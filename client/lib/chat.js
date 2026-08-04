@@ -29,7 +29,7 @@ let filter = 'all';                 // 'all' | 'mentions' | 'system' | 'w:<name>
 let lastWhisperFrom = null;         // who /r replies to
 const convos = new Map();           // name -> { unread }
 let unread = 0, unreadMentions = 0;
-let lastAuthor = null, lastAt = 0;
+let lastAuthor = null, lastAt = 0, lastLineEl = null;
 const sentHistory = [];             // up-arrow recall
 let historyIdx = -1;
 
@@ -165,7 +165,30 @@ const pad2 = (n) => String(n).padStart(2, '0');
 
 export function logChat(who, text, kind = '', meta = {}) {
   noteSeq(meta.seq);
+  // Caption merge: an agent speaking through a voicebox says each sentence as
+  // its audio starts, which is right for the overhead bubble but reads as a
+  // column of fragments here. Consecutive agent says inside a tight window
+  // flow into ONE line's body — a paragraph forming at speech rate. Scoped to
+  // agents (voice captions); human messages stay discrete rows.
+  const isAgentAuthor = kind === 'agent' || !!getPeople().find((p) => p.id === who)?.agent;
+  if (isAgentAuthor && who === lastAuthor && lastLineEl?.isConnected &&
+      lastLineEl.dataset.author === who && Date.now() - lastAt < 15_000) {
+    const body = lastLineEl.querySelector('.body');
+    if (body) {
+      body.append(' ', renderBody(text, namesForHighlight()));
+      lastAt = Date.now();
+      if (!lastLineEl.dataset.convo && mentionsMe(text)) {
+        lastLineEl.classList.add('ping'); lastLineEl.dataset.kind = 'mention';
+        bus.emit('pinged', { who, text });
+      }
+      const atBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
+      if (atBottom) scrollToEnd();
+      return;
+    }
+  }
   const line = buildLine(who, text, { kind, ...meta });
+  line.dataset.author = who;
+  lastLineEl = line;
   const pinged = line.dataset.kind === 'mention';
 
   const atBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
