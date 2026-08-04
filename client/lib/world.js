@@ -295,7 +295,10 @@ export async function applyEntry(entry, live, ctx = {}) {
       case 'say': {
         const isAgent = ctx.agents?.has(actor);
         logChat(actor, args.text, isAgent ? 'agent' : '', { seq: entry.seq, ts });
-        if (live) bus.emit('speech', { actor, text: args.text });
+        // spoken:true = this utterance was already PERFORMED as presence
+        // (captions paced the bubble to the voice); the say is its record.
+        // Log always, re-perform never — the full timer-free decoupling.
+        if (live && !args.spoken) bus.emit('speech', { actor, text: args.text });
         break;
       }
       case 'grant': {
