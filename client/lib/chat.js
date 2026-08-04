@@ -188,11 +188,24 @@ export function logChat(who, text, kind = '', meta = {}) {
   }
   const line = buildLine(who, text, { kind, ...meta });
   line.dataset.author = who;
+  line.dataset.tsn = String(meta.ts ?? Date.now());
   lastLineEl = line;
   const pinged = line.dataset.kind === 'mention';
 
   const atBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
-  logEl.appendChild(line);
+  // Causal placement (R, 16:30, verified against the world log — seq #1052/53
+  // landed same-second, interrupter first): a spoken utterance is an INTERVAL.
+  // Its record arrives when the voice stops, but it BEGAN before the interrupt
+  // that cut it. When a say carries t0 (air-start), it slots in front of any
+  // trailing lines that arrived after its speech began. Server order stays
+  // arrival-truth; this is display causality only.
+  let anchor = null;
+  if (meta.t0) {
+    let c = logEl.lastElementChild;
+    while (c && +(c.dataset.tsn ?? 0) > meta.t0) { anchor = c; c = c.previousElementSibling; }
+  }
+  if (anchor) logEl.insertBefore(line, anchor);
+  else logEl.appendChild(line);
   while (logEl.children.length > MAX_LINES) logEl.removeChild(logEl.firstChild);
 
   if (atBottom) scrollToEnd();
