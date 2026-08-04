@@ -22,7 +22,7 @@ import {
 import {
   remotes, updateRemotes, updateGaze, noteSpeaking, setLodBias,
 } from './lib/remotes.js';
-import { net, connect, initIdentity, loginUrl, wireNet, sendVerb, sendPose, sendPuppet, sendWhisper, sendTyping, sendWorldFork, sendWorldReset, sendMod, requestDebug } from './lib/net.js';
+import { net, connect, rejoin, initIdentity, loginUrl, wireNet, sendVerb, sendPose, sendPuppet, sendWhisper, sendTyping, sendWorldFork, sendWorldReset, sendMod, requestDebug } from './lib/net.js';
 import {
   initPalette, updateBuild, wireAvatarSwitch, setMyAvatarPath, toggleBuildMenu,
   hasGhost, hasSelection, toggleEditMode, isEditing,
@@ -640,6 +640,19 @@ bus.on('your-rights', (r) => {
 
 bus.on('command', ({ cmd, arg }) => {
   if (cmd === 'help') return toggleHelp();
+  if (cmd === 'rename') {
+    // chat.js has emitted this since the command existed; nothing ever
+    // listened — /name showed its help line and silently did nothing (found
+    // live, 2026-08-04). Rename = honest re-entry as a new identity (see
+    // net.rejoin doc), so say what's about to happen before it happens.
+    const name = (arg || '').trim().slice(0, 24);
+    if (!name) return logChat('*', 'usage: /name <new name>');
+    logChat('*', `leaving as ${CONFIG.name}, returning as ${name}…`);
+    setName(name);
+    localStorage.setItem('ew-name-set', '1');
+    rejoin();
+    return;
+  }
   if (cmd === 'role') {
     const who = (arg || '').trim() || CONFIG.name;
     if (who === CONFIG.name && !worldHasOwner() && net.myRights?.open !== false) {

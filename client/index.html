@@ -219,8 +219,8 @@ select {
 .chat-log .line.sys .who { display: none; }
 .chat-log .line.sys .body { margin-left: 0; }
 /* grouped continuation lines: hide the repeated name, keep the text aligned */
-.chat-log .line.cont .t, .chat-log .line.cont .who { visibility: hidden; }
-.chat-log .line.cont .t { font-size: 10px; }
+.chat-log .line.cont .t { visibility: hidden; font-size: 10px; }
+.chat-log .line.cont .who { display: none; }
 .chat-log .line.ping {
   background: rgba(255, 212, 121, .09);
   border-left: 2px solid var(--ping); margin-left: -10px; padding-left: 8px;

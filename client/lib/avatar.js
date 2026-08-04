@@ -82,11 +82,15 @@ function makeBubble(text) {
   if (clipped) lines.push('▾ more in chat');
   const h = 30 + lines.length * 34;
   return textSprite((ctx) => {
+    ctx.font = '27px ui-monospace, monospace';
+    // conform to the actual text (R, in-world 13:27): box hugs the widest
+    // wrapped line; the old fixed 700 stays as the ceiling
+    const wMax = Math.max(...lines.map((l) => ctx.measureText(l).width));
+    const w = Math.min(700, Math.ceil(wMax) + 44);
     ctx.fillStyle = 'rgba(8,20,28,0.86)';
     ctx.strokeStyle = 'rgba(143,232,200,0.25)';
     ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.roundRect(2, 2, 700, h - 4, 16); ctx.fill(); ctx.stroke();
-    ctx.font = '27px ui-monospace, monospace';
+    ctx.beginPath(); ctx.roundRect((704 - w) / 2, 2, w, h - 4, 16); ctx.fill(); ctx.stroke();
     ctx.textAlign = 'center';
     lines.forEach((l, i) => {
       ctx.fillStyle = clipped && i === lines.length - 1 ? '#8ba39c' : '#e8f4ef';
