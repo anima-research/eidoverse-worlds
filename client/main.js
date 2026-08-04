@@ -602,7 +602,10 @@ bus.on('caption', ({ actor, text }) => {
 });
 bus.on('speech', ({ actor, text }) => {
   const c = _captioned.get(actor);
-  if (c && performance.now() - c.t < 10000 && String(text).startsWith(c.first.slice(0, 24))) {
+  // 40s window: the blob waits for the LAST sentence's air, and a long
+  // closing sentence outran the old 10s — the whole speech re-bubbled and
+  // its linger suppressed the glyph pill (R saw it, 16:06)
+  if (c && performance.now() - c.t < 40000 && String(text).startsWith(c.first.slice(0, 24))) {
     _captioned.delete(actor);
     return;                     // already performed live via captions
   }
