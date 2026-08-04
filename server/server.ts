@@ -2300,6 +2300,20 @@ const server = Bun.serve({
           c.world.broadcast({ type: "typing", id: c.id, to: msg.to ?? null, ...(st ? { state: st } : {}) }, c);
           break;
         }
+        case "caption": {
+          // Live speech pacing (two-plane speech, R's design 15:56): a voice
+          // agent STREAMS by nature, but streaming into the log turns one
+          // utterance into six fragmentary pings for every listening agent.
+          // So the sentences ride presence — relayed, never persisted, same
+          // doctrine as typing — and the complete utterance lands in the log
+          // as ONE say when the voice finishes. Agents perceive a paragraph;
+          // humans watch it being spoken.
+          if (!c.world || c.spectator) return;
+          const capText = String(msg.text ?? "").slice(0, 500);
+          if (!capText) return;
+          c.world.broadcast({ type: "caption", id: c.id, text: capText, utt: msg.utt ?? 0 }, c);
+          break;
+        }
         case "drag": {
           // Transient build feedback. DESIGN.md is explicit that dragging is
           // presence traffic and only the RELEASE commits a log entry — so this

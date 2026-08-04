@@ -588,7 +588,25 @@ bus.on('force', ({ actor, at, radius = 4, power = 3 }) => {
   applyShove(lean, actor);
 });
 
+// Two-plane speech: captions are the live performance (bubble + mouth,
+// sentence by sentence), the logged say is the record. When a blob arrives
+// from someone whose captions we just watched, the performance already
+// happened — log it, don't replay it as a second giant bubble.
+const _captioned = new Map();   // actor -> { t, first }
+bus.on('caption', ({ actor, text }) => {
+  const av = actor === CONFIG.name ? me : remotes.get(actor)?.avatar;
+  av?.say(text);
+  if (!_captioned.has(actor)) _captioned.set(actor, { t: 0, first: text });
+  _captioned.get(actor).t = performance.now();
+  if (actor !== CONFIG.name) noteSpeaking(actor, Math.min(12000, 3000 + text.length * 30));
+});
 bus.on('speech', ({ actor, text }) => {
+  const c = _captioned.get(actor);
+  if (c && performance.now() - c.t < 10000 && String(text).startsWith(c.first.slice(0, 24))) {
+    _captioned.delete(actor);
+    return;                     // already performed live via captions
+  }
+  _captioned.delete(actor);
   const av = actor === CONFIG.name ? me : remotes.get(actor)?.avatar;
   av?.say(text);
   if (actor !== CONFIG.name) noteSpeaking(actor, Math.min(12000, 3000 + text.length * 30));

@@ -383,6 +383,12 @@ async function handle(msg) {
       logWhisper(msg);
       break;
 
+    case 'caption':
+      // live speech pacing (presence, never logged) — the bubble speaks in
+      // real time; the log gets the whole utterance as one say at the end
+      bus.emit('caption', { actor: msg.id, text: msg.text });
+      break;
+
     case 'typing':
       if (msg.id !== net.myId) {
         noteTyping(msg.id);                                // chat window "X is typing…"
