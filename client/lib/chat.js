@@ -226,7 +226,11 @@ function buildLine(who, text, { kind = '', ts = Date.now(), historical = false }
   // window drop the repeated name, so a paragraph reads as a paragraph.
   // Historical lines are prepended out of order, so they never group.
   const grouped = !historical && !sys && who === lastAuthor && now - lastAt < 90_000;
-  if (!historical) { lastAuthor = sys ? null : who; lastAt = now; }
+  // sys lines pass THROUGH a group without erasing it: an act narration mid-
+  // paragraph (an agent's tool use between spoken sentences) shouldn't force
+  // the name to reprint on the next sentence. Only a real change of speaker
+  // or the window ends a group. (Live observation, Rabscuttle 14:53.)
+  if (!historical && !sys) { lastAuthor = who; lastAt = now; }
   if (grouped) line.classList.add('cont');
   if (historical) line.classList.add('old');
 
