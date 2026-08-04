@@ -115,17 +115,31 @@ function makeTypingSprite() {
   s.userData.ctx = c.getContext('2d');
   return s;
 }
-function drawTypingDots(sprite, t) {
+// Social affordance glyphs (R's ask, in-world 13:36): what is this agent's
+// attention doing right now? ear = your speech will reach it; think = a reply
+// is being composed; tool = mid-task, hands busy — wait or ping, your call.
+const STATE_GLYPH = { ear: '👂', think: '💭', tool: '🔧' };
+function drawTypingDots(sprite, t, state) {
   const ctx = sprite.userData.ctx;
   ctx.clearRect(0, 0, 128, 56);
   ctx.fillStyle = 'rgba(8,20,28,0.82)';
   ctx.strokeStyle = 'rgba(143,232,200,0.28)';
   ctx.lineWidth = 2;
   ctx.beginPath(); ctx.roundRect(28, 12, 72, 32, 16); ctx.fill(); ctx.stroke();
-  for (let i = 0; i < 3; i++) {
-    const b = 0.32 + 0.68 * Math.max(0, Math.sin(t * 5 - i * 0.85));
-    ctx.fillStyle = `rgba(180,240,216,${b})`;
-    ctx.beginPath(); ctx.arc(48 + i * 16, 28, 5, 0, Math.PI * 2); ctx.fill();
+  const glyph = STATE_GLYPH[state];
+  if (glyph) {
+    const b = 0.75 + 0.25 * Math.sin(t * 3);      // gentle breathing, not a strobe
+    ctx.globalAlpha = b;
+    ctx.font = '26px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(glyph, 64, 30);
+    ctx.globalAlpha = 1;
+  } else {
+    for (let i = 0; i < 3; i++) {
+      const b = 0.32 + 0.68 * Math.max(0, Math.sin(t * 5 - i * 0.85));
+      ctx.fillStyle = `rgba(180,240,216,${b})`;
+      ctx.beginPath(); ctx.arc(48 + i * 16, 28, 5, 0, Math.PI * 2); ctx.fill();
+    }
   }
   sprite.material.map.needsUpdate = true;
 }
@@ -531,7 +545,7 @@ export class Avatar {
   // ---- speech
   /** They're composing. Repeated calls extend it; it expires on its own so a
    *  dropped "stopped typing" never leaves the dots stuck up forever. */
-  setTyping() { this._typingUntil = performance.now() + 4000; }
+  setTyping(state) { this._typingUntil = performance.now() + 4000; this._typingState = state || null; }
 
   say(text) {
     this._typingUntil = 0;         // speaking ends composing; the bubble takes over
@@ -654,7 +668,7 @@ export class Avatar {
     if (this.typing) {
       this.typing.visible = typingNow;
       if (typingNow) {
-        if (now - this._typingDrawAt > 110) { this._typingDrawAt = now; drawTypingDots(this.typing, now / 1000); }
+        if (now - this._typingDrawAt > 110) { this._typingDrawAt = now; drawTypingDots(this.typing, now / 1000, this._typingState); }
         this.typing.material.opacity = THREE.MathUtils.clamp(1 - (d - 26) / 12, 0, 1);
       }
     }

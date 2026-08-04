@@ -2293,7 +2293,11 @@ const server = Bun.serve({
           // Pure presence: who is composing, right now. Never logged, never
           // queued, and irrelevant a second later.
           if (!c.world || c.spectator) return;
-          c.world.broadcast({ type: "typing", id: c.id, to: msg.to ?? null }, c);
+          // state: optional social affordance glyph for agents (ear = I hear
+          // you, think = composing a reply, tool = working). Whitelisted so
+          // presence stays presence.
+          const st = typeof msg.state === "string" && ["ear", "think", "tool"].includes(msg.state) ? msg.state : null;
+          c.world.broadcast({ type: "typing", id: c.id, to: msg.to ?? null, ...(st ? { state: st } : {}) }, c);
           break;
         }
         case "drag": {
