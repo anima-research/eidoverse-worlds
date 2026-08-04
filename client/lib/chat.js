@@ -204,8 +204,12 @@ export function logChat(who, text, kind = '', meta = {}) {
     let c = logEl.lastElementChild;
     while (c && +(c.dataset.tsn ?? 0) > meta.t0) { anchor = c; c = c.previousElementSibling; }
   }
-  if (anchor) logEl.insertBefore(line, anchor);
-  else logEl.appendChild(line);
+  if (anchor) {
+    logEl.insertBefore(line, anchor);
+    // the anchor may have been name-grouped with a line that's no longer its
+    // neighbor — a different speaker between them means the name must reprint
+    if (anchor.dataset.author !== who) anchor.classList.remove('cont');
+  } else logEl.appendChild(line);
   while (logEl.children.length > MAX_LINES) logEl.removeChild(logEl.firstChild);
 
   if (atBottom) scrollToEnd();
