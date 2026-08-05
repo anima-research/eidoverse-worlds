@@ -15,7 +15,8 @@
 // usual clinical figures for a relaxed (not stretched, not athletic) body.
 
 import { plugin } from 'bun';
-const STUB = new URL('./core-stub.mjs', import.meta.url).pathname;
+import { fileURLToPath } from 'node:url';
+const STUB = fileURLToPath(new URL('./core-stub.mjs', import.meta.url));
 plugin({ name: 'core-stub', setup(b) { b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: STUB })); } });
 const { THREE } = await import('./core-stub.mjs');
 const { Ragdoll } = await import('../client/lib/ragdoll.js');

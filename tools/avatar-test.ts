@@ -17,7 +17,8 @@
 // ever after, so anything that deactivates them is unrecoverable.
 
 import { plugin } from 'bun';
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+import { fileURLToPath } from 'node:url';
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: 'client-stubs',
   setup(b) {

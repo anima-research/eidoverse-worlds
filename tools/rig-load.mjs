@@ -14,9 +14,10 @@
 // test needs. VRM's normalized bone nodes share those positions by definition.
 
 import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { THREE } from './core-stub.mjs';
 
-export const VRM_DIR = new URL('../assets/opt/eidoverse/assets/vrms/', import.meta.url).pathname;
+export const VRM_DIR = fileURLToPath(new URL('../assets/opt/eidoverse/assets/vrms/', import.meta.url));
 
 /** The JSON chunk of a .glb / .vrm. */
 export function glbJson(buf) {

@@ -24,12 +24,13 @@
 // minutes behind the stage. A hard per-line cap guards runaway synthesis.
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 const WORLD_URL = process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws";
 const WORLD_TOKEN = process.env.WORLD_TOKEN ?? "";
 const WORLD_NAME = process.env.WORLD_NAME ?? "commons";
 const SPEAKERS = (process.env.SPEAKERS ?? "*").split(",").map((s) => s.trim()).filter(Boolean);
-const VOICES_FILE = process.env.VOICES_FILE ?? new URL("./voices.json", import.meta.url).pathname;
+const VOICES_FILE = process.env.VOICES_FILE ?? fileURLToPath(new URL("./voices.json", import.meta.url));
 const ELEVEN_KEY = process.env.ELEVEN_KEY ?? "";
 const ELEVEN_MODEL = process.env.ELEVEN_MODEL ?? "eleven_turbo_v2_5";
 const DRY_RUN = process.env.DRY_RUN === "1";

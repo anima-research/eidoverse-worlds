@@ -16,6 +16,7 @@
 //         "world": "commons", "avatar": "eidoverse/assets/vrms/claude.vrm" } }
 
 import { createServer } from "node:http";
+import { fileURLToPath } from "node:url";
 import { readFileSync, existsSync, writeFileSync, renameSync } from "node:fs";
 import { WebSocketServer, type WebSocket } from "ws";
 import {
@@ -48,7 +49,7 @@ const PORT = Number(process.env.MCPL_PORT ?? 8941);
 const HN_ISSUER_KEY = process.env.HN_ISSUER_KEY ?? "";
 const HN_ISS = process.env.HN_ISS ?? "id.animalabs.ai";
 const ts = () => new Date().toISOString().slice(11, 19);
-const TOKENS_PATH = new URL("./tokens.json", import.meta.url).pathname;
+const TOKENS_PATH = fileURLToPath(new URL("./tokens.json", import.meta.url));
 
 type Auth = { id: string; name: string; world?: string; avatar?: string };
 // Tokens are read PER CONNECTION ATTEMPT — minting/revoking is a file edit,
@@ -62,7 +63,7 @@ function readTokens(): Record<string, Auth> {
 
 // per-agent durable state (missed-mention cursors, chosen bodies), tmp+rename.
 // Plain ids map to lastSeen timestamps; __-prefixed keys are sections.
-const STATE_PATH = new URL("./state.json", import.meta.url).pathname;
+const STATE_PATH = fileURLToPath(new URL("./state.json", import.meta.url));
 const _state: Record<string, unknown> = (() => {
   try { if (existsSync(STATE_PATH)) return JSON.parse(readFileSync(STATE_PATH, "utf8")); } catch { /* fresh */ }
   return {};

@@ -19,8 +19,9 @@
 // So: keep the synthetic cases (they isolate the solver), and add the fleet.
 
 import { plugin } from 'bun';
+import { fileURLToPath } from 'node:url';
 
-const STUB = new URL('./core-stub.mjs', import.meta.url).pathname;
+const STUB = fileURLToPath(new URL('./core-stub.mjs', import.meta.url));
 plugin({
   name: 'core-stub',
   setup(build) {

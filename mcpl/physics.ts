@@ -26,8 +26,9 @@
 // hillside (and into furniture — no colliders headless yet) is future work.
 
 import { plugin } from "bun";
+import { fileURLToPath } from "node:url";
 
-const STUB = new URL("../tools/core-stub.mjs", import.meta.url).pathname;
+const STUB = fileURLToPath(new URL("../tools/core-stub.mjs", import.meta.url));
 
 let simMods: {
   Ragdoll: any;

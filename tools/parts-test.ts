@@ -10,15 +10,21 @@
 // Run: bun run tools/parts-test.ts   (no servers, no GPU)
 
 import { plugin } from 'bun';
+import { fileURLToPath } from 'node:url';
 
-const CORE = new URL('./core-stub.mjs', import.meta.url).pathname;
-const PARTS = new URL('./parts-stub.mjs', import.meta.url).pathname;
+const CORE = fileURLToPath(new URL('./core-stub.mjs', import.meta.url));
+const PARTS = fileURLToPath(new URL('./parts-stub.mjs', import.meta.url));
+const LOADWORK = fileURLToPath(new URL('./loadwork-stub.mjs', import.meta.url));
 plugin({
   name: 'parts-stub',
   setup(build) {
     build.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: CORE }));
     build.onResolve({ filter: /^\.\/world\.js$/ }, () => ({ path: PARTS }));
     build.onResolve({ filter: /^\.\/colliders\.js$/ }, () => ({ path: PARTS }));
+    // motion.js's cone reaches remotes.js → loadwork.js, which schedules on
+    // requestAnimationFrame at module scope and dies headless. avatar-test
+    // already carries a stub for exactly this; share it.
+    build.onResolve({ filter: /^\.\/loadwork\.js$/ }, () => ({ path: LOADWORK }));
   },
 });
 
