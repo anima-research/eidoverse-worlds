@@ -2107,6 +2107,27 @@ const server = Bun.serve({
                 ...(args.knobs != null ? { knobs: args.knobs } : {}) };   // author = entry.actor, never client-supplied
             }
           }
+          if (msg.verb === "say") {
+            // Spoken-say protocol (two-plane speech): `spoken`/`utt`/`t0` are
+            // display metadata for a voice that already performed as captions.
+            // t0 is a REORDER key on every client, so it is never trusted raw:
+            // it exists only inside the spoken protocol, must be finite, and
+            // is clamped to a bounded utterance window ending at arrival.
+            // Ordinary says carry none of this — stripped, not errored, so a
+            // confused client degrades to normal chat instead of breaking.
+            const a = args as Record<string, unknown>;
+            const now = Date.now();
+            const MAX_UTTER_MS = 300_000;
+            const uttN = Number(a.utt);
+            const t0N = Number(a.t0);
+            if (a.spoken === true && Number.isSafeInteger(uttN) && uttN >= 0) {
+              a.spoken = true;
+              a.utt = uttN;
+              if (Number.isFinite(t0N)) {
+                a.t0 = Math.min(now, Math.max(now - MAX_UTTER_MS, t0N));
+              } else delete a.t0;
+            } else { delete a.spoken; delete a.utt; delete a.t0; }
+          }
           const entry = c.world.append(c.id, msg.verb, args);
           c.world.broadcast({ type: "log", entry }); // everyone, including author (authoritative echo)
           // A `use` is a cause; reactions turn it into logged effects.
@@ -2311,7 +2332,9 @@ const server = Bun.serve({
           if (!c.world || c.spectator) return;
           const capText = String(msg.text ?? "").slice(0, 500);
           if (!capText) return;
-          c.world.broadcast({ type: "caption", id: c.id, text: capText, utt: msg.utt ?? 0 }, c);
+          const capUtt = Number(msg.utt);
+          c.world.broadcast({ type: "caption", id: c.id, text: capText,
+            utt: Number.isSafeInteger(capUtt) && capUtt >= 0 ? capUtt : 0 }, c);
           break;
         }
         case "drag": {

@@ -514,6 +514,49 @@ try {
     Math.abs((bob2.snapshot.restore?.p?.[0] ?? 0) - 7) < 0.01,
     JSON.stringify(bob2.snapshot.restore));
 
+  // --- spoken-say protocol: display metadata is validated, never trusted
+  // (`t0` reorders every client's visible history, so the server clamps it
+  // to a bounded utterance window and only inside spoken:true + utt)
+  const sp = new Client("speaker", { agent: true });
+  await sp.connect();
+  const said = () => sp.of("log").filter((m) => m.entry?.verb === "say").map((m) => m.entry);
+
+  sp.verb("say", { text: "honest utterance", spoken: true, utt: 3, t0: Date.now() - 4000 });
+  await sleep(200);
+  let e = said().at(-1);
+  check("spoken say keeps spoken/utt and a recent t0",
+    e?.args?.spoken === true && e?.args?.utt === 3 &&
+    Math.abs(e.args.t0 - (Date.now() - 4000)) < 2000, JSON.stringify(e?.args));
+
+  sp.verb("say", { text: "time traveler", spoken: true, utt: 4, t0: 12345 });
+  await sleep(200);
+  e = said().at(-1);
+  check("absurd t0 is clamped into the utterance window, not honored",
+    Number.isFinite(e?.args?.t0) && e.args.t0 >= Date.now() - 301_000 && e.args.t0 <= Date.now(),
+    String(e?.args?.t0));
+
+  sp.verb("say", { text: "plain chat", t0: 12345, utt: 9 });
+  await sleep(200);
+  e = said().at(-1);
+  check("ordinary say cannot smuggle display metadata",
+    e?.args?.t0 === undefined && e?.args?.utt === undefined && e?.args?.spoken === undefined,
+    JSON.stringify(e?.args));
+
+  sp.verb("say", { text: "bad utt", spoken: true, utt: "DROP TABLE", t0: Date.now() });
+  await sleep(200);
+  e = said().at(-1);
+  check("non-numeric utt voids the spoken protocol for that say",
+    e?.args?.spoken === undefined && e?.args?.utt === undefined && e?.args?.t0 === undefined,
+    JSON.stringify(e?.args));
+
+  sp.send({ type: "caption", text: "cap", utt: { evil: true } });
+  await sleep(200);
+  const cap = alice2.of("caption").at(-1);
+  check("caption utt is bounded to a safe non-negative integer",
+    cap === undefined || cap.utt === 0, JSON.stringify(cap?.utt));
+
+  sp.close();
+
   for (const c of [alice, alice2, carol, bob2]) c.close();
 } catch (e) {
   fail++;
