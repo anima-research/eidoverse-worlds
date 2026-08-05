@@ -14,13 +14,18 @@ import { fileURLToPath } from 'node:url';
 
 const CORE = fileURLToPath(new URL('./core-stub.mjs', import.meta.url));
 const PARTS = fileURLToPath(new URL('./parts-stub.mjs', import.meta.url));
+const COLLIDERS = fileURLToPath(new URL('./colliders-stub.mjs', import.meta.url));
 const LOADWORK = fileURLToPath(new URL('./loadwork-stub.mjs', import.meta.url));
 plugin({
   name: 'parts-stub',
   setup(build) {
+    // one specifier, one file — './colliders.js' goes through a re-export
+    // shim over parts-stub rather than to parts-stub itself. Two specifiers
+    // resolving to one plugin-returned path is the configuration that breaks
+    // on macOS Bun 1.3.14 (see colliders-stub.mjs for the evidence).
     build.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: CORE }));
     build.onResolve({ filter: /^\.\/world\.js$/ }, () => ({ path: PARTS }));
-    build.onResolve({ filter: /^\.\/colliders\.js$/ }, () => ({ path: PARTS }));
+    build.onResolve({ filter: /^\.\/colliders\.js$/ }, () => ({ path: COLLIDERS }));
     // motion.js's cone reaches remotes.js → loadwork.js, which schedules on
     // requestAnimationFrame at module scope and dies headless. avatar-test
     // already carries a stub for exactly this; share it.
