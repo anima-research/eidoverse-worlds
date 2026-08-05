@@ -119,6 +119,12 @@ export function sendMod(type, extra = {}) {
 export function sendWhisper(to, text) {
   if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'whisper', to, text }));
 }
+/** WebRTC signalling relay for the voice mesh — offers, answers, ICE. The
+ *  server forwards the payload verbatim to `to`; it never inspects it. */
+export function sendRtc(to, payload) {
+  if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'rtc', to, payload }));
+}
+
 export function sendTyping(to, state) {
   if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'typing', to, ...(state ? { state } : {}) }));
 }

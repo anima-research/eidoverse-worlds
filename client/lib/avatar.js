@@ -118,7 +118,60 @@ function makeTypingSprite() {
 // Social affordance glyphs (R's ask, in-world 13:36): what is this agent's
 // attention doing right now? ear = your speech will reach it; think = a reply
 // is being composed; tool = mid-task, hands busy — wait or ping, your call.
-const STATE_GLYPH = { ear: '👂', think: '💭', tool: '🔧' };
+// mic = this body's voice is LIVE in the room right now (R, 23:30) — the
+// megaphone is presence, not a message: it says listen, sound is coming from
+// here, independent of whether any words have been transcribed yet.
+// DRAWN, never typed. Canvas fillText of an emoji silently paints NOTHING when
+// the platform lacks that glyph — no error, no fallback, just a pill that means
+// something and shows nothing. It happened live on R's Windows 11 desktop with
+// two different codepoints (U+1F399 🎙 and U+1F5E3 🗣), both of which
+// rasterized fine in headless Chromium — so the fault was invisible to the
+// tests too. Lucide-style strokes have no font dependency at all.
+// Signature: (ctx, t) => void, drawing centered on the origin in a ~26px box.
+const STATE_ICON = {
+  // ear — lucide 'ear': the outer helix, then the inner curl
+  ear(ctx) {
+    ctx.beginPath();
+    ctx.arc(0, -3, 8.5, Math.PI * 0.92, Math.PI * 2.02);
+    ctx.lineTo(8.5, 3);
+    ctx.arc(0, 3, 8.5, 0, Math.PI * 0.42);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(-0.5, -2, 3.6, Math.PI * 0.85, Math.PI * 2.1);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(3.1, -1.2); ctx.quadraticCurveTo(3.6, 6, -1.5, 8.5);
+    ctx.stroke();
+  },
+  // think — a thought cloud with trailing bubbles
+  think(ctx, t) {
+    ctx.beginPath();
+    ctx.arc(-5, -3, 5.2, 0, Math.PI * 2);
+    ctx.arc(3, -5, 6.2, 0, Math.PI * 2);
+    ctx.arc(6, 1.5, 4.4, 0, Math.PI * 2);
+    ctx.arc(-1, 2, 5.6, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let i = 0; i < 2; i++) {
+      const a = 0.4 + 0.6 * Math.max(0, Math.sin(t * 3.4 - i * 0.9));
+      ctx.globalAlpha *= 1;
+      ctx.beginPath();
+      ctx.arc(-9 - i * 4.5, 8 + i * 3.5, 2.4 - i * 0.7, 0, Math.PI * 2);
+      ctx.globalAlpha = a * 0.9;
+      ctx.fill();
+    }
+  },
+  // tool — lucide 'wrench': the open jaw and the shaft
+  tool(ctx) {
+    ctx.beginPath();
+    ctx.moveTo(6.5, -9.5);
+    ctx.arc(3, -6, 5, -Math.PI * 0.28, Math.PI * 0.95, false);
+    ctx.lineTo(-8, 7.5);
+    ctx.arc(-9.5, 9, 2.2, -Math.PI * 0.75, Math.PI * 0.6, false);
+    ctx.lineTo(1.5, -1.5);
+    ctx.closePath();
+    ctx.stroke();
+  },
+};
 function drawTypingDots(sprite, t, state) {
   const ctx = sprite.userData.ctx;
   ctx.clearRect(0, 0, 128, 56);
@@ -126,14 +179,52 @@ function drawTypingDots(sprite, t, state) {
   ctx.strokeStyle = 'rgba(143,232,200,0.28)';
   ctx.lineWidth = 2;
   ctx.beginPath(); ctx.roundRect(28, 12, 72, 32, 16); ctx.fill(); ctx.stroke();
-  const glyph = STATE_GLYPH[state];
-  if (glyph) {
-    const b = 0.75 + 0.25 * Math.sin(t * 3);      // gentle breathing, not a strobe
-    ctx.globalAlpha = b;
-    ctx.font = '26px sans-serif';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(glyph, 64, 30);
+  // mic is DRAWN, not typed (R, 23:48: empty pill while speaking, on two
+  // different emoji). Canvas emoji depend on the machine's font stack —
+  // headless Chromium rasterized both 🎙 and 🗣 fine while her desktop drew
+  // neither. A signal this load-bearing can't be a font gamble: three arcs
+  // and a capsule always paint. Bars animate with the breathing value so it
+  // reads as sound, not a static badge.
+  if (state === 'mic') {
+    const b = 0.75 + 0.25 * Math.sin(t * 3);
+    ctx.save();
+    ctx.translate(64, 28);
+    ctx.strokeStyle = `rgba(180,240,216,${b})`;
+    ctx.fillStyle = `rgba(180,240,216,${b})`;
+    ctx.lineWidth = 2.4;
+    ctx.lineCap = 'round';
+    // capsule mic body
+    ctx.beginPath(); ctx.roundRect(-16, -10, 9, 15, 4.5); ctx.fill();
+    // cradle under it
+    ctx.beginPath(); ctx.arc(-11.5, 3, 7.5, 0, Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-11.5, 10.5); ctx.lineTo(-11.5, 14); ctx.stroke();
+    // sound arcs, rising with the envelope
+    for (let i = 0; i < 3; i++) {
+      const amp = 0.35 + 0.65 * Math.max(0, Math.sin(t * 5 - i * 0.7));
+      ctx.globalAlpha = amp;
+      ctx.beginPath();
+      ctx.arc(0, 2, 7 + i * 6, -0.85, 0.85);
+      ctx.stroke();
+    }
     ctx.globalAlpha = 1;
+    ctx.restore();
+    sprite.material.map.needsUpdate = true;
+    return;
+  }
+  const icon = STATE_ICON[state];
+  if (icon) {
+    const b = 0.75 + 0.25 * Math.sin(t * 3);      // gentle breathing, not a strobe
+    ctx.save();
+    ctx.translate(64, 28);
+    ctx.globalAlpha = b;
+    ctx.strokeStyle = 'rgba(180,240,216,1)';
+    ctx.fillStyle = 'rgba(180,240,216,1)';
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    icon(ctx, t);
+    ctx.globalAlpha = 1;
+    ctx.restore();
   } else {
     for (let i = 0; i < 3; i++) {
       const b = 0.32 + 0.68 * Math.max(0, Math.sin(t * 5 - i * 0.85));
@@ -174,6 +265,8 @@ export class Avatar {
     this.bubble = null;
     this.bubbleUntil = 0;
     this.speakUntil = 0;           // drives the fake viseme envelope
+    this.voiceLevel = null;        // 0..1 real amplitude when a waveform exists
+    this._mouth = 0;               // smoothed jaw, so the mouth has inertia
     this.typing = null;            // lazily-built dots sprite
     this._typingUntil = 0;         // typing signals repeat ~2.5s and expire ~4s
     this._typingDrawAt = 0;
@@ -545,10 +638,20 @@ export class Avatar {
   // ---- speech
   /** They're composing. Repeated calls extend it; it expires on its own so a
    *  dropped "stopped typing" never leaves the dots stuck up forever. */
-  setTyping(state) { this._typingUntil = performance.now() + 4000; this._typingState = state || null; }
+  setTyping(state) {
+    // state === null means STOP (mic went cold, composing ended) — it must
+    // clear the pill, not schedule 4s of an empty one. Found live: R's
+    // megaphone rendered as a blank bubble (2026-08-04 23:35).
+    if (state === null) { this._typingUntil = 0; this._typingState = null; return; }
+    this._typingUntil = performance.now() + 4000;
+    this._typingState = state || null;
+  }
 
   say(text) {
-    this._typingUntil = 0;         // speaking ends composing; the bubble takes over
+    // Speaking ends COMPOSING — but not a live mic. The 🎙 is presence: the
+    // voice is still coming out of this body while its transcript scrolls
+    // past. Only the composing states yield to the bubble.
+    if (this._typingState !== 'mic') this._typingUntil = 0;
     if (this.bubble) { this.root.remove(this.bubble); disposeSprite(this.bubble); }
     this.bubble = makeBubble(text);
     this.bubble.position.y = 2.3;
@@ -632,11 +735,23 @@ export class Avatar {
       // ---- mouth: no audio to drive visemes from, but a frozen mouth during
       // a paragraph of speech is worse than an approximate one. Syllable-rate
       // envelope for the duration of the utterance.
-      if (now < this.speakUntil) {
+      // A REAL amplitude wins over the fake envelope whenever we have one
+      // (live mic, R 23:30): the mouth then moves with the actual voice
+      // instead of an approximation of one. Smoothed asymmetrically — jaws
+      // open fast and close slower, which is what reads as speech rather
+      // than chatter. Falls back to the syllable envelope for TTS/captions,
+      // where no waveform is available on this client.
+      if (this.voiceLevel != null) {
+        const target = Math.min(1, this.voiceLevel * 3.2);
+        const k = target > this._mouth ? 0.55 : 0.18;
+        this._mouth += (target - this._mouth) * k;
+        em.setValue('aa', this._mouth * 0.8);
+      } else if (now < this.speakUntil) {
         const t = now / 1000;
         const env = 0.5 + 0.5 * Math.sin(t * 17) * Math.sin(t * 7.3);
         em.setValue('aa', Math.max(0, env) * 0.65);
-      } else em.setValue('aa', 0);
+        this._mouth = 0;
+      } else { em.setValue('aa', 0); this._mouth = 0; }
     }
 
     BC('av:gaze-expr');
@@ -663,12 +778,21 @@ export class Avatar {
     }
 
     // ---- typing dots: shown only while composing and not already speaking
-    const typingNow = now < this._typingUntil && !this.bubble;
-    if (typingNow && !this.typing) { this.typing = makeTypingSprite(); this.typing.position.y = 2.12; this.root.add(this.typing); }
+    // A composing pill hides behind a bubble (you've stopped composing, you
+    // said it). A LIVE MIC does not: the voice keeps coming while its
+    // transcript floats. Stack it above the bubble instead of suppressing it.
+    const micLive = this._typingState === 'mic';
+    const typingNow = now < this._typingUntil && (micLive || !this.bubble);
+    if (typingNow && !this.typing) { this.typing = makeTypingSprite(); this.root.add(this.typing); }
+    if (this.typing) this.typing.position.y = (micLive && this.bubble) ? 2.72 : 2.12;
     if (this.typing) {
       this.typing.visible = typingNow;
       if (typingNow) {
-        if (now - this._typingDrawAt > 110) { this._typingDrawAt = now; drawTypingDots(this.typing, now / 1000, this._typingState); }
+        if (now - this._typingDrawAt > 110) {
+          this._typingDrawAt = now;
+          drawTypingDots(this.typing, now / 1000, this._typingState);
+          if (globalThis.__pillDebug) globalThis.__pillLast = { id: this.id, state: this._typingState, t: now };
+        }
         this.typing.material.opacity = THREE.MathUtils.clamp(1 - (d - 26) / 12, 0, 1);
       }
     }

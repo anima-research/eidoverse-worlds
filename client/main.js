@@ -28,6 +28,7 @@ import {
   hasGhost, hasSelection, toggleEditMode, isEditing,
 } from './lib/build.js';
 import { initConjure } from './lib/conjure.js';
+import { initVoice, micOn, isMuted, micAnalyserLevel, peerLevels } from './lib/voice.js';
 import { initSceneGraph, sceneAttach, sceneDetach } from './lib/scenegraph.js';
 import {
   toast, setHud, setHint, setAmbientHint, flashHint, buildHelp, toggleHelp,
@@ -179,6 +180,7 @@ function start() {
   connect();
   initPalette();
   initConjure();   // the orrery panel — prompt → your pick of images → mesh → world
+  initVoice(CONFIG.name);
   initSceneGraph();   // 🌳 the world as a tree + 📜 the scripts that animate it
   setHint('<kbd>WASD</kbd> move · <kbd>Enter</kbd> chat · <kbd>B</kbd> build · <kbd>?</kbd> help');
 
@@ -588,6 +590,40 @@ bus.on('force', ({ actor, at, radius = 4, power = 3 }) => {
   applyShove(lean, actor);
 });
 
+// ---- live voice as presence ------------------------------------------------
+// The same two-plane split as agent speech, pointed at humans: the SOUND is
+// already live over the mesh (no latency, no waiting on transcription), so the
+// visible half must be live too — mouth driven by real amplitude, an icon while
+// sound is actually coming out. STT stays on the LOG plane, landing afterward
+// as an ordinary say. Nobody waits for words to know you are talking.
+const VOICE_GATE = 0.045;        // below this is room tone, not speech
+let _micGlyphOn = false, _micGlyphAt = 0, _micTail = 0;
+
+function updateVoiceMouths(now) {
+  if (me) {
+    const live = micOn() && !isMuted();
+    me.voiceLevel = live ? micAnalyserLevel() : null;
+    // the icon means SOUND IS COMING OUT, not "a mic is plugged in": an
+    // always-on badge is furniture, it stops carrying information the moment
+    // everyone wears one. Short tail so pauses between words do not strobe it.
+    const speaking = live && me.voiceLevel > VOICE_GATE;
+    if (speaking) _micTail = now + 900;
+    const show = now < _micTail;
+    if (show !== _micGlyphOn || (show && now - _micGlyphAt > 1500)) {
+      _micGlyphOn = show; _micGlyphAt = now;
+      sendTyping(null, show ? 'mic' : null);
+      me.setTyping(show ? 'mic' : null);
+    }
+    if (speaking) me.speakUntil = now + 400;   // keeps head/gaze life going
+  }
+  const levels = peerLevels();
+  for (const [id, r] of remotes) {
+    const lv = levels.get(id);
+    if (r.avatar) r.avatar.voiceLevel = lv == null ? null : lv;
+    if (lv != null && lv > VOICE_GATE) noteSpeaking(id, 600);
+  }
+}
+
 // Two-plane speech, timer-free (R, 16:09): captions are the live performance
 // (bubble + mouth, paced to the voice); the logged say carries spoken:true
 // and world.js never re-performs it. No dedup windows, no content matching —
@@ -966,6 +1002,8 @@ function frame(now) {
     me._poseSig = myState.pose;
     if (myState.pose) me.setPose(myState.pose); else me.clearPose();
   }
+  BC('voice-mouths');
+  updateVoiceMouths(now);        // BEFORE the avatar updates that consume it
   BC('me-update');
   me?.update(dt, now);
   BC('bodydrag');
