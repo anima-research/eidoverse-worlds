@@ -165,42 +165,46 @@ const pad2 = (n) => String(n).padStart(2, '0');
 
 export function logChat(who, text, kind = '', meta = {}) {
   noteSeq(meta.seq);
-  // Caption merge: an agent speaking through a voicebox says each sentence as
-  // its audio starts, which is right for the overhead bubble but reads as a
-  // column of fragments here. Consecutive agent says inside a tight window
-  // flow into ONE line's body — a paragraph forming at speech rate. Scoped to
-  // agents (voice captions); human messages stay discrete rows.
-  const isAgentAuthor = kind === 'agent' || !!getPeople().find((p) => p.id === who)?.agent;
-  if (isAgentAuthor && who === lastAuthor && lastLineEl?.isConnected &&
-      lastLineEl.dataset.author === who && Date.now() - lastAt < 15_000) {
+  // Spoken-utterance merge: merges ONLY the continuation of one spoken
+  // utterance — spoken:true + same author + same utt (Sol review, PR#7).
+  // A voicebox interrupted mid-utterance flushes the aired sentences as one
+  // say and may finish the rest later under the SAME utt; those says are one
+  // paragraph. Everything else — ordinary agent says, distinct utterances,
+  // tool-authored messages — keeps today's row semantics.
+  if (meta.spoken && meta.utt != null && lastLineEl?.isConnected &&
+      lastLineEl.dataset.author === who && lastLineEl.dataset.utt === String(meta.utt)) {
     const body = lastLineEl.querySelector('.body');
     if (body) {
+      const wasAtBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
       body.append(' ', renderBody(text, namesForHighlight()));
       lastAt = Date.now();
-      if (!lastLineEl.dataset.convo && mentionsMe(text)) {
-        lastLineEl.classList.add('ping'); lastLineEl.dataset.kind = 'mention';
-        bus.emit('pinged', { who, text });
-      }
-      const atBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
-      if (atBottom) scrollToEnd();
+      const newlyPinged = !lastLineEl.dataset.convo &&
+        lastLineEl.dataset.kind !== 'mention' && mentionsMe(text);
+      if (newlyPinged) { lastLineEl.classList.add('ping'); lastLineEl.dataset.kind = 'mention'; }
+      account(lastLineEl, { who, text, merged: true, newlyPinged, wasAtBottom });
       return;
     }
   }
   const line = buildLine(who, text, { kind, ...meta });
   line.dataset.author = who;
   line.dataset.tsn = String(meta.ts ?? Date.now());
+  if (meta.spoken && meta.utt != null) line.dataset.utt = String(meta.utt);
   lastLineEl = line;
-  const pinged = line.dataset.kind === 'mention';
 
-  const atBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
+  const wasAtBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
   // Causal placement (R, 16:30, verified against the world log — seq #1052/53
   // landed same-second, interrupter first): a spoken utterance is an INTERVAL.
   // Its record arrives when the voice stops, but it BEGAN before the interrupt
-  // that cut it. When a say carries t0 (air-start), it slots in front of any
-  // trailing lines that arrived after its speech began. Server order stays
-  // arrival-truth; this is display causality only.
+  // that cut it. When a spoken say carries t0 (air-start), it slots in front
+  // of any trailing lines that arrived after its speech began. Server order
+  // stays arrival-truth; this is display causality only. t0 is honored ONLY
+  // inside the spoken protocol and only within a bounded window — the server
+  // clamps it too, but an old or foreign server might not (Sol review, PR#7).
+  const ts = meta.ts ?? Date.now();
+  const t0ok = meta.spoken && Number.isFinite(meta.t0) &&
+    meta.t0 <= ts && meta.t0 >= ts - 300_000;
   let anchor = null;
-  if (meta.t0) {
+  if (t0ok) {
     let c = logEl.lastElementChild;
     while (c && +(c.dataset.tsn ?? 0) > meta.t0) { anchor = c; c = c.previousElementSibling; }
   }
@@ -212,15 +216,25 @@ export function logChat(who, text, kind = '', meta = {}) {
   } else logEl.appendChild(line);
   while (logEl.children.length > MAX_LINES) logEl.removeChild(logEl.firstChild);
 
-  if (atBottom) scrollToEnd();
-  else if (line.dataset.kind !== 'system') { unread++; if (pinged) unreadMentions++; paintUnread(); }
+  account(line, { who, text, merged: false,
+    newlyPinged: line.dataset.kind === 'mention', wasAtBottom });
+}
 
-  if (pinged) {
-    if (!frame.visible || frame.state.collapsed) unreadMentions++;
+// ONE place turns a landed line into reader-facing accounting, for both new
+// and merged rows — a mention arriving in a later spoken sentence counts
+// exactly like a mention arriving as its own line, and nothing counts twice
+// (the old split paths could double-increment when the frame was hidden AND
+// the log was scrolled up). `seen` means the reader is actually looking:
+// frame visible, not collapsed, pinned to the bottom. (Sol review, PR#7.)
+function account(line, { who, text, merged, newlyPinged, wasAtBottom }) {
+  const seen = frame.visible && !frame.state.collapsed && wasAtBottom;
+  if (seen) scrollToEnd();
+  else {
+    if (!merged && line.dataset.kind !== 'system') unread++;
+    if (newlyPinged) unreadMentions++;
     paintUnread();
-    bus.emit('pinged', { who, text });
   }
-  if (!frame.visible || frame.state.collapsed) { unread++; paintUnread(); }
+  if (newlyPinged) bus.emit('pinged', { who, text });
 }
 
 function buildLine(who, text, { kind = '', ts = Date.now(), historical = false } = {}) {
@@ -536,6 +550,9 @@ export const chat = {
   get isOpen() { return document.activeElement === inputEl; },
   toggle() { frame.toggle(); },
   frame: () => frame,
+  // unread accounting is observable so tests can pin it (Sol review, PR#7)
+  unreadCounts: () => ({ unread, mentions: unreadMentions }),
+  markRead: () => { unread = 0; unreadMentions = 0; paintUnread(); },
 };
 const open = chat.open;
 

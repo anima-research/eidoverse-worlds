@@ -294,7 +294,14 @@ export async function applyEntry(entry, live, ctx = {}) {
         break;
       case 'say': {
         const isAgent = ctx.agents?.has(actor);
-        logChat(actor, args.text, isAgent ? 'agent' : '', { seq: entry.seq, ts, t0: args.t0 });
+        logChat(actor, args.text, isAgent ? 'agent' : '', {
+          seq: entry.seq, ts,
+          // spoken-say protocol only: display metadata for a voice that
+          // already performed as captions (server sanitizes; this is the
+          // client's own guard for old/foreign servers)
+          ...(args.spoken === true && Number.isSafeInteger(args.utt)
+            ? { spoken: true, utt: args.utt, t0: args.t0 } : {}),
+        });
         // spoken:true = this utterance was already PERFORMED as presence
         // (captions paced the bubble to the voice); the say is its record.
         // Log always, re-perform never — the full timer-free decoupling.
