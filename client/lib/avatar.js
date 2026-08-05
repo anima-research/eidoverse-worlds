@@ -9,6 +9,7 @@ import {
 } from './assets.js';
 import { beginWork, enqueue, idleYield } from './loadwork.js';
 import { DRIVEN_BONES } from './ragdoll.js';
+import { stroke as strokeIcon } from './icons.js';
 
 // The clip library is ~1.9MB PER SLOT. Waiting for all seven before a body
 // could exist put 13MB between a person and their own legs — the single
@@ -121,57 +122,10 @@ function makeTypingSprite() {
 // mic = this body's voice is LIVE in the room right now (R, 23:30) — the
 // megaphone is presence, not a message: it says listen, sound is coming from
 // here, independent of whether any words have been transcribed yet.
-// DRAWN, never typed. Canvas fillText of an emoji silently paints NOTHING when
-// the platform lacks that glyph — no error, no fallback, just a pill that means
-// something and shows nothing. It happened live on R's Windows 11 desktop with
-// two different codepoints (U+1F399 🎙 and U+1F5E3 🗣), both of which
-// rasterized fine in headless Chromium — so the fault was invisible to the
-// tests too. Lucide-style strokes have no font dependency at all.
-// Signature: (ctx, t) => void, drawing centered on the origin in a ~26px box.
-const STATE_ICON = {
-  // ear — lucide 'ear': the outer helix, then the inner curl
-  ear(ctx) {
-    ctx.beginPath();
-    ctx.arc(0, -3, 8.5, Math.PI * 0.92, Math.PI * 2.02);
-    ctx.lineTo(8.5, 3);
-    ctx.arc(0, 3, 8.5, 0, Math.PI * 0.42);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(-0.5, -2, 3.6, Math.PI * 0.85, Math.PI * 2.1);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(3.1, -1.2); ctx.quadraticCurveTo(3.6, 6, -1.5, 8.5);
-    ctx.stroke();
-  },
-  // think — a thought cloud with trailing bubbles
-  think(ctx, t) {
-    ctx.beginPath();
-    ctx.arc(-5, -3, 5.2, 0, Math.PI * 2);
-    ctx.arc(3, -5, 6.2, 0, Math.PI * 2);
-    ctx.arc(6, 1.5, 4.4, 0, Math.PI * 2);
-    ctx.arc(-1, 2, 5.6, 0, Math.PI * 2);
-    ctx.stroke();
-    for (let i = 0; i < 2; i++) {
-      const a = 0.4 + 0.6 * Math.max(0, Math.sin(t * 3.4 - i * 0.9));
-      ctx.globalAlpha *= 1;
-      ctx.beginPath();
-      ctx.arc(-9 - i * 4.5, 8 + i * 3.5, 2.4 - i * 0.7, 0, Math.PI * 2);
-      ctx.globalAlpha = a * 0.9;
-      ctx.fill();
-    }
-  },
-  // tool — lucide 'wrench': the open jaw and the shaft
-  tool(ctx) {
-    ctx.beginPath();
-    ctx.moveTo(6.5, -9.5);
-    ctx.arc(3, -6, 5, -Math.PI * 0.28, Math.PI * 0.95, false);
-    ctx.lineTo(-8, 7.5);
-    ctx.arc(-9.5, 9, 2.2, -Math.PI * 0.75, Math.PI * 0.6, false);
-    ctx.lineTo(1.5, -1.5);
-    ctx.closePath();
-    ctx.stroke();
-  },
-};
+// Attention icons come from the shared Lucide registry (icons.js) — never
+// from emoji: canvas fillText paints nothing when a glyph is missing, silently.
+const ICON_FOR = { ear: 'ear', think: 'think', tool: 'wrench', mic: 'mic' };
+
 function drawTypingDots(sprite, t, state) {
   const ctx = sprite.userData.ctx;
   ctx.clearRect(0, 0, 128, 56);
@@ -179,52 +133,24 @@ function drawTypingDots(sprite, t, state) {
   ctx.strokeStyle = 'rgba(143,232,200,0.28)';
   ctx.lineWidth = 2;
   ctx.beginPath(); ctx.roundRect(28, 12, 72, 32, 16); ctx.fill(); ctx.stroke();
-  // mic is DRAWN, not typed (R, 23:48: empty pill while speaking, on two
-  // different emoji). Canvas emoji depend on the machine's font stack —
-  // headless Chromium rasterized both 🎙 and 🗣 fine while her desktop drew
-  // neither. A signal this load-bearing can't be a font gamble: three arcs
-  // and a capsule always paint. Bars animate with the breathing value so it
-  // reads as sound, not a static badge.
-  if (state === 'mic') {
-    const b = 0.75 + 0.25 * Math.sin(t * 3);
-    ctx.save();
-    ctx.translate(64, 28);
-    ctx.strokeStyle = `rgba(180,240,216,${b})`;
-    ctx.fillStyle = `rgba(180,240,216,${b})`;
-    ctx.lineWidth = 2.4;
-    ctx.lineCap = 'round';
-    // capsule mic body
-    ctx.beginPath(); ctx.roundRect(-16, -10, 9, 15, 4.5); ctx.fill();
-    // cradle under it
-    ctx.beginPath(); ctx.arc(-11.5, 3, 7.5, 0, Math.PI); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(-11.5, 10.5); ctx.lineTo(-11.5, 14); ctx.stroke();
-    // sound arcs, rising with the envelope
-    for (let i = 0; i < 3; i++) {
-      const amp = 0.35 + 0.65 * Math.max(0, Math.sin(t * 5 - i * 0.7));
-      ctx.globalAlpha = amp;
-      ctx.beginPath();
-      ctx.arc(0, 2, 7 + i * 6, -0.85, 0.85);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-    ctx.restore();
-    sprite.material.map.needsUpdate = true;
-    return;
-  }
-  const icon = STATE_ICON[state];
-  if (icon) {
+  if (ICON_FOR[state]) {
     const b = 0.75 + 0.25 * Math.sin(t * 3);      // gentle breathing, not a strobe
     ctx.save();
     ctx.translate(64, 28);
     ctx.globalAlpha = b;
     ctx.strokeStyle = 'rgba(180,240,216,1)';
-    ctx.fillStyle = 'rgba(180,240,216,1)';
-    ctx.lineWidth = 2.2;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    icon(ctx, t);
-    ctx.globalAlpha = 1;
+    strokeIcon(ctx, ICON_FOR[state], 26);
+    // mic gets sound arcs on top: the icon says "a voice", the arcs say "NOW"
+    if (state === 'mic') {
+      for (let i = 0; i < 2; i++) {
+        const amp = 0.3 + 0.7 * Math.max(0, Math.sin(t * 5 - i * 0.7));
+        ctx.globalAlpha = b * amp;
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(2, 0, 15 + i * 5, -0.7, 0.7); ctx.stroke();
+      }
+    }
     ctx.restore();
+    ctx.globalAlpha = 1;
   } else {
     for (let i = 0; i < 3; i++) {
       const b = 0.32 + 0.68 * Math.max(0, Math.sin(t * 5 - i * 0.85));
