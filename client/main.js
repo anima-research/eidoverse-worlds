@@ -656,6 +656,14 @@ bus.on('command', ({ cmd, arg }) => {
     // net.rejoin doc), so say what's about to happen before it happens.
     const name = (arg || '').trim().slice(0, 24);
     if (!name) return logChat('*', 'usage: /name <new name>');
+    // A verified session OWNS its id — the server ignores self-asserted names
+    // when an auth session exists, so a local rename would leave the UI lying
+    // about who the server says you are. Refuse honestly instead of drifting.
+    // Local leave/rejoin is only a real rename for anonymous/key-link
+    // visitors. (Sol review, PR#7.)
+    if (CONFIG.authed) {
+      return logChat('*', `your name is verified by your login (${CONFIG.name}) — rename through your identity/home, not /name`);
+    }
     logChat('*', `leaving as ${CONFIG.name}, returning as ${name}…`);
     setName(name);
     localStorage.setItem('ew-name-set', '1');
