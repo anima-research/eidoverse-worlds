@@ -218,6 +218,18 @@ export function logChat(who, text, kind = '', meta = {}) {
     // the anchor may have been name-grouped with a line that's no longer its
     // neighbor — a different speaker between them means the name must reprint
     if (anchor.dataset.author !== who) anchor.classList.remove('cont');
+    // ...and the inserted line's OWN grouping must be re-derived from its
+    // visual predecessor. buildLine computed it against chronological arrival
+    // (lastAuthor), and the two disagree exactly when this branch runs — a
+    // 'cont' line landing under another speaker renders their nameplate over
+    // these words. (2026-08-05, "your line was credited to me"; repro:
+    // exultation/tools/repro-stale-t0.mjs. Sys lines pass through a group,
+    // same as the chronological rule.)
+    let prev = line.previousElementSibling;
+    while (prev && prev.dataset.kind === 'system') prev = prev.previousElementSibling;
+    const near = !!prev && prev.dataset.author === who &&
+      +(line.dataset.tsn ?? 0) - +(prev.dataset.tsn ?? 0) < 90_000;
+    line.classList.toggle('cont', near);
   } else logEl.appendChild(line);
   while (logEl.children.length > MAX_LINES) logEl.removeChild(logEl.firstChild);
 
