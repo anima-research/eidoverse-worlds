@@ -12,12 +12,19 @@
 // tested is the composition path we actually want.
 //
 // data: { src, gain?, radius?, loop? }
-//   src    — SAME-ORIGIN path only (e.g. assets/x.ogg). A component any
-//            builder can author must not make every client fetch an
-//            arbitrary external URL — that is an IP/tracking surface
-//            (#26/#31 review). Content-addressed media can widen this later.
+//   src    — a CONTENT-ADDRESSED store path (store/audio/<hash>.<ext>),
+//            minted by POST /upload?as=audio (sniffed, capped, hashed).
+//            Never a URL: a component any builder can author must not turn
+//            arbitrary endpoints into every client's audio fetch (#31/#45
+//            review). Served via /library/ with immutable caching.
 //   gain   — source gain, clamped to [0, 1]
 //   radius — metres to silence, clamped to [1, 60]; inside 1/4 = full gain
+//   loop   — loop-only for now: the blind fold reconstructs components for
+//            every late join, so a one-shot would replay per arrival.
+//
+// The server lints all of this at AUTHOR time; this file re-checks because
+// history can predate the lint — malformed persisted components are refused
+// LEGIBLY (ambientDebug().refused carries the reason) and stay in the log.
 //
 // Audio: WebAudio, not <audio>, so distance and the category slider compose
 // as one gain chain instead of fighting over element.volume. House standard
@@ -29,8 +36,8 @@ import { myState } from './controller.js';
 import { volumeFor } from './voiceconsent.js';
 import { report } from './core.js';
 
-const DEFAULT_SRC = 'assets/porch_ambient.ogg';
 const sources = new Map();          // entityId -> { el, node, gain, data }
+const refused = new Map();          // entityId -> reason (legible, queryable)
 let ctx = null;
 
 function audioCtx() {
@@ -40,20 +47,25 @@ function audioCtx() {
   return ctx;
 }
 
-/** same-origin gate — returns a safe URL string or null */
+/** store-path gate — returns the /library URL for a valid store src, else null */
 export function ambientSrc(raw) {
-  try {
-    const u = new URL(raw ?? DEFAULT_SRC, location.origin);
-    if (u.origin !== location.origin) return null;
-    return u.href;
-  } catch { return null; }
+  return /^store\/audio\/[0-9a-f]{16}\.(ogg|wav|mp3)$/.test(raw ?? '') ? `/library/${raw}` : null;
+}
+
+/** why a component is refusable — one truth for gate + receipts */
+export function ambientLint(data) {
+  if (!ambientSrc(data?.src)) return `src must be a store/audio/ path (got "${String(data?.src ?? '').slice(0, 80)}")`;
+  if (data.loop === false) return 'loop-only: a one-shot would replay for every late join (#31)';
+  return null;
 }
 
 function attach(id, data) {
   detach(id);
+  refused.delete(id);
   if (!data) return;
+  const why = ambientLint(data);
+  if (why) { refused.set(id, why); report('ambient refuse', `${id}: ${why}`); return; }
   const src = ambientSrc(data.src);
-  if (!src) { report('ambient refuse', `cross-origin src refused: ${data.src}`); return; }
   try {
     const c = audioCtx();
     const el = new Audio(src);
@@ -72,6 +84,7 @@ function attach(id, data) {
 }
 
 function detach(id) {
+  refused.delete(id);
   const s = sources.get(id);
   if (!s) return;
   sources.delete(id);
@@ -108,5 +121,8 @@ export function updateAmbient() {
 /** harness/debug: what is audible and why */
 export const ambientCount = () => sources.size;
 
-export const ambientDebug = () => Object.fromEntries(
-  [...sources].map(([id, s]) => [id, { src: s.data.src ?? DEFAULT_SRC, gain: +s.gain.gain.value.toFixed(3) }]));
+export const ambientDebug = () => ({
+  playing: Object.fromEntries(
+    [...sources].map(([id, s]) => [id, { src: s.data.src, gain: +s.gain.gain.value.toFixed(3) }])),
+  refused: Object.fromEntries(refused),
+});

@@ -60,36 +60,53 @@ const amb = await import("../client/lib/ambient.js");
 const at = (d: number) => ({ position: { distanceTo: () => d } });
 const comp = (id: string, data: unknown) => bus.emit("comp", { id, type: "ambient", data });
 
-// ---- provenance -----------------------------------------------------------
-check("relative src resolves against our own origin",
-  amb.ambientSrc("assets/x.ogg") === "http://lab.test/assets/x.ogg");
-check("absolute same-origin src is allowed",
-  amb.ambientSrc("http://lab.test/a.ogg") === "http://lab.test/a.ogg");
-check("cross-origin src is refused", amb.ambientSrc("https://evil.example/track.mp3") === null);
+const OGG = "store/audio/0123456789abcdef.ogg";
+const OGG2 = "store/audio/fedcba9876543210.ogg";
+
+// ---- provenance: store paths only -----------------------------------------
+check("a store path resolves to its /library URL",
+  amb.ambientSrc(OGG) === `/library/${OGG}`);
+check("a URL is refused outright", amb.ambientSrc("https://evil.example/track.mp3") === null);
+check("an arbitrary same-origin path is refused (no GET-endpoint audio)",
+  amb.ambientSrc("api/export?fmt=ogg") === null);
+check("a path-traversal dressed as a store path is refused",
+  amb.ambientSrc("store/audio/../../secrets.ogg") === null);
 comp("spy", { src: "https://evil.example/track.mp3" });
-check("a cross-origin component attaches NOTHING (no fetch, no IP leak)",
+check("a refused component attaches NOTHING (no fetch, no IP leak)",
   amb.ambientCount() === 0, `${amb.ambientCount()}`);
+check("…and the refusal is LEGIBLE, not silent",
+  /store\/audio/.test(amb.ambientDebug().refused["spy"] ?? ""),
+  JSON.stringify(amb.ambientDebug().refused));
+
+// ---- loop-only ------------------------------------------------------------
+comp("oneshot", { src: OGG, loop: false });
+check("loop:false is refused (late join would replay it)",
+  amb.ambientCount() === 0 && /loop-only/.test(amb.ambientDebug().refused["oneshot"] ?? ""),
+  JSON.stringify(amb.ambientDebug().refused));
 
 // ---- lifecycle ------------------------------------------------------------
 entities.set("fount", at(0));
-comp("fount", { src: "assets/water.ogg", gain: 0.5, radius: 10 });
+comp("fount", { src: OGG, gain: 0.5, radius: 10 });
 check("attach: one source for one component", amb.ambientCount() === 1);
-comp("fount", { src: "assets/birds.ogg" });
+comp("fount", { src: OGG2 });
 check("replace: same entity re-authored stays ONE source", amb.ambientCount() === 1);
 check("replace actually swapped the media",
-  amb.ambientDebug()["fount"].src.includes("birds"), JSON.stringify(amb.ambientDebug()));
+  amb.ambientDebug().playing["fount"].src === OGG2, JSON.stringify(amb.ambientDebug().playing));
+check("a valid replace clears any earlier refusal record",
+  amb.ambientDebug().refused["fount"] === undefined);
 bus.emit("entity", { id: "fount", kind: "remove" });
 check("entity kind:'remove' detaches promptly (the {gone} listener bug, fixed)",
   amb.ambientCount() === 0, `${amb.ambientCount()}`);
 
 entities.set("a", at(0)); entities.set("b", at(0));
-comp("a", {}); comp("b", {});
+comp("a", { src: OGG }); comp("b", { src: OGG2 });
+check("both attached pre-reset", amb.ambientCount() === 2);
 bus.emit("world-reset", {});
 check("world-reset detaches everything", amb.ambientCount() === 0, `${amb.ambientCount()}`);
 
 // ---- bounds + composition -------------------------------------------------
 entities.set("loud", at(0));
-comp("loud", { src: "assets/x.ogg", gain: 99, radius: 9999 });
+comp("loud", { src: OGG, gain: 99, radius: 9999 });
 amb.updateAmbient();
 const g = () => gains.at(-1)!.lastTarget;
 check("authored gain 99 is clamped: target never exceeds 1×world", (g() ?? 99) <= 1, `${g()}`);
