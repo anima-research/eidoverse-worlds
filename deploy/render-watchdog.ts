@@ -102,7 +102,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, async () => { log("shutting down — killing renderer"); await killTree(); process.exit(0); });
 }
 
-log(`watching ${URL}  (mem cap ${MEM_CAP_GB}GB, max uptime ${MAX_UPTIME_MIN}m, check ${CHECK_SEC}s)`);
+log(`watching ${SHOW_URL}/?world=${encodeURIComponent(WORLD)}&renderer  (credential redacted; mem cap ${MEM_CAP_GB}GB, max uptime ${MAX_UPTIME_MIN}m, check ${CHECK_SEC}s)`);
 for (;;) {
   await launch();
   const started = Date.now();
