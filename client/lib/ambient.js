@@ -12,9 +12,12 @@
 // tested is the composition path we actually want.
 //
 // data: { src, gain?, radius?, loop? }
-//   src    — a URL the client can fetch (our porch ambience by default)
-//   gain   — 0..1 at the source, before distance and before the world slider
-//   radius — metres to silence; inside 1/4 of it you get full gain
+//   src    — SAME-ORIGIN path only (e.g. assets/x.ogg). A component any
+//            builder can author must not make every client fetch an
+//            arbitrary external URL — that is an IP/tracking surface
+//            (#26/#31 review). Content-addressed media can widen this later.
+//   gain   — source gain, clamped to [0, 1]
+//   radius — metres to silence, clamped to [1, 60]; inside 1/4 = full gain
 //
 // Audio: WebAudio, not <audio>, so distance and the category slider compose
 // as one gain chain instead of fighting over element.volume. House standard
@@ -37,12 +40,23 @@ function audioCtx() {
   return ctx;
 }
 
+/** same-origin gate — returns a safe URL string or null */
+export function ambientSrc(raw) {
+  try {
+    const u = new URL(raw ?? DEFAULT_SRC, location.origin);
+    if (u.origin !== location.origin) return null;
+    return u.href;
+  } catch { return null; }
+}
+
 function attach(id, data) {
   detach(id);
   if (!data) return;
+  const src = ambientSrc(data.src);
+  if (!src) { report('ambient refuse', `cross-origin src refused: ${data.src}`); return; }
   try {
     const c = audioCtx();
-    const el = new Audio(data.src ?? DEFAULT_SRC);
+    const el = new Audio(src);
     el.loop = data.loop !== false;
     el.crossOrigin = 'anonymous';
     const node = c.createMediaElementSource(el);
@@ -66,7 +80,11 @@ function detach(id) {
 }
 
 bus.on('comp', ({ id, type, data }) => { if (type === 'ambient') attach(id, data); });
-bus.on('entity', ({ id, gone }) => { if (gone) detach(id); });
+// world.js emits { kind: 'remove' } — the fixture listened for a { gone }
+// field that nothing emits, so removal cleanup only happened incidentally
+// on a later frame (#26 review catch)
+bus.on('entity', ({ id, kind }) => { if (kind === 'remove') detach(id); });
+bus.on('world-reset', () => { for (const id of [...sources.keys()]) detach(id); });
 
 /** Per-frame-ish: distance rolloff × the WORLD category slider. Voices and
  *  world are separate categories on purpose — muting people must not mute
@@ -77,16 +95,18 @@ export function updateAmbient() {
   for (const [id, s] of sources) {
     const obj = entities.get(id);
     if (!obj) { detach(id); continue; }
-    const radius = s.data.radius ?? 18;
+    const radius = Math.max(1, Math.min(60, s.data.radius ?? 18));
     const d = obj.position.distanceTo(myState.pos);
     const near = radius * 0.25;
     const roll = d <= near ? 1 : Math.max(0, 1 - (d - near) / (radius - near));
-    const target = roll * (s.data.gain ?? 0.7) * wv;
+    const target = roll * Math.max(0, Math.min(1, s.data.gain ?? 0.7)) * wv;
     // setTargetAtTime, never a raw assignment: stepping a gain clicks
     s.gain.gain.setTargetAtTime(target, audioCtx().currentTime, 0.08);
   }
 }
 
 /** harness/debug: what is audible and why */
+export const ambientCount = () => sources.size;
+
 export const ambientDebug = () => Object.fromEntries(
   [...sources].map(([id, s]) => [id, { src: s.data.src ?? DEFAULT_SRC, gain: +s.gain.gain.value.toFixed(3) }]));
