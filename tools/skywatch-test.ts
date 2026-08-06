@@ -144,5 +144,36 @@ function rig(skyEntry: any) {
   check("their narrated states agree", a.events[0]?.text === b.events[0]?.text, `${a.events[0]?.text} vs ${b.events[0]?.text}`);
 }
 
+// ---------------------------------------------------------------- F: look()'s World.sky stays a structured object
+// (postdeploy regression, Sill: #37 briefly replaced the object with a bare
+//  description string, silently breaking every consumer of {hours, clouds,
+//  ts, …}. Type stability is now pinned: folded fields preserved, derivation
+//  ADDED — currentHour/currentWeather/source/description alongside, never
+//  instead.)
+
+{
+  const { ag } = rig({ verb: "sky", args: { hours: 8, rate: 24, clouds: "cumulus", azimuth: 200, forecast: policyArgs }, ts: T0, seq: 100, actor: "antra" });
+  ag.look();
+  const sky = ag.worldInfo.sky;
+  check("World.sky is an object, not a string", typeof sky === "object" && sky !== null && typeof sky !== "string");
+  check("authored/folded fields survive (hours, clouds, azimuth, ts, forecast)",
+    sky.hours === 8 && sky.clouds === "cumulus" && sky.azimuth === 200 && sky.ts === T0 && !!sky.forecast,
+    JSON.stringify(sky));
+  check("derived fields ride alongside",
+    typeof sky.currentHour === "number" && typeof sky.description === "string"
+      && ["authored", "forecast", "manual"].includes(sky.source)
+      && (sky.currentWeather === undefined || typeof sky.currentWeather === "string"),
+    JSON.stringify({ currentHour: sky.currentHour, currentWeather: sky.currentWeather, source: sky.source }));
+
+  // pre-forecast worlds keep their exact old shape too (plus the new derived fields)
+  const plain = rig({ verb: "sky", args: { hours: 12, weather: "rain" }, ts: T0, seq: 1, actor: "antra" });
+  plain.ag.look();
+  const ps = plain.ag.worldInfo.sky;
+  check("authored-only sky is structured with derivation added",
+    typeof ps === "object" && ps.hours === 12 && ps.weather === "rain" && ps.source === "authored"
+      && ps.currentWeather === "rain" && typeof ps.description === "string",
+    JSON.stringify(ps));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

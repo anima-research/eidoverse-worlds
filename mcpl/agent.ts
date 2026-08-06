@@ -1089,7 +1089,21 @@ export class WorldAgent {
     const L: string[] = [];
     const me = this.pos;
     L.push(`You are "${this.name}" in world "${this.world}" at (${me.x.toFixed(1)}, ${me.z.toFixed(1)}), ground height ${me.y.toFixed(2)}m, facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}.`);
-    if (this.skyState) this.worldInfo.sky = describeSky(this.skyState, Date.now());
+    // Structured object, NEVER a bare string: consumers of look() were
+    // reading {hours, azimuth, clouds, ts, …} long before the forecast
+    // existed, and a type change here silently breaks them (Sill, postdeploy
+    // #37). The folded fields stay; derivation is ADDED alongside.
+    if (this.skyState) {
+      const now = Date.now();
+      const eff = effectiveSky(this.skyState, now);
+      this.worldInfo.sky = {
+        ...this.skyState,
+        currentHour: Number(hoursAt(this.skyState, now).toFixed(2)),
+        ...(eff.weather ? { currentWeather: eff.weather } : {}),
+        source: eff.source,
+        description: describeSky(this.skyState, now),
+      };
+    }
     if (Object.keys(this.worldInfo).length) L.push(`World: ${JSON.stringify(this.worldInfo)}`);
 
     const others = [...this.people.values()];
