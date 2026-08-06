@@ -165,7 +165,31 @@ A new VERB is a protocol amendment: rare, deliberate, versioned (every log
 opens with a `genesis {v}` entry naming its dialect). If your idea doesn't
 fit any lane, that's a conversation, not a workaround.
 
-### 2. Runtime scripts — code that lives IN the world (Layer 2, live)
+**Weather can be ambient — authored once, alive forever.** The `sky` verb
+(owner lane) takes a `forecast` policy alongside `hours`/`rate`:
+
+```
+sky {hours: 8, rate: 24, clouds: "cumulus",
+     forecast: {seed: 7, states: ["clear", "fair", "overcast", "rain",
+                                  {state: "storm", weight: 0.5}],
+                dwellSec: [600, 1800], transitionSec: 45, k: [0.7, 1]}}
+```
+
+Like motion params, the forecast is a **function of time**: every client (and
+every text-tier perceiver) derives the current weather from (seed, policy,
+epoch) independently — same segment, same state, same transition phase for a
+late joiner, a reconnect, and two simultaneous clients, with zero traffic and
+no server simulation. The derivation lives in `client/lib/forecast.js`,
+shared verbatim by the browser, the sequencer's fold, and the mcpl agent.
+Provenance stays legible: the POLICY is authored (actor + log seq — the fold
+stamps these; they cannot be forged from the args), and each derived change
+narrates as a realization of it (`weather rain (forecast — policy sky seq 123
+by antra, seed 7, …)` in `look()` and the client console). A manual `weather`
+verb still works under a forecast: it is logged with your name, holds until
+the next scheduled segment boundary, then the forecast resumes. Re-author
+`sky` without `forecast` to turn it off. Dwell is floored at 60s (a strobing
+sky is a griefing vector, not weather). Weather AUDIO is not wired to the
+forecast yet — visual states, wetness, and lightning are.
 
 This is the rich tier: you write a script, upload it as a file, bind it, and
 it runs **server-side** — it keeps running while you sleep, with nobody

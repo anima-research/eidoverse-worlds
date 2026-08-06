@@ -12,6 +12,7 @@ import { fitCollider, removeCollider, reindexCollider, refitCollider } from './c
 import { setTerrain, setGrass, clearGrass, heightAt } from './terrain.js';
 import { buildFloraField } from './flora.js';
 import { applySky, attachLocalLights } from './sky.js';
+import { foldSkyEntry } from './forecast.js';
 import { makeLight, disposeLight } from './lights.js';
 import { logChat } from './chat.js';
 import { whenBooted } from './boot.js';
@@ -281,13 +282,19 @@ export async function applyEntry(entry, live, ctx = {}) {
         break;
       }
       case 'sky':
-        await applySky(args, ts);
+        // The shared fold stamps forecast provenance the same way the server
+        // does (synthetic pre-history entries pass through already stamped) —
+        // live viewers and late joiners must derive the same sky.
+        await applySky(foldSkyEntry(null, { verb: 'sky', args, ts, seq: entry.seq, actor }), ts);
         break;
       case 'weather':
         // Weather is its own verb rather than a sky arg because DESIGN.md names
         // `transitionTo('storm')` as a first-class world event — it is a thing
-        // that HAPPENS at a moment, not a property you set.
-        await applySky({ ...(args.keepSky === false ? {} : currentSkyArgs()), ...args }, ts);
+        // that HAPPENS at a moment, not a property you set. The fold rebases
+        // `hours` under a rated sky (no day-snap) and records the manual
+        // override when a forecast is active — in lockstep with the server.
+        await applySky(foldSkyEntry(args.keepSky === false ? null : currentSkyArgs(),
+          { verb: 'weather', args, ts, seq: entry.seq, actor }), ts);
         break;
       case 'asset':
         // An upload became part of this world's vocabulary: the palette grows

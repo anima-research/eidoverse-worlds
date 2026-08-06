@@ -11,6 +11,9 @@ import { randomBytes } from "node:crypto";
 import { verifyToken, JtiCache } from "./aid1.ts";
 import { BehaviorHost, wireBehaviorGate, wireBehaviorStore, behaviorLimits, type BehaviorRec } from "./behaviors.ts";
 import { summarizeGlb } from "./geometry.ts";
+// Pure and dependency-free — the same fold the browser client and the mcpl
+// agent run, which is what keeps all three planes' skies in agreement.
+import { foldSkyEntry } from "../client/lib/forecast.js";
 
 const PORT = Number(process.env.PORT ?? 8940);
 // Show-night door policy. Empty = open (dev on a tailnet). On a public box you
@@ -317,8 +320,11 @@ function foldEntry(st: WorldState, e: LogEntry): void {
     }
     case "terrain": st.terrain = a; return;
     case "grass": st.grass = a?.clear ? null : a; return;   // clear = mow, no field to replay
-    case "sky": st.sky = { ...a, ts: e.ts }; return;
-    case "weather": st.sky = { ...(st.sky ?? {}), ...a, ts: e.ts }; return;
+    // Sky and weather fold through the shared module: forecast/override
+    // provenance is stamped from the ENTRY (spoof-proof), and a weather verb
+    // under a rated sky rebases `hours` so the day doesn't snap (issue #29).
+    case "sky": st.sky = foldSkyEntry(null, { verb: "sky", args: a, ts: e.ts, seq: e.seq, actor: e.actor }); return;
+    case "weather": st.sky = foldSkyEntry(st.sky, { verb: "weather", args: a, ts: e.ts, seq: e.seq, actor: e.actor }); return;
     case "asset":
       if (a?.path && !st.assets.some((x) => x.path === a.path)) {
         st.assets.push({ name: a.name ?? "upload", path: a.path });

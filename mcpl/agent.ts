@@ -9,6 +9,10 @@ import * as TSL from "three/tsl";
 import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS,
   ACTIVITY_RADIUS_M, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
 import { HeadlessBody } from "./physics.ts";
+// The same pure sky fold + weather derivation the browser client and the
+// sequencer run — text-tier perception must land on the SAME hour and
+// weather every renderer shows (issue #29's shared-fact boundary).
+import { foldSkyEntry, describeSky } from "../client/lib/forecast.js";
 
 (globalThis as any).THREE = Object.assign({}, THREE_W, TSL);
 
@@ -162,6 +166,10 @@ export class WorldAgent {
   }
   private terrain: { heightAt(x: number, z: number): number } | null = null;
   private terrainSrc: string | null = null;
+  /** The folded sky (same fold as the sequencer's) — worldInfo.sky is
+   *  DERIVED from this at look() time, so the described hour/weather is the
+   *  one the forecast implies NOW, not the one at the last log entry. */
+  private skyState: any = null;
   worldInfo: Record<string, unknown> = {};
   private ticker: ReturnType<typeof setInterval> | null = null;
   /** Highest world-log seq this body has seen. This — not a wall-clock time —
@@ -653,8 +661,11 @@ export class WorldAgent {
     } else if (verb === "terrain") {
       await this.buildTerrain(args);
       this.worldInfo.terrain = { seed: args.seed, size: args.size, amplitude: args.amplitude, flatRadius: args.flatRadius };
-    } else if (verb === "sky") {
-      this.worldInfo.sky = args;
+    } else if (verb === "sky" || verb === "weather") {
+      // fold, don't overwrite: weather merges onto the standing sky (with the
+      // hours-rebase and override provenance), exactly as the server folds it
+      this.skyState = foldSkyEntry(verb === "sky" ? null : this.skyState,
+        { verb, args, ts, seq: entry.seq, actor });
     } else if (verb === "grass") {
       this.worldInfo.grass = { area: `${args.species ?? "grass"}, ${args.width ?? args.size}×${args.depth ?? args.size}m around ${JSON.stringify(args.center ?? [0, 0])}` };
     }
@@ -1031,6 +1042,7 @@ export class WorldAgent {
     const L: string[] = [];
     const me = this.pos;
     L.push(`You are "${this.name}" in world "${this.world}" at (${me.x.toFixed(1)}, ${me.z.toFixed(1)}), ground height ${me.y.toFixed(2)}m, facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}.`);
+    if (this.skyState) this.worldInfo.sky = describeSky(this.skyState, Date.now());
     if (Object.keys(this.worldInfo).length) L.push(`World: ${JSON.stringify(this.worldInfo)}`);
 
     const others = [...this.people.values()];

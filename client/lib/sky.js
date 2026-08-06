@@ -19,6 +19,7 @@ import { markPhase, whenBooted } from './boot.js';
 import { attachBakedDome, detachBakedDome, updateBakedDome, bakedActive, requestBake,
   envTexture, adoptEnvironment } from './sky_baked.js';
 import { holdFrames, holdObjectCompiles, beginWork } from './loadwork.js';
+import { WEATHERS, effectiveSky, hoursAt } from './forecast.js';
 
 // The environment exists from the first frame — BLACK, contributing nothing —
 // so every material's lighting graph is born with its env branch in place.
@@ -129,7 +130,10 @@ Object.defineProperty(globalThis, 'makeSkySystem', {
   set(fn) { _realMakeSkySystem = fn; },
 });
 
-export const WEATHERS = ['clear', 'fair', 'sunshower', 'overcast', 'rain', 'storm', 'cyclone', 'darkstorm'];
+// The canonical weather list lives in forecast.js (pure, shared with the
+// sequencer fold and the mcpl agent) — re-exported here so existing importers
+// keep their path.
+export { WEATHERS } from './forecast.js';
 export const CLOUDS = ['clear', 'cumulus', 'stratus', 'cirrus'];
 // Only `earth` is offered.
 //
@@ -146,7 +150,9 @@ const KNOWN_HEAVY = ['ringworld', 'shieldworld'];
 /** Called by the world log's `sky` verb. `ts` is the server stamp — it is what
  *  makes every client's sun agree without the server simulating anything. */
 export async function applySky(args = {}, ts) {
-  clock = { args: { ...args }, t0: ts ?? Date.now() };
+  // folded args carry their own ts (the shared fold stamps it); the param
+  // stays as a fallback for un-folded callers like the tuner's preview path
+  clock = { args: { ...args }, t0: args.ts ?? ts ?? Date.now() };
   await render();
 }
 
@@ -157,9 +163,9 @@ export async function previewSky(args) {
 }
 
 function nowHours() {
-  if (!clock) return 12;
-  const a = clock.args;
-  return ((a.hours ?? 12) + (a.rate ?? 0) * (Date.now() - clock.t0) / 3600e3 + 24000) % 24;
+  // the shared formula — the fold's hours-rebase on weather verbs uses the
+  // same one, which is what keeps the sun from snapping (issue #29)
+  return clock ? hoursAt({ ...clock.args, ts: clock.t0 }, Date.now()) : 12;
 }
 
 // How far the sky has been degraded to keep it working on this GPU.
@@ -402,11 +408,21 @@ async function buildSky(a, world, wantAudio) {
     if (typeof globalThis.makeSky !== 'function') throw new Error('sky_worlds.js exposed no makeSky');
     if (skyMesh) { scene.remove(skyMesh); skyMesh = null; }
     skyBuilds++;
+    // A fresh build asserts state rather than easing into it — reset the
+    // applyLive guards so the first applyLive after this re-asserts
+    // everything against the new skyApi.
+    forecastCursor = null; appliedWeather = null; appliedClouds = null; appliedColors = null;
+    // Construct at the DERIVED weather, not the raw authored field — under a
+    // forecast the authored field may be segments stale. Mid-transition, start
+    // from the segment's previous state; applyLive transitions the remainder.
+    const eff0 = effectiveSky(a, Date.now());
+    const w0 = (eff0.source === 'forecast' && eff0.inTransition && eff0.seg.prevState)
+      ? eff0.seg.prevState : eff0.weather;
     skyApi = await globalThis.makeSky({
       scene, camera, renderer, world,
       hours: nowHours(),
       clouds: cloudQuality === 'off' ? 'clear' : (CLOUDS.includes(a.clouds) ? a.clouds : 'cumulus'),
-      weather: WEATHERS.includes(a.weather) ? a.weather : 'clear',
+      weather: WEATHERS.includes(w0) ? w0 : 'clear',
       sun, hemi,
       audio: wantAudio,
     });
@@ -506,24 +522,71 @@ async function runEnvBake() {
 }
 
 /** Settings that apply to an already-built sky — cheap, idempotent, and safe
- *  to run for every sky verb in a log. */
+ *  to run for every sky verb in a log AND once a second under a forecast or a
+ *  rated day (see updateSky), which is why everything below is guarded to
+ *  fire only on actual change. */
+let forecastCursor = null;   // O(1) live ticking — the segment walk never re-runs from epoch
+let appliedWeather = null;   // `state|k` last asserted on skyApi; null = fresh build
+let appliedClouds = null;
+let appliedColors = null;
 function applyLive(a) {
   if (!skyApi) return;
   skyApi.setTime?.(nowHours());
   // Baked tiers re-bake on their own cadence (which covers TOD drift too);
   // the debounced TOD bake only serves the live 'high' tier's env-IBL.
   if (!bakedActive()) scheduleEnvBake();
-  if (cloudQuality === 'off') skyApi.setClouds?.('clear');
-  else if (a.clouds && CLOUDS.includes(a.clouds)) skyApi.setClouds?.(a.clouds);
-  if (a.weather && WEATHERS.includes(a.weather)) {
-    if (a.weatherSeconds) skyApi.transitionTo?.(a.weather, a.weatherK ?? 1, a.weatherSeconds);
-    else skyApi.setWeather?.(a.weather, a.weatherK ?? 1);
+  let changed = false;
+  const clouds = cloudQuality === 'off' ? 'clear'
+    : (a.clouds && CLOUDS.includes(a.clouds) ? a.clouds : null);
+  if (clouds && clouds !== appliedClouds) {
+    skyApi.setClouds?.(clouds);
+    appliedClouds = clouds;
+    changed = true;
   }
-  if (a.colors) skyApi.setColors?.(a.colors);
-  // The baked dome only changes when a bake lands — a verb that touched the
-  // sky's look asks for one now (the crossfade eases it in, and the rolling
+  // What the sky should show NOW — authored weather, the forecast's current
+  // segment, or a manual override that holds until the segment boundary. The
+  // derivation is shared with the sequencer and the mcpl agent (forecast.js),
+  // so every client and every text-tier perceiver lands on the same state
+  // without the server simulating anything.
+  const eff = effectiveSky(a, Date.now(), forecastCursor);
+  forecastCursor = eff.cursor;
+  if (eff.weather) {
+    const key = `${eff.weather}|${(eff.k ?? 1).toFixed(2)}`;
+    if (key !== appliedWeather) {
+      const fresh = appliedWeather === null;
+      if (fresh && eff.source === 'forecast' && eff.inTransition && eff.seg.prevState) {
+        // joined mid-transition: ease in over the REMAINING time so this
+        // client's sky finishes changing when everyone else's does
+        const remain = Math.max(1, (eff.seg.startMs + eff.seconds * 1000 - Date.now()) / 1000);
+        skyApi.transitionTo?.(eff.weather, eff.k ?? 1, remain);
+      } else if (!fresh && eff.seconds) {
+        skyApi.transitionTo?.(eff.weather, eff.k ?? 1, eff.seconds);
+      } else {
+        skyApi.setWeather?.(eff.weather, eff.k ?? 1);
+      }
+      // provenance stays legible: a derived change names its policy, a manual
+      // one its actor — an ambient world, but never an unattributed one
+      if (eff.source === 'forecast') {
+        console.info(`[weather] ${eff.weather} (forecast — policy sky seq ${eff.seq ?? '?'} by ${eff.by ?? '?'}, seg ${eff.seg.idx})`);
+      } else if (eff.source === 'manual') {
+        console.info(`[weather] ${eff.weather} (manual override by ${eff.by ?? '?'} — forecast resumes at next boundary)`);
+      }
+      appliedWeather = key;
+      changed = true;
+    }
+  }
+  if (a.colors) {
+    const cKey = JSON.stringify(a.colors);
+    if (cKey !== appliedColors) {
+      skyApi.setColors?.(a.colors);
+      appliedColors = cKey;
+      changed = true;
+    }
+  }
+  // The baked dome only changes when a bake lands — a change to the sky's
+  // look asks for one now (the crossfade eases it in, and the rolling
   // cadence carries any longer weather transition by itself).
-  if (bakedActive() && (a.clouds || a.weather || a.colors || cloudQuality === 'off')) {
+  if (bakedActive() && changed) {
     requestBake();
   }
 
@@ -695,9 +758,11 @@ export function updateSky(nowMs, t) {
     } catch (e) { noteSkyFailure(e); }
     updateBakedDome(nowMs);   // camera-follow + the band-bake/crossfade cycle
   }
-  // A rated sky advances everyone's sun in lockstep. ~1Hz is plenty — even at
-  // rate 24 the sun moves 0.1°/s.
-  if ((clock?.args.rate ?? 0) !== 0 && nowMs - lastClockTick > 1000) {
+  // A rated sky advances everyone's sun in lockstep, and a forecast needs the
+  // same heartbeat to notice its segment boundaries. ~1Hz is plenty — even at
+  // rate 24 the sun moves 0.1°/s, and the forecast's cursor makes each check
+  // O(1) (never a re-walk from the policy epoch).
+  if (((clock?.args.rate ?? 0) !== 0 || clock?.args.forecast) && nowMs - lastClockTick > 1000) {
     lastClockTick = nowMs;
     render().catch((e) => report('sky clock', e));
   }
