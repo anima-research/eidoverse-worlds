@@ -139,7 +139,49 @@ bystander2: {
 const reopened = await conn.sendChannelsOpen({ channelId: "world:commons", type: "world", address: { world: "commons" } });
 check("reopen works", reopened?.channel?.id === "world:commons");
 
-bystander.ws?.close();
+console.log("\n━━ reconnect: missed mentions replay as CATCHUP, never as live traffic ━━");
+// the host sleeps; someone mentions it; the host returns. The replay must
+// carry eidoverse:catchup ALONGSIDE the original addressing (issue #39 —
+// these shipped as bare legacy ["mention"], matching no declared rule), and
+// a live mention on the reconnected session must NOT be catchup-tagged.
 await conn.close();
+await Bun.sleep(400);
+{
+  const sleeper = new (await import("./agent.ts")).WorldAgent({ name: "sleeper" });
+  await sleeper.connect();
+  sleeper.say("hey @claude did you hear the thunder? (missed one)");
+  await Bun.sleep(800);                    // let the world log it past the cursor
+  sleeper.close();
+}
+const again = await connectHost(process.env.PLAYTEST_MCPL ?? "ws://127.0.0.1:8941", "dev-token");
+await hears(again.feed, "missed one", 6000);
+const replayed = again.feed.find((f) => f.text.includes("missed one"));
+check("missed mention is replayed on reconnect", !!replayed, again.feed.map((f) => f.text.slice(0, 40)).join(" | "));
+check("replay carries eidoverse:catchup + the ORIGINAL addressing",
+  !!replayed?.tags?.includes("eidoverse:catchup") && !!replayed?.tags?.includes("chat:mention")
+    && !!replayed?.tags?.includes("chat:addressed") && replayed?.mentioned === true,
+  JSON.stringify(replayed?.tags));
+const summary = again.feed.find((f) => f.text.includes("While you were away"));
+check("the replay summary is catchup-tagged, not bare", !!summary?.tags?.includes("eidoverse:catchup"), JSON.stringify(summary?.tags));
+// a catchup-defer rule (tagsAny: ["eidoverse:catchup"]) can now match every
+// replayed frame — and must NOT match live traffic:
+{
+  const live2 = new (await import("./agent.ts")).WorldAgent({ name: "liveone" });
+  await live2.connect();
+  live2.say("@claude live ping after reconnect");
+  await hears(again.feed, "live ping", 5000);
+  const liveMsg = again.feed.find((f) => f.text.includes("live ping"));
+  check("a LIVE mention is addressed but never catchup-tagged",
+    !!liveMsg?.tags?.includes("chat:mention") && !liveMsg?.tags?.includes("eidoverse:catchup"),
+    JSON.stringify(liveMsg?.tags));
+  const matchCatchup = (f: { tags?: string[] }) => f.tags?.includes("eidoverse:catchup");
+  check("one catchup rule cleanly splits replay from live",
+    again.feed.filter(matchCatchup).every((f) => f.text.includes("missed one") || f.text.includes("While you were away")),
+    again.feed.filter(matchCatchup).map((f) => f.text.slice(0, 40)).join(" | "));
+  live2.close();
+}
+await again.conn.close();
+
+bystander.ws?.close();
 console.log(failures ? `\n\x1b[31m${failures} failure(s)\x1b[0m` : "\n\x1b[32mall checks passed\x1b[0m");
 process.exit(failures ? 1 : 0);

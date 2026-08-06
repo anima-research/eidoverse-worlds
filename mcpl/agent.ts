@@ -514,7 +514,18 @@ export class WorldAgent {
     const [x, , z] = xyz;
     const prevXYZ = posePosition(prev);
     const dist = Math.hypot(x - this.pos.x, z - this.pos.z);
-    const prevDist = prevXYZ ? Math.hypot(prevXYZ[0] - this.pos.x, prevXYZ[2] - this.pos.z) : Infinity;
+    // First SPATIAL observation of this person is a BASELINE, not a
+    // transition (issue #39): reconnect/state replay lands here for every
+    // body already in the room, and narrating it synthesized live-looking
+    // "walked up to you" / "sits down" bursts that residents answered as
+    // live. Seed silently; the approach arms only for someone first seen
+    // properly far away, so a body standing beside you at (re)join must
+    // actually leave and come back before it can "walk up".
+    if (!prevXYZ) {
+      this.nearArmed.set(id, dist > REARM_RADIUS);
+      return;
+    }
+    const prevDist = Math.hypot(prevXYZ[0] - this.pos.x, prevXYZ[2] - this.pos.z);
     if (dist > REARM_RADIUS) this.nearArmed.set(id, true);
     const armed = this.nearArmed.get(id) ?? true;
     const cooled = Date.now() - (this.lastNear.get(id) ?? 0) > APPROACH_REFRACT_MS;
