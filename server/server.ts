@@ -587,6 +587,70 @@ function lintParticles(w: World, entry: LogEntry): void {
 // Wrapped whole in try/catch: no reaction may ever take the server down
 // (lesson of the 4f82250 crash loop — a ws handler must never leak a throw).
 
+/** GRAB vs EDIT (R, 2026-08-06): the client has always known these are two
+ *  acts — handgrab.js: picking a thing up (being in a room) is not editing a
+ *  scene — but the wire encoded both as `place`, which is builder-gated, so a
+ *  VISITOR's mouse-grab was silently refused at release. Now the room act has
+ *  its own rank-0 sentences, gated by the OBJECT and by REACH, exactly the
+ *  reactions doctrine: the trigger is anyone's; the effect runs with world
+ *  authority because the author's `grab` component is the standing decision.
+ *
+ *    use {id, action:"take"}            — must wear `grab`, be unheld, in reach
+ *    use {id, action:"put", pos, yaw}   — holder only, drop point in reach
+ *
+ *  Ungrabbable things can never be taken — only edited (place, rank 1).
+ *  Errors are sentences an agent can act on ("move closer").
+ *  Returns true when the action was take/put (handled here, even on error). */
+const GRAB_REACH = 2.6;   // client reach is 2.2; slack absorbs pose latency
+function handleTakePut(c: Client, ws: { send: (s: string) => void }, a: Record<string, unknown>): boolean {
+  const action = String(a?.action ?? "");
+  if (action !== "take" && action !== "put") return false;
+  const w = c.world!;
+  const id = String(a?.id ?? "");
+  const ent = w.state.entities[id];
+  const fail = (error: string, why: string) => {
+    w.debug("denied", { who: c.id, verb: `use ${action}`, id, why });
+    ws.send(JSON.stringify({ type: "error", error }));
+    return true;
+  };
+  if (!ent) return fail(`nothing here is called "${id}"`, "no such entity");
+  const me = (c.lastPose as { p?: number[] } | null)?.p;
+  if (!me) return fail("you have no body position yet — move once, then try", "no pose");
+  if (action === "take") {
+    if (!ent.comp?.grab) {
+      return fail(`"${id}" doesn't invite taking — it can only be edited (builders, edit mode)`, "no grab comp");
+    }
+    const held = w.holds.get(id);
+    if (held && held !== c.id) return fail(`${held} is holding "${id}"`, "already held");
+    const at = w.leases.get(id)?.lastState?.p ?? ent.pos ?? [0, 0, 0];
+    const d = Math.hypot(me[0] - at[0], me[2] - at[2]);
+    if (d > GRAB_REACH) {
+      return fail(`"${id}" is out of reach — you're ${d.toFixed(1)}m away, reach is about 2m; move closer and try again`, "too far");
+    }
+    w.holds.set(id, c.id);
+    const entry = w.append(c.id, "use", { id, action: "take" });
+    w.broadcast({ type: "log", entry });
+    return true;
+  }
+  // put
+  if (w.holds.get(id) !== c.id) return fail(`you're not holding "${id}"`, "not holder");
+  const pos = Array.isArray(a.pos) ? (a.pos as number[]) : null;
+  if (!pos || pos.length !== 3) return fail(`put needs a pos to rest "${id}" at`, "no pos");
+  const d = Math.hypot(me[0] - pos[0], me[2] - pos[2]);
+  if (d > GRAB_REACH) {
+    return fail(`that spot is out of reach — ${d.toFixed(1)}m away; step closer to where you want to put it down`, "drop too far");
+  }
+  w.holds.delete(id);
+  const entry = w.append(c.id, "use", { id, action: "put" });
+  w.broadcast({ type: "log", entry });
+  // the world speaks the place — the visitor never needed builder rank, the
+  // author's grab component did (same authority rule as reactions)
+  const eff = w.append("world", "place",
+    { id, pos, ...(a.yaw != null ? { yaw: a.yaw } : {}), cause: entry.seq, by: c.id });
+  w.broadcast({ type: "log", entry: eff });
+  return true;
+}
+
 function reactToUse(w: World, cause: LogEntry): void {
   const a = cause.args as Record<string, unknown>;
   const id = String(a?.id ?? "");
@@ -793,6 +857,11 @@ class World {
   name: string;
   entries: LogEntry[] = [];
   clients = new Set<Client>();
+  /** Things currently in someone's hands: entity id -> actor id. In-memory
+   *  and derived — the LOG carries the take/put entries; this is just the
+   *  live answer to "may someone else take it right now". Cleared when the
+   *  holder leaves, the entity is removed, or an editor place overrides. */
+  holds = new Map<string, string>();
   /** Poses received since the last stage-frame tick — latest value wins.
    *  The embodied plane is batched: N performers × M spectators must not be
    *  N×M×15Hz individual sends (24×200 would be 72k msgs/s); it's one frame
@@ -1829,6 +1898,7 @@ const server = Bun.serve({
       // them — the lease's whole promise (docs/leases.md)
       if (c.world) for (const [lid, L] of [...c.world.leases]) if (L.holder === c) c.world.settleLease(lid);
       if (c.world) {
+        for (const [hid, actor] of c.world.holds) if (actor === c.id) c.world.holds.delete(hid);
         c.world.clients.delete(c);
         if (!c.spectator) {
           if (!c.superseded) c.world.rememberPose(c.id, c.lastPose); // sleep where you stood
@@ -2262,6 +2332,9 @@ const server = Bun.serve({
               } else delete a.t0;
             } else { delete a.spoken; delete a.utt; delete a.t0; }
           }
+          // room-grab: take/put validate (reach, grab comp, holder) and may
+          // refuse — so they route before the unconditional append
+          if (msg.verb === "use" && handleTakePut(c, ws, args as Record<string, unknown>)) return;
           const entry = c.world.append(c.id, msg.verb, args);
           c.world.broadcast({ type: "log", entry }); // everyone, including author (authoritative echo)
           // A `use` is a cause; reactions turn it into logged effects.
