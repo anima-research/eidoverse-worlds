@@ -103,5 +103,37 @@ logChat("keir", "unspoken t0 smuggle", "", { seq: 16, ts, t0: ts - 5000 });
 check("t0 outside the spoken protocol is ignored",
   texts()[1] === "unspoken t0 smuggle", JSON.stringify(texts()));
 
+// --- REGRESSION (#27 review): an inserted line derives its grouping from its
+// VISUAL neighbor, not chronological arrival — and the displaced anchor
+// reprints its name. All three fail on main (buildLine keys cont off
+// lastAuthor; nothing re-derives after a t0 insert).
+reset();
+ts = Date.now();
+logChat("rab", "alpha", "", { seq: 20, ts: ts - 4000 });
+logChat("keir", "beta later", "agent", { seq: 21, ts: ts - 1000 });
+logChat("keir", "aired earlier", "agent", { seq: 22, ts, spoken: true, utt: 20, t0: ts - 3000 });
+check("stale-attribution setup: t0 insert lands between the speakers",
+  texts()[1] === "aired earlier", JSON.stringify(texts()));
+check("inserted line under ANOTHER speaker is NOT cont (nameplate reprints)",
+  !rows()[1].classList.contains("cont"),
+  `cont=${rows()[1].classList.contains("cont")} — keir's words would render under rab's nameplate`);
+
+reset();
+logChat("keir", "one", "agent", { seq: 25, ts: ts - 4000 });
+logChat("rab", "later", "", { seq: 26, ts: ts - 1000 });
+logChat("keir", "aired mid-thought", "agent", { seq: 27, ts, spoken: true, utt: 21, t0: ts - 3000 });
+check("inserted line under the SAME speaker stays cont (no duplicate nameplate)",
+  rows()[1].classList.contains("cont"),
+  `cont=${rows()[1].classList.contains("cont")} though visual predecessor is keir`);
+
+reset();
+logChat("keir", "first", "agent", { seq: 30, ts: ts - 4000 });
+logChat("keir", "second", "agent", { seq: 31, ts: ts - 1000 });
+check("pre-insert: second groups under first", rows()[1].classList.contains("cont"));
+logChat("rab", "spoken wedge", "", { seq: 32, ts, spoken: true, utt: 22, t0: ts - 3000 });
+check("displaced anchor reprints its name when a different speaker wedges in",
+  texts()[1] === "spoken wedge" && !rows()[2].classList.contains("cont"),
+  JSON.stringify({ order: texts(), anchorCont: rows()[2].classList.contains("cont") }));
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
