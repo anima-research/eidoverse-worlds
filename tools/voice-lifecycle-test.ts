@@ -60,7 +60,12 @@ class FakePC {
   getTransceivers() { return this.transceivers; }
   /** the direction actually offered to the far end */
   offeredDirection() { return this.transceivers[0]?.direction ?? "none"; }
-  async createOffer(opts?: unknown) { this.lastOfferOpts = opts ?? null; return { type: "offer", sdp: "fake" }; }
+  static gate: Promise<void> | null = null;   // slows createOffer for race tests
+  async createOffer(opts?: unknown) {
+    this.lastOfferOpts = opts ?? null;
+    if (FakePC.gate) await FakePC.gate;
+    return { type: "offer", sdp: "fake" };
+  }
   async createAnswer() { return { type: "answer", sdp: "fake" }; }
   async setLocalDescription(d: unknown) { this.localDescription = d; this.signalingState = "have-local-offer"; }
   async setRemoteDescription(d: unknown) { this.remote = d; this.signalingState = "stable"; }
@@ -296,6 +301,67 @@ stubs.remotes.delete("peer1");
 consent.setVolume("world", 0.5);
 consent.setReceiveVoice(false);
 check("muting voices leaves world volume untouched", consent.audioPrefs().volWorld === 0.5);
+
+// ---- the #34 lifecycle, pinned (review ask: fails on main) -----------------
+// A receiver with receive-OFF drops the first offer BEFORE any peer exists;
+// the sender wedges in have-local-offer with no heal path. recvReady is the
+// wake-up. Then the two hard edges: recvReady during the in-flight FIRST
+// offer (state still 'stable') must not double-offer or tear down, and
+// recvReady on a healthy peer must be idempotent.
+const { sent } = stubs;
+const rtcFrom = (who: string, payload: unknown) => bus.emit("rtc", { from: who, payload });
+
+// mic back ON for the sender role (earlier sections left it off)
+if (!voice.micOn()) await voice.toggleMic("me");
+stubs.remotes.set("nix", { agent: false });
+sent.length = 0; created.length = 0;
+bus.emit("roster");
+await settle();
+const wedged = created.at(-1) as FakePC;
+check("sender offers a new arrival while live", !!wedged && sent.some((m: any) => m.to === "nix" && m.payload?.sdp?.type === "offer"));
+check("no answer (their receive is off): sender is wedged in have-local-offer",
+  wedged.signalingState === "have-local-offer");
+
+sent.length = 0;
+rtcFrom("nix", { recvReady: true });
+await settle();
+const rebuilt = created.at(-1) as FakePC;
+check("recvReady drops the wedged leg", wedged.closed === true);
+check("…and exactly one fresh offer reaches the receiver",
+  rebuilt !== wedged && sent.filter((m: any) => m.to === "nix" && m.payload?.sdp?.type === "offer").length === 1,
+  `${sent.length} sends`);
+rtcFrom("nix", { sdp: { type: "answer", sdp: "x" } });
+await settle();
+check("their answer completes the healed leg", rebuilt.signalingState === "stable");
+
+// -- recvReady racing the in-flight FIRST offer (state still 'stable') -------
+let releaseGate!: () => void;
+FakePC.gate = new Promise<void>((r) => { releaseGate = r; });
+stubs.remotes.set("lyra", { agent: false });
+sent.length = 0; created.length = 0;
+bus.emit("roster");                       // offerTo(lyra) starts, parked inside createOffer
+await settle();
+const midflight = created.at(-1) as FakePC;
+check("race setup: offer is in flight, state still stable",
+  midflight.signalingState === "stable" && sent.length === 0);
+rtcFrom("lyra", { recvReady: true });     // arrives DURING the first offer
+await settle();
+FakePC.gate = null; releaseGate();
+await settle();
+check("recvReady during an in-flight offer neither tears down nor double-offers",
+  midflight.closed === false &&
+  sent.filter((m: any) => m.to === "lyra" && m.payload?.sdp?.type === "offer").length === 1,
+  `${sent.filter((m: any) => m.to === "lyra").length} offer(s), closed=${midflight.closed}`);
+
+// -- recvReady on an already-healthy peer is idempotent ----------------------
+rtcFrom("lyra", { sdp: { type: "answer", sdp: "x" } });
+await settle();
+sent.length = 0;
+rtcFrom("lyra", { recvReady: true });
+await settle();
+check("duplicate recvReady on a healthy peer never tears it down",
+  midflight.closed === false && created.at(-1) === midflight,
+  `closed=${midflight.closed}, pcs=${created.length}`);
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

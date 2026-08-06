@@ -1,7 +1,20 @@
-// voice-matrix — the both-orders consent experiment promised on issue #34.
-// Two fake-mic browsers. Order A: receive ON before the sender's mic. Order B:
-// receive enabled AFTER the sender offered (the production Digi→Antra order).
-// Receipts per phase: receiver peer count, pc state, inbound-rtp packets.
+// voice-matrix — EXTERNAL browser harness for the late-consent orders.
+//
+// HONESTY CONTRACT (#36 review, antra): this file is NOT part of the merge
+// receipt — the traveling regression lives in tools/voice-lifecycle-test.ts
+// (fake-RTC, runs with bun, no dependencies). This harness exists for
+// real-media verification on a workstation that has Playwright + real
+// browsers; it is documentation-plus-tool, not CI.
+//
+//   Requirements: playwright installed OUTSIDE this repo (run it from a
+//   directory that has it, e.g. `cd ~/lab && node <repo>/tools/voice-matrix.mjs`),
+//   a running server on :8940, and fake-media Chromium flags (below).
+//
+// The probe reads REAL stats via voice.js's exported voiceStats() — the
+// previous revision read a `__voicePcs` global that was never defined, so
+// its inbound numbers were structurally zero (review catch). It now ASSERTS
+// and exits nonzero on failure instead of printing YES/NO prose.
+//
 import { chromium } from 'playwright';
 
 const browser = await chromium.launch({ args: [
@@ -22,15 +35,10 @@ const mk = async (name) => {
 
 const stats = (page) => page.evaluate(async () => {
   const v = await import('/lib/voice.js');
-  const { bus } = await import('/lib/core.js');
   const peers = v.voiceDebug();
-  let inbound = 0, tracks = 0;
-  for (const pc of (globalThis.__voicePcs?.() ?? [])) {
-    for (const r of (await pc.getStats()).values())
-      if (r.type === 'inbound-rtp' && r.kind === 'audio') inbound += r.packetsReceived ?? 0;
-    tracks += pc.getReceivers().filter((x) => x.track?.readyState === 'live').length;
-  }
-  return { peers, inbound, tracks };
+  const per = await v.voiceStats();   // real getStats — no phantom globals
+  const inbound = Object.values(per).reduce((n, s) => n + (s.inboundAudioPackets ?? 0), 0);
+  return { peers, inbound, per };
 });
 
 async function phase(label, sender, receiver) {
@@ -46,7 +54,8 @@ async function phase(label, sender, receiver) {
   await receiver.evaluate(async () => (await import('/lib/voiceconsent.js')).setReceiveVoice(true));
   await sender.evaluate(async () => (await import('/lib/voice.js')).toggleMic('mxA-send'));
   const a = await phase('ORDER-A (recv→mic):', sender, receiver);
-  console.log('ORDER-A audio flows:', a.inbound > 0 ? 'YES' : 'NO');
+  console.log('ORDER-A inbound packets:', a.inbound);
+if (!(a.inbound > 0)) { console.error('FAIL: order A carried no audio'); process.exitCode = 1; }
   await sender.close(); await receiver.close();
 }
 
@@ -57,10 +66,12 @@ async function phase(label, sender, receiver) {
   await new Promise((r) => setTimeout(r, 3000));            // offer arrives, gets dropped
   await receiver.evaluate(async () => (await import('/lib/voiceconsent.js')).setReceiveVoice(true));
   const b = await phase('ORDER-B (mic→recv):', sender, receiver);
-  console.log('ORDER-B audio flows:', b.inbound > 0 ? 'YES' : 'NO — the #34 deadlock');
+  console.log('ORDER-B inbound packets (pre-heal):', b.inbound);
   // late probe: does ANYTHING heal it with more time?
   const b2 = await phase('ORDER-B +4s:', sender, receiver);
-  console.log('ORDER-B healed later:', b2.inbound > 0 ? 'YES' : 'NO');
+  console.log('ORDER-B inbound packets (post-recvReady):', b2.inbound);
+if (!(b2.inbound > 0)) { console.error('FAIL: late consent did not heal order B'); process.exitCode = 1; }
+process.exit(process.exitCode ?? 0);
   await sender.close(); await receiver.close();
 }
 await browser.close();

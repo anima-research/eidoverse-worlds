@@ -100,19 +100,15 @@ function dropPeer(id) {
 
 /** Re-offer on an EXISTING peer after our track set changed (mic on/off while
  *  a consented inbound leg is live). Silent no-op if we are mid-negotiation. */
-async function renegotiate(id) {
-  const p = peers.get(id);
-  if (!p || p.pc.signalingState !== 'stable') return;
-  try {
-    applyDirection(p);
-    const offer = await p.pc.createOffer();
-    await p.pc.setLocalDescription(offer);
-    sendRtc(id, { sdp: p.pc.localDescription });
-  } catch (e) { report('voice renegotiate', e); }
-}
-
-async function offerTo(id) {
-  const p = peerFor(id);
+/** SINGLE-FLIGHT (#36 review): recvReady can arrive while this peer's FIRST
+ *  offer is still inside createOffer — signalingState hasn't left 'stable'
+ *  yet, so the state check alone lets a second offer start concurrently and
+ *  the two race into glare against ourselves. One offer in flight per peer;
+ *  a request that finds one in flight simply yields to it — any offer that
+ *  lands satisfies a newly-consented receiver. */
+async function offerOn(p, id, label) {
+  if (p._offering) return;
+  p._offering = true;
   try {
     // direction FIRST: the offer must describe what we consented to, not ask
     // for everything and filter later
@@ -120,7 +116,17 @@ async function offerTo(id) {
     const offer = await p.pc.createOffer();
     await p.pc.setLocalDescription(offer);
     sendRtc(id, { sdp: p.pc.localDescription });
-  } catch (e) { report('voice offer', e); }
+  } catch (e) { report(label, e); } finally { p._offering = false; }
+}
+
+async function renegotiate(id) {
+  const p = peers.get(id);
+  if (!p || p.pc.signalingState !== 'stable') return;
+  await offerOn(p, id, 'voice renegotiate');
+}
+
+async function offerTo(id) {
+  await offerOn(peerFor(id), id, 'voice offer');
 }
 
 async function onRtc(msg) {
@@ -136,6 +142,11 @@ async function onRtc(msg) {
   if (payload?.recvReady) {
     if (micStream) {
       const p = peers.get(from);
+      // mid-flight first offer: the state is still 'stable' but an offer is
+      // being built — tearing down or re-offering here is the race the
+      // review named. Yield: the in-flight offer reaches a receiver who now
+      // answers. And a HEALTHY peer stays untouched (idempotent recvReady).
+      if (p?._offering) return;
       if (p && p.pc.signalingState !== 'stable') dropPeer(from);
       if (!peers.has(from)) offerTo(from);
       else renegotiate(from);
@@ -302,6 +313,23 @@ export function initVoice(name) {
 }
 
 // test/debug probe — connection states by peer id (the world_debug spirit)
+/** Real per-peer inbound-audio stats, for the external browser matrix — the
+ *  probe it previously "read" (__voicePcs) never existed, so its inbound
+ *  numbers were structurally zero (#36 review). This one queries the actual
+ *  RTCPeerConnections. */
+export async function voiceStats() {
+  const out = {};
+  for (const [id, p] of peers) {
+    try {
+      const stats = await p.pc.getStats();
+      let packets = 0;
+      stats.forEach((s) => { if (s.type === 'inbound-rtp' && s.kind === 'audio') packets += s.packetsReceived ?? 0; });
+      out[id] = { state: p.pc.connectionState, inboundAudioPackets: packets };
+    } catch { out[id] = { state: p.pc.connectionState, inboundAudioPackets: null }; }
+  }
+  return out;
+}
+
 export const voiceDebug = () => Object.fromEntries([...peers].map(([id, p]) => [id, p.pc.connectionState]));
 
 // ---- per-speaker levels (R, 23:30: mouths move in sync with the sound)
