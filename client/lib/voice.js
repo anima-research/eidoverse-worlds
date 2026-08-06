@@ -125,6 +125,23 @@ async function offerTo(id) {
 
 async function onRtc(msg) {
   const { from, payload } = msg;
+  // LATE-CONSENT WAKE (#34, matrix-proven 2026-08-06): an offer that arrives
+  // while receive is off is dropped BEFORE a peer exists — correct — but the
+  // sender is then wedged in have-local-offer, and every heal path skipped it
+  // (renegotiate bails on non-stable, roster re-offers only unknown ids).
+  // Deadlock until reload. So a receiver who turns consent ON announces it,
+  // and a live-mic sender rebuilds the wedged leg. This runs BEFORE the
+  // consent gate on purpose: it negotiates THEIR inbound, not ours — no
+  // consent of ours is needed to learn someone now wants to hear.
+  if (payload?.recvReady) {
+    if (micStream) {
+      const p = peers.get(from);
+      if (p && p.pc.signalingState !== 'stable') dropPeer(from);
+      if (!peers.has(from)) offerTo(from);
+      else renegotiate(from);
+    }
+    return;
+  }
   // CONSENT GATE: with receive-voice off we never negotiate an inbound path.
   // Not "answer then mute" — no audio path exists at all. An ANSWER to our
   // own offer is still processed, but it is safe now for a structural reason
@@ -234,6 +251,9 @@ export function initVoice(name) {
       for (const p of peers.values()) applyDirection(p);
       for (const id of [...peers.keys()]) renegotiate(id);
       if (micStream) for (const id of humanIds()) if (!peers.has(id)) offerTo(id);
+      // and tell everyone: any sender whose offer we consent-dropped is
+      // wedged with no path to us until they hear this (#34 wake)
+      for (const id of humanIds()) sendRtc(id, { recvReady: true });
       return;
     }
     // revoked: inbound legs come down. If our mic is live the outbound they
