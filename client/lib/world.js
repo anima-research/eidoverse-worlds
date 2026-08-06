@@ -291,9 +291,10 @@ export async function applyEntry(entry, live, ctx = {}) {
         // Weather is its own verb rather than a sky arg because DESIGN.md names
         // `transitionTo('storm')` as a first-class world event — it is a thing
         // that HAPPENS at a moment, not a property you set. The fold rebases
-        // `hours` under a rated sky (no day-snap) and records the manual
-        // override when a forecast is active — in lockstep with the server.
-        await applySky(foldSkyEntry(args.keepSky === false ? null : currentSkyArgs(),
+        // `hours` under a rated sky (no day-snap), records the manual
+        // override when a forecast is active, and owns `keepSky` — all in
+        // lockstep with the server's fold of the same entry.
+        await applySky(foldSkyEntry(currentSkyArgs(),
           { verb: 'weather', args, ts, seq: entry.seq, actor }), ts);
         break;
       case 'asset':

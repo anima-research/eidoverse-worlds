@@ -51,6 +51,7 @@ export const EIDO = {
   act: "eidoverse:act",
   presence: "eidoverse:presence",
   activityDigest: "eidoverse:activity-digest",
+  weather: "eidoverse:weather",
   catchup: "eidoverse:catchup",
 } as const;
 
@@ -184,6 +185,10 @@ const TAG_ONTOLOGY = {
     },
     [EIDO.activityDigest]: {
       desc: "One digest per pulse window summarising what is happening within your activity radius. Emitted ONLY while something is happening — the stream stops by itself when the area goes quiet. Cadence and radius are the agent's own to tune with the `activity` tool.",
+      facet: "lifecycle",
+    },
+    [EIDO.weather]: {
+      desc: "The world's weather or light changed on its own: a forecast segment boundary, a manual override landing or expiring, or the day crossing dawn/day/dusk/night. Derived deterministically from the authored sky policy (never a log entry); the text carries its provenance. At most one line per boundary — dwell is floored at 60s, so typically minutes-to-hours apart.",
       facet: "lifecycle",
     },
     [EIDO.catchup]: {

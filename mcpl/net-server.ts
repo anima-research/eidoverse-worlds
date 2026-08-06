@@ -408,6 +408,18 @@ class Session {
           if (this.heldActivity.length > 8) this.heldActivity.shift();
         } else if (this.channelOpen) this.deliver(`* ${ev.text}`, { id: "world", name: this.agent.world },
           { tags: tags(CHAT.ambient, EIDO.activityDigest), metadata: { activity: true } });
+      } else if (ev.kind === "weather") {
+        // The sky changed ON ITS OWN — a forecast boundary, an override
+        // landing/expiring, or a day-phase crossing. One line per boundary,
+        // provenance in the text, ambient like every world-system signal.
+        // Pull-only hosts get it from the `activity` tool's held ring, same
+        // as activity digests — resting agents shouldn't need a renderer to
+        // know it started raining.
+        if (!this.granted(CAP.channelsIncoming)) {
+          this.heldActivity.push(`[${new Date(ev.ts).toISOString().slice(11, 16)}Z] ${ev.text}`);
+          if (this.heldActivity.length > 8) this.heldActivity.shift();
+        } else if (this.channelOpen) this.deliver(`* ${ev.text}`, { id: "world", name: this.agent.world },
+          { tags: tags(CHAT.ambient, EIDO.weather), metadata: { weather: true } });
       } else if (this.channelOpen) {
         this.deliver(`* ${ev.who} ${ev.kind === "arrive" ? "arrived in the world" : "left the world"}`,
           { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.presence, from) });

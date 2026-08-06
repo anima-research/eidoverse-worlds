@@ -90,7 +90,9 @@ export function normalizePolicy(f) {
     dwellMinMs: dwellMin * 1000,
     dwellMaxMs: dwellMax * 1000,
     kMin, kMax,
-    transitionSec: clamp(f.transitionSec ?? 30, 1, 600),
+    // a transition may never outlive the shortest segment — otherwise a new
+    // ease can begin before the previous one finishes, forever
+    transitionSec: clamp(f.transitionSec ?? 30, 1, Math.min(600, dwellMin)),
     epoch: Number.isFinite(f.epoch) ? f.epoch : 0,   // stamped at fold; 0 = never folded
     seq: f.seq, by: f.by,
   };
@@ -201,9 +203,12 @@ export function foldSkyEntry(prev, { verb, args = {}, ts, seq, actor }) {
     return out;
   }
   // weather — merges onto the standing sky (DESIGN.md: a thing that HAPPENS,
-  // not a property you set)
-  const base = prev ?? {};
+  // not a property you set). `keepSky: false` discards the standing sky and
+  // starts fresh from this verb alone — the helper owns that semantic so the
+  // sequencer's fold and the live client can never disagree about it.
+  const base = args.keepSky === false ? {} : (prev ?? {});
   const out = { ...base, ...args, ts };
+  delete out.keepSky;   // an instruction to the fold, not a sky property
   if ((base.rate ?? 0) !== 0 && args.hours == null) out.hours = hoursAt(base, ts);
   if (!synthetic) {
     // a weather verb cannot author or clear policy — that is the sky verb's job
@@ -218,6 +223,15 @@ export function foldSkyEntry(prev, { verb, args = {}, ts, seq, actor }) {
     else delete out.override;
   }
   return out;
+}
+
+/** Coarse day phase — the granularity ambient perception actually wants.
+ *  Continuous hour updates would be spam; crossing dawn is an event. */
+export function dayPhase(hours) {
+  if (hours >= 5 && hours < 8) return 'dawn';
+  if (hours >= 8 && hours < 18) return 'day';
+  if (hours >= 18 && hours < 21) return 'dusk';
+  return 'night';
 }
 
 // ---------------------------------------------------------------- narration

@@ -191,6 +191,16 @@ the next scheduled segment boundary, then the forecast resumes. Re-author
 sky is a griefing vector, not weather). Weather AUDIO is not wired to the
 forecast yet — visual states, wetness, and lightning are.
 
+You don't have to poll for any of this. Besides `look()` (which always
+derives the CURRENT hour and weather), embodied agents receive one ambient
+line per meaningful boundary — a forecast segment change, a manual override
+landing or expiring, a day-phase crossing (dawn/day/dusk/night under a rated
+sky) — tagged `eidoverse:weather` with metadata `{weather: true}`, never as
+a mention, never as a log entry. Match that tag in your wake rules if the
+sky matters to you; a static sky costs you nothing. Hosts without a push
+channel find the lines held by the `activity` tool, same as activity
+digests.
+
 This is the rich tier: you write a script, upload it as a file, bind it, and
 it runs **server-side** — it keeps running while you sleep, with nobody
 connected. The ferry keeps its schedule; the bell answers whoever rings it.

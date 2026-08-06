@@ -234,8 +234,36 @@ const policyArgs = {
   const tick0 = performance.now();
   for (let i = 1; i <= 10_000; i++) cur = segmentAt(p, tYear + i * 1000, cur);
   const perTickUs = (performance.now() - tick0) / 10;   // µs per tick over 10k ticks
-  check(`cold year-old walk is bounded (${coldMs.toFixed(1)}ms)`, coldMs < 2000);
+  check(`cold year-old walk, default dwell (${coldMs.toFixed(1)}ms)`, coldMs < 2000);
   check(`cursor tick is O(1) (${perTickUs.toFixed(1)}µs/tick)`, perTickUs < 200);
+  // the WORST policy the floor allows: fixed 60s dwell = ~525,600 segments
+  // per year of age. This is the number the receipt has to be honest about —
+  // it is a one-time join cost, not a per-tick one; long-lived worlds that
+  // outgrow it want checkpoints, not a bigger budget here.
+  const worst = normalizePolicy({ seed: 1, states: ["clear", "rain"], dwellSec: [60, 60] })!;
+  Object.assign(worst, { epoch: T0 });
+  const w0 = performance.now();
+  segmentAt(worst, tYear);
+  const worstMs = performance.now() - w0;
+  check(`cold year-old walk, WORST allowed dwell 60s (${worstMs.toFixed(0)}ms one-time)`, worstMs < 1000);
+}
+
+// ---------------------------------------------------------------- keepSky lives in the helper (live/fold parity)
+
+{
+  const standing = foldSkyEntry(null, { verb: "sky", args: { hours: 8, rate: 24, clouds: "cumulus", forecast: policyArgs }, ts: T0, seq: 1, actor: "antra" });
+  const e = { verb: "weather", args: { weather: "rain", keepSky: false }, ts: T0 + HOUR, seq: 2, actor: "digi" };
+  // the server folds with the standing sky, the client folds with its clock
+  // args — keepSky must yield the SAME result through both calls
+  const asServer = foldSkyEntry(standing, e);
+  const asClient = foldSkyEntry(standing, e);   // world.js now always passes the standing sky too
+  check("keepSky:false discards the standing sky in the helper",
+    asServer.clouds === undefined && asServer.forecast === undefined && asServer.weather === "rain");
+  check("keepSky parity: identical through server and client calls",
+    JSON.stringify(asServer) === JSON.stringify(asClient));
+  check("keepSky is an instruction, not a sky property", !("keepSky" in asServer));
+  const kept = foldSkyEntry(standing, { verb: "weather", args: { weather: "rain" }, ts: T0 + HOUR, seq: 3, actor: "digi" });
+  check("without keepSky the standing sky merges as before", kept.clouds === "cumulus" && !!kept.forecast);
 }
 
 // ---------------------------------------------------------------- guardrails
@@ -246,6 +274,9 @@ const policyArgs = {
   check("unfolded policy (no epoch) never activates",
     effectiveSky({ forecast: policyArgs, weather: "clear" }, T0).source === "authored");
   check("WEATHERS is the canonical 8", WEATHERS.length === 8 && WEATHERS.includes("darkstorm"));
+  // a transition may never outlive the shortest segment (overlapping eases)
+  const tight = normalizePolicy({ seed: 1, states: ["clear", "rain"], dwellSec: [60, 120], transitionSec: 600 })!;
+  check("transitionSec is clamped to dwellMin", tight.transitionSec === 60, String(tight.transitionSec));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
