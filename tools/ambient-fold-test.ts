@@ -10,7 +10,7 @@
 // rejoin byte-identically; and nothing about a refusal mutates history.
 
 const HTTP = process.env.HTTP_URL ?? "http://localhost:8995";
-const URL = process.env.WORLD_URL ?? "ws://localhost:8994/ws";
+const URL = process.env.WORLD_URL ?? "ws://localhost:8995/ws";
 const TOKEN = process.env.JOIN_TOKEN ?? "test-door";
 
 let passed = 0;
@@ -93,10 +93,27 @@ console.log(`\ngrab-vs-edit matrix — world "${WORLD}"\n`);
 // ---- a real (tiny) ogg: "OggS" magic + padding — the sniffer's contract ----
 const oggBytes = new Uint8Array(64);
 oggBytes.set([0x4f, 0x67, 0x67, 0x53]);
-const up = await fetch(`${HTTP}/upload?as=audio&token=${TOKEN}&by=foldtest`, { method: "POST", body: oggBytes });
+// The server rate-limits uploads (4/min) — a virtue in production and a trap
+// for back-to-back test runs: the second run's uploads got text/429 and the
+// json() parse exploded with a misleading "idempotency" failure. Wait out
+// the window instead of misdiagnosing the server.
+async function uploadOgg(bytes: Uint8Array): Promise<Response> {
+  for (let i = 0; i < 5; i++) {
+    const r = await fetch(`${HTTP}/upload?as=audio&token=${TOKEN}&by=foldtest`, { method: "POST", body: bytes.slice() });
+    if (r.status !== 429) return r;
+    console.log("  (429 upload rate limit — waiting 20s for the window)");
+    await new Promise((res) => setTimeout(res, 20_000));
+  }
+  throw new Error("upload rate limit never cleared");
+}
+const up = await uploadOgg(oggBytes);
 const upJson: any = up.ok ? await up.json() : null;
 check("audio upload is accepted and content-addressed", !!upJson?.path && /^store\/audio\/[0-9a-f]{16}\.ogg$/.test(upJson.path), JSON.stringify(upJson) || `${up.status}`);
-const up2 = await fetch(`${HTTP}/upload?as=audio&token=${TOKEN}&by=foldtest`, { method: "POST", body: oggBytes });
+// fresh copy: Bun detaches a typed array's buffer on first send — reusing
+// oggBytes posts an EMPTY body (the "0KB" in the server log) and the magic
+// sniff's DataView throws on it. The server was always idempotent; the
+// reused buffer was the phantom.
+const up2 = await uploadOgg(oggBytes);
 check("same bytes → same address (idempotent)", (await up2.json() as any).path === upJson.path);
 const bad = await fetch(`${HTTP}/upload?as=audio&token=${TOKEN}`, { method: "POST", body: new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]) });
 check("non-audio bytes are refused at the door", bad.status === 415, `${bad.status}`);
