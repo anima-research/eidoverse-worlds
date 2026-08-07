@@ -1220,6 +1220,11 @@ type Client = {
   auth?: HnSession;    // archipelago-home session bound at WS upgrade (verified human)
   sub?: string;        // durable principal id when authenticated (`human:discord:…`)
   superseded?: boolean; // kicked by identity takeover — don't let its stale pose overwrite the successor's
+  surface?: string;    // (name, surface) session model: "world" = the embodied primary (default);
+                       // anything else = an auxiliary media leg (voice, vr-hands, …) — invisible,
+                       // poseless, log-mute, rtc-capable, and REAPED when its primary dies.
+                       // Per-surface last-writer-wins replaces the flat one-body rule (2026-08-07;
+                       // prior art: Discord voice legs keyed to gateway sessions, XMPP resources).
   renderer?: boolean;  // donates rendering: can answer snap requests for its world
   // rate windows: a griefer or a stuck client gets silence, not fanout
   msgWin: number; msgCount: number;   // all messages, per second
@@ -1948,6 +1953,18 @@ const server = Bun.serve({
           if (!c.superseded) c.world.rememberPose(c.id, c.lastPose); // sleep where you stood
           c.world.broadcast({ type: "leave", id: c.id });
           c.world.bhv.onPresence("leave", c.id);
+          // The primary is gone: reap every aux leg of this identity, unless a
+          // successor took over (its auxes transfer to the new primary — same
+          // identity, and takeover means re-arrival, not departure).
+          if (!c.superseded) {
+            for (const t of [...c.world.clients]) {
+              if (t.id === c.id && (t.surface ?? "world") !== "world") {
+                c.world.clients.delete(t); clients.delete(t.ws);
+                t.ws.close?.(4007, "primary session gone");
+                console.log(`[world:${c.world.name}] ${c.id}/${t.surface} reaped — primary gone`);
+              }
+            }
+          }
         }
         console.log(`[world:${c.world.name}] ${describe(c.world)} — ${c.id} ${c.spectator ? "stopped watching" : "left"}`);
       }
@@ -2023,7 +2040,11 @@ const server = Bun.serve({
             return;
           }
           c.avatar = String(msg.avatar ?? "eidoverse/assets/vrms/claude.vrm");
-          c.spectator = Boolean(msg.spectate);
+          // Surface: which leg of this identity is arriving. Sanitized like a
+          // world name; unknown values are allowed (the vocabulary belongs to
+          // clients), but "world" alone gets a body.
+          c.surface = String(msg.surface ?? "world").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 16) || "world";
+          c.spectator = Boolean(msg.spectate) || c.surface !== "world";
           c.agent = Boolean(msg.agent);
           c.renderer = Boolean(msg.renderer);
           if (c.renderer) c.spectator = true; // renderers are invisible by definition
@@ -2081,15 +2102,30 @@ const server = Bun.serve({
           // (half-open socket, zombie reconnect) is kicked when its identity
           // reconnects, instead of the two rubberbanding over one avatar.
           // No leave broadcast: the identity isn't leaving, it's re-arriving.
-          if (!c.spectator) {
+          // Takeover is PER (id, surface): a fresh world session kicks only the
+          // stale world session; a fresh voice leg kicks only the stale voice
+          // leg. Plain spectators (surface "world" + spectate flag) never duel.
+          if (!(c.spectator && c.surface === "world")) {
             for (const other of [...w.clients]) {
-              if (other !== c && other.id === c.id && !other.spectator) {
+              if (other !== c && other.id === c.id
+                  && (other.surface ?? "world") === c.surface
+                  && !(other.spectator && (other.surface ?? "world") === "world")) {
                 other.superseded = true;
                 w.clients.delete(other);
                 clients.delete(other.ws);
                 other.ws.close?.(4002, "session takeover");
-                console.log(`[world:${w.name}] ${c.id} takeover — stale session kicked`);
+                console.log(`[world:${w.name}] ${c.id}/${c.surface} takeover — stale session kicked`);
               }
+            }
+          }
+          // An aux leg without a living primary is an orphan mic: refuse it.
+          if (c.surface !== "world") {
+            const primary = [...w.clients].find(t => t !== c && t.id === c.id && (t.surface ?? "world") === "world" && !t.spectator);
+            if (!primary) {
+              ws.send(JSON.stringify({ type: "error", error: `no embodied "${c.id}" here to attach a ${c.surface} leg to — join the world first` }));
+              ws.close(4008, "aux without primary");
+              w.clients.delete(c); clients.delete(ws);
+              return;
             }
           }
           w.clients.add(c);
@@ -2686,12 +2722,16 @@ const server = Bun.serve({
           // logged for the same reason — but unlike a whisper, a stale SDP is
           // worthless (an offer for a peer who left answers nothing), so there
           // is no pending queue: absent recipient = silently dropped.
-          if (!c.world || c.spectator) return;
+          const aux = c.surface && c.surface !== "world";
+          if (!c.world || (c.spectator && !aux)) return;
           const rto = String(msg.to ?? "").slice(0, 64);
           if (!rto || msg.payload == null) return;
           if (JSON.stringify(msg.payload).length > 20000) return; // SDP-sized, not file-sized
           const rpacket = JSON.stringify({ type: "rtc", from: c.id, to: rto, payload: msg.payload });
-          for (const t of c.world.clients) if (t.id === rto && !t.spectator) t.ws.send(rpacket);
+          // Delivery: embodied sessions and aux media legs both hear signaling;
+          // a voice leg IS an rtc endpoint even though it renders as nothing.
+          for (const t of c.world.clients)
+            if (t.id === rto && (!t.spectator || (t.surface && t.surface !== "world"))) t.ws.send(rpacket);
           return;
         }
         case "typing": {
