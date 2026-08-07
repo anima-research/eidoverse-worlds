@@ -16,14 +16,16 @@ export const hasTerrain = () => current !== null;
 export function setTerrain(t) {
   if (current) scene.remove(current.mesh);
   current = t;
+  // ground/grid are null under the headless core stub — an agent process sets
+  // terrain for its settle sim and has no stage floor to hide (issue #17)
   if (t) {
-    scene.add(t.mesh);
+    if (t.mesh) scene.add(t.mesh);
     // terrain replaces the stage floor
-    ground.visible = false;
-    grid.visible = false;
+    if (ground) ground.visible = false;
+    if (grid) grid.visible = false;
   } else {
-    ground.visible = true;
-    grid.visible = true;
+    if (ground) ground.visible = true;
+    if (grid) grid.visible = true;
   }
 }
 

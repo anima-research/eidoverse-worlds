@@ -8,7 +8,7 @@ import * as THREE_W from "three/webgpu";
 import * as TSL from "three/tsl";
 import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS,
   ACTIVITY_RADIUS_M, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
-import { HeadlessBody } from "./physics.ts";
+import { HeadlessBody, setHeightField, registerSupport, removeSupport } from "./physics.ts";
 // The same pure sky fold + weather derivation the browser client and the
 // sequencer run — text-tier perception must land on the SAME hour and
 // weather every renderer shows (issue #29's shared-fact boundary).
@@ -29,7 +29,7 @@ const EMITTER_COALESCE_MS = Number(process.env.EW_EMITTER_COALESCE_SEC ?? 4) * 1
 
 type Vec2 = { x: number; z: number };
 type Pose = { p: number[]; yaw: number; speed: number; clip: string };
-type Entity = { id: string; lib: string; pos: number[]; yaw: number; actor: string;
+type Entity = { id: string; lib: string; pos: number[]; yaw: number; actor: string; scale?: number;
   /** component bag (sockets, reactions, motion, …) — what a thing can DO;
    *  this is how affordances reach text-tier perception */
   comp?: Record<string, any> };
@@ -635,8 +635,10 @@ export class WorldAgent {
   private async applyEntry(entry: any, live: boolean) {
     const { verb, args, actor, ts } = entry;
     if (verb === "spawn") {
-      this.entities.set(args.id, { id: args.id, lib: args.lib, pos: args.pos ?? [0, 0, 0], yaw: args.yaw ?? 0, actor });
+      this.entities.set(args.id, { id: args.id, lib: args.lib, pos: args.pos ?? [0, 0, 0], yaw: args.yaw ?? 0,
+        ...(args.scale != null ? { scale: args.scale } : {}), actor });
       if (live) this.noteBuild(actor, args.pos);
+      void this.syncSupport(args.id);   // a placed thing is a thing bodies can rest on (#17)
     } else if (verb === "light") {
       // a light is an entity too, so text-tier perception can see it and it can
       // be moved/removed by id like anything else. Re-issued on an existing id
@@ -647,11 +649,13 @@ export class WorldAgent {
       if (live) this.noteBuild(actor, args.pos);
     } else if (verb === "place") {
       const e = this.entities.get(args.id);
-      if (e) { e.pos = args.pos; if (args.yaw != null) e.yaw = args.yaw; }
+      if (e) { e.pos = args.pos; if (args.yaw != null) e.yaw = args.yaw; if (args.scale != null) e.scale = args.scale; }
       if (live) this.noteBuild(actor, args.pos);
+      void this.syncSupport(args.id);   // support follows the thing it belongs to
     } else if (verb === "remove") {
       if (live) this.noteBuild(actor, this.entities.get(args.id)?.pos);
       this.entities.delete(args.id);
+      this.dropSupport(args.id);
       for (const [rid, m] of this.mounts) if (m.to === args.id) this.mounts.delete(rid);
     } else if (verb === "comp") {
       // affordances are components — track them or look() can't tell anyone
@@ -859,10 +863,74 @@ export class WorldAgent {
       (0, eval)(this.terrainSrc);
     }
     this.terrain = (globalThis as any).makeTerrain({ ...args, layers: [] });
+    // the settle sim clamps against the SAME ground the walking clamp reads —
+    // not one height sampled at the fall site (#17)
+    void setHeightField((x, z) => this.heightAt(x, z));
   }
 
   heightAt(x: number, z: number): number {
     return this.terrain ? this.terrain.heightAt(x, z) : 0;
+  }
+
+  // ---- support surfaces (#17) ----------------------------------------------
+  // A body settling headless used to see bare terrain: every placed floor —
+  // a platform, a deck, the bell pavilion's slab — simply was not there, and
+  // a body released above one settled through it to the dirt underneath.
+  // The server already reads shape as data (GET /geom: bbox + up-facing flat
+  // zones); each entity this agent knows about contributes support boxes to
+  // the sim's collider map. Small solid things contribute their whole box —
+  // the same thing a browser's box collider reads. Room-scale things (the
+  // browser gives those exact trimesh interiors) contribute their floor DECKS
+  // as thin slabs instead, so a body can rest on the pavilion floor without
+  // the pavilion sealing into a solid block. Walls stay a browser-side seam:
+  // a data box carries floors, not architecture.
+
+  private geomCache = new Map<string, Promise<any | null>>();
+  private supportIds = new Map<string, string[]>();   // entity id -> registered box ids
+
+  private geomFor(lib: string): Promise<any | null> {
+    let p = this.geomCache.get(lib);
+    if (!p) {
+      p = fetch(`${this.httpBase}/geom?lib=${encodeURIComponent(lib)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((g) => (g && !g.error && g.bbox ? g : null))
+        .catch(() => null);                            // no geometry is a soft state, never a crash
+      this.geomCache.set(lib, p);
+    }
+    return p;
+  }
+
+  private async syncSupport(id: string) {
+    const before = this.entities.get(id);
+    if (!before || !before.lib || before.lib === "(light)") return;  // lights carry no collider
+    const g = await this.geomFor(before.lib);
+    const e = this.entities.get(id);                   // re-read: the world may have moved on mid-fetch
+    if (!g || !e) return;
+    this.dropSupport(id);
+    const s = e.scale ?? 1;
+    const xform = { position: e.pos, yaw: e.yaw ?? 0, scale: s };
+    const [w, h, d] = [g.bbox.size[0] * s, g.bbox.size[1] * s, g.bbox.size[2] * s];
+    const ids: string[] = [];
+    const roomScale = w * d >= 16 && h >= 2.2;         // decide()'s own gate, from the bbox alone
+    const decks = roomScale
+      ? (g.topSurfaces ?? []).filter((t: any) => t.area * s * s >= 1).slice(0, 6) : [];
+    if (roomScale && decks.length) {
+      for (let k = 0; k < decks.length; k++) {
+        const t = decks[k], bid = `${this.world}/${id}#${k}`;
+        void registerSupport(bid, [t.x[0], t.y - 0.15, t.z[0]], [t.x[1], t.y, t.z[1]], xform);
+        ids.push(bid);
+      }
+    } else if (!roomScale) {
+      const bid = `${this.world}/${id}`;
+      void registerSupport(bid, g.bbox.min, g.bbox.max, xform);
+      ids.push(bid);
+    }                                                   // room-scale with no readable decks: browser-only, declared
+    if (ids.length) this.supportIds.set(id, ids);
+  }
+
+  private dropSupport(id: string) {
+    for (const bid of this.supportIds.get(id) ?? []) void removeSupport(bid);
+    this.supportIds.delete(id);
   }
 
   private tick() {
@@ -955,9 +1023,12 @@ export class WorldAgent {
       return;
     }
     if (this.draggedBy) return;   // a hand arrived while the skeleton loaded
+    // the sim's ground is process state — assert OURS before every run
+    // (see physics.ts's declared seam)
+    await setHeightField((x, z) => this.heightAt(x, z));
+    if (this.draggedBy) return;
     body.begin({
       x: this.pos.x, z: this.pos.z,
-      groundY: this.heightAt(this.pos.x, this.pos.z),
       yaw: this.yaw,
       // no direction given = the browser default: you fall the way you face
       lean: lean ?? [Math.sin(this.yaw) * 0.9, 0, Math.cos(this.yaw) * 0.9],
@@ -973,9 +1044,11 @@ export class WorldAgent {
     const body = await this.ensureBody();
     if (!body) { this.heldPose = pose ?? this.heldPose ?? DOWNED_POSE; this.heldPoseAuthored = false; this.clip = "ragdoll"; return; }
     if (this.draggedBy) return;
+    // the sim's ground is process state — assert OURS before every run
+    await setHeightField((x, z) => this.heightAt(x, z));
+    if (this.draggedBy) return;
     body.begin({
       x: this.pos.x, z: this.pos.z,
-      groundY: this.heightAt(this.pos.x, this.pos.z),
       yaw: this.yaw,
       pose: pose ?? this.heldPose ?? null,
       rootY: this.pos.y,
