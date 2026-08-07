@@ -551,6 +551,7 @@ check("unhush rejoins the SAME peer at full volume",
   const w = globalThis as unknown as { __iceLog: string[] };
   w.__iceLog = [];
   created.length = 0;
+  stubs.sent.length = 0;
   bus.emit("rtc", { from: "racer", payload: { sdp: { type: "offer", sdp: "o1" } } });
   bus.emit("rtc", { from: "racer", payload: { sdp: { type: "offer", sdp: "o2" } } });  // same tick — no settle between
   await new Promise((r) => setTimeout(r, 60));
@@ -558,9 +559,11 @@ check("unhush rejoins the SAME peer at full volume",
   check("forced double-offer interleave: zero signal errors (serialization holds)",
     sigFails.length === 0, sigFails.join(" | ").slice(0, 120));
   const pc9 = created.at(-1)!;
-  check("forced double-offer interleave: BOTH offers produced answers (none died in wrong state)",
-    pc9.answersCreated === 2 && pc9.signalingState === "stable",
-    `answers=${pc9.answersCreated} state=${pc9.signalingState}`);
+  const answersSent = stubs.sent.filter((m: { to: string; payload: { sdp?: { type?: string } } }) =>
+    m.to === "racer" && m.payload?.sdp?.type === "answer").length;
+  check("forced double-offer interleave: BOTH answers actually SENT (main loses the second at setLocal)",
+    answersSent === 2 && pc9.signalingState === "stable",
+    `answersSent=${answersSent} state=${pc9.signalingState}`);
   consent.setReceiveVoice(false);
 }
 
