@@ -40,6 +40,14 @@ import {
   openDoor, toggleRoster, initRoster, initDock, paintRoster, panelFrame, el,
 } from './lib/ui.js';
 import { initDebug, updateDebug, toggleDebug } from './lib/debug.js';
+
+// Which build is this world running? One console line at boot, so "what's
+// deployed here" is a glance instead of an inference (the 2026-08-07 audio
+// mystery: fixes merged upstream for hours, prod still on the old code,
+// nothing anywhere said so). Server route: GET /version.
+fetch('/version').then((r) => r.json())
+  .then(({ sha, startedAt }) => console.log(`[eidoverse] server build ${sha}, up since ${startedAt}`))
+  .catch(() => console.log('[eidoverse] server build unknown (/version unavailable)'));
 import { dragSim } from './lib/bodydrag.js';
 import { initChat, logChat, chat, openConvo } from './lib/chat.js';
 import { makeFrame } from './lib/frames.js';

@@ -1376,6 +1376,23 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
   return new Response(f, { headers });
 }
 
+// Build identity, resolved once at boot. "What is production running?" must be
+// a lookup, not an inference from merge timestamps (2026-08-07: voice fixes
+// were merged for hours while the running sequencer predated them, and nobody
+// could tell from inside the world). Git is queried at startup only — a
+// deployed tree without .git falls back to BUILD_SHA (deploy scripts can set
+// it) and then to "unknown", honestly.
+const BUILD = (() => {
+  let sha = process.env.BUILD_SHA ?? "";
+  if (!sha) {
+    try {
+      sha = new TextDecoder().decode(
+        Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], { cwd: import.meta.dir }).stdout).trim();
+    } catch { /* no git in the deploy image */ }
+  }
+  return { sha: sha || "unknown", startedAt: new Date().toISOString() };
+})();
+
 const server = Bun.serve({
   port: PORT,
   hostname: "0.0.0.0",
@@ -1454,6 +1471,12 @@ const server = Bun.serve({
       if (m && hnSessions.delete(m[1]!)) saveSessions();
       return new Response(JSON.stringify({ ok: true }), {
         headers: { "content-type": "application/json", "set-cookie": "ew_sess=; Path=/; HttpOnly; Max-Age=0" },
+      });
+    }
+    if (url.pathname === "/version") {
+      // Public, cheap, cache-hostile: the whole point is knowing what runs NOW.
+      return new Response(JSON.stringify(BUILD), {
+        headers: { "content-type": "application/json", "cache-control": "no-store" },
       });
     }
     if (url.pathname === "/geom") {
