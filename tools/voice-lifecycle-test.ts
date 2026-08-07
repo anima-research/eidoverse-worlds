@@ -66,9 +66,30 @@ class FakePC {
     if (FakePC.gate) await FakePC.gate;
     return { type: "offer", sdp: "fake" };
   }
-  async createAnswer() { return { type: "answer", sdp: "fake" }; }
-  async setLocalDescription(d: unknown) { this.localDescription = d; this.signalingState = "have-local-offer"; }
-  async setRemoteDescription(d: unknown) { this.remote = d; this.signalingState = "stable"; }
+  async setLocalDescription(d: unknown) {
+    await new Promise((r) => setTimeout(r, 1));           // yield: lets a rival handler interleave
+    const t = (d as { type?: string })?.type;
+    if (t === "answer" && this.signalingState !== "have-remote-offer") {
+      const e = new Error(`Failed to set local answer sdp: Called in wrong state: ${this.signalingState}`);
+      e.name = "InvalidStateError"; throw e;
+    }
+    this.localDescription = d;
+    this.signalingState = t === "answer" ? "stable" : t === "rollback" ? "stable" : "have-local-offer";
+  }
+  async setRemoteDescription(d: unknown) {
+    await new Promise((r) => setTimeout(r, 1));           // yield: interleave window
+    this.remote = d;
+    const t = (d as { type?: string })?.type;
+    this.signalingState = t === "offer" ? "have-remote-offer" : "stable";
+  }
+  async createAnswer() {
+    await new Promise((r) => setTimeout(r, 1));           // yield: interleave window
+    if (this.signalingState !== "have-remote-offer") {
+      const e = new Error("PeerConnection cannot create an answer in a state other than have-remote-offer");
+      e.name = "InvalidStateError"; throw e;
+    }
+    return { type: "answer", sdp: "fake" };
+  }
   get remoteDescription() { return this.remote; }
   addedCandidates: unknown[] = [];
   async addIceCandidate(c: unknown) {
@@ -519,6 +540,28 @@ check("unhush rejoins the SAME peer at full volume",
     gen2.addedCandidates.length === 0, `${gen2.addedCandidates.length} contaminated`);
   if (voice.micOn()) await voice.toggleMic("me");    // mic back off — leave state clean
 }
+// T-race: forced interleaving — two offers in the same tick (Mica's review:
+// the async race must be FORCED, not hoped for). FakePC ops yield 1ms each,
+// so unserialized handlers interleave deterministically.
+{
+  consent.setReceiveVoice(true);
+  (globalThis as { window?: { __iceLog?: unknown[] } }).window ??= globalThis as never;
+  const w = globalThis as unknown as { __iceLog: string[] };
+  w.__iceLog = [];
+  created.length = 0;
+  bus.emit("rtc", { from: "racer", payload: { sdp: { type: "offer", sdp: "o1" } } });
+  bus.emit("rtc", { from: "racer", payload: { sdp: { type: "offer", sdp: "o2" } } });  // same tick — no settle between
+  await new Promise((r) => setTimeout(r, 60));
+  const sigFails = (w.__iceLog ?? []).filter((x) => typeof x === "string" && x.startsWith("signal-FAIL"));
+  check("forced double-offer interleave: zero signal errors (serialization holds)",
+    sigFails.length === 0, sigFails.join(" | ").slice(0, 120));
+  const pc9 = created.at(-1)!;
+  check("forced double-offer interleave: peer lands stable with an answer",
+    pc9.signalingState === "stable" && pc9.localDescription != null,
+    `state=${pc9.signalingState}`);
+  consent.setReceiveVoice(false);
+}
+
 // T5 (relay half) lives in tools/voice-matrix.mjs: RTC_MODE=relay-noturn must
 // stay at 0 inbound pkts; RTC_MODE=relay-turn must exceed 0. External harness
 // by design — fake RTC cannot prove media.

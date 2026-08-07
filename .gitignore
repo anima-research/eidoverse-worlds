@@ -27,3 +27,5 @@ assets/opt/thumbs/
 
 # local claude/mcp config
 .mcp.json
+.memsearch/
+tools/node_modules/

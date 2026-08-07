@@ -85,8 +85,8 @@ function peerFor(id) {
     audio.play().catch(() => addEventListener('click', () => audio.play().catch(() => {}), { once: true }));
   };
   pc.onicecandidate = (e) => { if (e.candidate) sendRtc(id, { ice: e.candidate }); };
-  pc.onconnectionstatechange = () => (window.__iceLog ??= []).push(`conn[${id}]=${pc.connectionState}`);
-  pc.oniceconnectionstatechange = () => (window.__iceLog ??= []).push(`icestate[${id}]=${pc.iceConnectionState}`);
+  pc.addEventListener?.('connectionstatechange', () => (window.__iceLog ??= []).push(`conn[${id}]=${pc.connectionState}`));
+  pc.addEventListener?.('iceconnectionstatechange', () => (window.__iceLog ??= []).push(`icestate[${id}]=${pc.iceConnectionState}`));
   pc.onconnectionstatechange = () => {
     if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) dropPeer(id);
   };
@@ -177,6 +177,16 @@ async function onRtc(msg) {
   // replacement pc poisons its checks (Mica's contamination rule, 08-07).
   const p = payload.ice ? peers.get(from) : peerFor(from);
   if (!p) return;
+  // Per-peer signal serialization: two concurrent onRtc invocations for the
+  // same peer interleave across their awaits (offer A setRemote -> offer B
+  // setRemote -> A answers -> B's createAnswer fires in 'stable'). Chain
+  // errors handled per-link so one failed signal doesn't wedge the queue.
+  // recvReady stays outside the chain above — it may rebuild the peer.
+  p.sigQ = (p.sigQ ?? Promise.resolve()).then(() => processSignal(p, from, payload));
+  await p.sigQ.catch(() => {});
+}
+
+async function processSignal(p, from, payload) {
   try {
     if (payload.sdp?.type === 'offer') {
       // glare: both sides offered at once — the LOWER id's offer stands, the
