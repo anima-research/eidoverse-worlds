@@ -20,19 +20,38 @@
 // only async doors. Sim unavailable (plugin failure, unparseable VRM) is a
 // soft state: the agent falls back to the slump.
 //
-// Frame convention: the sim runs on FLAT GROUND AT ZERO — the stand-in stands
-// at (x, 0, z) and the caller offsets streamed y by the terrain height at the
-// fall site. Locally-flat is honest for a body-sized patch; tumbling down a
-// hillside (and into furniture — no colliders headless yet) is future work.
+// Frame convention: the sim runs in WORLD COORDINATES against the live ground.
+// It used to run on flat ground at zero, offset by ONE terrain sample taken at
+// the fall site — locally-flat, blind to slopes the body tumbles across and to
+// every placed structure, which is how a body released over an elevated floor
+// settled through it to the terrain underneath (issue #17). Now the caller
+// hands over its terrain height function (setHeightField — the same generator
+// the browsers run, replicated in agent.ts) and registers support boxes for
+// placed entities (registerSupport, fed from the server's /geom summaries);
+// Ragdoll's own _terrain()/_world() clamps then see exactly what a browser's
+// would. Walls of room-scale interiors remain a browser-side concern — data
+// boxes carry floors, not architecture (see colliders.fitSupportBox).
+//
+// Declared seam: terrain and the collider map are MODULE state in the client
+// libs, so one process serves ONE world's geometry. Agents co-resident in a
+// process share it (every current harness runs one world per process); the
+// caller re-asserts its height field before each begin() so at least the
+// terrain is always the last faller's truth.
 
 import { plugin } from "bun";
+import { fileURLToPath } from "node:url";
 
-const STUB = new URL("../tools/core-stub.mjs", import.meta.url).pathname;
+// fileURLToPath, not .pathname: .pathname keeps %20s and the pre-drive slash,
+// so any checkout under a path with a space handed the plugin a file that
+// does not exist (PR #13's catch).
+const STUB = fileURLToPath(new URL("../tools/core-stub.mjs", import.meta.url));
 
 let simMods: {
   Ragdoll: any;
   rig: { glbJson: any; humanBones: any; worldPositions: any; makeAvatar: any };
   THREE: any;
+  terrain: any;
+  colliders: any;
 } | null = null;
 let simFailed = false;
 
@@ -49,13 +68,42 @@ async function loadSim() {
     const stub = await import("../tools/core-stub.mjs");
     const rag = await import("../client/lib/ragdoll.js");
     const rig = await import("../tools/rig-load.mjs");
-    simMods = { Ragdoll: rag.Ragdoll, rig, THREE: stub.THREE };
+    const terrain = await import("../client/lib/terrain.js");
+    const colliders = await import("../client/lib/colliders.js");
+    simMods = { Ragdoll: rag.Ragdoll, rig, THREE: stub.THREE, terrain, colliders };
     return simMods;
   } catch (e) {
     simFailed = true;
     console.error("[physics] headless ragdoll unavailable — agents will slump instead:", e);
     return null;
   }
+}
+
+/** Hand the sim the world's ground truth: the same heightAt the walking
+ *  clamp uses. Null restores the bare stage (flat zero). Soft no-op when the
+ *  sim is unavailable — a slumping agent has no clamp to feed. */
+export async function setHeightField(fn: ((x: number, z: number) => number) | null) {
+  const m = await loadSim();
+  if (!m) return;
+  m.terrain.setTerrain(fn ? { mesh: null, heightAt: fn } : null);
+}
+
+/** Register a placed entity's support geometry (a local-frame box + world
+ *  transform) so settling bodies rest on it. `id` is the caller's to choose —
+ *  and to remove. */
+export async function registerSupport(
+  id: string, min: number[], max: number[],
+  xform: { position: number[]; yaw?: number; scale?: number },
+) {
+  const m = await loadSim();
+  if (!m) return;
+  m.colliders.fitSupportBox(id, min, max, xform);
+}
+
+export async function removeSupport(id: string) {
+  const m = await loadSim();
+  if (!m) return;
+  m.colliders.removeCollider(id);
 }
 
 // skeletons are per-VRM and immutable — parse each avatar file once
@@ -93,7 +141,6 @@ export class HeadlessBody {
   private m: NonNullable<typeof simMods>;
   private av: any;
   rd: any = null;
-  groundY = 0;
 
   private constructor(m: NonNullable<typeof simMods>, P: Record<string, any>) {
     this.m = m;
@@ -109,12 +156,11 @@ export class HeadlessBody {
     return new HeadlessBody(m, P);
   }
 
-  /** Reset the stand-in to a pose at a place. `pose` is a sparse bone->quat
-   *  map (a streamed pose — e.g. where a dragger's hand left this body);
-   *  null means standing. */
-  private pose(x: number, z: number, groundY: number, yaw: number, pose: Record<string, number[]> | null) {
-    this.groundY = groundY;
-    this.av.root.position.set(x, 0, z);
+  /** Reset the stand-in to a pose at a place, standing on the live ground.
+   *  `pose` is a sparse bone->quat map (a streamed pose — e.g. where a
+   *  dragger's hand left this body); null means standing. */
+  private pose(x: number, z: number, yaw: number, pose: Record<string, number[]> | null) {
+    this.av.root.position.set(x, this.m.terrain.heightAt(x, z), z);
     this.av.root.rotation.y = yaw;
     for (const n of Object.values(this.av.nodes) as any[]) n.quaternion.identity();
     if (pose) {
@@ -127,19 +173,20 @@ export class HeadlessBody {
   }
 
   /** Start a tumble: from standing (pose null) with a topple lean, or from a
-   *  given pose (a drag release) falling free. Heights in `opts.rootY` and
-   *  pins are WORLD y; the sim runs ground-at-zero internally. */
+   *  given pose (a drag release) falling free. Everything is WORLD y —
+   *  `rootY`, pins, the seed — and the sim clamps against the live height
+   *  field and registered supports as it runs. */
   begin(opts: {
-    x: number; z: number; groundY: number; yaw: number;
+    x: number; z: number; yaw: number;
     lean?: number[] | null;
     pose?: Record<string, number[]> | null;
     rootY?: number;                          // world y of the root at start (a lifted drop)
     pins?: Array<{ j: string; at: number[] }>;
     sim?: { j: string[]; p: number[]; v: number[] } | null;   // a handover
   }) {
-    this.pose(opts.x, opts.z, opts.groundY, opts.yaw, opts.pose ?? null);
+    this.pose(opts.x, opts.z, opts.yaw, opts.pose ?? null);
     if (opts.rootY != null) {
-      this.av.root.position.y = opts.rootY - opts.groundY;
+      this.av.root.position.y = opts.rootY;
       this.av.root.updateMatrixWorld(true);
     }
     const lean = Array.isArray(opts.lean) && opts.lean.length === 3
@@ -147,17 +194,15 @@ export class HeadlessBody {
     // The rest snapshot must be taken with the root WHERE IT IS NOW. It is a
     // set of WORLD positions, and Ragdoll reads the hips' height out of it
     // against the live root to learn how far the model origin sits below the
-    // pelvis. Cached once at construction — with the root at y=0, as it was —
-    // it is wrong by exactly the lift for any tumble that begins somewhere
-    // else, and `rootY` is precisely that: a body let go of in mid-air. The
-    // pelvis then renders a metre from where the sim has it. A plain
-    // knock-over starts at y=0 and never noticed; a drag release always did.
+    // pelvis. Cached once at construction — with the root on the ground, as it
+    // was — it is wrong by exactly the lift for any tumble that begins
+    // somewhere else, and `rootY` is precisely that: a body let go of in
+    // mid-air. The pelvis then renders a metre from where the sim has it.
     // A handover carries the sim's own state — where each joint was and how
     // fast — so this body CONTINUES what the other machine was running rather
     // than restarting from the bones with the motion thrown away. Positions
-    // arrive in world y; this sim runs ground-at-zero, hence dy.
-    const seed = opts.sim && Array.isArray(opts.sim.j)
-      ? { ...opts.sim, dy: -opts.groundY } : null;
+    // arrive in world y and the sim now RUNS in world y: no offset.
+    const seed = opts.sim && Array.isArray(opts.sim.j) ? { ...opts.sim } : null;
     this.rd = new this.m.Ragdoll(this.av, lean, this.av.restBonePositions(), seed);
     for (const p of opts.pins ?? []) this.setPin(p.j, p.at);
   }
@@ -167,7 +212,7 @@ export class HeadlessBody {
     if (!this.rd) return;
     if (!joint) { this.rd.setPin(null); return; }
     if (!Array.isArray(at)) { this.rd.setPin(joint, null); return; }
-    this.rd.setPin(joint, new this.m.THREE.Vector3(at[0], at[1] - this.groundY, at[2]));
+    this.rd.setPin(joint, new this.m.THREE.Vector3(at[0], at[1], at[2]));
   }
 
   /** Advance; returns what to stream, or null once the sim has captured. */
@@ -177,7 +222,7 @@ export class HeadlessBody {
     const pose = this.rd.done ? this.rd.finalPose : this.rd.pose;
     if (!pose) return null;
     const r = this.av.root.position;
-    const out = { pose, p: [r.x, r.y + this.groundY, r.z], done: !!this.rd.done };
+    const out = { pose, p: [r.x, r.y, r.z], done: !!this.rd.done };
     if (this.rd.done) this.rd = null;
     return out;
   }
