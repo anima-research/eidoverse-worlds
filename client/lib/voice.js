@@ -170,7 +170,13 @@ async function onRtc(msg) {
   // works on localhost/LAN and fails through TURN or across real NATs —
   // "works in the lab, dead in production", wedged in checking forever.
   if (!receivingVoice() && payload?.sdp?.type !== 'answer' && !payload?.ice) return;
-  const p = peerFor(from);
+  // ICE never creates a peer: candidates only make sense for a negotiation
+  // we already own. A stray candidate (early trickle before an offer we
+  // dropped, or residue from a peer generation dropPeer() discarded) must
+  // not conjure a fresh pc — flushing old-generation candidates into a
+  // replacement pc poisons its checks (Mica's contamination rule, 08-07).
+  const p = payload.ice ? peers.get(from) : peerFor(from);
+  if (!p) return;
   try {
     if (payload.sdp?.type === 'offer') {
       // glare: both sides offered at once — the LOWER id's offer stands, the
@@ -205,7 +211,7 @@ async function onRtc(msg) {
         (p.pendingIce ??= []).push(payload.ice);   // queue until a remote description exists
       }
     }
-  } catch (e) { report('voice signal', e); }
+  } catch (e) { (window.__iceLog ??= []).push(`signal-FAIL ${e?.name}: ${e?.message}`); report('voice signal', e); }
 }
 
 export async function toggleMic(name) {

@@ -69,7 +69,12 @@ class FakePC {
   async createAnswer() { return { type: "answer", sdp: "fake" }; }
   async setLocalDescription(d: unknown) { this.localDescription = d; this.signalingState = "have-local-offer"; }
   async setRemoteDescription(d: unknown) { this.remote = d; this.signalingState = "stable"; }
-  async addIceCandidate() {}
+  get remoteDescription() { return this.remote; }
+  addedCandidates: unknown[] = [];
+  async addIceCandidate(c: unknown) {
+    if (!this.remote) { const e = new Error("The remote description was null"); e.name = "InvalidStateError"; throw e; }
+    this.addedCandidates.push(c);
+  }
   close() { this.closed = true; this.connectionState = "closed"; }
   playedAudio = false;
   /** Simulate the far end delivering audio. Acceptance is observed the way
@@ -450,6 +455,69 @@ check("unhush rejoins the SAME peer at full volume",
   check("…ticking the panel row unhushes the HUD glyph too",
     ear.title.includes("hearing") && consent.isHushed() === false, ear.title);
 }
+
+// ---- trickle ICE vs the consent gate (Mica's spec, 2026-08-07) ------------
+// Voice only ever worked via peer-reflexive luck: the gate dropped payload.ice
+// for mic-only senders, and addIceCandidate failures were swallowed. These
+// pin the repaired contract. All five FAIL on pre-fix main.
+{
+  // T1: mic-ON + receive-OFF sender must still ingest ICE for its own offer
+  consent.setReceiveVoice(false);
+  if (!voice.micOn()) await voice.toggleMic("me");  // ensure mic ON, receive OFF
+  await settle();
+  created.length = 0;
+  stubs.remotes.set("peerA", { agent: false });     // roster rescan offers to new ids
+  bus.emit("roster");
+  await settle();
+  const out = created.at(-1)!;
+  bus.emit("rtc", { from: "peerA", payload: { sdp: { type: "answer", sdp: "x" } } });
+  await settle();
+  bus.emit("rtc", { from: "peerA", payload: { ice: { candidate: "cand-1" } } });
+  await settle();
+  check("gate: mic-only sender ingests remote ICE for its own offer (was dropped)",
+    out.addedCandidates.length === 1, `${out.addedCandidates.length} added`);
+
+  // T2: ICE arriving BEFORE the answer is queued, then flushed after it
+  stubs.remotes.set("peerB", { agent: false });
+  bus.emit("roster");
+  await settle();
+  const out2 = created.at(-1)!;
+  bus.emit("rtc", { from: "peerB", payload: { ice: { candidate: "early-1" } } });
+  bus.emit("rtc", { from: "peerB", payload: { ice: { candidate: "early-2" } } });
+  await settle();
+  check("queue: pre-answer ICE neither throws nor lands early", out2.addedCandidates.length === 0);
+  bus.emit("rtc", { from: "peerB", payload: { sdp: { type: "answer", sdp: "x" } } });
+  await settle();
+  check("queue: candidates flush after setRemoteDescription",
+    out2.addedCandidates.length === 2, `${out2.addedCandidates.length} flushed`);
+
+  // T3: stray ICE from an unknown sender creates NO peer
+  const n = created.length;
+  bus.emit("rtc", { from: "total-stranger", payload: { ice: { candidate: "stray" } } });
+  await settle();
+  check("stray ICE conjures no peer connection", created.length === n, `${created.length - n} created`);
+
+  // T4: a rebuilt peer must not inherit the old generation's queued ICE
+  stubs.remotes.set("peerC", { agent: false });
+  bus.emit("roster");
+  await settle();
+  const gen1 = created.at(-1)!;
+  bus.emit("rtc", { from: "peerC", payload: { ice: { candidate: "gen1-stale" } } });
+  await settle();                                   // queued on gen1 (no answer yet)
+  gen1.signalingState = "have-local-offer";         // wedge it so recvReady rebuilds
+  bus.emit("rtc", { from: "peerC", payload: { recvReady: true } });
+  await settle();
+  const gen2 = created.at(-1)!;
+  check("rebuild actually made a fresh pc", gen2 !== gen1);
+  bus.emit("rtc", { from: "peerC", payload: { sdp: { type: "answer", sdp: "x" } } });
+  await settle();
+  check("rebuilt peer inherits NO stale queued ICE from the dropped generation",
+    gen2.addedCandidates.length === 0, `${gen2.addedCandidates.length} contaminated`);
+  if (voice.micOn()) await voice.toggleMic("me");    // mic back off — leave state clean
+}
+// T5 (relay half) lives in tools/voice-matrix.mjs: RTC_MODE=relay-noturn must
+// stay at 0 inbound pkts; RTC_MODE=relay-turn must exceed 0. External harness
+// by design — fake RTC cannot prove media.
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
