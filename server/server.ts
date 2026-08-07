@@ -2158,6 +2158,12 @@ const server = Bun.serve({
             // what YOU may do here, as of now (live grants update it client-side).
             // `open` = no owner exists, so rights are the everyone-builds default.
             yourRights: { ...rightsOf(w, c.id, c.sub), open: !worldHasOwner(w.state) },
+            // Who is HERE, with the agent flag — late joiners were blind to
+            // pre-existing residents' nature (arrive broadcasts carry `agent`,
+            // the snapshot carried nothing; found when a voice peer courted
+            // nine agents with RTC offers, 2026-08-07). Embodied only.
+            people: [...w.clients].filter(t => t !== c && !t.spectator)
+              .map(t => ({ id: t.id, avatar: t.avatar, agent: !!t.agent })),
             // wake where you fell asleep — the world's memory of your body
             restore: c.spectator ? null : (w.poses[c.id] ?? null),
             present: [...w.clients].filter(o => o !== c && !o.spectator).map(o => ({
