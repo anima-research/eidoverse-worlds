@@ -19,6 +19,24 @@ import { audioPrefs, setVolume, receivingVoice, setReceiveVoice,
 import { micAnalyserLevel } from './voice.js';
 import { bus } from './core.js';
 
+// The panel's row layout, carried BY THE MODULE. Found live 2026-08-06 (R,
+// in-headset): the sp-row/sp-label classes came from the lab's panel
+// framework and were never extracted with this file, so nothing upstream
+// defined them — the mic meter (an inline span with flex:1) collapsed to a
+// 2px vertical line, which is just its threshold marker with zero meter
+// behind it. A module's markup and its layout must travel together.
+const SP_CSS = `
+.sp-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+.sp-label { opacity: 0.75; min-width: 64px; flex-shrink: 0; }
+`;
+function ensureCss() {
+  if (document.getElementById('sp-audio-css')) return;
+  const st = document.createElement('style');
+  st.id = 'sp-audio-css';
+  st.textContent = SP_CSS;
+  document.head.appendChild(st);
+}
+
 const ROWS = [
   ['voices', 'voices', 'other people speaking, and agent speech'],
   ['world', 'world', 'ambience and place-sound — the 🎧 toggle never touches this'],
@@ -138,6 +156,7 @@ function paint(body) {
 }
 
 export function initAudioPanel() {
+  ensureCss();
   makeSection('🔊 audio', (body) => paint(body), { id: 'audio' });
   // either control moving repaints the other's row — one truth, two surfaces
   bus.on('audio:hush', () => paint());

@@ -1,0 +1,18 @@
+<!doctype html><meta charset="utf-8"><title>audiopanel css probe</title>
+<body>
+<script type="importmap">
+{ "imports": {
+  "/client/lib/ui.js": "data:text/javascript,export const makeSection = (t, paint) => { const b = document.createElement('div'); b.style.width='320px'; document.body.appendChild(b); paint(b); };",
+  "/client/lib/voiceconsent.js": "data:text/javascript,export const audioPrefs=()=>({voices:1,world:1,tts:1});export const setVolume=()=>{};export const receivingVoice=()=>true;export const setReceiveVoice=()=>{};export const sttConsented=()=>true;export const setSttConsent=()=>{};export const isHushed=()=>false;export const setHush=()=>{};export const micFloor=()=>0.04;export const setMicFloor=()=>{};",
+  "/client/lib/voice.js": "data:text/javascript,export const micAnalyserLevel=()=>0.08;",
+  "/client/lib/core.js": "data:text/javascript,const h=new Map();export const bus={on:(t,f)=>{h.set(t,[...(h.get(t)??[]),f])},emit:(t,p)=>{(h.get(t)??[]).forEach(f=>f(p))}};"
+} }
+</script>
+<script type="module">
+  const { initAudioPanel } = await import('/client/lib/audiopanel.js');
+  initAudioPanel();
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const meter = document.querySelector('[data-meter]');
+  const w = meter ? meter.getBoundingClientRect().width : -1;
+  window.__probe = { meterWidth: w, hasCss: !!document.getElementById('sp-audio-css') };
+</script>
