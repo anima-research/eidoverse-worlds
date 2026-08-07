@@ -88,10 +88,12 @@ class FakePC {
       const e = new Error("PeerConnection cannot create an answer in a state other than have-remote-offer");
       e.name = "InvalidStateError"; throw e;
     }
+    this.answersCreated++;
     return { type: "answer", sdp: "fake" };
   }
   get remoteDescription() { return this.remote; }
   addedCandidates: unknown[] = [];
+  answersCreated = 0;
   async addIceCandidate(c: unknown) {
     if (!this.remote) { const e = new Error("The remote description was null"); e.name = "InvalidStateError"; throw e; }
     this.addedCandidates.push(c);
@@ -556,9 +558,9 @@ check("unhush rejoins the SAME peer at full volume",
   check("forced double-offer interleave: zero signal errors (serialization holds)",
     sigFails.length === 0, sigFails.join(" | ").slice(0, 120));
   const pc9 = created.at(-1)!;
-  check("forced double-offer interleave: peer lands stable with an answer",
-    pc9.signalingState === "stable" && pc9.localDescription != null,
-    `state=${pc9.signalingState}`);
+  check("forced double-offer interleave: BOTH offers produced answers (none died in wrong state)",
+    pc9.answersCreated === 2 && pc9.signalingState === "stable",
+    `answers=${pc9.answersCreated} state=${pc9.signalingState}`);
   consent.setReceiveVoice(false);
 }
 
