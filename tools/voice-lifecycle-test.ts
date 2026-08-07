@@ -491,11 +491,15 @@ check("unhush rejoins the SAME peer at full volume",
   check("queue: candidates flush after setRemoteDescription",
     out2.addedCandidates.length === 2, `${out2.addedCandidates.length} flushed`);
 
-  // T3: stray ICE from an unknown sender creates NO peer
+  // T3: stray ICE from an unknown sender creates NO peer. Receive is ON for
+  // this one — with receive off, main's gate happens to hide its own
+  // peer-from-ICE bug behind the gate bug; consent on exposes it (fail-on-main).
+  consent.setReceiveVoice(true);
   const n = created.length;
   bus.emit("rtc", { from: "total-stranger", payload: { ice: { candidate: "stray" } } });
   await settle();
   check("stray ICE conjures no peer connection", created.length === n, `${created.length - n} created`);
+  consent.setReceiveVoice(false);
 
   // T4: a rebuilt peer must not inherit the old generation's queued ICE
   stubs.remotes.set("peerC", { agent: false });
