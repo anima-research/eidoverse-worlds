@@ -112,7 +112,7 @@ if (!(a.inbound > 0)) { console.error('FAIL: order A carried no audio'); process
   const b2 = await phase('ORDER-B +4s:', sender, receiver);
   console.log('ORDER-B inbound packets (post-recvReady):', b2.inbound);
 if (!(b2.inbound > 0)) { console.error('FAIL: late consent did not heal order B'); process.exitCode = 1; }
-process.exit(process.exitCode ?? 0);
   await sender.close(); await receiver.close();
 }
 await browser.close();
+process.exit(process.exitCode ?? 0);
