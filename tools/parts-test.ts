@@ -12,6 +12,25 @@
 import { plugin } from 'bun';
 import { fileURLToPath } from 'node:url';
 
+// Bun 1.3.x caches transpiled module graphs globally by content. A failed
+// plugin-resolved path can therefore survive into a later checkout and bypass
+// onResolve entirely. Tests need deterministic resolver behavior; production
+// runtime keeps Bun's normal cache. Re-exec once because this setting is read
+// at process startup.
+if (process.env.__EIDO_TEST_CACHE_OFF !== '1') {
+  const child = Bun.spawnSync({
+    cmd: [process.execPath, import.meta.path, ...process.argv.slice(2)],
+    env: {
+      ...process.env,
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0',
+      __EIDO_TEST_CACHE_OFF: '1',
+    },
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+  process.exit(child.exitCode ?? 1);
+}
+
 const CORE = fileURLToPath(new URL('./core-stub.mjs', import.meta.url));
 const PARTS = fileURLToPath(new URL('./parts-stub.mjs', import.meta.url));
 const COLLIDERS = fileURLToPath(new URL('./colliders-stub.mjs', import.meta.url));
