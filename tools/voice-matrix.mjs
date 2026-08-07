@@ -21,8 +21,34 @@ const browser = await chromium.launch({ args: [
   '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
   '--autoplay-policy=no-user-gesture-required', '--use-angle=swiftshader',
 ] });
+const RTC_MODE = process.env.RTC_MODE ?? "";
+const TURN_URL = process.env.TURN_URL ?? "turn:127.0.0.1:3478";
+const TURN_USER = process.env.TURN_USER ?? "hep";
+const TURN_PASS = process.env.TURN_PASS ?? "crucible";
+
 const mk = async (name) => {
   const page = await browser.newPage();
+  if (RTC_MODE) {
+    const ice = RTC_MODE === "relay-turn"
+      ? [{ urls: TURN_URL, username: TURN_USER, credential: TURN_PASS }]
+      : [];   // relay-noturn: relay-only with NOTHING to relay through
+    await page.addInitScript(({ ice }) => {
+      window.__iceLog = [];
+      const Native = window.RTCPeerConnection;
+      window.RTCPeerConnection = class extends Native {
+        constructor(cfg = {}) {
+          super({ ...cfg, iceServers: ice, iceTransportPolicy: "relay" });
+          window.__iceLog.push({ made: true, cfg: JSON.stringify(this.getConfiguration()) });
+          this.addEventListener("icecandidate", (e) => {
+            window.__iceLog.push(e.candidate ? `${e.candidate.type} ${e.candidate.protocol}` : "gathering-done");
+          });
+          this.addEventListener("icecandidateerror", (e) => {
+            window.__iceLog.push(`ICE-ERR ${e.errorCode} ${e.errorText} url=${e.url}`);
+          });
+        }
+      };
+    }, { ice });
+  }
   page.on('pageerror', () => {});
   await page.goto(`http://localhost:8940/?key=workbench-2026&name=${name}&world=workbench`, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => globalThis.__wired ?? true, { timeout: 15000 }).catch(() => {});
@@ -45,6 +71,21 @@ async function phase(label, sender, receiver) {
   await new Promise((r) => setTimeout(r, 4000));
   const s = await stats(sender), rx = await stats(receiver);
   console.log(label, JSON.stringify({ sender: s.peers, receiver: rx.peers, rxInboundPkts: rx.inbound }));
+  if (process.env.RTC_MODE) for (const [nm, pg] of [["sender", sender], ["receiver", receiver]]) {
+    console.log(`  iceLog[${nm}]:`, JSON.stringify(await pg.evaluate(() => (window.__iceLog ?? []).filter((x) => typeof x === "string"))).slice(0, 400));
+    console.log(`  pairs[${nm}]:`, JSON.stringify(await pg.evaluate(async () => {
+      const v = await import("/lib/voice.js");
+      const out = [];
+      for (const pc of (v.voicePcs?.() ?? [])) {
+        const st = await pc.getStats();
+        for (const s of st.values()) {
+          if (s.type === "candidate-pair") out.push({ st: s.state, nom: s.nominated, reqS: s.requestsSent, respR: s.responsesReceived, reqR: s.requestsReceived });
+          if (s.type === "local-candidate" || s.type === "remote-candidate") out.push({ [s.type[0] === "l" ? "L" : "R"]: `${s.candidateType}:${s.address}:${s.port}` });
+        }
+      }
+      return out;
+    })).slice(0, 500));
+  }
   return rx;
 }
 
