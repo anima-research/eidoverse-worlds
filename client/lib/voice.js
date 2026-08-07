@@ -109,6 +109,8 @@ function dropPeer(id) {
  *  the two race into glare against ourselves. One offer in flight per peer;
  *  a request that finds one in flight simply yields to it — any offer that
  *  lands satisfies a newly-consented receiver. */
+const RECVREADY_GRACE_MS = 800;   // answer beat for a live offer before the ghost-check rebuilds
+
 async function offerOn(p, id, label) {
   if (p._offering) return;
   p._offering = true;
@@ -119,7 +121,25 @@ async function offerOn(p, id, label) {
     const offer = await p.pc.createOffer();
     await p.pc.setLocalDescription(offer);
     sendRtc(id, { sdp: p.pc.localDescription });
-  } catch (e) { report(label, e); } finally { p._offering = false; }
+  } catch (e) { report(label, e); } finally {
+    p._offering = false;
+    if (p._recvReadyMidOffer) {
+      // A receiver announced consent while this offer was in flight. The
+      // yield above trusted the in-flight offer to reach them — but if it
+      // arrived BEFORE their consent flipped, their gate dropped it and
+      // nobody will ever answer (the recvReady-over-relay wedge: relay
+      // allocation widens this race past what localhost ever shows). Verify
+      // the trust: if the offer is still unanswered after a grace window,
+      // it's a ghost — rebuild the leg. An answered peer passes untouched.
+      p._recvReadyMidOffer = false;
+      setTimeout(() => {
+        if (peers.get(id) === p && p.pc.signalingState === 'have-local-offer') {
+          dropPeer(id);
+          if (micStream) offerTo(id);
+        }
+      }, RECVREADY_GRACE_MS);
+    }
+  }
 }
 
 async function renegotiate(id) {
@@ -149,7 +169,7 @@ async function onRtc(msg) {
       // being built — tearing down or re-offering here is the race the
       // review named. Yield: the in-flight offer reaches a receiver who now
       // answers. And a HEALTHY peer stays untouched (idempotent recvReady).
-      if (p?._offering) return;
+      if (p?._offering) { p._recvReadyMidOffer = true; return; }
       if (p && p.pc.signalingState !== 'stable') dropPeer(from);
       if (!peers.has(from)) offerTo(from);
       else renegotiate(from);

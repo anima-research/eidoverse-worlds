@@ -567,6 +567,47 @@ check("unhush rejoins the SAME peer at full volume",
   consent.setReceiveVoice(false);
 }
 
+// T-ghost: recvReady during the in-flight FIRST offer must not yield forever.
+// The yield assumed the in-flight offer would reach a now-consenting receiver;
+// if that offer arrived BEFORE consent flipped, it died at the gate and the
+// yield discarded the only heal — both sides wait forever with clean logs.
+// (The recvReady-over-relay 1/3 flake: relay allocation widens the race
+// window that localhost keeps microscopic.)
+{
+  consent.setReceiveVoice(false);
+  if (voice.micOn()) await voice.toggleMic("me");
+  await settle();
+  stubs.sent.length = 0;
+  stubs.remotes.set("ghost", { agent: false });
+  const offersTo = (id: string) => stubs.sent.filter((m: { to: string; payload: { sdp?: { type?: string } } }) =>
+    m.to === id && m.payload?.sdp?.type === "offer").length;
+
+  const micP = voice.toggleMic("me");                 // offer construction begins
+  await new Promise((r) => setTimeout(r, 0));         // now inside setLocalDescription's 1ms yield: _offering === true
+  bus.emit("rtc", { from: "ghost", payload: { recvReady: true } });  // lands mid-offer -> the yield path
+  await micP;
+  await settle();
+  check("ghost setup: exactly one offer in flight after the race", offersTo("ghost") === 1, `${offersTo("ghost")}`);
+  // the receiver never answers — that offer died at their gate. Wait past grace:
+  await new Promise((r) => setTimeout(r, 1200));
+  check("recvReady during in-flight offer: sender re-offers after grace instead of waiting forever",
+    offersTo("ghost") >= 2, `${offersTo("ghost")} offer(s) total`);
+
+  // healthy control: same ordering but the offer IS answered — no churn
+  stubs.sent.length = 0;
+  stubs.remotes.set("healthy", { agent: false });
+  bus.emit("roster");
+  await settle();
+  bus.emit("rtc", { from: "healthy", payload: { recvReady: true } });
+  bus.emit("rtc", { from: "healthy", payload: { sdp: { type: "answer", sdp: "x" } } });
+  await new Promise((r) => setTimeout(r, 1200));
+  // renegotiate-on-stable re-offers BY DESIGN (#36 heal); the guard here is
+  // that the ghost-check adds no THIRD offer to an answered peer.
+  check("healthy peer: ghost-check adds no extra re-offer beyond the designed renegotiate",
+    offersTo("healthy") <= 2, `${offersTo("healthy")} offer(s)`);
+  if (voice.micOn()) await voice.toggleMic("me");
+}
+
 // T5 (relay half) lives in tools/voice-matrix.mjs: RTC_MODE=relay-noturn must
 // stay at 0 inbound pkts; RTC_MODE=relay-turn must exceed 0. External harness
 // by design — fake RTC cannot prove media.
