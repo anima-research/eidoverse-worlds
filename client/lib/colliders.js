@@ -210,6 +210,35 @@ export function fitCollider(id, obj, { collide, scale = 1 } = {}) {
   bucketAdd(id, entry);
 }
 
+/** Register a support collider from DATA rather than a loaded mesh — the
+ *  headless door (issue #17). An agent process has no geometry to fit, but the
+ *  server's /geom summary gives it bboxes and floor decks; this turns one of
+ *  those into the same entry shape resolveColliders already walks, minus
+ *  everything that needs triangles. Deliberately NOT decide(): the exact and
+ *  uneven-top probes raycast real meshes. A data box is always pref 'box' —
+ *  honest boxes only. Walls of room-scale interiors stay a browser-side
+ *  concern; headless registers their floor decks as thin slabs instead, so a
+ *  settling body finds support without the pavilion sealing into a block.
+ *  `min`/`max` are the entity's LOCAL frame, like fitCollider's box. */
+export function fitSupportBox(id, min, max, { position, yaw = 0, scale = 1 } = {}) {
+  const box = new THREE.Box3(
+    new THREE.Vector3(min[0], min[1], min[2]),
+    new THREE.Vector3(max[0], max[1], max[2]),
+  );
+  if (box.isEmpty()) return;
+  const obj = {
+    position: new THREE.Vector3(position[0], position[1], position[2]),
+    rotation: { y: yaw },
+    scale: new THREE.Vector3(scale, scale, scale),
+  };
+  const entry = { obj, box, pref: 'box', exact: null, interior: false, cells: [] };
+  // same rule decide() applies to non-exact entries: tall small-footprint
+  // things collide as a slim centre pillar, not their canopy extents
+  entry.pillar = (box.max.y - box.min.y) * scale > 2.4;
+  colliders.set(id, entry);
+  bucketAdd(id, entry);
+}
+
 /** Call after an in-world rescale: re-decides exact-vs-box against the NEW
  *  size (a dollhouse import scaled to a building becomes walkable-inside)
  *  and re-buckets with the scaled footprint. */
