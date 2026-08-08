@@ -817,6 +817,33 @@ check("unhush rejoins the SAME peer at full volume",
     pcMid.signalingState === "stable", pcMid.signalingState);
 }
 
+{
+  // Mica's fourth class, the variant I can actually REACH (#62 review). A peer
+  // offered with a live mic, then the mic toggled off and on while that offer
+  // is still in flight: the in-flight offer describes a track that has since
+  // been stopped and replaced. renegotiate() bails while unstable, so unless
+  // something reconciles on return to stable, the far end is left holding a
+  // description of a dead track.
+  //
+  // (The mic-LESS local offer Mica describes may not be reachable — every
+  // offer-initiating path on this branch is gated on micStream. Asked rather
+  // than guessed; if it is reachable, that test comes separately.)
+  if (voice.micOn()) { await voice.toggleMic("me"); await settle(); }
+  consent.setReceiveVoice(true);
+  if (!voice.micOn()) { await voice.toggleMic("me"); await settle(); }   // mic ON
+  created.length = 0;
+  stubs.remotes.set("stale", { agent: false });
+  FakePC.gate = new Promise<void>(() => {});          // park the offer in flight
+  bus.emit("roster"); await settle();
+  const pcStale = created.at(-1)!;
+  FakePC.gate = null;
+  await voice.toggleMic("me"); await settle();        // mic OFF mid-offer
+  await voice.toggleMic("me"); await settle();        // mic ON again
+  const liveStale = pcStale.getSenders().filter((s) => s.track);
+  check("stale-offer: the peer carries exactly one live track after a mid-offer toggle",
+    liveStale.length === 1, `${liveStale.length} live of ${pcStale.getSenders().length}`);
+}
+
 // T5 (relay half) lives in tools/voice-matrix.mjs: RTC_MODE=relay-noturn must
 // stay at 0 inbound pkts; RTC_MODE=relay-turn must exceed 0. External harness
 // by design — fake RTC cannot prove media.
