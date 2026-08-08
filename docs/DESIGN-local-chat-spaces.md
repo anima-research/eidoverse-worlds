@@ -20,6 +20,14 @@ out as current-main bug **#71** (canonical tracker; #72 was this worker's
 duplicate filing, superseded); bounded/indexed `history {space}` requirement
 added; §10 updated with the review's audit results.*
 
+*Rev 3, same day — final pass per the second review of `d5cbba5`: the `caption`
+stream added to the §4.2 inventory as the seventh push path (it carries verbatim
+speech world-wide before the durable say; it now takes an explicit `space?` bound
+by the same predicate), `typing` added as an explicit no-body row, and the two
+rev-2 open questions resolved per the reviewer's recommendations (honest takeover
+leave with no wire compaction; bounded scan for slice 1, any future index derived
+and rebuildable, never authoritative).*
+
 ---
 
 ## 0. Shape of the proposal in one paragraph
@@ -214,9 +222,13 @@ bodies — so it must never go silently stale. The `leave {reason:"takeover"}` f
 to members; the successor session starts OUT everywhere (§2.1) and, if its restored
 pose is inside the café, re-enters through the ordinary ENTERING debounce — one
 clean enter, backlog header covering the gap. UIs may render a takeover-leave
-followed by a prompt re-enter compactly; the wire stays honest. (Flagged as a
-review question in §10 — this is a consent-adjacent call, made here for occupancy
-accuracy.)
+followed by a prompt re-enter compactly; the wire stays honest. **(Resolved in
+second review: divergence endorsed as the conservative choice — occupancy is a
+delivery-authority list that non-members can query, and a stale entry names
+someone as receiving bodies who cannot. Wire-level compaction rejected: buffering
+the leave for `enterMs` would delay honest occupancy for every member to tidy one
+edge case. Emit immediately; coalescing is a render-layer concern needing no wire
+support.)**
 
 **Ghost-freedom is now a property of the removal sites, not a slogan**: membership
 has no persistence surface, is keyed on the live object, and every path that removes
@@ -309,6 +321,26 @@ is a leak by default.**
 | catchup prelude (net-server.ts:490-511) | headers + capped mention replay | headers per lane; mention bodies per `policy.mentions` (§6) |
 | `pendingWhispers` (server.ts:1240, 2076-2083) | whispers | orthogonal — whispers are 1:1, never lane-scoped |
 | behaviors `bhv.onEntry` (server.ts:2335) | entries to scripts | lane says **not fanned** in slice 1 (§8) |
+| **`caption`** (server.ts:2603-2616) | up to 500 chars of **verbatim in-flight speech**, presence-plane, world-wide, preceding the durable say | `caption {text, utt, space?}` — explicit lane argument, same predicate as its say (below) |
+| `typing` (server.ts:2640) | no body — presence signal only | none needed: carries no speech, and §5 already grants occupancy-class facts to everyone. Listed because the contract sentence makes an unlisted path a leak by default |
+
+**Captions (found by the second review, applying this table's own contract):**
+today's `caption` broadcast is unconditional, so a resident speaking by voice in
+the café would stream their sentences to every browser in the world and only the
+trailing `say {space}` would be lane-filtered — the bodies cross first, and the
+non-member client that rendered them never receives the say that would have
+attributed them. Design: `caption` grows the same optional explicit `space`
+argument as `say`, filtered by the same membership predicate; **the lane is never
+inferred from position** (§4.1's doctrine — a café occupant addressing the commons
+must not have their speech confined by where they stand). The browser already
+holds the destination (the active tab, §9) and stamps it on both the caption
+stream and the final say. A `caption {space}` from a non-member is dropped with a
+one-time error to the author. Captions remain presence-plane ephemera: if a
+speaker switches destination mid-utterance, the trailing `say`'s receipt-time
+binding (§3) is authoritative for the record; the caption lane is best-effort
+display routing. Scope note: `caption` has no handler in mcpl/agent.ts — agents
+never receive captions — so this is a human-facing leak surface only and the #55
+intake plane is unaffected.
 
 ### 4.3 The join payload: per-recipient, both halves, one pass (review B2)
 
@@ -355,18 +387,23 @@ bounded chosen-pull surface for everything below — non-member reading (under
 ordinary record policy), returning-resident deep-read, and #55's "pull is chosen;
 push is the hazard" doctrine.
 
-**Bounded-scan requirement (from review)**: today's implementation reverse-scans
-and, failing to fill `limit`, falls back to a `readFileSync` of the **entire log**.
-A `space` filter is far more selective than the existing `verbs` filter — a quiet
-lane would turn every pull into a whole-world-log read, on exactly the path §5/§6
-route non-member reads, catchup, and deep-read onto. Requirement, either form:
+**Bounded-scan requirement (from review; resolved in second review)**: today's
+implementation reverse-scans and, failing to fill `limit`, falls back to a
+`readFileSync` of the **entire log**. A `space` filter is far more selective than
+the existing `verbs` filter — a quiet lane would turn every pull into a
+whole-world-log read, on exactly the path §5/§6 route non-member reads, catchup,
+and deep-read onto.
 
-- **preferred**: a per-space seq index maintained at fold time (the counters slot
-  grows a bounded ring of recent seqs per space, or a per-space index file beside
-  the log), making `history {space}` a seek, not a scan; or
-- **acceptable floor**: explicit bounded-scan semantics — `history {space}` may
-  return fewer than `limit`, carrying a `scannedThrough` cursor and `hasMore`, and
-  **never** falls back to an unbounded whole-file read.
+**Slice 1 ships the bounded scan**: `history {space}` may return fewer than
+`limit`, carrying a `scannedThrough` cursor and `hasMore`, and **never** falls
+back to an unbounded whole-file read. A bounded scan cannot lie — it can only
+return less and say so. A per-space fold-time index is deliberately deferred: it
+is new persistent derived state that must survive folds/restarts and stay
+consistent with the log — the class the codebase already treats with suspicion
+(server.ts:152: *"this is a DERIVED CACHE, never a source of truth"*), and an
+index that drifts becomes a second truth that quietly under-reports a room's
+history. If `history {space}` proves demonstrably hot, the index may be added
+later **as a derived cache rebuildable from the log, never authoritative**.
 
 ---
 
@@ -546,8 +583,10 @@ tab whispers, chat.js:710):
   (chat.js:246-255, 361-369) — one new key shape, no new machinery.
 - The 3-D scene already fades bubbles by distance (avatar.js:698-704); lane speech
   simply isn't delivered beyond the room, so the render plane and the delivery plane
-  finally agree with voice.js's stated doctrine ("voice is proximity-scoped like
-  chat", voice.js:15).
+  agree with voice.js's stated doctrine ("voice is proximity-scoped like chat",
+  voice.js:15) — **provided the caption stream carries the lane too** (§4.2): the
+  active tab stamps `space` on captions and the final say alike, or live bubbles
+  would leak what the say correctly withholds.
 
 ---
 
@@ -588,17 +627,26 @@ tab whispers, chat.js:710):
 6. **Intake metadata predicates** — confirmed as a genuine external dependency for
    the AF intake doc (§7.2); Mica to carry.
 
-### Open questions (rev 2)
+### Formerly-open questions (resolved in second review, rev 3)
 
-1. **Takeover boundary-event semantics** (§2.5): this design emits an honest
-   `leave {takeover}` to lane members, diverging from the world plane's deliberate
-   takeover silence, because lane occupancy is delivery authority. If review
-   prefers wire-level compaction (suppress the pair when re-enter completes within
-   one debounce window), that is a cosmetic layer on top — the teardown itself is
-   not negotiable.
-2. **History indexing** (§4.4): per-space fold-time index (preferred) vs bounded
-   scan with `scannedThrough` (floor) — an implementation-cost call, but one of the
-   two must hold before `history {space}` becomes the primary non-member surface.
+1. **Takeover boundary-event semantics** (§2.5): **resolved — honest
+   `leave {takeover}` emitted immediately; no wire-level compaction.** The world
+   plane's takeover silence protects identity continuity; lane occupancy is a
+   delivery-authority list queryable by non-members, so a stale entry makes the
+   occupancy surface lie to everyone who reads it. UIs may coalesce the
+   leave/re-enter pair at render; the wire needs no support for that.
+2. **History indexing** (§4.4): **resolved — slice 1 ships the bounded scan**
+   (`scannedThrough` + `hasMore`, no unbounded fallback); any future per-space
+   index is a derived cache rebuildable from the log, never authoritative.
+
+### Second-review addition (rev 3)
+
+- **`caption` is the seventh push path** and is now in the §4.2 inventory with a
+  chosen predicate: explicit `caption {space?}`, same membership predicate as its
+  say, lane never inferred from position; non-member lane captions dropped with a
+  one-time error; the trailing say's receipt-time binding stays authoritative for
+  the record. `typing` is listed as an explicit no-body row. Both were found by
+  applying the inventory's own contract sentence — which is what it is for.
 
 ### Non-goals (this slice)
 
