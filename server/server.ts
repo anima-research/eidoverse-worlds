@@ -1544,6 +1544,28 @@ const server = Bun.serve({
         return new Response(JSON.stringify({ path: srel }),
           { headers: { "content-type": "application/json" } });
       }
+      if (url.searchParams.get("as") === "audio") {
+        // Referenced-sound ingestion (#31): content-addressed like models, so
+        // an `ambient` component pins exact bytes forever, with media-type
+        // sniffing and a size cap as the provenance/verification slice.
+        if (body.length > 4 * 1024 * 1024) return new Response("audio too large (4MB cap)", { status: 413 });
+        const magic4 = new DataView(body.buffer).getUint32(0, false);
+        const isOgg = magic4 === 0x4f676753;                                   // "OggS"
+        const isWav = magic4 === 0x52494646 && body.length > 12               // "RIFF"…"WAVE"
+          && new DataView(body.buffer).getUint32(8, false) === 0x57415645;
+        const isMp3 = (magic4 >>> 8) === 0x494433                              // "ID3"
+          || (body[0] === 0xff && (body[1] & 0xe0) === 0xe0);                  // bare frame sync
+        const ext = isOgg ? "ogg" : isWav ? "wav" : isMp3 ? "mp3" : null;
+        if (!ext) return new Response("not a recognized audio container (ogg/wav/mp3)", { status: 415 });
+        const ahash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);
+        const adir = join(OPT_DIR, "store", "audio");
+        mkdirSync(adir, { recursive: true });
+        const arel = `store/audio/${ahash}.${ext}`;
+        if (!existsSync(join(OPT_DIR, arel))) writeFileSync(join(OPT_DIR, arel), body);
+        console.log(`[upload] audio ${arel} (${(body.length / 1e3).toFixed(0)}KB) by ${upBy}`);
+        return new Response(JSON.stringify({ path: arel, bytes: body.length, type: `audio/${ext === "mp3" ? "mpeg" : ext}` }),
+          { headers: { "content-type": "application/json" } });
+      }
       if (body.length < 12 || new DataView(body.buffer).getUint32(0, true) !== 0x46546c67)
         return new Response("not a GLB container (glb/vrm)", { status: 415 });
       if (url.searchParams.get("as") === "avatar") {
@@ -2174,6 +2196,36 @@ const server = Bun.serve({
               c.world.debug("rejected", { who: c.id, verb: "comp", why: `data too large (8KB max) on ${id}.${type}` });
               ws.send(JSON.stringify({ type: "error", error: "component data too large (8KB max) — put big things in /upload and reference the path" }));
               return;
+            }
+            if (type === "ambient" && args.data !== null && args.data !== undefined) {
+              // Author-time contract (#31/#45 review): src is a content-
+              // addressed store path — a component any builder can author
+              // must not turn arbitrary URLs (or arbitrary same-origin GET
+              // endpoints) into every client's audio fetch. Loop-only until
+              // one-shots have authored replay semantics: the blind fold
+              // reconstructs components for every late join, so a one-shot
+              // would replay for each arrival. The FOLD stays blind —
+              // already-persisted data is never judged here; clients report
+              // malformed history legibly instead (ambientDebug.refused).
+              const d = args.data as Record<string, unknown>;
+              const src = String(d.src ?? "");
+              const why =
+                !/^store\/audio\/[0-9a-f]{16}\.(ogg|wav|mp3)$/.test(src)
+                  ? `ambient.src must be a store path — POST the file to /upload?as=audio and use the returned path (got "${src.slice(0, 80) || "nothing"}")`
+                : !existsSync(join(OPT_DIR, src))
+                  ? `ambient.src ${src} is not in this world's store — upload it first`
+                : d.loop === false
+                  ? "ambient is loop-only for now: a one-shot would replay for every late join (needs authored start/duration semantics — #31)"
+                : d.gain !== undefined && !(typeof d.gain === "number" && d.gain >= 0 && d.gain <= 1)
+                  ? "ambient.gain must be a number in [0, 1]"
+                : d.radius !== undefined && !(typeof d.radius === "number" && d.radius >= 1 && d.radius <= 60)
+                  ? "ambient.radius must be a number in [1, 60] metres"
+                : null;
+              if (why) {
+                c.world.debug("rejected", { who: c.id, verb: "comp", why: `ambient-lint: ${why}` });
+                ws.send(JSON.stringify({ type: "error", error: why }));
+                return;
+              }
             }
             args = { id, type, data: args.data ?? null };
           }

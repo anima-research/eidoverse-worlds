@@ -34,6 +34,7 @@ import { initConjure } from './lib/conjure.js';
 import { initVoice, micOn, isMuted, micAnalyserLevel, peerLevels } from './lib/voice.js';
 import './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
 import { initAudioPanel } from './lib/audiopanel.js';
+import { updateAmbient } from './lib/ambient.js'; // place-sound: the world plane the panel governs
 import { initSceneGraph, sceneAttach, sceneDetach } from './lib/scenegraph.js';
 import {
   toast, setHud, setHint, setAmbientHint, flashHint, buildHelp, toggleHelp,
@@ -1041,6 +1042,8 @@ function frame(now) {
     me._poseSig = myState.pose;
     if (myState.pose) me.setPose(myState.pose); else me.clearPose();
   }
+  BC('ambient');
+  updateAmbient();               // place-sound follows the listener each frame
   BC('me-update');
   updateVoiceMouths(now);        // BEFORE the avatar updates that consume it
   me?.update(dt, now);
