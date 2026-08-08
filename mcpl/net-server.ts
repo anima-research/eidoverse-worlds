@@ -89,6 +89,8 @@ function persistState() {
 
 // ---- tools (shared schema with the stdio server, minus retina by default) --
 
+const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
+
 const TOOLS = [
   { name: "look", description: "Text-tier perception: where you are, who's present and what they're doing, every placed thing with distance/bearing, and chat since you last looked.", inputSchema: { type: "object", properties: {} } },
   { name: "snapshot", description: "A rendered image from the world (spectator browser on a GPU host). Slower than look — use when spatial/visual detail matters. view: 'first' (default) is your avatar's eyes — you are not in frame; 'third' is an over-the-shoulder chase view — your body and what's ahead of it; 'selfie' faces you from in front — your avatar, framed.", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["first", "third", "selfie"] } } } },
@@ -554,7 +556,7 @@ class Session {
         try {
           switch (req.method) {
             case "tools/list":
-              this.conn.sendResponse(req.id, { tools: TOOLS });
+              this.conn.sendResponse(req.id, { tools: WHISPERS_ENABLED ? TOOLS : TOOLS.filter((t) => t.name !== "whisper") });
               break;
             case "tools/call":
               this.conn.sendResponse(req.id, await this.handleTool(String(params.name), (params.arguments ?? {}) as Record<string, any>));
@@ -815,6 +817,7 @@ class Session {
       }
       case "say": ag.say(String(a.text).slice(0, 4000)); return text("said");
       case "whisper": {
+        if (!WHISPERS_ENABLED) return text("whispers are disabled in this world");
         ag.whisper(String(a.to), String(a.text).slice(0, 4000));
         return text(`whispered to ${a.to}`);
       }

@@ -1239,6 +1239,7 @@ function requestSnap(world: World, follow: string, view = "first"): Promise<{ ok
  *  private message that simply never arrives. */
 const pendingWhispers = new Map<string, unknown[]>();
 const whisperKey = (world: string, recipient: string) => `${world}\u0000${recipient}`;
+const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
 
 let clientVersionCache: { at: number; v: string } | null = null;
 let nextClientNum = 1;
@@ -2404,6 +2405,10 @@ const server = Bun.serve({
           break;
         }
         case "whisper": {
+          if (!WHISPERS_ENABLED) {
+            ws.send(JSON.stringify({ type: "error", error: "whispers are disabled in this world" }));
+            break;
+          }
           // A private message between two bodies.
           //
           // It must NEVER reach the world log. The log is append-only, public,
