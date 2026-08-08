@@ -317,8 +317,13 @@ export async function toggleMic(name) {
     flashHint('microphone unavailable — check browser permission');
     return false;
   }
-  // Existing peers are repaired by applyDirection, which every renegotiate
-  // and offer runs through — so re-offering is enough to attach the new track.
+  // Attach FIRST, renegotiate second. applyDirection is where the track is
+  // adopted, but renegotiate() bails on a peer that is not 'stable' — and a
+  // peer mid-negotiation when the mic opens is exactly one of the cases this
+  // is repairing, so routing the attachment only through renegotiate would
+  // skip it. Attaching is safe in any signaling state; replaceTrack on an
+  // existing sender needs no renegotiation at all.
+  for (const p of peers.values()) applyDirection(p);
   for (const id of [...peers.keys()]) renegotiate(id);
   for (const id of humanIds()) offerTo(id);
   flashHint('🎙 live — speak, neighbors hear · <b>mute</b> in the dock');

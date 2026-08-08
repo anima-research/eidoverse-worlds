@@ -682,6 +682,68 @@ check("unhush rejoins the SAME peer at full volume",
   consent.setReceiveVoice(false);
 }
 
+// ---- mic-after-peer: the track must reach peers built before it -----------
+// Two races, both leaving a peer with a sender carrying NO track on a
+// transceiver negotiated sendrecv: it renegotiates happily and transmits
+// silence, forever, while the UI reports "mic LIVE". Field receipt (phone on
+// cellular -> Burrow, 2026-08-07): in=1179 out=0.
+// Both FAIL on pre-fix main.
+{
+  // T6: peer exists BEFORE the mic opens.
+  // toggleMic is a TOGGLE — drive to the state, never assume a call reaches it.
+  if (voice.micOn()) { await voice.toggleMic("me"); await settle(); }
+  consent.setReceiveVoice(true);
+  created.length = 0;
+  stubs.remotes.set("early", { agent: false });
+  bus.emit("roster");                                // peer built with no mic
+  await settle();
+  bus.emit("rtc", { from: "early", payload: { sdp: { type: "offer", sdp: "x" } } });
+  await settle();
+  const pcEarly = created.at(-1)!;
+  if (!voice.micOn()) { await voice.toggleMic("me"); await settle(); }   // mic ON now
+  await settle();
+  const live = pcEarly.getSenders().filter((s) => s.track);
+  check("mic-after-peer: an existing peer gets the track (was a sender with none)",
+    live.length === 1, `${live.length} live senders of ${pcEarly.getSenders().length}`);
+
+  // T7: a peer appears WHILE mic acquisition is still pending. This is the
+  // race that made it intermittent — getUserMedia takes hundreds of ms, and a
+  // peer built inside that await is constructed while micStream is still null,
+  // so addTrack skips it AND any one-shot back-fill has already run. Forced
+  // deterministically rather than hoped for: the stub holds the promise open
+  // until we have created the peer.
+  if (voice.micOn()) { await voice.toggleMic("me"); await settle(); }    // back to mic OFF
+  created.length = 0;
+  let release: (() => void) | null = null;
+  const held = new Promise<void>((r) => { release = r; });
+  const realGUM = navigator.mediaDevices.getUserMedia;
+  (navigator.mediaDevices as { getUserMedia: unknown }).getUserMedia = async (c: unknown) => {
+    await held;                                      // peer arrives during this
+    return realGUM.call(navigator.mediaDevices, c);
+  };
+  const micOpening = voice.micOn() ? Promise.resolve(false) : voice.toggleMic("me");
+  await settle();
+  stubs.remotes.set("during", { agent: false });
+  bus.emit("rtc", { from: "during", payload: { sdp: { type: "offer", sdp: "x" } } });
+  await settle();                                    // peer now exists, micStream still null
+  release!();
+  await micOpening;
+  await settle();
+  (navigator.mediaDevices as { getUserMedia: unknown }).getUserMedia = realGUM;
+  const pcDuring = created.at(-1)!;
+  const liveDuring = pcDuring.getSenders().filter((s) => s.track);
+  check("mic-during-acquisition: a peer born inside the getUserMedia await still gets the track",
+    liveDuring.length === 1, `${liveDuring.length} live senders of ${pcDuring.getSenders().length}`);
+
+  // Exactly one — a repair that attaches on every renegotiation must not
+  // accumulate duplicate senders on a peer that is offered to repeatedly.
+  bus.emit("roster"); await settle();
+  bus.emit("roster"); await settle();
+  check("mic-after-peer: repeated renegotiation does not stack duplicate senders",
+    pcDuring.getSenders().filter((s) => s.track).length === 1,
+    `${pcDuring.getSenders().length} senders total`);
+}
+
 // T5 (relay half) lives in tools/voice-matrix.mjs: RTC_MODE=relay-noturn must
 // stay at 0 inbound pkts; RTC_MODE=relay-turn must exceed 0. External harness
 // by design — fake RTC cannot prove media.
