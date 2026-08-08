@@ -4,7 +4,7 @@
 // the controller needs ground height every frame, and world.js needs the
 // controller's position to place things. Both depend on this instead.
 
-import { scene, ground, grid } from './core.js';
+import { scene, ground, grid, bus } from './core.js';
 import { retireField } from './flora_field.js';
 import { makeGrassQuality, GRASS_QUALITY } from './grass_quality.js';
 
@@ -57,13 +57,18 @@ export const hasGrass = () => currentGrass !== null;
 const budget = makeGrassQuality(globalThis.localStorage);
 
 function applyGrassBudget() {
-  if (!currentGrass) return;
   const eff = budget.effective();
-  // `off` retires the draw entirely: count 0 stops the fill, and hiding the
-  // group spares raycasts/shadows too. The field object stays whole — shared
-  // state untouched, and any cap raise restores it in place.
-  if (currentGrass.mesh) currentGrass.mesh.visible = eff > 0;
-  currentGrass.setDensity?.(eff);
+  if (currentGrass) {
+    // `off` retires the draw entirely: count 0 stops the fill, and hiding the
+    // group spares raycasts/shadows too. The field object stays whole — shared
+    // state untouched, and any cap raise restores it in place.
+    if (currentGrass.mesh) currentGrass.mesh.visible = eff > 0;
+    currentGrass.setDensity?.(eff);
+  }
+  // whoever renders the dials (the grass⚙ row) hears every budget change —
+  // including the governor's, which otherwise went stale until the next
+  // panel open
+  bus.emit('grass-budget');
 }
 
 // Perf governor's handle on the meadow — may thin below the resident's cap,

@@ -10,10 +10,12 @@
 // (re-grow) and arrives before the first field loads. None of it is ever a
 // world verb.
 //
-// Negative control: this suite FAILS on current main — grass_quality.js does
-// not exist there, terrain.js exports no quality surface, and main's inline
-// density dial keeps ≥1 instance per stroke at factor 0 (the densityCount
-// zero assertion is the behavioral delta, not just a missing module).
+// Negative control: this suite FAILS on current main, and the FIRST section
+// fails there for the right reason — it evaluates flora.js's shipped dial
+// expression (source-extracted, runnable on both trees) and demonstrates the
+// behavioral delta directly: factor 0 keeps 50 instances on main, 0 here.
+// The later sections need grass_quality.js and are skipped on main with an
+// explicit novelty-not-behavior note.
 
 import { plugin } from "bun";
 const here = (f: string) => new URL(f, import.meta.url).pathname;
@@ -34,16 +36,40 @@ const store = new Map<string, string>();
 store.set("ew-grass-quality", "low");
 (globalThis as any)._autoParticleSystems = [];
 
-const { makeGrassQuality, densityCount, GRASS_QUALITY, QUALITY_DENSITY } =
-  await import("../client/lib/grass_quality.js");
-const terrain = await import("../client/lib/terrain.js");
-
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => {
   if (ok) { pass++; console.log(`  \x1b[32m✓\x1b[0m ${name}`); }
   else { fail++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ` — ${detail}` : ""}`); }
 };
 const near = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) < eps;
+
+// ---- behavioral delta — runs on BOTH trees -------------------------------
+// Evaluate the dial exactly as flora.js ships it, extracted from the tree's
+// own source (not retyped), so this one assertion is a live A/B: main's
+// inline expression floors at >=1 instance per stroke and keeps 50 of 1000
+// at factor 0; the branch delegates to densityCount and keeps 0.
+const gqMod = await import("../client/lib/grass_quality.js").then((m) => m, () => null);
+console.log("\nflora's shipped density dial (source-extracted, both trees)");
+{
+  const src = await Bun.file(here("../client/lib/flora.js")).text();
+  const dial = src.match(/const keep = ([^;\n]+);/);
+  let keep: unknown = "dial expression not found in flora.js";
+  if (dial) {
+    try {
+      keep = new Function("n", "f", "densityCount", `return (${dial[1]});`)(
+        1000, 0, gqMod?.densityCount);
+    } catch (e) { keep = `threw: ${e}`; }
+  }
+  check("factor 0 keeps ZERO of 1000 instances (main keeps 50)", keep === 0, `keep=${keep}`);
+}
+
+if (!gqMod) {
+  console.log(`\n${pass} passed, ${fail} failed — client/lib/grass_quality.js absent` +
+    ` (expected on main; that absence is novelty, the dial assertion above is the behavior)`);
+  process.exit(1);
+}
+const { makeGrassQuality, densityCount, GRASS_QUALITY, QUALITY_DENSITY } = gqMod;
+const terrain = await import("../client/lib/terrain.js");
 
 // A field shaped to terrain's setGrass contract, recording what it was told.
 const mkField = () => {

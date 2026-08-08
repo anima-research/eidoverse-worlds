@@ -1092,13 +1092,24 @@ function paintSky(body) {
   // the auto governor may thin below the cap under load, never above it.
   const gq = document.createElement('select');
   gq.style.cssText = wx.style.cssText;
+  gq.setAttribute('aria-label', 'grass quality — local only, never shared with the world');
   for (const q of GRASS_QUALITY) gq.appendChild(new Option(q, q));
   const gqRow = mkRow('grass⚙', gq);
+  // Live dial state as visible text, not a tooltip — the governor's shed is
+  // state a keyboard or screen-reader user must be able to learn too. The
+  // two dials stay attributed to their owners: the select is the RESIDENT's
+  // cap, ⚙× is the GOVERNOR's own session dial, ×draws is what min() yields.
+  const gqState = document.createElement('span');
+  gqState.className = 'v';
+  gqState.setAttribute('aria-live', 'polite');
+  gqRow.appendChild(gqState);
   const syncGrassRow = () => {
     gq.value = getGrassQuality();
-    const eff = getGrassDensity();
-    gqRow.title = getGrassShed() < 1 && gq.value !== 'off'
-      ? `local performance setting — auto governor thinned this session to ×${eff}`
+    const shed = getGrassShed();
+    const active = shed < 1 && gq.value !== 'off';
+    gqState.textContent = active ? `⚙×${shed} draws ×${getGrassDensity()}` : '';
+    gqRow.title = active
+      ? `your cap: ${gq.value} — the auto governor's session dial is ×${shed}; the field draws the lower of the two`
       : 'local performance setting — not shared with the world';
   };
   gq.onchange = () => {
@@ -1107,6 +1118,7 @@ function paintSky(body) {
     flashHint(`grass: ${gq.value} (yours only)`);
   };
   syncGrassRow();
+  bus.on('grass-budget', syncGrassRow);   // governor sheds repaint immediately
   body.appendChild(gqRow);
 
   for (const [key, label, min, max, step, dflt] of SLIDERS) {
