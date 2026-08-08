@@ -78,6 +78,20 @@ function reenableInbound(p) {
 function applyDirection(p) {
   const dir = wantDirection();
   try {
+    // A live mic with nothing attached is the same class of mismatch as a
+    // wrong direction, so it is repaired in the same place. addTrack runs only
+    // in peerFor's construction path, which leaves two windows where a peer
+    // ends up permanently silent: a mic opened after the peer was built, and —
+    // the race that made this intermittent — a peer built DURING the await on
+    // getUserMedia, when micStream is still null and any one-shot back-fill
+    // has already run. Every offer and renegotiation passes through here, so
+    // attaching here makes it an invariant rather than a patch per path.
+    if (micStream) {
+      const track = micStream.getAudioTracks()[0];
+      const sender = p.pc.getSenders().find((s) => s.track?.kind === 'audio' || !s.track);
+      if (track && sender && sender.track !== track) sender.replaceTrack(track).catch((e) => report('voice track', e));
+      else if (track && !sender) p.pc.addTrack(track, micStream);
+    }
     for (const t of p.pc.getTransceivers?.() ?? []) {
       if (t.receiver?.track?.kind === 'audio' || t.sender?.track?.kind === 'audio' || !t.receiver) {
         if (t.direction !== dir) t.direction = dir;
@@ -303,6 +317,9 @@ export async function toggleMic(name) {
     flashHint('microphone unavailable — check browser permission');
     return false;
   }
+  // Existing peers are repaired by applyDirection, which every renegotiate
+  // and offer runs through — so re-offering is enough to attach the new track.
+  for (const id of [...peers.keys()]) renegotiate(id);
   for (const id of humanIds()) offerTo(id);
   flashHint('🎙 live — speak, neighbors hear · <b>mute</b> in the dock');
   bus.emit('voice', { on: true });
