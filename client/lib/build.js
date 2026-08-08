@@ -1100,14 +1100,25 @@ function paintSky(body) {
   // two dials stay attributed to their owners: the select is the RESIDENT's
   // cap, ⚙× is the GOVERNOR's own session dial, ×draws is what min() yields.
   const gqState = document.createElement('span');
-  gqState.className = 'v';
+  // NOT `.v` — that's the sliders' fixed 34px readout column; this text
+  // would wrap inside it, reflowing the whole row. The visible half is
+  // compact enough to fit the default 232px panel on one line (measured:
+  // ≤62px available beside the select); the aria-live announcement reads a
+  // whole sentence instead, via a visually-hidden twin.
+  gqState.style.cssText = 'margin-left:auto; white-space:nowrap; color:var(--accent); font-size:10px;';
   gqState.setAttribute('aria-live', 'polite');
+  const gqStateEye = document.createElement('span');
+  gqStateEye.setAttribute('aria-hidden', 'true');
+  const gqStateEar = document.createElement('span');
+  gqStateEar.style.cssText = 'position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0);';
+  gqState.append(gqStateEye, gqStateEar);
   gqRow.appendChild(gqState);
   const syncGrassRow = () => {
     gq.value = getGrassQuality();
-    const shed = getGrassShed();
+    const shed = getGrassShed(), eff = getGrassDensity();
     const active = shed < 1 && gq.value !== 'off';
-    gqState.textContent = active ? `⚙×${shed} draws ×${getGrassDensity()}` : '';
+    gqStateEye.textContent = active ? `⚙${shed}→${eff}` : '';
+    gqStateEar.textContent = active ? `auto governor dial ${shed}, drawing ${eff}` : '';
     gqRow.title = active
       ? `your cap: ${gq.value} — the auto governor's session dial is ×${shed}; the field draws the lower of the two`
       : 'local performance setting — not shared with the world';
