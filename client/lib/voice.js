@@ -51,6 +51,25 @@ function wantDirection() {
 
 /** Force every audio transceiver on this peer to the currently-consented
  *  direction. Called before any offer/answer, and again when consent moves. */
+/** Un-silence inbound audio that the consent gate disabled on arrival.
+ *  The tracks are still live — the gate sets `enabled = false` rather than
+ *  stop() precisely so this is possible — so consenting later is a local flip
+ *  with no renegotiation. Attaches the element too, for the case where the
+ *  peer was built before any track arrived. */
+function reenableInbound(p) {
+  const tracks = (p.pc.getReceivers?.() ?? [])
+    .map((r) => r.track)
+    .filter((t) => t && t.kind === 'audio' && t.readyState === 'live');
+  if (!tracks.length) return;
+  for (const t of tracks) t.enabled = true;
+  if (!p.audio.srcObject) {
+    const stream = new MediaStream(tracks);
+    p.audio.srcObject = stream;
+    p.stream = stream;
+  }
+  p.audio.play().catch(() => addEventListener('click', () => p.audio.play().catch(() => {}), { once: true }));
+}
+
 function applyDirection(p) {
   const dir = wantDirection();
   try {
@@ -75,10 +94,25 @@ function peerFor(id) {
   if (micStream) for (const t of micStream.getTracks()) pc.addTrack(t, micStream);
   pc.ontrack = (e) => {
     // FAIL CLOSED: consent can be revoked mid-negotiation, and a track that
-    // was in flight when it happened must not land. Nothing is attached and
-    // nothing plays unless receive is on at the moment audio actually arrives.
-    if (!receivingVoice()) { try { for (const t of e.streams[0]?.getTracks() ?? []) t.stop(); } catch { /* best effort */ } return; }
+    // was in flight when it happened must not land. Nothing is AUDIBLE unless
+    // receive is on at the moment audio actually arrives.
+    // FAIL CLOSED, but REVERSIBLY. This previously called t.stop() on their
+    // track, which is a ONE-WAY DOOR: per mediacapture-streams stop() ends a
+    // track permanently, and per WebRTC-PC §5.3.1 `receiver.track` is never
+    // reassigned — so that transceiver's remote track was gone for its whole
+    // lifetime. No renegotiation, no direction change, and no second ontrack
+    // could bring it back. Consenting AFTER someone's track arrived left you
+    // permanently deaf to that person while still audible to them: the
+    // one-way report of 2026-08-08, order-dependent, which is why it read as
+    // a who-joined-first problem.
+    //
+    // stop() also never stopped the RTP on the wire, so it bought no
+    // bandwidth — it only removed the way back. `enabled` is the mechanism
+    // the spec provides for a reversible refusal: synchronous, local,
+    // mandated to render silence, and reversible with no negotiation.
+    for (const t of e.streams[0]?.getTracks() ?? []) t.enabled = receivingVoice();
     audio.srcObject = e.streams[0];
+    if (!receivingVoice()) return;   // attached but SILENT until consent
     p.stream = e.streams[0];        // kept so their mouth can move with their voice
     // autoplay policy: if the browser balks (receiver never clicked anything),
     // retry on the next user gesture rather than failing silently
@@ -329,6 +363,12 @@ export function initVoice(name) {
   bus.on('audio:receive', (on) => {
     if (on) {
       // permit inbound on peers we already hold, then reach the rest
+      // Re-enable anything the gate silenced on arrival. Without this, a
+      // track that landed while receive was off stays enabled=false forever:
+      // the direction below is repaired but no audio is ever heard, which is
+      // the one-way bug this pairs with. Idempotent, so it is safe on every
+      // flip; a track that was never silenced is simply set true again.
+      for (const p of peers.values()) reenableInbound(p);
       for (const p of peers.values()) applyDirection(p);
       for (const id of [...peers.keys()]) renegotiate(id);
       if (micStream) for (const id of humanIds()) if (!peers.has(id)) offerTo(id);

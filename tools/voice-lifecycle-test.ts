@@ -18,7 +18,13 @@ const check = (name: string, ok: boolean, detail = "") => {
 
 // ---- fakes ----------------------------------------------------------------
 const created: FakePC[] = [];
-class FakeTrack { stopped = false; kind = "audio"; stop() { this.stopped = true; } }
+class FakeTrack {
+  stopped = false;
+  enabled = true;              // the consent gate silences via enabled, never stop()
+  readyState = "live";
+  kind = "audio";
+  stop() { this.stopped = true; this.readyState = "ended"; }
+}
 class FakeStream {
   tracks = [new FakeTrack()];
   attached = false;
@@ -34,6 +40,16 @@ Object.defineProperty(globalThis.HTMLMediaElement.prototype, "srcObject", {
   set(v) { this._srcObject = v; if (v && typeof v === "object") (v as { attached?: boolean }).attached = true; },
 });
 (globalThis.HTMLMediaElement.prototype as { play?: () => Promise<void> }).play = () => Promise.resolve();
+// A real RTCRtpSender can be re-pointed at a different track without
+// renegotiating. Modelled because the repair for the mic-after-peer races uses
+// it: an existing sender whose track is null is exactly the state a peer is
+// left in when it was built before the mic opened.
+type FakeSender = { track: FakeTrack | null; replaceTrack(t: FakeTrack | null): Promise<void> };
+const mkSender = (t: FakeTrack | null): FakeSender => ({
+  track: t,
+  replaceTrack(next) { this.track = next; return Promise.resolve(); },
+});
+
 class FakePC {
   signalingState = "stable";
   connectionState = "new";
@@ -48,7 +64,7 @@ class FakePC {
   onconnectionstatechange: unknown = null;
   constructor() { created.push(this); }
   addTrack(t: FakeTrack) {
-    const sender = { track: t };
+    const sender = mkSender(t);
     this.senders.push(sender);
     // a real addTrack creates (or reuses) a sendrecv transceiver — modelled
     // faithfully, because that default is exactly what the bug rode in on
@@ -98,7 +114,16 @@ class FakePC {
     if (!this.remote) { const e = new Error("The remote description was null"); e.name = "InvalidStateError"; throw e; }
     this.addedCandidates.push(c);
   }
-  close() { this.closed = true; this.connectionState = "closed"; }
+  close() {
+    this.closed = true;
+    this.connectionState = "closed";
+    // A real pc.close() ends every receiver's track and detaches the element.
+    // The fake used to only set a flag, so a test could observe audio still
+    // "playing" from a closed connection — which is how a revoke-path privacy
+    // assertion could fail for a reason that did not exist in the browser.
+    for (const r of this._receivers) r.track.readyState = "ended";
+    if (this._lastStream) this._lastStream.attached = false;
+  }
   playedAudio = false;
   /** Simulate the far end delivering audio. Acceptance is observed the way
    *  the code expresses it: an accepted track gets attached to an <audio>
@@ -107,9 +132,24 @@ class FakePC {
   deliverAudio() {
     const stream = new FakeStream();
     stream.attached = false;
+    // The receiver and the stream expose the SAME track object, as a real
+    // browser does. An earlier version of this fake built two, so code that
+    // disabled the stream's track left the receiver's looking untouched — a
+    // consent test could pass while consent did nothing. (Mica, #34.)
+    this._receivers = [{ track: stream.tracks[0] }];
+    this._lastStream = stream;
     this.ontrack?.({ streams: [stream] });
     if (stream.attached) this.playedAudio = true;
   }
+  _receivers: { track: FakeTrack }[] = [];
+  _lastStream: FakeStream | null = null;
+  getReceivers() { return this._receivers; }
+  /** Audible = attached to an element AND not silenced AND not destroyed. */
+  inboundAudible() {
+    const t = this._receivers[0]?.track;
+    return !!(t && t.enabled && t.readyState === "live" && this._lastStream?.attached);
+  }
+  inboundStopped() { return this._receivers[0]?.track.readyState === "ended"; }
 }
 (globalThis as Record<string, unknown>).RTCPeerConnection = FakePC;
 
@@ -248,8 +288,14 @@ check("mic-ON + receive-OFF: no blanket offerToReceiveAudio",
   !JSON.stringify(outbound.lastOfferOpts ?? {}).includes("offerToReceiveAudio"));
 outbound.deliverAudio();                 // far end tries to send anyway
 await settle();
-check("mic-ON + receive-OFF: an inbound track is refused, not played",
-  !outbound.playedAudio, "audio was attached/played");
+// What must be true is that nothing is AUDIBLE — not that nothing is attached.
+// Those two come apart exactly where the one-way bug lived: stop() made the
+// track unattached AND unrecoverable, and the old assertion could not tell the
+// difference between a refusal and a destruction.
+check("mic-ON + receive-OFF: an inbound track is silenced, not audible",
+  outbound.inboundAudible() === false, "audio was audible with receive off");
+check("mic-ON + receive-OFF: ...and NOT destroyed (revocable, not fatal)",
+  outbound.inboundStopped() === false, "the gate stopped a remote track — one-way door");
 
 // now consent to hear: direction opens and tracks are accepted
 consent.setReceiveVoice(true);
@@ -564,6 +610,59 @@ check("unhush rejoins the SAME peer at full volume",
   check("forced double-offer interleave: BOTH answers actually SENT (main loses the second at setLocal)",
     answersSent === 2 && pc9.signalingState === "stable",
     `answersSent=${answersSent} state=${pc9.signalingState}`);
+  consent.setReceiveVoice(false);
+}
+
+
+// ---- the one-way bug: consent AFTER a track has already arrived -----------
+// Field report 2026-08-08: "they can hear me, I can't hear them." ontrack
+// fires ONCE per transceiver. A track arriving while receive is off was
+// stop()ed — permanent, since receiver.track is never reassigned (WebRTC-PC
+// §5.3.1) — so consenting later repaired the DIRECTION while nothing was ever
+// wired. Outbound was unaffected, hence exactly one-way, and dependent on who
+// arrived first. All three FAIL on pre-fix main.
+{
+  consent.setReceiveVoice(false);
+  if (!voice.micOn()) await voice.toggleMic("me");   // mic ON, receive OFF
+  await settle();
+  created.length = 0;
+  stubs.remotes.set("oneway", { agent: false });
+  bus.emit("roster");
+  await settle();
+  const pcX = created.at(-1)!;
+  if (!pcX) throw new Error("no peer was built for the one-way test");
+
+  pcX.deliverAudio();                       // arrives BEFORE consent
+  await settle();
+  check("one-way: nothing audible before consent",
+    pcX.inboundAudible() === false, "audio played before consent was given");
+  check("one-way: the refused track survives for later (not stop()ed)",
+    pcX.inboundStopped() === false, "remote track destroyed — unrecoverable");
+
+  consent.setReceiveVoice(true);             // consent arrives AFTER
+  await settle();
+  check("one-way: consenting AFTER arrival makes the SAME track audible",
+    pcX.inboundAudible() === true,
+    "direction repaired but the earlier track never became audible — one-way audio");
+
+  // Repeated revoke/enable must not degrade. NOTE: revoke calls dropPeer, so
+  // each cycle builds a NEW RTCPeerConnection — the assertion has to follow
+  // the current peer rather than the original handle. (My first version held
+  // the stale one and "failed" on a connection the code had correctly closed.)
+  let ratchet = "";
+  for (let i = 0; i < 5 && !ratchet; i++) {
+    consent.setReceiveVoice(false); await settle();
+    const closed = created.at(-1)!;
+    if (closed.inboundAudible()) ratchet = `cycle ${i}: audible after revoke`;
+
+    consent.setReceiveVoice(true); await settle();
+    const fresh = created.at(-1)!;
+    fresh.deliverAudio();                    // the far end re-sends on the new leg
+    await settle();
+    if (!fresh.inboundAudible()) ratchet = `cycle ${i}: silent after re-consent`;
+  }
+  check("one-way: five revoke/enable cycles stay reversible (no ratchet)",
+    ratchet === "", ratchet);
   consent.setReceiveVoice(false);
 }
 
