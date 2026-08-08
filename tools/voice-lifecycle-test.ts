@@ -825,9 +825,14 @@ check("unhush rejoins the SAME peer at full volume",
   // something reconciles on return to stable, the far end is left holding a
   // description of a dead track.
   //
-  // (The mic-LESS local offer Mica describes may not be reachable — every
-  // offer-initiating path on this branch is gated on micStream. Asked rather
-  // than guessed; if it is reachable, that test comes separately.)
+  // (CORRECTED: the mic-LESS local offer IS reachable, and my "every offer
+  // path is mic-gated" reading was wrong — I grepped the offer-INITIATING
+  // sites and skipped renegotiate()'s callers. toggleMic's OFF branch calls
+  // renegotiate AFTER micStream = null, so it builds a genuinely mic-less
+  // offer and parks the peer in have-local-offer. Note it fires only when
+  // receive is ON — the same asymmetry as the toggle bug: it selects for
+  // listeners. The generation-bound pending-on-stable repair for that case is
+  // still outstanding; this test covers the mid-offer variant only.)
   if (voice.micOn()) { await voice.toggleMic("me"); await settle(); }
   consent.setReceiveVoice(true);
   if (!voice.micOn()) { await voice.toggleMic("me"); await settle(); }   // mic ON
