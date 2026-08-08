@@ -401,6 +401,14 @@ const policyArgs = {
     { verb: "weather", args: { weather: "rain", dormantRated: { rate: 666 } } as any, ts: T3, seq: 5200, actor: "digi" });
   check("#65 guard: weather verb cannot author the parked clock",
     wSpoof.dormantRated?.rate === 24 && wSpoof.dormantRated?.hours === 6.8, JSON.stringify(wSpoof.dormantRated));
+  // the indirect route (review N1'): top-level hours/rate on a weather verb
+  // while the standing clock is real must not reach the park either
+  const wIndirect = foldSkyEntry(real,
+    { verb: "weather", args: { weather: "rain", hours: 1, rate: 666 }, ts: T3, seq: 5250, actor: "digi" });
+  check("#65 guard: weather-verb hours/rate cannot reach the park under a real clock",
+    wIndirect.dormantRated?.hours === 6.8 && wIndirect.dormantRated?.rate === 24 && wIndirect.dormantRated?.ts === T1
+      && wIndirect.hours === undefined && wIndirect.rate === undefined,
+    JSON.stringify({ park: wIndirect.dormantRated, hours: wIndirect.hours, rate: wIndirect.rate }));
   const junk = foldSkyEntry(null,
     { verb: "sky", args: { clock: "real", tz: "America/Los_Angeles", dormantRated: { rate: 999, hours: "noon", junk: 7, ts: "yes" } } as any, ts: T0, seq: 5300, actor: "antra" });
   check("#65 guard: sky-verb dormantRated is shape-sanitized (finite numbers only)",

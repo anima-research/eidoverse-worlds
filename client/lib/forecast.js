@@ -316,7 +316,12 @@ export function foldSkyEntry(prev, { verb, args = {}, ts, seq, actor }) {
     if (base.seq != null) out.seq = base.seq; else delete out.seq;
     if (base.by != null) out.by = base.by; else delete out.by;
   }
-  // a weather verb can never author the parked clock — base's only
+  // a weather verb can never author the parked clock — base's only. That
+  // includes the indirect route: while the standing clock is real, stray
+  // authored hours/rate on a weather verb must not reach the park (base
+  // carries no top-level rated fields under real mode, so anything here came
+  // from args). Same rank as sky either way — verb semantics, not rights.
+  if (base.clock === 'real') { delete out.hours; delete out.rate; }
   return normalizeClock(out, sanitizeDormant(base.dormantRated));
 }
 
