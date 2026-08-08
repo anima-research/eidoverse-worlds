@@ -16,7 +16,8 @@ relocated to all three client-removal sites and re-keyed on the live `Client`
 same membership predicate as live broadcast, with the `skipChatFromSeq` cursor
 consistency requirement (review B2); "single choke point / structurally
 impossible" overclaims removed; the folded-component invisibility finding split
-out as current-main bug **#72**; bounded/indexed `history {space}` requirement
+out as current-main bug **#71** (canonical tracker; #72 was this worker's
+duplicate filing, superseded); bounded/indexed `history {space}` requirement
 added; §10 updated with the review's audit results.*
 
 ---
@@ -485,18 +486,20 @@ channel for this slice**; if per-lane tuneout becomes a real resident need, the
 clean escalation is intake/tuneout growing metadata-scoped selection (§7.2's
 requirement, which is needed anyway), not the world minting channels per room.
 
-### 7.4 Dependency: current-main bug #72 (blocks acceptance #3)
+### 7.4 Dependency: current-main bug #71 (blocks acceptance #3)
 
 The agent-side replay path replays **no components at all** (`stateToEntries`,
 mcpl/agent.ts:55-92) while the browser path does (client/lib/world.js:631-634) —
 found while grounding rev 1, independently confirmed by the review, and **broader
 than #67**: it is live on main today for `lock` (server-enforced, so late-joining
 agents get refusals they cannot explain), `sockets`, `reactions`, `motion`,
-`particles`. Now filed as its own bug: **anima-research/eidoverse-worlds#72**
-(third instance of the #61 folded-state replay-drift class, fix shape and parity
-test described there). #67's acceptance vector 3 depends on #72 being fixed;
-this design carries it as an external dependency, not as its own prerequisite
-work item.
+`particles`. Tracked as its own bug: **anima-research/eidoverse-worlds#71**
+("Agent late join: folded snapshots omit entity components" — which also pins
+no-false-live-events and no-reaction-replay on the fix; third instance of the #61
+folded-state replay-drift class; #72 was a duplicate filing by this worker and is
+superseded by #71). #67's acceptance vector 3 depends on #71 being fixed; this
+design carries it as an external dependency, not as its own prerequisite work
+item.
 
 ---
 
@@ -556,7 +559,7 @@ tab whispers, chat.js:710):
 2. Human + agent converse in lane → §4 (both are clients behind the same two
    filtered paths); §9.
 3. Nest resident: no body, existence/occupancy queryable → §5; **depends on bug
-   #72** (§7.4).
+   #71** (§7.4).
 4. Threshold crossing delivers/undelivers once → §2.2 (hysteresis + debounce;
    events only on completed transitions).
 5. Disconnect/reconnect, no ghosts → §2.5 (teardown at all three removal sites;
