@@ -765,6 +765,28 @@ check("unhush rejoins the SAME peer at full volume",
     `${pcT.getSenders().filter((s) => s.track).length} live of ${pcT.getSenders().length}`);
 }
 
+{
+  // The toggle bug bites LISTENERS, not speakers. mic-off drops the peer when
+  // we are not receiving (so mic-on rebuilds it with the track — recovers),
+  // but keeps it when we are (stripping the track and leaving an empty
+  // sender). Digi toggled freely in commons while mic-only; anyone wearing
+  // headphones would have been silenced by their own toggle with no signal.
+  if (voice.micOn()) { await voice.toggleMic("me"); await settle(); }
+  consent.setReceiveVoice(false);                 // mic-only, like Digi
+  created.length = 0;
+  if (!voice.micOn()) { await voice.toggleMic("me"); await settle(); }
+  stubs.remotes.set("deaf", { agent: false });
+  bus.emit("roster"); await settle();
+  await voice.toggleMic("me"); await settle();    // OFF -> dropPeer
+  await voice.toggleMic("me"); await settle();    // ON  -> fresh peer
+  bus.emit("roster"); await settle();
+  const pcFresh = created.at(-1)!;
+  check("toggle while NOT receiving: peer is rebuilt with a track (why Digi's toggles worked)",
+    pcFresh.getSenders().filter((s) => s.track).length === 1,
+    `${pcFresh.getSenders().filter((s) => s.track).length} live of ${pcFresh.getSenders().length}`);
+  consent.setReceiveVoice(true);
+}
+
 // T5 (relay half) lives in tools/voice-matrix.mjs: RTC_MODE=relay-noturn must
 // stay at 0 inbound pkts; RTC_MODE=relay-turn must exceed 0. External harness
 // by design — fake RTC cannot prove media.
