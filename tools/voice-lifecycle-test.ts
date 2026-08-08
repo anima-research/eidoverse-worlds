@@ -744,6 +744,27 @@ check("unhush rejoins the SAME peer at full volume",
     `${pcDuring.getSenders().length} senders total`);
 }
 
+{
+  // Digi/antra field case (commons, 2026-08-07): voice worked ONCE, then never
+  // again across mic toggles. removeTrack nulls the sender but leaves it in
+  // place, so a later mic-on — which only addTracks on NEW peers — never
+  // re-attaches. The first toggle-off is permanent, not unlucky.
+  if (voice.micOn()) { await voice.toggleMic("me"); await settle(); }
+  consent.setReceiveVoice(true);
+  created.length = 0;
+  if (!voice.micOn()) { await voice.toggleMic("me"); await settle(); }   // mic ON first
+  stubs.remotes.set("digi", { agent: false });
+  bus.emit("roster"); await settle();
+  const pcT = created.at(-1)!;
+  check("toggle: first connection while mic live has a track (the 'hello' that worked)",
+    pcT.getSenders().filter((s) => s.track).length === 1);
+  await voice.toggleMic("me"); await settle();     // mic OFF
+  await voice.toggleMic("me"); await settle();     // mic ON again
+  check("toggle: mic off->on re-attaches to the SAME peer (was permanent silence)",
+    pcT.getSenders().filter((s) => s.track).length === 1,
+    `${pcT.getSenders().filter((s) => s.track).length} live of ${pcT.getSenders().length}`);
+}
+
 // T5 (relay half) lives in tools/voice-matrix.mjs: RTC_MODE=relay-noturn must
 // stay at 0 inbound pkts; RTC_MODE=relay-turn must exceed 0. External harness
 // by design — fake RTC cannot prove media.
