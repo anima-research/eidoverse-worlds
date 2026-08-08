@@ -644,6 +644,22 @@ check("unhush rejoins the SAME peer at full volume",
   check("one-way: consenting AFTER arrival makes the SAME track audible",
     pcX.inboundAudible() === true,
     "direction repaired but the earlier track never became audible — one-way audio");
+  // AUDIBLE is not the whole repair. peerLevels() skips any peer with no
+  // `p.stream`, so a peer could recover its sound while staying permanently
+  // mouth-blind — a half-repair visible only from OUTSIDE the session, which
+  // is the same shape as the bug itself. (Mica, #63 review.)
+  // Asserted through the real consumer rather than a test-only accessor:
+  // peerLevels() does `if (!p.stream) continue`, so a mouth-blind peer is
+  // simply absent from its map. AudioContext is unavailable under happy-dom,
+  // so the analyser path throws and `continue`s — presence in the map is the
+  // signal we can read here, and absence is exactly the bug.
+  check("one-way: the repaired peer is also VISIBLE (p.stream pinned for the mouth)",
+    // Optional-call so the negative control FAILS rather than crashing: on
+    // pre-fix main the export does not exist, and a TypeError would prove only
+    // that, not that the mouth is blind. Absent export reads as unbound, which
+    // is the same user-visible outcome.
+    voice.voiceMouthBound?.()["oneway"] === true,
+    "audio recovered but p.stream is unset — peerLevels() skips them, mouth never moves");
 
   // Repeated revoke/enable must not degrade. NOTE: revoke calls dropPeer, so
   // each cycle builds a NEW RTCPeerConnection — the assertion has to follow

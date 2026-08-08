@@ -62,10 +62,15 @@ function reenableInbound(p) {
     .filter((t) => t && t.kind === 'audio' && t.readyState === 'live');
   if (!tracks.length) return;
   for (const t of tracks) t.enabled = true;
+  // Restore the element only if it lost its stream, but ALWAYS ensure p.stream
+  // names something: the gate's early return can leave a peer attached with no
+  // stream recorded, and that is the exact path this function repairs.
   if (!p.audio.srcObject) {
     const stream = new MediaStream(tracks);
     p.audio.srcObject = stream;
     p.stream = stream;
+  } else if (!p.stream) {
+    p.stream = p.audio.srcObject;      // same object the element already holds
   }
   p.audio.play().catch(() => addEventListener('click', () => p.audio.play().catch(() => {}), { once: true }));
 }
@@ -112,8 +117,14 @@ function peerFor(id) {
     // mandated to render silence, and reversible with no negotiation.
     for (const t of e.streams[0]?.getTracks() ?? []) t.enabled = receivingVoice();
     audio.srcObject = e.streams[0];
-    if (!receivingVoice()) return;   // attached but SILENT until consent
-    p.stream = e.streams[0];        // kept so their mouth can move with their voice
+    // p.stream is set BEFORE the consent bail, not after. It is what
+    // peerLevels()/mouth animation read, and a refused-then-consented track
+    // recovers its AUDIO via reenableInbound() but would never come back
+    // through here — so leaving it unset behind the bail made the repaired
+    // path permanently mouth-blind. Attaching and naming the stream are one
+    // act; only PLAYING is gated. (Mica, #63 review.)
+    p.stream = e.streams[0];
+    if (!receivingVoice()) return;   // attached and named, but SILENT until consent
     // autoplay policy: if the browser balks (receiver never clicked anything),
     // retry on the next user gesture rather than failing silently
     audio.play().catch(() => addEventListener('click', () => audio.play().catch(() => {}), { once: true }));
@@ -453,6 +464,13 @@ export async function voiceStats() {
 export const peerVolume = (id) => peers.get(id)?.audio.volume ?? null;
 // test/debug probe — connection states by peer id
 export const voiceDebug = () => Object.fromEntries([...peers].map(([id, p]) => [id, p.pc.connectionState]));
+/** Which peers have a stream bound for mouth animation. `peerLevels()` skips
+ *  any peer without one, and it does so silently — so a peer can be perfectly
+ *  audible while its mouth never moves, a half-repair visible only to everyone
+ *  ELSE. Exported so that gap is assertable (and greppable in prod) rather
+ *  than only observable by watching a face that should be talking. */
+export const voiceMouthBound = () =>
+  Object.fromEntries([...peers].map(([id, p]) => [id, !!p.stream]));
 export const voicePcs = () => [...peers.values()].map((p) => p.pc); // experiment branch: raw pcs for stats probes
 
 // ---- per-speaker levels (R, 23:30: mouths move in sync with the sound)

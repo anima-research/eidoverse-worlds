@@ -52,20 +52,46 @@ check("receive-voice defaults OFF", /recvVoice:\s*false/.test(consent));
 check("STT is gated on its own consent, not on the mic", /ensureSttConsent|sttConsented/.test(mictoggle));
 check("STT consent names the third party in plain words",
   /vendor|third party/i.test(consent) && /transcrib/i.test(consent));
-check("revoking receive tears existing peers down",
-  /on\(\s*['"]audio:receive['"][\s\S]{0,1200}dropPeer/.test(voice));
+// Comment-stripped source: prose must never satisfy or break a code assertion.
+const voiceCode = voice.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+// Asserted on the HANDLER BODY rather than a character window: the old regex
+// measured distance, so it broke when a comment grew between the two lines and
+// would have passed if dropPeer moved into an unrelated branch. Slice the
+// handler, then test the revoke arm for what it must actually do.
+const receiveHandler = (() => {
+  const i = voice.search(/on\(\s*['"]audio:receive['"]/);
+  return i < 0 ? "" : voice.slice(i, i + 3000);
+})();
+check("the audio:receive handler exists", receiveHandler.length > 0);
+check("revoking receive tears existing peers down (hard revoke, not just a gain)",
+  /dropPeer/.test(receiveHandler));
 
 // --- consent is STRUCTURAL: the direction, not a gate to remember
 check("consent is expressed as a transceiver direction", /sendonly|recvonly|sendrecv/.test(voice));
 // strip comments before this one: the word legitimately appears in the
 // rationale explaining why we no longer USE it, and a test that cannot tell
 // prose from code would forbid documenting the bug we fixed
-const voiceCode = voice.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 check("no blanket offerToReceiveAudio in code", !/offerToReceiveAudio/.test(voiceCode));
 check("every offer path states the direction first",
   (voice.match(/createOffer\(/g) ?? []).length <= (voice.match(/applyDirection\(/g) ?? []).length);
-check("ontrack fails closed on revoked consent",
-  /ontrack[\s\S]{0,300}receivingVoice\(\)/.test(voice));
+// The contract changed with the one-way fix (#63): refusal must be REVERSIBLE.
+// stop() on a remote track is permanent — receiver.track is never reassigned —
+// so the gate silences via `enabled` and consent-on re-enables. Assert the
+// contract, not the old shape.
+// Read from the COMMENT-STRIPPED source: the fix's own rationale mentions
+// t.stop() by name to explain why we no longer call it, and a test that cannot
+// tell prose from code would forbid documenting the bug we fixed. (The file
+// already learned this once — see voiceCode above.)
+const ontrackBody = (() => {
+  const i = voiceCode.indexOf("ontrack");
+  return i < 0 ? "" : voiceCode.slice(i, i + 2000);
+})();
+check("ontrack fails closed on revoked consent", /receivingVoice\(\)/.test(ontrackBody));
+check("ontrack silences via enabled, never stop() — refusal must be reversible",
+  /\.enabled\s*=\s*receivingVoice\(\)/.test(ontrackBody) && !/\bt\.stop\(\)/.test(ontrackBody));
+check("consent-on re-enables what the gate silenced (no permanent deafness)",
+  /reenableInbound/.test(receiveHandler));
 
 // --- categories stay separate: the headphone must not touch world sound
 check("voice volume runs through the 'voices' category", /volumeFor\(['"]voices['"]\)/.test(voice));
