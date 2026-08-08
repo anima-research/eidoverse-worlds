@@ -15,7 +15,8 @@ import { loadGLB, libLabels, listLibrary } from './assets.js';
 import { makeLightGizmo } from './lights.js';
 import { entities, entityMeta, comps, findPart } from './world.js';
 import { surfaceUnder, reindexCollider } from './colliders.js';
-import { heightAt } from './terrain.js';
+import { heightAt, GRASS_QUALITY, getGrassQuality, setGrassQuality,
+  getGrassDensity, getGrassShed } from './terrain.js';
 import { sendVerb, sendDrag } from './net.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
 import { makeSection, toast, flashHint, collapseAll, panelFrame } from './ui.js';
@@ -1086,6 +1087,28 @@ function paintSky(body) {
   cqRow.title = 'local performance setting — not shared with the world';
   body.appendChild(cqRow);
 
+  // The meadow budget is likewise YOURS (#60) — a persisted cap on how much
+  // of the field this machine draws. Species/seed/extent stay world state;
+  // the auto governor may thin below the cap under load, never above it.
+  const gq = document.createElement('select');
+  gq.style.cssText = wx.style.cssText;
+  for (const q of GRASS_QUALITY) gq.appendChild(new Option(q, q));
+  const gqRow = mkRow('grass⚙', gq);
+  const syncGrassRow = () => {
+    gq.value = getGrassQuality();
+    const eff = getGrassDensity();
+    gqRow.title = getGrassShed() < 1 && gq.value !== 'off'
+      ? `local performance setting — auto governor thinned this session to ×${eff}`
+      : 'local performance setting — not shared with the world';
+  };
+  gq.onchange = () => {
+    setGrassQuality(gq.value);
+    syncGrassRow();
+    flashHint(`grass: ${gq.value} (yours only)`);
+  };
+  syncGrassRow();
+  body.appendChild(gqRow);
+
   for (const [key, label, min, max, step, dflt] of SLIDERS) {
     const input = document.createElement('input');
     input.type = 'range';
@@ -1147,6 +1170,7 @@ function paintSky(body) {
     if (a.world) wl.value = a.world;
     ck.value = a.clock === 'real' ? 'real' : '';
     syncClockUi();
+    syncGrassRow();
   };
   body._sync();
 }

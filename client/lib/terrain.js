@@ -6,6 +6,7 @@
 
 import { scene, ground, grid } from './core.js';
 import { retireField } from './flora_field.js';
+import { makeGrassQuality, GRASS_QUALITY } from './grass_quality.js';
 
 let current = null;
 
@@ -43,17 +44,46 @@ let currentGrass = null;
 export function setGrass(field) {
   retireField(currentGrass, globalThis._autoParticleSystems, scene);
   currentGrass = field ?? null;
-  // sticky density: a machine that had to thin its meadow keeps it thin
-  // across re-grows, instead of re-discovering the same slow frame rate
-  if (field?.setDensity && grassDensity < 1) field.setDensity(grassDensity);
+  // sticky budget: a machine that had to thin its meadow keeps it thin
+  // across re-grows, instead of re-discovering the same slow frame rate —
+  // and a resident's chosen cap (persisted) survives them the same way
+  if (field && budget.effective() < 1) applyGrassBudget();
 }
 export const clearGrass = () => setGrass(null);
 export const hasGrass = () => currentGrass !== null;
 
-// Perf governor's handle on the meadow.
-let grassDensity = 1;
-export function setGrassDensity(f) {
-  grassDensity = f;
-  currentGrass?.setDensity?.(f);
+// The meadow budget: the resident's persisted cap × the governor's session
+// shed (grass_quality.js owns the semantics — effective is their min).
+const budget = makeGrassQuality(globalThis.localStorage);
+
+function applyGrassBudget() {
+  if (!currentGrass) return;
+  const eff = budget.effective();
+  // `off` retires the draw entirely: count 0 stops the fill, and hiding the
+  // group spares raycasts/shadows too. The field object stays whole — shared
+  // state untouched, and any cap raise restores it in place.
+  if (currentGrass.mesh) currentGrass.mesh.visible = eff > 0;
+  currentGrass.setDensity?.(eff);
 }
-export const getGrassDensity = () => grassDensity;
+
+// Perf governor's handle on the meadow — may thin below the resident's cap,
+// never raises above it (the cap wins in effective()).
+export function setGrassDensity(f) {
+  budget.shedTo(f);
+  applyGrassBudget();
+}
+/** effective density — what this machine actually draws */
+export const getGrassDensity = () => budget.effective();
+
+// The resident's own dial (#60): full | medium | low | off, persisted per
+// browser. Never a verb — the shared field is world state, the draw cost is
+// not.
+export function setGrassQuality(q) {
+  const applied = budget.setQuality(q);
+  applyGrassBudget();
+  return applied;
+}
+export const getGrassQuality = () => budget.quality;
+/** the governor's uncapped session dial, for inspection */
+export const getGrassShed = () => budget.shed;
+export { GRASS_QUALITY };

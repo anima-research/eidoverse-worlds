@@ -16,6 +16,7 @@ import { myState } from './controller.js';
 import { remotes } from './remotes.js';
 import { mapGrassArgs, presetStrokes } from './flora_args.js';
 import { composeField } from './flora_field.js';
+import { densityCount } from './grass_quality.js';
 import { pushHostHook } from './autohooks.js';
 
 export { mapGrassArgs, presetStrokes } from './flora_args.js';
@@ -155,7 +156,8 @@ function wireDensityDial(field) {
   // the stem mesh (shrub wood) rides the same attribute OBJECTS, so the
   // shuffle above already covers it — only the count needs mirroring
   field.setDensity = (f) => {
-    const keep = Math.max(1, Math.round(n * Math.min(1, Math.max(0.05, f))));
+    // densityCount owns the clamp — including genuine zero for `off` (#60)
+    const keep = densityCount(n, f);
     field.mesh.count = keep;
     if (field.stemMesh) field.stemMesh.count = keep;
   };

@@ -13,7 +13,7 @@ import { contributeThumbnail, makeAvatar, EMOTE_ORDER, EMOTES } from './lib/avat
 import { updateSky, updateAutoSystems, skyArgs, skyImpl,
   CLOUD_QUALITY, getCloudQuality, setCloudQuality } from './lib/sky.js';
 import { setSkyArgsSource, entities, liveEntities, buildsPending, roleOf, worldHasOwner, comps, avatarMounts, mountTransform, socketWorldPos } from './lib/world.js';
-import { hasGrass, setGrassDensity } from './lib/terrain.js';
+import { hasGrass, setGrassDensity, getGrassDensity } from './lib/terrain.js';
 // side-effecting: the `particles` component's host wires itself to the comp
 // and entity buses on import (it has no boot step of its own)
 import { emitterCount, emitterQuality, setEmitterQuality } from './lib/emitters.js';
@@ -1109,11 +1109,13 @@ function shedClouds(now) {
 // frame budget on some browsers (Safari, measured 08-02 — "grass really
 // kills visual smoothness"), and a 60% field at full resolution reads far
 // better than a full field at 70% resolution. Sticky across re-grows.
-let grassShed = 1;
+// Steps from the EFFECTIVE density (the resident's grass⚙ cap already
+// applies), so a capped meadow isn't "shed" to a value the cap was already
+// below — that would toast without changing a single blade.
 function shedGrass() {
-  if (!hasGrass() || grassShed <= 0.35) return false;
-  grassShed = grassShed > 0.65 ? 0.6 : 0.35;
-  setGrassDensity(grassShed);
+  const eff = getGrassDensity();
+  if (!hasGrass() || eff <= 0.35) return false;
+  setGrassDensity(eff > 0.65 ? 0.6 : 0.35);
   toast(`grass thinned to keep the frame rate`, 'warn', 8000);
   return true;
 }

@@ -292,8 +292,10 @@ export function buildHelp() {
       sky changes, nearly free per frame. <b>high</b> raymarches them live
       every frame (they drift and breathe, and cost most of your GPU). Open
       <b>sky</b> and set <b>clouds⚙</b> — that setting is yours alone and is
-      never shared with the world. The client will also turn it down by
-      itself if the frame rate drops.</p>
+      never shared with the world. <b>grass⚙</b> in the same panel caps how
+      much of the meadow your machine draws (<b>off</b> hides it entirely,
+      for you only) — the shared field itself is untouched. The client will
+      also turn both down by itself if the frame rate drops.</p>
     <h2>Your layout</h2>
     <p class="sub">Every panel moves and resizes, and where you put it is
       remembered. <kbd>Alt</kbd>+drag moves a panel from anywhere on it. The
