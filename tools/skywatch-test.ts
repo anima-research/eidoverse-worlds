@@ -7,6 +7,12 @@
 // uses, never a synthetic log verb, never a continuous clock.
 //
 // Run: bun tools/skywatch-test.ts
+//
+// Worktree reproduction note (#65 review N4): importing mcpl/agent.ts pulls
+// three/webgpu, so a bare worktree needs the NESTED node_modules symlinks —
+// client/node_modules and mcpl/node_modules — from the main checkout, not
+// just the top-level one, or this suite dies at import and looks broken
+// when it isn't.
 
 import { WorldAgent } from "../mcpl/agent.ts";
 import { normalizePolicy, segmentAt, foldSkyEntry } from "../client/lib/forecast.js";
