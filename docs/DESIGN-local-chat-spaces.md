@@ -9,6 +9,16 @@ audible while the durable record stays under the world's ordinary record policy
 ("the log is public" — spectators may read `history`, server.ts:2365); sealed rooms
 are explicitly later work.*
 
+*Rev 2, same day — addresses the independent architecture review of `732abbf`
+(both blockers verified against the tree before revising): membership teardown
+relocated to all three client-removal sites and re-keyed on the live `Client`
+(review B1); the join payload named as the second push path and filtered by the
+same membership predicate as live broadcast, with the `skipChatFromSeq` cursor
+consistency requirement (review B2); "single choke point / structurally
+impossible" overclaims removed; the folded-component invisibility finding split
+out as current-main bug **#72**; bounded/indexed `history {space}` requirement
+added; §10 updated with the review's audit results.*
+
 ---
 
 ## 0. Shape of the proposal in one paragraph
@@ -19,14 +29,14 @@ counter). The **sequencer** derives per-person membership from the same authorit
 (server.ts:2516), through a small hysteresis state machine evaluated on the existing
 66 ms frame flush. A `say` may carry `space: <id>`; the server binds the lane **at
 verb receipt** against current membership and refuses non-members. The entry lands in
-the **single world log** (one seq space, self-describing via `args.space`), but
-`World.broadcast` — today unconditional (server.ts:1087) and the single choke point —
-delivers lane-scoped `log` entries **only to current members**. Everything any
-consumer learns about membership comes from the server; agents and humans share the
-same truth structurally, because the WorldAgent is just another client behind the
-same broadcast filter. Non-members get headers (existence, occupancy, counters) and
-bounded chosen pull, never pushed bodies. Catchup is headers, tagged, never replayed
-as live.
+the **single world log** (one seq space, self-describing via `args.space`). The
+sequencer pushes bodies to clients on exactly two paths — live `World.broadcast`
+(server.ts:1087) and the join payload (server.ts:1060) — and **one membership
+predicate filters both** (§4). Everything any consumer learns about membership comes
+from the server; agents and humans share the same truth because the WorldAgent is
+just another client behind the same two filtered paths. Non-members get headers
+(existence, occupancy, counters) and bounded chosen pull, never pushed bodies.
+Catchup is headers, tagged, never replayed as live.
 
 ---
 
@@ -76,7 +86,7 @@ legible physical referent ("the open side and doorway are legible", acceptance #
 
 ---
 
-## 2. Membership: server-owned, derived, per-(person, space) state machine
+## 2. Membership: server-owned, derived, per-(session, space) state machine
 
 ### 2.1 Where it lives
 
@@ -94,9 +104,18 @@ Per world, the sequencer keeps:
 
 ```
 spaces:      Map<spaceId, {anchor, cfg}>          // recomputed on comp fold
-membership:  Map<clientId, Map<spaceId, FSM>>     // live connections only
+membership:  Map<Client, Map<spaceId, FSM>>       // keyed on the LIVE Client object
 counters:    per-space {chatTotal, lastSeq}       // maintained in fold state (§4.3)
 ```
+
+**Keying is on the live `Client` object (the session), never the identity string.**
+The identity survives session takeover; the FSM must not. With object keying, a
+successor session starts with an empty FSM map *by construction* — there is nothing
+addressed by its identity to inherit — and every teardown question reduces to "when
+does this `Client` object leave the maps," which §2.5 answers site by site. (Rev 2:
+the rev-1 sketch keyed on `clientId`, which would have handed the predecessor's IN
+state to a reconnecting session that had never posed — a locality bypass through the
+exact mechanism claimed to prevent it. Review B1.)
 
 ### 2.2 The FSM
 
@@ -112,6 +131,8 @@ counters:    per-space {chatTotal, lastSeq}       // maintained in fold state (�
     │                 leaveMs elapsed                                 │
     └─────────────────────────────────────────────────────────────────┘
                      pose back inside exit boundary ──▶ IN (timer cancelled)
+
+   (any state) ── client removed from world (§2.5) ──▶ OUT, leave event w/ reason
 ```
 
 - **Hysteresis**: the *enter* test uses the authored region; the *stay* test uses the
@@ -151,7 +172,9 @@ On a *completed* transition the server emits a new presence-plane message:
 ```jsonc
 // to current members of the space (including the mover):
 { "type": "space", "space": "cafe", "id": "antra",
-  "state": "enter" | "leave",           // + "reason": "dissolved" | "disconnect" on teardown
+  "state": "enter" | "leave",
+  // on leave, reason is always present:
+  //   "walked" | "disconnect" | "takeover" | "expelled" | "dissolved"
   "occupants": ["antra", "mica", "sill"] }
 ```
 
@@ -159,19 +182,58 @@ To the mover on `enter`, the same message carries the **backlog header** (§6):
 `"backlog": { "count": 87, "fromSeq": 4900, "toSeq": 5012, "participants": [...] }` —
 counters only, never bodies.
 
-### 2.5 Ghosts, reconnects, takeover (acceptance #5)
+### 2.5 Teardown: the three removal sites, ghosts, takeover (acceptance #5)
 
-- Membership is keyed on the **live `Client`**; `close()` (server.ts:1871-1892)
-  tears down that client's FSMs and emits `leave {reason:"disconnect"}` to remaining
-  members. The *remembered* pose (`rememberPose` → poses.json, server.ts:1065) is
-  a resting place, not presence — it never confers membership.
-- **Identity takeover** (server.ts:2018-2032, close 4002, deliberately no leave
-  broadcast): the superseded session's FSMs die with it; the new session starts OUT
-  and re-derives from its own live poses. If the restored pose is inside the café,
-  the body re-enters through the ordinary ENTERING debounce — one clean enter, no
-  ghost, and the backlog header covers what was missed.
-- There is no path by which a disconnected, stopped, or absent body remains
-  subscribed: membership has no persistence surface at all.
+The world removes a `Client` on **three distinct paths**, and only one of them runs
+`close()`'s world bookkeeping. `expel()` (server.ts:1099-1109) and the identity-
+takeover loop (server.ts:2022-2029) both delete the client from the global ws→Client
+map *before* closing the socket, so `close()`'s `clients.get(ws)` lookup misses and
+it returns at server.ts:1873 — the code's own comment says so: *"close(ws) will not
+fire it — the client is already unmapped"* (server.ts:1095-1098). Rev 1 hung
+teardown on `close()` alone, which is exactly wrong on the two paths acceptance #5
+is about (moderation kick, reconnect). (Review B1.)
+
+**Design**: one teardown routine — transition every FSM of the removed `Client` to
+OUT and emit `leave {reason}` to each affected space's remaining members — invoked
+at all three sites:
+
+1. **normal socket close** (server.ts:1885-1889 block) — `reason:"disconnect"`;
+2. **`expel()`** — before the unmap, alongside `rememberPose`; `reason:"expelled"`.
+   `expel`'s doc-comment enumerates "all four bookkeeping steps or a ghost is left
+   behind" — membership teardown is the **fifth step of that checklist**, at this
+   site and the next, precisely because `close()` cannot cover them;
+3. **identity takeover** (server.ts:2022-2029) — teardown of the *superseded*
+   session's FSMs before it is unmapped; `reason:"takeover"`.
+
+**Takeover boundary semantics — an explicit divergence from the world plane.** The
+world deliberately suppresses the leave broadcast on takeover ("the identity isn't
+leaving, it's re-arriving", server.ts:2021). Lanes do **not** copy that: lane
+occupancy is *delivery authority* — whoever the occupants list names is who receives
+bodies — so it must never go silently stale. The `leave {reason:"takeover"}` fires
+to members; the successor session starts OUT everywhere (§2.1) and, if its restored
+pose is inside the café, re-enters through the ordinary ENTERING debounce — one
+clean enter, backlog header covering the gap. UIs may render a takeover-leave
+followed by a prompt re-enter compactly; the wire stays honest. (Flagged as a
+review question in §10 — this is a consent-adjacent call, made here for occupancy
+accuracy.)
+
+**Ghost-freedom is now a property of the removal sites, not a slogan**: membership
+has no persistence surface, is keyed on the live object, and every path that removes
+the object runs the teardown. The *remembered* pose (`rememberPose` → poses.json,
+server.ts:1065) is a resting place, not presence — it never confers membership; a
+restored pose participates only once live pose frames flow through the FSM.
+
+**Named negative-test vectors for the implementation PR** (each must fail if
+teardown regresses to close()-only or keying regresses to identity):
+
+- **takeover-while-IN**: predecessor IN the café; same identity reconnects from
+  elsewhere in the world → successor is not a member, receives no lane bodies,
+  occupants drop the body at takeover; members saw `leave {takeover}`.
+- **expel-while-IN**: expelled body leaves occupants, members see
+  `leave {expelled}`, no lane delivery to the expelled session afterward.
+- **reconnect-with-remembered-pose-inside-region**: restored pose inside the café →
+  no membership and no lane delivery until the first live pose message plus
+  `enterMs`; then one clean enter.
 
 ---
 
@@ -190,19 +252,22 @@ counters only, never bodies.
   seq authority, server.ts:1073-1085), so the binding is unambiguous even for a
   message racing a boundary crossing (acceptance #6, via LEAVING-is-member).
 
-### Seq-gap note for reviewers (implementation checkpoint, not a design choice)
+### Seq-gap audit (resolved in review; residual test named)
 
-Selective delivery (§4) means non-members observe gaps in the live seq stream.
-Nothing in the protocol promises contiguity — `history` pages by exclusive
-`before`/`after` (server.ts:1033-1058) — but any client-side high-water logic must
-tolerate gaps rather than treat gap-following entries as replay. The known trap is
-the inverse (seed logs must start at seq 0 or echoes drop as replay); the
-implementation PR must verify both `client/lib/net.js` and `WorldAgent.inboxSeen`
-(mcpl/agent.ts:139) dedupe by *seen-set/monotonic-per-entry*, not by contiguity.
+Selective delivery means non-members observe gaps in the live seq stream. The
+review audited every dedupe path: all are **monotonic high-water marks with strict
+`>`** — net.js:436, 580, 593; agent.ts:694-695 — no contiguity assumption anywhere,
+so gap-following entries are not mistaken for replay. Additionally, `history`
+replies resolve a promise and never touch `applyEntry`/`inboxSeen`
+(agent.ts:480-483), which is what makes `history {space}` viable as the body path —
+back-pulls survive the high-water marks. **Residual for the implementation PR**:
+`skipInboxThrough` (agent.ts:1204-1206) walks a prefix and breaks at the first
+`seq > cursor`; correct over a gappy inbox, but gaps become *normal* under this
+design, so it needs an explicit test.
 
 ---
 
-## 4. Delivery: membership-gated at the single choke point
+## 4. Delivery: one membership predicate over both push paths
 
 ### 4.1 Authoring gate
 
@@ -210,7 +275,7 @@ In the `say` arm of the verb handler (beside the spoken-protocol shape check,
 server.ts:2308-2330):
 
 - `space` present and author ∈ {IN, LEAVING, ENTERING-promote} → append + lane
-  broadcast.
+  delivery.
 - `space` present, author not a member → `{type:"error"}` refusal naming the space
   and the reason ("you're not in the café — step inside to join its conversation"),
   plus a `world.debug("denied", ...)` receipt per the flight-recorder convention.
@@ -224,43 +289,83 @@ server.ts:2308-2330):
 Speaking in a lane stays rank 0 (`say`, server.ts:723). Restricting *who may speak*
 in a space is not in this slice; the membership gate is spatial, not social.
 
-### 4.2 One message, exactly one lane (acceptance #8)
+### 4.2 The delivery-path inventory (one entry, one lane, one predicate)
 
-`World.broadcast` (server.ts:1087-1090) grows its first and only filter: a `log`
-message whose entry is `verb === "say" && args.space` goes **only to clients whose
-FSM for that space is IN/LEAVING** (plus the author, who gets the authoritative echo
-as today). Every other entry type broadcasts unchanged.
+An entry has either no `space` (global) or exactly one, decided at receipt — there
+is no copy, no mirror, no re-broadcast path, which is what makes acceptance #8 a
+non-event *provided every path that pushes bodies applies the membership predicate*.
+Rev 1 claimed `World.broadcast` was "the single choke point"; the review found the
+join payload is a second push path that bypasses it entirely (B2). The honest form
+is an inventory. **Contract sentence for PROTOCOL.md: any path that delivers say
+bodies to a client must state its lane predicate; a new delivery path without one
+is a leak by default.**
 
-Double-delivery is structurally impossible rather than filtered-out: an entry has
-either no `space` (global lane) or exactly one (that lane), decided at receipt.
-There is no copy, no mirror, no re-broadcast path. The browser and the WorldAgent
-are both just clients behind this filter, so "agents and browser humans use the same
-server membership truth" (#67) is not a synchronization property — it's the absence
-of a second implementation.
+| Path | What it pushes | Lane predicate (this design) |
+|---|---|---|
+| live `World.broadcast` (server.ts:1087-1090) | every log entry | lane says → FSM ∈ {IN, LEAVING} for that space; author always gets the authoritative echo; all other entries unchanged |
+| **join payload** `joinPayload()` (server.ts:1060-1063): `state.recentChat` + `tail: this.entries` | folded chat + the whole post-fold tail | **same predicate, per-recipient, both halves in one pass** (§4.3) |
+| `history` (server.ts:1033-1058) | bodies on request | none — chosen pull under ordinary record policy, bounded + explicit (§4.4); this is the *designed* body path for non-members |
+| catchup prelude (net-server.ts:490-511) | headers + capped mention replay | headers per lane; mention bodies per `policy.mentions` (§6) |
+| `pendingWhispers` (server.ts:1240, 2076-2083) | whispers | orthogonal — whispers are 1:1, never lane-scoped |
+| behaviors `bhv.onEntry` (server.ts:2335) | entries to scripts | lane says **not fanned** in slice 1 (§8) |
 
-### 4.3 Fold and late joiners (the snapshot leak, decided)
+### 4.3 The join payload: per-recipient, both halves, one pass (review B2)
 
-`recentChat` records (server.ts:349-353) gain the `space` field. The join snapshot
-therefore *contains* recent lane lines — deliberately: the fold is the durable
-record's index, and locality is not privacy. But **presentation filters**: the
-browser renders snapshot chat lines only for global + spaces the client is currently
-a member of (it starts OUT everywhere, so effectively global-only at join), and the
-agent's `stateToEntries` (mcpl/agent.ts:86-90) marks non-member lane lines as
-headers, not inbox bodies. The full record stays one `history {space}` pull away.
-Per-space counters (`chatTotal`, `lastSeq`) are maintained in the same fold arm to
-back the occupancy/backlog surfaces (§5, §6) without scanning.
+`joinPayload()` today returns `{state, tail: this.entries, throughSeq}` — the
+entire post-fold in-memory tail, up to FOLD_EVERY entries, identically to every
+joiner; both clients apply it wholesale (net.js:554-590, agent.ts:379-383), and the
+agent's say arm pushes tail bodies straight into its inbox (agent.ts:688-696).
+Unfiltered, every joiner — member or not — would receive every lane body in the
+tail, with no `space` metadata attached at the door: the locality promise and the
+#55 intake plane would fail together, on the join path. (Review B2, verified.)
 
-`trimRecentChat`'s fairness trim (server.ts:237-249) applies to the merged list
-unchanged; per-space recency beyond the merged window is what `history {space}` is
-for.
+**Design**: `joinPayload(recipient)` becomes per-recipient and applies the same
+membership predicate as live broadcast, to **both halves in the same serve pass**:
 
-### 4.4 `history` grows a lane filter
+- **tail**: lane-say entries the recipient is not a member of are **omitted**. A
+  joiner starts OUT everywhere (§2.1), so at join this means all lane says. The
+  resulting seq gaps are safe (§3 audit). All non-say entries pass untouched — the
+  tail's state-bearing replay (comps, spawns, mounts) is not filtered.
+- **`state.recentChat`**: records carry `space` in fold state (server-side); the
+  serve pass filters by the same predicate. **Filtering is serialization-time,
+  never fold-time** — the durable fold on disk keeps every line; nothing is
+  discarded from the record (the #55 invariant).
+- **`skipChatFromSeq` consistency**: both clients compute their snapshot-chat skip
+  cursor as min-seq over the *received* tail (net.js:550-553, agent.ts:379-381) to
+  suppress folded chat "the tail will bring". Because both halves are filtered by
+  one predicate in one pass, the cursor stays consistent with the chat actually
+  present. **Filtering one half only — or filtering them in separate passes — makes
+  the cursor a check that passes against its own starting state** (the review named
+  this trap precisely); the implementation test must assert cursor correctness
+  against a tail containing interleaved global and lane says.
+- **per-space counters** `{chatTotal, lastSeq}` ride the state for the occupancy
+  line and backlog headers (§5, §6) — headers exist independently of bodies.
+
+Net effect: no unshaped lane body can enter any consumer via join; live lane
+deliveries carry `space` metadata (§7.1); the only body path for non-members is
+chosen pull. "Bodies: never pushed to non-members" (§5) is now backed by the
+inventory in §4.2 rather than asserted.
+
+### 4.4 `history` grows a lane filter — with a scan bound
 
 `readHistory` (server.ts:1033-1058) filters by `verbs`/`before`/`after` today; it
 gains `space: <id>` (and `space: null` for explicitly-global-only). This is the
 bounded chosen-pull surface for everything below — non-member reading (under
 ordinary record policy), returning-resident deep-read, and #55's "pull is chosen;
 push is the hazard" doctrine.
+
+**Bounded-scan requirement (from review)**: today's implementation reverse-scans
+and, failing to fill `limit`, falls back to a `readFileSync` of the **entire log**.
+A `space` filter is far more selective than the existing `verbs` filter — a quiet
+lane would turn every pull into a whole-world-log read, on exactly the path §5/§6
+route non-member reads, catchup, and deep-read onto. Requirement, either form:
+
+- **preferred**: a per-space seq index maintained at fold time (the counters slot
+  grows a bounded ring of recent seqs per space, or a per-space index file beside
+  the log), making `history {space}` a seek, not a scan; or
+- **acceptable floor**: explicit bounded-scan semantics — `history {space}` may
+  return fewer than `limit`, carrying a `scannedThrough` cursor and `hasMore`, and
+  **never** falls back to an unbounded whole-file read.
 
 ---
 
@@ -271,8 +376,9 @@ push is the hazard" doctrine.
   87 messages, latest seq 5012`. Existence and occupancy are ambient facts about
   the world, like a lit hearth (acceptance #3). The browser inspector gets the
   equivalent row.
-- **Bodies**: never pushed to non-members, on any plane. Read via `history {space}`
-  under the world's ordinary record policy — an explicit, bounded, per-request act.
+- **Bodies**: never pushed to non-members — backed by the delivery-path inventory
+  (§4.2), not asserted. Read via `history {space}` under the world's ordinary
+  record policy — an explicit, bounded, per-request act.
 - **Mentions across the boundary** follow the authored `policy.mentions`:
   - `"knock"` (default): the mentioned non-member receives a **header-only** knock —
     `you were mentioned in the café [cafe] (seq 5013)` — tagged
@@ -295,8 +401,9 @@ tagged and can never be mistaken for live speech** (the fabricated-approach /
 
 1. **Crossing into a space** (live): the `enter` boundary event carries the backlog
    header (count, seq range, participants — §2.4). The browser MAY then render
-   recent lane lines *visibly marked historical* (a human reading scrollback is UX,
-   not context injection); the WorldAgent delivers the header only.
+   recent lane lines *visibly marked historical* via a `history {space}` pull (a
+   human reading scrollback is UX, not context injection); the WorldAgent delivers
+   the header only.
 2. **Returning resident** (reconnect/agent prelude): the existing catchup path
    (net-server.ts:490-511) extends with one header line per space that accrued
    traffic — `café: 87 messages while you were away (seq 4900–5012)` — tagged
@@ -305,7 +412,7 @@ tagged and can never be mistaken for live speech** (the fabricated-approach /
    contribute header knocks to the replay (tagged catchup + mention), deliver-policy
    spaces replay bodies within the existing ≤10 cap.
 3. **Deep read** (any time): `history {space, before/after}` — the chosen-pull
-   surface, bounded, no wake semantics, no live framing.
+   surface, bounded (§4.4), no wake semantics, no live framing.
 
 ---
 
@@ -327,14 +434,15 @@ tagged and can never be mistaken for live speech** (the fabricated-approach /
 - **spaceId is metadata, never a tag** (#67's own requirement; antra's #55 review
   point 2 on ontology hygiene): `deliver()` already carries a metadata bag
   (net-server.ts:335-347) — lane says add `metadata: {space: "cafe"}`; boundary
-  events add `{space, state, occupants}`. Dynamic authored ids stay out of the tag
-  ontology; tags name the *class*, metadata names the *instance*.
+  events add `{space, state, occupants}`. The `WorldAgent` say event object grows a
+  `space` field so the door can attach that metadata. Dynamic authored ids stay out
+  of the tag ontology; tags name the *class*, metadata names the *instance*.
 - **Tags describe, never authorize** (declaration.ts:7-21) holds: locality is
-  enforced by membership-gated broadcast at the sequencer (§4.2), upstream of the
-  door. The door never makes a delivery decision from a tag — the lane-scoped event
-  simply never reaches a non-member session's `WorldAgent`. This is the same
-  producer-side shape as the radius-gated emitter percept (mcpl/agent.ts:754-770),
-  scaled from a dial to a contract.
+  enforced by the membership predicate at the sequencer's two push paths (§4),
+  upstream of the door. The door never makes a delivery decision from a tag — a
+  lane-scoped event simply never reaches a non-member session's `WorldAgent`. This
+  is the same producer-side shape as the radius-gated emitter percept
+  (mcpl/agent.ts:754-770), scaled from a dial to a contract.
 - **Live vs catchup**: live lane speech is tagged `chat:ambient|chat:mention` +
   `eidoverse:local-chat`; anything replayed carries `eidoverse:catchup` in addition.
   The pair is disjoint by construction.
@@ -350,17 +458,19 @@ layers need:
 
 - a stable class tag (`eidoverse:local-chat`) for coarse intake rules;
 - `space` in the metadata plane for fine rules and for `message_meta` /
-  `intake_explain` receipts;
+  `intake_explain` receipts — on **every** lane body a consumer can receive, since
+  the join path no longer delivers unshaped bodies (§4.3);
 - headers that exist *independently of bodies* (occupancy line, backlog header,
   knock) so `headers`-dial consumers and refusal fallbacks have something honest to
   receive;
 - catchup marking so no intake layer can mistake backlog for live.
 
-**One requirement handed upward**: intake-rule predicates must be able to match
-**structured metadata keys** (`space == "cafe"`), not only tag classes — antra's
-#55 comment already lists "world/proximity classes" among rule predicates; this is
-the concrete instance. Otherwise per-space policy ("café → digest, workshop →
-verbatim") is inexpressible and the metadata plane is write-only.
+**One requirement handed upward** (endorsed by the review as a hard dependency):
+intake-rule predicates must be able to match **structured metadata keys**
+(`space == "cafe"`), not only tag classes — antra's #55 comment already lists
+"world/proximity classes" among rule predicates; this is the concrete instance.
+Otherwise per-space policy ("café → digest, workshop → verbatim") is inexpressible
+and the metadata plane is write-only.
 
 ### 7.3 The channel-granularity trade (flagged for review, recommendation given)
 
@@ -375,17 +485,18 @@ channel for this slice**; if per-lane tuneout becomes a real resident need, the
 clean escalation is intake/tuneout growing metadata-scoped selection (§7.2's
 requirement, which is needed anyway), not the world minting channels per room.
 
-### 7.4 Required repair discovered during grounding (blocks acceptance #3)
+### 7.4 Dependency: current-main bug #72 (blocks acceptance #3)
 
-The agent-side replay path **does not replay components at all**:
-`stateToEntries` in mcpl/agent.ts:55-92 emits terrain/grass/sky/assets/spawn/
-light/mounts/recentChat only, while the browser path replays comps
-(client/lib/world.js:631-634). Any agent joining after a `conversation-space` comp
-folds into the snapshot would not know the space exists — `look()` couldn't list it,
-acceptance #3 fails. This is the same class as the folded-mounts bug (#61). The
-implementation plan must include comp replay in the agent's `stateToEntries` (at
-minimum for server-meaningful comps), kept in step with the browser per the standing
-comment (mcpl/agent.ts:53-54).
+The agent-side replay path replays **no components at all** (`stateToEntries`,
+mcpl/agent.ts:55-92) while the browser path does (client/lib/world.js:631-634) —
+found while grounding rev 1, independently confirmed by the review, and **broader
+than #67**: it is live on main today for `lock` (server-enforced, so late-joining
+agents get refusals they cannot explain), `sockets`, `reactions`, `motion`,
+`particles`. Now filed as its own bug: **anima-research/eidoverse-worlds#72**
+(third instance of the #61 folded-state replay-drift class, fix shape and parity
+test described there). #67's acceptance vector 3 depends on #72 being fixed;
+this design carries it as an external dependency, not as its own prerequisite
+work item.
 
 ---
 
@@ -403,9 +514,9 @@ comment (mcpl/agent.ts:53-54).
 - **Behaviors**: `bhv.onEntry` fans every entry to every instance
   (server.ts:2335, behaviors.ts:391-395), so scripts anywhere would hear lane says —
   scripted eavesdropping that bypasses membership. Slice-1 rule: lane-scoped says
-  are **not** fanned to behaviors (cheapest honest cut). If a space later wants
-  reactive furniture, the principled extension is behavior hosts whose *own entity*
-  is the space anchor. Flagged as an explicit review question (§10).
+  are **not** fanned to behaviors (cheapest honest cut; the review concurs). If a
+  space later wants reactive furniture, the principled extension is behavior hosts
+  whose *own entity* is the space anchor.
 - **Voice** stays proximity-rolled client-side (voice.js:26) and untouched; the
   spatial-audio marriage is #67's own "later work".
 
@@ -425,8 +536,9 @@ tab whispers, chat.js:710):
   `say in the café…` (the `setFilter` placeholder pattern, chat.js:773-781) and
   Enter sends `say {text, space}`. In `all`, Enter is global — standing in the café
   never silently redirects a send.
-- Lane lines render with a lane chip; snapshot/backlog lines render marked
-  historical (§6.1). Membership transitions render as system lines in the lane tab.
+- Lane lines render with a lane chip; backlog lines pulled via `history {space}`
+  render marked historical (§6.1). Membership transitions render as system lines in
+  the lane tab.
 - Unread accounting rides the existing centralized `account()`/`paintUnread()`
   (chat.js:246-255, 361-369) — one new key shape, no new machinery.
 - The 3-D scene already fades bubbles by distance (avatar.js:698-704); lane speech
@@ -436,46 +548,54 @@ tab whispers, chat.js:710):
 
 ---
 
-## 10. Acceptance mapping and review questions
+## 10. Acceptance mapping and review state
 
 ### #67's café vectors → mechanism
 
 1. Authorable legible region → §1 (entity-anchored comp; radius slice 1).
-2. Human + agent converse in lane → §4 (both are clients behind one filter); §9.
-3. Nest resident: no body, existence/occupancy queryable → §5; **requires §7.4
-   repair**.
+2. Human + agent converse in lane → §4 (both are clients behind the same two
+   filtered paths); §9.
+3. Nest resident: no body, existence/occupancy queryable → §5; **depends on bug
+   #72** (§7.4).
 4. Threshold crossing delivers/undelivers once → §2.2 (hysteresis + debounce;
    events only on completed transitions).
-5. Disconnect/reconnect, no ghosts → §2.5 (live-client-keyed FSMs; takeover
-   re-derives; remembered pose confers nothing).
+5. Disconnect/reconnect, no ghosts → §2.5 (teardown at all three removal sites;
+   live-`Client` keying; three named negative-test vectors).
 6. Message just before crossing keeps lane + author → §3 (receipt-time binding) +
    §2.2 (LEAVING is a member).
 7. Durable history under rights, never replayed as live → §3, §4.4, §6 (catchup
    tagging disjoint from live).
-8. No double delivery global/local → §4.2 (structural: one entry, one lane).
+8. No double delivery global/local → §4.2 (one entry, one lane; one membership
+   predicate over both push paths, with the inventory as the contract).
 
-### Open questions for architecture review
+### Review state (rev 1 questions, resolved per the independent review)
 
-1. **Seq-gap tolerance** (§3): audit both clients' replay/dedupe logic before any
-   selective broadcast lands — this is the one place the design touches a live
-   invariant.
-2. **Behaviors and lanes** (§8): is "lane says skip behaviors" acceptable for slice
-   1, or does the café need reactive furniture on day one?
-3. **Spectator live view**: spectators are non-members (§2.3) and read via history.
-   Is there a moderation/ops case for a spectator live-tap, and if so is it a right
-   (grant) rather than a default?
-4. **Boundary-event durability**: derived-not-folded (§2.1) trades replayable
-   membership history for log hygiene; occupancy is reconstructible from pose
-   frames only ephemerally. If case law later wants "who was present at seq N"
-   answerable from the durable record, that's a fold-state snapshot extension —
-   cheap later, noted now.
-5. **`policy.mentions` default**: `"knock"` is proposed as the default (preserves
-   reachability without moving bodies). If the field's absence should instead mean
-   `"deliver"` until residents opt in, that's a one-line change with consent
-   implications worth an explicit call.
-6. **Intake metadata predicates** (§7.2): confirmation from the AF intake doc that
-   rules can match `space` metadata; otherwise per-space consumer policy has no
-   expression surface.
+1. **Seq-gap tolerance — resolved.** All dedupe paths are monotonic high-water
+   marks with strict `>`; `history` replies bypass `applyEntry`/`inboxSeen`
+   entirely (which is what makes pull-as-body-path work). Residual: an explicit
+   test for `skipInboxThrough` over a gappy inbox (§3).
+2. **Behaviors skip lanes** — agreed for slice 1 (§8).
+3. **Spectator live-tap** — agreed: non-member; if ops ever needs a tap, it is a
+   grant, never a default.
+4. **Boundary-event durability** — agreed: derived-not-folded stands; a fold-state
+   occupancy snapshot is the cheap later extension if case law wants "who was
+   present at seq N" durably answerable.
+5. **`policy.mentions` default `knock`** — endorsed (deliver-by-default would make
+   every lane leak on mention).
+6. **Intake metadata predicates** — confirmed as a genuine external dependency for
+   the AF intake doc (§7.2); Mica to carry.
+
+### Open questions (rev 2)
+
+1. **Takeover boundary-event semantics** (§2.5): this design emits an honest
+   `leave {takeover}` to lane members, diverging from the world plane's deliberate
+   takeover silence, because lane occupancy is delivery authority. If review
+   prefers wire-level compaction (suppress the pair when re-enter completes within
+   one debounce window), that is a cosmetic layer on top — the teardown itself is
+   not negotiable.
+2. **History indexing** (§4.4): per-space fold-time index (preferred) vs bounded
+   scan with `scannedThrough` (floor) — an implementation-cost call, but one of the
+   two must hold before `history {space}` becomes the primary non-member surface.
 
 ### Non-goals (this slice)
 
@@ -487,4 +607,4 @@ regions.
 
 ---
 
-*— eido-local-chat-design, 2026-08-08*
+*— eido-local-chat-design, 2026-08-08 (rev 2, same day)*
