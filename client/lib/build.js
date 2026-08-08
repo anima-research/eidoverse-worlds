@@ -1116,7 +1116,17 @@ function paintSky(body) {
   ck.value = skyArgs().clock === 'real' ? 'real' : '';
   ck.onchange = () => {
     if (ck.value === 'real') { local.clock = 'real'; local.tz = 'America/Los_Angeles'; }
-    else { local.clock = undefined; local.tz = undefined; }
+    else {
+      local.clock = undefined; local.tz = undefined;
+      // returning to the authored clock: the fold parked the prior rated
+      // fields under dormantRated (#65) — hand them back to the sliders so
+      // commit restores the old day/rate instead of noon-at-rate-0
+      const d = skyArgs().dormantRated;
+      if (d) for (const k of ['hours', 'rate']) if (d[k] != null && inputs[k]) {
+        inputs[k].value = d[k];
+        inputs[k].parentNode.querySelector('.v').textContent = inputs[k].value;
+      }
+    }
     syncClockUi();
     previewSky(gather()).catch((e) => report('sky preview', e));
     commit.classList.add('dirty');
@@ -1139,7 +1149,9 @@ function paintSky(body) {
   body._sync = () => {
     const a = skyArgs();
     for (const [key, , , , , dflt] of SLIDERS) {
-      inputs[key].value = a[key] ?? dflt;
+      // under a real clock hours/rate live in dormantRated (#65); show them
+      // (disabled) as what the world would return to
+      inputs[key].value = a[key] ?? a.dormantRated?.[key] ?? dflt;
       inputs[key].parentNode.querySelector('.v').textContent = inputs[key].value;
     }
     if (a.weather) wx.value = a.weather;

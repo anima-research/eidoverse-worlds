@@ -201,6 +201,27 @@ the next scheduled segment boundary, then the forecast resumes. Re-author
 sky is a griefing vector, not weather). Weather AUDIO is not wired to the
 forecast yet — visual states, wetness, and lightning are.
 
+**One clock governs, and the folded state says which** (issue #65). The day
+clock has three modes: `fixed` (an authored `hours`, no motion), `rated`
+(`hours` + `rate` — world-time multiplier), and `real` (`clock: "real"` +
+`tz` — the world's hour IS that timezone's wall hour). Because `sky` folds
+wholesale, authors legitimately re-issue the full standing bag when flipping
+modes — so the FOLD normalizes: under an effective real clock, top-level
+`hours`/`rate` never survive; they are parked in `dormantRated` (explicitly
+inactive; the tuner restores them to its sliders when you switch back).
+The fold also stamps top-level `seq`/`by` — which sky entry authored the
+current bag. Machine consumers should not divine precedence from raw fields:
+`effectiveClock(sky, now)` in `client/lib/forecast.js` (also serialized in
+`look()`'s `World.sky.effectiveClock`) answers
+`{mode: "real"|"rated"|"fixed", hour, tz?, rate?, seq, by}` — reporting what
+is ACTUALLY in effect, including the fallback when a `clock: "real"` names a
+timezone Intl can't resolve (then the rated/fixed fields stay active and
+`requestedTz` flags the typo). Migration for older consumers: `sky.rate` can
+no longer be stale-but-present under a real clock — it is simply absent, so
+`sky.rate` remains a truthful read in rated mode and `undefined` otherwise.
+Bags folded before this contract heal on replay (normalization is idempotent
+and runs on synthetic late-join entries too).
+
 **Things can EMIT — fire, embers, smoke, motes.** `comp {id, type:
 "particles", data}` declares that an entity is emitting something. It is an
 ordinary component: builder rights, folded blindly, ≤8KB, and it never writes

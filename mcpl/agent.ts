@@ -12,7 +12,7 @@ import { HeadlessBody } from "./physics.ts";
 // The same pure sky fold + weather derivation the browser client and the
 // sequencer run — text-tier perception must land on the SAME hour and
 // weather every renderer shows (issue #29's shared-fact boundary).
-import { foldSkyEntry, describeSky, effectiveSky, dayPhase, hoursAt } from "../client/lib/forecast.js";
+import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hoursAt } from "../client/lib/forecast.js";
 // The `particles` component's meaning, shared verbatim with the browser host:
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
@@ -801,7 +801,9 @@ export class WorldAgent {
     const eff = effectiveSky(this.skyState, nowMs, this.skyCursor);
     this.skyCursor = eff.cursor;
     const key = `${eff.source}:${eff.seg?.idx ?? "-"}:${eff.weather ?? "-"}`;
-    const advancing = (this.skyState.rate ?? 0) !== 0 || this.skyState.clock === "real";
+    // the canonical clock decides whether day phases can move (#65) — under a
+    // real clock the folded bag no longer carries rate at all
+    const advancing = effectiveClock(this.skyState, nowMs).mode !== "fixed";
     const phase = advancing ? dayPhase(hoursAt(this.skyState, nowMs)) : null;
     if (this.lastSkyKey === null) {
       this.lastSkyKey = key;
@@ -1234,11 +1236,16 @@ export class WorldAgent {
     if (this.skyState) {
       const now = Date.now();
       const eff = effectiveSky(this.skyState, now);
+      const ck = effectiveClock(this.skyState, now);
       this.worldInfo.sky = {
         ...this.skyState,
         currentHour: Number(hoursAt(this.skyState, now).toFixed(2)),
         ...(eff.weather ? { currentWeather: eff.weather } : {}),
         source: eff.source,
+        // the one canonical clock object (#65): machine consumers read THIS,
+        // not rate/hours precedence folklore — the folded fields alongside are
+        // active state only (a real-clock fold carries no top-level rate)
+        effectiveClock: { ...ck, hour: Number(ck.hour.toFixed(2)) },
         description: describeSky(this.skyState, now),
       };
     }

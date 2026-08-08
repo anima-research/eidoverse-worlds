@@ -175,5 +175,53 @@ function rig(skyEntry: any) {
     JSON.stringify(ps));
 }
 
+// ---------------------------------------------------------------- F: clock contract in look() (#65)
+// The issue's receipt was look() itself: one sky object carrying stale
+// hours/rate beside clock:'real'. The agent plane must serialize the
+// normalized bag plus the canonical effectiveClock, and ambient day-phase
+// perception must keep working with no top-level rate at all.
+
+{
+  // accelerated commons shape, then the owner flips to real time re-issuing
+  // the standing bag (the tuner's gather() spread — the seq 4777 shape)
+  const { ag, events } = rig({ verb: "sky", args: { hours: 6.8, rate: 24, clouds: "cumulus", forecast: policyArgs }, ts: T0, seq: 2561, actor: "mica" });
+  ag.applyEntry({ verb: "sky", args: { ...ag.skyState, clock: "real", tz: "America/Los_Angeles" }, ts: T0 + HOUR, seq: 4777, actor: "antra" }, false);
+  ag.look();
+  const sky = ag.worldInfo.sky;
+  check("#65 look(): no stale active-looking hours/rate under a real clock",
+    sky.rate === undefined && sky.hours === undefined && sky.clock === "real",
+    JSON.stringify({ hours: sky.hours, rate: sky.rate, clock: sky.clock }));
+  check("#65 look(): prior rated clock is explicit inactive provenance",
+    sky.dormantRated?.hours === 6.8 && sky.dormantRated?.rate === 24, JSON.stringify(sky.dormantRated));
+  check("#65 look(): canonical effectiveClock rides alongside",
+    sky.effectiveClock?.mode === "real" && sky.effectiveClock?.tz === "America/Los_Angeles"
+      && typeof sky.effectiveClock?.hour === "number"
+      && sky.effectiveClock?.seq === 4777 && sky.effectiveClock?.by === "antra",
+    JSON.stringify(sky.effectiveClock));
+  check("#65 look(): narration says real time, never ×24",
+    sky.description.includes("real time, America/Los_Angeles") && !sky.description.includes("advancing"),
+    sky.description);
+
+  // day phases still move with no rate field: LA 4:50 (night) → 5:10 (dawn)
+  const night = Date.UTC(2026, 0, 15, 12, 50, 0), dawn = Date.UTC(2026, 0, 15, 13, 10, 0);
+  ag.checkSky(night);
+  const before = events.length;
+  ag.checkSky(dawn);
+  // (a forecast segment boundary may also land in the 20min window — only
+  // the phase crossing itself is under test here)
+  check("#65 ambient day-phase crossing still fires under a real clock",
+    events.slice(before).some((e: any) => /dawn/.test(e?.text ?? "")),
+    JSON.stringify(events.slice(before)));
+
+  // return to accelerated: effective source changes once, with new provenance
+  ag.applyEntry({ verb: "sky", args: { hours: 6.8, rate: 24, clouds: "cumulus" }, ts: T0 + 2 * HOUR, seq: 5100, actor: "antra" }, false);
+  ag.look();
+  const back = ag.worldInfo.sky;
+  check("#65 look(): back to rated — active fields return, dormant drops",
+    back.rate === 24 && back.hours === 6.8 && back.dormantRated === undefined
+      && back.effectiveClock?.mode === "rated" && back.effectiveClock?.seq === 5100,
+    JSON.stringify({ rate: back.rate, dormant: back.dormantRated, ck: back.effectiveClock }));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -15,7 +15,7 @@
 //
 // Run: bun tools/forecast-test.ts
 
-import { WEATHERS, normalizePolicy, segmentAt, effectiveSky, foldSkyEntry, hoursAt, describeSky }
+import { WEATHERS, normalizePolicy, segmentAt, effectiveSky, effectiveClock, foldSkyEntry, hoursAt, describeSky }
   from "../client/lib/forecast.js";
 
 let pass = 0, fail = 0;
@@ -306,6 +306,114 @@ const policyArgs = {
     JSON.stringify({ clock: wet.clock, tz: wet.tz }));
   check("describeSky names the real clock", (describeSky(sky, jan) ?? "").includes("real time, America/Los_Angeles"),
     describeSky(sky, jan) ?? "null");
+}
+
+// ---------------------------------------------------------------- clock contract (#65)
+// One clock governs, and the folded state says which. Accelerated → real →
+// accelerated is the acceptance path from the issue: no stale active-looking
+// hours/rate beside clock:'real', history parked under dormantRated, bag
+// provenance (top-level seq/by) stamped by the fold, and effectiveClock as the
+// canonical machine answer on every plane.
+
+{
+  const synth = (bag: any) => foldSkyEntry(null, { verb: "sky", args: bag, ts: T0 + 9 * HOUR, seq: -1, actor: "world" });
+
+  // 1 — author accelerated policy (the commons shape: seq 2561)
+  const rated = foldSkyEntry(null,
+    { verb: "sky", args: { hours: 6.8, rate: 24, clouds: "cumulus", forecast: policyArgs }, ts: T0, seq: 2561, actor: "mica" });
+  check("#65 rated: hours/rate are top-level active state", rated.hours === 6.8 && rated.rate === 24);
+  check("#65 rated: fold stamps bag provenance", rated.seq === 2561 && rated.by === "mica");
+  const ckRated = effectiveClock(rated, T0 + HOUR);
+  check("#65 rated: effectiveClock mode/rate/provenance",
+    ckRated.mode === "rated" && ckRated.rate === 24 && ckRated.seq === 2561 && ckRated.by === "mica",
+    JSON.stringify(ckRated));
+  check("#65 rated: late join re-fold is identical",
+    JSON.stringify(synth(rated)) === JSON.stringify(rated));
+
+  // 2 — flip to real time, re-issuing the FULL standing bag (the tuner's
+  // gather() spreads skyArgs(), so the stale hours/rate ride along — the
+  // exact authoring shape that produced the issue's receipt at seq 4777)
+  const real = foldSkyEntry(null,
+    { verb: "sky", args: { ...rated, clock: "real", tz: "America/Los_Angeles" }, ts: T0 + 2 * HOUR, seq: 4777, actor: "antra" });
+  check("#65 real: no effective field still says ×24", real.rate === undefined && real.hours === undefined,
+    JSON.stringify({ hours: real.hours, rate: real.rate }));
+  check("#65 real: prior rated clock parked as dormantRated",
+    real.dormantRated?.hours === 6.8 && real.dormantRated?.rate === 24, JSON.stringify(real.dormantRated));
+  check("#65 real: clock/tz + new provenance", real.clock === "real" && real.seq === 4777 && real.by === "antra");
+  check("#65 real: forecast survives the flip (bag re-issue keeps policy)", !!real.forecast);
+  const ckReal = effectiveClock(real, Date.UTC(2026, 0, 15, 20, 30, 0));
+  check("#65 real: effectiveClock is canonical, no rate anywhere",
+    ckReal.mode === "real" && ckReal.tz === "America/Los_Angeles" && !("rate" in ckReal)
+      && ckReal.seq === 4777 && ckReal.by === "antra" && Math.abs(ckReal.hour - 12.5) < 1e-9,
+    JSON.stringify(ckReal));
+  const realDesc = describeSky(real, Date.UTC(2026, 0, 15, 20, 30, 0)) ?? "";
+  check("#65 real: narration names real time, never ×24",
+    realDesc.includes("real time, America/Los_Angeles") && !realDesc.includes("advancing"), realDesc);
+  check("#65 real: late join re-fold is identical",
+    JSON.stringify(synth(real)) === JSON.stringify(real));
+
+  // a bag folded BEFORE the contract (stale top-level hours/rate beside
+  // clock:'real' — the live commons state) heals on synthetic replay, with
+  // every provenance stamp passing through untouched
+  const legacy = { hours: 6.8, rate: 24, clouds: "cumulus", clock: "real", tz: "America/Los_Angeles",
+    forecast: { ...policyArgs, epoch: T0, seq: 4777, by: "antra" }, ts: T0 + 2 * HOUR };
+  const healed = synth(legacy);
+  check("#65 legacy bag heals on late-join replay",
+    healed.hours === undefined && healed.rate === undefined
+      && healed.dormantRated?.hours === 6.8 && healed.dormantRated?.rate === 24, JSON.stringify(healed));
+  check("#65 healing never restamps provenance",
+    healed.forecast.epoch === T0 && healed.forecast.seq === 4777 && healed.forecast.by === "antra"
+      && healed.ts === T0 + 2 * HOUR);
+
+  // 3 — weather under a real clock: merge stays clean, authorship stays put
+  const wet = foldSkyEntry(real,
+    { verb: "weather", args: { weather: "rain", seq: 9999, by: "evil" } as any, ts: T0 + 3 * HOUR, seq: 5000, actor: "digi" });
+  check("#65 weather merge resurrects no rated fields",
+    wet.rate === undefined && wet.hours === undefined && wet.dormantRated?.rate === 24, JSON.stringify(
+      { hours: wet.hours, rate: wet.rate, dormant: wet.dormantRated }));
+  check("#65 weather verb cannot claim bag authorship", wet.seq === 4777 && wet.by === "antra",
+    JSON.stringify({ seq: wet.seq, by: wet.by }));
+  check("#65 weather under real clock needs no hours rebase", !("hours" in wet));
+
+  // 4 — return to accelerated: what the tuner commits after restoring its
+  // sliders from dormantRated (clock cleared, full bag re-issued)
+  const back = foldSkyEntry(null,
+    { verb: "sky", args: { ...wet, clock: undefined, tz: undefined, hours: 6.8, rate: 24 }, ts: T0 + 4 * HOUR, seq: 5100, actor: "antra" });
+  check("#65 back to rated: hours/rate active again, dormant dropped",
+    back.hours === 6.8 && back.rate === 24 && back.dormantRated === undefined, JSON.stringify(
+      { hours: back.hours, rate: back.rate, dormant: back.dormantRated }));
+  const ckBack = effectiveClock(back, T0 + 4 * HOUR);
+  check("#65 back to rated: effective source changed once, new seq/by",
+    ckBack.mode === "rated" && ckBack.rate === 24 && ckBack.seq === 5100,
+    JSON.stringify(ckBack));
+  check("#65 back to rated: late join re-fold is identical",
+    JSON.stringify(synth(back)) === JSON.stringify(back));
+
+  // spoofing: authored seq/by/dormantRated are fold-owned and recomputed
+  const spoof = foldSkyEntry(null,
+    { verb: "sky", args: { hours: 3, rate: 1, seq: 1, by: "evil", dormantRated: { rate: 999 } } as any, ts: T0, seq: 6000, actor: "antra" });
+  check("#65 sky verb cannot spoof provenance or park fake history",
+    spoof.seq === 6000 && spoof.by === "antra" && spoof.dormantRated === undefined, JSON.stringify(spoof));
+
+  // unknown tz: the rated fallback GENUINELY governs, so it must stay active
+  // and the canonical clock must say so instead of hiding it
+  const typoFold = foldSkyEntry(null,
+    { verb: "sky", args: { clock: "real", tz: "America/Nowhere", hours: 6, rate: 1 }, ts: T0, seq: 7000, actor: "antra" });
+  check("#65 unknown tz keeps the rated fallback active",
+    typoFold.hours === 6 && typoFold.rate === 1 && typoFold.dormantRated === undefined);
+  const ckTypo = effectiveClock(typoFold, T0 + 2 * HOUR);
+  check("#65 unknown tz: effectiveClock reports the fallback honestly",
+    ckTypo.mode === "rated" && ckTypo.rate === 1 && ckTypo.requestedTz === "America/Nowhere"
+      && Math.abs(ckTypo.hour - 8) < 1e-9, JSON.stringify(ckTypo));
+  check("#65 unknown tz: narration flags the typo",
+    (describeSky(typoFold, T0) ?? "").includes('"America/Nowhere" is unknown'), describeSky(typoFold, T0) ?? "null");
+
+  // degenerate shapes
+  check("#65 effectiveClock: null sky is fixed noon",
+    JSON.stringify(effectiveClock(null, T0)) === JSON.stringify({ mode: "fixed", hour: 12 }));
+  const still = foldSkyEntry(null, { verb: "sky", args: { hours: 9 }, ts: T0, seq: 8000, actor: "antra" });
+  check("#65 effectiveClock: rate-less sky is fixed at its hour",
+    effectiveClock(still, T0 + HOUR).mode === "fixed" && effectiveClock(still, T0 + HOUR).hour === 9);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

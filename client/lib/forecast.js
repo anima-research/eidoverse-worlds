@@ -201,16 +201,44 @@ export function effectiveSky(sky, nowMs, cursor = null) {
 
 // ---------------------------------------------------------------- fold
 
+/** One clock may govern (issue #65). Under an EFFECTIVE real clock —
+ *  `clock:'real'` with a tz Intl can resolve — the rated fields `hours`/`rate`
+ *  must not remain as active-looking top-level state: they demote into
+ *  `dormantRated`, an explicitly-inactive namespace a later return to rated
+ *  mode can restore from (the tuner prefills its sliders with it). Outside
+ *  real mode `dormantRated` is dropped: the top-level fields are the active
+ *  clock again and history lives in the log.
+ *
+ *  Runs on EVERY fold, synthetic replay included — this is config
+ *  normalization, not provenance stamping: deterministic, idempotent, and it
+ *  heals bags folded before the contract existed the next time a late join
+ *  replays them. When the tz does NOT resolve, hours/rate stay active: they
+ *  genuinely govern via hoursAt's fallback, and demoting them would recreate
+ *  the lie in the other direction (effectiveClock reports the fallback). */
+function normalizeClock(out) {
+  const dormant = (out.dormantRated && typeof out.dormantRated === 'object') ? { ...out.dormantRated } : {};
+  delete out.dormantRated;
+  if (out.clock === 'real' && tzFormatter(out.tz ?? 'America/Los_Angeles')) {
+    if (out.hours != null) dormant.hours = out.hours;
+    if (out.rate != null) dormant.rate = out.rate;
+    delete out.hours; delete out.rate;
+    if (Object.keys(dormant).length) out.dormantRated = dormant;
+  }
+  return out;
+}
+
 /** Fold a `sky` or `weather` log entry onto the standing sky state. The
  *  sequencer, the live browser client, and the embodied agent all fold
  *  through here — one code path, three planes, no drift.
  *
- *  Server-owned stamps: `forecast.{epoch,seq,by}` and the whole `override`
- *  bag come from the ENTRY, never from the authored args — a policy bag
- *  cannot spoof its own provenance. The one exception is synthetic
- *  pre-history replay (stateToEntries' negative seqs): those args ARE the
- *  already-stamped fold, so they pass through untouched — restamping them
- *  with the synthetic entry would re-epoch the forecast on every late join.
+ *  Server-owned stamps: `forecast.{epoch,seq,by}`, the whole `override` bag,
+ *  and the top-level `seq`/`by` (which sky entry authored this bag — the
+ *  effective clock's provenance, issue #65) come from the ENTRY, never from
+ *  the authored args — a policy bag cannot spoof its own provenance. The one
+ *  exception is synthetic pre-history replay (stateToEntries' negative seqs):
+ *  those args ARE the already-stamped fold, so stamps pass through untouched —
+ *  restamping them with the synthetic entry would re-epoch the forecast on
+ *  every late join.
  *
  *  A weather verb under a rated sky also REBASES `hours` to the hour the old
  *  epoch implies at the entry's ts. Without this the merge re-epochs t0 while
@@ -227,8 +255,9 @@ export function foldSkyEntry(prev, { verb, args = {}, ts, seq, actor }) {
       } else {
         delete out.forecast;      // absent or null: forecast off, authored-only
       }
+      out.seq = seq; out.by = actor;
     }
-    return out;
+    return normalizeClock(out);
   }
   // weather — merges onto the standing sky (DESIGN.md: a thing that HAPPENS,
   // not a property you set). `keepSky: false` discards the standing sky and
@@ -249,8 +278,40 @@ export function foldSkyEntry(prev, { verb, args = {}, ts, seq, actor }) {
       };
     } else if (base.override) out.override = base.override;
     else delete out.override;
+    // nor can it claim authorship of the bag — seq/by stay the sky entry's
+    if (base.seq != null) out.seq = base.seq; else delete out.seq;
+    if (base.by != null) out.by = base.by; else delete out.by;
   }
-  return out;
+  return normalizeClock(out);
+}
+
+/** The canonical answer to "what clock governs this sky?" (issue #65) — no
+ *  precedence folklore. Mirrors hoursAt's ACTUAL behavior, including the
+ *  unknown-tz fallback: `mode` is what is effective right now, never what was
+ *  merely requested. Shapes:
+ *    { mode:'real',  tz, hour, seq?, by? }
+ *    { mode:'rated', rate, hour, seq?, by?, requestedTz? }
+ *    { mode:'fixed', hour, seq?, by?, requestedTz? }
+ *  `requestedTz` appears only when `clock:'real'` was authored with a tz Intl
+ *  cannot resolve — the fallback governs and says so. `seq`/`by` are the
+ *  fold-stamped provenance of the sky entry that authored this bag. */
+export function effectiveClock(sky, nowMs) {
+  if (!sky) return { mode: 'fixed', hour: 12 };
+  const hour = hoursAt(sky, nowMs);
+  const prov = {
+    ...(sky.seq != null ? { seq: sky.seq } : {}),
+    ...(sky.by != null ? { by: sky.by } : {}),
+  };
+  if (sky.clock === 'real') {
+    const tz = sky.tz ?? 'America/Los_Angeles';
+    if (tzFormatter(tz)) return { mode: 'real', tz, hour, ...prov };
+    const rate = sky.rate ?? 0;
+    return rate !== 0
+      ? { mode: 'rated', rate, hour, requestedTz: tz, ...prov }
+      : { mode: 'fixed', hour, requestedTz: tz, ...prov };
+  }
+  const rate = sky.rate ?? 0;
+  return rate !== 0 ? { mode: 'rated', rate, hour, ...prov } : { mode: 'fixed', hour, ...prov };
 }
 
 /** Coarse day phase — the granularity ambient perception actually wants.
@@ -269,11 +330,11 @@ export function dayPhase(hours) {
 export function describeSky(sky, nowMs) {
   if (!sky) return null;
   const bits = [];
-  const rated = (sky.rate ?? 0) !== 0;
-  const real = sky.clock === 'real';
-  bits.push(`hour ${hoursAt(sky, nowMs).toFixed(1)}${real
-    ? ` (real time, ${sky.tz ?? 'America/Los_Angeles'})`
-    : rated ? ` (advancing ×${sky.rate})` : ''}`);
+  const ck = effectiveClock(sky, nowMs);
+  bits.push(`hour ${ck.hour.toFixed(1)}${ck.mode === 'real'
+    ? ` (real time, ${ck.tz})`
+    : ck.mode === 'rated' ? ` (advancing ×${ck.rate})` : ''}${ck.requestedTz
+    ? ` (requested real-time tz "${ck.requestedTz}" is unknown — authored clock in effect)` : ''}`);
   const eff = effectiveSky(sky, nowMs);
   const mins = (t) => Math.max(0, Math.round((t - nowMs) / 60000));
   if (eff.source === 'forecast') {
