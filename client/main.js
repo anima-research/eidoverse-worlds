@@ -31,6 +31,7 @@ import {
   hasGhost, hasSelection, toggleEditMode, isEditing,
 } from './lib/build.js';
 import { initConjure } from './lib/conjure.js';
+import { initHandGrab, updateGrabHints } from './lib/handgrab.js';
 import { initVoice, micOn, isMuted, micAnalyserLevel, peerLevels } from './lib/voice.js';
 import './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
 import { initAudioPanel } from './lib/audiopanel.js';
@@ -530,6 +531,7 @@ function clearPins() {
 }
 
 initPhysObj({ myPos: () => myState.pos });
+initHandGrab();  // 🖐 room-grab: click a `grab`-comp'd thing to pick it up (#44)
 initMods();   // 🧩 runtime client scripts: local trusted mods + world offers
 
 initBodyDrag({
@@ -1049,6 +1051,8 @@ function frame(now) {
                                  // land in the same frame's avatar.update
   BC('physobj');
   tickPhysObj(dt, now);          // entity leases I hold (kicked balls, etc.)
+  BC('grab-hints');
+  updateGrabHints();             // warm what's takeable (room act, not edit)
   BC('mods');
   tickMods(dt, now);             // runtime-loaded client scripts (🧩 mods)
   BC('remotes');

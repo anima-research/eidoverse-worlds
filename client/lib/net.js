@@ -484,6 +484,7 @@ async function handle(msg) {
     case 'error':
       // Server-side refusals are the user's problem to see, not the console's.
       toast(msg.error, 'warn');
+      bus.emit('server-error', msg.error);   // systems with optimistic state listen
       break;
   }
 }
