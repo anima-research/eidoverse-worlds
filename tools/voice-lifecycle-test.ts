@@ -682,6 +682,173 @@ check("unhush rejoins the SAME peer at full volume",
   consent.setReceiveVoice(false);
 }
 
+// ---- mic-after-peer: the track must reach peers built before it -----------
+// Two races, both leaving a peer with a sender carrying NO track on a
+// transceiver negotiated sendrecv: it renegotiates happily and transmits
+// silence, forever, while the UI reports "mic LIVE". Field receipt (phone on
+// cellular -> Burrow, 2026-08-07): in=1179 out=0.
+// Both FAIL on pre-fix main.
+{
+  // T6: peer exists BEFORE the mic opens.
+  // toggleMic is a TOGGLE — drive to the state, never assume a call reaches it.
+  if (voice.micOn()) { await voice.toggleMic("me"); await settle(); }
+  consent.setReceiveVoice(true);
+  created.length = 0;
+  stubs.remotes.set("early", { agent: false });
+  bus.emit("roster");                                // peer built with no mic
+  await settle();
+  bus.emit("rtc", { from: "early", payload: { sdp: { type: "offer", sdp: "x" } } });
+  await settle();
+  const pcEarly = created.at(-1)!;
+  if (!voice.micOn()) { await voice.toggleMic("me"); await settle(); }   // mic ON now
+  await settle();
+  const live = pcEarly.getSenders().filter((s) => s.track);
+  check("mic-after-peer: an existing peer gets the track (was a sender with none)",
+    live.length === 1, `${live.length} live senders of ${pcEarly.getSenders().length}`);
+
+  // T7: a peer appears WHILE mic acquisition is still pending. This is the
+  // race that made it intermittent — getUserMedia takes hundreds of ms, and a
+  // peer built inside that await is constructed while micStream is still null,
+  // so addTrack skips it AND any one-shot back-fill has already run. Forced
+  // deterministically rather than hoped for: the stub holds the promise open
+  // until we have created the peer.
+  if (voice.micOn()) { await voice.toggleMic("me"); await settle(); }    // back to mic OFF
+  created.length = 0;
+  let release: (() => void) | null = null;
+  const held = new Promise<void>((r) => { release = r; });
+  const realGUM = navigator.mediaDevices.getUserMedia;
+  (navigator.mediaDevices as { getUserMedia: unknown }).getUserMedia = async (c: unknown) => {
+    await held;                                      // peer arrives during this
+    return realGUM.call(navigator.mediaDevices, c);
+  };
+  const micOpening = voice.micOn() ? Promise.resolve(false) : voice.toggleMic("me");
+  await settle();
+  stubs.remotes.set("during", { agent: false });
+  bus.emit("rtc", { from: "during", payload: { sdp: { type: "offer", sdp: "x" } } });
+  await settle();                                    // peer now exists, micStream still null
+  release!();
+  await micOpening;
+  await settle();
+  (navigator.mediaDevices as { getUserMedia: unknown }).getUserMedia = realGUM;
+  const pcDuring = created.at(-1)!;
+  const liveDuring = pcDuring.getSenders().filter((s) => s.track);
+  check("mic-during-acquisition: a peer born inside the getUserMedia await still gets the track",
+    liveDuring.length === 1, `${liveDuring.length} live senders of ${pcDuring.getSenders().length}`);
+
+  // Exactly one — a repair that attaches on every renegotiation must not
+  // accumulate duplicate senders on a peer that is offered to repeatedly.
+  bus.emit("roster"); await settle();
+  bus.emit("roster"); await settle();
+  check("mic-after-peer: repeated renegotiation does not stack duplicate senders",
+    pcDuring.getSenders().filter((s) => s.track).length === 1,
+    `${pcDuring.getSenders().length} senders total`);
+}
+
+{
+  // Digi/antra field case (commons, 2026-08-07): voice worked ONCE, then never
+  // again across mic toggles. removeTrack nulls the sender but leaves it in
+  // place, so a later mic-on — which only addTracks on NEW peers — never
+  // re-attaches. The first toggle-off is permanent, not unlucky.
+  if (voice.micOn()) { await voice.toggleMic("me"); await settle(); }
+  consent.setReceiveVoice(true);
+  created.length = 0;
+  if (!voice.micOn()) { await voice.toggleMic("me"); await settle(); }   // mic ON first
+  stubs.remotes.set("digi", { agent: false });
+  bus.emit("roster"); await settle();
+  const pcT = created.at(-1)!;
+  check("toggle: first connection while mic live has a track (the 'hello' that worked)",
+    pcT.getSenders().filter((s) => s.track).length === 1);
+  await voice.toggleMic("me"); await settle();     // mic OFF
+  await voice.toggleMic("me"); await settle();     // mic ON again
+  check("toggle: mic off->on re-attaches to the SAME peer (was permanent silence)",
+    pcT.getSenders().filter((s) => s.track).length === 1,
+    `${pcT.getSenders().filter((s) => s.track).length} live of ${pcT.getSenders().length}`);
+}
+
+{
+  // The toggle bug bites LISTENERS, not speakers. mic-off drops the peer when
+  // we are not receiving (so mic-on rebuilds it with the track — recovers),
+  // but keeps it when we are (stripping the track and leaving an empty
+  // sender). Digi toggled freely in commons while mic-only; anyone wearing
+  // headphones would have been silenced by their own toggle with no signal.
+  if (voice.micOn()) { await voice.toggleMic("me"); await settle(); }
+  consent.setReceiveVoice(false);                 // mic-only, like Digi
+  created.length = 0;
+  if (!voice.micOn()) { await voice.toggleMic("me"); await settle(); }
+  stubs.remotes.set("deaf", { agent: false });
+  bus.emit("roster"); await settle();
+  await voice.toggleMic("me"); await settle();    // OFF -> dropPeer
+  await voice.toggleMic("me"); await settle();    // ON  -> fresh peer
+  bus.emit("roster"); await settle();
+  const pcFresh = created.at(-1)!;
+  check("toggle while NOT receiving: peer is rebuilt with a track (why Digi's toggles worked)",
+    pcFresh.getSenders().filter((s) => s.track).length === 1,
+    `${pcFresh.getSenders().filter((s) => s.track).length} live of ${pcFresh.getSenders().length}`);
+  consent.setReceiveVoice(true);
+}
+
+{
+  // Mica's third timing class (#34): the mic opens while a peer is parked in
+  // have-remote-offer — mid-negotiation, so renegotiate() bails. The track
+  // must still be attached, and the in-flight answer must carry it, without
+  // forcing a second negotiation into a state that cannot take one.
+  if (voice.micOn()) { await voice.toggleMic("me"); await settle(); }
+  consent.setReceiveVoice(true);
+  created.length = 0;
+  stubs.remotes.set("midneg", { agent: false });
+  // hold the answer inside createAnswer so the peer stays in have-remote-offer
+  let release: (() => void) | null = null;
+  const held = new Promise<void>((r) => { release = r; });
+  const origCreateAnswer = FakePC.prototype.createAnswer;
+  FakePC.prototype.createAnswer = async function () { await held; return origCreateAnswer.call(this); };
+  bus.emit("rtc", { from: "midneg", payload: { sdp: { type: "offer", sdp: "x" } } });
+  await settle();
+  const pcMid = created.at(-1)!;
+  check("mid-negotiation: peer is parked in have-remote-offer",
+    pcMid.signalingState === "have-remote-offer", pcMid.signalingState);
+  if (!voice.micOn()) { await voice.toggleMic("me"); await settle(); }   // mic ON mid-negotiation
+  release!();
+  await settle();
+  FakePC.prototype.createAnswer = origCreateAnswer;
+  check("mid-negotiation: the track still lands on a peer renegotiate() would skip",
+    pcMid.getSenders().filter((s) => s.track).length === 1,
+    `${pcMid.getSenders().filter((s) => s.track).length} live of ${pcMid.getSenders().length}`);
+  check("mid-negotiation: peer ends stable with no duplicate offer",
+    pcMid.signalingState === "stable", pcMid.signalingState);
+}
+
+{
+  // Mica's fourth class, the variant I can actually REACH (#62 review). A peer
+  // offered with a live mic, then the mic toggled off and on while that offer
+  // is still in flight: the in-flight offer describes a track that has since
+  // been stopped and replaced. renegotiate() bails while unstable, so unless
+  // something reconciles on return to stable, the far end is left holding a
+  // description of a dead track.
+  //
+  // (CORRECTED: the mic-LESS local offer IS reachable, and my "every offer
+  // path is mic-gated" reading was wrong — I grepped the offer-INITIATING
+  // sites and skipped renegotiate()'s callers. toggleMic's OFF branch calls
+  // renegotiate AFTER micStream = null, so it builds a genuinely mic-less
+  // offer and parks the peer in have-local-offer. Note it fires only when
+  // receive is ON — the same asymmetry as the toggle bug: it selects for
+  // listeners. The generation-bound pending-on-stable repair for that case is
+  // still outstanding; this test covers the mid-offer variant only.)
+  if (voice.micOn()) { await voice.toggleMic("me"); await settle(); }
+  consent.setReceiveVoice(true);
+  if (!voice.micOn()) { await voice.toggleMic("me"); await settle(); }   // mic ON
+  created.length = 0;
+  stubs.remotes.set("stale", { agent: false });
+  FakePC.gate = new Promise<void>(() => {});          // park the offer in flight
+  bus.emit("roster"); await settle();
+  const pcStale = created.at(-1)!;
+  FakePC.gate = null;
+  await voice.toggleMic("me"); await settle();        // mic OFF mid-offer
+  await voice.toggleMic("me"); await settle();        // mic ON again
+  const liveStale = pcStale.getSenders().filter((s) => s.track);
+  check("stale-offer: the peer carries exactly one live track after a mid-offer toggle",
+    liveStale.length === 1, `${liveStale.length} live of ${pcStale.getSenders().length}`);
+}
+
 // T5 (relay half) lives in tools/voice-matrix.mjs: RTC_MODE=relay-noturn must
 // stay at 0 inbound pkts; RTC_MODE=relay-turn must exceed 0. External harness
 // by design — fake RTC cannot prove media.
