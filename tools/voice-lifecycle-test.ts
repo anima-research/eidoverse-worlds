@@ -787,6 +787,36 @@ check("unhush rejoins the SAME peer at full volume",
   consent.setReceiveVoice(true);
 }
 
+{
+  // Mica's third timing class (#34): the mic opens while a peer is parked in
+  // have-remote-offer — mid-negotiation, so renegotiate() bails. The track
+  // must still be attached, and the in-flight answer must carry it, without
+  // forcing a second negotiation into a state that cannot take one.
+  if (voice.micOn()) { await voice.toggleMic("me"); await settle(); }
+  consent.setReceiveVoice(true);
+  created.length = 0;
+  stubs.remotes.set("midneg", { agent: false });
+  // hold the answer inside createAnswer so the peer stays in have-remote-offer
+  let release: (() => void) | null = null;
+  const held = new Promise<void>((r) => { release = r; });
+  const origCreateAnswer = FakePC.prototype.createAnswer;
+  FakePC.prototype.createAnswer = async function () { await held; return origCreateAnswer.call(this); };
+  bus.emit("rtc", { from: "midneg", payload: { sdp: { type: "offer", sdp: "x" } } });
+  await settle();
+  const pcMid = created.at(-1)!;
+  check("mid-negotiation: peer is parked in have-remote-offer",
+    pcMid.signalingState === "have-remote-offer", pcMid.signalingState);
+  if (!voice.micOn()) { await voice.toggleMic("me"); await settle(); }   // mic ON mid-negotiation
+  release!();
+  await settle();
+  FakePC.prototype.createAnswer = origCreateAnswer;
+  check("mid-negotiation: the track still lands on a peer renegotiate() would skip",
+    pcMid.getSenders().filter((s) => s.track).length === 1,
+    `${pcMid.getSenders().filter((s) => s.track).length} live of ${pcMid.getSenders().length}`);
+  check("mid-negotiation: peer ends stable with no duplicate offer",
+    pcMid.signalingState === "stable", pcMid.signalingState);
+}
+
 // T5 (relay half) lives in tools/voice-matrix.mjs: RTC_MODE=relay-noturn must
 // stay at 0 inbound pkts; RTC_MODE=relay-turn must exceed 0. External harness
 // by design — fake RTC cannot prove media.

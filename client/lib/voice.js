@@ -325,7 +325,12 @@ export async function toggleMic(name) {
   // existing sender needs no renegotiation at all.
   for (const p of peers.values()) applyDirection(p);
   for (const id of [...peers.keys()]) renegotiate(id);
-  for (const id of humanIds()) offerTo(id);
+  // Only reach for peers we do NOT already hold. A peer mid-negotiation has
+  // an answer in flight that will carry the track we just attached — offering
+  // into it forces glare against ourselves and leaves the peer parked in
+  // have-local-offer (Mica, #34). renegotiate() above already covers the
+  // stable ones; this covers the strangers.
+  for (const id of humanIds()) if (!peers.has(id)) offerTo(id);
   flashHint('🎙 live — speak, neighbors hear · <b>mute</b> in the dock');
   bus.emit('voice', { on: true });
   startOnsetWatch();
