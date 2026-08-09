@@ -126,6 +126,23 @@ console.log("frame composition");
 }
 
 {
+  // Async rendering would restore visibility before the deferred draw. Reject
+  // that caller shape explicitly until a re-entrant async exclusion exists.
+  const cam = fakeCamera();
+  let visible = true;
+  let err = "";
+  try {
+    fp.composeFirstPerson({
+      camera: cam, yaw: 0, head: [0, 1.5, 0], name: "async-rig",
+      setOwnVisible: (v: boolean) => { visible = v; },
+      render: () => Promise.resolve("late-frame"),
+    });
+  } catch (e) { err = (e as Error).message; }
+  check("async render is rejected explicitly and visibility restored",
+    visible === true && err.includes("async") && err.includes("async-rig"), err);
+}
+
+{
   // A throwing render must still restore visibility — a leaked exclusion
   // leaves the body invisible to every OTHER viewer of the renderer's scene.
   const cam = fakeCamera();

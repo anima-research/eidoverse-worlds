@@ -1,10 +1,9 @@
 // fp_view — first-person view composition for a body seen from its own eyes.
 //
-// One module owns the answer to "where is this avatar's eye and what must be
-// hidden so it can see" — the snapshot path (net.js snap `first`), the live
-// spectator camera (controller.js updateSpectator), and any future surface
-// compose their first-person frame here instead of each keeping a private
-// head-height guess. Issue #75 is what happens when the guess drifts from the
+// One module owns the snapshot renderer's answer to "where is this avatar's
+// eye and what must be hidden so it can see". Future first-person render paths
+// should reuse this contract rather than invent another private head-height
+// guess. Issue #75 is what happens when the guess drifts from the
 // rig: a mounted resident's fixed `root + 1.52` camera sat INSIDE their own
 // head geometry, and nothing hid that geometry, so the watchtower view was
 // their own petals.
@@ -18,8 +17,8 @@
 //   - the eye anchors on the LIVE rig — head bone when the rig has one, mesh
 //     bounds when it doesn't — so it follows whatever drives the root,
 //     including a socket on moving furniture;
-//   - the resident's own body is never in frame (same exclusion the local
-//     first-person has always done with `me.vrm.scene.visible = false`);
+//   - the resident's whole own visual root (mesh plus labels/bubbles) is never
+//     in the snapshot frame;
 //   - other bodies are untouched — exclusion is scoped to the one avatar;
 //   - a rig offering neither anchor fails with a message naming the rig,
 //     not a frame from inside its chest.
@@ -82,9 +81,11 @@ export function resolveFirstPersonAnchor({ head, bounds, name = "this body" } = 
  *  setOwnVisible  hides/shows the avatar's own visual root (mesh, nameplate,
  *                 speech bubble, typing pill — all of it is "own body" to a
  *                 first-person frame).
- *  render         produces the frame; its return value is passed through.
+ *  render         synchronously produces the frame; its return value is passed
+ *                 through. A Promise/thenable is rejected explicitly: async
+ *                 rendering needs a separately designed re-entrant exclusion.
  *
- *  The body is hidden strictly around render() and restored in finally — an
+ *  The body is hidden strictly around synchronous render() and restored in finally — an
  *  exclusion that survived a throw would leave the body invisible to every
  *  OTHER viewer of this renderer's scene. */
 export function composeFirstPerson({ camera, yaw, head, bounds, name, setOwnVisible, render }) {
@@ -95,7 +96,11 @@ export function composeFirstPerson({ camera, yaw, head, bounds, name, setOwnVisi
   camera.lookAt(ex + fx * FP_GAZE_AHEAD, ey - FP_GAZE_DROP, ez + fz * FP_GAZE_AHEAD);
   setOwnVisible(false);
   try {
-    return render();
+    const frame = render();
+    if (frame && typeof frame.then === 'function') {
+      throw new Error(`${name ?? 'this body'}: async first-person render unsupported — exclusion is synchronous`);
+    }
+    return frame;
   } finally {
     setOwnVisible(true);
   }
