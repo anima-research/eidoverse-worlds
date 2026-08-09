@@ -94,21 +94,40 @@ export async function setHeightField(fn: ((x: number, z: number) => number) | nu
   m.terrain.setTerrain(fn ? { mesh: null, heightAt: fn } : null);
 }
 
+// Who is currently claiming each support box.
+//
+// Support ids are world/entity scoped, which is right — two agents in one
+// world are looking at ONE platform and should not each register their own
+// copy of it. But it means the registration is shared, and the first agent to
+// leave was deleting the floor out from under the one who stayed. Holders are
+// counted: the box lives while anyone claims it, and goes when the last
+// claimant lets go. A Set rather than a number so a holder that registers the
+// same id twice (a re-sync after a place) still counts once.
+const holders = new Map<string, Set<string>>();
+
 /** Register a placed entity's support geometry (a local-frame box + world
- *  transform) so settling bodies rest on it. `id` is the caller's to choose —
- *  and to remove. */
+ *  transform) so settling bodies rest on it. `holder` is the claiming agent;
+ *  the box survives until every holder has removed it. */
 export async function registerSupport(
-  id: string, min: number[], max: number[],
+  holder: string, id: string, min: number[], max: number[],
   xform: { position: number[]; yaw?: number; scale?: number },
 ) {
   const m = await loadSim();
   if (!m) return;
+  (holders.get(id) ?? holders.set(id, new Set()).get(id)!).add(holder);
+  // re-fit unconditionally: a place moves the box, and the newest claimant's
+  // transform is the freshest reading of where the thing actually is
   m.colliders.fitSupportBox(id, min, max, xform);
 }
 
-export async function removeSupport(id: string) {
+export async function removeSupport(holder: string, id: string) {
   const m = await loadSim();
   if (!m) return;
+  const hs = holders.get(id);
+  if (!hs) return;
+  hs.delete(holder);
+  if (hs.size) return;              // someone else is still standing on it
+  holders.delete(id);
   m.colliders.removeCollider(id);
 }
 

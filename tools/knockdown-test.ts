@@ -10,7 +10,27 @@
 // (WORLD_TOKEN is what WorldAgent presents at the door; JOIN_TOKEN is what the
 //  test's bare "human" socket presents. Same value, two doors.)
 
-import { WorldAgent } from "../mcpl/agent.ts";
+// Bun 1.3.x caches transpiled module graphs globally by content, so a stale
+// plugin-resolved path can bypass onResolve entirely and leave the headless
+// sim "unavailable" — this suite then measures the canned-slump fallback and
+// reports three false failures. #13 added this guard across the suite; this
+// file was missed because it reaches the plugin INDIRECTLY, through
+// WorldAgent -> physics.ts, rather than registering one itself.
+if (process.env.__EIDO_TEST_CACHE_OFF !== '1') {
+  const child = Bun.spawnSync({
+    cmd: [process.execPath, import.meta.path, ...process.argv.slice(2)],
+    env: {
+      ...process.env,
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0',
+      __EIDO_TEST_CACHE_OFF: '1',
+    },
+    stdout: 'inherit',
+    stderr: 'inherit',
+  });
+  process.exit(child.exitCode ?? 1);
+}
+
+const { WorldAgent } = await import("../mcpl/agent.ts");
 
 const URL = process.env.WORLD_URL ?? "ws://localhost:8996/ws";
 const TOKEN = process.env.JOIN_TOKEN ?? "test-door";
