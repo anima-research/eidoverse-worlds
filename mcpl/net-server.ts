@@ -940,7 +940,7 @@ class Session {
         // malformed place in the log is permanent history every replayer
         // must survive (#88)
         const why = rawShapeError(String(a.verb), (a.args ?? {}) as Record<string, unknown>);
-        if (why) return text(`refused ${a.verb}: ${why}`);
+        if (why) return { content: [{ type: "text", text: `refused ${a.verb}: ${why}` }], isError: true };
         ag.verb(String(a.verb), a.args ?? {});
         return text(`sent ${a.verb}`);
       }

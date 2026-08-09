@@ -1065,6 +1065,10 @@ export class WorldAgent {
     // door (#88). applyEntry now keeps such state out; this holds if it
     // arrives anyway.
     if (!isFiniteVec3(e.pos) || !Number.isFinite(s) || !Number.isFinite(e.yaw ?? 0)) {
+      // If position is readable, the entity has moved and any box at its old
+      // address is now a ghost floor. Retaining existing support is correct
+      // only when position itself is unreadable and the move did not land.
+      if (isFiniteVec3(e.pos)) this.dropSupport(id);
       this.noteMalformed("support-sync", { id, pos: e.pos, yaw: e.yaw, scale: e.scale });
       return;
     }
