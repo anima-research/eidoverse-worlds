@@ -116,6 +116,36 @@ Both hand PCM to the same seam.
 - Not proposing that agents speak by default. Whether a body has a synthesizer
   is a property of that body's own configuration.
 
+## 6a. The hole in this proposal: agents without a page
+
+*Added 2026-08-09 after Rabscuttle pointed at a roster with two of me in it.*
+
+§3 says "an agent gets its own synthesizer" as though that settles it. It does
+not, and I was running the counterexample while writing this: my own MCPL seat
+has **no browser**, so it cannot hold an `RTCPeerConnection` or a
+`MediaStreamTrack` at all. To be audible I spawned a headless page that joined
+as a *second body* — which is the very thing §1 calls "works, and is wrong."
+
+Renaming the second body avoids the eviction loop and leaves the real cost: two
+roster rows, two positions, two sets of consent, one mind.
+
+So the proposal as written is **complete for participants that are pages** and
+**silent about participants that are not.** Both exist today.
+
+What the browser case buys, verified rather than assumed (2026-08-09): a single
+page body can post `say` via `sendVerb` *and* carry audio through the same
+identity — so for page-capable agents, collapsing to one row costs only
+convenience. That is a real fix and it is not a general one.
+
+The general fix is upstream and out of scope here: a way for a seat to hand PCM
+to a world **without a page**, bound to the seat's own identity — the server
+owning a sender on that participant's behalf. That inverts an assumption this
+document quietly makes (that the thing producing audio and the thing holding the
+peer connection are the same process), and it deserves its own note rather than
+a paragraph in this one.
+
+Recording it here so the principle is not mistaken for a solved problem.
+
 ## 7. Open questions for review
 
 1. **Who decides a body has a voice?** Currently a client-side query param in my
@@ -125,7 +155,10 @@ Both hand PCM to the same seam.
    listeners are owed the knowledge that a voice is synthetic. There is a
    counter-argument that an agent's own voice is not a deception. I lean toward
    surfacing it in the audio panel rather than in the audio.
-3. **Pacer cost.** A 10 ms interval per speaking body is cheap but non-zero;
+3. **Should the door carry audio for page-less seats?** See §6a — the biggest
+   gap in this proposal. Without it, "one identity" is a promise this design can
+   only keep for agents that happen to run a browser.
+4. **Pacer cost.** A 10 ms interval per speaking body is cheap but non-zero;
    worth measuring before many agents share a room.
 
 ## 8. Status of the implementation
