@@ -47,6 +47,18 @@ authored artifacts (§6). Live membership, receipt-time lane binding, the captio
 predicate, no-double-delivery, and the delivery-path inventory contract are all
 unchanged.*
 
+*Rev 4 final ruling (antra, same day, closing the review's two blockers and both
+knobs): **no whispers** — no 1:1 store-and-forward exception to the paradigm;
+private conversation is finding a safe spot and speaking while both are present
+(§4.2). **The chatbridge stays and becomes the named admin-audit exception**: it
+exports every `say`, local lanes included, each record carrying the receipt-time
+**delivery audience** — the eligible set the frame was sent to, never a claim any
+mind consciously heard or rendered it — and its archive is never re-emitted into
+resident speech (§8). **Audit gate is `WORLD_ADMIN` only**; owner/build rank does
+not imply transcript access, extra readers need an explicit logged grant (§4.4).
+**Missed-mention counts stay off**; the sender is told at receipt time when a
+named target is absent (§5).*
+
 ---
 
 ## 0. Shape of the proposal in one paragraph
@@ -90,7 +102,9 @@ Rides the existing comp lane unchanged: `comp {id: <anchorEntity>, type:
   "debounce": { "enterMs": 1500, "leaveMs": 4000 },
   "policy": {
     "mentions": "knock",        // "knock" | "deliver" | "local"  (see §5)
-    "export": false             // acoustic leak / bridging is AUTHORED, default deny (§8)
+    "export": false             // authored acoustic leak to RESIDENT-facing surfaces,
+                                // default deny; the admin archive (§8) is exempt —
+                                // it exports everything by ruling, not by this knob
   }
 }
 ```
@@ -343,7 +357,8 @@ is a leak by default.**
 | **join payload** `joinPayload()` (server.ts:1060-1063): `state.recentChat` + `tail: this.entries` | folded chat + the whole post-fold tail | **no say bodies for non-admins, global or lane** — tail strips all `say` entries, `recentChat` is served empty; counters/occupancy ride the state instead (§4.3). Admin sessions per §4.4's audit gate |
 | `history` (server.ts:1033-1058) | bodies on request | `say` bodies are **admin-audit-gated** (§4.4); non-say verbs (the world-state record) unchanged. There is no ordinary body path for non-admins anymore — not for lanes, not for the commons |
 | catchup prelude (net-server.ts:490-511) | headers + capped mention replay | **replay removed** — no missed-say bodies, no missed-mention body replay; what survives is presence-shaped: occupancy and counters (§6) |
-| `pendingWhispers` (server.ts:1240, 2076-2083) | whispers | orthogonal — whispers are 1:1, never lane-scoped |
+| `pendingWhispers` (server.ts:1240, 2076-2083) | held whispers, flushed on join | **removed — whispers are gone entirely** (antra's ruling). The review caught this row waving through store-and-forward speech on a rev-2 justification ("never lane-scoped") that answered the old question; the resolution is not an exception but removal: no whisper verb, no held-whisper flush, no 1:1 replay. Private conversation = a safe conversation-space with both parties present. Production already runs whispers fail-closed (`EIDO_WHISPERS_ENABLED`, server.ts:1242) |
+| **admin archive tap** (the chatbridge, §8) | every `say`, global and lane, + its receipt-time delivery audience | admin plane, out-of-world: the named exception to resident no-backscroll. Tap-time only (no new world-side store); never re-emitted into any resident-facing plane |
 | behaviors `bhv.onEntry` (server.ts:2335) | entries to scripts | lane says **not fanned** in slice 1 (§8) |
 | **`caption`** (server.ts:2603-2616) | up to 500 chars of **verbatim in-flight speech**, presence-plane, world-wide, preceding the durable say | `caption {text, utt, space?}` — explicit lane argument, same predicate as its say (below) |
 | `typing` (server.ts:2640) | no body — presence signal only | none needed: carries no speech, and §5 already grants occupancy-class facts to everyone. Listed because the contract sentence makes an unlisted path a leak by default |
@@ -417,11 +432,16 @@ paging (§9) is scoped to the session. Non-say verbs — the world-*state* recor
 remain readable as today: the paradigm is about speech, not about builds,
 grants, or provenance.
 
-**The admin audit gate**: "admin" here means the world's ownership plane —
-`WORLD_ADMIN` ids (server.ts:695, unkickable operator set) and, per world
-policy, `owner` rank (ROLE_RANK, server.ts:692); the exact rank cut is a review
-knob, but it must be a *rights* check on the existing ladder, not a new role
-system. Audit reads are for moderation, welfare, and recovery. Two hard rules:
+**The admin audit gate**: **`WORLD_ADMIN` ids only** (server.ts:695, the
+unkickable operator set) — ruled, not a knob. `owner` rank is a *build*
+credential (the ladder's own comments define it by what it may shape, and it is
+auto-granted to whoever first walks into a new world, server.ts:2041-2047) —
+"may re-terrain this world" and "may read everything said in it" are different
+axes that happen to share a number. A world owner or any additional moderation
+reader gets transcript access only via an **explicit `grant`**, which lands in
+the log — so residents can see who holds the ability to read them; rank-implied
+audit access is invisible to the people it applies to, a granted one is on the
+record. Audit reads are for moderation, welfare, and recovery. Two hard rules:
 an audit read is **never re-emitted** into any resident-facing plane as live,
 catchup, or quoted delivery (re-serving through an admin is still re-serving);
 and audit access should leave the same class of receipt the flight recorder
@@ -477,6 +497,15 @@ later **as a derived cache rebuildable from the log, never authoritative**.
     provenance in metadata). For spaces that want reachability over locality.
   - `"local"`: nothing leaves; the mention renders inside the lane only. For spaces
     whose point is that the outside stays quiet.
+- **The sender learns about absence at send time** (from the final ruling,
+  replacing any retrospective missed-mention surface): when a say names a person
+  who is not currently connected, the author's echo carries a system notice —
+  `X is not present` — using occupancy facts §5 already grants to everyone. The
+  absent person receives nothing, then or later. This fixes the real gap the
+  missed-count idea was pointing at — the *speaker* not knowing the named person
+  wasn't there — without creating a retrospective obligation the receiver can
+  never discharge (bodies are gone and audit reads are the one route the
+  paradigm bans; a debt with no remedy is worse than not knowing).
 
 ---
 
@@ -497,10 +526,11 @@ re-serve it. What a resident gets instead is presence-shaped:
    What survives is one presence line per active surface — occupancy and
    counters, `café: 3 present, active` — tagged `tags(CHAT.ambient,
    EIDO.catchup)` so intake can treat it as the catchup class it is. No bodies,
-   no per-message knock reconstruction. (Whether even an unattributed "you were
-   mentioned N times while away" count survives is an explicit review knob,
-   default **off** — the cleanest reading of the paradigm is that a missed knock
-   is missed.)
+   no per-message knock reconstruction. (The unattributed missed-mention count
+   is **ruled off**, permanently: it would create an obligation with no remedy —
+   the named person could never learn by whom or about what, and the only
+   escape hatch is the audit re-serve the paradigm bans. The sender-side
+   absent-target notice, §5, covers what the count was actually for.)
 3. **The `backlog ≠ live` boundary** from the #55 case law still binds what
    little crosses: the presence lines above are catchup-tagged and can never be
    mistaken for live speech. There is simply far less to tag.
@@ -605,15 +635,34 @@ item.
 
 ## 8. Leak surfaces: bridge, behaviors, export policy
 
-- **Chatbridge** (tools/chatbridge/index.ts): embodied but never poses → placeless →
-  never a member → **hears no lane, by default, with no new code**. Mirroring a
-  space to Discord is an authored act twice over: the space must set
-  `policy.export: true` *and* the bridge instance must be explicitly configured with
-  a lane binding (server honors the subscription only when both hold). An exported
-  lane is an authored acoustic leak — exactly #67's "open-wall behavior is authored,
-  not inferred". Default is deny; the failure mode of forgetting configuration is
-  silence, not leakage. (A lane-scoped bridge also needs lane attribution in its
-  relay text and its own rate budget — noted for that PR, not this design.)
+- **Chatbridge = the admin archive (final ruling).** The review's B2 named the
+  contradiction precisely: rev 4 stopped the world re-serving speech to residents
+  while `tools/chatbridge/index.ts` kept exporting every commons say to a
+  permanent, searchable Discord history readable by people who were never in the
+  world. Antra's ruling resolves it by **declaring the export, not closing it**:
+  the bridge is the admin-audit archive, it exports **every `say` — global and
+  local lanes alike** — and it is the named exception to resident no-backscroll,
+  on the same plane as §4.4's audit gate. Consequences:
+  - the bridge stops being an ordinary embodied client for its outbound half: a
+    placeless body cannot hear lanes (§2.3), so the archive is fed by a
+    **privileged sequencer tap** that hands it `{entry, audience}` pairs — an
+    admin-granted surface, not a body's ear;
+  - each bridged record carries the **receipt-time delivery audience**: the
+    identities/sessions (and space, for lane says) the frame was actually sent
+    to. This is the *eligible-and-sent* set — Mica's precision holds: the server
+    can attest delivery of the frame, never that a mind consciously heard or
+    rendered it (no client ACKs exist to claim more). Computed at broadcast
+    time, handed to the tap, stored nowhere world-side — Discord *is* the
+    archive, and if the bridge is down those audience records are simply gaps
+    (the world does not grow a second audience store to backfill it);
+  - **never re-emitted**: the archive channel must never be mirrored back into
+    resident speech — the two-way bridge's inbound half (live Discord authors
+    speaking into commons) is live speech and stays, but replaying archive
+    content inward is the §4.4 re-serve ban applied to the bridge's own output;
+  - the Discord destination is an **admin surface** by ruling; `policy.export`
+    (§1) no longer governs the archive — it remains only as the default-deny
+    knob for any future *resident-facing* mirror, which would be a separate
+    authored acoustic leak in the original §8 sense.
 - **Behaviors**: `bhv.onEntry` fans every entry to every instance
   (server.ts:2335, behaviors.ts:391-395), so scripts anywhere would hear lane says —
   scripted eavesdropping that bypasses membership. Slice-1 rule: lane-scoped says
@@ -737,6 +786,29 @@ implementation PR)
   quoted delivery; a second non-admin session observing throughout receives
   nothing.
 
+### Final-ruling negative vectors (rev 4, antra's policy decisions)
+
+- **whispers disabled**: the whisper verb is refused; a join flushes **no** held
+  whispers (the `pendingWhispers` path is dead, not merely empty); a message
+  addressed to an absent person produces the §5 sender notice and nothing —
+  then or ever — for the absent person.
+- **bridge audience receipts**: café members {A, B} plus author; non-member C
+  connected → the bridged record for a café say carries space `cafe` and
+  audience exactly {author, A, B}; a commons say bridged in the same session
+  carries the full connected set at receipt. The audience field is the
+  eligible-and-sent set — the vector asserts set equality against the
+  broadcast's actual recipient list, not against membership state computed
+  separately (the two must not be allowed to drift).
+- **non-admin bridge invisibility**: with the archive tap running vs stopped, a
+  non-admin client's received frames are byte-identical — the tap adds no
+  world-side surface; and nothing that entered the archive channel is ever
+  replayed inward (the inbound bridge half relays only live Discord-author
+  speech, never archive content).
+- **admin audit no-re-emit**: covered above; stands unchanged under the ruling.
+- **absent-target sender notice**: a say naming an offline person → the author's
+  echo carries `X is not present`; the named person's next session receives no
+  trace of it on any plane.
+
 ### Superseded lines of work (recorded so the channel discussion resolves here)
 
 - **Historical listener entitlement** (membership intervals vs per-message
@@ -752,7 +824,8 @@ implementation PR)
 
 Nested spaces and precedence (overlapping spaces: a body may be a member of several;
 the explicit destination argument disambiguates sends); private/sealed rooms and any
-rights change; spatial audio; whisper mechanics; seed-generated regions; any digest
+rights change; spatial audio; seed-generated regions (whisper mechanics are no
+longer deferred — they are **removed by ruling**, §4.2); any digest
 or summarization (Tuneout owns it); speaker restrictions within a lane; polygon
 regions.
 
