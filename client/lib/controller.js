@@ -11,6 +11,7 @@ import { heightAt } from './terrain.js';
 import { resolveColliders, lastBlockedTop, findSeat } from './colliders.js';
 import { chat } from './chat.js';
 import { isOverlayOpen, flashHint } from './ui.js';
+import { resolveFirstPersonAnchor, FP_FORWARD, FP_GAZE_AHEAD, FP_GAZE_DROP } from './fp_view.js';
 
 export const myState = {
   pos: new THREE.Vector3(0, 0, 0),
@@ -494,14 +495,33 @@ function updatePhotoCamera(dt) {
   camera.lookAt(_f.add(photo.pos));   // _f is spent here — recomputed next frame
 }
 
-/** Spectator/retina camera: first person from a followed body's head. */
+/** Spectator/retina camera: first person from a followed body's head.
+ *  Same eye/exclusion semantics as the snap `first` view (#75): the eye
+ *  anchors on the live head bone (bounds when the rig has none) so it follows
+ *  a mounted socket, and the followed body is hidden — a first-person view
+ *  of someone is not improved by the inside of their skull. */
+const _specHead = new THREE.Vector3();
+const _specBox = new THREE.Box3();
 export function updateSpectator(dt, remote) {
   if (!remote?.avatar) return;
   const root = remote.avatar.root;
+  const head = remote.avatar.headWorldPosition(_specHead);
+  const box = head ? null : remote.avatar.visualBounds(_specBox);
+  let anchor;
+  try {
+    anchor = resolveFirstPersonAnchor({
+      head: head ? [head.x, head.y, head.z] : null,
+      bounds: box ? { min: box.min.toArray(), max: box.max.toArray() } : null,
+      name: remote.id,
+    });
+  } catch {
+    return;   // rig offers no anchor (still materializing) — hold the frame
+  }
+  root.visible = false;
   _facing.set(Math.sin(root.rotation.y), 0, Math.cos(root.rotation.y));
-  const eye = root.position.clone().add(new THREE.Vector3(0, 1.52, 0)).addScaledVector(_facing, 0.32);
+  const eye = new THREE.Vector3(...anchor.eye).addScaledVector(_facing, FP_FORWARD);
   camera.position.lerp(eye, 1 - Math.exp(-20 * dt));
-  camera.lookAt(eye.clone().addScaledVector(_facing, 8).add(new THREE.Vector3(0, -0.6, 0)));
+  camera.lookAt(eye.clone().addScaledVector(_facing, FP_GAZE_AHEAD).add(new THREE.Vector3(0, -FP_GAZE_DROP, 0)));
 }
 
 export function setCamYaw(v) { camYaw = v; }

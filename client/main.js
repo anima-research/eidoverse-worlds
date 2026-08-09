@@ -333,7 +333,7 @@ function dismountMe() {
   myState.pos.set(off.x, 0, off.z);
   setPosture('stand');
 }
-function updateMountedMe() {
+function updateMountedMe(dt) {
   const sw = mountTransform(CONFIG.name, _seatP);
   if (!sw) return;                       // parent still downloading
   myState.pos.copy(_seatP);
@@ -345,6 +345,11 @@ function updateMountedMe() {
     me.root.rotation.y = sw.yaw;
     me.setClip(sw.pose, 0);
   }
+  // The camera lives in updateMe, which we skip while seated — so drive it
+  // here too (the ragdoll path learned this the same way), or it freezes on
+  // the frame you sat down and never rides the seat (#75). First person keeps
+  // its own-mesh exclusion; both modes follow the socket, moving or not.
+  if (me) updateFollowCamera(dt, me);
   if (['KeyW', 'KeyA', 'KeyS', 'KeyD'].some((k) => keys.has(k))) dismountMe();
 }
 
@@ -1030,7 +1035,7 @@ function frame(now) {
   if (CONFIG.renderer) { /* camera is driven per snap request */ }
   else if (CONFIG.spectate) updateSpectator(dt, CONFIG.follow ? remotes.get(CONFIG.follow) : null);
   else if (downed) stepRagdoll(dt);     // the controller yields while limp
-  else if (avatarMounts.has(CONFIG.name)) updateMountedMe();  // seated: derived, not driven
+  else if (avatarMounts.has(CONFIG.name)) updateMountedMe(dt);  // seated: derived, not driven
   else updateMe(dt, me);
   updateSeatHint(dt);            // "X — sit" while a declared seat is in reach
 

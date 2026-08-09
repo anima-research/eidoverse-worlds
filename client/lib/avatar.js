@@ -221,6 +221,26 @@ export class Avatar {
     scene.add(this.root);
   }
 
+  // ---- first-person anchors (fp_view.js consumes these) -------------------
+
+  /** Live world position of the head bone, or null when the rig has none.
+   *  The RAW bone is the skinned skeleton the mesh actually follows — it
+   *  carries the current clip (seated, mounted, mid-swing) because the root
+   *  rides whatever drives it and the pose rides the mixer. */
+  headWorldPosition(out) {
+    const node = this.vrm.humanoid?.getRawBoneNode?.('head') ?? this.head;
+    if (!node) return null;
+    return node.getWorldPosition(out);
+  }
+
+  /** World bounds of the rig's own mesh — vrm.scene only, deliberately NOT
+   *  this.root, so the nameplate/bubble sprites above the head don't inflate
+   *  the box. Fallback anchor for rigs without a head bone. */
+  visualBounds(box) {
+    box.setFromObject(this.vrm.scene);
+    return box.isEmpty() ? null : box;
+  }
+
   // ---- locomotion / clips
   setClip(slot, speed = 0) {
     // Moving cancels an emote. Standing frozen mid-cheer while walking away

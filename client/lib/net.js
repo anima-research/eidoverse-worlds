@@ -6,6 +6,7 @@ import { fetchBytes, forgetBytes } from './assets.js';
 import { applyEntry, stateToEntries } from './world.js';
 import { remotes, ensureRemote, dropRemote, pushPose, noteServerTime, noteSpeaking } from './remotes.js';
 import { logChat, logWhisper, noteTyping, noteHistoryContext } from './chat.js';
+import { composeFirstPerson } from './fp_view.js';
 import { markPhase } from './boot.js';
 import { toast } from './ui.js';
 
@@ -607,10 +608,15 @@ async function onSnapshot(msg) {
   hooks.onSnapshotDone();
 }
 
+const _snapHead = new THREE.Vector3();
+const _snapBox = new THREE.Box3();
 async function onSnapRequest(msg) {
   // The world asked us for a view of/from the target. Three framings:
-  //   first  — the target's own eyes; the camera sits just outside their head
-  //            mesh, so their body is never in frame.
+  //   first  — the target's own eyes: the eye anchors on their LIVE head bone
+  //            (mesh bounds when the rig has none) and their own body is
+  //            hidden for the frame, the same exclusion the local
+  //            first-person applies to `me` (#75). The root carries the
+  //            socket transform while mounted, so the eye rides the seat.
   //   third  — chase cam over the shoulder: their body AND what it faces.
   //   selfie — from in front, facing them: the avatar itself is the subject.
   try {
@@ -618,22 +624,36 @@ async function onSnapRequest(msg) {
     if (!r?.avatar) throw new Error(`${msg.follow} not in local scene (still loading?)`);
     const root = r.avatar.root;
     const fwd = new THREE.Vector3(Math.sin(root.rotation.y), 0, Math.cos(root.rotation.y));
+    let dataUrl;
+    const shoot = () => {
+      renderer.render(scene, camera);   // completed frame, then read it
+      const url = renderer.domElement.toDataURL('image/png');
+      if (url.length < 2000) throw new Error('empty frame readback');
+      return url;
+    };
     if (msg.view === 'third') {
       const eye = root.position.clone().add(new THREE.Vector3(0, 2.1, 0)).addScaledVector(fwd, -3.4);
       camera.position.copy(eye);
       camera.lookAt(root.position.clone().add(new THREE.Vector3(0, 1.2, 0)).addScaledVector(fwd, 4));
+      dataUrl = shoot();
     } else if (msg.view === 'selfie') {
       const eye = root.position.clone().add(new THREE.Vector3(0, 1.6, 0)).addScaledVector(fwd, 2.6);
       camera.position.copy(eye);
       camera.lookAt(root.position.clone().add(new THREE.Vector3(0, 1.25, 0)));
+      dataUrl = shoot();
     } else {
-      const eye = root.position.clone().add(new THREE.Vector3(0, 1.52, 0)).addScaledVector(fwd, 0.32);
-      camera.position.copy(eye);
-      camera.lookAt(eye.clone().addScaledVector(fwd, 8).add(new THREE.Vector3(0, -0.6, 0)));
+      const head = r.avatar.headWorldPosition(_snapHead);
+      const box = head ? null : r.avatar.visualBounds(_snapBox);
+      dataUrl = composeFirstPerson({
+        camera,
+        yaw: root.rotation.y,
+        head: head ? [head.x, head.y, head.z] : null,
+        bounds: box ? { min: box.min.toArray(), max: box.max.toArray() } : null,
+        name: msg.follow,
+        setOwnVisible: (v) => { root.visible = v; },
+        render: shoot,
+      });
     }
-    renderer.render(scene, camera);   // completed frame, then read it
-    const dataUrl = renderer.domElement.toDataURL('image/png');
-    if (dataUrl.length < 2000) throw new Error('empty frame readback');
     net.ws.send(JSON.stringify({ type: 'snap-result', id: msg.id, dataUrl }));
   } catch (e) {
     net.ws.send(JSON.stringify({ type: 'snap-result', id: msg.id, error: e.message }));
