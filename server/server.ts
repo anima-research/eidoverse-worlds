@@ -1314,6 +1314,15 @@ function contentType(path: string): string {
   if (path.endsWith(".png")) return "image/png";
   if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg";
   if (path.endsWith(".hdr")) return "application/octet-stream";
+  // AUDIO NEEDS A REAL TYPE. Served as application/octet-stream a media element
+  // may refuse to decode — and it fails by producing NO SOUND rather than by
+  // raising anything catchable. Chrome usually sniffs and gets away with it,
+  // which is worse: it works until the one browser that does not.
+  if (path.endsWith(".ogg") || path.endsWith(".oga")) return "audio/ogg";
+  if (path.endsWith(".mp3")) return "audio/mpeg";
+  if (path.endsWith(".wav")) return "audio/wav";
+  if (path.endsWith(".m4a") || path.endsWith(".aac")) return "audio/mp4";
+  if (path.endsWith(".webm")) return "audio/webm";
   return "application/octet-stream";
 }
 

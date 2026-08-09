@@ -13,6 +13,7 @@ import { contributeThumbnail, makeAvatar, EMOTE_ORDER, EMOTES } from './lib/avat
 import { updateSky, updateAutoSystems, skyArgs, skyImpl,
   CLOUD_QUALITY, getCloudQuality, setCloudQuality } from './lib/sky.js';
 import { setSkyArgsSource, entities, liveEntities, buildsPending, roleOf, worldHasOwner, comps, avatarMounts, mountTransform, socketWorldPos } from './lib/world.js';
+import { updateAmbient } from './lib/ambient.js';   // `ambient` comp: world sound that belongs to a place
 import { hasGrass, setGrassDensity, getGrassDensity } from './lib/terrain.js';
 // side-effecting: the `particles` component's host wires itself to the comp
 // and entity buses on import (it has no boot step of its own)
@@ -1064,6 +1065,7 @@ function frame(now) {
   updateBuild();
   BC('debug');
   updateDebug(now);              // collider/ragdoll wireframes, when F3 is up
+  updateAmbient();
   BC('send-pose');
   sendPose(now);
 
