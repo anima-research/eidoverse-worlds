@@ -29,7 +29,11 @@ let micStream = null;
 let muted = false;
 const peers = new Map();           // id -> { pc, audio }
 let myId = null;
-export const micOn = () => !!micStream;
+// TRANSMITTING, not "a stream object exists". Going quiet now disables the
+// track instead of stopping it (see toggleMic), so micStream outlives mic-off
+// and `!!micStream` would leave the HUD stuck reading ON. Every caller of
+// micOn() is UI asking "am I being heard right now?" — this is that question.
+export const micOn = () => !!micStream && micStream.getAudioTracks().some((t) => t.enabled);
 export const isMuted = () => muted;
 
 function humanIds() {
@@ -321,37 +325,47 @@ async function processSignal(p, from, payload) {
 
 export async function toggleMic(name) {
   myId = name ?? myId;
-  if (micStream) {
-    // SEND state only. Going quiet must not deafen you: listening is a
-    // separate permission (review catch — the old teardown dropped every
-    // peer, including inbound legs, which then had no trigger to re-offer
-    // until the next roster event, so muting yourself silently deafened you
-    // for an unbounded time). We remove OUR track from each peer and keep
-    // the connection alive; if we are not listening either, THEN the peer
-    // has no purpose and comes down.
-    for (const t of micStream.getTracks()) t.stop();
-    micStream = null;
+  if (micOn()) {
+    // GOING QUIET IS A DATA CHANGE, NOT A CONNECTION CHANGE (R, 2026-08-08).
+    //
+    // This used to stop() the track, removeTrack() it from every peer, and
+    // renegotiate — three destructive operations to express "don't transmit".
+    // Four of the six voice bugs fixed this week were in the renegotiation
+    // that followed, and stop() manufactures precisely the `audio:ended`
+    // sender state that the live one-way-audio blocker shows in the field.
+    // The identical intent was already implemented correctly ten lines below
+    // in toggleMute (track.enabled = false, zero renegotiation, zero bugs) —
+    // it simply had no callers, while the HUD button called this.
+    //
+    // So: disable the track. It stays live, the sender stays bound, the
+    // transceiver stays sendonly, the SDP does not change, and coming back is
+    // one assignment rather than getUserMedia + renegotiate. Muting cannot
+    // deafen you because no peer is touched at all.
+    for (const t of micStream.getTracks()) t.enabled = false;
     stopOnsetWatch();
     muted = false;
-    for (const [id, p] of [...peers]) {
-      try {
-        for (const sender of p.pc.getSenders()) if (sender.track) p.pc.removeTrack(sender);
-      } catch (e) { report('voice untrack', e); }
-      if (!receivingVoice()) dropPeer(id);
-      else renegotiate(id);          // tell them our track is gone; keep theirs
-    }
     flashHint('🎙 off');
     bus.emit('voice', { on: false });
     return false;
   }
-  try {
-    micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true },
-    });
-  } catch (e) {
-    report('microphone', e);
-    flashHint('microphone unavailable — check browser permission');
-    return false;
+  // Coming back. If we still hold the stream (the normal case now — mic-off
+  // only disables it) re-enabling IS the whole acquisition step: no
+  // getUserMedia, so no permission re-prompt and no new track object. Then we
+  // fall THROUGH to the same attach/renegotiate/court-peers path a fresh mic
+  // takes; returning early here skipped peer creation entirely, which the
+  // lifecycle suite caught at once (mic ON with no peer courted).
+  if (micStream) {
+    for (const t of micStream.getTracks()) t.enabled = true;
+  } else {
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true },
+      });
+    } catch (e) {
+      report('microphone', e);
+      flashHint('microphone unavailable — check browser permission');
+      return false;
+    }
   }
   // Attach FIRST, renegotiate second. applyDirection is where the track is
   // adopted, but renegotiate() bails on a peer that is not 'stable' — and a
@@ -424,6 +438,10 @@ export function micAnalyserLevel() {
   return Math.sqrt(s / _anBuf.length);
 }
 
+// Kept as the explicit verb for "go quiet without touching the mic button's
+// meaning" — it is now the SAME mechanism toggleMic uses (track.enabled), so
+// the two can no longer disagree. Before 2026-08-08 this was the correct
+// implementation with zero callers while the HUD used the destructive path.
 export function toggleMute() {
   if (!micStream) return false;
   muted = !muted;
@@ -431,6 +449,26 @@ export function toggleMute() {
   flashHint(muted ? '🔇 muted' : '🎙 unmuted');
   bus.emit('voice', { on: true, muted });
   return muted;
+}
+
+/** Release the microphone device entirely — the OS/browser recording indicator
+ *  goes away. This is the ONLY path that stops tracks, and it is deliberately
+ *  not what the HUD mic button does: it costs a permission re-prompt and a
+ *  renegotiation to undo, so it is a privacy action, not a "go quiet" action. */
+export function releaseMicrophone() {
+  if (!micStream) return;
+  for (const t of micStream.getTracks()) t.stop();
+  micStream = null;
+  muted = false;
+  stopOnsetWatch();
+  for (const [id, p] of [...peers]) {
+    try {
+      for (const sender of p.pc.getSenders()) if (sender.track) p.pc.removeTrack(sender);
+    } catch (e) { report('voice untrack', e); }
+    if (!receivingVoice()) dropPeer(id); else renegotiate(id);
+  }
+  flashHint('🎙 released');
+  bus.emit('voice', { on: false });
 }
 
 export function initVoice(name) {
@@ -463,8 +501,11 @@ export function initVoice(name) {
     if (micStream) for (const id of humanIds()) offerTo(id);
   });
   bus.on('roster', () => {
-    // arrivals get an offer while we're live; departures get torn down
-    if (micStream) for (const id of humanIds()) if (!peers.has(id)) offerTo(id);
+    // Arrivals get an offer while we're LIVE; departures get torn down.
+    // micOn(), not micStream: since mic-off keeps the stream and only disables
+    // the track, `micStream` is truthy while muted and would court strangers we
+    // have nothing to say to. Transmitting is the condition that matters.
+    if (micOn()) for (const id of humanIds()) if (!peers.has(id)) offerTo(id);
     for (const id of [...peers.keys()]) if (!remotes.has(id)) dropPeer(id);
   });
   // Two clocks on purpose. Distance is a slow fact — 300ms is plenty and
