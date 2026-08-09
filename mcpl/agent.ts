@@ -9,6 +9,7 @@ import * as TSL from "three/tsl";
 import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS,
   ACTIVITY_RADIUS_M, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
 import { HeadlessBody, setHeightField, registerSupport, removeSupport } from "./physics.ts";
+import { isFiniteVec3 } from "./shape.ts";
 // The same pure sky fold + weather derivation the browser client and the
 // sequencer run — text-tier perception must land on the SAME hour and
 // weather every renderer shows (issue #29's shared-fact boundary).
@@ -352,6 +353,15 @@ export class WorldAgent {
     this.onEvent?.({ ts: now, kind: "activity", who: "world", text: `${who}${bits.join("; ")}` });
   }
 
+  /** A malformed log entry is WORLD data, not this agent's mistake — say so
+   *  a few times, then stay quiet: a poisoned tail replays on every
+   *  reconnect and must not flood the log with the same diagnosis (#88). */
+  private malformedSeen = 0;
+  private noteMalformed(verb: string, args: unknown) {
+    if (this.malformedSeen++ >= 5) return;
+    console.error(`[agent ${this.name}] malformed ${verb} entry — position kept: ${JSON.stringify(args)?.slice(0, 160)}`);
+  }
+
   /** A build act (spawn/place/light/remove) near this body counts as activity. */
   private noteBuild(actor: string | undefined, pos: number[] | undefined | null) {
     if (!actor || actor === this.name || actor === "world") return;
@@ -690,8 +700,17 @@ export class WorldAgent {
       if (live) this.noteBuild(actor, args.pos);
     } else if (verb === "place") {
       const e = this.entities.get(args.id);
-      if (e) { e.pos = args.pos; if (args.yaw != null) e.yaw = args.yaw; if (args.scale != null) e.scale = args.scale; }
-      if (live) this.noteBuild(actor, args.pos);
+      if (e) {
+        // mirror the server fold's partial-update semantics: a place without
+        // a usable pos KEEPS the prior position. Assigning args.pos
+        // unconditionally is how one malformed raw packet crash-looped the
+        // whole door — undefined walked into the support transform (#88).
+        if (isFiniteVec3(args.pos)) e.pos = args.pos;
+        else if (args.pos != null || args.x != null || args.y != null || args.z != null) this.noteMalformed(verb, args);
+        if (args.yaw != null) e.yaw = args.yaw;
+        if (args.scale != null) e.scale = args.scale;
+      }
+      if (live) this.noteBuild(actor, isFiniteVec3(args.pos) ? args.pos : e?.pos);
       this.trackSupport(this.syncSupport(args.id));   // support follows the thing it belongs to
     } else if (verb === "remove") {
       if (live) this.noteBuild(actor, this.entities.get(args.id)?.pos);
@@ -738,7 +757,7 @@ export class WorldAgent {
       if (e) {
         // a dismount stamps where the ride let go; the support must be built
         // from THAT, not from the transform the thing had before it mounted
-        if (Array.isArray(args.pos) && args.pos.length === 3) e.pos = args.pos;
+        if (isFiniteVec3(args.pos)) e.pos = args.pos;
         if (args.yaw != null) e.yaw = args.yaw;
         this.trackSupport(this.syncSupport(args.id));   // stand it back up
       }
@@ -1038,8 +1057,18 @@ export class WorldAgent {
     // started moving, or got mounted, while its geometry was in flight —
     // replay folds a mount right behind the spawn that triggered this fetch
     if (this.hasActiveMotion(e) || this.mounts.has(id)) { this.dropSupport(id); return; }
-    this.dropSupport(id);
     const s = e.scale ?? 1;
+    // A transform that cannot be a place in the world registers NOTHING —
+    // and abstains BEFORE the drop, leaving whatever support already stands.
+    // This is the layer that turned one malformed packet into everyone's
+    // outage: undefined rode e.pos into fitSupportBox and killed the shared
+    // door (#88). applyEntry now keeps such state out; this holds if it
+    // arrives anyway.
+    if (!isFiniteVec3(e.pos) || !Number.isFinite(s) || !Number.isFinite(e.yaw ?? 0)) {
+      this.noteMalformed("support-sync", { id, pos: e.pos, yaw: e.yaw, scale: e.scale });
+      return;
+    }
+    this.dropSupport(id);
     const xform = { position: e.pos, yaw: e.yaw ?? 0, scale: s };
     const [w, h, d] = [g.bbox.size[0] * s, g.bbox.size[1] * s, g.bbox.size[2] * s];
     const ids: string[] = [];

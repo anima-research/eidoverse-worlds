@@ -36,6 +36,7 @@ import {
   CHAT, EIDO, CAP, tags, capabilityMatches, MCPL_ADVERTISEMENT, FEATURE_SETS,
 } from "./declaration.ts";
 import { WorldAgent } from "./agent.ts";
+import { rawShapeError } from "./shape.ts";
 import { MANIFEST_WITH_REVISION, ManifestAnnouncer } from "./manifest.ts";
 import { verifyToken } from "../server/aid1.ts";
 import sharp from "sharp";
@@ -934,7 +935,15 @@ class Session {
         return text(`placed light [${id}] at (${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)})`);
       }
       case "remove": ag.verb("remove", { id: a.id }); return text(`removed ${a.id}`);
-      case "world_verb": ag.verb(String(a.verb), a.args ?? {}); return text(`sent ${a.verb}`);
+      case "world_verb": {
+        // the raw door forwards verbatim, so shape is checked HERE — a
+        // malformed place in the log is permanent history every replayer
+        // must survive (#88)
+        const why = rawShapeError(String(a.verb), (a.args ?? {}) as Record<string, unknown>);
+        if (why) return text(`refused ${a.verb}: ${why}`);
+        ag.verb(String(a.verb), a.args ?? {});
+        return text(`sent ${a.verb}`);
+      }
       case "measure": {
         const base = (process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws").replace(/^ws/, "http").replace(/\/ws$/, "");
         const q = a.id

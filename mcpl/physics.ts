@@ -40,6 +40,7 @@
 
 import { plugin } from "bun";
 import { fileURLToPath } from "node:url";
+import { isFiniteVec3 } from "./shape.ts";
 
 const STUB = fileURLToPath(new URL("../tools/core-stub.mjs", import.meta.url));
 
@@ -112,6 +113,15 @@ export async function registerSupport(
   holder: string, id: string, min: number[], max: number[],
   xform: { position: number[]; yaw?: number; scale?: number },
 ) {
+  // Last line of defense (#88): this runs detached (`void registerSupport`),
+  // so a throw here is an unhandled rejection that takes the WHOLE DOOR
+  // down — every agent in the process, not the one with the bad entity.
+  // A box or transform that is not finite geometry abstains instead.
+  if (![min, max, xform?.position].every(isFiniteVec3)
+      || !Number.isFinite(xform.yaw ?? 0) || !Number.isFinite(xform.scale ?? 1)) {
+    console.error(`[physics] support ${id} abstained — non-finite geometry/transform`);
+    return;
+  }
   const m = await loadSim();
   if (!m) return;
   (holders.get(id) ?? holders.set(id, new Set()).get(id)!).add(holder);
