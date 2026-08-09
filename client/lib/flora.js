@@ -211,6 +211,8 @@ export async function buildFloraField(rawArgs, { scene, heightFn }) {
   try {
     for (const st of strokes) {
       const f = await mod.createFlora({ ...st, heightFn });
+      // named so an applied-truth report (#74) can identify the stroke
+      f.strokeLabel = `${fields.length}:${st.species ?? 'grass'}`;
       wireDensityDial(f);
       mask.wire(f.material);
       group.add(f.mesh);

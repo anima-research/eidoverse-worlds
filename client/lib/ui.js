@@ -294,7 +294,9 @@ export function buildHelp() {
       <b>sky</b> and set <b>clouds⚙</b> — that setting is yours alone and is
       never shared with the world. <b>grass⚙</b> in the same panel caps how
       much of the meadow your machine draws (<b>off</b> hides it entirely,
-      for you only) — the shared field itself is untouched. The client will
+      for you only) — the shared field itself is untouched. If a field can't
+      be thinned (older vegetation), the row says so with ⚠ instead of
+      pretending the cap took. The client will
       also turn both down by itself if the frame rate drops.</p>
     <h2>Your layout</h2>
     <p class="sub">Every panel moves and resizes, and where you put it is

@@ -16,7 +16,7 @@ import { makeLightGizmo } from './lights.js';
 import { entities, entityMeta, comps, findPart } from './world.js';
 import { surfaceUnder, reindexCollider } from './colliders.js';
 import { heightAt, GRASS_QUALITY, getGrassQuality, setGrassQuality,
-  getGrassDensity, getGrassShed } from './terrain.js';
+  getGrassDensity, getGrassShed, getGrassApplied } from './terrain.js';
 import { sendVerb, sendDrag } from './net.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
 import { makeSection, toast, flashHint, collapseAll, panelFrame } from './ui.js';
@@ -1117,6 +1117,20 @@ function paintSky(body) {
     gq.value = getGrassQuality();
     const shed = getGrassShed(), eff = getGrassDensity();
     const active = shed < 1 && gq.value !== 'off';
+    // Applied truth (#74): the same report the programmatic surface serves —
+    // one source, so the row can never claim a density the renderer didn't.
+    // A false cap outranks governor detail for the row's scarce pixels.
+    const rep = getGrassApplied();
+    const bad = rep.field && rep.status !== 'applied';
+    if (bad) {
+      const names = rep.strokes.filter((s) => !s.ok).map((s) => s.stroke).join(', ');
+      gqStateEye.textContent = `⚠${rep.status}`;
+      gqStateEar.textContent = `grass cap ${gq.value} ${rep.status}` +
+        (names ? `: stroke ${names} has no working density dial` : '');
+      gqRow.title = `your cap asked for ×${eff} but the renderer did not fully apply it` +
+        ` (${rep.status}${names ? `: ${names}` : ''}) — affected strokes draw at their built density`;
+      return;
+    }
     gqStateEye.textContent = active ? `⚙${shed}→${eff}` : '';
     gqStateEar.textContent = active ? `auto governor dial ${shed}, drawing ${eff}` : '';
     gqRow.title = active

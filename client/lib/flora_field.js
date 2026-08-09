@@ -3,6 +3,57 @@
 // grass verb owns: possibly several engine strokes composed under one group.
 
 import { ownHook, releaseHook } from './autohooks.js';
+import { densityCount } from './grass_quality.js';
+
+// ---- applied truth (#74) ---------------------------------------------------
+// The density dial can silently no-op: wireDensityDial returns early when a
+// stroke's expected instanced attributes are absent (vegetation.js version
+// skew), leaving the stroke without setDensity, and the composed dial
+// optional-chains every child. Policy arithmetic then reports a density the
+// renderer never applied. These reports read the LIVE draw state — the
+// instanced mesh's actual count — never the arithmetic, so a resident-facing
+// surface can say when the cap did not take.
+
+/** One stroke's draw truth for a requested density factor. */
+export function strokeApplied(f, eff, i = 0) {
+  const stroke = f.strokeLabel ?? `stroke ${i}`;
+  const total = f.count ?? 0;
+  // a stroke that planted nothing draws nothing — any factor is vacuously on
+  if (!total) return { stroke, total: 0, drawn: 0, expected: 0, dial: false, ok: true, why: 'empty' };
+  const drawn = f.mesh?.count ?? total;
+  const expected = densityCount(total, eff);
+  const dial = typeof f.setDensity === 'function';
+  const ok = drawn === expected;
+  return {
+    stroke, total, drawn, expected, dial, ok,
+    why: ok ? 'applied' : dial ? 'count-mismatch' : 'no-density-dial',
+  };
+}
+
+/** The whole field's draw truth. `off` (eff ≤ 0) is enforced by group
+ *  visibility — terrain hides the group — so it applies even where count
+ *  dialing is unsupported; any positive factor needs every live stroke's
+ *  actual count to match what densityCount requested. */
+export function fieldApplied({ fields, groupVisible }, eff) {
+  if (eff <= 0) {
+    const ok = groupVisible === false;
+    return {
+      status: ok ? 'applied' : 'not-applied',
+      via: 'visibility',
+      strokes: fields.map((f, i) => ({
+        stroke: f.strokeLabel ?? `stroke ${i}`, total: f.count ?? 0,
+        drawn: ok ? 0 : (f.mesh?.count ?? f.count ?? 0), expected: 0,
+        dial: typeof f.setDensity === 'function', ok,
+        why: ok ? 'hidden' : 'group-still-visible',
+      })),
+    };
+  }
+  const strokes = fields.map((f, i) => strokeApplied(f, eff, i));
+  const live = strokes.filter((s) => s.total > 0);
+  const status = live.every((s) => s.ok) ? 'applied'
+    : live.some((s) => s.ok) ? 'partial' : 'unavailable';
+  return { status, via: 'count', strokes };
+}
 
 /** Compose stroke fields (createFlora results) + a clearing mask handle into
  *  ONE setGrass-shaped field. The caller supplies the parent group (THREE
@@ -14,6 +65,9 @@ export function composeField({ group, fields, mask }) {
     update: fields[0]?.update,
     setPushers: (list) => { for (const f of fields) f.setPushers?.(list); },
     setDensity: (k) => { for (const f of fields) f.setDensity?.(k); },
+    /** live draw truth for a requested factor (#74) — group.visible read at
+     *  call time so `off` reports what the scene actually shows */
+    applied: (eff) => fieldApplied({ fields, groupVisible: group.visible }, eff),
     // The engine registered these itself; marking them says the meadow retires
     // them, so no subsystem that claims per-frame hooks by diffing the global
     // array may adopt one that appeared while ITS own async build was in

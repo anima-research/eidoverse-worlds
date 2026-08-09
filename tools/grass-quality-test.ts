@@ -16,6 +16,16 @@
 // behavioral delta directly: factor 0 keeps 50 instances on main, 0 here.
 // The later sections need grass_quality.js and are skipped on main with an
 // explicit novelty-not-behavior note.
+//
+// The APPLIED-TRUTH sections (#74) extend the contract: the dial can
+// silently no-op (wireDensityDial leaves a stroke without setDensity when
+// its instanced attributes are absent; the composed dial optional-chains),
+// so every inspection surface must distinguish chosen / governor shed /
+// effective REQUESTED / effective APPLIED, read from live instance counts.
+// Their negative control also runs on both trees: flora.js's shipped
+// wireDensityDial (source-extracted) demonstrates the silent no-op LIVE, and
+// main then fails the "can this tree name it?" checks with the false success
+// it actually reports (policy 0.35, stroke drawing its full built count).
 
 import { plugin } from "bun";
 const here = (f: string) => new URL(f, import.meta.url).pathname;
@@ -165,6 +175,137 @@ console.log("\nterrain lifecycle (the real setGrass/setGrassDensity path)");
 
   check("unknown level via terrain refused",
     terrain.setGrassQuality("mega") === "low" && terrain.getGrassQuality() === "low");
+}
+
+// ---- applied truth (#74) --------------------------------------------------
+// flora.js's SHIPPED wireDensityDial, source-extracted so the silent-no-op
+// mechanism is demonstrated on both trees, not retyped into the test.
+const floraSrc = await Bun.file(here("../client/lib/flora.js")).text();
+const wdMatch = floraSrc.match(/function wireDensityDial\(field\) \{[\s\S]*?\n\}/);
+const wireDial = wdMatch
+  ? new Function("densityCount", `${wdMatch[0]}; return wireDensityDial;`)(densityCount)
+  : null;
+
+/** A stroke shaped to createFlora's contract: instance total, live mesh
+ *  count, and (when compatible) the instanced attributes the dial expects. */
+const mkStroke = (n: number, { attrs = true, label = "" } = {}) => {
+  const mk = (itemSize: number) => ({
+    itemSize,
+    array: Float32Array.from({ length: n * itemSize }, (_, i) => i),
+    needsUpdate: false,
+  });
+  const table: any = attrs ? { aPosRot: mk(4), aScaleVar: mk(2), aPhase: mk(1) } : {};
+  return {
+    count: n,
+    strokeLabel: label || undefined,
+    mesh: { count: n, geometry: { getAttribute: (nm: string) => table[nm] } },
+  } as any;
+};
+
+const ff = await import("../client/lib/flora_field.js");
+
+console.log("\nthe silent no-op seam (flora's shipped wireDensityDial, both trees)");
+{
+  check("wireDensityDial extracted from flora.js", typeof wireDial === "function");
+  const good = mkStroke(1000, { label: "0:grass" });
+  const yucca = mkStroke(800, { attrs: false, label: "1:yucca" });
+  wireDial?.(good); wireDial?.(yucca);
+  check("a stroke with instanced attributes gets a dial", typeof good.setDensity === "function");
+  check("missing attributes leave NO dial — the seam is real", yucca.setDensity === undefined);
+  good.setDensity?.(0.35);
+  check("a dialed stroke's LIVE count follows densityCount",
+    good.mesh.count === densityCount(1000, 0.35), `count=${good.mesh.count}`);
+
+  const group: any = { visible: true };
+  const field: any = ff.composeField({ group, fields: [good, yucca], mask: null });
+  field.setDensity(0.35);
+  check("the composed dial silently no-ops on the dial-less stroke",
+    yucca.mesh.count === 800, `count=${yucca.mesh.count}`);
+  check("this tree can NAME that no-op (field.applied)",
+    typeof field.applied === "function",
+    "main claims density 0.35 while 1:yucca draws 800/800 — success from policy arithmetic alone");
+  const rep = field.applied?.(0.35);
+  check("mixed field reports PARTIAL and identifies the stroke",
+    rep?.status === "partial"
+      && rep.strokes.some((s: any) => !s.ok && s.stroke === "1:yucca" && s.why === "no-density-dial")
+      && rep.strokes.some((s: any) => s.ok && s.stroke === "0:grass"),
+    JSON.stringify(rep ?? "no applied() on this tree"));
+  check("a planted-nothing stroke is vacuously applied, never a failure",
+    ff.strokeApplied?.({ count: 0, mesh: { count: 0 } }, 0.35)?.ok === true);
+}
+
+console.log("\nthe applied report through terrain (getGrassApplied)");
+{
+  const gApplied = (terrain as any).getGrassApplied;
+  check("terrain exports getGrassApplied", typeof gApplied === "function",
+    "no applied surface on this tree — getGrassDensity() reports intent only");
+  const rep0 = gApplied?.() ?? null;
+
+  terrain.setGrassQuality("low");
+
+  // acceptance 1+2: a compatible field under `low`
+  const g2 = mkStroke(1000, { label: "0:grass" }); wireDial?.(g2);
+  terrain.setGrass(ff.composeField({ group: { visible: true }, fields: [g2], mask: null }));
+  let rep = gApplied?.();
+  check("low on a compatible field: APPLIED, consistent with live mesh.count",
+    rep?.status === "applied" && rep.strokes[0]?.drawn === g2.mesh.count
+      && g2.mesh.count === densityCount(1000, 0.35),
+    JSON.stringify(rep ?? rep0));
+  check("the report carries the whole chain: chosen, cap, shed, requested",
+    rep?.quality === "low" && near(rep?.cap, 0.35) && near(rep?.shed, 1) && near(rep?.requested, 0.35));
+
+  // acceptance 3: an incompatible field must not read as success at 0.35
+  const g3 = mkStroke(800, { attrs: false, label: "0:yucca" }); wireDial?.(g3);
+  terrain.setGrass(ff.composeField({ group: { visible: true }, fields: [g3], mask: null }));
+  rep = gApplied?.();
+  check("low on an incompatible field: UNAVAILABLE, not success at 0.35",
+    rep?.status === "unavailable" && rep.strokes[0]?.drawn === 800,
+    JSON.stringify(rep ?? `getGrassDensity()=${terrain.getGrassDensity()} with stroke drawing 800/800`));
+  check("getGrassDensity still names the REQUEST — truth lives in the report",
+    near(terrain.getGrassDensity(), 0.35));
+
+  // acceptance 5: off and restore where count dialing is unsupported
+  terrain.setGrassQuality("off");
+  rep = gApplied?.();
+  check("off is honestly APPLIED via visibility even without a dial",
+    rep?.status === "applied" && rep?.via === "visibility", JSON.stringify(rep));
+  terrain.setGrassQuality("low");
+  rep = gApplied?.();
+  check("restore from off re-evaluates: UNAVAILABLE again, not remembered success",
+    rep?.status === "unavailable", JSON.stringify(rep));
+
+  // full asks for every instance — an undialed stroke drawing all of them is truth
+  terrain.setGrassQuality("full");
+  rep = gApplied?.();
+  check("full on an incompatible field is honestly applied (it IS drawing full)",
+    rep?.status === "applied", JSON.stringify(rep));
+  terrain.setGrassQuality("low");
+
+  // acceptance 6: re-grow preserves the choice, re-evaluates capability
+  const g4 = mkStroke(600, { label: "0:grass" }); wireDial?.(g4);
+  terrain.setGrass(ff.composeField({ group: { visible: true }, fields: [g4], mask: null }));
+  rep = gApplied?.();
+  check("re-grow preserves the choice and re-evaluates applied capability",
+    rep?.quality === "low" && rep?.status === "applied"
+      && g4.mesh.count === densityCount(600, 0.35), JSON.stringify(rep));
+
+  // a field that predates draw-state reporting must fail legibly
+  terrain.setGrass(mkField());
+  rep = gApplied?.();
+  check("a field that cannot report draw state is UNKNOWN, not success",
+    rep?.status === "unknown", JSON.stringify(rep));
+
+  terrain.clearGrass();
+  rep = gApplied?.();
+  check("no field at all says so", rep?.status === "no-field" && rep?.field === false);
+}
+
+console.log("\none report for every surface (source-level)");
+{
+  const bsrc = await Bun.file(here("../client/lib/build.js")).text();
+  check("the browser grass⚙ row reads the SAME report (getGrassApplied) as code does",
+    /getGrassApplied\(\)/.test(bsrc),
+    "build.js renders dial state from policy arithmetic only");
 }
 
 console.log("\nnever a verb (source-level)");

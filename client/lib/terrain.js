@@ -77,8 +77,29 @@ export function setGrassDensity(f) {
   budget.shedTo(f);
   applyGrassBudget();
 }
-/** effective density — what this machine actually draws */
+/** effective REQUESTED density — what the two dials agreed to ask for.
+ *  Whether the renderer actually applied it is getGrassApplied()'s answer:
+ *  a stroke without a working count dial draws denser than this number. */
 export const getGrassDensity = () => budget.effective();
+
+/** The full budget→draw chain, honestly (#74): the resident's chosen level,
+ *  the governor's shed, the requested effective factor, and what the
+ *  renderer verifiably APPLIED — read from live instance counts, never from
+ *  policy arithmetic. status: 'applied' | 'partial' | 'unavailable' |
+ *  'not-applied' | 'unknown' (field predates draw-state reporting) |
+ *  'no-field'. Strokes carry per-stroke truth so partial failure names the
+ *  affected stroke(s). Shared authored grass state is never touched. */
+export function getGrassApplied() {
+  const base = {
+    quality: budget.quality, cap: budget.cap,
+    shed: budget.shed, requested: budget.effective(),
+  };
+  if (!currentGrass) return { ...base, field: false, status: 'no-field', strokes: [] };
+  const rep = currentGrass.applied?.(base.requested);
+  // a field that cannot report draw state must not read as success
+  if (!rep) return { ...base, field: true, status: 'unknown', strokes: [] };
+  return { ...base, field: true, ...rep };
+}
 
 // The resident's own dial (#60): full | medium | low | off, persisted per
 // browser. Never a verb — the shared field is world state, the draw cost is
