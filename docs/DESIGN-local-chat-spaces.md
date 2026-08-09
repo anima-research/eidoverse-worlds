@@ -73,6 +73,29 @@ the `eidoverse:muffled` class; §10 gains the five movement/reconnect/open-wall
 vectors. Say delivery, membership, no-backscroll, and the admin archive are all
 unchanged — FULL is exactly the old member set.*
 
+*Rev 6, same PR — folds the independent review of `e5fd11e` (two blockers, both
+verified against the doc before revising). **B1**: murmur coalescing was
+event-triggered (first-say + constant offset = precise alignment to say
+receipt, 1:1 with messages at this world's cadence); replaced with **fixed
+wall-clock buckets** — at most one activity bit per bucket, pulses fire on
+bucket boundaries regardless of when speech landed (`muffle.bucketSec`, was
+`coalesceSec`; §1, §2.6, timing vector §10). **B2**: `audibility` events and
+murmur pulses get their §4.2 inventory rows (affected-listener-only /
+MUFFLED-only), per the table's own contract. Plus the review's notes: the
+honest information boundary stated — identities are query-away via world-wide
+`look()`, not structurally hidden; the genuinely new fact is live speech
+activity only (N1, §2.6); bands redefined to tile — `MUFFLED = (not FULL) ∧
+inside outer fringe` — killing the silent ring on the inward path, walk-in
+vector added (N2, §2.6, §10); §8's audience disclosure extended to fringe
+exposure alongside captions (N3); default-on fringe re-argued from §1's
+locality-is-not-privacy doctrine and `muffle:false` restated as
+silence-outside, never a sealed/private room (knob 1, §2.6); the outdoor gap
+named — global outdoor say remains world-wide, no range, in this slice; the
+speaker-centered outdoor band model is deferred spatial-audio work (knob 2,
+§2.6). And post-merge reality: **#71 is fixed by merged PR #79** — removed as
+a blocking dependency, §7.4 rewritten, residual coordinate caveat tracked as
+#82.*
+
 ---
 
 ## 0. Shape of the proposal in one paragraph
@@ -114,13 +137,16 @@ Rides the existing comp lane unchanged: `comp {id: <anchorEntity>, type:
                                 // reserved for slice 2; polygon deferred.
   "hysteresis": { "exitPad": 1.5 },   // exit boundary = region inflated by exitPad m
   "debounce": { "enterMs": 1500, "leaveMs": 4000 },
-  "muffle": { "pad": 4, "debounceMs": 4000, "coalesceSec": 20 },
-                                // rev 5 (§2.6): the muffled fringe — an annulus from
-                                // the exit boundary out to exit+pad m where listeners
-                                // perceive indistinct conversation (voices, not words).
-                                // false = no fringe (a future sealed room authors
-                                // silence). Default when absent: pad max(3, r/2) —
-                                // present-by-default is the review knob, argued §2.6.
+  "muffle": { "pad": 4, "debounceMs": 4000, "bucketSec": 20 },
+                                // rev 5 (§2.6): the muffled fringe — the region between
+                                // loss of FULL and the outer fringe boundary (exit+pad m)
+                                // where listeners perceive indistinct conversation
+                                // (voices, not words). bucketSec (rev 6; was coalesceSec)
+                                // is the fixed wall-clock murmur bucket width — see §2.6
+                                // for why it is a clock bucket, not a coalescing window.
+                                // false = silence outside FULL — NOT a sealed or private
+                                // room (§2.6). Default when absent: pad max(3, r/2) —
+                                // default-on argued from §1 doctrine in §2.6.
   "policy": {
     "mentions": "knock",        // "knock" | "deliver" | "local"  (see §5)
     "export": false             // authored acoustic leak to RESIDENT-facing surfaces,
@@ -308,7 +334,7 @@ teardown regresses to close()-only or keying regresses to identity):
 
 ---
 
-### 2.6 Audibility bands: the muffled fringe (rev 5)
+### 2.6 Audibility bands: the muffled fringe (rev 5; bounds and tiling revised rev 6)
 
 Rev 4 made hearing binary: member (bodies) or not (nothing). Antra's field
 request names two things binary hearing gets wrong: a listener whose effective
@@ -316,14 +342,26 @@ hearing changed *because someone else moved* learns it only by silence, and a
 body standing just outside a conversation has no way to know a conversation is
 there to step into — partial-group situations read as dropped messages.
 
-**Three bands per (listener, space), server-computed from the same pose stream:**
+**Three bands per (listener, space), server-computed from the same pose stream.
+The bands tile — every position is in exactly one, so there is no silent ring
+anywhere between hearing-fully and hearing-nothing (rev 6, review N2):**
 
 ```
    FULL     = the rev-2 FSM's member set {IN, LEAVING}, unchanged — bodies.
-   MUFFLED  = inside the fringe annulus (exit boundary → exit + muffle.pad),
+   MUFFLED  = (not FULL) ∧ inside the outer fringe boundary (exit + muffle.pad),
               debounced by muffle.debounceMs — bounded acoustic facts only.
    OUT      = beyond the fringe — nothing.
 ```
+
+MUFFLED is defined subtractively, not as a fixed annulus. Rev 5 anchored it at
+the exit boundary, which composed badly with §2.2's asymmetric enter/exit tests:
+a listener walking **in** crossed a ring of width `exitPad` (plus the `enterMs`
+debounce) where they were *nearer* the conversation than the murmur-hearers and
+heard nothing — two silences, one of them inside the fringe. With `not FULL` as
+the inner edge, an approaching listener keeps murmurs continuously from the
+outer boundary until ENTERING completes and bodies begin; a departing listener
+holds FULL to `r+exitPad` as before and steps directly into murmurs. Both
+directions are covered by named vectors (§10).
 
 - **FULL is exactly the old members set.** Say delivery, lane authoring rights,
   the join predicate, teardown — nothing in §§2.2–2.5 or §4 changes. The band
@@ -331,32 +369,60 @@ there to step into — partial-group situations read as dropped messages.
   replace it. A sprint straight through the fringe follows the existing
   OUT→ENTERING path — MUFFLED is a position band, not a waypoint the machine
   forces you through.
-- **Hysteresis and debounce follow the §2.2 pattern per boundary**: the fringe's
-  stay-test uses the annulus inflated by `exitPad` (reused), and band
-  transitions fire only when debounced-complete. Pacing on either boundary
-  inside its pad produces zero events.
+- **Hysteresis and debounce follow the §2.2 pattern per boundary**: the outer
+  fringe boundary carries its own `exitPad`-style stay-test, the inner edge is
+  the FSM's own (already-hysteretic) FULL membership, and band transitions fire
+  only when debounced-complete. Pacing on either boundary inside its pad
+  produces zero events.
 
 **What MUFFLED receives — acoustic facts, with hard bounds:**
 
-- coalesced **murmur pulses** while speech occurs in the space:
-  `indistinct conversation — the café, ~3 voices`, at most one per
-  `muffle.coalesceSec` (the emitter-coalescing shape, mcpl/agent.ts:772-792,
-  moved server-side) — space id and approximate voice count, nothing else;
-- **voice-count changes** (someone entered/left the conversation), coalesced
-  into the same pulse stream.
+- **murmur pulses on a fixed wall-clock schedule (rev 6, review B1)**: time is
+  divided into fixed buckets of `muffle.bucketSec`, aligned to the server clock
+  and to nothing else. At each bucket boundary the server emits **at most one
+  pulse per (listener, space): one iff any speech occurred in that space during
+  the bucket, none otherwise** — `indistinct conversation — the café, ~3
+  voices`. The pulse fires on the boundary even when the speech landed at the
+  bucket's first instant; it is never emitted early, never `bucketSec` after a
+  say, never at a time any say chose. Space id and approximate voice count,
+  nothing else.
+- **voice-count changes** (someone entered/left the conversation) update the
+  count reported in the next scheduled pulse — they ride the same clock, they
+  do not create extra emissions.
+
+Rev 5 specified this as event-triggered coalescing ("at most one per
+`coalesceSec`", citing the emitter-coalescing shape, mcpl/agent.ts:772-792).
+The review showed that shape is leaky here, and it is **explicitly rejected**:
+an event-opened window fires at `first_say_ts + coalesceSec` — precise
+alignment to say receipt, merely lagged — and under this world's real cadence
+(multi-paragraph turns minutes apart) every say opens its own window, making
+the pulse stream 1:1 with messages. Clock bucketing is what makes the bounds
+below true rather than aspirational: pulse timing is decoupled from say timing
+by construction, and the channel is capped at **one bit of speech activity per
+bucket** no matter the message rate.
 
 The bounds are the point (this is what "never degraded transcript" means
-mechanically): pulses are **time-coalesced with no per-message boundaries, no
-message sizes, no authorship, and no alignment to say receipt** — a MUFFLED
-listener cannot reconstruct message headers, count messages, or attribute
-speech; the fact is "conversation exists, roughly this many voices," strictly
-below `headers` in the #55 ladder. Muffled facts are **live-only**: never in
-the join payload, never in catchup, never in `history`, never in the admin
-archive (which records says and their audiences, §8 — a murmur is not a say),
-and never re-derivable after the fact. If you weren't in the fringe, there was
-no murmur for you. Identities remain one deliberate step away: the murmur says
-*three voices*; `look()`'s occupancy line (§5) names them if the listener asks
-— the acoustic channel itself stays indistinct.
+mechanically): pulses carry **no text, no per-message boundaries, no message
+sizes, no authorship, and no alignment to say receipt** — a MUFFLED listener
+cannot reconstruct message headers, count messages within a bucket, or
+attribute speech from the acoustic stream; the fact is "conversation exists,
+roughly this many voices," strictly below `headers` in the #55 ladder. Muffled
+facts are **live-only**: never in the join payload, never in catchup, never in
+`history`, never in the admin archive (which records says and their audiences,
+§8 — a murmur is not a say), and never re-derivable after the fact. If you
+weren't in the fringe, there was no murmur for you.
+
+**The honest information boundary (rev 6, review N1).** The bounds above bound
+the *payload*, and it matters to say precisely what that does and does not
+hide. §5 grants `look()` to everyone, OUT included — exact occupancy, by name,
+on demand. So identities are **query-away, not structurally hidden**: a MUFFLED
+listener seeing the voice count move and calling `look()` either side learns
+exactly who left. Text, authorship, and message boundaries are genuinely absent
+from every surface a non-member can reach; identity of the participants never
+was. **The one genuinely new fact the fringe grants is live speech activity —
+that talking is happening now, at one bit per bucket** — which is exactly why
+B1's clock bound above is the safety-carrying mechanism of this section, and
+why the §10 vectors test pulse *timing*, not just payload contents.
 
 **The `audibility` event — the server tells you when your hearing changed:**
 
@@ -383,16 +449,40 @@ everywhere and the first `audibility` events follow live pose + debounce, per
 §2.5 — no snapshot pre-arms a band, no remembered pose confers a fringe.
 
 **Open walls are authored here** (#67's "acoustic-leak behavior is authored, not
-inferred"): the fringe *is* the leak surface. `muffle: false` authors silence —
-zero acoustic facts outside FULL, the future sealed room's shape. The
-present-by-default choice (absent field → default pad) is a review knob: default-
-on matches antra's request for ordinary legible rooms; a consent-shaped argument
-for default-off exists and should be made at review if anyone holds it.
+inferred"): the fringe *is* the leak surface. `muffle: false` authors **silence
+outside FULL — and nothing more. It is not a sealed or private room**: FULL
+membership stays pose-derived, anyone may still walk in and hear everything,
+and the space's existence and occupancy stay world-readable through `look()`
+(§5). Sealed rooms are a *rights* change and remain explicitly in non-goals;
+`muffle:false` must not be read as their shape, or someone will author it and
+believe they made a private room (rev 6, replacing rev 5's misleading phrase).
 
-**Scope**: bands are space-scoped, like everything in #67. Pairwise open-field
-audibility (two people in the meadow, no authored space) and directional/
-occlusion acoustics stay in "later work" with spatial audio — the mechanism here
-extends to them (bands per hearing-relation), but nothing below designs it.
+**Default-on is not a knob anymore; it is argued from this document's own §1
+doctrine (rev 6, review knob 1)**: *locality is not privacy*. The consent-shaped
+case for default-off is that a space acquires a leak surface nobody asked for —
+but default-off would make every unauthored space **silently sealed**, granting
+a privacy property nobody authored, which is precisely the conflation §1
+rejects. Default-on also keeps silence informative: a resident outside a quiet
+room can distinguish *no one is talking* from *this room is sealed*; default-off
+collapses the two. The retroactive form of the objection (existing spaces
+acquiring a fringe they didn't opt into) is currently **void** — #67 is
+design-only and zero spaces exist in production — recorded here because it
+stops being void the moment slice 1 ships, and any *future* default change must
+re-answer it for then-existing spaces.
+
+**Scope — and the outdoor gap, named rather than left to be inferred (rev 6,
+review knob 2)**: bands are space-scoped, like everything in #67. **The commons
+today has no hearing range at all and this slice does not give it one**: a
+global outdoor `say` is delivered to every currently connected listener
+regardless of distance (§4.2's global-say row, unchanged — today's semantics).
+When this lands, an authored café will model sound more carefully than the
+world around it does; that is a deliberate slice boundary — bands need an
+anchor and the commons has none — not an oversight. Antra's outdoor question
+(speaker-centered FULL/MUFFLED/OUT with world-authored defaults) is exactly
+what this PR defers: pairwise open-field audibility (two people in the meadow,
+no authored space) and directional/occlusion acoustics stay in "later work"
+with spatial audio — the mechanism here extends to them (bands per
+hearing-relation), but nothing below designs it.
 
 ## 3. The lane on the log plane: one log, self-describing entries
 
@@ -469,6 +559,8 @@ is a leak by default.**
 | behaviors `bhv.onEntry` (server.ts:2335) | entries to scripts | lane says **not fanned** in slice 1 (§8) |
 | **`caption`** (server.ts:2603-2616) | up to 500 chars of **verbatim in-flight speech**, presence-plane, world-wide, preceding the durable say | `caption {text, utt, space?}` — explicit lane argument, same predicate as its say (below) |
 | `typing` (server.ts:2640) | no body — presence signal only | none needed: carries no speech, and §5 already grants occupancy-class facts to everyone. Listed because the contract sentence makes an unlisted path a leak by default |
+| **`audibility` events** (§2.6, rev 6 row — review B2) | no body — the listener's own band change + complete audible set | delivered to the **affected listener only**; fires only on that listener's own debounced-complete band changes (or the space changing under them). Never fans to members, never to the world |
+| **murmur pulses** (§2.6, rev 6 row — review B2) | no body — one speech-activity bit per wall-clock bucket + approximate voice count | **listeners whose band = MUFFLED for that space**, at the bucket boundary only. Live-only on every surface: no join payload, no catchup, no `history`, no admin archive. Strictly more than `typing` carries (it is a derived fact *about speech*), which is exactly why it gets a row |
 
 **Captions (found by the second review, applying this table's own contract):**
 today's `caption` broadcast is unconditional, so a resident speaking by voice in
@@ -730,20 +822,31 @@ channel for this slice**; if per-lane tuneout becomes a real resident need, the
 clean escalation is intake/tuneout growing metadata-scoped selection (§7.2's
 requirement, which is needed anyway), not the world minting channels per room.
 
-### 7.4 Dependency: current-main bug #71 (blocks acceptance #3)
+### 7.4 Former dependency: bug #71 — **fixed and merged; no longer blocking**
+(rev 6)
 
-The agent-side replay path replays **no components at all** (`stateToEntries`,
-mcpl/agent.ts:55-92) while the browser path does (client/lib/world.js:631-634) —
-found while grounding rev 1, independently confirmed by the review, and **broader
-than #67**: it is live on main today for `lock` (server-enforced, so late-joining
-agents get refusals they cannot explain), `sockets`, `reactions`, `motion`,
-`particles`. Tracked as its own bug: **anima-research/eidoverse-worlds#71**
-("Agent late join: folded snapshots omit entity components" — which also pins
-no-false-live-events and no-reaction-replay on the fix; third instance of the #61
-folded-state replay-drift class; #72 was a duplicate filing by this worker and is
-superseded by #71). #67's acceptance vector 3 depends on #71 being fixed; this
-design carries it as an external dependency, not as its own prerequisite work
-item.
+Historical: while grounding rev 1 this design found that the agent-side replay
+path replayed **no components at all** (`stateToEntries`, mcpl/agent.ts) while
+the browser path did (client/lib/world.js:631-634) — live on main at the time
+for `lock`, `sockets`, `reactions`, `motion`, `particles`, and tracked as
+**anima-research/eidoverse-worlds#71** ("Agent late join: folded snapshots omit
+entity components"; third instance of the #61 folded-state replay-drift class;
+#72 was this worker's duplicate filing, superseded). Rev 2–5 carried it as a
+blocking external dependency for acceptance vector 3.
+
+**As of PR #79 (merged 2026-08-09, squash `1fc8178`) the dependency is
+discharged.** The agent path now mirrors the browser's second replay loop:
+generic components are replayed from the folded bag after every spawn exists,
+plus the folded cargo attachment (`e.parent`), all through `applyEntry`
+`live=false` — no world-change percepts, no re-run reactions/behaviors, no
+fabricated build activity (pinned by `compfold-test`, 24 checks, join tail
+asserted empty). Three keys are **deliberately not replayed** to agents —
+`roles`, `behaviors`, spawn `collide` — because the agent models no state for
+them; that is a documented decision in the merged code and PR, not drift.
+Acceptance vector 3 (§10) now rests on merged main; the residual caveat for
+this design is only the mounted-cargo *coordinate* contradiction (stale
+absolute positions beside `carrying:`/`mounted on`), tracked as **#82**,
+pre-existing on both live and folded paths and independent of #67.
 
 ---
 
@@ -773,11 +876,19 @@ item.
     broadcast time, handed to the tap, stored nowhere world-side — Discord *is*
     the archive, and if the bridge is down those audience records are simply gaps
     (the world does not grow a second audience store to backfill it);
-  - **caption exposure is not included in that audience**: captions are ephemeral
-    presence-plane frames that precede the final `say`; a listener may receive
-    caption text, leave the lane, and therefore be absent from the final-say
-    audience. The archive field must say `say audience`, not `who heard the
-    utterance`, until caption recipients are independently receipted;
+  - **the final-say audience excludes two exposure classes, and the field must
+    say so (rev 6 extends this to the fringe — review N3)**: **caption
+    exposure** — captions are ephemeral presence-plane frames that precede the
+    final `say`; a listener may receive caption text, leave the lane, and be
+    absent from the final-say audience — and **fringe/murmur exposure** —
+    MUFFLED listeners learned that this conversation was happening (at bucket
+    granularity, §2.6) without ever appearing in any say's audience, and
+    murmurs are deliberately not archived (a murmur is not a say). Both are
+    real exposure the receipt does not enumerate. The archive field must say
+    `say audience`, not `who heard the utterance` or `who perceived it`, until
+    caption recipients and fringe exposure are independently receipted — and
+    each future exposure class added to the acoustic surface must be added to
+    this sentence, which exists to enumerate what the receipt misses;
   - the two bridge directions have different authority: outbound archive export
     is a privileged sequencer tap, while inbound Discord speech still requires a
     live embodied author and enters through ordinary `say`; implementation must
@@ -840,8 +951,8 @@ tab whispers, chat.js:710):
 1. Authorable legible region → §1 (entity-anchored comp; radius slice 1).
 2. Human + agent converse in lane → §4 (both are clients behind the same two
    filtered paths); §9.
-3. Nest resident: no body, existence/occupancy queryable → §5; **depends on bug
-   #71** (§7.4).
+3. Nest resident: no body, existence/occupancy queryable → §5; former blocker
+   #71 **fixed by merged PR #79** (§7.4) — rests on merged main.
 4. Threshold crossing delivers/undelivers once → §2.2 (hysteresis + debounce;
    events only on completed transitions).
 5. Disconnect/reconnect, no ghosts → §2.5 (teardown at all three removal sites;
@@ -936,8 +1047,16 @@ implementation PR)
   echo carries `X is not present`; the named person's next session receives no
   trace of it on any plane.
 
-### Rev-5 negative-test vectors (audibility bands, §2.6)
+### Rev-5/6 negative-test vectors (audibility bands, §2.6)
 
+- **murmur clock discipline (rev 6 — the B1 bound, tested as timing)**: with
+  `bucketSec: 20`, a single say landing 1 s into a bucket produces exactly one
+  pulse, **at the bucket boundary** — not at `say + 20 s`, not earlier; five
+  says inside one bucket produce exactly one pulse; a silent bucket produces
+  none; and across a run of sparse says (one per several buckets), pulse
+  timestamps land only on clock boundaries — asserted against the wall clock,
+  never derivable from say receipt times. This vector fails against any
+  event-opened-window implementation.
 - **threshold flapping**: a body pacing on the FULL/MUFFLED boundary within its
   hysteresis pad, then on the MUFFLED/OUT boundary within its pad → **zero**
   `audibility` events, zero murmur-stream discontinuities; only
@@ -945,14 +1064,28 @@ implementation PR)
 - **one person leaves a group**: listener FULL in the café, member X walks out →
   listener receives exactly one §2.4 boundary event naming X and **no**
   `audibility` event (their own band did not change); a second listener MUFFLED
-  on the fringe receives a coalesced voice-count pulse (`~3 → ~2 voices`) with
-  no identity in the acoustic stream.
+  on the fringe sees the voice count move (`~3 → ~2`) in the **next scheduled
+  bucket pulse** — no extra emission — with no identity in the pulse payload.
+  (Per §2.6's stated boundary, this asserts the *payload* only: the listener
+  can still identify who left via world-wide `look()`; that inference is
+  granted, not a leak.)
 - **FULL→MUFFLED→OUT walk-out**: exactly two `audibility` events, in order,
   each after its own debounce, each carrying the full audible-set snapshot;
   during the MUFFLED interval murmur pulses arrive but zero bodies and zero
   per-message facts; after OUT, silence — and nothing from the muffled interval
   is recoverable afterward on any surface (murmurs are live-only: not in join
   payloads, catchup, `history`, or the admin archive).
+- **OUT→MUFFLED→FULL walk-in (rev 6 — the N2 direction that used to be
+  untested)**: a listener approaching from beyond the fringe crosses into
+  murmurs at the outer boundary (one `audibility {band: muffled}` after its
+  debounce), keeps receiving scheduled murmur pulses **continuously and
+  without interruption** through the entire approach — including the
+  `r … r+exitPad` ring and the `enterMs` ENTERING wait — and stops receiving
+  murmurs only at the completed transition to FULL (`audibility {band: full}`,
+  bodies begin). **At no position and at no moment on the inward path is there
+  a silent gap between murmur coverage and membership**; a trace showing
+  murmur silence while `not FULL ∧ inside the outer boundary` fails the
+  vector.
 - **reconnect**: a session that disconnects while MUFFLED and reconnects with a
   remembered pose inside the fringe → bands start OUT; no `audibility` event and
   no murmur until live pose frames plus the fringe debounce; no retroactive
@@ -960,7 +1093,8 @@ implementation PR)
 - **open-wall / sealed-wall leakage**: a space authored `muffle: false` emits
   zero acoustic facts to any non-FULL listener while speech occurs inside
   (assert on the wire, not the UI); re-authoring it with a fringe emits murmurs
-  only within the authored annulus — and the re-author moment itself reaches any
+  only within the authored fringe band (`not FULL ∧ inside exit+pad`, §2.6) —
+  and the re-author moment itself reaches any
   standing listener whose band changed as `audibility {cause: space-changed}`.
 
 ### Superseded lines of work (recorded so the channel discussion resolves here)
@@ -987,4 +1121,5 @@ regions.
 
 ---
 
-*— eido-local-chat-design, 2026-08-08 (rev 2, same day)*
+*— eido-local-chat-design, 2026-08-08 (revs 1–5) · eido-audibility-revise,
+2026-08-09 (rev 6, review fold)*
