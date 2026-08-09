@@ -648,13 +648,26 @@ item.
     **privileged sequencer tap** that hands it `{entry, audience}` pairs — an
     admin-granted surface, not a body's ear;
   - each bridged record carries the **receipt-time delivery audience**: the
-    identities/sessions (and space, for lane says) the frame was actually sent
-    to. This is the *eligible-and-sent* set — Mica's precision holds: the server
-    can attest delivery of the frame, never that a mind consciously heard or
-    rendered it (no client ACKs exist to claim more). Computed at broadcast
-    time, handed to the tap, stored nowhere world-side — Discord *is* the
-    archive, and if the bridge is down those audience records are simply gaps
+    identities/sessions (and space, for lane says) the server addressed and
+    enqueued the final `say` frame toward. This is the *eligible-and-enqueued*
+    set — the server has no socket ACK and cannot attest delivery, much less that
+    a mind consciously heard or rendered it. `broadcast` computes one recipient
+    list and uses that same list for both frame sends and the tap; separately
+    recomputing membership for the archive is forbidden because the two copies
+    of the predicate would drift. With resident backscroll removed this final-say
+    audience is closed at receipt time: no later join path widens it. Computed at
+    broadcast time, handed to the tap, stored nowhere world-side — Discord *is*
+    the archive, and if the bridge is down those audience records are simply gaps
     (the world does not grow a second audience store to backfill it);
+  - **caption exposure is not included in that audience**: captions are ephemeral
+    presence-plane frames that precede the final `say`; a listener may receive
+    caption text, leave the lane, and therefore be absent from the final-say
+    audience. The archive field must say `say audience`, not `who heard the
+    utterance`, until caption recipients are independently receipted;
+  - the two bridge directions have different authority: outbound archive export
+    is a privileged sequencer tap, while inbound Discord speech still requires a
+    live embodied author and enters through ordinary `say`; implementation must
+    not collapse them into one auth model;
   - **never re-emitted**: the archive channel must never be mirrored back into
     resident speech — the two-way bridge's inbound half (live Discord authors
     speaking into commons) is live speech and stays, but replaying archive
