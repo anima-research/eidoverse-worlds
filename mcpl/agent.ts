@@ -75,6 +75,18 @@ function stateToEntries(state: any, skipChatFromSeq = Infinity): any[] {
         e.actor ?? "world", e.ts ?? Date.now());
     }
   }
+  // folded components and cargo attachments, in a second pass so every spawn
+  // exists before anything lands on it — the mirror of the browser client's
+  // ordering (world.js stateToEntries). Without the comp entries a post-fold
+  // joiner can be REFUSED for a lock it was never shown, and every socket,
+  // reaction and emitter authored before the fold is missing from look()
+  // until someone rewrites it (#71). Replay reconstructs state and stops
+  // there: applyEntry runs these with live=false, so a fire lit last week is
+  // in look(), not in your ears, and nothing re-performs as an event.
+  for (const [id, e] of Object.entries<any>(state.entities ?? {})) {
+    for (const [type, data] of Object.entries<any>(e.comp ?? {})) add("comp", { id, type, data });
+    if (e.parent) add("mount", { id, ...e.parent });
+  }
   // folded mounts: without these a rejoined agent doesn't know it is sitting
   // on anything — so "standing up" never dismounts, and the fold keeps the
   // body glued to its socket on every renderer (the second half of #61:
