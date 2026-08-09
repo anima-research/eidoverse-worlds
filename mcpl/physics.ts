@@ -51,29 +51,38 @@ let simMods: {
   colliders: any;
 } | null = null;
 let simFailed = false;
+// The in-flight load, not just the finished one. A joining agent asserts its
+// height field and replays a world's worth of spawns in the same tick, so
+// dozens of callers reach loadSim() before any of them resolves — each one
+// registering the plugin again and racing the same imports. One promise,
+// awaited by everyone.
+let simLoading: Promise<typeof simMods> | null = null;
 
-async function loadSim() {
-  if (simMods) return simMods;
-  if (simFailed) return null;
-  try {
-    plugin({
-      name: "ragdoll-core-stub",
-      setup(build) {
-        build.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: STUB }));
-      },
-    });
-    const stub = await import("../tools/core-stub.mjs");
-    const rag = await import("../client/lib/ragdoll.js");
-    const rig = await import("../tools/rig-load.mjs");
-    const terrain = await import("../client/lib/terrain.js");
-    const colliders = await import("../client/lib/colliders.js");
-    simMods = { Ragdoll: rag.Ragdoll, rig, THREE: stub.THREE, terrain, colliders };
-    return simMods;
-  } catch (e) {
-    simFailed = true;
-    console.error("[physics] headless ragdoll unavailable — agents will slump instead:", e);
-    return null;
-  }
+function loadSim(): Promise<typeof simMods> {
+  if (simMods) return Promise.resolve(simMods);
+  if (simFailed) return Promise.resolve(null);
+  simLoading ??= (async () => {
+    try {
+      plugin({
+        name: "ragdoll-core-stub",
+        setup(build) {
+          build.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: STUB }));
+        },
+      });
+      const stub = await import("../tools/core-stub.mjs");
+      const rag = await import("../client/lib/ragdoll.js");
+      const rig = await import("../tools/rig-load.mjs");
+      const terrain = await import("../client/lib/terrain.js");
+      const colliders = await import("../client/lib/colliders.js");
+      simMods = { Ragdoll: rag.Ragdoll, rig, THREE: stub.THREE, terrain, colliders };
+      return simMods;
+    } catch (e) {
+      simFailed = true;
+      console.error("[physics] headless ragdoll unavailable — agents will slump instead:", e);
+      return null;
+    }
+  })();
+  return simLoading;
 }
 
 /** Hand the sim the world's ground truth: the same heightAt the walking

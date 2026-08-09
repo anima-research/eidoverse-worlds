@@ -266,6 +266,13 @@ export class WorldAgent {
     this.gate.dispose(); // held narration dies with the session
     for (const s of this.emitterNarration.values()) clearTimeout(s.timer);
     this.emitterNarration.clear();
+    // Take this world's floors out with us. The collider map is process
+    // state (see physics.ts's declared seam), so an agent that leaves and is
+    // replaced by one joining somewhere else would otherwise leave its
+    // platforms standing in empty air under the new world — a ghost floor by
+    // the back door, and the exact failure the motion fence exists to
+    // prevent. Leaving is the one moment this agent knows they are its own.
+    for (const id of [...this.supportIds.keys()]) this.dropSupport(id);
     this.ws?.close();
   }
 
@@ -638,7 +645,7 @@ export class WorldAgent {
       this.entities.set(args.id, { id: args.id, lib: args.lib, pos: args.pos ?? [0, 0, 0], yaw: args.yaw ?? 0,
         ...(args.scale != null ? { scale: args.scale } : {}), actor });
       if (live) this.noteBuild(actor, args.pos);
-      void this.syncSupport(args.id);   // a placed thing is a thing bodies can rest on (#17)
+      this.trackSupport(this.syncSupport(args.id));   // a placed thing is a thing bodies can rest on (#17)
     } else if (verb === "light") {
       // a light is an entity too, so text-tier perception can see it and it can
       // be moved/removed by id like anything else. Re-issued on an existing id
@@ -651,7 +658,7 @@ export class WorldAgent {
       const e = this.entities.get(args.id);
       if (e) { e.pos = args.pos; if (args.yaw != null) e.yaw = args.yaw; if (args.scale != null) e.scale = args.scale; }
       if (live) this.noteBuild(actor, args.pos);
-      void this.syncSupport(args.id);   // support follows the thing it belongs to
+      this.trackSupport(this.syncSupport(args.id));   // support follows the thing it belongs to
     } else if (verb === "remove") {
       if (live) this.noteBuild(actor, this.entities.get(args.id)?.pos);
       this.entities.delete(args.id);
@@ -671,6 +678,9 @@ export class WorldAgent {
         if (args.type === "particles" && live) {
           this.noteEmitter(actor, String(args.id), before, args.data ?? null, e.pos, ts);
         }
+        // a motion arriving or leaving changes whether this thing may hold a
+        // body up (see hasActiveMotion)
+        if (args.type === "motion" || args.type.startsWith("motion:")) this.trackSupport(this.syncSupport(args.id));
       }
     } else if (verb === "motion") {
       const e = this.entities.get(args.id);
@@ -678,6 +688,7 @@ export class WorldAgent {
         e.comp ??= {};
         const { id: _id, ...m } = args;
         if (m.type == null) delete e.comp.motion; else e.comp.motion = m;
+        this.trackSupport(this.syncSupport(args.id));   // starts moving = stops supporting, and back
       }
     } else if (verb === "mount") {
       this.mounts.set(args.id, { to: args.to, slot: args.slot });
@@ -887,6 +898,60 @@ export class WorldAgent {
 
   private geomCache = new Map<string, Promise<any | null>>();
   private supportIds = new Map<string, string[]>();   // entity id -> registered box ids
+  /** Every support sync currently in flight. Replay fires one per spawn and
+   *  `/geom` is a network round trip, so for the first moment of a join the
+   *  world's floors exist in the log but not yet in the sim — and a body
+   *  released in that window falls through a platform that this agent simply
+   *  had not finished learning about. supportReady() is the barrier; a settle
+   *  that intends to claim placed-floor support waits on it. */
+  private supportPending = new Set<Promise<void>>();
+
+  /** Resolves once every support sync issued so far has landed. Re-checked in
+   *  a loop because a sync can enqueue while we wait (a spawn replayed behind
+   *  the one we were waiting on). Bounded so a hung fetch cannot freeze a
+   *  body forever — a late floor is a bug, a body that never settles is
+   *  worse. */
+  private async supportReady(timeoutMs = 3000) {
+    const deadline = Date.now() + timeoutMs;
+    while (this.supportPending.size && Date.now() < deadline) {
+      await Promise.race([
+        Promise.all([...this.supportPending]),
+        new Promise((r) => setTimeout(r, Math.max(0, deadline - Date.now()))),
+      ]);
+    }
+  }
+
+  /** Run a support sync and keep it visible to the barrier for its lifetime. */
+  private trackSupport(p: Promise<void>) {
+    this.supportPending.add(p);
+    void p.finally(() => this.supportPending.delete(p));
+  }
+
+  /** Is anything on this entity animating right now?
+   *
+   *  A motion component is PARAMETERS, not frames: the browser evaluates a
+   *  pendulum/spin/orbit/bob/path every frame and its collider rides along.
+   *  A support box registered from the AUTHORED transform does not — it would
+   *  sit where the swing used to be, and a body would come to rest on a floor
+   *  that is no longer there. A ghost floor is worse than no floor: no floor
+   *  is the honest pre-#17 answer for that entity, while a ghost floor is
+   *  geometry this code invented.
+   *
+   *  Deliberately conservative — ANY motion, including a `motion:<part>` on a
+   *  single named node, disqualifies the whole entity. A part motion leaves
+   *  the entity's own transform alone, but the /geom summary that produced
+   *  these boxes measured the model WITH that part in it, and nothing here
+   *  can tell which deck belongs to the moving piece. Until headless
+   *  evaluates the same deterministic motion the browsers do, the safe answer
+   *  is to abstain. */
+  private hasActiveMotion(e: Entity | undefined): boolean {
+    if (!e?.comp) return false;
+    for (const [k, v] of Object.entries(e.comp)) {
+      if (k !== "motion" && !k.startsWith("motion:")) continue;
+      if (v && (v as any).type != null) return true;
+    }
+    return false;
+  }
 
   private geomFor(lib: string): Promise<any | null> {
     let p = this.geomCache.get(lib);
@@ -903,9 +968,18 @@ export class WorldAgent {
   private async syncSupport(id: string) {
     const before = this.entities.get(id);
     if (!before || !before.lib || before.lib === "(light)") return;  // lights carry no collider
+    // a moving thing supports nothing here — and stops supporting the moment
+    // it starts moving, so this is the drop path as well as the skip path
+    if (this.hasActiveMotion(before)) { this.dropSupport(id); return; }
     const g = await this.geomFor(before.lib);
-    const e = this.entities.get(id);                   // re-read: the world may have moved on mid-fetch
-    if (!g || !e) return;
+    // Re-read, and re-CHECK: an id can be removed and respawned as something
+    // else while its geometry is in flight, and "the entity still exists" is
+    // not the same question as "it is still the thing I fetched for". Without
+    // the lib comparison a crate's decks could land under a lamp post that
+    // merely inherited its id.
+    const e = this.entities.get(id);
+    if (!g || !e || e.lib !== before.lib) return;
+    if (this.hasActiveMotion(e)) { this.dropSupport(id); return; }   // started moving mid-fetch
     this.dropSupport(id);
     const s = e.scale ?? 1;
     const xform = { position: e.pos, yaw: e.yaw ?? 0, scale: s };
@@ -1026,6 +1100,7 @@ export class WorldAgent {
     // the sim's ground is process state — assert OURS before every run
     // (see physics.ts's declared seam)
     await setHeightField((x, z) => this.heightAt(x, z));
+    await this.supportReady();    // don't fall through a floor still in flight
     if (this.draggedBy) return;
     body.begin({
       x: this.pos.x, z: this.pos.z,
@@ -1046,6 +1121,11 @@ export class WorldAgent {
     if (this.draggedBy) return;
     // the sim's ground is process state — assert OURS before every run
     await setHeightField((x, z) => this.heightAt(x, z));
+    // A release (or a 1.2s dragger silence) can land in the first moment of a
+    // join, while replayed spawns are still fetching their geometry. Settling
+    // then would drop the body through a platform the log already knows
+    // about — the #17 failure, arriving by a different door.
+    await this.supportReady();
     if (this.draggedBy) return;
     body.begin({
       x: this.pos.x, z: this.pos.z,

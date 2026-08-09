@@ -17,19 +17,23 @@
 import { plugin } from 'bun';
 import { fileURLToPath } from 'node:url';
 
-// Bun's runtime transpiler cache BAKES plugin-resolved specifiers into its
-// cached transpile of any module over 50KB (ragdoll.js qualifies), including
-// failed resolutions — after which onResolve never fires again for that
-// content, on any checkout of it, until the cache dies. One pre-fileURLToPath
-// run poisons every later one (the #13 ghost). Plugin-based stubbing is only
-// deterministic with the cache off, so this tool re-execs itself that way.
-if (process.env.BUN_RUNTIME_TRANSPILER_CACHE_PATH !== '0') {
-  const r = Bun.spawnSync({
-    cmd: [process.execPath, ...process.argv.slice(1)],
-    env: { ...process.env, BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0' },
-    stdout: 'inherit', stderr: 'inherit',
+// Bun 1.3.x caches transpiled module graphs globally by content. A failed
+// plugin-resolved path can therefore survive into a later checkout and bypass
+// onResolve entirely. Tests need deterministic resolver behavior; production
+// runtime keeps Bun's normal cache. Re-exec once because this setting is read
+// at process startup. (Same guard as the rest of the suite — see #13.)
+if (process.env.__EIDO_TEST_CACHE_OFF !== '1') {
+  const child = Bun.spawnSync({
+    cmd: [process.execPath, import.meta.path, ...process.argv.slice(2)],
+    env: {
+      ...process.env,
+      BUN_RUNTIME_TRANSPILER_CACHE_PATH: '0',
+      __EIDO_TEST_CACHE_OFF: '1',
+    },
+    stdout: 'inherit',
+    stderr: 'inherit',
   });
-  process.exit(r.exitCode ?? 1);
+  process.exit(child.exitCode ?? 1);
 }
 
 const STUB = fileURLToPath(new URL('./core-stub.mjs', import.meta.url));
