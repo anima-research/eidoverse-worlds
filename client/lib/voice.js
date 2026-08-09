@@ -18,6 +18,7 @@ import { bus, report } from './core.js';
 import { sendRtc, sendTyping } from './net.js';
 import { remotes } from './remotes.js';
 import { micFloor } from './voiceconsent.js';
+import { audioContext } from './audioctx.js';
 import { myState } from './controller.js';
 import { flashHint } from './ui.js';
 import { receivingVoice, volumeFor, isHushed } from './voiceconsent.js';
@@ -342,7 +343,12 @@ export function micAnalyserLevel() {
   if (!micStream || muted) return 0;
   if (!_an || _anStream !== micStream) {
     try {
-      const ctx = new AudioContext();
+      // ONE CONTEXT, REUSED. This made a NEW AudioContext every time the mic
+      // stream changed and never closed the old one — and Chrome caps a
+      // document at ~6, after which every further context is born unusable and
+      // SILENTLY so. Toggle the mic a few times and whatever asks next gets a
+      // dead one.
+      const ctx = audioContext();
       const src = ctx.createMediaStreamSource(micStream);
       _an = ctx.createAnalyser(); _an.fftSize = 512;
       src.connect(_an);
@@ -487,7 +493,7 @@ export function peerLevels() {
     let a = _peerAn.get(id);
     if (!a || a.stream !== p.stream) {
       try {
-        _peerCtx ??= new AudioContext();
+        _peerCtx ??= audioContext();
         const an = _peerCtx.createAnalyser();
         an.fftSize = 512;
         _peerCtx.createMediaStreamSource(p.stream).connect(an);
