@@ -89,9 +89,11 @@ check("the join tail is EMPTY — folded state is the only carrier",
 // ---- a fresh headless agent joins after the fold ----------------------------
 const body = new WorldAgent({ url: URL, name: "late-body", world: WORLD });
 const heard: any[] = [];
-(body as any).onEvent = (ev: any) => { if (ev.kind === "world-change") heard.push(ev); };
+(body as any).onEvent = (ev: any) => { heard.push(ev); };
 await body.connect();
 await sleep(600);
+check("replay produced no fabricated build activity", (body as any).act30.builds === 0,
+  `${(body as any).act30.builds} builds`);
 
 const bag = () => (body.entities.get("swing1") as any)?.comp ?? {};
 check("post-fold join: agent reconstructs the component bag",
@@ -111,7 +113,7 @@ check("look() lists the inert custom component", /components: sparkle/.test(seen
 check("look() shows the folded motion", /in motion \(pendulum\)/.test(seen));
 check("look() knows the folded cargo rides the swing", /carrying: crate1/.test(seen),
   seen.split("\n").find((l: string) => l.includes("swing1")));
-check("replay did NOT re-perform the fire as a live world-change percept", heard.length === 0,
+check("replay emitted no false live event of any kind", heard.length === 0,
   JSON.stringify(heard));
 check("no reaction re-ran on join (no world-authored motion in anyone's live feed)",
   !author.live.some((e: any) => e.verb === "motion" && e.actor === "world"),

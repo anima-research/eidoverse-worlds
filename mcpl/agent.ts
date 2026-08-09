@@ -51,7 +51,9 @@ type InboxItem = { ts: number; kind: "say" | "arrive" | "leave" | "act"; who: st
 
 /** Folded world state back into the verbs that produced it. Must stay in step
  *  with the browser client's stateToEntries — two renderers disagreeing about
- *  what a snapshot means is a world that looks different per species. */
+ *  what a snapshot means is a world that looks different per species. Deliberate
+ *  agent omissions: roles/grants and behaviors have no local reader, and spawn
+ *  `collide` is browser-only collider state; keep those absences explicit. */
 function stateToEntries(state: any, skipChatFromSeq = Infinity): any[] {
   if (!state) return [];
   const out: any[] = [];
