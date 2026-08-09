@@ -21,11 +21,12 @@ export function strokeApplied(f, eff, i = 0) {
   // a stroke that planted nothing draws nothing — any factor is vacuously on
   if (!total) return { stroke, total: 0, drawn: 0, expected: 0, dial: false, ok: true, why: 'empty' };
   const drawn = f.mesh?.count ?? total;
+  const stemDrawn = f.stemMesh?.count;
   const expected = densityCount(total, eff);
   const dial = typeof f.setDensity === 'function';
-  const ok = drawn === expected;
+  const ok = drawn === expected && (stemDrawn == null || stemDrawn === expected);
   return {
-    stroke, total, drawn, expected, dial, ok,
+    stroke, total, drawn, ...(stemDrawn != null ? { stemDrawn } : {}), expected, dial, ok,
     why: ok ? 'applied' : dial ? 'count-mismatch' : 'no-density-dial',
   };
 }

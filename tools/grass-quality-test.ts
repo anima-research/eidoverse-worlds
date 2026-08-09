@@ -10,12 +10,11 @@
 // (re-grow) and arrives before the first field loads. None of it is ever a
 // world verb.
 //
-// Negative control: this suite FAILS on current main, and the FIRST section
-// fails there for the right reason — it evaluates flora.js's shipped dial
-// expression (source-extracted, runnable on both trees) and demonstrates the
-// behavioral delta directly: factor 0 keeps 50 instances on main, 0 here.
-// The later sections need grass_quality.js and are skipped on main with an
-// explicit novelty-not-behavior note.
+// Negative control: this suite FAILS on the branch base. Most failures are
+// necessarily novelty because main has no applied-truth report; the behavioral
+// anchor is the source-extracted shipped dial below, which demonstrates the
+// silent no-op live (request 0.35 while an incompatible stroke draws 800/800)
+// before main proves it has no surface capable of naming that mismatch.
 //
 // The APPLIED-TRUTH sections (#74) extend the contract: the dial can
 // silently no-op (wireDensityDial leaves a stroke without setDensity when
@@ -188,7 +187,7 @@ const wireDial = wdMatch
 
 /** A stroke shaped to createFlora's contract: instance total, live mesh
  *  count, and (when compatible) the instanced attributes the dial expects. */
-const mkStroke = (n: number, { attrs = true, label = "" } = {}) => {
+const mkStroke = (n: number, { attrs = true, label = "", stem = false } = {}) => {
   const mk = (itemSize: number) => ({
     itemSize,
     array: Float32Array.from({ length: n * itemSize }, (_, i) => i),
@@ -199,6 +198,7 @@ const mkStroke = (n: number, { attrs = true, label = "" } = {}) => {
     count: n,
     strokeLabel: label || undefined,
     mesh: { count: n, geometry: { getAttribute: (nm: string) => table[nm] } },
+    ...(stem ? { stemMesh: { count: n } } : {}),
   } as any;
 };
 
@@ -215,6 +215,16 @@ console.log("\nthe silent no-op seam (flora's shipped wireDensityDial, both tree
   good.setDensity?.(0.35);
   check("a dialed stroke's LIVE count follows densityCount",
     good.mesh.count === densityCount(1000, 0.35), `count=${good.mesh.count}`);
+  const shrub = mkStroke(1000, { label: "shrub", stem: true });
+  wireDial?.(shrub); shrub.setDensity?.(0.35);
+  check("shrub report covers both leaf and stem draw meshes",
+    ff.strokeApplied?.(shrub, 0.35)?.ok === true
+      && ff.strokeApplied?.(shrub, 0.35)?.stemDrawn === densityCount(1000, 0.35));
+  shrub.stemMesh.count = 900;
+  check("shrub stem mismatch makes the live report fail",
+    ff.strokeApplied?.(shrub, 0.35)?.ok === false
+      && ff.strokeApplied?.(shrub, 0.35)?.stemDrawn === 900,
+    JSON.stringify(ff.strokeApplied?.(shrub, 0.35)));
 
   const group: any = { visible: true };
   const field: any = ff.composeField({ group, fields: [good, yucca], mask: null });
