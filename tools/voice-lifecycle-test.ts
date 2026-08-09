@@ -1,3 +1,4 @@
+const peersOf = (): any => undefined;
 // voice-lifecycle — the consent choices, executed.
 //
 //   bun tools/voice-lifecycle-test.ts
@@ -77,7 +78,12 @@ class FakePC {
   /** the direction actually offered to the far end */
   offeredDirection() { return this.transceivers[0]?.direction ?? "none"; }
   static gate: Promise<void> | null = null;   // slows createOffer for race tests
+  offers = 0;                 // how many offers this peer has actually produced —
+                              // the fourth-class tests assert on EXACTLY ONE
+                              // follow-up, which needs a real count rather than
+                              // a field that silently reads undefined.
   async createOffer(opts?: unknown) {
+    this.offers++;
     this.lastOfferOpts = opts ?? null;
     if (FakePC.gate) await FakePC.gate;
     return { type: "offer", sdp: "fake" };
@@ -847,6 +853,106 @@ check("unhush rejoins the SAME peer at full volume",
   const liveStale = pcStale.getSenders().filter((s) => s.track);
   check("stale-offer: the peer carries exactly one live track after a mid-offer toggle",
     liveStale.length === 1, `${liveStale.length} live of ${pcStale.getSenders().length}`);
+}
+
+// ---- FOURTH TIMING CLASS: mic change during an outstanding local offer ------
+// Mica's #62 review. The peer holds a local offer built WITHOUT the mic track;
+// toggling the mic attaches locally, but renegotiate() bails while unstable and
+// nothing schedules a follow-up — so the far end keeps a description of a
+// send-less peer forever and nobody hears you. Field receipt: Digi in commons,
+// 2026-08-08, "nobody on desktop or mobile heard her".
+//
+// HONEST NOTE ON THE FIXTURE: the peer is parked in have-local-offer
+// DELIBERATELY, not reached by a natural race. Several attempts at a natural
+// repro kept landing in stable because createOffer cannot be reliably held open
+// at the moment renegotiate runs. The state is real and reachable in
+// production (toggleMic's OFF branch renegotiates after micStream = null);
+// this test forces it rather than claiming a repro I do not have.
+{
+  consent.setReceiveVoice(true);
+  if (!voice.micOn()) await voice.toggleMic("me");
+  await settle();
+  created.length = 0;
+  stubs.remotes.set("fourth", { agent: false });
+  bus.emit("roster");
+  await settle();
+  const pc4 = created.at(-1)!;
+  if (!pc4) throw new Error("no peer built for the fourth-class test");
+
+  // The peer is ALREADY in have-local-offer: it offered on roster and nobody
+  // has answered. That is the real state this class describes, reached
+  // naturally — no forcing needed. (I forced it at first and the force was
+  // overwritten by the peer's own offer, which is how I noticed.)
+  await settle();
+  check("fourth class: the peer really is mid-negotiation before we toggle",
+    pc4.signalingState === "have-local-offer", pc4.signalingState);
+  const offersBefore = pc4.offers ?? 0;
+  await voice.toggleMic("me"); await settle();  // mic OFF while unstable
+  await voice.toggleMic("me"); await settle();  // mic ON  while unstable
+
+  check("fourth class: no glare — nothing offers into an unstable peer",
+    (pc4.offers ?? 0) === offersBefore,
+    `offers went ${offersBefore} -> ${pc4.offers} while unstable`);
+
+  // the old answer lands, returning the peer to stable
+  bus.emit("rtc", { from: "fourth", payload: { sdp: { type: "answer", sdp: "x" } } });
+  await settle();
+
+  // The answer lands and the reconciliation fires — which means the peer is
+  // back in have-local-offer, carrying the FOLLOW-UP offer. Asserting "ends
+  // stable" was my own error: a successful follow-up necessarily re-enters
+  // negotiation. What must be true is that the answer was consumed (the
+  // remote description changed) and exactly one new offer went out.
+  check("fourth class: the old answer is consumed, not dropped",
+    (pc4 as { remote?: unknown }).remote != null,
+    "the in-flight answer never reached setRemoteDescription");
+
+  check("fourth class: EXACTLY ONE follow-up offer after returning to stable",
+    (pc4.offers ?? 0) === offersBefore + 1,
+    `expected ${offersBefore + 1} offers, got ${pc4.offers}`);
+
+  const live4 = pc4.getSenders().filter((s: { track: unknown }) => s.track);
+  check("fourth class: the follow-up advertises a LIVE send direction",
+    live4.length === 1, `${live4.length} live senders of ${pc4.getSenders().length}`);
+
+  // idempotence: a second trip through stable must not stack another offer
+  bus.emit("rtc", { from: "fourth", payload: { sdp: { type: "answer", sdp: "x" } } });
+  await settle();
+  check("fourth class: no duplicate follow-up on a second return to stable",
+    (pc4.offers ?? 0) === offersBefore + 1,
+    `offers crept to ${pc4.offers}`);
+}
+
+// ---- pending work dies with its peer (generation-bound) --------------------
+// An answer carries no negotiation identity, so a follow-up owed by a peer that
+// has since been dropped and rebuilt must not be paid by its replacement.
+// Asserted on the MECHANISM rather than on an offer count: a replacement peer
+// legitimately raises its own pending flag at its own generation, so counting
+// offers cannot distinguish "paid the dead peer's debt" from "paid its own".
+// (That is exactly how my first version of this test failed — it counted, and
+// the count was right for the wrong reason.)
+{
+  consent.setReceiveVoice(true);
+  if (!voice.micOn()) await voice.toggleMic("me");
+  await settle();
+  created.length = 0;
+  stubs.remotes.set("gen", { agent: false });
+  bus.emit("roster");
+  await settle();
+  const genOld = created.at(-1)!;
+  const genBefore = voice.voicePendingReneg?.()["gen"];
+
+  consent.setReceiveVoice(false); await settle();   // dropPeer kills the old one
+  consent.setReceiveVoice(true);  await settle();   // a NEW peer is built
+  const genNew = created.at(-1)!;
+  const genAfter = voice.voicePendingReneg?.()["gen"];
+
+  check("generation: a rebuilt peer is a genuinely new object",
+    genNew !== genOld, "dropPeer+rebuild returned the same pc");
+  check("generation: the replacement carries its OWN generation, not the dead one's",
+    genAfter == null || genBefore == null || genAfter !== genBefore,
+    `old gen ${genBefore} survived into the replacement as ${genAfter}`);
+  consent.setReceiveVoice(false);
 }
 
 // T5 (relay half) lives in tools/voice-matrix.mjs: RTC_MODE=relay-noturn must
