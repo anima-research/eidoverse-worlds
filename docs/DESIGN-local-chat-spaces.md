@@ -4,9 +4,11 @@
 worker `eido-local-chat-design`. No code. Grounded against current main (`16e6b5b`);
 every mechanism claim below carries a file:line anchor from that tree. Composes with
 the #55 intake contract as settled by Mica + Cairn (2026-08-08) and defers all
-summarization to Tuneout (af#77). Locality is not privacy: a café lane is locally
-audible while the durable record stays under the world's ordinary record policy
-("the log is public" — spectators may read `history`, server.ts:2365); sealed rooms
+summarization to Tuneout (af#77). Locality is not privacy — but as of rev 4,
+**record is not hearing either**: the durable log persists for moderation, audit,
+and recovery, while ordinary retrospective *hearing* of speech is gone for
+non-admins (the rev-1 reliance on "the log is public" — spectators may read
+`history`, server.ts:2365 — is superseded for say bodies; see §4.4). Sealed rooms
 are explicitly later work.*
 
 *Rev 2, same day — addresses the independent architecture review of `732abbf`
@@ -28,6 +30,23 @@ rev-2 open questions resolved per the reviewer's recommendations (honest takeove
 leave with no wire compaction; bounded scan for slice 1, any future index derived
 and rebuildable, never authoritative).*
 
+*Rev 4 (follow-up PR, post-merge) — **paradigm change, decided by antra
+2026-08-08**: Eidoverse speech is live presence, not chat history. **If you were
+not there when it was said, you do not hear it later.** Non-admins have no
+backscroll of any kind — no say bodies in the join payload, no missed-message
+replay, no ordinary `history` body pull, for the commons and for lanes alike.
+The durable world log remains, for moderation/audit/recovery and explicitly
+authorized admin tooling — it is a record, not a reading room. This supersedes
+rev 2/3's catchup-body and chosen-pull semantics (§4.3, §4.4, §5, §6, §9
+amended below) and **dissolves the historical-listener-entitlement problem**
+antra surfaced post-merge (replay filtered by current position would grant
+retroactive hearing): with no retrospective hearing at all, live delivery needs
+only current server-owned membership, and no membership-interval or per-message
+audience-receipt machinery is needed or wanted. Intentional durability moves to
+authored artifacts (§6). Live membership, receipt-time lane binding, the caption
+predicate, no-double-delivery, and the delivery-path inventory contract are all
+unchanged.*
+
 ---
 
 ## 0. Shape of the proposal in one paragraph
@@ -44,8 +63,10 @@ sequencer pushes bodies to clients on exactly two paths — live `World.broadcas
 predicate filters both** (§4). Everything any consumer learns about membership comes
 from the server; agents and humans share the same truth because the WorldAgent is
 just another client behind the same two filtered paths. Non-members get headers
-(existence, occupancy, counters) and bounded chosen pull, never pushed bodies.
-Catchup is headers, tagged, never replayed as live.
+(existence, occupancy, counters) — never bodies. **And as of rev 4, speech is
+live presence for everyone who is not an admin**: no join-payload say bodies, no
+missed-message replay, no ordinary history body pull — if you were not there,
+you do not hear it later. The log records; it does not re-serve.
 
 ---
 
@@ -187,9 +208,10 @@ On a *completed* transition the server emits a new presence-plane message:
   "occupants": ["antra", "mica", "sill"] }
 ```
 
-To the mover on `enter`, the same message carries the **backlog header** (§6):
-`"backlog": { "count": 87, "fromSeq": 4900, "toSeq": 5012, "participants": [...] }` —
-counters only, never bodies.
+To the mover on `enter`, the same message carries the **presence header** (§6):
+`"presence": { "chatTotal": 87, "participants": [...] }` — that a conversation
+lives here and who is in it; counters only, never bodies, never a replayable
+range (rev 4: the room's past is not on offer, so the header does not index it).
 
 ### 2.5 Teardown: the three removal sites, ghosts, takeover (acceptance #5)
 
@@ -221,7 +243,8 @@ occupancy is *delivery authority* — whoever the occupants list names is who re
 bodies — so it must never go silently stale. The `leave {reason:"takeover"}` fires
 to members; the successor session starts OUT everywhere (§2.1) and, if its restored
 pose is inside the café, re-enters through the ordinary ENTERING debounce — one
-clean enter, backlog header covering the gap. UIs may render a takeover-leave
+clean enter, presence header on arrival (what was said in the gap is not
+recovered — rev 4). UIs may render a takeover-leave
 followed by a prompt re-enter compactly; the wire stays honest. **(Resolved in
 second review: divergence endorsed as the conservative choice — occupancy is a
 delivery-authority list that non-members can query, and a stale entry names
@@ -272,8 +295,9 @@ review audited every dedupe path: all are **monotonic high-water marks with stri
 `>`** — net.js:436, 580, 593; agent.ts:694-695 — no contiguity assumption anywhere,
 so gap-following entries are not mistaken for replay. Additionally, `history`
 replies resolve a promise and never touch `applyEntry`/`inboxSeen`
-(agent.ts:480-483), which is what makes `history {space}` viable as the body path —
-back-pulls survive the high-water marks. **Residual for the implementation PR**:
+(agent.ts:480-483), which is what keeps `history` replies (now headers-at-most
+for non-admin say queries, §4.4) from colliding with the high-water marks.
+**Residual for the implementation PR**:
 `skipInboxThrough` (agent.ts:1204-1206) walks a prefix and breaks at the first
 `seq > cursor`; correct over a gappy inbox, but gaps become *normal* under this
 design, so it needs an explicit test.
@@ -313,12 +337,12 @@ is an inventory. **Contract sentence for PROTOCOL.md: any path that delivers say
 bodies to a client must state its lane predicate; a new delivery path without one
 is a leak by default.**
 
-| Path | What it pushes | Lane predicate (this design) |
+| Path | What it pushes | Speech predicate (rev 4) |
 |---|---|---|
-| live `World.broadcast` (server.ts:1087-1090) | every log entry | lane says → FSM ∈ {IN, LEAVING} for that space; author always gets the authoritative echo; all other entries unchanged |
-| **join payload** `joinPayload()` (server.ts:1060-1063): `state.recentChat` + `tail: this.entries` | folded chat + the whole post-fold tail | **same predicate, per-recipient, both halves in one pass** (§4.3) |
-| `history` (server.ts:1033-1058) | bodies on request | none — chosen pull under ordinary record policy, bounded + explicit (§4.4); this is the *designed* body path for non-members |
-| catchup prelude (net-server.ts:490-511) | headers + capped mention replay | headers per lane; mention bodies per `policy.mentions` (§6) |
+| live `World.broadcast` (server.ts:1087-1090) | every log entry | lane says → FSM ∈ {IN, LEAVING} for that space; global says → currently connected listeners (today's semantics); author always gets the authoritative echo; all other entries unchanged |
+| **join payload** `joinPayload()` (server.ts:1060-1063): `state.recentChat` + `tail: this.entries` | folded chat + the whole post-fold tail | **no say bodies for non-admins, global or lane** — tail strips all `say` entries, `recentChat` is served empty; counters/occupancy ride the state instead (§4.3). Admin sessions per §4.4's audit gate |
+| `history` (server.ts:1033-1058) | bodies on request | `say` bodies are **admin-audit-gated** (§4.4); non-say verbs (the world-state record) unchanged. There is no ordinary body path for non-admins anymore — not for lanes, not for the commons |
+| catchup prelude (net-server.ts:490-511) | headers + capped mention replay | **replay removed** — no missed-say bodies, no missed-mention body replay; what survives is presence-shaped: occupancy and counters (§6) |
 | `pendingWhispers` (server.ts:1240, 2076-2083) | whispers | orthogonal — whispers are 1:1, never lane-scoped |
 | behaviors `bhv.onEntry` (server.ts:2335) | entries to scripts | lane says **not fanned** in slice 1 (§8) |
 | **`caption`** (server.ts:2603-2616) | up to 500 chars of **verbatim in-flight speech**, presence-plane, world-wide, preceding the durable say | `caption {text, utt, space?}` — explicit lane argument, same predicate as its say (below) |
@@ -352,47 +376,70 @@ Unfiltered, every joiner — member or not — would receive every lane body in 
 tail, with no `space` metadata attached at the door: the locality promise and the
 #55 intake plane would fail together, on the join path. (Review B2, verified.)
 
-**Design**: `joinPayload(recipient)` becomes per-recipient and applies the same
-membership predicate as live broadcast, to **both halves in the same serve pass**:
+**Design (rev 4 — simpler than rev 2's membership-filtered version)**:
+`joinPayload(recipient)` becomes per-recipient. For every non-admin recipient,
+**both halves in the same serve pass**:
 
-- **tail**: lane-say entries the recipient is not a member of are **omitted**. A
-  joiner starts OUT everywhere (§2.1), so at join this means all lane says. The
-  resulting seq gaps are safe (§3 audit). All non-say entries pass untouched — the
-  tail's state-bearing replay (comps, spawns, mounts) is not filtered.
-- **`state.recentChat`**: records carry `space` in fold state (server-side); the
-  serve pass filters by the same predicate. **Filtering is serialization-time,
-  never fold-time** — the durable fold on disk keeps every line; nothing is
-  discarded from the record (the #55 invariant).
+- **tail**: **all** `say` entries — global and lane alike — are omitted. Rev 2
+  filtered lane says by membership; the no-backscroll paradigm removes the
+  distinction: a joiner was not present for anything in the tail, so none of its
+  speech is theirs to hear. The resulting seq gaps are safe (§3 audit). All
+  non-say entries pass untouched — the tail's state-bearing replay (comps,
+  spawns, mounts) is not filtered; the paradigm governs speech, not world state.
+- **`state.recentChat`**: served **empty** to non-admins. **Filtering is
+  serialization-time, never fold-time** — the durable fold on disk keeps every
+  line (the record survives for §4.4's audit surface); nothing is discarded.
 - **`skipChatFromSeq` consistency**: both clients compute their snapshot-chat skip
-  cursor as min-seq over the *received* tail (net.js:550-553, agent.ts:379-381) to
-  suppress folded chat "the tail will bring". Because both halves are filtered by
-  one predicate in one pass, the cursor stays consistent with the chat actually
-  present. **Filtering one half only — or filtering them in separate passes — makes
-  the cursor a check that passes against its own starting state** (the review named
-  this trap precisely); the implementation test must assert cursor correctness
-  against a tail containing interleaved global and lane says.
+  cursor as min-seq over the *received* tail (net.js:550-553, agent.ts:379-381).
+  For non-admins the requirement is now trivially met (no snapshot chat, no tail
+  says); for **admin sessions**, which may still receive both under the audit
+  gate, the rev-2 rule stands unreduced: both halves filtered by one predicate in
+  one pass, with a test asserting cursor correctness against interleaved
+  global/lane says. The one-half-filtered trap (a check that passes against its
+  own starting state) is still the named failure mode on that path.
 - **per-space counters** `{chatTotal, lastSeq}` ride the state for the occupancy
-  line and backlog headers (§5, §6) — headers exist independently of bodies.
+  line and presence headers (§5, §6) — headers exist independently of bodies.
 
-Net effect: no unshaped lane body can enter any consumer via join; live lane
-deliveries carry `space` metadata (§7.1); the only body path for non-members is
-chosen pull. "Bodies: never pushed to non-members" (§5) is now backed by the
-inventory in §4.2 rather than asserted.
+Net effect: no say body — shaped or unshaped, global or lane — reaches any
+non-admin consumer via join. Live deliveries carry `space` metadata (§7.1). There
+is no longer any pull-based body path for non-admins to compose with (§4.4), so
+"bodies: never pushed to non-members" (§5) strengthens to "speech: never served
+retrospectively to non-admins".
 
-### 4.4 `history` grows a lane filter — with a scan bound
+### 4.4 `history`: the record is not a reading room (rev 4)
 
-`readHistory` (server.ts:1033-1058) filters by `verbs`/`before`/`after` today; it
-gains `space: <id>` (and `space: null` for explicitly-global-only). This is the
-bounded chosen-pull surface for everything below — non-member reading (under
-ordinary record policy), returning-resident deep-read, and #55's "pull is chosen;
-push is the hazard" doctrine.
+Rev 2/3 made `history {space}` the designed chosen-pull body path for
+non-members. **Rev 4 removes it.** `readHistory` (server.ts:1033-1058) still
+gains the `space` filter, but `say` bodies in any `history` reply are gated to
+the **admin audit surface**; for everyone else, `verbs:["say"]` requests return
+headers-at-most (actor, seq, ts, space — no text), and the client's scrollback
+paging (§9) is scoped to the session. Non-say verbs — the world-*state* record —
+remain readable as today: the paradigm is about speech, not about builds,
+grants, or provenance.
 
-**Bounded-scan requirement (from review; resolved in second review)**: today's
-implementation reverse-scans and, failing to fill `limit`, falls back to a
-`readFileSync` of the **entire log**. A `space` filter is far more selective than
-the existing `verbs` filter — a quiet lane would turn every pull into a
-whole-world-log read, on exactly the path §5/§6 route non-member reads, catchup,
-and deep-read onto.
+**The admin audit gate**: "admin" here means the world's ownership plane —
+`WORLD_ADMIN` ids (server.ts:695, unkickable operator set) and, per world
+policy, `owner` rank (ROLE_RANK, server.ts:692); the exact rank cut is a review
+knob, but it must be a *rights* check on the existing ladder, not a new role
+system. Audit reads are for moderation, welfare, and recovery. Two hard rules:
+an audit read is **never re-emitted** into any resident-facing plane as live,
+catchup, or quoted delivery (re-serving through an admin is still re-serving);
+and audit access should leave the same class of receipt the flight recorder
+already gives refusals (`world.debug`, server.ts:2104) — who read what range,
+when. Log durability itself is untouched: fold, recovery, and moderation all
+still depend on the complete record.
+
+**Consumer-side memory is out of scope and untouched**: a resident's own
+chronicle/store keeps what that resident heard live — that is their memory, not
+the world re-serving. The paradigm governs the world's delivery surfaces only.
+
+**Bounded-scan requirement (from review; resolved in second review; still
+binding in rev 4)**: today's implementation reverse-scans and, failing to fill
+`limit`, falls back to a `readFileSync` of the **entire log**. A `space` filter
+is far more selective than the existing `verbs` filter — a quiet lane would turn
+every pull into a whole-world-log read. Rev 4 shrinks the caller set (admin
+audit reads and header-only queries) but the bound must hold regardless — an
+audit query is not a license for an unbounded scan.
 
 **Slice 1 ships the bounded scan**: `history {space}` may return fewer than
 `limit`, carrying a `scannedThrough` cursor and `hasMore`, and **never** falls
@@ -415,15 +462,17 @@ later **as a derived cache rebuildable from the log, never authoritative**.
   the world, like a lit hearth (acceptance #3). The browser inspector gets the
   equivalent row.
 - **Bodies**: never pushed to non-members — backed by the delivery-path inventory
-  (§4.2), not asserted. Read via `history {space}` under the world's ordinary
-  record policy — an explicit, bounded, per-request act.
+  (§4.2), not asserted. And as of rev 4 there is no pull path either (§4.4): the
+  way to hear the café is to walk into the café.
 - **Mentions across the boundary** follow the authored `policy.mentions`:
   - `"knock"` (default): the mentioned non-member receives a **header-only** knock —
-    `you were mentioned in the café [cafe] (seq 5013)` — tagged
+    `you were mentioned in the café [cafe]` — tagged
     `chat:mention` + `eidoverse:local-chat`, `mentioned: true`, no body. The
     never-gated-knock doctrine (denoise.ts:28-29, #55 "addressed speech is
-    preserved") is honored while the *body* still respects locality; the body is one
-    chosen `history` pull away.
+    preserved") is honored while the *body* still respects locality. Rev 4: the
+    body is no longer a history pull away — a knock is an invitation to *go
+    there*, and it reaches only currently-connected listeners (a knock missed
+    while absent is missed, like everything else).
   - `"deliver"`: the full mention body crosses (today's mention semantics, plus lane
     provenance in metadata). For spaces that want reachability over locality.
   - `"local"`: nothing leaves; the mention renders inside the lane only. For spaces
@@ -431,26 +480,40 @@ later **as a derived cache rebuildable from the log, never authoritative**.
 
 ---
 
-## 6. Catchup and backlog: headers, tagged, never live (acceptance #7)
+## 6. Absence, return, and intentional durability (rev 4 — replaces catchup)
 
-Three distinct moments, one rule — **bodies move only by chosen pull; catchup is
-tagged and can never be mistaken for live speech** (the fabricated-approach /
-`backlog ≠ live` boundary from the #55 case law):
+One rule, no exceptions below the admin plane: **what was said while you were
+absent is gone for you.** Disconnecting, standing elsewhere, or sleeping through
+it all resolve the same way — speech is live presence, and the world does not
+re-serve it. What a resident gets instead is presence-shaped:
 
-1. **Crossing into a space** (live): the `enter` boundary event carries the backlog
-   header (count, seq range, participants — §2.4). The browser MAY then render
-   recent lane lines *visibly marked historical* via a `history {space}` pull (a
-   human reading scrollback is UX, not context injection); the WorldAgent delivers
-   the header only.
-2. **Returning resident** (reconnect/agent prelude): the existing catchup path
-   (net-server.ts:490-511) extends with one header line per space that accrued
-   traffic — `café: 87 messages while you were away (seq 4900–5012)` — tagged
-   `tags(CHAT.ambient, EIDO.catchup)` exactly like the current missed-say header.
-   Lane mentions in the missed window follow `policy.mentions`: knock-policy spaces
-   contribute header knocks to the replay (tagged catchup + mention), deliver-policy
-   spaces replay bodies within the existing ≤10 cap.
-3. **Deep read** (any time): `history {space, before/after}` — the chosen-pull
-   surface, bounded (§4.4), no wake semantics, no live framing.
+1. **Crossing into a space** (live): the `enter` boundary event carries the
+   presence header (occupancy, participants, `chatTotal` counter — §2.4). It says
+   *there is a conversation here and who is in it* — never what was said. No
+   `history` pull backs a scrollback render anymore (§4.4); the room's past is
+   its occupants' memory.
+2. **Returning resident** (reconnect/agent prelude): the missed-say and
+   missed-mention **replay is removed** from the prelude (net-server.ts:490-511).
+   What survives is one presence line per active surface — occupancy and
+   counters, `café: 3 present, active` — tagged `tags(CHAT.ambient,
+   EIDO.catchup)` so intake can treat it as the catchup class it is. No bodies,
+   no per-message knock reconstruction. (Whether even an unattributed "you were
+   mentioned N times while away" count survives is an explicit review knob,
+   default **off** — the cleanest reading of the paradigm is that a missed knock
+   is missed.)
+3. **The `backlog ≠ live` boundary** from the #55 case law still binds what
+   little crosses: the presence lines above are catchup-tagged and can never be
+   mistaken for live speech. There is simply far less to tag.
+
+**Intentional durability moves to authored artifacts.** When something *should*
+outlive the moment — a notice, a letter, a registry entry, a book on a shelf —
+the author makes an object of it. The existing comp/entity lane already carries
+authored text (spawn + comp, builder rank, durable, foldable, lockable,
+`look()`-legible); a message that matters is *placed*, not implicitly archived.
+This is a design hook, not new machinery: no new verb, no new component type is
+specified here — only the doctrine that durable communication is an authored
+act, so that removing backscroll removes ambient archiving without removing the
+ability to leave word.
 
 ---
 
@@ -498,7 +561,7 @@ layers need:
 - `space` in the metadata plane for fine rules and for `message_meta` /
   `intake_explain` receipts — on **every** lane body a consumer can receive, since
   the join path no longer delivers unshaped bodies (§4.3);
-- headers that exist *independently of bodies* (occupancy line, backlog header,
+- headers that exist *independently of bodies* (occupancy line, presence header,
   knock) so `headers`-dial consumers and refusal fallbacks have something honest to
   receive;
 - catchup marking so no intake layer can mistake backlog for live.
@@ -576,9 +639,13 @@ tab whispers, chat.js:710):
   `say in the café…` (the `setFilter` placeholder pattern, chat.js:773-781) and
   Enter sends `say {text, space}`. In `all`, Enter is global — standing in the café
   never silently redirects a send.
-- Lane lines render with a lane chip; backlog lines pulled via `history {space}`
-  render marked historical (§6.1). Membership transitions render as system lines in
-  the lane tab.
+- Lane lines render with a lane chip. Membership transitions render as system
+  lines in the lane tab. **Rev 4: the chat pane is session-scoped** — it holds
+  what this session heard live, and nothing else; the scrollback paging that
+  today pulls `requestHistory({verbs:['say']})` (chat.js:142-145) is removed for
+  non-admins (the server would return headers-at-most anyway, §4.4). A lane tab
+  opened on `enter` starts empty plus the presence header — like walking into a
+  room.
 - Unread accounting rides the existing centralized `account()`/`paintUnread()`
   (chat.js:246-255, 361-369) — one new key shape, no new machinery.
 - The 3-D scene already fades bubbles by distance (avatar.js:698-704); lane speech
@@ -605,8 +672,9 @@ tab whispers, chat.js:710):
    live-`Client` keying; three named negative-test vectors).
 6. Message just before crossing keeps lane + author → §3 (receipt-time binding) +
    §2.2 (LEAVING is a member).
-7. Durable history under rights, never replayed as live → §3, §4.4, §6 (catchup
-   tagging disjoint from live).
+7. Durable history under rights, never replayed as live → §3, §4.4, §6 —
+   satisfied more strongly than the vector asked: rev 4 narrows "rights" to the
+   admin audit plane, and *nothing* replays for anyone below it.
 8. No double delivery global/local → §4.2 (one entry, one lane; one membership
    predicate over both push paths, with the inventory as the contract).
 
@@ -647,6 +715,38 @@ tab whispers, chat.js:710):
   one-time error; the trailing say's receipt-time binding stays authoritative for
   the record. `typing` is listed as an explicit no-body row. Both were found by
   applying the inventory's own contract sentence — which is what it is for.
+
+### Rev-4 negative-test vectors (the no-backscroll paradigm, named for the
+implementation PR)
+
+- **fresh join**: a joiner — including one whose restored pose stands inside a
+  space, including a builder — receives a join payload containing **zero say
+  bodies** (tail stripped, `recentChat` empty); counters and occupancy only.
+  The world-state half of the tail (comps, spawns, mounts) arrives whole.
+- **reconnect**: an identity that heard N messages live, disconnects, returns →
+  receives none of what it missed *and* none of what it previously heard; its
+  own consumer-side chronicle is the only place its heard speech persists
+  (§4.4). The prelude delivers presence lines only, catchup-tagged.
+- **absent local member**: café member leaves the world; the café talks; they
+  return and re-enter the café → one `enter` boundary event with the presence
+  header (occupancy, counter), zero bodies, no per-message knocks from the
+  missed window.
+- **admin audit**: an authorized admin reads a seq range of say bodies via the
+  §4.4 gate → the read succeeds, leaves a flight-recorder receipt, and **nothing
+  appears on any resident-facing plane** — no live echo, no catchup artifact, no
+  quoted delivery; a second non-admin session observing throughout receives
+  nothing.
+
+### Superseded lines of work (recorded so the channel discussion resolves here)
+
+- **Historical listener entitlement** (membership intervals vs per-message
+  audience receipts), raised by antra post-merge as the gap in replay filtered by
+  current position: **superseded before design**. With no retrospective hearing
+  for non-admins, live delivery needs only current server-owned membership, and
+  no durable entitlement source is needed. Should a future policy ever
+  reintroduce non-admin replay, that machinery must be designed *first* —
+  current position must never stand in for presence-at-the-time (the gap stands
+  as case law even though the mechanism it demanded is not built).
 
 ### Non-goals (this slice)
 
