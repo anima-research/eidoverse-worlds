@@ -59,6 +59,20 @@ not imply transcript access, extra readers need an explicit logged grant (§4.4)
 **Missed-mention counts stay off**; the sender is told at receipt time when a
 named target is absent (§5).*
 
+*Rev 5 (follow-up PR) — **audibility bands**, from antra's post-deploy request
+(#67 comment, 2026-08-08): when anyone's movement changes what a listener can
+effectively hear, the listener must be told by the server, not left to infer it;
+and between hearing-fully and hearing-nothing there is a **muffled fringe** where
+a listener perceives that indistinct conversation exists — voices, not words —
+so partial-group situations are legible instead of looking like dropped
+messages. New §2.6 (band machine FULL/MUFFLED/OUT with per-boundary hysteresis,
+the server-authored `audibility` event, and the hard bound that muffled facts
+are acoustic, never degraded transcript and never covert backscroll); §1 grows
+the `muffle` field; §5 makes the listener's audible set inspectable; §7.1 adds
+the `eidoverse:muffled` class; §10 gains the five movement/reconnect/open-wall
+vectors. Say delivery, membership, no-backscroll, and the admin archive are all
+unchanged — FULL is exactly the old member set.*
+
 ---
 
 ## 0. Shape of the proposal in one paragraph
@@ -100,6 +114,13 @@ Rides the existing comp lane unchanged: `comp {id: <anchorEntity>, type:
                                 // reserved for slice 2; polygon deferred.
   "hysteresis": { "exitPad": 1.5 },   // exit boundary = region inflated by exitPad m
   "debounce": { "enterMs": 1500, "leaveMs": 4000 },
+  "muffle": { "pad": 4, "debounceMs": 4000, "coalesceSec": 20 },
+                                // rev 5 (§2.6): the muffled fringe — an annulus from
+                                // the exit boundary out to exit+pad m where listeners
+                                // perceive indistinct conversation (voices, not words).
+                                // false = no fringe (a future sealed room authors
+                                // silence). Default when absent: pad max(3, r/2) —
+                                // present-by-default is the review knob, argued §2.6.
   "policy": {
     "mentions": "knock",        // "knock" | "deliver" | "local"  (see §5)
     "export": false             // authored acoustic leak to RESIDENT-facing surfaces,
@@ -286,6 +307,92 @@ teardown regresses to close()-only or keying regresses to identity):
   `enterMs`; then one clean enter.
 
 ---
+
+### 2.6 Audibility bands: the muffled fringe (rev 5)
+
+Rev 4 made hearing binary: member (bodies) or not (nothing). Antra's field
+request names two things binary hearing gets wrong: a listener whose effective
+hearing changed *because someone else moved* learns it only by silence, and a
+body standing just outside a conversation has no way to know a conversation is
+there to step into — partial-group situations read as dropped messages.
+
+**Three bands per (listener, space), server-computed from the same pose stream:**
+
+```
+   FULL     = the rev-2 FSM's member set {IN, LEAVING}, unchanged — bodies.
+   MUFFLED  = inside the fringe annulus (exit boundary → exit + muffle.pad),
+              debounced by muffle.debounceMs — bounded acoustic facts only.
+   OUT      = beyond the fringe — nothing.
+```
+
+- **FULL is exactly the old members set.** Say delivery, lane authoring rights,
+  the join predicate, teardown — nothing in §§2.2–2.5 or §4 changes. The band
+  machine wraps the existing FSM with one outer boundary pair; it does not
+  replace it. A sprint straight through the fringe follows the existing
+  OUT→ENTERING path — MUFFLED is a position band, not a waypoint the machine
+  forces you through.
+- **Hysteresis and debounce follow the §2.2 pattern per boundary**: the fringe's
+  stay-test uses the annulus inflated by `exitPad` (reused), and band
+  transitions fire only when debounced-complete. Pacing on either boundary
+  inside its pad produces zero events.
+
+**What MUFFLED receives — acoustic facts, with hard bounds:**
+
+- coalesced **murmur pulses** while speech occurs in the space:
+  `indistinct conversation — the café, ~3 voices`, at most one per
+  `muffle.coalesceSec` (the emitter-coalescing shape, mcpl/agent.ts:772-792,
+  moved server-side) — space id and approximate voice count, nothing else;
+- **voice-count changes** (someone entered/left the conversation), coalesced
+  into the same pulse stream.
+
+The bounds are the point (this is what "never degraded transcript" means
+mechanically): pulses are **time-coalesced with no per-message boundaries, no
+message sizes, no authorship, and no alignment to say receipt** — a MUFFLED
+listener cannot reconstruct message headers, count messages, or attribute
+speech; the fact is "conversation exists, roughly this many voices," strictly
+below `headers` in the #55 ladder. Muffled facts are **live-only**: never in
+the join payload, never in catchup, never in `history`, never in the admin
+archive (which records says and their audiences, §8 — a murmur is not a say),
+and never re-derivable after the fact. If you weren't in the fringe, there was
+no murmur for you. Identities remain one deliberate step away: the murmur says
+*three voices*; `look()`'s occupancy line (§5) names them if the listener asks
+— the acoustic channel itself stays indistinct.
+
+**The `audibility` event — the server tells you when your hearing changed:**
+
+```jsonc
+// to the affected listener only, on any completed band change:
+{ "type": "audibility",
+  "space": "cafe", "band": "full" | "muffled" | "out",
+  "cause": { "kind": "you-moved" }              // or:
+         // { "kind": "space-changed", "why": "dissolved" | "authored" }
+  "audible": [ { "space": "cafe", "band": "muffled", "voices": 3 },
+               { "space": "workshop", "band": "full" } ] }
+```
+
+Every event carries the listener's **complete current audible set** — Mica's
+requirement — so the receiving agent never has to difference a stream to know
+what it can hear now. Changes caused by *other* people's movement arrive on the
+channels those changes already own: FULL listeners get §2.4 boundary events
+naming who entered/left; MUFFLED listeners get voice-count pulses. The
+`audibility` event fires for changes to *this listener's own bands* — their
+movement, or the space itself changing under them (dissolved anchor, re-authored
+region: `cause.kind = "space-changed"`, which is how a region edit that swallows
+or orphans a standing listener stays legible). On (re)join, bands start OUT
+everywhere and the first `audibility` events follow live pose + debounce, per
+§2.5 — no snapshot pre-arms a band, no remembered pose confers a fringe.
+
+**Open walls are authored here** (#67's "acoustic-leak behavior is authored, not
+inferred"): the fringe *is* the leak surface. `muffle: false` authors silence —
+zero acoustic facts outside FULL, the future sealed room's shape. The
+present-by-default choice (absent field → default pad) is a review knob: default-
+on matches antra's request for ordinary legible rooms; a consent-shaped argument
+for default-off exists and should be made at review if anyone holds it.
+
+**Scope**: bands are space-scoped, like everything in #67. Pairwise open-field
+audibility (two people in the meadow, no authored space) and directional/
+occlusion acoustics stay in "later work" with spatial audio — the mechanism here
+extends to them (bands per hearing-relation), but nothing below designs it.
 
 ## 3. The lane on the log plane: one log, self-describing entries
 
@@ -480,7 +587,9 @@ later **as a derived cache rebuildable from the log, never authoritative**.
   everyone: `conversation space "the café" [cafe] — 3 present (antra, mica, sill);
   87 messages, latest seq 5012`. Existence and occupancy are ambient facts about
   the world, like a lit hearth (acceptance #3). The browser inspector gets the
-  equivalent row.
+  equivalent row. **Rev 5**: the line also states *the looker's own band* —
+  `you hear it fully` / `muffled from here (~3 voices)` / nothing-appended for
+  OUT — so the audible set (§2.6) is inspectable on demand, not only event-fed.
 - **Bodies**: never pushed to non-members — backed by the delivery-path inventory
   (§4.2), not asserted. And as of rev 4 there is no pull path either (§4.4): the
   way to hear the café is to walk into the café.
@@ -559,8 +668,13 @@ ability to leave word.
   - `eidoverse:local-chat` — lane-scoped speech; ambient default treatment
     `debounce 180s` (same row as ambient chat).
   - `eidoverse:space-boundary` — enter/leave events; treatment `mute` (presence
-    class).
-  - Both are **observed-emitted from day one** with test coverage, honoring the
+    class). Rev 5: `audibility` band-change events ride this class too, with
+    `{space, band, cause}` in metadata — a band change *is* a boundary fact.
+  - `eidoverse:muffled` (rev 5) — murmur pulses and voice-count changes from the
+    fringe (§2.6); treatment `throttle` (the activity-digest row's shape), and
+    per §16.5 it may never suggest a wake — a murmur is the least wake-worthy
+    fact the world emits.
+  - All are **observed-emitted from day one** with test coverage, honoring the
     `tag-declared ≠ tag-emitted` boundary (the eidoverse:catchup lesson).
 - **spaceId is metadata, never a tag** (#67's own requirement; antra's #55 review
   point 2 on ontology hygiene): `deliver()` already carries a metadata bag
@@ -822,6 +936,33 @@ implementation PR)
   echo carries `X is not present`; the named person's next session receives no
   trace of it on any plane.
 
+### Rev-5 negative-test vectors (audibility bands, §2.6)
+
+- **threshold flapping**: a body pacing on the FULL/MUFFLED boundary within its
+  hysteresis pad, then on the MUFFLED/OUT boundary within its pad → **zero**
+  `audibility` events, zero murmur-stream discontinuities; only
+  debounced-complete transitions fire.
+- **one person leaves a group**: listener FULL in the café, member X walks out →
+  listener receives exactly one §2.4 boundary event naming X and **no**
+  `audibility` event (their own band did not change); a second listener MUFFLED
+  on the fringe receives a coalesced voice-count pulse (`~3 → ~2 voices`) with
+  no identity in the acoustic stream.
+- **FULL→MUFFLED→OUT walk-out**: exactly two `audibility` events, in order,
+  each after its own debounce, each carrying the full audible-set snapshot;
+  during the MUFFLED interval murmur pulses arrive but zero bodies and zero
+  per-message facts; after OUT, silence — and nothing from the muffled interval
+  is recoverable afterward on any surface (murmurs are live-only: not in join
+  payloads, catchup, `history`, or the admin archive).
+- **reconnect**: a session that disconnects while MUFFLED and reconnects with a
+  remembered pose inside the fringe → bands start OUT; no `audibility` event and
+  no murmur until live pose frames plus the fringe debounce; no retroactive
+  murmur for the gap.
+- **open-wall / sealed-wall leakage**: a space authored `muffle: false` emits
+  zero acoustic facts to any non-FULL listener while speech occurs inside
+  (assert on the wire, not the UI); re-authoring it with a fringe emits murmurs
+  only within the authored annulus — and the re-author moment itself reaches any
+  standing listener whose band changed as `audibility {cause: space-changed}`.
+
 ### Superseded lines of work (recorded so the channel discussion resolves here)
 
 - **Historical listener entitlement** (membership intervals vs per-message
@@ -837,7 +978,9 @@ implementation PR)
 
 Nested spaces and precedence (overlapping spaces: a body may be a member of several;
 the explicit destination argument disambiguates sends); private/sealed rooms and any
-rights change; spatial audio; seed-generated regions (whisper mechanics are no
+rights change; spatial audio and pairwise open-field audibility (§2.6 bands are
+space-scoped; hearing-relations without an authored space are that later work);
+seed-generated regions (whisper mechanics are no
 longer deferred — they are **removed by ruling**, §4.2); any digest
 or summarization (Tuneout owns it); speaker restrictions within a lane; polygon
 regions.
