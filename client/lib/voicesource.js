@@ -20,6 +20,7 @@
 // with clients rather than with the room (R, 2026-08-08).
 
 import { report } from './core.js';
+import { audioContext } from './audioctx.js';
 
 // The registered TTS source. null = ordinary microphone.
 //   fn: (text: string) => Promise<{pcm: Int16Array, sampleRate: number}>
@@ -260,7 +261,10 @@ let pacer = null;
  *  round trip. Off for renderers/spectators, which have no business making
  *  noise.
  */
-let monitorCtx = null;
+// The sidetone plays through the PAGE's one AudioContext (audioctx.js), not a
+// private one. A second context here is exactly the disease #86 exists to cure:
+// it counts against Chrome's ~six-context cap and its output cannot compose with
+// the shared gain graph (distance, category sliders, ambient bed).
 let monitorOn = (() => {
   try { return localStorage.getItem('eido.ttsSidetone') !== 'off'; } catch { return true; }
 })();
@@ -275,7 +279,7 @@ export const sidetone = (on) => {
 function monitor(pcm, sampleRate) {
   if (!monitorOn || !pcm?.length) return;
   try {
-    monitorCtx ??= new (window.AudioContext || window.webkitAudioContext)();
+    const monitorCtx = audioContext();
     // A context created before a user gesture starts suspended; a resume() that
     // never lands must not throw away the sample.
     if (monitorCtx.state === 'suspended') void monitorCtx.resume();

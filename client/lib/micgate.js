@@ -58,7 +58,7 @@ import { report } from './core.js';
 const ATTACK_TAU = 0.008;
 const RELEASE_TAU = 0.12;
 
-let _ctx = null, _src = null, _gain = null, _dest = null, _timer = null;
+let _ctx = null, _src = null, _gain = null, _dest = null;
 let _rawStream = null, _gatedStream = null, _level = () => 0;
 
 /** Wrap a mic stream in the gate graph. Returns the stream to hand to WebRTC —
@@ -77,6 +77,11 @@ export function gateStream(stream, levelFn) {
     // is doing at the instant the mic opens — the exact leak the settle window
     // exists to prevent, and the one R heard as "picking up background noise".
     _gain.gain.value = 0;
+  // A fresh lane IS closed — say so. `_wanted` outlives the graph it described;
+  // without this reset gateOpenness() reports the pre-release value (1 if the
+  // gate was open when the device was released), so micTransmitting() claims
+  // "audible now" before a single driveGate tick has run on the new lane.
+  _wanted = 0;
     _dest = _ctx.createMediaStreamDestination();
     _src.connect(_gain);
     _gain.connect(_dest);
@@ -236,7 +241,6 @@ export function attachSource(stream) {
  *  consent, never for going quiet: this is the path that costs a renegotiation
  *  to undo. */
 export function release() {
-  if (_timer) { clearInterval(_timer); _timer = null; }
   try { _src?.disconnect(); } catch { /* already gone */ }
   try { _gain?.disconnect(); } catch { /* already gone */ }
   // Deliberately does NOT stop the destination's tracks: they belong to the

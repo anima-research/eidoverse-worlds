@@ -565,6 +565,13 @@ export async function toggleMic(name) {
   // stable ones; this covers the strangers.
   for (const id of humanIds()) if (!peers.has(id)) offerTo(id);
   _micLive = true;
+  // 🔴 TURNING THE MIC ON IS AN UNMUTE. The off-path clears `muted`; this path
+  // did not — so a user who muted and then pressed the mic button was wedged:
+  // micOn() stayed false (it requires !muted), every press re-entered THIS
+  // branch, and the raw tracks it re-enables were live while micOn/isMuted/
+  // micTransmitting all reported silence. Broadcasting while every light says
+  // muted is the display-vs-real-state bug in its worst costume.
+  muted = false;
   flashHint('🎙 live — speak, neighbors hear · <b>mute</b> in the dock');
   bus.emit('voice', { on: true });
   startOnsetWatch();

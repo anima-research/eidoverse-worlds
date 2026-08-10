@@ -196,6 +196,10 @@ class FakeAudioCtx {
     getByteTimeDomainData() {},
     getFloatTimeDomainData(buf: Float32Array) { buf.fill(FakeAudioCtx.level); },
     connect() {}, disconnect() {} }; }
+  // A real destination stream CARRIES one audio track — the gated lane the
+  // senders attach. An empty one here silently reroutes every sender test onto
+  // the ungated fallback path.
+  createMediaStreamDestination() { const t = [new FakeTrack()]; return { stream: { getTracks: () => t, getAudioTracks: () => t } }; }
   async resume() {}
 }
 (globalThis as Record<string, unknown>).AudioContext = FakeAudioCtx;
@@ -275,8 +279,16 @@ check("mic off does NOT close a consented inbound peer (send ≠ receive)", !inb
 // fixed this week. It now disables the track instead, so the sender KEEPS it
 // and the SDP never changes. Asserting track === null here would be asserting
 // the bug. What matters is that nothing audible leaves:
-check("mic off keeps the sender bound but silences it (no renegotiation)",
-  inbound.getSenders().every((s) => !s.track || s.track.enabled === false));
+// With the gate in the chain the sender holds the GATED track, which stays
+// enabled — silence is enforced UPSTREAM: the raw source track is disabled and
+// the gate is driven closed. Asserting sender.track.enabled===false here would
+// be asserting the pre-gate wiring.
+const { rawStream } = await import("../client/lib/micgate.js");
+const rawOff = (rawStream()?.getTracks() ?? []).length > 0 &&
+  rawStream().getTracks().every((t: { enabled: boolean }) => !t.enabled);
+check("mic off silences the RAW source and closes the gate (sender stays bound)",
+  inbound.getSenders().some((s) => s.track) && rawOff,
+  `rawOff=${rawOff} senders=${inbound.getSenders().length}`);
 check("mic off does not stop() the track — an ended track cannot be revived",
   inbound.getSenders().every((s) => !s.track || s.track.readyState !== "ended"));
 
@@ -1169,5 +1181,42 @@ check("unhush rejoins the SAME peer at full volume",
       peer.getSenders().map((s) => s.track?.id).join(","));
   }
 }
+
+// ── mute × mic-button: the wedge (review of #90) ─────────────────────────────
+// A muted user pressing the mic button used to re-enter the ON path forever:
+// micOn() requires !muted, the on-path set _micLive but never cleared muted, so
+// the off-path was unreachable — with the raw tracks re-enabled while
+// micOn/isMuted/micTransmitting all said silent.
+{
+  if (!voice.micOn()) await voice.toggleMic("me");
+  voice.toggleMute();
+  check("mute while live: isMuted true, micOn false", voice.isMuted() && !voice.micOn());
+  await voice.toggleMic("me");           // muted user presses the mic button
+  check("mic button while muted UNMUTES (on-path clears muted)",
+        !voice.isMuted() && voice.micOn(),
+        `isMuted=${voice.isMuted()} micOn=${voice.micOn()}`);
+  await voice.toggleMic("me");           // and the off-path is reachable again
+  check("second press now reaches the OFF path", !voice.micOn());
+}
+
+// ── a fresh gate lane reports CLOSED (review of #90) ─────────────────────────
+// gateStream builds the graph with gain 0; _wanted must not outlive the old
+// lane, or gateOpenness() claims "audible" before any driveGate tick.
+{
+  const { gateStream, driveGate, gateOpenness } = await import("../client/lib/micgate.js");
+  gateStream(new FakeStream() as never, () => 0.5);
+  driveGate(true);                       // force the gate open on the old lane
+  const { isGated } = await import("../client/lib/micgate.js");
+  check("F2 precondition: the gate graph actually built under the fakes", isGated(),
+        "gateStream returned the raw stream — this case would be vacuous");
+  const wasOpen = gateOpenness() > 0.5;
+  check("F2 precondition: the old lane was genuinely OPEN", wasOpen,
+        `openness=${gateOpenness()} — driveGate(true) did not take`);
+  gateStream(new FakeStream() as never, () => 0.5);  // reacquire: a NEW lane
+  check("fresh lane reports closed even though the old one was open",
+        gateOpenness() === 0,
+        `openness=${gateOpenness()} (old lane open=${wasOpen})`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
