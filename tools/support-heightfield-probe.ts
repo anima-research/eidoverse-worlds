@@ -85,15 +85,15 @@ async function loadTris(path: string): Promise<Float32Array | null> {
   return out.length ? new Float32Array(out) : null;
 }
 
-async function probe(label: string, path: string) {
-  console.log(`\n━━ ${label} ━━`);
+async function probe(label: string, path: string, scale = 1) {
+  console.log(`\n━━ ${label}${scale !== 1 ? ` @ ×${scale}` : ""} ━━`);
   const sum = await summarizeGlb(path);
   if (!sum) { check(`${label}: summary`, false, "summarizeGlb returned null"); return; }
   const v = await loadTris(path);
   if (!v) { check(`${label}: triangles`, false, "loadTris returned null"); return; }
   const [w, h, d] = sum.bbox.size;
-  const cls = decideSupportClass({ w, d, h, lie: sum.lie ?? 0 });
-  console.log(`  shape ${w.toFixed(2)}×${d.toFixed(2)}×${h.toFixed(2)}m, lie ${sum.lie ?? "—"}, class: ` +
+  const cls = decideSupportClass({ w: w * scale, d: d * scale, h: h * scale, lie: (sum.lie ?? 0) * scale });
+  console.log(`  shape ${w.toFixed(2)}×${d.toFixed(2)}×${h.toFixed(2)}m, lie ${sum.lie?.toFixed(4) ?? "—"}, class at ×${scale}: ` +
     (cls.uneven ? "floor-shaped + UNEVEN" : cls.floorShaped ? "floor-shaped (honest top)" : cls.roomScale ? "room-scale" : "small solid"));
 
   if (!cls.uneven) {
@@ -112,55 +112,73 @@ async function probe(label: string, path: string) {
   if (!validTopGrid(sum.topGrid)) return;
   const g = sum.topGrid!;
 
-  // raycast truth per cell center, straight down from above the box
+  // raycast truth per OFFERED cell, 4×4 within-cell subsample — a body may
+  // stand anywhere in a cell, so the bound is per SUBPOINT, in WORLD metres
+  // at the tested scale, not a median over cell centres (#94 review B1).
+  // The 4×4 pattern deliberately differs from certification's 3×3: the
+  // probe must not sample the exact points generation certified.
   const geo = new THREE.BufferGeometry();
   geo.setAttribute("position", new THREE.BufferAttribute(v, 3));
   const bvh = new MeshBVH(geo);
   const ray = new THREE.Ray();
   ray.direction.set(0, -1, 0);
+  const SUB = 5;   // denser than certification's 4×4, on a different lattice — the probe must not resample certification's own points
   const diffs: number[] = [];
   const boxErr: number[] = [];
-  let notUpper = 0, compared = 0;
+  let notUpper = 0, overBound = 0, compared = 0, worstOver = 0;
   for (let iz = 0; iz < g.n; iz++) {
     for (let ix = 0; ix < g.n; ix++) {
       const top = g.cells[iz * g.n + ix];
       if (top === null) continue;
-      ray.origin.set(
-        g.minXZ[0] + (g.sizeXZ[0] * (ix + 0.5)) / g.n,
-        sum.bbox.max[1] + Math.max(0.1, h * 0.05),
-        g.minXZ[1] + (g.sizeXZ[1] * (iz + 0.5)) / g.n,
-      );
-      const hit = bvh.raycastFirst(ray, THREE.DoubleSide);
-      if (!hit) continue;
       compared++;
-      diffs.push(Math.abs(top - hit.point.y));
-      if (top < hit.point.y - 0.02) notUpper++;
-      boxErr.push(sum.bbox.max[1] - hit.point.y);
+      for (let sz = 0; sz < SUB; sz++) {
+        for (let sx = 0; sx < SUB; sx++) {
+          ray.origin.set(
+            g.minXZ[0] + (g.sizeXZ[0] * (ix + (sx + 0.5) / SUB)) / g.n,
+            sum.bbox.max[1] + Math.max(0.1, h * 0.05),
+            g.minXZ[1] + (g.sizeXZ[1] * (iz + (sz + 0.5) / SUB)) / g.n,
+          );
+          const hit = bvh.raycastFirst(ray, THREE.DoubleSide);
+          if (!hit) continue;   // an offered cell may graze the hem; certification bounded what it DID hit
+          const err = (top - hit.point.y) * scale;         // world metres at the tested scale
+          diffs.push(Math.abs(err));
+          if (err < -0.021 * scale - 0.002) notUpper++;    // below the surface: not an upper bound
+          if (err > 0.05 + 0.002) { overBound++; worstOver = Math.max(worstOver, err); }
+          boxErr.push((sum.bbox.max[1] - hit.point.y) * scale);
+        }
+      }
     }
   }
-  check(`${label}: enough occupied cells answered a ray`, compared >= 24, String(compared));
-  check(`${label}: the grid is an upper bound on the surface`, notUpper === 0, `${notUpper}/${compared} cells below ray`);
+  check(`${label}: enough offered cells to probe`, compared >= 24, String(compared));
+  check(`${label}: the grid is an upper bound on the surface`, notUpper === 0, `${notUpper} subpoints above the grid`);
+  check(`${label}: EVERY offered cell within the 5cm world bound, at every subpoint`, overBound === 0,
+    `${overBound}/${diffs.length} subpoints over (worst ${worstOver.toFixed(3)}m)`);
   const med = median(diffs), worst = Math.max(...diffs);
-  check(`${label}: grid tracks raycast (median ≤ 5cm)`, med <= 0.05, `median ${med.toFixed(3)}m`);
-  console.log(`  grid vs raycast: median ${med.toFixed(3)}m, worst ${worst.toFixed(3)}m over ${compared} columns`);
+  console.log(`  grid vs raycast (world m at ×${scale}): median ${med.toFixed(3)}, worst ${worst.toFixed(3)} over ${diffs.length} subpoints in ${compared} offered cells`);
   const boxMed = median(boxErr);
   console.log(`  the OLD box top's error at the same columns: median ${boxMed.toFixed(3)}m — the float a body suffered pre-#84`);
-  if ((sum.lie ?? 0) > UNEVEN_MIN_LIE) {
+  if ((sum.lie ?? 0) * scale > UNEVEN_MIN_LIE) {
     check(`${label}: the box top was indeed the lie (> gate)`, boxMed > UNEVEN_MIN_LIE, `${boxMed.toFixed(3)}m`);
   }
 }
 
 const lib = process.env.EIDOVERSE_DIR;
-const targets: Array<[string, string]> = [];
-if (process.env.BLANKET_GLB) targets.push(["blanket (store/9a9d0239eca609b3)", process.env.BLANKET_GLB]);
+const targets: Array<[string, string, number?]> = [];
+if (process.env.BLANKET_GLB) {
+  targets.push(["blanket (store/9a9d0239eca609b3)", process.env.BLANKET_GLB]);
+  targets.push(["blanket (store/9a9d0239eca609b3)", process.env.BLANKET_GLB, 1.25]);   // the agent test's spawn scale
+}
 if (lib) {
+  // the scifi debris pile is the rubble asset the scale gate actually admits
+  // (h 1.12m → in the class at ≤ 0.90) — probed AT the agent test's scale
+  targets.push(["scifi rubble pile", join(lib, "eidoverse/assets/models/apocalyptic_scifi_cyberpunk_destroyed_rubble_debris_pile.glb"), 0.88]);
   targets.push(["rubble pile (building collapse)", join(lib, "eidoverse/assets/models/apocalyptic_destroyed_rubble_debris_pile_building_collapse.glb")]);
   targets.push(["rubble pile (ruins)", join(lib, "eidoverse/assets/models/apocalyptic_destroyed_rubble_debris_pile_ruins.glb")]);
 }
 for (const extra of process.argv.slice(2)) targets.push([extra.split(/[\\/]/).pop()!, extra]);
 if (!targets.length) { console.error("nothing to probe — set BLANKET_GLB and/or EIDOVERSE_DIR"); process.exit(1); }
 
-for (const [label, path] of targets) await probe(label, path);
+for (const [label, path, scale] of targets) await probe(label, path, scale ?? 1);
 
 console.log("");
 process.exit(failures ? 1 : 0);

@@ -186,7 +186,7 @@ console.log("\n━━ interior hole: an empty cell inside the footprint is AIR �
   const n = 24, cells: (number | null)[] = new Array(n * n).fill(0.4);
   cells[12 * n + 12] = null;                            // one hole, dead centre
   const ok = typeof colliders.fitSupportGrid === "function" && colliders.fitSupportGrid("synthetic-hole", {
-    version: 1, n, minXZ: [-1.2, -1.2], sizeXZ: [2.4, 2.4], lie: 0.4, cells,
+    version: 1, n, minXZ: [-1.2, -1.2], sizeXZ: [2.4, 2.4], lie: 0.4, certSpread: 0.03, cells,
   }, { position: [60, 0, 60], yaw: 0, scale: 1 });
   check("synthetic grid registers", ok === true);
   const occupied = groundAt(60 + (11.5 / n) * 2.4 - 1.2, 60 + (12.5 / n) * 2.4 - 1.2);
@@ -194,6 +194,90 @@ console.log("\n━━ interior hole: an empty cell inside the footprint is AIR �
   check("occupied neighbor answers 0.4", Math.abs(occupied - 0.4) < 1e-9, String(occupied));
   check("the hole answers terrain — no bleed across air", Math.abs(hole - 0) < 1e-9, String(hole));
   colliders.removeCollider("synthetic-hole");
+}
+
+console.log("\n━━ the old worst cell: max-y's 21cm float is behaviorally gone ━━");
+{
+  // Rebuild what the max-y implementation WOULD have offered (the vertex
+  // grid) and ray truth per cell, independently; find the cell where the
+  // old float was worst; assert the agent's ground there is truth-or-
+  // terrain — never the old vertex top. On the max-y head this fails by
+  // ~0.21m (#94 review B1's behavioral requirement).
+  const { gridAccumulator } = await import("../client/lib/supportclass.js");
+  const { MeshBVH }: any = await import("../client/node_modules/three-mesh-bvh/src/index.js");
+  const io = await (async () => {
+    const { NodeIO } = await import("@gltf-transform/core");
+    const { ALL_EXTENSIONS } = await import("@gltf-transform/extensions");
+    const draco3d = (await import("draco3dgltf")).default;
+    return new NodeIO().registerExtensions(ALL_EXTENSIONS).registerDependencies({
+      "draco3d.decoder": await draco3d.createDecoderModule(),
+      "draco3d.encoder": await draco3d.createEncoderModule(),
+    });
+  })();
+  const doc = await io.read(blanketDst);
+  const inScene = new Set<any>();
+  for (const s of doc.getRoot().listScenes()) s.traverse((n: any) => inScene.add(n));
+  const soup: number[] = [];
+  for (const node of doc.getRoot().listNodes()) {
+    if (!inScene.has(node)) continue;
+    const mesh = node.getMesh();
+    if (!mesh) continue;
+    const m = node.getWorldMatrix();
+    for (const prim of mesh.listPrimitives()) {
+      const pos = prim.getAttribute("POSITION");
+      if (!pos) continue;
+      const idx = prim.getIndices();
+      const count = idx ? idx.getCount() : pos.getCount();
+      const p = [0, 0, 0];
+      for (let t = 0; t < count; t++) {
+        pos.getElement(idx ? idx.getScalar(t) : t, p);
+        soup.push(m[0]*p[0]+m[4]*p[1]+m[8]*p[2]+m[12], m[1]*p[0]+m[5]*p[1]+m[9]*p[2]+m[13], m[2]*p[0]+m[6]*p[1]+m[10]*p[2]+m[14]);
+      }
+    }
+  }
+  const bb = blanketSum.bbox;
+  const acc = gridAccumulator(bb.min[0], bb.min[2], bb.size[0], bb.size[2])!;
+  for (let i = 0; i < soup.length; i += 3) acc.add(soup[i], soup[i + 1], soup[i + 2]);
+  const vfin = acc.finish(bb.max[1]);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(soup), 3));
+  const bvh = new MeshBVH(geo);
+  const ray = new THREE.Ray();
+  ray.direction.set(0, -1, 0);
+  const n = blanketSum.topGrid!.n;
+  let worst: { ix: number; iz: number; float: number; ray: number } | null = null;
+  for (let iz = 0; iz < n; iz++) {
+    for (let ix = 0; ix < n; ix++) {
+      const vm = vfin.cells[iz * n + ix];
+      if (vm === -Infinity) continue;
+      ray.origin.set(bb.min[0] + (bb.size[0] * (ix + 0.5)) / n, bb.max[1] + 0.2, bb.min[2] + (bb.size[2] * (iz + 0.5)) / n);
+      const hit = bvh.raycastFirst(ray, THREE.DoubleSide);
+      if (!hit) continue;
+      const fl = vm - hit.point.y;
+      if (!worst || fl > worst.float) worst = { ix, iz, float: fl, ray: hit.point.y };
+    }
+  }
+  check("the old worst cell is a real float (the 0.21m class)", !!worst && worst.float > 0.1, JSON.stringify(worst));
+  if (worst) {
+    const p = cellWorld(blanketSum.topGrid!, worst.ix, worst.iz, B);
+    const ground = groundAt(p.x, p.z);
+    const oldGround = B.pos[1] + worst.float * B.scale + worst.ray * B.scale;  // what max-y offered
+    const truthCap = B.pos[1] + (worst.ray + 0.05 / B.scale) * B.scale;       // ray truth + the world bound
+    check("agent ground there is truth-or-terrain, never the max-y float",
+      ground <= truthCap + 1e-6, `ground ${ground.toFixed(3)}, truth+bound ${truthCap.toFixed(3)}, old max-y would offer ${oldGround.toFixed(3)}`);
+  }
+}
+
+console.log("\n━━ a scale that stretches certification: declared abstention ━━");
+{
+  // certSpread 0.03 × scale 2 = 0.06 > the 0.05 world bound — the grid must
+  // be refused, the seam declared, and the body finds terrain (no box!)
+  verb("spawn", { id: "blank2", lib: BLANKET_LIB, pos: [80, 0.5, 80], yaw: 0, scale: 2 });
+  await sleep(1500);
+  await (agent as any).supportReady(8000);
+  const held = Object.keys(supportHolders()).some((k) => k.endsWith("/blank2"));
+  check("over-stretched grid registers NOTHING (no box, no grid)", !held, JSON.stringify(Object.keys(supportHolders())));
+  check("and the seam is declared, bounded", agent.supportSeams > 0, `seams=${agent.supportSeams}`);
 }
 
 console.log("\n━━ crate: the honest box is untouched ━━");
