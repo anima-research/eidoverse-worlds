@@ -1383,14 +1383,22 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
 // deployed tree without .git falls back to BUILD_SHA (deploy scripts can set
 // it) and then to "unknown", honestly.
 const BUILD = (() => {
-  let sha = process.env.BUILD_SHA ?? "";
-  if (!sha) {
+  const gitLine = (...args: string[]) => {
     try {
-      sha = new TextDecoder().decode(
-        Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"], { cwd: import.meta.dir }).stdout).trim();
-    } catch { /* no git in the deploy image */ }
-  }
-  return { sha: sha || "unknown", startedAt: new Date().toISOString() };
+      return new TextDecoder().decode(
+        Bun.spawnSync(["git", ...args], { cwd: import.meta.dir }).stdout).trim();
+    } catch { return ""; /* no git in the deploy image */ }
+  };
+  const sha = process.env.BUILD_SHA || gitLine("rev-parse", "--short", "HEAD");
+  // WHEN the code is from, not just which commit. A sha is opaque to anyone
+  // without the repo in front of them; "code from 2026-08-10T14:32Z" lets a
+  // participant answer "did the deploy pick up this afternoon's fix?" without
+  // resolving hashes. Distinct from startedAt on purpose: startedAt says the
+  // PROCESS is fresh, commitTime says the CODE is — a restart of stale code
+  // looks healthy on the first and stale on the second.
+  const commitTime = process.env.BUILD_TIME || gitLine("show", "-s", "--format=%cI", "HEAD");
+  return { sha: sha || "unknown", commitTime: commitTime || "unknown",
+           startedAt: new Date().toISOString() };
 })();
 
 const server = Bun.serve({

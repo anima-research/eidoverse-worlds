@@ -46,7 +46,7 @@ import { initDebug, updateDebug, toggleDebug } from './lib/debug.js';
 // mystery: fixes merged upstream for hours, prod still on the old code,
 // nothing anywhere said so). Server route: GET /version.
 fetch('/version').then((r) => r.json())
-  .then(({ sha, startedAt }) => console.log(`[eidoverse] server build ${sha}, up since ${startedAt}`))
+  .then(({ sha, commitTime, startedAt }) => console.log(`[eidoverse] server build ${sha} (code from ${commitTime}), up since ${startedAt}`))
   .catch(() => console.log('[eidoverse] server build unknown (/version unavailable)'));
 import { dragSim } from './lib/bodydrag.js';
 import { initChat, logChat, chat, openConvo } from './lib/chat.js';
