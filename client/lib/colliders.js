@@ -135,7 +135,7 @@ function hasFloor(bvh, box, s) {
 // the headless support pipeline classifies with the SAME module, so the two
 // runtimes cannot drift about which box tops lie. This adapter's own job is
 // only what a renderer can do — walking loaded THREE meshes for vertices.
-function topLie(obj, box) {
+export function topLie(obj, box) {   // exported for the classifier-parity fixture (#94 B2)
   const w = box.max.x - box.min.x, d = box.max.z - box.min.z;
   const acc = gridAccumulator(box.min.x, box.min.z, w, d);
   if (!acc) return 0;

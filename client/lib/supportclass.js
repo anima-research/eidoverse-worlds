@@ -24,6 +24,15 @@ export const FLOOR_MIN_AREA = 2;         // m² (scaled) — smaller and nobody 
 export const FLOOR_MAX_H = 1.0;          // m (scaled) — decide()'s one movable line
 export const UNEVEN_MIN_LIE = 0.10;      // m (scaled) — below this a box is honest enough
 export const TOPGRID_MAX_JSON = 8192;    // hard cap on the serialized payload
+/** Per-cell certification (#94 review B1): a cell may be OFFERED as support
+ *  only when a within-cell ray subsample proves its surface varies by no
+ *  more than this (model metres). A body may stand anywhere in a cell, so
+ *  an uncertified cell is a floating false top in miniature — those serve
+ *  as null. 0.03 model units keeps the WORLD-space bound (0.05m) honest up
+ *  to scale ~1.66; consumers must refuse grids their scale stretches. */
+export const CERT_SPREAD = 0.03;         // m, model frame — max within-cell surface spread
+export const CERT_MAX_WORLD = 0.05;      // m, world frame — the agreed per-cell truth bound
+export const CERT_SUBSAMPLE = 4;         // rays per cell axis (4×4 per cell)
 
 /** Bucket model-local vertices into a LIE_GRID² footprint grid, max-y per
  *  cell. Both adapters feed this: the browser walks THREE meshes, the
@@ -76,6 +85,9 @@ export function validTopGrid(g) {
   if (!Array.isArray(g.minXZ) || g.minXZ.length !== 2 || !g.minXZ.every(Number.isFinite)) return false;
   if (!Array.isArray(g.sizeXZ) || g.sizeXZ.length !== 2 || !g.sizeXZ.every((v) => Number.isFinite(v) && v > 0)) return false;
   if (!Number.isFinite(g.lie)) return false;
+  // certSpread declares the bound every offered cell was certified to; a
+  // grid without one (or claiming worse than the contract) is refused
+  if (!Number.isFinite(g.certSpread) || g.certSpread <= 0 || g.certSpread > CERT_SPREAD) return false;
   if (!Array.isArray(g.cells) || g.cells.length !== LIE_GRID * LIE_GRID) return false;
   let occupied = 0;
   for (const c of g.cells) {

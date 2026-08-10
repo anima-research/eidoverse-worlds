@@ -9,7 +9,7 @@ import * as TSL from "three/tsl";
 import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS,
   ACTIVITY_RADIUS_M, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
 import { HeadlessBody, setHeightField, registerSupport, registerSupportGrid, removeSupport } from "./physics.ts";
-import { decideSupportClass } from "../client/lib/supportclass.js";
+import { decideSupportClass, CERT_MAX_WORLD } from "../client/lib/supportclass.js";
 import { isFiniteVec3 } from "./shape.ts";
 // The same pure sky fold + weather derivation the browser client and the
 // sequencer run — text-tier perception must land on the SAME hour and
@@ -1164,12 +1164,17 @@ export class WorldAgent {
       // boxes keep today's behavior either way.
       const cls = decideSupportClass({ w, d, h, lie: Number.isFinite(g.lie) ? g.lie * s : 0 });
       if (cls.uneven) {
-        const fit = await registerSupportGrid(this.supportHolder, bid, g.topGrid, xform);
+        // the certification is a MODEL-frame bound; this spawn's scale must
+        // not stretch it past the agreed world bound (#94 review B1) — a
+        // grid certified to 3cm serves a ×1.25 spawn (3.75cm) but not a ×2
+        const stretched = Number.isFinite(g.topGrid?.certSpread) && g.topGrid.certSpread * s > CERT_MAX_WORLD;
+        const fit = !stretched && await registerSupportGrid(this.supportHolder, bid, g.topGrid, xform);
         if (fit) ids.push(bid);
-        // refused grid (absent/malformed/oversized): a DECLARED abstention —
-        // the body finds terrain, which is at worst the browser's under-the-
-        // rubble disagreement, never a floating false floor
-        else this.noteSupportSeam(id, `uneven top (lie ${(g.lie * s).toFixed(2)}m) without a usable grid — abstaining, no box`);
+        // refused grid (absent/malformed/oversized/over-stretched): a
+        // DECLARED abstention — the body finds terrain, which is at worst
+        // the browser's under-the-rubble disagreement, never a floating
+        // false floor
+        else this.noteSupportSeam(id, `uneven top (lie ${(g.lie * s).toFixed(2)}m) without a usable grid${stretched ? ` (certification stretched past ${CERT_MAX_WORLD}m at ×${s})` : ""} — abstaining, no box`);
       } else {
         void registerSupport(this.supportHolder, bid, g.bbox.min, g.bbox.max, xform);
         ids.push(bid);
