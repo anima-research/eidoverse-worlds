@@ -54,6 +54,11 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
   const m = view.mount(id);
 
   // ---- mounted: the parent's frame is the truth, recursively -----------------
+  // A mounted entity's OWN root motion is deliberately inert here — the
+  // renderer does exactly this (motion.js tickMotion: `if (!obj ||
+  // obj.userData.mountedTo) continue` — mounted things ride their parent),
+  // so the defined composition order is: mount chain wins, own root motion
+  // resumes on dismount. Pinned by test (#92 review, "additional precision").
   if (m) {
     if (!m.to || m.to === id) return { ok: false, why: "malformed mount (no parent)", link: id };
     const parent = resolve(m.to, view, nowMs, depth - 1, seen);
