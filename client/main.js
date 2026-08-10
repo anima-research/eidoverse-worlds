@@ -31,7 +31,15 @@ import {
   hasGhost, hasSelection, toggleEditMode, isEditing,
 } from './lib/build.js';
 import { initConjure } from './lib/conjure.js';
-import { updateAmbient, ambientDebug, audioState } from './lib/ambient.js';   // `ambient` comp: world sound that belongs to a place
+// The `ambient` component (place-sounds) is its own PR and may be absent from
+// a deploy; a MISSING optional feature must not take the whole module graph
+// down with a failed static import — TTS, voice, and the world itself owe it
+// nothing. Field-caught: a static import here 404'd and the page died before
+// EW existed, silently (2026-08-10).
+let updateAmbient = () => {}, ambientDebug = () => null, audioState = () => null;
+import('./lib/ambient.js').then((m) => {
+  ({ updateAmbient, ambientDebug, audioState } = m);
+}).catch(() => console.log('[audio] no ambient module in this deploy — place-sounds off'));
 import { initVoice, micOn, isMuted, micAnalyserLevel, peerLevels,
          voiceDebug, voicePcs, voiceMouthBound, voicePendingReneg } from './lib/voice.js';
 import './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
@@ -1326,10 +1334,10 @@ if (typeof window !== 'undefined') window.setVoice = setVoice;
   }
 }
 
-globalThis.__ambientDebug = ambientDebug;
+globalThis.__ambientDebug = () => ambientDebug();
 // One command R can paste to answer "why is it silent?" from her own console:
 // context state, how many sources exist, whether the gesture hook is waiting.
-globalThis.__audioState = audioState;
+globalThis.__audioState = () => audioState();
 // THE ISOLATION TEST, INSIDE THE WORLD PAGE. A separate probe page meant a new
 // URL to type, and the URL was its own obstacle course: /audio-probe 404s,
 // /audio-probe.html works, an extensionless copy downloads instead of
