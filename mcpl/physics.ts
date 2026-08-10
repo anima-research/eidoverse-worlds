@@ -136,6 +136,27 @@ export async function registerSupport(
 export const supportHolders = (): Record<string, string[]> =>
   Object.fromEntries([...holders].map(([id, hs]) => [id, [...hs]]));
 
+/** Register HEIGHTFIELD support from a served topGrid (#84) — the sibling of
+ *  registerSupport for floor-shaped assets whose box top is a known lie.
+ *  Same holder discipline, same lifetime. Returns false when the payload is
+ *  refused (validTopGrid, non-finite transform): the caller must then
+ *  ABSTAIN — registering the box top instead is the bug this exists to fix. */
+export async function registerSupportGrid(
+  holder: string, id: string, topGrid: unknown,
+  xform: { position: number[]; yaw?: number; scale?: number },
+): Promise<boolean> {
+  if (!isFiniteVec3(xform?.position)
+      || !Number.isFinite(xform.yaw ?? 0) || !Number.isFinite(xform.scale ?? 1)) {
+    console.error(`[physics] grid support ${id} abstained — non-finite transform`);
+    return false;
+  }
+  const m = await loadSim();
+  if (!m) return false;
+  if (!m.colliders.fitSupportGrid(id, topGrid, xform)) return false;
+  (holders.get(id) ?? holders.set(id, new Set()).get(id)!).add(holder);
+  return true;
+}
+
 export async function removeSupport(holder: string, id: string) {
   const m = await loadSim();
   if (!m) return;

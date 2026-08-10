@@ -13,6 +13,10 @@
 // the server-side convenience tier.
 
 import { statSync } from "node:fs";
+// the one classifier both runtimes share (#84) — grid math and constants
+// live there; this file only supplies vertices from gltf-transform accessors
+import { gridAccumulator, SPARSE_MIN_CELLS, TOPGRID_VERSION, TOPGRID_MAX_JSON, LIE_GRID }
+  from "../client/lib/supportclass.js";
 
 // gltf-transform loads lazily and optionally, same doctrine as the behavior
 // sandbox: the sequencer must boot (and worlds must run) without it.
@@ -59,6 +63,17 @@ export type GeomSummary = {
            local: { center: number[]; size: number[] }; tris: number }[];
   /** true when the mesh was too big to walk exhaustively */
   sampled: boolean;
+  /** the box-top lie (m, model frame): bbox top minus the median 24×24
+   *  cell top — the SAME probe the browser's collider decide() runs, from
+   *  the shared classifier (client/lib/supportclass.js). Present whenever
+   *  the shape was worth probing; consumers scale it before judging. */
+  lie?: number;
+  /** the probe's grid itself, served as a truthful heightfield for
+   *  floor-shaped assets whose box top lies (#84). Versioned and
+   *  self-describing; cells are model-local max-y, null = unoccupied.
+   *  Row-major, index = z * n + x over the minXZ/sizeXZ footprint. */
+  topGrid?: { version: number; n: number; minXZ: [number, number];
+              sizeXZ: [number, number]; lie: number; cells: (number | null)[] };
   /** mesh nodes present in the FILE but attached to no scene — broken
    *  exports. No renderer draws them; never aim a motion at one. */
   orphans?: string[];
@@ -211,6 +226,57 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
     }));
 
   const ok = Number.isFinite(min[0]);
+
+  // ---- the box-top lie probe (#84) -----------------------------------------
+  // Same math as the browser's collider decide(): the shared accumulator
+  // buckets model-frame vertices 24×24 and medians the cell tops. This pass
+  // walks POSITION accessors exhaustively (the browser walks every vertex,
+  // so sampling here would change the verdict) — gated to shapes that could
+  // ever be floor-shaped, with slack for in-world scaling, so room-scale
+  // architecture and skyscraper meshes never pay for it.
+  let lie: number | undefined;
+  let topGrid: GeomSummary["topGrid"];
+  if (ok) {
+    const w = max[0] - min[0], h = max[1] - min[1], d = max[2] - min[2];
+    const worthProbing = w * d >= 1 && h <= 1.5 && !(w * d >= 16 && h >= 2.2);
+    if (worthProbing) {
+      const acc = gridAccumulator(min[0], min[2], w, d);
+      if (acc) {
+        const out = [0, 0, 0], p = [0, 0, 0];
+        for (const node of doc.getRoot().listNodes()) {
+          if (!inScene.has(node)) continue;
+          const mesh = node.getMesh();
+          if (!mesh) continue;
+          const m = node.getWorldMatrix();
+          for (const prim of mesh.listPrimitives()) {
+            const posAcc = prim.getAttribute("POSITION");
+            if (!posAcc) continue;
+            for (let vi = 0; vi < posAcc.getCount(); vi++) {
+              posAcc.getElement(vi, p);
+              xf(m, p, out);
+              acc.add(out[0], out[1], out[2]);
+            }
+          }
+        }
+        const fin = acc.finish(max[1]);
+        if (fin.occupied >= SPARSE_MIN_CELLS) {
+          lie = +fin.lie.toFixed(3);
+          const cells: (number | null)[] = [];
+          for (let i = 0; i < fin.cells.length; i++) {
+            cells.push(fin.cells[i] === -Infinity ? null : +fin.cells[i].toFixed(3));
+          }
+          const g = { version: TOPGRID_VERSION, n: LIE_GRID,
+            minXZ: [+min[0].toFixed(3), +min[2].toFixed(3)] as [number, number],
+            sizeXZ: [+w.toFixed(3), +d.toFixed(3)] as [number, number],
+            lie, cells };
+          // the hard payload cap is part of the contract — an oversized grid
+          // is dropped here and the consumer abstains, never box-tops
+          if (JSON.stringify(g).length <= TOPGRID_MAX_JSON) topGrid = g;
+        }
+      }
+    }
+  }
+
   const sum: GeomSummary = {
     tris,
     bbox: ok ? {
@@ -221,6 +287,8 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
     topSurfaces,
     nodes,
     sampled: stride > 1,
+    ...(lie !== undefined ? { lie } : {}),
+    ...(topGrid ? { topGrid } : {}),
     ...(orphans.length ? { orphans } : {}),
   };
   cache.set(absPath, { mtime, sum });

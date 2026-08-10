@@ -8,7 +8,8 @@ import * as THREE_W from "three/webgpu";
 import * as TSL from "three/tsl";
 import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS,
   ACTIVITY_RADIUS_M, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
-import { HeadlessBody, setHeightField, registerSupport, removeSupport } from "./physics.ts";
+import { HeadlessBody, setHeightField, registerSupport, registerSupportGrid, removeSupport } from "./physics.ts";
+import { decideSupportClass } from "../client/lib/supportclass.js";
 import { isFiniteVec3 } from "./shape.ts";
 // The same pure sky fold + weather derivation the browser client and the
 // sequencer run — text-tier perception must land on the SAME hour and
@@ -392,6 +393,15 @@ export class WorldAgent {
   private noteEffGap(id: string, why: string) {
     if (this.effGaps++ >= 5) return;
     console.error(`[agent ${this.name}] effective transform unavailable for ${id} — ${why}`);
+  }
+
+  /** A support seam is the same species (#84): a floor this side cannot
+   *  truthfully model. Declared, bounded, and never papered over with the
+   *  known-false box top. */
+  supportSeams = 0;
+  private noteSupportSeam(id: string, why: string) {
+    if (this.supportSeams++ >= 5) return;
+    console.error(`[agent ${this.name}] support seam on ${id} — ${why}`);
   }
 
   /** A build act (spawn/place/light/remove) near this body counts as activity. */
@@ -1144,8 +1154,26 @@ export class WorldAgent {
       }
     } else if (!roomScale) {
       const bid = `${this.world}/${id}`;
-      void registerSupport(this.supportHolder, bid, g.bbox.min, g.bbox.max, xform);
-      ids.push(bid);
+      // Floor-shaped things whose box top is a KNOWN lie (a blanket, a
+      // rubble pile — the browser collides those against exact triangles
+      // for the same reason) get heightfield support from the served grid,
+      // and NEVER the box: the box top floats bodies by the documented
+      // 0.73m/0.44m (#84). Identification uses the summary's `lie` through
+      // the same shared classifier the browser's decide() runs; a summary
+      // without `lie` (older server) cannot accuse anyone, so honest small
+      // boxes keep today's behavior either way.
+      const cls = decideSupportClass({ w, d, h, lie: Number.isFinite(g.lie) ? g.lie * s : 0 });
+      if (cls.uneven) {
+        const fit = await registerSupportGrid(this.supportHolder, bid, g.topGrid, xform);
+        if (fit) ids.push(bid);
+        // refused grid (absent/malformed/oversized): a DECLARED abstention —
+        // the body finds terrain, which is at worst the browser's under-the-
+        // rubble disagreement, never a floating false floor
+        else this.noteSupportSeam(id, `uneven top (lie ${(g.lie * s).toFixed(2)}m) without a usable grid — abstaining, no box`);
+      } else {
+        void registerSupport(this.supportHolder, bid, g.bbox.min, g.bbox.max, xform);
+        ids.push(bid);
+      }
     }                                                   // room-scale with no readable decks: browser-only, declared
     if (ids.length) this.supportIds.set(id, ids);
   }
