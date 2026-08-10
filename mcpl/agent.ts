@@ -418,7 +418,13 @@ export class WorldAgent {
         // 4006 = removed by moderation (kicked or banned). Reconnecting would
         // either hammer a banned door or instantly undo a kick — the body
         // stays down; its host reconnecting later is the deliberate return.
-        if ((ev as { code?: number } | undefined)?.code === 4006) { this.closed = true; return; }
+        // The branch's meaning is close()'s meaning ("never reconnect, stop
+        // the body"), so it goes THROUGH close(): setting `closed` alone left
+        // every support holder this instance owned registered in the
+        // process-global physics state — a ghost floor by the moderation
+        // door, holding up bodies in later worlds at the same coordinates
+        // (#83; the #17 symptom reached through a ban).
+        if ((ev as { code?: number } | undefined)?.code === 4006) { this.close(); return; }
         if (!this.closed) setTimeout(() => this.connect().catch(() => {}), 1500);
       };
       ws.onmessage = async (ev) => {

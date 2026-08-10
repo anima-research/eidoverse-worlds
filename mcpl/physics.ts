@@ -130,6 +130,12 @@ export async function registerSupport(
   m.colliders.fitSupportBox(id, min, max, xform);
 }
 
+/** test/debug probe — who holds which support box (the world_debug spirit:
+ *  the first question about a ghost floor is answered by looking, not by
+ *  re-deriving process state). Copies, not live references. */
+export const supportHolders = (): Record<string, string[]> =>
+  Object.fromEntries([...holders].map(([id, hs]) => [id, [...hs]]));
+
 export async function removeSupport(holder: string, id: string) {
   const m = await loadSim();
   if (!m) return;
