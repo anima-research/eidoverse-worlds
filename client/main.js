@@ -31,7 +31,9 @@ import {
   hasGhost, hasSelection, toggleEditMode, isEditing,
 } from './lib/build.js';
 import { initConjure } from './lib/conjure.js';
-import { initVoice, micOn, isMuted, micAnalyserLevel, peerLevels } from './lib/voice.js';
+import { updateAmbient, ambientDebug, audioState } from './lib/ambient.js';   // `ambient` comp: world sound that belongs to a place
+import { initVoice, micOn, isMuted, micAnalyserLevel, peerLevels,
+         voiceDebug, voicePcs, voiceMouthBound, voicePendingReneg } from './lib/voice.js';
 import './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
 import { initAudioPanel } from './lib/audiopanel.js';
 import { initSceneGraph, sceneAttach, sceneDetach } from './lib/scenegraph.js';
@@ -199,6 +201,28 @@ function start() {
   initConjure();   // the orrery panel — prompt → your pick of images → mesh → world
   initVoice(CONFIG.name);
   initAudioPanel();   // 🔊 categories: voices / world / TTS + consent rows
+  // HEARING YOURSELF IS THE POINT. This hook — your own says going through the
+  // selected voice — used to be installed ONLY inside the `?tts=PORT` block, so
+  // it existed exclusively for bodies launched with a URL parameter. A human who
+  // picked a voice in the panel loaded a 63 MB model, saw "ready", typed, and
+  // heard nothing, because nothing was listening for their says (R, 2026-08-09:
+  // "I don't hear anything when I type into the chat box. Hearing yourself as a
+  // human using TTS is half the fun").
+  //
+  // It belongs at boot, with everyone: it is a no-op until a voice exists and
+  // the checkbox is on, and speakOwnSays() already gates on both.
+  // `actor` on the speech event is the world-log ID STRING (world.js:331), so
+  // the identity here must be CONFIG.name — not `me`, which is the avatar
+  // OBJECT and would never compare equal, leaving the hook installed and
+  // permanently silent. Exactly the failure shape that has cost hours today:
+  // a check that runs, reports success, and can only ever be false.
+  import('./lib/voicesource.js')
+    // net.myId is what the SERVER settled on — it can differ from CONFIG.name
+    // when an authenticated identity renames you, or when the server suffixes a
+    // duplicate display name. Prefer it; fall back to the requested name before
+    // the join completes.
+    .then((vs) => vs.speakOwnSays(bus, () => net.myId || CONFIG.name))
+    .catch((e) => console.warn('[voice] own-say hook not installed:', e));
   initSceneGraph();   // 🌳 the world as a tree + 📜 the scripts that animate it
   setHint('<kbd>WASD</kbd> move · <kbd>Enter</kbd> chat · <kbd>B</kbd> build · <kbd>?</kbd> help');
 
@@ -1064,6 +1088,13 @@ function frame(now) {
   updateBuild();
   BC('debug');
   updateDebug(now);              // collider/ragdoll wireframes, when F3 is up
+  // 🔴 THIS HAD NO CALLERS. attach() deliberately starts an ambient source at
+  // gain 0 — "rises with proximity on the first tick" — and the tick never
+  // ran, so world sound has been playing at volume ZERO since it was attached
+  // (03:17 on 2026-08-08; R heard nothing all evening and reasonably concluded
+  // her audio was broken). Third instance tonight of a correct function that
+  // was never wired: toggleMute, sourceIsDead, this.
+  updateAmbient();
   BC('send-pose');
   sendPose(now);
 
@@ -1191,6 +1222,171 @@ startPrefetch().catch((e) => report('prefetch', e));
 
 // ---------------------------------------------------------------- debug
 
+// setVoice(name) — POINT AT A MODEL ON DISK, at any time, same function a human's
+// picker uses.
+//
+// R: "why does it need to be restarted? I don't have to restart my client to use
+// a voice, that's a weird asymmetry." She is right and I built the asymmetry: a
+// URL param is a BOOT-TIME decision, so a human got a live control and an agent
+// got a restart. Restarting a body is also the single most expensive thing in
+// this system — it drops the door, and I have broken her world doing it twice
+// today.
+//
+// So this is a function, callable whenever, and ?voice= merely calls it once at
+// boot. The picker only produces File objects and a File is constructible from
+// any bytes, so an agent fetches the two files a human would have chosen and
+// hands them to the SAME loadFromFiles(). Inference runs in this browser; no
+// synth process in the lane, nothing to keep alive, nothing to restart.
+async function setVoice(name) {
+  if (!name) {                       // setVoice(null) — go quiet, keep the lane
+    const { setTtsSource, setTtsEnabled } = await import('./lib/voicesource.js');
+    setTtsSource(null); setTtsEnabled(false);
+    return { ok: true, voice: null };
+  }
+  const base = new URL(`voices/${name}`, location.href).href;
+  const [onnx, cfg] = await Promise.all([
+    fetch(`${base}.onnx`).then((r) => { if (!r.ok) throw new Error(`${name}.onnx: ${r.status}`); return r.blob(); }),
+    fetch(`${base}.onnx.json`).then((r) => { if (!r.ok) throw new Error(`${name}.onnx.json: ${r.status}`); return r.blob(); }),
+  ]);
+  const files = [new File([onnx], `${name}.onnx`), new File([cfg], `${name}.onnx.json`)];
+  const { loadFromFiles } = await import('./lib/voiceengines.js');
+  await import('./lib/engines.js');
+  const { label } = await loadFromFiles(files, (p) =>
+    console.log(`[voice] ${p.text || p.phase || 'loading'}`));
+  const { setTtsEnabled } = await import('./lib/voicesource.js');
+  setTtsEnabled(true);
+  console.log(`[voice] speaking with ${label} — loaded from disk, no server`);
+  return { ok: true, voice: label };
+}
+// Callable from a console, from a harness, or by an agent mid-session.
+if (typeof window !== 'undefined') window.setVoice = setVoice;
+{
+  const want = new URLSearchParams(location.search).get('voice');
+  if (want) setVoice(want).catch((e) => console.warn('[voice] ?voice failed:', e));
+}
+
+// Opt-in synthesized voice: ?tts or ?tts=<port>. Absent — the overwhelmingly
+// common case — nothing connects and the microphone stays the only source, so
+// a human client is byte-for-byte unaffected.
+{
+  const q = new URLSearchParams(location.search);
+  if (q.has('tts')) {
+    const port = Number(q.get('tts')) || 8927;
+    import('./lib/piperbridge.js')
+      .then((m) => m.initPiperVoice({ port }))
+      .then(async (ok) => {
+        console.log(ok ? `[voice] synthesized voice ready on :${port}`
+                       : `[voice] no synthesizer on :${port} — falling back to browser speech`);
+        if (!ok) {
+          // R, 2026-08-09: "The TTS endpoint should probably default to the
+          // browser default if it can't resolve your TTS endpoint so you don't
+          // get crazy beeping." An unreachable endpoint used to mean NO voice —
+          // the body joined, asked to speak, and produced nothing (or, with a
+          // tone generator installed, beeped). browservoice.js already existed
+          // and was never imported anywhere: the fallback was written and dead.
+          // Web Speech is worse than Piper and strictly better than silence.
+          try {
+            const { speechSynthesis } = window;
+            if (!speechSynthesis) { console.warn('[voice] no speechSynthesis — microphone only'); return; }
+            const vs0 = await import('./lib/voicesource.js');
+            // Web Speech renders to the SPEAKERS, not to a PCM buffer we can put
+            // on the mic lane — so this is audible locally and NOT transmitted.
+            // Being honest about that is the point: silence used to be
+            // indistinguishable from a broken endpoint.
+            vs0.setTtsSource(async (text) => {
+              try { speechSynthesis.speak(new SpeechSynthesisUtterance(text)); } catch {}
+              return { pcm: new Int16Array(0), sampleRate: 22050, localOnly: true };
+            }, 'browser speech (local only — peers will NOT hear this)');
+            vs0.setTtsEnabled(true);
+            console.warn('[voice] FALLBACK: browser speech. Audible to YOU, not to peers.'
+                       + ` Start a synthesizer on :${port} for transmitted voice.`);
+          } catch (e) { console.warn('[voice] browser-speech fallback failed:', e); return; }
+        }
+        const vs = await import('./lib/voicesource.js');
+        // (own-say hook installed once at boot, line ~220, for every body —
+        // not here. Installing it again would speak each line twice, and this
+        // copy passed `me`, the avatar OBJECT, which never equals the actor
+        // string.)
+        // A body that registered a voice means to be heard: open the mic lane
+        // so the sender exists before the first utterance, rather than after.
+        // Install the seam BEFORE anything that can hang. toggleMic() awaits a
+        // source, and a wedged source blocks every line after it — which made
+        // the wiring look "never reached" when it had in fact reached and
+        // stalled. Observability must not sit downstream of the risky call.
+        globalThis.__voiceProbe = () => ({ ...vs.mouthInfo(), track: vs.genTrackInfo() });
+        globalThis.__voiceSpeak = (t) => vs.speak(t);   // the APP's mouth, for probes
+        const { toggleMic, micOn } = await import('./lib/voice.js');
+        if (!micOn()) await toggleMic(me);
+        console.log('[voice] TTS wiring complete');
+      })
+      // 🔴 NEVER SWALLOW THIS. It was `.catch(() => {})`, so anything after the
+      // "voice ready" line could throw and vanish while the log still claimed
+      // success — the exact shape of a check that did not run (2026-08-08).
+      .catch((e) => console.error('[voice] TTS wiring failed:', e?.message || e));
+  }
+}
+
+globalThis.__ambientDebug = ambientDebug;
+// One command R can paste to answer "why is it silent?" from her own console:
+// context state, how many sources exist, whether the gesture hook is waiting.
+globalThis.__audioState = audioState;
+// THE ISOLATION TEST, INSIDE THE WORLD PAGE. A separate probe page meant a new
+// URL to type, and the URL was its own obstacle course: /audio-probe 404s,
+// /audio-probe.html works, an extensionless copy downloads instead of
+// rendering. None of that is the bug we are chasing. This runs where she
+// already is. Call it from the console; it needs a click first for the
+// context, which console interaction does not provide — so it reports the
+// context state rather than pretending.
+globalThis.testAudioLayers = async () => {
+  // Use the SHARED context. This used to make its own, which on a page already
+  // holding five was the sixth — i.e. the diagnostic itself could exhaust the
+  // budget and then report silence it had caused.
+  const { audioContext } = await import('./lib/audioctx.js');
+  const ctx = audioContext();
+  await ctx.resume().catch(() => {});
+  const SRC = '/assets/audio_test_beacon.ogg';
+  const r = { ctx: ctx.state };
+
+  const a = new Audio(SRC); a.loop = true;
+  try { await a.play(); r.A_plainAudio = 'playing'; }
+  catch (e) { r.A_plainAudio = `FAILED ${e.name}`; }
+
+  const b = new Audio(SRC); b.loop = true;
+  try {
+    const n = ctx.createMediaElementSource(b);
+    const g = ctx.createGain(); g.gain.value = 1;
+    n.connect(g).connect(ctx.destination);
+    await b.play(); r.B_throughWebAudio = 'playing';
+  } catch (e) { r.B_throughWebAudio = `FAILED ${e.name}`; }
+
+  try {
+    const o = ctx.createOscillator(); const g = ctx.createGain();
+    g.gain.value = 0.15; o.frequency.value = 440;
+    o.connect(g).connect(ctx.destination); o.start();
+    setTimeout(() => { try { o.stop(); } catch {} }, 6000);
+    r.C_oscillator = 'started (6s)';
+  } catch (e) { r.C_oscillator = `FAILED ${e.message}`; }
+
+  setTimeout(() => {
+    console.log('%c[audio] after 3s — A t=' + a.currentTime.toFixed(2) +
+      '  B t=' + b.currentTime.toFixed(2) +
+      '  Aerr=' + (a.error?.code ?? 'none') + '  Berr=' + (b.error?.code ?? 'none'),
+      'font-size:14px;color:#6cf');
+    console.log('%cWHICH DID YOU HEAR?  A only → WebAudio output dead · A+C → ' +
+      'createMediaElementSource is the break · C only → decode/file · none → ' +
+      'below the page · all → page fine, ambient.js miswired', 'color:#fc6');
+  }, 3000);
+  console.log('%c[audio] ' + JSON.stringify(r, null, 1), 'font-size:14px;color:#6cf');
+  return r;
+};
+
+globalThis.whyIsItSilent = () => {
+  const s = audioState(), a = ambientDebug();
+  console.log('%c[audio] ' + JSON.stringify({ ...s, sources: a }, null, 1),
+    'font-size:14px;color:#6cf');
+  return { ...s, detail: a };
+};
+
 globalThis.EW = {
   me: () => me, remotes, entities, myState, THREE, net, scene, camera, renderer, bus,
   skyArgs, sendVerb, setPosable, get posable() { return posable; },
@@ -1198,6 +1394,11 @@ globalThis.EW = {
   lease: leaseApi,   // the entity-lease surface runtime plugins script against
   mods: modsApi,     // load/run/offer runtime client scripts (🧩)
   bodysim: { engine: bodyEngine, setEngine: setBodyEngine, list: listBodyEngines },  // swappable body physics
+  // Field diagnostics. These existed as module exports but were reachable from
+  // NOWHERE — every console recipe handed to a tester in the field was therefore
+  // a guess that could only ReferenceError (R hit this twice on 08-08).
+  voice: { debug: voiceDebug, pcs: voicePcs, mouthBound: voiceMouthBound,
+           pendingReneg: voicePendingReneg, micOn, isMuted },
 };
 
 } // end of the normal-boot branch (?mintthumbs takes the path above)
