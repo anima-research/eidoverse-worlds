@@ -22,6 +22,10 @@ import { myState } from './controller.js';
 import { flashHint } from './ui.js';
 import { receivingVoice, volumeFor, isHushed } from './voiceconsent.js';
 
+// How long an unanswered local offer stays 'live' for glare purposes. Past
+// this, an incoming offer is treated as a rejoin rather than a rival — a real
+// glare rival answers within a round trip.
+const GLARE_GRACE_MS = 4000;
 const RTC_CFG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 const FULL_M = 3, SILENT_M = 20;   // full volume inside 3m, gone by 20m
 
@@ -29,11 +33,7 @@ let micStream = null;
 let muted = false;
 const peers = new Map();           // id -> { pc, audio }
 let myId = null;
-// TRANSMITTING, not "a stream object exists". Going quiet now disables the
-// track instead of stopping it (see toggleMic), so micStream outlives mic-off
-// and `!!micStream` would leave the HUD stuck reading ON. Every caller of
-// micOn() is UI asking "am I being heard right now?" — this is that question.
-export const micOn = () => !!micStream && micStream.getAudioTracks().some((t) => t.enabled);
+export const micOn = () => !!micStream;
 export const isMuted = () => muted;
 
 function humanIds() {
@@ -181,6 +181,7 @@ async function offerOn(p, id, label) {
     applyDirection(p);
     const offer = await p.pc.createOffer();
     await p.pc.setLocalDescription(offer);
+    p._offeredAt = Date.now();     // for the rejoin-vs-glare distinction
     sendRtc(id, { sdp: p.pc.localDescription });
   } catch (e) { report(label, e); } finally { p._offering = false; }
 }
@@ -191,10 +192,26 @@ async function offerOn(p, id, label) {
  *  Idempotent — the flag is cleared before the offer, so a repeated call
  *  cannot stack duplicate offers. */
 function reconcilePending(p, id) {
+  // Bounded trace of every reconciliation decision. The cross-generation seam
+  // is invisible downstream — a leaked follow-up may still bail on signaling
+  // state, so an offer COUNT cannot see it — and this is what makes the
+  // refusal assertable. Capped so a long session cannot grow it without bound.
+  {
+    const L = (globalThis.__reconcileLog ??= []);
+    L.push(`id=${id} owed=${p?.pendingReneg} gen=${p?.gen} isCurrent=${peers.get(id) === p}`);
+    if (L.length > 200) L.splice(0, L.length - 200);
+  }
   if (!p || p.pendingReneg == null) return;
   const owed = p.pendingReneg;
   p.pendingReneg = null;                 // clear FIRST: no duplicate follow-ups
-  if (owed !== p.gen) return;            // raised against a peer that no longer exists
+  if (owed !== p.gen) return;            // debt belongs to this peer object
+  // ...and this peer object must still BE the peer for this id. The generation
+  // check above is self-referential: an old answer handler that was already
+  // mid-await when its peer was dropped and rebuilt compares the old object to
+  // its own gen, matches, and then renegotiate(id) resolves peers.get(id) —
+  // the REPLACEMENT. So the dead peer's debt gets paid by its successor, which
+  // is the exact leak the generation stamp was meant to prevent (Mica, #62).
+  if (peers.get(id) !== p) return;
   if (p.pc.signalingState !== 'stable') return;
   renegotiate(id);
 }
@@ -281,7 +298,27 @@ async function processSignal(p, from, payload) {
       // glare: both sides offered at once — the LOWER id's offer stands, the
       // higher id rolls back and answers (deterministic, no extra messages)
       if (p.pc.signalingState === 'have-local-offer') {
-        if ((myId ?? '') < from) return;               // mine stands; ignore theirs
+        // GLARE vs REJOIN. Glare's premise is that BOTH offers are live, so
+        // the loser's offer will be answered by the winner. A peer that
+        // RELOADED breaks that premise: their old session is gone, nobody is
+        // left to answer the offer we are protecting, and returning here
+        // discards the only live offer in the exchange — both sides strand,
+        // silently, forever. Field receipt 2026-08-08: "she could hear me
+        // until she hard reloaded."
+        //
+        // The tell is that our offer has been outstanding with no answer. A
+        // true glare rival answers within a round trip; a reloaded peer never
+        // will, because the session that owed us that answer no longer exists.
+        // So yield to an offer that arrives after our own has gone unanswered
+        // past a round trip, and keep the id rule only for the genuine
+        // simultaneous case.
+        // The tell is not TIME — a slow link can exceed any grace legitimately —
+        // it is whether this peer has ever answered anything of ours. A true
+        // glare rival is mid-exchange on a live connection; a reloaded peer is
+        // brand new to us and has never completed a negotiation. `_everStable`
+        // is set the first time we reach a settled state with them, so an
+        // offer from a peer we have never settled with is a JOIN, not a rival.
+        if (p._everStable && (myId ?? '') < from) return;   // real glare: mine stands
         await p.pc.setLocalDescription({ type: 'rollback' });
       }
       await p.pc.setRemoteDescription(payload.sdp);
@@ -292,6 +329,7 @@ async function processSignal(p, from, payload) {
       applyDirection(p);            // our answer states OUR consent, not theirs
       const answer = await p.pc.createAnswer();
       await p.pc.setLocalDescription(answer);
+      p._everStable = true;      // we answered them: a real exchange happened
       sendRtc(from, { sdp: p.pc.localDescription });
       // NOT reconciled here. Answering lands us in stable, but applyDirection
       // above already put the current track set into the answer we just sent —
@@ -303,6 +341,8 @@ async function processSignal(p, from, payload) {
 
     } else if (payload.sdp?.type === 'answer') {
       if (p.pc.signalingState === 'have-local-offer') {
+        p._offeredAt = null;       // answered: no longer an outstanding offer
+        p._everStable = true;      // we have completed a negotiation with them
         await p.pc.setRemoteDescription(payload.sdp);
         for (const c of p.pendingIce ?? []) {
           await p.pc.addIceCandidate(c).catch((err) => (window.__iceLog ??= []).push(`flushIce-FAIL ${err.name}`));
@@ -325,47 +365,37 @@ async function processSignal(p, from, payload) {
 
 export async function toggleMic(name) {
   myId = name ?? myId;
-  if (micOn()) {
-    // GOING QUIET IS A DATA CHANGE, NOT A CONNECTION CHANGE (R, 2026-08-08).
-    //
-    // This used to stop() the track, removeTrack() it from every peer, and
-    // renegotiate — three destructive operations to express "don't transmit".
-    // Four of the six voice bugs fixed this week were in the renegotiation
-    // that followed, and stop() manufactures precisely the `audio:ended`
-    // sender state that the live one-way-audio blocker shows in the field.
-    // The identical intent was already implemented correctly ten lines below
-    // in toggleMute (track.enabled = false, zero renegotiation, zero bugs) —
-    // it simply had no callers, while the HUD button called this.
-    //
-    // So: disable the track. It stays live, the sender stays bound, the
-    // transceiver stays sendonly, the SDP does not change, and coming back is
-    // one assignment rather than getUserMedia + renegotiate. Muting cannot
-    // deafen you because no peer is touched at all.
-    for (const t of micStream.getTracks()) t.enabled = false;
+  if (micStream) {
+    // SEND state only. Going quiet must not deafen you: listening is a
+    // separate permission (review catch — the old teardown dropped every
+    // peer, including inbound legs, which then had no trigger to re-offer
+    // until the next roster event, so muting yourself silently deafened you
+    // for an unbounded time). We remove OUR track from each peer and keep
+    // the connection alive; if we are not listening either, THEN the peer
+    // has no purpose and comes down.
+    for (const t of micStream.getTracks()) t.stop();
+    micStream = null;
     stopOnsetWatch();
     muted = false;
+    for (const [id, p] of [...peers]) {
+      try {
+        for (const sender of p.pc.getSenders()) if (sender.track) p.pc.removeTrack(sender);
+      } catch (e) { report('voice untrack', e); }
+      if (!receivingVoice()) dropPeer(id);
+      else renegotiate(id);          // tell them our track is gone; keep theirs
+    }
     flashHint('🎙 off');
     bus.emit('voice', { on: false });
     return false;
   }
-  // Coming back. If we still hold the stream (the normal case now — mic-off
-  // only disables it) re-enabling IS the whole acquisition step: no
-  // getUserMedia, so no permission re-prompt and no new track object. Then we
-  // fall THROUGH to the same attach/renegotiate/court-peers path a fresh mic
-  // takes; returning early here skipped peer creation entirely, which the
-  // lifecycle suite caught at once (mic ON with no peer courted).
-  if (micStream) {
-    for (const t of micStream.getTracks()) t.enabled = true;
-  } else {
-    try {
-      micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true },
-      });
-    } catch (e) {
-      report('microphone', e);
-      flashHint('microphone unavailable — check browser permission');
-      return false;
-    }
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true },
+    });
+  } catch (e) {
+    report('microphone', e);
+    flashHint('microphone unavailable — check browser permission');
+    return false;
   }
   // Attach FIRST, renegotiate second. applyDirection is where the track is
   // adopted, but renegotiate() bails on a peer that is not 'stable' — and a
@@ -438,10 +468,6 @@ export function micAnalyserLevel() {
   return Math.sqrt(s / _anBuf.length);
 }
 
-// Kept as the explicit verb for "go quiet without touching the mic button's
-// meaning" — it is now the SAME mechanism toggleMic uses (track.enabled), so
-// the two can no longer disagree. Before 2026-08-08 this was the correct
-// implementation with zero callers while the HUD used the destructive path.
 export function toggleMute() {
   if (!micStream) return false;
   muted = !muted;
@@ -449,26 +475,6 @@ export function toggleMute() {
   flashHint(muted ? '🔇 muted' : '🎙 unmuted');
   bus.emit('voice', { on: true, muted });
   return muted;
-}
-
-/** Release the microphone device entirely — the OS/browser recording indicator
- *  goes away. This is the ONLY path that stops tracks, and it is deliberately
- *  not what the HUD mic button does: it costs a permission re-prompt and a
- *  renegotiation to undo, so it is a privacy action, not a "go quiet" action. */
-export function releaseMicrophone() {
-  if (!micStream) return;
-  for (const t of micStream.getTracks()) t.stop();
-  micStream = null;
-  muted = false;
-  stopOnsetWatch();
-  for (const [id, p] of [...peers]) {
-    try {
-      for (const sender of p.pc.getSenders()) if (sender.track) p.pc.removeTrack(sender);
-    } catch (e) { report('voice untrack', e); }
-    if (!receivingVoice()) dropPeer(id); else renegotiate(id);
-  }
-  flashHint('🎙 released');
-  bus.emit('voice', { on: false });
 }
 
 export function initVoice(name) {
@@ -501,11 +507,8 @@ export function initVoice(name) {
     if (micStream) for (const id of humanIds()) offerTo(id);
   });
   bus.on('roster', () => {
-    // Arrivals get an offer while we're LIVE; departures get torn down.
-    // micOn(), not micStream: since mic-off keeps the stream and only disables
-    // the track, `micStream` is truthy while muted and would court strangers we
-    // have nothing to say to. Transmitting is the condition that matters.
-    if (micOn()) for (const id of humanIds()) if (!peers.has(id)) offerTo(id);
+    // arrivals get an offer while we're live; departures get torn down
+    if (micStream) for (const id of humanIds()) if (!peers.has(id)) offerTo(id);
     for (const id of [...peers.keys()]) if (!remotes.has(id)) dropPeer(id);
   });
   // Two clocks on purpose. Distance is a slow fact — 300ms is plenty and
@@ -581,6 +584,10 @@ export const voiceDebug = () => Object.fromEntries([...peers].map(([id, p]) => [
 /** Which peers owe a follow-up offer, and at which generation. The fourth
  *  timing class is invisible from outside otherwise: a peer that owes a
  *  renegotiation looks exactly like one that does not. */
+/** TEST SEAM: clear a peer's pending debt so a regression can isolate work
+ *  that could only have come from a DIFFERENT peer generation. */
+export const voiceClearPending = (id) => { const p = peers.get(id); if (p) p.pendingReneg = null; };
+
 export const voicePendingReneg = () =>
   Object.fromEntries([...peers].map(([id, p]) => [id, p.pendingReneg ?? null]));
 

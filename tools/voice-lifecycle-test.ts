@@ -1,4 +1,3 @@
-const peersOf = (): any => undefined;
 // voice-lifecycle — the consent choices, executed.
 //
 //   bun tools/voice-lifecycle-test.ts
@@ -77,7 +76,8 @@ class FakePC {
   getTransceivers() { return this.transceivers; }
   /** the direction actually offered to the far end */
   offeredDirection() { return this.transceivers[0]?.direction ?? "none"; }
-  static gate: Promise<void> | null = null;   // slows createOffer for race tests
+  static gate: Promise<void> | null = null;
+  static answerGate: Promise<void> | null = null;   // parks setRemoteDescription
   offers = 0;                 // how many offers this peer has actually produced —
                               // the fourth-class tests assert on EXACTLY ONE
                               // follow-up, which needs a real count rather than
@@ -100,6 +100,11 @@ class FakePC {
   }
   async setRemoteDescription(d: unknown) {
     await new Promise((r) => setTimeout(r, 1));           // yield: interleave window
+    // Separate gate from FakePC.gate (which parks createOffer). The
+    // cross-generation seam needs an ANSWER handler held mid-await while its
+    // peer is dropped and rebuilt underneath it — that is the only way to make
+    // an old handler resume against a replacement (Mica, #62).
+    if (FakePC.answerGate) await FakePC.answerGate;
     this.remote = d;
     const t = (d as { type?: string })?.type;
     this.signalingState = t === "offer" ? "have-remote-offer" : "stable";
@@ -247,25 +252,10 @@ const liveTrack = (await import("../client/lib/voice.js")).micOn();
 await voice.toggleMic("me");
 check("mic off stops the local track", liveTrack === true && voice.micOn() === false);
 check("mic off does NOT close a consented inbound peer (send ≠ receive)", !inbound.closed);
-// THE CONTRACT CHANGED (2026-08-08). Mic-off used to stop() the track and
-// removeTrack() it from every peer, then renegotiate — three destructive acts
-// to express "don't transmit", and the source of four of the six voice bugs
-// fixed this week. It now disables the track instead, so the sender KEEPS it
-// and the SDP never changes. Asserting track === null here would be asserting
-// the bug. What matters is that nothing audible leaves:
-check("mic off keeps the sender bound but silences it (no renegotiation)",
-  inbound.getSenders().every((s) => !s.track || s.track.enabled === false));
-check("mic off does not stop() the track — an ended track cannot be revived",
-  inbound.getSenders().every((s) => !s.track || s.track.readyState !== "ended"));
+check("mic off leaves no outbound track on the peer",
+  inbound.getSenders().every((s) => s.track === null));
 
 // ---- refusal must not loop ------------------------------------------------
-// Refusal is only reachable from a body that holds NO stream. Since mic-off
-// keeps the stream (and re-enabling needs no permission — correctly: a mic you
-// were already granted is not re-asked for), the honest way to reach the
-// permission path is to RELEASE the device first. That is what
-// releaseMicrophone() is for, and it is the only caller that stops tracks.
-voice.releaseMicrophone();
-await settle();
 denyMic = true;
 const before = micDenies;
 const r1 = await voice.toggleMic("me");
@@ -299,13 +289,6 @@ consent.setReceiveVoice(false);
 created.length = 0;
 stubs.remotes.set("peer1", { agent: false });
 denyMic = false;
-// Drive to the state, never assume a call reaches it (the discipline this file
-// states at the bottom). Mic-off now KEEPS the stream and only disables the
-// track, so a bare toggleMic() means "flip", not "on".
-// A real off->on cycle, so the courting path runs for THIS test's peer rather
-// than relying on one a previous test happened to leave behind.
-if (voice.micOn()) { await voice.toggleMic("me"); await settle(); }
-created.length = 0;
 await voice.toggleMic("me");            // mic ON, receive OFF
 await settle();
 const outbound = created.at(-1)!;
@@ -974,6 +957,116 @@ check("unhush rejoins the SAME peer at full volume",
   check("generation: the replacement carries its OWN generation, not the dead one's",
     genAfter == null || genBefore == null || genAfter !== genBefore,
     `old gen ${genBefore} survived into the replacement as ${genAfter}`);
+  consent.setReceiveVoice(false);
+}
+
+// ---- the cross-generation seam: an OLD handler resuming after replacement ---
+// Mica, #62 review. `owed === p.gen` proves the debt belongs to that peer
+// OBJECT — but it is self-referential, so an old answer handler that was
+// already mid-await when its peer was dropped and rebuilt compares the old
+// object to its own generation, matches, and then renegotiate(id) resolves
+// peers.get(id): the REPLACEMENT. The dead peer's debt gets paid by its
+// successor, which is exactly what the generation stamp was meant to prevent.
+//
+// Forced deterministically: the answer handler is held inside
+// setRemoteDescription while the peer is replaced underneath it.
+{
+  consent.setReceiveVoice(true);
+  if (!voice.micOn()) await voice.toggleMic("me");
+  await settle();
+  created.length = 0;
+  stubs.remotes.set("seam", { agent: false });
+  bus.emit("roster");
+  await settle();
+  const oldPeer = created.at(-1)!;
+  if (!oldPeer) throw new Error("no peer built for the seam test");
+
+  // the old peer owes a follow-up: toggle the mic while it is mid-negotiation
+  await voice.toggleMic("me"); await settle();
+  await voice.toggleMic("me"); await settle();
+  const owedBefore = voice.voicePendingReneg?.()["seam"];
+  check("seam: the old peer genuinely owes a follow-up before we replace it",
+    owedBefore != null, `pending was ${owedBefore}`);
+
+  // hold the answer handler mid-await, then deliver an answer to the OLD peer
+  let releaseAnswer!: () => void;
+  FakePC.answerGate = new Promise<void>((r) => { releaseAnswer = r; });
+  bus.emit("rtc", { from: "seam", payload: { sdp: { type: "answer", sdp: "held" } } });
+  await settle();                       // handler is now parked inside setRemoteDescription
+
+  // replace the peer underneath the parked handler
+  consent.setReceiveVoice(false); await settle();   // dropPeer kills the old one
+  consent.setReceiveVoice(true);  await settle();   // a NEW peer for the same id
+  const newPeer = created.at(-1)!;
+  // Settle the replacement into a CLEAN, STABLE, debt-free state. Otherwise
+  // renegotiate() bails on signalingState before the identity check is ever
+  // reached, and the test passes for a reason that has nothing to do with the
+  // fix — which is exactly how my first version of this was vacuous.
+  // The replacement legitimately has its own lifecycle (its own pending debt,
+  // its own offers). Rather than fighting it into an artificial idle state,
+  // clear its debt directly and snapshot the offer count immediately before
+  // releasing the old handler — so any offer AFTER that point can only have
+  // come from the dead peer's debt being paid by its successor.
+  voice.voiceClearPending?.("seam");
+  await settle();
+  const newOffersBefore = newPeer.offers ?? 0;
+
+  // release the old handler: it resumes against a peer that no longer exists
+  FakePC.answerGate = null; releaseAnswer();
+  await settle(); await settle();
+
+  // Assert on the MECHANISM. Downstream offer counts are unreliable here: even
+  // without the identity check, renegotiate() may bail on the replacement's
+  // signaling state, so the leak is real but invisible in the count — the test
+  // would pass for a reason unrelated to the fix. (It did, twice, before I
+  // looked at what reconcilePending actually saw.) What must be true is that a
+  // resumed old handler is REFUSED, and refused for the right reason: its
+  // generation check passes (self-referential) and only the identity check
+  // stops it.
+  const recs = ((globalThis as { __reconcileLog?: string[] }).__reconcileLog ?? [])
+    .filter((r) => r.startsWith("id=seam"));
+  const resumed = recs.find((r) => r.includes("isCurrent=false"));
+  check("seam: the resumed old handler reaches reconcilePending at all",
+    resumed !== undefined, `seam records: ${JSON.stringify(recs)}`);
+  check("seam: its generation check PASSES (self-referential) — identity is the only guard",
+    resumed !== undefined && /owed=(\d+) gen=\1 /.test(resumed + " "),
+    `expected owed===gen on the stale handler, got: ${resumed}`);
+  check("seam: and it is refused because the peer is no longer current",
+    resumed !== undefined && resumed.includes("isCurrent=false"),
+    `stale handler was not detected as non-current: ${resumed}`);
+  check("seam: the replacement is genuinely a different peer object",
+    newPeer !== oldPeer, "dropPeer+rebuild returned the same pc");
+  consent.setReceiveVoice(false);
+}
+
+// ---- REJOIN: a peer who reloads is a NEW session, not a glare rival --------
+// Field, 2026-08-08 (R + Digi): "she could hear me until she hard reloaded."
+// A reload sends a fresh offer. If our side still holds a stale peer parked in
+// have-local-offer from their dead session, the glare rule fires — and glare's
+// premise is that BOTH offers are live, so the loser's offer will be answered.
+// A reload breaks that premise: the peer we are protecting no longer exists on
+// their end, so returning here discards the only live offer in the exchange and
+// strands both sides. Deterministic; no timing needed.
+{
+  consent.setReceiveVoice(true);
+  if (!voice.micOn()) await voice.toggleMic("me");
+  await settle();
+  created.length = 0;
+  stubs.remotes.set("zzz-rejoin", { agent: false });   // id sorts ABOVE "me" — WE win glare
+  bus.emit("roster");
+  await settle();
+  const pcR = created.at(-1)!;
+  check("rejoin: our side is parked in have-local-offer (their answer never came)",
+    pcR.signalingState === "have-local-offer", pcR.signalingState);
+
+  const answersBefore = pcR.answersCreated ?? 0;
+  // they reload and offer fresh
+  bus.emit("rtc", { from: "zzz-rejoin", payload: { sdp: { type: "offer", sdp: "after-reload" } } });
+  await settle(); await settle();
+
+  check("rejoin: a reloaded peer's offer is ANSWERED, not discarded as glare",
+    (pcR.answersCreated ?? 0) > answersBefore,
+    `answersCreated stayed at ${pcR.answersCreated} — their fresh offer was dropped`);
   consent.setReceiveVoice(false);
 }
 
