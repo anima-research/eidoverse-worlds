@@ -279,5 +279,100 @@ const distOf = (line: string) => { const m = line.match(/:\s*([\d.]+)m\s+(\w+)\s
   live.close(); folded.close();
 }
 
+// ---- #92 review: B1 — motion runs on SEQUENCER time, not the host clock ----
+console.log("\n━━ B1: sequencer-relative clock ━━");
+{
+  const a = offlineAgent();
+  // the embodied plane's frame stamps say the sequencer is 7s AHEAD of this
+  // host; the motion's t0 is in the host's present — so the true phase is
+  // t ≈ 7s, and a host-clock evaluation reads t ≈ 0 instead
+  const skew = 7000;
+  // optional-called so a pre-revision head FAILS the checks below by phase
+  // rather than crashing the file — the control stays a control
+  for (let i = 0; i < 3; i++) (a as any).noteServerTime?.(Date.now() + skew);
+  const t0 = Date.now();
+  await fold(a, { verb: "spawn", args: { id: "swing1", lib: "models/bench.glb", pos: [10, 0, 10], yaw: 0 } });
+  await fold(a, { verb: "comp", args: { id: "swing1", type: "sockets", data: { seat: { pos: [0, 0.55, 0] } } } });
+  await fold(a, { verb: "motion", args: { id: "swing1", type: "pendulum", axis: "x", pivot: [0, 2, 0], amp: 1, period: 20, damp: 0, t0 } });
+  await fold(a, { verb: "spawn", args: { id: "crate1", lib: "models/crate.glb", pos: [3, 0, 3], yaw: 0 } });
+  await fold(a, { verb: "mount", args: { id: "crate1", to: "swing1", slot: "seat" } });
+  // crate = base + [0, 2 − 1.45·cosθ, −1.45·sinθ];  θ(7s) = cos(2π·7/20) ≈ −0.5885
+  // → (10.0, 0.8, 10.8).  A host-clock evaluation gives θ(0) = 1 → (10.0, 1.2, 8.8).
+  const def = crateLine(a.look());
+  check("default look() evaluates on sequencer time", def.includes("at (10.0, 0.8, 10.8)"), def);
+  const explicit = crateLine(a.look(Date.now()));
+  check("explicit nowMs is still honored verbatim", explicit.includes("at (10.0, 1.2, 8.8)"), explicit);
+  a.close();
+}
+
+// ---- #92 review: B2 — refusals never fall back to stale coordinates --------
+console.log("\n━━ B2: no stale fallbacks ━━");
+
+// (1) the sort: an unresolved thing makes no spatial claim — it lists last
+{
+  const a = offlineAgent();
+  await fold(a, { verb: "spawn", args: { id: "far1", lib: "models/bench.glb", pos: [30, 0, 30], yaw: 0 } });
+  await fold(a, { verb: "spawn", args: { id: "swing2", lib: "models/swing.glb", pos: [5, 0, 5], yaw: 0 } });
+  await fold(a, { verb: "comp", args: { id: "swing2", type: "sockets", data: { seat: { pos: [0, 0.5, 0], part: "plank" } } } });
+  await fold(a, { verb: "spawn", args: { id: "crate1", lib: "models/crate.glb", pos: [1, 0, 1], yaw: 0 } });
+  await fold(a, { verb: "mount", args: { id: "crate1", to: "swing2", slot: "seat" } });
+  const txt = a.look(T0);
+  check("unresolved cargo lists after resolved things, not by its stale 1.4m", txt.indexOf("[far1]") < txt.indexOf("[crate1]"),
+    txt.split("\n").filter((l) => l.includes("[")).join(" | "));
+  a.close();
+}
+
+// (2) the emitter gate: unknown position → abstain + bounded diagnostic
+{
+  const a = offlineAgent();
+  let events = 0;
+  a.onEvent = () => { events++; };
+  await fold(a, { verb: "spawn", args: { id: "swing2", lib: "models/swing.glb", pos: [5, 0, 5], yaw: 0 } });
+  await fold(a, { verb: "comp", args: { id: "swing2", type: "sockets", data: { seat: { pos: [0, 0.5, 0], part: "plank" } } } });
+  await fold(a, { verb: "spawn", args: { id: "lantern", lib: "models/lantern.glb", pos: [1, 0, 1], yaw: 0 } });
+  await fold(a, { verb: "mount", args: { id: "lantern", to: "swing2", slot: "seat" } });
+  await fold(a, { verb: "comp", args: { id: "lantern", type: "particles", data: { preset: "fire" } }, actor: "digi" }, true);
+  check("unresolvable emitter abstains from proximity delivery", events === 0 && a.effGaps > 0, `events=${events} gaps=${a.effGaps}`);
+  await fold(a, { verb: "spawn", args: { id: "hearth", lib: "models/hearth.glb", pos: [10, 0, 10], yaw: 0 } });
+  await fold(a, { verb: "comp", args: { id: "hearth", type: "particles", data: { preset: "fire" } }, actor: "digi" }, true);
+  check("a resolvable emitter still delivers", events === 1, `events=${events}`);
+  a.close();
+}
+
+// (3) the mounted self: unknown is SAID, and dependent distances are withheld
+{
+  const a = offlineAgent();
+  await fold(a, { verb: "spawn", args: { id: "swing2", lib: "models/swing.glb", pos: [5, 0, 5], yaw: 0 } });
+  await fold(a, { verb: "comp", args: { id: "swing2", type: "sockets", data: { seat: { pos: [0, 0.5, 0], part: "plank" } } } });
+  await fold(a, { verb: "spawn", args: { id: "rock1", lib: "models/rock.glb", pos: [2, 0, 2], yaw: 0 } });
+  await fold(a, { verb: "mount", args: { id: "tester", to: "swing2", slot: "seat" } });
+  const txt = a.look(T0);
+  const head = txt.split("\n")[0];
+  check("own unresolved seat: position unknown, said out loud", head.includes("position unknown") && /part "plank"/.test(head) && head.includes("seated on swing2"), head);
+  check("no distance/bearing is measured from a ghost", !/\d+\.\d+m /.test(txt), txt.split("\n").find((l) => /\d+\.\d+m /.test(l)));
+  check("resolved coordinates still print (facts survive)", txt.includes("[rock1]") && /\[rock1\][^\n]*at \(2\.0, 0\.0, 2\.0\)/.test(txt), txt);
+  a.close();
+}
+
+// ---- #92 review, precision: cargo's own root motion is inert while mounted -
+console.log("\n━━ precision: mount chain wins over own motion ━━");
+{
+  const a = offlineAgent();
+  await fold(a, { verb: "spawn", args: { id: "swing1", lib: "models/bench.glb", pos: [10, 0, 10], yaw: 0 } });
+  await fold(a, { verb: "comp", args: { id: "swing1", type: "sockets", data: { seat: { pos: [0, 0.55, 0] } } } });
+  await fold(a, { verb: "spawn", args: { id: "crate1", lib: "models/crate.glb", pos: [3, 0, 3], yaw: 0 } });
+  await fold(a, { verb: "motion", args: { id: "crate1", type: "orbit", center: [3, 0, 3], radius: 4, degPerSec: 90, t0: T0 - 60_000 } });
+  await fold(a, { verb: "mount", args: { id: "crate1", to: "swing1", slot: "seat" } });
+  // the renderer skips a mounted entity's own motion (motion.js tickMotion:
+  // `obj.userData.mountedTo` guard) — the seat, not the orbit, is the truth
+  const line = crateLine(a.look(T0));
+  check("own root motion is inert while mounted (matches the renderer)", line.includes("at (10.0, 0.6, 10.0)"), line);
+  await fold(a, { verb: "dismount", args: { id: "crate1", pos: [3, 0, 3], yaw: 0 } });
+  const after = crateLine(a.look(T0 + 1000));
+  // dismounted, the orbit resumes: a = 90°/s · 61s = 5490° ≡ 90° → (3+4, 0, 3+0)
+  check("own motion resumes on dismount", after.includes("at (7.0, 0.0, 3.0)"), after);
+  a.close();
+}
+
 console.log("");
 process.exit(failures ? 1 : 0);
