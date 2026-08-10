@@ -19,7 +19,7 @@
 // Caching: the runtime stores the model in the Origin Private File System, so
 // the ~60 MB download happens once per voice per browser and survives reloads.
 
-import { setTtsSource } from './voicesource.js';
+import { setTtsSource } from './tts.js';
 import { report } from './core.js';
 import { decodeWavToPcm } from './wavpcm.js';
 

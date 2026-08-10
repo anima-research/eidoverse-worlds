@@ -1111,7 +1111,17 @@ export function peerLevels() {
 // the field. replaceTrack needs no renegotiation, so the repair is cheap and
 // safe in any signaling state.
 setGeneratorRebuildHook((track) => {
-  if (!micStream) return;
+  // No micStream just means no stream bookkeeping — the SENDERS still need the
+  // track. A TTS-only body has no micStream by definition, and the old early
+  // return left its senders bound to a mouth that could not speak (2026-08-10
+  // field test: the naive agent's clip never left the machine).
+  if (!micStream) {
+    for (const p of peers.values())
+      for (const s of p.pc.getSenders())
+        if (!s.track || s.track.kind === 'audio')
+          s.replaceTrack(track).catch((e) => report('voice track rebind', e));
+    return;
+  }
   // Keep the local stream in step where it CAN be — a synthetic or stubbed
   // source is not always a real MediaStream (the suite caught this hook
   // throwing on removeTrack, inside the very recovery it exists to perform).

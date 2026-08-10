@@ -20,7 +20,7 @@
 // WICG/speech-api#69 asks for exactly that and is still open. A voice that can
 // be SENT must come from a synthesizer that returns bytes.
 
-import { setTtsSource } from './voicesource.js';
+import { setTtsSource } from './tts.js';
 import { report } from './core.js';
 
 /** Point the mouth at a synthesizer already running locally — the same ws

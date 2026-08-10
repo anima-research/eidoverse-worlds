@@ -15,7 +15,7 @@
  *  does the panel.
  */
 import { registerEngine } from './voiceengines.js';
-import { setTtsSource } from './voicesource.js';
+import { setTtsSource } from './tts.js';
 import { decodeWavToPcm } from './wavpcm.js';
 
 let engine = null;

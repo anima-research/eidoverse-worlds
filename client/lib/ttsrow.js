@@ -14,7 +14,7 @@
 // Both transmit; nothing here is local-only, because a voice that only you can
 // hear is indistinguishable from a working one until nobody answers.
 import { renderVoiceList } from './voicelist.js';
-import { ttsAvailable, ttsVoiceName, isTtsEnabled, setTtsEnabled, setTtsSource } from './voicesource.js';
+import { ttsAvailable, ttsVoiceName, isTtsEnabled, setTtsEnabled, setTtsSource } from './tts.js';
 import { setEndpointVoice } from './browservoice.js';
 import { report } from './core.js';
 // The id of whatever is currently installed, so the list can show a filled dot

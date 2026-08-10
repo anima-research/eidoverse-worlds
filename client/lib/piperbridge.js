@@ -10,7 +10,7 @@
 // takeovers in a single session (2026-08-08). A synthesizer is not a
 // participant.
 
-import { setTtsSource, setTtsEnabled } from './voicesource.js';
+import { setTtsSource, setTtsEnabled } from './tts.js';
 import { report } from './core.js';
 
 let ws = null, nextId = 1;

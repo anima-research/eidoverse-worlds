@@ -224,7 +224,7 @@ function start() {
   // OBJECT and would never compare equal, leaving the hook installed and
   // permanently silent. Exactly the failure shape that has cost hours today:
   // a check that runs, reports success, and can only ever be false.
-  import('./lib/voicesource.js')
+  import('./lib/tts.js')
     // net.myId is what the SERVER settled on — it can differ from CONFIG.name
     // when an authenticated identity renames you, or when the server suffixes a
     // duplicate display name. Prefer it; fall back to the requested name before
@@ -1247,7 +1247,7 @@ startPrefetch().catch((e) => report('prefetch', e));
 // synth process in the lane, nothing to keep alive, nothing to restart.
 async function setVoice(name) {
   if (!name) {                       // setVoice(null) — go quiet, keep the lane
-    const { setTtsSource, setTtsEnabled } = await import('./lib/voicesource.js');
+    const { setTtsSource, setTtsEnabled } = await import('./lib/tts.js');
     setTtsSource(null); setTtsEnabled(false);
     return { ok: true, voice: null };
   }
@@ -1261,7 +1261,7 @@ async function setVoice(name) {
   await import('./lib/engines.js');
   const { label } = await loadFromFiles(files, (p) =>
     console.log(`[voice] ${p.text || p.phase || 'loading'}`));
-  const { setTtsEnabled } = await import('./lib/voicesource.js');
+  const { setTtsEnabled } = await import('./lib/tts.js');
   setTtsEnabled(true);
   console.log(`[voice] speaking with ${label} — loaded from disk, no server`);
   return { ok: true, voice: label };
@@ -1296,7 +1296,7 @@ if (typeof window !== 'undefined') window.setVoice = setVoice;
           try {
             const { speechSynthesis } = window;
             if (!speechSynthesis) { console.warn('[voice] no speechSynthesis — microphone only'); return; }
-            const vs0 = await import('./lib/voicesource.js');
+            const vs0 = await import('./lib/tts.js');
             // Web Speech renders to the SPEAKERS, not to a PCM buffer we can put
             // on the mic lane — so this is audible locally and NOT transmitted.
             // Being honest about that is the point: silence used to be
@@ -1310,7 +1310,7 @@ if (typeof window !== 'undefined') window.setVoice = setVoice;
                        + ` Start a synthesizer on :${port} for transmitted voice.`);
           } catch (e) { console.warn('[voice] browser-speech fallback failed:', e); return; }
         }
-        const vs = await import('./lib/voicesource.js');
+        const vs = await import('./lib/tts.js');
         // (own-say hook installed once at boot, line ~220, for every body —
         // not here. Installing it again would speak each line twice, and this
         // copy passed `me`, the avatar OBJECT, which never equals the actor
