@@ -269,10 +269,25 @@ const liveTrack = (await import("../client/lib/voice.js")).micOn();
 await voice.toggleMic("me");
 check("mic off stops the local track", liveTrack === true && voice.micOn() === false);
 check("mic off does NOT close a consented inbound peer (send ≠ receive)", !inbound.closed);
-check("mic off leaves no outbound track on the peer",
-  inbound.getSenders().every((s) => s.track === null));
+// THE CONTRACT CHANGED (2026-08-08). Mic-off used to stop() the track and
+// removeTrack() it from every peer, then renegotiate — three destructive acts
+// to express "don't transmit", and the source of four of the six voice bugs
+// fixed this week. It now disables the track instead, so the sender KEEPS it
+// and the SDP never changes. Asserting track === null here would be asserting
+// the bug. What matters is that nothing audible leaves:
+check("mic off keeps the sender bound but silences it (no renegotiation)",
+  inbound.getSenders().every((s) => !s.track || s.track.enabled === false));
+check("mic off does not stop() the track — an ended track cannot be revived",
+  inbound.getSenders().every((s) => !s.track || s.track.readyState !== "ended"));
 
 // ---- refusal must not loop ------------------------------------------------
+// Refusal is only reachable from a body that holds NO stream. Since mic-off
+// keeps the stream (and re-enabling needs no permission — correctly: a mic you
+// were already granted is not re-asked for), the honest way to reach the
+// permission path is to RELEASE the device first. That is what
+// releaseMicrophone() is for, and it is the only caller that stops tracks.
+voice.releaseMicrophone();
+await settle();
 denyMic = true;
 const before = micDenies;
 const r1 = await voice.toggleMic("me");
@@ -306,6 +321,13 @@ consent.setReceiveVoice(false);
 created.length = 0;
 stubs.remotes.set("peer1", { agent: false });
 denyMic = false;
+// Drive to the state, never assume a call reaches it (the discipline this file
+// states at the bottom). Mic-off now KEEPS the stream and only disables the
+// track, so a bare toggleMic() means "flip", not "on".
+// A real off->on cycle, so the courting path runs for THIS test's peer rather
+// than relying on one a previous test happened to leave behind.
+if (voice.micOn()) { await voice.toggleMic("me"); await settle(); }
+created.length = 0;
 await voice.toggleMic("me");            // mic ON, receive OFF
 await settle();
 const outbound = created.at(-1)!;
@@ -1117,5 +1139,35 @@ check("unhush rejoins the SAME peer at full volume",
 // stay at 0 inbound pkts; RTC_MODE=relay-turn must exceed 0. External harness
 // by design — fake RTC cannot prove media.
 
+// ---- a rebuilt generator must reach the senders --------------------------
+// THE SILENT-FOREVER FAILURE. The synthesizer's generator dies; speak() quietly
+// makes a NEW track and every sender keeps the dead one. ICE stays connected,
+// direction stays sendonly, speak() returns true — and the room hears nothing.
+// Indistinguishable from the audio:ended blocker seen in the field.
+// sourceIsDead() was written for exactly this and had ZERO callers, the same
+// way toggleMute did while the HUD button called the destructive path.
+{
+  const vs = await import("../client/lib/voicesource.js");
+  check("voicesource exposes a rebuild hook", typeof vs.setGeneratorRebuildHook === "function");
+  check("sourceIsDead recognises an ended track",
+    vs.sourceIsDead({ getAudioTracks: () => [{ readyState: "ended" }] }) === true);
+  check("sourceIsDead does NOT flag a live one",
+    vs.sourceIsDead({ getAudioTracks: () => [{ readyState: "live" }] }) === false);
+
+  // voice.js installs the real hook at import time; prove it re-binds senders.
+  const peer = created.at(-1);
+  if (peer) {
+    const dead = { id: "dead", kind: "audio", readyState: "ended", enabled: true, stop() {} };
+    for (const s of peer.getSenders()) s.track = dead;
+    check("precondition: a sender is holding an ENDED track",
+      peer.getSenders().some((s) => s.track?.readyState === "ended"));
+
+    const fresh = { id: "fresh", kind: "audio", readyState: "live", enabled: true, stop() {} };
+    vs.__fireRebuild?.(fresh);
+    check("after a rebuild no sender is left holding the dead track",
+      peer.getSenders().every((s) => s.track?.id !== "dead"),
+      peer.getSenders().map((s) => s.track?.id).join(","));
+  }
+}
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

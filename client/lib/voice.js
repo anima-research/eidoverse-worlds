@@ -17,7 +17,10 @@
 import { bus, report } from './core.js';
 import { sendRtc, sendTyping } from './net.js';
 import { remotes } from './remotes.js';
-import { micFloor } from './voiceconsent.js';
+import { micFloor, gateThreshold } from './voiceconsent.js';
+import { voiceSource, setGeneratorRebuildHook } from './voicesource.js';
+import { gateStream, attachSource, detachSource, driveGate, gateOpenness,
+         setMonitor, monitoring, release as releaseGate } from './micgate.js';
 import { audioContext } from './audioctx.js';
 import { myState } from './controller.js';
 import { flashHint } from './ui.js';
@@ -31,10 +34,46 @@ const RTC_CFG = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
 const FULL_M = 3, SILENT_M = 20;   // full volume inside 3m, gone by 20m
 
 let micStream = null;
+// The pre-gate device stream. The analyser MUST measure this, not micStream:
+// measuring the gated output makes the gate self-latching (gain drops →
+// measured level drops → gate closes harder → never reopens).
+let _rawMic = null;
+// True when the DEVICE is gone but the LANE is still standing — the state that
+// makes coming back cheap.
+let _micReleased = false;
 let muted = false;
 const peers = new Map();           // id -> { pc, audio }
 let myId = null;
-export const micOn = () => !!micStream;
+// TRANSMITTING, not "a stream object exists". Going quiet now disables the
+// track instead of stopping it (see toggleMic), so micStream outlives mic-off
+// and `!!micStream` would leave the HUD stuck reading ON. Every caller of
+// micOn() is UI asking "am I being heard right now?" — this is that question.
+// 🔴 NOT track.enabled ANY MORE. The noise gate now toggles `enabled` between
+// words, so reading it here would make the HUD flicker "mic off" in every pause
+// — the control would look broken precisely while it worked. `muted` is the
+// user's intent and does not move on its own, which is the question every caller
+// is actually asking: am I open to the room?
+// 🔴 THREE STATES, NOT TWO. `muted` and "mic off" are different things and used
+// to be told apart by track.enabled — which the NOISE GATE now owns, toggling it
+// between words. When I repointed micOn() at `muted` I collapsed them, and
+// toggleMic's off-path (which sets enabled=false but muted=false) then left
+// micOn() permanently TRUE: R, 2026-08-09, "I'm not sure what the microphone
+// option does? It's just stuck on and I can't do anything with it."
+//
+//   _micLive false          → mic off: nothing is captured, the row reads off
+//   _micLive true + muted   → open but deliberately silent
+//   _micLive true + !muted  → open; the gate decides moment to moment
+let _micLive = false;
+export const micOn = () => !!micStream && _micLive && !muted;
+/** Am I audible RIGHT NOW — i.e. is the gate open this instant? For a live
+ *  indicator, not for state. This is the affordance R asked for: "we have no
+ *  affordance to say when audio is getting broadcasted." */
+export const micTransmitting = () =>
+  // Read the GAIN, not a boolean. With a smoothed gate there is no on/off flag
+  // to consult — the honest question is "how much of me is reaching the wire",
+  // and 0.05 is the point where a listener would call it audible rather than
+  // the tail of a fade.
+  !!micStream && !muted && gateOpenness() > 0.05;
 export const isMuted = () => muted;
 
 function humanIds() {
@@ -149,10 +188,42 @@ function peerFor(id) {
     audio.play().catch(() => addEventListener('click', () => audio.play().catch(() => {}), { once: true }));
   };
   pc.onicecandidate = (e) => { if (e.candidate) sendRtc(id, { ice: e.candidate }); };
+  // restartIce() does not send anything by itself — it raises negotiationneeded
+  // and waits for the application to offer. With no handler the flag was set and
+  // nothing ever went out, so an ICE restart would have been a silent no-op.
+  // renegotiate() is exactly the "offer if we can, queue if mid-flight" path
+  // this needs, so route the event there rather than writing a second one.
+  pc.addEventListener?.('negotiationneeded', () => { renegotiate(id); });
   pc.addEventListener?.('connectionstatechange', () => (window.__iceLog ??= []).push(`conn[${id}]=${pc.connectionState}`));
   pc.addEventListener?.('iceconnectionstatechange', () => (window.__iceLog ??= []).push(`icestate[${id}]=${pc.iceConnectionState}`));
   pc.onconnectionstatechange = () => {
-    if (['failed', 'closed', 'disconnected'].includes(pc.connectionState)) dropPeer(id);
+    const st = pc.connectionState;
+    // 🔴 'disconnected' IS NOT 'failed'. It means ICE consent checks stopped
+    // arriving — a wifi blip, a handover, a laptop lid — and it recovers on its
+    // own most of the time. MDN is explicit: "don't call close() on
+    // disconnected — you'd be discarding a connection that may well recover."
+    // We were tearing the peer down instantly, so a momentary blip permanently
+    // destroyed a working link and nothing rebuilt it: the peer is gone from the
+    // map, so no renegotiation can reach it, and the other end still holds a
+    // live connection to a peer that no longer exists. That is the one-way
+    // audio, and it explains why it survives mic toggles (the peer is not
+    // there to re-offer) and why a full restart FLIPS which side is deaf (only
+    // the restarted side rebuilds).
+    //
+    // Give it a grace period and try an ICE restart before giving up. Only
+    // 'failed' and 'closed' are terminal.
+    if (st === 'failed' || st === 'closed') { clearTimeout(p._discoTimer); dropPeer(id); return; }
+    if (st === 'connected') { clearTimeout(p._discoTimer); p._discoTimer = null; return; }
+    if (st === 'disconnected' && !p._discoTimer) {
+      p._discoTimer = setTimeout(() => {
+        p._discoTimer = null;
+        if (pc.connectionState !== 'disconnected') return;    // recovered on its own
+        // Still down after the grace window: ask ICE to find a new path rather
+        // than destroying the peer. restartIce() renegotiates in place, which
+        // keeps the transceivers — and therefore the agreed direction — intact.
+        try { pc.restartIce?.(); } catch (e) { report('voice ice restart', e); }
+      }, 6000);
+    }
   };
   return p;
 }
@@ -160,6 +231,11 @@ function peerFor(id) {
 function dropPeer(id) {
   const p = peers.get(id);
   if (!p) return;
+  // A pending disconnect timer outlives the peer it was watching unless it is
+  // cleared here — it would fire against a closed pc and try to restart ICE on
+  // a connection nobody holds.
+  clearTimeout(p._discoTimer);
+  p._discoTimer = null;
   peers.delete(id);
   try { p.pc.close(); } catch (e) { report('voice close', e); }
   p.audio.srcObject = null;
@@ -379,37 +455,100 @@ async function processSignal(p, from, payload) {
 
 export async function toggleMic(name) {
   myId = name ?? myId;
-  if (micStream) {
-    // SEND state only. Going quiet must not deafen you: listening is a
-    // separate permission (review catch — the old teardown dropped every
-    // peer, including inbound legs, which then had no trigger to re-offer
-    // until the next roster event, so muting yourself silently deafened you
-    // for an unbounded time). We remove OUR track from each peer and keep
-    // the connection alive; if we are not listening either, THEN the peer
-    // has no purpose and comes down.
-    for (const t of micStream.getTracks()) t.stop();
-    micStream = null;
+  if (micOn()) {
+    // GOING QUIET IS A DATA CHANGE, NOT A CONNECTION CHANGE (R, 2026-08-08).
+    //
+    // This used to stop() the track, removeTrack() it from every peer, and
+    // renegotiate — three destructive operations to express "don't transmit".
+    // Four of the six voice bugs fixed this week were in the renegotiation
+    // that followed, and stop() manufactures precisely the `audio:ended`
+    // sender state that the live one-way-audio blocker shows in the field.
+    // The identical intent was already implemented correctly ten lines below
+    // in toggleMute (track.enabled = false, zero renegotiation, zero bugs) —
+    // it simply had no callers, while the HUD button called this.
+    //
+    // So: disable the track. It stays live, the sender stays bound, the
+    // transceiver stays sendonly, the SDP does not change, and coming back is
+    // one assignment rather than getUserMedia + renegotiate. Muting cannot
+    // deafen you because no peer is touched at all.
+    for (const t of (_rawMic || micStream).getTracks()) t.enabled = false;
     stopOnsetWatch();
+    _micLive = false;                // the state the checkbox and HUD icon read
     muted = false;
-    for (const [id, p] of [...peers]) {
-      try {
-        for (const sender of p.pc.getSenders()) if (sender.track) p.pc.removeTrack(sender);
-      } catch (e) { report('voice untrack', e); }
-      if (!receivingVoice()) dropPeer(id);
-      else renegotiate(id);          // tell them our track is gone; keep theirs
-    }
+    driveGate(false);                // close the lane; never tear it down
     flashHint('🎙 off');
     bus.emit('voice', { on: false });
+      // 🔴 MIC OFF = TTS TAKES OVER, if it was left enabled (R, 2026-08-09).
+      // MIC BEATS TTS is a priority, not a toggle: the TTS setting stands while
+      // the mic wins, so the moment the mic drops the synth must actually be
+      // wired in — otherwise "drops back to TTS without touching anything" is
+      // just silence, and the user has no way to tell an armed voice from a
+      // broken one. Fixing only the mic-on direction would be exactly the
+      // asymmetric repair voicesource.js warns about two lines up from its own
+      // mix site.
+      import('./voicesource.js').then(async (vs) => {
+        if (!vs.isTtsEnabled?.() || !vs.canSynthesize?.()) return;
+        const m = await import('./micgate.js');
+        if (!m.isGated?.()) return;              // no lane; voiceSource handles it
+        vs.startPacer?.();
+        m.mixSynthTrack(vs.ensureGenerator());
+      }).catch(() => {});
     return false;
   }
-  try {
-    micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true },
-    });
-  } catch (e) {
-    report('microphone', e);
-    flashHint('microphone unavailable — check browser permission');
-    return false;
+  // Coming back. If we still hold the stream (the normal case now — mic-off
+  // only disables it) re-enabling IS the whole acquisition step: no
+  // getUserMedia, so no permission re-prompt and no new track object. Then we
+  // fall THROUGH to the same attach/renegotiate/court-peers path a fresh mic
+  // takes; returning early here skipped peer creation entirely, which the
+  // lifecycle suite caught at once (mic ON with no peer courted).
+  // 🔴 `micStream` DOES NOT MEAN "A DEVICE IS CAPTURING". After
+  // releaseMicrophone() it deliberately SURVIVES — the lane stays up so the mesh
+  // needs no renegotiation on the way back (R: "we just mute the lane", and
+  // recovering a torn-down audio path costs seconds). But its tracks are STOPPED
+  // and a stopped track cannot be revived. Branching on micStream alone sent the
+  // return-from-release path into the re-enable branch below, where it flipped
+  // `enabled` on dead tracks: getUserMedia was never called, no device was ever
+  // reacquired, and the mic silently never came back after any release.
+  //
+  // `_micReleased` is the variable that answers "is there a device behind this
+  // lane" — and it is ALREADY the discriminator twelve lines down, where
+  // attachSource decides whether to reuse the standing graph. Same question,
+  // same answer, both places.
+  if (micStream && !_micReleased) {
+    // 🔴 THE SAME TRACK THE OFF-PATH TOUCHED. micStream is the GATED output now,
+    // so re-enabling its track does nothing for the RAW device track that mic-off
+    // disabled — the mic came back once and was silent forever after (R,
+    // 2026-08-09: "it enables correctly only the first time. Once toggled again,
+    // it never comes back"). Asymmetric repair, in the one file that has a whole
+    // memory note about asymmetric repair. Both paths name (_rawMic || micStream)
+    // so they cannot drift apart again.
+    for (const t of (_rawMic || micStream).getTracks()) t.enabled = true;
+  } else {
+    try {
+      // WHERE THE VOICE COMES FROM is a property of this body, not a hardcoded
+      // device call: a human gets the microphone, an agent gets its own
+      // synthesizer, and everything downstream is identical either way. See
+      // voicesource.js — the alternative was a second WebRTC client holding
+      // the same identity, which produced 543 takeovers on 2026-08-08.
+      const rawMic = await voiceSource();
+      // GATE THE STREAM BEFORE WEBRTC EVER SEES IT. micStream becomes the GATED
+      // stream, so every existing path (addTrack, replaceTrack, the senders)
+      // carries gated audio with no further changes. The raw stream is kept for
+      // measurement and for mute.
+      _rawMic = rawMic;
+      // Reuse the EXISTING lane if one is standing: attachSource returns the
+      // same gated stream the senders already hold, so coming back from a
+      // release costs ZERO renegotiation. Only build a new graph when there is
+      // none — that rebuild is the "unmute lag while it sets it all up again"
+      // R described.
+      const reused = _micReleased ? attachSource(rawMic) : null;
+      micStream = reused || gateStream(rawMic, micAnalyserLevel);
+      _micReleased = false;
+    } catch (e) {
+      report('microphone', e);
+      flashHint('microphone unavailable — check browser permission');
+      return false;
+    }
   }
   // Attach FIRST, renegotiate second. applyDirection is where the track is
   // adopted, but renegotiate() bails on a peer that is not 'stable' — and a
@@ -425,6 +564,7 @@ export async function toggleMic(name) {
   // have-local-offer (Mica, #34). renegotiate() above already covers the
   // stable ones; this covers the strangers.
   for (const id of humanIds()) if (!peers.has(id)) offerTo(id);
+  _micLive = true;
   flashHint('🎙 live — speak, neighbors hear · <b>mute</b> in the dock');
   bus.emit('voice', { on: true });
   startOnsetWatch();
@@ -441,20 +581,171 @@ export async function toggleMic(name) {
 // must not land on the new one — answers carry no negotiation identity of
 // their own, so we supply it (Mica, #62 review).
 let _peerGen = 0;
-let _onsetTimer = null, _above = false, _lastOnset = 0;
+let _onsetTimer = null, _above = false, _lastOnset = 0, _openUntil = 0;
+// When this open began, and whether it has been announced — see onsetTick.
+let _openedAt = 0, _announced = false;
+// ADAPTIVE FLOOR. R, 2026-08-09 mid-call: "lol mic sensitivity still needs
+// work" — the 🎙 indicator fired on nothing and missed real speech.
+//
+// The old gate compared raw RMS to a FIXED 0.04. That cannot work across
+// machines: RMS scales with mic gain, distance and OS-level AGC, so 0.04 is
+// deafening on a headset and unreachable on a laptop array two feet away. One
+// constant against an unnormalised signal is the whole bug.
+//
+// So measure the ROOM and gate relative to it. `_noise` tracks the quiet level
+// with a slow one-sided follower — falls fast toward quiet, rises slowly — so a
+// long utterance cannot drag the floor up behind itself and gate you out
+// mid-sentence, while a fan switching on is absorbed within a few seconds.
+// Speech has to clear the noise by a MARGIN, which is what makes it work the
+// same in a silent room and a loud one.
+//
+// The slider still matters: it scales the margin (sensitivity), rather than
+// naming an absolute level nobody can reason about.
+let _noise = 0.01;
+let _settle = 0;
+// BasisVR's block tracker: 6 × 0.4s minima. See onsetTick.
+let _blocks = new Array(6).fill(Infinity), _blockIdx = 0, _blocksFilled = 0,
+    _blockMin = Infinity, _blockStart = 0;
 function onsetTick() {
-  const floor = micFloor();
   const level = micAnalyserLevel();
-  if (!_above && level >= floor) {
-    _above = true;
-    const now = Date.now();
-    if (now - _lastOnset > 1500) { _lastOnset = now; sendTyping(null, 'mic'); }
-  } else if (_above && level < floor * 0.6) _above = false;
+  // 🔴 DRIVE THE GATE BEFORE ANY EARLY RETURN. Both of the bails below (muted /
+  // silent, and the settle window) used to skip gateAudio() entirely — so the
+  // gain simply KEPT ITS LAST VALUE. If the gate happened to be open when you
+  // stopped talking into silence, or during the first second after unmuting, it
+  // stayed open and the monitor played straight through: R, twice, "hear myself
+  // isn't obeying the mic sensitivity". A control loop that skips its output
+  // stage is not a control loop.
+  if (level <= 0) { gateAudio(Date.now()); return; }   // muted: close, do not learn
+
+  // LEARN BEFORE JUDGING. The floor starts cold at 0.01, so in a loud room the
+  // first second reads as "way above the floor" and fires the 🎙 at the room
+  // itself — which is exactly what R saw: "it seemed like mic sensitivity was
+  // picking up a fair amount of background noise". Simulation put essentially
+  // every remaining false trigger in this window. Spend the first ~1s measuring
+  // only. Erring here is free: nobody speaks in the first tick after unmuting,
+  // and a missed onset costs an icon, not audio (audio always flows).
+  if (_settle < 8) {
+    _settle++;
+    const a0 = level < _noise ? 0.3 : 0.5;
+    _noise += (level - _noise) * a0;
+    gateAudio(Date.now());               // measuring, but still CLOSED — not frozen
+    return;
+  }
+
+  // NOISE FLOOR: minimum-of-block-minima, ported from BasisVR
+  // (BasisNoiseFloorTracker, MIT — R: "I'll bet money BasisVR already solved
+  // this"; she was right, and their design is better than the follower I
+  // hand-tuned). 6 blocks × 0.4s: take the quietest RMS in each block, then the
+  // quietest block. The floor therefore tracks the quietest moment in the last
+  // ~2.4s, so SPEECH CAN NEVER RAISE IT — structurally, not by tuning. My
+  // exponential follower could be dragged up by a long utterance and gate the
+  // speaker out mid-sentence; this cannot, and needed no rate constant at all.
+  const nowT = Date.now();
+  if (level < _blockMin) _blockMin = level;
+  if (nowT - _blockStart >= 400) {
+    _blockStart = nowT;
+    _blocks[_blockIdx] = _blockMin;
+    _blockIdx = (_blockIdx + 1) % 6;
+    if (_blocksFilled < 6) _blocksFilled++;
+    _blockMin = Infinity;
+  }
+  _noise = Math.max(1e-5, Math.min(_blockMin, ...(_blocks.slice(0, _blocksFilled))));
+
+  // THRESHOLD IS MULTIPLICATIVE, not additive — also theirs (AutoGateOverNoise
+  // = 2.5). This is the same lesson as "a fixed 0.04 cannot work across mics",
+  // one level up: an ADDITIVE margin is still an absolute number, so it is
+  // wrong at a different gain. `floor × k` scales with the signal and is the
+  // only form that behaves the same on a headset and a laptop array.
+  //
+  // The slider picks k over 1.6…5.0, with 2.5 (their default) mid-scale.
+  // FIXED THRESHOLD, Discord-style. The noise floor is still measured (it drives
+  // nothing now but is kept for the meter and for diagnosing "why did it not
+  // open"), but the GATE compares against an absolute dB level the user set.
+  // That is what makes the marker stay put while the level moves past it.
+  const on = gateThreshold();
+  const off = on * 0.7;                    // ~3 dB of hysteresis
+
+  const now = Date.now();
+  if (level >= on) {
+    _openUntil = now + 700;               // hang-time: see gateAudio()
+    if (!_above) { _above = true; _openedAt = now; _announced = false; }
+    // 🔴 THE PILL AND THE AUDIO MUST AGREE. R: "sometimes I can see the TTS voice
+    // threshold getting triggered (pill over the head) without hearing anything
+    // through hear-myself — these should have the exact same gate."
+    //
+    // They shared the threshold but not the OBSERVABLE. The pill fired the instant
+    // `_above` flipped; the audio rides an envelope, so a single-tick spike (a
+    // cough, a key) trips the flag and is nearly inaudible before the gate shuts.
+    // Announce only once the gate has been open long enough to have actually
+    // PASSED audio — one envelope's worth. The pill then means "the room heard
+    // something", which is what a pill over your head claims.
+    if (!_announced && now - _openedAt >= 60 && now - _lastOnset > 1500) {
+      _announced = true; _lastOnset = now; sendTyping(null, 'mic');
+    }
+  } else if (_above && level < off && now > _openUntil) _above = false;
+  gateAudio(now);
 }
+
+// 🔴 THE GATE MUST GATE THE AUDIO, NOT JUST THE ICON. R, 2026-08-09: "I would
+// DEFINITELY gate the mic sensitivity to cover the full audio channel so every
+// little background noise isn't broadcasted to the room. That's extra confusing
+// because we have no affordance to say when audio is getting broadcasted."
+//
+// She is right and I had this backwards: I spent an hour tuning this thing as an
+// INDICATOR problem, when the indicator was reporting truthfully — audio really
+// was always flowing. Your keyboard, your fan and your family went to the room
+// whenever the mic was open, and the only thing the threshold changed was a
+// glyph. A "sensitivity" control that does not control what anyone hears is
+// worse than none, because it reads as if it does.
+//
+// track.enabled is the right mechanism: universal (unlike
+// MediaStreamTrackGenerator, which is Chromium-only), synchronous, spec-mandated
+// to render silence, and already what mute uses — so this cannot fight it.
+//
+// HANG-TIME, not a hard cut. Speech is full of gaps: stops, breaths, the pause
+// before a clause. Closing the instant level drops chops words in half, so the
+// gate stays open 700ms past the last sound above threshold and only then
+// closes. Cost is 700ms of room tone after each utterance; the alternative is
+// being unintelligible.
+function gateAudio(now) {
+  if (!micStream || muted) { driveGate(false); return; }   // mute is authoritative
+  driveGate(_above || now <= _openUntil);
+}
+/** What the gate is actually doing right now — for the meter and for tuning.
+ *  Exposed because "why did it not trigger" is unanswerable from the outside:
+ *  the same RMS means different things in different rooms. */
+export const micGateInfo = () => ({
+  level: micAnalyserLevel(), noise: _noise,
+  // 🔴 ONE formula, not a copy. This drifted the moment the gate went
+  // multiplicative — it still carried the old additive margin, so the panel and
+  // the gate reported DIFFERENT thresholds. Derived from the same expression
+  // now; if the gate changes, this cannot silently disagree.
+  on: gateThreshold(),
+  // 🔴 THRESHOLD *PLUS HANG-TIME* — R: "turn the bar gold when it's streaming
+  // live audio over the threshold + hangtime". `_above` alone goes false the
+  // instant your level dips, but the gate is still open for another 700ms and
+  // the room is still hearing you. Reporting _above would make the bar flicker
+  // dark through every pause in a sentence while audio was flowing: an
+  // indicator that contradicts the thing it indicates.
+  speaking: _above || Date.now() <= _openUntil,
+});
 function startOnsetWatch() {
   if (_onsetTimer) return;
   _above = false;
-  _onsetTimer = setInterval(onsetTick, 120);
+  // Re-measure the room on every mic open. A floor learned in a quiet session
+  // would gate you out of a loud one — and worse, a floor learned while a fan
+  // was running stays high after it stops. Start low and let the follower rise;
+  // erring quiet costs a few false 🎙 in the first second, erring loud costs
+  // your first sentence.
+  _noise = 0.01;
+  _settle = 0;
+  _blocks = new Array(6).fill(Infinity); _blockIdx = 0; _blocksFilled = 0;
+  _blockMin = Infinity; _blockStart = Date.now();                            // re-learn the room, then judge
+  // 40ms, not 120: the tick interval is the WORST-CASE CLIP on the first
+  // syllable now that this gates audio. 120ms removes an audible chunk of a
+  // word's attack; 40ms is under the threshold where a missing onset is
+  // perceptible, and the work per tick is one FFT read.
+  _onsetTimer = setInterval(onsetTick, 20);
 }
 function stopOnsetWatch() {
   if (_onsetTimer) { clearInterval(_onsetTimer); _onsetTimer = null; }
@@ -463,10 +754,14 @@ function stopOnsetWatch() {
 
 // live mic level 0..1 for UI (the mic glyph's hot-glow) — analyser built
 // lazily on first ask, rebuilt if the stream changed
-let _an = null, _anStream = null, _anBuf = null;
+let _an = null, _anStream = null, _anBuf = null, _anCtx = null;
 export function micAnalyserLevel() {
+  // muted → 0 (nothing is being sent, and the gate must not learn a floor from
+  // a muted mic). But NOT gated → 0: the gate needs the true input level to
+  // decide when to reopen, which is the whole reason we measure the raw side.
   if (!micStream || muted) return 0;
-  if (!_an || _anStream !== micStream) {
+  const measured = _rawMic || micStream;
+  if (!_an || _anStream !== measured) {
     try {
       // ONE CONTEXT, REUSED. This made a NEW AudioContext every time the mic
       // stream changed and never closed the old one — and Chrome caps a
@@ -474,10 +769,10 @@ export function micAnalyserLevel() {
       // SILENTLY so. Toggle the mic a few times and whatever asks next gets a
       // dead one.
       const ctx = audioContext();
-      const src = ctx.createMediaStreamSource(micStream);
+      const src = ctx.createMediaStreamSource(measured);
       _an = ctx.createAnalyser(); _an.fftSize = 512;
       src.connect(_an);
-      _anStream = micStream;
+      _anStream = measured;
       _anBuf = new Float32Array(_an.fftSize);
     } catch { return 0; }
   }
@@ -487,13 +782,98 @@ export function micAnalyserLevel() {
   return Math.sqrt(s / _anBuf.length);
 }
 
+// Kept as the explicit verb for "go quiet without touching the mic button's
+// meaning" — it is now the SAME mechanism toggleMic uses (track.enabled), so
+// the two can no longer disagree. Before 2026-08-08 this was the correct
+// implementation with zero callers while the HUD used the destructive path.
 export function toggleMute() {
   if (!micStream) return false;
   muted = !muted;
-  for (const t of micStream.getTracks()) t.enabled = !muted;
+  // Unmuting hands control back to the NOISE GATE, it does not open the mic.
+  // Setting enabled=true here would broadcast whatever the room is doing until
+  // the next tick closed it again — a small leak, but exactly the one this gate
+  // exists to prevent. Muting still forces false immediately: mute must be
+  // instant and must never wait for a tick.
+  // Mute acts on the RAW device track, not the gated output: the gated stream's
+  // track is a graph destination, and disabling it would fight the gain node
+  // rather than replace it. Muting at the source is also the honest thing — the
+  // microphone genuinely stops contributing.
+  for (const t of (_rawMic || micStream).getTracks()) t.enabled = !muted;
+  if (!muted) { _above = false; _openUntil = 0; }   // gate decides from here
+  driveGate(false);                                  // and close it immediately
   flashHint(muted ? '🔇 muted' : '🎙 unmuted');
   bus.emit('voice', { on: true, muted });
   return muted;
+}
+
+/** Release the microphone device entirely — the OS/browser recording indicator
+ *  goes away. This is the ONLY path that stops tracks, and it is deliberately
+ *  not what the HUD mic button does: it costs a permission re-prompt and a
+ *  renegotiation to undo, so it is a privacy action, not a "go quiet" action. */
+export function releaseMicrophone() {
+  if (!micStream) return;
+  // 🔴 STOP THE DEVICE, NEVER THE GRAPH OUTPUT. Two separate rules meet here:
+  //
+  // (1) The raw device track MUST stop, or the OS recording indicator stays lit
+  //     while this function's whole promise is that it goes away. micStream is
+  //     now a graph destination, so stopping only that would leave the actual
+  //     microphone recording.
+  //
+  // (2) The GATED track must NOT stop. stop() is a one-way door (see the note in
+  //     ontrack above — the same mistake cost us a permanently-deaf peer), and a
+  //     MediaStreamDestination track cannot be restarted, so re-enabling the mic
+  //     would need a whole new graph and a renegotiation to hand the new track
+  //     to every peer. R, 2026-08-09: "we don't want to tear down audio tracks
+  //     at all unless someone leaves or unchecks the connect-to-audio box —
+  //     that's how we ran into people not hearing each other and unmute lag
+  //     while it sets it all up again. Now we just mute the lane."
+  //
+  // So: kill the device, leave the lane in place at zero gain. The senders keep
+  // a live track, no renegotiation is needed, and reacquiring the mic reconnects
+  // a new source into the SAME graph.
+  for (const t of (_rawMic || micStream).getTracks()) t.stop();
+  driveGate(false);              // lane stays up, gain to zero
+  detachSource();                // lane (GainNode + destination) SURVIVES
+  _rawMic = null;
+  // micStream KEEPS naming the gated stream. Its track is still live and still
+  // held by every sender, so the mesh needs no renegotiation when the mic comes
+  // back — that rebuild is exactly the "unmute lag while it sets it all up
+  // again" R described. Audibility is decided by `muted` and the gate; this
+  // variable only means "a lane exists".
+  // 🔴 THE DEVICE IS GONE, SO SAY SO. micOn() is `micStream && _micLive &&
+  // !muted`, and micStream deliberately SURVIVES here (the lane stays up so the
+  // mesh needs no renegotiation). That makes _micLive the only variable left
+  // that can express "no device is capturing" — and without this line it stayed
+  // true, so micOn() reported an open mic after a release. toggleMic() then took
+  // its already-on branch and muted a lane with nothing behind it instead of
+  // reacquiring the device: the mic button silently stopped working after any
+  // release, and getUserMedia was never called again.
+  //
+  // This is a STATE correction, not a teardown. Nothing is stopped here that
+  // wasn't already stopped four lines up; the graph, the senders and the track
+  // all stay exactly where they are.
+  _micLive = false;
+  _micReleased = true;
+  muted = false;
+  stopOnsetWatch();
+  for (const [id, p] of [...peers]) {
+    try {
+      for (const sender of p.pc.getSenders()) if (sender.track) p.pc.removeTrack(sender);
+    } catch (e) { report('voice untrack', e); }
+    // 🔴 DO NOT DESTROY THE PEER. This used to dropPeer() when receive was off —
+    // the same mistake as tearing down on 'disconnected', with a different
+    // trigger: we close the connection, the FAR END keeps a live pc to a peer
+    // that no longer exists, and neither side can recover. Ours cannot rebuild
+    // (both rebuild paths need a mic we just released); theirs will not, because
+    // they still hold us in `peers` so their reconciler skips us.
+    //
+    // Wanting neither to send nor receive is a DIRECTION ('inactive'), not a
+    // reason to hang up. renegotiate() carries that, the mesh stays warm, and
+    // consenting again is a renegotiation instead of a rebuild.
+    renegotiate(id);
+  }
+  flashHint('🎙 released');
+  bus.emit('voice', { on: false });
 }
 
 export function initVoice(name) {
@@ -532,8 +912,11 @@ export function initVoice(name) {
   // review). A live mic re-offers on the roster event that follows.
   bus.on('participant-teardown', (id) => dropPeer(id));
   bus.on('roster', () => {
-    // arrivals get an offer while we're live; departures get torn down
-    if (micStream) for (const id of humanIds()) if (!peers.has(id)) offerTo(id);
+    // Arrivals get an offer while we're LIVE; departures get torn down.
+    // micOn(), not micStream: since mic-off keeps the stream and only disables
+    // the track, `micStream` is truthy while muted and would court strangers we
+    // have nothing to say to. Transmitting is the condition that matters.
+    if (micOn()) for (const id of humanIds()) if (!peers.has(id)) offerTo(id);
     for (const id of [...peers.keys()]) if (!remotes.has(id)) dropPeer(id);
   });
   // Two clocks on purpose. Distance is a slow fact — 300ms is plenty and
@@ -554,6 +937,58 @@ export function initVoice(name) {
       // human voice you had stopped attending to. (Field report from a live
       // desk test: a teardown-on-toggle cut the utterance mid-word.)
       p.wantVolume = isHushed() ? 0 : roll * volumeFor('voices');
+    }
+
+    // ── RECONCILE: the roster is the truth, the peer map is a cache ──────────
+    // 🔴 A REPAIR ONLY ONE ROLE CAN TRIGGER IS NOT A REPAIR. Both rebuild sites
+    // (mic-on, and the recvReady flip) require micStream — so a listener who
+    // joined MUTED, which is the default, could never rebuild a peer that
+    // vanished. That is the same asymmetry class as the disconnected/dropPeer
+    // bug: the two ends permanently disagree about whether a connection exists,
+    // and only one of them is able to do anything about it.
+    //
+    // This runs for everyone, mic or no mic. Someone in the roster with no peer
+    // is a hole; offerTo() builds a recvonly connection when we have no mic,
+    // which is exactly what a listener wants.
+    //
+    // Cheap by construction: it is a set difference over a handful of ids on a
+    // loop that already walks the peers, and offerTo() is a no-op once the peer
+    // exists. Deliberately NOT dropping peers absent from the roster — a peer
+    // missing from a momentarily-stale roster must not be torn down, which is
+    // the mistake this whole file is recovering from.
+    for (const id of humanIds()) {
+      if (peers.has(id)) continue;
+      // Only offer to ids that outrank us, or we and a peer who is ALSO
+      // reconciling both offer at once and manufacture glare every 300ms.
+      // The lower id offers; the higher waits to be offered to.
+      if ((myId ?? '') < id) offerTo(id);
+    }
+
+    // ── THE TIMEOUT THAT WAS NOT THERE ───────────────────────────────────────
+    // 🔴 `_offeredAt` was WRITTEN twice and READ nowhere; GLARE_GRACE_MS was
+    // declared and never used. Both are fossils of a stale-offer timeout that
+    // got removed when the glare test moved to `_everStable` — and nothing
+    // replaced the recovery it provided.
+    //
+    // So an offer that is simply never answered wedges FOREVER. Every existing
+    // heal path is reactive: they notice have-local-offer when something else
+    // arrives. If their tab was backgrounded, the sequencer dropped the
+    // point-to-point message, or they reloaded mid-exchange, nothing arrives —
+    // renegotiate() bails on non-stable, and the reconciler above skips us
+    // because peers.has(id) is true. The peer exists and is permanently deaf.
+    //
+    // A generous timeout: a real answer comes back in well under a second, so
+    // 12s is far past any legitimate round trip and only catches the dead.
+    for (const [id, p] of peers) {
+      if (p.pc.signalingState !== 'have-local-offer' || !p._offeredAt) continue;
+      if (Date.now() - p._offeredAt < 12000) continue;
+      p._offeredAt = null;
+      // Roll back to stable and re-offer rather than dropping the peer: the far
+      // end may be perfectly healthy and merely never have received our SDP.
+      // Tearing down here would be the disconnected/dropPeer mistake again.
+      p.pc.setLocalDescription({ type: 'rollback' })
+        .then(() => offerTo(id))
+        .catch((e) => report('voice stale offer', e));
     }
   }, 300);
   // LINEAR, not exponential. An exponential approach spends most of its life
@@ -652,3 +1087,156 @@ export function peerLevels() {
   }
   return out;
 }
+
+/** Sender-side truth for probes: what track, if any, each peer is actually
+ *  sending — id, readyState and enabled. Pair it with genTrackInfo() to answer
+ *  "am I feeding the track I am sending?", which no local success check can. */
+// A REBUILT SOURCE MUST REACH THE SENDERS. When the synthesizer's generator
+// dies and is re-made, the new track is a different object; every sender still
+// holds the dead one and transmits silence forever while ICE and direction look
+// perfectly healthy — indistinguishable from the audio:ended blocker seen in
+// the field. replaceTrack needs no renegotiation, so the repair is cheap and
+// safe in any signaling state.
+setGeneratorRebuildHook((track) => {
+  if (!micStream) return;
+  // Keep the local stream in step where it CAN be — a synthetic or stubbed
+  // source is not always a real MediaStream (the suite caught this hook
+  // throwing on removeTrack, inside the very recovery it exists to perform).
+  // Re-binding the senders is the part that matters; stream bookkeeping is not
+  // worth failing the repair for.
+  try {
+    if (typeof micStream.removeTrack === 'function' && typeof micStream.addTrack === 'function') {
+      for (const t of micStream.getTracks()) if (t !== track) micStream.removeTrack(t);
+      if (!micStream.getTracks().includes(track)) micStream.addTrack(track);
+    }
+  } catch (e) { report('voice stream rebind', e); }
+  for (const p of peers.values()) {
+    for (const s of p.pc.getSenders()) {
+      if (s.track && s.track.kind !== 'audio') continue;
+      s.replaceTrack(track).catch((e) => report('voice track rebind', e));
+    }
+  }
+});
+
+export function senderTrackInfo() {
+  const out = [];
+  for (const [id, p] of peers) {
+    for (const s of p.pc.getSenders()) {
+      if (s.track?.kind && s.track.kind !== 'audio') continue;
+      out.push({ peer: id, track: s.track
+        ? { id: s.track.id, readyState: s.track.readyState, enabled: s.track.enabled } : null });
+    }
+  }
+  return { micOn: micOn(), hasStream: !!micStream,
+    localTracks: micStream ? micStream.getTracks().map((t) => ({ id: t.id, readyState: t.readyState, enabled: t.enabled })) : [],
+    senders: out };
+}
+
+
+// ONE-WAY AUDIO IS A DIRECTION QUESTION, AND NOTHING ELSE COULD ANSWER IT.
+// R, 2026-08-09: Digi could hear her and she could not hear Digi; a full Chrome
+// restart FLIPPED which side was deaf. That flip is the whole diagnosis — a
+// symptom that swaps with join order lives in negotiation, not in the mic. But
+// every check we had (mic on? track live? peer connected?) reports fine on BOTH
+// sides of a one-way link, because each end is individually healthy.
+//
+// What is NOT observable without this: `direction` is the local preference and
+// `currentDirection` is what the WIRE actually agreed. They can disagree — that
+// is precisely what a direction set outside a renegotiation looks like — and
+// only currentDirection explains silence. Also dumps whether our sender has a
+// live track and whether the inbound track is enabled, since a track silenced by
+// a receive-toggle stays enabled=false forever and produces the same symptom.
+//
+// Paste voiceDiag() from both browsers; the asymmetry names the culprit.
+export function voiceDiag() {
+  const out = [];
+  for (const [id, p] of peers.entries()) {
+    const tx = [], rx = [];
+    for (const t of p.pc.getTransceivers?.() ?? []) {
+      const kind = t.receiver?.track?.kind || t.sender?.track?.kind;
+      if (kind && kind !== 'audio') continue;
+      tx.push(`want=${t.direction} wire=${t.currentDirection ?? '—'}`);
+      const st = t.sender?.track, rt = t.receiver?.track;
+      rx.push(`send:${st ? `${st.readyState}/${st.enabled ? 'on' : 'OFF'}` : 'none'}`
+        + ` recv:${rt ? `${rt.readyState}/${rt.enabled ? 'on' : 'OFF'}` : 'none'}`);
+    }
+    out.push({
+      peer: id,
+      signaling: p.pc.signalingState,
+      conn: p.pc.connectionState,
+      ice: p.pc.iceConnectionState,
+      everStable: !!p._everStable,
+      transceivers: tx,
+      tracks: rx,
+    });
+  }
+  return { me: myId, mic: micStream ? 'open' : 'CLOSED',
+    wantDirection: wantDirection(), peers: out };
+}
+/** WHY IS MY MIC NOT LIVE — the one question voiceDiag() cannot answer, because
+ *  a mic that silently became a synth generator looks identical to a healthy one
+ *  from every angle we had. R, 2026-08-09: "sometimes I toggle the mic and it
+ *  seems to be live and sometimes not, and it's just silently failing."
+ *
+ *  The decisive fact is WHAT KIND OF TRACK we are sending. A real microphone
+ *  track has a deviceId and a label from the OS; a MediaStreamTrackGenerator has
+ *  neither. Nothing else distinguishes them — same kind, same readyState, same
+ *  enabled. */
+/** Is there a microphone at all?
+ *
+ *  R, 2026-08-09: "maybe if there isn't a live mic detected, it can't be turned
+ *  on?" — which dissolves the objection I had to mic-beats-TTS. My worry was an
+ *  agent silently muted by a mic it never asked for; an agent has no capture
+ *  device, so with this guard the mic cannot be on and the case stops existing.
+ *
+ *  enumerateDevices() works BEFORE permission is granted: labels come back empty
+ *  until the user consents, but the entries are there, so presence can be
+ *  checked without prompting. Deliberately fails OPEN — if enumeration throws or
+ *  the API is missing we return true and let getUserMedia be the real gate,
+ *  because refusing a mic that exists is worse than offering one that does not.
+ */
+export async function hasMicDevice() {
+  try {
+    const devs = await navigator.mediaDevices?.enumerateDevices?.();
+    if (!devs) return true;
+    return devs.some((d) => d.kind === 'audioinput');
+  } catch { return true; }
+}
+
+export function micDiag() {
+  const raw = _rawMic?.getAudioTracks?.()[0] || null;
+  const sent = micStream?.getAudioTracks?.()[0] || null;
+  const settings = (t) => { try { return t?.getSettings?.() || {}; } catch { return {}; } };
+  const kindOf = (t) => {
+    if (!t) return 'none';
+    const s = settings(t);
+    // A real device reports a deviceId; a generator or a graph destination does not.
+    if (s.deviceId) return `microphone (${t.label || 'unnamed'})`;
+    return t.label ? `synthetic (${t.label})` : 'synthetic/graph output';
+  };
+  return {
+    micLive: micOn(), muted, gateOpen: gateOpenness() > 0.05,
+    rawSource: kindOf(raw),
+    sentToPeers: kindOf(sent),
+    rawEnabled: raw ? raw.enabled : null,
+    sentEnabled: sent ? sent.enabled : null,
+    // The tell: if these disagree about being a microphone, the mic silently
+    // became something else.
+    verdict: !raw ? 'NO DEVICE — nothing was ever opened'
+      : !sent ? 'no track being sent'
+      : /microphone/.test(kindOf(raw)) ? 'ok: a real microphone is the source'
+      : 'BROKEN: the source is not a microphone',
+  };
+}
+if (typeof window !== 'undefined') window.micDiag = micDiag;
+if (typeof window !== 'undefined') window.voiceDiag = voiceDiag;
+
+
+// Self-monitoring: hear your own GATED lane, exactly as the room hears it.
+// Exposed from voice.js so the panel has one import for everything voice-shaped,
+// and so a monitor can never outlive the mic it is monitoring.
+export function setSelfMonitor(on) {
+  if (on && !micStream) return false;     // nothing to monitor yet
+  return setMonitor(on);
+}
+export const selfMonitoring = () => monitoring();
