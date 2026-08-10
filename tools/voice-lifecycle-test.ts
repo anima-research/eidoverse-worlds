@@ -1278,5 +1278,36 @@ check("unhush rejoins the SAME peer at full volume",
   ax.__resetForTest();          // later blocks get a working context again
 }
 
+
+// ── a FAILED lane reaches back (field, 2026-08-10) ───────────────────────────
+// ICE 'failed' dropped the peer and nothing re-offered until a roster event —
+// which a mid-session death never produces. One-way audio until manual reload.
+// Contract: failed → drop → ONE immediate fresh offer while the neighbor is
+// still in the roster. 'closed' stays terminal. FAILS on pre-fix main.
+{
+  stubs.remotes.set("cellular-peer", { agent: false });
+  bus.emit("roster");
+  await settle();
+  const pcF = created.at(-1)!;
+  const nBefore = created.length;
+  pcF.connectionState = "failed";
+  (pcF.onconnectionstatechange as () => void)?.();
+  await settle(); await settle();
+  check("failed lane: a fresh offer goes out for the same id",
+        created.length > nBefore, `${created.length - nBefore} new pc(s)`);
+  const pcG = created.at(-1)!;
+  check("failed lane: the replacement is a different pc that actually offered",
+        pcG !== pcF && (pcG.offers ?? 0) >= 1,
+        `same=${pcG === pcF} offers=${pcG.offers}`);
+  // closed is deliberate teardown — must NOT resurrect
+  const nBefore2 = created.length;
+  pcG.connectionState = "closed";
+  (pcG.onconnectionstatechange as () => void)?.();
+  await settle(); await settle();
+  check("closed lane: stays down (no zombie re-offer)", created.length === nBefore2,
+        `${created.length - nBefore2} unexpected pc(s)`);
+  stubs.remotes.delete("cellular-peer");
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

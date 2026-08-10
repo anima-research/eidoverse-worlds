@@ -232,7 +232,19 @@ function peerFor(id) {
     //
     // Give it a grace period and try an ICE restart before giving up. Only
     // 'failed' and 'closed' are terminal.
-    if (st === 'failed' || st === 'closed') { clearTimeout(p._discoTimer); dropPeer(id); return; }
+    if (st === 'failed' || st === 'closed') {
+      clearTimeout(p._discoTimer); dropPeer(id);
+      // Field, 2026-08-10 (voicetest, cellular×2): dropping on 'failed' left the
+      // id with NO peer and nothing re-offered — roster rescans run only on
+      // roster events, which a mid-session ICE death does not produce. The
+      // neighbor is still here; the lane just died. Reach again immediately,
+      // exactly once — if that offer's ICE fails too, the next 'failed' lands
+      // back here, so persistent unreachability retries at ICE cadence rather
+      // than looping hot. 'closed' stays terminal: WE closed that peer on
+      // purpose (leave, replacement), and re-offering would resurrect it.
+      if (st === 'failed' && remotes.has(id) && !remotes.get(id)?.agent) offerTo(id);
+      return;
+    }
     if (st === 'connected') { clearTimeout(p._discoTimer); p._discoTimer = null; return; }
     if (st === 'disconnected' && !p._discoTimer) {
       p._discoTimer = setTimeout(() => {
