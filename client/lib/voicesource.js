@@ -452,7 +452,13 @@ export async function voiceSource() {
     if (isTtsEnabled() && canSynthesize()) {
       const track = ensureGenerator();
       startPacer();
-      return new MediaStream([track]);
+      const ms = new MediaStream([track]);
+      // Mark it: this is a SYNTHETIC source, not a device. The caller must not
+      // wrap it in the WebAudio gate — a synth has no room noise to gate, and
+      // the gate graph hangs off an AudioContext whose clock is DEAD in every
+      // headless body (field-measured 2026-08-10: 'running', +0.000s/2s).
+      ms.synthetic = true;
+      return ms;
     }
     throw e;
   }

@@ -541,8 +541,12 @@ export async function toggleMic(name) {
       // release costs ZERO renegotiation. Only build a new graph when there is
       // none — that rebuild is the "unmute lag while it sets it all up again"
       // R described.
-      const reused = _micReleased ? attachSource(rawMic) : null;
-      micStream = reused || gateStream(rawMic, micAnalyserLevel);
+      // A SYNTHETIC source bypasses the gate outright: no room noise to gate,
+      // and the gate's WebAudio graph cannot even carry it on a stalled clock
+      // (headless). The generator track goes on the senders as-is — frames as
+      // data, paced by the wall clock, exactly as designed.
+      const reused = rawMic.synthetic ? null : (_micReleased ? attachSource(rawMic) : null);
+      micStream = rawMic.synthetic ? rawMic : (reused || gateStream(rawMic, micAnalyserLevel));
       _micReleased = false;
     } catch (e) {
       report('microphone', e);
