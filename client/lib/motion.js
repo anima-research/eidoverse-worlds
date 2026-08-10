@@ -34,94 +34,18 @@ import { THREE } from './core.js';
 import { entities, comps, findPart } from './world.js';
 import { reindexCollider } from './colliders.js';
 import { serverNow } from './remotes.js';
+// The closed forms themselves live in motioneval.js — a dependency-free
+// module shared verbatim with the agent's text-tier perception (#82), the
+// same arrangement forecast.js has. The generous reader (axis synonyms,
+// `amplitude`, missing t0) lives there too; this file is what remains:
+// applying evaluated transforms to THREE objects, and the part-frame
+// machinery only a renderer with a loaded model can have.
+import { evalWholeMotion, evalPath, axisOf, ampOf, since, pendulumTheta } from './motioneval.js';
 
-const UP = new THREE.Vector3(0, 1, 0);
 const _q = new THREE.Quaternion();
-const _qy = new THREE.Quaternion();
 const _ax = new THREE.Vector3();
 const _pv = new THREE.Vector3();
 const _rp = new THREE.Vector3();
-
-// ---- the generous reader ----------------------------------------------------
-// Text-tier authors improvise dialect: `amplitude` for amp, `axis: "x"` for
-// [1,0,0], no t0 at all. The fold is blind by doctrine, so nothing upstream
-// corrects them — and a strict evaluator turns every synonym into a world
-// that silently refuses to move. (Fable's first line of world-script — a
-// pendulum on the commons swing — stood perfectly still THREE separate ways:
-// `amplitude` read as amp 0, axis "x" spread into NaN, missing t0 frozen at
-// phase 0. No error anywhere, because every layer was being strict and
-// nothing was wrong enough to say so.) The closed form stays exact; the
-// PARSING is where generosity lives.
-const AXES = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1],
-  '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] };
-const axisOf = (m, def) => {
-  const a = m.axis;
-  if (Array.isArray(a) && a.length === 3) return a;
-  if (typeof a === 'string' && AXES[a.toLowerCase()]) return AXES[a.toLowerCase()];
-  return def;
-};
-const ampOf = (m, def = 0) => {
-  const v = Number(m.amp ?? m.amplitude ?? def);
-  return Number.isFinite(v) ? v : def;
-};
-
-/** Seconds since the motion's epoch. Log timestamps are sequencer clock, so
- *  all clients agree on phase to within their own clock skew. A motion with
- *  NO t0 anchors to when this client first evaluated it — clients disagree
- *  on phase, but the thing MOVES, which beats frozen honesty. (New entries
- *  get a real t0 stamped at fold; this is the fallback for old logs.) */
-const since = (m, nowMs) => Math.max(0, (nowMs - (m.t0 ?? (m._t0 ??= nowMs))) / 1000);
-
-/** ⚠ MIRRORS pendulumImpulse math in server/server.ts — keep in sync, or a
- *  joiner's swing disagrees with the one being pushed.
- *  Missing damp = 0 = swings FOREVER. Friction is opt-in: a declared
- *  pendulum is ambient decoration, and a default 0.06 meant every
- *  undamped swing quietly died within a minute or two of being cast —
- *  working exactly long enough for its author to walk away happy. */
-function pendulumTheta(m, t) {
-  const w0 = (2 * Math.PI) / (m.period ?? 3.5);
-  return ampOf(m) * Math.exp(-(m.damp ?? 0) * t) * Math.cos(w0 * t + (m.phase ?? 0));
-}
-
-/** Rotate obj by `theta` about local `axis` at local point `pivot`, composed
- *  on the base pose. The pendulum/spin workhorse. */
-function rotateAtPivot(obj, base, axis, pivot, theta) {
-  _ax.set(...(axis ?? [0, 1, 0])).normalize();
-  _q.setFromAxisAngle(_ax, theta);
-  _qy.setFromAxisAngle(UP, base.yaw ?? 0);
-  obj.quaternion.copy(_qy).multiply(_q);
-  _pv.set(...(pivot ?? [0, 0, 0]));
-  _rp.copy(_pv).applyQuaternion(_q);          // pivot after rotation
-  _pv.sub(_rp).applyQuaternion(_qy);          // shift that keeps the pivot fixed
-  obj.position.set(...base.pos).add(_pv);
-}
-
-function evalPath(m, t, obj, base) {
-  const pts = m.points;
-  if (!Array.isArray(pts) || pts.length < 2) return;
-  // cumulative arc lengths, cached on the component object itself
-  if (!m._len) {
-    m._len = [0];
-    for (let i = 1; i < pts.length; i++) {
-      const [ax, ay, az] = pts[i - 1]; const [bx, by, bz] = pts[i];
-      m._len.push(m._len[i - 1] + Math.hypot(bx - ax, by - ay, bz - az));
-    }
-  }
-  const total = m._len[m._len.length - 1] || 1;
-  const speed = m.speed ?? (m.duration ? total / m.duration : 1);
-  let s = speed * t;
-  const loop = m.loop ?? 'loop';
-  if (loop === 'loop') s %= total;
-  else if (loop === 'pingpong') { s %= 2 * total; if (s > total) s = 2 * total - s; }
-  else s = Math.min(s, total);                 // 'once': arrive and stay
-  let i = 1;
-  while (i < m._len.length - 1 && m._len[i] < s) i++;
-  const seg = m._len[i] - m._len[i - 1] || 1;
-  const f = (s - m._len[i - 1]) / seg;
-  const [ax, ay, az] = pts[i - 1]; const [bx, by, bz] = pts[i];
-  obj.position.set(ax + (bx - ax) * f, ay + (by - ay) * f, az + (bz - az) * f);
-  if (m.face !== false) obj.rotation.set(0, Math.atan2(bx - ax, bz - az), 0);
-}
 
 // Colliders re-index at a walk, not at frame rate — a moving thing's collider
 // trails it by up to half a second, which is invisible next to the cost of
@@ -175,9 +99,13 @@ function evalPart(m, t, obj, pbase) {
       if (m.face !== false) obj.rotation.set(0, a + Math.PI / 2, 0);
       return true;
     }
-    case 'path':
-      evalPath(m, t, obj, { pos: pbase.pos });
+    case 'path': {
+      const r = evalPath(m, t, { pos: pbase.pos, yaw: 0 });
+      if (!r.ok) return false;   // malformed path: the part rests, like an unknown type
+      obj.position.set(...r.pos);
+      if (r.rot) obj.rotation.set(0, r.yaw, 0);
       return true;
+    }
     default:
       return false;   // unknown type: the part rests here, moves for newer clients
   }
@@ -226,39 +154,20 @@ export function tickMotion() {
       } else {
         const base = obj.userData.base
           ?? (obj.userData.base = { pos: obj.position.toArray(), yaw: obj.rotation.y });
-        switch (m.type) {
-          case 'pendulum':
-            rotateAtPivot(obj, base, axisOf(m, [1, 0, 0]), m.pivot ?? [0, 2, 0], pendulumTheta(m, t));
-            break;
-          case 'spin': {
-            const rate = m.degPerSec != null ? m.degPerSec : (m.rpm ?? 6) * 6;   // rpm → deg/s
-            rotateAtPivot(obj, base, axisOf(m, [0, 1, 0]), m.pivot ?? [0, 0, 0],
-              (m.phase ?? 0) + (rate * Math.PI / 180) * t);
-            break;
-          }
-          case 'orbit': {
-            const c = m.center ?? base.pos;
-            const r = m.radius ?? 3;
-            const a = (m.phase ?? 0) + ((m.degPerSec ?? 12) * Math.PI / 180) * t;
-            obj.position.set(c[0] + r * Math.sin(a), (c[1] ?? base.pos[1]), c[2] + r * Math.cos(a));
-            if (m.face !== false) obj.rotation.set(0, a + Math.PI / 2, 0);
-            break;
-          }
-          case 'bob': {
-            const off = Math.sin((2 * Math.PI / (m.period ?? 4)) * t + (m.phase ?? 0)) * ampOf(m, 0.3);
-            _ax.set(...axisOf(m, [0, 1, 0])).normalize();
-            obj.position.set(...base.pos).addScaledVector(_ax, off);
-            break;
-          }
-          case 'path':
-            evalPath(m, t, obj, base);
-            break;
-          default:
-            // A motion type this client doesn't know: the thing stands still
-            // here and moves for newer clients. Forward-compatible, never an
-            // error.
-            continue;
+        // The shared evaluator (motioneval.js) is the single source of the
+        // closed forms — the agent's look() runs the SAME call, which is the
+        // whole point (#82). This side just applies the result to the object.
+        const r = evalWholeMotion(base, m, nowMs);
+        if (!r.ok) {
+          // A motion this evaluator won't vouch for (unknown type, malformed
+          // path): the thing stands still here and moves for newer clients.
+          // Forward-compatible, never an error.
+          continue;
         }
+        obj.position.set(...r.pos);
+        // rot:false = this motion leaves authored rotation alone (bob;
+        // face:false orbit/path) — matching the old per-case behavior.
+        if (r.rot) obj.quaternion.set(...r.quat);
       }
       const li = lastIndexed.get(id) ?? 0;
       if (nowMs - li > 500) { lastIndexed.set(id, nowMs); reindexCollider(id); }
