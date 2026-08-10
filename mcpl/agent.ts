@@ -18,6 +18,7 @@ import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hour
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
 import { describeParticles, emitterTransition, transitionLine } from "../client/lib/particles.js";
+import { effectiveWorldTransform, type Effective } from "./effective.ts";
 
 (globalThis as any).THREE = Object.assign({}, THREE_W, TSL);
 
@@ -96,7 +97,10 @@ function stateToEntries(state: any, skipChatFromSeq = Infinity): any[] {
   // princess stood, her session had no idea she was mounted, antra kept
   // seeing her seated on the crate)
   for (const [rid, m] of Object.entries<any>(state.mounts ?? {})) {
-    add("mount", { id: rid, to: m.to, ...(m.slot ? { slot: m.slot } : {}) }, rid);
+    // full wire shape, like entity parents above — a folded mount that loses
+    // its offset/yaw overrides composes to the wrong seat (#82)
+    add("mount", { id: rid, to: m.to, ...(m.slot ? { slot: m.slot } : {}),
+      ...(m.offset ? { offset: m.offset } : {}), ...(m.yaw != null ? { yaw: m.yaw } : {}) }, rid);
   }
   for (const m of state.recentChat ?? []) {
     if ((m.seq ?? -1) >= skipChatFromSeq) continue;   // the tail will bring these
@@ -176,7 +180,10 @@ export class WorldAgent {
   private walkDone: ((arrived: boolean) => void) | null = null;
   entities = new Map<string, Entity>();
   /** who/what rides what: mount verbs, keyed by the rider (body or thing) */
-  mounts = new Map<string, { to: string; slot?: string }>();
+  /** Every mount's full wire shape — offset/yaw OVERRIDE socket defaults in
+   *  the world transform (#82), so dropping them here made the composed
+   *  position disagree with every renderer. */
+  mounts = new Map<string, { to: string; slot?: string; offset?: number[]; yaw?: number }>();
   people = new Map<string, Person>();
   inbox: InboxItem[] = [];
   private inboxCursor = 0;
@@ -729,7 +736,12 @@ export class WorldAgent {
         // Replay reconstructs the state above and stops there: a fire that was
         // lit last week is in look(), not in your ears (#25).
         if (args.type === "particles" && live) {
-          this.noteEmitter(actor, String(args.id), before, args.data ?? null, e.pos, ts);
+          // proximity-gate on where the emitter's owner ACTUALLY is — a
+          // carried lantern is judged at the carrier, not at its pre-mount
+          // spot (#82); stale pos stays as the fallback when the chain
+          // cannot compose, which matches the old behavior exactly
+          const fx = this.eff(String(args.id), Date.now());
+          this.noteEmitter(actor, String(args.id), before, args.data ?? null, fx.ok ? fx.pos : e.pos, ts);
         }
         // a motion arriving or leaving changes whether this thing may hold a
         // body up (see hasActiveMotion)
@@ -744,7 +756,12 @@ export class WorldAgent {
         this.trackSupport(this.syncSupport(args.id));   // starts moving = stops supporting, and back
       }
     } else if (verb === "mount") {
-      this.mounts.set(args.id, { to: args.to, slot: args.slot });
+      // offset/yaw are kept RAW: effective.ts refuses non-finite values with
+      // a named link rather than silently substituting the socket default —
+      // a substitution would disagree with what the browser renders.
+      this.mounts.set(args.id, { to: args.to, slot: args.slot,
+        ...(args.offset != null ? { offset: args.offset } : {}),
+        ...(args.yaw != null ? { yaw: args.yaw } : {}) });
       // Cargo rides its parent, so its own support goes stale the instant the
       // parent moves — world.js drops the collider here for exactly that
       // reason and lets the pair collide as the parent. Entities only: a
@@ -1517,10 +1534,29 @@ export class WorldAgent {
     return dirs[Math.round(((a + Math.PI * 2) % (Math.PI * 2)) / (Math.PI / 4)) % 8];
   }
 
-  look(): string {
+  /** Where a thing ACTUALLY is right now: the mount chain and any whole-
+   *  entity motion, composed at read time by effective.ts with the same
+   *  closed forms the renderer runs. Every numeric spatial claim in
+   *  perception goes through this — reading `e.pos` directly is how mounted
+   *  cargo was reported 11m from its carrier (#82). */
+  private eff(id: string, nowMs: number): Effective {
+    return effectiveWorldTransform(id, {
+      entity: (eid) => this.entities.get(eid),
+      mount: (eid) => this.mounts.get(eid),
+    }, nowMs);
+  }
+
+  look(nowMs = Date.now()): string {
     const L: string[] = [];
-    const me = this.pos;
-    L.push(`You are "${this.name}" in world "${this.world}" at (${me.x.toFixed(1)}, ${me.z.toFixed(1)}), ground height ${me.y.toFixed(2)}m, facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}.`);
+    // The agent's own seat rides its parent too: seated on a moving ferry,
+    // every distance below is measured from where the body actually is.
+    // this.pos itself stays the controller's (dismount restores it) — the
+    // composition is a READ, here and nowhere else.
+    const selfRide = this.mounts.get(this.name);
+    const selfEff = selfRide ? this.eff(this.name, nowMs) : null;
+    const me = selfEff?.ok ? { x: selfEff.pos[0], y: selfEff.pos[1], z: selfEff.pos[2] } : this.pos;
+    const seated = selfRide ? `, seated on ${selfRide.to}${selfEff?.ok && selfEff.moving ? ` (riding its ${selfEff.moving})` : ""}` : "";
+    L.push(`You are "${this.name}" in world "${this.world}" at (${me.x.toFixed(1)}, ${me.z.toFixed(1)}), ground height ${me.y.toFixed(2)}m, facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}.`);
     // Structured object, NEVER a bare string: consumers of look() were
     // reading {hours, azimuth, clouds, ts, …} long before the forecast
     // existed, and a type change here silently breaks them (Sill, postdeploy
@@ -1560,11 +1596,16 @@ export class WorldAgent {
 
     const ents = [...this.entities.values()];
     L.push(ents.length ? `\nThings (${ents.length}):` : "\nNo placed things yet.");
+    // one composition per entity per look, shared by the sort and the line
+    const fx = new Map<string, Effective>();
+    for (const e of ents) fx.set(e.id, this.eff(e.id, nowMs));
+    const sortPos = (e: Entity) => { const f = fx.get(e.id)!; return f.ok ? f.pos : e.pos; };
     for (const e of ents.sort((a, b) => {
-      const da = Math.hypot(a.pos[0] - me.x, a.pos[2] - me.z), db = Math.hypot(b.pos[0] - me.x, b.pos[2] - me.z);
+      const pa = sortPos(a), pb = sortPos(b);
+      const da = Math.hypot(pa[0] - me.x, pa[2] - me.z), db = Math.hypot(pb[0] - me.x, pb[2] - me.z);
       return da - db;
     })) {
-      const dx = e.pos[0] - me.x, dz = e.pos[2] - me.z;
+      const f = fx.get(e.id)!;
       const short = (e.lib ?? "(light)").split("/").pop()!.replace(".glb", "").split("_").slice(0, 5).join(" ");
       // Affordances read out loud: a thing that can be sat on, used, or is
       // moving SAYS SO in text-tier perception — this is how the capability
@@ -1587,10 +1628,22 @@ export class WorldAgent {
       const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "lock"].includes(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);
-      if (ride) aff.push(`mounted on ${ride.to}`);
+      if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);
       const riders = [...this.mounts.entries()].filter(([, m]) => m.to === e.id).map(([rid, m]) => `${rid}${m.slot ? ` (${m.slot})` : ""}`);
       if (riders.length) aff.push(`carrying: ${riders.join(", ")}`);
-      L.push(`  - [${e.id}] ${short}: ${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} at (${e.pos[0].toFixed(1)}, ${e.pos[1].toFixed(1)}, ${e.pos[2].toFixed(1)})${e.pos[1] > 0.05 ? " (elevated)" : ""}${aff.length ? ` — ${aff.join(" · ")}` : ""}`);
+      if (f.ok) {
+        // the EFFECTIVE position — mount chain and motion composed at nowMs.
+        // For an unmounted, unmoving thing this is exactly the folded pos.
+        const dx = f.pos[0] - me.x, dz = f.pos[2] - me.z;
+        L.push(`  - [${e.id}] ${short}: ${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} at (${f.pos[0].toFixed(1)}, ${f.pos[1].toFixed(1)}, ${f.pos[2].toFixed(1)})${f.pos[1] > 0.05 ? " (elevated)" : ""}${aff.length ? ` — ${aff.join(" · ")}` : ""}`);
+      } else {
+        // No number is better than a wrong number: when the chain cannot be
+        // composed (a part socket, an unknown motion type, a malformed link),
+        // perception says whose frame the thing rides and why the coordinate
+        // is withheld — never the stale pre-mount pos next to "mounted on".
+        const where = ride ? `position rides ${ride.to}` : `position unavailable`;
+        L.push(`  - [${e.id}] ${short}: ${where} — ${f.why}${aff.length ? ` — ${aff.join(" · ")}` : ""}`);
+      }
     }
     if (ents.some((e) => e.comp?.sockets || e.comp?.reactions)) {
       L.push(`  (interact via world_verb: use {id, action} · sit/ride via mount {id: "${this.name}", to, slot} — both open to everyone; dismount {id: "${this.name}"} to get off)`);
