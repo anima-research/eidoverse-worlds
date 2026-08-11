@@ -64,13 +64,30 @@ let _rawStream = null, _gatedStream = null, _level = () => 0;
 /** Wrap a mic stream in the gate graph. Returns the stream to hand to WebRTC —
  *  or the original stream unchanged if the graph cannot be built, because a
  *  voice that works ungated beats no voice at all. */
+// ── declared vs effective (#90 review B2, 2026-08-11) ───────────────────────
+// If the gate graph cannot be built, the OLD behavior returned the raw device
+// stream — every room sound transmitted ungated while the UI still showed
+// sensitivity controls. A privacy control that silently downgrades to "off"
+// is worse than none. Now: construction failure REFUSES the stream (caller
+// gets null and must not transmit) unless the user has explicitly chosen
+// ungated transmission via allowUngated(true). Machine-visible either way.
+let _gateUnavailable = false;   // the graph could not be built on this device
+let _ungatedConsent = false;    // explicit "transmit raw anyway" choice
+export const gateUnavailable = () => _gateUnavailable;
+export const ungatedConsent = () => _ungatedConsent;
+export function allowUngated(on) { _ungatedConsent = !!on; }
+
 export function gateStream(stream, levelFn) {
   release();
   _rawStream = stream;
   _level = levelFn || (() => 0);
   try {
     _ctx = audioContext();
-    if (!_ctx || typeof _ctx.createMediaStreamDestination !== 'function') return stream;
+    if (!_ctx || typeof _ctx.createMediaStreamDestination !== 'function') {
+      _gateUnavailable = true;
+      return _ungatedConsent ? stream : null;   // fail CLOSED, not raw
+    }
+    _gateUnavailable = false;
     _src = _ctx.createMediaStreamSource(stream);
     _gain = _ctx.createGain();
     // Start CLOSED. Opening on the first frame would broadcast whatever the room
@@ -94,7 +111,11 @@ export function gateStream(stream, levelFn) {
   } catch (e) {
     report('mic gate graph', e);
     release();
-    return stream;                       // ungated beats silent
+    // FAIL CLOSED (B2): "ungated beats silent" was the old rule, and it made
+    // the sensitivity UI a lie whenever WebAudio broke. Silent-with-a-reason
+    // beats secretly-raw; allowUngated(true) is the explicit way back.
+    _gateUnavailable = true;
+    return _ungatedConsent ? stream : null;
   }
 }
 

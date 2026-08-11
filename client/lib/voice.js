@@ -547,6 +547,15 @@ export async function toggleMic(name) {
       // data, paced by the wall clock, exactly as designed.
       const reused = rawMic.synthetic ? null : (_micReleased ? attachSource(rawMic) : null);
       micStream = rawMic.synthetic ? rawMic : (reused || gateStream(rawMic, micAnalyserLevel));
+      // B2: a null gate is a REFUSAL, not a fallback. Stop the device we just
+      // opened (no capture without a lane), tell the user the true state, and
+      // do not transmit. allowUngated(true) + retry is the explicit override.
+      if (!micStream) {
+        for (const t of rawMic.getTracks?.() ?? []) t.stop();
+        flashHint('voice gate unavailable — NOT transmitting (raw-mic override available in audio panel)');
+        bus.emit('voice-gate-unavailable', {});
+        return false;
+      }
       _micReleased = false;
     } catch (e) {
       report('microphone', e);

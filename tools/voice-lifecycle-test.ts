@@ -1218,5 +1218,30 @@ check("unhush rejoins the SAME peer at full volume",
         `openness=${gateOpenness()} (old lane open=${wasOpen})`);
 }
 
+// ── B2 (#90 review): the gate fails CLOSED, and says so ─────────────────────
+// A gate graph that cannot be built must NOT hand back the raw device stream:
+// that is a privacy control silently reporting "on" while transmitting "off".
+// Deterministic breakage: a destination-less AudioContext.
+{
+  const m = await import("../client/lib/micgate.js");
+  const Real = (globalThis as Record<string, unknown>).AudioContext;
+  class BrokenCtx { state = "running"; resume() { return Promise.resolve(); } }  // no createMediaStreamDestination
+  (globalThis as Record<string, unknown>).AudioContext = BrokenCtx;
+  const ax = await import("../client/lib/audioctx.js");
+  ax.__resetForTest();          // next audioContext() constructs the BROKEN one
+  m.release();
+  const out = m.gateStream(new FakeStream() as never, () => 0.5);
+  check("B2 broken graph → gateStream REFUSES (null), no raw fallback", out === null, String(out));
+  check("B2 gateUnavailable() reports the true state", m.gateUnavailable?.() === true);
+  m.allowUngated?.(true);
+  const raw = new FakeStream();
+  const out2 = m.gateStream(raw as never, () => 0.5);
+  check("B2 explicit allowUngated(true) → raw stream, by choice", out2 === (raw as never));
+  check("B2 gateUnavailable stays visible under the override", m.gateUnavailable?.() === true);
+  m.allowUngated?.(false);
+  (globalThis as Record<string, unknown>).AudioContext = Real;
+  ax.__resetForTest();          // later blocks get a working context again
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
