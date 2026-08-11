@@ -1216,6 +1216,7 @@ type Client = {
   avatar: string;      // VRM library path chosen at join
   lastPose: unknown;   // latest pose, forwarded to late joiners so they see everyone immediately
   spectator: boolean;  // retina/observer connections: receive everything, appear as nothing
+  tokenVerified?: boolean; // this leg presented the identity's own bearer at join
   agent?: boolean;     // self-declared: an MCPL body, not a person at a keyboard
   auth?: HnSession;    // archipelago-home session bound at WS upgrade (verified human)
   sub?: string;        // durable principal id when authenticated (`human:discord:…`)
