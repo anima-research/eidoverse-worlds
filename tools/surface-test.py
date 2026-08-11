@@ -1,15 +1,17 @@
 import asyncio, json, websockets
-URL, TOK = 'ws://localhost:8940/ws', 'workbench-2026'
+import os
+URL, TOK = os.environ.get('SURF_URL', 'ws://localhost:8940/ws'), os.environ.get('SURF_TOK', 'workbench-2026')
 passed = failed = 0
 def check(name, ok, detail=""):
     global passed, failed
     print(("  ✓ " if ok else "  ✗ ") + name + (f"  [{detail}]" if detail and not ok else ""))
     passed, failed = passed + (1 if ok else 0), failed + (0 if ok else 1)
 
-async def join(name, surface=None, world="surftest"):
+async def join(name, surface=None, world="surftest", agent_token=None):
     ws = await websockets.connect(URL)
     msg = {"type": "join", "token": TOK, "id": name, "world": world, "agent": True}
     if surface: msg["surface"] = surface
+    if agent_token: msg["agentToken"] = agent_token
     await ws.send(json.dumps(msg))
     events, closed = [], None
     async def pump():
@@ -69,12 +71,90 @@ async def main():
     check("T6 voice leg reaped on primary close 4007", c3() is not None and c3()[0] == 4007, str(c3()))
 
     # T7: takeover transfers auxes — new primary, voice leg survives
-    p2, e6, c6, _ = await join("hesp2")
-    vA, eA, cA, _ = await join("hesp2", "voice")
-    p3, e7, c7, _ = await join("hesp2")          # takeover of primary
+    p2, e6, c6, _ = await join("hesp2", agent_token="surf-lab-hesp2")
+    vA, eA, cA, _ = await join("hesp2", "voice", agent_token="surf-lab-hesp2")
+    p3, e7, c7, _ = await join("hesp2", agent_token="surf-lab-hesp2")          # takeover of primary
     await asyncio.sleep(0.6)
     check("T7 primary takeover kicks old primary 4002", c6() is not None and c6()[0] == 4002, str(c6()))
     check("T7 voice leg SURVIVES primary takeover", cA() is None and vA.state.name == "OPEN")
+    # ── #57 review contracts (B1-B4), 2026-08-11 ──────────────────────────
+
+    # T8 (B2/matrix 3): a superseded generation's messages are refused.
+    # vA is about to be superseded by vB; vA's socket may drain AFTER the
+    # takeover — its rtc must reach NOBODY.
+    w1, ew, cw, _ = await join("watcher")
+    vB, eB, cB, _ = await join("hesp2", "voice", agent_token="surf-lab-hesp2")     # supersedes vA
+    await asyncio.sleep(0.5)
+    # capture the takeover's transition BEFORE clearing (T10 reads it)
+    transition_events = [m for m in ew + e7 if m.get("type") == "surface-transition"]
+    ew.clear(); e7.clear()
+    try: await vA.send(json.dumps({"type": "rtc", "to": "watcher", "payload": {"ghost": 1}}))
+    except Exception: pass                            # already closed = equally refused
+    await asyncio.sleep(0.5)
+    ghost = [m for m in ew if m.get("type") == "rtc" and m.get("payload", {}).get("ghost")]
+    check("T8 superseded generation rtc refused", len(ghost) == 0, f"got {len(ghost)}")
+
+    # T9 (B2): rtc carries the sender generation
+    eB.clear(); ew.clear()
+    await w1.send(json.dumps({"type": "rtc", "to": "hesp2", "payload": {"z": 3}}))
+    await asyncio.sleep(0.5)
+    stamped = [m for m in eB if m.get("type") == "rtc"]
+    check("T9 rtc stamped with fromGen", bool(stamped) and isinstance(stamped[0].get("fromGen"), int), str(stamped[:1]))
+
+    # T10 (B4): same-surface takeover emits a generation-bearing transition
+    trans = transition_events
+    ok9 = any(m.get("id") == "hesp2" and m.get("surface") == "voice"
+              and isinstance(m.get("gen"), int) and isinstance(m.get("retired"), int)
+              and m["gen"] != m["retired"] for m in trans)
+    check("T10 surface-transition broadcast on voice takeover", ok9, str(trans[:1]))
+
+    # T11 (B3/matrix 6): an aux cannot author — even say
+    eB.clear()
+    await vB.send(json.dumps({"type": "verb", "verb": "say", "args": {"text": "aux voice"}}))
+    await asyncio.sleep(0.5)
+    said = [m for m in ew if m.get("type") == "log" and m.get("entry", {}).get("verb") == "say"]
+    err = [m for m in eB if m.get("type") == "error"]
+    check("T11 aux say refused (authors nothing)", len(said) == 0 and len(err) >= 1, f"said={len(said)} err={len(err)}")
+
+    # T12 (B1): attest round-trip — valid receipt broadcasts `performed`;
+    # bad digest refused; embodied client cannot attest.
+    import hashlib
+    await p3.send(json.dumps({"type": "verb", "verb": "say", "args": {"text": "receipt me"}}))
+    await asyncio.sleep(0.5)
+    says = [m for m in ew if m.get("type") == "log" and m.get("entry", {}).get("verb") == "say"
+            and m["entry"].get("actor") == "hesp2"]
+    check("T12 setup: say folded", bool(says))
+    seq = says[-1]["entry"]["seq"] if says else -1
+    digest = hashlib.sha256("receipt me".encode()).hexdigest()
+    ew.clear(); e7.clear(); eB.clear()
+    await vB.send(json.dumps({"type": "attest", "seq": seq, "digest": digest}))
+    await asyncio.sleep(0.5)
+    perf = [m for m in ew if m.get("type") == "performed" and m.get("id") == "hesp2" and m.get("seq") == seq]
+    check("T12 valid attest broadcasts performed", bool(perf), str(perf[:1]))
+    check("T12 performed carries the leg generation", bool(perf) and isinstance(perf[0].get("gen"), int))
+    ew.clear(); eB.clear()
+    await vB.send(json.dumps({"type": "attest", "seq": seq, "digest": "0" * 64}))
+    await asyncio.sleep(0.4)
+    check("T12 digest mismatch refused", not any(m.get("type") == "performed" for m in ew)
+          and any(m.get("type") == "error" for m in eB))
+    ew.clear(); e7.clear()
+    await p3.send(json.dumps({"type": "attest", "seq": seq, "digest": digest}))
+    await asyncio.sleep(0.4)
+    check("T12 embodied client cannot attest", not any(m.get("type") == "performed" for m in ew))
+
+    # T13 (matrix 7): roster shows one person with a surface summary
+    w2, ew2, cw2, _ = await join("late-watcher")
+    await asyncio.sleep(0.5)
+    snaps = [m for m in ew2 if m.get("type") == "snapshot"]
+    people = snaps[0].get("people", []) if snaps else []
+    hesp = [p for p in people if p.get("id") == "hesp2"]
+    ok13 = len(hesp) == 1 and any(sf.get("surface") == "voice" for sf in hesp[0].get("surfaces", []))
+    check("T13 roster: one person, inspectable surfaces", ok13, str(hesp[:1]))
+
+    for w in (w1, w2, vB):
+        try: await w.close()
+        except Exception: pass
+
     for w in (v2, h1, p3, vA):
         try: await w.close()
         except Exception: pass
