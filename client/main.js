@@ -44,7 +44,7 @@ import { dragSim } from './lib/bodydrag.js';
 import { initChat, logChat, chat, openConvo } from './lib/chat.js';
 import { makeFrame } from './lib/frames.js';
 import { jointPositions } from './lib/ragdoll.js';
-import { makeRagdoll, bodyEngine, setBodyEngine } from './lib/bodysim.js';
+import { makeRagdoll, bodyEngine, setBodyEngine, listBodyEngines } from './lib/bodysim.js';
 import { initBodyDrag, updateBodyDrag, beingDragged, revokeDragged, dragState } from './lib/bodydrag.js';
 import { initPhysObj, tickPhysObj, kick, leaseApi } from './lib/physobj.js';
 import { initMods, tickMods, modsApi } from './lib/mods.js';
@@ -1197,7 +1197,7 @@ globalThis.EW = {
   setPushable, get pushable() { return pushable; }, dragState,
   lease: leaseApi,   // the entity-lease surface runtime plugins script against
   mods: modsApi,     // load/run/offer runtime client scripts (🧩)
-  bodysim: { engine: bodyEngine, setEngine: setBodyEngine },  // swappable body physics
+  bodysim: { engine: bodyEngine, setEngine: setBodyEngine, list: listBodyEngines },  // swappable body physics
 };
 
 } // end of the normal-boot branch (?mintthumbs takes the path above)

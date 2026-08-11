@@ -31,7 +31,7 @@ import { behaviors } from './world.js';
 import { sendVerb } from './net.js';
 import { makeSection, toast, flashHint } from './ui.js';
 import { physicsEnabled, setPhysicsEnabled } from './physobj.js';
-import { bodyEngine, setBodyEngine } from './bodysim.js';
+import { bodyEngine, setBodyEngine, currentBodyEngine, listBodyEngines } from './bodysim.js';
 import { makeFrame } from './frames.js';
 import { logChat } from './chat.js';
 
@@ -235,7 +235,7 @@ export function initMods() {
         <div><b>built-in</b> — the house plugins, dogfooding the same tier</div>
         <div>⚙ object physics <span style="color:var(--dim)">(balls, boxes, punts — the SIM half; you always SEE others' physics)</span>
           <button data-corephys="1">${physicsEnabled() ? 'on ✓' : 'off'}</button></div>
-        <div>⚙ body engine <span style="color:var(--dim)">(how YOUR falls simulate — rapier: rigid bones, muscle tone)</span>
+        <div>⚙ body engine <span style="color:var(--dim)">(how YOUR falls simulate — verlet: particles · rapier: rigid bones, muscle tone · ammo: Bullet, the janus rig — click to cycle)</span>
           <button data-bodyeng="1">${bodyEngine()}</button></div>
         <hr>
         <div style="color:var(--dim)">local mods run with FULL access, as you — load only code you trust</div>
@@ -266,7 +266,8 @@ export function initMods() {
         // then read as permanently stuck — the engine never changed because
         // the click never arrived, not because the switch was wrong.
         if (d.bodyeng) {
-          setBodyEngine(bodyEngine().startsWith('rapier') ? 'verlet' : 'rapier');
+          const names = listBodyEngines();
+          setBodyEngine(names[(names.indexOf(currentBodyEngine()) + 1) % names.length]);
           flashHint(`body engine: ${bodyEngine()} — takes effect on your next fall`);
           return render();
         }
