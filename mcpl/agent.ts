@@ -1409,7 +1409,7 @@ export class WorldAgent {
     return null;
   }
 
-  say(text: string) { this._typingUntil = 0; this.verb("say", { text }); }
+  say(text: string, extra?: Record<string, unknown>) { this._typingUntil = 0; this.verb("say", { ...extra, text }); }
 
   /** Show "composing" over this body. Presence-only (never logged), the same
    *  signal a human client sends while typing in the chat box. The world relays

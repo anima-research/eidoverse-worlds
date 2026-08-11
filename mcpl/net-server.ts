@@ -817,7 +817,20 @@ class Session {
         ag.emote(name);
         return text(`you ${name === "wave" ? "wave" : `play "${name}"`} — everyone sees it`);
       }
-      case "say": ag.say(String(a.text).slice(0, 4000)); return text("said");
+      // say args ride through whole (spoken-say protocol: a voice aux leg
+      // performs says marked spoken:true; utt/t0 tie the performance to the
+      // log entry). ag.say rebuilt {text} bare and silently stripped them —
+      // which forced voice agents onto a raw world-ws side door (2026-08-10).
+      case "say": {
+        // Spoken-say protocol keys ride through; anything else stays at the
+        // door. The server validates these (bounded utt window, clamped t0)
+        // and strips them from ordinary says — the door's job is to forward
+        // the protocol, not arbitrary metadata.
+        const extra: Record<string, unknown> = {};
+        for (const k of ["spoken", "utt", "t0"]) if (k in a) extra[k] = a[k];
+        ag.say(String(a.text).slice(0, 4000), extra);
+        return text("said");
+      }
       case "whisper": {
         if (!WHISPERS_ENABLED) return text("whispers are disabled in this world");
         ag.whisper(String(a.to), String(a.text).slice(0, 4000));
