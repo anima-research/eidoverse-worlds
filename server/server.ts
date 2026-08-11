@@ -2440,6 +2440,18 @@ const server = Bun.serve({
               } else delete a.t0;
             } else { delete a.spoken; delete a.utt; delete a.t0; }
           }
+          // SERVER-STAMPED spoken (workbench lab, 2026-08-10): if the author
+          // has a live token-verified voice aux leg RIGHT NOW, their says are
+          // performed — a presence-derived fact the server can attest, not a
+          // client claim. This is what lets a stock agent through a vanilla
+          // door speak: no flag authoring, no custom say path; run a voice
+          // leg and your words are marked as yours-aloud.
+          if (msg.verb === "say" && (args as { spoken?: boolean }).spoken !== true) {
+            for (const t of c.world.clients)
+              if (t.id === c.id && t.surface === "voice" && t.tokenVerified === true) {
+                (args as { spoken?: boolean }).spoken = true; break;
+              }
+          }
           const entry = c.world.append(c.id, msg.verb, args);
           c.world.broadcast({ type: "log", entry }); // everyone, including author (authoritative echo)
           // A `use` is a cause; reactions turn it into logged effects.
