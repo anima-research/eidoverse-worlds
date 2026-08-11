@@ -486,12 +486,15 @@ export async function toggleMic(name) {
       // broken one. Fixing only the mic-on direction would be exactly the
       // asymmetric repair voicesource.js warns about two lines up from its own
       // mix site.
-      import('./voicesource.js').then(async (vs) => {
+      // ONE mechanism (#91 B3): the generator goes ON the sender, here as
+      // everywhere. The old path mixed synth into micgate's destination node —
+      // a mouth sewn shut wherever the AudioContext clock stalls, and a second
+      // divergent handoff whose ordering against tts.js's own takeover could
+      // leave synth mixed in while the raw mic reopened. replaceTrack only.
+      import('./voicesource.js').then((vs) => {
         const sp = vs.synthProvider?.();
         if (!sp?.available?.()) return;
-        const m = await import('./micgate.js');
-        if (!m.isGated?.()) return;              // no lane; voiceSource handles it
-        m.mixSynthTrack(sp.start());
+        rebindSenders(sp.start());
       }).catch(() => {});
     return false;
   }
@@ -569,6 +572,11 @@ export async function toggleMic(name) {
   // is repairing, so routing the attachment only through renegotiate would
   // skip it. Attaching is safe in any signaling state; replaceTrack on an
   // existing sender needs no renegotiation at all.
+  // Retire the synth producer FIRST (#91 B3: mic beats TTS, and the handoff
+  // must be ordered — applyDirection below puts the gated mic track back on
+  // every sender via replaceTrack, so stopping the pacer before that leaves
+  // no window with two producers and no window with none).
+  import('./voicesource.js').then((vs) => vs.synthProvider?.()?.stop?.()).catch(() => {});
   for (const p of peers.values()) applyDirection(p);
   for (const id of [...peers.keys()]) renegotiate(id);
   // Only reach for peers we do NOT already hold. A peer mid-negotiation has
@@ -1110,16 +1118,26 @@ export function peerLevels() {
 // perfectly healthy — indistinguishable from the audio:ended blocker seen in
 // the field. replaceTrack needs no renegotiation, so the repair is cheap and
 // safe in any signaling state.
+/** Put `track` on every audio sender — replaceTrack only, zero SDP churn.
+ *  The ONE mechanism for handing the lane between producers (#91 B3): the
+ *  mic-off→TTS takeover, the TTS-generator rebuild, and the TTS-only body
+ *  all route through here. (Mic-ON goes through applyDirection, which adopts
+ *  micStream's gated track by the same replaceTrack — one mechanism per
+ *  direction, no WebAudio mixing anywhere.) */
+export function rebindSenders(track) {
+  for (const p of peers.values())
+    for (const s of p.pc.getSenders())
+      if (!s.track || s.track.kind === 'audio')
+        s.replaceTrack(track).catch((e) => report('voice track rebind', e));
+}
+
 setGeneratorRebuildHook((track) => {
   // No micStream just means no stream bookkeeping — the SENDERS still need the
   // track. A TTS-only body has no micStream by definition, and the old early
   // return left its senders bound to a mouth that could not speak (2026-08-10
   // field test: the naive agent's clip never left the machine).
   if (!micStream) {
-    for (const p of peers.values())
-      for (const s of p.pc.getSenders())
-        if (!s.track || s.track.kind === 'audio')
-          s.replaceTrack(track).catch((e) => report('voice track rebind', e));
+    rebindSenders(track);
     return;
   }
   // Keep the local stream in step where it CAN be — a synthetic or stubbed

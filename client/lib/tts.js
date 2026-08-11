@@ -87,31 +87,27 @@ export function setTtsEnabled(on) {
   // mirror of the bug this fixes, and shipping only one direction would be the
   // asymmetric repair this codebase keeps producing. Wire (or unwire) it here
   // too, so mic-then-TTS and TTS-then-mic reach the same place.
+  // 🔴 EITHER ORDER MUST WORK, ONE MECHANISM ONLY (#91 B3). Enabling TTS with
+  // the mic already live arms it for later and touches nothing — MIC BEATS
+  // TTS (R, 2026-08-09), and the mic's retirement path (voice.js mic-off)
+  // does the takeover via rebindSenders. Enabling with the mic off performs
+  // the takeover HERE, by the same mechanism: the generator goes ON the
+  // sender via replaceTrack. There is no WebAudio mixing path any more —
+  // micgate's destination node produces NOTHING where the AudioContext clock
+  // stalls (field-measured 2026-08-10: 'running', +0.000s/2s, 17 packets
+  // EVER), which is every headless body; two divergent handoffs also allowed
+  // an ordering where synth stayed mixed in while the raw mic reopened.
   if (ttsEnabled !== was && typeof window !== 'undefined') {
-    import('./micgate.js').then(async (m) => {
-      if (!m.isGated?.()) return;              // no lane yet; voiceSource will do it
-        // MIC BEATS TTS: while a real microphone is live, synthesized speech does
-        // not join the lane at all (R, 2026-08-09). Ticking TTS with the mic on
-        // therefore arms it for LATER — the moment the mic goes off, voiceSource
-        // falls back to the generator with nothing to re-enable. Both directions
-        // handled here; fixing only one is the asymmetric repair the comment
-        // above warns about.
-        const micLive = (await import('./voice.js')).micOn?.();
-        if (ttsEnabled && canSynthesize() && !micLive) {
-          // 🔴 THE GENERATOR GOES ON THE SENDER, not through the WebAudio mix.
-          // mixSynthTrack routes samples through micgate's destination node —
-          // which produces NOTHING when the page's AudioContext clock is
-          // stalled, and in a headless body it always is: field-measured
-          // (2026-08-10) ctx.state 'running' with currentTime advancing 0.000s
-          // over 2 real seconds, sender at 17 packets / 206 bytes EVER. The
-          // context lies about running; the destination is a mouth sewn shut.
-          // The generator is frames-as-data on a wall clock — the design that
-          // exists precisely because headless WebAudio stalls — so when TTS is
-          // the active producer it must BE the sender's track, for humans and
-          // agents alike. With the mic live this branch never runs (mic beats
-          // TTS), so the WebAudio mix path is not needed here at all.
-          startPacer(); m.unmixSynth(); notifySynthTrackChanged(ensureGenerator());
-        } else m.unmixSynth();
+    import('./voice.js').then((v) => {
+      const micLive = v.micOn?.();
+      if (ttsEnabled && canSynthesize() && !micLive) {
+        startPacer(); notifySynthTrackChanged(ensureGenerator());
+      } else if (!ttsEnabled) {
+        // Disable stills the producer; the senders keep the (now silent)
+        // generator track unless a live mic already reclaimed them — the
+        // same standing-lane rule the mic release uses.
+        stopPacer();
+      }
     }).catch(() => {});
   }
   return ttsEnabled;
@@ -429,10 +425,17 @@ export const mouthInfo = () => ({ pacing: !!pacer, queued: queue.length, playhea
 // through the ordinary sender, so distance, the category slider and consent all
 // apply exactly as they do to a microphone.
 export function speakOwnSays(bus, myId) {
-  bus.on('speech', ({ actor, text }) => {
+  bus.on('speech', async ({ actor, text }) => {
     const mine = actor === myId();
     if (!mine) return;                       // someone else's say: not ours to voice
     if (!isTtsEnabled()) { console.warn(`[voice] own say NOT spoken — tts disabled`); return; }
+    // #91 B3, declared policy: a typed say while the mic is live is DISCARDED,
+    // visibly. Mic beats TTS is a priority — synthesizing-but-not-sending
+    // burns cycles for nothing, and queuing behind a live mic means old text
+    // suddenly playing minutes later when the mic drops. You spoke with your
+    // voice; the text stays text.
+    const micLive = (await import('./voice.js')).micOn?.();
+    if (micLive) { console.warn(`[voice] own say NOT synthesized — mic is live, mic beats TTS: "${String(text).slice(0, 40)}"`); return; }
     console.log(`[voice] own say → speaking: "${String(text).slice(0, 60)}"`);
     void speak(text);
   });

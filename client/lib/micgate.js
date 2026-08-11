@@ -214,21 +214,6 @@ export const isGated = () => !!_gain;
 // in the same room. So it mixes in AFTER the gate: your room noise must clear a
 // threshold, but synthesized speech is already the signal and must never be
 // gated by it.
-let _synthSrc = null;
-export function mixSynthTrack(track) {
-  if (!_ctx || !_dest) return false;
-  unmixSynth();
-  if (!track) return false;
-  try {
-    _synthSrc = _ctx.createMediaStreamSource(new MediaStream([track]));
-    _synthSrc.connect(_dest);          // past the gate, deliberately
-    return true;
-  } catch (e) { report('mix synth', e); _synthSrc = null; return false; }
-}
-export function unmixSynth() {
-  try { _synthSrc?.disconnect(); } catch { /* already gone */ }
-  _synthSrc = null;
-}
 
 /** Detach the DEVICE from the lane, keeping the lane itself alive.
  *
@@ -268,9 +253,7 @@ export function release() {
   // synth mix-in, so this module disconnects them — a release that leaves its
   // own nodes wired into a dead graph is the asymmetric repair again.
   try { _mon?.disconnect(); } catch { /* already gone */ }
-  try { _synthSrc?.disconnect(); } catch { /* already gone */ }
   _mon = null;
-  _synthSrc = null;
   // Deliberately does NOT stop the destination's tracks: they belong to the
   // stream WebRTC holds, and stop() is a one-way door. The caller's own sender
   // cleanup owns that.
