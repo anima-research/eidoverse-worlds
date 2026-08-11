@@ -118,6 +118,25 @@ setTimeout(drainShadows, 30000);
 // Per-world roles as replayed from grant entries. A mirror for UI honesty —
 // the sequencer enforces; this only lets the client SAY what you are.
 const worldRoles = new Map();
+
+// #57: performance receipts. voiceCapable = actors with a live voice leg
+// (seeded by snapshot, kept current by surface-transition); pendingSpeech =
+// says held awaiting a `performed` receipt (seq → fallback timer).
+const voiceCapable = new Map();
+const pendingSpeech = new Map();
+bus.on('surfaces', (people) => {
+  voiceCapable.clear();
+  for (const p of people ?? [])
+    for (const sf of p.surfaces ?? [])
+      if (sf.surface === 'voice') voiceCapable.set(p.id, sf.gen);
+});
+bus.on('surface-transition', ({ actor, surface, gen }) => {
+  if (surface === 'voice') voiceCapable.set(actor, gen);
+});
+bus.on('performed', ({ seq }) => {
+  const timer = pendingSpeech.get(seq);
+  if (timer) { clearTimeout(timer); pendingSpeech.delete(seq); }
+});
 export const roleOf = (id) => worldRoles.get(id) ?? null;
 export const worldHasOwner = () => [...worldRoles.values()].some((r) => r.role === 'owner');
 
@@ -327,10 +346,26 @@ export async function applyEntry(entry, live, ctx = {}) {
           ...(args.spoken === true && Number.isSafeInteger(args.utt)
             ? { spoken: true, utt: args.utt, t0: args.t0 } : {}),
         });
-        // spoken:true = this utterance was already PERFORMED as presence
-        // (captions paced the bubble to the voice); the say is its record.
-        // Log always, re-perform never — the full timer-free decoupling.
-        if (live && !args.spoken) bus.emit('speech', { actor, text: args.text });
+        // PERFORMANCE, decided by receipts, not flags (#57 B1). If the author
+        // has a live voice leg, HOLD the local speech path briefly: a valid
+        // attest arrives as `performed` and we skip (the voice lane carried
+        // it); no receipt inside the window means the leg is dead or deaf and
+        // we fall back — the half-dead-sidecar case degrades to local TTS
+        // instead of silence. Authors with no voice leg speak immediately.
+        // (args.spoken stays honored for OLD servers/doors as display+skip
+        // metadata; new servers never stamp it.)
+        if (live && !args.spoken) {
+          const say = { actor, text: args.text };
+          if (voiceCapable.has(actor)) {
+            const timer = setTimeout(() => {
+              pendingSpeech.delete(entry.seq);
+              bus.emit('speech', say);
+            }, 2500);
+            pendingSpeech.set(entry.seq, timer);
+          } else {
+            bus.emit('speech', say);
+          }
+        }
         break;
       }
       case 'grant': {

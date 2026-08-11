@@ -142,6 +142,30 @@ async def main():
     await asyncio.sleep(0.4)
     check("T12 embodied client cannot attest", not any(m.get("type") == "performed" for m in ew))
 
+    # T14 (#57 client half): FIRST aux join broadcasts surface-transition
+    # (retired null) — listeners key hold-then-fallback on it, and a leg
+    # joining after their snapshot must not be invisible.
+    ew.clear()
+    vC, eC, cC, _ = await join("watcher2-owner")
+    await asyncio.sleep(0.3)
+    ew.clear()
+    vD, eD, cD, _ = await join("watcher2-owner", "voice")
+    await asyncio.sleep(0.5)
+    t14 = [m for m in ew if m.get("type") == "surface-transition" and m.get("id") == "watcher2-owner"]
+    check("T14 first aux join announces itself (retired null)",
+          bool(t14) and t14[0].get("retired") is None and isinstance(t14[0].get("gen"), int), str(t14[:1]))
+
+    # T15: a rejoining primary's snapshot carries its OWN live aux legs
+    p4, e8, c8, _ = await join("watcher2-owner")   # takeover of primary; voice leg survives
+    await asyncio.sleep(0.5)
+    snaps15 = [m for m in e8 if m.get("type") == "snapshot"]
+    ys = snaps15[0].get("yourSurfaces", None) if snaps15 else None
+    check("T15 snapshot yourSurfaces names the surviving voice leg",
+          bool(ys) and any(sf.get("surface") == "voice" for sf in ys), str(ys))
+    for w in (vC, vD, p4):
+        try: await w.close()
+        except Exception: pass
+
     # T13 (matrix 7): roster shows one person with a surface summary
     w2, ew2, cw2, _ = await join("late-watcher")
     await asyncio.sleep(0.5)
