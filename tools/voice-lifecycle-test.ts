@@ -219,6 +219,27 @@ voice.initVoice("me");
 const settle = () => new Promise((r) => setTimeout(r, 20));
 const offerFrom = (who: string) => bus.emit("rtc", { from: who, payload: { sdp: { type: "offer", sdp: "x" } } });
 
+// Every participant this matrix speaks as is ANNOUNCED in the roster first —
+// #95's rule: RTC updates peers for people the world has said exist; it
+// never creates one for an unannounced id. ("total-stranger" is deliberately
+// NOT seeded: its case asserts stray ICE conjures nothing, and now doubles
+// as the unannounced-id refusal.)
+for (const id of ["during", "early", "fourth", "friend", "friend2", "midneg", "neighbor",
+  "peerA", "peerB", "peerC", "racer", "seam", "stranger", "talker", "zzz-rejoin"]) {
+  stubs.remotes.set(id, { id, agent: false });
+}
+
+// ---- #95: the unannounced are refused --------------------------------------
+{
+  offerFrom("unannounced-ghost");
+  await settle();
+  check("an SDP offer from an id the world never announced builds no peer",
+    !created.some((pc: any) => pc._for === "unannounced-ghost") && created.length === 0);
+  bus.emit("rtc", { from: "unannounced-ghost", payload: { recvReady: true } });
+  await settle();
+  check("recvReady from an unannounced id courts nobody", stubs.sent.length === 0);
+}
+
 // ---- receive consent ------------------------------------------------------
 consent.setReceiveVoice(false);
 created.length = 0;
