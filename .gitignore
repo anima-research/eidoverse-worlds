@@ -36,3 +36,4 @@ tools/node_modules/
 # IS committed — 5,036 bytes as of 2026-08-11 (measured; LF) — it is what
 # says what the model is.
 client/voices/*.onnx
+client/accept-*.onnx*

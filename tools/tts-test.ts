@@ -51,10 +51,12 @@ class FakeGenerator {
 (globalThis as Record<string, unknown>).AudioData = FakeAudioData;
 class FakeTrack { kind = "audio"; readyState = "live"; enabled = true; id = `mic-${Math.random().toString(36).slice(2, 8)}`; stop() { this.readyState = "ended"; } }
 class FakeStream {
-  tracks = [new FakeTrack()];
+  tracks: unknown[];
+  constructor(tracks?: unknown[]) { this.tracks = tracks ?? [new FakeTrack()]; }
   getTracks() { return this.tracks; } getAudioTracks() { return this.tracks; }
   addTrack(t: FakeTrack) { this.tracks.push(t); } removeTrack(t: FakeTrack) { this.tracks = this.tracks.filter(x => x !== t); }
 }
+(globalThis as Record<string, unknown>).MediaStream = FakeStream;
 Object.defineProperty(globalThis.navigator, "mediaDevices", {
   value: { getUserMedia: async () => new FakeStream() }, configurable: true,
 });
