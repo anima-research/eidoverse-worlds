@@ -163,6 +163,11 @@ function dropPeer(id) {
   peers.delete(id);
   try { p.pc.close(); } catch (e) { report('voice close', e); }
   p.audio.srcObject = null;
+  // the mouth-animation analyser hung off this peer's stream — without this
+  // the MediaStreamSource graph node lived for the whole session (#95's
+  // side-table census found the leak; every departed speaker kept a node)
+  const a = _peerAn.get(id);
+  if (a) { try { a.an.disconnect(); } catch {} _peerAn.delete(id); }
 }
 
 /** Re-offer on an EXISTING peer after our track set changed (mic on/off while
@@ -258,7 +263,10 @@ async function onRtc(msg) {
       // answers. And a HEALTHY peer stays untouched (idempotent recvReady).
       if (p?._offering) return;
       if (p && p.pc.signalingState !== 'stable') dropPeer(from);
-      if (!peers.has(from)) offerTo(from);
+      // roster-gated: RTC updates peers, it never creates one for an id the
+      // world hasn't announced (#95) — a recvReady straggling in after its
+      // sender left must not court a departed generation
+      if (!peers.has(from)) { if (remotes.has(from)) offerTo(from); }
       else renegotiate(from);
     }
     return;
@@ -282,7 +290,12 @@ async function onRtc(msg) {
   // dropped, or residue from a peer generation dropPeer() discarded) must
   // not conjure a fresh pc — flushing old-generation candidates into a
   // replacement pc poisons its checks (Mica's contamination rule, 08-07).
-  const p = payload.ice ? peers.get(from) : peerFor(from);
+  // Offers/answers may BUILD a peer — but only for a participant the world
+  // has announced (#95: presence data, RTC included, updates generations and
+  // never creates them; an SDP offer from a departed id built a peer no
+  // roster sweep had a body to key on). ICE never creates, as before.
+  const p = payload.ice ? peers.get(from)
+    : (peers.get(from) ?? (remotes.has(from) ? peerFor(from) : null));
   if (!p) return;
   // Per-peer signal serialization: two concurrent onRtc invocations for the
   // same peer interleave across their awaits (offer A setRemote -> offer B
@@ -606,6 +619,9 @@ export const voicePcs = () => [...peers.values()].map((p) => p.pc); // experimen
 // mic glyph; the caller maps id -> avatar. Cheap enough at mesh scale: an
 // analyser node is a few hundred bytes and the read is a single loop.
 const _peerAn = new Map();          // id -> {an, buf, stream}
+/** test/debug probe — how many mouth-animation analysers are live (#95:
+ *  each departed speaker used to leave one behind, forever) */
+export const voiceAnalyserCount = () => _peerAn.size;
 let _peerCtx = null;
 
 export function peerLevels() {

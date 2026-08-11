@@ -339,37 +339,87 @@ export async function connect() {
 
 // ---------------------------------------------------------------- handling
 
+/** ONE teardown for a departed participant — every leave-shaped exit
+ *  (ordinary leave, kick/ban's broadcast leave, the reconnect snapshot's
+ *  roster prune) funnels here so the whole generation dies together (#95):
+ *  drag custody FIRST (a drag sim holds bone references into the avatar
+ *  about to be disposed — the one-frame-late recovery double-disposed a
+ *  VRM), then the voice peer and its analyser, then the body itself
+ *  (avatar root, nameplate, bubbles, typing dots and held poses all hang
+ *  off the avatar and dispose with it). Ownership stays explicit — each
+ *  line names the table it clears. Logged body-mounts are deliberately NOT
+ *  touched: avatarMounts mirrors folded world state, and the seat renders
+ *  through the remote, which is now gone.
+ *  `expected` makes the drop generation-conditional (see dropRemote). */
+export function teardownParticipant(id, expected) {
+  bus.emit('participant-teardown', id);   // bodydrag releases custody before the bones vanish
+  const dropped = dropRemote(id, expected);
+  // The voice peer (and its analyser) rides the 'roster' sweep every caller
+  // emits right after this — voice.js imports net, so calling into it here
+  // would close an import cycle; the sweep is the same teardown, one event
+  // later in the same turn, and it is generation-safe because it keys on
+  // absence from `remotes`, which this drop just established.
+  return dropped;
+}
+
+/** Presence for an id the world never announced (or already dismissed) is
+ *  dropped, counted, and said a few times — the flight-recorder spirit,
+ *  the noteMalformed bound. */
+let stalePresenceSeen = 0;
+export const stalePresenceCount = () => stalePresenceSeen;
+/** test seam — the wire, minus the socket (tools/remotes-lifecycle-test.ts
+ *  drives the dispatch directly; the server's per-socket FIFO is the test's
+ *  license to sequence messages by hand) */
+export const _dispatch = (msg) => handle(msg);
+function noteStalePresence(id) {
+  if (stalePresenceSeen++ >= 5) return;
+  console.warn(`[net] presence for unannounced id "${id}" dropped (straggler from a departed generation?)`);
+}
+
 async function handle(msg) {
   switch (msg.type) {
     case 'snapshot': return onSnapshot(msg);
 
     case 'arrive':
-      ensureRemote(msg.id, msg.avatar, { agent: msg.agent });
+      // `authority: true` — an arrive is the world SAYING this person exists.
+      // On a takeover (same id re-arriving; the server suppresses the old
+      // connection's leave) this starts a fresh generation and clears any
+      // predecessor pose buffer instead of letting the successor inherit it.
+      ensureRemote(msg.id, msg.avatar, { agent: msg.agent, authority: true });
       logChat('*', `${msg.id} arrived`);
       bus.emit('roster');
       break;
 
     case 'leave':
-      dropRemote(msg.id);
+      teardownParticipant(msg.id);
       logChat('*', `${msg.id} left`);
       bus.emit('roster');
       break;
 
     case 'pose': {
-      if (!remotes.has(msg.id)) await ensureRemote(msg.id, null);
-      pushPose(msg.id, msg.pose, msg.t);
+      // Presence UPDATES bodies; it never creates them (#95). A pose for an
+      // id we don't hold is a straggler from a departed generation — the
+      // server's per-socket order guarantees a living body's authority
+      // (snapshot roster or arrive) precedes its first sample, so there is
+      // no legitimate frame-before-authority to buffer for. Creating here
+      // is how one stale sample rebuilt the departed as a default-avatar
+      // ghost with a live nametag (the sunflower specimen, and #56's
+      // stand-forever race through the same door).
+      if (remotes.has(msg.id)) pushPose(msg.id, msg.pose, msg.t);
+      else noteStalePresence(msg.id);
       break;
     }
 
     case 'frame': {
-      // Batched embodied plane: one message per server tick, latest pose per id.
-      // Never awaits — a frame must not stall the queue behind an avatar
-      // download; unknown bodies start loading and pick up later frames.
+      // Batched embodied plane: one message per server tick, latest pose per
+      // id. Same law as `pose`: update-only, never create — and with no
+      // creation there is no fire-and-forget load whose completion could
+      // deliver a departed generation's sample into a successor's buffer.
       noteServerTime(msg.t);
       for (const [id, pose] of Object.entries(msg.poses)) {
         if (id === net.myId) continue; // our own echo — local prediction owns this body
         if (remotes.has(id)) pushPose(id, pose, msg.t);
-        else ensureRemote(id, null).then(() => pushPose(id, pose, msg.t)).catch(() => {});
+        else noteStalePresence(id);
       }
       break;
     }
@@ -531,14 +581,18 @@ async function onSnapshot(msg) {
     net.ws.send(JSON.stringify({ type: 'verb', verb, args }));
   }
 
-  // reconcile: the snapshot is authoritative — dispose any remote no longer
-  // present (stale ghosts otherwise survive reconnects forever)
+  // reconcile: the snapshot is authoritative — tear down any participant no
+  // longer present, through the SAME funnel a leave uses (custody, then
+  // body; the voice peer rides the roster emit below). Stale ghosts
+  // otherwise survive reconnects forever — and before #95 they survived
+  // with their side tables intact.
   const present = new Set(msg.present.map((p) => p.id));
-  for (const id of [...remotes.keys()]) if (!present.has(id)) dropRemote(id);
+  for (const id of [...remotes.keys()]) if (!present.has(id)) teardownParticipant(id);
 
-  // remote avatars build in parallel and never block log replay
+  // remote avatars build in parallel and never block log replay — the
+  // roster is an AUTHORITY: a same-id record here is a fresh generation
   for (const p of msg.present) {
-    ensureRemote(p.id, p.avatar, { agent: p.agent })
+    ensureRemote(p.id, p.avatar, { agent: p.agent, authority: true })
       .then(() => { if (p.pose) pushPose(p.id, p.pose); })
       .catch((e) => report(`present ${p.id}`, e));
   }

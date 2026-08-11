@@ -222,6 +222,22 @@ function endGrab() {
   drag = null;
 }
 
+/** The dragged person LEFT (#95): release custody BEFORE the avatar is
+ *  disposed — endGrab's normal path sends a handover to the departed id and
+ *  disposes a sim built over bones that are about to go through
+ *  deepDispose (the one-frame-late recovery double-disposed the VRM). This
+ *  is the quiet version: no wire send to a ghost, drop the sim, clear the
+ *  custody set, done. Runs on net's 'participant-teardown', which every
+ *  leave-shaped exit emits before touching the body. */
+bus.on('participant-teardown', (id) => {
+  if (drag?.id === id) {
+    drag.rd.setPin(null);
+    drag.rd.dispose?.();
+    drag = null;
+  }
+  draggedLocal.delete(id);
+});
+
 // capture phase: this listener decides FIRST whether the press is a grab
 canvas.addEventListener('mousedown', beginGrab, true);
 addEventListener('mouseup', endGrab);

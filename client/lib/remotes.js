@@ -27,6 +27,13 @@ export function noteServerTime(t) {
 }
 export const serverNow = () => performance.timeOrigin + performance.now() + (clockOffset ?? 0);
 
+/** Per-identity generation counter (#95): every AUTHORITATIVE (re)creation
+ *  of an id bumps it, and async continuations validate record identity
+ *  before touching the scene — a departed generation can neither delete
+ *  nor repopulate its successor. Session-lifetime, monotonic. */
+const gens = new Map();
+export const remoteGen = (id) => gens.get(id) ?? 0;
+
 export async function ensureRemote(id, avatarPath, meta = {}) {
   const existing = remotes.get(id);
   if (existing) {
@@ -38,15 +45,30 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
     if (avatarPath && existing.avatarPath !== avatarPath) {
       remotes.delete(id);
       existing.avatar?.dispose();
-    } else return existing;
+    } else {
+      // Same body re-announced = a TAKEOVER (the server suppresses the old
+      // connection's leave and re-arrives the identity — server.ts ~2023).
+      // The successor reuses the mesh but must inherit NOTHING streamed: the
+      // predecessor's buffered poses are its generation's, not this one's
+      // (#95 acceptance 4 — a stale sample teleporting the successor to
+      // where the predecessor last stood is inheritance, in miniature).
+      if (meta.authority) {
+        existing.buf.length = 0;
+        existing.gen = (gens.get(id) ?? 0) + 1;
+        gens.set(id, existing.gen);
+      }
+      return existing;
+    }
   }
   const r = {
     id, avatar: null, avatarPath, loading: true, agent: !!meta.agent,
+    gen: (gens.get(id) ?? 0) + 1,
     buf: [],                 // [{ t, p:[x,y,z], yaw, speed, clip, pitch }]
     lastClip: 'idle',
     lodAcc: 0, lodTick: 0,
     speakingUntil: 0,
   };
+  gens.set(id, r.gen);
   remotes.set(id, r);
   try {
     r.avatar = await makeAvatar(id, avatarPath || DEFAULT_AVATAR);
@@ -61,10 +83,18 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
   return r;
 }
 
-export function dropRemote(id) {
+/** Remove a body. Idempotent, and GENERATION-CONDITIONAL when handed the
+ *  record the caller believes it is dropping: a predecessor's late cleanup
+ *  (a drag callback, a stale timer) cannot delete the successor that now
+ *  owns the id (#95 acceptance 4). Returns the dropped record, or null when
+ *  there was nothing to drop / the record didn't match. */
+export function dropRemote(id, expected) {
   const r = remotes.get(id);
+  if (!r) return null;
+  if (expected && r !== expected) return null;   // a successor owns this id now
   remotes.delete(id);
-  r?.avatar?.dispose();
+  r.avatar?.dispose();
+  return r;
 }
 
 /** Feed one presence sample. `t` is the server stamp when available. */
