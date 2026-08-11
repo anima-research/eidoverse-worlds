@@ -2075,6 +2075,7 @@ const server = Bun.serve({
               const v = verifyToken(tokStr, { issuerId: HN_ISSUER_KEY, iss: HN_ISS, aud: HN_AUD, requireScopes: ["worlds:join"] });
               if (v.ok) tokId = v.payload.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || v.payload.sub;
             }
+            if (tokId && tokId.toLowerCase() === c.id.toLowerCase()) c.tokenVerified = true;
             if (at.names.has(c.id.toLowerCase()) && tokId?.toLowerCase() !== c.id.toLowerCase()) {
               console.log(`[perm] join refused: "${c.id}" is a reserved agent name (token ${tokStr ? "unrecognized" : "missing"})`);
               ws.send(JSON.stringify({ type: "error", error: `"${c.id}" is a reserved agent name` }));
@@ -2193,7 +2194,15 @@ const server = Bun.serve({
           if (!c.world) return;
           // spectators watch; authoring needs a body. (This is the entire
           // show-night moderation model: the audience cannot touch the stage.)
-          if (c.spectator) {
+          // PROTOTYPE (#57 design question, workbench lab 2026-08-10): an AUX
+          // LEG that proved its identity with the agent's own bearer may
+          // author `say` — and only say — for that identity. Attribution is
+          // safe because the token, not the name, is what vouches; the
+          // show-night model is untouched (plain spectators still cannot, and
+          // an aux leg still cannot build).
+          const verifiedAuxSay = c.spectator && c.surface !== "world"
+            && c.tokenVerified === true && msg.verb === "say";
+          if (c.spectator && !verifiedAuxSay) {
             ws.send(JSON.stringify({ type: "error", error: "spectators can't author — join embodied to build" }));
             return;
           }
