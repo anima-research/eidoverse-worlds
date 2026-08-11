@@ -149,7 +149,7 @@ export function ensureGenerator() {
   writer = genTrack.writable.getWriter();
   if (replacing) {
     console.warn('[voice] generator was dead — rebuilt; re-binding senders');
-    try { onRebuild?.(genTrack); } catch (e) { report('generator rebind', e); }
+    notifySynthTrackChanged(genTrack);   // voice.js re-binds every sender
   }
   return genTrack;
 }
@@ -157,6 +157,7 @@ export function ensureGenerator() {
 /** Speak text through the registered synthesizer. Silent no-op when TTS is off
  *  or unavailable — callers should not have to branch. */
 export async function speak(text) {
+  const epoch = ttsEpoch;
   // EVERY REFUSAL SAYS WHY. This function had five silent `return false`
   // paths, so "nothing came out" looked identical whether TTS was off, the
   // sender was missing, or the synthesizer returned empty. A whole evening was
@@ -200,6 +201,10 @@ export async function speak(text) {
     }
   // QUEUE IT — DO NOT PUSH IT. The frames are handed to a wall-clock pacer that
   // is already running; see the pacer below for why the track must never starve.
+  if (epoch !== ttsEpoch) {
+    console.warn('[voice] synthesis finished after a disable — result dropped (stale, not current)');
+    return false;
+  }
   enqueue(out.pcm, out.sampleRate);
   return true;
 }
@@ -238,6 +243,12 @@ const OUT_RATE = 48000;
 // rate around was how 22050-sized frames got declared as 48k in my first pass.)
 const FRAME = Math.round(OUT_RATE / 50);   // 20ms at the OUTPUT rate
 let queue = [];            // pending {pcm, sampleRate}
+// Disable epoch (#91 B2's stale-becomes-current hole, caught by the harness):
+// a synthesis in flight when TTS is disabled completes AFTER stopPacer cleared
+// the queue and would re-enqueue into it — re-enabling then played text the
+// user disabled minutes ago. speak() captures the epoch before synthesizing
+// and its result is dropped if a disable happened in between.
+let ttsEpoch = 0;
 let qOff = 0;              // read offset into queue[0]
 let playhead = 0;          // samples emitted since the pacer started
 let t0 = 0;
@@ -409,6 +420,7 @@ export function startPacer() {
 export function stopPacer() {
   if (pacer) { clearInterval(pacer); pacer = null; }
   queue = []; qOff = 0;
+  ttsEpoch++;              // anything still synthesizing belongs to the old era
 }
 
 /** Probe seam: is the mouth open, and how much is waiting to be said? */
