@@ -68,7 +68,11 @@ export async function setEndpointVoice(url, label) {
     body: JSON.stringify({ text: 'test' }),
   }).catch(() => null);
   if (!probe?.ok) return false;
-  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  // ONE AudioContext per page (#86's whole reason to exist; #91 B4 caught
+  // this constructing a second one). decodeAudioData is context-agnostic —
+  // the shared context serves it fine even suspended.
+  const { audioContext } = await import('./audioctx.js');
+  const ctx = audioContext();
   setTtsSource(async (text) => {
     try {
       const res = await fetch(url, {

@@ -33,5 +33,6 @@ tools/node_modules/
 
 # Piper voice models: ~60MB each, fetched by the client at runtime
 # (user's disk or HuggingFace+OPFS) and never served by us. The .onnx.json
-# IS committed — it is 5KB and it is what says what the model is.
+# IS committed — 5,036 bytes as of 2026-08-11 (measured; LF) — it is what
+# says what the model is.
 client/voices/*.onnx
