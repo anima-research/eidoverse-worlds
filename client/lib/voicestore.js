@@ -84,7 +84,7 @@ export async function voiceIdentity(onnxFile, cfgFile) {
 }
 // The dep version we pin in client/package.json — surfaced here so identity
 // records name the runtime that performed, not just the model.
-export const PIPER_WEB_VERSION = '1.0.3';
+export const PIPER_WEB_VERSION = '1.0.4';
 
 /** Everything remembered, newest first: [{id, name, handles, identity}]. */
 export async function listVoices() {
