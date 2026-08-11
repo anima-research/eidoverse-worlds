@@ -487,11 +487,11 @@ export async function toggleMic(name) {
       // asymmetric repair voicesource.js warns about two lines up from its own
       // mix site.
       import('./voicesource.js').then(async (vs) => {
-        if (!vs.isTtsEnabled?.() || !vs.canSynthesize?.()) return;
+        const sp = vs.synthProvider?.();
+        if (!sp?.available?.()) return;
         const m = await import('./micgate.js');
         if (!m.isGated?.()) return;              // no lane; voiceSource handles it
-        vs.startPacer?.();
-        m.mixSynthTrack(vs.ensureGenerator());
+        m.mixSynthTrack(sp.start());
       }).catch(() => {});
     return false;
   }

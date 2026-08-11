@@ -1175,7 +1175,7 @@ check("unhush rejoins the SAME peer at full volume",
       peer.getSenders().some((s) => s.track?.readyState === "ended"));
 
     const fresh = { id: "fresh", kind: "audio", readyState: "live", enabled: true, stop() {} };
-    vs.__fireRebuild?.(fresh);
+    vs.notifySynthTrackChanged?.(fresh);
     check("after a rebuild no sender is left holding the dead track",
       peer.getSenders().every((s) => s.track?.id !== "dead"),
       peer.getSenders().map((s) => s.track?.id).join(","));
