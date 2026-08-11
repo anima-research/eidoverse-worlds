@@ -13,7 +13,7 @@
 
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 
 let pass = 0, fail = 0;
@@ -22,15 +22,57 @@ const check = (name: string, ok: boolean, detail = "") => {
   else { fail++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ` — ${detail}` : ""}`); }
 };
 
-const PORT = Number(process.env.PORT ?? 8991);
+// ── PORT SAFETY + CHILD OWNERSHIP (r3 B2) ─────────────────────────────────
+// The revision-2 review hit this harness's false-receipt bug in the field: a
+// fixed default port was already occupied, the child failed to bind, and the
+// test fetched a STALE listener — reporting on a server it never spawned. Two
+// defenses, both required:
+//   1. pick a port that is verifiably FREE before spawning (random high port,
+//      preflight fetch must FAIL);
+//   2. prove the listener we then talk to is OUR child: a nonce file written
+//      into this checkout's served tree, fetched back. Only a server rooted at
+//      THIS tree can serve it — a squatter from another checkout cannot.
+async function freePort(): Promise<number> {
+  for (let i = 0; i < 20; i++) {
+    const cand = 20000 + Math.floor(Math.random() * 20000);
+    try { await fetch(`http://127.0.0.1:${cand}/`, { signal: AbortSignal.timeout(400) }); }
+    catch { return cand; }               // nothing answered: free
+  }
+  throw new Error("no free port found in 20 tries");
+}
+const PORT = await freePort();
+const NONCE = `route-nonce-${crypto.randomUUID()}`;
+const clientDir = join(import.meta.dir, "..", "client");
+writeFileSync(join(clientDir, `${NONCE}.txt`), NONCE);
+
 const server = spawn("bun", [join(import.meta.dir, "..", "server", "server.ts")], {
   env: { ...process.env, PORT: String(PORT), WORLDS_DIR: mkdtempSync(join(tmpdir(), "deps-route-")) },
   stdio: "ignore",
 });
+const cleanup = () => {
+  try { server.kill(); } catch { /* already gone */ }
+  try { rmSync(join(clientDir, `${NONCE}.txt`)); } catch { /* best effort */ }
+};
+// Cleanly stop the child on ANY exit — including assertion failure (r3 B5).
+process.on("exit", cleanup);
+
 // wait for the door
+let up = false;
 for (let i = 0; i < 40; i++) {
-  try { await fetch(`http://127.0.0.1:${PORT}/`); break; }
+  try { await fetch(`http://127.0.0.1:${PORT}/`); up = true; break; }
   catch { await new Promise((r) => setTimeout(r, 250)); }
+}
+check("child server came up on a verified-free port", up, `:${PORT}`);
+// ownership: the nonce only exists in the tree WE spawned from
+{
+  let owned = false, got = "";
+  try {
+    const res = await fetch(`http://127.0.0.1:${PORT}/${NONCE}.txt`);
+    got = res.ok ? (await res.text()).trim() : `status=${res.status}`;
+    owned = got === NONCE;
+  } catch (e) { got = String(e).slice(0, 40); }
+  check("listener is OUR child (nonce round-trip), not a squatter", owned, got);
+  if (!owned) { console.log("\n  refusing to test an unowned server\n"); process.exit(1); }
 }
 
 // Every route the TTS stack resolves at runtime. Sizes are floors, not
@@ -78,6 +120,5 @@ for (const [path, minBytes] of ROUTES) {
     `status=${res.status} html=${text.includes("<html")}`);
 }
 
-server.kill();
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

@@ -257,6 +257,17 @@ console.log("\n— voicestore: identity is digests; remember/forget round-trip �
   const onnxB = new File([new Uint8Array(1024).fill(2)], "voice.onnx");   // SAME NAME, different bytes
   const idB = await store.voiceIdentity(onnxB, cfg);
   check("same filename, different bytes → DIFFERENT voice identity", idB.id !== idA.id, `${idA.id} vs ${idB.id}`);
+  // r3 B1 converse: SAME model, DIFFERENT config. The config names the
+  // phoneme map / language / inference params — a different config is a
+  // different voice, and an id derived from the model digest alone collides
+  // them (the exact hole the revision-2 review named).
+  const cfgB = new File([JSON.stringify({ audio: { sample_rate: 16000 }, inference: { noise_scale: 0.2 } })], "voice.onnx.json");
+  const idC = await store.voiceIdentity(onnx, cfgB);
+  check("same model, different config → DIFFERENT voice identity", idC.id !== idA.id, `${idA.id} vs ${idC.id}`);
+  check("joint id carries both digests", idA.id.includes("+") && idA.id.split("+").length === 2, idA.id);
+  // both variants can be remembered side by side — distinct ids can't clobber
+  check("model+cfgA and model+cfgB coexist as distinct rows",
+    idA.id !== idC.id && idA.modelSha256 === idC.modelSha256 && idA.configSha256 !== idC.configSha256);
 }
 
 console.log("\n— negative control: a disconnected feature must FAIL this suite —");

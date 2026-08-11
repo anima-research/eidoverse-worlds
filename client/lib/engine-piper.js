@@ -64,10 +64,16 @@ registerEngine({
     // different models that share a filename silently serve each other's
     // bytes; suffixing the digest makes a collision structurally impossible
     // and costs one sha256 of bytes we were about to copy anyway.
-    const shaBuf = await crypto.subtle.digest('SHA-256', await onnx.arrayBuffer());
-    const sha12 = Array.from(new Uint8Array(shaBuf).slice(0, 6))
+    // BOTH digests in the cache name (r3 B1): a same-model different-config
+    // pair must never serve each other's cached bytes — the config names the
+    // phoneme map and inference params, which are part of what a voice IS.
+    const hex = (buf, n) => Array.from(new Uint8Array(buf).slice(0, n))
       .map((b) => b.toString(16).padStart(2, '0')).join('');
-    const base = `${onnx.name.replace(/\.onnx$/i, '')}-${sha12}`;
+    const [modelBuf, cfgBuf] = await Promise.all([
+      crypto.subtle.digest('SHA-256', await onnx.arrayBuffer()),
+      crypto.subtle.digest('SHA-256', await cfg.arrayBuffer()),
+    ]);
+    const base = `${onnx.name.replace(/\.onnx$/i, '')}-${hex(modelBuf, 6)}-${hex(cfgBuf, 4)}`;
 
     // The runtime has no seam for local model bytes: TtsSession always resolves
     // a voiceId through PATH_MAP and fetches HuggingFace. But getBlob() reads an

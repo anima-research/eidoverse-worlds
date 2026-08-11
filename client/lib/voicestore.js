@@ -76,7 +76,10 @@ export async function voiceIdentity(onnxFile, cfgFile) {
     params = cfg?.inference ?? null;   // noise_scale / length_scale / noise_w
   } catch { /* config unreadable: identity still stands on the digests */ }
   return {
-    id: `sha256:${modelSha256.slice(0, 16)}`,
+    // JOINT identity (r3 B1): same model with a different config — phoneme
+    // map, language, inference params — is a DIFFERENT voice. An id derived
+    // from the model alone collides them; both digests carry.
+    id: `sha256:${modelSha256.slice(0, 16)}+${configSha256.slice(0, 16)}`,
     modelSha256, configSha256, sampleRate, params,
     engine: 'piper-tts-web', engineVersion: PIPER_WEB_VERSION,
     modelBytes: onnxFile.size, configBytes: cfgFile.size,

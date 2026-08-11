@@ -83,24 +83,6 @@ export function matchEngine(files) {
  *  Deliberately does NOT ask which engine — sniffing is the point, because a
  *  person with a voice model should not have to know which runtime consumes it.
  */
-/** Sessions already built this page-load, keyed by the files that made them.
- *
- *  🔴 R asked: "can we cache the model load so we don't have to do it all over
- *  again on every reload?" Two separate costs hide behind that question, and
- *  only one of them was already handled:
- *
- *    1. THE BYTES — 60 MB. Already cached in OPFS, keyed by basename. Fast.
- *    2. THE COMPILED GRAPH — InferenceSession.create(). ORT parses the protobuf,
- *       plans memory, fuses ops and JITs kernels. THIS is the ~30s.
- *
- *  (2) cannot be written to storage: onnxruntime-web has no save/restore of a
- *  compiled session, so a genuine page RELOAD must pay it again. What we CAN fix
- *  is paying it twice in one page — switching voice away and back rebuilt the
- *  whole graph even though the old session was still perfectly good.
- *
- *  Keyed by name+size+lastModified of every file: same bytes, same session. */
-const _sessions = new Map();
-const keyOf = (files) => files.map((f) => `${f.name}:${f.size}:${f.lastModified ?? 0}`).sort().join('|');
 
 export async function loadFromFiles(files, onProgress = () => {}) {
   const e = matchEngine(files);
