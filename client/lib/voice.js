@@ -876,22 +876,15 @@ export function releaseMicrophone() {
   _micReleased = true;
   muted = false;
   stopOnsetWatch();
-  for (const [id, p] of [...peers]) {
-    try {
-      for (const sender of p.pc.getSenders()) if (sender.track) p.pc.removeTrack(sender);
-    } catch (e) { report('voice untrack', e); }
-    // 🔴 DO NOT DESTROY THE PEER. This used to dropPeer() when receive was off —
-    // the same mistake as tearing down on 'disconnected', with a different
-    // trigger: we close the connection, the FAR END keeps a live pc to a peer
-    // that no longer exists, and neither side can recover. Ours cannot rebuild
-    // (both rebuild paths need a mic we just released); theirs will not, because
-    // they still hold us in `peers` so their reconciler skips us.
-    //
-    // Wanting neither to send nor receive is a DIRECTION ('inactive'), not a
-    // reason to hang up. renegotiate() carries that, the mesh stays warm, and
-    // consenting again is a renegotiation instead of a rebuild.
-    renegotiate(id);
-  }
+  // 🔴 NO UNTRACK, NO RENEGOTIATION — that is the whole contract (#90 B3).
+  // Everything above this line promised the standing lane: senders keep the
+  // live destination track (currently carrying silence — gain zero, source
+  // detached), so reacquiring is attachSource(newDevice) into the SAME graph
+  // with zero SDP churn. A removeTrack+renegotiate loop lived here anyway,
+  // quietly doing the teardown the comments forswore — every reacquire paid
+  // the renegotiation the design existed to avoid, and the lifecycle suite
+  // never pinned it. Privacy is not weakened by its removal: the device is
+  // stopped (OS indicator off) and the lane transmits silent frames only.
   flashHint('🎙 released');
   bus.emit('voice', { on: false });
 }

@@ -71,7 +71,8 @@ class FakePC {
     this.transceivers.push({ direction: "sendrecv", sender, receiver: { track: { kind: "audio" } } });
     return sender;
   }
-  removeTrack(s: { track: FakeTrack | null }) { s.track = null; }
+  removeTrackCalls = 0;      // B3 pins releaseMicrophone to ZERO of these
+  removeTrack(s: { track: FakeTrack | null }) { this.removeTrackCalls++; s.track = null; }
   getSenders() { return this.senders; }
   getTransceivers() { return this.transceivers; }
   /** the direction actually offered to the far end */
@@ -1216,6 +1217,40 @@ check("unhush rejoins the SAME peer at full volume",
   check("fresh lane reports closed even though the old one was open",
         gateOpenness() === 0,
         `openness=${gateOpenness()} (old lane open=${wasOpen})`);
+}
+
+// ── B3 (#90 review): the standing-lane release contract, pinned ─────────────
+// releaseMicrophone's comments promise: device stops, but every sender keeps
+// the live (silent) destination track — so reacquiring needs no removeTrack
+// and no renegotiation. The implementation contradicted this with an
+// untrack+renegotiate loop for months and no test noticed. This one does.
+{
+  if (!voice.micOn()) await voice.toggleMic("me");
+  const peer = created.at(-1);
+  if (peer) {
+    const beforeTracks = peer.getSenders().map((s) => s.track?.id).join(",");
+    const beforeOffers = peer.offers;
+    const beforeRemove = peer.removeTrackCalls;
+    voice.releaseMicrophone();
+    await new Promise((r) => setTimeout(r, 30));
+    check("B3 release: zero removeTrack on any sender", peer.removeTrackCalls === beforeRemove,
+      `${peer.removeTrackCalls - beforeRemove} calls`);
+    check("B3 release: zero negotiation cycles", peer.offers === beforeOffers,
+      `${peer.offers - beforeOffers} offers`);
+    check("B3 release: senders keep the SAME track identity",
+      peer.getSenders().map((s) => s.track?.id).join(",") === beforeTracks,
+      peer.getSenders().map((s) => s.track?.id).join(","));
+    check("B3 release: micOn reports no device", voice.micOn() === false);
+
+    // reacquire: same graph, same track, still no sender surgery
+    await voice.toggleMic("me");
+    await new Promise((r) => setTimeout(r, 30));
+    check("B3 reacquire: still zero removeTrack", peer.removeTrackCalls === beforeRemove);
+    check("B3 reacquire: senders STILL hold the same track identity",
+      peer.getSenders().map((s) => s.track?.id).join(",") === beforeTracks,
+      peer.getSenders().map((s) => s.track?.id).join(","));
+    check("B3 reacquire: mic is live again", voice.micOn() === true);
+  }
 }
 
 // ── B2 (#90 review): the gate fails CLOSED, and says so ─────────────────────
