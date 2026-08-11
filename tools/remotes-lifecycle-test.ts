@@ -138,24 +138,53 @@ console.log("\n━━ takeover: a successor inherits nothing, and outlives its p
   await _dispatch({ type: "arrive", id: "helen", avatar: "vrms/helen.vrm" });
   await settle();
   await _dispatch({ type: "frame", t: 10, poses: { helen: pose({ p: [9, 0, 9] }) } });
-  const pre = remotes.get("helen");
+  const pre = remotes.get("helen");                                     // the TRUE predecessor record (#97 B2)
   check("the predecessor holds streamed poses", pre.buf.length === 1);
   const preGen = pre.gen;
   // same avatar re-announced = server-suppressed-leave takeover
   await _dispatch({ type: "arrive", id: "helen", avatar: "vrms/helen.vrm" });
   await settle();
   const post = remotes.get("helen");
-  check("same-name successor: fresh generation", typeof post.gen === "number" && post.gen === preGen + 1,
+  check("the successor is a FRESH RECORD OBJECT", post !== pre,
+    "on the reviewed head the record was reused, so predecessor references passed as current");
+  check("…with a fresh generation", typeof post.gen === "number" && post.gen === preGen + 1,
     `gen ${preGen} → ${post.gen} (on main: no generations, buffer inherited)`);
-  check("…and the predecessor's pose buffer is NOT inherited", post.buf.length === 0, `buf=${post.buf.length}`);
-  // predecessor cleanup cannot delete the successor
-  const stale = { id: "helen" };                                        // a record the id no longer belongs to
-  const dropped = dropRemote("helen", stale as any);
-  check("a stale expected-record drop is a no-op", dropped === null && remotes.has("helen"));
-  const dropped2 = teardownParticipant("helen", stale as any);
-  check("…through the funnel too", dropped2 === null && remotes.has("helen"));
+  check("…the predecessor's pose buffer is NOT inherited", post.buf.length === 0, `buf=${post.buf.length}`);
+  check("…and the mesh transplanted without a reload flicker", post.avatar === pre.avatar && !post.loading);
+  // predecessor cleanup — holding the REAL predecessor record — is a
+  // COMPLETE no-op: no drop, no custody event, no side effect at all
+  const events: string[] = [];
+  stubs.bus.on("participant-teardown", (id: string) => events.push(id));
+  const dropped = dropRemote("helen", pre);
+  check("the predecessor's own record cannot drop the successor", dropped === null && remotes.has("helen"));
+  const dropped2 = teardownParticipant("helen", pre);
+  check("…and through the funnel it is a COMPLETE no-op: no custody event",
+    dropped2 === null && remotes.has("helen") && events.length === 0,
+    `events=${JSON.stringify(events)} (on the reviewed head the event fired and stripped the successor's custody)`);
   await _dispatch({ type: "leave", id: "helen" });
-  check("a genuine leave still lands (idempotent, unconditional)", !remotes.has("helen"));
+  check("a genuine leave still lands (idempotent, unconditional)", !remotes.has("helen") && events.includes("helen"));
+}
+
+console.log("\n━━ takeover mid-load: ownership moves, the old load dies unattached ━━");
+{
+  stubs.resetAvatarLog();
+  stubs.setHoldLoads(true);
+  const p1 = _dispatch({ type: "arrive", id: "sill", avatar: "vrms/sill.vrm" });
+  await settle();
+  const pre = remotes.get("sill");
+  const oldLoad = stubs.pendingLoads.shift()!;
+  const p2 = _dispatch({ type: "arrive", id: "sill", avatar: "vrms/sill.vrm" });   // same avatar, mid-load
+  await settle();
+  const successorLoad = stubs.pendingLoads.shift()!;
+  check("the successor started its OWN load (no avatar to transplant yet)", !!successorLoad && remotes.get("sill") !== pre);
+  oldLoad.resolve();                                                     // predecessor's load completes late
+  successorLoad.resolve();
+  await p1; await p2; await settle();
+  stubs.setHoldLoads(false);
+  const post = remotes.get("sill");
+  check("the departed generation's load disposed instead of attaching",
+    stubs.disposeCount >= 1 && !!post?.avatar && !post.loading, `disposed=${stubs.disposeCount}`);
+  await _dispatch({ type: "leave", id: "sill" });
 }
 
 console.log("\n━━ reconnect roster seed: the snapshot prunes through the funnel ━━");

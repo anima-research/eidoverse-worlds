@@ -48,14 +48,37 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
     } else {
       // Same body re-announced = a TAKEOVER (the server suppresses the old
       // connection's leave and re-arrives the identity — server.ts ~2023).
-      // The successor reuses the mesh but must inherit NOTHING streamed: the
-      // predecessor's buffered poses are its generation's, not this one's
-      // (#95 acceptance 4 — a stale sample teleporting the successor to
-      // where the predecessor last stood is inheritance, in miniature).
+      // The successor must be a FRESH RECORD OBJECT, not the predecessor's
+      // with fields wiped: every continuation guard in this file compares
+      // record identity, and a reused object makes a predecessor's captured
+      // reference pass as current (#97 review B2). The loaded avatar itself
+      // transplants — same mesh, no flicker, single ownership moves to the
+      // successor — while streamed state (the pose buffer) stays behind on
+      // the orphaned record, uninherited (#95 acceptance 4).
       if (meta.authority) {
-        existing.buf.length = 0;
-        existing.gen = (gens.get(id) ?? 0) + 1;
-        gens.set(id, existing.gen);
+        const fresh = {
+          id, avatar: existing.avatar, avatarPath: existing.avatarPath,
+          loading: false, agent: !!(meta.agent ?? existing.agent),
+          gen: (gens.get(id) ?? 0) + 1,
+          buf: [], lastClip: 'idle', lodAcc: 0, lodTick: 0, speakingUntil: 0,
+        };
+        gens.set(id, fresh.gen);
+        remotes.set(id, fresh);
+        // predecessor still mid-load: its completion will see a record that
+        // isn't its own and dispose (the stale-load guard below); the
+        // successor starts its OWN load — bytes are cached, so this is
+        // cheap, and ownership stays unambiguous
+        if (!fresh.avatar) {
+          fresh.loading = true;
+          try {
+            const av = await makeAvatar(id, fresh.avatarPath || DEFAULT_AVATAR);
+            if (remotes.get(id) !== fresh) { av.dispose(); return fresh; }
+            fresh.avatar = av;
+            if (fresh.buf.length) applyImmediate(fresh);
+          } catch (e) { report(`avatar ${id}`, e); }
+          fresh.loading = false;
+        }
+        return fresh;
       }
       return existing;
     }

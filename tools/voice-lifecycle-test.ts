@@ -217,17 +217,13 @@ const bus = stubs.bus;
 voice.initVoice("me");
 
 const settle = () => new Promise((r) => setTimeout(r, 20));
-const offerFrom = (who: string) => bus.emit("rtc", { from: who, payload: { sdp: { type: "offer", sdp: "x" } } });
-
-// Every participant this matrix speaks as is ANNOUNCED in the roster first —
-// #95's rule: RTC updates peers for people the world has said exist; it
-// never creates one for an unannounced id. ("total-stranger" is deliberately
-// NOT seeded: its case asserts stray ICE conjures nothing, and now doubles
-// as the unannounced-id refusal.)
-for (const id of ["during", "early", "fourth", "friend", "friend2", "midneg", "neighbor",
-  "peerA", "peerB", "peerC", "racer", "seam", "stranger", "talker", "zzz-rejoin"]) {
-  stubs.remotes.set(id, { id, agent: false });
-}
+// #95's roster rule: RTC never builds a peer for an id the world hasn't
+// announced. Sections announce their speakers lazily, at the moment of
+// speaking (seed-if-absent, so a section's richer seed — an avatar with
+// distance, say — is never clobbered), which keeps mic-on from courting
+// the whole future cast at once.
+const announce = (who: string) => { if (!stubs.remotes.has(who)) stubs.remotes.set(who, { id: who, agent: false }); };
+const offerFrom = (who: string) => { announce(who); bus.emit("rtc", { from: who, payload: { sdp: { type: "offer", sdp: "x" } } }); };
 
 // ---- #95: the unannounced are refused --------------------------------------
 {
@@ -610,7 +606,7 @@ check("unhush rejoins the SAME peer at full volume",
   bus.emit("rtc", { from: "peerC", payload: { ice: { candidate: "gen1-stale" } } });
   await settle();                                   // queued on gen1 (no answer yet)
   gen1.signalingState = "have-local-offer";         // wedge it so recvReady rebuilds
-  bus.emit("rtc", { from: "peerC", payload: { recvReady: true } });
+  announce("peerC"); bus.emit("rtc", { from: "peerC", payload: { recvReady: true } });
   await settle();
   const gen2 = created.at(-1)!;
   check("rebuild actually made a fresh pc", gen2 !== gen1);
@@ -630,7 +626,7 @@ check("unhush rejoins the SAME peer at full volume",
   w.__iceLog = [];
   created.length = 0;
   stubs.sent.length = 0;
-  bus.emit("rtc", { from: "racer", payload: { sdp: { type: "offer", sdp: "o1" } } });
+  announce("racer"); bus.emit("rtc", { from: "racer", payload: { sdp: { type: "offer", sdp: "o1" } } });
   bus.emit("rtc", { from: "racer", payload: { sdp: { type: "offer", sdp: "o2" } } });  // same tick — no settle between
   await new Promise((r) => setTimeout(r, 60));
   const sigFails = (w.__iceLog ?? []).filter((x) => typeof x === "string" && x.startsWith("signal-FAIL"));
@@ -729,7 +725,7 @@ check("unhush rejoins the SAME peer at full volume",
   stubs.remotes.set("early", { agent: false });
   bus.emit("roster");                                // peer built with no mic
   await settle();
-  bus.emit("rtc", { from: "early", payload: { sdp: { type: "offer", sdp: "x" } } });
+  announce("early"); bus.emit("rtc", { from: "early", payload: { sdp: { type: "offer", sdp: "x" } } });
   await settle();
   const pcEarly = created.at(-1)!;
   if (!voice.micOn()) { await voice.toggleMic("me"); await settle(); }   // mic ON now
@@ -756,7 +752,7 @@ check("unhush rejoins the SAME peer at full volume",
   const micOpening = voice.micOn() ? Promise.resolve(false) : voice.toggleMic("me");
   await settle();
   stubs.remotes.set("during", { agent: false });
-  bus.emit("rtc", { from: "during", payload: { sdp: { type: "offer", sdp: "x" } } });
+  announce("during"); bus.emit("rtc", { from: "during", payload: { sdp: { type: "offer", sdp: "x" } } });
   await settle();                                    // peer now exists, micStream still null
   release!();
   await micOpening;
@@ -833,7 +829,7 @@ check("unhush rejoins the SAME peer at full volume",
   const held = new Promise<void>((r) => { release = r; });
   const origCreateAnswer = FakePC.prototype.createAnswer;
   FakePC.prototype.createAnswer = async function () { await held; return origCreateAnswer.call(this); };
-  bus.emit("rtc", { from: "midneg", payload: { sdp: { type: "offer", sdp: "x" } } });
+  announce("midneg"); bus.emit("rtc", { from: "midneg", payload: { sdp: { type: "offer", sdp: "x" } } });
   await settle();
   const pcMid = created.at(-1)!;
   check("mid-negotiation: peer is parked in have-remote-offer",
@@ -1082,7 +1078,7 @@ check("unhush rejoins the SAME peer at full volume",
 
   const answersBefore = pcR.answersCreated ?? 0;
   // they reload and offer fresh
-  bus.emit("rtc", { from: "zzz-rejoin", payload: { sdp: { type: "offer", sdp: "after-reload" } } });
+  announce("zzz-rejoin"); bus.emit("rtc", { from: "zzz-rejoin", payload: { sdp: { type: "offer", sdp: "after-reload" } } });
   await settle(); await settle();
 
   check("rejoin: a reloaded peer's offer is ANSWERED, not discarded as glare",

@@ -352,6 +352,11 @@ export async function connect() {
  *  through the remote, which is now gone.
  *  `expected` makes the drop generation-conditional (see dropRemote). */
 export function teardownParticipant(id, expected) {
+  // The generation check comes BEFORE any side effect: a predecessor's stale
+  // cleanup must be a COMPLETE no-op — emitting the custody event first let
+  // it strip the successor's drag state even though the drop itself refused
+  // (#97 review B1). Only a caller who owns the current record may tear.
+  if (expected && remotes.get(id) !== expected) return null;
   bus.emit('participant-teardown', id);   // bodydrag releases custody before the bones vanish
   const dropped = dropRemote(id, expected);
   // The voice peer (and its analyser) rides the 'roster' sweep every caller
