@@ -186,4 +186,3 @@ export const toDb = (amp) => 20 * Math.log10(Math.max(amp, 1e-6));
  *  threshold uses. ONE function for both, so the bar and the marker cannot
  *  land in different places — that mismatch is this control's whole history. */
 export const meterPos = (amp) => Math.max(0, Math.min(1, (toDb(amp) + 60) / 60));
-

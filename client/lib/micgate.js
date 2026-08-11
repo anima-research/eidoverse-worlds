@@ -264,6 +264,13 @@ export function attachSource(stream) {
 export function release() {
   try { _src?.disconnect(); } catch { /* already gone */ }
   try { _gain?.disconnect(); } catch { /* already gone */ }
+  // Disposal OWNERSHIP (#90 review): this module built the monitor tap and the
+  // synth mix-in, so this module disconnects them — a release that leaves its
+  // own nodes wired into a dead graph is the asymmetric repair again.
+  try { _mon?.disconnect(); } catch { /* already gone */ }
+  try { _synthSrc?.disconnect(); } catch { /* already gone */ }
+  _mon = null;
+  _synthSrc = null;
   // Deliberately does NOT stop the destination's tracks: they belong to the
   // stream WebRTC holds, and stop() is a one-way door. The caller's own sender
   // cleanup owns that.
