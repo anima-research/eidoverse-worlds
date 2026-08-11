@@ -96,7 +96,7 @@ const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
 const TOOLS = [
   { name: "look", description: "Text-tier perception: where you are, who's present and what they're doing, every placed thing with distance/bearing, and chat since you last looked.", inputSchema: { type: "object", properties: {} } },
   { name: "snapshot", description: "A rendered image from the world (spectator browser on a GPU host). Slower than look — use when spatial/visual detail matters. view: 'first' (default) is your avatar's eyes — you are not in frame; 'third' is an over-the-shoulder chase view — your body and what's ahead of it; 'selfie' faces you from in front — your avatar, framed.", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["first", "third", "selfie"] } } } },
-  { name: "walk_to", description: "Walk (or run) to world coordinates. Returns when you arrive; others see you walking.", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, run: { type: "boolean" } }, required: ["x", "z"] } },
+  { name: "walk_to", description: "Walk (or run) to world coordinates. Returns when you arrive; others see you walking. If you are seated or riding something, walking gets you off it first, from wherever the seat has carried you — no separate dismount needed.", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, run: { type: "boolean" } }, required: ["x", "z"] } },
   { name: "face", description: "Turn to face a point (x,z) or a participant/entity id (target).", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, target: { type: "string" } } } },
   { name: "stop", description: "Stop walking.", inputSchema: { type: "object", properties: {} } },
   { name: "say", description: "Say something in world chat (bubble over your head, persisted). Equivalent to publishing on the world channel.", inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] } },
@@ -942,6 +942,20 @@ class Session {
         // must survive (#88)
         const why = rawShapeError(String(a.verb), (a.args ?? {}) as Record<string, unknown>);
         if (why) return { content: [{ type: "text", text: `refused ${a.verb}: ${why}` }], isError: true };
+        // Getting off your OWN seat is not a raw forward: it must stamp the
+        // absolute landing derived from the live socket, the same act the
+        // browser performs and the same one look() promises when it says a
+        // dismount "restores a stamped position" (#18). A caller who supplies
+        // its own pos has chosen a landing — forward that verbatim.
+        const ra = (a.args ?? {}) as Record<string, unknown>;
+        if (String(a.verb) === "dismount" && ra.id === ag.name && ra.pos == null) {
+          const at = ag.dismountSelf();
+          if (!at) return text("you are not mounted on anything");
+          const gap = ag.lastDismountGap;
+          return text(`dismounted at (${at.x.toFixed(1)}, ${at.z.toFixed(1)})${
+            gap ? ` — seat unresolved (${gap.why}); landed on ${
+              gap.landedOn === "parent" ? `${gap.to}'s own frame` : "your last stamped position"}` : ""}`);
+        }
         ag.verb(String(a.verb), a.args ?? {});
         return text(`sent ${a.verb}`);
       }

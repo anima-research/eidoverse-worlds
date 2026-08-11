@@ -824,6 +824,18 @@ export class WorldAgent {
         if (isFiniteVec3(args.pos)) e.pos = args.pos;
         if (args.yaw != null) e.yaw = args.yaw;
         this.trackSupport(this.syncSupport(args.id));   // stand it back up
+      } else if (live && args.id === this.name && actor !== this.name && isFiniteVec3(args.pos)) {
+        // OUR body, taken off its seat by someone else: the stamped absolute
+        // is the landing, and without it this body keeps the pre-mount
+        // coordinate exactly the way #18 describes.
+        // Two guards earn their keep. `actor !== this.name` — the echo of our
+        // OWN dismount must not apply, or it snaps us back to the landing
+        // point after we have already taken a stride (dismountSelf set pos
+        // before the round trip; the echo only confirms). `live` — at join
+        // the server's `restore` message owns this body's position, and
+        // replaying a historical landing here would fight it.
+        this.pos.x = args.pos[0]; this.pos.y = args.pos[1]; this.pos.z = args.pos[2];
+        if (Number.isFinite(args.yaw)) this.yaw = args.yaw;
       }
     } else if (verb === "force") {
       // an instantaneous radial CAUSE (blast, gust) — live only, because a
@@ -1371,6 +1383,85 @@ export class WorldAgent {
     if (this.simTicker) { clearInterval(this.simTicker); this.simTicker = null; }
   }
 
+  /** The last self-dismount whose seat would not compose: where it had to
+   *  land instead, and why. Surfaced in look() so the resident SEES the gap
+   *  rather than inheriting a silent teleport. */
+  lastDismountGap: { to: string; why: string; landedOn: "parent" | "stale" } | null = null;
+
+  /** Get off the seat, stamping where the ride ACTUALLY let go (#18).
+   *
+   *  The browser has done this since sockets existed (client/main.js
+   *  `dismountMe`): derive the LIVE seat transform, step clear of it along
+   *  the seat's yaw, and send a dismount carrying that absolute landing —
+   *  the plane-transition invariant the server's own handler names. Headless
+   *  agents emitted a BARE dismount, so the mount vanished while `pos` still
+   *  held the pre-mount ground coordinate; the body then walked away from
+   *  wherever it had sat down. That is the teleport in #18 (FC, on a chair):
+   *  not a missing verb — the verb was sent — but a missing stamp.
+   *
+   *  effective.ts (#82) is what makes this possible headlessly: it composes
+   *  the seat through moving parents at read time, so stepping off a swing
+   *  mid-arc lands where the swing is NOW, not where it was authored.
+   *
+   *  When the chain refuses (a part socket, an unknown motion type, a
+   *  deleted parent) there is no seat transform to stamp. Never fabricate
+   *  one, and never keep the stale coordinate in silence:
+   *    1. seat resolves        → land clear of the seat            (normal)
+   *    2. only the parent does → land clear of the PARENT's origin — we know
+   *                              which thing carries us, just not where on it
+   *    3. nothing resolves     → the browser's own fallback (`sw ? seat :
+   *                              myState.pos`), and SAY so
+   *  2 and 3 record `lastDismountGap` and log a bounded diagnostic.
+   *
+   *  Public because the raw `world_verb dismount {id: me}` door routes here
+   *  too: look() tells a seated resident that dismounting "restores a
+   *  stamped position", and a bare forwarded verb would not keep that
+   *  promise. Returns the landing, or null when not seated. */
+  dismountSelf(): { x: number; y: number; z: number; yaw: number } | null {
+    const ride = this.mounts.get(this.name);
+    if (!ride || !this.joined) return null;
+    // Stamping an absolute landing takes authority over the body, so it
+    // outranks any tumble or settle still suspended on an await — otherwise
+    // one of those resumes and writes the landing back out from under us.
+    // walkTo bumps this already; setPosture and the raw door do not, and
+    // before #18 neither of them moved the body at all.
+    ++this.bodyEpoch;
+    const now = this.serverNow();
+    let eff = this.eff(this.name, now);
+    let landedOn: "parent" | "stale" | null = null;
+    let why = "";
+    if (!eff.ok) {
+      why = eff.why;
+      const parent = ride.to ? this.eff(ride.to, now) : eff;
+      if (parent.ok) { eff = parent; landedOn = "parent"; }
+      else landedOn = "stale";
+    }
+    // step clear along the seat's facing, or you dismount into the chair you
+    // just left — 0.7m, the browser's exact figure, so a watching human and
+    // this body agree on where the transition put it
+    const yaw = eff.ok ? eff.yaw : this.yaw;
+    const fromX = eff.ok ? eff.pos[0] : this.pos.x;
+    const fromZ = eff.ok ? eff.pos[2] : this.pos.z;
+    const x = fromX + Math.sin(yaw) * 0.7;
+    const z = fromZ + Math.cos(yaw) * 0.7;
+    // the browser stamps y=0 because its ground controller re-derives height
+    // every frame; nothing re-derives for a headless body, so stamp the real
+    // terrain height and the log carries a landing that is true on a hill
+    const y = this.heightAt(x, z);
+    this.verb("dismount", { id: this.name, pos: [x, y, z], yaw });
+    // locally immediate, like the browser: the echo CONFIRMS, it does not
+    // grant. Waiting for it would take the first stride still glued.
+    this.mounts.delete(this.name);
+    this.pos.x = x; this.pos.y = y; this.pos.z = z;
+    this.yaw = yaw;
+    if (landedOn) {
+      this.lastDismountGap = { to: ride.to, why, landedOn };
+      this.noteEffGap(this.name, `${why} — dismounted onto ${
+        landedOn === "parent" ? `${ride.to}'s own frame` : "its last stamped position"}`);
+    } else this.lastDismountGap = null;
+    return { x, y, z, yaw };
+  }
+
   walkTo(x: number, z: number, run = false, timeoutMs = 90_000): Promise<boolean> {
     this.walkDone?.(false); // cancel a previous walk
     if (this.draggedBy) {   // deciding to walk IS breaking the dragger's hold
@@ -1391,8 +1482,10 @@ export class WorldAgent {
       if (this.clip === "ragdoll") this.clip = "walk";
     }
     // and deciding to walk IS getting off the seat — a folded mount otherwise
-    // glues this body to its socket on every renderer, wherever the feet go
-    if (this.joined && this.mounts.has(this.name)) this.verb("dismount", { id: this.name });
+    // glues this body to its socket on every renderer, wherever the feet go.
+    // dismountSelf stamps the landing FIRST, so the stride below starts from
+    // beside the seat instead of the pre-mount ground spot (#18).
+    this.dismountSelf();
     // and stand on the ground you got up onto
     this.pos.y = this.heightAt(this.pos.x, this.pos.z);
     this.target = { x, z, run };
@@ -1493,8 +1586,9 @@ export class WorldAgent {
       this.heldPose = null; this.heldPoseAuthored = false;
       this.pos.y = this.heightAt(this.pos.x, this.pos.z);
     }
-    // and standing up IS getting off the seat
-    if (clip === "idle" && this.joined && this.mounts.has(this.name)) this.verb("dismount", { id: this.name });
+    // and standing up IS getting off the seat — with the same stamped landing
+    // a walk gets, or "posture stand" drops the body at its pre-mount spot (#18)
+    if (clip === "idle") this.dismountSelf();
     this.clip = clip;
   }
 
