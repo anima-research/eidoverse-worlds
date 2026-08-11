@@ -56,6 +56,10 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
       // successor — while streamed state (the pose buffer) stays behind on
       // the orphaned record, uninherited (#95 acceptance 4).
       if (meta.authority) {
+        // the mesh transplants; its EXPRESSIONS do not — typing, bubble,
+        // held pose, limp, gaze were the predecessor generation's (#97 B2':
+        // avatar-owned transients must not survive ownership moving)
+        existing.avatar?.resetTransients?.();
         const fresh = {
           id, avatar: existing.avatar, avatarPath: existing.avatarPath,
           loading: false, agent: !!(meta.agent ?? existing.agent),

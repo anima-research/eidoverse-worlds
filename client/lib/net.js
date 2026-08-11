@@ -388,8 +388,13 @@ async function handle(msg) {
     case 'arrive':
       // `authority: true` — an arrive is the world SAYING this person exists.
       // On a takeover (same id re-arriving; the server suppresses the old
-      // connection's leave) this starts a fresh generation and clears any
-      // predecessor pose buffer instead of letting the successor inherit it.
+      // connection's leave) the predecessor generation RETIRES WHOLE before
+      // the successor takes ownership (#97 review): the same generation-end
+      // event a leave emits releases drag custody and drops the voice peer
+      // + analyser — the roster sweep cannot, because the id remains
+      // present — and ensureRemote resets the mesh's transient expressions
+      // before transplanting it into a fresh record.
+      if (remotes.has(msg.id)) bus.emit('participant-teardown', msg.id);
       ensureRemote(msg.id, msg.avatar, { agent: msg.agent, authority: true });
       logChat('*', `${msg.id} arrived`);
       bus.emit('roster');

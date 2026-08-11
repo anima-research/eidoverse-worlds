@@ -584,6 +584,24 @@ export class Avatar {
   // ---- speech
   /** They're composing. Repeated calls extend it; it expires on its own so a
    *  dropped "stopped typing" never leaves the dots stuck up forever. */
+  /** Generation-end (#95): everything TRANSIENT this body was expressing —
+   *  typing pill, speech bubble, held bone pose, limpness, gaze — belongs to
+   *  the generation that expressed it, not to the mesh. A takeover
+   *  transplants the mesh into a fresh record; this is what does NOT ride
+   *  along. Each reset goes through the transient's own teardown mechanism
+   *  (the bubble expires through the update loop, the pill through
+   *  setTyping's stop path), so nothing here invents a second way to die. */
+  resetTransients() {
+    this.setTyping(null);
+    this.bubbleUntil = 0;
+    this.speakUntil = 0;
+    this.voiceLevel = null;
+    this.clearPose();
+    this.setLimp(false);
+    this.setGazeTarget(null);
+    this.setClip('idle');
+  }
+
   setTyping(state) {
     // state === null means STOP (mic went cold, composing ended) — it must
     // clear the pill, not schedule 4s of an empty one. Found live: R's

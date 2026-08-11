@@ -58,6 +58,8 @@ export const setHoldLoads = (v) => { holdLoads = v; };
 const fakeAvatar = () => ({
   root: { position: Object.assign(new THREE_REAL.Vector3(), { set() {}, copy() {} }), rotation: { y: 0 } },
   dispose() { disposeCount++; },
+  transientResets: 0,
+  resetTransients() { this.transientResets++; },   // the generation-end seam (#97)
   setTyping() {}, playAnimation() {}, setClip() {}, setPose() {}, clearPose() {},
   setLimp() {}, playEmote() {}, setGazeTarget() {}, update() {},
 });

@@ -1087,6 +1087,32 @@ check("unhush rejoins the SAME peer at full volume",
   consent.setReceiveVoice(false);
 }
 
+// ---- #97: generation-end retires the voice peer while the id is PRESENT ---
+// A takeover re-arrives an id that never leaves the roster, so the roster
+// sweep can never retire its predecessor's peer — the 'participant-teardown'
+// event must, directly. Deterministic: peer built, audio delivered, analyser
+// live, then the event; the id stays in `remotes` throughout.
+{
+  consent.setReceiveVoice(true);
+  created.length = 0;
+  const who = "genend";
+  offerFrom(who);                                 // announce() seeds remotes
+  await settle();
+  const pc = created.at(-1) as FakePC;
+  check("generation-end setup: a live peer exists", !!pc && !pc.closed);
+  pc.deliverAudio();
+  voice.peerLevels();                             // builds the mouth analyser lazily
+  const before = voice.voiceAnalyserCount();
+  check("…with a live analyser", before >= 1, String(before));
+  bus.emit("participant-teardown", who);
+  await settle();
+  check("the event retires the peer — roster presence notwithstanding",
+    pc.closed && stubs.remotes.has(who), `closed=${pc.closed}, still announced=${stubs.remotes.has(who)}`);
+  check("…and the analyser with it (the census leak, dead)",
+    voice.voiceAnalyserCount() < before, `${before} → ${voice.voiceAnalyserCount()}`);
+  consent.setReceiveVoice(false);
+}
+
 // T5 (relay half) lives in tools/voice-matrix.mjs: RTC_MODE=relay-noturn must
 // stay at 0 inbound pkts; RTC_MODE=relay-turn must exceed 0. External harness
 // by design — fake RTC cannot prove media.

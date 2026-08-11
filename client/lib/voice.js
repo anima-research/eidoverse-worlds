@@ -525,6 +525,12 @@ export function initVoice(name) {
     for (const id of [...peers.keys()]) dropPeer(id);
     if (micStream) for (const id of humanIds()) offerTo(id);
   });
+  // A generation ended — leave, kick/ban, reconnect prune, or a TAKEOVER.
+  // The takeover is why this cannot ride the roster sweep below: the id is
+  // still present, but the peer (and its analyser) belonged to the
+  // predecessor's connection and must not survive into the successor (#97
+  // review). A live mic re-offers on the roster event that follows.
+  bus.on('participant-teardown', (id) => dropPeer(id));
   bus.on('roster', () => {
     // arrivals get an offer while we're live; departures get torn down
     if (micStream) for (const id of humanIds()) if (!peers.has(id)) offerTo(id);

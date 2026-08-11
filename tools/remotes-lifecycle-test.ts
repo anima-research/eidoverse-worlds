@@ -141,10 +141,21 @@ console.log("\n━━ takeover: a successor inherits nothing, and outlives its p
   const pre = remotes.get("helen");                                     // the TRUE predecessor record (#97 B2)
   check("the predecessor holds streamed poses", pre.buf.length === 1);
   const preGen = pre.gen;
+  // the takeover must RETIRE the predecessor generation whole: the same
+  // generation-end event a leave emits (custody + voice listen to it),
+  // fired while the id is STILL PRESENT — the roster sweep cannot do this
+  const retire: string[] = [];
+  stubs.bus.on("participant-teardown", (id: string) => retire.push(id));
   // same avatar re-announced = server-suppressed-leave takeover
   await _dispatch({ type: "arrive", id: "helen", avatar: "vrms/helen.vrm" });
   await settle();
+  check("the takeover fires generation-end, id still present throughout",
+    retire.length === 1 && retire[0] === "helen" && remotes.has("helen"),
+    `retire=${JSON.stringify(retire)} (on the prior head: nothing fired — custody and the voice peer survived)`);
   const post = remotes.get("helen");
+  check("the mesh's transient expressions were reset before transplant",
+    (pre.avatar?.transientResets ?? 0) === 1,
+    `resets=${pre.avatar?.transientResets} (typing pill, bubble, held pose, limp, gaze)`);
   check("the successor is a FRESH RECORD OBJECT", post !== pre,
     "on the reviewed head the record was reused, so predecessor references passed as current");
   check("…with a fresh generation", typeof post.gen === "number" && post.gen === preGen + 1,
