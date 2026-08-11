@@ -201,10 +201,18 @@ export function ttsSection(host, onPaint = () => {}) {
         // existing nodes; fall back to a rebuild only if they are not there yet.
         if (!liveStatus(_busy)) build();
       });
-        const id = `file:${name}`;
+        // #91 B5: identity is the BYTES. `file:${'{'}name{'}'}` let a same-named
+        // different model silently become the same voice; the digest id makes
+        // that impossible, and the identity travels with the memory.
+        const onnxF = files.find((f) => /\.onnx$/i.test(f.name));
+        const cfgF = files.find((f) => /\.onnx\.json$/i.test(f.name)) || files.find((f) => /\.json$/i.test(f.name));
+        const identity = (onnxF && cfgF)
+          ? await (await import('./voicestore.js')).voiceIdentity(onnxF, cfgF)
+          : null;
+        const id = identity?.id ?? `file:${name}`;   // digest when we have bytes; picker edge cases keep working
         try {
           const { rememberVoice, canRemember } = await import('./voicestore.js');
-          if (canRemember()) await rememberVoice(id, name, handles);
+          if (canRemember()) await rememberVoice(id, name, handles, identity);
         } catch (e) { console.warn('[voice] not remembered:', e); }
         _pending = null;
         _selected = id;

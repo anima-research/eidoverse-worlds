@@ -55,7 +55,38 @@ async function tx(mode, fn) {
   } finally { db.close(); }
 }
 
-/** Everything remembered, newest first: [{id, name, handles}]. */
+/** Voice identity from the actual bytes (#91 B5): what the voice IS, not
+ *  what its file happens to be called. A same-named different model pair is
+ *  a different voice; digests make that structural. sha256 of a 60 MB model
+ *  is a one-time ~0.5s at selection — cheap next to the copy it precedes.
+ *  Reproducibility claim, scoped honestly: these digests identify the model
+ *  and config exactly, so a session's INPUTS are reproducible; VITS
+ *  inference is stochastic (noise_scale et al. draw randomness the runtime
+ *  does not expose a seed for), so a given utterance's waveform is a
+ *  performance, not a regenerable artifact. */
+export async function voiceIdentity(onnxFile, cfgFile) {
+  const sha = async (f) => Array.from(new Uint8Array(
+    await crypto.subtle.digest('SHA-256', await f.arrayBuffer())))
+    .map((b) => b.toString(16).padStart(2, '0')).join('');
+  const [modelSha256, configSha256] = await Promise.all([sha(onnxFile), sha(cfgFile)]);
+  let sampleRate = null, params = null;
+  try {
+    const cfg = JSON.parse(await cfgFile.text());
+    sampleRate = cfg?.audio?.sample_rate ?? null;
+    params = cfg?.inference ?? null;   // noise_scale / length_scale / noise_w
+  } catch { /* config unreadable: identity still stands on the digests */ }
+  return {
+    id: `sha256:${modelSha256.slice(0, 16)}`,
+    modelSha256, configSha256, sampleRate, params,
+    engine: 'piper-tts-web', engineVersion: PIPER_WEB_VERSION,
+    modelBytes: onnxFile.size, configBytes: cfgFile.size,
+  };
+}
+// The dep version we pin in client/package.json — surfaced here so identity
+// records name the runtime that performed, not just the model.
+export const PIPER_WEB_VERSION = '1.0.3';
+
+/** Everything remembered, newest first: [{id, name, handles, identity}]. */
 export async function listVoices() {
   const rows = await tx('readonly', (s) => s.getAll());
   return (rows || []).sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
@@ -63,10 +94,10 @@ export async function listVoices() {
 
 /** Remember one pick. `files` are the FileSystemFileHandles, not File objects —
  *  a File is a snapshot of bytes and is NOT persistable; the handle is. */
-export async function rememberVoice(id, name, handles) {
+export async function rememberVoice(id, name, handles, identity = null) {
   if (!id || !handles?.length) return false;
   try {
-    await tx('readwrite', (s) => s.put({ id, name, handles, savedAt: Date.now() }, id));
+    await tx('readwrite', (s) => s.put({ id, name, handles, identity, savedAt: Date.now() }, id));
     return true;
   } catch (e) {
     // Private-browsing and locked-down profiles refuse IndexedDB outright.

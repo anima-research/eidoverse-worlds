@@ -60,7 +60,14 @@ registerEngine({
     // fake percentage would be a progress bar that lies.
     onProgress({ phase: 'runtime', text: 'loading runtime…' });
     const e = await runtime();
-    const base = onnx.name.replace(/\.onnx$/i, '');
+    // #91 B5: the OPFS cache key IS the digest. Basename-only keys let two
+    // different models that share a filename silently serve each other's
+    // bytes; suffixing the digest makes a collision structurally impossible
+    // and costs one sha256 of bytes we were about to copy anyway.
+    const shaBuf = await crypto.subtle.digest('SHA-256', await onnx.arrayBuffer());
+    const sha12 = Array.from(new Uint8Array(shaBuf).slice(0, 6))
+      .map((b) => b.toString(16).padStart(2, '0')).join('');
+    const base = `${onnx.name.replace(/\.onnx$/i, '')}-${sha12}`;
 
     // The runtime has no seam for local model bytes: TtsSession always resolves
     // a voiceId through PATH_MAP and fetches HuggingFace. But getBlob() reads an
