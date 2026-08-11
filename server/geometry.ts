@@ -290,10 +290,12 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
 
           // ---- per-cell ray certification (#94 review B1) ----------------
           // A body may stand ANYWHERE in a cell, so every offered cell must
-          // prove its whole surface, not its tallest vertex: 3×3 rays per
-          // occupied cell; any miss (air in the cell) or a spread beyond
-          // CERT_SPREAD serves as null. The offered value is the ray MAXIMUM
-          // — a certified upper bound within the declared spread.
+          // prove its whole surface, not its tallest vertex: CERT_SUBSAMPLE²
+          // (4×4) rays per occupied cell, with rough cells re-proving
+          // themselves on an 8×8 lattice below; any miss (air in the cell)
+          // or a spread beyond CERT_SPREAD serves as null. The offered value
+          // folds in the cell's vertex max — a certified upper bound within
+          // the declared spread.
           const bvhMod = tris <= SAMPLE_ABOVE_TRIS ? await getBVH() : null;   // a sampled-scale mesh gets no certification, hence no grid
           if (bvhMod) {
             const soup: number[] = [];
