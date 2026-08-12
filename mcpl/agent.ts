@@ -1409,13 +1409,19 @@ export class WorldAgent {
     return null;
   }
 
-  // extra carries ONLY the spoken-say protocol trio (r2 review: an
-  // unconstrained spread made every internal caller a second, unguarded door
-  // for protocol keys). The world server validates values; this picks names.
+  // extra carries ONLY the spoken-say protocol trio, guarded with the same
+  // shapes the server enforces (r3 review: name-picking without value guards
+  // still let an internal caller send utt:-1 or t0:NaN — two layers that
+  // disagree on well-formed are one layer). Malformed trio → plain say: an
+  // internal caller's bug must not silently ride protocol keys.
   say(text: string, extra?: { spoken?: boolean; utt?: number; t0?: number }) {
     this._typingUntil = 0;
     const args: Record<string, unknown> = { text };
-    if (extra) for (const k of ["spoken", "utt", "t0"] as const) if (extra[k] !== undefined) args[k] = extra[k];
+    if (extra?.spoken === true && Number.isSafeInteger(extra.utt) && (extra.utt as number) >= 0) {
+      args.spoken = true;
+      args.utt = extra.utt;
+      if (Number.isFinite(extra.t0)) args.t0 = extra.t0;
+    }
     this.verb("say", args);
   }
 

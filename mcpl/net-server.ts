@@ -826,16 +826,24 @@ class Session {
         // door. The server validates these (bounded utt window, clamped t0)
         // and strips them from ordinary says — the door's job is to forward
         // the protocol, not arbitrary metadata.
-        // Typed at the door, not just named (r2 review): the world server is
-        // the enforcing validator (it deletes the trio unless well-formed),
-        // but the door shouldn't relay arbitrarily large or mistyped payloads
-        // TO it under protocol names. Wrong type here means the key simply
-        // doesn't ride — same outcome the server would impose, one hop
-        // earlier.
-        const extra: Record<string, unknown> = {};
-        if (a.spoken === true) extra.spoken = true;
-        if (typeof a.utt === "number" && Number.isSafeInteger(a.utt) && a.utt >= 0) extra.utt = a.utt;
-        if (typeof a.t0 === "number" && Number.isFinite(a.t0)) extra.t0 = a.t0;
+        // THE TRIO IS A UNIT (r3 review). The world server deletes all three
+        // keys unless spoken===true AND utt is a safe non-negative integer —
+        // so forwarding keys independently let a spoken:true say with a bad
+        // utt ride to the server and silently degrade to ordinary chat, the
+        // voice agent none the wiser. Validate the same unit here, with the
+        // server's own coercion (Number(), not typeof — the server accepts
+        // "5"), and refuse LOUDLY: a door that must drop the protocol should
+        // say so, not shrug the say into text.
+        const wantsSpoken = a.spoken !== undefined || a.utt !== undefined || a.t0 !== undefined;
+        const uttN = Number(a.utt);
+        const t0N = Number(a.t0);
+        const trioOk = a.spoken === true && Number.isSafeInteger(uttN) && uttN >= 0;
+        if (wantsSpoken && !trioOk) {
+          return text("spoken-say refused: the protocol trio must travel together — spoken:true plus a non-negative integer utt (t0 optional, finite). Sent as ordinary text it would silently lose its performance link, so nothing was said; fix and resend.");
+        }
+        const extra = trioOk
+          ? { spoken: true as const, utt: uttN, ...(Number.isFinite(t0N) ? { t0: t0N } : {}) }
+          : undefined;
         ag.say(String(a.text).slice(0, 4000), extra);
         return text("said");
       }
