@@ -30,12 +30,20 @@
 //    log and snapshot leaves the log AHEAD — startup folds it forward. A
 //    snapshot ahead of its log is a state with no receipt: quarantined,
 //    served as missing, said loudly. Provenance ⊇ applied state, always;
-//  - writes are CAS-guarded: the store reloads from disk before mutating
-//    (two processes write here — the server and the operator tool), and the
-//    countersign additionally requires the revision the operator REVIEWED —
-//    a proposal that changed since `list` cannot be accepted unseen.
+//  - writes are SERIALIZED across processes (#105 review round 2): the store
+//    has two real writers — the live server and the offline operator tool —
+//    and a check-then-act freshen was provably interleavable (two contradictory
+//    records at one revision, forced by the reviewer on the prior head). Every
+//    mutation now runs whole under one shared on-disk lock: acquire → forced
+//    reload (never mtime trust) → precondition re-check → provenance append →
+//    snapshot rename → in-memory swap → release in finally. Lock acquisition
+//    is bounded and explicit — a timeout changes nothing anywhere and says
+//    so; a lock older than its liveness window is declared stale, broken,
+//    and noted. The countersign additionally requires the revision the
+//    operator REVIEWED — under the lock, an interleaved proposal moves the
+//    revision and the acceptance refuses rather than bless the unseen.
 
-import { mkdirSync, existsSync, readFileSync, writeFileSync, renameSync, appendFileSync, statSync } from "node:fs";
+import { mkdirSync, existsSync, readFileSync, writeFileSync, renameSync, appendFileSync, statSync, openSync, closeSync, writeSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { validateProfile, profileStatus } from "../client/lib/seatcore.js";
 
@@ -82,6 +90,7 @@ export class SeatStore {
   private dir: string;
   private file: string;
   private logFile: string;
+  private lockFile: string;
   private store: Store = { rev: 0, profiles: Object.create(null) };
   private fileMtime = 0;
   private quarantined: string | null = null;
@@ -89,29 +98,97 @@ export class SeatStore {
   private clipBases: string[];
   private vrmDirs: string[];
   private fs: SeatFs;
+  private lockTimeoutMs: number;
+  private lockStaleMs: number;
 
-  constructor(optDir: string, libraryDir: string, fsOverride: Partial<SeatFs> = {}) {
+  constructor(optDir: string, libraryDir: string, fsOverride: Partial<SeatFs> = {},
+    { lockTimeoutMs = 3000, lockStaleMs = 10_000 } = {}) {
     this.dir = join(optDir, "seats");
     this.file = join(this.dir, "profiles.json");
     this.logFile = join(this.dir, "profiles.log.jsonl");
+    this.lockFile = join(this.dir, ".write-lock");
     // overlay wins, like the avatar roster scan
     this.clipBases = [join(optDir, CLIP_REL), join(libraryDir, CLIP_REL)];
     this.vrmDirs = [join(optDir, "eidoverse/assets/vrms"), join(libraryDir, "eidoverse/assets/vrms")];
     this.fs = { writeFileSync, renameSync, appendFileSync, ...fsOverride };
+    this.lockTimeoutMs = lockTimeoutMs;
+    this.lockStaleMs = lockStaleMs;
     this.reload();
+  }
+
+  // ---- the write lock (one per store directory, shared by every process) ---
+
+  /** Exclusive-create is the atom: openSync(…, "wx") either mints the lock
+   *  file or throws EEXIST, on Windows and POSIX alike. The file carries
+   *  {pid, ts}; a lock older than its liveness window belongs to a dead
+   *  writer — broken loudly, never silently. Acquisition is a bounded spin:
+   *  timing out is an ANSWER (the caller refuses with no state touched),
+   *  not a hang. NB the lock rides the REAL fs even under fault injection —
+   *  injected faults are the transaction's to survive, not the lock's. */
+  private acquireLock(): boolean {
+    const deadline = Date.now() + this.lockTimeoutMs;
+    mkdirSync(this.dir, { recursive: true });
+    for (;;) {
+      try {
+        const fd = openSync(this.lockFile, "wx");
+        writeSync(fd, JSON.stringify({ pid: process.pid, ts: Date.now() }));
+        closeSync(fd);
+        return true;
+      } catch {
+        try {
+          const holder = JSON.parse(readFileSync(this.lockFile, "utf8"));
+          if (Date.now() - (holder.ts ?? 0) > this.lockStaleMs) {
+            console.error(`[seats] breaking stale write lock (pid ${holder.pid}, ${Date.now() - holder.ts}ms old)`);
+            unlinkSync(this.lockFile);
+            continue;
+          }
+        } catch { /* unreadable or vanished between stat and read: retry */ }
+        if (Date.now() >= deadline) return false;
+        Bun.sleepSync(25);
+      }
+    }
+  }
+
+  private releaseLock() {
+    try { unlinkSync(this.lockFile); } catch { /* already broken as stale — nothing to release */ }
+  }
+
+  /** Every mutation runs WHOLE under the lock: forced reload (mtime is a
+   *  hint, not a guarantee), precondition re-check, provenance append,
+   *  snapshot rename, in-memory swap. Two writers can no longer both build
+   *  rev N+1 from rev N — the second waits or refuses. */
+  private withLock<T>(fn: () => T): T | { ok: false; status: number; why: string } {
+    if (!this.acquireLock())
+      return { ok: false, status: 503, why: `another writer holds the seat-profile lock (waited ${this.lockTimeoutMs}ms) — nothing was written; retry after it releases` };
+    try {
+      this.reload();   // unconditional: the lock is when the disk is the truth
+      return fn();
+    } finally {
+      this.releaseLock();
+    }
   }
 
   // ---- store I/O -----------------------------------------------------------
 
-  private lastLogRev(): number {
+  /** All valid log entries, in file order — and the monotonicity verdict.
+   *  Two records at one revision is what the write lock exists to prevent;
+   *  finding them on disk means a pre-lock writer (or hand edit) forked the
+   *  history, and no fold order is defensible — quarantine (#105 round 2,
+   *  vector 5). */
+  private readLog(): { entries: any[]; monotonic: boolean } {
+    const entries: any[] = [];
+    let monotonic = true, prev = 0;
     try {
-      if (!existsSync(this.logFile)) return 0;
-      const lines = readFileSync(this.logFile, "utf8").trimEnd().split("\n");
-      for (let i = lines.length - 1; i >= 0; i--) {
-        try { const r = JSON.parse(lines[i]).rev; if (Number.isInteger(r)) return r; } catch { /* torn tail line: skip */ }
+      if (!existsSync(this.logFile)) return { entries, monotonic };
+      for (const line of readFileSync(this.logFile, "utf8").trimEnd().split("\n")) {
+        let e: any; try { e = JSON.parse(line); } catch { continue; /* torn tail line */ }
+        if (!Number.isInteger(e.rev)) continue;
+        if (e.rev <= prev) monotonic = false;
+        prev = e.rev;
+        entries.push(e);
       }
-    } catch { /* unreadable log = rev 0 */ }
-    return 0;
+    } catch { /* unreadable log = empty; the snapshot check below decides */ }
+    return { entries, monotonic };
   }
 
   private reload() {
@@ -125,7 +202,14 @@ export class SeatStore {
         this.fileMtime = st.mtimeMs;
       }
     } catch { /* unreadable snapshot serves as empty below, subject to the log check */ }
-    const logRev = this.lastLogRev();
+    const log = this.readLog();
+    if (!log.monotonic) {
+      this.quarantined = "provenance log has duplicate or non-monotonic revisions — a forked history has no defensible fold order; operator must reconcile";
+      console.error(`[seats] ${this.quarantined}`);
+      this.store = { rev: snap.rev, profiles: Object.create(null) };
+      return;
+    }
+    const logRev = log.entries.at(-1)?.rev ?? 0;
     if (snap.rev > logRev) {
       // a snapshot with no receipt for its last write — the exact state the
       // provenance boundary exists to forbid. Refuse to serve it as truth.
@@ -137,24 +221,15 @@ export class SeatStore {
     if (logRev > snap.rev) {
       // crash between log append and snapshot rename: fold the receipted
       // writes forward — the log is the truth the snapshot merely caches
-      try {
-        const lines = readFileSync(this.logFile, "utf8").trimEnd().split("\n");
-        for (const line of lines) {
-          let e: any; try { e = JSON.parse(line); } catch { continue; }
-          if (!Number.isInteger(e.rev) || e.rev <= snap.rev) continue;
-          this.foldLogEntry(snap, e);
-          snap.rev = e.rev;
-        }
-        console.log(`[seats] snapshot lagged its log — receipted writes folded forward to rev ${snap.rev}`);
-        this.store = snap;
-        this.persistSnapshotOnly();   // rewrite the cache to match its receipts
-        return;
-      } catch (e) {
-        this.quarantined = `provenance log unreadable during recovery: ${(e as Error).message}`;
-        console.error(`[seats] ${this.quarantined}`);
-        this.store = { rev: logRev, profiles: Object.create(null) };
-        return;
+      for (const e of log.entries) {
+        if (e.rev <= snap.rev) continue;
+        this.foldLogEntry(snap, e);
+        snap.rev = e.rev;
       }
+      console.log(`[seats] snapshot lagged its log — receipted writes folded forward to rev ${snap.rev}`);
+      this.store = snap;
+      try { this.persistSnapshotOnly(); } catch { /* the log still leads; the next load folds again */ }
+      return;
     }
     this.store = snap;
   }
@@ -201,13 +276,6 @@ export class SeatStore {
     this.store = next;
     try { this.fileMtime = statSync(this.file).mtimeMs; } catch { /* poll heals */ }
     return { ok: true, rev: next.rev };
-  }
-
-  /** Two processes write here — reload from disk before every mutation so a
-   *  decision is made against current state, not a stale snapshot. */
-  private freshen() {
-    let st; try { st = statSync(this.file); } catch { return; }
-    if (st.mtimeMs !== this.fileMtime) this.reload();
   }
 
   pollExternalChange(): { rev: number; changed: { name: string; pose: string }[] } | null {
@@ -279,23 +347,25 @@ export class SeatStore {
    *  this path by construction. */
   propose(record: ProfileRec, actor: string, { allowUnrostered = false } = {}):
     { ok: true; rev: number; name: string; pose: string } | { ok: false; status: number; why: string } {
-    this.freshen();
-    if (this.quarantined) return { ok: false, status: 503, why: "profile store quarantined — operator must reconcile snapshot/log" };
+    // shape refusals need no lock — garbage never contends with real writers
     const val = validateProfile(record);
     if (!val.ok) return { ok: false, status: 422, why: val.why };
     if (record.review && record.review.status !== "proposed")
       return { ok: false, status: 403, why: "this door writes proposals only — countersign is an operator act" };
-    const name = record.avatar, pose = record.pose;
-    if (!allowUnrostered && !this.rosterHas(name))
-      return { ok: false, status: 404, why: `"${name}" is not a roster avatar — there are no bytes to judge this profile against` };
-    const prior = this.store.profiles[name]?.[pose]?.proposed ?? null;
-    const rec = { ...record, review: { status: "proposed", proposedBy: actor, ...(allowUnrostered ? { unrostered: true } : {}), ts: Date.now() } };
-    const r = this.persist("propose", actor, name, pose, rec, prior, (s) => {
-      const slot = ((s.profiles[name] ??= Object.create(null))[pose] ??= {});
-      slot.proposed = rec;
+    return this.withLock(() => {
+      if (this.quarantined) return { ok: false as const, status: 503, why: "profile store quarantined — operator must reconcile snapshot/log" };
+      const name = record.avatar, pose = record.pose;
+      if (!allowUnrostered && !this.rosterHas(name))
+        return { ok: false as const, status: 404, why: `"${name}" is not a roster avatar — there are no bytes to judge this profile against` };
+      const prior = this.store.profiles[name]?.[pose]?.proposed ?? null;
+      const rec = { ...record, review: { status: "proposed", proposedBy: actor, ...(allowUnrostered ? { unrostered: true } : {}), ts: Date.now() } };
+      const r = this.persist("propose", actor, name, pose, rec, prior, (s) => {
+        const slot = ((s.profiles[name] ??= Object.create(null))[pose] ??= {});
+        slot.proposed = rec;
+      });
+      if (!r.ok) return { ok: false as const, status: 503, why: r.why };
+      return { ok: true as const, rev: r.rev, name, pose };
     });
-    if (!r.ok) return { ok: false, status: 503, why: r.why };
-    return { ok: true, rev: r.rev, name, pose };
   }
 
   /** Operator countersign (tools/seat-accept.ts — no HTTP path reaches this).
@@ -303,22 +373,27 @@ export class SeatStore {
    *  store has moved since, the acceptance refuses rather than countersign a
    *  record nobody looked at (#105 review B3). */
   accept(name: string, pose: string, receipt: string, by: string, expectedRev: number):
-    { ok: true; rev: number } | { ok: false; why: string } {
-    this.freshen();
-    if (this.quarantined) return { ok: false, why: `store quarantined: ${this.quarantined}` };
+    { ok: true; rev: number } | { ok: false; why: string; status?: number } {
     if (!Number.isInteger(expectedRev)) return { ok: false, why: "expectedRev required — accept what you reviewed (run `list`, pass --expect-rev)" };
-    if (this.store.rev !== expectedRev)
-      return { ok: false, why: `store moved (rev ${this.store.rev} ≠ reviewed ${expectedRev}) — re-list and re-review before countersigning` };
-    const slot = this.store.profiles[name]?.[pose];
-    if (!slot?.proposed) return { ok: false, why: `no proposed profile for ${name}/${pose}` };
-    const rec = { ...slot.proposed, review: { status: "accepted", receipt, by, ts: Date.now() } };
-    const val = validateProfile(rec);
-    if (!val.ok) return { ok: false, why: `proposed record no longer validates: ${val.why}` };
-    const prior = slot.accepted ?? null;
-    return this.persist("accept", by, name, pose, rec, prior, (s) => {
-      const sl = ((s.profiles[name] ??= Object.create(null))[pose] ??= {});
-      sl.accepted = rec;
-      delete sl.proposed;
+    return this.withLock(() => {
+      if (this.quarantined) return { ok: false as const, why: `store quarantined: ${this.quarantined}` };
+      // the reload above happened UNDER the lock: this comparison is against
+      // the disk's truth at commit time, so a proposal that interleaved
+      // anywhere before this moment moves the revision and refuses the
+      // countersign — the operator never blesses a record nobody reviewed
+      if (this.store.rev !== expectedRev)
+        return { ok: false as const, why: `store moved (rev ${this.store.rev} ≠ reviewed ${expectedRev}) — re-list and re-review before countersigning` };
+      const slot = this.store.profiles[name]?.[pose];
+      if (!slot?.proposed) return { ok: false as const, why: `no proposed profile for ${name}/${pose}` };
+      const rec = { ...slot.proposed, review: { status: "accepted", receipt, by, ts: Date.now() } };
+      const val = validateProfile(rec);
+      if (!val.ok) return { ok: false as const, why: `proposed record no longer validates: ${val.why}` };
+      const prior = slot.accepted ?? null;
+      return this.persist("accept", by, name, pose, rec, prior, (s) => {
+        const sl = ((s.profiles[name] ??= Object.create(null))[pose] ??= {});
+        sl.accepted = rec;
+        delete sl.proposed;
+      });
     });
   }
 

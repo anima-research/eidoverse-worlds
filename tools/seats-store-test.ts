@@ -14,7 +14,7 @@
  * Run: bun run tools/seats-store-test.ts   (scratch dirs only)
  */
 
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync, appendFileSync as appendFileSyncReal } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -120,6 +120,71 @@ try {
       q.judge("seatdummy", join(OPT, "eidoverse/assets/vrms/seatdummy.vrm")).status === "missing");
     const w = q.propose(profile("seatdummy"), "someone") as any;
     check("quarantined store refuses writes (503)", !w.ok && w.status === 503);
+    // un-quarantine for the sections below: restore the honest snapshot
+    writeFileSync(join(seatsDir, "profiles.json"), JSON.stringify(snap));
+  }
+
+  console.log("#105 round 2 — two real writers, genuinely overlapped");
+  {
+    // B is a second store instance (a second process, as far as the lock can
+    // tell) with a short bounded wait; its propose() is injected INSIDE A's
+    // provenance append — the exact interleaving the reviewer forced on the
+    // prior head, where both writers built rev N+1 from rev N and the log
+    // took two contradictory records at one revision.
+    const B = new SeatStore(OPT, LIB, {}, { lockTimeoutMs: 250 });
+    let overlapResult: any = null, fired = false;
+    const A = new SeatStore(OPT, LIB, {
+      appendFileSync: (path: any, data: any) => {
+        if (!fired) { fired = true; overlapResult = B.propose(profile("seatdummy", "sitchair"), "writer-B"); }
+        return appendFileSyncReal(path, data);
+      },
+    });
+    const revBefore = A.rev;
+    const logBefore = logOf(), snapBefore = snapshotOf();
+    const a = A.propose(profile("seatdummy"), "writer-A") as any;
+    check("A's write completes under its lock", a.ok === true && a.rev === revBefore + 1, JSON.stringify(a));
+    check("B, overlapped inside A's transaction, REFUSES instead of forking history",
+      overlapResult && overlapResult.ok === false && /lock/.test(overlapResult.why), JSON.stringify(overlapResult));
+    check("B's refusal changed nothing (rev held)", B.rev <= revBefore + 1);
+    const b = B.propose(profile("seatdummy"), "writer-B") as any;
+    check("B retried after the release succeeds at the NEXT revision", b.ok === true && b.rev === a.rev + 1, JSON.stringify(b));
+    const revs = logOf()!.trim().split("\n").map((l) => { try { return JSON.parse(l).rev; } catch { return null; } }).filter((r) => r !== null);
+    check("vector 1: log revisions are unique and strictly monotonic",
+      revs.every((r, i) => i === 0 || r > revs[i - 1]), JSON.stringify(revs));
+    check("vector 2: both writes survive, reconstructible",
+      new SeatStore(OPT, LIB).list().records.some((x) => x.name === "seatdummy" && x.slot === "proposed"));
+
+    // vector 3: a proposal lands between the operator's review and the
+    // countersign — the reviewed revision has moved, the acceptance refuses
+    const op = new SeatStore(OPT, LIB);
+    const reviewedRev = op.rev;
+    const interloper = new SeatStore(OPT, LIB);
+    const p = interloper.propose(profile("seatdummy"), "interloper") as any;
+    const ac = op.accept("seatdummy", "sitchair", "receipt", "op", reviewedRev) as any;
+    check("vector 3: the countersign refuses the record nobody reviewed", p.ok === true && !ac.ok && /re-list/.test(ac.why), JSON.stringify(ac));
+    const ac2 = op.accept("seatdummy", "sitchair", "receipt", "op", p.rev) as any;
+    check("…and succeeds against the re-reviewed revision", ac2.ok === true);
+
+    // vector 4: lock acquisition failure changes neither log, snapshot, nor memory
+    writeFileSync(join(seatsDir, ".write-lock"), JSON.stringify({ pid: 99999, ts: Date.now() }));
+    const blocked = new SeatStore(OPT, LIB, {}, { lockTimeoutMs: 200 });
+    const logHeld = logOf(), snapHeld = snapshotOf(), revHeld = blocked.rev;
+    const timeout = blocked.propose(profile("seatdummy"), "late-writer") as any;
+    check("vector 4: a lock timeout refuses with nothing written",
+      !timeout.ok && /lock/.test(timeout.why) && logOf() === logHeld && snapshotOf() === snapHeld && blocked.rev === revHeld,
+      JSON.stringify(timeout));
+    // …and a lock whose holder is DEAD (past the liveness window) is broken, loudly
+    writeFileSync(join(seatsDir, ".write-lock"), JSON.stringify({ pid: 99999, ts: Date.now() - 60_000 }));
+    const breaker = new SeatStore(OPT, LIB, {}, { lockTimeoutMs: 500 });
+    const broke = breaker.propose(profile("seatdummy"), "after-crash") as any;
+    check("a stale lock is broken and the write proceeds", broke.ok === true, JSON.stringify(broke));
+
+    // vector 5: duplicate-revision provenance is a forked history — quarantined
+    const lastLine = logOf()!.trim().split("\n").at(-1)!;
+    appendFileSyncReal(join(seatsDir, "profiles.log.jsonl"), lastLine + "\n");
+    const forked = new SeatStore(OPT, LIB);
+    check("vector 5: startup refuses duplicate-revision provenance",
+      forked.quarantineReason !== null && /monotonic|duplicate/.test(forked.quarantineReason ?? ""), forked.quarantineReason ?? "");
   }
 } finally {
   rmSync(OPT, { recursive: true, force: true });
