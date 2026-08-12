@@ -1220,6 +1220,7 @@ type Client = {
   lastPose: unknown;   // latest pose, forwarded to late joiners so they see everyone immediately
   spectator: boolean;  // retina/observer connections: receive everything, appear as nothing
   tokenVerified?: boolean; // this leg presented the identity's own bearer at join
+  auxBound?: boolean;  // this aux leg is bound to the primary's identity authority (token bearer OR matching login sub) — the B1 admission result, reused by the B3 attest gate
   agent?: boolean;     // self-declared: an MCPL body, not a person at a keyboard
   auth?: HnSession;    // archipelago-home session bound at WS upgrade (verified human)
   sub?: string;        // durable principal id when authenticated (`human:discord:…`)
@@ -2195,6 +2196,12 @@ const server = Bun.serve({
             //     stop; the primary can log in and rejoin to earn aux legs.
             const auxBound = c.tokenVerified === true
               || (typeof primary.sub === "string" && primary.sub.length > 0 && c.sub === primary.sub);
+            // Remember the binding so the attest gate (B3) admits the SAME
+            // identity authority B1 does — a sub-bound human's voice leg, not
+            // only a token-verified agent leg (Opus-5 review: gating attest on
+            // tokenVerified alone silently barred a logged-in human's own voice
+            // leg, holding then double-speaking every say they voiced).
+            if (auxBound) c.auxBound = true;
             if (!auxBound) {
               console.log(`[world:${w.name}] aux refused: "${c.id}"/${c.surface} has no binding to the primary's identity authority`);
               ws.send(JSON.stringify({ type: "error", error: `a ${c.surface} leg for "${c.id}" must present that identity's credential (agent bearer, or the primary's own login)` }));
@@ -2882,11 +2889,14 @@ const server = Bun.serve({
           // anywhere: capability gates the hold, this receipt confirms the
           // performance, a timeout recovers the fallback.
           if (!c.world) return;
-          // B3: performance attestation is the VOICE surface's privilege alone.
-          // A token-verified but arbitrary aux leg (vr-hands, etc.) must not be
-          // able to mint a voice-performance receipt for the author's says.
-          if (c.surface !== "voice" || c.tokenVerified !== true) {
-            ws.send(JSON.stringify({ type: "error", error: "attest is for the token-verified voice leg" }));
+          // B3: performance attestation is the VOICE surface's privilege alone,
+          // and only from a leg BOUND to the identity's authority (the same B1
+          // admission test — token bearer OR the primary's own login sub). A
+          // vr-hands or otherwise non-voice aux leg cannot mint a voice receipt;
+          // and a sub-bound human's voice leg CAN (Opus-5 review: gating on
+          // tokenVerified alone barred exactly that legitimate leg).
+          if (c.surface !== "voice" || c.auxBound !== true) {
+            ws.send(JSON.stringify({ type: "error", error: "attest is for the identity's bound voice leg" }));
             return;
           }
           const seq = Number(msg.seq);

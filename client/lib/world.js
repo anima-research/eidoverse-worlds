@@ -146,12 +146,17 @@ bus.on('surface-transition', ({ actor, surface, gen, retired }) => {
   }
 });
 bus.on('performed', ({ actor, seq, gen }) => {
-  // A receipt cancels a hold only when it matches the whole composite it was
-  // held under (B2): same seq AND same author AND same voice generation. This
-  // is the reason the protocol carries actor/gen — a receipt from a wrong actor
-  // or a stale/late generation must not satisfy this seq's hold.
+  // A receipt cancels a hold only from the right author and NOT from a stale
+  // (predecessor) voice generation (B2). It carries actor/gen for exactly this.
+  // The gen test is `>=`, not `===` (Opus-5 review): a say held while gen 7 was
+  // live may legitimately be performed by a SUCCESSOR leg (gen 9) after a
+  // mid-hold takeover — the successor inherits the utterance and attests under
+  // its own current gen, which the server stamps as performed.gen. Requiring
+  // strict equality would ignore that valid receipt and double-speak the line
+  // locally. Only a receipt OLDER than the hold's generation (a retired leg's
+  // late frame) must be refused; current-or-newer is a real performance.
   const held = pendingSpeech.get(seq);
-  if (held && held.actor === actor && held.gen === gen) {
+  if (held && held.actor === actor && gen >= held.gen) {
     clearTimeout(held.timer);
     pendingSpeech.delete(seq);
   }

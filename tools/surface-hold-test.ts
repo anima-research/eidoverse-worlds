@@ -68,12 +68,13 @@ const say = (actor: string, text: string) =>
     spoken.filter((s) => s.text === "unreceipted line").length === 1, JSON.stringify(spoken));
 }
 
-// ── 2b. a receipt cancels ONLY on the full {actor, seq, gen} it was held under
-//        (B2): wrong actor, predecessor gen, or successor gen must NOT cancel —
-//        the say still falls back. This is why the protocol carries actor/gen. ─
+// ── 2b. a receipt cancels on the right author and a NON-stale generation (B2):
+//        wrong actor → no cancel (falls back); predecessor gen → no cancel
+//        (a retired leg's late frame); successor gen → DOES cancel (a takeover
+//        leg legitimately performed the inherited say). gen is matched `>=`. ──
 {
-  // hold three says under norrin@gen7, then fire three MISMATCHED receipts —
-  // right seq each time, but a wrong composite member — and confirm none cancel.
+  // hold three says while gen 7 is live, then fire receipts that differ on one
+  // composite member each.
   spoken.length = 0;
   await say("norrin", "wrong-actor receipt");
   const sWrongActor = seq;
@@ -81,16 +82,16 @@ const say = (actor: string, text: string) =>
   const sPredGen = seq;
   await say("norrin", "successor-gen receipt");
   const sSuccGen = seq;
-  stub.bus.emit("performed", { actor: "zarniwoop", seq: sWrongActor, gen: 7 }); // wrong actor
-  stub.bus.emit("performed", { actor: "norrin", seq: sPredGen, gen: 6 });       // predecessor generation
-  stub.bus.emit("performed", { actor: "norrin", seq: sSuccGen, gen: 9 });       // successor generation
+  stub.bus.emit("performed", { actor: "zarniwoop", seq: sWrongActor, gen: 7 }); // wrong actor → ignore
+  stub.bus.emit("performed", { actor: "norrin", seq: sPredGen, gen: 6 });       // predecessor (stale) → ignore
+  stub.bus.emit("performed", { actor: "norrin", seq: sSuccGen, gen: 9 });       // successor (takeover) → CANCEL
   await sleep(HOLD_MS + 400);
   check("wrong-actor receipt does not cancel the hold (falls back)",
     spoken.filter((s) => s.text === "wrong-actor receipt").length === 1, JSON.stringify(spoken));
-  check("predecessor-generation receipt does not cancel the hold (falls back)",
+  check("predecessor-generation receipt does not cancel the hold (falls back — stale leg)",
     spoken.filter((s) => s.text === "predecessor-gen receipt").length === 1, JSON.stringify(spoken));
-  check("successor-generation receipt does not cancel the hold (falls back)",
-    spoken.filter((s) => s.text === "successor-gen receipt").length === 1, JSON.stringify(spoken));
+  check("successor-generation receipt DOES cancel the hold (a takeover leg performed it — no double-speak)",
+    spoken.filter((s) => s.text === "successor-gen receipt").length === 0, JSON.stringify(spoken));
 }
 
 // ── 3. no receipt → falls back exactly once ─────────────────────────────────
