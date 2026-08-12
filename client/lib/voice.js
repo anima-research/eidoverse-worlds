@@ -318,6 +318,12 @@ function peerFor(id) {
 }
 
 function dropPeer(id) {
+  // Cancel any deferred sole-courter reach FIRST — before the no-peer early
+  // return (#102 review): a reach is scheduled precisely when no peer exists
+  // yet, so leaving it to expire would retain a dead id in _soleReach and (were
+  // the object-identity guard ever weakened) risk courting a successor. Cancel
+  // on the true leave.
+  cancelSoleCourterReach(id);
   const p = peers.get(id);
   if (!p) return;
   // A pending disconnect timer outlives the peer it was watching unless it is
@@ -429,10 +435,19 @@ async function offerTo(id) {
 const _soleReach = new Map();
 function scheduleSoleCourterReach(id) {
   if (_soleReach.has(id)) return;                 // one outstanding deferred reach per id
+  // Bind the debt to the EXACT remote record that incurred it, not just the id
+  // (#102 review). #97 makes a same-id takeover a FRESH remote object; if the
+  // predecessor leaves/takes over inside this 380ms window and a successor
+  // re-occupies the key before the timer fires, the predecessor's repair debt
+  // must not court the successor. Same object-identity guard the avatar loader
+  // uses (remotes.get(id) !== r): the successor is a different object.
+  const expected = remotes.get(id);
+  if (!expected) return;                          // nothing to owe a reach to
   const t = setTimeout(() => {
     _soleReach.delete(id);
-    // only if STILL unhealed and the peer is still present & still not an agent
-    if (!peers.has(id) && remotes.has(id) && !remotes.get(id)?.agent) offerTo(id);
+    // still unhealed, still present, still not an agent — AND still the SAME
+    // remote generation that scheduled this reach (identity, not mere presence).
+    if (!peers.has(id) && remotes.get(id) === expected && !expected.agent) offerTo(id);
   }, 380);                                        // > the 300ms sweep period, with margin
   _soleReach.set(id, t);
 }

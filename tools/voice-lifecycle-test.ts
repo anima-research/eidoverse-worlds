@@ -1352,6 +1352,61 @@ consent.setReceiveVoice(true);   // a late consent block leaves receive OFF —
   stubs.remotes.delete("aa-race"); bus.emit("roster"); await settle();
 }
 
+// A3a (#102 review). The GENERATION-DEBT seam, isolating the object-identity
+// fire-check: sole courter, high rank, fails and schedules the deferred reach —
+// then a SAME-ID successor re-occupies the key as a FRESH record (#97 takeover)
+// via the roster path, WITHOUT a participant-teardown, inside the 380ms window.
+// The id-only guard (remotes.has(id) && !agent) sees the successor present and
+// courts it — the predecessor's debt relabelled onto a new generation. Bound to
+// the exact remote record, the stale reach must stand down: ZERO offers.
+// (No teardown here on purpose — a teardown would cancel the timer and mask
+//  this guard; A3b covers the teardown-cancel path separately.)
+{
+  if (!voice.micOn()) await voice.toggleMic("me");
+  const n0 = created.length;
+  stubs.remotes.set("aa-gen", { agent: false });        // predecessor
+  bus.emit("roster");
+  await settle();
+  check("gen-debt setup: courting built the lane", created.length === n0 + 1, `${created.length - n0}`);
+  const lane = created.at(-1)!;
+  await failPc(lane);                        // schedules the deferred reach for the predecessor record
+  check("gen-debt: no immediate re-offer (defers)", created.length === n0 + 1, `${created.length - n0 - 1}`);
+  // same-id successor as a FRESH object (a new generation), no teardown event
+  stubs.remotes.set("aa-gen", { agent: false });
+  await settle();
+  const beforeDefer = created.length;
+  await new Promise((r) => setTimeout(r, 480));   // let the stale defer window pass
+  check("gen-debt: stale reach stands down against a fresh same-id successor (ZERO offers)",
+    created.length === beforeDefer, `${created.length - beforeDefer} stale pc(s) courted the successor`);
+  stubs.remotes.delete("aa-gen"); bus.emit("roster"); await settle();
+}
+
+// A3b (#102 review). A departed id's deferred reach fires zero offers. Two
+// mechanisms guarantee this and this test pins the OBSERVABLE result of both:
+// the object-identity fire-check already stands down (remotes.get(id) is now
+// undefined ≠ the predecessor), AND dropPeer cancels the timer on teardown so
+// _soleReach does not retain a dead id until expiry (map hygiene Antra asked
+// for; its effect is retention, not the offer count, which the fire-check
+// covers). dropPeer cancels even though no peer pc exists (the reach lives in
+// exactly the no-peer state).
+{
+  if (!voice.micOn()) await voice.toggleMic("me");
+  const n0 = created.length;
+  stubs.remotes.set("aa-leave", { agent: false });
+  bus.emit("roster");
+  await settle();
+  const lane = created.at(-1)!;
+  await failPc(lane);                        // schedules the deferred reach
+  check("teardown-cancel setup: no immediate re-offer (defers)", created.length === n0 + 1, `${created.length - n0 - 1}`);
+  bus.emit("participant-teardown", "aa-leave");   // the id truly leaves
+  stubs.remotes.delete("aa-leave");
+  const beforeDefer = created.length;
+  await new Promise((r) => setTimeout(r, 480));   // the cancelled timer must never fire
+  check("teardown-cancel: a departed id's deferred reach fires ZERO offers",
+    created.length === beforeDefer, `${created.length - beforeDefer} pc(s) against a gone id`);
+  bus.emit("roster"); await settle();
+}
+
 // B. dual courtship, we rank HIGHER: they also offered at some point — rank
 //    arbitrates, and higher waits (they reach, we answer).
 {
