@@ -228,7 +228,8 @@ async function sha256hex(buf) {
 export async function deriveSeatProfile(avatarPath, { pose = 'sitchair', runs = 3 } = {}) {
   const scan = await labRig(avatarPath, { pose, runs });
   const name = nameFromAvatarPath(avatarPath);
-  const avatarSha256 = await sha256hex(await (await fetch(avatarPath)).arrayBuffer());
+  // the same bytes loadVRM downloads: library route, overlay included
+  const avatarSha256 = await sha256hex(await (await fetch(`/library/${avatarPath.replace(/^\/?(library\/)?/, '')}`)).arrayBuffer());
   if (scan.result?.rig === 'unsupported') {
     return { profile: { avatar: name, avatarSha256, pose, unsupported: { refusal: scan.result.refusal }, review: { status: 'proposed' } } };
   }
