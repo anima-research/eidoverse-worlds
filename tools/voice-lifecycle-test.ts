@@ -1314,11 +1314,42 @@ consent.setReceiveVoice(true);   // a late consent block leaves receive OFF —
     created.length === n0 + 1, `${created.length - n0} pc(s)`);
   const lane = created.at(-1)!;
   await failPc(lane);
-  check("failed lane, sole courter, lower-ranked peer: we re-offer (nobody else will)",
-    created.length === n0 + 2, `${created.length - n0 - 1} new pc(s)`);
-  check("failed lane: the replacement is a different pc that actually offered",
-    created.at(-1) !== lane && created.at(-1)!.offers >= 1, `offers=${created.at(-1)!.offers}`);
+  // r6 (adversarial review): sole courter + HIGH rank ("me" < "aa-solo" is
+  // false) no longer reaches IMMEDIATELY — that raced the 300ms sweep. It
+  // DEFERS past one sweep cycle, then reaches only if still unhealed. So no
+  // new pc at settle-time...
+  check("failed lane, sole courter, high rank: NO immediate re-offer (would race the sweep)",
+    created.length === n0 + 1, `${created.length - n0 - 1} premature pc(s)`);
+  // ...but the deferred reach fires (~380ms) because nobody else repaired it.
+  await new Promise((r) => setTimeout(r, 480));
+  check("failed lane, sole courter, high rank: the DEFERRED reach re-offers (last resort)",
+    created.length === n0 + 2 && created.at(-1) !== lane && created.at(-1)!.offers >= 1,
+    `${created.length - n0 - 1} new pc(s) offers=${created.at(-1)!.offers}`);
   stubs.remotes.delete("aa-solo"); bus.emit("roster"); await settle();
+}
+
+// A2 (r6). The GLARE-RACE the defer exists to kill: sole courter, high rank,
+// and the peer's reconcile sweep rebuilds the lane DURING the defer window.
+// The deferred reach must see the healed lane and stand down — no second pc,
+// no glare.
+{
+  if (!voice.micOn()) await voice.toggleMic("me");
+  const n0 = created.length;
+  stubs.remotes.set("aa-race", { agent: false });
+  bus.emit("roster");
+  await settle();
+  const lane = created.at(-1)!;
+  await failPc(lane);
+  check("glare-race setup: no immediate re-offer", created.length === n0 + 1, `${created.length - n0 - 1}`);
+  // simulate the peer's sweep winning: a fresh inbound offer rebuilds the lane
+  // before the deferred reach fires.
+  offerFrom("aa-race");
+  await settle();
+  const healed = created.length;
+  await new Promise((r) => setTimeout(r, 480));   // let the deferred reach window pass
+  check("glare-race: the deferred reach STANDS DOWN once the lane is healed (no glare pc)",
+    created.length === healed, `${created.length - healed} glare pc(s)`);
+  stubs.remotes.delete("aa-race"); bus.emit("roster"); await settle();
 }
 
 // B. dual courtship, we rank HIGHER: they also offered at some point — rank
@@ -1387,7 +1418,7 @@ consent.setReceiveVoice(true);   // a late consent block leaves receive OFF —
 // per failed generation — no synchronous storm, no duplicate offers — and a
 // dead generation's ghost events must not touch its replacement.
 {
-  stubs.remotes.set("aa-flaky", { agent: false });
+  stubs.remotes.set("zz-flaky", { agent: false });
   bus.emit("roster");
   await settle();
   const gen1 = created.at(-1)!;
@@ -1424,7 +1455,7 @@ consent.setReceiveVoice(true);   // a late consent block leaves receive OFF —
   await settle(); await settle();
   check("backoff: next generation's failure earns exactly one more offer",
         created.length === n1 + 2, `${created.length - n1} total new`);
-  stubs.remotes.delete("aa-flaky"); bus.emit("roster"); await settle();
+  stubs.remotes.delete("zz-flaky"); bus.emit("roster"); await settle();
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

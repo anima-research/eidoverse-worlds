@@ -174,6 +174,7 @@ function peerFor(id) {
   audio.playsInline = true;
   p = { pc, audio, gen: ++_peerGen };
   peers.set(id, p);
+  cancelSoleCourterReach(id);   // a lane exists again — a pending deferred reach is moot
   if (micStream) for (const t of micStream.getTracks()) pc.addTrack(t, micStream);
   pc.ontrack = (e) => {
     // FAIL CLOSED: consent can be revoked mid-negotiation, and a track that
@@ -272,8 +273,33 @@ function peerFor(id) {
       // non-reaching side noticed the death, the reacher's own ICE fails
       // within its timeout and lands here — late beats storming.
       // (We still never reach TOWARD agent peers: their lanes are theirs.)
-      if (st === 'failed' && remotes.has(id) && !remotes.get(id)?.agent
-        && p._court && (!p._theyEverOffered || (myId ?? '') < id)) offerTo(id);
+      //
+      // ⚠️ ARBITRATION MUST MATCH THE 300ms RECONCILE SWEEP (r6, adversarial
+      // review). The recut onto post-#91 main pulled in a reconcile interval
+      // (see ~line 1036) that offers to any roster HOLE when (myId < id) —
+      // court-ignorant, rank-only. So an UNCONDITIONAL sole-courter reach-back
+      // that ranks HIGH races that sweep: both ends drop on 'failed', we reach
+      // immediately, and within ≤300ms the low peer's sweep offers too — two
+      // never-stable pcs cross and glare-storm, the exact failure this repair
+      // claims to prevent. The two mechanisms must share ONE rule: the LOWER
+      // id offers.
+      //   · we rank LOW  (myId < id): reach immediately — the sweep would make
+      //     the same offer, and sooner is strictly better;
+      //   · we rank HIGH and the lane is DUAL: rank says wait to be offered to
+      //     (unchanged);
+      //   · we rank HIGH and are the SOLE courter (the agent-leg-toward-human
+      //     case, no sweep will ever cover it because the human ranks higher
+      //     than the agent id... or the peer simply never noticed the death):
+      //     DEFER past one sweep cycle, then reach only if still unhealed. This
+      //     gives the low peer's sweep deterministic first crack (no glare) yet
+      //     preserves the agent leg's only repair when nobody else acts.
+      if (st === 'failed' && remotes.has(id) && !remotes.get(id)?.agent && p._court) {
+        const weRankLow = (myId ?? '') < id;
+        if (weRankLow || !p._theyEverOffered) {
+          if (weRankLow) offerTo(id);                 // matches the sweep — immediate, no race
+          else scheduleSoleCourterReach(id);          // high & sole: defer past the sweep window
+        }
+      }
       return;
     }
     if (st === 'connected') { clearTimeout(p._discoTimer); p._discoTimer = null; return; }
@@ -390,6 +416,29 @@ async function renegotiate(id) {
 
 async function offerTo(id) {
   await offerOn(peerFor(id), id, 'voice offer');
+}
+
+// SOLE-COURTER HIGH-RANK REACH-BACK (r6): we outrank the peer, so the 300ms
+// reconcile sweep's "lower id offers" rule means the PEER should re-establish
+// the lane — but if they never noticed the death (mid-session ICE failure
+// produces no roster event on their side), nobody sweeps and the lane stays
+// dead. Wait past one sweep cycle: if the peer's sweep (or their own
+// reach-back) rebuilt the lane, `peers.has(id)` is true and we do nothing —
+// no glare. If it's still a hole, we are the last resort and reach. Deferred
+// reaches are keyed by id so repeated 'failed' events don't stack timers.
+const _soleReach = new Map();
+function scheduleSoleCourterReach(id) {
+  if (_soleReach.has(id)) return;                 // one outstanding deferred reach per id
+  const t = setTimeout(() => {
+    _soleReach.delete(id);
+    // only if STILL unhealed and the peer is still present & still not an agent
+    if (!peers.has(id) && remotes.has(id) && !remotes.get(id)?.agent) offerTo(id);
+  }, 380);                                        // > the 300ms sweep period, with margin
+  _soleReach.set(id, t);
+}
+function cancelSoleCourterReach(id) {
+  const t = _soleReach.get(id);
+  if (t) { clearTimeout(t); _soleReach.delete(id); }
 }
 
 async function onRtc(msg) {
