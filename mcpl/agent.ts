@@ -1383,9 +1383,15 @@ export class WorldAgent {
     if (this.simTicker) { clearInterval(this.simTicker); this.simTicker = null; }
   }
 
-  /** The last self-dismount whose seat would not compose: where it had to
-   *  land instead, and why. Surfaced in look() so the resident SEES the gap
-   *  rather than inheriting a silent teleport. */
+  /** The gap from the most recent dismountSelf CALL: where the landing had to
+   *  come from when the seat would not compose, and why — or null when that
+   *  call resolved its seat, and null when it had no seat to leave.
+   *
+   *  Strictly per-act, cleared on every call including the early return. A
+   *  gap that outlived its own transition would annotate the NEXT walk, which
+   *  is its own kind of lie: the resident would read a stale refusal against
+   *  a landing that was fine (#98 review, B1). Surfaced to the resident by
+   *  look() and by the walk_to / dismount tool results. */
   lastDismountGap: { to: string; why: string; landedOn: "parent" | "stale" } | null = null;
 
   /** Get off the seat, stamping where the ride ACTUALLY let go (#18).
@@ -1419,7 +1425,10 @@ export class WorldAgent {
    *  promise. Returns the landing, or null when not seated. */
   dismountSelf(): { x: number; y: number; z: number; yaw: number } | null {
     const ride = this.mounts.get(this.name);
-    if (!ride || !this.joined) return null;
+    // Nothing to leave: clear, so a gap from an earlier transition cannot
+    // annotate this act. Every walk and every stand runs through here, so
+    // this is what keeps the resident-facing report honest (review B1).
+    if (!ride || !this.joined) { this.lastDismountGap = null; return null; }
     // Stamping an absolute landing takes authority over the body, so it
     // outranks any tumble or settle still suspended on an await — otherwise
     // one of those resumes and writes the landing back out from under us.
@@ -1729,6 +1738,18 @@ export class WorldAgent {
       L.push(`You are "${this.name}" in world "${this.world}" at (${me.x.toFixed(1)}, ${me.z.toFixed(1)}), ground height ${me.y.toFixed(2)}m, facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}.`);
     } else {
       L.push(`You are "${this.name}" in world "${this.world}", position unknown (${selfEff && !selfEff.ok ? selfEff.why : "seat unresolved"}), facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}. Distances are withheld until your seat resolves — dismount {id: "${this.name}"} restores a stamped position.`);
+    }
+    // How you got here, when getting here was a fallback. Standing on a
+    // landing the seat could not vouch for is exactly the state a resident
+    // must not be left to discover by walking into things — and until this,
+    // the gap reached the server console and nothing the resident could read
+    // (#98 review, B1). Cleared by the next walk or stand, so it always
+    // describes the transition that actually put this body where it is.
+    const gap = this.lastDismountGap;
+    if (gap && !selfRide) {
+      L.push(`  (you stepped off ${gap.to} without a seat this side could resolve — ${gap.why}. Your position is ${
+        gap.landedOn === "parent" ? `${gap.to}'s own frame, not the seat's` : "the last one you stamped, not the ride's"
+      }, so treat it as approximate until you walk.)`);
     }
     // Structured object, NEVER a bare string: consumers of look() were
     // reading {hours, azimuth, clouds, ts, …} long before the forecast

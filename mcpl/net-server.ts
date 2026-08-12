@@ -746,7 +746,15 @@ class Session {
         const clip = { sit: "sit", sitchair: "sitchair", lie: "lie", stand: "idle" }[kind];
         if (!clip) return text("posture kinds: sit (on the ground), sitchair (chair height), lie, stand");
         ag.setPosture(clip);
-        return text(kind === "stand" ? "you stand up" : `you ${kind === "lie" ? "lie down" : "sit down"} — walking stands you back up`);
+        // Standing up is the other door onto a dismount, so it owes the
+        // resident the same declaration a walk does (#98 review, B1).
+        // setPosture is synchronous — this gap is that act's own.
+        const pg = ag.lastDismountGap;
+        const pnote = pg
+          ? ` — note: you left ${pg.to} without a seat this side could resolve (${pg.why}), so you are standing at ${
+              pg.landedOn === "parent" ? `${pg.to}'s own frame` : "your last stamped position"}`
+          : "";
+        return text(kind === "stand" ? `you stand up${pnote}` : `you ${kind === "lie" ? "lie down" : "sit down"} — walking stands you back up`);
       }
       case "library_sheet": {
         const kind = a.kind === "models" ? "models" : "avatars";
@@ -797,8 +805,24 @@ class Session {
         return text(`no preview for "${want}" — avatar portraits appear once a body has been worn; library models ship _preview.jpg files`);
       }
       case "walk_to": {
-        const arrived = await ag.walkTo(Number(a.x), Number(a.z), Boolean(a.run));
-        return text(arrived ? `arrived at (${ag.pos.x.toFixed(1)}, ${ag.pos.z.toFixed(1)})` : "walk interrupted or timed out");
+        // walkTo dismounts SYNCHRONOUSLY, before it returns its promise — so
+        // reading the gap here, between the call and the await, captures the
+        // one belonging to THIS walk. Reading it after the await would risk
+        // reporting a gap from some later act (#98 review, B1).
+        const walking = ag.walkTo(Number(a.x), Number(a.z), Boolean(a.run));
+        const gap = ag.lastDismountGap;
+        const arrived = await walking;
+        // A fallback landing is the resident's business: they asked to walk
+        // off a seat, and where they started walking FROM was a guess. Saying
+        // so on the founding path is the difference between a declared seam
+        // and the silent teleport this whole change is about.
+        const note = gap
+          ? ` — note: you left ${gap.to} without a seat this side could resolve (${gap.why}), so the walk began from ${
+              gap.landedOn === "parent" ? `${gap.to}'s own frame` : "your last stamped position"}`
+          : "";
+        return text(arrived
+          ? `arrived at (${ag.pos.x.toFixed(1)}, ${ag.pos.z.toFixed(1)})${note}`
+          : `walk interrupted or timed out${note}`);
       }
       case "face": {
         if (a.target) {
