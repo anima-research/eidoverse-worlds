@@ -99,7 +99,7 @@ const TOOLS = [
   { name: "walk_to", description: "Walk (or run) to world coordinates. Returns when you arrive; others see you walking.", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, run: { type: "boolean" } }, required: ["x", "z"] } },
   { name: "face", description: "Turn to face a point (x,z) or a participant/entity id (target).", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, target: { type: "string" } } } },
   { name: "stop", description: "Stop walking.", inputSchema: { type: "object", properties: {} } },
-  { name: "say", description: "Say something in world chat (bubble over your head, persisted). Equivalent to publishing on the world channel. Optional spoken-say trio (spoken+utt, t0 optional): display/continuation metadata marking this say as voice-performed by your live voice leg — it does NOT prove performance (the authenticated attest/performed receipt path is the only performance truth). The trio travels together or the door refuses loudly.", inputSchema: { type: "object", properties: { text: { type: "string" }, spoken: { type: "boolean", description: "true = a live voice leg is performing this say (display metadata only)" }, utt: { type: "integer", minimum: 0, description: "utterance counter tying the performance to the log entry" }, t0: { type: "number", description: "performance start, epoch ms (optional, finite)" } }, required: ["text"] } },
+  { name: "say", description: "Say something in world chat (bubble over your head, persisted). Equivalent to publishing on the world channel. Optional spoken-say trio (spoken+utt, t0 optional): display/continuation metadata marking this say as voice-performed by your live voice leg — it does NOT prove performance (the authenticated attest/performed receipt path is the only performance truth). The trio travels together or the door refuses loudly.", inputSchema: { type: "object", properties: { text: { type: "string" }, spoken: { type: "boolean", description: "true = a live voice leg is performing this say (display metadata only)" }, utt: { type: "integer", minimum: 0, description: "utterance counter: author-controlled display/continuation metadata (does NOT prove performance)" }, t0: { type: "number", description: "performance start, epoch ms (optional, finite)" } }, required: ["text"] } },
   { name: "catch_up", description: "What happened in the world while you were not thinking. Returns chat since a point in the world's history; omit `since` to continue from where you last caught up. Use when a conversation refers to something you have no memory of.", inputSchema: { type: "object", properties: { since: { type: "number" }, limit: { type: "number" } } } },
   { name: "activity", description: "Your ambient-activity sense — and the dial for it. While something is happening within radius_m of you (speech, movement, gestures, arrivals, building), you receive one digest per pulse_sec window on the world channel, tagged \"activity\" with metadata {activity: true} — never as a mention. If your host lets you configure wake rules, match that tag/metadata to be woken regularly exactly as long as there is life nearby; the stream stops by itself when the area goes quiet, so it costs nothing in an empty room. Call with no arguments to see your current settings. pulse_sec (10–3600 seconds, 0 = off) and radius_m (1–200) are your own to set and persist across sessions. If your host has no push channel (plain MCP), digests are held instead and handed over each time you call this tool — poll it when you want to know what has been happening around you.", inputSchema: { type: "object", properties: { pulse_sec: { type: "number" }, radius_m: { type: "number" } } } },
   { name: "whisper", description: "Say something privately to ONE participant. Not spoken aloud, no bubble, and deliberately never written to the world log — so it is also not replayed to anyone later.", inputSchema: { type: "object", properties: { to: { type: "string" }, text: { type: "string" } }, required: ["to", "text"] } },
@@ -818,8 +818,10 @@ class Session {
         return text(`you ${name === "wave" ? "wave" : `play "${name}"`} — everyone sees it`);
       }
       // say args ride through whole (spoken-say protocol: a voice aux leg
-      // performs says marked spoken:true; utt/t0 tie the performance to the
-      // log entry). ag.say rebuilt {text} bare and silently stripped them —
+      // performs says marked spoken:true; utt/t0 are author-controlled
+      // display/continuation metadata — NOT proof of performance, which only
+      // the attest/performed receipt path establishes). ag.say rebuilt {text}
+      // bare and silently stripped them —
       // which forced voice agents onto a raw world-ws side door (2026-08-10).
       case "say": {
         // Spoken-say protocol keys ride through; anything else stays at the
@@ -830,10 +832,12 @@ class Session {
         // keys unless spoken===true AND utt is a safe non-negative integer —
         // so forwarding keys independently let a spoken:true say with a bad
         // utt ride to the server and silently degrade to ordinary chat, the
-        // voice agent none the wiser. Validate the same unit here, with the
-        // server's own coercion (Number(), not typeof — the server accepts
-        // "5"), and refuse LOUDLY: a door that must drop the protocol should
-        // say so, not shrug the say into text.
+        // voice agent none the wiser. Validate the same unit here and refuse
+        // LOUDLY: a door that must drop the protocol should say so, not shrug
+        // the say into text. (r5 tightened this to TYPE-EXACT rather than the
+        // server's Number() coercion — see the next block: the door refuses
+        // null/bool/"5" outright so a coerced value can never be laundered into
+        // a fabricated utterance.)
         const wantsSpoken = a.spoken !== undefined || a.utt !== undefined || a.t0 !== undefined;
         // TYPE-EXACT, not coerced (adversarial review): Number(null)===0 and
         // Number(true)===1 let a null/boolean utt or a null t0 pass the old
@@ -846,7 +850,12 @@ class Session {
         const t0Ok = a.t0 === undefined || (typeof a.t0 === "number" && Number.isFinite(a.t0));
         const trioOk = a.spoken === true && uttOk && t0Ok;
         if (wantsSpoken && !trioOk) {
-          return text("spoken-say refused: the protocol trio must travel together — spoken:true plus a non-negative integer utt (t0 optional, finite). Sent as ordinary text it would silently lose its performance link, so nothing was said; fix and resend.");
+          // Machine-legible failure (r6 review): the same {content, isError:true}
+          // contract a malformed world_verb returns. A prose-only refusal let a
+          // schema client that inspects result.isError read this as a successful
+          // say — the door must mark the refusal as an error, not just describe
+          // one in text.
+          return { content: [{ type: "text", text: "spoken-say refused: the protocol trio must travel together — spoken:true plus a non-negative integer utt (t0 optional, finite). Sent as ordinary text it would silently lose its performance link, so nothing was said; fix and resend." }], isError: true };
         }
         const extra = trioOk
           ? { spoken: true as const, utt: a.utt, ...(typeof a.t0 === "number" ? { t0: a.t0 } : {}) }

@@ -92,13 +92,28 @@ try {
   //    so this arrives with the trio stripped and the assertion fails.
   {
     seen.length = 0;
-    const r = await call({ text: "performed line", spoken: true, utt: 3, t0: 1754980000000 });
+    // A deliberately OLD t0 (2025): the authoritative server clamps it up into
+    // the accepted window [now - 5min, now]. Asserting the clamp proves the say
+    // reached the real sequencer, not merely that the door preserved two fields.
+    const sentT0 = 1754980000000;
+    const before = Date.now();
+    const r = await call({ text: "performed line", spoken: true, utt: 3, t0: sentT0 });
     await sleep(700);
+    const after = Date.now();
     const says = saysSeen();
     check("valid trio: exactly one durable say lands", says.length === 1, `${says.length} says`);
     const a = (says[0]?.args ?? {}) as Record<string, unknown>;
     check("valid trio: spoken/utt survive the door to the log (fail-on-main vector)",
       a.spoken === true && a.utt === 3, JSON.stringify(a));
+    // t0 (item 2, r6): finite, clamped server-side into the 5-minute window
+    // ending at arrival — NOT the stale value we sent. Proves the authoritative
+    // sequencer, not a local pass-through, produced it.
+    const t0 = a.t0 as number;
+    const MAX_UTTER_MS = 300_000;
+    check("valid trio: durable t0 is finite and server-clamped into the 5-min window (not the raw stale value)",
+      typeof t0 === "number" && Number.isFinite(t0) && t0 !== sentT0 &&
+      t0 >= before - MAX_UTTER_MS - 2000 && t0 <= after,
+      `t0=${t0} sent=${sentT0} window=[${before - MAX_UTTER_MS}, ${after}]`);
     check("valid trio: the call reports success", !r?.result?.isError, JSON.stringify(r?.result)?.slice(0, 100));
   }
 
@@ -119,11 +134,17 @@ try {
     await sleep(700);
     check("malformed trio: loud refusal in the tool result",
       /refused|trio/i.test(JSON.stringify(r?.result ?? {})), JSON.stringify(r?.result)?.slice(0, 120));
+    // machine-legible failure (item 1, r6): a schema client that inspects
+    // result.isError must see the refusal AS an error, not a successful say.
+    check("malformed trio: result.isError === true (not just failure-shaped prose)",
+      r?.result?.isError === true, JSON.stringify(r?.result)?.slice(0, 120));
     check("malformed trio: zero say entries created", saysSeen().length === 0, `${saysSeen().length} says`);
     seen.length = 0;
-    await call({ text: "partial should not land", utt: 5 });   // partner without spoken
+    const rp = await call({ text: "partial should not land", utt: 5 });   // partner without spoken
     await sleep(700);
     check("partial trio (utt without spoken): refused, zero says", saysSeen().length === 0, `${saysSeen().length}`);
+    check("partial trio: result.isError === true",
+      rp?.result?.isError === true, JSON.stringify(rp?.result)?.slice(0, 120));
     // COERCION vectors (adversarial review): Number(null)===0, Number(true)===1
     // used to SNEAK a fabricated utt/t0 past the guard. Type-exact validation
     // must refuse these outright — a fabricated utterance is worse than a
@@ -142,9 +163,9 @@ try {
       // The security-relevant assertion: a coerced value must NEVER become a
       // durable say. (Number(null)===0 / Number(true)===1 used to fabricate
       // an utterance; type-exact validation refuses instead.)
-      check(`coercion: ${bad.text} → refused loudly, ZERO fabricated says`,
-        /refused|trio/i.test(JSON.stringify(rr?.result ?? {})) && saysSeen().length === 0,
-        `says=${saysSeen().length} reply=${JSON.stringify(rr?.result)?.slice(0, 80)}`);
+      check(`coercion: ${bad.text} → refused loudly (isError), ZERO fabricated says`,
+        rr?.result?.isError === true && saysSeen().length === 0,
+        `says=${saysSeen().length} isError=${rr?.result?.isError} reply=${JSON.stringify(rr?.result)?.slice(0, 80)}`);
     }
   }
 
