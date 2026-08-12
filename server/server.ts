@@ -2161,7 +2161,10 @@ const server = Bun.serve({
             if (!primary) {
               ws.send(JSON.stringify({ type: "error", error: `no embodied "${c.id}" here to attach a ${c.surface} leg to — join the world first` }));
               ws.close(4008, "aux without primary");
-              w.clients.delete(c); clients.delete(ws);
+              // (c is not yet in w.clients here — add happens after these
+              // checks — so only the global map needs cleaning. A w.clients
+              // delete would be a no-op that misreads as "joiner counted".)
+              clients.delete(ws);
               return;
             }
             // B3 (#57): bounded legs per identity — takeover replaces, it does
@@ -2171,7 +2174,10 @@ const server = Bun.serve({
             if (auxCount >= 4) {
               ws.send(JSON.stringify({ type: "error", error: "too many auxiliary legs for this identity" }));
               ws.close(4008, "aux cap");
-              w.clients.delete(c); clients.delete(ws);
+              // (c is not yet in w.clients here — add happens after these
+              // checks — so only the global map needs cleaning. A w.clients
+              // delete would be a no-op that misreads as "joiner counted".)
+              clients.delete(ws);
               return;
             }
           }
