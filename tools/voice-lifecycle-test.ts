@@ -1279,56 +1279,83 @@ check("unhush rejoins the SAME peer at full volume",
 }
 
 
-// ── a FAILED lane reaches back (field, 2026-08-10) ───────────────────────────
+// ── a FAILED lane reaches back (field, 2026-08-10; r2: by courtship) ─────────
 // ICE 'failed' dropped the peer and nothing re-offered until a roster event —
-// which a mid-session death never produces. One-way audio until manual reload.
-// Contract (r2: rank-split — if BOTH sides re-offered, two never-settled
-// rivals meet and the glare logic reads them as rejoins; both roll back,
-// marry mismatched sessions, and storm at ICE cadence): failed → drop →
-// ONE immediate fresh offer FROM THE LOWER ID while the neighbor is still
-// in the roster; the higher id waits and answers. 'closed' stays terminal.
-// FAILS on pre-fix main. Local id is "me"; "zz-cellular" ranks above us, so
-// we are the reacher here.
+// which a mid-session death never produces. Contract (r2): the lane's SOLE
+// courter reaches back unconditionally (nobody else ever will — the agent-leg
+// case); a DUAL-courtship lane is arbitrated by rank (lower offers, higher
+// answers) so the two sides cannot re-offer into each other as never-settled
+// rivals the glare logic misreads as rejoins. 'closed' stays terminal.
+// Mic must be LIVE for courtship — a vacuous version of these pins asserted
+// on a stale pc with the mic off and passed against every implementation.
+// (The harness's pcs carry no id — anchor each case on created.length GROWTH
+// after courting so a silent no-court can't leave a stale pc standing in.)
+const failPc = async (pc: any) => {
+  pc.connectionState = "failed";
+  (pc.onconnectionstatechange as () => void)?.();
+  await settle(); await settle();
+};
+
+consent.setReceiveVoice(true);   // a late consent block leaves receive OFF —
+                                 // without this the injected rival offers die
+                                 // at the gate and every "dual" pin is vacuous
+// A. sole courter, peer ranks BELOW us: we courted, they never offered — we
+//    reach regardless of rank (the agent-leg case: an agent leg ranking above
+//    its human peer is that lane's only possible repairer). Rank-only gating
+//    fails exactly this pin: it was the regression that silently disarmed the
+//    agent leg's only repair.
 {
-  stubs.remotes.set("zz-cellular", { agent: false });
+  if (!voice.micOn()) await voice.toggleMic("me");
+  const n0 = created.length;
+  stubs.remotes.set("aa-solo", { agent: false });
   bus.emit("roster");
   await settle();
-  const pcF = created.at(-1)!;
-  const nBefore = created.length;
-  pcF.connectionState = "failed";
-  (pcF.onconnectionstatechange as () => void)?.();
-  await settle(); await settle();
-  check("failed lane: a fresh offer goes out for the same id",
-        created.length > nBefore, `${created.length - nBefore} new pc(s)`);
-  const pcG = created.at(-1)!;
+  check("sole-courter setup: courting built exactly one pc (pin is not vacuous)",
+    created.length === n0 + 1, `${created.length - n0} pc(s)`);
+  const lane = created.at(-1)!;
+  await failPc(lane);
+  check("failed lane, sole courter, lower-ranked peer: we re-offer (nobody else will)",
+    created.length === n0 + 2, `${created.length - n0 - 1} new pc(s)`);
   check("failed lane: the replacement is a different pc that actually offered",
-        pcG !== pcF && (pcG.offers ?? 0) >= 1,
-        `same=${pcG === pcF} offers=${pcG.offers}`);
-  // closed is deliberate teardown — must NOT resurrect
-  const nBefore2 = created.length;
-  pcG.connectionState = "closed";
-  (pcG.onconnectionstatechange as () => void)?.();
-  await settle(); await settle();
-  check("closed lane: stays down (no zombie re-offer)", created.length === nBefore2,
-        `${created.length - nBefore2} unexpected pc(s)`);
-  stubs.remotes.delete("zz-cellular");
+    created.at(-1) !== lane && created.at(-1)!.offers >= 1, `offers=${created.at(-1)!.offers}`);
+  stubs.remotes.delete("aa-solo"); bus.emit("roster"); await settle();
 }
 
-// Higher-rank side of the same contract: when the FAILED peer ranks BELOW us,
-// we do NOT re-offer — their side owns the reach, ours answers through the
-// normal path. (Both sides offering is the storm this convention prevents.)
+// B. dual courtship, we rank HIGHER: they also offered at some point — rank
+//    arbitrates, and higher waits (they reach, we answer).
 {
-  stubs.remotes.set("aa-cellular", { agent: false });
+  if (!voice.micOn()) await voice.toggleMic("me");
+  const n0 = created.length;
+  stubs.remotes.set("aa-dual", { agent: false });
   bus.emit("roster");
   await settle();
-  const pcA = created.at(-1)!;
-  const nA = created.length;
-  pcA.connectionState = "failed";
-  (pcA.onconnectionstatechange as () => void)?.();
-  await settle(); await settle();
-  check("failed lane, peer ranks below us: no immediate re-offer (they reach, we answer)",
-    created.length === nA, `${created.length - nA} new pc(s)`);
-  stubs.remotes.delete("aa-cellular");
+  check("dual setup: courting built the lane", created.length === n0 + 1, `${created.length - n0}`);
+  const lane = created.at(-1)!;
+  offerFrom("aa-dual");            // their courtship: marks the lane dual
+  await settle();
+  const nB = created.length;
+  await failPc(lane);
+  check("failed dual lane, peer ranks below us: no re-offer (rank: they reach, we answer)",
+    created.length === nB, `${created.length - nB} new pc(s)`);
+  stubs.remotes.delete("aa-dual"); bus.emit("roster"); await settle();
+}
+
+// C. dual courtship, we rank LOWER: rank picks us — one clean re-offer.
+{
+  if (!voice.micOn()) await voice.toggleMic("me");
+  const n0 = created.length;
+  stubs.remotes.set("zz-dual", { agent: false });
+  bus.emit("roster");
+  await settle();
+  check("dual-low setup: courting built the lane", created.length === n0 + 1, `${created.length - n0}`);
+  const lane = created.at(-1)!;
+  offerFrom("zz-dual");
+  await settle();
+  const nC = created.length;
+  await failPc(lane);
+  check("failed dual lane, we rank lower: exactly one fresh re-offer",
+    created.length === nC + 1, `${created.length - nC} new pc(s)`);
+  stubs.remotes.delete("zz-dual"); bus.emit("roster"); await settle();
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

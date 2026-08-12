@@ -247,23 +247,24 @@ function peerFor(id) {
       // agents — line ~10), so their 'failed' repair belongs to the agent's
       // voice source; reaching from here would invert the direction
       // convention and race their own re-offer.
-      // ONE side reaches back, by rank (r2 review). Both peers usually see
-      // 'failed' near-simultaneously; if both re-offered, two fresh peer
-      // objects (_everStable false) meet as rivals the glare logic cannot
-      // tie-break — it reads never-settled as REJOIN, both roll back and
-      // answer, and the pair marries mismatched sessions that fail again at
-      // ICE cadence. Same convention as the mesh-heal sweep: the lower id
-      // offers, the higher id answers through the normal path. If only the
-      // higher side noticed the death, the lower side's own ICE fails within
-      // its timeout and lands here — converging late beats storming forever.
-      //
-      // Repair OWNERSHIP is also split by who courts: humans are ours. Agent
-      // lanes are agent-initiated (we never offer to agents — line ~10), so
-      // their 'failed' repair belongs to the agent's voice source; reaching
-      // from here would invert the direction convention and race their own
-      // re-offer.
+      // WHO reaches back = WHO COURTED (r2, revised in-review). Both peers
+      // usually see 'failed' near-simultaneously; if both re-offered, two
+      // fresh never-settled rivals meet and the glare logic reads them as
+      // rejoins — both roll back and answer, each marries a different
+      // session, and the pair storms at ICE cadence. So:
+      //   · the lane's SOLE courter (we offered, they never have — an agent's
+      //     leg toward humans, or a one-mic human pair) reaches back
+      //     unconditionally: nobody else ever will;
+      //   · a DUAL-courtship lane (both sides have offered — two live mics)
+      //     is arbitrated by rank, the mesh-heal sweep's own convention:
+      //     lower id offers, higher answers through the normal path.
+      // A first version rank-gated everything and silently disarmed the
+      // agent leg's only repair whenever it ranked high. If only the
+      // non-reaching side noticed the death, the reacher's own ICE fails
+      // within its timeout and lands here — late beats storming.
+      // (We still never reach TOWARD agent peers: their lanes are theirs.)
       if (st === 'failed' && remotes.has(id) && !remotes.get(id)?.agent
-        && (myId ?? '') < id) offerTo(id);
+        && p._court && (!p._theyEverOffered || (myId ?? '') < id)) offerTo(id);
       return;
     }
     if (st === 'connected') { clearTimeout(p._discoTimer); p._discoTimer = null; return; }
@@ -370,7 +371,9 @@ async function renegotiate(id) {
 }
 
 async function offerTo(id) {
-  await offerOn(peerFor(id), id, 'voice offer');
+  const p = peerFor(id);
+  p._court = true;               // we courted this lane (repair-ownership tell)
+  await offerOn(p, id, 'voice offer');
 }
 
 async function onRtc(msg) {
@@ -438,6 +441,7 @@ async function onRtc(msg) {
 async function processSignal(p, from, payload) {
   try {
     if (payload.sdp?.type === 'offer') {
+      p._theyEverOffered = true;   // dual courtship: rank must arbitrate repair
       // glare: both sides offered at once — the LOWER id's offer stands, the
       // higher id rolls back and answers (deterministic, no extra messages)
       if (p.pc.signalingState === 'have-local-offer') {
