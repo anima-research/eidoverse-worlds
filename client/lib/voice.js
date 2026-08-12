@@ -605,6 +605,18 @@ export async function toggleMic(name) {
   // every sender via replaceTrack, so stopping the pacer before that leaves
   // no window with two producers and no window with none).
   import('./voicesource.js').then((vs) => vs.synthProvider?.()?.stop?.()).catch(() => {});
+  // 🔴 PRODUCER STATE FLIPS BEFORE THE REBIND (r4 — the founding receipt's
+  // third catch). applyDirection consults activeSendTrack(), which reads
+  // _micLive — and _micLive used to be set BELOW this loop, so at the exact
+  // moment the mic went live every sender was handed the GENERATOR: a dead
+  // outbound leg (pacer stopped, device track never bound) that the
+  // acceptance greenwashed by asserting only the CAPTURE side. Same class as
+  // the _micReleased and _synthLane discriminator bugs: a state flag read
+  // before its writer ran. The unmute lesson rides along: mic ON is an
+  // unmute, or a muted user pressing the button wedges with every light
+  // reading silence.
+  _micLive = true;
+  muted = false;
   for (const p of peers.values()) applyDirection(p);
   for (const id of [...peers.keys()]) renegotiate(id);
   // Only reach for peers we do NOT already hold. A peer mid-negotiation has
@@ -613,14 +625,6 @@ export async function toggleMic(name) {
   // have-local-offer (Mica, #34). renegotiate() above already covers the
   // stable ones; this covers the strangers.
   for (const id of humanIds()) if (!peers.has(id)) offerTo(id);
-  _micLive = true;
-  // 🔴 TURNING THE MIC ON IS AN UNMUTE. The off-path clears `muted`; this path
-  // did not — so a user who muted and then pressed the mic button was wedged:
-  // micOn() stayed false (it requires !muted), every press re-entered THIS
-  // branch, and the raw tracks it re-enables were live while micOn/isMuted/
-  // micTransmitting all reported silence. Broadcasting while every light says
-  // muted is the display-vs-real-state bug in its worst costume.
-  muted = false;
   flashHint('🎙 live — speak, neighbors hear · <b>mute</b> in the dock');
   bus.emit('voice', { on: true });
   startOnsetWatch();
@@ -1327,6 +1331,14 @@ export function micDiag() {
     // became something else.
     verdict: !raw ? 'NO DEVICE — nothing was ever opened'
       : !sent ? 'no track being sent'
+      // The contradiction case FIRST (r4 review): a live mic whose peers are
+      // receiving the synthesizer is a dead outbound leg wearing a green
+      // light — the exact state the founding receipt exposed. Never report
+      // 'ok' from the capture side alone.
+      : micOn() && !/microphone/.test(kindOf(sent))
+        ? 'BROKEN: mic is live but peers receive ' + kindOf(sent)
+      : !micOn() && /microphone/.test(kindOf(sent)) && gateOpenness() === 0
+        ? 'suspect: mic not live yet a device track is on the senders'
       : /microphone/.test(kindOf(raw)) ? 'ok: a real microphone is the source'
       : 'BROKEN: the source is not a microphone',
   };

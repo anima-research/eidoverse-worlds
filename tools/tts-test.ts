@@ -49,7 +49,7 @@ class FakeGenerator {
 }
 (globalThis as Record<string, unknown>).MediaStreamTrackGenerator = FakeGenerator;
 (globalThis as Record<string, unknown>).AudioData = FakeAudioData;
-class FakeTrack { kind = "audio"; readyState = "live"; enabled = true; id = `mic-${Math.random().toString(36).slice(2, 8)}`; stop() { this.readyState = "ended"; } }
+class FakeTrack { kind = "audio"; readyState = "live"; enabled = true; id = `mic-${Math.random().toString(36).slice(2, 8)}`; getSettings() { return { deviceId: "fake-device" }; } stop() { this.readyState = "ended"; } }
 class FakeStream {
   tracks: unknown[];
   constructor(tracks?: unknown[]) { this.tracks = tracks ?? [new FakeTrack()]; }
@@ -83,7 +83,7 @@ class FakePC {
   async setLocalDescription() {} async setRemoteDescription() {}
   close() {}
 }
-void FakePC;
+(globalThis as Record<string, unknown>).RTCPeerConnection = FakePC;
 
 // engine: a deterministic "synthesizer" — 1000 samples of known pcm per call,
 // with controllable latency and failure.
@@ -155,6 +155,65 @@ console.log("\n— speakOwnSays: the bridge, and the mic-live discard policy —
   check("typed say while mic live is DISCARDED, not queued", synthCalls.length === 0, `${synthCalls.length}`);
   await voice.toggleMic("me");            // mic off again for later blocks
   await sleep(30);
+}
+
+console.log("\n— sender identity across producer transitions (r4: the third catch, pinned) —");
+{
+  const voice = await import("../client/lib/voice.js");
+  const tts = await import("../client/lib/tts.js");
+  // a real peer in voice's map: a human appears in the roster while we are a
+  // transmitting body, so the roster handler courts them through peerFor —
+  // whose RTCPeerConnection is FakePC above. Senders become inspectable.
+  (stubs.remotes as Map<string, unknown>).set("neighbor", { agent: false });
+  tts.setTtsEnabled(true);
+  await sleep(60);
+  const senderIds = () => voice.senderTrackInfo().senders.map((x: { track: { id: string } | null }) => x.track?.id);
+  const genId = () => (tts.genTrackInfo() as { id: string } | null)?.id;
+  // Court the neighbor from the MIC side (the roster handler courts for a
+  // transmitting body; earlier blocks left a device lane standing, so the
+  // synth-adoption path is the acceptance's job — here the mic builds the
+  // peer and the ids are asserted across every handoff thereafter).
+  await voice.toggleMic("me");
+  await sleep(40);
+  stubs.bus.emit("roster", {});
+  await sleep(80);
+  check("(precondition) a peer with a sender exists", senderIds().length > 0, `${senderIds().length}`);
+  const laneId = () => {
+    const lt = voice.senderTrackInfo().localTracks[0];
+    return lt?.id;
+  };
+  check("mic ON: every sender holds the MIC-LANE id, not the generator",
+    senderIds().every((id: string | undefined) => id === laneId() && id !== genId()),
+    `senders=${senderIds()} lane=${laneId()} gen=${genId()}`);
+  check("mic ON: no sender holds the generator", !senderIds().includes(genId()));
+  check("mic ON: pacer stopped", tts.mouthInfo().pacing === false);
+  // a renegotiation while the MIC owns the lane — the prior last-writer seam:
+  // applyDirection must re-bind the SAME producer, not resurrect the other one
+  stubs.bus.emit("audio:receive", true);
+  await sleep(60);
+  check("renegotiation while mic owns the lane keeps the mic on the senders",
+    senderIds().every((id: string | undefined) => id === laneId() && id !== genId()),
+    `senders=${senderIds()}`);
+
+  await voice.toggleMic("me");
+  await sleep(120);
+  check("mic OFF: every sender holds the GENERATOR id again",
+    senderIds().every((id: string | undefined) => id === genId()), `senders=${senderIds()} gen=${genId()}`);
+  check("mic OFF: pacer running", tts.mouthInfo().pacing === true);
+  stubs.bus.emit("audio:receive", true);          // renegotiate while TTS owns it
+  await sleep(60);
+  check("renegotiation while TTS owns the lane keeps the generator on the senders",
+    senderIds().every((id: string | undefined) => id === genId()), `senders=${senderIds()}`);
+  // repeated cycles stay id-coherent
+  for (let i = 0; i < 3; i++) {
+    await voice.toggleMic("me"); await sleep(50);
+    if (!senderIds().every((id: string | undefined) => id === laneId())) { check(`cycle ${i} ON id-coherent`, false, `${senderIds()}`); break; }
+    await voice.toggleMic("me"); await sleep(80);
+    if (!senderIds().every((id: string | undefined) => id === genId())) { check(`cycle ${i} OFF id-coherent`, false, `${senderIds()}`); break; }
+  }
+  check("3× ON/OFF cycles: sender id tracks the producer every time", true);
+  check("micDiag verdict names a contradiction if one exists",
+    !/BROKEN/.test((voice.micDiag() as { verdict: string }).verdict), (voice.micDiag() as { verdict: string }).verdict);
 }
 
 console.log("\n— mic priority: both orderings, repeated cycles, no dual producer —");

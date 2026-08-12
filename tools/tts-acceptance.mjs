@@ -26,7 +26,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
 
-const REPO = join('/tmp/wn-91');
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 const VOICE_ONNX = process.env.VOICE_ONNX;
 const VOICE_CFG = process.env.VOICE_CFG;
 if (!VOICE_ONNX || !VOICE_CFG) { console.error('VOICE_ONNX and VOICE_CFG required'); process.exit(2); }
@@ -153,26 +153,64 @@ check('independent listener RECEIVED it', lRx.inbound > 50, `${lRx.inbound} pkts
 check('and it is AUDIBLE (nonzero level at the listener)', lRx.level > 0.005, `peak ${lRx.level.toFixed(3)}`);
 check('speaker pacer active while TTS is the producer', sTx.mouth.pacing === true);
 
-console.error('\n— mic priority transitions on real tracks —');
-const trans = await speaker.evaluate(async (name) => {
+console.error('\n— mic priority transitions: SENDER IDENTITY, not capture identity (r4) —');
+// The r3 receipt exposed a dead outbound leg the old checks greenwashed: the
+// device opened (capture side ✓) while every sender still held the generator
+// with the pacer stopped. These checks assert what the PEERS receive — actual
+// sender track ids against the lane and generator ids — through both
+// transitions, a renegotiation under each producer, and repeated cycles.
+const probe = async (page) => page.evaluate(async () => {
   const v = await import('/lib/voice.js');
   const tts = await import('/lib/tts.js');
-  const before = v.micDiag();
-  await v.toggleMic(name);                       // mic ON: fake device, real track
-  await new Promise(r => setTimeout(r, 1500));
-  const during = { mic: v.micDiag(), pacing: tts.mouthInfo().pacing };
-  await v.toggleMic(name);                       // mic OFF: TTS takes the lane back
-  await new Promise(r => setTimeout(r, 1500));
-  const after = { mic: v.micDiag(), pacing: tts.mouthInfo().pacing,
-    // the pair that should match, from both ends (reporter doctrine):
-    senders: v.senderTrackInfo().senders.map((x) => x.track?.id),
-    gen: tts.genTrackInfo?.() ?? null };
-  return { before, during, after };
-}, 'accept-speaker');
-check('mic ON: a real microphone becomes the source', /microphone/.test(trans.during.mic.rawSource), trans.during.mic.rawSource);
-check('mic ON stopped the pacer (no dual producer)', trans.during.pacing === false);
-check('mic OFF: TTS re-engaged (pacer running again)', trans.after.pacing === true);
-check('mic OFF: sent track is the synthetic generator again', /synthetic|graph/.test(trans.after.mic.sentToPeers), trans.after.mic.sentToPeers);
+  const st = v.senderTrackInfo();
+  let rtp = 0;
+  for (const pc of (v.voicePcs?.() ?? [])) {
+    const stats = await pc.getStats();
+    stats.forEach((s) => { if (s.type === 'outbound-rtp' && s.kind === 'audio') rtp += s.packetsSent ?? 0; });
+  }
+  return { senders: st.senders.map((x) => x.track?.id), lane: st.localTracks[0]?.id ?? null,
+    gen: (tts.genTrackInfo?.() ?? {}).id ?? null, pacing: tts.mouthInfo().pacing,
+    rtp, diag: v.micDiag() };
+});
+const trans = { };
+const flipMic = () => speaker.evaluate(async (name) => { const v = await import('/lib/voice.js'); await v.toggleMic(name); }, 'accept-speaker');
+const reneg = () => listener.evaluate(async () => { const c = await import('/lib/voiceconsent.js'); c.setReceiveVoice(false); c.setReceiveVoice(true); });
+await flipMic();
+await new Promise(r => setTimeout(r, 1500));
+let during = await probe(speaker);
+check('mic ON: every sender holds the MIC-LANE id', during.senders.length > 0 && during.senders.every((id) => id === during.lane), JSON.stringify({ senders: during.senders, lane: during.lane }));
+check('mic ON: no sender holds the generator', !during.senders.includes(during.gen), `gen=${during.gen}`);
+check('mic ON: pacer stopped', during.pacing === false);
+check('mic ON: micDiag agrees end to end (no contradiction verdict)', !/BROKEN/.test(during.diag.verdict), during.diag.verdict);
+const rtp0 = during.rtp;
+await new Promise(r => setTimeout(r, 2000));
+during = await probe(speaker);
+check('mic ON: sender RTP INCREMENTS on the mic track (live leg, not a dead one)', during.rtp > rtp0, `${rtp0} → ${during.rtp}`);
+await reneg();
+await new Promise(r => setTimeout(r, 2000));
+during = await probe(speaker);
+check('renegotiation under mic: senders STILL hold the mic lane', during.senders.every((id) => id === during.lane) && !during.senders.includes(during.gen), JSON.stringify(during.senders));
+trans.during = during;
+await flipMic();
+await new Promise(r => setTimeout(r, 1500));
+let after = await probe(speaker);
+check('mic OFF: every sender holds the GENERATOR id', after.senders.length > 0 && after.senders.every((id) => id === after.gen), JSON.stringify({ senders: after.senders, gen: after.gen }));
+check('mic OFF: pacer running', after.pacing === true);
+await reneg();
+await new Promise(r => setTimeout(r, 2000));
+after = await probe(speaker);
+check('renegotiation under TTS: senders STILL hold the generator', after.senders.every((id) => id === after.gen), JSON.stringify(after.senders));
+let cyclesOk = true, cycleDetail = '';
+for (let i = 0; i < 3 && cyclesOk; i++) {
+  await flipMic(); await new Promise(r => setTimeout(r, 900));
+  const on = await probe(speaker);
+  if (!on.senders.every((id) => id === on.lane)) { cyclesOk = false; cycleDetail = `cycle ${i} ON: ${JSON.stringify(on.senders)}`; }
+  await flipMic(); await new Promise(r => setTimeout(r, 900));
+  const off = await probe(speaker);
+  if (!off.senders.every((id) => id === off.gen)) { cyclesOk = false; cycleDetail = `cycle ${i} OFF: ${JSON.stringify(off.senders)}`; }
+}
+check('3× ON/OFF cycles: sender id tracks the producer every time', cyclesOk, cycleDetail);
+trans.after = after;
 receipt.transitions = trans;
 
 // free the two live-media pages first: OPFS is origin-scoped and survives;
