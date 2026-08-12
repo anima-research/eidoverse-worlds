@@ -56,6 +56,9 @@ async function spawnServer(env: Record<string, string | undefined>): Promise<{ p
   const own = await fetch(`http://127.0.0.1:${port}/${nonce}.txt`).then((r) => r.ok && r.text()).catch(() => false);
   if (own !== nonce) throw new Error(`listener on :${port} is not our child — refusing to test it`);
   return { port };
+  // (freePort's probe can false-positive "free" on a slow listener; the nonce
+  // check above is the backstop that turns that race into a loud abort
+  // rather than a wrong-server receipt — abort over false testimony.)
 }
 
 const HOME = process.env.HOME; const BUNPATH = process.env.PATH;
@@ -96,7 +99,13 @@ console.log("\n— B. git-driven identity (dev checkout case) —");
   const body = await (await fetch(`http://127.0.0.1:${port}/version`)).json();
   check("sha resolved from git (not unknown)", body.sha !== "unknown" && body.sha.length >= 7, body.sha);
   check("commitTime resolved from git", body.commitTime !== "unknown" && !Number.isNaN(Date.parse(body.commitTime)));
-  check("dirty is a real boolean when git can answer", body.dirty === true || body.dirty === false, String(body.dirty));
+  // The nonce file this harness plants in client/ is UNTRACKED, so during
+  // any spawned-server's lifetime the checkout is guaranteed dirty — which
+  // makes this the executable proof of the git-derived TRUE path (a
+  // hardcoded `dirty: false` fails here; review caught that the boolean
+  // check alone could not tell them apart).
+  check("git-derived dirty is TRUE while the tree holds the nonce (real detection, not a hardcode)",
+    body.dirty === true, String(body.dirty));
 }
 
 console.log("\n— C. no env, no git: honest unknowns, never fake-clean —");

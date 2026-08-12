@@ -1404,10 +1404,15 @@ const BUILD = (() => {
   // BUILD_DIRTY env for image builds, or "unknown" when neither can answer —
   // never a silent default that reads as clean.
   const dirtyRaw = process.env.BUILD_DIRTY ?? (() => {
+    // IDENTITY MATCH (r2 self-review): with BUILD_SHA set, the reported sha
+    // is the IMAGE's — pairing it with `git status` of whatever local tree
+    // the process happens to sit in would report one identity's sha with
+    // another's dirtiness. Env-driven sha without env-driven dirty is
+    // honestly unknown.
+    if (process.env.BUILD_SHA) return "unknown";
     const out = gitLine("status", "--porcelain");
     // gitLine returns "" both for a clean tree and for no-git; disambiguate
-    // by whether HEAD resolved — no sha from git means no git to trust.
-    if (!process.env.BUILD_SHA && !sha) return "unknown";
+    // by whether HEAD resolves — no sha from git means no git to trust.
     return gitLine("rev-parse", "HEAD") ? (out ? "true" : "false") : "unknown";
   })();
   return { sha: sha || "unknown", commitTime: commitTime || "unknown",

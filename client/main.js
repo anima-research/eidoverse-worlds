@@ -50,7 +50,7 @@ import { initDebug, updateDebug, toggleDebug } from './lib/debug.js';
 // agents the answer is the same public GET /version, one curl away; an
 // agent-surface (join/look) exposure would be its own explicit slice.
 fetch('/version').then((r) => r.json())
-  .then(({ sha, commitTime, dirty, startedAt }) => console.log(`[eidoverse] server build ${sha}${dirty === true ? ' (DIRTY TREE)' : ''} (code from ${commitTime}), up since ${startedAt}`))
+  .then(({ sha, commitTime, dirty, startedAt }) => console.log(`[eidoverse] server build ${sha}${dirty === true ? ' (DIRTY TREE)' : dirty === false ? '' : ' (dirty: unknown)'} (code from ${commitTime}), up since ${startedAt}`))
   .catch(() => console.log('[eidoverse] server build unknown (/version unavailable)'));
 import { dragSim } from './lib/bodydrag.js';
 import { initChat, logChat, chat, openConvo } from './lib/chat.js';
