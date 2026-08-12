@@ -124,6 +124,28 @@ try {
     await call({ text: "partial should not land", utt: 5 });   // partner without spoken
     await sleep(700);
     check("partial trio (utt without spoken): refused, zero says", saysSeen().length === 0, `${saysSeen().length}`);
+    // COERCION vectors (adversarial review): Number(null)===0, Number(true)===1
+    // used to SNEAK a fabricated utt/t0 past the guard. Type-exact validation
+    // must refuse these outright — a fabricated utterance is worse than a
+    // refused one.
+    for (const bad of [
+      { text: "utt null", spoken: true, utt: null },
+      { text: "utt bool", spoken: true, utt: true },
+      { text: "utt string", spoken: true, utt: "5" },
+      { text: "t0 null", spoken: true, utt: 1, t0: null },
+      { text: "utt negative", spoken: true, utt: -1 },
+      { text: "t0 infinite", spoken: true, utt: 1, t0: Infinity },
+    ]) {
+      seen.length = 0;
+      const rr = await call(bad as Record<string, unknown>);
+      await sleep(400);
+      // The security-relevant assertion: a coerced value must NEVER become a
+      // durable say. (Number(null)===0 / Number(true)===1 used to fabricate
+      // an utterance; type-exact validation refuses instead.)
+      check(`coercion: ${bad.text} → refused loudly, ZERO fabricated says`,
+        /refused|trio/i.test(JSON.stringify(rr?.result ?? {})) && saysSeen().length === 0,
+        `says=${saysSeen().length} reply=${JSON.stringify(rr?.result)?.slice(0, 80)}`);
+    }
   }
 
   // 4. Unrelated extra key never reaches the log.

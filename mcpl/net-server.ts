@@ -835,15 +835,21 @@ class Session {
         // "5"), and refuse LOUDLY: a door that must drop the protocol should
         // say so, not shrug the say into text.
         const wantsSpoken = a.spoken !== undefined || a.utt !== undefined || a.t0 !== undefined;
-        const uttN = Number(a.utt);
-        const t0N = Number(a.t0);
-        const trioOk = a.spoken === true && Number.isSafeInteger(uttN) && uttN >= 0
-          && (a.t0 === undefined || Number.isFinite(t0N));   // present ⇒ finite: a malformed t0 refuses, never silently drops
+        // TYPE-EXACT, not coerced (adversarial review): Number(null)===0 and
+        // Number(true)===1 let a null/boolean utt or a null t0 pass the old
+        // guard and forward a FABRICATED value — violating this door's own
+        // "malformed refuses, never silently drops" invariant. The schema
+        // declares utt:integer>=0 and t0:number; require exactly those raw
+        // JSON types. (The world server tolerates numeric strings elsewhere;
+        // the door does not launder them into the protocol.)
+        const uttOk = typeof a.utt === "number" && Number.isSafeInteger(a.utt) && a.utt >= 0;
+        const t0Ok = a.t0 === undefined || (typeof a.t0 === "number" && Number.isFinite(a.t0));
+        const trioOk = a.spoken === true && uttOk && t0Ok;
         if (wantsSpoken && !trioOk) {
           return text("spoken-say refused: the protocol trio must travel together — spoken:true plus a non-negative integer utt (t0 optional, finite). Sent as ordinary text it would silently lose its performance link, so nothing was said; fix and resend.");
         }
         const extra = trioOk
-          ? { spoken: true as const, utt: uttN, ...(Number.isFinite(t0N) ? { t0: t0N } : {}) }
+          ? { spoken: true as const, utt: a.utt, ...(typeof a.t0 === "number" ? { t0: a.t0 } : {}) }
           : undefined;
         ag.say(String(a.text).slice(0, 4000), extra);
         return text("said");
