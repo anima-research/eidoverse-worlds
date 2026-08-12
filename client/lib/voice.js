@@ -1190,17 +1190,27 @@ setGeneratorRebuildHook((track) => {
     for (const id of humanIds()) if (!peers.has(id)) offerTo(id);
     return;
   }
-  // Keep the local stream in step where it CAN be — a synthetic or stubbed
-  // source is not always a real MediaStream (the suite caught this hook
-  // throwing on removeTrack, inside the very recovery it exists to perform).
-  // Re-binding the senders is the part that matters; stream bookkeeping is not
-  // worth failing the repair for.
-  try {
-    if (typeof micStream.removeTrack === 'function' && typeof micStream.addTrack === 'function') {
-      for (const t of micStream.getTracks()) if (t !== track) micStream.removeTrack(t);
-      if (!micStream.getTracks().includes(track)) micStream.addTrack(track);
-    }
-  } catch (e) { report('voice stream rebind', e); }
+  // 🔴 NEVER MUTATE A DEVICE LANE (r4 self-audit — the fourth member of the
+  // state-discriminator family). This block used to swap the arriving
+  // generator INTO micStream unconditionally. For a SYNTH lane that is the
+  // correct rebuild bookkeeping — the stream's whole content is the
+  // generator. But when micStream is the STANDING DEVICE LANE (mic used,
+  // then off — the release contract keeps it up), the swap evicted the gated
+  // destination track and made the lane NAME the generator: the next mic-ON
+  // re-enabled the device, asked activeSendTrack() for the lane, and bound
+  // the generator — a dead outbound leg via a different door than the one
+  // r4 closed (sequence: mic on → off → enable TTS → mic on). The lane is
+  // micgate's output and only micgate may restaff it; the hook's job on a
+  // device lane is the SENDERS only, and activeSendTrack() already prefers
+  // _synthTrack while the mic is not live.
+  if (_synthLane) {
+    try {
+      if (typeof micStream.removeTrack === 'function' && typeof micStream.addTrack === 'function') {
+        for (const t of micStream.getTracks()) if (t !== track) micStream.removeTrack(t);
+        if (!micStream.getTracks().includes(track)) micStream.addTrack(track);
+      }
+    } catch (e) { report('voice stream rebind', e); }
+  }
   _synthTrack = track;
   for (const p of peers.values()) {
     for (const s of p.pc.getSenders()) {

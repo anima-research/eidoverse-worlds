@@ -154,10 +154,16 @@ export function ttsSection(host, onPaint = () => {}) {
       _busy = String(e?.message || e).slice(0, 80);
       build();
       setTimeout(() => { _busy = null; repaint(); }, 2500);
-      return;
+      // FALSE, loudly (r5 self-review): this catch absorbs every load
+      // failure, which made the checkbox handler's own catch DEAD CODE — a
+      // failed load left the box ticked with no voice behind it, the exact
+      // silent failure its comment claims to prevent. Failure is a return
+      // value now; the callers that must untick can finally see it.
+      return false;
     }
     _busy = null;
     repaint();
+    return true;
   }
   async function remove(id) {
     if (id === '__pending') { _pending = null; repaint(); return; }
@@ -393,7 +399,10 @@ export function ttsSection(host, onPaint = () => {}) {
         // If loading fails the box must not stay ticked over a voice that never
         // arrived — that is the same silent failure by a different route.
         try {
-          await pick(pickId);                 // loads, sets the source, enables
+          const ok = await pick(pickId);      // loads, sets the source, enables
+          // pickInner reports failure as `false`, not a throw — its catch
+          // owns the error UI. Only the tick needs undoing here.
+          if (ok === false) { e.target.checked = false; return; }
         } catch (err) {
           e.target.checked = false;
           _needVoice = true;

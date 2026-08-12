@@ -56,17 +56,26 @@ async function build(wasmPaths) {
 function run(mod, text, voice) {
   let ids = null;
   _sink = (data) => { try { ids = JSON.parse(data).phoneme_ids; } catch { /* not our line */ } };
-  _errSink = (msg) => { throw new Error(String(msg)); };
+  // stderr is CHATTER until proven otherwise (r5 self-review): Emscripten's
+  // printErr carries espeak warnings and info lines, and throwing on any of
+  // them failed the whole phonemize call on output that wasn't an error.
+  // Collect; it becomes the diagnostic only if the run produces no ids.
+  const errLines = [];
+  _errSink = (msg) => { errLines.push(String(msg)); };
   try {
     mod.callMain(['-l', voice || 'en-us', '--input', JSON.stringify([{ text }]),
                   '--espeak_data', '/espeak-ng-data']);
   } catch (e) {
     // callMain throws its exit code even on success; a real failure is an Error.
     if (typeof e !== 'number' && e?.status === undefined) throw e;
+    // exit-code throws are normal; real failures fall through to the ids
+    // check below, where collected stderr becomes the message.
   } finally {
     _sink = null; _errSink = null;
   }
-  if (!ids) throw new Error('phonemizer produced no ids');
+  if (!ids && errLines.length) throw new Error('phonemizer produced no ids; stderr: ' + errLines.slice(-5).join(' | '));
+  if (!ids) throw new Error('phonemizer produced no ids'
+    + (errLines.length ? '; stderr: ' + errLines.slice(-5).join(' | ') : ''));
   return ids;
 }
 

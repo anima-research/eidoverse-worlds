@@ -212,6 +212,25 @@ console.log("\n— sender identity across producer transitions (r4: the third ca
     if (!senderIds().every((id: string | undefined) => id === genId())) { check(`cycle ${i} OFF id-coherent`, false, `${senderIds()}`); break; }
   }
   check("3× ON/OFF cycles: sender id tracks the producer every time", true);
+
+  // THE FOURTH DOOR (r4 self-audit): mic on → off → enable TTS → mic on.
+  // Enabling TTS while the DEVICE lane stands fires the rebuild hook with a
+  // standing micStream; the hook used to swap the generator INTO the lane,
+  // so the final mic-ON bound the generator while the pacer stopped — the
+  // r4 dead leg through a different entrance. The lane's own track identity
+  // must survive the TTS enable untouched.
+  await voice.toggleMic("me"); await sleep(50);           // ON
+  const laneBefore = laneId();
+  await voice.toggleMic("me"); await sleep(80);           // OFF (lane stands)
+  tts.setTtsEnabled(false); await sleep(30);
+  tts.setTtsEnabled(true); await sleep(80);               // hook fires on standing lane
+  check("TTS enable over a standing device lane leaves the lane's track alone",
+    laneId() === laneBefore, `lane ${laneBefore} → ${laneId()}`);
+  await voice.toggleMic("me"); await sleep(80);           // ON again
+  check("mic ON after TTS-enable-over-lane binds the LANE, not the generator",
+    senderIds().every((id: string | undefined) => id === laneId() && id !== genId()),
+    `senders=${senderIds()} lane=${laneId()} gen=${genId()}`);
+  await voice.toggleMic("me"); await sleep(80);
   check("micDiag verdict names a contradiction if one exists",
     !/BROKEN/.test((voice.micDiag() as { verdict: string }).verdict), (voice.micDiag() as { verdict: string }).verdict);
 }
@@ -267,6 +286,19 @@ console.log("\n— disable / replace: stale async can never become current —")
   written.length = 0;
   await sleep(120);
   check("re-enable after stale-drop plays nothing old (silence only)", speechFrames() === 0, `${speechFrames()}`);
+  // r5 self-review: the RESAMPLE seam. speak()'s epoch check runs before
+  // enqueue, but the resample callback is one more async hop — a disable
+  // landing inside it re-pushed the dead audio until the push itself became
+  // epoch-guarded. Fire without awaiting so the disable races the pipeline.
+  written.length = 0;
+  void tts.speak("assassinated mid-pipeline");
+  tts.setTtsEnabled(false);              // same tick: epoch bumps under the resample
+  await sleep(80);
+  tts.setTtsEnabled(true);
+  await sleep(150);
+  check("disable racing the resample: stale audio dies at EVERY seam",
+    speechFrames() === 0 && tts.mouthInfo().queued === 0,
+    `speech=${speechFrames()} queued=${tts.mouthInfo().queued}`);
 }
 
 console.log("\n— dead generator: rebuilt once, senders re-bound, no SDP churn —");

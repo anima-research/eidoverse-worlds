@@ -374,13 +374,18 @@ function enqueue(pcm, sampleRate) {
   if (!canSynthesize()) return;
   // Resample BEFORE queueing so the pacer only ever handles OUT_RATE floats and
   // the frame math has exactly one rate in it.
-  void toOutRate(pcm, sampleRate).then((f) => { queue.push(f); }).catch((e) => report('resample', e));
-  return;
-  queue.push({ pcm, sampleRate });
-  startPacer();
+  // EPOCH-GUARDED at the PUSH, not just at speak() (r5 self-review): the
+  // resample is async, so a disable can land between this call and the
+  // callback — and an unguarded push here re-opened the stale-becomes-current
+  // hole one stage after the epoch closed it at speak(). The audio a user
+  // disabled must die at EVERY asynchronous seam it could cross, not the
+  // first one.
+  const epoch = ttsEpoch;
+  void toOutRate(pcm, sampleRate)
+    .then((f) => { if (epoch === ttsEpoch) queue.push(f); })
+    .catch((e) => report('resample', e));
 }
 
-/** Drain the queue into one frame; zeros when there is nothing to say. */
 function fillSpeech(out) {
   let i = 0;
   while (i < out.length) {
