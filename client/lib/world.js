@@ -13,6 +13,8 @@ import { setTerrain, setGrass, clearGrass, heightAt } from './terrain.js';
 import { buildFloraField } from './flora.js';
 import { applySky, attachLocalLights } from './sky.js';
 import { foldSkyEntry } from './forecast.js';
+import { seatCorrectionFor } from './seats.js';
+import { applySeatCorrection } from './seatcore.js';
 import { makeLight, updateLight, disposeLight } from './lights.js';
 import { logChat } from './chat.js';
 import { whenBooted } from './boot.js';
@@ -540,9 +542,12 @@ const _mtQ = new THREE.Quaternion();
 const _mtF = new THREE.Vector3();
 const _mtV = new THREE.Vector3();
 const _mtM = new THREE.Matrix4();
-/** Fill outPos with rider's world seat position; returns {yaw, pose, to} or
- *  null when not mounted (or the parent isn't live yet). */
-export function mountTransform(riderId, outPos) {
+/** Fill outPos with rider's world seat position; returns {yaw, pose, to,
+ *  seatState, seatReason} or null when not mounted (or the parent isn't live
+ *  yet). `rider` is {path, av} — the roster path and live wrapper of the
+ *  body being seated; without it the seat is declared approximate, because
+ *  a correction we cannot gate is a correction we may not apply (#101). */
+export function mountTransform(riderId, outPos, rider) {
   const m = avatarMounts.get(riderId);
   if (!m) return null;
   const parent = entities.get(m.to);
@@ -560,11 +565,24 @@ export function mountTransform(riderId, outPos) {
       .premultiply(part.parent.matrixWorld).invert();       // world → part-at-rest
     _mtF.applyMatrix4(_mtM).applyMatrix4(part.matrixWorld); // …re-emerge from the live part
   }
+  // The profile correction (#101): contact plane onto the authored socket
+  // plane, applied AFTER part displacement so a profiled rider carries it
+  // through a moving part's arc. The subtraction is along WORLD up — mounted
+  // bodies render upright (yaw only, below), so a tilted parent's normal
+  // would displace the root laterally while the body's contact geometry
+  // stays vertical (the B2 discriminator in tools/seatcore-test.ts). Gate
+  // closed = today's root-at-socket, declared, never silent.
+  const seat = seatCorrectionFor(rider, sock);
+  if (seat.applied) {
+    const c = applySeatCorrection([_mtF.x, _mtF.y, _mtF.z], seat.contactY, seat.scale);
+    if (c) _mtF.set(c[0], c[1], c[2]);
+  }
   outPos.copy(_mtF);
   parent.getWorldQuaternion(_mtQ);
   _mtF.set(0, 0, 1).applyQuaternion(_mtQ);
   const parentYaw = Math.atan2(_mtF.x, _mtF.z);
-  return { yaw: parentYaw + (m.yaw ?? sock.yaw ?? 0), pose: sock.pose ?? 'sitchair', to: m.to };
+  return { yaw: parentYaw + (m.yaw ?? sock.yaw ?? 0), pose: sock.pose ?? 'sitchair', to: m.to,
+    seatState: seat.applied ? 'profiled' : 'approximate', seatReason: seat.applied ? null : seat.reason };
 }
 
 /** Motion ended: rest at the logged base pose. Anything that rests AWAY from

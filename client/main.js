@@ -25,6 +25,7 @@ import {
 import {
   remotes, updateRemotes, updateGaze, noteSpeaking, setLodBias,
 } from './lib/remotes.js';
+import { initSeats, declareSeatState, clearSeatState } from './lib/seats.js';
 import { net, connect, initIdentity, loginUrl, wireNet, sendVerb, sendPose, sendPuppet, sendWhisper, sendTyping, sendWorldFork, sendWorldReset, sendMod, requestDebug } from './lib/net.js';
 import {
   initPalette, updateBuild, wireAvatarSwitch, setMyAvatarPath, toggleBuildMenu,
@@ -261,6 +262,8 @@ wireAvatarSwitch(async (path, name) => {
 
 bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 
+initSeats();   // seat-profile verdicts (#101): fetch on boot, refresh on the two update events
+
 bus.on('avatar-updated', ({ path, name, fresh }) => {
   if (myAvatarPath.split('?')[0] === path) {
     toast(`your body "${name}" was updated — refreshing`, 'info');
@@ -323,7 +326,7 @@ function getUp() {
 // and control returns to the normal ground controller.
 const _seatP = new THREE.Vector3();
 function dismountMe() {
-  const sw = mountTransform(CONFIG.name, _seatP);
+  const sw = mountTransform(CONFIG.name, _seatP, { path: myAvatarPath, av: me });
   const yaw = sw?.yaw ?? myState.yaw;
   const off = sw ? _seatP.clone() : myState.pos.clone();
   off.x += Math.sin(yaw) * 0.7;
@@ -331,10 +334,12 @@ function dismountMe() {
   sendVerb('dismount', { id: CONFIG.name, pos: [off.x, 0, off.z], yaw });
   avatarMounts.delete(CONFIG.name);      // locally immediate; the echo confirms
   myState.pos.set(off.x, 0, off.z);
+  me?.setSeatApprox(false);              // stood up — the ≈ marker comes off (#101)
+  clearSeatState(CONFIG.name);
   setPosture('stand');
 }
 function updateMountedMe(dt) {
-  const sw = mountTransform(CONFIG.name, _seatP);
+  const sw = mountTransform(CONFIG.name, _seatP, { path: myAvatarPath, av: me });
   if (!sw) return;                       // parent still downloading
   myState.pos.copy(_seatP);
   myState.yaw = sw.yaw;
@@ -344,6 +349,9 @@ function updateMountedMe(dt) {
     me.root.position.copy(_seatP);
     me.root.rotation.y = sw.yaw;
     me.setClip(sw.pose, 0);
+    // Declared seat state (#101), same two surfaces the remotes get.
+    me.setSeatApprox(sw.seatState === 'approximate');
+    declareSeatState(CONFIG.name, sw.to, avatarMounts.get(CONFIG.name)?.slot, sw.seatState, sw.seatReason);
   }
   // The camera lives in updateMe, which we skip while seated — so drive it
   // here too (the ragdoll path learned this the same way), or it freezes on

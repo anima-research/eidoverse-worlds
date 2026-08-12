@@ -515,6 +515,13 @@ async function handle(msg) {
       break;
     }
 
+    case 'avatar-profile-updated': {
+      // a seat profile was proposed or countersigned (#101) — seats.js holds
+      // the cache and the generation guard; this is just the wire → bus hop
+      bus.emit('avatar-profile-updated', msg);
+      break;
+    }
+
     case 'world-forked': {
       // The link stands alone at the end of the line, never inside brackets —
       // naive linkifiers (ours included, once) swallow closing punctuation

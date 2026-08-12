@@ -9,6 +9,7 @@
 import { THREE, camera, scene, report, angleDelta } from './core.js';
 import { makeAvatar } from './avatar.js';
 import { avatarMounts, mountTransform } from './world.js';
+import { declareSeatState, clearSeatState } from './seats.js';
 
 export const remotes = new Map(); // id -> RemoteBody
 
@@ -252,10 +253,15 @@ export function updateRemotes(dt, now = performance.now()) {
     // swing mid-pendulum — presence samples are ignored while mounted, so a
     // stale stream can't fight the seat.
     if (avatarMounts.has(r.id)) {
-      const sw = mountTransform(r.id, _a);
+      const sw = mountTransform(r.id, _a, { path: r.avatarPath, av: r.avatar });
       if (sw) {
         r.avatar.root.position.copy(_a);
         r.avatar.root.rotation.y = sw.yaw;
+        // Declared seat state (#101): the ≈ marker and one console line per
+        // transition — an unprofiled seat renders where it always did, but
+        // never silently.
+        r.avatar.setSeatApprox(sw.seatState === 'approximate');
+        declareSeatState(r.id, sw.to, avatarMounts.get(r.id)?.slot, sw.seatState, sw.seatReason);
         // The seat owns WHERE the body is and its base clip — never its
         // expressiveness. The newest presence sample still delivers emotes
         // (one-shots layer over the sit; setClip is emote-aware and won't
@@ -280,6 +286,10 @@ export function updateRemotes(dt, now = performance.now()) {
         continue;
       }
       // parent still downloading — fall through to normal presence meanwhile
+    } else if (r.avatar._seatApprox) {
+      // stood up: the marker comes off and the next sit declares afresh
+      r.avatar.setSeatApprox(false);
+      clearSeatState(r.id);
     }
 
     if (buf.length >= 2) {

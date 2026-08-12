@@ -32,6 +32,7 @@ import { qApply } from "./motioneval.js";
 // ---- constants (versioned by derivation.toolVersion — change them, bump it) --
 
 export const SEAT_METHOD = "skinned-pelvis-contact-v1";
+export const SEAT_CLIP_FILE = "sitting_normal_chair"; // the library VRMA every chair profile binds to
 export const CONTACT_MIN = 0.02;   // metres root-local; below this the "contact" is the root itself
 export const CONTACT_MAX = 1.0;    // above this no humanoid sit pose is plausible
 export const MIN_PATCH_VERTS = 8;  // fewer neighbours than this = the winner sits alone
