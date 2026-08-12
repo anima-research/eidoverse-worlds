@@ -1,0 +1,44 @@
+{
+  "issue": 101,
+  "phase": "B acceptance — numeric receipts (scratch battery, world chapel101b, branch im/101-seat-profiles)",
+  "specimen": {
+    "source": "prod commons entity e6482948 via public GET /geom (read-only)",
+    "lib": "store/0445768b0c87d590.glb",
+    "pos": [-22.1163814045823, 3.6378553539267884, 16.69438442197905],
+    "scale": 6.694159214837762,
+    "sockets_verbatim": {
+      "seat":  { "pos": [-0.247, -0.29, -0.04],  "yaw": 1.675,  "battery": "surface (migrated)" },
+      "seat2": { "pos": [-0.249, -0.29, 0.041],  "yaw": 1.708,  "battery": "legacy-root (in-place control)" },
+      "seat3": { "pos": [-0.075, -0.291, -0.226], "yaw": 0.13,  "battery": "surface (migrated)" },
+      "seat4": { "pos": [-0.107, -0.29, 0.226],  "yaw": -3.034, "battery": "surface (migrated)" }
+    },
+    "padPlaneWorldY": 1.690,
+    "socketPlaneWorldY_seat": 1.6967
+  },
+  "profiles": { "claude": 0.2055, "aletheia": 0.2791, "countersign": "tools/seat-accept.ts, receipt = accepted Phase B contract comment, rev 4" },
+  "threeConsumers": {
+    "claude_seat":   { "headlessLook": "ground height 1.49m, no suffix", "headlessRoot": 1.4912, "browserRemoteRoot": 1.4912, "activeSlot": "sitchair", "nameplateMarker": false },
+    "claude_seat4_browserLocal": { "mountTransformSeatY": 1.4910, "state": "profiled", "activeSlot": "sitchair", "note": "seat4 pad authored at -0.29 vs seat3 -0.291 — authorship, not consumer drift" },
+    "aletheia_seat3": { "headlessRoot": 1.4109, "browserRemoteRoot": 1.4108, "activeSlot": "sitchair", "nameplateMarker": false },
+    "legacy_seat2":  { "headlessLook": "ground height 1.70m … (seat approximate: legacy socket)", "composition": "root at socket plane — byte-identical to main" }
+  },
+  "gapToPad": {
+    "claude": { "contactWorldY": 1.6967, "pad": 1.690, "signedGap_m": 0.0067 },
+    "aletheia": { "contactWorldY": 1.690, "pad": 1.690, "signedGap_m": "≈0.000–0.007 (seat3 pad plane)" },
+    "tolerance": { "cushion": 0.05, "rigidControl": 0.02, "verdict": "both rigs within BOTH bounds" }
+  },
+  "movingParent_B2_discriminator": {
+    "fixture": "swing: pendulum axis [1,0,0] pivot [0,2.4,0] amp 0.5 period 3.2 — the parent TILTS through the arc",
+    "samples": [
+      { "sock": [-26, 3.5752, 16.9985], "root": [-26, 3.5752, 16.9985], "note": "pre-hydration sample: clip not loaded → declared approximate root-at-socket (the designed transient)" },
+      { "sock": [-26, 3.6284, 17.2269], "root": [-26, 3.4229, 17.2269] },
+      { "sock": [-26, 3.7652, 15.8281], "root": [-26, 3.5597, 15.8281] },
+      { "sock": [-26, 3.5564, 16.8479], "root": [-26, 3.3509, 16.8479] },
+      { "sock": [-26, 3.7139, 17.4553], "root": [-26, 3.5084, 17.4553] },
+      { "sock": [-26, 3.7013, 15.9612], "root": [-26, 3.4958, 15.9612] }
+    ],
+    "profiledChecks": { "dY": "0.2055 exactly, every sample", "dX": "0 exactly", "dZ": "0 exactly" },
+    "parentNormalSignature": "dZ up to ±0.098 m at amp 0.5 — ABSENT; matches seatcore-test hand math",
+    "headlessParity": "sitter-swing look(): ground height 3.34m (= 3.5455 rest socket − 0.2055), 'riding its pendulum', no suffix"
+  }
+}
