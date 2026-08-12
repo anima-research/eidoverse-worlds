@@ -837,7 +837,8 @@ class Session {
         const wantsSpoken = a.spoken !== undefined || a.utt !== undefined || a.t0 !== undefined;
         const uttN = Number(a.utt);
         const t0N = Number(a.t0);
-        const trioOk = a.spoken === true && Number.isSafeInteger(uttN) && uttN >= 0;
+        const trioOk = a.spoken === true && Number.isSafeInteger(uttN) && uttN >= 0
+          && (a.t0 === undefined || Number.isFinite(t0N));   // present ⇒ finite: a malformed t0 refuses, never silently drops
         if (wantsSpoken && !trioOk) {
           return text("spoken-say refused: the protocol trio must travel together — spoken:true plus a non-negative integer utt (t0 optional, finite). Sent as ordinary text it would silently lose its performance link, so nothing was said; fix and resend.");
         }
