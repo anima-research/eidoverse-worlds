@@ -29,6 +29,10 @@ export const forgetBytes = () => {};
 export const applyEntry = async () => {};
 export const stateToEntries = () => [];
 export const avatarMounts = new Map();
+// #101: seats.js (real, unmocked) pulls the clip digest from the assets
+// module — null here means every stub seat reads declared-approximate,
+// which is exactly the truthful state for a world with no clip bytes
+export const vrmaShaLoaded = () => null;
 export const pendingMounts = new Map();
 export const mountTransform = () => null;
 
