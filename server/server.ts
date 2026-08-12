@@ -1965,7 +1965,16 @@ const server = Bun.serve({
         // that could never perform. Retirement carries the dying gen so a
         // client that already saw a successor's transition (out-of-order
         // delivery) knows to ignore it.
-        if ((c.surface ?? "world") !== "world" && !c.superseded) {
+        // ...but only a leg that was ACCEPTED ever was a session. c.world is
+        // assigned before the aux checks, so a REFUSED aux (orphan, cap,
+        // B1-unbindable) also passes through here — and broadcasting its
+        // "retirement" would announce a surface-transition for a leg that
+        // never existed, making every listener toggle voiceCapable for the
+        // victim of an impersonation attempt. The gen is issued exactly on
+        // acceptance; no gen, no session, no event. (Found by the B1 impostor
+        // vector: refusal at the door is only half the contract — the other
+        // half is that the refused leg leaves no trace in anyone's model.)
+        if ((c.surface ?? "world") !== "world" && !c.superseded && c.gen != null) {
           const retire = JSON.stringify({ type: "surface-transition",
             id: c.id, surface: c.surface, gen: null, retired: c.gen ?? null });
           for (const t of c.world.clients) t.ws.send(retire);
@@ -2164,6 +2173,29 @@ const server = Bun.serve({
               // (c is not yet in w.clients here — add happens after these
               // checks — so only the global map needs cleaning. A w.clients
               // delete would be a no-op that misreads as "joiner counted".)
+              clients.delete(ws);
+              return;
+            }
+            // B1 (#57 review): an aux leg binds to the PRIMARY'S IDENTITY
+            // AUTHORITY, or it does not attach. Same-display-name existence is
+            // presence, not authority: without this check, anyone could join
+            // surface:"voice" under an unreserved human's name — every
+            // listener marks that person voiceCapable (adding hold latency to
+            // each of their says) and RTC packets go out stamped as them.
+            // Impersonation and denial in one seam. The binding, per review:
+            //   · reserved agents: this leg presented the agent's own bearer
+            //     (tokenVerified — same rule attest already uses);
+            //   · authenticated humans: this leg's verified session subject
+            //     equals the PRIMARY's (same person, proven, not asserted);
+            //   · self-asserted primary with no bindable credential: REFUSE.
+            //     Guessing would bless exactly the impostor this exists to
+            //     stop; the primary can log in and rejoin to earn aux legs.
+            const auxBound = c.tokenVerified === true
+              || (typeof primary.sub === "string" && primary.sub.length > 0 && c.sub === primary.sub);
+            if (!auxBound) {
+              console.log(`[world:${w.name}] aux refused: "${c.id}"/${c.surface} has no binding to the primary's identity authority`);
+              ws.send(JSON.stringify({ type: "error", error: `a ${c.surface} leg for "${c.id}" must present that identity's credential (agent bearer, or the primary's own login)` }));
+              ws.close(4009, "unbindable aux");
               clients.delete(ws);
               return;
             }
