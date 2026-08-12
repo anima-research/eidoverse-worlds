@@ -838,7 +838,20 @@ class Session {
         // server's Number() coercion — see the next block: the door refuses
         // null/bool/"5" outright so a coerced value can never be laundered into
         // a fabricated utterance.)
-        const wantsSpoken = a.spoken !== undefined || a.utt !== undefined || a.t0 !== undefined;
+        // text is REQUIRED and must be a real string (Opus-5 review): the schema
+        // says required:["text"], but a schema is not a boundary here (same
+        // reason "5" is refused for utt) — so validate it, or a call with the
+        // trio but no text lands a FABRICATED spoken say whose body is the
+        // literal "undefined"/"[object Object]".
+        if (typeof a.text !== "string" || a.text.length === 0) {
+          return { content: [{ type: "text", text: "say refused: `text` is required and must be a non-empty string." }], isError: true };
+        }
+        // "Wants spoken" means the caller is ASSERTING a performance: spoken:true,
+        // or a trio partner (utt/t0) present. An explicit spoken:false (or spoken
+        // absent) is an ordinary say — degrade to plain chat exactly as the world
+        // server does, never an error (Opus-5 review: refusing spoken:false muted
+        // a voice leg doing the natural `spoken: leg.isActive`).
+        const wantsSpoken = a.spoken === true || a.utt !== undefined || a.t0 !== undefined;
         // TYPE-EXACT, not coerced (adversarial review): Number(null)===0 and
         // Number(true)===1 let a null/boolean utt or a null t0 pass the old
         // guard and forward a FABRICATED value — violating this door's own

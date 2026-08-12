@@ -178,6 +178,35 @@ try {
     check("unrelated extra key stays at the door", !("glitter" in a) && a.utt === 9, JSON.stringify(a));
   }
 
+  // 5. spoken:false is an ORDINARY say, not an error (Opus-5 review): a voice
+  //    leg doing `spoken: leg.isActive` must not go mute+error when idle.
+  {
+    seen.length = 0;
+    const r = await call({ text: "not performed this time", spoken: false });
+    await sleep(700);
+    const says = saysSeen();
+    const a = (says[0]?.args ?? {}) as Record<string, unknown>;
+    check("spoken:false → ordinary say lands (not refused)",
+      says.length === 1 && a.text === "not performed this time" && !("spoken" in a) && !r?.result?.isError,
+      `says=${says.length} isError=${r?.result?.isError} a=${JSON.stringify(a)}`);
+  }
+
+  // 6. Missing/empty text is refused loudly — never a fabricated spoken say of
+  //    "undefined" (Opus-5 review: text is required; a schema is not a boundary).
+  {
+    seen.length = 0;
+    const r = await call({ spoken: true, utt: 7, t0: Date.now() } as Record<string, unknown>);
+    await sleep(700);
+    check("missing text with a valid trio → isError, zero says (no 'undefined' body)",
+      r?.result?.isError === true && saysSeen().length === 0,
+      `says=${saysSeen().length} isError=${r?.result?.isError}`);
+    seen.length = 0;
+    const r2 = await call({ text: "" });
+    await sleep(500);
+    check("empty text → isError, zero says",
+      r2?.result?.isError === true && saysSeen().length === 0, `says=${saysSeen().length}`);
+  }
+
   watcher.close(); host.close();
 } catch (e) {
   fail++;
