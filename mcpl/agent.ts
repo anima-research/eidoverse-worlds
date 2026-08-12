@@ -20,6 +20,7 @@ import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hour
 // what is burning (#25's shared-facts boundary).
 import { describeParticles, emitterTransition, transitionLine } from "../client/lib/particles.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
+import { makeGenerationGuard, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
 
 (globalThis as any).THREE = Object.assign({}, THREE_W, TSL);
 
@@ -217,6 +218,13 @@ export class WorldAgent {
    *  ambient scenery (roster + movers + acts); `roster` lets an unchanged
    *  cast be compacted to a count instead of ten names, every time. */
   private lastPulse = { sig: "", roster: "", at: 0 };
+  // Seat-profile verdicts (#101): the same server-judged values /avatars
+  // hands the browser, fetched over httpBase at join and on the two update
+  // events, generation-guarded so a slow response from before an acceptance
+  // can never roll the acceptance back. effective.ts reads THESE through the
+  // view — never a rederived hash, never a quiet default.
+  private seatVerdicts = new Map<string, any>();
+  private seatGuard = makeGenerationGuard();
   /** Stateful denoiser for ambient narration (arrive/leave/acts). Says,
    *  mentions, and whispers never pass through it — a knock is not chatter.
    *  See denoise.ts for the doctrine. */
@@ -495,6 +503,7 @@ export class WorldAgent {
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
             for (const e of msg.entries) this.lastSeq = Math.max(this.lastSeq, e.seq ?? -1);
             this.joined = true;
+            this.fetchSeatProfiles("join").catch(() => { /* declared-approximate until it lands */ });
             if (!this.ticker) this.ticker = setInterval(() => this.tick(), TICK_MS);
             clearTimeout(timeout);
             resolve();
@@ -620,6 +629,17 @@ export class WorldAgent {
           case "leave":
             this.people.delete(msg.id);
             this.gate.presence(msg.id, "leave");
+            break;
+          case "avatar-updated":
+            // avatar bytes changed: whatever profile we held for that name is
+            // suspect NOW — bump first, then refetch, so a response already
+            // in flight can never install the pre-change verdict (#101 B3)
+            if (msg.name) this.seatGuard.bump(String(msg.name));
+            this.fetchSeatProfiles("avatar-updated").catch(() => { /* held verdicts stay; seats read declared-approximate */ });
+            break;
+          case "avatar-profile-updated":
+            if (msg.name) this.seatGuard.bump(String(msg.name));
+            this.fetchSeatProfiles("avatar-profile-updated").catch(() => { /* same */ });
             break;
           case "pose":
             this.notePose(msg.id, msg.pose);
@@ -1613,7 +1633,44 @@ export class WorldAgent {
     return effectiveWorldTransform(id, {
       entity: (eid) => this.entities.get(eid),
       mount: (eid) => this.mounts.get(eid),
+      seatVerdict: (eid) => this.seatVerdictFor(eid),
     }, nowMs);
+  }
+
+  /** The served verdict for whatever avatar this body currently wears —
+   *  roster truth (p.avatar) mapped through the same name derivation every
+   *  consumer uses. Undefined = no profile, declared. */
+  private seatVerdictFor(id: string) {
+    const path = id === this.name ? this.avatar : this.people.get(id)?.avatar;
+    const nm = nameFromAvatarPath(path);
+    return nm ? this.seatVerdicts.get(nm) : undefined;
+  }
+
+  /** The declared-approximation suffix for a seated person's line (#101):
+   *  the same reason string the browser consoles and the nameplate ≈ carry —
+   *  one contract, three declarations. Empty when the seat is profiled. */
+  private seatSuffix(id: string, ride: { to: string; slot?: string }): string {
+    const sock = ride.slot ? this.entities.get(ride.to)?.comp?.sockets?.[ride.slot] : undefined;
+    const g = seatGateCore({ sock, verdict: this.seatVerdictFor(id), pose: sock?.pose ?? "sitchair" });
+    return g.apply ? "" : ` (seat approximate: ${g.reason})`;
+  }
+
+  /** /avatars over the same base /geom and terrain ride — the roster with
+   *  each entry's seat verdict pre-judged by the server. Stamps every known
+   *  name at DEPARTURE; a bump landing mid-flight invalidates that name's
+   *  slice of this response (seatcore.makeGenerationGuard — the #95 lesson). */
+  private async fetchSeatProfiles(_why: string) {
+    const stamps = new Map([...this.seatVerdicts.keys()].map((n) => [n, this.seatGuard.stamp(n)]));
+    try {
+      const res = await fetch(`${this.httpBase}/avatars`);
+      if (!res.ok) return;
+      const rev = Number(res.headers.get("x-profiles-rev") ?? NaN);
+      const roster = await res.json() as { name: string; seat?: any }[];
+      for (const e of roster) {
+        const stamped = stamps.get(e.name) ?? this.seatGuard.stamp(e.name);
+        if (this.seatGuard.accept(e.name, stamped, rev)) this.seatVerdicts.set(e.name, e.seat ?? { status: "missing" });
+      }
+    } catch { /* unreachable roster: verdicts stay as held; seats read declared-approximate and the next event retries */ }
   }
 
   look(nowMs = this.serverNow()): string {
@@ -1630,7 +1687,10 @@ export class WorldAgent {
     const selfEff = selfRide ? this.eff(this.name, nowMs) : null;
     const meKnown = !selfRide || selfEff?.ok === true;
     const me = selfEff?.ok ? { x: selfEff.pos[0], y: selfEff.pos[1], z: selfEff.pos[2] } : this.pos;
-    const seated = selfRide ? `, seated on ${selfRide.to}${selfEff?.ok && selfEff.moving ? ` (riding its ${selfEff.moving})` : ""}` : "";
+    // #101: an uncorrected seat composition is never silent — the same
+    // "(seat approximate: reason)" every renderer consumer declares.
+    const selfSeatNote = selfEff?.ok && selfEff.seat?.state === "approximate" ? ` (seat approximate: ${selfEff.seat.reason})` : "";
+    const seated = selfRide ? `, seated on ${selfRide.to}${selfEff?.ok && selfEff.moving ? ` (riding its ${selfEff.moving})` : ""}${selfSeatNote}` : "";
     if (meKnown) {
       L.push(`You are "${this.name}" in world "${this.world}" at (${me.x.toFixed(1)}, ${me.z.toFixed(1)}), ground height ${me.y.toFixed(2)}m, facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}.`);
     } else {
@@ -1669,7 +1729,7 @@ export class WorldAgent {
       const held = (p.pose as { pose?: Record<string, unknown> | null }).pose;
       const posed = held ? `, holding a pose (${Object.keys(held).length} bones)` : "";
       const ride = this.mounts.get(p.id);
-      const riding = ride ? ` — on ${ride.to}${ride.slot ? ` (${ride.slot})` : ""}` : "";
+      const riding = ride ? ` — on ${ride.to}${ride.slot ? ` (${ride.slot})` : ""}${this.seatSuffix(p.id, ride)}` : "";
       L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${riding}`);
     }
 

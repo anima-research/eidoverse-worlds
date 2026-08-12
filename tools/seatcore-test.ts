@@ -16,7 +16,7 @@
  */
 
 import {
-  validateProfile, profileStatus, socketAnchor, seatGate,
+  validateProfile, profileStatus, socketAnchor, seatGate, seatGateCore,
   applySeatCorrection, riderScalar, seatClaim, makeGenerationGuard,
   SEAT_METHOD, MIN_PATCH_VERTS, MAX_PATCH_SPREAD_Y,
 } from "../client/lib/seatcore.js";
@@ -99,7 +99,7 @@ console.log("socket anchor (B1)");
 console.log("runtime gate (B3)");
 {
   const surface = { seatAnchor: "surface", pos: [0, 0.5, 0] };
-  const accepted = { status: "accepted", contactY: 0.2055 };
+  const accepted = { status: "accepted", pose: "sitchair", contactY: 0.2055 };
   const base = { sock: surface, verdict: accepted, currentSlot: "sitchair", loadedClipSha256: C_SHA, currentClipSha256: C_SHA };
   check("full gate open → apply with contactY",
     (() => { const g = seatGate(base); return g.apply === true && near(g.contactY!, 0.2055); })());
@@ -119,6 +119,12 @@ console.log("runtime gate (B3)");
     (() => { const g = seatGate({ ...base, verdict: { status: "unsupported", refusal: "no humanoid mapping" } }); return !g.apply && /unsupported rig/.test(g.reason!); })());
   check("missing → 'no profile'",
     (() => { const g = seatGate({ ...base, verdict: { status: "missing" } }); return !g.apply && g.reason === "no profile"; })());
+  check("pose identity is the contract's, not the filename's",
+    (() => { const g = seatGate({ ...base, verdict: { ...accepted, pose: "sitground" } }); return !g.apply && /pose sitground/.test(g.reason!); })());
+  // The headless half: no mixer, so the contract IS the runtime truth.
+  check("core gate opens on contract identity alone (headless consumer)",
+    (() => { const g = seatGateCore({ sock: surface, verdict: accepted }); return g.apply === true && near(g.contactY!, 0.2055); })());
+  check("core gate still refuses a legacy socket", !seatGateCore({ sock: {}, verdict: accepted }).apply);
 }
 
 // ---- B5: rider scale -------------------------------------------------------

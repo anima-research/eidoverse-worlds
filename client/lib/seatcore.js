@@ -144,27 +144,47 @@ export function riderScalar(scaleVec3) {
   return { ok: true, s: sy };
 }
 
-// ---- the runtime gate (B1 ∧ served verdict ∧ B3) ---------------------------
+// ---- the gate (B1 ∧ served verdict ∧ B3) -----------------------------------
 
-/** Decide whether a profile may move this body, and if not, name the reason.
- *  Every input is the caller's CURRENT runtime truth, not its request:
- *  `currentSlot` is the mixer slot actually playing (setClip's fallback walk
- *  lands on "sit"/"idle" — those never consume a chair profile), and
- *  `loadedClipSha256` is the digest of the bytes the action was built from,
- *  hashed once at fetch (null until hydration delivers the clip).
- *  Returns {apply:true, contactY} or {apply:false, reason} — and the reason
- *  is user-facing: it is the string all three consumers declare. */
-export function seatGate({ sock, verdict, pose = "sitchair", currentSlot, loadedClipSha256, currentClipSha256 }) {
+/** The contract half of the gate — authored surface socket, countersigned
+ *  fresh verdict, pose identity. This is everything a consumer WITHOUT a
+ *  mixer can honestly check: the headless reader has no action playing, so
+ *  its runtime truth IS the contract (the browser adds its own runtime half
+ *  in seatGate below; each consumer gates on the truths it actually has,
+ *  and steady-state parity between them is pinned by test). */
+export function seatGateCore({ sock, verdict, pose = "sitchair" }) {
   if (socketAnchor(sock) !== "surface") return { apply: false, reason: "legacy socket" };
   if (!verdict || verdict.status === "missing") return { apply: false, reason: "no profile" };
   if (verdict.status === "unsupported") return { apply: false, reason: `unsupported rig: ${verdict.refusal}` };
   if (verdict.status === "stale") return { apply: false, reason: `profile stale (${verdict.which} bytes changed)` };
   if (verdict.status === "proposed") return { apply: false, reason: "profile proposed — not countersigned" };
+  if (verdict.pose !== pose) return { apply: false, reason: `profile is for pose ${verdict.pose}, socket wants ${pose}` };
+  if (!fin(verdict.contactY)) return { apply: false, reason: "no profile" };
+  return { apply: true, contactY: verdict.contactY };
+}
+
+/** The renderer's full gate: the contract half plus the runtime truths only
+ *  a mixer-owning consumer has. `currentSlot` is the slot ACTUALLY playing
+ *  (setClip's fallback walk lands on "sit"/"idle" — those never consume a
+ *  chair profile), and `loadedClipSha256` is the digest of the bytes the
+ *  action was built from, hashed once at fetch (null until hydration
+ *  delivers the clip). Returns {apply:true, contactY} or {apply:false,
+ *  reason} — the reason is the string all three consumers declare. */
+export function seatGate({ sock, verdict, pose = "sitchair", currentSlot, loadedClipSha256, currentClipSha256 }) {
+  const core = seatGateCore({ sock, verdict, pose });
+  if (!core.apply) return core;
   if (currentSlot !== pose) return { apply: false, reason: currentSlot ? `pose fallback: ${currentSlot}` : "clip not loaded" };
   if (!loadedClipSha256) return { apply: false, reason: "clip not loaded" };
   if (loadedClipSha256 !== currentClipSha256) return { apply: false, reason: "clip mismatch (loaded bytes differ from served clip)" };
-  if (!fin(verdict.contactY)) return { apply: false, reason: "no profile" };
-  return { apply: true, contactY: verdict.contactY };
+  return core;
+}
+
+/** The roster name an avatar path implies — the key /avatars verdicts use.
+ *  Pure string surgery, shared by every consumer that must map a wearer to
+ *  a profile. */
+export function nameFromAvatarPath(path) {
+  const m = /([^/\\]+)\.vrm/i.exec(String(path ?? ""));
+  return m ? m[1] : null;
 }
 
 // ---- the correction (B2: world-up, this slice) ------------------------------

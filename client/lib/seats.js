@@ -16,16 +16,11 @@
 
 import { bus, report } from './core.js';
 import { vrmaShaLoaded } from './assets.js';
-import { makeGenerationGuard, seatGate, riderScalar, SEAT_CLIP_FILE } from './seatcore.js';
+import { makeGenerationGuard, seatGate, riderScalar, nameFromAvatarPath, SEAT_CLIP_FILE } from './seatcore.js';
 
 const verdicts = new Map();       // avatar name → server seat verdict
 const guard = makeGenerationGuard();
 let started = false;
-
-export function nameFromAvatarPath(path) {
-  const m = /([^/\\]+)\.vrm/i.exec(String(path ?? ''));
-  return m ? m[1] : null;
-}
 
 async function refetch(why) {
   // Stamp every name we know about at DEPARTURE; a bump landing mid-flight
@@ -69,6 +64,7 @@ export function seatCorrectionFor(rider, sock) {
   if (!sc.ok) return { applied: false, reason: sc.why };
   const g = seatGate({
     sock, verdict,
+    pose: sock?.pose ?? 'sitchair',
     currentSlot: rider.av.currentSlot,
     loadedClipSha256: vrmaShaLoaded(SEAT_CLIP_FILE),
     currentClipSha256: verdict?.clipSha256,
