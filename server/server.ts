@@ -1958,6 +1958,18 @@ const server = Bun.serve({
       if (c.world) for (const [lid, L] of [...c.world.leases]) if (L.holder === c) c.world.settleLease(lid);
       if (c.world) {
         c.world.clients.delete(c);
+        // AUX LEG DEATH IS AN EVENT (r-review): aux legs ride the spectator
+        // path, so their close used to broadcast NOTHING — voiceCapable on
+        // every other client kept the dead leg's gen forever, and each say
+        // from that actor waited the full performance window against a leg
+        // that could never perform. Retirement carries the dying gen so a
+        // client that already saw a successor's transition (out-of-order
+        // delivery) knows to ignore it.
+        if ((c.surface ?? "world") !== "world" && !c.superseded) {
+          const retire = JSON.stringify({ type: "surface-transition",
+            id: c.id, surface: c.surface, gen: null, retired: c.gen ?? null });
+          for (const t of c.world.clients) t.ws.send(retire);
+        }
         if (!c.spectator) {
           if (!c.superseded) c.world.rememberPose(c.id, c.lastPose); // sleep where you stood
           c.world.broadcast({ type: "leave", id: c.id });
@@ -1968,6 +1980,14 @@ const server = Bun.serve({
           if (!c.superseded) {
             for (const t of [...c.world.clients]) {
               if (t.id === c.id && (t.surface ?? "world") !== "world") {
+                // Retire BEFORE unmapping (r2 review): this loop deletes the
+                // aux from `clients` before closing its socket, so the ws
+                // close handler finds nothing and its retirement broadcast
+                // never fires for reaped legs — the exact silent-death hole,
+                // one caller upstream. Broadcast here, then unmap.
+                const reapRetire = JSON.stringify({ type: "surface-transition",
+                  id: t.id, surface: t.surface, gen: null, retired: t.gen ?? null });
+                for (const o of c.world.clients) if (o !== t) o.ws.send(reapRetire);
                 c.world.clients.delete(t); clients.delete(t.ws);
                 t.ws.close?.(4007, "primary session gone");
                 console.log(`[world:${c.world.name}] ${c.id}/${t.surface} reaped — primary gone`);

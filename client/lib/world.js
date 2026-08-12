@@ -130,8 +130,20 @@ bus.on('surfaces', (people) => {
     for (const sf of p.surfaces ?? [])
       if (sf.surface === 'voice') voiceCapable.set(p.id, sf.gen);
 });
-bus.on('surface-transition', ({ actor, surface, gen }) => {
-  if (surface === 'voice') voiceCapable.set(actor, gen);
+bus.on('surface-transition', ({ actor, surface, gen, retired }) => {
+  if (surface !== 'voice') return;
+  // gen null = the leg DIED unreplaced (r-review: this event never fired
+  // before — set-only bookkeeping held dead capability forever and every say
+  // from that actor ate the full performance timeout against a gone leg).
+  // Retire only OUR CURRENT idea of the leg: if a successor's transition
+  // already landed (delivery is per-socket, order across sockets is not
+  // guaranteed), the stale retirement names an older gen and must not strip
+  // the live one.
+  if (gen == null) {
+    if (retired == null || voiceCapable.get(actor) === retired) voiceCapable.delete(actor);
+  } else {
+    voiceCapable.set(actor, gen);
+  }
 });
 bus.on('performed', ({ seq }) => {
   const timer = pendingSpeech.get(seq);

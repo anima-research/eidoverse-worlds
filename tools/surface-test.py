@@ -1,6 +1,9 @@
 import asyncio, json, websockets
 import os
 URL, TOK = os.environ.get('SURF_URL', 'ws://localhost:8940/ws'), os.environ.get('SURF_TOK', 'workbench-2026')
+# T12/T16 need the hesp2 legs token-verified: the target server's mcpl/tokens.json
+# must map {"surf-lab-hesp2": {"id": "hesp2"}} or both attest cases fail with
+# "attest is for token-verified media legs" — an environment gap, not a bug.
 passed = failed = 0
 def check(name, ok, detail=""):
     global passed, failed
@@ -175,7 +178,39 @@ async def main():
     ok13 = len(hesp) == 1 and any(sf.get("surface") == "voice" for sf in hesp[0].get("surfaces", []))
     check("T13 roster: one person, inspectable surfaces", ok13, str(hesp[:1]))
 
-    for w in (w1, w2, vB):
+    # T16 (r-review): an aux leg DYING unreplaced broadcasts retirement.
+    # Before this, aux legs rode the spectator path whose close is silent —
+    # every client kept the dead leg's gen in voiceCapable forever, and each
+    # say from that actor waited the full performance window against a leg
+    # that could never perform. Contract: close(voice leg) → everyone else
+    # receives surface-transition {gen: null, retired: <dying gen>}.
+    ew2.clear()
+    await vB.close()
+    await asyncio.sleep(0.6)
+    retire = [m for m in ew2 if m.get("type") == "surface-transition"
+              and m.get("surface") == "voice" and m.get("gen") is None]
+    check("T16 aux death broadcasts retirement (gen null)", len(retire) == 1, str(ew2[-3:]))
+    check("T16 retirement names the dying gen", bool(retire) and retire[0].get("retired") is not None,
+          str(retire[:1]))
+
+    # T17 (r2 review): PRIMARY death reaps its aux legs — and the reap loop
+    # unmaps each aux from `clients` before closing its socket, so the ws
+    # close handler can never broadcast for them. The reap path must emit
+    # retirement itself: primary dies → watchers get BOTH the leave and a
+    # voice retirement, or every say from a rejoining actor with no leg
+    # waits the full window against the ghost.
+    p4, e8, c8, _ = await join("hesp3", agent_token="surf-lab-hesp3")
+    v4, e9, c9, _ = await join("hesp3", "voice", agent_token="surf-lab-hesp3")
+    await asyncio.sleep(0.4)
+    ew2.clear()
+    await p4.close()                       # primary dies; aux gets reaped 4007
+    await asyncio.sleep(0.6)
+    reapret = [m for m in ew2 if m.get("type") == "surface-transition"
+               and m.get("surface") == "voice" and m.get("gen") is None
+               and m.get("id") == "hesp3"]
+    check("T17 primary death: reaped voice leg broadcasts retirement", len(reapret) == 1, str(ew2[-4:]))
+
+    for w in (w1, w2, v4):
         try: await w.close()
         except Exception: pass
 
