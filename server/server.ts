@@ -11,6 +11,7 @@ import { randomBytes } from "node:crypto";
 import { verifyToken, JtiCache } from "./aid1.ts";
 import { BehaviorHost, wireBehaviorGate, wireBehaviorStore, behaviorLimits, type BehaviorRec } from "./behaviors.ts";
 import { summarizeGlb } from "./geometry.ts";
+import { SeatStore, MAX_PROPOSAL_BYTES } from "./seats.ts";
 // Pure and dependency-free — the same fold the browser client and the mcpl
 // agent run, which is what keeps all three planes' skies in agreement.
 import { foldSkyEntry } from "../client/lib/forecast.js";
@@ -71,6 +72,9 @@ const OPT_DIR = join(ROOT, "assets", "opt");
 // sibling when one exists. `.failed` markers stop hopeless files from being
 // retried every boot.
 const STORE_MIN = join(OPT_DIR, "store-min");
+// Seat profiles (#101): where a body's posed contact sits relative to its
+// root, per avatar — stored beside the overlay, judged at serve time.
+const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR);
 
 mkdirSync(WORLDS_DIR, { recursive: true });
 
@@ -1122,6 +1126,22 @@ const worlds = new Map<string, World>();
 // behavior keep behaving with NOBODY connected — the ferry runs, the
 // lighthouse blinks, the greeter is ready — which is the point of scripts
 // living server-side rather than in any client.
+// Countersign has no HTTP path (an accepted profile is operator provenance,
+// #101 B4) — tools/seat-accept.ts edits the store from another process, and
+// the running server notices here: reload, diff, and push the same
+// generation-bearing event a proposal gets. Late profile arrival is
+// event-driven for every consumer, not wishful polling.
+setInterval(() => {
+  const ext = seatStore.pollExternalChange();
+  if (!ext) return;
+  for (const ch of ext.changed) {
+    const update = JSON.stringify({ type: "avatar-profile-updated", name: ch.name, pose: ch.pose, rev: ext.rev });
+    let notified = 0;
+    for (const w of worlds.values()) for (const c of w.clients) { c.ws.send(update); notified++; }
+    console.log(`[seats] external change ${ch.name}/${ch.pose} rev ${ext.rev} → ${notified} client(s)`);
+  }
+}, 5000);
+
 setInterval(() => {
   const now = Date.now();
   for (const w of worlds.values()) {
@@ -1624,14 +1644,15 @@ const server = Bun.serve({
     if (url.pathname === "/avatars") {
       // Roster = Skye's library vrms + our overlay (assets/opt/...) — drop a
       // .vrm into either and it's an avatar, live, no restart, no manifest.
-      const seen = new Map<string, string>();
+      const seen = new Map<string, { path: string; abs: string }>();
       for (const base of [LIBRARY_DIR, OPT_DIR]) {
         const dir = join(base, "eidoverse/assets/vrms");
         if (!existsSync(dir)) continue;
         for (const f of readdirSync(dir)) {
           // ?v=mtime makes the URL content-versioned: clients cache it forever,
           // and any re-export mints a new URL. Invalidation by construction.
-          if (f.endsWith(".vrm")) seen.set(f.replace(".vrm", ""), `eidoverse/assets/vrms/${f}?v=${Math.round(Bun.file(join(dir, f)).lastModified)}`);
+          if (f.endsWith(".vrm")) seen.set(f.replace(".vrm", ""),
+            { path: `eidoverse/assets/vrms/${f}?v=${Math.round(Bun.file(join(dir, f)).lastModified)}`, abs: join(dir, f) });
         }
       }
       // stature metadata, contributed alongside portraits (see POST /thumb)
@@ -1640,10 +1661,46 @@ const server = Bun.serve({
         const mp = join(OPT_DIR, "thumbs", "meta.json");
         if (existsSync(mp)) hmeta = JSON.parse(readFileSync(mp, "utf8"));
       } catch { /* roster works without heights */ }
+      // Each entry carries its seat verdict, judged HERE against the current
+      // bytes (#101) — consumers read the verdict, never rehash a VRM, and a
+      // stale profile cannot be served as fresh. The x-profiles-rev header is
+      // the store's monotonic revision: the array shape predates seats and
+      // stays an array, so the rev rides a header instead of breaking it.
       return new Response(
-        JSON.stringify([...seen].map(([name, path]) => ({ name, path, height: hmeta[name.replace(/[^a-zA-Z0-9_-]/g, "_")]?.h ?? null }))),
-        { headers: { "content-type": "application/json", "cache-control": "no-store" } },
+        JSON.stringify([...seen].map(([name, r]) => ({ name, path: r.path,
+          height: hmeta[name.replace(/[^a-zA-Z0-9_-]/g, "_")]?.h ?? null,
+          seat: seatStore.judge(name, r.abs) }))),
+        { headers: { "content-type": "application/json", "cache-control": "no-store",
+          "x-profiles-rev": String(seatStore.rev) } },
       );
+    }
+    if (url.pathname === "/seat-profile" && req.method === "POST") {
+      // Seat-profile PROPOSALS (#101). This door writes the proposed slot and
+      // nothing else — countersign is tools/seat-accept.ts, operator-only, on
+      // the box. A profile moves every wearer of an avatar, so unlike /thumb
+      // the anonymous door token is not enough: proposals require a NAMED
+      // actor — a tokens.json bearer or an aid1 identity the home node
+      // vouches for (the same two legs /upload trusts; `?by=` stays what it
+      // is there, a console label, and never becomes authorship here).
+      const tok = url.searchParams.get("token") ?? "";
+      let actor = agentTokens().byToken.get(tok);
+      if (!actor && HN_ISSUER_KEY && tok.startsWith("aid1.")) {
+        const v = verifyToken(tok, { issuerId: HN_ISSUER_KEY, iss: HN_ISS, aud: HN_AUD, requireScopes: ["worlds:join"] });
+        if (v.ok) actor = v.payload.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || v.payload.sub;
+      }
+      if (!actor)
+        return new Response("seat proposals need a named identity (agent bearer or aid1) — the door token is anonymous; without one, ask the operator to import your derivation (tools/seat-accept.ts propose)", { status: 401 });
+      const raw = await req.arrayBuffer();
+      if (raw.byteLength > MAX_PROPOSAL_BYTES) return new Response("proposal too large", { status: 413 });
+      let record: any;
+      try { record = JSON.parse(new TextDecoder().decode(raw)); } catch { return new Response("not JSON", { status: 415 }); }
+      const r = seatStore.propose(record, actor);
+      if (!r.ok) return new Response(r.why, { status: r.status });
+      console.log(`[seats] proposal ${r.name}/${r.pose} rev ${r.rev} by ${actor}`);
+      const update = JSON.stringify({ type: "avatar-profile-updated", name: r.name, pose: r.pose, rev: r.rev });
+      for (const w of worlds.values()) for (const c of w.clients) c.ws.send(update);
+      return new Response(JSON.stringify({ ok: true, rev: r.rev, status: "proposed" }),
+        { headers: { "content-type": "application/json" } });
     }
     if (url.pathname.startsWith("/thumb/")) {
       // Avatar thumbnails. VRMs have no shipped previews, and a name-only
