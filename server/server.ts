@@ -1390,7 +1390,7 @@ const BUILD = (() => {
     } catch { return ""; /* no git in the deploy image */ }
   };
   const sha = process.env.BUILD_SHA
-    || (process.env.BUILD_TIME ? "unknown" : gitLine("rev-parse", "--short", "HEAD") || "unknown");
+    || ((process.env.BUILD_TIME || process.env.BUILD_DIRTY != null) ? "unknown" : gitLine("rev-parse", "--short", "HEAD") || "unknown");
   // WHEN the code is from, not just which commit. A sha is opaque to anyone
   // without the repo in front of them; "code from 2026-08-10T14:32Z" lets a
   // participant answer "did the deploy pick up this afternoon's fix?" without
@@ -1405,21 +1405,26 @@ const BUILD = (() => {
   // identity.
   const envSha = process.env.BUILD_SHA || "";
   const envTime = process.env.BUILD_TIME || "";
+  // envIdentity computed below governs all three; forward-declare the parts it needs.
+  const envDirtyPresent = process.env.BUILD_DIRTY != null;
   const commitTime = envTime
-    || (envSha ? "unknown" : gitLine("show", "-s", "--format=%cI", "HEAD") || "unknown");
+    || ((envSha || envDirtyPresent) ? "unknown" : gitLine("show", "-s", "--format=%cI", "HEAD") || "unknown");
   // A sha identifies HEAD — not the bytes actually executing. A tree with
   // uncommitted edits reports a clean-looking sha while running modified
   // code, which is exactly the deployment mystery this endpoint exists to
   // end. So say so: dirty=true|false from `git status --porcelain`, or the
   // BUILD_DIRTY env for image builds, or "unknown" when neither can answer —
   // never a silent default that reads as clean.
+  // WHOLE-IDENTITY MATCH (r3+, adversarial review): sha, commitTime and dirty
+  // are ONE provenance triple. If ANY of the three comes from the environment
+  // (an image build), the other two are env-or-unknown — never filled from the
+  // local git tree, in any direction. So a lone BUILD_DIRTY no more licenses a
+  // git-derived sha/time than a lone BUILD_SHA licenses a git-derived dirty:
+  // the local tree is trusted for dirtiness ONLY when the whole identity is
+  // git-derived (no BUILD_SHA, BUILD_TIME, or BUILD_DIRTY set).
+  const envIdentity = !!(process.env.BUILD_SHA || process.env.BUILD_TIME || process.env.BUILD_DIRTY);
   const dirtyRaw = process.env.BUILD_DIRTY ?? (() => {
-    // IDENTITY MATCH (r2 self-review): with BUILD_SHA set, the reported sha
-    // is the IMAGE's — pairing it with `git status` of whatever local tree
-    // the process happens to sit in would report one identity's sha with
-    // another's dirtiness. Env-driven sha without env-driven dirty is
-    // honestly unknown.
-    if (process.env.BUILD_SHA || process.env.BUILD_TIME) return "unknown";
+    if (envIdentity) return "unknown";        // BUILD_SHA or BUILD_TIME set, DIRTY not: image sha, no coherent local partner
     const out = gitLine("status", "--porcelain");
     // gitLine returns "" both for a clean tree and for no-git; disambiguate
     // by whether HEAD resolves — no sha from git means no git to trust.

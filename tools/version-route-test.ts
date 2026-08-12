@@ -124,6 +124,25 @@ console.log("\n— B2. mixed provenance refused: sha/time are ONE pair (r3, revi
   const bodyB = await (await fetch(`http://127.0.0.1:${b.port}/version`)).json();
   check("BUILD_TIME alone, git present: sha is unknown, never local HEAD",
     bodyB.commitTime === "2026-08-12T00:00:00Z" && bodyB.sha === "unknown", `${bodyB.sha} @ ${bodyB.commitTime}`);
+  // The THIRD direction (adversarial review): BUILD_DIRTY alone, git PRESENT.
+  // The image's dirty flag must NOT pair with a local git sha+time — the same
+  // composite class, the remaining member. sha and commitTime go unknown.
+  const c = await spawnServer({ HOME, PATH: BUNPATH, BUILD_DIRTY: "true" });
+  const bodyC = await (await fetch(`http://127.0.0.1:${c.port}/version`)).json();
+  check("BUILD_DIRTY alone, git present: sha AND commitTime are unknown (no local partner for an env dirty)",
+    bodyC.sha === "unknown" && bodyC.commitTime === "unknown", `${bodyC.sha} @ ${bodyC.commitTime} dirty=${bodyC.dirty}`);
+  check("BUILD_DIRTY alone: the env dirty value itself is still honored",
+    bodyC.dirty === true, String(bodyC.dirty));
+  // Garbage / empty BUILD_DIRTY clamps to "unknown", never a leaked raw string.
+  const d = await spawnServer({ HOME, PATH: BUNPATH, BUILD_DIRTY: "" });
+  const bodyD = await (await fetch(`http://127.0.0.1:${d.port}/version`)).json();
+  check("BUILD_DIRTY='' clamps dirty to unknown (no leaked empty string) and still marks env-identity",
+    bodyD.dirty === "unknown" && bodyD.sha === "unknown" && bodyD.commitTime === "unknown",
+    `dirty=${JSON.stringify(bodyD.dirty)} sha=${bodyD.sha}`);
+  const e = await spawnServer({ HOME, PATH: BUNPATH, BUILD_DIRTY: "garbage" });
+  const bodyE = await (await fetch(`http://127.0.0.1:${e.port}/version`)).json();
+  check("BUILD_DIRTY='garbage' clamps dirty to unknown (only true/false pass)",
+    bodyE.dirty === "unknown", JSON.stringify(bodyE.dirty));
 }
 
 console.log("\n— C. no env, no git: honest unknowns, never fake-clean —");
