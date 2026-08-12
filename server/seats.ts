@@ -99,10 +99,9 @@ export class SeatStore {
   private vrmDirs: string[];
   private fs: SeatFs;
   private lockTimeoutMs: number;
-  private lockStaleMs: number;
 
   constructor(optDir: string, libraryDir: string, fsOverride: Partial<SeatFs> = {},
-    { lockTimeoutMs = 3000, lockStaleMs = 10_000 } = {}) {
+    { lockTimeoutMs = 3000 } = {}) {
     this.dir = join(optDir, "seats");
     this.file = join(this.dir, "profiles.json");
     this.logFile = join(this.dir, "profiles.log.jsonl");
@@ -112,7 +111,6 @@ export class SeatStore {
     this.vrmDirs = [join(optDir, "eidoverse/assets/vrms"), join(libraryDir, "eidoverse/assets/vrms")];
     this.fs = { writeFileSync, renameSync, appendFileSync, ...fsOverride };
     this.lockTimeoutMs = lockTimeoutMs;
-    this.lockStaleMs = lockStaleMs;
     this.reload();
   }
 
@@ -120,37 +118,90 @@ export class SeatStore {
 
   /** Exclusive-create is the atom: openSync(…, "wx") either mints the lock
    *  file or throws EEXIST, on Windows and POSIX alike. The file carries
-   *  {pid, ts}; a lock older than its liveness window belongs to a dead
-   *  writer — broken loudly, never silently. Acquisition is a bounded spin:
-   *  timing out is an ANSWER (the caller refuses with no state touched),
-   *  not a hang. NB the lock rides the REAL fs even under fault injection —
-   *  injected faults are the transaction's to survive, not the lock's. */
+   *  {pid, nonce, ts} and the holder retains its nonce — ownership is the
+   *  nonce, never the path.
+   *
+   *  Liveness is PID-verified, never inferred from age (#105 round 3: a live
+   *  writer delayed past any age threshold had its lock stolen and history
+   *  forked — age is not proof of death). `process.kill(pid, 0)` answers on
+   *  this single-host design: ESRCH = no such process = the lock is orphaned;
+   *  anything else (alive, or EPERM) = a holder we must WAIT for, however old
+   *  its stamp — if liveness is unknown, we time out rather than violate
+   *  exclusion. PID reuse cannot resurrect a broken claim: a reused pid is a
+   *  LIVE process, so the lock is simply waited on, and the nonce keeps its
+   *  release from ever touching a lock it did not mint.
+   *
+   *  Breaking a dead lock is a RENAME-steal, not an unlink: rename is the
+   *  atomic claim, so two breakers cannot both succeed, and the tomb's nonce
+   *  is verified against the record that was judged dead — if the rename
+   *  caught a newer (live) lock instead, it is restored and the breaker
+   *  retries. Acquisition is a bounded spin: timing out is an ANSWER (the
+   *  caller refuses with no state touched), not a hang. The lock rides the
+   *  REAL fs even under fault injection — injected faults are the
+   *  transaction's to survive, not the lock's. */
+  private lockNonce: string | null = null;
+
+  private static pidAlive(pid: number): boolean {
+    try { process.kill(pid, 0); return true; }
+    catch (e: any) { return e?.code !== "ESRCH"; }
+  }
+
+  private readLockRecord(): { pid?: number; nonce?: string; ts?: number } | null {
+    try { return JSON.parse(readFileSync(this.lockFile, "utf8")); } catch { return null; }
+  }
+
   private acquireLock(): boolean {
     const deadline = Date.now() + this.lockTimeoutMs;
+    const nonce = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
     mkdirSync(this.dir, { recursive: true });
     for (;;) {
       try {
         const fd = openSync(this.lockFile, "wx");
-        writeSync(fd, JSON.stringify({ pid: process.pid, ts: Date.now() }));
+        writeSync(fd, JSON.stringify({ pid: process.pid, nonce, ts: Date.now() }));
         closeSync(fd);
+        this.lockNonce = nonce;
         return true;
       } catch {
-        try {
-          const holder = JSON.parse(readFileSync(this.lockFile, "utf8"));
-          if (Date.now() - (holder.ts ?? 0) > this.lockStaleMs) {
-            console.error(`[seats] breaking stale write lock (pid ${holder.pid}, ${Date.now() - holder.ts}ms old)`);
-            unlinkSync(this.lockFile);
-            continue;
-          }
-        } catch { /* unreadable or vanished between stat and read: retry */ }
+        const holder = this.readLockRecord();
+        if (holder && Number.isInteger(holder.pid) && !SeatStore.pidAlive(holder.pid!)) {
+          // dead holder: claim the corpse atomically, verify it IS the corpse
+          const tomb = `${this.lockFile}.tomb-${nonce}`;
+          try {
+            renameSync(this.lockFile, tomb);
+            const claimed = JSON.parse(readFileSync(tomb, "utf8"));
+            if (claimed.nonce === holder.nonce) {
+              console.error(`[seats] breaking dead writer's lock (pid ${holder.pid} no longer exists)`);
+              unlinkSync(tomb);
+            } else {
+              // the rename caught a NEWER lock — put it back untouched
+              try { renameSync(tomb, this.lockFile); } catch { try { unlinkSync(tomb); } catch { /* commit gates protect the rest */ } }
+            }
+          } catch { /* another breaker won the rename: loop */ }
+          continue;
+        }
+        // live (or unknowable) holder: wait, however old its stamp — age is
+        // not proof of death, and exclusion outranks our patience
         if (Date.now() >= deadline) return false;
         Bun.sleepSync(25);
       }
     }
   }
 
+  /** True while the on-disk lock is still the one we minted — the commit
+   *  gates read this immediately before each irreversible step so that even
+   *  a pathological steal aborts a transaction instead of forking history. */
+  private ownsLock(): boolean {
+    return this.lockNonce !== null && this.readLockRecord()?.nonce === this.lockNonce;
+  }
+
   private releaseLock() {
-    try { unlinkSync(this.lockFile); } catch { /* already broken as stale — nothing to release */ }
+    // release only what we minted — never a successor's lock (#105 round 3)
+    if (this.lockNonce !== null) {
+      if (this.readLockRecord()?.nonce === this.lockNonce) {
+        try { unlinkSync(this.lockFile); } catch { /* vanished: nothing ours remains */ }
+      } else console.error("[seats] write lock no longer ours at release — leaving it untouched");
+    }
+    this.lockNonce = null;
   }
 
   /** Every mutation runs WHOLE under the lock: forced reload (mtime is a
@@ -258,12 +309,25 @@ export class SeatStore {
     const next: Store = { rev: this.store.rev + 1, profiles: inertProfiles(JSON.parse(JSON.stringify(this.store.profiles))) };
     mutate(next);
     mkdirSync(this.dir, { recursive: true });
+    // COMMIT GATE (#105 round 3): the on-disk lock must still be the one we
+    // minted immediately before each irreversible step. A liveness-verified
+    // lock cannot be stolen from a live holder, but if any pathological path
+    // ever takes it anyway, the transaction ABORTS here — an exclusion breach
+    // becomes a refused write, never a forked history.
+    if (!this.ownsLock())
+      return { ok: false, why: "lock ownership lost before commit — nothing was written; retry" };
     try {
       this.fs.appendFileSync(this.logFile,
         JSON.stringify({ ts: Date.now(), rev: next.rev, action, actor, name, pose, record, prior }) + "\n");
     } catch (e) {
       return { ok: false, why: `provenance append failed — nothing was written: ${(e as Error).message}` };
     }
+    if (!this.ownsLock())
+      // the log line stands (receipted); the snapshot must not race a
+      // successor's writes. Recovery folds the receipt forward — or, if a
+      // successor also appended, the monotonicity check quarantines rather
+      // than guess at a fold order.
+      return { ok: false, why: "lock ownership lost after provenance append — snapshot withheld; recovery will reconcile the receipt" };
     try {
       this.fs.writeFileSync(`${this.file}.tmp`, JSON.stringify(next));
       this.fs.renameSync(`${this.file}.tmp`, this.file);

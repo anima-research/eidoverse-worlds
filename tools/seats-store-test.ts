@@ -166,18 +166,59 @@ try {
     check("…and succeeds against the re-reviewed revision", ac2.ok === true);
 
     // vector 4: lock acquisition failure changes neither log, snapshot, nor memory
-    writeFileSync(join(seatsDir, ".write-lock"), JSON.stringify({ pid: 99999, ts: Date.now() }));
+    writeFileSync(join(seatsDir, ".write-lock"), JSON.stringify({ pid: process.pid, nonce: "someone-else", ts: Date.now() }));
     const blocked = new SeatStore(OPT, LIB, {}, { lockTimeoutMs: 200 });
     const logHeld = logOf(), snapHeld = snapshotOf(), revHeld = blocked.rev;
     const timeout = blocked.propose(profile("seatdummy"), "late-writer") as any;
     check("vector 4: a lock timeout refuses with nothing written",
       !timeout.ok && /lock/.test(timeout.why) && logOf() === logHeld && snapshotOf() === snapHeld && blocked.rev === revHeld,
       JSON.stringify(timeout));
-    // …and a lock whose holder is DEAD (past the liveness window) is broken, loudly
-    writeFileSync(join(seatsDir, ".write-lock"), JSON.stringify({ pid: 99999, ts: Date.now() - 60_000 }));
+    rmSync(join(seatsDir, ".write-lock"), { force: true });
+
+    // #105 round 3 — a LIVE holder is never broken, however old its stamp.
+    // The lock names THIS test process's pid (alive by construction) with a
+    // stamp from an hour ago: age says stale, liveness says wait. B must
+    // time out with nothing written — exclusion outranks patience.
+    writeFileSync(join(seatsDir, ".write-lock"), JSON.stringify({ pid: process.pid, nonce: "live-but-slow-writer", ts: Date.now() - 3_600_000 }));
+    const lb = new SeatStore(OPT, LIB, {}, { lockTimeoutMs: 250 });
+    const logLive = logOf(), snapLive = snapshotOf(), lbRevBefore = lb.rev;
+    const liveOld = lb.propose(profile("seatdummy"), "impatient") as any;
+    check("live-but-old holder: the lock is NOT stolen — the writer times out",
+      !liveOld.ok && /lock/.test(liveOld.why), JSON.stringify(liveOld));
+    check("…with log, snapshot, and memory untouched", logOf() === logLive && snapshotOf() === snapLive && lb.rev === lbRevBefore);
+    check("…and the live holder's lock survives, byte-identical",
+      JSON.parse(readFileSync(join(seatsDir, ".write-lock"), "utf8")).nonce === "live-but-slow-writer");
+    rmSync(join(seatsDir, ".write-lock"), { force: true });
+
+    // …while a DEAD holder's lock is broken by verified pid-death, not age:
+    // a fresh stamp on a nonexistent pid breaks immediately
+    writeFileSync(join(seatsDir, ".write-lock"), JSON.stringify({ pid: 999_999_999, nonce: "corpse", ts: Date.now() }));
     const breaker = new SeatStore(OPT, LIB, {}, { lockTimeoutMs: 500 });
     const broke = breaker.propose(profile("seatdummy"), "after-crash") as any;
-    check("a stale lock is broken and the write proceeds", broke.ok === true, JSON.stringify(broke));
+    check("a dead writer's lock is broken (pid-verified, fresh stamp and all) and the write proceeds", broke.ok === true, JSON.stringify(broke));
+
+    // #105 round 3 — release-safety + commit gate: the lock is swapped to a
+    // successor's mid-transaction (inside A's provenance append, after the
+    // first gate). A must ABORT at the second gate — snapshot withheld, its
+    // own release must NOT touch the successor's lock, and the orphaned log
+    // line folds forward as a receipted write on the next load.
+    let swapped = false;
+    const gated = new SeatStore(OPT, LIB, {
+      appendFileSync: (path: any, data: any) => {
+        appendFileSyncReal(path, data);
+        if (!swapped) { swapped = true; writeFileSync(join(seatsDir, ".write-lock"), JSON.stringify({ pid: process.pid, nonce: "successor", ts: Date.now() })); }
+      },
+    });
+    const revG = gated.rev;
+    const g = gated.propose(profile("seatdummy"), "gated-writer") as any;
+    check("commit gate: ownership lost after append → transaction aborts, snapshot withheld",
+      !g.ok && /ownership lost after provenance append/.test(g.why), JSON.stringify(g));
+    check("…the aborted writer's memory and snapshot are unchanged", gated.rev === revG && JSON.parse(snapshotOf()!).rev === revG);
+    check("…and its release leaves the successor's lock untouched",
+      JSON.parse(readFileSync(join(seatsDir, ".write-lock"), "utf8")).nonce === "successor");
+    rmSync(join(seatsDir, ".write-lock"), { force: true });
+    const afterGate = new SeatStore(OPT, LIB);
+    check("…while the receipted orphan folds forward on the next load", afterGate.rev === revG + 1, `rev=${afterGate.rev}`);
 
     // vector 5: duplicate-revision provenance is a forked history — quarantined
     const lastLine = logOf()!.trim().split("\n").at(-1)!;
