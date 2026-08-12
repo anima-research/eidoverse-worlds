@@ -242,7 +242,28 @@ function peerFor(id) {
       // back here, so persistent unreachability retries at ICE cadence rather
       // than looping hot. 'closed' stays terminal: WE closed that peer on
       // purpose (leave, replacement), and re-offering would resurrect it.
-      if (st === 'failed' && remotes.has(id) && !remotes.get(id)?.agent) offerTo(id);
+      // Repair OWNERSHIP is split by who courts: humans are ours (we offer,
+      // so we reach back). Agent lanes are agent-initiated (we never offer to
+      // agents — line ~10), so their 'failed' repair belongs to the agent's
+      // voice source; reaching from here would invert the direction
+      // convention and race their own re-offer.
+      // ONE side reaches back, by rank (r2 review). Both peers usually see
+      // 'failed' near-simultaneously; if both re-offered, two fresh peer
+      // objects (_everStable false) meet as rivals the glare logic cannot
+      // tie-break — it reads never-settled as REJOIN, both roll back and
+      // answer, and the pair marries mismatched sessions that fail again at
+      // ICE cadence. Same convention as the mesh-heal sweep: the lower id
+      // offers, the higher id answers through the normal path. If only the
+      // higher side noticed the death, the lower side's own ICE fails within
+      // its timeout and lands here — converging late beats storming forever.
+      //
+      // Repair OWNERSHIP is also split by who courts: humans are ours. Agent
+      // lanes are agent-initiated (we never offer to agents — line ~10), so
+      // their 'failed' repair belongs to the agent's voice source; reaching
+      // from here would invert the direction convention and race their own
+      // re-offer.
+      if (st === 'failed' && remotes.has(id) && !remotes.get(id)?.agent
+        && (myId ?? '') < id) offerTo(id);
       return;
     }
     if (st === 'connected') { clearTimeout(p._discoTimer); p._discoTimer = null; return; }

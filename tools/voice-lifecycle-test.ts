@@ -1282,10 +1282,15 @@ check("unhush rejoins the SAME peer at full volume",
 // ── a FAILED lane reaches back (field, 2026-08-10) ───────────────────────────
 // ICE 'failed' dropped the peer and nothing re-offered until a roster event —
 // which a mid-session death never produces. One-way audio until manual reload.
-// Contract: failed → drop → ONE immediate fresh offer while the neighbor is
-// still in the roster. 'closed' stays terminal. FAILS on pre-fix main.
+// Contract (r2: rank-split — if BOTH sides re-offered, two never-settled
+// rivals meet and the glare logic reads them as rejoins; both roll back,
+// marry mismatched sessions, and storm at ICE cadence): failed → drop →
+// ONE immediate fresh offer FROM THE LOWER ID while the neighbor is still
+// in the roster; the higher id waits and answers. 'closed' stays terminal.
+// FAILS on pre-fix main. Local id is "me"; "zz-cellular" ranks above us, so
+// we are the reacher here.
 {
-  stubs.remotes.set("cellular-peer", { agent: false });
+  stubs.remotes.set("zz-cellular", { agent: false });
   bus.emit("roster");
   await settle();
   const pcF = created.at(-1)!;
@@ -1306,7 +1311,24 @@ check("unhush rejoins the SAME peer at full volume",
   await settle(); await settle();
   check("closed lane: stays down (no zombie re-offer)", created.length === nBefore2,
         `${created.length - nBefore2} unexpected pc(s)`);
-  stubs.remotes.delete("cellular-peer");
+  stubs.remotes.delete("zz-cellular");
+}
+
+// Higher-rank side of the same contract: when the FAILED peer ranks BELOW us,
+// we do NOT re-offer — their side owns the reach, ours answers through the
+// normal path. (Both sides offering is the storm this convention prevents.)
+{
+  stubs.remotes.set("aa-cellular", { agent: false });
+  bus.emit("roster");
+  await settle();
+  const pcA = created.at(-1)!;
+  const nA = created.length;
+  pcA.connectionState = "failed";
+  (pcA.onconnectionstatechange as () => void)?.();
+  await settle(); await settle();
+  check("failed lane, peer ranks below us: no immediate re-offer (they reach, we answer)",
+    created.length === nA, `${created.length - nA} new pc(s)`);
+  stubs.remotes.delete("aa-cellular");
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
