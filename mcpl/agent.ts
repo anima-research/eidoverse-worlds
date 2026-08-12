@@ -20,7 +20,7 @@ import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hour
 // what is burning (#25's shared-facts boundary).
 import { describeParticles, emitterTransition, transitionLine } from "../client/lib/particles.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
-import { makeGenerationGuard, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
+import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
 
 (globalThis as any).THREE = Object.assign({}, THREE_W, TSL);
 
@@ -220,11 +220,17 @@ export class WorldAgent {
   private lastPulse = { sig: "", roster: "", at: 0 };
   // Seat-profile verdicts (#101): the same server-judged values /avatars
   // hands the browser, fetched over httpBase at join and on the two update
-  // events, generation-guarded so a slow response from before an acceptance
-  // can never roll the acceptance back. effective.ts reads THESE through the
-  // view — never a rederived hash, never a quiet default.
-  private seatVerdicts = new Map<string, any>();
-  private seatGuard = makeGenerationGuard();
+  // events. The cache — epochs, pending demotion, event-rev floors — is
+  // seatcore.makeVerdictCache, the SAME implementation the browser runs
+  // (#105 review B1: the logic existed twice and each copy had the same
+  // holes). effective.ts reads these through the view — never a rederived
+  // hash, never a quiet default.
+  private seatCache = makeVerdictCache(async () => {
+    const res = await fetch(`${this.httpBase}/avatars`);
+    if (!res.ok) throw new Error(`roster ${res.status}`);
+    const rev = Number(res.headers.get("x-profiles-rev") ?? NaN);
+    return { rev, entries: await res.json() as { name: string; seat?: any }[] };
+  });
   /** Stateful denoiser for ambient narration (arrive/leave/acts). Says,
    *  mentions, and whispers never pass through it — a knock is not chatter.
    *  See denoise.ts for the doctrine. */
@@ -503,7 +509,7 @@ export class WorldAgent {
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
             for (const e of msg.entries) this.lastSeq = Math.max(this.lastSeq, e.seq ?? -1);
             this.joined = true;
-            this.fetchSeatProfiles("join").catch(() => { /* declared-approximate until it lands */ });
+            this.seatCache.init().catch(() => { /* declared-approximate until it lands */ });
             if (!this.ticker) this.ticker = setInterval(() => this.tick(), TICK_MS);
             clearTimeout(timeout);
             resolve();
@@ -631,15 +637,13 @@ export class WorldAgent {
             this.gate.presence(msg.id, "leave");
             break;
           case "avatar-updated":
-            // avatar bytes changed: whatever profile we held for that name is
-            // suspect NOW — bump first, then refetch, so a response already
-            // in flight can never install the pre-change verdict (#101 B3)
-            if (msg.name) this.seatGuard.bump(String(msg.name));
-            this.fetchSeatProfiles("avatar-updated").catch(() => { /* held verdicts stay; seats read declared-approximate */ });
+            // avatar bytes changed: the held verdict demotes to pending NOW
+            // and the refetch departs after the bump — a response already in
+            // flight can never install the pre-change value (#105 B1)
+            this.seatCache.note(msg.name, NaN).catch(() => { /* pending names stay pending; the next event retries */ });
             break;
           case "avatar-profile-updated":
-            if (msg.name) this.seatGuard.bump(String(msg.name));
-            this.fetchSeatProfiles("avatar-profile-updated").catch(() => { /* same */ });
+            this.seatCache.note(msg.name, Number(msg.rev)).catch(() => { /* same */ });
             break;
           case "pose":
             this.notePose(msg.id, msg.pose);
@@ -1643,7 +1647,7 @@ export class WorldAgent {
   private seatVerdictFor(id: string) {
     const path = id === this.name ? this.avatar : this.people.get(id)?.avatar;
     const nm = nameFromAvatarPath(path);
-    return nm ? this.seatVerdicts.get(nm) : undefined;
+    return nm ? this.seatCache.get(nm) : undefined;
   }
 
   /** The declared-approximation suffix for a seated person's line (#101):
@@ -1655,23 +1659,6 @@ export class WorldAgent {
     return g.apply ? "" : ` (seat approximate: ${g.reason})`;
   }
 
-  /** /avatars over the same base /geom and terrain ride — the roster with
-   *  each entry's seat verdict pre-judged by the server. Stamps every known
-   *  name at DEPARTURE; a bump landing mid-flight invalidates that name's
-   *  slice of this response (seatcore.makeGenerationGuard — the #95 lesson). */
-  private async fetchSeatProfiles(_why: string) {
-    const stamps = new Map([...this.seatVerdicts.keys()].map((n) => [n, this.seatGuard.stamp(n)]));
-    try {
-      const res = await fetch(`${this.httpBase}/avatars`);
-      if (!res.ok) return;
-      const rev = Number(res.headers.get("x-profiles-rev") ?? NaN);
-      const roster = await res.json() as { name: string; seat?: any }[];
-      for (const e of roster) {
-        const stamped = stamps.get(e.name) ?? this.seatGuard.stamp(e.name);
-        if (this.seatGuard.accept(e.name, stamped, rev)) this.seatVerdicts.set(e.name, e.seat ?? { status: "missing" });
-      }
-    } catch { /* unreachable roster: verdicts stay as held; seats read declared-approximate and the next event retries */ }
-  }
 
   look(nowMs = this.serverNow()): string {
     const L: string[] = [];

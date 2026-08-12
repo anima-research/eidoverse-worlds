@@ -14,39 +14,30 @@
 // and the digest of the clip bytes this page really loaded (assets.js
 // hashes them once at fetch — a filename is not an identity).
 
-import { bus, report } from './core.js';
+import { bus } from './core.js';
 import { vrmaShaLoaded } from './assets.js';
-import { makeGenerationGuard, seatGate, riderScalar, nameFromAvatarPath, SEAT_CLIP_FILE } from './seatcore.js';
+import { makeVerdictCache, seatGate, riderScalar, nameFromAvatarPath, SEAT_CLIP_FILE } from './seatcore.js';
 
-const verdicts = new Map();       // avatar name → server seat verdict
-const guard = makeGenerationGuard();
+// The cache logic — epochs, pending demotion, event-rev floors — lives ONCE
+// in seatcore.makeVerdictCache, shared verbatim with the headless agent and
+// pinned by bun against the #105 review's four vectors. This module supplies
+// only the browser's transport and wiring.
+const cache = makeVerdictCache(async () => {
+  const res = await fetch('/avatars', { cache: 'no-store' });
+  if (!res.ok) throw new Error(`roster ${res.status}`);
+  const rev = Number(res.headers.get('x-profiles-rev') ?? NaN);
+  return { rev, entries: await res.json() };
+});
 let started = false;
-
-async function refetch(why) {
-  // Stamp every name we know about at DEPARTURE; a bump landing mid-flight
-  // (avatar re-upload, profile acceptance) invalidates that name's slice of
-  // this response. Unknown names are new — nothing held, nothing to protect.
-  const stamps = new Map([...verdicts.keys()].map((n) => [n, guard.stamp(n)]));
-  try {
-    const res = await fetch('/avatars', { cache: 'no-store' });
-    if (!res.ok) return;
-    const rev = Number(res.headers.get('x-profiles-rev') ?? NaN);
-    const roster = await res.json();
-    for (const e of roster) {
-      const stamped = stamps.get(e.name) ?? guard.stamp(e.name);
-      if (guard.accept(e.name, stamped, rev)) verdicts.set(e.name, e.seat ?? { status: 'missing' });
-    }
-  } catch (e) { report(`seat profiles (${why})`, e); }
-}
 
 export function initSeats() {
   if (started) return;
   started = true;
-  // Both events bump the name's generation BEFORE the refetch departs — the
-  // order is the guard's whole guarantee.
-  bus.on('avatar-updated', ({ name }) => { if (name) guard.bump(name); refetch('avatar-updated'); });
-  bus.on('avatar-profile-updated', ({ name }) => { if (name) guard.bump(name); refetch('avatar-profile-updated'); });
-  refetch('init');
+  // note() bumps BEFORE its refetch departs and demotes the held verdict to
+  // pending immediately — the order is the whole guarantee
+  bus.on('avatar-updated', ({ name }) => cache.note(name, NaN));
+  bus.on('avatar-profile-updated', ({ name, rev }) => cache.note(name, Number(rev)));
+  cache.init();
 }
 
 /** The full gate for one mounted rider, assembled from the served verdict
@@ -59,7 +50,7 @@ export function seatCorrectionFor(rider, sock) {
   if (!rider.av) return { applied: false, reason: 'body loading' };
   const name = nameFromAvatarPath(rider.path);
   if (!name) return { applied: false, reason: 'no rider context' };
-  const verdict = verdicts.get(name);
+  const verdict = cache.get(name);
   const sc = riderScalar([rider.av.root.scale.x, rider.av.root.scale.y, rider.av.root.scale.z]);
   if (!sc.ok) return { applied: false, reason: sc.why };
   const g = seatGate({

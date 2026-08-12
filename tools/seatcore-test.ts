@@ -17,7 +17,7 @@
 
 import {
   validateProfile, profileStatus, socketAnchor, seatGate, seatGateCore,
-  applySeatCorrection, riderScalar, seatClaim, makeGenerationGuard,
+  applySeatCorrection, riderScalar, seatClaim, makeGenerationGuard, makeVerdictCache,
   SEAT_METHOD, MIN_PATCH_VERTS, MAX_PATCH_SPREAD_Y,
 } from "../client/lib/seatcore.js";
 import { qAxisAngle } from "../client/lib/motioneval.js";
@@ -66,6 +66,18 @@ console.log("schema");
   const unsup = { avatar: "crow", avatarSha256: A_SHA, pose: "sitchair", unsupported: { refusal: "no humanoid mapping — no seat landmark derivable" } };
   check("unsupported record with refusal validates", validateProfile(unsup).ok === true && validateProfile(unsup).kind === "unsupported");
   check("unsupported without refusal refused", !validateProfile({ ...unsup, unsupported: {} }).ok);
+  // #105 review B2: these strings index rights-bearing maps
+  // #105 review B2: legal syntax is not enough — the language's reserved
+  // names are refused at the schema, and the store's null-prototype maps
+  // refuse them again (tools/seats-store-test.ts)
+  check("avatar '__proto__' refused", !validateProfile({ ...good(), avatar: "__proto__" }).ok);
+  check("avatar 'constructor' refused", !validateProfile({ ...good(), avatar: "constructor" }).ok);
+  check("avatar 'prototype' refused", !validateProfile({ ...good(), avatar: "prototype" }).ok);
+  check("avatar with path characters refused", !validateProfile({ ...good(), avatar: "../../etc" }).ok && !validateProfile({ ...good(), avatar: "a b" }).ok);
+  check("avatar with dots refused", !validateProfile({ ...good(), avatar: "a.b" }).ok);
+  check("avatar with path characters refused", !validateProfile({ ...good(), avatar: "../../etc" }).ok && !validateProfile({ ...good(), avatar: "a b" }).ok);
+  check("avatar over 48 chars refused", !validateProfile({ ...good(), avatar: "x".repeat(49) }).ok);
+  check("pose other than sitchair refused (the slice's whole scope)", !validateProfile({ ...good(), pose: "sitground" }).ok);
 }
 
 // ---- serve-time verdict ----------------------------------------------------
@@ -183,20 +195,80 @@ console.log("seat claim (the _v regression)");
   check("non-finite socket world refuses", seatClaim([0, NaN, 0], q) === null);
 }
 
-// ---- generations (B3/B4: the #95 lesson) -----------------------------------
-console.log("generation guard");
+// ---- generations (B3/B4 → #105 review B1: whole-request epochs) ------------
+console.log("generation guard (epoch)");
 {
   const g = makeGenerationGuard();
-  const s0 = g.stamp("claude");
-  check("resolution under the current generation applies", g.accept("claude", s0, 1) === true);
-  const s1 = g.stamp("claude");
+  const s0 = g.begin();
+  check("resolution under the departure epoch applies", g.accept("claude", s0, 1) === true);
+  const s1 = g.begin();
   g.bump("claude");                       // avatar-updated lands mid-flight
-  check("resolution stamped before a bump is discarded whole", g.accept("claude", s1, 2) === false);
-  const s2 = g.stamp("claude");
+  check("resolution stamped before a bump is discarded — even for a name never seen before",
+    g.accept("claude", s1, 2) === false);
+  check("…while an unbumped name from the same response still applies", g.accept("aletheia", s1, 2) === true);
+  const s2 = g.begin();
   check("post-bump fetch applies at rev 5", g.accept("claude", s2, 5) === true);
-  check("a slow rev-3 response can never roll rev 5 back", g.accept("claude", g.stamp("claude"), 3) === false);
-  check("equal rev re-applies (idempotent refresh)", g.accept("claude", g.stamp("claude"), 5) === true);
-  check("names are independent generations", g.accept("aletheia", g.stamp("aletheia"), 6) === true);
+  check("a slow rev-3 response can never roll rev 5 back", g.accept("claude", g.begin(), 3) === false);
+  check("equal rev re-applies (idempotent refresh)", g.accept("claude", g.begin(), 5) === true);
+  const g2 = makeGenerationGuard();
+  g2.bump("claude", 7);                   // the event ANNOUNCED rev 7
+  check("a response older than an announced rev is pre-event by definition — refused",
+    g2.accept("aletheia", g2.begin(), 6) === false);
+  check("a response at the announced rev applies", g2.accept("aletheia", g2.begin(), 7) === true);
+  check("a rev-less response is refused once any rev has been announced", g2.accept("aletheia", g2.begin(), NaN) === false);
+}
+
+// ---- the verdict cache: the review's four vectors, driven end to end -------
+console.log("verdict cache (shared browser/agent implementation)");
+{
+  // a controllable transport: each call resolves when the test says so
+  let pendingResolves: ((v: any) => void)[] = [];
+  let failNext = false;
+  const cache = makeVerdictCache(() => new Promise((res, rej) => {
+    if (failNext) { failNext = false; rej(new Error("roster unreachable")); return; }
+    pendingResolves.push(res);
+  }));
+  const settle = () => new Promise((r) => setTimeout(r, 5));
+  const accepted = (rev: number) => ({ rev, entries: [
+    { name: "claude", seat: { pose: "sitchair", status: "accepted", contactY: 0.2055 } },
+    { name: "aletheia", seat: { pose: "sitchair", status: "accepted", contactY: 0.2791 } },
+  ] });
+
+  // 1 — initial EMPTY-cache fetch, update arrives mid-flight, and the OLD
+  // response resolves LAST carrying the pre-event snapshot. This is the exact
+  // hole the review named: nothing was cached, so nothing was stamped, and
+  // the per-name-stamp guard read the post-bump generation at response time.
+  const first = cache.init();                       // fetch A departs (cache empty)
+  const noted = cache.note("claude", 6);            // event lands mid-flight → fetch B departs
+  const resolveA = pendingResolves.shift()!;
+  const resolveB = pendingResolves.shift()!;
+  resolveB(accepted(6));                            // the fresh post-event state applies
+  await noted; await settle();
+  check("vector 1 setup: fresh post-event verdict is in place", cache.get("claude")?.status === "accepted");
+  resolveA({ rev: 4, entries: [                     // …then the stale pre-event snapshot arrives
+    { name: "claude", seat: { pose: "sitchair", status: "proposed" } },
+    { name: "aletheia", seat: { pose: "sitchair", status: "accepted", contactY: 0.2791 } },
+  ] });
+  await first; await settle();
+  check("vector 1: the stale empty-cache response is discarded — accepted survives",
+    cache.get("claude")?.status === "accepted" && near(cache.get("claude").contactY, 0.2055));
+
+  // 2 — held accepted verdict, update lands, refetch FAILS → pending immediately, stays pending
+  failNext = true;
+  await cache.note("claude", 7).catch(() => {});
+  check("vector 2: the held verdict demotes to pending the moment the event lands",
+    cache.get("claude")?.status === "pending");
+  check("vector 2: the gate refuses pending with its own reason",
+    (() => { const gte = seatGateCore({ sock: { seatAnchor: "surface" }, verdict: cache.get("claude") }); return !gte.apply && gte.reason === "profile update pending"; })());
+  check("vector 4: the other name's verdict is untouched by claude's update",
+    cache.get("aletheia")?.status === "accepted");
+
+  // 3 — a fresh response under the new generation restores service
+  const restore = cache.init();
+  pendingResolves.shift()!(accepted(8));
+  await restore;
+  check("vector 3: a fresh post-bump response restores the correction",
+    cache.get("claude")?.status === "accepted" && near(cache.get("claude").contactY, 0.2055));
 }
 
 console.log(failures ? `\n\x1b[31m${failures} failure(s)\x1b[0m` : "\n\x1b[32mall checks passed\x1b[0m");

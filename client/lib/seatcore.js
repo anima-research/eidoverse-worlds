@@ -40,6 +40,7 @@ export const MAX_PATCH_SPREAD_Y = 0.02; // a real pelvis underside clusters with
 export const SCALE_UNIFORM_EPS = 1e-3;  // |sx−sy|,|sy−sz| beyond this = nonuniform, abstain
 
 const HEX64 = /^[0-9a-f]{64}$/;
+const SAFE_NAME = /^[a-zA-Z0-9_-]{1,48}$/;   // roster-name syntax — also what keeps map keys inert
 const fin = Number.isFinite;
 const fin3 = (v) => Array.isArray(v) && v.length === 3 && v.every(fin);
 
@@ -54,10 +55,20 @@ const fin3 = (v) => Array.isArray(v) && v.length === 3 && v.every(fin);
  *  is a FINDING worth storing — it converts "missing" into a named reason). */
 export function validateProfile(p) {
   if (!p || typeof p !== "object") return { ok: false, why: "profile must be an object" };
-  if (typeof p.avatar !== "string" || !p.avatar) return { ok: false, why: "avatar name required" };
+  // The store indexes maps with these two strings and a profile moves every
+  // wearer of an avatar (#105 review B2): the name is roster syntax exactly
+  // (the same character class /avatars sanitizes to — "__proto__" and
+  // friends cannot pass), and this slice supports ONE pose.
+  if (typeof p.avatar !== "string" || !SAFE_NAME.test(p.avatar))
+    return { ok: false, why: "avatar must be a roster name ([a-zA-Z0-9_-], ≤48 chars)" };
+  // legal SYNTAX but reserved by the language: these index inherited slots on
+  // any plain object, so they are refused at the schema — and the store's
+  // null-prototype maps refuse them a second time (defense in depth)
+  if (p.avatar === "__proto__" || p.avatar === "constructor" || p.avatar === "prototype")
+    return { ok: false, why: `"${p.avatar}" is not an avatar` };
   if (typeof p.avatarSha256 !== "string" || !HEX64.test(p.avatarSha256))
     return { ok: false, why: "avatarSha256 must be 64 hex chars" };
-  if (typeof p.pose !== "string" || !p.pose) return { ok: false, why: "pose required" };
+  if (p.pose !== "sitchair") return { ok: false, why: 'this slice profiles pose "sitchair" only' };
 
   if (p.unsupported) {
     if (typeof p.unsupported.refusal !== "string" || !p.unsupported.refusal)
@@ -155,6 +166,9 @@ export function riderScalar(scaleVec3) {
 export function seatGateCore({ sock, verdict, pose = "sitchair" }) {
   if (socketAnchor(sock) !== "surface") return { apply: false, reason: "legacy socket" };
   if (!verdict || verdict.status === "missing") return { apply: false, reason: "no profile" };
+  // an update event has landed and the fresh verdict hasn't — the held value
+  // is no longer trusted and stops moving bodies NOW (#105 review B1)
+  if (verdict.status === "pending") return { apply: false, reason: "profile update pending" };
   if (verdict.status === "unsupported") return { apply: false, reason: `unsupported rig: ${verdict.refusal}` };
   if (verdict.status === "stale") return { apply: false, reason: `profile stale (${verdict.which} bytes changed)` };
   if (verdict.status === "proposed") return { apply: false, reason: "profile proposed — not countersigned" };
@@ -217,27 +231,89 @@ export function seatClaim(socketWorld, parentQuat) {
 
 // ---- fetch generations (B3/B4: the #95 lesson, generalized) -----------------
 
-/** Per-name generation guard for async profile fetches. Every update event
- *  (avatar-updated, avatar-profile-updated) bumps the name's generation; a
- *  fetch stamps the generation it departed under; a resolution whose stamp is
- *  no longer current is discarded WHOLE. profilesRev is monotonic and a
- *  lower-or-equal rev never replaces a higher one, so a slow response from
- *  before an acceptance cannot roll the acceptance back. */
+/** Whole-request epoch guard for async profile fetches (#105 review B1).
+ *
+ *  The per-name-stamp version had a hole: an initial fetch stamps nothing
+ *  (the cache is empty), so an update landing mid-flight was read at its
+ *  POST-bump generation at response time and the stale response won. The
+ *  epoch closes it: every bump advances one global epoch and records it
+ *  against the name, a request stamps the epoch it DEPARTED under, and a
+ *  resolution is refused for any name bumped after that departure — known
+ *  to the cache or not.
+ *
+ *  Event revs are incorporated (review B1, "incorporate the event's rev"):
+ *  `avatar-profile-updated` announces the store revision that now exists,
+ *  so any response carrying an older revision is pre-event by definition
+ *  and is refused whole. heldRev stays monotonic — a slow response from
+ *  before an acceptance can never roll the acceptance back. */
 export function makeGenerationGuard() {
-  const gen = new Map();     // name → generation counter
-  let heldRev = -1;
+  let epoch = 0;
+  const lastBump = new Map();  // name → epoch of its most recent bump
+  let heldRev = -1;            // highest revision actually applied
+  let floorRev = -1;           // highest revision ANNOUNCED by an event
   return {
-    bump(name) { gen.set(name, (gen.get(name) ?? 0) + 1); },
-    stamp(name) { return gen.get(name) ?? 0; },
-    /** true = this resolution may be applied (and the rev is recorded) */
-    accept(name, stampedGen, rev) {
-      if ((gen.get(name) ?? 0) !== stampedGen) return false;
+    /** stamp for a departing request */
+    begin() { return epoch; },
+    bump(name, rev) {
+      epoch++;
+      lastBump.set(name, epoch);
+      if (fin(rev)) floorRev = Math.max(floorRev, rev);
+    },
+    /** true = this name's slice of the response may be applied */
+    accept(name, stampedEpoch, rev) {
+      if ((lastBump.get(name) ?? 0) > stampedEpoch) return false;
       if (fin(rev)) {
-        if (rev < heldRev) return false;
-        heldRev = rev;
+        if (rev < heldRev || rev < floorRev) return false;
+        heldRev = Math.max(heldRev, rev);
+        return true;
       }
-      return true;
+      // a response that cannot state its revision is refused once any event
+      // has announced one — it might predate the announcement
+      return floorRev < 0;
     },
     rev() { return heldRev; },
+  };
+}
+
+// ---- the verdict cache: ONE implementation for every consumer ---------------
+
+/** The seat-verdict cache the browser and the headless agent both run
+ *  (#105 review B1 — the logic existed twice and each copy had the same
+ *  holes; mirrored math stays mirrored, so now it exists once, here, where
+ *  bun pins it). `fetchRoster` is the consumer's transport: an async
+ *  () => ({ rev, entries: [{name, seat}] }) that throws on failure.
+ *
+ *  The contract, per the review's four vectors:
+ *   1. an update landing while ANY fetch is in flight — including the very
+ *      first, empty-cache fetch — discards that name's slice of the response;
+ *   2. an update immediately demotes the HELD verdict to `pending` (the gate
+ *      declares "profile update pending"): if the refetch is slow or fails,
+ *      the old accepted value stops moving bodies the moment the event lands;
+ *   3. a fresh response under the new generation restores service;
+ *   4. names are independent — one avatar's update never invalidates another's
+ *      verdict. */
+export function makeVerdictCache(fetchRoster) {
+  const verdicts = new Map();  // name → served verdict (or {status:"pending"})
+  const guard = makeGenerationGuard();
+  async function refetch() {
+    const stamp = guard.begin();
+    try {
+      const { rev, entries } = await fetchRoster();
+      for (const e of entries ?? [])
+        if (guard.accept(e.name, stamp, rev)) verdicts.set(e.name, e.seat ?? { status: "missing" });
+    } catch { /* held state stays as marked (pending names stay pending); the next event or init retries */ }
+  }
+  return {
+    get(name) { return verdicts.get(name); },
+    /** an update event: invalidate FIRST, then refetch — the order is the guarantee */
+    note(name, rev) {
+      if (name) {
+        guard.bump(String(name), rev);
+        if (verdicts.has(String(name))) verdicts.set(String(name), { status: "pending" });
+      }
+      return refetch();
+    },
+    init() { return refetch(); },
+    rev() { return guard.rev(); },
   };
 }
