@@ -1382,5 +1382,50 @@ consent.setReceiveVoice(true);   // a late consent block leaves receive OFF —
   stubs.remotes.delete("zz-ren"); bus.emit("roster"); await settle();
 }
 
+// ── backoff bound: retries ride ICE cadence, never a hot loop (r5 review) ──
+// Antra's vector: repeated failure must produce exactly ONE outstanding retry
+// per failed generation — no synchronous storm, no duplicate offers — and a
+// dead generation's ghost events must not touch its replacement.
+{
+  stubs.remotes.set("aa-flaky", { agent: false });
+  bus.emit("roster");
+  await settle();
+  const gen1 = created.at(-1)!;
+  const n1 = created.length;
+  // the same dead pc fires 'failed' THREE times (browsers can re-emit; a hot
+  // loop would mint three replacements)
+  gen1.connectionState = "failed";
+  (gen1.onconnectionstatechange as () => void)?.();
+  (gen1.onconnectionstatechange as () => void)?.();
+  (gen1.onconnectionstatechange as () => void)?.();
+  await settle(); await settle();
+  check("backoff: three failure events on ONE generation → exactly one replacement",
+        created.length === n1 + 1, `${created.length - n1} new pc(s)`);
+  const gen2 = created.at(-1)!;
+  check("backoff: the single replacement offered exactly once",
+        gen2 !== gen1 && (gen2.offers ?? 0) === 1, `offers=${gen2.offers}`);
+  // ghost 'closed' from the DEAD generation must not kill the live one:
+  // without the staleness guard this drops the replacement, and 'closed'
+  // being terminal, the lane dies silently — the repair becomes the killer.
+  gen1.connectionState = "closed";
+  (gen1.onconnectionstatechange as () => void)?.();
+  await settle();
+  check("backoff: dead generation's late 'closed' cannot mint or drop peers",
+        created.length === n1 + 1 && gen2.closed !== true,
+        `${created.length - n1} pcs, replacement closed=${gen2.closed}`);
+  const gen2offers = gen2.offers ?? 0;
+  check("backoff: ...and provokes no extra offer from the replacement",
+        (created.at(-1) === gen2) && (gen2.offers ?? 0) === gen2offers && gen2.closed !== true,
+        `offers=${gen2.offers} closed=${gen2.closed}`);
+  // each NEW generation failing earns exactly one more retry — ICE cadence,
+  // one outstanding at a time
+  gen2.connectionState = "failed";
+  (gen2.onconnectionstatechange as () => void)?.();
+  await settle(); await settle();
+  check("backoff: next generation's failure earns exactly one more offer",
+        created.length === n1 + 2, `${created.length - n1} total new`);
+  stubs.remotes.delete("aa-flaky"); bus.emit("roster"); await settle();
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

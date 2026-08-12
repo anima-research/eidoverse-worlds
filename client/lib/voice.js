@@ -233,6 +233,15 @@ function peerFor(id) {
     // Give it a grace period and try an ICE restart before giving up. Only
     // 'failed' and 'closed' are terminal.
     if (st === 'failed' || st === 'closed') {
+      // STALENESS GUARD (r5, review): after reach-back replaces this peer,
+      // the OLD pc is closed and can still emit state changes ('closed', or a
+      // late 'failed'). Without this check a ghost event drops the fresh
+      // REPLACEMENT — and 'closed' being terminal, nothing rebuilds it: the
+      // repair mechanism itself becomes the killer. A dead generation's
+      // events are void; only the registry's current peer may act. This is
+      // also the one-outstanding-retry bound: repeated events on one dead pc
+      // cannot fan out into duplicate offers.
+      if (peers.get(id) !== p) return;
       clearTimeout(p._discoTimer); dropPeer(id);
       // Field, 2026-08-10 (voicetest, cellular×2): dropping on 'failed' left the
       // id with NO peer and nothing re-offered — roster rescans run only on
