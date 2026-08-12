@@ -319,6 +319,15 @@ async function offerOn(p, id, label) {
     await p.pc.setLocalDescription(offer);
     p._offeredAt = Date.now();     // for the rejoin-vs-glare distinction
     sendRtc(id, { sdp: p.pc.localDescription });
+    // Repair-ownership tell (r3, moved here in r4 review): a COURTER is
+    // anyone who has actually SENT an offer on this lane — courtship,
+    // renegotiation, ICE-restart follow-ups alike. Setting it only in
+    // offerTo let a renegotiating answerer mark the far side dual
+    // (_theyEverOffered) while never owning repair itself: courter
+    // rank-blocked, answerer court-blocked, NOBODY reaches. And setting it
+    // before the await marked lanes courted when the offer never left the
+    // building. After the send: the flag states a fact.
+    p._court = true;
   } catch (e) { report(label, e); } finally { p._offering = false; }
 }
 
@@ -371,9 +380,7 @@ async function renegotiate(id) {
 }
 
 async function offerTo(id) {
-  const p = peerFor(id);
-  p._court = true;               // we courted this lane (repair-ownership tell)
-  await offerOn(p, id, 'voice offer');
+  await offerOn(peerFor(id), id, 'voice offer');
 }
 
 async function onRtc(msg) {

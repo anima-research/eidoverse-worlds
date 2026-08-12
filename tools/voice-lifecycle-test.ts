@@ -1358,5 +1358,29 @@ consent.setReceiveVoice(true);   // a late consent block leaves receive OFF —
   stubs.remotes.delete("zz-dual"); bus.emit("roster"); await settle();
 }
 
+// D. (r4) the ANSWERER who has since renegotiated owns repair too: courting
+// is "ever sent an offer on this lane", not "created the peer". Under r3,
+// a lane born from THEIR offer kept _court=false here forever — if the far
+// courter ranked high it was rank-blocked and we were court-blocked: NOBODY
+// reached. Our mic toggle renegotiates (a real offer through offerOn), which
+// makes us a courter of record; their original offer makes the lane dual;
+// we rank lower than zz-ren, so rank picks us. FAILS on r3.
+{
+  consent.setReceiveVoice(true);
+  if (voice.micOn()) await voice.toggleMic("me");
+  offerFrom("zz-ren");                    // lane born from THEIR offer: we answer
+  await settle();
+  const lane = created.at(-1)!;
+  await voice.toggleMic("me");            // mic up → renegotiate → we now court
+  await settle();
+  const nD = created.length;
+  lane.connectionState = "failed";
+  (lane.onconnectionstatechange as () => void)?.();
+  await settle(); await settle();
+  check("failed lane born from their offer, renegotiated by us: we reach (dual, we rank lower)",
+    created.length === nD + 1, `${created.length - nD} new pc(s)`);
+  stubs.remotes.delete("zz-ren"); bus.emit("roster"); await settle();
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
