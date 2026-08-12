@@ -34,11 +34,14 @@ const check = (name: string, ok: boolean, extra = "") => {
   ok ? pass++ : fail++;
 };
 
-const world = Bun.spawn(["bun", "server/server.ts"], {
+// process.execPath, not "bun": the PATH "bun" is an npm .cmd shim on Windows
+// whose pid dies immediately, orphaning both of these on their ports where
+// they poison the next run.
+const world = Bun.spawn([process.execPath, "server/server.ts"], {
   env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir },
   stdout: "ignore", stderr: "ignore",
 });
-const mcpl = Bun.spawn(["bun", "mcpl/net-server.ts"], {
+const mcpl = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
   env: {
     ...process.env, MCPL_PORT: String(MPORT),
     WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`,

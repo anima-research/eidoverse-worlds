@@ -45,7 +45,11 @@ const NONCE = `route-nonce-${crypto.randomUUID()}`;
 const clientDir = join(import.meta.dir, "..", "client");
 writeFileSync(join(clientDir, `${NONCE}.txt`), NONCE);
 
-const server = spawn("bun", [join(import.meta.dir, "..", "server", "server.ts")], {
+// process.execPath, not "bun": the PATH "bun" is an npm .cmd shim on Windows
+// whose pid dies the instant it has launched the real binary, so kill() below
+// reaps nothing and the server outlives the test still holding this port —
+// which is precisely the stale-listener trap described above.
+const server = spawn(process.execPath, [join(import.meta.dir, "..", "server", "server.ts")], {
   env: { ...process.env, PORT: String(PORT), WORLDS_DIR: mkdtempSync(join(tmpdir(), "deps-route-")) },
   stdio: "ignore",
 });

@@ -84,7 +84,10 @@ if (!existsSync(TOKENS)) {
 
 const WORLDS = mkdtempSync(join(tmpdir(), "seatlife-"));
 const CHILD_LOG = join(WORLDS, "server-output.txt");
-const server = Bun.spawn(["bun", "run", "server/server.ts"], {
+// process.execPath, not "bun": the PATH "bun" is an npm .cmd shim on Windows
+// whose pid dies immediately, orphaning the real sequencer on this port where
+// it poisons the next run.
+const server = Bun.spawn([process.execPath, "run", "server/server.ts"], {
   cwd: ROOT,
   env: { ...process.env, WORLDS_DIR: WORLDS, JOIN_TOKEN: DOOR, PORT: String(PORT), EIDOVERSE_DIR: LIB },
   stdout: "pipe", stderr: "pipe",

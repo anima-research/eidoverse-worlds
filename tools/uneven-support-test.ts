@@ -66,7 +66,10 @@ const blanketSum = (await summarizeGlb(blanketDst))!;
 const rubbleSum = (await summarizeGlb(join(process.env.EIDOVERSE_DIR, RUBBLE_LIB)))!;
 
 // ---- scratch sequencer ------------------------------------------------------
-const server = spawn("bun", [join(import.meta.dir, "..", "server", "server.ts")], {
+// process.execPath, not "bun": the PATH "bun" is an npm .cmd shim on Windows
+// whose pid dies immediately, orphaning the real sequencer on this port where
+// it poisons the next run.
+const server = spawn(process.execPath, [join(import.meta.dir, "..", "server", "server.ts")], {
   env: { ...process.env, PORT: String(PORT), WORLDS_DIR: mkdtempSync(join(tmpdir(), "ew-uneven-")), JOIN_TOKEN: "" },
   stdio: "ignore",
 });

@@ -71,7 +71,10 @@ const snap = (s: Sock) => s.msgs.find((m) => m.type === "snapshot");
 
 // ---- boot scratch sequencer ----
 const worldsDir = mkdtempSync(join(tmpdir(), "ew-authtest-"));
-const proc = Bun.spawn(["bun", "run", join(import.meta.dir, "..", "server", "server.ts")], {
+// process.execPath, not "bun": the PATH "bun" is an npm .cmd shim on Windows
+// whose pid dies immediately, orphaning the real sequencer on this port where
+// it poisons the next run.
+const proc = Bun.spawn([process.execPath, "run", join(import.meta.dir, "..", "server", "server.ts")], {
   env: {
     ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: DOOR,
     HN_ISSUER_KEY: ISSUER_ID, HN_ISS: ISS, HN_REQUIRE_LOGIN: "0",

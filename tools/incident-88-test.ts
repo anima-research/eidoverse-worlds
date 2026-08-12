@@ -79,7 +79,10 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let server: ReturnType<typeof spawn> | null = null;
 async function startServer() {
   if (EXTERNAL) return;
-  server = spawn("bun", [join(import.meta.dir, "..", "server", "server.ts")], {
+  // process.execPath, not "bun": the PATH "bun" is an npm .cmd shim on
+  // Windows whose pid dies immediately, orphaning the real sequencer on this
+  // port where it poisons the next run.
+  server = spawn(process.execPath, [join(import.meta.dir, "..", "server", "server.ts")], {
     env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "",
            VERB_RATE: "5000", MSG_RATE: "5000" },
     stdio: "ignore",

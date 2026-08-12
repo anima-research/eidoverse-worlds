@@ -44,7 +44,10 @@ async function spawnServer(env: Record<string, string | undefined>): Promise<{ p
   const nonce = `vr-nonce-${crypto.randomUUID().slice(0, 8)}`;
   const noncePath = join(REPO, "client", `${nonce}.txt`);
   writeFileSync(noncePath, nonce); nonces.push(noncePath);
-  const child = spawn("bun", [join(REPO, "server", "server.ts")], {
+  // process.execPath, not "bun": the PATH "bun" is an npm .cmd shim on
+  // Windows whose pid dies immediately, orphaning the real sequencer on this
+  // port where it poisons the next run.
+  const child = spawn(process.execPath, [join(REPO, "server", "server.ts")], {
     env: { PORT: String(port), WORLDS_DIR: mkdtempSync(join(tmpdir(), "vr-")), ...env },
     stdio: "ignore",
   });
