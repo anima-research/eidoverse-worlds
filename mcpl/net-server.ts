@@ -826,8 +826,16 @@ class Session {
         // door. The server validates these (bounded utt window, clamped t0)
         // and strips them from ordinary says — the door's job is to forward
         // the protocol, not arbitrary metadata.
+        // Typed at the door, not just named (r2 review): the world server is
+        // the enforcing validator (it deletes the trio unless well-formed),
+        // but the door shouldn't relay arbitrarily large or mistyped payloads
+        // TO it under protocol names. Wrong type here means the key simply
+        // doesn't ride — same outcome the server would impose, one hop
+        // earlier.
         const extra: Record<string, unknown> = {};
-        for (const k of ["spoken", "utt", "t0"]) if (k in a) extra[k] = a[k];
+        if (a.spoken === true) extra.spoken = true;
+        if (typeof a.utt === "number" && Number.isSafeInteger(a.utt) && a.utt >= 0) extra.utt = a.utt;
+        if (typeof a.t0 === "number" && Number.isFinite(a.t0)) extra.t0 = a.t0;
         ag.say(String(a.text).slice(0, 4000), extra);
         return text("said");
       }

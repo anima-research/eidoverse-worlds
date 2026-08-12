@@ -1409,7 +1409,15 @@ export class WorldAgent {
     return null;
   }
 
-  say(text: string, extra?: Record<string, unknown>) { this._typingUntil = 0; this.verb("say", { ...extra, text }); }
+  // extra carries ONLY the spoken-say protocol trio (r2 review: an
+  // unconstrained spread made every internal caller a second, unguarded door
+  // for protocol keys). The world server validates values; this picks names.
+  say(text: string, extra?: { spoken?: boolean; utt?: number; t0?: number }) {
+    this._typingUntil = 0;
+    const args: Record<string, unknown> = { text };
+    if (extra) for (const k of ["spoken", "utt", "t0"] as const) if (extra[k] !== undefined) args[k] = extra[k];
+    this.verb("say", args);
+  }
 
   /** Show "composing" over this body. Presence-only (never logged), the same
    *  signal a human client sends while typing in the chat box. The world relays
