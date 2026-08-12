@@ -1389,14 +1389,24 @@ const BUILD = (() => {
         Bun.spawnSync(["git", ...args], { cwd: import.meta.dir }).stdout).trim();
     } catch { return ""; /* no git in the deploy image */ }
   };
-  const sha = process.env.BUILD_SHA || gitLine("rev-parse", "--short", "HEAD");
+  const sha = process.env.BUILD_SHA
+    || (process.env.BUILD_TIME ? "unknown" : gitLine("rev-parse", "--short", "HEAD") || "unknown");
   // WHEN the code is from, not just which commit. A sha is opaque to anyone
   // without the repo in front of them; "code from 2026-08-10T14:32Z" lets a
   // participant answer "did the deploy pick up this afternoon's fix?" without
   // resolving hashes. Distinct from startedAt on purpose: startedAt says the
   // PROCESS is fresh, commitTime says the CODE is — a restart of stale code
   // looks healthy on the first and stale on the second.
-  const commitTime = process.env.BUILD_TIME || gitLine("show", "-s", "--format=%cI", "HEAD");
+  // SHA AND TIME ARE ONE PROVENANCE PAIR (r3, Antra's re-review): r2 fixed
+  // this class for dirty and left its sibling open — BUILD_SHA without
+  // BUILD_TIME paired the image's sha with the LOCAL checkout's HEAD
+  // timestamp (and vice versa). Both from env, or both from the same git
+  // HEAD, or the missing partner is "unknown" — never filled from another
+  // identity.
+  const envSha = process.env.BUILD_SHA || "";
+  const envTime = process.env.BUILD_TIME || "";
+  const commitTime = envTime
+    || (envSha ? "unknown" : gitLine("show", "-s", "--format=%cI", "HEAD") || "unknown");
   // A sha identifies HEAD — not the bytes actually executing. A tree with
   // uncommitted edits reports a clean-looking sha while running modified
   // code, which is exactly the deployment mystery this endpoint exists to
@@ -1409,7 +1419,7 @@ const BUILD = (() => {
     // the process happens to sit in would report one identity's sha with
     // another's dirtiness. Env-driven sha without env-driven dirty is
     // honestly unknown.
-    if (process.env.BUILD_SHA) return "unknown";
+    if (process.env.BUILD_SHA || process.env.BUILD_TIME) return "unknown";
     const out = gitLine("status", "--porcelain");
     // gitLine returns "" both for a clean tree and for no-git; disambiguate
     // by whether HEAD resolves — no sha from git means no git to trust.

@@ -108,6 +108,24 @@ console.log("\n— B. git-driven identity (dev checkout case) —");
     body.dirty === true, String(body.dirty));
 }
 
+console.log("\n— B2. mixed provenance refused: sha/time are ONE pair (r3, review vectors) —");
+{
+  // BUILD_SHA without BUILD_TIME, git PRESENT: the tempting-but-wrong move is
+  // filling time from local HEAD — that pairs the image's sha with another
+  // identity's timestamp, the exact composite the dirty fix rejects.
+  const a = await spawnServer({ HOME, PATH: BUNPATH, BUILD_SHA: "cafe123" });
+  const bodyA = await (await fetch(`http://127.0.0.1:${a.port}/version`)).json();
+  check("BUILD_SHA alone, git present: commitTime is unknown, never local HEAD's",
+    bodyA.sha === "cafe123" && bodyA.commitTime === "unknown", `${bodyA.sha} @ ${bodyA.commitTime}`);
+  check("BUILD_SHA alone: dirty stays unknown too (no partner from another tree)",
+    bodyA.dirty === "unknown", String(bodyA.dirty));
+  // The mirror: BUILD_TIME without BUILD_SHA, git present.
+  const b = await spawnServer({ HOME, PATH: BUNPATH, BUILD_TIME: "2026-08-12T00:00:00Z" });
+  const bodyB = await (await fetch(`http://127.0.0.1:${b.port}/version`)).json();
+  check("BUILD_TIME alone, git present: sha is unknown, never local HEAD",
+    bodyB.commitTime === "2026-08-12T00:00:00Z" && bodyB.sha === "unknown", `${bodyB.sha} @ ${bodyB.commitTime}`);
+}
+
 console.log("\n— C. no env, no git: honest unknowns, never fake-clean —");
 {
   // PATH without git: gitLine's spawn fails → catch → "" → "unknown"s.
