@@ -29,14 +29,14 @@ async def join(name, surface=None, world="surftest", agent_token=None):
 
 async def main():
     # T1: primary + voice leg coexist
-    p1, e1, c1, _ = await join("hesp")
-    v1, e2, c2, _ = await join("hesp", "voice")
+    p1, e1, c1, _ = await join("hesp", agent_token="surf-lab-hesp")
+    v1, e2, c2, _ = await join("hesp", "voice", agent_token="surf-lab-hesp")
     await asyncio.sleep(0.5)
     check("T1 primary survives voice-leg join", c1() is None and p1.state.name == "OPEN")
     check("T1 voice leg accepted (snapshot arrived)", any(m.get("type") == "snapshot" for m in e2))
 
     # T2: second voice leg kicks only the old voice leg
-    v2, e3, c3, _ = await join("hesp", "voice")
+    v2, e3, c3, _ = await join("hesp", "voice", agent_token="surf-lab-hesp")
     await asyncio.sleep(0.5)
     check("T2 old voice leg kicked 4002", c2() is not None and c2()[0] == 4002, str(c2()))
     check("T2 primary untouched by voice duel", c1() is None)
@@ -149,17 +149,17 @@ async def main():
     # (retired null) — listeners key hold-then-fallback on it, and a leg
     # joining after their snapshot must not be invisible.
     ew.clear()
-    vC, eC, cC, _ = await join("watcher2-owner")
+    vC, eC, cC, _ = await join("watcher2-owner", agent_token="surf-lab-w2o")
     await asyncio.sleep(0.3)
     ew.clear()
-    vD, eD, cD, _ = await join("watcher2-owner", "voice")
+    vD, eD, cD, _ = await join("watcher2-owner", "voice", agent_token="surf-lab-w2o")
     await asyncio.sleep(0.5)
     t14 = [m for m in ew if m.get("type") == "surface-transition" and m.get("id") == "watcher2-owner"]
     check("T14 first aux join announces itself (retired null)",
           bool(t14) and t14[0].get("retired") is None and isinstance(t14[0].get("gen"), int), str(t14[:1]))
 
     # T15: a rejoining primary's snapshot carries its OWN live aux legs
-    p4, e8, c8, _ = await join("watcher2-owner")   # takeover of primary; voice leg survives
+    p4, e8, c8, _ = await join("watcher2-owner", agent_token="surf-lab-w2o")   # takeover of primary; voice leg survives
     await asyncio.sleep(0.5)
     snaps15 = [m for m in e8 if m.get("type") == "snapshot"]
     ys = snaps15[0].get("yourSurfaces", None) if snaps15 else None
@@ -209,6 +209,27 @@ async def main():
                and m.get("surface") == "voice" and m.get("gen") is None
                and m.get("id") == "hesp3"]
     check("T17 primary death: reaped voice leg broadcasts retirement", len(reapret) == 1, str(ew2[-4:]))
+
+    # T18 (B1, review): an aux leg binds to the primary's identity authority.
+    # Same-display existence is presence, not authority — an uncredentialed
+    # "voice" join for a self-asserted human must be refused (4009) and leave
+    # ZERO trace: no surface-transition at any witness, no voiceCapable flip.
+    ew2.clear()
+    imp_err = None
+    try:
+        impws, imp_e, imp_c, _ = await join("human1", "voice")   # no credential
+        imp_err = next((m for m in imp_e if m.get("type") == "error"), None)
+        try: await impws.close()
+        except Exception: pass
+    except Exception as e:                     # server may close 4009 pre-snapshot
+        imp_err = {"type": "error", "error": str(e)}
+    await asyncio.sleep(0.5)
+    check("T18 impostor aux (same display, no credential) is refused",
+          imp_err is not None and ("credential" in str(imp_err.get("error", "")) or "4009" in str(imp_err)),
+          str(imp_err))
+    ghost_events = [m for m in ew2 if m.get("type") == "surface-transition" and m.get("id") == "human1"]
+    check("T18 refused aux leaves zero trace (no transition at witnesses)", len(ghost_events) == 0,
+          str(ghost_events[:2]))
 
     for w in (w1, w2, v4):
         try: await w.close()
