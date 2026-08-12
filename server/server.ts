@@ -1397,7 +1397,21 @@ const BUILD = (() => {
   // PROCESS is fresh, commitTime says the CODE is — a restart of stale code
   // looks healthy on the first and stale on the second.
   const commitTime = process.env.BUILD_TIME || gitLine("show", "-s", "--format=%cI", "HEAD");
+  // A sha identifies HEAD — not the bytes actually executing. A tree with
+  // uncommitted edits reports a clean-looking sha while running modified
+  // code, which is exactly the deployment mystery this endpoint exists to
+  // end. So say so: dirty=true|false from `git status --porcelain`, or the
+  // BUILD_DIRTY env for image builds, or "unknown" when neither can answer —
+  // never a silent default that reads as clean.
+  const dirtyRaw = process.env.BUILD_DIRTY ?? (() => {
+    const out = gitLine("status", "--porcelain");
+    // gitLine returns "" both for a clean tree and for no-git; disambiguate
+    // by whether HEAD resolved — no sha from git means no git to trust.
+    if (!process.env.BUILD_SHA && !sha) return "unknown";
+    return gitLine("rev-parse", "HEAD") ? (out ? "true" : "false") : "unknown";
+  })();
   return { sha: sha || "unknown", commitTime: commitTime || "unknown",
+           dirty: dirtyRaw === "true" ? true : dirtyRaw === "false" ? false : "unknown",
            startedAt: new Date().toISOString() };
 })();
 
