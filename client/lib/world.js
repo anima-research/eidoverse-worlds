@@ -145,9 +145,16 @@ bus.on('surface-transition', ({ actor, surface, gen, retired }) => {
     voiceCapable.set(actor, gen);
   }
 });
-bus.on('performed', ({ seq }) => {
-  const timer = pendingSpeech.get(seq);
-  if (timer) { clearTimeout(timer); pendingSpeech.delete(seq); }
+bus.on('performed', ({ actor, seq, gen }) => {
+  // A receipt cancels a hold only when it matches the whole composite it was
+  // held under (B2): same seq AND same author AND same voice generation. This
+  // is the reason the protocol carries actor/gen — a receipt from a wrong actor
+  // or a stale/late generation must not satisfy this seq's hold.
+  const held = pendingSpeech.get(seq);
+  if (held && held.actor === actor && held.gen === gen) {
+    clearTimeout(held.timer);
+    pendingSpeech.delete(seq);
+  }
 });
 export const roleOf = (id) => worldRoles.get(id) ?? null;
 export const worldHasOwner = () => [...worldRoles.values()].some((r) => r.role === 'owner');
@@ -369,11 +376,18 @@ export async function applyEntry(entry, live, ctx = {}) {
         if (live && !args.spoken) {
           const say = { actor, text: args.text };
           if (voiceCapable.has(actor)) {
+            // Bind the hold to WHO is speaking and WHICH voice generation is
+            // live now (B2): the receipt that cancels it must match {actor,
+            // seq, gen}. A wrong actor, or a predecessor/successor generation's
+            // receipt, must not cancel THIS hold — otherwise a receipt born
+            // under a retired leg, submitted after reconnect, gets relabelled as
+            // the successor and suppresses a fallback that should have fired.
+            const gen = voiceCapable.get(actor);
             const timer = setTimeout(() => {
               pendingSpeech.delete(entry.seq);
               bus.emit('speech', say);
             }, 2500);
-            pendingSpeech.set(entry.seq, timer);
+            pendingSpeech.set(entry.seq, { timer, actor, gen });
           } else {
             bus.emit('speech', say);
           }

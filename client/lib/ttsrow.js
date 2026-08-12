@@ -183,17 +183,6 @@ export function ttsSection(host, onPaint = () => {}) {
    *  first-try one — two paths to the same outcome is how this panel has been
    *  drifting all day. */
   async function finishImport(handles, files) {
-    // ONE compile at a time applies to IMPORTS too (r3 review): the
-    // _inFlight guard lived only in pick(), so a second "add" click during
-    // a ~30s compile started a second 63MB graph racing the first — the
-    // exact thrash the guard exists for, through the other entrance.
-    if (_inFlight) { console.log(`[voice] already loading ${_inFlight}; ignoring import`); return; }
-    _inFlight = 'import';
-    try {
-      return await finishImportInner(handles, files);
-    } finally { _inFlight = null; }
-  }
-  async function finishImportInner(handles, files) {
     const { loadFromFiles } = await import('./voiceengines.js');
     await import('./engines.js');
     const shown = (files.find((f) => /\.onnx$/i.test(f.name)) || files[0])?.name || 'voice';

@@ -5,12 +5,25 @@
 // The impostor scenario this pins: anyone joining surface:"voice" under an
 // unreserved human's name made every listener mark that person voiceCapable
 // (hold latency on each of their says) and could send RTC stamped as them.
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const PORT = 8600 + (process.pid % 150);
 const worldsDir = mkdtempSync(join(tmpdir(), "eido-auxbind-"));
+
+// The test OWNS its credential fixture: a scratch tokens.json reserving the
+// agent names this test asserts on (hesp2, hesp3) and minting hesp2's bearer.
+// The server reads it via AGENT_TOKENS_PATH, so the proof does not depend on —
+// and cannot be contaminated by — whatever tokens.json sits in the checkout.
+// (Antra B1: a founding harness cannot classify its private setup as an
+// environment footnote; here it creates and owns exactly what it relies on.)
+const tokensPath = join(worldsDir, "tokens.json");
+writeFileSync(tokensPath, JSON.stringify({
+  "surf-lab-hesp2": { id: "hesp2" },
+  "surf-lab-hesp3": { id: "hesp3" },
+}));
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -19,7 +32,7 @@ const check = (name: string, ok: boolean, extra = "") => {
 };
 
 const server = Bun.spawn(["bun", "server/server.ts"], {
-  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "" },
+  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "", AGENT_TOKENS_PATH: tokensPath },
   stdout: "pipe", stderr: "pipe",
 });
 

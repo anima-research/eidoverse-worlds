@@ -805,7 +805,10 @@ wireBehaviorGate((w, author, verb, args) => {
 // RESERVED — a plain browser join cannot claim it — and (b) a join carrying
 // the right token is a verified agent. Hot-reloaded by mtime, like the MCPL
 // server does.
-const AGENT_TOKENS_PATH = join(ROOT, "mcpl", "tokens.json");
+// Path is env-overridable so a self-contained test can own its credential
+// fixture (a scratch tokens.json) without mutating the checkout — same posture
+// as WORLDS_DIR. Production leaves it unset and reads the real mcpl/tokens.json.
+const AGENT_TOKENS_PATH = resolve(process.env.AGENT_TOKENS_PATH ?? join(ROOT, "mcpl", "tokens.json"));
 let agentTokCache: { mtime: number; byToken: Map<string, string>; names: Set<string> } | null = null;
 function agentTokens() {
   try {
@@ -2879,14 +2882,24 @@ const server = Bun.serve({
           // anywhere: capability gates the hold, this receipt confirms the
           // performance, a timeout recovers the fallback.
           if (!c.world) return;
-          const aux = c.surface && c.surface !== "world";
-          if (!aux || c.tokenVerified !== true) {
-            ws.send(JSON.stringify({ type: "error", error: "attest is for token-verified media legs" }));
+          // B3: performance attestation is the VOICE surface's privilege alone.
+          // A token-verified but arbitrary aux leg (vr-hands, etc.) must not be
+          // able to mint a voice-performance receipt for the author's says.
+          if (c.surface !== "voice" || c.tokenVerified !== true) {
+            ws.send(JSON.stringify({ type: "error", error: "attest is for the token-verified voice leg" }));
             return;
           }
           const seq = Number(msg.seq);
           const digest = String(msg.digest ?? "").slice(0, 64);
           if (!Number.isSafeInteger(seq) || !digest) return;
+          // B2: the leg must attest under the generation it currently holds. A
+          // completion born under a RETIRED leg and submitted after reconnect
+          // carries the old gen; without this it would be broadcast stamped with
+          // the successor's c.gen and relabelled as the live generation.
+          if (msg.gen !== c.gen) {
+            ws.send(JSON.stringify({ type: "error", error: "attest surface-generation mismatch" }));
+            return;
+          }
           // the say must exist, be recent, and be THIS identity's
           const e = c.world.entries.find((x) => x.seq === seq);
           if (!e || e.verb !== "say" || e.actor !== c.id) return;

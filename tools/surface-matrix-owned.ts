@@ -8,7 +8,7 @@
 // port fails loudly instead of lending its answers.
 //
 //   bun tools/surface-matrix-owned.ts
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,8 +16,21 @@ const PORT = 8420 + (process.pid % 150);
 const worldsDir = mkdtempSync(join(tmpdir(), "eido-surfmatrix-"));
 const TOK = `surf-${Math.random().toString(36).slice(2, 10)}`;   // per-run fixture
 
+// Own the AGENT-token fixture too (Antra B1): surface-test.py needs the agent
+// bearers that reserve hesp/hesp2/hesp3/watcher2-owner, but this wrapper only
+// owned the browser JOIN_TOKEN — so the matrix silently borrowed the checkout's
+// mcpl/tokens.json. Write the fixture the matrix relies on and point the server
+// at it via AGENT_TOKENS_PATH, so the run proves WHICH tokens produced it.
+const agentTokensPath = join(worldsDir, "agent-tokens.json");
+writeFileSync(agentTokensPath, JSON.stringify({
+  "surf-lab-hesp": { id: "hesp" },
+  "surf-lab-hesp2": { id: "hesp2" },
+  "surf-lab-hesp3": { id: "hesp3" },
+  "surf-lab-w2o": { id: "watcher2-owner" },
+}));
+
 const server = Bun.spawn(["bun", "server/server.ts"], {
-  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: TOK },
+  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: TOK, AGENT_TOKENS_PATH: agentTokensPath },
   stdout: "pipe", stderr: "pipe",
 });
 const drain = async (label: string, stream: unknown) => {

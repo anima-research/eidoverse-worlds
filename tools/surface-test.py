@@ -87,6 +87,10 @@ async def main():
     # takeover — its rtc must reach NOBODY.
     w1, ew, cw, _ = await join("watcher")
     vB, eB, cB, _ = await join("hesp2", "voice", agent_token="surf-lab-hesp2")     # supersedes vA
+    # capture vB's live surface generation from its own join snapshot NOW, before
+    # eB is cleared by later vectors — the attest in T12 must echo this gen (B2).
+    _vB_snaps = [m for m in eB if m.get("type") == "snapshot"]
+    vB_gen = _vB_snaps[-1].get("gen") if _vB_snaps else None
     await asyncio.sleep(0.5)
     # capture the takeover's transition BEFORE clearing (T10 reads it)
     transition_events = [m for m in ew + e7 if m.get("type") == "surface-transition"]
@@ -129,19 +133,28 @@ async def main():
     check("T12 setup: say folded", bool(says))
     seq = says[-1]["entry"]["seq"] if says else -1
     digest = hashlib.sha256("receipt me".encode()).hexdigest()
+    # vB_gen (captured at vB's join above) is the surface generation the leg
+    # echoes in its attest (B2); the server requires it to equal c.gen.
     ew.clear(); e7.clear(); eB.clear()
-    await vB.send(json.dumps({"type": "attest", "seq": seq, "digest": digest}))
+    await vB.send(json.dumps({"type": "attest", "seq": seq, "digest": digest, "gen": vB_gen}))
     await asyncio.sleep(0.5)
     perf = [m for m in ew if m.get("type") == "performed" and m.get("id") == "hesp2" and m.get("seq") == seq]
     check("T12 valid attest broadcasts performed", bool(perf), str(perf[:1]))
     check("T12 performed carries the leg generation", bool(perf) and isinstance(perf[0].get("gen"), int))
     ew.clear(); eB.clear()
-    await vB.send(json.dumps({"type": "attest", "seq": seq, "digest": "0" * 64}))
+    await vB.send(json.dumps({"type": "attest", "seq": seq, "digest": "0" * 64, "gen": vB_gen}))
     await asyncio.sleep(0.4)
     check("T12 digest mismatch refused", not any(m.get("type") == "performed" for m in ew)
           and any(m.get("type") == "error" for m in eB))
+    # B2: a stale-generation attest (correct digest, WRONG gen) is refused —
+    # the retired-leg-after-reconnect relabel this check exists to stop.
+    ew.clear(); eB.clear()
+    await vB.send(json.dumps({"type": "attest", "seq": seq, "digest": digest, "gen": (vB_gen or 0) - 1}))
+    await asyncio.sleep(0.4)
+    check("T12 stale-generation attest refused (B2)", not any(m.get("type") == "performed" for m in ew)
+          and any(m.get("type") == "error" for m in eB))
     ew.clear(); e7.clear()
-    await p3.send(json.dumps({"type": "attest", "seq": seq, "digest": digest}))
+    await p3.send(json.dumps({"type": "attest", "seq": seq, "digest": digest, "gen": vB_gen}))
     await asyncio.sleep(0.4)
     check("T12 embodied client cannot attest", not any(m.get("type") == "performed" for m in ew))
 
