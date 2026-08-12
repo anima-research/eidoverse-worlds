@@ -441,13 +441,20 @@ function scheduleSoleCourterReach(id) {
   // re-occupies the key before the timer fires, the predecessor's repair debt
   // must not court the successor. Same object-identity guard the avatar loader
   // uses (remotes.get(id) !== r): the successor is a different object.
+  // Capture the record identity if there IS one. remotes can hold a nullish
+  // value under a present key (the surrounding code hedges remotes.get(id)?.),
+  // so a nullish capture must NOT abort the schedule (Opus-5 review): that would
+  // silently drop the last-resort reach with nothing to reschedule it. When we
+  // captured a record, the fire-time check demands the SAME object (reject a
+  // fresh successor); when we captured nothing, fall back to presence, the
+  // pre-fix behaviour, and re-check the record freshly at fire.
   const expected = remotes.get(id);
-  if (!expected) return;                          // nothing to owe a reach to
   const t = setTimeout(() => {
     _soleReach.delete(id);
-    // still unhealed, still present, still not an agent — AND still the SAME
-    // remote generation that scheduled this reach (identity, not mere presence).
-    if (!peers.has(id) && remotes.get(id) === expected && !expected.agent) offerTo(id);
+    const now = remotes.get(id);
+    // still unhealed, still present, still not an agent — and, if we pinned a
+    // record, still that SAME generation (identity, not mere presence).
+    if (!peers.has(id) && now && !now.agent && (expected ? now === expected : true)) offerTo(id);
   }, 380);                                        // > the 300ms sweep period, with margin
   _soleReach.set(id, t);
 }
