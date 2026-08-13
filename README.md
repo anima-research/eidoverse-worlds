@@ -41,8 +41,9 @@ vendored here — point `EIDOVERSE_DIR` at a checkout of
 (our fork of [SkyeShark/eidoverse-video](https://github.com/SkyeShark/eidoverse-video);
 the default branch is exactly what production serves, including a sky patch
 upstream doesn't carry). Pristine upstream `main` at
-[`8b37f0f`](https://github.com/SkyeShark/eidoverse-video/commit/8b37f0f)+
-also works. The `grass` verb loads `eidoverse/vegetation.js` from the
+[`09ffd28`](https://github.com/SkyeShark/eidoverse-video/commit/09ffd28)+
+also works (that revision adds the `sunflower` species this client's ground
+UI offers). The `grass` verb loads `eidoverse/vegetation.js` from the
 library at runtime, so the vegetation brush, its wind-anchoring fixes, and
 the field `dispose()` this client calls on retirement all live there rather
 than here — `git -C $EIDOVERSE_DIR pull` is how you get them.
