@@ -30,7 +30,8 @@ writeFileSync(agentTokensPath, JSON.stringify({
 }));
 
 const server = Bun.spawn(["bun", "server/server.ts"], {
-  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: TOK, AGENT_TOKENS_PATH: agentTokensPath },
+  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: TOK, AGENT_TOKENS_PATH: agentTokensPath,
+    FOLD_EVERY: "5" /* T22: a handful of comps must fold entries[] out from under a held say */ },
   stdout: "pipe", stderr: "pipe",
 });
 const drain = async (label: string, stream: unknown) => {

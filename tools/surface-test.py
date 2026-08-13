@@ -1,6 +1,12 @@
 import asyncio, json, websockets
 import os
-URL, TOK = os.environ.get('SURF_URL', 'ws://localhost:8940/ws'), os.environ.get('SURF_TOK', 'workbench-2026')
+# No default endpoint (review finding 10): :8940 is a PRODUCTION sequencer per
+# AGENTS.md ("NEVER develop against a port someone lives on") — a bare run of
+# this matrix must refuse, not dial a lived-in world with a default token and
+# mutate it. tools/surface-matrix-owned.ts is the owned entrypoint; it sets both.
+URL, TOK = os.environ.get('SURF_URL'), os.environ.get('SURF_TOK', 'workbench-2026')
+if not URL:
+    raise SystemExit('surface-test.py: set SURF_URL (or run via tools/surface-matrix-owned.ts, which owns its server)')
 # T12/T16 need the hesp2 legs token-verified: the target server's mcpl/tokens.json
 # must map {"surf-lab-hesp2": {"id": "hesp2"}} or both attest cases fail with
 # "attest is for token-verified media legs" — an environment gap, not a bug.
@@ -52,13 +58,20 @@ async def main():
     await v2.send(json.dumps({"type": "rtc", "to": "human1", "payload": {"x": 1}}))
     await asyncio.sleep(0.5)
     check("T4 aux rtc delivered to embodied target", any(m.get("type") == "rtc" and m.get("from") == "hesp" for m in e5))
+    # Per-surface ADDRESSING (review finding 7): default toSurface="world"
+    # reaches ONLY the primary — the old any-leg fanout answered every offer
+    # twice (both of the offerer's legs got answers: SDP glare in exactly the
+    # human-with-voice-leg case). The leg is reached by naming it.
     e2.clear(); e3.clear()
     await h1.send(json.dumps({"type": "rtc", "to": "hesp", "payload": {"y": 2}}))
     await asyncio.sleep(0.5)
-    got_primary = any(m.get("type") == "rtc" for m in e1)
-    got_voice = any(m.get("type") == "rtc" for m in e3)
-    check("T4 rtc to identity reaches primary", got_primary)
-    check("T4 rtc to identity reaches voice leg too", got_voice)
+    check("T4 rtc to identity reaches primary", any(m.get("type") == "rtc" for m in e1))
+    check("T4 unaddressed rtc does NOT reach the voice leg (glare guard)",
+          not any(m.get("type") == "rtc" for m in e3), str(e3[-2:]))
+    e3.clear()
+    await h1.send(json.dumps({"type": "rtc", "to": "hesp", "toSurface": "voice", "payload": {"y": 3}}))
+    await asyncio.sleep(0.5)
+    check("T4 toSurface:'voice' reaches exactly the voice leg", any(m.get("type") == "rtc" for m in e3), str(e3[-2:]))
 
     # T5: roster honesty — human sees ONE hesp (aux invisible)
     arrivals = [m for m in e5 if m.get("type") == "snapshot"]
@@ -103,7 +116,7 @@ async def main():
 
     # T9 (B2): rtc carries the sender generation
     eB.clear(); ew.clear()
-    await w1.send(json.dumps({"type": "rtc", "to": "hesp2", "payload": {"z": 3}}))
+    await w1.send(json.dumps({"type": "rtc", "to": "hesp2", "toSurface": "voice", "payload": {"z": 3}}))
     await asyncio.sleep(0.5)
     stamped = [m for m in eB if m.get("type") == "rtc"]
     check("T9 rtc stamped with fromGen", bool(stamped) and isinstance(stamped[0].get("fromGen"), int), str(stamped[:1]))
@@ -245,6 +258,90 @@ async def main():
     ghost_events = [m for m in ew2 if m.get("type") == "surface-transition" and m.get("id") == "human1"]
     check("T18 refused aux leaves zero trace (no transition at witnesses)", len(ghost_events) == 0,
           str(ghost_events[:2]))
+
+    # T19 (review finding 2): admission precedes takeover — a join that will
+    # be REFUSED must not destroy the genuine leg it duels. Uncredentialed
+    # voice join for hesp2 while hesp2's bound leg is live: refusal, no
+    # retirement broadcast, and the genuine leg's socket still answers.
+    p5, e10, c10, _ = await join("hesp2", agent_token="surf-lab-hesp2")
+    v5, e11, c11, _ = await join("hesp2", "voice", agent_token="surf-lab-hesp2")
+    await asyncio.sleep(0.4)
+    ew2.clear()
+    try:
+        impws2, imp2_e, imp2_c, _ = await join("hesp2", "voice")   # no credential
+        try: await impws2.close()
+        except Exception: pass
+    except Exception: pass
+    await asyncio.sleep(0.5)
+    check("T19 refused takeover leaves the genuine leg alive (no 4002)", c11() is None, str(c11()))
+    t19_ghost = [m for m in ew2 if m.get("type") == "surface-transition" and m.get("id") == "hesp2"]
+    check("T19 refused takeover broadcasts no transition", len(t19_ghost) == 0, str(t19_ghost[:2]))
+    e11.clear()
+    await v5.send(json.dumps({"type": "attest", "seq": 999999, "gen": 1, "digest": "00"}))
+    await asyncio.sleep(0.4)
+    check("T19 genuine leg still answers after the attempt (error frame, not silence)",
+          any(m.get("type") == "error" for m in e11), str(e11[-2:]))
+
+    # T20 (review finding 6): travel reaps — "leave A, join B" never runs the
+    # ws close handler, so the reap must live on the travel path itself.
+    ew2.clear()
+    await p5.send(json.dumps({"type": "join", "token": TOK, "id": "hesp2", "world": "elsewhere", "agent": True,
+                              "agentToken": "surf-lab-hesp2"}))
+    await asyncio.sleep(0.6)
+    t20_ret = [m for m in ew2 if m.get("type") == "surface-transition" and m.get("id") == "hesp2"
+               and m.get("surface") == "voice" and m.get("gen") is None]
+    check("T20 travel retires the voice leg at the old world's witnesses", len(t20_ret) == 1, str(ew2[-4:]))
+    check("T20 traveled-from voice leg is closed (reaped 4007)",
+          c11() is not None and c11()[0] == 4007, str(c11()))
+
+    # T21 (review finding 4): a surface that sanitizes to EMPTY is refused,
+    # never promoted to "world" — promotion gave a malformed aux join takeover
+    # power over the user's own body.
+    p6, e12, c12, _ = await join("hesp3", agent_token="surf-lab-hesp3")
+    await asyncio.sleep(0.3)
+    b1, e13, c13, _ = await join("hesp3", "!!!", agent_token="surf-lab-hesp3")
+    await asyncio.sleep(0.5)
+    check("T21 empty-sanitizing surface refused 4005", c13() is not None and c13()[0] == 4005, str(c13()))
+    check("T21 the embodied primary survives its malformed accessory", c12() is None, str(c12()))
+
+    # T22 (review finding 3): attest survives a fold. The owned wrapper sets
+    # FOLD_EVERY=5, so a handful of comps folds entries[] out from under the
+    # say — the receipt must still resolve (recentSays ring) and broadcast
+    # `performed`.
+    v6, e14, c14, _ = await join("hesp3", "voice", agent_token="surf-lab-hesp3")
+    await asyncio.sleep(0.4)
+    await p6.send(json.dumps({"type": "verb", "verb": "say", "args": {"text": "folded but performed"}}))
+    await asyncio.sleep(0.4)
+    say_seq = None
+    for m in reversed(ew2):
+        if m.get("type") == "log" and m.get("entry", {}).get("verb") == "say"            and m["entry"].get("args", {}).get("text") == "folded but performed":
+            say_seq = m["entry"]["seq"]; break
+    for i in range(8):   # trip at least one fold past the say
+        await p6.send(json.dumps({"type": "verb", "verb": "comp", "args": {"id": f"t22-{i}", "type": "note", "data": {"i": i}}}))
+    await asyncio.sleep(0.6)
+    import hashlib
+    dig = hashlib.sha256("folded but performed".encode()).hexdigest()
+    ew2.clear()
+    gen6 = None
+    for m in e14:
+        if m.get("type") == "snapshot": gen6 = m.get("gen")
+    await v6.send(json.dumps({"type": "attest", "seq": say_seq, "gen": gen6, "digest": dig}))
+    await asyncio.sleep(0.5)
+    check("T22 attest resolves a folded-out say (recentSays ring) and broadcasts performed",
+          any(m.get("type") == "performed" and m.get("seq") == say_seq for m in ew2),
+          f"seq={say_seq} gen={gen6} tail={str(ew2[-3:])}")
+
+    # T23 (review finding 8): the bound voice leg paces captions — presence
+    # lanes admit the same authority attest does.
+    ew2.clear()
+    await v6.send(json.dumps({"type": "caption", "text": "paced from the leg"}))
+    await asyncio.sleep(0.4)
+    check("T23 caption from the bound voice leg reaches witnesses",
+          any(m.get("type") == "caption" and m.get("text") == "paced from the leg" for m in ew2), str(ew2[-3:]))
+
+    for w in (p5, v5, p6, b1, v6):
+        try: await w.close()
+        except Exception: pass
 
     for w in (w1, w2, v4):
         try: await w.close()

@@ -84,6 +84,9 @@ export class WorldLog {
   private snapBytes = 0;      // byte offset in log.jsonl just past snapSeq
   private logBytes = 0;
   private dirtySinceFold = 0;
+  /** The last ≤256 say entries, fold-proof — the attest handler's lookup
+   *  table (#57, review finding 3). See append(). */
+  recentSays: LogEntry[] = [];
   private logPath: string;
   private posesPath: string;
   private snapPath: string;
@@ -245,6 +248,17 @@ export class WorldLog {
     const seq = this.snapSeq + this.entries.length + 1;
     const entry: LogEntry = { seq, ts: Date.now(), actor, verb, args };
     this.entries.push(entry);
+    // #57 attest lookup (review finding 3): performance receipts resolve a
+    // say by seq, but fold() empties entries[] every FOLD_EVERY appends — a
+    // say folded out before its receipt arrives (1-2s of synthesis on a busy
+    // world) would make a valid attest silently vanish, and every listener's
+    // hold would fall back ON TOP of the real voice audio. Says ride their
+    // own small ring that folding never touches; the 300s freshness rule in
+    // the attest handler is what actually bounds staleness.
+    if (verb === "say") {
+      this.recentSays.push(entry);
+      if (this.recentSays.length > 256) this.recentSays.shift();
+    }
     const line = JSON.stringify(entry) + "\n";
     // Batched, not per-entry (§15.1, 7d): seq, the memory tail, logBytes
     // accounting, and the live fold stay SYNCHRONOUS — every reader of
@@ -382,6 +396,7 @@ export class World {
 
   // the authored plane, read through the log
   get entries() { return this.log.entries; }
+  get recentSays() { return this.log.recentSays; }
   get state() { return this.log.state; }
   get snapSeq() { return this.log.snapSeq; }
   get poses() { return this.log.poses; }

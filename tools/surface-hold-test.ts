@@ -68,7 +68,9 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   await say("norrin", "unreceipted line");
   stub.bus.emit("performed", { actor: "norrin", seq: receipted, gen: 7 });
   await sleep(HOLD_MS + 400);
-  check("receipted say never falls back to local speech", !spoken.some((s) => s.text === "receipted line"),
+  // (the receipt's display-only re-emit carries performed:true — §8; a
+  // FALLBACK is a speech event without it)
+  check("receipted say never falls back to local speech", !spoken.some((s) => s.text === "receipted line" && !s.performed),
     JSON.stringify(spoken));
   check("the OTHER pending say still falls back (receipt cancelled exactly one)",
     spoken.filter((s) => s.text === "unreceipted line").length === 1, JSON.stringify(spoken));
@@ -97,7 +99,7 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   check("predecessor-generation receipt does not cancel the hold (falls back — stale leg)",
     spoken.filter((s) => s.text === "predecessor-gen receipt").length === 1, JSON.stringify(spoken));
   check("successor-generation receipt DOES cancel the hold (a takeover leg performed it — no double-speak)",
-    spoken.filter((s) => s.text === "successor-gen receipt").length === 0, JSON.stringify(spoken));
+    spoken.filter((s) => s.text === "successor-gen receipt" && !s.performed).length === 0, JSON.stringify(spoken));
 }
 
 // ── 3. no receipt → falls back exactly once ─────────────────────────────────
@@ -197,6 +199,34 @@ const say = (actor: string, text: string, extra: Record<string, unknown> = {}) =
   check("spoken:true with a matching receipt never speaks locally (the leg performed it)",
     spoken.filter((s) => s.text === "spoken flag, receipted").length === 0, JSON.stringify(spoken));
   stub.bus.emit("surface-transition", { actor: "miri", surface: "voice", gen: null, retired: 21 });
+}
+
+// ── 8. receipt SUCCESS still performs visually (review finding 9) ───────────
+//    A cancel-only receipt made the system look broken exactly when it worked:
+//    fallback drew bubble+mouth, success drew nothing. A matching receipt
+//    re-emits 'speech' with performed:true — display consumers draw, TTS
+//    consumers skip. Not for spoken:true says: that field owns display/caption
+//    continuation, so a caption-paced bubble is never drawn twice.
+{
+  stub.bus.emit("surface-transition", { actor: "vex", surface: "voice", gen: 31, retired: null });
+  spoken.length = 0;
+  await say("vex", "performed and visible");
+  stub.bus.emit("performed", { actor: "vex", seq, gen: 31 });
+  await sleep(150);
+  const disp = spoken.filter((s) => s.text === "performed and visible");
+  check("receipt re-emits a display-only speech (performed: true)",
+    disp.length === 1 && disp[0].performed === true, JSON.stringify(spoken));
+  await sleep(HOLD_MS + 400);
+  check("…exactly once — the cancelled fallback never fires on top",
+    spoken.filter((s) => s.text === "performed and visible").length === 1, JSON.stringify(spoken));
+
+  spoken.length = 0;
+  await say("vex", "caption-paced line", { spoken: true, utt: 9, t0: Date.now() });
+  stub.bus.emit("performed", { actor: "vex", seq, gen: 31 });
+  await sleep(150);
+  check("spoken:true + receipt draws NO display re-emit (captions own that plane)",
+    spoken.length === 0, JSON.stringify(spoken));
+  stub.bus.emit("surface-transition", { actor: "vex", surface: "voice", gen: null, retired: 31 });
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

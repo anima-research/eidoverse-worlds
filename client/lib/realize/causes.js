@@ -60,6 +60,15 @@ bus.on('performed', ({ actor, seq, gen }) => {
   if (held && held.actor === actor && gen >= held.gen) {
     clearTimeout(held.timer);
     pendingSpeech.delete(seq);
+    // The SUCCESS path still performs VISUALLY (review finding 9): a receipt
+    // proves the voice lane carried the audio, but bubbles/mouth ride bus
+    // events — cancel-only receipts made the system look broken exactly when
+    // it worked (fallback drew everything, success drew nothing). performed:
+    // true keeps TTS out (tts.js speakOwnSays skips it — the leg already made
+    // the sound). Skipped when the say carried spoken display metadata: that
+    // is precisely the field antra's spec leaves in charge of display/caption
+    // continuation, so a caption-paced bubble is not drawn twice.
+    if (!held.spoken) bus.emit('speech', { ...held.say, performed: true });
   }
 });
 
@@ -102,7 +111,7 @@ export function handleLiveCause(entry) {
           pendingSpeech.delete(entry.seq);
           bus.emit('speech', say);
         }, PERFORMANCE_TIMEOUT_MS);
-        pendingSpeech.set(entry.seq, { timer, actor, gen });
+        pendingSpeech.set(entry.seq, { timer, actor, gen, say, spoken: args.spoken === true });
       } else {
         bus.emit('speech', say);
       }
