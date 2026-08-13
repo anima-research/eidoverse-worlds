@@ -496,6 +496,16 @@ async function handle(msg) {
       bus.emit('rtc', msg);
       break;
 
+    // #57 B1/B4 presence messages (never logged):
+    // performed — an authenticated voice leg attested it aired this say;
+    // surface-transition — an aux leg joined or took over (capability signal).
+    case 'performed':
+      bus.emit('performed', { actor: msg.id, seq: msg.seq, gen: msg.gen });
+      break;
+    case 'surface-transition':
+      bus.emit('surface-transition', { actor: msg.id, surface: msg.surface, gen: msg.gen, retired: msg.retired });
+      break;
+
     case 'whisper':
       logWhisper(msg);
       break;
@@ -642,6 +652,10 @@ async function onSnapshot(msg) {
   }
   if (typeof msg.throughSeq === 'number' && msg.throughSeq > lastSeq) lastSeq = msg.throughSeq;
   bus.emit('net', net);
+  // #57 matrix 7: who has which aux legs live NOW (surface-transition keeps it
+  // current after this). Consumers key hold-then-fallback TTS on it.
+  bus.emit('surfaces', [...(msg.present ?? []),
+    ...(msg.yourSurfaces?.length ? [{ id: msg.you, surfaces: msg.yourSurfaces }] : [])]);
 
   if (msg.recording && !onSnapshot._noted) {
     onSnapshot._noted = true;

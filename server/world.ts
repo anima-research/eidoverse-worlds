@@ -50,6 +50,17 @@ export type Client = {
   auth?: HnSession;    // archipelago-home session bound at WS upgrade (verified human)
   sub?: string;        // durable principal id when authenticated (`human:discord:…`)
   superseded?: boolean; // kicked by identity takeover — don't let its stale pose overwrite the successor's
+  tokenVerified?: boolean; // this leg presented the identity's own bearer at join
+  auxBound?: boolean;  // this aux leg is bound to the primary's identity authority (token bearer OR matching login sub) — the B1 admission result, reused by the B3 attest gate
+  gen?: number;        // surfaceSession (#57 B2): server-issued transport epoch for THIS leg.
+                       // Monotonic, never reused. Every rtc/attestation message is stamped with
+                       // it, and a superseded generation's messages are refused structurally —
+                       // takeover retires the GENERATION, not just the socket.
+  surface?: string;    // (name, surface) session model: "world" = the embodied primary (default);
+                       // anything else = an auxiliary media leg (voice, vr-hands, …) — invisible,
+                       // poseless, log-mute, rtc-capable, and REAPED when its primary dies.
+                       // Per-surface last-writer-wins replaces the flat one-body rule (2026-08-07;
+                       // prior art: Discord voice legs keyed to gateway sessions, XMPP resources).
   renderer?: boolean;  // donates rendering: can answer snap requests for its world
   bcRing?: unknown[];  // dev crash forensics (?bc=1): last N breadcrumbs, printed on close
   // rate windows: a griefer or a stuck client gets silence, not fanout

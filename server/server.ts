@@ -183,6 +183,10 @@ const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
 
 let nextClientNum = 1;
 const clients = new Map<unknown, Client>();
+// #57 B2: transport-epoch source. Global (not per-world) so a generation number
+// never collides across worlds or after a world reload; never persisted — an
+// epoch outliving the process would defeat its purpose.
+let GEN = 0;
 
 /** The placeholder tier's bbox side-channel, sent AFTER the snapshot as its
  *  own message: summaries are async, and the join handler's synchronous
@@ -259,6 +263,27 @@ const server = Bun.serve({
         }
         if (c.world) {
           c.world.clients.delete(c);
+          // AUX LEG DEATH IS AN EVENT (r-review): aux legs ride the spectator
+          // path, so their close used to broadcast NOTHING — voiceCapable on
+          // every other client kept the dead leg's gen forever, and each say
+          // from that actor waited the full performance window against a leg
+          // that could never perform. Retirement carries the dying gen so a
+          // client that already saw a successor's transition (out-of-order
+          // delivery) knows to ignore it.
+          // ...but only a leg that was ACCEPTED ever was a session. c.world is
+          // assigned before the aux checks, so a REFUSED aux (orphan, cap,
+          // B1-unbindable) also passes through here — and broadcasting its
+          // "retirement" would announce a surface-transition for a leg that
+          // never existed, making every listener toggle voiceCapable for the
+          // victim of an impersonation attempt. The gen is issued exactly on
+          // acceptance; no gen, no session, no event. (Found by the B1 impostor
+          // vector: refusal at the door is only half the contract — the other
+          // half is that the refused leg leaves no trace in anyone's model.)
+          if ((c.surface ?? "world") !== "world" && !c.superseded && c.gen != null) {
+            const retire = JSON.stringify({ type: "surface-transition",
+              id: c.id, surface: c.surface, gen: null, retired: c.gen ?? null });
+            for (const t of c.world.clients) t.ws.send(retire);
+          }
           if (!c.spectator) {
             if (!c.superseded) {
               try { c.world.rememberPose(c.id, c.lastPose); } // sleep where you stood
@@ -266,6 +291,26 @@ const server = Bun.serve({
             }
             c.world.broadcast({ type: "leave", id: c.id });
             c.world.bhv.onPresence("leave", c.id);
+            // The primary is gone: reap every aux leg of this identity, unless a
+            // successor took over (its auxes transfer to the new primary — same
+            // identity, and takeover means re-arrival, not departure).
+            if (!c.superseded) {
+              for (const t of [...c.world.clients]) {
+                if (t.id === c.id && (t.surface ?? "world") !== "world") {
+                  // Retire BEFORE unmapping (r2 review): this loop deletes the
+                  // aux from `clients` before closing its socket, so the ws
+                  // close handler finds nothing and its retirement broadcast
+                  // never fires for reaped legs — the exact silent-death hole,
+                  // one caller upstream. Broadcast here, then unmap.
+                  const reapRetire = JSON.stringify({ type: "surface-transition",
+                    id: t.id, surface: t.surface, gen: null, retired: t.gen ?? null });
+                  for (const o of c.world.clients) if (o !== t) o.ws.send(reapRetire);
+                  c.world.clients.delete(t); clients.delete(t.ws);
+                  t.ws.close?.(4007, "primary session gone");
+                  console.log(`[world:${c.world.name}] ${c.id}/${t.surface} reaped — primary gone`);
+                }
+              }
+            }
           }
           console.log(`[world:${c.world.name}] ${describe(c.world)} — ${c.id} ${c.spectator ? "stopped watching" : "left"}`);
         }
@@ -276,6 +321,11 @@ const server = Bun.serve({
     message(ws, raw) {
       const c = clients.get(ws);
       if (!c) return;
+      // B2 (#57, matrix 3): a superseded generation is DEAD to the world even
+      // while its socket drains. Takeover marks the predecessor before closing
+      // it, and ws close is asynchronous — without this gate a delayed rtc/SDP
+      // from the old leg could still reach (and wedge) the successor's peers.
+      if (c.superseded) return;
       let msg: any;
       try { msg = JSON.parse(String(raw)); } catch { return; }
 
@@ -352,7 +402,11 @@ const server = Bun.serve({
             : a.includes("/") ? a
             : (avatarRoster().find((r) => r.name === a)?.path ?? "eidoverse/assets/vrms/claude.vrm");
         }
-          c.spectator = Boolean(msg.spectate);
+          // Surface: which leg of this identity is arriving. Sanitized like a
+          // world name; unknown values are allowed (the vocabulary belongs to
+          // clients), but "world" alone gets a body.
+          c.surface = String(msg.surface ?? "world").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 16) || "world";
+          c.spectator = Boolean(msg.spectate) || c.surface !== "world";
           c.agent = Boolean(msg.agent);
           c.renderer = Boolean(msg.renderer);
           if (c.renderer) c.spectator = true; // renderers are invisible by definition
@@ -382,6 +436,7 @@ const server = Bun.serve({
               const v = verifyToken(tokStr, { issuerId: HN_ISSUER_KEY, iss: HN_ISS, aud: HN_AUD, requireScopes: ["worlds:join"] });
               if (v.ok) tokId = v.payload.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || v.payload.sub;
             }
+            if (tokId && tokId.toLowerCase() === c.id.toLowerCase()) c.tokenVerified = true;
             if (at.names.has(c.id.toLowerCase()) && tokId?.toLowerCase() !== c.id.toLowerCase()) {
               console.log(`[perm] join refused: "${c.id}" is a reserved agent name (token ${tokStr ? "unrecognized" : "missing"})`);
               ws.send(JSON.stringify({ type: "error", error: `"${c.id}" is a reserved agent name` }));
@@ -410,18 +465,96 @@ const server = Bun.serve({
           // (half-open socket, zombie reconnect) is kicked when its identity
           // reconnects, instead of the two rubberbanding over one avatar.
           // No leave broadcast: the identity isn't leaving, it's re-arriving.
-          if (!c.spectator) {
+          // Takeover is PER (id, surface): a fresh world session kicks only the
+          // stale world session; a fresh voice leg kicks only the stale voice
+          // leg. Plain spectators (surface "world" + spectate flag) never duel.
+          let retiredGen: number | undefined;
+          if (!(c.spectator && c.surface === "world")) {
             for (const other of [...w.clients]) {
-              if (other !== c && other.id === c.id && !other.spectator) {
+              if (other !== c && other.id === c.id
+                  && (other.surface ?? "world") === c.surface
+                  && !(other.spectator && (other.surface ?? "world") === "world")) {
                 other.superseded = true;
+                retiredGen = other.gen;
                 w.clients.delete(other);
                 clients.delete(other.ws);
                 other.ws.close?.(4002, "session takeover");
-                console.log(`[world:${w.name}] ${c.id} takeover — stale session kicked`);
+                console.log(`[world:${w.name}] ${c.id}/${c.surface} takeover — gen ${other.gen} retired`);
               }
             }
           }
+          // An aux leg without a living primary is an orphan mic: refuse it.
+          if (c.surface !== "world") {
+            const primary = [...w.clients].find(t => t !== c && t.id === c.id && (t.surface ?? "world") === "world" && !t.spectator);
+            if (!primary) {
+              ws.send(JSON.stringify({ type: "error", error: `no embodied "${c.id}" here to attach a ${c.surface} leg to — join the world first` }));
+              ws.close(4008, "aux without primary");
+              // (c is not yet in w.clients here — add happens after these
+              // checks — so only the global map needs cleaning. A w.clients
+              // delete would be a no-op that misreads as "joiner counted".)
+              clients.delete(ws);
+              return;
+            }
+            // B1 (#57 review): an aux leg binds to the PRIMARY'S IDENTITY
+            // AUTHORITY, or it does not attach. Same-display-name existence is
+            // presence, not authority: without this check, anyone could join
+            // surface:"voice" under an unreserved human's name — every
+            // listener marks that person voiceCapable (adding hold latency to
+            // each of their says) and RTC packets go out stamped as them.
+            // Impersonation and denial in one seam. The binding, per review:
+            //   · reserved agents: this leg presented the agent's own bearer
+            //     (tokenVerified — same rule attest already uses);
+            //   · authenticated humans: this leg's verified session subject
+            //     equals the PRIMARY's (same person, proven, not asserted);
+            //   · self-asserted primary with no bindable credential: REFUSE.
+            //     Guessing would bless exactly the impostor this exists to
+            //     stop; the primary can log in and rejoin to earn aux legs.
+            const auxBound = c.tokenVerified === true
+              || (typeof primary.sub === "string" && primary.sub.length > 0 && c.sub === primary.sub);
+            // Remember the binding so the attest gate (B3) admits the SAME
+            // identity authority B1 does — a sub-bound human's voice leg, not
+            // only a token-verified agent leg (Opus-5 review: gating attest on
+            // tokenVerified alone silently barred a logged-in human's own voice
+            // leg, holding then double-speaking every say they voiced).
+            if (auxBound) c.auxBound = true;
+            if (!auxBound) {
+              console.log(`[world:${w.name}] aux refused: "${c.id}"/${c.surface} has no binding to the primary's identity authority`);
+              ws.send(JSON.stringify({ type: "error", error: `a ${c.surface} leg for "${c.id}" must present that identity's credential (agent bearer, or the primary's own login)` }));
+              ws.close(4009, "unbindable aux");
+              clients.delete(ws);
+              return;
+            }
+            // B3 (#57): bounded legs per identity — takeover replaces, it does
+            // not stack, so 4 DISTINCT surfaces is generous; more is a leak or
+            // an attack, and either wants a refusal, not a collection.
+            const auxCount = [...w.clients].filter(t => t.id === c.id && (t.surface ?? "world") !== "world").length;
+            if (auxCount >= 4) {
+              ws.send(JSON.stringify({ type: "error", error: "too many auxiliary legs for this identity" }));
+              ws.close(4008, "aux cap");
+              // (c is not yet in w.clients here — add happens after these
+              // checks — so only the global map needs cleaning. A w.clients
+              // delete would be a no-op that misreads as "joiner counted".)
+              clients.delete(ws);
+              return;
+            }
+          }
+          c.gen = ++GEN;   // B2: this leg's surfaceSession, issued on acceptance
           w.clients.add(c);
+          // B4 (#57): a same-surface takeover must be VISIBLE to subscribers —
+          // the lab found a listener bound to a dead voice leg until page
+          // reload. This event is the no-reload path: "retire the old peer,
+          // negotiate the current generation." Aux surfaces only: a world-body
+          // takeover already re-arrives through presence.
+          // Broadcast on EVERY aux join, not only takeovers (retired: null on a
+          // first join): listeners key their hold-then-fallback TTS on "does
+          // the author have a live voice leg", and a leg that joins after
+          // their snapshot would otherwise be invisible — stale capability in
+          // the exact direction that causes double-speak.
+          if (c.surface && c.surface !== "world") {
+            const transition = JSON.stringify({ type: "surface-transition",
+              id: c.id, surface: c.surface, gen: c.gen, retired: retiredGen ?? null });
+            for (const t of w.clients) if (t !== c) t.ws.send(transition);
+          }
           // A brand-new world belongs to whoever first walks into it embodied:
           // the grant goes through the log like any other fact, actor "world".
           // (Pre-existing ownerless worlds stay OPEN — granting their first
@@ -442,6 +575,13 @@ const server = Bun.serve({
             type: "snapshot",
             world: w.name,
             you: c.id,
+            gen: c.gen,   // your surfaceSession — echo it in attestations
+            // your OWN live aux legs — people[] excludes self, and a page that
+            // reconnects while its voice leg lives must still hold-then-fallback
+            // its own says rather than double-speak next to its own voice.
+            yourSurfaces: [...w.clients]
+              .filter(x => x !== c && x.id === c.id && (x.surface ?? "world") !== "world")
+              .map(x => ({ surface: x.surface, gen: x.gen })),
             recording: RECORD,
             // The world as it is, then only what has happened since. A joiner's
             // cost is now the size of the WORLD, not the length of its history.
@@ -461,6 +601,11 @@ const server = Bun.serve({
               // else's mid-ragdoll frame (#61). Same normalization `restore`
               // above already gets via rememberPose.
               id: o.id, avatar: o.avatar, pose: settledPose(o.lastPose), agent: o.agent,
+              // #57 matrix 7: which aux legs this identity has live NOW —
+              // inspectable surface summary on the one roster, never a second body
+              surfaces: [...w.clients]
+                .filter(x => x.id === o.id && (x.surface ?? "world") !== "world")
+                .map(x => ({ surface: x.surface, gen: x.gen })),
             })),
           }));
           sendGeomFollowup(w, c);
@@ -756,12 +901,65 @@ const server = Bun.serve({
           // logged for the same reason — but unlike a whisper, a stale SDP is
           // worthless (an offer for a peer who left answers nothing), so there
           // is no pending queue: absent recipient = silently dropped.
-          if (!c.world || c.spectator) return;
+          const aux = c.surface && c.surface !== "world";
+          if (!c.world || (c.spectator && !aux)) return;
           const rto = String(msg.to ?? "").slice(0, 64);
           if (!rto || msg.payload == null) return;
           if (JSON.stringify(msg.payload).length > 20000) return; // SDP-sized, not file-sized
-          const rpacket = JSON.stringify({ type: "rtc", from: c.id, to: rto, payload: msg.payload });
-          for (const t of c.world.clients) if (t.id === rto && !t.spectator) t.ws.send(rpacket);
+          const rpacket = JSON.stringify({ type: "rtc", from: c.id, to: rto, payload: msg.payload,
+            // B2: receivers key peers by (id, surface, gen) — a packet from a
+            // generation you don't currently know is a predecessor's ghost; drop it.
+            fromGen: c.gen, fromSurface: c.surface ?? "world" });
+          // Delivery: embodied sessions and aux media legs both hear signaling;
+          // a voice leg IS an rtc endpoint even though it renders as nothing.
+          for (const t of c.world.clients)
+            if (t.id === rto && (!t.spectator || (t.surface && t.surface !== "world"))) t.ws.send(rpacket);
+          return;
+        }
+        case "attest": {
+          // B1 (#57): the per-utterance performance receipt. ONLY message an
+          // aux media leg is allowed beyond signalling — and only for its own
+          // identity's says. The server verifies, then broadcasts `performed`
+          // (presence-grade, unlogged — like typing): listeners that were
+          // HOLDING local TTS on the author's voice capability now skip;
+          // everyone else ignores it. No boolean is inferred from presence
+          // anywhere: capability gates the hold, this receipt confirms the
+          // performance, a timeout recovers the fallback.
+          if (!c.world) return;
+          // B3: performance attestation is the VOICE surface's privilege alone,
+          // and only from a leg BOUND to the identity's authority (the same B1
+          // admission test — token bearer OR the primary's own login sub). A
+          // vr-hands or otherwise non-voice aux leg cannot mint a voice receipt;
+          // and a sub-bound human's voice leg CAN (Opus-5 review: gating on
+          // tokenVerified alone barred exactly that legitimate leg).
+          if (c.surface !== "voice" || c.auxBound !== true) {
+            ws.send(JSON.stringify({ type: "error", error: "attest is for the identity's bound voice leg" }));
+            return;
+          }
+          const seq = Number(msg.seq);
+          const digest = String(msg.digest ?? "").slice(0, 64);
+          if (!Number.isSafeInteger(seq) || !digest) return;
+          // B2: the leg must attest under the generation it currently holds. A
+          // completion born under a RETIRED leg and submitted after reconnect
+          // carries the old gen; without this it would be broadcast stamped with
+          // the successor's c.gen and relabelled as the live generation.
+          if (msg.gen !== c.gen) {
+            ws.send(JSON.stringify({ type: "error", error: "attest surface-generation mismatch" }));
+            return;
+          }
+          // the say must exist, be recent, and be THIS identity's
+          const e = c.world.entries.find((x) => x.seq === seq);
+          if (!e || e.verb !== "say" || e.actor !== c.id) return;
+          if (Date.now() - (e.ts ?? 0) > 300_000) return;   // stale receipt: refuse
+          const text = String((e.args as Record<string, unknown>)?.text ?? "");
+          const want = new Bun.CryptoHasher("sha256").update(text).digest("hex");
+          if (digest !== want) {
+            ws.send(JSON.stringify({ type: "error", error: "attest digest mismatch" }));
+            return;
+          }
+          const performed = JSON.stringify({ type: "performed",
+            id: c.id, seq, gen: c.gen, surface: c.surface });
+          for (const t of c.world.clients) t.ws.send(performed);
           return;
         }
         case "typing": {
