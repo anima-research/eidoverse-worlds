@@ -35,7 +35,7 @@ const mcpl = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
 });
 
 /** Minimal MCPL 0.5 host: initialize, grant, then request/notification I/O. */
-async function connectHost(token: string, query = "") {
+async function connectHost(token: string, query = "", mode: "accept" | "decline" | "mute" = "accept") {
   const ws = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=${token}${query}`);
   let nextId = 10;
   const pending = new Map<number, (m: any) => void>();
@@ -49,7 +49,15 @@ async function connectHost(token: string, query = "") {
     const m = JSON.parse(String(ev.data));
     if (m.id !== undefined && pending.has(m.id)) { pending.get(m.id)!(m); pending.delete(m.id); return; }
     inbound.push(m);
-    if (m.id !== undefined && m.method) rpc({ jsonrpc: "2.0", id: m.id, result: {} }); // ack server Requests
+    if (m.id !== undefined && m.method) {
+      if (m.method === "channels/changed" && mode !== "accept") {
+        if (mode === "mute") return;                       // never answer: server must fail closed
+        const added = (m.params?.added ?? []) as { id: string }[];
+        rpc({ jsonrpc: "2.0", id: m.id, result: { results: added.map((c) => ({ id: c.id, accepted: false, reason: "test_decline" })) } });
+        return;
+      }
+      rpc({ jsonrpc: "2.0", id: m.id, result: {} });       // ack server Requests
+    }
   };
   await new Promise<void>((res, rej) => {
     const t = setTimeout(() => rej(new Error("open timeout")), 6000);
@@ -164,6 +172,42 @@ try {
   const conflict = await founder.request("channels/open", { channelId: "world:annex", type: "world", address: { world: "commons" } });
   check("conflicting channelId+address is -32602", conflict.error?.code === -32602, JSON.stringify(conflict.error));
   founder.ws.close();
+
+  // ── 4d. REGRESSION (round-3 defect 1): dialing your OWN world must be fine ─
+  // v3 gated `auth.world` whenever ?world= was present at all, so naming your
+  // own home refused where omitting it admitted — bricking fresh deployments.
+  const ownWorld = await connectHost("bound-token", "&world=commons");
+  await sleep(1200);
+  const ow = await ownWorld.request("channels/list", {});
+  check("dialing your OWN minted world is not 'founding'", ow.result?.channels?.[0]?.id === "world:commons", JSON.stringify(ow.result));
+  ownWorld.ws.close();
+
+  // ── 4e. REGRESSION (round-3 defect 2): channels/changed carries the epoch ──
+  // It is the client's ONLY epoch source; v3 dropped the field and froze every
+  // client at 0 while the server advanced.
+  const eh = await connectHost("roamer-token");
+  await sleep(1200);
+  await eh.request("channels/open", { type: "world", address: { world: "annex" } });
+  await sleep(600);
+  const ch = eh.inbound.find((m) => m.method === "channels/changed");
+  check("channels/changed descriptor carries metadata.epoch (§3.2.3d)",
+    typeof ch?.params?.added?.[0]?.metadata?.epoch === "number", JSON.stringify(ch?.params?.added?.[0]?.metadata));
+  eh.ws.close();
+
+  // ── 4f. prepare/commit REFUSAL — the path the suite never exercised ───────
+  const decliner = await connectHost("roamer-token", "", "decline");
+  await sleep(1200);
+  const declined = await decliner.request("channels/open", { type: "world", address: { world: "annex" } });
+  check("host decline aborts the join with -32017", declined.error?.code === -32017, JSON.stringify(declined.error));
+  const stillHome = await decliner.request("channels/list", {});
+  check("declined join left the body where it was", stillHome.result?.channels?.[0]?.id === "world:commons", JSON.stringify(stillHome.result));
+  decliner.ws.close();
+
+  const mute = await connectHost("roamer-token", "", "mute");
+  await sleep(1200);
+  const timedOut = await mute.request("channels/open", { type: "world", address: { world: "annex" } });
+  check("mute host is treated as declining (fail-closed)", timedOut.error?.code === -32017, JSON.stringify(timedOut.error));
+  mute.ws.close();
 
   // ── 5. attach failure → -32024 and the connection surfaces CLOSED ─────────
   // (last: it kills the sequencer)

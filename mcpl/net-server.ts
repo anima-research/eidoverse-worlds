@@ -279,11 +279,13 @@ class Session {
         id: `world:${w}`,
         label: `eidoverse — ${w}`,
         address: { world: w },
-        // §3.2.3d: NO epoch here. The epoch names a COMMITTED attachment; a
-        // proposal that may be declined must not hand the host a generation
-        // number that will never exist (review A(c) — the shipped client
-        // believed it and drifted by one per aborted join).
-        metadata: { ...(founding ? { created: true } : {}) },
+        // §3.2.3d: the descriptor MUST carry metadata.epoch — it is the only
+        // place the client learns it. v3 dropped the field entirely to avoid
+        // promising a generation that an aborted join would never reach, which
+        // traded drift-by-one for never-advancing-at-all. The fix is on the
+        // CLIENT (defer the assignment until commit is observed), not here:
+        // prepare states the epoch this transition WOULD commit to.
+        metadata: { epoch: this.epoch + 1, ...(founding ? { created: true } : {}) },
       } as ChannelDescriptor;
       let accepted = false;
       try {
@@ -1392,6 +1394,7 @@ wss.on("connection", (ws, req) => {
   ws.on("message", hold);
   const reqWorld = new URL(req.url ?? "/", "http://localhost").searchParams.get("world");
   const dialWorld = reqWorld;
+  const mintedWorld = auth.world ?? "commons";   // before the dial lane rewrites it
   if (reqWorld && reqWorld !== (auth.world ?? "commons")) {
     if (joinAllowed(auth, reqWorld)) {
       console.log(`[${ts()}] [mcpl] ${auth.id} dial-time world "${reqWorld}" granted (policy)`);
@@ -1419,22 +1422,40 @@ wss.on("connection", (ws, req) => {
   // `world` claim is where its operator put it — refusing that would brick a
   // fresh deployment (whose "commons" does not exist until someone arrives)
   // and would be gating the operator, not the agent.
-  const chosen = dialWorld !== null;            // ?world= is a choice; the claim is not
+  // The AGENT chose only if it named a world OTHER than the one its credential
+  // was minted into. Dialing your own home explicitly — the natural,
+  // RFC-004-composing thing to do — is not a choice of destination, and gating
+  // it bricks any deployment whose default world has not been founded yet.
+  // (v3 got this wrong: it tested `dialWorld !== null` and then gated
+  // `auth.world`, so ?world=commons refused where no ?world= admitted. Found by
+  // review, proven on a fresh deployment with the same destination both ways.)
+  const chosen = dialWorld !== null && dialWorld !== mintedWorld;
   if (chosen) {
-    const wname = auth.world ?? "commons";
+    const wname = dialWorld!;                  // the DIALLED name, not the claim
     void (async () => {
-      if (!auth!.create && !(await worldExists(wname))) {
+      const exists = await worldExists(wname); // one probe, one verdict
+      if (!exists && !auth!.create) {
         console.log(`[${ts()}] [audit] founding DENIED: ${auth!.id} → "${wname}" (dial-time, no create authority)`);
-        refuseWithGuidance(ws, `world "${wname}" does not exist and this credential has no create authority`);
+        refuse(`world "${wname}" does not exist and this credential has no create authority`);
         return;
       }
-      if (!(await worldExists(wname))) {
-        console.log(`[${ts()}] [audit] founding GRANTED: ${auth!.id} → "${wname}" (dial-time, create authority)`);
-      }
+      if (!exists) console.log(`[${ts()}] [audit] founding GRANTED: ${auth!.id} → "${wname}" (dial-time, create authority)`);
       admit();
     })();
   } else {
     admit();
+  }
+
+  /** Refuse AFTER the hold-buffer is installed: drop the buffer first, and
+   *  replay what the agent already said so refuseWithGuidance's teaching path
+   *  can answer it. Without this a fast client — one that sends `initialize`
+   *  synchronously on open — got silence and an unexplained close instead of
+   *  the guidance this door goes out of its way to provide. */
+  function refuse(why: string) {
+    ws.off("message", hold);
+    refuseWithGuidance(ws, why);
+    for (const d of held) ws.emit("message", d);
+    held.length = 0;
   }
 
   function admit() {
