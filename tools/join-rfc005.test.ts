@@ -5,7 +5,7 @@
 //      new channel descriptor, and a channels/changed Request retires the old
 //   3. unknown channelId form → -32023 (spec code, not legacy -32004)
 //   4. dial-time ?world= honored under the same policy
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -147,6 +147,8 @@ try {
   await sleep(1200);
   const wouldFound = await nofound.request("channels/open", { type: "world", address: { world: "brand-new-place" } });
   check("worlds:['*'] without create CANNOT found a world", wouldFound.error?.code === -32023, JSON.stringify(wouldFound));
+  // …and prove it wasn't created as a side effect anyway (review F)
+  check("refused founding left NOTHING on disk", !existsSync(join(worldsDir, "brand-new-place")));
   nofound.ws.close();
   const founder = await connectHost("roamer-token");
   await sleep(1200);

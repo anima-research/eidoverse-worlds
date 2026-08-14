@@ -279,7 +279,11 @@ class Session {
         id: `world:${w}`,
         label: `eidoverse — ${w}`,
         address: { world: w },
-        metadata: { epoch: this.epoch + 1, ...(founding ? { created: true } : {}) },
+        // §3.2.3d: NO epoch here. The epoch names a COMMITTED attachment; a
+        // proposal that may be declined must not hand the host a generation
+        // number that will never exist (review A(c) — the shipped client
+        // believed it and drifted by one per aborted join).
+        metadata: { ...(founding ? { created: true } : {}) },
       } as ChannelDescriptor;
       let accepted = false;
       try {
@@ -299,9 +303,9 @@ class Session {
       }
       if (!accepted) throw new JoinDeclined(`host declined channel world:${w}`);
     }
-    // ── COMMIT (§3.2.3d-g) — the epoch increment IS the cutoff instant ─────
-    this.epoch++;
-    this.foundedHere = founding;
+    // ── COMMIT (§3.2.3d-g) ────────────────────────────────────────────────
+    // The epoch increments only once the new attachment is LIVE: it names the
+    // cutoff instant, so a transition that dies mid-flight must not advance it.
     const old = this.agent;
     const next = new WorldAgent({
       name: this.auth.id,
@@ -323,6 +327,8 @@ class Session {
     this.caughtUpTo = null;            // catch_up cursors are per-world context
     this.heldActivity.length = 0;      // held ambient lines are old-world context (review C1)
     await next.connect();
+    this.epoch++;                      // the cutoff instant, after the fact of it
+    this.foundedHere = founding;
     console.log(`[${ts()}] [mcpl:${this.auth.id}] joined world "${w}" epoch=${this.epoch}${founding ? " (FOUNDED)" : ""} (RFC-005)`);
     // §3.4 audit: a join is an authorization event, and on a found-on-attach
     // server a founding join is TWO. Logged with the permanence of an auth
@@ -679,9 +685,12 @@ class Session {
             case method.CHANNELS_LIST:
               this.conn.sendResponse(req.id, { channels: this.channelDescriptors() });
               break;
-            case method.CHANNELS_PUBLISH:
-              this.conn.sendResponse(req.id, this.handlePublish(params as unknown as ChannelsPublishParams));
+            case method.CHANNELS_PUBLISH: {
+              const pub = this.handlePublish(params as unknown as ChannelsPublishParams);
+              if (pub.error) { this.conn.sendError(req.id, -32023, pub.error); break; }
+              this.conn.sendResponse(req.id, pub);
               break;
+            }
             case method.CHANNELS_OPEN: {
               // The host's channel_open tool performs the server-side open op
               // here (and expects optional history atomically with it).
@@ -714,6 +723,13 @@ class Session {
                 // conflicting address is an authoring bug, not a preference.
                 const byId = p.channelId?.startsWith("world:") ? p.channelId.slice(6) : undefined;
                 const byAddr = p.type === "world" ? p.address?.world : undefined;
+                // §3.2.6: an id this server cannot resolve is -32023 — NEVER a
+                // silent fallback to the address. A typo'd id used to be
+                // upgraded into an address-driven join to somewhere else.
+                if (p.channelId && !byId) {
+                  this.conn.sendError(req.id, -32023, `unknown channel: ${p.channelId}`);
+                  break;
+                }
                 const target = byId ?? byAddr;   // channelId wins (conflict rejected above)
                 if (!target) { this.conn.sendError(req.id, -32023, `unknown channel: ${p.channelId ?? JSON.stringify(p.address)}`); break; }
                 // RFC-005 §3.1: join intent requires the channels.join grant
@@ -859,8 +875,12 @@ class Session {
     try { await this.conn.sendRequest(method.CHANNELS_REGISTER, params); } catch { /* non-MCPL host: tools still work */ }
   }
 
-  private handlePublish(params: ChannelsPublishParams): ChannelsPublishResult {
-    if (params.channelId !== this.channelId) return { delivered: false };
+  private handlePublish(params: ChannelsPublishParams): ChannelsPublishResult & { error?: string } {
+    // §3.2.3 cutoff: a publish naming a channel we are no longer attached to
+    // is answered, not dropped — the host learns the boundary. (The verb
+    // returns a result rather than throwing, so the honest signal rides here;
+    // the caller maps it to -32023.)
+    if (params.channelId !== this.channelId) return { delivered: false, error: `unknown channel: ${params.channelId}` };
     const text = (params.content ?? [])
       .filter((b): b is { type: "text"; text: string } => b.type === "text")
       .map((b) => b.text).join("\n").trim();
@@ -1293,8 +1313,14 @@ class JoinDeclined extends Error {}
  *  reports "exists" so that a join is refused for lack of create authority
  *  rather than silently founding a world during an outage. */
 async function worldExists(name: string): Promise<boolean> {
-  const base = (process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws")
-    .replace(/^ws/, "http").replace(/\/ws$/, "");
+  // Proper URL surgery, not string surgery: a WORLD_URL carrying a query
+  // string or a mount path defeated the old two-regex version and produced
+  // garbage (fail-closed, so founding became impossible rather than unsafe).
+  const u = new URL(process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws");
+  u.protocol = u.protocol === "wss:" ? "https:" : "http:";
+  u.pathname = u.pathname.replace(/\/ws$/, "") + "/geom";
+  u.search = "";
+  const base = u.toString().replace(/\/geom$/, "");
   try {
     // Bounded: an unreachable sequencer must fail the probe FAST, not hang the
     // agent's channels/open until the TCP stack gives up (caught by the
@@ -1356,10 +1382,16 @@ wss.on("connection", (ws, req) => {
     return;
   }
   // RFC-005 §3.3 dial-time lane: ?world= requests the INITIAL attachment,
-  // evaluated under the same join policy as in-session moves. Denied or
-  // unpoliced: fall back to the credential's minted world (documented
-  // fallback-not-refusal), with the reason in the log.
+  // evaluated under the same join policy as in-session moves. A denial
+  // REFUSES the connection — never a silent landing somewhere else.
+  // Buffer frames across any async gate below; replayed in admit(). (`ws` is
+  // not a Node stream — no pause()/resume() — and dropping these loses the
+  // host's `initialize`.)
+  const held: unknown[] = [];
+  const hold = (data: unknown) => held.push(data);
+  ws.on("message", hold);
   const reqWorld = new URL(req.url ?? "/", "http://localhost").searchParams.get("world");
+  const dialWorld = reqWorld;
   if (reqWorld && reqWorld !== (auth.world ?? "commons")) {
     if (joinAllowed(auth, reqWorld)) {
       console.log(`[${ts()}] [mcpl] ${auth.id} dial-time world "${reqWorld}" granted (policy)`);
@@ -1375,12 +1407,51 @@ wss.on("connection", (ws, req) => {
       return;
     }
   }
-  // session takeover: one body per identity — a half-open predecessor gets
-  // cleanly killed instead of rubberbanding against its successor
-  const prev = sessions.get(auth.id);
-  if (prev) { console.log(`[${ts()}] [mcpl] ${auth.id} reconnected — taking over previous session`); prev.close(); }
-  const session = new Session(auth, ws, token ?? "");
-  sessions.set(auth.id, session);
+  // ── RFC-005 §3.2.7: FOUNDING AUTHORITY, at the one point every path meets ──
+  // Three routes reach a fresh world name: the minted `world` claim, the
+  // dial-time ?world= lane, and the in-session join. Only the last was gated,
+  // so a credential could found a world merely by naming one (found by
+  // adversarial review, proven on disk). The sequencer founds unconditionally
+  // for any joiner, so the door is the only place this is enforceable.
+  //
+  // SCOPE, learned the hard way: this gates DESTINATIONS THE AGENT CHOSE, not
+  // the world its operator minted it into. A credential arriving at its own
+  // `world` claim is where its operator put it — refusing that would brick a
+  // fresh deployment (whose "commons" does not exist until someone arrives)
+  // and would be gating the operator, not the agent.
+  const chosen = dialWorld !== null;            // ?world= is a choice; the claim is not
+  if (chosen) {
+    const wname = auth.world ?? "commons";
+    void (async () => {
+      if (!auth!.create && !(await worldExists(wname))) {
+        console.log(`[${ts()}] [audit] founding DENIED: ${auth!.id} → "${wname}" (dial-time, no create authority)`);
+        refuseWithGuidance(ws, `world "${wname}" does not exist and this credential has no create authority`);
+        return;
+      }
+      if (!(await worldExists(wname))) {
+        console.log(`[${ts()}] [audit] founding GRANTED: ${auth!.id} → "${wname}" (dial-time, create authority)`);
+      }
+      admit();
+    })();
+  } else {
+    admit();
+  }
+
+  function admit() {
+    // session takeover: one body per identity — a half-open predecessor gets
+    // cleanly killed instead of rubberbanding against its successor
+    const prev = sessions.get(auth!.id);
+    if (prev) { console.log(`[${ts()}] [mcpl] ${auth!.id} reconnected — taking over previous session`); prev.close(); }
+    const session = new Session(auth!, ws, token ?? "");
+    sessions.set(auth!.id, session);
+    startSession(session, ws, auth!);
+    ws.off("message", hold);
+    for (const d of held) ws.emit("message", d);
+  }
+});
+/** Everything after admission — split out so the async founding gate above can
+ *  own the admit/refuse decision without duplicating the session lifecycle. */
+function startSession(session: Session, ws: WebSocket, auth: Auth) {
   // Half-open detection — tolerant of a THINKING agent.
   //
   // This used to ping every 20s and terminate on a SINGLE missed pong. That is
@@ -1422,7 +1493,7 @@ wss.on("connection", (ws, req) => {
       console.log(`[${ts()}] [mcpl] ${auth.id} session ended`);
     });
   console.log(`[${ts()}] [mcpl] ${auth.id} connected`);
-});
+}
 http.listen(PORT, "0.0.0.0", () => {
   console.log(`eidoverse-worlds network MCPL on ws://0.0.0.0:${PORT} (${Object.keys(readTokens()).length} tokens)`);
 });
