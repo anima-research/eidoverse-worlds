@@ -61,9 +61,22 @@ async function connectHost(token: string, query = "") {
   });
   rpc({ jsonrpc: "2.0", method: "notifications/initialized" });
   await request("featureSets/update", {
-    effectiveCapabilities: ["tools", "channels.register", "channels.lifecycle", "channels.publish", "channels.incoming"],
+    effectiveCapabilities: ["tools", "channels.register", "channels.lifecycle", "channels.join", "channels.publish", "channels.incoming"],
   });
   return { ws, request, inbound, init };
+}
+
+/** Raw world-WS watcher parked in a world, recording leave/join broadcasts. */
+async function watchWorld(w: string, id: string) {
+  const ws = new WebSocket(`ws://127.0.0.1:${WPORT}/ws`);
+  const events: any[] = [];
+  await new Promise<void>((res, rej) => {
+    const t = setTimeout(() => rej(new Error("watcher join timeout")), 6000);
+    ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); events.push(m);
+      if (m.type === "snapshot") { clearTimeout(t); res(); } };
+    ws.onopen = () => ws.send(JSON.stringify({ type: "join", world: w, id, avatar: "a.vrm" }));
+  });
+  return { ws, events };
 }
 
 try {
@@ -83,6 +96,7 @@ try {
   bound.ws.close();
 
   // ── 2. worlds:["*"] → join granted, descriptor + changed ─────────────────
+  const commonsWatch = await watchWorld("commons", "watcher");
   const roamer = await connectHost("roamer-token");
   await sleep(1200);
   const joined = await roamer.request("channels/open", { type: "world", address: { world: "annex" }, history: { limit: 5 } });
@@ -97,7 +111,18 @@ try {
   // …and the same-channel open keeps its old meaning post-join
   const reopen = await roamer.request("channels/open", { type: "world", address: { world: "annex" } });
   check("current-channel open still plain-opens", reopen.result?.channel?.id === "world:annex", JSON.stringify(reopen));
-  roamer.ws.close();
+  // atomicity, world-side: the commons watcher saw the body actually LEAVE
+  await sleep(600);
+  const left = commonsWatch.events.some((m) => (m.type === "leave" || m.type === "part" || m.type === "left") && (m.id === "roamer" || m.who === "roamer"));
+  const ghost = commonsWatch.events.filter((m) => m.type === "say" && m.id === "roamer").length;
+  check("old world saw the body leave (no dual presence)", left, "leave-ish events: " + JSON.stringify(commonsWatch.events.map((m) => m.type).slice(-12)) + ` ghost says: ${ghost}`);
+  commonsWatch.ws.close();
+  // in-session denial for a LISTED credential asking outside its list
+  const roamer2 = await connectHost("roamer2-token");
+  await sleep(1200);
+  const outside = await roamer2.request("channels/open", { type: "world", address: { world: "elsewhere" } });
+  check("worlds:[annex] credential denied for other worlds", outside.error?.code === -32017, JSON.stringify(outside));
+  roamer2.ws.close();
 
   // ── 4. dial-time ?world= under the same policy ────────────────────────────
   const dialed = await connectHost("roamer2-token", "&world=annex");
@@ -110,6 +135,21 @@ try {
   const fb = await fallback.request("channels/list", {});
   check("?world= falls back to minted world when unpoliced", fb.result?.channels?.[0]?.id === "world:commons", JSON.stringify(fb.result));
   fallback.ws.close();
+
+  // ── 5. attach failure → -32024 and the connection surfaces CLOSED ─────────
+  // (last: it kills the sequencer)
+  const victim = await connectHost("roamer-token");
+  await sleep(1200);
+  world.kill();                        // the sequencer goes away mid-session
+  await sleep(500);
+  const failed = await victim.request("channels/open", { type: "world", address: { world: "faraway" } });
+  check("attach failure is -32024", failed.error?.code === -32024, JSON.stringify(failed));
+  const closed = await new Promise<boolean>((res) => {
+    if (victim.ws.readyState === WebSocket.CLOSED) return res(true);
+    victim.ws.onclose = () => res(true);
+    setTimeout(() => res(victim.ws.readyState === WebSocket.CLOSED), 4000);
+  });
+  check("never half-attached: connection surfaced as closed", closed);
 } finally {
   world.kill(); mcpl.kill();
 }

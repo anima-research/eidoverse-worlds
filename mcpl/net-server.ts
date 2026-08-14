@@ -266,10 +266,16 @@ class Session {
     });
     next.onEvent = old.onEvent;
     next.onPing = old.onPing;
+    // Detach BEFORE close: ws frames already queued can still fire the old
+    // body's onmessage after close() returns, and the shared closures would
+    // attribute a late commons say to the annex channel (review B1).
+    old.onEvent = null;
+    old.onPing = null;
     old.close();                       // detach: persists exactly what a disconnect persists
     this.agent = next;
     this.channelId = `world:${w}`;
     this.caughtUpTo = null;            // catch_up cursors are per-world context
+    this.heldActivity.length = 0;      // held ambient lines are old-world context (review C1)
     await next.connect();
     console.log(`[${ts()}] [mcpl:${this.auth.id}] joined world "${w}" (RFC-005)`);
     // §3.2.3d: tell the host its channel roster changed — old world retired,
@@ -531,7 +537,7 @@ class Session {
     // to filter — and a clock comparison silently degrades to "whatever
     // happens to still be in memory". A seq is asked of the world directly and
     // reaches back as far as the log goes.
-    const sinceSeq = lastSeenSeq[this.auth.id];
+    const sinceSeq = lastSeenSeq[seqKey(this.auth.id, this.agent.world)] ?? lastSeenSeq[this.auth.id];
     // "Since you last looked" starts where the persisted cursor says this
     // agent last was — not at the dawn of the replayed tail. Mentions from
     // the gap are delivered explicitly below; scrollback stays on catch_up.
@@ -565,11 +571,11 @@ class Session {
       }
     }
     lastSeen[this.auth.id] = Date.now();
-    lastSeenSeq[this.auth.id] = this.agent.lastSeq;
+    lastSeenSeq[seqKey(this.auth.id, this.agent.world)] = this.agent.lastSeq;
     persistState();
     seenTimer = setInterval(() => {
       lastSeen[this.auth.id] = Date.now();
-      lastSeenSeq[this.auth.id] = this.agent.lastSeq;
+      lastSeenSeq[seqKey(this.auth.id, this.agent.world)] = this.agent.lastSeq;
       persistState();
     }, 60_000);
     };
@@ -644,6 +650,12 @@ class Session {
                 // channel falls through below — response shape unchanged.
                 const target = p.type === "world" ? p.address?.world : undefined;
                 if (!target) { this.conn.sendError(req.id, -32023, `unknown channel: ${p.channelId ?? JSON.stringify(p.address)}`); break; }
+                // RFC-005 §3.1: join intent requires the channels.join grant
+                // (in addition to channels.lifecycle), BEFORE policy.
+                if (!this.granted("channels.join")) {
+                  this.conn.sendError(req.id, -32002, "capability denied: channels.join");
+                  break;
+                }
                 if (!joinAllowed(this.auth, target)) {
                   this.conn.sendError(req.id, -32017, `channel not permitted: world "${target}" is not in this credential's join policy`);
                   break;
@@ -697,7 +709,7 @@ class Session {
     } finally {
       clearInterval(seenTimer);
       lastSeen[this.auth.id] = Date.now();
-    lastSeenSeq[this.auth.id] = this.agent.lastSeq;
+    lastSeenSeq[seqKey(this.auth.id, this.agent.world)] = this.agent.lastSeq;
       persistState();
       this.close();
     }
@@ -1186,11 +1198,21 @@ function refuseWithGuidance(ws: WebSocket, why: string) {
 }
 /** RFC-005 join policy: may this credential attach to `world`? One rule, both
  *  lanes (dial-time ?world= and in-session channels/open). No `worlds` list on
- *  the credential = no policy = deny — the pre-RFC-005 status quo exactly. */
+ *  the credential = no policy = deny — the pre-RFC-005 status quo exactly.
+ *  The name-shape gate mirrors the sequencer's own rule (server.ts join
+ *  validation): the door refusing early is one closed loop instead of a
+ *  granted join dying against the sequencer 8s later. */
+const WORLD_NAME_RE = /^[a-z0-9_-]{1,64}$/;
 function joinAllowed(auth: Auth, world: string): boolean {
+  if (!WORLD_NAME_RE.test(world)) return false;
   return world === (auth.world ?? "commons") ||
     (auth.worlds ?? []).some((w) => w === "*" || w === world);
 }
+/** Per-world watermark key for missed-mention replay. World-fixed identity was
+ *  a safe assumption before RFC-005; a commons seq is meaningless in annex.
+ *  Legacy bare-id entries are read as a fallback so existing residents don't
+ *  get a full replay on the first post-upgrade connect. */
+const seqKey = (id: string, world: string) => `${id}@${world}`;
 const sessions = new Map<string, Session>(); // identity → live session (newest wins)
 wss.on("connection", (ws, req) => {
   const token = new URL(req.url ?? "/", "http://localhost").searchParams.get("token");
