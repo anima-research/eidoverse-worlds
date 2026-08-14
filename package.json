@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.11.1",
-    "@livekit/rtc-node": "^0.13.33"
+    "@livekit/rtc-node": "^0.13.33",
+    "playwright": "^1.62.1"
   }
 }

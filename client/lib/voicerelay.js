@@ -13,7 +13,7 @@
 // the SERVER subscribes us per speaker when our listener consent says so —
 // receive-off means the relay does not forward, not that we discard.
 import { bus, report } from './core.js';
-import { sendRelayCredRequest, sendVoiceConsent, sendTyping } from './net.js';
+import { net, sendRelayCredRequest, sendVoiceConsent, sendTyping } from './net.js';
 import { remotes, noteSpeaking } from './remotes.js';
 import { receivingVoice, volumeFor, isHushed } from './voiceconsent.js';
 import { audioContext } from './audioctx.js';
@@ -129,12 +129,14 @@ export function initVoiceRelay(name) {
       s.audio.srcObject = null; try { s.an?.disconnect(); } catch {} speakers.delete(id);
     }
   });
-  // Ask for the credential once JOINED — init runs before the ws handshake
-  // completes, and an unjoined send is silently dropped. One request per
-  // session; reconnect paths re-ask explicitly.
+  // Ask for the credential once JOINED — an unjoined send is silently
+  // dropped. This module loads via dynamic import, so the join may complete
+  // BEFORE our 'net' listener registers (it did, in the first browser
+  // smoke): check the live state now AND listen, one request either way.
   let asked = false;
   const askOnce = (n) => { if (!asked && n?.joined) { asked = true; sendRelayCredRequest(); } };
   bus.on('net', askOnce);
+  askOnce(net);
 
   // Distance rolloff + hush: same two-clock shape as the mesh (slow target,
   // fast approach), applied to the per-speaker elements.
