@@ -287,6 +287,10 @@ export const MCPL_ADVERTISEMENT = {
   channels: {
     register: true,
     lifecycle: true,
+    // RFC-005: channels/open naming a sibling world is a JOIN request,
+    // policy-gated (worlds allowlist on the credential; absence denies).
+    // Advertisement leaf only — authorization stays on channels.lifecycle.
+    join: true,
     publish: true,
     incoming: true,
     streaming: true,

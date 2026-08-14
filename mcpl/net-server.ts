@@ -51,9 +51,14 @@ const HN_ISSUER_KEY = process.env.HN_ISSUER_KEY ?? "";
 const HN_ISS = process.env.HN_ISS ?? "id.animalabs.ai";
 const HN_AUD = process.env.HN_AUD ?? "eidoverse";
 const ts = () => new Date().toISOString().slice(11, 19);
-const TOKENS_PATH = fileURLToPath(new URL("./tokens.json", import.meta.url));
+const TOKENS_PATH = process.env.MCPL_TOKENS ?? fileURLToPath(new URL("./tokens.json", import.meta.url));
 
-type Auth = { id: string; name: string; world?: string; avatar?: string };
+type Auth = { id: string; name: string; world?: string; avatar?: string;
+  /** RFC-005 join policy: worlds this credential may move to in-session or
+   *  request at dial time ("*" = any). ABSENT means no join policy — the
+   *  credential stays bound to its minted world, exactly as before RFC-005.
+   *  Operator-set: a tokens.json field, or a `worlds` claim on an aid1. */
+  worlds?: string[] };
 // Tokens are read PER CONNECTION ATTEMPT — minting/revoking is a file edit,
 // never a restart (the no-restart rule applies to the door, not just the world).
 function readTokens(): Record<string, Auth> {
@@ -223,7 +228,7 @@ class Session {
    *  sense, not scrollback. */
   private heldActivity: string[] = [];
 
-  constructor(private auth: Auth, ws: WebSocket, agentToken = "") {
+  constructor(private auth: Auth, ws: WebSocket, private agentToken = "") {
     this.conn = McplConnection.fromWebSocket(ws as never);
     this.agent = new WorldAgent({
       name: auth.id,
@@ -240,6 +245,41 @@ class Session {
   close() {
     this.agent.close(); // deliberate death — stops the body's auto-reconnect
     this.conn.close();
+  }
+
+  /** RFC-005 §3.2 in-session join: atomically reattach this connection's body
+   *  to another world. Exclusivity by ordering — the old body dies before the
+   *  new one dials, so at no observable moment is this identity in two worlds.
+   *  The event/ping handlers are closures over `this.agent`, so handing the
+   *  same closures to the new body re-routes every delivery path in one
+   *  assignment. Throws on attach failure; the caller maps that to -32024 and
+   *  MUST then surface the connection as closed (§3.2.5 — we cannot silently
+   *  remain attached to a world we already left). */
+  private async joinWorld(w: string): Promise<void> {
+    const old = this.agent;
+    const next = new WorldAgent({
+      name: this.auth.id,
+      world: w,
+      avatar: chosenAvatar[this.auth.id] ?? this.auth.avatar,
+      url: process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws",
+      agentToken: this.agentToken,
+    });
+    next.onEvent = old.onEvent;
+    next.onPing = old.onPing;
+    old.close();                       // detach: persists exactly what a disconnect persists
+    this.agent = next;
+    this.channelId = `world:${w}`;
+    this.caughtUpTo = null;            // catch_up cursors are per-world context
+    await next.connect();
+    console.log(`[${ts()}] [mcpl:${this.auth.id}] joined world "${w}" (RFC-005)`);
+    // §3.2.3d: tell the host its channel roster changed — old world retired,
+    // new one added. Request form per §14.5; best-effort toward plain-MCP.
+    if (this.granted(CAP.channelsRegister)) {
+      this.conn.sendRequest(method.CHANNELS_CHANGED, {
+        added: this.channelDescriptors(),
+        removed: [`world:${old.world}`],
+      }).catch(() => { /* host may not implement the inbound form */ });
+    }
   }
 
   /**
@@ -597,7 +637,27 @@ class Session {
               const p = params as { channelId?: string; type?: string; address?: { world?: string }; history?: { limit: number } };
               const matches = p.channelId === this.channelId ||
                 (p.type === "world" && p.address?.world === this.agent.world);
-              if (!matches) { this.conn.sendError(req.id, -32004, `unknown channel: ${p.channelId ?? JSON.stringify(p.address)}`); break; }
+              if (!matches) {
+                // RFC-005 §3.2: opening a SIBLING world channel is a join
+                // request. Policy first (-32017), then atomic reattachment
+                // (-32024 on failure), then the ordinary open of the NEW
+                // channel falls through below — response shape unchanged.
+                const target = p.type === "world" ? p.address?.world : undefined;
+                if (!target) { this.conn.sendError(req.id, -32023, `unknown channel: ${p.channelId ?? JSON.stringify(p.address)}`); break; }
+                if (!joinAllowed(this.auth, target)) {
+                  this.conn.sendError(req.id, -32017, `channel not permitted: world "${target}" is not in this credential's join policy`);
+                  break;
+                }
+                try {
+                  await this.joinWorld(target);
+                } catch (e) {
+                  // §3.2.5: never half-attached — the old body is gone, so the
+                  // honest state is a closed connection, not a limbo session.
+                  this.conn.sendError(req.id, -32024, `channel open failed: ${(e as Error).message}`);
+                  this.close();
+                  break;
+                }
+              }
               this.channelOpen = true;
               const limit = Math.min(Math.max(p.history?.limit ?? 0, 0), 100);
               const says = this.agent.inbox.filter((m) => m.kind === "say").slice(-limit);
@@ -618,7 +678,7 @@ class Session {
             }
             case method.CHANNELS_CLOSE: {
               const p = params as { channelId?: string };
-              if (p.channelId !== this.channelId) { this.conn.sendError(req.id, -32004, `unknown channel: ${p.channelId}`); break; }
+              if (p.channelId !== this.channelId) { this.conn.sendError(req.id, -32023, `unknown channel: ${p.channelId}`); break; }
               // The agent shuts their door: ambient chatter stops; mentions
               // and walk-ups still get through (a knock is not chatter).
               this.channelOpen = false;
@@ -1124,6 +1184,13 @@ function refuseWithGuidance(ws: WebSocket, why: string) {
     }
   });
 }
+/** RFC-005 join policy: may this credential attach to `world`? One rule, both
+ *  lanes (dial-time ?world= and in-session channels/open). No `worlds` list on
+ *  the credential = no policy = deny — the pre-RFC-005 status quo exactly. */
+function joinAllowed(auth: Auth, world: string): boolean {
+  return world === (auth.world ?? "commons") ||
+    (auth.worlds ?? []).some((w) => w === "*" || w === world);
+}
 const sessions = new Map<string, Session>(); // identity → live session (newest wins)
 wss.on("connection", (ws, req) => {
   const token = new URL(req.url ?? "/", "http://localhost").searchParams.get("token");
@@ -1141,6 +1208,8 @@ wss.on("connection", (ws, req) => {
         name: p.name,
         world: typeof p.claims?.world === "string" ? (p.claims.world as string) : undefined,
         avatar: typeof p.claims?.avatar === "string" ? (p.claims.avatar as string) : undefined,
+        worlds: Array.isArray(p.claims?.worlds) && (p.claims.worlds as unknown[]).every((w) => typeof w === "string")
+          ? (p.claims.worlds as string[]) : undefined,
       };
       console.log(`[${ts()}] aid1 agent: ${p.sub} ("${p.name}") exp ${new Date(p.exp * 1000).toISOString()}`);
     } else {
@@ -1151,6 +1220,19 @@ wss.on("connection", (ws, req) => {
   if (!auth) {
     refuseWithGuidance(ws, token ? (aidReason ? `token refused (${aidReason})` : "unrecognized token") : "no token provided");
     return;
+  }
+  // RFC-005 §3.3 dial-time lane: ?world= requests the INITIAL attachment,
+  // evaluated under the same join policy as in-session moves. Denied or
+  // unpoliced: fall back to the credential's minted world (documented
+  // fallback-not-refusal), with the reason in the log.
+  const reqWorld = new URL(req.url ?? "/", "http://localhost").searchParams.get("world");
+  if (reqWorld && reqWorld !== (auth.world ?? "commons")) {
+    if (joinAllowed(auth, reqWorld)) {
+      console.log(`[${ts()}] [mcpl] ${auth.id} dial-time world "${reqWorld}" granted (policy)`);
+      auth = { ...auth, world: reqWorld };
+    } else {
+      console.log(`[${ts()}] [mcpl] ${auth.id} dial-time world "${reqWorld}" denied — falling back to "${auth.world ?? "commons"}"`);
+    }
   }
   // session takeover: one body per identity — a half-open predecessor gets
   // cleanly killed instead of rubberbanding against its successor
