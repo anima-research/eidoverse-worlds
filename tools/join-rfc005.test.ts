@@ -14,7 +14,8 @@ const worldsDir = mkdtempSync(join(tmpdir(), "eido-join-"));
 const tokensPath = join(worldsDir, "tokens.json");
 writeFileSync(tokensPath, JSON.stringify({
   "bound-token":   { id: "bound",   name: "Bound",   world: "commons" },
-  "roamer-token":  { id: "roamer",  name: "Roamer",  world: "commons", worlds: ["*"] },
+  "roamer-token":  { id: "roamer",  name: "Roamer",  world: "commons", worlds: ["*"], create: true },
+  "nofound-token": { id: "nofound", name: "NoFound", world: "commons", worlds: ["*"] },
   "roamer2-token": { id: "roamer2", name: "Roamer2", world: "commons", worlds: ["annex"] },
 }));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -130,11 +131,37 @@ try {
   const dl = await dialed.request("channels/list", {});
   check("?world= honored for a policied credential", dl.result?.channels?.[0]?.id === "world:annex", JSON.stringify(dl.result));
   dialed.ws.close();
-  const fallback = await connectHost("bound-token", "&world=annex");
+  // §3.3 (Mica #3): a denied dial-time destination REFUSES the connection —
+  // no silent fallback to the minted world.
+  let refused = false;
+  try {
+    const fallback = await connectHost("bound-token", "&world=annex");
+    await sleep(1500);
+    refused = fallback.ws.readyState === WebSocket.CLOSED || fallback.ws.readyState === WebSocket.CLOSING;
+    fallback.ws.close();
+  } catch { refused = true; }   // connectHost throws when the socket dies during init
+  check("denied ?world= refuses the connection (no silent fallback)", refused);
+
+  // ── 4b. §3.2.7 founding is not joining ───────────────────────────────────
+  const nofound = await connectHost("nofound-token");
   await sleep(1200);
-  const fb = await fallback.request("channels/list", {});
-  check("?world= falls back to minted world when unpoliced", fb.result?.channels?.[0]?.id === "world:commons", JSON.stringify(fb.result));
-  fallback.ws.close();
+  const wouldFound = await nofound.request("channels/open", { type: "world", address: { world: "brand-new-place" } });
+  check("worlds:['*'] without create CANNOT found a world", wouldFound.error?.code === -32023, JSON.stringify(wouldFound));
+  nofound.ws.close();
+  const founder = await connectHost("roamer-token");
+  await sleep(1200);
+  const founded = await founder.request("channels/open", { type: "world", address: { world: "founded-place" } });
+  check("create:true CAN found, and says so", founded.result?.channel?.id === "world:founded-place"
+    && founded.result?.channel?.metadata?.created === true, JSON.stringify(founded.result?.channel?.metadata));
+  // ── 4c. §3.2.3d epoch + §3.2.6 channelId form ────────────────────────────
+  const e1 = founded.result?.channel?.metadata?.epoch;
+  const byId = await founder.request("channels/open", { channelId: "world:annex" });
+  check("channelId form expresses join intent (Mica #5)", byId.result?.channel?.id === "world:annex", JSON.stringify(byId.error ?? byId.result?.channel?.id));
+  check("epoch increments across transitions", typeof e1 === "number" && byId.result?.channel?.metadata?.epoch > e1,
+    `e1=${e1} e2=${byId.result?.channel?.metadata?.epoch}`);
+  const conflict = await founder.request("channels/open", { channelId: "world:annex", type: "world", address: { world: "commons" } });
+  check("conflicting channelId+address is -32602", conflict.error?.code === -32602, JSON.stringify(conflict.error));
+  founder.ws.close();
 
   // ── 5. attach failure → -32024 and the connection surfaces CLOSED ─────────
   // (last: it kills the sequencer)
@@ -142,7 +169,7 @@ try {
   await sleep(1200);
   world.kill();                        // the sequencer goes away mid-session
   await sleep(500);
-  const failed = await victim.request("channels/open", { type: "world", address: { world: "faraway" } });
+  const failed = await victim.request("channels/open", { type: "world", address: { world: "annex" } });  // exists, so this tests ATTACH failure
   check("attach failure is -32024", failed.error?.code === -32024, JSON.stringify(failed));
   const closed = await new Promise<boolean>((res) => {
     if (victim.ws.readyState === WebSocket.CLOSED) return res(true);

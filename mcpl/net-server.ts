@@ -58,7 +58,11 @@ type Auth = { id: string; name: string; world?: string; avatar?: string;
    *  request at dial time ("*" = any). ABSENT means no join policy — the
    *  credential stays bound to its minted world, exactly as before RFC-005.
    *  Operator-set: a tokens.json field, or a `worlds` claim on an aid1. */
-  worlds?: string[] };
+  worlds?: string[];
+  /** RFC-005 §3.2.7: founding authority, SEPARATE from join policy. A broad
+   *  `worlds: ["*"]` grants travel to worlds that exist; it does not grant the
+   *  power to call new ones into being. */
+  create?: boolean };
 // Tokens are read PER CONNECTION ATTEMPT — minting/revoking is a file edit,
 // never a restart (the no-restart rule applies to the door, not just the world).
 function readTokens(): Record<string, Auth> {
@@ -219,6 +223,14 @@ class Session {
    *  (waiting inline would deadlock — the discord-mcpl 90f869f lesson). */
   private policyAnswered!: () => void;
   private policyGate: Promise<void> = new Promise((resolve) => { this.policyAnswered = resolve; });
+  /** RFC-005 §3.2.3d: attachment generation. Increments at each transition's
+   *  COMMIT instant, which IS the cutoff — traffic dispatched before it belongs
+   *  to the old attachment, after it to the new. Surfaced on the descriptor as
+   *  metadata.epoch so both sides can name "current" instead of inferring it. */
+  private epoch = 0;
+  /** Set when THIS attachment founded its world (§3.2.7) — surfaced on the
+   *  descriptor so founding is never something an agent does unknowingly. */
+  private foundedHere = false;
   private caughtUpTo: number | null = null; // the world channel is home — open unless the agent closes it
   /** Activity digests held for a push-less (plain-MCP) host. The pulse is a
    *  wake signal, and a host with no push channel cannot be woken — but the
@@ -255,7 +267,41 @@ class Session {
    *  assignment. Throws on attach failure; the caller maps that to -32024 and
    *  MUST then surface the connection as closed (§3.2.5 — we cannot silently
    *  remain attached to a world we already left). */
-  private async joinWorld(w: string): Promise<void> {
+  private async joinWorld(w: string, founding = false): Promise<void> {
+    // ── PREPARE (RFC-005 §3.2.3a-c, Mica review #2) ────────────────────────
+    // The host's acceptance is PART of the transition, not a notification
+    // after it: never move a body somewhere its host has refused to deliver.
+    // A host that doesn't implement the inbound Request form, or doesn't
+    // answer in time, is treated as DECLINING (fail-closed, §5.3).
+    if (this.granted(CAP.channelsRegister)) {
+      const proposed: ChannelDescriptor = {
+        ...this.channelDescriptors()[0],
+        id: `world:${w}`,
+        label: `eidoverse — ${w}`,
+        address: { world: w },
+        metadata: { epoch: this.epoch + 1, ...(founding ? { created: true } : {}) },
+      } as ChannelDescriptor;
+      let accepted = false;
+      try {
+        const res = await Promise.race([
+          this.conn.sendRequest(method.CHANNELS_CHANGED, {
+            added: [proposed], removed: [`world:${this.agent.world}`],
+          }) as Promise<{ results?: { id: string; accepted?: boolean }[] }>,
+          new Promise<never>((_, rej) => setTimeout(() => rej(new Error("host did not answer channels/changed")), 5_000)),
+        ]);
+        // No itemized result = no objection expressible = accepted (§14.5 only
+        // REQUIRES the itemized form of hosts whose policy can reject).
+        const mine = res?.results?.find((r) => r.id === `world:${w}`);
+        accepted = mine ? mine.accepted !== false : true;
+      } catch (e) {
+        console.log(`[${ts()}] [mcpl:${this.auth.id}] join "${w}" declined at prepare: ${(e as Error).message}`);
+        accepted = false;
+      }
+      if (!accepted) throw new JoinDeclined(`host declined channel world:${w}`);
+    }
+    // ── COMMIT (§3.2.3d-g) — the epoch increment IS the cutoff instant ─────
+    this.epoch++;
+    this.foundedHere = founding;
     const old = this.agent;
     const next = new WorldAgent({
       name: this.auth.id,
@@ -277,15 +323,14 @@ class Session {
     this.caughtUpTo = null;            // catch_up cursors are per-world context
     this.heldActivity.length = 0;      // held ambient lines are old-world context (review C1)
     await next.connect();
-    console.log(`[${ts()}] [mcpl:${this.auth.id}] joined world "${w}" (RFC-005)`);
-    // §3.2.3d: tell the host its channel roster changed — old world retired,
-    // new one added. Request form per §14.5; best-effort toward plain-MCP.
-    if (this.granted(CAP.channelsRegister)) {
-      this.conn.sendRequest(method.CHANNELS_CHANGED, {
-        added: this.channelDescriptors(),
-        removed: [`world:${old.world}`],
-      }).catch(() => { /* host may not implement the inbound form */ });
-    }
+    console.log(`[${ts()}] [mcpl:${this.auth.id}] joined world "${w}" epoch=${this.epoch}${founding ? " (FOUNDED)" : ""} (RFC-005)`);
+    // §3.4 audit: a join is an authorization event, and on a found-on-attach
+    // server a founding join is TWO. Logged with the permanence of an auth
+    // event, per §13.2.
+    console.log(`[${ts()}] [audit] join granted: ${this.auth.id} → world:${w}${founding ? " (created)" : ""} epoch=${this.epoch}`);
+    // No second channels/changed here: PREPARE already announced the roster
+    // change and the host already accepted it (§3.2.3a). Emitting again would
+    // tell the host something it told us was fine.
   }
 
   /**
@@ -641,14 +686,35 @@ class Session {
               // The host's channel_open tool performs the server-side open op
               // here (and expects optional history atomically with it).
               const p = params as { channelId?: string; type?: string; address?: { world?: string }; history?: { limit: number } };
+              // §3.2.6: a request naming TWO destinations that disagree is an
+              // authoring bug — validated BEFORE the current-channel shortcut,
+              // or a conflicting pair where either half happens to name the
+              // current world would silently pass as a plain re-open.
+              {
+                const cid = p.channelId?.startsWith("world:") ? p.channelId.slice(6) : undefined;
+                const adr = p.type === "world" ? p.address?.world : undefined;
+                if (cid && adr && cid !== adr) {
+                  this.conn.sendError(req.id, -32602, `channelId "${p.channelId}" and address.world "${adr}" name different channels`);
+                  break;
+                }
+              }
               const matches = p.channelId === this.channelId ||
-                (p.type === "world" && p.address?.world === this.agent.world);
+                (p.channelId == null && p.type === "world" && p.address?.world === this.agent.world);
               if (!matches) {
                 // RFC-005 §3.2: opening a SIBLING world channel is a join
-                // request. Policy first (-32017), then atomic reattachment
-                // (-32024 on failure), then the ordinary open of the NEW
-                // channel falls through below — response shape unchanged.
-                const target = p.type === "world" ? p.address?.world : undefined;
+                // request. Capability → policy (-32017) → prepare/commit
+                // (host may decline) → the ordinary open of the NEW channel
+                // falls through below — response shape unchanged.
+                //
+                // §3.2.6 (Mica review): BOTH addressing forms express join
+                // intent. ChannelsOpenParams documents channelId as "preferred
+                // over type/address matching", and generic host surfaces work
+                // in ids — an address-only rule would make join unreachable
+                // from them. channelId wins when both are present; a
+                // conflicting address is an authoring bug, not a preference.
+                const byId = p.channelId?.startsWith("world:") ? p.channelId.slice(6) : undefined;
+                const byAddr = p.type === "world" ? p.address?.world : undefined;
+                const target = byId ?? byAddr;   // channelId wins (conflict rejected above)
                 if (!target) { this.conn.sendError(req.id, -32023, `unknown channel: ${p.channelId ?? JSON.stringify(p.address)}`); break; }
                 // RFC-005 §3.1: join intent requires the channels.join grant
                 // (in addition to channels.lifecycle), BEFORE policy.
@@ -660,9 +726,27 @@ class Session {
                   this.conn.sendError(req.id, -32017, `channel not permitted: world "${target}" is not in this credential's join policy`);
                   break;
                 }
+                // §3.2.7 (Mica review): FOUNDING IS NOT JOINING. This deployment
+                // founds a world on first attach, so a join naming an unused
+                // name would create one — an operator granting broad travel has
+                // not thereby granted unbounded world-founding. Creation needs
+                // its own positive authority (`create: true` on the credential).
+                const founding = !(await worldExists(target));
+                if (founding && !this.auth.create) {
+                  this.conn.sendError(req.id, -32023,
+                    `unknown channel: world "${target}" does not exist (founding requires create authority)`);
+                  break;
+                }
                 try {
-                  await this.joinWorld(target);
+                  await this.joinWorld(target, founding);
                 } catch (e) {
+                  if (e instanceof JoinDeclined) {
+                    // §3.2.3b: PREPARE failed — nothing moved. The connection is
+                    // exactly where it was; this is a refusal, not a casualty.
+                    this.conn.sendError(req.id, -32017, `channel not permitted: ${(e as Error).message}`,
+                      { reason: "host_declined" });
+                    break;
+                  }
                   // §3.2.5: never half-attached — the old body is gone, so the
                   // honest state is a closed connection, not a limbo session.
                   this.conn.sendError(req.id, -32024, `channel open failed: ${(e as Error).message}`);
@@ -765,6 +849,8 @@ class Session {
       // produce a notice). The world an agent is EMBODIED IN is its home —
       // it must be open from the first breath.
       initiallyOpen: true,
+      metadata: { epoch: this.epoch, ...(this.foundedHere ? { created: true } : {}) },   // RFC-005 §3.2.3d/§3.2.7
+
     } as ChannelDescriptor];
   }
 
@@ -1196,6 +1282,31 @@ function refuseWithGuidance(ws: WebSocket, why: string) {
     }
   });
 }
+/** Host declined the new descriptor at PREPARE (RFC-005 §3.2.3b). Distinct
+ *  from an attach failure: nothing has moved, so the caller answers -32017 and
+ *  leaves the connection exactly where it was. */
+class JoinDeclined extends Error {}
+
+/** Does this world already exist? The MCPL door is a SEPARATE PROCESS from the
+ *  sequencer, so this asks over the same HTTP surface every client uses: /geom
+ *  answers 404 for a world with no log. Fail-closed — an unreachable sequencer
+ *  reports "exists" so that a join is refused for lack of create authority
+ *  rather than silently founding a world during an outage. */
+async function worldExists(name: string): Promise<boolean> {
+  const base = (process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws")
+    .replace(/^ws/, "http").replace(/\/ws$/, "");
+  try {
+    // Bounded: an unreachable sequencer must fail the probe FAST, not hang the
+    // agent's channels/open until the TCP stack gives up (caught by the
+    // attach-failure test, which kills the sequencer mid-session).
+    const r = await fetch(`${base}/geom?world=${encodeURIComponent(name)}`,
+      { method: "HEAD", signal: AbortSignal.timeout(2_000) });
+    if (r.status === 404) return false;
+    if (r.ok) return true;
+    return true;
+  } catch { return true; }
+}
+
 /** RFC-005 join policy: may this credential attach to `world`? One rule, both
  *  lanes (dial-time ?world= and in-session channels/open). No `worlds` list on
  *  the credential = no policy = deny — the pre-RFC-005 status quo exactly.
@@ -1232,6 +1343,7 @@ wss.on("connection", (ws, req) => {
         avatar: typeof p.claims?.avatar === "string" ? (p.claims.avatar as string) : undefined,
         worlds: Array.isArray(p.claims?.worlds) && (p.claims.worlds as unknown[]).every((w) => typeof w === "string")
           ? (p.claims.worlds as string[]) : undefined,
+        create: p.claims?.create === true,   // RFC-005 §3.2.7 — founding authority
       };
       console.log(`[${ts()}] aid1 agent: ${p.sub} ("${p.name}") exp ${new Date(p.exp * 1000).toISOString()}`);
     } else {
@@ -1253,7 +1365,14 @@ wss.on("connection", (ws, req) => {
       console.log(`[${ts()}] [mcpl] ${auth.id} dial-time world "${reqWorld}" granted (policy)`);
       auth = { ...auth, world: reqWorld };
     } else {
-      console.log(`[${ts()}] [mcpl] ${auth.id} dial-time world "${reqWorld}" denied — falling back to "${auth.world ?? "commons"}"`);
+      // RFC-005 §3.3 (Mica review #3): NO SILENT FALLBACK. The dialer asked to
+      // wake up somewhere; landing elsewhere unannounced means the host thinks
+      // it is in one place while its body is in another — the exact failure
+      // this RFC exists to prevent, reintroduced at connect time. Refuse, and
+      // name the denied destination in the close reason.
+      console.log(`[${ts()}] [audit] dial-time world "${reqWorld}" DENIED for ${auth.id} — refusing connection`);
+      refuseWithGuidance(ws, `world "${reqWorld}" is not in this credential's join policy`);
+      return;
     }
   }
   // session takeover: one body per identity — a half-open predecessor gets
