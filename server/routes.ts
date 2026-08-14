@@ -19,6 +19,7 @@ import { resolveLibFile } from "./lint.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { worlds, getWorld, type World } from "./world.ts";
 import { handleUpload } from "./upload.ts";
+import { handleRelayWebhook, relayDiag, relayEnabled } from "./relayadapter.ts";
 
 /** What the routes need from Bun's server object, structurally: the WS
  *  upgrade and the socket address (X-Real-IP's fallback). */
@@ -360,6 +361,31 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname === "/avatars",
     handler: () => new Response(JSON.stringify(avatarRoster()),
+      { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
+  },
+  {
+    // #104 phase-1: LiveKit's signed event stream (participant_joined/left).
+    // The SDK verifies the signature against our key/secret — an unsigned or
+    // wrongly-signed post is refused inside handleRelayWebhook, and admission
+    // enforcement (the seven refusals) runs on every join event.
+    match: (u, req) => u.pathname === "/relay-webhook" && req.method === "POST",
+    handler: async ({ req }) => {
+      if (!relayEnabled()) return new Response("no relay", { status: 404 });
+      try {
+        const r = await handleRelayWebhook(await req.text(), req.headers.get("authorization") ?? "");
+        return new Response(JSON.stringify(r), { headers: { "content-type": "application/json" } });
+      } catch (err) {
+        console.error(`[relay] webhook refused:`, err);
+        return new Response("bad webhook", { status: 401 });
+      }
+    },
+  },
+  {
+    // #104 diagnostics: the adapter's view — legs, gens, consent, incarnation.
+    // Both-ends discipline: pair with the client's voiceDiag relay page.
+    match: (u) => u.pathname === "/relay-diag",
+    handler: ({ url }) => new Response(
+      JSON.stringify(relayDiag(url.searchParams.get("world") ?? "staging")),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {

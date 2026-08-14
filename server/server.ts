@@ -41,7 +41,42 @@ import { ROLE_RANK } from "../shared/fold.js";
 // noticed, because /version kept answering from the brief up-windows.)
 import { SeatStore } from "./seats.ts";
 import { OPT_DIR } from "./config.ts";
+// Relay-floor spike (#104 phase 1): the LiveKit adapter. Inert without
+// RELAY_URL — the mesh stays the production path (amendment 6).
+import { relayEnabled, bootRelayAdapter, mintRelayCredential, revokeRelayLeg,
+  setListenerConsent, setLegRetiredHook, relayDiag, relayServiceState, currentIncarnation } from "./relayadapter.ts";
 const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR);
+
+// The resident-visible service chart (amendment 2): every voice-service
+// transition reaches every client of every world, stamped with the
+// incarnation so a client can tell "the relay restarted" from "it flapped".
+bootRelayAdapter(OPT_DIR, (state, inc) => {
+  const msg = JSON.stringify({ type: "voice-service", state, incarnation: inc });
+  for (const w of worlds.values()) for (const t of w.clients) t.ws.send(msg);
+  console.log(`[relay] voice-service ${state} (${inc})`);
+});
+// The relay told us (webhook participant_left / probe) a leg died: the
+// SEQUENCER announces it — presence authority stays here in every topology.
+setLegRetiredHook((worldName, id, gen) => {
+  const w = worlds.get(worldName);
+  if (!w) return;
+  const retire = JSON.stringify({ type: "surface-transition",
+    id, surface: "voice-relay", gen: null, retired: gen });
+  for (const t of w.clients) t.ws.send(retire);
+});
+/** Retire an identity's relay leg through the SAME funnel every other surface
+ *  death uses: revoke at the relay, burn the credential, broadcast the
+ *  transition. Fire-and-forget — a relay outage must never wedge a close. */
+function retireRelayLeg(w: World, id: string) {
+  if (!relayEnabled()) return;
+  revokeRelayLeg(w.name, id).then((leg) => {
+    if (!leg) return;
+    const retire = JSON.stringify({ type: "surface-transition",
+      id, surface: "voice-relay", gen: null, retired: leg.gen });
+    for (const t of w.clients) t.ws.send(retire);
+    console.log(`[world:${w.name}] ${id}/voice-relay revoked — gen ${leg.gen}`);
+  }).catch((err) => console.error(`[relay] revoke for ${id} failed`, err));
+}
 
 // Behavior sandbox wiring: a script's emit is gated by its AUTHOR's live
 // rights (revoke the grant, the behavior loses its teeth) through the same
@@ -117,6 +152,9 @@ function retireAuxLeg(w: World, leg: Client, except?: Client) {
  *  closing its socket, so the ws close handler finds nothing and would never
  *  broadcast (the exact silent-death hole, one caller upstream). */
 function reapAuxLegs(w: World, primary: Client, closeReason: string) {
+  // the identity's RELAY leg dies with its primary, same funnel (#104 A1:
+  // primary retirement revokes the media credential)
+  retireRelayLeg(w, primary.id);
   for (const t of [...w.clients]) {
     if (t !== primary && t.id === primary.id && (t.surface ?? "world") !== "world") {
       retireAuxLeg(w, t, primary);
@@ -591,6 +629,11 @@ const server = Bun.serve({
                 clients.delete(other.ws);
                 other.ws.close?.(4002, "session takeover");
                 console.log(`[world:${w.name}] ${c.id}/${c.surface} takeover — gen ${other.gen} retired`);
+                // a WORLD-surface takeover retires the identity's relay leg:
+                // its credential is bound to the retired primaryGen, and the
+                // successor mints fresh (#104 amendment 1 — takeover→rotate;
+                // measured target: old leg's packets refused ≤2s)
+                if ((c.surface ?? "world") === "world" && !other.spectator) retireRelayLeg(w, c.id);
               }
             }
           }
@@ -987,6 +1030,50 @@ const server = Bun.serve({
           for (const t of c.world.clients)
             if (t.id === rto && (t.surface ?? "world") === toSurface
                 && (!t.spectator || (t.surface && t.surface !== "world"))) t.ws.send(rpacket);
+          return;
+        }
+        case "relay-cred": {
+          // #104 phase-1: mint the least-authority media credential (A1). The
+          // asker must be an ADMITTED identity — the embodied primary (its own
+          // mic/tts publishes on its relay leg) — and the leg it earns is a
+          // surface session: gen from the same counter as every leg, announced
+          // by the same transition event, retired by the same funnel. The
+          // LiveKit API secret never rides this reply; only the scoped JWT.
+          if (!c.world) return;
+          if (!relayEnabled()) { ws.send(JSON.stringify({ type: "error", error: "no voice relay configured" })); return; }
+          if (c.spectator || (c.surface ?? "world") !== "world") {
+            ws.send(JSON.stringify({ type: "error", error: "relay-cred is the embodied primary's ask" }));
+            return;
+          }
+          const wantPub = msg.publish !== false;      // scopes are askable-down, never up
+          const mediaGen = ++GEN;
+          mintRelayCredential(c.world.name, c.id, c.gen!, mediaGen,
+            { publish: wantPub, subscribe: msg.subscribe !== false })
+            .then((cred) => {
+              if (!c.world) return;
+              const transition = JSON.stringify({ type: "surface-transition",
+                id: c.id, surface: "voice-relay", gen: mediaGen, retired: null });
+              for (const t of c.world.clients) if (t !== c) t.ws.send(transition);
+              ws.send(JSON.stringify({ type: "relay-cred", ...cred, gen: mediaGen,
+                service: relayServiceState() }));
+            })
+            .catch((err) => {
+              console.error(`[relay] mint for ${c.id} failed`, err);
+              ws.send(JSON.stringify({ type: "error", error: "relay credential mint failed" }));
+            });
+          return;
+        }
+        case "voice-consent": {
+          // Listener-authored receive consent (amendment 3): server-enforced
+          // via subscriptions, gen-bound (this leg's gen — a reconnect starts
+          // fail-closed and cannot resurrect its predecessor's yes),
+          // idempotent. Publisher self-mute stays pre-encode client-side;
+          // moderator mute is a different verb with a different rank.
+          if (!c.world || c.spectator) return;
+          if (!relayEnabled()) return;
+          setListenerConsent(c.world.name, c.id, c.gen ?? 0, msg.recv === true)
+            .then((r) => ws.send(JSON.stringify({ type: "voice-consent", recv: msg.recv === true, applied: r.changed, ...(r.reason ? { note: r.reason } : {}) })))
+            .catch((err) => console.error(`[relay] consent for ${c.id} failed`, err));
           return;
         }
         case "attest": {

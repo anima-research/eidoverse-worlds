@@ -183,7 +183,15 @@ function start() {
   connect();
   initPalette();
   initConjure();   // the orrery panel — prompt → your pick of images → mesh → world
-  initVoice(CONFIG.name);
+  // #104 phase-1: EXACTLY ONE PLAYBACK OWNER (amendment 6). ?relay=1 runs the
+  // relay-floor leg and the mesh never initializes; without it, byte-identical
+  // mesh behavior. The staging world flips the flag; production stays mesh.
+  if (new URLSearchParams(location.search).get('relay') === '1') {
+    import('./lib/voicerelay.js').then((vr) => vr.initVoiceRelay(CONFIG.name))
+      .catch((e) => console.error('voice relay init failed', e));
+  } else {
+    initVoice(CONFIG.name);
+  }
   initAudioPanel();   // 🔊 categories: voices / world / TTS + consent rows
   // HEARING YOURSELF IS THE POINT. This hook — your own says going through the
   // selected voice — used to be installed ONLY inside the `?tts=PORT` block, so
