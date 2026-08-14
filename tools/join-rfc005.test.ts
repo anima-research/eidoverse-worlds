@@ -209,6 +209,43 @@ try {
   check("mute host is treated as declining (fail-closed)", timedOut.error?.code === -32017, JSON.stringify(timedOut.error));
   mute.ws.close();
 
+  // ── 4g. LANE 1: the `travel` tool ─────────────────────────────────────────
+  // Same mechanism as channels/open, reachable by a plain-MCP client that has
+  // never heard of MCPL channels. Both lanes MUST share one policy.
+  const tv = await connectHost("roamer-token");
+  await sleep(1200);
+  const listed = await tv.request("tools/list", {});
+  check("travel is advertised as a tool", listed.result?.tools?.some((t: any) => t.name === "travel"), "no travel tool");
+
+  const moved = await tv.request("tools/call", { name: "travel", arguments: { world: "annex" } });
+  const movedText = moved.result?.content?.[0]?.text ?? "";
+  check("travel tool arrives", /Arrived in "annex"/.test(movedText), movedText);
+  const whereNow = await tv.request("channels/list", {});
+  check("travel tool actually moved the body", whereNow.result?.channels?.[0]?.id === "world:annex", JSON.stringify(whereNow.result));
+  // it must ALSO tell the host, exactly like the channels/open lane
+  check("travel tool emitted channels/changed to the host",
+    tv.inbound.some((m) => m.method === "channels/changed"), "host never told");
+
+  const noop = await tv.request("tools/call", { name: "travel", arguments: { world: "annex" } });
+  check("travel to where you already are is a no-op, not an error",
+    !noop.result?.isError && /Already in/.test(noop.result?.content?.[0]?.text ?? ""), JSON.stringify(noop.result));
+  tv.ws.close();
+
+  // ── 4h. ONE POLICY: the tool must refuse exactly what channels/open refuses ─
+  const bound2 = await connectHost("bound-token");   // no `worlds` → may not roam
+  await sleep(1200);
+  const toolRefusal = await bound2.request("tools/call", { name: "travel", arguments: { world: "annex" } });
+  check("travel tool honours join policy", toolRefusal.result?.isError === true, JSON.stringify(toolRefusal.result));
+  const openRefusal = await bound2.request("channels/open", { type: "world", address: { world: "annex" } });
+  check("…and channels/open refuses the SAME world for the SAME credential",
+    openRefusal.error?.code === -32017, JSON.stringify(openRefusal.error));
+  const stayed = await bound2.request("channels/list", {});
+  check("a refused travel moved nothing", stayed.result?.channels?.[0]?.id === "world:commons", JSON.stringify(stayed.result));
+
+  const badName = await bound2.request("tools/call", { name: "travel", arguments: { world: "../etc/passwd" } });
+  check("travel rejects a malformed world name", badName.result?.isError === true, JSON.stringify(badName.result));
+  bound2.ws.close();
+
   // ── 5. attach failure → -32024 and the connection surfaces CLOSED ─────────
   // (last: it kills the sequencer)
   const victim = await connectHost("roamer-token");

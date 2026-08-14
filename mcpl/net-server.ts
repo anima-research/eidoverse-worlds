@@ -126,6 +126,7 @@ const TOOLS = [
   { name: "place", description: "Move an entity (id from look) to x,z (y defaults to terrain; pass y to seat on furniture).", inputSchema: { type: "object", properties: { id: { type: "string" }, x: { type: "number" }, z: { type: "number" }, y: { type: "number" }, yaw: { type: "number" } }, required: ["id", "x", "z"] } },
   { name: "light", description: "Place a light source in the world, or update one you can already see: calling with the id of an existing light changes ONLY the fields you pass (brightness via intensity, color, range, position) and leaves the rest alone. Persists like any placed thing. color is a hex integer (e.g. 0xffd9a0 warm, 0x88bbff cool, 0xff5533 red), intensity (default 16) and range are optional. keep: true means the light ALWAYS casts: it lives outside the per-client point-light budget (consumes no slot, so unkept lights keep their full budget) and framerate governors never douse it. Every casting light has real GPU cost — keep it for lights that matter. Position defaults to just in front of you. A small glowing sphere marks it; move or remove it by id like any entity.", inputSchema: { type: "object", properties: { color: { type: "number" }, intensity: { type: "number" }, range: { type: "number" }, keep: { type: "boolean" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, id: { type: "string" } } } },
   { name: "remove", description: "Remove a placed entity.", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+  { name: "travel", description: "Walk to another world this door fronts, keeping your identity, body and attention settings — no reconnect. Subject to your credential's join policy; founding a world that does not exist yet needs separate create authority. Your held pose and posture survive; your chat cursor resets to the new world.", inputSchema: { type: "object", properties: { world: { type: "string", description: "world name, e.g. \"commons\"" } }, required: ["world"] } },
   { name: "world_verb", description: "Raw world-log verb. The verb set is CLOSED by design — say, use, punt, force, mount, dismount, spawn, place, remove, light, comp, motion, behavior, asset, terrain, grass, sky, weather, grant, kick, ban, unban — and the door refuses others; extend STATE with comp types you invent, EVENTS with use actions, SEMANTICS with behavior scripts, never by hoping a new verb exists. This is also the authoring surface for components: comp {id, type, data|null} attaches data to an entity (sockets, reactions, or anything you invent); motion {id, type: pendulum|spin|orbit|bob|path, …} sets it moving; see AGENTS.md in the eidoverse-worlds repo for the full vocabulary.", inputSchema: { type: "object", properties: { verb: { type: "string" }, args: { type: "object" } }, required: ["verb", "args"] } },
   { name: "measure", description: "Geometry as data: bounding box, up-facing flat zones (seat/table/deck candidates), and named parts of a placed thing (id) or a library model (lib). Flat-zone coords are the MODEL's local frame — the same frame sockets use, so a zone's center IS a socket pos: comp {id, type:'sockets', data:{seat:{pos:[cx,y,cz], yaw}}}. Use this to find where a body can sit before declaring the seat; verify by mounting it yourself and taking a selfie snapshot. Raw GLB bytes are at GET <sequencer>/library/<lib> if you want to process the mesh locally.", inputSchema: { type: "object", properties: { id: { type: "string" }, lib: { type: "string" } } } },
   { name: "world_history", description: "Pull raw entries from the world log — the append-only record every world IS. Filter by verbs (e.g. ['use','motion'] to trace an interaction, ['comp'] to see how something was built), page backwards with before. Every entry has {seq, ts, actor, verb, args}; reaction-authored entries carry {cause, by}. This is the debugging primitive: the log is the world, so reading it is reading the world's source.", inputSchema: { type: "object", properties: { verbs: { type: "array", items: { type: "string" } }, before: { type: "number" }, after: { type: "number" }, limit: { type: "number" } } } },
@@ -267,6 +268,30 @@ class Session {
    *  assignment. Throws on attach failure; the caller maps that to -32024 and
    *  MUST then surface the connection as closed (§3.2.5 — we cannot silently
    *  remain attached to a world we already left). */
+  /** The ONE authorization path for changing worlds, shared by both lanes:
+   *  the `travel` tool and `channels/open` naming a sibling. Extracted because
+   *  two copies of a three-part gate is two policies that will drift — and the
+   *  founding check in particular took three rounds of review to get right.
+   *
+   *  Three questions, in this order, each with its own answer shape:
+   *    1. may this HOST act on channels at all      → capability (-32002)
+   *    2. may this CREDENTIAL reach that world      → join policy (-32017)
+   *    3. may it CREATE a world that isn't there    → create authority (-32023)
+   *  Founding is deliberately last and separate: an operator granting broad
+   *  travel has not thereby granted unbounded world-founding. */
+  private async travelGate(target: string): Promise<
+    { ok: true; founding: boolean } | { ok: false; code: number; why: string }
+  > {
+    if (!this.granted(CAP.channelsLifecycle))
+      return { ok: false, code: -32002, why: `capability denied: ${CAP.channelsLifecycle}` };
+    if (!joinAllowed(this.auth, target))
+      return { ok: false, code: -32017, why: `channel not permitted: world "${target}" is not in this credential's join policy` };
+    const founding = !(await worldExists(target));
+    if (founding && !this.auth.create)
+      return { ok: false, code: -32023, why: `unknown channel: world "${target}" does not exist (founding requires create authority)` };
+    return { ok: true, founding };
+  }
+
   private async joinWorld(w: string, founding = false): Promise<void> {
     // ── PREPARE (RFC-005 §3.2.3a-c, Mica review #2) ────────────────────────
     // The host's acceptance is PART of the transition, not a notification
@@ -734,27 +759,15 @@ class Session {
                 }
                 const target = byId ?? byAddr;   // channelId wins (conflict rejected above)
                 if (!target) { this.conn.sendError(req.id, -32023, `unknown channel: ${p.channelId ?? JSON.stringify(p.address)}`); break; }
-                // RFC-005 §3.1: join intent requires the channels.join grant
-                // (in addition to channels.lifecycle), BEFORE policy.
-                if (!this.granted("channels.join")) {
-                  this.conn.sendError(req.id, -32002, "capability denied: channels.join");
-                  break;
-                }
-                if (!joinAllowed(this.auth, target)) {
-                  this.conn.sendError(req.id, -32017, `channel not permitted: world "${target}" is not in this credential's join policy`);
-                  break;
-                }
-                // §3.2.7 (Mica review): FOUNDING IS NOT JOINING. This deployment
-                // founds a world on first attach, so a join naming an unused
-                // name would create one — an operator granting broad travel has
-                // not thereby granted unbounded world-founding. Creation needs
-                // its own positive authority (`create: true` on the credential).
-                const founding = !(await worldExists(target));
-                if (founding && !this.auth.create) {
-                  this.conn.sendError(req.id, -32023,
-                    `unknown channel: world "${target}" does not exist (founding requires create authority)`);
-                  break;
-                }
+                // Join intent is authorized by channels.lifecycle — the same
+                // grant that covers opening any channel. An earlier draft gated
+                // it on an invented `channels.join` leaf, which is NOT in the
+                // spec's §6.2 capability list: declaring it would have made this
+                // a protocol change. It isn't one. (antra, 2026-08-14: "this can
+                // be done well within eidoverse mcpl".)
+                const gate = await this.travelGate(target);
+                if (!gate.ok) { this.conn.sendError(req.id, gate.code, gate.why); break; }
+                const founding = gate.founding;
                 try {
                   await this.joinWorld(target, founding);
                 } catch (e) {
@@ -1174,6 +1187,25 @@ class Session {
         return text(`placed light [${id}] at (${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)})`);
       }
       case "remove": ag.verb("remove", { id: a.id }); return text(`removed ${a.id}`);
+      case "travel": {
+        const target = String(a.world ?? "").trim();
+        if (!WORLD_NAME_RE.test(target))
+          return { content: [{ type: "text", text: `travel refused: "${target}" is not a valid world name` }], isError: true };
+        if (target === ag.world) return text(`Already in "${target}".`);
+        const gate = await this.travelGate(target);
+        if (!gate.ok) return { content: [{ type: "text", text: `travel refused: ${gate.why}` }], isError: true };
+        try {
+          await this.joinWorld(target, gate.founding);
+        } catch (e) {
+          return { content: [{ type: "text", text: `travel failed: ${(e as Error).message}` }], isError: true };
+        }
+        // The host is told by channels/changed (same as the channels/open lane);
+        // this string is for the AGENT, so it says what actually moved.
+        return text(
+          `${gate.founding ? "Founded and entered" : "Arrived in"} "${target}" (attachment ${this.epoch}). ` +
+          `Your body, avatar and held pose came with you; your chat cursor starts fresh here. Use \`look\` to see where you are.`,
+        );
+      }
       case "world_verb": {
         // the raw door forwards verbatim, so shape is checked HERE — a
         // malformed place in the log is permanent history every replayer
