@@ -78,6 +78,13 @@ async function pumpOptimize() {
         writeFileSync(failed, err.slice(0, 2000) || "not-smaller");
         console.log(mode ? `[ktx2] ${base} — no variant (${err.split("\n").pop()?.replace(/^\[optimize\]\s*/, "") || "not smaller"})`
           : `[store] ${base} already lean — serving original`);
+      } else if (code === 4) {
+        // Output failed its own container check — the pass corrupted its
+        // images (#122). ENVIRONMENTAL, like code 3: the source is good, so a
+        // .failed marker here would permanently skip an asset that will
+        // convert fine once the encoder stack is sane. Loud, and retried.
+        console.error(`[${mode ? "ktx2" : "store"}] ${base} REFUSED — optimized output failed its image check, `
+          + `serving the original: ${err.split("\n").filter((l) => l.includes("declares")).join(" | ") || err.split("\n").pop()}`);
       } else if (code === 3 && mode) {
         // No KTX2 encoder on this box — ENVIRONMENTAL, never a .failed marker
         // (that would permanently skip every model authored before
