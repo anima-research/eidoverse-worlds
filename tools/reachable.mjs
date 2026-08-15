@@ -30,10 +30,10 @@
  *   DEAD        — the feature is gone; delete the function.
  *   UNWIRED     — the feature was never finished; write the caller.
  *
- * `rebindSenders` (swap the outgoing audio track on every peer) is the worked
- * example: it is not dead, it is UNWIRED — there is no mic-device-switching UI
- * in the client at all, so its caller was never written. A durability checker
- * calls that file perfectly healthy.
+ * `toggleMute` is the worked example: a harness proves it works while the
+ * product calls micOn() instead, so its careful noise-gate reasoning about the
+ * unmute leak is not on any live path. A durability checker calls that file
+ * perfectly healthy.
  *
  *   node tools/reachable.mjs            # whole client
  *   node tools/reachable.mjs client/lib/voice.js
@@ -83,12 +83,37 @@ for (const file of targets) {
     // 1. console-exposed — a human is the call site, and that is legitimate.
     if (new RegExp(`window\\.${fn}\\s*=|window\\[['"\`]${fn}['"\`]\\]`).test(src)) continue;
 
+    // 🔴 The defining file is a CALL SITE like any other. Skipping it was a real
+    // bug: rebindSenders is called at voice.js:554 for the TTS takeover, and
+    // this tool reported it uncalled — then I wrote that false finding into a
+    // commit message before a ground-truth grep caught me. Count self-calls,
+    // but not the `export function fn(` line itself.
     let callers = 0, testOnly = 0, reexport = 0;
-    for (const [f, s] of text) {
-      if (f === file) continue;
+    for (const [f, raw] of text) {
+      // 🔴 Strip comments FIRST. toggleMute has exactly two mentions in the
+      // tree and both are inside comments explaining what it does — counting
+      // those as call sites hid a true positive (the product calls micOn(),
+      // never toggleMute). Prose about a function is not a caller.
+      const s = raw.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
       // 3. a re-export is not a call — it just moves the name.
       if (new RegExp(`export\\s*\\{[^}]*\\b${fn}\\b[^}]*\\}\\s*from`).test(s)) { reexport++; continue; }
-      const hits = (s.match(new RegExp(`\\b${fn}\\s*\\(`, 'g')) || []).length;
+      // A call is `fn(`, but a REFERENCE is a call site too and looks nothing
+      // like one: addEventListener('beforeunload', sfuClose), .then(fn),
+      // map(fn), { onClick: fn }. sfuClose was flagged NO CALLER while being
+      // wired at voicesfubridge.js:108 exactly that way — the fifth distinct
+      // legitimately-invisible pattern found while building these two tools.
+      const called = (s.match(new RegExp(`\\b${fn}\\s*\\(`, 'g')) || []).length;
+      // Narrow: a reference is the bare name as a whole argument or value —
+      // addEventListener('x', fn) / .then(fn) / { on: fn }. The first version
+      // of this regex was loose enough to match nearly anything and drove
+      // findings to ZERO, which is exactly as useless as crying wolf.
+      const referenced = (s.match(
+        new RegExp(`(?:,|\\(|:)\\s*${fn}\\s*(?:,|\\)|\\})`, 'g')
+      ) || []).length;
+      const selfDef = f === file
+        ? (s.match(new RegExp(`export\\s+(?:async\\s+)?function\\s+${fn}\\s*\\(`, 'g')) || []).length
+        : 0;
+      const hits = called + referenced - selfDef;
       if (!hits) continue;
       // 2. harness callers are real, but they do not prove the LIVE path runs it.
       if (/\/tools\/|\.test\.|\.spec\./.test(f)) testOnly += hits; else callers += hits;
