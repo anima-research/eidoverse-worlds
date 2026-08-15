@@ -418,9 +418,17 @@ export function ttsSection(host, onPaint = () => {}) {
     };
     host.appendChild(head);
     const listHost = document.createElement('div');
-    // Indent to the CONTROL column (label 104px + 10px gap), so the voices hang
-    // under the checkbox that switches them on rather than floating mid-panel.
-    listHost.style.cssText = 'margin:2px 0 8px 142px';
+    // Indent to the CONTROL column so the voices hang under the checkbox that
+    // switches them on rather than floating mid-panel.
+    //
+    // 🔴 DERIVED, NOT HARDCODED. This was `margin-left: 142px` from "label
+    // 104px + 10px gap" — a measurement of one particular layout, which silently
+    // became wrong the moment the panel's label column changed width (it went
+    // 5.5rem → 8.5rem on 2026-08-14 because the longest label did not fit).
+    // The grid owns the gutter; read it from the grid.
+    const col = getComputedStyle(host.closest('.sp-row')?.parentElement ?? host)
+      .getPropertyValue('--sp-label-col') || '8.5rem';
+    listHost.style.cssText = `margin:2px 0 8px calc(${col} + 10px)`;
     host.appendChild(listHost);
     collectVoices().then((items) => {
       renderVoiceList(listHost, {

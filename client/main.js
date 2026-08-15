@@ -516,7 +516,14 @@ if (typeof window !== 'undefined') window.setVoice = setVoice;
         globalThis.__voiceProbe = () => ({ ...vs.mouthInfo(), track: vs.genTrackInfo() });
         globalThis.__voiceSpeak = (t) => vs.speak(t);   // the APP's mouth, for probes
         const { toggleMic, micOn } = await import('./lib/voice.js');
-        if (!micOn()) await toggleMic(me);
+        // 🔴 `me` IS NOT IN SCOPE HERE — it was a ReferenceError that threw
+        // before the mouth ever opened, so a body with ?tts= joined, logged
+        // "synthesized voice ready", and was mute. The comment six lines up
+        // already warned that an older copy "passed `me`, the avatar OBJECT";
+        // the fix deleted the definition and left the call. toggleMic wants the
+        // actor NAME, which is CONFIG.name — the same value every other caller
+        // passes.
+        if (!micOn()) await toggleMic(CONFIG.name);
         console.log('[voice] TTS wiring complete');
       })
       // 🔴 NEVER SWALLOW THIS. It was `.catch(() => {})`, so anything after the

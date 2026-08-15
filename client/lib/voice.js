@@ -501,7 +501,15 @@ export async function toggleMic(name) {
   // reported rx=0/publishing=false forever. Caught live: R turned her mic on,
   // said "hello", and the server saw zero packets. The button must drive
   // WHICHEVER voice path is actually running, so route before doing anything.
-  if (window.__sfuMic) { await window.__sfuMic(); bus.emit('audio:mic', true); return; }
+  // 🔴 RETURN THE NEW STATE. This branch used to `return` bare, so every caller
+  // got undefined — the panel checkbox ticked and micPublished stayed false
+  // (R, 00:05: "the mic toggle is broken now, can't be toggled on"). It also
+  // hard-emitted `true`, which is a claim rather than a reading.
+  if (window.__sfuMic) {
+    const on = await window.__sfuMic();
+    bus.emit('audio:mic', on);
+    return on;
+  }
   myId = name ?? myId;
   if (micOn()) {
     // GOING QUIET IS A DATA CHANGE, NOT A CONNECTION CHANGE (R, 2026-08-08).

@@ -39,9 +39,14 @@ import { micOn, toggleMic } from './voice.js';
 // minmax(0,1fr) on the control column, not 1fr: the mic meter is flex:1 inside
 // it and a bare 1fr lets it push the grid wider than the panel.
 const SP_CSS = `
-.sp-row { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr);
-          align-items: center; gap: 8px; margin: 5px 0; }
-.sp-label { opacity: 0.75; text-align: right; }
+:root { --sp-label-col: 8.5rem; }
+.sp-row { display: grid; grid-template-columns: var(--sp-label-col) minmax(0, 1fr);
+          align-items: center; gap: 10px; margin: 5px 0; }
+/* 8.5rem, not the 5.5 I guessed: the longest label here is "connect to other
+   people's audio" and a column narrower than its longest member does not make
+   a centre line, it makes a ragged wrap. Labels wrap to two lines rather than
+   overflowing, and the line still holds. */
+.sp-label { opacity: 0.75; text-align: right; line-height: 1.25; }
 .sp-ctl { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .sp-note { opacity: .6; font-size: .9em; }
 /* rows that are a label + a bare control (checkbox first in markup) still line
@@ -171,12 +176,22 @@ function paint(body) {
   // toggleMic — the sync is the shared state, not a message between them.)
   body_.append(checkRow('microphone',
     'transmit your voice — the mic glyph beside the HUD is this same switch',
-    micOn(), async () => {
-      await toggleMic();
-      // Emit AFTER the await: the SFU path publishes asynchronously, and an
-      // event fired before the track exists repaints the row to a state that
-      // has not happened yet — the displayed-state-vs-real-state trap again.
-      bus.emit('audio:mic', micOn());
+    // 🔴 micOn() reads the MESH's state — on the SFU path it is always false,
+    // so the box would render unticked no matter what. Ask whichever transport
+    // is live. (window.relayDiag is installed by the SFU bridge.)
+    (window.relayDiag?.().micPublished ?? micOn()), async () => {
+      // 🔴 COPY THE BADGE EXACTLY (R, 00:05: "make sure you copy how 'hear
+      // voice' is doing its thing" — the toggle would not turn on). Two bugs
+      // in my first version, both the same shape as the `me is not defined`
+      // one I fixed in main.js an hour earlier:
+      //   1. `toggleMic()` with NO ARGUMENT. mictoggle.js:104 passes
+      //      CONFIG.name; without it the mesh path has no actor name and the
+      //      toggle silently does not take.
+      //   2. I threw away the RETURN VALUE. toggleMic resolves to the new
+      //      state — reading micOn() after the await races the async publish,
+      //      which is exactly the state-lag the comment claimed to avoid.
+      const on = await toggleMic(CONFIG.name);
+      bus.emit('audio:mic', on);
     }));
   body_.append(micFloorRow());   // sensitivity belongs UNDER the switch it serves
 

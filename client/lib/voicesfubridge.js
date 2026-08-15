@@ -94,7 +94,17 @@ export function initVoiceSfu(name) {
   // The mic badge (mictoggle.js → voice.js toggleMic) checks for this and hands
   // over when the SFU transport owns playback. Set LAST, so it is never visible
   // before the bridge can honour it.
-  window.__sfuMic = async () => { await sfuMic(!sfuMicOn()); bus.emit('mic', sfuMicOn()); };
+  // Returns the RESULTING state so toggleMic can hand it back to the panel, and
+  // reads it from sfuMicOn() AFTER the await — a publish that fails then reports
+  // honestly instead of optimistically. (An earlier edit of mine matched nothing
+  // and silently did NOTHING because I wrote 'audio:mic' where the file says
+  // 'mic'; assert-before-replace is why this one cannot repeat that.)
+  window.__sfuMic = async () => {
+    await sfuMic(!sfuMicOn());
+    const on = sfuMicOn();
+    bus.emit('audio:mic', on);
+    return on;
+  };
   addEventListener('beforeunload', sfuClose);
 }
 
