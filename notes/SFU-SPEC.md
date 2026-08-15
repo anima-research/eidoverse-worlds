@@ -397,6 +397,44 @@ Filed as future work; not built.
 listener-consent, server-enforced — stronger), plaintext UDP (browser mandates
 DTLS-SRTP), and the whole jitter/PLC/FEC layer (browser does it better).
 
+## Future work: loss-driven FEC (a PROTOCOL addition, sketched not built)
+
+Worth writing down properly because it is the one idea from Basis that survives
+the browser comparison, and because it needs a wire change rather than a client
+tweak.
+
+**The gap.** Opus in-band FEC embeds a redundant copy of the previous frame,
+sized by `OPUS_SET_PACKET_LOSS_PERC`. The browser picks that from its own model
+of the *sender's* uplink. But in an SFU the loss that matters is on the
+**listener's downlink**, which the sender cannot observe — so the encoder is
+tuned against the wrong network. Basis solves it by measuring loss at the
+receiver and feeding it back (`BasisVoiceBuffer` ~5s half-life →
+`OPUS_SET_PACKET_LOSS_PERC`). Their advantage is that both ends are their code.
+
+**What we already have.** Each listener's browser knows its real loss:
+`getStats()` on the inbound track gives `concealedSamples`, `concealmentEvents`,
+`fecPacketsReceived`, `fecPacketsDiscarded`, `packetsLost`. And a sender can
+retune live via `RTCRtpSender.setParameters()`.
+
+**What is missing is the path between them**, and it is SFU-shaped:
+1. listener reports a smoothed loss figure to the sequencer (a small periodic
+   message, or ride the existing consent/diag channel);
+2. the SFU aggregates per SPEAKER — the interesting statistic is the **worst**
+   listener of that speaker, not the mean, since FEC has to protect the weakest
+   link;
+3. the sequencer nudges that speaker's client, which calls `setParameters()`.
+
+**Why it is not free.** FEC costs ~15% bitrate at 10% assumed loss (Basis's
+setting), so tuning it up for everyone because one listener is on bad LTE
+penalises the room. That argues for a cap, hysteresis (Basis's whole design is
+hysteresis), and possibly per-speaker rather than per-room.
+
+**Why it is interesting anyway:** it is the one place where being an SFU is an
+ADVANTAGE over a mesh for quality rather than merely for connection count — the
+relay is the only party that can see every listener's downlink at once. Worth
+raising with antra as a phase-2 candidate alongside the P2P offload, since both
+are "the relay knows something no endpoint does".
+
 ## Attribution
 
 Design informed by a source read of BasisVR (MIT, © 2024 Luke Doolan) — specifically its
