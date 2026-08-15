@@ -228,6 +228,30 @@ candidates. `bundlePolicy:"max-bundle"` → 176ms; `+ iceUseIpv6:false` → 61ms
 we have a public host. At this m-line count this is the difference between a
 usable join and a two-second stall.
 
+### 🔴 What the CPU numbers actually measure (checked 17:59 — one earlier claim corrected)
+
+**Every figure in this file is an UPPER BOUND, not the SFU's own cost.** The load
+harness runs both halves of every connection in one process: the fake browsers
+encrypt on send and decrypt on receive, alongside the SFU's forwarding. A real
+deployment pays only the SFU's share.
+
+Decomposed at N=12, 2 speakers, Node:
+
+| | |
+|---|---|
+| 12 peer-pairs with **no SFU at all**, 2 speaking | **7.0%** — pure harness |
+| 12 legs connected to the SFU, **nobody speaking** | **0.7%** |
+| same, 2 speaking | **24.0%** total → **23.2% marginal** for the audio |
+
+**Correction:** an earlier line here said "12 idle legs = 12% CPU". That measured
+legs which had just finished negotiating 132 routes — setup churn, not idle.
+True idle is **0.7%**, and the ambient cost of a connected room is nearly free.
+
+So "22% for a room of twelve" is honest as a ceiling and wrong as a measurement
+of the SFU. The real share is lower by whatever the harness's receive-side
+decryption costs, which this method cannot separate — isolating it needs peers
+in separate processes, which is browser-smoke work rather than a load test.
+
 ### The realistic number, and why the scary one was wrong
 
 | scenario | Bun | Node |
