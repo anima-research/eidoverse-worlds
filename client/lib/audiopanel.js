@@ -116,7 +116,11 @@ function checkRow(label, hint, checked, onChange) {
 // the same hue at a quarter value, so the bar still MOVES when muted (you can
 // set your threshold before unmuting) without claiming to transmit.
 const LVL_LIVE = '#ffd66b';
-const LVL_DARK = '#4a4230';
+const LVL_DARK = '#6b5f42';   // was #4a4230 — INVISIBLE against the black track
+// (seen in the 08-15 screenshot: only the threshold marker showed). A muted
+// meter must still be READABLE; "not transmitting" is said by being dimmer than
+// live, not by vanishing. Verified visually, which is the only way this class
+// of bug gets caught.
 
 function micFloorRow() {
   const row = document.createElement('div');
