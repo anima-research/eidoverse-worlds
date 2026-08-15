@@ -102,5 +102,43 @@ check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length ===
 
 }
 
+// ── RECONNECT MUST NOT RESURRECT CONSENT (live-path bug, 2026-08-14) ──────
+// A reviewer found this by reconnecting a real websocket against a live server:
+// retireRelayLeg never routed to the SFU, so revokeSfuLeg was imported and
+// NEVER CALLED. The old leg lingered, standingConsent survived, and a fresh
+// voice leg inherited a yes it never gave.
+//
+// 🔴 THESE TESTS STILL CANNOT CATCH THE ORIGINAL BUG, and saying so is the
+// point. Verified by mutation: deleting the SFU branch in server.ts's
+// retireRelayLeg — the exact defect that shipped — leaves this file at 25/25,
+// because these tests CALL revokeSfuLeg themselves, which is precisely the call
+// the live path was missing. What they pin is that retirement CLEARS
+// everything; what no unit test here can pin is that retirement is REACHED.
+// That gap belongs to tools/sfu-browser-smoke.mjs and to live probes.
+// If you add a new per-listener map, add it below AND check the live path.
+{
+  const W = "reconnect";
+  const st = sfuState(W);
+  const allows = (l: string, sp: string) =>
+    (st.sfu as unknown as { allows(a: string, b: string): boolean }).allows(l, sp);
+  mintSfuCredential(W, "lis", 1, 2);
+  mintSfuCredential(W, "spk", 1, 4);
+  setSfuConsent(W, "lis", 1, true);
+  check("consent ON permits the pair", allows("lis", "spk"));
+  setSfuModeratorMute(W, "spk", true);
+
+  revokeSfuLeg(W, "lis");                       // the leg dies WITHOUT a revoke
+  mintSfuCredential(W, "lis", 1, 6);            // …and reconnects, new mediaGen
+  check("a reconnected listener does NOT inherit consent", !allows("lis", "spk"));
+  check("…and its standing answer is gone too", st.standingConsent.get("lis") === undefined);
+
+  revokeSfuLeg(W, "spk");
+  mintSfuCredential(W, "spk", 1, 8);            // the MUTED speaker reconnects
+  check("a reconnected speaker's mute is cleared in BOTH stores",
+    !st.moderatorMuted.has("spk") &&
+    !((st.sfu as unknown as { muted: Set<string> }).muted.has("spk")),
+    `adapter=${st.moderatorMuted.has("spk")} sfu=${(st.sfu as unknown as { muted: Set<string> }).muted.has("spk")}`);
+}
+
 console.log(fail === 0 ? `\n\x1b[32m✅ sfu-adapter: ${pass} passed\x1b[0m` : `\n\x1b[31m❌ ${fail} failed\x1b[0m`);
 process.exit(fail ? 1 : 0);

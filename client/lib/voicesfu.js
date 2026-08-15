@@ -21,6 +21,10 @@ import { bus } from './core.js';
 import { audioContext } from './audioctx.js';
 
 let pc = null, cred = null, micStream = null, wantMic = false;
+/** Speaker ids announced by the server, consumed in order by ontrack. Module
+ *  level and subscribed ONCE (see sfuConnect) — core.js has no `off`. */
+const routeQueue = [];
+bus.on('sfu-route', (m) => routeQueue.push(m.speaker));
 const speakers = new Map();           // id → { audio, stream, wantVolume, an, buf }
 
 export const sfuActive = () => !!pc && pc.connectionState === 'connected';
@@ -53,10 +57,16 @@ export async function sfuConnect(credential, send) {
   // mid → we cannot read that portably, so the SERVER tells us via a sideband
   // `sfu-route` message before the offer that adds it. ontrack then pairs the
   // arriving track with the speaker id in arrival order.
-  const pending = [];
-  bus.on('sfu-route', (m) => pending.push(m.speaker));
+  //
+  // 🔴 ONE SUBSCRIPTION FOR THE MODULE'S LIFETIME, not one per connect. core.js
+  // exposes on/emit and NO `off`, so subscribing inside sfuConnect() leaked a
+  // listener on every voice-leg reconnect — each bound to a dead pc's array,
+  // all of them receiving every announcement while only the newest ontrack
+  // consumed one. pending.shift() then desyncs and tracks attach to the WRONG
+  // speaker id. The module-level array is rebound here instead.
+  routeQueue.length = 0;
   pc.ontrack = (e) => {
-    const id = pending.shift();
+    const id = routeQueue.shift();
     if (id) attach(id, e.track);
   };
 

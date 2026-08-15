@@ -74,6 +74,22 @@ setLegRetiredHook((worldName, id, gen) => {
  *  transition. Fire-and-forget — a relay outage must never wedge a close. */
 function retireRelayLeg(w: World, id: string) {
   if (!relayEnabled()) return;
+  // 🔴 THE SFU PATH MUST RETIRE TOO. revokeSfuLeg was imported and never
+  // called, so an SFU leg was NEVER retired on the live path: the old leg
+  // lingered, its standingConsent survived, and a voice-leg reconnect INHERITED
+  // a consent the fresh leg never gave. Fail-open on a privacy boundary.
+  // Adapter tests missed it because they call revokeSfuLeg explicitly; only a
+  // live-server probe reconnecting over real websockets could see it.
+  if (voiceTransport() === "sfu") {
+    const leg = revokeSfuLeg(w.name, id);
+    if (leg) {
+      const retire = JSON.stringify({ type: "surface-transition",
+        id, surface: "voice-relay", gen: null, retired: leg.gen });
+      for (const t of w.clients) t.ws.send(retire);
+      console.log(`[world:${w.name}] ${id}/voice-relay(sfu) revoked — gen ${leg.gen}`);
+    }
+    return;
+  }
   revokeRelayLeg(w.name, id).then((leg) => {
     if (!leg) return;
     const retire = JSON.stringify({ type: "surface-transition",

@@ -32,7 +32,22 @@ export type SfuWorldState = {
   consent: Map<string, { gen: number; consent: boolean }>;
   moderatorMuted: Set<string>;
   usedNonces: Set<string>;
-  /** listener → their last stated answer, applied to speakers who arrive LATER. */
+  /** listener → their last stated answer, applied to speakers who arrive LATER.
+   *
+   *  🔴 THIS IS ROOM-LEVEL, NOT PER-SPEAKER, AND THAT IS DELIBERATE. A listener
+   *  who says YES is consenting to *hear the room*, so someone joining later is
+   *  audible without a fresh consent event — which is what the audio panel's
+   *  single "receive voice" toggle actually means to a user. A per-speaker ACL
+   *  would be a different product (and a worse one: it would silence a newcomer
+   *  until the listener noticed them and opted in individually).
+   *
+   *  The safety property that makes it acceptable is that it dies with the leg:
+   *  revokeSfuLeg deletes this entry, so a RECONNECT starts fail-closed and
+   *  cannot inherit a yes the fresh leg never gave. That invariant was broken
+   *  until 2026-08-14 — the live path never called revokeSfuLeg at all — so if
+   *  you are reading this while changing retirement, that is the thing not to
+   *  break. Reviewer found it by reconnecting a real websocket; no unit test
+   *  could, because the tests called revokeSfuLeg themselves. */
   standingConsent: Map<string, boolean>;
 };
 
@@ -162,6 +177,12 @@ export function revokeSfuLeg(world: string, id: string) {
   const leg = s.legs.get(id) ?? null;
   s.legs.delete(id); s.consent.delete(id); s.moderatorMuted.delete(id);
   s.standingConsent.delete(id);
+  // 🔴 Clear the SFU's mute too, or the two stores diverge: /relay-diag and the
+  // moderator UI read s.moderatorMuted (now empty) while fanout still checks
+  // sfu.muted (still set) and gags the speaker at ingress. Fails SAFE — silence,
+  // not leakage — but a moderator cannot tell why someone is inaudible, which
+  // is displayed-state-vs-real-state on a control surface.
+  s.sfu.setMuted(id, false);
   s.sfu.closeLeg(id);
   return leg;
 }
