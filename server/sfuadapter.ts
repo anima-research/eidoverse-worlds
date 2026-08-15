@@ -32,6 +32,8 @@ export type SfuWorldState = {
   consent: Map<string, { gen: number; consent: boolean }>;
   moderatorMuted: Set<string>;
   usedNonces: Set<string>;
+  /** listener → their last stated answer, applied to speakers who arrive LATER. */
+  standingConsent: Map<string, boolean>;
 };
 
 const worlds = new Map<string, SfuWorldState>();
@@ -47,19 +49,30 @@ export function sfuState(world: string): SfuWorldState {
       // than harder (the SFU cannot outlive or predecease the sequencer), but
       // "easier" is not "proven", so we still refuse to call it monotonic.
       incarnation: nextIncarnation(null, crypto.randomUUID()),
-      sfu: new Sfu({ onNegotiationNeeded: (legId) => pendingOffers.get(world)?.(legId) }),
+      sfu: new Sfu({ onNegotiationNeeded: (legId) => {
+        const send = senders.get(legId);
+        if (send) void sfuNegotiate(world, legId, send);
+      } }),
       legs: new Map(), consent: new Map(), moderatorMuted: new Set(), usedNonces: new Set(),
+      standingConsent: new Map(),
     };
     worlds.set(world, s);
   }
   return s;
 }
 
-/** server.ts installs a callback that knows how to reach a given leg's socket.
- *  The SFU itself must never learn about websockets — it speaks SDP and RTP. */
-const pendingOffers = new Map<string, (legId: string) => void>();
-export function onSfuNegotiationNeeded(world: string, fn: (legId: string) => void) {
-  pendingOffers.set(world, fn);
+/** legId → how to reach that leg's browser. The SFU itself never learns about
+ *  websockets (it speaks SDP and RTP); the adapter owns this seam.
+ *
+ *  🔴 This replaces a per-WORLD callback that server.ts was supposed to install
+ *  and never did — so onNegotiationNeeded fired into an empty map and a route
+ *  that consent had already created sat in `pendingRoutes` forever. Measured:
+ *  the listener showed pending:['smoke-a'] while the speaker pushed 1764
+ *  packets into the SFU and nobody heard anything. A per-LEG registry cannot
+ *  have that bug, because the same call that creates the leg registers it. */
+const senders = new Map<string, (payload: unknown) => void>();
+export function registerSfuSender(legId: string, send: (payload: unknown) => void) {
+  senders.set(legId, send);
 }
 
 /** Mint: same shape as mintRelayCredential, minus the JWT that has no analogue. */
@@ -67,6 +80,13 @@ export function mintSfuCredential(world: string, id: string, primaryGen: number,
   const s = sfuState(world);
   const nonce = crypto.randomUUID();
   s.legs.set(id, { id, gen: mediaGen, primaryGen, nonce });
+  // 🔴 CREATE THE ACTUAL LEG. The first version recorded the bookkeeping entry
+  // and stopped there, so negotiate() found "no leg <id>" and every browser sat
+  // at active:false forever with no error anywhere — the credential minted, the
+  // identity assigned, and nothing behind it. A record of a peer connection is
+  // not a peer connection.
+  s.sfu.createLeg(id, mediaGen);
+  applyStandingConsent(s, id);   // consent given before this leg existed still counts
   return { nonce, incarnation: s.incarnation, identity: `${id}#${mediaGen}`, transport: "sfu" as const };
 }
 
@@ -88,12 +108,42 @@ export function admitSfuLeg(world: string, claims: RelayClaims, live: LiveLegSta
 export function setSfuConsent(world: string, listenerId: string, listenerGen: number, recv: boolean) {
   const s = sfuState(world);
   const r = applyConsentUpdate(s.consent, listenerId, listenerGen, recv);
-  if (!r.changed) return r;
+  if (!r.changed) {
+    // 🔴 A REFUSED REVOKE IS A PRIVACY FAILURE, NOT A NO-OP. Consent recorded
+    // at one gen and revoked at another was rejected as a "stale listener
+    // generation" — the browser showed consent OFF while audio kept flowing,
+    // and the smoke caught it as `audio survived revocation`. Idempotence may
+    // swallow a repeated YES; it must NEVER swallow a NO. When in doubt, the
+    // quiet answer is the safe one, so a refused revoke still stops the audio.
+    if (!recv) for (const speakerId of s.legs.keys()) s.sfu.setConsent(listenerId, speakerId, false);
+    return r;
+  }
+  // 🔴 Apply to legs that DO NOT EXIST YET, too. This loop over s.legs misses
+  // any speaker who joins after the listener consents — measured: consent ON
+  // produced `hears: []` because the speaker's leg was registered later, and
+  // the route only appeared by accident of ordering. Record the standing
+  // answer so joinSfuLeg can honour it on arrival.
+  s.standingConsent.set(listenerId, recv);
   for (const speakerId of s.legs.keys()) {
     if (speakerId === listenerId) continue;
     s.sfu.setConsent(listenerId, speakerId, recv);
   }
   return r;
+}
+
+/** Apply every existing listener's standing consent to a newly-arrived speaker,
+ *  and the newcomer's own standing consent to everyone already here. Called
+ *  when a leg is created, because consent is a STANDING answer about the room,
+ *  not a statement about the participants who happened to be present when it
+ *  was given. */
+function applyStandingConsent(s: SfuWorldState, newLegId: string) {
+  for (const [listenerId, recv] of s.standingConsent) {
+    if (listenerId !== newLegId) s.sfu.setConsent(listenerId, newLegId, recv);
+  }
+  const mine = s.standingConsent.get(newLegId);
+  if (mine !== undefined) {
+    for (const otherId of s.legs.keys()) if (otherId !== newLegId) s.sfu.setConsent(newLegId, otherId, mine);
+  }
 }
 
 /** Moderator/global mute — a different state than consent (amendment 3),
@@ -106,10 +156,12 @@ export function setSfuModeratorMute(world: string, speakerId: string, mutedFlag:
 
 /** Retirement funnel — the same one every other surface uses. */
 export function revokeSfuLeg(world: string, id: string) {
+  senders.delete(id);
   const s = worlds.get(world);
   if (!s) return null;
   const leg = s.legs.get(id) ?? null;
   s.legs.delete(id); s.consent.delete(id); s.moderatorMuted.delete(id);
+  s.standingConsent.delete(id);
   s.sfu.closeLeg(id);
   return leg;
 }
@@ -142,6 +194,17 @@ export async function sfuNegotiate(world: string, legId: string,
   send: (payload: unknown) => void) {
   const s = worlds.get(world);
   if (!s) return;
+  // 🔴 AN OFFER WITH NOTHING IN IT NEVER CONNECTS. A leg with no routes yet
+  // produces an SDP with ZERO m-lines: signaling completes (have-remote-offer →
+  // stable) and ICE never starts, so connectionState sits at "new" forever with
+  // no error on either side. Measured — the browser reported exactly that.
+  //
+  // A leg only gains routes when some OTHER participant consents to hear it, so
+  // the first offer is empty by construction. We add a recvonly audio
+  // transceiver as the floor: it gives ICE something to gather for, and it is
+  // also honest — this leg WILL receive audio, we just do not know whose yet.
+  const leg = s.sfu.getLeg(legId);
+  if (leg && leg.pc.getTransceivers().length === 0) leg.pc.addTransceiver("audio", { direction: "recvonly" });
   await s.sfu.negotiate(legId, async (pc) => {
     // Tell the client which speaker each new track carries BEFORE the offer
     // lands, so its ontrack can pair them in arrival order (see voicesfu.js).

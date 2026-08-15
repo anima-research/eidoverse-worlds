@@ -17,7 +17,8 @@
 // server that answers silently forwards into a track nobody receives
 // (measured: forwarded=20, heard=0). Every renegotiation here is
 // server-initiated: we only ever setRemoteDescription(offer) → answer.
-import { bus } from './bus.js';
+import { bus } from './core.js';
+import { audioContext } from './audioctx.js';
 
 let pc = null, cred = null, micStream = null, wantMic = false;
 const speakers = new Map();           // id → { audio, stream, wantVolume, an, buf }
@@ -101,7 +102,7 @@ export function sfuPeerLevels() {
     if (!s.stream) continue;
     if (!s.an) {
       try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const ctx = audioContext();      // the shared context, not a new one per speaker
         s.an = ctx.createAnalyser(); s.an.fftSize = 512;
         ctx.createMediaStreamSource(s.stream).connect(s.an);
         s.buf = new Float32Array(s.an.fftSize);

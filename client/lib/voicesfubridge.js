@@ -9,12 +9,13 @@
 // LiveKit path does — deliberately, so ONE browser smoke can drive either
 // transport and the acceptance-table row is measured the same way for both
 // hypotheses. A row proved by a different yardstick proves nothing comparable.
-import { bus } from './bus.js';
-import { net } from './net.js';
+import { bus } from './core.js';
+import { net, sendRelayCredRequest, sendVoiceConsent } from './net.js';
 import { sfuConnect, sfuOnOffer, sfuOnIce, sfuMic, sfuPeerLevels,
   sfuDiagClient, sfuClose, sfuActive, sfuSpeakerEntries } from './voicesfu.js';
-import { myState, remotes } from './state.js';
-import { isHushed, volumeFor } from './audio.js';
+import { remotes } from './remotes.js';
+import { myState } from './controller.js';
+import { isHushed, volumeFor, receivingVoice } from './voiceconsent.js';
 
 const send = (o) => { if (net.ws?.readyState === 1) net.ws.send(JSON.stringify(o)); };
 
@@ -26,7 +27,7 @@ export function initVoiceSfu(name) {
   const askOnce = (n) => {
     if (asked || !n?.joined) return;
     asked = true;
-    send({ type: 'relay-cred', publish: true, subscribe: true });
+    sendRelayCredRequest();          // the same ask the relay path uses
   };
   bus.on('net', askOnce);
   askOnce(net);
@@ -38,6 +39,16 @@ export function initVoiceSfu(name) {
     // a receive direction the offer never proposed.
     send({ type: 'sfu-want-negotiate' });
   });
+
+  // 🔴 CONSENT MUST BE WIRED. The first version never subscribed to
+  // 'audio:receive', so setReceiveVoice(true) fired into a void: the browser
+  // showed consent ON, the server never heard about it, and the listener's
+  // `hears` array stayed empty while the speaker happily pushed 1858 packets
+  // into the SFU. Same two halves the relay path uses — the current state NOW
+  // (a session that joined already-consenting must not wait for a toggle), and
+  // every change after.
+  sendVoiceConsent(receivingVoice());
+  bus.on('audio:receive', (on) => sendVoiceConsent(on));
 
   bus.on('sfu-offer', (m) => sfuOnOffer(m.sdp, send));
   bus.on('sfu-ice', (m) => sfuOnIce(m.candidate));

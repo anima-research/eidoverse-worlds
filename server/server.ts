@@ -49,7 +49,7 @@ import { relayEnabled, bootRelayAdapter, mintRelayCredential, revokeRelayLeg,
 // The in-process SFU (VOICE_TRANSPORT=sfu). Same surface as the LiveKit
 // adapter, so every call site below branches on transport rather than on shape.
 import { mintSfuCredential, setSfuConsent, revokeSfuLeg, sfuDiag,
-  sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition } from "./sfuadapter.ts";
+  sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition, registerSfuSender } from "./sfuadapter.ts";
 const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR);
 
 // The resident-visible service chart (amendment 2): every voice-service
@@ -1090,6 +1090,7 @@ const server = Bun.serve({
             // synchronous — but it announces through the SAME transition event
             // and takes a gen from the SAME counter, because a surface session
             // is a surface session regardless of what carries its audio.
+            registerSfuSender(c.id, (payload) => ws.send(JSON.stringify(payload)));
             const cred = mintSfuCredential(c.world.name, c.id, c.gen!, mediaGen);
             const transition = JSON.stringify({ type: "surface-transition",
               id: c.id, surface: "voice-relay", gen: mediaGen, retired: null });

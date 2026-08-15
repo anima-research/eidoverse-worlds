@@ -500,6 +500,13 @@ async function handle(msg) {
       break;
     }
 
+    // SFU transport (VOICE_TRANSPORT=sfu). This switch has NO default branch —
+    // an unrouted type is silently dropped — which is why the first version of
+    // the SFU client sat at active:false forever: the server offered, the
+    // browser never saw it, and nothing anywhere said so.
+    case 'sfu-offer': bus.emit('sfu-offer', msg); break;
+    case 'sfu-ice':   bus.emit('sfu-ice', msg);   break;
+    case 'sfu-route': bus.emit('sfu-route', msg); break;
     case 'relay-cred':          // #104: the minted media credential (voicerelay.js)
       bus.emit('relay-cred', msg);
       break;
