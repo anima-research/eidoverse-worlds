@@ -28,9 +28,25 @@ import { micOn, toggleMic } from './voice.js';
 // defined them — the mic meter (an inline span with flex:1) collapsed to a
 // 2px vertical line, which is just its threshold marker with zero meter
 // behind it. A module's markup and its layout must travel together.
+// 🔴 TWO COLUMNS ON A SHARED CENTRE LINE (R's spec, restored 2026-08-14).
+// A flex row with a min-width label puts every control at a DIFFERENT x — the
+// eye has to re-find the column on each row. A grid gives one gutter: labels
+// end at the line, controls begin at it, and the panel reads as a table
+// instead of a ragged list. ttsrow.js already emits `.sp-ctl` expecting exactly
+// this ("same two columns as every other row") — it was written against a
+// layout the panel never had, which is why its rows looked unlike the others.
+//
+// minmax(0,1fr) on the control column, not 1fr: the mic meter is flex:1 inside
+// it and a bare 1fr lets it push the grid wider than the panel.
 const SP_CSS = `
-.sp-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
-.sp-label { opacity: 0.75; min-width: 64px; flex-shrink: 0; }
+.sp-row { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr);
+          align-items: center; gap: 8px; margin: 5px 0; }
+.sp-label { opacity: 0.75; text-align: right; }
+.sp-ctl { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sp-note { opacity: .6; font-size: .9em; }
+/* rows that are a label + a bare control (checkbox first in markup) still line
+   up: the checkbox is the whole second column, left-justified against the line */
+.sp-row > input[type=checkbox] { justify-self: start; }
 `;
 function ensureCss() {
   if (document.getElementById('sp-audio-css')) return;
@@ -51,8 +67,10 @@ function slider(cat, label, hint, value) {
   row.className = 'sp-row';
   row.innerHTML =
     `<span class="sp-label" title="${hint}">${label}</span>` +
-    `<input type="range" min="0" max="1" step="0.05" value="${value}" data-cat="${cat}" style="flex:1">` +
-    `<span class="sp-info" data-out="${cat}" style="min-width:34px;text-align:right">${Math.round(value * 100)}%</span>`;
+    `<span class="sp-ctl">` +
+      `<input type="range" min="0" max="1" step="0.05" value="${value}" data-cat="${cat}" style="flex:1">` +
+      `<span class="sp-info" data-out="${cat}" style="min-width:34px;text-align:right">${Math.round(value * 100)}%</span>` +
+    `</span>`;
   const input = row.querySelector('input');
   const out = row.querySelector('[data-out]');
   input.oninput = () => {
@@ -65,9 +83,13 @@ function slider(cat, label, hint, value) {
 function checkRow(label, hint, checked, onChange) {
   const row = document.createElement('div');
   row.className = 'sp-row';
+  // LABEL FIRST in the markup, because the grid assigns columns by source
+  // order: label right-justified against the centre line, control left-
+  // justified after it. The old order put the checkbox in the LABEL column and
+  // the text in the control column — the exact inversion of R's spec.
   row.innerHTML =
-    `<input type="checkbox" ${checked ? 'checked' : ''} title="${hint}">` +
-    `<span class="sp-label" title="${hint}">${label}</span>`;
+    `<span class="sp-label" title="${hint}">${label}</span>` +
+    `<span class="sp-ctl"><input type="checkbox" ${checked ? 'checked' : ''} title="${hint}"></span>`;
   row.querySelector('input').onchange = (e) => onChange(e.target.checked);
   return row;
 }
@@ -92,12 +114,14 @@ function micFloorRow() {
   const FS = 0.2;  // full-scale mic level = right edge of the meter
   row.innerHTML =
     `<span class="sp-label" title="${hint}">mic sensitivity</span>` +
+    `<span class="sp-ctl">` +
     `<span data-meter title="${hint}" style="flex:1;min-width:60px;position:relative;height:14px;` +
     `background:#000;border-radius:2px;overflow:hidden;cursor:ew-resize">` +
     `<span data-lvl style="position:absolute;left:0;top:0;height:100%;width:0;background:${LVL_DARK}"></span>` +
     `<span data-thr style="position:absolute;top:0;height:100%;width:2px;background:#9f9;opacity:.9"></span>` +
     `</span>` +
-    `<span data-out style="min-width:34px;text-align:right">${Math.round(micFloor() * 500)}%</span>`;
+    `<span data-out style="min-width:34px;text-align:right">${Math.round(micFloor() * 500)}%</span>` +
+    `</span>`;
   const meter = row.querySelector('[data-meter]');
   const out = row.querySelector('[data-out]');
   const lvl = row.querySelector('[data-lvl]');
