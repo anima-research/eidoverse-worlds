@@ -96,15 +96,31 @@ export async function sfuOnIce(candidate) {
  *  what the browser's own AGC/NS/AEC expect; Basis hand-builds all three
  *  (BasisMicrophoneAgcTests.cs) because Unity has no equivalent, and that is
  *  precisely the work we are declining to redo. */
+// 🔴 ONE ACQUISITION AT A TIME (review, 2026-08-15). getUserMedia is SLOW — a
+// permission prompt is seconds — and two callers can be inside it at once: the
+// user pressing V, and the relay-cred replay that honours a pre-connection
+// press. Both saw `micStream == null`, both awaited, and both ran addTrack:
+// TWO audio senders, two negotiations, the user published twice (echoing to
+// every listener), and the first stream orphaned — `sfuClose` cannot stop it
+// because micStream no longer names it, so THE MIC HARDWARE LIGHT STAYS ON
+// AFTER LEAVING. The guard is the promise, not a boolean: late callers await
+// the same acquisition instead of starting a second one.
+let micPending = null;
+
 export async function sfuMic(on = true) {
   wantMic = on;
   if (!pc) return;
   if (!on) { micStream?.getTracks().forEach((t) => (t.enabled = false)); return; }
   if (micStream) { micStream.getTracks().forEach((t) => (t.enabled = true)); return; }
-  micStream = await navigator.mediaDevices.getUserMedia({
-    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-  });
-  for (const t of micStream.getTracks()) pc.addTrack(t, micStream);
+  if (micPending) { await micPending; micStream?.getTracks().forEach((t) => (t.enabled = true)); return; }
+  micPending = (async () => {
+    const s = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    micStream = s;
+    for (const t of s.getTracks()) pc.addTrack(t, s);
+  })();
+  try { await micPending; } finally { micPending = null; }
   // Adding a track makes US want to renegotiate — but the server offers, so we
   // ASK it to, rather than offering ourselves and causing glare.
   bus.emit('sfu-want-negotiate', {});

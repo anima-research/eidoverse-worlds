@@ -75,7 +75,23 @@ let micHot = false;
 // UI must never have — micgate fails CLOSED for the same reason. toggleMic
 // already routes by transport; the indicator has to make the same turn or the
 // button and the badge describe different bodies.
-const micIsOn = () => (window.relayDiag ? !!window.relayDiag().micPublished : micOn());
+const micIsOn = () => {
+  // 🔴 NEVER THROW OUT OF THE INDICATOR (review, 2026-08-15). The first version
+  // was `window.relayDiag ? !!window.relayDiag().micPublished : micOn()` — no
+  // try, no `?.` on the CALL. voicerelay.js installs window.relayDiag at module
+  // top level, so it exists before its state does; a throw there aborts the tick
+  // before paint(), FREEZING the glyph at its last value — and a frozen glyph
+  // that says "off" while the room hears you is the exact bug fb33ffb existed to
+  // kill, re-entered through a different door. Worse in flipMic(), where the
+  // throw escapes the click handler AFTER toggleMic already succeeded.
+  //
+  // Prefer the CHEAP dedicated getter over the diag blob: sfuDiagClient()
+  // allocates an object and spreads the speaker map, and this runs 8×/second.
+  try {
+    if (typeof window.__sfuMicOn === 'function') return !!window.__sfuMicOn();
+    return window.relayDiag?.().micPublished ?? micOn();
+  } catch { return micOn(); }
+};
 function paint() {
   if (!micBtn) return;
   const on = micIsOn();

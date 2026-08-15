@@ -101,6 +101,9 @@ export function initVoiceSfu(name) {
   window.relayDiag = sfuDiagClient;
   window.relayMic = () => sfuMic(true);
   window.relayPeerLevels = sfuPeerLevels;
+  // Cheap mic-state read for the 8Hz HUD poll — sfuDiagClient() allocates an
+  // object and spreads the speaker map every call (review F4).
+  window.__sfuMicOn = sfuMicOn;
   window.sfuStats = sfuInboundStats;      // NetEq evidence for the spike report
   // The mic badge (mictoggle.js → voice.js toggleMic) checks for this and hands
   // over when the SFU transport owns playback. Set LAST, so it is never visible

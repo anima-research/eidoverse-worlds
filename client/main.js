@@ -214,16 +214,21 @@ function start() {
     initVoice(CONFIG.name);
   } else if (_relay) {
     console.info('[voice] transport=RELAY (livekit — a #104 acceptance-table candidate, not the floor)');
-    window.__voiceTransport = 'relay';
-    import('./lib/voicerelay.js').then((vr) => vr.initVoiceRelay(CONFIG.name))
-      .catch((e) => console.error('voice relay init failed', e));
+    window.__voiceTransport = 'pending:relay';
+    import('./lib/voicerelay.js').then((vr) => { vr.initVoiceRelay(CONFIG.name); window.__voiceTransport = 'relay'; })
+      .catch((e) => { window.__voiceTransport = 'failed:relay'; window.__voiceTransportError = String(e); console.error('voice relay init failed', e); });
   } else {
     // DEFAULT on this branch. ?sfu=1 still accepted so existing links/probes
     // keep working, but it is no longer load-bearing.
+    // 🔴 INTENT vs LIVE (review, 2026-08-15). Setting this BEFORE the dynamic
+    // import resolves makes it a CLAIM, not a reading — a probe asking "which
+    // transport?" got 'sfu' for a body whose init had thrown into the catch
+    // below. Same distinction voice.js:507 already calls out. So: pending
+    // until it actually initialises, and the failure is recorded, not swallowed.
     console.info('[voice] transport=SFU (in-process, default on relay-spike)');
-    window.__voiceTransport = 'sfu';
-    import('./lib/voicesfubridge.js').then((m) => m.initVoiceSfu(CONFIG.name))
-      .catch((e) => console.error('voice sfu init failed', e));
+    window.__voiceTransport = 'pending:sfu';
+    import('./lib/voicesfubridge.js').then((m) => { m.initVoiceSfu(CONFIG.name); window.__voiceTransport = 'sfu'; })
+      .catch((e) => { window.__voiceTransport = 'failed:sfu'; window.__voiceTransportError = String(e); console.error('voice sfu init failed', e); });
   }
   initAudioPanel();   // 🔊 categories: voices / world / TTS + consent rows
   // HEARING YOURSELF IS THE POINT. This hook — your own says going through the
