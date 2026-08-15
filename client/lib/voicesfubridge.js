@@ -24,13 +24,35 @@ export function initVoiceSfu(name) {
   // Ask for the media credential once we are actually joined. Same join-race
   // guard as the relay path (askOnce): check the live state NOW and also
   // listen, because a fast join can fire before we subscribed.
+  // 🔴 RE-ASK AFTER A RECONNECT (found 2026-08-15 by reading this file end to
+  // end, after R: "you HAVE to re-read after trims").
+  //
+  // `asked` used to be a ONE-WAY LATCH: set true on the first join and never
+  // cleared. So when the socket dropped and net.js reconnected (net.js:381), the
+  // world log recovered — snapshot replays verbQueue — but VOICE never did. No
+  // new credential was requested, so `pc` was never rebuilt, and the SFU stayed
+  // dead until a full page reload. Chat working while voice is silently gone is
+  // exactly the shape that reads as "the voice feature is broken".
+  //
+  // Every send() in this file is fire-and-forget (line 21: no queue, no retry,
+  // silent no-op when readyState !== 1), so a reconnect loses consent and
+  // position too — hence re-arming here re-establishes ALL of it.
   let asked = false;
   const askOnce = (n) => {
     if (asked || !n?.joined) return;
     asked = true;
     sendRelayCredRequest();          // the same ask the relay path uses
   };
-  bus.on('net', askOnce);
+  bus.on('net', (n) => {
+    // joined→false means the socket died: disarm so the NEXT join re-asks.
+    if (!n?.joined) { asked = false; return; }
+    if (!asked) {
+      askOnce(n);
+      // consent is listener-authored state the server holds per-connection; a
+      // new connection has none, so restate it rather than assume it survived
+      sendVoiceConsent(receivingVoice());
+    }
+  });
   askOnce(net);
 
   bus.on('relay-cred', async (cred) => {
