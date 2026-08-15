@@ -2,52 +2,80 @@
  * Containment for a werift bug that would otherwise crash the world server.
  *
  * werift creates its UDP socket and binds "message" but never "error"
- * (`werift/lib/common/src/transport.js:130-142`; contrast its TCP path at
- * :383-393, which DOES bind one). An unhandled `'error'` on a Node EventEmitter
+ * (`werift/lib/common/src/transport.js:130-131`; every `on("error")` in the
+ * package is on a TCP client). An unhandled `'error'` on a Node EventEmitter
  * throws globally, so when a peer's socket dies and the kernel answers our next
  * send with ICMP port-unreachable, dgram surfaces ECONNREFUSED and takes the
- * process with it.
+ * process with it. Measured: closing six listeners during active fanout
+ * produced EIGHT uncaught exceptions — "someone left a busy room, the world
+ * server died". Upstream fix is one line in their transport; worth a PR.
  *
- * Measured 2026-08-14: closing six listeners during active fanout produced
- * EIGHT uncaught exceptions. In production that is "someone left a busy room,
- * the world server died". These have been in every test run today; I filtered
- * them as noise for hours before noticing they were unhandled rather than
- * merely ugly.
+ * ── WHAT ADVERSARIAL REVIEW FOUND WRONG WITH THE FIRST VERSION ──────────────
  *
- * WHY A PROCESS HANDLER AND NOT A PER-CONNECTION ONE: the socket is created
- * inside werift and is not reachable through any exported API. I tried a
- * per-connection guard first and it did nothing, because the throw happens
- * below the layer werift exposes. Upstream fix would be one line in their
- * transport; worth a PR.
+ * C2 (worst): it matched `err.message` with a REGEX, so any application error
+ * whose text merely mentioned an errno was silently eaten. Proven:
+ * `TypeError: Cannot read properties of undefined (reading 'ECONNRESET')` was
+ * swallowed and the process survived. That is a `catch {}` in disguise, in a
+ * codebase with a standing rule against exactly that. Now we match `err.code`
+ * — the structured field Node sets on real syscall errors — and require an
+ * Error instance. A TypeError has no `.code`, so it can never match.
  *
- * WHY THIS IS NARROW ON PURPOSE: a blanket `process.on("uncaughtException")`
- * would mask real faults — exactly the "never catch {}" failure this codebase
- * has a standing rule about. So this matches only the four errno strings a dead
- * UDP peer can produce, only while the SFU is running, and re-throws everything
- * else so a genuine bug still crashes loudly.
+ * C1: re-throwing inside the handler preserves the crash site on Node but NOT
+ * on Bun (measured: unguarded exit 1 pointing at the real bug; guarded exit 7
+ * pointing at this file). Since this project runs Bun, a naive re-throw made
+ * every real crash anonymous. We now log the original error and its stack
+ * ourselves before exiting, so the crash site survives on both runtimes.
+ *
+ * C3: `unhandledRejection` and `uncaughtException` do not have the same
+ * semantics and no longer share a handler.
  */
 
-/** errnos a dead/unreachable UDP peer produces. Nothing else is swallowed. */
-const BENIGN = /\b(ECONNREFUSED|ECONNRESET|EHOSTUNREACH|ENETUNREACH|EPIPE)\b/;
+/** errno CODES a dead/unreachable UDP peer produces. Structured, not textual:
+ *  matching message text is how the first version swallowed a TypeError. */
+const BENIGN_CODES = new Set(["ECONNREFUSED", "ECONNRESET", "EHOSTUNREACH", "ENETUNREACH", "EPIPE"]);
 
 let installed = false;
 let swallowed = 0;
+
+function isBenignTransportError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const code = (err as NodeJS.ErrnoException).code;
+  if (typeof code !== "string" || !BENIGN_CODES.has(code)) return false;
+  // A syscall error from our own sockets — not, say, an ECONNREFUSED bubbling
+  // out of application code that happens to talk to a database.
+  const syscall = (err as NodeJS.ErrnoException).syscall;
+  return syscall === undefined || /^(recv|send|connect|write|read)/.test(syscall);
+}
+
+/** Preserve the crash site ourselves. A bare `throw` inside the handler loses
+ *  the original stack on Bun, which is worse than not guarding at all. */
+function dieLoudly(err: unknown, kind: string): never {
+  console.error(`\n[sfu] FATAL (${kind}) — not a transport error, crashing:`);
+  console.error(err instanceof Error && err.stack ? err.stack : err);
+  process.exit(1);
+}
 
 /** Idempotent: safe to call from every Sfu constructor. */
 export function installSfuTransportGuard() {
   if (installed) return;
   installed = true;
 
-  const onError = (err: unknown) => {
-    const msg = String((err as Error)?.message ?? err);
-    if (BENIGN.test(msg)) { swallowed++; return; }   // a dead peer's socket; expected
-    throw err;                                        // anything else is a real bug: crash
-  };
+  process.on("uncaughtException", (err) => {
+    if (isBenignTransportError(err)) { swallowed++; return; }
+    dieLoudly(err, "uncaughtException");
+  });
 
-  process.on("uncaughtException", onError);
-  process.on("unhandledRejection", onError);
+  // Separate handler: a rejection is not an exception, and the benign case here
+  // is narrower — werift's send path can reject with the same errnos.
+  process.on("unhandledRejection", (reason) => {
+    if (isBenignTransportError(reason)) { swallowed++; return; }
+    dieLoudly(reason, "unhandledRejection");
+  });
 }
 
-/** Surfaced in /relay-diag: a climbing count is normal churn, but a spike
- *  means peers are dying faster than they should and is worth looking at. */
+/** Surfaced in /relay-diag: a climbing count is normal churn, but a spike means
+ *  peers are dying faster than they should and is worth looking at. */
 export function transportErrorsSwallowed() { return swallowed; }
+
+/** Exported for tests — the classifier is the security-relevant half. */
+export const __isBenignTransportError = isBenignTransportError;

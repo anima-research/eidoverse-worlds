@@ -63,6 +63,27 @@ check("both legs negotiated", !!sfu.getLeg("alice") && !!sfu.getLeg("bob"));
 await alice.speak(15);
 await sleep(300);
 check("fail-closed: 0 packets to bob before consent", bob.heard === 0, `heard=${bob.heard}`);
+// 🔴 E1: the assertion above is satisfied by route ABSENCE, so it survives
+// deleting the consent check entirely (proven by mutation testing in review).
+// This one cannot: the route EXISTS and is negotiated, and only the consent
+// check stands between alice's mic and bob's ear.
+{
+  const armed = new Sfu();
+  const a2 = new FakePeer(), b2 = new FakePeer();
+  await negotiate(a2.pc, armed.createLeg("a", 1).pc);
+  await negotiate(b2.pc, armed.createLeg("b", 1).pc);
+  armed.setConsent("b", "a", true);                 // build + negotiate the route
+  await sleep(10);
+  await armed.negotiate("b", (pc) => negotiate(pc, b2.pc));
+  await sleep(400);
+  armed.setConsent("b", "a", false);                // …then withdraw consent only
+  const heardAtRevoke = b2.heard;
+  await a2.speak(15);
+  await sleep(300);
+  check("fail-closed HOLDS with a live negotiated route (kills the mutant)",
+    b2.heard === heardAtRevoke, `heard ${heardAtRevoke}→${b2.heard}`);
+  armed.closeAll();
+}
 check("…but the SFU DID receive alice's mic", (sfu.getLeg("alice")?.rxPackets ?? 0) > 0,
   `rx=${sfu.getLeg("alice")?.rxPackets}`);
 
@@ -207,6 +228,50 @@ check("…and the old PC was closed", bLeg.pc.connectionState === "closed" || bL
   check("18 legs created+destroyed leaks no legs", room.diag().legs.length === 0);
   check("…and RSS growth stays bounded (<60MB)", grewMB < 60, `grew ${grewMB.toFixed(0)}MB`);
   room.closeAll();
+}
+
+// ── REGRESSION B2: a route whose exchange FAILED must be re-asked ──────────
+// Old behaviour: outbound.has() → return false, so one failed exchange
+// silenced that pair forever while diag reported it healthy (forwarded=15,
+// heard=0, diag green).
+{
+  const asks: string[] = [];
+  const room = new Sfu({ onNegotiationNeeded: (id) => asks.push(id) });
+  const spk = new FakePeer(), lis = new FakePeer();
+  await negotiate(spk.pc, room.createLeg("S", 1).pc);
+  await negotiate(lis.pc, room.createLeg("L", 1).pc);
+  room.setConsent("L", "S", true);
+  await sleep(10);
+  const afterFirst = asks.filter((a) => a === "L").length;
+  // the exchange never happens (simulating a blip) — the route stays pending
+  room.setConsent("L", "S", false);
+  room.setConsent("L", "S", true);
+  await sleep(10);
+  check("an un-negotiated route is re-asked, not silenced forever",
+    asks.filter((a) => a === "L").length > afterFirst, `asks ${afterFirst}→${asks.filter(a=>a==="L").length}`);
+  check("…and diag does not claim the listener hears them yet",
+    room.diag().legs.find((l) => l.id === "L")?.hears.includes("S") === false,
+    JSON.stringify(room.diag().legs.find((l) => l.id === "L")));
+  // now actually negotiate: the route becomes real and stops being re-asked
+  await room.negotiate("L", (pc) => negotiate(pc, lis.pc));
+  await sleep(400);
+  check("…and once negotiated, diag reports it as heard",
+    room.diag().legs.find((l) => l.id === "L")?.hears.includes("S") === true);
+  room.closeAll();
+}
+
+// ── REGRESSION C2: the guard must not swallow a real bug ───────────────────
+{
+  const { __isBenignTransportError: benign } = await import("../server/sfuguard.ts");
+  const mk = (msg: string, code?: string, syscall?: string) => {
+    const e = new Error(msg) as NodeJS.ErrnoException;
+    if (code) e.code = code; if (syscall) e.syscall = syscall; return e;
+  };
+  check("guard swallows a real dgram ECONNREFUSED",
+    benign(mk("ECONNREFUSED: connection refused, recv", "ECONNREFUSED", "recv")) === true);
+  check("guard does NOT swallow a TypeError that merely mentions an errno",
+    benign(mk("Cannot read properties of undefined (reading 'ECONNRESET')")) === false);
+  check("guard does NOT swallow a non-transport errno", benign(mk("no such file", "ENOENT", "open")) === false);
 }
 
 const d = sfu.diag();
