@@ -69,7 +69,13 @@ check("…but the SFU DID receive alice's mic", (sfu.getLeg("alice")?.rxPackets 
 // ── consent ON → route created, renegotiation requested, audio flows ───────
 sfu.setConsent("bob", "alice", true);
 check("consent created a route", (sfu.getLeg("bob")?.outbound.has("alice")) === true);
+// Coalesced: the ask lands on the next microtask, so N routes added in one
+// turn produce ONE renegotiation rather than N. (N exchanges also inflates the
+// SDP — werift adds a transceiver per exchange — and double-delivers.)
+await sleep(10);
 check("consent asked the caller to renegotiate", renegotiations.includes("bob"));
+check("…exactly once, however many routes were added",
+  renegotiations.filter((r) => r === "bob").length === 1, `${renegotiations.filter(r=>r==="bob").length}×`);
 // The SFU OFFERS here, it does not answer: bob's browser offered sendonly (his
 // mic), and an answer cannot add a receive direction the offer never proposed.
 // Adding a track server-side therefore makes the SERVER the offerer — which is
@@ -115,6 +121,40 @@ await negotiate(bob2.pc, bLeg2.pc);
 await sleep(500);
 check("takeover replaced the leg", sfu.getLeg("bob")?.gen === 2);
 check("…and the old PC was closed", bLeg.pc.connectionState === "closed" || bLeg.closed);
+
+// ── INCREMENTAL JOINS + GLARE: the case a batch-setup test never exercises ──
+// People arrive one at a time, and two can arrive at once. Concurrent offers on
+// one PC is SDP glare — the failure class that grew voice.js to 1388 lines.
+{
+  const room = new Sfu({ onNegotiationNeeded: (id) => { pend.push(id); } });
+  const pend: string[] = [];
+  const members = new Map<string, FakePeer>();
+  for (let i = 0; i < 5; i++) {
+    const id = `j${i}`;
+    const p = new FakePeer();
+    members.set(id, p);
+    const leg = room.createLeg(id, 1);
+    await negotiate(p.pc, leg.pc);
+    for (const other of members.keys()) if (other !== id) {
+      room.setConsent(other, id, true); room.setConsent(id, other, true);
+    }
+    await sleep(10);                                  // let the coalesced asks land
+    const asks = [...new Set(pend)]; pend.length = 0;
+    // Drain CONCURRENTLY — this is the glare case, and negotiate() must serialize it.
+    const r = await Promise.allSettled(asks.map((legId) =>
+      room.negotiate(legId, (pc) => negotiate(pc, members.get(legId)!.pc))));
+    check(`join ${i + 1}/5: every renegotiation succeeded (no glare rejection)`,
+      r.every((x) => x.status === "fulfilled"), r.map((x) => x.status).join(","));
+  }
+  await sleep(800);
+  const routes = [...members.keys()].reduce((n, id) => n + (room.getLeg(id)?.outbound.size ?? 0), 0);
+  check("incremental joins converge to a full room", routes === 20, `${routes}/20 routes`);
+  for (let k = 0; k < 12; k++) { for (const p of members.values()) await p.speak(1); }
+  await sleep(600);
+  const under = [...members.values()].filter((p) => p.heard < 12 * 4 * 0.9).length;
+  check("…and everyone actually hears everyone", under === 0, `${under} peers under-hearing`);
+  room.closeAll();
+}
 
 const d = sfu.diag();
 check("diag reports live legs", Array.isArray(d.legs) && typeof d.forwarded === "number");
