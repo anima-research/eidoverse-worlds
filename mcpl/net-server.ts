@@ -126,7 +126,14 @@ const TOOLS = [
   { name: "place", description: "Move an entity (id from look) to x,z (y defaults to terrain; pass y to seat on furniture).", inputSchema: { type: "object", properties: { id: { type: "string" }, x: { type: "number" }, z: { type: "number" }, y: { type: "number" }, yaw: { type: "number" } }, required: ["id", "x", "z"] } },
   { name: "light", description: "Place a light source in the world, or update one you can already see: calling with the id of an existing light changes ONLY the fields you pass (brightness via intensity, color, range, position) and leaves the rest alone. Persists like any placed thing. color is a hex integer (e.g. 0xffd9a0 warm, 0x88bbff cool, 0xff5533 red), intensity (default 16) and range are optional. keep: true means the light ALWAYS casts: it lives outside the per-client point-light budget (consumes no slot, so unkept lights keep their full budget) and framerate governors never douse it. Every casting light has real GPU cost — keep it for lights that matter. Position defaults to just in front of you. A small glowing sphere marks it; move or remove it by id like any entity.", inputSchema: { type: "object", properties: { color: { type: "number" }, intensity: { type: "number" }, range: { type: "number" }, keep: { type: "boolean" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, id: { type: "string" } } } },
   { name: "remove", description: "Remove a placed entity.", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
-  { name: "travel", description: "Walk to another world this door fronts, keeping your identity, body and attention settings — no reconnect. Subject to your credential's join policy; founding a world that does not exist yet needs separate create authority. Your held pose and posture survive; your chat cursor resets to the new world.", inputSchema: { type: "object", properties: { world: { type: "string", description: "world name, e.g. \"commons\"" } }, required: ["world"] } },
+  // Description narrowed to what the implementation actually does (antra
+  // review, #3). It previously promised "held pose and posture survive", which
+  // joinWorld does NOT transfer — and which contradicts the existing pose
+  // contract ("vanishes when you leave"). Carrying a world-local pose across
+  // worlds is a product decision nobody has made, so the honest move is to
+  // stop promising it rather than to implement it by inference. Identity,
+  // avatar and the activity dial ARE carried, and are named because they are.
+  { name: "travel", description: "Walk to another world this door fronts, keeping your identity, avatar and attention settings — no reconnect. Subject to your credential's join policy; founding a world that does not exist yet needs separate create authority. Your held pose and posture do NOT survive the move (they are world-local, like a disconnect), and your chat cursor resets to the new world.", inputSchema: { type: "object", properties: { world: { type: "string", description: "world name, e.g. \"commons\"" } }, required: ["world"] } },
   { name: "world_verb", description: "Raw world-log verb. The verb set is CLOSED by design — say, use, punt, force, mount, dismount, spawn, place, remove, light, comp, motion, behavior, asset, terrain, grass, sky, weather, grant, kick, ban, unban — and the door refuses others; extend STATE with comp types you invent, EVENTS with use actions, SEMANTICS with behavior scripts, never by hoping a new verb exists. This is also the authoring surface for components: comp {id, type, data|null} attaches data to an entity (sockets, reactions, or anything you invent); motion {id, type: pendulum|spin|orbit|bob|path, …} sets it moving; see AGENTS.md in the eidoverse-worlds repo for the full vocabulary.", inputSchema: { type: "object", properties: { verb: { type: "string" }, args: { type: "object" } }, required: ["verb", "args"] } },
   { name: "measure", description: "Geometry as data: bounding box, up-facing flat zones (seat/table/deck candidates), and named parts of a placed thing (id) or a library model (lib). Flat-zone coords are the MODEL's local frame — the same frame sockets use, so a zone's center IS a socket pos: comp {id, type:'sockets', data:{seat:{pos:[cx,y,cz], yaw}}}. Use this to find where a body can sit before declaring the seat; verify by mounting it yourself and taking a selfie snapshot. Raw GLB bytes are at GET <sequencer>/library/<lib> if you want to process the mesh locally.", inputSchema: { type: "object", properties: { id: { type: "string" }, lib: { type: "string" } } } },
   { name: "world_history", description: "Pull raw entries from the world log — the append-only record every world IS. Filter by verbs (e.g. ['use','motion'] to trace an interaction, ['comp'] to see how something was built), page backwards with before. Every entry has {seq, ts, actor, verb, args}; reaction-authored entries carry {cause, by}. This is the debugging primitive: the log is the world, so reading it is reading the world's source.", inputSchema: { type: "object", properties: { verbs: { type: "array", items: { type: "string" } }, before: { type: "number" }, after: { type: "number" }, limit: { type: "number" } } } },
@@ -268,21 +275,68 @@ class Session {
    *  assignment. Throws on attach failure; the caller maps that to -32024 and
    *  MUST then surface the connection as closed (§3.2.5 — we cannot silently
    *  remain attached to a world we already left). */
-  /** The ONE authorization path for changing worlds, shared by both lanes:
-   *  the `travel` tool and `channels/open` naming a sibling. Extracted because
-   *  two copies of a three-part gate is two policies that will drift — and the
-   *  founding check in particular took three rounds of review to get right.
+  /** The authorization path for changing worlds. It had TWO callers — the
+   *  `travel` tool and `channels/open` naming a sibling — and was extracted so
+   *  the two could not drift into two policies. The sibling lane is now gone
+   *  (see the CHANNELS_OPEN case), leaving one caller; the extraction stays
+   *  because the gate is worth reading in one piece, not because it is shared.
    *
-   *  Three questions, in this order, each with its own answer shape:
-   *    1. may this HOST act on channels at all      → capability (-32002)
-   *    2. may this CREDENTIAL reach that world      → join policy (-32017)
-   *    3. may it CREATE a world that isn't there    → create authority (-32023)
-   *  Founding is deliberately last and separate: an operator granting broad
-   *  travel has not thereby granted unbounded world-founding. */
+   *  Three questions, in order:
+   *    1. may this HOST act on channels at all → capability (-32002).
+   *       🔴 MCPL HOSTS ONLY. granted() is false for every plain-MCP client by
+   *       construction, so asking it of them denied the advertised plain lane
+   *       outright (antra #1). A plain host's authority is its credential.
+   *    2. may this CREDENTIAL reach that world → join policy (-32017).
+   *    3. does the world exist, and if not may this credential found → (-32023).
+   */
+  /** Classify a joinWorld() failure. ONE place, because the two invocation
+   *  lanes hand-rolled this and drifted: channels/open correctly closed the
+   *  connection on a post-detach failure while the `travel` tool returned
+   *  isError and left the session alive with its old body gone and a failed
+   *  new attachment (antra review, #2).
+   *
+   *  The distinction that matters is WHEN the failure happened:
+   *    • JoinDeclined  → PREPARE refused, NOTHING moved. The connection is
+   *      exactly where it was; this is a refusal, not a casualty.
+   *    • anything else → we are past the detach. The old body is gone, so the
+   *      only honest state is a CLOSED connection. Never a limbo session.
+   *
+   *  🔴 It CLASSIFIES; it does not close. The first version closed here and
+   *  hung the tool lane: closing inside the classifier killed the socket with
+   *  the reply still unwritten, and the caller waited out its timeout. Pair it
+   *  with finishFatalJoin(), which defers the close by a tick so the response
+   *  flushes first — the deferral is what makes ordering safe, NOT the position
+   *  of the call, so calling it just before a `return` is correct.
+   *
+   *  `code` is currently unused by the sole (tool-lane) caller, which reports
+   *  via isError text; it is kept because it is the right answer for any
+   *  JSON-RPC lane and re-adding one should not have to re-derive it. */
+  private classifyJoinFailure(e: unknown): { fatal: boolean; code: number; why: string } {
+    if (e instanceof JoinDeclined)
+      return { fatal: false, code: -32017, why: `channel not permitted: ${(e as Error).message}` };
+    return { fatal: true, code: -32024, why: `channel open failed: ${(e as Error).message}` };
+  }
+
+  /** §3.2.5: never half-attached — the old body is gone, so the honest state
+   *  is a closed connection. Deferred a tick so whatever the caller is about to
+   *  send (or return) reaches the wire first. */
+  private finishFatalJoin() { setTimeout(() => this.close(), 0); }
+
   private async travelGate(target: string): Promise<
     { ok: true; founding: boolean } | { ok: false; code: number; why: string }
   > {
-    if (!this.granted(CAP.channelsLifecycle))
+    // 🔴 The capability gate applies to MCPL HOSTS ONLY (antra review, #1).
+    // granted() returns false for any plain-MCP client by construction — no
+    // MCPL frames, so no capabilities — which made the advertised plain-MCP
+    // travel lane deny EVERY non-noop call with -32002 while toolsAllowed()
+    // cheerfully listed the tool. An advertised lane that cannot succeed is
+    // worse than an absent one.
+    //
+    // A plain-MCP caller's authority is its CREDENTIAL, checked immediately
+    // below: joinAllowed() enforces the join policy and `auth.create` gates
+    // founding, so removing the capability requirement for this lane narrows
+    // nothing — it just stops demanding a token plain MCP cannot hold.
+    if (this.mcplClient && !this.granted(CAP.channelsLifecycle))
       return { ok: false, code: -32002, why: `capability denied: ${CAP.channelsLifecycle}` };
     if (!joinAllowed(this.auth, target))
       return { ok: false, code: -32017, why: `channel not permitted: world "${target}" is not in this credential's join policy` };
@@ -343,6 +397,13 @@ class Session {
     });
     next.onEvent = old.onEvent;
     next.onPing = old.onPing;
+    // 🔴 The resident's activity dial is THEIRS, not the world's (antra review,
+    // #3). serve() restores it before the body first joins; a transition that
+    // silently reset it would make travel quietly destroy a setting the agent
+    // chose and the file persists. Applied BEFORE connect() for the same reason
+    // it is there — the sense should be tuned before the body arrives, not a
+    // beat after.
+    if (activityCfg[this.auth.id]) next.setActivity(activityCfg[this.auth.id]);
     // Detach BEFORE close: ws frames already queued can still fire the old
     // body's onmessage after close() returns, and the shared closures would
     // attribute a late commons say to the annex channel (review B1).
@@ -353,6 +414,12 @@ class Session {
     this.channelId = `world:${w}`;
     this.caughtUpTo = null;            // catch_up cursors are per-world context
     this.heldActivity.length = 0;      // held ambient lines are old-world context (review C1)
+    // 🔴 The NEW channel's descriptor announces initiallyOpen:true, so the door
+    // must actually BE open or host and server disagree about the new world:
+    // an agent who ran channels/close and then travelled arrived with the door
+    // shut while the host was told it was open, and nothing reconciled them.
+    // A door is per-world state like the cursor above, not a session-long mood.
+    this.channelOpen = true;
     await next.connect();
     this.epoch++;                      // the cutoff instant, after the fact of it
     this.foundedHere = founding;
@@ -737,53 +804,46 @@ class Session {
               const matches = p.channelId === this.channelId ||
                 (p.channelId == null && p.type === "world" && p.address?.world === this.agent.world);
               if (!matches) {
-                // RFC-005 §3.2: opening a SIBLING world channel is a join
-                // request. Capability → policy (-32017) → prepare/commit
-                // (host may decline) → the ordinary open of the NEW channel
-                // falls through below — response shape unchanged.
+                // 🔴 THE SECOND INVOCATION LANE IS REMOVED (antra review, #4).
                 //
-                // §3.2.6 (Mica review): BOTH addressing forms express join
-                // intent. ChannelsOpenParams documents channelId as "preferred
-                // over type/address matching", and generic host surfaces work
-                // in ids — an address-only rule would make join unreachable
-                // from them. channelId wins when both are present; a
-                // conflicting address is an authoring bug, not a preference.
-                const byId = p.channelId?.startsWith("world:") ? p.channelId.slice(6) : undefined;
-                const byAddr = p.type === "world" ? p.address?.world : undefined;
-                // §3.2.6: an id this server cannot resolve is -32023 — NEVER a
-                // silent fallback to the address. A typo'd id used to be
-                // upgraded into an address-driven join to somewhere else.
-                if (p.channelId && !byId) {
-                  this.conn.sendError(req.id, -32023, `unknown channel: ${p.channelId}`);
-                  break;
-                }
-                const target = byId ?? byAddr;   // channelId wins (conflict rejected above)
-                if (!target) { this.conn.sendError(req.id, -32023, `unknown channel: ${p.channelId ?? JSON.stringify(p.address)}`); break; }
-                // Join intent is authorized by channels.lifecycle — the same
-                // grant that covers opening any channel. An earlier draft gated
-                // it on an invented `channels.join` leaf, which is NOT in the
-                // spec's §6.2 capability list: declaring it would have made this
-                // a protocol change. It isn't one. (antra, 2026-08-14: "this can
-                // be done well within eidoverse mcpl".)
-                const gate = await this.travelGate(target);
-                if (!gate.ok) { this.conn.sendError(req.id, gate.code, gate.why); break; }
-                const founding = gate.founding;
-                try {
-                  await this.joinWorld(target, founding);
-                } catch (e) {
-                  if (e instanceof JoinDeclined) {
-                    // §3.2.3b: PREPARE failed — nothing moved. The connection is
-                    // exactly where it was; this is a refusal, not a casualty.
-                    this.conn.sendError(req.id, -32017, `channel not permitted: ${(e as Error).message}`,
-                      { reason: "host_declined" });
-                    break;
-                  }
-                  // §3.2.5: never half-attached — the old body is gone, so the
-                  // honest state is a closed connection, not a limbo session.
-                  this.conn.sendError(req.id, -32024, `channel open failed: ${(e as Error).message}`);
-                  this.close();
-                  break;
-                }
+                // ⚠️ READ THIS BEFORE ASSUMING TRAVEL WAS CUT: cross-world travel
+                // is NOT removed and is the point of this PR. The `travel` TOOL
+                // is untouched — same travelGate(), same joinWorld(). What is
+                // gone is a SECOND way to ask for the same thing: opening a
+                // sibling world's channel id through channels/open.
+                //
+                // 🔴 NOT "the same channels/changed transition", which an
+                // earlier draft of this comment claimed: joinWorld() guards
+                // PREPARE behind granted(channelsRegister), and granted() is
+                // false for every plain-MCP host by construction. So an MCPL
+                // host gets prepare + consent + channels/changed, while a
+                // plain-MCP host gets none of them — it has no inbound Request
+                // form to consent WITH. That asymmetry is inherent to plain
+                // MCP, not a shortcut, but it must be stated rather than
+                // papered over: on the plain lane the credential is the ONLY
+                // gate, and there is no host veto.
+                //
+                // It worked, and `travel` plus the ordinary channels/changed
+                // notification already gives a host an observable transition —
+                // so a second invocation lane needed to justify itself, and it
+                // could not. channels/list exposes only the CURRENT world, so no
+                // generic host can DISCOVER a sibling descriptor through this
+                // surface; a hand-constructed `world:foo` is not a demonstrated
+                // second consumer, and the promote-on-reuse rule asks for a real
+                // one. Keeping a lane in case someone eventually wants it is
+                // exactly the speculative generality that rule exists to refuse.
+                //
+                // Re-adding it needs no MCPL spec change: travelGate() and
+                // classifyJoinFailure() still hold the whole policy. (One
+                // caveat for whoever does it — travelGate() now branches on
+                // this.mcplClient, which is always true for a channels/open
+                // caller, so that conjunct is a no-op on this lane rather than
+                // a behaviour to reason about.) Until then a
+                // sibling id is simply an unknown channel, which is the honest
+                // answer for a channel this surface never advertised.
+                this.conn.sendError(req.id, -32023,
+                  `unknown channel: ${p.channelId ?? JSON.stringify(p.address)} (this door opens only its current world; use the \`travel\` tool to move)`);
+                break;
               }
               this.channelOpen = true;
               const limit = Math.min(Math.max(p.history?.limit ?? 0, 0), 100);
@@ -1197,13 +1257,24 @@ class Session {
         try {
           await this.joinWorld(target, gate.founding);
         } catch (e) {
-          return { content: [{ type: "text", text: `travel failed: ${(e as Error).message}` }], isError: true };
+          const f = this.classifyJoinFailure(e);
+          // Safe HERE (before the return) only because finishFatalJoin defers
+          // by a macrotask and the dispatch loop's sendResponse is synchronous
+          // once handleTool resolves — so the reply always wins the race. If an
+          // await is ever introduced between this returning and the send, that
+          // stops being true and the socket dies with the reply unwritten.
+          if (f.fatal) this.finishFatalJoin();
+          return { content: [{ type: "text", text: f.fatal
+            // Say plainly that the seat is gone. An agent told only "travel
+            // failed" would keep issuing verbs into a closed connection.
+            ? `travel failed past the point of no return: ${f.why}. Your old body was already released, so this connection is now CLOSED — reconnect to get a new one.`
+            : `travel refused: ${f.why}` }], isError: true };
         }
         // The host is told by channels/changed (same as the channels/open lane);
         // this string is for the AGENT, so it says what actually moved.
         return text(
           `${gate.founding ? "Founded and entered" : "Arrived in"} "${target}" (attachment ${this.epoch}). ` +
-          `Your body, avatar and held pose came with you; your chat cursor starts fresh here. Use \`look\` to see where you are.`,
+          `Your identity, avatar and attention settings came with you; your held pose and posture did not (they are world-local). Your chat cursor starts fresh here. Use \`look\` to see where you are.`,
         );
       }
       case "world_verb": {
