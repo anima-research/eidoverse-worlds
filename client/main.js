@@ -193,12 +193,23 @@ function start() {
   // both attach <audio> elements for the same speaker.
   const _q = new URLSearchParams(location.search);
   if (_q.get('sfu') === '1') {
+    console.info('[voice] transport=SFU (in-process)');
+    window.__voiceTransport = 'sfu';
     import('./lib/voicesfubridge.js').then((m) => m.initVoiceSfu(CONFIG.name))
       .catch((e) => console.error('voice sfu init failed', e));
   } else if (_q.get('relay') === '1') {
+    console.info('[voice] transport=RELAY (livekit)');
+    window.__voiceTransport = 'relay';
     import('./lib/voicerelay.js').then((vr) => vr.initVoiceRelay(CONFIG.name))
       .catch((e) => console.error('voice relay init failed', e));
   } else {
+    // 🔴 SAY WHICH TRANSPORT YOU ARE (2026-08-15, R: "comment out all the mesh
+    // plumbing so you can be certain it's not being used"). The three paths
+    // were silently interchangeable — I served R the MESH for an hour while
+    // reporting the SFU, because nothing anywhere announces which one ran.
+    // A transport that does not name itself is untestable from the outside.
+    console.info('[voice] transport=MESH (add ?sfu=1 for the in-process SFU)');
+    window.__voiceTransport = 'mesh';
     initVoice(CONFIG.name);
   }
   initAudioPanel();   // 🔊 categories: voices / world / TTS + consent rows
