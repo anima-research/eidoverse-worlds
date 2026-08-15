@@ -300,6 +300,75 @@ check("…and the old PC was closed", bLeg.pc.connectionState === "closed" || bL
   room.closeAll();
 }
 
+// ── MUTATION-DERIVED TESTS ─────────────────────────────────────────────────
+// Review ran mutants of fanout()'s four guards against the then-37 tests; five
+// survived. M4 is the one that mattered and IS now killed (verified: inverting
+// `!this.allows(...)` to a denylist turns this suite red in 3 places).
+//
+// HONEST NOTE on the others: M1 (source-closed), M5 (route check) and M7
+// (self-echo) STILL survive, and that is defensible rather than a hole —
+// each is redundant with a guard that runs first. A closed leg's routes are
+// deleted by closeLeg, so M1 cannot leak; self-consent never builds a route,
+// so M7 cannot either; and `route?.track` is semantically identical to the
+// early-continue. The assertions below pin the BEHAVIOUR either way, which is
+// what a reader cares about, but they are not discriminating tests and this
+// comment exists so nobody mistakes them for coverage they are not.
+{
+  const room = new Sfu();
+  const a = new FakePeer(), b = new FakePeer(), c = new FakePeer();
+  await negotiate(a.pc, room.createLeg("a", 1).pc);
+  await negotiate(b.pc, room.createLeg("b", 1).pc);
+  await negotiate(c.pc, room.createLeg("c", 1).pc);
+  // Build a NEGOTIATED route, then remove the consent ENTRY entirely (not set
+  // false). This is the state after closeLeg cleanup, and for any pair policy
+  // never spoke about — the "absent" case the allowlist claims to deny.
+  room.setConsent("b", "a", true);
+  await sleep(10);
+  await room.negotiate("b", (pc) => negotiate(pc, b.pc));
+  await sleep(400);
+  // Remove the ENTIRE listener row — the true "absent" state. Deleting only the
+  // inner key leaves the row, and `=== false` vs `!== true` behave identically
+  // there, which is why the first version of this test did not discriminate.
+  (room as unknown as { consent: Map<string, Map<string, boolean>> }).consent.delete("b");
+  const atDelete = b.heard;
+  await a.speak(20);
+  await sleep(400);
+  check("M4: ABSENT consent denies (not merely explicit-false)",
+    b.heard === atDelete, `heard ${atDelete}→${b.heard}`);
+
+  // M5: a listener with consent but NO route must hear nothing.
+  room.setConsent("c", "a", true);
+  (room.getLeg("c") as unknown as { outbound: Map<string, unknown> }).outbound.delete("a");
+  const cAt = c.heard;
+  await a.speak(15);
+  await sleep(300);
+  check("M5: consent without a route still delivers nothing", c.heard === cAt, `heard ${cAt}→${c.heard}`);
+
+  // M1: a CLOSED speaker's in-flight packets reach nobody.
+  room.setConsent("b", "a", true);
+  await sleep(10);
+  await room.negotiate("b", (pc) => negotiate(pc, b.pc));
+  await sleep(300);
+  const beforeClose = b.heard;
+  room.closeLeg("a");
+  await a.speak(15);                                  // the corpse keeps talking
+  await sleep(300);
+  check("M1: a closed speaker's packets reach nobody", b.heard === beforeClose, `heard ${beforeClose}→${b.heard}`);
+
+  // M7: nobody hears their own voice echoed back.
+  const solo = new Sfu();
+  const s1 = new FakePeer();
+  await negotiate(s1.pc, solo.createLeg("s1", 1).pc);
+  solo.setConsent("s1", "s1", true);                  // even if policy says yes
+  await sleep(10);
+  const selfAt = s1.heard;
+  await s1.speak(15);
+  await sleep(300);
+  check("M7: no self-echo even with self-consent set", s1.heard === selfAt, `heard ${selfAt}→${s1.heard}`);
+  solo.closeAll();
+  room.closeAll();
+}
+
 // ── REGRESSION C2: the guard must not swallow a real bug ───────────────────
 {
   const { __isBenignTransportError: benign } = await import("../server/sfuguard.ts");

@@ -68,9 +68,17 @@ export interface SfuLeg {
 
 export class Sfu {
   private legs = new Map<string, SfuLeg>();
-  /** `${listener}\u0000${speaker}` → allowed. ABSENT MEANS DENIED — the map is
-   *  an allowlist, so a consent we never heard about cannot leak audio. */
-  private consent = new Map<string, boolean>();
+  /** listener → speaker → allowed. ABSENT MEANS DENIED at BOTH levels — an
+   *  allowlist, so a consent we never heard about cannot leak audio.
+   *
+   *  🔴 NESTED, not a joined key. `listener + NUL + speaker` is NOT injective
+   *  when an id may itself contain NUL: ("a","b\0c") and ("a\0b","c") both
+   *  produce `a\0b\0c`, so one pair's revoke silently revokes — or GRANTS —
+   *  another's. `parseRelayIdentity` accepts `.{1,64}`, which does not exclude
+   *  NUL, so nothing upstream prevented it (review item 7). Nesting also
+   *  removes a string allocation per (packet × listener) — ~6600/s in a
+   *  12-person room (item 9). */
+  private consent = new Map<string, Map<string, boolean>>();
   /** speakers a moderator has silenced: enforced at INGRESS, so a muted
    *  speaker is inaudible to everyone at once and cannot be routed around. */
   private muted = new Set<string>();
@@ -90,7 +98,9 @@ export class Sfu {
     installSfuTransportGuard();
   }
 
-  private key(listener: string, speaker: string) { return `${listener}\u0000${speaker}`; }
+  private allows(listener: string, speaker: string): boolean {
+    return this.consent.get(listener)?.get(speaker) === true;   // absent = denied, both levels
+  }
 
   /** Create a leg for an already-authenticated participant. There is no
    *  credential to mint and no webhook to admit: the websocket proved identity
@@ -138,7 +148,7 @@ export class Sfu {
     from.rxPackets++;
     for (const [listenerId, listener] of this.legs) {
       if (listenerId === from.id || listener.closed) continue;
-      if (this.consent.get(this.key(listenerId, from.id)) !== true) continue;  // absent = denied
+      if (!this.allows(listenerId, from.id)) continue;         // absent = denied
       const route = listener.outbound.get(from.id);
       if (!route) continue;                  // no route = not heard
       route.track.writeRtp(rtp);             // encoded Opus, straight through
@@ -238,7 +248,9 @@ export class Sfu {
    *  sender-declared recipient list: there the speaker picks who hears them,
    *  which is the weaker guarantee. */
   setConsent(listenerId: string, speakerId: string, allowed: boolean) {
-    this.consent.set(this.key(listenerId, speakerId), allowed);
+    let row = this.consent.get(listenerId);
+    if (!row) { row = new Map(); this.consent.set(listenerId, row); }
+    row.set(speakerId, allowed);
     if (allowed) this.ensureRoute(listenerId, speakerId);
   }
 
@@ -255,8 +267,8 @@ export class Sfu {
     for (const [, l] of this.legs) l.outbound.delete(id);   // nobody hears a corpse
     try { leg.pc.close(); } catch { /* already dead */ }
     this.legs.delete(id);
-    for (const k of [...this.consent.keys()])
-      if (k.startsWith(`${id}\u0000`) || k.endsWith(`\u0000${id}`)) this.consent.delete(k);
+    this.consent.delete(id);                       // everything this leg consented to
+    for (const row of this.consent.values()) row.delete(id);   // everyone's consent TO it
   }
 
   getLeg(id: string) { return this.legs.get(id); }

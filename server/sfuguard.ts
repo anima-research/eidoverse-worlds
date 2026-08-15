@@ -41,10 +41,15 @@ function isBenignTransportError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   const code = (err as NodeJS.ErrnoException).code;
   if (typeof code !== "string" || !BENIGN_CODES.has(code)) return false;
-  // A syscall error from our own sockets — not, say, an ECONNREFUSED bubbling
-  // out of application code that happens to talk to a database.
+  // 🔴 REQUIRE a syscall. `syscall === undefined` was too permissive: an
+  // application error carrying a benign code with no syscall got swallowed and
+  // the process survived in an unknown state — the same catch{}-in-disguise
+  // this file exists to prevent. Demonstrated in review with
+  // `Error("fetch failed", code=ECONNREFUSED)`, and there are seven in-process
+  // fetch() calls in server/, so it is reachable rather than theoretical.
+  // dgram ALWAYS sets syscall, so requiring it costs us nothing.
   const syscall = (err as NodeJS.ErrnoException).syscall;
-  return syscall === undefined || /^(recv|send|connect|write|read)/.test(syscall);
+  return typeof syscall === "string" && /^(recv|send)/.test(syscall);
 }
 
 /** Preserve the crash site ourselves. A bare `throw` inside the handler loses
