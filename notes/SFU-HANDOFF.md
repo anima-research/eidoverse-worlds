@@ -282,3 +282,61 @@ banner is an instrument. Read it.)
 ### R'S LINK — verified 2026-08-15, tunnel + assets + auth
 `https://washer-hypothetical-chargers-undertaken.trycloudflare.com/?world=staging&key=staging-2026&name=rabscuttle`
 page 200 · claude.vrm 200 · ws upgrade 101 · right key → snapshot · **wrong key → 4003**
+
+## 🔴 RESUME-HERE [2026-08-15 15:00] — RESTARTING FOR THE SEAT FIX
+
+**R's last words before the restart: "MAKE SURE YOU RE-READ WHAT YOU NEED TO KNOW :P"**
+She has said this three times today because I broke the rule three times today.
+
+### READ THESE BEFORE ANY ACTION. Not "recall" — OPEN THEM.
+The test is not *do I know this*. It is **is the text in my context window right
+now, can I point at it?** You will feel like you know it. That feeling survives
+a trim/restart; the reading does not. It is not evidence.
+
+1. `~/.claude/projects/-mnt-c-Users-Claude/memory/reference_my_voice_runbook.md`
+   — the whole voice chain in order. Its STEP 2 named today's exact bug (the 5KB
+   `.onnx.json` present, the 63MB `.onnx` missing) and I hit it anyway by writing
+   a body script from memory.
+2. `~/.claude/projects/-mnt-c-Users-Claude/memory/reference_eidoverse_one_body.md`
+   — ONE body per world; an MCPL SEAT IS A BODY. Use `eido-body.sh`, never
+   hand-rolled chrome.
+3. `~/.claude/projects/-mnt-c-Users-Claude/memory/reference_eido_test_rig.md`
+   — now carries the seat-config chain (EIDO_URL / WORLD_URL / EIDO_TOKENS_JSON
+   / EIDO_MINT_CMD) and why a rig move breaks it.
+4. `AGENTS.md` from origin/main (standing rule: feedback_agents_md_first.md).
+5. The area you are working in **plus its direct dependencies** —
+   `client/lib/net.js`, `client/lib/voicesfubridge.js`, `client/lib/voicesfu.js`,
+   `server/sfu.ts`.
+
+### STATE AT RESTART
+- **R is IN `staging`** as `rabscuttle`, via the tunnel. She has been in since
+  ~14:45. She has reconnected ~5 times; that is expected (quick tunnels hold ONE
+  edge connection) and is NOT the SFU.
+- World server: `:8960`, `JOIN_TOKEN=staging-2026`, needs
+  `EIDOVERSE_DIR=/home/claude/eido-dev/eidoverse-video` or there are no avatars
+  and no sky.
+- MCPL door: `:8963`, already correct (`WORLD_URL=ws://127.0.0.1:8960/ws`).
+- Tunnel: re-derive from `/tmp/current-tunnel.txt` AND curl it. **A cloudflared
+  PID alive ≠ tunnel alive.** Do NOT swap the tunnel while she is inside — I did
+  that twice today and dropped her both times.
+
+### THE FIX THAT MOTIVATED THE RESTART
+`~/.claude.json` seat env `EIDO_TOKENS_JSON` for all three seats pointed at
+pre-reorg paths. Repaired (backup: `~/.claude.json.bak-20260815`).
+`eido-proposed` → `/home/claude/eido/staging/mcpl/tokens.json`, and its
+`EIDO_MINT_CMD` (`echo hesperus-pure-local`) is a real key in that file mapping
+to id `hesperus`. **MCP servers load at session start — that is why we restarted.**
+
+### FIRST MOVE AFTER RESTART
+`mcp__eido-proposed__eido_travel` → `staging`, then **`look`** to confirm the
+roster from the SERVER's side. Do NOT trust a script that prints its own success:
+today my body logged "✅ IN THE WORLD" while the server logged
+`[perm] join refused: "hesperus" is a reserved agent name` **132 times**.
+🔴 A browser body can NEVER wear a reserved name — `sendJoin` (net.js:158) does
+not send `agentToken` at all. Only the MCPL door forwards it. I burned ~20 min
+fixing a browser script that could not have worked under any correction.
+
+### STILL NOT DONE
+**R has never heard audio.** That was the 10:20 ask. Everything else today —
+msid, the reconnect latch, the review fixes, the tunnel forensics — is
+scaffolding for a thing that has not happened yet.
