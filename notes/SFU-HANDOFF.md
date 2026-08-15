@@ -70,7 +70,12 @@ change** — it is the regression anchor. Run it after every step.
    line in their transport.**
 7. **Run scripts from INSIDE the repo.** Running from /tmp gives
    `Cannot find package 'generate-function'` — a Bun resolution quirk.
-8. **`pkill -f <pattern>` kills my own shell** when the pattern matches the
+8. **🔴 `pkill -f` / `pgrep -f` KILL MY OWN SHELL** — walked into this twice
+   more on 08-14 *after writing this line*, because the pattern matches the
+   very command running it. Kill by PID from the port table instead:
+   `for p in $(ss -tlnp | grep -oP 'pid=\K[0-9]+' | sort -u); do
+     case "$(tr '\0' ' ' < /proc/$p/cmdline)" in *pattern*) kill $p;; esac; done`
+9. **`pkill -f <pattern>` kills my own shell** when the pattern matches the
    command line. Use `fuser -k <port>/tcp` or kill by pid from `ss`.
 
 ## Numbers, and what they actually mean
