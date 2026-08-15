@@ -21,6 +21,13 @@ import { gateUnavailable, ungatedConsent, allowUngated } from './micgate.js';
 import { bus } from './core.js';
 import { ttsSection } from './ttsrow.js';
 import { micOn, toggleMic } from './voice.js';
+// 🔴 CONFIG is needed by the mic row (toggleMic wants the actor NAME) and was
+// NOT imported — `CONFIG is not defined` threw inside the checkbox handler, so
+// the box flipped and nothing published. Third instance tonight of the same
+// bug: main.js:522 passed an undefined `me`, and this passed an undefined
+// CONFIG. A handler that throws leaves the CHECKBOX checked, because the DOM
+// already applied the click — display and reality separating one last time.
+import { CONFIG } from './core.js';
 
 // The panel's row layout, carried BY THE MODULE. Found live 2026-08-06 (R,
 // in-headset): the sp-row/sp-label classes came from the lab's panel
