@@ -135,6 +135,40 @@ as gotcha 3, and it is now measured rather than feared.
 a Claude session — a real host does better, and this is the worst case with
 everyone talking). Not yet proven for "many more", which was the stated target.
 
+### 🔴 The cost is Bun, not crypto — and my first diagnosis was wrong
+
+I claimed ">99% of the cost is SRTP encryption", derived by measuring two cheap
+things (bookkeeping 0.06%, serialize 0.43%) and attributing the remainder to the
+plausible suspect. **That is reasoning by subtraction and it was wrong.**
+
+Measured facts, independently reproduced here:
+- werift's SRTP is **native** `crypto.createCipheriv("aes-128-ctr")` + HMAC-SHA1,
+  not pure JS: **1.69µs/packet ≈ 590,000 pps**. At our 6,600 pps that is ~1% of
+  cost with ~90× headroom. **Crypto is not the bottleneck.**
+- The real cost is **Bun's per-packet event/Buffer overhead inside werift.**
+  Same code, same load, same 100.0% delivery:
+
+  | runtime | CPU @ N=12 all-speaking |
+  |---|---|
+  | **Bun 1.3.14** | **118.5%** of a core |
+  | **Node 22** | **62.7%** of a core |
+
+  **Bun is 1.9× slower** (survey measured 2.0× separately — two independent
+  derivations agreeing). Not crypto (Bun's crypto is *faster*), not dgram.
+
+**Deployment consequence:** if voice runs in the sequencer process and the
+sequencer runs on Bun, we pay ~2× for the media path. Options, unexplored:
+run the SFU in a Node sidecar (loses the one-process win), wait for Bun, or
+accept it. **This deserves its own decision and is NOT settled here.**
+
+### ICE config is worth 52×, not a micro-optimization
+
+With 12 m-lines, default `createOffer` took **2021ms** and gathered 96
+candidates. `bundlePolicy:"max-bundle"` → 176ms; `+ iceUseIpv6:false` → 61ms;
+`+ iceLite:true` (public-IP server) → 39ms. Applied the first two; iceLite when
+we have a public host. At this m-line count this is the difference between a
+usable join and a two-second stall.
+
 **Cheap headroom not yet taken** (in rough order of value):
 1. **Proximity gating** — #104 already lists it (steal from Basis). No listener
    in range → don't forward. In a big world this is most of the traffic.
