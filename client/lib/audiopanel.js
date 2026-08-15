@@ -19,6 +19,7 @@ import { audioPrefs, setVolume, receivingVoice, setReceiveVoice,
 import { micAnalyserLevel } from './voice.js';
 import { gateUnavailable, ungatedConsent, allowUngated } from './micgate.js';
 import { bus } from './core.js';
+import { ttsSection } from './ttsrow.js';
 
 // The panel's row layout, carried BY THE MODULE. Found live 2026-08-06 (R,
 // in-headset): the sp-row/sp-label classes came from the lab's panel
@@ -166,6 +167,15 @@ function paint(body) {
     'rooms, and strangers cannot see your IP address. Muting only turns the ' +
     'volume down; this unplugs the wire.',
     receivingVoice(), (on) => { setReceiveVoice(on); if (on) setHush(false); }));
+
+  // 🔴 THE TTS SECTION WAS ORPHANED. client/lib/ttsrow.js has shipped complete
+  // since #91 (2026-08-10) and was NEVER imported by anything — not by the
+  // commit that added it, not by main.js, not by origin/main today. 419 lines
+  // of finished human UI, dead on arrival, which is why R could not find the
+  // voice controls she remembered building. Found because she said "we did the
+  // full UI for humans as well, where is it?" and was right; my first grep
+  // covered only this file and I wrongly reported it as never built.
+  ttsSection(body_, () => paint());
 }
 
 export function initAudioPanel() {
