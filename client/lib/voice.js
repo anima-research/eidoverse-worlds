@@ -495,6 +495,13 @@ async function processSignal(p, from, payload) {
 }
 
 export async function toggleMic(name) {
+  // 🔴 TRANSPORT-AWARE. mictoggle.js is the ONE mic UI for every transport, but
+  // it only ever called this mesh implementation — so on the SFU path (?sfu=1)
+  // the badge lit up, voice.js published to a mesh nobody was on, and the SFU
+  // reported rx=0/publishing=false forever. Caught live: R turned her mic on,
+  // said "hello", and the server saw zero packets. The button must drive
+  // WHICHEVER voice path is actually running, so route before doing anything.
+  if (window.__sfuMic) { await window.__sfuMic(); return; }
   myId = name ?? myId;
   if (micOn()) {
     // GOING QUIET IS A DATA CHANGE, NOT A CONNECTION CHANGE (R, 2026-08-08).
