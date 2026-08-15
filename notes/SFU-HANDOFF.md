@@ -238,3 +238,27 @@ it is an open flank in both stacks, and cheap for us to close at ingress later.
 Recipient lists pick the cheapest of bitfield / denylist / allowlist per update
 (`BasisTransmissionResults.cs:869-930`), sent ReliableOrdered while audio is
 Unreliable. If our consent map ever ships to clients, copy that shape.
+
+### ✅ END-TO-END AUDIO PROVEN (2026-08-15, after the msid change)
+`tools/sfu-browser-smoke.mjs` (BASE=http://127.0.0.1:8960) — two real Chromiums:
+```
+✅ transport is the in-process SFU (no LiveKit)
+✅ A publishing a real getUserMedia track
+✅ B subscribed to A — server-enforced, POST-consent
+   envelope peak at B for A: 1.018        ← AMPLITUDE, not a packet counter
+✅ AUDIO IS FLOWING browser → our SFU → browser
+✅ consent revoked → audio stopped in ~2512ms
+   server diag: forwarded=1799 suppressed={"gated":0,"capped":0}
+```
+The envelope is the only number that survives every intermediate lie — counters
+can be right while the audio is silence. **The msid change did not regress
+routing: 57/57 sfu-test.ts, and the listener hears the speaker.**
+
+🔴 The smoke test had been UNRUNNABLE since this morning for two unrelated
+reasons, both mine: it defaulted to port 8946 (the pre-reorg rig) and it never
+clicked `#d-go`, so it hung 90s at page load. A test that cannot run is not a
+passing test — it is an absent one, and it was absent all morning.
+
+**Known-noisy, not blocking:** `/library/eidoverse/assets/vrms/claude.vrm` 404s
+during smoke (avatar only; voice path unaffected). Likely a repath missed in the
+reorg — worth a look, does not gate R's audio test.
