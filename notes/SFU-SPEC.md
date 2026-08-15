@@ -501,6 +501,50 @@ unproven rows they are, and present it as a THIRD hypothesis beside LiveKit and
 Galène — which is precisely how §8.1 frames the exercise. No-go remains a
 successful result.
 
+## Basis's block model vs ours (read after the revocation bug, 20:25)
+
+Went back to Basis specifically to ask *what does their consent/mute code do
+that ours doesn't* — because tonight's privacy bug (a refused revoke treated as
+a no-op) survived two code-reading reviews and died in 4 seconds to a live test.
+Their voice has shipped to real users for years, so their answer is evidence.
+
+**What they have that we should steal (and I have now implemented):**
+`BasisNetworkHandleTempBlock.OnRemotePlayerJoined` (:110-133) re-asserts a
+persisted block when the blocked player LATER JOINS. That is precisely the bug
+I fixed tonight from the other direction — consent applied only to legs that
+already existed, so a speaker arriving after a listener consented was never
+heard. They arrived at "a block is a standing answer about the ROOM, not about
+who happened to be present" years before I did. Ours is now `standingConsent`,
+applied in `applyStandingConsent()` on leg creation.
+
+**What they have that we deliberately do NOT:** blocks are SYMMETRIC and
+MIRRORED. `SendTempBlock` (:44-56) tells the server, which routes it to the
+blocked peer ONLY, and that peer's client mirrors it — so if A blocks B, B also
+stops hearing A. That is a social-safety choice (no one-sided eavesdropping)
+rather than a technical one. Ours is one-directional by design: a listener's
+consent is theirs alone and a speaker is never told who is listening. Both are
+defensible; the difference should be a PRODUCT decision, not an accident, so it
+is written here rather than left implicit. Flag for antra.
+
+**🔴 Where OUR design is stronger, and it is the security-relevant half:**
+their block is enforced CLIENT-SIDE. `BasisAudioReceiver` (:805-806) computes
+`muted = settings.IsBlocked || tempBlocked` and calls
+`ChangeRemotePlayersVolumeSettings(muted ? 0f : ...)` — **the audio still
+arrives over the network and the client multiplies it by zero.** A modified
+client can hear anyone it claims to have blocked. Ours is server-enforced: a
+route that does not exist delivers nothing, whatever the client believes. That
+is exactly what #104 amendment 3 asks for ("default receive remains
+fail-closed", server-enforced consent), and it is a real advantage of the
+relay-floor shape over a mesh-with-client-mute — worth stating plainly in the
+spike report rather than leaving as an implicit win.
+
+**The lesson I am taking from the comparison:** their mute/block path is small
+and their JITTER path is enormous, which is the inverse of where I expected the
+value to be. The hard-won knowledge in a mature voice stack is in the parts that
+face the NETWORK, not the parts that face policy — and the policy parts are
+where a fresh implementation can actually be better, because it can put the
+enforcement somewhere the client cannot reach.
+
 ## Attribution
 
 Design informed by a source read of BasisVR (MIT, © 2024 Luke Doolan) — specifically its
