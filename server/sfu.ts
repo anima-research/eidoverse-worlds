@@ -98,6 +98,58 @@ export class Sfu {
     installSfuTransportGuard();
   }
 
+  /** Last known world position per leg, and when we heard it. */
+  private pos = new Map<string, { x: number; y: number; z: number; at: number }>();
+  /** Packets suppressed because nobody could have heard them. Diagnostic only. */
+  gated = 0;
+
+  /** Client rolloff is FULL_M=3 → SILENT_M=20 (client/lib/voicerelay.js:23), so
+   *  beyond SILENT_M the listener multiplies the stream by exactly zero.
+   *
+   *  🔴 HYSTERESIS, not a fixed margin. My first version added MARGIN_M=10 with a
+   *  plausible story about sprint speed; reading BasisDistanceJob.cs:74-84 showed
+   *  the real mechanism — an EXIT threshold 10% further than the ENTER threshold,
+   *  keyed on previous state (`prevVoice ? d2 < voiceExit : d2 < voiceEnter`).
+   *  A margin does not stop flapping: someone standing at exactly the cutoff
+   *  toggles on every position update, and each toggle is an audible cut. Two
+   *  thresholds with memory cannot flap, which is why every VR stack does it this
+   *  way. Cost: one bool per pair. */
+  private static readonly ENTER_M = 20;      // start forwarding within this
+  private static readonly HYSTERESIS = 1.10; // …stop only beyond 10% further (Basis's value)
+  private static readonly POS_STALE_MS = 5000;
+  /** Was this pair audible last time? The memory that makes hysteresis work.
+   *  🔴 NESTED for the same reason consent is: `listener + NUL + speaker` is not
+   *  injective when ids may contain NUL. I re-introduced the joined key here
+   *  three commits after fixing it in consent — the shape is seductive. */
+  private inRange = new Map<string, Map<string, boolean>>();
+
+  /** Tell the SFU where a participant is. Positions are OPTIONAL — a world that
+   *  never calls this simply never gates, which is why this cannot break an
+   *  existing deployment. */
+  setPosition(legId: string, x: number, y: number, z: number, now = Date.now()) {
+    this.pos.set(legId, { x, y, z, at: now });
+  }
+
+  /** Could `listener` possibly hear `speaker`? Unknown or stale → YES.
+   *  Hysteresis: a pair already in range stays in range until 10% further out. */
+  private inEarshot(listenerId: string, speakerId: string, now = Date.now()): boolean {
+    const a = this.pos.get(listenerId), b = this.pos.get(speakerId);
+    if (!a || !b) return true;                                   // unknown → forward
+    if (now - a.at > Sfu.POS_STALE_MS || now - b.at > Sfu.POS_STALE_MS) return true;  // stale → forward
+    const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+    const d2 = dx * dx + dy * dy + dz * dz;    // squared: no sqrt on the packet path
+    const enter = Sfu.ENTER_M * Sfu.ENTER_M;
+    const exit = enter * Sfu.HYSTERESIS * Sfu.HYSTERESIS;
+    let row = this.inRange.get(listenerId);
+    const was = row?.get(speakerId) === true;
+    const nowIn = was ? d2 < exit : d2 < enter;
+    if (nowIn !== was) {
+      if (!row) { row = new Map(); this.inRange.set(listenerId, row); }
+      row.set(speakerId, nowIn);
+    }
+    return nowIn;
+  }
+
   private allows(listener: string, speaker: string): boolean {
     return this.consent.get(listener)?.get(speaker) === true;   // absent = denied, both levels
   }
@@ -149,6 +201,12 @@ export class Sfu {
     for (const [listenerId, listener] of this.legs) {
       if (listenerId === from.id || listener.closed) continue;
       if (!this.allows(listenerId, from.id)) continue;         // absent = denied
+      // Proximity gate. Deliberately AFTER consent so it can only ever SUBTRACT:
+      // it is an efficiency hint, never a second authorization. If positions are
+      // unknown or stale we forward (fail-OPEN here is correct — the cost of a
+      // wrong gate is silence, and silence is the failure users actually notice;
+      // the cost of forwarding is bandwidth the client already discards).
+      if (!this.inEarshot(listenerId, from.id)) { this.gated++; continue; }
       const route = listener.outbound.get(from.id);
       if (!route) continue;                  // no route = not heard
       route.track.writeRtp(rtp);             // encoded Opus, straight through
@@ -267,6 +325,9 @@ export class Sfu {
     for (const [, l] of this.legs) l.outbound.delete(id);   // nobody hears a corpse
     try { leg.pc.close(); } catch { /* already dead */ }
     this.legs.delete(id);
+    this.pos.delete(id);
+    this.inRange.delete(id);
+    for (const row of this.inRange.values()) row.delete(id);
     this.consent.delete(id);                       // everything this leg consented to
     for (const row of this.consent.values()) row.delete(id);   // everyone's consent TO it
   }

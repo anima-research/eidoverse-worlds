@@ -369,6 +369,43 @@ check("…and the old PC was closed", bLeg.pc.connectionState === "closed" || bL
   room.closeAll();
 }
 
+// ── PROXIMITY GATE (Basis BasisDistanceJob.cs:74-84) ───────────────────────
+// An efficiency hint applied AFTER consent, so it can only ever subtract.
+// Measured motivation: two conversation groups 40m apart waste 55%% of fanout;
+// people scattered over 100m waste 100%%; a huddle wastes 0%% (gating costs
+// nothing exactly when it cannot help).
+// The mechanism is HYSTERESIS, not a fixed margin — my first version invented
+// MARGIN_M=10 from a sprint-speed story, and reading Basis showed the real
+// shape: exit threshold 10%% further than enter, keyed on previous state. A
+// margin does not stop flapping; two thresholds with memory cannot flap.
+{
+  const room = new Sfu();
+  const s = room as unknown as { inEarshot(a: string, b: string): boolean };
+  room.createLeg("a", 1); room.createLeg("b", 1);
+
+
+
+check("no positions → forwards (fail-open)", s.inEarshot("a","b")===true);
+room.setPosition("a",0,0,0); room.setPosition("b",5,0,0);
+check("5m apart → in range", s.inEarshot("a","b")===true);
+room.setPosition("b",100,0,0);
+check("100m apart → gated", s.inEarshot("a","b")===false);
+// hysteresis: enter at 20, exit at 22
+room.setPosition("b",19,0,0); check("19m → enters range", s.inEarshot("a","b")===true);
+room.setPosition("b",21,0,0); check("21m → STAYS (was in, exit is 22)", s.inEarshot("a","b")===true);
+room.setPosition("b",23,0,0); check("23m → drops out", s.inEarshot("a","b")===false);
+room.setPosition("b",21,0,0); check("back to 21m → STAYS OUT (enter is 20)", s.inEarshot("a","b")===false);
+// the anti-flap property, stated directly
+let flips=0, prev=s.inEarshot("a","b");
+for(let i=0;i<40;i++){ room.setPosition("b",20+(i%2?0.2:-0.2),0,0); const v=s.inEarshot("a","b"); if(v!==prev)flips++; prev=v; }
+check(`jitter across the boundary 40× → ${flips} flips (fixed cutoff would give ~40)`, flips<=1);
+// stale
+room.setPosition("a",0,0,0,Date.now()-9999); room.setPosition("b",100,0,0);
+check("stale position → forwards (fail-open)", s.inEarshot("a","b")===true);
+
+  room.closeAll();
+}
+
 // ── REGRESSION C2: the guard must not swallow a real bug ───────────────────
 {
   const { __isBenignTransportError: benign } = await import("../server/sfuguard.ts");
