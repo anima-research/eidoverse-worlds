@@ -191,26 +191,40 @@ function start() {
   // mesh. They are mutually exclusive branches on purpose — amendment 6 says one
   // owner must be visible at all times, and two initialised transports would
   // both attach <audio> elements for the same speaker.
+  // 🔴 ON THIS BRANCH THE SFU IS THE DEFAULT AND THE MESH IS OPT-IN.
+  //
+  // R, 2026-08-15: "Why aren't you commenting out the mesh code entirely so
+  // sfu=1 matters?" Because I had reached for a FLAG when the requirement is
+  // that the wrong path be IMPOSSIBLE. A flag can be forgotten — I dropped
+  // ?sfu=1 from her URL as "redundant" and served her the mesh for an hour
+  // while reporting SFU results.
+  //
+  // This is the relay-spike branch: its whole purpose is proving the
+  // in-process SFU. There is no reason it should be able to run the mesh by
+  // accident. So the default inverts here, and the mesh needs ?mesh=1 said out
+  // loud. Production (main) is untouched and stays mesh-by-default —
+  // #104 A5: "keep current mesh available as the existing production/rollback
+  // path". Rollback is `git revert`, not a runtime branch.
   const _q = new URLSearchParams(location.search);
-  if (_q.get('sfu') === '1') {
-    console.info('[voice] transport=SFU (in-process)');
-    window.__voiceTransport = 'sfu';
-    import('./lib/voicesfubridge.js').then((m) => m.initVoiceSfu(CONFIG.name))
-      .catch((e) => console.error('voice sfu init failed', e));
-  } else if (_q.get('relay') === '1') {
-    console.info('[voice] transport=RELAY (livekit)');
+  const _forceMesh = _q.get('mesh') === '1';
+  const _relay = _q.get('relay') === '1';
+  if (_forceMesh) {
+    console.warn('[voice] transport=MESH (explicit ?mesh=1 — the SFU spike is NOT under test)');
+    window.__voiceTransport = 'mesh';
+    initVoice(CONFIG.name);
+  } else if (_relay) {
+    console.info('[voice] transport=RELAY (livekit — a #104 acceptance-table candidate, not the floor)');
     window.__voiceTransport = 'relay';
     import('./lib/voicerelay.js').then((vr) => vr.initVoiceRelay(CONFIG.name))
       .catch((e) => console.error('voice relay init failed', e));
   } else {
-    // 🔴 SAY WHICH TRANSPORT YOU ARE (2026-08-15, R: "comment out all the mesh
-    // plumbing so you can be certain it's not being used"). The three paths
-    // were silently interchangeable — I served R the MESH for an hour while
-    // reporting the SFU, because nothing anywhere announces which one ran.
-    // A transport that does not name itself is untestable from the outside.
-    console.info('[voice] transport=MESH (add ?sfu=1 for the in-process SFU)');
-    window.__voiceTransport = 'mesh';
-    initVoice(CONFIG.name);
+    // DEFAULT on this branch. ?sfu=1 still accepted so existing links/probes
+    // keep working, but it is no longer load-bearing.
+    console.info('[voice] transport=SFU (in-process, default on relay-spike)');
+    window.__voiceTransport = 'sfu';
+    import('./lib/voicesfubridge.js').then((m) => m.initVoiceSfu(CONFIG.name))
+      .catch((e) => console.error('voice sfu init failed', e));
+  }
   }
   initAudioPanel();   // 🔊 categories: voices / world / TTS + consent rows
   // HEARING YOURSELF IS THE POINT. This hook — your own says going through the
