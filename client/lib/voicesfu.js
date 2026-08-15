@@ -120,7 +120,18 @@ export async function sfuMic(on = true) {
     micStream = s;
     for (const t of s.getTracks()) pc.addTrack(t, s);
   })();
-  try { await micPending; } finally { micPending = null; }
+  // A DENIED permission prompt is a normal answer, not a crash. getUserMedia
+  // rejects, and no caller catches: the relay-cred replay (voicesfubridge:47)
+  // would take an unhandled rejection into a bus handler. Clear the intent so
+  // the state stays honest — sfuMicOn() is `!!micStream && wantMic`, so leaving
+  // wantMic true after a denial would be a claim we did not earn.
+  try {
+    await micPending;
+  } catch (e) {
+    wantMic = false;
+    console.warn('[sfu] mic not granted:', e?.name || e);
+    return;
+  } finally { micPending = null; }
   // Adding a track makes US want to renegotiate — but the server offers, so we
   // ASK it to, rather than offering ourselves and causing glare.
   bus.emit('sfu-want-negotiate', {});
