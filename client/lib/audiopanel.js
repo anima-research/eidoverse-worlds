@@ -175,7 +175,20 @@ function paint(body) {
   // voice controls she remembered building. Found because she said "we did the
   // full UI for humans as well, where is it?" and was right; my first grep
   // covered only this file and I wrongly reported it as never built.
-  ttsSection(body_, () => paint());
+  // 🔴 ttsSection OWNS ITS HOST EXCLUSIVELY — build() does `host.textContent =
+  // ''` (ttsrow.js:346) on every rebuild. Handing it body_ meant it ERASED every
+  // row appended before it, which is why R saw a "mega broken" panel showing one
+  // stray row: paint() ran fine and completed (proved by instrumenting each
+  // step — no throw, all three reached), and then the last call wiped the
+  // output. Give it its own div and the two coexist.
+  //
+  // Two wrong theories preceded this (import failure, then an onPaint repaint
+  // loop) because I kept reasoning instead of instrumenting. The rule I have
+  // written down for exactly this — ship a reporter, not a third guess — would
+  // have found it two rounds earlier.
+  const ttsHost = document.createElement('div');
+  body_.append(ttsHost);
+  ttsSection(ttsHost, () => {});
 }
 
 export function initAudioPanel() {
