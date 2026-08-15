@@ -2,6 +2,16 @@
 
 ## Standing against #104 (read this first — it is NOT a deviation)
 
+**Checked 2026-08-14: nothing in #104 or its comments argues against writing our
+own.** I had cited "#104's rejection of hand-rolling" in my own recommendation
+doc — that phrase appears ONLY in my doc, attributed to #104, and is not in the
+issue body or any comment (the only "hand" in #104 is "a handful of known
+networks"). Either it was said in channel and I mis-filed the citation, or I
+inflated a packaging preference into a prohibition. **Do not repeat it as a #104
+constraint.** antra's actual words: *"`Lean Galène for the house; LiveKit as
+growth candidate` is a reasonable hypothesis, not yet a selection receipt. Let
+the spike decide against this matrix."*
+
 §8.1 says the spike decides between hypotheses against an acceptance table:
 *"Galène and LiveKit are **hypotheses**; the spike decides against one acceptance
 table."* A homegrown in-process SFU is therefore a **third hypothesis**, judged by the
@@ -16,6 +26,31 @@ acceptance (PLAN §1 is its death warrant), never before. Read the mesh only for
 transport-agnostic halves the PLAN already names as portable (mic capture, consent,
 playback ownership) — not for its courtship/glare/repair doctrine, which is precisely
 the pairwise failure surface the relay dissolves.
+
+## The honest argument AGAINST this (there is one, and it is not in #104)
+
+**Maintenance.** LiveKit has a company; this has us. If werift goes unmaintained,
+or a browser changes DTLS behavior, that is ours to fix on our schedule. The
+survey found werift at 383k weekly downloads with 100+ human commits in 2026 and
+E2E interop tests against Chrome/Safari/Firefox — healthy, but one maintainer's
+project, with **zero published scale data**. Nobody has publicly run it as a
+12-peer SFU; the numbers in this file are ours.
+
+Against that, antra's §7 ops criteria are satisfied BETTER in-process:
+
+| §7 criterion | separate SFU binary | in-process |
+|---|---|---|
+| "one more systemd/Task-Scheduler unit" | one more | **zero** |
+| "health = one port check" | probe a service | in-process, always truthful |
+| "no Redis, no containers, no cloud" | ✅ | ✅ |
+| "~5 Mbps at N=12 all-talking" | — | **4.63 Mbps measured** ✓ |
+
+The bandwidth landing on their estimate is an independent check that we are
+measuring the right thing.
+
+**Mitigation, and it is cheap:** the adapter interface is env-swappable, so
+LiveKit remains a drop-in escape hatch. If werift dies or we outgrow it, we
+change a config value, not an architecture.
 
 ## Why this instead of LiveKit
 
