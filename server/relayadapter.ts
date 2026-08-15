@@ -31,7 +31,14 @@ const CRED_TTL_S = 120;                                        // ≤10m is a ce
 // credential life = CRED_TTL_S + server skew; our own verification is exact.
 const VERIFY_TOLERANCE_S = 0;
 
-export const relayEnabled = () => !!RELAY_URL;
+/** Which voice transport is live.
+ *  - "livekit" (default when RELAY_URL is set): the phase-1 hypothesis.
+ *  - "sfu": our in-process SFU — needs NO external service, so it enables on
+ *    the flag alone. This is the switch that lets #104's acceptance table be
+ *    run against a third hypothesis without touching server.ts's call sites. */
+export const voiceTransport = (): "livekit" | "sfu" | "off" =>
+  process.env.VOICE_TRANSPORT === "sfu" ? "sfu" : RELAY_URL ? "livekit" : "off";
+export const relayEnabled = () => voiceTransport() !== "off";
 
 // ---- durable incarnation (amendment 2) -------------------------------------
 // Advanced atomically at every adapter boot: tmp + rename, so a torn write

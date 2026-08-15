@@ -10,6 +10,8 @@
 // both one-way: this module never imports server.ts.
 
 import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, appendFileSync } from "node:fs";
+import { sfuDiag } from "./sfuadapter.ts";
+import { voiceTransport } from "./relayadapter.ts";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, JOIN_TOKEN } from "./config.ts";
@@ -385,7 +387,13 @@ const ROUTES: Route[] = [
     // Both-ends discipline: pair with the client's voiceDiag relay page.
     match: (u) => u.pathname === "/relay-diag",
     handler: ({ url }) => new Response(
-      JSON.stringify(relayDiag(url.searchParams.get("world") ?? "staging")),
+      // 🔴 Must report the transport that is ACTUALLY running. Reading the
+      // LiveKit adapter's state while the SFU carries the audio produced
+      // `state:"degraded"` on a perfectly healthy server — a diagnostic that
+      // lies is worse than none, and this is the third such bug today.
+      JSON.stringify(voiceTransport() === "sfu"
+        ? sfuDiag(url.searchParams.get("world") ?? "staging")
+        : relayDiag(url.searchParams.get("world") ?? "staging")),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {

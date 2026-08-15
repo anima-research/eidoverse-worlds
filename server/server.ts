@@ -44,7 +44,12 @@ import { OPT_DIR } from "./config.ts";
 // Relay-floor spike (#104 phase 1): the LiveKit adapter. Inert without
 // RELAY_URL — the mesh stays the production path (amendment 6).
 import { relayEnabled, bootRelayAdapter, mintRelayCredential, revokeRelayLeg,
-  setListenerConsent, setLegRetiredHook, relayDiag, relayServiceState, currentIncarnation } from "./relayadapter.ts";
+  setListenerConsent, setLegRetiredHook, relayDiag, relayServiceState, currentIncarnation,
+  voiceTransport } from "./relayadapter.ts";
+// The in-process SFU (VOICE_TRANSPORT=sfu). Same surface as the LiveKit
+// adapter, so every call site below branches on transport rather than on shape.
+import { mintSfuCredential, setSfuConsent, revokeSfuLeg, sfuDiag,
+  sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate } from "./sfuadapter.ts";
 const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR);
 
 // The resident-visible service chart (amendment 2): every voice-service
@@ -1002,6 +1007,29 @@ const server = Bun.serve({
             utt: Number.isSafeInteger(capUtt) && capUtt >= 0 ? capUtt : 0 }, c);
           break;
         }
+        // ── SFU signaling (VOICE_TRANSPORT=sfu) ──────────────────────────
+        // Deliberately SEPARATE verbs from `rtc`: rtc is client↔client and
+        // routes by `to`, whereas here one end IS the sequencer, so there is no
+        // recipient to address and no fanout to get wrong. Same properties
+        // though — never logged, SDP-sized cap, dropped if the leg is gone.
+        case "sfu-answer": {
+          if (!c.world || voiceTransport() !== "sfu") return;
+          if (typeof msg.sdp !== "string" || msg.sdp.length > 20000) return;
+          sfuAcceptAnswer(c.world.name, c.id, msg.sdp);
+          return;
+        }
+        case "sfu-ice": {
+          if (!c.world || voiceTransport() !== "sfu") return;
+          sfuAcceptIce(c.world.name, c.id, msg.candidate);
+          return;
+        }
+        case "sfu-want-negotiate": {
+          // The client added a track and needs an offer. It ASKS rather than
+          // offering, because the server must own every offer (glare).
+          if (!c.world || voiceTransport() !== "sfu") return;
+          sfuNegotiate(c.world.name, c.id, (payload) => ws.send(JSON.stringify(payload)));
+          return;
+        }
         case "rtc": {
           // Voice/media signaling: point-to-point like a whisper and never
           // logged for the same reason — but unlike a whisper, a stale SDP is
@@ -1047,6 +1075,19 @@ const server = Bun.serve({
           }
           const wantPub = msg.publish !== false;      // scopes are askable-down, never up
           const mediaGen = ++GEN;
+          if (voiceTransport() === "sfu") {
+            // No JWT to mint and no external service to reach, so this is
+            // synchronous — but it announces through the SAME transition event
+            // and takes a gen from the SAME counter, because a surface session
+            // is a surface session regardless of what carries its audio.
+            const cred = mintSfuCredential(c.world.name, c.id, c.gen!, mediaGen);
+            const transition = JSON.stringify({ type: "surface-transition",
+              id: c.id, surface: "voice-relay", gen: mediaGen, retired: null });
+            for (const t of c.world.clients) if (t !== c) t.ws.send(transition);
+            ws.send(JSON.stringify({ type: "relay-cred", ...cred, gen: mediaGen,
+              service: { enabled: true, state: "live", transport: "sfu" } }));
+            return;
+          }
           mintRelayCredential(c.world.name, c.id, c.gen!, mediaGen,
             { publish: wantPub, subscribe: msg.subscribe !== false })
             .then((cred) => {
@@ -1071,6 +1112,12 @@ const server = Bun.serve({
           // moderator mute is a different verb with a different rank.
           if (!c.world || c.spectator) return;
           if (!relayEnabled()) return;
+          if (voiceTransport() === "sfu") {
+            const r = setSfuConsent(c.world.name, c.id, c.gen ?? 0, msg.recv === true);
+            ws.send(JSON.stringify({ type: "voice-consent", recv: msg.recv === true,
+              applied: r.changed, ...(r.reason ? { note: r.reason } : {}) }));
+            return;
+          }
           setListenerConsent(c.world.name, c.id, c.gen ?? 0, msg.recv === true)
             .then((r) => ws.send(JSON.stringify({ type: "voice-consent", recv: msg.recv === true, applied: r.changed, ...(r.reason ? { note: r.reason } : {}) })))
             .catch((err) => console.error(`[relay] consent for ${c.id} failed`, err));

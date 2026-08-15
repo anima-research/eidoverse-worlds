@@ -331,6 +331,24 @@ export class Sfu {
     }
   }
 
+  /** Speaker ids this leg has routes for, in insertion order — which is the
+   *  order werift added the transceivers, hence the order the browser's
+   *  ontrack will fire. The client pairs tracks to speakers by that order (see
+   *  client/lib/voicesfu.js); a Map preserves it, which is the only reason this
+   *  is safe to rely on. */
+  routesFor(legId: string): string[] {
+    return [...(this.legs.get(legId)?.outbound.keys() ?? [])];
+  }
+
+  /** Trickle ICE from the browser. Unknown leg or malformed candidate is
+   *  dropped rather than thrown — a late candidate for a closed leg is normal
+   *  churn, not an error worth crashing a voice session over. */
+  addIceCandidate(legId: string, candidate: unknown) {
+    const leg = this.legs.get(legId);
+    if (!leg || leg.closed || !candidate) return;
+    try { void leg.pc.addIceCandidate(candidate as RTCIceCandidate); } catch {}
+  }
+
   /** Give `listener` a track to hear `speaker` on. Separate from consent on
    *  purpose: the track can exist (negotiated, stable SDP) while starved of
    *  packets, so flipping consent costs no renegotiation — which is what makes

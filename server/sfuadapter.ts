@@ -128,3 +128,46 @@ export function sfuDiag(world: string) {
     moderatorMuted: [...s.moderatorMuted],
   };
 }
+
+// ── signaling: the server always OFFERS ───────────────────────────────────
+// One pending answer-resolver per leg. `Sfu.negotiate()` serialises offers per
+// leg internally (the promise chain that fixed SDP glare), so this map can
+// never hold more than one entry per leg — if it somehow did, the second offer
+// would be answering a question the browser was never asked.
+const waiting = new Map<string, (sdp: string) => void>();
+
+/** Create the offer for `legId` and hand it to `send`. The browser answers via
+ *  the `sfu-answer` verb, which resolves the promise this awaits. */
+export async function sfuNegotiate(world: string, legId: string,
+  send: (payload: unknown) => void) {
+  const s = worlds.get(world);
+  if (!s) return;
+  await s.sfu.negotiate(legId, async (pc) => {
+    // Tell the client which speaker each new track carries BEFORE the offer
+    // lands, so its ontrack can pair them in arrival order (see voicesfu.js).
+    for (const speakerId of s.sfu.routesFor(legId)) send({ type: "sfu-route", speaker: speakerId });
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    send({ type: "sfu-offer", sdp: pc.localDescription!.sdp });
+    const sdp = await new Promise<string>((resolve, reject) => {
+      waiting.set(legId, resolve);
+      // A browser that never answers must not wedge the leg's promise chain
+      // forever — every later offer for this leg would queue behind it and the
+      // participant would go permanently silent with no error anywhere.
+      setTimeout(() => { if (waiting.delete(legId)) reject(new Error("answer timeout")); }, 15000);
+    });
+    await pc.setRemoteDescription({ type: "answer", sdp });
+  }).catch((e) => console.error(`[sfu] negotiate ${legId}:`, (e as Error).message));
+}
+
+export function sfuAcceptAnswer(world: string, legId: string, sdp: string) {
+  const resolve = waiting.get(legId);
+  if (!resolve) return;                 // no offer outstanding — stale answer, drop
+  waiting.delete(legId);
+  resolve(sdp);
+}
+
+export function sfuAcceptIce(world: string, legId: string, candidate: unknown) {
+  const s = worlds.get(world);
+  s?.sfu.addIceCandidate(legId, candidate);
+}
