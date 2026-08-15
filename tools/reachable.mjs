@@ -81,7 +81,12 @@ for (const file of targets) {
 
   for (const fn of exports) {
     // 1. console-exposed — a human is the call site, and that is legitimate.
+    // 🔴 Match the function on the RIGHT of the assignment too. `window.relayMic
+    // = relayToggleMic` exposes it under a DIFFERENT name, and matching only
+    // `window.<fn> =` called the relay's live mic toggle an orphan (2026-08-15,
+    // the fifth invisible-call pattern these two tools have turned up).
     if (new RegExp(`window\\.${fn}\\s*=|window\\[['"\`]${fn}['"\`]\\]`).test(src)) continue;
+    if (new RegExp(`window\\.[A-Za-z0-9_$]+\\s*=\\s*${fn}\\s*[;,\n]`).test(src)) continue;
 
     // 🔴 The defining file is a CALL SITE like any other. Skipping it was a real
     // bug: rebindSenders is called at voice.js:554 for the TTS takeover, and
