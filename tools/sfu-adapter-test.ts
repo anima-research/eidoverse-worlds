@@ -44,5 +44,63 @@ check("incarnation is opaque, not a claimed-monotonic counter", /^i\d+-/.test(d.
 revokeSfuLeg(W, "alice");
 check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length === 0);
 
+// ── THE REVOCATION FAMILY ─────────────────────────────────────────────────
+// The live smoke caught ONE ordering ("audio survived revocation"). A privacy
+// guarantee has to hold under EVERY ordering, so this pins the whole family:
+// stale gen, newer gen, double revoke, reconnect, and a speaker who arrives
+// after consent was given.
+//
+// 🔴 These assert `allows()`, NOT route existence. Routes and consent are
+// deliberately separate — the transceiver stays negotiated and gets STARVED,
+// which is what makes revocation a memory write instead of an SDP round trip.
+// The first version of these tests counted pendingRoutes as "can hear" and
+// reported four false failures on correct code.
+{
+  const allowed = (w: string, l: string, sp: string) =>
+    (sfuState(w).sfu as unknown as { allows(a: string, b: string): boolean }).allows(l, sp);
+
+// 1. the exact bug: revoke at a stale gen must still silence
+{ const W="w1"; mintSfuCredential(W,"L",1,2); mintSfuCredential(W,"S",1,4);
+  setSfuConsent(W,"L",2,true);
+  check("consent ON permits the pair", allowed(W,"L","S"));
+  setSfuConsent(W,"L",0,false);                      // STALE gen
+  check("revoke at a STALE gen still silences", !allowed(W,"L","S")); }
+
+// 2. revoke at a NEWER gen (the reconnect case)
+{ const W="w2"; mintSfuCredential(W,"L",1,2); mintSfuCredential(W,"S",1,4);
+  setSfuConsent(W,"L",2,true);
+  setSfuConsent(W,"L",99,false);
+  check("revoke at a NEWER gen silences", !allowed(W,"L","S")); }
+
+// 3. double revoke (idempotent NO must stay NO)
+{ const W="w3"; mintSfuCredential(W,"L",1,2); mintSfuCredential(W,"S",1,4);
+  setSfuConsent(W,"L",2,true); setSfuConsent(W,"L",2,false); setSfuConsent(W,"L",2,false);
+  check("double revoke stays silent", !allowed(W,"L","S")); }
+
+// 4. 🔴 THE RECONNECT: a retired leg's consent must NOT resurrect
+{ const W="w4"; mintSfuCredential(W,"L",1,2); mintSfuCredential(W,"S",1,4);
+  setSfuConsent(W,"L",2,true);
+  revokeSfuLeg(W,"L");                               // listener disconnects
+  mintSfuCredential(W,"L",1,6);                      // …and comes back, new gen
+  check("a reconnected listener starts FAIL-CLOSED (no resurrected yes)", !allowed(W,"L","S")); }
+
+// 5. consent BEFORE the speaker exists, then speaker joins (tonight's 2nd bug)
+{ const W="w5"; mintSfuCredential(W,"L",1,2);
+  setSfuConsent(W,"L",2,true);
+  mintSfuCredential(W,"S",1,4);                      // arrives LATER
+  check("a speaker joining after consent IS permitted", allowed(W,"L","S"));
+  setSfuConsent(W,"L",2,false);
+  check("…and revoking still silences that late speaker", !allowed(W,"L","S")); }
+
+// 6. moderator mute vs consent — independent states (amendment 3)
+{ const W="w6"; mintSfuCredential(W,"L",1,2); mintSfuCredential(W,"S",1,4);
+  setSfuModeratorMute(W,"S",true);
+  setSfuConsent(W,"L",2,true);
+  const s = sfuState(W);
+  check("consent does not un-mute a moderator-muted speaker", s.sfu.diag().muted?.includes("S") ?? s.moderatorMuted.has("S")); }
+
+
+}
+
 console.log(fail === 0 ? `\n\x1b[32m✅ sfu-adapter: ${pass} passed\x1b[0m` : `\n\x1b[31m❌ ${fail} failed\x1b[0m`);
 process.exit(fail ? 1 : 0);
