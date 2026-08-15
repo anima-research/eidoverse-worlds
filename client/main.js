@@ -186,7 +186,16 @@ function start() {
   // #104 phase-1: EXACTLY ONE PLAYBACK OWNER (amendment 6). ?relay=1 runs the
   // relay-floor leg and the mesh never initializes; without it, byte-identical
   // mesh behavior. The staging world flips the flag; production stays mesh.
-  if (new URLSearchParams(location.search).get('relay') === '1') {
+  // 🔴 EXACTLY ONE PLAYBACK OWNER, now across THREE transports. ?sfu=1 is the
+  // in-process SFU (no LiveKit), ?relay=1 is the LiveKit relay, neither is the
+  // mesh. They are mutually exclusive branches on purpose — amendment 6 says one
+  // owner must be visible at all times, and two initialised transports would
+  // both attach <audio> elements for the same speaker.
+  const _q = new URLSearchParams(location.search);
+  if (_q.get('sfu') === '1') {
+    import('./lib/voicesfubridge.js').then((m) => m.initVoiceSfu(CONFIG.name))
+      .catch((e) => console.error('voice sfu init failed', e));
+  } else if (_q.get('relay') === '1') {
     import('./lib/voicerelay.js').then((vr) => vr.initVoiceRelay(CONFIG.name))
       .catch((e) => console.error('voice relay init failed', e));
   } else {

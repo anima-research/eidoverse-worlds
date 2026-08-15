@@ -49,7 +49,7 @@ import { relayEnabled, bootRelayAdapter, mintRelayCredential, revokeRelayLeg,
 // The in-process SFU (VOICE_TRANSPORT=sfu). Same surface as the LiveKit
 // adapter, so every call site below branches on transport rather than on shape.
 import { mintSfuCredential, setSfuConsent, revokeSfuLeg, sfuDiag,
-  sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate } from "./sfuadapter.ts";
+  sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition } from "./sfuadapter.ts";
 const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR);
 
 // The resident-visible service chart (amendment 2): every voice-service
@@ -1021,6 +1021,16 @@ const server = Bun.serve({
         case "sfu-ice": {
           if (!c.world || voiceTransport() !== "sfu") return;
           sfuAcceptIce(c.world.name, c.id, msg.candidate);
+          return;
+        }
+        case "sfu-pos": {
+          // Position feed for the proximity gate. OPTIONAL by design: the gate
+          // fails open on unknown/stale positions, so a client that never sends
+          // these is never gated — which is what keeps this from being a way to
+          // silence someone by withholding data.
+          if (!c.world || voiceTransport() !== "sfu") return;
+          const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+          sfuSetPosition(c.world.name, c.id, n(msg.x), n(msg.y), n(msg.z));
           return;
         }
         case "sfu-want-negotiate": {

@@ -127,6 +127,12 @@ export function sfuDiagClient() {
   };
 }
 
+/** Live speaker records, for the rolloff/hush loops in the bridge. Returns the
+ *  actual objects (playback state must be mutated in place, not on a copy) but
+ *  as entries rather than the Map itself, so a caller cannot add or delete
+ *  speakers behind ontrack's back. */
+export function sfuSpeakerEntries() { return [...speakers.entries()]; }
+
 export function sfuClose() {
   try { pc?.close(); } catch {}
   pc = null;

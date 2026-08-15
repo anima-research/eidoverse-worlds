@@ -171,3 +171,8 @@ export function sfuAcceptIce(world: string, legId: string, candidate: unknown) {
   const s = worlds.get(world);
   s?.sfu.addIceCandidate(legId, candidate);
 }
+
+/** Feed the proximity gate. Optional — see the `sfu-pos` case in server.ts. */
+export function sfuSetPosition(world: string, legId: string, x: number, y: number, z: number) {
+  worlds.get(world)?.sfu.setPosition(legId, x, y, z);
+}
