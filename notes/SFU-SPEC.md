@@ -153,8 +153,32 @@ Measured facts, independently reproduced here:
   | **Bun 1.3.14** | **118.5%** of a core |
   | **Node 22** | **62.7%** of a core |
 
-  **Bun is 1.9× slower** (survey measured 2.0× separately — two independent
-  derivations agreeing). Not crypto (Bun's crypto is *faster*), not dgram.
+  **Bun is 1.9-3× slower.** Three runs each (N=12, 2 speakers): Node
+  22.7 / 22.9 / 23.1% — rock steady. Bun 64.9 / 65.7 / 85.9% — slower AND
+  much noisier.
+
+  🔴 **THE EFFECT IS REAL; MY EXPLANATION FOR IT WAS WRONG.** I said "Bun's
+  per-packet event/Buffer overhead". Then I isolated the primitives werift's hot
+  path uses, and **Bun wins or ties on every one of them**:
+
+  | primitive (300k iters) | Bun | Node |
+  |---|---|---|
+  | alloc 100B Buffer | **13ms** | 150ms |
+  | Buffer.concat | 41ms | 43ms |
+  | subarray + copy | 20ms | 19ms |
+  | read/writeUInt16BE | 3ms | 2ms |
+  | 11 callbacks per event | **14ms** | 27ms |
+  | dgram.send (20k) | **13.0µs** | 21.2µs |
+
+  And the measurement itself is sound: a calibration busy-loop reads 94.8% (Bun)
+  vs 94.4% (Node) on identical single-threaded work, so `process.cpuUsage()` is
+  comparable across runtimes.
+
+  **So the cause is unidentified.** It is not crypto, not Buffers, not callbacks,
+  not dgram, and not measurement error. Candidates not yet tested: werift's
+  async/await chains under JSC vs V8, timer/`setTimeout` granularity in the RTCP
+  and pacing paths, or something in werift's event-emitter library specifically.
+  **Do not repeat "Bun's Buffer overhead" — it is falsified.**
 
 **Deployment consequence:** if voice runs in the sequencer process and the
 sequencer runs on Bun, we pay ~2× for the media path. Options, unexplored:
