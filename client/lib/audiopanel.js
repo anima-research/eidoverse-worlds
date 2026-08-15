@@ -20,6 +20,7 @@ import { micAnalyserLevel } from './voice.js';
 import { gateUnavailable, ungatedConsent, allowUngated } from './micgate.js';
 import { bus } from './core.js';
 import { ttsSection } from './ttsrow.js';
+import { micOn, toggleMic } from './voice.js';
 
 // The panel's row layout, carried BY THE MODULE. Found live 2026-08-06 (R,
 // in-headset): the sp-row/sp-label classes came from the lab's panel
@@ -75,6 +76,14 @@ function checkRow(label, hint, checked, onChange) {
 // voice lands versus your keyboard before choosing the floor (R, 17:19 —
 // typing sounds were pinging agents' ears). The bar animates only while the
 // section is open and stops the moment its row leaves the DOM.
+// The meter tracks the mic BADGE's palette (client/lib/mictoggle.js), because
+// they are read as one control: a bar lit while the badge is off says the mic
+// is hearing you when it is not. LIVE is the badge's live white-gold; DARK is
+// the same hue at a quarter value, so the bar still MOVES when muted (you can
+// set your threshold before unmuting) without claiming to transmit.
+const LVL_LIVE = '#ffd66b';
+const LVL_DARK = '#4a4230';
+
 function micFloorRow() {
   const row = document.createElement('div');
   row.className = 'sp-row';
@@ -85,7 +94,7 @@ function micFloorRow() {
     `<span class="sp-label" title="${hint}">mic sensitivity</span>` +
     `<span data-meter title="${hint}" style="flex:1;min-width:60px;position:relative;height:14px;` +
     `background:#000;border-radius:2px;overflow:hidden;cursor:ew-resize">` +
-    `<span data-lvl style="position:absolute;left:0;top:0;height:100%;width:0;background:#3c5"></span>` +
+    `<span data-lvl style="position:absolute;left:0;top:0;height:100%;width:0;background:${LVL_DARK}"></span>` +
     `<span data-thr style="position:absolute;top:0;height:100%;width:2px;background:#9f9;opacity:.9"></span>` +
     `</span>` +
     `<span data-out style="min-width:34px;text-align:right">${Math.round(micFloor() * 500)}%</span>`;
@@ -93,6 +102,9 @@ function micFloorRow() {
   const out = row.querySelector('[data-out]');
   const lvl = row.querySelector('[data-lvl]');
   const thr = row.querySelector('[data-thr]');
+  const paintLive = () => { lvl.style.background = micOn() ? LVL_LIVE : LVL_DARK; };
+  paintLive();
+  bus.on('audio:mic', paintLive);
   const paintThr = () => {
     thr.style.left = `calc(${Math.min(100, (micFloor() / FS) * 100)}% - 1px)`;
     out.textContent = `${Math.round(micFloor() * 500)}%`;
@@ -128,6 +140,22 @@ function paint(body) {
   // controls showing two different states while looking like one.) Ticking
   // it from a fully-revoked state grants consent as well, exactly like the
   // glyph, so the box is never a dead end.
+  // MIC FIRST — it is the control people reach for, and it is the one that
+  // transmits. Synced to the HUD badge exactly the way 'hear voices' is synced
+  // to the 🎧 glyph: one state, two surfaces, never disagreeing. (mictoggle.js
+  // exports nothing and self-injects, so both read micOn() and call the same
+  // toggleMic — the sync is the shared state, not a message between them.)
+  body_.append(checkRow('microphone',
+    'transmit your voice — the mic glyph beside the HUD is this same switch',
+    micOn(), async () => {
+      await toggleMic();
+      // Emit AFTER the await: the SFU path publishes asynchronously, and an
+      // event fired before the track exists repaints the row to a state that
+      // has not happened yet — the displayed-state-vs-real-state trap again.
+      bus.emit('audio:mic', micOn());
+    }));
+  body_.append(micFloorRow());   // sensitivity belongs UNDER the switch it serves
+
   body_.append(checkRow('hear voices',
     'peers and agent speech — the 🎧 glyph is this same switch',
     receivingVoice() && !isHushed(), (on) => {
@@ -138,7 +166,6 @@ function paint(body) {
     body_.append(slider(cat, label, hint,
       cat === 'world' ? p.volWorld : cat === 'tts' ? p.volTts : p.volVoices));
   }
-  body_.append(micFloorRow());
   // B2 (#90): the gate-unavailable escape hatch. Hidden while the gate works;
   // when the graph cannot be built the mic REFUSES to transmit and this row
   // appears — the explicit, user-visible choice to go raw. Never silent.
@@ -175,17 +202,12 @@ function paint(body) {
   // voice controls she remembered building. Found because she said "we did the
   // full UI for humans as well, where is it?" and was right; my first grep
   // covered only this file and I wrongly reported it as never built.
-  // 🔴 ttsSection OWNS ITS HOST EXCLUSIVELY — build() does `host.textContent =
-  // ''` (ttsrow.js:346) on every rebuild. Handing it body_ meant it ERASED every
-  // row appended before it, which is why R saw a "mega broken" panel showing one
-  // stray row: paint() ran fine and completed (proved by instrumenting each
-  // step — no throw, all three reached), and then the last call wiped the
-  // output. Give it its own div and the two coexist.
+  // TTS sits between the text-to-speech volume row and the speech-to-text
+  // controls — the voices you HAVE, next to the sliders that carry them.
   //
-  // Two wrong theories preceded this (import failure, then an onPaint repaint
-  // loop) because I kept reasoning instead of instrumenting. The rule I have
-  // written down for exactly this — ship a reporter, not a third guess — would
-  // have found it two rounds earlier.
+  // 🔴 ttsSection OWNS ITS HOST EXCLUSIVELY — build() does `host.textContent =
+  // ''` (ttsrow.js:346) on every rebuild. Handing it body_ meant it ERASED
+  // every row appended before it. Its own div, and the two coexist.
   const ttsHost = document.createElement('div');
   body_.append(ttsHost);
   ttsSection(ttsHost, () => {});
@@ -197,4 +219,5 @@ export function initAudioPanel() {
   // either control moving repaints the other's row — one truth, two surfaces
   bus.on('audio:hush', () => paint());
   bus.on('audio:receive', () => paint());
+  bus.on('audio:mic', () => paint());     // the badge and this row are one state
 }
