@@ -214,11 +214,21 @@ export class Sfu {
     if (!leg || leg.closed) return Promise.reject(new Error(`no leg ${legId}`));
     const run = leg.negotiating.then(async () => {
       if (leg.closed) return;
+      // 🔴 SNAPSHOT BEFORE, MARK ONLY THOSE. Marking every route after the
+      // exchange resurrected B2 one level deeper: a route added AFTER the offer
+      // was created cannot be in that SDP, but got marked negotiated anyway —
+      // silent forever, with diag reporting it as heard. Measured: hears
+      // ["s1","s2"], pendingRoutes [], listener heard 0 of 12.
+      // Snapshotting means a route that arrived mid-exchange stays pending and
+      // gets its own ask, which is exactly what the un-negotiated path is for.
+      const covered = [...leg.outbound.keys()];
       await exchange(leg.pc);
-      // Success is what makes a route real. Marking here — rather than at
-      // addTransceiver — is what lets a FAILED exchange be retried: the route
-      // stays un-negotiated, so the next setConsent re-asks (review B2).
-      for (const r of leg.outbound.values()) r.negotiated = true;
+      let stillPending = false;
+      for (const [speakerId, r] of leg.outbound) {
+        if (covered.includes(speakerId)) r.negotiated = true;
+        else stillPending = true;
+      }
+      if (stillPending) this.askToNegotiate(legId);   // the latecomer gets its own round
     });
     leg.negotiating = run.catch(() => {});      // a failure must not wedge the queue
     return run;

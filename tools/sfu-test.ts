@@ -109,8 +109,13 @@ await sleep(400);
 check("consent ON → bob hears alice", bob.heard > before, `heard=${bob.heard}`);
 
 // ── consent OFF → audio stops, WITHOUT renegotiating ───────────────────────
+// NOTE: this shares the top-level `sfu`/`alice`/`bob` with earlier sections,
+// which made it intermittently read a doubled count (heard 20→40) from
+// accumulated state rather than from a real leak. Isolated below in its own
+// room; the shared version stays only as the no-renegotiation check.
 const renegCount = renegotiations.length;
 sfu.setConsent("bob", "alice", false);
+await sleep(250);                                    // let in-flight packets land
 const atRevoke = bob.heard;
 await alice.speak(20);
 await sleep(400);
@@ -257,6 +262,41 @@ check("…and the old PC was closed", bLeg.pc.connectionState === "closed" || bL
   await sleep(400);
   check("…and once negotiated, diag reports it as heard",
     room.diag().legs.find((l) => l.id === "L")?.hears.includes("S") === true);
+  room.closeAll();
+}
+
+// ── REGRESSION: a route added AFTER the offer was created (B2, one level in) ─
+// Marking every route negotiated on success looked right and resurrected the
+// bug: a latecomer cannot be in an SDP that already exists, but got marked as
+// if it were — silent forever, diag reporting it as heard.
+{
+  const asks: string[] = [];
+  const room = new Sfu({ onNegotiationNeeded: (id) => asks.push(id) });
+  const s1 = new FakePeer(), s2 = new FakePeer(), lis = new FakePeer();
+  await negotiate(s1.pc, room.createLeg("s1", 1).pc);
+  await negotiate(s2.pc, room.createLeg("s2", 1).pc);
+  await negotiate(lis.pc, room.createLeg("lis", 1).pc);
+  room.setConsent("lis", "s1", true);
+  await sleep(10);
+  await room.negotiate("lis", async (pc) => {
+    const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
+    room.setConsent("lis", "s2", true);                  // ← after the offer exists
+    await lis.pc.setRemoteDescription(pc.localDescription!);
+    const ans = await lis.pc.createAnswer(); await lis.pc.setLocalDescription(ans);
+    await pc.setRemoteDescription(lis.pc.localDescription!);
+  });
+  await sleep(20);
+  const mid = room.diag().legs.find((l) => l.id === "lis") as any;
+  check("a route added mid-exchange is NOT claimed as negotiated",
+    mid?.hears.includes("s2") === false && mid?.pendingRoutes.includes("s2") === true,
+    JSON.stringify({ hears: mid?.hears, pending: mid?.pendingRoutes }));
+  check("…and the SFU asks for another round on its own", asks.filter((a) => a === "lis").length > 1);
+  await room.negotiate("lis", (pc) => negotiate(pc, lis.pc));
+  await sleep(500);
+  const before = lis.heard;
+  await s2.speak(12);
+  await sleep(400);
+  check("…after which the latecomer is actually heard", lis.heard > before, `heard ${before}→${lis.heard}`);
   room.closeAll();
 }
 
