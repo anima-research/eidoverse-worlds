@@ -225,7 +225,6 @@ function start() {
     import('./lib/voicesfubridge.js').then((m) => m.initVoiceSfu(CONFIG.name))
       .catch((e) => console.error('voice sfu init failed', e));
   }
-  }
   initAudioPanel();   // 🔊 categories: voices / world / TTS + consent rows
   // HEARING YOURSELF IS THE POINT. This hook — your own says going through the
   // selected voice — used to be installed ONLY inside the `?tts=PORT` block, so
