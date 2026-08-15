@@ -340,3 +340,45 @@ fixing a browser script that could not have worked under any correction.
 **R has never heard audio.** That was the 10:20 ask. Everything else today —
 msid, the reconnect latch, the review fixes, the tunnel forensics — is
 scaffolding for a thing that has not happened yet.
+
+## 🔴 RESUME [2026-08-15 15:18] — SECOND RESTART, TO LOAD EIDO_DOORS_JSON
+
+### FIRST MOVE — do this before anything else, then STOP and report
+1. `mcp__eido-main__eido_travel` → `staging`
+2. **`look`** — confirm from the SERVER's side that I am in `staging` with
+   `rabscuttle` (R). Do NOT trust a tool that prints its own success: today a
+   body script logged "✅ IN THE WORLD" while the server logged
+   `[perm] join refused: "hesperus" is a reserved agent name` **132 times**.
+3. If travel fails, `tail /tmp/eido-staging.log` and read the refusal reason.
+
+### WHAT THIS RESTART WAS FOR
+`EIDO_DOORS_JSON=/home/claude/eido/doors.json` is now set on all three eido
+seats. It overrides the built-in `rig` door recipe, which still pointed at
+`:8951` + `/home/claude/eido-ab/test-main/mcpl/tokens.json` — both dead since
+the morning reorg. Recipes load at process start, hence the restart.
+
+### THE DOOR MANAGER WORKS. DO NOT RE-LITIGATE THIS.
+I told R twice today it was unimplemented, quoting the design doc's header —
+while `eido_travel`'s OWN TOOL DESCRIPTION, visible in my tool list, states the
+`world@door` cross-server hop outright. R has done `staging → commons →
+staging` with it, no restart. The header is now corrected (eido-cc @6cf423d).
+- **Shipped:** `doorRegistry()` + `eido_travel world@door` in
+  `extras/eido-cc-extras.ts` (~line 689). One dial, re-pointable at runtime.
+  `steerRow()` rewrites our token row; the door re-reads tokens.json on EVERY
+  connection attempt — that is the trick.
+- **Not shipped:** `mcpl_deploy/list/restart/close`, N concurrent doors.
+- Doors: `eidoverse` = Antra's production (`wss://eidoverse.animalabs.ai/mcpl`),
+  `rig` = local.
+
+🔴 **A design note cannot answer "does X exist" — grep the source, and read your
+own tool descriptions first.**
+
+### STATE
+- R is in `staging` as `rabscuttle`. World `:8960`, door `:8963`, tunnel alive.
+- The world server is now reparented to init (nohup) — it SURVIVES the trim.
+  The 15:08 trim killed it because it was still a child of the pane; R got
+  dropped. Do not launch servers without nohup/disown.
+- Seat names `main`/`proposed`/`workbench` are A/B-era fossils and are CROSSED:
+  `eido-main`'s token binds `staging`; `eido-proposed`'s binds `voicetest`.
+  R wants them consolidated to one connector — AFTER the travel test passes.
+- **R has still never heard audio.** That is the 10:20 ask, still open.
