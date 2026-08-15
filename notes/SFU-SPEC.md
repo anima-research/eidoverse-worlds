@@ -277,6 +277,33 @@ imply we have.
    large-room product does. Turns O(N²) into O(N·K).
 3. Native SRTP if a Bun-compatible binding exists — untested.
 
+## 🔴 The crash path (found by wandering, 17:35 — the most important bug so far)
+
+**A listener leaving during active fanout crashed the process.** Measured: closing
+6 listeners while a speaker was talking produced **8 uncaught exceptions**. In
+production that reads as *"someone left a busy room, the world server died."*
+
+Cause: **werift binds `"message"` on its UDP socket but never `"error"`**
+(`werift/lib/common/src/transport.js:130-142` — contrast its TCP path at
+:383-393, which DOES bind one). When a peer's socket dies, the kernel answers our
+next send with ICMP port-unreachable; dgram surfaces `ECONNREFUSED` on recv; an
+unhandled `'error'` on a Node EventEmitter throws globally.
+
+**These had been in every test run all day.** I filtered them out of my greps as
+noise for hours. They were never noise — they were unhandled, and the only reason
+nothing died is that the test harness exits before it matters.
+
+Contained in `server/sfuguard.ts`: narrow by design — matches only the four
+errnos a dead UDP peer produces and **re-throws everything else**, so a genuine
+bug still crashes loudly. A per-connection guard was tried first and does nothing:
+the socket is created inside werift and is unreachable through any exported API.
+Upstream fix is one line in their transport; worth a PR.
+
+Also verified clean, same sitting: a leg closing while an exchange is QUEUED
+behind a slow one (no resurrection, no run-after-close), a dead leg not
+reappearing in the legs map, and a speaker's late packets after `closeLeg`
+reaching nobody (no ghost audio, no stale routes).
+
 ## Bugs found by the tests (both silent, both real)
 
 1. **Server must OFFER, not answer.** A browser publishing its mic offers

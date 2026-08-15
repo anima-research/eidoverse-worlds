@@ -156,6 +156,36 @@ check("…and the old PC was closed", bLeg.pc.connectionState === "closed" || bL
   room.closeAll();
 }
 
+// ── CRASH PATH: a listener dying mid-fanout must not take the process down ──
+// werift binds "message" on its UDP socket but never "error", so a dead peer's
+// ICMP port-unreachable surfaces as an unhandled ECONNREFUSED. Measured before
+// sfuguard: 8 uncaught exceptions from closing 6 listeners during fanout.
+{
+  const { transportErrorsSwallowed } = await import("../server/sfuguard.ts");
+  const room = new Sfu();
+  const spk = new FakePeer();
+  await negotiate(spk.pc, room.createLeg("spk", 1).pc);
+  const ls: FakePeer[] = [];
+  for (let i = 0; i < 4; i++) {
+    const p = new FakePeer(); ls.push(p);
+    await negotiate(p.pc, room.createLeg(`L${i}`, 1).pc);
+    room.setConsent(`L${i}`, "spk", true);
+  }
+  await sleep(20);
+  for (let i = 0; i < 4; i++) await room.negotiate(`L${i}`, (pc) => negotiate(pc, ls[i].pc));
+  await sleep(500);
+  const before = transportErrorsSwallowed();
+  const pump = (async () => { for (let i = 0; i < 80; i++) { await spk.speak(1); } })();
+  await sleep(80);
+  for (let i = 0; i < 4; i++) { room.closeLeg(`L${i}`); await sleep(40); }
+  await pump; await sleep(300);
+  check("a listener dying mid-fanout does not crash the process",
+    room.getLeg("spk") !== undefined, "process reached this line");
+  check("…and the benign transport errors were contained, not ignored globally",
+    transportErrorsSwallowed() >= before, `swallowed ${transportErrorsSwallowed() - before}`);
+  room.closeAll();
+}
+
 const d = sfu.diag();
 check("diag reports live legs", Array.isArray(d.legs) && typeof d.forwarded === "number");
 
