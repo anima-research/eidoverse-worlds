@@ -29,6 +29,11 @@ const speakers = new Map();           // id → { audio, stream, wantVolume, an,
 
 export const sfuActive = () => !!pc && pc.connectionState === 'connected';
 export const sfuMicOn = () => !!micStream && wantMic;
+/** The mic the user ASKED for, which is not the mic they GOT: sfuMicOn() needs
+ *  a live micStream, and a press before `pc` exists sets only this. The bridge
+ *  replays it once the credential lands. Intent and achievement must be
+ *  readable separately or a pre-connection press is silently lost. */
+export const sfuMicWanted = () => wantMic;
 
 /** Attach a remote track to a per-speaker <audio>, exactly as the LiveKit path
  *  does — the playback half is transport-agnostic and stays byte-identical so

@@ -12,7 +12,8 @@
 import { bus } from './core.js';
 import { net, sendRelayCredRequest, sendVoiceConsent } from './net.js';
 import { sfuConnect, sfuOnOffer, sfuOnIce, sfuMic, sfuPeerLevels,
-  sfuDiagClient, sfuClose, sfuActive, sfuSpeakerEntries, sfuInboundStats, sfuMicOn } from './voicesfu.js';
+  sfuDiagClient, sfuClose, sfuActive, sfuSpeakerEntries, sfuInboundStats, sfuMicOn,
+  sfuMicWanted } from './voicesfu.js';
 import { remotes } from './remotes.js';
 import { myState } from './controller.js';
 import { isHushed, volumeFor, receivingVoice } from './voiceconsent.js';
@@ -34,6 +35,16 @@ export function initVoiceSfu(name) {
 
   bus.on('relay-cred', async (cred) => {
     await sfuConnect(cred, send);
+    // 🔴 HONOUR A MIC PRESSED BEFORE THE CREDENTIAL ARRIVED. window.__sfuMic is
+    // installed at init, but `pc` does not exist until this message lands a
+    // server round-trip later — so a press in that window hits sfuMic's
+    // `if (!pc) return`, sets wantMic and publishes NOTHING. The badge then
+    // reports false honestly, which is worse than a lie: the user sees the mic
+    // refuse to turn on with no error anywhere. Nothing re-read wantMic once
+    // the connection existed, so it stayed dead until the next manual toggle.
+    // Found by reading voicesfu.js and this file end-to-end, NOT by grepping —
+    // it only exists in the seam between the two.
+    if (sfuMicWanted()) { await sfuMic(true); bus.emit('audio:mic', sfuMicOn()); }
     // We do NOT offer. Tell the server we are ready and let it drive every
     // negotiation — see the header of voicesfu.js for why an answer cannot add
     // a receive direction the offer never proposed.
