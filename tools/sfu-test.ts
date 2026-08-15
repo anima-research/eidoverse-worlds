@@ -186,6 +186,29 @@ check("…and the old PC was closed", bLeg.pc.connectionState === "closed" || bL
   room.closeAll();
 }
 
+// ── LEAK: werift's memleak harness (PR #665) warns that un-unsubscribed
+// Event.subscribe closures retain RTCPeerConnection. We never call the
+// unSubscribe that onReceiveRtp.subscribe returns, so pin that it's fine.
+{
+  const room = new Sfu();
+  const rss0 = process.memoryUsage().rss;
+  for (let c = 0; c < 6; c++) {
+    const ps: FakePeer[] = [];
+    for (let i = 0; i < 3; i++) {
+      const p = new FakePeer(); ps.push(p);
+      await negotiate(p.pc, room.createLeg(`c${c}p${i}`, 1).pc);
+    }
+    await sleep(60);
+    for (let i = 0; i < 3; i++) { room.closeLeg(`c${c}p${i}`); ps[i].pc.close(); }
+    await sleep(60);
+  }
+  await sleep(200);
+  const grewMB = (process.memoryUsage().rss - rss0) / 1048576;
+  check("18 legs created+destroyed leaks no legs", room.diag().legs.length === 0);
+  check("…and RSS growth stays bounded (<60MB)", grewMB < 60, `grew ${grewMB.toFixed(0)}MB`);
+  room.closeAll();
+}
+
 const d = sfu.diag();
 check("diag reports live legs", Array.isArray(d.legs) && typeof d.forwarded === "number");
 
