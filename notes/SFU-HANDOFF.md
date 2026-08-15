@@ -262,3 +262,23 @@ passing test — it is an absent one, and it was absent all morning.
 **Known-noisy, not blocking:** `/library/eidoverse/assets/vrms/claude.vrm` 404s
 during smoke (avatar only; voice path unaffected). Likely a repath missed in the
 reorg — worth a look, does not gate R's audio test.
+
+### 🔴 THE ASSET LIBRARY WAS MISSING — and the server said so at boot
+`⚠ no eidoverse-video library at /home/claude/eido/eidoverse-video — avatars/sky/
+vegetation will be absent. Set EIDOVERSE_DIR.`
+
+It printed that on EVERY boot today and I never read it. R would have joined to
+an empty void — no avatars, no sky — and reasonably concluded the whole thing
+was broken. This morning's reorg moved the rigs into eido/{engine,staging,...}
+but the library still lives at **/home/claude/eido-dev/eidoverse-video**, so the
+sibling-path default no longer resolves.
+
+**Run staging WITH:** `EIDOVERSE_DIR=/home/claude/eido-dev/eidoverse-video`
+Verified: `/library/eidoverse/assets/vrms/claude.vrm` 404 → **200**, warning gone.
+
+(Third time today the instrument reported honestly and I didn't look. The boot
+banner is an instrument. Read it.)
+
+### R'S LINK — verified 2026-08-15, tunnel + assets + auth
+`https://washer-hypothetical-chargers-undertaken.trycloudflare.com/?world=staging&key=staging-2026&name=rabscuttle`
+page 200 · claude.vrm 200 · ws upgrade 101 · right key → snapshot · **wrong key → 4003**
