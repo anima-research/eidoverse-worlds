@@ -144,6 +144,29 @@ export function sfuDiagClient() {
  *  speakers behind ontrack's back. */
 export function sfuSpeakerEntries() { return [...speakers.entries()]; }
 
+/** Live inbound-audio stats — the browser's NetEq telling us what it is doing.
+ *  Exposed because #104's measurement hygiene wants delivered AND destroyed
+ *  counted separately, and because these fields ARE the evidence that we do not
+ *  need Basis's 745-line jitter buffer: jitterBufferTargetDelay is NetEq's
+ *  adaptive depth, inserted/removedSamples are its time-stretching, and
+ *  concealedSamples is its PLC. All of it for free, on the receive side. */
+export async function sfuInboundStats() {
+  if (!pc) return [];
+  const out = [];
+  (await pc.getStats()).forEach((r) => {
+    if (r.type === 'inbound-rtp' && r.kind === 'audio') out.push({
+      packetsReceived: r.packetsReceived, packetsLost: r.packetsLost, jitter: r.jitter,
+      jitterBufferDelay: r.jitterBufferDelay, jitterBufferTargetDelay: r.jitterBufferTargetDelay,
+      jitterBufferEmittedCount: r.jitterBufferEmittedCount,
+      concealedSamples: r.concealedSamples, concealmentEvents: r.concealmentEvents,
+      insertedSamplesForDeceleration: r.insertedSamplesForDeceleration,
+      removedSamplesForAcceleration: r.removedSamplesForAcceleration,
+      fecPacketsReceived: r.fecPacketsReceived, fecPacketsDiscarded: r.fecPacketsDiscarded,
+    });
+  });
+  return out;
+}
+
 export function sfuClose() {
   try { pc?.close(); } catch {}
   pc = null;

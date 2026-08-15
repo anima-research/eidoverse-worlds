@@ -12,7 +12,7 @@
 import { bus } from './core.js';
 import { net, sendRelayCredRequest, sendVoiceConsent } from './net.js';
 import { sfuConnect, sfuOnOffer, sfuOnIce, sfuMic, sfuPeerLevels,
-  sfuDiagClient, sfuClose, sfuActive, sfuSpeakerEntries } from './voicesfu.js';
+  sfuDiagClient, sfuClose, sfuActive, sfuSpeakerEntries, sfuInboundStats } from './voicesfu.js';
 import { remotes } from './remotes.js';
 import { myState } from './controller.js';
 import { isHushed, volumeFor, receivingVoice } from './voiceconsent.js';
@@ -90,6 +90,7 @@ export function initVoiceSfu(name) {
   window.relayDiag = sfuDiagClient;
   window.relayMic = () => sfuMic(true);
   window.relayPeerLevels = sfuPeerLevels;
+  window.sfuStats = sfuInboundStats;      // NetEq evidence for the spike report
   addEventListener('beforeunload', sfuClose);
 }
 

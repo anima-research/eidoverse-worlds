@@ -545,6 +545,51 @@ face the NETWORK, not the parts that face policy — and the policy parts are
 where a fresh implementation can actually be better, because it can put the
 enforcement somewhere the client cannot reach.
 
+## 🔴 MEASURED: NetEq runs on our transport (20:35) — the jitter question, closed
+
+R asked directly: "do we need their jitter stuff? I think that's handled by the
+browser?" Yes, and it is now MEASURED rather than inferred from documentation.
+`window.sfuStats()` reads `getStats()` on the listener's inbound audio track,
+through two real Chromium bodies on our SFU:
+
+```
+packetsReceived                  702
+packetsLost                        0
+jitter                         0.003
+jitterBufferDelay              26256
+jitterBufferTargetDelay      20428.8   ← NetEq's ADAPTIVE DEPTH
+jitterBufferEmittedCount      314880
+concealedSamples                1435   ← its PLC
+concealmentEvents                  1
+insertedSamplesForDeceleration  1866   ← TIME-STRETCHING to absorb jitter
+removedSamplesForAcceleration    240   ← …and to catch up when early
+fecPacketsReceived                 0   (nothing lost, so FEC never needed)
+```
+
+**The headline:** with ZERO packets lost and jitter at 3ms, NetEq still
+time-stretched 2,106 samples to keep playback smooth. The adaptive machinery is
+live on a clean local network; on a bad one it does more. That is the whole
+745-line `BasisVoiceBuffer.cs` — adaptive depth, PLC, reordering, FEC decode —
+running for free on the receive side, plus time-stretching that Basis has **no
+equivalent for at all**.
+
+**Why the comparison was never apples-to-apples:** Basis is on Unity, which has
+no WebRTC stack. LiteNetLib gives them raw UDP, so every one of those mechanisms
+was theirs to write. We terminate WebRTC server-side and forward ENCODED Opus
+without ever decoding it, so the browser keeps `getUserMedia → addTrack` on the
+send side and a real `RTCPeerConnection` on the receive side. **We are not
+competing with their jitter buffer; we are declining to have one.**
+
+This closes the acceptance-table question and it is the strongest single number
+for the report: the sophistication we skipped is not missing, it is upstream of
+us, maintained by people who do it full time.
+
+**Still worth stealing (unchanged):** loss-driven FEC, because that is the one
+thing NetEq CANNOT do for us — it tunes the encoder from the sender's model of
+its own uplink, and only the SFU can see every listener's downlink at once.
+`fecPacketsReceived` in the table above is exactly the signal that proposal
+would feed back. See the loss-driven FEC section.
+
 ## Attribution
 
 Design informed by a source read of BasisVR (MIT, © 2024 Luke Doolan) — specifically its
