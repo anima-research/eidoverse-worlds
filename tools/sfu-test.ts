@@ -406,6 +406,52 @@ check("stale position → forwards (fail-open)", s.inEarshot("a","b")===true);
   room.closeAll();
 }
 
+// ── SPEAKER CAP + STICKINESS (Basis BasisAudioCapJob) ──────────────────────
+// Distance gating alone is not enough: forty people in one plaza are all within
+// 20m of each other, so every pair passes the gate and we are back to N².
+// A per-listener cap bounds the worst case at N x MAX. Stickiness (an incumbent's
+// distance is discounted when competing for a slot) is what stops two speakers
+// at near-equal distance from swapping the last slot every tick and stuttering.
+{
+  const room = new Sfu(); const s = room as any;
+
+for (const id of ["L","a","b","c","d"]) room.createLeg(id,1);
+room.setPosition("L",0,0,0);
+room.setPosition("a",1,0,0); room.setPosition("b",2,0,0); room.setPosition("c",3,0,0); room.setPosition("d",4,0,0);
+
+check("cap disabled (0) → everyone admitted", ["a","b","c","d"].every(x=>s.withinCap("L",x)===true));
+
+const r2 = new Sfu(); const t:any = r2;
+for (const id of ["L","a","b","c","d"]) r2.createLeg(id,1);
+r2.setPosition("L",0,0,0);
+r2.setPosition("a",1,0,0); r2.setPosition("b",2,0,0); r2.setPosition("c",3,0,0); r2.setPosition("d",40,0,0);
+r2.maxAudiblePerListener = 2;
+check("first 2 get slots", t.withinCap("L","a")===true && t.withinCap("L","b")===true);
+check("3rd (further) is capped out", t.withinCap("L","c")===false);
+check("…and incumbents keep theirs", t.withinCap("L","a")===true && t.withinCap("L","b")===true);
+
+// c walks much closer than b → should displace despite stickiness
+r2.setPosition("c",0.2,0,0);
+check("much-closer newcomer DOES displace", t.withinCap("L","c")===true);
+check("…and the displaced one is now out", t.withinCap("L","b")===false);
+
+// STICKINESS: two at nearly equal distance must not swap every tick
+const r3 = new Sfu(); const u:any = r3;
+for (const id of ["L","x","y"]) r3.createLeg(id,1);
+r3.setPosition("L",0,0,0); r3.setPosition("x",10,0,0);
+r3.maxAudiblePerListener = 1;
+u.withinCap("L","x");                       // x holds the only slot
+let swaps=0, holder="x";
+for (let i=0;i<40;i++){
+  // y hovers at essentially the same distance as x, jittering either side
+  r3.setPosition("y", 10 + (i%2?0.05:-0.05), 0, 0);
+  if (u.withinCap("L","y")) { if(holder!=="y"){swaps++;holder="y";} }
+  else if (u.withinCap("L","x")) { if(holder!=="x"){swaps++;holder="x";} }
+}
+check(`near-tie jitter 40× → ${swaps} slot swaps (no stickiness would thrash)`, swaps<=1);
+
+}
+
 // ── REGRESSION C2: the guard must not swallow a real bug ───────────────────
 {
   const { __isBenignTransportError: benign } = await import("../server/sfuguard.ts");

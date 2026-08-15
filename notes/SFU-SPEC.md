@@ -435,6 +435,72 @@ relay is the only party that can see every listener's downlink at once. Worth
 raising with antra as a phase-2 candidate alongside the P2P offload, since both
 are "the relay knows something no endpoint does".
 
+## 🔴 WHERE THIS LANDS — re-read of #104's final comments (19:10)
+
+R told me to re-confirm the deliverable rather than trust memory. Correct, and it
+changed the plan. antra's approving comment carries **six amendments**, and my
+own reply (octopusburrow, 2026-08-13T23:51Z) accepted them **verbatim**, including
+the sequencing. Reading them back:
+
+**The deliverable is a SPIKE REPORT against the acceptance table, not merged
+code.** Amendment 6: *"Spike acceptance is not production cutover authority…
+Phase one may prove the relay and recommend cutover. It does not yet authorize
+deleting the mesh or changing production."* Cutover is a SEPARATE later PR with
+a removal list, migration of `spoken:true` producers, a hard-reload seam,
+rollback canary, and explicit operator approval. **Keep the mesh as rollback.**
+
+**The mandated ORDER, which I accepted and then did not follow:**
+> "Begin with the two runtime kill questions and credential-replay/admission
+> proof before building UI or migration layers."
+
+Proximity gating and the speaker cap are optimizations — the class explicitly
+sequenced AFTER the gates. I built them first because they were interesting.
+Noting it plainly rather than quietly reordering the story.
+
+**The good news: the gates are already proven, and they carry over.**
+`server/relaydecision.ts` + `tools/relay-decision-test.ts` (23 tests) are
+transport-agnostic — they decide admission from claims vs live state and never
+mention LiveKit. All seven refusals are pinned:
+wrong world · wrong identity · retired primary gen · retired media gen · prior
+relay incarnation · credential replay (nonce) · expired (upstream at
+TokenVerifier, tolerance 0, pinned by the killq-a receipt).
+**That is the amendment-1 row, already green, against OUR SFU too.**
+
+**What our SFU changes about the remaining rows — mostly by DELETING them:**
+- **Amendment 4 (the two Bun kill-questions) partly EVAPORATES.** 4(a) was "does
+  the LiveKit *server SDK* survive Bun" and 4(b) "does `@livekit/rtc-node`
+  survive Bun/Node for a headless TTS publisher". We have no LiveKit SDK at all,
+  so 4(a) is moot; 4(b) becomes "can werift publish a TTS track", which is a
+  smaller and more answerable question. **Say this explicitly in the report —
+  a hypothesis that removes two kill-questions is a finding, not a dodge.**
+- **Amendment 2 (`relayEpoch` must survive the failure it names)** gets EASIER,
+  not harder: in-process means the SFU dies with the sequencer, so there is no
+  separate adapter whose restart can silently reuse an epoch. Still needs a
+  durable or opaque incarnation — do not claim monotonic.
+- **Amendment 3 (three independent states)** is DONE and tested: listener receive
+  consent (`setConsent`, absent = denied, fail-closed), publisher self-mute
+  (client-side), moderator/global mute (`muted` set, at the source). The M4
+  mutation test is what proves the fail-closed default is real rather than
+  incidental. 🔴 Amendment 3 also warns: *"no listeners → no publish bytes is an
+  optimization claim and needs a measured sender-uplink receipt; do not use it
+  as the privacy invariant."* **Our proximity gate is exactly that class of
+  claim** — it is an efficiency hint, never a privacy boundary, which is why it
+  sits AFTER the consent check and can only subtract. Say so in the report.
+- **Amendment 5 (name what `performed` proves)** is unchanged and ours to honour:
+  bind it to `publisher track accepted/enqueued under {utteranceId,digest,
+  mediaGen,relayEpoch}` and never let a rung inherit the next rung's name.
+- **Measurement hygiene**: report delivered AND destroyed packets separately
+  ("a cheaper server that drops more is not healthier"), pin codec/bitrate/
+  talkers/placement, and state whether CPU includes relay, adapter, or both.
+  🔴 Our numbers are currently UPPER BOUNDS (both halves in one process) —
+  that must be stated, not buried.
+
+**So the honest next step is not more features.** It is the report: run the
+acceptance table against this SFU, mark browser-interop and TTS-publish as the
+unproven rows they are, and present it as a THIRD hypothesis beside LiveKit and
+Galène — which is precisely how §8.1 frames the exercise. No-go remains a
+successful result.
+
 ## Attribution
 
 Design informed by a source read of BasisVR (MIT, © 2024 Luke Doolan) — specifically its

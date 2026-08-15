@@ -102,6 +102,10 @@ export class Sfu {
   private pos = new Map<string, { x: number; y: number; z: number; at: number }>();
   /** Packets suppressed because nobody could have heard them. Diagnostic only. */
   gated = 0;
+  /** Packets suppressed by the per-listener speaker cap. Diagnostic only. */
+  capped = 0;
+  /** listener → speakerIds currently holding an audible slot. */
+  private slots = new Map<string, Set<string>>();
 
   /** Client rolloff is FULL_M=3 → SILENT_M=20 (client/lib/voicerelay.js:23), so
    *  beyond SILENT_M the listener multiplies the stream by exactly zero.
@@ -117,6 +121,20 @@ export class Sfu {
   private static readonly ENTER_M = 20;      // start forwarding within this
   private static readonly HYSTERESIS = 1.10; // …stop only beyond 10% further (Basis's value)
   private static readonly POS_STALE_MS = 5000;
+
+  /** Hard cap on simultaneous speakers per listener, mirroring Basis's
+   *  BasisAudioCapJob. Distance alone is NOT enough: forty people in one plaza
+   *  are all within 20m of each other, so the gate passes every pair and we are
+   *  back to N². A cap bounds the worst case at N×MAX_AUDIBLE instead.
+   *
+   *  0 disables the cap (the default — an operator opts in, because silently
+   *  dropping a speaker is a policy choice, not a default we should impose). */
+  maxAudiblePerListener = 0;
+  /** Someone already audible gets their squared distance multiplied by this when
+   *  competing for a slot, so a newcomer must be MEANINGFULLY closer to displace
+   *  them. Without it, two people at nearly equal distance swap the last slot
+   *  every tick and both stutter. Basis calls it StickinessBonus. */
+  private static readonly STICKINESS = 0.8;
   /** Was this pair audible last time? The memory that makes hysteresis work.
    *  🔴 NESTED for the same reason consent is: `listener + NUL + speaker` is not
    *  injective when ids may contain NUL. I re-introduced the joined key here
@@ -148,6 +166,50 @@ export class Sfu {
       row.set(speakerId, nowIn);
     }
     return nowIn;
+  }
+
+  /** Does `speaker` hold one of `listener`'s audible slots?
+   *
+   *  🔴 Recomputed lazily on the PACKET path rather than on a timer, because a
+   *  timer would need to know when anyone moved. The set only changes when a
+   *  speaker who is NOT currently in it wants in — which is exactly when we can
+   *  afford the O(k) comparison, since that speaker is by definition producing a
+   *  packet we were about to forward anyway. */
+  private withinCap(listenerId: string, speakerId: string): boolean {
+    const cap = this.maxAudiblePerListener;
+    if (cap <= 0) return true;                                   // disabled → everyone
+    let held = this.slots.get(listenerId);
+    if (!held) { held = new Set(); this.slots.set(listenerId, held); }
+    if (held.has(speakerId)) return true;                        // already audible → keep
+    if (held.size < cap) { held.add(speakerId); return true; }    // room to spare
+
+    // Full. Displace the furthest holder, but only if this speaker is closer
+    // than that holder's STICKINESS-discounted distance.
+    const me = this.d2(listenerId, speakerId);
+    if (me === null) return true;                                // no positions → cannot rank, admit
+    let worstId: string | null = null, worstD2 = -1;
+    for (const h of held) {
+      const d = this.d2(listenerId, h);
+      if (d === null) continue;
+      const effective = d * Sfu.STICKINESS;                      // incumbents are sticky
+      if (effective > worstD2) { worstD2 = effective; worstId = h; }
+    }
+    if (worstId !== null && me < worstD2) {
+      held.delete(worstId); held.add(speakerId);
+      // The displaced speaker also loses its hysteresis memory, so it must
+      // re-enter range cleanly rather than inheriting a stale "was in" bit.
+      this.inRange.get(listenerId)?.delete(worstId);
+      return true;
+    }
+    return false;
+  }
+
+  /** Squared distance between two legs, or null if either position is unknown. */
+  private d2(a: string, b: string): number | null {
+    const p = this.pos.get(a), q = this.pos.get(b);
+    if (!p || !q) return null;
+    const dx = p.x - q.x, dy = p.y - q.y, dz = p.z - q.z;
+    return dx * dx + dy * dy + dz * dz;
   }
 
   private allows(listener: string, speaker: string): boolean {
@@ -191,6 +253,60 @@ export class Sfu {
 
   /** The hot path. One packet in, zero-or-more out — with the policy checks
    *  in the order that fails cheapest first. */
+  // ═══════════════════════════════════════════════════════════════════════
+  // 🔮 FUTURE: P2P OFFLOAD — where it plugs in, and why it plugs in HERE.
+  //
+  // The settled architecture (#104) is relay-floor with P2P as deferred phase 2:
+  // the SFU always works, and a pair that manages a direct connection stops
+  // paying for the relay hop. Basis has shipped exactly this; the pieces to
+  // steal, with file:line, are in notes/SFU-HANDOFF.md. The short version:
+  //
+  //   • THE HOOK IS THIS LOOP. Basis checks `IsP2POffloaded(sender, client)` in
+  //     its fanout (BasisServerHandleEvents.cs:995) and skips the send. Ours
+  //     would be one more `continue` right beside the proximity gate — the gate
+  //     and the offload check are the same SHAPE (both answer "does this packet
+  //     need to traverse the relay?"), which is why they belong adjacent.
+  //
+  //   • FAST-PATH THE COMMON CASE. `HasOffloadedPairs` is a volatile int compare
+  //     that short-circuits before any map lookup, because zero-offload is
+  //     overwhelmingly common (BasisServerP2PBroker.cs:44-58). At 12 people it
+  //     hardly matters; at their 1000 it removes a million hash lookups a tick.
+  //     Our proximity gate should learn the same trick if `pos` is ever empty.
+  //
+  //   • PAIRS ARE UNORDERED. They pack (lo,hi) into a long so a pair has ONE
+  //     identity regardless of direction. Ours must too — and note this is the
+  //     third place in this file wanting a pair key, after consent and inRange.
+  //     If a fourth appears, extract a PairMap<T> rather than joining strings;
+  //     the NUL-join collision has already been found here twice.
+  //
+  //   • THE HARD PART IS NOT THE PLUMBING, IT IS THE WATCHDOG. A direct link
+  //     that dies silently is WORSE than no direct link, because both ends think
+  //     they are connected and neither hears anything. Basis extracted that
+  //     decision logic into BasisP2PLinkHealth.cs specifically so it could be
+  //     unit-tested headless (their client is Unity-only) — the same move we
+  //     made with relaydecision.ts, arrived at independently. Their verdicts:
+  //       DemoteStale        — no inbound past staleMs → path is dead/one-way
+  //       DemoteUnconfirmed  — reached Connected but the server never confirmed
+  //       ClearFlapCounter   — healthy long enough to forget past flapping
+  //     …with a post-connect GRACE window where demotion is never allowed, and
+  //     staleness checked BEFORE unconfirmed so the reported reason is specific.
+  //     Copy that structure into relaydecision.ts (transport-agnostic, already
+  //     the regression anchor) rather than inventing new thresholds.
+  //
+  //   • DEMOTION MUST BE INVISIBLE. Falling back to the relay is the recovery
+  //     path, so the relay route must still EXIST while offloaded — keep the
+  //     transceiver negotiated and starve it, exactly as consent already does
+  //     (see ensureRoute's doc). That is why consent and routes are separate
+  //     concepts in this file, and it is what makes demotion a memory write
+  //     instead of an SDP round trip.
+  //
+  // 🔮 ANIMATION OFFLOAD is the same broker with different traffic and a much
+  //     lower stake: a dropped pose interpolates, a dropped voice packet is an
+  //     audible hole. If both are built, voice should be the LAST thing moved to
+  //     a new direct link and the FIRST thing moved back — earn trust with pose
+  //     traffic, spend it on audio. Basis routes both over one link; we do not
+  //     have to, and the asymmetry in failure cost argues we should not.
+  // ═══════════════════════════════════════════════════════════════════════
   private fanout(from: SfuLeg, rtp: RtpPacket) {
     // 🔴 D2: the closed check comes FIRST. werift's onReceiveRtp subscription
     // outlives the leg (we cannot unsubscribe what we did not keep), so
@@ -207,6 +323,7 @@ export class Sfu {
       // wrong gate is silence, and silence is the failure users actually notice;
       // the cost of forwarding is bandwidth the client already discards).
       if (!this.inEarshot(listenerId, from.id)) { this.gated++; continue; }
+      if (!this.withinCap(listenerId, from.id)) { this.capped++; continue; }
       const route = listener.outbound.get(from.id);
       if (!route) continue;                  // no route = not heard
       route.track.writeRtp(rtp);             // encoded Opus, straight through
@@ -326,6 +443,8 @@ export class Sfu {
     try { leg.pc.close(); } catch { /* already dead */ }
     this.legs.delete(id);
     this.pos.delete(id);
+    this.slots.delete(id);
+    for (const held of this.slots.values()) held.delete(id);
     this.inRange.delete(id);
     for (const row of this.inRange.values()) row.delete(id);
     this.consent.delete(id);                       // everything this leg consented to
