@@ -340,6 +340,63 @@ reaching nobody (no ghost audio, no stale routes).
    load test read exactly **200.0%** delivery at both N=3 and N=12. A "delivery
    should be exactly 100%" assertion is worth more than it looks.
 
+## Reading Basis MYSELF (18:37) — what the summaries flattened
+
+R asked me to read the Basis audio path rather than trust two subagent summaries
+(my own memory file says: *survey yes, decision-gating joints NO*, and I had made
+four architectural calls off summaries). Read `BasisVoiceBuffer.cs` (745 ln),
+`BasisAudioTransmission.cs` (397 ln) and the receiver directly. Three findings.
+
+**1. Their jitter buffer is far more sophisticated than "adaptive depth."** The
+summaries said ~750 lines with adaptive depth; that undersells it. The real
+mechanisms:
+
+- **Arrival-gap tracker using the SECOND-largest gap.** They track the two worst
+  wall-clock gaps between arrivals and size the buffer from the *second* one, so
+  a repeating pattern (wifi clumping, delivery batching) raises depth almost
+  immediately while a one-off 500ms stall does **not** get to demand 500ms of
+  standing buffer. That is a genuinely clever discrimination between *recurring*
+  and *singular* badness, and it is proactive — it raises depth before damage
+  rather than after.
+- **Deadline hold with late salvage** (`_holdingForSeq`, `LateSalvagedCount`).
+  When a packet is missing at the playback cursor, they do NOT immediately
+  conceal: as long as the decoded queue has more than `PlcReserveFrames` of
+  runway, they HOLD the hole open, because playback continues off the queue for
+  free and the late packet gets its maximum possible time to land. The effective
+  late-tolerance becomes the standing buffer depth instead of a fixed grace
+  window. They count the saves separately — audio older builds would have
+  concealed and then thrown away.
+- **App-layer loss estimation with a ~5s half-life**, because LiteNetLib reports
+  nothing on unreliable delivery. That measured ratio then drives
+  `OPUS_SET_PACKET_LOSS_PERC` on the *encoder*, i.e. **measured loss feeds back
+  into FEC aggressiveness**.
+- Silence-gap exclusion: gaps following a sender mute are identified by
+  `silenceUnits>0` on the resume packet and excluded, so intentional silence
+  never inflates the buffer.
+
+**2. We need none of it, and that is now VERIFIED rather than assumed.** The
+browser's NetEq does all of this and exposes the telemetry — `getStats()` on an
+inbound audio track gives `jitterBufferTargetDelay`, `jitterBufferDelay`,
+`concealedSamples`, `concealmentEvents`, `insertedSamplesForDeceleration`,
+`removedSamplesForAcceleration`, `fecPacketsReceived`, `fecPacketsDiscarded`.
+Adaptive depth, time-stretching, PLC and FEC decode: all present, all tuned by
+people who do this full time. Basis reimplemented it because Unity has no WebRTC
+stack. **Confirms the design, by a better route than "the summary said so."**
+
+**3. The one idea worth STEALING — loss-driven FEC.** Basis measures actual loss
+and feeds it to `OPUS_SET_PACKET_LOSS_PERC`, so FEC aggressiveness tracks real
+conditions instead of a fixed guess. The browser will not do this for us: it
+picks FEC on its own model. But we CAN read `concealedSamples` /
+`fecPacketsReceived` from the listener's `getStats()`, and the SENDER can adjust
+its encoding via `RTCRtpSender.setParameters()`. That is a real, small, and
+unclaimed improvement — and note it needs the SFU to relay a listener's measured
+loss back to the speaker, which is a **protocol** addition, not a client tweak.
+Filed as future work; not built.
+
+**What does NOT transfer:** their sender-declared recipient lists (ours is
+listener-consent, server-enforced — stronger), plaintext UDP (browser mandates
+DTLS-SRTP), and the whole jitter/PLC/FEC layer (browser does it better).
+
 ## Attribution
 
 Design informed by a source read of BasisVR (MIT, © 2024 Luke Doolan) — specifically its
