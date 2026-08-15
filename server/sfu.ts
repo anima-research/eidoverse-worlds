@@ -27,7 +27,7 @@
  * the caller. The SFU's only enforcement is mechanical: a pair with no consent
  * is never fed, so a modified client cannot hear what the server didn't send.
  */
-import { RTCPeerConnection, MediaStreamTrack, RTCRtpCodecParameters } from "werift";
+import { RTCPeerConnection, MediaStreamTrack, MediaStream, RTCRtpCodecParameters } from "werift";
 import type { RtpPacket } from "werift";
 import { installSfuTransportGuard, transportErrorsSwallowed } from "./sfuguard.ts";
 
@@ -368,8 +368,28 @@ export class Sfu {
       return false;
     }
     const track = new MediaStreamTrack({ kind: "audio" });
+    // 🔴 IDENTITY RIDES WITH THE TRACK (Basis validation, 2026-08-15).
+    // Basis puts the speaker in the PACKET — ServerAudioSegmentMessage is
+    // {playerIdMessage, audioSegmentData} — and stamps it from the
+    // authenticated sender, discarding whatever the client claimed
+    // (BasisServerHandleEvents.cs:973-976). Audio is self-identifying; nothing
+    // is inferred.
+    //
+    // Ours inferred identity from ARRIVAL ORDER: a sideband `sfu-route` queue
+    // shifted on each ontrack. That is a positional coupling between two
+    // processes, and it has ALREADY desynced once (a leaked listener attached
+    // tracks to the WRONG speaker — voicesfu.js:66-71). The failure mode is the
+    // worst available: right voice, wrong avatar, everything looks healthy.
+    //
+    // WebRTC has a first-class channel for this and we were not using it. msid
+    // travels in the SDP and surfaces as e.streams[0].id in the browser.
+    // VERIFIED against real Chromium (tools/msid-probe.ts): werift derives msid
+    // from the SENDER's streamIds, which come from `streams` here — NOT from
+    // fields on MediaStreamTrack. Setting streamId/id on the track produces NO
+    // msid at all (measured: browser saw streamIds:["default"]).
+    const stream = new MediaStream({ id: speakerId, tracks: [track] });
     listener.outbound.set(speakerId, { track, negotiated: false });
-    listener.pc.addTransceiver(track, { direction: "sendonly" });
+    listener.pc.addTransceiver(track, { direction: "sendonly", streams: [stream] } as any);
     // 🔴 THE SERVER MUST OFFER, NOT ANSWER. A browser publishing its mic offers
     // `sendonly`, and an answer cannot add a receive direction the offer never
     // proposed — so answering a browser re-offer silently produces a route that

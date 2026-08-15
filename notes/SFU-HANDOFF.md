@@ -175,3 +175,66 @@ the best available list of what actually goes wrong in a voice pipeline.
 - `notes/relay-spike/RECEIPTS.md` — the LiveKit spike this supersedes. Its
   staging topology (port **8945**, not 8941) and the "firewall blocked" note is
   **FALSE and corrected in that file**; tailnet already passes.
+
+## 2026-08-15 — validation pass against Basis (R: "check your SFU approach")
+
+### 🔴 Q1 ANSWERED AND FIXABLE — track identity should ride WITH the track
+
+**Basis:** every voice packet is `ServerAudioSegmentMessage{ playerIdMessage,
+audioSegmentData }` (`BasisNetworkCore/Serializable/ServerAudioSegmentMessage.cs:6`).
+Identity travels WITH the audio. The server stamps it from the authenticated
+sender and **discards whatever id the client claimed**
+(`BasisServerHandleEvents.cs:973-976`) — so spoofing is structurally impossible.
+
+**Us, today:** `sfu.ts:334-341` + `voicesfu.js:61-76` infer identity from
+ARRIVAL ORDER — a sideband `sfu-route` queue shifted on each `ontrack`. It has
+already desynced once (leaked listener → tracks attached to the WRONG speaker).
+Failure mode is the worst kind available: right voice, wrong avatar, everything
+looks healthy.
+
+**VERIFIED FIX (tools/msid-probe.ts, run 2026-08-15):** werift derives `msid`
+from the SENDER's `streamIds`, which come from `streams` in the transceiver
+options (`rtpSender.js:443`) — NOT from fields on MediaStreamTrack. My first
+attempt set `streamId`/`id` on the track and produced NO msid at all; the
+browser saw `streamIds:["default"]`. Correct form:
+
+```ts
+const stream = new MediaStream({ id: speakerId, tracks: [track] });
+pc.addTransceiver(track, { direction: "sendonly", streams: [stream] });
+```
+→ SDP carries `a=msid:speaker-abc123 <trackid>`, and the browser's ontrack reads
+`e.streams[0].id === "speaker-abc123"`. **Tested against real Chromium, both
+directions confirmed.** Client becomes `attach(e.streams[0].id, e.track)` with
+the routeQueue kept only as a fallback for older servers.
+
+### Q2 ANSWERED — and it INVERTS what I assumed
+
+I assumed Basis culls server-side and I was behind. **The opposite is true.**
+The SENDER computes its own recipient list (`BasisDistanceJob.cs:82-86`) and
+uploads it (`BasisTransmissionResults.cs:820-941`); the server caches the
+resolved peer list and obeys it (`BasisSavedState.cs:65-84`).
+`BasisAudioRangeLimitManager` is **not a culler** — it broadcasts advisory
+ceilings clients are trusted to self-clamp to (`:9-11`, `SendStateToPeer`).
+
+**A modified Basis client can address any peer in the instance.** Ours cannot:
+consent is a server-side allowlist where absent = denied (`sfu.ts:215-217`), and
+the proximity gate can only ever SUBTRACT from it (`sfu.ts:320-325`). Our
+position is genuinely stronger here — keep it, and say so in #104's table.
+
+### Q3/Q4 ANSWERED — our no-decode stance matches theirs, for the same reason
+Basis never decodes server-side either: `AudioSegmentDataMessage.cs:13-29` takes
+`GetRemainingBytes()` as an opaque blob; there is no Opus dependency in the
+server projects at all. Jitter/PLC/reorder is entirely client-side
+(`BasisVoiceBuffer.cs`, adaptive and clock-free). We inherit the browser's for
+free — the 745-line buffer is the cost we are correctly declining.
+
+**But they validate nothing on the wire**: no size, framing, bitrate, frame
+duration, or rate limit. A hostile client's garbage is relayed unmodified. The
+four `Security/*StateManager` classes clamp the ADMIN's input and broadcast it;
+none is consulted when a packet arrives. So this is NOT a gap we are behind on —
+it is an open flank in both stacks, and cheap for us to close at ingress later.
+
+### Wire-format idea worth stealing (not yet ours)
+Recipient lists pick the cheapest of bitfield / denylist / allowlist per update
+(`BasisTransmissionResults.cs:869-930`), sent ReliableOrdered while audio is
+Unreliable. If our consent map ever ships to clients, copy that shape.

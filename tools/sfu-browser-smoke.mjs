@@ -9,7 +9,8 @@
 //   (server must be running with VOICE_TRANSPORT=sfu)
 import { chromium } from 'playwright';
 
-const BASE = process.env.BASE ?? 'http://127.0.0.1:8946';
+const BASE = process.env.BASE ?? 'http://127.0.0.1:8960';
+const KEY = process.env.KEY ?? 'staging-2026';
 const browser = await chromium.launch({
   executablePath: process.env.CHROME ?? '/home/claude/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
   args: [
@@ -29,7 +30,16 @@ const mk = async (name) => {
   const pg = await (await browser.newContext({ permissions: ['microphone'] })).newPage();
   pg.on('console', (m) => { if (/sfu|error/i.test(m.text())) console.log(`  [${name}] ${m.text().slice(0, 140)}`); });
   pg.on('pageerror', (e) => console.log(`  [${name}] PAGEERROR ${String(e).slice(0, 140)}`));
-  await pg.goto(`${BASE}/?world=staging&sfu=1&name=${name}`);
+  await pg.goto(`${BASE}/?world=staging&key=${KEY}&name=${name}`);
+  // 🔴 THERE IS A FRONT DOOR (found 2026-08-15). main.js calls start() ONLY
+  // from openDoor's onEnter (ui.js:369, button #d-go) — a probe that merely
+  // LOADS the url sits at the panel forever while the HUD paints behind the
+  // overlay. This test predates that discovery and hung 90s at this line.
+  // Click through like a visitor.
+  await pg.waitForSelector('#d-go', { timeout: 20000 }).catch(() => {});
+  const nameField = await pg.$('#d-name');
+  if (nameField) await nameField.fill(name).catch(() => {});
+  await pg.click('#d-go').catch(() => {});
   // Page boot is ~13s under load (RECEIPTS.md), so 90s is the floor, not slack.
   await pg.waitForFunction(() => window.relayDiag?.().active === true, null, { timeout: 90000 });
   return pg;

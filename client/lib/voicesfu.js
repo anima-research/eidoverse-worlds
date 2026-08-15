@@ -71,7 +71,22 @@ export async function sfuConnect(credential, send) {
   // speaker id. The module-level array is rebound here instead.
   routeQueue.length = 0;
   pc.ontrack = (e) => {
-    const id = routeQueue.shift();
+    // 🔴 PREFER THE TRACK'S OWN IDENTITY. The server now names each outbound
+    // stream after the speaker it carries (sfu.ts ensureRoute), so msid gives
+    // us identity that CANNOT desync — the id arrives welded to the media
+    // instead of correlated with it by arrival order. Basis's principle:
+    // ServerAudioSegmentMessage carries {playerId, audioData} together.
+    //
+    // The queue stays as a fallback for a server that predates this, but it is
+    // no longer the load-bearing path. When both are present and DISAGREE, msid
+    // wins and we say so loudly — that disagreement is exactly the silent
+    // wrong-avatar bug we could never see before.
+    const viaMsid = e.streams?.[0]?.id;
+    const viaQueue = routeQueue.shift();
+    const id = (viaMsid && viaMsid !== 'default') ? viaMsid : viaQueue;
+    if (viaMsid && viaQueue && viaMsid !== 'default' && viaMsid !== viaQueue) {
+      console.warn('[sfu] route identity mismatch — msid', viaMsid, 'vs queue', viaQueue, '(trusting msid)');
+    }
     if (id) attach(id, e.track);
   };
 
@@ -93,9 +108,22 @@ export async function sfuOnIce(candidate) {
 }
 
 /** Publish the mic. Plain getUserMedia — no SDK wrapper. The constraints match
- *  what the browser's own AGC/NS/AEC expect; Basis hand-builds all three
- *  (BasisMicrophoneAgcTests.cs) because Unity has no equivalent, and that is
- *  precisely the work we are declining to redo. */
+ *  what the browser's own AGC/NS/AEC expect.
+ *
+ *  🔴 CORRECTED 2026-08-15 (read the tree, don't repeat your own summary). This
+ *  comment used to say "Basis hand-builds all three". Two-thirds wrong:
+ *    • AGC — hand-built and SERIOUS. BasisMicrophoneAgc.cs is a speech-level
+ *      normalizer with a minimum-statistics noise-floor tracker, asymmetric
+ *      attack/release, and gain HELD across pauses so the next utterance starts
+ *      at level. 588 lines of tests (BasisMicrophoneAgcTests.cs), whose names
+ *      are the best available checklist for judging ours.
+ *    • NS  — NOT hand-built: a native RNNoise binding (com.xiph.rnnoise,
+ *      prebuilt librnnoise per platform). Defaults OFF.
+ *    • AEC — DOES NOT EXIST in their tree. Zero hits for echo-cancel/AEC/
+ *      SpeexDSP/aec3 across every .cs. They rely on OS AEC or headphones.
+ *  So the honest version of our argument is narrower and still holds: the
+ *  browser hands us AGC+NS+AEC for free, and AEC is the one Basis never got at
+ *  all. Their real declined cost for us is the 745-line jitter buffer. */
 // 🔴 ONE ACQUISITION AT A TIME (review, 2026-08-15). getUserMedia is SLOW — a
 // permission prompt is seconds — and two callers can be inside it at once: the
 // user pressing V, and the relay-cred replay that honours a pre-connection
