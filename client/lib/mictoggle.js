@@ -65,12 +65,24 @@ const EAR_SVG = (on) => {
 let micBtn = null, earBtn = null;
 
 let micHot = false;
+// 🔴 THE GLYPH MUST READ WHICHEVER TRANSPORT IS LIVE (2026-08-15).
+// micOn() is voice.js's MESH state — `!!micStream && _micLive && !muted` — and
+// on the SFU path micStream is never set, so it is permanently false while the
+// SFU happily publishes. Measured in a real browser: relayDiag().micPublished
+// true, glyph slashed, tooltip "mic off (V to talk)".
+//
+// A control that says PRIVATE while the room hears you is the one failure this
+// UI must never have — micgate fails CLOSED for the same reason. toggleMic
+// already routes by transport; the indicator has to make the same turn or the
+// button and the badge describe different bodies.
+const micIsOn = () => (window.relayDiag ? !!window.relayDiag().micPublished : micOn());
 function paint() {
   if (!micBtn) return;
-  const deaf = micOn() && !receivingVoice();
-  micBtn.innerHTML = MIC_SVG(micOn(), micOn() && micHot);
+  const on = micIsOn();
+  const deaf = on && !receivingVoice();
+  micBtn.innerHTML = MIC_SVG(on, on && micHot);
   micBtn.style.opacity = deaf ? '0.55' : '1';
-  micBtn.title = !micOn() ? 'mic off (V to talk)'
+  micBtn.title = !on ? 'mic off (V to talk)'
     : deaf ? 'mic LIVE — but you are not hearing the room (Shift+V to listen)'
     : 'mic LIVE — the world hears you (V)';
   if (earBtn) {
@@ -94,7 +106,7 @@ function paint() {
 // polled at 8Hz, drives the yellow glow in step with STT pickup
 import { micAnalyserLevel } from './voice.js';
 setInterval(() => {
-  if (!micOn()) { if (micHot) { micHot = false; paint(); } return; }
+  if (!micIsOn()) { if (micHot) { micHot = false; paint(); } return; }
   const lvl = micAnalyserLevel?.() ?? 0;
   const hot = lvl > 0.02;
   if (hot !== micHot) { micHot = hot; paint(); }
@@ -180,6 +192,10 @@ setInterval(placeMic, 2000);          // safety net only; the observer does the 
 // disagree about what you are hearing
 bus.on('audio:hush', paint);
 bus.on('audio:receive', paint);
+// 🔴 'audio:mic' was EMITTED from three sites (voice.js:510, and twice in
+// voicesfubridge.js) and subscribed by nobody. The glyph repainted only from
+// its own 125ms poll, which read mesh state — so under SFU it never moved.
+bus.on('audio:mic', paint);
 setInterval(ensure, 1000);
 ensure();
 
