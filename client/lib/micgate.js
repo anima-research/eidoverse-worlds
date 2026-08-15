@@ -31,30 +31,31 @@
 import { audioContext } from './audioctx.js';
 import { report } from './core.js';
 
-// 🔴 THESE ARE PER-CALL RATES, AND OUR CALL CADENCE IS NOT THEIRS. BasisVR's
-// 0.10/0.05 are per 20ms audio frame; driveGate() runs on the 40ms onset tick,
-// and a naive copy took 300ms to reach 90% gain — an audible fade-in on the
-// first word, which is worse than the click it replaces. Measured, not assumed
-// (a syllable is ~80-150ms, so the attack must finish well inside one).
+// 🔴 THE ENVELOPE IS setTargetAtTime, AND THE TICK IS A FLOOR UNDER IT.
 //
-// Measured at the 40ms cadence: attack 0.35 → ~90% open in 160ms (inside a
-// syllable); release 0.18 → down to 10% in ~440ms, a soft tail rather than the
-// 1.5s smear 0.06 produced. Attack faster than release, always: opening late
-// loses a consonant, closing early cuts a word in half. And the 700ms hang-time
-// runs BEFORE this fade even begins, so a pause mid-sentence never reaches it.
-// TIME CONSTANTS, in seconds — setTargetAtTime reaches ~63% of the target in one
-// tau and ~95% in three. Attack 0.02s → audibly open in ~60ms, inside a syllable
-// (~80-150ms), so the first consonant survives. Release 0.12s → a soft ~360ms
-// tail, and the 700ms hang-time runs BEFORE the fade even starts, so a pause
-// mid-sentence never reaches it. Attack always faster than release: opening late
-// loses a consonant, closing early cuts a word in half.
-// 🔴 R: "lower the gate time to start capturing? The first syllable sounds a
-// little chopped off." Two things were eating the attack and only one was this
-// constant: the 40ms TICK is a floor on how fast the gate can react at all, so
-// the true worst case was tick + envelope. Tick is 20ms now (below the ~30ms
-// where a missing onset becomes audible) and tau is 0.008s — ~95% open in 24ms,
-// so worst case ~44ms instead of ~160ms. A plosive is ~20-40ms, so this is the
-// difference between "puh" and "uh".
+// Two things ate the first syllable and only one of them was a constant.
+// R, 2026-08-09: "lower the gate time to start capturing? The first syllable
+// sounds a little chopped off."
+//
+//   1. THE TICK. driveGate() cannot react faster than it is called. That was a
+//      40ms onset tick; it is 20ms now, below the ~30ms where a missing onset
+//      becomes audible.
+//   2. THE TIME CONSTANT. setTargetAtTime reaches ~63% of target in one tau and
+//      ~95% in three, so tau 0.008s is ~95% open in 24ms.
+//
+// Worst case is tick + envelope: ~44ms now, against ~160ms before. A plosive is
+// ~20-40ms, so that is the difference between "puh" and "uh".
+//
+// Release stays slow on purpose: 0.12s is a soft ~360ms tail, and the 700ms
+// hang-time runs BEFORE the fade begins, so a pause mid-sentence never reaches
+// it. Attack always faster than release — opening late loses a consonant,
+// closing early cuts a word in half.
+//
+// (Superseded, kept only as a warning: BasisVR's 0.10/0.05 are per 20ms audio
+// FRAME, and copying them onto our tick took 300ms to reach 90% — an audible
+// fade-in on the first word, worse than the click it replaced. Their rates are
+// not our rates. An earlier lerp-based pass here used 0.35/0.18 and is gone
+// entirely; do not resurrect a second smoothing stage, see driveGate.)
 const ATTACK_TAU = 0.008;
 const RELEASE_TAU = 0.12;
 
