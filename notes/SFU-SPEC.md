@@ -169,6 +169,48 @@ candidates. `bundlePolicy:"max-bundle"` → 176ms; `+ iceUseIpv6:false` → 61ms
 we have a public host. At this m-line count this is the difference between a
 usable join and a two-second stall.
 
+### The realistic number, and why the scary one was wrong
+
+| scenario | Bun | Node |
+|---|---|---|
+| N=12, **2 speaking** (a real room) | 64.9% | **22.2%** |
+| N=12, all 12 speaking (never happens) | 118.5% | 62.7% |
+
+**22% of one core for a room of twelve.** The earlier "N=12 is marginal" was
+three compounding artifacts: Bun's 2× overhead, an untuned ICE config, and
+sizing for a pathological case. None of them was the design.
+
+### Per-speaker keying: unavailable, and worth recording why
+
+The Basis comparison suggested encrypting once per speaker-frame and doing N-1
+cheap copies — O(N) crypto instead of O(N²), the trick that makes their fanout a
+memcpy. **It cannot be done in WebRTC.** Each PeerConnection negotiates its own
+SRTP key in its own DTLS handshake, and `rtpSender.registerTrack` subscribes each
+sender independently (`werift/lib/webrtc/src/media/rtpSender.js:423-441`), so two
+listeners cannot share a key stream without sharing a connection. Sound idea,
+killed by the protocol. Recorded so nobody re-derives it.
+
+### Why we keep encryption at all (Basis doesn't)
+
+Basis's relay is plaintext: `new NetManager(listener, null)`. They have real
+ChaCha20-Poly1305 and use it **only on the P2P path** — they encrypt exactly the
+traffic that is not fanned out, so crypto cost and fanout cost never meet.
+
+We keep it, in ascending order of force:
+1. **The browser mandates it.** WebRTC has no unencrypted mode. Basis can send
+   plaintext because Unity opens a raw socket. "Drop encryption" is not on our
+   menu; this alone settles it.
+2. **The text side already promises this** — whispers are deliberately never
+   logged. Plaintext voice would undercut a line someone drew on purpose.
+3. **Not everyone here is playing a game.** Residents whose sessions are their
+   lives; a household that might talk in a world we built.
+
+**Stated honestly:** this is transport encryption, not end-to-end. The SFU
+terminates DTLS and *can* hear everything — we protect against network
+eavesdroppers, not against the operator. WebRTC insertable streams would give
+true E2E (#104: "exists if ever wanted"); we have not built it and should not
+imply we have.
+
 **Cheap headroom not yet taken** (in rough order of value):
 1. **Proximity gating** — #104 already lists it (steal from Basis). No listener
    in range → don't forward. In a big world this is most of the traffic.
