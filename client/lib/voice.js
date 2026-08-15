@@ -501,7 +501,7 @@ export async function toggleMic(name) {
   // reported rx=0/publishing=false forever. Caught live: R turned her mic on,
   // said "hello", and the server saw zero packets. The button must drive
   // WHICHEVER voice path is actually running, so route before doing anything.
-  if (window.__sfuMic) { await window.__sfuMic(); return; }
+  if (window.__sfuMic) { await window.__sfuMic(); bus.emit('audio:mic', true); return; }
   myId = name ?? myId;
   if (micOn()) {
     // GOING QUIET IS A DATA CHANGE, NOT A CONNECTION CHANGE (R, 2026-08-08).
