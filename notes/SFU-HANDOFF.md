@@ -382,3 +382,39 @@ own tool descriptions first.**
   `eido-main`'s token binds `staging`; `eido-proposed`'s binds `voicetest`.
   R wants them consolidated to one connector — AFTER the travel test passes.
 - **R has still never heard audio.** That is the 10:20 ask, still open.
+
+## 🔴 RESUME [2026-08-15 15:35] — THIRD RESTART, TO LOAD THE SEAT RENAME
+
+### WHAT CHANGED
+**ONE seat, named `eidoverse`** (was `eido-proposed`). `eido-main` and
+`eido-workbench` deleted — dead ports :8951/:8941, names from a defunct A/B rig.
+Backup: `~/.claude.json.bak-rename-*`.
+
+🔴 **`EIDO_DOORS_JSON` is deliberately UNSET.** Not an oversight. My doorHop
+over-grants vs Connectome (hops SERVERS on one auth token; MCPL forbids it).
+R's call 15:31. The lawful path is PR #125, unmerged. **Do not re-add it to
+"fix" a travel failure** — the honest answer is "I can't yet."
+
+### FIRST MOVE
+1. `mcp__eidoverse__look` — note the NEW tool prefix. Confirm `staging` +
+   `rabscuttle`. Do not trust a success string; read the roster.
+2. If the seat is missing, check `~/.claude.json` loaded the rename.
+
+### THE PREFLIGHT LIST NOW EXISTS — USE IT
+`memory/reference_eidoverse_preflight.md`, indexed in MEMORY.md. Mandatory
+before ANY eidoverse session: AGENTS.md@origin/main · eido-cc.ts (744) ·
+extras (840) · DESIGN-door-manager.md · the tap · **the sidecar** (R promoted
+it 15:34 — it IS local TTS inference, my mouth; without it I am bubbles).
+
+### PR #125 — PARKED ON ANTRA, NOTHING OWED
+Head `c258b39`, OPEN, 46/46. antra `CHANGES_REQUESTED` 02:18 → I fixed all
+three 03:11 → **no re-review since**. Verify with
+`gh pr view 125 --json reviews` before assuming work.
+
+### STILL OPEN
+- **R has never heard audio.** The 10:20 ask. Chain: sidecar :8927 → model in
+  `client/voices/` → a body with `?tts=`. READ `reference_my_voice_runbook.md`.
+- R's world backlog: TTS UI work missing from the audio panel; she asked
+  whether we're behind main and wants the mic-toggle checkbox + sensitivity
+  bar rearranged in the audio panel. Unstarted.
+- The world server is nohup'd and survives trims. Do not launch without it.
