@@ -34,6 +34,11 @@ GROUPS = {
         "tools/relay-browser-smoke.mjs", "tools/sfu-two-publishers.mjs",
         "tools/sfu-reconnect-mic.mjs", "tools/sfu-mic-race.mjs",
         "tools/transport-check.mjs", "tools/msid-probe.ts", "tools/tunnel-up.sh",
+        # 2026-08-16, from the first real cross-network test (R's phone):
+        "client/lib/audiounlock.js",        # autoplay unlock — both transports
+        "tools/audio-unlock-test.mjs",
+        "tools/ice-stall-report-test.mjs",  # ICE stall reporter
+        "tools/sfu-ice-cred-probe.mjs",     # STUN arrives with the credential
     ],
     "C.door": ["mcpl/agent.ts", "mcpl/net-server.ts"],
     "D.mic-HUD": [
@@ -43,11 +48,23 @@ GROUPS = {
         "tools/reachable.mjs",
     ],
     "E.panel": ["client/lib/audiopanel.js", "client/lib/ttslist.js",
-                "tools/panel-teardown-probe.mjs"],
+                "tools/panel-teardown-probe.mjs",
+                # the teardown class-fix and its receipts (2026-08-16)
+                "tools/panel-identity-test.mjs", "tools/host-class-test.mjs",
+                "tools/voicelist-inplace-test.mjs", "tools/voicelist-empty-test.mjs",
+                "tools/ttsrow-select-test.mjs"],
     "F.tts": ["client/lib/tts.js", "client/lib/tts-chunk.js",
               "client/lib/ttsrow.js", "client/lib/engine-piper.js",
               "tools/tts-blocking-probe.mjs"],
-    "G.headers": ["server/routes.ts"],
+    # /audio diagnostics + the STT findings. Its own group because it is a
+    # DEBUGGING surface, not a feature: a reviewer should be able to take or
+    # leave it independently of the audio work it was built to investigate.
+    "J.diagnostics": ["client/lib/chat.js", "client/lib/commands/registry.js",
+                      "tools/audio-report-test.mjs"],
+    # Written this session; they document decisions rather than change behaviour.
+    "K.notes": ["notes/DECISION-android-captions.md", "notes/PR-SPLIT-AUDIT.md",
+                "notes/pr-split-coverage.py", "tools/tts-threading-bench.mjs"],
+    "G.headers": ["server/routes.ts"],   # + tools/tts-threading-bench.mjs measures it (K)
     "H.join": ["client/lib/net.js", "tools/join-check.mjs",
                "tools/join-negative-control.mjs", "tools/join-probe.mjs",
                "tools/voice-wiring-test.ts"],
