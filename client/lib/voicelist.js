@@ -77,8 +77,18 @@ const ROW = `
    forever. */
 .vl-add { padding: 3px 6px; }
 .vl-row:not(.vl-add) { padding-left: 2px; }
-.vl-verbs-start { border-top: 1px solid var(--edge);
-  margin-top: 6px; padding-top: 6px; }
+/* 🔴 THE SEPARATOR'S SPACE IS ABOVE IT, NOT INSIDE THE FIRST VERB (R,
+   2026-08-16: "can you scootch the + add a speech server button closer to the
+   + add a text-to-speech model button? That spacing looks odd").
+   padding-top on this row put 6px INSIDE the first button, between its border
+   and its own text — so the model row rendered 6px taller than the endpoint
+   row below it and the pair read as unevenly spaced, even though the gap
+   between them was the container's ordinary 2px. The two verbs are siblings
+   and must be the same height; the space belongs entirely to the margin above
+   the rule, which is the separator's own business.
+   This is the same double-counting as the note above, one level in: a gap
+   built by two rules, where only one of them should own it. */
+.vl-verbs-start { border-top: 1px solid var(--edge); margin-top: 8px; }
 .vl-dim { color: var(--dim); font-style: italic; }
 `;
 function ensureCss() {
