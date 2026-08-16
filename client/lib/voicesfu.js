@@ -244,13 +244,54 @@ let micPending = null;
 export async function sfuMic(on = true) {
   wantMic = on;
   if (!pc) return;
-  if (!on) { micStream?.getTracks().forEach((t) => (t.enabled = false)); return; }
+  if (!on) {
+    // 🔴 MIC OFF MUST NOT MEAN VOICE OFF when a synth provider is speaking for
+    // you. Disabling the tracks was right for a microphone and wrong for a body
+    // whose voice is synthesized: it silenced TTS along with the mic, which is
+    // why "mic off" produced no packets at all rather than falling back.
+    // Swap the SOURCE instead of muting it, so the sender keeps publishing.
+    const { synthProvider } = await import('./voicesource.js');
+    if (synthProvider()?.available?.()) {
+      // Drop the device stream and let the publish path below re-acquire from
+      // voiceSource(), which now returns the synth when micWanted is false.
+      // Re-entering rather than duplicating that block keeps ONE place where a
+      // track is chosen and attached — the transceiver hunt below is subtle
+      // enough that a second copy would drift.
+      if (micStream) {
+        for (const t of micStream.getTracks()) { try { t.stop(); } catch { /* gone */ } }
+        micStream = null;
+      }
+      return void sfuPublish();
+    }
+    micStream?.getTracks().forEach((t) => (t.enabled = false));
+    return;
+  }
   if (micStream) { micStream.getTracks().forEach((t) => (t.enabled = true)); return; }
   if (micPending) { await micPending; micStream?.getTracks().forEach((t) => (t.enabled = true)); return; }
+  return sfuPublish();
+}
+
+/** Acquire a source (mic or synth, decided by voiceSource) and publish it.
+ *  Split out of sfuMic so the mic-OFF path can re-enter it to swap sources
+ *  rather than carrying a second copy of the transceiver logic below. */
+async function sfuPublish() {
+  if (!pc) return;
+  if (micPending) return micPending;
   micPending = (async () => {
-    const s = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
+    // 🔴 ASK THE SEAM, NOT THE DEVICE (R, 2026-08-16 — her TTS reached nobody).
+    // This called getUserMedia directly, bypassing voiceSource() entirely. The
+    // MESH asks the seam (voice.js:551) and therefore gets a synthesized track
+    // for free; the SFU never asked, so on this transport a TTS provider had no
+    // route to a sender at all — mic on, TTS refuses by design (tts.js:591);
+    // mic off, nothing publishes. Her typed lines could not leave the machine
+    // in either state, and /relay-diag showed pub=false with rx=0 throughout.
+    //
+    // voiceSource() returns the microphone when one is available and wanted,
+    // and the synth provider otherwise, marking synthetic streams so the gate
+    // is skipped. Everything below — addTrack, the transceiver hunt,
+    // replaceTrack — is source-agnostic and unchanged.
+    const { voiceSource } = await import('./voicesource.js');
+    const s = await voiceSource({ micWanted: wantMic });
     micStream = s;
     // 🔴 addTrack PICKS A TRANSCEIVER FOR YOU, AND IT PICKS THE WRONG ONE.
     //
