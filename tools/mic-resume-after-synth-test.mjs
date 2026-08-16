@@ -1,3 +1,15 @@
+// 🔴🔴 THIS FILE IMPORTS NOTHING. IT IS NOT A REGRESSION TEST.
+//
+// Flagged by a second-agent audit, 2026-08-16: the logic below is a
+// TRANSCRIPTION of the shipped code, re-typed inline and verified by eye. A
+// green run proves the COPY is self-consistent; it cannot fail when the real
+// module breaks, because it never loads it. Editing the shipped file and
+// running this will still print PASS.
+//
+// Kept because the reasoning is worth preserving and the cases are the right
+// cases — but it is a DESIGN NOTE with assertions, and must never be cited as
+// evidence that a fix holds. To make it real: import the actual module and
+// delete the inline copy. Until then, the honest claim is "unregression-tested".
 // Turning the mic back ON after a synth swap must ACQUIRE a device, not
 // re-enable the synthesizer's track.
 let micStream = null, acquired = 0;
