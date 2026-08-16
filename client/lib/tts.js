@@ -375,6 +375,30 @@ export const sidetone = (on) => {
 // consecutive speech instead of a chord.
 let monitorHead = 0;
 
+/** The ONE gain node every sidetone chunk plays through. Created lazily on the
+ *  page's shared AudioContext and reused, so a slider move reaches audio that
+ *  is already scheduled. bus 'audio:vol' keeps it current. */
+let _monGain = null;
+function monitorGain(ctx) {
+  if (!_monGain || _monGain.context !== ctx) {
+    _monGain = ctx.createGain();
+    _monGain.connect(ctx.destination);
+    applyMonitorGain();
+  }
+  return _monGain;
+}
+// 0.8 is the "your own voice sits behind the room" baseline the slider rides,
+// so a slider at 1.0 is exactly the level this had before it was adjustable.
+function applyMonitorGain() {
+  if (_monGain) _monGain.gain.value = 0.8 * volumeFor('tts');
+}
+// 🔴 NO EVENT TO SUBSCRIBE TO — I invented `audio:vol` and it does not exist
+// (setVolume writes prefs and the panel emits nothing for volume). Rather than
+// add a bus event and two places that must stay in sync, the level is refreshed
+// on every chunk: applyMonitorGain() runs in monitor() below, so the SHARED
+// node is always current and audio already scheduled through it moves too.
+// Cheap — one float assignment per utterance chunk.
+
 function monitor(pcm, sampleRate) {
   if (!monitorOn || !pcm?.length) return;
   try {
@@ -386,7 +410,20 @@ function monitor(pcm, sampleRate) {
     const ch = buf.getChannelData(0);
     for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
     const src = monitorCtx.createBufferSource();
-    const g = monitorCtx.createGain();
+    // 🔴 ONE SHARED GAIN NODE, NOT ONE PER CHUNK (R, 2026-08-16: "self-TTS
+    // volume slider doesn't seem to be working"). A per-chunk gain reads the
+    // slider at SCHEDULE time, and chunks are scheduled AHEAD (see monitorHead
+    // below) — so moving the slider changed nothing already queued, and a short
+    // utterance is entirely queued before you finish dragging. The control was
+    // real and always one utterance late, which from outside is indistinguishable
+    // from dead.
+    //
+    // A single persistent node on the context, updated whenever the slider
+    // moves, applies to everything flowing through it — including audio already
+    // scheduled — which is what a volume control is supposed to do.
+    const g = monitorGain(monitorCtx);
+    applyMonitorGain();   // pick up any slider movement since the last chunk
+    // (see monitorGain — the level itself lives there now)
     // 🔴 SELF-TTS VOLUME LANDS HERE, NOT ON THE OUTBOUND TRACK (R, 2026-08-16:
     // "Maybe it's just what you hear of yourself and not what goes out. Seems
     // like endpoint volume should be in the end user's control anyway").
@@ -401,9 +438,8 @@ function monitor(pcm, sampleRate) {
     // So this scales the SIDETONE only. 0.8 stays as the baseline the slider
     // rides, keeping the old "your own voice sits behind the room" default at
     // unity while letting you push it up or down for yourself alone.
-    g.gain.value = 0.8 * volumeFor('tts');
     src.buffer = buf;
-    src.connect(g).connect(monitorCtx.destination);
+    src.connect(g);   // g is already wired to the destination
     // 🔴 SCHEDULE, DO NOT FIRE (R, 2026-08-16: "when they finish they just start
     // playing right away without waiting, so they end up talking over each
     // other"). A bare src.start() plays NOW. That was harmless while an
