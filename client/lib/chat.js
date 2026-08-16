@@ -527,8 +527,12 @@ function audioReport() {
   probe('captions', () => {
     const has = !!(window.SpeechRecognition ?? window.webkitSpeechRecognition);
     if (!has) return 'no SpeechRecognition in this browser';
+    // The TALLY is the load-bearing part: a last-event slot cannot prove that
+    // something never happened, and on 2026-08-16 I read exactly that absence
+    // out of it and was wrong twice.
     return `${window.__sttOn?.() ? 'ON' : 'off'}`
-      + (window.__sttLast ? ` — last event: ${window.__sttLast}` : ' — no events yet');
+      + (window.__sttTally ? ` [${window.__sttTally()}]` : '')
+      + (window.__sttLast ? ` — last: ${window.__sttLast}` : ' — no events yet');
   });
   probe('secure', () => `${window.isSecureContext} · isolated=${window.crossOriginIsolated}`);
 

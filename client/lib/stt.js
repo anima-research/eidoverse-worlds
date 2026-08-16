@@ -59,7 +59,19 @@ export function setSTT(on) {
   // see. (Same trap voicesfu.js:29 documents for its analyser vars.)
   let restarts = 0;
   const firstStart = performance.now();
-  const mark = (what) => { try { window.__sttLast = what; } catch { /* no window */ } };
+  // 🔴 A SINGLE SLOT CANNOT PROVE AN ABSENCE (2026-08-16). __sttLast held only
+  // the MOST RECENT event, so "onresult never fired" and "onresult fired, then
+  // onaudiostart fired again after it" read identically — and I concluded the
+  // former from a marker that could not distinguish them. Keep a TALLY as well:
+  // counts prove absence, a last-value does not.
+  const tally = Object.create(null);
+  const mark = (what, kind) => {
+    try {
+      if (kind) tally[kind] = (tally[kind] ?? 0) + 1;
+      window.__sttLast = what;
+      window.__sttTally = () => Object.entries(tally).map(([k, n]) => `${k}×${n}`).join(' ') || 'no events';
+    } catch { /* no window */ }
+  };
   rec.onresult = (e) => {
     // 🔴 DISTINGUISH "no results" FROM "results that are never FINAL"
     // (2026-08-16). On R's Android, /audio reported audio reaching the
@@ -72,8 +84,9 @@ export function setSTT(on) {
       (e.results[i].isFinal ? fin++ : interim++);
     }
     try {
-      window.__sttLast = `results: ${fin} final, ${interim} interim`
-        + (fin === 0 && interim > 0 ? '  ← hearing you, never finalizing' : '');
+      mark(`results: ${fin} final, ${interim} interim`
+        + (fin === 0 && interim > 0 ? '  ← hearing you, never finalizing' : ''),
+        fin ? 'result:final' : 'result:interim');
     } catch { /* no window */ }
     for (let i = e.resultIndex; i < e.results.length; i++) {
       if (!e.results[i].isFinal) continue;
@@ -119,7 +132,7 @@ export function setSTT(on) {
     if (wanted && micIsLive()) {
       try {
         rec.start();
-        mark(`ended+restarted ${restarts}× in ${secs}s${restarts >= 3 ? '  ← the session keeps dying; captions cannot finalize' : ''}`);
+        mark(`ended+restarted ${restarts}× in ${secs}s${restarts >= 3 ? '  ← the session keeps dying; captions cannot finalize' : ''}`, 'end');
       } catch (err) { mark(`restart failed: ${err?.message ?? err}`); report('stt restart', err); }
     }
     else if (wanted) { wanted = false; rec = null; mark('stopped: mic is off'); report('stt', 'stopped: mic is off'); }
@@ -146,9 +159,9 @@ export function setSTT(on) {
   // 🔴 The phone has no console, so the last event has to be READABLE from the
   // page itself — /audio prints it. Without this, "recognition never started"
   // and "started and heard nothing" are the same observation: silence.
-  rec.onaudiostart = () => { sawAudio = true; mark('audio reached the recognizer'); };
+  rec.onaudiostart = () => { sawAudio = true; mark('audio reached the recognizer', 'audiostart'); };
   rec.onstart = () => {
-    mark('started');
+    mark('started', 'start');
     // Give it a beat: if recognition starts but never receives audio, that is
     // the contention signature and it is otherwise invisible.
     setTimeout(() => {
@@ -161,7 +174,7 @@ export function setSTT(on) {
     }, 4000);
   };
   rec.onerror = (e) => {
-    mark(`error: ${e.error}`);
+    mark(`error: ${e.error}`, `err:${e.error}`);
     if (e.error === 'no-speech' || e.error === 'aborted') return;   // ordinary silence
     report('stt', e.error);
     const said = {
