@@ -431,9 +431,9 @@ export function ttsSection(host, onPaint = () => {}) {
      *  Returns false if the nodes are not there yet, so callers keep their
      *  build() fallback and a first paint still works. */
     function syncHead() {
-      const label = host.querySelector('.sp-row .sp-label');
-      const note = host.querySelector('.sp-row .sp-note');
-      const box = host.querySelector('.sp-row input[type=checkbox]');
+      const label = host.querySelector('.row.wide .nm');
+      const note = host.querySelector('.row.wide .note');
+      const box = host.querySelector('.row.wide input[type=checkbox]');
       if (!label || !note || !box) return false;
       const live = ttsAvailable() && isTtsEnabled();
       label.style.opacity = live ? '1' : '.45';
@@ -472,9 +472,9 @@ export function ttsSection(host, onPaint = () => {}) {
    *  Returns false if the expected nodes are missing (first paint, or a
    *  structure change), so the caller falls back to a real build. */
   function syncInPlace() {
-    const label = host.querySelector('.sp-label');
+    const label = host.querySelector('.nm');
     const box = host.querySelector('input[type=checkbox]');
-    const note = host.querySelector('.sp-note');
+    const note = host.querySelector('.note');
     const listHost = host.querySelector('.tts-list');
     if (!label || !box || !note || !listHost) return false;
 
@@ -518,7 +518,7 @@ export function ttsSection(host, onPaint = () => {}) {
     if (host.firstChild && syncInPlace()) return;
     host.textContent = '';
     const head = document.createElement('div');
-    head.className = 'sp-row';
+    head.className = 'row wide';
     const live = ttsAvailable() && isTtsEnabled();
     // Same two columns as every other row: label, then control. The status note
     // rides in the control column beside the tick rather than starting a third
@@ -528,8 +528,8 @@ export function ttsSection(host, onPaint = () => {}) {
       // "text-to-speech volume" slider, and two different controls carrying the
       // identical label "text-to-speech" is the ambiguity she hit. This one
       // selects WHICH VOICE; that one sets how loud it is.
-      `<label class="sp-label" style="opacity:${live ? '1' : '.45'}">text-to-speech model</label>` +
-      `<span class="sp-ctl">` +
+      `<label class="nm" style="opacity:${live ? '1' : '.45'}">text-to-speech model</label>` +
+      `<span class="ctl">` +
       `<input type="checkbox" ${isTtsEnabled() ? 'checked' : ''} ` +
         // 🔴 NOT `disabled` WHEN THERE IS NO VOICE (R, 2026-08-09: "there's no
         // warning to load a model if you try to checkbox text-to-speech, it just
@@ -538,7 +538,7 @@ export function ttsSection(host, onPaint = () => {}) {
         // its own precondition. It must be clickable precisely so the click can
         // be answered: the handler unticks it and names what is missing.
       `title="speak with the voice marked below">` +
-      `<span class="sp-note">` +
+      `<span class="note">` +
       // THE NOTE SAYS ONE THING: what is loading, or what is loaded. Not what to
       // do next — the rows below ARE what to do next, and a note pointing at them
       // was the second "add a voice below" R found. Empty when there is nothing to
@@ -634,8 +634,8 @@ export function ttsSection(host, onPaint = () => {}) {
     // became wrong the moment the panel's label column changed width (it went
     // 5.5rem → 8.5rem on 2026-08-14 because the longest label did not fit).
     // The grid owns the gutter; read it from the grid.
-    const col = getComputedStyle(host.closest('.sp-row')?.parentElement ?? host)
-      .getPropertyValue('--sp-label-col') || '8.5rem';
+    const col = getComputedStyle(host.closest('.row.wide')?.parentElement ?? host)
+      .getPropertyValue('--row-label-col') || '8.5rem';
     listHost.style.cssText = `margin:2px 0 8px calc(${col} + 10px)`;
     host.appendChild(listHost);
     collectVoices().then((items) => {

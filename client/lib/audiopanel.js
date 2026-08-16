@@ -52,7 +52,7 @@ import { CONFIG } from './core.js';
 // A flex row with a min-width label puts every control at a DIFFERENT x — the
 // eye has to re-find the column on each row. A grid gives one gutter: labels
 // end at the line, controls begin at it, and the panel reads as a table
-// instead of a ragged list. ttsrow.js already emits `.sp-ctl` expecting exactly
+// instead of a ragged list. ttsrow.js already emits `.ctl` expecting exactly
 // this ("same two columns as every other row") — it was written against a
 // layout the panel never had, which is why its rows looked unlike the others.
 //
@@ -76,53 +76,18 @@ import { CONFIG } from './core.js';
 //
 // Keeping the two-column grid (her spec, 08-14) and changing only the PAINT:
 // labels take --fg, hints and units take --dim, controls take --accent.
-const SP_CSS = `
-:root { --sp-label-col: 8.5rem; }
-/* 🔴 MATCH THE SKY PANEL (R, 2026-08-16: "everything is farther apart
-   spacing-wise in the audio panel in general vs the sky panel. Can you match
-   the sky panel spacing?").
-   Measured, not eyeballed — index.html:307 is the house spec:
-       .row     display:flex; align-items:center; gap:7px
-       .row .nm width:42px
-   This row invented its own: gap:10px and `margin: 5px 0`, which puts 10px
-   between adjacent rows where sky puts none. That margin was the bulk of the
-   difference; the 3px of extra gap was the rest.
-   The GRID stays — sky's 42px label column cannot hold "connect to other
-   people's audio", and a column narrower than its longest member makes a
-   ragged wrap rather than a centre line (see the note below). So: sky's
-   rhythm, this panel's column width. */
-.sp-row { display: grid; grid-template-columns: var(--sp-label-col) minmax(0, 1fr);
-          align-items: center; gap: 7px; margin: 0;
-          font-size: var(--fs-sm); color: var(--dim); }
-/* The house accent, so a slider here and a slider in ☀ sky are the same object.
-   accent-color paints the thumb, the filled track AND the checkbox tick in one
-   property — which is why the sky panel needs no bespoke control CSS at all. */
-.sp-row input[type=range] { accent-color: var(--accent); }
-.sp-row input[type=checkbox] { accent-color: var(--accent); }
-/* The reading the value gives you: sky puts its readout in --accent (.row .v),
-   so the number you are steering is the brightest thing on the row. */
-.sp-row .sp-info { color: var(--accent); }
-/* 8.5rem, not the 5.5 I guessed: the longest label here is "connect to other
-   people's audio" and a column narrower than its longest member does not make
-   a centre line, it makes a ragged wrap. Labels wrap to two lines rather than
-   overflowing, and the line still holds. */
-/* --fg, not opacity: sky's .nm does this. An opacity of .75 is not a colour,
-   it is a wash over whatever is behind — so the label drifted with the panel
-   background instead of holding the palette's own foreground. */
-.sp-label { color: var(--fg); text-align: right; line-height: 1.25; }
-.sp-ctl { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.sp-note { color: var(--dim); }
-/* rows that are a label + a bare control (checkbox first in markup) still line
-   up: the checkbox is the whole second column, left-justified against the line */
-.sp-row > input[type=checkbox] { justify-self: start; }
-`;
-function ensureCss() {
-  if (document.getElementById('sp-audio-css')) return;
-  const st = document.createElement('style');
-  st.id = 'sp-audio-css';
-  st.textContent = SP_CSS;
-  document.head.appendChild(st);
-}
+// 🔴 NO PRIVATE STYLESHEET. This panel used to define 40 lines of CSS under an
+// sp-* class family that re-implemented index.html's .row — which is exactly
+// how its spacing drifted to gap:10px while the house row is 7px, invisibly,
+// until R measured the two panels against each other by eye.
+// (R, 2026-08-16: "If there is an existing UI class we should 100% be using
+// it.")
+// The one thing .row genuinely lacked is a label column wide enough for a
+// sentence; that now lives in the house sheet as `.row.wide`, so both panels
+// read the same rules and neither can drift from the other again.
+// The injector went with it: there is nothing to inject. Styles come from the
+// document's own sheet, like every other panel's.
+function ensureCss() { /* house sheet — index.html owns .row and .row.wide */ }
 
 // Labels say what they CONTROL, not what they are about (R, 2026-08-16:
 // "you should probably change all the volume sliders to be voice volume, world
@@ -137,12 +102,12 @@ const ROWS = [
 
 function slider(cat, label, hint, value) {
   const row = document.createElement('div');
-  row.className = 'sp-row';
+  row.className = 'row wide';
   row.innerHTML =
-    `<span class="sp-label" title="${hint}">${label}</span>` +
-    `<span class="sp-ctl">` +
+    `<span class="nm" title="${hint}">${label}</span>` +
+    `<span class="ctl">` +
       `<input type="range" min="0" max="1" step="0.05" value="${value}" data-cat="${cat}" style="flex:1">` +
-      `<span class="sp-info" data-out="${cat}" style="min-width:34px;text-align:right">${Math.round(value * 100)}%</span>` +
+      `<span class="v" data-out="${cat}" style="min-width:34px;text-align:right">${Math.round(value * 100)}%</span>` +
     `</span>`;
   const input = row.querySelector('input');
   const out = row.querySelector('[data-out]');
@@ -155,14 +120,14 @@ function slider(cat, label, hint, value) {
 
 function checkRow(label, hint, checked, onChange) {
   const row = document.createElement('div');
-  row.className = 'sp-row';
+  row.className = 'row wide';
   // LABEL FIRST in the markup, because the grid assigns columns by source
   // order: label right-justified against the centre line, control left-
   // justified after it. The old order put the checkbox in the LABEL column and
   // the text in the control column — the exact inversion of R's spec.
   row.innerHTML =
-    `<span class="sp-label" title="${hint}">${label}</span>` +
-    `<span class="sp-ctl"><input type="checkbox" ${checked ? 'checked' : ''} title="${hint}"></span>`;
+    `<span class="nm" title="${hint}">${label}</span>` +
+    `<span class="ctl"><input type="checkbox" ${checked ? 'checked' : ''} title="${hint}"></span>`;
   row.querySelector('input').onchange = (e) => onChange(e.target.checked);
   return row;
 }
@@ -189,13 +154,13 @@ const LVL_DARK = '#6b5f42';   // was #4a4230 — INVISIBLE against the black tra
 
 function micFloorRow() {
   const row = document.createElement('div');
-  row.className = 'sp-row';
+  row.className = 'row wide';
   const hint = 'mic level below the marker is treated as room noise, not speech — ' +
     'raise it if typing pings nearby agents; the bar shows your live mic level';
   const FS = 0.2;  // full-scale mic level = right edge of the meter
   row.innerHTML =
-    `<span class="sp-label" title="${hint}">mic sensitivity</span>` +
-    `<span class="sp-ctl">` +
+    `<span class="nm" title="${hint}">mic sensitivity</span>` +
+    `<span class="ctl">` +
     `<span data-meter title="${hint}" style="flex:1;min-width:60px;position:relative;height:14px;` +
     `background:#000;border-radius:2px;overflow:hidden;cursor:ew-resize">` +
     `<span data-lvl style="position:absolute;left:0;top:0;height:100%;width:0;background:${LVL_DARK}"></span>` +
