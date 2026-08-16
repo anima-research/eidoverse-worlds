@@ -90,3 +90,47 @@ cat <every PR branch's file list> | sort -u > /tmp/b
 comm -23 /tmp/a /tmp/b
 ```
 A file in `/tmp/a` but not `/tmp/b` is work about to be lost.
+
+---
+
+## PR 0 — measured, 2026-08-16 (`tools/tts-threading-bench.mjs`)
+
+Two servers, same commit, only `isolate()` differing. Chromium-1228 (the pin
+every other browser smoke uses). 4 phrases × 2 repeats per arm.
+
+| | bare `:8974` | isolated `:8960` |
+|---|---|---|
+| `crossOriginIsolated` | false | **true** |
+| `SharedArrayBuffer` | false | **true** |
+| ORT `numThreads` | **1** | **8** |
+| median warm synthesis | 853.8ms | **695.9ms** |
+| ms per 1k samples | 14.70 | **11.22** |
+| cold load (63MB model + graph opt) | 55.1s | **47.2s** |
+
+**Length-normalized: 1.31× faster. Raw median: 1.23×. Cold load: 1.17× (−7.8s).**
+
+🔴 **The win SCALES WITH UTTERANCE LENGTH** — which is the number that matters,
+because long utterances are what froze the page:
+
+| chars | bare ms/1k | isolated ms/1k | speedup |
+|---|---|---|---|
+| 34 | 19.12 | 16.75 | 1.14× |
+| 38 | 15.30 | 12.82 | 1.19× |
+| 45 | 15.75 | 12.97 | 1.21× |
+| **104** | 12.70 | **8.28** | **1.53×** |
+
+🔴 **Do not write "8× faster" in the PR.** Threads went 1→8; wall-clock went
+1.2–1.5×. Piper is a small model with sequential structure, so most of the
+graph does not parallelize. The honest claim is *"1.3× overall, 1.5× on long
+utterances, and ORT stops silently running single-threaded."*
+
+**Validity guards this bench carries** (engine-piper.js:344-378 is why):
+`noise_w` makes the same text produce different-length audio, and length IS
+latency (RTF ≈ 1.1). So it reports sample counts per run and normalizes by
+them; the arms differed by <1% in total audio, so the raw and normalized
+figures agree. It also asserts the two arms actually reported DIFFERENT
+`crossOriginIsolated` — an A/B that silently didn't vary is the failure this
+would otherwise ship.
+
+Reproduce: `node tools/tts-threading-bench.mjs --isolated 8960 --bare 8974`
+(bare arm = worktree at HEAD with `git revert --no-commit 919c0d1`).
