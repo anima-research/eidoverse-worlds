@@ -515,7 +515,19 @@ export function ttsSection(host, onPaint = () => {}) {
   }
 
   function build() {
-    if (host.firstChild && syncInPlace()) return;
+    // 🔴 REPORT WHICH LAYER REBUILT. There are two nested in-place paths —
+    // this one for the section, syncSelection() for the list inside it — and
+    // when the panel still tore down, "no rendered rows carry data-id" from the
+    // INNER one was ambiguous: it means the same thing whether the list host
+    // was just recreated by THIS function or the rows genuinely lack the
+    // attribute. Four layers traced by hand, all looking correct, is the point
+    // at which the code should be saying it rather than me reading it.
+    if (host.firstChild) {
+      if (syncInPlace()) { try { window.__ttsSync = 'section in place'; } catch {} return; }
+      try { window.__ttsSync = 'section REBUILT (syncInPlace refused)'; } catch {}
+    } else {
+      try { window.__ttsSync = 'section first paint'; } catch {}
+    }
     host.textContent = '';
     const head = document.createElement('div');
     head.className = 'row wide';

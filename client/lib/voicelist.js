@@ -115,7 +115,22 @@ function syncSelection(host, { items, selected, busy, loading }) {
   // five reasons must name the one it used; window.__vlSync is readable from
   // /audio and costs nothing when nobody looks.
   const no = (why) => { try { window.__vlSync = `rebuilt: ${why}`; } catch {} return false; };
-  if (!rows || !rows.length) return no('no rendered rows carry data-id');
+  // An EMPTY list is a legitimate steady state, not a failure: with no voices
+  // saved there are no data-id rows, only the two add-verbs. Refusing here sent
+  // every repaint down the rebuild path and reported "no rendered rows carry
+  // data-id", which reads like a bug in the markup and is really "you have no
+  // voices yet" (R, 2026-08-16 — her list was empty and I nearly went looking
+  // for a missing attribute).
+  if (!rows.length && !items.length) {
+    // Nothing to select; only the status text can have changed.
+    if (loading) {
+      const note = host.querySelector('.vl-loading .vl-note');
+      if (note) note.textContent = busy || loading.status || 'loading…';
+    }
+    try { window.__vlSync = 'in place (empty list)'; } catch { /* no window */ }
+    return !!host.querySelector('.vl-pane');   // false on first paint
+  }
+  if (!rows || !rows.length) return no(`no data-id rows, but ${items.length} item(s) expected`);
   const want = items.map((i) => i.id);
   if (rows.length !== want.length) return no(`row count ${rows.length} != items ${want.length}`);
   for (let i = 0; i < rows.length; i++) {
