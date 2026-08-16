@@ -475,6 +475,10 @@ function acceptAC() {
  *  claim is exactly what this exists to get past. Each probe is individually
  *  guarded: a missing subsystem must print "unknown", never take the report
  *  down with it (a diagnostic that throws is worse than none). */
+// Bumped by hand when the audio diagnostics change — the point is only that a
+// report from a stale page carries a DIFFERENT value than the current one.
+const BUILD_STAMP = 'stt-diag-4';
+
 function audioReport() {
   const L = [];
   const probe = (label, fn) => {
@@ -536,6 +540,13 @@ function audioReport() {
   });
   probe('secure', () => `${window.isSecureContext} · isolated=${window.crossOriginIsolated}`);
 
+  // 🔴 STAMP THE BUILD (2026-08-16). Three times this morning I diagnosed a
+  // "bug" that was really the phone running an older copy of a module — most
+  // recently for a full round trip, because her output said "last event:" while
+  // the server had been serving "last:" for ten minutes. Without a version in
+  // the report, a stale page and a broken probe are indistinguishable, and I
+  // will chase the wrong one every time.
+  L.push(`build: ${BUILD_STAMP}`);
   return 'audio ▸ ' + L.join('  ·  ');
 }
 
