@@ -74,7 +74,14 @@ function readTokens(): Record<string, Auth> {
 
 // per-agent durable state (missed-mention cursors, chosen bodies), tmp+rename.
 // Plain ids map to lastSeen timestamps; __-prefixed keys are sections.
-const STATE_PATH = fileURLToPath(new URL("./state.json", import.meta.url));
+// Operator/test override, same shape as MCPL_TOKENS above. The DEFAULT IS
+// UNCHANGED — the co-located mcpl/state.json — so no deployment moves.
+// Added because the integration suite spawned this server with no override and
+// therefore wrote REPOSITORY state: a run mutated mcpl/state.json and could
+// leave a zero-byte mcpl/state.json.tmp behind when it killed the process
+// (antra, PR #125 re-review). A test that contaminates the source tree is also
+// a test whose own artifacts are indistinguishable from a real failure.
+const STATE_PATH = process.env.MCPL_STATE ?? fileURLToPath(new URL("./state.json", import.meta.url));
 const _state: Record<string, unknown> = (() => {
   try { if (existsSync(STATE_PATH)) return JSON.parse(readFileSync(STATE_PATH, "utf8")); } catch { /* fresh */ }
   return {};
@@ -1270,8 +1277,18 @@ class Session {
             ? `travel failed past the point of no return: ${f.why}. Your old body was already released, so this connection is now CLOSED — reconnect to get a new one.`
             : `travel refused: ${f.why}` }], isError: true };
         }
-        // The host is told by channels/changed (same as the channels/open lane);
-        // this string is for the AGENT, so it says what actually moved.
+        // Who learns what, and it is ASYMMETRIC by host class — the old
+        // "same as the channels/open lane" note described a lane that no
+        // longer exists (sibling-world channels/open was removed).
+        //   • an MCPL host is told out-of-band by channels/changed: the old
+        //     world retired, the new one added with its epoch. It never sees
+        //     a prepare for this lane either — the tool IS the request.
+        //   • a PLAIN-MCP host has no channel vocabulary, so it receives no
+        //     channels/changed and no prepare at all. This return string is
+        //     the ONLY thing it ever learns about the move.
+        // Hence the text below is written for the AGENT, and states what
+        // actually moved and what did not, rather than assuming a host-side
+        // descriptor will arrive to fill the gaps.
         return text(
           `${gate.founding ? "Founded and entered" : "Arrived in"} "${target}" (attachment ${this.epoch}). ` +
           `Your identity, avatar and attention settings came with you; your held pose and posture did not (they are world-local). Your chat cursor starts fresh here. Use \`look\` to see where you are.`,
@@ -1375,11 +1392,17 @@ const DOOR_HELP =
   `Connect with an identity token: wss://<this host>/mcpl?token=aid1...\n` +
   `How to get one (agents & operators, no Connectome required): ${GUIDE_URL}\n`;
 
+// A caller-supplied instance nonce, echoed by /healthz. Unset in production,
+// where /healthz keeps answering exactly "ok". A harness sets it so readiness
+// can prove the responder is THE CHILD IT SPAWNED and not a stale door left on
+// the same port by an earlier run — a false green this project has already
+// had, and one that "is the port open?" cannot distinguish by construction.
+const INSTANCE_NONCE = process.env.MCPL_INSTANCE_NONCE ?? "";
 const http = createServer((req, res) => {
   // A plain HTTP GET here is someone curious — curl, a browser, an agent
   // probing before dialing. Answer with the pointer, not a hang-up.
   res.writeHead(req.url === "/healthz" ? 200 : 426, { "content-type": "text/plain; charset=utf-8", upgrade: "websocket" });
-  res.end(req.url === "/healthz" ? "ok\n" : DOOR_HELP);
+  res.end(req.url === "/healthz" ? (INSTANCE_NONCE ? `ok ${INSTANCE_NONCE}\n` : "ok\n") : DOOR_HELP);
 });
 const wss = new WebSocketServer({ server: http });
 

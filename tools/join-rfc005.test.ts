@@ -1,17 +1,48 @@
-// RFC-005 channel join — integration test. Starts its own world + MCPL door on
-// temp ports with a temp tokens file, then exercises all four outcomes:
-//   1. join DENIED (-32017) for a credential with no worlds policy (status quo)
-//   2. join GRANTED for a credential with worlds: ["*"] — response carries the
-//      new channel descriptor, and a channels/changed Request retires the old
-//   3. unknown channelId form → -32023 (spec code, not legacy -32004)
-//   4. dial-time ?world= honored under the same policy
-import { mkdtempSync, writeFileSync, existsSync } from "node:fs";
+// In-session world travel — integration test for the `travel` tool lane.
+// Starts its own world + MCPL door on VERIFIED-FREE ports with a temp tokens
+// file and a temp state file, then covers: join policy (denied / granted /
+// listed-but-outside), founding vs joining, dial-time ?world=, epoch across
+// transitions, host prepare/commit refusal, per-world door state, the
+// plain-MCP lane, and attach failure.
+//
+// 🔴 THE HARNESS OWNS ITS PORTS, ITS STATE, AND ITS CHILDREN (2026-08-16).
+// It previously hardcoded 8957/8958, waited by sleep, and never proved the
+// responder was the process it spawned — and this project has already had a
+// test answer green from a STALE listener on a fixed 89xx port. It also let
+// the door write the REPOSITORY's mcpl/state.json. Both are false-receipt
+// generators: the first reports on someone else's server, the second leaves
+// artifacts that look like real failures. Everything below exists to make the
+// suite's green mean "the code under test did this."
+import { mkdtempSync, writeFileSync, existsSync, rmSync, statSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer } from "node:net";
 
-const WPORT = 8957, MPORT = 8958;
+/** A port nothing is listening on RIGHT NOW: bind :0, read what the kernel
+ *  gave us, release it. Racy in principle (someone could take it in the gap)
+ *  — which is why readiness below verifies ownership rather than trusting
+ *  that whatever answers is ours. */
+async function freePort(): Promise<number> {
+  return await new Promise((res, rej) => {
+    const s = createServer();
+    s.once("error", rej);
+    s.listen(0, "127.0.0.1", () => {
+      const p = (s.address() as { port: number }).port;
+      s.close(() => res(p));
+    });
+  });
+}
+const WPORT = await freePort(), MPORT = await freePort();
 const worldsDir = mkdtempSync(join(tmpdir(), "eido-join-"));
 const tokensPath = join(worldsDir, "tokens.json");
+// Bound to worldsDir, per the review: the door's durable state lives with the
+// rest of this run's scratch and dies with it.
+const statePath = join(worldsDir, "state.json");
+// Repository state must be untouched by a run. Snapshot before, compare after.
+const REPO_STATE = new URL("../mcpl/state.json", import.meta.url).pathname;
+const repoStateBefore = existsSync(REPO_STATE)
+  ? { exists: true, mtimeMs: statSync(REPO_STATE).mtimeMs, size: statSync(REPO_STATE).size }
+  : { exists: false, mtimeMs: 0, size: 0 };
 writeFileSync(tokensPath, JSON.stringify({
   "bound-token":   { id: "bound",   name: "Bound",   world: "commons" },
   "roamer-token":  { id: "roamer",  name: "Roamer",  world: "commons", worlds: ["*"], create: true },
@@ -25,14 +56,95 @@ const check = (name: string, ok: boolean, extra = "") => {
   ok ? pass++ : fail++;
 };
 
+// A nonce this run owns, echoed by the door's /healthz.
+const NONCE = `t${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
+
 const world = Bun.spawn([process.execPath, "server/server.ts"], {
   env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir },
   stdout: "ignore", stderr: "ignore",
 });
 const mcpl = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
-  env: { ...process.env, MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`, MCPL_TOKENS: tokensPath },
+  env: { ...process.env, MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`,
+         MCPL_TOKENS: tokensPath, MCPL_STATE: statePath, MCPL_INSTANCE_NONCE: NONCE },
   stdout: "ignore", stderr: "ignore",
 });
+
+/** PIDs listening on a TCP port, from the OS. Verified against this machine's
+ *  `ss -lntp` output before use. Empty when nothing is listening. */
+async function listenerPids(port: number): Promise<number[]> {
+  const p = Bun.spawn(["ss", "-lntpH"], { stdout: "pipe", stderr: "ignore" });
+  const out = await new Response(p.stdout).text();
+  await p.exited;
+  const pids: number[] = [];
+  for (const line of out.split("\n")) {
+    if (!new RegExp(`[:.]${port}\\s`).test(line)) continue;
+    for (const m of line.matchAll(/pid=(\d+)/g)) pids.push(Number(m[1]));
+  }
+  return [...new Set(pids)];
+}
+
+/** Transitive children of a pid, via /proc — Bun.spawn of a .ts file may exec
+ *  a child that does the actual listening, so "port pid === our pid" is too
+ *  strict. */
+function descendantsOf(root: number): number[] {
+  const out: number[] = [];
+  const walk = (pid: number, depth = 0) => {
+    if (depth > 6) return;
+    let kids = "";
+    try { kids = readFileSync(`/proc/${pid}/task/${pid}/children`, "utf8"); } catch { return; }
+    for (const k of kids.trim().split(/\s+/).filter(Boolean)) {
+      const n = Number(k); out.push(n); walk(n, depth + 1);
+    }
+  };
+  walk(root);
+  return out;
+}
+
+/** Poll until `probe()` returns true, or throw. Replaces the fixed startup
+ *  sleep: a sleep encodes a GUESS about startup time and fails in both
+ *  directions — slow when it over-waits, flaky when it under-waits. Also fails
+ *  FAST if either child dies, which is how a squatted port surfaces. */
+async function waitFor(what: string, probe: () => Promise<boolean>, ms = 20_000) {
+  const deadline = Date.now() + ms;
+  let lastErr = "";
+  while (Date.now() < deadline) {
+    if (world.exitCode !== null) throw new Error(`${what}: world child exited early (code ${world.exitCode})`);
+    if (mcpl.exitCode !== null) throw new Error(`${what}: door child exited early (code ${mcpl.exitCode})`);
+    try { if (await probe()) return; } catch (e) { lastErr = (e as Error).message; }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`${what}: not ready within ${ms}ms${lastErr ? ` (last: ${lastErr})` : ""}`);
+}
+
+/** The port must be held by the child we spawned (or a descendant). This is
+ *  the OS's answer, not the app's — an app endpoint can only tell you what the
+ *  app believes, and a stale listener believes it is fine. */
+function ownsPort(name: string, port: number, child: { pid: number }) {
+  return async () => {
+    const pids = await listenerPids(port);
+    if (pids.length === 0) return false;
+    const ours = new Set([child.pid, ...descendantsOf(child.pid)]);
+    const foreign = pids.filter((p) => !ours.has(p));
+    if (foreign.length) throw new Error(`${name} port ${port} held by pid(s) ${foreign.join(",")}, not our child ${child.pid} — stale listener`);
+    return true;
+  };
+}
+
+// 🔴 IDENTITY, NOT MERE LIVENESS. "The port answers" is exactly the check that
+// lets a stale listener report green.
+await waitFor("world /version", async () => (await fetch(`http://127.0.0.1:${WPORT}/version`)).ok);
+await waitFor("world port is owned by OUR child", ownsPort("world", WPORT, world));
+// Two independent proofs for the door: it echoes a nonce only we set, AND the
+// OS says the port is our child's. (The world server has no nonce-able
+// endpoint — /avatars reads LIBRARY_DIR/OPT_DIR, not worldsDir; checked.)
+await waitFor("door /healthz echoes our nonce", async () => {
+  const r = await fetch(`http://127.0.0.1:${MPORT}/healthz`);
+  if (!r.ok) return false;
+  const body = (await r.text()).trim();
+  if (body === "ok") throw new Error("a door answered but WITHOUT our nonce — stale listener on this port");
+  return body === `ok ${NONCE}`;
+});
+await waitFor("door port is owned by OUR child", ownsPort("door", MPORT, mcpl));
 
 /** Minimal MCPL 0.5 host: initialize, grant, then request/notification I/O. */
 async function connectHost(token: string, query = "", mode: "accept" | "decline" | "mute" = "accept") {
@@ -126,7 +238,8 @@ async function watchWorld(w: string, id: string) {
 const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
 
 try {
-  await sleep(2500);
+  // (no startup sleep: readiness above already proved both children are up AND
+  // are the processes we spawned)
 
   // ── 1. no policy → deny, and the session survives the refusal ─────────────
   // Driven through the TOOL now: the channels/open sibling-join lane was
@@ -426,7 +539,41 @@ try {
   });
   check("never half-attached: connection surfaced as closed", closed);
 } finally {
-  world.kill(); mcpl.kill();
+  // Verified termination: kill(), then AWAIT the exit. `kill()` alone returns
+  // immediately, so the old teardown could return while children still held
+  // ports and were mid-write — which is how a zero-byte state.json.tmp
+  // survived a run. Escalate to SIGKILL rather than hang the suite.
+  for (const [name, child] of [["world", world], ["door", mcpl]] as const) {
+    try { child.kill(); } catch { /* already gone */ }
+    const outcome = await Promise.race([
+      child.exited,
+      new Promise<"timeout">((r) => setTimeout(() => r("timeout"), 5000)),
+    ]);
+    if (outcome === "timeout") {
+      try { child.kill("SIGKILL"); } catch { /* already gone */ }
+      await Promise.race([child.exited, new Promise((r) => setTimeout(r, 2000))]);
+    }
+    check(`${name} child terminated`, child.exitCode !== null || child.signalCode !== null,
+      "still running after SIGTERM+SIGKILL");
+  }
+
+  // 🔴 SOURCE-TREE CLEANLINESS. The whole point of MCPL_STATE. A run that
+  // mutates repository state is not a receipt, it is contamination — and its
+  // leftovers are indistinguishable from a real failure to the next reader.
+  const after = existsSync(REPO_STATE)
+    ? { exists: true, mtimeMs: statSync(REPO_STATE).mtimeMs, size: statSync(REPO_STATE).size }
+    : { exists: false, mtimeMs: 0, size: 0 };
+  check("repository mcpl/state.json untouched",
+    after.exists === repoStateBefore.exists && after.mtimeMs === repoStateBefore.mtimeMs && after.size === repoStateBefore.size,
+    `before=${JSON.stringify(repoStateBefore)} after=${JSON.stringify(after)}`);
+  check("no repository mcpl/state.json.tmp left behind", !existsSync(`${REPO_STATE}.tmp`));
+  // …and our own temp state exists, proving the override was HONOURED rather
+  // than silently ignored — otherwise "untouched" would also pass if the door
+  // simply never persisted at all.
+  check("the door persisted to OUR state path", existsSync(statePath), statePath);
+  check("no temp file left in our state dir", !existsSync(`${statePath}.tmp`));
+
+  try { rmSync(worldsDir, { recursive: true, force: true }); } catch { /* best effort */ }
 }
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
