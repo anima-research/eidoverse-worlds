@@ -7,9 +7,19 @@ written in code.
 
 ## State: DONE and green
 
-- `server/sfu.ts` (~200 ln) + `server/sfuguard.ts` — in-process SFU, no external
-  binary. **41/41 tests** (`bun tools/sfu-test.ts`), 100.0% delivery.
-- Branch `relay-spike`, ~12 commits, all local. **NOT pushed, NOT a PR yet.**
+- `server/sfu.ts` (**514 ln**) + `server/sfuguard.ts` — in-process SFU, no
+  external binary. **57/57** (`bun tools/sfu-test.ts`), 100.0% delivery on a
+  loopback N=6 run.
+- Branch `relay-spike`, **~126 commits**, all local. **NOT pushed, NOT a PR yet.**
+
+> 🔴 **THIS DOCUMENT WAS WRONG ABOUT ITSELF (audited 2026-08-16).** The three
+> figures above previously read "~200 ln", "41/41" and "~12 commits" — off by
+> 2.5x, 16 tests and 114 commits. It also cited
+> `notes/relay-spike/RECEIPTS.md` three times as the source of timing evidence:
+> **that file has never existed in this repo's history** (`git log --all --
+> 'notes/relay-spike/*'` → nothing). Any number sourced from it is unbacked.
+> A handoff that is stale about its own branch is worse than no handoff — it
+> reads authoritative. Re-derive before quoting anything here.
 - Load: `bun tools/sfu-load.ts [N] [secs] [speakers]`.
 
 ## The ONE thing not done: browser interop
@@ -24,11 +34,35 @@ Chromium. What is unproven:
 **Do this next**, and do it WITH R — she can judge whether it sounds like a
 person; I can only count packets. Pattern to copy: the existing browser smokes
 (`tools/relay-browser-smoke.mjs`), Playwright with the chromium-1228 pin noted in
-`notes/relay-spike/RECEIPTS.md`. Page boot ≈13s under load → timeouts ≥90s.
+~13s page boot under load → timeouts ≥90s. (This previously cited
+`notes/relay-spike/RECEIPTS.md`, a file that does not exist; the 13s figure is
+an observation from live runs with no preserved artifact — treat as folklore
+until re-measured.)
 
-## Wiring that is NOT written yet
+## Wiring — MOSTLY DONE (corrected 2026-08-16; this section said the opposite)
 
-The SFU is a library; nothing calls it. To make it live:
+> 🔴 This heading read **"Wiring that is NOT written yet — the SFU is a library;
+> nothing calls it"** for a day after it stopped being true, and an audit found
+> that reading the handoff top-to-bottom "gives a materially wrong picture of
+> branch state." Four of the five items below now have live callers:
+> `relay-cred` → `server.ts:1126`, `voice-consent` → `server.ts:1164`, the
+> retirement funnel → `server.ts:83`, `/relay-diag` → `routes.ts:400`. The fifth
+> (porting `voicerelay.js`) happened too — it is `voicesfu.js`.
+>
+> **🔴 STILL DEAD, and this is the honest gap the section never named:**
+> - `admitSfuLeg` (`sfuadapter.ts:152`) — all seven A1 refusals implemented and
+>   unit-proven, **no caller outside its own test**. On LiveKit the equivalent
+>   runs from a webhook; the in-process SFU has none, so the refusals are never
+>   exercised on the live path. `usedNonces` is never populated in production.
+> - `setSfuModeratorMute` (`sfuadapter.ts:207`) — implemented, enforced at
+>   ingress, tested, **callers are tests and probes only**. `server.ts:1161`
+>   says moderator mute "is a different verb with a different rank"; that verb
+>   does not exist.
+>
+> Both are exactly the shape that makes a green suite misleading: complete
+> subsystems reachable only from their own tests.
+
+Original list (kept for the record):
 
 1. **`server.ts`** — on `relay-cred` (or a new verb), `sfu.createLeg(id, gen)`.
    The existing `rtc` verb (case at ~:1005) already carries SDP point-to-point

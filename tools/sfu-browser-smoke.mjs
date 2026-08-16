@@ -72,7 +72,9 @@ const mk = async (name) => {
   const nameField = await pg.$('#d-name');
   if (nameField) await nameField.fill(name).catch(() => {});
   await pg.click('#d-go').catch(() => {});
-  // Page boot is ~13s under load (RECEIPTS.md), so 90s is the floor, not slack.
+  // Page boot is ~13s under load, so 90s is the floor, not slack. (Cited
+  // RECEIPTS.md until 2026-08-16 — a file that never existed. The number is a
+  // live observation with no preserved artifact.)
   await pg.waitForFunction(() => window.relayDiag?.().active === true, null, { timeout: 90000 });
   return pg;
 };
