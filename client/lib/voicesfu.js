@@ -19,6 +19,10 @@
 // server-initiated: we only ever setRemoteDescription(offer) → answer.
 import { bus } from './core.js';
 import { audioContext } from './audioctx.js';
+// A dead media path must be visible to the PERSON, not only in the console —
+// they are holding a phone and watching a gold mic meter that is telling them
+// the truth about capture and nothing about transmission.
+import { logChat } from './chat.js';
 
 let pc = null, cred = null, micStream = null, wantMic = false;
 // My own outbound analyser (sfuMyLevel). Declared HERE, with the rest of the
@@ -117,7 +121,69 @@ export async function sfuConnect(credential, send) {
     if (id) attach(id, e.track);
   };
 
-  pc.onicecandidate = (e) => { if (e.candidate) send({ type: 'sfu-ice', candidate: e.candidate }); };
+  // Candidate TYPE is the evidence for the diagnosis below: host-only means no
+  // STUN reflexive address was ever obtained, so nothing off this machine can
+  // route to us. Recorded here because by the time ICE stalls, the candidates
+  // are long gone.
+  let _sawNonHostCandidate = false;
+  pc.onicecandidate = (e) => {
+    if (!e.candidate) return;
+    if (e.candidate.type && e.candidate.type !== 'host') _sawNonHostCandidate = true;
+    send({ type: 'sfu-ice', candidate: e.candidate });
+  };
+
+  // 🔴 A CONNECTION THAT NEVER CONNECTS MUST SAY SO (R, 2026-08-16, from a real
+  // phone on a real network: "that probably shouldn't be a silent failure").
+  //
+  // Nothing here watched connectionState, so the ONLY signal of a dead media
+  // path was rxPackets=0 in server-side diag — invisible to the person holding
+  // the phone, who sees a gold mic meter (the LOCAL analyser, which is happily
+  // reading a live capture) and concludes the mic works. It does. The packets
+  // just never leave.
+  //
+  // The specific failure this caught: `iceServers: []` above is correct for
+  // same-host peers and CANNOT work across networks — no STUN means no
+  // server-reflexive candidate, no TURN means no relay, so a phone on cellular
+  // or another subnet has no viable candidate pair and ICE simply never
+  // completes. No exception is thrown; the state machine just stops at
+  // 'checking' and sits there.
+  //
+  // 'disconnected' is deliberately NOT treated as failure — it is often
+  // transient and recovers on its own (webrtc-mesh-gotchas: disconnected ≠
+  // failed). 'failed' and a stall in 'checking' are the real reports.
+  let iceStallTimer = null;
+  const clearStall = () => { if (iceStallTimer) { clearTimeout(iceStallTimer); iceStallTimer = null; } };
+  pc.oniceconnectionstatechange = () => {
+    const st = pc.iceConnectionState;
+    if (st === 'checking') {
+      clearStall();
+      // Host-only candidate pairs settle in well under a second on a LAN; 8s
+      // means there is no viable pair and there never will be without STUN/TURN.
+      iceStallTimer = setTimeout(() => {
+        if (pc.iceConnectionState === 'checking' || pc.iceConnectionState === 'new') {
+          const hostOnly = !_sawNonHostCandidate;
+          console.error('[voice] 🔴 ICE STALLED — no media path. '
+            + `iceConnectionState=${pc.iceConnectionState} after 8s.`
+            + (hostOnly ? '  Only HOST candidates were gathered: this peer can only reach '
+                + 'the server on the same machine/LAN. A phone or remote listener needs a '
+                + 'STUN/TURN server, which this build does not configure (iceServers: []).'
+                : '')
+            + '  Your mic is capturing (the meter is local) but NOTHING is being transmitted.');
+          logChat('*', 'voice: no media path to the server — mic is on but nobody can hear you');
+        }
+      }, 8000);
+    } else if (st === 'connected' || st === 'completed') {
+      clearStall();
+      console.info(`[voice] ICE ${st} — media path is live`);
+    } else if (st === 'failed') {
+      clearStall();
+      console.error('[voice] 🔴 ICE FAILED — no media path to the server. '
+        + 'Mic capture is unaffected and still looks healthy; nothing is reaching anyone.');
+      logChat('*', 'voice: connection failed — mic is on but nobody can hear you');
+    } else if (st === 'closed') {
+      clearStall();
+    }
+  };
   return pc;
 }
 
