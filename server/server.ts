@@ -49,7 +49,7 @@ import { onVoiceServiceChange, markVoiceDegraded, voiceServiceState } from "./sf
 // The in-process SFU (VOICE_TRANSPORT=sfu). Same surface as the LiveKit
 // adapter, so every call site below branches on transport rather than on shape.
 import { mintSfuCredential, setSfuConsent, revokeSfuLeg, sfuDiag,
-  sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition, registerSfuSender, admitSfuLeg, liveLegState } from "./sfuadapter.ts";
+  sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition, registerSfuSender, admitSfuLeg, liveLegState, sfuLegAdmitted, markSfuLegAdmitted } from "./sfuadapter.ts";
 const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR);
 
 // The resident-visible service chart (amendment 2): every voice-service
@@ -1048,6 +1048,25 @@ const server = Bun.serve({
           // admission belongs: the server offers, the client answers, and the
           // answer must prove it is the leg the credential was minted for.
           {
+            // 🔴 ADMIT ONCE PER LEG, NOT ONCE PER ANSWER. The nonce is
+            // single-use by design (it closes the removed-participant replay
+            // hole), but sfu-answer fires on EVERY renegotiation — and the
+            // server renegotiates whenever anyone else joins. So the second
+            // answer presented the same, now-burned nonce, was refused as
+            // "credential replay", and the refusal path revoked a working leg:
+            // the first person in a room lost voice the moment a second person
+            // arrived. Caught by an independent reviewer reading the path, not
+            // by a test — the suites only ever negotiate once.
+            //
+            // An already-admitted leg has proven its credential; subsequent
+            // answers are ordinary negotiation traffic on an established,
+            // gen-checked session, exactly like sfu-ice.
+            if (sfuLegAdmitted(c.world.name, c.id)) {
+              const sdpOk = String(msg.sdp ?? "");
+              if (sdpOk.length > 20000) return;
+              void sfuAcceptAnswer(c.world.name, c.id, sdpOk);
+              return;
+            }
             const cl = (msg as { cred?: Record<string, unknown> }).cred;
             const verdict = cl
               ? admitSfuLeg(c.world.name, {
@@ -1056,6 +1075,7 @@ const server = Bun.serve({
                   incarnation: String(cl.incarnation ?? ""), nonce: String(cl.nonce ?? ""),
                 }, liveLegState(c.world.name, c.id, c.gen))
               : { admit: false as const, reason: "no credential presented" };
+            if (verdict.admit) markSfuLegAdmitted(c.world.name, c.id);
             if (!verdict.admit) {
               console.warn(`[sfu] answer REFUSED for ${c.id}: ${verdict.reason}`);
               ws.send(JSON.stringify({ type: "error", error: `voice leg refused: ${verdict.reason}` }));

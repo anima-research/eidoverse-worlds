@@ -145,7 +145,7 @@ console.log("\n— speakOwnSays: the bridge, and the mic-live discard policy —
   check("own say queues exactly one performance", synthCalls.length === 1, `${synthCalls.length}`);
 
   // mic beats TTS: with the mic live, typed says are DISCARDED (declared policy)
-  const voice = await import("../client/lib/voice.js");
+  const voice = await import("../client/lib/micstate.js");
   voice.initVoice?.("me");
   await voice.toggleMic("me");
   check("precondition: mic is live", voice.micOn() === true);
@@ -159,7 +159,7 @@ console.log("\n— speakOwnSays: the bridge, and the mic-live discard policy —
 
 console.log("\n— sender identity across producer transitions (r4: the third catch, pinned) —");
 {
-  const voice = await import("../client/lib/voice.js");
+  const voice = await import("../client/lib/micstate.js");
   const tts = await import("../client/lib/tts.js");
   // a real peer in voice's map: a human appears in the roster while we are a
   // transmitting body, so the roster handler courts them through peerFor —
@@ -237,7 +237,7 @@ console.log("\n— sender identity across producer transitions (r4: the third ca
 
 console.log("\n— mic priority: both orderings, repeated cycles, no dual producer —");
 {
-  const voice = await import("../client/lib/voice.js");
+  const voice = await import("../client/lib/micstate.js");
   // ordering A: TTS enabled while mic OFF → generator on senders
   tts.setTtsEnabled(false); tts.setTtsEnabled(true);
   await sleep(30);

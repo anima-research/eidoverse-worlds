@@ -24,6 +24,11 @@ import { sendTyping } from './net.js';
 import { gateThreshold } from './voiceconsent.js';
 import { gateStream, attachSource, detachSource, driveGate, setMonitor, monitoring,
          gateUnavailable, ungatedConsent, isGated } from './micgate.js';
+// 🔴 The analyser hangs off the shared context; omitting this import made
+// micAnalyserLevel() return 0 forever inside its own catch{} rather than
+// erroring — a silent meter, which is the exact failure this file's gate is
+// meant to make impossible.
+import { audioContext } from './audioctx.js';
 
 // 🔴 MUTE AND LANE LIVE HERE NOW, not in a transport. They were voice.js
 // module state (`muted`, `micStream`), which is why the SFU had no mute at all:
@@ -41,6 +46,17 @@ export function toggleMute(on) {
   bus.emit('audio:mute', _muted);
   return _muted;
 }
+
+// 🔴 THE ONSET WATCHER'S STATE. Extracted from voice.js:680-682 — the slice
+// that moved the FUNCTIONS started below these declarations, so every one of
+// them was a free variable here: startOnsetWatch/onsetTick/gateAudio threw
+// ReferenceError on first call, i.e. turning the mic on rejected. `node --check`
+// passes on an unbound identifier and every test in place greps source text, so
+// nothing could report it. Caught by an adversarial agent that EXECUTED the
+// module instead of reading it.
+let _onsetTimer = null, _above = false, _lastOnset = 0, _openUntil = 0;
+// When this open began, and whether it has been announced — see onsetTick.
+let _openedAt = 0, _announced = false;
 
 let _noise = 0.01;
 let _settle = 0;

@@ -13,7 +13,16 @@ check('a refused leg is revoked, not left half-open', /revokeSfuLeg\(c\.world\.n
 
 // The client must PRESENT the claim, or the gate has nothing to check.
 const cli = readFileSync(new URL('../client/lib/voicesfu.js', import.meta.url), 'utf8');
-check('client returns its credential on sfu-answer', /cred: _cred/.test(cli));
+// 🔴 This asserted `cred: _cred` — the exact TYPO it was written alongside.
+// `_cred` was never declared, so sfu-answer threw ReferenceError on every
+// client and the gate was never reached; this test passed the whole time,
+// because a grep for a string cannot tell a bound identifier from a free one.
+// Assert the SHAPE that has to reach the server instead.
+check('client returns its credential on sfu-answer',
+  /cred: cred && \{/.test(cli) && /nonce: cred\.nonce/.test(cli));
+check('the credential the client sends carries all six claims',
+  ['world:', 'id:', 'primaryGen:', 'mediaGen:', 'incarnation:', 'nonce:']
+    .every((f) => new RegExp(f.replace(':', ':\\s*cred\\.')).test(cli)));
 
 // A2 — supervision exists, and the guard no longer kills the world server.
 const guard = S('sfuguard.ts');

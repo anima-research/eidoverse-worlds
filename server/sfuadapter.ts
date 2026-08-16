@@ -187,6 +187,14 @@ export function liveLegState(world: string, id: string, primaryGen?: number): Li
            mediaGen: leg?.gen, usedNonces: s.usedNonces };
 }
 
+/** Has this leg already proven its credential? A leg is admitted ONCE; later
+ *  answers are ordinary renegotiation on an established session. Cleared by
+ *  revokeSfuLeg, so a fresh leg must prove itself again. */
+const admitted = new Set<string>();
+const akey = (world: string, id: string) => `${world}\u0000${id}`;
+export const sfuLegAdmitted = (world: string, id: string) => admitted.has(akey(world, id));
+export const markSfuLegAdmitted = (world: string, id: string) => { admitted.add(akey(world, id)); };
+
 export function admitSfuLeg(world: string, claims: RelayClaims, live: LiveLegState) {
   const s = sfuState(world);
   const verdict = admitParticipant(claims, { ...live, usedNonces: s.usedNonces });
@@ -251,6 +259,7 @@ export function setSfuModeratorMute(world: string, speakerId: string, mutedFlag:
 /** Retirement funnel — the same one every other surface uses. */
 export function revokeSfuLeg(world: string, id: string) {
   senders.delete(id);
+  admitted.delete(akey(world, id));   // a new leg must prove its credential again
   // A leg revoked mid-negotiation must not leave its resolver behind: for up to
   // 15s sfuAcceptAnswer would otherwise feed an SDP answer into a CLOSED pc,
   // where setRemoteDescription throws into a bare .catch and the failure is
