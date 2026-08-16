@@ -89,3 +89,53 @@ Does `onresult` fire with `isFinal` before the session dies?
 
 `/audio`'s tally (`[start×N audiostart×N result:final×N …]`) answers this
 directly. It is one test on the device already in R's hand.
+
+---
+
+## MEASURED 2026-08-16 18:11Z — captions WORK on Android, unreliably
+
+R's Galaxy, Chrome, page stamped `stt-diag-5`, after speaking "Hello":
+
+```
+stt ▸ build stt-diag-5 · lang en-US · stt ON ·
+start×7 audiostart×7 sound×6 speech×6 speechend×6
+nomatch×4 end×5 result:final×3 err:aborted×1
+```
+
+**Three `🎙 Hello` lines actually landed in the world log.** So:
+
+- ✅ **`result:final×3`** — Android DOES finalize. Captions work.
+- ⚠️ **`speech×6` vs `final×3` + `nomatch×4`** — roughly half of heard
+  utterances come back as text, half come back empty.
+- ✅ **`lang en-US`** — the language suspect is cleared.
+
+### This REVERSES the plan above
+
+Every option in this file assumed captions were broken on Android. They are
+not. They are **unreliable** — a materially different thing:
+
+- **A (block on Android) is now WRONG.** It would disable a working feature.
+- **The behavioural "zero finals → give up" check is also WRONG**, for the
+  reason R gave before any of this was measured: absence of results is not
+  evidence of breakage. Here there were finals; a check watching for their
+  absence would have fired during the four nomatches and disabled captions
+  mid-conversation, on a device where they work.
+- **B (ship with a notice)** is defensible if the chiming is the complaint.
+- **D (local whisper)** remains the real upgrade — it fixes the ~50% miss rate,
+  the chime, and the privacy exposure together.
+
+### What I got wrong, recorded because the pattern repeated
+
+Three theories before measuring — contention, restart-loop, never-finalizing —
+**all three about the session's LIFECYCLE**, because that was the code I had
+been reading. The truth was in recognition QUALITY, which I never proposed. The
+instrument answered in one line what an hour of theorising did not, and R's
+"maybe you should research this before guessing more" was the turn that got us
+here.
+
+### Still open
+
+- The ~50% miss rate: is it acoustic (phone mic already committed to WebRTC,
+  reaching the recognizer processed), or the Chromium bug's session churn
+  clipping utterances? `err:aborted×1` and `end×5` suggest churn is real.
+- The chime remains, and remains upstream's.
