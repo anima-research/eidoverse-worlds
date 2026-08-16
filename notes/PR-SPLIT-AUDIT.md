@@ -8,8 +8,12 @@ mechanically derived; the commands are included so it can be re-run.*
 
 ```
 git diff --stat upstream/main..relay-spike
-→ 60 files changed, 7015 insertions(+), 84 deletions(-)   (80 commits)
+→ 86 files changed, 9338 insertions(+), 132 deletions(-)  (126 commits)
 ```
+
+🔴 **These numbers go stale FAST.** This block said 60 files / 7015 / 80
+commits until 2026-08-16 13:1x — a full day of work later. Re-derive before
+trusting any count here; the coverage script is the only part that self-checks.
 
 🔴 **`origin` in this tree is a LOCAL PATH** (`/home/claude/eido/engine`), not
 GitHub. Measuring against `origin/main` says "241 commits ahead" and is
@@ -36,14 +40,17 @@ Re-run the coverage check before shipping anything (it prints UNASSIGNED):
 
 ## 🔴 Why this CANNOT be split per-commit
 
-**27 of 80 commits touch more than one group.** Cherry-picking by commit
-drops hunks silently — the exact way work has gone missing before.
+**14 of 126 commits touch more than one group** (re-derived 2026-08-16 13:1x;
+this previously read "27 of 80" and the offender list named commits whose
+spans have since changed — a stale justification for a conclusion that
+happens to still hold). Cherry-picking by commit drops hunks silently — the
+exact way work has gone missing before.
 
-Worst offenders:
-- `452b7be` (the phase-1 spike) spans **A+B+G+H+I** — five groups, one commit.
-- `a99e147` spans **A+B+D+G+H**.
-- `6881582` spans **D+E+F**.
-- `69016d4` spans **B+E+F**.
+Worst offenders now:
+- `452b7be` (the phase-1 spike) spans **G+H+I** (14 files).
+- `dd379d8` spans **E+F+K**, `0f1c510` spans **E+F+J**, `3d4e8d6` spans **E+F+I**.
+- The E+F pairing recurs (panel + TTS edited together all afternoon), which is
+  itself the argument for shipping E and F as ONE PR.
 
 Even the smallest candidate is not file-clean: **`server/routes.ts` carries 8
 isolation-header lines AND 19 SFU lines** across its 4 hunks. PR 0 therefore
