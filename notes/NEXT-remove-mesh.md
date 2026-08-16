@@ -75,7 +75,53 @@ files "too big to review honestly"). Ship the SFU, then remove the mesh as its
 own PR whose diff is almost entirely deletions — which is the easiest kind to
 review and the easiest to revert if audio breaks.
 
-## ✅ Checked before starting: mouth-flap is SAFE
+## 🔴 THE FULL READ CHANGED THE PLAN (2026-08-16, R: "Have you read all of the
+## audio code to make sure your changes make sense?" — I had not)
+
+A complete read of all 19 client audio modules found things a partial read
+missed. **The mesh is not just a transport — it is where the shared audio
+machinery lives.** Deleting voice.js as scoped below would have shipped SILENT
+capability loss, not a clean swap.
+
+### What dies silently with voice.js (nothing errors; features just vanish)
+
+| Lost | Evidence |
+|---|---|
+| **The entire mic NOISE GATE** | `gateStream`/`attachSource`/`driveGate`/`setMonitor` — verified: voice.js is their ONLY production caller. `voicesfu.js` never gates anything (zero matches). micgate.js (280 lines) becomes unreachable except audiopanel's 3 escape-hatch symbols. |
+| **The mic sensitivity slider becomes decorative** | It still paints a marker, but `gateThreshold()` loses both callers, so nothing consumes the value. Precisely the "control that lies" micgate.js:68-79 exists to prevent. |
+| **`releaseMicrophone()`** | The only path that stops the device and clears the OS recording indicator. `sfuClose()` closes the pc but never stops mic tracks. A privacy-visible regression. |
+| **Mute, as a concept** | The SFU has none. `voicemouths.js:57` calls `isMuted()` from voice.js on BOTH paths — after deletion that import does not resolve at all. |
+| **Self-monitor ("hear yourself")** | micgate.js:144-192 implements the graph; only voice.js reaches it. |
+
+### 🔴 And a calibration bug that would have been blamed on anything else
+
+`micAnalyserLevel()` (mesh) is **RMS**: `sqrt(mean(x²))`, voice.js:876-878.
+`sfuMyLevel()` (SFU) is **PEAK**: `max(|x|)`, voicesfu.js:410-412.
+
+Peak runs ~1.4–3x RMS for speech. The sensitivity slider was calibrated against
+RMS — voiceconsent.js:57, *"60% = -24 dBFS… R's number, found by TESTING IT IN
+HER ROOM"*. Deleting the RMS analyser silently re-scales her calibration.
+
+### Hard breaks (module resolution fails immediately)
+main.js:34,541 · mictoggle.js:12,123 · audiopanel.js:19,36 ·
+voicemouths.js:9-10 (incl. `isMuted`) · stt.js:74 · tts.js:102,612
+
+### Revised order — extract the SHARED HALF first, and it is bigger than helpers
+Move into a transport-neutral module (or into micgate.js) BEFORE deleting:
+`micAnalyserLevel` · the onset/gate loop (`onsetTick`/`gateAudio`/
+`startOnsetWatch`) · `muted`+`toggleMute`+`isMuted` · `releaseMicrophone` ·
+`hasMicDevice` · `setSelfMonitor` · and the acquisition block at voice.js:593-632
+that wires `voiceSource()` → `gateStream`/`attachSource`. Then wire
+`sfuPublish()` through it. THEN delete.
+
+### Open question for R (I will not guess)
+Is the SFU's missing mic gate deliberate spike scope, or an oversight? No
+comment in either SFU file mentions gating the outbound mic. If deliberate, the
+gate moves anyway (the slider must not lie). If an oversight, the SFU has been
+publishing UNGATED mic audio this whole time — which would explain room noise
+nobody attributed to a transport change.
+
+## ✅ Also checked: mouth-flap is SAFE
 
 The worry was that `voicemouths.js` and `audiopanel.js` read voice.js's analyser
 for mouth-flap and meters, and would go flat when the mesh is deleted — a
