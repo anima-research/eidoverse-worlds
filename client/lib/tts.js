@@ -197,7 +197,48 @@ function chain(speaker, job) {
  *  or unavailable — callers should not have to branch.
  *  `speaker` scopes the serialization; omit it for your own voice. */
 export function speak(text, speaker) {
-  return chain(speaker, () => speakOne(text));
+  return chain(speaker, () => speakChunked(text));
+}
+
+// 🔴 LENGTH IS LATENCY, AND THE BROWSER NEVER CHUNKED (R, 2026-08-16: "I
+// submitted a long thing to test TTS hang and boy it's hung af — froze the
+// whole browser. Finally came back after about 30 seconds and started
+// talking").
+//
+// That is not a hang, which is why hunting for one would have wasted the
+// night: engine-piper.js:347 already measured RTF ≈ 1.1, so synthesis costs
+// about as long as the audio it produces. A ~25-second paragraph is a ~28-
+// second ort.run() — on the main thread, in one piece, with the page frozen
+// for the duration.
+//
+// The sidecar has never had this problem because it splits utterances into
+// sentence-sized pieces and streams the first while the rest synthesize.
+// tts-chunk.js is that same splitter, ported (identical output on the same
+// input, checked). fastFirst() deliberately cuts an aggressive OPENING clause:
+// time-to-first-word is synth(chunk 1), so a 64-char opener starts the audio
+// in about a second instead of thirty.
+//
+// This does NOT make synthesis non-blocking — each chunk still runs on the
+// main thread, and a genuinely enormous single sentence with no commas can
+// still stall. Moving inference into a Worker is the real cure and remains
+// open. Chunking is what makes the page usable today, and it is a strict
+// improvement rather than a workaround: shorter pieces also mean the first
+// word arrives sooner, which is the thing a listener actually notices.
+async function speakChunked(text) {
+  const { ttsChunks } = await import('./tts-chunk.js');
+  const chunks = ttsChunks(text);
+  if (!chunks.length) return false;          // emoji-only: in the log, not the air
+  if (chunks.length === 1) return speakOne(chunks[0]);
+  let any = false;
+  for (const c of chunks) {
+    // Sequential BY DESIGN: the queue plays in order, and synthesizing ahead
+    // would put us right back into the race the speaker chain exists to stop.
+    // Yielding between chunks lets the page paint — the whole point.
+    const ok = await speakOne(c);
+    any = any || ok;
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  return any;
 }
 
 async function speakOne(text) {
