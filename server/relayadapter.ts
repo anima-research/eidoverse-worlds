@@ -108,6 +108,20 @@ export const relayServiceState = () => ({ state: serviceState, incarnation });
 export function bootRelayAdapter(optDir: string, notify: (state: ServiceState, incarnation: string) => void) {
   if (!relayEnabled()) return null;
   bootIncarnation(optDir);
+  // 🔴 THE SFU HAS NO LIVEKIT AND NO URL TO REACH (2026-08-15). `relayEnabled()`
+  // is true for BOTH transports, so this used to run the whole LiveKit boot
+  // under the SFU: a RoomServiceClient pointed at an EMPTY string, a probe
+  // timer polling it every 5s forever, and the banner
+  //     [relay] adapter up — , incarnation i7-…
+  // whose empty slot is RELAY_URL. I read that banner while debugging tonight
+  // and it told me nothing — worse, it reads like a transport that failed to
+  // name itself. An instrument that cannot say which transport is live is the
+  // exact thing that cost an hour on the mesh/SFU mixup.
+  if (voiceTransport() === "sfu") {
+    onServiceChange = notify;
+    console.log(`[relay] transport=SFU (in-process) — no LiveKit client, incarnation ${incarnation}`);
+    return { incarnation };
+  }
   svc = new RoomServiceClient(RELAY_URL, RELAY_KEY, RELAY_SECRET);
   verifier = new TokenVerifier(RELAY_KEY, RELAY_SECRET);
   receiver = new WebhookReceiver(RELAY_KEY, RELAY_SECRET);

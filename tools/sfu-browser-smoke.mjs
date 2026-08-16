@@ -34,6 +34,23 @@ const browser = await chromium.launch({
     // would fail this test for the right reason and the wrong purpose.
     '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
     '--autoplay-policy=no-user-gesture-required',
+    // 🔴 WSL HAS NO SOUND CARD (2026-08-15). `/dev/snd` contains only `timer`,
+    // and without an output device Chromium's WebAudio renderer eventually
+    // fails to start a graph: "The AudioContext encountered an error from the
+    // audio device or the WebAudio renderer" — and then the AnalyserNode this
+    // test measures with reads 0.000 forever. The audio was FINE (the server
+    // forwarded 13k packets and B was subscribed); the INSTRUMENT was dead.
+    //
+    // That is the worst failure shape available here: an envelope of 0.000
+    // reads exactly like silence, so a green transport looks broken and a
+    // change made minutes earlier looks guilty. It cost an A/B against a
+    // stashed tree to clear code that was never involved.
+    //
+    // This flag gives Chromium a null audio sink so the render graph runs with
+    // no hardware. It changes nothing about what is measured — the analyser
+    // still reads the decoded remote track.
+    '--disable-features=AudioServiceOutOfProcess',
+    '--alsa-output-device=null',
   ],
 });
 

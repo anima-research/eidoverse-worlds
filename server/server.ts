@@ -1061,6 +1061,28 @@ const server = Bun.serve({
           // logged for the same reason — but unlike a whisper, a stale SDP is
           // worthless (an offer for a peer who left answers nothing), so there
           // is no pending queue: absent recipient = silently dropped.
+          //
+          // 🔴 THIS IS THE **MESH** LANE, AND IT IS DELIBERATELY NOT GATED ON
+          // voiceTransport() (unlike its four sfu-* siblings above). The mesh
+          // is #104 A5's rollback path and `?mesh=1` still selects it on this
+          // branch, so gating this would break rollback on an SFU server.
+          //
+          // The hazard it creates, paid for in full on 2026-08-15: a client
+          // that speaks `rtc` on an SFU server SUCCEEDS at signalling and is
+          // heard by NOBODY, because every listener is on the SFU. It looks
+          // perfectly healthy from the sender's side — ICE completes, an
+          // answer may even arrive. A sidecar of mine ran an hour that way.
+          // If you are writing something that publishes audio, the question
+          // "which transport is this server on" is not optional: ask
+          // /relay-diag, do not infer it from a working handshake.
+          //
+          // 🔴 AND: a reply is addressed by SURFACE (`toSurface` below), but
+          // no browser client sends that field — grep the client tree, it is
+          // absent. So an offer from an AUX leg (surface:"voice") gets its
+          // answer routed to the PRIMARY, which drops it, and the aux leg
+          // waits forever with packetsSent=0. Fixing that needs the client to
+          // echo `fromSurface` back as `toSurface`; until then, aux legs
+          // cannot be answered on this lane at all.
           const aux = c.surface && c.surface !== "world";
           if (!c.world || (c.spectator && !aux)) return;
           const rto = String(msg.to ?? "").slice(0, 64);

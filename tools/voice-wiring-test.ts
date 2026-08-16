@@ -36,7 +36,18 @@ const server = read("server/server.ts");
 for (const [label, src] of [["main.js", main], ["voicemouths.js", mouths]] as const) {
   for (const fn of ["initVoice", "updateVoiceMouths", "micOn", "isMuted", "micAnalyserLevel", "peerLevels"]) {
     const called = new RegExp(`\\b${fn}\\s*\\(`).test(src);
-    const bound = new RegExp(`\\b${fn}\\b[^\\n]*from|function ${fn}|import[^\\n]*\\b${fn}\\b`).test(src);
+    // 🔴 A DESTRUCTURED DYNAMIC IMPORT IS A BINDING TOO (fixed 2026-08-15).
+    // `const { toggleMic, micOn } = await import('./lib/voice.js')` binds both
+    // names, but the old regex required `<name> … from` or `import … <name>`
+    // ON ONE LINE, so it saw neither — this check had been RED for micOn and
+    // toggleMic on main.js since the TTS path moved to a dynamic import, and
+    // "34 passed, 1 failed" was the normal state of this suite. I nearly
+    // rewrote correct client code to satisfy it; `git show HEAD:client/main.js`
+    // proved the failure predated my edit. A test that has always failed is
+    // not a test, it is a warning label nobody reads.
+    const bound = new RegExp(`\\b${fn}\\b[^\\n]*from|function ${fn}|import[^\\n]*\\b${fn}\\b`).test(src)
+      // destructured dynamic import: `{ …, name, … } = await import(…)`
+      || new RegExp(`\\{[^}]*\\b${fn}\\b[^}]*\\}\\s*=\\s*await\\s+import`).test(src);
     check(`${label} binds ${fn} before calling it`, !called || bound);
   }
 }

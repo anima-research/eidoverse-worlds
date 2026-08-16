@@ -372,7 +372,13 @@ const ROUTES: Route[] = [
     // enforcement (the seven refusals) runs on every join event.
     match: (u, req) => u.pathname === "/relay-webhook" && req.method === "POST",
     handler: async ({ req }) => {
-      if (!relayEnabled()) return new Response("no relay", { status: 404 });
+      // 🔴 GATE ON THE TRANSPORT, NOT ON "SOME RELAY EXISTS" (2026-08-15).
+      // relayEnabled() is true for the SFU too, so this LiveKit-only endpoint
+      // stayed reachable on an SFU server — where no legitimate caller can
+      // exist, and where the signature it checks is against RELAY_SECRET's
+      // default ("secret"). An endpoint that cannot be legitimately called on
+      // the running transport should not be answering at all.
+      if (voiceTransport() !== "livekit") return new Response("no relay", { status: 404 });
       try {
         const r = await handleRelayWebhook(await req.text(), req.headers.get("authorization") ?? "");
         return new Response(JSON.stringify(r), { headers: { "content-type": "application/json" } });

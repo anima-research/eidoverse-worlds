@@ -224,8 +224,29 @@ export async function sfuNegotiate(world: string, legId: string,
   // the first offer is empty by construction. We add a recvonly audio
   // transceiver as the floor: it gives ICE something to gather for, and it is
   // also honest — this leg WILL receive audio, we just do not know whose yet.
+  // 🔴 THE FLOOR IS ABOUT *RECEIVING*, NOT ABOUT BEING EMPTY (2026-08-15).
+  //
+  // This used to read `getTransceivers().length === 0`, which is only true for
+  // a leg that has no OUTBOUND routes yet. The moment a second person is in the
+  // room, each leg gets a `sendonly` route to the other BEFORE its first
+  // negotiation — so length is already 1, the floor is skipped, and the offer
+  // contains no recvonly m-line at all. The server then never proposes to
+  // RECEIVE, `ontrack` never fires, `leg.ingress` stays null, and diag reports
+  // `publishing:false, rxPackets:0` while the publisher's own client correctly
+  // reports `micPublished:true` and its stats show thousands of packets sent.
+  //
+  // Both ends were telling the truth about different halves of a connection
+  // that was only ever negotiated in one direction. It reproduced as "my mic
+  // doesn't work" for a human and "my voice doesn't work" for an agent — the
+  // same defect, and it hid because the ALONE case (no routes → floor applied)
+  // is exactly what every fresh single-client probe exercises.
+  //
+  // The honest condition: does this leg have a way to receive? If not, add one.
   const leg = s.sfu.getLeg(legId);
-  if (leg && leg.pc.getTransceivers().length === 0) leg.pc.addTransceiver("audio", { direction: "recvonly" });
+  if (leg && !leg.pc.getTransceivers().some((t: { direction?: string }) =>
+        t.direction === "recvonly" || t.direction === "sendrecv")) {
+    leg.pc.addTransceiver("audio", { direction: "recvonly" });
+  }
   await s.sfu.negotiate(legId, async (pc) => {
     // Tell the client which speaker each new track carries BEFORE the offer
     // lands, so its ontrack can pair them in arrival order (see voicesfu.js).
