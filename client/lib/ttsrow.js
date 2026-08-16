@@ -116,7 +116,21 @@ export function ttsSection(host, onPaint = () => {}) {
       _inFlight = id;
       // The loading row + clock, for EVERY path into a load.
       _loadingId = id;
+      // 🔴 SHOW THE VOICE'S NAME, NOT ITS ID (R, 2026-08-16: "it says 'loading'
+      // with a huuuuge hash next to it"). Stored voices are keyed by CONTENT
+      // DIGEST — `sha256:<16 hex>+<16 hex>` (voicestore.js:82) — so stripping
+      // the file:/ep: prefixes left the raw hash on screen. Those prefixes only
+      // ever covered the two import paths; a voice loaded from the list has
+      // neither, which is the common case and the one nobody looked at.
+      //
+      // The list already knows the human name, so ask it. Falls back to the
+      // stripped id for a voice not yet in the list (mid-import), which is
+      // exactly when file:/ep: DO apply.
       _loadingName = id.replace(/^file:/, '').replace(/^ep:/, '');
+      void collectVoices().then((vs) => {
+        const hit = vs.find((v) => v.id === id);
+        if (hit?.name && _loadingId === id) { _loadingName = hit.name; build(); }
+      }).catch(() => { /* keep the fallback */ });
       _loadingSince = Date.now();
       build();
       try {
