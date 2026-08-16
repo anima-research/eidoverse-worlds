@@ -174,3 +174,17 @@ difference without measuring.
 Matched by hand for now. **The real fix is spacing tokens both panels read**,
 which belongs in the UI redesign R has already said is coming — building it
 today would touch every panel and then be thrown away.
+
+## 🔴 "Fixed by a reload" — three times on 2026-08-16
+
+Three separate "bugs" this session were a page running stale modules:
+the /audio tally that appeared missing, the `— last event:` string that proved
+an old chat.js, and STT that "stopped working" and returned after a reload.
+
+Cause is structural, not carelessness: the world server was restarted **eleven
+times** in one session and each restart serves new code to pages that never
+re-import it. A long-lived tab drifts arbitrarily far from the tree.
+
+Mitigation shipped: `/audio` ends with `build: <stamp>`. A report whose stamp is
+not current is a stale page, and the correct response is "reload", not
+debugging. **Check the stamp before believing any other field.**

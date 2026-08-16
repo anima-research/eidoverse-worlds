@@ -39,6 +39,11 @@ GROUPS = {
         "tools/audio-unlock-test.mjs",
         "tools/ice-stall-report-test.mjs",  # ICE stall reporter
         "tools/sfu-ice-cred-probe.mjs",     # STUN arrives with the credential
+        # the synth lane: TTS publishes with the mic off (2026-08-16 pm)
+        "client/lib/voicesource.js",
+        "tools/tts-publishes-mic-off-test.mjs",
+        "tools/synth-hook-broadcast-test.mjs",
+        "tools/mic-resume-after-synth-test.mjs",
     ],
     "C.door": ["mcpl/agent.ts", "mcpl/net-server.ts"],
     "D.mic-HUD": [
@@ -55,7 +60,13 @@ GROUPS = {
                 "tools/ttsrow-select-test.mjs"],
     "F.tts": ["client/lib/tts.js", "client/lib/tts-chunk.js",
               "client/lib/ttsrow.js", "client/lib/engine-piper.js",
-              "tools/tts-blocking-probe.mjs"],
+              "tools/tts-blocking-probe.mjs",
+              # the afternoon's TTS panel work
+              "client/lib/voiceconsent.js",          # volume prefs + defaults
+              "tools/self-tts-gain-test.mjs",
+              "tools/sidetone-gain-live-test.mjs",
+              "tools/tts-import-order-test.mjs",
+              "tools/tts-mic-precedence-test.mjs"],
     # /audio diagnostics + the STT findings. Its own group because it is a
     # DEBUGGING surface, not a feature: a reviewer should be able to take or
     # leave it independently of the audio work it was built to investigate.
@@ -63,7 +74,8 @@ GROUPS = {
                       "tools/audio-report-test.mjs"],
     # Written this session; they document decisions rather than change behaviour.
     "K.notes": ["notes/DECISION-android-captions.md", "notes/PR-SPLIT-AUDIT.md",
-                "notes/pr-split-coverage.py", "tools/tts-threading-bench.mjs"],
+                "notes/pr-split-coverage.py", "tools/tts-threading-bench.mjs",
+                "notes/NEXT-barge-in.md"],
     "G.headers": ["server/routes.ts"],   # + tools/tts-threading-bench.mjs measures it (K)
     "H.join": ["client/lib/net.js", "tools/join-check.mjs",
                "tools/join-negative-control.mjs", "tools/join-probe.mjs",
