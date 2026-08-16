@@ -364,6 +364,15 @@ export function sfuDiagClient() {
     active: sfuActive(),
     identity: cred?.identity ?? null,
     micPublished: sfuMicOn(),
+    // 🔴 THE RAW ICE/CONNECTION STATES, not just the derived boolean (added
+    // 2026-08-16). `active` collapses to false for a peer that is still
+    // 'checking', one that has 'failed', and one that never existed — three
+    // different problems with three different fixes, reported as one bit. The
+    // morning's phone bug was a peer stuck in 'checking' forever, and nothing
+    // in this blob could say so.
+    iceConnectionState: pc?.iceConnectionState ?? null,
+    connectionState: pc?.connectionState ?? null,
+    iceGatheringState: pc?.iceGatheringState ?? null,
     speakers: [...speakers.entries()].map(([id, s]) => ({ id, hasStream: !!s.stream })),
   };
 }

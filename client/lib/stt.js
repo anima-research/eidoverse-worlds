@@ -36,6 +36,8 @@ let rec = null;
 let wanted = false;
 let uttSeq = 0;                 // one id per transcribed utterance (log plane)
 export const sttOn = () => wanted;
+// Readable from /audio on a device with no console.
+try { window.__sttOn = () => wanted; } catch { /* no window */ }
 export const sttAvailable = () => !!(window.SpeechRecognition ?? window.webkitSpeechRecognition);
 
 export function setSTT(on) {
@@ -106,12 +108,18 @@ export function setSTT(on) {
   //   network       — the recognizer is Google's, not local; it can fail while
   //     the rest of the page's connectivity is perfectly healthy.
   let sawAudio = false;
-  rec.onaudiostart = () => { sawAudio = true; };
+  // 🔴 The phone has no console, so the last event has to be READABLE from the
+  // page itself — /audio prints it. Without this, "recognition never started"
+  // and "started and heard nothing" are the same observation: silence.
+  const mark = (what) => { try { window.__sttLast = what; } catch { /* no window */ } };
+  rec.onaudiostart = () => { sawAudio = true; mark('audio reached the recognizer'); };
   rec.onstart = () => {
+    mark('started');
     // Give it a beat: if recognition starts but never receives audio, that is
     // the contention signature and it is otherwise invisible.
     setTimeout(() => {
       if (wanted && !sawAudio) {
+        mark('started but NO audio after 4s (mic contention?)');
         flashHint('captions: recognition started but no audio reached it — '
           + 'another app or tab may hold the microphone');
         report('stt', 'started but onaudiostart never fired (mic contention?)');
@@ -119,6 +127,7 @@ export function setSTT(on) {
     }, 4000);
   };
   rec.onerror = (e) => {
+    mark(`error: ${e.error}`);
     if (e.error === 'no-speech' || e.error === 'aborted') return;   // ordinary silence
     report('stt', e.error);
     const said = {

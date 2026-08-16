@@ -470,6 +470,61 @@ function acceptAC() {
 
 // ---- commands ---------------------------------------------------------------
 
+/** What this device actually knows about its own audio, for a person with no
+ *  console. Every line is READ LIVE at call time — a cached "we connected"
+ *  claim is exactly what this exists to get past. Each probe is individually
+ *  guarded: a missing subsystem must print "unknown", never take the report
+ *  down with it (a diagnostic that throws is worse than none). */
+function audioReport() {
+  const L = [];
+  const probe = (label, fn) => {
+    try { L.push(`${label}: ${fn()}`); }
+    catch (e) { L.push(`${label}: unreadable (${(e?.message ?? e)})`); }
+  };
+
+  probe('transport', () => window.__voiceTransport ?? '(none — voice never initialised)');
+  probe('mic', () => {
+    const on = typeof window.__sfuMicOn === 'function' ? window.__sfuMicOn() : null;
+    return on === null ? 'unknown (no sfu bridge)' : (on ? 'ON' : 'off');
+  });
+  // The peer connection's own view — the only honest answer to "is there a
+  // media path", and the thing that was stalling in 'checking' this morning.
+  probe('ice', () => {
+    const d = typeof window.relayDiag === 'function' ? window.relayDiag() : null;
+    if (!d) return 'unknown (no diag)';
+    return `${d.iceConnectionState ?? '?'} / conn=${d.connectionState ?? '?'}`;
+  });
+  probe('speakers', () => {
+    const d = typeof window.relayDiag === 'function' ? window.relayDiag() : null;
+    const s = d?.speakers ?? d?.peers;
+    if (!s) return 'unknown';
+    // sfuDiagClient returns [{id, hasStream}] — name each one and whether a
+    // track actually landed, since "attached but no stream" is its own bug.
+    const list = (Array.isArray(s) ? s : Object.entries(s).map(([id, v]) => ({ id, ...v })))
+      .map((x) => (typeof x === 'string' ? x : `${x.id}${x.hasStream === false ? '(no stream)' : ''}`));
+    return list.length ? `${list.length} — ${list.join(', ')}` : 'none attached';
+  });
+  // Playback is the half that failed silently on Android: packets arrive, the
+  // <audio> element refuses to start, and nothing anywhere says so.
+  probe('playback', () => {
+    const els = document.querySelectorAll('audio');
+    if (!els.length) return 'no <audio> elements yet';
+    let playing = 0, paused = 0;
+    for (const a of els) (a.paused ? paused++ : playing++);
+    return `${els.length} element(s) — ${playing} playing, ${paused} PAUSED`
+      + (paused ? '  ← tap the page to unlock' : '');
+  });
+  probe('captions', () => {
+    const has = !!(window.SpeechRecognition ?? window.webkitSpeechRecognition);
+    if (!has) return 'no SpeechRecognition in this browser';
+    return `${window.__sttOn?.() ? 'ON' : 'off'}`
+      + (window.__sttLast ? ` — last event: ${window.__sttLast}` : ' — no events yet');
+  });
+  probe('secure', () => `${window.isSecureContext} · isolated=${window.crossOriginIsolated}`);
+
+  return 'audio ▸ ' + L.join('  ·  ');
+}
+
 function runCommand(raw) {
   const [cmd, ...rest] = raw.slice(1).split(/\s+/);
   const arg = rest.join(' ');
@@ -509,6 +564,17 @@ function runCommand(raw) {
     case 'debug':
       // /debug [n] — the world's flight recorder: why things bounced
       bus.emit('command', { cmd: 'debug', arg });
+      return true;
+    case 'audio': case 'voicecheck':
+      // 🔴 /audio — the phone's own console (R, 2026-08-16: "maybe you can
+      // temporarily add a chatlog command that can return something?").
+      //
+      // Android Chrome has no on-device console, so every mobile-only voice bug
+      // this morning was diagnosed by me guessing and her testing. The page
+      // already knows all of this; it just had nowhere to say it. Answers
+      // LOCALLY (logChat, not the world) — it is a self-report, and nobody else
+      // in the room needs to read someone's mic diagnostics.
+      logChat('*', audioReport());
       return true;
     case 'use': case 'pull': case 'ring': case 'open':
       // /use <thing> [action] — the universal interact. The aliases are the
