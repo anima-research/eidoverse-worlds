@@ -14,6 +14,23 @@
 import { report } from './core.js';
 import { sendVerb } from './net.js';
 import { flashHint } from './ui.js';
+// The mic's real state — this module's capture must never outlive it.
+//
+// 🔴 ASK WHICHEVER TRANSPORT IS ACTUALLY RUNNING. voice.js's `micOn()` reads
+// the MESH's module-level micStream, which is null forever on an SFU client —
+// so importing it directly made this guard permanently false and STT
+// permanently off (R, 2026-08-15: "I toggled it on and now it's just
+// perma-off"). That is the same defect the mic BUTTON had: state read from one
+// transport while another is live. One helper, asked in transport order.
+import { micOn as meshMicOn } from './voice.js';
+function micIsLive() {
+  try {
+    // SFU first: on relay-spike it is the default, and its bridge publishes
+    // __sfuMicOn only when that transport actually initialised.
+    if (typeof window.__sfuMicOn === 'function') return !!window.__sfuMicOn();
+    return !!meshMicOn();
+  } catch { return false; }   // unreadable state = not live = stay silent
+}
 
 let rec = null;
 let wanted = false;
@@ -42,11 +59,34 @@ export function setSTT(on) {
       // 🎙 glyph + moving mouth); this is the written record arriving after,
       // so it must never re-perform the utterance as a fresh speech event.
       // Same doctrine as the agent voice's spoken:true. (R, 23:30)
+      // 🔴 GATE THE EMIT TOO, not only the restart. A result can be delivered
+      // after the mic went off (recognition is async and Chrome buffers), and
+      // one leaked line is a private sentence in a public log — the failure is
+      // not recoverable by fixing the next one. Two checks, because `wanted`
+      // is our intent and `micOn()` is the world's reality; a disagreement
+      // between them must resolve to silence.
+      if (!wanted || !micIsLive()) continue;
       if (text) sendVerb('say', { text: `🎙 ${text}`, voiced: true, spoken: true, utt: ++uttSeq });
     }
   };
-  // Chrome ends recognition on silence — restart while still wanted
-  rec.onend = () => { if (wanted) { try { rec.start(); } catch (err) { report('stt restart', err); } } };
+  // Chrome ends recognition on silence — restart while still wanted.
+  //
+  // 🔴 AND ONLY WHILE THE MIC IS ACTUALLY ON (R, 2026-08-15, live and costly).
+  // `wanted` alone is not enough: SpeechRecognition holds its OWN microphone,
+  // independent of the WebRTC track, so a mic that is off — or that never
+  // managed to publish at all — leaves this loop transcribing the room and
+  // saying it into the world log, and shipping the audio to the browser
+  // vendor's recognizer. R's mic button read OFF while a private conversation
+  // with her sister went into the log as `🎙 …` lines. The auto-restart made
+  // it un-stoppable by muting: every silence timeout revived it.
+  //
+  // The mic toggle is the one control a person believes governs their
+  // microphone. It must govern EVERY capture, not just the one WebRTC owns.
+  // Fails closed: if micOn cannot be read, we stop rather than continue.
+  rec.onend = () => {
+    if (wanted && micIsLive()) { try { rec.start(); } catch (err) { report('stt restart', err); } }
+    else if (wanted) { wanted = false; rec = null; report('stt', 'stopped: mic is off'); }
+  };
   rec.onerror = (e) => { if (e.error !== 'no-speech' && e.error !== 'aborted') report('stt', e.error); };
   try { rec.start(); } catch (e) { report('stt', e); wanted = false; }
 }
