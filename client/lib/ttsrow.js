@@ -470,7 +470,16 @@ export function ttsSection(host, onPaint = () => {}) {
       // do next — the rows below ARE what to do next, and a note pointing at them
       // was the second "add a voice below" R found. Empty when there is nothing to
       // report: a row with nothing to say should be quiet.
-      `${_busy || (_needVoice ? 'add a voice with one of the options below'
+      // 🔴 SAY IT IS IN FLIGHT, ON THIS LINE (R, 2026-08-16: "maybe put a
+      // 'loading...' next to the checkbox line so people know it's in flight").
+      // _busy carries the engine's own phase text once loading starts, but
+      // there is a gap between the tick and the first phase report where the
+      // line said "ready" — i.e. it claimed the voice was available while a
+      // 63MB graph was still downloading. _loadingId is set for EVERY path into
+      // a load, so it closes that gap; the engine's phase text still wins once
+      // it arrives, because it says more.
+      `${_busy || (_loadingId ? `loading ${_loadingName || 'voice'}…`
+        : _needVoice ? 'add a voice with one of the options below'
         : live ? ttsVoiceName() : ttsAvailable() ? 'ready' : '')}</span>` +
       `</span>`;
     head.querySelector('input').onchange = async (e) => {
@@ -574,7 +583,28 @@ export function ttsSection(host, onPaint = () => {}) {
         items, selected: _selected, busy: _busy,
         // The in-flight import, shown as a ghost row with a running clock.
         loading: _loadingId ? { id: _loadingId, name: _loadingName, since: _loadingSince, status: _busy } : null,
-        on: { select: pick, remove, addFile, addEndpoint },
+        // 🔴 MARKING IS NOT LOADING (R, 2026-08-16: "when someone selects a
+        // model radio button and the checkbox isn't checked, can you *not*
+        // load the model yet?"). The comment above claimed marking was display
+        // only — it was not: `select` called pick(), which imports the engine
+        // and pulls a ~63MB graph. So glancing at the list cost a download.
+        //
+        // Now the radio only MARKS while TTS is off; the load happens when the
+        // checkbox is ticked, which already honours the visible selection. If
+        // TTS is already ON this is a live switch between voices and must load
+        // immediately — otherwise the dot would say one thing and the speaker
+        // another, which is the display-vs-reality split this file keeps
+        // fixing.
+        on: {
+          select: (id) => {
+            if (id === '__pending') return pick(id);   // resuming IS the ask
+            if (isTtsEnabled()) return pick(id);       // live switch: load now
+            _selected = id;
+            try { localStorage.setItem('eido.tts.lastVoice', id); } catch { /* private mode */ }
+            build();
+          },
+          remove, addFile, addEndpoint,
+        },
       });
     });
   }
