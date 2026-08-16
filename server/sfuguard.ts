@@ -54,27 +54,45 @@ function isBenignTransportError(err: unknown): boolean {
 
 /** Preserve the crash site ourselves. A bare `throw` inside the handler loses
  *  the original stack on Bun, which is worse than not guarding at all. */
-function dieLoudly(err: unknown, kind: string): never {
-  console.error(`\n[sfu] FATAL (${kind}) — not a transport error, crashing:`);
+function reportFatal(err: unknown, kind: string, onFatal?: (e: unknown, k: string) => void) {
+  console.error(`\n[sfu] FATAL (${kind}) — not a benign transport error:`);
   console.error(err instanceof Error && err.stack ? err.stack : err);
-  process.exit(1);
+  fatals++;
+  // The supervisor decides what this means for VOICE. The world server keeps
+  // serving text, presence and builds regardless — see the doc above.
+  try { onFatal?.(err, kind); } catch { /* a supervisor that throws must not recurse */ }
 }
+let fatals = 0;
+export const transportFatals = () => fatals;
 
-/** Idempotent: safe to call from every Sfu constructor. */
-export function installSfuTransportGuard() {
+/** 🔴 EXPLICIT, NOT A CONSTRUCTOR SIDE EFFECT (independent review, 2026-08-16).
+ *  This was called from the Sfu constructor, so CONSTRUCTING AN SFU silently
+ *  replaced process-wide crash semantics for an entire world server that
+ *  otherwise installs no such handlers — upstream has none. A voice subsystem
+ *  must not decide what happens to unrelated failures.
+ *
+ *  Now: server.ts calls it once, at boot, with a log line. Same protection,
+ *  visible in the place that owns the process.
+ *
+ *  It also no longer EXITS on a non-transport error. Killing the world server —
+ *  text, presence, builds, everyone — because voice hit an unexpected exception
+ *  is a bigger outage than the one it prevents. It reports, marks voice
+ *  degraded through the supervisor, and lets the process live. */
+export function installSfuTransportGuard(onFatal?: (err: unknown, kind: string) => void) {
   if (installed) return;
   installed = true;
+  console.log("[sfu] transport guard installed (werift UDP errno swallowing)");
 
   process.on("uncaughtException", (err) => {
     if (isBenignTransportError(err)) { swallowed++; return; }
-    dieLoudly(err, "uncaughtException");
+    reportFatal(err, "uncaughtException", onFatal);
   });
 
   // Separate handler: a rejection is not an exception, and the benign case here
   // is narrower — werift's send path can reject with the same errnos.
   process.on("unhandledRejection", (reason) => {
     if (isBenignTransportError(reason)) { swallowed++; return; }
-    dieLoudly(reason, "unhandledRejection");
+    reportFatal(reason, "unhandledRejection", onFatal);
   });
 }
 

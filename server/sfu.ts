@@ -95,7 +95,8 @@ export class Sfu {
   constructor(private opts: { onNegotiationNeeded?: (legId: string) => void } = {}) {
     // werift leaves its UDP socket's 'error' unbound, which crashes the process
     // when a peer dies mid-fanout. See sfuguard.ts — narrow by design.
-    installSfuTransportGuard();
+    // (the transport guard is installed once by server.ts at boot — a
+    // constructor must not change process-wide crash semantics)
   }
 
   /** Last known world position per leg, and when we heard it. */

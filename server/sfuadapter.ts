@@ -23,7 +23,7 @@
 //     secrets to a browser or resident tool surface" is satisfied vacuously.
 import { currentIncarnation } from "./transport.ts";
 import { Sfu } from "./sfu.ts";
-import { admitParticipant, applyConsentUpdate, nextIncarnation,
+import { admitParticipant, applyConsentUpdate, nextIncarnation, relayIdentity,
   type RelayClaims, type LiveLegState } from "./relaydecision.ts";
 
 export type SfuWorldState = {
@@ -113,7 +113,11 @@ export function mintSfuCredential(world: string, id: string, primaryGen: number,
   // not a peer connection.
   s.sfu.createLeg(id, mediaGen);
   applyStandingConsent(s, id);   // consent given before this leg existed still counts
-  return { nonce, incarnation: s.incarnation, identity: `${id}#${mediaGen}`,
+  // world/id/primaryGen ride along so the client can PRESENT the full claim set
+  // on its next authenticated act (amendment 1). Without them the client could
+  // only echo a nonce, and admitParticipant checks six things besides the nonce.
+  return { nonce, incarnation: s.incarnation, identity: relayIdentity(id, mediaGen),
+           world, id, primaryGen, mediaGen,
            transport: "sfu" as const, iceServers: iceServers() };
 }
 
@@ -160,6 +164,29 @@ function iceServers(): { urls: string; username?: string; credential?: string }[
 /** Admission — amendment 1's seven refusals, decided by the SHARED decision
  *  layer. Synchronous here because we are the SFU: there is no third party to
  *  ask and no webhook to wait for. */
+/** Add `useinbandfec=1` (and keep DTX off — a silence-suppressed stream and a
+ *  dead one are indistinguishable to a listener, and our proximity gate already
+ *  decides who is worth sending). Idempotent: an fmtp line that already asks
+ *  for FEC is left alone rather than accumulating duplicate params. */
+export function withOpusFec(sdp: string): string {
+  const pt = /a=rtpmap:(\d+)\s+opus\/48000/i.exec(sdp)?.[1];
+  if (!pt) return sdp;                       // no opus offered — nothing to ask for
+  const fmtp = new RegExp(`a=fmtp:${pt} ([^\r\n]*)`);
+  const m = fmtp.exec(sdp);
+  if (!m) return sdp.replace(new RegExp(`(a=rtpmap:${pt}\\s+opus/48000[^\r\n]*)`),
+                             `$1\r\na=fmtp:${pt} useinbandfec=1`);
+  if (/useinbandfec=1/.test(m[1])) return sdp;
+  return sdp.replace(fmtp, `a=fmtp:${pt} ${m[1]};useinbandfec=1`);
+}
+
+/** The sequencer's live view of an identity, for the admission gate. */
+export function liveLegState(world: string, id: string, primaryGen?: number): LiveLegState {
+  const s = sfuState(world);
+  const leg = s.legs.get(id);
+  return { world, incarnation: s.incarnation, primaryGen,
+           mediaGen: leg?.gen, usedNonces: s.usedNonces };
+}
+
 export function admitSfuLeg(world: string, claims: RelayClaims, live: LiveLegState) {
   const s = sfuState(world);
   const verdict = admitParticipant(claims, { ...live, usedNonces: s.usedNonces });
@@ -318,7 +345,16 @@ export async function sfuNegotiate(world: string, legId: string,
     for (const speakerId of s.sfu.routesFor(legId)) send({ type: "sfu-route", speaker: speakerId });
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    send({ type: "sfu-offer", sdp: pc.localDescription!.sdp });
+    // 🔴 ASK FOR FEC EXPLICITLY (#104 §8 item 4, "steal Basis's Opus
+    // discipline"). We forward ENCODED Opus and never decode it, so the
+    // BROWSER's encoder owns in-band FEC end-to-end — Chromium enables it by
+    // default, which is why this worked without ever being requested. But
+    // "works by default" is not a contract: a default can change, and a browser
+    // that does not enable it fails silently and identically to packet loss.
+    // Stating useinbandfec=1 in the fmtp makes it an agreed parameter rather
+    // than a hope, and the client already measures fecPacketsReceived so the
+    // claim has an instrument at the other end.
+    send({ type: "sfu-offer", sdp: withOpusFec(pc.localDescription!.sdp) });
     const sdp = await new Promise<string>((resolve, reject) => {
       waiting.set(wkey(world, legId), resolve);
       // A browser that never answers must not wedge the leg's promise chain

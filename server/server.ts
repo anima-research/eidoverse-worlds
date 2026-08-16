@@ -44,10 +44,12 @@ import { OPT_DIR } from "./config.ts";
 // Relay-floor spike (#104 phase 1): the LiveKit adapter. Inert without
 // RELAY_URL — the mesh stays the production path (amendment 6).
 import { relayEnabled, bootIncarnation, currentIncarnation, voiceTransport } from "./transport.ts";
+import { installSfuTransportGuard } from "./sfuguard.ts";
+import { onVoiceServiceChange, markVoiceDegraded, voiceServiceState } from "./sfusupervisor.ts";
 // The in-process SFU (VOICE_TRANSPORT=sfu). Same surface as the LiveKit
 // adapter, so every call site below branches on transport rather than on shape.
 import { mintSfuCredential, setSfuConsent, revokeSfuLeg, sfuDiag,
-  sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition, registerSfuSender } from "./sfuadapter.ts";
+  sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition, registerSfuSender, admitSfuLeg, liveLegState } from "./sfuadapter.ts";
 const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR);
 
 // The resident-visible service chart (amendment 2): every voice-service
@@ -58,6 +60,24 @@ const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR);
 // old credential structurally instead of resetting the counter to i1- (which is
 // what sfuadapter.ts did by passing a hardcoded null prev).
 bootIncarnation(OPT_DIR);
+
+// 🔴 THE TRANSPORT GUARD IS INSTALLED HERE, ONCE, not as a side effect of
+// constructing an Sfu (independent review 2026-08-16: a voice subsystem must
+// not silently change process-wide crash semantics for a world server). It no
+// longer exits either — a non-benign voice fault marks VOICE degraded and
+// leaves text, presence and builds serving.
+installSfuTransportGuard((err, kind) => markVoiceDegraded(`${kind}: ${String(err).slice(0, 120)}`));
+
+// Amendment 2: voice service state is broadcast to every client of every world,
+// stamped with the incarnation so a client can tell "the service restarted"
+// from "it flapped". A restart advances the DURABLE incarnation, which is what
+// makes every prior credential structurally stale — clients do one clean fresh
+// join rather than resurrecting a leg the server has forgotten.
+onVoiceServiceChange((state, incarnation, why) => {
+  const msg = JSON.stringify({ type: "voice-service", state, incarnation, reason: why });
+  for (const w of worlds.values()) for (const t of w.clients) t.ws.send(msg);
+  console.log(`[sfu] voice-service ${state} (${incarnation})`);
+});
 
 // NOTE: there is no external service to probe, so there is no voice-service
 // state machine and no leg-retired webhook. The in-process SFU cannot outlive
@@ -1018,16 +1038,34 @@ const server = Bun.serve({
           // keeps the PRIMARY'S `c.id` (:509 sets spectator from surface, it does
           // not rename), so without this check any such socket reaches a real
           // participant's SFU leg. Found by an independent reviewer, 2026-08-16.
-          //
-          // sfu-pos was the sharp one: writing a distant position for someone
-          // else's id moves them out of every listener's proximity gate — a
-          // REMOTE MUTE available to any connected client. The old comment here
-          // reasoned only about withholding one's own data ("cannot silence
-          // someone by withholding"), which is true and answers the wrong threat:
-          // the risk is FORGING another identity's data, not omitting your own.
           if (c.spectator || (c.surface ?? "world") !== "world") return;
-          if (typeof msg.sdp !== "string" || msg.sdp.length > 20000) return;
-          sfuAcceptAnswer(c.world.name, c.id, msg.sdp);
+          // 🔴 AMENDMENT 1's SEVEN REFUSALS, ACTUALLY RUN (2026-08-16).
+          // admitSfuLeg implemented all seven and had NO CALLER outside its own
+          // test, and the client never returned its nonce — so usedNonces was
+          // never populated and "the refusals hold under our transport" was a
+          // claim about code that did not execute. This is the first
+          // authenticated act after the credential is issued, so it is where
+          // admission belongs: the server offers, the client answers, and the
+          // answer must prove it is the leg the credential was minted for.
+          {
+            const cl = (msg as { cred?: Record<string, unknown> }).cred;
+            const verdict = cl
+              ? admitSfuLeg(c.world.name, {
+                  world: String(cl.world ?? ""), id: String(cl.id ?? ""),
+                  primaryGen: Number(cl.primaryGen ?? -1), mediaGen: Number(cl.mediaGen ?? -1),
+                  incarnation: String(cl.incarnation ?? ""), nonce: String(cl.nonce ?? ""),
+                }, liveLegState(c.world.name, c.id, c.gen))
+              : { admit: false as const, reason: "no credential presented" };
+            if (!verdict.admit) {
+              console.warn(`[sfu] answer REFUSED for ${c.id}: ${verdict.reason}`);
+              ws.send(JSON.stringify({ type: "error", error: `voice leg refused: ${verdict.reason}` }));
+              revokeSfuLeg(c.world.name, c.id);
+              return;
+            }
+          }
+          const sdp = String(msg.sdp ?? "");
+          if (sdp.length > 20000) return;
+          void sfuAcceptAnswer(c.world.name, c.id, sdp);
           return;
         }
         case "sfu-ice": {
@@ -1166,7 +1204,7 @@ const server = Bun.serve({
               id: c.id, surface: "voice-relay", gen: mediaGen, retired: null });
             for (const t of c.world.clients) if (t !== c) t.ws.send(transition);
             ws.send(JSON.stringify({ type: "relay-cred", ...cred, gen: mediaGen,
-              service: { enabled: true, state: "live", transport: "sfu" } }));
+              service: { enabled: true, ...voiceServiceState(), transport: "sfu" } }));
             return;
           }
         }

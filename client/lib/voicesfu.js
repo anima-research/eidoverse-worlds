@@ -206,7 +206,12 @@ export async function sfuOnOffer(sdp, send) {
   await pc.setRemoteDescription({ type: 'offer', sdp });
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
-  send({ type: 'sfu-answer', sdp: answer.sdp });
+  // 🔴 PRESENT THE CREDENTIAL (amendment 1). The nonce was minted, handed to
+  // us, and never sent back — so the server's replay check had nothing to
+  // check and usedNonces was never populated in production. The seven refusals
+  // existed and could not run. An admission gate the client never addresses is
+  // not a gate.
+  send({ type: 'sfu-answer', sdp: answer.sdp, cred: _cred });
 }
 
 export async function sfuOnIce(candidate) {
