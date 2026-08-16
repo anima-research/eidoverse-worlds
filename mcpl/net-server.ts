@@ -241,8 +241,25 @@ class Session {
    *  replaces the first, because two publishers for one identity is the
    *  double-speak bug (#57's whole premise) wearing a new hat. */
   private mediaSock: WebSocket | null = null;
+  /** The listener handle, so session teardown can actually release the port.
+   *  🔴 It used to be discarded (2026-08-16). Bun.serve()'s return value was
+   *  thrown away, no field held it, and session.close() therefore had nothing
+   *  to close — so the bridge outlived every session BY CONSTRUCTION. The
+   *  first session bound :8931 and worked; when it ended the listener stayed;
+   *  every reconnect after that died on `Failed to start server. Is port 8931
+   *  in use?` — the door failing to bind a port the door itself was holding.
+   *  Observed as an hour of working voice, then a permanent crash loop with a
+   *  5-second period and no audio at all. */
+  private mediaServer: { stop: (closeActiveConnections?: boolean) => void } | null = null;
+
   private startMediaBridge(port: number) {
-    Bun.serve({
+    // Idempotent: a re-entry must not try to bind a port we already hold.
+    if (this.mediaServer) {
+      console.log(`[door] media bridge already listening on :${port} — reusing`);
+      return;
+    }
+    try {
+    this.mediaServer = Bun.serve({
       port, hostname: "127.0.0.1",
       fetch: (req, srv) => srv.upgrade(req) ? undefined : new Response("media bridge: websocket only", { status: 426 }),
       websocket: {
@@ -273,7 +290,22 @@ class Session {
         },
         close: (ws) => { if (this.mediaSock === (ws as never)) this.mediaSock = null; },
       },
+      // A bind failure must not be fatal to the SESSION. Before, the throw
+      // escaped into session.serve()'s catch and ended the connection outright
+      // — so a leaked listener cost the agent its whole seat (text included),
+      // not just its voice. The door is still useful mute.
+      error: (e: Error) => { console.warn("[door] media bridge error:", e.message); return undefined; },
     });
+    } catch (e) {
+      // 🔴 A BIND FAILURE IS A MUTE DOOR, NOT A DEAD ONE. This used to throw
+      // out of the session setup path into session.serve()'s catch, ending the
+      // whole MCPL connection — so a stuck port cost the agent its text seat
+      // too, and the reconnect loop that followed made it look like the world
+      // was rejecting us. Log it, stay up, speak later.
+      this.mediaServer = null;
+      console.warn(`[door] media bridge could NOT bind :${port} (${(e as Error).message}) — continuing WITHOUT a voice; text is unaffected`);
+      return;
+    }
     // World → sidecar. Dropped when nothing is attached: the credential and
     // offers are meaningless without a peer to answer them, and the server
     // retires the leg on its own funnel.
@@ -295,6 +327,17 @@ class Session {
   close() {
     this.agent.close(); // deliberate death — stops the body's auto-reconnect
     this.conn.close();
+    // 🔴 RELEASE THE MEDIA PORT. Without this the listener outlives the
+    // session and the NEXT session cannot bind it — the door failing to bind a
+    // port the door still holds, forever, at the reconnect interval. Cost when
+    // it was missing: voice worked for one session, then eight hours of a
+    // 5-second crash loop that read as "the world is rejecting me."
+    // closeActiveConnections=true so a still-attached sidecar is dropped now,
+    // not left half-alive against a dead session.
+    if (this.mediaServer) {
+      try { this.mediaServer.stop(true); } catch (e) { console.warn("[door] media bridge stop:", (e as Error).message); }
+      this.mediaServer = null;
+    }
   }
 
   /**

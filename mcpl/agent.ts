@@ -486,6 +486,11 @@ export class WorldAgent {
           // for a credential, so the server never sends these.
           case "relay-cred": case "sfu-offer": case "sfu-ice": case "sfu-route":
           case "voice-consent":   // the world's ack of our own receive toggle
+          // A speaker's voice leg was (re)born. The media half needs this to
+          // restate consent — the server clears standing consent when a leg is
+          // revoked (deliberately: a reconnect must not inherit a yes), so
+          // after both sides reconnect nobody hears anybody and nothing errors.
+          case "surface-transition":
             this.onMedia?.(msg);
             break;
           case "snapshot":
