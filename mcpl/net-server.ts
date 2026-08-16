@@ -359,6 +359,9 @@ class Session {
     // after it: never move a body somewhere its host has refused to deliver.
     // A host that doesn't implement the inbound Request form, or doesn't
     // answer in time, is treated as DECLINING (fail-closed, §5.3).
+    // Captured BEFORE anything can reassign this.agent — the channel we are
+    // leaving, named while it is still the one we are in.
+    const leaving = `world:${this.agent.world}`;
     if (this.granted(CAP.channelsRegister)) {
       const proposed: ChannelDescriptor = {
         ...this.channelDescriptors()[0],
@@ -376,8 +379,21 @@ class Session {
       let accepted = false;
       try {
         const res = await Promise.race([
+          // 🔴 PREPARE ASKS; IT DOES NOT ANNOUNCE THE DEPARTURE (adversarial
+          // review, 2026-08-17). This carried `removed: [leaving]` — so a host
+          // that DECLINED, or simply answered slowly enough to hit the 5s
+          // timeout, had already been told its current channel was gone. The
+          // body then stays (JoinDeclined means nothing moved) while every
+          // later deliver() targets a channel the host believes is closed.
+          // That is the host-and-body-disagree failure this RFC exists to
+          // prevent, reintroduced on the refusal path — and reachable by a
+          // merely SLOW host, not only a rejecting one.
+          //
+          // A prepare is a question. The removal is stated on COMMIT, below,
+          // where it is true. §14.5's itemized results are per-ADDED-descriptor
+          // anyway: nothing about the answer needs `removed` to be present.
           this.conn.sendRequest(method.CHANNELS_CHANGED, {
-            added: [proposed], removed: [`world:${this.agent.world}`],
+            added: [proposed],
           }) as Promise<{ results?: { id: string; accepted?: boolean }[] }>,
           new Promise<never>((_, rej) => setTimeout(() => rej(new Error("host did not answer channels/changed")), 5_000)),
         ]);
@@ -430,6 +446,14 @@ class Session {
     await next.connect();
     this.epoch++;                      // the cutoff instant, after the fact of it
     this.foundedHere = founding;
+    // 🔴 NOW the departure is a fact, so now it can be stated. PREPARE above
+    // deliberately sends only `added` — a question must not assert a change it
+    // has not made. This is a NOTIFICATION, not a Request: the host has no
+    // veto over a move that has already happened, and asking for one would
+    // invite a "no" nothing can honour.
+    try {
+      this.conn.sendNotification(method.CHANNELS_CHANGED, { removed: [leaving] });
+    } catch { /* peer gone — the close path is already handling that */ }
     console.log(`[${ts()}] [mcpl:${this.auth.id}] joined world "${w}" epoch=${this.epoch}${founding ? " (FOUNDED)" : ""} (RFC-005)`);
     // §3.4 audit: a join is an authorization event, and on a found-on-attach
     // server a founding join is TWO. Logged with the permanence of an auth

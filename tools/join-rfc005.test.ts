@@ -355,10 +355,17 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   const joined = await roamer.request("tools/call", { name: "travel", arguments: { world: "annex" } });
   check("policied travel arrives", !joined.result?.isError && /(Arrived in|Founded and entered) "annex"/.test(txt(joined)), txt(joined));
   await sleep(800);
-  const changed = roamer.inbound.find((m) => m.method === "channels/changed");
+  // On a SUCCESSFUL travel the host learns both halves — but in two frames now,
+  // not one: the prepare asks (`added` only, so a question asserts nothing), and
+  // the commit states the departure once it is a fact. The old single-frame
+  // assertion was written against a prepare that claimed the removal up front,
+  // which is precisely the thing a declining host must never see (4f below).
+  const changedFrames = roamer.inbound.filter((m) => m.method === "channels/changed");
+  const addedAnnex = changedFrames.some((m) => m.params?.added?.[0]?.id === "world:annex");
+  const retiredCommons = changedFrames.some((m) => m.params?.removed?.includes("world:commons"));
   check("channels/changed retires old world, adds new",
-    changed?.params?.removed?.includes("world:commons") && changed?.params?.added?.[0]?.id === "world:annex",
-    JSON.stringify(changed?.params));
+    addedAnnex && retiredCommons,
+    JSON.stringify(changedFrames.map((m) => m.params)));
   const after = await roamer.request("channels/list", {});
   check("channels/list agrees the session moved", after.result?.channels?.[0]?.id === "world:annex", JSON.stringify(after.result));
   // …and the same-channel open keeps its old meaning post-travel. This is the
@@ -523,6 +530,20 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
     declined.result?.isError === true && /channel not permitted/.test(txt(declined)), txt(declined));
   const stillHome = await decliner.request("channels/list", {});
   check("declined join left the body where it was", stillHome.result?.channels?.[0]?.id === "world:commons", JSON.stringify(stillHome.result));
+  // 🔴 …AND THE HOST WAS NOT TOLD OTHERWISE (adversarial review, 2026-08-17).
+  // "nothing moved" was checked from the BODY's side only. The prepare Request
+  // used to carry `removed: ["world:commons"]`, so a declining host had already
+  // been told its current channel was gone — and then kept receiving deliveries
+  // on it. Host and body disagreeing about the roster is the exact failure
+  // RFC-005 exists to prevent, and it was reachable by a merely SLOW host
+  // (5s timeout), not only a rejecting one.
+  //
+  // A prepare is a question; it must not assert a change it has not made.
+  const prepareFrames = decliner.inbound.filter((m: any) =>
+    m.method === "channels/changed" && Array.isArray(m.params?.removed) && m.params.removed.length);
+  check("…and the host was never told its channel was removed",
+    prepareFrames.length === 0,
+    `saw ${prepareFrames.length} removal claim(s): ${JSON.stringify(prepareFrames.map((f: any) => f.params.removed))}`);
   decliner.ws.close();
 
   const mute = await connectHost("roamer-token", "", "mute");
