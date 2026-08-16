@@ -58,17 +58,47 @@ import { CONFIG } from './core.js';
 //
 // minmax(0,1fr) on the control column, not 1fr: the mic meter is flex:1 inside
 // it and a bare 1fr lets it push the grid wider than the panel.
+// 🔴 USE THE HOUSE TOKENS (R, 2026-08-16: "can you grab the slider/checkbox
+// color and styling and the text color/look from the 'sky' panel as
+// reference?").
+//
+// index.html:307-310 is that reference, and the whole of it is four lines
+// because it spends the palette in :root rather than inventing values:
+//     .row      { font-size: var(--fs-sm); color: var(--dim); }
+//     .row .nm  { color: var(--fg); }
+//     .row input[type=range] { accent-color: var(--accent); }
+//     .row .v   { color: var(--accent); }
+//
+// This panel hardcoded its own sizes and greys and used `opacity: .75` for
+// "dim" — which is not the same colour as --dim, just a washed-out version of
+// whatever it sits on. So the audio section read as a slightly different
+// application than the sky section, which is exactly what R noticed.
+//
+// Keeping the two-column grid (her spec, 08-14) and changing only the PAINT:
+// labels take --fg, hints and units take --dim, controls take --accent.
 const SP_CSS = `
 :root { --sp-label-col: 8.5rem; }
 .sp-row { display: grid; grid-template-columns: var(--sp-label-col) minmax(0, 1fr);
-          align-items: center; gap: 10px; margin: 5px 0; }
+          align-items: center; gap: 10px; margin: 5px 0;
+          font-size: var(--fs-sm); color: var(--dim); }
+/* The house accent, so a slider here and a slider in ☀ sky are the same object.
+   accent-color paints the thumb, the filled track AND the checkbox tick in one
+   property — which is why the sky panel needs no bespoke control CSS at all. */
+.sp-row input[type=range] { accent-color: var(--accent); }
+.sp-row input[type=checkbox] { accent-color: var(--accent); }
+/* The reading the value gives you: sky puts its readout in --accent (.row .v),
+   so the number you are steering is the brightest thing on the row. */
+.sp-row .sp-info { color: var(--accent); }
 /* 8.5rem, not the 5.5 I guessed: the longest label here is "connect to other
    people's audio" and a column narrower than its longest member does not make
    a centre line, it makes a ragged wrap. Labels wrap to two lines rather than
    overflowing, and the line still holds. */
-.sp-label { opacity: 0.75; text-align: right; line-height: 1.25; }
+/* --fg, not opacity: sky's .nm does this. An opacity of .75 is not a colour,
+   it is a wash over whatever is behind — so the label drifted with the panel
+   background instead of holding the palette's own foreground. */
+.sp-label { color: var(--fg); text-align: right; line-height: 1.25; }
 .sp-ctl { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.sp-note { opacity: .6; font-size: .9em; }
+.sp-note { color: var(--dim); }
 /* rows that are a label + a bare control (checkbox first in markup) still line
    up: the checkbox is the whole second column, left-justified against the line */
 .sp-row > input[type=checkbox] { justify-self: start; }

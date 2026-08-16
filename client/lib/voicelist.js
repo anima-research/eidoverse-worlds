@@ -31,7 +31,10 @@ const ROW = `
   overflow-y: auto; overscroll-behavior: contain; }
 .vl-row { display: flex; align-items: center; gap: 6px; padding: 2px 4px;
   border-radius: 3px; cursor: pointer; }
-.vl-row:hover { background: #2a2a2a; }
+/* --accent-dk is what the house uses for "this row is active/hovered"
+   (index.html: .card.on). #2a2a2a was a neutral grey borrowed from nowhere —
+   it read as a different application's hover. */
+.vl-row:hover { background: var(--accent-dk); }
 .vl-row .vl-x { opacity: 0; margin-left: auto; padding: 0 4px; border: 0;
   background: none; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; }
 /* The × appears on hover OR on keyboard focus — hover-only affordances are
@@ -56,10 +59,27 @@ const ROW = `
   transition: opacity .12s, box-shadow .12s; }
 .vl-radio.on { opacity: 1; box-shadow: inset 0 0 0 2.5px currentColor; }
 .vl-row:hover .vl-radio { opacity: .85; }
-.vl-add { margin-top: 4px; padding-left: 0; }
+/* 🔴 THE GAP UNDER THE HAIRLINE WAS DOUBLE-COUNTED (R, 2026-08-16: "the row
+   spacing between the graphic line above and the button below being a bit
+   odd"). .vl-verbs-start contributes padding-top:6px AND .vl-add contributed
+   margin-top:4px, so the first verb sat 10px below the rule while every other
+   row sat 2px apart — one gap built by two rules that did not know about each
+   other. The separator owns the space above the group; the row owns none. */
+/* 🔴 AND THE BUTTON'S OWN PADDING WAS LOPSIDED. .vl-row gives every row
+   2px 4px, but a voice row spends its left edge on the marker glyph
+   (12px + 6px gap) while an add-row starts at its own glyph — so identical
+   padding read as tight on the left and loose on the right, which is the
+   "weirdly spaced within that button" R saw. One declaration, symmetric, and
+   the noun/verb distinction is carried by the indent rule below rather than by
+   padding doing two jobs.
+   Written as ONE rule deliberately: a second .vl-add padding-left would be
+   silently overridden by this shorthand — dead CSS that reads as intentional
+   forever. */
+.vl-add { padding: 3px 6px; }
 .vl-row:not(.vl-add) { padding-left: 2px; }
-.vl-verbs-start { border-top: 1px solid currentColor; border-top-color: color-mix(in srgb, currentColor 15%, transparent); padding-top: 6px; }
-.vl-dim { opacity: .45; font-style: italic; }
+.vl-verbs-start { border-top: 1px solid var(--edge);
+  margin-top: 6px; padding-top: 6px; }
+.vl-dim { color: var(--dim); font-style: italic; }
 `;
 function ensureCss() {
   if (document.getElementById('vl-css')) return;
