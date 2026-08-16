@@ -314,7 +314,21 @@ function paint(body) {
     });
   _sync.hear = hearRow.querySelector('input');
   body_.append(hearRow);
+  // 🔴 TOGGLE, THEN ITS VOLUME (R, 2026-08-16: "you should probably move this
+  // between world volume and TTS volume to be consistent in this panel —
+  // usually it's toggle on/off then volume for a lot of these features").
+  //
+  // She is right, and the panel already read that way everywhere else: mic
+  // switch then mic sensitivity, hear-voices then the voice slider. The TTS
+  // model picker was the odd one out, stranded at the BOTTOM below the consent
+  // rows — so the one feature whose on/off is furthest from its volume was
+  // also the one with the most controls between them.
+  //
+  // Order is now: voice volume · world volume · [tts toggle + model list] ·
+  // text-to-speech volume. The slider that belongs to a switch sits under it.
+  const ttsHost = document.createElement('div');
   for (const [cat, label, hint] of ROWS) {
+    if (cat === 'tts') body_.append(ttsHost);   // the switch, immediately above its slider
     body_.append(slider(cat, label, hint,
       cat === 'world' ? p.volWorld : cat === 'tts' ? p.volTts : p.volVoices));
   }
@@ -360,10 +374,10 @@ function paint(body) {
   // controls — the voices you HAVE, next to the sliders that carry them.
   //
   // 🔴 ttsSection OWNS ITS HOST EXCLUSIVELY — build() does `host.textContent =
-  // ''` (ttsrow.js:346) on every rebuild. Handing it body_ meant it ERASED
-  // every row appended before it. Its own div, and the two coexist.
-  const ttsHost = document.createElement('div');
-  body_.append(ttsHost);
+  // ''` on every rebuild. Handing it body_ meant it ERASED every row appended
+  // before it. Its own div, and the two coexist. (The div is created and
+  // POSITIONED above, beside the tts volume slider; only the wiring is here,
+  // after every row exists, so the section can measure the grid gutter.)
   ttsSection(ttsHost, () => {});
 }
 

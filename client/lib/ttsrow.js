@@ -416,6 +416,32 @@ export function ttsSection(host, onPaint = () => {}) {
       row.textContent = text || '';
       return true;
     }
+
+    /** 🔴 THE TICK CHANGES TWO THINGS, SO WRITE TWO THINGS (R, 2026-08-16:
+     *  "looks like panel is tearing down when you click the text-to-speech
+     *  model checkbox").
+     *
+     *  Same defect as the audio panel's, one file over: the checkbox handler
+     *  called repaint() → build() → host.textContent = '', destroying and
+     *  recreating the whole section for a state change that touches a label's
+     *  opacity and a note's text. My teardown probe missed it because it
+     *  clicked 'hear voices' — a probe proves the path it walks and nothing
+     *  else, and I let a green light stand for the panel as a whole.
+     *
+     *  Returns false if the nodes are not there yet, so callers keep their
+     *  build() fallback and a first paint still works. */
+    function syncHead() {
+      const label = host.querySelector('.sp-row .sp-label');
+      const note = host.querySelector('.sp-row .sp-note');
+      const box = host.querySelector('.sp-row input[type=checkbox]');
+      if (!label || !note || !box) return false;
+      const live = ttsAvailable() && isTtsEnabled();
+      label.style.opacity = live ? '1' : '.45';
+      box.checked = isTtsEnabled();
+      note.textContent = _busy || (_needVoice ? 'add a voice with one of the options below'
+        : live ? ttsVoiceName() : ttsAvailable() ? 'ready' : '');
+      return true;
+    }
   function build() {
     host.textContent = '';
     const head = document.createElement('div');
@@ -448,13 +474,24 @@ export function ttsSection(host, onPaint = () => {}) {
         : live ? ttsVoiceName() : ttsAvailable() ? 'ready' : '')}</span>` +
       `</span>`;
     head.querySelector('input').onchange = async (e) => {
-      if (!e.target.checked) { _needVoice = false; setTtsEnabled(false); repaint(); return; }
+      // Untick: nothing structural changes — no row appears or vanishes — so
+      // write the two affected nodes instead of rebuilding the section.
+      if (!e.target.checked) {
+        _needVoice = false; setTtsEnabled(false);
+        if (!syncHead()) repaint(); else onPaint();
+        return;
+      }
       // TICKING THE BOX MEANS "SPEAK" — so make that true if it can be
       // (R, 2026-08-09). Three cases:
       //   no voices  → refuse, and SAY why (transient, clears when they add one)
       //   one voice  → use it; asking which of one is busywork
       //   several    → last used, else the first
-      if (ttsAvailable()) { _needVoice = false; setTtsEnabled(true); repaint(); return; }
+      // Tick with a voice already loaded: same two nodes, same reasoning.
+      if (ttsAvailable()) {
+        _needVoice = false; setTtsEnabled(true);
+        if (!syncHead()) repaint(); else onPaint();
+        return;
+      }
       const items = await collectVoices();
       if (!items.length) {
         e.target.checked = false;          // the tick did not take; do not lie about it

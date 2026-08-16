@@ -369,6 +369,11 @@ export const sidetone = (on) => {
   return monitorOn;
 };
 
+// Where the sidetone has played up to, in AudioContext time. Chunks schedule
+// against this rather than against "now", so a burst of fast synthesis lands as
+// consecutive speech instead of a chord.
+let monitorHead = 0;
+
 function monitor(pcm, sampleRate) {
   if (!monitorOn || !pcm?.length) return;
   try {
@@ -386,7 +391,24 @@ function monitor(pcm, sampleRate) {
     g.gain.value = 0.8;
     src.buffer = buf;
     src.connect(g).connect(monitorCtx.destination);
-    src.start();
+    // 🔴 SCHEDULE, DO NOT FIRE (R, 2026-08-16: "when they finish they just start
+    // playing right away without waiting, so they end up talking over each
+    // other"). A bare src.start() plays NOW. That was harmless while an
+    // utterance was one buffer; the moment chunking made it five, each chunk's
+    // sidetone began the instant ITS synthesis finished — so the overlap is
+    // proportional to how much faster synthesis is than speech, and the fix
+    // that removed the freeze created the stacking.
+    //
+    // The transmitted lane never had this problem: the pacer walks a queue on a
+    // wall clock. The sidetone is a second, independent path — the one seam
+    // where "queued" and "audible" are different things — so it needs its own
+    // playhead. Chunk N+1 starts when chunk N ends, not when it arrives.
+    const now = monitorCtx.currentTime;
+    // Behind the clock (a gap in speaking, or the very first chunk) → start
+    // now. Ahead of it → queue after what is still playing.
+    const at = Math.max(now, monitorHead);
+    src.start(at);
+    monitorHead = at + buf.duration;
   } catch (e) { console.warn('[voice] sidetone failed (still transmitting):', e?.message || e); }
 }
 
@@ -511,6 +533,11 @@ export function stopPacer() {
   if (pacer) { clearInterval(pacer); pacer = null; }
   queue = []; qOff = 0;
   ttsEpoch++;              // anything still synthesizing belongs to the old era
+  // Drop the sidetone playhead with the queue. Leaving it set would make the
+  // NEXT utterance schedule itself behind audio that was just cancelled — a
+  // silent delay of up to the length of whatever was pending, and the kind of
+  // stale-state bug that only shows up as "why did it take so long to start".
+  monitorHead = 0;
 }
 
 /** Probe seam: is the mouth open, and how much is waiting to be said? */

@@ -56,23 +56,61 @@ const r = await pg.evaluate(async () => {
   const meterEl = body.querySelector('[data-lvl]');
   if (meterEl) meterEl.__probeTag = 'meter';
 
-  // Click 'hear voices' — the cheapest toggle that emits on the bus and does
-  // not need a real microphone.
-  const boxes = [...body.querySelectorAll('input[type=checkbox]')];
-  const hear = boxes[1] ?? boxes[0];
-  hear.click();
-  await new Promise((r) => setTimeout(r, 500));   // well past any repaint
+  // 🔴 CLICK EVERY CHECKBOX, NOT A REPRESENTATIVE ONE (R, 2026-08-16: "looks
+  // like panel is tearing down when you click the text-to-speech model
+  // checkbox"). The first version of this probe clicked only 'hear voices',
+  // passed, and I read that as "the panel does not tear down" — but a probe
+  // proves the path it walks and NOTHING else. The TTS tick lives in a
+  // different module with its own build(), and it was still rebuilding.
+  // Identify targets by their LABEL, not by index. Indices shift the moment a
+  // row is skipped or replaced, and an index-keyed loop silently pairs one
+  // box's click with another box's tags — which is exactly how this probe
+  // reported a teardown on 'speech-to-text' that a direct check disproved
+  // (rows 10 before, 10 after, the tagged node still present). A measurement
+  // whose bookkeeping can drift will eventually accuse the code of its own bug.
+  const labels = [...body.querySelectorAll('.sp-row')]
+    .filter((r) => r.querySelector('input[type=checkbox]') && r.style.display !== 'none')
+    .map((r) => r.querySelector('.sp-label')?.textContent?.trim())
+    .filter(Boolean);
+  const perBox = [];
+  for (const label of labels) {
+    const rowOf = () => [...body.querySelectorAll('.sp-row')]
+      .find((r) => r.querySelector('.sp-label')?.textContent?.trim() === label);
+    const live = rowOf()?.querySelector('input[type=checkbox]');
+    if (!live) continue;
+    // 🔴 LET THE PREVIOUS RESTORE SETTLE BEFORE TAGGING. Each iteration clicks
+    // twice (test, then put it back), and the RESTORE click can still be
+    // repainting when the next iteration tags. That is how this probe reported
+    // a teardown on 'speech-to-text' twice in a row while a direct check found
+    // zero rows losing their tag — the contamination came from the probe's own
+    // cleanup, one control earlier. Two dead theories (hidden rows, index
+    // drift) before I printed WHICH row lost its tag and got an empty list.
+    await new Promise((r) => setTimeout(r, 250));
+    rows().forEach((el, n) => { el.__probeTag = `row${n}`; });
+    const n0 = rows().length;
+    live.click();
+    await new Promise((r) => setTimeout(r, 500));
+    const survived = rows().filter((el) => typeof el.__probeTag === 'string').length;
+    perBox.push({ label, before: n0, survived, after: rows().length });
+    live.click();                                   // put it back
+    await new Promise((r) => setTimeout(r, 400));
+  }
 
   const after = rows();
   const kept = after.filter((el) => typeof el.__probeTag === 'string').length;
   const meterKept = body.querySelector('[data-lvl]')?.__probeTag === 'meter';
 
-  return { before, after: after.length, kept, meterKept, checked: hear.checked };
+  return { before, after: after.length, kept, meterKept, perBox };
 });
 
-const ok = r.kept === r.before && r.before === r.after && r.meterKept;
-console.log(`rows before=${r.before} after=${r.after} survived=${r.kept} meter kept=${r.meterKept}`);
-console.log(ok ? '✅ PER-ELEMENT UPDATE — nodes survived the click'
-               : '❌ FULL TEARDOWN — the panel rebuilt itself (R\'s jumping)');
+let ok = r.meterKept;
+for (const b of r.perBox) {
+  const good = b.survived === b.before;
+  ok = ok && good;
+  console.log(`  ${String(b.label).padEnd(24)} ${b.survived}/${b.before} rows survived  ${good ? '✅' : '❌ TEARDOWN'}`);
+}
+console.log(`  meter node kept: ${r.meterKept ? '✅' : '❌'}`);
+console.log(ok ? '✅ PER-ELEMENT UPDATE — every checkbox leaves the panel standing'
+               : '❌ FULL TEARDOWN on at least one control (R\'s jumping)');
 await b.close();
 process.exit(ok ? 0 : 1);
