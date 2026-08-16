@@ -477,7 +477,7 @@ function acceptAC() {
  *  down with it (a diagnostic that throws is worse than none). */
 // Bumped by hand when the audio diagnostics change — the point is only that a
 // report from a stale page carries a DIFFERENT value than the current one.
-const BUILD_STAMP = 'stt-diag-5';
+const BUILD_STAMP = 'stt-diag-6';
 
 function audioReport() {
   const L = [];
@@ -603,22 +603,7 @@ function runCommand(raw) {
       // /debug [n] — the world's flight recorder: why things bounced
       bus.emit('command', { cmd: 'debug', arg });
       return true;
-    case 'stt':
-      // 🔴 `/stt say` POSTS IT TO THE WORLD — no copy/paste at all. R has spent
-      // this morning relaying diagnostics off a phone by hand, in two batches,
-      // because the text exceeds a mobile selection window. The page can simply
-      // say it. Opt-in via the argument, because a diagnostic is normally a
-      // self-report and the room does not need everyone's mic internals.
-      if (arg.trim().toLowerCase() === 'say') { onSend(sttReport()); return true; }
-      // 🔴 SHORT BY DESIGN (R, 2026-08-16: copy/paste "exceeds the window size
-      // on mobile"). /audio grew to one long line carrying the whole system
-      // state, which is unreadable and un-copyable on the device it was BUILT
-      // FOR — the same mistake as every other bug this morning: designed at the
-      // desk, used on a phone. This answers only the STT question, in a few
-      // words, so a phone can relay it in one tap.
-      logChat('*', sttReport());
-      return true;
-    case 'audio': case 'voicecheck':
+    case 'audio':
       // 🔴 /audio — the phone's own console (R, 2026-08-16: "maybe you can
       // temporarily add a chatlog command that can return something?").
       //
@@ -627,8 +612,20 @@ function runCommand(raw) {
       // already knows all of this; it just had nowhere to say it. Answers
       // LOCALLY (logChat, not the world) — it is a self-report, and nobody else
       // in the room needs to read someone's mic diagnostics.
-      logChat('*', audioReport());
-      return true;
+      // Three forms, because the full report is unreadable on the device that
+      // needs it most (R, 2026-08-16 — mobile copy/paste "exceeds the window
+      // size", and she relayed one in two batches):
+      //   /audio       full picture, for a desk
+      //   /audio stt   captions only, short enough to read on a phone
+      //   /audio say   posts the short form INTO the world — no copy/paste
+      // `say` is opt-in because a diagnostic is a self-report by default; the
+      // room does not need everyone's mic internals unprompted.
+      {
+        const mode = arg.trim().toLowerCase();
+        if (mode === 'say') { onSend(sttReport()); return true; }
+        logChat('*', mode === 'stt' ? sttReport() : audioReport());
+        return true;
+      }
     case 'use': case 'pull': case 'ring': case 'open':
       // /use <thing> [action] — the universal interact. The aliases are the
       // same verb with the action already in hand: /pull lever1.

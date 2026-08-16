@@ -24,6 +24,11 @@ export const COMMANDS = [
   { name: 'kick', help: '/kick [thing] [power] — send an object flying (a person\'s name = moderation)' },
   { name: 'punt', aliases: ['boot'], help: '/punt [thing] [power] — the unambiguous physics kick' },
   { name: 'who', help: 'list everyone present' },
+  // Registered so it is DISCOVERABLE. It was added on 2026-08-16 to debug voice
+  // on a phone with no console, and stayed unregistered for the rest of that
+  // session — a diagnostic nobody can find is one nobody uses, and the next
+  // person with a silent mic is exactly who needs it.
+  { name: 'audio', help: '/audio [stt|say] — why voice or captions are not working; `say` posts it to the room' },
   { name: 'role', help: 'what you may do here (or /role <name>)' },
   { name: 'grant', help: '/grant <name> owner|builder|visitor [+gen|-gen] — owner only' },
   { name: 'ban', help: '/ban <name> [reason] — ban someone from this world (owner)' },

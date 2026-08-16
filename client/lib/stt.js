@@ -18,6 +18,34 @@
 // the device. Local whisper is the planned upgrade; the say-pipe stays
 // identical.
 //
+// ┌──────────────────────────────────────────────────────────────────────────┐
+// │ 🔴 STT ON PHONES: WORKS, ~50% OF THE TIME. Measured 2026-08-16.          │
+// │                                                                          │
+// │ Do not "fix" this by disabling captions on mobile — that was proposed    │
+// │ twice and both versions would have blocked a WORKING feature.            │
+// │                                                                          │
+// │ Real numbers, Samsung Galaxy / Chrome, speaking "Hello" repeatedly:      │
+// │   speech×6  result:final×3  nomatch×4  err:aborted×1                     │
+// │ Three transcriptions reached the world log. Roughly half of the          │
+// │ utterances the recognizer HEARD came back empty.                         │
+// │                                                                          │
+// │ Confounder, honestly: the tester's mobile data was dropping during that  │
+// │ session, and this recognizer is CLOUD-based (every utterance is a round  │
+// │ trip to Google). An unknown share of those nomatches may be network, not │
+// │ recognition. It has been measured ONCE, on ONE device.                   │
+// │                                                                          │
+// │ Get the current numbers before theorising — the page reports itself:     │
+// │   /stt        in world chat — build, lang, event tally, last event       │
+// │   /stt say    posts that line INTO the world (no copy/paste on mobile)   │
+// │ `nomatch` = heard, recognised nothing. `speech` = classified as speech.  │
+// │ A tally with speech×N and result:final×0 is the broken case; anything    │
+// │ with finals in it is the unreliable-but-working case.                    │
+// │                                                                          │
+// │ Full history, four options and why three are wrong:                      │
+// │   notes/DECISION-android-captions.md                                     │
+// │ Upstream: https://issues.chromium.org/issues/40324711                    │
+// └──────────────────────────────────────────────────────────────────────────┘
+//
 // 🔴 ANDROID: `continuous` DOES NOT WORK. Chromium issue 40324711 — recognition
 // stops after ~3-4s of no speech regardless of the flag, and upstream has
 // debated faking it vs throwing not-supported. The documented workaround is
@@ -72,6 +100,7 @@ try { window.__sttOn = () => wanted; } catch { /* no window */ }
 // toggle — it could never accumulate across the on/off cycle we are trying to
 // measure. Both now persist for the page's lifetime.
 const tally = Object.create(null);
+let lastMissNotice = 0;
 let restarts = 0;
 const firstStart = performance.now();
 function mark(what, kind) {
@@ -232,7 +261,28 @@ export function setSTT(on) {
   rec.onsoundstart = () => mark('sound detected (not necessarily speech)', 'sound');
   rec.onspeechstart = () => mark('SPEECH detected', 'speech');
   rec.onspeechend = () => mark('speech ended', 'speechend');
-  rec.onnomatch = () => mark('nomatch — heard something, recognised nothing', 'nomatch');
+  rec.onnomatch = () => {
+    mark('nomatch — heard something, recognised nothing', 'nomatch');
+    // 🔴 TELL THEM IT MISSED (2026-08-16). Measured on a phone: roughly half of
+    // heard utterances come back empty. A silent miss is indistinguishable from
+    // "you did not speak", so people conclude the world dropped their line —
+    // and it is invisible to us too. This does not fix the miss; it stops it
+    // being a mystery, which is the honest thing we CAN do while the recogniser
+    // stays cloud-based and upstream-broken.
+    //
+    // Deliberately quiet: one short local line, never a `say`. A failed
+    // transcription is not an utterance and must not reach the room — that
+    // would put "(didn't catch that)" in the world log as if it were speech.
+    // 🔴 RATE-LIMIT IT. The measured session had nomatch×4 in a couple of
+    // minutes, and a mic in a noisy room will produce far more — a notice
+    // printed every time becomes the spam it was meant to prevent, and trains
+    // people to ignore the one that matters. At most one every 30s.
+    const now = Date.now();
+    if (now - lastMissNotice > 30_000) {
+      lastMissNotice = now;
+      logChat('*', '(didn\u2019t catch that)');
+    }
+  };
   rec.onerror = (e) => {
     mark(`error: ${e.error}`, `err:${e.error}`);
     if (e.error === 'no-speech' || e.error === 'aborted') return;   // ordinary silence
