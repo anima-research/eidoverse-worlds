@@ -16,7 +16,20 @@ import { makeSection } from './ui.js';
 import { audioPrefs, setVolume, receivingVoice, setReceiveVoice,
   sttConsented, setSttConsent, isHushed, setHush,
   micFloor, setMicFloor } from './voiceconsent.js';
-import { micAnalyserLevel } from './voice.js';
+import { micAnalyserLevel as meshMicLevel } from './voice.js';
+// 🔴 ASK THE LIVE TRANSPORT (2026-08-15, R found this one in the HUD: "the mic
+// icon isn't turning gold anymore when it is transmitting"). voice.js's
+// micAnalyserLevel() reads the MESH's micStream, which is null forever on an
+// SFU client — so it returns 0 at line one and the glyph can never go hot, and
+// the sensitivity bar sits at zero while looking merely quiet. Fifth instance
+// of this defect class in one night; see stt.js / voicemouths.js / tts.js.
+function micLevelNow() {
+  try {
+    if (typeof window.__sfuMyLevel === 'function') return window.__sfuMyLevel();
+    return meshMicLevel?.() ?? 0;
+  } catch { return 0; }
+}
+
 import { gateUnavailable, ungatedConsent, allowUngated } from './micgate.js';
 import { bus } from './core.js';
 import { ttsSection } from './ttsrow.js';
@@ -159,7 +172,7 @@ function micFloorRow() {
   meter.onpointermove = (ev) => { if (meter.hasPointerCapture?.(ev.pointerId)) setFromX(ev); };
   const beat = () => {
     if (!row.isConnected) return;
-    const level = micAnalyserLevel();
+    const level = micLevelNow();
     lvl.style.width = `${Math.min(100, (level / FS) * 100)}%`;
     requestAnimationFrame(beat);
   };

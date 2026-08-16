@@ -120,10 +120,23 @@ function paint() {
 }
 // hot = your voice is actually registering: a tiny analyser on the mic track,
 // polled at 8Hz, drives the yellow glow in step with STT pickup
-import { micAnalyserLevel } from './voice.js';
+import { micAnalyserLevel as meshMicLevel } from './voice.js';
+// 🔴 ASK THE LIVE TRANSPORT (2026-08-15, R found this one in the HUD: "the mic
+// icon isn't turning gold anymore when it is transmitting"). voice.js's
+// micAnalyserLevel() reads the MESH's micStream, which is null forever on an
+// SFU client — so it returns 0 at line one and the glyph can never go hot, and
+// the sensitivity bar sits at zero while looking merely quiet. Fifth instance
+// of this defect class in one night; see stt.js / voicemouths.js / tts.js.
+function micLevelNow() {
+  try {
+    if (typeof window.__sfuMyLevel === 'function') return window.__sfuMyLevel();
+    return meshMicLevel?.() ?? 0;
+  } catch { return 0; }
+}
+
 setInterval(() => {
   if (!micIsOn()) { if (micHot) { micHot = false; paint(); } return; }
-  const lvl = micAnalyserLevel?.() ?? 0;
+  const lvl = micLevelNow();
   const hot = lvl > 0.02;
   if (hot !== micHot) { micHot = hot; paint(); }
 }, 125);
