@@ -22,7 +22,7 @@
 import { bus, flashHint } from './core.js';
 import { sendTyping } from './net.js';
 import { gateThreshold } from './voiceconsent.js';
-import { gateStream, attachSource, driveGate, setMonitor, monitoring,
+import { gateStream, attachSource, detachSource, driveGate, setMonitor, monitoring,
          gateUnavailable, ungatedConsent, isGated } from './micgate.js';
 
 // 🔴 MUTE AND LANE LIVE HERE NOW, not in a transport. They were voice.js
@@ -241,6 +241,7 @@ export function gateFor(rawStream) {
   _released = false;
   _gated = reused || gateStream(rawStream, micAnalyserLevel);
   _lane = _gated;
+  _deviceLive = true;
   startOnsetWatch();
   return _gated;
 }
@@ -257,6 +258,75 @@ export function gateRelease() {
   stopOnsetWatch();
   _released = true;
   _gated = _lane = null;
+}
+
+/** Turn the mic on or off. The ONE entry point every UI uses.
+ *
+ *  🔴 voice.js:508 used to route here to `window.__sfuMic` and return before
+ *  touching mesh state — which is exactly why the SFU had no mute: the flag it
+ *  checked could never be set. With one transport there is no routing left to
+ *  do, only the call.
+ *
+ *  Returns the RESULTING state so a caller can hand it straight to a checkbox
+ *  rather than re-reading and racing the toggle. */
+export async function toggleMic() {
+  const fn = typeof window !== 'undefined' ? window.__sfuMic : null;
+  if (!fn) { flashHint('voice is still connecting — try again in a moment'); return micOn(); }
+  const on = await fn();
+  bus.emit('audio:mic', on);
+  return on;
+}
+
+/** 🔴 THE ONE ANSWER TO "IS MY MIC ON". The audit found EIGHT sources of truth
+ *  and four different fallback ladders across mictoggle/audiopanel/voicemouths/
+ *  stt/tts/ttsrow/chat — each subtly different, one of which (ttsrow) returned
+ *  a hard false with no fallback, so the TTS row never greyed out on the mesh.
+ *
+ *  A mic is on when a LANE exists, a DEVICE is capturing, and the user has not
+ *  muted — the three-state distinction voice.js:56-66 documented and the SFU
+ *  never had (sfuMicOn() is two-state and does not read track.enabled, so a mic
+ *  muted by disabling its track still reported micPublished:true).
+ *
+ *  Transports report device liveness through setMicLive(); everything else in
+ *  the client asks HERE. */
+let _deviceLive = false;
+export function setMicLive(on) { _deviceLive = !!on; }
+export const micOn = () => !!_lane && _deviceLive && !_muted;
+
+/** Release the DEVICE while keeping the lane. Ported verbatim from voice.js:909
+ *  — the reasoning is R's and was paid for in production:
+ *
+ *  (1) The raw device track MUST stop, or the OS recording indicator stays lit
+ *      while this function's whole promise is that it goes away.
+ *  (2) The GATED track must NOT stop. stop() is a one-way door and a
+ *      MediaStreamDestination track cannot be restarted, so re-enabling the mic
+ *      would need a new graph and a renegotiation with every peer. R,
+ *      2026-08-09: "we don't want to tear down audio tracks at all unless
+ *      someone leaves... that's how we ran into people not hearing each other
+ *      and unmute lag while it sets it all up again. Now we just mute the lane."
+ *
+ *  So: kill the device, leave the lane at zero gain. Senders keep a live track,
+ *  no renegotiation, and reacquiring reconnects a new source into the SAME
+ *  graph. The SFU had NO equivalent — sfuClose() closes the pc but never stops
+ *  a device, so the recording indicator survived a disconnect. */
+export function releaseMicrophone() {
+  if (!_lane) return;
+  for (const t of (_raw || _lane).getTracks()) t.stop();
+  _deviceLive = false;
+  driveGate(false);
+  detachSource();
+  _raw = null;
+  _released = true;
+  stopOnsetWatch();
+  bus.emit('audio:mic', false);
+}
+
+/** Is there a microphone at all? Transport-agnostic and cheap. */
+export async function hasMicDevice() {
+  try {
+    const devs = await navigator.mediaDevices?.enumerateDevices?.();
+    return !!devs?.some((d) => d.kind === 'audioinput');
+  } catch { return false; }
 }
 
 /** Hear your own lane, exactly as the room hears it. Tapped AFTER the gate's

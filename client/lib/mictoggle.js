@@ -9,7 +9,7 @@
 // A small headphone glyph beside it mutes INCOMING voice separately.
 // V toggles the mic from the keyboard, exactly like the porch.
 
-import { toggleMic, micOn } from './voice.js';
+import { micOn, toggleMic } from './micstate.js';
 import { setSTT, sttAvailable } from './stt.js';
 import { CONFIG } from './core.js';
 import { receivingVoice, setReceiveVoice, ensureSttConsent, sttConsented,
@@ -120,7 +120,7 @@ function paint() {
 }
 // hot = your voice is actually registering: a tiny analyser on the mic track,
 // polled at 8Hz, drives the yellow glow in step with STT pickup
-import { micAnalyserLevel as meshMicLevel } from './voice.js';
+import { micAnalyserLevel as meshMicLevel } from './micstate.js';
 // 🔴 ASK THE LIVE TRANSPORT (2026-08-15, R found this one in the HUD: "the mic
 // icon isn't turning gold anymore when it is transmitting"). voice.js's
 // micAnalyserLevel() reads the MESH's micStream, which is null forever on an

@@ -99,7 +99,7 @@ export function setTtsEnabled(on) {
   // EVER), which is every headless body; two divergent handoffs also allowed
   // an ordering where synth stayed mixed in while the raw mic reopened.
   if (ttsEnabled !== was && typeof window !== 'undefined') {
-    import('./voice.js').then((v) => {
+    import('./micstate.js').then((v) => {
       // 🔴 ASK THE LIVE TRANSPORT. v.micOn() reads voice.js's own micStream,
       // which is null forever on an SFU client — so this guard failed OPEN in
       // the dangerous direction: enabling TTS while the SFU mic was hot ran
@@ -609,7 +609,7 @@ export function speakOwnSays(bus, myId) {
     // double-voice #91 B3 was written to forbid, arriving as the DEFAULT path
     // on this branch rather than as dead code.
     const micLive = (typeof window !== 'undefined' && typeof window.__sfuMicOn === 'function')
-      ? !!window.__sfuMicOn() : (await import('./voice.js')).micOn?.();
+      ? !!window.__sfuMicOn() : (await import('./micstate.js')).micOn?.();
     if (micLive) { console.warn(`[voice] own say NOT synthesized — mic is live, mic beats TTS: "${String(text).slice(0, 40)}"`); return; }
     console.log(`[voice] own say → speaking: "${String(text).slice(0, 60)}"`);
     // Keyed by the speaker so consecutive says QUEUE instead of overlapping

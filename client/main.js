@@ -31,7 +31,6 @@ import {
 } from './lib/net.js';
 import { initPalette, updateBuild, toggleEditMode, isEditing } from './lib/build.js';
 import { initConjure } from './lib/conjure.js';
-import { initVoice } from './lib/voice.js';
 import './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
 import { initAudioPanel } from './lib/audiopanel.js';
 import { initSceneGraph } from './lib/scenegraph.js';
@@ -205,24 +204,17 @@ function start() {
   // loud. Production (main) is untouched and stays mesh-by-default —
   // #104 A5: "keep current mesh available as the existing production/rollback
   // path". Rollback is `git revert`, not a runtime branch.
-  const _q = new URLSearchParams(location.search);
-  const _forceMesh = _q.get('mesh') === '1';
-  if (_forceMesh) {
-    console.warn('[voice] transport=MESH (explicit ?mesh=1 — the SFU spike is NOT under test)');
-    window.__voiceTransport = 'mesh';
-    initVoice(CONFIG.name);
-  } else {
-    // DEFAULT on this branch. ?sfu=1 still accepted so existing links/probes
-    // keep working, but it is no longer load-bearing.
-    // 🔴 INTENT vs LIVE (review, 2026-08-15). Setting this BEFORE the dynamic
-    // import resolves makes it a CLAIM, not a reading — a probe asking "which
-    // transport?" got 'sfu' for a body whose init had thrown into the catch
-    // below. Same distinction voice.js:507 already calls out. So: pending
-    // until it actually initialises, and the failure is recorded, not swallowed.
-    console.info('[voice] transport=SFU (in-process, default on relay-spike)');
-    window.__voiceTransport = 'pending:sfu';
-    import('./lib/voicesfubridge.js').then((m) => { m.initVoiceSfu(CONFIG.name); window.__voiceTransport = 'sfu'; })
-      .catch((e) => { window.__voiceTransport = 'failed:sfu'; window.__voiceTransportError = String(e); console.error('voice sfu init failed', e); });
+  // 🔴 ONE TRANSPORT. The mesh is deleted (#104 phase-1 cutover): A5 asked that
+  // a rollback path exist while the floor proves itself, and it does — it is the
+  // revert, one command, no config change and no migration. What a single
+  // transport buys is that every audio result stops carrying the question
+  // "which one produced this?", a question that cost an hour of "SFU results"
+  // that were actually mesh, and a sidecar signalling happily into an rtc verb
+  // nobody was listening to. antra's amendment 6: "exactly one playback owner
+  // must be visible at all times."
+  window.__voiceTransport = 'pending:sfu';
+  import('./lib/voicesfubridge.js').then((m) => { m.initVoiceSfu(CONFIG.name); window.__voiceTransport = 'sfu'; })
+    .catch((e) => { window.__voiceTransport = 'failed:sfu'; window.__voiceTransportError = String(e); console.error('voice init failed', e); });
   }
   initAudioPanel();   // 🔊 categories: voices / world / TTS + consent rows
   // HEARING YOURSELF IS THE POINT. This hook — your own says going through the
@@ -538,7 +530,7 @@ if (typeof window !== 'undefined') window.setVoice = setVoice;
         // stalled. Observability must not sit downstream of the risky call.
         globalThis.__voiceProbe = () => ({ ...vs.mouthInfo(), track: vs.genTrackInfo() });
         globalThis.__voiceSpeak = (t) => vs.speak(t);   // the APP's mouth, for probes
-        const { toggleMic, micOn } = await import('./lib/voice.js');
+        const { toggleMic, micOn } = await import('./lib/micstate.js');
         // 🔴 `me` IS NOT IN SCOPE HERE — it was a ReferenceError that threw
         // before the mouth ever opened, so a body with ?tts= joined, logged
         // "synthesized voice ready", and was mute. The comment six lines up

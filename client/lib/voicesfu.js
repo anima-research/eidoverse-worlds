@@ -280,6 +280,7 @@ export async function sfuMic(on = true) {
       return void sfuPublish();
     }
     micStream?.getTracks().forEach((t) => (t.enabled = false));
+    try { (await import('./micstate.js')).setMicLive(false); } catch { /* module may be absent in probes */ }
     return;
   }
   // 🔴 A SYNTH STREAM IS NOT A MIC TO RE-ENABLE (regression fix, 2026-08-16).
@@ -337,8 +338,12 @@ async function sfuPublish() {
     // actually ship was the ungated one. gateFor() passes a synthetic source
     // through untouched — no room noise to gate, and the gate's graph cannot
     // run on a headless stalled clock.
-    const { gateFor, gateIsUnavailable, ungatedAllowed } = await import('./micstate.js');
+    const { gateFor, gateIsUnavailable, ungatedAllowed, setMicLive } = await import('./micstate.js');
     const s = gateFor(raw);
+    // Tell micstate whether a DEVICE is capturing — the third state micOn()
+    // needs and sfuMicOn() never had (it is two-state and cannot tell a muted
+    // mic from a live one).
+    setMicLive(!raw?.synthetic && wantMic);
     if (!raw?.synthetic && gateIsUnavailable() && !ungatedAllowed()) {
       // Refuse rather than publish ungated: the panel offers an explicit
       // opt-in row for that, and silently transmitting an ungated mic is the

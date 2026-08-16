@@ -71,7 +71,7 @@ import { logChat } from './chat.js';
 // permanently off (R, 2026-08-15: "I toggled it on and now it's just
 // perma-off"). That is the same defect the mic BUTTON had: state read from one
 // transport while another is live. One helper, asked in transport order.
-import { micOn as meshMicOn } from './voice.js';
+import { micOn as meshMicOn } from './micstate.js';
 function micIsLive() {
   try {
     // SFU first: on relay-spike it is the default, and its bridge publishes

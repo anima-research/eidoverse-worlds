@@ -1126,58 +1126,14 @@ const server = Bun.serve({
           sfuNegotiate(c.world.name, c.id, (payload) => ws.send(JSON.stringify(payload)));
           return;
         }
-        case "rtc": {
-          // Voice/media signaling: point-to-point like a whisper and never
-          // logged for the same reason — but unlike a whisper, a stale SDP is
-          // worthless (an offer for a peer who left answers nothing), so there
-          // is no pending queue: absent recipient = silently dropped.
-          //
-          // 🔴 THIS IS THE **MESH** LANE, AND IT IS DELIBERATELY NOT GATED ON
-          // voiceTransport() (unlike its four sfu-* siblings above). The mesh
-          // is #104 A5's rollback path and `?mesh=1` still selects it on this
-          // branch, so gating this would break rollback on an SFU server.
-          //
-          // The hazard it creates, paid for in full on 2026-08-15: a client
-          // that speaks `rtc` on an SFU server SUCCEEDS at signalling and is
-          // heard by NOBODY, because every listener is on the SFU. It looks
-          // perfectly healthy from the sender's side — ICE completes, an
-          // answer may even arrive. A sidecar of mine ran an hour that way.
-          // If you are writing something that publishes audio, the question
-          // "which transport is this server on" is not optional: ask
-          // /relay-diag, do not infer it from a working handshake.
-          //
-          // 🔴 AND: a reply is addressed by SURFACE (`toSurface` below), but
-          // no browser client sends that field — grep the client tree, it is
-          // absent. So an offer from an AUX leg (surface:"voice") gets its
-          // answer routed to the PRIMARY, which drops it, and the aux leg
-          // waits forever with packetsSent=0. Fixing that needs the client to
-          // echo `fromSurface` back as `toSurface`; until then, aux legs
-          // cannot be answered on this lane at all.
-          const aux = c.surface && c.surface !== "world";
-          if (!c.world || (c.spectator && !aux)) return;
-          const rto = String(msg.to ?? "").slice(0, 64);
-          if (!rto || msg.payload == null) return;
-          if (JSON.stringify(msg.payload).length > 20000) return; // SDP-sized, not file-sized
-          // Per-surface ADDRESSING (review finding 7): a voice leg IS an rtc
-          // endpoint, but the old any-leg fanout delivered an offer meant for
-          // X's voice leg to X's browser primary too — whose per-id state
-          // machine answers offers unconditionally, so both of the offerer's
-          // legs got answers: SDP glare precisely in the human-with-voice-leg
-          // case the feature enables. `toSurface` names the target leg;
-          // omitted = "world", which is byte-identical to today's mesh (the
-          // current voice.js neither sends nor reads it). fromGen/fromSurface
-          // are stamped for the receiving side's (id, surface, gen) peer
-          // keying — today's mesh client reads neither (it keys by id alone);
-          // the consumers arrive with the sidecar/relay client half (#104),
-          // and stamping now means old servers never have to be told apart.
-          const toSurface = String(msg.toSurface ?? "world").toLowerCase().slice(0, 16) || "world";
-          const rpacket = JSON.stringify({ type: "rtc", from: c.id, to: rto, payload: msg.payload,
-            fromGen: c.gen, fromSurface: c.surface ?? "world" });
-          for (const t of c.world.clients)
-            if (t.id === rto && (t.surface ?? "world") === toSurface
-                && (!t.spectator || (t.surface && t.surface !== "world"))) t.ws.send(rpacket);
-          return;
-        }
+        // 🔴 THE `rtc` VERB IS GONE (#104 phase-1 cutover, 2026-08-16). It was the
+        // MESH's point-to-point SDP/ICE lane and its only client was voice.js,
+        // now deleted. It was also deliberately UNGATED on transport — kept open
+        // so ?mesh=1 could still roll back on an SFU server — which made it an
+        // unauthenticated relay with no consumer: a sidecar signalled through it
+        // for an hour, ICE completing happily, heard by NOBODY. Its per-surface
+        // addressing (toSurface/fromSurface/fromGen) never functioned either, by
+        // the server's own admission: no browser ever sent those fields.
         case "relay-cred": {
           // #104 phase-1: mint the least-authority media credential (A1). The
           // asker must be an ADMITTED identity — the embodied primary (its own

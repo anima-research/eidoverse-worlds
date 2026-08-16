@@ -6,8 +6,7 @@
 // afterward as an ordinary say. Nobody waits for words to know you're talking.
 
 import { CONFIG, bus } from './core.js';
-import { micOn as meshMicOn, isMuted, micAnalyserLevel as meshMicLevel,
-  peerLevels as meshPeerLevels } from './voice.js';
+import { micOn as meshMicOn, isMuted, micAnalyserLevel as meshMicLevel } from './micstate.js';
 
 import { remotes, noteSpeaking } from './remotes.js';
 import { sendTyping } from './net.js';
@@ -42,8 +41,12 @@ const myLevel = () => {
 };
 const allPeerLevels = () => {
   try {
+    // 🔴 ONE TRANSPORT, ONE ANSWER. This fell back to the mesh's own `peers`
+    // analyser map; with the mesh gone the SFU global is the only source, and
+    // an empty Map is the honest answer before the bridge installs it — never a
+    // stale second opinion.
     if (typeof window.relayPeerLevels === 'function') return window.relayPeerLevels();
-    return meshPeerLevels();
+    return new Map();
   } catch { return new Map(); }
 };
 

@@ -16,7 +16,7 @@ import { makeSection } from './ui.js';
 import { audioPrefs, setVolume, receivingVoice, setReceiveVoice,
   sttConsented, setSttConsent, isHushed, setHush,
   micFloor, setMicFloor } from './voiceconsent.js';
-import { micAnalyserLevel as meshMicLevel } from './voice.js';
+import { micAnalyserLevel as meshMicLevel } from './micstate.js';
 // 🔴 ASK THE LIVE TRANSPORT (2026-08-15, R found this one in the HUD: "the mic
 // icon isn't turning gold anymore when it is transmitting"). voice.js's
 // micAnalyserLevel() reads the MESH's micStream, which is null forever on an
@@ -34,7 +34,7 @@ import { gateUnavailable, ungatedConsent, allowUngated } from './micgate.js';
 import { selfMonitor, selfMonitoring } from './micstate.js';
 import { bus } from './core.js';
 import { ttsSection } from './ttsrow.js';
-import { micOn, toggleMic } from './voice.js';
+import { micOn, toggleMic } from './micstate.js';
 // 🔴 CONFIG is needed by the mic row (toggleMic wants the actor NAME) and was
 // NOT imported — `CONFIG is not defined` threw inside the checkbox handler, so
 // the box flipped and nothing published. Third instance tonight of the same
