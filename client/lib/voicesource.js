@@ -44,10 +44,22 @@ export const synthProvider = () => provider;
 // restarted), it calls notifySynthTrackChanged(newTrack); voice.js re-binds
 // every sender. The hook survives from the pre-split module under its old
 // name so the call site's diff stays honest.
-let onRebuild = null;
-export const setGeneratorRebuildHook = (fn) => { onRebuild = fn; };
+// 🔴 A LIST, NOT A SLOT (2026-08-16). This was `onRebuild = fn`, a single
+// assignment — and once the SFU needed the hook too, TWO modules registered:
+// voice.js:1204 for the mesh and voicesfubridge for the SFU. Whichever module
+// evaluated last silently won and the other's hook never fired again, with no
+// error and no way to see it. That is a transport-dependent, load-order-
+// dependent failure in the one path that gives a synthesized voice its lane.
+//
+// Both transports coexist by design on this branch (mesh is #104's rollback
+// path), so the hook has to be broadcast. Handlers are independent: one
+// throwing must not deny the others their notification.
+const rebuildHooks = new Set();
+export const setGeneratorRebuildHook = (fn) => { rebuildHooks.add(fn); return () => rebuildHooks.delete(fn); };
 export const notifySynthTrackChanged = (track) => {
-  try { onRebuild?.(track); } catch (e) { report('synth track-change hook', e); }
+  for (const fn of rebuildHooks) {
+    try { fn(track); } catch (e) { report('synth track-change hook', e); }
+  }
 };
 
 // ── the source ───────────────────────────────────────────────────────────────

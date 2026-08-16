@@ -17,8 +17,32 @@ import { sfuConnect, sfuOnOffer, sfuOnIce, sfuMic, sfuPeerLevels, sfuMyLevel,
 import { remotes } from './remotes.js';
 import { myState } from './controller.js';
 import { isHushed, volumeFor, receivingVoice } from './voiceconsent.js';
+import { setGeneratorRebuildHook, synthProvider } from './voicesource.js';
 
 const send = (o) => { if (net.ws?.readyState === 1) net.ws.send(JSON.stringify(o)); };
+
+// 🔴 ADOPT THE SYNTH LANE — the SFU never registered this hook (R, 2026-08-16;
+// found because /audio reported `source: never published`).
+//
+// voice.js:1204 has carried this for the MESH since a real-media acceptance
+// run: "rebindSenders repairs senders that EXIST, but a body whose mic was
+// never live has none". The SFU has the identical hole and no hook, so a TTS
+// track arriving while the mic is off had nothing to attach to. My earlier fix
+// only handled the mic-off TRANSITION, which does nothing for the state she was
+// actually in — mic already off, TTS loaded afterwards, nothing re-evaluating
+// the source.
+//
+// A synth track arriving with no lane must BECOME the lane, exactly as it does
+// on the mesh. sfuPublish() already asks voiceSource() and handles a synthetic
+// stream, so this only needs to trigger it.
+setGeneratorRebuildHook(() => {
+  // Only when the user is not already publishing a microphone: a live mic wins
+  // outright (voicesource.js's own doctrine), and re-publishing under one would
+  // swap a device the user deliberately turned on for a synthesizer.
+  if (sfuMicOn()) return;
+  if (!synthProvider()?.available?.()) return;
+  void sfuMic(false);   // re-enters the swap path, which now finds the provider
+});
 
 export function initVoiceSfu(name) {
   // Ask for the media credential once we are actually joined. Same join-race
