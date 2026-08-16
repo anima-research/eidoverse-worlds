@@ -323,7 +323,25 @@ async function sfuPublish() {
     // is skipped. Everything below — addTrack, the transceiver hunt,
     // replaceTrack — is source-agnostic and unchanged.
     const { voiceSource } = await import('./voicesource.js');
-    const s = await voiceSource({ micWanted: wantMic });
+    const raw = await voiceSource({ micWanted: wantMic });
+    // 🔴 GATE IT BEFORE THE SENDER SEES IT (2026-08-16). This published `raw`
+    // directly, so the SFU sent the unprocessed device stream: continuous room
+    // tone, with the panel's sensitivity slider driving nothing at all. The
+    // mesh gated at voice.js:615 ("GATE THE STREAM BEFORE WEBRTC EVER SEES
+    // IT") and voice.js was the gate's only caller, so the transport we
+    // actually ship was the ungated one. gateFor() passes a synthetic source
+    // through untouched — no room noise to gate, and the gate's graph cannot
+    // run on a headless stalled clock.
+    const { gateFor, gateIsUnavailable, ungatedAllowed } = await import('./micstate.js');
+    const s = gateFor(raw);
+    if (!raw?.synthetic && gateIsUnavailable() && !ungatedAllowed()) {
+      // Refuse rather than publish ungated: the panel offers an explicit
+      // opt-in row for that, and silently transmitting an ungated mic is the
+      // one outcome nobody consented to.
+      bus.emit('voice-gate-unavailable', {});
+      wantMic = false;
+      return;
+    }
     try {
       window.__sfuSrc = `published ${s?.synthetic ? 'SYNTH' : 'mic'}`
         + ` · tracks=${s?.getTracks?.().length ?? 0}`

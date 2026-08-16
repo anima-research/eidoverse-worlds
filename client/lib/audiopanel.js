@@ -31,6 +31,7 @@ function micLevelNow() {
 }
 
 import { gateUnavailable, ungatedConsent, allowUngated } from './micgate.js';
+import { selfMonitor, selfMonitoring } from './micstate.js';
 import { bus } from './core.js';
 import { ttsSection } from './ttsrow.js';
 import { micOn, toggleMic } from './voice.js';
@@ -352,6 +353,28 @@ function paint(body) {
     body_.append(slider(cat, label, hint,
       cat === 'world' ? p.volWorld : cat === 'tts' ? p.volTts : p.volVoices));
   }
+  // 🔴 HEAR YOUR OWN LANE — R asked for this on 2026-08-09 ("can you feed my own
+  // audio lane back to me for this test so I can hear myself?"), micgate.js
+  // built it, and it was never surfaced: setMonitor() had ZERO callers until
+  // now, so the feature shipped dark for a week.
+  //
+  // It is the instrument that settles "is the gate actually working?" — the
+  // question that found the SFU publishing ungated audio (2026-08-16). Source
+  // reading says the gate is wired; hearing your own voice cut out cleanly when
+  // you stop talking says it unambiguously. Tapped AFTER the gain node
+  // (micgate.js:150), so when the gate closes the monitor goes quiet too — a
+  // monitor on the RAW source would sound perfect while the room heard nothing.
+  //
+  // Default OFF and low: on speakers this WILL howl (mic hears monitor hears
+  // mic), which the hint says out loud rather than leaving to be discovered at
+  // volume.
+  {
+    const row = checkRow('hear my own mic (monitor)',
+      'plays your gated lane back to you — exactly what the room hears, so silence here means the room hears silence. USE HEADPHONES: on speakers this feeds back.',
+      selfMonitoring(), (on) => selfMonitor(on));
+    body_.append(row);
+  }
+
   // B2 (#90): the gate-unavailable escape hatch. Hidden while the gate works;
   // when the graph cannot be built the mic REFUSES to transmit and this row
   // appears — the explicit, user-visible choice to go raw. Never silent.
