@@ -21,6 +21,11 @@ import { bus } from './core.js';
 import { audioContext } from './audioctx.js';
 
 let pc = null, cred = null, micStream = null, wantMic = false;
+// My own outbound analyser (sfuMyLevel). Declared HERE, with the rest of the
+// module state, because sfuConnect() clears it on reconnect — a `let` further
+// down the file is in the temporal dead zone for any caller that runs during
+// module evaluation, and that is a runtime error `node --check` cannot see.
+let _myAn = null, _myBuf = null, _myStream = null;
 /** Speaker ids announced by the server, consumed in order by ontrack. Module
  *  level and subscribed ONCE (see sfuConnect) — core.js has no `off`. */
 const routeQueue = [];
@@ -56,6 +61,28 @@ function attach(id, track) {
 
 export async function sfuConnect(credential, send) {
   cred = credential;
+  // 🔴 A MIC TRACK BELONGS TO THE PC THAT PUBLISHED IT (2026-08-15, found live
+  // — R's mic read ON and published NOTHING for an entire session while a
+  // freshly-loaded tab worked fine).
+  //
+  // On a reconnect this function builds a NEW pc, but `micStream` still named
+  // the OLD one's stream. The bridge then replays the wanted mic (`if
+  // (sfuMicWanted()) await sfuMic(true)`), which hits sfuMic's early return:
+  //     if (micStream) { …enable tracks…; return; }
+  // …so it re-enabled tracks on a stream attached to a CLOSED peer connection
+  // and never called addTrack on the live one. sfuMicOn() is
+  // `!!micStream && wantMic` — both true — so the badge lit, the panel
+  // ticked, and the server saw publishing=false with rx=0 forever.
+  //
+  // The old stream's tracks must also be STOPPED, or the mic hardware light
+  // stays on for a connection nobody is listening to.
+  if (micStream) {
+    for (const t of micStream.getTracks()) { try { t.stop(); } catch { /* already dead */ } }
+    micStream = null;      // wantMic is deliberately KEPT: intent survives a
+                           // reconnect, the stream does not. The bridge's
+                           // replay then takes the real addTrack path.
+  }
+  _myAn = null; _myStream = null;   // the analyser was bound to the dead stream
   pc = new RTCPeerConnection({ iceServers: [] });   // same host: no STUN needed
 
   // The server names each route by the speaker it carries, in the transceiver's
@@ -146,7 +173,42 @@ export async function sfuMic(on = true) {
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
     micStream = s;
-    for (const t of s.getTracks()) pc.addTrack(t, s);
+    // 🔴 addTrack PICKS A TRANSCEIVER FOR YOU, AND IT PICKS THE WRONG ONE.
+    //
+    // Root-caused 2026-08-15 with a 40-line isolation harness
+    // (tools/mini-sfu-test.mjs — keep it, it reproduces this in seconds without
+    // a world). With anyone else in the room our pc holds, in order:
+    //     [sendonly route → speakerA] [sendonly route → speakerB] [recvonly floor]
+    // The FLOOR is the m-line the server offers to receive OUR mic. addTrack
+    // reuses the first *compatible* transceiver, which is a speaker ROUTE, so
+    // the mic lands there (locally sendrecv, answered a=recvonly because the
+    // server offered that m-line sendonly) and the floor is answered a=inactive
+    // forever. Measured, both ends:
+    //     a=recvonly,a=recvonly,a=inactive | trx: sendrecv+track,recvonly,recvonly
+    // werift fires ontrack only for sendonly|sendrecv with a non-zero port
+    // (transceiverManager.js:288), so the server NEVER subscribes: diag says
+    // publishing:false / rxPackets:0 while this client honestly says
+    // micPublished:true with thousands of packets sent. Both true, different
+    // m-lines.
+    //
+    // Only reproduces with 2+ people — a lone client has no routes to mis-pick,
+    // which is why every single-client probe passed while two humans heard
+    // nothing all day.
+    //
+    // The fix: put the track on the transceiver the SERVER offered FOR it. The
+    // floor is the one sitting inactive (nothing has ever been sent on it).
+    // Verified in isolation: a=recvonly,a=recvonly,a=sendonly.
+    const track = s.getTracks()[0];
+    const floor = pc.getTransceivers().find(
+      (t) => t.currentDirection === 'inactive' || t.direction === 'inactive');
+    if (floor) {
+      await floor.sender.replaceTrack(track);
+      floor.direction = 'sendonly';
+    } else {
+      // No floor offered yet (we are the only one here, or the mic beat the
+      // first offer). addTrack is correct then: there are no routes to mis-pick.
+      for (const t of s.getTracks()) pc.addTrack(t, s);
+    }
   })();
   // A DENIED permission prompt is a normal answer, not a crash. getUserMedia
   // rejects, and no caller catches: the relay-cred replay (voicesfubridge:47)
@@ -163,6 +225,35 @@ export async function sfuMic(on = true) {
   // Adding a track makes US want to renegotiate — but the server offers, so we
   // ASK it to, rather than offering ourselves and causing glare.
   bus.emit('sfu-want-negotiate', {});
+}
+
+/** MY OWN level, for my own mouth flap and the 🎙 glyph.
+ *
+ *  The mesh has had this since the beginning (voice.js micAnalyserLevel) and
+ *  the SFU never did, so on an SFU client the speaker's own avatar sat
+ *  slack-jawed while everyone else's moved — voicemouths.js asked voice.js,
+ *  whose micStream is null on this transport, and got a flat 0. Same analyser
+ *  shape as sfuPeerLevels below, on the outbound stream instead of an inbound
+ *  one. (2026-08-15.)
+ *
+ *  Reads the RAW mic, deliberately: the question a mouth answers is "are you
+ *  making sound", not "is the gate currently forwarding it" — a gated-shut
+ *  syllable still moves your face. */
+export function sfuMyLevel() {
+  if (!micStream || !wantMic) return 0;
+  try {
+    if (!_myAn || _myStream !== micStream) {
+      const ctx = audioContext();
+      _myAn = ctx.createAnalyser(); _myAn.fftSize = 512;
+      ctx.createMediaStreamSource(micStream).connect(_myAn);
+      _myBuf = new Float32Array(_myAn.fftSize);
+      _myStream = micStream;
+    }
+    _myAn.getFloatTimeDomainData(_myBuf);
+    let peak = 0;
+    for (const v of _myBuf) peak = Math.max(peak, Math.abs(v));
+    return peak;
+  } catch { return 0; }
 }
 
 /** Same shape relayPeerLevels() returns, so mouth-flap code is shared. */
