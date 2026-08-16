@@ -8,8 +8,23 @@
 // doubles as captions for humans with sound off.
 //
 // v1 engine is the browser's SpeechRecognition (Chrome). Honest caveat,
-// flagged to the gang: desktop Chrome ships audio to Google's recognizer.
-// Local whisper is the planned upgrade; the say-pipe stays identical.
+// flagged to the gang: Chrome ships audio to Google's recognizer — and that is
+// not desktop-only, as this comment used to imply. Researched 2026-08-16:
+// webkitSpeechRecognition is cloud-based on EVERY platform. Chrome on Android
+// exposes the newer on-device API surface but ships no models, so
+// `available({processLocally: true})` always resolves "unavailable"; Samsung
+// Internet exposes only the legacy constructor, which has always been cloud.
+// So there is no configuration in which enabling captions keeps the audio on
+// the device. Local whisper is the planned upgrade; the say-pipe stays
+// identical.
+//
+// 🔴 ANDROID: `continuous` DOES NOT WORK. Chromium issue 40324711 — recognition
+// stops after ~3-4s of no speech regardless of the flag, and upstream has
+// debated faking it vs throwing not-supported. The documented workaround is
+// restarting in onend, which is what this file does — and on Android that
+// restart plays the OS connect/disconnect earcon EVERY time. R heard exactly
+// that as "a chime every 6-8 seconds": it is the workaround being audible, not
+// a bug of ours and not a notification.
 
 import { report } from './core.js';
 import { sendVerb } from './net.js';
@@ -173,6 +188,14 @@ export function setSTT(on) {
       }
     }, 4000);
   };
+  // 🔴 nomatch — the fourth invisible state (found by RESEARCH, 2026-08-16,
+  // after R said "maybe you should research this before guessing more" and she
+  // was right; I had burned two theories by then). It fires when the recognizer
+  // returns a FINAL result in which nothing was confidently recognised —
+  // distinct from no-speech (heard nothing) and from a result we dropped for
+  // not being final. Without it, "the recognizer heard you and understood
+  // nothing" is invisible.
+  rec.onnomatch = () => mark('nomatch — heard something, recognised nothing', 'nomatch');
   rec.onerror = (e) => {
     mark(`error: ${e.error}`, `err:${e.error}`);
     if (e.error === 'no-speech' || e.error === 'aborted') return;   // ordinary silence
