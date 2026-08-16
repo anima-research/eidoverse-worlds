@@ -16,7 +16,7 @@
 import { renderVoiceList } from './ttslist.js';
 import { ttsAvailable, ttsVoiceName, isTtsEnabled, setTtsEnabled, setTtsSource } from './tts.js';
 import { setEndpointVoice } from './browservoice.js';
-import { report } from './core.js';
+import { report, bus } from './core.js';
 // The id of whatever is currently installed, so the list can show a filled dot
 // against it. Null when nothing is loaded — which is a real state, not an error.
 let _selected = null;
@@ -478,10 +478,9 @@ export function ttsSection(host, onPaint = () => {}) {
       const box = host.querySelector('.row.wide input[type=checkbox]');
       if (!label || !note || !box) return false;
       const live = ttsAvailable() && isTtsEnabled();
-      label.style.opacity = live ? '1' : '.45';
+      label.style.opacity = headDimmed() ? '.45' : '1';
       box.checked = isTtsEnabled();
-      note.textContent = _busy || (_needVoice ? 'add a voice with one of the options below'
-        : live ? ttsVoiceName() : ttsAvailable() ? 'ready' : '');
+      note.textContent = headNote();
       return true;
     }
   /** 🔴 THE PANEL MUST NOT TEAR DOWN ON A STATE CHANGE — FOR EVERY ELEMENT
@@ -513,6 +512,46 @@ export function ttsSection(host, onPaint = () => {}) {
    *
    *  Returns false if the expected nodes are missing (first paint, or a
    *  structure change), so the caller falls back to a real build. */
+
+/** 🔴 MIC LIVE MEANS TTS IS UNAVAILABLE, AND IT MUST SAY SO (R, 2026-08-16:
+ *  "I was lobbying for *greying out* TTS model if mic was live… it doesn't give
+ *  you the silent failure of TTS being on in the audio panel and not working").
+ *
+ *  The priority itself is hers from PR #91 and stays: one publishing source, a
+ *  live mic wins outright. What was wrong is that the panel kept claiming TTS
+ *  was on while tts.js silently discarded every typed say — a control showing a
+ *  state the system was not in, which is the same defect as the mic meter and
+ *  the dead volume slider this morning.
+ *
+ *  Nothing is turned OFF here: isTtsEnabled() stays true, so mic-off drops
+ *  straight back to speaking with nothing to re-enable — the "setting stays
+ *  STANDING" property #91 was built around. Only the DISPLAY yields.
+ *
+ *  🔴 ONE function, because this text had drifted into THREE copies (483, 540,
+ *  619) and the first was already missing the loading branch. A status line
+ *  computed in three places is three chances to disagree with itself. */
+function micIsPublishing() {
+  try {
+    if (typeof window.__sfuMicOn === 'function') return !!window.__sfuMicOn();
+  } catch { /* no window */ }
+  return false;
+}
+
+function headNote() {
+  if (_busy) return _busy;
+  if (_loadingId) return `loading ${_loadingName || 'voice'}…`;
+  if (micIsPublishing()) return 'not available while your mic is on';
+  if (_needVoice) return 'add a voice with one of the options below';
+  const live = ttsAvailable() && isTtsEnabled();
+  return live ? ttsVoiceName() : ttsAvailable() ? 'ready' : '';
+}
+
+/** Dimmed when TTS cannot actually speak — either off, or outranked by a live
+ *  mic. The label and the list both read this, so "greyed out" is one answer. */
+function headDimmed() {
+  return !(ttsAvailable() && isTtsEnabled()) || micIsPublishing();
+}
+
   function syncInPlace() {
     const label = host.querySelector('.nm');
     const box = host.querySelector('input[type=checkbox]');
@@ -532,14 +571,12 @@ export function ttsSection(host, onPaint = () => {}) {
     try { window.__ttsMissing = null; } catch { /* no window */ }
 
     const live = ttsAvailable() && isTtsEnabled();
-    label.style.opacity = live ? '1' : '.45';
+    label.style.opacity = headDimmed() ? '.45' : '1';
     // Never fight the user's own click: if the box already shows what state
     // says, leave the node alone. Writing .checked during their interaction is
     // how a control starts feeling like it is arguing back.
     if (box.checked !== isTtsEnabled()) box.checked = isTtsEnabled();
-    note.textContent = _busy || (_loadingId ? `loading ${_loadingName || 'voice'}…`
-      : _needVoice ? 'add a voice with one of the options below'
-      : live ? ttsVoiceName() : ttsAvailable() ? 'ready' : '');
+    note.textContent = headNote();
 
     // The list owns its own in-place update (ttslist.js renders per-element),
     // so re-rendering it here is not a teardown of the rows.
@@ -593,7 +630,7 @@ export function ttsSection(host, onPaint = () => {}) {
       // "text-to-speech volume" slider, and two different controls carrying the
       // identical label "text-to-speech" is the ambiguity she hit. This one
       // selects WHICH VOICE; that one sets how loud it is.
-      `<label class="nm" style="opacity:${live ? '1' : '.45'}">text-to-speech model</label>` +
+      `<label class="nm" style="opacity:${headDimmed() ? '.45' : '1'}">text-to-speech model</label>` +
       `<span class="ctl">` +
       `<input type="checkbox" ${isTtsEnabled() ? 'checked' : ''} ` +
         // 🔴 NOT `disabled` WHEN THERE IS NO VOICE (R, 2026-08-09: "there's no
@@ -616,9 +653,7 @@ export function ttsSection(host, onPaint = () => {}) {
       // 63MB graph was still downloading. _loadingId is set for EVERY path into
       // a load, so it closes that gap; the engine's phase text still wins once
       // it arrives, because it says more.
-      `${_busy || (_loadingId ? `loading ${_loadingName || 'voice'}…`
-        : _needVoice ? 'add a voice with one of the options below'
-        : live ? ttsVoiceName() : ttsAvailable() ? 'ready' : '')}</span>` +
+      `${headNote()}</span>` +
       `</span>`;
     head.querySelector('input').onchange = async (e) => {
       // Untick: nothing structural changes — no row appears or vanishes — so
@@ -748,5 +783,15 @@ export function ttsSection(host, onPaint = () => {}) {
     });
   }
   build();
+  // 🔴 REPAINT WHEN THE MIC CHANGES, or the greying is a lie one toggle old.
+  // The row now displays a state it does not own — whether a live mic is
+  // outranking TTS — so it has to hear about that state changing. audio:mic is
+  // emitted by both the panel's own checkbox and the HUD glyph (mictoggle), so
+  // one subscription covers every way the mic goes on or off.
+  //
+  // build() is safe to call repeatedly now that it updates in place; before the
+  // syncInPlace work earlier today this subscription would have torn the
+  // section down on every mic toggle.
+  bus.on('audio:mic', () => build());
   return host;
 }
