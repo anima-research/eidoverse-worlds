@@ -134,3 +134,26 @@ would otherwise ship.
 
 Reproduce: `node tools/tts-threading-bench.mjs --isolated 8960 --bare 8974`
 (bare arm = worktree at HEAD with `git revert --no-commit 919c0d1`).
+
+---
+
+## Found while testing, NOT fixed — for later, deliberately
+
+**Display names cap at 64 chars and TRUNCATE silently** (`server/server.ts:469`,
+`.slice(0, 64)`). R pasted a URL into the name field on mobile and joined as
+`phone_testhttps://mazda-mic-joy-conducted.trycloudflare.com/?wor` — exactly 64
+characters, so the guard fired correctly and still produced a nonsense identity.
+
+R: "it's probably more of a length problem. Names (especially display names)
+have no business being that long."
+
+Two separate things worth deciding together:
+1. **64 is too generous** for a display name — something like 32 is plenty.
+2. **Truncating is the wrong failure.** It manufactured a valid-looking name
+   from a mis-paste, so nothing told anyone it was wrong. A refusal ("that name
+   is too long") is honest; a silent trim is how a paste becomes an identity.
+
+Deliberately NOT fixed today: it is unrelated to the SFU/audio work, it touches
+the join path (which every client depends on), and changing an identity rule
+mid-test would have muddied the captions measurement. Belongs in its own small
+PR with a decision about the limit.
