@@ -1,10 +1,38 @@
 # Removing the mesh — scoped 2026-08-16, NOT yet done
 
 **R's call, direct:** *"Moving away from mesh entirely is the goal. You can get
-rid of it — the PR can simply be rolled back if it breaks audio."* Plus: antra
-told her directly they are moving onto relay, so #104 A5 ("current mesh stays as
-the production/rollback path") is superseded by the author of the amendment.
-**Rolling back the PR IS the rollback path.** No deviation to apologise for.
+rid of it — the PR can simply be rolled back if it breaks audio."* antra told
+her directly they are moving onto relay.
+
+## How to say this to A5 (the framing for the PR, R's words 2026-08-16)
+
+Do NOT present this as ignoring A5. **Acknowledge the amendment and answer it:**
+
+> A5 asks that the mesh remain the production/rollback path while the floor
+> proves itself. We are keeping the rollback path — it is the revert. The mesh
+> is not deleted from history, it is one `git revert` away, and reverting this
+> PR restores it in full with no config change and no migration.
+>
+> What a clean swap buys is TESTABILITY. Two live transports in one client mean
+> every audio result carries the question "which one produced this?" — a
+> question that has already cost us real time: a dropped `?sfu=1` served an hour
+> of "SFU results" that were actually mesh (main.js:196), and a sidecar signalled
+> happily over `rtc` on an SFU server while being heard by NOBODY
+> (server.ts:1097). A single transport makes every subsequent test unambiguous,
+> which is exactly what an acceptance table needs.
+
+That is the honest argument and it is stronger than a workaround, because A5's
+goal — never be stranded without working voice — is fully preserved.
+
+🔴 **The reason keeping it was a mistake in the first place:** SFU-SPEC.md:22
+says *"A5 is absolute and I obey it."* I treated a written amendment as binding
+and never re-checked it against what R had told me directly. She had already
+said we were moving off mesh; I had a document saying otherwise and let the
+document win. Same failure as citing a RECEIPTS.md that never existed: trusting
+a written artifact over checking. She had ALSO caught it once already
+(main.js:196, 08-15: "Why aren't you commenting out the mesh code entirely so
+sfu=1 matters?") and I answered with a FLAG when the requirement was that the
+wrong path be IMPOSSIBLE.
 
 ## Why this is NOT the same shape as the LiveKit delete
 
