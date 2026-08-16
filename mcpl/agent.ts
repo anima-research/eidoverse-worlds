@@ -157,6 +157,42 @@ export class WorldAgent {
   onPing: ((p: { ts: number; kind: string; who: string; text?: string }) => void) | null = null;
   /** live world events (say/arrive/leave/activity) — the channel fan-out hook */
   onEvent: ((ev: { ts: number; kind: "say" | "arrive" | "leave" | "whisper" | "act" | "activity" | "weather" | "world-change"; who: string; text?: string; mention?: boolean }) => void) | null = null;
+  /** MEDIA seam (#104 / #57): the SFU's publish path is gated to the EMBODIED
+   *  PRIMARY (`relay-cred is the embodied primary's ask`, server.ts) — and for
+   *  an agent, the primary IS this door. So an agent with a local synthesizer
+   *  could not publish at all: its sidecar has the audio and no credential, the
+   *  door has the credential and no audio.
+   *
+   *  Same shape as #100's fix, one layer out: rather than forcing the agent onto
+   *  a raw world-ws side connection (which is what my media-peer was, and it
+   *  landed on the MESH while everyone else was on the SFU), the door forwards
+   *  the media-signalling frames it is the only one authorized to carry. The
+   *  door NEVER synthesizes, encodes, or holds a peer connection — it relays
+   *  four message types and stays a text-tier participant.
+   *
+   *  Frames out (server→sidecar): relay-cred · sfu-offer · sfu-ice · sfu-route
+   *  Frames in  (sidecar→server): sfu-answer · sfu-ice · sfu-want-negotiate
+   *  Nothing else is forwarded in either direction — a whitelist, not a pipe,
+   *  for exactly #100's reason: server-side validation stays the one authority. */
+  onMedia: ((frame: Record<string, unknown>) => void) | null = null;
+  /** Our own recent says (seq → text) and our surface generation, both needed
+   *  to mint a performance receipt on a sidecar's behalf. */
+  ownSays = new Map<number, string>();
+  surfaceGen: number | null = null;
+
+  /** The performance receipt (#57 B1 / PR #103). Sent by the DOOR, never by the
+   *  sidecar: attest is identity-bearing and generation-stamped, and a loopback
+   *  peer able to mint one could suppress every listener's TTS fallback for
+   *  audio it never aired. The digest is over the WORLD's copy of the text. */
+  async attestSay(seq: number): Promise<boolean> {
+    const text = this.ownSays.get(seq);
+    if (text == null || this.ws?.readyState !== 1) return false;
+    const digest = Array.from(new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))))
+      .map((b) => b.toString(16).padStart(2, "0")).join("");
+    this.ws.send(JSON.stringify({ type: "attest", seq, digest, gen: this.surfaceGen }));
+    return true;
+  }
   /** Open coalescing windows for world-change narration, keyed by entity id.
    *  See noteEmitter. */
   private emitterNarration = new Map<string, { announced: unknown; latest: unknown; actor: string; timer: ReturnType<typeof setTimeout> }>();
@@ -442,7 +478,20 @@ export class WorldAgent {
             // Moderation replies (ban lists, global-ban confirmations).
             this.lastMod = { ts: Date.now(), text: String(msg.text ?? "") };
             break;
+          // ── media signalling (see onMedia) ─────────────────────────────
+          // Forwarded verbatim to whoever holds this identity's audio. The
+          // door does not interpret SDP; it is the authenticated carrier, and
+          // nothing more. If no sidecar is attached these are dropped, which
+          // is the correct behaviour for a text-only agent — it never asked
+          // for a credential, so the server never sends these.
+          case "relay-cred": case "sfu-offer": case "sfu-ice": case "sfu-route":
+          case "voice-consent":   // the world's ack of our own receive toggle
+            this.onMedia?.(msg);
+            break;
           case "snapshot":
+            // Our surface generation, issued by the server on acceptance —
+            // every attest must echo it or the receipt is refused (PR #103 B2).
+            if (typeof msg.gen === "number") this.surfaceGen = msg.gen;
             this.entities.clear(); this.people.clear();
             // wake where you fell asleep — fresh body only; a body that has
             // walked this process keeps its own truth on mid-life reconnects
@@ -562,6 +611,18 @@ export class WorldAgent {
             break;
           case "log":
             this.lastSeq = Math.max(this.lastSeq, msg.entry?.seq ?? -1);
+            // Remember our OWN says briefly, so a sidecar that airs one can be
+            // attested for it: the receipt is sha256 of the text the world
+            // logged, and only the world's copy is authoritative (ours could
+            // differ by a trailing space and the digest would not match).
+            // Small ring — a receipt is valid for 5 minutes server-side, so
+            // holding more than a handful of utterances is pointless.
+            if (msg.entry?.verb === "say" && msg.entry?.actor === this.name
+                && typeof msg.entry?.args?.text === "string") {
+              this.ownSays.set(msg.entry.seq, String(msg.entry.args.text));
+              if (this.ownSays.size > 32) this.ownSays.delete(this.ownSays.keys().next().value as number);
+              this.onMedia?.({ type: "speak", seq: msg.entry.seq, text: msg.entry.args.text });
+            }
             await this.applyEntry(msg.entry, true);
             break;
           case "history": {
@@ -1409,6 +1470,36 @@ export class WorldAgent {
   sendMod(type: "world-bans" | "global-ban" | "global-unban" | "global-bans", extra: Record<string, unknown> = {}) {
     if (!this.joined || this.ws?.readyState !== 1) throw new Error("not joined");
     this.ws.send(JSON.stringify({ type, ...extra }));
+  }
+
+  /** Ask the world to mint this identity's media credential (#104 phase-1).
+   *  Only the embodied primary may — which is this door. The answer arrives as
+   *  a `relay-cred` frame on onMedia; a sidecar then publishes on it. */
+  requestMediaCredential(scopes: { publish?: boolean; subscribe?: boolean } = {}) {
+    if (!this.joined || this.ws?.readyState !== 1) throw new Error("not joined");
+    this.ws.send(JSON.stringify({ type: "relay-cred", ...scopes }));
+  }
+
+  /** Carry ONE media-signalling frame from the sidecar to the world. Whitelisted
+   *  by type for #100's reason — the door must not become a general tunnel into
+   *  the sequencer, and server-side validation stays the single authority.
+   *  Payload shape is deliberately NOT inspected here: SDP and ICE are the
+   *  server's to validate, and a door that parsed them would be a second,
+   *  weaker validator that could disagree. */
+  sendMedia(frame: { type: string; [k: string]: unknown }): void {
+    if (!this.joined || this.ws?.readyState !== 1) return;
+    const t = String(frame?.type ?? "");
+    // `voice-consent` is the LISTENER half: the world requires it from the
+    // primary (server.ts refuses a spectator and keys on c.id/c.gen), so an
+    // agent that wants to HEAR must send it through this door too. It carries
+    // no audio and no identity claim beyond the one the door already holds —
+    // it is a boolean about our own ears.
+    if (t !== "sfu-answer" && t !== "sfu-ice" && t !== "sfu-want-negotiate"
+        && t !== "sfu-pos" && t !== "voice-consent") {
+      console.warn(`[door] refusing to forward non-media frame "${t}"`);
+      return;
+    }
+    this.ws.send(JSON.stringify(frame));
   }
 
   /** Wait briefly for the world's answer to a moderation act issued at t0: a
