@@ -34,7 +34,23 @@ Object.defineProperty(globalThis.navigator, 'mediaDevices', { configurable: true
   return { kind: 'microphone', getTracks: () => [{ kind: 'audio', stop() {} }] };
 }}});
 class FakeNode { connect() { return this; } disconnect() {} }
-globalThis.MediaStream = globalThis.MediaStream ?? class { constructor(t){ this._t=t||[]; } getTracks(){ return this._t; } };
+// 🔴 THE STUB MUST BE AS STRICT AS THE BROWSER. A permissive stub hides real
+// bugs: `new MediaStream([null])` throws TypeError in Chrome, but a stub that
+// stores the array happily let mutation M4 (provider.start() returning null)
+// pass 8/8. A test double looser than the thing it doubles is a source of false
+// green — the same defect as a test that imports nothing, wearing a disguise.
+globalThis.MediaStream = class {
+  constructor(t) {
+    const tracks = t || [];
+    for (const x of tracks) {
+      if (x == null || typeof x !== 'object' || x.kind !== 'audio') {
+        throw new TypeError("Failed to construct 'MediaStream': invalid track");
+      }
+    }
+    this._t = tracks;
+  }
+  getTracks() { return this._t; }
+};
 globalThis.AudioContext = class {
   createMediaStreamDestination() { return { stream: { synthetic: true, getTracks: () => [{ kind: 'audio', stop() {} }] } }; }
   createGain() { return new FakeNode(); }
@@ -63,7 +79,19 @@ check('mic available and wanted → microphone', s.kind === 'microphone' && gumC
 setSynthProvider({ available: () => true, start: () => ({ kind: 'audio', stop() {} }) });
 gumCalls = 0;
 s = await voiceSource({ micWanted: false });
-check('mic OFF + provider → synthetic source', !!s && s.kind !== 'microphone');
+// 🔴 ASSERT THE POSITIVE. This read `s.kind !== 'microphone'` — a NEGATIVE, so
+// a stream that is neither a mic nor marked synthetic sailed through. An
+// adversarial mutation (strip `.synthetic = true` from synthStream()) left this
+// file 6/6 GREEN. That flag drives five live branches — voicesfu.js:290,294,300
+// (the mic-resume-after-synth guard) and voice.js:614 (whether the WebAudio
+// gate wraps the stream at all) — so a source that loses it is silently treated
+// as a microphone by every consumer.
+//
+// This is the same class of error the transcription version made, one level
+// down: I fixed the invented INTERFACE and kept asserting the absence of the
+// wrong thing instead of the presence of the right one.
+check('mic OFF + provider → synthetic source', !!s && s.synthetic === true);
+check('mic OFF source is NOT a microphone', s.kind !== 'microphone');
 check('mic OFF does not call getUserMedia', gumCalls === 0);
 
 // 3. Default stays mic — every existing call site unchanged.
@@ -71,10 +99,26 @@ gumCalls = 0;
 s = await voiceSource();
 check('default (micWanted omitted) still takes the mic', s.kind === 'microphone' && gumCalls === 1);
 
+// 3b. The provider contract itself: start() must yield a usable track.
+//     (Mutation M4: start() returning null left the old version green, because
+//     `new MediaStream([null])` is tolerated by the stub while a real browser
+//     throws. Assert the track exists rather than trusting the wrapper.)
+const tracks = typeof s.getTracks === 'function' ? s.getTracks() : [];
+check('synthetic stream carries a real track', tracks.length === 1 && tracks[0] != null);
+
+// A provider whose start() yields nothing must FAIL LOUDLY, not publish silence.
+// (Mutation M4. The strict MediaStream stub above makes this throw the way a
+// browser does; catching it here turns a crash into a reported assertion.)
+setSynthProvider({ available: () => true, start: () => null });
+let m4threw = false;
+try { await voiceSource({ micWanted: false }); } catch { m4threw = true; }
+check('provider.start() returning null throws, not silent publish', m4threw);
+setSynthProvider({ available: () => true, start: () => ({ kind: 'audio', stop() {} }) });
+
 // 4. Original fallback intact: gUM throws + provider → synth.
 gumBehaviour = 'throw'; gumCalls = 0;
 s = await voiceSource();
-check('gUM throws + provider → synthetic (original path)', !!s && s.kind !== 'microphone');
+check('gUM throws + provider → synthetic (original path)', !!s && s.synthetic === true);
 
 // 5. Negative control: no provider + gUM throws → must THROW, never silently mute.
 //    (setSynthProvider(null) may be rejected by a guard; clear via a provider
