@@ -157,3 +157,20 @@ Deliberately NOT fixed today: it is unrelated to the SFU/audio work, it touches
 the join path (which every client depends on), and changing an identity rule
 mid-test would have muddied the captions measurement. Belongs in its own small
 PR with a decision about the limit.
+
+## Follow-up for the UI redesign — spacing has NO tokens
+
+Found 2026-08-16 while matching the audio panel to the sky panel. The client has
+real design tokens for **colour and type** (`--accent`, `--edge`, `--dim`,
+`--fs-sm`) and panels use them correctly. It has **none for spacing**: 25
+hardcoded `gap:` values across `index.html`, `audiopanel.js` and `voicelist.js`,
+and no `--space`/`--gap` variable anywhere.
+
+That is why the audio panel drifted to `gap: 10px; margin: 5px 0` while the
+house row (`index.html:307`) is `gap: 7px` with no vertical margin — there was
+nothing to inherit, so a new panel invented its own and nobody could see the
+difference without measuring.
+
+Matched by hand for now. **The real fix is spacing tokens both panels read**,
+which belongs in the UI redesign R has already said is coming — building it
+today would touch every panel and then be thrown away.

@@ -78,8 +78,21 @@ import { CONFIG } from './core.js';
 // labels take --fg, hints and units take --dim, controls take --accent.
 const SP_CSS = `
 :root { --sp-label-col: 8.5rem; }
+/* 🔴 MATCH THE SKY PANEL (R, 2026-08-16: "everything is farther apart
+   spacing-wise in the audio panel in general vs the sky panel. Can you match
+   the sky panel spacing?").
+   Measured, not eyeballed — index.html:307 is the house spec:
+       .row     display:flex; align-items:center; gap:7px
+       .row .nm width:42px
+   This row invented its own: gap:10px and `margin: 5px 0`, which puts 10px
+   between adjacent rows where sky puts none. That margin was the bulk of the
+   difference; the 3px of extra gap was the rest.
+   The GRID stays — sky's 42px label column cannot hold "connect to other
+   people's audio", and a column narrower than its longest member makes a
+   ragged wrap rather than a centre line (see the note below). So: sky's
+   rhythm, this panel's column width. */
 .sp-row { display: grid; grid-template-columns: var(--sp-label-col) minmax(0, 1fr);
-          align-items: center; gap: 10px; margin: 5px 0;
+          align-items: center; gap: 7px; margin: 0;
           font-size: var(--fs-sm); color: var(--dim); }
 /* The house accent, so a slider here and a slider in ☀ sky are the same object.
    accent-color paints the thumb, the filled track AND the checkbox tick in one
