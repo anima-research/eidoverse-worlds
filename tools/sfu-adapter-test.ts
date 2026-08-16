@@ -39,7 +39,15 @@ check("moderator mute is a DIFFERENT state than consent",
 // measurement hygiene: delivered and suppressed reported separately
 const d = sfuDiag(W) as any;
 check("diag separates forwarded from suppressed", typeof d.forwarded === "number" && typeof d.suppressed?.gated === "number");
-check("incarnation is opaque, not a claimed-monotonic counter", /^i\d+-/.test(d.incarnation) && d.incarnation.length > 20);
+// 🔴 ASSERT OPACITY, NOT LENGTH. This read `.length > 20`, which pinned the old
+// full-UUID suffix rather than the property it names — and went red when the
+// incarnation moved to the DURABLE implementation (transport.ts), whose suffix
+// is 8 hex chars. 8 hex is ~4 billion values, plenty to make a lost-file
+// counter reuse non-colliding, which is the entropy suffix's actual job.
+// What matters is: prefixed counter + a non-empty entropy suffix that a caller
+// cannot predict — never that it is long.
+check("incarnation is opaque, not a claimed-monotonic counter",
+  /^i\d+-[0-9a-f]{6,}$/.test(d.incarnation));
 
 revokeSfuLeg(W, "alice");
 check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length === 0);

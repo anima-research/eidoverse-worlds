@@ -21,6 +21,7 @@
 //     instead of a round trip we react to after the fact;
 //   • no API secret exists at all, so amendment 1's "never expose LiveKit API
 //     secrets to a browser or resident tool surface" is satisfied vacuously.
+import { currentIncarnation } from "./transport.ts";
 import { Sfu } from "./sfu.ts";
 import { admitParticipant, applyConsentUpdate, nextIncarnation,
   type RelayClaims, type LiveLegState } from "./relaydecision.ts";
@@ -63,7 +64,17 @@ export function sfuState(world: string): SfuWorldState {
       // accidentally reuse an old value". In-process makes this easier rather
       // than harder (the SFU cannot outlive or predecease the sequencer), but
       // "easier" is not "proven", so we still refuse to call it monotonic.
-      incarnation: nextIncarnation(null, crypto.randomUUID()),
+      //
+      // 🔴 THIS PASSED A HARDCODED `null` PREV UNTIL 2026-08-16, which is
+      // exactly the reset amendment 2 rejects: every process start produced
+      // `i1-…` again, so a credential minted before a restart was
+      // indistinguishable from one minted after. The comment above defends
+      // OPACITY and never noticed it was also describing a RESET. The durable
+      // implementation (atomic tmp+rename) existed the whole time in the
+      // LiveKit adapter and was already booted — now in transport.ts, booted by
+      // server.ts, so there is ONE incarnation per process and it survives a
+      // restart. Found by an independent audit.
+      incarnation: currentIncarnation(),
       sfu: new Sfu({ onNegotiationNeeded: (legId) => {
         const send = senders.get(legId);
         if (send) void sfuNegotiate(world, legId, send);

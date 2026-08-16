@@ -1,7 +1,7 @@
 {
   "name": "eidoverse-worlds",
   "private": true,
-  "description": "Root deps serve server/optimize.ts (the store's GLB diet) and server/behaviors.ts (quickjs-emscripten, the runtime-script sandbox — lazily imported; the sequencer boots without it, scripting just reports itself unavailable). The sequencer core itself stays dependency-free. Client and mcpl keep their own manifests.",
+  "description": "Root deps serve server/optimize.ts (the store's GLB diet) and server/behaviors.ts (quickjs-emscripten, the runtime-script sandbox \u2014 lazily imported; the sequencer boots without it, scripting just reports itself unavailable). The sequencer core itself stays dependency-free. Client and mcpl keep their own manifests.",
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.19.3",
     "@gltf-transform/core": "^4.1.1",
@@ -9,7 +9,6 @@
     "@gltf-transform/functions": "^4.1.1",
     "draco3dgltf": "^1.5.7",
     "jpeg-js": "^0.4.4",
-    "livekit-server-sdk": "^2.17.0",
     "meshoptimizer": "^1.2.0",
     "pngjs": "^7.0.0",
     "quickjs-emscripten": "^0.32.0",
@@ -18,7 +17,6 @@
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.11.1",
-    "@livekit/rtc-node": "^0.13.33",
     "playwright": "^1.62.1"
   }
 }

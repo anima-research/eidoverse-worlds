@@ -11,7 +11,7 @@
 
 import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, appendFileSync } from "node:fs";
 import { sfuDiag } from "./sfuadapter.ts";
-import { voiceTransport } from "./relayadapter.ts";
+import { voiceTransport } from "./transport.ts";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, JOIN_TOKEN } from "./config.ts";
@@ -21,7 +21,6 @@ import { resolveLibFile } from "./lint.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { worlds, getWorld, type World } from "./world.ts";
 import { handleUpload } from "./upload.ts";
-import { handleRelayWebhook, relayDiag, relayEnabled } from "./relayadapter.ts";
 
 /** What the routes need from Bun's server object, structurally: the WS
  *  upgrade and the socket address (X-Real-IP's fallback). */
@@ -366,29 +365,6 @@ const ROUTES: Route[] = [
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {
-    // #104 phase-1: LiveKit's signed event stream (participant_joined/left).
-    // The SDK verifies the signature against our key/secret — an unsigned or
-    // wrongly-signed post is refused inside handleRelayWebhook, and admission
-    // enforcement (the seven refusals) runs on every join event.
-    match: (u, req) => u.pathname === "/relay-webhook" && req.method === "POST",
-    handler: async ({ req }) => {
-      // 🔴 GATE ON THE TRANSPORT, NOT ON "SOME RELAY EXISTS" (2026-08-15).
-      // relayEnabled() is true for the SFU too, so this LiveKit-only endpoint
-      // stayed reachable on an SFU server — where no legitimate caller can
-      // exist, and where the signature it checks is against RELAY_SECRET's
-      // default ("secret"). An endpoint that cannot be legitimately called on
-      // the running transport should not be answering at all.
-      if (voiceTransport() !== "livekit") return new Response("no relay", { status: 404 });
-      try {
-        const r = await handleRelayWebhook(await req.text(), req.headers.get("authorization") ?? "");
-        return new Response(JSON.stringify(r), { headers: { "content-type": "application/json" } });
-      } catch (err) {
-        console.error(`[relay] webhook refused:`, err);
-        return new Response("bad webhook", { status: 401 });
-      }
-    },
-  },
-  {
     // #104 diagnostics: the adapter's view — legs, gens, consent, incarnation.
     // Both-ends discipline: pair with the client's voiceDiag relay page.
     match: (u) => u.pathname === "/relay-diag",
@@ -397,9 +373,7 @@ const ROUTES: Route[] = [
       // LiveKit adapter's state while the SFU carries the audio produced
       // `state:"degraded"` on a perfectly healthy server — a diagnostic that
       // lies is worse than none, and this is the third such bug today.
-      JSON.stringify(voiceTransport() === "sfu"
-        ? sfuDiag(url.searchParams.get("world") ?? "staging")
-        : relayDiag(url.searchParams.get("world") ?? "staging")),
+      JSON.stringify(sfuDiag(url.searchParams.get("world") ?? "staging")),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {

@@ -207,16 +207,10 @@ function start() {
   // path". Rollback is `git revert`, not a runtime branch.
   const _q = new URLSearchParams(location.search);
   const _forceMesh = _q.get('mesh') === '1';
-  const _relay = _q.get('relay') === '1';
   if (_forceMesh) {
     console.warn('[voice] transport=MESH (explicit ?mesh=1 — the SFU spike is NOT under test)');
     window.__voiceTransport = 'mesh';
     initVoice(CONFIG.name);
-  } else if (_relay) {
-    console.info('[voice] transport=RELAY (livekit — a #104 acceptance-table candidate, not the floor)');
-    window.__voiceTransport = 'pending:relay';
-    import('./lib/voicerelay.js').then((vr) => { vr.initVoiceRelay(CONFIG.name); window.__voiceTransport = 'relay'; })
-      .catch((e) => { window.__voiceTransport = 'failed:relay'; window.__voiceTransportError = String(e); console.error('voice relay init failed', e); });
   } else {
     // DEFAULT on this branch. ?sfu=1 still accepted so existing links/probes
     // keep working, but it is no longer load-bearing.

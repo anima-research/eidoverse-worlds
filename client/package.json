@@ -15,7 +15,6 @@
     "@pixiv/three-vrm": "^3.5.2",
     "@pixiv/three-vrm-animation": "^3.5.2",
     "@pixiv/three-vrm-materials-mtoon": "^3.5.2",
-    "livekit-client": "^2.21.0",
     "three": "^0.184.0",
     "three-mesh-bvh": "^0.9.14"
   }

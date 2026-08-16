@@ -43,9 +43,7 @@ import { SeatStore } from "./seats.ts";
 import { OPT_DIR } from "./config.ts";
 // Relay-floor spike (#104 phase 1): the LiveKit adapter. Inert without
 // RELAY_URL — the mesh stays the production path (amendment 6).
-import { relayEnabled, bootRelayAdapter, mintRelayCredential, revokeRelayLeg,
-  setListenerConsent, setLegRetiredHook, relayDiag, relayServiceState, currentIncarnation,
-  voiceTransport } from "./relayadapter.ts";
+import { relayEnabled, bootIncarnation, currentIncarnation, voiceTransport } from "./transport.ts";
 // The in-process SFU (VOICE_TRANSPORT=sfu). Same surface as the LiveKit
 // adapter, so every call site below branches on transport rather than on shape.
 import { mintSfuCredential, setSfuConsent, revokeSfuLeg, sfuDiag,
@@ -55,20 +53,16 @@ const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR);
 // The resident-visible service chart (amendment 2): every voice-service
 // transition reaches every client of every world, stamped with the
 // incarnation so a client can tell "the relay restarted" from "it flapped".
-bootRelayAdapter(OPT_DIR, (state, inc) => {
-  const msg = JSON.stringify({ type: "voice-service", state, incarnation: inc });
-  for (const w of worlds.values()) for (const t of w.clients) t.ws.send(msg);
-  console.log(`[relay] voice-service ${state} (${inc})`);
-});
-// The relay told us (webhook participant_left / probe) a leg died: the
-// SEQUENCER announces it — presence authority stays here in every topology.
-setLegRetiredHook((worldName, id, gen) => {
-  const w = worlds.get(worldName);
-  if (!w) return;
-  const retire = JSON.stringify({ type: "surface-transition",
-    id, surface: "voice-relay", gen: null, retired: gen });
-  for (const t of w.clients) t.ws.send(retire);
-});
+// 🔴 The incarnation is now DURABLE for the SFU too. It boots from the same
+// atomic tmp+rename file the LiveKit adapter used, so a restart strands every
+// old credential structurally instead of resetting the counter to i1- (which is
+// what sfuadapter.ts did by passing a hardcoded null prev).
+bootIncarnation(OPT_DIR);
+
+// NOTE: there is no external service to probe, so there is no voice-service
+// state machine and no leg-retired webhook. The in-process SFU cannot outlive
+// or predecease the sequencer; retirement is driven directly by retireRelayLeg
+// below, on the same close path every other surface uses.
 /** Retire an identity's relay leg through the SAME funnel every other surface
  *  death uses: revoke at the relay, burn the credential, broadcast the
  *  transition. Fire-and-forget — a relay outage must never wedge a close. */
@@ -80,23 +74,13 @@ function retireRelayLeg(w: World, id: string) {
   // a consent the fresh leg never gave. Fail-open on a privacy boundary.
   // Adapter tests missed it because they call revokeSfuLeg explicitly; only a
   // live-server probe reconnecting over real websockets could see it.
-  if (voiceTransport() === "sfu") {
-    const leg = revokeSfuLeg(w.name, id);
-    if (leg) {
-      const retire = JSON.stringify({ type: "surface-transition",
-        id, surface: "voice-relay", gen: null, retired: leg.gen });
-      for (const t of w.clients) t.ws.send(retire);
-      console.log(`[world:${w.name}] ${id}/voice-relay(sfu) revoked — gen ${leg.gen}`);
-    }
-    return;
-  }
-  revokeRelayLeg(w.name, id).then((leg) => {
-    if (!leg) return;
+  const leg = revokeSfuLeg(w.name, id);
+  if (leg) {
     const retire = JSON.stringify({ type: "surface-transition",
       id, surface: "voice-relay", gen: null, retired: leg.gen });
     for (const t of w.clients) t.ws.send(retire);
     console.log(`[world:${w.name}] ${id}/voice-relay revoked — gen ${leg.gen}`);
-  }).catch((err) => console.error(`[relay] revoke for ${id} failed`, err));
+  }
 }
 
 // Behavior sandbox wiring: a script's emit is gated by its AUTHOR's live
@@ -1029,7 +1013,7 @@ const server = Bun.serve({
         // recipient to address and no fanout to get wrong. Same properties
         // though — never logged, SDP-sized cap, dropped if the leg is gone.
         case "sfu-answer": {
-          if (!c.world || voiceTransport() !== "sfu") return;
+          if (!c.world || !relayEnabled()) return;
           // 🔴 THE SAME GATE relay-cred USES (:1120). A spectator or an aux leg
           // keeps the PRIMARY'S `c.id` (:509 sets spectator from surface, it does
           // not rename), so without this check any such socket reaches a real
@@ -1047,7 +1031,7 @@ const server = Bun.serve({
           return;
         }
         case "sfu-ice": {
-          if (!c.world || voiceTransport() !== "sfu") return;
+          if (!c.world || !relayEnabled()) return;
           // 🔴 THE SAME GATE relay-cred USES (:1120). A spectator or an aux leg
           // keeps the PRIMARY'S `c.id` (:509 sets spectator from surface, it does
           // not rename), so without this check any such socket reaches a real
@@ -1068,7 +1052,7 @@ const server = Bun.serve({
           // fails open on unknown/stale positions, so a client that never sends
           // these is never gated — which is what keeps this from being a way to
           // silence someone by withholding data.
-          if (!c.world || voiceTransport() !== "sfu") return;
+          if (!c.world || !relayEnabled()) return;
           // 🔴 THE SAME GATE relay-cred USES (:1120). A spectator or an aux leg
           // keeps the PRIMARY'S `c.id` (:509 sets spectator from surface, it does
           // not rename), so without this check any such socket reaches a real
@@ -1088,7 +1072,7 @@ const server = Bun.serve({
         case "sfu-want-negotiate": {
           // The client added a track and needs an offer. It ASKS rather than
           // offering, because the server must own every offer (glare).
-          if (!c.world || voiceTransport() !== "sfu") return;
+          if (!c.world || !relayEnabled()) return;
           // 🔴 THE SAME GATE relay-cred USES (:1120). A spectator or an aux leg
           // keeps the PRIMARY'S `c.id` (:509 sets spectator from surface, it does
           // not rename), so without this check any such socket reaches a real
@@ -1171,7 +1155,7 @@ const server = Bun.serve({
           }
           const wantPub = msg.publish !== false;      // scopes are askable-down, never up
           const mediaGen = ++GEN;
-          if (voiceTransport() === "sfu") {
+          {
             // No JWT to mint and no external service to reach, so this is
             // synchronous — but it announces through the SAME transition event
             // and takes a gen from the SAME counter, because a surface session
@@ -1185,21 +1169,6 @@ const server = Bun.serve({
               service: { enabled: true, state: "live", transport: "sfu" } }));
             return;
           }
-          mintRelayCredential(c.world.name, c.id, c.gen!, mediaGen,
-            { publish: wantPub, subscribe: msg.subscribe !== false })
-            .then((cred) => {
-              if (!c.world) return;
-              const transition = JSON.stringify({ type: "surface-transition",
-                id: c.id, surface: "voice-relay", gen: mediaGen, retired: null });
-              for (const t of c.world.clients) if (t !== c) t.ws.send(transition);
-              ws.send(JSON.stringify({ type: "relay-cred", ...cred, gen: mediaGen,
-                service: relayServiceState() }));
-            })
-            .catch((err) => {
-              console.error(`[relay] mint for ${c.id} failed`, err);
-              ws.send(JSON.stringify({ type: "error", error: "relay credential mint failed" }));
-            });
-          return;
         }
         case "voice-consent": {
           // Listener-authored receive consent (amendment 3): server-enforced
@@ -1209,15 +1178,9 @@ const server = Bun.serve({
           // moderator mute is a different verb with a different rank.
           if (!c.world || c.spectator) return;
           if (!relayEnabled()) return;
-          if (voiceTransport() === "sfu") {
-            const r = setSfuConsent(c.world.name, c.id, c.gen ?? 0, msg.recv === true);
-            ws.send(JSON.stringify({ type: "voice-consent", recv: msg.recv === true,
-              applied: r.changed, ...(r.reason ? { note: r.reason } : {}) }));
-            return;
-          }
-          setListenerConsent(c.world.name, c.id, c.gen ?? 0, msg.recv === true)
-            .then((r) => ws.send(JSON.stringify({ type: "voice-consent", recv: msg.recv === true, applied: r.changed, ...(r.reason ? { note: r.reason } : {}) })))
-            .catch((err) => console.error(`[relay] consent for ${c.id} failed`, err));
+          const r = setSfuConsent(c.world.name, c.id, c.gen ?? 0, msg.recv === true);
+          ws.send(JSON.stringify({ type: "voice-consent", recv: msg.recv === true,
+            applied: r.changed, ...(r.reason ? { note: r.reason } : {}) }));
           return;
         }
         case "attest": {
