@@ -87,7 +87,20 @@ export async function sfuConnect(credential, send) {
                            // replay then takes the real addTrack path.
   }
   _myAn = null; _myStream = null;   // the analyser was bound to the dead stream
-  pc = new RTCPeerConnection({ iceServers: [] });   // same host: no STUN needed
+  // 🔴 THE SERVER CHOOSES THE ICE CONFIG, not this file (2026-08-16). This was
+  // `iceServers: []` with the comment "same host: no STUN needed" — true of the
+  // loopback pairs it was written against, and the reason a PHONE could not be
+  // heard: with no STUN there is no reflexive candidate, so a peer on another
+  // network has no viable pair and ICE stalls in 'checking' forever without
+  // throwing. The mesh never had this problem because voice.js:33 always
+  // carried a STUN server.
+  //
+  // It comes from the credential (SFU-SPEC.md:113's `iceServers?`) so the
+  // operator can point at their own STUN/TURN without a client rebuild. The
+  // fallback stays [] — a credential from a server that predates this field
+  // behaves exactly as before rather than silently acquiring a public
+  // dependency.
+  pc = new RTCPeerConnection({ iceServers: credential?.iceServers ?? [] });
 
   // The server names each route by the speaker it carries, in the transceiver's
   // mid → we cannot read that portably, so the SERVER tells us via a sideband

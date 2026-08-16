@@ -102,7 +102,48 @@ export function mintSfuCredential(world: string, id: string, primaryGen: number,
   // not a peer connection.
   s.sfu.createLeg(id, mediaGen);
   applyStandingConsent(s, id);   // consent given before this leg existed still counts
-  return { nonce, incarnation: s.incarnation, identity: `${id}#${mediaGen}`, transport: "sfu" as const };
+  return { nonce, incarnation: s.incarnation, identity: `${id}#${mediaGen}`,
+           transport: "sfu" as const, iceServers: iceServers() };
+}
+
+/** ICE servers handed to the browser with its credential — the `iceServers?`
+ *  field SFU-SPEC.md:113 designed into mintLeg and nobody ever populated.
+ *
+ *  🔴 WHY THIS IS NOT "PHASE 2" (R, 2026-08-16, from a phone that could not be
+ *  heard). SFU-SPEC.md:135 says "No TURN for phase 1 — TURN is a phase-2
+ *  direct-pair concern", and I let that stand for STUN too. The reasoning was
+ *  imported from the wrong topology: in a direct P2P pair BOTH ends sit behind
+ *  NAT, which is the hard case deferred to phase 2. An SFU has exactly one
+ *  reachable endpoint and every client dials OUT to it — so a client needs only
+ *  to discover its own public address, which is what STUN does, statelessly and
+ *  for free.
+ *
+ *  The mesh has always had this (client/lib/voice.js:33) and that is precisely
+ *  why phone↔desktop worked on mesh and not here. Shipping an SFU that only
+ *  carries audio between tabs on one machine would make "voice works" false for
+ *  everyone not sitting at the server.
+ *
+ *  TURN genuinely IS deferred: it relays media, costs bandwidth, needs
+ *  credentials, and is only required when STUN fails (symmetric NAT). Set
+ *  SFU_ICE_SERVERS to a JSON array to add one, or to `[]` to force host-only
+ *  (which is what the tests want — a loopback pair must not wait on a public
+ *  STUN server that may not answer in CI).
+ */
+function iceServers(): { urls: string; username?: string; credential?: string }[] {
+  const raw = process.env.SFU_ICE_SERVERS;
+  if (raw !== undefined) {
+    try { return JSON.parse(raw); }
+    catch (e) {
+      // 🔴 Do NOT silently fall back to the default here. An operator who set
+      // this meant to change it; swallowing a typo would hand out a config they
+      // did not choose and the symptom would be unreachable voice for exactly
+      // the remote users this exists to serve.
+      console.error(`[sfu] SFU_ICE_SERVERS is not valid JSON — refusing to guess:`,
+        (e as Error).message);
+      return [];
+    }
+  }
+  return [{ urls: "stun:stun.l.google.com:19302" }];
 }
 
 /** Admission — amendment 1's seven refusals, decided by the SHARED decision
