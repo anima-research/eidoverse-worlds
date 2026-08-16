@@ -127,6 +127,10 @@ export function ttsSection(host, onPaint = () => {}) {
       }
     }
     async function pickInner(id) {
+    // Captured BEFORE anything below clears it: "was the user already asking to
+    // speak, and only missing a voice?" TTS already being on counts too — then
+    // this is a SWITCH between voices and must stay on, not silently mute.
+    const wantedSpeech = _needVoice || isTtsEnabled();
     try {
       if (id.startsWith('ep:')) {
         await setEndpointVoice(id.slice(3));
@@ -148,7 +152,22 @@ export function ttsSection(host, onPaint = () => {}) {
     // Remember it so ticking the box later picks what they used last.
     try { localStorage.setItem('eido.tts.lastVoice', id); } catch { /* private mode */ }
     _needVoice = false;   // they acted on the prompt; it has served its purpose
-      setTtsEnabled(true);
+      // 🔴 CHOOSING IS NOT ENABLING (R, 2026-08-16: "can you make it possible to
+      // interact with the text-to-speech model radio buttons between 2+ models
+      // even without the check box checked? That way if there's more than one,
+      // you can select the one you want, getting around uploading one you don't
+      // want first when you click the checkbox").
+      //
+      // Selecting used to force TTS on unconditionally, which made the two
+      // controls one control: with several voices remembered you could not
+      // switch to the one you wanted without also starting to speak in it, and
+      // ticking the box grabbed whichever voice the rules landed on first.
+      //
+      // Now the tick decides WHETHER, the list decides WHICH. Enabling on
+      // select happens only when the user was already asking to speak and the
+      // one thing missing was a voice — the _needVoice prompt is exactly that
+      // state, so it keeps its old behaviour and nothing else does.
+      if (wantedSpeech) setTtsEnabled(true);
     } catch (e) {
       report('tts voice', e);
       _busy = String(e?.message || e).slice(0, 80);
@@ -453,8 +472,18 @@ export function ttsSection(host, onPaint = () => {}) {
         return;
       }
       _needVoice = false;
+      // 🔴 THE VISIBLE SELECTION WINS (R, 2026-08-16). Now that choosing a voice
+      // no longer enables TTS, a user can mark the one they want and THEN tick
+      // the box — so the tick must honour what the radio shows. Reading only
+      // localStorage here would load a different voice than the one marked on
+      // screen, which is the display-vs-reality split in its purest form: the
+      // dot says one thing, the speaker says another.
+      //
+      // Order: what is selected right now → last used → the first row. The
+      // second and third are the pre-existing rule, unchanged.
       const last = (() => { try { return localStorage.getItem('eido.tts.lastVoice'); } catch { return null; } })();
-      const pickId = (last && items.some((i) => i.id === last)) ? last : items[0].id;
+      const marked = _selected && items.some((i) => i.id === _selected) ? _selected : null;
+      const pickId = marked ?? ((last && items.some((i) => i.id === last)) ? last : items[0].id);
         // If loading fails the box must not stay ticked over a voice that never
         // arrived — that is the same silent failure by a different route.
         try {
@@ -490,6 +519,20 @@ export function ttsSection(host, onPaint = () => {}) {
     listHost.style.cssText = `margin:2px 0 8px calc(${col} + 10px)`;
     host.appendChild(listHost);
     collectVoices().then((items) => {
+      // 🔴 SOMETHING IS ALWAYS MARKED (R, 2026-08-16: "maybe leave top radio'd
+      // by default, or last if one exists, per existing rules"). _selected
+      // starts null, so a fresh page with remembered voices showed a list with
+      // NO dot — and "which one will the checkbox use?" had no visible answer.
+      //
+      // Same order the tick uses, so the dot is a PREDICTION of what ticking
+      // will do rather than a separate opinion: last used, else the first row.
+      // Marking is display only — no load, no permission prompt, nothing
+      // enabled. The voice is not touched until the user asks for it.
+      if (!_selected && items.length) {
+        const last = (() => { try { return localStorage.getItem('eido.tts.lastVoice'); } catch { return null; } })();
+        const real = items.filter((i) => i.id !== '__pending');
+        if (real.length) _selected = (last && real.some((i) => i.id === last)) ? last : real[0].id;
+      }
       renderVoiceList(listHost, {
         items, selected: _selected, busy: _busy,
         // The in-flight import, shown as a ghost row with a running clock.
