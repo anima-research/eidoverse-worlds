@@ -166,7 +166,17 @@ function syncSelection(host, { items, selected, busy, loading }) {
  */
 export function renderVoiceList(host, { items, selected, on, busy, loading }) {
   ensureCss();
-  host.className = 'vl';
+  // 🔴 ADD, DO NOT OVERWRITE (R, 2026-08-16 — the panel teardown, report five).
+  // This was `host.className = 'vl'`, which ERASES whatever the caller put
+  // there. ttsrow marks this element `.tts-list` so its in-place updater can
+  // find it again; the first render silently replaced that with `vl`, so from
+  // then on syncInPlace() could not locate the list, refused, and rebuilt the
+  // ENTIRE section on every state change — which is exactly the teardown she
+  // reported three times while I fixed the two layers underneath it.
+  //
+  // A component that styles a host it does not own must contribute a class, not
+  // seize the attribute. classList.add is the whole fix.
+  host.classList.add('vl');
   // 🔴 A SELECTION CHANGE MUST NOT REBUILD THE LIST (R, 2026-08-16, asking for
   // the third time and rightly annoyed: "the whole panel is *still* tearing
   // down when you select one radio button or the other… fix this issue for
