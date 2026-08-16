@@ -550,6 +550,16 @@ function audioReport() {
   return 'audio ▸ ' + L.join('  ·  ');
 }
 
+/** Just the captions answer, short enough to copy on a phone. */
+function sttReport() {
+  const parts = [`build ${BUILD_STAMP}`];
+  try { parts.push(window.__sttOn?.() ? 'stt ON' : 'stt off'); } catch { parts.push('stt ?'); }
+  try { parts.push(window.__sttTally ? window.__sttTally() : 'NO TALLY (stale page)'); }
+  catch (e) { parts.push(`tally unreadable: ${e?.message ?? e}`); }
+  try { if (window.__sttLast) parts.push(`last: ${window.__sttLast}`); } catch { /* ignore */ }
+  return 'stt ▸ ' + parts.join(' · ');
+}
+
 function runCommand(raw) {
   const [cmd, ...rest] = raw.slice(1).split(/\s+/);
   const arg = rest.join(' ');
@@ -589,6 +599,21 @@ function runCommand(raw) {
     case 'debug':
       // /debug [n] — the world's flight recorder: why things bounced
       bus.emit('command', { cmd: 'debug', arg });
+      return true;
+    case 'stt':
+      // 🔴 `/stt say` POSTS IT TO THE WORLD — no copy/paste at all. R has spent
+      // this morning relaying diagnostics off a phone by hand, in two batches,
+      // because the text exceeds a mobile selection window. The page can simply
+      // say it. Opt-in via the argument, because a diagnostic is normally a
+      // self-report and the room does not need everyone's mic internals.
+      if (arg.trim().toLowerCase() === 'say') { onSend(sttReport()); return true; }
+      // 🔴 SHORT BY DESIGN (R, 2026-08-16: copy/paste "exceeds the window size
+      // on mobile"). /audio grew to one long line carrying the whole system
+      // state, which is unreadable and un-copyable on the device it was BUILT
+      // FOR — the same mistake as every other bug this morning: designed at the
+      // desk, used on a phone. This answers only the STT question, in a few
+      // words, so a phone can relay it in one tap.
+      logChat('*', sttReport());
       return true;
     case 'audio': case 'voicecheck':
       // 🔴 /audio — the phone's own console (R, 2026-08-16: "maybe you can
