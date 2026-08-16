@@ -476,7 +476,18 @@ export function ttsSection(host, onPaint = () => {}) {
     const box = host.querySelector('input[type=checkbox]');
     const note = host.querySelector('.note');
     const listHost = host.querySelector('.tts-list');
-    if (!label || !box || !note || !listHost) return false;
+    // 🔴 NAME THE MISSING NODE. Four lookups behind ONE combined guard meant a
+    // refusal said only "something is absent" — and I reasoned about which for
+    // three rounds instead of asking. Every predicate in this file that can
+    // decline for several reasons now says which one it used; that is the
+    // difference between one reload and three.
+    if (!label || !box || !note || !listHost) {
+      const missing = [!label && '.nm', !box && 'checkbox', !note && '.note',
+                       !listHost && '.tts-list'].filter(Boolean).join(', ');
+      try { window.__ttsMissing = missing; } catch { /* no window */ }
+      return false;
+    }
+    try { window.__ttsMissing = null; } catch { /* no window */ }
 
     const live = ttsAvailable() && isTtsEnabled();
     label.style.opacity = live ? '1' : '.45';
