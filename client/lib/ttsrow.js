@@ -264,6 +264,37 @@ export function ttsSection(host, onPaint = () => {}) {
       report('resume voice import', e);
     }
   }
+  /** Look for the other half of a piper pair in the folder the user points at.
+   *
+   *  Piper names them `X.onnx` and `X.onnx.json`, so the sibling of `a.onnx` is
+   *  `a.onnx.json` and the sibling of `a.onnx.json` is `a.onnx` — NOT a naive
+   *  "strip the extension", which would turn `a.onnx.json` into `a.onnx` only
+   *  by luck and `a.json` into `a` wrongly.
+   *
+   *  Returns {handle, file} or null. Never throws at the caller: a declined
+   *  directory prompt is an ordinary outcome, not an error.
+   */
+  async function pairFromDirectory(have, want) {
+    if (!window.showDirectoryPicker) return null;
+    const base = /\.onnx$/i.test(have) ? have : have.replace(/\.json$/i, '');
+    const target = want === '.onnx.json' ? `${base}.json` : base;
+    _busy = `looking for ${target} — pick the folder holding ${have}`;
+    build();
+    let dir;
+    try {
+      dir = await window.showDirectoryPicker({ mode: 'read', id: 'piper-voices' });
+    } catch { return null; }          // declined, or unsupported: fall back to asking
+    // getFileHandle throws NotFoundError when the name is absent — which is the
+    // ordinary "they picked the wrong folder" case, not a failure worth
+    // reporting. Confirm the ORIGINAL is here too, so we cannot pair a model
+    // with a config belonging to a different copy of the same filename.
+    try {
+      const mate = await dir.getFileHandle(target);
+      await dir.getFileHandle(have);   // throws if this is not that folder
+      return { handle: mate, file: await mate.getFile() };
+    } catch { return null; }
+  }
+
   async function addFile() {
     try {
       const { loadFromFiles, matchEngine } = await import('./voiceengines.js');
@@ -284,6 +315,30 @@ export function ttsSection(host, onPaint = () => {}) {
       if (!matchEngine(files) || files.length === 1) {
         const have = files[0]?.name || 'a file';
         const want = /\.onnx$/i.test(have) ? '.onnx.json' : '.onnx';
+
+        // 🔴 TRY THE SIBLING FIRST (R, 2026-08-16: "when the TTS model is trying
+        // to bring in a piper model and the user selects an onnx or onnx.jsonl,
+        // can it grab the other pair in that same directory if it has the same
+        // file name?").
+        //
+        // The constraint that makes this awkward: showOpenFilePicker hands back
+        // a FileSystemFileHandle, and a file handle gives NO access to its
+        // siblings — by design, and there is no .getParent(). The only lawful
+        // route to the folder is asking for the folder. So we ask ONCE, and if
+        // the user grants it we never bother them again for this pair.
+        //
+        // A user who declines is not stuck: the explicit second pick below is
+        // still there, unchanged. This is a shortcut, never the only path.
+        const paired = await pairFromDirectory(have, want).catch(() => null);
+        if (paired) {
+          handles = [...handles, paired.handle];
+          files = [...files, paired.file];
+          _busy = `found ${paired.file.name} beside it`;
+          build();
+          await finishImport(handles, files);
+          return;
+        }
+
         _busy = `${have} selected — now pick the matching ${want}`;
         build();
         const more = await window.showOpenFilePicker({
