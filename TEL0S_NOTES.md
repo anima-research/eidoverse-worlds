@@ -390,6 +390,27 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-15 — §23: the lines braid — upstream merge + sunflower.**
+  Skye merged tel0s/main d9925d9 into the upstream line (462efec, with
+  her own merge fixups) — the §22 grass arc now ships upstream via the
+  upstream-patched override she kept intact. We merged her
+  feat/sunflower-species back (49a67b3, `upstream` = fetch-only remote,
+  push DISABLED): Tripo avatar pipeline (#110-#120), ammo default body
+  engine (#107) + vendored wasm, the TTS/piper voice lane (#91), seats,
+  agent/mic hardening, /version build identity (#51), and the sunflower
+  species. THE SNAG the branch didn't solve: our vegetation.js override
+  wins /library, and it predated the sunflower — FLORA_SPECIES.sunflower
+  was dead on any stack running it. Fixed by three-way merge-file
+  (base = video 8b37f0f at vendor time, theirs = video origin/main):
+  four clean hunks (import, species entry, heading yaw-lock, archetype
+  branch), zero overlap with our patches. Gate green (parity PASS,
+  lightbench 30/30, bootjank clean, flora 67/67 incl. 6 new sunflower
+  tests); headless smoke planted a 485-instance sunflower field at
+  61fps, heading lock visible, no page errors. LESSON: every upstream
+  vegetation.js change now costs an override rebase — the standing
+  refresh recipe is merge-file against the vendor-base sha (recorded
+  here: 8b37f0f → 62365e9).
+
 - **2026-08-12 — §22r: MSAA back on by default.** tel0s's call: a
   silently-missing AA reads as a rendering bug to colleagues who
   weren't holding the §22n measurement. The dPR-gated auto-off is
