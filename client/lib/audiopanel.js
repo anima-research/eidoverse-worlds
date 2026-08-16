@@ -181,7 +181,40 @@ function micFloorRow() {
 }
 
 let _body = null;
+// 🔴 THE ROWS ARE BUILT ONCE AND THEN UPDATED IN PLACE (R, 2026-08-16: "I can
+// see elements in the panel jumping around on the tick after a click… make
+// that tear-down per element and not the whole panel").
+//
+// What was wrong: all three bus handlers called paint(), and paint() opened
+// with innerHTML='' and rebuilt all nine rows. One checkbox click destroyed and
+// recreated every node in the section — hence the jump. Worse, micFloorRow()'s
+// beat() loop ends itself on !row.isConnected, so each teardown killed the live
+// meter's rAF chain and started a new one (a visible stutter), and any in-flight
+// pointer-drag on the threshold was dropped mid-gesture.
+//
+// ttsrow.js:204 already carries this doctrine for its own host — "UPDATE TEXT,
+// DO NOT REBUILD… that is the thrash R saw". Same rule, second file.
+//
+// The three synced checkboxes keep a reference here; a bus event writes
+// `.checked` and nothing else moves. Everything else in the panel owns its own
+// state (sliders write through on input; the meter animates itself).
+const _sync = { mic: null, hear: null, connect: null };
+
+/** Reflect state onto the existing controls. No DOM construction, no reflow —
+ *  this is what the bus handlers call instead of paint(). */
+function syncRows() {
+  if (!_body) return;
+  const p = audioPrefs();   // unused today; kept so slider sync has an obvious home
+  void p;
+  if (_sync.mic) _sync.mic.checked = (window.relayDiag?.().micPublished ?? micOn());
+  if (_sync.hear) _sync.hear.checked = receivingVoice() && !isHushed();
+  if (_sync.connect) _sync.connect.checked = receivingVoice();
+}
+
 function paint(body) {
+  // makeSection calls onOpen(body) on EVERY open, so this must be idempotent:
+  // if the rows are already built and still attached, just re-sync them.
+  if (body && _body === body && _body.firstChild) { syncRows(); return; }
   _body = body ?? _body;
   if (!_body) return;
   const body_ = _body;
@@ -198,7 +231,7 @@ function paint(body) {
   // to the 🎧 glyph: one state, two surfaces, never disagreeing. (mictoggle.js
   // exports nothing and self-injects, so both read micOn() and call the same
   // toggleMic — the sync is the shared state, not a message between them.)
-  body_.append(checkRow('microphone',
+  const micRow = checkRow('microphone',
     'transmit your voice — the mic glyph beside the HUD is this same switch',
     // 🔴 micOn() reads the MESH's state — on the SFU path it is always false,
     // so the box would render unticked no matter what. Ask whichever transport
@@ -216,15 +249,19 @@ function paint(body) {
       //      which is exactly the state-lag the comment claimed to avoid.
       const on = await toggleMic(CONFIG.name);
       bus.emit('audio:mic', on);
-    }));
+    });
+  _sync.mic = micRow.querySelector('input');
+  body_.append(micRow);
   body_.append(micFloorRow());   // sensitivity belongs UNDER the switch it serves
 
-  body_.append(checkRow('hear voices',
+  const hearRow = checkRow('hear voices',
     'peers and agent speech — the 🎧 glyph is this same switch',
     receivingVoice() && !isHushed(), (on) => {
       if (on) { if (!receivingVoice()) setReceiveVoice(true); setHush(false); }
       else setHush(true);
-    }));
+    });
+  _sync.hear = hearRow.querySelector('input');
+  body_.append(hearRow);
   for (const [cat, label, hint] of ROWS) {
     body_.append(slider(cat, label, hint,
       cat === 'world' ? p.volWorld : cat === 'tts' ? p.volTts : p.volVoices));
@@ -251,12 +288,14 @@ function paint(body) {
   // because "refuse inbound audio" reads as a second mute to anyone who has
   // not thought about the wire. (Field note: a reader asked what it affords
   // over muting — if the label has to be explained, the label is wrong.)
-  body_.append(checkRow('connect to other people’s audio',
+  const connectRow = checkRow('connect to other people’s audio',
     'on: your machine holds a live connection to each speaker nearby. ' +
     'Off: nothing is sent to you at all — saves bandwidth and CPU in busy ' +
     'rooms, and strangers cannot see your IP address. Muting only turns the ' +
     'volume down; this unplugs the wire.',
-    receivingVoice(), (on) => { setReceiveVoice(on); if (on) setHush(false); }));
+    receivingVoice(), (on) => { setReceiveVoice(on); if (on) setHush(false); });
+  _sync.connect = connectRow.querySelector('input');
+  body_.append(connectRow);
 
   // 🔴 THE TTS SECTION WAS ORPHANED. client/lib/ttsrow.js has shipped complete
   // since #91 (2026-08-10) and was NEVER imported by anything — not by the
@@ -279,8 +318,11 @@ function paint(body) {
 export function initAudioPanel() {
   ensureCss();
   makeSection('🔊 audio', (body) => paint(body), { id: 'audio' });
-  // either control moving repaints the other's row — one truth, two surfaces
-  bus.on('audio:hush', () => paint());
-  bus.on('audio:receive', () => paint());
-  bus.on('audio:mic', () => paint());     // the badge and this row are one state
+  // Either control moving updates the other's row — one truth, two surfaces.
+  // 🔴 syncRows(), NOT paint(): these fire on every toggle, and a full repaint
+  // tears down and rebuilds all nine rows (see the comment above _sync). The
+  // state that needs mirroring is three booleans; write the three booleans.
+  bus.on('audio:hush', syncRows);
+  bus.on('audio:receive', syncRows);
+  bus.on('audio:mic', syncRows);          // the badge and this row are one state
 }

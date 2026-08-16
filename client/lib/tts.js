@@ -160,9 +160,47 @@ export function ensureGenerator() {
   return genTrack;
 }
 
+// 🔴 ONE SPEAKER TALKS ONE AT A TIME (R, 2026-08-16: "the second chat I sent
+// started talking over the first one before the first one finished. That would
+// be correct in a multi-agent space, but since I'm one person, the TTS should
+// wait to play until the first group is done").
+//
+// The playback queue below was never the problem — it works. The hole is that
+// speak() is async and `await ttsFn(text)` happens BEFORE enqueue(): two says
+// spawn two CONCURRENT synthesis jobs, and whichever finishes first reaches the
+// queue first. So the failure is not only overlap but REORDERING — a short
+// later utterance can play before a long earlier one.
+//
+// Keyed by speaker, deliberately, per R's own framing: two different people
+// talking at once IS correct in a shared room; it is one person's consecutive
+// utterances that must not interleave. A single global lock would "fix" this by
+// making a crowded room take turns, which is a different bug.
+//
+// (media-sfu.ts:332 already does exactly this for the agent sidecar — same
+// doctrine, and until now only one of the two implementations honoured it.)
+const _speakChains = new Map();   // speaker -> Promise
+function chain(speaker, job) {
+  const key = speaker || 'self';
+  const prev = _speakChains.get(key) ?? Promise.resolve();
+  // Never let a rejection poison the chain: a failed utterance must not stop
+  // the next one from being spoken.
+  const next = prev.then(job, job);
+  const tail = next.catch(() => {});
+  _speakChains.set(key, tail);
+  // Drop the entry once this is still the tail and it has settled, so a
+  // long-lived room does not keep one promise per departed speaker.
+  tail.then(() => { if (_speakChains.get(key) === tail) _speakChains.delete(key); });
+  return next;
+}
+
 /** Speak text through the registered synthesizer. Silent no-op when TTS is off
- *  or unavailable — callers should not have to branch. */
-export async function speak(text) {
+ *  or unavailable — callers should not have to branch.
+ *  `speaker` scopes the serialization; omit it for your own voice. */
+export function speak(text, speaker) {
+  return chain(speaker, () => speakOne(text));
+}
+
+async function speakOne(text) {
   const epoch = ttsEpoch;
   // EVERY REFUSAL SAYS WHY. This function had five silent `return false`
   // paths, so "nothing came out" looked identical whether TTS was off, the
@@ -471,7 +509,11 @@ export function speakOwnSays(bus, myId) {
       ? !!window.__sfuMicOn() : (await import('./voice.js')).micOn?.();
     if (micLive) { console.warn(`[voice] own say NOT synthesized — mic is live, mic beats TTS: "${String(text).slice(0, 40)}"`); return; }
     console.log(`[voice] own say → speaking: "${String(text).slice(0, 60)}"`);
-    void speak(text);
+    // Keyed by the speaker so consecutive says QUEUE instead of overlapping
+    // (R, 2026-08-16). Every event reaching this line is `mine` by the guard
+    // above, so this is one chain today — but passing the id keeps the call
+    // honest if this hook is ever generalised to voice other people's says.
+    void speak(text, actor);
   });
 }
 
