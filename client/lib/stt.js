@@ -195,6 +195,23 @@ export function setSTT(on) {
   // distinct from no-speech (heard nothing) and from a result we dropped for
   // not being final. Without it, "the recognizer heard you and understood
   // nothing" is invisible.
+  // 🔴 SOUND IS NOT SPEECH (R, 2026-08-16: "a lot of live mics don't return any
+  // STT because it's not speech, just random noises like coughing").
+  //
+  // She caught a false positive I was about to ship: "the session ended with no
+  // final result" is ALSO what a perfectly healthy recognizer does when nobody
+  // said words — a quiet room, a cough, papers shuffling. Blocking captions on
+  // that would tell people the feature is broken on machines where it works,
+  // and it would fire almost every time rather than rarely.
+  //
+  // The API already draws the distinction, and we were listening to neither
+  // half: `soundstart` is any audio, `speechstart` is audio the recognizer
+  // judges to be SPEECH. A cough raises soundstart alone. So any future
+  // "captions are broken here" test must key on speechstart — heard actual
+  // speech, produced nothing — and never on the absence of results.
+  rec.onsoundstart = () => mark('sound detected (not necessarily speech)', 'sound');
+  rec.onspeechstart = () => mark('SPEECH detected', 'speech');
+  rec.onspeechend = () => mark('speech ended', 'speechend');
   rec.onnomatch = () => mark('nomatch — heard something, recognised nothing', 'nomatch');
   rec.onerror = (e) => {
     mark(`error: ${e.error}`, `err:${e.error}`);
