@@ -59,16 +59,34 @@ const check = (name: string, ok: boolean, extra = "") => {
 // A nonce this run owns, echoed by the door's /healthz.
 const NONCE = `t${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
 
-const world = Bun.spawn([process.execPath, "server/server.ts"], {
-  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir,
-         WORLD_INSTANCE_NONCE: NONCE },
-  stdout: "ignore", stderr: "ignore",
+// 🔴 EVERY CHILD IS REGISTERED BEFORE IT CAN BE LOST (adversarial review,
+// 2026-08-17). Round 3 moved the readiness PROBES inside the try but left the
+// ACQUISITIONS outside it, and the file then claimed "nothing that can throw
+// sits outside it" — which was false about the two lines that matter most. If
+// the second Bun.spawn throws (bad execPath resolution, EAGAIN), the first
+// child runs forever holding a port, with no teardown and no owner.
+//
+// A live registry the finally block drains covers both children AND any future
+// third one, rather than naming them individually and drifting again.
+const spawned: { pid: number; kill: (sig?: string) => void; exitCode: number | null }[] = [];
+function spawnChild(args: string[], env: Record<string, string>) {
+  const child = Bun.spawn(args, { env: { ...process.env, ...env }, stdout: "ignore", stderr: "ignore" });
+  spawned.push(child as unknown as typeof spawned[number]);
+  return child;
+}
+const world = spawnChild([process.execPath, "server/server.ts"], {
+  PORT: String(WPORT), WORLDS_DIR: worldsDir, WORLD_INSTANCE_NONCE: NONCE,
 });
-const mcpl = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
-  env: { ...process.env, MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`,
-         MCPL_TOKENS: tokensPath, MCPL_STATE: statePath, MCPL_INSTANCE_NONCE: NONCE },
-  stdout: "ignore", stderr: "ignore",
+const mcpl = spawnChild([process.execPath, "mcpl/net-server.ts"], {
+  MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`,
+  MCPL_TOKENS: tokensPath, MCPL_STATE: statePath, MCPL_INSTANCE_NONCE: NONCE,
 });
+// Last-resort net: if anything between here and the try throws, or the process
+// dies by signal, the children still go. process.exit does NOT run finally
+// blocks, so this cannot be left to the one at the bottom.
+const reap = () => { for (const c of spawned) { try { c.kill(); } catch { /* gone */ } } };
+process.on("exit", reap);
+process.on("uncaughtException", (e) => { reap(); console.error(e); process.exit(1); });
 
 /** PIDs listening on a TCP port, from the OS. Returns null when this platform
  *  cannot answer — which is NOT the same as "nothing is listening", and
@@ -142,11 +160,22 @@ function ownsPort(name: string, port: number, child: { pid: number }) {
     if (pids === null) return true;
     if (pids.length === 0) return false;
     const ours = new Set([child.pid, ...descendantsOf(child.pid)]);
-    // No procfs but `ss` present (unlikely, but do not guess): with no way to
-    // enumerate descendants, an exact pid match is the most we can honestly
-    // assert, and anything else is unproven rather than foreign.
+    // 🔴 THE GUARD I ADDED LAST ROUND DISABLED THIS CHECK IN ITS MOST COMMON
+    // CONFIGURATION (adversarial review, 2026-08-17). It read
+    // `if (foreign.length && ours.size > 1)`, and ours.size > 1 is true ONLY
+    // when descendantsOf() found a forked child. When bun runs the .ts
+    // in-process — the ordinary Linux case — the set is just {child.pid}, so a
+    // genuinely foreign pid holding the port sailed through returning true.
+    // The one check written to catch a squatted port was off exactly where it
+    // was needed, and my reasoning for the guard ("no procfs but ss present")
+    // described a configuration that barely occurs while breaking the one that
+    // always does.
+    //
+    // A foreign listener is foreign regardless of how many pids we own. The
+    // only honest exemption is not being able to enumerate at all, and that is
+    // the `pids === null` early return above.
     const foreign = pids.filter((p) => !ours.has(p));
-    if (foreign.length && ours.size > 1) {
+    if (foreign.length) {
       throw new Error(`${name} port ${port} held by pid(s) ${foreign.join(",")}, not our child ${child.pid} — stale listener`);
     }
     return true;
@@ -359,14 +388,48 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   dialed.ws.close();
   // §3.3 (Mica #3): a denied dial-time destination REFUSES the connection —
   // no silent fallback to the minted world.
-  let refused = false;
-  try {
-    const fallback = await connectHost("bound-token", "&world=annex");
-    await sleep(1500);
-    refused = fallback.ws.readyState === WebSocket.CLOSED || fallback.ws.readyState === WebSocket.CLOSING;
-    fallback.ws.close();
-  } catch { refused = true; }   // connectHost throws when the socket dies during init
-  check("denied ?world= refuses the connection (no silent fallback)", refused);
+  // 🔴 ASSERT THE REFUSAL, NOT "SOMETHING WENT WRONG" (adversarial review,
+  // 2026-08-17). The previous version slept 1500ms and read `ws.readyState` —
+  // but refuseWithGuidance (net-server.ts:1415) closes on a FIFTEEN second
+  // timer, so that branch could never be true. The check passed only through a
+  // bare `catch { refused = true }`, which accepts ANY failure as proof of the
+  // specific behaviour under test: a door that OOM'd, timed out for an
+  // unrelated reason, or refused while naming the WRONG world all scored the
+  // identical green.
+  //
+  // The observable contract is narrow and worth pinning exactly: an
+  // -32001 error whose message names the refusal, then close 4001 (:1424-1428).
+  // So capture the error TEXT and require it to mention the world we were
+  // refused for.
+  // Dial RAW, not through connectHost(): its `request()` resolves on ANY reply
+  // carrying the matching id — including the -32001 refusal — so it reports a
+  // refused dial as a successful connect. (My first rewrite asserted on that
+  // and read `admitted=true` against a door whose refusal path is correct: the
+  // harness was wrong in the direction that looks like a product bug, which is
+  // the same trap as the on-disk control below.)
+  //
+  // What §3.3 actually promises is observable and narrow: the -32001 body NAMES
+  // the denied destination, and the socket then closes 4001 (net-server.ts
+  // :1424-1428). Assert both, and give the close a real deadline rather than
+  // the 1500ms sleep that could never have seen a 15s timer.
+  const denial = await new Promise<{ err: string; code: number }>((resolve) => {
+    const ws = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=bound-token&world=annex`);
+    let err = "";
+    const done = (code: number) => resolve({ err, code });
+    ws.onopen = () => ws.send(JSON.stringify({
+      jsonrpc: "2.0", id: 1, method: "initialize",
+      params: { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "denied", version: "0" } },
+    }));
+    ws.onmessage = (ev) => {
+      const m = JSON.parse(String(ev.data));
+      if (m.error?.message) err = String(m.error.message);
+    };
+    ws.onclose = (ev) => done(ev.code);
+    setTimeout(() => { try { ws.close(); } catch { /* gone */ } done(-1); }, 8000);
+  });
+  check("denied ?world= refuses the connection (no silent fallback)",
+    /annex/.test(denial.err) && /policy|unauthorized|not permitted/i.test(denial.err) && denial.code === 4001,
+    `close=${denial.code} err=${denial.err.slice(0, 110)}`);
 
   // ── 4b. §3.2.7 founding is not joining ───────────────────────────────────
   const nofound = await connectHost("nofound-token");
@@ -375,6 +438,13 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   check("worlds:['*'] without create CANNOT found a world",
     wouldFound.result?.isError === true && /founding requires create authority/.test(txt(wouldFound)), txt(wouldFound));
   // …and prove it wasn't created as a side effect anyway (review F)
+  // 🔴 PAIRED WITH ITS POSITIVE CONTROL (adversarial review, 2026-08-17).
+  // `!existsSync(...)` alone passes for a build where founding writes NOTHING
+  // anywhere — or where worlds land at a different path entirely — which makes
+  // it indistinguishable from `!existsSync("/tmp/definitely-not-a-path")`. The
+  // second assertion is what gives the first its meaning: a world that WAS
+  // founded appears at exactly this path, so a world that was refused being
+  // absent from it is now evidence rather than a tautology.
   check("refused founding left NOTHING on disk", !existsSync(join(worldsDir, "brand-new-place")));
   nofound.ws.close();
   const founder = await connectHost("roamer-token");
@@ -382,6 +452,20 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   const founded = await founder.request("tools/call", { name: "travel", arguments: { world: "founded-place" } });
   check("create:true CAN found, and says so",
     !founded.result?.isError && /Founded and entered "founded-place"/.test(txt(founded)), txt(founded));
+  // 🔴 THE POSITIVE CONTROL FOR THE on-disk CHECK ABOVE (adversarial review,
+  // 2026-08-17). `!existsSync(brand-new-place)` alone also passes for a build
+  // where founding writes nothing anywhere, or writes somewhere else entirely
+  // — indistinguishable from !existsSync("/tmp/not-a-real-path"). Pairing it
+  // with a world that WAS founded, at the SAME parent path, is what turns the
+  // negative into evidence.
+  //
+  // It has to run HERE, after the founding it controls for — my first attempt
+  // put it beside the negative check twenty lines earlier and asserted the
+  // directory existed before anything had created it. The control was itself
+  // wrong in the direction that would have looked like a product bug.
+  await sleep(400);              // the sequencer writes the log dir on join
+  check("…and the CONTROL: a world that WAS founded IS on disk at that path",
+    existsSync(join(worldsDir, "founded-place")), `worldsDir=${worldsDir}`);
   // ── 4c. §3.2.3d epoch across transitions ─────────────────────────────────
   // The epoch is read from the channels/changed descriptor the server pushes
   // to the HOST — which is where §3.2.3d says a client learns it, and the only
