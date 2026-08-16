@@ -251,7 +251,17 @@ export async function sfuMic(on = true) {
     // why "mic off" produced no packets at all rather than falling back.
     // Swap the SOURCE instead of muting it, so the sender keeps publishing.
     const { synthProvider } = await import('./voicesource.js');
-    if (synthProvider()?.available?.()) {
+    // 🔴 SAY WHY THE SWAP DID OR DID NOT HAPPEN. Three rounds of "still zero
+    // packets" with no way to tell whether this branch ran, whether the
+    // provider was available, or whether publishing failed afterwards. Same
+    // lesson as the panel teardown: a path that can decline silently turns the
+    // next report into another guess.
+    const prov = synthProvider();
+    try {
+      window.__sfuSrc = `mic off · provider=${prov ? 'registered' : 'NONE'}`
+        + (prov ? ` · available=${!!prov.available?.()}` : '');
+    } catch { /* no window */ }
+    if (prov?.available?.()) {
       // Drop the device stream and let the publish path below re-acquire from
       // voiceSource(), which now returns the synth when micWanted is false.
       // Re-entering rather than duplicating that block keeps ONE place where a
@@ -261,6 +271,7 @@ export async function sfuMic(on = true) {
         for (const t of micStream.getTracks()) { try { t.stop(); } catch { /* gone */ } }
         micStream = null;
       }
+      try { window.__sfuSrc += ' · swapping to synth'; } catch {}
       return void sfuPublish();
     }
     micStream?.getTracks().forEach((t) => (t.enabled = false));
@@ -292,6 +303,11 @@ async function sfuPublish() {
     // replaceTrack — is source-agnostic and unchanged.
     const { voiceSource } = await import('./voicesource.js');
     const s = await voiceSource({ micWanted: wantMic });
+    try {
+      window.__sfuSrc = `published ${s?.synthetic ? 'SYNTH' : 'mic'}`
+        + ` · tracks=${s?.getTracks?.().length ?? 0}`
+        + ` · wantMic=${wantMic}`;
+    } catch { /* no window */ }
     micStream = s;
     // 🔴 addTrack PICKS A TRANSCEIVER FOR YOU, AND IT PICKS THE WRONG ONE.
     //

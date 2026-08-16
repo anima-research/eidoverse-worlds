@@ -477,7 +477,7 @@ function acceptAC() {
  *  down with it (a diagnostic that throws is worse than none). */
 // Bumped by hand when the audio diagnostics change — the point is only that a
 // report from a stale page carries a DIFFERENT value than the current one.
-const BUILD_STAMP = 'panel-9';
+const BUILD_STAMP = 'src-10';
 
 function audioReport() {
   const L = [];
@@ -541,6 +541,8 @@ function audioReport() {
   // Why the voice list last rebuilt instead of updating in place — the panel
   // teardown R has reported three times.
   probe('panel', () => `${window.__ttsSync ?? 'no section paint'}${window.__ttsMissing ? ` [missing ${window.__ttsMissing}]` : ''} | ${window.__vlSync ?? 'no list paint'}`);
+  // What the SFU last published, and why — the TTS-with-mic-off question.
+  probe('source', () => window.__sfuSrc ?? 'never published');
   probe('secure', () => `${window.isSecureContext} · isolated=${window.crossOriginIsolated}`);
 
   // 🔴 STAMP THE BUILD (2026-08-16). Three times this morning I diagnosed a
