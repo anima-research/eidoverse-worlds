@@ -213,6 +213,12 @@ export function setSfuModeratorMute(world: string, speakerId: string, mutedFlag:
 /** Retirement funnel — the same one every other surface uses. */
 export function revokeSfuLeg(world: string, id: string) {
   senders.delete(id);
+  // A leg revoked mid-negotiation must not leave its resolver behind: for up to
+  // 15s sfuAcceptAnswer would otherwise feed an SDP answer into a CLOSED pc,
+  // where setRemoteDescription throws into a bare .catch and the failure is
+  // swallowed into a console.error. Fails safe, but it is still a leak of a
+  // live promise and a silenced error.
+  waiting.delete(wkey(world, id));
   const s = worlds.get(world);
   if (!s) return null;
   const leg = s.legs.get(id) ?? null;
@@ -248,6 +254,13 @@ export function sfuDiag(world: string) {
 // leg internally (the promise chain that fixed SDP glare), so this map can
 // never hold more than one entry per leg — if it somehow did, the second offer
 // would be answering a question the browser was never asked.
+// 🔴 KEYED BY world+legId, NOT legId (independent review, 2026-08-16). Two
+// worlds hosting the same participant id — routine, since ids are per-identity
+// and not per-world — collided in this map: whichever leg answered first
+// resolved the OTHER world's pending offer. Keyed properly, and cleared on
+// revoke (see revokeSfuLeg) so a leg torn down mid-negotiation cannot leave a
+// resolver behind for 15s waiting to feed an SDP answer to a closed pc.
+const wkey = (world: string, legId: string) => `${world}\u0000${legId}`;
 const waiting = new Map<string, (sdp: string) => void>();
 
 /** Create the offer for `legId` and hand it to `send`. The browser answers via
@@ -296,20 +309,20 @@ export async function sfuNegotiate(world: string, legId: string,
     await pc.setLocalDescription(offer);
     send({ type: "sfu-offer", sdp: pc.localDescription!.sdp });
     const sdp = await new Promise<string>((resolve, reject) => {
-      waiting.set(legId, resolve);
+      waiting.set(wkey(world, legId), resolve);
       // A browser that never answers must not wedge the leg's promise chain
       // forever — every later offer for this leg would queue behind it and the
       // participant would go permanently silent with no error anywhere.
-      setTimeout(() => { if (waiting.delete(legId)) reject(new Error("answer timeout")); }, 15000);
+      setTimeout(() => { if (waiting.delete(wkey(world, legId))) reject(new Error("answer timeout")); }, 15000);
     });
     await pc.setRemoteDescription({ type: "answer", sdp });
   }).catch((e) => console.error(`[sfu] negotiate ${legId}:`, (e as Error).message));
 }
 
 export function sfuAcceptAnswer(world: string, legId: string, sdp: string) {
-  const resolve = waiting.get(legId);
+  const resolve = waiting.get(wkey(world, legId));
   if (!resolve) return;                 // no offer outstanding — stale answer, drop
-  waiting.delete(legId);
+  waiting.delete(wkey(world, legId));
   resolve(sdp);
 }
 

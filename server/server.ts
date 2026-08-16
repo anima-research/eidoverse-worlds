@@ -1030,12 +1030,36 @@ const server = Bun.serve({
         // though — never logged, SDP-sized cap, dropped if the leg is gone.
         case "sfu-answer": {
           if (!c.world || voiceTransport() !== "sfu") return;
+          // 🔴 THE SAME GATE relay-cred USES (:1120). A spectator or an aux leg
+          // keeps the PRIMARY'S `c.id` (:509 sets spectator from surface, it does
+          // not rename), so without this check any such socket reaches a real
+          // participant's SFU leg. Found by an independent reviewer, 2026-08-16.
+          //
+          // sfu-pos was the sharp one: writing a distant position for someone
+          // else's id moves them out of every listener's proximity gate — a
+          // REMOTE MUTE available to any connected client. The old comment here
+          // reasoned only about withholding one's own data ("cannot silence
+          // someone by withholding"), which is true and answers the wrong threat:
+          // the risk is FORGING another identity's data, not omitting your own.
+          if (c.spectator || (c.surface ?? "world") !== "world") return;
           if (typeof msg.sdp !== "string" || msg.sdp.length > 20000) return;
           sfuAcceptAnswer(c.world.name, c.id, msg.sdp);
           return;
         }
         case "sfu-ice": {
           if (!c.world || voiceTransport() !== "sfu") return;
+          // 🔴 THE SAME GATE relay-cred USES (:1120). A spectator or an aux leg
+          // keeps the PRIMARY'S `c.id` (:509 sets spectator from surface, it does
+          // not rename), so without this check any such socket reaches a real
+          // participant's SFU leg. Found by an independent reviewer, 2026-08-16.
+          //
+          // sfu-pos was the sharp one: writing a distant position for someone
+          // else's id moves them out of every listener's proximity gate — a
+          // REMOTE MUTE available to any connected client. The old comment here
+          // reasoned only about withholding one's own data ("cannot silence
+          // someone by withholding"), which is true and answers the wrong threat:
+          // the risk is FORGING another identity's data, not omitting your own.
+          if (c.spectator || (c.surface ?? "world") !== "world") return;
           sfuAcceptIce(c.world.name, c.id, msg.candidate);
           return;
         }
@@ -1045,6 +1069,18 @@ const server = Bun.serve({
           // these is never gated — which is what keeps this from being a way to
           // silence someone by withholding data.
           if (!c.world || voiceTransport() !== "sfu") return;
+          // 🔴 THE SAME GATE relay-cred USES (:1120). A spectator or an aux leg
+          // keeps the PRIMARY'S `c.id` (:509 sets spectator from surface, it does
+          // not rename), so without this check any such socket reaches a real
+          // participant's SFU leg. Found by an independent reviewer, 2026-08-16.
+          //
+          // sfu-pos was the sharp one: writing a distant position for someone
+          // else's id moves them out of every listener's proximity gate — a
+          // REMOTE MUTE available to any connected client. The old comment here
+          // reasoned only about withholding one's own data ("cannot silence
+          // someone by withholding"), which is true and answers the wrong threat:
+          // the risk is FORGING another identity's data, not omitting your own.
+          if (c.spectator || (c.surface ?? "world") !== "world") return;
           const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
           sfuSetPosition(c.world.name, c.id, n(msg.x), n(msg.y), n(msg.z));
           return;
@@ -1053,6 +1089,18 @@ const server = Bun.serve({
           // The client added a track and needs an offer. It ASKS rather than
           // offering, because the server must own every offer (glare).
           if (!c.world || voiceTransport() !== "sfu") return;
+          // 🔴 THE SAME GATE relay-cred USES (:1120). A spectator or an aux leg
+          // keeps the PRIMARY'S `c.id` (:509 sets spectator from surface, it does
+          // not rename), so without this check any such socket reaches a real
+          // participant's SFU leg. Found by an independent reviewer, 2026-08-16.
+          //
+          // sfu-pos was the sharp one: writing a distant position for someone
+          // else's id moves them out of every listener's proximity gate — a
+          // REMOTE MUTE available to any connected client. The old comment here
+          // reasoned only about withholding one's own data ("cannot silence
+          // someone by withholding"), which is true and answers the wrong threat:
+          // the risk is FORGING another identity's data, not omitting your own.
+          if (c.spectator || (c.surface ?? "world") !== "world") return;
           sfuNegotiate(c.world.name, c.id, (payload) => ws.send(JSON.stringify(payload)));
           return;
         }
