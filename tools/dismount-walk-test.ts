@@ -168,6 +168,40 @@ check("...and the landing is on the ground, not the seat's height",
 check("...and no gap was recorded — the seat resolved", ag.lastDismountGap === null,
   JSON.stringify(ag.lastDismountGap));
 
+// ------------------------------------------------- approximate is not a fallback
+// #101 gave eff() a third outcome this file predates. A seat can COMPOSE and
+// still report `seat.state: "approximate"`: the avatar profile's contact plane
+// was not applied — no profile, a legacy socket, a stale or uncountersigned
+// one. That is a real declaration, and look() carries it (agent.ts,
+// selfSeatNote) the whole time the body sits there.
+//
+// It is NOT a landing fallback, and folding it into one would be B1's
+// complaint mirrored — a declared seam where there is no seam. The reason it
+// cannot reach the landing is closed-form: applySeatCorrection moves the
+// socket point along WORLD Y and nothing else (seatcore.js), and dismountSelf
+// throws that Y away for heightAt(x, z). So the landing off an approximate
+// seat is the SAME hand-computed step a profiled seat yields, and the gap
+// stays null. This case exists so a later change cannot quietly conflate the
+// two: it fails loudly if `approximate` ever starts moving x/z or raising a
+// gap.
+ag.pos.x = 0; ag.pos.z = 0;
+check("setup: it sits back on the chair", await mount(ag, "chair", "perch"));
+const unprofiled = ag.eff(ag.name, ag.serverNow());
+// Asserted by SHAPE, not by reason text: which of seatGateCore's refusals this
+// harness lands on is #101's business, and pinning the string here would couple
+// this file to a vocabulary it does not own. What matters is that the seat
+// really is uncorrected — otherwise the checks below pass vacuously.
+check("setup: and the seat really is uncorrected (else this case proves nothing)",
+  unprofiled.ok === true && unprofiled.seat?.state === "approximate"
+    && typeof unprofiled.seat?.reason === "string" && unprofiled.seat.reason.length > 0,
+  JSON.stringify(unprofiled.ok ? unprofiled.seat : unprofiled));
+const L1b = landingOfWalk(ag, 12, 0);
+check("an uncorrected contact plane does not move the landing",
+  near(L1b.x, 12) && near(L1b.z, -6 + 0.7),
+  `landed (${L1b.x.toFixed(4)}, ${L1b.z.toFixed(4)}) · expected (12.0000, ${(-6 + 0.7).toFixed(4)})`);
+check("...and it raises NO gap — an approximate seat is not a fallback",
+  ag.lastDismountGap === null, JSON.stringify(ag.lastDismountGap));
+
 // -------------------------------------------------------------- arrived ferry
 // `loop: 'once'` with a t0 a minute old: the ferry has finished its run and
 // SITS at the endpoint. No clock sensitivity anywhere in this assertion.

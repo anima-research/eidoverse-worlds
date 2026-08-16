@@ -1402,6 +1402,16 @@ export class WorldAgent {
    *                              myState.pos`), and SAY so
    *  2 and 3 record `lastDismountGap` and log a bounded diagnostic.
    *
+   *  Case 1 has two flavours since #101 — a seat that composes may still be
+   *  `seat.state: "approximate"`, the profile's contact plane unapplied — and
+   *  the split deliberately does NOT reach here. applySeatCorrection displaces
+   *  the socket point along world Y alone, and the landing throws that Y away
+   *  for heightAt(x, z) below, so both flavours stamp the same coordinate and
+   *  neither is a gap. Reporting one would be this change's own thesis
+   *  inverted: a declared seam where the landing has none. The resident is
+   *  already told, for the whole duration of the sit, by look()'s
+   *  selfSeatNote. Pinned by tools/dismount-walk-test.ts.
+   *
    *  Public because the raw `world_verb dismount {id: me}` door routes here
    *  too: look() tells a seated resident that dismounting "restores a
    *  stamped position", and a bare forwarded verb would not keep that
