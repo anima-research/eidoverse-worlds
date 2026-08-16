@@ -297,7 +297,10 @@ export function ttsSection(host, onPaint = () => {}) {
     if (!window.showDirectoryPicker) return null;
     const base = /\.onnx$/i.test(have) ? have : have.replace(/\.json$/i, '');
     const target = want === '.onnx.json' ? `${base}.json` : base;
-    _busy = `looking for ${target} — pick the folder holding ${have}`;
+    // Say what granting the folder BUYS, not just what it wants. This is the
+    // second ask in a row; "pick the folder" with no reason reads as the app
+    // being fussy rather than as a shortcut being offered.
+    _busy = `optional: pick the folder holding ${have} and I'll find ${target} myself`;
     build();
     let dir;
     try {
@@ -348,24 +351,49 @@ export function ttsSection(host, onPaint = () => {}) {
         //
         // A user who declines is not stuck: the explicit second pick below is
         // still there, unchanged. This is a shortcut, never the only path.
-        const paired = await pairFromDirectory(have, want).catch(() => null);
-        if (paired) {
-          handles = [...handles, paired.handle];
-          files = [...files, paired.file];
-          _busy = `found ${paired.file.name} beside it`;
-          build();
-          await finishImport(handles, files);
-          return;
-        }
-
+        // 🔴 ASK FOR THE FILE, NOT THE FOLDER (R, 2026-08-16: "I don't like
+        // that the second dialogue is asking for a *folder* instead of the
+        // other file pair, that's not great UX").
+        //
+        // She is right and this was ordered backwards. The folder prompt used
+        // to come FIRST, so picking one .onnx immediately demanded read access
+        // to a whole directory — a large, strange-looking permission, asked
+        // before the small obvious question. The plain "pick the other file"
+        // dialogue only appeared if you declined it.
+        //
+        // Now the obvious ask comes first and the folder shortcut is offered
+        // only if that one is declined — i.e. exactly when the user is signalling
+        // that picking files one at a time is not what they want.
+        //
+        // Why we cannot just read the sibling: showOpenFilePicker returns a
+        // FileSystemFileHandle, which is deliberately sibling-blind — no
+        // .getParent(), no directory access, by design. Asking for the folder is
+        // the ONLY lawful route to the file next door, which is why the shortcut
+        // exists at all rather than us silently globbing the directory.
         _busy = `${have} selected — now pick the matching ${want}`;
         build();
-        const more = await window.showOpenFilePicker({
+        let more = await window.showOpenFilePicker({
           multiple: true,
           types: [{ description: `Matching ${want} for ${have}`,
                     accept: want === '.onnx' ? { 'application/octet-stream': ['.onnx'] }
                                              : { 'application/json': ['.json'] } }],
         }).catch(() => null);
+
+        // Declined the file pick? THEN offer the folder — it saves this step
+        // next time, and someone who just dismissed a file dialog is the person
+        // most likely to want that. Still optional; declining both lands on the
+        // half-finished row below, unchanged.
+        if (!more?.length) {
+          const paired = await pairFromDirectory(have, want).catch(() => null);
+          if (paired) {
+            handles = [...handles, paired.handle];
+            files = [...files, paired.file];
+            _busy = `found ${paired.file.name} beside it`;
+            build();
+            await finishImport(handles, files);
+            return;
+          }
+        }
         if (more?.length) {
           handles = [...handles, ...more];
           files = [...files, ...await Promise.all(more.map((h) => h.getFile()))];
