@@ -29,6 +29,12 @@
 import { report } from './core.js';
 import { sendVerb } from './net.js';
 import { flashHint } from './ui.js';
+// 🔴 flashHint is a 2.6s OVERLAY, not a log (ui.js:flashHint). Every caption
+// failure I "surfaced" this morning appeared and vanished on a phone screen
+// nobody was watching — R: "not getting any chat log errors when STT fails on
+// phone", and she was right, there were none. A failure worth telling someone
+// about has to persist where they can scroll back to it.
+import { logChat } from './chat.js';
 // The mic's real state — this module's capture must never outlive it.
 //
 // 🔴 ASK WHICHEVER TRANSPORT IS ACTUALLY RUNNING. voice.js's `micOn()` reads
@@ -53,13 +59,38 @@ let uttSeq = 0;                 // one id per transcribed utterance (log plane)
 export const sttOn = () => wanted;
 // Readable from /audio on a device with no console.
 try { window.__sttOn = () => wanted; } catch { /* no window */ }
+
+// 🔴 MODULE SCOPE, ASSIGNED AT LOAD (fixed 2026-08-16 — the tally did not print
+// on R's phone at all). Both of these lived inside setSTT(): __sttTally was
+// only assigned from inside mark(), so it did not EXIST until STT had been
+// switched on AND an event had fired — and /audio run after toggling STT off
+// showed no bracket, which reads exactly like "no events" rather than "the
+// probe is not wired". A diagnostic that is absent when unused is
+// indistinguishable from a diagnostic reporting nothing.
+//
+// Worse, `tally` was re-created per setSTT() call, so counts reset on every
+// toggle — it could never accumulate across the on/off cycle we are trying to
+// measure. Both now persist for the page's lifetime.
+const tally = Object.create(null);
+let restarts = 0;
+const firstStart = performance.now();
+function mark(what, kind) {
+  try {
+    if (kind) tally[kind] = (tally[kind] ?? 0) + 1;
+    window.__sttLast = what;
+  } catch { /* no window */ }
+}
+try {
+  window.__sttTally = () =>
+    Object.entries(tally).map(([k, n]) => `${k}×${n}`).join(' ') || 'no events yet';
+} catch { /* no window */ }
 export const sttAvailable = () => !!(window.SpeechRecognition ?? window.webkitSpeechRecognition);
 
 export function setSTT(on) {
   wanted = on;
   if (!on) { try { rec?.stop(); } catch { /* already stopped */ } rec = null; return; }
   const SR = window.SpeechRecognition ?? window.webkitSpeechRecognition;
-  if (!SR) { flashHint('no speech recognition in this browser — voice works, captions don’t'); wanted = false; return; }
+  if (!SR) { const m = 'no speech recognition in this browser — voice works, captions don’t'; flashHint(m); logChat('*', m); wanted = false; return; }
   rec = new SR();
   rec.continuous = true;
   rec.interimResults = false;
@@ -68,25 +99,6 @@ export function setSTT(on) {
   // it rides the local analyser loop in voice.js, so a person who declines
   // vendor transcription still has an audible presence. STT is transcript
   // duty only.
-  // 🔴 DECLARED BEFORE THE HANDLERS THAT USE THEM. onend/onresult reference
-  // these, and a `let` further down is in the temporal dead zone for any
-  // callback that fires first — a runtime ReferenceError `node --check` cannot
-  // see. (Same trap voicesfu.js:29 documents for its analyser vars.)
-  let restarts = 0;
-  const firstStart = performance.now();
-  // 🔴 A SINGLE SLOT CANNOT PROVE AN ABSENCE (2026-08-16). __sttLast held only
-  // the MOST RECENT event, so "onresult never fired" and "onresult fired, then
-  // onaudiostart fired again after it" read identically — and I concluded the
-  // former from a marker that could not distinguish them. Keep a TALLY as well:
-  // counts prove absence, a last-value does not.
-  const tally = Object.create(null);
-  const mark = (what, kind) => {
-    try {
-      if (kind) tally[kind] = (tally[kind] ?? 0) + 1;
-      window.__sttLast = what;
-      window.__sttTally = () => Object.entries(tally).map(([k, n]) => `${k}×${n}`).join(' ') || 'no events';
-    } catch { /* no window */ }
-  };
   rec.onresult = (e) => {
     // 🔴 DISTINGUISH "no results" FROM "results that are never FINAL"
     // (2026-08-16). On R's Android, /audio reported audio reaching the
@@ -182,8 +194,9 @@ export function setSTT(on) {
     setTimeout(() => {
       if (wanted && !sawAudio) {
         mark('started but NO audio after 4s (mic contention?)');
-        flashHint('captions: recognition started but no audio reached it — '
-          + 'another app or tab may hold the microphone');
+        const m = 'captions: recognition started but no audio reached it — '
+          + 'another app or tab may hold the microphone';
+        flashHint(m); logChat('*', m);
         report('stt', 'started but onaudiostart never fired (mic contention?)');
       }
     }, 4000);
@@ -224,7 +237,8 @@ export function setSTT(on) {
       'network': 'captions: the speech recognizer is unreachable (it runs on Google servers, not locally)',
       'language-not-supported': `captions: no recognizer for ${rec.lang}`,
     }[e.error];
-    flashHint(said ?? `captions stopped: ${e.error}`);
+    const m = said ?? `captions stopped: ${e.error}`;
+    flashHint(m); logChat('*', m);
   };
   try { rec.start(); } catch (e) { report('stt', e); wanted = false; }
 }
