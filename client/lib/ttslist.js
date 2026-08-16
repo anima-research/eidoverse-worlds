@@ -1,4 +1,18 @@
-// voicelist — THE VOICES YOU HAVE, AS A LIST.
+// ttslist — THE VOICES YOU HAVE, AS A LIST.
+//
+// 🔴 NAMED ttslist, NOT voicelist (R, 2026-08-16: "shouldn't it be called
+// tts-model-list or something instead of voicelist so it's more understandable
+// what it does at a glance?"). There are ten voice*.js files in this directory
+// and every OTHER one is about the WebRTC voice TRANSPORT — voice, voiceconsent,
+// voiceengines, voicemouths, voicerelay, voicesfu, voicesfubridge, voicesource,
+// voicestore. This one is text-to-speech, and wearing their prefix put it in the
+// wrong neighbourhood: easy to reason about as if it were transport code, which
+// is a decent bet for how the class-overwrite bug below survived so long.
+//
+// Not `ttsmodellist`, because the list holds two DIFFERENT kinds of thing — a
+// local .onnx model file and a remote speech-server endpoint. What they share is
+// being a source of a voice, so the list is of voices; the pairing with
+// ttsrow.js is what makes the feature legible at a glance.
 //
 // R, 2026-08-09: "the add-remove buttons aren't very intuitive... I feel like
 // the current implementation is clunky. Is there another UI you're aware of that

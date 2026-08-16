@@ -13,7 +13,7 @@
 // What remains is BYOV: a model file from your disk, or a speech server you run.
 // Both transmit; nothing here is local-only, because a voice that only you can
 // hear is indistinguishable from a working one until nobody answers.
-import { renderVoiceList } from './voicelist.js';
+import { renderVoiceList } from './ttslist.js';
 import { ttsAvailable, ttsVoiceName, isTtsEnabled, setTtsEnabled, setTtsSource } from './tts.js';
 import { setEndpointVoice } from './browservoice.js';
 import { report } from './core.js';
@@ -207,7 +207,7 @@ export function ttsSection(host, onPaint = () => {}) {
     const shown = (files.find((f) => /\.onnx$/i.test(f.name)) || files[0])?.name || 'voice';
     const name = shown.replace(/\.onnx$/i, '');
       // 🔴 _busy MUST BE CLEARED ON EVERY EXIT. The add button greys itself while
-      // busy (voicelist.js), so a throw in here left it grey FOREVER — R,
+      // busy (ttslist.js), so a throw in here left it grey FOREVER — R,
       // 2026-08-09: "the add a text-to-speech model button goes gray after one is
       // added, so you can't add more". try/finally, not a trailing assignment.
       _busy = `loading ${name}…`;
@@ -499,7 +499,7 @@ export function ttsSection(host, onPaint = () => {}) {
       : _needVoice ? 'add a voice with one of the options below'
       : live ? ttsVoiceName() : ttsAvailable() ? 'ready' : '');
 
-    // The list owns its own in-place update (voicelist.js renders per-element),
+    // The list owns its own in-place update (ttslist.js renders per-element),
     // so re-rendering it here is not a teardown of the rows.
     collectVoices().then((items) => {
       if (!_selected && items.length) {

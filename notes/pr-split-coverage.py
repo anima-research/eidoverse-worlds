@@ -42,7 +42,7 @@ GROUPS = {
         "tools/mic-glyph-probe.mjs", "tools/mic-meter-states.mjs",
         "tools/reachable.mjs",
     ],
-    "E.panel": ["client/lib/audiopanel.js", "client/lib/voicelist.js",
+    "E.panel": ["client/lib/audiopanel.js", "client/lib/ttslist.js",
                 "tools/panel-teardown-probe.mjs"],
     "F.tts": ["client/lib/tts.js", "client/lib/tts-chunk.js",
               "client/lib/ttsrow.js", "client/lib/engine-piper.js",
