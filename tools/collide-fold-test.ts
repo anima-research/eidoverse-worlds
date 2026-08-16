@@ -75,7 +75,12 @@ async function startServer() {
     throw new Error(`port ${PORT} is already serving — a previous run's sequencer is still up. `
       + `Kill it (or set PORT=) before trusting any result from this test.`);
   }
-  server = spawn("bun", [join(import.meta.dir, "..", "server", "server.ts")], {
+  // process.execPath, not "bun": the PATH "bun" is an npm .cmd shim on
+  // Windows, and it is the reason stopServer needs a tree-kill at all — the
+  // shim exits immediately, so the "grandchild" named below is really just
+  // the server, orphaned. Spawning the binary directly makes our pid the
+  // sequencer's own.
+  server = spawn(process.execPath, [join(import.meta.dir, "..", "server", "server.ts")], {
     env: {
       ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "",
       FOLD_EVERY: "5", VERB_RATE: "5000", MSG_RATE: "5000",
@@ -95,10 +100,10 @@ async function startServer() {
  *  back to taskkill on the process tree. */
 async function stopServer() {
   if (!server) return;
-  // Order matters. SIGKILL reaps the direct child and ORPHANS whatever
-  // grandchild is actually holding the socket — after which a tree-kill has no
-  // parent left to walk and the port stays busy forever. So walk the tree
-  // first, while the parent still exists, and only then fall back to signals.
+  // Since startServer spawns the binary directly, our pid IS the sequencer and
+  // a plain kill would do. The tree-walk stays as belt-and-braces: it costs one
+  // call, and it still reaps anything the sequencer itself spawned. Order
+  // matters — walk the tree while the parent exists, then fall back to signals.
   if (process.platform === "win32" && server.pid) {
     spawn("taskkill", ["/PID", String(server.pid), "/T", "/F"], { stdio: "ignore" });
     for (let i = 0; i < 30; i++) {

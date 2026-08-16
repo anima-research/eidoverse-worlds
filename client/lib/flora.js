@@ -68,7 +68,11 @@ async function ensureFloraAssets(mod, species) {
       paths.push(`${GRASS_DIR}/${spec.stem}_${kind}.png`);
     }
   }
-  if (spec.archetype === 'blades') paths.push(`${GRASS_DIR}/${spec.maps}_fit.json`);
+  // blade grasses AND the sunflower fit their card widths to a measured
+  // alpha-envelope json; unprimed it falls back to built-in envelopes
+  if (spec.archetype === 'blades' || spec.archetype === 'sunflower') {
+    paths.push(`${GRASS_DIR}/${spec.maps}_fit.json`);
+  }
   if (spec.archetype === 'shrub') paths.push(`${GRASS_DIR}/shrub_anchors.json`);
   await primeFiles(paths); // missing files warn + degrade, never throw
 }

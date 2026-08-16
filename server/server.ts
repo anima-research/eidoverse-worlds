@@ -33,6 +33,15 @@ import { route, avatarRoster, pendingSnaps } from "./routes.ts";
 // The reference fold lives in shared/ (house rule 1 by construction; the
 // world folds with it in world.ts) — what remains here is the role ladder.
 import { ROLE_RANK } from "../shared/fold.js";
+// Seat profiles (#101, upstream): the store + its external-change poll are
+// wired; the proposal/countersign HTTP routes are NOT ported into the route
+// table yet — the feature is dormant here, not torn. (The crash this line
+// heals: the poll timer auto-merged in while the declaration hunk fell on
+// the fork side of a conflict — restart counter reached 15 before anyone
+// noticed, because /version kept answering from the brief up-windows.)
+import { SeatStore } from "./seats.ts";
+import { OPT_DIR } from "./config.ts";
+const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR);
 
 // Behavior sandbox wiring: a script's emit is gated by its AUTHOR's live
 // rights (revoke the grant, the behavior loses its teeth) through the same
@@ -107,6 +116,22 @@ function describe(w: World): string {
 // behavior keep behaving with NOBODY connected — the ferry runs, the
 // lighthouse blinks, the greeter is ready — which is the point of scripts
 // living server-side rather than in any client.
+// Countersign has no HTTP path (an accepted profile is operator provenance,
+// #101 B4) — tools/seat-accept.ts edits the store from another process, and
+// the running server notices here: reload, diff, and push the same
+// generation-bearing event a proposal gets. Late profile arrival is
+// event-driven for every consumer, not wishful polling.
+setInterval(() => {
+  const ext = seatStore.pollExternalChange();
+  if (!ext) return;
+  for (const ch of ext.changed) {
+    const update = JSON.stringify({ type: "avatar-profile-updated", name: ch.name, pose: ch.pose, rev: ext.rev });
+    let notified = 0;
+    for (const w of worlds.values()) for (const c of w.clients) { c.ws.send(update); notified++; }
+    console.log(`[seats] external change ${ch.name}/${ch.pose} rev ${ext.rev} → ${notified} client(s)`);
+  }
+}, 5000);
+
 setInterval(() => {
   const now = Date.now();
   for (const w of worlds.values()) {

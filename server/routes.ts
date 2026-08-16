@@ -95,6 +95,36 @@ function contentType(path: string): string {
   return "application/octet-stream";
 }
 
+// Build identity, resolved once at boot (upstream #51, ported into the route
+// module). "What is production running?" must be a lookup, not an inference.
+// sha, commitTime and dirty are ONE provenance triple: if ANY comes from the
+// environment (image builds), the others are env-or-unknown — never filled
+// from the local git tree in any direction.
+const BUILD = (() => {
+  const gitLine = (...args: string[]) => {
+    try {
+      return new TextDecoder().decode(
+        Bun.spawnSync(["git", ...args], { cwd: import.meta.dir }).stdout).trim();
+    } catch { return ""; /* no git in the deploy image */ }
+  };
+  // PRESENCE, not truthiness: an image build exporting BUILD_DIRTY='' has
+  // still declared an env identity — a git-derived sha must not pair with it
+  const envIdentity = process.env.BUILD_SHA != null || process.env.BUILD_TIME != null
+    || process.env.BUILD_DIRTY != null;
+  const sha = process.env.BUILD_SHA
+    || (envIdentity ? "unknown" : gitLine("rev-parse", "--short", "HEAD") || "unknown");
+  const commitTime = process.env.BUILD_TIME
+    || (envIdentity ? "unknown" : gitLine("show", "-s", "--format=%cI", "HEAD") || "unknown");
+  const dirtyRaw = process.env.BUILD_DIRTY ?? (() => {
+    if (envIdentity) return "unknown";
+    const out = gitLine("status", "--porcelain");
+    return gitLine("rev-parse", "HEAD") ? (out ? "true" : "false") : "unknown";
+  })();
+  return { sha: sha || "unknown", commitTime: commitTime || "unknown",
+    dirty: dirtyRaw === "true" ? true : dirtyRaw === "false" ? false : "unknown",
+    startedAt: new Date().toISOString() };
+})();
+
 const gzCache = new Map<string, { mtime: number; gz: Uint8Array }>();
 
 // What may cache for a day WITHOUT asking: heavy, rarely-edited art. What may
@@ -148,7 +178,7 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
   // because their float animation tracks and mesh data are stored raw. Seven
   // clips at ~1.9MB each was the second-largest slice of a cold boot; half of
   // it was air.
-  if (/\.(m?js|json|css|html|vrma|vrm)$/.test(path) && req?.headers.get("accept-encoding")?.includes("gzip") && f.size > 10_000) {
+  if (/\.(m?js|json|css|html|vrma|vrm|wasm)$/.test(path) && req?.headers.get("accept-encoding")?.includes("gzip") && f.size > 10_000) {
     let entry = gzCache.get(path);
     if (!entry || entry.mtime !== f.lastModified) {
       entry = { mtime: f.lastModified, gz: Bun.gzipSync(new Uint8Array(require("node:fs").readFileSync(path))) };
@@ -330,6 +360,13 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname === "/avatars",
     handler: () => new Response(JSON.stringify(avatarRoster()),
+      { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
+  },
+  {
+    // upstream #51, ported to the route table: which build is this world
+    // running — public, cheap, cache-hostile; the whole point is NOW
+    match: (u) => u.pathname === "/version",
+    handler: () => new Response(JSON.stringify(BUILD),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {

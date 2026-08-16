@@ -819,6 +819,8 @@ function paintGround(body) {
     'mojave desert': () => ({ preset: 'mojave', width: 90, depth: 80, center: [0, 0] }),
     'corn field': () => ({ species: 'corn', width: 40, depth: 30, center: [0, 0],
       rows: { spacing: 0.9, plant: 0.26 }, corn: { peelChance: 0.25 } }),
+    'sunflower field': () => ({ species: 'sunflower', width: 34, depth: 26, center: [0, 0],
+      rows: { spacing: 0.85, plant: 0.5 } }),
   };
   const growGrass = () => {
     st.grass = true;

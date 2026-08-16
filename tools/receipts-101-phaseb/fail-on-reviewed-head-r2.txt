@@ -1,0 +1,31 @@
+=== fail-on-old controls: new R2 tests vs reviewed head 036abf1 ===
+--- tools/seatcore-test.ts
+exit 1 | 0 pass, 0 fail
+--- tools/seats-store-test.ts
+exit 1 | 5 pass, 21 fail
+  [31m✗ avatar "__proto__" refused with a 4xx — {"ok":true,"rev":1,"name":"__proto__","pose":"sitchair"}[0m
+  [31m✗ avatar "constructor" refused with a 4xx — {"ok":true,"rev":2,"name":"constructor","pose":"sitchair"}[0m
+  [31m✗ avatar "prototype" refused with a 4xx — {"ok":true,"rev":3,"name":"prototype","pose":"sitchair"}[0m
+  [31m✗ unrostered avatar refused (404 — no bytes to judge against) — {"ok":true,"rev":4,"name":"ghost-rig","pose":"sitchair"}[0m
+  [31m✗ pose outside the slice refused[0m
+  [31m✗ refused writes mutated nothing on disk[0m
+  [31m✗ refused writes left rev at 0[0m
+  [31m✗ Object.prototype is unpolluted[0m
+  [31m✗ rostered proposal lands at rev 1[0m
+  [31m✗ the log line precedes and matches the snapshot rev[0m
+  [31m✗ accept without expectedRev refused[0m
+  [31m✗ accept against a moved revision refused (review what you sign)[0m
+--- tools/seat-lifecycle-test.ts
+exit 1 | 25 pass, 12 fail
+  [31m✗ real door: avatar "__proto__" bounces with a 4xx — 200[0m
+  [31m✗ real door: avatar "constructor" bounces with a 4xx — 200[0m
+  [31m✗ real door: avatar "prototype" bounces with a 4xx — 200[0m
+  [31m✗ real door: unrostered avatar bounces (404) — 200[0m
+  [31m✗ real door: pose outside the slice bounces (422) — 200[0m
+  [31m✗ refused writes moved nothing (rev unchanged, no events) — rev 0→5[0m
+  [31m✗ countersign against an unreviewed revision refuses[0m
+  [31m✗ operator accept at the reviewed revision succeeds — {"ok":false,"why":"no proposed profile for claude/sitchair"}[0m
+  [31m✗ the agent's seat corrects IN PLACE on the push — contact plane onto the socket plane (1 − 0.2055 → 0.79) — You are "seatbot" in world "seatlab" at (0.0, 0.0), ground height 1.00m, facing S, seated on crate1 (seat approximate: profile proposed — not countersigned).[0m
+  [31m✗ …and the approximation is gone from the line[0m
+  [31m✗ acceptance announced to every connected client — events=6[0m
+  [31m✗ served verdict: accepted, value present, clip digest alongside — {"pose":"sitchair","status":"proposed","clipSha256":"c5f1828ffb222875f1ef1201189f032d22984ece24cc12122e7e450977dcb3e1"}[0m

@@ -620,9 +620,21 @@ export const CLIP_FILES = { sit: 'sitting_on_ground', lie: 'sit_laying_on_ground
 export const CLIP_SPEED = { idle: 0, walk: 1.55, run: 4.0, sit: 0, lie: 0, jump: 0, climb: 0 };
 
 const vrmaCache = new Map();
+// Digest of the clip bytes THIS PAGE actually loaded, hashed once at fetch
+// (#101 B3): the seat gate compares it to the digest the server judged the
+// profile against, so a fallback clip or a divergent file can never wear a
+// profile that was derived from different bytes. A filename is not an
+// identity; the hash of what arrived is.
+const vrmaSha = new Map(); // slot → hex sha256, present only once resolved
+export function vrmaShaLoaded(slot) { return vrmaSha.get(slot) ?? null; }
 export function vrmaBytes(slot) {
   if (!vrmaCache.has(slot)) {
-    vrmaCache.set(slot, fetchBytes(`/library/eidoverse/assets/animations/${CLIP_FILES[slot] ?? slot}.vrma`));
+    const p = fetchBytes(`/library/eidoverse/assets/animations/${CLIP_FILES[slot] ?? slot}.vrma`);
+    vrmaCache.set(slot, p);
+    p.then(async (buf) => {
+      const d = await crypto.subtle.digest('SHA-256', buf);
+      vrmaSha.set(slot, [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join(''));
+    }).catch(() => { /* fetch failure already surfaces via the caller */ });
   }
   return vrmaCache.get(slot);
 }

@@ -64,7 +64,13 @@ class Client {
 let server: ReturnType<typeof spawn> | null = null;
 async function startServer() {
   if (EXTERNAL) return;
-  server = spawn("bun", [join(import.meta.dir, "..", "server", "server.ts")], {
+  // process.execPath, not "bun": on Windows the PATH "bun" is an npm .cmd
+  // shim that exits the moment it has launched the real bun.exe, so the pid
+  // we hold is dead within milliseconds and `server?.kill()` below reaps
+  // nothing — the sequencer is orphaned and keeps this port. That survivor
+  // then answers the NEXT run's readiness poll, and the suite reports on a
+  // build it never started (this is the 72/85 ghost).
+  server = spawn(process.execPath, [join(import.meta.dir, "..", "server", "server.ts")], {
     env: {
       ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "",
       // fold aggressively so the test exercises it, and lift the authoring rate

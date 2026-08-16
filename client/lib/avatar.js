@@ -11,6 +11,7 @@ import { beginWork, enqueue, idleYield, nextFrame, loadNote } from './loadwork.j
 import { warm } from './warmqueue.js';
 import { DRIVEN_BONES } from './ragdoll.js';
 import { stroke as strokeIcon } from './icons.js';
+import { SEAT_CLIP_FILE } from './seatcore.js';
 
 // The clip library is ~1.9MB PER SLOT. Waiting for all seven before a body
 // could exist put 13MB between a person and their own legs — the single
@@ -36,7 +37,7 @@ export const EMOTES = {
 export const EMOTE_ORDER = ['wave', 'cheer', 'dance', 'point', 'salute', 'clap'];
 // Seated postures differ by what you're sitting ON — the ground clip on a
 // chair leaves you cross-legged in mid-air.
-export const SEAT_CLIPS = { ground: 'sitting_on_ground', chair: 'sitting_normal_chair' };
+export const SEAT_CLIPS = { ground: 'sitting_on_ground', chair: SEAT_CLIP_FILE };
 
 // ---------------------------------------------------------------- sprites
 
@@ -577,14 +578,42 @@ export class Avatar {
     this.id = name;
     this.root.remove(this.label);
     disposeSprite(this.label);
-    this.label = makeLabel(name);
+    this.label = makeLabel(this._seatApprox ? `${name} ≈` : name);
     this.label.position.y = 1.95;
     this.root.add(this.label);
+  }
+
+  /** Declared-approximation marker (#101): a seated body whose profile gate
+   *  is closed (legacy socket, no profile, clip not loaded, …) wears a small
+   *  ≈ on its nameplate — the browser's half of "no silent root-at-socket".
+   *  Idempotent per state; the sprite is only redrawn on a transition. */
+  setSeatApprox(on) {
+    if (this._seatApprox === !!on) return;
+    this._seatApprox = !!on;
+    this.setName(this.id);
   }
 
   // ---- speech
   /** They're composing. Repeated calls extend it; it expires on its own so a
    *  dropped "stopped typing" never leaves the dots stuck up forever. */
+  /** Generation-end (#95): everything TRANSIENT this body was expressing —
+   *  typing pill, speech bubble, held bone pose, limpness, gaze — belongs to
+   *  the generation that expressed it, not to the mesh. A takeover
+   *  transplants the mesh into a fresh record; this is what does NOT ride
+   *  along. Each reset goes through the transient's own teardown mechanism
+   *  (the bubble expires through the update loop, the pill through
+   *  setTyping's stop path), so nothing here invents a second way to die. */
+  resetTransients() {
+    this.setTyping(null);
+    this.bubbleUntil = 0;
+    this.speakUntil = 0;
+    this.voiceLevel = null;
+    this.clearPose();
+    this.setLimp(false);
+    this.setGazeTarget(null);
+    this.setClip('idle');
+  }
+
   setTyping(state) {
     // state === null means STOP (mic went cold, composing ended) — it must
     // clear the pill, not schedule 4s of an empty one. Found live: R's

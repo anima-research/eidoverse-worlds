@@ -18,6 +18,7 @@ import { worlds } from "./world.ts";
 type UploadSrv = { requestIP(req: Request): { address: string } | null };
 
 const uploadWin = new Map<string, { t: number; n: number }>(); // per-IP upload rate windows
+let tripoImportBusy = false;   // one Tripo import at a time — they cost CPU-seconds
 
 // ---- store optimization -----------------------------------------------------
 // Every uploaded GLB (drag-drop, Orrery conjures) gets a draco+webp shadow in
@@ -225,8 +226,52 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     const name = raw.replace(/\.vrm$/i, "").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 48) || "unnamed";
     const dir = join(OPT_DIR, "eidoverse/assets/vrms");
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, `${name}.vrm`), body);
-    console.log(`[upload] avatar "${name}" (${(body.length / 1e6).toFixed(1)}MB) by ${upBy}`);
+    // A RAW TRIPO RIG at the avatar door runs the import pipeline instead of
+    // being saved as-is (a Blender export is not wearable: proxy hulls,
+    // dropped textures, no humanoid map — three exports in a row needed all
+    // three repairs). Detection is a JSON-chunk peek: no VRM extension +
+    // the Tripo bone names. The pipeline runs in a SUBPROCESS (simplify +
+    // the verification falls are CPU-seconds; in-process they would freeze
+    // pose relay — the optimize queue's own rule), one at a time, and the
+    // tool's PASS/FAIL exit code is the gate: a body that cannot settle a
+    // fall under both engines never enters the roster.
+    let gjson: any = null;
+    try {
+      const dv = new DataView(body.buffer, body.byteOffset);
+      gjson = JSON.parse(new TextDecoder().decode(body.subarray(20, 20 + dv.getUint32(12, true))));
+    } catch { /* unparseable chunk — treat as plain save, the client will complain */ }
+    const isVRM = !!(gjson?.extensions?.VRMC_vrm || gjson?.extensions?.VRM);
+    const nodeNames = new Set((gjson?.nodes ?? []).map((n: any) => n.name));
+    if (!isVRM && ["Hip", "L_Thigh", "L_Upperarm"].every((b) => nodeNames.has(b))) {
+      if (tripoImportBusy) {
+        return new Response("an avatar import is already running — try again in a minute", { status: 429 });
+      }
+      tripoImportBusy = true;
+      try {
+        const tmpIn = join(OPT_DIR, `.import-${name}.glb`);
+        writeFileSync(tmpIn, body);
+        // process.execPath, never "bun" (docs/INCIDENTS.md, the Windows shim)
+        const spawnArgs = [process.execPath, "run", join(ROOT, "tools/import-tripo-avatar.ts"),
+          tmpIn, "--name", name, "--out", OPT_DIR];
+        if (process.env.EW_AVATAR_DONOR) spawnArgs.push("--donor", process.env.EW_AVATAR_DONOR);
+        const proc = Bun.spawn(spawnArgs, { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
+        const killer = setTimeout(() => proc.kill(), 300_000);
+        const code = await proc.exited;
+        clearTimeout(killer);
+        const log = (await new Response(proc.stdout).text()) + (await new Response(proc.stderr).text());
+        try { Bun.spawnSync(["rm", "-f", tmpIn]); } catch { /* temp */ }
+        if (code !== 0) {
+          console.log(`[upload] tripo import "${name}" FAILED verification\n${log.slice(-800)}`);
+          return new Response(`tripo import failed verification — not installed:\n${log.slice(-800)}`,
+            { status: 422 });
+        }
+        renameSync(join(OPT_DIR, `${name}.vrm`), join(dir, `${name}.vrm`));
+        console.log(`[upload] tripo→vrm "${name}" imported by ${upBy}\n${log.split("\n").slice(-8).join("\n")}`);
+      } finally { tripoImportBusy = false; }
+    } else {
+      writeFileSync(join(dir, `${name}.vrm`), body);
+      console.log(`[upload] avatar "${name}" (${(body.length / 1e6).toFixed(1)}MB) by ${upBy}`);
+    }
     // Live cache invalidation: avatars are name-keyed and mutable (people
     // iterate on their bodies), so every connected client — all worlds —
     // learns the file changed; wearers hot-swap with the fresh version.

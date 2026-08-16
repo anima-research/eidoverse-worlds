@@ -37,6 +37,22 @@ export const rosterLazy = () => fetch('/avatars').then((r) => r.json()).catch(()
 // +350ms at 25mbit/40ms — the multi-MB VRM is the long pole, and its start
 // time is the boot.) Warm boots have the cached path and skip the request.
 const rosterEarly = myAvatarPath ? null : rosterLazy();
+// Warm boots must still REFRESH the stored resolution: the cached path
+// carries a frozen ?v= stamp, so an avatar redeployed under the same name
+// would otherwise replay from HTTP cache forever (bit 08-12: three hair
+// retunes deployed to the box, zero ever reached a returning client — the
+// live sim was running the day-one file). The cached path still wins THIS
+// boot — nothing here blocks — but the roster re-resolves in the background
+// and rewrites the cache, so the next reload wears the new version.
+if (myAvatarPath) {
+  rosterLazy().then((list) => {
+    const fresh = (list ?? []).find((a) => a.name === myAvatarName)?.path;
+    if (fresh && fresh !== myAvatarPath) {
+      try { localStorage.setItem('ew-avatar-path', JSON.stringify({ name: myAvatarName, path: fresh })); } catch { /* private mode */ }
+      console.log(`[avatar] ${myAvatarName} was updated on the server — reload to wear the new version`);
+    }
+  });
+}
 /** The body path: cache, else whichever of (early fetch | snapshot roster)
  *  lands first. Nothing here ever blocked the module graph. */
 export async function resolveMyAvatarPath() {

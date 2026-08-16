@@ -1,0 +1,6 @@
+=== fail-on-prior-head control: R3 overlap vectors vs reviewed head b5957d4 ===
+exit 1 | 33 pass, 4 fail
+  [31m✗ B, overlapped inside A's transaction, REFUSES instead of forking history — {"ok":true,"rev":6,"name":"seatdummy","pose":"sitchair"}[0m
+  [31m✗ vector 1: log revisions are unique and strictly monotonic — [1,2,3,4,5,6,6,7][0m
+  [31m✗ vector 4: a lock timeout refuses with nothing written — {"ok":true,"rev":10,"name":"seatdummy","pose":"sitchair"}[0m
+  [31m✗ vector 5: startup refuses duplicate-revision provenance[0m

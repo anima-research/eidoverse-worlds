@@ -1,0 +1,88 @@
+// voicesource — WHERE YOUR VOICE COMES FROM.
+//
+// A participant's voice is a property of that participant, not a second client
+// in the room. Before this, an agent spoke by running a WHOLE SEPARATE WebRTC
+// client (voicebox/page.html) that joined under the agent's own name — which
+// meant two sockets holding one identity, and the server's one-body-per-id rule
+// evicting each in turn: 543 identity takeovers in a single session on
+// 2026-08-08. Renaming that client is not the fix; not being a client is.
+//
+// So: voice.js asks THIS module for a MediaStream instead of calling
+// getUserMedia directly. Everything downstream — the sender, replaceTrack,
+// distance falloff, volumeFor(), consent, mute — takes a MediaStream and does
+// not care where it came from. One seam, and an agent's synthesized speech gets
+// spatialization and consent for free rather than needing a parallel path.
+//
+//   humans → getUserMedia (unchanged; the browser/OS default device)
+//   agents → a SYNTH PROVIDER, registered by whatever is driving the body
+//
+// This module deliberately contains NO synthesizer (#90 review, 2026-08-11):
+// it is the seam, not the mouth. A provider hands over a finished
+// MediaStreamTrack — how the samples are made (generator, pacer, TTS engine,
+// test stub) is entirely the provider's business, and lives in its own module.
+
+import { report } from './core.js';
+
+// ── the synth-provider contract ──────────────────────────────────────────────
+// {
+//   available(): boolean            — can this provider produce a track NOW
+//   start(): MediaStreamTrack       — begin producing; returns the live track
+//   stop(): void                    — cease producing (track may end)
+//   label?: string                  — shown in the audio panel
+// }
+// One provider, replaceable. null = this body has no synthetic voice.
+let provider = null;
+
+export function setSynthProvider(p) {
+  provider = p || null;
+  return provider;
+}
+export const synthProvider = () => provider;
+
+// ── track-change notification ────────────────────────────────────────────────
+// If a provider must rebuild its track (its generator died, its engine
+// restarted), it calls notifySynthTrackChanged(newTrack); voice.js re-binds
+// every sender. The hook survives from the pre-split module under its old
+// name so the call site's diff stays honest.
+let onRebuild = null;
+export const setGeneratorRebuildHook = (fn) => { onRebuild = fn; };
+export const notifySynthTrackChanged = (track) => {
+  try { onRebuild?.(track); } catch (e) { report('synth track-change hook', e); }
+};
+
+// ── the source ───────────────────────────────────────────────────────────────
+export async function voiceSource() {
+  // A body has ONE mic, and a LIVE MIC WINS OUTRIGHT (R, 2026-08-09): mic on
+  // means your own voice, full stop; mic off drops back to the synth provider
+  // with nothing to re-enable, because the provider's enablement is left
+  // STANDING rather than cleared — a priority, not a toggle.
+  try {
+    const mic = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true },
+    });
+    return mic;
+  } catch (e) {
+    // No microphone, or permission refused. If a synth provider is registered
+    // and willing, that is the whole voice — the agent path, and the path a
+    // human with no mic takes to still be heard.
+    if (provider?.available?.()) {
+      const track = provider.start();
+      const ms = new MediaStream([track]);
+      // Mark it: this is a SYNTHETIC source, not a device. The caller must not
+      // wrap it in the WebAudio gate — a synth has no room noise to gate, and
+      // the gate graph hangs off an AudioContext whose clock is DEAD in every
+      // headless body (field-measured 2026-08-10: 'running', +0.000s/2s).
+      ms.synthetic = true;
+      return ms;
+    }
+    throw e;
+  }
+}
+
+/** True when the current source's track has died and needs re-making. The
+ *  liveness check nothing was doing — an `audio:ended` sender transmits
+ *  silence forever while ICE and direction both look perfectly healthy. */
+export function sourceIsDead(stream) {
+  const t = stream?.getAudioTracks?.()[0];
+  return !!t && t.readyState === 'ended';
+}

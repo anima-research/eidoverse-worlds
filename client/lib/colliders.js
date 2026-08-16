@@ -14,6 +14,7 @@
 import { THREE } from './core.js';
 import { MeshBVH, estimateMemoryInBytes } from 'three-mesh-bvh';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { gridAccumulator, decideSupportClass, validTopGrid, LIE_GRID } from './supportclass.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 export const colliders = new Map(); // entity id -> { obj, box, pillar, exact?, interior, cell }
@@ -191,33 +192,28 @@ function hasFloor(bvh, box, s) {
 // case and never disagrees about the threshold. (Library-wide it drifts up to
 // 2.5m on tall structured things — a watchtower, a perimeter wall — which is
 // exactly why the shape gate runs before the probe is consulted.)
-const LIE_GRID = 24;
-function topLie(obj, box) {
+// The grid/median math and its constants live in supportclass.js now (#84):
+// the headless support pipeline classifies with the SAME module, so the two
+// runtimes cannot drift about which box tops lie. This adapter's own job is
+// only what a renderer can do — walking loaded THREE meshes for vertices.
+export function topLie(obj, box) {   // exported for the classifier-parity fixture (#94 B2)
   const w = box.max.x - box.min.x, d = box.max.z - box.min.z;
-  if (!(w > 0) || !(d > 0)) return 0;
+  const acc = gridAccumulator(box.min.x, box.min.z, w, d);
+  if (!acc) return 0;
   obj.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(obj.matrixWorld).invert();
   const rel = new THREE.Matrix4();
   const v = new THREE.Vector3();
-  const cells = new Float64Array(LIE_GRID * LIE_GRID).fill(-Infinity);
   obj.traverse((o) => {
     if (!o.isMesh || !o.geometry?.attributes?.position) return;
     const pos = o.geometry.attributes.position;
     rel.multiplyMatrices(inv, o.matrixWorld);
     for (let i = 0; i < pos.count; i++) {
       v.fromBufferAttribute(pos, i).applyMatrix4(rel);
-      const cx = Math.min(LIE_GRID - 1, Math.max(0, Math.floor(((v.x - box.min.x) / w) * LIE_GRID)));
-      const cz = Math.min(LIE_GRID - 1, Math.max(0, Math.floor(((v.z - box.min.z) / d) * LIE_GRID)));
-      const k = cz * LIE_GRID + cx;
-      if (v.y > cells[k]) cells[k] = v.y;
+      acc.add(v.x, v.y, v.z);
     }
   });
-  const tops = [];
-  for (let i = 0; i < cells.length; i++) if (cells[i] !== -Infinity) tops.push(cells[i]);
-  if (tops.length < 8) return 0;   // a 4-corner quad covers 4 cells: too sparse to accuse
-  tops.sort((a, b) => a - b);
-  const h = tops.length >> 1;
-  return box.max.y - (tops.length % 2 ? tops[h] : (tops[h - 1] + tops[h]) / 2);
+  return acc.finish(box.max.y).lie;
 }
 
 /** `fresh` marks a pristine-clone fit (see the lib-cache header): only those
@@ -237,7 +233,9 @@ function decide(entry, s, fresh = false) {
   // per-object `collide` override still wins over any of it.
   const w = (box.max.x - box.min.x) * s, d = (box.max.z - box.min.z) * s;
   const h = (box.max.y - box.min.y) * s;
-  const roomScale = w * d >= 16 && h >= 2.2;
+  // shape gates come from the shared classifier (supportclass.js) — the
+  // numbers below in the comments are ITS constants, kept in one place
+  const { roomScale } = decideSupportClass({ w, d, h });
   // The exception: FLOOR-SHAPED things whose box top is a lie. Wide enough to
   // stand on, low enough that standing on it is the only thing a body would
   // ever do with it — a blanket, a rug, a pillow pile — and with a real gap
@@ -251,11 +249,13 @@ function decide(entry, s, fresh = false) {
   // more — both rubble piles (which float you 0.73m and 0.44m, worse than the
   // blanket), five hovercars, a shark. If those should firm up too, this is
   // the one line to move.
-  const floorShaped = !roomScale && w * d >= 2 && h <= 1.0;
+  // shape gates from the shared classifier (upstream supportclass.js — the
+  // same thresholds the headless side mirrors); the lie probe keeps the
+  // fork's per-LIB sharing: it is local-space and scale-free (the gate
+  // applies `s` below), so one per-vertex walk per LIB answers for every
+  // clone, and nothing pays for the probe unless the shape gate consults it
+  const { floorShaped } = decideSupportClass({ w, d, h });
   const shared = entry.lib ? libCache.get(entry.lib) : null;
-  // the lie is local-space and scale-free (the gate applies `s` below), so
-  // one per-vertex walk per LIB answers for every clone; same laziness as
-  // before — nothing pays for the probe unless the shape gate consults it
   if (floorShaped && entry.lie == null) {
     if (shared && shared.lie != null) entry.lie = shared.lie;
     else {
@@ -263,7 +263,8 @@ function decide(entry, s, fresh = false) {
       if (shared && fresh) shared.lie = entry.lie;
     }
   }
-  const uneven = floorShaped && (entry.lie ?? 0) * s > 0.10;
+  const uneven = floorShaped
+    && decideSupportClass({ w, d, h, lie: (entry.lie ?? 0) * s }).uneven;
   const exact = pref === 'exact' ? true : pref === 'box' ? false : (roomScale || uneven);
   if (exact && !entry.exact) {
     if (shared?.exact) entry.exact = shared.exact;
@@ -338,6 +339,38 @@ export function fitSupportBox(id, min, max, { position, yaw = 0, scale = 1 } = {
   entry.pillar = (box.max.y - box.min.y) * scale > 2.4;
   colliders.set(id, entry);
   bucketAdd(id, entry);
+}
+
+/** Register HEIGHTFIELD support from a served topGrid — the headless door
+ *  for floor-shaped assets whose box top is a known lie (#84; the data-tier
+ *  sibling of fitSupportBox, #17's door). The grid is the same 24×24
+ *  max-y-per-cell probe decide() trusts to DETECT the lie, surveyed to
+ *  1.8cm against raycast inside this population — so here it IS the floor.
+ *  Cells are model-local; the entry composes with the entity transform like
+ *  every other collider. Support only: a blanket has no walls.
+ *  Returns false (registering nothing) for any payload validTopGrid
+ *  refuses — the caller's duty on refusal is to abstain, never box-top. */
+export function fitSupportGrid(id, topGrid, { position, yaw = 0, scale = 1 } = {}) {
+  if (!validTopGrid(topGrid)) return false;
+  if (![position].every((v) => Array.isArray(v) && v.length === 3 && v.every(Number.isFinite))
+      || !Number.isFinite(yaw) || !Number.isFinite(scale) || !(scale > 0)) return false;
+  const [minX, minZ] = topGrid.minXZ, [w, d] = topGrid.sizeXZ;
+  let lo = Infinity, hi = -Infinity;
+  for (const c of topGrid.cells) if (c !== null) { if (c < lo) lo = c; if (c > hi) hi = c; }
+  const box = new THREE.Box3(
+    new THREE.Vector3(minX, lo, minZ),
+    new THREE.Vector3(minX + w, hi, minZ + d),
+  );
+  const obj = {
+    position: new THREE.Vector3(position[0], position[1], position[2]),
+    rotation: { y: yaw },
+    scale: new THREE.Vector3(scale, scale, scale),
+  };
+  const entry = { obj, box, pref: 'box', exact: null, interior: false, pillar: false, cells: [],
+    grid: { n: topGrid.n, minX, minZ, w, d, tops: topGrid.cells } };
+  colliders.set(id, entry);
+  bucketAdd(id, entry);   // radial footprint: the world bounds follow yaw and scale
+  return true;
 }
 
 /** Call after an in-world rescale: re-decides exact-vs-box against the NEW
@@ -530,7 +563,27 @@ export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL) {
   const step = Math.min(STEP, tall * 0.3);   // a ragdoll does not climb stairs
   const probeY = Math.min(HIP, tall * 0.5);  // mid-body, not "hip"
   const spanY = Math.max(r, tall * 0.26);    // how far up/down a wall hit counts
-  for (const { obj, box, pillar, exact } of near(pos.x, pos.z)) {
+  for (const { obj, box, pillar, exact, grid } of near(pos.x, pos.z)) {
+    if (grid) {
+      // Heightfield support (#84): the CONTAINING cell's max-y is the ground
+      // — nearest occupied cell, piecewise-constant, no interpolation. An
+      // empty cell offers NOTHING: bilinear smoothing would bridge air and
+      // manufacture floors, so stepping off the cloth's edge finds terrain,
+      // exactly as the browser's exact triangles would have it.
+      const gs = obj.scale?.x || 1;
+      _local.set(pos.x - obj.position.x, 0, pos.z - obj.position.z)
+        .applyAxisAngle(UP, -obj.rotation.y).divideScalar(gs);
+      const gx = Math.floor(((_local.x - grid.minX) / grid.w) * grid.n);
+      const gz = Math.floor(((_local.z - grid.minZ) / grid.d) * grid.n);
+      if (gx >= 0 && gx < grid.n && gz >= 0 && gz < grid.n) {
+        const top = grid.tops[gz * grid.n + gx];
+        if (top !== null) {
+          const gy = obj.position.y + top * gs;
+          if (gy <= pos.y + step && gy > ground) ground = gy;
+        }
+      }
+      continue; // support only — never box-test a grid entry (no false walls)
+    }
     if (exact) {
       // work in entity-local space (yaw-only rotation, uniform scale)
       const s = obj.scale.x || 1;
@@ -633,8 +686,9 @@ export function findSeat(pos, range = 1.2) {
   // grid-bounded (§14.2 6a): a chair within `range` has its footprint cells
   // inside the query disc — the old full-map scan ran on every X press and
   // the 0.45s seat-hint beat
-  for (const [id, { obj, box, pillar, exact }] of nearColliders(pos.x, pos.z, range)) {
+  for (const [id, { obj, box, pillar, exact, grid }] of nearColliders(pos.x, pos.z, range)) {
     if (pillar || exact) continue; // interiors aren't chairs; furniture inside them is
+    if (grid) continue; // a heightfield's box top is the lie we exist to avoid — no phantom seat offers (#11)
     const sc = obj.scale?.x || 1;
     const topY = obj.position.y + box.max.y * sc;
     const rise = topY - pos.y;

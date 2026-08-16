@@ -13,6 +13,29 @@
 // the server-side convenience tier.
 
 import { statSync } from "node:fs";
+// the one classifier both runtimes share (#84) — grid math and constants
+// live there; this file only supplies vertices from gltf-transform accessors
+import { gridAccumulator, SPARSE_MIN_CELLS, TOPGRID_VERSION, TOPGRID_MAX_JSON, LIE_GRID,
+  CERT_SPREAD, CERT_SUBSAMPLE } from "../client/lib/supportclass.js";
+
+// Ray certification (#94 review B1) needs a BVH — loaded lazily and
+// optionally, same doctrine as gltf-transform above: without it the summary
+// still carries `lie` (classification works) but serves no topGrid, and the
+// consumer's duty on a missing grid is a declared abstention.
+let bvhP: Promise<{ THREE: any; MeshBVH: any } | null> | null = null;
+async function getBVH() {
+  bvhP ??= (async () => {
+    try {
+      const { THREE } = await import("../tools/core-stub.mjs");
+      const { MeshBVH } = await import("../client/node_modules/three-mesh-bvh/src/index.js");
+      return { THREE, MeshBVH };
+    } catch (err) {
+      console.warn("[geometry] three-mesh-bvh unavailable — topGrid certification disabled:", String(err));
+      return null;
+    }
+  })();
+  return bvhP;
+}
 
 // gltf-transform loads lazily and optionally, same doctrine as the behavior
 // sandbox: the sequencer must boot (and worlds must run) without it.
@@ -59,6 +82,21 @@ export type GeomSummary = {
            local: { center: number[]; size: number[] }; tris: number }[];
   /** true when the mesh was too big to walk exhaustively */
   sampled: boolean;
+  /** the box-top lie (m, model frame): bbox top minus the median 24×24
+   *  cell top — the SAME probe the browser's collider decide() runs, from
+   *  the shared classifier (client/lib/supportclass.js). Present whenever
+   *  the shape was worth probing; consumers scale it before judging. */
+  lie?: number;
+  /** the probe's grid itself, served as a truthful heightfield for
+   *  floor-shaped assets whose box top lies (#84). Versioned and
+   *  self-describing; cells are model-local max-y, null = unoccupied.
+   *  Row-major, index = z * n + x over the minXZ/sizeXZ footprint. */
+  topGrid?: { version: number; n: number; minXZ: [number, number];
+              sizeXZ: [number, number]; lie: number;
+              /** the within-cell surface-spread bound every offered cell was
+               *  ray-certified to (model metres) — consumers refuse grids
+               *  their spawn scale stretches past the world bound */
+              certSpread: number; cells: (number | null)[] };
   /** mesh nodes present in the FILE but attached to no scene — broken
    *  exports. No renderer draws them; never aim a motion at one. */
   orphans?: string[];
@@ -211,6 +249,152 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
     }));
 
   const ok = Number.isFinite(min[0]);
+
+  // ---- the box-top lie probe (#84) -----------------------------------------
+  // Same math as the browser's collider decide(): the shared accumulator
+  // buckets model-frame vertices 24×24 and medians the cell tops. This pass
+  // walks POSITION accessors exhaustively (the browser walks every vertex,
+  // so sampling here would change the verdict) — gated to shapes that could
+  // ever be floor-shaped, with slack for in-world scaling, so room-scale
+  // architecture and skyscraper meshes never pay for it.
+  let lie: number | undefined;
+  let topGrid: GeomSummary["topGrid"];
+  if (ok) {
+    const w = max[0] - min[0], h = max[1] - min[1], d = max[2] - min[2];
+    const worthProbing = w * d >= 1 && h <= 1.5 && !(w * d >= 16 && h >= 2.2);
+    if (worthProbing) {
+      const acc = gridAccumulator(min[0], min[2], w, d);
+      if (acc) {
+        const out = [0, 0, 0], p = [0, 0, 0];
+        for (const node of doc.getRoot().listNodes()) {
+          if (!inScene.has(node)) continue;
+          const mesh = node.getMesh();
+          if (!mesh) continue;
+          const m = node.getWorldMatrix();
+          for (const prim of mesh.listPrimitives()) {
+            const posAcc = prim.getAttribute("POSITION");
+            if (!posAcc) continue;
+            for (let vi = 0; vi < posAcc.getCount(); vi++) {
+              posAcc.getElement(vi, p);
+              xf(m, p, out);
+              acc.add(out[0], out[1], out[2]);
+            }
+          }
+        }
+        const fin = acc.finish(max[1]);
+        if (fin.occupied >= SPARSE_MIN_CELLS) {
+          // FULL precision: the browser's topLie is unrounded, and the 0.10m
+          // gate is strict — a 0.1004 lie rounded to 0.100 flips the verdict
+          // headlessly while the browser calls it uneven (#94 review B2).
+          lie = fin.lie;
+
+          // ---- per-cell ray certification (#94 review B1) ----------------
+          // A body may stand ANYWHERE in a cell, so every offered cell must
+          // prove its whole surface, not its tallest vertex: CERT_SUBSAMPLE²
+          // (4×4) rays per occupied cell, with rough cells re-proving
+          // themselves on an 8×8 lattice below; any miss (air in the cell)
+          // or a spread beyond CERT_SPREAD serves as null. The offered value
+          // folds in the cell's vertex max — a certified upper bound within
+          // the declared spread.
+          const bvhMod = tris <= SAMPLE_ABOVE_TRIS ? await getBVH() : null;   // a sampled-scale mesh gets no certification, hence no grid
+          if (bvhMod) {
+            const soup: number[] = [];
+            const pv = [0, 0, 0], pw = [0, 0, 0];
+            for (const node of doc.getRoot().listNodes()) {
+              if (!inScene.has(node)) continue;
+              const mesh = node.getMesh();
+              if (!mesh) continue;
+              const m = node.getWorldMatrix();
+              for (const prim of mesh.listPrimitives()) {
+                const posAcc = prim.getAttribute("POSITION");
+                if (!posAcc) continue;
+                const idxAcc = prim.getIndices();
+                const count = idxAcc ? idxAcc.getCount() : posAcc.getCount();
+                for (let t = 0; t < count; t++) {
+                  posAcc.getElement(idxAcc ? idxAcc.getScalar(t) : t, pv);
+                  xf(m, pv, pw);
+                  soup.push(pw[0], pw[1], pw[2]);
+                }
+              }
+            }
+            const { THREE, MeshBVH } = bvhMod;
+            const geo = new THREE.BufferGeometry();
+            geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(soup), 3));
+            const bvh = new MeshBVH(geo);
+            const ray = new THREE.Ray();
+            ray.direction.set(0, -1, 0);
+            const rayY = max[1] + Math.max(0.1, h * 0.05);
+            const cells: (number | null)[] = [];
+            let offered = 0;
+            for (let iz = 0; iz < LIE_GRID; iz++) {
+              for (let ix = 0; ix < LIE_GRID; ix++) {
+                const vertMax = fin.cells[iz * LIE_GRID + ix];
+                if (vertMax === -Infinity) { cells.push(null); continue; }
+                let lo = Infinity, hi = -Infinity, misses = 0;
+                for (let sz = 0; sz < CERT_SUBSAMPLE && !misses; sz++) {
+                  for (let sx = 0; sx < CERT_SUBSAMPLE; sx++) {
+                    ray.origin.set(
+                      min[0] + (w * (ix + (sx + 0.5) / CERT_SUBSAMPLE)) / LIE_GRID,
+                      rayY,
+                      min[2] + (d * (iz + (sz + 0.5) / CERT_SUBSAMPLE)) / LIE_GRID,
+                    );
+                    const hit = bvh.raycastFirst(ray, THREE.DoubleSide);
+                    if (!hit) { misses++; break; }
+                    if (hit.point.y < lo) lo = hit.point.y;
+                    if (hit.point.y > hi) hi = hit.point.y;
+                  }
+                }
+                // The OFFERED top is max(ray max, this cell's vertex max): a
+                // piecewise-linear surface cannot exceed its vertices inside
+                // the cell, so folding vertMax in covers peaks the ray lattice
+                // slips between. The spread check then runs against the
+                // OFFERED value: a cell whose deepest sampled point sits more
+                // than CERT_SPREAD under what we would offer is not flat
+                // enough to certify — null, air, abstention.
+                let top = Math.max(hi, vertMax);
+                if (misses || top - lo > CERT_SPREAD) { cells.push(null); continue; }
+                // Adaptive re-certification (#94 B1, "adaptive subdivision is
+                // fine"): a ROUGH cell — spread in the upper half of the
+                // certifiable band — must re-prove itself on an 8×8 lattice.
+                // Smooth cloth skips this; rubble crevices that hid between
+                // the 4×4 rays are found here and refused.
+                if (top - lo > CERT_SPREAD * 0.5) {
+                  const RE = 8;
+                  for (let sz = 0; sz < RE && !misses; sz++) {
+                    for (let sx = 0; sx < RE; sx++) {
+                      ray.origin.set(
+                        min[0] + (w * (ix + (sx + 0.5) / RE)) / LIE_GRID,
+                        rayY,
+                        min[2] + (d * (iz + (sz + 0.5) / RE)) / LIE_GRID,
+                      );
+                      const hit = bvh.raycastFirst(ray, THREE.DoubleSide);
+                      if (!hit) { misses++; break; }
+                      if (hit.point.y < lo) lo = hit.point.y;
+                      if (hit.point.y > hi) hi = hit.point.y;
+                    }
+                  }
+                  top = Math.max(hi, vertMax);
+                  if (misses || top - lo > CERT_SPREAD) { cells.push(null); continue; }
+                }
+                cells.push(+top.toFixed(3));
+                offered++;
+              }
+            }
+            if (offered >= SPARSE_MIN_CELLS) {
+              const g = { version: TOPGRID_VERSION, n: LIE_GRID,
+                minXZ: [+min[0].toFixed(3), +min[2].toFixed(3)] as [number, number],
+                sizeXZ: [+w.toFixed(3), +d.toFixed(3)] as [number, number],
+                lie, certSpread: CERT_SPREAD, cells };
+              // the hard payload cap is part of the contract — an oversized
+              // grid is dropped here and the consumer abstains, never box-tops
+              if (JSON.stringify(g).length <= TOPGRID_MAX_JSON) topGrid = g;
+            }
+          }
+        }
+      }
+    }
+  }
+
   const sum: GeomSummary = {
     tris,
     bbox: ok ? {
@@ -221,6 +405,8 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
     topSurfaces,
     nodes,
     sampled: stride > 1,
+    ...(lie !== undefined ? { lie } : {}),
+    ...(topGrid ? { topGrid } : {}),
     ...(orphans.length ? { orphans } : {}),
   };
   cache.set(absPath, { mtime, sum });

@@ -17,6 +17,7 @@ import { audioPrefs, setVolume, receivingVoice, setReceiveVoice,
   sttConsented, setSttConsent, isHushed, setHush,
   micFloor, setMicFloor } from './voiceconsent.js';
 import { micAnalyserLevel } from './voice.js';
+import { gateUnavailable, ungatedConsent, allowUngated } from './micgate.js';
 import { bus } from './core.js';
 
 // The panel's row layout, carried BY THE MODULE. Found live 2026-08-06 (R,
@@ -137,6 +138,18 @@ function paint(body) {
       cat === 'world' ? p.volWorld : cat === 'tts' ? p.volTts : p.volVoices));
   }
   body_.append(micFloorRow());
+  // B2 (#90): the gate-unavailable escape hatch. Hidden while the gate works;
+  // when the graph cannot be built the mic REFUSES to transmit and this row
+  // appears — the explicit, user-visible choice to go raw. Never silent.
+  {
+    const row = checkRow('transmit UNGATED (voice gate unavailable)',
+      'the noise gate could not be built on this device — checking this transmits your raw microphone, room noise and all',
+      ungatedConsent(), (on) => allowUngated(on));
+    row.style.display = gateUnavailable() ? '' : 'none';
+    row.style.color = '#fa5';
+    bus.on('voice-gate-unavailable', () => { row.style.display = ''; });
+    body_.append(row);
+  }
   body_.append(checkRow('speech-to-text',
     'sends your mic audio to your browser vendor’s cloud to transcribe',
     sttConsented(), (on) => setSttConsent(on)));

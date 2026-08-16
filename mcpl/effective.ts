@@ -16,19 +16,29 @@
 // time comes in as an argument. agent.ts wraps it; tests drive it bare.
 
 import { evalWholeMotion, qMul, qApply, qAxisAngle, yawOfQuat } from "../client/lib/motioneval.js";
+import { seatGateCore, applySeatCorrection } from "../client/lib/seatcore.js";
 
 export type EffectiveView = {
   /** The folded entity, or undefined when `id` is not a thing (a body, or unknown). */
   entity(id: string): { pos: number[]; yaw?: number; scale?: number; comp?: Record<string, any> } | undefined;
   /** The live mount record for `id` (thing OR body), or undefined when unmounted. */
   mount(id: string): { to: string; slot?: string; offset?: number[]; yaw?: number } | undefined;
+  /** The SERVER-JUDGED seat verdict for this body's current avatar (#101) —
+   *  the same value /avatars hands every consumer. Absent method or absent
+   *  verdict both read as "no profile": this module never defaults a contact
+   *  and never rederives one. */
+  seatVerdict?(id: string): { pose?: string; status: string; contactY?: number; refusal?: string; which?: string } | undefined;
 };
 
 export type Effective =
   | { ok: true; pos: [number, number, number]; yaw: number;
       quat: [number, number, number, number]; scale: number;
       /** the motion type of the nearest moving link, or null when the chain stands still */
-      moving: string | null }
+      moving: string | null;
+      /** for seated BODIES only (#101): whether the profile correction is in
+       *  this composition, or the declared reason it is not. Things never
+       *  carry it. */
+      seat?: { state: "profiled" | "approximate"; reason?: string } }
   | { ok: false; why: string; link: string };
 
 const fin3 = (v: unknown): v is [number, number, number] =>
@@ -88,11 +98,29 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
     // them (world.js runs the offset through matrixWorld for the same reason)
     const local: [number, number, number] = [rawOff[0] * parent.scale, rawOff[1] * parent.scale, rawOff[2] * parent.scale];
     const d = qApply(parent.quat, local);
-    const pos: [number, number, number] = [parent.pos[0] + d[0], parent.pos[1] + d[1], parent.pos[2] + d[2]];
+    let pos: [number, number, number] = [parent.pos[0] + d[0], parent.pos[1] + d[1], parent.pos[2] + d[2]];
+    // The profile correction (#101), bodies only: contact plane onto the
+    // authored socket plane, along WORLD up (a mounted body renders upright —
+    // yaw only — so the parent's tilted normal would smear it laterally; the
+    // B2 discriminator). contactY is RIDER-root-local and multiplies the
+    // rider's own scalar — which is 1 for every headless body by the named
+    // shared definition (no code path scales an avatar root today); the
+    // parent's scale must NOT touch it. The gate here is the contract half
+    // (seatGateCore): this reader has no mixer, so the contract IS its
+    // runtime truth; steady-state parity with the renderer is pinned by test.
+    let seat: { state: "profiled" | "approximate"; reason?: string } | undefined;
+    if (isBody) {
+      const g = seatGateCore({ sock, verdict: view.seatVerdict?.(id), pose: sock?.pose ?? "sitchair" });
+      if (g.apply) {
+        const c = applySeatCorrection(pos, g.contactY, 1);
+        if (c) { pos = c as [number, number, number]; seat = { state: "profiled" }; }
+        else seat = { state: "approximate", reason: "non-finite correction" };
+      } else seat = { state: "approximate", reason: g.reason };
+    }
     const quat = qMul(parent.quat, qAxisAngle([0, 1, 0], rawYaw)) as [number, number, number, number];
     const yaw = yawOfQuat(quat);
     if (!fin3(pos) || !Number.isFinite(yaw)) return { ok: false, why: "composed transform is non-finite", link: id };
-    return { ok: true, pos, yaw, quat, scale: parent.scale * ownScale, moving: parent.moving };
+    return { ok: true, pos, yaw, quat, scale: parent.scale * ownScale, moving: parent.moving, ...(seat ? { seat } : {}) };
   }
 
   // ---- unmounted: the folded base, plus the thing's own whole-entity motion --

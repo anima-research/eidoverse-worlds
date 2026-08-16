@@ -93,6 +93,18 @@ console.log("\npreset + variety strokes (one verb, several strokes)");
   const explicit = presetStrokes({ species: "corn", rows: { spacing: 1, plant: 0.3, stride: 2, phase: 0 } });
   check("an explicit stride is left alone", explicit.length === 1);
 
+  const sun = presetStrokes({ species: "sunflower", width: 34, depth: 26 });
+  check("a sunflower field interleaves variants", sun.length === 3, String(sun.length));
+  check("every sunflower stroke is row-planted", sun.every((s: any) => s.rows?.stride === 3));
+  check("the strokes tile the row grid without collision",
+    new Set(sun.map((s: any) => s.rows.phase)).size === 3);
+  check("sunflower variants differ by seed", new Set(sun.map((s: any) => s.seed)).size === 3);
+  check("the field shares ONE heading (they face the sun together)",
+    new Set(sun.map((s: any) => s.heading)).size === 1 && sun[0].heading !== undefined);
+  const sunExplicit = presetStrokes({ species: "sunflower", heading: 1.2 });
+  check("a caller's heading wins over the default",
+    sunExplicit.every((s: any) => near(s.heading, 1.2)));
+
   // the sparse/normal/lush dial has to REACH the composed biomes: every
   // preset stroke carries an authored density, and a preset that dropped the
   // caller's factor left the dial doing nothing at all on mojave

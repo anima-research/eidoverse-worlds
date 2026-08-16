@@ -21,6 +21,12 @@ import { buildFloraField, warmField } from './flora.js';
 import { applySky, whenSkyWarm } from './sky.js';
 import { whenBooted, bootDone } from './boot.js';
 import { warm, P_GATE } from './warmqueue.js';
+// seat correction for mounted riders (upstream #101) — the me-drive frame
+// calls these for every seated body; their import fell on the fork side of
+// a merge hunk while the call site auto-merged, and every SIT threw 56
+// ReferenceErrors a second (antra, live, from a swing in commons2)
+import { seatCorrectionFor } from './seats.js';
+import { applySeatCorrection } from './seatcore.js';
 
 /** id -> Object3D. `null` is a reservation held while the GLB downloads, so a
  *  duplicate spawn in the same tick can't create two bodies for one id. */
@@ -338,9 +344,12 @@ const _mtQ = new THREE.Quaternion();
 const _mtF = new THREE.Vector3();
 const _mtV = new THREE.Vector3();
 const _mtM = new THREE.Matrix4();
-/** Fill outPos with rider's world seat position; returns {yaw, pose, to} or
- *  null when not mounted (or the parent isn't live yet). */
-export function mountTransform(riderId, outPos) {
+/** Fill outPos with rider's world seat position; returns {yaw, pose, to,
+ *  seatState, seatReason} or null when not mounted (or the parent isn't live
+ *  yet). `rider` is {path, av} — the roster path and live wrapper of the
+ *  body being seated; without it the seat is declared approximate, because
+ *  a correction we cannot gate is a correction we may not apply (#101). */
+export function mountTransform(riderId, outPos, rider) {
   const m = avatarMounts.get(riderId);
   if (!m) return null;
   const parent = entities.get(m.to);
@@ -358,11 +367,24 @@ export function mountTransform(riderId, outPos) {
       .premultiply(part.parent.matrixWorld).invert();       // world → part-at-rest
     _mtF.applyMatrix4(_mtM).applyMatrix4(part.matrixWorld); // …re-emerge from the live part
   }
+  // The profile correction (#101): contact plane onto the authored socket
+  // plane, applied AFTER part displacement so a profiled rider carries it
+  // through a moving part's arc. The subtraction is along WORLD up — mounted
+  // bodies render upright (yaw only, below), so a tilted parent's normal
+  // would displace the root laterally while the body's contact geometry
+  // stays vertical (the B2 discriminator in tools/seatcore-test.ts). Gate
+  // closed = today's root-at-socket, declared, never silent.
+  const seat = seatCorrectionFor(rider, sock);
+  if (seat.applied) {
+    const c = applySeatCorrection([_mtF.x, _mtF.y, _mtF.z], seat.contactY, seat.scale);
+    if (c) _mtF.set(c[0], c[1], c[2]);
+  }
   outPos.copy(_mtF);
   parent.getWorldQuaternion(_mtQ);
   _mtF.set(0, 0, 1).applyQuaternion(_mtQ);
   const parentYaw = Math.atan2(_mtF.x, _mtF.z);
-  return { yaw: parentYaw + (m.yaw ?? sock.yaw ?? 0), pose: sock.pose ?? 'sitchair', to: m.to };
+  return { yaw: parentYaw + (m.yaw ?? sock.yaw ?? 0), pose: sock.pose ?? 'sitchair', to: m.to,
+    seatState: seat.applied ? 'profiled' : 'approximate', seatReason: seat.applied ? null : seat.reason };
 }
 
 // sky.js owns the current args; world.js only needs them to merge a weather
