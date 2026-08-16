@@ -447,3 +447,42 @@ like instructions.)
 **Do NOT "fix" this by re-adding EIDO_DOORS_JSON or re-creating seats.**
 The parity call (R, 15:31) stands: doorHop over-grants vs Connectome; lawful
 path is PR #125, unmerged.
+
+---
+
+## 2026-08-16 — TTS over the SFU, mic OFF: VERIFIED
+
+R's requirement, in her words: "I just want to verify that TTS can ship over the
+voice lane even if mic is toggled off." It could not. Now it does.
+
+Receipt, from `/relay-diag` with her mic off and a Piper voice loaded:
+
+```
+forwarded: 862            rabscuttle  pub=true  rx=862
+forwarded: 1154   (+6s)   rabscuttle  pub=true  rx=1154
+```
+
+Climbing, with the SFU's forwarded counter tracking it.
+
+**Four bugs, stacked. Only the last was the blocker:**
+
+1. `voicesfu.js` called `getUserMedia` DIRECTLY, bypassing `voiceSource()`. The
+   mesh asks the seam (`voice.js:551`) and gets a synth track for free; the SFU
+   never asked, so a TTS provider had no route to a sender on this transport.
+2. `voiceSource()` treated "mic off" and "no mic" as the same state — it only
+   fell back to the synth when `getUserMedia` THREW. A working mic that the user
+   switched off still came back as the microphone.
+3. 🔴 **The real one:** the SFU never registered `setGeneratorRebuildHook`.
+   `voice.js:1204` has carried it for the mesh since a real-media acceptance run
+   ("a body whose mic was never live has no senders… two real browsers sent 0
+   RTP"). Without it, a TTS track arriving while the mic was ALREADY off had
+   nothing to attach to — and fixes 1 and 2 only covered the mic-off
+   *transition*, which is not the state most people are in.
+4. `setGeneratorRebuildHook` was a single ASSIGNMENT. With mesh and SFU both
+   registering — and both live by design, mesh being #104's rollback path —
+   whichever module evaluated last silently won. Now a Set with independent
+   delivery.
+
+**The pattern worth carrying:** every one of these is the SFU missing something
+the mesh already had. When something works on `?mesh=1` and not on the SFU,
+diff the two transports' use of the shared seams before theorising.
