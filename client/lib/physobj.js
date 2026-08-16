@@ -19,7 +19,7 @@ import { THREE, bus, CONFIG } from './core.js';
 import { entities, comps } from './world.js';
 import { remotes } from './remotes.js';
 import { heightAt } from './terrain.js';
-import { colliders } from './colliders.js';
+import { colliders, nearColliders } from './colliders.js';
 import { sendLease, sendVerb } from './net.js';
 import { flashHint } from './ui.js';
 import { logChat } from './chat.js';
@@ -64,6 +64,7 @@ export function setPhysicsEnabled(v) {
 // id -> live sim state. Several at once is fine (juggling is legal).
 const sims = new Map();
 const _v = new THREE.Vector3();
+const _cl = new THREE.Vector3();   // contact clamp scratch — no per-pair alloc
 const _axis = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const UP = new THREE.Vector3(0, 1, 0);
@@ -133,12 +134,14 @@ export function tickPhysObj(dt, now = performance.now()) {
 
     // world colliders: a sphere test against the same boxes feet use — enough
     // to bounce a ball off a crate. Interiors and self are skipped; a plugin
-    // wanting real contacts can hold the same lease and do better.
-    for (const [cid, c] of colliders) {
+    // wanting real contacts can hold the same lease and do better. The grid
+    // bounds the scan (§14.2 6a — this was O(sims × ALL colliders) with an
+    // allocation per pair, hot-path offender #2).
+    for (const [cid, c] of nearColliders(s.p.x, s.p.z, 8)) {
       if (cid === id || c.interior || !c.box || !entities.get(cid)) continue;
       const co = entities.get(cid);
       _v.copy(s.p).sub(co.position);                 // object-local (box is local too)
-      const cl = _v.clone().clamp(c.box.min, c.box.max);
+      const cl = _cl.copy(_v).clamp(c.box.min, c.box.max);
       const d = _v.distanceTo(cl);
       if (d < shape.r && d > 1e-6) {
         const n = _v.sub(cl).normalize();

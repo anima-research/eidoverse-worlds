@@ -24,6 +24,16 @@ export function strokeApplied(f, eff, i = 0) {
   const stemDrawn = f.stemMesh?.count;
   const expected = densityCount(total, eff);
   const dial = typeof f.setDensity === 'function';
+  if (f.tiled) {
+    // a tiled stroke legitimately draws FEWER than the cap: distance
+    // falloff and frustum-culled tiles are deliberate under-draw, not a
+    // dial that failed to take. The cap still binds from above (small
+    // slack: per-tile rounding and the max(1,…) floor).
+    const slack = f.tiles?.length ?? 0;
+    const ok = dial && drawn <= expected + slack;
+    return { stroke, total, drawn, expected, dial, ok, falloff: true,
+      why: ok ? 'applied-with-falloff' : dial ? 'count-over-cap' : 'no-density-dial' };
+  }
   const ok = drawn === expected && (stemDrawn == null || stemDrawn === expected);
   return {
     stroke, total, drawn, ...(stemDrawn != null ? { stemDrawn } : {}), expected, dial, ok,

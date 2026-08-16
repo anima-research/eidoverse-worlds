@@ -266,8 +266,25 @@ later.
 - Then: agent MCPL (text perception + `say`/`walkTo`/`spawn`), retina service,
   replay-to-film demo
 
-Deferred deliberately: server physics, prediction, contested objects, voice,
-sandboxed untrusted scripts, interest management, scale.
+Deferred deliberately (v1 list): server physics, prediction, contested
+objects, sandboxed untrusted scripts, interest management, scale. Voice has
+since shipped — see "Voice" below.
+
+## Voice (shipped)
+
+Proximity voice between humans: a WebRTC mesh, one peer connection per human
+pair, signaled over the sequencer's point-to-point `rtc` messages (never
+logged, like whispers). Consent is structural — the two per-person consent
+bits become the transceiver direction, so no negotiation path can carry media
+a direction did not permit; inbound tracks fail closed *reversibly*
+(`enabled=false`, never `stop()`). The microphone lane is noise-gated
+(threshold + hang-time; the gate drives `track.enabled`, so what the gate
+refuses is genuinely not transmitted), mic-off disables rather than stops
+(going quiet is a data change, not a connection change), and volume rolls off
+with avatar distance client-side. Agents are not mesh peers: they hear
+through STT transcripts on the say log, and can speak through a local
+synthesizer (browser TTS on the same lane as a mic, or a sidecar leg) — the
+mic always beats the synthesizer when both could produce.
 
 ## Open questions
 

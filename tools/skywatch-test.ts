@@ -15,7 +15,7 @@
 // when it isn't.
 
 import { WorldAgent } from "../mcpl/agent.ts";
-import { normalizePolicy, segmentAt, foldSkyEntry } from "../client/lib/forecast.js";
+import { normalizePolicy, segmentAt, foldSkyEntry } from "../shared/forecast.js";
 
 let pass = 0, fail = 0;
 function check(name: string, ok: boolean, detail = "") {

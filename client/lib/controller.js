@@ -8,7 +8,7 @@
 
 import { THREE, camera, canvas, CONFIG, angleDelta, bus } from './core.js';
 import { heightAt } from './terrain.js';
-import { resolveColliders, lastBlockedTop, findSeat } from './colliders.js';
+import { resolveColliders, lastBlockedTop, findSeat, raySegment } from './colliders.js';
 import { chat } from './chat.js';
 import { isOverlayOpen, flashHint } from './ui.js';
 import { resolveFirstPersonAnchor, FP_FORWARD, FP_GAZE_AHEAD, FP_GAZE_DROP } from './fp_view.js';
@@ -259,7 +259,6 @@ if (matchMedia('(pointer: coarse)').matches) enableTouch();
 const _dir = new THREE.Vector3();
 const _eye = new THREE.Vector3();
 const _facing = new THREE.Vector3();
-const _ray = new THREE.Raycaster();
 const UP = new THREE.Vector3(0, 1, 0);
 
 export function updateMe(dt, me) {
@@ -375,35 +374,33 @@ export function updateFollowCamera(dt, me) {
   const dirX = Math.sin(camYaw) * Math.cos(camPitch);
   const dirY = Math.sin(camPitch);
   const dirZ = Math.cos(camYaw) * Math.cos(camPitch);
-  const shoulder = new THREE.Vector3(Math.cos(camYaw), 0, -Math.sin(camYaw))
+  const shoulder = _shoulder.set(Math.cos(camYaw), 0, -Math.sin(camYaw))
     .multiplyScalar(THREE.MathUtils.clamp(camDist * 0.16, 0, 0.62));
-  const want = new THREE.Vector3(dirX, dirY, dirZ).multiplyScalar(camDist).add(focus).add(shoulder);
+  const want = _camWant.set(dirX, dirY, dirZ).multiplyScalar(camDist).add(focus).add(shoulder);
 
-  // ---- collision: raycast from the head to the wanted eye and pull in.
-  // Orbiting into a wall or a hillside used to put the camera inside the world.
-  _ray.set(focus, want.clone().sub(focus).normalize());
-  _ray.far = focus.distanceTo(want);
-  const hits = _ray.intersectObjects(collisionTargets(), true);
-  let allowed = _ray.far;
-  for (const h of hits) {
-    if (h.object.userData?.noCamCollide) continue;
-    allowed = Math.min(allowed, h.distance - 0.22);
-    break;
-  }
-  if (allowed < _ray.far) {
-    want.copy(focus).addScaledVector(_ray.ray.direction, Math.max(0.35, allowed));
+  // ---- collision: pull the eye in so orbiting into a wall or hillside never
+  // puts the camera inside the world. One grid segment query (§14.2 6a) —
+  // this used to be a recursive raycast into every mesh of every entity,
+  // with three fresh Vector3s per frame, to learn this one number.
+  const farD = focus.distanceTo(want);
+  _cdir.copy(want).sub(focus).normalize();
+  const hitT = raySegment(focus, _cdir, farD);
+  const allowed = hitT !== null ? Math.min(farD, hitT - 0.22) : farD;
+  if (allowed < farD) {
+    want.copy(focus).addScaledVector(_cdir, Math.max(0.35, allowed));
   }
   // never let the eye go under the floor
   want.y = Math.max(want.y, heightAt(want.x, want.z) + 0.35);
 
-  camera.position.lerp(want, 1 - Math.exp(-(allowed < _ray.far ? 26 : 14) * dt));
+  camera.position.lerp(want, 1 - Math.exp(-(allowed < farD ? 26 : 14) * dt));
   camera.lookAt(focus.x + shoulder.x * 0.5, focus.y - 0.1, focus.z + shoulder.z * 0.5);
 }
+const _shoulder = new THREE.Vector3();
+const _camWant = new THREE.Vector3();   // _want is photo mode's, below
+const _cdir = new THREE.Vector3();
 
-// The set of things the camera should not pass through. Supplied by world.js
-// (it owns the entity registry); default empty so this module stays standalone.
-let collisionTargets = () => [];
-export function setCameraCollisionTargets(fn) { collisionTargets = fn; }
+// (The camera's collision-target DI hook died with the mesh raycast — the
+// grid's raySegment answers from collider entries, no entity list needed.)
 
 // ---- photo mode -------------------------------------------------------------
 // The pitch is "the video toolkit becomes the camera crew" and there was no

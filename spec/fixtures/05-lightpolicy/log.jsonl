@@ -1,0 +1,11 @@
+{"seq":0,"ts":1786320000000,"actor":"world","verb":"genesis","args":{"v":2,"dialect":"eidoverse-log"}}
+{"seq":1,"ts":1786320000001,"actor":"world","verb":"grant","args":{"id":"author","role":"owner","gen":true}}
+{"seq":2,"ts":1786320000002,"actor":"author","verb":"light","args":{"id":"porch","pos":[1,2,1],"color":16767392,"intensity":20,"range":8,"day":false}}
+{"seq":3,"ts":1786320000003,"actor":"author","verb":"light","args":{"id":"porch","intensity":30}}
+{"seq":4,"ts":1786320000004,"actor":"author","verb":"light","args":{"id":"porch","day":true}}
+{"seq":5,"ts":1786320000005,"actor":"author","verb":"light","args":{"id":"lamp","pos":[0,2,0],"keep":true,"day":false}}
+{"seq":6,"ts":1786320000006,"actor":"author","verb":"light","args":{"id":"lamp","keep":false}}
+{"seq":7,"ts":1786320000007,"actor":"author","verb":"light","args":{"id":"lantern","pos":[3,2,3],"color":39423,"intensity":18,"range":6}}
+{"seq":8,"ts":1786320000008,"actor":"author","verb":"comp","args":{"id":"lantern","type":"halo","data":{"tint":"amber"}}}
+{"seq":9,"ts":1786320000009,"actor":"author","verb":"mount","args":{"id":"lantern","to":"porch","offset":[0,0.5,0]}}
+{"seq":10,"ts":1786320000010,"actor":"author","verb":"light","args":{"id":"lantern","intensity":40}}

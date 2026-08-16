@@ -6,7 +6,7 @@
 //   WORLDS_DIR=$(mktemp -d) PORT=8996 bun run server/server.ts &
 //   WORLD_URL=ws://localhost:8996/ws bun tools/forecast-probe.mjs
 
-import { effectiveSky, describeSky } from "../client/lib/forecast.js";
+import { effectiveSky, describeSky } from "../shared/forecast.js";
 
 const URL = process.env.WORLD_URL ?? "ws://localhost:8996/ws";
 const world = `probe-${Math.random().toString(36).slice(2, 8)}`;
@@ -52,8 +52,8 @@ check("late joiner sees the sky+weather history (or fold)", skyEntries.length > 
 
 // fold the way the client does (world.js applyEntry): sky replaces, weather merges
 // — or take the snapshot's sky if the log was already folded server-side
-import("../client/lib/forecast.js").then(() => {});
-const { foldSkyEntry } = await import("../client/lib/forecast.js");
+import("../shared/forecast.js").then(() => {});
+const { foldSkyEntry } = await import("../shared/forecast.js");
 let sky = late.snapshot?.sky ?? null;
 for (const e of skyEntries) sky = foldSkyEntry(e.verb === "sky" ? null : sky, e);
 

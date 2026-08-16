@@ -37,7 +37,7 @@ const _pr = { s: 0, t: 0 };
 const _up = new THREE.Vector3(0, 1, 0);
 const _Y = new THREE.Vector3(0, 1, 0);   // CapsuleGeometry's own axis
 
-let frame = null, providers = {}, statsEl = null, statsAt = 0, lastRun = null, lastRag = null;
+let frame = null, providers = {}, statsEl = null, framePre = null, statsAt = 0, lastRun = null, lastRag = null;
 const on = { colliders: false, ragdoll: false };
 
 // ---- shared geometry/material, so N colliders cost N transforms ------------
@@ -323,6 +323,14 @@ export function initDebug(p = {}) {
   });
   const stack = document.createElement('div');
   stack.className = 'stack';
+  // The frame block is PINNED above everything (tel0s: the stats pre at the
+  // bottom rendered past the scroller's end) — its own element, flex:none,
+  // so scrolling the settings never hides the one number the panel is
+  // usually opened for.
+  framePre = document.createElement('pre');
+  framePre.className = 'dbg-stats';
+  framePre.style.cssText = 'flex:none;margin:0 0 4px';
+  stack.appendChild(framePre);
   stack.append(
     row('collider volumes', 'colliders', (v) => { if (!v) clearColliders(); }),
     row('ragdoll skeleton', 'ragdoll', (v) => { if (!v) clearRagdoll(); }),
@@ -415,8 +423,20 @@ export function updateDebug(now = performance.now()) {
     const k = kindOf(e);
     if (k === 'box') box++; else if (k === 'pillar') pillar++; else exact++;
   }
+  // the pinned frame block: fps + honest ms + worst-of-last-second, then
+  // the per-system bill (EWMA ms) — where the frame actually goes
+  const p = providers.perf?.();
+  if (framePre && p) {
+    const bill = (providers.bill?.() ?? [])
+      .filter((s) => s.ms > 0.05)
+      .sort((a, b) => b.ms - a.ms)
+      .slice(0, 5);
+    framePre.textContent = [
+      `frame  ${String(p.fps).padStart(4)} fps  ${p.ms.toFixed(1)}ms  worst ${Math.round(p.worst)}ms`,
+      ...bill.map((s) => `  ${s.name.padEnd(12)} ${s.ms.toFixed(2).padStart(6)}ms${s.every > 1 ? ` /${s.every}f` : ''}`),
+    ].join('\n');
+  }
   const lines = [
-    `fps      ${String(providers.fps?.() ?? 0).padStart(5)}`,
     `things   ${String(colliders.size).padStart(5)}`,
     `  box    ${String(box).padStart(5)}   walk on top, solid between`,
     `  pillar ${String(pillar).padStart(5)}   slim column, pass under`,

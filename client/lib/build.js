@@ -13,7 +13,7 @@
 import { THREE, scene, camera, canvas, CONFIG, report, bus } from './core.js';
 import { loadGLB, libLabels, listLibrary } from './assets.js';
 import { makeLightGizmo } from './lights.js';
-import { entities, entityMeta, comps, findPart } from './world.js';
+import { entities, entityMeta, comps, findPart, editHolds } from './world.js';
 import { surfaceUnder, reindexCollider } from './colliders.js';
 import { heightAt, GRASS_QUALITY, getGrassQuality, setGrassQuality,
   getGrassDensity, getGrassShed, getGrassApplied } from './terrain.js';
@@ -21,8 +21,9 @@ import { sendVerb, sendDrag } from './net.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
 import { makeSection, toast, flashHint, collapseAll, panelFrame } from './ui.js';
 import { sceneSelect } from './scenegraph.js';
-import { previewSky, skyArgs, WEATHERS, CLOUDS, SKY_WORLDS,
+import { previewSky, skyArgs, skyImpl, WEATHERS, CLOUDS, SKY_WORLDS,
   CLOUD_QUALITY, getCloudQuality, setCloudQuality } from './sky.js';
+import { RENDER_SCALES, getRenderScale, setRenderScale } from './governor.js';
 
 const raycaster = new THREE.Raycaster();
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -129,6 +130,9 @@ export function select(id) {
   const obj = entities.get(id);
   if (!obj) return;
   selected = { id, obj };
+  // the residency sweep must never demote what someone is editing — id-based
+  // because promotion swaps the object out from under a userData flag
+  editHolds.add(id);
   outline.box.setFromObject(obj);
   outline.visible = true;
   showInspector(id);
@@ -137,6 +141,7 @@ export function select(id) {
   sceneSelect(id);
 }
 export function deselect() {
+  if (selected) editHolds.delete(selected.id);
   selected = null;
   dragging = null;
   outline.visible = false;
@@ -358,7 +363,7 @@ function removeSelected() {
 // refine, Q/E to face, Del to remove, one undoable log entry per commit.
 // Zero server involvement — this is all authoring UI over the comp verb.
 
-const seatGizmos = new Map();   // "id slot" -> gizmo (child of entity root)
+const seatGizmos = new Map();   // "id\x00slot" -> gizmo (child of entity root)
 let seatSel = null;             // { id, slot } — the anchor under edit
 let seatDrag = null;            // { armed, startX, startY, pending } drag state
 let seatArm = null;             // entity id waiting for a placement click
@@ -392,10 +397,10 @@ function refreshSeatGizmos() {
       g.position.set(...(sock.pos ?? [0, 0.5, 0]));
       g.rotation.y = sock.yaw ?? 0;
       root.add(g);
-      seatGizmos.set(`${id} ${slot}`, g);
+      seatGizmos.set(`${id}\x00${slot}`, g);
     }
   }
-  if (seatSel && !seatGizmos.has(`${seatSel.id} ${seatSel.slot}`)) deselectSeat();
+  if (seatSel && !seatGizmos.has(`${seatSel.id}\x00${seatSel.slot}`)) deselectSeat();
   else refreshSeatHighlight();
 }
 bus.on('comp', ({ type }) => { if (type === 'sockets') refreshSeatGizmos(); });
@@ -403,7 +408,7 @@ bus.on('entity', () => { if (editMode) refreshSeatGizmos(); });
 
 function refreshSeatHighlight() {
   for (const [k, g] of seatGizmos) {
-    const on = seatSel && k === `${seatSel.id} ${seatSel.slot}`;
+    const on = seatSel && k === `${seatSel.id}\x00${seatSel.slot}`;
     g.scale.setScalar(on ? 1.6 : 1);
     g.traverse((o) => o.material?.color.setHex(on ? 0x8fe8c8 : 0xf5c96b));
   }
@@ -422,7 +427,7 @@ function pickSeat(ray) {
     if (d < tol && d < bestD) { bestD = d; best = k; }
   }
   if (!best) return null;
-  const [id, slot] = best.split(' ');
+  const [id, slot] = best.split('\x00');
   return { id, slot };
 }
 
@@ -542,7 +547,7 @@ function updateSeatDrag() {
   if (!hit) return;
   const next = seatFromHit(seatSel.id, root, hit);
   seatDrag.pending = next;
-  const g = seatGizmos.get(`${seatSel.id} ${seatSel.slot}`);
+  const g = seatGizmos.get(`${seatSel.id}\x00${seatSel.slot}`);
   if (g) g.position.set(...next.pos);
 }
 
@@ -814,6 +819,8 @@ function paintGround(body) {
     'mojave desert': () => ({ preset: 'mojave', width: 90, depth: 80, center: [0, 0] }),
     'corn field': () => ({ species: 'corn', width: 40, depth: 30, center: [0, 0],
       rows: { spacing: 0.9, plant: 0.26 }, corn: { peelChance: 0.25 } }),
+    'sunflower field': () => ({ species: 'sunflower', width: 34, depth: 26, center: [0, 0],
+      rows: { spacing: 0.85, plant: 0.5 } }),
   };
   const growGrass = () => {
     st.grass = true;
@@ -1146,6 +1153,39 @@ function paintSky(body) {
   bus.on('grass-budget', syncGrassRow);   // governor sheds repaint immediately
   body.appendChild(gqRow);
 
+  // Render scale is YOURS too (§22k) — the whole frame's pixel budget, the
+  // one lever a pixel-bound machine actually answers to (§22j's tables).
+  // 'auto' lets the governor's cruise drive; a pinned % is the resident's
+  // word and turns the cruise off. Persisted like the other two dials.
+  const rs = document.createElement('select');
+  rs.style.cssText = wx.style.cssText;
+  rs.setAttribute('aria-label', 'render scale — local only, never shared with the world');
+  for (const v of RENDER_SCALES) rs.appendChild(new Option(v === 'auto' ? 'auto' : `${Math.round(v * 100)}%`, v));
+  rs.value = getRenderScale();
+  rs.onchange = () => {
+    setRenderScale(rs.value);
+    flashHint(`render scale: ${rs.value === 'auto' ? 'auto' : `${Math.round(rs.value * 100)}%`} (yours only)`);
+  };
+  const rsRow = mkRow('scale⚙', rs);
+  rsRow.title = 'local performance setting — not shared with the world';
+  body.appendChild(rsRow);
+
+  // Sliders that only the BASIC sky answers. On the real sky the engine owns
+  // sun direction and supplies its own bounce fill (sky.js documents the
+  // ownership boundary) — a slider that does nothing must say so, not sit
+  // there lying. sun/ambient/fog work on BOTH paths now: fog density was
+  // always ours, and sun/ambient ride as post-update multipliers (§12.6).
+  const BASIC_ONLY = new Set(['azimuth', 'fill']);
+  const basicRows = [];
+  const syncBasicOnly = () => {
+    const dead = skyImpl() === 'eidoverse';
+    for (const { row, input } of basicRows) {
+      input.disabled = dead;
+      row.style.opacity = dead ? '.45' : '';
+      row.title = dead ? 'the detailed sky drives this itself — basic sky only' : '';
+    }
+  };
+
   for (const [key, label, min, max, step, dflt] of SLIDERS) {
     const input = document.createElement('input');
     input.type = 'range';
@@ -1161,8 +1201,10 @@ function paintSky(body) {
     inputs[key] = input;
     const row = mkRow(label, input);
     row.appendChild(val);
+    if (BASIC_ONLY.has(key)) basicRows.push({ row, input });
     body.appendChild(row);
   }
+  syncBasicOnly();
 
   // The sun can follow a REAL clock: `clock: real` makes the world's hour BE
   // the named timezone's wall hour (DST included, hoursAt owns the formula)
@@ -1219,6 +1261,7 @@ function paintSky(body) {
     if (a.world) wl.value = a.world;
     ck.value = a.clock === 'real' ? 'real' : '';
     syncClockUi();
+    syncBasicOnly();
     syncGrassRow();
   };
   body._sync();

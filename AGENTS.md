@@ -189,7 +189,7 @@ Like motion params, the forecast is a **function of time**: every client (and
 every text-tier perceiver) derives the current weather from (seed, policy,
 epoch) independently — same segment, same state, same transition phase for a
 late joiner, a reconnect, and two simultaneous clients, with zero traffic and
-no server simulation. The derivation lives in `client/lib/forecast.js`,
+no server simulation. The derivation lives in `shared/forecast.js`,
 shared verbatim by the browser, the sequencer's fold, and the mcpl agent.
 Provenance stays legible: the POLICY is authored (actor + log seq — the fold
 stamps these; they cannot be forged from the args), and each derived change
@@ -217,7 +217,7 @@ falls back to it, the sun keeps moving (a typo dims nothing), and the parked
 `ts` anchor means later weather merges never snap the fallback day. The fold
 also stamps top-level `seq`/`by` — which sky entry authored the current bag.
 Machine consumers should not divine precedence from raw fields:
-`effectiveClock(sky, now)` in `client/lib/forecast.js` (also serialized in
+`effectiveClock(sky, now)` in `shared/forecast.js` (also serialized in
 `look()`'s `World.sky.effectiveClock`) answers
 `{mode: "real"|"rated"|"fixed", hour, tz?, rate?, seq, by}` — reporting what
 is ACTUALLY in effect; an unresolvable real-clock tz reports the fallback
@@ -338,9 +338,13 @@ client-side behavior — are code. Pull the repo, then:
 
 House rules, learned the hard way (each one is a past incident):
 
-1. **The fold is sacred.** `foldEntry` (server) and `applyEntry` (client)
-   must agree, and both must stay pure functions of the log. If they drift,
-   joiners see a world that never existed.
+1. **The fold is sacred — and now it is singular.** `shared/fold.js` is the
+   one fold: the sequencer, the browser (via `client/lib/state.js` + the
+   realizers in `client/lib/realize/`), and the mcpl agent all consume it.
+   It must stay a pure function of the log (conformance:
+   `bun tools/foldfix-test.ts` against `spec/fixtures/`; browser:
+   `bun tools/paritybench.ts` reads EW.foldParity() over CDP). A realizer
+   projects state; it never invents it.
 2. **Mirrored math stays mirrored.** `pendulumImpulse` (server) and
    `pendulumTheta` (client/lib/motion.js) implement the same physics — a
    change to one without the other makes the pushed swing disagree with the

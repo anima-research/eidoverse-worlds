@@ -16,6 +16,8 @@
 
 import { mapGrassArgs, presetStrokes, hexToMultiplier, isLegacyArgs } from "../client/lib/flora_args.js";
 import { composeField, retireField } from "../client/lib/flora_field.js";
+import { bladeLodIndex, bladeCoarseIndex, BLADE_VERTS, BLADE_INDICES,
+  BLADE_COARSE_INDICES } from "../client/lib/flora_lod.js";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, extra = "") => {
@@ -91,6 +93,18 @@ console.log("\npreset + variety strokes (one verb, several strokes)");
   const explicit = presetStrokes({ species: "corn", rows: { spacing: 1, plant: 0.3, stride: 2, phase: 0 } });
   check("an explicit stride is left alone", explicit.length === 1);
 
+  const sun = presetStrokes({ species: "sunflower", width: 34, depth: 26 });
+  check("a sunflower field interleaves variants", sun.length === 3, String(sun.length));
+  check("every sunflower stroke is row-planted", sun.every((s: any) => s.rows?.stride === 3));
+  check("the strokes tile the row grid without collision",
+    new Set(sun.map((s: any) => s.rows.phase)).size === 3);
+  check("sunflower variants differ by seed", new Set(sun.map((s: any) => s.seed)).size === 3);
+  check("the field shares ONE heading (they face the sun together)",
+    new Set(sun.map((s: any) => s.heading)).size === 1 && sun[0].heading !== undefined);
+  const sunExplicit = presetStrokes({ species: "sunflower", heading: 1.2 });
+  check("a caller's heading wins over the default",
+    sunExplicit.every((s: any) => near(s.heading, 1.2)));
+
   // the sparse/normal/lush dial has to REACH the composed biomes: every
   // preset stroke carries an authored density, and a preset that dropped the
   // caller's factor left the dial doing nothing at all on mojave
@@ -106,6 +120,94 @@ console.log("\npreset + variety strokes (one verb, several strokes)");
   const cornDense = presetStrokes({ species: "corn", density: 1.4 });
   check("corn strokes carry density through too",
     cornDense.every((s: any) => near(s.density, 1.4)));
+}
+
+console.log("\nblade LOD index subsets (far tiles thin blades per tuft, §17b)");
+{
+  // an index built exactly the way vegetation.js bunchGeometry builds one:
+  // per blade, (LOOPS+1)×2 = 10 verts, then LOOPS×6 = 24 entries — two
+  // triangles per horizontal segment, contiguous runs
+  const buildIndex = (blades: number) => {
+    const idx: number[] = [];
+    for (let b = 0; b < blades; b++) {
+      const s0 = b * BLADE_VERTS;
+      for (let lp = 0; lp < 4; lp++) {
+        const a = s0 + lp * 2;
+        idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+      }
+    }
+    return new Uint16Array(idx);
+  };
+
+  // galleta_dry: perBunch 34 → 340 verts / 816 index entries
+  const galleta = buildIndex(34);
+  check("galleta source is 34 × 24 entries", galleta.length === 816, String(galleta.length));
+  const far: any = bladeLodIndex(galleta, 34 * BLADE_VERTS, 0.4);
+  check("far index keeps ceil(34×0.4) = 14 whole blades",
+    !!far && far.length === 14 * BLADE_INDICES, String(far?.length));
+  check("the subset stays same-typed (no widening — vertices are never copied)",
+    far instanceof Uint16Array);
+  if (far) {
+    const runs: number[] = [];
+    let whole = true;
+    for (let i = 0; i < far.length; i += BLADE_INDICES) {
+      const b = Math.floor(far[i] / BLADE_VERTS);
+      for (let e = 0; e < BLADE_INDICES; e++) {
+        if (far[i + e] !== galleta[b * BLADE_INDICES + e]) whole = false;
+      }
+      runs.push(b);
+    }
+    check("every kept run is a VERBATIM whole-blade run from the source", whole);
+    check("kept blades stride the tuft, not the first k (radial balance)",
+      runs[0] === 0 && runs[runs.length - 1] >= 31 && new Set(runs).size === runs.length,
+      runs.join(","));
+    check("kept blades stay in construction order", runs.every((b, i) => i === 0 || b > runs[i - 1]));
+    check("the subset references only kept blades' vertex ranges",
+      runs.every((b, i) => {
+        for (let e = 0; e < BLADE_INDICES; e++) {
+          const v = far[i * BLADE_INDICES + e];
+          if (v < b * BLADE_VERTS || v >= (b + 1) * BLADE_VERTS) return false;
+        }
+        return true;
+      }));
+  }
+
+  // meadow grass: perBunch 8 → 80 verts / 192 entries, keeps every 2nd blade
+  const grass = buildIndex(8);
+  const gfar: any = bladeLodIndex(grass, 8 * BLADE_VERTS, 0.4);
+  check("meadow grass keeps ceil(8×0.4) = 4 blades, every 2nd",
+    !!gfar && gfar.length === 4 * BLADE_INDICES &&
+    [0, 2, 4, 6].every((b, i) => gfar[i * BLADE_INDICES] === b * BLADE_VERTS));
+
+  // guards: anything not blade-shaped degrades to "no LOD", never a torn tuft
+  check("a vertex-count mismatch refuses", bladeLodIndex(galleta, 34 * BLADE_VERTS + 1, 0.4) === null);
+  check("a non-multiple index length refuses",
+    bladeLodIndex(galleta.subarray(0, 100), 34 * BLADE_VERTS, 0.4) === null);
+  const torn = buildIndex(4);
+  torn[0] = 39;   // blade 0's run reaching into blade 3's vertices
+  check("a cross-blade reference refuses", bladeLodIndex(torn, 4 * BLADE_VERTS, 0.4) === null);
+  check("keep ≥ 1 (nothing to drop) refuses", bladeLodIndex(galleta, 34 * BLADE_VERTS, 1) === null);
+  check("keep ≤ 0 refuses", bladeLodIndex(galleta, 34 * BLADE_VERTS, 0) === null);
+
+  // §22n — the coarse (vertex-LOD) far index: every blade, loops 0→2→4
+  const coarse: any = bladeCoarseIndex(grass, 8 * BLADE_VERTS);
+  check("coarse index keeps ALL 8 blades at 12 entries each",
+    !!coarse && coarse.length === 8 * BLADE_COARSE_INDICES, String(coarse?.length));
+  check("coarse index stays same-typed", coarse instanceof Uint16Array);
+  if (coarse) {
+    let ok = true;
+    for (let b = 0; b < 8; b++) {
+      const base = b * BLADE_VERTS, d = b * BLADE_COARSE_INDICES;
+      // 2 quads with the source winding, spanning loops 0→2 and 2→4
+      const want = [0, 1, 4, 1, 5, 4, 4, 5, 8, 5, 9, 8].map((o) => base + o);
+      for (let e = 0; e < BLADE_COARSE_INDICES; e++) if (coarse[d + e] !== want[e]) ok = false;
+    }
+    check("every blade spans loops 0→2→4 with the source winding", ok);
+    check("coarse references only loop-0/2/4 vertex pairs (6 of 10 per blade)",
+      Array.from(coarse as Uint16Array).every((v: number) => [0, 1, 4, 5, 8, 9].includes(v % BLADE_VERTS)));
+  }
+  check("coarse: a cross-blade reference refuses", bladeCoarseIndex(torn, 4 * BLADE_VERTS) === null);
+  check("coarse: a vertex-count mismatch refuses", bladeCoarseIndex(galleta, 34 * BLADE_VERTS + 1) === null);
 }
 
 console.log("\nfield lifecycle (grow → replace → mow)");

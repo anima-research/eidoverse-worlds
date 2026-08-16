@@ -1,0 +1,10 @@
+{"seq":0,"ts":1786312089325,"actor":"world","verb":"genesis","args":{"v":2,"dialect":"eidoverse-log"}}
+{"seq":1,"ts":1786312089326,"actor":"world","verb":"grant","args":{"id":"author","role":"owner","gen":true}}
+{"seq":2,"ts":1786312089327,"actor":"author","verb":"spawn","args":{"id":"a","lib":"props/ball.glb","pos":[1,0,1],"yaw":0.5}}
+{"seq":3,"ts":1786312089327,"actor":"author","verb":"comp","args":{"id":"a","type":"sparkle","data":{"hue":"amber"}}}
+{"seq":4,"ts":1786312089328,"actor":"author","verb":"spawn","args":{"id":"a","lib":"props/crate.glb","pos":[4,0,4],"yaw":1.5,"scale":2}}
+{"seq":5,"ts":1786312089328,"actor":"author","verb":"spawn","args":{"id":"b","lib":"props/ball.glb","pos":[0,0,2]}}
+{"seq":6,"ts":1786312089329,"actor":"author","verb":"light","args":{"id":"b","pos":[0,2,2],"color":8965375,"intensity":12,"range":8}}
+{"seq":7,"ts":1786312089329,"actor":"author","verb":"light","args":{"id":"b","intensity":40,"keep":true}}
+{"seq":8,"ts":1786312089329,"actor":"author","verb":"light","args":{"id":"c","pos":[5,1,5]}}
+{"seq":9,"ts":1786312089329,"actor":"author","verb":"spawn","args":{"id":"c","lib":"props/ball.glb","pos":[5,0,5]}}

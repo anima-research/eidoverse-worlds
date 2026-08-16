@@ -53,7 +53,7 @@
 
 import { THREE } from './core.js';
 import { heightAt } from './terrain.js';
-import { colliders } from './colliders.js';
+import { colliders, nearColliders } from './colliders.js';
 
 // loaded lazily by bodysim.js — a WASM module has an async init, and the
 // Ragdoll interface is synchronous, so readiness is a precondition
@@ -339,7 +339,9 @@ export class RapierRagdoll {
       RAPIER.ColliderDesc.cuboid(60, 0.5, 60)
         .setTranslation(hips.x, this.groundY - 0.5, hips.z).setFriction(0.85),
     );
-    for (const [, c] of colliders) {
+    // grid-bounded (§14.2 6a): this was a full-map scan with a hand-rolled
+    // 8m filter — the same 8m the grid answers directly
+    for (const [, c] of nearColliders(hips.x, hips.z, 8)) {
       const obj = c.obj;
       if (!obj || c.interior || !c.box) continue;
       if (Math.hypot(obj.position.x - hips.x, obj.position.z - hips.z) > 8) continue;

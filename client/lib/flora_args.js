@@ -89,5 +89,17 @@ export function presetStrokes(args) {
         corn: { ...corn, peel: true, peelChance: 0.6 } },
     ];
   }
+  if (args.species === 'sunflower' && !args.rows?.stride) {
+    // Same interleave trick, three plant variants through one grid. The
+    // shared `heading` is the signature look — a sunflower field faces one
+    // way together — and it must be identical across the strokes or the
+    // variants argue about where the sun is.
+    const rows = { spacing: 0.85, plant: 0.5, ...(args.rows ?? {}) };
+    const heading = args.heading ?? -0.6;
+    return [0, 1, 2].map((phase, i) => ({
+      ...args, heading, seed: seed + 23 + i * 19,
+      rows: { ...rows, stride: 3, phase },
+    }));
+  }
   return [args];
 }

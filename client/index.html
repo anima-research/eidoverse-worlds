@@ -452,10 +452,68 @@ body.touch #touch { display: block; }
     "@pixiv/three-vrm-materials-mtoon": "./node_modules/@pixiv/three-vrm-materials-mtoon/lib/three-vrm-materials-mtoon.module.js",
     "@pixiv/three-vrm-materials-mtoon/nodes": "./node_modules/@pixiv/three-vrm-materials-mtoon/lib/nodes/index.module.js",
     "@pixiv/three-vrm-animation": "./node_modules/@pixiv/three-vrm-animation/lib/three-vrm-animation.module.js",
-    "@dimforge/rapier3d-compat": "./node_modules/@dimforge/rapier3d-compat/rapier.mjs"
+    "@dimforge/rapier3d-compat": "./node_modules/@dimforge/rapier3d-compat/rapier.mjs",
+    "@mintplex-labs/piper-tts-web": "./node_modules/@mintplex-labs/piper-tts-web/dist/piper-tts-web.js",
+    "onnxruntime-web": "./node_modules/onnxruntime-web/dist/ort.bundle.min.mjs"
   }
 }
 </script>
+<script>
+// The early socket (TEL0S_NOTES §4): open the wire and send the join NOW —
+// inline, zero imports, before the module graph is even requested — so the
+// snapshot downloads while the 2.1MB engine parses and the GPU wakes.
+// net.js ADOPTS this socket at connect() only if the join it sent is
+// byte-for-byte the one net would send; any mismatch closes it unadopted.
+// Inline rather than a file: a separate script would cost a blocking fetch
+// on exactly the RTT this exists to save. Eligibility is the common
+// returning-resident path only — first-run visitors get the door first,
+// spectators/renderers take the normal path, ?earlysock=0 disables.
+(() => {
+  try {
+    const params = new URLSearchParams(location.search);
+    if (params.get('earlysock') === '0') return;
+    if (params.has('spectate') || params.has('renderer') || params.has('mintthumbs')) return;
+    const name = params.get('name')
+      || (localStorage.getItem('ew-name-set') === '1' ? localStorage.getItem('ew-name') : null);
+    if (!name) return;   // the first-run door decides identity — never preempt it
+    const world = params.get('world') || 'commons';
+    const token = params.get('key') || localStorage.getItem('ew-key') || '';
+    const want = params.get('avatar') || localStorage.getItem('ew-avatar-name') || 'claude';
+    let avatar = want;   // a bare name: the server resolves it against the roster
+    try {
+      const c = JSON.parse(localStorage.getItem('ew-avatar-path') ?? 'null');
+      if (c && c.name === want && typeof c.path === 'string') avatar = c.path;
+    } catch (e) { /* a bare name is fine */ }
+    const sent = { world, id: name, avatar, token };
+    const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
+    const stash = { ws, sent, buffered: [], failed: false, closeInfo: null };
+    globalThis.__ewEarlySocket = stash;
+    ws.onopen = () => ws.send(JSON.stringify({ type: 'join', world, id: name, avatar, spectate: false, renderer: false, token }));
+    ws.onmessage = (ev) => {
+      stash.buffered.push(ev.data);
+      if (stash.buffered.length > 5000) {   // a runaway stream: bail to the normal path
+        stash.failed = true;
+        try { ws.close(); } catch (e) { /* dying */ }
+      }
+    };
+    ws.onerror = () => { stash.failed = true; };
+    ws.onclose = (ev) => { stash.failed = true; stash.closeInfo = { code: ev.code, reason: ev.reason }; };
+  } catch (e) { /* the normal connect path exists precisely for this */ }
+})();
+</script>
+<!-- The engine is 2.1MB discovered at waterfall depth 3 (HTML -> main.js ->
+     three.webgpu.js) unless declared here: modulepreload starts the fetch
+     +parse the moment the HTML lands, in parallel with main.js and the GPU
+     init. Only the STATIC graph belongs in this list — rapier is a dynamic
+     import behind a user action and preloading it would tax the very
+     window this exists to shorten. -->
+<link rel="modulepreload" href="./node_modules/three/build/three.webgpu.js">
+<link rel="modulepreload" href="./node_modules/three/build/three.tsl.js">
+<link rel="modulepreload" href="./node_modules/three-mesh-bvh/build/index.module.js">
+<link rel="modulepreload" href="./node_modules/@pixiv/three-vrm/lib/three-vrm.module.js">
+<link rel="modulepreload" href="./node_modules/@pixiv/three-vrm-materials-mtoon/lib/three-vrm-materials-mtoon.module.js">
+<link rel="modulepreload" href="./node_modules/@pixiv/three-vrm-materials-mtoon/lib/nodes/index.module.js">
+<link rel="modulepreload" href="./node_modules/@pixiv/three-vrm-animation/lib/three-vrm-animation.module.js">
 </head>
 <body>
 <!-- Static so it paints before any module loads. boot.js only fills it in. -->
@@ -486,6 +544,33 @@ body.touch #touch { display: block; }
 <div id="door" class="scrim"><div class="sheet panel"></div></div>
 <div id="help" class="scrim"><div class="sheet panel"></div></div>
 
+<script>
+  // Boot watchdog — pre-module, zero imports. A failed or hanging module
+  // graph (missing client/node_modules on a fresh clone, a browser without
+  // WebGPU) used to leave this splash saying "waking the engine" forever,
+  // name "…", nothing anywhere — the least debuggable failure the client
+  // had. The truth now lands ON the splash: any uncaught error or
+  // rejection before the engine marks itself up is shown, and twenty
+  // silent seconds earn a diagnosis hint. core.js sets __ewEngineUp after
+  // renderer.init() — module resolution AND the GPU both proven.
+  (() => {
+    const phase = () => document.querySelector('.sp-phase');
+    const fail = (msg) => {
+      const el = phase();
+      if (globalThis.__ewEngineUp || !el) return;
+      el.textContent = msg;
+      el.style.color = '#ff9d8a';
+    };
+    addEventListener('error', (e) => fail(
+      `the engine failed to load — ${e.message || (e.target && e.target.src) || 'see the console'}`));
+    addEventListener('unhandledrejection', (e) => fail(
+      `the engine failed to start — ${(e.reason && e.reason.message) || e.reason || 'see the console'}`));
+    setTimeout(() => {
+      if (globalThis.__ewEngineUp) return;
+      fail('still waking after 20s — open the console. Fresh checkout? run: cd client && bun install. And the client needs WebGPU (current Chrome).');
+    }, 20000);
+  })();
+</script>
 <script type="module" src="./main.js"></script>
 </body>
 </html>

@@ -19,7 +19,7 @@ import {
   PARTICLE_PRESETS, PARTICLE_MAX_COUNT, normalizeParticles, resolvedCount,
   describeParticles, emitterTransition, transitionLine, emitterSeed,
   mulberry32, withSeededRandom,
-} from "../client/lib/particles.js";
+} from "../shared/particles.js";
 import {
   makeEmitterRegistry, retireEmitter, retireRawSystem, adoptSystem,
 } from "../client/lib/emitter_field.js";

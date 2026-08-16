@@ -89,7 +89,15 @@ canvas.tabIndex = -1;
 canvas.style.outline = 'none';
 document.body.prepend(canvas);
 
-export const renderer = new THREE.WebGPURenderer({ canvas, antialias: true });
+// MSAA policy (§22n measured, §22r reverted to ON): the 4×MSAA resolve at
+// 2× retina costs ~4ms/frame (+10fps when dropped, drift-controlled A/B),
+// but a silently-vanished AA reads as a rendering bug to anyone not holding
+// the measurement — so MSAA stays the default everywhere and ?msaa=0 is the
+// opt-out lever (the +10fps is one flag away; §22q bought the frames back
+// for the default look). The dPR-gated auto-off waits for a real settings
+// row alongside the other quality dials.
+export const renderer = new THREE.WebGPURenderer({ canvas,
+  antialias: CONFIG.params.get('msaa') !== '0' });
 renderer.setSize(innerWidth, innerHeight);
 // Spectators start a notch lower — an audience laptop's job is 30fps for an
 // hour, not maximum sharpness. Adaptive scaling adjusts from here.
@@ -98,6 +106,9 @@ renderer.setPixelRatio(BASE_PIXEL_RATIO);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 await renderer.init();
+// the splash watchdog (index.html) stops worrying: modules resolved and the
+// GPU answered — everything past this point can report its own failures
+globalThis.__ewEngineUp = true;
 
 export const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x101828);

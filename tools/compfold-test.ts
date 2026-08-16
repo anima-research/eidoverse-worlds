@@ -8,7 +8,7 @@
 //
 // The contract under test (issue #71): a folded late join must reconstruct
 // every current durable component with the same identity and deletion
-// semantics as browser reconstruction (client/lib/world.js stateToEntries
+// semantics as browser reconstruction (shared/fold.js stateToEntries
 // replays e.comp; the agent's must stay in step) — as state replay, not a
 // fresh authored act: no live world-change percept, no re-run reactions.
 //

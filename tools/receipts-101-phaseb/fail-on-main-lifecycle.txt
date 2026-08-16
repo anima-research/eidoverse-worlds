@@ -1,0 +1,31 @@
+serve-time verdicts
+  [31m✗ roster entries carry a seat verdict — {"name":"claude","path":"eidoverse/assets/vrms/claude.vrm?v=1786342444754","height":null}[0m
+  [31m✗ no profile on disk → status missing[0m
+  [31m✗ x-profiles-rev header rides the roster, rev 0 — rev=null[0m
+write authority (B4)
+  [31m✗ the anonymous door token cannot propose (401) — 404[0m
+  [31m✗ no token cannot propose (401) — 404[0m
+proposal
+  [31m✗ a malformed proposal is refused with a named reason (422) — 404: not found[0m
+  [31m✗ this door writes proposals ONLY — accepted is refused (403) — 404[0m
+  [31m✗ a named actor's valid proposal lands — 404 null[0m
+  [31m✗ avatar-profile-updated broadcast reaches connected clients, rev-bearing — [][0m
+  [31m✗ proposed serves as proposed — never load-bearing[0m
+the headless consumer, end to end
+  [32m✓[0m legacy socket: seated, byte-identical composition (y = socket)
+  [31m✗ legacy socket: declared, never silent — You are "seatbot" in world "seatlab" at (0.0, 0.0), ground height 1.00m, facing S, seated on crate1.[0m
+  [31m✗ surface socket + proposed profile: still approximate, reason names the countersign — You are "seatbot" in world "seatlab" at (0.0, 0.0), ground height 1.00m, facing S, seated on crate1.[0m
+countersign (operator-only, no HTTP path)
+  [31m✗ operator accept succeeds — {"ok":false,"why":"no proposed profile for claude/sitchair"}[0m
+  [31m✗ the agent's seat corrects IN PLACE on the push — contact plane onto the socket plane (1 − 0.2055 → 0.79) — You are "seatbot" in world "seatlab" at (0.0, 0.0), ground height 1.00m, facing S, seated on crate1.[0m
+  [31m✗ …and the approximation is gone from the line[0m
+  [31m✗ acceptance announced to every connected client — events=0[0m
+  [31m✗ served verdict: accepted, value present, clip digest alongside[0m
+stale and unsupported are verdicts, not silence
+  [31m✗ accepted-but-bytes-changed serves stale, naming which bytes[0m
+  [32m✓[0m stale withholds the number
+  [31m✗ an unsupported rig serves its refusal[0m
+dismount stamping unchanged (#18/#98 neighborhood)
+  [32m✓[0m dismount clears the seat and the controller's own truth returns, exactly as on main
+
+[31m19 failure(s), 3 passed[0m

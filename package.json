@@ -8,6 +8,9 @@
     "@gltf-transform/extensions": "^4.1.1",
     "@gltf-transform/functions": "^4.1.1",
     "draco3dgltf": "^1.5.7",
+    "jpeg-js": "^0.4.4",
+    "meshoptimizer": "^1.2.0",
+    "pngjs": "^7.0.0",
     "quickjs-emscripten": "^0.32.0",
     "sharp": "^0.33.5"
   },

@@ -13,6 +13,9 @@
 import { CONFIG, bus, colorFor, assignColors } from './core.js';
 import { makeFrame } from './frames.js';
 import { requestHistory } from './net.js';
+// ONLY the registry — never handlers.js, or the cycle chat→handlers→net→chat
+// closes (§14.2). The registry is a pure table with no imports of its own.
+import { COMMANDS } from './commands/registry.js';
 
 const MAX_LINES = 400;
 const HISTORY = 'ew-chat-history';
@@ -168,7 +171,18 @@ async function loadOlder() {
 
 const pad2 = (n) => String(n).padStart(2, '0');
 
+// Every seq this log has already rendered: a reconnect re-hydrates the world
+// and the social realizer re-renders the arrival window from state — the
+// SAME lines, same seqs. Idempotence lives here rather than in the realizer
+// because seq identity is chat's own concept (synthetic lines carry none and
+// are exempt — they were never positions in history).
+const renderedSeqs = new Set();
+
 export function logChat(who, text, kind = '', meta = {}) {
+  if (typeof meta.seq === 'number' && meta.seq >= 0) {
+    if (renderedSeqs.has(meta.seq)) return;
+    renderedSeqs.add(meta.seq);
+  }
   noteSeq(meta.seq);
   // Spoken-utterance merge: merges ONLY the continuation of one spoken
   // utterance — spoken:true + same author + same utt (Sol review, PR#7).
@@ -382,34 +396,10 @@ function insertAtCursor(str) {
 
 let acBox = null, acItems = [], acIndex = 0, acStart = -1, acKind = null;
 
-const COMMANDS = [
-  ['/w', '/w <name> <message> — whisper, privately'],
-  ['/r', 'reply to the last whisper you got'],
-  ['/name', '/name <new name> — change what the world calls you'],
-  ['/me', 'describe an action — "/me waves"'],
-  ['/emote', '/emote dance · wave cheer dance point salute clap'],
-  ['/sit', 'sit down, on a seat if one is near'],
-  ['/push', '/push [name] [power] — shove someone within reach (their client decides); /push <thing> works the thing'],
-  ['/pushable', '/pushable on|off — whether shoves and blasts can knock you over (on by default)'],
-  ['/boom', '/boom [power] [radius] — a blast where you stand, you included (builder)'],
-  ['/kick', '/kick [thing] [power] — send an object flying (a person\'s name = moderation)'],
-  ['/punt', '/punt [thing] [power] — the unambiguous physics kick'],
-  ['/who', 'list everyone present'],
-  ['/role', 'what you may do here (or /role <name>)'],
-  ['/grant', '/grant <name> owner|builder|visitor [+gen|-gen] — owner only'],
-  ['/kick', '/kick <name> [reason] — remove someone from this world (owner)'],
-  ['/ban', '/ban <name> [reason] — ban someone from this world (owner)'],
-  ['/unban', '/unban <name> — lift a ban here (owner)'],
-  ['/bans', 'who is banned from this world'],
-  ['/gban', '/gban <name> [reason] — ban from ALL worlds (operator)'],
-  ['/gunban', '/gunban <name> — lift a global ban (operator)'],
-  ['/gbans', 'list global bans (operator)'],
-  ['/fork', '/fork <new-name> — copy this world, history and all (owner)'],
-  ['/reset', 'erase this world back to zero, archived not destroyed (owner)'],
-  ['/goto', '/goto <name> — walk to someone'],
-  ['/clear', 'clear your chat log'],
-  ['/help', 'open the help sheet'],
-];
+// The command list derives from the registry — one source of truth. The
+// hand-kept copy that lived here drifted (a duplicate /kick row, help text
+// diverging from behavior); now the table that autocompletes IS the table
+// the handlers registered against.
 
 function closeAC() {
   acBox.style.display = 'none';
@@ -425,8 +415,8 @@ function updateAC() {
   const cmd = /^\/(\w*)$/.exec(upto);
   if (cmd) {
     const q = cmd[1].toLowerCase();
-    const hits = COMMANDS.filter(([c]) => c.slice(1).startsWith(q));
-    return showAC(hits.map(([c, d]) => ({ value: c, label: c, hint: d })), 0, 'cmd');
+    const hits = COMMANDS.filter(({ name }) => name.startsWith(q));
+    return showAC(hits.map(({ name, help }) => ({ value: `/${name}`, label: `/${name}`, hint: help })), 0, 'cmd');
   }
 
   // @mention

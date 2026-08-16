@@ -1,0 +1,63 @@
+{
+  "entities": {
+    "porch": {
+      "kind": "light",
+      "pos": [
+        1,
+        2,
+        1
+      ],
+      "color": 16767392,
+      "intensity": 30,
+      "range": 8,
+      "actor": "author",
+      "ts": 1786320000004
+    },
+    "lamp": {
+      "kind": "light",
+      "pos": [
+        0,
+        2,
+        0
+      ],
+      "color": 16767392,
+      "intensity": 16,
+      "range": 10,
+      "day": false,
+      "actor": "author",
+      "ts": 1786320000006
+    },
+    "lantern": {
+      "kind": "light",
+      "pos": [
+        3,
+        2,
+        3
+      ],
+      "color": 39423,
+      "intensity": 40,
+      "range": 6,
+      "comp": {
+        "halo": {
+          "tint": "amber"
+        }
+      },
+      "parent": {
+        "to": "porch",
+        "offset": [
+          0,
+          0.5,
+          0
+        ]
+      },
+      "actor": "author",
+      "ts": 1786320000010
+    }
+  },
+  "roles": {
+    "author": {
+      "role": "owner",
+      "gen": true
+    }
+  }
+}

@@ -35,6 +35,7 @@
 // degraded performance, never a broken sky.
 
 import { THREE, TSL, scene, camera, renderer } from './core.js';
+import { warm, P_AMBIENT } from './warmqueue.js';
 
 let dome = null;
 let mat = null;
@@ -48,6 +49,23 @@ let bandMeshes = null;
 let bandGeos = null;
 let bakeCam = null;
 let pinnedCloudsOn = null;   // whether the pinned bake graph HAS a cloud branch
+/** The §18b fence in sky.js consults this: 'clear' is respelled as an empty
+ *  cumulus ONLY once a cloud-carrying graph is pinned — an eager respell
+ *  would build the ~1.5MB-WGSL cloud graph at boot for clear worlds, and
+ *  even an ASYNC compile of that monster stalls the whole GPU process ~9s
+ *  (measured — Chrome serializes queue submits behind Tint). Lazy pinning
+ *  means a session pays that compile at most ONCE, at the user's own first
+ *  cloudy change, instead of every clear↔cloudy flip (the old behavior) or
+ *  at every clear-world boot (the eager fence). */
+export const bakedCloudsPinned = () => pinnedCloudsOn === true;
+
+// §19a: arrival gates on the FIRST bake's band pipeline being warm (the
+// boot pays the one big cloud-graph compile behind the splash — tel0s's
+// call). Single-shot; only meaningful on baked tiers (sky.js guards).
+let _bakeReadyResolve = null;
+const _bakeReady = new Promise((r) => { _bakeReadyResolve = r; });
+export const whenBakeReady = () => _bakeReady;
+function resolveBakeReady() { _bakeReadyResolve?.(); _bakeReadyResolve = null; }
 // scene.environment stays a dedicated small target (what IBL was sized for
 // all along) — PMREM from the full 4096 display bake was a ~150ms stall
 // every cycle. Each fresh bake is blitted down into this instead.
@@ -271,12 +289,47 @@ export function attachBakedDome(skyApi, opts = {}) {
   scene.add(dome);
 
   front = 0;
-  state = 'idle';
+  // §18b: the pinned graph's WGSL is enormous once it carries clouds (the
+  // 8-pass march ≈ 1.5MB of shader text), and the BAND context (bandScene +
+  // targets[]) is a different pipeline than the boot bake's own — the first
+  // renderBand that met it cold paid NodeBuilder plus a BLOCKING pipeline
+  // compile inside one frame (measured 12s on the first cadence cycle). The
+  // cycle holds in 'warming' until the band pipeline exists.
+  state = 'warming';
+  warmBakePipeline().then(() => {
+    if (state === 'warming') state = 'idle';
+    resolveBakeReady();          // §19a: the boot gate may lift now
+  });
   pendingForce = false;
   nextAt = performance.now() + cfg.intervalMs;
   console.log(`[sky] baked dome crossfade loop — ${A.width}x${A.height}, `
     + `${bands} bands/cycle, ${(cfg.intervalMs / 1000).toFixed(1)}s cadence`);
   return true;
+}
+
+/** Compile the band material's pipeline off the render path, through the
+ *  conductor (§16.2.A): same scene, same camera, same target formats as
+ *  renderBand — the real band render is then a pure cache hit. All bands
+ *  share one material and one geometry layout, so warming band 0 covers
+ *  every strip. */
+function warmBakePipeline() {
+  const m0 = bandMeshes[0];
+  if (!m0) return Promise.resolve();
+  return warm('sky bake pipeline', async () => {
+    if (!bandMeshes[0] || !bakeCam) return;   // torn down while queued
+    const prevRT = renderer.getRenderTarget();
+    const saveVis = m0.visible;
+    m0.visible = true;
+    let compiled;
+    try {
+      renderer.setRenderTarget(targets[0]);
+      compiled = renderer.compileAsync(m0, bakeCam, bandScene);
+    } finally {
+      renderer.setRenderTarget(prevRT);
+      m0.visible = saveVis;
+    }
+    await (compiled?.catch(() => {}) ?? Promise.resolve());
+  }, { p: P_AMBIENT });
 }
 
 /** Ask for a fresh bake soon (verb changed the sky's look). If one is
@@ -335,6 +388,13 @@ export function updateBakedDome(now = performance.now()) {
 function maybeRefreshGraph() {
   const wantClouds = sys.state?.preset !== 'clear';
   if (wantClouds === pinnedCloudsOn) return false;
+  // One direction only (§18b): a c1 graph with finalMul→0 draws a correct
+  // clear sky, so cloudy→clear NEVER needs the full-quad rebake (the
+  // measured ~5s halt). Only c0→c1 is genuinely impossible to render
+  // without a rebuild (a graph built with no cloud branch cannot grow
+  // one) — and the §18b fence in sky.js keeps capable tiers pinned c1
+  // from the first bake, so even that direction is normally unreachable.
+  if (!wantClouds) return false;
   state = 'refreshing';
   const A = targets[0];
   Promise.resolve(sys.bakeEnv(renderer, {
@@ -347,13 +407,16 @@ function maybeRefreshGraph() {
     bakeCam = bake.camera;
     pinnedCloudsOn = /\|c1$/.test(bake.key ?? '');
     // the full bake landed in A — show it, take the env back from it, and
-    // let the cadence resume from there
+    // let the cadence resume from there. The fresh graph's band pipeline
+    // warms first (§18b) — the re-pinned material is as cold in the band
+    // context as the boot one was.
     blitEnvFrom(A);
     blendU.value = 0;
     front = 0;
     fade = null;
     nextAt = performance.now() + cfg.intervalMs;
-    state = 'idle';
+    state = 'warming';
+    return warmBakePipeline().then(() => { if (state === 'warming') state = 'idle'; });
   }).catch((e) => {
     console.warn('[sky] bake graph refresh failed', e?.message ?? e);
     pinnedCloudsOn = wantClouds;   // stop retrying every cycle

@@ -76,7 +76,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 let server: ReturnType<typeof spawn> | null = null;
 async function startServer() {
   if (EXTERNAL) return;
-  server = spawn("bun", [join(import.meta.dir, "..", "server", "server.ts")], {
+  // process.execPath, not "bun": on Windows the PATH "bun" is an npm .cmd
+  // shim whose pid is not the real process — kill() takes the shim and
+  // orphans the sequencer, which then squats the port and poisons the NEXT
+  // run (found live: this line's server outlived its kill on :8994, and a
+  // later run silently drove the stale zombie instead of its own server)
+  server = spawn(process.execPath, [join(import.meta.dir, "..", "server", "server.ts")], {
     env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, JOIN_TOKEN: "",
            VERB_RATE: "5000", MSG_RATE: "5000" },
     stdio: "ignore",

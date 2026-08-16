@@ -23,7 +23,17 @@ const KEY = 'eido.audio.prefs';
 // so a refusal would be re-prompted on the next mic-on — turning a no into a
 // recurring negotiation, which is the opposite of asking once (review catch).
 const DEFAULTS = { recvVoice: false, volVoices: 1, volWorld: 0.6, volTts: 1, sttConsent: null,
-  micFloor: 0.04 };  // speech-onset gate: mic level below this is keyboard, not voice
+  // Sensitivity, not an absolute level: it scales the margin a sound must clear
+  // ABOVE the measured room noise (see onsetTick). 0.06 is the lowest value that
+  // took zero false triggers across 200 simulated room/noise combinations while
+  // never missing speech, so the slider has honest room in both directions.
+  // 60% = -24 dBFS. R's number, found by TESTING IT IN HER ROOM — "seems like
+  // 60% is a good place" — which beats my four earlier defaults, every one of
+  // them reasoned from published reference levels rather than measured against
+  // a real mic at a real gain. The slider is honest and 1:1 now, so anyone
+  // else's number is a drag away; this is a good place to start, not a claim
+  // about everyone's room.
+  micFloor: 0.12 };
 
 let prefs = { ...DEFAULTS };
 try {
@@ -123,3 +133,56 @@ function defaultAsk() {
     'Voice chat itself does NOT require this — you can talk without it.',
   ));
 }
+
+/** How many times the measured room noise a sound must be, to count as speech.
+ *
+ *  🔴 THE ONE DEFINITION. This formula lived in FOUR places (the gate, the gate's
+ *  own info dump, and two panel readouts) and had already drifted once — the
+ *  panel kept an old additive version after the gate went multiplicative, so the
+ *  two reported different thresholds (2026-08-09). Anything that needs it
+ *  imports it from here.
+ *
+ *  Range 1.5x…20x, widened after R found the old 5x ceiling too low: "even
+ *  someone talking in another room here is hitting 100% from time to time."
+ *  She was right — distant speech lands around 3-4x a quiet room's floor, so a
+ *  5x maximum left almost no rejection headroom, while her own voice clears the
+ *  floor by more than 30x. The top of the range is now genuinely strict and the
+ *  bottom still catches a whisper.
+ */
+// THE THRESHOLD IS A dB POSITION, not a multiplier over the room.
+//
+// R, after three rounds of the marker and the colour disagreeing: "maybe it's
+// time to search online for how other people have programmed mic sensitivity
+// sliders". Discord's model, and it is better than what I built:
+//
+//   • one widget, two jobs — the live level bar and the draggable threshold
+//     share one track, on a dB scale (roughly -60..0 dBFS)
+//   • the marker DOES NOT MOVE. The level moves past it.
+//   • colour by GATE STATE, not by level: below the marker is muted, above is
+//     live
+//
+// My room-relative version (level >= noise x k) meant the threshold moved as the
+// room changed — so drawing the marker where the gate opens made it slide away
+// from the cursor, and drawing it where the cursor was made the colour flip
+// somewhere else. There is no way to draw two coordinate systems as one mark.
+// A fixed dB threshold removes the conflict at the root rather than papering it.
+//
+// dB also fixes the crushed scale: on a linear RMS meter a quiet room and speech
+// are both jammed into the left edge, which is why the useful part of the slider
+// kept feeling like a sliver. In dB they are 25 points apart.
+
+/** The gate threshold in dBFS. 0% = -60 dB (everything), 100% = 0 dB (nothing).
+ *  Linear in dB, which is already logarithmic in amplitude — the standard shape
+ *  for this control, and the reason Discord's slider feels even end to end. */
+export const gateThresholdDb = () => -60 + Math.min(1, Math.max(0, prefs.micFloor / 0.2)) * 60;
+
+/** Same threshold as a linear amplitude, for comparing against an RMS reading. */
+export const gateThreshold = () => Math.pow(10, gateThresholdDb() / 20);
+
+/** dBFS of a linear amplitude, floored so silence does not become -Infinity. */
+export const toDb = (amp) => 20 * Math.log10(Math.max(amp, 1e-6));
+
+/** Where a level sits on the meter, 0..1 across the same -60..0 dB span the
+ *  threshold uses. ONE function for both, so the bar and the marker cannot
+ *  land in different places — that mismatch is this control's whole history. */
+export const meterPos = (amp) => Math.max(0, Math.min(1, (toDb(amp) + 60) / 60));

@@ -61,11 +61,14 @@ function note(name: string, detail: string) {
 
 const rigOut = join(ROOT, "assets/opt/eidoverse/assets/vrms/bighead75.vrm");
 const rigSrc = join(EIDOVERSE_DIR, "eidoverse/assets/vrms/claude.vrm");
-const mk = Bun.spawnSync(["bun", join(ROOT, "tools/make-bighead-vrm.ts"), rigSrc, rigOut, "5"]);
+// process.execPath, not "bun": on Windows the PATH "bun" is an npm .cmd
+// shim whose pid is not the real process — killing the shim orphans the
+// child (paritybench found two abandoned sequencers holding ports this way)
+const mk = Bun.spawnSync([process.execPath, join(ROOT, "tools/make-bighead-vrm.ts"), rigSrc, rigOut, "5"]);
 if (mk.exitCode !== 0) { console.error(mk.stderr.toString()); process.exit(1); }
 
 console.log(`[probe] sequencer on :${PORT} (world ${WORLD}) — library ${EIDOVERSE_DIR}`);
-const seq = Bun.spawn(["bun", join(ROOT, "server/server.ts")], {
+const seq = Bun.spawn([process.execPath, join(ROOT, "server/server.ts")], {
   env: { ...process.env, PORT: String(PORT), JOIN_TOKEN: "", EIDOVERSE_DIR, WORLDS_DIR: join(RECEIPTS, "worlds") },
   stdout: Bun.file(join(RECEIPTS, "sequencer.log")),
   stderr: Bun.file(join(RECEIPTS, "sequencer.log")),

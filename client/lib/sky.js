@@ -15,11 +15,13 @@
 
 import { THREE, scene, sun, hemi, renderer, camera, report, bus } from './core.js';
 import { loadEidoModule, primeFiles, listLibrary, fetchBytes } from './assets.js';
-import { markPhase, whenBooted } from './boot.js';
+import { markPhase } from './boot.js';
 import { attachBakedDome, detachBakedDome, updateBakedDome, bakedActive, requestBake,
-  envTexture, adoptEnvironment } from './sky_baked.js';
-import { holdFrames, holdObjectCompiles, beginWork } from './loadwork.js';
-import { WEATHERS, effectiveSky, hoursAt } from './forecast.js';
+  envTexture, adoptEnvironment, whenBakeReady } from './sky_baked.js';
+import { beginWork } from './loadwork.js';
+import { setDayness, releaseForeignLights } from './lightrig.js';
+import { warm, P_AMBIENT } from './warmqueue.js';
+import { WEATHERS, effectiveSky, hoursAt } from '../../shared/forecast.js';
 // Who owns which per-frame hook. The sky claims by diffing a GLOBAL array
 // around its own async build; anything another subsystem marks as its own is
 // off limits, whenever it appeared.
@@ -38,20 +40,25 @@ scene.environment = envTexture();
 
 let impl = null;           // 'eidoverse' | 'skymesh' | null
 let skyApi = null;         // Skye's sky object when impl === 'eidoverse'
+let skyInner = null;       // _internals.sky — upstream's declared escape hatch (§18b)
 let skyMesh = null;
-let fillLight = null;
-const lampLights = new Set();
-/** Point lights the emissive-lamp system currently casts — shared so the
- *  explicit-light budget counts the WHOLE scene, not just its own. */
-export const lampCount = () => lampLights.size;
-/** Total point lights the world may hang off emissive materials. See
- *  attachLocalLights for why this is a hard ceiling rather than a soft one. */
-const MAX_LAMPS = 2;
+// The skymesh-path fill light is born EAGERLY: light topology is frozen at
+// boot (TEL0S_NOTES §12.1 — a light appearing later recompiles every lit
+// material, and the old lazy creation fired exactly when the sky DEGRADED,
+// the worst possible moment to pay a recompile storm). On the eidoverse
+// path it idles at intensity 0, which costs its loop iteration and nothing
+// else. (The emissive-lamp system that lived here is lightrig.js now —
+// lamps are slot requests, not scene lights.)
+const fillLight = new THREE.DirectionalLight(0xffffff, 0);
+scene.add(fillLight);
 let clock = null;          // { args, t0 } — the server-stamped epoch
 let currentWorld = null;
 
 export const skyArgs = () => clock?.args ?? {};
 export const skyImpl = () => impl;
+/** §22m diag: the sky-owned scene roots, for cost-attribution phases that
+ *  hide the sky's DRAW without touching its state. Read-only. */
+export const skyOwnedObjects = () => skyOwned ?? [];
 /** 0 at night → 1 at noon. Lamps and other night-aware things read this. */
 export let dayness = 1;
 
@@ -137,7 +144,7 @@ Object.defineProperty(globalThis, 'makeSkySystem', {
 // The canonical weather list lives in forecast.js (pure, shared with the
 // sequencer fold and the mcpl agent) — re-exported here so existing importers
 // keep their path.
-export { WEATHERS } from './forecast.js';
+export { WEATHERS } from '../../shared/forecast.js';
 export const CLOUDS = ['clear', 'cumulus', 'stratus', 'cirrus'];
 // Only `earth` is offered.
 //
@@ -207,35 +214,19 @@ async function renderOnce() {
     return markPhase('sky', 1);
   }
 
-  // A sky is coming: pause OBJECT pipeline compiles until its wraps + env
-  // bake exist, so every material compiles once, with its final graph —
-  // instead of once now and once again when the weather rewrites it. (On a
-  // slow-loading Safari the sky lost this race and the wraps hit 44 already-
-  // compiled materials; at ~6s per graph compile there, that ordering WAS the
-  // twenty painful seconds.) Released in the finally below on every path —
-  // settle, skymesh fallback, or failure — with a 25s cap behind it.
-  let releaseObjects = null;
-  if (!skyApi) holdObjectCompiles(new Promise((r) => { releaseObjects = r; }));
-  try {
+  // No hold, no settle beat, no ordering dependency. A sky arriving used to
+  // be the single most disruptive moment a running client had — weather
+  // wraps rewrote materials, the env flip invalidated every pipeline, a new
+  // light changed the topology — and holdObjectCompiles/holdFrames existed
+  // to absorb exactly that. The factory (materials.js) now applies the
+  // wraps at material birth, the env texture is persistent, and the light
+  // rig swallows the weather's bolt: sky arrival invalidates NOTHING. The
+  // sky's own meshes precompile detached inside buildSky, so even their
+  // first frame doesn't stall. (TEL0S_NOTES §12.7 — the holds are gone.)
+  {
     while (degrade < 2 && skyBuilds < MAX_SKY_BUILDS) {
     try {
-      const buildsBefore = skyBuilds;
       await renderEidoverse(a);
-      // A FRESH sky build is the single most disruptive moment a running
-      // client has: weather wraps rewrite materials and the env bake flips
-      // scene.environment from null, which together invalidate every compiled
-      // pipeline in the scene — the next render() then rebuilds them all
-      // SYNCHRONOUSLY (the post-splash "unresponsive for ten seconds with
-      // long freezes", 08-02). Nothing can render the old state while the new
-      // one compiles, so: hold presentation for one bounded beat, settle the
-      // whole scene through compileAsync (slices yield, input stays live),
-      // resume warm. Rebakes and slider previews don't build → don't hold.
-      if (skyBuilds !== buildsBefore) {
-        const settle = beginWork('sky settle'); // the whole-scene recompile behind the held beat
-        try {
-          await holdFrames(renderer.compileAsync(scene, camera).catch(() => {}), 4000);
-        } finally { settle.end(); }
-      }
       return;
     } catch (e) {
       const why = e?.message ?? String(e);
@@ -253,15 +244,25 @@ async function renderOnce() {
       } else {
         report('eidoverse sky (falling back)', e);
       }
+      // the build budget counts FAILURES (§18b): it used to count every
+      // build, so one failed-then-recovered boot left skyBuilds at MAX and
+      // every later sky verb stacked a SkyMesh over the working eidoverse
+      // sky without a teardown — and froze its updates (updateSky gates on
+      // impl === 'eidoverse')
+      skyBuilds++;
       degrade++;
       skyApi = null;
       currentWorld = null;
     }
     }
+    // Falling to the basic sky without a full teardown (build budget spent):
+    // the weather system will not be rebuilt, so its adopted bolt must not
+    // outlive it here either.
+    releaseForeignLights();
     impl = 'skymesh';
     await renderSkyMesh(a);
     markPhase('sky', 1);
-  } finally { releaseObjects?.(); }
+  }
 }
 
 // ============================================================ Skye's sky
@@ -306,6 +307,18 @@ async function primeFor(world, wantAudio) {
 // produced six stacked sky systems and six weather systems. The guard has to
 // be the in-flight PROMISE, not the finished result.
 let building = null;
+
+// The FIRST sky's warm, as a single-shot promise the boot gate can race
+// (world.applySkyFolded): resolved when the first eidoverse build's dome
+// warm drains through the conductor, OR when the sky lands on the skymesh
+// fallback (its dome is one small material — nothing left worth gating on),
+// whichever a degrading retry ladder reaches first. Later verbs/rebuilds
+// never re-arm it: a mid-session sky has no curtain.
+let _skyWarmResolve = null;
+const _skyWarmDone = new Promise((r) => { _skyWarmResolve = r; });
+function resolveSkyWarm() { _skyWarmResolve?.(); _skyWarmResolve = null; }
+export const whenSkyWarm = () => _skyWarmDone;
+
 // What the last sky build put into the scene.
 //
 // makeSky returns an api with no dispose — so `skyApi?.dispose?.()` was a
@@ -325,9 +338,16 @@ function snapshotSceneOwnership() {
 }
 function claimSkyAdditions(snap) {
   skyOwned = scene.children.filter((c) => !snap.before.has(c)
-    // never claim anything the world itself owns — entities and bodies can be
-    // added by other code while an async sky build is in flight
-    && !c.userData?.entityId && !c.userData?.isBody);
+    // never claim anything the world itself owns — entities, bodies, the
+    // terrain, the meadow, debug groups: all can be added by other code
+    // while an async sky build is in flight. skyExempt is the positive
+    // marker world-owned roots wear at their add site (§17c — tel0s's
+    // trace caught the claim swallowing the TERRAIN: a later sky rebuild
+    // would have removed the ground with the old dome set)
+    // (isDebug: debug.js has worn this marker with a "sky must not adopt"
+    // comment since it was written — the filter just never read it)
+    && !c.userData?.entityId && !c.userData?.isBody
+    && !c.userData?.skyExempt && !c.userData?.isDebug);
   // Hooks are claimed the same way the scene children above are: by identity,
   // and never something another owner marked as theirs. It used to be a LENGTH
   // mark, which meant anything that registered a per-frame hook after the sky
@@ -339,9 +359,26 @@ function claimSkyAdditions(snap) {
   autoSystemsOwned = claimUnowned(snap.autos);
 }
 function teardownSky() {
+  // The adopted lightning first: the scene diff below cannot see it (the
+  // rig's seam kept it OUT of the scene), and on teardowns that never
+  // build a replacement weather system its registry-eviction release never
+  // fires — without this, a dead mirror holds a reserved slot forever,
+  // frozen at whatever the last strike left it.
+  releaseForeignLights();
   // Put the parked live domes back first: the diff below claimed them at
   // build time, so restoring them lets the disposal pass find and free them.
   detachBakedDome();
+  // §22b: the engine's OWN dispose — the only path to the ~64MB _envTarget,
+  // the bake target, and the noise/weather textures. detachBakedDome above
+  // deliberately leaves target A alive (it blits from it), and the api never
+  // exposed dispose — so every cloud-quality rebuild leaked all of it
+  // (measured: textures 69→77, renderTargets 7→11 across two flips — the
+  // sticky-35fps ratchet on a unified-memory Mac). cloudShadowRoots is empty
+  // in this client (the factory marks every mesh noCloudShadow), so the
+  // unwrap loop inside is a no-op — no recompiles. Runs AFTER the blit,
+  // BEFORE the dome disposal walk (double-dispose is idempotent in three).
+  try { skyInner?.dispose?.(); } catch (e) { console.warn('[sky] engine dispose', e?.message ?? e); }
+  skyInner = null;
   for (const o of skyOwned) {
     scene.remove(o);
     o.traverse?.((n) => {
@@ -377,6 +414,12 @@ async function renderEidoverse(a) {
   applyLive(a);
   const bake = beginWork('sky bake');    // names the env-bake + reflections gaps
   try { await ensureSkyBake(); } finally { bake.end(); }
+  // §19a: on baked tiers the curtain waits for the first bake's band
+  // pipeline too — the one big cloud-graph compile lands behind the splash
+  // (tel0s's call), not in the first visible minute. Non-baked tiers and
+  // degraded paths resolve through renderSkyMesh/dome-warm as before.
+  if (bakedActive()) await whenBakeReady();
+  resolveSkyWarm();
 }
 
 async function buildSky(a, world, wantAudio) {
@@ -412,19 +455,22 @@ async function buildSky(a, world, wantAudio) {
     envKnobs.DCACHE = undefined;
     envKnobs.LCACHE = a.quality === 'high' ? undefined : '0';
 
-    // Let the person get into the world first. On a throttled link the sky's
-    // assets and the body's were racing each other through the same pipe, and
-    // the body is the one arrival actually waits for.
-    await whenBooted();
+    // (An `await whenBooted()` lived here — a bandwidth yield so the sky's
+    // assets wouldn't race the body's through one pipe. It had to go: during
+    // initial hydration arrival now GATES on this build's warm
+    // (world.applySkyFolded, §16.2.D), and a sky that waits for boot while
+    // boot waits for the sky is a splash that never lifts. The gating order
+    // itself provides what the wait was for — the sky is no longer
+    // competing with boot-critical work, it IS boot work.)
     await primeFor(world, wantAudio);
     await loadEidoModule('sky_worlds.js');
     if (typeof globalThis.makeSky !== 'function') throw new Error('sky_worlds.js exposed no makeSky');
     if (skyMesh) { scene.remove(skyMesh); skyMesh = null; }
-    skyBuilds++;
     // A fresh build asserts state rather than easing into it — reset the
     // applyLive guards so the first applyLive after this re-asserts
     // everything against the new skyApi.
     forecastCursor = null; appliedWeather = null; appliedClouds = null; appliedColors = null;
+    lastLiveHours = null;
     // Construct at the DERIVED weather, not the raw authored field — under a
     // forecast the authored field may be segments stale. Mid-transition, start
     // from the segment's previous state; applyLive transitions the remainder.
@@ -440,6 +486,53 @@ async function buildSky(a, world, wantAudio) {
       audio: wantAudio,
     });
     claimSkyAdditions(ownership);
+    // ---- the clear↔cloudy fence (§18b, pre-paid §19a) ----------------------
+    // The baked tier's graph cache keys on preset !== 'clear' (sky_system
+    // bakeKey …|c0/c1), and building the cloud-carrying graph costs a
+    // ~1.5MB-WGSL compile that stalls the whole GPU process ~5-10s cold —
+    // even async (Chrome serializes submits behind Tint). Nothing can hide
+    // that compile; the only question is WHEN a session pays it. tel0s's
+    // call (2026-08-10): inside the boot splash — so on cloud-capable
+    // tiers 'clear' is ALWAYS respelled as an empty cumulus (finalMul 0 —
+    // the march gates itself off at runtime): the preset is never 'clear',
+    // the c1 graph pins at the boot bake (inside the sky gate, cap raised
+    // for it), and every later sky change — dawn, dusk, clouds, weather —
+    // is uniform writes. Warm-cache visits (Dawn's disk cache) pay ~none
+    // of it. The wrap sits on the INTERNAL setter because the weather
+    // system drives setClouds('clear') behind the api (WEATHER.clear).
+    // The 'off' tier keeps genuine 'clear' always: it constructs c0 and
+    // must stay there. When Skye lands the upstream asks (Addendum 2:
+    // per-bakeKey cache / authoritative includeClouds), this whole fence
+    // shrinks to one option flag.
+    skyInner = skyApi?._internals?.sky ?? null;
+    if (skyInner?.setClouds && cloudQuality !== 'off') {
+      const orig = skyInner.setClouds.bind(skyInner);
+      skyInner.setClouds = (kind, over) => (kind === 'clear'
+        ? orig('cumulus', { ...(over ?? {}), finalMul: 0, wispOn: 0, stormCanopy: 0 })
+        : orig(kind, over));
+    }
+    // Warm the sky's OWN pipelines off the render path: the cloud march is
+    // the biggest single compile in the client, and a regular render that
+    // meets an uncompiled dome creates its pipeline SYNCHRONOUSLY — one big
+    // stall exactly when the sky first appears. Each claimed addition goes
+    // through the warm conductor (§16.2.A) — one item per dome, serialized
+    // against every other pipeline warm, a real frame between items: it
+    // detaches, compiles against the live scene, re-adds warm (the grass
+    // precompile pattern). Nothing ELSE needs settling — sky arrival no
+    // longer invalidates the rest of the scene. During initial hydration
+    // the curtain waits for this loop (whenSkyWarm below) — measured 3.1s
+    // that used to land squarely in the visible window (§16.1g).
+    for (const o of skyOwned) {
+      // P_AMBIENT: dome warmth never queues ahead of the ground/models a
+      // person is actually waiting for (the 16s-boot lesson, warmqueue.js)
+      await warm(`sky warm ${(o.name || o.type || 'dome').slice(0, 24)}`, async () => {
+        scene.remove(o);
+        try { await renderer.compileAsync(o, camera, scene).catch(() => {}); }
+        finally { scene.add(o); }
+      }, { p: P_AMBIENT });
+    }
+    // resolveSkyWarm moved to renderEidoverse (§19a): the gate now waits
+    // for the first BAKE too, not just the dome warms
     currentWorld = world;
     impl = 'eidoverse';
     scene.background = null;
@@ -542,13 +635,28 @@ let forecastCursor = null;   // O(1) live ticking — the segment walk never re-
 let appliedWeather = null;   // `state|k` last asserted on skyApi; null = fresh build
 let appliedClouds = null;
 let appliedColors = null;
+let lastLiveHours = null;    // detects VERB-driven clock jumps (§18b)
 function applyLive(a) {
   if (!skyApi) return;
-  skyApi.setTime?.(nowHours());
+  const h = nowHours();
+  skyApi.setTime?.(h);
   // Baked tiers re-bake on their own cadence (which covers TOD drift too);
   // the debounced TOD bake only serves the live 'high' tier's env-IBL.
   if (!bakedActive()) scheduleEnvBake();
   let changed = false;
+  // A dusk/dawn VERB used to wait out the 9s bake cadence before the
+  // visible dome moved (§18b) — a clock JUMP asks for a bake now. Circular
+  // delta so the daily midnight wrap doesn't read as a jump; TOD drift
+  // between 1Hz calls stays far under the threshold.
+  if (lastLiveHours !== null) {
+    const d = Math.abs(h - lastLiveHours);
+    if (Math.min(d, 24 - d) > 0.75) changed = true;
+  }
+  lastLiveHours = h;
+  // An authored 'clear' flows to the setter like any other kind — the §18b
+  // fence renders it as an EMPTY cumulus on capable tiers so the graph
+  // never flips flavours. Unauthored stays null (construction's default
+  // look, exactly as before).
   const clouds = cloudQuality === 'off' ? 'clear'
     : (a.clouds && CLOUDS.includes(a.clouds) ? a.clouds : null);
   if (clouds && clouds !== appliedClouds) {
@@ -651,6 +759,9 @@ async function renderSkyMesh(a) {
   scene.background = null;
 
   applyTuning(a, day, warmth, sunPos);
+  // every degraded/fallback route ends here — the boot gate must not wait
+  // for a dome warm that will never come
+  resolveSkyWarm();
 }
 
 // ============================================================ shared tuning
@@ -663,10 +774,6 @@ function applyTuning(a, day, warmth = Math.pow(1 - day, 1.5), sunPos = null, sky
     // Low sun ≠ dark subjects: golden hour is FULL of scattered warm light.
     hemi.intensity = (0.6 + 0.4 * day) * (a.ambient ?? 1);
 
-    if (!fillLight) {
-      fillLight = new THREE.DirectionalLight(0xffffff, 0);
-      scene.add(fillLight);
-    }
     fillLight.color.copy(hemi.color);
     if (sunPos) {
       fillLight.position.set(-sunPos.x, Math.max(0.35, sunPos.y), -sunPos.z).multiplyScalar(60);
@@ -680,78 +787,24 @@ function applyTuning(a, day, warmth = Math.pow(1 - day, 1.5), sunPos = null, sky
       const cool = new THREE.Color().setHSL(0.6, 0.2, 0.05 + 0.5 * day);
       const warm = new THREE.Color().setHSL(0.07, 0.32, 0.04 + 0.45 * day);
       scene.fog.color.lerpColors(cool, warm, warmth);
-      scene.fog.density = 0.018 * (a.fog ?? 1);
     }
-  } else if (fillLight) {
+  } else {
     fillLight.intensity = 0; // the real sky supplies its own bounce
   }
+
+  // Fog DENSITY is the world's on both paths: the real sky drives fog
+  // COLOR (applyToLights) and never the density — so this slider was dead
+  // on the shipped sky for no reason at all (§12.6's tuner audit).
+  if (scene.fog) scene.fog.density = 0.018 * (a.fog ?? 1);
 
   // Exposure is the world's, not the sky's — it's the tuner's one global knob
   // and it must work identically on both implementations.
   renderer.toneMappingExposure = (skyOwnsLights ? 1 : (1.0 - 0.22 * warmth)) * (a.exposure ?? 1);
 
   dayness = day;
-  const lampGlow = Math.pow(1 - day, 2);
-  for (const l of lampLights) {
-    let root = l; while (root.parent) root = root.parent;
-    if (root !== scene) { lampLights.delete(l); continue; } // its object left
-    l.intensity = l.userData.base * lampGlow;
-  }
-}
-
-// ---------------------------------------------------------------- lamps
-// Models that glow should also SHED light. Any spawned object with emissive
-// surfaces gets a point light at each emissive mesh's centre; the sky clock
-// dims them at noon and lights them at dusk. No per-model configuration —
-// the material IS the declaration.
-
-export async function attachLocalLights(obj) {
-  // Deferred until after arrival, deliberately. Adding point lights
-  // invalidates every material variant in the scene, and with a grass field up
-  // that recompile is enormous — measured 2026-07-26: a world with grass took
-  // 1.3s to boot, and 10.6s once two emissive streetlights were in it. Neither
-  // alone is expensive; the product is. Lamps are also near-invisible in
-  // daylight, so nothing is lost by hanging them a moment later.
-  await whenBooted();
-  const emissive = [];
-  obj.traverse((o) => {
-    if (!o.isMesh) return;
-    const m = o.material;
-    const glow = (m?.emissiveIntensity ?? 1) *
-      Math.max(m?.emissive?.r ?? 0, m?.emissive?.g ?? 0, m?.emissive?.b ?? 0);
-    if (glow > 0.5 || (m?.emissiveMap && (m?.emissiveIntensity ?? 1) > 1)) {
-      emissive.push({ mesh: o, glow: Math.max(glow, m?.emissiveIntensity ?? 1) });
-    }
-  });
-  // Hard global cap. Each additional point light forces another material
-  // variant to compile across the WHOLE scene, and with an instanced grass
-  // field that recompile is brutal. Measured 2026-07-26 on the same world:
-  // grass + 2 lights booted in 429ms at 61fps and stayed responsive; grass +
-  // 4 lights never finished compiling and hung the tab outright. The cost is
-  // superlinear in light COUNT, so the count is what has to be bounded — not
-  // the number of lamps a world may contain. Two is what is MEASURED to be
-  // safe here; raising it needs a re-measure, not an assumption.
-  const budget = Math.max(0, MAX_LAMPS - lampLights.size);
-  if (budget === 0) {
-    if (!attachLocalLights._warned) {
-      attachLocalLights._warned = true;
-      console.warn(`[lights] lamp budget (${MAX_LAMPS}) reached — further emissive objects glow but do not cast`);
-    }
-    return;
-  }
-  for (const { mesh, glow } of emissive.slice(0, Math.min(2, budget))) { // and per object
-    mesh.geometry.computeBoundingSphere();
-    // saturated emissive keeps its colour; whitish emissive reads as a warm bulb
-    const ec = mesh.material.emissive;
-    const sat = Math.max(ec.r, ec.g, ec.b) - Math.min(ec.r, ec.g, ec.b);
-    const color = sat > 0.25 ? ec.clone() : new THREE.Color(0xffd9a0);
-    const light = new THREE.PointLight(color, 0, 12, 1.7); // tight radius: grass fragments cost
-    light.position.copy(mesh.geometry.boundingSphere.center);
-    light.userData.base = Math.min(40, 6 + 2.6 * glow);
-    light.intensity = light.userData.base * Math.pow(1 - dayness, 2);
-    mesh.add(light);
-    lampLights.add(light);
-  }
+  // the rig dims lamps and placed lights on this same clock (lamp inference
+  // itself lives there too — lightrig.attachLamps, requests not lights)
+  setDayness(day);
 }
 
 // ---------------------------------------------------------------- per-frame
@@ -769,6 +822,16 @@ export function updateSky(nowMs, t) {
       if (r && typeof r.catch === 'function') r.catch(noteSkyFailure);
       else updateFailures = 0;
     } catch (e) { noteSkyFailure(e); }
+    // The sun/ambient sliders, rescued: the engine's applyToLights rewrites
+    // sun/hemi intensity EVERY frame inside update(t), so a multiplier
+    // applied after it neither fights nor compounds — the palette drives,
+    // the resident garnishes. (This is the layering sky_worlds' own
+    // comment invites: "update, then adjust, then render".)
+    const a = clock?.args;
+    if (a) {
+      if (a.sun != null && a.sun !== 1) sun.intensity *= a.sun;
+      if (a.ambient != null && a.ambient !== 1) hemi.intensity *= a.ambient;
+    }
     updateBakedDome(nowMs);   // camera-follow + the band-bake/crossfade cycle
   }
   // A rated sky advances everyone's sun in lockstep, and a forecast needs the

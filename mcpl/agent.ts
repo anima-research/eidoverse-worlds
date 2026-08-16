@@ -14,12 +14,16 @@ import { isFiniteVec3 } from "./shape.ts";
 // The same pure sky fold + weather derivation the browser client and the
 // sequencer run — text-tier perception must land on the SAME hour and
 // weather every renderer shows (issue #29's shared-fact boundary).
-import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hoursAt } from "../client/lib/forecast.js";
+import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hoursAt } from "../shared/forecast.js";
+// The snapshot re-synthesizer, shared with the browser — this agent's
+// deliberate omissions ride as flags (see stateToEntries below).
+import { stateToEntries as sharedStateToEntries } from "../shared/fold.js";
 // The `particles` component's meaning, shared verbatim with the browser host:
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
-import { describeParticles, emitterTransition, transitionLine } from "../client/lib/particles.js";
+import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
+import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
 
 (globalThis as any).THREE = Object.assign({}, THREE_W, TSL);
 
@@ -52,63 +56,19 @@ function posePosition(pose: Pose | null | undefined): [number, number, number] |
 }
 type InboxItem = { ts: number; kind: "say" | "arrive" | "leave" | "act"; who: string; text?: string; seq?: number | null };
 
-/** Folded world state back into the verbs that produced it. Must stay in step
- *  with the browser client's stateToEntries — two renderers disagreeing about
- *  what a snapshot means is a world that looks different per species. Deliberate
- *  agent omissions: roles/grants and behaviors have no local reader, and spawn
- *  `collide` is browser-only collider state; keep those absences explicit. */
+/** The snapshot re-synthesizer lives in shared/fold.js now — one
+ *  implementation, every species, with this agent's deliberate omissions
+ *  encoded as EXPLICIT flags rather than a hand-mirrored copy that "must
+ *  stay in step" (the drift that crashed look() for every agent in the
+ *  world is the incident that comment carried): roles/grants and behaviors
+ *  have no local reader here, spawn `collide` is browser-only collider
+ *  state, and body mounts read as "who sits where", attributed to the
+ *  sitter. */
 function stateToEntries(state: any, skipChatFromSeq = Infinity): any[] {
-  if (!state) return [];
-  const out: any[] = [];
-  let seq = -1;
-  const add = (verb: string, args: any, actor = "world", ts = Date.now()) =>
-    out.push({ seq: seq--, ts, actor, verb, args });
-  if (state.terrain) add("terrain", state.terrain);
-  if (state.grass) add("grass", state.grass);
-  if (state.sky) add("sky", state.sky, "world", state.sky.ts ?? Date.now());
-  for (const a of state.assets ?? []) add("asset", a);
-  for (const [id, e] of Object.entries<any>(state.entities ?? {})) {
-    if (e.kind === "light") {
-      // folded lights have no lib — must stay in step with the browser
-      // client's stateToEntries (a drift here is how Fable's porchlight
-      // crashed look() for every agent in the world)
-      add("light", { id, pos: e.pos, color: e.color, intensity: e.intensity, range: e.range,
-        ...(e.keep ? { keep: true } : {}) },
-        e.actor ?? "world", e.ts ?? Date.now());
-    } else {
-      add("spawn", { id, lib: e.lib, pos: e.pos, yaw: e.yaw, ...(e.scale != null ? { scale: e.scale } : {}) },
-        e.actor ?? "world", e.ts ?? Date.now());
-    }
-  }
-  // folded components and cargo attachments, in a second pass so every spawn
-  // exists before anything lands on it — the mirror of the browser client's
-  // ordering (world.js stateToEntries). Without the comp entries a post-fold
-  // joiner can be REFUSED for a lock it was never shown, and every socket,
-  // reaction and emitter authored before the fold is missing from look()
-  // until someone rewrites it (#71). Replay reconstructs state and stops
-  // there: applyEntry runs these with live=false, so a fire lit last week is
-  // in look(), not in your ears, and nothing re-performs as an event.
-  for (const [id, e] of Object.entries<any>(state.entities ?? {})) {
-    for (const [type, data] of Object.entries<any>(e.comp ?? {})) add("comp", { id, type, data });
-    if (e.parent) add("mount", { id, ...e.parent });
-  }
-  // folded mounts: without these a rejoined agent doesn't know it is sitting
-  // on anything — so "standing up" never dismounts, and the fold keeps the
-  // body glued to its socket on every renderer (the second half of #61:
-  // princess stood, her session had no idea she was mounted, antra kept
-  // seeing her seated on the crate)
-  for (const [rid, m] of Object.entries<any>(state.mounts ?? {})) {
-    // full wire shape, like entity parents above — a folded mount that loses
-    // its offset/yaw overrides composes to the wrong seat (#82)
-    add("mount", { id: rid, to: m.to, ...(m.slot ? { slot: m.slot } : {}),
-      ...(m.offset ? { offset: m.offset } : {}), ...(m.yaw != null ? { yaw: m.yaw } : {}) }, rid);
-  }
-  for (const m of state.recentChat ?? []) {
-    if ((m.seq ?? -1) >= skipChatFromSeq) continue;   // the tail will bring these
-    out.push({ seq: typeof m.seq === "number" ? m.seq : seq--, ts: m.ts, actor: m.actor,
-               verb: "say", args: { text: m.text } });
-  }
-  return out;
+  return sharedStateToEntries(state, {
+    skipChatFromSeq, roles: false, behaviors: false, collide: false,
+    bodyMountRel: "seat", bodyMountActor: "rider",
+  });
 }
 
 /** How much of a `/geom` top-surface band is actually SURFACE.
@@ -217,6 +177,19 @@ export class WorldAgent {
    *  ambient scenery (roster + movers + acts); `roster` lets an unchanged
    *  cast be compacted to a count instead of ten names, every time. */
   private lastPulse = { sig: "", roster: "", at: 0 };
+  // Seat-profile verdicts (#101): the same server-judged values /avatars
+  // hands the browser, fetched over httpBase at join and on the two update
+  // events. The cache — epochs, pending demotion, event-rev floors — is
+  // seatcore.makeVerdictCache, the SAME implementation the browser runs
+  // (#105 review B1: the logic existed twice and each copy had the same
+  // holes). effective.ts reads these through the view — never a rederived
+  // hash, never a quiet default.
+  private seatCache = makeVerdictCache(async () => {
+    const res = await fetch(`${this.httpBase}/avatars`);
+    if (!res.ok) throw new Error(`roster ${res.status}`);
+    const rev = Number(res.headers.get("x-profiles-rev") ?? NaN);
+    return { rev, entries: await res.json() as { name: string; seat?: any }[] };
+  });
   /** Stateful denoiser for ambient narration (arrive/leave/acts). Says,
    *  mentions, and whispers never pass through it — a knock is not chatter.
    *  See denoise.ts for the doctrine. */
@@ -495,6 +468,7 @@ export class WorldAgent {
             if (typeof msg.throughSeq === "number") this.lastSeq = Math.max(this.lastSeq, msg.throughSeq);
             for (const e of msg.entries) this.lastSeq = Math.max(this.lastSeq, e.seq ?? -1);
             this.joined = true;
+            this.seatCache.init().catch(() => { /* declared-approximate until it lands */ });
             if (!this.ticker) this.ticker = setInterval(() => this.tick(), TICK_MS);
             clearTimeout(timeout);
             resolve();
@@ -620,6 +594,15 @@ export class WorldAgent {
           case "leave":
             this.people.delete(msg.id);
             this.gate.presence(msg.id, "leave");
+            break;
+          case "avatar-updated":
+            // avatar bytes changed: the held verdict demotes to pending NOW
+            // and the refetch departs after the bump — a response already in
+            // flight can never install the pre-change value (#105 B1)
+            this.seatCache.note(msg.name, NaN).catch(() => { /* pending names stay pending; the next event retries */ });
+            break;
+          case "avatar-profile-updated":
+            this.seatCache.note(msg.name, Number(msg.rev)).catch(() => { /* same */ });
             break;
           case "pose":
             this.notePose(msg.id, msg.pose);
@@ -1544,7 +1527,21 @@ export class WorldAgent {
     return null;
   }
 
-  say(text: string) { this._typingUntil = 0; this.verb("say", { text }); }
+  // extra carries ONLY the spoken-say protocol trio, guarded with the same
+  // shapes the server enforces (r3 review: name-picking without value guards
+  // still let an internal caller send utt:-1 or t0:NaN — two layers that
+  // disagree on well-formed are one layer). Malformed trio → plain say: an
+  // internal caller's bug must not silently ride protocol keys.
+  say(text: string, extra?: { spoken?: boolean; utt?: number; t0?: number }) {
+    this._typingUntil = 0;
+    const args: Record<string, unknown> = { text };
+    if (extra?.spoken === true && Number.isSafeInteger(extra.utt) && (extra.utt as number) >= 0) {
+      args.spoken = true;
+      args.utt = extra.utt;
+      if (Number.isFinite(extra.t0)) args.t0 = extra.t0;
+    }
+    this.verb("say", args);
+  }
 
   /** Show "composing" over this body. Presence-only (never logged), the same
    *  signal a human client sends while typing in the chat box. The world relays
@@ -1716,8 +1713,28 @@ export class WorldAgent {
     return effectiveWorldTransform(id, {
       entity: (eid) => this.entities.get(eid),
       mount: (eid) => this.mounts.get(eid),
+      seatVerdict: (eid) => this.seatVerdictFor(eid),
     }, nowMs);
   }
+
+  /** The served verdict for whatever avatar this body currently wears —
+   *  roster truth (p.avatar) mapped through the same name derivation every
+   *  consumer uses. Undefined = no profile, declared. */
+  private seatVerdictFor(id: string) {
+    const path = id === this.name ? this.avatar : this.people.get(id)?.avatar;
+    const nm = nameFromAvatarPath(path);
+    return nm ? this.seatCache.get(nm) : undefined;
+  }
+
+  /** The declared-approximation suffix for a seated person's line (#101):
+   *  the same reason string the browser consoles and the nameplate ≈ carry —
+   *  one contract, three declarations. Empty when the seat is profiled. */
+  private seatSuffix(id: string, ride: { to: string; slot?: string }): string {
+    const sock = ride.slot ? this.entities.get(ride.to)?.comp?.sockets?.[ride.slot] : undefined;
+    const g = seatGateCore({ sock, verdict: this.seatVerdictFor(id), pose: sock?.pose ?? "sitchair" });
+    return g.apply ? "" : ` (seat approximate: ${g.reason})`;
+  }
+
 
   look(nowMs = this.serverNow()): string {
     const L: string[] = [];
@@ -1733,7 +1750,10 @@ export class WorldAgent {
     const selfEff = selfRide ? this.eff(this.name, nowMs) : null;
     const meKnown = !selfRide || selfEff?.ok === true;
     const me = selfEff?.ok ? { x: selfEff.pos[0], y: selfEff.pos[1], z: selfEff.pos[2] } : this.pos;
-    const seated = selfRide ? `, seated on ${selfRide.to}${selfEff?.ok && selfEff.moving ? ` (riding its ${selfEff.moving})` : ""}` : "";
+    // #101: an uncorrected seat composition is never silent — the same
+    // "(seat approximate: reason)" every renderer consumer declares.
+    const selfSeatNote = selfEff?.ok && selfEff.seat?.state === "approximate" ? ` (seat approximate: ${selfEff.seat.reason})` : "";
+    const seated = selfRide ? `, seated on ${selfRide.to}${selfEff?.ok && selfEff.moving ? ` (riding its ${selfEff.moving})` : ""}${selfSeatNote}` : "";
     if (meKnown) {
       L.push(`You are "${this.name}" in world "${this.world}" at (${me.x.toFixed(1)}, ${me.z.toFixed(1)}), ground height ${me.y.toFixed(2)}m, facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}.`);
     } else {
@@ -1784,7 +1804,7 @@ export class WorldAgent {
       const held = (p.pose as { pose?: Record<string, unknown> | null }).pose;
       const posed = held ? `, holding a pose (${Object.keys(held).length} bones)` : "";
       const ride = this.mounts.get(p.id);
-      const riding = ride ? ` — on ${ride.to}${ride.slot ? ` (${ride.slot})` : ""}` : "";
+      const riding = ride ? ` — on ${ride.to}${ride.slot ? ` (${ride.slot})` : ""}${this.seatSuffix(p.id, ride)}` : "";
       L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${riding}`);
     }
 

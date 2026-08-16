@@ -12,14 +12,40 @@ let current = null;
 
 export const heightAt = (x, z) => (current ? current.heightAt(x, z) : 0);
 export const hasTerrain = () => current !== null;
+/** §22m diag: the terrain mesh, for cost-attribution phases. */
+export const getTerrainMesh = () => current?.mesh ?? null;
 
 export function setTerrain(t) {
-  if (current) scene.remove(current.mesh);
+  if (current) {
+    scene.remove(current.mesh);
+    // …and FREE it (audit §13.1): three's WebGPU renderer pins every
+    // geometry and texture it has uploaded in strong maps, so a replaced
+    // terrain stayed GPU-resident forever. Terrain resources are per-build
+    // (engine mesh + client-baked layer noiseTextures) — nothing shared,
+    // safe to dispose wholesale.
+    current.mesh?.traverse?.((o) => {
+      o.geometry?.dispose?.();
+      for (const m of Array.isArray(o.material) ? o.material : o.material ? [o.material] : []) {
+        for (const v of Object.values(m)) if (v?.isTexture) v.dispose();
+        m.dispose?.();
+      }
+    });
+    // layer textures ride the colorNode, not material properties (world.js
+    // stashes them at build for exactly this pass)
+    for (const tex of current.layerTextures ?? []) tex?.dispose?.();
+  }
   current = t;
   // ground/grid are null under the headless core stub — an agent process sets
   // terrain for its settle sim and has no stage floor to hide (issue #17)
   if (t) {
-    if (t.mesh) scene.add(t.mesh);
+    if (t.mesh) {
+      // the sky's scene-diff claim must never own the ground: a terrain
+      // landing while an async sky build is in flight got CLAIMED (tel0s's
+      // trace: "sky warm terrain") and the next sky rebuild would have
+      // removed it (§17c)
+      if (t.mesh.userData) t.mesh.userData.skyExempt = true;
+      scene.add(t.mesh);
+    }
     // terrain replaces the stage floor
     if (ground) ground.visible = false;
     if (grid) grid.visible = false;
@@ -53,6 +79,8 @@ export function setGrass(field) {
 }
 export const clearGrass = () => setGrass(null);
 export const hasGrass = () => currentGrass !== null;
+/** The live field object — grassdiag's toggle surface (§22). */
+export const getGrassField = () => currentGrass;
 
 // The meadow budget: the resident's persisted cap × the governor's session
 // shed (grass_quality.js owns the semantics — effective is their min).
@@ -101,6 +129,40 @@ export function getGrassApplied() {
   // a field that cannot report draw state must not read as success
   if (!rep) return { ...base, field: true, status: 'unknown', strokes: [] };
   return { ...base, field: true, ...rep };
+}
+
+/** Tile-level truth (§13.2's promised-and-never-landed stats, landed 8e):
+ *  how each stroke is actually cut and what it draws right now — the render-
+ *  object count that §16 spent a night shrinking, readable in-session. */
+export function grassTiles() {
+  if (!currentGrass) return { field: false, strokes: [] };
+  const strokes = (currentGrass._strokes ?? []).map((f, i) => {
+    const tiles = f.tiles ?? [];
+    return {
+      stroke: f.strokeLabel ?? `stroke ${i}`,
+      // §22m: which material generation this stroke actually built —
+      // 'opaque' (palette blades), 'cards-fast', 'cards-sss', or species
+      // default. Answers "is the branch's grass actually on?" in one read.
+      mode: f.grassMode ?? 'n/a',
+      tiled: !!f.tiled,
+      // tiled strokes: f.count is the LIVE summing getter (#74), so the
+      // planted total lives on the tiles' fullCount
+      planted: tiles.length
+        ? tiles.reduce((s, t) => s + (t.userData.fullCount ?? 0), 0)
+        : (f.count ?? 0),
+      tiles: tiles.length,
+      visible: tiles.filter((t) => t.visible).length,
+      drawn: tiles.length
+        ? tiles.reduce((s, t) => s + t.count, 0)
+        : (f.mesh?.count ?? f.count ?? 0),
+      // §17b blade LOD, observable: `lod` says the stroke carries far-index
+      // twins at all; `lodTiles` counts tiles drawing the thinned tuft right
+      // now. Existing fields stay put (bootjank prints them).
+      lod: tiles.some((t) => t.userData.lodFar !== undefined),
+      lodTiles: tiles.filter((t) => t.userData.lodFar === true).length,
+    };
+  });
+  return { field: true, strokes };
 }
 
 // The resident's own dial (#60): full | medium | low | off, persisted per

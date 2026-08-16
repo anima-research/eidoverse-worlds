@@ -93,7 +93,7 @@ export const since = (m, nowMs) => {
   return Math.max(0, (nowMs - t0) / 1000);
 };
 
-/** ⚠ MIRRORS pendulumImpulse math in server/server.ts — keep in sync, or a
+/** ⚠ MIRRORS pendulumImpulse math in server/reactions.ts — keep in sync, or a
  *  joiner's swing disagrees with the one being pushed.
  *  Missing damp = 0 = swings FOREVER (friction is opt-in; see motion.js). */
 export function pendulumTheta(m, t) {

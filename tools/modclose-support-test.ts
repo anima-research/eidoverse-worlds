@@ -45,11 +45,10 @@ async function until(cond: () => boolean, ms = 6000, step = 100) {
 const allHolders = () => new Set(Object.values(supportHolders()).flat());
 
 // ---- scratch sequencer ------------------------------------------------------
-if (!process.env.EIDOVERSE_DIR) {
-  console.error("EIDOVERSE_DIR must point at an eidoverse-video checkout (support geometry comes from /geom).");
-  process.exit(1);
-}
-const server = spawn("bun", [join(import.meta.dir, "..", "server", "server.ts")], {
+// house default: the sibling checkout, like every other tools/*.ts
+process.env.EIDOVERSE_DIR ??= join(import.meta.dir, "..", "..", "eidoverse-video");
+// process.execPath, never "bun" — the Windows npm-shim footgun (docs/INCIDENTS.md)
+const server = spawn(process.execPath, [join(import.meta.dir, "..", "server", "server.ts")], {
   env: { ...process.env, PORT: String(PORT), WORLDS_DIR: mkdtempSync(join(tmpdir(), "ew-modtest-")), JOIN_TOKEN: "" },
   stdio: "ignore",
 });

@@ -30,7 +30,7 @@
 import { THREE, scene, bus } from './core.js';
 import { loadEidoModule, primeFiles } from './assets.js';
 import { entities } from './world.js';
-import { normalizeParticles, resolvedCount, withSeededRandom, QUALITY_TIERS } from './particles.js';
+import { normalizeParticles, resolvedCount, withSeededRandom, QUALITY_TIERS } from '../../shared/particles.js';
 import { makeEmitterRegistry, retireEmitter, adoptSystem } from './emitter_field.js';
 import { autoHooks as autos, ownHook } from './autohooks.js';
 
@@ -129,6 +129,10 @@ async function build(emitter, { id }) {
     // snapshot scene.children mid-flight must never claim (and then dispose)
     // somebody's hearth. Same marker entities and bodies carry.
     sys.mesh.userData.entityId = id;
+    // …and the weather sweep must not wet a fire (or recompile its
+    // instanced material mid-session trying)
+    sys.mesh.userData.noWet = true;
+    sys.mesh.userData.noCloudShadow = true;
 
     const handle = {
       id,
@@ -192,13 +196,25 @@ bus.on('comp', ({ id, type, data }) => {
 });
 
 bus.on('entity', ({ id, kind }) => {
-  if (kind === 'remove') {
+  if (kind === 'remove' || kind === 'demote') {
+    // demote (residency §13.3): the entity's subtree left the scene with the
+    // emitter mesh inside it — retire the handle or its per-frame hook keeps
+    // ticking against a detached group. Promotion re-announces the comp bag
+    // and the emitter re-attaches through the ordinary pending path.
     pending.delete(id);
     registry.retire(id);
-  } else if (kind === 'spawn' && pending.has(id)) {
-    const emitter = pending.get(id);
-    pending.delete(id);
-    void registry.apply(id, emitter);
+  } else if (kind === 'spawn') {
+    // a promote replaces the placeholder SUBTREE — an emitter attached to the
+    // stand would survive as a live hook on a detached mesh, and the comp
+    // re-announcement would hit the registry's same-key idempotence guard and
+    // keep the stale handle (review B2). Retire first (no-op when none), so
+    // the re-announced bag rebuilds on the real object.
+    registry.retire(id);
+    if (pending.has(id)) {
+      const emitter = pending.get(id);
+      pending.delete(id);
+      void registry.apply(id, emitter);
+    }
   }
 });
 

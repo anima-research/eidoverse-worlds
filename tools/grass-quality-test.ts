@@ -27,7 +27,10 @@
 // it actually reports (policy 0.35, stroke drawing its full built count).
 
 import { plugin } from "bun";
-const here = (f: string) => new URL(f, import.meta.url).pathname;
+import { fileURLToPath } from "node:url";
+// URL.pathname yields "/D:/…" on Windows, which nothing can open —
+// fileURLToPath is the portable spelling
+const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
 plugin({
   name: "grass-stubs",
   setup(b) {

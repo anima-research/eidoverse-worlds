@@ -1,0 +1,6 @@
+=== fail-on-prior-head control: R4 liveness/ownership vectors vs reviewed head 8e7897a ===
+exit 1 | 35 pass, 2 fail
+  [31m✗ live-but-old holder: the lock is NOT stolen — the writer times out — {"ok":true,"rev":10,"name":"seatdummy","pose":"sitchair"}[0m
+  [31m✗ …with log, snapshot, and memory untouched[0m
+
+NOTE: the control run ABORTS after 37 of 44 checks — the prior head's unconditional release DELETED the successor's lock, so the release-safety probe found no file to read. The crash is the finding.

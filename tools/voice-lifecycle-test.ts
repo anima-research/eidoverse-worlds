@@ -71,7 +71,8 @@ class FakePC {
     this.transceivers.push({ direction: "sendrecv", sender, receiver: { track: { kind: "audio" } } });
     return sender;
   }
-  removeTrack(s: { track: FakeTrack | null }) { s.track = null; }
+  removeTrackCalls = 0;      // B3 pins releaseMicrophone to ZERO of these
+  removeTrack(s: { track: FakeTrack | null }) { this.removeTrackCalls++; s.track = null; }
   getSenders() { return this.senders; }
   getTransceivers() { return this.transceivers; }
   /** the direction actually offered to the far end */
@@ -196,6 +197,10 @@ class FakeAudioCtx {
     getByteTimeDomainData() {},
     getFloatTimeDomainData(buf: Float32Array) { buf.fill(FakeAudioCtx.level); },
     connect() {}, disconnect() {} }; }
+  // A real destination stream CARRIES one audio track — the gated lane the
+  // senders attach. An empty one here silently reroutes every sender test onto
+  // the ungated fallback path.
+  createMediaStreamDestination() { const t = [new FakeTrack()]; return { stream: { getTracks: () => t, getAudioTracks: () => t } }; }
   async resume() {}
 }
 (globalThis as Record<string, unknown>).AudioContext = FakeAudioCtx;
@@ -217,7 +222,24 @@ const bus = stubs.bus;
 voice.initVoice("me");
 
 const settle = () => new Promise((r) => setTimeout(r, 20));
-const offerFrom = (who: string) => bus.emit("rtc", { from: who, payload: { sdp: { type: "offer", sdp: "x" } } });
+// #95's roster rule: RTC never builds a peer for an id the world hasn't
+// announced. Sections announce their speakers lazily, at the moment of
+// speaking (seed-if-absent, so a section's richer seed — an avatar with
+// distance, say — is never clobbered), which keeps mic-on from courting
+// the whole future cast at once.
+const announce = (who: string) => { if (!stubs.remotes.has(who)) stubs.remotes.set(who, { id: who, agent: false }); };
+const offerFrom = (who: string) => { announce(who); bus.emit("rtc", { from: who, payload: { sdp: { type: "offer", sdp: "x" } } }); };
+
+// ---- #95: the unannounced are refused --------------------------------------
+{
+  offerFrom("unannounced-ghost");
+  await settle();
+  check("an SDP offer from an id the world never announced builds no peer",
+    !created.some((pc: any) => pc._for === "unannounced-ghost") && created.length === 0);
+  bus.emit("rtc", { from: "unannounced-ghost", payload: { recvReady: true } });
+  await settle();
+  check("recvReady from an unannounced id courts nobody", stubs.sent.length === 0);
+}
 
 // ---- receive consent ------------------------------------------------------
 consent.setReceiveVoice(false);
@@ -252,10 +274,33 @@ const liveTrack = (await import("../client/lib/voice.js")).micOn();
 await voice.toggleMic("me");
 check("mic off stops the local track", liveTrack === true && voice.micOn() === false);
 check("mic off does NOT close a consented inbound peer (send ≠ receive)", !inbound.closed);
-check("mic off leaves no outbound track on the peer",
-  inbound.getSenders().every((s) => s.track === null));
+// THE CONTRACT CHANGED (2026-08-08). Mic-off used to stop() the track and
+// removeTrack() it from every peer, then renegotiate — three destructive acts
+// to express "don't transmit", and the source of four of the six voice bugs
+// fixed this week. It now disables the track instead, so the sender KEEPS it
+// and the SDP never changes. Asserting track === null here would be asserting
+// the bug. What matters is that nothing audible leaves:
+// With the gate in the chain the sender holds the GATED track, which stays
+// enabled — silence is enforced UPSTREAM: the raw source track is disabled and
+// the gate is driven closed. Asserting sender.track.enabled===false here would
+// be asserting the pre-gate wiring.
+const { rawStream } = await import("../client/lib/micgate.js");
+const rawOff = (rawStream()?.getTracks() ?? []).length > 0 &&
+  rawStream().getTracks().every((t: { enabled: boolean }) => !t.enabled);
+check("mic off silences the RAW source and closes the gate (sender stays bound)",
+  inbound.getSenders().some((s) => s.track) && rawOff,
+  `rawOff=${rawOff} senders=${inbound.getSenders().length}`);
+check("mic off does not stop() the track — an ended track cannot be revived",
+  inbound.getSenders().every((s) => !s.track || s.track.readyState !== "ended"));
 
 // ---- refusal must not loop ------------------------------------------------
+// Refusal is only reachable from a body that holds NO stream. Since mic-off
+// keeps the stream (and re-enabling needs no permission — correctly: a mic you
+// were already granted is not re-asked for), the honest way to reach the
+// permission path is to RELEASE the device first. That is what
+// releaseMicrophone() is for, and it is the only caller that stops tracks.
+voice.releaseMicrophone();
+await settle();
 denyMic = true;
 const before = micDenies;
 const r1 = await voice.toggleMic("me");
@@ -289,6 +334,13 @@ consent.setReceiveVoice(false);
 created.length = 0;
 stubs.remotes.set("peer1", { agent: false });
 denyMic = false;
+// Drive to the state, never assume a call reaches it (the discipline this file
+// states at the bottom). Mic-off now KEEPS the stream and only disables the
+// track, so a bare toggleMic() means "flip", not "on".
+// A real off->on cycle, so the courting path runs for THIS test's peer rather
+// than relying on one a previous test happened to leave behind.
+if (voice.micOn()) { await voice.toggleMic("me"); await settle(); }
+created.length = 0;
 await voice.toggleMic("me");            // mic ON, receive OFF
 await settle();
 const outbound = created.at(-1)!;
@@ -589,7 +641,7 @@ check("unhush rejoins the SAME peer at full volume",
   bus.emit("rtc", { from: "peerC", payload: { ice: { candidate: "gen1-stale" } } });
   await settle();                                   // queued on gen1 (no answer yet)
   gen1.signalingState = "have-local-offer";         // wedge it so recvReady rebuilds
-  bus.emit("rtc", { from: "peerC", payload: { recvReady: true } });
+  announce("peerC"); bus.emit("rtc", { from: "peerC", payload: { recvReady: true } });
   await settle();
   const gen2 = created.at(-1)!;
   check("rebuild actually made a fresh pc", gen2 !== gen1);
@@ -609,7 +661,7 @@ check("unhush rejoins the SAME peer at full volume",
   w.__iceLog = [];
   created.length = 0;
   stubs.sent.length = 0;
-  bus.emit("rtc", { from: "racer", payload: { sdp: { type: "offer", sdp: "o1" } } });
+  announce("racer"); bus.emit("rtc", { from: "racer", payload: { sdp: { type: "offer", sdp: "o1" } } });
   bus.emit("rtc", { from: "racer", payload: { sdp: { type: "offer", sdp: "o2" } } });  // same tick — no settle between
   await new Promise((r) => setTimeout(r, 60));
   const sigFails = (w.__iceLog ?? []).filter((x) => typeof x === "string" && x.startsWith("signal-FAIL"));
@@ -708,7 +760,7 @@ check("unhush rejoins the SAME peer at full volume",
   stubs.remotes.set("early", { agent: false });
   bus.emit("roster");                                // peer built with no mic
   await settle();
-  bus.emit("rtc", { from: "early", payload: { sdp: { type: "offer", sdp: "x" } } });
+  announce("early"); bus.emit("rtc", { from: "early", payload: { sdp: { type: "offer", sdp: "x" } } });
   await settle();
   const pcEarly = created.at(-1)!;
   if (!voice.micOn()) { await voice.toggleMic("me"); await settle(); }   // mic ON now
@@ -735,7 +787,7 @@ check("unhush rejoins the SAME peer at full volume",
   const micOpening = voice.micOn() ? Promise.resolve(false) : voice.toggleMic("me");
   await settle();
   stubs.remotes.set("during", { agent: false });
-  bus.emit("rtc", { from: "during", payload: { sdp: { type: "offer", sdp: "x" } } });
+  announce("during"); bus.emit("rtc", { from: "during", payload: { sdp: { type: "offer", sdp: "x" } } });
   await settle();                                    // peer now exists, micStream still null
   release!();
   await micOpening;
@@ -812,7 +864,7 @@ check("unhush rejoins the SAME peer at full volume",
   const held = new Promise<void>((r) => { release = r; });
   const origCreateAnswer = FakePC.prototype.createAnswer;
   FakePC.prototype.createAnswer = async function () { await held; return origCreateAnswer.call(this); };
-  bus.emit("rtc", { from: "midneg", payload: { sdp: { type: "offer", sdp: "x" } } });
+  announce("midneg"); bus.emit("rtc", { from: "midneg", payload: { sdp: { type: "offer", sdp: "x" } } });
   await settle();
   const pcMid = created.at(-1)!;
   check("mid-negotiation: peer is parked in have-remote-offer",
@@ -1061,7 +1113,7 @@ check("unhush rejoins the SAME peer at full volume",
 
   const answersBefore = pcR.answersCreated ?? 0;
   // they reload and offer fresh
-  bus.emit("rtc", { from: "zzz-rejoin", payload: { sdp: { type: "offer", sdp: "after-reload" } } });
+  announce("zzz-rejoin"); bus.emit("rtc", { from: "zzz-rejoin", payload: { sdp: { type: "offer", sdp: "after-reload" } } });
   await settle(); await settle();
 
   check("rejoin: a reloaded peer's offer is ANSWERED, not discarded as glare",
@@ -1070,9 +1122,161 @@ check("unhush rejoins the SAME peer at full volume",
   consent.setReceiveVoice(false);
 }
 
+// ---- #97: generation-end retires the voice peer while the id is PRESENT ---
+// A takeover re-arrives an id that never leaves the roster, so the roster
+// sweep can never retire its predecessor's peer — the 'participant-teardown'
+// event must, directly. Deterministic: peer built, audio delivered, analyser
+// live, then the event; the id stays in `remotes` throughout.
+{
+  consent.setReceiveVoice(true);
+  created.length = 0;
+  const who = "genend";
+  offerFrom(who);                                 // announce() seeds remotes
+  await settle();
+  const pc = created.at(-1) as FakePC;
+  check("generation-end setup: a live peer exists", !!pc && !pc.closed);
+  pc.deliverAudio();
+  voice.peerLevels();                             // builds the mouth analyser lazily
+  const before = voice.voiceAnalyserCount();
+  check("…with a live analyser", before >= 1, String(before));
+  bus.emit("participant-teardown", who);
+  await settle();
+  check("the event retires the peer — roster presence notwithstanding",
+    pc.closed && stubs.remotes.has(who), `closed=${pc.closed}, still announced=${stubs.remotes.has(who)}`);
+  check("…and the analyser with it (the census leak, dead)",
+    voice.voiceAnalyserCount() < before, `${before} → ${voice.voiceAnalyserCount()}`);
+  consent.setReceiveVoice(false);
+}
+
 // T5 (relay half) lives in tools/voice-matrix.mjs: RTC_MODE=relay-noturn must
 // stay at 0 inbound pkts; RTC_MODE=relay-turn must exceed 0. External harness
 // by design — fake RTC cannot prove media.
+
+// ---- a rebuilt generator must reach the senders --------------------------
+// THE SILENT-FOREVER FAILURE. The synthesizer's generator dies; speak() quietly
+// makes a NEW track and every sender keeps the dead one. ICE stays connected,
+// direction stays sendonly, speak() returns true — and the room hears nothing.
+// Indistinguishable from the audio:ended blocker seen in the field.
+// sourceIsDead() was written for exactly this and had ZERO callers, the same
+// way toggleMute did while the HUD button called the destructive path.
+{
+  const vs = await import("../client/lib/voicesource.js");
+  check("voicesource exposes a rebuild hook", typeof vs.setGeneratorRebuildHook === "function");
+  check("sourceIsDead recognises an ended track",
+    vs.sourceIsDead({ getAudioTracks: () => [{ readyState: "ended" }] }) === true);
+  check("sourceIsDead does NOT flag a live one",
+    vs.sourceIsDead({ getAudioTracks: () => [{ readyState: "live" }] }) === false);
+
+  // voice.js installs the real hook at import time; prove it re-binds senders.
+  const peer = created.at(-1);
+  if (peer) {
+    const dead = { id: "dead", kind: "audio", readyState: "ended", enabled: true, stop() {} };
+    for (const s of peer.getSenders()) s.track = dead;
+    check("precondition: a sender is holding an ENDED track",
+      peer.getSenders().some((s) => s.track?.readyState === "ended"));
+
+    const fresh = { id: "fresh", kind: "audio", readyState: "live", enabled: true, stop() {} };
+    vs.notifySynthTrackChanged?.(fresh);
+    check("after a rebuild no sender is left holding the dead track",
+      peer.getSenders().every((s) => s.track?.id !== "dead"),
+      peer.getSenders().map((s) => s.track?.id).join(","));
+  }
+}
+
+// ── mute × mic-button: the wedge (review of #90) ─────────────────────────────
+// A muted user pressing the mic button used to re-enter the ON path forever:
+// micOn() requires !muted, the on-path set _micLive but never cleared muted, so
+// the off-path was unreachable — with the raw tracks re-enabled while
+// micOn/isMuted/micTransmitting all said silent.
+{
+  if (!voice.micOn()) await voice.toggleMic("me");
+  voice.toggleMute();
+  check("mute while live: isMuted true, micOn false", voice.isMuted() && !voice.micOn());
+  await voice.toggleMic("me");           // muted user presses the mic button
+  check("mic button while muted UNMUTES (on-path clears muted)",
+        !voice.isMuted() && voice.micOn(),
+        `isMuted=${voice.isMuted()} micOn=${voice.micOn()}`);
+  await voice.toggleMic("me");           // and the off-path is reachable again
+  check("second press now reaches the OFF path", !voice.micOn());
+}
+
+// ── a fresh gate lane reports CLOSED (review of #90) ─────────────────────────
+// gateStream builds the graph with gain 0; _wanted must not outlive the old
+// lane, or gateOpenness() claims "audible" before any driveGate tick.
+{
+  const { gateStream, driveGate, gateOpenness } = await import("../client/lib/micgate.js");
+  gateStream(new FakeStream() as never, () => 0.5);
+  driveGate(true);                       // force the gate open on the old lane
+  const { isGated } = await import("../client/lib/micgate.js");
+  check("F2 precondition: the gate graph actually built under the fakes", isGated(),
+        "gateStream returned the raw stream — this case would be vacuous");
+  const wasOpen = gateOpenness() > 0.5;
+  check("F2 precondition: the old lane was genuinely OPEN", wasOpen,
+        `openness=${gateOpenness()} — driveGate(true) did not take`);
+  gateStream(new FakeStream() as never, () => 0.5);  // reacquire: a NEW lane
+  check("fresh lane reports closed even though the old one was open",
+        gateOpenness() === 0,
+        `openness=${gateOpenness()} (old lane open=${wasOpen})`);
+}
+
+// ── B3 (#90 review): the standing-lane release contract, pinned ─────────────
+// releaseMicrophone's comments promise: device stops, but every sender keeps
+// the live (silent) destination track — so reacquiring needs no removeTrack
+// and no renegotiation. The implementation contradicted this with an
+// untrack+renegotiate loop for months and no test noticed. This one does.
+{
+  if (!voice.micOn()) await voice.toggleMic("me");
+  const peer = created.at(-1);
+  if (peer) {
+    const beforeTracks = peer.getSenders().map((s) => s.track?.id).join(",");
+    const beforeOffers = peer.offers;
+    const beforeRemove = peer.removeTrackCalls;
+    voice.releaseMicrophone();
+    await new Promise((r) => setTimeout(r, 30));
+    check("B3 release: zero removeTrack on any sender", peer.removeTrackCalls === beforeRemove,
+      `${peer.removeTrackCalls - beforeRemove} calls`);
+    check("B3 release: zero negotiation cycles", peer.offers === beforeOffers,
+      `${peer.offers - beforeOffers} offers`);
+    check("B3 release: senders keep the SAME track identity",
+      peer.getSenders().map((s) => s.track?.id).join(",") === beforeTracks,
+      peer.getSenders().map((s) => s.track?.id).join(","));
+    check("B3 release: micOn reports no device", voice.micOn() === false);
+
+    // reacquire: same graph, same track, still no sender surgery
+    await voice.toggleMic("me");
+    await new Promise((r) => setTimeout(r, 30));
+    check("B3 reacquire: still zero removeTrack", peer.removeTrackCalls === beforeRemove);
+    check("B3 reacquire: senders STILL hold the same track identity",
+      peer.getSenders().map((s) => s.track?.id).join(",") === beforeTracks,
+      peer.getSenders().map((s) => s.track?.id).join(","));
+    check("B3 reacquire: mic is live again", voice.micOn() === true);
+  }
+}
+
+// ── B2 (#90 review): the gate fails CLOSED, and says so ─────────────────────
+// A gate graph that cannot be built must NOT hand back the raw device stream:
+// that is a privacy control silently reporting "on" while transmitting "off".
+// Deterministic breakage: a destination-less AudioContext.
+{
+  const m = await import("../client/lib/micgate.js");
+  const Real = (globalThis as Record<string, unknown>).AudioContext;
+  class BrokenCtx { state = "running"; resume() { return Promise.resolve(); } }  // no createMediaStreamDestination
+  (globalThis as Record<string, unknown>).AudioContext = BrokenCtx;
+  const ax = await import("../client/lib/audioctx.js");
+  ax.__resetForTest();          // next audioContext() constructs the BROKEN one
+  m.release();
+  const out = m.gateStream(new FakeStream() as never, () => 0.5);
+  check("B2 broken graph → gateStream REFUSES (null), no raw fallback", out === null, String(out));
+  check("B2 gateUnavailable() reports the true state", m.gateUnavailable?.() === true);
+  m.allowUngated?.(true);
+  const raw = new FakeStream();
+  const out2 = m.gateStream(raw as never, () => 0.5);
+  check("B2 explicit allowUngated(true) → raw stream, by choice", out2 === (raw as never));
+  check("B2 gateUnavailable stays visible under the override", m.gateUnavailable?.() === true);
+  m.allowUngated?.(false);
+  (globalThis as Record<string, unknown>).AudioContext = Real;
+  ax.__resetForTest();          // later blocks get a working context again
+}
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

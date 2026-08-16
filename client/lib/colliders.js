@@ -12,7 +12,7 @@
 // is, by the same data, sittable and placeable-on. Nobody authors that.
 
 import { THREE } from './core.js';
-import { MeshBVH } from 'three-mesh-bvh';
+import { MeshBVH, estimateMemoryInBytes } from 'three-mesh-bvh';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { gridAccumulator, decideSupportClass, validTopGrid, LIE_GRID } from './supportclass.js';
 
@@ -45,6 +45,67 @@ function buildExact(obj) {
   });
   if (!geoms.length) return null;
   return { bvh: new MeshBVH(mergeGeometries(geoms, false)) };
+}
+
+// ---- per-lib shared derivations (§16.2.C) ------------------------------------
+// buildExact and topLie already work in the entity's ROOT-LOCAL frame: every
+// mesh is transformed by inv(root.matrixWorld) · mesh.matrixWorld, which folds
+// the root's position/yaw/scale OUT of the product, and every query path
+// (raySegment, resolveColliders, surfaceUnder, hasFloor) transforms INTO that
+// frame per entity (subtract position, un-rotate yaw, divide by live scale).
+// So the merged geometry, the BVH, the lie scalar and the hasFloor verdict are
+// IDENTICAL for every clone of a lib at ANY uniform scale — 20 blankets used
+// to pay 20 per-vertex topLie walks and 20 BVH builds for one answer. The key
+// is the lib path alone; scale needs no place in it because the product is
+// scale-free (per-entity decisions apply `s` at use, as they always did).
+//
+// Sharing is only SOUND for a pristine clone. models.js passes `lib` exactly
+// when the subtree is the untouched lib clone (promote time, before mounts
+// execute, no part motion having bent a named node); every other path — the
+// dismount/step-out re-fits, refit flips on already-lived objects, conjured
+// meshes with no lib — keeps the per-entity build. Cache WRITES happen only
+// from those pristine fits; refit-time cache READS are safe (the product is
+// rest-pose lib geometry, which is what promote-time fits always baked).
+//
+// Everything here is CPU heap (geometry arrays + BVH nodes, nothing ever
+// uploaded) — refcounted by the collider entries wearing it, dropped for GC
+// at zero refs (demote/delete releases). Sizes: colliderCacheStats (8e).
+const libCache = new Map(); // lib -> { refs, lie?, exact?: {bvh, interior} }
+
+/** CPU bytes and refcounts per cached lib — the 8e observability hook. */
+export const colliderCacheStats = () => {
+  const libs = [];
+  let bytes = 0;
+  for (const [lib, c] of libCache) {
+    let b = 0;
+    if (c.exact) { try { b = estimateMemoryInBytes(c.exact.bvh); } catch { /* debug util, best-effort */ } }
+    bytes += b;
+    libs.push({ lib, refs: c.refs, exact: !!c.exact, lie: c.lie ?? null, bytes: b });
+  }
+  return { libs, bytes };
+};
+
+const _lbInv = new THREE.Matrix4();
+const _lbRel = new THREE.Matrix4();
+const _lbBox = new THREE.Box3();
+/** The entity-root-local bounding box — setFromObject's answer at identity,
+ *  computable at ANY current transform (inv(root) folds the pose back out).
+ *  The promote tail fits colliders AFTER the spawn transform lands, and every
+ *  consumer treats `box` as root-local (subtract position, un-rotate, divide
+ *  by scale per query), so the box must not inherit the world pose. */
+function localBox(obj) {
+  obj.updateMatrixWorld(true);
+  _lbInv.copy(obj.matrixWorld).invert();
+  const box = new THREE.Box3();
+  obj.traverse((o) => {
+    const g = o.geometry;
+    if (!g) return;
+    if (g.boundingBox === null) g.computeBoundingBox();
+    if (!g.boundingBox || g.boundingBox.isEmpty()) return;
+    _lbBox.copy(g.boundingBox).applyMatrix4(_lbRel.multiplyMatrices(_lbInv, o.matrixWorld));
+    box.union(_lbBox);
+  });
+  return box;
 }
 
 // ---- spatial hash -----------------------------------------------------------
@@ -155,7 +216,9 @@ export function topLie(obj, box) {   // exported for the classifier-parity fixtu
   return acc.finish(box.max.y).lie;
 }
 
-function decide(entry, s) {
+/** `fresh` marks a pristine-clone fit (see the lib-cache header): only those
+ *  may WRITE the shared derivations; refits and step-out re-fits read only. */
+function decide(entry, s, fresh = false) {
   const { box, pref } = entry;
   // SIZE decides walkability — with one exception below.
   //
@@ -186,27 +249,65 @@ function decide(entry, s) {
   // more — both rubble piles (which float you 0.73m and 0.44m, worse than the
   // blanket), five hovercars, a shark. If those should firm up too, this is
   // the one line to move.
+  // shape gates from the shared classifier (upstream supportclass.js — the
+  // same thresholds the headless side mirrors); the lie probe keeps the
+  // fork's per-LIB sharing: it is local-space and scale-free (the gate
+  // applies `s` below), so one per-vertex walk per LIB answers for every
+  // clone, and nothing pays for the probe unless the shape gate consults it
   const { floorShaped } = decideSupportClass({ w, d, h });
-  // the lie probe stays LAZY — it walks every vertex, so it only runs once
-  // the cheap shape gates have admitted the candidate (same as always)
+  const shared = entry.lib ? libCache.get(entry.lib) : null;
+  if (floorShaped && entry.lie == null) {
+    if (shared && shared.lie != null) entry.lie = shared.lie;
+    else {
+      entry.lie = topLie(entry.obj, box);
+      if (shared && fresh) shared.lie = entry.lie;
+    }
+  }
   const uneven = floorShaped
-    && decideSupportClass({ w, d, h, lie: (entry.lie ??= topLie(entry.obj, box)) * s }).uneven;
+    && decideSupportClass({ w, d, h, lie: (entry.lie ?? 0) * s }).uneven;
   const exact = pref === 'exact' ? true : pref === 'box' ? false : (roomScale || uneven);
-  if (exact && !entry.exact) entry.exact = buildExact(entry.obj);
+  if (exact && !entry.exact) {
+    if (shared?.exact) entry.exact = shared.exact;
+    else {
+      const built = buildExact(entry.obj);
+      if (built) {
+        // hasFloor reads only the local bvh + local box (its `s` is unused):
+        // the verdict rides the shared product instead of re-raycasting 16
+        // times per clone — same inputs, same boolean, computed once
+        built.interior = hasFloor(built.bvh, box, s);
+        if (shared && fresh) shared.exact = built;
+      }
+      entry.exact = built;
+    }
+  }
   if (!exact) entry.exact = null;         // small/solid: use pillar/box, no trimesh
   entry.pillar = !entry.exact && (box.max.y - box.min.y) * s > 2.4;
   // Clearing is a SEPARATE question from collision: a palm is now exact (you
   // walk under the fronds and bump the trunk, which is right), but stamping its
   // canopy footprint into the grass mask would leave a bald ring under every
   // tree. Only things with a real floor suppress the meadow.
-  entry.interior = entry.exact ? hasFloor(entry.exact.bvh, box, s) : false;
+  entry.interior = entry.exact ? entry.exact.interior : false;
 }
 
-export function fitCollider(id, obj, { collide, scale = 1 } = {}) {
-  const box = new THREE.Box3().setFromObject(obj); // obj still at identity here
+/** `lib` opts in to the per-lib shared derivations — pass it ONLY for a
+ *  pristine clone (see the lib-cache header; models.js's promote tail is the
+ *  one caller). `localFrame` computes the box in the root-local frame at any
+ *  current transform — required when fitting after the spawn transform landed
+ *  (the promote tail); legacy callers fit at identity and keep setFromObject. */
+export function fitCollider(id, obj, { collide, scale = 1, lib = null, localFrame = false } = {}) {
+  const box = localFrame ? localBox(obj) : new THREE.Box3().setFromObject(obj);
   if (box.isEmpty()) return;
-  const entry = { obj, box, pref: collide, pillar: false, exact: null, cells: [] };
-  decide(entry, scale);
+  removeCollider(id);   // a re-fit REPLACES: drop the old entry's bucket cells + lib ref
+  // camGhost hoisted from userData so the camera query never touches the
+  // object graph (the flag lives on roots: gizmos, placeholders)
+  const entry = { obj, box, pref: collide, pillar: false, exact: null, cells: [],
+    camGhost: !!obj.userData?.noCamCollide, lib };
+  if (lib) {
+    const c = libCache.get(lib) ?? { refs: 0 };
+    c.refs++;
+    libCache.set(lib, c);
+  }
+  decide(entry, scale, Boolean(lib));
   colliders.set(id, entry);
   bucketAdd(id, entry);
 }
@@ -284,7 +385,15 @@ export function refitCollider(id) {
 }
 export function removeCollider(id) {
   const e = colliders.get(id);
-  if (e) bucketRemove(id, e);
+  if (e) {
+    bucketRemove(id, e);
+    if (e.lib) {
+      const c = libCache.get(e.lib);
+      // zero refs: no resident entity wears this lib's derivations — drop
+      // the CPU-side geometry + BVH for GC (demote/delete land here)
+      if (c && --c.refs <= 0) libCache.delete(e.lib);
+    }
+  }
   colliders.delete(id);
 }
 /** Call after moving an entity so its bucket registration follows it. */
@@ -307,6 +416,115 @@ function* near(x, z) {
       }
     }
   }
+}
+
+/** Variable-radius neighbourhood, [id, entry] pairs — the promoted service
+ *  query (§14.2 6a). The 3×3 `near` above caps at ~8m; seat search reaches
+ *  30 and physics wants its own radius. Dedupes ids that straddle cells.
+ *  ⚠️ NOT REENTRANT: the dedupe Set is shared (zero-alloc per query), so a
+ *  loop body iterating this generator must never start a second
+ *  nearColliders iteration — take a different scratch or collect first. */
+const _seen = new Set();
+export function* nearColliders(x, z, r = CELL) {
+  const x0 = Math.floor((x - r) / CELL), x1 = Math.floor((x + r) / CELL);
+  const z0 = Math.floor((z - r) / CELL), z1 = Math.floor((z + r) / CELL);
+  _seen.clear();
+  for (let cx = x0; cx <= x1; cx++) {
+    for (let cz = z0; cz <= z1; cz++) {
+      const s = buckets.get(`${cx},${cz}`);
+      if (!s) continue;
+      for (const id of s) {
+        if (_seen.has(id)) continue;
+        _seen.add(id);
+        const e = colliders.get(id);
+        if (e) yield [id, e];
+      }
+    }
+  }
+}
+
+// ---- camera segment query (§14.2 6a — hot-path offender #1) -----------------
+// The follow camera used to raycast recursively into EVERY MESH of EVERY
+// entity, three allocations per frame, to learn one number: how far back it
+// may sit. This answers the same question from the grid: candidate ids from
+// the cells the ≤6m segment overlaps, then per entry a slab test against the
+// OBB (world→local is sub(pos), rotY(−yaw), ÷scale — the same transform
+// surfaceUnder uses) — except exact entries, which raycast their BVH so the
+// camera still slides through a doorway instead of bumping the pavilion's
+// bounding box, and pillars, which test the walking post so a tree's canopy
+// box doesn't yank the camera the way its sparse meshes never did.
+
+const _rsO = new THREE.Vector3();
+const _rsD = new THREE.Vector3();
+const _rsRay = new THREE.Ray();
+const _rsPost = new THREE.Box3();
+const _rsSeen = new Set();
+
+function slabT(o, d, box, far) {
+  let t0 = 0, t1 = far;
+  for (const ax of ['x', 'y', 'z']) {
+    const dv = d[ax];
+    if (Math.abs(dv) < 1e-9) {
+      if (o[ax] < box.min[ax] || o[ax] > box.max[ax]) return null;
+      continue;
+    }
+    let a = (box.min[ax] - o[ax]) / dv;
+    let b = (box.max[ax] - o[ax]) / dv;
+    if (a > b) { const t = a; a = b; b = t; }
+    if (a > t0) t0 = a;
+    if (b < t1) t1 = b;
+    if (t0 > t1) return null;
+  }
+  return t0;   // 0 when the origin starts inside — a solid box is solid
+}
+
+/** Nearest blocking distance along origin+dir, within `far`; null = clear.
+ *  camGhost entries (gizmos, placeholders) never block. */
+export function raySegment(origin, dir, far) {
+  let bestT = Infinity;
+  const ex = origin.x + dir.x * far, ez = origin.z + dir.z * far;
+  const x0 = Math.floor(Math.min(origin.x, ex) / CELL) - 1;
+  const x1 = Math.floor(Math.max(origin.x, ex) / CELL) + 1;
+  const z0 = Math.floor(Math.min(origin.z, ez) / CELL) - 1;
+  const z1 = Math.floor(Math.max(origin.z, ez) / CELL) + 1;
+  _rsSeen.clear();
+  for (let cx = x0; cx <= x1; cx++) {
+    for (let cz = z0; cz <= z1; cz++) {
+      const set = buckets.get(`${cx},${cz}`);
+      if (!set) continue;
+      for (const id of set) {
+        if (_rsSeen.has(id)) continue;
+        _rsSeen.add(id);
+        const e = colliders.get(id);
+        if (!e || e.camGhost || !e.box) continue;
+        const o = e.obj;
+        const s = o.scale?.x || 1;
+        const yaw = o.rotation?.y ?? 0;
+        _rsO.copy(origin).sub(o.position);
+        _rsD.copy(dir);
+        if (yaw) { _rsO.applyAxisAngle(UP, -yaw); _rsD.applyAxisAngle(UP, -yaw); }
+        _rsO.divideScalar(s);
+        const lfar = Math.min(far, bestT) / s;
+        if (e.exact?.bvh) {
+          _rsRay.origin.copy(_rsO);
+          _rsRay.direction.copy(_rsD);
+          const hit = e.exact.bvh.raycastFirst(_rsRay, THREE.DoubleSide);
+          if (hit && hit.distance <= lfar) bestT = hit.distance * s;
+          continue;
+        }
+        let box = e.box;
+        if (e.pillar) {
+          const mx = (e.box.min.x + e.box.max.x) / 2, mz = (e.box.min.z + e.box.max.z) / 2;
+          _rsPost.min.set(mx - 0.25, e.box.min.y, mz - 0.25);
+          _rsPost.max.set(mx + 0.25, e.box.max.y, mz + 0.25);
+          box = _rsPost;
+        }
+        const t = slabT(_rsO, _rsD, box, lfar);
+        if (t !== null) bestT = t * s;
+      }
+    }
+  }
+  return bestT === Infinity ? null : bestT;
 }
 
 // ---- resolution -------------------------------------------------------------
@@ -465,7 +683,10 @@ export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL) {
  *  the geometry IS the affordance. Returns {y, x, z, yaw, id} or null. */
 export function findSeat(pos, range = 1.2) {
   let best = null;
-  for (const [id, { obj, box, pillar, exact, grid }] of colliders) {
+  // grid-bounded (§14.2 6a): a chair within `range` has its footprint cells
+  // inside the query disc — the old full-map scan ran on every X press and
+  // the 0.45s seat-hint beat
+  for (const [id, { obj, box, pillar, exact, grid }] of nearColliders(pos.x, pos.z, range)) {
     if (pillar || exact) continue; // interiors aren't chairs; furniture inside them is
     if (grid) continue; // a heightfield's box top is the lie we exist to avoid — no phantom seat offers (#11)
     const sc = obj.scale?.x || 1;
@@ -489,7 +710,9 @@ export function findSeat(pos, range = 1.2) {
 export function surfaceUnder(x, z, terrainAt, maxY = Infinity, skipId = null) {
   let y = terrainAt(x, z);
   let onto = null;
-  for (const [id, { obj, box, pillar, exact }] of colliders) {
+  // a surface UNDER the point must have its footprint over the point — the
+  // point's own cell holds every such entry (grid-bounded, §14.2 6a)
+  for (const [id, { obj, box, pillar, exact }] of nearColliders(x, z, 0.5)) {
     if (pillar || id === skipId) continue;
     if (exact) {
       // dropped things land on the actual surface (stair tread, mezzanine)
@@ -518,4 +741,5 @@ export function surfaceUnder(x, z, terrainAt, maxY = Infinity, skipId = null) {
 export function clearColliders() {
   colliders.clear();
   buckets.clear();
+  libCache.clear();
 }

@@ -9,6 +9,7 @@
 import { THREE, camera, scene, report, angleDelta } from './core.js';
 import { makeAvatar } from './avatar.js';
 import { avatarMounts, mountTransform } from './world.js';
+import { declareSeatState, clearSeatState } from './seats.js';
 
 export const remotes = new Map(); // id -> RemoteBody
 
@@ -27,6 +28,13 @@ export function noteServerTime(t) {
 }
 export const serverNow = () => performance.timeOrigin + performance.now() + (clockOffset ?? 0);
 
+/** Per-identity generation counter (#95): every AUTHORITATIVE (re)creation
+ *  of an id bumps it, and async continuations validate record identity
+ *  before touching the scene — a departed generation can neither delete
+ *  nor repopulate its successor. Session-lifetime, monotonic. */
+const gens = new Map();
+export const remoteGen = (id) => gens.get(id) ?? 0;
+
 export async function ensureRemote(id, avatarPath, meta = {}) {
   const existing = remotes.get(id);
   if (existing) {
@@ -34,19 +42,63 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
     // same person, new body: rebuild (live avatar switching re-announces via
     // join). A switch that lands while the OLD body is still loading must not
     // be dropped — delete the map entry and let the stale load's own guard
-    // dispose it when it completes.
+    // dispose it when it completes. This dispose is the §19b release point:
+    // the old VRM returns to the instance pool intact, so a switch back —
+    // or anyone else arriving in this body — skips the re-parse.
     if (avatarPath && existing.avatarPath !== avatarPath) {
       remotes.delete(id);
       existing.avatar?.dispose();
-    } else return existing;
+    } else {
+      // Same body re-announced = a TAKEOVER (the server suppresses the old
+      // connection's leave and re-arrives the identity — server.ts ~2023).
+      // The successor must be a FRESH RECORD OBJECT, not the predecessor's
+      // with fields wiped: every continuation guard in this file compares
+      // record identity, and a reused object makes a predecessor's captured
+      // reference pass as current (#97 review B2). The loaded avatar itself
+      // transplants — same mesh, no flicker, single ownership moves to the
+      // successor — while streamed state (the pose buffer) stays behind on
+      // the orphaned record, uninherited (#95 acceptance 4).
+      if (meta.authority) {
+        // the mesh transplants; its EXPRESSIONS do not — typing, bubble,
+        // held pose, limp, gaze were the predecessor generation's (#97 B2':
+        // avatar-owned transients must not survive ownership moving)
+        existing.avatar?.resetTransients?.();
+        const fresh = {
+          id, avatar: existing.avatar, avatarPath: existing.avatarPath,
+          loading: false, agent: !!(meta.agent ?? existing.agent),
+          gen: (gens.get(id) ?? 0) + 1,
+          buf: [], lastClip: 'idle', lodAcc: 0, lodTick: 0, speakingUntil: 0,
+        };
+        gens.set(id, fresh.gen);
+        remotes.set(id, fresh);
+        // predecessor still mid-load: its completion will see a record that
+        // isn't its own and dispose (the stale-load guard below); the
+        // successor starts its OWN load — bytes are cached, so this is
+        // cheap, and ownership stays unambiguous
+        if (!fresh.avatar) {
+          fresh.loading = true;
+          try {
+            const av = await makeAvatar(id, fresh.avatarPath || DEFAULT_AVATAR);
+            if (remotes.get(id) !== fresh) { av.dispose(); return fresh; }
+            fresh.avatar = av;
+            if (fresh.buf.length) applyImmediate(fresh);
+          } catch (e) { report(`avatar ${id}`, e); }
+          fresh.loading = false;
+        }
+        return fresh;
+      }
+      return existing;
+    }
   }
   const r = {
     id, avatar: null, avatarPath, loading: true, agent: !!meta.agent,
+    gen: (gens.get(id) ?? 0) + 1,
     buf: [],                 // [{ t, p:[x,y,z], yaw, speed, clip, pitch }]
     lastClip: 'idle',
     lodAcc: 0, lodTick: 0,
     speakingUntil: 0,
   };
+  gens.set(id, r.gen);
   remotes.set(id, r);
   try {
     r.avatar = await makeAvatar(id, avatarPath || DEFAULT_AVATAR);
@@ -61,10 +113,18 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
   return r;
 }
 
-export function dropRemote(id) {
+/** Remove a body. Idempotent, and GENERATION-CONDITIONAL when handed the
+ *  record the caller believes it is dropping: a predecessor's late cleanup
+ *  (a drag callback, a stale timer) cannot delete the successor that now
+ *  owns the id (#95 acceptance 4). Returns the dropped record, or null when
+ *  there was nothing to drop / the record didn't match. */
+export function dropRemote(id, expected) {
   const r = remotes.get(id);
+  if (!r) return null;
+  if (expected && r !== expected) return null;   // a successor owns this id now
   remotes.delete(id);
-  r?.avatar?.dispose();
+  r.avatar?.dispose();
+  return r;
 }
 
 /** Feed one presence sample. `t` is the server stamp when available. */
@@ -195,10 +255,15 @@ export function updateRemotes(dt, now = performance.now()) {
     // swing mid-pendulum — presence samples are ignored while mounted, so a
     // stale stream can't fight the seat.
     if (avatarMounts.has(r.id)) {
-      const sw = mountTransform(r.id, _a);
+      const sw = mountTransform(r.id, _a, { path: r.avatarPath, av: r.avatar });
       if (sw) {
         r.avatar.root.position.copy(_a);
         r.avatar.root.rotation.y = sw.yaw;
+        // Declared seat state (#101): the ≈ marker and one console line per
+        // transition — an unprofiled seat renders where it always did, but
+        // never silently.
+        r.avatar.setSeatApprox(sw.seatState === 'approximate');
+        declareSeatState(r.id, sw.to, avatarMounts.get(r.id)?.slot, sw.seatState, sw.seatReason);
         // The seat owns WHERE the body is and its base clip — never its
         // expressiveness. The newest presence sample still delivers emotes
         // (one-shots layer over the sit; setClip is emote-aware and won't
@@ -223,6 +288,10 @@ export function updateRemotes(dt, now = performance.now()) {
         continue;
       }
       // parent still downloading — fall through to normal presence meanwhile
+    } else if (r.avatar._seatApprox) {
+      // stood up: the marker comes off and the next sit declares afresh
+      r.avatar.setSeatApprox(false);
+      clearSeatState(r.id);
     }
 
     if (buf.length >= 2) {
@@ -269,7 +338,14 @@ export function noteSpeaking(id, ms = 4000) {
  *  speaker if there is one, otherwise the nearest other body. This is the
  *  cheapest presence win in the client — VRM ships a lookAt rig and nothing
  *  was ever aiming it, so every avatar had dead eyes. */
+let _gazeAt = 0;
 export function updateGaze(myPos, myAvatar, myName, now = performance.now()) {
+  // Attention changes at conversational rate, not frame rate — the O(n²)
+  // focus pass at 60Hz was hot-path offender #3 (§14.1). 4Hz is beyond
+  // perceptual limits for gaze retargeting (the VRM lookAt rig eases the
+  // turn itself); the scan is unchanged, just honestly paced.
+  if (now - _gazeAt < 250) return;
+  _gazeAt = now;
   let speaker = null;
   for (const r of remotes.values()) {
     if (r.speakingUntil > now && r.avatar) {

@@ -29,3 +29,17 @@ assets/opt/thumbs/
 .mcp.json
 .memsearch/
 tools/node_modules/
+
+
+# Piper voice models: ~60MB each, fetched by the client at runtime
+# (user's disk or HuggingFace+OPFS) and never served by us. The .onnx.json
+# IS committed — 5,036 bytes as of 2026-08-11 (measured; LF) — it is what
+# says what the model is.
+client/voices/*.onnx
+client/accept-*.onnx*
+
+# a SYMLINK named node_modules dodges the dir-only pattern above — the
+# worktree-symlink footgun that shipped a Mac path to the VPS (2026-08-12)
+node_modules
+client/node_modules
+mcpl/node_modules

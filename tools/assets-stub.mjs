@@ -7,5 +7,6 @@ export const VRMUtils = { deepDispose() {}, rotateVRM0() {} };
 export const loadVRM = async () => { throw new Error('stub'); };
 export const clipFor = async () => null;
 export const vrmaBytes = async () => null;
+export const vrmaShaLoaded = () => null;   // #101: no clip bytes in the stub world — seats read declared-approximate
 export const loadTrack = async () => null;
 export const loadDone = () => true;

@@ -23,7 +23,8 @@
 
 import { bus, CONFIG, report } from './core.js';
 import { whenBooted } from './boot.js';
-import { demandState, listLibrary } from './assets.js';
+import { whenCalm } from './governor.js';
+import { demandState, listLibrary, ktx2Capable } from './assets.js';
 
 const QUIET_MS = 1500;      // demand-free time required before (re)taking the wire
 const SESSION_CAP = 600e6;  // max bytes streamed per session — a long visit warms a lot, a peek doesn't
@@ -93,7 +94,19 @@ async function buildQueue() {
   const q = [];
   const seen = new Set();
   const push = (path, size = 0) => {
-    const url = path.startsWith('/') ? path : `/library/${path}`;
+    let url = path.startsWith('/') ? path : `/library/${path}`;
+    // Warm the SAME cache key demand fetches will use (§20c gate finding):
+    // capable clients fetch .glb/.vrm with ?ktx2=1 — unflagged warmth lands
+    // in a different HTTP-cache entry and is pure waste for them. Loose
+    // images (§20d) negotiate too, but ONLY where the file layer does
+    // (primeFiles, i.e. the curated toolkit dirs) — catalog previews and
+    // other images are consumed unflagged, and flagging them here would be
+    // the same wasted-warmth bug in the other direction.
+    const bare = url.split('?')[0];
+    if (ktx2Capable() && (/\.(glb|vrm)$/.test(bare)
+      || (/^\/library\/eidoverse\/assets\/(grass|sky|particle_textures)\//.test(bare) && /\.(png|jpe?g)$/i.test(bare)))) {
+      url += (url.includes('?') ? '&' : '?') + 'ktx2=1';
+    }
     if (!seen.has(url) && seen.add(url)) q.push({ url, size });
   };
   const roster = await fetch('/avatars').then((r) => r.json()).catch(() => []);
@@ -115,6 +128,13 @@ export async function startPrefetch() {
   if (CONFIG.params.get('prefetch') === '0') return;  // escape hatch
   if (navigator.connection?.saveData) return;         // respect data saver
   await whenBooted();
+  // The storm's edge (§16.2.D): the roster pull used to start ~5s in — 45MB
+  // of speculative VRMs racing the boot storm's own compiles. Calm is the
+  // governor's word: 5 smooth seconds with no load work in flight. This
+  // gates only the SPECULATIVE stream — anything the world actually needs
+  // goes through fetchBytes directly and never waited on prefetch, and the
+  // 'demand' abort below still preempts us the instant a real load starts.
+  await whenCalm();
   await quietWindow(); // let the join's own warm-fetches drain first
   const queue = await buildQueue().catch((e) => { report('prefetch', e); return []; });
   if (!queue.length) return;

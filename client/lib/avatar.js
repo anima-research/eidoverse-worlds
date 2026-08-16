@@ -5,11 +5,13 @@
 import { THREE, scene, camera, renderer, report, angleDelta } from './core.js';
 import {
   loadVRM, clipFor, vrmaBytes, loadTrack, loadDone,
-  CLIP_SLOTS, CLIP_SPEED, VRMUtils,
+  CLIP_SLOTS, CLIP_SPEED, releaseVRM, vrmWarmed, markVrmWarmed,
 } from './assets.js';
-import { beginWork, enqueue, idleYield } from './loadwork.js';
+import { beginWork, enqueue, idleYield, nextFrame, loadNote } from './loadwork.js';
+import { warm } from './warmqueue.js';
 import { DRIVEN_BONES } from './ragdoll.js';
 import { stroke as strokeIcon } from './icons.js';
+import { SEAT_CLIP_FILE } from './seatcore.js';
 
 // The clip library is ~1.9MB PER SLOT. Waiting for all seven before a body
 // could exist put 13MB between a person and their own legs — the single
@@ -35,7 +37,7 @@ export const EMOTES = {
 export const EMOTE_ORDER = ['wave', 'cheer', 'dance', 'point', 'salute', 'clap'];
 // Seated postures differ by what you're sitting ON — the ground clip on a
 // chair leaves you cross-legged in mid-air.
-export const SEAT_CLIPS = { ground: 'sitting_on_ground', chair: 'sitting_normal_chair' };
+export const SEAT_CLIPS = { ground: 'sitting_on_ground', chair: SEAT_CLIP_FILE };
 
 // ---------------------------------------------------------------- sprites
 
@@ -576,14 +578,42 @@ export class Avatar {
     this.id = name;
     this.root.remove(this.label);
     disposeSprite(this.label);
-    this.label = makeLabel(name);
+    this.label = makeLabel(this._seatApprox ? `${name} ≈` : name);
     this.label.position.y = 1.95;
     this.root.add(this.label);
+  }
+
+  /** Declared-approximation marker (#101): a seated body whose profile gate
+   *  is closed (legacy socket, no profile, clip not loaded, …) wears a small
+   *  ≈ on its nameplate — the browser's half of "no silent root-at-socket".
+   *  Idempotent per state; the sprite is only redrawn on a transition. */
+  setSeatApprox(on) {
+    if (this._seatApprox === !!on) return;
+    this._seatApprox = !!on;
+    this.setName(this.id);
   }
 
   // ---- speech
   /** They're composing. Repeated calls extend it; it expires on its own so a
    *  dropped "stopped typing" never leaves the dots stuck up forever. */
+  /** Generation-end (#95): everything TRANSIENT this body was expressing —
+   *  typing pill, speech bubble, held bone pose, limpness, gaze — belongs to
+   *  the generation that expressed it, not to the mesh. A takeover
+   *  transplants the mesh into a fresh record; this is what does NOT ride
+   *  along. Each reset goes through the transient's own teardown mechanism
+   *  (the bubble expires through the update loop, the pill through
+   *  setTyping's stop path), so nothing here invents a second way to die. */
+  resetTransients() {
+    this.setTyping(null);
+    this.bubbleUntil = 0;
+    this.speakUntil = 0;
+    this.voiceLevel = null;
+    this.clearPose();
+    this.setLimp(false);
+    this.setGazeTarget(null);
+    this.setClip('idle');
+  }
+
   setTyping(state) {
     // state === null means STOP (mic went cold, composing ended) — it must
     // clear the pill, not schedule 4s of an empty one. Found live: R's
@@ -744,7 +774,19 @@ export class Avatar {
     }
   }
 
+  // Split teardown (§19b): everything PER-BODY dies here — scene membership,
+  // the gaze anchor, the sprites, the mixer and its actions, the compose
+  // records. The VRM instance itself (scene subtree, skeleton, materials,
+  // textures) is deliberately NOT disposed here: the pool owns disposal
+  // (assets.js releaseVRM resets it to rest and shelves it; the real
+  // deepDispose happens only at pool eviction). Deep-disposing a body that
+  // then pools is the recorded black-avatar landmine (§13.3).
   dispose() {
+    // Idempotent, and that is load-bearing now: a second dispose() of THIS
+    // avatar after its VRM was re-worn by a newer one would release a body
+    // someone is wearing back into the pool — two wearers, one instance.
+    if (this._disposed) return;
+    this._disposed = true;
     scene.remove(this.root);
     scene.remove(this.gaze);
     if (this.bubble) disposeSprite(this.bubble);
@@ -752,7 +794,7 @@ export class Avatar {
     disposeSprite(this.label);
     this.mixer.stopAllAction();
     this._composed.clear();
-    VRMUtils.deepDispose?.(this.vrm.scene);
+    releaseVRM(this.vrm);
   }
 }
 
@@ -801,10 +843,32 @@ export async function makeAvatar(id, libPath, { full = false, urgent = false } =
       try { clips[slot] = await clipFor(vrm, slot, { priority }); } catch (e) { report(`clip ${slot}`, e); }
     }
     work.phase('compile');
-    // gpu lane: codegen slices interleave with the frame loop; the long tail
-    // is driver-side pipeline creation, which overlaps other compiles fine.
-    await enqueue(() => renderer.compileAsync(vrm.scene, camera, scene).catch(() => {}),
-      { lane: 'gpu', priority });
+    if (vrmWarmed(vrm)) {
+      // §19b: a pooled body's material set compiled on its first wear and the
+      // renderer's pipeline cache still holds it — a re-warm would be a cheap
+      // no-op that nonetheless occupies the conductor. Skip it, and say so.
+      loadNote(`avatar ${id}: compile skipped — pooled body, pipelines already warm`);
+    } else {
+      // Through the warm conductor (§16.2.A), mesh by mesh with a real frame
+      // between: the body's MToon set is a burst of ~11 pipelines, and both
+      // the old 2-wide gpu lane AND a single whole-scene conductor item landed
+      // that burst in one GPU-process gulp — bootjank attributed 383ms/491ms
+      // compile-stall frames to exactly that. Spread, shared materials
+      // cache-hit after their first mesh. frustumCulled defeats the compile
+      // walk's culling while the body is still detached (stale matrices).
+      await warm(`avatar ${id}`, async () => {
+        const meshes = [];
+        vrm.scene.traverse((o) => { if (o.isMesh) meshes.push(o); });
+        for (const mesh of meshes) {
+          const culled = mesh.frustumCulled;
+          mesh.frustumCulled = false;
+          try { await renderer.compileAsync(mesh, camera, scene).catch(() => {}); }
+          finally { mesh.frustumCulled = culled; }
+          await nextFrame();
+        }
+      });
+      markVrmWarmed(vrm);
+    }
     const av = new Avatar(id, vrm, clips);
     // The rest arrives behind you. Remote bodies hydrate too — someone else
     // breaking into a run should not be stuck walking on your screen.

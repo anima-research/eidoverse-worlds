@@ -36,9 +36,14 @@ humans, an MCPL server for agents, a headless batch renderer as the film crew.
 ## Running
 
 Requires [Bun](https://bun.sh). Assets (models, VRMs, animations) are **not**
-vendored here — point `EIDOVERSE_DIR` at an eidoverse-video checkout at
-[`8b37f0f`](https://github.com/SkyeShark/eidoverse-video/commit/8b37f0f) or
-later on `main`. The `grass` verb loads `eidoverse/vegetation.js` from the
+vendored here — point `EIDOVERSE_DIR` at a checkout of
+[anima-research/eidoverse-video](https://github.com/anima-research/eidoverse-video)
+(our fork of [SkyeShark/eidoverse-video](https://github.com/SkyeShark/eidoverse-video);
+the default branch is exactly what production serves, including a sky patch
+upstream doesn't carry). Pristine upstream `main` at
+[`09ffd28`](https://github.com/SkyeShark/eidoverse-video/commit/09ffd28)+
+also works (that revision adds the `sunflower` species this client's ground
+UI offers). The `grass` verb loads `eidoverse/vegetation.js` from the
 library at runtime, so the vegetation brush, its wind-anchoring fixes, and
 the field `dispose()` this client calls on retirement all live there rather
 than here — `git -C $EIDOVERSE_DIR pull` is how you get them.

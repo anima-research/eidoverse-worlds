@@ -30,7 +30,7 @@
 // predate this file simply don't animate parts. When a part's motion is
 // removed, the part eases back to its authored rest pose.
 
-import { THREE } from './core.js';
+import { THREE, camera } from './core.js';
 import { entities, comps, findPart } from './world.js';
 import { reindexCollider } from './colliders.js';
 import { serverNow } from './remotes.js';
@@ -138,6 +138,10 @@ export function tickMotion() {
       if (!m || !m.type) continue;
       const obj = entities.get(id);
       if (!obj || obj.userData.mountedTo) continue;   // mounted things ride their parent
+      // distance gate (§14.2 6a, offender #4): motion is CLOSED-FORM f(t),
+      // so a far swing skipped this frame lands at exactly the right phase
+      // the frame it re-enters range — nothing drifts, nothing catches up
+      if (obj.position.distanceToSquared(camera.position) > 8100) continue;   // 90m
       const t = since(m, nowMs);
       const partName = isWhole ? (typeof m.part === 'string' ? m.part : null) : key.slice(7);
 

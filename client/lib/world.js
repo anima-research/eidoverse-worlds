@@ -1,21 +1,32 @@
-// world — the authored plane. Folds log entries into scene state.
+// world — the authored plane's scene registries and world-scope builders.
 //
-// Every entry is an intent verb; applying one is the ONLY way anything appears
-// in this world. Replay of the whole log on join and a single live entry take
-// exactly the same path, which is what makes late joiners see what everyone
-// else sees.
+// The log's MEANING lives in shared/fold.js (state.js folds it; the
+// realizers in realize/ project it into the scene). What remains here is
+// what every consumer shares: the entity/comp/mount registries, the
+// world-build queue that gates arrival on ground, the world-scope
+// application functions the environment/social realizers drive, mount
+// transforms, and the deferred shadow drain. The applyEntry switch that
+// once folded entries directly into the scene — and the pendingOps/
+// pendingMounts machinery that reconstructed ordering downstream — is
+// gone: state is folded once, realizers read it, and every load
+// completion re-reads current state (TEL0S_NOTES §11).
 
 import { THREE, scene, camera, renderer, report, bus } from './core.js';
-import { loadGLB, loadEidoModule, noiseTexture, loadTrack, loadDone, libLabels } from './assets.js';
+import { loadEidoModule, noiseTexture, loadTrack, loadDone, libLabels } from './assets.js';
+import { prepareObject } from './materials.js';
 import { beginWork } from './loadwork.js';
-import { fitCollider, removeCollider, reindexCollider, refitCollider } from './colliders.js';
+import { reindexCollider } from './colliders.js';
 import { setTerrain, setGrass, clearGrass, heightAt } from './terrain.js';
-import { buildFloraField } from './flora.js';
-import { applySky, attachLocalLights } from './sky.js';
-import { foldSkyEntry } from './forecast.js';
-import { makeLight, updateLight, disposeLight } from './lights.js';
-import { logChat } from './chat.js';
-import { whenBooted } from './boot.js';
+import { buildFloraField, warmField } from './flora.js';
+import { applySky, whenSkyWarm } from './sky.js';
+import { whenBooted, bootDone } from './boot.js';
+import { warm, P_GATE } from './warmqueue.js';
+// seat correction for mounted riders (upstream #101) — the me-drive frame
+// calls these for every seated body; their import fell on the fork side of
+// a merge hunk while the call site auto-merged, and every SIT threw 56
+// ReferenceErrors a second (antra, live, from a swing in commons2)
+import { seatCorrectionFor } from './seats.js';
+import { applySeatCorrection } from './seatcore.js';
 
 /** id -> Object3D. `null` is a reservation held while the GLB downloads, so a
  *  duplicate spawn in the same tick can't create two bodies for one id. */
@@ -34,18 +45,14 @@ export const avatarMounts = new Map();
 /** id -> bound runtime scripts (server sandbox AND client-mod offers), from
  *  `behavior` entries. mods.js consumes the runtime:"client" ones. */
 export const behaviors = new Map();
-// A mount whose parent or child is still downloading waits here and is
-// retried whenever a spawn completes — same reasoning as pendingOps.
-const pendingMounts = new Map(); // id -> mount args
 
-// A spawn reserves its id synchronously but its GLB arrives later. Anything
-// that addresses the entity in that window (a `place` right behind it in the
-// log, a `remove` of something still downloading) used to hit `null` and be
-// silently dropped. Now it is remembered and applied when the body lands —
-// which also makes it safe to stop waiting for every asset before replaying.
-const pendingOps = new Map(); // id -> { pos, yaw, scale, removed }
 
 export const liveEntities = () => [...entities.values()].filter(Boolean);
+
+/** ids someone is actively editing — the residency sweep must never demote
+ *  them (review S4: id-based, because promote/demote SWAPS the object a
+ *  userData flag would ride). build.js and panel editors add/remove. */
+export const editHolds = new Set();
 
 // Heavy world construction (terrain ~2s, grass ~1s of main-thread geometry
 // generation) runs on its own ordered chain so log replay — and everything
@@ -78,371 +85,204 @@ function enqueueWorldBuild(what, fn) {
       bus.emit('build-queue', { depth: buildDepth, what });
     });
 }
-export const buildsPending = () => gatingDepth;
-export const anyBuildsPending = () => buildDepth;
+// The sky's arrival gate rides its own counter, NOT the worldBuild chain:
+// grass parks that chain on whenBooted(), so a sky queued behind it would
+// hold the curtain against itself (see applySkyFolded).
+let skyGate = 0;
+export const buildsPending = () => gatingDepth + skyGate;
+export const anyBuildsPending = () => buildDepth + skyGate;
 
 // Guards so a re-join (avatar switch, reconnect) that replays the log doesn't
 // regenerate an identical world.
 let lastTerrainArgs = null;
 let lastGrassArgs = null;
 
-// ---- deferred shadow-in -----------------------------------------------------
-// Spawned objects come in without castShadow (see the spawn case). Once every
-// queued load has finished — or after a hard 30s fallback, so a world where
-// something never drains still gets its light right — shadows switch on one
-// object per beat, spreading the per-caster depth-pipeline compiles that
-// would otherwise stack into the load window.
-const shadowless = new Set();
-let drainingShadows = false;
-async function drainShadows() {
-  if (drainingShadows) return;
-  drainingShadows = true;
-  try {
-    while (shadowless.size) {
-      const id = shadowless.values().next().value;
-      shadowless.delete(id);
-      const obj = entities.get(id);
-      if (obj) {
-        obj.castShadow = true;
-        obj.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-        await new Promise((r) => setTimeout(r, 250)); // one depth compile per beat
+// ---- world-scope state application ------------------------------------------
+// Driven by the environment/social realizers (realize/environment.js,
+// realize/social.js). Written during the migration window as one
+// implementation under two drivers; the legacy driver is gone, the names
+// stay.
+
+/** Build (or rebuild) the terrain from its authored bag. Dedupes by args so
+ *  a re-join replaying the same world does not regenerate identical ground. */
+export function applyTerrainState(args) {
+  if (!args) return;
+  const key = JSON.stringify(args);
+  if (lastTerrainArgs === key) return;
+  lastTerrainArgs = key;
+  enqueueWorldBuild('terrain', async () => {
+    await loadEidoModule('terrain.js');
+    const layers = (args.layers ?? []).map((l) => ({
+      map: noiseTexture(l.color ?? '#4a5d33'), repeat: l.repeat ?? 16,
+    }));
+    const t = globalThis.makeTerrain({ ...args, layers });
+    // the layer textures ride the engine's colorNode, unreachable from
+    // material properties — carry them so terrain disposal can free them
+    // (review S5)
+    if (t) t.layerTextures = layers.map((l) => l.map);
+    // the factory dresses the ground BEFORE its compile: wetness + cloud
+    // shade + receiveShadow (real terrain never received before — only the
+    // stage floor did, and that hides when this lands)
+    if (t?.mesh) prepareObject(t.mesh, { kind: 'terrain' });
+    // compile the ground's pipelines BEFORE it enters the scene — an
+    // unprecompiled terrain material otherwise codegens synchronously
+    // inside the first render() that sees it. UNCAPPED, through the warm
+    // conductor and awaited fully (§16.2.A): this build gates arrival, so
+    // the splash simply holds a moment longer and the ground enters
+    // compiled. (A 1200ms Promise.race cap lived here for slow-compile
+    // Safari boots — but past the cap the biggest material in the world
+    // entered the scene UNCOMPILED and codegen'd inside the first render()
+    // that saw it, §16.1c. An uncompiled ground is worse than a longer
+    // splash.)
+    if (t?.mesh) {
+      // P_GATE: arrival waits on THIS item — the first 8b gate measured a
+      // rain world booting in 16s because the cloud-march compiles queued
+      // ahead of the ground the curtain was actually waiting for
+      await warm('compile terrain', () => renderer.compileAsync(t.mesh, camera, scene).catch(() => {}), { p: P_GATE });
+    }
+    setTerrain(t);
+    // re-seat only ground-level entities — anything with a meaningful y
+    // (seated on furniture, elevated) keeps its logged height
+    for (const [id, obj] of entities) {
+      if (obj && Math.abs(obj.position.y) < 0.02) {
+        obj.position.y = heightAt(obj.position.x, obj.position.z);
+        if (obj.userData.base) obj.userData.base.pos[1] = obj.position.y;
+        reindexCollider(id);
       }
     }
-  } finally { drainingShadows = false; }
+  });
 }
-bus.on('lanes-idle', drainShadows);
-setTimeout(drainShadows, 30000);
+
+/** Grow (or mow) the grass field. Same dedupe-by-args contract. */
+export function applyGrassState(args) {
+  if (!args) return;
+  const key = JSON.stringify(args);
+  if (lastGrassArgs === key) return;
+  lastGrassArgs = key;
+  if (args.clear) { clearGrass(); return; }   // an empty field: mow it
+  enqueueWorldBuild('grass', async () => {
+    // yields the main thread to arrival; resolves instantly once booted
+    await whenBooted();
+    // vegetation brush (createFlora) — makeGrass's replacement upstream.
+    // Legacy makeGrass bags persisted in old world logs are mapped
+    // inside buildFloraField; the log itself is never rewritten.
+    const field = await buildFloraField(args, { scene, heightFn: heightAt });
+    // factory pass before the precompile (field.mesh is the whole stroke
+    // group): wet sheen on the meadow, sweep markers, no shadow receipt
+    // (grass never received, and its fragment cost is the client's biggest)
+    if (field?.mesh) prepareObject(field.mesh, { kind: 'grass' });
+    // warm EVERY render object off the render path. The old field-level
+    // compileAsync silently skipped whatever applyTiles had culled against
+    // the boot camera (visible=false / out of frustum), and those tiles
+    // compiled synchronously inside render() when first looked at.
+    // warmField (flora.js) detaches per object, defeats culling, compiles
+    // one per frame, then re-settles tile counts against the live camera —
+    // still inside this build's beginWork('build grass') accounting.
+    if (field?.mesh) await warmField(field, renderer, camera, scene);
+    setGrass(field);
+  });
+}
+
+/** Apply an already-FOLDED sky bag (state.st.sky or foldSkyEntry output).
+ *  `ts` anchors live transition timing; a snapshot passes the bag's own. */
+// During INITIAL hydration, arrival gates on the sky's pipeline warm
+// (§16.2.D): the dome compiles are ~3s of splash instead of ~3s of visible
+// jank — the warm used to await whenBooted() and land squarely AFTER the
+// curtain lifted (§16.1g). Capped: a degraded or headless sky must never
+// brick arrival (lightbench's bolt-seam section knows sky can degrade) —
+// past the cap the curtain lifts and the warm continues in the conductor
+// behind it. A mid-session sky verb (bootDone) gates nothing and behaves
+// exactly as before; a world with no sky verb never reaches this and gates
+// on nothing. The gate registers synchronously inside the hydration
+// realizer pass — before checkReady can ever observe an empty queue (same
+// ordering guarantee terrain leans on, realize/environment.js).
+let skyGated = false;
+// 25s, was 8: the gate now covers the first bake's cloud-graph compile
+// (§19a — measured 9.3s ending at t=15.3s on THIS box's cold GPU cache;
+// a slower GPU must not have the curtain lift mid-stall, and the gate
+// resolves EARLY via whenBakeReady the moment the pipeline is warm — the
+// cap only binds pathological cases. Near-zero on warm Dawn caches.
+// tel0s chose splash over a mid-session stall until upstream can cache
+// the graph per flavour.)
+const SKY_GATE_MAX_MS = 25000;
+export function applySkyFolded(bag, ts) {
+  if (!bag) return Promise.resolve();
+  const p = Promise.resolve(applySky(bag, ts ?? bag.ts)).catch((e) => report('sky', e));
+  if (!skyGated && !bootDone()) {
+    skyGated = true;
+    skyGate = 1;
+    loadTrack('build:sky', 'warming the sky');
+    bus.emit('build-queue', { depth: buildDepth, what: 'sky' });
+    const work = beginWork('sky gate');
+    work.phase('warm');
+    Promise.race([
+      whenSkyWarm(),
+      new Promise((r) => setTimeout(() => r('timeout'), SKY_GATE_MAX_MS)),
+    ]).then((how) => {
+      skyGate = 0;
+      loadDone('build:sky');
+      bus.emit('build-queue', { depth: buildDepth, what: 'sky' });
+      if (how === 'timeout') {
+        // visible in __loadLog: the gate line names the giving-up, and the
+        // still-running warm keeps its own conductor records
+        work.phase('lifted-at-cap');
+        setTimeout(() => work.end(), 2);
+      } else work.end();
+    });
+  }
+  return p;
+}
+
+/** An upload became part of this world's vocabulary: the palette grows for
+ *  everyone, live (broadcast) and forever (replay/snapshot for joiners). */
+export function applyAssetState(args) {
+  if (!args?.path) return;
+  libLabels.set(args.path, args.name ?? 'upload');
+  bus.emit('asset', { name: args.name ?? 'upload', path: args.path });
+}
+
+/** Mirror one role record so the UI can say what you are here, live.
+ *  Enforcement is the server's; narration is the LIVE driver's business
+ *  (legacy case or causes.js), not this mirror's. */
+export function applyGrantState(id, rec) {
+  // default matches the FOLD's (shared/fold.js grant case): an unlisted id
+  // in an owned world is a builder, so `/grant bob +gen` doesn't silently
+  // demote bob to visitor. The old 'visitor' default here disagreed with
+  // what the server actually granted (review S6) — the HUD lied.
+  const cur = worldRoles.get(id) ?? { role: 'builder' };
+  worldRoles.set(id, {
+    role: rec.role ?? cur.role,
+    gen: rec.gen != null ? Boolean(rec.gen) : cur.gen,
+  });
+  bus.emit('roles', { id, ...worldRoles.get(id) });
+}
+
+/** Mirror one behavior binding (or its removal) into the roster mods.js
+ *  watches. `live` rides the bus event exactly as legacy did. */
+export function applyBehaviorState(id, rec, live = false) {
+  if (!rec) behaviors.delete(id);
+  else if (id && rec.src) {
+    behaviors.set(id, {
+      src: rec.src,
+      ...(rec.runtime ? { runtime: rec.runtime } : {}),
+      ...(rec.knobs ? { knobs: rec.knobs } : {}),
+      author: rec.author ?? rec.by ?? 'world',
+    });
+  }
+  bus.emit('behavior-roster', { live });
+}
+
+// (The deferred shadow-in drain that lived here — markShadowless /
+// drainShadows, one caster per 250ms beat, lanes-idle trigger, 30s fallback
+// — is gone: object.castShadow is in no pipeline cache key, so the light
+// rig budgets the caster set live by camera distance, reversibly.
+// lightrig.js §12.5.)
 
 // Per-world roles as replayed from grant entries. A mirror for UI honesty —
 // the sequencer enforces; this only lets the client SAY what you are.
 const worldRoles = new Map();
 export const roleOf = (id) => worldRoles.get(id) ?? null;
 export const worldHasOwner = () => [...worldRoles.values()].some((r) => r.role === 'owner');
-
-export async function applyEntry(entry, live, ctx = {}) {
-  const { verb, args = {}, actor, ts } = entry;
-  try {
-    switch (verb) {
-      case 'spawn': {
-        if (entities.has(args.id)) return;
-        entities.set(args.id, null); // reserve
-        const obj = await loadGLB(args.lib);
-        // it may have been moved or unmade while its bytes were in flight
-        const queued = pendingOps.get(args.id);
-        pendingOps.delete(args.id);
-        if (queued?.removed) { entities.delete(args.id); return; }
-        obj.userData.lib = args.lib;
-        obj.userData.entityId = args.id;
-        // receiveShadow now, castShadow LATER: a caster's depth-pass pipeline
-        // compiles synchronously at its first shadow render, and during a
-        // load that is one more freeze per object in the window that hurts.
-        // Shadows are the last thing a world needs — they arrive one object
-        // per beat once every queued load has drained (see drainShadows).
-        obj.traverse((o) => { if (o.isMesh) o.receiveShadow = true; });
-        shadowless.add(args.id);
-        const sc = queued?.scale ?? args.scale;
-        // decision sees the SPAWN scale: wrong-sized imports that arrive with a
-        // corrective scale still classify by their real-world size
-        fitCollider(args.id, obj, { collide: args.collide, scale: sc || 1 });
-        obj.position.set(...(queued?.pos ?? args.pos ?? [0, 0, 0]));
-        obj.rotation.y = queued?.yaw ?? args.yaw ?? 0;
-        if (sc) obj.scale.setScalar(sc);
-        // the logged rest pose — what motion composes on and rest returns to
-        obj.userData.base = { pos: obj.position.toArray(), yaw: obj.rotation.y };
-        reindexCollider(args.id);
-        attachLocalLights(obj);   // async, deliberately not awaited
-        entities.set(args.id, obj);
-        entityMeta.set(args.id, { actor, lib: args.lib, ts });
-        scene.add(obj);
-        bus.emit('entity', { id: args.id, kind: 'spawn' });
-        retryMounts();            // a waiting mount may have just become possible
-        break;
-      }
-      case 'light': {
-        if (entities.has(args.id)) {
-          // re-issuing `light` on an existing id is a partial UPDATE
-          // (brightness, color, range, keep, position) — the server fold
-          // merges the same way; a live client mirrors it here instead of
-          // ignoring the entry. A non-light holding the id (or a spawn still
-          // downloading) refuses, same as before.
-          const existing = entities.get(args.id);
-          if (!existing?.userData?.isLight) return;
-          updateLight(existing, args);
-          if (args.pos) existing.position.set(...args.pos);
-          bus.emit('entity', { id: args.id, kind: 'light' });
-          return;
-        }
-        const g = makeLight({ color: args.color, intensity: args.intensity, range: args.range, keep: args.keep });
-        g.userData.entityId = args.id;
-        g.position.set(...(args.pos ?? [0, 1, 0]));
-        entities.set(args.id, g);
-        entityMeta.set(args.id, { actor, kind: 'light', ts });
-        scene.add(g);
-        bus.emit('entity', { id: args.id, kind: 'light' });
-        break;
-      }
-      case 'place': {
-        const obj = entities.get(args.id);
-        if (!obj) {
-          if (entities.has(args.id)) {           // reserved, still downloading
-            const q = pendingOps.get(args.id) ?? {};
-            if (args.pos) q.pos = args.pos;
-            if (args.yaw != null) q.yaw = args.yaw;
-            if (args.scale != null) q.scale = args.scale;
-            pendingOps.set(args.id, q);
-          }
-          return;
-        }
-        if (args.pos) obj.position.set(...args.pos);
-        if (args.yaw != null) obj.rotation.y = args.yaw;
-        if (args.scale != null) obj.scale.setScalar(args.scale);
-        if (!obj.userData.mountedTo) {
-          obj.userData.base = { pos: obj.position.toArray(), yaw: obj.rotation.y };
-        }
-        // rescale can cross the room-scale threshold: re-decide, not just re-bucket
-        refitCollider(args.id);
-        bus.emit('entity', { id: args.id, kind: 'place' });
-        break;
-      }
-      case 'remove': {
-        const obj = entities.get(args.id);
-        if (!obj && entities.has(args.id)) {      // reserved, still downloading
-          pendingOps.set(args.id, { ...(pendingOps.get(args.id) ?? {}), removed: true });
-          return;
-        }
-        if (obj) {
-          if (obj.userData?.isLight) disposeLight(obj);
-          // anything mounted ON it steps off first, keeping its world pose —
-          // removal must not vaporize the cargo along with the truck
-          for (const [cid, cobj] of entities) {
-            if (cobj?.userData?.mountedTo === args.id) {
-              scene.attach(cobj);
-              delete cobj.userData.mountedTo;
-              cobj.userData.base = { pos: cobj.position.toArray(), yaw: cobj.rotation.y };
-              fitCollider(cid, cobj, { scale: cobj.scale?.x || 1 });
-            }
-          }
-          (obj.parent ?? scene).remove(obj);
-        }
-        entities.delete(args.id);
-        entityMeta.delete(args.id);
-        comps.delete(args.id);
-        pendingMounts.delete(args.id);
-        shadowless.delete(args.id);
-        removeCollider(args.id);
-        bus.emit('entity', { id: args.id, kind: 'remove' });
-        break;
-      }
-      case 'terrain': {
-        const key = JSON.stringify(args);
-        if (lastTerrainArgs === key) return;
-        lastTerrainArgs = key;
-        enqueueWorldBuild('terrain', async () => {
-          await loadEidoModule('terrain.js');
-          const layers = (args.layers ?? []).map((l) => ({
-            map: noiseTexture(l.color ?? '#4a5d33'), repeat: l.repeat ?? 16,
-          }));
-          const t = globalThis.makeTerrain({ ...args, layers });
-          // compile the ground's pipelines BEFORE it enters the scene — an
-          // unprecompiled terrain material otherwise codegens synchronously
-          // inside the first render() that sees it. BOUNDED: this build GATES
-          // arrival, and on Safari one compile can cost seconds (measured
-          // 08-02: boot went 10.7s) — past the cap the ground arrives anyway
-          // and the still-running compile finishes warming it moments later.
-          if (t?.mesh) {
-            await Promise.race([
-              renderer.compileAsync(t.mesh, camera, scene).catch(() => {}),
-              new Promise((r) => setTimeout(r, 1200)),
-            ]);
-          }
-          setTerrain(t);
-          // re-seat only ground-level entities — anything with a meaningful y
-          // (seated on furniture, elevated) keeps its logged height
-          for (const [id, obj] of entities) {
-            if (obj && Math.abs(obj.position.y) < 0.02) {
-              obj.position.y = heightAt(obj.position.x, obj.position.z);
-              if (obj.userData.base) obj.userData.base.pos[1] = obj.position.y;
-              reindexCollider(id);
-            }
-          }
-        });
-        break;
-      }
-      case 'grass': {
-        const key = JSON.stringify(args);
-        if (lastGrassArgs === key) return;
-        lastGrassArgs = key;
-        if (args.clear) { clearGrass(); break; }   // an empty field: mow it
-        enqueueWorldBuild('grass', async () => {
-          // yields the main thread to arrival; resolves instantly once booted
-          await whenBooted();
-          // vegetation brush (createFlora) — makeGrass's replacement upstream.
-          // Legacy makeGrass bags persisted in old world logs are mapped
-          // inside buildFloraField; the log itself is never rewritten.
-          const field = await buildFloraField(args, { scene, heightFn: heightAt });
-          // borrow the mesh back out for a precompile
-          // (compileAsync skips invisible objects, so hiding wouldn't work —
-          // detach, compile against the scene's lighting, re-add warm)
-          if (field?.mesh) {
-            const parent = field.mesh.parent;
-            parent?.remove(field.mesh);
-            await renderer.compileAsync(field.mesh, camera, scene).catch(() => {});
-            (parent ?? scene).add(field.mesh);
-          }
-          setGrass(field);
-        });
-        break;
-      }
-      case 'sky':
-        // The shared fold stamps forecast provenance the same way the server
-        // does (synthetic pre-history entries pass through already stamped) —
-        // live viewers and late joiners must derive the same sky.
-        await applySky(foldSkyEntry(null, { verb: 'sky', args, ts, seq: entry.seq, actor }), ts);
-        break;
-      case 'weather':
-        // Weather is its own verb rather than a sky arg because DESIGN.md names
-        // `transitionTo('storm')` as a first-class world event — it is a thing
-        // that HAPPENS at a moment, not a property you set. The fold rebases
-        // `hours` under a rated sky (no day-snap), records the manual
-        // override when a forecast is active, and owns `keepSky` — all in
-        // lockstep with the server's fold of the same entry.
-        await applySky(foldSkyEntry(currentSkyArgs(),
-          { verb: 'weather', args, ts, seq: entry.seq, actor }), ts);
-        break;
-      case 'asset':
-        // An upload became part of this world's vocabulary: the palette grows
-        // for everyone, live (broadcast) and forever (replay for late joiners).
-        libLabels.set(args.path, args.name ?? 'upload');
-        bus.emit('asset', { name: args.name ?? 'upload', path: args.path });
-        break;
-      case 'say': {
-        const isAgent = ctx.agents?.has(actor);
-        logChat(actor, args.text, isAgent ? 'agent' : '', {
-          seq: entry.seq, ts,
-          // spoken-say protocol only: display metadata for a voice that
-          // already performed as captions (server sanitizes; this is the
-          // client's own guard for old/foreign servers)
-          ...(args.spoken === true && Number.isSafeInteger(args.utt)
-            ? { spoken: true, utt: args.utt, t0: args.t0 } : {}),
-        });
-        // spoken:true = this utterance was already PERFORMED as presence
-        // (captions paced the bubble to the voice); the say is its record.
-        // Log always, re-perform never — the full timer-free decoupling.
-        if (live && !args.spoken) bus.emit('speech', { actor, text: args.text });
-        break;
-      }
-      case 'grant': {
-        // permissions are log entries like everything else — mirror them so
-        // the UI can say what you are here, live. Enforcement is the server's.
-        const cur = worldRoles.get(args.id) ?? { role: 'visitor' };
-        worldRoles.set(args.id, {
-          role: args.role ?? cur.role,
-          gen: args.gen != null ? Boolean(args.gen) : cur.gen,
-        });
-        if (live) {
-          const bits = [args.role, args.gen != null ? (args.gen ? '+gen' : '-gen') : null].filter(Boolean);
-          logChat('*', `${actor === 'world' ? 'the world' : actor} made ${args.id} ${bits.join(' ')}`);
-        }
-        bus.emit('roles', { id: args.id, ...worldRoles.get(args.id) });
-        break;
-      }
-      case 'ban': case 'unban': case 'kick': {
-        // Moderation is log history like everything else; enforcement is the
-        // server's (fold + expel). Here it only narrates, and only LIVE —
-        // replaying an old ban as if it just happened would be a lie.
-        if (live) {
-          const what = verb === 'ban' ? 'banned' : verb === 'unban' ? 'lifted the ban on' : 'removed';
-          logChat('*', `${actor} ${what} ${args.id}${verb !== 'unban' && args.reason ? ` — ${args.reason}` : ''}`);
-        }
-        break;
-      }
-      case 'comp': {
-        // The generic component fold — mirror of the server's blind one.
-        if (!args.id || typeof args.type !== 'string') return;
-        const bag = comps.get(args.id) ?? {};
-        if (args.data == null) delete bag[args.type]; else bag[args.type] = args.data;
-        if (Object.keys(bag).length) comps.set(args.id, bag); else comps.delete(args.id);
-        if (args.type === 'motion' && args.data == null) restAtBase(args.id);
-        bus.emit('comp', { id: args.id, type: args.type, data: args.data ?? null });
-        break;
-      }
-      case 'motion': {
-        // sugar for the motion component; {type: null} = come to rest
-        const { id, ...m } = args;
-        // mirror of the server fold: an epoch-less motion starts when spoken
-        if (m.type != null && m.t0 == null) m.t0 = ts;
-        const bag = comps.get(id) ?? {};
-        if (m.type == null) { delete bag.motion; restAtBase(id); }
-        else bag.motion = m;
-        if (Object.keys(bag).length) comps.set(id, bag); else comps.delete(id);
-        bus.emit('comp', { id, type: 'motion', data: bag.motion ?? null });
-        break;
-      }
-      case 'mount': {
-        if (!args.id || !args.to) return;
-        applyMount(args);
-        break;
-      }
-      case 'dismount': {
-        const obj = entities.get(args.id);
-        if (obj && obj.userData.mountedTo) {
-          scene.attach(obj);                     // keeps the world transform it had
-          delete obj.userData.mountedTo;
-          // plane-transition stamp wins over wherever the ride left it
-          if (args.pos) obj.position.set(...args.pos);
-          if (args.yaw != null) obj.rotation.set(0, args.yaw, 0);
-          obj.userData.base = { pos: obj.position.toArray(), yaw: obj.rotation.y };
-          // its collider was parked while mounted — stand it back up
-          // (size-derived collide decision; an explicit spawn override is lost
-          // across a mount cycle, acceptable until colliders learn to ride)
-          fitCollider(args.id, obj, { scale: obj.scale?.x || 1 });
-        }
-        avatarMounts.delete(args.id);
-        pendingMounts.delete(args.id);
-        bus.emit('mount', { id: args.id, to: null });
-        break;
-      }
-      case 'use':
-        // a cause, not an effect: nothing to render — reactions arrive as
-        // their own log entries. Surfaced for UI/behaviors that care.
-        if (live) bus.emit('use', { actor, ...args });
-        break;
-      case 'behavior':
-        // the client's mirror of the binding roster: the QuickJS tier runs
-        // server-side, but client-runtime MOD OFFERS (runtime: "client") are
-        // consumed here — mods.js watches this map and asks the person.
-        if (args.remove) behaviors.delete(args.id);
-        else if (args.id && args.src) {
-          behaviors.set(args.id, {
-            src: args.src,
-            ...(args.runtime ? { runtime: args.runtime } : {}),
-            ...(args.knobs ? { knobs: args.knobs } : {}),
-            author: args.by ?? actor,
-          });
-        }
-        bus.emit('behavior-roster', { live });
-        break;
-      case 'punt':
-        // a cause, like force: folds to nothing, and live clients with a
-        // physics plugin VOLUNTEER to simulate it (physobj.js) — the lease
-        // table arbitrates who wins. History keeps the kicker's name.
-        if (live) bus.emit('punt', { actor, ...args });
-        break;
-      case 'force':
-        // an instantaneous radial cause (blast, gust): no state to fold, so a
-        // replay never re-detonates — the log keeps the historical fact, and
-        // only bodies present at the moment feel it (main.js applies it to
-        // MY body under my own consent; everyone else's tumble arrives as
-        // their streamed poses, like any motion of theirs).
-        if (live) bus.emit('force', { actor, ...args });
-        break;
-      default:
-        // Unknown verbs are not errors — a newer client may author verbs this
-        // one doesn't render yet, and the log must stay forward-compatible.
-        console.debug('unhandled verb', verb, args);
-    }
-  } catch (e) { report(`entry ${verb}`, e); }
-}
 
 // ---- named parts ------------------------------------------------------------
 
@@ -484,42 +324,6 @@ export function socketWorldPos(id, slot, out) {
   return out.set(...(sock.pos ?? [0, 0.5, 0])).applyMatrix4(parent.matrixWorld);
 }
 
-function applyMount(args) {
-  if (!entities.has(args.id)) {
-    // a body, not a thing — remotes/controller consume this (sitter on a
-    // swing seat rides the parent frame; wiring lands with avatar mounting)
-    avatarMounts.set(args.id, { to: args.to, slot: args.slot, offset: args.offset, yaw: args.yaw });
-    bus.emit('mount', { id: args.id, to: args.to, slot: args.slot });
-    return;
-  }
-  const child = entities.get(args.id);
-  const parent = entities.get(args.to);
-  if (!child || !parent) {                 // either end still downloading
-    pendingMounts.set(args.id, args);
-    return;
-  }
-  pendingMounts.delete(args.id);
-  const sock = socketOf(args.to, args.slot);
-  const off = args.offset ?? sock?.pos ?? [0, 0, 0];
-  parent.add(child);                       // transform becomes parent-relative
-  child.position.set(...off);
-  child.rotation.set(0, args.yaw ?? sock?.yaw ?? 0, 0);
-  // a part socket glues the cargo INTO the moving node, so it rides the
-  // part's motion. Same glue-don't-teleport rule as /mount: attach preserves
-  // the world transform, which bakes the part's current phase into the offset.
-  const partNode = sock?.part ? findPart(parent, String(sock.part)) : null;
-  if (partNode) partNode.attach(child);
-  child.userData.mountedTo = args.to;
-  // its collider would go stale the moment the parent moves; the parent's own
-  // collider is what the pair collides as while attached
-  removeCollider(args.id);
-  bus.emit('mount', { id: args.id, to: args.to, slot: args.slot });
-}
-
-function retryMounts() {
-  for (const args of [...pendingMounts.values()]) applyMount(args);
-}
-
 // A seated body's world transform, live: parent entity's CURRENT transform
 // (mid-pendulum, mid-path — motion.js has already ticked it this frame)
 // composed with the socket. This is what makes a sitter actually RIDE the
@@ -540,9 +344,12 @@ const _mtQ = new THREE.Quaternion();
 const _mtF = new THREE.Vector3();
 const _mtV = new THREE.Vector3();
 const _mtM = new THREE.Matrix4();
-/** Fill outPos with rider's world seat position; returns {yaw, pose, to} or
- *  null when not mounted (or the parent isn't live yet). */
-export function mountTransform(riderId, outPos) {
+/** Fill outPos with rider's world seat position; returns {yaw, pose, to,
+ *  seatState, seatReason} or null when not mounted (or the parent isn't live
+ *  yet). `rider` is {path, av} — the roster path and live wrapper of the
+ *  body being seated; without it the seat is declared approximate, because
+ *  a correction we cannot gate is a correction we may not apply (#101). */
+export function mountTransform(riderId, outPos, rider) {
   const m = avatarMounts.get(riderId);
   if (!m) return null;
   const parent = entities.get(m.to);
@@ -560,23 +367,24 @@ export function mountTransform(riderId, outPos) {
       .premultiply(part.parent.matrixWorld).invert();       // world → part-at-rest
     _mtF.applyMatrix4(_mtM).applyMatrix4(part.matrixWorld); // …re-emerge from the live part
   }
+  // The profile correction (#101): contact plane onto the authored socket
+  // plane, applied AFTER part displacement so a profiled rider carries it
+  // through a moving part's arc. The subtraction is along WORLD up — mounted
+  // bodies render upright (yaw only, below), so a tilted parent's normal
+  // would displace the root laterally while the body's contact geometry
+  // stays vertical (the B2 discriminator in tools/seatcore-test.ts). Gate
+  // closed = today's root-at-socket, declared, never silent.
+  const seat = seatCorrectionFor(rider, sock);
+  if (seat.applied) {
+    const c = applySeatCorrection([_mtF.x, _mtF.y, _mtF.z], seat.contactY, seat.scale);
+    if (c) _mtF.set(c[0], c[1], c[2]);
+  }
   outPos.copy(_mtF);
   parent.getWorldQuaternion(_mtQ);
   _mtF.set(0, 0, 1).applyQuaternion(_mtQ);
   const parentYaw = Math.atan2(_mtF.x, _mtF.z);
-  return { yaw: parentYaw + (m.yaw ?? sock.yaw ?? 0), pose: sock.pose ?? 'sitchair', to: m.to };
-}
-
-/** Motion ended: rest at the logged base pose. Anything that rests AWAY from
- *  base (a ferry stopping mid-route) gets a `place` alongside its stop —
- *  that is the plane-transition stamp, and it rewrites base above. */
-function restAtBase(id) {
-  const obj = entities.get(id);
-  const base = obj?.userData?.base;
-  if (!obj || !base) return;
-  obj.position.set(...base.pos);
-  obj.rotation.set(0, base.yaw ?? 0, 0);
-  reindexCollider(id);
+  return { yaw: parentYaw + (m.yaw ?? sock.yaw ?? 0), pose: sock.pose ?? 'sitchair', to: m.to,
+    seatState: seat.applied ? 'profiled' : 'approximate', seatReason: seat.applied ? null : seat.reason };
 }
 
 // sky.js owns the current args; world.js only needs them to merge a weather
@@ -584,87 +392,3 @@ function restAtBase(id) {
 let currentSkyArgs = () => ({});
 export function setSkyArgsSource(fn) { currentSkyArgs = fn; }
 
-/** Turn a folded snapshot back into the verbs that would have produced it.
- *
- *  Deliberately NOT a second way of building a world. The state goes back
- *  through applyEntry as synthetic entries, so there is exactly one code path
- *  that puts things in a scene — if snapshot-joining and log-joining could
- *  drift apart, they eventually would, and the difference would be a world
- *  that looks different depending on when you arrived.
- *
- *  Order matters the way it does in a log: ground before the things standing
- *  on it. */
-export function stateToEntries(state, { skipChatFromSeq = Infinity } = {}) {
-  if (!state) return [];
-  const out = [];
-  let seq = -1;
-  const add = (verb, args, actor = 'world', ts = Date.now()) =>
-    out.push({ seq: seq--, ts, actor, verb, args });   // negative: pre-history
-
-  for (const [id, r] of Object.entries(state.roles ?? {})) {
-    add('grant', { id, role: r.role, ...(r.gen ? { gen: true } : {}) });
-  }
-  if (state.terrain) add('terrain', state.terrain);
-  if (state.grass) add('grass', state.grass);
-  if (state.sky) add('sky', state.sky, 'world', state.sky.ts ?? Date.now());
-  for (const a of state.assets ?? []) add('asset', a);
-  for (const [id, e] of Object.entries(state.entities ?? {})) {
-    if (e.kind === 'light') {
-      add('light', { id, pos: e.pos, color: e.color, intensity: e.intensity, range: e.range,
-        ...(e.keep ? { keep: true } : {}) },
-        e.actor ?? 'world', e.ts ?? Date.now());
-    } else {
-      add('spawn', {
-        id, lib: e.lib, pos: e.pos, yaw: e.yaw,
-        ...(e.scale != null ? { scale: e.scale } : {}),
-        // carried through the snapshot for the same reason as scale: the
-        // spawn verb's `collide` override decides exact-vs-box, and rebuilding
-        // the entry without it makes a snapshot-joiner's world disagree with a
-        // log-joiner's. applyEntry reads args.collide; give it the same value
-        // the original spawn carried.
-        ...(e.collide != null ? { collide: e.collide } : {}),
-      }, e.actor ?? 'world', e.ts ?? Date.now());
-    }
-  }
-  // components and attachments, after every spawn exists (a mount whose GLB
-  // is still in flight waits in pendingMounts, same as a trailing `place`)
-  for (const [id, e] of Object.entries(state.entities ?? {})) {
-    for (const [type, data] of Object.entries(e.comp ?? {})) add('comp', { id, type, data });
-    if (e.parent) add('mount', { id, ...e.parent });
-  }
-  for (const [id, rel] of Object.entries(state.mounts ?? {})) add('mount', { id, ...rel });
-  for (const [id, b] of Object.entries(state.behaviors ?? {})) {
-    add('behavior', { id, src: b.src, ...(b.runtime ? { runtime: b.runtime } : {}),
-      ...(b.knobs ? { knobs: b.knobs } : {}), by: b.author }, b.author ?? 'world', b.ts ?? Date.now());
-  }
-  // Anything the tail will replay must not also be rendered from the snapshot.
-  // Chat keeps its REAL seq, unlike the world-shaping entries above: it is the
-  // only part of a snapshot that is a position in history rather than a
-  // description of the present, and the scrollback cursor is derived from it.
-  // Without this the first page-back re-fetches what is already on screen.
-  for (const m of state.recentChat ?? []) {
-    if ((m.seq ?? -1) >= skipChatFromSeq) continue;
-    const e = { seq: typeof m.seq === 'number' ? m.seq : seq--, ts: m.ts, actor: m.actor,
-                verb: 'say', args: { text: m.text } };
-    out.push(e);
-  }
-  return out;
-}
-
-export function resetWorld() {
-  worldRoles.clear();
-  behaviors.clear();
-  shadowless.clear();
-  for (const [id, obj] of entities) { if (obj) (obj.parent ?? scene).remove(obj); removeCollider(id); }
-  entities.clear();
-  entityMeta.clear();
-  comps.clear();
-  avatarMounts.clear();
-  pendingMounts.clear();
-  lastTerrainArgs = lastGrassArgs = null;
-  pendingOps.clear();
-  // Anything hanging off entities that owns GPU resources and per-frame hooks
-  // (emitters, today) retires here. Announced rather than imported so the
-  // owning module stays a leaf — world.js is imported BY it.
-  bus.emit('world-reset', {});
-}

@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "a": {
+      "lib": "props/crate.glb",
+      "pos": [
+        4,
+        0,
+        4
+      ],
+      "yaw": 1.5,
+      "scale": 2,
+      "actor": "author",
+      "ts": 1786312089328
+    },
+    "b": {
+      "kind": "light",
+      "pos": [
+        0,
+        2,
+        2
+      ],
+      "color": 8965375,
+      "intensity": 40,
+      "range": 8,
+      "keep": true,
+      "actor": "author",
+      "ts": 1786312089329
+    },
+    "c": {
+      "lib": "props/ball.glb",
+      "pos": [
+        5,
+        0,
+        5
+      ],
+      "yaw": 0,
+      "actor": "author",
+      "ts": 1786312089329
+    }
+  },
+  "roles": {
+    "author": {
+      "role": "owner",
+      "gen": true
+    }
+  }
+}

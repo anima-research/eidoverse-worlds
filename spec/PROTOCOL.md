@@ -41,8 +41,8 @@ Folding produces, at minimum:
 ```jsonc
 {
   "entities": { "<id>": { "pos": [x,y,z], "yaw": r, "lib": "path",   // things
-                           "scale": s?, "actor": who, "ts": ms,
-                           "kind": "light"?, "color"?, "intensity"?, "range"?,
+                           "scale": s?, "actor": who, "ts": ms, "collide"?,
+                           "kind": "light"?, "color"?, "intensity"?, "range"?, "keep"?, "day"?,
                            "comp": { "<type>": <opaque data> }?,      // §4
                            "parent": { "to", "slot"?, "offset"?, "yaw"? }? } },
   "mounts": { "<body-id>": { "to", "slot"?, "offset"?, "yaw"? } }?,   // §5
@@ -61,9 +61,9 @@ measured on the fields above (see `fixtures/README.md`).
 | verb | args | fold effect |
 |---|---|---|
 | `genesis` | `{v, dialect}` | nothing (version marker) |
-| `spawn` | `{id, lib, pos?, yaw?, scale?}` | create entity (no-op if id exists) |
+| `spawn` | `{id, lib, pos?, yaw?, scale?, collide?}` | create **or replace** entity (see §3.1) |
 | `place` | `{id, pos?, yaw?, scale?}` | update transform; re-stamps rest pose |
-| `light` | `{id, pos?, color?, intensity?, range?}` | create light entity |
+| `light` | `{id, pos?, color?, intensity?, range?, keep?, day?}` | create light entity; re-issuing on an id that already folds as a light is a **partial update** (absent fields keep their prior value); a non-light holding the id is replaced wholesale (§3.1) |
 | `remove` | `{id}` | delete entity; children mounted on it get their **absolute pose computed and stamped** (parent pos + yaw-rotated offset), then orphaned; body mounts onto it are cleared |
 | `comp` | `{id, type, data\|null}` | `entities[id].comp[type] = data`; null deletes. **Blind**: data is opaque to the fold. Writers SHOULD keep data ≤ 8 KB |
 | `motion` | `{id, type, …params}` | sugar: `comp[motion] = args-minus-id`; `type: null` deletes. If `t0` absent, fold stamps `t0 = entry.ts` |
@@ -79,6 +79,33 @@ measured on the fields above (see `fixtures/README.md`).
 | `terrain` / `grass` / `sky` / `weather` | opaque bags | world-scope singletons (grass `{clear: true}` deletes; weather merges into sky). Grass bags speak eidoverse-video's `createFlora` (species/height/density/color/rows); legacy makeGrass bags in old logs are mapped client-side, never rewritten |
 | `asset` | `{name, path}` | append to the world's asset palette (dedup by path) |
 | anything else | — | **nothing, and the log keeps it** |
+
+### 3.1 The id namespace is flat, and the newest word wins
+
+A `spawn` whose id already exists REPLACES the previous holder **wholesale**:
+transform, component bag, and parent attachment are those of the new entry
+alone (nothing is inherited — a bag you want to survive re-authoring is a
+bag you re-author). The same replacement applies across kinds: a `spawn`
+landing on a light id, or a `light` landing on a model id, replaces it. The
+one exception is `light`-on-`light`, which merges as a partial update (the
+table above) — brightening a lamp is not re-authoring it.
+
+*Erratum (2026-08-09):* this section previously read "no-op if id exists"
+for `spawn`. Every reference fold since genesis has overwritten, so every
+persisted v1 log already means what this section now says — the text was
+wrong, not the worlds. Documented under §0's rule that the implementation
+wins the argument; no dialect bump.
+
+`keep` and `day` (lights) fold into the entity (§2) and carry client policy
+in world state, not rendering guarantees. `keep: true` gives the light
+**first claim on a casting slot** and exempts it from perf-governor
+shedding — top *priority*, not an unbounded promise: a client's slot pool
+is finite, and past it a kept light still glows without casting. `day:
+false` opts a light out of the time-of-day cycle: it burns at its authored
+intensity at noon (the deliberate porch light). Absent or true, a placed
+light dims toward midday the way lamps do. Both are stored only in their
+non-default state (`keep: true`, `day: false`); partial updates merge them
+like any other light field. Pinned by fixture `05-lightpolicy`.
 
 ## 4. Components
 

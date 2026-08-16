@@ -22,6 +22,7 @@ const check = (name: string, ok: boolean, detail = "") => {
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 
 const main = read("client/main.js");
+const mouths = read("client/lib/voicemouths.js");   // 6c: the mouth/glyph driver moved out of main.js
 const voice = read("client/lib/voice.js");
 const consent = read("client/lib/voiceconsent.js");
 const mictoggle = read("client/lib/mictoggle.js");
@@ -29,16 +30,21 @@ const net = read("client/lib/net.js");
 const server = read("server/server.ts");
 
 // --- entry point imports everything it calls (the bug this file was born from)
-for (const fn of ["initVoice", "updateVoiceMouths", "micOn", "isMuted", "micAnalyserLevel", "peerLevels"]) {
-  const called = new RegExp(`\\b${fn}\\s*\\(`).test(main);
-  const bound = new RegExp(`\\b${fn}\\b[^\\n]*from|function ${fn}|import[^\\n]*\\b${fn}\\b`).test(main);
-  check(`main.js binds ${fn} before calling it`, !called || bound);
+// The mouth/amplitude driver lives in lib/voicemouths.js now (§14 6c); the
+// same per-file check follows it there — main.js must still bind what it
+// calls itself (updateVoiceMouths, from the frame-system list).
+for (const [label, src] of [["main.js", main], ["voicemouths.js", mouths]] as const) {
+  for (const fn of ["initVoice", "updateVoiceMouths", "micOn", "isMuted", "micAnalyserLevel", "peerLevels"]) {
+    const called = new RegExp(`\\b${fn}\\s*\\(`).test(src);
+    const bound = new RegExp(`\\b${fn}\\b[^\\n]*from|function ${fn}|import[^\\n]*\\b${fn}\\b`).test(src);
+    check(`${label} binds ${fn} before calling it`, !called || bound);
+  }
 }
 check("main.js actually starts the voice subsystem", /initVoice\s*\(/.test(main));
 check("main.js loads the mic/headphone toggles", /mictoggle\.js/.test(main));
 
 // --- every client-side emit this feature adds has a listener somewhere
-const clientSrc = main + voice + consent + mictoggle + net + read("client/lib/audiopanel.js");
+const clientSrc = main + mouths + voice + consent + mictoggle + net + read("client/lib/audiopanel.js");
 for (const ev of ["audio:receive", "rtc", "caption"]) {
   const emitted = new RegExp(`emit\\(\\s*['"]${ev}['"]`).test(clientSrc);
   const heard = new RegExp(`on\\(\\s*['"]${ev}['"]`).test(clientSrc);
