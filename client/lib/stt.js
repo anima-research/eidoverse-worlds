@@ -53,6 +53,13 @@ export function setSTT(on) {
   // it rides the local analyser loop in voice.js, so a person who declines
   // vendor transcription still has an audible presence. STT is transcript
   // duty only.
+  // 🔴 DECLARED BEFORE THE HANDLERS THAT USE THEM. onend/onresult reference
+  // these, and a `let` further down is in the temporal dead zone for any
+  // callback that fires first — a runtime ReferenceError `node --check` cannot
+  // see. (Same trap voicesfu.js:29 documents for its analyser vars.)
+  let restarts = 0;
+  const firstStart = performance.now();
+  const mark = (what) => { try { window.__sttLast = what; } catch { /* no window */ } };
   rec.onresult = (e) => {
     // 🔴 DISTINGUISH "no results" FROM "results that are never FINAL"
     // (2026-08-16). On R's Android, /audio reported audio reaching the
@@ -100,8 +107,22 @@ export function setSTT(on) {
   // microphone. It must govern EVERY capture, not just the one WebRTC owns.
   // Fails closed: if micOn cannot be read, we stop rather than continue.
   rec.onend = () => {
-    if (wanted && micIsLive()) { try { rec.start(); } catch (err) { report('stt restart', err); } }
-    else if (wanted) { wanted = false; rec = null; report('stt', 'stopped: mic is off'); }
+    // 🔴 COUNT THE RESTARTS (2026-08-16). On Android the session ends every
+    // 6-8s no matter what, so this handler re-starts it forever — and every
+    // start/stop plays the OS recognition earcon. R heard "a chime every 6-8
+    // seconds" and that was the loop being audible; the same loop is why
+    // nothing is ever transcribed, since a session that dies that fast never
+    // survives to finalize. One symptom she could hear, one she could not,
+    // both this.
+    restarts++;
+    const secs = ((performance.now() - firstStart) / 1000).toFixed(0);
+    if (wanted && micIsLive()) {
+      try {
+        rec.start();
+        mark(`ended+restarted ${restarts}× in ${secs}s${restarts >= 3 ? '  ← the session keeps dying; captions cannot finalize' : ''}`);
+      } catch (err) { mark(`restart failed: ${err?.message ?? err}`); report('stt restart', err); }
+    }
+    else if (wanted) { wanted = false; rec = null; mark('stopped: mic is off'); report('stt', 'stopped: mic is off'); }
   };
   // 🔴 A CAPTION ENGINE THAT NEVER STARTS MUST SAY SO (R, 2026-08-16, on an
   // Android phone where voice worked both ways and STT produced nothing).
@@ -125,7 +146,6 @@ export function setSTT(on) {
   // 🔴 The phone has no console, so the last event has to be READABLE from the
   // page itself — /audio prints it. Without this, "recognition never started"
   // and "started and heard nothing" are the same observation: silence.
-  const mark = (what) => { try { window.__sttLast = what; } catch { /* no window */ } };
   rec.onaudiostart = () => { sawAudio = true; mark('audio reached the recognizer'); };
   rec.onstart = () => {
     mark('started');
