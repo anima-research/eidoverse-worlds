@@ -37,7 +37,25 @@ class FakePeer {
   }
 }
 
-/** Full offer/answer both directions — the SFU always answers. */
+/** Full offer/answer, BROWSER-OFFERS direction.
+ *
+ *  🔴 THIS IS THE OPPOSITE OF PRODUCTION, and the comment here used to say "the
+ *  SFU always answers" as though it were the contract. It is not: sfu.ts:394-398
+ *  is emphatic that THE SERVER MUST OFFER, because a browser's re-offer arrives
+ *  `sendonly` and an answer cannot add a receive direction the offer never
+ *  proposed — "answering a browser re-offer silently produces a route that
+ *  forwards packets into a track nobody is receiving."
+ *
+ *  So this helper exercises a direction production never uses. It is fine for
+ *  the POLICY assertions it serves (consent, caps, leaks — none of which depend
+ *  on who offered), and the tests that care about direction drive
+ *  `room.negotiate(...)` themselves. But it means a green run here says NOTHING
+ *  about SDP direction handling, and the stale comment was itself evidence that
+ *  production flipped without anyone revisiting this file.
+ *
+ *  Found by a second-agent audit, 2026-08-16. Left in place rather than
+ *  rewritten mid-audit: changing negotiation direction under 57 passing
+ *  assertions is its own change, with its own review. */
 async function negotiate(browser: RTCPeerConnection, sfuPc: RTCPeerConnection) {
   const offer = await browser.createOffer();
   await browser.setLocalDescription(offer);
