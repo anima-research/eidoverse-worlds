@@ -48,7 +48,10 @@ async function connect() {
     const stream = new MediaStream([track.mediaStreamTrack]);
     s.audio.srcObject = stream;
     s.stream = stream;
-    s.audio.play().catch(() => addEventListener('click', () => s.audio.play().catch(() => {}), { once: true }));
+    // Shared unlock queue — the one-shot 'click' listener this replaces left
+    // every other speaker's element silent even after a successful tap, and
+    // never fired at all on a touchscreen. See audiounlock.js.
+    playWhenAllowed(s.audio, id);
   });
   r.on(RoomEvent.TrackUnsubscribed, (track, _pub, participant) => {
     if (track.kind !== 'audio') return;

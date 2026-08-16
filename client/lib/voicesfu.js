@@ -23,6 +23,7 @@ import { audioContext } from './audioctx.js';
 // they are holding a phone and watching a gold mic meter that is telling them
 // the truth about capture and nothing about transmission.
 import { logChat } from './chat.js';
+import { playWhenAllowed } from './audiounlock.js';
 
 let pc = null, cred = null, micStream = null, wantMic = false;
 // My own outbound analyser (sfuMyLevel). Declared HERE, with the rest of the
@@ -55,12 +56,11 @@ function attach(id, track) {
   const stream = new MediaStream([track]);
   s.audio.srcObject = stream;
   s.stream = stream;
-  // Autoplay policy: a page that has not been clicked cannot start audio. The
-  // smoke launches Chromium with --autoplay-policy=no-user-gesture-required,
-  // but a real user's first join needs this fallback or they hear nothing and
-  // nothing in the logs says why.
-  s.audio.play().catch(() =>
-    addEventListener('click', () => s.audio.play().catch(() => {}), { once: true }));
+  // Autoplay policy: a page that has not been gestured at cannot start audio.
+  // The smoke launches Chromium with --autoplay-policy=no-user-gesture-required,
+  // but a real user's first join needs the unlock queue — see audiounlock.js for
+  // why the old one-shot 'click' listener silently failed on a phone.
+  playWhenAllowed(s.audio, id);
 }
 
 export async function sfuConnect(credential, send) {
