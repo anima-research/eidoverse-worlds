@@ -97,7 +97,19 @@ function ensureCss() { /* house sheet — index.html owns .row and .row.wide */ 
 const ROWS = [
   ['voices', 'voice volume', 'other people speaking, and agent speech'],
   ['world', 'world volume', 'ambience and place-sound — the 🎧 toggle never touches this'],
-  ['tts', 'text-to-speech volume', 'synthetic narration only'],
+  // 🔴 "self-TTS volume", NOT "text-to-speech volume" (R, 2026-08-16: "is it a
+  // bit of a misnomer? Voice volume covers EVERYTHING in the voice lane,
+  // including TTS"). She is right — voicesource.js hands synthesized speech to
+  // the same lane as a microphone, so 'voices' already governs every TTS you
+  // HEAR. The old label promised control this slider could not have, and did
+  // not have: volumeFor('tts') had no caller anywhere in the client.
+  // It now scales the SIDETONE — what you hear of your own synthesized voice —
+  // and deliberately not what goes out. R's argument (2026-08-16): "endpoint
+  // volume should be in the end user's control anyway". A sender-side gain
+  // would let me override every listener's own 'voices' slider, rolloff and
+  // consent from my end; a speaker controls what they monitor, a listener
+  // controls what they hear.
+  ['tts', 'self-TTS volume', 'how loud you hear your own synthesized voice'],
 ];
 
 function slider(cat, label, hint, value) {

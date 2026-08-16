@@ -12,6 +12,7 @@
 
 import { report } from './core.js';
 import { setSynthProvider, notifySynthTrackChanged } from './voicesource.js';
+import { volumeFor } from './voiceconsent.js';
 import { audioContext } from './audioctx.js';
 
 // The registered TTS source. null = ordinary microphone.
@@ -386,9 +387,21 @@ function monitor(pcm, sampleRate) {
     for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
     const src = monitorCtx.createBufferSource();
     const g = monitorCtx.createGain();
-    // Slightly under unity: your own voice should sit behind the room, the way
-    // sidetone always does, rather than competing with it.
-    g.gain.value = 0.8;
+    // 🔴 SELF-TTS VOLUME LANDS HERE, NOT ON THE OUTBOUND TRACK (R, 2026-08-16:
+    // "Maybe it's just what you hear of yourself and not what goes out. Seems
+    // like endpoint volume should be in the end user's control anyway").
+    //
+    // I had built the outbound version first — scaling the samples everyone
+    // else receives — and her argument is better: every listener already owns
+    // 'voices', distance rolloff and consent, so a sender-side gain lets me
+    // make myself quieter or louder in THEIR ears, over their settings. That is
+    // authority pointing the wrong way. A speaker should control what they
+    // monitor; a listener should control what they hear.
+    //
+    // So this scales the SIDETONE only. 0.8 stays as the baseline the slider
+    // rides, keeping the old "your own voice sits behind the room" default at
+    // unity while letting you push it up or down for yourself alone.
+    g.gain.value = 0.8 * volumeFor('tts');
     src.buffer = buf;
     src.connect(g).connect(monitorCtx.destination);
     // 🔴 SCHEDULE, DO NOT FIRE (R, 2026-08-16: "when they finish they just start
