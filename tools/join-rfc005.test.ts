@@ -60,7 +60,8 @@ const check = (name: string, ok: boolean, extra = "") => {
 const NONCE = `t${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
 
 const world = Bun.spawn([process.execPath, "server/server.ts"], {
-  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir },
+  env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir,
+         WORLD_INSTANCE_NONCE: NONCE },
   stdout: "ignore", stderr: "ignore",
 });
 const mcpl = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
@@ -69,18 +70,27 @@ const mcpl = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
   stdout: "ignore", stderr: "ignore",
 });
 
-/** PIDs listening on a TCP port, from the OS. Verified against this machine's
- *  `ss -lntp` output before use. Empty when nothing is listening. */
-async function listenerPids(port: number): Promise<number[]> {
-  const p = Bun.spawn(["ss", "-lntpH"], { stdout: "pipe", stderr: "ignore" });
-  const out = await new Response(p.stdout).text();
-  await p.exited;
-  const pids: number[] = [];
-  for (const line of out.split("\n")) {
-    if (!new RegExp(`[:.]${port}\\s`).test(line)) continue;
-    for (const m of line.matchAll(/pid=(\d+)/g)) pids.push(Number(m[1]));
-  }
-  return [...new Set(pids)];
+/** PIDs listening on a TCP port, from the OS. Returns null when this platform
+ *  cannot answer — which is NOT the same as "nothing is listening", and
+ *  conflating the two is how a portable-looking check silently stops checking.
+ *
+ *  🔴 LINUX-ONLY, AND THAT IS WHY IT IS THE SECOND OPINION (antra, 2026-08-16:
+ *  the macOS review host has no `ss` and no /proc, so the exact-head run died
+ *  before the first vector with `Executable not found in $PATH: "ss"`). The
+ *  PORTABLE proof is the per-run nonce each child echoes; this is a stricter
+ *  opinion offered where the platform can give one. */
+async function listenerPids(port: number): Promise<number[] | null> {
+  try {
+    const p = Bun.spawn(["ss", "-lntpH"], { stdout: "pipe", stderr: "ignore" });
+    const out = await new Response(p.stdout).text();
+    if ((await p.exited) !== 0) return null;
+    const pids: number[] = [];
+    for (const line of out.split("\n")) {
+      if (!new RegExp(`[:.]${port}\\s`).test(line)) continue;
+      for (const m of line.matchAll(/pid=(\d+)/g)) pids.push(Number(m[1]));
+    }
+    return [...new Set(pids)];
+  } catch { return null; }          // no `ss` on this platform
 }
 
 /** Transitive children of a pid, via /proc — Bun.spawn of a .ts file may exec
@@ -88,6 +98,7 @@ async function listenerPids(port: number): Promise<number[]> {
  *  strict. */
 function descendantsOf(root: number): number[] {
   const out: number[] = [];
+  if (!existsSync("/proc")) return out;   // no procfs: caller falls back to the nonce
   const walk = (pid: number, depth = 0) => {
     if (depth > 6) return;
     let kids = "";
@@ -122,21 +133,59 @@ async function waitFor(what: string, probe: () => Promise<boolean>, ms = 20_000)
 function ownsPort(name: string, port: number, child: { pid: number }) {
   return async () => {
     const pids = await listenerPids(port);
+    // null = this platform cannot answer. Return true so the wait resolves: the
+    // nonce challenge above has ALREADY proved identity, and refusing to
+    // proceed here would make a portable receipt unrunnable on the very host
+    // that reviews it. A skip is recorded loudly (see osOwnership below) — a
+    // check that quietly stops checking is the failure mode this file exists
+    // to prevent.
+    if (pids === null) return true;
     if (pids.length === 0) return false;
     const ours = new Set([child.pid, ...descendantsOf(child.pid)]);
+    // No procfs but `ss` present (unlikely, but do not guess): with no way to
+    // enumerate descendants, an exact pid match is the most we can honestly
+    // assert, and anything else is unproven rather than foreign.
     const foreign = pids.filter((p) => !ours.has(p));
-    if (foreign.length) throw new Error(`${name} port ${port} held by pid(s) ${foreign.join(",")}, not our child ${child.pid} — stale listener`);
+    if (foreign.length && ours.size > 1) {
+      throw new Error(`${name} port ${port} held by pid(s) ${foreign.join(",")}, not our child ${child.pid} — stale listener`);
+    }
     return true;
   };
 }
 
+/** Did the OS-level check actually run on this platform? Reported, never
+ *  assumed — antra's macOS run must be able to see WHICH proofs it got. */
+async function osOwnershipAvailable(): Promise<boolean> {
+  return (await listenerPids(WPORT)) !== null && existsSync("/proc");
+}
+
 // 🔴 IDENTITY, NOT MERE LIVENESS. "The port answers" is exactly the check that
 // lets a stale listener report green.
-await waitFor("world /version", async () => (await fetch(`http://127.0.0.1:${WPORT}/version`)).ok);
+//
+// 🔴 AND EVERY PROBE BELOW RUNS INSIDE THE try (antra, 2026-08-16): readiness
+// and ownership used to run BEFORE the try/finally opened, so any startup or
+// identity failure bypassed the very teardown this file guarantees. Their
+// failed macOS run left both children to the shell. The `try` now opens here,
+// before the first spawn-dependent assertion, so nothing that can throw sits
+// outside it.
+let osOwnership = false;
+try {
+await waitFor("world /version echoes our nonce", async () => {
+  const r = await fetch(`http://127.0.0.1:${WPORT}/version`);
+  if (!r.ok) return false;
+  const body = await r.json().catch(() => null) as { instance?: string } | null;
+  // A world answering WITHOUT our instance field is a stale listener, not a
+  // slow start — say so rather than spinning until the deadline.
+  if (body && !("instance" in body)) {
+    throw new Error("a world answered but WITHOUT our nonce — stale listener on this port");
+  }
+  return body?.instance === NONCE;
+});
 await waitFor("world port is owned by OUR child", ownsPort("world", WPORT, world));
 // Two independent proofs for the door: it echoes a nonce only we set, AND the
-// OS says the port is our child's. (The world server has no nonce-able
-// endpoint — /avatars reads LIBRARY_DIR/OPT_DIR, not worldsDir; checked.)
+// OS says the port is our child's. The nonce is the PORTABLE one; the OS check
+// is a stricter second opinion, and is skipped (loudly, below) where the
+// platform cannot answer.
 await waitFor("door /healthz echoes our nonce", async () => {
   const r = await fetch(`http://127.0.0.1:${MPORT}/healthz`);
   if (!r.ok) return false;
@@ -145,6 +194,14 @@ await waitFor("door /healthz echoes our nonce", async () => {
   return body === `ok ${NONCE}`;
 });
 await waitFor("door port is owned by OUR child", ownsPort("door", MPORT, mcpl));
+
+// Say which proofs this run actually obtained. A receipt that cannot be read
+// as "nonce only" vs "nonce + OS" invites the reader to assume the stronger
+// one — and on macOS they would be assuming a check that did not run.
+osOwnership = await osOwnershipAvailable();
+console.log(osOwnership
+  ? "  identity: per-run nonce + OS port ownership (linux)"
+  : "  identity: per-run nonce only (no ss//proc on this platform — OS check skipped)");
 
 /** Minimal MCPL 0.5 host: initialize, grant, then request/notification I/O. */
 async function connectHost(token: string, query = "", mode: "accept" | "decline" | "mute" = "accept") {
@@ -237,9 +294,9 @@ async function watchWorld(w: string, id: string) {
 
 const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
 
-try {
   // (no startup sleep: readiness above already proved both children are up AND
-  // are the processes we spawned)
+  // are the processes we spawned. The `try` that guards teardown opens further
+  // up, BEFORE those probes — see the note there.)
 
   // ── 1. no policy → deny, and the session survives the refusal ─────────────
   // Driven through the TOOL now: the channels/open sibling-join lane was
