@@ -477,7 +477,7 @@ function acceptAC() {
  *  down with it (a diagnostic that throws is worse than none). */
 // Bumped by hand when the audio diagnostics change — the point is only that a
 // report from a stale page carries a DIFFERENT value than the current one.
-const BUILD_STAMP = 'stt-diag-4';
+const BUILD_STAMP = 'stt-diag-5';
 
 function audioReport() {
   const L = [];
@@ -553,6 +553,9 @@ function audioReport() {
 /** Just the captions answer, short enough to copy on a phone. */
 function sttReport() {
   const parts = [`build ${BUILD_STAMP}`];
+  // The recognizer's language — a wrong one returns confident nothing (nomatch)
+  // rather than an error, which is exactly what R's Galaxy reported.
+  try { if (window.__sttLang) parts.push(`lang ${window.__sttLang}`); } catch { /* ignore */ }
   try { parts.push(window.__sttOn?.() ? 'stt ON' : 'stt off'); } catch { parts.push('stt ?'); }
   try { parts.push(window.__sttTally ? window.__sttTally() : 'NO TALLY (stale page)'); }
   catch (e) { parts.push(`tally unreadable: ${e?.message ?? e}`); }

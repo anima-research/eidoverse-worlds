@@ -94,7 +94,14 @@ export function setSTT(on) {
   rec = new SR();
   rec.continuous = true;
   rec.interimResults = false;
+  // 🔴 THE LANGUAGE IS A PRIME SUSPECT FOR nomatch (2026-08-16). R's Galaxy
+  // returned nomatch×5 — final results recognising nothing — after speech was
+  // detected. The Samsung-specific reports call this out: navigator.language on
+  // a Galaxy may not match what is actually being spoken, and a recognizer
+  // asked for the wrong language returns confident nothing rather than an
+  // error. Report it so the phone can tell us instead of us guessing.
   rec.lang = navigator.language || 'en-US';
+  try { window.__sttLang = rec.lang; } catch { /* no window */ }
   // Speech-onset presence intentionally does NOT live here (#26 review):
   // it rides the local analyser loop in voice.js, so a person who declines
   // vendor transcription still has an audible presence. STT is transcript
