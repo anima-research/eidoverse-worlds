@@ -636,6 +636,42 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
     check("…while the SAME credential as plain-MCP travels fine (the mcplClient conjunct is load-bearing)",
       !plainOk.result?.isError && /(Arrived in|Founded and entered) "annex"/.test(txt(plainOk)), txt(plainOk));
     samecred.ws.close();
+
+    // 🔴 WHAT MAKES THE CONJUNCT SOUND: MCPL-ness is FIXED AT INITIALIZE.
+    //
+    // An adversarial review (2026-08-17) read `this.mcplClient && !granted(...)`
+    // and reported a bypass: mcplClient comes from a CLIENT-SUPPLIED field, so
+    // a denied host should be able to escape by ceasing to declare MCPL. The
+    // premise is true. The conclusion does not follow, and I nearly shipped a
+    // `lifecycleDenied` latch defending against it before checking.
+    //
+    // mcplClient is assigned at exactly one site, inside the one-shot prelude:
+    // it awaits initialize, then notifications/initialized, and only then does
+    // the read loop start. A second initialize never reaches the assignment.
+    // So a host chooses its class ONCE, before any policy exchange — and a host
+    // that chose plain-MCP never had a denial to escape.
+    //
+    // This vector pins that property, because the refactor that WOULD open the
+    // hole is moving that assignment out of the prelude. If someone does, this
+    // fails instead of shipping.
+    const escapee = await connectHost("roamer-token");
+    await sleep(1200);
+    await escapee.request("featureSets/update", {
+      effectiveCapabilities: ["tools", "channels.register", "channels.publish", "channels.incoming"],
+    });
+    // Try to become "plain MCP" mid-session. The door must not honour this.
+    await escapee.request("initialize", {
+      protocolVersion: "2024-11-05",
+      capabilities: {},                       // <- no experimental.mcpl
+      clientInfo: { name: "escapee", version: "0" },
+    }).catch(() => { /* refusing a re-initialize outright is equally fine */ });
+    const escape = await escapee.request("tools/call", { name: "travel", arguments: { world: "annex" } });
+    check("a denied host stays denied — MCPL-ness is fixed at initialize, not re-declarable",
+      escape.result?.isError === true && /capability denied/.test(txt(escape)), txt(escape));
+    const stillOpen = await escapee.request("channels/list", {});
+    check("…and the refused host is still in its own world, undisturbed",
+      stillOpen.result?.channels?.[0]?.id === "world:commons", JSON.stringify(stillOpen.result));
+    escapee.ws.close();
   }
 
   // ── 4k. the door must be OPEN in the new world (state-desync regression) ──
