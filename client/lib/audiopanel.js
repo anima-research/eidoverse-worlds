@@ -81,10 +81,15 @@ function ensureCss() {
   document.head.appendChild(st);
 }
 
+// Labels say what they CONTROL, not what they are about (R, 2026-08-16:
+// "you should probably change all the volume sliders to be voice volume, world
+// volume, etc."). "voices" beside a slider is a category; "voice volume" is a
+// control. It also disambiguates the row from the text-to-speech MODEL row
+// below, which used to carry the identical label "text-to-speech".
 const ROWS = [
-  ['voices', 'voices', 'other people speaking, and agent speech'],
-  ['world', 'world', 'ambience and place-sound — the 🎧 toggle never touches this'],
-  ['tts', 'text-to-speech', 'synthetic narration only'],
+  ['voices', 'voice volume', 'other people speaking, and agent speech'],
+  ['world', 'world volume', 'ambience and place-sound — the 🎧 toggle never touches this'],
+  ['tts', 'text-to-speech volume', 'synthetic narration only'],
 ];
 
 function slider(cat, label, hint, value) {
@@ -128,7 +133,11 @@ function checkRow(label, hint, checked, onChange) {
 // is hearing you when it is not. LIVE is the badge's live white-gold; DARK is
 // the same hue at a quarter value, so the bar still MOVES when muted (you can
 // set your threshold before unmuting) without claiming to transmit.
-const LVL_LIVE = '#ffd66b';
+const LVL_LIVE = '#ffd66b';   // = INK.hot in mictoggle.js. One instrument, one gold.
+// Mic ON but under the threshold: the bar is hearing you and the gate is not
+// passing it. Brighter than muted-dark (something IS happening) and plainly not
+// the live gold (nothing is leaving your machine).
+const LVL_WARM = '#9a8a5e';
 const LVL_DARK = '#6b5f42';   // was #4a4230 — INVISIBLE against the black track
 // (seen in the 08-15 screenshot: only the threshold marker showed). A muted
 // meter must still be READABLE; "not transmitting" is said by being dimmer than
@@ -147,7 +156,11 @@ function micFloorRow() {
     `<span data-meter title="${hint}" style="flex:1;min-width:60px;position:relative;height:14px;` +
     `background:#000;border-radius:2px;overflow:hidden;cursor:ew-resize">` +
     `<span data-lvl style="position:absolute;left:0;top:0;height:100%;width:0;background:${LVL_DARK}"></span>` +
-    `<span data-thr style="position:absolute;top:0;height:100%;width:2px;background:#9f9;opacity:.9"></span>` +
+    // The marker is a RULER, not a signal (R, 2026-08-16: "the percentage
+    // slider being green is kinda ugly with a gold waveform bar… maybe just
+    // white?"). Green read as a second status light competing with the level;
+    // white states a POSITION and never argues with whatever colour the bar is.
+    `<span data-thr style="position:absolute;top:0;height:100%;width:2px;background:rgba(255,255,255,.85);opacity:1"></span>` +
     `</span>` +
     `<span data-out style="min-width:34px;text-align:right">${Math.round(micFloor() * 500)}%</span>` +
     `</span>`;
@@ -155,9 +168,42 @@ function micFloorRow() {
   const out = row.querySelector('[data-out]');
   const lvl = row.querySelector('[data-lvl]');
   const thr = row.querySelector('[data-thr]');
-  const paintLive = () => { lvl.style.background = micOn() ? LVL_LIVE : LVL_DARK; };
+  // 🔴 THREE STATES, NOT TWO (R, 2026-08-16: "when the mic sensitivity waveform
+  // is over the sensitivity threshold and goes live, can you turn it bright
+  // gold (same color as the HUD mic when it's live) and leave it gold until it
+  // goes off again").
+  //   mic off        → dark (still moves, so you can set a floor before unmuting)
+  //   on, under floor→ dim  (hearing you, not passing the gate)
+  //   on, over floor → GOLD (this is what the room actually gets)
+  // The gold is INK.hot from mictoggle.js — the same value, because the badge
+  // and this bar are read as one instrument.
+  //
+  // "leave it gold until it goes off again" IS hysteresis: a bare `level >
+  // floor` strobes on every syllable boundary, because speech crosses its own
+  // threshold dozens of times a second. Release at 85% of the floor, so it
+  // latches through the gaps inside a word and drops on a real pause.
+  const REL = 0.85;
+  let hot = false;
+  // 🔴 SIXTH INSTANCE OF THE SAME DEFECT (caught by tools/mic-meter-states.mjs,
+  // 2026-08-16). micOn() reads voice.js's MESH micStream, which is null forever
+  // on an SFU client — so this asked "is the mic on?" of a transport that is
+  // not running and got `false` every time, and the bar could never leave its
+  // muted colour no matter how loud you were. The file header at line 20 warns
+  // about exactly this for micLevelNow(); the mic ROW above already asks
+  // relayDiag() first. This is the third reader in this one file, so it gets
+  // the same treatment rather than a fourth private copy.
+  const micIsLive = () => {
+    try { return window.relayDiag?.().micPublished ?? micOn(); } catch { return micOn(); }
+  };
+  const paintLive = () => {
+    if (!micIsLive()) { hot = false; lvl.style.background = LVL_DARK; return; }
+    lvl.style.background = hot ? LVL_LIVE : LVL_WARM;
+  };
   paintLive();
   bus.on('audio:mic', paintLive);
+  // Dragging the threshold must re-evaluate immediately: the bar is the thing
+  // you are aiming, so it cannot wait for the next level sample to agree.
+  bus.on('audio:micfloor', () => paintLive());
   const paintThr = () => {
     thr.style.left = `calc(${Math.min(100, (micFloor() / FS) * 100)}% - 1px)`;
     out.textContent = `${Math.round(micFloor() * 500)}%`;
@@ -174,6 +220,12 @@ function micFloorRow() {
     if (!row.isConnected) return;
     const level = micLevelNow();
     lvl.style.width = `${Math.min(100, (level / FS) * 100)}%`;
+    // Latch above the floor, release at REL× it. Repaint only on a state
+    // CHANGE — this runs at frame rate, and assigning a style every frame is
+    // how you get a repaint storm behind a bar that already looks fine.
+    const floor = micFloor();
+    const next = hot ? level > floor * REL : level > floor;
+    if (next !== hot) { hot = next; paintLive(); }
     requestAnimationFrame(beat);
   };
   requestAnimationFrame(beat);

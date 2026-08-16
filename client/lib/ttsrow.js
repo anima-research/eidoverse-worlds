@@ -351,7 +351,11 @@ export function ttsSection(host, onPaint = () => {}) {
     // rides in the control column beside the tick rather than starting a third
     // ragged column of its own.
     head.innerHTML =
-      `<label class="sp-label" style="opacity:${live ? '1' : '.45'}">text-to-speech</label>` +
+      // "text-to-speech MODEL" (R, 2026-08-16): the audio panel already has a
+      // "text-to-speech volume" slider, and two different controls carrying the
+      // identical label "text-to-speech" is the ambiguity she hit. This one
+      // selects WHICH VOICE; that one sets how loud it is.
+      `<label class="sp-label" style="opacity:${live ? '1' : '.45'}">text-to-speech model</label>` +
       `<span class="sp-ctl">` +
       `<input type="checkbox" ${isTtsEnabled() ? 'checked' : ''} ` +
         // 🔴 NOT `disabled` WHEN THERE IS NO VOICE (R, 2026-08-09: "there's no
