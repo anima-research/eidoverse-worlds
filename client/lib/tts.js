@@ -99,7 +99,13 @@ export function setTtsEnabled(on) {
   // an ordering where synth stayed mixed in while the raw mic reopened.
   if (ttsEnabled !== was && typeof window !== 'undefined') {
     import('./voice.js').then((v) => {
-      const micLive = v.micOn?.();
+      // 🔴 ASK THE LIVE TRANSPORT. v.micOn() reads voice.js's own micStream,
+      // which is null forever on an SFU client — so this guard failed OPEN in
+      // the dangerous direction: enabling TTS while the SFU mic was hot ran
+      // the takeover the "mic beats TTS" invariant (above) exists to prevent.
+      // (2026-08-15, found auditing the stack for mesh-only reads.)
+      const micLive = (typeof window !== 'undefined' && typeof window.__sfuMicOn === 'function')
+        ? !!window.__sfuMicOn() : v.micOn?.();
       if (ttsEnabled && canSynthesize() && !micLive) {
         startPacer(); notifySynthTrackChanged(ensureGenerator());
       } else if (!ttsEnabled) {
@@ -456,7 +462,13 @@ export function speakOwnSays(bus, myId) {
     // burns cycles for nothing, and queuing behind a live mic means old text
     // suddenly playing minutes later when the mic drops. You spoke with your
     // voice; the text stays text.
-    const micLive = (await import('./voice.js')).micOn?.();
+    // 🔴 SAME READ, SAME TRAP (2026-08-15). On the SFU this returned false for
+    // a LIVE mic, so the discard below never fired: you spoke into a hot mic
+    // and the synthesizer spoke your typed line at the same time — the exact
+    // double-voice #91 B3 was written to forbid, arriving as the DEFAULT path
+    // on this branch rather than as dead code.
+    const micLive = (typeof window !== 'undefined' && typeof window.__sfuMicOn === 'function')
+      ? !!window.__sfuMicOn() : (await import('./voice.js')).micOn?.();
     if (micLive) { console.warn(`[voice] own say NOT synthesized — mic is live, mic beats TTS: "${String(text).slice(0, 40)}"`); return; }
     console.log(`[voice] own say → speaking: "${String(text).slice(0, 60)}"`);
     void speak(text);

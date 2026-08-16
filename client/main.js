@@ -552,7 +552,18 @@ if (typeof window !== 'undefined') window.setVoice = setVoice;
         // the fix deleted the definition and left the call. toggleMic wants the
         // actor NAME, which is CONFIG.name — the same value every other caller
         // passes.
-        if (!micOn()) await toggleMic(CONFIG.name);
+        // 🔴 OPEN THE LANE THE TRANSPORT ACTUALLY OWNS (2026-08-15). This read
+        // the mesh's own mic-state getter and toggle unconditionally — so a
+        // ?tts= body on an SFU server opened the MESH mic lane, published to a
+        // transport nobody was on, and reported success. Same defect as the
+        // HUD mic button had, on the path a voiced agent body depends on, and
+        // it violates the "EXACTLY ONE PLAYBACK OWNER" invariant asserted at
+        // the top of start(). Ask the bridge first; fall back to the mesh.
+        if (typeof window.__sfuMic === 'function') {
+          if (!window.__sfuMicOn?.()) await window.__sfuMic();
+        } else if (!micOn()) {
+          await toggleMic(CONFIG.name);
+        }
         console.log('[voice] TTS wiring complete');
       })
       // 🔴 NEVER SWALLOW THIS. It was `.catch(() => {})`, so anything after the

@@ -9,9 +9,9 @@
 // LiveKit path does — deliberately, so ONE browser smoke can drive either
 // transport and the acceptance-table row is measured the same way for both
 // hypotheses. A row proved by a different yardstick proves nothing comparable.
-import { bus } from './core.js';
+import { bus, CONFIG } from './core.js';
 import { net, sendRelayCredRequest, sendVoiceConsent } from './net.js';
-import { sfuConnect, sfuOnOffer, sfuOnIce, sfuMic, sfuPeerLevels,
+import { sfuConnect, sfuOnOffer, sfuOnIce, sfuMic, sfuPeerLevels, sfuMyLevel,
   sfuDiagClient, sfuClose, sfuActive, sfuSpeakerEntries, sfuInboundStats, sfuMicOn,
   sfuMicWanted } from './voicesfu.js';
 import { remotes } from './remotes.js';
@@ -54,6 +54,32 @@ export function initVoiceSfu(name) {
     }
   });
   askOnce(net);
+
+  // 🔴 A SPEAKER'S VOICE LEG CAN BE REPLACED WHILE YOU LISTEN (2026-08-15).
+  //
+  // Found live: I restarted my sidecar, which retires my voice leg and mints a
+  // new generation. R's client had subscribed to the OLD gen and simply went
+  // deaf to me — permanently, with no error. The server was already correct
+  // (`applyStandingConsent` re-applies her standing consent to the new leg, so
+  // `hears: ['hesperus']` stayed true) and it BROADCASTS `surface-transition`
+  // for exactly this reason. Nothing on the SFU client listened: the event fed
+  // only causes.js's hold-then-fallback bookkeeping, never the media path.
+  //
+  // Net effect without this: any speaker whose voice leg restarts is silent to
+  // everyone already in the room until THEY reload. For an agent whose mouth is
+  // a separate process — which is the whole topology-B design — that is not an
+  // edge case, it is every deploy.
+  //
+  // We do not offer (the server owns every offer — see voicesfu.js's header);
+  // we ASK for a renegotiation, and the server's next offer carries the route
+  // to the new leg. Skip our own transitions: we are not our own listener.
+  bus.on('surface-transition', ({ actor, surface, gen }) => {
+    if (surface !== 'voice' || gen == null) return;      // gen null = leg died
+    if (actor === CONFIG.name) return;                    // our own leg
+    if (!sfuActive()) return;                             // nothing to renegotiate yet
+    console.info(`[sfu] ${actor} has a new voice leg (gen ${gen}) — asking to re-negotiate`);
+    send({ type: 'sfu-want-negotiate' });
+  });
 
   bus.on('relay-cred', async (cred) => {
     await sfuConnect(cred, send);
@@ -126,6 +152,9 @@ export function initVoiceSfu(name) {
   // Cheap mic-state read for the 8Hz HUD poll — sfuDiagClient() allocates an
   // object and spreads the speaker map every call (review F4).
   window.__sfuMicOn = sfuMicOn;
+  // My own mic level, for my own mouth flap + the 🎙 glyph (voicemouths.js).
+  // The mesh reads voice.js's analyser; on this transport that is always 0.
+  window.__sfuMyLevel = sfuMyLevel;
   window.sfuStats = sfuInboundStats;      // NetEq evidence for the spike report
   // The mic badge (mictoggle.js → voice.js toggleMic) checks for this and hands
   // over when the SFU transport owns playback. Set LAST, so it is never visible

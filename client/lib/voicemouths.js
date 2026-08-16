@@ -6,10 +6,46 @@
 // afterward as an ordinary say. Nobody waits for words to know you're talking.
 
 import { CONFIG, bus } from './core.js';
-import { micOn, isMuted, micAnalyserLevel, peerLevels } from './voice.js';
+import { micOn as meshMicOn, isMuted, micAnalyserLevel as meshMicLevel,
+  peerLevels as meshPeerLevels } from './voice.js';
+
 import { remotes, noteSpeaking } from './remotes.js';
 import { sendTyping } from './net.js';
 import { getMe } from './mybody.js';
+
+// 🔴 READ WHICHEVER TRANSPORT IS LIVE (2026-08-15). Every function below used
+// to come straight from voice.js — which reads voice.js's OWN module-level
+// `micStream` and `peers`. On an SFU client both are null/empty FOREVER (the
+// mic and the peers live in voicesfu.js), so:
+//   · peerLevels() returned an empty Map      → NOBODY's mouth ever moved
+//   · micAnalyserLevel() returned 0 at line 1 → your own mouth never moved,
+//     and the 🎙 glyph never lit, no matter how loudly you spoke.
+// Verified by reading voice.js:854 (`if (!micStream || muted) return 0`) and
+// :1161 (`for (const [id, p] of peers)`), not inferred.
+//
+// Same shape as mictoggle.js:85-94 and stt.js: ask the SFU bridge first, fall
+// back to the mesh. The SFU deliberately exposes the SAME shapes
+// (sfuPeerLevels returns "the same shape relayPeerLevels() returns, so
+// mouth-flap code is shared" — voicesfu.js:168), so this is a lookup change,
+// not a logic change.
+const micIsOn = () => {
+  try {
+    if (typeof window.__sfuMicOn === 'function') return !!window.__sfuMicOn();
+    return !!meshMicOn();
+  } catch { return false; }
+};
+const myLevel = () => {
+  try {
+    if (typeof window.__sfuMyLevel === 'function') return window.__sfuMyLevel();
+    return meshMicLevel();
+  } catch { return 0; }
+};
+const allPeerLevels = () => {
+  try {
+    if (typeof window.relayPeerLevels === 'function') return window.relayPeerLevels();
+    return meshPeerLevels();
+  } catch { return new Map(); }
+};
 
 const VOICE_GATE = 0.045;        // below this is room tone, not speech
 let _micGlyphOn = false, _micGlyphAt = 0, _micTail = 0;
@@ -18,8 +54,8 @@ export function updateVoiceMouths(now) {
   // mine: local analyser, no round trip
   const me = getMe();
   if (me) {
-    const live = micOn() && !isMuted();
-    me.voiceLevel = live ? micAnalyserLevel() : null;
+    const live = micIsOn() && !isMuted();
+    me.voiceLevel = live ? myLevel() : null;
     // 🎙 means SOUND IS COMING OUT OF ME, not "my mic is plugged in" (R,
     // 23:38: "it's not just if the mic is capturing my voice activity, it's
     // if the mic is simply ON"). An always-on badge is furniture — it stops
@@ -37,7 +73,7 @@ export function updateVoiceMouths(now) {
     if (speaking) me.speakUntil = now + 400;   // keeps head/gaze life going
   }
   // theirs: one analyser per inbound stream
-  const levels = peerLevels();
+  const levels = allPeerLevels();
   for (const [id, r] of remotes) {
     const lv = levels.get(id);
     if (r.avatar) r.avatar.voiceLevel = lv == null ? null : lv;
