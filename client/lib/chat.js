@@ -477,7 +477,7 @@ function acceptAC() {
  *  down with it (a diagnostic that throws is worse than none). */
 // Bumped by hand when the audio diagnostics change — the point is only that a
 // report from a stale page carries a DIFFERENT value than the current one.
-const BUILD_STAMP = 'stt-diag-6';
+const BUILD_STAMP = 'panel-7';
 
 function audioReport() {
   const L = [];
@@ -538,6 +538,9 @@ function audioReport() {
       + (window.__sttTally ? ` [${window.__sttTally()}]` : '')
       + (window.__sttLast ? ` — last: ${window.__sttLast}` : ' — no events yet');
   });
+  // Why the voice list last rebuilt instead of updating in place — the panel
+  // teardown R has reported three times.
+  probe('panel', () => window.__vlSync ?? 'no selection yet');
   probe('secure', () => `${window.isSecureContext} · isolated=${window.crossOriginIsolated}`);
 
   // 🔴 STAMP THE BUILD (2026-08-16). Three times this morning I diagnosed a

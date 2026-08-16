@@ -108,15 +108,22 @@ function ensureCss() {
  *  with state, which is the failure this whole file keeps hitting. */
 function syncSelection(host, { items, selected, busy, loading }) {
   const rows = host.querySelectorAll?.('.vl-row[data-id]');
-  if (!rows || !rows.length) return false;
+  // 🔴 SAY WHY IT REFUSED. This returned a bare false on five different
+  // conditions, so when the panel kept tearing down (R, 2026-08-16, third
+  // report) there was no way to tell WHICH guard was rejecting — I read the
+  // code three times and guessed wrong twice. A predicate that can decline for
+  // five reasons must name the one it used; window.__vlSync is readable from
+  // /audio and costs nothing when nobody looks.
+  const no = (why) => { try { window.__vlSync = `rebuilt: ${why}`; } catch {} return false; };
+  if (!rows || !rows.length) return no('no rendered rows carry data-id');
   const want = items.map((i) => i.id);
-  if (rows.length !== want.length) return false;
+  if (rows.length !== want.length) return no(`row count ${rows.length} != items ${want.length}`);
   for (let i = 0; i < rows.length; i++) {
-    if (rows[i].dataset.id !== want[i]) return false;
+    if (rows[i].dataset.id !== want[i]) return no(`row ${i} is ${rows[i].dataset.id}, wanted ${want[i]}`);
   }
   // A loading row appearing or clearing IS structural — it adds/removes a node.
   const hasLoadingRow = !!host.querySelector('.vl-loading');
-  if (hasLoadingRow !== !!loading) return false;
+  if (hasLoadingRow !== !!loading) return no(`loading row ${hasLoadingRow} vs ${!!loading}`);
 
   for (const row of rows) {
     const on_ = row.dataset.id === selected;
@@ -125,10 +132,11 @@ function syncSelection(host, { items, selected, busy, loading }) {
     // which would have made the whole in-place path dead code that always fell
     // back to a rebuild. Read the renderer, then update what it actually paints.
     const mark = row.querySelector('.vl-radio');
-    if (!mark) return false;
+    if (!mark) return no('a row has no .vl-radio');
     mark.classList.toggle('on', on_);
     mark.setAttribute('aria-checked', on_ ? 'true' : 'false');
   }
+  try { window.__vlSync = 'in place'; } catch {}
   if (loading) {
     const note = host.querySelector('.vl-loading .vl-note');
     if (note) note.textContent = busy || loading.status || 'loading…';
