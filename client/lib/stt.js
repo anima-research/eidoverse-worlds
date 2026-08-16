@@ -54,6 +54,20 @@ export function setSTT(on) {
   // vendor transcription still has an audible presence. STT is transcript
   // duty only.
   rec.onresult = (e) => {
+    // 🔴 DISTINGUISH "no results" FROM "results that are never FINAL"
+    // (2026-08-16). On R's Android, /audio reported audio reaching the
+    // recognizer while nothing was ever transcribed — and from outside those
+    // two states are identical. Android Chrome in continuous mode is far more
+    // reluctant to finalize than desktop, so a stream of interim results that
+    // never flips isFinal looks exactly like silence. Count both.
+    let fin = 0, interim = 0;
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      (e.results[i].isFinal ? fin++ : interim++);
+    }
+    try {
+      window.__sttLast = `results: ${fin} final, ${interim} interim`
+        + (fin === 0 && interim > 0 ? '  ← hearing you, never finalizing' : '');
+    } catch { /* no window */ }
     for (let i = e.resultIndex; i < e.results.length; i++) {
       if (!e.results[i].isFinal) continue;
       const text = e.results[i][0].transcript.trim();
