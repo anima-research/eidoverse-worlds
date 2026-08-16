@@ -770,6 +770,28 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   // simply never persisted at all.
   check("the door persisted to OUR state path", existsSync(statePath), statePath);
   check("no temp file left in our state dir", !existsSync(`${statePath}.tmp`));
+  // 🔴 NO "-1" WATERMARK EVER REACHES DISK (adversarial review, 2026-08-17).
+  // WorldAgent.lastSeq is -1 until the first snapshot lands, and joinWorld
+  // assigns this.agent = next BEFORE awaiting next.connect(). A 60s tick — or
+  // the disconnect path — landing in that window persisted `{id}@{world}: -1`.
+  //
+  // -1 is not "nothing recorded", it is a NUMBER, so the reader takes it: it
+  // skips nothing and reaches back to the dawn of the log, replaying an entire
+  // world's history as wake-triggering mentions on the next connect. This PR's
+  // own per-world seqKey is what makes it reachable, so the regression would
+  // have shipped WITH the feature.
+  //
+  // The suite has travelled many times by now, including a fatal-attach case,
+  // so any window-write would be on disk here.
+  {
+    const persisted = JSON.parse(readFileSync(statePath, "utf8")) as
+      { lastSeenSeq?: Record<string, number> };
+    const seqs = persisted.lastSeenSeq ?? {};
+    const negatives = Object.entries(seqs).filter(([, v]) => typeof v === "number" && v < 0);
+    check("no unsynced (-1) watermark was persisted for any world",
+      negatives.length === 0,
+      `negatives: ${JSON.stringify(negatives)} | all: ${JSON.stringify(seqs)}`);
+  }
 
   try { rmSync(worldsDir, { recursive: true, force: true }); } catch { /* best effort */ }
 }

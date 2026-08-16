@@ -751,7 +751,24 @@ class Session {
     persistState();
     seenTimer = setInterval(() => {
       lastSeen[this.auth.id] = Date.now();
-      lastSeenSeq[seqKey(this.auth.id, this.agent.world)] = this.agent.lastSeq;
+      // 🔴 NEVER PERSIST A WATERMARK FROM A BODY THAT HAS NOT SYNCED
+      // (adversarial review, 2026-08-17). WorldAgent.lastSeq is -1 until the
+      // first snapshot lands (agent.ts:245), and joinWorld assigns
+      // `this.agent = next` BEFORE awaiting next.connect() — a window of up to
+      // the 8s join timeout. A tick landing in that window wrote
+      // `{id}@{newworld}: -1`.
+      //
+      // -1 is not "nothing recorded", it is a NUMBER: the reader at :716 takes
+      // any non-null value, so skipInboxThrough(-1) skips nothing and
+      // missedSince(-1) reaches back to the dawn of the log — the next connect
+      // to that world replays its ENTIRE history as wake-triggering mentions.
+      //
+      // This PR's own seqKey change is what makes it reachable: the old
+      // world-independent key meant a travel could not mint a fresh -1 entry.
+      // So the regression ships with the feature unless guarded here.
+      if (this.agent.lastSeq >= 0) {
+        lastSeenSeq[seqKey(this.auth.id, this.agent.world)] = this.agent.lastSeq;
+      }
       persistState();
     }, 60_000);
     };
@@ -915,7 +932,13 @@ class Session {
     } finally {
       clearInterval(seenTimer);
       lastSeen[this.auth.id] = Date.now();
-    lastSeenSeq[seqKey(this.auth.id, this.agent.world)] = this.agent.lastSeq;
+      // Same guard as the timer above, and reachable the same way: a travel
+      // that failed FATALLY leaves this.agent = next with lastSeq still -1,
+      // and this runs on the way out. A disconnect must not hand the next
+      // session a watermark meaning "replay everything".
+      if (this.agent.lastSeq >= 0) {
+        lastSeenSeq[seqKey(this.auth.id, this.agent.world)] = this.agent.lastSeq;
+      }
       persistState();
       this.close();
     }
