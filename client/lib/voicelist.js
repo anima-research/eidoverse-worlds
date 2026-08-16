@@ -88,6 +88,44 @@ function ensureCss() {
   st.textContent = ROW;
   document.head.appendChild(st);
 }
+
+/** Update selection + status on an already-rendered list. Returns false when
+ *  the DOM does not match these items, so the caller rebuilds for real.
+ *
+ *  Deliberately conservative: it compares the rendered ids to the requested
+ *  ones and refuses if ANYTHING differs in membership or order. A wrong
+ *  in-place update is worse than a rebuild — it leaves the screen disagreeing
+ *  with state, which is the failure this whole file keeps hitting. */
+function syncSelection(host, { items, selected, busy, loading }) {
+  const rows = host.querySelectorAll?.('.vl-row[data-id]');
+  if (!rows || !rows.length) return false;
+  const want = items.map((i) => i.id);
+  if (rows.length !== want.length) return false;
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].dataset.id !== want[i]) return false;
+  }
+  // A loading row appearing or clearing IS structural — it adds/removes a node.
+  const hasLoadingRow = !!host.querySelector('.vl-loading');
+  if (hasLoadingRow !== !!loading) return false;
+
+  for (const row of rows) {
+    const on_ = row.dataset.id === selected;
+    // The mark is a span styled `.vl-radio.on`, NOT an <input type=radio> — I
+    // wrote this against an imagined DOM first and it silently matched nothing,
+    // which would have made the whole in-place path dead code that always fell
+    // back to a rebuild. Read the renderer, then update what it actually paints.
+    const mark = row.querySelector('.vl-radio');
+    if (!mark) return false;
+    mark.classList.toggle('on', on_);
+    mark.setAttribute('aria-checked', on_ ? 'true' : 'false');
+  }
+  if (loading) {
+    const note = host.querySelector('.vl-loading .vl-note');
+    if (note) note.textContent = busy || loading.status || 'loading…';
+  }
+  return true;
+}
+
 /** Build the list.
  *  items:    [{id, name, note}]   — the voices this person has
  *  selected: id | null
@@ -96,6 +134,20 @@ function ensureCss() {
 export function renderVoiceList(host, { items, selected, on, busy, loading }) {
   ensureCss();
   host.className = 'vl';
+  // 🔴 A SELECTION CHANGE MUST NOT REBUILD THE LIST (R, 2026-08-16, asking for
+  // the third time and rightly annoyed: "the whole panel is *still* tearing
+  // down when you select one radio button or the other… fix this issue for
+  // EVERY element").
+  //
+  // This function wiped `host` unconditionally, so every caller — including the
+  // ones that had just been fixed not to tear down — got the rows destroyed and
+  // recreated anyway. Marking a different radio is the commonest interaction
+  // there is, and it was the most destructive.
+  //
+  // If the same voices are already rendered, only the SELECTION and the
+  // loading/busy text have changed: write those and return. Anything
+  // structural (a voice added or removed) still falls through to a real build.
+  if (syncSelection(host, { items, selected, busy, loading })) return;
   host.textContent = '';
   // The scrolling part. Only the voices go in here; the "+ add" rows stay below
   // it, so the thing you click to fix an empty list is never itself scrolled
@@ -163,6 +215,11 @@ export function renderVoiceList(host, { items, selected, on, busy, loading }) {
   for (const it of items) {
     const row = document.createElement('div');
     row.className = 'vl-row';
+    // Identity ON the node, so an update can find its row without rebuilding
+    // the list. Without this, syncSelection has nothing to match and silently
+    // falls back to a full teardown — the fix would look applied and do
+    // nothing, which is the failure mode this whole morning was made of.
+    row.dataset.id = it.id;
     row.tabIndex = 0;
     row.title = it.note || it.name;
     const mark = document.createElement('span');

@@ -442,7 +442,80 @@ export function ttsSection(host, onPaint = () => {}) {
         : live ? ttsVoiceName() : ttsAvailable() ? 'ready' : '');
       return true;
     }
+  /** 🔴 THE PANEL MUST NOT TEAR DOWN ON A STATE CHANGE — FOR EVERY ELEMENT
+   *  (R, 2026-08-16, third report: "Can you please check and fix this issue for
+   *  EVERY element in the audio panel? I don't like having to call out this
+   *  issue repeatedly for every element.")
+   *
+   *  She is right that this kept recurring, and the reason is that the previous
+   *  two fixes were applied AT THE CALL SITE — a bespoke syncHead() for the
+   *  checkbox, liveStatus() for the loading note — while build() itself stayed
+   *  destructive and 24 other callers kept invoking it. Fixing the instance
+   *  three times is how you get asked a fourth.
+   *
+   *  So the fix moves into build(): if the section is already built, UPDATE the
+   *  existing nodes and return. Nothing is destroyed, so nothing loses focus,
+   *  scroll position, or an in-flight interaction — regardless of which of the
+   *  24 callers fired. A full construction happens once, and after any
+   *  deliberate teardown.
+   *
+   *  The bespoke helpers stay: they are cheaper for the hot path (a status
+   *  string once a second) and they already have their own callers. This is the
+   *  floor beneath them, not a replacement. */
+  /** Update every node build() renders, without destroying any of them.
+   *
+   *  🔴 IT MUST COVER EVERYTHING build() PAINTS, or a state change silently
+   *  stops reaching the screen — a stale panel is worse than a torn-down one,
+   *  because it looks fine. The pieces are: the label's dimming, the checkbox's
+   *  checked state, the status note, and the voice list.
+   *
+   *  Returns false if the expected nodes are missing (first paint, or a
+   *  structure change), so the caller falls back to a real build. */
+  function syncInPlace() {
+    const label = host.querySelector('.sp-label');
+    const box = host.querySelector('input[type=checkbox]');
+    const note = host.querySelector('.sp-note');
+    const listHost = host.querySelector('.tts-list');
+    if (!label || !box || !note || !listHost) return false;
+
+    const live = ttsAvailable() && isTtsEnabled();
+    label.style.opacity = live ? '1' : '.45';
+    // Never fight the user's own click: if the box already shows what state
+    // says, leave the node alone. Writing .checked during their interaction is
+    // how a control starts feeling like it is arguing back.
+    if (box.checked !== isTtsEnabled()) box.checked = isTtsEnabled();
+    note.textContent = _busy || (_loadingId ? `loading ${_loadingName || 'voice'}…`
+      : _needVoice ? 'add a voice with one of the options below'
+      : live ? ttsVoiceName() : ttsAvailable() ? 'ready' : '');
+
+    // The list owns its own in-place update (voicelist.js renders per-element),
+    // so re-rendering it here is not a teardown of the rows.
+    collectVoices().then((items) => {
+      if (!_selected && items.length) {
+        const last = (() => { try { return localStorage.getItem('eido.tts.lastVoice'); } catch { return null; } })();
+        const real = items.filter((i) => i.id !== '__pending');
+        if (real.length) _selected = (last && real.some((i) => i.id === last)) ? last : real[0].id;
+      }
+      renderVoiceList(listHost, {
+        items, selected: _selected, busy: _busy,
+        loading: _loadingId ? { id: _loadingId, name: _loadingName, since: _loadingSince, status: _busy } : null,
+        on: {
+          select: (id) => {
+            if (id === '__pending') return pick(id);
+            if (isTtsEnabled()) return pick(id);
+            _selected = id;
+            try { localStorage.setItem('eido.tts.lastVoice', id); } catch { /* private mode */ }
+            build();
+          },
+          remove, addFile, addEndpoint,
+        },
+      });
+    });
+    return true;
+  }
+
   function build() {
+    if (host.firstChild && syncInPlace()) return;
     host.textContent = '';
     const head = document.createElement('div');
     head.className = 'sp-row';
@@ -552,6 +625,7 @@ export function ttsSection(host, onPaint = () => {}) {
     };
     host.appendChild(head);
     const listHost = document.createElement('div');
+    listHost.className = 'tts-list';   // findable by syncInPlace
     // Indent to the CONTROL column so the voices hang under the checkbox that
     // switches them on rather than floating mid-panel.
     //
