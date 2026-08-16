@@ -277,8 +277,29 @@ export async function sfuMic(on = true) {
     micStream?.getTracks().forEach((t) => (t.enabled = false));
     return;
   }
-  if (micStream) { micStream.getTracks().forEach((t) => (t.enabled = true)); return; }
-  if (micPending) { await micPending; micStream?.getTracks().forEach((t) => (t.enabled = true)); return; }
+  // 🔴 A SYNTH STREAM IS NOT A MIC TO RE-ENABLE (regression fix, 2026-08-16).
+  // Turning the mic OFF now SWAPS the published source to the synthesizer, so
+  // `micStream` may hold synthetic frames. This path re-enabled its tracks and
+  // returned — lighting the badge, publishing happily, and never acquiring the
+  // microphone. From the server the leg looks identical (same leg, packets
+  // flowing) while the mic is not actually captured, so STT transcribes nothing
+  // and the only visible symptom is "STT stopped working".
+  //
+  // I introduced that an hour ago by making mic-off swap rather than mute.
+  // Re-acquire whenever the current stream is not a real device.
+  if (micStream && !micStream.synthetic) {
+    micStream.getTracks().forEach((t) => (t.enabled = true));
+    return;
+  }
+  if (micStream?.synthetic) {
+    for (const t of micStream.getTracks()) { try { t.stop(); } catch { /* gone */ } }
+    micStream = null;                      // force a real getUserMedia below
+  }
+  if (micPending) {
+    await micPending;
+    if (micStream && !micStream.synthetic) micStream.getTracks().forEach((t) => (t.enabled = true));
+    return;
+  }
   return sfuPublish();
 }
 
