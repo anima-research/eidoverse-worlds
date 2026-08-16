@@ -147,6 +147,12 @@ export function initVoiceSfu(name) {
   }, 500);
 
   window.relayDiag = sfuDiagClient;
+  // The actual <audio> elements, for /audio's playback probe. They are
+  // `new Audio()` and never appended to the DOM, so querySelectorAll cannot
+  // find them — a probe that looked there reported "no elements" while two
+  // speakers were audibly playing (2026-08-16).
+  window.__voiceSpeakerEls = () =>
+    sfuSpeakerEntries().map(([id, s]) => ({ id, audio: s.audio }));
   window.relayMic = () => sfuMic(true);
   window.relayPeerLevels = sfuPeerLevels;
   // Cheap mic-state read for the 8Hz HUD poll — sfuDiagClient() allocates an

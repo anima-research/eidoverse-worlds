@@ -507,12 +507,22 @@ function audioReport() {
   // Playback is the half that failed silently on Android: packets arrive, the
   // <audio> element refuses to start, and nothing anywhere says so.
   probe('playback', () => {
-    const els = document.querySelectorAll('audio');
-    if (!els.length) return 'no <audio> elements yet';
+    // 🔴 DO NOT querySelectorAll('audio') — voicesfu builds `new Audio()`
+    // elements that are NEVER appended to the DOM, so the document cannot see
+    // them and this printed "no <audio> elements yet" on a phone that was
+    // audibly playing two speakers (R, 2026-08-16). A probe that reads the
+    // wrong source reports a failure that is not happening, which is worse
+    // than reporting nothing. Ask the transport for its own elements.
+    const entries = typeof window.__voiceSpeakerEls === 'function' ? window.__voiceSpeakerEls() : null;
+    if (!entries) return 'unknown (transport exposes no elements)';
+    if (!entries.length) return 'no speaker elements yet';
     let playing = 0, paused = 0;
-    for (const a of els) (a.paused ? paused++ : playing++);
-    return `${els.length} element(s) — ${playing} playing, ${paused} PAUSED`
-      + (paused ? '  ← tap the page to unlock' : '');
+    const stuck = [];
+    for (const { id, audio } of entries) {
+      if (audio?.paused) { paused++; stuck.push(id); } else playing++;
+    }
+    return `${entries.length} — ${playing} playing, ${paused} paused`
+      + (paused ? `  ← ${stuck.join(', ')} held; tap the page to unlock` : '');
   });
   probe('captions', () => {
     const has = !!(window.SpeechRecognition ?? window.webkitSpeechRecognition);
