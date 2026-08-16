@@ -87,6 +87,48 @@ export function setSTT(on) {
     if (wanted && micIsLive()) { try { rec.start(); } catch (err) { report('stt restart', err); } }
     else if (wanted) { wanted = false; rec = null; report('stt', 'stopped: mic is off'); }
   };
-  rec.onerror = (e) => { if (e.error !== 'no-speech' && e.error !== 'aborted') report('stt', e.error); };
+  // 🔴 A CAPTION ENGINE THAT NEVER STARTS MUST SAY SO (R, 2026-08-16, on an
+  // Android phone where voice worked both ways and STT produced nothing).
+  //
+  // report() is console-only and rate-limited, and NOTHING observed onstart or
+  // onaudiostart — so "recognition never started" and "started and heard
+  // nothing" were indistinguishable from outside, on a device with no console
+  // in reach. The person's only signal was absence, which is the same signal as
+  // having nothing to transcribe.
+  //
+  // The errors worth naming, because each has a different fix and Android hits
+  // them in ways desktop does not:
+  //   audio-capture — something else holds the mic. SpeechRecognition takes its
+  //     OWN capture, separate from the WebRTC track (see micIsLive above), and
+  //     Android is far stricter than desktop about two consumers of one device.
+  //   not-allowed   — Chrome scopes this permission separately from
+  //     getUserMedia, so a working WebRTC mic does NOT imply STT is permitted.
+  //   network       — the recognizer is Google's, not local; it can fail while
+  //     the rest of the page's connectivity is perfectly healthy.
+  let sawAudio = false;
+  rec.onaudiostart = () => { sawAudio = true; };
+  rec.onstart = () => {
+    // Give it a beat: if recognition starts but never receives audio, that is
+    // the contention signature and it is otherwise invisible.
+    setTimeout(() => {
+      if (wanted && !sawAudio) {
+        flashHint('captions: recognition started but no audio reached it — '
+          + 'another app or tab may hold the microphone');
+        report('stt', 'started but onaudiostart never fired (mic contention?)');
+      }
+    }, 4000);
+  };
+  rec.onerror = (e) => {
+    if (e.error === 'no-speech' || e.error === 'aborted') return;   // ordinary silence
+    report('stt', e.error);
+    const said = {
+      'audio-capture': 'captions: something else is holding the microphone',
+      'not-allowed': 'captions: speech recognition was denied — it needs its own permission, separate from the mic',
+      'service-not-allowed': 'captions: speech recognition was denied by the browser or OS',
+      'network': 'captions: the speech recognizer is unreachable (it runs on Google servers, not locally)',
+      'language-not-supported': `captions: no recognizer for ${rec.lang}`,
+    }[e.error];
+    flashHint(said ?? `captions stopped: ${e.error}`);
+  };
   try { rec.start(); } catch (e) { report('stt', e); wanted = false; }
 }
