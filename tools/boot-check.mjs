@@ -38,15 +38,24 @@ if (!LIVE) {
     stdio: ['ignore', 'ignore', 'ignore'],
   });
   ORIGIN = `http://127.0.0.1:${PORT}`;
-  let ours = false;
+  // Identity: prefer the nonce echo (#128's /version addition). A server that
+  // PREDATES it answers /version without the field — accept that only when
+  // the child is alive AND the reported startedAt is newer than our spawn
+  // (a stale pre-nonce listener started long ago; ours started just now).
+  // Wrong nonce = a different nonce-speaking server = always fail.
+  const spawnedAt = Date.now() - 2000;
+  let ours = false, reason = 'never answered';
   for (let i = 0; i < 60 && !ours; i++) {
-    if (srv.exitCode !== null) break;         // died (EADDRINUSE etc.) — never green
-    try { ours = (await (await fetch(`${ORIGIN}/version`)).json()).nonce === NONCE; }
-    catch { /* not up yet */ }
+    if (srv.exitCode !== null) { reason = `exited ${srv.exitCode}`; break; }
+    try {
+      const v = await (await fetch(`${ORIGIN}/version`)).json();
+      if (v.nonce !== undefined) { ours = v.nonce === NONCE; if (!ours) { reason = 'wrong nonce (not our child)'; break; } }
+      else { ours = Date.parse(v.startedAt) >= spawnedAt; if (!ours) { reason = `pre-nonce responder started ${v.startedAt} (stale listener)`; break; } }
+    } catch { /* not up yet */ }
     if (!ours) await new Promise((r) => setTimeout(r, 250));
   }
   if (!ours) {
-    console.log(`FAIL — child server never came up as OURS (${srv.exitCode === null ? 'alive but wrong responder' : `exited ${srv.exitCode}`})`);
+    console.log(`FAIL — child server never came up as OURS (${reason})`);
     try { srv.kill('SIGKILL'); } catch {}
     process.exit(1);
   }
