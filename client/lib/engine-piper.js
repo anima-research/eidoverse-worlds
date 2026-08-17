@@ -74,6 +74,14 @@ registerEngine({
       crypto.subtle.digest('SHA-256', await cfg.arrayBuffer()),
     ]);
     const base = `${onnx.name.replace(/\.onnx$/i, '')}-${hex(modelBuf, 6)}-${hex(cfgBuf, 4)}`;
+    // The FRIENDLY half of the same identity. `base` carries the digest because
+    // it is a CACHE KEY (see the OPFS seeding and PATH_MAP below) — two voices
+    // with the same filename must never serve each other's bytes. But a cache
+    // key is not a name, and the panel was showing the whole thing beside the
+    // checkbox (R, 2026-08-16: "remove the hash next to the model name when a
+    // model is live"). The digest stays where it does work; the human sees the
+    // filename, and can still hover for the full identity.
+    const humanName = onnx.name.replace(/\.onnx$/i, '');
 
     // The runtime has no seam for local model bytes: TtsSession always resolves
     // a voiceId through PATH_MAP and fetches HuggingFace. But getBlob() reads an
@@ -399,8 +407,13 @@ registerEngine({
         + ` · RTF ${((t2 - t0) / 1000 / Math.max(secs, 1e-6)).toFixed(3)}` + ` · ${usedEP}`);
       return { pcm: pcmData, sampleRate: rate };
     };
-    const label = `Piper: ${base}${sr ? ` (${sr} Hz)` : ''}`;
+    // Label = what a person calls this voice. `base` (with its digest) remains
+    // the cache/PATH_MAP key and is unchanged; only the DISPLAY loses the hex.
+    const label = `Piper: ${humanName}${sr ? ` (${sr} Hz)` : ''}`;
     setTtsSource(speak, label);
-    return { speak, label };
+    // `base` travels alongside so a caller that needs the exact identity — a
+    // bug report, a tooltip, telling two same-named voices apart — still has
+    // it. Removing it from the label must not remove it from the program.
+    return { speak, label, id: base };
   },
 });
