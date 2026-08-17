@@ -1164,7 +1164,11 @@ const server = Bun.serve({
             ws.send(JSON.stringify({ type: "error", error: "relay-cred is the embodied primary's ask" }));
             return;
           }
-          const wantPub = msg.publish !== false;      // scopes are askable-down, never up
+          // "Scopes are askable-down" (A1) is DESIGNED and not yet ENFORCED:
+          // msg.publish was read into a variable that nothing consumed, which
+          // made the code claim a property it does not have. Named honestly
+          // until the SFU carries a per-leg publish flag at ingress — every
+          // credential is currently a publishing credential.
           const mediaGen = ++GEN;
           {
             // No JWT to mint and no external service to reach, so this is

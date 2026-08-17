@@ -88,6 +88,20 @@ export async function sfuConnect(credential, send) {
                            // reconnect, the stream does not. The bridge's
                            // replay then takes the real addTrack path.
   }
+  // 🔴 CLOSE THE PREDECESSOR (review agent, 2026-08-17). The old stream was
+  // stopped but the old PC was left alive with its handlers attached — and
+  // because those handlers close over the MODULE-LEVEL `pc`, a ghost pc
+  // reaching 'failed' (or its still-armed 8s stall timer firing) read the NEW
+  // pc's state, logged "connection failed" for a healthy leg, and emitted
+  // sfu-media-dead — burning the bridge's 3-attempt recovery budget on a
+  // corpse and replacing a working credential each time. Null the handlers
+  // first (close() does not fire a state change, so the handlers would not
+  // run — but the stall timer would), then close.
+  if (pc) {
+    try { pc.onicecandidate = pc.ontrack = pc.oniceconnectionstatechange = null; pc.close(); }
+    catch { /* already closed */ }
+  }
+  pendingIce.length = 0;            // candidates for the dead pc are meaningless
   _myAn = null; _myStream = null;   // the analyser was bound to the dead stream
   // 🔴 THE SERVER CHOOSES THE ICE CONFIG, not this file (2026-08-16). This was
   // `iceServers: []` with the comment "same host: no STUN needed" — true of the
@@ -168,13 +182,19 @@ export async function sfuConnect(credential, send) {
   // failed). 'failed' and a stall in 'checking' are the real reports.
   let iceStallTimer = null;
   const clearStall = () => { if (iceStallTimer) { clearTimeout(iceStallTimer); iceStallTimer = null; } };
+  // Which pc THIS closure serves. The handlers and the stall timer must judge
+  // the connection they were armed for — reading the module-level `pc` let a
+  // superseded connection's timer diagnose the successor.
+  const myPc = pc;
   pc.oniceconnectionstatechange = () => {
+    if (myPc !== pc) return;            // a ghost has no diagnosis to offer
     const st = pc.iceConnectionState;
     if (st === 'checking') {
       clearStall();
       // Host-only candidate pairs settle in well under a second on a LAN; 8s
       // means there is no viable pair and there never will be without STUN/TURN.
       iceStallTimer = setTimeout(() => {
+        if (myPc !== pc) return;        // superseded while armed — not our patient
         if (pc.iceConnectionState === 'checking' || pc.iceConnectionState === 'new') {
           const hostOnly = !_sawNonHostCandidate;
           console.error('[voice] 🔴 ICE STALLED — no media path. '
@@ -217,6 +237,9 @@ export async function sfuConnect(credential, send) {
 export async function sfuOnOffer(sdp, send) {
   if (!pc) return;
   await pc.setRemoteDescription({ type: 'offer', sdp });
+  // Candidates that arrived before the offer finished applying were queued —
+  // feed them now that addIceCandidate has a description to attach them to.
+  while (pendingIce.length) { const c = pendingIce.shift(); try { await pc.addIceCandidate(c); } catch { /* stale */ } }
   const answer = await pc.createAnswer();
   await pc.setLocalDescription(answer);
   // 🔴 PRESENT THE CREDENTIAL (amendment 1). The nonce was minted, handed to
@@ -231,8 +254,18 @@ export async function sfuOnOffer(sdp, send) {
     mediaGen: cred.mediaGen ?? cred.gen, incarnation: cred.incarnation, nonce: cred.nonce } });
 }
 
+// 🔴 EARLY CANDIDATES ARE NOT GARBAGE (review agent, 2026-08-17). The server
+// sends its offer and then trickles candidates on the same socket; while
+// sfuOnOffer is still awaiting setRemoteDescription, addIceCandidate throws
+// InvalidStateError — and the bare catch destroyed the candidate. Host
+// candidates arrive in exactly that window, so on a constrained network the
+// one viable pair could be the one we discarded: the "stalls in checking"
+// symptom, self-inflicted. Queue until a remote description exists.
+const pendingIce = [];
 export async function sfuOnIce(candidate) {
-  try { await pc?.addIceCandidate(candidate); } catch {}
+  if (!pc) return;
+  if (!pc.remoteDescription) { pendingIce.push(candidate); return; }
+  try { await pc.addIceCandidate(candidate); } catch { /* stale/dup candidate */ }
 }
 
 /** Publish the mic. Plain getUserMedia — no SDK wrapper. The constraints match
@@ -411,7 +444,18 @@ async function sfuPublish() {
     // Order: the sendonly sender we already own (a SWAP — replaceTrack on the
     // same m-line, no renegotiation at all) → the inactive floor (first
     // publish) → bare addTrack only when neither exists (solo, pre-offer).
-    const mine = pc.getTransceivers().find((t) => t.direction === 'sendonly' && t.sender);
+    // 🔴 sendrecv IS ALSO OURS (review agent, 2026-08-17): a publish that BEAT
+    // the server's first offer went through addTrack below, which creates a
+    // sendrecv transceiver — the bridge's mic replay at credential time does
+    // exactly this, so it is the COMMON path, not the solo corner. A hunt that
+    // only knew 'sendonly' missed it, fell through to addTrack again on every
+    // later swap, and each new transceiver could never be answered (the server
+    // offers, an answer cannot add m-lines): permanent silence after the first
+    // mic→TTS swap while the real sender still carried the stopped old track.
+    // recvonly/inactive can never be addTrack's product, so this match is
+    // still ours alone. (`&& t.sender` was dead — a transceiver's sender is
+    // always non-null.)
+    const mine = pc.getTransceivers().find((t) => t.direction === 'sendonly' || t.direction === 'sendrecv');
     if (mine) {
       await mine.sender.replaceTrack(track);
     } else {
