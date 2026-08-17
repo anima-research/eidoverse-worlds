@@ -659,5 +659,349 @@ console.log('\nlifecycle (one rig, every downstream contract):');
     `done=${rd5.done}`);
 }
 
+// ---- wings ------------------------------------------------------------------
+// The fleet above cannot reach this code. makeAvatar builds HUMANOID bones and
+// nothing else, so a stand-in skeleton has no [LR]_Wing_* nodes for ammodoll to
+// find — which is the same gap that left headless bodies with no hair for a
+// month while the browser ran 75 locks of it (mcpl/physics.ts:216). So the wing
+// bones are grafted on here, from the shipped rig, the way physics.ts grafts
+// hair: read out of the VRM's node tree, parented to their real humanoid
+// ancestor.
+{
+  const { glbJson, humanBones, worldPositions, VRM_DIR } =
+    await import('./rig-load.mjs');
+  const { readFileSync, existsSync } = await import('node:fs');
+  const file = `${VRM_DIR}mythos-wings.vrm`;
+  console.log('\nwings (the ragdoll takes them over):');
+  if (!existsSync(file)) {
+    check('a winged rig is installed to test against', false, `no ${file}`);
+  } else {
+    // The CONTROL is the same rig as the fleet sees it — humanoid bones and the
+    // rig's real parent chain. Building the control with makeAvatar(P) instead
+    // would silently compare two different skeletons: with `realParent` passed,
+    // makeAvatar walks P's keys (54 bones, upperChest and shoulders and
+    // fingers) and without it walks PARENT's (16). The first version of this
+    // test did exactly that and reported 308mm of "wing shove" that was really
+    // 38 extra bones.
+    const rigW: any = FLEET.find((r: any) => r.name === 'mythos-wings');
+    if (!rigW) throw new Error('mythos-wings not in the fleet');
+    const g = glbJson(readFileSync(file));
+    const bones = humanBones(g);
+    const wp = worldPositions(g);
+    const P: any = { ...rigW.P };
+    const byName = new Map<string, number>();
+    g.nodes.forEach((n: any, i: number) => { if (n.name) byName.set(n.name, i); });
+    const parentOf = new Map<number, number>();
+    g.nodes.forEach((n: any, i: number) =>
+      (n.children ?? []).forEach((c: number) => parentOf.set(c, i)));
+    const wingParent: Record<string, string> = {};
+    for (const [name, i] of byName) {
+      if (!/^[LR]_Wing_(Upper|Lower)(_\d+)?$/.test(name)) continue;
+      P[name] = wp(i);
+      const pn = parentOf.get(i) != null ? g.nodes[parentOf.get(i)!]?.name : null;
+      // a segment either continues another wing bone, or hangs off the shoulder
+      wingParent[name] = (pn && /^[LR]_Wing_/.test(pn)) ? pn
+        : (name[0] === 'L' ? 'leftShoulder' : 'rightShoulder');
+    }
+    check('the rig carries every wing bone (4 chains x 3)',
+      Object.keys(wingParent).length === 12, `${Object.keys(wingParent).length} found`);
+    // HAIR bones too — the hair-ownership check below needs a rig that actually
+    // grows Bullet hair, and makeAvatar carries only humanoid bones by default
+    // (the same gap mcpl/physics.ts closes for headless agents).
+    const hairParent: Record<string, string> = {};
+    for (const [name, i] of byName) {
+      if (!/^Hair_\d+_\d+$/.test(name)) continue;
+      P[name] = wp(i);
+      const pn = parentOf.get(i) != null ? g.nodes[parentOf.get(i)!]?.name : null;
+      hairParent[name] = (pn && /^Hair_\d+_\d+$/.test(pn)) ? pn : 'head';
+    }
+    const RP2 = { ...rigW.realParent, ...wingParent, ...hairParent };
+
+    const av = makeAvatar(P, { realParent: { ...rigW.realParent, ...wingParent } });
+    const rd: any = new AmmoRagdoll(av, toppleLean(), av.restBonePositions());
+    check('the doll builds Bullet chains for them',
+      rd._wingSegs?.length === 12, `${rd._wingSegs?.length ?? 0} segments`);
+    // Chain ORDER is what the depth index buys: each segment's Bullet parent
+    // must be the body of its own parent BONE. Counting underscores made _1 and
+    // _2 the same depth, and the sort then left it to traversal luck which of
+    // them got built as the other's parent — a wing hinged in the wrong place,
+    // with nothing in the log to say so.
+    const segOf = new Map(rd._wingSegs.map((s: any) => [s.node, s]));
+    const misparented = rd._wingSegs.filter((s: any) => s.j > 0
+      && rd._wingSegs[rd._wingSegs.indexOf(s) - 1]?.node !== s.node.parent);
+    check('...each segment chained to its own parent BONE, in order',
+      misparented.length === 0,
+      misparented.map((s: any) => s.node.name).join(' '));
+    check('...and each chain ramps its limit over its own length',
+      rd._wingSegs.every((s: any) => s.n === 3));
+    check('...hung from four kinematic anchors',
+      rd._wingAnchors?.length === 4, `${rd._wingAnchors?.length ?? 0} anchors`);
+    check('...and the step loop sees hair and wings as one list',
+      rd._dressSegs?.length === (rd._hairSegs?.length ?? 0) + rd._wingSegs.length);
+
+    const wingNodes = rd._wingSegs.map((s: any) => s.node);
+    const before = wingNodes.map((n: any) => n.quaternion.clone());
+    // A wing must NOT be in the settle metric: 8 plates swinging on springs
+    // would hold a settled body awake, and the doll would never capture.
+    check('wings are excluded from the settle metric (not in _cores)',
+      rd._wingSegs.every((s: any) => !rd._cores.includes(s.body)));
+
+    // NO WING PLATE IS BORN INSIDE THE BODY.
+    //
+    // This is the hair's "poof" at wing scale: a contact born penetrating
+    // cannot be resolved — split impulse converts only 2cm of it and the rest
+    // is paid off as kinetic energy — and on a plate half a metre wide that is
+    // not a puff of hair, it is a body launched across the room. Hair solves it
+    // by excluding j===0 from the skull; wings are added with mask G_STATIC,
+    // which is a precaution and not a fix, so the geometry has to hold too.
+    //
+    // Measured as world AABBs at build time, which is deterministic. The
+    // obvious alternative — compare against a wingless twin — does NOT work:
+    // tried at settle it read 1m of divergence that was pure chaos, tried over
+    // the first half second it passed *even with the wings set to collide with
+    // everything*, i.e. it could not fail. This one can, and the head/torso
+    // pair below proves the instrument sees an overlap when there is one.
+    // "Inside" is asked of the actual boxes, not of bounding boxes: an AABB
+    // around a plate that sweeps out and back is enormous and overlaps the
+    // torso's for every root segment, which the first version of this reported
+    // as four wings born inside the body. The question that matters is whether
+    // the plate's CENTRE — where a penetrating contact would push from — sits
+    // within a core body's boxes.
+    const worldOf = (body: any) => {
+      const t = body.getCenterOfMassTransform();
+      const o = t.getOrigin(), r = t.getRotation();
+      return {
+        c: new THREE.Vector3(o.x(), o.y(), o.z()),
+        q: new THREE.Quaternion(r.x(), r.y(), r.z(), r.w()),
+        boxes: rd._vol.find((v: any) => v.body === body)?.boxes ?? [],
+      };
+    };
+    const inside = (p: any, body: any) => {
+      const w = worldOf(body);
+      const local = p.clone().sub(w.c).applyQuaternion(w.q.clone().invert());
+      return w.boxes.some((bx: any) => {
+        const b = local.clone().sub(bx.t).applyQuaternion(bx.q.clone().invert());
+        return Math.abs(b.x) <= bx.he.x && Math.abs(b.y) <= bx.he.y && Math.abs(b.z) <= bx.he.z;
+      });
+    };
+    const born: string[] = [];
+    for (const ws of rd._wingSegs) {
+      const p = worldOf(ws.body).c;
+      for (const core of rd._cores) if (inside(p, core)) born.push(ws.node.name);
+    }
+    check('no wing plate is born inside a body it cannot push out of',
+      born.length === 0, [...new Set(born)].join(' '));
+    // the predicate's own calibration: a body's own centre is inside its own
+    // boxes, so a clean wing result means "not inside", not "cannot tell"
+    const torso: any = rd.segs.get('chest|neck') ?? rd.segs.get('spine|chest');
+    check('...and that predicate can see an inside when there is one',
+      !!torso && inside(worldOf(torso.body).c, torso.body));
+    check('every anchor is kinematic (one-way, no reaction on the chest)',
+      rd._wingAnchors.every((a: any) => (a.anchor.getCollisionFlags() & 2) !== 0));
+
+    let steps = 0;
+    while (!rd.done && steps < 900) { rd.step(1 / 60); steps++; }
+    check('the body still falls and settles', rd.done, `${steps} steps`);
+    const moved = wingNodes.filter((n: any, i: number) =>
+      n.quaternion.angleTo(before[i]) > 1e-3).length;
+    check('the sim WRITES every wing bone during the fall', moved === 12,
+      `${moved}/12 moved`);
+
+    check('...with finite quaternions throughout',
+      wingNodes.every((n: any) => Number.isFinite(n.quaternion.x)
+        && Number.isFinite(n.quaternion.w)));
+    // the other half of the hair-ownership handshake (avatar-test has the
+    // consumer side): the doll must CLAIM the hair while it drives it, and
+    // hand it back reset, or three-vrm resumes from state captured before the
+    // fall and yanks the hair there in one frame
+    {
+      const hav = makeAvatar(P, { realParent: RP2 });
+      let didReset = false;
+      hav.vrm.springBoneManager = { reset: () => { didReset = true; }, update: () => {} };
+      hav.vrm.scene = { updateMatrixWorld: () => {} };
+      const hrd: any = new AmmoRagdoll(hav, toppleLean(), hav.restBonePositions());
+      check('a doll with Bullet hair claims those bones from three-vrm',
+        hav.__simHair === true, `hair segments: ${hrd._hairSegs?.length ?? 0}`);
+      hrd.dispose();
+      // A SETTLED BODY KEEPS THE HAIR THE FALL GAVE IT. dispose() used to hand
+      // the hair back and reset the springs, and since dispose fires the moment
+      // a body settles, the hair snapped to combed a few seconds into every
+      // fall while she was still lying there. Release belongs to getting up.
+      check('...and does NOT hand them back while she is still down',
+        hav.__simHair === true);
+      check('...so nothing resets the spring shape mid-fall', didReset === false);
+    }
+    rd.dispose();
+    check('dispose frees the wing bodies too', rd._freed === true);
+  }
+}
+
+// ---- wing boxes come from the MESH, not the bone length ---------------------
+// The failure: mythos's upper wing chain has a 16cm middle bone carrying 44cm
+// of membrane, and its outermost bone is a leaf where the builder had nothing
+// to measure and copied the previous segment's length. Both distal boxes came
+// out about a third of the wing they stood for — "the collider boxes are much
+// smaller than the actual wing sections", and the reason those sections would
+// not drape.
+//
+// Built here as a real THREE.SkinnedMesh rather than measured off the shipped
+// VRM, so the test states the contract instead of restating today's rig: a
+// SHORT bone with LONG geometry on it must get the geometry's box.
+{
+  console.log('\nwing boxes (sized by the mesh, not the bone):');
+  const { AmmoRagdoll } = await import('../client/lib/ammodoll.js');
+  const BONE_LEN = 0.15, MESH_LEN = 0.60, MESH_SPAN = 0.40;
+
+  const rigW: any = FLEET.find((r: any) => r.name === 'mythos-wings');
+  const P: any = { ...rigW.P };
+  // one chain, two segments, both short bones — the second a leaf
+  const shoulder = P.leftShoulder ?? P.leftUpperArm;
+  P.L_Wing_Upper = shoulder.clone().add(new THREE.Vector3(0.05, 0.05, 0));
+  P.L_Wing_Upper_1 = P.L_Wing_Upper.clone().add(new THREE.Vector3(BONE_LEN, 0, 0));
+  // ...and a hair chain, because the hair asks for its extents FIRST. Both
+  // families share one cache, and an unkeyed cache hands the second caller the
+  // first caller's map — wings would drop back to bone-length boxes on every
+  // rig that also has hair, which is every rig that matters, with nothing in
+  // the log to say the fix had stopped working.
+  P.Hair_0_0 = P.head.clone().add(new THREE.Vector3(0, 0.05, 0));
+  P.Hair_0_1 = P.Hair_0_0.clone().add(new THREE.Vector3(0, -0.04, 0));
+  const wingParent = {
+    L_Wing_Upper: 'leftShoulder', L_Wing_Upper_1: 'L_Wing_Upper',
+    Hair_0_0: 'head', Hair_0_1: 'Hair_0_0',
+  };
+  const av = makeAvatar(P, { realParent: { ...rigW.realParent, ...wingParent } });
+
+  // a slab of geometry on the OUTER bone, far longer than the bone itself
+  const bones = [av.nodes.L_Wing_Upper, av.nodes.L_Wing_Upper_1];
+  const geo = new THREE.BoxGeometry(MESH_LEN, MESH_SPAN, 0.02, 8, 8, 1);
+  const n = geo.attributes.position.count;
+  geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(new Uint16Array(n * 4), 4));
+  geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(new Float32Array(n * 4), 4));
+  for (let i = 0; i < n; i++) {
+    geo.attributes.skinIndex.setXYZW(i, 1, 0, 0, 0);       // all on the OUTER bone
+    geo.attributes.skinWeight.setXYZW(i, 1, 0, 0, 0);
+  }
+  const skel = new THREE.Skeleton(bones);
+  const sm = new THREE.SkinnedMesh(geo, new THREE.MeshBasicMaterial());
+  av.root.add(sm);
+  sm.bind(skel);
+  av.root.updateMatrixWorld(true);
+
+  {
+    const hbones = [av.nodes.Hair_0_0, av.nodes.Hair_0_1];
+    const hgeo = new THREE.BoxGeometry(0.02, 0.05, 0.02, 2, 2, 2);
+    const hn = hgeo.attributes.position.count;
+    hgeo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(new Uint16Array(hn * 4), 4));
+    hgeo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(new Float32Array(hn * 4), 4));
+    for (let i = 0; i < hn; i++) {
+      hgeo.attributes.skinIndex.setXYZW(i, 1, 0, 0, 0);
+      hgeo.attributes.skinWeight.setXYZW(i, 1, 0, 0, 0);
+    }
+    const hsm = new THREE.SkinnedMesh(hgeo, new THREE.MeshBasicMaterial());
+    av.root.add(hsm);
+    hsm.bind(new THREE.Skeleton(hbones));
+    av.root.updateMatrixWorld(true);
+  }
+
+  const rd: any = new AmmoRagdoll(av, toppleLean(), av.restBonePositions());
+  check('the fixture builds hair as well as wings (both families present)',
+    (rd._hairSegs?.length ?? 0) > 0 && (rd._wingSegs?.length ?? 0) > 0,
+    `hair ${rd._hairSegs?.length ?? 0}, wings ${rd._wingSegs?.length ?? 0}`);
+  const seg = rd._wingSegs.find((s: any) => s.node.name === 'L_Wing_Upper_1');
+  check('the rig under test has geometry 4x its bone length',
+    !!seg, seg ? '' : 'no outer wing segment built');
+  if (seg) {
+    const he = rd._vol.find((v: any) => v.body === seg.body).boxes[0].he;
+    const longest = 2 * Math.max(he.x, he.y, he.z);
+    check('the box spans the MESH, not the bone',
+      Math.abs(longest - MESH_LEN) < 0.05,
+      `box ${longest.toFixed(3)}m vs mesh ${MESH_LEN}m, bone ${BONE_LEN}m`);
+    const mid = 2 * [he.x, he.y, he.z].sort((a, b) => b - a)[1];
+    check('...across its span too, not a filament',
+      Math.abs(mid - MESH_SPAN) < 0.05, `${mid.toFixed(3)}m vs ${MESH_SPAN}m`);
+    check('...and a membrane keeps a floor thickness, not a degenerate box',
+      Math.min(he.x, he.y, he.z) >= 0.01);
+  }
+  // and the fallback still works where there is nothing to measure
+  const bare = makeAvatar(P, { realParent: { ...rigW.realParent, ...wingParent } });
+  const rdBare: any = new AmmoRagdoll(bare, toppleLean(), bare.restBonePositions());
+  check('a rig with no skinned mesh still gets bone-length boxes',
+    rdBare._wingSegs?.length === 2, `${rdBare._wingSegs?.length ?? 0} segments`);
+}
+
+// ---- the sim's writes must SURVIVE matrixAutoUpdate = false ----------------
+// three-vrm sets `bone.matrixAutoUpdate = false` on every spring-bone joint
+// (three-vrm.module.js:5279) and drives matrix/matrixWorld itself. On such a
+// bone, assigning `.quaternion` composes into `.matrix` never, so the renderer
+// shows the bone exactly where it was — while the Bullet body, the debug box
+// and every headless assertion move correctly.
+//
+// That is why this took four rounds to find: EVERY measurement agreed the
+// writeback was perfect (residual 0.01 deg), because they all read .quaternion,
+// which is exactly the thing that was being ignored. The instrument and the bug
+// shared a blind spot. So this test reads the WORLD MATRIX, the way a renderer
+// does, on bones configured the way three-vrm configures them.
+{
+  console.log('\nhair writes reach the renderer (matrixAutoUpdate = false):');
+  const rigW: any = FLEET.find((r: any) => r.name === 'mythos-wings');
+  const { glbJson, humanBones, worldPositions, VRM_DIR } = await import('./rig-load.mjs');
+  const { readFileSync } = await import('node:fs');
+  const g = glbJson(readFileSync(`${VRM_DIR}mythos-wings.vrm`));
+  const wp = worldPositions(g);
+  const P: any = { ...rigW.P };
+  const byName = new Map<string, number>();
+  g.nodes.forEach((n: any, i: number) => { if (n.name) byName.set(n.name, i); });
+  const parentOf = new Map<number, number>();
+  g.nodes.forEach((n: any, i: number) =>
+    (n.children ?? []).forEach((c: number) => parentOf.set(c, i)));
+  const hairParent: Record<string, string> = {};
+  for (const [name, i] of byName) {
+    if (!/^Hair_\d+_\d+$/.test(name)) continue;
+    P[name] = wp(i);
+    const pn = parentOf.get(i) != null ? g.nodes[parentOf.get(i)!]?.name : null;
+    hairParent[name] = (pn && /^Hair_\d+_\d+$/.test(pn)) ? pn : 'head';
+  }
+  const av = makeAvatar(P, { realParent: { ...rigW.realParent, ...hairParent } });
+  // exactly what three-vrm does to a spring joint
+  let frozen = 0;
+  av.root.traverse((o: any) => {
+    if (/^Hair_\d+_\d+$/.test(o.name ?? '')) { o.matrixAutoUpdate = false; frozen++; }
+  });
+  check('the fixture freezes hair bones the way three-vrm does', frozen > 0,
+    `${frozen} bones`);
+
+  const rd: any = new AmmoRagdoll(av, toppleLean(), av.restBonePositions());
+  const watch = rd._hairSegs.slice(0, 40);
+  const before = watch.map((s: any) => {
+    s.node.updateWorldMatrix(true, false);
+    return new THREE.Vector3().setFromMatrixPosition(s.node.matrixWorld);
+  });
+  for (let i = 0; i < 120; i++) rd.step(1 / 60);
+  // a renderer walks the graph; it does NOT call updateMatrix on a frozen bone
+  av.root.updateMatrixWorld(true);
+  let moved = 0, worst = 0;
+  watch.forEach((s: any, i: number) => {
+    const now = new THREE.Vector3().setFromMatrixPosition(s.node.matrixWorld);
+    const d = now.distanceTo(before[i]);
+    if (d > 0.005) moved++;
+    worst = Math.max(worst, d);
+  });
+  check('a frozen hair bone still MOVES IN ITS WORLD MATRIX after a fall',
+    moved > watch.length / 2,
+    `${moved}/${watch.length} moved, worst ${(worst * 100).toFixed(1)}cm`);
+  // and the matrix must agree with the quaternion — the failure mode was them
+  // disagreeing, with every test reading only the quaternion
+  const q = new THREE.Quaternion(), qm = new THREE.Quaternion();
+  const s0 = watch[0];
+  s0.node.matrix.decompose(new THREE.Vector3(), qm, new THREE.Vector3());
+  q.copy(s0.node.quaternion);
+  // 0.5 deg, not 1e-6: compose->decompose is a lossy round trip and the first
+  // threshold here flagged 0.02 deg of ordinary numeric drift as a defect. What
+  // this is actually watching for is a matrix that was never recomposed at all,
+  // which shows up as TENS of degrees (measured 40+ with the fix removed).
+  check('...and its matrix agrees with its quaternion (the two never diverge)',
+    qm.angleTo(q) < 0.5 * Math.PI / 180, `${(qm.angleTo(q) * 180 / Math.PI).toFixed(2)}° apart`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

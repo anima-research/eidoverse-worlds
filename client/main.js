@@ -510,6 +510,11 @@ if (typeof window !== 'undefined') window.setVoice = setVoice;
 }
 
 globalThis.__ambientDebug = () => ambientDebug();
+// My own body, for console probes. Chasing "the hair boxes move but the hair
+// mesh does not" meant asking whether the bones the sim writes are the same
+// objects the SkinnedMesh is bound to — a question answerable in one line from
+// the console and in no lines at all without a handle on the avatar.
+globalThis.__me = () => getMe();
 // One command R can paste to answer "why is it silent?" from her own console:
 // context state, how many sources exist, whether the gesture hook is waiting.
 globalThis.__audioState = () => audioState();

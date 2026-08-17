@@ -251,12 +251,110 @@ export const HAIR_TUNING = {
   // not all of it: full gravity and a root-heavy ramp (rootExp < 1) were found
   // by eye, against theory. Hair is the one system here with no honest headless
   // metric, so the eye is the instrument.
-  mass: 0.022,      // kg per segment
-  tension: 20,      // 6DOF angular spring stiffness
-  damping: 0.22,    // both the spring's and the body's angular damping
-  gravity: 1.5,     // fraction of world gravity — heavier than real, and right
-  limit: 75,        // degrees at the TIP
-  rootExp: 0.4,     // ramp exponent: lim = limit * (j/n)^rootExp
+  // ...WITH ONE LARGE ASTERISK, found 08-17: while those values were being
+  // tuned, three-vrm's springbones were overwriting every hair bone one system
+  // later in the frame (see avatar.js's vrm.update). So the sliders were tuning
+  // a simulation nobody could see — which is exactly what it felt like at the
+  // time: "hmm, the settings didn't change that much". tension 20 / damping
+  // 0.22 is therefore not a hand-tuned value for THIS sim; it is a value chosen
+  // against a different one.
+  //
+  // Re-measured now that the render follows the sim, as mean LOCAL bend per
+  // hair joint — world rotation cannot tell "the hair moves" from "the head
+  // moves", since a lock riding a tumbling body turns 100 degrees while lying
+  // perfectly straight:
+  //
+  //     tension  damping |  peak bend   at rest   jitter
+  //          20     0.22 |     34.9°     12.4°   0.020°/frame   <- as tuned
+  //           8     0.22 |     43.5°     15.8°   0.019
+  //           3     0.22 |     52.8°     20.3°   0.018
+  //           8     0.10 |     47.6°     19.4°   0.017
+  //           3     0.10 |     52.9°     24.9°   0.021          <- now
+  //
+  // Monotonic in both knobs, and the jitter does not pay for any of it. The
+  // dials are live and they finally bite, so this is a starting point to tune
+  // from by eye rather than a settled answer — hair remains the one system with
+  // no honest headless metric for "flows" versus "whips".
+  // TUNED BY JANUS, 08-17, and the FIRST tuning of this system done against a
+  // render that was actually showing it (see the matrixAutoUpdate note in
+  // step()). Every earlier number in this table — mine and theirs — was chosen
+  // while watching either three-vrm's springbones or nothing at all, so the
+  // history above is a record of what was measured, not of what was seen.
+  //
+  // Worth noting how close these land to the source playground's own defaults
+  // (mass 3 g, tension 8, damping 0.6, gravity 0.45, limit 25, rootExp 1.0),
+  // after a year of this port insisting it needed something different. It did
+  // not. It needed its output to reach the screen.
+  mass: 0.003,      // kg per segment
+  tension: 7.25,    // 6DOF angular spring stiffness
+  damping: 0.31,    // both the spring's and the body's angular damping
+  gravity: 0.45,    // fraction of world gravity
+  limit: 25,        // degrees at the TIP
+  rootExp: 1.2,     // ramp exponent: lim = limit * (j/n)^rootExp
+};
+
+/** Wing tuning, live. Same shape as HAIR_TUNING and the same instrument (the
+ *  eye, against a body being dropped), but a wing is not a lock of hair and the
+ *  numbers say so: three orders of magnitude more mass per segment, a limit
+ *  small enough that a folded wing cannot pass through the back it is attached
+ *  to, and a ramp that leaves the shoulder joint STIFFER than the elbow rather
+ *  than the reverse.
+ *
+ *  What a limp wing should look like is a real question and these are a first
+ *  answer: dead weight that swings from the shoulder and trails the body,
+ *  neither flapping (it is unconscious) nor rigid (it is not a prop). */
+export const WING_TUNING = {
+  mass: 0.55,       // kg per segment. Wings this size on a real animal would be
+                    // lighter, being mostly air — but a 20 g plate a metre long
+                    // is all lever and no inertia, and reads as paper.
+  // MEASURED, over 4 lean directions per row, because one fall's number is
+  // noise. The first guess here was 140/0.5, reasoning that "a wing has a
+  // shoulder that resists" — and it did resist, all the way to rigid: the joint
+  // spiked on impact and then snapped back to the pose it was born in, which
+  // reads exactly as Janus reported it, "rigid and twitchy". The bend a wing
+  // KEEPS is the number that matters, not the bend it reaches:
+  //
+  //     tension  damping |  peak bend   bend at rest   jitter
+  //         140     0.15 |     25.9°           0.3°   0.052°/frame
+  //          50     0.15 |     38.0°           0.6°   0.047
+  //          20     0.15 |     46.6°           1.4°   0.037
+  //           8     0.15 |     62.2°          12.5°   0.025   <- both best
+  //           3     0.15 |     72.4°          12.4°   0.064
+  //
+  // 8 is the knee: below it nothing more is gained in fold and the jitter
+  // climbs again (a spring too weak to hold its joint quiet against contact).
+  // Doubling the damping cost fold and doubled jitter at every tension.
+  tension: 8,       // 6DOF angular spring stiffness
+  damping: 0.15,    // both the spring's and the body's angular damping. Bullet's
+                    // spring "damping" is a target-velocity GAIN, not
+                    // dissipation, so more of it means snappier, not calmer.
+  gravity: 1.0,     // fraction of world gravity. Real, unlike hair's 1.5 — a
+                    // wing is a big surface and if anything falls SLOWER.
+  // The RAMP is where the remaining stiffness lived, and it got worse when the
+  // chains grew from two bones to three: lim = limit * ((j+1)/n)^rootExp, so at
+  // 38/1.6 the shoulder went from 12.5° (n=2) to 6.5° (n=3) without anyone
+  // touching a number. Re-measured on the 3-bone rig:
+  //
+  //     limit  rootExp |  peak bend   bend at rest   jitter
+  //        38      1.6 |     69.0°           4.7°   0.119°/frame
+  //        70      1.0 |     74.7°           5.9°   0.073        <- more fold,
+  //        70      0.7 |     74.4°           5.9°   0.077           less twitch
+  //
+  // A linear ramp dominates the steep one on BOTH axes, which is the unusual
+  // case where there is no trade to make.
+  //
+  // 0.7 looked calmer still on 4 leans (jitter 0.089 vs 0.130) — and did not
+  // survive: paired over 10 leans the difference is -0.003 ± 0.024, t = 0.13,
+  // i.e. nothing. Noted because that gap is exactly the size this project has
+  // been fooled by before, and the cheap paired re-test is what settles it.
+  //
+  // Re-measured AGAIN once the boxes were sized from the mesh (see
+  // boneMeshExtents — the distal upper segments had been carrying boxes a third
+  // of their true length, which is most of why they would not drape): the same
+  // row now rests at 9.0° ± 2.0 rather than 5.9°.
+  limit: 70,        // degrees at the outermost segment
+  rootExp: 1.0,     // ramp exponent — linear: the shoulder gets a third of the
+                    // range, the tip all of it.
 };
 
 export const JOINT_SPECS = {
@@ -383,6 +481,102 @@ function frameQuat(dir, out = new THREE.Quaternion()) {
   const x = new THREE.Vector3().crossVectors(ref, y).normalize();
   const z = new THREE.Vector3().crossVectors(x, y);
   return out.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+}
+
+/** Per-bone mesh extents, in each bone's OWN rest frame, read off the skin.
+ *
+ *  For limbs a bone's length is a fine proxy for the flesh on it — head to the
+ *  next head, and the box follows. Wings broke that assumption outright:
+ *  mythos's upper chain has a 16cm middle bone carrying 44cm of membrane, and
+ *  its outermost bone is a LEAF, where the chain builder had nothing to measure
+ *  and copied the previous segment's length. Both distal boxes came out about a
+ *  THIRD of the wing they stand for — visible in the debug overlay, and the
+ *  reason those sections would not drape: gravity's torque goes as the lever
+ *  arm, so a box a third the length has a third the pull and a ninth the
+ *  inertia to carry a swing with.
+ *
+ *  So ask the mesh instead. A vertex's position times boneInverse × bindMatrix
+ *  is where it sits in that bone's frame at bind time — pose-independent, so
+ *  this is computed ONCE per avatar and cached (the doll is rebuilt on every
+ *  grab). Vertices are assigned to whichever bone weights them MOST, and only
+ *  when that weight is decisive; a vertex split evenly across a joint belongs
+ *  to neither box.
+ *
+ *  Returns Map(boneName -> {c, he}) in bone-local units, or an empty map when
+ *  there is no skinned mesh to read — headless rigs have bones and no geometry,
+ *  and the caller keeps its bone-length path for them.
+ */
+function boneMeshExtents(avatar, key, match) {
+  // Keyed, because there are TWO callers with different matchers (hair and
+  // wings) and a single cached map would hand the second caller the first
+  // caller's answer — silently returning no extents and dropping it back to
+  // bone-length boxes, with nothing in the log to say the fix had stopped
+  // working.
+  const cache = avatar.__boneExt ??= new Map();
+  if (cache.has(key)) return cache.get(key);
+  const out = new Map();
+  const acc = new Map();      // bone name -> {lo, hi}
+  const v = new THREE.Vector3();
+  const m = new THREE.Matrix4();
+  avatar.root?.traverse?.((o) => {
+    if (!o.isSkinnedMesh || !o.skeleton?.bones?.length) return;
+    const pos = o.geometry?.attributes?.position;
+    const si = o.geometry?.attributes?.skinIndex;
+    const sw = o.geometry?.attributes?.skinWeight;
+    if (!pos || !si || !sw) return;
+    // which of this skeleton's bones are we being asked about
+    const want = new Map();
+    o.skeleton.bones.forEach((b, i) => { if (match(b.name)) want.set(i, b.name); });
+    if (!want.size) return;
+    for (let k = 0; k < pos.count; k++) {
+      let bi = -1, bw = 0;
+      for (let c = 0; c < 4; c++) {
+        const w = sw.getComponent(k, c);
+        if (w > bw) { bw = w; bi = si.getComponent(k, c); }
+      }
+      // 0.4 is "this vertex is decisively one bone's": below it the vertex
+      // straddles a joint and would stretch BOTH boxes past the real geometry.
+      if (bw < 0.4 || !want.has(bi)) continue;
+      const name = want.get(bi);
+      m.multiplyMatrices(o.skeleton.boneInverses[bi], o.bindMatrix);
+      v.fromBufferAttribute(pos, k).applyMatrix4(m);
+      let a = acc.get(name);
+      if (!a) acc.set(name, (a = { lo: v.clone(), hi: v.clone(), n: 0 }));
+      a.lo.min(v); a.hi.max(v); a.n++;
+    }
+  });
+  for (const [name, a] of acc) {
+    // a handful of stray vertices is not a shape; fall back rather than build a
+    // box out of noise
+    if (a.n < 24) continue;
+    out.set(name, {
+      c: a.lo.clone().add(a.hi).multiplyScalar(0.5),
+      he: a.hi.clone().sub(a.lo).multiplyScalar(0.5),
+    });
+  }
+  cache.set(key, out);
+  return out;
+}
+
+/** A bone's mesh extent, carried out to world by its live matrix: the box
+ *  centre and a single child box oriented with the bone. Returns null when
+ *  there is nothing measured for that bone, and the caller keeps its fallback.
+ *
+ *  `floor` is the minimum half-extent on every axis — a membrane or a lock of
+ *  hair can be millimetres thick, and a zero-depth box is a degenerate shape
+ *  with no inertia about two of its axes. */
+function extBox(nd, ext, floor = 0.01) {
+  if (!ext) return null;
+  nd.updateWorldMatrix(true, false);
+  return {
+    center: ext.c.clone().applyMatrix4(nd.matrixWorld),
+    boxes: [{
+      he: new THREE.Vector3(
+        Math.max(ext.he.x, floor), Math.max(ext.he.y, floor), Math.max(ext.he.z, floor)),
+      t: new THREE.Vector3(0, 0, 0),
+      q: nd.getWorldQuaternion(new THREE.Quaternion()),
+    }],
+  };
 }
 
 /** Shortest arc with the antiparallel case answered deterministically. */
@@ -1241,10 +1435,17 @@ export class AmmoRagdoll {
           avatar.__hairRest = rest;
         }
         // ...and start combed, not mid-tumble.
-        for (const [nd0, q0] of avatar.__hairRest) nd0.quaternion.copy(q0);
+        // ...and updateMatrix, or this reset never happens either: a
+        // springbone joint has matrixAutoUpdate false, so the bodies below
+        // would be built at whatever pose three-vrm's matrices still held —
+        // the boxes born offset from the hair you can see.
+        for (const [nd0, q0] of avatar.__hairRest) {
+          nd0.quaternion.copy(q0); nd0.updateMatrix();
+        }
         avatar.root.updateMatrixWorld(true);
         const headGroup = this._groupOf.get(headSeg.body) ?? G_STATIC;
         const R = Math.max(0.004 * H, 0.004);
+        const hairExt = boneMeshExtents(avatar, 'hair', (n) => /^Hair_\d+_\d+$/.test(n));
         // The source playground's DEFAULTS, transplanted. Where this port
         // guessed, it guessed like a FINGER — hair is built with isFinger=true,
         // so it inherited the finger damping and the finger collision group,
@@ -1294,8 +1495,20 @@ export class AmmoRagdoll {
             const len = Math.max(aW.distanceTo(bW), 0.015);
             prevLen = len;
             const mid = aW.clone().add(bW).multiplyScalar(0.5);
-            const body = mkBody(HAIR_MASS, mid, new THREE.Quaternion(),
-              [boxFor(mid, aW, bW, R, R, len)], true);
+            // The lock's own measurements when the mesh offers them (see
+            // boneMeshExtents), the bone spacing otherwise. A much SMALLER
+            // correction than the wings needed — measured on this rig, the
+            // median lock is 48mm long against 36mm of bone spacing, and
+            // 17x10mm in section against the 14x14mm the constant gives — so
+            // this is a tidy-up, not the fix that the wings' 3x error was.
+            // 131 of 346 segments are too sparsely tessellated to measure and
+            // keep the constant; they are the thin tips, where it is closest to
+            // right anyway.
+            const hx = extBox(nd, hairExt.get(nd.name), 0.004);
+            const body = hx
+              ? mkBody(HAIR_MASS, hx.center, new THREE.Quaternion(), hx.boxes, true)
+              : mkBody(HAIR_MASS, mid, new THREE.Quaternion(),
+                [boxFor(mid, aW, bW, R, R, len)], true);
             // Angular damping 0.9 was the finger constant. Per Bullet's
             // w *= (1-d)^dt, 0.9 bleeds angular momentum ~2.5x faster per step
             // than 0.6 — hair that cannot carry a swing through its arc reads
@@ -1364,9 +1577,189 @@ export class AmmoRagdoll {
             built++;
           }
         }
-        if (built) console.log(`[ammodoll] bullet hair: ${chains.size} locks, ${built} segments`);
+        if (built) {
+          // Claim the hair from three-vrm for as long as this doll lives. See
+          // avatar.js's vrm.update: without this the springbones overwrite
+          // every bone we are about to drive, one system later in the frame.
+          avatar.__simHair = true;
+          console.log(`[ammodoll] bullet hair: ${chains.size} locks, ${built} segments`);
+        }
       }
     }
+
+    // ---- BULLET WINGS. Same shape as the hair above — chains of boxes hung
+    // from a KINEMATIC anchor carried in a core body's frame, one-way, local
+    // dressing, excluded from settle and the pose wire — and deliberately NOT
+    // sharing its code. The two differ in every parameter that matters (mass by
+    // 25x, a plate cross-section instead of a filament, an anchor at the chest
+    // instead of the skull, a stiff root instead of a stiff tip), and a shared
+    // builder would be five booleans with one caller each.
+    //
+    // The division of labour with avatar.js is the point of the whole thing:
+    // while the body is alive its wings are DRIVEN (WING_IDLE's flap, on the raw
+    // bones, after vrm.update); the moment it goes limp the doll is built and
+    // these chains take the same bones over. Neither writes while the other
+    // does, so there is never a frame with two authors.
+    this._wingSegs = [];
+    this._wingAnchors = [];
+    {
+      // The chest, not the clavicle: the arms hang off 'chest' in CORE_JOINTS
+      // for the same reason — there is no clavicle body in this cut of the rig.
+      const chestSeg = this.segs.get('chest|neck') ?? this.segs.get('spine|chest');
+      const wingNodes = [];
+      avatar.root?.traverse?.((o) => {
+        if (/^[LR]_Wing_(Upper|Lower)(_\d+)?$/.test(o.name ?? '')) wingNodes.push(o);
+      });
+      const wchains = new Map();
+      for (const nd of wingNodes) {
+        // The index in the name IS the position in the chain. Counting
+        // underscores instead collapses _1 and _2 to the same depth, and then
+        // the sort below leaves their order to traversal luck — which decides
+        // which segment gets built as whose parent.
+        const m = nd.name.match(/^([LR]_Wing_(?:Upper|Lower))(?:_(\d+))?$/);
+        if (!wchains.has(m[1])) wchains.set(m[1], []);
+        wchains.get(m[1]).push({ i: m[2] ? Number(m[2]) : 0, node: nd });
+      }
+      if (chestSeg && wchains.size) {
+        // The AUTHORED pose, captured by avatar.js's _findWings before the flap
+        // ever ran, and shared here. Falling back to the live pose would define
+        // rest as "wherever the flap happened to be when you grabbed her", so
+        // the equilibrium would differ every time the doll was built — and
+        // since a drag release rebuilds, that is the hair's crumple ratchet
+        // again, in a system where it would read as wings drifting upward.
+        if (!avatar.__wingRest) {
+          const rest = new Map();
+          for (const [, l0] of wchains) for (const it of l0) rest.set(it.node, it.node.quaternion.clone());
+          avatar.__wingRest = rest;
+        }
+        for (const [nd0, q0] of avatar.__wingRest) {
+          nd0.quaternion.copy(q0); nd0.updateMatrix();   // harmless when auto is on
+        }
+        avatar.root.updateMatrixWorld(true);
+        const WT = WING_TUNING;
+        const WING_LIM = WT.limit * DEG;
+        const wingExt = boneMeshExtents(avatar, 'wing', (n) => /^[LR]_Wing_/.test(n));
+        let built = 0;
+        for (const [, list] of wchains) {
+          list.sort((x2, y2) => x2.i - y2.i);
+          const rootW = list[0].node.getWorldPosition(new THREE.Vector3());
+          const aShape = keep(new AMMO.btBoxShape(new AMMO.btVector3(0.01, 0.01, 0.01)));
+          _bt1.setIdentity();
+          _bv1.setValue(rootW.x, rootW.y, rootW.z); _bt1.setOrigin(_bv1);
+          const aMs = keep(new AMMO.btDefaultMotionState(_bt1));
+          _bv1.setValue(0, 0, 0);
+          const aCi = keep(new AMMO.btRigidBodyConstructionInfo(0, aMs, aShape, _bv1));
+          const anchor = keep(new AMMO.btRigidBody(aCi));
+          anchor.setCollisionFlags(anchor.getCollisionFlags() | CF_KINEMATIC);
+          anchor.setActivationState(DISABLE_DEACTIVATION);
+          this.world.addRigidBody(anchor, G_FINGER, 0);   // mask 0: touches nothing
+          this._bodies.push(anchor);
+          this._wingAnchors.push({
+            anchor, head: chestSeg.body, local: localOf(chestSeg.body, rootW),
+          });
+          let parentBody = anchor;
+          let prevLen = 0.2;
+          for (let j2 = 0; j2 < list.length; j2++) {
+            const nd = list[j2].node;
+            const aW = nd.getWorldPosition(new THREE.Vector3());
+            const childNd = list[j2 + 1]?.node;
+            const bW = childNd ? childNd.getWorldPosition(new THREE.Vector3())
+              : aW.clone().add(nd.getWorldDirection(new THREE.Vector3()).multiplyScalar(-prevLen));
+            const len = Math.max(aW.distanceTo(bW), 0.03);
+            prevLen = len;
+            const mid = aW.clone().add(bW).multiplyScalar(0.5);
+            // THE BOX IS THE MESH, when the rig has one to read.
+            //
+            // See boneMeshExtents: a wing bone's length is not the size of the
+            // wing on it. The extents come back in the bone's own frame, so the
+            // box rides out to world with the bone's live matrix — centre and
+            // orientation both — and needs no guess about span or thickness.
+            //
+            // The bone-length plate below is the fallback for a rig with no
+            // skinned geometry to measure (every headless fixture). It is a
+            // PLATE and not a filament on purpose: the width is what stops a
+            // wing lying flat inside the ground plane when the body lands on
+            // its back, where hair's 4mm cross-section would be a wire.
+            const ext = wingExt.get(nd.name);
+            let center = mid, boxes;
+            if (ext) {
+              nd.updateWorldMatrix(true, false);
+              center = ext.c.clone().applyMatrix4(nd.matrixWorld);
+              boxes = [{
+                // a membrane can be millimetres thick, and a zero-depth box is
+                // a degenerate shape with no inertia about two of its axes
+                he: new THREE.Vector3(
+                  Math.max(ext.he.x, 0.01), Math.max(ext.he.y, 0.01),
+                  Math.max(ext.he.z, 0.01)),
+                t: new THREE.Vector3(0, 0, 0),
+                q: nd.getWorldQuaternion(new THREE.Quaternion()),
+              }];
+            } else {
+              const halfSpan = len * 0.45, halfThick = Math.max(0.01, len * 0.05);
+              boxes = [boxFor(mid, aW, bW, halfSpan, halfThick, 0.03)];
+            }
+            const body = mkBody(WT.mass, center, new THREE.Quaternion(), boxes, true);
+            body.setDamping(0.35, WT.damping);
+            body.setFriction(0.6);        // wings drag on the floor, not slide
+            body.setRestitution(0.0);
+            body.setRollingFriction(0.0);
+            // Wings meet the WORLD only, never the body they hang from.
+            //
+            // The root segment starts inside the torso box by construction (it
+            // is anchored at the shoulder blade), and a contact born penetrating
+            // cannot be resolved — that is the hair's poof, and on a plate this
+            // size it would fire the whole body across the room. Excluding the
+            // torso is not enough either: a folded wing wraps the arm and the
+            // leg on that side. So: statics only. A wing can rest on the ground
+            // and cannot touch its owner.
+            this.world.addRigidBody(body, G_FINGER, G_STATIC);
+            _bv1.setValue(0, -9.81 * WT.gravity, 0);
+            body.setGravity(_bv1);       // AFTER addRigidBody — the source's lesson
+            const lim = WING_LIM * Math.pow((j2 + 1) / list.length, WT.rootExp);
+            const mkF = (bdy) => {
+              const tr = keep(new AMMO.btTransform());
+              tr.setIdentity();
+              const o = localOf(bdy, aW);
+              _bv2.setValue(o.x, o.y, o.z); tr.setOrigin(_bv2);
+              return tr;
+            };
+            const con = keep(new AMMO.btGeneric6DofSpringConstraint(
+              parentBody, body, mkF(parentBody), mkF(body), true));
+            _bv1.setValue(0, 0, 0);
+            con.setLinearLowerLimit(_bv1); con.setLinearUpperLimit(_bv1);
+            _bv1.setValue(-lim, -lim, -lim); con.setAngularLowerLimit(_bv1);
+            _bv1.setValue(lim, lim, lim); con.setAngularUpperLimit(_bv1);
+            for (let ax = 3; ax < 6; ax++) {
+              con.enableSpring(ax, true);
+              con.setStiffness(ax, WT.tension);
+              con.setDamping(ax, WT.damping);
+            }
+            // Equilibrium is the pose the wing was BORN in, which the reset
+            // above guarantees is the authored one.
+            con.setEquilibriumPoint();
+            this.world.addConstraint(con, true);
+            this._constraints.push(con);
+            this._wingSegs.push({
+              body, node: nd, parent: nd.parent,
+              restWorldQ: nd.getWorldQuaternion(new THREE.Quaternion()),
+              con, j: j2, n: list.length,
+            });
+            parentBody = body;
+            built++;
+          }
+        }
+        if (built) console.log(`[ammodoll] bullet wings: ${wchains.size} chains, ${built} segments`);
+      }
+    }
+
+    // Hair and wings are the same KIND of thing to the step loop — hung from a
+    // carried kinematic anchor, written back to a raw bone, invisible to settle
+    // and to the wire. Joined once here rather than concatenated per frame.
+    // `?? []` on the hair: _hairAnchors is only assigned INSIDE its build guard,
+    // so a rig with no hair leaves it undefined and the spread throws — which is
+    // exactly what the fleet's hairless rigs did the first time this ran.
+    this._dressAnchors = [...(this._hairAnchors ?? []), ...this._wingAnchors];
+    this._dressSegs = [...(this._hairSegs ?? []), ...this._wingSegs];
 
     // ---- the drive table (rapierdoll's law: BOTH references from the live
     // skeleton — refDir must be the direction the bone points in the pose
@@ -1547,6 +1940,33 @@ export class AmmoRagdoll {
     // a sleeping body will not notice its joints changed under it
     for (const b of this._bodies) b.activate();
     return n;
+  }
+
+  /** Push WING_TUNING into the running wings, no rebuild. Same contract as
+   *  retuneHair, and the same reason: a wing is being judged on how it settles,
+   *  and rebuilding to test a slider throws away the fall you were judging. */
+  retuneWings() {
+    if (!AMMO || !this._wingSegs?.length) return 0;
+    const WT = WING_TUNING;
+    for (const ws of this._wingSegs) {
+      ws.body.setDamping(0.35, WT.damping);
+      _bv1.setValue(0, -9.81 * WT.gravity, 0);
+      ws.body.setGravity(_bv1);
+      _bv1.setValue(0, 0, 0);
+      ws.body.getCollisionShape().calculateLocalInertia(WT.mass, _bv1);
+      ws.body.setMassProps(WT.mass, _bv1);
+      ws.body.updateInertiaTensor();
+      ws.body.activate();
+      if (!ws.con) continue;
+      const lim = WT.limit * DEG * Math.pow((ws.j + 1) / ws.n, WT.rootExp);
+      _bv1.setValue(-lim, -lim, -lim); ws.con.setAngularLowerLimit(_bv1);
+      _bv1.setValue(lim, lim, lim); ws.con.setAngularUpperLimit(_bv1);
+      for (let ax = 3; ax < 6; ax++) {
+        ws.con.setStiffness(ax, WT.tension);
+        ws.con.setDamping(ax, WT.damping);
+      }
+    }
+    return this._wingSegs.length;
   }
 
   /** Push HAIR_TUNING into the running hair, no rebuild.
@@ -1755,7 +2175,7 @@ export class AmmoRagdoll {
     // Kinematic roots move BEFORE the step (the source's law): Bullet derives a
     // kinematic body's velocity as (new - old)/dt, so moving one after the step
     // hands the solver a stale offset and the chains get whipped.
-    for (const ha of this._hairAnchors ?? []) {
+    for (const ha of this._dressAnchors ?? []) {
       const t0 = ha.head.getCenterOfMassTransform();
       const o0 = t0.getOrigin();
       _v.set(o0.x(), o0.y(), o0.z());
@@ -1845,10 +2265,24 @@ export class AmmoRagdoll {
     // hair rides raw nodes, local only: world orientation = the body's
     // rest→live rotation composed on the born orientation (rest-aligned
     // bodies make that exact), then into parent-local
-    for (const hs of this._hairSegs) {
+    for (const hs of this._dressSegs ?? []) {
       quatOf2(hs.body, _q).multiply(hs.restWorldQ);
       hs.parent.getWorldQuaternion(_qp).invert();
       hs.node.quaternion.copy(_qp.multiply(_q));
+      // updateMatrix() IS THE WRITE. Setting .quaternion is not.
+      //
+      // three-vrm sets `bone.matrixAutoUpdate = false` on every spring-bone
+      // joint (three-vrm.module.js:5279) and maintains matrix/matrixWorld by
+      // hand inside its own update. So on any rig whose hair is declared as
+      // springbones — which is every rig this pipeline builds — a bare
+      // quaternion write is composed into `matrix` by nobody and reaches the
+      // renderer never. The bones moved, the debug boxes moved, and the mesh
+      // stood still: "the hair is bending less than the collider boxes".
+      //
+      // This is why the WINGS worked from the first try and the hair never did.
+      // Wing bones are not springbone joints, so they keep the three.js default
+      // and the renderer recomposes them for free.
+      hs.node.updateMatrix();
     }
 
     if (this.settledFor >= SETTLE_TIME || this.elapsed >= DEADLINE) {
@@ -1873,6 +2307,18 @@ export class AmmoRagdoll {
     // never become the next tumble's definition of rest. Restoring the comb
     // here instead is a one-line change if that is ever wanted.
     this.done = true;
+    // The hair is NOT handed back here, and that is the point.
+    //
+    // This used to call springBoneManager.reset() — which does
+    // `bone.quaternion.copy(this._initialLocalRotation)` per joint
+    // (three-vrm.module.js:5353). That is a snap to the COMBED pose, and since
+    // dispose() fires the moment a body settles, it fired a few seconds into
+    // every fall: "the hair abruptly jumps back into the default position
+    // instead of staying in the position it fell into".
+    //
+    // A settled corpse keeps the hair the fall gave it. Ownership is released
+    // when she gets UP (avatar.js's _releaseHair, off setLimp), which is the
+    // moment the shape should start combing itself out again.
     try {
       for (const c of this._constraints) this.world.removeConstraint(c);
       for (const [, pin] of this._pinCons) this.world.removeConstraint(pin.con);

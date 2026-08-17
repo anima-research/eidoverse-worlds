@@ -45,6 +45,61 @@ export const BLINK = {
                  // CLOSING plus the reopen, and this curve covers both halves.
 };
 
+// Wings, when a rig has them: [LR]_Wing_(Upper|Lower)[_<n>]. Four chains hung
+// off the clavicles — an upper pair and a lower pair per side — each as long as
+// the rig cares to make it (mythos went from two bones to three on 08-17;
+// nothing here counts them).
+//
+// The flap is PROCEDURAL rather than a clip, for two reasons. A VRMA clip can
+// only address humanoid bones, and these are not humanoid; and the wings have
+// to be able to stop being driven the instant the body goes limp, which a
+// running clip cannot do without a second blend tree. Driving the raw bones
+// directly costs nothing and makes limpness a one-line handover to the sim.
+//
+// The axis is the BODY'S FORWARD, not the bone's own X/Y/Z: bone roll out of
+// Blender is arbitrary (the eyelids cost a day over exactly this), so rotating
+// about a local axis would flap one rig and swipe sideways on the next. About
+// the forward axis, "up" is up for any wing that points outward, and the two
+// sides differ only by sign.
+export const WING_IDLE = {
+  deg: 15,       // half-amplitude at the shoulder. A resting bird's wings barely
+                 // move; this is an IDLE, not flight, and the first value big
+                 // enough to see (28) read as an animal trying to take off.
+  hz: 0.42,      // full flaps per second — "slowly", and slow enough that the
+                 // sine never looks like a loop.
+  bias: 0,       // degrees of permanent lift added to the flap, both sides. A
+                 // dial for resting the wings higher or lower than the rig's
+                 // rest pose without editing the blend.
+  tip: 0.65,     // the outer segment's share of the amplitude. Two segments
+                 // rotating as one plank is the difference between a wing and a
+                 // door; the tip carrying less than the root gives it a curve.
+  lag: 0.16,     // cycles the outer segment trails the inner by. This is the
+                 // whole reason a wing reads as membrane rather than board — the
+                 // tip is still going up as the shoulder starts down.
+  sync: true,    // upper and lower pairs share one phase. False gives the lower
+                 // pair a half-cycle offset (they beat against each other, which
+                 // is an insect, not a bird).
+  recover: 0.55, // seconds to slerp back into the flap after a ragdoll, out of
+                 // whatever pose the body was left in.
+  // ---- the SWEEP: how far the tips travel FORWARD and BACK.
+  //
+  // Rotating about the forward axis alone confines every tip to the plane
+  // across the body — up, down and inboard, and nothing fore or aft. That is a
+  // hinge, and it reads as one. A real wing also sweeps: the tip goes forward
+  // as it comes down and back as it rises, so the path is an ellipse rather
+  // than an arc, and it is the sweep that makes a flap look like it is moving
+  // air rather than waving.
+  //
+  // Applied as a second rotation about the body's UP axis, mirrored the other
+  // way from the flap (both wings must sweep forward together, and the two
+  // sides point opposite ways along the span).
+  sweep: 9,        // degrees fore/aft at the shoulder
+  sweepPhase: 0.25, // cycles the sweep leads the flap by. A QUARTER turn is
+                    // what opens the arc into an ellipse; at 0 the two
+                    // rotations peak together and the path stays a straight
+                    // diagonal line, just a tilted hinge.
+};
+
 const CORE_CLIPS = ['idle', 'walk'];
 const LATER_CLIPS = CLIP_SLOTS.filter((s) => !CORE_CLIPS.includes(s));
 // Until a clip arrives, the nearest thing that HAS arrived stands in. Silently
@@ -205,6 +260,14 @@ const _gw = new THREE.Vector3();
 const _gp = new THREE.Vector3();
 const _X = new THREE.Vector3(1, 0, 0);      // scratch — hot paths must not allocate
 const _v2 = new THREE.Vector3();
+const _wq = new THREE.Quaternion();        // wing scratch
+const _wpq = new THREE.Quaternion();
+const _wacc = new THREE.Quaternion();
+const _wr = new THREE.Quaternion();
+const _wax = new THREE.Vector3();
+const _wup = new THREE.Vector3();
+const _wsw = new THREE.Quaternion();
+const DEG = Math.PI / 180;
 
 export class Avatar {
   constructor(id, vrm, clips) {
@@ -277,6 +340,158 @@ export class Avatar {
       if (/^[LR]_Eye$/.test(o.name ?? '')) found.push({ node: o, rest: o.quaternion.clone() });
     });
     if (found.length) this._eyes = found;
+  }
+
+  /** Give the hair back to three-vrm, resuming from where the tumble left it.
+   *
+   *  Not a reset. springBoneManager.reset() restores every joint's
+   *  _initialLocalRotation (three-vrm.module.js:5353) — the combed pose — which
+   *  is a visible snap, and calling it when the doll disposed is what made the
+   *  hair jump back to default a few seconds into every fall.
+   *
+   *  What is wanted is the other half of reset(): the tail state re-derived
+   *  from the CURRENT world matrices, so the springs pick up smoothly with no
+   *  stored velocity, keep the dishevelled shape, and comb it out over the next
+   *  second the way they would if you had just been shoved. There is no public
+   *  call for that half alone, so the rest rotation is pointed at the pose the
+   *  hair is ALREADY in for the duration of the call — making the restore a
+   *  no-op — and then put straight back, so the springs still pull toward the
+   *  authored shape afterwards rather than freezing the crumple in forever.
+   */
+  _releaseHair() {
+    if (!this.__simHair) return;
+    this.__simHair = false;
+    const sbm = this.vrm?.springBoneManager;
+    if (!sbm?.joints) return;
+    this.vrm.scene?.updateMatrixWorld?.(true);
+    const saved = [];
+    for (const j of sbm.joints) {
+      if (!j?._initialLocalRotation || !j.bone) continue;
+      saved.push([j, j._initialLocalRotation.clone()]);
+      j._initialLocalRotation.copy(j.bone.quaternion);
+    }
+    sbm.reset();
+    for (const [j, q] of saved) j._initialLocalRotation.copy(q);
+  }
+
+  /** Find the wing bones once, and remember the pose they were authored in.
+   *
+   *  `[LR]_Wing_(Upper|Lower)` is the root of a chain and `_<n>` its nth
+   *  segment outward: mythos runs `_1`, `_2` today and may grow more. Depth is
+   *  the INDEX in the name, not a count of underscores — reading it as a count
+   *  makes `_1` and `_2` both depth 1, and then the two outer segments share a
+   *  phase and an amplitude and the chain flaps as two planks instead of three.
+   *
+   *  Chains do not all have to be the same length: depth is per bone, and the
+   *  ragdoll's limit ramp divides by each chain's own length.
+   *
+   *  Rest is captured here, before the first flap is ever applied, and every
+   *  frame rebuilds from it. That is not a style choice: composing onto last
+   *  frame's pose integrates, and an integrating flap winds the wings around
+   *  their own axis over a few minutes. The same capture is what the ragdoll
+   *  reads as its equilibrium, so it must be the AUTHORED pose and not a pose
+   *  the sim or the flap left behind (HANDOFF.md: never rebuild a rig from a
+   *  simulated pose — it cost the hair a permanent crumple).
+   */
+  _findWings() {
+    this._wings = null;
+    if (!this.vrm?.scene) return;
+    const found = [];
+    this.vrm.scene.traverse((o) => {
+      const m = /^([LR])_Wing_(Upper|Lower)(?:_(\d+))?$/.exec(o.name ?? '');
+      if (!m) return;
+      found.push({
+        node: o,
+        rest: o.quaternion.clone(),
+        // +1 left, -1 right. A single rotation about the body's forward axis
+        // lifts a wing that points +X and drops the one that points -X, so the
+        // mirror is a sign and nothing else.
+        side: m[1] === 'L' ? 1 : -1,
+        lower: m[2] === 'Lower',
+        depth: m[3] ? Number(m[3]) : 0,
+      });
+    });
+    if (!found.length) return;
+    // roots before tips: a tip's world frame is read AFTER its root has been
+    // written this frame, so the order it is visited in is load-bearing.
+    found.sort((a, b) => a.depth - b.depth);
+    this._wings = found;
+    // Shared with the ragdoll, which hangs its Bullet chains off this pose.
+    // Stored on the avatar because the doll is rebuilt on every grab.
+    this.__wingRest = new Map(found.map((w) => [w.node, w.rest]));
+  }
+
+  /** One frame of the idle flap. Every wing is rebuilt from its captured rest,
+   *  so this cannot integrate however long it runs.
+   *
+   *  The rotation is applied about a WORLD axis and then carried into the
+   *  bone's parent frame — local = parentWorld⁻¹ · R · parentWorld · rest —
+   *  which is the same construction the eyeballs use, and for the same reason:
+   *  the axis that means something ("the body's forward") is not an axis any
+   *  one bone owns.
+   */
+  _flap(dt) {
+    const W = WING_IDLE;
+    this._wingBlend = Math.min(1, (this._wingBlend ?? 1) + dt / Math.max(0.01, W.recover));
+    this._wingT = (this._wingT ?? 0) + dt * Math.max(0, W.hz);
+    this._wingT -= Math.floor(this._wingT);      // stays in [0,1) forever
+    // The body's forward, from the NORMALIZED rig: three-vrm guarantees those
+    // bones rest facing +Z, where the raw Tripo bones carry whatever roll
+    // Blender gave them. Falls back to the avatar group, which is upright and
+    // faces travel — worse only when the body is leaning.
+    const h = this.vrm.humanoid;
+    const ref = this._wingRef ?? (this._wingRef =
+      h?.getNormalizedBoneNode?.('upperChest') ?? h?.getNormalizedBoneNode?.('chest')
+      ?? h?.getNormalizedBoneNode?.('spine') ?? this.root);
+    ref.getWorldQuaternion(_wq);
+    _wax.set(0, 0, 1).applyQuaternion(_wq).normalize();   // forward: the flap
+    _wup.set(0, 1, 0).applyQuaternion(_wq).normalize();   // up: the sweep
+    for (const w of this._wings) {
+      // the outer segments trail their root, and (optionally) the lower pair
+      // trails the upper by half a beat
+      const ph = this._wingT - W.lag * w.depth - (W.sync || !w.lower ? 0 : 0.5);
+      // depth 0 carries the full amplitude; each segment out carries `tip` of
+      // the one before it, as its OWN rotation — the total sweep at the tip is
+      // larger than at the shoulder, because it inherits the root's as well.
+      const amp = W.deg * Math.pow(W.tip, w.depth);
+      const ang = (amp * Math.sin(ph * Math.PI * 2) + W.bias) * DEG * w.side;
+      _wr.setFromAxisAngle(_wax, ang);
+      // ...and the fore/aft sweep, about UP. Mirrored the OTHER way from the
+      // flap: the two wings point opposite ways along the span, so sweeping
+      // both forward together means opposite turns about the body's up axis.
+      // Composed on the left, so the sweep acts in the body's frame rather than
+      // in the already-flapped wing's.
+      const sw = W.sweep * Math.pow(W.tip, w.depth)
+        * Math.sin((ph + W.sweepPhase) * Math.PI * 2) * DEG * -w.side;
+      if (sw) _wr.premultiply(_wsw.setFromAxisAngle(_wup, sw));
+      // parentWorld is read fresh per bone, and roots are visited before tips
+      // (see _findWings), so a tip composes on its root's NEW orientation
+      // rather than last frame's.
+      // _wacc, not _wpq, as the accumulator: three.js quaternion ops MUTATE the
+      // receiver, so `_wpq.invert().multiply(_wr).multiply(_wpq)` reads the
+      // already-inverted-and-multiplied value back as the third factor and
+      // squares the rotation. It looked plausible — the wings flapped, in the
+      // right plane, symmetrically — and was 2x every commanded angle.
+      w.node.parent.getWorldQuaternion(_wpq);
+      _wacc.copy(_wpq).invert().multiply(_wr).multiply(_wpq).multiply(w.rest);
+      if (this._wingBlend < 1 && w.from) {
+        // Standing up, the bones are wherever the ragdoll left them — folded,
+        // or under her. Cutting straight to mid-flap is a one-frame teleport of
+        // something a metre long, so the first half-second is a slerp out of
+        // the pose she fell in. (The HAIR deliberately stays dishevelled; wings
+        // are limbs, and a bird shakes them back into place.)
+        w.node.quaternion.copy(w.from).slerp(_wacc, this._wingBlend);
+      } else {
+        w.node.quaternion.copy(_wacc);
+      }
+      // Explicit, though wing bones keep three.js's default: a bone declared as
+      // a VRM springbone has matrixAutoUpdate FALSE (three-vrm sets it on every
+      // spring joint), and on such a bone assigning .quaternion reaches the
+      // renderer never. That cost four rounds of debugging on the hair; costing
+      // it again on a rig that happens to declare its wings as springbones
+      // would be careless.
+      w.node.updateMatrix();
+    }
   }
 
   /** Hold the eyes shut (1) or let them open (0). Eased in update() so it
@@ -558,6 +773,23 @@ export class Avatar {
     // (/eyes) keeps them closed.
     if (on) { this._limpEyes = this.setEyes(true); }
     else if (this._limpEyes) { this._limpEyes = false; this.setEyes(false); }
+    // Wings: while limp they belong to the ragdoll (ammodoll hangs Bullet
+    // chains off these same bones), and here we only mark the handover BACK.
+    // Where the sim left them is captured now, so the flap can slerp out of it
+    // instead of cutting. On a REMOTE body no doll ever ran and the wings are
+    // simply frozen where the flap stopped — remotes carry no dressing on the
+    // wire, exactly as with the hair.
+    // Getting up is when the hair goes back to three-vrm — not when the doll
+    // disposed, which happens the moment the body settles and left the hair
+    // snapping to combed while she was still lying there.
+    if (!on) this._releaseHair();
+    if (!on) {
+      if (this._wings === undefined) this._findWings();
+      if (this._wings) {
+        for (const w of this._wings) w.from = w.node.quaternion.clone();
+        this._wingBlend = 0;
+      }
+    }
     if (!on) {
       // Hand the bones back as we found them. three.js only writes a bone when
       // the clip's computed value CHANGES, so a track that holds still — a
@@ -924,7 +1156,51 @@ export class Avatar {
     }
 
     BC('av:gaze-expr');
+    // ONE author per bone, again — this time for the hair.
+    //
+    // A rig with Hair_* chains is simulated TWICE while limp: ammodoll builds
+    // Bullet bodies for those bones and writes them in the 'me-drive' system,
+    // and three-vrm's springBoneManager writes the same bones inside
+    // vrm.update() during 'me-update'. Registration order is execution order,
+    // so the springbones always ran second and always won — the Bullet boxes
+    // swung wide in the debug overlay while the rendered hair barely moved,
+    // which is exactly how Janus described it.
+    //
+    // The wings never had this problem because nothing else simulates them.
+    // The hair's second simulator is the whole reason it moves while WALKING,
+    // so it cannot simply be removed: it is suppressed for exactly as long as a
+    // local sim owns those bones (__simHair, set by ammodoll between build and
+    // dispose), and dispose resets it so it resumes from where the tumble left
+    // the hair instead of snapping from its own stale state.
+    //
+    // Caveat worth knowing: this suppresses the whole manager, so a rig whose
+    // springbones include something Bullet does NOT drive — a skirt, a tail —
+    // would freeze that too while limp. Every chain in this rig is hair.
+    // Self-healing: ownership is claimed by the doll and released by setLimp,
+    // and anything that ends a tumble without going through setLimp (an avatar
+    // swap, a dragger taking over) would otherwise leave the hair suppressed
+    // and frozen for good.
+    if (this.__simHair && !this._limp) this._releaseHair();
+    const sbm = this.__simHair ? this.vrm.springBoneManager : null;
+    if (sbm) this.vrm.springBoneManager = null;
     this.vrm.update(dt);
+    if (sbm) this.vrm.springBoneManager = sbm;
+
+    // ---- wings: flap while alive, let go the instant the body does.
+    //
+    // AFTER vrm.update, unlike every other bone edit here, and deliberately.
+    // Wing bones are RAW and not humanoid, so nothing in vrm.update overwrites
+    // them — the ordering trap that put the head pitch and the blink up there
+    // does not apply. What DOES apply is that their parent clavicle is
+    // humanoid, and only receives this frame's clip pose when vrm.update copies
+    // normalized -> raw. Composing before that would hang every wing off last
+    // frame's shoulder, which shows as a shear whenever the body turns.
+    //
+    // While limp the wings belong to the sim: ammodoll hangs Bullet chains off
+    // these same bones and writes them every step, and two authors on one bone
+    // is decided by whichever runs second.
+    if (this._wings === undefined) this._findWings();
+    if (this._wings && !this._limp) this._flap(dt);
 
     // ---- contact shadow: on the GROUND, not on the body.
     // The blob is a child of root at a fixed local y, so it rode along under a
