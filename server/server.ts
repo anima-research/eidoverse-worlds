@@ -1064,7 +1064,7 @@ const server = Bun.serve({
             if (sfuLegAdmitted(c.world.name, c.id)) {
               const sdpOk = String(msg.sdp ?? "");
               if (sdpOk.length > 20000) return;
-              void sfuAcceptAnswer(c.world.name, c.id, sdpOk);
+              void sfuAcceptAnswer(c.world.name, c.id, sdpOk, Number((msg as { gen?: unknown }).gen ?? NaN) || undefined);
               return;
             }
             const cl = (msg as { cred?: Record<string, unknown> }).cred;
@@ -1085,7 +1085,7 @@ const server = Bun.serve({
           }
           const sdp = String(msg.sdp ?? "");
           if (sdp.length > 20000) return;
-          void sfuAcceptAnswer(c.world.name, c.id, sdp);
+          void sfuAcceptAnswer(c.world.name, c.id, sdp, Number((msg as { gen?: unknown }).gen ?? NaN) || undefined);
           return;
         }
         case "sfu-ice": {

@@ -375,7 +375,25 @@ export async function sfuNegotiate(world: string, legId: string,
   }).catch((e) => console.error(`[sfu] negotiate ${legId}:`, (e as Error).message));
 }
 
-export function sfuAcceptAnswer(world: string, legId: string, sdp: string) {
+export function sfuAcceptAnswer(world: string, legId: string, sdp: string, claimedGen?: number) {
+  // 🔴 ENFORCE THE GENERATION (A2). `gen` was threaded through create, store and
+  // diag and NEVER COMPARED — sfu.ts:417 still said "a wrong-generation offer
+  // once gen is enforced", in future tense, in shipped code. So a stale client
+  // that reconnected (new leg, new gen) could still answer an offer made to its
+  // PREDECESSOR, and the answer would be accepted for the live leg.
+  //
+  // The waiting-promise keying already caught the common case by accident
+  // (a revoked leg's resolver is deleted), but "accidentally unreachable" is
+  // not "checked". An answer names the generation it believes it is answering
+  // under; if that is not the leg's current generation, it belongs to a leg
+  // that no longer exists.
+  if (claimedGen != null) {
+    const leg = worlds.get(world)?.legs.get(legId);
+    if (!leg || leg.gen !== claimedGen) {
+      console.warn(`[sfu] answer for ${legId} claims gen ${claimedGen}, live gen is ${leg?.gen ?? "none"} — dropped`);
+      return;
+    }
+  }
   const resolve = waiting.get(wkey(world, legId));
   if (!resolve) return;                 // no offer outstanding — stale answer, drop
   waiting.delete(wkey(world, legId));

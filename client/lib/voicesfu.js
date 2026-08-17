@@ -211,7 +211,9 @@ export async function sfuOnOffer(sdp, send) {
   // check and usedNonces was never populated in production. The seven refusals
   // existed and could not run. An admission gate the client never addresses is
   // not a gate.
-  send({ type: 'sfu-answer', sdp: answer.sdp, cred: cred && {
+  // The generation this answer is FOR — the server drops it if the leg has
+  // been replaced since the offer (A2 generation binding).
+  send({ type: 'sfu-answer', sdp: answer.sdp, gen: cred?.mediaGen ?? cred?.gen, cred: cred && {
     world: cred.world, id: cred.id, primaryGen: cred.primaryGen,
     mediaGen: cred.mediaGen ?? cred.gen, incarnation: cred.incarnation, nonce: cred.nonce } });
 }
