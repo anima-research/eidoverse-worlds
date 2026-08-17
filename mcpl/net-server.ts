@@ -1189,7 +1189,19 @@ class Session {
         return text(`sent ${a.verb}`);
       }
       case "measure": {
-        const base = (process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws").replace(/^ws/, "http").replace(/\/ws$/, "");
+        // 🔴 USE THE AGENT'S OWN httpBase (2026-08-16). This re-derived the HTTP
+        // base by string surgery on WORLD_URL — the exact form agent.ts:297
+        // replaced with real URL parsing, for a reason its comment records: a
+        // WORLD_URL carrying a query string (…/ws?token=…) defeats the `/\/ws$/`
+        // replace and produces a malformed URL (reported by digi/FC). The bug was
+        // fixed in one place and left standing in the other, which is what a
+        // duplicated derivation always eventually does.
+        //
+        // It also ignored the door's actual connection: WORLD_URL is the boot
+        // env, but `connect()` re-reads its target on every dial, so after a
+        // travel this could point at the world we LEFT and measure a different
+        // world's geometry than the one the agent is standing in.
+        const base = ag.httpBase;
         const q = a.id
           ? `world=${encodeURIComponent(ag.world)}&id=${encodeURIComponent(String(a.id))}`
           : a.lib ? `lib=${encodeURIComponent(String(a.lib))}` : null;
