@@ -14,6 +14,7 @@
 // Both transmit; nothing here is local-only, because a voice that only you can
 // hear is indistinguishable from a working one until nobody answers.
 import { renderVoiceList } from './ttslist.js';
+import { why } from './debuglog.js';
 import { ttsAvailable, ttsVoiceName, isTtsEnabled, setTtsEnabled, setTtsSource } from './tts.js';
 import { setEndpointVoice } from './browservoice.js';
 import { report, bus } from './core.js';
@@ -565,10 +566,9 @@ function headDimmed() {
     if (!label || !box || !note || !listHost) {
       const missing = [!label && '.nm', !box && 'checkbox', !note && '.note',
                        !listHost && '.tts-list'].filter(Boolean).join(', ');
-      try { window.__ttsMissing = missing; } catch { /* no window */ }
+      why('tts-section', `sync refused: missing ${missing}`);
       return false;
     }
-    try { window.__ttsMissing = null; } catch { /* no window */ }
 
     const live = ttsAvailable() && isTtsEnabled();
     label.style.opacity = headDimmed() ? '.45' : '1';
@@ -613,10 +613,10 @@ function headDimmed() {
     // attribute. Four layers traced by hand, all looking correct, is the point
     // at which the code should be saying it rather than me reading it.
     if (host.firstChild) {
-      if (syncInPlace()) { try { window.__ttsSync = 'section in place'; } catch {} return; }
-      try { window.__ttsSync = 'section REBUILT (syncInPlace refused)'; } catch {}
+      if (syncInPlace()) { why('tts-section', 'in place'); return; }
+      why('tts-section', 'REBUILT (syncInPlace refused)');
     } else {
-      try { window.__ttsSync = 'section first paint'; } catch {}
+      why('tts-section', 'first paint');
     }
     host.textContent = '';
     const head = document.createElement('div');

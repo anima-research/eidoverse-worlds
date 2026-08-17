@@ -85,6 +85,7 @@ GROUPS = {
         "tools/reachable.mjs",
     ],
     "E.panel": ["client/lib/audiopanel.js", "client/lib/ttslist.js",
+                "client/lib/debuglog.js",   # the shared why-channel — ships with its first importer
                 "tools/panel-teardown-probe.mjs",
                 # the teardown class-fix and its receipts (2026-08-16)
                 "tools/panel-identity-test.mjs", "tools/host-class-test.mjs",
@@ -103,7 +104,7 @@ GROUPS = {
     # DEBUGGING surface, not a feature: a reviewer should be able to take or
     # leave it independently of the audio work it was built to investigate.
     "J.diagnostics": ["client/lib/chat.js", "client/lib/commands/registry.js",
-                      "tools/audio-report-test.mjs"],
+                      "tools/audio-report-test.mjs", "tools/audio-cmd-probe.mjs"],
     # Written this session; they document decisions rather than change behaviour.
     "K.notes": ["notes/DECISION-android-captions.md", "notes/PR-SPLIT-AUDIT.md",
                 "notes/pr-split-coverage.py", "tools/tts-threading-bench.mjs",

@@ -35,6 +35,8 @@
 // with VERBS ("voice file on this computer…") and STATUS ("loading voices…") in
 // one list of supposed choices. Verbs are rows here too, but visibly separate
 // and at the bottom, where an "add" affordance belongs.
+import { why } from './debuglog.js';
+
 const ROW = `
 .vl { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 /* The voices SCROLL, the add-rows do not (R, 2026-08-09: "should the model list
@@ -126,9 +128,10 @@ function syncSelection(host, { items, selected, busy, loading }) {
   // conditions, so when the panel kept tearing down (R, 2026-08-16, third
   // report) there was no way to tell WHICH guard was rejecting — I read the
   // code three times and guessed wrong twice. A predicate that can decline for
-  // five reasons must name the one it used; window.__vlSync is readable from
-  // /audio and costs nothing when nobody looks.
-  const no = (why) => { try { window.__vlSync = `rebuilt: ${why}`; } catch {} return false; };
+  // five reasons must name the one it used; the debuglog 'tts-list' topic is
+  // readable from /audio and __why('tts-list'), and costs nothing when nobody
+  // looks.
+  const no = (reason) => { why('tts-list', `rebuilt: ${reason}`); return false; };
   // An EMPTY list is a legitimate steady state, not a failure: with no voices
   // saved there are no data-id rows, only the two add-verbs. Refusing here sent
   // every repaint down the rebuild path and reported "no rendered rows carry
@@ -141,7 +144,7 @@ function syncSelection(host, { items, selected, busy, loading }) {
       const note = host.querySelector('.vl-loading .vl-note');
       if (note) note.textContent = busy || loading.status || 'loading…';
     }
-    try { window.__vlSync = 'in place (empty list)'; } catch { /* no window */ }
+    why('tts-list', 'in place (empty list)');
     return !!host.querySelector('.vl-pane');   // false on first paint
   }
   if (!rows || !rows.length) return no(`no data-id rows, but ${items.length} item(s) expected`);
@@ -165,7 +168,7 @@ function syncSelection(host, { items, selected, busy, loading }) {
     mark.classList.toggle('on', on_);
     mark.setAttribute('aria-checked', on_ ? 'true' : 'false');
   }
-  try { window.__vlSync = 'in place'; } catch {}
+  why('tts-list', 'in place');
   if (loading) {
     const note = host.querySelector('.vl-loading .vl-note');
     if (note) note.textContent = busy || loading.status || 'loading…';

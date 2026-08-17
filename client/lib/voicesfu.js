@@ -24,6 +24,7 @@ import { audioContext } from './audioctx.js';
 // the truth about capture and nothing about transmission.
 import { logChat } from './chat.js';
 import { playWhenAllowed } from './audiounlock.js';
+import { why } from './debuglog.js';
 
 let pc = null, cred = null, micStream = null, wantMic = false;
 // My own outbound analyser (sfuMyLevel). Declared HERE, with the rest of the
@@ -277,10 +278,8 @@ export async function sfuMic(on = true) {
     // lesson as the panel teardown: a path that can decline silently turns the
     // next report into another guess.
     const prov = synthProvider();
-    try {
-      window.__sfuSrc = `mic off · provider=${prov ? 'registered' : 'NONE'}`
-        + (prov ? ` · available=${!!prov.available?.()}` : '');
-    } catch { /* no window */ }
+    why('publish', `mic off · provider=${prov ? 'registered' : 'NONE'}`
+      + (prov ? ` · available=${!!prov.available?.()}` : ''));
     if (prov?.available?.()) {
       // Drop the device stream and let the publish path below re-acquire from
       // voiceSource(), which now returns the synth when micWanted is false.
@@ -291,7 +290,7 @@ export async function sfuMic(on = true) {
         for (const t of micStream.getTracks()) { try { t.stop(); } catch { /* gone */ } }
         micStream = null;
       }
-      try { window.__sfuSrc += ' · swapping to synth'; } catch {}
+      why('publish', 'swapping to synth');
       return void sfuPublish();
     }
     micStream?.getTracks().forEach((t) => (t.enabled = false));
@@ -367,11 +366,8 @@ async function sfuPublish() {
       wantMic = false;
       return;
     }
-    try {
-      window.__sfuSrc = `published ${s?.synthetic ? 'SYNTH' : 'mic'}`
-        + ` · tracks=${s?.getTracks?.().length ?? 0}`
-        + ` · wantMic=${wantMic}`;
-    } catch { /* no window */ }
+    why('publish', `published ${s?.synthetic ? 'SYNTH' : 'mic'}`
+      + ` · tracks=${s?.getTracks?.().length ?? 0}` + ` · wantMic=${wantMic}`);
     micStream = s;
     // 🔴 addTrack PICKS A TRANSCEIVER FOR YOU, AND IT PICKS THE WRONG ONE.
     //

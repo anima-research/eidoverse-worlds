@@ -11,6 +11,7 @@
 // species are reading different rooms.
 
 import { CONFIG, bus, colorFor, assignColors } from './core.js';
+import { lastWhy } from './debuglog.js';
 import { makeFrame } from './frames.js';
 import { requestHistory } from './net.js';
 // ONLY the registry — never handlers.js, or the cycle chat→handlers→net→chat
@@ -470,14 +471,22 @@ function acceptAC() {
 
 // ---- commands ---------------------------------------------------------------
 
+// The build actually SERVED, from the server's own /version — replacing a
+// hand-bumped 'src-N' stamp that had reached 10 in one day and would have been
+// forgotten by the next. Its purpose is unchanged: a report from a stale page
+// must carry a visibly different value than a fresh one, because a stale page
+// and a broken probe are otherwise indistinguishable and three diagnoses in
+// one morning chased the wrong one.
+let _build = 'unknown';
+fetch('/version').then((r) => r.json())
+  .then((v) => { _build = `${String(v.sha ?? '').slice(0, 7) || 'unknown'}${v.dirty === true ? '+dirty' : ''}`; })
+  .catch(() => { /* stays 'unknown' — itself a diagnostic */ });
+
 /** What this device actually knows about its own audio, for a person with no
  *  console. Every line is READ LIVE at call time — a cached "we connected"
  *  claim is exactly what this exists to get past. Each probe is individually
  *  guarded: a missing subsystem must print "unknown", never take the report
  *  down with it (a diagnostic that throws is worse than none). */
-// Bumped by hand when the audio diagnostics change — the point is only that a
-// report from a stale page carries a DIFFERENT value than the current one.
-const BUILD_STAMP = 'src-10';
 
 function audioReport() {
   const L = [];
@@ -538,11 +547,11 @@ function audioReport() {
       + (window.__sttTally ? ` [${window.__sttTally()}]` : '')
       + (window.__sttLast ? ` — last: ${window.__sttLast}` : ' — no events yet');
   });
-  // Why the voice list last rebuilt instead of updating in place — the panel
-  // teardown R has reported three times.
-  probe('panel', () => `${window.__ttsSync ?? 'no section paint'}${window.__ttsMissing ? ` [missing ${window.__ttsMissing}]` : ''} | ${window.__vlSync ?? 'no list paint'}`);
-  // What the SFU last published, and why — the TTS-with-mic-off question.
-  probe('source', () => window.__sfuSrc ?? 'never published');
+  // Each subsystem's own last narrated decision (debuglog.js — the shared
+  // "name which guard refused" channel; __why('<topic>') in the console shows
+  // recent history for any of them).
+  probe('panel', () => `${lastWhy('tts-section')} | ${lastWhy('tts-list')}`);
+  probe('source', () => lastWhy('publish'));
   probe('secure', () => `${window.isSecureContext} · isolated=${window.crossOriginIsolated}`);
 
   // 🔴 STAMP THE BUILD (2026-08-16). Three times this morning I diagnosed a
@@ -551,13 +560,13 @@ function audioReport() {
   // the server had been serving "last:" for ten minutes. Without a version in
   // the report, a stale page and a broken probe are indistinguishable, and I
   // will chase the wrong one every time.
-  L.push(`build: ${BUILD_STAMP}`);
+  L.push(`build: ${_build}`);
   return 'audio ▸ ' + L.join('  ·  ');
 }
 
 /** Just the captions answer, short enough to copy on a phone. */
 function sttReport() {
-  const parts = [`build ${BUILD_STAMP}`];
+  const parts = [`build ${_build}`];
   // The recognizer's language — a wrong one returns confident nothing (nomatch)
   // rather than an error, which is exactly what R's Galaxy reported.
   try { if (window.__sttLang) parts.push(`lang ${window.__sttLang}`); } catch { /* ignore */ }
