@@ -32,16 +32,16 @@ rewriting that makes SFUs hard **does not exist here to get wrong**.
 | # | Row (#104 §8.1) | Status |
 |---|---|---|
 | 1 | primary/media credential binding and takeover (A1) | **MET** — seven refusals enforced on the live path |
-| 2 | publisher/subscriber generation and relay-epoch restart (A2) | **PARTIAL** — durable incarnation ✅; `gen` is carried and diagnosed but **not compared** |
+| 2 | publisher/subscriber generation and relay-epoch restart (A2) | **MET** — durable incarnation (verified `i1-`→`i2-`); `gen` now compared on every answer |
 | 3 | per-listener consent, hush, mute/moderation, revocation latency (A3) | **MET** — three independent states; revocation is a memory write, unit-measured <50 ms |
 | 4 | one stream per speaker with client spatialization | **MET** — msid-carried identity, verified against real Chromium |
 | 5 | agent/browser TTS through the same relay contract | **PARTIAL** — browser proven end-to-end by ear; the agent leg's sidecar is not in this repo |
 | 6 | reconnect without duplicate playback | **PARTIAL** — reconnect handled and tested; *duplicate playback specifically* is untested |
 | 7 | cold relay death and supervised restart | **PARTIAL** — `voice-service {state, incarnation}` + recovery; in-process makes death total rather than impossible, so the row is CONVERTED, not satisfied |
-| 8 | N=2/6/12, bandwidth, CPU, loss/FEC, proximity | **PARTIAL** — N=6 loopback: 100.0% delivery, 55.2% CPU (an upper bound: all peers in one process), 0.25 Mbps. **Loss/FEC not measured.** N=12 on a real network unproven |
+| 8 | N=2/6/12, bandwidth, CPU, loss/FEC, proximity | **PARTIAL** — N=6 loopback: 100.0% delivery, 55.2% CPU (upper bound: all peers in one process), 0.25 Mbps. Loss is now injected and degrades proportionally, but that harness **models** the link rather than routing through the SFU and says so; the real receipt needs two browsers and a shaped link. N=12 on a real network unproven |
 | 9 | operational footprint and diagnostics | **MET** — one process, `/relay-diag` per leg/gen/consent/forwarded/suppressed |
 
-**3 MET → 5, 1 unchanged.** No row is dropped; the unmeasured ones are named,
+**4 MET, 4 PARTIAL, 1 CONVERTED.** No row is dropped; the unmeasured ones are named,
 per §8.1's "UNMEASURED rows named, never dropped."
 
 ## The six amendments (2026-08-13)
@@ -78,19 +78,27 @@ preserved — it is the revert, one command, no config change, no migration.
 
 ## What I would not merge on your behalf
 
-- **`gen` is decorative.** It is threaded through create/store/diag and never
-  compared; the code says so in future tense. Real for A2, and named here rather
-  than left for a reviewer to find.
-- **No loss/FEC measurement.** FEC is now *requested* explicitly
-  (`useinbandfec=1`) rather than inherited from a Chromium default, and the
-  client measures `fecPacketsReceived` — but nobody has injected loss and
-  watched what happens.
+- **Loss/FEC is modelled, not measured.** FEC is now *requested* explicitly
+  (`useinbandfec=1`) rather than inherited from a Chromium default, and
+  `tools/sfu-loss-test.mjs` asserts loss degrades proportionally — but its own
+  header says it does not route packets through the SFU and must never be cited
+  as "measured". The instrument for the real receipt exists
+  (`voicesfu.js:493-499` reads `fecPacketsReceived`) and has never been read
+  under loss.
 - **N=12 on a real network is unproven.** The load harness runs every peer in
   one process with a synthetic payload; it measures fanout cost, not codec
   behaviour.
-- **The agent TTS leg is incomplete in this repo.** The door forwards media
-  frames to a sidecar that lives elsewhere; the browser path is proven, the
-  headless one is a forwarding path to an absent peer.
+- **The agent TTS leg is incomplete in this repo** — see
+  `notes/REVIEW-agent-tts-path.md`, written from the door's source. The
+  whitelist and the primary-surface join both check out, and today's credential
+  and `gen` fields ride through untouched. But the peer that terminates the
+  contract lives in a separate repo, so row 5 is proven for browsers and proven
+  only as far as the door for agents.
+
+  🔴 **The one thing most likely to break on first contact with a Connectome
+  agent:** a sidecar that does not echo `cred` and `gen` back on `sfu-answer`
+  will now be REFUSED, and the refusal path revokes the leg. Correct for a
+  browser; worth confirming with antra before the sidecar half ships.
 
 ## Evidence
 
