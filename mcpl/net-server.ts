@@ -402,7 +402,17 @@ class Session {
    *  declaration (plain MCP) keeps everything, exactly as toolsAllowed does;
    *  this binds only hosts that bothered to declare. */
   private capAllowed(cap: string): boolean {
-    return this.grant ? this.granted(cap) : true;
+    // 🔴 SAME SEMANTICS AS granted(), deliberately (review agent, 2026-08-17).
+    // The first version was `this.grant ? this.granted(cap) : true` — the
+    // toolsAllowed shape — which quietly skipped granted()'s two other fences
+    // for every channel verb: the plain-MCP check (a host that never declared
+    // MCPL had channels/publish ANSWERED, while every other MCPL frame path
+    // refused it) and the §5.3 deny-until-policy window (a 0.5 host that
+    // simply never sent featureSets/update was never gated at all — publish
+    // allowed in exactly the window the comments above claim is closed).
+    // toolsAllowed's fallback-to-MCP rationale is real for TOOLS, which exist
+    // in plain MCP; it has no analogue for MCPL-only channel verbs.
+    return this.granted(cap);
   }
 
   private toolsAllowed(): boolean {
@@ -649,9 +659,12 @@ class Session {
     // the gap are delivered explicitly below; scrollback stays on catch_up.
     if (sinceSeq != null) this.agent.skipInboxThrough(sinceSeq);
     if (sinceSeq != null) {
+      // mentionRegex returns null for an id with no matchable form — its
+      // documented contract, honoured by agent.ts and violated here: a null
+      // threw inside the prelude and killed the session at connect.
       const rxSeq = mentionRegex(this.auth.id);
       const said = await this.agent.missedSince(sinceSeq);
-      const missedSeq = said.filter((m) => m.who !== this.auth.id && rxSeq.test(m.text));
+      const missedSeq = said.filter((m) => m.who !== this.auth.id && !!rxSeq?.test(m.text));
       if (missedSeq.length) {
         this.deliver(`While you were away, ${missedSeq.length} message${missedSeq.length === 1 ? "" : "s"} mentioned you:`,
           { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.catchup) });
@@ -667,8 +680,8 @@ class Session {
     }
     const since = sinceSeq != null ? null : lastSeen[this.auth.id];
     if (since != null) {
-      const rx = mentionRegex(this.auth.id);
-      const missed = this.agent.inbox.filter((m) => m.kind === "say" && m.ts > since && m.who !== this.auth.id && rx.test(m.text ?? ""));
+      const rx = mentionRegex(this.auth.id);   // null-safe: see rxSeq above
+      const missed = this.agent.inbox.filter((m) => m.kind === "say" && m.ts > since && m.who !== this.auth.id && !!rx?.test(m.text ?? ""));
       if (missed.length) {
         this.deliver(`While you were away, ${missed.length} message${missed.length === 1 ? "" : "s"} mentioned you:`,
           { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.catchup) });

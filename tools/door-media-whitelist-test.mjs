@@ -40,10 +40,18 @@ for (const fwd of ['relay-cred', 'sfu-offer', 'sfu-ice', 'sfu-route',
 }
 
 // ---- negative controls: both matchers must be able to fail ----
-check('control: an over-permissive outbound guard is detected',
-  'if (t !== "sfu-answer" && t !== "say")'.includes('"say"'));
-check('control: a missing inbound case is detected',
-  !'case "relay-cred": case "sfu-offer":'.includes('case "voice-service":'));
+// 🔴 The first version tested string literals against themselves — constants
+// that pass regardless of what ships (review agent, 2026-08-17: "the comment
+// claims the matchers were shown falsifiable; they weren't"). A control must
+// run the SAME predicate on a corruption of the REAL extracted text, so it
+// also fails if the extraction anchors ever drift off the source.
+check('control: both extraction anchors were actually found',
+  src.indexOf('const t = String(frame?.type ?? "")') >= 0 && src.indexOf('case "relay-cred":') >= 0
+  && guard.length > 40 && inbound.length > 40);
+check('control: the forbidden-matcher detects "say" injected into the real guard',
+  guard.replace('"sfu-answer"', '"sfu-answer" || t === "say"').includes('"say"'));
+check('control: the inbound-matcher detects a case removed from the real block',
+  !inbound.replace(/case "voice-service":/g, '').includes('case "voice-service":'));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

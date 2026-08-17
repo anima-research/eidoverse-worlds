@@ -28,27 +28,46 @@ const ok = (name, cond, detail = '') => {
 // The gate, extracted exactly as net-server implements it. If this drifts from
 // the source the door will pass here and fail in the world — so the shape is
 // kept trivial and the REAL assertion is the wiring check at the bottom.
-const capAllowed = (grant, cap) =>
-  grant ? grant.some((g) => capabilityMatches(g, cap)) : true;
+//
+// 🔴 REVISED 2026-08-17 (review agent): the first extraction was
+// `grant ? matches : true` — which faithfully copied a BUG and thereby pinned
+// it. capAllowed now shares granted()'s full semantics: plain-MCP hosts get
+// no channel verbs (channels are MCPL-only; the fallback-to-MCP rationale
+// that lets toolsAllowed default open applies to tools alone), and a 0.5+
+// host is denied until its first featureSets/update arrives (§5.3
+// deny-until-policy). The extraction takes (mcplClient, version, grant).
+const capAllowed = (mcplClient, version, grant, cap) => {
+  if (!mcplClient) return false;
+  if (grant) return grant.some((g) => capabilityMatches(g, cap));
+  const major = Number(version?.split('.')[0] ?? 0);
+  const minor = Number(version?.split('.')[1] ?? 0);
+  return !(major > 0 || minor >= 5);
+};
+const withGrant = (grant, cap) => capAllowed(true, '0.5', grant, cap);
 
 // ---- the matcher itself (§5.4 path semantics) ------------------------------
 
-ok('exact path grants', capAllowed(['channels.publish'], CAP.channelsPublish));
-ok('one-segment wildcard grants', capAllowed(['channels.*'], CAP.channelsPublish));
+ok('exact path grants', withGrant(['channels.publish'], CAP.channelsPublish));
+ok('one-segment wildcard grants', withGrant(['channels.*'], CAP.channelsPublish));
 ok('ANCESTOR PREFIX DOES NOT GRANT — the fail-closed rule',
-   !capAllowed(['channels'], CAP.channelsPublish));
+   !withGrant(['channels'], CAP.channelsPublish));
 ok('a sibling grant does not confer publish',
-   !capAllowed(['channels.incoming'], CAP.channelsPublish));
+   !withGrant(['channels.incoming'], CAP.channelsPublish));
 ok('a sibling grant does not confer lifecycle',
-   !capAllowed(['channels.incoming'], CAP.channelsLifecycle));
+   !withGrant(['channels.incoming'], CAP.channelsLifecycle));
 ok('tools does not confer channels',
-   !capAllowed(['tools'], CAP.channelsPublish));
+   !withGrant(['tools'], CAP.channelsPublish));
 ok('bare * does not span two segments',
-   !capAllowed(['*'], CAP.channelsPublish));
-ok('no declaration at all ⇒ everything (plain-MCP host)',
-   capAllowed(null, CAP.channelsPublish) && capAllowed(null, CAP.channelsLifecycle));
+   !withGrant(['*'], CAP.channelsPublish));
 ok('an EMPTY grant list denies (declared, granted nothing)',
-   !capAllowed([], CAP.channelsPublish));
+   !withGrant([], CAP.channelsPublish));
+// The three fences the first extraction missed:
+ok('plain-MCP host (never declared MCPL) gets NO channel verbs',
+   !capAllowed(false, null, null, CAP.channelsPublish));
+ok('0.5 host with no policy yet is DENIED (deny-until-policy window)',
+   !capAllowed(true, '0.5', null, CAP.channelsPublish));
+ok('legacy 0.4 MCPL host with no policy keeps everything',
+   capAllowed(true, '0.4', null, CAP.channelsPublish));
 
 // ---- the wiring: is the gate actually CALLED at each verb? ------------------
 //
