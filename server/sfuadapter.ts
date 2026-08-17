@@ -137,9 +137,17 @@ export function mintSfuCredential(world: string, id: string, primaryGen: number,
   const s0 = worlds.get(world);
   const hadLeg = !!s0?.legs.has(id);
   const preConsent = hadLeg ? undefined : s0?.standingConsent.get(id);
+  // …and its GEN WATERMARK rides along (round-3 review): setSfuConsent writes
+  // both maps, and the watermark is what refuses an out-of-order replay.
+  // Preserving the answer while dropping the watermark meant a delayed
+  // yes(gen1) after a preserved no(gen2) was accepted as "no prev" and
+  // re-GRANTED consent against the listener's last word — the one direction
+  // quiet-is-safe does not cover.
+  const preWatermark = hadLeg ? undefined : s0?.consent.get(id);
   revokeSfuLeg(world, id);
   const s = sfuState(world);
   if (preConsent !== undefined) s.standingConsent.set(id, preConsent);
+  if (preWatermark !== undefined) s.consent.set(id, preWatermark);
   const nonce = crypto.randomUUID();
   s.legs.set(id, { id, gen: mediaGen, primaryGen, nonce });
   // 🔴 CREATE THE ACTUAL LEG. The first version recorded the bookkeeping entry

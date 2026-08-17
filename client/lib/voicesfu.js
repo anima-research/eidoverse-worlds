@@ -245,11 +245,35 @@ export async function sfuOnOffer(sdp, send) {
   if (myPc !== pc) return;              // superseded mid-exchange — the new pc has its own offer coming
   // Candidates that arrived before the offer finished applying were queued —
   // feed them now that addIceCandidate has a description to attach them to.
-  while (pendingIce.length) { const c = pendingIce.shift(); try { await myPc.addIceCandidate(c); } catch { /* stale */ } }
+  while (pendingIce.length) {
+    if (myPc !== pc) return;   // queue now belongs to the successor's offer
+    const c = pendingIce.shift();
+    try { await myPc.addIceCandidate(c); } catch { /* stale */ }
+  }
   const answer = await myPc.createAnswer();
   if (myPc !== pc) return;
   await myPc.setLocalDescription(answer);
   if (myPc !== pc) return;
+  // 🔴 RESCUE A STRANDED PUBLISH (round-3 review). The common path the
+  // sendrecv fix defends — a publish that beat the first offer, other
+  // speakers present — leaves the published track on a transceiver JSEP
+  // associated with a recv route: the hunt now correctly EXCLUDES it, but
+  // nothing re-published, so a join-into-occupied-room stayed silent until
+  // the first manual toggle. currentDirection is authoritative here (the
+  // answer we just set applied it): if we hold a live outbound track and no
+  // m-line is actually sending, move the track to the floor and re-negotiate.
+  const outTrack = micStream?.getTracks?.()[0];
+  if (outTrack && outTrack.readyState === 'live'
+      && !myPc.getTransceivers().some((t) => t.currentDirection === 'sendonly')) {
+    const floor = myPc.getTransceivers().find(
+      (t) => t.currentDirection === 'inactive' || t.direction === 'inactive');
+    if (floor) {
+      why('publish', 'post-offer rescue: outbound track was stranded — moving to the floor');
+      await floor.sender.replaceTrack(outTrack);
+      floor.direction = 'sendonly';
+      bus.emit('sfu-want-negotiate', {});
+    }
+  }
   // 🔴 PRESENT THE CREDENTIAL (amendment 1). The nonce was minted, handed to
   // us, and never sent back — so the server's replay check had nothing to
   // check and usedNonces was never populated in production. The seven refusals
@@ -303,6 +327,12 @@ export async function sfuOnIce(candidate) {
 // AFTER LEAVING. The guard is the promise, not a boolean: late callers await
 // the same acquisition instead of starting a second one.
 let micPending = null;
+// Which pc the pending acquisition was FOR (round-3 review): a reconnect
+// mints a new pc while getUserMedia is still up, and the bridge's replay then
+// COALESCED onto the old acquisition — whose superseded-guard dropped the
+// publish — so nobody ever published on the new pc. A stale pending is
+// awaited (never raced) and then treated as absent.
+let micPendingPc = null;
 
 export async function sfuMic(on = true) {
   wantMic = on;
@@ -357,11 +387,12 @@ export async function sfuMic(on = true) {
     for (const t of micStream.getTracks()) { try { t.stop(); } catch { /* gone */ } }
     micStream = null;                      // force a real getUserMedia below
   }
-  if (micPending) {
+  if (micPending && micPendingPc === pc) {
     await micPending;
     if (micStream && !micStream.synthetic) micStream.getTracks().forEach((t) => (t.enabled = true));
     return;
   }
+  if (micPending) { try { await micPending; } catch { /* the old one's problem */ } }
   return sfuPublish();
 }
 
@@ -370,11 +401,13 @@ export async function sfuMic(on = true) {
  *  rather than carrying a second copy of the transceiver logic below. */
 async function sfuPublish() {
   if (!pc) return;
-  if (micPending) return micPending;
+  if (micPending && micPendingPc === pc) return micPending;
+  if (micPending) { try { await micPending; } catch { /* superseded */ } }
   // Snapshot for the same reason as sfuOnOffer: getUserMedia can take seconds
   // (a permission prompt), and a reconnect in that window swaps pc — the
   // acquired track must not be planted on a connection from another session.
   const myPc = pc;
+  micPendingPc = myPc;
   micPending = (async () => {
     // 🔴 ASK THE SEAM, NOT THE DEVICE (R, 2026-08-16 — her TTS reached nobody).
     // This called getUserMedia directly, bypassing voiceSource() entirely. The
@@ -418,6 +451,8 @@ async function sfuPublish() {
     if (myPc !== pc) {
       why('publish', 'pc superseded during acquisition — dropping this publish');
       for (const t of raw?.getTracks?.() ?? []) { try { t.stop(); } catch { /* gone */ } }
+      // setMicLive(true) ran above for a device we just stopped — undo the claim.
+      try { setMicLive(false); } catch { /* probe env */ }
       return;
     }
     why('publish', `published ${s?.synthetic ? 'SYNTH' : 'mic'}`

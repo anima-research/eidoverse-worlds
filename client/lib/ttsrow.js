@@ -42,6 +42,16 @@ let _loadingId = null, _loadingName = null, _loadingSince = 0;
 // and blanked the freshly-clicked box. Set at the tick, cleared when the load
 // path owns the state (or on any early exit).
 let _tickPending = false;
+/** 🔴 THE USER'S LAST WORD ON "should this speak?" — written ONLY by the
+ *  checkbox change handler (round-3 review, 2026-08-17). Round 1 used a
+ *  generation counter (self-cancelled on re-tick); round 2 used the box's own
+ *  checked state ("the checkbox IS the truth") — but the box is a DERIVED
+ *  display: syncHead/syncInPlace/build all recompute it from
+ *  isTtsEnabled()||loading, so the untick branch's own syncHead() call forced
+ *  the box back to checked mid-load and the completion guard could never see
+ *  the no. A plain boolean that no repaint recomputes is the only state here
+ *  that cannot be clobbered by its own sync machinery. */
+let _wantSpeech = false;
 /** 🔴 ONE LOAD AT A TIME (R, 2026-08-09: "re-clicking the box appears to make it
  *  thrash and start over"). Compiling the graph takes 30s+, and nothing stopped
  *  a second click from starting a SECOND compile racing the first — two 63 MB
@@ -497,7 +507,7 @@ export function ttsSection(host, onPaint = () => {}) {
       // the END), snapping the box back to unchecked mid-load and popping it
       // on at completion. The intent is registered the moment they click;
       // the box says so immediately and the fade says "working on it".
-      const loadingNow = !!_loadingId || _tickPending;
+      const loadingNow = (!!_loadingId || _tickPending) && _wantSpeech;
       box.checked = isTtsEnabled() || loadingNow;
       box.style.opacity = loadingNow && !isTtsEnabled() ? '.45' : '';
       note.textContent = headNote();
@@ -601,7 +611,7 @@ function headDimmed() {
     // checked from isTtsEnabled() alone, snapping the box blank mid-load on
     // every path that runs through here. Two copies of one truth is the whole
     // disease; until they merge, they must at least agree.
-    const wantChecked = isTtsEnabled() || !!_loadingId || _tickPending;
+    const wantChecked = isTtsEnabled() || ((!!_loadingId || _tickPending) && _wantSpeech);
     if (box.checked !== wantChecked) box.checked = wantChecked;
     box.style.opacity = wantChecked && !isTtsEnabled() ? '.45' : '';
     note.textContent = headNote();
@@ -660,8 +670,8 @@ function headDimmed() {
       // selects WHICH VOICE; that one sets how loud it is.
       `<label class="nm" style="opacity:${headDimmed() ? '.45' : '1'}">text-to-speech model</label>` +
       `<span class="ctl">` +
-      `<input type="checkbox" ${isTtsEnabled() || _loadingId || _tickPending ? 'checked' : ''} `
-        + `${(_loadingId || _tickPending) && !isTtsEnabled() ? 'style="opacity:.45" ' : ''}` +
+      `<input type="checkbox" ${isTtsEnabled() || ((_loadingId || _tickPending) && _wantSpeech) ? 'checked' : ''} `
+        + `${(_loadingId || _tickPending) && _wantSpeech && !isTtsEnabled() ? 'style="opacity:.45" ' : ''}` +
         // 🔴 NOT `disabled` WHEN THERE IS NO VOICE (R, 2026-08-09: "there's no
         // warning to load a model if you try to checkbox text-to-speech, it just
         // fails silently"). A disabled checkbox fires NO change event, so the
@@ -687,6 +697,7 @@ function headDimmed() {
     head.querySelector('input').onchange = async (e) => {
       // Untick: nothing structural changes — no row appears or vanishes — so
       // write the two affected nodes instead of rebuilding the section.
+      _wantSpeech = e.target.checked;
       if (!e.target.checked) {
         // 🔴 AN UNTICK OUTRANKS A TICK STILL IN FLIGHT (round 1), and a
         // RE-TICK outranks the untick (round 2 — the generation-counter
@@ -717,7 +728,7 @@ function headDimmed() {
       }
       _tickPending = true;
       const items = await collectVoices();
-      if (!e.target.checked) { _tickPending = false; return; }  // unticked while listing
+      if (!_wantSpeech) { _tickPending = false; return; }      // unticked while listing
       if (!items.length) {
         _tickPending = false;
         e.target.checked = false;          // the tick did not take; do not lie about it
@@ -756,10 +767,11 @@ function headDimmed() {
           // busy-ignore path also returns false now — an enable for a pick
           // that never took was the same lie by a quieter route.)
           if (ok === false) { e.target.checked = false; return; }
-          // The box's state at load-completion is the user's LAST action —
+          // _wantSpeech at load-completion is the user's LAST action —
           // unticked mid-load means no enable; unticked-then-re-ticked means
-          // enable. No counter can express that; the checkbox already does.
-          if (!e.target.checked) return;
+          // enable. Deliberately NOT the checkbox: the box is re-derived by
+          // every sync during the load window and cannot carry the no.
+          if (!_wantSpeech) return;
           // 🔴 ENABLE HERE, NOT IN pickInner (R, 2026-08-16: "TTS gets stuck
           // faded out and 'ready' and never goes live"). pickInner only enables
           // when `wantedSpeech` — captured from `_needVoice || isTtsEnabled()`

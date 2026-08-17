@@ -223,6 +223,17 @@ check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length ===
   mintSfuCredential(W4, "early-bird", 1, 3);       // takeover — predecessor existed
   check("…and a takeover re-mint still wipes it (fail-closed rejoin)",
     s4.standingConsent.get("early-bird") === undefined);
+
+  // Round 3: the gen WATERMARK survives with the answer — a delayed replay of
+  // an older YES must not re-grant consent the listener later revoked.
+  const W5 = "rev-watermark";
+  const s5 = sfuState(W5);
+  setSfuConsent(W5, "careful", 1, true);           // yes at gen 1, pre-leg
+  setSfuConsent(W5, "careful", 2, false);          // no at gen 2, pre-leg — the last word
+  mintSfuCredential(W5, "careful", 1, 2);          // first mint
+  setSfuConsent(W5, "careful", 1, true);           // delayed REPLAY of the old yes
+  check("a replayed older YES after the first mint is refused (watermark preserved)",
+    s5.standingConsent.get("careful") === false);
 }
 
 console.log(fail === 0 ? `\n\x1b[32m✅ sfu-adapter: ${pass} passed\x1b[0m` : `\n\x1b[31m❌ ${fail} failed\x1b[0m`);
