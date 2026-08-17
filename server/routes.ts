@@ -369,8 +369,8 @@ const ROUTES: Route[] = [
     // Both-ends discipline: pair with the client's voiceDiag relay page.
     match: (u) => u.pathname === "/relay-diag",
     handler: ({ url }) => new Response(
-      // 🔴 Must report the transport that is ACTUALLY running. Reading the
-      // LiveKit adapter's state while the SFU carries the audio produced
+      // 🔴 Must report the transport that is ACTUALLY running. Reading a
+      // deleted rival adapter's state while the SFU carried the audio produced
       // `state:"degraded"` on a perfectly healthy server — a diagnostic that
       // lies is worse than none, and this is the third such bug today.
       JSON.stringify(sfuDiag(url.searchParams.get("world") ?? "staging")),

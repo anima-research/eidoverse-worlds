@@ -10,17 +10,17 @@
 // 🔴 The decision layer is NOT re-implemented here. `admitParticipant`,
 // `applyConsentUpdate`, `parseRelayIdentity` and `nextIncarnation` live in
 // relaydecision.ts, are transport-agnostic, and carry all seven of amendment
-// 1's refusals with 23 tests. Reusing them unchanged is the single strongest
-// argument this hypothesis has: the security-shaped half was never LiveKit's.
+// 1's refusals with 23 tests. The security-shaped half never belonged to any
+// particular transport.
 //
-// What genuinely differs from the LiveKit adapter:
+// What being in-process buys, structurally:
 //   • no JWT — a browser talks SDP to a process it is already authenticated to
 //     over the world websocket, so the credential is a nonce we mint and burn,
 //     not a bearer token a third party validates;
 //   • no webhook — admission is synchronous, at the moment we create the leg,
 //     instead of a round trip we react to after the fact;
-//   • no API secret exists at all, so amendment 1's "never expose LiveKit API
-//     secrets to a browser or resident tool surface" is satisfied vacuously.
+//   • no API secret exists at all, so amendment 1's "never expose API secrets
+//     to a browser or resident tool surface" is satisfied vacuously.
 import { currentIncarnation } from "./transport.ts";
 import { voiceServiceState } from "./sfusupervisor.ts";
 import { Sfu } from "./sfu.ts";
@@ -75,10 +75,9 @@ export function sfuState(world: string): SfuWorldState {
       // `i1-…` again, so a credential minted before a restart was
       // indistinguishable from one minted after. The comment above defends
       // OPACITY and never noticed it was also describing a RESET. The durable
-      // implementation (atomic tmp+rename) existed the whole time in the
-      // LiveKit adapter and was already booted — now in transport.ts, booted by
-      // server.ts, so there is ONE incarnation per process and it survives a
-      // restart. Found by an independent audit.
+      // implementation (atomic tmp+rename) existed the whole time two files
+      // away — now in transport.ts, booted by server.ts, so there is ONE
+      // incarnation per process and it survives a restart. Found by audit.
       incarnation: currentIncarnation(),
       sfu: new Sfu({ onNegotiationNeeded: (legId) => {
         const send = senders.get(legId);
@@ -201,8 +200,8 @@ export const markSfuLegAdmitted = (world: string, id: string) => { sfuState(worl
 export function admitSfuLeg(world: string, claims: RelayClaims, live: LiveLegState) {
   const s = sfuState(world);
   const verdict = admitParticipant(claims, { ...live, usedNonces: s.usedNonces });
-  // Burn on FIRST admission, exactly as the LiveKit path does — the
-  // removed-participant replay hole is real and the nonce is what closes it.
+  // Burn on FIRST admission — the removed-participant replay hole is real
+  // (probed and measured, 2026-08-13) and the nonce is what closes it.
   if (verdict.admit) s.usedNonces.add(claims.nonce);
   return verdict;
 }

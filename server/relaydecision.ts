@@ -1,6 +1,6 @@
 // relaydecision — the relay adapter's PURE decision logic, extracted headless
 // so the seven refusal proofs (#104 amendment 1) and the incarnation rules
-// (amendment 2) are pinned by tests with no LiveKit, no sockets, no clock.
+// (amendment 2) are pinned by tests with no transport, no sockets, no clock.
 // The Basis lesson (BasisP2PLinkHealth): the part that decides is a function;
 // the part that talks to the world imports it.
 //
@@ -10,9 +10,9 @@
 //     plus entropy, so a reused counter after file loss still cannot collide).
 //   mediaGen — the sequencer generation of THIS participant's relay leg
 //     (a surface session in the #103 model; the credential names exactly one).
-//   nonce — single-use credential id; replaying a credential after its leg was
-//     removed is the probed LiveKit hole (removed-replay), and single-use is
-//     what closes it.
+//   nonce — single-use credential id; a bearer credential replayed after its
+//     leg was removed re-admits a removed participant (probed and measured on
+//     an external relay, 2026-08-13), and single-use is what closes it.
 
 export interface RelayClaims {
   world: string;
@@ -34,11 +34,10 @@ export interface LiveLegState {
 
 export type Admission = { admit: true } | { admit: false; reason: string };
 
-/** The seven refusals, in the order amendment 1 names them. Expiry and
- *  signature are enforced upstream (LiveKit + TokenVerifier with tolerance
- *  PINNED to 0 — the SDK default is 10s of grace, and the server itself
- *  admits ~60s past expiry, both measured 2026-08-13); everything the
- *  infrastructure cannot know about our generations is decided HERE. */
+/** The seven refusals, in the order amendment 1 names them. The in-process
+ *  SFU has no bearer expiry or signature to enforce upstream (the world
+ *  websocket already authenticated the identity); everything about our
+ *  generations is decided HERE. */
 export function admitParticipant(claims: RelayClaims, live: LiveLegState): Admission {
   if (claims.world !== live.world) return { admit: false, reason: "wrong world" };
   if (!claims.id) return { admit: false, reason: "no identity" };

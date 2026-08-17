@@ -2,10 +2,11 @@
  * An in-process SFU — voice as an organ of the world server, not a service
  * beside it.
  *
- * #104 §8.1 leaves the relay implementation to the spike ("Galène and LiveKit
- * are hypotheses; the spike decides against one acceptance table"). This is a
- * third hypothesis: forward encoded Opus ourselves, in this process, so an
- * operator runs ONE thing and voice costs them nothing.
+ * #104 §8.1 leaves the relay implementation to the spike — off-the-shelf SFUs
+ * were the other hypotheses, judged against one acceptance table. This is the
+ * one that won: forward encoded Opus ourselves, in this process, so an
+ * operator runs ONE thing and voice costs them nothing. (Why the others lost
+ * is recorded in the PR that introduced this file, not here.)
  *
  * WHY THIS IS SMALL, stated once because it is the whole argument:
  * we terminate WebRTC server-side, so the BROWSER keeps getUserMedia →
@@ -108,7 +109,7 @@ export class Sfu {
   private slots = new Map<string, Set<string>>();
 
   /** Client rolloff is FULL_M=3 → SILENT_M=20 (client/lib/voicesfubridge.js:145;
-   *  this cited voicerelay.js until the LiveKit client was deleted), so
+   *  the historical client this number came from is deleted), so
    *  beyond SILENT_M the listener multiplies the stream by exactly zero.
    *
    *  🔴 HYSTERESIS, not a fixed margin. My first version added MARGIN_M=10 with a
@@ -219,10 +220,10 @@ export class Sfu {
 
   /** Create a leg for an already-authenticated participant. There is no
    *  credential to mint and no webhook to admit: the websocket proved identity
-   *  before we got here, so the leg IS the authorization. (This is what
-   *  collapses LiveKit's A1 credential + webhook-admission surface — and with
-   *  it the 4.7s webhook-bound revocation window, since revoking is now a
-   *  local pc.close().) */
+   *  before we got here, so the leg IS the authorization. (An external relay
+   *  needs a bearer credential plus asynchronous webhook admission for A1 —
+   *  measured at a 4.7s webhook-bound revocation window; in-process, revoking
+   *  is a local pc.close().) */
   createLeg(id: string, gen: number): SfuLeg {
     this.closeLeg(id);                       // one body per identity (#57 takeover)
     // Measured (werift survey, N=12): default createOffer with 12 m-lines took

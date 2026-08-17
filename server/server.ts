@@ -41,13 +41,11 @@ import { ROLE_RANK } from "../shared/fold.js";
 // noticed, because /version kept answering from the brief up-windows.)
 import { SeatStore } from "./seats.ts";
 import { OPT_DIR } from "./config.ts";
-// Relay-floor spike (#104 phase 1): the LiveKit adapter. Inert without
-// RELAY_URL — the mesh stays the production path (amendment 6).
+// Relay-floor (#104): transport selection + durable voice-service identity.
 import { relayEnabled, bootIncarnation, currentIncarnation, voiceTransport } from "./transport.ts";
 import { installSfuTransportGuard } from "./sfuguard.ts";
 import { onVoiceServiceChange, markVoiceDegraded, voiceServiceState } from "./sfusupervisor.ts";
-// The in-process SFU (VOICE_TRANSPORT=sfu). Same surface as the LiveKit
-// adapter, so every call site below branches on transport rather than on shape.
+// The in-process SFU (VOICE_TRANSPORT=sfu) — the only voice transport.
 import { mintSfuCredential, setSfuConsent, setSfuModeratorMute, revokeSfuLeg, sfuDiag,
   sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition, registerSfuSender, admitSfuLeg, liveLegState, sfuLegAdmitted, markSfuLegAdmitted } from "./sfuadapter.ts";
 const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR);
@@ -55,10 +53,9 @@ const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR);
 // The resident-visible service chart (amendment 2): every voice-service
 // transition reaches every client of every world, stamped with the
 // incarnation so a client can tell "the relay restarted" from "it flapped".
-// 🔴 The incarnation is now DURABLE for the SFU too. It boots from the same
-// atomic tmp+rename file the LiveKit adapter used, so a restart strands every
-// old credential structurally instead of resetting the counter to i1- (which is
-// what sfuadapter.ts did by passing a hardcoded null prev).
+// 🔴 The incarnation is DURABLE: an atomic tmp+rename file, so a restart
+// strands every old credential structurally instead of resetting the counter
+// to i1- (which sfuadapter.ts once did by passing a hardcoded null prev).
 bootIncarnation(OPT_DIR);
 
 // 🔴 THE TRANSPORT GUARD IS INSTALLED HERE, ONCE, not as a side effect of
@@ -1159,8 +1156,8 @@ const server = Bun.serve({
           // asker must be an ADMITTED identity — the embodied primary (its own
           // mic/tts publishes on its relay leg) — and the leg it earns is a
           // surface session: gen from the same counter as every leg, announced
-          // by the same transition event, retired by the same funnel. The
-          // LiveKit API secret never rides this reply; only the scoped JWT.
+          // by the same transition event, retired by the same funnel. No API
+          // secret and no bearer token exist to leak into this reply (A1).
           if (!c.world) return;
           if (!relayEnabled()) { ws.send(JSON.stringify({ type: "error", error: "no voice relay configured" })); return; }
           if (c.spectator || (c.surface ?? "world") !== "world") {

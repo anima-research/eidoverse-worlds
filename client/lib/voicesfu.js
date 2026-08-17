@@ -1,16 +1,16 @@
 // voicesfu — the browser half of the in-process SFU, in plain WebRTC.
 //
-// It was born a SIBLING of voicerelay.js (the LiveKit client); both rivals are
-// now deleted — LiveKit at 236c239, the mesh at 25f61df — and this is the ONLY
-// transport. The shapes it standardized on (same bus events, same speakers map,
-// same relayDiag() surface) survive because the smokes assert against them.
+// Both rival transports are deleted — the external relay at 236c239, the mesh
+// at 25f61df — and this is the ONLY one. The shapes it standardized on (same
+// bus events, same speakers map, same relayDiag() surface) survive because the
+// smokes assert against them.
 //
 // 🔴 WHY THIS FILE IS SHORT (and why that is the argument, not a shortcut):
-// only 5 of voicerelay.js's 200 lines were actually LiveKit — `new Room(...)`
-// plus `createLocalAudioTrack`. Everything else (per-speaker <audio> elements,
-// distance rolloff, hush, the analyser feeding relayPeerLevels for mouth flap,
-// the askOnce join-race guard) is generic browser code that works unchanged
-// against any transport. The SDK was never carrying the hard part.
+// only 5 of the deleted SDK client's 200 lines were actually SDK calls.
+// Everything else (per-speaker <audio> elements, distance rolloff, hush, the
+// analyser feeding relayPeerLevels for mouth flap, the askOnce join-race
+// guard) is generic browser code that works unchanged against any transport.
+// The SDK was never carrying the hard part.
 //
 // 🔴 THE SERVER OFFERS, ALWAYS. A browser publishing its mic offers `sendonly`;
 // an answer cannot add a receive direction the offer never proposed, so a
@@ -45,9 +45,9 @@ export const sfuMicOn = () => !!micStream && wantMic;
  *  readable separately or a pre-connection press is silently lost. */
 export const sfuMicWanted = () => wantMic;
 
-/** Attach a remote track to a per-speaker <audio>, exactly as the LiveKit path
- *  does — the playback half is transport-agnostic and stays byte-identical so
- *  the rolloff/hush/analyser code below can be shared verbatim. */
+/** Attach a remote track to a per-speaker <audio>. The playback half is
+ *  transport-agnostic; every transport this codebase has carried shared it
+ *  verbatim, which is why the rolloff/hush/analyser code below never forks. */
 function attach(id, track) {
   let s = speakers.get(id);
   if (!s) { s = { audio: new Audio(), wantVolume: 0 }; speakers.set(id, s); }

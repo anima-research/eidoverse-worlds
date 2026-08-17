@@ -1,12 +1,12 @@
 // Which voice transport is live, and the durable incarnation every credential
 // carries. Transport-NEUTRAL by construction: this module imports no adapter.
 //
-// 🔴 WHY THIS FILE EXISTS. Both of these lived inside `relayadapter.ts` — the
-// LiveKit adapter — so `server.ts` and `routes.ts` imported the LiveKit module
-// merely to ask "are we on the SFU?", and the in-process SFU depended on the
+// 🔴 WHY THIS FILE EXISTS. Both of these lived inside the deleted external-
+// relay adapter, so `server.ts` and `routes.ts` imported that module merely to
+// ask "are we on the SFU?", and the in-process SFU depended on the
 // implementation it replaced. That is backwards, and it is what kept three
-// LiveKit packages in a branch whose whole argument is "own the stack, no extra
-// dependencies" (R, 2026-08-16: "I thought we were moving away from that").
+// third-party packages in a branch whose whole argument is "own the stack, no
+// extra dependencies" (R, 2026-08-16: "I thought we were moving away from that").
 //
 // Extracting first, deleting second: nothing here is new logic, so the delete
 // that follows is a delete and not a rewrite.

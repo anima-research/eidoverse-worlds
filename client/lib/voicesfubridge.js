@@ -5,10 +5,9 @@
 // verb names. voicerelay.js fuses these two jobs; splitting them is the one
 // structural improvement this port makes over the file it is modelled on.
 //
-// 🔴 It exposes window.relayDiag / window.relayMic with the SAME shape the
-// LiveKit path does — deliberately, so ONE browser smoke can drive either
-// transport and the acceptance-table row is measured the same way for both
-// hypotheses. A row proved by a different yardstick proves nothing comparable.
+// 🔴 It exposes window.relayDiag / window.relayMic — the shape every browser
+// smoke asserts against. The names date from when two transports competed and
+// one smoke drove both; the shape survives because the instruments do.
 import { bus, CONFIG } from './core.js';
 import { net, sendRelayCredRequest, sendVoiceConsent } from './net.js';
 import { sfuConnect, sfuOnOffer, sfuOnIce, sfuMic, sfuPeerLevels, sfuMyLevel,
