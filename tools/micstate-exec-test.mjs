@@ -17,7 +17,9 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { mock } from "bun:test";
 GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
 mock.module(new URL('../client/lib/core.js', import.meta.url).pathname, () => ({
-  report: () => {}, bus: { on(){}, emit(){} }, flashHint: () => {},
+  // 🔴 no flashHint here — it does NOT live in core.js, and stubbing it there
+  // once codified exactly the wrong import this test then failed to catch.
+  report: () => {}, bus: { on(){}, emit(){} },
 }));
 mock.module(new URL('../client/lib/net.js', import.meta.url).pathname, () => ({ sendTyping: () => {} }));
 mock.module(new URL('../client/lib/audioctx.js', import.meta.url).pathname, () => ({

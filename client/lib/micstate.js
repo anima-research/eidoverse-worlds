@@ -19,12 +19,15 @@
 // Nothing here knows about peers, SDP or transports. A transport calls
 // gateFor(rawStream) and publishes what it gets back.
 
-// 🔴 flashHint lives in ui.js, not core.js — this wrong path was a LINK-TIME
-// boot-breaker in the browser (module graph refuses to load), invisible to
-// micstate-exec-test because that harness stubs the sibling imports. Only
-// boot-check.mjs, which loads the real graph, could see it.
+// 🔴 flashHint lives in ui.js, not core.js — the wrong path was a LINK-TIME
+// boot-breaker in the browser (the module graph refuses to load), and
+// micstate-exec-test could not see it because its core.js STUB also carried a
+// flashHint, codifying the same wrong guess. Lazy-imported at the one call
+// site rather than statically: a hint is UI, this file is machinery, and the
+// static form dragged all of ui.js (and its THREE import) into every context
+// that touches the mic — including headless ones with no DOM at all.
 import { bus } from './core.js';
-import { flashHint } from './ui.js';
+const flashHint = (msg) => import('./ui.js').then((u) => u.flashHint(msg)).catch(() => {});
 import { sendTyping } from './net.js';
 import { gateThreshold } from './voiceconsent.js';
 import { gateStream, attachSource, detachSource, driveGate, setMonitor, monitoring,
