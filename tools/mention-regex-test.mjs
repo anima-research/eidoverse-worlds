@@ -29,5 +29,19 @@ let oldThrew = false;
 try { new RegExp(`(@a(\\b|\\ba(\\b)`, 'i'); } catch { oldThrew = true; }
 check('control: the unescaped form does throw', oldThrew);
 
+// ── malformed ids must DEGRADE, never throw ────────────────────────────────
+// The id comes from JSON.parse of an operator-edited tokens.json, and
+// `id: string` is erased at runtime. A missing or numeric id used to throw
+// `id.replace is not a function` inside the same catch-all that swallowed the
+// unescaped-regex throw — same deafness, different door.
+for (const [label, id] of [['undefined', undefined], ['null', null],
+                           ['number', 42], ['empty string', ''],
+                           ['object', {}]]) {
+  let threw = false, out;
+  try { out = mentionRegex(id); } catch { threw = true; }
+  check(`${label} id does not throw`, !threw);
+  check(`${label} id returns null (degraded, not a bogus regex)`, !threw && out === null);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

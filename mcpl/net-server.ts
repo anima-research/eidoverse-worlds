@@ -59,7 +59,28 @@ type Auth = { id: string; name: string; world?: string; avatar?: string };
 // never a restart (the no-restart rule applies to the door, not just the world).
 function readTokens(): Record<string, Auth> {
   try {
-    if (existsSync(TOKENS_PATH)) return JSON.parse(readFileSync(TOKENS_PATH, "utf8"));
+    if (existsSync(TOKENS_PATH)) {
+      const raw = JSON.parse(readFileSync(TOKENS_PATH, "utf8")) as Record<string, unknown>;
+      // 🔴 VALIDATE THE SHAPE (2026-08-16). This was JSON.parse-and-trust, and
+      // the id flows straight into `name:` and into mentionRegex — so an entry
+      // missing `id`, or carrying a number, threw deep inside the agent and left
+      // that body deaf to its own name for the life of the process, with one log
+      // line. An operator typo in a hand-edited auth file should bounce AT THE
+      // DOOR with the offending key named, not surface as mysterious deafness
+      // three layers in.
+      const out: Record<string, Auth> = {};
+      for (const [tok, v] of Object.entries(raw)) {
+        const a = v as Partial<Auth> | null;
+        if (!a || typeof a !== "object" || typeof a.id !== "string" || !a.id) {
+          console.error(`[mcpl] tokens.json: entry "${tok.slice(0, 12)}…" has no usable string id — ignored`);
+          continue;
+        }
+        out[tok] = { id: a.id, name: typeof a.name === "string" && a.name ? a.name : a.id,
+          world: typeof a.world === "string" ? a.world : undefined,
+          avatar: typeof a.avatar === "string" ? a.avatar : undefined };
+      }
+      return out;
+    }
   } catch (e) { console.error("[mcpl] tokens.json unreadable:", (e as Error).message); }
   return { "dev-token": { id: "claude", name: "Claude", world: "commons" } };
 }

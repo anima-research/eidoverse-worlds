@@ -946,8 +946,11 @@ export class WorldAgent {
         const pp = this.people.get(actor)?.pose;
         if (!pp || Math.hypot(pp.p[0] - this.pos.x, pp.p[2] - this.pos.z) <= this.activityRadiusM)
           this.act30.says.set(actor, (this.act30.says.get(actor) ?? 0) + 1);
+        // A null regex means this body has no usable name (a malformed tokens
+        // entry). Not being mentionable is degraded, not fatal — the body still
+        // hears the room; it just cannot be addressed by name.
         const rx = mentionRegex(this.name);
-        const mention = rx.test(String(args.text));
+        const mention = rx ? rx.test(String(args.text)) : false;
         if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
         this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
       }
