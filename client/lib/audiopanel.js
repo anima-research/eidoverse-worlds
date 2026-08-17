@@ -32,6 +32,17 @@ function micLevelNow() {
 
 import { gateUnavailable, ungatedConsent, allowUngated } from './micgate.js';
 import { selfMonitor, selfMonitoring } from './micstate.js';
+import { why } from './debuglog.js';
+/** Is a mic actually publishing, whichever transport is live? GUARDED:
+ *  voicerelay installs window.relayDiag at module top level BEFORE its state
+ *  exists, so an early call THROWS — `?.` covers absence, not that. Two of
+ *  this file's three readers called it bare (review agent, 2026-08-17): a
+ *  throw in syncRows killed the audio:mic bus handler, and one in paint()
+ *  aborted the build half way. Fourth instance of the defect the meter's
+ *  micIsLive comment already documents — now there is ONE reader to guard. */
+const micLive = () => {
+  try { return window.relayDiag?.().micPublished ?? micOn(); } catch { return micOn(); }
+};
 import { bus } from './core.js';
 import { ttsSection } from './ttsrow.js';
 import { micOn, toggleMic } from './micstate.js';
@@ -141,7 +152,7 @@ function checkRow(label, hint, checked, onChange) {
   row.innerHTML =
     `<span class="nm" title="${hint}">${label}</span>` +
     `<span class="ctl"><input type="checkbox" ${checked ? 'checked' : ''} title="${hint}"></span>`;
-  row.querySelector('input').onchange = (e) => onChange(e.target.checked);
+  row.querySelector('input').onchange = (e) => onChange(e.target.checked, e.target);
   return row;
 }
 
@@ -213,9 +224,7 @@ function micFloorRow() {
   // about exactly this for micLevelNow(); the mic ROW above already asks
   // relayDiag() first. This is the third reader in this one file, so it gets
   // the same treatment rather than a fourth private copy.
-  const micIsLive = () => {
-    try { return window.relayDiag?.().micPublished ?? micOn(); } catch { return micOn(); }
-  };
+  const micIsLive = micLive;   // the shared guarded reader — see module top
   const paintLive = () => {
     if (!micIsLive()) { hot = false; lvl.style.background = LVL_DARK; return; }
     lvl.style.background = hot ? LVL_LIVE : LVL_WARM;
@@ -279,7 +288,7 @@ function syncRows() {
   if (!_body) return;
   const p = audioPrefs();   // unused today; kept so slider sync has an obvious home
   void p;
-  if (_sync.mic) _sync.mic.checked = (window.relayDiag?.().micPublished ?? micOn());
+  if (_sync.mic) _sync.mic.checked = micLive();
   if (_sync.hear) _sync.hear.checked = receivingVoice() && !isHushed();
   if (_sync.connect) _sync.connect.checked = receivingVoice();
 }
@@ -309,7 +318,7 @@ function paint(body) {
     // 🔴 micOn() reads the MESH's state — on the SFU path it is always false,
     // so the box would render unticked no matter what. Ask whichever transport
     // is live. (window.relayDiag is installed by the SFU bridge.)
-    (window.relayDiag?.().micPublished ?? micOn()), async () => {
+    micLive(), async () => {
       // 🔴 COPY THE BADGE EXACTLY (R, 00:05: "make sure you copy how 'hear
       // voice' is doing its thing" — the toggle would not turn on). Two bugs
       // in my first version, both the same shape as the `me is not defined`
@@ -371,7 +380,19 @@ function paint(body) {
   {
     const row = checkRow('hear my own mic (monitor)',
       'plays your gated lane back to you — exactly what the room hears, so silence here means the room hears silence. USE HEADPHONES: on speakers this feeds back.',
-      selfMonitoring(), (on) => selfMonitor(on));
+      selfMonitoring(), (on, input) => {
+        // 🔴 THE BOX MUST NOT CLAIM A MONITOR THAT ISN'T RUNNING (review
+        // agent, 2026-08-17). setMonitor() returns false when the gate graph
+        // does not exist yet — always true before the first mic acquisition —
+        // and the discarded return left the box ticked over a dead feature:
+        // exactly the display-vs-reality split this row's own hint promises
+        // to settle. Untick and say why instead.
+        const took = selfMonitor(on);
+        if (on && took === false && input) {
+          input.checked = false;
+          why('panel', 'monitor refused: no gate graph yet — turn the mic on first');
+        }
+      });
     body_.append(row);
   }
 

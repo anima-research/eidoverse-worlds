@@ -230,8 +230,18 @@ async function speakChunked(text) {
   const chunks = ttsChunks(text);
   if (!chunks.length) return false;          // emoji-only: in the log, not the air
   if (chunks.length === 1) return speakOne(chunks[0]);
+  // 🔴 ONE EPOCH FOR THE WHOLE UTTERANCE (review agent, 2026-08-17 — the
+  // "next one" of the known pattern). Each speakOne captures the epoch at its
+  // OWN start, so a stopPacer() mid-utterance (mic takeover — TTS stays
+  // enabled, so the isTtsEnabled refusal never fires) only killed the chunk
+  // in flight: chunks N+1… re-captured the NEW epoch, passed every guard, and
+  // queued into a stopped pacer — to play minutes later when the mic dropped
+  // and the pacer restarted. Cancelled audio must die at EVERY await; the
+  // between-chunks seam was the one this utterance-level check now owns.
+  const epoch0 = ttsEpoch;
   let any = false;
   for (const c of chunks) {
+    if (ttsEpoch !== epoch0) { console.warn('[voice] utterance cancelled between chunks — dropping the rest'); return any; }
     // Sequential BY DESIGN: the queue plays in order, and synthesizing ahead
     // would put us right back into the race the speaker chain exists to stop.
     // Yielding between chunks lets the page paint — the whole point.
@@ -390,6 +400,14 @@ bus.on('audio:volume', ({ cat }) => {
 // against this rather than against "now", so a burst of fast synthesis lands as
 // consecutive speech instead of a chord.
 let monitorHead = 0;
+/** Every sidetone chunk currently scheduled — so a cancel can STOP them.
+ *  🔴 (review agent, 2026-08-17): stopPacer cleared the transmit queue and
+ *  zeroed monitorHead but never touched the already-scheduled buffer sources:
+ *  the ROOM went quiet while YOU kept hearing the cancelled utterance's tail —
+ *  and the zeroed playhead then scheduled the next utterance at `now`, on top
+ *  of that residue. The exact overlap the playhead was built to prevent,
+ *  resurrected on the cancel path. */
+const _monSources = new Set();
 
 
 function monitor(pcm, sampleRate) {
@@ -451,6 +469,10 @@ function monitor(pcm, sampleRate) {
     // Behind the clock (a gap in speaking, or the very first chunk) → start
     // now. Ahead of it → queue after what is still playing.
     const at = Math.max(now, monitorHead);
+    // Retained so cancellation can reach audio that is already scheduled —
+    // see stopPacer. onended keeps the set from growing past what is queued.
+    _monSources.add(src);
+    src.onended = () => _monSources.delete(src);
     src.start(at);
     monitorHead = at + buf.duration;
   } catch (e) { console.warn('[voice] sidetone failed (still transmitting):', e?.message || e); }
@@ -594,6 +616,10 @@ export function stopPacer() {
   // silent delay of up to the length of whatever was pending, and the kind of
   // stale-state bug that only shows up as "why did it take so long to start".
   monitorHead = 0;
+  // ...and stop the sidetone audio that is ALREADY scheduled — a cancelled
+  // utterance must fall silent in your own ears too, not only in the room.
+  for (const s of _monSources) { try { s.stop(); } catch { /* already ended */ } }
+  _monSources.clear();
 }
 
 /** Probe seam: is the mouth open, and how much is waiting to be said? */

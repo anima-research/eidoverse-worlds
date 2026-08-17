@@ -83,7 +83,15 @@ export async function voiceSource({ micWanted = true } = {}) {
   // micWanted:false is that state, and it takes the synth path directly rather
   // than opening a device the caller has already declined. Default true keeps
   // every existing call site behaving exactly as before.
-  if (!micWanted && provider?.available?.()) return synthStream();
+  if (!micWanted) {
+    // 🔴 NO PROVIDER IS NOT PERMISSION (review agent, 2026-08-17). Falling
+    // through to getUserMedia here opened the device the caller had just
+    // DECLINED — OS recording light on, "mic off" promise broken — whenever no
+    // synth provider happened to be registered. A declined mic with nothing to
+    // replace it is "nothing to publish", which is an answer, not a fallback.
+    if (provider?.available?.()) return synthStream();
+    throw new Error('mic declined and no synth provider registered — nothing to publish');
+  }
   try {
     const mic = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true },

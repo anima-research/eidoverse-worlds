@@ -42,6 +42,7 @@ let _loadingId = null, _loadingName = null, _loadingSince = 0;
 // and blanked the freshly-clicked box. Set at the tick, cleared when the load
 // path owns the state (or on any early exit).
 let _tickPending = false;
+let _tickGen = 0;   // last tick/untick wins across the 30s load window
 /** 🔴 ONE LOAD AT A TIME (R, 2026-08-09: "re-clicking the box appears to make it
  *  thrash and start over"). Compiling the graph takes 30s+, and nothing stopped
  *  a second click from starting a SECOND compile racing the first — two 63 MB
@@ -112,12 +113,16 @@ export function ttsSection(host, onPaint = () => {}) {
      *  One entry point, one guard, one row. */
     async function pick(id) {
       if (id === '__pending') return resumePending();
-      if (id === _selected && ttsAvailable()) return;    // already live
+      if (id === _selected && ttsAvailable()) return true;   // already live — the ask IS satisfied
       if (_inFlight) {
         // A second click during a 30s compile used to start a SECOND compile
         // racing the first — two 63 MB graphs fighting for the same cores.
+        // 🔴 Return false, not undefined (review agent, 2026-08-17): the tick
+        // handler undoes its enable on `ok === false`, and this path's bare
+        // return slipped past that — the box enabled TTS for a pick that
+        // never took.
         console.log(`[voice] already loading ${_inFlight}; ignoring ${id}`);
-        return;
+        return false;
       }
       _inFlight = id;
       // The loading row + clock, for EVERY path into a load.
@@ -684,6 +689,13 @@ function headDimmed() {
       // Untick: nothing structural changes — no row appears or vanishes — so
       // write the two affected nodes instead of rebuilding the section.
       if (!e.target.checked) {
+        // 🔴 AN UNTICK OUTRANKS A TICK STILL IN FLIGHT (review agent,
+        // 2026-08-17). The tick path below awaits a 30s model load and then
+        // enabled unconditionally — so tick → regret → untick meant your
+        // typed says started speaking half a minute after you said no. The
+        // generation counter makes the last click win: any older tick landing
+        // after this sees a newer generation and keeps its hands off enable.
+        _tickGen++;
         _needVoice = false; setTtsEnabled(false);
         if (!syncHead()) repaint(); else onPaint();
         return;
@@ -700,7 +712,9 @@ function headDimmed() {
         return;
       }
       _tickPending = true;
+      const gen = ++_tickGen;            // this tick's claim; an untick voids it
       const items = await collectVoices();
+      if (gen !== _tickGen) { _tickPending = false; return; }   // unticked while listing
       if (!items.length) {
         _tickPending = false;
         e.target.checked = false;          // the tick did not take; do not lie about it
@@ -735,8 +749,12 @@ function headDimmed() {
         try {
           const ok = await pick(pickId);      // loads and sets the source
           // pickInner reports failure as `false`, not a throw — its catch
-          // owns the error UI. Only the tick needs undoing here.
+          // owns the error UI. Only the tick needs undoing here. (pick's
+          // busy-ignore path also returns false now — an enable for a pick
+          // that never took was the same lie by a quieter route.)
           if (ok === false) { e.target.checked = false; return; }
+          // Unticked during the load: the user's later click already decided.
+          if (gen !== _tickGen) return;
           // 🔴 ENABLE HERE, NOT IN pickInner (R, 2026-08-16: "TTS gets stuck
           // faded out and 'ready' and never goes live"). pickInner only enables
           // when `wantedSpeech` — captured from `_needVoice || isTtsEnabled()`
