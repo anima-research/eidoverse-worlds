@@ -41,5 +41,17 @@ check('FEC is applied to the offer that is SENT', /withOpusFec\(pc\.localDescrip
 check('control: a server without the gate is detected', !/admitSfuLeg\(/.test('case "sfu-answer": { void accept(); }'));
 check('control: a guard that exits is detected', /process\.exit/.test('function die(){ process.exit(1); }'));
 
+// A3 — three INDEPENDENT states. The third one had no verb at all: the code
+// existed, was enforced at ingress, was unit-tested, and nothing could reach it.
+check('listener receive consent has a verb', /case "voice-consent"/.test(srv));
+check('moderator mute has a verb (A3 third state)', /case "voice-moderate"/.test(srv));
+check('moderator mute is rights-gated, not a preference', /ROLE_RANK\[rights\.role\] < 2/.test(srv));
+check('moderator mute reaches the enforcement', /setSfuModeratorMute\(c\.world\.name/.test(srv));
+check('moderation is world-visible', /voice-moderated/.test(srv));
+
+// Amendment 5 — no rung inherits the name of the next.
+check('performed names its rung', /rung: "authorized-claim"/.test(srv));
+check('performed carries the incarnation that scopes it', /performed[\s\S]{0,200}currentIncarnation\(\)/.test(srv));
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

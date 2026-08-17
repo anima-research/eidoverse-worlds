@@ -48,7 +48,7 @@ import { installSfuTransportGuard } from "./sfuguard.ts";
 import { onVoiceServiceChange, markVoiceDegraded, voiceServiceState } from "./sfusupervisor.ts";
 // The in-process SFU (VOICE_TRANSPORT=sfu). Same surface as the LiveKit
 // adapter, so every call site below branches on transport rather than on shape.
-import { mintSfuCredential, setSfuConsent, revokeSfuLeg, sfuDiag,
+import { mintSfuCredential, setSfuConsent, setSfuModeratorMute, revokeSfuLeg, sfuDiag,
   sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition, registerSfuSender, admitSfuLeg, liveLegState, sfuLegAdmitted, markSfuLegAdmitted } from "./sfuadapter.ts";
 const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR);
 
@@ -1184,6 +1184,39 @@ const server = Bun.serve({
             return;
           }
         }
+        case "voice-moderate": {
+          // 🔴 A3'S THIRD STATE, WHICH DID NOT EXIST (amendment 3, 2026-08-16).
+          // antra: "Define and test three independent states: listener receive
+          // consent OFF/ON; publisher self-mute / pre-encode gate; moderator /
+          // global track mute." We had the first two. setSfuModeratorMute was
+          // implemented, enforced at ingress and unit-tested — and had NO
+          // CALLER outside its own test, because the verb that would reach it
+          // was never written. server.ts even carried a comment saying
+          // "moderator mute is a different verb with a different rank", naming
+          // a verb that did not exist.
+          //
+          // It is NOT a substitute for listener consent: consent is
+          // listener-authored and per-pair; this silences a speaker for
+          // EVERYONE, so it needs moderation rights, not a preference.
+          if (!c.world || !relayEnabled()) return;
+          if (c.spectator || (c.surface ?? "world") !== "world") return;
+          const rights = rightsOf(c.world.state, c.id, c.sub);
+          if (ROLE_RANK[rights.role] < 2) {
+            ws.send(JSON.stringify({ type: "error", error: "muting someone for everyone needs owner rights here" }));
+            return;
+          }
+          const who = String(msg.id ?? "").slice(0, 64);
+          if (!who) return;
+          const muted = msg.muted === true;
+          setSfuModeratorMute(c.world.name, who, muted);
+          // Moderation is world-visible by design: a silence nobody can see the
+          // cause of is indistinguishable from a bug, and that ambiguity is
+          // what makes moderation feel arbitrary.
+          const note = JSON.stringify({ type: "voice-moderated", id: who, muted, by: c.id });
+          for (const t of c.world.clients) t.ws.send(note);
+          console.log(`[world:${c.world.name}] ${c.id} ${muted ? "muted" : "unmuted"} ${who} for everyone`);
+          return;
+        }
         case "voice-consent": {
           // Listener-authored receive consent (amendment 3): server-enforced
           // via subscriptions, gen-bound (this leg's gen — a reconnect starts
@@ -1246,7 +1279,22 @@ const server = Bun.serve({
             ws.send(JSON.stringify({ type: "error", error: "attest digest mismatch" }));
             return;
           }
+          // 🔴 AMENDMENT 5: NAME THE RUNG (antra, 2026-08-13). "No rung
+          // inherits the name of the next." What this receipt proves is that an
+          // AUTHORIZED LEG CLAIMED it performed the utterance — nothing about
+          // SFU ingress, forwarding, decoding, rendering, or hearing:
+          //
+          //   authorized claim → publisher frames → SFU ingress →
+          //   per-listener forward → decode/render → heard (unattested)
+          //
+          // `rung` says so on the wire, so a consumer cannot quietly read it as
+          // "this was heard". The word "performed" is kept for compatibility
+          // with #103's shipped shape, but it is now qualified rather than
+          // trusted, and stamped with the media generation and incarnation that
+          // scope the claim.
           const performed = JSON.stringify({ type: "performed",
+            rung: "authorized-claim",
+            incarnation: currentIncarnation(),
             id: c.id, seq, gen: c.gen, surface: c.surface });
           for (const t of c.world.clients) t.ws.send(performed);
           return;
