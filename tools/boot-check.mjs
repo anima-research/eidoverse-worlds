@@ -3,17 +3,71 @@
 // (2026-08-16: the mesh-deletion commit left an orphaned `}` in main.js and
 // staging served a dead client for five hours while every test stayed green).
 // This is the "what does it print when broken" instrument for the client.
+//
+// 🔴 OWNS ITS SERVER (the #128 review lens, applied here before it was asked):
+// the first version pointed at whatever answered on :8960, so its verdict was
+// about an AMBIENT world — a stale server could buy a green, and on a clean
+// checkout there was nothing to answer at all. It now spawns a child bound to
+// a per-run nonce identity, exactly like isolation-headers-test. Pass an
+// origin argv[1] to probe a LIVE deployment instead (the old behavior, now
+// explicit): `bun tools/boot-check.mjs http://host:port` — identity checks are
+// skipped in that mode because the deployment is not our child.
 import { chromium } from 'playwright';
-const ORIGIN = process.argv[2] || 'http://127.0.0.1:8960';
-const KEY = process.env.JOIN_KEY || 'staging-2026';
+import { spawn } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+
+const LIVE = process.argv[2];                 // explicit live-deployment mode
+const KEY = process.env.JOIN_KEY || 'dev';
+let srv = null, scratch = null, ORIGIN = LIVE;
+const NONCE = randomUUID();
+
+if (!LIVE) {
+  const PORT = 8981 + Math.floor(Math.random() * 15);
+  scratch = mkdtempSync(join(tmpdir(), 'bootcheck-'));
+  // process.execPath is only right when WE run under bun — this test runs
+  // under node (playwright), where execPath is node and cannot run TS. The
+  // house rule's target is Windows PATH shims; an absolute bun serves both.
+  const BUN = process.execPath.includes('bun') ? process.execPath
+    : (process.env.BUN_PATH || '/home/claude/.bun/bin/bun');
+  srv = spawn(BUN, ['server/server.ts'], {
+    env: { ...process.env, PORT: String(PORT), JOIN_TOKEN: KEY, WORLDS_DIR: scratch,
+           EIDO_BOOT_NONCE: NONCE },
+    stdio: ['ignore', 'ignore', 'ignore'],
+  });
+  ORIGIN = `http://127.0.0.1:${PORT}`;
+  let ours = false;
+  for (let i = 0; i < 60 && !ours; i++) {
+    if (srv.exitCode !== null) break;         // died (EADDRINUSE etc.) — never green
+    try { ours = (await (await fetch(`${ORIGIN}/version`)).json()).nonce === NONCE; }
+    catch { /* not up yet */ }
+    if (!ours) await new Promise((r) => setTimeout(r, 250));
+  }
+  if (!ours) {
+    console.log(`FAIL — child server never came up as OURS (${srv.exitCode === null ? 'alive but wrong responder' : `exited ${srv.exitCode}`})`);
+    try { srv.kill('SIGKILL'); } catch {}
+    process.exit(1);
+  }
+}
+
 const b = await chromium.launch({ executablePath: '/home/claude/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome' });
-const pg = await (await b.newContext()).newPage();
-const errs = [];
-pg.on('pageerror', e => errs.push(e.message));
-await pg.goto(`${ORIGIN}/?world=staging&name=bootcheck&key=${KEY}`, { waitUntil: 'networkidle' });
-await new Promise(r => setTimeout(r, 3000));
-const n = await pg.evaluate(() => document.querySelectorAll('.sec').length);
-await b.close();
-if (errs.length) { console.log('FAIL — page errors:\n  ' + errs.slice(0,4).join('\n  ')); process.exit(1); }
-if (!n) { console.log('FAIL — zero .sec panels rendered (boot died silently)'); process.exit(1); }
-console.log(`ok — client boots, ${n} panels rendered, no page errors`);
+try {
+  const pg = await (await b.newContext()).newPage();
+  const errs = [];
+  pg.on('pageerror', e => errs.push(e.message));
+  await pg.goto(`${ORIGIN}/?world=staging&name=bootcheck&key=${KEY}`, { waitUntil: 'networkidle' });
+  await new Promise(r => setTimeout(r, 3000));
+  const n = await pg.evaluate(() => document.querySelectorAll('.sec').length);
+  if (errs.length) { console.log('FAIL — page errors:\n  ' + errs.slice(0, 4).join('\n  ')); process.exit(1); }
+  if (!n) { console.log('FAIL — zero .sec panels rendered (boot died silently)'); process.exit(1); }
+  console.log(`ok — client boots, ${n} panels rendered, no page errors${LIVE ? ' (live deployment)' : ' (owned child)'}`);
+} finally {
+  await b.close();
+  if (srv) {
+    srv.kill('SIGTERM');
+    await new Promise((r) => { const t = setTimeout(() => { try { srv.kill('SIGKILL'); } catch {} r(); }, 3000); srv.once('exit', () => { clearTimeout(t); r(); }); });
+  }
+  if (scratch) { try { rmSync(scratch, { recursive: true, force: true }); } catch { /* best effort */ } }
+}

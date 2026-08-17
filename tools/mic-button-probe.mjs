@@ -2,7 +2,7 @@
 // __sfuMic() directly — which works — so the gap must be between the BUTTON
 // and the bridge. This closes that gap or proves it isn't there.
 import { chromium } from 'playwright';
-const BASE = process.env.BASE ?? 'http://127.0.0.1:8960', KEY = process.env.KEY ?? 'staging-2026';
+const BASE = process.env.BASE ?? 'http://127.0.0.1:8960', KEY = process.env.KEY ?? 'dev';
 const b = await chromium.launch({ executablePath:'/home/claude/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
   args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--autoplay-policy=no-user-gesture-required']});
 const pg = await (await b.newContext({permissions:['microphone']})).newPage();

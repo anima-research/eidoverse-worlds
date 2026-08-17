@@ -25,7 +25,7 @@ if (LOCAL) {
 } else {
   console.log(`  \x1b[36mreal-network run via ${BASE}\x1b[0m`);
 }
-const KEY = process.env.KEY ?? 'staging-2026';
+const KEY = process.env.KEY ?? 'dev';
 const browser = await chromium.launch({
   executablePath: process.env.CHROME ?? '/home/claude/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
   args: [

@@ -10,7 +10,7 @@
 // It hid because a SINGLE client has no routes → floor applies → works.
 // Every single-client probe passed all day while two humans heard nothing.
 import { chromium } from 'playwright';
-const BASE = process.env.BASE ?? 'http://127.0.0.1:8960', KEY = process.env.KEY ?? 'staging-2026';
+const BASE = process.env.BASE ?? 'http://127.0.0.1:8960', KEY = process.env.KEY ?? 'dev';
 const diag = async () => (await (await fetch(`${BASE}/relay-diag`)).json());
 const b = await chromium.launch({ executablePath:'/home/claude/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
   args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--autoplay-policy=no-user-gesture-required',

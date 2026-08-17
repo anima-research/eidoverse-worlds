@@ -2,13 +2,13 @@
 // turning gold anymore when it is transmitting"). Both the glyph and the
 // audio-panel bar polled voice.js's mesh analyser, which is 0 forever here.
 import { chromium } from 'playwright';
-const BASE = process.env.BASE ?? 'http://127.0.0.1:8960';
+const BASE = process.env.BASE ?? 'http://127.0.0.1:8960', KEY = process.env.KEY ?? 'dev';
 const b = await chromium.launch({ executablePath:'/home/claude/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
   args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--autoplay-policy=no-user-gesture-required',
         '--disable-features=AudioServiceOutOfProcess','--alsa-output-device=null']});
 const pg = await (await b.newContext({permissions:['microphone']})).newPage();
 const errs=[]; pg.on('pageerror', e=>errs.push(e.message));
-await pg.goto(`${BASE}/?world=staging&key=staging-2026&name=glyphprobe`, {waitUntil:'domcontentloaded'});
+await pg.goto(`${BASE}/?world=staging&key=${KEY}&name=glyphprobe`, {waitUntil:'domcontentloaded'});
 await pg.waitForSelector('#d-go',{timeout:20000}).catch(()=>{});
 await pg.fill('#d-name','glyphprobe').catch(()=>{}); await pg.click('#d-go').catch(()=>{});
 for(let i=0;i<40;i++){ await new Promise(r=>setTimeout(r,1500)); if(await pg.evaluate(()=>!!window.__sfuMic).catch(()=>false)) break; }

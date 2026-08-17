@@ -55,7 +55,7 @@ async function measure(base, label) {
   page.on('console', (m) => { const t = m.text(); if (t.includes('[voice] ORT')) ortLines.push(t); });
   page.on('pageerror', (e) => ortLines.push(`PAGEERROR: ${e.message}`));
 
-  await page.goto(`${base}/?world=bench&name=bench${Date.now() % 10000}&token=staging-2026`,
+  await page.goto(`${base}/?world=bench&name=bench${Date.now() % 10000}&token=${process.env.JOIN_KEY || 'dev'}`,
     { waitUntil: 'domcontentloaded', timeout: 90_000 });
   await page.waitForFunction(() => typeof window.crossOriginIsolated !== 'undefined', { timeout: 30_000 });
 

@@ -6,10 +6,10 @@
 // not submit). First run caught a missing import that left two probes
 // "unreadable" while every node-side test stayed green.
 //
-//   node tools/audio-cmd-probe.mjs   (world on :8960, key staging-2026)
+//   node tools/audio-cmd-probe.mjs   (world on :8960; JOIN_KEY env for the key)
 import { chromium } from 'playwright';
 const ORIGIN = process.argv[2] || 'http://127.0.0.1:8960';
-const KEY = process.env.JOIN_KEY || 'staging-2026';
+const KEY = process.env.JOIN_KEY || 'dev';
 const b = await chromium.launch({ executablePath: '/home/claude/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
   args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
 const pg = await (await b.newContext({ permissions: ['microphone'] })).newPage();

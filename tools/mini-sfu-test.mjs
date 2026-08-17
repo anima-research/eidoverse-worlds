@@ -20,7 +20,14 @@ await server.setLocalDescription(offer);
 const b = await chromium.launch({ executablePath:'/home/claude/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
   args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--autoplay-policy=no-user-gesture-required'] });
 const pg = await (await b.newContext({permissions:['microphone']})).newPage();
-await pg.goto('http://127.0.0.1:8960/');
+// A real http(s) origin is required for getUserMedia's secure-context check —
+// but it must be OURS, not whatever ambient world happens to hold :8960 (the
+// #128 review lens: an ambient responder is not identity, and a clean
+// checkout has no responder at all). A one-page server owned by the test.
+const { createServer } = await import('node:http');
+const pageSrv = createServer((_, res) => { res.setHeader('content-type', 'text/html'); res.end('<!doctype html><title>mini-sfu</title>'); });
+await new Promise((r) => pageSrv.listen(0, '127.0.0.1', r));
+await pg.goto(`http://127.0.0.1:${pageSrv.address().port}/`);
 // THE REAL SEQUENCE: answer FIRST with no mic (as the client does at join),
 // then acquire the mic, then answer the SAME offer again (renegotiation).
 const out = await pg.evaluate(async (offerSdp) => {
@@ -99,5 +106,6 @@ const reproduced = out.oldHuntPutSynthOnRecvRoute && !out.oldHuntOwnedSenderHasS
 console.log(`  STAGE 3 — old hunt hijacks a recv route: ${reproduced ? `✅ reproduced (synth on a non-sendonly sender, ${out.oldHuntTrx} trx)` : '❌ not reproduced'}`);
 console.log(`  STAGE 3 — fixed hunt swaps in place:     ${out.ownedSenderCarriesSynth ? '✅ owned sendonly sender carries the synth track' : '❌'}`);
 await b.close();
+pageSrv.close();
 console.log(`  STAGE 3 — recv-associated sendrecv excluded: ${out.recvAssociatedExcluded ? '✅' : '❌'}`);
 process.exit(reproduced && out.ownedSenderCarriesSynth && out.recvAssociatedExcluded ? 0 : 1);

@@ -6,7 +6,7 @@
 // rx=0 — for an entire session, while a freshly-loaded tab worked fine. That
 // asymmetry is why it survived every probe I wrote: they all started fresh.
 import { chromium } from 'playwright';
-const BASE = process.env.BASE ?? 'http://127.0.0.1:8960', KEY = process.env.KEY ?? 'staging-2026';
+const BASE = process.env.BASE ?? 'http://127.0.0.1:8960', KEY = process.env.KEY ?? 'dev';
 const diag = async () => (await (await fetch(`${BASE}/relay-diag`)).json());
 const legOf = async (id) => (await diag()).legs.find((l) => l.id === id);
 
