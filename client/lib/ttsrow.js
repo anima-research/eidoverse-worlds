@@ -480,7 +480,17 @@ export function ttsSection(host, onPaint = () => {}) {
       if (!label || !note || !box) return false;
       const live = ttsAvailable() && isTtsEnabled();
       label.style.opacity = headDimmed() ? '.45' : '1';
-      box.checked = isTtsEnabled();
+      // 🔴 A LOADING VOICE IS A TICKED BOX, FADED (R, 2026-08-16: "check that
+      // box right away so it shows as registered, but greyed out or faded, and
+      // it goes full strength once the model is finished loading"). The user's
+      // click ticks the box natively — then every repaint during the ~27s load
+      // ran this line while isTtsEnabled() was still false (pick() enables at
+      // the END), snapping the box back to unchecked mid-load and popping it
+      // on at completion. The intent is registered the moment they click;
+      // the box says so immediately and the fade says "working on it".
+      const loadingNow = !!_loadingId;
+      box.checked = isTtsEnabled() || loadingNow;
+      box.style.opacity = loadingNow && !isTtsEnabled() ? '.45' : '';
       note.textContent = headNote();
       return true;
     }
@@ -632,7 +642,8 @@ function headDimmed() {
       // selects WHICH VOICE; that one sets how loud it is.
       `<label class="nm" style="opacity:${headDimmed() ? '.45' : '1'}">text-to-speech model</label>` +
       `<span class="ctl">` +
-      `<input type="checkbox" ${isTtsEnabled() ? 'checked' : ''} ` +
+      `<input type="checkbox" ${isTtsEnabled() || _loadingId ? 'checked' : ''} `
+        + `${_loadingId && !isTtsEnabled() ? 'style="opacity:.45" ' : ''}` +
         // 🔴 NOT `disabled` WHEN THERE IS NO VOICE (R, 2026-08-09: "there's no
         // warning to load a model if you try to checkbox text-to-speech, it just
         // fails silently"). A disabled checkbox fires NO change event, so the

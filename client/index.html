@@ -307,6 +307,12 @@ select {
 .row { display: flex; align-items: center; gap: 7px; font-size: var(--fs-sm); color: var(--dim); }
 .row .nm { width: 42px; flex: none; color: var(--fg); }
 .row input[type=range] { flex: 1; accent-color: var(--accent); min-width: 0; }
+/* Checkboxes take the same accent as the sliders — seafoam fill, UA-contrast
+   (black) tick when checked. This existed via accent-color when the audio
+   panel first spent the house palette, and fell out of the selector when the
+   checkbox rows moved to .row.wide markup (R, 2026-08-16: "I could have sworn
+   we did a styling for the checkboxes… seems to be gone now"). */
+.row input[type=checkbox] { accent-color: var(--accent); }
 .row .v { width: 34px; flex: none; text-align: right; color: var(--accent); }
 
 /* 🔴 .row.wide — the SAME row, for panels whose labels are sentences.

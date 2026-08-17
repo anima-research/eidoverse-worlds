@@ -10,7 +10,7 @@
 // LOCAL, always. Synthesis on the client costs the server nothing and scales
 // with clients rather than with the room (R, 2026-08-08).
 
-import { report } from './core.js';
+import { report, bus } from './core.js';
 import { setSynthProvider, notifySynthTrackChanged } from './voicesource.js';
 import { volumeFor } from './voiceconsent.js';
 import { audioContext } from './audioctx.js';
@@ -370,6 +370,22 @@ export const sidetone = (on) => {
   return monitorOn;
 };
 
+// The shared sidetone gain — see the three-version history at its use site.
+let _monGain = null, _monGainCtx = null;
+function monitorGain(ctx) {
+  if (_monGainCtx !== ctx) {
+    _monGain = ctx.createGain();
+    _monGain.connect(ctx.destination);
+    _monGainCtx = ctx;
+  }
+  return _monGain;
+}
+// The drag must land on audio ALREADY queued (v1's failure). Guarded: the bus
+// exists at module load, the node may not.
+bus.on('audio:volume', ({ cat }) => {
+  if (cat === 'tts' && _monGain) _monGain.gain.value = 0.8 * volumeFor('tts');
+});
+
 // Where the sidetone has played up to, in AudioContext time. Chunks schedule
 // against this rather than against "now", so a burst of fast synthesis lands as
 // consecutive speech instead of a chord.
@@ -387,28 +403,21 @@ function monitor(pcm, sampleRate) {
     const ch = buf.getChannelData(0);
     for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
     const src = monitorCtx.createBufferSource();
-    // 🔴 ONE SHARED GAIN NODE, NOT ONE PER CHUNK (R, 2026-08-16: "self-TTS
-    // volume slider doesn't seem to be working"). A per-chunk gain reads the
-    // slider at SCHEDULE time, and chunks are scheduled AHEAD (see monitorHead
-    // below) — so moving the slider changed nothing already queued, and a short
-    // utterance is entirely queued before you finish dragging. The control was
-    // real and always one utterance late, which from outside is indistinguishable
-    // from dead.
-    //
-    // A single persistent node on the context, updated whenever the slider
-    // moves, applies to everything flowing through it — including audio already
-    // scheduled — which is what a volume control is supposed to do.
-    // 🔴 BACK TO A PER-CHUNK NODE (regression fix, 2026-08-16). I replaced this
-    // with one shared node so the slider could reach already-scheduled audio —
-    // and R stopped hearing herself entirely. The shared node hangs off a
-    // context obtained per call; any difference there orphans it mid-playback,
-    // and a node connected to a dead context is silence with no error.
-    //
-    // The slider lag it was meant to fix is a much smaller problem than no
-    // sidetone at all, so: per-chunk node, level read at creation. A drag still
-    // takes effect on the next chunk rather than instantly, which for
-    // sentence-chunked speech is well under a second.
-    const g = monitorCtx.createGain();
+    // 🔴 THIS GAIN HAS OSCILLATED THREE TIMES — read all three before a fourth:
+    //   v1 per-chunk node, level at creation → chunks schedule AHEAD
+    //     (monitorHead), so a short utterance is fully queued before the drag
+    //     ends: "the control was real and always one utterance late, which
+    //     from outside is indistinguishable from dead" (R's first report).
+    //   v2 ONE shared node → orphaned when audioContext() returned a different
+    //     context; a node on a dead context is silence with no error. R
+    //     stopped hearing herself entirely.
+    //   v3 revert to v1 → restored v1's bug verbatim. R, same day: "the
+    //     self-TTS volume slider is broken, needs to be hooked back up."
+    // The fix needs BOTH properties: shared (reaches already-scheduled audio)
+    // and context-tracked (rebuilt whenever the context identity changes, so
+    // it can never be orphaned). Level is also re-applied on every chunk AND
+    // on the volume bus event, so the drag lands mid-utterance.
+    const g = monitorGain(monitorCtx);
     g.gain.value = 0.8 * volumeFor('tts');
     // 🔴 SELF-TTS VOLUME LANDS HERE, NOT ON THE OUTBOUND TRACK (R, 2026-08-16:
     // "Maybe it's just what you hear of yourself and not what goes out. Seems
@@ -425,7 +434,7 @@ function monitor(pcm, sampleRate) {
     // rides, keeping the old "your own voice sits behind the room" default at
     // unity while letting you push it up or down for yourself alone.
     src.buffer = buf;
-    src.connect(g).connect(monitorCtx.destination);
+    src.connect(g);   // g is already wired to this context's destination
     // 🔴 SCHEDULE, DO NOT FIRE (R, 2026-08-16: "when they finish they just start
     // playing right away without waiting, so they end up talking over each
     // other"). A bare src.start() plays NOW. That was harmless while an
