@@ -1,19 +1,23 @@
 # relay-spike → PRs: the complete audit
 
-## ✅ CURRENT STATE (2026-08-16 ~22:30, Fable) — the stack is CUT and branch-verified
+## ✅ CURRENT STATE (2026-08-17 ~00:50, Fable) — recut post-adversarial-review
 
-Every branch below was verified by CHECKING OUT THE BRANCH in a scratch
-worktree (`/tmp/split`, symlinked node_modules ×3: root, client/, mcpl/) and
-running its suites there — not by simulation, not by assertion.
+Round 1: four adversarial agents over the branches + wiring → 21 real findings
+(each VERIFIED against source before fixing — the agents' hit rate was
+unusually high this round), fixed in commits 7317de4 / f20a876 / d1da895 /
+5d8de4d, branches recut and re-verified in /tmp/split. Round 2 (fix-attack +
+security pass) running. pr3+pr4 folded into ONE pr3-mic-panel (R-approved).
 
 | PR | branch | head | contents | receipts on the branch |
 |---|---|---|---|---|
-| 0 | `pr0-isolation-headers` | fa11e0c | COOP/COEP hunk of routes.ts + conjure.js | isolation-headers 9 |
-| 1 | `pr1-door` | 5eb06e1 | mcpl/{agent,net-server,mention}.ts + 3 tests | 78 (whitelist 26 · mention 36 · cap-gate 16) |
-| 2 | `pr2-sfu-engine` | 08d2c22 | sfu/sfuguard/sfuadapter/relaydecision/**transport/sfusupervisor** + tests + SFU-SPEC | 105 (57+25+23); upstream server.ts still builds untouched |
-| 3 | `pr3-mic-foundation` | 0bda374 | micstate.js + micgate.js + exec-test + **boot-check.mjs** | exec 10/10 |
-| 4 | `pr4-panel-tts` (stacked on 3) | 368c644 | audiopanel · ttslist(⇐voicelist rename) · ttsrow · tts · tts-chunk · engine-piper · voiceconsent · voicesource · stt · mictoggle + 15 tests/probes | 8/8 PASS node-side; meter 6/6 + boot-check on live staging |
-| 5 | *(uncut — the wiring/cutover)* | — | server.ts, voicesfu(bridge).js, voicemouths, main.js, net.js hunk, audiounlock, mesh deletion, deps, J diagnostics, remaining smokes | 🔴 amendment 6 gate: removal/retention list, spoken:true migration, reload seam, rollback plan, operator approval |
+| 0 | `pr0-isolation-headers` | fa11e0c | COOP/COEP + conjure.js | 9 (review: clean; Safari note) |
+| 1 | `pr1-door` | see git | mcpl/{agent,net-server,mention}.ts + 3 tests | 81 (36+18+27); capAllowed=granted, null guards, real controls |
+| 2 | `pr2-sfu-engine` | see git | 6 server files + tests + SFU-SPEC + **package.json/bun.lock (werift — standalone!)** | 112 (57+32+23); consent/lifecycle holes fixed |
+| 3 | `pr3-mic-panel` | see git | FOLD: mic foundation + panel + TTS, 33 files | 10 suites + exec 10 + spoken-form 11 + boot-check |
+| 5 | *(uncut — wiring/cutover)* | — | server.ts, voicesfu/bridge, net hunk, main.js, mesh deletion, J diagnostics | notes/CUTOVER-ARTIFACTS.md = the amendment-6 gate, written |
+
+Known pre-existing (NOT ours): tools/incident-88-door-test.ts times out on
+pure upstream/main in this environment — flag upstream separately.
 
 Boundary corrections made while verifying (each the result of a real failure):
 - **transport.ts + sfusupervisor.ts moved B→A**: they import only node builtins
