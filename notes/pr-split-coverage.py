@@ -63,6 +63,7 @@ GROUPS = {
         "tools/sfu-no-duplicate-playback-test.mjs",
         "mcpl/mention.ts",                 # door: shared, escaped mention pattern
         "tools/door-media-whitelist-test.mjs",
+        "tools/channel-cap-gate-test.mjs",
         "tools/mention-regex-test.mjs",
         "tools/voicesource-real-test.mjs",
         "tools/voice-lifecycle-test.ts",  # DELETED with the mesh it tested
