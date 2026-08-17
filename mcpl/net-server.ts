@@ -367,6 +367,23 @@ class Session {
    *  `tools`, and a denied capability behaves as if never advertised (§5.4) —
    *  so once a grant exists it decides; absent one we defer to MCP, which
    *  negotiated tools at initialize without any help from MCPL. */
+  /** §5.4 for the CHANNEL verbs, which had no gate at all (found 2026-08-16).
+   *
+   *  `channels.publish`, `channels.lifecycle` and `channels.streaming` are all
+   *  declared in CAP and were checked NOWHERE — only `channels.register` and
+   *  `channels.incoming` were. So a host that granted `channels.incoming` alone
+   *  (receive, do not send) still had its agent's `channels/publish` answered:
+   *  the door SPOKE IN THE WORLD on behalf of an agent whose host never granted
+   *  speech. Same class as toolsAllowed's dead call, three more times.
+   *
+   *  declaration.ts's own §5.4 comment: "absence is denial and there is no
+   *  unspecified state, so an ambiguous entry fails closed." A peer with no
+   *  declaration (plain MCP) keeps everything, exactly as toolsAllowed does;
+   *  this binds only hosts that bothered to declare. */
+  private capAllowed(cap: string): boolean {
+    return this.grant ? this.granted(cap) : true;
+  }
+
   private toolsAllowed(): boolean {
     return this.grant ? this.granted(CAP.tools) : true;
   }
@@ -717,9 +734,17 @@ class Session {
               this.conn.sendResponse(req.id, { channels: this.channelDescriptors() });
               break;
             case method.CHANNELS_PUBLISH:
+              if (!this.capAllowed(CAP.channelsPublish)) {
+                this.conn.sendError(req.id, -32003, "channels.publish not granted");
+                break;
+              }
               this.conn.sendResponse(req.id, this.handlePublish(params as unknown as ChannelsPublishParams));
               break;
             case method.CHANNELS_OPEN: {
+              if (!this.capAllowed(CAP.channelsLifecycle)) {
+                this.conn.sendError(req.id, -32003, "channels.lifecycle not granted");
+                break;
+              }
               // The host's channel_open tool performs the server-side open op
               // here (and expects optional history atomically with it).
               const p = params as { channelId?: string; type?: string; address?: { world?: string }; history?: { limit: number } };
@@ -745,6 +770,10 @@ class Session {
               break;
             }
             case method.CHANNELS_CLOSE: {
+              if (!this.capAllowed(CAP.channelsLifecycle)) {
+                this.conn.sendError(req.id, -32003, "channels.lifecycle not granted");
+                break;
+              }
               const p = params as { channelId?: string };
               if (p.channelId !== this.channelId) { this.conn.sendError(req.id, -32004, `unknown channel: ${p.channelId}`); break; }
               // The agent shuts their door: ambient chatter stops; mentions
