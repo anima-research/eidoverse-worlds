@@ -171,23 +171,45 @@ async function paint(body) {
         // subresources (MDN: "requests made in cors mode won't be blocked by
         // COEP"), so the session cookie still rides.
         let done = false;
-        const finish = () => {
-          if (done) return;
+        // ONE teardown, idempotent, shared by every exit (review on the
+        // isolation PR: the timeout branch used to clear only the interval —
+        // the message listener stayed installed and accumulated across retry
+        // attempts, `done` stayed false, and the abandoned flow had no
+        // visible completion or retry state).
+        const cleanup = () => {
+          if (done) return false;
           done = true;
           removeEventListener('message', onMsg);
           clearInterval(poll);
-          connected = null;
           try { w?.close(); } catch { /* severed under COOP, or already closed */ }
+          return true;
+        };
+        const finish = () => {
+          if (!cleanup()) return;
+          connected = null;                       // unknown → paint re-checks auth
           paint(body).catch((e) => report('conjure', e));
         };
-        const onMsg = (ev) => { if (ev.data === 'orrery:signed-in') finish(); };
+        const abandon = (reason) => {
+          if (!cleanup()) return;
+          connected = false;                      // retryable: the connect button paints again
+          console.warn(`[conjure] orrery login ${reason}`);
+          paint(body).catch((e) => report('conjure', e));
+        };
+        const onMsg = (ev) => {
+          // The message path is an optimisation retained for non-isolated
+          // browsers — but the data string alone is not identity: any window
+          // that can obtain a reference could post it. Origin must match the
+          // configured Orrery.
+          if (ev.origin !== new URL(ORRERY).origin) return;
+          if (ev.data === 'orrery:signed-in') finish();
+        };
         addEventListener('message', onMsg);
         // 90s at 2s intervals: long enough for a slow Discord sign-in, bounded
         // so a user who abandons the popup does not leave a timer running.
         let tries = 0;
         const poll = setInterval(async () => {
           if (done) return;
-          if (++tries > 45) { clearInterval(poll); return; }
+          if (++tries > 45) { abandon('timed out after 90s — connect again to retry'); return; }
           try { await api('/api/auth/me'); finish(); } catch { /* not yet */ }
         }, 2000);
       } catch (e) { report('orrery login', e); }

@@ -389,7 +389,12 @@ const ROUTES: Route[] = [
     // upstream #51, ported to the route table: which build is this world
     // running — public, cheap, cache-hostile; the whole point is NOW
     match: (u) => u.pathname === "/version",
-    handler: () => new Response(JSON.stringify(BUILD),
+    // EIDO_BOOT_NONCE: a per-run identity echo for tests that spawn a child
+    // server — "the first 89xx listener that answers" is not identity, and a
+    // stale server has bought a false green in this repo before (review on
+    // the isolation PR). Absent unless the spawner sets it.
+    handler: () => new Response(JSON.stringify(
+      process.env.EIDO_BOOT_NONCE ? { ...BUILD, nonce: process.env.EIDO_BOOT_NONCE } : BUILD),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {
