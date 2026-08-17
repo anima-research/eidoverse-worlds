@@ -406,6 +406,15 @@ export class Avatar {
    *  This runs only where NO local sim owns the dressing — remotes, and the
    *  gap after a doll disposes. Where Bullet runs it already uses real world
    *  gravity and none of this applies.
+   *
+   *  CONFIRMED IN THE WORLD, 08-17. A 20s sample of a real drag showed Bullet
+   *  owning the hair for 96% of it, from which the first read was that this
+   *  could not be what "sideways while dragging" meant — and that was a
+   *  misreading of WHICH INSTANTS were being described. Grabbing, letting go,
+   *  pinning, and the fall afterwards are all springbone moments, and they are
+   *  what the report was about. With the center dropped, all of it came right.
+   *  The lesson is not about hair: 96% of the samples answered a question
+   *  nobody had asked, and the 4% was the whole story.
    */
   _springsLimp(on) {
     const sbm = this.vrm?.springBoneManager;
