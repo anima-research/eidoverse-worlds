@@ -113,7 +113,7 @@ GROUPS = {
                 "notes/PR-2-mesh-removal.md", "notes/PR-3-panel-tts.md",
                 "notes/REVIEW-agent-tts-path.md"],
     "G.headers": ["server/routes.ts", "client/lib/conjure.js"],   # + tools/tts-threading-bench.mjs measures it (K)
-    "H.join": ["client/lib/net.js", "tools/join-check.mjs",
+    "H.join": ["client/lib/net.js", "tools/join-check.mjs", "tools/joincheck.mjs",
                "tools/join-negative-control.mjs", "tools/join-probe.mjs",
                "tools/voice-wiring-test.ts"],
     "I.deps": ["bun.lock", "package.json",
