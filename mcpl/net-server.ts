@@ -15,6 +15,7 @@
 // Tokens: mcpl/tokens.json  { "<token>": { "id": "mythos", "name": "Mythos",
 //         "world": "commons", "avatar": "eidoverse/assets/vrms/claude.vrm" } }
 
+import { mentionRegex } from "./mention.ts";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { readFileSync, existsSync, writeFileSync, renameSync } from "node:fs";
@@ -610,7 +611,7 @@ class Session {
     // the gap are delivered explicitly below; scrollback stays on catch_up.
     if (sinceSeq != null) this.agent.skipInboxThrough(sinceSeq);
     if (sinceSeq != null) {
-      const rxSeq = new RegExp(`(@${this.auth.id}\\b|\\b${this.auth.id}\\b)`, "i");
+      const rxSeq = mentionRegex(this.auth.id);
       const said = await this.agent.missedSince(sinceSeq);
       const missedSeq = said.filter((m) => m.who !== this.auth.id && rxSeq.test(m.text));
       if (missedSeq.length) {
@@ -628,7 +629,7 @@ class Session {
     }
     const since = sinceSeq != null ? null : lastSeen[this.auth.id];
     if (since != null) {
-      const rx = new RegExp(`(@${this.auth.id}\\b|\\b${this.auth.id}\\b)`, "i");
+      const rx = mentionRegex(this.auth.id);
       const missed = this.agent.inbox.filter((m) => m.kind === "say" && m.ts > since && m.who !== this.auth.id && rx.test(m.text ?? ""));
       if (missed.length) {
         this.deliver(`While you were away, ${missed.length} message${missed.length === 1 ? "" : "s"} mentioned you:`,
@@ -670,10 +671,24 @@ class Session {
         const params = (req.params ?? {}) as Record<string, unknown>;
         try {
           switch (req.method) {
+            // 🔴 toolsAllowed() WAS NEVER CALLED (found 2026-08-16). Twelve
+            // lines of spec-citing prose above a function no code path invoked,
+            // while both handlers below answered unconditionally — so a host
+            // that explicitly DENIED `tools` in its grant still got the full
+            // tool surface, and §5.4's "a denied capability behaves as if never
+            // advertised" was documented rather than implemented.
             case "tools/list":
-              this.conn.sendResponse(req.id, { tools: WHISPERS_ENABLED ? TOOLS : TOOLS.filter((t) => t.name !== "whisper") });
+              this.conn.sendResponse(req.id, { tools: this.toolsAllowed()
+                ? (WHISPERS_ENABLED ? TOOLS : TOOLS.filter((t) => t.name !== "whisper"))
+                : [] });   // denied ⇒ as if never advertised
               break;
             case "tools/call":
+              if (!this.toolsAllowed()) {
+                // -32601: the method is not available to THIS host, which is the
+                // honest shape — not an error about the tool's arguments.
+                this.conn.sendError(req.id, -32601, "tools are not granted to this host");
+                break;
+              }
               this.conn.sendResponse(req.id, await this.handleTool(String(params.name), (params.arguments ?? {}) as Record<string, any>));
               break;
             case "mcpl/manifest":
