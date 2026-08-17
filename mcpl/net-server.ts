@@ -15,6 +15,7 @@
 // Tokens: mcpl/tokens.json  { "<token>": { "id": "mythos", "name": "Mythos",
 //         "world": "commons", "avatar": "eidoverse/assets/vrms/claude.vrm" } }
 
+import { mentionRegex } from "./mention.ts";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { readFileSync, existsSync, writeFileSync, renameSync } from "node:fs";
@@ -58,7 +59,28 @@ type Auth = { id: string; name: string; world?: string; avatar?: string };
 // never a restart (the no-restart rule applies to the door, not just the world).
 function readTokens(): Record<string, Auth> {
   try {
-    if (existsSync(TOKENS_PATH)) return JSON.parse(readFileSync(TOKENS_PATH, "utf8"));
+    if (existsSync(TOKENS_PATH)) {
+      const raw = JSON.parse(readFileSync(TOKENS_PATH, "utf8")) as Record<string, unknown>;
+      // 🔴 VALIDATE THE SHAPE (2026-08-16). This was JSON.parse-and-trust, and
+      // the id flows straight into `name:` and into mentionRegex — so an entry
+      // missing `id`, or carrying a number, threw deep inside the agent and left
+      // that body deaf to its own name for the life of the process, with one log
+      // line. An operator typo in a hand-edited auth file should bounce AT THE
+      // DOOR with the offending key named, not surface as mysterious deafness
+      // three layers in.
+      const out: Record<string, Auth> = {};
+      for (const [tok, v] of Object.entries(raw)) {
+        const a = v as Partial<Auth> | null;
+        if (!a || typeof a !== "object" || typeof a.id !== "string" || !a.id) {
+          console.error(`[mcpl] tokens.json: entry "${tok.slice(0, 12)}…" has no usable string id — ignored`);
+          continue;
+        }
+        out[tok] = { id: a.id, name: typeof a.name === "string" && a.name ? a.name : a.id,
+          world: typeof a.world === "string" ? a.world : undefined,
+          avatar: typeof a.avatar === "string" ? a.avatar : undefined };
+      }
+      return out;
+    }
   } catch (e) { console.error("[mcpl] tokens.json unreadable:", (e as Error).message); }
   return { "dev-token": { id: "claude", name: "Claude", world: "commons" } };
 }
@@ -237,9 +259,107 @@ class Session {
     this.channelId = `world:${this.agent.world}`;
   }
 
+  /** The loopback media bridge. One sidecar at a time: a second connection
+   *  replaces the first, because two publishers for one identity is the
+   *  double-speak bug (#57's whole premise) wearing a new hat. */
+  private mediaSock: WebSocket | null = null;
+  /** The listener handle, so session teardown can actually release the port.
+   *  🔴 It used to be discarded (2026-08-16). Bun.serve()'s return value was
+   *  thrown away, no field held it, and session.close() therefore had nothing
+   *  to close — so the bridge outlived every session BY CONSTRUCTION. The
+   *  first session bound :8931 and worked; when it ended the listener stayed;
+   *  every reconnect after that died on `Failed to start server. Is port 8931
+   *  in use?` — the door failing to bind a port the door itself was holding.
+   *  Observed as an hour of working voice, then a permanent crash loop with a
+   *  5-second period and no audio at all. */
+  private mediaServer: { stop: (closeActiveConnections?: boolean) => void } | null = null;
+
+  private startMediaBridge(port: number) {
+    // Idempotent: a re-entry must not try to bind a port we already hold.
+    if (this.mediaServer) {
+      console.log(`[door] media bridge already listening on :${port} — reusing`);
+      return;
+    }
+    try {
+    this.mediaServer = Bun.serve({
+      port, hostname: "127.0.0.1",
+      fetch: (req, srv) => srv.upgrade(req) ? undefined : new Response("media bridge: websocket only", { status: 426 }),
+      websocket: {
+        open: (ws) => {
+          if (this.mediaSock) { try { this.mediaSock.close(4001, "replaced"); } catch {} }
+          this.mediaSock = ws as never;
+          console.log(`[door] media sidecar attached on :${port} — asking for a credential`);
+          // The sidecar cannot ask for itself (the server refuses a non-primary),
+          // so attaching IS the ask. subscribe:false — this leg speaks, it does
+          // not listen; hearing is the door's job on the text tier.
+          try { this.agent.requestMediaCredential({ publish: true, subscribe: false }); }
+          catch (e) { console.warn("[door] credential ask failed:", (e as Error).message); }
+        },
+        message: (_ws, raw) => {
+          // Sidecar → world. Whitelisted in sendMedia; malformed JSON is the
+          // sidecar's bug and must not take the door down (house rule #3).
+          try {
+            const frame = JSON.parse(String(raw)) as { type?: string; seq?: number };
+            // `aired` is the sidecar telling us an utterance actually left the
+            // encoder. The RECEIPT is ours to send, never the sidecar's: attest
+            // is identity-bearing (own-id, token-verified, generation-stamped)
+            // and belongs to the authenticated primary. A loopback peer that
+            // could mint receipts could suppress every listener's fallback for
+            // audio it never aired — silence that looks like speech.
+            if (frame?.type === "aired") { void this.attestAired(Number(frame.seq)); return; }
+            this.agent.sendMedia(frame as never);
+          } catch (e) { console.warn("[door] bad media frame:", (e as Error).message); }
+        },
+        close: (ws) => { if (this.mediaSock === (ws as never)) this.mediaSock = null; },
+      },
+      // A bind failure must not be fatal to the SESSION. Before, the throw
+      // escaped into session.serve()'s catch and ended the connection outright
+      // — so a leaked listener cost the agent its whole seat (text included),
+      // not just its voice. The door is still useful mute.
+      error: (e: Error) => { console.warn("[door] media bridge error:", e.message); return undefined; },
+    });
+    } catch (e) {
+      // 🔴 A BIND FAILURE IS A MUTE DOOR, NOT A DEAD ONE. This used to throw
+      // out of the session setup path into session.serve()'s catch, ending the
+      // whole MCPL connection — so a stuck port cost the agent its text seat
+      // too, and the reconnect loop that followed made it look like the world
+      // was rejecting us. Log it, stay up, speak later.
+      this.mediaServer = null;
+      console.warn(`[door] media bridge could NOT bind :${port} (${(e as Error).message}) — continuing WITHOUT a voice; text is unaffected`);
+      return;
+    }
+    // World → sidecar. Dropped when nothing is attached: the credential and
+    // offers are meaningless without a peer to answer them, and the server
+    // retires the leg on its own funnel.
+    this.agent.onMedia = (frame) => {
+      try { this.mediaSock?.send(JSON.stringify(frame)); } catch { /* sidecar died mid-frame */ }
+    };
+  }
+
+  /** A sidecar reported an utterance aired; mint the receipt for it. Silent on
+   *  an unknown seq — the say may have aged out of the ring, and a missing
+   *  receipt degrades to listener-side fallback, which is the designed
+   *  behaviour rather than an error worth shouting about. */
+  private async attestAired(seq: number): Promise<void> {
+    if (!Number.isSafeInteger(seq)) return;
+    const ok = await this.agent.attestSay(seq).catch(() => false);
+    if (!ok) console.warn(`[door] could not attest seq ${seq} (unknown say or not joined)`);
+  }
+
   close() {
     this.agent.close(); // deliberate death — stops the body's auto-reconnect
     this.conn.close();
+    // 🔴 RELEASE THE MEDIA PORT. Without this the listener outlives the
+    // session and the NEXT session cannot bind it — the door failing to bind a
+    // port the door still holds, forever, at the reconnect interval. Cost when
+    // it was missing: voice worked for one session, then eight hours of a
+    // 5-second crash loop that read as "the world is rejecting me."
+    // closeActiveConnections=true so a still-attached sidecar is dropped now,
+    // not left half-alive against a dead session.
+    if (this.mediaServer) {
+      try { this.mediaServer.stop(true); } catch (e) { console.warn("[door] media bridge stop:", (e as Error).message); }
+      this.mediaServer = null;
+    }
   }
 
   /**
@@ -268,6 +388,33 @@ class Session {
    *  `tools`, and a denied capability behaves as if never advertised (§5.4) —
    *  so once a grant exists it decides; absent one we defer to MCP, which
    *  negotiated tools at initialize without any help from MCPL. */
+  /** §5.4 for the CHANNEL verbs, which had no gate at all (found 2026-08-16).
+   *
+   *  `channels.publish`, `channels.lifecycle` and `channels.streaming` are all
+   *  declared in CAP and were checked NOWHERE — only `channels.register` and
+   *  `channels.incoming` were. So a host that granted `channels.incoming` alone
+   *  (receive, do not send) still had its agent's `channels/publish` answered:
+   *  the door SPOKE IN THE WORLD on behalf of an agent whose host never granted
+   *  speech. Same class as toolsAllowed's dead call, three more times.
+   *
+   *  declaration.ts's own §5.4 comment: "absence is denial and there is no
+   *  unspecified state, so an ambiguous entry fails closed." A peer with no
+   *  declaration (plain MCP) keeps everything, exactly as toolsAllowed does;
+   *  this binds only hosts that bothered to declare. */
+  private capAllowed(cap: string): boolean {
+    // 🔴 SAME SEMANTICS AS granted(), deliberately (review agent, 2026-08-17).
+    // The first version was `this.grant ? this.granted(cap) : true` — the
+    // toolsAllowed shape — which quietly skipped granted()'s two other fences
+    // for every channel verb: the plain-MCP check (a host that never declared
+    // MCPL had channels/publish ANSWERED, while every other MCPL frame path
+    // refused it) and the §5.3 deny-until-policy window (a 0.5 host that
+    // simply never sent featureSets/update was never gated at all — publish
+    // allowed in exactly the window the comments above claim is closed).
+    // toolsAllowed's fallback-to-MCP rationale is real for TOOLS, which exist
+    // in plain MCP; it has no analogue for MCPL-only channel verbs.
+    return this.granted(cap);
+  }
+
   private toolsAllowed(): boolean {
     return this.grant ? this.granted(CAP.tools) : true;
   }
@@ -372,6 +519,21 @@ class Session {
     // door decision below is still made from world state (`channelOpen`,
     // `ev.mention`), never by reading a tag back: tags describe, they never
     // authorize (§16.6).
+    // ── MEDIA BRIDGE (#104 / #57) ────────────────────────────────────────
+    // The SFU gates publishing to the embodied primary; for an agent that is
+    // this door. But the door has no audio — a local synthesizer does, in
+    // another process. So when EIDO_MEDIA_PORT is set, the door listens on
+    // loopback and relays media-signalling frames both ways, and NOTHING else
+    // (see WorldAgent.onMedia / sendMedia for the whitelist).
+    //
+    // Off by default: a door with no sidecar never opens the port, never asks
+    // for a credential, and behaves exactly as it did before. Loopback only —
+    // this carries the authority to publish audio AS this identity, which is
+    // the same trust boundary as the agent's own process space (and the same
+    // named threat the sidecar's ARCHITECTURE.md records for its other seams).
+    const mediaPort = Number(process.env.EIDO_MEDIA_PORT ?? 0);
+    if (mediaPort > 0) this.startMediaBridge(mediaPort);
+
     this.agent.onEvent = (ev) => {
       // §16.2 sender facet. The world reports `agent: true` for bodies driven by
       // a model, so `chat:from-agent` rests on something. There is no
@@ -497,9 +659,12 @@ class Session {
     // the gap are delivered explicitly below; scrollback stays on catch_up.
     if (sinceSeq != null) this.agent.skipInboxThrough(sinceSeq);
     if (sinceSeq != null) {
-      const rxSeq = new RegExp(`(@${this.auth.id}\\b|\\b${this.auth.id}\\b)`, "i");
+      // mentionRegex returns null for an id with no matchable form — its
+      // documented contract, honoured by agent.ts and violated here: a null
+      // threw inside the prelude and killed the session at connect.
+      const rxSeq = mentionRegex(this.auth.id);
       const said = await this.agent.missedSince(sinceSeq);
-      const missedSeq = said.filter((m) => m.who !== this.auth.id && rxSeq.test(m.text));
+      const missedSeq = said.filter((m) => m.who !== this.auth.id && !!rxSeq?.test(m.text));
       if (missedSeq.length) {
         this.deliver(`While you were away, ${missedSeq.length} message${missedSeq.length === 1 ? "" : "s"} mentioned you:`,
           { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.catchup) });
@@ -515,8 +680,8 @@ class Session {
     }
     const since = sinceSeq != null ? null : lastSeen[this.auth.id];
     if (since != null) {
-      const rx = new RegExp(`(@${this.auth.id}\\b|\\b${this.auth.id}\\b)`, "i");
-      const missed = this.agent.inbox.filter((m) => m.kind === "say" && m.ts > since && m.who !== this.auth.id && rx.test(m.text ?? ""));
+      const rx = mentionRegex(this.auth.id);   // null-safe: see rxSeq above
+      const missed = this.agent.inbox.filter((m) => m.kind === "say" && m.ts > since && m.who !== this.auth.id && !!rx?.test(m.text ?? ""));
       if (missed.length) {
         this.deliver(`While you were away, ${missed.length} message${missed.length === 1 ? "" : "s"} mentioned you:`,
           { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.catchup) });
@@ -547,6 +712,13 @@ class Session {
           // agent.typing() call is throttled and the world extends a 4s window
           // on each, so a long generation keeps the dots up continuously.
           if (msg.notification.method === method.CHANNELS_OUTGOING_CHUNK) {
+            // 🔴 `channels.streaming` was the fourth declared-but-unchecked
+            // capability (2026-08-16). This is a NOTIFICATION, so there is no
+            // response to refuse with — it is dropped silently, which is the
+            // correct shape for a stream the host never asked to send. Ungated,
+            // a host that declared only `channels.incoming` still made the
+            // world draw typing dots over its agent's head.
+            if (!this.capAllowed(CAP.channelsStreaming)) continue;
             const cid = (msg.notification.params as { channelId?: string } | undefined)?.channelId;
             if (!cid || cid === this.channelId) this.agent.typing();
           }
@@ -557,10 +729,24 @@ class Session {
         const params = (req.params ?? {}) as Record<string, unknown>;
         try {
           switch (req.method) {
+            // 🔴 toolsAllowed() WAS NEVER CALLED (found 2026-08-16). Twelve
+            // lines of spec-citing prose above a function no code path invoked,
+            // while both handlers below answered unconditionally — so a host
+            // that explicitly DENIED `tools` in its grant still got the full
+            // tool surface, and §5.4's "a denied capability behaves as if never
+            // advertised" was documented rather than implemented.
             case "tools/list":
-              this.conn.sendResponse(req.id, { tools: WHISPERS_ENABLED ? TOOLS : TOOLS.filter((t) => t.name !== "whisper") });
+              this.conn.sendResponse(req.id, { tools: this.toolsAllowed()
+                ? (WHISPERS_ENABLED ? TOOLS : TOOLS.filter((t) => t.name !== "whisper"))
+                : [] });   // denied ⇒ as if never advertised
               break;
             case "tools/call":
+              if (!this.toolsAllowed()) {
+                // -32601: the method is not available to THIS host, which is the
+                // honest shape — not an error about the tool's arguments.
+                this.conn.sendError(req.id, -32601, "tools are not granted to this host");
+                break;
+              }
               this.conn.sendResponse(req.id, await this.handleTool(String(params.name), (params.arguments ?? {}) as Record<string, any>));
               break;
             case "mcpl/manifest":
@@ -589,9 +775,17 @@ class Session {
               this.conn.sendResponse(req.id, { channels: this.channelDescriptors() });
               break;
             case method.CHANNELS_PUBLISH:
+              if (!this.capAllowed(CAP.channelsPublish)) {
+                this.conn.sendError(req.id, -32003, "channels.publish not granted");
+                break;
+              }
               this.conn.sendResponse(req.id, this.handlePublish(params as unknown as ChannelsPublishParams));
               break;
             case method.CHANNELS_OPEN: {
+              if (!this.capAllowed(CAP.channelsLifecycle)) {
+                this.conn.sendError(req.id, -32003, "channels.lifecycle not granted");
+                break;
+              }
               // The host's channel_open tool performs the server-side open op
               // here (and expects optional history atomically with it).
               const p = params as { channelId?: string; type?: string; address?: { world?: string }; history?: { limit: number } };
@@ -617,6 +811,10 @@ class Session {
               break;
             }
             case method.CHANNELS_CLOSE: {
+              if (!this.capAllowed(CAP.channelsLifecycle)) {
+                this.conn.sendError(req.id, -32003, "channels.lifecycle not granted");
+                break;
+              }
               const p = params as { channelId?: string };
               if (p.channelId !== this.channelId) { this.conn.sendError(req.id, -32004, `unknown channel: ${p.channelId}`); break; }
               // The agent shuts their door: ambient chatter stops; mentions
@@ -1004,7 +1202,19 @@ class Session {
         return text(`sent ${a.verb}`);
       }
       case "measure": {
-        const base = (process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws").replace(/^ws/, "http").replace(/\/ws$/, "");
+        // 🔴 USE THE AGENT'S OWN httpBase (2026-08-16). This re-derived the HTTP
+        // base by string surgery on WORLD_URL — the exact form agent.ts:297
+        // replaced with real URL parsing, for a reason its comment records: a
+        // WORLD_URL carrying a query string (…/ws?token=…) defeats the `/\/ws$/`
+        // replace and produces a malformed URL (reported by digi/FC). The bug was
+        // fixed in one place and left standing in the other, which is what a
+        // duplicated derivation always eventually does.
+        //
+        // It also ignored the door's actual connection: WORLD_URL is the boot
+        // env, but `connect()` re-reads its target on every dial, so after a
+        // travel this could point at the world we LEFT and measure a different
+        // world's geometry than the one the agent is standing in.
+        const base = ag.httpBase;
         const q = a.id
           ? `world=${encodeURIComponent(ag.world)}&id=${encodeURIComponent(String(a.id))}`
           : a.lib ? `lib=${encodeURIComponent(String(a.lib))}` : null;

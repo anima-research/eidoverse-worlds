@@ -4,6 +4,7 @@
 // terrain replicated (Skye's terrain.js eval'd in Bun) so feet agree with
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
+import { mentionRegex } from "./mention.ts";
 import * as THREE_W from "three/webgpu";
 import * as TSL from "three/tsl";
 import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS,
@@ -157,6 +158,42 @@ export class WorldAgent {
   onPing: ((p: { ts: number; kind: string; who: string; text?: string }) => void) | null = null;
   /** live world events (say/arrive/leave/activity) — the channel fan-out hook */
   onEvent: ((ev: { ts: number; kind: "say" | "arrive" | "leave" | "whisper" | "act" | "activity" | "weather" | "world-change"; who: string; text?: string; mention?: boolean }) => void) | null = null;
+  /** MEDIA seam (#104 / #57): the SFU's publish path is gated to the EMBODIED
+   *  PRIMARY (`relay-cred is the embodied primary's ask`, server.ts) — and for
+   *  an agent, the primary IS this door. So an agent with a local synthesizer
+   *  could not publish at all: its sidecar has the audio and no credential, the
+   *  door has the credential and no audio.
+   *
+   *  Same shape as #100's fix, one layer out: rather than forcing the agent onto
+   *  a raw world-ws side connection (which is what my media-peer was, and it
+   *  landed on the MESH while everyone else was on the SFU), the door forwards
+   *  the media-signalling frames it is the only one authorized to carry. The
+   *  door NEVER synthesizes, encodes, or holds a peer connection — it relays
+   *  four message types and stays a text-tier participant.
+   *
+   *  Frames out (server→sidecar): relay-cred · sfu-offer · sfu-ice · sfu-route
+   *  Frames in  (sidecar→server): sfu-answer · sfu-ice · sfu-want-negotiate
+   *  Nothing else is forwarded in either direction — a whitelist, not a pipe,
+   *  for exactly #100's reason: server-side validation stays the one authority. */
+  onMedia: ((frame: Record<string, unknown>) => void) | null = null;
+  /** Our own recent says (seq → text) and our surface generation, both needed
+   *  to mint a performance receipt on a sidecar's behalf. */
+  ownSays = new Map<number, string>();
+  surfaceGen: number | null = null;
+
+  /** The performance receipt (#57 B1 / PR #103). Sent by the DOOR, never by the
+   *  sidecar: attest is identity-bearing and generation-stamped, and a loopback
+   *  peer able to mint one could suppress every listener's TTS fallback for
+   *  audio it never aired. The digest is over the WORLD's copy of the text. */
+  async attestSay(seq: number): Promise<boolean> {
+    const text = this.ownSays.get(seq);
+    if (text == null || this.ws?.readyState !== 1) return false;
+    const digest = Array.from(new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))))
+      .map((b) => b.toString(16).padStart(2, "0")).join("");
+    this.ws.send(JSON.stringify({ type: "attest", seq, digest, gen: this.surfaceGen }));
+    return true;
+  }
   /** Open coalescing windows for world-change narration, keyed by entity id.
    *  See noteEmitter. */
   private emitterNarration = new Map<string, { announced: unknown; latest: unknown; actor: string; timer: ReturnType<typeof setTimeout> }>();
@@ -442,7 +479,41 @@ export class WorldAgent {
             // Moderation replies (ban lists, global-ban confirmations).
             this.lastMod = { ts: Date.now(), text: String(msg.text ?? "") };
             break;
+          // ── media signalling (see onMedia) ─────────────────────────────
+          // Forwarded verbatim to whoever holds this identity's audio. The
+          // door does not interpret SDP; it is the authenticated carrier, and
+          // nothing more. If no sidecar is attached these are dropped, which
+          // is the correct behaviour for a text-only agent — it never asked
+          // for a credential, so the server never sends these.
+          case "relay-cred": case "sfu-offer": case "sfu-ice": case "sfu-route":
+          case "voice-consent":   // the world's ack of our own receive toggle
+          // A speaker's voice leg was (re)born. The media half needs this to
+          // restate consent — the server clears standing consent when a leg is
+          // revoked (deliberately: a reconnect must not inherit a yes), so
+          // after both sides reconnect nobody hears anybody and nothing errors.
+          case "surface-transition":
+          // 🔴 ADDED 2026-08-16 — the server broadcasts both of these to every
+          // client and the door dropped them on the floor, so an agent could
+          // not learn that its own voice had degraded or that a moderator had
+          // silenced it. Both are facts ABOUT THIS IDENTITY's audio, which is
+          // exactly what the media lane carries.
+          //
+          // voice-service: the SFU's supervised state {state, incarnation}. A
+          // sidecar holding a peer connection needs it — a degraded service
+          // means its frames are going nowhere, and the incarnation tells it
+          // whether the service RESTARTED (rejoin) or merely flapped (wait).
+          case "voice-service":
+          // voice-moderated: a moderator muted/unmuted someone for everyone. If
+          // that someone is us, our audio is being dropped at ingress and no
+          // other signal says so — the alternative is an agent that keeps
+          // speaking into a void and cannot tell.
+          case "voice-moderated":
+            this.onMedia?.(msg);
+            break;
           case "snapshot":
+            // Our surface generation, issued by the server on acceptance —
+            // every attest must echo it or the receipt is refused (PR #103 B2).
+            if (typeof msg.gen === "number") this.surfaceGen = msg.gen;
             this.entities.clear(); this.people.clear();
             // wake where you fell asleep — fresh body only; a body that has
             // walked this process keeps its own truth on mid-life reconnects
@@ -562,6 +633,18 @@ export class WorldAgent {
             break;
           case "log":
             this.lastSeq = Math.max(this.lastSeq, msg.entry?.seq ?? -1);
+            // Remember our OWN says briefly, so a sidecar that airs one can be
+            // attested for it: the receipt is sha256 of the text the world
+            // logged, and only the world's copy is authoritative (ours could
+            // differ by a trailing space and the digest would not match).
+            // Small ring — a receipt is valid for 5 minutes server-side, so
+            // holding more than a handful of utterances is pointless.
+            if (msg.entry?.verb === "say" && msg.entry?.actor === this.name
+                && typeof msg.entry?.args?.text === "string") {
+              this.ownSays.set(msg.entry.seq, String(msg.entry.args.text));
+              if (this.ownSays.size > 32) this.ownSays.delete(this.ownSays.keys().next().value as number);
+              this.onMedia?.({ type: "speak", seq: msg.entry.seq, text: msg.entry.args.text });
+            }
             await this.applyEntry(msg.entry, true);
             break;
           case "history": {
@@ -593,6 +676,20 @@ export class WorldAgent {
             break;
           case "leave":
             this.people.delete(msg.id);
+            // 🔴 THE PER-PARTICIPANT MAPS MUST GO TOO (2026-08-16). `people` was
+            // cleaned here and these three were not, so every identity that ever
+            // appeared kept an entry for the LIFE OF THE PROCESS — a door in a
+            // busy world grows without bound, and the local convention elsewhere
+            // in this file is explicitly bounded rings (ownSays 32, heldActivity
+            // 8, malformedSeen 5). These were the exception, not the rule.
+            //
+            // Correctness, not just memory: nearArmed is the approach-ping
+            // re-arm bit, so a returning visitor inherited the arm state from
+            // their PREVIOUS visit — walking away and back could fail to
+            // re-announce them, or announce them twice.
+            this.lastNear.delete(msg.id);
+            this.nearArmed.delete(msg.id);
+            this.nonLocoSince.delete(msg.id);
             this.gate.presence(msg.id, "leave");
             break;
           case "avatar-updated":
@@ -849,8 +946,11 @@ export class WorldAgent {
         const pp = this.people.get(actor)?.pose;
         if (!pp || Math.hypot(pp.p[0] - this.pos.x, pp.p[2] - this.pos.z) <= this.activityRadiusM)
           this.act30.says.set(actor, (this.act30.says.get(actor) ?? 0) + 1);
-        const rx = new RegExp(`(@${this.name}\\b|\\b${this.name}\\b)`, "i");
-        const mention = rx.test(String(args.text));
+        // A null regex means this body has no usable name (a malformed tokens
+        // entry). Not being mentionable is degraded, not fatal — the body still
+        // hears the room; it just cannot be addressed by name.
+        const rx = mentionRegex(this.name);
+        const mention = rx ? rx.test(String(args.text)) : false;
         if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
         this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
       }
@@ -970,8 +1070,23 @@ export class WorldAgent {
     }
   }
 
+  /** Recent pings, for a host that polls instead of subscribing.
+   *
+   *  🔴 BOUNDED (2026-08-16). This array grew forever: the live path is
+   *  `onPing` (net-server subscribes), and `takePings` — the only drain — has no
+   *  caller in this repo. So on a push host the array accumulated every mention,
+   *  approach and whisper for the life of the process and nothing ever read it.
+   *
+   *  Kept rather than deleted because a PLAIN-MCP host has no push channel and
+   *  polling is its documented path (AGENTS.md says digests are "held and handed
+   *  over each time you call the tool"). But it is a RING now, like every other
+   *  buffer in this file — ownSays 32, heldActivity 8, malformedSeen 5. An
+   *  unbounded buffer whose only consumer is optional is a leak with a plan. */
+  private static readonly PING_RING = 64;
+
   private ping(p: { ts: number; kind: "mention" | "approach" | "whisper"; who: string; text?: string }) {
     this.pings.push(p);
+    if (this.pings.length > WorldAgent.PING_RING) this.pings.splice(0, this.pings.length - WorldAgent.PING_RING);
     this.onPing?.(p);
   }
 
@@ -1409,6 +1524,44 @@ export class WorldAgent {
   sendMod(type: "world-bans" | "global-ban" | "global-unban" | "global-bans", extra: Record<string, unknown> = {}) {
     if (!this.joined || this.ws?.readyState !== 1) throw new Error("not joined");
     this.ws.send(JSON.stringify({ type, ...extra }));
+  }
+
+  /** Ask the world to mint this identity's media credential (#104 phase-1).
+   *  Only the embodied primary may — which is this door. The answer arrives as
+   *  a `relay-cred` frame on onMedia; a sidecar then publishes on it. */
+  requestMediaCredential(scopes: { publish?: boolean; subscribe?: boolean } = {}) {
+    if (!this.joined || this.ws?.readyState !== 1) throw new Error("not joined");
+    this.ws.send(JSON.stringify({ type: "relay-cred", ...scopes }));
+  }
+
+  /** Carry ONE media-signalling frame from the sidecar to the world. Whitelisted
+   *  by type for #100's reason — the door must not become a general tunnel into
+   *  the sequencer, and server-side validation stays the single authority.
+   *  Payload shape is deliberately NOT inspected here: SDP and ICE are the
+   *  server's to validate, and a door that parsed them would be a second,
+   *  weaker validator that could disagree. */
+  sendMedia(frame: { type: string; [k: string]: unknown }): void {
+    if (!this.joined || this.ws?.readyState !== 1) return;
+    const t = String(frame?.type ?? "");
+    // `voice-consent` is the LISTENER half: the world requires it from the
+    // primary (server.ts refuses a spectator and keys on c.id/c.gen), so an
+    // agent that wants to HEAR must send it through this door too. It carries
+    // no audio and no identity claim beyond the one the door already holds —
+    // it is a boolean about our own ears.
+    //
+    // 🔴 `voice-moderate` is DELIBERATELY NOT HERE (2026-08-16). It silences a
+    // speaker for EVERYONE and needs owner rank — a moderation act, not media.
+    // The door already exposes moderation as first-class tools (kick/ban), which
+    // go through the verb path with its rights check and its `mod` confirmation.
+    // Letting it ride the media lane would give a SIDECAR — a process holding a
+    // peer connection, not an identity — the ability to mute people, which is
+    // precisely the authority the whitelist exists to withhold.
+    if (t !== "sfu-answer" && t !== "sfu-ice" && t !== "sfu-want-negotiate"
+        && t !== "sfu-pos" && t !== "voice-consent") {
+      console.warn(`[door] refusing to forward non-media frame "${t}"`);
+      return;
+    }
+    this.ws.send(JSON.stringify(frame));
   }
 
   /** Wait briefly for the world's answer to a moderation act issued at t0: a
