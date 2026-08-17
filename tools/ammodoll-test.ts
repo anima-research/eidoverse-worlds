@@ -816,9 +816,14 @@ console.log('\nlifecycle (one rig, every downstream contract):');
     // fall and yanks the hair there in one frame
     {
       const hav = makeAvatar(P, { realParent: RP2 });
-      let didReset = false;
+      let didReset = false, adopted: any = null;
       hav.vrm.springBoneManager = { reset: () => { didReset = true; }, update: () => {} };
       hav.vrm.scene = { updateMatrixWorld: () => {} };
+      // the stand-in is not an Avatar, so it carries the one method the doll
+      // reaches for on the way out (avatar.js owns the real one)
+      hav._releaseHair = (opts: any) => {
+        adopted = opts; hav.__simHair = false; hav.vrm.springBoneManager.reset();
+      };
       const hrd: any = new AmmoRagdoll(hav, toppleLean(), hav.restBonePositions());
       check('a doll with Bullet hair claims those bones from three-vrm',
         hav.__simHair === true, `hair segments: ${hrd._hairSegs?.length ?? 0}`);
@@ -827,9 +832,12 @@ console.log('\nlifecycle (one rig, every downstream contract):');
       // the hair back and reset the springs, and since dispose fires the moment
       // a body settles, the hair snapped to combed a few seconds into every
       // fall while she was still lying there. Release belongs to getting up.
-      check('...and does NOT hand them back while she is still down',
-        hav.__simHair === true);
-      check('...so nothing resets the spring shape mid-fall', didReset === false);
+      // dispose hands the hair back ADOPTING the fallen pose — live again, so a
+      // body let go mid-drag keeps falling with its hair instead of freezing
+      check('...and hands them back on dispose, adopting the fallen pose',
+        hav.__simHair === false && adopted?.adopt === true,
+        `adopt=${adopted?.adopt}`);
+      check('...having re-derived the spring state so it resumes smoothly', didReset);
     }
     rd.dispose();
     check('dispose frees the wing bodies too', rd._freed === true);
@@ -1001,6 +1009,33 @@ console.log('\nlifecycle (one rig, every downstream contract):');
   // which shows up as TENS of degrees (measured 40+ with the fix removed).
   check('...and its matrix agrees with its quaternion (the two never diverge)',
     qm.angleTo(q) < 0.5 * Math.PI / 180, `${(qm.angleTo(q) * 180 / Math.PI).toFixed(2)}° apart`);
+}
+
+// ---- the collision filter fits in a SHORT --------------------------------
+// ammo.js declares addRigidBody's group and mask as short, not int. Anything
+// above bit 14 truncates on the way into wasm, and a group of 0 collides with
+// NOTHING -- which is why hair, wings and fingers fell through the floor, and
+// why both feet (the last two bits under the old 16-bit budget) were ghosts.
+// The failure is completely silent, so it is asserted rather than remembered.
+{
+  console.log('\ncollision groups fit the short the binding declares:');
+  const rig: any = FLEET.find((r: any) => r.name === 'mythos-wings') ?? FLEET[0];
+  const av = makeAvatar(rig.P, { realParent: rig.realParent });
+  const rd: any = new AmmoRagdoll(av, toppleLean(), av.restBonePositions());
+  const groups = [...rd._groupOf.values()] as number[];
+  const asShort = (v: number) => { const m = v & 0xffff; return m > 32767 ? m - 65536 : m; };
+  check('every core body has a bit (none dropped to ground-only)',
+    rd._groupOf.size === rd._cores.length,
+    `${rd._groupOf.size} of ${rd._cores.length}`);
+  check('no group truncates to zero (a body that collides with nothing)',
+    groups.every((g) => asShort(g) !== 0),
+    groups.filter((g) => asShort(g) === 0).join(','));
+  check('no group lands on the sign bit',
+    groups.every((g) => asShort(g) > 0),
+    groups.filter((g) => asShort(g) < 0).join(','));
+  check('the dressing group survives too',
+    asShort(1 << 14) === 1 << 14);
+  rd.dispose();
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

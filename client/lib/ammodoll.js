@@ -438,15 +438,33 @@ const CORE_JOINTS = [
 // source's TENDON_CHAIN does (thumb excluded: no shared tendon).
 const FINGERS = ['Index', 'Middle', 'Ring', 'Little'];
 
-// collision filter bits — the filter is an OR of BOTH directions
-// ((groupA & maskB) || (groupB & maskA)), and it FREEZES at addRigidBody:
-// changing it later does nothing (source, the day it cost)
-// Bullet's filter group/mask are ints (btBroadphaseProxy), so there is room:
-// bit 0 statics, bits 1..16 per-core-body (torso + head + 8 limb segments +
-// 2 hands + 2 feet = 14 today), bit 30 the shared finger group.
+// Collision filter bits. The filter is an AND of BOTH directions
+// ((groupA & maskB) && (groupB & maskA)), and it FREEZES at addRigidBody:
+// changing it later does nothing (source, the day it cost).
+//
+// THE BUDGET IS 15 BITS, NOT 32. Bullet's own btBroadphaseProxy carries ints,
+// which is what the old comment here assumed — but ammo.js's IDL declares
+// addRigidBody's group and mask as SHORT, so anything above bit 14 is silently
+// truncated on the way into wasm. Measured on this rig, before the fix:
+//
+//     G_FINGER  1<<30 = 1073741824  ->  short 0      collides with NOTHING
+//     core body       =      65536  ->  short 0      collides with NOTHING
+//     core body       =      32768  ->  short -32768 sign bit, collides broadly
+//
+// Group 0 is why hair, wings and fingers fell straight through the floor: a
+// body dropped from 2m above the ground passed it and was still falling 100m
+// down. It reads as "the sim let them through" because it is exactly that, and
+// no amount of tuning touches it.
+//
+// So: bit 0 statics, bits 1..12 the twelve core bodies that need self-collision
+// (3 trunk + head + 8 limb segments), bit 14 everything that only ever wants
+// the ground. Hands and feet do NOT get bits of their own — they ride their
+// parent limb's (see the assignment below), which costs nothing anatomically
+// and is what makes 16 bodies fit in 12 bits.
 const G_STATIC = 1;
-const G_FINGER = 1 << 30;
-const BODY_BITS = 16;
+const G_FINGER = 1 << 14;      // 16384 — the top bit a signed short can hold
+const BODY_BITS = 12;
+const FILTER_MAX = 1 << 14;    // anything above this does not survive the call
 
 // ---------------------------------------------------------------- wasm temps
 
@@ -1110,16 +1128,63 @@ export class AmmoRagdoll {
           }
         }
       }
+      // A HAND RIDES ITS FOREARM'S BIT, a foot its calf's.
+      //
+      // Sixteen core bodies do not fit in the twelve bits a signed short can
+      // spare (see G_FINGER), and the alternative — dropping the last three
+      // assigned to ground-only — costs whichever bodies happen to be last in
+      // construction order their self-collision, asymmetrically: one hand keeps
+      // it, the other does not.
+      //
+      // Sharing is better than dropping AND better than a unique bit. The
+      // exclusion sets still work out right: building the forearm's mask skips
+      // the hand (adjacent, excluded) and skips itself, so the shared bit is
+      // absent and forearm/hand do not collide — which is what was wanted.
+      // Every OTHER body sees one bit meaning "that arm, hand included", so a
+      // hand still meets the torso, the head, and the opposite arm.
+      for (const seg of this.segs.values()) {
+        // by KEY, not by a `part` field — the extra segments carry `part` in
+        // their table but the seg objects built from them do not, so the first
+        // version of this matched nothing and quietly left three bodies on the
+        // ground-only fallback
+        if (!/^(left|right)(Hand|Foot)\|/.test(seg.key ?? '')) continue;
+        const parent = [...this.segs.values()].find((s) => s !== seg && s.b === seg.a);
+        if (parent && bodyIndex.has(parent.body)) bodyIndex.set(seg.body, bodyIndex.get(parent.body));
+      }
+      // A SHARED BIT EXCLUDES IF ANY OF ITS BODIES DOES.
+      //
+      // The per-body loop below was: OR in `other`'s bit unless `other` is
+      // excluded. With one bit per body that is exact. With a bit shared by a
+      // limb and its hand, it silently UN-excludes: building the thigh's mask
+      // skips the calf (adjacent) but not the foot — which now carries the
+      // calf's bit — so the bit went back in and thigh/calf collided at the
+      // knee again. Measured: knee hyperextension went from one rig to all six.
+      //
+      // Over-excluding is the safe direction (a thigh that ignores its own
+      // foot costs nothing); under-excluding puts two overlapping bodies in a
+      // penetration fight at a joint.
+      const bitBodies = new Map();
+      for (const [body, bit] of bodyIndex) {
+        if (!bitBodies.has(bit)) bitBodies.set(bit, []);
+        bitBodies.get(bit).push(body);
+      }
       this._groupOf = new Map();
       for (const [body, bit] of bodyIndex) {
         this._groupOf.set(body, (G_STATIC << 1) << bit);
         let mask = G_STATIC;
-        for (const [other, obit] of bodyIndex) {
-          if (other === body) continue;
-          if (excluded.get(body)?.has(other)) continue;
+        for (const [obit, sharers] of bitBodies) {
+          if (obit === bit) continue;
+          if (sharers.some((o) => excluded.get(body)?.has(o))) continue;
           mask |= (G_STATIC << 1) << obit;
         }
-        this.world.addRigidBody(body, (G_STATIC << 1) << bit, mask);
+        const group = (G_STATIC << 1) << bit;
+        // Loud, because the failure is SILENT: an over-budget group truncates
+        // to zero on the way into wasm and the body simply stops colliding.
+        if (group > FILTER_MAX) {
+          console.error(`[ammodoll] filter group ${group} exceeds the short budget `
+            + `— this body will collide with nothing`);
+        }
+        this.world.addRigidBody(body, group, mask);
       }
       // any core body past the bit budget joins ground-only (none today:
       // torso + head + 8 limbs + 2 hands + 2 feet = 13 ≤ 1+12 bits)
@@ -1748,7 +1813,14 @@ export class AmmoRagdoll {
             built++;
           }
         }
-        if (built) console.log(`[ammodoll] bullet wings: ${wchains.size} chains, ${built} segments`);
+        if (built) {
+          // Wings are springbone chains too now (import-tripo-avatar), so the
+          // same claim the hair makes has to be made here — otherwise a rig
+          // with wings and no hair would have three-vrm and Bullet writing the
+          // same bones, and three-vrm runs second.
+          avatar.__simHair = true;
+          console.log(`[ammodoll] bullet wings: ${wchains.size} chains, ${built} segments`);
+        }
       }
     }
 
@@ -2307,7 +2379,20 @@ export class AmmoRagdoll {
     // never become the next tumble's definition of rest. Restoring the comb
     // here instead is a one-line change if that is ever wanted.
     this.done = true;
-    // The hair is NOT handed back here, and that is the point.
+    // Hand the hair back ADOPTING the pose it is in.
+    //
+    // Not handing it back at all was wrong in one specific case, and only that
+    // one: a doll disposed MID-TUMBLE — letting go of a body you were dragging
+    // — left the hair owned by a sim that no longer existed, frozen in the pose
+    // it was dropped in while the body kept falling. Janus saw it on a dragged
+    // dummy and never on their own body going limp, which is the tell: a body
+    // that falls on its own keeps its doll until it settles.
+    //
+    // Adopting means three-vrm resumes from the fallen shape rather than
+    // combing it (the snap this used to cause), and the hair is LIVE again so
+    // it keeps falling with her. The authored shape comes back when she gets
+    // up — see _combHair.
+    this.avatar?._releaseHair?.({ adopt: true });
     //
     // This used to call springBoneManager.reset() — which does
     // `bone.quaternion.copy(this._initialLocalRotation)` per joint

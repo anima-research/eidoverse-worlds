@@ -358,20 +358,44 @@ export class Avatar {
    *  no-op — and then put straight back, so the springs still pull toward the
    *  authored shape afterwards rather than freezing the crumple in forever.
    */
-  _releaseHair() {
+  _releaseHair({ adopt = false } = {}) {
     if (!this.__simHair) return;
     this.__simHair = false;
     const sbm = this.vrm?.springBoneManager;
     if (!sbm?.joints) return;
     this.vrm.scene?.updateMatrixWorld?.(true);
-    const saved = [];
-    for (const j of sbm.joints) {
-      if (!j?._initialLocalRotation || !j.bone) continue;
-      saved.push([j, j._initialLocalRotation.clone()]);
-      j._initialLocalRotation.copy(j.bone.quaternion);
+    // The authored spring rest, remembered ONCE, so adopting a fallen shape is
+    // always reversible and can never ratchet.
+    if (!this.__springRest) {
+      this.__springRest = new Map();
+      for (const j of sbm.joints) {
+        if (j?._initialLocalRotation) this.__springRest.set(j, j._initialLocalRotation.clone());
+      }
     }
-    sbm.reset();
-    for (const [j, q] of saved) j._initialLocalRotation.copy(q);
+    for (const j of sbm.joints) {
+      if (j?._initialLocalRotation && j.bone) j._initialLocalRotation.copy(j.bone.quaternion);
+    }
+    sbm.reset();                 // re-derives tails; the rotation restore is a no-op
+    if (!adopt) this._combHair();
+  }
+
+  /** Put the AUTHORED spring rest back, so the hair combs itself out again.
+   *
+   *  Split from the release because the two happen at different moments. A doll
+   *  that disposes mid-tumble (letting go of a dragged body) hands the hair back
+   *  ADOPTING the fallen shape: it stays exactly where it was dropped and is
+   *  live again, so it keeps falling with her. Getting UP is when the combed
+   *  shape comes back. Without the split, a body released mid-air had its hair
+   *  owned by a doll that no longer existed — frozen in the pose it was let go
+   *  in, which is precisely what a dragged dummy did while a body going limp on
+   *  its own never did (its doll lives until it settles). */
+  _combHair() {
+    const sbm = this.vrm?.springBoneManager;
+    if (!sbm?.joints || !this.__springRest) return;
+    for (const j of sbm.joints) {
+      const q = this.__springRest.get(j);
+      if (q && j._initialLocalRotation) j._initialLocalRotation.copy(q);
+    }
   }
 
   /** Find the wing bones once, and remember the pose they were authored in.
@@ -782,7 +806,7 @@ export class Avatar {
     // Getting up is when the hair goes back to three-vrm — not when the doll
     // disposed, which happens the moment the body settles and left the hair
     // snapping to combed while she was still lying there.
-    if (!on) this._releaseHair();
+    if (!on) { this._releaseHair(); this._combHair(); }
     if (!on) {
       if (this._wings === undefined) this._findWings();
       if (this._wings) {
@@ -1180,7 +1204,7 @@ export class Avatar {
     // and anything that ends a tumble without going through setLimp (an avatar
     // swap, a dragger taking over) would otherwise leave the hair suppressed
     // and frozen for good.
-    if (this.__simHair && !this._limp) this._releaseHair();
+    if (this.__simHair && !this._limp) { this._releaseHair(); this._combHair(); }
     const sbm = this.__simHair ? this.vrm.springBoneManager : null;
     if (sbm) this.vrm.springBoneManager = null;
     this.vrm.update(dt);

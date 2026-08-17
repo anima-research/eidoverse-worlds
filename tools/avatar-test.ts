@@ -94,7 +94,7 @@ function stand({ constant = false } = {}) {
   // real methods, or setLimp throws and the whole suite stops at test two.
   for (const m of ['setLimp', '_park', '_resolveBones', '_humanoidBones', 'setPose',
                    'clearPose', '_applyOverride', '_composeBegin', '_composeEnd',
-                   'setEyes', '_findLids', '_findWings', '_releaseHair']) {
+                   'setEyes', '_findLids', '_findWings', '_releaseHair', '_combHair']) {
     self[m] = (Avatar.prototype as any)[m];
   }
   // the slice of update() that matters here, in its real order
@@ -291,7 +291,7 @@ function wingStand() {
     cancelEmote() { this.emote = null; },
   };
   for (const m of ['_findWings', '_flap', 'setLimp', 'setEyes', '_findLids',
-                   '_resolveBones', '_humanoidBones', '_park', '_releaseHair']) {
+                   '_resolveBones', '_humanoidBones', '_park', '_releaseHair', '_combHair']) {
     self[m] = (Avatar.prototype as any)[m];
   }
   self._findWings();
@@ -548,6 +548,7 @@ console.log('\nwings:');
       },
     };
     self._releaseHair = (Avatar.prototype as any)._releaseHair;
+    self._combHair = (Avatar.prototype as any)._combHair;
     self._releaseHair();
     check('releasing the hair KEEPS the pose the fall left',
       bone.quaternion.angleTo(q(1.1)) < 1e-6,
@@ -555,6 +556,39 @@ console.log('\nwings:');
     check('...and puts the combed rest back, so it still combs out afterwards',
       joint._initialLocalRotation.angleTo(q(0)) < 1e-6);
     check('...and ownership is released', self.__simHair === false);
+  }
+
+  // Letting go of a DRAGGED body disposes its doll mid-tumble. Adopting the
+  // fallen shape hands the hair back live; not handing it back at all left it
+  // owned by a sim that no longer existed and frozen in mid-air — seen on a
+  // dragged dummy, never on a body going limp on its own, because that one
+  // keeps its doll until it settles.
+  {
+    const q = (x: number) => new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), x);
+    const bone = { quaternion: q(0.9) };
+    const joint = { bone, _initialLocalRotation: q(0) };
+    const self: any = {
+      __simHair: true, _limp: true,
+      vrm: {
+        scene: { updateMatrixWorld() {} },
+        springBoneManager: {
+          joints: new Set([joint]),
+          reset() { bone.quaternion.copy(joint._initialLocalRotation); },
+        },
+      },
+    };
+    self._releaseHair = (Avatar.prototype as any)._releaseHair;
+    self._combHair = (Avatar.prototype as any)._combHair;
+    self._releaseHair({ adopt: true });
+    check('a doll disposing mid-tumble hands the hair back LIVE, not frozen',
+      self.__simHair === false);
+    check('...keeping the pose it was dropped in',
+      bone.quaternion.angleTo(q(0.9)) < 1e-6);
+    check('...with the springs now resting THERE, so it falls on with her',
+      joint._initialLocalRotation.angleTo(q(0.9)) < 1e-6);
+    self._combHair();
+    check('...and getting up restores the authored shape (no ratchet)',
+      joint._initialLocalRotation.angleTo(q(0)) < 1e-6);
   }
 
   // a REMOTE body goes limp with no doll of its own — suppressing there would

@@ -298,6 +298,50 @@ say(`vrmified: ${Object.keys(humanBones).length} humanoid bones`);
         colliderGroups: [0],
       });
     }
+    // WINGS GET SPRINGBONES TOO, for the one case the client cannot cover.
+    //
+    // A wing is DRIVEN while the body is alive (the flap) and simulated in
+    // Bullet while it is limp — but only on the client that owns the body.
+    // Everyone else sees a REMOTE: no local doll, and the flap is gated on not
+    // being limp, so a fallen body's wings froze mid-stroke for every observer.
+    // Hair never had that problem because three-vrm was always catching it,
+    // which is exactly the fallback wings were missing.
+    //
+    // Stiffer and heavier-falling than hair: a wing is a limb, not a filament,
+    // so the root barely gives and the tip trails. Same hips center, so
+    // walking does not excite them. While a local sim owns the body these are
+    // suppressed wholesale (avatar.js), so this costs nothing where Bullet runs.
+    const wingChains = new Map<string, { idx: number; node: number }[]>();
+    for (const [name, ni] of idx.entries()) {
+      const m = /^([LR]_Wing_(?:Upper|Lower))(?:_(\d+))?$/.exec(String(name));
+      if (!m) continue;
+      const c = wingChains.get(m[1]) ?? [];
+      c.push({ idx: m[2] ? Number(m[2]) : 0, node: ni as number });
+      wingChains.set(m[1], c);
+    }
+    let wingSprings = 0;
+    if (!args.includes('--no-wing-springs')) {
+      for (const [cname, joints] of wingChains) {
+        joints.sort((a, b) => a.idx - b.idx);
+        if (joints.length < 2) continue;
+        springs.push({
+          name: `wing_${cname}`,
+          center: need('Hip'),
+          joints: joints.map((j, i) => {
+            const t = i / Math.max(1, joints.length - 1);
+            return {
+              node: j.node,
+              hitRadius: 0.02,
+              stiffness: 1.6 - 0.9 * t,     // shoulder holds, tip trails
+              gravityPower: 0.05 + 0.15 * t, // a limp wing hangs
+              gravityDir: [0, -1, 0],
+              dragForce: 0.75 - 0.25 * t,
+            };
+          }),
+        });
+        wingSprings++;
+      }
+    }
     g.extensionsUsed = [...new Set([...(g.extensionsUsed ?? []), 'VRMC_springBone'])];
     g.extensions.VRMC_springBone = {
       specVersion: '1.0',
@@ -307,7 +351,8 @@ say(`vrmified: ${Object.keys(humanBones).length} humanoid bones`);
       colliderGroups: [{ name: 'head', colliders: [0] }],
       springs,
     };
-    say(`springbones: ${springs.length} hair chains declared (+head collider)`);
+    say(`springbones: ${springs.length - wingSprings} hair chains`
+      + `${wingSprings ? ` + ${wingSprings} wing chains` : ''} declared (+head collider)`);
   }
 }
 
