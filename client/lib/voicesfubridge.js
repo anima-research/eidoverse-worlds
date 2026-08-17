@@ -12,7 +12,7 @@ import { bus, CONFIG } from './core.js';
 import { net, sendRelayCredRequest, sendVoiceConsent } from './net.js';
 import { sfuConnect, sfuOnOffer, sfuOnIce, sfuMic, sfuPeerLevels, sfuMyLevel,
   sfuDiagClient, sfuClose, sfuActive, sfuSpeakerEntries, sfuInboundStats, sfuMicOn,
-  sfuMicWanted } from './voicesfu.js';
+  sfuMicWanted, sfuDropSpeaker } from './voicesfu.js';
 import { remotes } from './remotes.js';
 import { myState } from './controller.js';
 import { isHushed, volumeFor, receivingVoice } from './voiceconsent.js';
@@ -97,11 +97,50 @@ export function initVoiceSfu(name) {
   // we ASK for a renegotiation, and the server's next offer carries the route
   // to the new leg. Skip our own transitions: we are not our own listener.
   bus.on('surface-transition', ({ actor, surface, gen }) => {
-    if (surface !== 'voice' || gen == null) return;      // gen null = leg died
+    if (surface !== 'voice' && surface !== 'voice-relay') return;
     if (actor === CONFIG.name) return;                    // our own leg
+    if (gen == null) {
+      // The leg DIED (disconnect, revoke). Drop its playback now — the <audio>
+      // and analyser are unreachable outside the speakers map, so a departed
+      // visitor otherwise leaks both for the rest of the session, and a
+      // returning one gets a second element beside the corpse of the first.
+      sfuDropSpeaker(actor);
+      return;
+    }
     if (!sfuActive()) return;                             // nothing to renegotiate yet
     console.info(`[sfu] ${actor} has a new voice leg (gen ${gen}) — asking to re-negotiate`);
     send({ type: 'sfu-want-negotiate' });
+  });
+
+  // 🔴 MEDIA-PATH RECOVERY (2026-08-16) — the one behavior every managed relay
+  // SDK has that we did not: a media leg that dies while the world socket is
+  // healthy (network switch, sleep/wake, NAT rebind) re-establishes itself.
+  // Ours logged 'failed' into chat and stayed dead until a page reload.
+  //
+  // The ask is the SAME ask a fresh join makes — sendRelayCredRequest() — so
+  // the server path is the already-tested takeover: new mediaGen, predecessor
+  // closed by createLeg, standing consent re-applied, routes re-offered. The
+  // only new machinery is the budget: 3 attempts with growing delay, reset the
+  // moment ICE actually connects. A stall with no STUN would recur forever;
+  // the cap turns that into three tries and an honest final message instead of
+  // a silent infinite loop of doomed re-joins.
+  let recoveryAttempts = 0, recoveryTimer = null;
+  bus.on('sfu-media-live', () => { recoveryAttempts = 0; if (recoveryTimer) { clearTimeout(recoveryTimer); recoveryTimer = null; } });
+  bus.on('sfu-media-dead', ({ reason }) => {
+    if (recoveryTimer) return;                 // one pending recovery at a time
+    if (!net.joined) return;                   // the world socket owns THAT reconnect
+    if (recoveryAttempts >= 3) {
+      console.error(`[sfu] media path dead (${reason}) — giving up after 3 recovery attempts; reload to retry`);
+      return;
+    }
+    const delay = [2000, 8000, 20000][recoveryAttempts++];
+    console.warn(`[sfu] media path dead (${reason}) — re-joining voice in ${delay / 1000}s (attempt ${recoveryAttempts}/3)`);
+    recoveryTimer = setTimeout(() => {
+      recoveryTimer = null;
+      if (!net.joined) return;
+      sendRelayCredRequest();                  // fresh credential → fresh leg → fresh ICE
+      sendVoiceConsent(receivingVoice());      // fire-and-forget lane: restate consent too
+    }, delay);
   });
 
   bus.on('relay-cred', async (cred) => {

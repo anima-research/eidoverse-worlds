@@ -183,16 +183,27 @@ export async function sfuConnect(credential, send) {
                 : '')
             + '  Your mic is capturing (the meter is local) but NOTHING is being transmitted.');
           logChat('*', 'voice: no media path to the server — mic is on but nobody can hear you');
+          // A stall is the same corpse as 'failed' with less ceremony — without
+          // STUN it will stall again, which is why the bridge CAPS the retries
+          // rather than this path deciding it is hopeless.
+          bus.emit('sfu-media-dead', { reason: 'ice-stalled' });
         }
       }, 8000);
     } else if (st === 'connected' || st === 'completed') {
       clearStall();
       console.info(`[voice] ICE ${st} — media path is live`);
+      bus.emit('sfu-media-live', {});     // the bridge resets its recovery budget
     } else if (st === 'failed') {
       clearStall();
       console.error('[voice] 🔴 ICE FAILED — no media path to the server. '
         + 'Mic capture is unaffected and still looks healthy; nothing is reaching anyone.');
-      logChat('*', 'voice: connection failed — mic is on but nobody can hear you');
+      logChat('*', 'voice: connection failed — reconnecting voice…');
+      // 🔴 RECOVER, don't just report (2026-08-16). A media-only death — the
+      // world socket fine, ICE gone (network switch, sleep/wake, carrier NAT
+      // rebind) — used to be terminal until a full page reload: the bridge only
+      // re-asks for a credential when the WORLD socket rejoins. The bridge owns
+      // the retry budget; this only names the corpse.
+      bus.emit('sfu-media-dead', { reason: 'ice-failed' });
     } else if (st === 'closed') {
       clearStall();
     }
@@ -514,6 +525,19 @@ export async function sfuInboundStats() {
     });
   });
   return out;
+}
+
+/** Tear down ONE departed speaker's playback. Their <audio> element and
+ *  analyser otherwise outlive them for the whole session — audio elements are
+ *  never in the DOM here, so nothing else can ever reclaim them, and a busy
+ *  world accumulates a dead analyser per visitor per session. */
+export function sfuDropSpeaker(id) {
+  const s = speakers.get(id);
+  if (!s) return;
+  try { s.audio.pause(); } catch { /* already dead */ }
+  s.audio.srcObject = null;
+  try { s.an?.disconnect(); } catch { /* never built */ }
+  speakers.delete(id);
 }
 
 export function sfuClose() {

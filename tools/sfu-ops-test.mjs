@@ -37,6 +37,20 @@ check('voice-service is broadcast with the incarnation', /voice-service/.test(sr
 check('offer requests Opus in-band FEC', /useinbandfec=1/.test(S('sfuadapter.ts')));
 check('FEC is applied to the offer that is SENT', /withOpusFec\(pc\.localDescription/.test(S('sfuadapter.ts')));
 
+// Media-path recovery (2026-08-16): a media leg that dies while the world
+// socket is healthy re-establishes itself — capped, and reset on success.
+const bridge = readFileSync(new URL('../client/lib/voicesfubridge.js', import.meta.url), 'utf8');
+const vsfu = readFileSync(new URL('../client/lib/voicesfu.js', import.meta.url), 'utf8');
+check('ICE failure emits a recovery request, not just a log line', /sfu-media-dead/.test(vsfu));
+check('the stall path asks for recovery too', /reason: 'ice-stalled'/.test(vsfu));
+check('the bridge answers with a fresh credential ask', /bus\.on\('sfu-media-dead'/.test(bridge) && /sendRelayCredRequest\(\);\s+\/\/ fresh credential/.test(bridge));
+check('recovery is capped (no infinite doomed re-joins)', /recoveryAttempts >= 3/.test(bridge));
+check('the budget resets when media actually connects', /bus\.on\('sfu-media-live'/.test(bridge) && /recoveryAttempts = 0/.test(bridge));
+// Speaker teardown: a departed visitor's <audio>+analyser must not outlive them.
+check('a dead leg (gen null) drops its playback', /sfuDropSpeaker\(actor\)/.test(bridge));
+check('dropSpeaker releases element, analyser and map entry',
+  /s\.audio\.srcObject = null/.test(vsfu) && /speakers\.delete\(id\)/.test(vsfu.split('sfuDropSpeaker')[1] ?? ''));
+
 // Negative controls — each matcher must be able to fail.
 check('control: a server without the gate is detected', !/admitSfuLeg\(/.test('case "sfu-answer": { void accept(); }'));
 check('control: a guard that exits is detected', /process\.exit/.test('function die(){ process.exit(1); }'));
