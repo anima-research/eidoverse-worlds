@@ -80,7 +80,7 @@ export function sfuState(world: string): SfuWorldState {
       // incarnation per process and it survives a restart. Found by audit.
       incarnation: currentIncarnation(),
       sfu: new Sfu({ onNegotiationNeeded: (legId) => {
-        const send = senders.get(legId);
+        const send = senders.get(wkey(world, legId));
         if (send) void sfuNegotiate(world, legId, send);
       } }),
       legs: new Map(), consent: new Map(), usedNonces: new Set(),
@@ -100,9 +100,20 @@ export function sfuState(world: string): SfuWorldState {
  *  the listener showed pending:['smoke-a'] while the speaker pushed 1764
  *  packets into the SFU and nobody heard anything. A per-LEG registry cannot
  *  have that bug, because the same call that creates the leg registers it. */
+/** The one per-world key everything module-global uses — senders and waiting
+ *  both collided on bare ids before adopting it. */
+const wkey = (world: string, legId: string) => `${world}\u0000${legId}`;
+
+// 🔴 KEYED BY world+legId — the same fix `waiting` below already carries, for
+// the same reason its comment names: two worlds hosting the same participant
+// id are ROUTINE (ids are per-identity, not per-world). Bare-id keying meant
+// the second world's register overwrote the first's, so world A's offers went
+// down world B's websocket — and revokeSfuLeg(worldA, id) deleted world B's
+// sender. Found by reading the file after the waiting-map fix; the two maps
+// sat twenty lines apart with the same shape and different keys.
 const senders = new Map<string, (payload: unknown) => void>();
-export function registerSfuSender(legId: string, send: (payload: unknown) => void) {
-  senders.set(legId, send);
+export function registerSfuSender(world: string, legId: string, send: (payload: unknown) => void) {
+  senders.set(wkey(world, legId), send);
 }
 
 /** Mint: same shape as mintRelayCredential, minus the JWT that has no analogue. */
@@ -266,7 +277,7 @@ export function setSfuModeratorMute(world: string, speakerId: string, mutedFlag:
 
 /** Retirement funnel — the same one every other surface uses. */
 export function revokeSfuLeg(world: string, id: string) {
-  senders.delete(id);
+  senders.delete(wkey(world, id));
   // A leg revoked mid-negotiation must not leave its resolver behind: for up to
   // 15s sfuAcceptAnswer would otherwise feed an SDP answer into a CLOSED pc,
   // where setRemoteDescription throws into a bare .catch and the failure is
@@ -322,7 +333,6 @@ export function sfuDiag(world: string) {
 // resolved the OTHER world's pending offer. Keyed properly, and cleared on
 // revoke (see revokeSfuLeg) so a leg torn down mid-negotiation cannot leave a
 // resolver behind for 15s waiting to feed an SDP answer to a closed pc.
-const wkey = (world: string, legId: string) => `${world}\u0000${legId}`;
 const waiting = new Map<string, (sdp: string) => void>();
 
 /** Create the offer for `legId` and hand it to `send`. The browser answers via

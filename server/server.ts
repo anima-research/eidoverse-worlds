@@ -1171,7 +1171,7 @@ const server = Bun.serve({
             // synchronous — but it announces through the SAME transition event
             // and takes a gen from the SAME counter, because a surface session
             // is a surface session regardless of what carries its audio.
-            registerSfuSender(c.id, (payload) => ws.send(JSON.stringify(payload)));
+            registerSfuSender(c.world.name, c.id, (payload) => ws.send(JSON.stringify(payload)));
             const cred = mintSfuCredential(c.world.name, c.id, c.gen!, mediaGen);
             const transition = JSON.stringify({ type: "surface-transition",
               id: c.id, surface: "voice-relay", gen: mediaGen, retired: null });

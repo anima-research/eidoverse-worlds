@@ -2,10 +2,10 @@
 //
 // These are ALREADY proven in relay-decision-test.ts (23 tests) against the
 // decision layer directly. This file exists to prove they still hold when the
-// transport underneath is ours rather than LiveKit's — that reusing
+// decision layer is driven through the in-process adapter — that reusing
 // relaydecision.ts is a real inheritance and not a claim.
 import { mintSfuCredential, admitSfuLeg, setSfuConsent, setSfuModeratorMute,
-  revokeSfuLeg, sfuDiag, sfuState } from "../server/sfuadapter.ts";
+  revokeSfuLeg, sfuDiag, sfuState, registerSfuSender } from "../server/sfuadapter.ts";
 
 let pass = 0, fail = 0;
 const check = (n: string, c: boolean, d = "") => { console.log(`  ${c ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m"} ${n}${d ? "  " + d : ""}`); c ? pass++ : fail++; };
@@ -24,9 +24,8 @@ check("5 prior relay incarnation refused", admitSfuLeg(W, claims({ incarnation: 
 const good = claims();
 check("   (a valid credential IS admitted)", admitSfuLeg(W, good, live).admit === true);
 check("6 removed participant cannot reuse its token", admitSfuLeg(W, good, live).reason === "credential replay");
-// 7 expiry is enforced upstream at the token verifier in the LiveKit path; on
-// the SFU path there is no bearer token at all — the nonce is single-use and
-// the leg dies with the websocket, so there is no window to expire INTO.
+// 7 expiry: there is no bearer token at all — the nonce is single-use and the
+// leg dies with the websocket, so there is no window to expire INTO.
 check("7 expiry: no bearer token exists to replay (nonce is single-use)", s.usedNonces.has(good.nonce));
 
 // amendment 3: three independent states
@@ -152,6 +151,32 @@ check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length ===
   check("a reconnected speaker does not inherit its predecessor's mute",
     !st.sfu.diag().muted.includes("spk"),
     `muted=${JSON.stringify(st.sfu.diag().muted)}`);
+}
+
+// 🔴 senders is world-keyed. The SAME listener id in two worlds is routine
+// (ids are per-identity, not per-world), and bare-id keying failed BOTH ways:
+// the world registered last clobbered the first's sender, and revoking the leg
+// in one world deleted the other's. `waiting` in this same file was fixed for
+// this class first; this pins the second map.
+//
+// Ordering matters: the cross-world revoke happens BEFORE any negotiation, so
+// with bare-id keying the surviving entry is deleted and world A's offer has
+// nowhere to go — wsA=0. (A second negotiation round can't be observed here:
+// sfuNegotiate serialises per leg behind a 15s answer wait, by design.)
+{
+  const wsA: unknown[] = [], wsB: unknown[] = [];
+  const WA = "senders-a", WB = "senders-b";
+  mintSfuCredential(WA, "spk", 1, 2);
+  mintSfuCredential(WA, "dupL", 1, 4);
+  mintSfuCredential(WB, "dupL", 1, 4);
+  registerSfuSender(WA, "dupL", (p) => wsA.push(p));
+  registerSfuSender(WB, "dupL", (p) => wsB.push(p));  // bare keying: clobbers wsA…
+  revokeSfuLeg(WB, "dupL");                           // …and this then deletes it
+  setSfuConsent(WA, "dupL", 4, true);                 // negotiation fires in world A
+  await new Promise((r) => setTimeout(r, 300));
+  check("world A's offer reaches world A's socket despite world B's register+revoke",
+    wsA.length > 0, `wsA=${wsA.length}`);
+  check("…and nothing leaks into world B's socket", wsB.length === 0, `wsB=${wsB.length}`);
 }
 
 console.log(fail === 0 ? `\n\x1b[32m✅ sfu-adapter: ${pass} passed\x1b[0m` : `\n\x1b[31m❌ ${fail} failed\x1b[0m`);
