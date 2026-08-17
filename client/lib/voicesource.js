@@ -51,8 +51,9 @@ export const synthProvider = () => provider;
 // error and no way to see it. That is a transport-dependent, load-order-
 // dependent failure in the one path that gives a synthesized voice its lane.
 //
-// Both transports coexist by design on this branch (mesh is #104's rollback
-// path), so the hook has to be broadcast. Handlers are independent: one
+// The mesh is deleted now, but the broadcast stays: a slot invites exactly this
+// silent last-writer-wins bug back the moment a second consumer exists (a test
+// harness, a diagnostics tap), and handlers must stay independent — one
 // throwing must not deny the others their notification.
 const rebuildHooks = new Set();
 export const setGeneratorRebuildHook = (fn) => { rebuildHooks.add(fn); return () => rebuildHooks.delete(fn); };

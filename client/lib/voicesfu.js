@@ -1,9 +1,9 @@
 // voicesfu — the browser half of the in-process SFU, in plain WebRTC.
 //
-// SIBLING of voicerelay.js, not a replacement. #104 amendment 6 keeps the mesh
-// as rollback during staging and forbids the spike from changing production, so
-// a third transport must be ADDITIVE: same bus events, same speakers map shape,
-// same relayDiag() surface the browser smoke already asserts against.
+// It was born a SIBLING of voicerelay.js (the LiveKit client); both rivals are
+// now deleted — LiveKit at 236c239, the mesh at 25f61df — and this is the ONLY
+// transport. The shapes it standardized on (same bus events, same speakers map,
+// same relayDiag() surface) survive because the smokes assert against them.
 //
 // 🔴 WHY THIS FILE IS SHORT (and why that is the argument, not a shortcut):
 // only 5 of voicerelay.js's 200 lines were actually LiveKit — `new Room(...)`

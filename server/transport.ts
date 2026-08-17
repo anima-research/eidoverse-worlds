@@ -18,11 +18,14 @@ import { nextIncarnation } from "./relaydecision.ts";
 /** Which voice transport is live.
  *  - "sfu": our in-process SFU. Needs no external service, so the flag alone
  *    enables it.
- *  - "off": no server-carried voice — the P2P mesh is the path, and it is the
- *    production/rollback path per #104 amendment A5.
+ *  - "off": NO VOICE AT ALL. 🔴 This used to mean "the P2P mesh is the path" —
+ *    the mesh is now DELETED (25f61df, #104 phase-1 cutover), so an unset
+ *    VOICE_TRANSPORT is a silent no-voice world: text/presence/builds all live,
+ *    every voice control present and inert. Rollback to the mesh is `git
+ *    revert` of the deletion, not this flag.
  *
- *  NOTE the default: unset VOICE_TRANSPORT means "off", NOT "sfu". The mesh
- *  stays the floor until an operator opts in. */
+ *  The default stays "off" — opt-in until the acceptance table passes — but an
+ *  operator reading "off" should know it no longer names a fallback. */
 export const voiceTransport = (): "sfu" | "off" =>
   process.env.VOICE_TRANSPORT === "sfu" ? "sfu" : "off";
 
