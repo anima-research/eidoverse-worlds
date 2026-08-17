@@ -27,12 +27,36 @@ const MIN_LEN = 20;
 const SOFT_LEN = 90;
 const SOFT_MIN = 35;
 
-/** Markdown is for eyes; emoji are for the log. Neither is for the larynx. */
+/** Markdown is for eyes; emoji are for the log. Neither is for the larynx.
+ *
+ *  🔴 EXTENDED 2026-08-16 (R, from the phone test: "update the reader-rules so
+ *  it doesn't read things like : out loud" — copy eido-cc-extras' rules).
+ *  What was missing, in the order it bites:
+ *
+ *  · FENCED CODE NEVER SPEAKS — extras rule #5, the load-bearing one. The old
+ *    form stripped the backticks and then read the CONTENTS of the fence as
+ *    prose. Fenced content is work, not words; it goes entirely.
+ *  · URLs become "link". espeak spells them out — "h t t p s colon slash
+ *    slash mazda dash mic dash…" is most of a minute of noise for one tap.
+ *    A markdown [label](url) keeps its label, which was already the speech.
+ *  · The symbol runs espeak vocalizes by name: arrows and bullets (→ ▸ ·),
+ *    ASCII arrows (->, =>), separator colons in "world:staging" shapes, bare
+ *    | and ~ runs. Each maps to a comma or a space — the PAUSE the symbol
+ *    meant, not the NAME of the glyph. Times (6:04) and ratios keep their
+ *    colon: digit:digit is something espeak already says correctly. */
 export function spokenForm(text) {
   return text
+    .replace(/```[\s\S]*?(?:```|$)/g, ' ')                     // fenced code never speaks
+    .replace(/\[([^\]]{1,80})\]\((?:[^)]+)\)/g, '$1')           // [label](url) → label
+    .replace(/\bhttps?:\/\/\S+/gi, 'link')                     // bare URLs → "link"
     .replace(/[*_`#]+/g, '')
     .replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}]/gu, '')
+    .replace(/[→⇒↔▸▶◦‣·•]+/g, ', ')                            // glyphs espeak names aloud
+    .replace(/(?:->|=>|::)+/g, ', ')                           // ASCII arrows / double colon
+    .replace(/(?<=[a-zA-Z])[:](?=[a-zA-Z])/g, ', ')            // world:staging → pause, 6:04 untouched
+    .replace(/\s[|~]+\s/g, ', ')                               // separator pipes/tildes
     .replace(/\s{2,}/g, ' ')
+    .replace(/(?:, )+(?=, )/g, '')                             // collapse comma pileups
     .trim();
 }
 

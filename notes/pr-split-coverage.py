@@ -93,7 +93,7 @@ GROUPS = {
                 "tools/ttsrow-select-test.mjs"],
     "F.tts": ["client/lib/tts.js", "client/lib/tts-chunk.js",
               "client/lib/ttsrow.js", "client/lib/engine-piper.js",
-              "tools/tts-blocking-probe.mjs",
+              "tools/tts-blocking-probe.mjs", "tools/spoken-form-test.mjs",
               # the afternoon's TTS panel work
               "client/lib/voiceconsent.js",          # volume prefs + defaults
               "tools/self-tts-gain-test.mjs",
