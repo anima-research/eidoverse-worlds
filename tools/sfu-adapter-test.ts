@@ -34,7 +34,10 @@ setSfuConsent(W, "bob", 1, true);
 check("consent is listener-authored and gen-bound", s.consent.get("bob")?.consent === true);
 setSfuModeratorMute(W, "alice", true);
 check("moderator mute is a DIFFERENT state than consent",
-  s.moderatorMuted.has("alice") && s.consent.get("alice") === undefined);
+  // ONE store now: the SFU is the enforcement point and therefore owns the fact.
+  // This read the adapter's shadow Set, which is exactly the duplication that
+  // let the two diverge in production.
+  s.sfu.diag().muted.includes("alice") && s.consent.get("alice") === undefined);
 
 // measurement hygiene: delivered and suppressed reported separately
 const d = sfuDiag(W) as any;
@@ -105,7 +108,7 @@ check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length ===
   setSfuModeratorMute(W,"S",true);
   setSfuConsent(W,"L",2,true);
   const s = sfuState(W);
-  check("consent does not un-mute a moderator-muted speaker", s.sfu.diag().muted?.includes("S") ?? s.moderatorMuted.has("S")); }
+  check("consent does not un-mute a moderator-muted speaker", s.sfu.diag().muted.includes("S")); }
 
 
 }
@@ -142,10 +145,13 @@ check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length ===
 
   revokeSfuLeg(W, "spk");
   mintSfuCredential(W, "spk", 1, 8);            // the MUTED speaker reconnects
-  check("a reconnected speaker's mute is cleared in BOTH stores",
-    !st.moderatorMuted.has("spk") &&
-    !((st.sfu as unknown as { muted: Set<string> }).muted.has("spk")),
-    `adapter=${st.moderatorMuted.has("spk")} sfu=${(st.sfu as unknown as { muted: Set<string> }).muted.has("spk")}`);
+  // Was "cleared in BOTH stores" — the duplication is gone, so there is one
+  // store to clear and the divergence it guarded against is now unrepresentable.
+  // The BEHAVIOUR it protected still matters and is still asserted: a fresh leg
+  // must not inherit a moderation act aimed at its predecessor.
+  check("a reconnected speaker does not inherit its predecessor's mute",
+    !st.sfu.diag().muted.includes("spk"),
+    `muted=${JSON.stringify(st.sfu.diag().muted)}`);
 }
 
 console.log(fail === 0 ? `\n\x1b[32m✅ sfu-adapter: ${pass} passed\x1b[0m` : `\n\x1b[31m❌ ${fail} failed\x1b[0m`);

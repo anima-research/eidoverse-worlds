@@ -32,7 +32,6 @@ export type SfuWorldState = {
   incarnation: string;
   legs: Map<string, { id: string; gen: number; primaryGen: number; nonce: string }>;
   consent: Map<string, { gen: number; consent: boolean }>;
-  moderatorMuted: Set<string>;
   usedNonces: Set<string>;
   /** listener → their last stated answer, applied to speakers who arrive LATER.
    *
@@ -51,6 +50,11 @@ export type SfuWorldState = {
    *  break. Reviewer found it by reconnecting a real websocket; no unit test
    *  could, because the tests called revokeSfuLeg themselves. */
   standingConsent: Map<string, boolean>;
+  /** Legs that have already proven their credential. Per-world like everything
+   *  else here — it was a module-level Set with its own `world\0id` keying, the
+   *  FOURTH key scheme in this file, and the only piece of leg state that did
+   *  not die when a world did. */
+  admitted: Set<string>;
 };
 
 const worlds = new Map<string, SfuWorldState>();
@@ -80,8 +84,8 @@ export function sfuState(world: string): SfuWorldState {
         const send = senders.get(legId);
         if (send) void sfuNegotiate(world, legId, send);
       } }),
-      legs: new Map(), consent: new Map(), moderatorMuted: new Set(), usedNonces: new Set(),
-      standingConsent: new Map(),
+      legs: new Map(), consent: new Map(), usedNonces: new Set(),
+      standingConsent: new Map(), admitted: new Set(),
     };
     worlds.set(world, s);
   }
@@ -191,10 +195,8 @@ export function liveLegState(world: string, id: string, primaryGen?: number): Li
 /** Has this leg already proven its credential? A leg is admitted ONCE; later
  *  answers are ordinary renegotiation on an established session. Cleared by
  *  revokeSfuLeg, so a fresh leg must prove itself again. */
-const admitted = new Set<string>();
-const akey = (world: string, id: string) => `${world}\u0000${id}`;
-export const sfuLegAdmitted = (world: string, id: string) => admitted.has(akey(world, id));
-export const markSfuLegAdmitted = (world: string, id: string) => { admitted.add(akey(world, id)); };
+export const sfuLegAdmitted = (world: string, id: string) => !!worlds.get(world)?.admitted.has(id);
+export const markSfuLegAdmitted = (world: string, id: string) => { sfuState(world).admitted.add(id); };
 
 export function admitSfuLeg(world: string, claims: RelayClaims, live: LiveLegState) {
   const s = sfuState(world);
@@ -252,15 +254,20 @@ function applyStandingConsent(s: SfuWorldState, newLegId: string) {
 /** Moderator/global mute — a different state than consent (amendment 3),
  *  enforced at the SOURCE so one call silences a speaker for everyone. */
 export function setSfuModeratorMute(world: string, speakerId: string, mutedFlag: boolean) {
-  const s = sfuState(world);
-  mutedFlag ? s.moderatorMuted.add(speakerId) : s.moderatorMuted.delete(speakerId);
-  s.sfu.setMuted(speakerId, mutedFlag);
+  // 🔴 ONE STORE. This kept its own `moderatorMuted` Set alongside sfu.muted,
+  // and they DIVERGED in production: revokeSfuLeg cleared one and not the other,
+  // so /relay-diag and the moderator UI showed nobody muted while fanout still
+  // gagged the speaker at ingress. The fix at the time was to clear both — which
+  // treats the symptom and leaves the shape that caused it.
+  //
+  // The SFU is the enforcement point, so the SFU owns the fact. Nothing else
+  // needs a copy; sfuDiag reads it back through diag().muted.
+  sfuState(world).sfu.setMuted(speakerId, mutedFlag);
 }
 
 /** Retirement funnel — the same one every other surface uses. */
 export function revokeSfuLeg(world: string, id: string) {
   senders.delete(id);
-  admitted.delete(akey(world, id));   // a new leg must prove its credential again
   // A leg revoked mid-negotiation must not leave its resolver behind: for up to
   // 15s sfuAcceptAnswer would otherwise feed an SDP answer into a CLOSED pc,
   // where setRemoteDescription throws into a bare .catch and the failure is
@@ -270,13 +277,12 @@ export function revokeSfuLeg(world: string, id: string) {
   const s = worlds.get(world);
   if (!s) return null;
   const leg = s.legs.get(id) ?? null;
-  s.legs.delete(id); s.consent.delete(id); s.moderatorMuted.delete(id);
+  s.legs.delete(id); s.consent.delete(id);
   s.standingConsent.delete(id);
-  // 🔴 Clear the SFU's mute too, or the two stores diverge: /relay-diag and the
-  // moderator UI read s.moderatorMuted (now empty) while fanout still checks
-  // sfu.muted (still set) and gags the speaker at ingress. Fails SAFE — silence,
-  // not leakage — but a moderator cannot tell why someone is inaudible, which
-  // is displayed-state-vs-real-state on a control surface.
+  s.admitted.delete(id);              // a new leg must prove its credential again
+  // A retired leg is not a muted one: a fresh leg with the same id must not
+  // inherit a moderation act aimed at its predecessor. (There is only ONE mute
+  // store now, so this cannot half-apply the way it used to.)
   s.sfu.setMuted(id, false);
   s.sfu.closeLeg(id);
   return leg;
@@ -302,7 +308,7 @@ export function sfuDiag(world: string) {
     // The supervisor's view belongs here too — A2 asks for voice service state
     // to be observable, and /relay-diag is where an operator looks.
     service: voiceServiceState(),
-    moderatorMuted: [...s.moderatorMuted],
+    moderatorMuted: d.muted,          // one store, read back from the enforcement point
   };
 }
 
