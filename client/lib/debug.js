@@ -18,7 +18,7 @@ import { MeshBVHHelper } from 'three-mesh-bvh';
 import { colliders } from './colliders.js';
 import { closestParams, TUNING } from './ragdoll.js';
 import { JOINT_SPECS, HAIR_TUNING, WING_TUNING } from './ammodoll.js';
-import { BLINK, WING_IDLE } from './avatar.js';
+import { BLINK, WING_IDLE, LIMP_SPRINGS } from './avatar.js';
 import { makeFrame } from './frames.js';
 
 // box = an OBB, walkable on top, solid on the sides between min.y and max.y
@@ -505,6 +505,38 @@ function buildBlinkPanel(stack) {
   stack.appendChild(rows);
 }
 
+// A limp body with no sim of its own falls back to three-vrm, whose springs
+// are tuned for standing: the droop is in the rest shape, so gravity is near
+// zero and stiffness pulls toward a direction that rotates WITH the body. On a
+// body lying on its side that reads as gravity pulling the hair sideways.
+// These two take effect on the next body to go limp.
+const LIMP_FIELDS = [
+  ['stiffness', 0, 1, 0.02],   // factor on whatever the rig declared
+  ['gravity', 0, 1.5, 0.05],   // floor, not a replacement
+];
+
+function buildLimpPanel(stack) {
+  const rows = document.createElement('div');
+  rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
+  for (const [f, lo, hi, st] of LIMP_FIELDS) {
+    const wrap = document.createElement('div');
+    wrap.className = 'row';
+    const nm = document.createElement('span');
+    nm.className = 'nm'; nm.style.width = '54px'; nm.textContent = f;
+    const sl = document.createElement('input');
+    sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = LIMP_SPRINGS[f];
+    const val = document.createElement('span');
+    val.className = 'v'; val.style.width = '44px';
+    const show = () => { val.textContent = f === 'stiffness'
+      ? `${LIMP_SPRINGS[f]}x` : String(LIMP_SPRINGS[f]); };
+    sl.oninput = () => { LIMP_SPRINGS[f] = Number(sl.value); show(); };
+    show();
+    wrap.append(nm, sl, val);
+    rows.appendChild(wrap);
+  }
+  stack.appendChild(rows);
+}
+
 function buildHairPanel(stack) {
   const defaults = { ...HAIR_TUNING };
   const rows = document.createElement('div');
@@ -740,6 +772,14 @@ export function initDebug(p = {}) {
   hhead.textContent = '— hair (live, while ragdolled) —';
   stack.appendChild(hhead);
   buildHairPanel(stack);
+
+  // limp springbones (remotes and post-dispose), live
+  const lhead = document.createElement('div');
+  lhead.className = 'row';
+  lhead.style.cssText = 'margin-top:6px;opacity:.75';
+  lhead.textContent = '— limp hair, no local sim —';
+  stack.appendChild(lhead);
+  buildLimpPanel(stack);
 
   // wings, live
   const whead = document.createElement('div');

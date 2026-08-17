@@ -558,6 +558,58 @@ console.log('\nwings:');
     check('...and ownership is released', self.__simHair === false);
   }
 
+  // A limp body with NO sim of its own must hang its hair on the world. The
+  // springs are authored for standing — gravity near zero, stiffness pulling
+  // toward a rest direction that rotates WITH the body — so on a body lying on
+  // its side the hair is pulled sideways and gravity cannot argue.
+  {
+    const { LIMP_SPRINGS } = await import('../client/lib/avatar.js');
+    const hips = { name: 'Hip' };
+    const joint: any = {
+      settings: { stiffness: 1.0, gravityPower: 0.02 }, _center: hips,
+      bone: { quaternion: new THREE.Quaternion() },
+      _initialLocalRotation: new THREE.Quaternion(),
+    };
+    let resets = 0;
+    const self: any = {
+      _limp: false, __simHair: false,
+      vrm: {
+        scene: { updateMatrixWorld() {} },
+        springBoneManager: { joints: new Set([joint]), reset() { resets++; } },
+      },
+    };
+    self._springsLimp = (Avatar.prototype as any)._springsLimp;
+    self._springsResync = (Avatar.prototype as any)._springsResync;
+    self._springsLimp(false);
+    check('a standing body keeps the rig\'s own spring settings',
+      joint.settings.stiffness === 1.0 && joint.settings.gravityPower === 0.02);
+    self._springsLimp(true);
+    check('a limp body with no sim lets gravity win',
+      joint.settings.gravityPower >= LIMP_SPRINGS.gravity
+      && joint.settings.stiffness < 1.0,
+      `stiffness ${joint.settings.stiffness}, gravity ${joint.settings.gravityPower}`);
+    check('...and gravity is a FLOOR, not a replacement',
+      joint.settings.gravityPower === Math.max(0.02, LIMP_SPRINGS.gravity));
+    self._springsLimp(false);
+    check('...restored exactly on standing, so nothing accumulates',
+      joint.settings.stiffness === 1.0 && joint.settings.gravityPower === 0.02);
+    // the CENTER is why a carried body's hair rotates rigidly with it: the tail
+    // state lives in hip space, so turning the body is invisible to the springs
+    self._springsLimp(true);
+    check('a limp body simulates its hair in the WORLD, not in its hips',
+      joint._center === null);
+    check('...re-deriving the tails, which lived in the frame just changed',
+      resets > 0);
+    self._springsLimp(false);
+    check('...and the hips center comes back on standing',
+      joint._center === hips);
+    // and it must be idempotent — update() calls it every frame
+    for (let i = 0; i < 5; i++) self._springsLimp(true);
+    check('...and repeated calls do not compound the factor',
+      Math.abs(joint.settings.stiffness - 1.0 * LIMP_SPRINGS.stiffness) < 1e-9,
+      `stiffness ${joint.settings.stiffness}`);
+  }
+
   // Letting go of a DRAGGED body disposes its doll mid-tumble. Adopting the
   // fallen shape hands the hair back live; not handing it back at all left it
   // owned by a sim that no longer existed and frozen in mid-air — seen on a

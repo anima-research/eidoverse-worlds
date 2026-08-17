@@ -100,6 +100,15 @@ export const WING_IDLE = {
                     // diagonal line, just a tilted hinge.
 };
 
+/** What a limp body's springbones become, when no sim of its own is running.
+ *  Live: the debug panel dials these, and they take effect on the next body to
+ *  go limp. stiffness is a FACTOR on whatever the rig declared; gravity is a
+ *  floor, so a chain that already falls harder keeps its own value. */
+export const LIMP_SPRINGS = {
+  stiffness: 0.2,   // give way — the rest shape was authored for standing up
+  gravity: 0.45,    // ...and let the world win instead
+};
+
 const CORE_CLIPS = ['idle', 'walk'];
 const LATER_CLIPS = CLIP_SLOTS.filter((s) => !CORE_CLIPS.includes(s));
 // Until a clip arrives, the nearest thing that HAS arrived stands in. Silently
@@ -377,6 +386,88 @@ export class Avatar {
     }
     sbm.reset();                 // re-derives tails; the rotation restore is a no-op
     if (!adopt) this._combHair();
+  }
+
+  /** Springbone settings for a body that is LIMP and has no sim of its own.
+   *
+   *  three-vrm's springbones are tuned for a body that is standing up: the
+   *  droop is modelled into the rest shape, so gravityPower is near zero
+   *  (0.01-0.03) while stiffness is 0.35-1.3. Stiffness pulls each joint toward
+   *  its rest DIRECTION, and that direction rotates with the body — so on a
+   *  body lying on its side the hair is pulled sideways and world gravity is
+   *  far too weak to argue. That is "the direction of gravity pulling the hair
+   *  seems wrong", and it is not a bug in the springbones; it is a rest shape
+   *  being applied in a pose it was never authored for.
+   *
+   *  A body that cannot hold its own head up cannot hold its hair up either.
+   *  While limp and unowned, stiffness gives way and gravity takes over. The
+   *  originals are restored on standing, so nothing accumulates.
+   *
+   *  This runs only where NO local sim owns the dressing — remotes, and the
+   *  gap after a doll disposes. Where Bullet runs it already uses real world
+   *  gravity and none of this applies.
+   */
+  _springsLimp(on) {
+    const sbm = this.vrm?.springBoneManager;
+    if (!sbm?.joints || this.__springsLimp === on) return;
+    this.__springsLimp = on;
+    if (!this.__springSettings) {
+      this.__springSettings = new Map();
+      for (const j of sbm.joints) {
+        if (j?.settings) {
+          this.__springSettings.set(j, {
+            s: j.settings.stiffness, g: j.settings.gravityPower, center: j._center ?? null,
+          });
+        }
+      }
+    }
+    for (const j of sbm.joints) {
+      const o = this.__springSettings.get(j);
+      if (!o) continue;
+      j.settings.stiffness = on ? o.s * LIMP_SPRINGS.stiffness : o.s;
+      j.settings.gravityPower = on ? Math.max(o.g, LIMP_SPRINGS.gravity) : o.g;
+      // ...AND THE HAIR LIVES IN THE WORLD, not in the hips.
+      //
+      // `center` is why hair does not sweep back when you walk: the tail state
+      // is stored in the hips' frame, so pure locomotion moves hair and body
+      // together and the springs never see it. Exactly the same property is
+      // wrong for a body being carried: rotate it and the hair rotates
+      // RIGIDLY with it, because in hip space nothing happened. That is
+      // Janus's "drag it in one orientation and then the orientation changes",
+      // and "when it falls the hair stays in the direction it was falling
+      // before" — the hair is not lagging, it is being carried.
+      //
+      // A limp body is not walking, so the center has nothing left to protect.
+      // Dropped, the tails live in world space, gravity is world gravity, and
+      // swinging the body makes the hair trail the way it should.
+      if (on) j._center = null;
+      else if (o.center !== undefined) j._center = o.center;
+    }
+    // The tails were stored in the frame we just changed; re-derive them from
+    // the pose the hair is in, or the first frame after the switch reads old
+    // center-space numbers as world-space ones and flings it.
+    this._springsResync();
+  }
+
+  /** Re-derive spring tail state from the CURRENT pose, keeping that pose.
+   *
+   *  reset() alone would restore each joint's _initialLocalRotation (the combed
+   *  shape) — a visible snap. Pointing that rest at the pose the hair is
+   *  already in makes the restore a no-op while the tails re-derive, and then
+   *  the real rest goes back so the springs still pull toward the authored
+   *  shape afterwards. Needed anywhere the frame those tails live in changes. */
+  _springsResync() {
+    const sbm = this.vrm?.springBoneManager;
+    if (!sbm?.joints) return;
+    this.vrm.scene?.updateMatrixWorld?.(true);
+    const saved = [];
+    for (const j of sbm.joints) {
+      if (!j?._initialLocalRotation || !j.bone) continue;
+      saved.push([j, j._initialLocalRotation.clone()]);
+      j._initialLocalRotation.copy(j.bone.quaternion);
+    }
+    sbm.reset();
+    for (const [j, q] of saved) j._initialLocalRotation.copy(q);
   }
 
   /** Put the AUTHORED spring rest back, so the hair combs itself out again.
@@ -1205,6 +1296,9 @@ export class Avatar {
     // swap, a dragger taking over) would otherwise leave the hair suppressed
     // and frozen for good.
     if (this.__simHair && !this._limp) { this._releaseHair(); this._combHair(); }
+    // A limp body with no sim of its own hangs its hair on the world, not on
+    // its own rest shape (see _springsLimp).
+    this._springsLimp(this._limp && !this.__simHair);
     const sbm = this.__simHair ? this.vrm.springBoneManager : null;
     if (sbm) this.vrm.springBoneManager = null;
     this.vrm.update(dt);
