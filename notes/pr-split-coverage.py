@@ -40,7 +40,7 @@ GROUPS = {
         "tools/relay-decision-test.ts", "tools/relay-e2e-test.ts",
         "tools/mini-sfu-test.mjs", "tools/probe-consent.ts",
         "tools/probe-live.ts", "tools/probe-ws.ts",
-        "notes/SFU-SPEC.md", "notes/SFU-HANDOFF.md",
+        "notes/SFU-SPEC.md", "notes/SFU-HANDOFF.md", "notes/CUTOVER-ARTIFACTS.md",
     ],
     "B.SFU-wiring": [
         "server/server.ts", "client/lib/voicesfu.js", "client/lib/voicesfubridge.js",
