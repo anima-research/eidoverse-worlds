@@ -1099,7 +1099,9 @@ const server = Bun.serve({
           // someone by withholding"), which is true and answers the wrong threat:
           // the risk is FORGING another identity's data, not omitting your own.
           if (c.spectator || (c.surface ?? "world") !== "world") return;
-          sfuAcceptIce(c.world.name, c.id, msg.candidate);
+          // gen required end-to-end (#130 item 4) — the adapter refuses
+          // missing or stale generations, mirroring sfu-answer.
+          sfuAcceptIce(c.world.name, c.id, msg.candidate, typeof msg.gen === "number" ? msg.gen : undefined);
           return;
         }
         case "sfu-pos": {

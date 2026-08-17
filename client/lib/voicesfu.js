@@ -158,7 +158,10 @@ export async function sfuConnect(credential, send) {
   pc.onicecandidate = (e) => {
     if (!e.candidate) return;
     if (e.candidate.type && e.candidate.type !== 'host') _sawNonHostCandidate = true;
-    send({ type: 'sfu-ice', candidate: e.candidate });
+    // 🔴 ICE names its generation, exactly as the answer does (#130 item 4):
+    // the server refuses a candidate that cannot prove which leg it belongs
+    // to, so a stale predecessor tab cannot trickle into its successor's pc.
+    send({ type: 'sfu-ice', candidate: e.candidate, gen: cred?.mediaGen });
   };
 
   // 🔴 A CONNECTION THAT NEVER CONNECTS MUST SAY SO (R, 2026-08-16, from a real
