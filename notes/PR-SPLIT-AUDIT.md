@@ -1,5 +1,44 @@
 # relay-spike → PRs: the complete audit
 
+## ✅ CURRENT STATE (2026-08-16 ~22:30, Fable) — the stack is CUT and branch-verified
+
+Every branch below was verified by CHECKING OUT THE BRANCH in a scratch
+worktree (`/tmp/split`, symlinked node_modules ×3: root, client/, mcpl/) and
+running its suites there — not by simulation, not by assertion.
+
+| PR | branch | head | contents | receipts on the branch |
+|---|---|---|---|---|
+| 0 | `pr0-isolation-headers` | fa11e0c | COOP/COEP hunk of routes.ts + conjure.js | isolation-headers 9 |
+| 1 | `pr1-door` | 5eb06e1 | mcpl/{agent,net-server,mention}.ts + 3 tests | 78 (whitelist 26 · mention 36 · cap-gate 16) |
+| 2 | `pr2-sfu-engine` | 08d2c22 | sfu/sfuguard/sfuadapter/relaydecision/**transport/sfusupervisor** + tests + SFU-SPEC | 105 (57+25+23); upstream server.ts still builds untouched |
+| 3 | `pr3-mic-foundation` | 0bda374 | micstate.js + micgate.js + exec-test + **boot-check.mjs** | exec 10/10 |
+| 4 | `pr4-panel-tts` (stacked on 3) | 368c644 | audiopanel · ttslist(⇐voicelist rename) · ttsrow · tts · tts-chunk · engine-piper · voiceconsent · voicesource · stt · mictoggle + 15 tests/probes | 8/8 PASS node-side; meter 6/6 + boot-check on live staging |
+| 5 | *(uncut — the wiring/cutover)* | — | server.ts, voicesfu(bridge).js, voicemouths, main.js, net.js hunk, audiounlock, mesh deletion, deps, J diagnostics, remaining smokes | 🔴 amendment 6 gate: removal/retention list, spoken:true migration, reload seam, rollback plan, operator approval |
+
+Boundary corrections made while verifying (each the result of a real failure):
+- **transport.ts + sfusupervisor.ts moved B→A**: they import only node builtins
+  + relaydecision — the engine is a closed cluster; the wiring PR shrank.
+- **sfu-ops-test stays in B**: it reads server.ts AND voicesfu.js — it is a
+  wiring test and fails by ENOENT anywhere else.
+- **H (net.js) folded into B**: the delta is +24 lines of pure SFU message
+  routing; inert without the engine, meaningless before it.
+- **J (diagnostics) verified independent**: every SFU read is
+  `typeof window.X === 'function'`-guarded; degrades to null upstream.
+
+🔴 Found DURING the split, on live staging (fixed, commits c76a369/b91ec7b):
+the mesh-deletion commit left an orphaned `}` in main.js — **the browser
+client was DEAD from 16:33 to ~21:45 while the entire node-side suite stayed
+green.** Then the first fix introduced a second link-time breaker (flashHint
+imported from the wrong module) that the exec test could not see because its
+own STUB carried the same wrong export. `tools/boot-check.mjs` now loads the
+real module graph in a real browser and owns the "does it boot at all"
+question; run it after ANY client-touching change.
+
+Suggested merge order: 0 → 1 → 2 → 3 → 4 (0–4 in any order, all independent
+except 4-on-3), then 5 after browser testing with R + the amendment-6
+artifacts.
+
+
 *2026-08-16. Written because we have LOST WORK from staging before by
 splitting from memory instead of from the diff. Every claim here is
 mechanically derived; the commands are included so it can be re-run.*
