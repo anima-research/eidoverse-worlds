@@ -25,9 +25,17 @@ BASE = subprocess.run(["git", "merge-base", "upstream/main", HEAD],
                       capture_output=True, text=True).stdout.strip() or "upstream/main"
 
 GROUPS = {
+    # ═══ Branches exist for A/C/G and the mic/panel pair (2026-08-16 pm):
+    #   pr0-isolation-headers=G · pr1-door=C · pr2-sfu-engine=A ·
+    #   pr3-mic-foundation=micstate+micgate · pr4-panel-tts=E+F+mictoggle+stt.
+    # Each verified by building + running its suites on a clean upstream
+    # checkout (/tmp/split worktree), never by assertion. B is the wiring/
+    # cutover PR and carries H's net.js hunk (pure SFU routing) and the mesh
+    # deletion — amendment 6 artifacts required before it ships.
     "A.SFU-core": [
         "server/sfu.ts", "server/sfuadapter.ts", "server/sfuguard.ts",
-        "server/relayadapter.ts", "server/relaydecision.ts",
+        "server/relaydecision.ts",
+        "server/transport.ts", "server/sfusupervisor.ts",
         "tools/sfu-test.ts", "tools/sfu-adapter-test.ts", "tools/sfu-load.ts",
         "tools/relay-decision-test.ts", "tools/relay-e2e-test.ts",
         "tools/mini-sfu-test.mjs", "tools/probe-consent.ts",
@@ -36,7 +44,7 @@ GROUPS = {
     ],
     "B.SFU-wiring": [
         "server/server.ts", "client/lib/voicesfu.js", "client/lib/voicesfubridge.js",
-        "client/lib/voicerelay.js", "client/main.js", "client/lib/voice.js",
+        "client/main.js", "client/lib/voice.js",
         "client/lib/voicemouths.js", "tools/sfu-browser-smoke.mjs",
         "tools/relay-browser-smoke.mjs", "tools/sfu-two-publishers.mjs",
         "tools/sfu-reconnect-mic.mjs", "tools/sfu-mic-race.mjs",
@@ -52,13 +60,9 @@ GROUPS = {
         "tools/synth-hook-broadcast-test.mjs",
         "tools/mic-resume-after-synth-test.mjs",
         # the cutover: one transport, and the ops gaps closed (2026-08-16 pm)
-        "server/transport.ts",            # voiceTransport + durable incarnation
-        "server/sfusupervisor.ts",        # A2 voice-service state
-        "client/lib/micstate.js",         # the transport-neutral mic half
         "tools/sfu-ops-test.mjs",
         "tools/sfu-verb-gate-test.mjs",
         "tools/mic-gate-wired-test.mjs",
-        "tools/micstate-exec-test.mjs",
         "tools/sfu-loss-test.mjs",
         "tools/sfu-no-duplicate-playback-test.mjs",
         "mcpl/mention.ts",                 # door: shared, escaped mention pattern
@@ -72,7 +76,9 @@ GROUPS = {
         "tools/audiopanel-css-probe.html",
     ],
     "C.door": ["mcpl/agent.ts", "mcpl/net-server.ts"],
-    "D.mic-HUD": [
+    "D.mic-foundation": [   # = pr3 + pr4's HUD halves
+        "client/lib/micstate.js", "tools/micstate-exec-test.mjs",
+        "tools/boot-check.mjs",
         "client/lib/mictoggle.js", "client/lib/micgate.js", "client/lib/stt.js",
         "tools/hud-mic-truth.mjs", "tools/mic-button-probe.mjs",
         "tools/mic-glyph-probe.mjs", "tools/mic-meter-states.mjs",
@@ -109,7 +115,7 @@ GROUPS = {
     "H.join": ["client/lib/net.js", "tools/join-check.mjs",
                "tools/join-negative-control.mjs", "tools/join-probe.mjs",
                "tools/voice-wiring-test.ts"],
-    "I.deps": ["bun.lock", "client/bun.lock", "package.json",
+    "I.deps": ["bun.lock", "package.json",
                "client/package.json", "client/index.html"],
 }
 
