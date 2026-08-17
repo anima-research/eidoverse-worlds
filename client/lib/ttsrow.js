@@ -507,7 +507,7 @@ export function ttsSection(host, onPaint = () => {}) {
       // the END), snapping the box back to unchecked mid-load and popping it
       // on at completion. The intent is registered the moment they click;
       // the box says so immediately and the fade says "working on it".
-      const loadingNow = (!!_loadingId || _tickPending) && _wantSpeech;
+      const loadingNow = (!!_loadingId || _tickPending) && (_wantSpeech || !_tickPending);
       box.checked = isTtsEnabled() || loadingNow;
       box.style.opacity = loadingNow && !isTtsEnabled() ? '.45' : '';
       note.textContent = headNote();
@@ -611,7 +611,7 @@ function headDimmed() {
     // checked from isTtsEnabled() alone, snapping the box blank mid-load on
     // every path that runs through here. Two copies of one truth is the whole
     // disease; until they merge, they must at least agree.
-    const wantChecked = isTtsEnabled() || ((!!_loadingId || _tickPending) && _wantSpeech);
+    const wantChecked = isTtsEnabled() || ((!!_loadingId || _tickPending) && (_wantSpeech || !_tickPending));
     if (box.checked !== wantChecked) box.checked = wantChecked;
     box.style.opacity = wantChecked && !isTtsEnabled() ? '.45' : '';
     note.textContent = headNote();
@@ -670,8 +670,8 @@ function headDimmed() {
       // selects WHICH VOICE; that one sets how loud it is.
       `<label class="nm" style="opacity:${headDimmed() ? '.45' : '1'}">text-to-speech model</label>` +
       `<span class="ctl">` +
-      `<input type="checkbox" ${isTtsEnabled() || ((_loadingId || _tickPending) && _wantSpeech) ? 'checked' : ''} `
-        + `${(_loadingId || _tickPending) && _wantSpeech && !isTtsEnabled() ? 'style="opacity:.45" ' : ''}` +
+      `<input type="checkbox" ${isTtsEnabled() || ((_loadingId || _tickPending) && (_wantSpeech || !_tickPending)) ? 'checked' : ''} `
+        + `${(_loadingId || _tickPending) && (_wantSpeech || !_tickPending) && !isTtsEnabled() ? 'style="opacity:.45" ' : ''}` +
         // 🔴 NOT `disabled` WHEN THERE IS NO VOICE (R, 2026-08-09: "there's no
         // warning to load a model if you try to checkbox text-to-speech, it just
         // fails silently"). A disabled checkbox fires NO change event, so the

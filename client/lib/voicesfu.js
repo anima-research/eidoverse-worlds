@@ -270,6 +270,7 @@ export async function sfuOnOffer(sdp, send) {
     if (floor) {
       why('publish', 'post-offer rescue: outbound track was stranded — moving to the floor');
       await floor.sender.replaceTrack(outTrack);
+      if (myPc !== pc) return;          // superseded mid-rescue — not our negotiation to ask for
       floor.direction = 'sendonly';
       bus.emit('sfu-want-negotiate', {});
     }
@@ -392,7 +393,8 @@ export async function sfuMic(on = true) {
     if (micStream && !micStream.synthetic) micStream.getTracks().forEach((t) => (t.enabled = true));
     return;
   }
-  if (micPending) { try { await micPending; } catch { /* the old one's problem */ } }
+  // A stale pending is sfuPublish's problem now — its entry loop re-checks
+  // after every await (round-4: two waiters resuming past taken checks).
   return sfuPublish();
 }
 
@@ -401,8 +403,16 @@ export async function sfuMic(on = true) {
  *  rather than carrying a second copy of the transceiver logic below. */
 async function sfuPublish() {
   if (!pc) return;
-  if (micPending && micPendingPc === pc) return micPending;
-  if (micPending) { try { await micPending; } catch { /* superseded */ } }
+  // 🔴 RE-CHECK AFTER EVERY STALE AWAIT (round-4 review): two callers parked
+  // on the same stale pending both resumed past their checks and minted TWO
+  // concurrent acquisitions — the exact two-senders/mic-light-stays-on bug
+  // the promise guard exists to prevent, reintroduced by the guard's own
+  // stale-handling. The loop makes each waiter re-inspect the world it woke
+  // into: a fresh same-pc pending is joined, a stale one is awaited again.
+  while (micPending) {
+    if (micPendingPc === pc) return micPending;
+    try { await micPending; } catch { /* the old one's problem */ }
+  }
   // Snapshot for the same reason as sfuOnOffer: getUserMedia can take seconds
   // (a permission prompt), and a reconnect in that window swaps pc — the
   // acquired track must not be planted on a connection from another session.
@@ -539,13 +549,21 @@ async function sfuPublish() {
   // would take an unhandled rejection into a bus handler. Clear the intent so
   // the state stays honest — sfuMicOn() is `!!micStream && wantMic`, so leaving
   // wantMic true after a denial would be a claim we did not earn.
+  const own = micPending;
   try {
-    await micPending;
+    await own;
   } catch (e) {
-    wantMic = false;
+    // Only OUR intent may be cleared: a superseded invocation's rejection was
+    // running `wantMic = false` AFTER a fresh sfuMic(true) had set it — the
+    // user's new press silently downgraded to nothing (round-4 review).
+    if (myPc === pc) wantMic = false;
     console.warn('[sfu] mic not granted:', e?.name || e);
     return;
-  } finally { micPending = null; }
+  } finally {
+    // CAS, not blind null: a successor may have registered its own pending
+    // while we settled — clobbering it made a THIRD acquisition possible.
+    if (micPending === own) micPending = null;
+  }
   // Adding a track makes US want to renegotiate — but the server offers, so we
   // ASK it to, rather than offering ourselves and causing glare.
   bus.emit('sfu-want-negotiate', {});
