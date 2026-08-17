@@ -17,8 +17,8 @@ import { THREE, scene } from './core.js';
 import { MeshBVHHelper } from 'three-mesh-bvh';
 import { colliders } from './colliders.js';
 import { closestParams, TUNING } from './ragdoll.js';
-import { JOINT_SPECS, HAIR_TUNING } from './ammodoll.js';
-import { BLINK } from './avatar.js';
+import { JOINT_SPECS, HAIR_TUNING, WING_TUNING } from './ammodoll.js';
+import { BLINK, WING_IDLE, LIMP_SPRINGS } from './avatar.js';
 import { makeFrame } from './frames.js';
 
 // box = an OBB, walkable on top, solid on the sides between min.y and max.y
@@ -468,8 +468,11 @@ const BLINK_FIELDS = [
 
 const HAIR_FIELDS = [
   ['mass', 0.001, 0.05, 0.001],
-  ['tension', 0, 40, 0.5],
-  ['damping', 0, 1, 0.02],
+  // 0-40 put the whole interesting range (see WING/HAIR_TUNING: 3 to 20 covers
+  // barely-moving to lively) inside the first eighth of the track. These now
+  // resolve where the hair actually responds.
+  ['tension', 0, 24, 0.25],
+  ['damping', 0, 0.6, 0.01],
   ['gravity', 0, 1.5, 0.05],
   ['limit', 0, 90, 1],
   ['rootExp', 0.2, 3, 0.1],
@@ -495,6 +498,38 @@ function buildBlinkPanel(stack) {
             : f === 'axis' ? ['x', 'y', 'z'][BLINK[f]] ?? '?' : `${BLINK[f]}x`;
     };
     sl.oninput = () => { BLINK[f] = Number(sl.value); show(); };
+    show();
+    wrap.append(nm, sl, val);
+    rows.appendChild(wrap);
+  }
+  stack.appendChild(rows);
+}
+
+// A limp body with no sim of its own falls back to three-vrm, whose springs
+// are tuned for standing: the droop is in the rest shape, so gravity is near
+// zero and stiffness pulls toward a direction that rotates WITH the body. On a
+// body lying on its side that reads as gravity pulling the hair sideways.
+// These two take effect on the next body to go limp.
+const LIMP_FIELDS = [
+  ['stiffness', 0, 1, 0.02],   // factor on whatever the rig declared
+  ['gravity', 0, 1.5, 0.05],   // floor, not a replacement
+];
+
+function buildLimpPanel(stack) {
+  const rows = document.createElement('div');
+  rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
+  for (const [f, lo, hi, st] of LIMP_FIELDS) {
+    const wrap = document.createElement('div');
+    wrap.className = 'row';
+    const nm = document.createElement('span');
+    nm.className = 'nm'; nm.style.width = '54px'; nm.textContent = f;
+    const sl = document.createElement('input');
+    sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = LIMP_SPRINGS[f];
+    const val = document.createElement('span');
+    val.className = 'v'; val.style.width = '44px';
+    const show = () => { val.textContent = f === 'stiffness'
+      ? `${LIMP_SPRINGS[f]}x` : String(LIMP_SPRINGS[f]); };
+    sl.oninput = () => { LIMP_SPRINGS[f] = Number(sl.value); show(); };
     show();
     wrap.append(nm, sl, val);
     rows.appendChild(wrap);
@@ -548,6 +583,100 @@ function buildHairPanel(stack) {
   };
   btns.append(b1, b2);
   stack.append(rows, btns);
+}
+
+// ---- wings ------------------------------------------------------------------
+// Two tables, because a wing has two lives. WING_IDLE is the flap, read fresh
+// every frame by avatar.js, so its sliders bite instantly on a standing body.
+// WING_TUNING is the ragdoll's, and needs retuneWings() to reach constraints
+// that already exist — which only has anything to retune while a body is
+// actually limp. Drop her first, then reach for the lower half of this panel.
+const WING_IDLE_FIELDS = [
+  ['deg', 0, 60, 1],        // half-amplitude at the shoulder
+  ['hz', 0, 3, 0.02],       // flaps per second
+  ['bias', -40, 40, 1],     // permanent lift, degrees
+  ['tip', 0, 1.5, 0.05],    // outer segment's share
+  ['lag', 0, 0.5, 0.01],    // cycles the tip trails the root
+  ['sweep', 0, 40, 1],      // fore/aft travel — 0 pins the tips to the frontal
+                            // plane, which is the hinge look it exists to fix
+  ['sweepPhase', 0, 0.5, 0.01],  // 0.25 opens the path into an ellipse; 0 or
+                                 // 0.5 collapses it back to a tilted line
+  ['recover', 0.05, 2, 0.05],
+];
+const WING_SIM_FIELDS = [
+  ['mass', 0.02, 3, 0.01],
+  ['tension', 0, 400, 5],
+  ['damping', 0, 1, 0.02],
+  ['gravity', 0, 2, 0.05],
+  ['limit', 0, 90, 1],
+  ['rootExp', 0.2, 3, 0.1],
+];
+
+function buildWingPanel(stack) {
+  const idleDefaults = { ...WING_IDLE };
+  const simDefaults = { ...WING_TUNING };
+  const apply = () => {
+    const rd = providers.ragdoll?.();
+    if (rd?.retuneWings) rd.retuneWings();
+  };
+  const table = (fields, obj, live, fmt) => {
+    const rows = document.createElement('div');
+    rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
+    const mk = () => {
+      rows.textContent = '';
+      for (const [f, lo, hi, st] of fields) {
+        const wrap = document.createElement('div');
+        wrap.className = 'row';
+        const nm = document.createElement('span');
+        nm.className = 'nm'; nm.style.width = '54px'; nm.textContent = f;
+        const sl = document.createElement('input');
+        sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = obj[f];
+        const val = document.createElement('span');
+        val.className = 'v'; val.style.width = '44px';
+        const show = () => { val.textContent = fmt(f); };
+        sl.oninput = () => { obj[f] = Number(sl.value); show(); if (live) apply(); };
+        show();
+        wrap.append(nm, sl, val);
+        rows.appendChild(wrap);
+      }
+    };
+    mk();
+    return { rows, mk };
+  };
+  const idle = table(WING_IDLE_FIELDS, WING_IDLE, false, (f) => (
+    f === 'deg' || f === 'bias' || f === 'sweep' ? `${WING_IDLE[f]}°`
+      : f === 'hz' ? `${WING_IDLE[f]}Hz`
+        : f === 'recover' ? `${(WING_IDLE[f] * 1000).toFixed(0)}ms`
+          : String(WING_IDLE[f])));
+  const sim = table(WING_SIM_FIELDS, WING_TUNING, true, (f) => (
+    f === 'mass' ? `${(WING_TUNING[f] * 1000).toFixed(0)}g`
+      : f === 'limit' ? `${WING_TUNING[f]}°` : String(WING_TUNING[f])));
+  const sub = (text) => {
+    const h = document.createElement('div');
+    h.className = 'nm'; h.style.cssText = 'opacity:0.6;margin-top:4px';
+    h.textContent = text;
+    return h;
+  };
+  const btns = document.createElement('div');
+  btns.className = 'row';
+  const b1 = document.createElement('button');
+  b1.textContent = 'reset wings';
+  b1.onclick = () => {
+    Object.assign(WING_IDLE, idleDefaults);
+    Object.assign(WING_TUNING, simDefaults);
+    idle.mk(); sim.mk(); apply();
+  };
+  const b2 = document.createElement('button');
+  b2.textContent = 'copy wings';
+  b2.onclick = async () => {
+    const one = (name, o) => `export const ${name} = {\n`
+      + Object.entries(o).map(([k, v]) => `  ${k}: ${v},`).join('\n') + '\n};';
+    const out = `${one('WING_IDLE', WING_IDLE)}\n\n${one('WING_TUNING', WING_TUNING)}`;
+    try { await navigator.clipboard.writeText(out); toastLike('wing tuning copied'); }
+    catch { console.log(out); toastLike('wing tuning logged'); }
+  };
+  btns.append(b1, b2);
+  stack.append(sub('flap (live)'), idle.rows, sub('limp (needs a ragdoll)'), sim.rows, btns);
 }
 
 // the panel has no toast of its own; keep the dependency to one line
@@ -643,6 +772,22 @@ export function initDebug(p = {}) {
   hhead.textContent = '— hair (live, while ragdolled) —';
   stack.appendChild(hhead);
   buildHairPanel(stack);
+
+  // limp springbones (remotes and post-dispose), live
+  const lhead = document.createElement('div');
+  lhead.className = 'row';
+  lhead.style.cssText = 'margin-top:6px;opacity:.75';
+  lhead.textContent = '— limp hair, no local sim —';
+  stack.appendChild(lhead);
+  buildLimpPanel(stack);
+
+  // wings, live
+  const whead = document.createElement('div');
+  whead.className = 'row';
+  whead.style.cssText = 'margin-top:6px;opacity:.75';
+  whead.textContent = '— wings —';
+  stack.appendChild(whead);
+  buildWingPanel(stack);
 
   // joint limits, live
   const jhead = document.createElement('div');

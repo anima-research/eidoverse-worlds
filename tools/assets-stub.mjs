@@ -10,3 +10,8 @@ export const vrmaBytes = async () => null;
 export const vrmaShaLoaded = () => null;   // #101: no clip bytes in the stub world — seats read declared-approximate
 export const loadTrack = async () => null;
 export const loadDone = () => true;
+// Added when avatar.js grew a VRM warm/release path; without them the suite
+// cannot import at all (see loadwork-stub for the same lesson).
+export const releaseVRM = () => {};
+export const vrmWarmed = () => true;
+export const markVrmWarmed = () => {};
