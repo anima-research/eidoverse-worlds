@@ -43,9 +43,47 @@ const out = await pg.evaluate(async (offerSdp) => {
   a = await pc.createAnswer(); await pc.setLocalDescription(a);
   r.second = (a.sdp.match(/a=(sendonly|recvonly|sendrecv|inactive)/g)||[]).join(',');
   r.trx = pc.getTransceivers().map(t=>`${t.direction}${t.sender?.track?'+track':''}`).join(',');
+
+  // ── STAGE 3: SWAP THE SOURCE ON AN ALREADY-PUBLISHED PC (R's TTS bug,
+  // 2026-08-16: "can hear locally but not at the endpoint… toggling mic back
+  // on = silence"). The floor is now sendonly, so a hunt that only knows
+  // 'inactive' falls through to addTrack — and the server offers, ALWAYS: an
+  // answer cannot add an m-line, so the new sender lives locally, plays into
+  // the monitor, and never enters the SDP. Every later swap repeats it.
+  const ctx = new AudioContext();
+  const dest = ctx.createMediaStreamDestination();       // a synthetic "TTS" track
+  const synthTrack = dest.stream.getAudioTracks()[0];
+  // the OLD hunt, verbatim — proves the failure shape:
+  {
+    const floor = pc.getTransceivers().find(t => t.currentDirection === 'inactive' || t.direction === 'inactive');
+    if (floor) { await floor.sender.replaceTrack(synthTrack); floor.direction = 'sendonly'; }
+    else { pc.addTrack(synthTrack, dest.stream); }
+  }
+  // What actually happens (measured, not the orphan I predicted): addTrack
+  // HIJACKS a recvonly route transceiver — its sender slot is empty, so it is
+  // "compatible" — and the answer for that m-line can only ever say recvonly
+  // (the server offered it sendonly, their side). The synth track sits on a
+  // sender that will never transmit. Same silence, same mis-pick class as the
+  // original 2026-08-15 addTrack bug, resurrected on the swap path.
+  r.oldHuntTrx = pc.getTransceivers().length;
+  r.oldHuntPutSynthOnRecvRoute = pc.getTransceivers()
+    .some(t => t.sender?.track === synthTrack && t.direction !== 'sendonly');
+  r.oldHuntOwnedSenderHasSynth = pc.getTransceivers()
+    .some(t => t.direction === 'sendonly' && t.sender?.track === synthTrack);
+  // the FIXED hunt: the sender we already own wins — replaceTrack, same m-line
+  {
+    const mine = pc.getTransceivers().find(t => t.direction === 'sendonly' && t.sender);
+    if (mine) await mine.sender.replaceTrack(synthTrack);
+  }
+  r.ownedSenderCarriesSynth = pc.getTransceivers()
+    .some(t => t.direction === 'sendonly' && t.sender?.track === synthTrack);
   return r;
 }, server.localDescription.sdp);
 console.log('  FIRST answer (no mic yet):', out.first);
 console.log('  SECOND answer (mic added):', out.second, '| transceivers:', out.trx);
 console.log(out.second.includes('sendonly') ? '  ✅ revives' : '  ❌ STAYS DEAD — a rejected m-line cannot be revived');
-await b.close(); process.exit(0);
+const reproduced = out.oldHuntPutSynthOnRecvRoute && !out.oldHuntOwnedSenderHasSynth;
+console.log(`  STAGE 3 — old hunt hijacks a recv route: ${reproduced ? `✅ reproduced (synth on a non-sendonly sender, ${out.oldHuntTrx} trx)` : '❌ not reproduced'}`);
+console.log(`  STAGE 3 — fixed hunt swaps in place:     ${out.ownedSenderCarriesSynth ? '✅ owned sendonly sender carries the synth track' : '❌'}`);
+await b.close();
+process.exit(reproduced && out.ownedSenderCarriesSynth ? 0 : 1);

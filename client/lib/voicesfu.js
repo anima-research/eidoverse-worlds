@@ -396,15 +396,35 @@ async function sfuPublish() {
     // floor is the one sitting inactive (nothing has ever been sent on it).
     // Verified in isolation: a=recvonly,a=recvonly,a=sendonly.
     const track = s.getTracks()[0];
-    const floor = pc.getTransceivers().find(
-      (t) => t.currentDirection === 'inactive' || t.direction === 'inactive');
-    if (floor) {
-      await floor.sender.replaceTrack(track);
-      floor.direction = 'sendonly';
+    // 🔴 THE SENDER WE ALREADY OWN WINS (R, phone test 2026-08-16: "TTS —
+    // can hear locally but not at the endpoint, and toggling mic back on =
+    // silence forever"). After the FIRST publish the floor is sendonly, so a
+    // hunt that only knows 'inactive' fell through to addTrack — which
+    // HIJACKS a recvonly route transceiver (its sender slot is empty, so it
+    // is "compatible"), and the answer for that m-line can only ever say
+    // recvonly: the swapped source plays into the local monitor and never
+    // enters the SDP. Every later swap repeats it — mic→TTS→mic each landed
+    // on a sender that cannot transmit, which read as "activating TTS
+    // destroys the pair forever". Reproduced and both halves proven in
+    // tools/mini-sfu-test.mjs stage 3.
+    //
+    // Order: the sendonly sender we already own (a SWAP — replaceTrack on the
+    // same m-line, no renegotiation at all) → the inactive floor (first
+    // publish) → bare addTrack only when neither exists (solo, pre-offer).
+    const mine = pc.getTransceivers().find((t) => t.direction === 'sendonly' && t.sender);
+    if (mine) {
+      await mine.sender.replaceTrack(track);
     } else {
-      // No floor offered yet (we are the only one here, or the mic beat the
-      // first offer). addTrack is correct then: there are no routes to mis-pick.
-      for (const t of s.getTracks()) pc.addTrack(t, s);
+      const floor = pc.getTransceivers().find(
+        (t) => t.currentDirection === 'inactive' || t.direction === 'inactive');
+      if (floor) {
+        await floor.sender.replaceTrack(track);
+        floor.direction = 'sendonly';
+      } else {
+        // No floor offered yet (we are the only one here, or the mic beat the
+        // first offer). addTrack is correct then: there are no routes to mis-pick.
+        for (const t of s.getTracks()) pc.addTrack(t, s);
+      }
     }
   })();
   // A DENIED permission prompt is a normal answer, not a crash. getUserMedia
