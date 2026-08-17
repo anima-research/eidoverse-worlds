@@ -19,7 +19,12 @@
 // Nothing here knows about peers, SDP or transports. A transport calls
 // gateFor(rawStream) and publishes what it gets back.
 
-import { bus, flashHint } from './core.js';
+// 🔴 flashHint lives in ui.js, not core.js — this wrong path was a LINK-TIME
+// boot-breaker in the browser (module graph refuses to load), invisible to
+// micstate-exec-test because that harness stubs the sibling imports. Only
+// boot-check.mjs, which loads the real graph, could see it.
+import { bus } from './core.js';
+import { flashHint } from './ui.js';
 import { sendTyping } from './net.js';
 import { gateThreshold } from './voiceconsent.js';
 import { gateStream, attachSource, detachSource, driveGate, setMonitor, monitoring,
