@@ -236,12 +236,20 @@ export async function sfuConnect(credential, send) {
 /** Server-initiated renegotiation. The ONLY negotiation path — see the header. */
 export async function sfuOnOffer(sdp, send) {
   if (!pc) return;
-  await pc.setRemoteDescription({ type: 'offer', sdp });
+  // The connection this offer was FOR (review agent, round 2): a reconnect
+  // mid-await swaps the module-level pc, and finishing this exchange against
+  // the fresh one means createAnswer() with no remote offer — an unhandled
+  // InvalidStateError. Same snapshot pattern as the state handler.
+  const myPc = pc;
+  await myPc.setRemoteDescription({ type: 'offer', sdp });
+  if (myPc !== pc) return;              // superseded mid-exchange — the new pc has its own offer coming
   // Candidates that arrived before the offer finished applying were queued —
   // feed them now that addIceCandidate has a description to attach them to.
-  while (pendingIce.length) { const c = pendingIce.shift(); try { await pc.addIceCandidate(c); } catch { /* stale */ } }
-  const answer = await pc.createAnswer();
-  await pc.setLocalDescription(answer);
+  while (pendingIce.length) { const c = pendingIce.shift(); try { await myPc.addIceCandidate(c); } catch { /* stale */ } }
+  const answer = await myPc.createAnswer();
+  if (myPc !== pc) return;
+  await myPc.setLocalDescription(answer);
+  if (myPc !== pc) return;
   // 🔴 PRESENT THE CREDENTIAL (amendment 1). The nonce was minted, handed to
   // us, and never sent back — so the server's replay check had nothing to
   // check and usedNonces was never populated in production. The seven refusals
@@ -363,6 +371,10 @@ export async function sfuMic(on = true) {
 async function sfuPublish() {
   if (!pc) return;
   if (micPending) return micPending;
+  // Snapshot for the same reason as sfuOnOffer: getUserMedia can take seconds
+  // (a permission prompt), and a reconnect in that window swaps pc — the
+  // acquired track must not be planted on a connection from another session.
+  const myPc = pc;
   micPending = (async () => {
     // 🔴 ASK THE SEAM, NOT THE DEVICE (R, 2026-08-16 — her TTS reached nobody).
     // This called getUserMedia directly, bypassing voiceSource() entirely. The
@@ -398,6 +410,14 @@ async function sfuPublish() {
       // one outcome nobody consented to.
       bus.emit('voice-gate-unavailable', {});
       wantMic = false;
+      return;
+    }
+    // Superseded during acquisition (reconnect swapped the pc): stop what we
+    // acquired — an orphan device stream keeps the hardware light on — and let
+    // the new session's own replay publish on the live connection.
+    if (myPc !== pc) {
+      why('publish', 'pc superseded during acquisition — dropping this publish');
+      for (const t of raw?.getTracks?.() ?? []) { try { t.stop(); } catch { /* gone */ } }
       return;
     }
     why('publish', `published ${s?.synthetic ? 'SYNTH' : 'mic'}`
@@ -444,18 +464,26 @@ async function sfuPublish() {
     // Order: the sendonly sender we already own (a SWAP — replaceTrack on the
     // same m-line, no renegotiation at all) → the inactive floor (first
     // publish) → bare addTrack only when neither exists (solo, pre-offer).
-    // 🔴 sendrecv IS ALSO OURS (review agent, 2026-08-17): a publish that BEAT
-    // the server's first offer went through addTrack below, which creates a
-    // sendrecv transceiver — the bridge's mic replay at credential time does
-    // exactly this, so it is the COMMON path, not the solo corner. A hunt that
-    // only knew 'sendonly' missed it, fell through to addTrack again on every
-    // later swap, and each new transceiver could never be answered (the server
-    // offers, an answer cannot add m-lines): permanent silence after the first
-    // mic→TTS swap while the real sender still carried the stopped old track.
-    // recvonly/inactive can never be addTrack's product, so this match is
-    // still ours alone. (`&& t.sender` was dead — a transceiver's sender is
-    // always non-null.)
-    const mine = pc.getTransceivers().find((t) => t.direction === 'sendonly' || t.direction === 'sendrecv');
+    // 🔴 sendrecv IS ALSO OURS — BUT ONLY BEFORE NEGOTIATION (round-1 review
+    // found the sendonly-only miss; round-2 found the round-1 fix's own hole).
+    // A publish that BEAT the server's first offer goes through addTrack
+    // (sendrecv transceiver — the bridge's mic replay at credential time, the
+    // COMMON path). Round 1 matched `direction sendonly||sendrecv` — but
+    // `direction` is only OUR ASK. When the first offer lands with other
+    // speakers in the room, JSEP associates that addTrack transceiver with the
+    // offer's FIRST audio m-line — a speaker ROUTE — so it answers
+    // currentDirection='recvonly' while its direction still reads 'sendrecv':
+    // the round-1 hunt latched onto it forever, replaceTrack-ing into an
+    // m-line that can never send. The same permanent silence, re-pinned.
+    //
+    // currentDirection is what the NEGOTIATION actually agreed, so it is the
+    // authority wherever it exists: a transceiver whose currentDirection is
+    // 'sendonly' is our live sender, whatever its history. direction is
+    // consulted only while currentDirection is null (created by our addTrack,
+    // never yet negotiated — the only phase where the ask is all there is).
+    const mine = pc.getTransceivers().find((t) =>
+      t.currentDirection === 'sendonly'
+      || (t.currentDirection == null && (t.direction === 'sendonly' || t.direction === 'sendrecv')));
     if (mine) {
       await mine.sender.replaceTrack(track);
     } else {

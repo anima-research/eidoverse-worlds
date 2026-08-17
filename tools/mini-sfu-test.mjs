@@ -70,13 +70,26 @@ const out = await pg.evaluate(async (offerSdp) => {
     .some(t => t.sender?.track === synthTrack && t.direction !== 'sendonly');
   r.oldHuntOwnedSenderHasSynth = pc.getTransceivers()
     .some(t => t.direction === 'sendonly' && t.sender?.track === synthTrack);
-  // the FIXED hunt: the sender we already own wins — replaceTrack, same m-line
+  // the FIXED hunt — round-2 shape, kept in sync with voicesfu.js: the
+  // NEGOTIATED direction is the authority; the ask (direction) counts only
+  // pre-negotiation (currentDirection null). Round 1's direction-based match
+  // latched onto a sendrecv transceiver JSEP had associated with a recv
+  // route; currentDirection === 'recvonly' excludes it.
   {
-    const mine = pc.getTransceivers().find(t => t.direction === 'sendonly' && t.sender);
+    const mine = pc.getTransceivers().find(t =>
+      t.currentDirection === 'sendonly'
+      || (t.currentDirection == null && (t.direction === 'sendonly' || t.direction === 'sendrecv')));
     if (mine) await mine.sender.replaceTrack(synthTrack);
   }
   r.ownedSenderCarriesSynth = pc.getTransceivers()
-    .some(t => t.direction === 'sendonly' && t.sender?.track === synthTrack);
+    .some(t => t.currentDirection === 'sendonly' && t.sender?.track === synthTrack);
+  // round-2 control: a transceiver whose ASK is sendrecv but whose NEGOTIATED
+  // answer is recvonly (a route JSEP associated with our addTrack) must be
+  // invisible to the hunt.
+  r.recvAssociatedExcluded = !pc.getTransceivers().some(t =>
+    t.currentDirection === 'recvonly' && t.direction === 'sendrecv'
+    && (t.currentDirection === 'sendonly'
+        || (t.currentDirection == null && (t.direction === 'sendonly' || t.direction === 'sendrecv'))));
   return r;
 }, server.localDescription.sdp);
 console.log('  FIRST answer (no mic yet):', out.first);
@@ -86,4 +99,5 @@ const reproduced = out.oldHuntPutSynthOnRecvRoute && !out.oldHuntOwnedSenderHasS
 console.log(`  STAGE 3 — old hunt hijacks a recv route: ${reproduced ? `✅ reproduced (synth on a non-sendonly sender, ${out.oldHuntTrx} trx)` : '❌ not reproduced'}`);
 console.log(`  STAGE 3 — fixed hunt swaps in place:     ${out.ownedSenderCarriesSynth ? '✅ owned sendonly sender carries the synth track' : '❌'}`);
 await b.close();
-process.exit(reproduced && out.ownedSenderCarriesSynth ? 0 : 1);
+console.log(`  STAGE 3 — recv-associated sendrecv excluded: ${out.recvAssociatedExcluded ? '✅' : '❌'}`);
+process.exit(reproduced && out.ownedSenderCarriesSynth && out.recvAssociatedExcluded ? 0 : 1);

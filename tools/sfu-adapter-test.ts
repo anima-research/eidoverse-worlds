@@ -211,6 +211,18 @@ check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length ===
     s3.standingConsent.get("amy") === undefined);
   check("re-mint does not inherit a moderation mute aimed at the predecessor",
     !s3.sfu.diag().muted.includes("amy"));
+
+  // Round 2: consent given while NO leg existed must survive the first mint
+  // (it has no predecessor to inherit from), while takeover still wipes.
+  const W4 = "rev-premint";
+  const s4 = sfuState(W4);
+  setSfuConsent(W4, "early-bird", 1, true);        // consent BEFORE any leg
+  mintSfuCredential(W4, "early-bird", 1, 2);       // first mint — no predecessor
+  check("pre-mint consent survives the FIRST mint (no predecessor to inherit from)",
+    s4.standingConsent.get("early-bird") === true);
+  mintSfuCredential(W4, "early-bird", 1, 3);       // takeover — predecessor existed
+  check("…and a takeover re-mint still wipes it (fail-closed rejoin)",
+    s4.standingConsent.get("early-bird") === undefined);
 }
 
 console.log(fail === 0 ? `\n\x1b[32m✅ sfu-adapter: ${pass} passed\x1b[0m` : `\n\x1b[31m❌ ${fail} failed\x1b[0m`);

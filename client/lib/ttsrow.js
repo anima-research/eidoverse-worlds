@@ -42,7 +42,6 @@ let _loadingId = null, _loadingName = null, _loadingSince = 0;
 // and blanked the freshly-clicked box. Set at the tick, cleared when the load
 // path owns the state (or on any early exit).
 let _tickPending = false;
-let _tickGen = 0;   // last tick/untick wins across the 30s load window
 /** 🔴 ONE LOAD AT A TIME (R, 2026-08-09: "re-clicking the box appears to make it
  *  thrash and start over"). Compiling the graph takes 30s+, and nothing stopped
  *  a second click from starting a SECOND compile racing the first — two 63 MB
@@ -689,17 +688,22 @@ function headDimmed() {
       // Untick: nothing structural changes — no row appears or vanishes — so
       // write the two affected nodes instead of rebuilding the section.
       if (!e.target.checked) {
-        // 🔴 AN UNTICK OUTRANKS A TICK STILL IN FLIGHT (review agent,
-        // 2026-08-17). The tick path below awaits a 30s model load and then
-        // enabled unconditionally — so tick → regret → untick meant your
-        // typed says started speaking half a minute after you said no. The
-        // generation counter makes the last click win: any older tick landing
-        // after this sees a newer generation and keeps its hands off enable.
-        _tickGen++;
+        // 🔴 AN UNTICK OUTRANKS A TICK STILL IN FLIGHT (round 1), and a
+        // RE-TICK outranks the untick (round 2 — the generation-counter
+        // version of this fix made tick→untick→re-tick self-cancel: the
+        // re-tick hit the busy path and unchecked itself while the counter
+        // voided the running load's enable, so the LAST click did not win).
+        // The box's checked state IS the user's last word, so the load's
+        // completion consults IT rather than a counter — see below.
         _needVoice = false; setTtsEnabled(false);
         if (!syncHead()) repaint(); else onPaint();
         return;
       }
+      // A tick while a tick-initiated load is already running: the box stays
+      // checked, and the running load's completion will honour it. Calling
+      // pick() again would only hit the busy path and untick a box the user
+      // just ticked.
+      if (_tickPending) return;
       // TICKING THE BOX MEANS "SPEAK" — so make that true if it can be
       // (R, 2026-08-09). Three cases:
       //   no voices  → refuse, and SAY why (transient, clears when they add one)
@@ -712,9 +716,8 @@ function headDimmed() {
         return;
       }
       _tickPending = true;
-      const gen = ++_tickGen;            // this tick's claim; an untick voids it
       const items = await collectVoices();
-      if (gen !== _tickGen) { _tickPending = false; return; }   // unticked while listing
+      if (!e.target.checked) { _tickPending = false; return; }  // unticked while listing
       if (!items.length) {
         _tickPending = false;
         e.target.checked = false;          // the tick did not take; do not lie about it
@@ -753,8 +756,10 @@ function headDimmed() {
           // busy-ignore path also returns false now — an enable for a pick
           // that never took was the same lie by a quieter route.)
           if (ok === false) { e.target.checked = false; return; }
-          // Unticked during the load: the user's later click already decided.
-          if (gen !== _tickGen) return;
+          // The box's state at load-completion is the user's LAST action —
+          // unticked mid-load means no enable; unticked-then-re-ticked means
+          // enable. No counter can express that; the checkbox already does.
+          if (!e.target.checked) return;
           // 🔴 ENABLE HERE, NOT IN pickInner (R, 2026-08-16: "TTS gets stuck
           // faded out and 'ready' and never goes live"). pickInner only enables
           // when `wantedSpeech` — captured from `_needVoice || isTtsEnabled()`

@@ -68,6 +68,8 @@ ok('0.5 host with no policy yet is DENIED (deny-until-policy window)',
    !capAllowed(true, '0.5', null, CAP.channelsPublish));
 ok('legacy 0.4 MCPL host with no policy keeps everything',
    capAllowed(true, '0.4', null, CAP.channelsPublish));
+ok('0.5 host whose featureSets/update OMITS effectiveCapabilities stays denied (fail-closed, §5.4)',
+   !capAllowed(true, '0.5', null, CAP.channelsPublish));  // update-without-grant leaves grant null
 
 // ---- the wiring: is the gate actually CALLED at each verb? ------------------
 //

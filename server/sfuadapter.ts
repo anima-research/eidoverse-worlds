@@ -127,8 +127,19 @@ export function mintSfuCredential(world: string, id: string, primaryGen: number,
   // its pending answer-resolver/15s timer. The funnel exists; use it. Note
   // for callers: revoke also unregisters the leg's sender, so
   // registerSfuSender must come AFTER the mint (server.ts does).
+  //
+  // 🔴 …EXCEPT consent given while NO leg existed (round-2 review). The
+  // invariant kills a PREDECESSOR's standing yes; consent recorded before any
+  // leg was minted (server.ts accepts pre-cred consent) has no predecessor to
+  // inherit from — it is the very case applyStandingConsent's "consent given
+  // before this leg existed still counts" comment describes, and the blanket
+  // revoke was silently wiping it. Preserve it only when there was no leg.
+  const s0 = worlds.get(world);
+  const hadLeg = !!s0?.legs.has(id);
+  const preConsent = hadLeg ? undefined : s0?.standingConsent.get(id);
   revokeSfuLeg(world, id);
   const s = sfuState(world);
+  if (preConsent !== undefined) s.standingConsent.set(id, preConsent);
   const nonce = crypto.randomUUID();
   s.legs.set(id, { id, gen: mediaGen, primaryGen, nonce });
   // 🔴 CREATE THE ACTUAL LEG. The first version recorded the bookkeeping entry
@@ -261,6 +272,16 @@ export function setSfuConsent(world: string, listenerId: string, listenerGen: nu
       // true meant a listener whose revoke was refused (stale gen) heard
       // nothing from the current room and then heard EVERYONE who joined
       // afterwards. The fail-safe fixed today and missed tomorrow.
+      //
+      // DELIBERATE TRADE (round-2 review named it): an out-of-order STALE
+      // revoke — one older than a newer recorded YES — also lands here and
+      // clobbers that newer grant. That is an availability cost (silence
+      // until the listener re-toggles), accepted because the alternative is
+      // trusting message ordering to decide who can hear whom, and when in
+      // doubt the quiet answer is the safe one. Re-mint now clears consent
+      // (mintSfuCredential funnels through revoke), so the legitimate
+      // refused-revoke class this guards is nearly empty — but "nearly" is
+      // not a consent guarantee.
       s.standingConsent.set(listenerId, false);
     }
     return r;
