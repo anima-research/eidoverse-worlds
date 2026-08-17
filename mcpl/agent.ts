@@ -676,6 +676,20 @@ export class WorldAgent {
             break;
           case "leave":
             this.people.delete(msg.id);
+            // 🔴 THE PER-PARTICIPANT MAPS MUST GO TOO (2026-08-16). `people` was
+            // cleaned here and these three were not, so every identity that ever
+            // appeared kept an entry for the LIFE OF THE PROCESS — a door in a
+            // busy world grows without bound, and the local convention elsewhere
+            // in this file is explicitly bounded rings (ownSays 32, heldActivity
+            // 8, malformedSeen 5). These were the exception, not the rule.
+            //
+            // Correctness, not just memory: nearArmed is the approach-ping
+            // re-arm bit, so a returning visitor inherited the arm state from
+            // their PREVIOUS visit — walking away and back could fail to
+            // re-announce them, or announce them twice.
+            this.lastNear.delete(msg.id);
+            this.nearArmed.delete(msg.id);
+            this.nonLocoSince.delete(msg.id);
             this.gate.presence(msg.id, "leave");
             break;
           case "avatar-updated":
@@ -1053,8 +1067,23 @@ export class WorldAgent {
     }
   }
 
+  /** Recent pings, for a host that polls instead of subscribing.
+   *
+   *  🔴 BOUNDED (2026-08-16). This array grew forever: the live path is
+   *  `onPing` (net-server subscribes), and `takePings` — the only drain — has no
+   *  caller in this repo. So on a push host the array accumulated every mention,
+   *  approach and whisper for the life of the process and nothing ever read it.
+   *
+   *  Kept rather than deleted because a PLAIN-MCP host has no push channel and
+   *  polling is its documented path (AGENTS.md says digests are "held and handed
+   *  over each time you call the tool"). But it is a RING now, like every other
+   *  buffer in this file — ownSays 32, heldActivity 8, malformedSeen 5. An
+   *  unbounded buffer whose only consumer is optional is a leak with a plan. */
+  private static readonly PING_RING = 64;
+
   private ping(p: { ts: number; kind: "mention" | "approach" | "whisper"; who: string; text?: string }) {
     this.pings.push(p);
+    if (this.pings.length > WorldAgent.PING_RING) this.pings.splice(0, this.pings.length - WorldAgent.PING_RING);
     this.onPing?.(p);
   }
 
