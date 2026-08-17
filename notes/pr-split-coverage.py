@@ -44,6 +44,19 @@ GROUPS = {
         "tools/tts-publishes-mic-off-test.mjs",
         "tools/synth-hook-broadcast-test.mjs",
         "tools/mic-resume-after-synth-test.mjs",
+        # the cutover: one transport, and the ops gaps closed (2026-08-16 pm)
+        "server/transport.ts",            # voiceTransport + durable incarnation
+        "server/sfusupervisor.ts",        # A2 voice-service state
+        "client/lib/micstate.js",         # the transport-neutral mic half
+        "tools/sfu-ops-test.mjs",
+        "tools/sfu-verb-gate-test.mjs",
+        "tools/mic-gate-wired-test.mjs",
+        "tools/micstate-exec-test.mjs",
+        "tools/voicesource-real-test.mjs",
+        "tools/voice-lifecycle-test.ts",  # DELETED with the mesh it tested
+        "tools/audioctx-test.ts",         # repointed at micstate
+        "tools/tts-test.ts",              # repointed at micstate
+        "tools/audiopanel-css-probe.html",
     ],
     "C.door": ["mcpl/agent.ts", "mcpl/net-server.ts"],
     "D.mic-HUD": [
@@ -75,7 +88,7 @@ GROUPS = {
     # Written this session; they document decisions rather than change behaviour.
     "K.notes": ["notes/DECISION-android-captions.md", "notes/PR-SPLIT-AUDIT.md",
                 "notes/pr-split-coverage.py", "tools/tts-threading-bench.mjs",
-                "notes/NEXT-barge-in.md"],
+                "notes/NEXT-barge-in.md", "notes/NEXT-remove-mesh.md"],
     "G.headers": ["server/routes.ts"],   # + tools/tts-threading-bench.mjs measures it (K)
     "H.join": ["client/lib/net.js", "tools/join-check.mjs",
                "tools/join-negative-control.mjs", "tools/join-probe.mjs",
