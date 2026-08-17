@@ -37,6 +37,11 @@ let _busy = null;          // a phase string while loading, else null
  *  running timer, so a slow prepare (the phonemizer build is ~27s on first use)
  *  reads as work rather than as nothing happening. */
 let _loadingId = null, _loadingName = null, _loadingSince = 0;
+// The tick's own await window: onchange awaits collectVoices() BEFORE pick()
+// sets _loadingId, and a repaint in that gap read "not loading, not enabled"
+// and blanked the freshly-clicked box. Set at the tick, cleared when the load
+// path owns the state (or on any early exit).
+let _tickPending = false;
 /** 🔴 ONE LOAD AT A TIME (R, 2026-08-09: "re-clicking the box appears to make it
  *  thrash and start over"). Compiling the graph takes 30s+, and nothing stopped
  *  a second click from starting a SECOND compile racing the first — two 63 MB
@@ -488,7 +493,7 @@ export function ttsSection(host, onPaint = () => {}) {
       // the END), snapping the box back to unchecked mid-load and popping it
       // on at completion. The intent is registered the moment they click;
       // the box says so immediately and the fade says "working on it".
-      const loadingNow = !!_loadingId;
+      const loadingNow = !!_loadingId || _tickPending;
       box.checked = isTtsEnabled() || loadingNow;
       box.style.opacity = loadingNow && !isTtsEnabled() ? '.45' : '';
       note.textContent = headNote();
@@ -585,7 +590,16 @@ function headDimmed() {
     // Never fight the user's own click: if the box already shows what state
     // says, leave the node alone. Writing .checked during their interaction is
     // how a control starts feeling like it is arguing back.
-    if (box.checked !== isTtsEnabled()) box.checked = isTtsEnabled();
+    //
+    // 🔴 THE SECOND WRITER (R, reload, 2026-08-16: "it's the same"). The
+    // ticked-but-faded-while-loading fix went into syncHead() above — and THIS
+    // function is a second, older copy of the same head-sync that still wrote
+    // checked from isTtsEnabled() alone, snapping the box blank mid-load on
+    // every path that runs through here. Two copies of one truth is the whole
+    // disease; until they merge, they must at least agree.
+    const wantChecked = isTtsEnabled() || !!_loadingId || _tickPending;
+    if (box.checked !== wantChecked) box.checked = wantChecked;
+    box.style.opacity = wantChecked && !isTtsEnabled() ? '.45' : '';
     note.textContent = headNote();
 
     // The list owns its own in-place update (ttslist.js renders per-element),
@@ -642,8 +656,8 @@ function headDimmed() {
       // selects WHICH VOICE; that one sets how loud it is.
       `<label class="nm" style="opacity:${headDimmed() ? '.45' : '1'}">text-to-speech model</label>` +
       `<span class="ctl">` +
-      `<input type="checkbox" ${isTtsEnabled() || _loadingId ? 'checked' : ''} `
-        + `${_loadingId && !isTtsEnabled() ? 'style="opacity:.45" ' : ''}` +
+      `<input type="checkbox" ${isTtsEnabled() || _loadingId || _tickPending ? 'checked' : ''} `
+        + `${(_loadingId || _tickPending) && !isTtsEnabled() ? 'style="opacity:.45" ' : ''}` +
         // 🔴 NOT `disabled` WHEN THERE IS NO VOICE (R, 2026-08-09: "there's no
         // warning to load a model if you try to checkbox text-to-speech, it just
         // fails silently"). A disabled checkbox fires NO change event, so the
@@ -685,8 +699,10 @@ function headDimmed() {
         if (!syncHead()) repaint(); else onPaint();
         return;
       }
+      _tickPending = true;
       const items = await collectVoices();
       if (!items.length) {
+        _tickPending = false;
         e.target.checked = false;          // the tick did not take; do not lie about it
         _needVoice = true;
         // Clear itself after 5s (R, 2026-08-09). It answers ONE click; leaving it
@@ -717,7 +733,7 @@ function headDimmed() {
         // If loading fails the box must not stay ticked over a voice that never
         // arrived — that is the same silent failure by a different route.
         try {
-          const ok = await pick(pickId);      // loads, sets the source, enables
+          const ok = await pick(pickId);      // loads, sets the source, enables (pick sets _loadingId synchronously, so clearing the tick flag after it returns leaves no gap)
           // pickInner reports failure as `false`, not a throw — its catch
           // owns the error UI. Only the tick needs undoing here.
           if (ok === false) { e.target.checked = false; return; }

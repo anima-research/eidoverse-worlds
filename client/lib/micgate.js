@@ -58,8 +58,19 @@ import { report } from './core.js';
 // entirely; do not resurrect a second smoothing stage, see driveGate.)
 const ATTACK_TAU = 0.008;
 const RELEASE_TAU = 0.12;
+// 🔴 LOOKAHEAD — the third thing that ate first syllables, and the one no
+// attack speed can fix (R, 2026-08-16: "Hello often sounds like 'ello'").
+// An unvoiced /h/ is LOW-ENERGY: it never crosses the threshold at all, so
+// the gate opens on the vowel and the consonant is already gone — a detector
+// problem, not an envelope problem. The fix every hardware gate uses: delay
+// the AUDIO, not the DETECTOR. The analyser reads the raw side (pre-delay),
+// so when the vowel trips the gate, the /h/ is still inside the delay line
+// and passes through the opening gain. Cost: 50ms of outbound latency, well
+// under the network's own jitter buffer; the close tail grows by the same
+// 50ms, which the 700ms hang-time already dwarfs.
+const LOOKAHEAD = 0.05;
 
-let _ctx = null, _src = null, _gain = null, _dest = null;
+let _ctx = null, _src = null, _gain = null, _dest = null, _look = null;
 let _rawStream = null, _gatedStream = null, _level = () => 0;
 
 /** Wrap a mic stream in the gate graph. Returns the stream to hand to WebRTC —
@@ -101,7 +112,11 @@ export function gateStream(stream, levelFn) {
   // "audible now" before a single driveGate tick has run on the new lane.
   _wanted = 0;
     _dest = _ctx.createMediaStreamDestination();
-    _src.connect(_gain);
+    // src → lookahead delay → gate gain → destination. See LOOKAHEAD.
+    _look = _ctx.createDelay(0.2);
+    _look.delayTime.value = LOOKAHEAD;
+    _src.connect(_look);
+    _look.connect(_gain);
     _gain.connect(_dest);
     _gatedStream = _dest.stream;
 
@@ -239,7 +254,10 @@ export function attachSource(stream) {
   if (!_ctx || !_gain || !_dest) return null;
   try { _src?.disconnect(); } catch { /* fine */ }
   _src = _ctx.createMediaStreamSource(stream);
-  _src.connect(_gain);
+  // Through the SAME lookahead as gateStream — reattaching without it would
+  // silently lose the first syllable again, on exactly the reconnect path
+  // nobody re-tests by ear.
+  if (_look) _src.connect(_look); else _src.connect(_gain);
   _rawStream = stream;
   return _gatedStream;
 }
@@ -249,6 +267,8 @@ export function attachSource(stream) {
  *  to undo. */
 export function release() {
   try { _src?.disconnect(); } catch { /* already gone */ }
+  try { _look?.disconnect(); } catch { /* already gone */ }
+  _look = null;
   try { _gain?.disconnect(); } catch { /* already gone */ }
   // Disposal OWNERSHIP (#90 review): this module built the monitor tap and the
   // synth mix-in, so this module disconnects them — a release that leaves its
