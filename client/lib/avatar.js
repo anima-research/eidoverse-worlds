@@ -412,9 +412,16 @@ export class Avatar {
    *  could not be what "sideways while dragging" meant — and that was a
    *  misreading of WHICH INSTANTS were being described. Grabbing, letting go,
    *  pinning, and the fall afterwards are all springbone moments, and they are
-   *  what the report was about. With the center dropped, all of it came right.
-   *  The lesson is not about hair: 96% of the samples answered a question
-   *  nobody had asked, and the 4% was the whole story.
+   *  what the report was about. Dropping the center made all of it much
+   *  better — but NOT completely: Janus still sees sideways hair
+   *  occasionally, "significantly less often". So this is a large fix to a
+   *  real cause, not the whole cause, and the remainder is an open thread
+   *  (rigtest/EIDOVERSE-DEPLOY.md).
+   *
+   *  Two lessons, and neither is about hair. The 96% answered a question
+   *  nobody had asked while the 4% was most of the story — a statistic can be
+   *  accurate and still be about the wrong thing. And "confirmed fixed" was
+   *  written here one report too early: better is not gone.
    */
   _springsLimp(on) {
     const sbm = this.vrm?.springBoneManager;
