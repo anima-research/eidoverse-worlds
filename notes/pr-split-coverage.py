@@ -14,8 +14,15 @@ ahead, which is meaningless for PRs.
 """
 import subprocess, sys
 
-BASE = "upstream/main"
+# 🔴 MERGE-BASE, NOT THE MOVING TIP (fixed 2026-08-16). This read
+# `upstream/main` directly, so the moment upstream merged anything (#126,
+# headless Bullet bodies), THEIR nine new files appeared in my delta and the
+# script reported them as MY unassigned work — "🔴 THIS WORK WOULD BE LOST"
+# about files I had never opened. A three-dot delta answers the question the
+# script is actually asking: what did I change since I diverged?
 HEAD = "relay-spike"
+BASE = subprocess.run(["git", "merge-base", "upstream/main", HEAD],
+                      capture_output=True, text=True).stdout.strip() or "upstream/main"
 
 GROUPS = {
     "A.SFU-core": [
