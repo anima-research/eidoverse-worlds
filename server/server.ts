@@ -1171,8 +1171,12 @@ const server = Bun.serve({
             // synchronous — but it announces through the SAME transition event
             // and takes a gen from the SAME counter, because a surface session
             // is a surface session regardless of what carries its audio.
-            registerSfuSender(c.world.name, c.id, (payload) => ws.send(JSON.stringify(payload)));
+            // Mint FIRST: mintSfuCredential funnels through revokeSfuLeg (a
+            // re-mint must not inherit its predecessor's consent/admission),
+            // and revoke unregisters the sender — registering before it would
+            // hand the fresh leg a deleted send path.
             const cred = mintSfuCredential(c.world.name, c.id, c.gen!, mediaGen);
+            registerSfuSender(c.world.name, c.id, (payload) => ws.send(JSON.stringify(payload)));
             const transition = JSON.stringify({ type: "surface-transition",
               id: c.id, surface: "voice-relay", gen: mediaGen, retired: null });
             for (const t of c.world.clients) if (t !== c) t.ws.send(transition);

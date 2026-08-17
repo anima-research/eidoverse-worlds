@@ -179,5 +179,39 @@ check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length ===
   check("…and nothing leaks into world B's socket", wsB.length === 0, `wsB=${wsB.length}`);
 }
 
+// ── 2026-08-17 adversarial-review regressions ────────────────────────────────
+{
+  const W2 = "rev-regress";
+  const s2 = sfuState(W2);
+
+  // #1 A refused revoke must also flip the STANDING answer — the future tense.
+  mintSfuCredential(W2, "lis", 1, 2);
+  setSfuConsent(W2, "lis", 2, true);                       // consent ON at gen 2
+  setSfuConsent(W2, "lis", 1, false);                      // revoke at STALE gen → refused
+  check("refused revoke still flips standing consent (future speakers stay silent)",
+    s2.standingConsent.get("lis") === false);
+  mintSfuCredential(W2, "late-speaker", 3, 4);             // joins AFTER the refused revoke
+  check("…and a speaker joining later is NOT consented to the revoked listener",
+    !s2.sfu.diag().consent?.["lis"]?.includes?.("late-speaker"));
+
+  // #2 A re-mint is a retirement first: no inherited consent, admission, or mute.
+  const W3 = "rev-remint";
+  const s3 = sfuState(W3);
+  const c1 = mintSfuCredential(W3, "amy", 1, 2);
+  setSfuConsent(W3, "amy", 2, true);                       // predecessor's standing YES
+  const v = admitSfuLeg(W3, { world: W3, id: "amy", primaryGen: 1, mediaGen: 2,
+    incarnation: c1.incarnation, nonce: c1.nonce }, 
+    { world: W3, incarnation: c1.incarnation, primaryGen: 1, mediaGen: 2, usedNonces: s3.usedNonces });
+  if (v.admit) s3.admitted.add("amy");
+  s3.sfu.setMuted("amy", true);                            // moderation aimed at THIS leg
+  mintSfuCredential(W3, "amy", 1, 3);                      // takeover re-mint
+  check("re-mint clears predecessor's admission (fresh leg must prove itself)",
+    !s3.admitted.has("amy"));
+  check("re-mint does not inherit predecessor's standing consent",
+    s3.standingConsent.get("amy") === undefined);
+  check("re-mint does not inherit a moderation mute aimed at the predecessor",
+    !s3.sfu.diag().muted.includes("amy"));
+}
+
 console.log(fail === 0 ? `\n\x1b[32m✅ sfu-adapter: ${pass} passed\x1b[0m` : `\n\x1b[31m❌ ${fail} failed\x1b[0m`);
 process.exit(fail ? 1 : 0);

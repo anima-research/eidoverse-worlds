@@ -118,6 +118,16 @@ export function registerSfuSender(world: string, legId: string, send: (payload: 
 
 /** Mint: same shape as mintRelayCredential, minus the JWT that has no analogue. */
 export function mintSfuCredential(world: string, id: string, primaryGen: number, mediaGen: number) {
+  // 🔴 A MINT IS A RETIREMENT FIRST (review agent, 2026-08-17). Re-minting
+  // without funnelling through revokeSfuLeg resurrected three pieces of the
+  // predecessor's state onto the fresh leg: its standing consent YES (via
+  // applyStandingConsent below — directly against the fail-closed invariant
+  // documented on SfuWorldState.standingConsent), its ADMISSION (s.admitted
+  // uncleaned, so the new leg never had to present its new credential), and
+  // its pending answer-resolver/15s timer. The funnel exists; use it. Note
+  // for callers: revoke also unregisters the leg's sender, so
+  // registerSfuSender must come AFTER the mint (server.ts does).
+  revokeSfuLeg(world, id);
   const s = sfuState(world);
   const nonce = crypto.randomUUID();
   s.legs.set(id, { id, gen: mediaGen, primaryGen, nonce });
@@ -230,7 +240,16 @@ export function setSfuConsent(world: string, listenerId: string, listenerGen: nu
     // and the smoke caught it as `audio survived revocation`. Idempotence may
     // swallow a repeated YES; it must NEVER swallow a NO. When in doubt, the
     // quiet answer is the safe one, so a refused revoke still stops the audio.
-    if (!recv) for (const speakerId of s.legs.keys()) s.sfu.setConsent(listenerId, speakerId, false);
+    if (!recv) {
+      for (const speakerId of s.legs.keys()) s.sfu.setConsent(listenerId, speakerId, false);
+      // 🔴 ...AND THE FUTURE TENSE TOO (review agent, 2026-08-17). Denying the
+      // legs that exist silences the present, but the STANDING answer is what
+      // joinSfuLeg consults for every speaker who arrives later — leaving it
+      // true meant a listener whose revoke was refused (stale gen) heard
+      // nothing from the current room and then heard EVERYONE who joined
+      // afterwards. The fail-safe fixed today and missed tomorrow.
+      s.standingConsent.set(listenerId, false);
+    }
     return r;
   }
   // 🔴 Apply to legs that DO NOT EXIST YET, too. This loop over s.legs misses
@@ -390,11 +409,20 @@ export async function sfuNegotiate(world: string, legId: string,
     // claim has an instrument at the other end.
     send({ type: "sfu-offer", sdp: withOpusFec(pc.localDescription!.sdp) });
     const sdp = await new Promise<string>((resolve, reject) => {
-      waiting.set(wkey(world, legId), resolve);
+      const k = wkey(world, legId);
+      waiting.set(k, resolve);
       // A browser that never answers must not wedge the leg's promise chain
       // forever — every later offer for this leg would queue behind it and the
       // participant would go permanently silent with no error anywhere.
-      setTimeout(() => { if (waiting.delete(wkey(world, legId))) reject(new Error("answer timeout")); }, 15000);
+      // 🔴 Delete by IDENTITY, not by key (review agent, 2026-08-17): a stale
+      // timer from a superseded offer would otherwise clobber the SUCCESSOR
+      // offer's resolver — its answer then found no resolver and was dropped,
+      // and the leg sat routeless with no error. The same twin-map lesson a
+      // third time: the map was world-keyed correctly, its timer was not
+      // identity-checked.
+      setTimeout(() => {
+        if (waiting.get(k) === resolve) { waiting.delete(k); reject(new Error("answer timeout")); }
+      }, 15000);
     });
     await pc.setRemoteDescription({ type: "answer", sdp });
   }).catch((e) => console.error(`[sfu] negotiate ${legId}:`, (e as Error).message));
@@ -412,7 +440,16 @@ export function sfuAcceptAnswer(world: string, legId: string, sdp: string, claim
   // not "checked". An answer names the generation it believes it is answering
   // under; if that is not the leg's current generation, it belongs to a leg
   // that no longer exists.
-  if (claimedGen != null) {
+  // 🔴 REQUIRED, not opt-in (review agent, 2026-08-17): `if (gen != null)` let
+  // a client skip the A2 check by omitting the field — and a stale predecessor
+  // browser is exactly the client that WOULD omit it. Our client has always
+  // sent it (voicesfu.js `gen: cred?.mediaGen`); an answer that cannot name
+  // its generation belongs to no live leg.
+  if (claimedGen == null) {
+    console.warn(`[sfu] answer for ${legId} names no generation — dropped`);
+    return;
+  }
+  {
     const leg = worlds.get(world)?.legs.get(legId);
     if (!leg || leg.gen !== claimedGen) {
       console.warn(`[sfu] answer for ${legId} claims gen ${claimedGen}, live gen is ${leg?.gen ?? "none"} — dropped`);
