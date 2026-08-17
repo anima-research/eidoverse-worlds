@@ -314,7 +314,7 @@ Verified: `/library/eidoverse/assets/vrms/claude.vrm` 404 → **200**, warning g
 banner is an instrument. Read it.)
 
 ### R'S LINK — verified 2026-08-15, tunnel + assets + auth
-`https://washer-hypothetical-chargers-undertaken.trycloudflare.com/?world=staging&key=staging-2026&name=rabscuttle`
+`https://<tunnel>.trycloudflare.com/?world=staging&key=<JOIN_TOKEN>&name=rabscuttle`
 page 200 · claude.vrm 200 · ws upgrade 101 · right key → snapshot · **wrong key → 4003**
 
 ## 🔴 RESUME-HERE [2026-08-15 15:00] — RESTARTING FOR THE SEAT FIX
@@ -346,7 +346,7 @@ a trim/restart; the reading does not. It is not evidence.
 - **R is IN `staging`** as `rabscuttle`, via the tunnel. She has been in since
   ~14:45. She has reconnected ~5 times; that is expected (quick tunnels hold ONE
   edge connection) and is NOT the SFU.
-- World server: `:8960`, `JOIN_TOKEN=staging-2026`, needs
+- World server: `:8960`, `JOIN_TOKEN=<redacted — see secrets-vault>`, needs
   `EIDOVERSE_DIR=/home/claude/eido-dev/eidoverse-video` or there are no avatars
   and no sky.
 - MCPL door: `:8963`, already correct (`WORLD_URL=ws://127.0.0.1:8960/ws`).

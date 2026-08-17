@@ -223,7 +223,20 @@ export function admitSfuLeg(world: string, claims: RelayClaims, live: LiveLegSta
   const verdict = admitParticipant(claims, { ...live, usedNonces: s.usedNonces });
   // Burn on FIRST admission — the removed-participant replay hole is real
   // (probed and measured, 2026-08-13) and the nonce is what closes it.
-  if (verdict.admit) s.usedNonces.add(claims.nonce);
+  if (verdict.admit) {
+    s.usedNonces.add(claims.nonce);
+    // 🔴 BOUNDED (security review, 2026-08-17): one entry per admission,
+    // never pruned — a slow leak for the life of the process. Evicting the
+    // OLDEST is safe because the nonce is only the replay guard for a
+    // credential whose generations are still live: by the time an admission
+    // is 4096 mints old, its gens are long retired and admitParticipant
+    // refuses it on "retired generation" before the nonce check matters.
+    // (Sets iterate in insertion order, so first() is oldest.)
+    if (s.usedNonces.size > 4096) {
+      const oldest = s.usedNonces.values().next().value;
+      if (oldest !== undefined) s.usedNonces.delete(oldest);
+    }
+  }
   return verdict;
 }
 

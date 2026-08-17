@@ -191,7 +191,7 @@ Reproduce: `node tools/tts-threading-bench.mjs --isolated 8960 --bare 8974`
 
 **Display names cap at 64 chars and TRUNCATE silently** (`server/server.ts:469`,
 `.slice(0, 64)`). R pasted a URL into the name field on mobile and joined as
-`phone_testhttps://mazda-mic-joy-conducted.trycloudflare.com/?wor` — exactly 64
+`phone_testhttps://<tunnel>.trycloudflare.com/?wor` — exactly 64
 characters, so the guard fired correctly and still produced a nonsense identity.
 
 R: "it's probably more of a length problem. Names (especially display names)

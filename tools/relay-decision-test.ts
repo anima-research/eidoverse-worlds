@@ -66,14 +66,14 @@ t("moderator mute beats consent",
 // ── consent updates: gen-bound, idempotent, reconnect never broadens ────────
 {
   const m = new Map<string, { gen: number; consent: boolean }>();
-  t("fresh consent applies", applyConsentUpdate(m, "riannon", 500, true), { changed: true });
-  t("repeat is idempotent", applyConsentUpdate(m, "riannon", 500, true),
+  t("fresh consent applies", applyConsentUpdate(m, "listener-a", 500, true), { changed: true });
+  t("repeat is idempotent", applyConsentUpdate(m, "listener-a", 500, true),
     { changed: false, reason: "idempotent" });
-  t("stale generation cannot apply", applyConsentUpdate(m, "riannon", 499, true),
+  t("stale generation cannot apply", applyConsentUpdate(m, "listener-a", 499, true),
     { changed: false, reason: "stale listener generation" });
   t("newer generation resets (fail-closed rejoin)",
-    applyConsentUpdate(m, "riannon", 501, false), { changed: true });
-  t("…and the old ON cannot resurrect", applyConsentUpdate(m, "riannon", 500, true),
+    applyConsentUpdate(m, "listener-a", 501, false), { changed: true });
+  t("…and the old ON cannot resurrect", applyConsentUpdate(m, "listener-a", 500, true),
     { changed: false, reason: "stale listener generation" });
 }
 
