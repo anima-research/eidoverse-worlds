@@ -54,7 +54,8 @@
 // that as "a chime every 6-8 seconds": it is the workaround being audible, not
 // a bug of ours and not a notification.
 
-import { report } from './core.js';
+import { report, bus } from './core.js';
+import { sttConsented } from './voiceconsent.js';
 import { sendVerb } from './net.js';
 import { flashHint } from './ui.js';
 // 🔴 flashHint is a 2.6s OVERLAY, not a log (ui.js:flashHint). Every caption
@@ -116,6 +117,7 @@ try {
 export const sttAvailable = () => !!(window.SpeechRecognition ?? window.webkitSpeechRecognition);
 
 export function setSTT(on) {
+  if (on && wanted && rec) return;      // already running — never rebuild the recognizer
   wanted = on;
   if (!on) { try { rec?.stop(); } catch { /* already stopped */ } rec = null; return; }
   const SR = window.SpeechRecognition ?? window.webkitSpeechRecognition;
@@ -299,3 +301,22 @@ export function setSTT(on) {
   };
   try { rec.start(); } catch (e) { report('stt', e); wanted = false; }
 }
+
+// 🔴 RUNNING-STT IS DERIVED STATE, NOT A CLICK'S SIDE EFFECT (R, 2026-08-16:
+// "I don't see any STT at all landing in the chatlog", desktop, consent long
+// since granted). setSTT(true) had exactly ONE caller: the HUD mic button's
+// own click handler (mictoggle.flipMic). Turn the mic on any other way — the
+// audio panel's microphone checkbox, or the bridge's reconnect replay after a
+// reload, which is precisely what a reload does — and captions never start,
+// with consent granted, the recognizer available, and no error anywhere.
+//
+// The truth is a conjunction: consent AND a live mic AND a recognizer. So
+// derive it, from the same two events whose emitters already existed with
+// nothing listening. flipMic keeps its one legitimate extra job — ASKING for
+// consent the first time — and this keeps the running state true afterwards.
+function syncSTT() {
+  const want = sttConsented() && micIsLive() && sttAvailable();
+  if (want !== wanted) setSTT(want);
+}
+bus.on('audio:mic', syncSTT);
+bus.on('audio:stt-consent', syncSTT);

@@ -25,6 +25,7 @@ import { audioContext } from './audioctx.js';
 import { logChat } from './chat.js';
 import { playWhenAllowed } from './audiounlock.js';
 import { why } from './debuglog.js';
+import { rawMicStream } from './micstate.js';
 
 let pc = null, cred = null, micStream = null, wantMic = false;
 // My own outbound analyser (sfuMyLevel). Declared HERE, with the rest of the
@@ -438,12 +439,22 @@ async function sfuPublish() {
 export function sfuMyLevel() {
   if (!micStream || !wantMic) return 0;
   try {
-    if (!_myAn || _myStream !== micStream) {
+    // 🔴 MEASURE THE RAW DEVICE, NOT THE LANE (R, 2026-08-16: "the mic
+    // sensitivity monitor seems to be pegged to zero until the sound rises
+    // over the threshold"). When the gate was wired in, micStream became the
+    // GATED stream — so this analyser silently became a gate-OUTPUT meter:
+    // zero while the gate is closed, live while open, zero again after the
+    // 700ms hang. A sensitivity meter that only moves once you are already
+    // over the threshold cannot help you SET the threshold, which is its one
+    // job. micstate measures the raw side for exactly this reason
+    // (micstate.js:218: "the gate needs the true input level"); so do we.
+    const src = rawMicStream() ?? micStream;
+    if (!_myAn || _myStream !== src) {
       const ctx = audioContext();
       _myAn = ctx.createAnalyser(); _myAn.fftSize = 512;
-      ctx.createMediaStreamSource(micStream).connect(_myAn);
+      ctx.createMediaStreamSource(src).connect(_myAn);
       _myBuf = new Float32Array(_myAn.fftSize);
-      _myStream = micStream;
+      _myStream = src;
     }
     _myAn.getFloatTimeDomainData(_myBuf);
     let peak = 0;
