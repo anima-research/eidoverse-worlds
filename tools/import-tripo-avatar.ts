@@ -388,29 +388,54 @@ const S = HEIGHT / (span * 1.16);
 say(`scale ×${S.toFixed(3)} (head-foot span ${(headY - footY).toFixed(2)} → target ${HEIGHT}m)`);
 const bin = Buffer.from(rest0.subarray(8));
 for (const n of g.nodes) if (n.translation) n.translation = n.translation.map((x: number) => x * S);
+// An accessor's bufferView is OPTIONAL. Without one its values are all zeros,
+// which a `sparse` block may then override for named indices — and that is
+// exactly what a rig with SHAPE KEYS exports: every morph-target POSITION comes
+// through as a sparse accessor with no bufferView of its own, because most
+// vertices do not move. Indexing g.bufferViews[undefined] threw outright
+// ("undefined is not an object") the first time a blend with shape keys reached
+// this stage.
+//
+// Skipping them would stop the crash and quietly break the file instead: the
+// base mesh would scale by S and the morph DELTAS would not, so every shape key
+// would apply at the old scale on a body 1.8x bigger. Sparse values are the
+// real data for the vertices they name, so they take the same multiply. (Sparse
+// value blocks are tightly packed — the spec forbids byteStride on them.)
 const accBytes = (a: any) => {
+  if (a.bufferView == null) return null;
   const bv = g.bufferViews[a.bufferView];
   return { base: (bv.byteOffset ?? 0) + (a.byteOffset ?? 0), stride: bv.byteStride ?? 0 };
 };
+const scaleVec3s = (base: number, count: number, step: number) => {
+  for (let i = 0; i < count; i++) for (let c = 0; c < 3; c++) {
+    const off = base + i * step + c * 4;
+    bin.writeFloatLE(bin.readFloatLE(off) * S, off);
+  }
+};
+let sparseScaled = 0;
 const seen = new Set();
 for (const m of g.meshes ?? []) for (const p of m.primitives) {
   for (const ai of [p.attributes.POSITION, ...(p.targets ?? []).map((t: any) => t.POSITION)]) {
     if (ai == null || seen.has(ai)) continue;
     seen.add(ai);
     const a = g.accessors[ai];
-    const { base, stride } = accBytes(a);
-    const step = stride || 12;
-    for (let i = 0; i < a.count; i++) for (let c = 0; c < 3; c++) {
-      const off = base + i * step + c * 4;
-      bin.writeFloatLE(bin.readFloatLE(off) * S, off);
+    const loc = accBytes(a);
+    if (loc) scaleVec3s(loc.base, a.count, loc.stride || 12);
+    if (a.sparse?.values) {
+      const bv = g.bufferViews[a.sparse.values.bufferView];
+      scaleVec3s((bv.byteOffset ?? 0) + (a.sparse.values.byteOffset ?? 0), a.sparse.count, 12);
+      sparseScaled++;
     }
     if (a.min) a.min = a.min.map((x: number) => x * S);
     if (a.max) a.max = a.max.map((x: number) => x * S);
   }
 }
+if (sparseScaled) say(`scaled ${sparseScaled} sparse morph-target accessor(s)`);
 for (const sk of g.skins ?? []) {
   const a = g.accessors[sk.inverseBindMatrices];
-  const { base, stride } = accBytes(a);
+  const loc = accBytes(a);
+  if (!loc) continue;                 // a skin with no bind matrices to scale
+  const { base, stride } = loc;
   const step = stride || 64;
   for (let i = 0; i < a.count; i++) for (const e of [12, 13, 14]) {
     const off = base + i * step + e * 4;
