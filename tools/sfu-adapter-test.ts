@@ -200,7 +200,7 @@ check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length ===
   const c1 = mintSfuCredential(W3, "amy", 1, 2);
   setSfuConsent(W3, "amy", 2, true);                       // predecessor's standing YES
   const v = admitSfuLeg(W3, { world: W3, id: "amy", primaryGen: 1, mediaGen: 2,
-    incarnation: c1.incarnation, nonce: c1.nonce }, 
+    incarnation: c1.incarnation, nonce: c1.nonce },
     { world: W3, incarnation: c1.incarnation, primaryGen: 1, mediaGen: 2, usedNonces: s3.usedNonces });
   if (v.admit) s3.admitted.add("amy");
   s3.sfu.setMuted("amy", true);                            // moderation aimed at THIS leg
@@ -234,6 +234,46 @@ check("retirement clears the leg", (sfuDiag(W) as any).moderatorMuted.length ===
   setSfuConsent(W5, "careful", 1, true);           // delayed REPLAY of the old yes
   check("a replayed older YES after the first mint is refused (watermark preserved)",
     s5.standingConsent.get("careful") === false);
+}
+
+// ── #130 item 4: ICE IS GENERATION-BOUND, LIKE ANSWERS ─────────────────────
+// A stale predecessor must not trickle candidates into its successor's pc.
+{
+  const { sfuAcceptIce } = await import("../server/sfuadapter.ts");
+  const W = "ice-gen";
+  const s6 = sfuState(W);
+  mintSfuCredential(W, "walker", 1, 3);
+  let accepted = 0;
+  (s6.sfu as any).addIceCandidate = () => { accepted++; };
+  sfuAcceptIce(W, "walker", { candidate: "c" });          // no gen at all
+  check("ICE with NO generation is dropped (required, not opt-in)", accepted === 0);
+  sfuAcceptIce(W, "walker", { candidate: "c" }, 2);        // predecessor's gen
+  check("ICE claiming a RETIRED generation is dropped", accepted === 0);
+  sfuAcceptIce(W, "walker", { candidate: "c" }, 3);        // the live gen
+  check("ICE naming the LIVE generation is accepted", accepted === 1);
+  mintSfuCredential(W, "walker", 1, 4);                    // takeover
+  (s6.sfu as any).addIceCandidate = () => { accepted++; };
+  sfuAcceptIce(W, "walker", { candidate: "c" }, 3);        // stale after takeover
+  check("post-takeover, the predecessor's ICE gen is refused", accepted === 1);
+}
+
+// ── #130 item 2: DEGRADED NEVER AGES INTO GREEN; RECOVERY IS A RECEIPT ─────
+// The reviewer's clocked repro: fault at t=0 and t=20 reported LIVE at t=31
+// under the old 30s silence timer. There is no timer now — degraded is sticky
+// until a POSITIVE receipt (a completed negotiation calls markVoiceLive).
+{
+  const { markVoiceDegraded, markVoiceLive, voiceServiceState } =
+    await import("../server/sfusupervisor.ts");
+  markVoiceDegraded("fault-1");
+  markVoiceDegraded("fault-2");                            // repeat, mid-degraded
+  check("repeat fault UPDATES the reason (latest fault is what an operator needs)",
+    voiceServiceState().state === "degraded" && voiceServiceState().reason === "fault-2");
+  await new Promise((r) => setTimeout(r, 50));
+  check("degraded does NOT age into live — no silence timer exists to fire",
+    voiceServiceState().state === "degraded");
+  markVoiceLive("negotiation completed for test-leg");
+  check("a positive receipt (completed negotiation) returns the service to live",
+    voiceServiceState().state === "live" && /negotiation completed/.test(voiceServiceState().reason));
 }
 
 console.log(fail === 0 ? `\n\x1b[32m✅ sfu-adapter: ${pass} passed\x1b[0m` : `\n\x1b[31m❌ ${fail} failed\x1b[0m`);

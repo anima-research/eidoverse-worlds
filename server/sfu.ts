@@ -206,10 +206,19 @@ export class Sfu {
     return false;
   }
 
-  /** Squared distance between two legs, or null if either position is unknown. */
-  private d2(a: string, b: string): number | null {
+  /** Squared distance between two legs, or null if either position is unknown
+   *  OR STALE. 🔴 Stale counts as unknown here (#130 review, item 6): inEarshot
+   *  forwards on stale positions ("fail-open — silence is the failure users
+   *  notice"), and withinCap ranks through THIS function — so if d2 happily
+   *  ranked a 10s-old coordinate, the cap suppressed the very packet the gate
+   *  had just promised to forward, and the two stages silently disagreed
+   *  (reviewer's exact-head probe: forwarded=1, capped=1 on the same stale
+   *  pair). One staleness rule, owned by the one distance function: a position
+   *  we would not gate on is a position we may not rank on either. */
+  private d2(a: string, b: string, now = Date.now()): number | null {
     const p = this.pos.get(a), q = this.pos.get(b);
     if (!p || !q) return null;
+    if (now - p.at > Sfu.POS_STALE_MS || now - q.at > Sfu.POS_STALE_MS) return null;
     const dx = p.x - q.x, dy = p.y - q.y, dz = p.z - q.z;
     return dx * dx + dy * dy + dz * dz;
   }
@@ -479,7 +488,20 @@ export class Sfu {
     const leg = this.legs.get(id);
     if (!leg) return;
     leg.closed = true;
-    for (const [, l] of this.legs) l.outbound.delete(id);   // nobody hears a corpse
+    // 🔴 ROUTES SURVIVE THE SPEAKER (#130 review, item 3). This used to delete
+    // every listener's outbound entry for the retiring speaker — but the entry
+    // held the ONLY reference to a transceiver werift keeps forever, so each
+    // same-id reconnect allocated a fresh one and the pc grew an m-line per
+    // generation (reviewer measured 20 transceivers, 0 routes, after twenty
+    // reconnect cycles against one listener). Routes are keyed AND msid'd by
+    // speaker id, so a successor with the same id maps onto the same track:
+    // retaining the route makes reconnect a zero-SDP event and bounds
+    // transceivers by DISTINCT speakers, not by reconnect count.
+    //
+    // Retention leaks no audio: consent for the retired id is wiped below, and
+    // fanout checks consent before the route — an unconsented route is starved,
+    // exactly the mechanism consent-revocation has always relied on. No stale
+    // packets either: the corpse's own fanout stops at `from.closed`.
     try { leg.pc.close(); } catch { /* already dead */ }
     this.legs.delete(id);
     this.pos.delete(id);

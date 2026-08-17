@@ -52,15 +52,25 @@ function isBenignTransportError(err: unknown): boolean {
   return typeof syscall === "string" && /^(recv|send)/.test(syscall);
 }
 
-/** Preserve the crash site ourselves. A bare `throw` inside the handler loses
- *  the original stack on Bun, which is worse than not guarding at all. */
+/** Preserve the crash site ourselves — a bare `throw` inside the handler loses
+ *  the original stack on Bun — then EXIT, preserving the ordinary fatal
+ *  contract. 🔴 Reviewer (#130 item 1): the previous version logged, marked
+ *  voice degraded, and kept the process alive for EVERY non-benign uncaught
+ *  error — which reclassified arbitrary unknown failures (world-state bugs,
+ *  persistence bugs, anything) as "voice degraded" and left the whole
+ *  sequencer running in an unknown state. That is the catch{}-in-disguise
+ *  this file's own header warns about, promoted to process scope. Installing
+ *  the guard may narrow the fatal set ONLY by the positively-identified
+ *  benign werift transport errors; everything else must die as it would have
+ *  died unguarded, with its original stack on record. */
 function reportFatal(err: unknown, kind: string, onFatal?: (e: unknown, k: string) => void) {
   console.error(`\n[sfu] FATAL (${kind}) — not a benign transport error:`);
   console.error(err instanceof Error && err.stack ? err.stack : err);
   fatals++;
-  // The supervisor decides what this means for VOICE. The world server keeps
-  // serving text, presence and builds regardless — see the doc above.
-  try { onFatal?.(err, kind); } catch { /* a supervisor that throws must not recurse */ }
+  // Last-gasp notify (e.g. broadcast voice-degraded) before the process dies;
+  // the restart advances the durable incarnation, which is the real recovery.
+  try { onFatal?.(err, kind); } catch { /* a notifier that throws must not recurse */ }
+  process.exit(1);
 }
 let fatals = 0;
 export const transportFatals = () => fatals;
@@ -74,10 +84,15 @@ export const transportFatals = () => fatals;
  *  Now: server.ts calls it once, at boot, with a log line. Same protection,
  *  visible in the place that owns the process.
  *
- *  It also no longer EXITS on a non-transport error. Killing the world server —
- *  text, presence, builds, everyone — because voice hit an unexpected exception
- *  is a bigger outage than the one it prevents. It reports, marks voice
- *  degraded through the supervisor, and lets the process live. */
+ *  CONTRACT (#130 review): the guard narrows Bun's default-fatal semantics by
+ *  exactly one set — positively identified benign werift UDP transport errors
+ *  (structured errno + send/recv syscall), which are swallowed and counted.
+ *  Every other uncaught failure logs its original stack and exits nonzero,
+ *  as it would have unguarded. "Voice degraded but alive" is NOT an outcome
+ *  this guard may produce for an unknown error: an unknown error means an
+ *  unknown process state, and amendment 2's recovery story (restart → durable
+ *  incarnation advances → every credential structurally stale → clients
+ *  perform one clean rejoin) only works if the process actually restarts. */
 export function installSfuTransportGuard(onFatal?: (err: unknown, kind: string) => void) {
   if (installed) return;
   installed = true;

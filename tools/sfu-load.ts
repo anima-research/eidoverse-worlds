@@ -67,11 +67,17 @@ for (let tick = 0; tick < ticks; tick++) {
   }
   await sleep(PTIME_MS);
 }
+// 🔴 TWO WINDOWS, REPORTED SEPARATELY (#130 review). `elapsed` used to include
+// this drain, understating sustained CPU/egress (reviewer's check: reported
+// 3.48 Mbps where the active-send arithmetic gives ~4.86). The drain still
+// exists — delivery accounting needs in-flight packets to land — but rates are
+// computed over the ACTIVE send window and the drain is reported as itself.
+const activeSec = (Date.now() - t0) / 1000;
 await sleep(1000);
 
 const elapsed = (Date.now() - t0) / 1000;
 const cpu = process.cpuUsage(cpu0);
-const cpuPct = ((cpu.user + cpu.system) / 1000 / (elapsed * 1000)) * 100;
+const cpuPct = ((cpu.user + cpu.system) / 1000 / (activeSec * 1000)) * 100;  // over the active send window — the drain is idle time
 const memMB = (process.memoryUsage().rss - mem0) / 1048576;
 const d = sfu.diag();
 const heard = peers.reduce((n, p) => n + p.heard, 0);
@@ -79,10 +85,11 @@ const heard = peers.reduce((n, p) => n + p.heard, 0);
 // (N-1) per packet — not per peer. (First run read 200%: the formula was
 // wrong, not the SFU. forwarded == sent*(N-1) exactly, which is the proof.)
 const expected = sent * (N - 1);
-const egressBps = (d.forwarded / elapsed) * (OPUS_BYTES + 12) * 8;
+const egressBps = (d.forwarded / activeSec) * (OPUS_BYTES + 12) * 8;
 
-console.log(`  packets in       ${sent}  (${Math.round(sent / elapsed)}/s)`);
-console.log(`  forwarded        ${d.forwarded}  (${Math.round(d.forwarded / elapsed)}/s)`);
+console.log(`  active window    ${activeSec.toFixed(2)}s send + ${(elapsed - activeSec).toFixed(2)}s drain (delivery counted over both)`);
+console.log(`  packets in       ${sent}  (${Math.round(sent / activeSec)}/s active)`);
+console.log(`  forwarded        ${d.forwarded}  (${Math.round(d.forwarded / activeSec)}/s active)`);
 console.log(`  heard by peers   ${heard} / ${expected} expected  (${((heard / expected) * 100).toFixed(1)}% delivery)`);
 console.log(`  CPU              ${cpuPct.toFixed(1)}% of one core`);
 console.log(`  RSS delta        ${memMB.toFixed(0)} MB`);

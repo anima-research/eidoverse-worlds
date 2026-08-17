@@ -22,7 +22,7 @@
 //   • no API secret exists at all, so amendment 1's "never expose API secrets
 //     to a browser or resident tool surface" is satisfied vacuously.
 import { currentIncarnation } from "./transport.ts";
-import { voiceServiceState } from "./sfusupervisor.ts";
+import { voiceServiceState, markVoiceLive } from "./sfusupervisor.ts";
 import { Sfu } from "./sfu.ts";
 import { admitParticipant, applyConsentUpdate, nextIncarnation, relayIdentity,
   type RelayClaims, type LiveLegState } from "./relaydecision.ts";
@@ -467,6 +467,11 @@ export async function sfuNegotiate(world: string, legId: string,
       }, 15000);
     });
     await pc.setRemoteDescription({ type: "answer", sdp });
+    // The POSITIVE health receipt (#130 review, item 2): an owned negotiation
+    // that completed end-to-end — offer created, browser answered, answer
+    // applied — is evidence the SFU is doing its job. This is the ONLY path
+    // back from degraded; silence never is.
+    markVoiceLive(`negotiation completed for ${legId}`);
   }).catch((e) => console.error(`[sfu] negotiate ${legId}:`, (e as Error).message));
 }
 
@@ -504,9 +509,18 @@ export function sfuAcceptAnswer(world: string, legId: string, sdp: string, claim
   resolve(sdp);
 }
 
-export function sfuAcceptIce(world: string, legId: string, candidate: unknown) {
-  const s = worlds.get(world);
-  s?.sfu.addIceCandidate(legId, candidate);
+export function sfuAcceptIce(world: string, legId: string, candidate: unknown, claimedGen?: number) {
+  // 🔴 ICE IS GENERATION-BOUND, EXACTLY AS ANSWERS ARE (#130 review, item 4).
+  // sfuAcceptAnswer requires the generation and refuses a mismatch; this
+  // function took none, so a stale predecessor browser could trickle
+  // candidates into the SUCCESSOR's peer connection after a same-id takeover.
+  // Same contract, same required-not-opt-in stance: a candidate that cannot
+  // name its generation belongs to no live leg. (Our client has always been
+  // able to send it — voicesfu.js holds the credential that carries mediaGen.)
+  if (claimedGen == null) return;                    // late/stale churn, drop quietly
+  const leg = worlds.get(world)?.legs.get(legId);
+  if (!leg || leg.gen !== claimedGen) return;        // predecessor's candidate, drop
+  worlds.get(world)?.sfu.addIceCandidate(legId, candidate);
 }
 
 /** Feed the proximity gate. Optional — see the `sfu-pos` case in server.ts. */

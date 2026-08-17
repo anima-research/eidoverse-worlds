@@ -17,7 +17,12 @@ server.onTrack.subscribe(() => { fired = true; console.log('  🔔 SERVER ontrac
 const offer = await server.createOffer();
 await server.setLocalDescription(offer);
 
-const b = await chromium.launch({ executablePath:'/home/claude/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
+// 🔴 PORTABLE (#130 review, item 5): this hardcoded one Linux machine's
+// chromium path, so the branch's own receipt exited 1 on any other host —
+// including the macOS review host. Playwright's managed browser is the
+// default; SFU_TEST_CHROME overrides it explicitly when an operator wants a
+// specific binary.
+const b = await chromium.launch({ ...(process.env.SFU_TEST_CHROME ? { executablePath: process.env.SFU_TEST_CHROME } : {}),
   args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--autoplay-policy=no-user-gesture-required'] });
 const pg = await (await b.newContext({permissions:['microphone']})).newPage();
 // A real http(s) origin is required for getUserMedia's secure-context check —
