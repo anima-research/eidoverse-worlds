@@ -22,6 +22,7 @@
 //   • no API secret exists at all, so amendment 1's "never expose LiveKit API
 //     secrets to a browser or resident tool surface" is satisfied vacuously.
 import { currentIncarnation } from "./transport.ts";
+import { voiceServiceState } from "./sfusupervisor.ts";
 import { Sfu } from "./sfu.ts";
 import { admitParticipant, applyConsentUpdate, nextIncarnation, relayIdentity,
   type RelayClaims, type LiveLegState } from "./relaydecision.ts";
@@ -288,10 +289,19 @@ export function sfuDiag(world: string) {
   const s = worlds.get(world);
   if (!s) return { transport: "sfu", active: false };
   const d = s.sfu.diag();
+  // 🔴 PASS THE INNER DIAG THROUGH, do not re-shape it. This rebuilt the object
+  // field by field and silently DROPPED transportErrorsSwallowed — the guard's
+  // count of swallowed werift UDP errors, which is the one number that says
+  // "peers are dying faster than they should". A diagnostic that quietly loses a
+  // field is worse than one that never had it: the field exists, the instrument
+  // exists, and nobody sees it. Found reading sfu.ts end to end (R: "you should
+  // have already read the applicable code from top to bottom").
   return {
+    ...d,
     transport: "sfu", active: true, incarnation: s.incarnation,
-    legs: d.legs, forwarded: d.forwarded,
-    suppressed: { gated: s.sfu.gated, capped: s.sfu.capped },
+    // The supervisor's view belongs here too — A2 asks for voice service state
+    // to be observable, and /relay-diag is where an operator looks.
+    service: voiceServiceState(),
     moderatorMuted: [...s.moderatorMuted],
   };
 }

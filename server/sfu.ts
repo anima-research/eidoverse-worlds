@@ -29,7 +29,7 @@
  */
 import { RTCPeerConnection, MediaStreamTrack, MediaStream, RTCRtpCodecParameters } from "werift";
 import type { RtpPacket } from "werift";
-import { installSfuTransportGuard, transportErrorsSwallowed } from "./sfuguard.ts";
+import { transportErrorsSwallowed } from "./sfuguard.ts";
 
 /** Opus, 48k stereo — the browser's default publish codec. Pinned so the
  *  answer never negotiates something we'd have to transcode. */
@@ -92,12 +92,11 @@ export class Sfu {
    *  should not have to know that; the SFU asks once and means once. */
   private dirty = new Set<string>();
 
-  constructor(private opts: { onNegotiationNeeded?: (legId: string) => void } = {}) {
-    // werift leaves its UDP socket's 'error' unbound, which crashes the process
-    // when a peer dies mid-fanout. See sfuguard.ts — narrow by design.
-    // (the transport guard is installed once by server.ts at boot — a
-    // constructor must not change process-wide crash semantics)
-  }
+  // werift leaves its UDP socket's 'error' unbound, which crashes the process
+  // when a peer dies mid-fanout — see sfuguard.ts. The guard that swallows it is
+  // installed ONCE by server.ts at boot, not here: a constructor must not change
+  // process-wide crash semantics for a whole world server.
+  constructor(private opts: { onNegotiationNeeded?: (legId: string) => void } = {}) {}
 
   /** Last known world position per leg, and when we heard it. */
   private pos = new Map<string, { x: number; y: number; z: number; at: number }>();
@@ -108,7 +107,8 @@ export class Sfu {
   /** listener → speakerIds currently holding an audible slot. */
   private slots = new Map<string, Set<string>>();
 
-  /** Client rolloff is FULL_M=3 → SILENT_M=20 (client/lib/voicerelay.js:23), so
+  /** Client rolloff is FULL_M=3 → SILENT_M=20 (client/lib/voicesfubridge.js:145;
+   *  this cited voicerelay.js until the LiveKit client was deleted), so
    *  beyond SILENT_M the listener multiplies the stream by exactly zero.
    *
    *  🔴 HYSTERESIS, not a fixed margin. My first version added MARGIN_M=10 with a
@@ -506,6 +506,13 @@ export class Sfu {
         state: l.pc.connectionState,
       })),
       forwarded: this.forwarded,
+      // 🔴 SUPPRESSION BELONGS IN THE SAME REPORT AS DELIVERY. These were public
+      // fields that only sfuadapter reached into, so anything calling sfu.diag()
+      // directly — tools/sfu-load.ts does — saw forwarded with no idea how many
+      // packets were deliberately dropped. Basis's lesson, recorded in
+      // SFU-HANDOFF: "a cheaper server that drops more is not healthier", and a
+      // load harness that cannot see drops will report exactly that.
+      suppressed: { gated: this.gated, capped: this.capped },
       muted: [...this.muted],
       transportErrorsSwallowed: transportErrorsSwallowed(),
     };
