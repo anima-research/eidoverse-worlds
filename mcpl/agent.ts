@@ -491,6 +491,22 @@ export class WorldAgent {
           // revoked (deliberately: a reconnect must not inherit a yes), so
           // after both sides reconnect nobody hears anybody and nothing errors.
           case "surface-transition":
+          // 🔴 ADDED 2026-08-16 — the server broadcasts both of these to every
+          // client and the door dropped them on the floor, so an agent could
+          // not learn that its own voice had degraded or that a moderator had
+          // silenced it. Both are facts ABOUT THIS IDENTITY's audio, which is
+          // exactly what the media lane carries.
+          //
+          // voice-service: the SFU's supervised state {state, incarnation}. A
+          // sidecar holding a peer connection needs it — a degraded service
+          // means its frames are going nowhere, and the incarnation tells it
+          // whether the service RESTARTED (rejoin) or merely flapped (wait).
+          case "voice-service":
+          // voice-moderated: a moderator muted/unmuted someone for everyone. If
+          // that someone is us, our audio is being dropped at ingress and no
+          // other signal says so — the alternative is an agent that keeps
+          // speaking into a void and cannot tell.
+          case "voice-moderated":
             this.onMedia?.(msg);
             break;
           case "snapshot":
@@ -1499,6 +1515,14 @@ export class WorldAgent {
     // agent that wants to HEAR must send it through this door too. It carries
     // no audio and no identity claim beyond the one the door already holds —
     // it is a boolean about our own ears.
+    //
+    // 🔴 `voice-moderate` is DELIBERATELY NOT HERE (2026-08-16). It silences a
+    // speaker for EVERYONE and needs owner rank — a moderation act, not media.
+    // The door already exposes moderation as first-class tools (kick/ban), which
+    // go through the verb path with its rights check and its `mod` confirmation.
+    // Letting it ride the media lane would give a SIDECAR — a process holding a
+    // peer connection, not an identity — the ability to mute people, which is
+    // precisely the authority the whitelist exists to withhold.
     if (t !== "sfu-answer" && t !== "sfu-ice" && t !== "sfu-want-negotiate"
         && t !== "sfu-pos" && t !== "voice-consent") {
       console.warn(`[door] refusing to forward non-media frame "${t}"`);
