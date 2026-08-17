@@ -52,6 +52,11 @@ GROUPS = {
         "tools/sfu-verb-gate-test.mjs",
         "tools/mic-gate-wired-test.mjs",
         "tools/micstate-exec-test.mjs",
+        "tools/sfu-loss-test.mjs",
+        "tools/sfu-no-duplicate-playback-test.mjs",
+        "mcpl/mention.ts",                 # door: shared, escaped mention pattern
+        "tools/door-media-whitelist-test.mjs",
+        "tools/mention-regex-test.mjs",
         "tools/voicesource-real-test.mjs",
         "tools/voice-lifecycle-test.ts",  # DELETED with the mesh it tested
         "tools/audioctx-test.ts",         # repointed at micstate
@@ -88,8 +93,11 @@ GROUPS = {
     # Written this session; they document decisions rather than change behaviour.
     "K.notes": ["notes/DECISION-android-captions.md", "notes/PR-SPLIT-AUDIT.md",
                 "notes/pr-split-coverage.py", "tools/tts-threading-bench.mjs",
-                "notes/NEXT-barge-in.md", "notes/NEXT-remove-mesh.md"],
-    "G.headers": ["server/routes.ts"],   # + tools/tts-threading-bench.mjs measures it (K)
+                "notes/NEXT-barge-in.md", "notes/NEXT-remove-mesh.md",
+                "notes/PR-0-isolation.md", "notes/PR-1-sfu.md",
+                "notes/PR-2-mesh-removal.md", "notes/PR-3-panel-tts.md",
+                "notes/REVIEW-agent-tts-path.md"],
+    "G.headers": ["server/routes.ts", "client/lib/conjure.js"],   # + tools/tts-threading-bench.mjs measures it (K)
     "H.join": ["client/lib/net.js", "tools/join-check.mjs",
                "tools/join-negative-control.mjs", "tools/join-probe.mjs",
                "tools/voice-wiring-test.ts"],
