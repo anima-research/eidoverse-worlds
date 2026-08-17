@@ -557,15 +557,27 @@ export function startPacer() {
   playhead = 0;
   pacer = setInterval(() => {
     if (!writer) return;
+    // 🔴 A CLOSED WRITER IS NOT A NULL WRITER (R, phone test 2026-08-16:
+    // "Stream closed at tts.js write — ×8536"). The source swap stops the old
+    // generator track, which closes its writable; this guard passed, and
+    // write() REJECTED — asynchronously, so the try below never saw it —
+    // 100 times a second for the rest of the session. The recovery already
+    // existed one function up: ensureGenerator() rebuilds a dead generator and
+    // re-binds every sender. The pacer just never asked.
+    if (genTrack?.readyState !== 'live') { ensureGenerator(); return; }
     const owed = Math.floor(((performance.now() - t0) / 1000) * OUT_RATE) - playhead;
     for (let n = 0; n + FRAME <= owed; n += FRAME) {
       const data = new Float32Array(FRAME);
       fillSpeech(data);
       try {
-        writer.write(new AudioData({
+        // write() returns a promise; a stream closed BETWEEN the liveness
+        // check and this call rejects async. Swallow exactly that — the next
+        // tick's liveness check owns the rebuild — so one mid-swap race does
+        // not print, and a real storm cannot recur.
+        void writer.write(new AudioData({
           format: 'f32', sampleRate: OUT_RATE, numberOfFrames: FRAME,
           numberOfChannels: 1, timestamp: Math.round((playhead / OUT_RATE) * 1e6), data,
-        }));
+        })).catch(() => {});
       } catch (e) { report('tts write', e); }
       playhead += FRAME;
     }
