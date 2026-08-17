@@ -78,6 +78,17 @@ for (const [caseName, capConst] of [
   ok(`${caseName} is gated on ${capConst}`, r.ok, r.why);
 }
 
+// The streaming path is a NOTIFICATION — no response, so the gate must drop it
+// silently rather than refuse. Assert the drop happens before agent.typing().
+{
+  const at = src.indexOf('CHANNELS_OUTGOING_CHUNK');
+  const body = src.slice(at, at + 900);
+  const gate = body.indexOf('capAllowed(CAP.channelsStreaming)');
+  const typing = body.indexOf('this.agent.typing()');
+  ok('channels/outgoing/chunk is gated on channelsStreaming', gate >= 0);
+  ok('the streaming gate precedes agent.typing()', gate >= 0 && typing >= 0 && gate < typing);
+}
+
 // tools/list and tools/call were the original offenders — keep them pinned.
 for (const m of ['tools/list', 'tools/call']) {
   const at = src.indexOf(`case "${m}"`);

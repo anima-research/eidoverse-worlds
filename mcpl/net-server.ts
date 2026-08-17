@@ -678,6 +678,13 @@ class Session {
           // agent.typing() call is throttled and the world extends a 4s window
           // on each, so a long generation keeps the dots up continuously.
           if (msg.notification.method === method.CHANNELS_OUTGOING_CHUNK) {
+            // 🔴 `channels.streaming` was the fourth declared-but-unchecked
+            // capability (2026-08-16). This is a NOTIFICATION, so there is no
+            // response to refuse with — it is dropped silently, which is the
+            // correct shape for a stream the host never asked to send. Ungated,
+            // a host that declared only `channels.incoming` still made the
+            // world draw typing dots over its agent's head.
+            if (!this.capAllowed(CAP.channelsStreaming)) continue;
             const cid = (msg.notification.params as { channelId?: string } | undefined)?.channelId;
             if (!cid || cid === this.channelId) this.agent.typing();
           }
