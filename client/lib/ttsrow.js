@@ -733,10 +733,20 @@ function headDimmed() {
         // If loading fails the box must not stay ticked over a voice that never
         // arrived — that is the same silent failure by a different route.
         try {
-          const ok = await pick(pickId);      // loads, sets the source, enables (pick sets _loadingId synchronously, so clearing the tick flag after it returns leaves no gap)
+          const ok = await pick(pickId);      // loads and sets the source
           // pickInner reports failure as `false`, not a throw — its catch
           // owns the error UI. Only the tick needs undoing here.
           if (ok === false) { e.target.checked = false; return; }
+          // 🔴 ENABLE HERE, NOT IN pickInner (R, 2026-08-16: "TTS gets stuck
+          // faded out and 'ready' and never goes live"). pickInner only enables
+          // when `wantedSpeech` — captured from `_needVoice || isTtsEnabled()`
+          // at its entry — and THIS path sets _needVoice=false four lines
+          // before calling it, so the tick-then-load flow could never enable:
+          // the model landed, the note said "ready", and nothing spoke. The
+          // file's own doctrine says it plainly — the tick decides WHETHER,
+          // the list decides WHICH — so the tick's handler owns the enable the
+          // moment its load succeeds.
+          setTtsEnabled(true);
         } catch (err) {
           e.target.checked = false;
           _needVoice = true;
@@ -747,6 +757,11 @@ function headDimmed() {
         clearTimeout(_needVoiceTimer);
         _needVoiceTimer = setTimeout(() => { _needVoice = false; build(); }, 5000);
           console.warn('[voice] could not load the saved voice:', err);
+        } finally {
+          // EVERY exit — success, refusal, throw. The first version cleared
+          // this only on the no-items branch, so a successful load left the
+          // box faded forever (the leak R reported as "stuck faded out").
+          _tickPending = false;
         }
         repaint();
     };

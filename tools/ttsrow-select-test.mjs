@@ -45,3 +45,26 @@ const c = loads === 2;
 console.log(a && b && c
   ? 'PASS — marking is free, live switching still loads, pending still resumes'
   : `FAIL a=${a} b=${b} c=${c}`);
+
+// ── the tick-enable flow, pinned after THREE rounds of reload-and-see ──────
+// (source-level; the closure is unreachable from outside. Each has a negative
+// control inline: the regex must fail on the pre-fix shape.)
+{
+  const { readFileSync } = await import('fs');
+  const src = readFileSync(new URL('../client/lib/ttsrow.js', import.meta.url), 'utf8');
+  const t = (n, c) => { console.log(`${c ? 'ok  ' : 'FAIL'} ${n}`); if (!c) process.exit(1); }
+  // 1. the tick handler enables AFTER its own successful pick — pickInner
+  //    cannot (wantedSpeech is captured after this path clears _needVoice).
+  const tick = src.slice(src.indexOf('await pick(pickId)'), src.indexOf('await pick(pickId)') + 2600);
+  t('tick path enables after a successful load', /setTtsEnabled\(true\)/.test(tick));
+  // 2. _tickPending is cleared in a finally — the leak that stuck the box faded.
+  t('_tickPending cleared on EVERY exit (finally)', /finally \{[^}]*_tickPending = false/.test(tick));
+  // 3. both head-sync writers agree on checked (two copies of one truth). One
+  //    assigns the expression inline, the other through a wantChecked local —
+  //    so collect every assignment RHS, resolving one level of indirection.
+  const rhs = [...src.matchAll(/box\.checked = ([^;\n]+);/g)].map((m) => m[1].trim());
+  const defs = Object.fromEntries([...src.matchAll(/const (\w+) = ([^;\n]+);/g)].map((m) => [m[1], m[2]]));
+  const resolved = rhs.map((r) => defs[r] ?? r);
+  t(`both checked-writers consult loading state (${rhs.length} writers)`,
+    rhs.length >= 2 && resolved.every((w) => /_loadingId|_tickPending|loadingNow/.test(w)));
+}
