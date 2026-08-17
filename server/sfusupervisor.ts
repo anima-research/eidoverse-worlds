@@ -27,35 +27,33 @@ let notify: ((s: VoiceState, incarnation: string, reason: string) => void) | nul
 /** server.ts supplies the broadcast; the supervisor owns the decision. */
 export function onVoiceServiceChange(fn: typeof notify) { notify = fn; }
 
-/** Called by the transport guard on a non-benign fault, and by anything else
- *  that discovers the SFU cannot do its job. Idempotent per state. */
+/** Called by anything that discovers the SFU cannot do its job. Repeated
+ *  faults update the reason (the LATEST fault is the one an operator needs). */
 export function markVoiceDegraded(why: string) {
-  if (state === "degraded") return;
+  const wasDegraded = state === "degraded";
   state = "degraded"; reason = why;
-  console.error(`[sfu] voice DEGRADED: ${why}`);
-  try { notify?.(state, currentIncarnation(), reason); } catch { /* never recurse */ }
-  // 🔴 NOT A ONE-WAY DOOR (independent review, 2026-08-16). markVoiceLive had
-  // ZERO callers, so a single non-benign fault anywhere in the process latched
-  // voice degraded for the life of the server with no path back — and because
-  // the guard is process-wide, an unrelated unhandled rejection could do it.
+  if (!wasDegraded) {
+    console.error(`[sfu] voice DEGRADED: ${why}`);
+    try { notify?.(state, currentIncarnation(), reason); } catch { /* never recurse */ }
+  }
+  // 🔴 NO SILENCE TIMER (#130 review, item 2). Two prior versions were both
+  // wrong ways: markVoiceLive with zero callers latched degraded forever, and
+  // the 30s "no further faults" timer that replaced it aged faults into green
+  // on the absence of evidence — a dead subsystem is silent forever, and the
+  // early-return above (previous version) didn't even rearm it on a repeat
+  // fault (reviewer's clocked repro: fault at t=0 and t=20, LIVE at t=31).
   //
-  // A degraded voice service that has stopped faulting is a RECOVERED one: the
-  // SFU is in-process, so there is nothing to restart and nothing to wait for
-  // except evidence that the fault is not recurring. If it recurs, this timer
-  // is replaced by the next degrade and the window starts again — so a
-  // crash-looping subsystem stays visibly degraded rather than flapping green.
-  clearTimeout(recoveryTimer);
-  recoveryTimer = setTimeout(() => markVoiceLive("no further faults for 30s"), 30_000);
-  // A recovery timer must never hold the process open on its own.
-  (recoveryTimer as { unref?: () => void }).unref?.();
+  // Recovery now requires a POSITIVE receipt: markVoiceLive is called by the
+  // adapter when an owned negotiation completes end-to-end (offer → browser
+  // answer → setRemoteDescription OK) — evidence the SFU is doing its actual
+  // job, not merely evidence nobody has watched it fail lately.
 }
-let recoveryTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** A supervised recovery: the SFU is usable again. Clients rejoin under the
- *  CURRENT incarnation — which, after a process restart, is a new one, so no
- *  stale leg can be resurrected by a client that missed the transition. */
+/** A supervised recovery, on a POSITIVE health receipt only: a completed
+ *  negotiation proves the SFU is usable. Clients rejoin under the CURRENT
+ *  incarnation — which, after a process restart, is a new one, so no stale
+ *  leg can be resurrected by a client that missed the transition. */
 export function markVoiceLive(why = "") {
-  clearTimeout(recoveryTimer);
   if (state === "live") return;
   state = "live"; reason = why;
   console.log(`[sfu] voice LIVE again${why ? `: ${why}` : ""}`);

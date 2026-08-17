@@ -156,7 +156,14 @@ sfu.closeLeg("alice");
 const revokeMs = Date.now() - t0;
 check("revoke is synchronous (<50ms, vs LiveKit's ~4700ms webhook path)", revokeMs < 50, `${revokeMs}ms`);
 check("revoked leg is gone", sfu.getLeg("alice") === undefined);
-check("…and nobody holds a route to it", sfu.getLeg("bob")?.outbound.has("alice") === false);
+// 🔴 #130 item 3 changed the mechanism here: routes now SURVIVE speaker
+// retirement (deleting them leaked the transceiver — the only handle werift
+// keeps — one per reconnect). The safety property was never route absence;
+// it is that nobody HEARS a corpse: the corpse's fanout stops at from.closed,
+// and consent for the retired id is wiped so a same-id successor is starved
+// until it is granted afresh. Pin THAT.
+check("…and consent to the corpse is wiped (retained route is starved)",
+  (sfu as any).allows("bob", "alice") === false);
 
 // ── takeover: same id re-joining retires the predecessor (#57 one body) ────
 const bob2 = new FakePeer();
@@ -468,6 +475,98 @@ for (let i=0;i<40;i++){
 }
 check(`near-tie jitter 40× → ${swaps} slot swaps (no stickiness would thrash)`, swaps<=1);
 
+}
+
+// ── #130 item 6: STALE POSITIONS MUST NOT BE CAP-RANKED ────────────────────
+// inEarshot forwards on stale (fail-open), and withinCap used to rank the same
+// stale coordinates through d2() and suppress — the two stages disagreed
+// silently. One staleness rule now lives in d2(): a position too old to gate
+// on is too old to rank on. Reviewer's probe: 10s-old positions, cap=1 →
+// {forwarded:1, capped:1}; must be forwarded with capped:0.
+{
+  const room = new Sfu(); const s = room as any;
+  for (const id of ["L","a","b"]) room.createLeg(id, 1);
+  const old = Date.now() - 10_000;
+  room.setPosition("L", 0, 0, 0, old);
+  room.setPosition("a", 1, 0, 0, old);
+  room.setPosition("b", 2, 0, 0, old);
+  room.maxAudiblePerListener = 1;
+  check("stale challenger vs full cap → admitted (cannot rank what we cannot gate)",
+    s.withinCap("L","a") === true && s.withinCap("L","b") === true);
+  // and the mixed case: fresh holder, stale challenger — still admitted
+  const r2 = new Sfu(); const t = r2 as any;
+  for (const id of ["L","x","y"]) r2.createLeg(id, 1);
+  r2.setPosition("L", 0, 0, 0); r2.setPosition("x", 1, 0, 0);
+  r2.maxAudiblePerListener = 1;
+  t.withinCap("L","x");                              // x holds the slot, fresh
+  r2.setPosition("y", 2, 0, 0, Date.now() - 10_000); // y is stale
+  check("stale challenger admitted past a fresh incumbent (d2=null → fail-open)",
+    t.withinCap("L","y") === true);
+  room.closeAll(); r2.closeAll();
+}
+
+// ── #130 item 3: SAME-ID RECONNECT MUST NOT GROW TRANSCEIVERS ──────────────
+// closeLeg used to delete the listener's route entry — the only reference to a
+// transceiver werift keeps forever — so every reconnect allocated another one
+// (reviewer measured 20 transceivers, 0 routes, after 20 cycles). Routes now
+// survive speaker retirement and a same-id successor reuses them.
+{
+  const room = new Sfu();
+  room.createLeg("listener", 1);
+  for (let cycle = 1; cycle <= 20; cycle++) {
+    room.createLeg("spk", cycle);
+    room.setConsent("listener", "spk", true);        // creates/reuses the route
+    room.closeLeg("spk");
+  }
+  const listener = room.getLeg("listener")!;
+  const tx = listener.pc.getTransceivers().length;
+  check(`20 same-id speaker reconnect cycles → ${tx} transceiver(s), bounded (was 20)`, tx === 1);
+  check("…and exactly one route entry (reused, not re-created)",
+    listener.outbound.size === 1);
+  // No stale audio: the retired speaker's consent is wiped, so a packet from a
+  // NEW same-id leg is starved until consent is granted afresh — and after a
+  // fresh grant, the reused route carries it again.
+  room.createLeg("spk", 21);
+  const spk = room.getLeg("spk")!;
+  const fakeRtp = { header: {}, payload: Buffer.from([0xf8]) } as any;
+  let wrote = 0;
+  const route = listener.outbound.get("spk")!;
+  const origWrite = route.track.writeRtp.bind(route.track);
+  (route.track as any).writeRtp = (p: unknown) => { wrote++; return origWrite(p); };
+  (room as any).fanout(spk, fakeRtp);
+  check("retired consent does NOT survive onto a same-id successor (no stale audio)", wrote === 0);
+  room.setConsent("listener", "spk", true);
+  (room as any).fanout(spk, fakeRtp);
+  check("fresh consent → the RETAINED route carries the successor's audio", wrote === 1);
+  room.closeAll();
+}
+
+// ── #130 item 1: THE GUARD PRESERVES THE FATAL CONTRACT (child-process) ────
+// An unrelated uncaught exception must still exit nonzero with the guard
+// installed, at its original site — only positively identified benign werift
+// transport errors are swallowed. Proven in a child process because the
+// property IS process-level.
+{
+  const run = (code: string) => Bun.spawnSync(["bun", "-e", code], { cwd: import.meta.dir + "/.." });
+  const unrelated = run(`
+    const { installSfuTransportGuard } = await import("./server/sfuguard.ts");
+    installSfuTransportGuard();
+    setTimeout(() => { throw new TypeError("unrelated world-state bug"); }, 10);
+    setTimeout(() => { console.log("SURVIVED"); process.exit(0); }, 300);
+  `);
+  check("guarded process still DIES on an unrelated uncaught exception",
+    unrelated.exitCode !== 0 && !unrelated.stdout.toString().includes("SURVIVED"));
+  check("…and the original crash site is on stderr, not this file's",
+    unrelated.stderr.toString().includes("unrelated world-state bug"));
+  const benignChild = run(`
+    const { installSfuTransportGuard, transportErrorsSwallowed } = await import("./server/sfuguard.ts");
+    installSfuTransportGuard();
+    const e = new Error("recvmsg ECONNREFUSED"); e.code = "ECONNREFUSED"; e.syscall = "recvmsg";
+    setTimeout(() => { throw e; }, 10);
+    setTimeout(() => { console.log("SWALLOWED=" + transportErrorsSwallowed()); process.exit(0); }, 300);
+  `);
+  check("…while a benign werift transport error is swallowed and counted",
+    benignChild.exitCode === 0 && benignChild.stdout.toString().includes("SWALLOWED=1"));
 }
 
 // ── REGRESSION C2: the guard must not swallow a real bug ───────────────────
