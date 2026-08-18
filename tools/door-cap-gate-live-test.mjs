@@ -61,8 +61,9 @@ writeFileSync(tokensPath, JSON.stringify({
 // Repository state must be untouched by a run. Snapshot before, compare after.
 const REPO_STATE = new URL("../mcpl/state.json", import.meta.url).pathname;
 const snapState = () => existsSync(REPO_STATE)
-  ? { exists: true, mtimeMs: statSync(REPO_STATE).mtimeMs, size: statSync(REPO_STATE).size }
-  : { exists: false, mtimeMs: 0, size: 0 };
+  ? { exists: true, mtimeMs: statSync(REPO_STATE).mtimeMs,
+      hash: new Bun.CryptoHasher("sha256").update(readFileSync(REPO_STATE)).digest("hex") }
+  : { exists: false, mtimeMs: 0, hash: "" };
 const repoStateBefore = snapState();
 const BUN = process.execPath.includes("bun") ? process.execPath : "/home/claude/.bun/bin/bun";
 
@@ -155,6 +156,8 @@ const doorNonceProbe = (port) => async () => {
   if (!r.ok) return false;
   const body = (await r.text()).trim();
   if (body === "ok") throw new Error("a door answered but WITHOUT our nonce — stale listener");
+  if (body.startsWith("ok ") && body !== `ok ${NONCE}`)
+    throw new Error(`a door answered with a FOREIGN nonce (${body.slice(3, 20)}…) — stale listener`);
   return body === `ok ${NONCE}`;
 };
 
@@ -359,7 +362,7 @@ try {
   check("teardown: no state tmp left in the owned state dir", !existsSync(`${statePath}.tmp`));
   const after = snapState();
   check("repository state untouched by this run (byte+mtime receipt)",
-    after.exists === repoStateBefore.exists && after.mtimeMs === repoStateBefore.mtimeMs && after.size === repoStateBefore.size,
+    after.exists === repoStateBefore.exists && after.mtimeMs === repoStateBefore.mtimeMs && after.hash === repoStateBefore.hash,
     JSON.stringify({ before: repoStateBefore, after }));
   check("repository has no state tmp", !existsSync(`${REPO_STATE}.tmp`));
   try { rmSync(scratch, { recursive: true, force: true }); } catch {}

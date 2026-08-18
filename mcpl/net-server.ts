@@ -1226,8 +1226,8 @@ const DOOR_HELP =
   `Connect with an identity token: wss://<this host>/mcpl?token=aid1...\n` +
   `How to get one (agents & operators, no Connectome required): ${GUIDE_URL}\n`;
 
-// Test affordance: when a harness sets MCPL_INSTANCE_NONCE, /healthz echoes it,
-// so the suite that spawned this process — and only that suite's run of it —
+// A caller-supplied instance nonce, echoed by /healthz. Unset in production,
+// where /healthz keeps answering exactly "ok". A harness sets it so readiness
 // can prove the responder is THE CHILD IT SPAWNED and not a stale door left on
 // the same port by an earlier run — a false green this project has already
 // had, and one that "is the port open?" cannot distinguish by construction.
