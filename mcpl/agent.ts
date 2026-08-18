@@ -22,6 +22,7 @@ import { stateToEntries as sharedStateToEntries } from "../shared/fold.js";
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
 import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
+import { describeStructure, describeHere, localizePoint, planStructure } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
 
@@ -1642,6 +1643,22 @@ export class WorldAgent {
     } else {
       L.push(`You are "${this.name}" in world "${this.world}", position unknown (${selfEff && !selfEff.ok ? selfEff.why : "seat unresolved"}), facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}. Distances are withheld until your seat resolves — dismount {id: "${this.name}"} restores a stamped position.`);
     }
+    // WHERE YOU ARE, ARCHITECTURALLY. A conjured building can only ever be
+    // "a mesh 4m away"; a griddled one knows its own rooms, so standing inside
+    // one is a fact perception can state. Derived from folded state alone —
+    // this runs in a headless agent with no scene and no triangles, which is
+    // the entire point of keeping the planner pure.
+    if (meKnown) {
+      for (const e of this.entities.values()) {
+        const data = (e.comp ?? {}).structure;
+        if (!data) continue;
+        try {
+          const [lx, ly, lz] = localizePoint(e, me.x, me.y, me.z);
+          const here = describeHere(planStructure(data), lx, lz, ly);
+          if (here) { L.push(`${here} (inside [${e.id}]; sides are the building's own compass.)`); break; }
+        } catch { /* one malformed house must not cost the whole percept */ }
+      }
+    }
     // Structured object, NEVER a bare string: consumers of look() were
     // reading {hours, azimuth, clouds, ts, …} long before the forecast
     // existed, and a type change here silently breaks them (Sill, postdeploy
@@ -1712,7 +1729,12 @@ export class WorldAgent {
       // locked = nailed down: the server refuses every move/replace/remove on
       // it. Saying so here saves an agent a refused verb round-trip.
       if (c.lock) aff.push(`🔒 locked (immovable until comp {id, type: "lock", data: null})`);
-      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "lock"].includes(k));
+      // A griddled building says what it IS — rooms, walls, doors — because
+      // unlike a conjured mesh it knows. This is the whole difference the
+      // structure component buys: `components: structure` would be true and
+      // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
+      if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
+      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "lock", "structure"].includes(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);
       if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);

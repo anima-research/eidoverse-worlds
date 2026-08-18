@@ -17,6 +17,7 @@ import { foldParity } from './lib/parity.js';
 import { initModelsRealizer, reconcileModels, residencyDebug, setResidencyFocus, drainPromoteTail } from './lib/realize/models.js';
 import { initEnvironmentRealizer } from './lib/realize/environment.js';
 import { initSocialRealizer } from './lib/realize/social.js';
+import { initStructureRealizer } from './lib/realize/structure.js';
 import { initCauses } from './lib/realize/causes.js';
 // side-effecting: the `particles` component's host wires itself to the comp
 // and entity buses on import (it has no boot step of its own)
@@ -105,6 +106,10 @@ setResidencyFocus(() => myState?.pos ?? null);   // the body anchors residency t
 initModelsRealizer();
 initEnvironmentRealizer();
 initSocialRealizer();
+// structure AFTER models: a building's anchor entity is an ordinary spawn until
+// the `kind` amendment lands, and the structure realizer hides whatever object
+// the models realizer made for it.
+initStructureRealizer();
 initCauses();
 
 // ---------------------------------------------------------------- boot
