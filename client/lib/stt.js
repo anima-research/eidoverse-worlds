@@ -63,7 +63,12 @@ import { flashHint } from './ui.js';
 // nobody was watching — R: "not getting any chat log errors when STT fails on
 // phone", and she was right, there were none. A failure worth telling someone
 // about has to persist where they can scroll back to it.
-import { logChat } from './chat.js';
+// Lazy, same pattern as micstate's flashHint: a static chat.js import drags
+// core.js's full surface (assignColors, colorFor) into every context that
+// mocks core for headless tests — the composed lifecycle suite crashed on
+// exactly that (#131 re-review). STT's chat lines are advisory; losing one on
+// a failed import is fine, losing the module graph is not.
+const logChat = (who, text) => import('./chat.js').then((m) => m.logChat(who, text)).catch(() => {});
 // The mic's real state — this module's capture must never outlive it.
 //
 // 🔴 ASK WHICHEVER TRANSPORT IS ACTUALLY RUNNING. voice.js's `micOn()` reads

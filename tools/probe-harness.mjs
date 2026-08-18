@@ -61,17 +61,21 @@ export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'd
     stdio: ['ignore', 'ignore', 'ignore'],
   });
   const origin = `http://127.0.0.1:${PORT}`;
-  // Identity: prefer the nonce echo; a pre-nonce server is accepted only when
-  // the child is alive AND startedAt is newer than our spawn. Wrong nonce =
-  // someone else's server = always fail.
-  const spawnedAt = Date.now() - 2000;
+  // Identity: the nonce echo, and ONLY the nonce echo (#131 re-review, item 4).
+  // This branch's /version echoes EIDO_BOOT_NONCE, so an owned exact-head
+  // child always answers with our nonce; a startedAt-freshness fallback would
+  // reopen the just-started-impostor race for no one's benefit. A responder
+  // WITHOUT a nonce field is by definition not our child — some stale
+  // pre-nonce build squatting the port — and fails immediately. Probing a
+  // live deployment (not our child) is the explicit `live:` mode above.
   let ours = false, reason = 'never answered';
   for (let i = 0; i < 60 && !ours; i++) {
     if (srv.exitCode !== null) { reason = `exited ${srv.exitCode}`; break; }
     try {
       const v = await (await fetch(`${origin}/version`)).json();
-      if (v.nonce !== undefined) { ours = v.nonce === NONCE; if (!ours) { reason = 'wrong nonce (not our child)'; break; } }
-      else { ours = Date.parse(v.startedAt) >= spawnedAt; if (!ours) { reason = `pre-nonce responder started ${v.startedAt} (stale listener)`; break; } }
+      if (v.nonce === undefined) { reason = 'responder has no nonce field (stale pre-nonce listener)'; break; }
+      ours = v.nonce === NONCE;
+      if (!ours) { reason = 'wrong nonce (not our child)'; break; }
     } catch { /* not up yet */ }
     if (!ours) await new Promise((r) => setTimeout(r, 250));
   }

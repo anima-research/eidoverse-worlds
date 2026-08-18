@@ -113,10 +113,23 @@ export function gateStream(stream, levelFn) {
   _wanted = 0;
     _dest = _ctx.createMediaStreamDestination();
     // src → lookahead delay → gate gain → destination. See LOOKAHEAD.
-    _look = _ctx.createDelay(0.2);
-    _look.delayTime.value = LOOKAHEAD;
-    _src.connect(_look);
-    _look.connect(_gain);
+    //
+    // 🔴 THE LOOKAHEAD IS POLISH, THE GATE IS THE PRODUCT (#131 re-review).
+    // Built unguarded, a context without createDelay (a minimal WebAudio
+    // environment — the lifecycle suite's fake, and any constrained embedder)
+    // threw here, and the catch below turned "no 50ms lookahead" into the
+    // fail-closed NO-GATE-AT-ALL path: mic on yielded no lane, no raw stream,
+    // no senders — the whole voice stack regressed to protect a nicety. An
+    // enhancement's absence must cost exactly the enhancement.
+    _look = null;
+    if (typeof _ctx.createDelay === "function") {
+      try {
+        _look = _ctx.createDelay(0.2);
+        _look.delayTime.value = LOOKAHEAD;
+      } catch { _look = null; /* no lookahead on this device — gate still real */ }
+    }
+    if (_look) { _src.connect(_look); _look.connect(_gain); }
+    else _src.connect(_gain);
     _gain.connect(_dest);
     _gatedStream = _dest.stream;
 
