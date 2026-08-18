@@ -6,6 +6,13 @@
  */
 import { RTCPeerConnection, MediaStreamTrack, RTCRtpCodecParameters, RtpPacket, RtpHeader } from "werift";
 import { Sfu } from "../server/sfu.ts";
+import { installSfuTransportGuard } from "../server/sfuguard.ts";
+
+// Run the ENTIRE suite guarded (review 2026-08-18): the negotiation vectors
+// below are the receipt that the ownership patch is transparent under real
+// RTCPeerConnection gathering — a receipt that only exists if the guard is ON
+// in the main process, not just inside the child vectors.
+installSfuTransportGuard();
 
 const CODEC = new RTCRtpCodecParameters({ mimeType: "audio/opus", clockRate: 48000, channels: 2, payloadType: 111 });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -541,11 +548,10 @@ check(`near-tie jitter 40× → ${swaps} slot swaps (no stickiness would thrash)
   room.closeAll();
 }
 
-// ── #130 item 1: THE GUARD PRESERVES THE FATAL CONTRACT (child-process) ────
-// An unrelated uncaught exception must still exit nonzero with the guard
-// installed, at its original site — only positively identified benign werift
-// transport errors are swallowed. Proven in a child process because the
-// property IS process-level.
+// ── #130 item 1: CONTAINMENT IS BOUND TO OWNED WERIFT TRANSPORT ────────────
+// (round 2, antra): the guard must swallow only errors from werift-owned
+// sockets, not any process-global error that happens to look UDP-shaped.
+// Proven in child processes because the fatal contract IS process-level.
 {
   const run = (code: string) => Bun.spawnSync(["bun", "-e", code], { cwd: import.meta.dir + "/.." });
   const unrelated = run(`
@@ -558,15 +564,83 @@ check(`near-tie jitter 40× → ${swaps} slot swaps (no stickiness would thrash)
     unrelated.exitCode !== 0 && !unrelated.stdout.toString().includes("SURVIVED"));
   check("…and the original crash site is on stderr, not this file's",
     unrelated.stderr.toString().includes("unrelated world-state bug"));
-  const benignChild = run(`
-    const { installSfuTransportGuard, transportErrorsSwallowed } = await import("./server/sfuguard.ts");
+
+  // The discriminating sibling: the EXACT synthesized errno/syscall shape that
+  // v2 swallowed at process scope — with no werift ownership — must now die.
+  // This was v2's own positive test; the review's point is that it passing
+  // WAS the bug.
+  const shapedButUnowned = run(`
+    const { installSfuTransportGuard } = await import("./server/sfuguard.ts");
     installSfuTransportGuard();
     const e = new Error("recvmsg ECONNREFUSED"); e.code = "ECONNREFUSED"; e.syscall = "recvmsg";
     setTimeout(() => { throw e; }, 10);
-    setTimeout(() => { console.log("SWALLOWED=" + transportErrorsSwallowed()); process.exit(0); }, 300);
+    setTimeout(() => { console.log("SURVIVED"); process.exit(0); }, 300);
   `);
-  check("…while a benign werift transport error is swallowed and counted",
-    benignChild.exitCode === 0 && benignChild.stdout.toString().includes("SWALLOWED=1"));
+  check("an UNOWNED error with the exact benign errno/syscall shape DIES (shape is not ownership)",
+    shapedButUnowned.exitCode !== 0 && !shapedButUnowned.stdout.toString().includes("SURVIVED"));
+
+  // Same discriminator on a REAL non-werift dgram socket: an actual dgram
+  // emitter error, benign-shaped, no werift involved — ordinary fatal.
+  const unownedDgram = run(`
+    const { installSfuTransportGuard } = await import("./server/sfuguard.ts");
+    const dgram = await import("node:dgram");
+    installSfuTransportGuard();
+    const s = dgram.createSocket("udp4");
+    s.bind(0, "127.0.0.1", () => {
+      const e = new Error("send ECONNREFUSED 127.0.0.1"); e.code = "ECONNREFUSED"; e.syscall = "send";
+      s.emit("error", e);   // dgram's own contract: unhandled 'error' throws
+    });
+    setTimeout(() => { console.log("SURVIVED"); process.exit(0); }, 400);
+  `);
+  check("a real NON-WERIFT dgram socket erroring with a benign shape DIES",
+    unownedDgram.exitCode !== 0 && !unownedDgram.stdout.toString().includes("SURVIVED"));
+
+  // OWNED positive: a socket created through werift's own UdpTransport.init —
+  // the one seam all its raw sockets flow through — survives the same benign
+  // error, counted; and a NON-benign error on the same owned socket is fatal.
+  const ownedBenign = run(`
+    const { installSfuTransportGuard, transportErrorsSwallowed } = await import("./server/sfuguard.ts");
+    const { UdpTransport } = await import("werift");
+    installSfuTransportGuard();
+    const t = await UdpTransport.init("udp4", {});
+    const e = new Error("recvmsg ECONNREFUSED"); e.code = "ECONNREFUSED"; e.syscall = "recvmsg";
+    t.socket.emit("error", e);
+    setTimeout(async () => {
+      console.log("SWALLOWED=" + transportErrorsSwallowed());
+      await t.close(); process.exit(0);
+    }, 200);
+  `);
+  check("…while the same benign error on a WERIFT-OWNED socket is swallowed and counted",
+    ownedBenign.exitCode === 0 && ownedBenign.stdout.toString().includes("SWALLOWED=1"));
+  const ownedFatal = run(`
+    const { installSfuTransportGuard } = await import("./server/sfuguard.ts");
+    const { UdpTransport } = await import("werift");
+    installSfuTransportGuard();
+    const t = await UdpTransport.init("udp4", {});
+    t.socket.emit("error", new TypeError("werift-adjacent real bug"));
+    setTimeout(() => { console.log("SURVIVED"); process.exit(0); }, 300);
+  `);
+  check("…and a NON-benign error on an owned socket is still fatal, with its site on stderr",
+    ownedFatal.exitCode !== 0 && ownedFatal.stderr.toString().includes("werift-adjacent real bug"));
+
+  // The callback-send rejection path is contained at the same seam: a send
+  // whose underlying socket errors with a benign code resolves (counted)
+  // instead of escaping as an unhandledRejection.
+  const ownedSend = run(`
+    const { installSfuTransportGuard, transportErrorsSwallowed } = await import("./server/sfuguard.ts");
+    const { UdpTransport } = await import("werift");
+    installSfuTransportGuard();
+    const t = await UdpTransport.init("udp4", {});
+    const e = new Error("send EHOSTUNREACH"); e.code = "EHOSTUNREACH"; e.syscall = "send";
+    t.socket.send = (...a) => { const cb = a[a.length - 1]; if (typeof cb === "function") cb(e); };
+    // a NON-IP address selects werift's callback branch, the only one that
+    // rejects (send = async: isIP(addr[0]) ? fire-and-forget : promise+cb)
+    await t.send(new Uint8Array([1]), ["closed.invalid", 9]);
+    console.log("SWALLOWED=" + transportErrorsSwallowed());
+    await t.close(); process.exit(0);
+  `);
+  check("…and a benign callback-send rejection on an owned transport is contained and counted",
+    ownedSend.exitCode === 0 && ownedSend.stdout.toString().includes("SWALLOWED=1"));
 }
 
 // ── REGRESSION C2: the guard must not swallow a real bug ───────────────────

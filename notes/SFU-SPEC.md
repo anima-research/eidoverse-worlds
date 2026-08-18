@@ -48,9 +48,14 @@ Against that, antra's §7 ops criteria are satisfied BETTER in-process:
 The bandwidth landing on their estimate is an independent check that we are
 measuring the right thing.
 
-**Mitigation, and it is cheap:** the adapter interface is env-swappable, so
-LiveKit remains a drop-in escape hatch. If werift dies or we outgrow it, we
-change a config value, not an architecture.
+**Mitigation:** the transport selector keeps the *seam* for a swap — voice
+routing asks `voiceTransport()` rather than importing an implementation — but
+no LiveKit adapter exists in this branch, and `voiceTransport()` currently
+answers only `sfu | off`. If werift dies or we outgrow it, the escape hatch is
+*writing* an external-relay adapter behind that seam (the deleted LiveKit
+adapter in git history is a starting point), not flipping a config value that
+already works. Claiming the hatch as built would be exactly the kind of
+untested rollback story A5 forbids.
 
 ## Why this instead of LiveKit
 
