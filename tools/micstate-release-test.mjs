@@ -39,6 +39,10 @@ mock.module(new URL("../client/lib/core.js", import.meta.url).pathname, () => ({
 }));
 mock.module(new URL("../client/lib/net.js", import.meta.url).pathname, () => ({ sendTyping: () => {} }));
 
+// Pin an SFU hook so micstate's OWN state path is under test here — without
+// this, micstate may delegate micOn() to the (real, happy-dom-loaded) mesh
+// module and every lane assertion below would silently test the wrong world.
+window.__sfuMic = async () => false;
 const m = await import("../client/lib/micstate.js");
 let pass = 0, fail = 0;
 const check = (n, ok, extra = "") => {

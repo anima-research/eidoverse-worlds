@@ -298,21 +298,51 @@ export function gateRelease() {
   _gated = _lane = null;
 }
 
+/** The mesh transport, when it is the live one (#131 review, item 1).
+ *
+ *  This PR must STAND ALONE on current main, where the live voice transport is
+ *  the P2P mesh (client/lib/voice.js) and `window.__sfuMic` is installed by
+ *  nothing — the SFU stack that provides it lands later. The first cut of
+ *  toggleMic below checked only the hook, so merging this PR alone would have
+ *  disabled the existing mesh mic: V/click said "still connecting" forever.
+ *
+ *  So: the mesh module is loaded once (it is already loaded on current main —
+ *  this just takes a reference), and when NO SFU hook is installed, the mesh
+ *  IS the transport and this module delegates to it — both the mutation
+ *  (toggleMic) and the answer (micOn). The catch handles the post-cutover
+ *  world where voice.js no longer exists: there the SFU installs the hook and
+ *  this reference is never consulted. */
+let _mesh = null;
+if (typeof window !== "undefined") {
+  import("./voice.js").then((m) => { _mesh = m; }).catch(() => { /* cutover world: no mesh */ });
+}
+const meshIsTheTransport = () =>
+  !!_mesh && typeof window !== "undefined" && typeof window.__sfuMic !== "function";
+
 /** Turn the mic on or off. The ONE entry point every UI uses.
  *
  *  🔴 voice.js:508 used to route here to `window.__sfuMic` and return before
  *  touching mesh state — which is exactly why the SFU had no mute: the flag it
- *  checked could never be set. With one transport there is no routing left to
- *  do, only the call.
+ *  checked could never be set. The routing that remains is transport
+ *  SELECTION, not per-call forking: the installed SFU hook if present, else
+ *  the live mesh, else an honest hint.
  *
  *  Returns the RESULTING state so a caller can hand it straight to a checkbox
  *  rather than re-reading and racing the toggle. */
-export async function toggleMic() {
+export async function toggleMic(name) {
   const fn = typeof window !== 'undefined' ? window.__sfuMic : null;
-  if (!fn) { flashHint('voice is still connecting — try again in a moment'); return micOn(); }
-  const on = await fn();
-  bus.emit('audio:mic', on);
-  return on;
+  if (fn) {
+    const on = await fn();
+    bus.emit('audio:mic', on);
+    return on;
+  }
+  if (meshIsTheTransport() && typeof _mesh.toggleMic === 'function') {
+    const on = !!(await _mesh.toggleMic(name));
+    bus.emit('audio:mic', on);
+    return on;
+  }
+  flashHint('voice is still connecting — try again in a moment');
+  return micOn();
 }
 
 /** 🔴 THE ONE ANSWER TO "IS MY MIC ON". The audit found EIGHT sources of truth
@@ -329,7 +359,13 @@ export async function toggleMic() {
  *  the client asks HERE. */
 let _deviceLive = false;
 export function setMicLive(on) { _deviceLive = !!on; }
-export const micOn = () => !!_lane && _deviceLive && !_muted;
+export const micOn = () => {
+  // When the mesh is the live transport it keeps its own three-state answer
+  // (voice.js:71) and does not report through setMicLive — asking it directly
+  // keeps this THE one answer instead of a stale second one (#131 item 1).
+  if (meshIsTheTransport() && typeof _mesh.micOn === 'function') return _mesh.micOn();
+  return !!_lane && _deviceLive && !_muted;
+};
 
 /** Release the DEVICE while keeping the lane. Ported verbatim from voice.js:909
  *  — the reasoning is R's and was paid for in production:
