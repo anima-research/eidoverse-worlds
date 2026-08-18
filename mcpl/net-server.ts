@@ -259,107 +259,9 @@ class Session {
     this.channelId = `world:${this.agent.world}`;
   }
 
-  /** The loopback media bridge. One sidecar at a time: a second connection
-   *  replaces the first, because two publishers for one identity is the
-   *  double-speak bug (#57's whole premise) wearing a new hat. */
-  private mediaSock: WebSocket | null = null;
-  /** The listener handle, so session teardown can actually release the port.
-   *  🔴 It used to be discarded (2026-08-16). Bun.serve()'s return value was
-   *  thrown away, no field held it, and session.close() therefore had nothing
-   *  to close — so the bridge outlived every session BY CONSTRUCTION. The
-   *  first session bound :8931 and worked; when it ended the listener stayed;
-   *  every reconnect after that died on `Failed to start server. Is port 8931
-   *  in use?` — the door failing to bind a port the door itself was holding.
-   *  Observed as an hour of working voice, then a permanent crash loop with a
-   *  5-second period and no audio at all. */
-  private mediaServer: { stop: (closeActiveConnections?: boolean) => void } | null = null;
-
-  private startMediaBridge(port: number) {
-    // Idempotent: a re-entry must not try to bind a port we already hold.
-    if (this.mediaServer) {
-      console.log(`[door] media bridge already listening on :${port} — reusing`);
-      return;
-    }
-    try {
-    this.mediaServer = Bun.serve({
-      port, hostname: "127.0.0.1",
-      fetch: (req, srv) => srv.upgrade(req) ? undefined : new Response("media bridge: websocket only", { status: 426 }),
-      websocket: {
-        open: (ws) => {
-          if (this.mediaSock) { try { this.mediaSock.close(4001, "replaced"); } catch {} }
-          this.mediaSock = ws as never;
-          console.log(`[door] media sidecar attached on :${port} — asking for a credential`);
-          // The sidecar cannot ask for itself (the server refuses a non-primary),
-          // so attaching IS the ask. subscribe:false — this leg speaks, it does
-          // not listen; hearing is the door's job on the text tier.
-          try { this.agent.requestMediaCredential({ publish: true, subscribe: false }); }
-          catch (e) { console.warn("[door] credential ask failed:", (e as Error).message); }
-        },
-        message: (_ws, raw) => {
-          // Sidecar → world. Whitelisted in sendMedia; malformed JSON is the
-          // sidecar's bug and must not take the door down (house rule #3).
-          try {
-            const frame = JSON.parse(String(raw)) as { type?: string; seq?: number };
-            // `aired` is the sidecar telling us an utterance actually left the
-            // encoder. The RECEIPT is ours to send, never the sidecar's: attest
-            // is identity-bearing (own-id, token-verified, generation-stamped)
-            // and belongs to the authenticated primary. A loopback peer that
-            // could mint receipts could suppress every listener's fallback for
-            // audio it never aired — silence that looks like speech.
-            if (frame?.type === "aired") { void this.attestAired(Number(frame.seq)); return; }
-            this.agent.sendMedia(frame as never);
-          } catch (e) { console.warn("[door] bad media frame:", (e as Error).message); }
-        },
-        close: (ws) => { if (this.mediaSock === (ws as never)) this.mediaSock = null; },
-      },
-      // A bind failure must not be fatal to the SESSION. Before, the throw
-      // escaped into session.serve()'s catch and ended the connection outright
-      // — so a leaked listener cost the agent its whole seat (text included),
-      // not just its voice. The door is still useful mute.
-      error: (e: Error) => { console.warn("[door] media bridge error:", e.message); return undefined; },
-    });
-    } catch (e) {
-      // 🔴 A BIND FAILURE IS A MUTE DOOR, NOT A DEAD ONE. This used to throw
-      // out of the session setup path into session.serve()'s catch, ending the
-      // whole MCPL connection — so a stuck port cost the agent its text seat
-      // too, and the reconnect loop that followed made it look like the world
-      // was rejecting us. Log it, stay up, speak later.
-      this.mediaServer = null;
-      console.warn(`[door] media bridge could NOT bind :${port} (${(e as Error).message}) — continuing WITHOUT a voice; text is unaffected`);
-      return;
-    }
-    // World → sidecar. Dropped when nothing is attached: the credential and
-    // offers are meaningless without a peer to answer them, and the server
-    // retires the leg on its own funnel.
-    this.agent.onMedia = (frame) => {
-      try { this.mediaSock?.send(JSON.stringify(frame)); } catch { /* sidecar died mid-frame */ }
-    };
-  }
-
-  /** A sidecar reported an utterance aired; mint the receipt for it. Silent on
-   *  an unknown seq — the say may have aged out of the ring, and a missing
-   *  receipt degrades to listener-side fallback, which is the designed
-   *  behaviour rather than an error worth shouting about. */
-  private async attestAired(seq: number): Promise<void> {
-    if (!Number.isSafeInteger(seq)) return;
-    const ok = await this.agent.attestSay(seq).catch(() => false);
-    if (!ok) console.warn(`[door] could not attest seq ${seq} (unknown say or not joined)`);
-  }
-
   close() {
     this.agent.close(); // deliberate death — stops the body's auto-reconnect
     this.conn.close();
-    // 🔴 RELEASE THE MEDIA PORT. Without this the listener outlives the
-    // session and the NEXT session cannot bind it — the door failing to bind a
-    // port the door still holds, forever, at the reconnect interval. Cost when
-    // it was missing: voice worked for one session, then eight hours of a
-    // 5-second crash loop that read as "the world is rejecting me."
-    // closeActiveConnections=true so a still-attached sidecar is dropped now,
-    // not left half-alive against a dead session.
-    if (this.mediaServer) {
-      try { this.mediaServer.stop(true); } catch (e) { console.warn("[door] media bridge stop:", (e as Error).message); }
-      this.mediaServer = null;
-    }
   }
 
   /**
@@ -519,21 +421,6 @@ class Session {
     // door decision below is still made from world state (`channelOpen`,
     // `ev.mention`), never by reading a tag back: tags describe, they never
     // authorize (§16.6).
-    // ── MEDIA BRIDGE (#104 / #57) ────────────────────────────────────────
-    // The SFU gates publishing to the embodied primary; for an agent that is
-    // this door. But the door has no audio — a local synthesizer does, in
-    // another process. So when EIDO_MEDIA_PORT is set, the door listens on
-    // loopback and relays media-signalling frames both ways, and NOTHING else
-    // (see WorldAgent.onMedia / sendMedia for the whitelist).
-    //
-    // Off by default: a door with no sidecar never opens the port, never asks
-    // for a credential, and behaves exactly as it did before. Loopback only —
-    // this carries the authority to publish audio AS this identity, which is
-    // the same trust boundary as the agent's own process space (and the same
-    // named threat the sidecar's ARCHITECTURE.md records for its other seams).
-    const mediaPort = Number(process.env.EIDO_MEDIA_PORT ?? 0);
-    if (mediaPort > 0) this.startMediaBridge(mediaPort);
-
     this.agent.onEvent = (ev) => {
       // §16.2 sender facet. The world reports `agent: true` for bodies driven by
       // a model, so `chat:from-agent` rests on something. There is no
