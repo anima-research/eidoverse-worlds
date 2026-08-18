@@ -738,6 +738,27 @@ export function makeShader(level, g, floorY) {
       // ceiling that went to near-black in the corners and made every interior
       // feel like a cellar.
       if (ny < -0.5) v *= 1.24;
+    } else {
+      // OUTSIDE, the openness field is 1.0 everywhere, so exterior walls got
+      // none of the modelling the interior gets — a flat card with a roof on
+      // it. Two shapes carry a building from outside, and both are analytic
+      // here for the same reason the interior ones were: we know where the
+      // eaves and the grade are.
+      //
+      // The eave shadow is the one that matters. A roof overhang throws a band
+      // of shade down the top of the wall, and its absence is most of why an
+      // untextured box reads as a box rather than as a house.
+      const underEave = floorY + g.wallH - py;
+      if (underEave < 0.85) v *= 0.62 + 0.38 * clamp01((underEave + 0.35) / 1.2);
+      // and the ground steals light back at the base
+      const above = py - floorY;
+      if (above < 0.45) v *= 0.76 + 0.24 * clamp01(above / 0.45);
+      // a convex corner catches the sky from two sides: lift it a little so
+      // massing reads as volume rather than as one continuous surface
+      const near = Math.min(
+        Math.abs(sx - Math.round(sx / g.tile) * g.tile),
+        Math.abs(sz - Math.round(sz / g.tile) * g.tile));
+      if (near < 0.10) v *= 1.0 + 0.05 * (1 - near / 0.10);
     }
     // sky above, ground below — the hemisphere term the scene's single hemi
     // light would give us if anything ever occluded it
@@ -852,4 +873,87 @@ export function roomAt(plan, lx, lz, ly = 0) {
     }
   }
   return best ? best.room : null;
+}
+
+// ---- routing ----------------------------------------------------------------
+// The grid IS the navigation graph. Cells are nodes, and an edge between two
+// neighbours is passable unless a wall stands on it — which is the same lookup
+// the flood fill already does, asked one question differently.
+//
+// WHY THIS EXISTS AT ALL. `walkTo` samples only the height field, so a headless
+// agent walks a straight line and passes through walls. With sparse free-placed
+// props that is invisible; inside a building it is the whole experience. It is
+// also what would have made the monolith-vs-griddled comparison worthless: an
+// agent told "go to the kitchen" arrives in BOTH houses by walking through the
+// dividing wall, so both arms pass and the experiment measures nothing — a
+// check that fails in the direction that flatters the design.
+
+/** Can a body pass from cell a to cell b? A door or an arch is a hole you can
+ *  walk through; a window is not, and neither is a wall. */
+export function passable(level, ax, az, bx, bz) {
+  const e = edgeBetween(ax, az, bx, bz);
+  if (!e) return false;
+  const k = edgeKey(e[0], e[1], e[2]);
+  if (!level.walls.has(k)) return true;
+  const ap = level.apertures.get(k);
+  return ap === 'door' || ap === 'arch';
+}
+
+/** Breadth-first route between two cells, as a list of cell keys inclusive of
+ *  both ends, or null if no way through exists. BFS rather than A* on purpose:
+ *  a domestic floor plan is tens of cells, the heuristic would cost more than
+ *  it saves, and BFS is exhaustive so "there is no route" is a real answer
+ *  rather than a timeout. Neighbours are visited in a fixed order so two agents
+ *  folding the same log walk the same path. */
+export function routeCells(level, fromKey, toKey) {
+  if (!level.tiles.has(fromKey) || !level.tiles.has(toKey)) return null;
+  if (fromKey === toKey) return [fromKey];
+  const prev = new Map([[fromKey, null]]);
+  const q = [fromKey];
+  for (let i = 0; i < q.length; i++) {
+    const [cx, cz] = q[i].split(',').map(Number);
+    for (const [nx, nz] of [[cx, cz - 1], [cx + 1, cz], [cx, cz + 1], [cx - 1, cz]]) {
+      const nk = cellKey(nx, nz);
+      if (prev.has(nk) || !level.tiles.has(nk)) continue;
+      if (!passable(level, cx, cz, nx, nz)) continue;
+      prev.set(nk, q[i]);
+      if (nk === toKey) {
+        const path = [];
+        for (let c = nk; c != null; c = prev.get(c)) path.push(c);
+        return path.reverse();
+      }
+      q.push(nk);
+    }
+  }
+  return null;
+}
+
+/** A route in grid-local metres: the true start, the centre of each cell the
+ *  path turns in, and the true destination.
+ *
+ *  Only TURNS become waypoints. A straight run down a corridor is one leg, so a
+ *  body walks it as a straight line instead of stuttering cell to cell — and
+ *  the waypoint count stays proportional to the number of decisions rather than
+ *  to the distance. */
+export function routeLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
+  const g = plan.grid;
+  const lv = plan.levels.find((L) => L.rooms.length) ?? plan.levels[0];
+  if (!lv) return null;
+  const level = lv.level;
+  const key = (x, z) => cellKey(Math.floor(x / g.tile), Math.floor(z / g.tile));
+  const cells = routeCells(level, key(fromX, fromZ), key(toX, toZ));
+  if (!cells) return null;
+  const centre = (k) => {
+    const [x, z] = k.split(',').map(Number);
+    return [(x + 0.5) * g.tile, (z + 0.5) * g.tile];
+  };
+  const pts = [[fromX, fromZ]];
+  for (let i = 1; i < cells.length - 1; i++) {
+    const [ax, az] = cells[i - 1].split(',').map(Number);
+    const [bx, bz] = cells[i + 1].split(',').map(Number);
+    if (ax !== bx && az !== bz) pts.push(centre(cells[i]));   // a turn
+  }
+  pts.push([toX, toZ]);
+  void y;
+  return pts;
 }

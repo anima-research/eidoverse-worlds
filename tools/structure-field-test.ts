@@ -15,7 +15,7 @@
 import {
   planStructure, normalize, wallBoxes, deriveRooms, derivePortals, roomAt,
   edgeCells, edgeBetween, edgeKey, cellKey, APERTURES, GRID_DEFAULTS,
-  describeHere, describeStructure, localizePoint, levelParts, TRIM, cornerFills, wallRuns,
+  describeHere, describeStructure, localizePoint, levelParts, TRIM, cornerFills, wallRuns, routeCells, routeLocal, passable, makeShader,
 } from "../shared/structure.js";
 
 let passed = 0, failed = 0;
@@ -474,6 +474,91 @@ const HOUSE = {
   const cross = normalize({ levels: [{ tiles: [[0, 0]],
     walls: [[0, 0, 0], [0, -1, 0], [1, 0, 0], [1, 0, -1]] }] });
   check("a crossing grows no fill", cornerFills(cross.levels[0], cross, 0, cross.wallH).length === 0);
+}
+
+// 17. ROUTING — the grid is the navigation graph
+//
+// This is what makes the monolith-vs-griddled comparison mean anything. Without
+// it an agent told "go to the kitchen" arrives in BOTH houses by walking through
+// the dividing wall: both arms pass, and the experiment measures nothing.
+{
+  const g = normalize(HOUSE);
+  const lv = g.levels[0];
+  const plan = planStructure(HOUSE);
+
+  // the divider runs x=2: doored at z=0, solid at z=1
+  check("a solid wall blocks passage", !passable(lv, 1, 1, 2, 1));
+  check("a doorway is passable", passable(lv, 1, 0, 2, 0));
+  check("passability is symmetric", passable(lv, 2, 0, 1, 0) === passable(lv, 1, 0, 2, 0));
+  check("open floor is passable", passable(lv, 0, 0, 1, 0));
+  check("non-neighbours are not passable", !passable(lv, 0, 0, 3, 1));
+
+  const route = routeCells(lv, "0,1", "3,1");
+  check("a route exists between the rooms", route !== null, "no route");
+  check("the route goes THROUGH the doorway, not through the wall",
+    route !== null && route.includes("1,0") && route.includes("2,0"),
+    JSON.stringify(route));
+  check("the route is contiguous", route !== null && route.every((k, i) => {
+    if (i === 0) return true;
+    const [ax, az] = route[i - 1].split(",").map(Number);
+    const [bx, bz] = k.split(",").map(Number);
+    return Math.abs(ax - bx) + Math.abs(az - bz) === 1;
+  }));
+  check("every step of the route is legal", route !== null && route.every((k, i) => {
+    if (i === 0) return true;
+    const [ax, az] = route[i - 1].split(",").map(Number);
+    const [bx, bz] = k.split(",").map(Number);
+    return passable(lv, ax, az, bx, bz);
+  }));
+
+  // seal the door and the rooms become unreachable — the honest failure
+  const sealed = structuredClone(HOUSE);
+  sealed.levels[0].apertures = [[0, 0, 0, "window"]];
+  const sg = normalize(sealed);
+  check("no door means no route", routeCells(sg.levels[0], "0,1", "3,1") === null);
+  check("a window is not a doorway", !passable(sg.levels[0], 0, 0, 0, -1));
+
+  // waypoints: only turns, plus the true endpoints
+  const pts = routeLocal(plan, 0.5, 1.5, 3.5, 1.5)!;
+  check("routeLocal starts and ends where asked",
+    pts[0][0] === 0.5 && pts[0][1] === 1.5
+    && pts[pts.length - 1][0] === 3.5 && pts[pts.length - 1][1] === 1.5);
+  check("a route through a doorway needs few waypoints", pts.length <= 5, `${pts.length}`);
+  check("no leg crosses a wall", pts.slice(1).every(([x, z], i) => {
+    const [px, pz] = pts[i];
+    // sample the leg and confirm every cell transition is legal
+    const N = 24;
+    let ok = true, cur = cellKey(Math.floor(px / g.tile), Math.floor(pz / g.tile));
+    for (let t = 1; t <= N; t++) {
+      const sx = px + (x - px) * (t / N), sz = pz + (z - pz) * (t / N);
+      const nk = cellKey(Math.floor(sx / g.tile), Math.floor(sz / g.tile));
+      if (nk === cur) continue;
+      const [ax, az] = cur.split(",").map(Number);
+      const [bx, bz] = nk.split(",").map(Number);
+      if (!passable(g.levels[0], ax, az, bx, bz)) ok = false;
+      cur = nk;
+    }
+    return ok;
+  }), "a leg passes through a wall");
+  check("unreachable target routes to null", routeLocal(plan, 0.5, 0.5, 99, 99) === null);
+}
+
+// 18. exterior AO — the outside gets modelled too
+{
+  const g = normalize(HOUSE);
+  const lv = g.levels[0];
+  const floorY = lv.y + g.slabT;
+  const sh = makeShader(lv, g, floorY);
+  const lum = (y: number) => sh(0.5, y, -g.wallT / 2, 0, 0, -1)[0];
+  check("the eaves throw shade down the wall top", lum(floorY + 2.65) < lum(floorY + 1.5) * 0.92,
+    `${lum(floorY + 2.65).toFixed(3)} vs ${lum(floorY + 1.5).toFixed(3)}`);
+  check("the ground darkens the wall base", lum(floorY + 0.12) < lum(floorY + 1.5) * 0.95,
+    `${lum(floorY + 0.12).toFixed(3)} vs ${lum(floorY + 1.5).toFixed(3)}`);
+  check("mid-wall stays bright outside", lum(floorY + 1.5) > 0.85, `${lum(floorY + 1.5).toFixed(3)}`);
+  // an interior face of the SAME wall must read darker than its exterior face
+  const inFace = sh(0.5, floorY + 1.5, g.wallT / 2, 0, 0, 1)[0];
+  check("inside is dimmer than outside on one wall", inFace < lum(floorY + 1.5),
+    `${inFace.toFixed(3)} vs ${lum(floorY + 1.5).toFixed(3)}`);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

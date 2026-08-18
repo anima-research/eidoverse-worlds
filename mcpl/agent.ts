@@ -22,7 +22,7 @@ import { stateToEntries as sharedStateToEntries } from "../shared/fold.js";
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
 import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
-import { describeStructure, describeHere, localizePoint, planStructure } from "../shared/structure.js";
+import { describeStructure, describeHere, localizePoint, planStructure, routeLocal } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
 
@@ -120,6 +120,9 @@ export class WorldAgent {
   pos = { x: 0, y: 0, z: 0 };
   yaw = 0; speed = 0; clip = "idle";
   private target: (Vec2 & { run: boolean }) | null = null;
+  /** Remaining waypoints of a routed walk — see walkTo. Empty means the target
+   *  is reachable in a straight line, which is every case outside a building. */
+  private legs: Vec2[] = [];
   /** A held custom pose — sparse humanoid-bone quaternions. Presence only:
    *  it rides the pose packet and is never a log verb, because it is a moment,
    *  not a change to the world. `null` clears. */
@@ -1193,8 +1196,16 @@ export class WorldAgent {
       const dx = this.target.x - this.pos.x, dz = this.target.z - this.pos.z;
       const dist = Math.hypot(dx, dz);
       if (dist < ARRIVE) {
-        this.target = null; this.speed = 0; this.clip = "idle";
-        this.walkDone?.(true); this.walkDone = null;
+        // A route through a building arrives in legs. Only the LAST one
+        // finishes the walk; the rest hand off to the next waypoint, so a body
+        // rounds a doorway instead of driving at the wall behind it.
+        const next = this.legs.shift();
+        if (next) {
+          this.target = { x: next.x, z: next.z, run: this.target.run };
+        } else {
+          this.target = null; this.speed = 0; this.clip = "idle";
+          this.walkDone?.(true); this.walkDone = null;
+        }
       } else {
         const sp = this.target.run ? RUN : WALK;
         this.speed = sp; this.clip = this.target.run ? "run" : "walk";
@@ -1233,7 +1244,7 @@ export class WorldAgent {
    *  is something that happens TO this body, not just to its pixels. */
   knockDown(by: string, lean: number[] | null, notice: string) {
     if (!this.pushable || this.draggedBy) return;
-    if (this.target) { this.walkDone?.(false); this.walkDone = null; this.target = null; }
+    if (this.target) { this.walkDone?.(false); this.walkDone = null; this.target = null; this.legs = []; }
     this.speed = 0;
     // Down NOW, not when the physics finishes loading. tumble() awaits the
     // skeleton, the height field and the support barrier before it can set
@@ -1379,14 +1390,43 @@ export class WorldAgent {
     if (this.joined && this.mounts.has(this.name)) this.verb("dismount", { id: this.name });
     // and stand on the ground you got up onto
     this.pos.y = this.heightAt(this.pos.x, this.pos.z);
-    this.target = { x, z, run };
+    // ROUTE THROUGH WALLS RATHER THAN INTO THEM. Straight-line walking samples
+    // only the height field, so a body crosses walls as if they were not there.
+    // Inside a griddled building the grid IS the navigation graph, so ask it.
+    // Failure is silent and total on purpose: no route (target outdoors, no
+    // structure, a sealed room) falls back to the old straight line, which is
+    // exactly the behaviour everywhere that has no building.
+    this.legs = [];
+    try {
+      for (const e of this.entities.values()) {
+        const data = (e.comp ?? {}).structure;
+        if (!data) continue;
+        const plan = planStructure(data);
+        const [ax, , az] = localizePoint(e, this.pos.x, this.pos.y, this.pos.z);
+        const [bx, , bz] = localizePoint(e, x, this.pos.y, z);
+        const pts = routeLocal(plan, ax, az, bx, bz);
+        if (!pts || pts.length < 3) continue;    // straight line is already fine
+        const yaw = Number.isFinite(e.yaw) ? e.yaw : 0;
+        const sc = Number.isFinite(e.scale) && e.scale > 0 ? e.scale : 1;
+        const [px, , pz] = Array.isArray(e.pos) ? e.pos : [0, 0, 0];
+        const c = Math.cos(yaw), n = Math.sin(yaw);
+        // grid-local back to world: the inverse of localizePoint
+        this.legs = pts.slice(1).map(([lx, lz]) => ({
+          x: px + (lx * c + lz * n) * sc,
+          z: pz + (-lx * n + lz * c) * sc,
+        }));
+        break;
+      }
+    } catch { this.legs = []; }
+    const first = this.legs.shift();
+    this.target = first ? { x: first.x, z: first.z, run } : { x, z, run };
     return new Promise((resolve) => {
       this.walkDone = resolve;
       setTimeout(() => { if (this.walkDone === resolve) { this.target = null; this.walkDone = null; resolve(false); } }, timeoutMs);
     });
   }
 
-  stop() { this.target = null; this.speed = 0; this.clip = "idle"; this.walkDone?.(false); this.walkDone = null; }
+  stop() { this.target = null; this.legs = []; this.speed = 0; this.clip = "idle"; this.walkDone?.(false); this.walkDone = null; }
 
   face(x: number, z: number) { this.yaw = Math.atan2(x - this.pos.x, z - this.pos.z); }
 
