@@ -349,7 +349,16 @@ export const micOn = () => !!_lane && _deviceLive && !_muted;
  *  a device, so the recording indicator survived a disconnect. */
 export function releaseMicrophone() {
   if (!_lane) return;
-  for (const t of (_raw || _lane).getTracks()) t.stop();
+  // Stop ONLY the raw device (#131 review). `_raw || _lane` stopped the LANE
+  // whenever the raw was already gone — a second release, or any release after
+  // the raw was nulled — which is the one-way door rule (2) forbids: a stopped
+  // destination track cannot restart, so the function was causing the exact
+  // renegotiation it promises to prevent. Rule (1) still wins where the lane
+  // IS the device (synthetic / gate-unavailable paths, where raw === lane):
+  // the OS recording indicator is a privacy promise, so a present raw always
+  // stops, even at the cost of that lane. Repeated release is harmless by
+  // construction: _raw is null after the first.
+  if (_raw) for (const t of _raw.getTracks()) t.stop();
   _deviceLive = false;
   driveGate(false);
   detachSource();
