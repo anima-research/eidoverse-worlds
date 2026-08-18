@@ -17,7 +17,7 @@
 
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
-import { readFileSync, existsSync, writeFileSync, renameSync } from "node:fs";
+import { readFileSync, existsSync, writeFileSync, renameSync, rmSync } from "node:fs";
 import { WebSocketServer, type WebSocket } from "ws";
 import {
   McplConnection,
@@ -82,6 +82,12 @@ function readTokens(): Record<string, Auth> {
 // (antra, PR #125 re-review). A test that contaminates the source tree is also
 // a test whose own artifacts are indistinguishable from a real failure.
 const STATE_PATH = process.env.MCPL_STATE ?? fileURLToPath(new URL("./state.json", import.meta.url));
+const STATE_TMP = STATE_PATH + ".tmp";
+// A tmp here is an INTERRUPTED atomic write from a previous incarnation: the
+// rename never happened, so STATE_PATH still holds the last good state and the
+// tmp is garbage by definition. Sweep it at boot rather than leave an artifact
+// indistinguishable from a live failure (antra, PR #125 round 4).
+try { rmSync(STATE_TMP, { force: true }); } catch (e) { console.error("[mcpl] stale state tmp not removable:", (e as Error).message); }
 const _state: Record<string, unknown> = (() => {
   try { if (existsSync(STATE_PATH)) return JSON.parse(readFileSync(STATE_PATH, "utf8")); } catch { /* fresh */ }
   return {};
@@ -101,8 +107,32 @@ const lastSeen: Record<string, number> = Object.fromEntries(
   Object.entries(_state).filter(([k, v]) => !k.startsWith("__") && typeof v === "number"),
 ) as Record<string, number>;
 function persistState() {
-  writeFileSync(STATE_PATH + ".tmp", JSON.stringify({ ...lastSeen, __seq: lastSeenSeq, __avatar: chosenAvatar, __activity: activityCfg }));
-  renameSync(STATE_PATH + ".tmp", STATE_PATH);
+  try {
+    writeFileSync(STATE_TMP, JSON.stringify({ ...lastSeen, __seq: lastSeenSeq, __avatar: chosenAvatar, __activity: activityCfg }));
+    renameSync(STATE_TMP, STATE_PATH);
+  } catch (e) {
+    // A failed persist must not leave its tmp behind — an orphaned tmp reads
+    // as a mid-write crash to the next observer. STATE_PATH keeps the last
+    // good state either way.
+    try { rmSync(STATE_TMP, { force: true }); } catch { /* the boot sweep gets it */ }
+    console.error("[mcpl] state persist failed:", (e as Error).message);
+  }
+}
+
+// 🔴 With no JS handler, SIGTERM terminates Bun at DEFAULT DISPOSITION — at any
+// instruction, including between persistState's write and rename. That is how
+// ${MCPL_STATE}.tmp survived the integration suite's verified-termination
+// teardown (antra, PR #125 round 4 — deterministic on macOS, a flake on
+// Linux: the kill lands while the door is still draining the per-agent
+// disconnect persists after the sequencer dies). A handler makes delivery
+// event-loop-ordered, so the synchronous write+rename pair can no longer be
+// split; exit is then orderly and sweeps any stray tmp. SIGKILL-mid-write
+// remains possible, and the boot sweep above is the recovery for it.
+for (const sig of ["SIGTERM", "SIGINT"] as const) {
+  process.on(sig, () => {
+    try { rmSync(STATE_TMP, { force: true }); } catch { /* best effort */ }
+    process.exit(0);
+  });
 }
 
 // ---- tools (shared schema with the stdio server, minus retina by default) --

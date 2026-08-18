@@ -77,6 +77,13 @@ function spawnChild(args: string[], env: Record<string, string>) {
 const world = spawnChild([process.execPath, "server/server.ts"], {
   PORT: String(WPORT), WORLDS_DIR: worldsDir, WORLD_INSTANCE_NONCE: NONCE,
 });
+// Seed a stale tmp as if a previous incarnation died mid-write (SIGKILL
+// between write and rename). The door must sweep it at boot — which makes the
+// final "no temp file" receipt exercise the cleanup machinery on EVERY run,
+// instead of passing vacuously on runs where no write happened to be
+// interrupted (the pre-fix failure was a kill-timing flake for exactly that
+// reason: the check only bit when the race landed).
+writeFileSync(`${statePath}.tmp`, "");
 const mcpl = spawnChild([process.execPath, "mcpl/net-server.ts"], {
   MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`,
   MCPL_TOKENS: tokensPath, MCPL_STATE: statePath, MCPL_INSTANCE_NONCE: NONCE,
@@ -231,6 +238,11 @@ osOwnership = await osOwnershipAvailable();
 console.log(osOwnership
   ? "  identity: per-run nonce + OS port ownership (linux)"
   : "  identity: per-run nonce only (no ss//proc on this platform — OS check skipped)");
+
+// The seeded stale tmp (above, before the spawn) must be gone once the door
+// answers /healthz: interrupted atomic writes are cleaned at boot, not left as
+// artifacts indistinguishable from live failures.
+check("stale state tmp from a previous incarnation swept at boot", !existsSync(`${statePath}.tmp`));
 
 /** Minimal MCPL 0.5 host: initialize, grant, then request/notification I/O. */
 async function connectHost(token: string, query = "", mode: "accept" | "decline" | "mute" = "accept") {
@@ -784,9 +796,18 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   // The suite has travelled many times by now, including a fatal-attach case,
   // so any window-write would be on disk here.
   {
+    // 🔴 The watermark section is persisted under the `__seq` key (see
+    // persistState in mcpl/net-server.ts) — an earlier revision of this check
+    // read a `lastSeenSeq` key that the writer never uses, so it filtered an
+    // always-empty object and could not fail. Hence the non-emptiness guard:
+    // the suite has travelled by now, so a truthful read MUST see entries —
+    // an empty map here means the check went blind again, not that all is well.
     const persisted = JSON.parse(readFileSync(statePath, "utf8")) as
-      { lastSeenSeq?: Record<string, number> };
-    const seqs = persisted.lastSeenSeq ?? {};
+      { __seq?: Record<string, number> };
+    const seqs = persisted.__seq ?? {};
+    check("watermarks were actually persisted (the check is reading the live key)",
+      Object.keys(seqs).length > 0,
+      `state file keys: ${JSON.stringify(Object.keys(persisted))}`);
     const negatives = Object.entries(seqs).filter(([, v]) => typeof v === "number" && v < 0);
     check("no unsynced (-1) watermark was persisted for any world",
       negatives.length === 0,
