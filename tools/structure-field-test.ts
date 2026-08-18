@@ -15,7 +15,7 @@
 import {
   planStructure, normalize, wallBoxes, deriveRooms, derivePortals, roomAt,
   edgeCells, edgeBetween, edgeKey, cellKey, APERTURES, GRID_DEFAULTS,
-  describeHere, describeStructure, localizePoint, levelParts, TRIM, cornerFills, wallRuns, wallPolylines, sweepProfile, wallProfile, levelSweeps, capProfile, clipProfileV, routeCells, routeLocal, passable, makeShader,
+  describeHere, describeStructure, localizePoint, levelParts, TRIM, cornerFills, wallRuns, wallPolylines, sweepProfile, wallProfile, levelSweeps, capProfile, clipProfileV, refineProfile, makeShader, routeCells, routeLocal, passable, makeShader,
 } from "../shared/structure.js";
 
 let passed = 0, failed = 0;
@@ -591,7 +591,8 @@ const HOUSE = {
 
   // the profile carries the skirting and the chamfer
   const prof = wallProfile(g);
-  check("the profile is a plinth, a wall and a chamfered top", prof.length === 10, `${prof.length}`);
+  check("the profile is a plinth, a wall and a chamfered top, refined",
+    prof.length > 10 && prof.filter((q) => Math.abs(q[1]) < 1e-9).length === 2, `${prof.length}`);
   check("the plinth stands proud of the wall face",
     Math.min(...prof.map((q) => q[0])) < -g.wallT / 2);
   check("the top is chamfered, not square",
@@ -712,6 +713,55 @@ const HOUSE = {
   });
   check("a closed room is right-side-out on both faces", wrongWay.length === 0,
     `${wrongWay.length} wrong`);
+}
+
+// 21. SHADING CONTINUITY AT OPENINGS
+//
+// The panels over doors and under windows read as stuck on even though they
+// were already merged into one mesh — it was never a mesh-count problem. The
+// bake is sampled per VERTEX and interpolated between, and the shading is
+// strongly non-linear in height, so a wall quad spanning the whole storey shows
+// lerp(shade(0), shade(H)) at 2.1 while the lintel starting there samples
+// shade(2.1) directly. Same point, two colours, a step at the opening.
+{
+  const g = normalize(HOUSE);
+  const prof = wallProfile(g);
+  const heights = [...new Set(prof.map((q) => +q[1].toFixed(6)))];
+
+  for (const [name, v] of [["window sill", APERTURES.window.bottom],
+    ["lintel", APERTURES.window.top], ["arch head", APERTURES.arch.top]] as [string, number][]) {
+    check(`the profile samples exactly at the ${name} (${v}m)`, heights.includes(v),
+      heights.join(", "));
+  }
+  check("and carries a ladder between them, not two lonely ends",
+    heights.length >= 10, `${heights.length} sample heights`);
+
+  // the real claim: at an aperture boundary, what a WALL shows and what the
+  // LINTEL shows must agree. Interpolate the wall's face between its samples
+  // either side of 2.1 and compare with the direct value.
+  const lv = g.levels[0], floorY = lv.y + g.slabT;
+  const shade = makeShader(lv, g, floorY);
+  const at = (v: number) => shade(0.5, floorY + v, -g.wallT / 2, 0, 0, -1)[0];
+  // The aperture lines are exact samples, so nothing interpolates ACROSS them.
+  // What remains to prove is that the ladder is fine enough that interpolation
+  // between adjacent samples tracks the real curve.
+  const sorted = [...heights].sort((a, b) => a - b);
+  let worst = 0, worstAt = 0;
+  for (let i = 1; i < sorted.length; i++) {
+    const lo = sorted[i - 1], hi = sorted[i], mid = (lo + hi) / 2;
+    const err = Math.abs((at(lo) + at(hi)) / 2 - at(mid));
+    if (err > worst) { worst = err; worstAt = mid; }
+  }
+  check("interpolation tracks the shading curve between samples", worst < 0.02,
+    `worst ${worst.toFixed(4)} at ${worstAt.toFixed(2)}m`);
+
+  // control: with only the two ends, the same measure must blow up — otherwise
+  // this test cannot see the defect it exists for
+  const crude = Math.abs((at(0) + at(g.wallH)) / 2 - at(g.wallH / 2));
+  check("control: two lonely ends DO disagree", crude > 0.02, `${crude.toFixed(4)}`);
+
+  check("refineProfile inserts on both up and down chains",
+    refineProfile([[0, 0], [0, 2], [1, 2], [1, 0]], [1]).length === 6);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

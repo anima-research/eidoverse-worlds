@@ -85,6 +85,16 @@ export const APERTURES = Object.freeze({
   arch:   { bottom: 0.00, top: 2.40 },
 });
 
+/** Where makeShader's contact terms stop biting. Named here because the wall
+ *  profile must sample AT them — a kink that no vertex sits on shows up as a
+ *  band across every wall, and two copies of these numbers would silently
+ *  drift apart. */
+export const SHADE_KINKS = Object.freeze({
+  floorContact: 0.55, ceilContact: 0.40,   // interior
+  groundContact: 0.45, eave: 0.85,         // exterior — the outside face has
+});                                        // its own breakpoints, and the
+                                           // profile is shared by both faces
+
 export const cellKey = (x, z) => `${x},${z}`;
 export const edgeKey = (axis, x, z) => `${axis}:${x},${z}`;
 
@@ -692,10 +702,10 @@ export function makeShader(level, g, floorY) {
       }
       // contact shadow up from the floor
       const hAbove = py - floorY;
-      if (hAbove < 0.55) v *= 0.62 + 0.38 * clamp01(hAbove / 0.55);
+      if (hAbove < SHADE_KINKS.floorContact) v *= 0.62 + 0.38 * clamp01(hAbove / SHADE_KINKS.floorContact);
       // and down from the ceiling
       const below = floorY + g.wallH - py;
-      if (below < 0.40) v *= 0.82 + 0.18 * clamp01(below / 0.40);
+      if (below < SHADE_KINKS.ceilContact) v *= 0.82 + 0.18 * clamp01(below / SHADE_KINKS.ceilContact);
       // FLOOR BOUNCE. A downward face indoors is not unlit — it is the surface
       // a real room bounces the most light onto, which is why ceilings read
       // bright rather than black. Treating it as pure sky-occlusion gave a
@@ -713,10 +723,10 @@ export function makeShader(level, g, floorY) {
       // of shade down the top of the wall, and its absence is most of why an
       // untextured box reads as a box rather than as a house.
       const underEave = floorY + g.wallH - py;
-      if (underEave < 0.85) v *= 0.62 + 0.38 * clamp01((underEave + 0.35) / 1.2);
+      if (underEave < SHADE_KINKS.eave) v *= 0.62 + 0.38 * clamp01((underEave + 0.35) / 1.2);
       // and the ground steals light back at the base
       const above = py - floorY;
-      if (above < 0.45) v *= 0.76 + 0.24 * clamp01(above / 0.45);
+      if (above < SHADE_KINKS.groundContact) v *= 0.76 + 0.24 * clamp01(above / SHADE_KINKS.groundContact);
       // a convex corner catches the sky from two sides: lift it a little so
       // massing reads as volume rather than as one continuous surface
       const near = Math.min(
@@ -937,7 +947,40 @@ export function routeLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
  *  `up` from the walk surface. The top arrises are chamfered: a bevel there
  *  catches a highlight line along the whole run, which is most of what stops a
  *  wall reading as an untextured slab. */
-export function wallProfile(g, chamfer = 0.02, plinth = null) {
+/** Insert profile points wherever an edge crosses one of `vs`.
+ *
+ *  The vertex-colour bake is sampled PER VERTEX and interpolated across the
+ *  face between them, but the shading is strongly non-linear in height (floor
+ *  contact, ceiling contact, daylight falloff). A wall quad spanning the whole
+ *  storey therefore shows lerp(shade(0), shade(H)) at every height in between,
+ *  while a lintel starting at 2.1 samples shade(2.1) directly — the same point
+ *  in space, two different colours, and a visible step right at the opening.
+ *
+ *  Refining the profile fixes it from both sides: the ladder makes
+ *  interpolation track the real curve, and putting a cut at every aperture
+ *  height guarantees an EXACT shared sample where a wall meets a lintel or a
+ *  sill. This is why the panels read as stuck on even though they were already
+ *  merged into one mesh — it was never a mesh-count problem. */
+export function refineProfile(profile, vs) {
+  const cuts = [...new Set(vs)].sort((a, b) => a - b);
+  const out = [];
+  for (let i = 0; i < profile.length; i++) {
+    const cur = profile[i], prev = profile[i - 1];
+    if (prev) {
+      const lo = Math.min(prev[1], cur[1]), hi = Math.max(prev[1], cur[1]);
+      const between = cuts.filter((v) => v > lo + 1e-9 && v < hi - 1e-9);
+      if (prev[1] > cur[1]) between.reverse();
+      for (const v of between) {
+        const t = (v - prev[1]) / (cur[1] - prev[1]);
+        out.push([prev[0] + (cur[0] - prev[0]) * t, v]);
+      }
+    }
+    out.push(cur);
+  }
+  return out;
+}
+
+export function wallProfile(g, chamfer = 0.02, plinth = null, cuts = null) {
   const h = g.wallT / 2, H = g.wallH;
   const c = Math.max(0, Math.min(chamfer, h * 0.6, H * 0.1));
   const pr = plinth ?? { h: TRIM.base.h, out: TRIM.base.proud };
@@ -946,11 +989,23 @@ export function wallProfile(g, chamfer = 0.02, plinth = null) {
   // that happened to abut, and it needed its own corner reasoning; as a step in
   // the swept profile it is one board, mitred at every turn by construction,
   // and it cannot come apart from the wall it belongs to.
-  return [
+  const base = [
     [-h - o, 0], [-h - o, b], [-h, b + o], [-h, H - c],
     [-h + c, H], [h - c, H],
     [h, H - c], [h, b + o], [h + o, b], [h + o, 0],
   ].filter((pt, i, a) => i === 0 || Math.abs(pt[0] - a[i - 1][0]) > 1e-9 || Math.abs(pt[1] - a[i - 1][1]) > 1e-9);
+  // a ladder up the wall, plus an exact cut at every aperture height so a
+  // lintel or sill shares its boundary sample with the wall it continues
+  const apHeights = Object.values(APERTURES).flatMap((a) => [a.bottom, a.top]).filter((v) => v > 0 && v < H);
+  // The shading curve KINKS where its contact terms end (see makeShader), and
+  // no ladder spacing can track a kink — interpolation only follows a curve if
+  // a sample sits ON the corner. Sampling the breakpoints is the fix; the
+  // ladder just keeps the smooth stretches honest between them.
+  const kinks = [SHADE_KINKS.floorContact, H - SHADE_KINKS.ceilContact,
+    SHADE_KINKS.groundContact, H - SHADE_KINKS.eave];
+  const ladder = [];
+  for (let v = 0.3; v < H - c; v += 0.3) ladder.push(v);
+  return refineProfile(base, cuts ?? [...apHeights, ...kinks, ...ladder].filter((v) => v > 0 && v < H));
 }
 
 const nodePt = (k) => k.split(',').map(Number);
