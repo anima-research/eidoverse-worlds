@@ -15,7 +15,7 @@
 import {
   planStructure, normalize, wallBoxes, deriveRooms, derivePortals, roomAt,
   edgeCells, edgeBetween, edgeKey, cellKey, APERTURES, GRID_DEFAULTS,
-  describeHere, describeStructure, localizePoint, levelParts, TRIM, joinExtents, wallRuns,
+  describeHere, describeStructure, localizePoint, levelParts, TRIM, cornerFills, wallRuns,
 } from "../shared/structure.js";
 
 let passed = 0, failed = 0;
@@ -216,9 +216,10 @@ const HOUSE = {
   // Collinear segments merge: the 12 solid segments are 5 stretches of wall,
   // which is what they are in the world. Fewer boxes, no interior seams, and a
   // skirting that is one board instead of several that happen to abut.
-  check("16 boxes total", plan.boxes.length === 16, `got ${plan.boxes.length}`);
+  check("20 boxes total", plan.boxes.length === 20, `got ${plan.boxes.length}`);
   check("8 floor slabs", n("floor") === 8, `got ${n("floor")}`);
   check("12 solid segments merge to 5 runs", n("wall") === 5, `got ${n("wall")}`);
+  check("4 corners get their own quadrant fill", n("corner") === 4, `got ${n("corner")}`);
   check("no jambs anywhere", n("jamb") === 0, `got ${n("jamb")}`);
   check("2 lintels, 1 sill", n("lintel") === 2 && n("sill") === 1,
     `${n("lintel")} lintels, ${n("sill")} sills`);
@@ -410,20 +411,16 @@ const HOUSE = {
     boxes.some((b) => x > b.x0 - 1e-9 && x < b.x1 + 1e-9 && y > b.y0 - 1e-9
       && y < b.y1 + 1e-9 && z > b.z0 - 1e-9 && z < b.z1 + 1e-9);
 
-  const withJoin: any[] = [], without: any[] = [];
-  for (const [k, edge] of lv.walls) {
-    const ap = lv.apertures.get(k) ?? null;
-    withJoin.push(...wallBoxes(edge, ap, g, floorY, joinExtents(lv, edge.axis, edge.x, edge.z, g)));
-    without.push(...wallBoxes(edge, ap, g, floorY));      // the negative control
-  }
+  // the REAL plan, corner fills included — testing wallBoxes in isolation is
+  // how the notch survived a "corner is solid" check in the first place
+  const withJoin = planStructure(HOUSE).boxes as any[];
+  const without: any[] = [];
+  for (const [k, edge] of lv.walls) without.push(...wallBoxes(edge, lv.apertures.get(k) ?? null, g, floorY));
 
-  // the NW outer corner quadrant, at chest height
   const [cx, cy, cz] = [-h / 2, floorY + 1.2, -h / 2];
-  check("control: unjoined segments DO leave a corner notch", !solidAt(without, cx, cy, cz),
+  check("control: walls ALONE leave a corner notch", !solidAt(without, cx, cy, cz),
     "the bug this test exists for is no longer reachable");
   check("an external corner is solid", solidAt(withJoin, cx, cy, cz));
-
-  // all four corners of the rectangular shell, and the full height of one
   const corners: [number, number][] = [[-h / 2, -h / 2], [4 + h / 2, -h / 2],
     [-h / 2, 2 + h / 2], [4 + h / 2, 2 + h / 2]];
   check("every external corner is solid",
@@ -432,17 +429,51 @@ const HOUSE = {
   check("solid up the corner's whole height",
     [0.1, 0.9, 1.8, 2.7].every((dy) => solidAt(withJoin, cx, floorY + dy, cz)));
 
-  // a free end must NOT grow a nub — extension is for joints only
+  // NOTHING MAY REACH PAST ANY OUTER FACE, and the check must cover VISUAL
+  // parts too. Watching one plane is how an interior door's casing punched out
+  // through the north face while the test guarded the south; watching only
+  // collision boxes would have missed it regardless, since casing is visual.
+  const shell = { x0: -h, x1: 4 + h, z0: -h, z1: 2 + h };
+  const vis = levelParts(lv, g, floorY).filter((b: any) => b.kind !== "roof");
+  const escapes = [...withJoin, ...vis].filter((b: any) =>
+    b.x0 < shell.x0 - 1e-9 || b.x1 > shell.x1 + 1e-9
+    || b.z0 < shell.z0 - 1e-9 || b.z1 > shell.z1 + 1e-9);
+  check("nothing reaches past ANY outer face", escapes.length === 0,
+    escapes.map((b: any) => `${b.kind} x[${b.x0.toFixed(2)},${b.x1.toFixed(2)}] z[${b.z0.toFixed(3)},${b.z1.toFixed(3)}]`).join(" | "));
+
+  // no two boxes fight for the same outer plane
+  let clash = 0;
+  for (const plane of [shell.z0, shell.z1]) {
+    const on = withJoin.filter((b: any) => Math.abs(b.z0 - plane) < 1e-9 || Math.abs(b.z1 - plane) < 1e-9);
+    for (let i = 0; i < on.length; i++) {
+      for (let j = i + 1; j < on.length; j++) {
+        const A = on[i], B = on[j];
+        if (A.x0 < B.x1 - 1e-9 && B.x0 < A.x1 - 1e-9 && A.y0 < B.y1 - 1e-9 && B.y0 < A.y1 - 1e-9) clash++;
+      }
+    }
+  }
+  check("no overlapping coplanar faces on an outer plane (z-fight)", clash === 0, `${clash} pairs`);
+
+  // a free end grows nothing
   const stub = normalize({ levels: [{ tiles: [[0, 0]], walls: [[0, 0, 0]] }] });
-  const sl = stub.levels[0];
-  const [e0, e1] = joinExtents(sl, 0, 0, 0, stub);
-  check("a wall ending in open space is not extended", e0 === 0 && e1 === 0, `${e0}, ${e1}`);
-  // ...while a corner joint extends on exactly the joined side
+  check("a wall ending in open space grows no fill",
+    cornerFills(stub.levels[0], stub, 0, stub.wallH).length === 0);
+  // an L-corner is closed by exactly one quadrant box
   const ell = normalize({ levels: [{ tiles: [[0, 0]], walls: [[0, 0, 0], [1, 0, 0]] }] });
-  const el = ell.levels[0];
-  const [f0, f1] = joinExtents(el, 0, 0, 0, ell);
-  check("a joined end extends by half a thickness", f0 === ell.wallT / 2 && f1 === 0,
-    `${f0}, ${f1}`);
+  const fills = cornerFills(ell.levels[0], ell, 0, ell.wallH);
+  check("an L-corner gets exactly one quadrant fill", fills.length === 1, `${fills.length}`);
+  check("the fill is a half-thickness square",
+    fills.every((f) => Math.abs(f.x1 - f.x0 - ell.wallT / 2) < 1e-9
+      && Math.abs(f.z1 - f.z0 - ell.wallT / 2) < 1e-9));
+  // A T-JUNCTION NEEDS NOTHING — the crossing wall already spans ±t/2, and
+  // anything added reappears on its far face.
+  const tee = normalize({ levels: [{ tiles: [[0, 0]], walls: [[0, 0, 0], [0, -1, 0], [1, 0, 0]] }] });
+  check("a T-junction grows no fill",
+    cornerFills(tee.levels[0], tee, 0, tee.wallH).length === 0,
+    JSON.stringify(cornerFills(tee.levels[0], tee, 0, tee.wallH)));
+  const cross = normalize({ levels: [{ tiles: [[0, 0]],
+    walls: [[0, 0, 0], [0, -1, 0], [1, 0, 0], [1, 0, -1]] }] });
+  check("a crossing grows no fill", cornerFills(cross.levels[0], cross, 0, cross.wallH).length === 0);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

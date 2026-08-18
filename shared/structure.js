@@ -201,13 +201,60 @@ export function normalize(data) {
  *  Extending each segment by half a thickness into any joint it actually
  *  participates in closes it. Free ends are left alone, so a wall that stops in
  *  open space still stops where it says it does. */
-export function joinExtents(level, axis, x, z, g) {
+/** Fill the missing quadrant at each corner with its OWN small box, rather than
+ *  stretching a wall across it.
+ *
+ *  Stretching was wrong twice over, and both showed in-world:
+ *
+ *  - AT A T-JUNCTION there is no gap at all. The crossing wall already spans
+ *    ±t/2, so it covers the quadrants by itself; extending the stem drove its
+ *    end cap out to the crossing wall's OUTER face, flush and coplanar. That is
+ *    an interior wall appearing on the outside of the building, and a z-fight
+ *    along the seam where it lands.
+ *  - AT AN L-CORNER extending does close the notch, but leaves both walls with
+ *    a face on the same plane, facing the same way, OVERLAPPING — which is
+ *    precisely what z-fights.
+ *
+ *  A quadrant box does neither. Its faces are coplanar with the walls' faces
+ *  but ADJACENT rather than overlapping — they tile the plane instead of
+ *  competing for it — and its end caps sit back-to-back with the walls', which
+ *  backface culling resolves for free.
+ *
+ *  A quadrant is uncovered exactly when neither wall bounding it is present,
+ *  and it is a CORNER (rather than open air past a free end) exactly when both
+ *  opposite walls are. Free ends grow nothing. */
+export function cornerFills(level, g, y0, y1) {
   const h = g.wallT / 2;
-  const perpAt = (px, pz) => (axis === 0
-    ? level.walls.has(edgeKey(1, px, pz)) || level.walls.has(edgeKey(1, px, pz - 1))
-    : level.walls.has(edgeKey(0, px, pz)) || level.walls.has(edgeKey(0, px - 1, pz)));
-  const end = axis === 0 ? [x + 1, z] : [x, z + 1];
-  return [perpAt(x, z) ? h : 0, perpAt(end[0], end[1]) ? h : 0];
+  const pts = new Set();
+  for (const [, e] of level.walls) {
+    if (e.axis === 0) { pts.add(`${e.x},${e.z}`); pts.add(`${e.x + 1},${e.z}`); }
+    else { pts.add(`${e.x},${e.z}`); pts.add(`${e.x},${e.z + 1}`); }
+  }
+  const out = [];
+  for (const p of [...pts].sort()) {
+    const [px, pz] = p.split(',').map(Number);
+    const W = level.walls.has(edgeKey(0, px - 1, pz));
+    const E = level.walls.has(edgeKey(0, px, pz));
+    const N = level.walls.has(edgeKey(1, px, pz - 1));
+    const S = level.walls.has(edgeKey(1, px, pz));
+    //        sx  sz   would cover it   makes it a corner
+    for (const [sx, sz, a, b, c, d] of [
+      [+1, -1, E, N, W, S],   // NE
+      [+1, +1, E, S, W, N],   // SE
+      [-1, +1, W, S, E, N],   // SW
+      [-1, -1, W, N, E, S],   // NW
+    ]) {
+      if (a || b || !c || !d) continue;
+      const cx = px * g.tile, cz = pz * g.tile;
+      out.push({
+        x0: cx + (sx < 0 ? -h : 0), x1: cx + (sx < 0 ? 0 : h),
+        y0, y1,
+        z0: cz + (sz < 0 ? -h : 0), z1: cz + (sz < 0 ? 0 : h),
+        mat: 'wall', kind: 'corner',
+      });
+    }
+  }
+  return out;
 }
 
 /** Group aperture-free wall segments into RUNS: maximal contiguous collinear
@@ -254,9 +301,10 @@ export function wallRuns(level, g) {
 export function runSpan(run, level, g) {
   const startEdge = run.axis === 0 ? [0, run.lo, run.cross] : [1, run.cross, run.lo];
   const endEdge = run.axis === 0 ? [0, run.hi, run.cross] : [1, run.cross, run.hi];
-  const [s0] = joinExtents(level, run.axis, startEdge[1], startEdge[2], g);
-  const [, e1] = joinExtents(level, run.axis, endEdge[1], endEdge[2], g);
-  return [run.lo * g.tile - s0, (run.hi + 1) * g.tile + e1];
+  // A run stops where it stops; corners are closed by cornerFills, not by
+  // stretching this span past the wall it meets.
+  void startEdge; void endEdge;
+  return [run.lo * g.tile, (run.hi + 1) * g.tile];
 }
 
 export function wallBoxes(edge, aperture, g, y, ext = [0, 0]) {
@@ -417,9 +465,9 @@ export function planStructure(data) {
     for (const [k, edge] of level.walls) {
       const ap = level.apertures.get(k);
       if (!ap) continue;
-      boxes.push(...wallBoxes(edge, ap, g, floorY,
-        joinExtents(level, edge.axis, edge.x, edge.z, g)));
+      boxes.push(...wallBoxes(edge, ap, g, floorY));
     }
+    boxes.push(...cornerFills(level, g, floorY, floorY + g.wallH));
     const rooms = deriveRooms(level, g);
     levels.push({
       y: floorY, base: level.y, rooms, portals: derivePortals(level, rooms),
@@ -505,11 +553,12 @@ export function levelParts(level, g, floorY) {
     }
   }
 
+  parts.push(...cornerFills(level, g, floorY, floorY + h));
+
   for (const [k, edge] of level.walls) {
     const ap = level.apertures.get(k) ?? null;
     if (!ap) continue;                       // solid stretches ran above
-    const ext = joinExtents(level, edge.axis, edge.x, edge.z, g);
-    parts.push(...wallBoxes(edge, ap, g, floorY, ext));
+    parts.push(...wallBoxes(edge, ap, g, floorY));
 
     const { axis, x, z } = edge;
     const a0 = (axis === 0 ? x : z) * g.tile, a1 = a0 + g.tile;
@@ -521,6 +570,17 @@ export function levelParts(level, g, floorY) {
     // than intruding into it — an aperture spans its whole tile, so a jamb
     // placed inside would narrow the hole the collider still says is open.
     const oB = floorY + prof.bottom, oT = floorY + Math.min(prof.top, h);
+    // CASING MAY ONLY SIT ON WALL THAT EXISTS. It frames the opening from the
+    // neighbouring collinear segments, so where there is no neighbour there is
+    // nothing to sit on — and the trim does not merely hang in space, it punches
+    // out through the face of whatever wall the opening meets. That is what put
+    // an interior door's jambs on the OUTSIDE of the building: the door met the
+    // exterior wall at a T, had no neighbour on that side, and its casing ran
+    // 9cm along an axis whose outer face was 7.5cm away.
+    const prevK = axis === 0 ? edgeKey(0, x - 1, z) : edgeKey(1, x, z - 1);
+    const nextK = axis === 0 ? edgeKey(0, x + 1, z) : edgeKey(1, x, z + 1);
+    const cw0 = level.walls.has(prevK) ? TRIM.case.w : 0;
+    const cw1 = level.walls.has(nextK) ? TRIM.case.w : 0;
     const cw = TRIM.case.w;
     for (const s of faces) {
       const c0 = s < 0 ? -half - TRIM.case.proud : half;
@@ -535,15 +595,15 @@ export function levelParts(level, g, floorY) {
         parts.push(edgeSpan(axis, cross, a0, a1, b0, b0 + TRIM.base.proud + 0.001,
           floorY, floorY + TRIM.base.h, 'trim', 'base'));
       }
-      parts.push(edgeSpan(axis, cross, a0 - cw, a0, c0, c1, oB, oT, 'trim', 'case'));
-      parts.push(edgeSpan(axis, cross, a1, a1 + cw, c0, c1, oB, oT, 'trim', 'case'));
+      if (cw0) parts.push(edgeSpan(axis, cross, a0 - cw0, a0, c0, c1, oB, oT, 'trim', 'case'));
+      if (cw1) parts.push(edgeSpan(axis, cross, a1, a1 + cw1, c0, c1, oB, oT, 'trim', 'case'));
       if (oT < floorY + h) {
-        parts.push(edgeSpan(axis, cross, a0 - cw, a1 + cw, c0, c1, oT, oT + cw, 'trim', 'case'));
+        parts.push(edgeSpan(axis, cross, a0 - cw0, a1 + cw1, c0, c1, oT, oT + cw, 'trim', 'case'));
       }
       if (prof.bottom > 0) {
         // sill: stands proud of the face, the one piece of trim you can rest
         // a mug on, and the thing that makes a window read as a window
-        parts.push(edgeSpan(axis, cross, a0 - cw, a1 + cw,
+        parts.push(edgeSpan(axis, cross, a0 - cw0, a1 + cw1,
           s < 0 ? -half - TRIM.sill.out : half, s < 0 ? -half : half + TRIM.sill.out,
           oB - TRIM.sill.t, oB, 'trim', 'sill'));
       }

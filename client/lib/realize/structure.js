@@ -118,6 +118,7 @@ function slotFor(part) {
   if (part.kind === 'floor') return 'floor';
   if (part.kind === 'roof') return 'roof';
   if (part.kind === 'glass') return 'glass';
+  if (part.kind === 'corner') return 'wall';
   if (part.kind === 'base' || part.kind === 'case' || part.kind === 'sill'
     || part.kind === 'lintel') return 'trim';
   return 'wall';
