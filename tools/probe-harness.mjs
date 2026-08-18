@@ -43,7 +43,11 @@ export async function launchBrowser({ mic = false } = {}) {
  *  (explicit, identity unchecked — it is not our child). */
 export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'dev' } = {}) {
   if (live) return { origin: live, key, owned: false, close: async () => {} };
-  const PORT = 8981 + Math.floor(Math.random() * 15);
+  // Wide range: with a narrow one, two concurrent runs collide ~1/15 and the
+  // loser's readiness poll can reach the WINNER's just-started server, which
+  // passes a freshness check — the nonce echo is what actually rejects it,
+  // and width makes the collision rare to begin with.
+  const PORT = 8981 + Math.floor(Math.random() * 800);
   const scratch = mkdtempSync(join(tmpdir(), 'probe-'));
   const NONCE = randomUUID();
   // process.execPath is only right when WE run under bun — under node it
