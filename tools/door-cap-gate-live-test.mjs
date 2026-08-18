@@ -52,7 +52,11 @@ async function up(url, ms = 15000) {
 }
 function shutdown() {
   for (const p of kids) { try { p.kill("SIGTERM"); } catch {} }
-  try { rmSync(scratch, { recursive: true, force: true }); } catch {}
+  // The sequencer's graceful shutdown can still be writing worlds/<name>/ when
+  // rmSync races it (review nit: one in three runs left a /tmp/capgate-* dir).
+  // exit handlers cannot await, so retry synchronously after a beat via SIGKILL.
+  for (const p of kids) { try { p.kill("SIGKILL"); } catch {} }
+  for (let i = 0; i < 2; i++) { try { rmSync(scratch, { recursive: true, force: true }); break; } catch {} }
 }
 process.on("exit", shutdown);
 
