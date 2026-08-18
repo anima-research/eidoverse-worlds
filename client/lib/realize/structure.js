@@ -160,11 +160,35 @@ function buildGroup(plan) {
   const bySlot = new Map();
   for (const lv of plan.levels) {
     const shade = makeShader(lv.level, plan.grid, lv.y);
+    // Swept walls: geometry built from the wall's own direction, mitred at
+    // every turn. Made NON-INDEXED before normals so each profile facet gets a
+    // flat normal — shared ring vertices would average the chamfer into a soft
+    // roll, and a chamfer that does not catch a hard highlight line is a
+    // chamfer nobody can see.
+    for (const sw of lv.sweeps ?? []) {
+      if (!sw.positions.length) continue;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(sw.positions, 3));
+      geo.setIndex(sw.indices);
+      const flat = geo.toNonIndexed();
+      geo.dispose();
+      flat.computeVertexNormals();
+      const slot = PALETTE[sw.mat] ? sw.mat : 'wall';
+      if (!bySlot.has(slot)) bySlot.set(slot, []);
+      bySlot.get(slot).push({ g: flat, shade });
+    }
     for (const b of lv.parts) {
       const w = Math.abs(b.x1 - b.x0), h = Math.abs(b.y1 - b.y0), d = Math.abs(b.z1 - b.z0);
       if (!(w > 0 && h > 0 && d > 0)) continue;
-      const g = new THREE.BoxGeometry(w, h, d);
-      g.translate((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, (b.z0 + b.z1) / 2);
+      const boxed = new THREE.BoxGeometry(w, h, d);
+      boxed.translate((b.x0 + b.x1) / 2, (b.y0 + b.y1) / 2, (b.z0 + b.z1) / 2);
+      // non-indexed like the sweeps: mergeGeometries refuses a mix, and flat
+      // normals are what we want on every one of these anyway
+      const g = boxed.toNonIndexed();
+      boxed.dispose();
+      // nothing here samples a texture — the materials are procedural from
+      // position — and mergeGeometries refuses a mix of attribute sets
+      g.deleteAttribute('uv');
       const slot = slotFor(b);
       if (!bySlot.has(slot)) bySlot.set(slot, []);
       bySlot.get(slot).push({ g, shade });

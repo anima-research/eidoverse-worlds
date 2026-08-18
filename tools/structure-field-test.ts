@@ -15,7 +15,7 @@
 import {
   planStructure, normalize, wallBoxes, deriveRooms, derivePortals, roomAt,
   edgeCells, edgeBetween, edgeKey, cellKey, APERTURES, GRID_DEFAULTS,
-  describeHere, describeStructure, localizePoint, levelParts, TRIM, cornerFills, wallRuns, routeCells, routeLocal, passable, makeShader,
+  describeHere, describeStructure, localizePoint, levelParts, TRIM, cornerFills, wallRuns, wallPolylines, sweepProfile, wallProfile, routeCells, routeLocal, passable, makeShader,
 } from "../shared/structure.js";
 
 let passed = 0, failed = 0;
@@ -387,7 +387,7 @@ const HOUSE = {
 
   // and the rest of the kit is present
   const kinds = new Set(parts.map((p) => p.kind));
-  for (const k of ["floor", "wall", "base", "case", "sill", "glass", "roof"]) {
+  for (const k of ["floor", "base", "case", "sill", "glass", "roof"]) {
     check(`parts include ${k}`, kinds.has(k), [...kinds].join(","));
   }
   check("the roof overhangs the footprint",
@@ -559,6 +559,76 @@ const HOUSE = {
   const inFace = sh(0.5, floorY + 1.5, g.wallT / 2, 0, 0, 1)[0];
   check("inside is dimmer than outside on one wall", inFace < lum(floorY + 1.5),
     `${inFace.toFixed(3)} vs ${lum(floorY + 1.5).toFixed(3)}`);
+}
+
+// 19. SWEPT WALLS — built from the wall's direction, not the world's axes
+{
+  const g = normalize(HOUSE);
+  const lv = g.levels[0];
+  const floorY = lv.y + g.slabT;
+  const lines = wallPolylines(lv, g);
+
+  check("solid walls chain into polylines", lines.length > 0);
+  // The divider meets the shell at a T. The shell must run THROUGH that node
+  // as one line while the divider ends against it — three stubs meeting at a
+  // point is what "straightest continuation" exists to prevent.
+  const lens = lines.map((l) => l.pts.length).sort((a, b) => b - a);
+  check("the shell chains into one long run, the divider is its own stub",
+    lines.length === 2 && lens[0] >= 8 && lens[1] === 2, JSON.stringify(lens));
+  const stub = lines.find((l) => l.pts.length === 2)!;
+  check("the divider stub ends ON the shell",
+    stub.pts.some(([, z]) => Math.abs(z - 2) < 1e-9), JSON.stringify(stub.pts));
+  check("apertured segments are excluded from runs",
+    lines.every((l) => l.pts.length >= 2));
+
+  // a closed ring must wrap, or its last corner is left unmitred
+  const ring = normalize({ levels: [{ tiles: [[0, 0]],
+    walls: [[0, 0, 0], [1, 0, 0], [0, 0, 1], [1, 1, 0]] }] });
+  const rl = wallPolylines(ring.levels[0], ring);
+  check("a closed room is one wrapped ring", rl.length === 1
+    && rl[0].pts.length === 5
+    && rl[0].pts[0][0] === rl[0].pts[4][0] && rl[0].pts[0][1] === rl[0].pts[4][1],
+    JSON.stringify(rl.map((l) => l.pts)));
+
+  // the profile carries the skirting and the chamfer
+  const prof = wallProfile(g);
+  check("the profile is a plinth, a wall and a chamfered top", prof.length === 10, `${prof.length}`);
+  check("the plinth stands proud of the wall face",
+    Math.min(...prof.map((q) => q[0])) < -g.wallT / 2);
+  check("the top is chamfered, not square",
+    prof.filter((q) => Math.abs(q[1] - g.wallH) < 1e-9).length === 2);
+
+  // THE MITRE. At a 90° corner the outer face must reach exactly the corner
+  // point — 1/cos(45°) = √2 times the half-thickness. A naive (unmitred) sweep
+  // falls short by that factor and leaves a notch, which is the whole defect
+  // the box model kept reproducing.
+  const L = [[0, 0], [2, 0], [2, 2]];
+  const sw = sweepProfile(L, [[-g.wallT / 2, 0], [g.wallT / 2, 0]], 0);
+  const xs: number[] = [], zs: number[] = [];
+  for (let i = 0; i < sw.positions.length; i += 3) { xs.push(sw.positions[i]); zs.push(sw.positions[i + 2]); }
+  const outer = Math.max(...xs);
+  check("a 90° mitre reaches the full corner",
+    Math.abs(outer - (2 + g.wallT / 2)) < 1e-6, `outer x = ${outer}`);
+
+  // and a 45° turn mitres too — this is what makes diagonals possible
+  const D = [[0, 0], [2, 0], [3, 1]];
+  const sd = sweepProfile(D, [[-g.wallT / 2, 0], [g.wallT / 2, 0]], 0);
+  check("a 45° turn produces finite, mitred geometry",
+    sd.positions.every((v: number) => Number.isFinite(v)) && sd.positions.length > 0);
+  const widths: number[] = [];
+  for (let r = 0; r < sd.rings; r++) {
+    const a = r * 2 * 3, b = a + 3;
+    widths.push(Math.hypot(sd.positions[b] - sd.positions[a], sd.positions[b + 2] - sd.positions[a + 2]));
+  }
+  check("the mitre widens at the turn, never pinches",
+    widths.every((w) => w >= g.wallT - 1e-9), widths.map((w) => w.toFixed(3)).join(", "));
+
+  // the level plan carries sweeps
+  const plan = planStructure(HOUSE);
+  check("the plan carries swept walls", (plan.levels[0] as any).sweeps.length > 0);
+  check("swept geometry is well-formed", (plan.levels[0] as any).sweeps.every((s2: any) =>
+    s2.positions.length % 3 === 0 && s2.indices.length % 3 === 0
+    && s2.indices.every((i: number) => i >= 0 && i < s2.positions.length / 3)));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

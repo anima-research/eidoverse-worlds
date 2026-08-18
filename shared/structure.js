@@ -473,6 +473,7 @@ export function planStructure(data) {
       y: floorY, base: level.y, rooms, portals: derivePortals(level, rooms),
       // visual geometry rides alongside, never inside, the collision boxes
       parts: levelParts(level, g, floorY),
+      sweeps: levelSweeps(level, g, floorY),
       level,
     });
   }
@@ -532,28 +533,10 @@ export function levelParts(level, g, floorY) {
     parts.push(tileBox(x, z, mat, g, floorY - g.slabT));
   }
 
-  // Solid stretches are ONE piece — wall and skirting both. A baseboard built
-  // per segment is several boards that happen to abut; built per run it is one
-  // board, which is what it is in the world.
-  for (const run of wallRuns(level, g)) {
-    const [a0, a1] = runSpan(run, level, g);
-    const cross = run.cross * g.tile;
-    parts.push(edgeSpan(run.axis, cross, a0, a1, -half, half,
-      floorY, floorY + h, run.mat, 'wall'));
-    // one skirting per face that looks into a room, along the whole run
-    const sides = new Set();
-    for (let i = run.lo; i <= run.hi; i++) {
-      const ex = run.axis === 0 ? i : run.cross, ez = run.axis === 0 ? run.cross : i;
-      for (const s of facesOf(level, run.axis, ex, ez)) sides.add(s);
-    }
-    for (const s of sides) {
-      const c0 = s < 0 ? -half - TRIM.base.proud : half;
-      parts.push(edgeSpan(run.axis, cross, a0, a1, c0, c0 + TRIM.base.proud + 0.001,
-        floorY, floorY + TRIM.base.h, 'trim', 'base'));
-    }
-  }
-
-  parts.push(...cornerFills(level, g, floorY, floorY + h));
+  // Solid stretches and their skirting are SWEPT (see levelSweeps) — geometry
+  // built from the wall's own direction rather than the world's axes, so it
+  // mitres at every turn and can run at any angle. Only the pieces that are
+  // genuinely box-shaped stay here.
 
   for (const [k, edge] of level.walls) {
     const ap = level.apertures.get(k) ?? null;
@@ -956,4 +939,182 @@ export function routeLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
   pts.push([toX, toZ]);
   void y;
   return pts;
+}
+
+// ---- swept wall geometry ----------------------------------------------------
+// Walls stop being boxes here.
+//
+// A box per run is axis-aligned by construction, so it can never mitre and can
+// never turn 45°. Both of those are the same limitation wearing different
+// clothes: the geometry is built from the world's axes instead of from the
+// wall's own direction. Sweeping a cross-section along a polyline builds it
+// from the wall's direction instead, which gives true mitres at ANY angle,
+// puts chamfers in the profile where they belong, and makes diagonal walls a
+// change of path rather than a change of pipeline.
+
+/** The wall cross-section, as [across, up] pairs. `across` runs −t/2..+t/2,
+ *  `up` from the walk surface. The top arrises are chamfered: a bevel there
+ *  catches a highlight line along the whole run, which is most of what stops a
+ *  wall reading as an untextured slab. */
+export function wallProfile(g, chamfer = 0.02, plinth = null) {
+  const h = g.wallT / 2, H = g.wallH;
+  const c = Math.max(0, Math.min(chamfer, h * 0.6, H * 0.1));
+  const pr = plinth ?? { h: TRIM.base.h, out: TRIM.base.proud };
+  const b = Math.min(pr.h, H * 0.25), o = Math.max(0, pr.out);
+  // THE SKIRTING IS PART OF THE WALL. As separate boxes it was several boards
+  // that happened to abut, and it needed its own corner reasoning; as a step in
+  // the swept profile it is one board, mitred at every turn by construction,
+  // and it cannot come apart from the wall it belongs to.
+  return [
+    [-h - o, 0], [-h - o, b], [-h, b + o], [-h, H - c],
+    [-h + c, H], [h - c, H],
+    [h, H - c], [h, b + o], [h + o, b], [h + o, 0],
+  ].filter((pt, i, a) => i === 0 || Math.abs(pt[0] - a[i - 1][0]) > 1e-9 || Math.abs(pt[1] - a[i - 1][1]) > 1e-9);
+}
+
+const nodePt = (k) => k.split(',').map(Number);
+
+/** Chain wall segments into polylines.
+ *
+ *  A run continues through a node by taking the STRAIGHTEST onward segment,
+ *  which is what makes a T-junction behave: the crossing wall runs through as
+ *  one line and the stem ends against it, instead of three stubs meeting at a
+ *  point. Degree-2 corners chain and mitre; anything apertured is excluded
+ *  because a hole makes it a different shape, and it is emitted separately. */
+export function wallPolylines(level, g) {
+  const segs = [];
+  for (const [k, e] of level.walls) {
+    if (level.apertures.has(k)) continue;
+    const a = cellKey(e.x, e.z);
+    const b = e.axis === 0 ? cellKey(e.x + 1, e.z)
+      : e.axis === 1 ? cellKey(e.x, e.z + 1)
+      : e.axis === 2 ? cellKey(e.x + 1, e.z + 1)     // ↘ diagonal
+      : cellKey(e.x - 1, e.z + 1);                   // ↗ diagonal
+    segs.push({ a, b, mat: e.mat, used: false });
+  }
+  const inc = new Map();
+  segs.forEach((s, i) => {
+    for (const n of [s.a, s.b]) { if (!inc.has(n)) inc.set(n, []); inc.get(n).push(i); }
+  });
+  const dir = (from, to) => {
+    const [ax, az] = nodePt(from), [bx, bz] = nodePt(to);
+    const d = Math.hypot(bx - ax, bz - az) || 1;
+    return [(bx - ax) / d, (bz - az) / d];
+  };
+  /** the straightest unused continuation at `node` arriving along `d` */
+  const onward = (node, from, d) => {
+    let best = -1, bestDot = -2;
+    for (const i of inc.get(node) ?? []) {
+      const s = segs[i];
+      if (s.used) continue;
+      const other = s.a === node ? s.b : s.a;
+      if (other === from) continue;
+      const e = dir(node, other);
+      const dot = d[0] * e[0] + d[1] * e[1];
+      if (dot > bestDot) { bestDot = dot; best = i; }
+    }
+    return best;
+  };
+  const lines = [];
+  const grow = (startSeg) => {
+    const s = segs[startSeg];
+    s.used = true;
+    const pts = [s.a, s.b];
+    const mat = s.mat;
+    // extend forward, then backward
+    for (const forward of [true, false]) {
+      for (;;) {
+        const tip = forward ? pts[pts.length - 1] : pts[0];
+        const prev = forward ? pts[pts.length - 2] : pts[1];
+        const i = onward(tip, prev, dir(prev, tip));
+        if (i < 0) break;
+        segs[i].used = true;
+        const nxt = segs[i].a === tip ? segs[i].b : segs[i].a;
+        if (pts.includes(nxt)) {
+          // a closed ring: repeat the first point so the sweep knows to wrap,
+          // otherwise the last corner is left unmitred and the run has a seam
+          if (nxt === pts[0]) { if (forward) pts.push(nxt); else pts.unshift(nxt); }
+          break;
+        }
+        if (forward) pts.push(nxt); else pts.unshift(nxt);
+      }
+    }
+    lines.push({ pts: pts.map(nodePt).map(([x, z]) => [x * g.tile, z * g.tile]), mat });
+  };
+  // start at ends and junctions first so open runs are not cut mid-line
+  for (let i = 0; i < segs.length; i++) {
+    if (segs[i].used) continue;
+    const dA = (inc.get(segs[i].a) ?? []).length, dB = (inc.get(segs[i].b) ?? []).length;
+    if (dA !== 2 || dB !== 2) grow(i);
+  }
+  for (let i = 0; i < segs.length; i++) if (!segs[i].used) grow(i);   // pure loops
+  return lines;
+}
+
+/** Sweep a profile along a path, mitring at every turn.
+ *
+ *  The mitre is the classic one: at each interior vertex the offset direction
+ *  is the bisector of the two segment normals, lengthened by 1/cos(θ/2) so the
+ *  faces meet exactly. It is angle-agnostic, which is the whole point — a 90°
+ *  corner and a 45° corner take the same code, and that is what lets diagonal
+ *  walls exist at all.
+ *
+ *  Returns flat positions + indices; normals are left to the caller (the
+ *  realizer computes them) so this half stays free of any renderer. */
+export function sweepProfile(path, profile, y0) {
+  if (path.length < 2 || profile.length < 2) return { positions: [], indices: [] };
+  const closed = path.length > 2
+    && Math.abs(path[0][0] - path[path.length - 1][0]) < 1e-9
+    && Math.abs(path[0][1] - path[path.length - 1][1]) < 1e-9;
+  const pts = closed ? path.slice(0, -1) : path;
+  const n = pts.length;
+  const segDir = [];
+  for (let i = 0; i < n - (closed ? 0 : 1); i++) {
+    const a = pts[i], b = pts[(i + 1) % n];
+    const dx = b[0] - a[0], dz = b[1] - a[1];
+    const L = Math.hypot(dx, dz) || 1;
+    segDir.push([dx / L, dz / L]);
+  }
+  /** unit normal (left of travel) */
+  const nrm = (d) => [-d[1], d[0]];
+  const offsets = [];
+  for (let i = 0; i < n; i++) {
+    const dIn = closed ? segDir[(i - 1 + n) % n] : segDir[Math.max(0, i - 1)];
+    const dOut = closed ? segDir[i % n] : segDir[Math.min(segDir.length - 1, i)];
+    const nIn = nrm(dIn), nOut = nrm(dOut);
+    let mx = nIn[0] + nOut[0], mz = nIn[1] + nOut[1];
+    const mL = Math.hypot(mx, mz);
+    if (mL < 1e-6) { offsets.push(nOut); continue; }   // 180° doubling back
+    mx /= mL; mz /= mL;
+    // 1/cos(θ/2): the amount the mitre must reach to keep both faces flush
+    const scale = 1 / Math.max(0.35, mx * nOut[0] + mz * nOut[1]);
+    offsets.push([mx * scale, mz * scale]);
+  }
+  const positions = [];
+  for (let i = 0; i < n; i++) {
+    const [px, pz] = pts[i], [ox, oz] = offsets[i];
+    for (const [u, v] of profile) positions.push(px + ox * u, y0 + v, pz + oz * u);
+  }
+  const P = profile.length;
+  const indices = [];
+  const rings = closed ? n : n - 1;
+  for (let i = 0; i < rings; i++) {
+    const a = i * P, b = ((i + 1) % n) * P;
+    for (let j = 0; j < P - 1; j++) {
+      indices.push(a + j, b + j, b + j + 1, a + j, b + j + 1, a + j + 1);
+    }
+  }
+  return { positions, indices, ringSize: P, rings: n };
+}
+
+
+/** Swept geometry for one level: every solid wall run, mitred. */
+export function levelSweeps(level, g, floorY) {
+  const prof = wallProfile(g);
+  const out = [];
+  for (const line of wallPolylines(level, g)) {
+    const sw = sweepProfile(line.pts, prof, floorY);
+    if (sw.positions.length) out.push({ ...sw, mat: line.mat, kind: 'wall' });
+  }
+  return out;
 }
