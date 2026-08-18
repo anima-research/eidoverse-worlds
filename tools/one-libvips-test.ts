@@ -25,6 +25,12 @@
 // aligns the ranges) would pass case 1 for reasons unrelated to the fix, so
 // case 2 asserts the STRUCTURE — the resolver reaches the nested copy
 // whenever a nested copy exists.
+//
+// Cases 1 and 2 both describe what optimize.ts ASKS for. Case 3 is the one
+// that answers the question directly — it censuses the native binaries this
+// process actually mapped, after a real optimizeGlb run. "Avoids the bare
+// specifier" and "loads one libvips" are different claims, and only the
+// second is the fix.
 
 import { existsSync } from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -178,6 +184,32 @@ if (nested && existsSync(nested)) {
   console.log("  \x1b[36m—\x1b[0m single sharp install; the bare specifier is safe here");
   console.log(`     resolved: ${from}`);
 }
+
+// ------------------------------------------- 3. the process, not the resolver
+// Cases 1 and 2 show that optimize.ts ASKS for the right copy. This shows what
+// the process actually LOADED, which is the only claim that matters: the fix
+// is "one libvips per optimize process", so count the libvips.
+//
+// process.report.getReport().sharedObjects lists the native binaries mapped
+// into this process by absolute path. Two distinct install roots holding a
+// sharp binding means two libvips, whatever the resolver intended. Measured
+// AFTER case 1's real optimizeGlb run, so it covers the actual optimize path
+// and not a synthetic import.
+const report = (process as any).report?.getReport?.();
+if (!report || !Array.isArray(report.sharedObjects)) {
+  console.log("  [36m—[0m process.report unavailable on this runtime; skipping the load census");
+} else {
+  const installs = [...new Set((report.sharedObjects as string[])
+    .filter((s) => /sharp/i.test(s) && s.endsWith(".node"))
+    .map((s) => dirname(s)))];
+  check("exactly one sharp install is loaded in this process",
+    installs.length === 1,
+    installs.length === 0
+      ? "none loaded — the texture pass never ran, so this proves nothing"
+      : `${installs.length} loaded:${installs.map((i) => `
+     ${i}`).join("")}`);
+}
+
 
 console.log(`\n${failures === 0 ? "\x1b[32m" : "\x1b[31m"}${failures} failed\x1b[0m\n`);
 process.exit(failures ? 1 : 0);
