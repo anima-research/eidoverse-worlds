@@ -36,6 +36,7 @@ export const COMMANDS = [
   { name: 'fork', aliases: ['copy'], help: '/fork <new-name> — copy this world, history and all (owner)' },
   { name: 'reset', aliases: ['erase'], help: 'erase this world back to zero, archived not destroyed (owner)' },
   { name: 'goto', help: '/goto <name> — walk to someone' },
+  { name: 'receipt', help: '/receipt [secs] — measure this tab (fps, GPU, per-subsystem cost); downloads a JSON receipt (#42)' },
   { name: 'clear', help: 'clear your chat log' },
   { name: 'help', help: 'open the help sheet' },
 ];

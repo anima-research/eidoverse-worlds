@@ -510,6 +510,10 @@ function runCommand(raw) {
       // /debug [n] — the world's flight recorder: why things bounced
       bus.emit('command', { cmd: 'debug', arg });
       return true;
+    case 'receipt':
+      // /receipt [secs] — the #42 performance receipt (console table + JSON download)
+      bus.emit('command', { cmd: 'receipt', arg });
+      return true;
     case 'use': case 'pull': case 'ring': case 'open':
       // /use <thing> [action] — the universal interact. The aliases are the
       // same verb with the action already in hand: /pull lever1.
