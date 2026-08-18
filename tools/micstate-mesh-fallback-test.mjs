@@ -20,6 +20,8 @@ const meshCalls = [];
 mock.module(new URL("../client/lib/voice.js", import.meta.url).pathname, () => ({
   toggleMic: async (name) => { meshCalls.push(name); meshOn = !meshOn; return meshOn; },
   micOn: () => meshOn,
+  micAnalyserLevel: () => (meshOn ? 0.42 : 0),
+  micGateInfo: () => ({ gated: true, openness: 0.9, mesh: true }),
 }));
 mock.module(new URL("../client/lib/core.js", import.meta.url).pathname, () => ({
   report: () => {}, bus: { on() {}, emit() {} },
@@ -54,6 +56,12 @@ check("…visible state follows down: micOn() is false", m.micOn() === false);
 
 const on3 = await m.toggleMic("prosper");
 check("toggleMic ON again completes the ON→OFF→ON discriminator", on3 === true && m.micOn() === true);
+
+// The LEVEL readout must follow the same seam (second-agent review: without
+// this, the hot glow and the sensitivity meter read 0 forever on the mesh —
+// blocker 1's disease, one symptom over).
+check("micAnalyserLevel defers to the mesh while it is the transport", m.micAnalyserLevel() === 0.42);
+check("micGateInfo defers to the mesh's gate", m.micGateInfo().mesh === true);
 
 // ── SFU hook installed: it outranks the mesh (no regression) ───────────────
 let sfuCalls = 0, sfuOn = false;

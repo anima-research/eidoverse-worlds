@@ -187,7 +187,10 @@ function gateAudio(now) {
 /** What the gate is actually doing right now — for the meter and for tuning.
  *  Exposed because "why did it not trigger" is unanswerable from the outside:
  *  the same RMS means different things in different rooms. */
-export const micGateInfo = () => ({
+export const micGateInfo = () =>
+  // Same mesh seam as micAnalyserLevel: the gate the panel describes is the
+  // MESH's gate when the mesh is the transport.
+  (meshIsTheTransport() && typeof _mesh.micGateInfo === 'function') ? _mesh.micGateInfo() : ({
   level: micAnalyserLevel(), noise: _noise,
   // 🔴 ONE formula, not a copy. This drifted the moment the gate went
   // multiplicative — it still carried the old additive margin, so the panel and
@@ -229,6 +232,12 @@ function stopOnsetWatch() {
 // lazily on first ask, rebuilt if the stream changed
 let _an = null, _anStream = null, _anBuf = null, _anCtx = null, _anSrc = null;
 export function micAnalyserLevel() {
+  // Mesh-transport delegation, same seam as toggleMic/micOn (#131 second-agent
+  // review): this measures micstate's OWN _raw/_lane, which no mesh path
+  // populates — without deferring, the hot glow and the sensitivity meter
+  // read 0 forever on current main, the exact level-UI regression class this
+  // file's history documents. The mesh keeps its own analyser (voice.js:839).
+  if (meshIsTheTransport() && typeof _mesh.micAnalyserLevel === 'function') return _mesh.micAnalyserLevel();
   // muted → 0 (nothing is being sent, and the gate must not learn a floor from
   // a muted mic). But NOT gated → 0: the gate needs the true input level to
   // decide when to reopen, which is the whole reason we measure the raw side.
