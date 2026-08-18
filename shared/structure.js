@@ -541,7 +541,8 @@ export function levelParts(level, g, floorY) {
   for (const [k, edge] of level.walls) {
     const ap = level.apertures.get(k) ?? null;
     if (!ap) continue;                       // solid stretches ran above
-    parts.push(...wallBoxes(edge, ap, g, floorY));
+    // lintel/sill are SWEPT now (levelSweeps) — only the glass and the
+    // aperture's own trim remain box-shaped here
 
     const { axis, x, z } = edge;
     const a0 = (axis === 0 ? x : z) * g.tile, a1 = a0 + g.tile;
@@ -565,32 +566,12 @@ export function levelParts(level, g, floorY) {
     const cw0 = level.walls.has(prevK) ? TRIM.case.w : 0;
     const cw1 = level.walls.has(nextK) ? TRIM.case.w : 0;
     const cw = TRIM.case.w;
-    for (const s of faces) {
-      const c0 = s < 0 ? -half - TRIM.case.proud : half;
-      const c1 = c0 + TRIM.case.proud + 0.001;
-      // A WINDOW LEAVES A WALL UNDER IT, AND THAT WALL IS STILL A WALL.
-      // Skipping trim on every apertured segment is only right for a door,
-      // whose opening reaches the floor; under a window there is a real stub
-      // of wall meeting the floor, and it wants a baseboard like any other.
-      // The skirting ran up to the window and stopped dead.
-      if (prof.bottom > TRIM.base.h) {
-        const b0 = s < 0 ? -half - TRIM.base.proud : half;
-        parts.push(edgeSpan(axis, cross, a0, a1, b0, b0 + TRIM.base.proud + 0.001,
-          floorY, floorY + TRIM.base.h, 'trim', 'base'));
-      }
-      if (cw0) parts.push(edgeSpan(axis, cross, a0 - cw0, a0, c0, c1, oB, oT, 'trim', 'case'));
-      if (cw1) parts.push(edgeSpan(axis, cross, a1, a1 + cw1, c0, c1, oB, oT, 'trim', 'case'));
-      if (oT < floorY + h) {
-        parts.push(edgeSpan(axis, cross, a0 - cw0, a1 + cw1, c0, c1, oT, oT + cw, 'trim', 'case'));
-      }
-      if (prof.bottom > 0) {
-        // sill: stands proud of the face, the one piece of trim you can rest
-        // a mug on, and the thing that makes a window read as a window
-        parts.push(edgeSpan(axis, cross, a0 - cw0, a1 + cw1,
-          s < 0 ? -half - TRIM.sill.out : half, s < 0 ? -half : half + TRIM.sill.out,
-          oB - TRIM.sill.t, oB, 'trim', 'sill'));
-      }
-    }
+    // Casing was a box standing proud of a wall that is now a swept profile;
+    // the two could not agree on a surface. The REVEAL does this job properly —
+    // the flat cut at the top of a clipped profile is the soffit over a door
+    // and the ledge under a window — so the trim boxes are gone rather than
+    // fighting geometry they can no longer match.
+    void faces; void oB; void oT; void cw; void cw0; void cw1;
     if (prof.bottom > 0) {
       parts.push(edgeSpan(axis, cross, a0, a1, -TRIM.glass.t / 2, TRIM.glass.t / 2,
         oB, oT, 'glass', 'glass'));
@@ -1110,6 +1091,18 @@ export function sweepProfile(path, profile, y0) {
       indices.push(a + j, b + j + 1, b + j, a + j, a + j + 1, b + j + 1);
     }
   }
+  // END CAPS on an open run. Without them the run is a hollow tube and a
+  // doorway shows the inside of the wall — which reads as a missing jamb.
+  if (!closed) {
+    const cap = capProfile(profile);
+    const last = (n - 1) * P;
+    for (let t = 0; t < cap.length; t += 3) {
+      // the far cap faces along travel, the near cap against it, so their
+      // windings are opposites
+      indices.push(last + cap[t], last + cap[t + 1], last + cap[t + 2]);
+      indices.push(cap[t + 2], cap[t + 1], cap[t]);
+    }
+  }
   return { positions, indices, ringSize: P, rings: n };
 }
 
@@ -1122,5 +1115,87 @@ export function levelSweeps(level, g, floorY) {
     const sw = sweepProfile(line.pts, prof, floorY);
     if (sw.positions.length) out.push({ ...sw, mat: line.mat, kind: 'wall' });
   }
+  // An APERTURED segment is the same wall with a bite out of it, so it is the
+  // same swept profile clipped vertically — same thickness, same plinth, same
+  // chamfer. Emitting it as a box was what made the panels over doors and
+  // under windows refuse to line up with the wall they sit in.
+  for (const [k, e] of level.walls) {
+    const ap = level.apertures.get(k);
+    if (!ap) continue;
+    const prf = APERTURES[ap];
+    const a = [e.x * g.tile, e.z * g.tile];
+    const b = e.axis === 0 ? [(e.x + 1) * g.tile, e.z * g.tile]
+      : e.axis === 1 ? [e.x * g.tile, (e.z + 1) * g.tile]
+      : e.axis === 2 ? [(e.x + 1) * g.tile, (e.z + 1) * g.tile]
+      : [(e.x - 1) * g.tile, (e.z + 1) * g.tile];
+    const top = Math.min(prf.top, g.wallH);
+    for (const [lo, hi] of [[0, prf.bottom], [top, g.wallH]]) {
+      if (hi - lo < 1e-6) continue;
+      const cp = clipProfileV(prof, lo, hi);
+      if (cp.length < 2) continue;
+      const sw = sweepProfile([a, b], cp, floorY);
+      if (sw.positions.length) out.push({ ...sw, mat: e.mat, kind: 'wall' });
+    }
+  }
   return out;
+}
+
+/** Clip a wall profile to a vertical band, closing it flat at the cuts.
+ *
+ *  This is how an aperture becomes part of the same wall rather than a box
+ *  bolted next to one. A lintel is the wall profile clipped to [top, H] — so it
+ *  keeps the chamfered top and the exact thickness of the wall it continues —
+ *  and a sill is the same profile clipped to [0, bottom], keeping the plinth.
+ *  The flat cut is the reveal: the soffit over a door, the ledge under a window.
+ *
+ *  Boxes could never line up here. A box has no plinth and no chamfer, so where
+ *  it met a swept wall the surfaces simply disagreed, which is what made the
+ *  squares over the openings read as stuck on. */
+export function clipProfileV(profile, vMin, vMax) {
+  const out = [];
+  const lerp = (a, b, v) => {
+    const t = (v - a[1]) / (b[1] - a[1]);
+    return [a[0] + (b[0] - a[0]) * t, v];
+  };
+  for (let i = 0; i < profile.length; i++) {
+    const cur = profile[i], prev = profile[i - 1];
+    if (prev) {
+      for (const edge of [vMin, vMax]) {
+        if ((prev[1] < edge && cur[1] > edge) || (prev[1] > edge && cur[1] < edge)) {
+          out.push(lerp(prev, cur, edge));
+        }
+      }
+    }
+    if (cur[1] >= vMin - 1e-9 && cur[1] <= vMax + 1e-9) out.push(cur);
+  }
+  // drop duplicates the clipping can produce at a vertex sitting on a cut
+  return out.filter((p, i, a) => i === 0
+    || Math.abs(p[0] - a[i - 1][0]) > 1e-9 || Math.abs(p[1] - a[i - 1][1]) > 1e-9);
+}
+
+/** Triangulate a profile as an END CAP.
+ *
+ *  Without caps an open run is a hollow tube: at a doorway you look straight
+ *  into the inside of the wall, which reads as a missing jamb rather than as a
+ *  missing face. The profile is v-monotone by construction — up the left side,
+ *  across the top, down the right — so it triangulates by merge-walking the two
+ *  chains, with no ear clipping and no trouble from the reflex vertex the
+ *  plinth step introduces. */
+export function capProfile(profile) {
+  const n = profile.length;
+  if (n < 3) return [];
+  let apex = 0;
+  for (let i = 1; i < n; i++) if (profile[i][1] > profile[apex][1]) apex = i;
+  const left = [], right = [];
+  for (let i = 0; i <= apex; i++) left.push(i);
+  for (let i = n - 1; i >= apex; i--) right.push(i);
+  const tris = [];
+  let li = 0, ri = 0;
+  while (li < left.length - 1 || ri < right.length - 1) {
+    const advanceLeft = ri >= right.length - 1
+      || (li < left.length - 1 && profile[left[li + 1]][1] <= profile[right[ri + 1]][1]);
+    if (advanceLeft) { tris.push(left[li], left[li + 1], right[ri]); li++; }
+    else { tris.push(right[ri], left[li], right[ri + 1]); ri++; }
+  }
+  return tris;
 }

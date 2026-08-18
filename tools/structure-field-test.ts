@@ -15,7 +15,7 @@
 import {
   planStructure, normalize, wallBoxes, deriveRooms, derivePortals, roomAt,
   edgeCells, edgeBetween, edgeKey, cellKey, APERTURES, GRID_DEFAULTS,
-  describeHere, describeStructure, localizePoint, levelParts, TRIM, cornerFills, wallRuns, wallPolylines, sweepProfile, wallProfile, levelSweeps, routeCells, routeLocal, passable, makeShader,
+  describeHere, describeStructure, localizePoint, levelParts, TRIM, cornerFills, wallRuns, wallPolylines, sweepProfile, wallProfile, levelSweeps, capProfile, clipProfileV, routeCells, routeLocal, passable, makeShader,
 } from "../shared/structure.js";
 
 let passed = 0, failed = 0;
@@ -375,19 +375,18 @@ const HOUSE = {
     : Math.abs((p.x0 + p.x1) / 2 - x * g.tile) < 0.2 && p.z0 >= z * g.tile - 0.01 && p.z1 <= (z + 1) * g.tile + 0.01));
 
   // the window sits on edge (0,0,0); only cell (0,0) is floored, so one face
-  check("a windowed segment still gets its baseboard", at(0, 0, 0).length === 1,
-    `${at(0, 0, 0).length} pieces`);
-  // the door on edge (1,2,0) opens to the floor on both sides — no wall, no skirting
-  check("a doored segment gets none (the opening reaches the floor)",
-    at(1, 2, 0).length === 0, `${at(1, 2, 0).length} pieces`);
-  check("baseboards sit ON the floor, one board high",
-    base.every((p) => Math.abs(p.y0 - floorY) < 1e-9 && Math.abs(p.y1 - floorY - TRIM.base.h) < 1e-9));
-  check("every baseboard stands proud of its wall face",
-    base.every((p) => Math.min(p.x1 - p.x0, p.z1 - p.z0) > 0));
+  // The skirting is a step in the swept PROFILE now, not a box — so it mitres
+  // by construction and cannot come apart from its wall. Boxes standing proud
+  // of a swept surface could never agree with it, which is what made the
+  // panels around openings look stuck on.
+  void at; void base;
+  const prof0 = wallProfile(g);
+  check("the skirting lives in the profile", Math.min(...prof0.map((q) => q[0])) < -g.wallT / 2);
+  check("no skirting boxes remain", base.length === 0, `${base.length}`);
 
   // and the rest of the kit is present
   const kinds = new Set(parts.map((p) => p.kind));
-  for (const k of ["floor", "base", "case", "sill", "glass", "roof"]) {
+  for (const k of ["floor", "glass", "roof"]) {
     check(`parts include ${k}`, kinds.has(k), [...kinds].join(","));
   }
   check("the roof overhangs the footprint",
@@ -655,32 +654,48 @@ const HOUSE = {
     }
     return out;
   };
-  // a straight wall along +X at z=0: outward is away from the centreline
-  const sw = sweepProfile([[0, 0], [3, 0]], wallProfile(g), 0);
-  const faces = faceNormals(sw);
-  const inward = faces.filter((f) => {
-    const out = [0, f.c[1] > g.wallH - 0.05 ? 1 : 0, f.c[2]];
-    const L = Math.hypot(out[0], out[1], out[2]);
-    if (L < 1e-6) return false;
-    return (f.n[0] * out[0] + f.n[1] * out[1] + f.n[2] * out[2]) <= 0;
-  });
-  check("every swept face points away from the wall", inward.length === 0,
-    `${inward.length} of ${faces.length} inward`);
+  // SIGNED VOLUME is the honest test. A centroid heuristic cannot judge a
+  // stepped profile — the plinth's top ledge faces up but sits below the mesh
+  // centre, so it reads as inward every time. For a CLOSED surface, consistent
+  // outward winding gives positive volume and inside-out gives negative, with
+  // no heuristic anywhere. Closing the profile makes the sweep a closed solid.
+  const closedProf: [number, number][] = [[-0.075, 0], [-0.075, 2.8], [0.075, 2.8], [0.075, 0], [-0.075, 0]];
+  const solid = sweepProfile([[0, 0], [3, 0]], closedProf, 0);
+  const volume = (x: any) => {
+    let vol = 0;
+    for (let t = 0; t < x.indices.length; t += 3) {
+      const q = (k: number) => [x.positions[x.indices[t + k] * 3], x.positions[x.indices[t + k] * 3 + 1], x.positions[x.indices[t + k] * 3 + 2]];
+      const [p0, p1, p2] = [q(0), q(1), q(2)];
+      vol += (p0[0] * (p1[1] * p2[2] - p1[2] * p2[1])
+            - p0[1] * (p1[0] * p2[2] - p1[2] * p2[0])
+            + p0[2] * (p1[0] * p2[1] - p1[1] * p2[0])) / 6;
+    }
+    return vol;
+  };
+  const vol = volume(solid);
+  const expect = 3 * 0.15 * 2.8;
+  check("a swept solid has POSITIVE volume (right-side-out)", vol > 0, `${vol.toFixed(4)}`);
+  check("...and it is the volume it should be", Math.abs(vol - expect) < 1e-6,
+    `${vol.toFixed(4)} vs ${expect.toFixed(4)}`);
 
-  // control: reversing the winding must make the test fail, or it is asserting
-  // nothing at all
-  const flipped = { ...sw, indices: [] as number[] };
-  for (let t = 0; t < sw.indices.length; t += 3) {
-    flipped.indices.push(sw.indices[t], sw.indices[t + 2], sw.indices[t + 1]);
+  // control: reversed winding must go negative, or the test asserts nothing
+  const flipped = { ...solid, indices: [] as number[] };
+  for (let t = 0; t < solid.indices.length; t += 3) {
+    flipped.indices.push(solid.indices[t], solid.indices[t + 2], solid.indices[t + 1]);
   }
-  const flippedInward = faceNormals(flipped).filter((f) => {
-    const out = [0, f.c[1] > g.wallH - 0.05 ? 1 : 0, f.c[2]];
-    const L = Math.hypot(out[0], out[1], out[2]);
-    if (L < 1e-6) return false;
-    return (f.n[0] * out[0] + f.n[1] * out[1] + f.n[2] * out[2]) <= 0;
-  });
-  check("control: reversed winding IS detected", flippedInward.length > 0,
-    "the test cannot tell inside-out from right-side-out");
+  check("control: reversed winding IS detected", volume(flipped) < 0,
+    `${volume(flipped).toFixed(4)}`);
+
+  const sw = sweepProfile([[0, 0], [3, 0]], wallProfile(g), 0);
+  // END CAPS. An open run without them is a hollow tube, and at a doorway you
+  // look into the inside of the wall — which reads as a missing jamb, not as a
+  // missing face. An uncapped sweep has strictly fewer triangles.
+  const uncappedTris = (sw.rings - 1) * (wallProfile(g).length - 1) * 2;
+  check("an open run is capped at both ends",
+    sw.indices.length / 3 > uncappedTris, `${sw.indices.length / 3} vs ${uncappedTris}`);
+  check("the caps are the profile, twice",
+    sw.indices.length / 3 === uncappedTris + capProfile(wallProfile(g)).length / 3 * 2,
+    `${sw.indices.length / 3}`);
 
   // and a closed room, where the ring wraps
   const ring = normalize({ levels: [{ tiles: [[0, 0]],
