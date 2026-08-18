@@ -527,13 +527,31 @@ export class Avatar {
   _findWings() {
     this._wings = null;
     if (!this.vrm?.scene) return;
+    // THE AUTHORED REST, NOT THE LIVE ONE.
+    //
+    // This used to clone o.quaternion, which is only the authored pose if
+    // nothing has moved the bone yet. Wings are declared as springbones now, so
+    // three-vrm has posed them before the first update() gets here — and an
+    // observer whose client first sees a body WHILE IT IS RAGDOLLED captured a
+    // fallen pose as "rest" and composed every flap onto it forever after.
+    // That is Janus's "after getting up the wings are twisted, but only from
+    // the perspective of particular other users": per-client state, captured at
+    // whatever moment that client happened to arrive.
+    //
+    // three-vrm already keeps the real thing. Every spring joint stores
+    // _initialLocalRotation at setup, before any simulation runs, so prefer it
+    // and fall back to the live pose only for a bone no springbone claims.
+    const springRest = new Map();
+    for (const j of this.vrm.springBoneManager?.joints ?? []) {
+      if (j?.bone && j._initialLocalRotation) springRest.set(j.bone, j._initialLocalRotation);
+    }
     const found = [];
     this.vrm.scene.traverse((o) => {
       const m = /^([LR])_Wing_(Upper|Lower)(?:_(\d+))?$/.exec(o.name ?? '');
       if (!m) return;
       found.push({
         node: o,
-        rest: o.quaternion.clone(),
+        rest: (springRest.get(o) ?? o.quaternion).clone(),
         // +1 left, -1 right. A single rotation about the body's forward axis
         // lifts a wing that points +X and drops the one that points -X, so the
         // mirror is a sign and nothing else.
