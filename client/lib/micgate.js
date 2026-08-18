@@ -205,10 +205,20 @@ export function setMonitor(on, level = 0.35) {
     // room. 400ms is past the echo threshold (~50ms), so it reads as a distinct
     // repeat you can compare against what you just said: did the gate clip the
     // start of that word, or not?
-    _delay = _ctx.createDelay(2.0);
-    _delay.delayTime.value = MONITOR_DELAY;
-    _gain.connect(_delay);
-    _delay.connect(_mon);
+    // Same guard as the lookahead above: the delay is the FEATURE here rather
+    // than polish, but a context without createDelay should yield zero-latency
+    // monitoring (degraded, still audible), not an uncaught throw from a
+    // settings checkbox (second-agent review of 6231c37 — the exact class the
+    // lookahead fix closed, one function over).
+    _delay = null;
+    if (typeof _ctx.createDelay === "function") {
+      try {
+        _delay = _ctx.createDelay(2.0);
+        _delay.delayTime.value = MONITOR_DELAY;
+      } catch { _delay = null; }
+    }
+    if (_delay) { _gain.connect(_delay); _delay.connect(_mon); }
+    else _gain.connect(_mon);
     _mon.connect(_ctx.destination);
   }
   // setTargetAtTime, not a bare assignment: a step change in a monitor path is
