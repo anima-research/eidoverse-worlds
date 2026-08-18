@@ -15,7 +15,7 @@
 import {
   planStructure, normalize, wallBoxes, deriveRooms, derivePortals, roomAt,
   edgeCells, edgeBetween, edgeKey, cellKey, APERTURES, GRID_DEFAULTS,
-  describeHere, describeStructure, localizePoint, levelParts, TRIM, cornerFills, wallRuns, wallPolylines, sweepProfile, wallProfile, routeCells, routeLocal, passable, makeShader,
+  describeHere, describeStructure, localizePoint, levelParts, TRIM, cornerFills, wallRuns, wallPolylines, sweepProfile, wallProfile, levelSweeps, routeCells, routeLocal, passable, makeShader,
 } from "../shared/structure.js";
 
 let passed = 0, failed = 0;
@@ -629,6 +629,74 @@ const HOUSE = {
   check("swept geometry is well-formed", (plan.levels[0] as any).sweeps.every((s2: any) =>
     s2.positions.length % 3 === 0 && s2.indices.length % 3 === 0
     && s2.indices.every((i: number) => i >= 0 && i < s2.positions.length / 3)));
+}
+
+// 20. NORMALS FACE OUT
+//
+// Every geometric test above passed while the entire building was inside-out:
+// they all asked about POSITIONS, and winding is not a position. A swept
+// surface has no natural orientation — the lateral offset is the left normal
+// of travel, so the obvious quad order puts u=-t/2 faces back into the wall —
+// and the failure does not read as "normals are flipped", it reads as the
+// whole thing being cursed.
+{
+  const g = normalize(HOUSE);
+  const faceNormals = (sw: any) => {
+    const P = sw.positions, I = sw.indices, out: any[] = [];
+    for (let t = 0; t < I.length; t += 3) {
+      const q = (k: number) => [P[I[t + k] * 3], P[I[t + k] * 3 + 1], P[I[t + k] * 3 + 2]];
+      const [p0, p1, p2] = [q(0), q(1), q(2)];
+      const u = [p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]];
+      const v = [p2[0] - p0[0], p2[1] - p0[1], p2[2] - p0[2]];
+      out.push({
+        n: [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]],
+        c: [(p0[0] + p1[0] + p2[0]) / 3, (p0[1] + p1[1] + p2[1]) / 3, (p0[2] + p1[2] + p2[2]) / 3],
+      });
+    }
+    return out;
+  };
+  // a straight wall along +X at z=0: outward is away from the centreline
+  const sw = sweepProfile([[0, 0], [3, 0]], wallProfile(g), 0);
+  const faces = faceNormals(sw);
+  const inward = faces.filter((f) => {
+    const out = [0, f.c[1] > g.wallH - 0.05 ? 1 : 0, f.c[2]];
+    const L = Math.hypot(out[0], out[1], out[2]);
+    if (L < 1e-6) return false;
+    return (f.n[0] * out[0] + f.n[1] * out[1] + f.n[2] * out[2]) <= 0;
+  });
+  check("every swept face points away from the wall", inward.length === 0,
+    `${inward.length} of ${faces.length} inward`);
+
+  // control: reversing the winding must make the test fail, or it is asserting
+  // nothing at all
+  const flipped = { ...sw, indices: [] as number[] };
+  for (let t = 0; t < sw.indices.length; t += 3) {
+    flipped.indices.push(sw.indices[t], sw.indices[t + 2], sw.indices[t + 1]);
+  }
+  const flippedInward = faceNormals(flipped).filter((f) => {
+    const out = [0, f.c[1] > g.wallH - 0.05 ? 1 : 0, f.c[2]];
+    const L = Math.hypot(out[0], out[1], out[2]);
+    if (L < 1e-6) return false;
+    return (f.n[0] * out[0] + f.n[1] * out[1] + f.n[2] * out[2]) <= 0;
+  });
+  check("control: reversed winding IS detected", flippedInward.length > 0,
+    "the test cannot tell inside-out from right-side-out");
+
+  // and a closed room, where the ring wraps
+  const ring = normalize({ levels: [{ tiles: [[0, 0]],
+    walls: [[0, 0, 0], [1, 0, 0], [0, 0, 1], [1, 1, 0]] }] });
+  const rsw = levelSweeps(ring.levels[0], ring, 0);
+  const centre = [0.5, 0.5];
+  const wrongWay = rsw.flatMap((s2: any) => faceNormals(s2)).filter((f: any) => {
+    // side faces only: must face away from the room centre, in or out
+    if (Math.abs(f.n[1]) > Math.max(Math.abs(f.n[0]), Math.abs(f.n[2]))) return false;
+    const dx = f.c[0] - centre[0], dz = f.c[2] - centre[1];
+    const dot = f.n[0] * dx + f.n[2] * dz;
+    const outerFace = Math.hypot(dx, dz) > 0.5;
+    return outerFace ? dot <= 0 : dot >= 0;
+  });
+  check("a closed room is right-side-out on both faces", wrongWay.length === 0,
+    `${wrongWay.length} wrong`);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

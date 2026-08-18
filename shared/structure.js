@@ -1101,7 +1101,13 @@ export function sweepProfile(path, profile, y0) {
   for (let i = 0; i < rings; i++) {
     const a = i * P, b = ((i + 1) % n) * P;
     for (let j = 0; j < P - 1; j++) {
-      indices.push(a + j, b + j, b + j + 1, a + j, b + j + 1, a + j + 1);
+      // WINDING. The lateral offset is the LEFT normal of travel, so profile
+      // point u = −t/2 lands on the right-hand side of the path. Ordering the
+      // quad the obvious way (a,b,b+1) puts that face's normal back INTO the
+      // wall — every surface inside-out, which reads in-world as a building
+      // turned inside out rather than as anything recognisable as a normals
+      // bug. Reversed here, and pinned by the outward-normal test.
+      indices.push(a + j, b + j + 1, b + j, a + j, a + j + 1, b + j + 1);
     }
   }
   return { positions, indices, ringSize: P, rings: n };
