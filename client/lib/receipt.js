@@ -227,7 +227,13 @@ export async function perfReceipt({ secsPer = 5, log = console.log } = {}) {
   const skyVis = skyObjs.map((o) => o.visible);
   const bodies = [getMe()?.root, ...[...remotes.values()].map((r) => r.avatar?.root)].filter(Boolean);
   const bodyVis = bodies.map((o) => o.visible);
-  const shadowWas = { map: renderer.shadowMap?.enabled ?? null, sun: sun?.castShadow ?? null };
+  // shadows toggle = per-light castShadow, the governor's own lever (§12.1:
+  // "in no pipeline key — free toggles"). NEVER renderer.shadowMap.enabled:
+  // flipping that live nulls the shadow map under a ShadowNode that still
+  // ticks (ShadowNode.updateBefore reads shadowMap.depthTexture unguarded)
+  // and costs ~1s of dead frames — receipt v1's own first run caught it.
+  const casters = [];
+  scene.traverse((o) => { if (o.isLight && o.castShadow) casters.push(o); });
 
   try {
     phases.push({ phase: 'baseline', ...stats(await sampleFrames(secsPer, 'baseline')) });
@@ -241,15 +247,11 @@ export async function perfReceipt({ secsPer = 5, log = console.log } = {}) {
         () => skyObjs.forEach((o, i) => { o.visible = skyVis[i]; }));
     } else notes.push('sky: no sky objects in this world; phase skipped');
 
-    if (shadowWas.map || shadowWas.sun) {
-      await run('shadows off', () => {
-        if (renderer.shadowMap) renderer.shadowMap.enabled = false;
-        if (sun) sun.castShadow = false;
-      }, () => {
-        if (renderer.shadowMap) renderer.shadowMap.enabled = shadowWas.map;
-        if (sun) sun.castShadow = shadowWas.sun;
-      });
-    } else notes.push('shadows: already off before the run; phase skipped');
+    if (casters.length) {
+      await run(`shadows off (${casters.length} caster${casters.length === 1 ? '' : 's'})`,
+        () => casters.forEach((l) => { l.castShadow = false; }),
+        () => casters.forEach((l) => { l.castShadow = true; }));
+    } else notes.push('shadows: no light was casting before the run; phase skipped');
 
     if (bodies.length) {
       await run(`avatars hidden (${bodies.length})`, () => bodies.forEach((o) => { o.visible = false; }),
@@ -263,8 +265,7 @@ export async function perfReceipt({ secsPer = 5, log = console.log } = {}) {
     if (field?.mesh) field.mesh.visible = true;
     skyObjs.forEach((o, i) => { o.visible = skyVis[i]; });
     bodies.forEach((o, i) => { o.visible = bodyVis[i]; });
-    if (renderer.shadowMap && shadowWas.map !== null) renderer.shadowMap.enabled = shadowWas.map;
-    if (sun && shadowWas.sun !== null) sun.castShadow = shadowWas.sun;
+    casters.forEach((l) => { l.castShadow = true; });
     console.error = origError;
     window.removeEventListener('error', onWinErr);
     window.removeEventListener('unhandledrejection', onWinErr);
