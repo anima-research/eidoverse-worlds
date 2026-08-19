@@ -138,7 +138,11 @@ export function tickPhysObj(dt, now = performance.now()) {
     // bounds the scan (§14.2 6a — this was O(sims × ALL colliders) with an
     // allocation per pair, hot-path offender #2).
     for (const [cid, c] of nearColliders(s.p.x, s.p.z, 8)) {
-      if (cid === id || c.interior || !c.box || !entities.get(cid)) continue;
+      // A structure's collider ids are SYNTHETIC (house1#s7) — there is no entity
+      // behind them, so requiring one made every wall invisible to a punted
+      // object: crates sailed straight through buildings. structOwner names the
+      // building the box belongs to, which is the identity this guard wanted.
+      if (cid === id || c.interior || !c.box || (!entities.get(cid) && !c.structOwner)) continue;
       const co = entities.get(cid);
       _v.copy(s.p).sub(co.position);                 // object-local (box is local too)
       const cl = _cl.copy(_v).clamp(c.box.min, c.box.max);

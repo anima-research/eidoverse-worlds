@@ -15,7 +15,7 @@
 import {
   planStructure, normalize, wallBoxes, deriveRooms, derivePortals, roomAt,
   edgeCells, edgeBetween, edgeKey, cellKey, APERTURES, GRID_DEFAULTS,
-  describeHere, describeStructure, localizePoint, levelParts, TRIM, cornerFills, wallRuns, wallPolylines, sweepProfile, wallProfile, levelSweeps, capProfile, clipProfileV, refineProfile, makeShader, routeCells, routeLocal, passable, makeShader,
+  describeHere, describeStructure, localizePoint, levelParts, TRIM, cornerFills, wallRuns, wallPolylines, sweepProfile, wallProfile, levelSweeps, capProfile, clipProfileV, refineProfile, makeShader, diagOf, nodeAtPoint, nodeGraph, cellNodes, routeCells, routeLocal, passable, makeShader,
 } from "../shared/structure.js";
 
 let passed = 0, failed = 0;
@@ -762,6 +762,62 @@ const HOUSE = {
 
   check("refineProfile inserts on both up and down chains",
     refineProfile([[0, 0], [0, 2], [1, 2], [1, 0]], [1]).length === 6);
+}
+
+// 22. DIAGONALS — Sims-style walls corner to corner across a cell
+//
+// Geometry needed nothing: a swept profile mitres at any angle, which is why
+// the sweep had to land first. What diagonals break is the assumption that a
+// CELL IS ATOMIC — a diagonal cuts one in two, and the halves are rooms.
+{
+  // one 2×1 space, cut by a ↘ diagonal in the left cell
+  const D = { levels: [{ tiles: [[0, 0], [1, 0]], walls: [[2, 0, 0]] }] };
+  const g = normalize(D);
+  const lv = g.levels[0];
+  check("a diagonal is folded", diagOf(lv, 0, 0) === 2);
+  check("a cut cell contributes two nodes", cellNodes(lv, 0, 0).length === 2);
+  check("an uncut cell contributes one", cellNodes(lv, 1, 0).length === 1);
+  check("a point lands in the right half",
+    nodeAtPoint(lv, g, 0.8, 0.2) === "0,0:A" && nodeAtPoint(lv, g, 0.2, 0.8) === "0,0:B");
+
+  const rooms = planStructure(D).levels[0].rooms;
+  check("the diagonal DIVIDES the space", rooms.length === 2, `${rooms.length} rooms`);
+  const sw = rooms.find((r) => r.cells.includes("0,0:B"))!;
+  check("the cut-off half is half a tile", sw.area === 0.5, `${sw.area}`);
+  check("the other half keeps the cell it opens onto",
+    rooms.find((r) => r.cells.includes("0,0:A"))!.cells.includes("1,0"));
+
+  // routing must respect it, and go through it when it is holed
+  check("no route across a solid diagonal", routeCells(lv, "0,0:B", "1,0") === null);
+  const holed = normalize({ levels: [{ tiles: [[0, 0], [1, 0]],
+    walls: [[2, 0, 0]], apertures: [[2, 0, 0, "door"]] }] });
+  check("a doored diagonal is walkable",
+    routeCells(holed.levels[0], "0,0:B", "1,0") !== null);
+  check("...but it still divides the rooms",
+    planStructure({ levels: [{ tiles: [[0, 0], [1, 0]],
+      walls: [[2, 0, 0]], apertures: [[2, 0, 0, "door"]] }] }).levels[0].rooms.length === 2);
+
+  // geometry: the sweep handles it, at 45°
+  const sweeps = planStructure(D).levels[0].sweeps;
+  check("a diagonal sweeps", sweeps.length === 1 && sweeps[0].positions.length > 0);
+  const xs: number[] = [], zs: number[] = [];
+  for (let i = 0; i < sweeps[0].positions.length; i += 3) { xs.push(sweeps[0].positions[i]); zs.push(sweeps[0].positions[i + 2]); }
+  check("...corner to corner across the cell",
+    Math.min(...xs) < 0.05 && Math.max(...xs) > 0.95
+    && Math.min(...zs) < 0.05 && Math.max(...zs) > 0.95,
+    `x ${Math.min(...xs).toFixed(2)}..${Math.max(...xs).toFixed(2)}`);
+
+  // collision: stair-stepped, but with no gap a body could slip through
+  const boxes = planStructure(D).boxes.filter((b: any) => b.kind === "wall");
+  check("a diagonal is collided", boxes.length >= 8, `${boxes.length}`);
+  const centres = boxes.map((b: any) => [(b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2]).sort((p, q) => p[0] - q[0]);
+  let biggestGap = 0;
+  for (let i = 1; i < centres.length; i++) {
+    biggestGap = Math.max(biggestGap, Math.hypot(centres[i][0] - centres[i - 1][0], centres[i][1] - centres[i - 1][1]));
+  }
+  const boxW = boxes[0].x1 - boxes[0].x0;
+  check("no gap a body could slip through", biggestGap < boxW,
+    `gap ${biggestGap.toFixed(3)} vs box ${boxW.toFixed(3)}`);
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -35,7 +35,8 @@ const STRUCTURE = {
       ...wallsRun(0, [0, 1, 2, 3, 4, 5], 0),   // north exterior
       ...wallsRun(0, [0, 1, 2, 3, 4, 5], 4),   // south exterior
       ...wallsRun(1, [0, 1, 2, 3], 0),         // west exterior
-      ...wallsRun(1, [0, 1, 2, 3], 6),         // east exterior
+      ...wallsRun(1, [1, 2, 3], 6),            // east exterior (top cell cut off)
+      [2, 5, 0],                               // a Sims-style DIAGONAL corner
       ...wallsRun(0, [0, 1, 2], 2),            // kitchen | bedroom
       ...wallsRun(1, [0, 1, 2, 3], 3),         // west rooms | hall
     ],
@@ -45,6 +46,7 @@ const STRUCTURE = {
       [0, 4, 4, 'door'],      // hall → outside (the front door)
       [0, 1, 0, 'window'],    // kitchen, north
       [0, 1, 4, 'window'],    // bedroom, south
+      [2, 5, 0, 'window'],    // the diagonal gets a window too
       [1, 6, 1, 'window'],    // hall, east
     ],
   }],

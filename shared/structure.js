@@ -130,6 +130,105 @@ export function sideOfCell(axis, x, z, cx, cz) {
   return cx === x ? 'W' : 'E';
 }
 
+// ---- diagonals --------------------------------------------------------------
+// A diagonal runs corner to corner ACROSS a cell rather than along its edge:
+// axis 2 is ↘ (from the cell's own corner to the far one), axis 3 is ↗.
+//
+// Geometry needed nothing for this — a swept profile mitres at any angle, which
+// is exactly why the sweep had to come first. What diagonals break is the
+// assumption a CELL IS ATOMIC, which the flood fill and the router both lean
+// on: a diagonal cuts a cell in two, and the halves are different rooms.
+//
+// So a cell contributes one node when it is whole and two when it is cut, and
+// every graph walk runs on nodes. A half is named by the pair of sides it
+// touches — a ↘ diagonal separates the N/E half from the S/W half — which is
+// also how a half connects to its neighbours.
+
+/** The diagonal cutting a cell, or null. */
+export function diagOf(level, x, z) {
+  if (level.walls.has(edgeKey(2, x, z))) return 2;
+  if (level.walls.has(edgeKey(3, x, z))) return 3;
+  return null;
+}
+
+/** Which half of a cell touches `side` ('N'|'E'|'S'|'W'); '' when uncut. */
+export function halfFor(level, x, z, side) {
+  const d = diagOf(level, x, z);
+  if (!d) return '';
+  if (d === 2) return (side === 'N' || side === 'E') ? ':A' : ':B';
+  return (side === 'N' || side === 'W') ? ':A' : ':B';
+}
+
+/** Every node a cell contributes to the room/route graph. */
+export function cellNodes(level, x, z) {
+  const k = cellKey(x, z);
+  return diagOf(level, x, z) ? [`${k}:A`, `${k}:B`] : [k];
+}
+
+/** The node of cell (x,z) that touches `side`. */
+export const nodeOnSide = (level, x, z, side) => cellKey(x, z) + halfFor(level, x, z, side);
+
+/** Which half a grid-local point falls in — the describer's and router's way
+ *  in. ↘ splits on u = v; ↗ splits on u + v = 1. */
+export function nodeAtPoint(level, g, lx, lz) {
+  const x = Math.floor(lx / g.tile), z = Math.floor(lz / g.tile);
+  const d = diagOf(level, x, z);
+  const k = cellKey(x, z);
+  if (!d) return k;
+  const u = lx / g.tile - x, v = lz / g.tile - z;
+  if (d === 2) return u > v ? `${k}:A` : `${k}:B`;
+  return (u + v) < 1 ? `${k}:A` : `${k}:B`;
+}
+
+const SIDE_OF = [['N', 'S'], ['E', 'W'], ['S', 'N'], ['W', 'E']];
+const STEP = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+
+/** Node-level adjacency.
+ *
+ *  TWO GRAPHS, ONE NODE SET. A ROOM is bounded by walls whatever holes they
+ *  carry — a kitchen with a door to the hall is still a kitchen, which is the
+ *  whole reason rooms are worth naming. A ROUTE passes through those holes.
+ *  Sharing the node set but not the edges is what keeps both true; conflating
+ *  them made every doored pair of rooms collapse into one. */
+export function nodeNeighbours(level, x, z, throughApertures = false) {
+  const out = [];
+  for (let i = 0; i < 4; i++) {
+    const [side, back] = SIDE_OF[i], [dx, dz] = STEP[i];
+    const nx = x + dx, nz = z + dz;
+    if (!level.tiles.has(cellKey(nx, nz))) continue;
+    const e = edgeBetween(x, z, nx, nz);
+    const ek = e && edgeKey(e[0], e[1], e[2]);
+    if (ek && level.walls.has(ek)
+      && !(throughApertures && ['door', 'arch'].includes(level.apertures.get(ek)))) continue;
+    out.push([nodeOnSide(level, x, z, side), nodeOnSide(level, nx, nz, back)]);
+  }
+  // across the diagonal itself, if it is holed
+  const d = diagOf(level, x, z);
+  if (d && throughApertures) {
+    const dk = edgeKey(d, x, z);
+    if (['door', 'arch'].includes(level.apertures.get(dk))) {
+      out.push([`${cellKey(x, z)}:A`, `${cellKey(x, z)}:B`]);
+    }
+  }
+  return out;
+}
+
+/** The whole node graph for a level. */
+export function nodeGraph(level, throughApertures = false) {
+  const adj = new Map();
+  const add = (a, b) => {
+    if (!adj.has(a)) adj.set(a, new Set());
+    if (!adj.has(b)) adj.set(b, new Set());
+    adj.get(a).add(b); adj.get(b).add(a);
+  };
+  for (const k of level.tiles.keys()) {
+    const [x, z] = k.split(',').map(Number);
+    for (const n of cellNodes(level, x, z)) if (!adj.has(n)) adj.set(n, new Set());
+    for (const [a, b] of nodeNeighbours(level, x, z, throughApertures)) add(a, b);
+  }
+  return adj;
+}
+
 // ---- normalization ----------------------------------------------------------
 
 /** Coerce one component payload into a shape the planner can trust totally.
@@ -161,13 +260,13 @@ export function normalize(data) {
       tiles.set(cellKey(x, z), typeof t[2] === 'string' ? t[2] : 'floor');
     }
     for (const w of Array.isArray(lv.walls) ? lv.walls : []) {
-      const axis = w?.[0] === 1 ? 1 : w?.[0] === 0 ? 0 : null;
+      const axis = [0, 1, 2, 3].includes(w?.[0]) ? w[0] : null;
       const x = int(w?.[1]), z = int(w?.[2]);
       if (axis == null || x == null || z == null) continue;
       walls.set(edgeKey(axis, x, z), { axis, x, z, mat: typeof w[3] === 'string' ? w[3] : 'wall' });
     }
     for (const a of Array.isArray(lv.apertures) ? lv.apertures : []) {
-      const axis = a?.[0] === 1 ? 1 : a?.[0] === 0 ? 0 : null;
+      const axis = [0, 1, 2, 3].includes(a?.[0]) ? a[0] : null;
       const x = int(a?.[1]), z = int(a?.[2]);
       const kind = APERTURES[a?.[3]] ? a[3] : null;
       if (axis == null || x == null || z == null || !kind) continue;
@@ -284,6 +383,9 @@ export function wallRuns(level, g) {
   const lines = new Map();   // "axis:cross" -> [{ along, mat }]
   for (const [k, e] of level.walls) {
     if (level.apertures.has(k)) continue;
+    // runs are an AXIS-ALIGNED notion (they exist to merge collinear collision
+    // boxes); a diagonal read as one produced a phantom wall across the cell
+    if (e.axis >= 2) continue;
     const cross = e.axis === 0 ? e.z : e.x;
     const along = e.axis === 0 ? e.x : e.z;
     const lk = `${e.axis}:${cross}`;
@@ -379,9 +481,10 @@ export function tileBox(x, z, mat, g, y) {
  *  describe itself differently to two agents standing in it. Scanning in sorted
  *  key order makes the labelling a pure function of the data. */
 export function deriveRooms(level, g) {
+  const adj = nodeGraph(level);
   const seen = new Set();
   const rooms = [];
-  const keys = [...level.tiles.keys()].sort();
+  const keys = [...adj.keys()].sort();
   for (const start of keys) {
     if (seen.has(start)) continue;
     const cells = [];
@@ -390,28 +493,27 @@ export function deriveRooms(level, g) {
     while (stack.length) {
       const k = stack.pop();
       cells.push(k);
-      const [cx, cz] = k.split(',').map(Number);
-      for (const [nx, nz] of [[cx, cz - 1], [cx + 1, cz], [cx, cz + 1], [cx - 1, cz]]) {
-        const nk = cellKey(nx, nz);
-        if (seen.has(nk) || !level.tiles.has(nk)) continue;
-        const e = edgeBetween(cx, cz, nx, nz);
-        if (e && level.walls.has(edgeKey(e[0], e[1], e[2]))) continue;  // a wall stops the fill
-        seen.add(nk);
-        stack.push(nk);
+      for (const n of adj.get(k) ?? []) {
+        if (seen.has(n)) continue;
+        seen.add(n); stack.push(n);
       }
     }
     cells.sort();
+    // a node key may carry a half suffix; the CELL is the part before it
+    const cellOf = (k) => k.split(':')[0].split(',').map(Number);
     let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
     for (const k of cells) {
-      const [cx, cz] = k.split(',').map(Number);
+      const [cx, cz] = cellOf(k);
       if (cx < minX) minX = cx; if (cx + 1 > maxX) maxX = cx + 1;
       if (cz < minZ) minZ = cz; if (cz + 1 > maxZ) maxZ = cz + 1;
     }
+    // a half-cell is half a tile of floor
+    const area = cells.reduce((t, k) => t + (k.includes(':') ? 0.5 : 1), 0) * g.tile * g.tile;
     rooms.push({
       id: `r${rooms.length + 1}`,
-      label: g.labels[cells[0]] ?? cells.map((k) => g.labels[k]).find((v) => typeof v === 'string') ?? null,
+      label: g.labels[cells[0]] ?? cells.map((k) => g.labels[k] ?? g.labels[k.split(':')[0]]).find((v) => typeof v === 'string') ?? null,
       cells,
-      area: cells.length * g.tile * g.tile,
+      area,
       min: [minX * g.tile, minZ * g.tile],
       max: [maxX * g.tile, maxZ * g.tile],
       centre: [((minX + maxX) / 2) * g.tile, ((minZ + maxZ) / 2) * g.tile],
@@ -432,10 +534,22 @@ export function derivePortals(level, rooms) {
   for (const [k, kind] of level.apertures) {
     const w = level.walls.get(k);
     if (!w) continue;
+    if (w.axis >= 2) {
+      // a diagonal's two sides are the two halves of its own cell
+      const k = cellKey(w.x, w.z);
+      portals.push({ axis: w.axis, x: w.x, z: w.z, kind,
+        between: [roomOf.get(`${k}:A`) ?? null, roomOf.get(`${k}:B`) ?? null] });
+      continue;
+    }
     const [[ax, az], [bx, bz]] = edgeCells(w.axis, w.x, w.z);
+    const sideA = sideOfCell(w.axis, w.x, w.z, ax, az);
+    const sideB = sideOfCell(w.axis, w.x, w.z, bx, bz);
     portals.push({
       axis: w.axis, x: w.x, z: w.z, kind,
-      between: [roomOf.get(cellKey(ax, az)) ?? null, roomOf.get(cellKey(bx, bz)) ?? null],
+      between: [
+        roomOf.get(nodeOnSide(level, ax, az, sideA)) ?? null,
+        roomOf.get(nodeOnSide(level, bx, bz, sideB)) ?? null,
+      ],
     });
   }
   return portals;
@@ -478,6 +592,35 @@ export function planStructure(data) {
       boxes.push(...wallBoxes(edge, ap, g, floorY));
     }
     boxes.push(...cornerFills(level, g, floorY, floorY + g.wallH));
+    // DIAGONAL COLLISION is stair-stepped: a run of small overlapping
+    // axis-aligned boxes along the line. The collider entry carries ONE yaw
+    // shared by every box of a building, so a genuinely rotated box would mean
+    // changing that contract; stepping keeps the existing machinery and the
+    // steps (~18cm apart, boxes wider than that) are well under a 32cm body
+    // radius, so nothing can slip between them. Visually the wall is a true
+    // mitred diagonal — this approximation is only what the body feels.
+    for (const [k, e] of level.walls) {
+      if (e.axis < 2) continue;
+      const a = [e.x * g.tile, e.z * g.tile];
+      const b = e.axis === 2
+        ? [(e.x + 1) * g.tile, (e.z + 1) * g.tile]
+        : [(e.x + 1) * g.tile, e.z * g.tile];
+      const a2 = e.axis === 2 ? a : [e.x * g.tile, (e.z + 1) * g.tile];
+      const [sx, sz] = e.axis === 2 ? a : b;
+      const [ex, ez] = e.axis === 2 ? b : a2;
+      const open = ['door', 'arch'].includes(level.apertures.get(k));
+      const N = 8, r = g.wallT * 0.8;
+      for (let i = 0; i <= N; i++) {
+        const t = i / N;
+        const cx = sx + (ex - sx) * t, cz = sz + (ez - sz) * t;
+        boxes.push({
+          x0: cx - r, x1: cx + r,
+          y0: open ? floorY + (APERTURES[level.apertures.get(k)]?.top ?? 0) : floorY,
+          y1: floorY + g.wallH,
+          z0: cz - r, z1: cz + r, mat: e.mat, kind: 'wall',
+        });
+      }
+    }
     const rooms = deriveRooms(level, g);
     levels.push({
       y: floorY, base: level.y, rooms, portals: derivePortals(level, rooms),
@@ -834,15 +977,14 @@ export function describeStructure(data) {
  *  geometric query against triangles. */
 export function roomAt(plan, lx, lz, ly = 0) {
   const tile = plan.grid.tile;
-  const cx = Math.floor(lx / tile), cz = Math.floor(lz / tile);
-  const k = cellKey(cx, cz);
+  void tile;
   // Nearest level at or below the point, so a first storey doesn't answer for
   // someone standing on the second.
   let best = null;
   for (const lv of plan.levels) {
     if (lv.y > ly + 0.5) continue;
     if (!best || lv.y > best.y) {
-      const room = lv.rooms.find((r) => r.cells.includes(k));
+      const room = lv.rooms.find((r) => r.cells.includes(nodeAtPoint(lv.level, plan.grid, lx, lz)));
       if (room) best = { y: lv.y, level: lv, room };
     }
   }
@@ -880,20 +1022,18 @@ export function passable(level, ax, az, bx, bz) {
  *  rather than a timeout. Neighbours are visited in a fixed order so two agents
  *  folding the same log walk the same path. */
 export function routeCells(level, fromKey, toKey) {
-  if (!level.tiles.has(fromKey) || !level.tiles.has(toKey)) return null;
+  const adj = nodeGraph(level, true);      // routes go through doorways
+  if (!adj.has(fromKey) || !adj.has(toKey)) return null;
   if (fromKey === toKey) return [fromKey];
   const prev = new Map([[fromKey, null]]);
   const q = [fromKey];
   for (let i = 0; i < q.length; i++) {
-    const [cx, cz] = q[i].split(',').map(Number);
-    for (const [nx, nz] of [[cx, cz - 1], [cx + 1, cz], [cx, cz + 1], [cx - 1, cz]]) {
-      const nk = cellKey(nx, nz);
-      if (prev.has(nk) || !level.tiles.has(nk)) continue;
-      if (!passable(level, cx, cz, nx, nz)) continue;
+    for (const nk of [...(adj.get(q[i]) ?? [])].sort()) {
+      if (prev.has(nk)) continue;
       prev.set(nk, q[i]);
       if (nk === toKey) {
         const path = [];
-        for (let c = nk; c != null; c = prev.get(c)) path.push(c);
+        for (let c2 = nk; c2 != null; c2 = prev.get(c2)) path.push(c2);
         return path.reverse();
       }
       q.push(nk);
@@ -914,17 +1054,16 @@ export function routeLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
   const lv = plan.levels.find((L) => L.rooms.length) ?? plan.levels[0];
   if (!lv) return null;
   const level = lv.level;
-  const key = (x, z) => cellKey(Math.floor(x / g.tile), Math.floor(z / g.tile));
-  const cells = routeCells(level, key(fromX, fromZ), key(toX, toZ));
+  const cells = routeCells(level, nodeAtPoint(level, g, fromX, fromZ), nodeAtPoint(level, g, toX, toZ));
   if (!cells) return null;
   const centre = (k) => {
-    const [x, z] = k.split(',').map(Number);
+    const [x, z] = k.split(':')[0].split(',').map(Number);
     return [(x + 0.5) * g.tile, (z + 0.5) * g.tile];
   };
   const pts = [[fromX, fromZ]];
   for (let i = 1; i < cells.length - 1; i++) {
-    const [ax, az] = cells[i - 1].split(',').map(Number);
-    const [bx, bz] = cells[i + 1].split(',').map(Number);
+    const [ax, az] = cells[i - 1].split(':')[0].split(',').map(Number);
+    const [bx, bz] = cells[i + 1].split(':')[0].split(',').map(Number);
     if (ax !== bx && az !== bz) pts.push(centre(cells[i]));   // a turn
   }
   pts.push([toX, toZ]);
