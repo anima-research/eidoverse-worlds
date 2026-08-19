@@ -15,7 +15,7 @@
 import {
   planStructure, normalize, wallBoxes, deriveRooms, derivePortals, roomAt,
   edgeCells, edgeBetween, edgeKey, cellKey, APERTURES, GRID_DEFAULTS,
-  describeHere, describeStructure, localizePoint, levelParts, TRIM, cornerFills, wallRuns, wallPolylines, sweepProfile, wallProfile, levelSweeps, capProfile, clipProfileV, refineProfile, makeShader, diagOf, nodeAtPoint, nodeGraph, cellNodes, routeCells, routeLocal, passable, makeShader,
+  describeHere, describeStructure, localizePoint, levelParts, TRIM, cornerFills, wallRuns, wallPolylines, sweepProfile, wallProfile, levelSweeps, capProfile, clipProfileV, refineProfile, makeShader, diagOf, halfTriangle, triPrism, halfFloored, segmentEnds, nodeAtPoint, nodeGraph, cellNodes, routeCells, routeLocal, passable, makeShader,
 } from "../shared/structure.js";
 
 let passed = 0, failed = 0;
@@ -386,7 +386,7 @@ const HOUSE = {
 
   // and the rest of the kit is present
   const kinds = new Set(parts.map((p) => p.kind));
-  for (const k of ["floor", "glass", "roof"]) {
+  for (const k of ["floor", "roof"]) {
     check(`parts include ${k}`, kinds.has(k), [...kinds].join(","));
   }
   check("the roof overhangs the footprint",
@@ -818,6 +818,80 @@ const HOUSE = {
   const boxW = boxes[0].x1 - boxes[0].x0;
   check("no gap a body could slip through", biggestGap < boxW,
     `gap ${biggestGap.toFixed(3)} vs box ${boxW.toFixed(3)}`);
+}
+
+// 23. HALF-FLOORED CELLS — a cut corner is a corner, not a wall on a floor
+{
+  const D = { levels: [{ tiles: [[0, 0, "floor", "B"], [1, 0]], walls: [[2, 0, 0]] }] };
+  const g = normalize(D);
+  const lv = g.levels[0];
+  check("only the floored half is a node", cellNodes(lv, 0, 0).join() === "0,0:B");
+  check("the unfloored half is outside the building",
+    !halfFloored(lv, 0, 0, "A") && halfFloored(lv, 0, 0, "B"));
+
+  const plan = planStructure(D);
+  check("the outer half is not a room",
+    !plan.levels[0].rooms.some((r) => r.cells.includes("0,0:A")),
+    JSON.stringify(plan.levels[0].rooms.map((r) => r.cells)));
+  check("the inner half is half a tile", plan.levels[0].rooms
+    .find((r) => r.cells.includes("0,0:B"))!.area === 0.5);
+  check("a half cell emits no box slab",
+    plan.levels[0].parts.filter((b: any) => b.kind === "floor").length === 1);
+
+  // the slab is a PRISM, and its orientation is derived rather than assumed:
+  // hand-reasoning the winding per half of per diagonal is how a floor ends up
+  // lit from underneath. Signed volume proves all four cases at once.
+  const vol = (pr: any) => {
+    let v = 0;
+    for (let t = 0; t < pr.indices.length; t += 3) {
+      const q = (k: number) => [pr.positions[pr.indices[t + k] * 3], pr.positions[pr.indices[t + k] * 3 + 1], pr.positions[pr.indices[t + k] * 3 + 2]];
+      const [a, b, c] = [q(0), q(1), q(2)];
+      v += (a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0]) + a[2] * (b[0] * c[1] - b[1] * c[0])) / 6;
+    }
+    return v;
+  };
+  const want = 0.5 * g.slabT;
+  const cases: [number, string][] = [[2, "A"], [2, "B"], [3, "A"], [3, "B"]];
+  check("every half of every diagonal is a right-side-out prism",
+    cases.every(([d, h]) => Math.abs(vol(triPrism(halfTriangle(0, 0, d, h, g), 0, g.slabT)) - want) < 1e-9),
+    cases.map(([d, h]) => `${d}${h}:${vol(triPrism(halfTriangle(0, 0, d, h, g), 0, g.slabT)).toFixed(4)}`).join(" "));
+  // control: swapping two corners must invert it, or the test sees nothing
+  const t0 = halfTriangle(0, 0, 2, "A", g);
+  check("control: the prism builder CORRECTS a reversed triangle",
+    Math.abs(vol(triPrism([t0[0], t0[2], t0[1]], 0, g.slabT)) - want) < 1e-9,
+    "orientation is not being derived");
+}
+
+// 24. DIAGONAL GLASS AND MITRED APERTURE ENDS
+{
+  // a diagonal window: the pane must run along the diagonal, not axis-aligned
+  const D = { levels: [{ tiles: [[0, 0, "floor", "B"], [1, 0]],
+    walls: [[2, 0, 0]], apertures: [[2, 0, 0, "window"]] }] };
+  const sweeps = planStructure(D).levels[0].sweeps;
+  const glass = sweeps.filter((s2: any) => s2.kind === "glass");
+  check("a diagonal window has glass", glass.length === 1, `${glass.length}`);
+  const xs: number[] = [], zs: number[] = [];
+  for (let i = 0; i < glass[0].positions.length; i += 3) { xs.push(glass[0].positions[i]); zs.push(glass[0].positions[i + 2]); }
+  const spanX = Math.max(...xs) - Math.min(...xs), spanZ = Math.max(...zs) - Math.min(...zs);
+  check("the pane runs diagonally, not along one axis",
+    spanX > 0.8 && spanZ > 0.8, `span ${spanX.toFixed(2)} × ${spanZ.toFixed(2)}`);
+
+  // aperture ends mitre against the run they interrupt. A butt joint keeps the
+  // end ring square to its own segment; a mitred one leans into the neighbour.
+  const g2 = normalize({ levels: [{ tiles: [[0, 0], [1, 0]],
+    walls: [[0, 0, 0], [0, 1, 0]], apertures: [[0, 1, 0, "door"]] }] });
+  const e = g2.levels[0].walls.get(edgeKey(0, 1, 0))!;
+  const [a, b] = segmentEnds(e, g2);
+  const prof = clipProfileV(wallProfile(g2), 2.10, g2.wallH);
+  const butt = sweepProfile([a, b], prof, 0);
+  const mitred = sweepProfile([a, b], prof, 0, { inDir: [1, 0], outDir: [1, 0] });
+  check("a straight neighbour changes nothing",
+    JSON.stringify(butt.positions.map((v: number) => +v.toFixed(6)))
+      === JSON.stringify(mitred.positions.map((v: number) => +v.toFixed(6))));
+  const angled = sweepProfile([a, b], prof, 0, { inDir: [0.7071, 0.7071], outDir: [1, 0] });
+  check("a 45° neighbour DOES lean the end ring",
+    JSON.stringify(angled.positions) !== JSON.stringify(butt.positions),
+    "aperture ends are still butting");
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

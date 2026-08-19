@@ -30,7 +30,10 @@ const STRUCTURE = {
   labels: { '0,0': 'kitchen', '0,2': 'bedroom', '3,0': 'hall' },
   levels: [{
     y: 0,
-    tiles: Array.from({ length: 6 }, (_, x) => Array.from({ length: 4 }, (_, z) => [x, z])).flat(),
+    // the corner cell is floored on its INNER half only — the diagonal is the
+    // corner of the building, so the floor must stop at it
+    tiles: Array.from({ length: 6 }, (_, x) => Array.from({ length: 4 }, (_, z) =>
+      (x === 5 && z === 0 ? [x, z, 'floor', 'B'] : [x, z]))).flat(),
     walls: [
       ...wallsRun(0, [0, 1, 2, 3, 4], 0),      // north exterior (corner cell cut off)
       ...wallsRun(0, [0, 1, 2, 3, 4, 5], 4),   // south exterior

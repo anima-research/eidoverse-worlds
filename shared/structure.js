@@ -162,7 +162,16 @@ export function halfFor(level, x, z, side) {
 /** Every node a cell contributes to the room/route graph. */
 export function cellNodes(level, x, z) {
   const k = cellKey(x, z);
-  return diagOf(level, x, z) ? [`${k}:A`, `${k}:B`] : [k];
+  if (!diagOf(level, x, z)) return [k];
+  const only = level.halves?.get(k);
+  return only ? [`${k}:${only}`] : [`${k}:A`, `${k}:B`];
+}
+
+/** Is this half of a cut cell actually floored? An unfloored half is outside
+ *  the building: no node, no room, no route, no floor. */
+export function halfFloored(level, x, z, half) {
+  const only = level.halves?.get(cellKey(x, z));
+  return !only || only === half.replace(':', '');
 }
 
 /** The node of cell (x,z) that touches `side`. */
@@ -200,14 +209,19 @@ export function nodeNeighbours(level, x, z, throughApertures = false) {
     const ek = e && edgeKey(e[0], e[1], e[2]);
     if (ek && level.walls.has(ek)
       && !(throughApertures && ['door', 'arch'].includes(level.apertures.get(ek)))) continue;
-    out.push([nodeOnSide(level, x, z, side), nodeOnSide(level, nx, nz, back)]);
+    const here = nodeOnSide(level, x, z, side), there = nodeOnSide(level, nx, nz, back);
+    const ok = (n, cx, cz) => !n.includes(':') || halfFloored(level, cx, cz, n.split(':')[1]);
+    if (!ok(here, x, z) || !ok(there, nx, nz)) continue;
+    out.push([here, there]);
   }
   // across the diagonal itself, if it is holed
   const d = diagOf(level, x, z);
   if (d && throughApertures) {
     const dk = edgeKey(d, x, z);
     if (['door', 'arch'].includes(level.apertures.get(dk))) {
-      out.push([`${cellKey(x, z)}:A`, `${cellKey(x, z)}:B`]);
+      if (halfFloored(level, x, z, 'A') && halfFloored(level, x, z, 'B')) {
+        out.push([`${cellKey(x, z)}:A`, `${cellKey(x, z)}:B`]);
+      }
     }
   }
   return out;
@@ -252,12 +266,18 @@ export function normalize(data) {
   for (const raw of Array.isArray(d.levels) ? d.levels : []) {
     const lv = (raw && typeof raw === 'object') ? raw : {};
     const tiles = new Map();     // cellKey -> mat
+    const halves = new Map();    // cellKey -> 'A'|'B' when only one half is floored
     const walls = new Map();     // edgeKey -> {axis, x, z, mat}
     const apertures = new Map(); // edgeKey -> kind
     for (const t of Array.isArray(lv.tiles) ? lv.tiles : []) {
       const x = int(t?.[0]), z = int(t?.[1]);
       if (x == null || z == null) continue;
-      tiles.set(cellKey(x, z), typeof t[2] === 'string' ? t[2] : 'floor');
+      const k0 = cellKey(x, z);
+      tiles.set(k0, typeof t[2] === 'string' ? t[2] : 'floor');
+      // A cell cut by a diagonal may be floored on only ONE side — that is what
+      // makes a diagonal read as the CORNER OF A BUILDING rather than a wall
+      // standing on a floor that carries on past it.
+      if (t[3] === 'A' || t[3] === 'B') halves.set(k0, t[3]);
     }
     for (const w of Array.isArray(lv.walls) ? lv.walls : []) {
       const axis = [0, 1, 2, 3].includes(w?.[0]) ? w[0] : null;
@@ -277,7 +297,7 @@ export function normalize(data) {
       if (!walls.has(k)) continue;
       apertures.set(k, kind);
     }
-    g.levels.push({ y: Number.isFinite(lv.y) ? lv.y : 0, tiles, walls, apertures });
+    g.levels.push({ y: Number.isFinite(lv.y) ? lv.y : 0, tiles, halves, walls, apertures });
   }
   return g;
 }
@@ -683,6 +703,7 @@ export function levelParts(level, g, floorY) {
 
   for (const [k, mat] of level.tiles) {
     const [x, z] = k.split(',').map(Number);
+    if (level.halves?.has(k)) continue;      // half-cells are prisms, see levelSweeps
     parts.push(tileBox(x, z, mat, g, floorY - g.slabT));
   }
 
@@ -725,10 +746,7 @@ export function levelParts(level, g, floorY) {
     // and the ledge under a window — so the trim boxes are gone rather than
     // fighting geometry they can no longer match.
     void faces; void oB; void oT; void cw; void cw0; void cw1;
-    if (prof.bottom > 0) {
-      parts.push(edgeSpan(axis, cross, a0, a1, -TRIM.glass.t / 2, TRIM.glass.t / 2,
-        oB, oT, 'glass', 'glass'));
-    }
+    // glass is swept in levelSweeps — edgeSpan cannot express a diagonal
   }
 
   // Flat roof with an overhang. From outside, an open-topped box is the single
@@ -1236,7 +1254,7 @@ export function wallPolylines(level, g) {
  *
  *  Returns flat positions + indices; normals are left to the caller (the
  *  realizer computes them) so this half stays free of any renderer. */
-export function sweepProfile(path, profile, y0) {
+export function sweepProfile(path, profile, y0, ends = null) {
   if (path.length < 2 || profile.length < 2) return { positions: [], indices: [] };
   const closed = path.length > 2
     && Math.abs(path[0][0] - path[path.length - 1][0]) < 1e-9
@@ -1254,8 +1272,15 @@ export function sweepProfile(path, profile, y0) {
   const nrm = (d) => [-d[1], d[0]];
   const offsets = [];
   for (let i = 0; i < n; i++) {
-    const dIn = closed ? segDir[(i - 1 + n) % n] : segDir[Math.max(0, i - 1)];
-    const dOut = closed ? segDir[i % n] : segDir[Math.min(segDir.length - 1, i)];
+    // `ends` lets a piece mitre against a neighbour it is not chained to. An
+    // apertured segment is swept on its own (a hole makes it a different
+    // shape), so without this its ends BUTT against the run they interrupt.
+    // At 90° a butt joint hides — the cap is perpendicular and buried — but at
+    // 45° it leaves a visible wedge where the two pieces fail to meet.
+    let dIn = closed ? segDir[(i - 1 + n) % n] : segDir[Math.max(0, i - 1)];
+    let dOut = closed ? segDir[i % n] : segDir[Math.min(segDir.length - 1, i)];
+    if (!closed && i === 0 && ends?.inDir) dIn = ends.inDir;
+    if (!closed && i === n - 1 && ends?.outDir) dOut = ends.outDir;
     const nIn = nrm(dIn), nOut = nrm(dOut);
     let mx = nIn[0] + nOut[0], mz = nIn[1] + nOut[1];
     const mL = Math.hypot(mx, mz);
@@ -1301,6 +1326,43 @@ export function sweepProfile(path, profile, y0) {
 }
 
 
+/** A wall segment's two endpoints in grid-local metres, for any axis. */
+export function segmentEnds(e, g) {
+  const a = [e.x * g.tile, e.z * g.tile];
+  const b = e.axis === 0 ? [(e.x + 1) * g.tile, e.z * g.tile]
+    : e.axis === 1 ? [e.x * g.tile, (e.z + 1) * g.tile]
+    : e.axis === 2 ? [(e.x + 1) * g.tile, (e.z + 1) * g.tile]
+    : [(e.x - 1) * g.tile, (e.z + 1) * g.tile];
+  return [a, b];
+}
+
+/** The straightest neighbouring segment's direction arriving at / leaving an
+ *  apertured segment, so its swept ends mitre into the run they interrupt. */
+function neighbourDirs(level, g, key, e) {
+  const [a, b] = segmentEnds(e, g);
+  const unit = (p, q) => {
+    const d = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1;
+    return [(q[0] - p[0]) / d, (q[1] - p[1]) / d];
+  };
+  const own = unit(a, b);
+  const at = (node, want) => {
+    let best = null, bestDot = -2;
+    for (const [k2, e2] of level.walls) {
+      if (k2 === key) continue;
+      const [c, d] = segmentEnds(e2, g);
+      for (const [p, q] of [[c, d], [d, c]]) {
+        if (Math.hypot(p[0] - node[0], p[1] - node[1]) > 1e-9) continue;
+        // q→p is the direction arriving at this node
+        const dir = unit(q, p);
+        const dot = dir[0] * want[0] + dir[1] * want[1];
+        if (dot > bestDot) { bestDot = dot; best = dir; }
+      }
+    }
+    return best;
+  };
+  return { inDir: at(a, own) ?? undefined, outDir: at(b, own) ?? undefined };
+}
+
 /** Swept geometry for one level: every solid wall run, mitred. */
 export function levelSweeps(level, g, floorY) {
   const prof = wallProfile(g);
@@ -1309,6 +1371,19 @@ export function levelSweeps(level, g, floorY) {
     const sw = sweepProfile(line.pts, prof, floorY);
     if (sw.positions.length) out.push({ ...sw, mat: line.mat, kind: 'wall' });
   }
+  // A half-floored cell's slab is a TRIANGLE. Without this the floor runs on
+  // past the diagonal and out of the building, which is what made a cut corner
+  // look like a wall standing on a floor rather than the corner of a house.
+  for (const [k, mat] of level.tiles) {
+    const half = level.halves?.get(k);
+    if (!half) continue;
+    const [x, z] = k.split(',').map(Number);
+    const d = diagOf(level, x, z);
+    if (!d) continue;
+    const pr = triPrism(halfTriangle(x, z, d, half, g), floorY - g.slabT, floorY);
+    out.push({ ...pr, mat, kind: 'floor' });
+  }
+
   // An APERTURED segment is the same wall with a bite out of it, so it is the
   // same swept profile clipped vertically — same thickness, same plinth, same
   // chamfer. Emitting it as a box was what made the panels over doors and
@@ -1323,12 +1398,22 @@ export function levelSweeps(level, g, floorY) {
       : e.axis === 2 ? [(e.x + 1) * g.tile, (e.z + 1) * g.tile]
       : [(e.x - 1) * g.tile, (e.z + 1) * g.tile];
     const top = Math.min(prf.top, g.wallH);
+    const nd = neighbourDirs(level, g, k, e);
     for (const [lo, hi] of [[0, prf.bottom], [top, g.wallH]]) {
       if (hi - lo < 1e-6) continue;
       const cp = clipProfileV(prof, lo, hi);
       if (cp.length < 2) continue;
-      const sw = sweepProfile([a, b], cp, floorY);
+      const sw = sweepProfile([a, b], cp, floorY, nd);
       if (sw.positions.length) out.push({ ...sw, mat: e.mat, kind: 'wall' });
+    }
+    // GLASS IS SWEPT TOO. As a box it went through edgeSpan, whose two-branch
+    // ternary treats "not axis 0" as "must be axis 1" — so a diagonal window
+    // came out axis-aligned. Sweeping it costs nothing and follows any angle.
+    if (prf.bottom > 0) {
+      const gt = TRIM.glass.t / 2;
+      const pane = [[-gt, prf.bottom], [-gt, top], [gt, top], [gt, prf.bottom], [-gt, prf.bottom]];
+      const gs = sweepProfile([a, b], pane, floorY, nd);
+      if (gs.positions.length) out.push({ ...gs, mat: 'glass', kind: 'glass' });
     }
   }
   return out;
@@ -1392,4 +1477,40 @@ export function capProfile(profile) {
     else { tris.push(right[ri], left[li], right[ri + 1]); ri++; }
   }
   return tris;
+}
+
+/** The three corners of a floored half-cell, in grid-local metres. */
+export function halfTriangle(x, z, diag, half, g) {
+  const t = g.tile, X = x * t, Z = z * t;
+  const c = { nw: [X, Z], ne: [X + t, Z], se: [X + t, Z + t], sw: [X, Z + t] };
+  if (diag === 2) {                                   // ↘ from nw to se
+    return half === 'A' ? [c.nw, c.ne, c.se] : [c.nw, c.se, c.sw];
+  }
+  return half === 'A' ? [c.nw, c.ne, c.sw] : [c.ne, c.se, c.sw];   // ↗ from ne to sw
+}
+
+/** A closed triangular prism with outward normals — the slab under a half-cell.
+ *
+ *  Orientation is DERIVED, not assumed: the winding that makes a top face point
+ *  up depends on which half of which diagonal you are looking at, and hand-
+ *  reasoning it per case is how a floor ends up lit from underneath. The cross
+ *  product decides, once. */
+export function triPrism(corners, y0, y1) {
+  let [p0, p1, p2] = corners;
+  const a = [p1[0] - p0[0], p1[1] - p0[1]], b = [p2[0] - p0[0], p2[1] - p0[1]];
+  if (a[1] * b[0] - a[0] * b[1] <= 0) { const s = p1; p1 = p2; p2 = s; }
+  const tri = [p0, p1, p2];
+  const positions = [];
+  for (const y of [y1, y0]) for (const p of tri) positions.push(p[0], y, p[1]);
+  const indices = [0, 1, 2, 5, 4, 3];                 // top up, bottom down
+  for (let i = 0; i < 3; i++) {
+    const j = (i + 1) % 3;
+    // the caps' winding makes the sides run the OTHER way round: with the top
+    // face CCW from above, edge i→j is traversed such that the outward side
+    // needs the reversed order. Derived by splitting the signed volume into
+    // caps and sides — caps came out right and sides negative, which is a
+    // clearer signal than any amount of squinting at index arithmetic.
+    indices.push(i, j + 3, j, i, i + 3, j + 3);       // side quad, outward
+  }
+  return { positions, indices };
 }
