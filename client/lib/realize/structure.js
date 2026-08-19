@@ -211,8 +211,29 @@ function buildGroup(plan) {
   for (const [slot, entries] of bySlot) {
     // paint BEFORE the merge, so every part is shaded by its own level's field
     if (slot !== 'glass') for (const { g, shade } of entries) paintGeometry(g, shade);
-    const merged = mergeGeometries(entries.map((e) => e.g), false);
-    for (const { g } of entries) g.dispose();   // the merge copied them
+    // mergeGeometries refuses ANY disagreement — a stray index, one extra
+    // attribute — and it fails the whole slot rather than the offending piece,
+    // so a single mismatch silently drops a building's worth of geometry. It
+    // reports only "index 6", which names nothing you can act on. Normalise to
+    // one shape, and say plainly if something arrived wearing another.
+    const want = slot === 'glass' ? ['position', 'normal'] : ['position', 'normal', 'color'];
+    for (const e of entries) {
+      let g2 = e.g;
+      if (g2.index) g2 = g2.toNonIndexed();
+      for (const name of Object.keys(g2.attributes)) {
+        if (!want.includes(name)) g2.deleteAttribute(name);
+      }
+      const missing = want.filter((n) => !g2.attributes[n]);
+      if (missing.length) {
+        report(`structure geometry (${slot})`,
+          new Error(`piece missing ${missing.join(', ')} — dropped from the merge`));
+        e.g = null; continue;
+      }
+      e.g = g2;
+    }
+    const usable = entries.filter((e) => e.g);
+    const merged = mergeGeometries(usable.map((e) => e.g), false);
+    for (const { g } of usable) g.dispose();    // the merge copied them
     if (!merged) continue;
     const mesh = new THREE.Mesh(merged, PALETTE[slot] ?? PALETTE.wall);
     mesh.castShadow = false;   // still one pipeline at a time — the baked term
