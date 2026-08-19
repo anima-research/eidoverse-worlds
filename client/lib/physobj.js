@@ -143,7 +143,11 @@ export function tickPhysObj(dt, now = performance.now()) {
       // object: crates sailed straight through buildings. structOwner names the
       // building the box belongs to, which is the identity this guard wanted.
       if (cid === id || c.interior || !c.box || (!entities.get(cid) && !c.structOwner)) continue;
-      const co = entities.get(cid);
+      // the collider entry's OWN frame, not the entity's: for a model they are
+      // the same object, but a structure box has only the former, and reaching
+      // through the entity map would have thrown on every wall
+      const co = c.obj ?? entities.get(cid);
+      if (!co?.position) continue;
       _v.copy(s.p).sub(co.position);                 // object-local (box is local too)
       const cl = _cl.copy(_v).clamp(c.box.min, c.box.max);
       const d = _v.distanceTo(cl);
