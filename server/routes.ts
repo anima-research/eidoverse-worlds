@@ -122,7 +122,14 @@ const BUILD = (() => {
   })();
   return { sha: sha || "unknown", commitTime: commitTime || "unknown",
     dirty: dirtyRaw === "true" ? true : dirtyRaw === "false" ? false : "unknown",
-    startedAt: new Date().toISOString() };
+    startedAt: new Date().toISOString(),
+    // Per-run identity echo for owned test children (tools/probe-harness.mjs,
+    // the boot-check pattern): a probe that spawned this process with
+    // EIDO_BOOT_NONCE can prove the responder is ITS child rather than a stale
+    // listener or a concurrent run's — startedAt freshness alone cannot tell
+    // two just-started servers apart. Absent when unset, so production
+    // /version is unchanged.
+    ...(process.env.EIDO_BOOT_NONCE ? { nonce: process.env.EIDO_BOOT_NONCE } : {}) };
 })();
 
 const gzCache = new Map<string, { mtime: number; gz: Uint8Array }>();
@@ -392,8 +399,8 @@ const ROUTES: Route[] = [
     handler: () => new Response(
       JSON.stringify({
         ...BUILD,
+        // EIDO_BOOT_NONCE (`nonce`) rides in via ...BUILD itself — one owner.
         ...(process.env.WORLD_INSTANCE_NONCE ? { instance: process.env.WORLD_INSTANCE_NONCE } : {}),
-        ...(process.env.EIDO_BOOT_NONCE ? { nonce: process.env.EIDO_BOOT_NONCE } : {}),
       }),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },

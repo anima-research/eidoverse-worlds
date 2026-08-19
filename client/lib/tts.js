@@ -10,8 +10,9 @@
 // LOCAL, always. Synthesis on the client costs the server nothing and scales
 // with clients rather than with the room (R, 2026-08-08).
 
-import { report } from './core.js';
+import { report, bus } from './core.js';
 import { setSynthProvider, notifySynthTrackChanged } from './voicesource.js';
+import { volumeFor } from './voiceconsent.js';
 import { audioContext } from './audioctx.js';
 
 // The registered TTS source. null = ordinary microphone.
@@ -98,8 +99,14 @@ export function setTtsEnabled(on) {
   // EVER), which is every headless body; two divergent handoffs also allowed
   // an ordering where synth stayed mixed in while the raw mic reopened.
   if (ttsEnabled !== was && typeof window !== 'undefined') {
-    import('./voice.js').then((v) => {
-      const micLive = v.micOn?.();
+    import('./micstate.js').then((v) => {
+      // 🔴 ASK THE LIVE TRANSPORT. v.micOn() reads voice.js's own micStream,
+      // which is null forever on an SFU client — so this guard failed OPEN in
+      // the dangerous direction: enabling TTS while the SFU mic was hot ran
+      // the takeover the "mic beats TTS" invariant (above) exists to prevent.
+      // (2026-08-15, found auditing the stack for mesh-only reads.)
+      const micLive = (typeof window !== 'undefined' && typeof window.__sfuMicOn === 'function')
+        ? !!window.__sfuMicOn() : v.micOn?.();
       if (ttsEnabled && canSynthesize() && !micLive) {
         startPacer(); notifySynthTrackChanged(ensureGenerator());
       } else if (!ttsEnabled) {
@@ -154,9 +161,98 @@ export function ensureGenerator() {
   return genTrack;
 }
 
+// 🔴 ONE SPEAKER TALKS ONE AT A TIME (R, 2026-08-16: "the second chat I sent
+// started talking over the first one before the first one finished. That would
+// be correct in a multi-agent space, but since I'm one person, the TTS should
+// wait to play until the first group is done").
+//
+// The playback queue below was never the problem — it works. The hole is that
+// speak() is async and `await ttsFn(text)` happens BEFORE enqueue(): two says
+// spawn two CONCURRENT synthesis jobs, and whichever finishes first reaches the
+// queue first. So the failure is not only overlap but REORDERING — a short
+// later utterance can play before a long earlier one.
+//
+// Keyed by speaker, deliberately, per R's own framing: two different people
+// talking at once IS correct in a shared room; it is one person's consecutive
+// utterances that must not interleave. A single global lock would "fix" this by
+// making a crowded room take turns, which is a different bug.
+//
+// (media-sfu.ts:332 already does exactly this for the agent sidecar — same
+// doctrine, and until now only one of the two implementations honoured it.)
+const _speakChains = new Map();   // speaker -> Promise
+function chain(speaker, job) {
+  const key = speaker || 'self';
+  const prev = _speakChains.get(key) ?? Promise.resolve();
+  // Never let a rejection poison the chain: a failed utterance must not stop
+  // the next one from being spoken.
+  const next = prev.then(job, job);
+  const tail = next.catch(() => {});
+  _speakChains.set(key, tail);
+  // Drop the entry once this is still the tail and it has settled, so a
+  // long-lived room does not keep one promise per departed speaker.
+  tail.then(() => { if (_speakChains.get(key) === tail) _speakChains.delete(key); });
+  return next;
+}
+
 /** Speak text through the registered synthesizer. Silent no-op when TTS is off
- *  or unavailable — callers should not have to branch. */
-export async function speak(text) {
+ *  or unavailable — callers should not have to branch.
+ *  `speaker` scopes the serialization; omit it for your own voice. */
+export function speak(text, speaker) {
+  return chain(speaker, () => speakChunked(text));
+}
+
+// 🔴 LENGTH IS LATENCY, AND THE BROWSER NEVER CHUNKED (R, 2026-08-16: "I
+// submitted a long thing to test TTS hang and boy it's hung af — froze the
+// whole browser. Finally came back after about 30 seconds and started
+// talking").
+//
+// That is not a hang, which is why hunting for one would have wasted the
+// night: engine-piper.js:347 already measured RTF ≈ 1.1, so synthesis costs
+// about as long as the audio it produces. A ~25-second paragraph is a ~28-
+// second ort.run() — on the main thread, in one piece, with the page frozen
+// for the duration.
+//
+// The sidecar has never had this problem because it splits utterances into
+// sentence-sized pieces and streams the first while the rest synthesize.
+// tts-chunk.js is that same splitter, ported (identical output on the same
+// input, checked). fastFirst() deliberately cuts an aggressive OPENING clause:
+// time-to-first-word is synth(chunk 1), so a 64-char opener starts the audio
+// in about a second instead of thirty.
+//
+// This does NOT make synthesis non-blocking — each chunk still runs on the
+// main thread, and a genuinely enormous single sentence with no commas can
+// still stall. Moving inference into a Worker is the real cure and remains
+// open. Chunking is what makes the page usable today, and it is a strict
+// improvement rather than a workaround: shorter pieces also mean the first
+// word arrives sooner, which is the thing a listener actually notices.
+async function speakChunked(text) {
+  const { ttsChunks } = await import('./tts-chunk.js');
+  const chunks = ttsChunks(text);
+  if (!chunks.length) return false;          // emoji-only: in the log, not the air
+  if (chunks.length === 1) return speakOne(chunks[0]);
+  // 🔴 ONE EPOCH FOR THE WHOLE UTTERANCE (review agent, 2026-08-17 — the
+  // "next one" of the known pattern). Each speakOne captures the epoch at its
+  // OWN start, so a stopPacer() mid-utterance (mic takeover — TTS stays
+  // enabled, so the isTtsEnabled refusal never fires) only killed the chunk
+  // in flight: chunks N+1… re-captured the NEW epoch, passed every guard, and
+  // queued into a stopped pacer — to play minutes later when the mic dropped
+  // and the pacer restarted. Cancelled audio must die at EVERY await; the
+  // between-chunks seam was the one this utterance-level check now owns.
+  const epoch0 = ttsEpoch;
+  let any = false;
+  for (const c of chunks) {
+    if (ttsEpoch !== epoch0) { console.warn('[voice] utterance cancelled between chunks — dropping the rest'); return any; }
+    // Sequential BY DESIGN: the queue plays in order, and synthesizing ahead
+    // would put us right back into the race the speaker chain exists to stop.
+    // Yielding between chunks lets the page paint — the whole point.
+    const ok = await speakOne(c);
+    any = any || ok;
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  return any;
+}
+
+async function speakOne(text) {
   const epoch = ttsEpoch;
   // EVERY REFUSAL SAYS WHY. This function had five silent `return false`
   // paths, so "nothing came out" looked identical whether TTS was off, the
@@ -284,6 +380,36 @@ export const sidetone = (on) => {
   return monitorOn;
 };
 
+// The shared sidetone gain — see the three-version history at its use site.
+let _monGain = null, _monGainCtx = null;
+function monitorGain(ctx) {
+  if (_monGainCtx !== ctx) {
+    _monGain = ctx.createGain();
+    _monGain.connect(ctx.destination);
+    _monGainCtx = ctx;
+  }
+  return _monGain;
+}
+// The drag must land on audio ALREADY queued (v1's failure). Guarded: the bus
+// exists at module load, the node may not.
+bus.on('audio:volume', ({ cat }) => {
+  if (cat === 'tts' && _monGain) _monGain.gain.value = 0.8 * volumeFor('tts');
+});
+
+// Where the sidetone has played up to, in AudioContext time. Chunks schedule
+// against this rather than against "now", so a burst of fast synthesis lands as
+// consecutive speech instead of a chord.
+let monitorHead = 0;
+/** Every sidetone chunk currently scheduled — so a cancel can STOP them.
+ *  🔴 (review agent, 2026-08-17): stopPacer cleared the transmit queue and
+ *  zeroed monitorHead but never touched the already-scheduled buffer sources:
+ *  the ROOM went quiet while YOU kept hearing the cancelled utterance's tail —
+ *  and the zeroed playhead then scheduled the next utterance at `now`, on top
+ *  of that residue. The exact overlap the playhead was built to prevent,
+ *  resurrected on the cancel path. */
+const _monSources = new Set();
+
+
 function monitor(pcm, sampleRate) {
   if (!monitorOn || !pcm?.length) return;
   try {
@@ -295,13 +421,60 @@ function monitor(pcm, sampleRate) {
     const ch = buf.getChannelData(0);
     for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 32768;
     const src = monitorCtx.createBufferSource();
-    const g = monitorCtx.createGain();
-    // Slightly under unity: your own voice should sit behind the room, the way
-    // sidetone always does, rather than competing with it.
-    g.gain.value = 0.8;
+    // 🔴 THIS GAIN HAS OSCILLATED THREE TIMES — read all three before a fourth:
+    //   v1 per-chunk node, level at creation → chunks schedule AHEAD
+    //     (monitorHead), so a short utterance is fully queued before the drag
+    //     ends: "the control was real and always one utterance late, which
+    //     from outside is indistinguishable from dead" (R's first report).
+    //   v2 ONE shared node → orphaned when audioContext() returned a different
+    //     context; a node on a dead context is silence with no error. R
+    //     stopped hearing herself entirely.
+    //   v3 revert to v1 → restored v1's bug verbatim. R, same day: "the
+    //     self-TTS volume slider is broken, needs to be hooked back up."
+    // The fix needs BOTH properties: shared (reaches already-scheduled audio)
+    // and context-tracked (rebuilt whenever the context identity changes, so
+    // it can never be orphaned). Level is also re-applied on every chunk AND
+    // on the volume bus event, so the drag lands mid-utterance.
+    const g = monitorGain(monitorCtx);
+    g.gain.value = 0.8 * volumeFor('tts');
+    // 🔴 SELF-TTS VOLUME LANDS HERE, NOT ON THE OUTBOUND TRACK (R, 2026-08-16:
+    // "Maybe it's just what you hear of yourself and not what goes out. Seems
+    // like endpoint volume should be in the end user's control anyway").
+    //
+    // I had built the outbound version first — scaling the samples everyone
+    // else receives — and her argument is better: every listener already owns
+    // 'voices', distance rolloff and consent, so a sender-side gain lets me
+    // make myself quieter or louder in THEIR ears, over their settings. That is
+    // authority pointing the wrong way. A speaker should control what they
+    // monitor; a listener should control what they hear.
+    //
+    // So this scales the SIDETONE only. 0.8 stays as the baseline the slider
+    // rides, keeping the old "your own voice sits behind the room" default at
+    // unity while letting you push it up or down for yourself alone.
     src.buffer = buf;
-    src.connect(g).connect(monitorCtx.destination);
-    src.start();
+    src.connect(g);   // g is already wired to this context's destination
+    // 🔴 SCHEDULE, DO NOT FIRE (R, 2026-08-16: "when they finish they just start
+    // playing right away without waiting, so they end up talking over each
+    // other"). A bare src.start() plays NOW. That was harmless while an
+    // utterance was one buffer; the moment chunking made it five, each chunk's
+    // sidetone began the instant ITS synthesis finished — so the overlap is
+    // proportional to how much faster synthesis is than speech, and the fix
+    // that removed the freeze created the stacking.
+    //
+    // The transmitted lane never had this problem: the pacer walks a queue on a
+    // wall clock. The sidetone is a second, independent path — the one seam
+    // where "queued" and "audible" are different things — so it needs its own
+    // playhead. Chunk N+1 starts when chunk N ends, not when it arrives.
+    const now = monitorCtx.currentTime;
+    // Behind the clock (a gap in speaking, or the very first chunk) → start
+    // now. Ahead of it → queue after what is still playing.
+    const at = Math.max(now, monitorHead);
+    // Retained so cancellation can reach audio that is already scheduled —
+    // see stopPacer. onended keeps the set from growing past what is queued.
+    _monSources.add(src);
+    src.onended = () => _monSources.delete(src);
+    src.start(at);
+    monitorHead = at + buf.duration;
   } catch (e) { console.warn('[voice] sidetone failed (still transmitting):', e?.message || e); }
 }
 
@@ -406,15 +579,27 @@ export function startPacer() {
   playhead = 0;
   pacer = setInterval(() => {
     if (!writer) return;
+    // 🔴 A CLOSED WRITER IS NOT A NULL WRITER (R, phone test 2026-08-16:
+    // "Stream closed at tts.js write — ×8536"). The source swap stops the old
+    // generator track, which closes its writable; this guard passed, and
+    // write() REJECTED — asynchronously, so the try below never saw it —
+    // 100 times a second for the rest of the session. The recovery already
+    // existed one function up: ensureGenerator() rebuilds a dead generator and
+    // re-binds every sender. The pacer just never asked.
+    if (genTrack?.readyState !== 'live') { ensureGenerator(); return; }
     const owed = Math.floor(((performance.now() - t0) / 1000) * OUT_RATE) - playhead;
     for (let n = 0; n + FRAME <= owed; n += FRAME) {
       const data = new Float32Array(FRAME);
       fillSpeech(data);
       try {
-        writer.write(new AudioData({
+        // write() returns a promise; a stream closed BETWEEN the liveness
+        // check and this call rejects async. Swallow exactly that — the next
+        // tick's liveness check owns the rebuild — so one mid-swap race does
+        // not print, and a real storm cannot recur.
+        void writer.write(new AudioData({
           format: 'f32', sampleRate: OUT_RATE, numberOfFrames: FRAME,
           numberOfChannels: 1, timestamp: Math.round((playhead / OUT_RATE) * 1e6), data,
-        }));
+        })).catch(() => {});
       } catch (e) { report('tts write', e); }
       playhead += FRAME;
     }
@@ -426,6 +611,15 @@ export function stopPacer() {
   if (pacer) { clearInterval(pacer); pacer = null; }
   queue = []; qOff = 0;
   ttsEpoch++;              // anything still synthesizing belongs to the old era
+  // Drop the sidetone playhead with the queue. Leaving it set would make the
+  // NEXT utterance schedule itself behind audio that was just cancelled — a
+  // silent delay of up to the length of whatever was pending, and the kind of
+  // stale-state bug that only shows up as "why did it take so long to start".
+  monitorHead = 0;
+  // ...and stop the sidetone audio that is ALREADY scheduled — a cancelled
+  // utterance must fall silent in your own ears too, not only in the room.
+  for (const s of _monSources) { try { s.stop(); } catch { /* already ended */ } }
+  _monSources.clear();
 }
 
 /** Probe seam: is the mouth open, and how much is waiting to be said? */
@@ -456,10 +650,20 @@ export function speakOwnSays(bus, myId) {
     // burns cycles for nothing, and queuing behind a live mic means old text
     // suddenly playing minutes later when the mic drops. You spoke with your
     // voice; the text stays text.
-    const micLive = (await import('./voice.js')).micOn?.();
+    // 🔴 SAME READ, SAME TRAP (2026-08-15). On the SFU this returned false for
+    // a LIVE mic, so the discard below never fired: you spoke into a hot mic
+    // and the synthesizer spoke your typed line at the same time — the exact
+    // double-voice #91 B3 was written to forbid, arriving as the DEFAULT path
+    // on this branch rather than as dead code.
+    const micLive = (typeof window !== 'undefined' && typeof window.__sfuMicOn === 'function')
+      ? !!window.__sfuMicOn() : (await import('./micstate.js')).micOn?.();
     if (micLive) { console.warn(`[voice] own say NOT synthesized — mic is live, mic beats TTS: "${String(text).slice(0, 40)}"`); return; }
     console.log(`[voice] own say → speaking: "${String(text).slice(0, 60)}"`);
-    void speak(text);
+    // Keyed by the speaker so consecutive says QUEUE instead of overlapping
+    // (R, 2026-08-16). Every event reaching this line is `mine` by the guard
+    // above, so this is one chain today — but passing the id keeps the call
+    // honest if this hook is ever generalised to voice other people's says.
+    void speak(text, actor);
   });
 }
 
