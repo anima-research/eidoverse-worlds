@@ -384,10 +384,17 @@ const ROUTES: Route[] = [
     // challenge-response the SERVER answers is the portable proof; the OS check
     // stays as a second, stricter opinion where the platform offers one.
     match: (u) => u.pathname === "/version",
+    // EIDO_BOOT_NONCE: a per-run identity echo for tests that spawn a child
+    // server — "the first 89xx listener that answers" is not identity, and a
+    // stale server has bought a false green in this repo before (review on
+    // the isolation PR). Absent unless the spawner sets it. Independent of
+    // WORLD_INSTANCE_NONCE above; a spawner sets whichever proof it consumes.
     handler: () => new Response(
-      JSON.stringify(process.env.WORLD_INSTANCE_NONCE
-        ? { ...BUILD, instance: process.env.WORLD_INSTANCE_NONCE }
-        : BUILD),
+      JSON.stringify({
+        ...BUILD,
+        ...(process.env.WORLD_INSTANCE_NONCE ? { instance: process.env.WORLD_INSTANCE_NONCE } : {}),
+        ...(process.env.EIDO_BOOT_NONCE ? { nonce: process.env.EIDO_BOOT_NONCE } : {}),
+      }),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {
@@ -698,10 +705,59 @@ const ROUTES: Route[] = [
  *  unsplit fetch() had. The catch-all last row means every request gets a
  *  Response… except a successful /ws upgrade, which (as before) returns none
  *  and lets Bun own the socket. */
+// 🔴 CROSS-ORIGIN ISOLATION — why local speech synthesis runs single-threaded.
+//
+// engine-piper.js reads `crossOriginIsolated && SharedArrayBuffer` and pins
+// ort.env.wasm.numThreads to 1 when either is missing. This server sent no COOP
+// or COEP headers, so both were false and ONNX inference ran single-threaded on
+// every machine that loaded the page, however many cores it has. The client's
+// own console said so on every load ("SINGLE-THREADED — isolation headers
+// missing"); the diagnostic was already printing the answer.
+//
+// COEP is `credentialless` rather than `require-corp`: require-corp blocks any
+// cross-origin subresource that does not opt in with CORP headers, which would
+// break third-party assets the moment someone adds one. credentialless buys the
+// same isolation by stripping credentials instead of refusing the request.
+// 🔴 THE CLIENT DOES LOAD CROSS-ORIGIN THINGS. This comment used to claim it
+// "loads nothing cross-origin" — false, asserted without checking, and it was
+// the justification for the whole choice. What it loads, and how each fares:
+//
+//   • DRACO decoder wasm from gstatic (assets.js) — fine either way; gstatic
+//     sends `cross-origin-resource-policy: cross-origin`.
+//   • Orrery API via fetch(credentials:'include') (conjure.js) — UNAFFECTED.
+//     COEP governs no-cors SUBRESOURCES; a cors-mode fetch is not one
+//     ("requests made in cors mode won't be blocked by COEP" — MDN).
+//   • Orrery thumbnails via <img> — WAS affected: a bare <img> is no-cors, so
+//     credentialless would strip the session cookie. Fixed at the call site
+//     with crossorigin="use-credentials", moving it to cors mode.
+//
+// And COOP `same-origin` severs window.opener, which broke Orrery's OAuth
+// popup — it could not postMessage back and sign-in hung silently. conjure.js
+// now polls /api/auth/me as the primary signal, needing no opener at all.
+//
+// The headers must ride on EVERY response, not just the document: a worker
+// script served without them is not isolated and the whole context degrades.
+function isolate(res: Response): Response {
+  // 🔴 A SUCCESSFUL /ws UPGRADE RETURNS NOTHING — the ws route hands back
+  // `undefined as unknown as Response` and lets Bun own the socket. Touching it
+  // here would throw on every websocket connection, i.e. this header change
+  // would break the world rather than speed it up. Checked before shipping.
+  if (!res) return res;
+  // A 101 upgrade owns its own handshake — do not touch it.
+  if (res.status === 101) return res;
+  res.headers.set("cross-origin-opener-policy", "same-origin");
+  res.headers.set("cross-origin-embedder-policy", "credentialless");
+  return res;
+}
+
 export function route(req: Request, srv: Srv): Response | Promise<Response> {
   const url = new URL(req.url);
-  for (const r of ROUTES) if (r.match(url, req)) return r.handler({ req, url, srv });
+  for (const r of ROUTES) {
+    if (!r.match(url, req)) continue;
+    const out = r.handler({ req, url, srv });
+    return out instanceof Promise ? out.then(isolate) : isolate(out);
+  }
   // unreachable — the catch-all matches everything — but a table must not be
   // able to strand a request even if a future edit breaks that property.
-  return new Response("not found", { status: 404 });
+  return isolate(new Response("not found", { status: 404 }));
 }
