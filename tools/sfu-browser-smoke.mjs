@@ -17,7 +17,13 @@ import { chromium } from 'playwright';
 //     BASE=$(tools/tunnel-up.sh) node tools/sfu-browser-smoke.mjs
 // It still ACCEPTS a localhost BASE — for a fast inner-loop check — but it says
 // loudly that such a run is not evidence for the PR.
-const BASE = process.env.BASE ?? 'http://127.0.0.1:8960';
+// No BASE ⇒ own a scratch child (VOICE_TRANSPORT=sfu, nonce identity) rather
+// than trusting whatever answers an ambient port — the review's standing
+// objection to probes whose subject is unverified.
+import { ownedWorld } from './probe-harness.mjs';
+const world = process.env.BASE ? null
+  : await ownedWorld({ env: { VOICE_TRANSPORT: 'sfu' } });
+const BASE = process.env.BASE ?? world.origin;
 const LOCAL = /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])/.test(BASE);
 if (LOCAL) {
   console.log('  \x1b[33m⚠ LOCALHOST RUN — inner-loop only, NOT evidence the SFU works.\x1b[0m');
@@ -25,7 +31,7 @@ if (LOCAL) {
 } else {
   console.log(`  \x1b[36mreal-network run via ${BASE}\x1b[0m`);
 }
-const KEY = process.env.KEY ?? 'dev';
+const KEY = process.env.KEY ?? (world ? world.key : 'dev');
 const browser = await chromium.launch({
   executablePath: process.env.SFU_TEST_CHROME ?? process.env.CHROME ?? undefined,
   args: [
@@ -138,6 +144,7 @@ try {
   bad(`threw: ${String(e).slice(0, 300)}`);
 } finally {
   await browser.close();
+  if (world) await world.close();
 }
 
 console.log(failed ? '\n\x1b[31m❌ sfu-browser-smoke: FAIL\x1b[0m' : '\n\x1b[32m✅ sfu-browser-smoke: PASS\x1b[0m');
