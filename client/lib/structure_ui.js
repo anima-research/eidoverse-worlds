@@ -15,7 +15,8 @@
 import { THREE, canvas, camera, scene, bus, report } from './core.js';
 import { sendVerb } from './net.js';
 import { state } from './state.js';
-import { planStructure, localizePoint } from '../../shared/structure.js';
+import { planStructure, localizePoint, GRID_DEFAULTS } from '../../shared/structure.js';
+import { setCutaway } from './realize/structure.js';
 import {
   emptyStructure, pickEdge, pickCell, addWall, removeWall, setAperture,
   drawRoom, eraseRoom, setTile, pickWalledEdge,
@@ -94,6 +95,7 @@ function apply(b, at, commit, upTo = null) {
     undoStack.push(JSON.parse(JSON.stringify(g)));
     if (undoStack.length > 40) undoStack.shift();
     sendVerb('comp', { id: b.id, type: 'structure', data: next });
+    setTimeout(refreshGrid, 60);       // the lattice follows the footprint out
   } else {
     showGhost(b, next);
   }
@@ -157,6 +159,7 @@ function newBuilding(ev) {
     pos: [Math.round(hit.x), 0, Math.round(hit.z)], yaw: 0 });
   sendVerb('comp', { id, type: 'structure', data: emptyStructure() });
   editing = id;
+  setTimeout(refreshGrid, 120);
 }
 
 // ---- pointer ----------------------------------------------------------------
@@ -164,7 +167,7 @@ function newBuilding(ev) {
 // synthetic PointerEvents never reach it (a lesson already paid for once).
 
 function onDown(ev) {
-  if (!tool || ev.button !== 0) return;
+  if (!active || !tool || ev.button !== 0) return;
   const b = target();
   if (!b) return;
   const at = hitGrid(ev, b);
@@ -175,7 +178,7 @@ function onDown(ev) {
 }
 
 function onMove(ev) {
-  if (!tool) return;
+  if (!active || !tool) return;
   const b = target();
   if (!b) return;
   const at = hitGrid(ev, b);
@@ -184,7 +187,7 @@ function onMove(ev) {
 }
 
 function onUp(ev) {
-  if (!tool || !dragFrom) return;
+  if (!active || !tool || !dragFrom) return;
   const b = target();
   const at = b && hitGrid(ev, b);
   if (b && at) apply(b, at, true, dragFrom);
@@ -201,12 +204,66 @@ export function setTool(t) {
   return tool;
 }
 
+// ---- the grid overlay -------------------------------------------------------
+// You cannot snap to something you cannot see. The overlay draws the lattice a
+// click will actually land on, in the building's own frame — which is also the
+// only honest way to show a grid that may be rotated or diagonal to the world.
+
+let gridHelp = null;
+
+function refreshGrid() {
+  if (gridHelp) { scene.remove(gridHelp); gridHelp.geometry.dispose(); gridHelp.material.dispose(); gridHelp = null; }
+  const b = target();
+  if (!active || !b) return;
+  const g = b.data ?? {};
+  const t = g.tile ?? GRID_DEFAULTS.tile;
+  const lv = g.levels?.[0] ?? {};
+  let x0 = 0, x1 = 1, z0 = 0, z1 = 1;
+  for (const [tx, tz] of lv.tiles ?? []) {
+    x0 = Math.min(x0, tx); x1 = Math.max(x1, tx + 1);
+    z0 = Math.min(z0, tz); z1 = Math.max(z1, tz + 1);
+  }
+  const PAD = 3;                       // room to extend the building outwards
+  x0 -= PAD; z0 -= PAD; x1 += PAD; z1 += PAD;
+  const pts = [];
+  const y = (planStructure(g).levels[0]?.y ?? 0) + 0.012;
+  for (let x = x0; x <= x1; x++) pts.push(x * t, y, z0 * t, x * t, y, z1 * t);
+  for (let z = z0; z <= z1; z++) pts.push(x0 * t, y, z * t, x1 * t, y, z * t);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  gridHelp = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+    color: 0x4fb3d9, transparent: true, opacity: 0.22, depthWrite: false,
+  }));
+  gridHelp.position.set(...(b.ent.pos ?? [0, 0, 0]));
+  gridHelp.rotation.y = b.ent.yaw ?? 0;
+  scene.add(gridHelp);
+}
+
+let active = false;
 let bar = null;
+
+/** Build mode owns the structure tools: they arrive with it and leave with it,
+ *  rather than floating over a world nobody is editing. */
+export function setStructureMode(on) {
+  if (active === on) return active;
+  active = !!on;
+  if (bar) bar.style.display = active ? 'flex' : 'none';
+  if (!active) { setTool(null); clearGhost(); }
+  setCutaway(active);
+  refreshGrid();
+  return active;
+}
+export const isStructureMode = () => active;
+
 export function initStructureUI() {
   canvas.addEventListener('mousedown', onDown, true);
   window.addEventListener('mousemove', onMove);
   window.addEventListener('mouseup', onUp);
-  bus.on('world-reset', () => { undoStack.length = 0; editing = null; clearGhost(); });
+  bus.on('world-reset', () => { undoStack.length = 0; editing = null; clearGhost(); refreshGrid(); });
+  // the mode arrives and leaves with eidoverse's own build mode — B, or Esc
+  bus.on('edit-mode', (on) => setStructureMode(on));
+  // a building appearing or changing under us moves the lattice with it
+  bus.on('entity', (ev) => { if (active && ev?.kind !== 'collider') refreshGrid(); });
 
   bar = document.createElement('div');
   bar.id = 'structbar';
@@ -231,6 +288,7 @@ export function initStructureUI() {
       btn.style.borderColor = tool === k ? '#4fb3d9' : '#2c3a44';
     }
   };
+  bar.style.display = 'none';         // build mode turns it on
   document.body.appendChild(bar);
   paint();
   return true;

@@ -143,6 +143,18 @@ function paintGeometry(geo, shade) {
 }
 
 const tracked = new Map(); // entity id -> { group, sig, geoms: BufferGeometry[] }
+let cutaway = false;
+
+/** Hide every roof while building. Idempotent, and applied to buildings that
+ *  appear DURING the mode as well as those already standing. */
+export function setCutaway(on) {
+  cutaway = !!on;
+  for (const t of tracked.values()) {
+    t.group.traverse((o) => { if (o.userData?.structRoof) o.visible = !cutaway; });
+  }
+  return cutaway;
+}
+export const isCutaway = () => cutaway;
 
 /** The structure component, or null for entities that aren't buildings. */
 const structOf = (ent) => (ent?.comp && typeof ent.comp === 'object' ? ent.comp.structure ?? null : null);
@@ -205,6 +217,10 @@ function buildGroup(plan) {
     const mesh = new THREE.Mesh(merged, PALETTE[slot] ?? PALETTE.wall);
     mesh.castShadow = false;   // still one pipeline at a time — the baked term
     mesh.receiveShadow = true; // is doing the work real shadows would
+    // THE CUTAWAY. You cannot lay a floor you cannot see, and a roof is opaque
+    // from every angle a builder wants. Sims solves this with walls-down; the
+    // cheap and honest version here is to take the lid off while building.
+    if (slot === 'roof') { mesh.userData.structRoof = true; mesh.visible = !cutaway; }
     group.add(mesh);
     geoms.push(merged);
   }
