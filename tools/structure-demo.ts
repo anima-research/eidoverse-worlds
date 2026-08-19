@@ -32,7 +32,7 @@ const STRUCTURE = {
     y: 0,
     tiles: Array.from({ length: 6 }, (_, x) => Array.from({ length: 4 }, (_, z) => [x, z])).flat(),
     walls: [
-      ...wallsRun(0, [0, 1, 2, 3, 4, 5], 0),   // north exterior
+      ...wallsRun(0, [0, 1, 2, 3, 4], 0),      // north exterior (corner cell cut off)
       ...wallsRun(0, [0, 1, 2, 3, 4, 5], 4),   // south exterior
       ...wallsRun(1, [0, 1, 2, 3], 0),         // west exterior
       ...wallsRun(1, [1, 2, 3], 6),            // east exterior (top cell cut off)
