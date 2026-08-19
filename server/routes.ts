@@ -81,6 +81,40 @@ export function avatarRoster(): { name: string; path: string; height: number | n
   return [...seen].map(([name, path]) => ({ name, path, height: hmeta[name.replace(/[^a-zA-Z0-9_-]/g, "_")]?.h ?? null }));
 }
 
+/** The animation clips, each at a path stamped with its mtime — the same
+ *  ?v= trick avatarRoster mints above, for the same reason and one class of
+ *  bug later. A .vrm URL has always carried a version; a .vrma URL carried
+ *  none, so a changed clip had NO way to invalidate a stored copy, and
+ *  `no-cache` does not save you: a response cached under the OLD headers
+ *  (before .vrma joined the no-cache list) keeps the headers it was stored
+ *  with, and `immutable` means the browser never asks again. Prod, 2026-08-19:
+ *  a corrected sit clip was live and byte-verified on the wire while a user's
+ *  Chrome kept animating from a copy it had never re-requested — days of it,
+ *  no 304s, nothing to purge from this end. A version in the URL is the only
+ *  invalidation that reaches a cache we do not control.
+ *
+ *  Precedence is /library's own ladder — PATCH_DIR wins over OPT_DIR wins over
+ *  LIBRARY_DIR — because the mtime MUST describe the bytes a client will
+ *  actually receive. Version the library's copy while serving a patched fork
+ *  and the stamp is a lie that pins the wrong file forever. */
+export function animationRoster(): { name: string; path: string; size: number }[] {
+  const seen = new Map<string, { path: string; size: number }>();
+  // later base wins, so this list runs lowest-precedence first
+  for (const base of [LIBRARY_DIR, OPT_DIR, PATCH_DIR]) {
+    const dir = join(base, "eidoverse/assets/animations");
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith(".vrma")) continue;
+      const file = Bun.file(join(dir, f));
+      // size rides along so the prefetcher's byte budget still sees these
+      // clips as it did when it read them from /library-list
+      seen.set(f.replace(".vrma", ""),
+        { path: `eidoverse/assets/animations/${f}?v=${Math.round(file.lastModified)}`, size: file.size });
+    }
+  }
+  return [...seen].map(([name, e]) => ({ name, ...e }));
+}
+
 function contentType(path: string): string {
   if (path.endsWith(".html")) return "text/html";
   if (path.endsWith(".js") || path.endsWith(".mjs")) return "text/javascript";
@@ -367,6 +401,13 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname === "/avatars",
     handler: () => new Response(JSON.stringify(avatarRoster()),
+      { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
+  },
+  {
+    // The clip roster, mtime-stamped. no-store on the LISTING is what makes
+    // the stamps trustworthy: the listing must never be the stale thing.
+    match: (u) => u.pathname === "/animations",
+    handler: () => new Response(JSON.stringify(animationRoster()),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {

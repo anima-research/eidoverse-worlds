@@ -40,8 +40,8 @@ import { ROLE_RANK } from "../shared/fold.js";
 // the fork side of a conflict — restart counter reached 15 before anyone
 // noticed, because /version kept answering from the brief up-windows.)
 import { SeatStore } from "./seats.ts";
-import { OPT_DIR } from "./config.ts";
-const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR);
+import { OPT_DIR, PATCH_DIR } from "./config.ts";
+const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR, {}, { patchDir: PATCH_DIR });
 
 // Behavior sandbox wiring: a script's emit is gated by its AUTHOR's live
 // rights (revoke the grant, the behavior loses its teeth) through the same
