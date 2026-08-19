@@ -894,5 +894,74 @@ const HOUSE = {
     "aperture ends are still butting");
 }
 
+// 25. MITRE SCALE AND JUNCTION CHAINING — both found by MEASURING, not looking
+{
+  const g = normalize(HOUSE);
+
+  // (a) an end mitre must lean, never explode. Using the ARRIVING direction at
+  // a path's END reverses the outgoing normal, flips the bisector and drives
+  // 1/cos(θ/2) from 1.08 to 2.6 — a diagonal overshot its own corner by 0.23m.
+  const seg: [number, number][] = [[0, 0], [1, 1]];        // a 45° segment
+  const thin: [number, number][] = [[-0.075, 0], [0.075, 0]];
+  const good = sweepProfile(seg, thin, 0, { inDir: [1, 0], outDir: [0, 1] });
+  const flipped = sweepProfile(seg, thin, 0, { inDir: [1, 0], outDir: [0, -1] });
+  // only the LAST ring — the path's start is √2 away from (1,1) by
+  // construction, and including it measures the segment, not the mitre
+  const reach = (sw: any) => {
+    let far = 0;
+    const start = (sw.rings - 1) * sw.ringSize * 3;
+    for (let i = start; i < sw.positions.length; i += 3) {
+      far = Math.max(far, Math.hypot(sw.positions[i] - 1, sw.positions[i + 2] - 1));
+    }
+    return far;
+  };
+  // relative, not absolute: with a thin probe profile both numbers are small,
+  // and what matters is the RATIO the bad bisector introduces
+  check("a correct end mitre barely leans", reach(good) < g.wallT,
+    `reaches ${reach(good).toFixed(3)}m past`);
+  check("control: a reversed end direction DOES blow the mitre up",
+    reach(flipped) > reach(good) * 1.8,
+    `${reach(flipped).toFixed(3)} vs ${reach(good).toFixed(3)} — the sign error is no longer detectable`);
+
+  // (b) a run may turn at a corner but must STOP at a junction, or it swallows
+  // one arbitrary branch of a wall it merely meets.
+  const tee = normalize({ levels: [{ tiles: [[0, 0], [1, 0], [0, 1], [1, 1]],
+    walls: [[0, 0, 1], [0, 1, 1], [1, 2, 0], [1, 2, 1]] }] });
+  const lines = wallPolylines(tee.levels[0], tee);
+  // The STRAIGHT wall runs through; the stem meeting it must stop. Asserting
+  // that nothing passes through was wrong — continuing straight is the whole
+  // point, and it is what keeps a T from becoming three stubs at a point.
+  const isJunction = ([x, z]: number[]) => Math.abs(x - 2) < 1e-9 && Math.abs(z - 1) < 1e-9;
+  const through = lines.filter((l) => l.pts.some((p, i) => i > 0 && i < l.pts.length - 1 && isJunction(p)));
+  check("exactly one run continues through the junction", through.length === 1,
+    JSON.stringify(lines.map((l) => l.pts)));
+  check("...and it is the straight one",
+    through[0].pts.every(([x]) => Math.abs(x - 2) < 1e-9), JSON.stringify(through[0].pts));
+  const stem = lines.find((l) => l !== through[0])!;
+  check("the stem ENDS at the junction", isJunction(stem.pts[stem.pts.length - 1]),
+    JSON.stringify(stem.pts));
+
+  // ...while a plain corner still chains and mitres
+  const ell = normalize({ levels: [{ tiles: [[0, 0]], walls: [[0, 0, 0], [1, 0, 0]] }] });
+  const el = wallPolylines(ell.levels[0], ell);
+  check("a plain corner still chains", el.length === 1 && el[0].pts.length === 3,
+    JSON.stringify(el.map((l) => l.pts)));
+
+  // (c) nothing anywhere may reach past the building's own outer faces
+  const plan = planStructure(HOUSE);
+  // the plinth legitimately stands proud of the wall face
+  const h = g.wallT / 2 + TRIM.base.proud;
+  const esc: string[] = [];
+  for (const sw of (plan.levels[0] as any).sweeps) {
+    for (let i = 0; i < sw.positions.length; i += 3) {
+      const x = sw.positions[i], z = sw.positions[i + 2];
+      if (x < -h - 1e-6 || x > 4 + h + 1e-6 || z < -h - 1e-6 || z > 2 + h + 1e-6) {
+        esc.push(`${sw.kind} (${x.toFixed(2)},${z.toFixed(2)})`); break;
+      }
+    }
+  }
+  check("no swept piece reaches past the shell", esc.length === 0, esc.join(" | "));
+}
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);

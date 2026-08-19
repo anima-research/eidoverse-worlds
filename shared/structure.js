@@ -1197,6 +1197,13 @@ export function wallPolylines(level, g) {
   /** the straightest unused continuation at `node` arriving along `d` */
   const onward = (node, from, d) => {
     let best = -1, bestDot = -2;
+    // At a plain corner (two segments) a run turns and mitres. At a JUNCTION it
+    // may only continue if something actually carries straight on — otherwise
+    // the arriving run picks one of two equally-perpendicular branches at
+    // random and swallows half of it, which is how a room divider ended up
+    // chained into the wall it merely meets.
+    const degree = (inc.get(node) ?? []).length;
+    const minDot = degree > 2 ? 0.7 : -2;
     for (const i of inc.get(node) ?? []) {
       const s = segs[i];
       if (s.used) continue;
@@ -1204,7 +1211,7 @@ export function wallPolylines(level, g) {
       if (other === from) continue;
       const e = dir(node, other);
       const dot = d[0] * e[0] + d[1] * e[1];
-      if (dot > bestDot) { bestDot = dot; best = i; }
+      if (dot > bestDot && dot >= minDot) { bestDot = dot; best = i; }
     }
     return best;
   };
@@ -1345,22 +1352,29 @@ function neighbourDirs(level, g, key, e) {
     return [(q[0] - p[0]) / d, (q[1] - p[1]) / d];
   };
   const own = unit(a, b);
-  const at = (node, want) => {
+  /** `leaving` picks which way the neighbour's direction must point.
+   *
+   *  At the START of a path the mitre wants the direction ARRIVING at the
+   *  node; at the END it wants the direction LEAVING it. Using "arriving" for
+   *  both reverses the outgoing normal, which flips the bisector and sends the
+   *  mitre scale from 1.08 to 2.6 — the diagonal shot a quarter of a metre past
+   *  its own corner. Measured, not spotted: the piece's bounding box ran to
+   *  z = 1.23 on a wall that ends at z = 1. */
+  const at = (node, want, leaving) => {
     let best = null, bestDot = -2;
     for (const [k2, e2] of level.walls) {
       if (k2 === key) continue;
       const [c, d] = segmentEnds(e2, g);
       for (const [p, q] of [[c, d], [d, c]]) {
         if (Math.hypot(p[0] - node[0], p[1] - node[1]) > 1e-9) continue;
-        // q→p is the direction arriving at this node
-        const dir = unit(q, p);
+        const dir = leaving ? unit(p, q) : unit(q, p);
         const dot = dir[0] * want[0] + dir[1] * want[1];
         if (dot > bestDot) { bestDot = dot; best = dir; }
       }
     }
     return best;
   };
-  return { inDir: at(a, own) ?? undefined, outDir: at(b, own) ?? undefined };
+  return { inDir: at(a, own, false) ?? undefined, outDir: at(b, own, true) ?? undefined };
 }
 
 /** Swept geometry for one level: every solid wall run, mitred. */
