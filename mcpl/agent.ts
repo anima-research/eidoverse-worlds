@@ -412,6 +412,12 @@ export class WorldAgent {
         // door, holding up bodies in later worlds at the same coordinates
         // (#83; the #17 symptom reached through a ban).
         if ((ev as { code?: number } | undefined)?.code === 4006) { this.close(); return; }
+        // 4005 = the sequencer REFUSED the join (bad/reserved name, bad token).
+        // A refusal is an answer, not an outage — redialing it every 1.5s is
+        // the polite-DoS the sequencer's own comments warn about (RFC-005
+        // review D1: a granted ?world= dial with a name the sequencer rejects
+        // used to hammer forever).
+        if ((ev as { code?: number } | undefined)?.code === 4005) { this.close(); return; }
         if (!this.closed) setTimeout(() => this.connect().catch(() => {}), 1500);
       };
       ws.onmessage = async (ev) => {
