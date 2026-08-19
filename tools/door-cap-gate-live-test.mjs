@@ -99,13 +99,23 @@ function awaitExit(p, ms = 5000) {
 }
 
 /** PIDs listening on a TCP port, from the OS — Linux second opinion (no `ss`
- *  or /proc ⇒ null, and the per-run nonce remains the portable proof). */
-async function listenerPids(port) {
+ *  or /proc ⇒ null, and the per-run nonce remains the portable proof).
+ *  Non-Linux returns null without spawning: the second opinion is Linux-only
+ *  by design, and a macOS host must not pay a spawn to learn that. On Linux a
+ *  missing `ss` surfaces as an ASYNC `error` event on the child (Node/Bun do
+ *  not throw ENOENT synchronously from spawn) — an unhandled one is a process
+ *  crash via `uncaughtException`, which is exactly the non-portability the
+ *  #129 re-review caught. Handle it as: cannot answer ⇒ null. */
+async function listenerPids(port, cmd = "ss") {
+  if (process.platform !== "linux") return null;
   try {
-    const p = spawn("ss", ["-lntpH"], { stdio: ["ignore", "pipe", "ignore"] });
+    const p = spawn(cmd, ["-lntpH"], { stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     p.stdout.on("data", (d) => { out += String(d); });
-    const code = await new Promise((r) => p.once("close", r));
+    const code = await new Promise((r) => {
+      p.once("error", () => r(-1));   // spawn failure (ENOENT) — not an exit code
+      p.once("close", r);
+    });
     if (code !== 0) return null;
     const pids = [];
     for (const line of out.split("\n")) {
@@ -173,6 +183,19 @@ const doorNonceProbe = (port) => async () => {
   catch (e) { refused = /stale listener/.test(String(e)); }
   impostor.close();
   check("negative control: a nonce-less listener is refused as stale, never adopted", refused);
+}
+
+// ── NEGATIVE CONTROL 1b: the OS second opinion must DEGRADE, never crash. ──
+// (#129 re-review: on a host without `ss`, spawn ENOENT arrives as an async
+// `error` event; unhandled, it killed the whole harness before any behavioral
+// vector ran.) Force that exact path with a command that cannot exist and
+// require the documented contract: resolve null — the per-run nonce remains
+// the portable proof — with the process still alive to say so. On non-Linux
+// the platform guard answers null before any spawn; same contract, earlier.
+{
+  const r = await listenerPids(1, "ss-absent-for-portability-vector");
+  check("negative control: missing `ss` ⇒ listenerPids resolves null (no crash, nonce stays the proof)",
+    r === null, `got ${JSON.stringify(r)}`);
 }
 
 // ── the rig ──────────────────────────────────────────────────────────────────
