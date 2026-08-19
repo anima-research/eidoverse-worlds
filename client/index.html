@@ -438,6 +438,11 @@ body.touch #touch { display: block; }
   margin: 2px 0 0; padding: 6px 7px; font: 11px/1.45 ui-monospace, monospace;
   color: var(--dim); background: rgba(0,0,0,0.25); border-radius: 5px;
   white-space: pre; overflow-x: auto;
+  /* The readout is the tallest thing in the panel and the LAST: as a flex
+     child it shrank instead of overflowing, so its final lines were clipped
+     inside the box and the stack's scrollbar hit bottom without ever showing
+     them. Let it keep its natural height and let the stack do the scrolling. */
+  flex: 0 0 auto;
 }
 </style>
 <script type="importmap">

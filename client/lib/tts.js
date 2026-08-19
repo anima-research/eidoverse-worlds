@@ -435,16 +435,21 @@ export const mouthInfo = () => ({ pacing: !!pacer, queued: queue.length, playhea
  *  whichever source this body uses. */
 
 // ── speak your own says ─────────────────────────────────────────────────────
-// world.js already emits 'speech' for every say that was not already performed
-// (args.spoken marks the ones a voice paced itself, so this cannot
-// double-speak). A body with a synthesizer listens for its OWN and voices it:
+// causes.js emits 'speech' for every say that was not already performed —
+// decided by voice CAPABILITY + `performed` receipts (#57), never by the
+// author-controlled spoken flag (a claim is not a receipt; receipt-confirmed
+// re-emits carry performed:true and are display-only, skipped below).
+// A body with a synthesizer listens for its OWN and voices it:
 // that is the entire bridge from "posted text" to "made a sound", and it runs
 // through the ordinary sender, so distance, the category slider and consent all
 // apply exactly as they do to a microphone.
 export function speakOwnSays(bus, myId) {
-  bus.on('speech', async ({ actor, text }) => {
+  bus.on('speech', async ({ actor, text, performed }) => {
     const mine = actor === myId();
     if (!mine) return;                       // someone else's say: not ours to voice
+    // performed = a receipt-confirmed display re-emit (#57): the voice leg
+    // already made the sound; this event exists for bubbles/mouth only
+    if (performed) return;
     if (!isTtsEnabled()) { console.warn(`[voice] own say NOT spoken — tts disabled`); return; }
     // #91 B3, declared policy: a typed say while the mic is live is DISCARDED,
     // visibly. Mic beats TTS is a priority — synthesizing-but-not-sending

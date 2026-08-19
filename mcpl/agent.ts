@@ -1466,7 +1466,21 @@ export class WorldAgent {
     return null;
   }
 
-  say(text: string) { this._typingUntil = 0; this.verb("say", { text }); }
+  // extra carries ONLY the spoken-say protocol trio, guarded with the same
+  // shapes the server enforces (r3 review: name-picking without value guards
+  // still let an internal caller send utt:-1 or t0:NaN — two layers that
+  // disagree on well-formed are one layer). Malformed trio → plain say: an
+  // internal caller's bug must not silently ride protocol keys.
+  say(text: string, extra?: { spoken?: boolean; utt?: number; t0?: number }) {
+    this._typingUntil = 0;
+    const args: Record<string, unknown> = { text };
+    if (extra?.spoken === true && Number.isSafeInteger(extra.utt) && (extra.utt as number) >= 0) {
+      args.spoken = true;
+      args.utt = extra.utt;
+      if (Number.isFinite(extra.t0)) args.t0 = extra.t0;
+    }
+    this.verb("say", args);
+  }
 
   /** Show "composing" over this body. Presence-only (never logged), the same
    *  signal a human client sends while typing in the chat box. The world relays

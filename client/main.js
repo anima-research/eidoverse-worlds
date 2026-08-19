@@ -517,6 +517,29 @@ if (typeof window !== 'undefined') window.setVoice = setVoice;
 }
 
 globalThis.__ambientDebug = () => ambientDebug();
+// My own body, for console probes. Chasing "the hair boxes move but the hair
+// mesh does not" meant asking whether the bones the sim writes are the same
+// objects the SkinnedMesh is bound to — a question answerable in one line from
+// the console and in no lines at all without a handle on the avatar.
+globalThis.__me = () => getMe();
+// EVERY body in the scene, mine and the remotes, for console probes. Added
+// because "which system is driving that body's hair right now" — the flap,
+// Bullet, or three-vrm's springbones — is answerable in one line and was
+// answerable in none: the avatars were reachable only through module-private
+// maps, so a question about someone ELSE's body had nowhere to start.
+globalThis.__bodies = () => [
+  ...(getMe() ? [['me', getMe()]] : []),
+  ...[...remotes.entries()].map(([id, r]) => [id, r.avatar]),
+].filter(([, av]) => av).map(([who, av]) => ({
+  who,
+  limp: !!av._limp,
+  clip: av.currentSlot ?? null,
+  // exactly one of these should be true of a limp body: the local sim owns the
+  // hair and wings, or three-vrm does
+  simOwnsDressing: !!av.__simHair,
+  springbonesRunning: !av.__simHair && !!av.vrm?.springBoneManager,
+  avatar: av,
+}));
 // One command R can paste to answer "why is it silent?" from her own console:
 // context state, how many sources exist, whether the gesture hook is waiting.
 globalThis.__audioState = () => audioState();

@@ -48,20 +48,31 @@ export function worldPositions(g) {
   const parent = new Map();
   g.nodes.forEach((n, i) => (n.children ?? []).forEach((c) => parent.set(c, i)));
   const memo = new Map();
+  // Full matrices, because SCALE is load-bearing here. Composing only
+  // translation and rotation (and reading a matrix node's translation column
+  // while dropping its basis) silently drops any scale on an ancestor — and
+  // glb2vrm bakes a uniform scale on the Armature to bring a ~1m Tripo export
+  // to human height, so mythospaint's armature carries 1.651. The headless
+  // skeleton came out 0.86m tall while the browser rendered her at 1.65m.
+  // Bone quaternions are scale-free, so limbs still looked right and nothing
+  // complained; only the streamed ROOT was in the small frame, which put her
+  // ~0.46m — a foot and a half — above the floor for everyone watching.
+  const localMatrix = (n) => (n.matrix
+    ? new THREE.Matrix4().fromArray(n.matrix)
+    : new THREE.Matrix4().compose(
+      new THREE.Vector3(...(n.translation ?? [0, 0, 0])),
+      new THREE.Quaternion(...(n.rotation ?? [0, 0, 0, 1])),
+      new THREE.Vector3(...(n.scale ?? [1, 1, 1])),
+    ));
   const world = (i) => {
     if (memo.has(i)) return memo.get(i);
-    const n = g.nodes[i];
-    const t = n.matrix ? new THREE.Vector3(n.matrix[12], n.matrix[13], n.matrix[14])
-      : new THREE.Vector3(...(n.translation ?? [0, 0, 0]));
-    const q = new THREE.Quaternion(...(n.rotation ?? [0, 0, 0, 1]));
+    const m = localMatrix(g.nodes[i]);
     const p = parent.get(i);
-    const out = p === undefined ? { p: t, q }
-      : (() => { const pw = world(p);
-          return { p: t.clone().applyQuaternion(pw.q).add(pw.p), q: pw.q.clone().multiply(q) }; })();
+    const out = p === undefined ? m : world(p).clone().multiply(m);
     memo.set(i, out);
     return out;
   };
-  return (i) => world(i).p.clone();
+  return (i) => new THREE.Vector3().setFromMatrixPosition(world(i));
 }
 
 /** Every shipped rig, as { name, P } where P maps humanoid bone -> world rest

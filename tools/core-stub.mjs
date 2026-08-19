@@ -24,3 +24,8 @@ export const angleDelta = (a, b) => {
   return d;
 };
 export const CONFIG = {};
+// warmqueue.js reaches for the shader-node namespace and the sun. Neither means
+// anything headless, but a MISSING export is a SyntaxError at import time, which
+// takes the whole suite down before a single test runs (see loadwork-stub).
+export const sun = { position: new THREE.Vector3(0, 1, 0) };
+export const TSL = new Proxy({}, { get: () => () => {} });

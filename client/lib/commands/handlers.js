@@ -27,6 +27,21 @@ import { getMe } from '../mybody.js';
 
 register('help', () => toggleHelp());
 
+// Eyelids are BONES on rigs that have them (L_/R_Eyelid_Upper) — most VRMs
+// blink with a blendshape instead and have none, so this says so plainly
+// rather than appearing to work. Local: your eyes are yours to close, and
+// nothing about them is on the wire yet.
+register('eyes', (arg) => {
+  const me = getMe();
+  const want = /^(close|closed|shut)$/i.test((arg || '').trim()) ? true
+    : /^(open|up)$/i.test((arg || '').trim()) ? false
+      : null;
+  if (!me?.setEyes) return logChat('*', 'no body to close the eyes of');
+  const shut = want === null ? !me._eyesGoal : want;
+  if (!me.setEyes(shut)) return logChat('*', 'this body has no eyelid bones — nothing to close');
+  logChat('*', shut ? 'you close your eyes' : 'you open your eyes');
+});
+
 register('role', (arg) => {
   const who = (arg || '').trim() || CONFIG.name;
   if (who === CONFIG.name && !worldHasOwner() && net.myRights?.open !== false) {

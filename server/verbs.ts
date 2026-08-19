@@ -246,6 +246,12 @@ function vBehavior(ctx: VerbCtx, args: Record<string, unknown>) {
 }
 
 function vSay(_ctx: VerbCtx, args: Record<string, unknown>) {
+  // (#57 B1: a presence-derived spoken stamp — "author has a live voice leg,
+  // so mark the say spoken" — was prototyped and rejected in review: a live
+  // voice leg proves capability, not that THIS utterance was performed. Its
+  // replacement is the `attest` receipt path in server.ts; clients
+  // hold-then-fallback on `performed` receipts, and `spoken` below remains
+  // author-controlled DISPLAY metadata that never decides performance.)
   // Spoken-say protocol: `spoken`/`utt`/`t0` are display metadata for
   // a voice that already performed as captions. t0 is a REORDER key
   // on every client, so it is never trusted raw — it exists only
@@ -336,6 +342,13 @@ export function runVerb(ctx: VerbCtx, verb: string, rawArgs: unknown): void {
   if (!c.world) return;
   // spectators watch; authoring needs a body. (This is the entire
   // show-night moderation model: the audience cannot touch the stage.)
+  // B3 (#57): aux media legs ride the spectator flag, so this gate also means
+  // an aux NEVER authors — not even say. The topology-A carve-out
+  // (verified-aux-say, c1fdb11) let a voice leg author its own says; under
+  // voice-leg-speaks-what-the-body-says the leg's only voice-shaped message
+  // is `attest`, handled before the verb switch. Identity's token
+  // authenticates the leg; identity's RIGHTS do not flow into a second
+  // command path.
   if (c.spectator) {
     c.ws.send(JSON.stringify({ type: "error", error: "spectators can't author — join embodied to build" }));
     return;

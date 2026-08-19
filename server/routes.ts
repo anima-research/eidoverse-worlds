@@ -135,8 +135,15 @@ const gzCache = new Map<string, { mtime: number; gz: Uint8Array }>();
 // pre-§22l shader through a server restart and a whole branch A/B — mode
 // read 'cards-sss' while the wire had 'opaque'). no-cache still rides the
 // ETag: revalidation is a 304, not a re-download.
+// .vrma is in that list too, and was missing from it: ".vrma" does not match
+// endsWith(".vrm"), so ANIMATIONS cached hard for a day. Worse than a stale rig,
+// because a .vrm URL carries ?v=mtime and an animation URL carries no version at
+// all — a bad clip is sticky with no way to invalidate it. Measured 2026-08-12:
+// a placeholder dropped in during a bring-up stuck for every avatar on the
+// roster, and read as "animations are broken" rather than "your cache is holding
+// one wrong file".
 const hardCacheable = (path: string) =>
-  !path.endsWith(".vrm") && !/\.(m?js|json)$/i.test(path);
+  !/\.vrma?$/i.test(path) && !/\.(m?js|json)$/i.test(path);
 
 function serveFrom(base: string, rel: string, cache = false, req?: Request, immutable = false): Response {
   const path = normalize(join(base, rel));

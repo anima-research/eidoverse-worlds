@@ -301,6 +301,19 @@ export async function loadVRM(libPath, { priority = 1 } = {}) {
       await work.yield();
       work.phase('skeleton');
       VRMUtils.combineSkeletons?.(vrm.scene) ?? VRMUtils.removeUnnecessaryJoints?.(vrm.scene);
+      // A SkinnedMesh's bounding sphere comes from BIND-POSE positions, so it
+      // stops bounding the mesh the moment the skeleton poses — and three.js
+      // then culls against that stale sphere, so parts of a body vanish
+      // depending on camera angle.
+      //
+      // Invisible on a one-primitive avatar, whose bounds are body-sized and
+      // effectively never leave the frustum. A multi-material body splits into
+      // one SkinnedMesh PER PRIMITIVE, each with region-tight bounds: measured
+      // on a 6-primitive rig, the hair primitive (bounds y 0.83..1.00 — the head
+      // alone) disappeared from most angles while the seam primitive (bounds
+      // spanning the whole body) never did. That reads as "the hair is missing
+      // but its gold highlights are still there".
+      vrm.scene.traverse((o) => { if (o.isSkinnedMesh) o.frustumCulled = false; });
       VRMUtils.rotateVRM0(vrm); // VRM0 → faces +Z
       // through the factory BEFORE the first compile: the final graph shape
       // (wetness on MToon, sweep markers) is born with the body

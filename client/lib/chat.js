@@ -552,6 +552,9 @@ function runCommand(raw) {
     case 'pushable':
       bus.emit('command', { cmd: 'pushable', arg });
       return true;
+    case 'eyes':
+      bus.emit('command', { cmd: 'eyes', arg });
+      return true;
     case 'boom': case 'blast':
       bus.emit('command', { cmd: 'boom', arg });
       return true;
