@@ -27,7 +27,7 @@ if (LOCAL) {
 }
 const KEY = process.env.KEY ?? 'dev';
 const browser = await chromium.launch({
-  executablePath: process.env.CHROME ?? '/home/claude/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
+  executablePath: process.env.SFU_TEST_CHROME ?? process.env.CHROME ?? undefined,
   args: [
     // --use-fake-device gives a deterministic tone, which is what makes the
     // envelope check a THRESHOLD rather than a vibe. A real mic in a quiet room

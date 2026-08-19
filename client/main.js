@@ -189,36 +189,17 @@ function start() {
   connect();
   initPalette();
   initConjure();   // the orrery panel — prompt → your pick of images → mesh → world
-  // #104 phase-1: EXACTLY ONE PLAYBACK OWNER (amendment 6). ?relay=1 runs the
-  // relay-floor leg and the mesh never initializes; without it, byte-identical
-  // mesh behavior. The staging world flips the flag; production stays mesh.
-  // 🔴 EXACTLY ONE PLAYBACK OWNER, now across THREE transports. ?sfu=1 is the
-  // in-process SFU (no LiveKit), ?relay=1 is the LiveKit relay, neither is the
-  // mesh. They are mutually exclusive branches on purpose — amendment 6 says one
-  // owner must be visible at all times, and two initialised transports would
-  // both attach <audio> elements for the same speaker.
-  // 🔴 ON THIS BRANCH THE SFU IS THE DEFAULT AND THE MESH IS OPT-IN.
-  //
-  // R, 2026-08-15: "Why aren't you commenting out the mesh code entirely so
-  // sfu=1 matters?" Because I had reached for a FLAG when the requirement is
-  // that the wrong path be IMPOSSIBLE. A flag can be forgotten — I dropped
-  // ?sfu=1 from her URL as "redundant" and served her the mesh for an hour
-  // while reporting SFU results.
-  //
-  // This is the relay-spike branch: its whole purpose is proving the
-  // in-process SFU. There is no reason it should be able to run the mesh by
-  // accident. So the default inverts here, and the mesh needs ?mesh=1 said out
-  // loud. Production (main) is untouched and stays mesh-by-default —
-  // #104 A5: "keep current mesh available as the existing production/rollback
-  // path". Rollback is `git revert`, not a runtime branch.
-  // 🔴 ONE TRANSPORT. The mesh is deleted (#104 phase-1 cutover): A5 asked that
-  // a rollback path exist while the floor proves itself, and it does — it is the
-  // revert, one command, no config change and no migration. What a single
-  // transport buys is that every audio result stops carrying the question
-  // "which one produced this?", a question that cost an hour of "SFU results"
-  // that were actually mesh, and a sidecar signalling happily into an rtc verb
-  // nobody was listening to. antra's amendment 6: "exactly one playback owner
-  // must be visible at all times."
+  // 🔴 ONE TRANSPORT, EXACTLY ONE PLAYBACK OWNER (#104 amendment 6, the #132
+  // cutover). The P2P mesh is deleted; the in-process SFU is not a flag or a
+  // URL param, it is the only voice path the client has. That is deliberate —
+  // when transports selected by flag coexisted, a dropped ?sfu=1 served R the
+  // mesh for an hour while every result was reported as "SFU" (2026-08-15),
+  // and amendment 6's "exactly one playback owner must be visible at all
+  // times" is only IMPOSSIBLE to violate when a second owner cannot
+  // initialise. The requirement is that the wrong path be impossible, not
+  // discouraged. If cutover acceptance fails, the remedy is deploying the
+  // previous release during the migration window (notes/CUTOVER-ROLLBACK.md),
+  // not a runtime branch back to a transport this bundle no longer contains.
   window.__voiceTransport = 'pending:sfu';
   import('./lib/voicesfubridge.js').then((m) => { m.initVoiceSfu(CONFIG.name); window.__voiceTransport = 'sfu'; })
     .catch((e) => { window.__voiceTransport = 'failed:sfu'; window.__voiceTransportError = String(e); console.error('voice init failed', e); });

@@ -10,7 +10,7 @@ const BASE = process.env.BASE ?? 'http://127.0.0.1:8960', KEY = process.env.KEY 
 const diag = async () => (await (await fetch(`${BASE}/relay-diag`)).json());
 const legOf = async (id) => (await diag()).legs.find((l) => l.id === id);
 
-const b = await chromium.launch({ executablePath:'/home/claude/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
+const b = await chromium.launch({ executablePath: process.env.SFU_TEST_CHROME || undefined,
   args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--autoplay-policy=no-user-gesture-required',
         '--disable-features=AudioServiceOutOfProcess','--alsa-output-device=null']});
 const pg = await (await b.newContext({permissions:['microphone']})).newPage();

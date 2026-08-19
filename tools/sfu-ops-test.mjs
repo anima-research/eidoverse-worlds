@@ -24,9 +24,19 @@ check('the credential the client sends carries all six claims',
   ['world:', 'id:', 'primaryGen:', 'mediaGen:', 'incarnation:', 'nonce:']
     .every((f) => new RegExp(f.replace(':', ':\\s*cred\\.')).test(cli)));
 
-// A2 — supervision exists, and the guard no longer kills the world server.
+// A2 — supervision exists, and peer churn no longer kills the world server.
+// (The first cut of this row asserted "never calls process.exit" — pinning the
+// pre-review guard the #130 review REJECTED. The approved v3 contract is the
+// opposite pair: benign werift-owned transport errnos are contained at the
+// OWNERSHIP seam (UdpTransport.init patch), while the process-scope handlers
+// are pure fatal reporters — an unowned error must still die. The behavioral
+// proof is tools/sfu-test.ts's owned/unowned vectors; what a source check can
+// honestly pin is that both halves of that contract are present.)
 const guard = S('sfuguard.ts');
-check('transport guard never calls process.exit', !/process\.exit/.test(guard));
+check('guard contains benign errnos at the werift ownership seam (UdpTransport.init patch)',
+  /UdpTransport/.test(guard) && /benign/i.test(guard));
+check('…while process-scope handlers stay fatal (exit path present, not removed)',
+  /process\.exit/.test(guard));
 check('guard is installed explicitly, not from a constructor', !/installSfuTransportGuard\(\)/.test(S('sfu.ts')));
 check('server installs the guard at boot', /installSfuTransportGuard\(/.test(srv));
 const sup = S('sfusupervisor.ts');

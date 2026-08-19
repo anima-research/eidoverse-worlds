@@ -3,7 +3,7 @@
 // audio-panel bar polled voice.js's mesh analyser, which is 0 forever here.
 import { chromium } from 'playwright';
 const BASE = process.env.BASE ?? 'http://127.0.0.1:8960', KEY = process.env.KEY ?? 'dev';
-const b = await chromium.launch({ executablePath:'/home/claude/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
+const b = await chromium.launch({ executablePath: process.env.SFU_TEST_CHROME || undefined,
   args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--autoplay-policy=no-user-gesture-required',
         '--disable-features=AudioServiceOutOfProcess','--alsa-output-device=null']});
 const pg = await (await b.newContext({permissions:['microphone']})).newPage();

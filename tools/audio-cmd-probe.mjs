@@ -10,7 +10,7 @@
 import { chromium } from 'playwright';
 const ORIGIN = process.argv[2] || 'http://127.0.0.1:8960';
 const KEY = process.env.JOIN_KEY || 'dev';
-const b = await chromium.launch({ executablePath: '/home/claude/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
+const b = await chromium.launch({ executablePath: process.env.SFU_TEST_CHROME || undefined,
   args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
 const pg = await (await b.newContext({ permissions: ['microphone'] })).newPage();
 await pg.goto(`${ORIGIN}/?world=staging&name=audioprobe&key=${KEY}`, { waitUntil: 'networkidle' });

@@ -54,23 +54,23 @@ What a stale (pre-cutover) page experiences after the server updates:
   deploy is a bigger behavior change than this PR should smuggle in; if the
   project wants version-gated sessions, that is its own proposal.
 
-## 4 · Rollback plan — named reading, and the canary
+## 4 · Rollback plan — the settled contract, and the canary
 
-**Rollback = `git revert` of this cutover PR, and that is the *entire*
-procedure.** This reading was chosen deliberately (and R approved naming it
-plainly): the mesh is deleted, not mutated, and no surviving file edits mesh
-internals — so the revert is textually clean and restores `voice.js` + its
-suite byte-identical. "Keep the mesh as rollback" is satisfied by git history
-plus the guarantee of a clean revert, not by dead code kept compiled-in;
-`VOICE_TRANSPORT=mesh` as a runtime toggle would mean maintaining two live
-transports indefinitely, which #104 itself argues against.
+**Rollback = deploying the previous release during the migration acceptance
+window** — ordinary release rollback, not an ongoing product architecture
+(reviewer correction, 2026-08-18: the mesh-retention requirement was
+withdrawn; Eidoverse is not maintaining mesh audio after relay cutover, and
+"executable rollback" over-carried the pre-cutover A5 posture). The
+step-by-step procedure, with its verification canaries and the window's
+boundaries, is `notes/CUTOVER-ROLLBACK.md` — an operator runbook, not a
+git-history claim. After the acceptance window closes, the previous release
+retires and relay-only is the product.
 
-**Canary, before and after any cutover deploy:** `tools/joincheck.mjs` over
-the public tunnel (good-key joins AND bad-key refused — the negative control
-is the half that catches auth wired open), plus `/relay-diag` showing the
-six-claim credential path and `tools/audio-cmd-probe.mjs` for the client
-chain. All three exist and ran green on 2026-08-16's live test night
-(cross-network cellular included).
+**Canary, before and after any cutover deploy:** `tools/join-probe.mjs` over
+the public URL (protocol-level: good-key joins AND bad-key refused — the
+negative control is the half that catches auth wired open), plus `/relay-diag`
+showing the six-claim credential path and `tools/audio-cmd-probe.mjs` for the
+client chain. The composed receipt set for this PR is the pre-deploy gate.
 
 ## 5 · Operator approval
 

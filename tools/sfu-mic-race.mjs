@@ -16,7 +16,7 @@
 import { chromium } from 'playwright';
 const BASE = 'http://127.0.0.1:8946';
 const browser = await chromium.launch({
-  executablePath: '/home/claude/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
+  executablePath: process.env.SFU_TEST_CHROME || undefined,
   args: ['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream','--autoplay-policy=no-user-gesture-required'],
 });
 const pg = await (await browser.newContext({ permissions:['microphone'] })).newPage();

@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 
 const BASE = process.env.BASE ?? 'http://127.0.0.1:8941';
 const browser = await chromium.launch({
-  executablePath: process.env.CHROME ?? '/home/claude/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
+  executablePath: process.env.SFU_TEST_CHROME ?? process.env.CHROME ?? undefined,
   args: [
   '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
   '--autoplay-policy=no-user-gesture-required',

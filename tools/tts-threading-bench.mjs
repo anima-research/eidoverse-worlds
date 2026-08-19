@@ -46,7 +46,7 @@ async function measure(base, label) {
     // The bundled default resolves to a headless-shell build that is not
     // installed here, and letting playwright download its own would also mean
     // benchmarking a DIFFERENT browser than every other receipt in this repo.
-    executablePath: process.env.CHROME ?? '/home/claude/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome',
+    executablePath: process.env.SFU_TEST_CHROME ?? process.env.CHROME ?? undefined,
     args: ['--autoplay-policy=no-user-gesture-required',
            '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
   });
