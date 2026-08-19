@@ -4,6 +4,7 @@
 // terrain replicated (Skye's terrain.js eval'd in Bun) so feet agree with
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
+import { mentionRegex } from "./mention.ts";
 import * as THREE_W from "three/webgpu";
 import * as TSL from "three/tsl";
 import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS,
@@ -603,6 +604,20 @@ export class WorldAgent {
             break;
           case "leave":
             this.people.delete(msg.id);
+            // 🔴 THE PER-PARTICIPANT MAPS MUST GO TOO (2026-08-16). `people` was
+            // cleaned here and these three were not, so every identity that ever
+            // appeared kept an entry for the LIFE OF THE PROCESS — a door in a
+            // busy world grows without bound, and the local convention elsewhere
+            // in this file is explicitly bounded rings (pings 64, heldActivity
+            // 8, malformedSeen 5). These were the exception, not the rule.
+            //
+            // Correctness, not just memory: nearArmed is the approach-ping
+            // re-arm bit, so a returning visitor inherited the arm state from
+            // their PREVIOUS visit — walking away and back could fail to
+            // re-announce them, or announce them twice.
+            this.lastNear.delete(msg.id);
+            this.nearArmed.delete(msg.id);
+            this.nonLocoSince.delete(msg.id);
             this.gate.presence(msg.id, "leave");
             break;
           case "avatar-updated":
@@ -859,8 +874,11 @@ export class WorldAgent {
         const pp = this.people.get(actor)?.pose;
         if (!pp || Math.hypot(pp.p[0] - this.pos.x, pp.p[2] - this.pos.z) <= this.activityRadiusM)
           this.act30.says.set(actor, (this.act30.says.get(actor) ?? 0) + 1);
-        const rx = new RegExp(`(@${this.name}\\b|\\b${this.name}\\b)`, "i");
-        const mention = rx.test(String(args.text));
+        // A null regex means this body has no usable name (a malformed tokens
+        // entry). Not being mentionable is degraded, not fatal — the body still
+        // hears the room; it just cannot be addressed by name.
+        const rx = mentionRegex(this.name);
+        const mention = rx ? rx.test(String(args.text)) : false;
         if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
         this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
       }
@@ -980,8 +998,23 @@ export class WorldAgent {
     }
   }
 
+  /** Recent pings, for a host that polls instead of subscribing.
+   *
+   *  🔴 BOUNDED (2026-08-16). This array grew forever: the live path is
+   *  `onPing` (net-server subscribes), and `takePings` — the only drain — has no
+   *  caller in this repo. So on a push host the array accumulated every mention,
+   *  approach and whisper for the life of the process and nothing ever read it.
+   *
+   *  Kept rather than deleted because a PLAIN-MCP host has no push channel and
+   *  polling is its documented path (AGENTS.md says digests are "held and handed
+   *  over each time you call the tool"). But it is a RING now, like every other
+   *  buffer in this file — pings 64, heldActivity 8, malformedSeen 5. An
+   *  unbounded buffer whose only consumer is optional is a leak with a plan. */
+  private static readonly PING_RING = 64;
+
   private ping(p: { ts: number; kind: "mention" | "approach" | "whisper"; who: string; text?: string }) {
     this.pings.push(p);
+    if (this.pings.length > WorldAgent.PING_RING) this.pings.splice(0, this.pings.length - WorldAgent.PING_RING);
     this.onPing?.(p);
   }
 
