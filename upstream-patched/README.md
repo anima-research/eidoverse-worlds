@@ -24,21 +24,23 @@ Current patches:
   for Skye alongside docs/upstream-wrap-once.md.
 
 - `eidoverse/assets/animations/sitting_normal_chair.vrma` — hips translation
-  track lowered by 0.2911 (track units; 169 keyframes, Y lane only, X/Z and
+  track lowered by 0.409 (track units; 169 keyframes, Y lane only, X/Z and
   every other byte untouched). The clip is authored FLOOR-ORIGIN — its hips
   sit at y≈0.5247, a seated pelvis above the floor the chair stands on —
   while every seat path here puts the avatar root ON THE SEAT SURFACE
   (`mountTransform` at the socket, `controller.toggleSit` at `findSeat`'s
   surface). Root-at-surface + floor-origin clip = the body hovers by the
-  clip's implied seat height: measured 0.250 m at the pelvis, 0.454 m at the
-  hips, which reads to a viewer as sitting a foot and a half in the air. The
-  two ground clips are authored root-at-contact and are unaffected — that is
-  the control that puts the fault in this file rather than in the engine's
-  placement convention. Baked here rather than corrected in code because
-  `createVRMAnimationClip` scales the hips track by each rig's own hips
-  ratio, so one shift lands correctly on every body (measured spread across
-  two rigs: 2.0 mm) and the avatar ROOT never moves — nothing downstream
-  (collision, the per-frame `resolveColliders` snap, network position,
-  camera) changes meaning. Regenerate with `bun tools/bake-seat-clip.ts`;
-  that script carries the derivation, the post-fix measurements, and a guard
-  that refuses to reapply the delta if upstream re-exports the clip.
+  clip's implied seat height; measured 0.454 m at the hips, which reads to a
+  viewer as sitting a foot and a half in the air. The two ground clips are
+  authored root-at-contact and are unaffected — that is the control that puts
+  the fault in this file rather than in the engine's placement convention.
+  Baked here rather than corrected in code because `createVRMAnimationClip`
+  scales the hips track by each rig's own hips ratio, so one shift lands
+  correctly on every body, and the avatar ROOT never moves — nothing
+  downstream (collision, the per-frame `resolveColliders` snap, network
+  position, camera) changes meaning. Δ is anchored on `sitting_on_ground`
+  (root-at-contact, hips 0.085 m above its contact surface) and on chair-height
+  proportions; an earlier Δ=0.2911 derived from a lowest-vertex "contact"
+  reader under-corrected by ~0.10 m and is the cautionary tale in
+  `tools/bake-seat-clip.ts`. Regenerate with `bun tools/bake-seat-clip.ts`
+  (`--check` verifies, `--delta=` for a calibration round).

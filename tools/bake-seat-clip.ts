@@ -33,33 +33,44 @@
 // so editing sampler output values leaves `scale` untouched. That is the whole
 // reason this edit is safe.
 //
-// DERIVATION OF DELTA (live measurement, staging, calibrated reader = lowest
-// skinned vertex whose dominant bone is `hips`):
-//   claude:     contact 0.25492, seated hips 0.45598 → scale 0.8697 → Δ 0.2931
-//   local body: contact 0.25015, seated hips 0.45362 → scale 0.8652 → Δ 0.2891
-// Two independent rigs agreeing to 1.4% is the evidence that ONE shift serves
-// the roster. Midpoint taken; residual under 2 mm on both.
+// DERIVATION OF DELTA — and the wrong turn worth recording
 //
-// Re-derive Δ (do not guess it) if the clip is ever re-exported upstream, or if
-// a body shows a visible gap: measure contact and seated hips for that body,
-// Δ = contact / (hips / 0.5247).
+// First attempt took Δ from a "contact" reader: the lowest skinned vertex whose
+// dominant bone is `hips`. That gave 0.2911, and re-measuring with the SAME
+// reader then reported the pelvis landing within 3 mm of the seat on three
+// bodies. It was wrong. The reader locks onto a vertex hanging below the
+// visible seated mass, so it read contact while the body a viewer sees was
+// still ~0.2 m in the air — the derivation and its verification shared one
+// error and confirmed each other perfectly. The operator, looking at the
+// screen, reported the offset unchanged in kind and merely smaller.
 //
-// POST-BAKE MEASUREMENT (same instrument, same chairs, staging):
-//   path A (local, X-sit)  pelvis −0.00323  hips +0.20177   (was +0.25015 / +0.45362)
-//   path B (local, socket) pelvis −0.00117  hips +0.20207   (was +0.24794 / +0.45317)
-//   remote claude.vrm      pelvis −0.00279  hips +0.20131   (was +0.25492 / +0.45598)
-// Rig-to-rig spread 2.0 mm — the evidence that ONE shift serves different rigs,
-// which is why this file exists instead of a per-avatar profile system.
+// What the operator's eye actually tracked, both times, was HIPS-above-seat:
+//   before any fix   they said "1.5–2 ft"   hips sat 0.454 m  (= 1.49 ft)
+//   after Δ=0.2911   they said "~8 inches"  hips sat 0.202 m  (= 7.95 in)
+// Two estimates, two matches, against a reader that claimed contact throughout.
 //
-// Both rigs land ~2.4 mm LOW, so the exactly-centred Δ would be ≈0.2883 rather
-// than 0.2911. Deliberately NOT applied: 2.4 mm is invisible (the avatars' own
-// standing feet-to-root bias is 44 mm), and re-baking would invalidate the
-// hashes below and demand another full measurement pass to stay honest. If this
-// file is ever re-baked for another reason, fold 0.2883 in then.
+// So Δ is set from where a seated pelvis BELONGS, anchored twice:
+//  - `sitting_on_ground.vrma` is authored root-at-contact and looks right; its
+//    hips sit 0.0975 track units (~0.085 m) above the surface the body rests on;
+//  - inverting the stock clip, hips-at-0.10 m puts its authored seat plane
+//    0.354 m above its floor, which scales to ~0.42 m on a 1.75 m human — a
+//    normal chair.
+// Both give Δ ≈ 0.409, pelvis ~0.10 m above the seat. Confirmed by eye on prod.
+//
+// The lesson, since it cost a day: a landmark definition is part of the
+// instrument. Calibration (displacement tests, frame checks, standing
+// baselines) proved the frame was sound and said nothing about whether the
+// point being measured was the right point. When a measurement and a human
+// looking at the thing disagree, the measurement is the hypothesis.
+//
+// Re-derive (do not guess) if the clip is re-exported upstream: put a body in
+// the pose, find the lowest point of the mass that should rest — buttocks and
+// thigh undersides, not a single minimum vertex — and Δ = that height / 0.865.
 //
 // USAGE
-//   bun tools/bake-seat-clip.ts            # write the patched file
-//   bun tools/bake-seat-clip.ts --check    # verify the committed file matches
+//   bun tools/bake-seat-clip.ts               # write the patched file
+//   bun tools/bake-seat-clip.ts --check       # verify the committed file matches
+//   bun tools/bake-seat-clip.ts --delta=0.42  # a calibration round (hash not claimed)
 //
 // The source is read from the PRISTINE eidoverse-video checkout — that tree is
 // never patched in place (upstream-patched/README.md).
@@ -68,14 +79,19 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 
-const DELTA = 0.2911;
+// `--delta=<n>` overrides for a calibration round (the eye is the instrument
+// that has been right about this clip; see the note below). An overridden
+// delta writes the file but does NOT claim the recorded hash.
+const deltaArg = process.argv.find((a) => a.startsWith("--delta="));
+const DELTA = deltaArg ? Number(deltaArg.slice("--delta=".length)) : 0.409;
+if (!Number.isFinite(DELTA)) { console.error(`bad --delta`); process.exit(1); }
 
 // The exact upstream bytes this delta was derived against. If the source no
 // longer hashes to this, the derivation above was measured on a DIFFERENT clip
 // and Δ must be re-measured rather than reapplied — a silent re-export is
 // precisely how a hand-tuned constant goes quietly wrong.
 const EXPECT_SRC = "c5f1828ffb222875f1ef1201189f032d22984ece24cc12122e7e450977dcb3e1";
-const EXPECT_OUT = "5527a10b3edd6ed096325c70c22b050e15428e6ed5e2ae74818d79fc992a0c59";
+const EXPECT_OUT = "ea31ca53057f3302b6103f323dbcf47c0220d2a9742039ae150c45674ca47456";
 
 const REL = "eidoverse/assets/animations/sitting_normal_chair.vrma";
 const ROOT = join(import.meta.dir, "..");
@@ -136,4 +152,5 @@ if (process.argv.includes("--check")) {
 writeFileSync(OUT, out);
 console.log(`baked Δ=${DELTA} → ${OUT}`);
 console.log(`  src ${srcSha.slice(0, 16)}  out ${outSha.slice(0, 16)}  ${out.length} bytes (unchanged length)`);
-if (outSha !== EXPECT_OUT) console.warn(`  WARNING: output differs from the recorded hash ${EXPECT_OUT.slice(0, 16)}`);
+if (deltaArg) console.warn(`  calibration bake (delta overridden) — recorded hash NOT claimed; settle the value, then fold it into DELTA and update EXPECT_OUT`);
+else if (outSha !== EXPECT_OUT) console.warn(`  WARNING: output differs from the recorded hash ${EXPECT_OUT.slice(0, 16)}`);
