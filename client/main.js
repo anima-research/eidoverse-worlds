@@ -18,6 +18,7 @@ import { initModelsRealizer, reconcileModels, residencyDebug, setResidencyFocus,
 import { initEnvironmentRealizer } from './lib/realize/environment.js';
 import { initSocialRealizer } from './lib/realize/social.js';
 import { initStructureRealizer } from './lib/realize/structure.js';
+import { initStructureUI } from './lib/structure_ui.js';
 import { initCauses } from './lib/realize/causes.js';
 // side-effecting: the `particles` component's host wires itself to the comp
 // and entity buses on import (it has no boot step of its own)
@@ -110,6 +111,7 @@ initSocialRealizer();
 // the `kind` amendment lands, and the structure realizer hides whatever object
 // the models realizer made for it.
 initStructureRealizer();
+initStructureUI();
 initCauses();
 
 // ---------------------------------------------------------------- boot
