@@ -41,7 +41,64 @@ import { ROLE_RANK } from "../shared/fold.js";
 // noticed, because /version kept answering from the brief up-windows.)
 import { SeatStore } from "./seats.ts";
 import { OPT_DIR } from "./config.ts";
+// Relay-floor (#104): transport selection + durable voice-service identity.
+import { relayEnabled, bootIncarnation, currentIncarnation, voiceTransport } from "./transport.ts";
+import { installSfuTransportGuard } from "./sfuguard.ts";
+import { onVoiceServiceChange, markVoiceDegraded, voiceServiceState } from "./sfusupervisor.ts";
+// The in-process SFU (VOICE_TRANSPORT=sfu) — the only voice transport.
+import { mintSfuCredential, setSfuConsent, setSfuModeratorMute, revokeSfuLeg, sfuDiag,
+  sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition, registerSfuSender, admitSfuLeg, liveLegState, sfuLegAdmitted, markSfuLegAdmitted } from "./sfuadapter.ts";
 const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR);
+
+// The resident-visible service chart (amendment 2): every voice-service
+// transition reaches every client of every world, stamped with the
+// incarnation so a client can tell "the relay restarted" from "it flapped".
+// 🔴 The incarnation is DURABLE: an atomic tmp+rename file, so a restart
+// strands every old credential structurally instead of resetting the counter
+// to i1- (which sfuadapter.ts once did by passing a hardcoded null prev).
+bootIncarnation(OPT_DIR);
+
+// 🔴 THE TRANSPORT GUARD IS INSTALLED HERE, ONCE, not as a side effect of
+// constructing an Sfu (independent review 2026-08-16: a voice subsystem must
+// not silently change process-wide crash semantics for a world server). It no
+// longer exits either — a non-benign voice fault marks VOICE degraded and
+// leaves text, presence and builds serving.
+installSfuTransportGuard((err, kind) => markVoiceDegraded(`${kind}: ${String(err).slice(0, 120)}`));
+
+// Amendment 2: voice service state is broadcast to every client of every world,
+// stamped with the incarnation so a client can tell "the service restarted"
+// from "it flapped". A restart advances the DURABLE incarnation, which is what
+// makes every prior credential structurally stale — clients do one clean fresh
+// join rather than resurrecting a leg the server has forgotten.
+onVoiceServiceChange((state, incarnation, why) => {
+  const msg = JSON.stringify({ type: "voice-service", state, incarnation, reason: why });
+  for (const w of worlds.values()) for (const t of w.clients) t.ws.send(msg);
+  console.log(`[sfu] voice-service ${state} (${incarnation})`);
+});
+
+// NOTE: there is no external service to probe, so there is no voice-service
+// state machine and no leg-retired webhook. The in-process SFU cannot outlive
+// or predecease the sequencer; retirement is driven directly by retireRelayLeg
+// below, on the same close path every other surface uses.
+/** Retire an identity's relay leg through the SAME funnel every other surface
+ *  death uses: revoke at the relay, burn the credential, broadcast the
+ *  transition. Fire-and-forget — a relay outage must never wedge a close. */
+function retireRelayLeg(w: World, id: string) {
+  if (!relayEnabled()) return;
+  // 🔴 THE SFU PATH MUST RETIRE TOO. revokeSfuLeg was imported and never
+  // called, so an SFU leg was NEVER retired on the live path: the old leg
+  // lingered, its standingConsent survived, and a voice-leg reconnect INHERITED
+  // a consent the fresh leg never gave. Fail-open on a privacy boundary.
+  // Adapter tests missed it because they call revokeSfuLeg explicitly; only a
+  // live-server probe reconnecting over real websockets could see it.
+  const leg = revokeSfuLeg(w.name, id);
+  if (leg) {
+    const retire = JSON.stringify({ type: "surface-transition",
+      id, surface: "voice-relay", gen: null, retired: leg.gen });
+    for (const t of w.clients) t.ws.send(retire);
+    console.log(`[world:${w.name}] ${id}/voice-relay revoked — gen ${leg.gen}`);
+  }
+}
 
 // Behavior sandbox wiring: a script's emit is gated by its AUTHOR's live
 // rights (revoke the grant, the behavior loses its teeth) through the same
@@ -117,6 +174,9 @@ function retireAuxLeg(w: World, leg: Client, except?: Client) {
  *  closing its socket, so the ws close handler finds nothing and would never
  *  broadcast (the exact silent-death hole, one caller upstream). */
 function reapAuxLegs(w: World, primary: Client, closeReason: string) {
+  // the identity's RELAY leg dies with its primary, same funnel (#104 A1:
+  // primary retirement revokes the media credential)
+  retireRelayLeg(w, primary.id);
   for (const t of [...w.clients]) {
     if (t !== primary && t.id === primary.id && (t.surface ?? "world") !== "world") {
       retireAuxLeg(w, t, primary);
@@ -591,6 +651,11 @@ const server = Bun.serve({
                 clients.delete(other.ws);
                 other.ws.close?.(4002, "session takeover");
                 console.log(`[world:${w.name}] ${c.id}/${c.surface} takeover — gen ${other.gen} retired`);
+                // a WORLD-surface takeover retires the identity's relay leg:
+                // its credential is bound to the retired primaryGen, and the
+                // successor mints fresh (#104 amendment 1 — takeover→rotate;
+                // measured target: old leg's packets refused ≤2s)
+                if ((c.surface ?? "world") === "world" && !other.spectator) retireRelayLeg(w, c.id);
               }
             }
           }
@@ -959,34 +1024,217 @@ const server = Bun.serve({
             utt: Number.isSafeInteger(capUtt) && capUtt >= 0 ? capUtt : 0 }, c);
           break;
         }
-        case "rtc": {
-          // Voice/media signaling: point-to-point like a whisper and never
-          // logged for the same reason — but unlike a whisper, a stale SDP is
-          // worthless (an offer for a peer who left answers nothing), so there
-          // is no pending queue: absent recipient = silently dropped.
-          const aux = c.surface && c.surface !== "world";
-          if (!c.world || (c.spectator && !aux)) return;
-          const rto = String(msg.to ?? "").slice(0, 64);
-          if (!rto || msg.payload == null) return;
-          if (JSON.stringify(msg.payload).length > 20000) return; // SDP-sized, not file-sized
-          // Per-surface ADDRESSING (review finding 7): a voice leg IS an rtc
-          // endpoint, but the old any-leg fanout delivered an offer meant for
-          // X's voice leg to X's browser primary too — whose per-id state
-          // machine answers offers unconditionally, so both of the offerer's
-          // legs got answers: SDP glare precisely in the human-with-voice-leg
-          // case the feature enables. `toSurface` names the target leg;
-          // omitted = "world", which is byte-identical to today's mesh (the
-          // current voice.js neither sends nor reads it). fromGen/fromSurface
-          // are stamped for the receiving side's (id, surface, gen) peer
-          // keying — today's mesh client reads neither (it keys by id alone);
-          // the consumers arrive with the sidecar/relay client half (#104),
-          // and stamping now means old servers never have to be told apart.
-          const toSurface = String(msg.toSurface ?? "world").toLowerCase().slice(0, 16) || "world";
-          const rpacket = JSON.stringify({ type: "rtc", from: c.id, to: rto, payload: msg.payload,
-            fromGen: c.gen, fromSurface: c.surface ?? "world" });
-          for (const t of c.world.clients)
-            if (t.id === rto && (t.surface ?? "world") === toSurface
-                && (!t.spectator || (t.surface && t.surface !== "world"))) t.ws.send(rpacket);
+        // ── SFU signaling (VOICE_TRANSPORT=sfu) ──────────────────────────
+        // Deliberately SEPARATE verbs from `rtc`: rtc is client↔client and
+        // routes by `to`, whereas here one end IS the sequencer, so there is no
+        // recipient to address and no fanout to get wrong. Same properties
+        // though — never logged, SDP-sized cap, dropped if the leg is gone.
+        case "sfu-answer": {
+          if (!c.world || !relayEnabled()) return;
+          // 🔴 THE SAME GATE relay-cred USES (:1120). A spectator or an aux leg
+          // keeps the PRIMARY'S `c.id` (:509 sets spectator from surface, it does
+          // not rename), so without this check any such socket reaches a real
+          // participant's SFU leg. Found by an independent reviewer, 2026-08-16.
+          if (c.spectator || (c.surface ?? "world") !== "world") return;
+          // 🔴 AMENDMENT 1's SEVEN REFUSALS, ACTUALLY RUN (2026-08-16).
+          // admitSfuLeg implemented all seven and had NO CALLER outside its own
+          // test, and the client never returned its nonce — so usedNonces was
+          // never populated and "the refusals hold under our transport" was a
+          // claim about code that did not execute. This is the first
+          // authenticated act after the credential is issued, so it is where
+          // admission belongs: the server offers, the client answers, and the
+          // answer must prove it is the leg the credential was minted for.
+          {
+            // 🔴 ADMIT ONCE PER LEG, NOT ONCE PER ANSWER. The nonce is
+            // single-use by design (it closes the removed-participant replay
+            // hole), but sfu-answer fires on EVERY renegotiation — and the
+            // server renegotiates whenever anyone else joins. So the second
+            // answer presented the same, now-burned nonce, was refused as
+            // "credential replay", and the refusal path revoked a working leg:
+            // the first person in a room lost voice the moment a second person
+            // arrived. Caught by an independent reviewer reading the path, not
+            // by a test — the suites only ever negotiate once.
+            //
+            // An already-admitted leg has proven its credential; subsequent
+            // answers are ordinary negotiation traffic on an established,
+            // gen-checked session, exactly like sfu-ice.
+            if (sfuLegAdmitted(c.world.name, c.id)) {
+              const sdpOk = String(msg.sdp ?? "");
+              if (sdpOk.length > 20000) return;
+              void sfuAcceptAnswer(c.world.name, c.id, sdpOk, Number((msg as { gen?: unknown }).gen ?? NaN) || undefined);
+              return;
+            }
+            const cl = (msg as { cred?: Record<string, unknown> }).cred;
+            const verdict = cl
+              ? admitSfuLeg(c.world.name, {
+                  world: String(cl.world ?? ""), id: String(cl.id ?? ""),
+                  primaryGen: Number(cl.primaryGen ?? -1), mediaGen: Number(cl.mediaGen ?? -1),
+                  incarnation: String(cl.incarnation ?? ""), nonce: String(cl.nonce ?? ""),
+                }, liveLegState(c.world.name, c.id, c.gen))
+              : { admit: false as const, reason: "no credential presented" };
+            if (verdict.admit) markSfuLegAdmitted(c.world.name, c.id);
+            if (!verdict.admit) {
+              console.warn(`[sfu] answer REFUSED for ${c.id}: ${verdict.reason}`);
+              ws.send(JSON.stringify({ type: "error", error: `voice leg refused: ${verdict.reason}` }));
+              revokeSfuLeg(c.world.name, c.id);
+              return;
+            }
+          }
+          const sdp = String(msg.sdp ?? "");
+          if (sdp.length > 20000) return;
+          void sfuAcceptAnswer(c.world.name, c.id, sdp, Number((msg as { gen?: unknown }).gen ?? NaN) || undefined);
+          return;
+        }
+        case "sfu-ice": {
+          if (!c.world || !relayEnabled()) return;
+          // 🔴 THE SAME GATE relay-cred USES (:1120). A spectator or an aux leg
+          // keeps the PRIMARY'S `c.id` (:509 sets spectator from surface, it does
+          // not rename), so without this check any such socket reaches a real
+          // participant's SFU leg. Found by an independent reviewer, 2026-08-16.
+          //
+          // sfu-pos was the sharp one: writing a distant position for someone
+          // else's id moves them out of every listener's proximity gate — a
+          // REMOTE MUTE available to any connected client. The old comment here
+          // reasoned only about withholding one's own data ("cannot silence
+          // someone by withholding"), which is true and answers the wrong threat:
+          // the risk is FORGING another identity's data, not omitting your own.
+          if (c.spectator || (c.surface ?? "world") !== "world") return;
+          // gen required end-to-end (#130 item 4) — the adapter refuses
+          // missing or stale generations, mirroring sfu-answer.
+          sfuAcceptIce(c.world.name, c.id, msg.candidate, typeof msg.gen === "number" ? msg.gen : undefined);
+          return;
+        }
+        case "sfu-pos": {
+          // Position feed for the proximity gate. OPTIONAL by design: the gate
+          // fails open on unknown/stale positions, so a client that never sends
+          // these is never gated — which is what keeps this from being a way to
+          // silence someone by withholding data.
+          if (!c.world || !relayEnabled()) return;
+          // 🔴 THE SAME GATE relay-cred USES (:1120). A spectator or an aux leg
+          // keeps the PRIMARY'S `c.id` (:509 sets spectator from surface, it does
+          // not rename), so without this check any such socket reaches a real
+          // participant's SFU leg. Found by an independent reviewer, 2026-08-16.
+          //
+          // sfu-pos was the sharp one: writing a distant position for someone
+          // else's id moves them out of every listener's proximity gate — a
+          // REMOTE MUTE available to any connected client. The old comment here
+          // reasoned only about withholding one's own data ("cannot silence
+          // someone by withholding"), which is true and answers the wrong threat:
+          // the risk is FORGING another identity's data, not omitting your own.
+          if (c.spectator || (c.surface ?? "world") !== "world") return;
+          const n = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+          sfuSetPosition(c.world.name, c.id, n(msg.x), n(msg.y), n(msg.z));
+          return;
+        }
+        case "sfu-want-negotiate": {
+          // The client added a track and needs an offer. It ASKS rather than
+          // offering, because the server must own every offer (glare).
+          if (!c.world || !relayEnabled()) return;
+          // 🔴 THE SAME GATE relay-cred USES (:1120). A spectator or an aux leg
+          // keeps the PRIMARY'S `c.id` (:509 sets spectator from surface, it does
+          // not rename), so without this check any such socket reaches a real
+          // participant's SFU leg. Found by an independent reviewer, 2026-08-16.
+          //
+          // sfu-pos was the sharp one: writing a distant position for someone
+          // else's id moves them out of every listener's proximity gate — a
+          // REMOTE MUTE available to any connected client. The old comment here
+          // reasoned only about withholding one's own data ("cannot silence
+          // someone by withholding"), which is true and answers the wrong threat:
+          // the risk is FORGING another identity's data, not omitting your own.
+          if (c.spectator || (c.surface ?? "world") !== "world") return;
+          sfuNegotiate(c.world.name, c.id, (payload) => ws.send(JSON.stringify(payload)));
+          return;
+        }
+        // 🔴 THE `rtc` VERB IS GONE (#104 phase-1 cutover, 2026-08-16). It was the
+        // MESH's point-to-point SDP/ICE lane and its only client was voice.js,
+        // now deleted. It was also deliberately UNGATED on transport — kept open
+        // so ?mesh=1 could still roll back on an SFU server — which made it an
+        // unauthenticated relay with no consumer: a sidecar signalled through it
+        // for an hour, ICE completing happily, heard by NOBODY. Its per-surface
+        // addressing (toSurface/fromSurface/fromGen) never functioned either, by
+        // the server's own admission: no browser ever sent those fields.
+        case "relay-cred": {
+          // #104 phase-1: mint the least-authority media credential (A1). The
+          // asker must be an ADMITTED identity — the embodied primary (its own
+          // mic/tts publishes on its relay leg) — and the leg it earns is a
+          // surface session: gen from the same counter as every leg, announced
+          // by the same transition event, retired by the same funnel. No API
+          // secret and no bearer token exist to leak into this reply (A1).
+          if (!c.world) return;
+          if (!relayEnabled()) { ws.send(JSON.stringify({ type: "error", error: "no voice relay configured" })); return; }
+          if (c.spectator || (c.surface ?? "world") !== "world") {
+            ws.send(JSON.stringify({ type: "error", error: "relay-cred is the embodied primary's ask" }));
+            return;
+          }
+          // "Scopes are askable-down" (A1) is DESIGNED and not yet ENFORCED:
+          // msg.publish was read into a variable that nothing consumed, which
+          // made the code claim a property it does not have. Named honestly
+          // until the SFU carries a per-leg publish flag at ingress — every
+          // credential is currently a publishing credential.
+          const mediaGen = ++GEN;
+          {
+            // No JWT to mint and no external service to reach, so this is
+            // synchronous — but it announces through the SAME transition event
+            // and takes a gen from the SAME counter, because a surface session
+            // is a surface session regardless of what carries its audio.
+            // Mint FIRST: mintSfuCredential funnels through revokeSfuLeg (a
+            // re-mint must not inherit its predecessor's consent/admission),
+            // and revoke unregisters the sender — registering before it would
+            // hand the fresh leg a deleted send path.
+            const cred = mintSfuCredential(c.world.name, c.id, c.gen!, mediaGen);
+            registerSfuSender(c.world.name, c.id, (payload) => ws.send(JSON.stringify(payload)));
+            const transition = JSON.stringify({ type: "surface-transition",
+              id: c.id, surface: "voice-relay", gen: mediaGen, retired: null });
+            for (const t of c.world.clients) if (t !== c) t.ws.send(transition);
+            ws.send(JSON.stringify({ type: "relay-cred", ...cred, gen: mediaGen,
+              service: { enabled: true, ...voiceServiceState(), transport: "sfu" } }));
+            return;
+          }
+        }
+        case "voice-moderate": {
+          // 🔴 A3'S THIRD STATE, WHICH DID NOT EXIST (amendment 3, 2026-08-16).
+          // antra: "Define and test three independent states: listener receive
+          // consent OFF/ON; publisher self-mute / pre-encode gate; moderator /
+          // global track mute." We had the first two. setSfuModeratorMute was
+          // implemented, enforced at ingress and unit-tested — and had NO
+          // CALLER outside its own test, because the verb that would reach it
+          // was never written. server.ts even carried a comment saying
+          // "moderator mute is a different verb with a different rank", naming
+          // a verb that did not exist.
+          //
+          // It is NOT a substitute for listener consent: consent is
+          // listener-authored and per-pair; this silences a speaker for
+          // EVERYONE, so it needs moderation rights, not a preference.
+          if (!c.world || !relayEnabled()) return;
+          if (c.spectator || (c.surface ?? "world") !== "world") return;
+          const rights = rightsOf(c.world.state, c.id, c.sub);
+          if (ROLE_RANK[rights.role] < 2) {
+            ws.send(JSON.stringify({ type: "error", error: "muting someone for everyone needs owner rights here" }));
+            return;
+          }
+          const who = String(msg.id ?? "").slice(0, 64);
+          if (!who) return;
+          const muted = msg.muted === true;
+          setSfuModeratorMute(c.world.name, who, muted);
+          // Moderation is world-visible by design: a silence nobody can see the
+          // cause of is indistinguishable from a bug, and that ambiguity is
+          // what makes moderation feel arbitrary.
+          const note = JSON.stringify({ type: "voice-moderated", id: who, muted, by: c.id });
+          for (const t of c.world.clients) t.ws.send(note);
+          console.log(`[world:${c.world.name}] ${c.id} ${muted ? "muted" : "unmuted"} ${who} for everyone`);
+          return;
+        }
+        case "voice-consent": {
+          // Listener-authored receive consent (amendment 3): server-enforced
+          // via subscriptions, gen-bound (this leg's gen — a reconnect starts
+          // fail-closed and cannot resurrect its predecessor's yes),
+          // idempotent. Publisher self-mute stays pre-encode client-side;
+          // moderator mute is a different verb with a different rank.
+          if (!c.world || c.spectator) return;
+          if (!relayEnabled()) return;
+          const r = setSfuConsent(c.world.name, c.id, c.gen ?? 0, msg.recv === true);
+          ws.send(JSON.stringify({ type: "voice-consent", recv: msg.recv === true,
+            applied: r.changed, ...(r.reason ? { note: r.reason } : {}) }));
           return;
         }
         case "attest": {
@@ -1038,7 +1286,22 @@ const server = Bun.serve({
             ws.send(JSON.stringify({ type: "error", error: "attest digest mismatch" }));
             return;
           }
+          // 🔴 AMENDMENT 5: NAME THE RUNG (antra, 2026-08-13). "No rung
+          // inherits the name of the next." What this receipt proves is that an
+          // AUTHORIZED LEG CLAIMED it performed the utterance — nothing about
+          // SFU ingress, forwarding, decoding, rendering, or hearing:
+          //
+          //   authorized claim → publisher frames → SFU ingress →
+          //   per-listener forward → decode/render → heard (unattested)
+          //
+          // `rung` says so on the wire, so a consumer cannot quietly read it as
+          // "this was heard". The word "performed" is kept for compatibility
+          // with #103's shipped shape, but it is now qualified rather than
+          // trusted, and stamped with the media generation and incarnation that
+          // scope the claim.
           const performed = JSON.stringify({ type: "performed",
+            rung: "authorized-claim",
+            incarnation: currentIncarnation(),
             id: c.id, seq, gen: c.gen, surface: c.surface });
           for (const t of c.world.clients) t.ws.send(performed);
           return;

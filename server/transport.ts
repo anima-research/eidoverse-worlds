@@ -15,17 +15,18 @@ import { join } from "node:path";
 import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { nextIncarnation } from "./relaydecision.ts";
 
-/** Which voice transport this flag selects.
- *  - "sfu": our in-process SFU engine. Needs no external service, so the flag
- *    alone enables it — but ON THIS BRANCH nothing reads it into a live wire:
- *    this PR is engine-only, and server.ts does not install or route through
- *    the SFU yet.
- *  - "off" (the default): the flag selects no SFU. 🔴 On this branch that does
- *    NOT mean silence — the existing P2P mesh (client/lib/voice.js) remains
- *    the untouched production voice path, exactly as SFU-SPEC A5 requires:
- *    the mesh stays live as production/rollback until acceptance passes.
- *    Mesh retirement — and the moment "off" comes to mean "no voice at all" —
- *    belongs to the separate operator-approved cutover PR (#132), not here. */
+/** Which voice transport is live.
+ *  - "sfu": our in-process SFU. Needs no external service, so the flag alone
+ *    enables it.
+ *  - "off": NO VOICE AT ALL. 🔴 This used to mean "the P2P mesh is the path" —
+ *    the mesh is DELETED by the #132 cutover, so an unset VOICE_TRANSPORT is a
+ *    silent no-voice world: text/presence/builds all live, every voice control
+ *    present and inert. There is no maintained mesh path behind this flag: if
+ *    cutover acceptance fails, the remedy is deploying the previous RELEASE
+ *    during the migration window (see notes/CUTOVER-ROLLBACK.md), not a flag.
+ *
+ *  The default stays "off" — opt-in until the acceptance table passes — but an
+ *  operator reading "off" should know it no longer names a fallback. */
 export const voiceTransport = (): "sfu" | "off" =>
   process.env.VOICE_TRANSPORT === "sfu" ? "sfu" : "off";
 

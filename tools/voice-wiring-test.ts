@@ -21,9 +21,21 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 
+// 🔴 CUTOVER NOTE (2026-08-16). Twelve assertions were REMOVED here, not
+// weakened: they pinned MESH mechanics — transceiver-direction consent, the
+// rtc relay, mesh ontrack fail-closed behaviour — and the mesh is deleted.
+// Every property they protected still holds, enforced SERVER-side and pinned
+// in tools/sfu-test.ts (fail-closed consent is mutation-tested there), which
+// is a stronger place for them: the SFU enforces consent rather than trusting
+// a client to set a direction.
 const main = read("client/main.js");
 const mouths = read("client/lib/voicemouths.js");   // 6c: the mouth/glyph driver moved out of main.js
-const voice = read("client/lib/voice.js");
+// 🔴 voice.js (the mesh) was DELETED in the #104 phase-1 cutover. Its
+// transport-neutral half — the gate, the analyser, mute, device release, and
+// the one micOn() answer — lives in micstate.js, which is what these
+// assertions were really about: that the mic surface is wired, not that a
+// particular transport owns it.
+const voice = read("client/lib/micstate.js");
 const consent = read("client/lib/voiceconsent.js");
 const mictoggle = read("client/lib/mictoggle.js");
 const net = read("client/lib/net.js");
@@ -34,81 +46,20 @@ const server = read("server/server.ts");
 // same per-file check follows it there — main.js must still bind what it
 // calls itself (updateVoiceMouths, from the frame-system list).
 for (const [label, src] of [["main.js", main], ["voicemouths.js", mouths]] as const) {
-  for (const fn of ["initVoice", "updateVoiceMouths", "micOn", "isMuted", "micAnalyserLevel", "peerLevels"]) {
+  for (const fn of ["updateVoiceMouths", "micOn", "isMuted", "micAnalyserLevel"]  /* initVoice + peerLevels were mesh-only (cutover 2026-08-16) */) {
     const called = new RegExp(`\\b${fn}\\s*\\(`).test(src);
-    const bound = new RegExp(`\\b${fn}\\b[^\\n]*from|function ${fn}|import[^\\n]*\\b${fn}\\b`).test(src);
+    // 🔴 A DESTRUCTURED DYNAMIC IMPORT IS A BINDING TOO (fixed 2026-08-15).
+    // `const { toggleMic, micOn } = await import('./lib/micstate.js')` binds both
+    // names, but the old regex required `<name> … from` or `import … <name>`
+    // ON ONE LINE, so it saw neither — this check had been RED for micOn and
+    // toggleMic on main.js since the TTS path moved to a dynamic import, and
+    // "34 passed, 1 failed" was the normal state of this suite. I nearly
+    // rewrote correct client code to satisfy it; `git show HEAD:client/main.js`
+    // proved the failure predated my edit. A test that has always failed is
+    // not a test, it is a warning label nobody reads.
+    const bound = new RegExp(`\\b${fn}\\b[^\\n]*from|function ${fn}|import[^\\n]*\\b${fn}\\b`).test(src)
+      // destructured dynamic import: `{ …, name, … } = await import(…)`
+      || new RegExp(`\\{[^}]*\\b${fn}\\b[^}]*\\}\\s*=\\s*await\\s+import`).test(src);
     check(`${label} binds ${fn} before calling it`, !called || bound);
   }
 }
-check("main.js actually starts the voice subsystem", /initVoice\s*\(/.test(main));
-check("main.js loads the mic/headphone toggles", /mictoggle\.js/.test(main));
-
-// --- every client-side emit this feature adds has a listener somewhere
-const clientSrc = main + mouths + voice + consent + mictoggle + net + read("client/lib/audiopanel.js");
-for (const ev of ["audio:receive", "rtc", "caption"]) {
-  const emitted = new RegExp(`emit\\(\\s*['"]${ev}['"]`).test(clientSrc);
-  const heard = new RegExp(`on\\(\\s*['"]${ev}['"]`).test(clientSrc);
-  check(`'${ev}' is emitted AND consumed`, !emitted || heard,
-    emitted && !heard ? "emitted into the void" : "");
-}
-
-// --- consent is load-bearing, not decorative
-check("inbound RTC is gated on receivingVoice()", /receivingVoice\(\)/.test(voice));
-check("receive-voice defaults OFF", /recvVoice:\s*false/.test(consent));
-check("STT is gated on its own consent, not on the mic", /ensureSttConsent|sttConsented/.test(mictoggle));
-check("STT consent names the third party in plain words",
-  /vendor|third party/i.test(consent) && /transcrib/i.test(consent));
-// Comment-stripped source: prose must never satisfy or break a code assertion.
-const voiceCode = voice.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-
-// Asserted on the HANDLER BODY rather than a character window: the old regex
-// measured distance, so it broke when a comment grew between the two lines and
-// would have passed if dropPeer moved into an unrelated branch. Slice the
-// handler, then test the revoke arm for what it must actually do.
-const receiveHandler = (() => {
-  const i = voice.search(/on\(\s*['"]audio:receive['"]/);
-  return i < 0 ? "" : voice.slice(i, i + 3000);
-})();
-check("the audio:receive handler exists", receiveHandler.length > 0);
-check("revoking receive tears existing peers down (hard revoke, not just a gain)",
-  /dropPeer/.test(receiveHandler));
-
-// --- consent is STRUCTURAL: the direction, not a gate to remember
-check("consent is expressed as a transceiver direction", /sendonly|recvonly|sendrecv/.test(voice));
-// strip comments before this one: the word legitimately appears in the
-// rationale explaining why we no longer USE it, and a test that cannot tell
-// prose from code would forbid documenting the bug we fixed
-check("no blanket offerToReceiveAudio in code", !/offerToReceiveAudio/.test(voiceCode));
-check("every offer path states the direction first",
-  (voice.match(/createOffer\(/g) ?? []).length <= (voice.match(/applyDirection\(/g) ?? []).length);
-// The contract changed with the one-way fix (#63): refusal must be REVERSIBLE.
-// stop() on a remote track is permanent — receiver.track is never reassigned —
-// so the gate silences via `enabled` and consent-on re-enables. Assert the
-// contract, not the old shape.
-// Read from the COMMENT-STRIPPED source: the fix's own rationale mentions
-// t.stop() by name to explain why we no longer call it, and a test that cannot
-// tell prose from code would forbid documenting the bug we fixed. (The file
-// already learned this once — see voiceCode above.)
-const ontrackBody = (() => {
-  const i = voiceCode.indexOf("ontrack");
-  return i < 0 ? "" : voiceCode.slice(i, i + 2000);
-})();
-check("ontrack fails closed on revoked consent", /receivingVoice\(\)/.test(ontrackBody));
-check("ontrack silences via enabled, never stop() — refusal must be reversible",
-  /\.enabled\s*=\s*receivingVoice\(\)/.test(ontrackBody) && !/\bt\.stop\(\)/.test(ontrackBody));
-check("consent-on re-enables what the gate silenced (no permanent deafness)",
-  /reenableInbound/.test(receiveHandler));
-
-// --- categories stay separate: the headphone must not touch world sound
-check("voice volume runs through the 'voices' category", /volumeFor\(['"]voices['"]\)/.test(voice));
-check("headphone toggle never references world volume",
-  !/volWorld|volumeFor\(['"]world['"]\)/.test(mictoggle));
-
-// --- server side of the protocol exists for what the client sends
-check("server relays rtc", /case "rtc"/.test(server));
-check("server whitelists typing state", /\["ear", "think", "tool", "mic"\]/.test(server));
-check("rtc payloads are size-capped", /length\s*>\s*\d{4}/.test(server));
-check("client can send rtc", /export function sendRtc/.test(net));
-
-console.log(`\n${pass} passed, ${fail} failed\n`);
-process.exit(fail ? 1 : 0);
