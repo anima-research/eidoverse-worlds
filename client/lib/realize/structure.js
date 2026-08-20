@@ -34,7 +34,7 @@ import { THREE, TSL, scene, bus, report } from '../core.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { state, onWorldChange } from '../state.js';
 import { prepareObject } from '../materials.js';
-import { fitStructureBoxes, removeStructureBoxes } from '../colliders.js';
+import { fitStructureBoxes, removeStructureBoxes, removeCollider, fitCollider } from '../colliders.js';
 import { entities } from '../world.js';
 import { planStructure, makeShader } from '../../shared/structure.js';
 
@@ -265,13 +265,26 @@ function buildGroup(plan) {
  *  existence seconds later, inside the house. Found live, not reasoned out. */
 function hideAnchor(id) {
   const anchor = entities.get(id);
-  if (anchor) anchor.visible = false;
+  if (!anchor) return;
+  anchor.visible = false;
+  // AND TAKE ITS COLLIDER. Hiding the mesh only stops you SEEING the crate —
+  // the models realizer fitted a box for it at spawn, so it stayed solid: an
+  // invisible obstacle the size of a large crate, sitting at the origin of
+  // every building. The building declares its own boxes (fitStructureBoxes,
+  // keyed <id>#sN); this one is keyed by the bare entity id, so dropping it
+  // touches nothing of ours.
+  removeCollider(id);
 }
 
 function retire(id) {
-  // give the anchor back before we stop owning the id
+  // give the anchor back — mesh AND collider — before we stop owning the id,
+  // so removing just the `structure` comp leaves an ordinary solid crate
   const anchor = entities.get(id);
-  if (anchor) anchor.visible = true;
+  if (anchor) {
+    anchor.visible = true;
+    try { fitCollider(id, anchor, { localFrame: true, scale: anchor.scale?.x || 1 }); }
+    catch (e) { report(`structure anchor restore ${id}`, e); }
+  }
   const t = tracked.get(id);
   if (!t) return;
   scene.remove(t.group);
@@ -367,9 +380,9 @@ export function initStructureRealizer() {
   // The anchor can arrive at any time after we realize — the models realizer
   // announces every object it creates or moves on this bus, which is the only
   // moment we can be sure there is something to hide.
-  bus.on('entity', (ev) => {
-    if (ev?.id && ev.kind !== 'collider' && tracked.has(ev.id)) hideAnchor(ev.id);
-  });
+  // 'collider' included: models announces a late collider fit under that kind,
+  // and hideAnchor emits nothing, so there is no loop to guard against
+  bus.on('entity', (ev) => { if (ev?.id && tracked.has(ev.id)) hideAnchor(ev.id); });
   onWorldChange((ev) => {
     if (ev.type === 'hydrated') reconcileStructures();
     else if (ev.type === 'reset') { for (const id of [...tracked.keys()]) retire(id); }
