@@ -55,24 +55,63 @@ import { join, basename, dirname } from "node:path";
 //
 // So: never import "sharp" by bare specifier in this file. Resolve the copy
 // @gltf-transform/functions itself will use, and hand that same module back
-// to it as the encoder — one libvips, end to end. Falling back to the bare
-// specifier keeps a single-copy install (or a future deduped one) working;
-// it is only ever reached when the nested copy is absent, which is exactly
-// when the bare import is safe.
+// to it as the encoder — one libvips, end to end.
+//
+// RESOLUTION and IMPORT are kept separate, and the bare specifier is reached
+// on exactly one condition: no nested copy could be RESOLVED. That means a
+// deduped (or single-copy) install, where the bare import is the same single
+// copy and is therefore safe.
+//
+// A nested copy that resolves but fails to IMPORT — ABI mismatch, missing
+// dylib, damaged install — must NOT fall back (#136 review). Doing so loads
+// the root copy beside the one gltf-transform already has and recreates the
+// exact two-libvips condition this module exists to forbid, in the one
+// situation where things are already going wrong. It fails closed instead:
+// the rejection propagates, both callers skip the texture pass, and a
+// draco-only result ships. Less compression is a cost; an image that is not
+// an image is a lie.
+/** Where gltf-transform's own sharp lives, or null when there is no nested
+ *  copy at all (a deduped install — the state this whole fix is chasing).
+ *  RESOLUTION ONLY: it must not import, because import failure and absence
+ *  are different facts and only one of them makes a bare import safe. */
+export function resolveNestedSharp(): string | null {
+  try {
+    const fnDir = dirname(Bun.resolveSync("@gltf-transform/functions", import.meta.dir));
+    const npDir = dirname(Bun.resolveSync("ndarray-pixels", fnDir));
+    return Bun.resolveSync("sharp", npDir);
+  } catch {
+    return null;
+  }
+}
+
+/** The choice itself, with its two effects injected so a test can drive the
+ *  branch that matters (#136 review). Fails CLOSED: once a nested copy has
+ *  been resolved, an import failure PROPAGATES. It must not fall back to the
+ *  bare specifier — that would load the root copy beside the one
+ *  gltf-transform already has and recreate the exact two-libvips condition
+ *  this module forbids, in the one situation (ABI mismatch, missing dylib,
+ *  damaged install) where things are already going wrong. Both callers
+ *  already know how to degrade on rejection by skipping the texture pass,
+ *  which is the correct outcome: a draco-only pass ships nothing false. */
+export async function pickSharp(
+  resolveNested: () => string | null,
+  load: (specifier: string) => Promise<any>,
+): Promise<{ sharp: any; from: string }> {
+  const nested = resolveNested();
+  if (nested !== null) {
+    const mod = await load(nested);          // no catch: fail closed
+    return { sharp: mod.default ?? mod, from: nested };
+  }
+  // No nested copy exists, so the bare specifier IS the single copy.
+  const mod = await load("sharp");
+  return { sharp: mod.default ?? mod, from: "sharp (bare specifier)" };
+}
+
 let sharpP: Promise<{ sharp: any; from: string }> | null = null;
 /** Exported for tools/one-libvips-test.ts, which asserts `from` lands on the
  *  nested copy whenever one exists — the whole fix in one readable value. */
 export function getSharp(): Promise<{ sharp: any; from: string }> {
-  sharpP ??= (async () => {
-    try {
-      const fnDir = dirname(Bun.resolveSync("@gltf-transform/functions", import.meta.dir));
-      const npDir = dirname(Bun.resolveSync("ndarray-pixels", fnDir));
-      const nested = Bun.resolveSync("sharp", npDir);
-      return { sharp: (await import(nested)).default, from: nested };
-    } catch {
-      return { sharp: (await import("sharp")).default, from: "sharp (bare specifier)" };
-    }
-  })();
+  sharpP ??= pickSharp(resolveNestedSharp, (s) => import(s));
   return sharpP;
 }
 
