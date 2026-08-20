@@ -82,7 +82,8 @@ import { posable, pushable, setPosable, setPushable } from './lib/consent.js';
 import { updateVoiceMouths } from './lib/voicemouths.js';
 import { initEmoteBar } from './lib/emotebar.js';
 import { initCommands, saveScreenshot } from './lib/commands/handlers.js';
-import { deriveLandmarks, debugMarkers } from './lib/landmarks.js';
+import { deriveLandmarks, debugMarkers, landmarkWorld } from './lib/landmarks.js';
+import { canonicalPoint } from '../shared/contact.js';
 
 // (Crash breadcrumbs live in lib/bc.js now; the frame loop stamps each
 // system's name as it runs. avatar.js still reads globalThis.__ewBC.)
@@ -617,6 +618,18 @@ globalThis.EW = {
     if (!av) return null;
     av.__marks ??= deriveLandmarks(av);
     return av.__marks;
+  },
+  // Where a named contact point on a body IS, right now, in world space.
+  // `standoff` lifts it off the skin so a hand rests ON it, not inside it.
+  // This is the piece a touch is made of:
+  //   EW.reach('rightHand', () => EW.contactAt('mythos', 'shoulder_l', 0.02))
+  contactAt: (who, name, standoff = 0.02) => {
+    const av = who ? remotes.get(who)?.avatar : getMe();
+    if (!av) return null;
+    av.__marks ??= deriveLandmarks(av);
+    const e = av.__marks.get(canonicalPoint(name) ?? name);
+    const hit = e && landmarkWorld(e, standoff);
+    return hit ? hit.pos.toArray() : null;
   },
   showLandmarks: (on = true, who) => {
     const av = who ? remotes.get(who)?.avatar : getMe();
