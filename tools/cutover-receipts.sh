@@ -9,8 +9,13 @@ BUN="${BUN_PATH:-bun}"
 fails=0
 run() {
   printf '%-38s' "$1:"
-  if out=$($BUN "tools/$1" 2>&1); then echo "${out##*$'\n'}"; else
-    echo "FAIL"; echo "$out" | tail -5 | sed 's/^/    /'; fails=$((fails+1)); fi
+  # Stream to a scratch file, not $(…): a multi-minute browser suite inside a
+  # command substitution is INVISIBLE until it exits, and "no output" reads
+  # exactly like "wedged" — a healthy run got killed for looking quiet
+  # (2026-08-20, twice). tail -f the file to watch a slow suite live.
+  local out="/tmp/cutover-receipt-$$-${1%.*}.log"
+  if $BUN "tools/$1" >"$out" 2>&1; then tail -1 "$out"; else
+    echo "FAIL"; tail -5 "$out" | sed 's/^/    /'; fails=$((fails+1)); fi
 }
 echo "── node-side ──"
 run mention-regex-test.mjs
