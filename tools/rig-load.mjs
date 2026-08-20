@@ -78,6 +78,46 @@ export function worldPositions(g) {
 /** Every shipped rig, as { name, P } where P maps humanoid bone -> world rest
  *  position. Rigs without a humanoid extension or without hips are skipped
  *  loudly rather than silently. */
+/** The rigs the WORLD offers that assets/opt does not hold.
+ *
+ *  The optimized store and the avatar roster are not the same set: the world
+ *  serves claude, claude_suit, aletheia and aporia straight from the library,
+ *  and claude is the DEFAULT body. Every suite here ran on the 14 optimized
+ *  rigs and none of them on the body most people are actually wearing, which
+ *  is how a cross-body reach shipped looking wrong on it. Opt-in so the
+ *  ragdoll's measured baseline is not silently re-based; the reach suites take
+ *  it. Returns [] if the library is not on disk.
+ */
+export function libraryRigs(dir = process.env.EIDOVERSE_DIR
+  ? `${process.env.EIDOVERSE_DIR}/eidoverse/assets/vrms/`
+  : fileURLToPath(new URL('../../eidoverse-video/eidoverse/assets/vrms/', import.meta.url))) {
+  let names = [];
+  try { names = readdirSync(dir).filter((n) => n.endsWith('.vrm')).sort(); }
+  catch { return []; }
+  const out = [];
+  for (const f of names) {
+    const name = f.replace('.vrm', '');
+    let g, bones, wp;
+    try { g = glbJson(readFileSync(dir + f)); bones = humanBones(g); wp = worldPositions(g); }
+    catch (e) { out.push({ name, err: e.message }); continue; }
+    if (!bones) { out.push({ name, err: 'no humanoid extension' }); continue; }
+    const P = {};
+    for (const [b, n] of Object.entries(bones)) if (g.nodes[n]) P[b] = wp(n);
+    if (!P.hips) { out.push({ name, err: 'no hips bone' }); continue; }
+    const nodeOf = new Map(Object.entries(bones).map(([b, n]) => [n, b]));
+    const up = new Map();
+    g.nodes.forEach((n, i) => (n.children ?? []).forEach((c) => up.set(c, i)));
+    const realParent = {};
+    for (const [b, n] of Object.entries(bones)) {
+      let a = up.get(n);
+      while (a !== undefined && !nodeOf.has(a)) a = up.get(a);
+      realParent[b] = a === undefined ? null : nodeOf.get(a);
+    }
+    out.push({ name, P, realParent, boneCount: Object.keys(P).length });
+  }
+  return out;
+}
+
 export function rigs() {
   const out = [];
   for (const f of readdirSync(VRM_DIR).filter((n) => n.endsWith('.vrm')).sort()) {

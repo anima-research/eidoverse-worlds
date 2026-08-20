@@ -2,7 +2,11 @@
  * Live reach test — the solver driving REAL bone nodes on the shipped rigs,
  * frame after frame, with the target moving under it.
  *
- *   bun tools/reachlive-test.ts
+ *   EIDOVERSE_DIR=~/connectome-local/eidoverse-video bun tools/reachlive-test.ts
+ *
+ * EIDOVERSE_DIR is not optional in a worktree: without it the library rigs
+ * (claude, claude_suit, aletheia, aporia — claude is the DEFAULT body) do not
+ * load and the suite silently drops to the 14 optimized ones.
  *
  * tools/reach-test.ts checks the geometry and tools/reachrig-test.ts checks
  * the conversion against rig data. Neither writes a bone. This one does: it
@@ -18,7 +22,7 @@ const STUB = fileURLToPath(new URL('./core-stub.mjs', import.meta.url));
 plugin({ name: 'core-stub', setup(b) { b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: STUB })); } });
 
 const { THREE } = await import('./core-stub.mjs');
-const { rigs, makeAvatar } = await import('./rig-load.mjs');
+const { rigs, libraryRigs, makeAvatar } = await import('./rig-load.mjs');
 const { measureChain, solveChain } = await import('../client/lib/reachbone.js');
 const { solveTwoBone, penetration } = await import('../shared/reach.js');
 
@@ -40,7 +44,7 @@ function step(chain: any, av: any, target: number[], pole: number[] | null) {
 const handAt = (chain: any) => chain.nodes.end.getWorldPosition(new THREE.Vector3());
 const D = (a: any, b: number[]) => a.distanceTo(new THREE.Vector3(b[0], b[1], b[2]));
 
-const good = rigs().filter((r: any) => !r.err);
+const good = [...rigs(), ...libraryRigs()].filter((r: any) => !r.err);
 console.log(`\n${good.length} rigs`);
 
 console.log("\na hand goes where it is sent");

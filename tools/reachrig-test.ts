@@ -1,7 +1,11 @@
 /**
  * Reach-on-real-rigs test — the solver wired to the SHIPPED VRMs, headless.
  *
- *   bun tools/reachrig-test.ts
+ *   EIDOVERSE_DIR=~/connectome-local/eidoverse-video bun tools/reachrig-test.ts
+ *
+ * EIDOVERSE_DIR is not optional in a worktree: without it the library rigs
+ * resolve to <worktree>/../eidoverse-video and silently do not load, and the
+ * suite quietly drops to the 14 optimized ones. Check the rig count it prints.
  *
  * tools/ragdoll-test.ts learned this lesson the expensive way: a synthetic
  * T-pose humanoid passed 18/18 while every real rig in the fleet was broken,
@@ -16,7 +20,7 @@
  * the solver agreeing with itself would have told us.
  */
 
-import { rigs } from "./rig-load.mjs";
+import { rigs, libraryRigs } from "./rig-load.mjs";
 import { solveTwoBone, chainLocalQuats, qMulq, qRot } from "../shared/reach.js";
 import { bodyFrame, limitsFor, coneAxisBody, fromBody, toBody, D2R } from "../shared/joints.js";
 
@@ -42,7 +46,7 @@ function forwardK(root: number[], dRestU: number[], dRestL: number[], L1: number
   return { elbow, hand };
 }
 
-const all = rigs();
+const all = [...rigs(), ...libraryRigs()];
 const good = all.filter((r: any) => !r.err);
 console.log(`\n${good.length} rigs loaded${all.length - good.length ? `, ${all.length - good.length} skipped` : ""}`);
 
