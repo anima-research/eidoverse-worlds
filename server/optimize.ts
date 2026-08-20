@@ -29,7 +29,91 @@ import { dedup, prune, resample, textureCompress, draco, listTextureSlots } from
 import draco3d from "draco3dgltf";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, basename } from "node:path";
+import { join, basename, dirname } from "node:path";
+
+// ---- ONE libvips per process (#122) -----------------------------------------
+// The store's root manifest declares `sharp: ^0.33.5`; @gltf-transform/
+// functions reaches sharp through ndarray-pixels, which declares `^0.35.0`.
+// The ranges do not intersect, so no installer can dedupe them and BOTH land
+// on disk — node_modules/sharp (0.33.5) beside
+// node_modules/ndarray-pixels/node_modules/sharp (0.35.3). Importing plain
+// "sharp" here therefore loads a SECOND native libvips into a process that
+// already has one, and the two disagree about libvips' own enums:
+//
+//   GLib-GObject-CRITICAL: value "32" of type 'gint' is invalid or out of
+//   range for property 'space' of type 'VipsInterpretation'
+//   Error: colourspace: parameter space not set   (sharp/lib/output.js)
+//
+// On win32 that THROWS, which is the merciful outcome — the pass dies and the
+// original is kept. On the show box's libvips it does not throw: encoding
+// returns a buffer of uninitialized memory (a repeated LE uint32, then
+// zeros), gltf-transform stamps it `image/webp`, and the store serves an
+// image that is not an image. That is #122 — the threshold-lantern's
+// baseColor and normal (both JPEG-sourced, so both routed through the
+// converting path) came out undecodable, the material fell back to
+// baseColorFactor 1,1,1,1, and the lantern rendered white.
+//
+// So: never import "sharp" by bare specifier in this file. Resolve the copy
+// @gltf-transform/functions itself will use, and hand that same module back
+// to it as the encoder — one libvips, end to end.
+//
+// RESOLUTION and IMPORT are kept separate, and the bare specifier is reached
+// on exactly one condition: no nested copy could be RESOLVED. That means a
+// deduped (or single-copy) install, where the bare import is the same single
+// copy and is therefore safe.
+//
+// A nested copy that resolves but fails to IMPORT — ABI mismatch, missing
+// dylib, damaged install — must NOT fall back (#136 review). Doing so loads
+// the root copy beside the one gltf-transform already has and recreates the
+// exact two-libvips condition this module exists to forbid, in the one
+// situation where things are already going wrong. It fails closed instead:
+// the rejection propagates, both callers skip the texture pass, and a
+// draco-only result ships. Less compression is a cost; an image that is not
+// an image is a lie.
+/** Where gltf-transform's own sharp lives, or null when there is no nested
+ *  copy at all (a deduped install — the state this whole fix is chasing).
+ *  RESOLUTION ONLY: it must not import, because import failure and absence
+ *  are different facts and only one of them makes a bare import safe. */
+export function resolveNestedSharp(): string | null {
+  try {
+    const fnDir = dirname(Bun.resolveSync("@gltf-transform/functions", import.meta.dir));
+    const npDir = dirname(Bun.resolveSync("ndarray-pixels", fnDir));
+    return Bun.resolveSync("sharp", npDir);
+  } catch {
+    return null;
+  }
+}
+
+/** The choice itself, with its two effects injected so a test can drive the
+ *  branch that matters (#136 review). Fails CLOSED: once a nested copy has
+ *  been resolved, an import failure PROPAGATES. It must not fall back to the
+ *  bare specifier — that would load the root copy beside the one
+ *  gltf-transform already has and recreate the exact two-libvips condition
+ *  this module forbids, in the one situation (ABI mismatch, missing dylib,
+ *  damaged install) where things are already going wrong. Both callers
+ *  already know how to degrade on rejection by skipping the texture pass,
+ *  which is the correct outcome: a draco-only pass ships nothing false. */
+export async function pickSharp(
+  resolveNested: () => string | null,
+  load: (specifier: string) => Promise<any>,
+): Promise<{ sharp: any; from: string }> {
+  const nested = resolveNested();
+  if (nested !== null) {
+    const mod = await load(nested);          // no catch: fail closed
+    return { sharp: mod.default ?? mod, from: nested };
+  }
+  // No nested copy exists, so the bare specifier IS the single copy.
+  const mod = await load("sharp");
+  return { sharp: mod.default ?? mod, from: "sharp (bare specifier)" };
+}
+
+let sharpP: Promise<{ sharp: any; from: string }> | null = null;
+/** Exported for tools/one-libvips-test.ts, which asserts `from` lands on the
+ *  nested copy whenever one exists — the whole fix in one readable value. */
+export function getSharp(): Promise<{ sharp: any; from: string }> {
+  sharpP ??= pickSharp(resolveNestedSharp, (s) => import(s));
+  return sharpP;
+}
 
 let ioP: Promise<NodeIO> | null = null;
 function getIO(): Promise<NodeIO> {
@@ -54,7 +138,10 @@ export async function optimizeGlb(bytes: Uint8Array): Promise<Uint8Array> {
   // Texture recompression needs sharp (native). If it can't load on this box,
   // a draco-only pass is still most of the win — degrade, don't die.
   try {
-    const sharp = (await import("sharp")).default;
+    // getSharp, never a bare import: this encoder must be the SAME module
+    // gltf-transform decodes with, or the two libvips corrupt each other's
+    // output and we ship it (#122).
+    const { sharp } = await getSharp();
     transforms.push(textureCompress({
       encoder: sharp,
       targetFormat: "webp",
@@ -132,7 +219,7 @@ async function ktx2CompressTextures(doc: Document, encoder: string): Promise<num
   // KHR_texture_basisu (and WebGPU BC upload) wants width/height % 4 == 0.
   // sharp is optional today: without it, only already-aligned PNGs encode.
   let sharp: any = null;
-  try { sharp = (await import("sharp")).default; } catch { /* PNG-only pass below */ }
+  try { sharp = (await getSharp()).sharp; } catch { /* PNG-only pass below */ }
   const tmp = mkdtempSync(join(tmpdir(), "ew-ktx2-"));
   let converted = 0;
   try {
@@ -438,7 +525,7 @@ export async function transcodeVrmKtx2(bytes: Uint8Array, encoder: string):
   const marks = classifyVrmImages(json);
   const isToktx = basename(encoder).toLowerCase().includes("toktx");
   let sharp: any = null;
-  try { sharp = (await import("sharp")).default; } catch { /* aligned-PNG/JPEG-only pass below */ }
+  try { sharp = (await getSharp()).sharp; } catch { /* aligned-PNG/JPEG-only pass below */ }
   const tmp = mkdtempSync(join(tmpdir(), "ew-ktx2vrm-"));
   const newImageBytes = new Map<number, Uint8Array>(); // image idx -> ktx2 bytes
   let etc1s = 0, uastcN = 0;
