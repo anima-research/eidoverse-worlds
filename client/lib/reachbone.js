@@ -10,13 +10,16 @@
 // silently, plausibly wrong.
 
 import { THREE } from './core.js';
-import { solveTwoBone, chainLocalQuats, qConj, qMulq, qRot } from '../../shared/reach.js';
-import { bodyFrame, limitsFor, coneAxisBody, toBody, fromBody, REACH_CHAINS } from '../../shared/joints.js';
+import { solveTwoBone, solveTwoBoneClear, penetration, chainLocalQuats, qConj, qMulq, qRot } from '../../shared/reach.js';
+import { bodyFrame, limitsFor, coneAxisBody, toBody, fromBody, REACH_CHAINS,
+         torsoRadius, boneRadius, GUARD_SEGMENTS } from '../../shared/joints.js';
 
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
+const _v3 = new THREE.Vector3();
+const _v4 = new THREE.Vector3();
 
 const dirLen = (u, v) => {
   const w = [v[0] - u[0], v[1] - u[1], v[2] - u[2]];
@@ -60,9 +63,34 @@ export function measureChain(avatar, key) {
   const up = dirLen(a, b), lo = dirLen(b, c);
   if (!(up.l > 1e-5) || !(lo.l > 1e-5)) return null;
   const lim = limitsFor(spec.root);
+
+  // ---- what this limb must not pass through.
+  //
+  // Thicknesses are the ragdoll's measured model (torso radius from the wider
+  // of shoulder/hip span, anatomical fractions per bone), so a reach and a
+  // fall agree about how thick this body is.
+  const torsoR = torsoRadius(P);
+  const rUpper = boneRadius(spec.root, torsoR);
+  const rLower = boneRadius(spec.mid, torsoR);
+  const own = new Set([spec.root, spec.mid, spec.end]);
+  const guards = [];
+  for (const [ga, gb] of GUARD_SEGMENTS) {
+    if (own.has(ga) || own.has(gb)) continue;          // a limb cannot hit itself
+    const na = h.getNormalizedBoneNode(ga), nb = h.getNormalizedBoneNode(gb);
+    if (!na || !nb || !P[ga] || !P[gb]) continue;
+    const g = { na, nb, r: (boneRadius(ga, torsoR) + boneRadius(gb, torsoR)) / 2 };
+    // Drop anything already overlapping at REST. A shoulder sits inside the
+    // chest capsule on most rigs; guarding against it would report the arm as
+    // permanently stuck in the body and swivel forever chasing a clearance
+    // that never existed. Same rule the ragdoll applies when building pairs.
+    const restPen = penetration(a, b, c, rUpper, rLower, [{ a: P[ga], b: P[gb], r: g.r }]);
+    if (restPen > 0) continue;
+    guards.push(g);
+  }
+
   return {
     key, spec, nodes, L1: up.l, L2: lo.l, dRestU: up.u, dRestL: lo.u, lim,
-    fwd: F.f,
+    fwd: F.f, rUpper, rLower, guards,
     coneAxis: fromBody(coneAxisBody(toBody(up.u, F), lim.coneTilt ?? 0), F),
   };
 }
@@ -88,20 +116,32 @@ export function solveChain(chain, avatar, targetWorld, poleHint = null) {
   const shoulder = root.worldToLocal(chain.nodes.upper.getWorldPosition(_v2)).toArray();
   const qParent = qMulq(qRootInv, chain.nodes.upper.parent.getWorldQuaternion(_q2).toArray());
 
-  const res = solveTwoBone({
+  // guards, live and in the same frame the solve happens in — the torso moves
+  const guards = [];
+  for (const g of chain.guards ?? []) {
+    guards.push({
+      a: root.worldToLocal(g.na.getWorldPosition(_v3)).toArray(),
+      b: root.worldToLocal(g.nb.getWorldPosition(_v4)).toArray(),
+      r: g.r,
+    });
+  }
+
+  const res = solveTwoBoneClear({
     root: shoulder, target, L1: chain.L1, L2: chain.L2,
+    rUpper: chain.rUpper, rLower: chain.rLower,
     // last frame's elbow keeps the bend plane continuous, so a target swinging
     // past the shoulder does not flip the elbow inside out mid-reach
     pole: poleHint ?? qRot(qParent, chain.dRestU),
     fwd: qRot(qParent, chain.fwd),
     coneAxis: qRot(qParent, chain.coneAxis),
     limits: { coneHalf: chain.lim.coneHalf, behind: chain.lim.behind, maxFlex: chain.lim.maxFlex },
-  });
+  }, guards);
   if (!res.ok) return { ok: false, why: res.why };
 
   const q = chainLocalQuats(chain.dRestU, chain.dRestL, res.upper, res.lower, qParent);
   return {
     ok: true, res, upper: q.upper, lower: q.lower,
+    swivel: res.swivel ?? 0, penetration: res.penetration ?? 0,
     elbowOffset: [res.elbow[0] - shoulder[0], res.elbow[1] - shoulder[1], res.elbow[2] - shoulder[2]],
   };
 }

@@ -198,3 +198,46 @@ export const fromBody = (b, F) => [
   b[0] * F.r[1] + b[1] * F.u[1] + b[2] * F.f[1],
   b[0] * F.r[2] + b[1] * F.u[2] + b[2] * F.f[2],
 ];
+
+// Self-collision radii, as fractions of the torso radius. The torso radius
+// itself is MEASURED from the body (shoulder/hip span) so this scales to any
+// avatar — a bulky one gets fatter colliders than a slim one. Anatomical
+// fractions give limbs their taper: a wrist is thinner than a hip.
+export const RADIUS_FRAC = {
+  hips: 1.0, spine: 0.95, chest: 1.0, neck: 0.5, head: 0.75,
+  leftUpperArm: 0.5, rightUpperArm: 0.5, leftLowerArm: 0.35, rightLowerArm: 0.35,
+  leftHand: 0.3, rightHand: 0.3,
+  leftUpperLeg: 0.55, rightUpperLeg: 0.55, leftLowerLeg: 0.4, rightLowerLeg: 0.4,
+  leftFoot: 0.35, rightFoot: 0.35,
+};
+
+
+/**
+ * A body's torso half-thickness, MEASURED — the same derivation the ragdoll
+ * uses, so a reach and a fall disagree about nothing. Half the wider of the
+ * shoulder or hip span; a fraction of the spine if the limbs are missing.
+ *
+ * @param {Record<string, number[]>} P rest bone positions
+ */
+export function torsoRadius(P) {
+  const d = (a, b) => (P[a] && P[b]
+    ? Math.hypot(P[a][0] - P[b][0], P[a][1] - P[b][1], P[a][2] - P[b][2]) : 0);
+  const shoulderW = d('leftUpperArm', 'rightUpperArm');
+  const hipW = d('leftUpperLeg', 'rightUpperLeg');
+  const spineLen = d('hips', 'head') || 0.5;
+  return Math.min(0.25, Math.max(0.05, (Math.max(shoulderW, hipW) * 0.42) || spineLen * 0.26));
+}
+
+/** Capsule radius for one bone on a body of the given torso radius. */
+export const boneRadius = (bone, torsoR) => torsoR * (RADIUS_FRAC[bone] ?? 0.4);
+
+/** The segments a reaching arm must not pass through: the torso column, the
+ *  head, the thighs, and the OTHER arm. Chain-owned bones are excluded by the
+ *  caller — a limb cannot collide with itself. */
+export const GUARD_SEGMENTS = [
+  ['hips', 'spine'], ['spine', 'chest'], ['chest', 'neck'], ['neck', 'head'],
+  ['hips', 'leftUpperLeg'], ['hips', 'rightUpperLeg'],
+  ['leftUpperLeg', 'leftLowerLeg'], ['rightUpperLeg', 'rightLowerLeg'],
+  ['leftUpperArm', 'leftLowerArm'], ['rightUpperArm', 'rightLowerArm'],
+  ['leftLowerArm', 'leftHand'], ['rightLowerArm', 'rightHand'],
+];

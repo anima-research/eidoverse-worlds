@@ -42,7 +42,7 @@
 // numbers tuned on one body are wrong on the next one.
 
 import { THREE } from './core.js';
-import { BEHIND, CONE, HINGE, TWIST, TWIST_PARENT } from '../../shared/joints.js';
+import { BEHIND, CONE, HINGE, TWIST, TWIST_PARENT, RADIUS_FRAC } from '../../shared/joints.js';
 import { heightAt } from './terrain.js';
 import { resolveColliders } from './colliders.js';
 
@@ -229,17 +229,8 @@ const FLEX = [
 // second copy would be mirrored math. The comments explaining what each value
 // cost to find moved with the values; read them there.
 
-// Self-collision radii, as fractions of the torso radius. The torso radius
-// itself is MEASURED from the body (shoulder/hip span) so this scales to any
-// avatar — a bulky one gets fatter colliders than a slim one. Anatomical
-// fractions give limbs their taper: a wrist is thinner than a hip.
-const RADIUS_FRAC = {
-  hips: 1.0, spine: 0.95, chest: 1.0, neck: 0.5, head: 0.75,
-  leftUpperArm: 0.5, rightUpperArm: 0.5, leftLowerArm: 0.35, rightLowerArm: 0.35,
-  leftHand: 0.3, rightHand: 0.3,
-  leftUpperLeg: 0.55, rightUpperLeg: 0.55, leftLowerLeg: 0.4, rightLowerLeg: 0.4,
-  leftFoot: 0.35, rightFoot: 0.35,
-};
+// Self-collision radii moved to shared/joints.js with the joint envelope —
+// the reach solver needs the same idea of how thick a body is.
 
 const D2R = Math.PI / 180;
 

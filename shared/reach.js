@@ -308,3 +308,94 @@ export function chainLocalQuats(dRestUpper, dRestLower, dWantUpper, dWantLower, 
     lowerFrame: QL,
   };
 }
+
+// ---- not through your own body ---------------------------------------------
+//
+// A two-bone chain has exactly one degree of freedom left once the hand is
+// placed: the SWIVEL of the elbow around the shoulder-hand axis. That is the
+// right knob for self-collision, because turning it moves the elbow without
+// moving the hand at all — the arm comes out of the torso and still touches
+// what it was asked to touch. Pushing the limb out bodily would clear the body
+// too, and would break the one promise the reach makes.
+//
+// Thicknesses come from shared/joints.js, which is the ragdoll's measured
+// model: a reach and a fall should disagree about nothing, least of all how
+// thick this body is.
+
+/** Squared distance between two segments, by the standard clamped-parameter
+ *  method. Degenerate (zero-length) segments fall through to point cases. */
+export function segSegDist(p1, q1, p2, q2) {
+  const d1 = sub(q1, p1), d2 = sub(q2, p2), r = sub(p1, p2);
+  const a = dot(d1, d1), e = dot(d2, d2), f = dot(d2, r);
+  let s, t;
+  if (a <= 1e-12 && e <= 1e-12) return len(sub(p1, p2));
+  if (a <= 1e-12) { s = 0; t = clamp(f / e, 0, 1); }
+  else {
+    const c = dot(d1, r);
+    if (e <= 1e-12) { t = 0; s = clamp(-c / a, 0, 1); }
+    else {
+      const b = dot(d1, d2), den = a * e - b * b;
+      s = den > 1e-12 ? clamp((b * f - c * e) / den, 0, 1) : 0;
+      t = (b * s + f) / e;
+      if (t < 0) { t = 0; s = clamp(-c / a, 0, 1); }
+      else if (t > 1) { t = 1; s = clamp((b - c) / a, 0, 1); }
+    }
+  }
+  return len(sub(add(p1, mul(d1, s)), add(p2, mul(d2, t))));
+}
+
+/** How far the solved limb is inside anything it should not be, in metres
+ *  summed over every offending pair. Zero means clear. */
+export function penetration(root, elbow, hand, rUpper, rLower, guards) {
+  let pen = 0;
+  for (const g of guards) {
+    const min1 = g.r + rUpper, min2 = g.r + rLower;
+    const d1 = segSegDist(root, elbow, g.a, g.b);
+    if (d1 < min1) pen += min1 - d1;
+    const d2 = segSegDist(elbow, hand, g.a, g.b);
+    if (d2 < min2) pen += min2 - d2;
+  }
+  return pen;
+}
+
+const SWIVELS = (() => {
+  // ordered by |angle|, so the FIRST clear one is the least departure from the
+  // pose the pole hint asked for. Deterministic — every client sweeps the same
+  // list in the same order and picks the same arm.
+  const out = [0];
+  for (let a = 10; a <= 170; a += 10) { out.push(a * Math.PI / 180, -a * Math.PI / 180); }
+  return out;
+})();
+
+/**
+ * Solve, and if the arm comes out inside the body, swivel the elbow until it
+ * does not. Falls back to the least-bad swivel rather than refusing, because
+ * an arm that is 2cm inside a hip still reads better than an arm that gave up.
+ *
+ * @param {object} o the same options solveTwoBone takes
+ * @param {Array<{a:number[],b:number[],r:number}>} guards live segments to avoid
+ */
+export function solveTwoBoneClear(o, guards) {
+  const first = solveTwoBone(o);
+  if (!first.ok || !guards?.length) return first;
+
+  const rU = o.rUpper ?? 0, rL = o.rLower ?? 0;
+  const pen0 = penetration(o.root, first.elbow, first.hand, rU, rL, guards);
+  if (pen0 <= 0) return { ...first, swivel: 0, penetration: 0 };
+
+  const to = sub(o.target, o.root);
+  const aim = norm(to);
+  const basePole = o.pole ?? first.elbow;
+  let best = { res: first, pen: pen0, swivel: 0 };
+
+  for (const th of SWIVELS) {
+    if (th === 0) continue;
+    const pole = aim ? rotateAbout(basePole, aim, th) : basePole;
+    const res = solveTwoBone({ ...o, pole });
+    if (!res.ok) continue;
+    const pen = penetration(o.root, res.elbow, res.hand, rU, rL, guards);
+    if (pen <= 0) return { ...res, swivel: th, penetration: 0 };
+    if (pen < best.pen) best = { res, pen, swivel: th };
+  }
+  return { ...best.res, swivel: best.swivel, penetration: best.pen };
+}

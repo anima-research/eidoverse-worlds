@@ -20,6 +20,7 @@ plugin({ name: 'core-stub', setup(b) { b.onResolve({ filter: /^\.\/core\.js$/ },
 const { THREE } = await import('./core-stub.mjs');
 const { rigs, makeAvatar } = await import('./rig-load.mjs');
 const { measureChain, solveChain } = await import('../client/lib/reachbone.js');
+const { solveTwoBone, penetration } = await import('../shared/reach.js');
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
@@ -182,6 +183,59 @@ console.log("\nthe limits hold on live bones");
   }
   check(`no bone ever changes length on a live rig (${tested} solves)`, violations === 0, `${violations}`);
   check(`out-of-range targets are reported, not faked (${reported} bound)`, reported > 0);
+}
+
+console.log("\nnot through your own body");
+{
+  // antra, looking at it: "heavy self-intersection, arms passing through torso".
+  // Targets across the body are what provoke it — reaching the LEFT hand at
+  // points on the RIGHT side drags the forearm through the chest.
+  //
+  // Baseline first, with the guards switched off, so the improvement is
+  // measured against a number and not against an impression.
+  let before = 0, after = 0, worstAfter = 0, cases = 0, cleared = 0, gapWorst = 0;
+  for (const rig of good) {
+    const av = makeAvatar(rig.P, { realParent: rig.realParent });
+    const chain: any = measureChain(av, "leftHand");
+    if (!chain?.guards?.length) continue;
+    const sh = chain.nodes.upper.getWorldPosition(new THREE.Vector3());
+    const R = (chain.L1 + chain.L2);
+    for (let i = 0; i < 60; i++) {
+      const a = (i / 60) * Math.PI * 2;
+      // a ring across the front of the torso, well inside arm's length —
+      // squarely in the region where the elbow wants to be inside the chest
+      const t = [sh.x - R * 0.55 + Math.cos(a) * R * 0.3,
+                 sh.y + Math.sin(a) * R * 0.35,
+                 sh.z + R * 0.22];
+      // rebuild the live guard list the way solveChain does
+      const guards = (chain.guards ?? []).map((g: any) => ({
+        a: g.na.getWorldPosition(new THREE.Vector3()).toArray(),
+        b: g.nb.getWorldPosition(new THREE.Vector3()).toArray(), r: g.r,
+      }));
+      const naive: any = solveTwoBone({
+        root: sh.toArray(), target: t, L1: chain.L1, L2: chain.L2,
+        pole: chain.dRestU, fwd: chain.fwd, coneAxis: chain.coneAxis,
+        limits: { coneHalf: chain.lim.coneHalf, behind: chain.lim.behind, maxFlex: chain.lim.maxFlex },
+      });
+      if (!naive.ok) continue;
+      cases++;
+      before += penetration(sh.toArray(), naive.elbow, naive.hand, chain.rUpper, chain.rLower, guards);
+
+      const out: any = step(chain, av, t, null);
+      if (!out.ok) continue;
+      const pen = out.penetration ?? 0;
+      after += pen; worstAfter = Math.max(worstAfter, pen);
+      if (pen <= 0) cleared++;
+      if (!out.res.bound.length) gapWorst = Math.max(gapWorst, D(handAt(chain), t));
+    }
+  }
+  const drop = before > 0 ? (1 - after / before) : 0;
+  console.log(`  ${cases} across-body targets: penetration ${(before * 100).toFixed(1)}cm -> ${(after * 100).toFixed(1)}cm total`);
+  check(`the baseline actually penetrated (else this proves nothing)`, before > 0.05, `${before.toFixed(4)}m`);
+  check(`self-intersection drops by >90% (${(drop * 100).toFixed(1)}%)`, drop > 0.9);
+  check(`most targets come out completely clear (${cleared}/${cases})`, cleared / Math.max(1, cases) > 0.9);
+  check(`worst remaining overlap is small (${(worstAfter * 1000).toFixed(1)}mm)`, worstAfter < 0.02);
+  check(`and the hand still lands on target (${(gapWorst * 1000).toFixed(3)}mm)`, gapWorst < 1e-4);
 }
 
 console.log(failures ? `\n\x1b[31m${failures} failed\x1b[0m\n` : "\n\x1b[32mall passed\x1b[0m\n");
