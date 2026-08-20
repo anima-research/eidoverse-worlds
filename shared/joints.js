@@ -152,3 +152,49 @@ export const REACH_CHAINS = {
   leftFoot:  { root: 'leftUpperLeg',  mid: 'leftLowerLeg',  end: 'leftFoot' },
   rightFoot: { root: 'rightUpperLeg', mid: 'rightLowerLeg', end: 'rightFoot' },
 };
+
+/**
+ * The body's own axes from a set of rest bone positions: right, up, forward.
+ *
+ * Same construction as the ragdoll's `_frame` — the pelvis bar for right, hips
+ * to head for up, their cross for forward, then re-orthogonalize right. It is
+ * NOT the same function: the ragdoll's is stateful on purpose (it keeps the
+ * last good forward through a fold where the spine lies along the pelvis bar,
+ * because a hinge whose handedness jumps mid-tumble is how a knee decides it
+ * bends the wrong way). A reach solves from the REST pose, which is never
+ * degenerate, so this one is pure and has nothing to remember.
+ *
+ * @param {Record<string, number[]>} P bone -> [x,y,z]
+ * @returns {{r: number[], u: number[], f: number[]}|null}
+ */
+export function bodyFrame(P) {
+  const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const cross = (a, b) => [
+    a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]); return l > 1e-5 ? [a[0] / l, a[1] / l, a[2] / l] : null; };
+
+  let r = (P.leftUpperLeg && P.rightUpperLeg) ? norm(sub(P.leftUpperLeg, P.rightUpperLeg))
+        : (P.leftUpperArm && P.rightUpperArm) ? norm(sub(P.leftUpperArm, P.rightUpperArm)) : null;
+  let u = (P.head && P.hips) ? norm(sub(P.head, P.hips))
+        : (P.chest && P.hips) ? norm(sub(P.chest, P.hips)) : null;
+  r ??= [1, 0, 0];
+  u ??= [0, 1, 0];
+  const f = norm(cross(r, u));
+  if (!f) return null;
+  const r2 = norm(cross(u, f)) ?? r;
+  return { r: r2, u, f };
+}
+
+/** A world-space direction, expressed in body-frame coordinates. */
+export const toBody = (v, F) => [
+  v[0] * F.r[0] + v[1] * F.r[1] + v[2] * F.r[2],
+  v[0] * F.u[0] + v[1] * F.u[1] + v[2] * F.u[2],
+  v[0] * F.f[0] + v[1] * F.f[1] + v[2] * F.f[2],
+];
+
+/** ...and back out again. */
+export const fromBody = (b, F) => [
+  b[0] * F.r[0] + b[1] * F.u[0] + b[2] * F.f[0],
+  b[0] * F.r[1] + b[1] * F.u[1] + b[2] * F.f[1],
+  b[0] * F.r[2] + b[1] * F.u[2] + b[2] * F.f[2],
+];

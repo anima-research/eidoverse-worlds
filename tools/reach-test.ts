@@ -117,9 +117,13 @@ console.log("\nthe cone and the frontal plane");
     coneAxis: [1, 0, 0], limits: { coneHalf: 85 * D },
   }) as any;
   check("cone reported as binding", r.bound.includes("cone"));
-  const armDir = [r.hand[0], r.hand[1], r.hand[2]].map((v) => v / Math.hypot(...r.hand));
-  check("the whole arm is pulled onto the cone boundary",
-    near(dot(armDir, [1, 0, 0]), Math.cos(85 * D), 1e-6), `dot=${dot(armDir, [1, 0, 0])}`);
+  // The cone constrains the SHOULDER, so it is the upper bone that lands on
+  // the boundary — not the hand, which then reaches on from there as far as
+  // the elbow allows. (This assertion used to check the hand and was simply
+  // wrong about which vector the joint limit owns.)
+  check("the UPPER BONE is pulled onto the cone boundary",
+    near(dot(r.upper, [1, 0, 0]), Math.cos(85 * D), 1e-6), `dot=${dot(r.upper, [1, 0, 0])}`);
+  check("the upper bone stays unit length", near(Math.hypot(...r.upper), 1));
 }
 {
   const r = solveTwoBone({
@@ -127,8 +131,54 @@ console.log("\nthe cone and the frontal plane");
     fwd: [0, 0, 1], limits: { behind: 65 * D },
   }) as any;
   check("frontal stop reported as binding", r.bound.includes("behind"));
-  const f = dot(r.hand.map((v: number) => v / Math.hypot(...r.hand)), [0, 0, 1]);
-  check("the limb sits exactly at the 65° stop", near(f, -Math.sin(65 * D), 1e-6), `fwd=${f}`);
+  const f = dot(r.upper, [0, 0, 1]);
+  check("the upper bone sits exactly at the 65° stop", near(f, -Math.sin(65 * D), 1e-6), `fwd=${f}`);
+}
+
+{
+  // cone AND frontal stop together — one projection each is not enough, which
+  // is why the solver alternates them to a fixed point
+  const r = solveTwoBone({
+    root: [0, 0, 0], target: [-2, 0, -2], L1: 1, L2: 1, pole: [0, -1, 0],
+    coneAxis: [1, 0, 0], fwd: [0, 0, 1],
+    limits: { coneHalf: 85 * D, behind: 65 * D, maxFlex: 145 * D },
+  }) as any;
+  check("BOTH are satisfied at once, not just the last one applied",
+    dot(r.upper, [1, 0, 0]) >= Math.cos(85 * D) - 1e-6 && dot(r.upper, [0, 0, 1]) >= -Math.sin(65 * D) - 1e-6,
+    `cone=${dot(r.upper, [1, 0, 0])} fwd=${dot(r.upper, [0, 0, 1])}`);
+  check("and it did not give up as infeasible", !r.bound.includes("infeasible"));
+  // Here only the frontal stop is active at the fixed point — the cone fires
+  // during alternation and the final arm ends up well inside it (0.42 against
+  // a boundary of 0.087). `bound` must say what is true AT THE END.
+  check("reports only the limit that is actually active", r.bound.includes("behind") && !r.bound.includes("cone"));
+}
+{
+  // report honesty as a property: over many targets, every limit named in
+  // `bound` is genuinely on its boundary, and every limit NOT named is
+  // genuinely satisfied with room to spare
+  let lies = 0, coneHits = 0, behindHits = 0;
+  let seed = 4242;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  for (let i = 0; i < 5000; i++) {
+    const t = [(rnd() - 0.5) * 5, (rnd() - 0.5) * 5, (rnd() - 0.5) * 5];
+    const r = solveTwoBone({
+      root: [0, 0, 0], target: t, L1: 1, L2: 0.9, pole: [(rnd() - 0.5), -1, (rnd() - 0.5)],
+      coneAxis: [1, 0, 0], fwd: [0, 0, 1],
+      limits: { coneHalf: 85 * D, behind: 65 * D, maxFlex: 145 * D },
+    }) as any;
+    if (!r.ok) continue;
+    const cd = dot(r.upper, [1, 0, 0]), fd = dot(r.upper, [0, 0, 1]);
+    const coneOn = Math.abs(cd - Math.cos(85 * D)) < 1e-6;
+    const behindOn = Math.abs(fd - -Math.sin(65 * D)) < 1e-6;
+    if (r.bound.includes("cone") !== coneOn) lies++;
+    if (r.bound.includes("behind") !== behindOn) lies++;
+    if (cd < Math.cos(85 * D) - 1e-6 || fd < -Math.sin(65 * D) - 1e-6) lies++;
+    if (coneOn) coneHits++;
+    if (behindOn) behindHits++;
+  }
+  check(`bound[] never lies over 5000 targets (cone active ${coneHits}, behind active ${behindHits})`,
+    lies === 0, `${lies} discrepancies`);
+  check("...and both limits were exercised", coneHits > 0 && behindHits > 0);
 }
 
 console.log("\nrefusals rather than NaN");

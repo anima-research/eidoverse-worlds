@@ -119,41 +119,17 @@ export function solveTwoBone(o) {
 
   const lim = o.limits ?? {};
   const bound = [];
-  let aim = mul(to, 1 / d0);
+  const aim = mul(to, 1 / d0);
 
-  // ---- where the limb may POINT (cone about its rest direction, then the
-  // frontal-plane stop). Applied cone-behind-cone: the frontal clamp can push
-  // a direction back out of the cone, and one re-pass returns it without the
-  // open-ended loop an iterative solver would need. If it is still outside
-  // after that, say so rather than pretend.
-  const applyCone = () => {
-    if (o.coneAxis && lim.coneHalf != null) {
-      const r = clampToCone(aim, o.coneAxis, lim.coneHalf);
-      aim = r.v;
-      return r.clamped;
-    }
-    return false;
-  };
-  if (applyCone()) bound.push('cone');
-  if (o.fwd && lim.behind != null) {
-    const r = clampBehind(aim, o.fwd, -Math.sin(lim.behind));
-    aim = r.v;
-    if (r.clamped) {
-      bound.push('behind');
-      if (applyCone() && !bound.includes('cone')) bound.push('cone');
-    }
-  }
-
-  // ---- how far along that direction the hand can get.
+  // ---- the triangle: how far the hand can be, and how bent the elbow is.
   // The triangle closes only for |L1-L2| <= d <= L1+L2; outside it the arm is
-  // either straight (too far) or folded as tight as the elbow allows (too
-  // near). EPS keeps the law of cosines off its singular ends, where acos
-  // loses all its precision.
+  // either straight (too far) or folded as tight as the elbow allows. EPS
+  // keeps the law of cosines off its singular ends, where acos loses all its
+  // precision.
   const EPS = 1e-6;
   let d = clamp(d0, Math.abs(L1 - L2) + EPS, L1 + L2 - EPS);
-  if (d < d0) bound.push('reach');
+  if (d < d0 - 1e-12) bound.push('reach');
 
-  // elbow interior angle, then the fold as a joint sees it
   let interior = Math.acos(clamp((L1 * L1 + L2 * L2 - d * d) / (2 * L1 * L2), -1, 1));
   let flex = Math.PI - interior;
   const maxFlex = lim.maxFlex ?? Math.PI;
@@ -169,10 +145,10 @@ export function solveTwoBone(o) {
     d = Math.sqrt(Math.max(EPS, L1 * L1 + L2 * L2 - 2 * L1 * L2 * Math.cos(interior)));
   }
 
-  // ---- the plane the arm bends in, chosen by the pole hint
+  // ---- the bend plane, chosen by the pole hint
   let poleDir = o.pole ? norm(sub(o.pole, mul(aim, dot(o.pole, aim)))) : null;
   if (!poleDir) {
-    // No usable hint (or a hint parallel to the aim): fall back to something
+    // No usable hint (or one parallel to the aim): fall back to something
     // deterministic and anatomically sane rather than an arbitrary axis.
     const alt = o.fwd ? mul(o.fwd, -1) : [0, -1, 0];
     poleDir = norm(sub(alt, mul(aim, dot(alt, aim))))
@@ -182,17 +158,138 @@ export function solveTwoBone(o) {
   const axis = norm(cross(aim, poleDir));
   if (!axis) return { ok: false, why: 'cannot resolve a bend plane' };
 
-  // shoulder angle between the upper bone and the root->hand line
   const alpha = Math.acos(clamp((L1 * L1 + d * d - L2 * L2) / (2 * L1 * d), -1, 1));
 
-  const upper = rotateAbout(aim, axis, alpha);
+  // ---- where the UPPER BONE may point.
+  //
+  // The cone and the frontal stop are properties of the SHOULDER, so they
+  // constrain the upper bone's own direction — not the shoulder-to-target
+  // line. Those differ by `alpha`, so clamping the aim (the convenient thing,
+  // and what this did first) lets an aim well inside the cone still put the
+  // actual arm outside it. Caught by a real rig at 84° behind the body on a
+  // limit of 65°; the geometry suite never saw it because it was checking the
+  // same wrong vector.
+  //
+  // Cone and half-space are two constraints whose intersection is not reached
+  // by applying either once — each projection can leave the other violated —
+  // so alternate them to a fixed point. Both sets are geodesically convex caps
+  // here (half-angles under 90°), which is what makes alternating projection
+  // converge instead of cycling. It is BOUNDED and then VERIFIED: if a pass
+  // limit is hit without feasibility, that gets reported, not hidden.
+  let upper = rotateAbout(aim, axis, alpha);
+  let hitCone = false, hitBehind = false;
+  if ((o.coneAxis && lim.coneHalf != null) || (o.fwd && lim.behind != null)) {
+    const minFwd = lim.behind != null ? -Math.sin(lim.behind) : null;
+    let feasible = false;
+    for (let pass = 0; pass < 12; pass++) {
+      let moved = false;
+      if (o.coneAxis && lim.coneHalf != null) {
+        const c = clampToCone(upper, o.coneAxis, lim.coneHalf);
+        if (c.clamped) { upper = c.v; moved = true; hitCone = true; }
+      }
+      if (o.fwd && minFwd != null) {
+        const b = clampBehind(upper, o.fwd, minFwd);
+        if (b.clamped) { upper = b.v; moved = true; hitBehind = true; }
+      }
+      if (!moved) { feasible = true; break; }
+    }
+    // Report what is binding AT THE FIXED POINT, not what fired on the way
+    // there. Alternating projection can touch the cone in an early pass and
+    // then be carried clear of it by the frontal stop — saying "cone" then is
+    // a caller reading a limit as active when the arm is nowhere near it, and
+    // the whole point of this list is that a caller can trust it enough to
+    // fall back on. Measured on a real rig: 'cone' reported at 0.423 against a
+    // boundary of 0.087.
+    const onBoundary = (v, ref, want) => Math.abs(dot(v, ref) - want) < 1e-6;
+    if (hitCone && o.coneAxis && onBoundary(upper, o.coneAxis, Math.cos(lim.coneHalf))) bound.push('cone');
+    if (hitBehind && o.fwd && onBoundary(upper, o.fwd, minFwd)) bound.push('behind');
+    if (!feasible) bound.push('infeasible');
+  }
+
+  // ---- the forearm: aim it at the target from wherever the elbow ended up,
+  // then let the hinge have the last word. When nothing above bound, this
+  // reproduces the analytic triangle exactly and the hand lands on target.
   const elbow = add(root, mul(upper, L1));
-  const hand = add(root, mul(aim, d));
-  const lower = norm(sub(hand, elbow)) ?? [...upper];
+  const toTargetFromElbow = sub(target, elbow);
+  let lower = norm(toTargetFromElbow) ?? [...upper];
+  const back = mul(upper, -1);
+  const inter = Math.acos(clamp(dot(back, lower), -1, 1));   // elbow interior angle
+  const wantInter = clamp(inter, Math.PI - maxFlex, Math.PI - minFlex);
+  if (Math.abs(wantInter - inter) > 1e-12) {
+    if (!bound.includes('hinge')) bound.push('hinge');
+    const n = norm(cross(back, lower)) ?? axis;
+    lower = rotateAbout(back, n, wantInter);
+  }
+  const hand = add(elbow, mul(lower, L2));
 
   const gap = len(sub(target, hand));
   return {
     ok: true, upper, lower, elbow, hand,
     reached: gap <= 1e-4, gap, bound, flex,
   };
+}
+
+// ---- directions -> bone rotations ------------------------------------------
+//
+// A VRM's NORMALIZED humanoid rig has every bone's rest rotation identity, so
+// in the rest pose every normalized bone's world rotation is identity too.
+// That is what makes this conversion three lines instead of a frame algebra:
+// the rotation a bone needs IS the rotation taking its rest direction to its
+// wanted one, and a child only has to subtract its parent's.
+//
+// Minimal-arc (setFromUnitVectors) leaves roll about the bone's own axis at
+// zero, which is the same swing construction the ragdoll uses, and the right
+// default: position IK does not determine twist — a two-bone chain's spare
+// degree of freedom is the POLE, and twist belongs to whoever aims the hand.
+
+/** Quaternion (x,y,z,w) taking unit `a` to unit `b`, by the shortest arc. */
+export function qFromUnitVectors(a, b) {
+  let w = 1 + dot(a, b);
+  if (w < 1e-8) {
+    // antiparallel: any perpendicular axis is a valid 180° turn
+    const alt = Math.abs(a[0]) > 0.9 ? [0, 1, 0] : [1, 0, 0];
+    const ax = norm(cross(a, alt)) ?? [0, 0, 1];
+    return [ax[0], ax[1], ax[2], 0];
+  }
+  const c = cross(a, b);
+  const l = Math.hypot(c[0], c[1], c[2], w) || 1;
+  return [c[0] / l, c[1] / l, c[2] / l, w / l];
+}
+
+export const qMulq = (a, b) => [
+  a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1],
+  a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0],
+  a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3],
+  a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2],
+];
+
+export const qConj = (q) => [-q[0], -q[1], -q[2], q[3]];
+
+/** Rotate a vector by a quaternion. */
+export const qRot = (q, v) => {
+  const [x, y, z, w] = q;
+  const cx = y * v[2] - z * v[1] + w * v[0];
+  const cy = z * v[0] - x * v[2] + w * v[1];
+  const cz = x * v[1] - y * v[0] + w * v[2];
+  return [
+    v[0] + 2 * (y * cz - z * cy),
+    v[1] + 2 * (z * cx - x * cz),
+    v[2] + 2 * (x * cy - y * cx),
+  ];
+};
+
+/**
+ * Local rotations for a two-bone chain, given rest and wanted directions in
+ * ONE common frame (the frame in which the rest pose has identity rotations —
+ * i.e. the avatar root's local frame, not the world).
+ *
+ * @returns {{upper: number[], lower: number[]}} local quaternions, ready to
+ *          write onto the normalized bone nodes.
+ */
+export function chainLocalQuats(dRestUpper, dRestLower, dWantUpper, dWantLower) {
+  const QU = qFromUnitVectors(dRestUpper, dWantUpper);
+  const QL = qFromUnitVectors(dRestLower, dWantLower);
+  // the lower bone hangs off the upper one, so its LOCAL rotation is whatever
+  // is left after the parent's has been accounted for
+  return { upper: QU, lower: qMulq(qConj(QU), QL) };
 }
