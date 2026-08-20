@@ -17,8 +17,9 @@ side of that contract. Every claim below was verified against the delta on
 **Retained and modified (transport-agnostic, survives cutover):**
 - `client/lib/voicemouths.js` — bubble + mouth pacing for `spoken:true` says;
   consumes the say log, never the transport.
-- `client/lib/net.js` — gains the SFU message routes; the mesh's `'rtc'` relay
-  case remains for one release (see §3).
+- `client/lib/net.js` — gains the SFU message routes; the mesh's `sendRtc` and
+  its `'rtc'` receive case are deleted with the mesh (see §3 for where stale
+  frames actually die).
 
 Everything else in the stack is **additive** (new files) — the full list is
 the pr0–pr3 diffs plus this PR's wiring.
@@ -41,9 +42,15 @@ What a stale (pre-cutover) page experiences after the server updates:
 - **Text, presence, says: unaffected.** No message type it depends on is
   removed.
 - **Voice: silently absent, both directions.** The stale page offers mesh via
-  `'rtc'` relay; fresh pages route `'rtc'` to a bus with no subscriber (voice.js
-  gone) — a no-op, not an error. The stale page never requests a relay
-  credential, so the SFU never offers to it.
+  `'rtc'` frames — which die AT THE SERVER: the `rtc` verb is deleted from the
+  ws switch, and an unknown type falls off the switch silently, so no fresh (or
+  stale) page ever receives an `'rtc'` frame again. A no-op, not an error —
+  enforced server-side, which is where this repository's authority lives. The
+  stale page never requests a relay credential, so the SFU never offers to it.
+  (An earlier draft claimed the no-op happened client-side, at a bus with no
+  subscriber — a mechanism that could never fire, since delivery already
+  stopped at the server. Corrected 2026-08-19; the client's `sendRtc`/`'rtc'`
+  remnants are deleted rather than documented.)
 - **Diagnosis is built in, not tribal:** `/audio` prints the served build
   (`/version` sha, `+dirty` when applicable) as its first line — a stale page
   and a fresh page are *visibly* different in the one report a phone user can

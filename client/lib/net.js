@@ -129,9 +129,6 @@ export function sendMod(type, extra = {}) {
 export function sendWhisper(to, text) {
   if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'whisper', to, text }));
 }
-export function sendRtc(to, payload) {
-  if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'rtc', to, payload }));
-}
 /** #104 phase-1: ask the sequencer to mint this body's media credential. */
 export function sendRelayCredRequest(scopes = {}) {
   if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'relay-cred', ...scopes }));
@@ -516,10 +513,6 @@ async function handle(msg) {
     case 'voice-service':       // #104 A2: relay service state, incarnation-stamped
       bus.emit('voice-service', { state: msg.state, incarnation: msg.incarnation });
       break;
-    case 'rtc':
-      bus.emit('rtc', msg);
-      break;
-
     // #57 B1/B4 presence messages (never logged):
     // performed — an authenticated voice leg attested it aired this say;
     // surface-transition — an aux leg joined or took over (capability signal).

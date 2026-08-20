@@ -76,7 +76,6 @@ rolling our own, and it does not apply to this design.
 | credential mint / revoke / incarnation / consent enforcement | `server/relayadapter.ts` (263 ln) | policy layer — **keep**, swap only the LiveKit calls underneath |
 | pure decisions (23-vector test) | `server/relaydecision.ts` (97 ln) | transport-agnostic — **keep unchanged** |
 | surface/generation model | #103, merged | media leg binds to `(id, surface, gen)`; the SFU must honor the same binding |
-| E2E harness | `tools/relay-e2e-test.ts` | 7 checks incl. fail-closed, consent latency, revoke, stale-gen |
 
 ## The design
 

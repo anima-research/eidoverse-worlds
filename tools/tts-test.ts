@@ -189,11 +189,6 @@ console.log("\n— mic priority: both orderings, repeated cycles, no dual produc
   tts.setTtsEnabled(false); tts.setTtsEnabled(true);
   await sleep(30);
   const gen = tts.ensureGenerator();
-  // fabricate a peer holding a sender so handoffs are observable
-  const sender = { track: { kind: "audio", id: "initial" } as { kind: string; id: string } | null,
-    replaceTrack: async (t: { kind: string; id: string }) => { sender.track = t; } };
-  const fakePeers = { pc: { getSenders: () => [sender] } };
-  void fakePeers;
   vsrc.notifySynthTrackChanged(gen);      // what enabling does via the hook
   await sleep(20);
   // ordering B: mic ON — the mic wins. (The pacer-stop on a LIVE mic takeover

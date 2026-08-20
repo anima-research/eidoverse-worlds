@@ -86,7 +86,14 @@ function readTokens(): Record<string, Auth> {
         }
         out[tok] = { id: a.id, name: typeof a.name === "string" && a.name ? a.name : a.id,
           world: typeof a.world === "string" ? a.world : undefined,
-          avatar: typeof a.avatar === "string" ? a.avatar : undefined };
+          avatar: typeof a.avatar === "string" ? a.avatar : undefined,
+          // RFC-005 join policy + founding (composition casualty, 2026-08-19:
+          // the shape-validation rebuild copied only the pre-005 fields, so
+          // every file-token credential lost `worlds`/`create` and travel was
+          // refused at joinAllowed — the aid1 lane kept them, only this lane
+          // dropped them. join-rfc005.test.ts is the regression net.)
+          worlds: Array.isArray(a.worlds) ? a.worlds.filter((w): w is string => typeof w === "string") : undefined,
+          create: typeof a.create === "boolean" ? a.create : undefined };
       }
       return out;
     }

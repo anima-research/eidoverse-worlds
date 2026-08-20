@@ -11,7 +11,6 @@
 
 import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, appendFileSync } from "node:fs";
 import { sfuDiag } from "./sfuadapter.ts";
-import { voiceTransport } from "./transport.ts";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, JOIN_TOKEN } from "./config.ts";
