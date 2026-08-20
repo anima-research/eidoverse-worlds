@@ -307,7 +307,36 @@ select {
 .row { display: flex; align-items: center; gap: 7px; font-size: var(--fs-sm); color: var(--dim); }
 .row .nm { width: 42px; flex: none; color: var(--fg); }
 .row input[type=range] { flex: 1; accent-color: var(--accent); min-width: 0; }
+/* Checkboxes take the same accent as the sliders — seafoam fill, UA-contrast
+   (black) tick when checked. This existed via accent-color when the audio
+   panel first spent the house palette, and fell out of the selector when the
+   checkbox rows moved to .row.wide markup (R, 2026-08-16: "I could have sworn
+   we did a styling for the checkboxes… seems to be gone now"). */
+.row input[type=checkbox] { accent-color: var(--accent); }
 .row .v { width: 34px; flex: none; text-align: right; color: var(--accent); }
+
+/* 🔴 .row.wide — the SAME row, for panels whose labels are sentences.
+   (R, 2026-08-16: "If there is an existing UI class we should 100% be using
+   it." She is right, and the audio panel was not: it carried 40 lines of
+   private CSS re-implementing .row under sp-* names, which is how its spacing
+   drifted to gap:10px while the house row is 7px and nobody could see it
+   without measuring.)
+   .row's 42px .nm cannot hold "connect to other people's audio", so this
+   variant swaps flex for a two-column grid with a label column wide enough for
+   a sentence — and inherits gap, font-size and colour from .row itself, so it
+   CANNOT drift again. Everything else (range accent, .v readout, .nm colour)
+   already comes from the rules above and needs no duplicate. */
+.row.wide { display: grid; grid-template-columns: var(--row-label-col, 8.5rem) minmax(0, 1fr); }
+.row.wide > .nm { width: auto; text-align: right; line-height: 1.25; }
+/* a label + a bare control still lines up: the control owns the whole second
+   column, left-justified against the centre line */
+.row.wide > input[type=checkbox] { justify-self: start; }
+/* the control column, when a row needs several things side by side */
+.row .ctl { display: flex; align-items: center; gap: 6px; min-width: 0; }
+/* a status word riding beside a control — dim, because it reports rather than
+   labels. (.sp-note did this in the audio panel's private sheet; it is a house
+   concern, not that panel's.) */
+.row .note { color: var(--dim); }
 
 /* who's-here list */
 .who-row { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }

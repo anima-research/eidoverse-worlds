@@ -298,6 +298,50 @@ say(`vrmified: ${Object.keys(humanBones).length} humanoid bones`);
         colliderGroups: [0],
       });
     }
+    // WINGS GET SPRINGBONES TOO, for the one case the client cannot cover.
+    //
+    // A wing is DRIVEN while the body is alive (the flap) and simulated in
+    // Bullet while it is limp — but only on the client that owns the body.
+    // Everyone else sees a REMOTE: no local doll, and the flap is gated on not
+    // being limp, so a fallen body's wings froze mid-stroke for every observer.
+    // Hair never had that problem because three-vrm was always catching it,
+    // which is exactly the fallback wings were missing.
+    //
+    // Stiffer and heavier-falling than hair: a wing is a limb, not a filament,
+    // so the root barely gives and the tip trails. Same hips center, so
+    // walking does not excite them. While a local sim owns the body these are
+    // suppressed wholesale (avatar.js), so this costs nothing where Bullet runs.
+    const wingChains = new Map<string, { idx: number; node: number }[]>();
+    for (const [name, ni] of idx.entries()) {
+      const m = /^([LR]_Wing_(?:Upper|Lower))(?:_(\d+))?$/.exec(String(name));
+      if (!m) continue;
+      const c = wingChains.get(m[1]) ?? [];
+      c.push({ idx: m[2] ? Number(m[2]) : 0, node: ni as number });
+      wingChains.set(m[1], c);
+    }
+    let wingSprings = 0;
+    if (!args.includes('--no-wing-springs')) {
+      for (const [cname, joints] of wingChains) {
+        joints.sort((a, b) => a.idx - b.idx);
+        if (joints.length < 2) continue;
+        springs.push({
+          name: `wing_${cname}`,
+          center: need('Hip'),
+          joints: joints.map((j, i) => {
+            const t = i / Math.max(1, joints.length - 1);
+            return {
+              node: j.node,
+              hitRadius: 0.02,
+              stiffness: 1.6 - 0.9 * t,     // shoulder holds, tip trails
+              gravityPower: 0.05 + 0.15 * t, // a limp wing hangs
+              gravityDir: [0, -1, 0],
+              dragForce: 0.75 - 0.25 * t,
+            };
+          }),
+        });
+        wingSprings++;
+      }
+    }
     g.extensionsUsed = [...new Set([...(g.extensionsUsed ?? []), 'VRMC_springBone'])];
     g.extensions.VRMC_springBone = {
       specVersion: '1.0',
@@ -307,7 +351,8 @@ say(`vrmified: ${Object.keys(humanBones).length} humanoid bones`);
       colliderGroups: [{ name: 'head', colliders: [0] }],
       springs,
     };
-    say(`springbones: ${springs.length} hair chains declared (+head collider)`);
+    say(`springbones: ${springs.length - wingSprings} hair chains`
+      + `${wingSprings ? ` + ${wingSprings} wing chains` : ''} declared (+head collider)`);
   }
 }
 
@@ -388,29 +433,54 @@ const S = HEIGHT / (span * 1.16);
 say(`scale ×${S.toFixed(3)} (head-foot span ${(headY - footY).toFixed(2)} → target ${HEIGHT}m)`);
 const bin = Buffer.from(rest0.subarray(8));
 for (const n of g.nodes) if (n.translation) n.translation = n.translation.map((x: number) => x * S);
+// An accessor's bufferView is OPTIONAL. Without one its values are all zeros,
+// which a `sparse` block may then override for named indices — and that is
+// exactly what a rig with SHAPE KEYS exports: every morph-target POSITION comes
+// through as a sparse accessor with no bufferView of its own, because most
+// vertices do not move. Indexing g.bufferViews[undefined] threw outright
+// ("undefined is not an object") the first time a blend with shape keys reached
+// this stage.
+//
+// Skipping them would stop the crash and quietly break the file instead: the
+// base mesh would scale by S and the morph DELTAS would not, so every shape key
+// would apply at the old scale on a body 1.8x bigger. Sparse values are the
+// real data for the vertices they name, so they take the same multiply. (Sparse
+// value blocks are tightly packed — the spec forbids byteStride on them.)
 const accBytes = (a: any) => {
+  if (a.bufferView == null) return null;
   const bv = g.bufferViews[a.bufferView];
   return { base: (bv.byteOffset ?? 0) + (a.byteOffset ?? 0), stride: bv.byteStride ?? 0 };
 };
+const scaleVec3s = (base: number, count: number, step: number) => {
+  for (let i = 0; i < count; i++) for (let c = 0; c < 3; c++) {
+    const off = base + i * step + c * 4;
+    bin.writeFloatLE(bin.readFloatLE(off) * S, off);
+  }
+};
+let sparseScaled = 0;
 const seen = new Set();
 for (const m of g.meshes ?? []) for (const p of m.primitives) {
   for (const ai of [p.attributes.POSITION, ...(p.targets ?? []).map((t: any) => t.POSITION)]) {
     if (ai == null || seen.has(ai)) continue;
     seen.add(ai);
     const a = g.accessors[ai];
-    const { base, stride } = accBytes(a);
-    const step = stride || 12;
-    for (let i = 0; i < a.count; i++) for (let c = 0; c < 3; c++) {
-      const off = base + i * step + c * 4;
-      bin.writeFloatLE(bin.readFloatLE(off) * S, off);
+    const loc = accBytes(a);
+    if (loc) scaleVec3s(loc.base, a.count, loc.stride || 12);
+    if (a.sparse?.values) {
+      const bv = g.bufferViews[a.sparse.values.bufferView];
+      scaleVec3s((bv.byteOffset ?? 0) + (a.sparse.values.byteOffset ?? 0), a.sparse.count, 12);
+      sparseScaled++;
     }
     if (a.min) a.min = a.min.map((x: number) => x * S);
     if (a.max) a.max = a.max.map((x: number) => x * S);
   }
 }
+if (sparseScaled) say(`scaled ${sparseScaled} sparse morph-target accessor(s)`);
 for (const sk of g.skins ?? []) {
   const a = g.accessors[sk.inverseBindMatrices];
-  const { base, stride } = accBytes(a);
+  const loc = accBytes(a);
+  if (!loc) continue;                 // a skin with no bind matrices to scale
+  const { base, stride } = loc;
   const step = stride || 64;
   for (let i = 0; i < a.count; i++) for (const e of [12, 13, 14]) {
     const off = base + i * step + e * 4;

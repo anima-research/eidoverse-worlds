@@ -302,7 +302,7 @@ bus.on('bodydrag', (msg) => {
     if (drag && drag.id === by) {
       for (const p of msg.pins) {
         if (p?.j && Array.isArray(p.at) && p.at.length === 3) {
-          drag.rd.setPin(String(p.j), _tmp.set(p.at[0], p.at[1], p.at[2]));
+          drag.rd.setPin(String(p.j), _tmp.set(p.at[0], p.at[1], p.at[2]), true);  // a NAIL, held firm
         }
       }
     }

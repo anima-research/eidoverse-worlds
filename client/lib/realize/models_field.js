@@ -87,3 +87,23 @@ export function mountsTouching(stEntities, touchedId, childrenOf = null) {
   }
   return out;
 }
+
+
+/** Does this entity's collision belong to somebody else?
+ *
+ *  Two cases, one law: an entity whose collision is owned elsewhere must not
+ *  have a box inferred for it here.
+ *
+ *  - MOUNTED cargo collides as its carrier (execMount law).
+ *  - A `structure` entity's collision is DECLARED by the structure realizer —
+ *    walls, floors and corner fills, each an exact box. The entity itself is
+ *    only an anchor for the component, and its lib is a placeholder whose mesh
+ *    is hidden. Inferring a box from that placeholder left an invisible
+ *    crate-sized obstacle at the origin of every building: the mesh was
+ *    hidden, the collider was not.
+ *
+ *  @param {any} ent   the folded entity record
+ *  @param {boolean} mounted  whether the scene object rides a carrier */
+export function collisionOwnedElsewhere(ent, mounted = false) {
+  return !!mounted || !!ent?.comp?.structure;
+}

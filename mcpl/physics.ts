@@ -46,6 +46,8 @@ const STUB = fileURLToPath(new URL("../tools/core-stub.mjs", import.meta.url));
 
 let simMods: {
   Ragdoll: any;
+  Body: any;                 // the engine that actually runs: AmmoRagdoll or Ragdoll
+  engine: string;
   rig: { glbJson: any; humanBones: any; worldPositions: any; makeAvatar: any };
   THREE: any;
   terrain: any;
@@ -75,7 +77,31 @@ function loadSim(): Promise<typeof simMods> {
       const rig = await import("../tools/rig-load.mjs");
       const terrain = await import("../client/lib/terrain.js");
       const colliders = await import("../client/lib/colliders.js");
-      simMods = { Ragdoll: rag.Ragdoll, rig, THREE: stub.THREE, terrain, colliders };
+      // Bullet, not the Verlet floor. The browser has defaulted to ammo since
+      // it beat every other engine on live falls (bodysim.js), but a headless
+      // body hard-coded Ragdoll -- so a shoved agent tumbled under one solver
+      // while the human dragging it ran another, and every drag-release handed
+      // authority back to the SLOWER model mid-fall. That solver swap is what
+      // "the joints twist up and it doesn't fall naturally when I let go"
+      // actually is. ammodoll's ensureAmmo() already carries a bun branch and
+      // imports the same three modules the Verlet does; nothing needed inventing.
+      let Body: any = rag.Ragdoll;
+      let engine = "verlet";
+      const want = process.env.AGENT_BODY_ENGINE ?? "ammo";
+      if (want === "ammo") {
+        try {
+          const ammo = await import("../client/lib/ammodoll.js");
+          if (await ammo.ensureAmmo()) { Body = ammo.AmmoRagdoll; engine = "ammo"; }
+          else console.warn("[physics] ammo wasm did not open — falling back to verlet");
+        } catch (e) {
+          console.warn("[physics] ammodoll unavailable — falling back to verlet:", e);
+        }
+      }
+      // Say which engine answered. A silent fallback here is indistinguishable
+      // from a toggle that does not work -- the same ambiguity bodysim.js's
+      // status string was added to kill.
+      console.log(`[physics] headless body engine: ${engine}`);
+      simMods = { Ragdoll: rag.Ragdoll, Body, engine, rig, THREE: stub.THREE, terrain, colliders };
       return simMods;
     } catch (e) {
       simFailed = true;
@@ -187,6 +213,31 @@ async function skeletonFor(httpBase: string, avatarPath: string) {
     const P: Record<string, any> = {};
     for (const [b, n] of Object.entries(bones)) if (g.nodes[n as number]) P[b] = wp(n);
     if (!P.hips) throw new Error("no hips bone");
+    // Hair chains too, with their real parenting.
+    //
+    // The stand-in carried HUMANOID bones only, so a headless body had no
+    // Hair_<chain>_<idx> nodes — and that is exactly what ammodoll's hair block
+    // looks for. Agents therefore ran with NO hair simulation while the browser
+    // ran 75 locks of it, and the fleet suite never touched that code path
+    // either: a whole subsystem absent and untested in the process that is
+    // supposed to BE the body.
+    const byName = new Map<string, number>();
+    g.nodes.forEach((n: any, i: number) => { if (n.name) byName.set(n.name, i); });
+    const parentOf = new Map<number, number>();
+    g.nodes.forEach((n: any, i: number) =>
+      (n.children ?? []).forEach((c: number) => parentOf.set(c, i)));
+    const hairParent: Record<string, string> = {};
+    for (const [name, i] of byName) {
+      if (!/^Hair_\d+_\d+$/.test(name)) continue;
+      P[name] = wp(i);
+      const pi = parentOf.get(i);
+      const pn = pi != null ? g.nodes[pi]?.name : null;
+      // a lock either continues another lock, or hangs off the head
+      hairParent[name] = (pn && /^Hair_\d+_\d+$/.test(pn)) ? pn : "head";
+    }
+    if (Object.keys(hairParent).length) {
+      Object.defineProperty(P, "__hairParent", { value: hairParent, enumerable: false });
+    }
     skeletons.set(key, P);
     return P;
   } catch (e) {
@@ -206,7 +257,11 @@ export class HeadlessBody {
 
   private constructor(m: NonNullable<typeof simMods>, P: Record<string, any>) {
     this.m = m;
-    this.av = m.rig.makeAvatar(P);
+    // realParent carries the hair chains; without it makeAvatar drops any bone
+    // that is not in its humanoid PARENT table, hair included.
+    const hp = (P as any).__hairParent;
+    this.av = hp ? m.rig.makeAvatar(P, { realParent: { ...(m.rig as any).PARENT, ...hp } })
+      : m.rig.makeAvatar(P);
   }
 
   /** null when physics is unavailable for this process or this VRM. */
@@ -265,16 +320,38 @@ export class HeadlessBody {
     // than restarting from the bones with the motion thrown away. Positions
     // arrive in world y and the sim now RUNS in world y: no offset.
     const seed = opts.sim && Array.isArray(opts.sim.j) ? { ...opts.sim } : null;
-    this.rd = new this.m.Ragdoll(this.av, lean, this.av.restBonePositions(), seed);
+    // Free the previous body FIRST. Every drag release begins a new one, and a
+    // Bullet body owns wasm: a world, its bodies and constraints, and up to
+    // 1089 ground tiles. The verlet owned nothing but JS, so dropping the
+    // reference was a complete release and this line never needed to exist —
+    // under ammo the same code leaked a whole world per release and killed the
+    // agent with Aborted(OOM) in `new AmmoRagdoll` after a few minutes of being
+    // dragged around. dispose() is idempotent (`_freed`), so this is safe even
+    // when the body already finished and freed itself.
+    this.rd?.dispose?.();
+    this.rd = new this.m.Body(this.av, lean, this.av.restBonePositions(), seed);
     for (const p of opts.pins ?? []) this.setPin(p.j, p.at);
+    // hipsOffset is how far the render root hangs below the hips — a property
+    // of the RIG, so it must read the same on every build of the same body.
+    // When it moves, everyone else sees this body float or sink by exactly the
+    // difference, and nothing on THIS side looks wrong, which is why it needs
+    // saying out loud. Only a handover can move it, so only log then.
+    if (process.env.BODY_DEBUG && this.rd) {
+      console.log(`[physics] ${opts.sim ? "handover" : "fresh"} build: `
+        + `hipsOffset=${this.rd.hipsOffset?.toFixed(4)} `
+        + `rootY=${this.av.root.position.y.toFixed(3)} `
+        + `hips=${this.rd.p?.hips?.y?.toFixed(3)}`);
+    }
   }
 
   /** Add/update/remove a pin, in WORLD coordinates. */
-  setPin(joint: string | null, at?: number[] | null) {
+  setPin(joint: string | null, at?: number[] | null, firm = true) {
     if (!this.rd) return;
     if (!joint) { this.rd.setPin(null); return; }
     if (!Array.isArray(at)) { this.rd.setPin(joint, null); return; }
-    this.rd.setPin(joint, new this.m.THREE.Vector3(at[0], at[1], at[2]));
+    // Pins arriving here are NAILS (begin's opts.pins, and the bodydrag relay's
+    // pin map) — a hand is simulated by whoever is holding it, not replicated.
+    this.rd.setPin(joint, new this.m.THREE.Vector3(at[0], at[1], at[2]), firm);
   }
 
   /** Advance; returns what to stream, or null once the sim has captured. */
@@ -285,10 +362,28 @@ export class HeadlessBody {
     if (!pose) return null;
     const r = this.av.root.position;
     const out = { pose, p: [r.x, r.y, r.z], done: !!this.rd.done };
-    if (this.rd.done) this.rd = null;
+    if (this.rd.done && process.env.BODY_DEBUG) {
+      // Where did she actually COME TO REST? Build-time numbers say nothing
+      // about this: the question "does she settle above the floor" is about the
+      // sim's own ground plane and its lowest joint, and both are only knowable
+      // once it stops. groundY is what the solver believes the floor is; if
+      // that disagrees with the world's floor, everything else is downstream
+      // of it and no amount of root arithmetic will help.
+      let lo = Infinity, who = "";
+      for (const [j, v] of Object.entries(this.rd.p ?? {})) {
+        const y = (v as any)?.y;
+        if (Number.isFinite(y) && y < lo) { lo = y; who = j; }
+      }
+      console.log(`[physics] SETTLED: groundY=${this.rd.groundY?.toFixed(3)} `
+        + `lowestJoint=${lo.toFixed(3)} (${who}) hips=${this.rd.p?.hips?.y?.toFixed(3)} `
+        + `rootY=${r.y.toFixed(3)}  [lowest joint should sit just above groundY]`);
+    }
+    if (this.rd.done) { this.rd.dispose?.(); this.rd = null; }
     return out;
   }
 
   get active() { return this.rd != null; }
-  stop() { this.rd = null; }
+  /** Drop the body. dispose() before the reference goes: under ammo the
+   *  reference is the only handle on a wasm world. */
+  stop() { this.rd?.dispose?.(); this.rd = null; }
 }

@@ -17,6 +17,8 @@ import { THREE, scene } from './core.js';
 import { MeshBVHHelper } from 'three-mesh-bvh';
 import { colliders } from './colliders.js';
 import { closestParams, TUNING } from './ragdoll.js';
+import { JOINT_SPECS, HAIR_TUNING, WING_TUNING } from './ammodoll.js';
+import { BLINK, WING_IDLE, LIMP_SPRINGS } from './avatar.js';
 import { makeFrame } from './frames.js';
 
 // box = an OBB, walkable on top, solid on the sides between min.y and max.y
@@ -200,6 +202,35 @@ function disposeCapsules() {
   ragCaps = null;
 }
 
+// Box volumes. Geometry is a unit cube built once and SCALED per box, so N
+// volumes cost N transforms — the same bargain the collider boxes strike.
+let ragVols = null;
+function syncVolumes(vols) {
+  if (!ragVols || ragVols.items.length !== vols.length) {
+    disposeVolumes();
+    const items = vols.map(() => {
+      const mesh = onTop(new THREE.LineSegments(unitBoxWire(), lineMat(RAG_COLOR.bone)));
+      ragGroup.add(mesh);
+      return mesh;
+    });
+    ragVols = { items };
+  }
+  vols.forEach((v, i) => {
+    const m = ragVols.items[i];
+    m.position.copy(v.p);
+    m.quaternion.copy(v.q);
+    m.scale.set(v.he.x * 2, v.he.y * 2, v.he.z * 2);
+  });
+}
+function disposeVolumes() {
+  // NOT m.geometry.dispose(): every box shares the one unit cube, so disposing
+  // it through any single mesh guts all the others.
+  for (const m of ragVols?.items ?? []) ragGroup?.remove(m);
+  ragVols = null;
+}
+let _boxWire = null;
+const unitBoxWire = () => (_boxWire ??= new THREE.WireframeGeometry(new THREE.BoxGeometry(1, 1, 1)));
+
 function syncRagdoll(rd) {
   // ---- joint spheres, at the radius the GROUND and props are tested against
   // (which is per-joint, and not the same number as a bone's radius)
@@ -217,7 +248,15 @@ function syncRagdoll(rd) {
   });
   ragJoints.mesh.instanceMatrix.needsUpdate = true;
 
+  // ---- box volumes, for engines that hold boxes rather than capsules
+  // (ammo/rapier). The verlet answers with caps/radius below; a Bullet doll
+  // answered with nothing at all until volumes() existed, so the panel showed
+  // a skeleton floating in no body.
+  const vols = rd.volumes?.() ?? [];
+  if (vols.length) syncVolumes(vols); else disposeVolumes();
+
   // ---- bone capsules
+  if (!rd.caps) return;
   if (ragCaps?.rd !== rd) buildCapsules(rd);
   for (const it of ragCaps.items) {
     const pa = rd.p[it.cap.a], pb = rd.p[it.cap.b];
@@ -299,6 +338,350 @@ function dialRow(key, lo, hi, step) {
   return { wrap, reset: () => { TUNING[key] = DEFAULTS[key]; sl.value = DEFAULTS[key]; paint(); } };
 }
 
+// ---- joint limits ----------------------------------------------------------
+//
+// Anatomy is a matter of taste as much as measurement — a spine's range is a
+// real number, but how floppy a RAGDOLL should look inside it is a judgement,
+// and judging it from a table of degrees is guesswork. (It cost a round of
+// exactly that: halving the trunk's range looked right on every metric and
+// hyperextended the knees 148 degrees, because a stiff trunk stops absorbing a
+// landing.) So: pick a joint, drag its ranges, watch the body.
+//
+// Live — retune() pushes the table into the running constraints, so a body
+// already lying on the floor changes under your hands.
+
+// what each spec exposes: directional joints carry flex/ext, the rest an x pair
+const LIMIT_FIELDS = [
+  ['flex', 0, 180, 1], ['ext', 0, 180, 1],
+  ['twist', 0, 90, 1],
+  ['x0', -180, 0, 1], ['x1', 0, 180, 1],
+  ['z0', -180, 0, 1], ['z1', 0, 180, 1],
+];
+const getF = (S, f) => (f === 'x0' ? S.x?.[0] : f === 'x1' ? S.x?.[1]
+  : f === 'z0' ? S.z?.[0] : f === 'z1' ? S.z?.[1] : S[f]);
+const setF = (S, f, v) => {
+  if (f === 'x0') S.x[0] = v; else if (f === 'x1') S.x[1] = v;
+  else if (f === 'z0') S.z[0] = v; else if (f === 'z1') S.z[1] = v;
+  else S[f] = v;
+};
+
+let jointSel = null, jointRows = null, jointDefaults = null;
+
+function buildJointPanel(stack) {
+  // one snapshot of the shipped table, so "reset" means the defaults and not
+  // whatever was on the sliders when the panel was opened
+  jointDefaults = JSON.parse(JSON.stringify(JOINT_SPECS));
+
+  const pick = document.createElement('select');
+  for (const k of Object.keys(JOINT_SPECS)) {
+    const o = document.createElement('option');
+    o.value = k; o.textContent = k;
+    pick.appendChild(o);
+  }
+  jointSel = pick;
+
+  const rows = document.createElement('div');
+  rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
+  jointRows = rows;
+
+  const apply = () => {
+    const rd = providers.ragdoll?.();
+    if (rd?.retune) rd.retune();
+  };
+
+  const paint = () => {
+    rows.textContent = '';
+    const S = JOINT_SPECS[pick.value];
+    if (!S) return;
+    for (const [f, lo, hi, st] of LIMIT_FIELDS) {
+      if (getF(S, f) === undefined) continue;
+      const wrap = document.createElement('div');
+      wrap.className = 'row';
+      const nm = document.createElement('span');
+      nm.className = 'nm'; nm.style.width = '42px'; nm.textContent = f;
+      const sl = document.createElement('input');
+      sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = getF(S, f);
+      const val = document.createElement('span');
+      val.className = 'v'; val.style.width = '34px';
+      const show = () => { val.textContent = `${getF(S, f)}°`; };
+      sl.oninput = () => { setF(S, f, Number(sl.value)); show(); apply(); };
+      show();
+      wrap.append(nm, sl, val);
+      rows.appendChild(wrap);
+    }
+  };
+  pick.onchange = paint;
+  paint();
+
+  const btns = document.createElement('div');
+  btns.className = 'row';
+  const mk = (label, fn) => {
+    const b = document.createElement('button');
+    b.textContent = label; b.onclick = fn; btns.appendChild(b); return b;
+  };
+  mk('reset joint', () => {
+    Object.assign(JOINT_SPECS[pick.value], JSON.parse(JSON.stringify(jointDefaults[pick.value])));
+    paint(); apply();
+  });
+  // The point of tuning is to KEEP the answer. Printing the whole table as a
+  // paste-able literal is the difference between a nice afternoon and a number
+  // you have to find twice.
+  mk('copy table', async () => {
+    const txt = Object.entries(JOINT_SPECS).map(([k, S]) => {
+      const parts = [`ref: '${S.ref}'`];
+      if (S.flex != null) parts.push(`flex: ${S.flex}`, `ext: ${S.ext}`, `want: '${S.want}'`);
+      else parts.push(`x: [${S.x[0]}, ${S.x[1]}]`);
+      parts.push(`twist: ${S.twist}`, `z: [${S.z[0]}, ${S.z[1]}]`);
+      return `  ${k}: { ${parts.join(', ')} },`;
+    }).join('\n');
+    const out = `const JOINT_SPECS = {\n${txt}\n};`;
+    try { await navigator.clipboard.writeText(out); toastLike('joint table copied'); }
+    catch { console.log(out); toastLike('joint table logged to console'); }
+  });
+
+  const head = document.createElement('div');
+  head.className = 'row';
+  const hl = document.createElement('span');
+  hl.className = 'nm'; hl.style.width = '42px'; hl.textContent = 'joint';
+  head.append(hl, pick);
+  stack.append(head, rows, btns);
+}
+
+// ---- hair -------------------------------------------------------------------
+// The hair is the one system with no good headless metric: "peak segment speed"
+// cannot tell flowing from whipping, and a fall's numbers are dominated by the
+// body's own motion. So it gets dials and a pair of eyes.
+// Which way an eyelid SHUTS depends on how its bone was rolled, so the sign is
+// a coin flip from here — a dial settles it in one blink. Rigs that export a
+// Limit Rotation constraint (see eido_export.py) use their own value and ignore
+// this one.
+const BLINK_FIELDS = [
+  ['closed', -2, 2, 0.02],   // upper lid
+  ['lower', -2, 2, 0.02],    // lower lid — an upper alone does not shut an eye
+  ['dur', 0.05, 0.8, 0.01],  // seconds for the whole close-and-open
+  ['hz', 0.2, 4, 0.1],
+  // eyeMax 0 pins the eyeballs at rest — the way to tell "the eyes are rigged
+  // wrong" from "the gaze code is turning them wrong" without rebuilding.
+  ['eyeMax', 0, 1.2, 0.02],
+  ['axis', 0, 2, 1],          // 0=x 1=y 2=z — which way the lid hinges
+];
+
+const HAIR_FIELDS = [
+  ['mass', 0.001, 0.05, 0.001],
+  // 0-40 put the whole interesting range (see WING/HAIR_TUNING: 3 to 20 covers
+  // barely-moving to lively) inside the first eighth of the track. These now
+  // resolve where the hair actually responds.
+  ['tension', 0, 24, 0.25],
+  ['damping', 0, 0.6, 0.01],
+  ['gravity', 0, 1.5, 0.05],
+  ['limit', 0, 90, 1],
+  ['rootExp', 0.2, 3, 0.1],
+];
+
+function buildBlinkPanel(stack) {
+  const rows = document.createElement('div');
+  rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
+  for (const [f, lo, hi, st] of BLINK_FIELDS) {
+    const wrap = document.createElement('div');
+    wrap.className = 'row';
+    const nm = document.createElement('span');
+    nm.className = 'nm'; nm.style.width = '54px'; nm.textContent = f;
+    const sl = document.createElement('input');
+    sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = BLINK[f];
+    const val = document.createElement('span');
+    val.className = 'v'; val.style.width = '44px';
+    const show = () => {
+      val.textContent = (f === 'closed' || f === 'lower')
+        ? `${(BLINK[f] * 180 / Math.PI).toFixed(0)}°`
+        : f === 'dur' ? `${(BLINK[f] * 1000).toFixed(0)}ms`
+          : f === 'eyeMax' ? `${(BLINK[f] * 180 / Math.PI).toFixed(0)}°`
+            : f === 'axis' ? ['x', 'y', 'z'][BLINK[f]] ?? '?' : `${BLINK[f]}x`;
+    };
+    sl.oninput = () => { BLINK[f] = Number(sl.value); show(); };
+    show();
+    wrap.append(nm, sl, val);
+    rows.appendChild(wrap);
+  }
+  stack.appendChild(rows);
+}
+
+// A limp body with no sim of its own falls back to three-vrm, whose springs
+// are tuned for standing: the droop is in the rest shape, so gravity is near
+// zero and stiffness pulls toward a direction that rotates WITH the body. On a
+// body lying on its side that reads as gravity pulling the hair sideways.
+// These two take effect on the next body to go limp.
+const LIMP_FIELDS = [
+  ['stiffness', 0, 1, 0.02],   // factor on whatever the rig declared
+  ['gravity', 0, 1.5, 0.05],   // floor, not a replacement
+];
+
+function buildLimpPanel(stack) {
+  const rows = document.createElement('div');
+  rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
+  for (const [f, lo, hi, st] of LIMP_FIELDS) {
+    const wrap = document.createElement('div');
+    wrap.className = 'row';
+    const nm = document.createElement('span');
+    nm.className = 'nm'; nm.style.width = '54px'; nm.textContent = f;
+    const sl = document.createElement('input');
+    sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = LIMP_SPRINGS[f];
+    const val = document.createElement('span');
+    val.className = 'v'; val.style.width = '44px';
+    const show = () => { val.textContent = f === 'stiffness'
+      ? `${LIMP_SPRINGS[f]}x` : String(LIMP_SPRINGS[f]); };
+    sl.oninput = () => { LIMP_SPRINGS[f] = Number(sl.value); show(); };
+    show();
+    wrap.append(nm, sl, val);
+    rows.appendChild(wrap);
+  }
+  stack.appendChild(rows);
+}
+
+function buildHairPanel(stack) {
+  const defaults = { ...HAIR_TUNING };
+  const rows = document.createElement('div');
+  rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
+  const apply = () => {
+    const rd = providers.ragdoll?.();
+    if (rd?.retuneHair) rd.retuneHair();
+  };
+  const mk = () => {
+    rows.textContent = '';
+    for (const [f, lo, hi, st] of HAIR_FIELDS) {
+      const wrap = document.createElement('div');
+      wrap.className = 'row';
+      const nm = document.createElement('span');
+      nm.className = 'nm'; nm.style.width = '54px'; nm.textContent = f;
+      const sl = document.createElement('input');
+      sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = HAIR_TUNING[f];
+      const val = document.createElement('span');
+      val.className = 'v'; val.style.width = '44px';
+      const show = () => {
+        val.textContent = f === 'mass' ? `${(HAIR_TUNING[f] * 1000).toFixed(1)}g`
+          : f === 'limit' ? `${HAIR_TUNING[f]}°` : String(HAIR_TUNING[f]);
+      };
+      sl.oninput = () => { HAIR_TUNING[f] = Number(sl.value); show(); apply(); };
+      show();
+      wrap.append(nm, sl, val);
+      rows.appendChild(wrap);
+    }
+  };
+  mk();
+  const btns = document.createElement('div');
+  btns.className = 'row';
+  const b1 = document.createElement('button');
+  b1.textContent = 'reset hair';
+  b1.onclick = () => { Object.assign(HAIR_TUNING, defaults); mk(); apply(); };
+  const b2 = document.createElement('button');
+  b2.textContent = 'copy hair';
+  b2.onclick = async () => {
+    const out = 'export const HAIR_TUNING = {\n'
+      + Object.entries(HAIR_TUNING).map(([k, v]) => `  ${k}: ${v},`).join('\n')
+      + '\n};';
+    try { await navigator.clipboard.writeText(out); toastLike('hair tuning copied'); }
+    catch { console.log(out); toastLike('hair tuning logged'); }
+  };
+  btns.append(b1, b2);
+  stack.append(rows, btns);
+}
+
+// ---- wings ------------------------------------------------------------------
+// Two tables, because a wing has two lives. WING_IDLE is the flap, read fresh
+// every frame by avatar.js, so its sliders bite instantly on a standing body.
+// WING_TUNING is the ragdoll's, and needs retuneWings() to reach constraints
+// that already exist — which only has anything to retune while a body is
+// actually limp. Drop her first, then reach for the lower half of this panel.
+const WING_IDLE_FIELDS = [
+  ['deg', 0, 60, 1],        // half-amplitude at the shoulder
+  ['hz', 0, 3, 0.02],       // flaps per second
+  ['bias', -40, 40, 1],     // permanent lift, degrees
+  ['tip', 0, 1.5, 0.05],    // outer segment's share
+  ['lag', 0, 0.5, 0.01],    // cycles the tip trails the root
+  ['sweep', 0, 40, 1],      // fore/aft travel — 0 pins the tips to the frontal
+                            // plane, which is the hinge look it exists to fix
+  ['sweepPhase', 0, 0.5, 0.01],  // 0.25 opens the path into an ellipse; 0 or
+                                 // 0.5 collapses it back to a tilted line
+  ['recover', 0.05, 2, 0.05],
+];
+const WING_SIM_FIELDS = [
+  ['mass', 0.02, 3, 0.01],
+  ['tension', 0, 400, 5],
+  ['damping', 0, 1, 0.02],
+  ['gravity', 0, 2, 0.05],
+  ['limit', 0, 90, 1],
+  ['rootExp', 0.2, 3, 0.1],
+];
+
+function buildWingPanel(stack) {
+  const idleDefaults = { ...WING_IDLE };
+  const simDefaults = { ...WING_TUNING };
+  const apply = () => {
+    const rd = providers.ragdoll?.();
+    if (rd?.retuneWings) rd.retuneWings();
+  };
+  const table = (fields, obj, live, fmt) => {
+    const rows = document.createElement('div');
+    rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
+    const mk = () => {
+      rows.textContent = '';
+      for (const [f, lo, hi, st] of fields) {
+        const wrap = document.createElement('div');
+        wrap.className = 'row';
+        const nm = document.createElement('span');
+        nm.className = 'nm'; nm.style.width = '54px'; nm.textContent = f;
+        const sl = document.createElement('input');
+        sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = obj[f];
+        const val = document.createElement('span');
+        val.className = 'v'; val.style.width = '44px';
+        const show = () => { val.textContent = fmt(f); };
+        sl.oninput = () => { obj[f] = Number(sl.value); show(); if (live) apply(); };
+        show();
+        wrap.append(nm, sl, val);
+        rows.appendChild(wrap);
+      }
+    };
+    mk();
+    return { rows, mk };
+  };
+  const idle = table(WING_IDLE_FIELDS, WING_IDLE, false, (f) => (
+    f === 'deg' || f === 'bias' || f === 'sweep' ? `${WING_IDLE[f]}°`
+      : f === 'hz' ? `${WING_IDLE[f]}Hz`
+        : f === 'recover' ? `${(WING_IDLE[f] * 1000).toFixed(0)}ms`
+          : String(WING_IDLE[f])));
+  const sim = table(WING_SIM_FIELDS, WING_TUNING, true, (f) => (
+    f === 'mass' ? `${(WING_TUNING[f] * 1000).toFixed(0)}g`
+      : f === 'limit' ? `${WING_TUNING[f]}°` : String(WING_TUNING[f])));
+  const sub = (text) => {
+    const h = document.createElement('div');
+    h.className = 'nm'; h.style.cssText = 'opacity:0.6;margin-top:4px';
+    h.textContent = text;
+    return h;
+  };
+  const btns = document.createElement('div');
+  btns.className = 'row';
+  const b1 = document.createElement('button');
+  b1.textContent = 'reset wings';
+  b1.onclick = () => {
+    Object.assign(WING_IDLE, idleDefaults);
+    Object.assign(WING_TUNING, simDefaults);
+    idle.mk(); sim.mk(); apply();
+  };
+  const b2 = document.createElement('button');
+  b2.textContent = 'copy wings';
+  b2.onclick = async () => {
+    const one = (name, o) => `export const ${name} = {\n`
+      + Object.entries(o).map(([k, v]) => `  ${k}: ${v},`).join('\n') + '\n};';
+    const out = `${one('WING_IDLE', WING_IDLE)}\n\n${one('WING_TUNING', WING_TUNING)}`;
+    try { await navigator.clipboard.writeText(out); toastLike('wing tuning copied'); }
+    catch { console.log(out); toastLike('wing tuning logged'); }
+  };
+  btns.append(b1, b2);
+  stack.append(sub('flap (live)'), idle.rows, sub('limp (needs a ragdoll)'), sim.rows, btns);
+}
+
+// the panel has no toast of its own; keep the dependency to one line
+function toastLike(msg) { console.log(`[debug] ${msg}`); }
+
 // ---- panel -----------------------------------------------------------------
 
 function row(label, key, onChange) {
@@ -374,6 +757,46 @@ export function initDebug(p = {}) {
     stack.appendChild(d.wrap);
   }
 
+  // blink, live
+  const bhead = document.createElement('div');
+  bhead.className = 'row';
+  bhead.style.cssText = 'margin-top:6px;opacity:.75';
+  bhead.textContent = '— blink (live) —';
+  stack.appendChild(bhead);
+  buildBlinkPanel(stack);
+
+  // hair, live
+  const hhead = document.createElement('div');
+  hhead.className = 'row';
+  hhead.style.cssText = 'margin-top:6px;opacity:.75';
+  hhead.textContent = '— hair (live, while ragdolled) —';
+  stack.appendChild(hhead);
+  buildHairPanel(stack);
+
+  // limp springbones (remotes and post-dispose), live
+  const lhead = document.createElement('div');
+  lhead.className = 'row';
+  lhead.style.cssText = 'margin-top:6px;opacity:.75';
+  lhead.textContent = '— limp hair, no local sim —';
+  stack.appendChild(lhead);
+  buildLimpPanel(stack);
+
+  // wings, live
+  const whead = document.createElement('div');
+  whead.className = 'row';
+  whead.style.cssText = 'margin-top:6px;opacity:.75';
+  whead.textContent = '— wings —';
+  stack.appendChild(whead);
+  buildWingPanel(stack);
+
+  // joint limits, live
+  const jhead = document.createElement('div');
+  jhead.className = 'row';
+  jhead.style.cssText = 'margin-top:6px;opacity:.75';
+  jhead.textContent = '— joint limits (live) —';
+  stack.appendChild(jhead);
+  buildJointPanel(stack);
+
   statsEl = document.createElement('pre');
   statsEl.className = 'dbg-stats';
   stack.appendChild(statsEl);
@@ -391,6 +814,7 @@ function clearColliders() {
 function clearRagdoll() {
   if (ragJoints) { ragGroup?.remove(ragJoints.mesh); ragJoints = null; }
   disposeCapsules();
+  disposeVolumes();
 }
 
 const fmt = (n, d = 2) => (Number.isFinite(n) ? n.toFixed(d) : '--');
@@ -450,6 +874,13 @@ export function updateDebug(now = performance.now()) {
       `  speed  ${fmt(rd.maxV, 3).padStart(5)} m/s`,
       `  still  ${fmt(rd.settledFor, 2).padStart(5)} s`,
       `  age    ${fmt(rd.elapsed, 2).padStart(5)} s`,
+      // hipsOffset is how far the render root hangs below the hips. It is a
+      // property of the RIG, so it should read the same on every body of the
+      // same avatar and never change across a drag or a release — when it
+      // drifts, the whole body renders that far off the sim, which is what
+      // floating and clipping through the floor both look like from inside.
+      `  hipsΔ  ${fmt(rd.hipsOffset, 3).padStart(5)} m  (rig constant)`,
+      `  rootY  ${fmt(rd.avatar?.root?.position?.y, 3).padStart(5)} m`,
       // steps vs age separates "nobody is calling step()" from "step() is
       // being called with dt 0" — two very different bugs that look identical
       // from a frozen body.

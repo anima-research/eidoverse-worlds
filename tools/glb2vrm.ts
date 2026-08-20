@@ -210,6 +210,36 @@ const TRIPO_MAP: Record<string, string> = {
   rightToes: "R_ToeBase",
 };
 
+// Digits are OPTIONAL: many rigs have no finger bones, and TRIPO_MAP is checked
+// with fail-fast nodeByName, so these cannot live in it. Any entry whose bone is
+// missing is simply skipped.
+//
+// Worth mapping, because ammodoll.js ports the source's finger springs and
+// tendon coupling and asks for these exact joints — without them a rig with a
+// full hand rig arrives with no finger physics at all.
+//
+// Tripo's naming, and two traps in it:
+//   *0 is the METACARPAL. VRM has a slot for the thumb's and NOT for the other
+//      fingers — which matches the source rig's own choice to keep metacarpals
+//      fused to the hand body. So Index0/Middle0/Ring0/Pinky0 are deliberately
+//      unmapped, and Index1 is the PROXIMAL.
+//   VRM says "Little" where Tripo says "Pinky".
+const TRIPO_DIGITS: Record<string, string> = (() => {
+  const m: Record<string, string> = {};
+  for (const [vrmSide, t] of [["left", "L"], ["right", "R"]] as const) {
+    m[`${vrmSide}ThumbMetacarpal`] = `${t}_Thumb0`;
+    m[`${vrmSide}ThumbProximal`]   = `${t}_Thumb1`;
+    m[`${vrmSide}ThumbDistal`]     = `${t}_Thumb2`;
+    for (const [vrmFinger, tripoFinger] of
+         [["Index", "Index"], ["Middle", "Middle"], ["Ring", "Ring"], ["Little", "Pinky"]] as const) {
+      m[`${vrmSide}${vrmFinger}Proximal`]     = `${t}_${tripoFinger}1`;
+      m[`${vrmSide}${vrmFinger}Intermediate`] = `${t}_${tripoFinger}2`;
+      m[`${vrmSide}${vrmFinger}Distal`]       = `${t}_${tripoFinger}3`;
+    }
+  }
+  return m;
+})();
+
 // ------------------------------------------------------------------- main
 
 const argv = Bun.argv.slice(2);
@@ -378,9 +408,18 @@ g.extensions.VRMC_vrm = {
       if (mirrored) console.log("  rig is mirrored (L_* bones at -X) → swapping left/right in humanoid map");
       const side = (name: string) =>
         mirrored ? name.replace(/^([LR])_/, (_, c) => (c === "L" ? "R_" : "L_")) : name;
-      return Object.fromEntries(
+      const out: Record<string, { node: number }> = Object.fromEntries(
         Object.entries(TRIPO_MAP).map(([vrm, tripo]) => [vrm, { node: nodeByName(g, side(tripo)) }]),
       );
+      let digits = 0;
+      for (const [vrm, tripo] of Object.entries(TRIPO_DIGITS)) {
+        const idx = g.nodes.findIndex((n: any) => n.name === side(tripo));
+        if (idx >= 0) { out[vrm] = { node: idx }; digits++; }
+      }
+      console.log(digits
+        ? `  mapped ${digits} finger bones (ammodoll drives these as spring joints)`
+        : "  no finger bones found — hands will be rigid in the body engine");
+      return out;
     })(),
   },
 };

@@ -10,7 +10,7 @@
 // every linkage a completed spawn could unblock); distance bands promote
 // what is in front of you.
 
-import { planReconcile, bandForDistance, mountsTouching } from "../client/lib/realize/models_field.js";
+import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere } from "../client/lib/realize/models_field.js";
 import { P } from "../client/lib/scheduler.js";
 
 let passed = 0, failed = 0;
@@ -80,6 +80,26 @@ const light = () => ({ kind: "light", pos: [0, 1, 0], color: 0xffd9a0, intensity
   check("mid is VISIBLE", bandForDistance(25) === P.VISIBLE);
   check("far is FAR", bandForDistance(300) === P.FAR);
   check("unknown distance is VISIBLE", bandForDistance(NaN) === P.VISIBLE);
+}
+
+// 8. whose collision is it?
+//
+// An entity whose collision is owned elsewhere must not have a box inferred
+// here. Mounted cargo collides as its carrier; a `structure` entity's collision
+// is DECLARED by the structure realizer. Inferring one from the structure's
+// placeholder lib left an invisible crate-sized obstacle at the origin of every
+// building — mesh hidden, collider not.
+{
+  check("an ordinary model owns its collision",
+    !collisionOwnedElsewhere(model("crate.glb"), false));
+  check("mounted cargo does not", collisionOwnedElsewhere(model("crate.glb"), true));
+  check("a structure anchor does not",
+    collisionOwnedElsewhere({ ...model("placeholder.glb"), comp: { structure: { levels: [] } } }, false));
+  check("...even unmounted, which is the whole point",
+    collisionOwnedElsewhere({ ...model("x.glb"), comp: { structure: {} } }, false));
+  check("an unrelated comp changes nothing",
+    !collisionOwnedElsewhere({ ...model("x.glb"), comp: { lock: true } }, false));
+  check("missing entity is not a crash", !collisionOwnedElsewhere(undefined, false));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

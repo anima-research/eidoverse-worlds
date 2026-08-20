@@ -5,7 +5,7 @@
 // exactly where it always did in the boot sequence.
 
 import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { JtiCache } from "./aid1.ts";
 import { ROOT } from "./config.ts";
 
@@ -68,7 +68,10 @@ try {
 // RESERVED — a plain browser join cannot claim it — and (b) a join carrying
 // the right token is a verified agent. Hot-reloaded by mtime, like the MCPL
 // server does.
-export const AGENT_TOKENS_PATH = join(ROOT, "mcpl", "tokens.json");
+// Path is env-overridable so a self-contained test can own its credential
+// fixture (a scratch tokens.json) without mutating the checkout — same posture
+// as WORLDS_DIR. Production leaves it unset and reads the real mcpl/tokens.json.
+export const AGENT_TOKENS_PATH = resolve(process.env.AGENT_TOKENS_PATH ?? join(ROOT, "mcpl", "tokens.json"));
 let agentTokCache: { mtime: number; byToken: Map<string, string>; names: Set<string> } | null = null;
 export function agentTokens() {
   try {
