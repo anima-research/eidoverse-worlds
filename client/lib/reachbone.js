@@ -91,6 +91,11 @@ export function measureChain(avatar, key) {
   return {
     key, spec, nodes, L1: up.l, L2: lo.l, dRestU: up.u, dRestL: lo.u, lim,
     fwd: F.f, rUpper, rLower, guards,
+    // toward the body's midline from THIS shoulder: the rest direction points
+    // laterally outward, so the midline is the other way along the body's
+    // lateral axis
+    inward: (() => { const sg = Math.sign(up.u[0] * F.r[0] + up.u[1] * F.r[1] + up.u[2] * F.r[2]) || 1;
+                     return [-sg * F.r[0], -sg * F.r[1], -sg * F.r[2]]; })(),
     coneAxis: fromBody(coneAxisBody(toBody(up.u, F), lim.coneTilt ?? 0), F),
   };
 }
@@ -137,7 +142,9 @@ export function solveChain(chain, avatar, targetWorld, poleHint = null) {
     pole: qRot(qParent, chain.dRestU),
     fwd: qRot(qParent, chain.fwd),
     coneAxis: qRot(qParent, chain.coneAxis),
-    limits: { coneHalf: chain.lim.coneHalf, behind: chain.lim.behind, maxFlex: chain.lim.maxFlex },
+    inward: qRot(qParent, chain.inward),
+    limits: { coneHalf: chain.lim.coneHalf, coneAcross: chain.lim.coneAcross,
+              behind: chain.lim.behind, maxFlex: chain.lim.maxFlex },
   }, guards);
   if (!res.ok) return { ok: false, why: res.why };
 

@@ -34,8 +34,10 @@ export const BEHIND = [
 // thigh swings far forward and barely backward.
 export const CONE = [
   // bone           child            half°  tilt° (toward body forward)
-  ['leftUpperArm',  'leftLowerArm',   85,    0],
-  ['rightUpperArm', 'rightLowerArm',  85,    0],
+  // arms carry a fifth number: how far they may swing toward the midline.
+  // See ACROSS below. Consumed by the reach only; the ragdoll reads [2] and [3].
+  ['leftUpperArm',  'leftLowerArm',   85,    0,   135],
+  ['rightUpperArm', 'rightLowerArm',  85,    0,   135],
   ['leftUpperLeg',  'leftLowerLeg',   55,   25],
   ['rightUpperLeg', 'rightLowerLeg',  55,   25],
 ];
@@ -137,7 +139,8 @@ export function limitsFor(bone) {
   const behind = BEHIND.find((b) => b[0] === bone);
   const hinge = HINGE.find((h) => h[0] === bone);
   return {
-    ...(cone ? { coneHalf: cone[2] * D2R, coneTilt: cone[3] } : {}),
+    ...(cone ? { coneHalf: cone[2] * D2R, coneTilt: cone[3],
+                 ...(cone[4] != null ? { coneAcross: cone[4] * D2R } : {}) } : {}),
     ...(behind ? { behind: behind[2] * D2R } : {}),
     ...(hinge ? { maxFlex: hinge[4] * D2R, hingeDir: hinge[3], hingeSide: hinge[5] * D2R } : {}),
     ...(TWIST[bone] != null ? { twistMax: TWIST[bone] * D2R } : {}),
@@ -241,3 +244,23 @@ export const GUARD_SEGMENTS = [
   ['leftUpperArm', 'leftLowerArm'], ['rightUpperArm', 'rightLowerArm'],
   ['leftLowerArm', 'leftHand'], ['rightLowerArm', 'rightHand'],
 ];
+
+// ACROSS — how far a limb may swing TOWARD the body's midline.
+//
+// A circular cone has one number for every direction, so the 85° that stops a
+// shoulder folding back over the spine also forbids the arm crossing the
+// chest. Measured with the reach audit, that left every cross-body contact
+// point 200-320mm short, and the failure looked like a locked outstretched
+// arm rather than a fold. Same problem BEHIND solves for hips ("the CONE is
+// circular, so it cannot express the one shape a hip actually has"), same
+// answer: one more number for one more direction.
+//
+// It is only safe alongside the torso projection in shared/reach.js. Widening
+// the envelope on its own moves the arm INTO the chest — clearance measured
+// at 831/840 before, 693/840 after — because an adducted upper bone points
+// through the body. The two belong together.
+//
+// Read by the REACH only. The ragdoll keeps the plain circular cone: a fall is
+// passive and a reach is active, and a muscle holds shapes gravity will not
+// produce. Whether a limp body should fold its arms across itself is a
+// separate judgement about how a corpse looks, and it has not been made.

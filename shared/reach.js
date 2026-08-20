@@ -177,20 +177,74 @@ export function solveTwoBone(o) {
   // converge instead of cycling. It is BOUNDED and then VERIFIED: if a pass
   // limit is hit without feasibility, that gets reported, not hidden.
   let upper = rotateAbout(aim, axis, alpha);
-  let hitCone = false, hitBehind = false;
-  if ((o.coneAxis && lim.coneHalf != null) || (o.fwd && lim.behind != null)) {
+  let hitCone = false, hitBehind = false, hitBody = false;
+
+  // ---- the shoulder's envelope is not a circle.
+  //
+  // One half-angle for every direction cannot say what a shoulder does: the
+  // 85° that correctly stops it folding backwards over the spine also stops
+  // the arm crossing the chest, and crossing the chest is most of what arms
+  // do socially — folding, hugging, a hand on your own other shoulder. Same
+  // shape of problem BEHIND solves for hips, same shape of answer: a second
+  // number for one direction. `inward` points at the body's midline, and the
+  // allowance opens smoothly with how much adduction the reach is ASKING for,
+  // measured before anything is clamped (keying it off the clamped vector is
+  // circular — the clamp is what stops the arm pointing inward, so it never
+  // opens; that version moved the hand 6mm).
+  const wantAdduction = o.inward ? clamp(dot(upper, o.inward), 0, 1) : 0;
+  const coneHalfEff = (lim.coneAcross != null && o.inward)
+    ? lim.coneHalf + (lim.coneAcross - lim.coneHalf) * wantAdduction
+    : lim.coneHalf;
+
+  // ---- and the torso is not a suggestion.
+  //
+  // Widening the envelope alone just moves the arm INTO the chest, because an
+  // adducted upper bone points through the body (measured: clearance fell
+  // 831/840 -> 693/840). The elbow swivel cannot rescue that — it moves the
+  // elbow around the shoulder-hand axis, and the offending bone IS that axis.
+  // So the torso pushes the UPPER BONE, as a projection in the same loop as
+  // the joint limits: rotate the bone about the shoulder, just far enough to
+  // lift its deepest point out of the capsule. An arm crossing the chest then
+  // ends up in FRONT of it because that is where the geometry allows, not
+  // because a constant said so.
+  const pushOutOfBody = (v) => {
+    if (!o.guards?.length) return { v, moved: false };
+    const rU = o.rUpper ?? 0;
+    let out = v, moved = false;
+    for (const g of o.guards) {
+      const min = g.r + rU;
+      const cc = segSegClosest(root, add(root, mul(out, L1)), g.a, g.b);
+      if (cc.d >= min) continue;
+      const arm = sub(cc.c1, root);
+      const armLen = len(arm);
+      if (armLen < 1e-4) continue;
+      const n = norm(sub(cc.c1, cc.c2));
+      if (!n) continue;                       // dead centre: no direction to push
+      const ax = norm(cross(arm, n));
+      if (!ax) continue;                      // already pushing straight along the bone
+      // small-angle: the arc a point at armLen travels is armLen * theta
+      const theta = Math.min(0.6, (min - cc.d) / armLen);
+      out = norm(rotateAbout(out, ax, theta)) ?? out;
+      moved = true;
+    }
+    return { v: out, moved };
+  };
+
+  if ((o.coneAxis && lim.coneHalf != null) || (o.fwd && lim.behind != null) || o.guards?.length) {
     const minFwd = lim.behind != null ? -Math.sin(lim.behind) : null;
     let feasible = false;
-    for (let pass = 0; pass < 12; pass++) {
+    for (let pass = 0; pass < 24; pass++) {
       let moved = false;
       if (o.coneAxis && lim.coneHalf != null) {
-        const c = clampToCone(upper, o.coneAxis, lim.coneHalf);
+        const c = clampToCone(upper, o.coneAxis, coneHalfEff);
         if (c.clamped) { upper = c.v; moved = true; hitCone = true; }
       }
       if (o.fwd && minFwd != null) {
         const b = clampBehind(upper, o.fwd, minFwd);
         if (b.clamped) { upper = b.v; moved = true; hitBehind = true; }
       }
+      const p = pushOutOfBody(upper);
+      if (p.moved) { upper = p.v; moved = true; hitBody = true; }
       if (!moved) { feasible = true; break; }
     }
     // Report what is binding AT THE FIXED POINT, not what fired on the way
@@ -201,8 +255,9 @@ export function solveTwoBone(o) {
     // fall back on. Measured on a real rig: 'cone' reported at 0.423 against a
     // boundary of 0.087.
     const onBoundary = (v, ref, want) => Math.abs(dot(v, ref) - want) < 1e-6;
-    if (hitCone && o.coneAxis && onBoundary(upper, o.coneAxis, Math.cos(lim.coneHalf))) bound.push('cone');
+    if (hitCone && o.coneAxis && onBoundary(upper, o.coneAxis, Math.cos(coneHalfEff))) bound.push('cone');
     if (hitBehind && o.fwd && onBoundary(upper, o.fwd, minFwd)) bound.push('behind');
+    if (hitBody) bound.push('body');
     if (!feasible) bound.push('infeasible');
   }
 
@@ -324,6 +379,27 @@ export function chainLocalQuats(dRestUpper, dRestLower, dWantUpper, dWantLower, 
 
 /** Squared distance between two segments, by the standard clamped-parameter
  *  method. Degenerate (zero-length) segments fall through to point cases. */
+export function segSegClosest(p1, q1, p2, q2) {
+  const d1 = sub(q1, p1), d2 = sub(q2, p2), r = sub(p1, p2);
+  const a = dot(d1, d1), e = dot(d2, d2), f = dot(d2, r);
+  let s, t;
+  if (a <= 1e-12 && e <= 1e-12) { s = 0; t = 0; }
+  else if (a <= 1e-12) { s = 0; t = clamp(f / e, 0, 1); }
+  else {
+    const c = dot(d1, r);
+    if (e <= 1e-12) { t = 0; s = clamp(-c / a, 0, 1); }
+    else {
+      const b = dot(d1, d2), den = a * e - b * b;
+      s = den > 1e-12 ? clamp((b * f - c * e) / den, 0, 1) : 0;
+      t = (b * s + f) / e;
+      if (t < 0) { t = 0; s = clamp(-c / a, 0, 1); }
+      else if (t > 1) { t = 1; s = clamp((b - c) / a, 0, 1); }
+    }
+  }
+  const c1 = add(p1, mul(d1, s)), c2 = add(p2, mul(d2, t));
+  return { d: len(sub(c1, c2)), c1, c2 };
+}
+
 export function segSegDist(p1, q1, p2, q2) {
   const d1 = sub(q1, p1), d2 = sub(q2, p2), r = sub(p1, p2);
   const a = dot(d1, d1), e = dot(d2, d2), f = dot(d2, r);
@@ -384,9 +460,6 @@ const SWIVELS = (() => {
  * @param {Array<{a:number[],b:number[],r:number}>} guards live segments to avoid
  */
 export function solveTwoBoneClear(o, guards) {
-  const first = solveTwoBone(o);
-  if (!first.ok || !guards?.length) return first;
-
   const rU = o.rUpper ?? 0, rL = o.rLower ?? 0;
 
   // You cannot touch a shoulder without putting your hand inside the shoulder's
@@ -394,9 +467,13 @@ export function solveTwoBoneClear(o, guards) {
   // keeping it means no swivel ever clears, the search falls through to
   // least-bad every frame, and the arm hunts. Drop those: the point of the
   // guards is to stop the arm passing through the body on the way, not to
-  // forbid arriving.
-  guards = guards.filter((g) => segSegDist(o.target, o.target, g.a, g.b) >= g.r + rL);
-  if (!guards.length) return { ...first, swivel: 0, penetration: 0 };
+  // forbid arriving. Filtered ONCE here and handed down, so the upper-bone
+  // projection inside solveTwoBone works from the same set.
+  guards = (guards ?? []).filter((g) => segSegDist(o.target, o.target, g.a, g.b) >= g.r + rL);
+  o = { ...o, guards };
+
+  const first = solveTwoBone(o);
+  if (!first.ok || !guards.length) return first;
   const pen0 = penetration(o.root, first.elbow, first.hand, rU, rL, guards);
   if (pen0 <= 0) return { ...first, swivel: 0, penetration: 0 };
 
