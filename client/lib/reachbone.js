@@ -129,9 +129,12 @@ export function solveChain(chain, avatar, targetWorld, poleHint = null) {
   const res = solveTwoBoneClear({
     root: shoulder, target, L1: chain.L1, L2: chain.L2,
     rUpper: chain.rUpper, rLower: chain.rLower,
-    // last frame's elbow keeps the bend plane continuous, so a target swinging
-    // past the shoulder does not flip the elbow inside out mid-reach
-    pole: poleHint ?? qRot(qParent, chain.dRestU),
+    // The rest direction carried by the parent — a pure function of the
+    // current pose. NOT last frame's elbow: threading that back in made the
+    // solve depend on its own output and self-touch oscillated (see
+    // solveTwoBoneClear). poleHint is accepted and ignored for callers that
+    // still pass it.
+    pole: qRot(qParent, chain.dRestU),
     fwd: qRot(qParent, chain.fwd),
     coneAxis: qRot(qParent, chain.coneAxis),
     limits: { coneHalf: chain.lim.coneHalf, behind: chain.lim.behind, maxFlex: chain.lim.maxFlex },

@@ -372,6 +372,14 @@ const SWIVELS = (() => {
  * does not. Falls back to the least-bad swivel rather than refusing, because
  * an arm that is 2cm inside a hip still reads better than an arm that gave up.
  *
+ * This is a PURE FUNCTION of (pose, target) — it keeps no memory of what it
+ * chose last frame, and that is deliberate. The first version threaded the
+ * previous elbow back in as the pole hint, which closed a loop: the solve
+ * depended on its own output, the discrete swivel steps gave the loop
+ * something to bounce between, and self-touch went into a limit cycle that
+ * flipped the elbow on up to 54 frames out of 54. Same input, same arm, every
+ * frame, no history — an oscillator needs state, so it does not get any.
+ *
  * @param {object} o the same options solveTwoBone takes
  * @param {Array<{a:number[],b:number[],r:number}>} guards live segments to avoid
  */
@@ -380,6 +388,15 @@ export function solveTwoBoneClear(o, guards) {
   if (!first.ok || !guards?.length) return first;
 
   const rU = o.rUpper ?? 0, rL = o.rLower ?? 0;
+
+  // You cannot touch a shoulder without putting your hand inside the shoulder's
+  // own capsule. A guard the TARGET sits inside can never be satisfied, so
+  // keeping it means no swivel ever clears, the search falls through to
+  // least-bad every frame, and the arm hunts. Drop those: the point of the
+  // guards is to stop the arm passing through the body on the way, not to
+  // forbid arriving.
+  guards = guards.filter((g) => segSegDist(o.target, o.target, g.a, g.b) >= g.r + rL);
+  if (!guards.length) return { ...first, swivel: 0, penetration: 0 };
   const pen0 = penetration(o.root, first.elbow, first.hand, rU, rL, guards);
   if (pen0 <= 0) return { ...first, swivel: 0, penetration: 0 };
 

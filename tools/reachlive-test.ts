@@ -238,5 +238,49 @@ console.log("\nnot through your own body");
   check(`and the hand still lands on target (${(gapWorst * 1000).toFixed(3)}mm)`, gapWorst < 1e-4);
 }
 
+console.log("\nself-touch does not hunt");
+{
+  // antra, reaching for their own shoulder: "enter endless oscillations ...
+  // pretty close to success". The elbow flipped between adjacent swivel steps
+  // on up to 54 frames out of 54.
+  //
+  // Cause: the solve was fed its own previous elbow as the pole hint, so it
+  // depended on its own output, and the discrete swivel search gave that loop
+  // something to bounce between. A static body reaching a static point must
+  // produce the SAME arm every frame — an oscillator needs state, so the
+  // solver keeps none. This test exists because a user found this and the
+  // suite did not.
+  let worstFlips = 0, worstRig = '', tested = 0;
+  for (const rig of good) {
+    const av = makeAvatar(rig.P, { realParent: rig.realParent });
+    const chain: any = measureChain(av, "rightHand");
+    if (!chain) continue;
+    // a point just off the LEFT upper arm — anchored on a bone that is also
+    // one of this arm's own guards, which is what made it unsatisfiable
+    const lu = av.nodes.leftUpperArm.getWorldPosition(new THREE.Vector3());
+    const target = [lu.x + 0.03, lu.y + 0.04, lu.z + 0.02];
+    const seen: number[] = [];
+    // Feed the elbow back in as the caller used to. That is the loop that
+    // oscillated, so the test has to CLOSE it — passing null here would be a
+    // check that cannot see the bug it was written for (it passed against the
+    // reintroduced bug on the first attempt, which is how this was caught).
+    let pole: number[] | null = null;
+    for (let f = 0; f < 60; f++) {
+      const out: any = step(chain, av, target, pole);
+      if (!out.ok) break;
+      pole = out.elbowOffset;
+      seen.push(Math.round((out.swivel ?? 0) * 1e6));
+    }
+    if (seen.length < 30) continue;
+    tested++;
+    const settled = seen.slice(5);
+    const flips = settled.filter((v, i) => i > 0 && v !== settled[i - 1]).length;
+    if (flips > worstFlips) { worstFlips = flips; worstRig = rig.name; }
+  }
+  check(`a static self-touch settles on ONE arm and stays there (${tested} rigs, worst ${worstFlips} flips${worstRig ? ` on ${worstRig}` : ''})`,
+    worstFlips === 0);
+  check("...and it actually ran on every rig", tested >= 14, `${tested}`);
+}
+
 console.log(failures ? `\n\x1b[31m${failures} failed\x1b[0m\n` : "\n\x1b[32mall passed\x1b[0m\n");
 process.exit(failures ? 1 : 0);
