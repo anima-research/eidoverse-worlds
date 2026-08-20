@@ -116,7 +116,14 @@ async function buildQueue() {
   const store = (await listLibrary('store')) ?? [];
   const glbs = [...store, ...models.filter((f) => f.path.endsWith('.glb'))]
     .sort((a, b) => a.size - b.size);
-  for (const f of (await listLibrary('eidoverse/assets/animations')) ?? []) push(f.path, f.size);
+  // Clips come from /animations, not the raw directory listing, for the same
+  // reason avatars come from /avatars: the roster's paths carry ?v=<mtime>,
+  // and warming a DIFFERENT url than the one vrmaBytes will request is warmth
+  // thrown away (and the bytes pulled twice) — the §20 wasted-warmth bug, in
+  // clip clothing. The roster also resolves upstream-patched over library, so
+  // this warms the fork rather than the original it shadows.
+  const clips = await fetch('/animations').then((r) => r.json()).catch(() => []);
+  for (const c of clips) push(c.path, c.size);
   for (const f of glbs) push(f.path, f.size);
   for (const dir of ['eidoverse/assets/sky', 'eidoverse/assets/particle_textures'])
     for (const f of (await listLibrary(dir)) ?? []) push(f.path, f.size);

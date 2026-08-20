@@ -19,6 +19,7 @@ export const COMMANDS = [
   { name: 'emote', help: '/emote dance · wave cheer dance point salute clap' },
   { name: 'sit', help: 'sit down, on a seat if one is near' },
   { name: 'push', aliases: ['shove'], help: '/push [name] [power] — shove someone within reach (their client decides); /push <thing> works the thing' },
+  { name: 'eyes', help: '/eyes close|open — hold your eyes shut, if your rig has eyelid bones' },
   { name: 'pushable', help: '/pushable on|off — whether shoves and blasts can knock you over (on by default)' },
   { name: 'boom', aliases: ['blast'], help: '/boom [power] [radius] — a blast where you stand, you included (builder)' },
   { name: 'kick', help: '/kick [thing] [power] — send an object flying (a person\'s name = moderation)' },

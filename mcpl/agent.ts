@@ -4,6 +4,7 @@
 // terrain replicated (Skye's terrain.js eval'd in Bun) so feet agree with
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
+import { mentionRegex } from "./mention.ts";
 import * as THREE_W from "three/webgpu";
 import * as TSL from "three/tsl";
 import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS,
@@ -22,6 +23,7 @@ import { stateToEntries as sharedStateToEntries } from "../shared/fold.js";
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
 import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
+import { describeStructure, describeHere, localizePoint, planStructure, routeLocal } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
 
@@ -119,6 +121,9 @@ export class WorldAgent {
   pos = { x: 0, y: 0, z: 0 };
   yaw = 0; speed = 0; clip = "idle";
   private target: (Vec2 & { run: boolean }) | null = null;
+  /** Remaining waypoints of a routed walk — see walkTo. Empty means the target
+   *  is reachable in a straight line, which is every case outside a building. */
+  private legs: Vec2[] = [];
   /** A held custom pose — sparse humanoid-bone quaternions. Presence only:
    *  it rides the pose packet and is never a log verb, because it is a moment,
    *  not a change to the world. `null` clears. */
@@ -593,6 +598,20 @@ export class WorldAgent {
             break;
           case "leave":
             this.people.delete(msg.id);
+            // 🔴 THE PER-PARTICIPANT MAPS MUST GO TOO (2026-08-16). `people` was
+            // cleaned here and these three were not, so every identity that ever
+            // appeared kept an entry for the LIFE OF THE PROCESS — a door in a
+            // busy world grows without bound, and the local convention elsewhere
+            // in this file is explicitly bounded rings (pings 64, heldActivity
+            // 8, malformedSeen 5). These were the exception, not the rule.
+            //
+            // Correctness, not just memory: nearArmed is the approach-ping
+            // re-arm bit, so a returning visitor inherited the arm state from
+            // their PREVIOUS visit — walking away and back could fail to
+            // re-announce them, or announce them twice.
+            this.lastNear.delete(msg.id);
+            this.nearArmed.delete(msg.id);
+            this.nonLocoSince.delete(msg.id);
             this.gate.presence(msg.id, "leave");
             break;
           case "avatar-updated":
@@ -861,8 +880,11 @@ export class WorldAgent {
         const pp = this.people.get(actor)?.pose;
         if (!pp || Math.hypot(pp.p[0] - this.pos.x, pp.p[2] - this.pos.z) <= this.activityRadiusM)
           this.act30.says.set(actor, (this.act30.says.get(actor) ?? 0) + 1);
-        const rx = new RegExp(`(@${this.name}\\b|\\b${this.name}\\b)`, "i");
-        const mention = rx.test(String(args.text));
+        // A null regex means this body has no usable name (a malformed tokens
+        // entry). Not being mentionable is degraded, not fatal — the body still
+        // hears the room; it just cannot be addressed by name.
+        const rx = mentionRegex(this.name);
+        const mention = rx ? rx.test(String(args.text)) : false;
         if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
         this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
       }
@@ -982,8 +1004,23 @@ export class WorldAgent {
     }
   }
 
+  /** Recent pings, for a host that polls instead of subscribing.
+   *
+   *  🔴 BOUNDED (2026-08-16). This array grew forever: the live path is
+   *  `onPing` (net-server subscribes), and `takePings` — the only drain — has no
+   *  caller in this repo. So on a push host the array accumulated every mention,
+   *  approach and whisper for the life of the process and nothing ever read it.
+   *
+   *  Kept rather than deleted because a PLAIN-MCP host has no push channel and
+   *  polling is its documented path (AGENTS.md says digests are "held and handed
+   *  over each time you call the tool"). But it is a RING now, like every other
+   *  buffer in this file — pings 64, heldActivity 8, malformedSeen 5. An
+   *  unbounded buffer whose only consumer is optional is a leak with a plan. */
+  private static readonly PING_RING = 64;
+
   private ping(p: { ts: number; kind: "mention" | "approach" | "whisper"; who: string; text?: string }) {
     this.pings.push(p);
+    if (this.pings.length > WorldAgent.PING_RING) this.pings.splice(0, this.pings.length - WorldAgent.PING_RING);
     this.onPing?.(p);
   }
 
@@ -1204,8 +1241,16 @@ export class WorldAgent {
       const dx = this.target.x - this.pos.x, dz = this.target.z - this.pos.z;
       const dist = Math.hypot(dx, dz);
       if (dist < ARRIVE) {
-        this.target = null; this.speed = 0; this.clip = "idle";
-        this.walkDone?.(true); this.walkDone = null;
+        // A route through a building arrives in legs. Only the LAST one
+        // finishes the walk; the rest hand off to the next waypoint, so a body
+        // rounds a doorway instead of driving at the wall behind it.
+        const next = this.legs.shift();
+        if (next) {
+          this.target = { x: next.x, z: next.z, run: this.target.run };
+        } else {
+          this.target = null; this.speed = 0; this.clip = "idle";
+          this.walkDone?.(true); this.walkDone = null;
+        }
       } else {
         const sp = this.target.run ? RUN : WALK;
         this.speed = sp; this.clip = this.target.run ? "run" : "walk";
@@ -1244,7 +1289,7 @@ export class WorldAgent {
    *  is something that happens TO this body, not just to its pixels. */
   knockDown(by: string, lean: number[] | null, notice: string) {
     if (!this.pushable || this.draggedBy) return;
-    if (this.target) { this.walkDone?.(false); this.walkDone = null; this.target = null; }
+    if (this.target) { this.walkDone?.(false); this.walkDone = null; this.target = null; this.legs = []; }
     this.speed = 0;
     // Down NOW, not when the physics finishes loading. tumble() awaits the
     // skeleton, the height field and the support barrier before it can set
@@ -1490,14 +1535,43 @@ export class WorldAgent {
     this.dismountSelf();
     // and stand on the ground you got up onto
     this.pos.y = this.heightAt(this.pos.x, this.pos.z);
-    this.target = { x, z, run };
+    // ROUTE THROUGH WALLS RATHER THAN INTO THEM. Straight-line walking samples
+    // only the height field, so a body crosses walls as if they were not there.
+    // Inside a griddled building the grid IS the navigation graph, so ask it.
+    // Failure is silent and total on purpose: no route (target outdoors, no
+    // structure, a sealed room) falls back to the old straight line, which is
+    // exactly the behaviour everywhere that has no building.
+    this.legs = [];
+    try {
+      for (const e of this.entities.values()) {
+        const data = (e.comp ?? {}).structure;
+        if (!data) continue;
+        const plan = planStructure(data);
+        const [ax, , az] = localizePoint(e, this.pos.x, this.pos.y, this.pos.z);
+        const [bx, , bz] = localizePoint(e, x, this.pos.y, z);
+        const pts = routeLocal(plan, ax, az, bx, bz);
+        if (!pts || pts.length < 3) continue;    // straight line is already fine
+        const yaw = Number.isFinite(e.yaw) ? e.yaw : 0;
+        const sc = Number.isFinite(e.scale) && e.scale > 0 ? e.scale : 1;
+        const [px, , pz] = Array.isArray(e.pos) ? e.pos : [0, 0, 0];
+        const c = Math.cos(yaw), n = Math.sin(yaw);
+        // grid-local back to world: the inverse of localizePoint
+        this.legs = pts.slice(1).map(([lx, lz]) => ({
+          x: px + (lx * c + lz * n) * sc,
+          z: pz + (-lx * n + lz * c) * sc,
+        }));
+        break;
+      }
+    } catch { this.legs = []; }
+    const first = this.legs.shift();
+    this.target = first ? { x: first.x, z: first.z, run } : { x, z, run };
     return new Promise((resolve) => {
       this.walkDone = resolve;
       setTimeout(() => { if (this.walkDone === resolve) { this.target = null; this.walkDone = null; resolve(false); } }, timeoutMs);
     });
   }
 
-  stop() { this.target = null; this.speed = 0; this.clip = "idle"; this.walkDone?.(false); this.walkDone = null; }
+  stop() { this.target = null; this.legs = []; this.speed = 0; this.clip = "idle"; this.walkDone?.(false); this.walkDone = null; }
 
   face(x: number, z: number) { this.yaw = Math.atan2(x - this.pos.x, z - this.pos.z); }
 
@@ -1781,6 +1855,22 @@ export class WorldAgent {
         gap.landedOn === "parent" ? `${gap.to}'s own frame, not the seat's` : "the last one you stamped, not the ride's"
       }, so treat it as approximate until you walk.)`);
     }
+    // WHERE YOU ARE, ARCHITECTURALLY. A conjured building can only ever be
+    // "a mesh 4m away"; a griddled one knows its own rooms, so standing inside
+    // one is a fact perception can state. Derived from folded state alone —
+    // this runs in a headless agent with no scene and no triangles, which is
+    // the entire point of keeping the planner pure.
+    if (meKnown) {
+      for (const e of this.entities.values()) {
+        const data = (e.comp ?? {}).structure;
+        if (!data) continue;
+        try {
+          const [lx, ly, lz] = localizePoint(e, me.x, me.y, me.z);
+          const here = describeHere(planStructure(data), lx, lz, ly);
+          if (here) { L.push(`${here} (inside [${e.id}]; sides are the building's own compass.)`); break; }
+        } catch { /* one malformed house must not cost the whole percept */ }
+      }
+    }
     // Structured object, NEVER a bare string: consumers of look() were
     // reading {hours, azimuth, clouds, ts, …} long before the forecast
     // existed, and a type change here silently breaks them (Sill, postdeploy
@@ -1851,7 +1941,12 @@ export class WorldAgent {
       // locked = nailed down: the server refuses every move/replace/remove on
       // it. Saying so here saves an agent a refused verb round-trip.
       if (c.lock) aff.push(`🔒 locked (immovable until comp {id, type: "lock", data: null})`);
-      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "lock"].includes(k));
+      // A griddled building says what it IS — rooms, walls, doors — because
+      // unlike a conjured mesh it knows. This is the whole difference the
+      // structure component buys: `components: structure` would be true and
+      // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
+      if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
+      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "lock", "structure"].includes(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);
       if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);

@@ -373,6 +373,94 @@ export function fitSupportGrid(id, topGrid, { position, yaw = 0, scale = 1 } = {
   return true;
 }
 
+// ---- declared structure boxes -----------------------------------------------
+// A griddled building (client/lib/structure_field.js) is the one case where the
+// collider does not have to be INFERRED: the generator knows exactly what it
+// built, so it declares its boxes and decide() never runs. That matters more
+// than it saves. decide()'s comment above records that its earlier "hollow"
+// probe "failed every bell tower, pavilion, gazebo and colonnade we have" —
+// architecture is precisely the population where guessing a shape back out of a
+// bounding box has already lost once. Declaring sidesteps the whole question,
+// and takes the sync BVH build out of the spawn path with it.
+//
+// Two things are deliberately NOT inherited from fitSupportBox:
+//  - the pillar rule (`h > 2.4` → a 0.5m centre post so you can walk under a
+//    canopy). A 2.8m wall is exactly that tall and is emphatically not a post;
+//    applied here it would make every building walk-through-able.
+//  - `interior`. That flag is overloaded: flora reads it to clear grass, while
+//    physobj and both ragdoll engines read it to SKIP the entry (its box being
+//    a known lie for room-scale meshes). A declared slab's box is not a lie, so
+//    wearing `interior` would make bodies fall through the floor. The grass
+//    mask instead gets its own footprint-shaped entry carrying `mask`, which
+//    every query path skips and only flora consumes.
+const structureIds = new Map(); // owner entity id -> synthetic collider ids
+
+/** Register a building's boxes. `boxes` are grid-LOCAL metres (the entity's own
+ *  frame, like every other collider's box); the entity transform composes at
+ *  query time exactly as it does for a fitted mesh. Each box becomes its own
+ *  entry so the spatial hash keeps doing real work — a query at one corner of a
+ *  house tests the few boxes in its 3×3 neighbourhood, not all of them. */
+export function fitStructureBoxes(ownerId, boxes, { position, yaw = 0, scale = 1 } = {}) {
+  removeStructureBoxes(ownerId);
+  if (!Array.isArray(boxes) || !boxes.length) return 0;
+  if (!Array.isArray(position) || position.length !== 3 || !position.every(Number.isFinite)) return 0;
+  if (!Number.isFinite(yaw) || !Number.isFinite(scale) || !(scale > 0)) return 0;
+  const obj = {
+    position: new THREE.Vector3(position[0], position[1], position[2]),
+    rotation: { y: yaw },
+    scale: new THREE.Vector3(scale, scale, scale),
+  };
+  const ids = [];
+  let lo = null, hi = null;
+  for (const b of boxes) {
+    if (![b?.x0, b?.y0, b?.z0, b?.x1, b?.y1, b?.z1].every(Number.isFinite)) continue;
+    const box = new THREE.Box3(
+      new THREE.Vector3(Math.min(b.x0, b.x1), Math.min(b.y0, b.y1), Math.min(b.z0, b.z1)),
+      new THREE.Vector3(Math.max(b.x0, b.x1), Math.max(b.y0, b.y1), Math.max(b.z0, b.z1)),
+    );
+    if (box.isEmpty()) continue;
+    const id = `${ownerId}#s${ids.length}`;
+    // `structOwner` keeps the entity recoverable from a synthetic id — anything
+    // that needs to know WHOSE wall it hit can ask, without parsing the key.
+    const kind = b.kind ?? 'wall';
+    const entry = { obj, box, pref: 'box', exact: null, interior: false, pillar: false,
+      // floors hold you up; they never push you sideways (see resolveColliders)
+      support: kind === 'floor', cells: [], structOwner: ownerId, structKind: kind };
+    colliders.set(id, entry);
+    bucketAdd(id, entry);
+    ids.push(id);
+    lo = lo ? lo.min(box.min) : box.min.clone();
+    hi = hi ? hi.max(box.max) : box.max.clone();
+  }
+  // The grass mask: one footprint-shaped, non-colliding entry. Rectangular
+  // (flora paints a rect from the bbox), so an L-shaped building clears a
+  // little more meadow than it covers — visible only as tidiness, and cheaper
+  // than teaching the mask about cells.
+  if (lo && hi) {
+    const id = `${ownerId}#mask`;
+    const entry = { obj, box: new THREE.Box3(lo, hi), pref: 'box', exact: null,
+      interior: true, mask: true, pillar: false, cells: [], structOwner: ownerId };
+    colliders.set(id, entry);
+    bucketAdd(id, entry);
+    ids.push(id);
+  }
+  structureIds.set(ownerId, ids);
+  return ids.length;
+}
+
+/** Drop every box a building registered. Idempotent — the realizer calls it on
+ *  retire and again at the head of every re-fit. */
+export function removeStructureBoxes(ownerId) {
+  const ids = structureIds.get(ownerId);
+  if (!ids) return;
+  for (const id of ids) removeCollider(id);
+  structureIds.delete(ownerId);
+}
+
+/** The synthetic ids a building currently owns — the realizer's ownership
+ *  check, and the debug overlay's way to colour a building's boxes together. */
+export const structureBoxIds = (ownerId) => structureIds.get(ownerId) ?? [];
+
 /** Call after an in-world rescale: re-decides exact-vs-box against the NEW
  *  size (a dollhouse import scaled to a building becomes walkable-inside)
  *  and re-buckets with the scaled footprint. */
@@ -496,7 +584,7 @@ export function raySegment(origin, dir, far) {
         if (_rsSeen.has(id)) continue;
         _rsSeen.add(id);
         const e = colliders.get(id);
-        if (!e || e.camGhost || !e.box) continue;
+        if (!e || e.camGhost || e.mask || !e.box) continue;
         const o = e.obj;
         const s = o.scale?.x || 1;
         const yaw = o.rotation?.y ?? 0;
@@ -563,7 +651,30 @@ export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL) {
   const step = Math.min(STEP, tall * 0.3);   // a ragdoll does not climb stairs
   const probeY = Math.min(HIP, tall * 0.5);  // mid-body, not "hip"
   const spanY = Math.max(r, tall * 0.26);    // how far up/down a wall hit counts
-  for (const { obj, box, pillar, exact, grid } of near(pos.x, pos.z)) {
+  for (const { obj, box, pillar, exact, grid, mask, support } of near(pos.x, pos.z)) {
+    if (mask) continue;   // a grass-mask footprint is not a solid (see fitStructureBoxes)
+    if (support) {
+      // A DECLARED FLOOR IS SUPPORT, NEVER AN OBSTACLE — the same contract the
+      // heightfield branch below keeps, for the same reason.
+      //
+      // The generic box path treats a box as floor only within 8cm of its top
+      // (`pos.y >= topY - 0.08`), because for an INFERRED collider that
+      // tolerance is the only thing separating a doorstep from a crate. A
+      // 10cm foundation slab misses it by 2cm and becomes a wall: the body
+      // standing on it gets ejected horizontally out of its own building.
+      // Shrinking the slab under the tolerance would "work" while making the
+      // floor's thickness hostage to a constant in another file. A declared
+      // floor doesn't need the heuristic — it knows what it is.
+      const ss = obj.scale?.x || 1;
+      _local.set(pos.x - obj.position.x, 0, pos.z - obj.position.z)
+        .applyAxisAngle(UP, -obj.rotation.y).divideScalar(ss);
+      if (_local.x > box.min.x && _local.x < box.max.x
+          && _local.z > box.min.z && _local.z < box.max.z) {
+        const topY = obj.position.y + box.max.y * ss;
+        if (topY <= pos.y + step && topY > ground) ground = topY;
+      }
+      continue;
+    }
     if (grid) {
       // Heightfield support (#84): the CONTAINING cell's max-y is the ground
       // — nearest occupied cell, piecewise-constant, no interpolation. An
@@ -686,7 +797,8 @@ export function findSeat(pos, range = 1.2) {
   // grid-bounded (§14.2 6a): a chair within `range` has its footprint cells
   // inside the query disc — the old full-map scan ran on every X press and
   // the 0.45s seat-hint beat
-  for (const [id, { obj, box, pillar, exact, grid }] of nearColliders(pos.x, pos.z, range)) {
+  for (const [id, { obj, box, pillar, exact, grid, mask }] of nearColliders(pos.x, pos.z, range)) {
+    if (mask) continue;
     if (pillar || exact) continue; // interiors aren't chairs; furniture inside them is
     if (grid) continue; // a heightfield's box top is the lie we exist to avoid — no phantom seat offers (#11)
     const sc = obj.scale?.x || 1;
@@ -712,8 +824,8 @@ export function surfaceUnder(x, z, terrainAt, maxY = Infinity, skipId = null) {
   let onto = null;
   // a surface UNDER the point must have its footprint over the point — the
   // point's own cell holds every such entry (grid-bounded, §14.2 6a)
-  for (const [id, { obj, box, pillar, exact }] of nearColliders(x, z, 0.5)) {
-    if (pillar || id === skipId) continue;
+  for (const [id, { obj, box, pillar, exact, mask }] of nearColliders(x, z, 0.5)) {
+    if (pillar || mask || id === skipId) continue;
     if (exact) {
       // dropped things land on the actual surface (stair tread, mezzanine)
       const s = obj.scale.x || 1;

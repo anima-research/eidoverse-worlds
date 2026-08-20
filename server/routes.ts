@@ -81,6 +81,40 @@ export function avatarRoster(): { name: string; path: string; height: number | n
   return [...seen].map(([name, path]) => ({ name, path, height: hmeta[name.replace(/[^a-zA-Z0-9_-]/g, "_")]?.h ?? null }));
 }
 
+/** The animation clips, each at a path stamped with its mtime — the same
+ *  ?v= trick avatarRoster mints above, for the same reason and one class of
+ *  bug later. A .vrm URL has always carried a version; a .vrma URL carried
+ *  none, so a changed clip had NO way to invalidate a stored copy, and
+ *  `no-cache` does not save you: a response cached under the OLD headers
+ *  (before .vrma joined the no-cache list) keeps the headers it was stored
+ *  with, and `immutable` means the browser never asks again. Prod, 2026-08-19:
+ *  a corrected sit clip was live and byte-verified on the wire while a user's
+ *  Chrome kept animating from a copy it had never re-requested — days of it,
+ *  no 304s, nothing to purge from this end. A version in the URL is the only
+ *  invalidation that reaches a cache we do not control.
+ *
+ *  Precedence is /library's own ladder — PATCH_DIR wins over OPT_DIR wins over
+ *  LIBRARY_DIR — because the mtime MUST describe the bytes a client will
+ *  actually receive. Version the library's copy while serving a patched fork
+ *  and the stamp is a lie that pins the wrong file forever. */
+export function animationRoster(): { name: string; path: string; size: number }[] {
+  const seen = new Map<string, { path: string; size: number }>();
+  // later base wins, so this list runs lowest-precedence first
+  for (const base of [LIBRARY_DIR, OPT_DIR, PATCH_DIR]) {
+    const dir = join(base, "eidoverse/assets/animations");
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir)) {
+      if (!f.endsWith(".vrma")) continue;
+      const file = Bun.file(join(dir, f));
+      // size rides along so the prefetcher's byte budget still sees these
+      // clips as it did when it read them from /library-list
+      seen.set(f.replace(".vrma", ""),
+        { path: `eidoverse/assets/animations/${f}?v=${Math.round(file.lastModified)}`, size: file.size });
+    }
+  }
+  return [...seen].map(([name, e]) => ({ name, ...e }));
+}
+
 function contentType(path: string): string {
   if (path.endsWith(".html")) return "text/html";
   if (path.endsWith(".js") || path.endsWith(".mjs")) return "text/javascript";
@@ -122,7 +156,14 @@ const BUILD = (() => {
   })();
   return { sha: sha || "unknown", commitTime: commitTime || "unknown",
     dirty: dirtyRaw === "true" ? true : dirtyRaw === "false" ? false : "unknown",
-    startedAt: new Date().toISOString() };
+    startedAt: new Date().toISOString(),
+    // Per-run identity echo for owned test children (tools/probe-harness.mjs,
+    // the boot-check pattern): a probe that spawned this process with
+    // EIDO_BOOT_NONCE can prove the responder is ITS child rather than a stale
+    // listener or a concurrent run's — startedAt freshness alone cannot tell
+    // two just-started servers apart. Absent when unset, so production
+    // /version is unchanged.
+    ...(process.env.EIDO_BOOT_NONCE ? { nonce: process.env.EIDO_BOOT_NONCE } : {}) };
 })();
 
 const gzCache = new Map<string, { mtime: number; gz: Uint8Array }>();
@@ -135,8 +176,15 @@ const gzCache = new Map<string, { mtime: number; gz: Uint8Array }>();
 // pre-§22l shader through a server restart and a whole branch A/B — mode
 // read 'cards-sss' while the wire had 'opaque'). no-cache still rides the
 // ETag: revalidation is a 304, not a re-download.
+// .vrma is in that list too, and was missing from it: ".vrma" does not match
+// endsWith(".vrm"), so ANIMATIONS cached hard for a day. Worse than a stale rig,
+// because a .vrm URL carries ?v=mtime and an animation URL carries no version at
+// all — a bad clip is sticky with no way to invalidate it. Measured 2026-08-12:
+// a placeholder dropped in during a bring-up stuck for every avatar on the
+// roster, and read as "animations are broken" rather than "your cache is holding
+// one wrong file".
 const hardCacheable = (path: string) =>
-  !path.endsWith(".vrm") && !/\.(m?js|json)$/i.test(path);
+  !/\.vrma?$/i.test(path) && !/\.(m?js|json)$/i.test(path);
 
 function serveFrom(base: string, rel: string, cache = false, req?: Request, immutable = false): Response {
   const path = normalize(join(base, rel));
@@ -363,10 +411,31 @@ const ROUTES: Route[] = [
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {
+    // The clip roster, mtime-stamped. no-store on the LISTING is what makes
+    // the stamps trustworthy: the listing must never be the stale thing.
+    match: (u) => u.pathname === "/animations",
+    handler: () => new Response(JSON.stringify(animationRoster()),
+      { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
+  },
+  {
     // upstream #51, ported to the route table: which build is this world
     // running — public, cheap, cache-hostile; the whole point is NOW
+    //
+    // WORLD_INSTANCE_NONCE is an opt-in TEST affordance, mirroring the door's
+    // MCPL_INSTANCE_NONCE: when set, /version carries `instance`, letting a
+    // harness prove the process answering is the one IT spawned rather than a
+    // stale listener squatting the port. Unset in production, where the body is
+    // byte-identical to before — the field is absent, not empty.
+    //
+    // Why an app endpoint at all when the OS can be asked: because `ss` and
+    // /proc are Linux-only, and this repository is reviewed on macOS. A
+    // challenge-response the SERVER answers is the portable proof; the OS check
+    // stays as a second, stricter opinion where the platform offers one.
     match: (u) => u.pathname === "/version",
-    handler: () => new Response(JSON.stringify(BUILD),
+    handler: () => new Response(
+      JSON.stringify(process.env.WORLD_INSTANCE_NONCE
+        ? { ...BUILD, instance: process.env.WORLD_INSTANCE_NONCE }
+        : BUILD),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {

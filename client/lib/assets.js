@@ -301,6 +301,19 @@ export async function loadVRM(libPath, { priority = 1 } = {}) {
       await work.yield();
       work.phase('skeleton');
       VRMUtils.combineSkeletons?.(vrm.scene) ?? VRMUtils.removeUnnecessaryJoints?.(vrm.scene);
+      // A SkinnedMesh's bounding sphere comes from BIND-POSE positions, so it
+      // stops bounding the mesh the moment the skeleton poses — and three.js
+      // then culls against that stale sphere, so parts of a body vanish
+      // depending on camera angle.
+      //
+      // Invisible on a one-primitive avatar, whose bounds are body-sized and
+      // effectively never leave the frustum. A multi-material body splits into
+      // one SkinnedMesh PER PRIMITIVE, each with region-tight bounds: measured
+      // on a 6-primitive rig, the hair primitive (bounds y 0.83..1.00 — the head
+      // alone) disappeared from most angles while the seam primitive (bounds
+      // spanning the whole body) never did. That reads as "the hair is missing
+      // but its gold highlights are still there".
+      vrm.scene.traverse((o) => { if (o.isSkinnedMesh) o.frustumCulled = false; });
       VRMUtils.rotateVRM0(vrm); // VRM0 → faces +Z
       // through the factory BEFORE the first compile: the final graph shape
       // (wetness on MToon, sweep markers) is born with the body
@@ -627,9 +640,39 @@ const vrmaCache = new Map();
 // identity; the hash of what arrived is.
 const vrmaSha = new Map(); // slot → hex sha256, present only once resolved
 export function vrmaShaLoaded(slot) { return vrmaSha.get(slot) ?? null; }
+// Clip URLs carry ?v=<mtime>, exactly as avatar URLs do — the server's
+// /animations roster mints the stamp against the file it would actually
+// SERVE (upstream-patched over opt over library), so a fork and its original
+// never share a version. Without it a clip has no invalidation story at all:
+// prod 2026-08-19, a corrected sit clip was live and byte-verified on the
+// wire while a browser kept animating from a copy stored under the older
+// `immutable` headers and never re-requested it — no 304s, nothing this end
+// could purge. A version in the URL is the only invalidation that reaches a
+// cache we do not control; with one, `serveFrom` may also hand the clip the
+// year-long immutable lifetime, so an UNCHANGED clip costs zero requests.
+//
+// Fetched lazily rather than at module load: the first call rides alongside
+// loadVRM, whose megabytes dwarf this JSON, so it costs no wall-clock — and a
+// top-level fetch here is what once gated the whole module graph.
+//
+// A roster failure degrades to the bare, unversioned URL: exactly today's
+// behaviour (no-cache + ETag), never worse. Clips must not stop loading
+// because a listing did.
+let clipRoster = null;
+function clipPath(file) {
+  clipRoster ??= fetch('/animations', { cache: 'no-store' })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`animations ${r.status}`))))
+    .then((list) => new Map(list.map((e) => [e.name, e.path])))
+    .catch((e) => {
+      console.warn('[clips] roster unavailable — clips load unversioned, and a changed clip may serve stale', e);
+      return new Map();
+    });
+  return clipRoster.then((m) => m.get(file) ?? `eidoverse/assets/animations/${file}.vrma`);
+}
+
 export function vrmaBytes(slot) {
   if (!vrmaCache.has(slot)) {
-    const p = fetchBytes(`/library/eidoverse/assets/animations/${CLIP_FILES[slot] ?? slot}.vrma`);
+    const p = clipPath(CLIP_FILES[slot] ?? slot).then((rel) => fetchBytes(`/library/${rel}`));
     vrmaCache.set(slot, p);
     p.then(async (buf) => {
       const d = await crypto.subtle.digest('SHA-256', buf);

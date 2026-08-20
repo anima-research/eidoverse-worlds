@@ -9,6 +9,8 @@ import {
 } from './assets.js';
 import { beginWork, enqueue, idleYield, nextFrame, loadNote } from './loadwork.js';
 import { warm } from './warmqueue.js';
+import { heightAt } from './terrain.js';
+import { surfaceUnder } from './colliders.js';
 import { DRIVEN_BONES } from './ragdoll.js';
 import { stroke as strokeIcon } from './icons.js';
 import { SEAT_CLIP_FILE } from './seatcore.js';
@@ -18,6 +20,95 @@ import { SEAT_CLIP_FILE } from './seatcore.js';
 // largest chunk of a cold boot, spent on animations most arrivals don't use in
 // the first minute (nobody lands mid-climb). So a body is born able to stand
 // and walk, and learns the rest while you're already moving.
+// How far an upper lid swings to shut, in radians about its own X, when the rig
+// exports no limit of its own. Signed: which way is "closed" depends on how the
+// lid bone was rolled, so this is a dial, not a constant of nature — the first
+// guess here blinked mythos UPWARD, which is the other 50%.
+export const BLINK = {
+  closed: 1.2,   // radians — 69 deg, found on the slider against her own lids
+  hz: 1,         // blink-rate multiplier
+  // Which AXIS a lid swings about is a property of how the bone was rolled, and
+  // Blender's bone axes are not glTF's — a lid that shuts about X in Blender may
+  // need Y or Z here. 0=x 1=y 2=z. Rotating about the wrong one sweeps the lid
+  // sideways instead of down, which looks like an eye you can see straight
+  // through however far you close it.
+  axis: 0,
+  lower: -0.35,  // the LOWER lid's share, signed and usually opposite. An upper
+                 // lid alone does not shut an eye: it covers the top and leaves
+                 // the sclera and iris showing under it, which is why a "closed"
+                 // eye read as a white eyeball with a dark dot.
+  eyeMax: 0.42,  // radians an eyeball may turn off the head's forward (~24 deg).
+                 // Human eyes reach further, but a doll whose eyes track hard
+                 // reads as staring; the head is meant to do most of the work.
+  dur: 0.28,     // seconds for a full close-and-open. 0.13 was the original and
+                 // it is barely perceptible: a real blink is 100-150ms of
+                 // CLOSING plus the reopen, and this curve covers both halves.
+};
+
+// Wings, when a rig has them: [LR]_Wing_(Upper|Lower)[_<n>]. Four chains hung
+// off the clavicles — an upper pair and a lower pair per side — each as long as
+// the rig cares to make it (mythos went from two bones to three on 08-17;
+// nothing here counts them).
+//
+// The flap is PROCEDURAL rather than a clip, for two reasons. A VRMA clip can
+// only address humanoid bones, and these are not humanoid; and the wings have
+// to be able to stop being driven the instant the body goes limp, which a
+// running clip cannot do without a second blend tree. Driving the raw bones
+// directly costs nothing and makes limpness a one-line handover to the sim.
+//
+// The axis is the BODY'S FORWARD, not the bone's own X/Y/Z: bone roll out of
+// Blender is arbitrary (the eyelids cost a day over exactly this), so rotating
+// about a local axis would flap one rig and swipe sideways on the next. About
+// the forward axis, "up" is up for any wing that points outward, and the two
+// sides differ only by sign.
+export const WING_IDLE = {
+  deg: 15,       // half-amplitude at the shoulder. A resting bird's wings barely
+                 // move; this is an IDLE, not flight, and the first value big
+                 // enough to see (28) read as an animal trying to take off.
+  hz: 0.42,      // full flaps per second — "slowly", and slow enough that the
+                 // sine never looks like a loop.
+  bias: 0,       // degrees of permanent lift added to the flap, both sides. A
+                 // dial for resting the wings higher or lower than the rig's
+                 // rest pose without editing the blend.
+  tip: 0.65,     // the outer segment's share of the amplitude. Two segments
+                 // rotating as one plank is the difference between a wing and a
+                 // door; the tip carrying less than the root gives it a curve.
+  lag: 0.16,     // cycles the outer segment trails the inner by. This is the
+                 // whole reason a wing reads as membrane rather than board — the
+                 // tip is still going up as the shoulder starts down.
+  sync: true,    // upper and lower pairs share one phase. False gives the lower
+                 // pair a half-cycle offset (they beat against each other, which
+                 // is an insect, not a bird).
+  recover: 0.55, // seconds to slerp back into the flap after a ragdoll, out of
+                 // whatever pose the body was left in.
+  // ---- the SWEEP: how far the tips travel FORWARD and BACK.
+  //
+  // Rotating about the forward axis alone confines every tip to the plane
+  // across the body — up, down and inboard, and nothing fore or aft. That is a
+  // hinge, and it reads as one. A real wing also sweeps: the tip goes forward
+  // as it comes down and back as it rises, so the path is an ellipse rather
+  // than an arc, and it is the sweep that makes a flap look like it is moving
+  // air rather than waving.
+  //
+  // Applied as a second rotation about the body's UP axis, mirrored the other
+  // way from the flap (both wings must sweep forward together, and the two
+  // sides point opposite ways along the span).
+  sweep: 9,        // degrees fore/aft at the shoulder
+  sweepPhase: 0.25, // cycles the sweep leads the flap by. A QUARTER turn is
+                    // what opens the arc into an ellipse; at 0 the two
+                    // rotations peak together and the path stays a straight
+                    // diagonal line, just a tilted hinge.
+};
+
+/** What a limp body's springbones become, when no sim of its own is running.
+ *  Live: the debug panel dials these, and they take effect on the next body to
+ *  go limp. stiffness is a FACTOR on whatever the rig declared; gravity is a
+ *  floor, so a chain that already falls harder keeps its own value. */
+export const LIMP_SPRINGS = {
+  stiffness: 0.2,   // give way — the rest shape was authored for standing up
+  gravity: 0.45,    // ...and let the world win instead
+};
+
 const CORE_CLIPS = ['idle', 'walk'];
 const LATER_CLIPS = CLIP_SLOTS.filter((s) => !CORE_CLIPS.includes(s));
 // Until a clip arrives, the nearest thing that HAS arrived stands in. Silently
@@ -167,8 +258,25 @@ function drawTypingDots(sprite, t, state) {
 
 const _v = new THREE.Vector3();
 const _pq = new THREE.Quaternion();
+const _Y2 = new THREE.Vector3(0, 1, 0);
+const _Z2 = new THREE.Vector3(0, 0, 1);
+const _gq = new THREE.Quaternion();        // gaze scratch — hot path, no allocs
+const _gd = new THREE.Quaternion();
+const _gi = new THREE.Quaternion();
+const _gpq = new THREE.Quaternion();
+const _gf = new THREE.Vector3();
+const _gw = new THREE.Vector3();
+const _gp = new THREE.Vector3();
 const _X = new THREE.Vector3(1, 0, 0);      // scratch — hot paths must not allocate
 const _v2 = new THREE.Vector3();
+const _wq = new THREE.Quaternion();        // wing scratch
+const _wpq = new THREE.Quaternion();
+const _wacc = new THREE.Quaternion();
+const _wr = new THREE.Quaternion();
+const _wax = new THREE.Vector3();
+const _wup = new THREE.Vector3();
+const _wsw = new THREE.Quaternion();
+const DEG = Math.PI / 180;
 
 export class Avatar {
   constructor(id, vrm, clips) {
@@ -221,6 +329,376 @@ export class Avatar {
     this.root.add(this.shadow);
 
     scene.add(this.root);
+  }
+
+  /** Find the eyeball bones once. VRM ships a lookAt rig and three-vrm drives
+   *  it — but only if the file HAS one, and this rig has hand-rigged bones
+   *  instead: L_Eye / R_Eye. Same gaze target either way. */
+  _findEyes() {
+    this._eyes = null;
+    if (!this.vrm?.scene) return;
+    // DEFER to three-vrm when the rig maps its eyes properly. import-tripo-avatar
+    // (#120) now maps L_Eye/R_Eye to VRM leftEye/rightEye, which gives the stock
+    // lookAt rig those bones — and this.gaze is already its target. Driving them
+    // from here as well would be two writers on one bone every frame, and the
+    // one that lost would be whichever ran second. Bone-rigged eyes with no VRM
+    // mapping (anything imported before that landed) still need us.
+    if (this.vrm.lookAt && this.vrm.humanoid?.getNormalizedBoneNode?.('leftEye')) return;
+    const found = [];
+    this.vrm.scene.traverse((o) => {
+      if (/^[LR]_Eye$/.test(o.name ?? '')) found.push({ node: o, rest: o.quaternion.clone() });
+    });
+    if (found.length) this._eyes = found;
+  }
+
+  /** Give the hair back to three-vrm, resuming from where the tumble left it.
+   *
+   *  Not a reset. springBoneManager.reset() restores every joint's
+   *  _initialLocalRotation (three-vrm.module.js:5353) — the combed pose — which
+   *  is a visible snap, and calling it when the doll disposed is what made the
+   *  hair jump back to default a few seconds into every fall.
+   *
+   *  What is wanted is the other half of reset(): the tail state re-derived
+   *  from the CURRENT world matrices, so the springs pick up smoothly with no
+   *  stored velocity, keep the dishevelled shape, and comb it out over the next
+   *  second the way they would if you had just been shoved. There is no public
+   *  call for that half alone, so the rest rotation is pointed at the pose the
+   *  hair is ALREADY in for the duration of the call — making the restore a
+   *  no-op — and then put straight back, so the springs still pull toward the
+   *  authored shape afterwards rather than freezing the crumple in forever.
+   */
+  _releaseHair({ adopt = false } = {}) {
+    if (!this.__simHair) return;
+    this.__simHair = false;
+    const sbm = this.vrm?.springBoneManager;
+    if (!sbm?.joints) return;
+    this.vrm.scene?.updateMatrixWorld?.(true);
+    // The authored spring rest, remembered ONCE, so adopting a fallen shape is
+    // always reversible and can never ratchet.
+    if (!this.__springRest) {
+      this.__springRest = new Map();
+      for (const j of sbm.joints) {
+        if (j?._initialLocalRotation) this.__springRest.set(j, j._initialLocalRotation.clone());
+      }
+    }
+    for (const j of sbm.joints) {
+      if (j?._initialLocalRotation && j.bone) j._initialLocalRotation.copy(j.bone.quaternion);
+    }
+    sbm.reset();                 // re-derives tails; the rotation restore is a no-op
+    if (!adopt) this._combHair();
+  }
+
+  /** Springbone settings for a body that is LIMP and has no sim of its own.
+   *
+   *  three-vrm's springbones are tuned for a body that is standing up: the
+   *  droop is modelled into the rest shape, so gravityPower is near zero
+   *  (0.01-0.03) while stiffness is 0.35-1.3. Stiffness pulls each joint toward
+   *  its rest DIRECTION, and that direction rotates with the body — so on a
+   *  body lying on its side the hair is pulled sideways and world gravity is
+   *  far too weak to argue. That is "the direction of gravity pulling the hair
+   *  seems wrong", and it is not a bug in the springbones; it is a rest shape
+   *  being applied in a pose it was never authored for.
+   *
+   *  A body that cannot hold its own head up cannot hold its hair up either.
+   *  While limp and unowned, stiffness gives way and gravity takes over. The
+   *  originals are restored on standing, so nothing accumulates.
+   *
+   *  This runs only where NO local sim owns the dressing — remotes, and the
+   *  gap after a doll disposes. Where Bullet runs it already uses real world
+   *  gravity and none of this applies.
+   *
+   *  CONFIRMED IN THE WORLD, 08-17. A 20s sample of a real drag showed Bullet
+   *  owning the hair for 96% of it, from which the first read was that this
+   *  could not be what "sideways while dragging" meant — and that was a
+   *  misreading of WHICH INSTANTS were being described. Grabbing, letting go,
+   *  pinning, and the fall afterwards are all springbone moments, and they are
+   *  what the report was about. Dropping the center made all of it much
+   *  better — but NOT completely: Janus still sees sideways hair
+   *  occasionally, "significantly less often". So this is a large fix to a
+   *  real cause, not the whole cause, and the remainder is an open thread
+   *  (rigtest/EIDOVERSE-DEPLOY.md).
+   *
+   *  Two lessons, and neither is about hair. The 96% answered a question
+   *  nobody had asked while the 4% was most of the story — a statistic can be
+   *  accurate and still be about the wrong thing. And "confirmed fixed" was
+   *  written here one report too early: better is not gone.
+   */
+  _springsLimp(on) {
+    const sbm = this.vrm?.springBoneManager;
+    if (!sbm?.joints || this.__springsLimp === on) return;
+    this.__springsLimp = on;
+    if (!this.__springSettings) {
+      this.__springSettings = new Map();
+      for (const j of sbm.joints) {
+        if (j?.settings) {
+          this.__springSettings.set(j, {
+            s: j.settings.stiffness, g: j.settings.gravityPower, center: j._center ?? null,
+          });
+        }
+      }
+    }
+    for (const j of sbm.joints) {
+      const o = this.__springSettings.get(j);
+      if (!o) continue;
+      j.settings.stiffness = on ? o.s * LIMP_SPRINGS.stiffness : o.s;
+      j.settings.gravityPower = on ? Math.max(o.g, LIMP_SPRINGS.gravity) : o.g;
+      // ...AND THE HAIR LIVES IN THE WORLD, not in the hips.
+      //
+      // `center` is why hair does not sweep back when you walk: the tail state
+      // is stored in the hips' frame, so pure locomotion moves hair and body
+      // together and the springs never see it. Exactly the same property is
+      // wrong for a body being carried: rotate it and the hair rotates
+      // RIGIDLY with it, because in hip space nothing happened. That is
+      // Janus's "drag it in one orientation and then the orientation changes",
+      // and "when it falls the hair stays in the direction it was falling
+      // before" — the hair is not lagging, it is being carried.
+      //
+      // A limp body is not walking, so the center has nothing left to protect.
+      // Dropped, the tails live in world space, gravity is world gravity, and
+      // swinging the body makes the hair trail the way it should.
+      if (on) j._center = null;
+      else if (o.center !== undefined) j._center = o.center;
+    }
+    // The tails were stored in the frame we just changed; re-derive them from
+    // the pose the hair is in, or the first frame after the switch reads old
+    // center-space numbers as world-space ones and flings it.
+    this._springsResync();
+  }
+
+  /** Re-derive spring tail state from the CURRENT pose, keeping that pose.
+   *
+   *  reset() alone would restore each joint's _initialLocalRotation (the combed
+   *  shape) — a visible snap. Pointing that rest at the pose the hair is
+   *  already in makes the restore a no-op while the tails re-derive, and then
+   *  the real rest goes back so the springs still pull toward the authored
+   *  shape afterwards. Needed anywhere the frame those tails live in changes. */
+  _springsResync() {
+    const sbm = this.vrm?.springBoneManager;
+    if (!sbm?.joints) return;
+    this.vrm.scene?.updateMatrixWorld?.(true);
+    const saved = [];
+    for (const j of sbm.joints) {
+      if (!j?._initialLocalRotation || !j.bone) continue;
+      saved.push([j, j._initialLocalRotation.clone()]);
+      j._initialLocalRotation.copy(j.bone.quaternion);
+    }
+    sbm.reset();
+    for (const [j, q] of saved) j._initialLocalRotation.copy(q);
+  }
+
+  /** Put the AUTHORED spring rest back, so the hair combs itself out again.
+   *
+   *  Split from the release because the two happen at different moments. A doll
+   *  that disposes mid-tumble (letting go of a dragged body) hands the hair back
+   *  ADOPTING the fallen shape: it stays exactly where it was dropped and is
+   *  live again, so it keeps falling with her. Getting UP is when the combed
+   *  shape comes back. Without the split, a body released mid-air had its hair
+   *  owned by a doll that no longer existed — frozen in the pose it was let go
+   *  in, which is precisely what a dragged dummy did while a body going limp on
+   *  its own never did (its doll lives until it settles). */
+  _combHair() {
+    const sbm = this.vrm?.springBoneManager;
+    if (!sbm?.joints || !this.__springRest) return;
+    for (const j of sbm.joints) {
+      const q = this.__springRest.get(j);
+      if (q && j._initialLocalRotation) j._initialLocalRotation.copy(q);
+    }
+  }
+
+  /** Find the wing bones once, and remember the pose they were authored in.
+   *
+   *  `[LR]_Wing_(Upper|Lower)` is the root of a chain and `_<n>` its nth
+   *  segment outward: mythos runs `_1`, `_2` today and may grow more. Depth is
+   *  the INDEX in the name, not a count of underscores — reading it as a count
+   *  makes `_1` and `_2` both depth 1, and then the two outer segments share a
+   *  phase and an amplitude and the chain flaps as two planks instead of three.
+   *
+   *  Chains do not all have to be the same length: depth is per bone, and the
+   *  ragdoll's limit ramp divides by each chain's own length.
+   *
+   *  Rest is captured here, before the first flap is ever applied, and every
+   *  frame rebuilds from it. That is not a style choice: composing onto last
+   *  frame's pose integrates, and an integrating flap winds the wings around
+   *  their own axis over a few minutes. The same capture is what the ragdoll
+   *  reads as its equilibrium, so it must be the AUTHORED pose and not a pose
+   *  the sim or the flap left behind (HANDOFF.md: never rebuild a rig from a
+   *  simulated pose — it cost the hair a permanent crumple).
+   */
+  _findWings() {
+    this._wings = null;
+    if (!this.vrm?.scene) return;
+    // THE AUTHORED REST, NOT THE LIVE ONE.
+    //
+    // This used to clone o.quaternion, which is only the authored pose if
+    // nothing has moved the bone yet. Wings are declared as springbones now, so
+    // three-vrm has posed them before the first update() gets here — and an
+    // observer whose client first sees a body WHILE IT IS RAGDOLLED captured a
+    // fallen pose as "rest" and composed every flap onto it forever after.
+    // That is Janus's "after getting up the wings are twisted, but only from
+    // the perspective of particular other users": per-client state, captured at
+    // whatever moment that client happened to arrive.
+    //
+    // three-vrm already keeps the real thing. Every spring joint stores
+    // _initialLocalRotation at setup, before any simulation runs, so prefer it
+    // and fall back to the live pose only for a bone no springbone claims.
+    const springRest = new Map();
+    for (const j of this.vrm.springBoneManager?.joints ?? []) {
+      if (j?.bone && j._initialLocalRotation) springRest.set(j.bone, j._initialLocalRotation);
+    }
+    const found = [];
+    this.vrm.scene.traverse((o) => {
+      const m = /^([LR])_Wing_(Upper|Lower)(?:_(\d+))?$/.exec(o.name ?? '');
+      if (!m) return;
+      found.push({
+        node: o,
+        rest: (springRest.get(o) ?? o.quaternion).clone(),
+        // +1 left, -1 right. A single rotation about the body's forward axis
+        // lifts a wing that points +X and drops the one that points -X, so the
+        // mirror is a sign and nothing else.
+        side: m[1] === 'L' ? 1 : -1,
+        lower: m[2] === 'Lower',
+        depth: m[3] ? Number(m[3]) : 0,
+      });
+    });
+    if (!found.length) return;
+    // roots before tips: a tip's world frame is read AFTER its root has been
+    // written this frame, so the order it is visited in is load-bearing.
+    found.sort((a, b) => a.depth - b.depth);
+    this._wings = found;
+    // Shared with the ragdoll, which hangs its Bullet chains off this pose.
+    // Stored on the avatar because the doll is rebuilt on every grab.
+    this.__wingRest = new Map(found.map((w) => [w.node, w.rest]));
+  }
+
+  /** One frame of the idle flap. Every wing is rebuilt from its captured rest,
+   *  so this cannot integrate however long it runs.
+   *
+   *  The rotation is applied about a WORLD axis and then carried into the
+   *  bone's parent frame — local = parentWorld⁻¹ · R · parentWorld · rest —
+   *  which is the same construction the eyeballs use, and for the same reason:
+   *  the axis that means something ("the body's forward") is not an axis any
+   *  one bone owns.
+   */
+  _flap(dt) {
+    const W = WING_IDLE;
+    this._wingBlend = Math.min(1, (this._wingBlend ?? 1) + dt / Math.max(0.01, W.recover));
+    this._wingT = (this._wingT ?? 0) + dt * Math.max(0, W.hz);
+    this._wingT -= Math.floor(this._wingT);      // stays in [0,1) forever
+    // The body's forward, from the NORMALIZED rig: three-vrm guarantees those
+    // bones rest facing +Z, where the raw Tripo bones carry whatever roll
+    // Blender gave them. Falls back to the avatar group, which is upright and
+    // faces travel — worse only when the body is leaning.
+    const h = this.vrm.humanoid;
+    const ref = this._wingRef ?? (this._wingRef =
+      h?.getNormalizedBoneNode?.('upperChest') ?? h?.getNormalizedBoneNode?.('chest')
+      ?? h?.getNormalizedBoneNode?.('spine') ?? this.root);
+    ref.getWorldQuaternion(_wq);
+    _wax.set(0, 0, 1).applyQuaternion(_wq).normalize();   // forward: the flap
+    _wup.set(0, 1, 0).applyQuaternion(_wq).normalize();   // up: the sweep
+    for (const w of this._wings) {
+      // the outer segments trail their root, and (optionally) the lower pair
+      // trails the upper by half a beat
+      const ph = this._wingT - W.lag * w.depth - (W.sync || !w.lower ? 0 : 0.5);
+      // depth 0 carries the full amplitude; each segment out carries `tip` of
+      // the one before it, as its OWN rotation — the total sweep at the tip is
+      // larger than at the shoulder, because it inherits the root's as well.
+      const amp = W.deg * Math.pow(W.tip, w.depth);
+      const ang = (amp * Math.sin(ph * Math.PI * 2) + W.bias) * DEG * w.side;
+      _wr.setFromAxisAngle(_wax, ang);
+      // ...and the fore/aft sweep, about UP. Mirrored the OTHER way from the
+      // flap: the two wings point opposite ways along the span, so sweeping
+      // both forward together means opposite turns about the body's up axis.
+      // Composed on the left, so the sweep acts in the body's frame rather than
+      // in the already-flapped wing's.
+      const sw = W.sweep * Math.pow(W.tip, w.depth)
+        * Math.sin((ph + W.sweepPhase) * Math.PI * 2) * DEG * -w.side;
+      if (sw) _wr.premultiply(_wsw.setFromAxisAngle(_wup, sw));
+      // parentWorld is read fresh per bone, and roots are visited before tips
+      // (see _findWings), so a tip composes on its root's NEW orientation
+      // rather than last frame's.
+      // _wacc, not _wpq, as the accumulator: three.js quaternion ops MUTATE the
+      // receiver, so `_wpq.invert().multiply(_wr).multiply(_wpq)` reads the
+      // already-inverted-and-multiplied value back as the third factor and
+      // squares the rotation. It looked plausible — the wings flapped, in the
+      // right plane, symmetrically — and was 2x every commanded angle.
+      w.node.parent.getWorldQuaternion(_wpq);
+      _wacc.copy(_wpq).invert().multiply(_wr).multiply(_wpq).multiply(w.rest);
+      if (this._wingBlend < 1 && w.from) {
+        // Standing up, the bones are wherever the ragdoll left them — folded,
+        // or under her. Cutting straight to mid-flap is a one-frame teleport of
+        // something a metre long, so the first half-second is a slerp out of
+        // the pose she fell in. (The HAIR deliberately stays dishevelled; wings
+        // are limbs, and a bird shakes them back into place.)
+        w.node.quaternion.copy(w.from).slerp(_wacc, this._wingBlend);
+      } else {
+        w.node.quaternion.copy(_wacc);
+      }
+      // Explicit, though wing bones keep three.js's default: a bone declared as
+      // a VRM springbone has matrixAutoUpdate FALSE (three-vrm sets it on every
+      // spring joint), and on such a bone assigning .quaternion reaches the
+      // renderer never. That cost four rounds of debugging on the hair; costing
+      // it again on a rig that happens to declare its wings as springbones
+      // would be careless.
+      w.node.updateMatrix();
+    }
+  }
+
+  /** Hold the eyes shut (1) or let them open (0). Eased in update() so it
+   *  reads as closing rather than snapping. Returns false if this body has no
+   *  eyelid bones, so a caller can say so instead of appearing to work. */
+  setEyes(shut) {
+    if (this._lids === undefined) this._findLids();
+    if (!this._lids) return false;
+    this._eyesGoal = shut ? 1 : 0;
+    return true;
+  }
+
+  /** Find the eyelid bones once, and remember where OPEN is.
+   *
+   *  Named by the rig pipeline: L_/R_Eyelid_Upper (and _Lower, unused for now —
+   *  a lower lid barely moves in a human blink). The closing angle comes from
+   *  the Limit Rotation constraint the rig author set in Blender, carried out
+   *  as a node extra by eido_export.py; BLINK.closed is the live fallback for a rig
+   *  that never exported one, and is deliberately modest — a lid that overshoots
+   *  reads as a wince, and this is the value you would rather have too small.
+   */
+  _findLids() {
+    this._lids = null;
+    if (!this.vrm?.scene) return;
+    const found = [];
+    this.vrm.scene.traverse((o) => {
+      const m = /^[LR]_Eyelid_(Upper|Lower)$/.exec(o.name ?? '');
+      if (!m) return;
+      const ex = o.userData?.gltfExtras ?? o.userData ?? {};
+      // A Limit Rotation's numbers are ABSOLUTE angles in the bone's own frame,
+      // not offsets from rest — mythos's upper lids export min 150 / max 240
+      // degrees, bracketing the ~195 the lid actually rests at. Read as a delta
+      // that is a 240-degree sweep: the lid leaves the head entirely and the eye
+      // is bare, which reads as "you can see through the eyelids" and survives
+      // any amount of making the mesh bigger.
+      //
+      // Rest sits at the middle of a range that brackets it, so the closing
+      // delta is closed - centre = 45 degrees here. Anything that does not come
+      // out plausible is discarded in favour of the dial: a rig may have set
+      // those limits for something other than a blink.
+      let lim = NaN;
+      const mn = Number(ex.limit_min_x), mx = Number(ex.limit_max_x);
+      const cl = Number(ex.blink_closed_x);
+      if ([mn, mx, cl].every(Number.isFinite) && mx > mn) {
+        const d = cl - (mn + mx) / 2;
+        if (Math.abs(d) > 1e-3 && Math.abs(d) < 1.6) lim = d;
+      }
+      found.push({
+        node: o,
+        rest: o.quaternion.clone(),
+        lower: m[1] === 'Lower',
+        exported: Number.isFinite(lim) && Math.abs(lim) > 1e-4 ? lim : null,
+      });
+    });
+    // NOT report() — that is the error channel, and report(msg, null) renders
+    // as "unknown error", which is what it did: a clean load announcing a fault
+    // that never happened.
+    if (found.length) this._lids = found;
   }
 
   // ---- first-person anchors (fp_view.js consumes these) -------------------
@@ -431,6 +909,36 @@ export class Avatar {
     on = !!on;
     if (on === this._limp) return;
     this._limp = on;
+    // Eyes close when the body goes slack, and open when it gets up. Only for a
+    // rig with eyelid BONES — setEyes says so itself and does nothing otherwise,
+    // so a VRM that blinks with a blendshape is unaffected.
+    //
+    // This is driven from setLimp rather than from the ragdoll, which means it
+    // is also true of everyone ELSE you watch fall: remotes call setLimp the
+    // moment a streamed clip turns to 'ragdoll'. Nothing new on the wire.
+    //
+    // _limpEyes remembers that WE closed them, so getting up only reopens eyes
+    // that the fall shut — someone who chose to lie there with their eyes closed
+    // (/eyes) keeps them closed.
+    if (on) { this._limpEyes = this.setEyes(true); }
+    else if (this._limpEyes) { this._limpEyes = false; this.setEyes(false); }
+    // Wings: while limp they belong to the ragdoll (ammodoll hangs Bullet
+    // chains off these same bones), and here we only mark the handover BACK.
+    // Where the sim left them is captured now, so the flap can slerp out of it
+    // instead of cutting. On a REMOTE body no doll ever ran and the wings are
+    // simply frozen where the flap stopped — remotes carry no dressing on the
+    // wire, exactly as with the hair.
+    // Getting up is when the hair goes back to three-vrm — not when the doll
+    // disposed, which happens the moment the body settles and left the hair
+    // snapping to combed while she was still lying there.
+    if (!on) { this._releaseHair(); this._combHair(); }
+    if (!on) {
+      if (this._wings === undefined) this._findWings();
+      if (this._wings) {
+        for (const w of this._wings) w.from = w.node.quaternion.clone();
+        this._wingBlend = 0;
+      }
+    }
     if (!on) {
       // Hand the bones back as we found them. three.js only writes a bone when
       // the clip's computed value CHANGES, so a track that holds still — a
@@ -696,18 +1204,84 @@ export class Avatar {
       this.gaze.position.lerp(_v, 1 - Math.exp(-3 * dt));
     }
 
+    // ---- blink: irregular, in pairs sometimes, never metronomic
+    //
+    // The CLOCK runs whether or not this body has expressions. It used to live
+    // inside `if (em)`, which is fine for a VRM authored with a blink
+    // blendshape and silently nothing for one without: a rig whose eyelids are
+    // BONES has no expressions at all, so the timer never advanced and the
+    // avatar never blinked. Value first, consumers after.
+    let blinkV = 0;
+    if (this.blinkT >= 0) {
+      this.blinkT += dt;
+      const k = this.blinkT / Math.max(0.05, BLINK.dur);
+      blinkV = k < 1 ? Math.sin(k * Math.PI) : 0;
+      if (k >= 1) {
+        this.blinkT = -1;
+        // Schedule from the END of the blink, not its start. Measured from the
+        // start, the 260ms "pair" gap is shorter than a 280ms blink — so the
+        // next one is already due the instant this one finishes and EVERY blink
+        // came in twos. It only worked before because the blink was 130ms, i.e.
+        // the bug was hidden by the duration rather than absent.
+        const rate = Math.max(0.15, BLINK.hz);
+        this.blinkAt = now + (Math.random() < 0.22 ? 220
+          : (2200 + Math.random() * 4200) / rate);
+      }
+    } else if (now > this.blinkAt) {
+      this.blinkT = 0;
+    }
+    // eyelids as BONES: rotate the uppers from their rest pose by the same
+    // curve. Rest is captured once, so a blink cannot integrate — the lids
+    // return exactly where they started rather than creeping shut over an hour.
+    // ---- eyeballs: point them at the same target the gaze already eases to
+    if (this._eyes === undefined) this._findEyes();
+    if (this._eyes && this.head) {
+      this.head.getWorldQuaternion(_gq);
+      _gf.set(0, 0, 1).applyQuaternion(_gq);          // where the head faces NOW
+      for (const e of this._eyes) {
+        e.node.getWorldPosition(_gp);
+        _gw.copy(this.gaze.position).sub(_gp);
+        if (_gw.lengthSq() < 1e-10) continue;
+        _gw.normalize();
+        _gd.setFromUnitVectors(_gf, _gw);             // the world-space turn
+        const ang = 2 * Math.acos(Math.min(1, Math.abs(_gd.w)));
+        if (ang > BLINK.eyeMax) {                     // clamp into a cone
+          _gi.identity().slerp(_gd, BLINK.eyeMax / ang);
+          _gd.copy(_gi);
+        }
+        // local = parentWorld⁻¹ · turn · parentWorld · rest
+        e.node.parent.getWorldQuaternion(_gpq);
+        _gi.copy(_gpq).invert().multiply(_gd).multiply(_gpq).multiply(e.rest);
+        e.node.quaternion.copy(_gi);
+      }
+    }
+
+    if (this._lids === undefined) this._findLids();
+    // ease toward the held state — a lid that snaps shut reads as a flinch
+    this._eyesShut = this._eyesShut ?? 0;
+    const goal = this._eyesGoal ?? 0;
+    if (this._eyesShut !== goal) {
+      this._eyesShut += (goal - this._eyesShut) * (1 - Math.exp(-12 * dt));
+      if (Math.abs(goal - this._eyesShut) < 0.002) this._eyesShut = goal;
+    }
+    if (this._lids) {
+      // a held close (/eyes) and a blink share the lids: whichever is further
+      // shut wins, so blinking while your eyes are closed changes nothing
+      const amt = Math.max(blinkV, this._eyesShut ?? 0);
+      for (const l of this._lids) {
+        l.node.quaternion.copy(l.rest);
+        // the rig's own exported limit wins; BLINK.closed is the dial otherwise
+        const shut = l.exported ?? (l.lower ? BLINK.lower : BLINK.closed);
+        if (amt > 0) {
+          const ax = BLINK.axis === 1 ? _Y2 : BLINK.axis === 2 ? _Z2 : _X;
+          l.node.quaternion.multiply(_pq.setFromAxisAngle(ax, shut * amt));
+        }
+      }
+    }
+
     const em = this.vrm.expressionManager;
     if (em) {
-      // ---- blink: irregular, in pairs sometimes, never metronomic
-      if (this.blinkT >= 0) {
-        this.blinkT += dt;
-        const k = this.blinkT / 0.13;
-        em.setValue('blink', k < 1 ? Math.sin(k * Math.PI) : 0);
-        if (k >= 1) { this.blinkT = -1; em.setValue('blink', 0); }
-      } else if (now > this.blinkAt) {
-        this.blinkT = 0;
-        this.blinkAt = now + (Math.random() < 0.22 ? 260 : 2200 + Math.random() * 4200);
-      }
+      em.setValue('blink', blinkV);
       // ---- mouth: no audio to drive visemes from, but a frozen mouth during
       // a paragraph of speech is worse than an approximate one. Syllable-rate
       // envelope for the duration of the utterance.
@@ -731,7 +1305,74 @@ export class Avatar {
     }
 
     BC('av:gaze-expr');
+    // ONE author per bone, again — this time for the hair.
+    //
+    // A rig with Hair_* chains is simulated TWICE while limp: ammodoll builds
+    // Bullet bodies for those bones and writes them in the 'me-drive' system,
+    // and three-vrm's springBoneManager writes the same bones inside
+    // vrm.update() during 'me-update'. Registration order is execution order,
+    // so the springbones always ran second and always won — the Bullet boxes
+    // swung wide in the debug overlay while the rendered hair barely moved,
+    // which is exactly how Janus described it.
+    //
+    // The wings never had this problem because nothing else simulates them.
+    // The hair's second simulator is the whole reason it moves while WALKING,
+    // so it cannot simply be removed: it is suppressed for exactly as long as a
+    // local sim owns those bones (__simHair, set by ammodoll between build and
+    // dispose), and dispose resets it so it resumes from where the tumble left
+    // the hair instead of snapping from its own stale state.
+    //
+    // Caveat worth knowing: this suppresses the whole manager, so a rig whose
+    // springbones include something Bullet does NOT drive — a skirt, a tail —
+    // would freeze that too while limp. Every chain in this rig is hair.
+    // Self-healing: ownership is claimed by the doll and released by setLimp,
+    // and anything that ends a tumble without going through setLimp (an avatar
+    // swap, a dragger taking over) would otherwise leave the hair suppressed
+    // and frozen for good.
+    if (this.__simHair && !this._limp) { this._releaseHair(); this._combHair(); }
+    // A limp body with no sim of its own hangs its hair on the world, not on
+    // its own rest shape (see _springsLimp).
+    this._springsLimp(this._limp && !this.__simHair);
+    const sbm = this.__simHair ? this.vrm.springBoneManager : null;
+    if (sbm) this.vrm.springBoneManager = null;
     this.vrm.update(dt);
+    if (sbm) this.vrm.springBoneManager = sbm;
+
+    // ---- wings: flap while alive, let go the instant the body does.
+    //
+    // AFTER vrm.update, unlike every other bone edit here, and deliberately.
+    // Wing bones are RAW and not humanoid, so nothing in vrm.update overwrites
+    // them — the ordering trap that put the head pitch and the blink up there
+    // does not apply. What DOES apply is that their parent clavicle is
+    // humanoid, and only receives this frame's clip pose when vrm.update copies
+    // normalized -> raw. Composing before that would hang every wing off last
+    // frame's shoulder, which shows as a shear whenever the body turns.
+    //
+    // While limp the wings belong to the sim: ammodoll hangs Bullet chains off
+    // these same bones and writes them every step, and two authors on one bone
+    // is decided by whichever runs second.
+    if (this._wings === undefined) this._findWings();
+    if (this._wings && !this._limp) this._flap(dt);
+
+    // ---- contact shadow: on the GROUND, not on the body.
+    // The blob is a child of root at a fixed local y, so it rode along under a
+    // lifted body at a constant 2cm — which is precisely the one thing it
+    // exists to disprove ("how high a jump went"). Put it at the surface under
+    // her instead, and let it shrink and fade with the gap, so height reads
+    // even when the ground is out of frame. surfaceUnder, not heightAt: a body
+    // held over a platform casts onto the PLATFORM.
+    if (this.shadow) {
+      const rp = this.root.position;
+      const gy = surfaceUnder(rp.x, rp.z, heightAt, rp.y + 0.05).y;
+      const gap = Math.max(0, rp.y - gy);
+      this.shadow.position.y = (gy - rp.y) + 0.02;
+      // 3 m up the blob is gone; directly underfoot it is full size.
+      const k = THREE.MathUtils.clamp(1 - gap / 3, 0, 1);
+      this.shadow.scale.setScalar(0.55 + 0.45 * k);
+      this.shadow.material.opacity = k * k;
+      this.shadow.visible = k > 0.02;
+    }
+
     BC('av:plates');
 
     // ---- nameplate: fade with distance and stop screaming across the stage.
