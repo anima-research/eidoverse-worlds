@@ -413,8 +413,22 @@ const ROUTES: Route[] = [
   {
     // upstream #51, ported to the route table: which build is this world
     // running — public, cheap, cache-hostile; the whole point is NOW
+    //
+    // WORLD_INSTANCE_NONCE is an opt-in TEST affordance, mirroring the door's
+    // MCPL_INSTANCE_NONCE: when set, /version carries `instance`, letting a
+    // harness prove the process answering is the one IT spawned rather than a
+    // stale listener squatting the port. Unset in production, where the body is
+    // byte-identical to before — the field is absent, not empty.
+    //
+    // Why an app endpoint at all when the OS can be asked: because `ss` and
+    // /proc are Linux-only, and this repository is reviewed on macOS. A
+    // challenge-response the SERVER answers is the portable proof; the OS check
+    // stays as a second, stricter opinion where the platform offers one.
     match: (u) => u.pathname === "/version",
-    handler: () => new Response(JSON.stringify(BUILD),
+    handler: () => new Response(
+      JSON.stringify(process.env.WORLD_INSTANCE_NONCE
+        ? { ...BUILD, instance: process.env.WORLD_INSTANCE_NONCE }
+        : BUILD),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {

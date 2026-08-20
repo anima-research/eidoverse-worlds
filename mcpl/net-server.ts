@@ -15,9 +15,10 @@
 // Tokens: mcpl/tokens.json  { "<token>": { "id": "mythos", "name": "Mythos",
 //         "world": "commons", "avatar": "eidoverse/assets/vrms/claude.vrm" } }
 
+import { mentionRegex } from "./mention.ts";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
-import { readFileSync, existsSync, writeFileSync, renameSync } from "node:fs";
+import { readFileSync, existsSync, writeFileSync, renameSync, rmSync } from "node:fs";
 import { WebSocketServer, type WebSocket } from "ws";
 import {
   McplConnection,
@@ -51,21 +52,55 @@ const HN_ISSUER_KEY = process.env.HN_ISSUER_KEY ?? "";
 const HN_ISS = process.env.HN_ISS ?? "id.animalabs.ai";
 const HN_AUD = process.env.HN_AUD ?? "eidoverse";
 const ts = () => new Date().toISOString().slice(11, 19);
-const TOKENS_PATH = fileURLToPath(new URL("./tokens.json", import.meta.url));
+const TOKENS_PATH = process.env.MCPL_TOKENS ?? fileURLToPath(new URL("./tokens.json", import.meta.url));
 
 type Auth = { id: string; name: string; world?: string; avatar?: string };
 // Tokens are read PER CONNECTION ATTEMPT — minting/revoking is a file edit,
 // never a restart (the no-restart rule applies to the door, not just the world).
 function readTokens(): Record<string, Auth> {
   try {
-    if (existsSync(TOKENS_PATH)) return JSON.parse(readFileSync(TOKENS_PATH, "utf8"));
+    if (existsSync(TOKENS_PATH)) {
+      const raw = JSON.parse(readFileSync(TOKENS_PATH, "utf8")) as Record<string, unknown>;
+      // 🔴 VALIDATE THE SHAPE (2026-08-16). This was JSON.parse-and-trust, and
+      // the id flows straight into `name:` and into mentionRegex — so an entry
+      // missing `id`, or carrying a number, threw deep inside the agent and left
+      // that body deaf to its own name for the life of the process, with one log
+      // line. An operator typo in a hand-edited auth file should bounce AT THE
+      // DOOR with the offending key named, not surface as mysterious deafness
+      // three layers in.
+      const out: Record<string, Auth> = {};
+      for (const [tok, v] of Object.entries(raw)) {
+        const a = v as Partial<Auth> | null;
+        if (!a || typeof a !== "object" || typeof a.id !== "string" || !a.id) {
+          console.error(`[mcpl] tokens.json: entry "${tok.slice(0, 12)}…" has no usable string id — ignored`);
+          continue;
+        }
+        out[tok] = { id: a.id, name: typeof a.name === "string" && a.name ? a.name : a.id,
+          world: typeof a.world === "string" ? a.world : undefined,
+          avatar: typeof a.avatar === "string" ? a.avatar : undefined };
+      }
+      return out;
+    }
   } catch (e) { console.error("[mcpl] tokens.json unreadable:", (e as Error).message); }
   return { "dev-token": { id: "claude", name: "Claude", world: "commons" } };
 }
 
 // per-agent durable state (missed-mention cursors, chosen bodies), tmp+rename.
 // Plain ids map to lastSeen timestamps; __-prefixed keys are sections.
-const STATE_PATH = fileURLToPath(new URL("./state.json", import.meta.url));
+// Operator/test override, same shape as MCPL_TOKENS above. The DEFAULT IS
+// UNCHANGED — the co-located mcpl/state.json — so no deployment moves.
+// Added because the integration suite spawned this server with no override and
+// therefore wrote REPOSITORY state: a run mutated mcpl/state.json and could
+// leave a zero-byte mcpl/state.json.tmp behind when it killed the process
+// (antra, PR #125 re-review). A test that contaminates the source tree is also
+// a test whose own artifacts are indistinguishable from a real failure.
+const STATE_PATH = process.env.MCPL_STATE ?? fileURLToPath(new URL("./state.json", import.meta.url));
+const STATE_TMP = STATE_PATH + ".tmp";
+// A tmp here is an INTERRUPTED atomic write from a previous incarnation: the
+// rename never happened, so STATE_PATH still holds the last good state and the
+// tmp is garbage by definition. Sweep it at boot rather than leave an artifact
+// indistinguishable from a live failure (antra, PR #125 round 4).
+try { rmSync(STATE_TMP, { force: true }); } catch (e) { console.error("[mcpl] stale state tmp not removable:", (e as Error).message); }
 const _state: Record<string, unknown> = (() => {
   try { if (existsSync(STATE_PATH)) return JSON.parse(readFileSync(STATE_PATH, "utf8")); } catch { /* fresh */ }
   return {};
@@ -85,8 +120,32 @@ const lastSeen: Record<string, number> = Object.fromEntries(
   Object.entries(_state).filter(([k, v]) => !k.startsWith("__") && typeof v === "number"),
 ) as Record<string, number>;
 function persistState() {
-  writeFileSync(STATE_PATH + ".tmp", JSON.stringify({ ...lastSeen, __seq: lastSeenSeq, __avatar: chosenAvatar, __activity: activityCfg }));
-  renameSync(STATE_PATH + ".tmp", STATE_PATH);
+  try {
+    writeFileSync(STATE_TMP, JSON.stringify({ ...lastSeen, __seq: lastSeenSeq, __avatar: chosenAvatar, __activity: activityCfg }));
+    renameSync(STATE_TMP, STATE_PATH);
+  } catch (e) {
+    // A failed persist must not leave its tmp behind — an orphaned tmp reads
+    // as a mid-write crash to the next observer. STATE_PATH keeps the last
+    // good state either way.
+    try { rmSync(STATE_TMP, { force: true }); } catch { /* the boot sweep gets it */ }
+    console.error("[mcpl] state persist failed:", (e as Error).message);
+  }
+}
+
+// 🔴 With no JS handler, SIGTERM terminates Bun at DEFAULT DISPOSITION — at any
+// instruction, including between persistState's write and rename. That is how
+// ${MCPL_STATE}.tmp survived the integration suite's verified-termination
+// teardown (antra, PR #125 round 4 — deterministic on macOS, a flake on
+// Linux: the kill lands while the door is still draining the per-agent
+// disconnect persists after the sequencer dies). A handler makes delivery
+// event-loop-ordered, so the synchronous write+rename pair can no longer be
+// split; exit is then orderly and sweeps any stray tmp. SIGKILL-mid-write
+// remains possible, and the boot sweep above is the recovery for it.
+for (const sig of ["SIGTERM", "SIGINT"] as const) {
+  process.on(sig, () => {
+    try { rmSync(STATE_TMP, { force: true }); } catch { /* best effort */ }
+    process.exit(0);
+  });
 }
 
 // ---- tools (shared schema with the stdio server, minus retina by default) --
@@ -268,6 +327,33 @@ class Session {
    *  `tools`, and a denied capability behaves as if never advertised (§5.4) —
    *  so once a grant exists it decides; absent one we defer to MCP, which
    *  negotiated tools at initialize without any help from MCPL. */
+  /** §5.4 for the CHANNEL verbs, which had no gate at all (found 2026-08-16).
+   *
+   *  `channels.publish`, `channels.lifecycle` and `channels.streaming` are all
+   *  declared in CAP and were checked NOWHERE — only `channels.register` and
+   *  `channels.incoming` were. So a host that granted `channels.incoming` alone
+   *  (receive, do not send) still had its agent's `channels/publish` answered:
+   *  the door SPOKE IN THE WORLD on behalf of an agent whose host never granted
+   *  speech. Same class as toolsAllowed's dead call, three more times.
+   *
+   *  declaration.ts's own §5.4 comment: "absence is denial and there is no
+   *  unspecified state, so an ambiguous entry fails closed." A peer with no
+   *  declaration (plain MCP) keeps everything, exactly as toolsAllowed does;
+   *  this binds only hosts that bothered to declare. */
+  private capAllowed(cap: string): boolean {
+    // 🔴 SAME SEMANTICS AS granted(), deliberately (review agent, 2026-08-17).
+    // The first version was `this.grant ? this.granted(cap) : true` — the
+    // toolsAllowed shape — which quietly skipped granted()'s two other fences
+    // for every channel verb: the plain-MCP check (a host that never declared
+    // MCPL had channels/publish ANSWERED, while every other MCPL frame path
+    // refused it) and the §5.3 deny-until-policy window (a 0.5 host that
+    // simply never sent featureSets/update was never gated at all — publish
+    // allowed in exactly the window the comments above claim is closed).
+    // toolsAllowed's fallback-to-MCP rationale is real for TOOLS, which exist
+    // in plain MCP; it has no analogue for MCPL-only channel verbs.
+    return this.granted(cap);
+  }
+
   private toolsAllowed(): boolean {
     return this.grant ? this.granted(CAP.tools) : true;
   }
@@ -497,9 +583,12 @@ class Session {
     // the gap are delivered explicitly below; scrollback stays on catch_up.
     if (sinceSeq != null) this.agent.skipInboxThrough(sinceSeq);
     if (sinceSeq != null) {
-      const rxSeq = new RegExp(`(@${this.auth.id}\\b|\\b${this.auth.id}\\b)`, "i");
+      // mentionRegex returns null for an id with no matchable form — its
+      // documented contract, honoured by agent.ts and violated here: a null
+      // threw inside the prelude and killed the session at connect.
+      const rxSeq = mentionRegex(this.auth.id);
       const said = await this.agent.missedSince(sinceSeq);
-      const missedSeq = said.filter((m) => m.who !== this.auth.id && rxSeq.test(m.text));
+      const missedSeq = said.filter((m) => m.who !== this.auth.id && !!rxSeq?.test(m.text));
       if (missedSeq.length) {
         this.deliver(`While you were away, ${missedSeq.length} message${missedSeq.length === 1 ? "" : "s"} mentioned you:`,
           { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.catchup) });
@@ -515,8 +604,8 @@ class Session {
     }
     const since = sinceSeq != null ? null : lastSeen[this.auth.id];
     if (since != null) {
-      const rx = new RegExp(`(@${this.auth.id}\\b|\\b${this.auth.id}\\b)`, "i");
-      const missed = this.agent.inbox.filter((m) => m.kind === "say" && m.ts > since && m.who !== this.auth.id && rx.test(m.text ?? ""));
+      const rx = mentionRegex(this.auth.id);   // null-safe: see rxSeq above
+      const missed = this.agent.inbox.filter((m) => m.kind === "say" && m.ts > since && m.who !== this.auth.id && !!rx?.test(m.text ?? ""));
       if (missed.length) {
         this.deliver(`While you were away, ${missed.length} message${missed.length === 1 ? "" : "s"} mentioned you:`,
           { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.catchup) });
@@ -547,6 +636,13 @@ class Session {
           // agent.typing() call is throttled and the world extends a 4s window
           // on each, so a long generation keeps the dots up continuously.
           if (msg.notification.method === method.CHANNELS_OUTGOING_CHUNK) {
+            // 🔴 `channels.streaming` was the fourth declared-but-unchecked
+            // capability (2026-08-16). This is a NOTIFICATION, so there is no
+            // response to refuse with — it is dropped silently, which is the
+            // correct shape for a stream the host never asked to send. Ungated,
+            // a host that declared only `channels.incoming` still made the
+            // world draw typing dots over its agent's head.
+            if (!this.capAllowed(CAP.channelsStreaming)) continue;
             const cid = (msg.notification.params as { channelId?: string } | undefined)?.channelId;
             if (!cid || cid === this.channelId) this.agent.typing();
           }
@@ -557,10 +653,24 @@ class Session {
         const params = (req.params ?? {}) as Record<string, unknown>;
         try {
           switch (req.method) {
+            // 🔴 toolsAllowed() WAS NEVER CALLED (found 2026-08-16). Twelve
+            // lines of spec-citing prose above a function no code path invoked,
+            // while both handlers below answered unconditionally — so a host
+            // that explicitly DENIED `tools` in its grant still got the full
+            // tool surface, and §5.4's "a denied capability behaves as if never
+            // advertised" was documented rather than implemented.
             case "tools/list":
-              this.conn.sendResponse(req.id, { tools: WHISPERS_ENABLED ? TOOLS : TOOLS.filter((t) => t.name !== "whisper") });
+              this.conn.sendResponse(req.id, { tools: this.toolsAllowed()
+                ? (WHISPERS_ENABLED ? TOOLS : TOOLS.filter((t) => t.name !== "whisper"))
+                : [] });   // denied ⇒ as if never advertised
               break;
             case "tools/call":
+              if (!this.toolsAllowed()) {
+                // -32601: the method is not available to THIS host, which is the
+                // honest shape — not an error about the tool's arguments.
+                this.conn.sendError(req.id, -32601, "tools are not granted to this host");
+                break;
+              }
               this.conn.sendResponse(req.id, await this.handleTool(String(params.name), (params.arguments ?? {}) as Record<string, any>));
               break;
             case "mcpl/manifest":
@@ -589,9 +699,17 @@ class Session {
               this.conn.sendResponse(req.id, { channels: this.channelDescriptors() });
               break;
             case method.CHANNELS_PUBLISH:
+              if (!this.capAllowed(CAP.channelsPublish)) {
+                this.conn.sendError(req.id, -32003, "channels.publish not granted");
+                break;
+              }
               this.conn.sendResponse(req.id, this.handlePublish(params as unknown as ChannelsPublishParams));
               break;
             case method.CHANNELS_OPEN: {
+              if (!this.capAllowed(CAP.channelsLifecycle)) {
+                this.conn.sendError(req.id, -32003, "channels.lifecycle not granted");
+                break;
+              }
               // The host's channel_open tool performs the server-side open op
               // here (and expects optional history atomically with it).
               const p = params as { channelId?: string; type?: string; address?: { world?: string }; history?: { limit: number } };
@@ -617,6 +735,10 @@ class Session {
               break;
             }
             case method.CHANNELS_CLOSE: {
+              if (!this.capAllowed(CAP.channelsLifecycle)) {
+                this.conn.sendError(req.id, -32003, "channels.lifecycle not granted");
+                break;
+              }
               const p = params as { channelId?: string };
               if (p.channelId !== this.channelId) { this.conn.sendError(req.id, -32004, `unknown channel: ${p.channelId}`); break; }
               // The agent shuts their door: ambient chatter stops; mentions
@@ -1004,7 +1126,19 @@ class Session {
         return text(`sent ${a.verb}`);
       }
       case "measure": {
-        const base = (process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws").replace(/^ws/, "http").replace(/\/ws$/, "");
+        // 🔴 USE THE AGENT'S OWN httpBase (2026-08-16). This re-derived the HTTP
+        // base by string surgery on WORLD_URL — the exact form agent.ts:297
+        // replaced with real URL parsing, for a reason its comment records: a
+        // WORLD_URL carrying a query string (…/ws?token=…) defeats the `/\/ws$/`
+        // replace and produces a malformed URL (reported by digi/FC). The bug was
+        // fixed in one place and left standing in the other, which is what a
+        // duplicated derivation always eventually does.
+        //
+        // It also ignored the door's actual connection: WORLD_URL is the boot
+        // env, but `connect()` re-reads its target on every dial, so after a
+        // travel this could point at the world we LEFT and measure a different
+        // world's geometry than the one the agent is standing in.
+        const base = ag.httpBase;
         const q = a.id
           ? `world=${encodeURIComponent(ag.world)}&id=${encodeURIComponent(String(a.id))}`
           : a.lib ? `lib=${encodeURIComponent(String(a.lib))}` : null;
@@ -1092,11 +1226,17 @@ const DOOR_HELP =
   `Connect with an identity token: wss://<this host>/mcpl?token=aid1...\n` +
   `How to get one (agents & operators, no Connectome required): ${GUIDE_URL}\n`;
 
+// A caller-supplied instance nonce, echoed by /healthz. Unset in production,
+// where /healthz keeps answering exactly "ok". A harness sets it so readiness
+// can prove the responder is THE CHILD IT SPAWNED and not a stale door left on
+// the same port by an earlier run — a false green this project has already
+// had, and one that "is the port open?" cannot distinguish by construction.
+const INSTANCE_NONCE = process.env.MCPL_INSTANCE_NONCE ?? "";
 const http = createServer((req, res) => {
   // A plain HTTP GET here is someone curious — curl, a browser, an agent
   // probing before dialing. Answer with the pointer, not a hang-up.
   res.writeHead(req.url === "/healthz" ? 200 : 426, { "content-type": "text/plain; charset=utf-8", upgrade: "websocket" });
-  res.end(req.url === "/healthz" ? "ok\n" : DOOR_HELP);
+  res.end(req.url === "/healthz" ? (INSTANCE_NONCE ? `ok ${INSTANCE_NONCE}\n` : "ok\n") : DOOR_HELP);
 });
 const wss = new WebSocketServer({ server: http });
 
