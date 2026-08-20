@@ -1,4 +1,18 @@
-// voicelist — THE VOICES YOU HAVE, AS A LIST.
+// ttslist — THE VOICES YOU HAVE, AS A LIST.
+//
+// 🔴 NAMED ttslist, NOT voicelist (R, 2026-08-16: "shouldn't it be called
+// tts-model-list or something instead of voicelist so it's more understandable
+// what it does at a glance?"). There are ten voice*.js files in this directory
+// and every OTHER one is about the WebRTC voice TRANSPORT — voice, voiceconsent,
+// voiceengines, voicemouths, voicerelay, voicesfu, voicesfubridge, voicesource,
+// voicestore. This one is text-to-speech, and wearing their prefix put it in the
+// wrong neighbourhood: easy to reason about as if it were transport code, which
+// is a decent bet for how the class-overwrite bug below survived so long.
+//
+// Not `ttsmodellist`, because the list holds two DIFFERENT kinds of thing — a
+// local .onnx model file and a remote speech-server endpoint. What they share is
+// being a source of a voice, so the list is of voices; the pairing with
+// ttsrow.js is what makes the feature legible at a glance.
 //
 // R, 2026-08-09: "the add-remove buttons aren't very intuitive... I feel like
 // the current implementation is clunky. Is there another UI you're aware of that
@@ -21,6 +35,8 @@
 // with VERBS ("voice file on this computer…") and STATUS ("loading voices…") in
 // one list of supposed choices. Verbs are rows here too, but visibly separate
 // and at the bottom, where an "add" affordance belongs.
+import { why } from './debuglog.js';
+
 const ROW = `
 .vl { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 /* The voices SCROLL, the add-rows do not (R, 2026-08-09: "should the model list
@@ -31,7 +47,10 @@ const ROW = `
   overflow-y: auto; overscroll-behavior: contain; }
 .vl-row { display: flex; align-items: center; gap: 6px; padding: 2px 4px;
   border-radius: 3px; cursor: pointer; }
-.vl-row:hover { background: #2a2a2a; }
+/* --accent-dk is what the house uses for "this row is active/hovered"
+   (index.html: .card.on). #2a2a2a was a neutral grey borrowed from nowhere —
+   it read as a different application's hover. */
+.vl-row:hover { background: var(--accent-dk); }
 .vl-row .vl-x { opacity: 0; margin-left: auto; padding: 0 4px; border: 0;
   background: none; color: inherit; cursor: pointer; font-size: 13px; line-height: 1; }
 /* The × appears on hover OR on keyboard focus — hover-only affordances are
@@ -56,10 +75,37 @@ const ROW = `
   transition: opacity .12s, box-shadow .12s; }
 .vl-radio.on { opacity: 1; box-shadow: inset 0 0 0 2.5px currentColor; }
 .vl-row:hover .vl-radio { opacity: .85; }
-.vl-add { margin-top: 4px; padding-left: 0; }
+/* 🔴 THE GAP UNDER THE HAIRLINE WAS DOUBLE-COUNTED (R, 2026-08-16: "the row
+   spacing between the graphic line above and the button below being a bit
+   odd"). .vl-verbs-start contributes padding-top:6px AND .vl-add contributed
+   margin-top:4px, so the first verb sat 10px below the rule while every other
+   row sat 2px apart — one gap built by two rules that did not know about each
+   other. The separator owns the space above the group; the row owns none. */
+/* 🔴 AND THE BUTTON'S OWN PADDING WAS LOPSIDED. .vl-row gives every row
+   2px 4px, but a voice row spends its left edge on the marker glyph
+   (12px + 6px gap) while an add-row starts at its own glyph — so identical
+   padding read as tight on the left and loose on the right, which is the
+   "weirdly spaced within that button" R saw. One declaration, symmetric, and
+   the noun/verb distinction is carried by the indent rule below rather than by
+   padding doing two jobs.
+   Written as ONE rule deliberately: a second .vl-add padding-left would be
+   silently overridden by this shorthand — dead CSS that reads as intentional
+   forever. */
+.vl-add { padding: 3px 6px; }
 .vl-row:not(.vl-add) { padding-left: 2px; }
-.vl-verbs-start { border-top: 1px solid currentColor; border-top-color: color-mix(in srgb, currentColor 15%, transparent); padding-top: 6px; }
-.vl-dim { opacity: .45; font-style: italic; }
+/* 🔴 THE SEPARATOR'S SPACE IS ABOVE IT, NOT INSIDE THE FIRST VERB (R,
+   2026-08-16: "can you scootch the + add a speech server button closer to the
+   + add a text-to-speech model button? That spacing looks odd").
+   padding-top on this row put 6px INSIDE the first button, between its border
+   and its own text — so the model row rendered 6px taller than the endpoint
+   row below it and the pair read as unevenly spaced, even though the gap
+   between them was the container's ordinary 2px. The two verbs are siblings
+   and must be the same height; the space belongs entirely to the margin above
+   the rule, which is the separator's own business.
+   This is the same double-counting as the note above, one level in: a gap
+   built by two rules, where only one of them should own it. */
+.vl-verbs-start { border-top: 1px solid var(--edge); margin-top: 8px; }
+.vl-dim { color: var(--dim); font-style: italic; }
 `;
 function ensureCss() {
   if (document.getElementById('vl-css')) return;
@@ -68,6 +114,68 @@ function ensureCss() {
   st.textContent = ROW;
   document.head.appendChild(st);
 }
+
+/** Update selection + status on an already-rendered list. Returns false when
+ *  the DOM does not match these items, so the caller rebuilds for real.
+ *
+ *  Deliberately conservative: it compares the rendered ids to the requested
+ *  ones and refuses if ANYTHING differs in membership or order. A wrong
+ *  in-place update is worse than a rebuild — it leaves the screen disagreeing
+ *  with state, which is the failure this whole file keeps hitting. */
+function syncSelection(host, { items, selected, busy, loading }) {
+  const rows = host.querySelectorAll?.('.vl-row[data-id]');
+  // 🔴 SAY WHY IT REFUSED. This returned a bare false on five different
+  // conditions, so when the panel kept tearing down (R, 2026-08-16, third
+  // report) there was no way to tell WHICH guard was rejecting — I read the
+  // code three times and guessed wrong twice. A predicate that can decline for
+  // five reasons must name the one it used; the debuglog 'tts-list' topic is
+  // readable from /audio and __why('tts-list'), and costs nothing when nobody
+  // looks.
+  const no = (reason) => { why('tts-list', `rebuilt: ${reason}`); return false; };
+  // An EMPTY list is a legitimate steady state, not a failure: with no voices
+  // saved there are no data-id rows, only the two add-verbs. Refusing here sent
+  // every repaint down the rebuild path and reported "no rendered rows carry
+  // data-id", which reads like a bug in the markup and is really "you have no
+  // voices yet" (R, 2026-08-16 — her list was empty and I nearly went looking
+  // for a missing attribute).
+  if (!rows.length && !items.length) {
+    // Nothing to select; only the status text can have changed.
+    if (loading) {
+      const note = host.querySelector('.vl-loading .vl-note');
+      if (note) note.textContent = busy || loading.status || 'loading…';
+    }
+    why('tts-list', 'in place (empty list)');
+    return !!host.querySelector('.vl-pane');   // false on first paint
+  }
+  if (!rows || !rows.length) return no(`no data-id rows, but ${items.length} item(s) expected`);
+  const want = items.map((i) => i.id);
+  if (rows.length !== want.length) return no(`row count ${rows.length} != items ${want.length}`);
+  for (let i = 0; i < rows.length; i++) {
+    if (rows[i].dataset.id !== want[i]) return no(`row ${i} is ${rows[i].dataset.id}, wanted ${want[i]}`);
+  }
+  // A loading row appearing or clearing IS structural — it adds/removes a node.
+  const hasLoadingRow = !!host.querySelector('.vl-loading');
+  if (hasLoadingRow !== !!loading) return no(`loading row ${hasLoadingRow} vs ${!!loading}`);
+
+  for (const row of rows) {
+    const on_ = row.dataset.id === selected;
+    // The mark is a span styled `.vl-radio.on`, NOT an <input type=radio> — I
+    // wrote this against an imagined DOM first and it silently matched nothing,
+    // which would have made the whole in-place path dead code that always fell
+    // back to a rebuild. Read the renderer, then update what it actually paints.
+    const mark = row.querySelector('.vl-radio');
+    if (!mark) return no('a row has no .vl-radio');
+    mark.classList.toggle('on', on_);
+    mark.setAttribute('aria-checked', on_ ? 'true' : 'false');
+  }
+  why('tts-list', 'in place');
+  if (loading) {
+    const note = host.querySelector('.vl-loading .vl-note');
+    if (note) note.textContent = busy || loading.status || 'loading…';
+  }
+  return true;
+}
+
 /** Build the list.
  *  items:    [{id, name, note}]   — the voices this person has
  *  selected: id | null
@@ -75,7 +183,31 @@ function ensureCss() {
  */
 export function renderVoiceList(host, { items, selected, on, busy, loading }) {
   ensureCss();
-  host.className = 'vl';
+  // 🔴 ADD, DO NOT OVERWRITE (R, 2026-08-16 — the panel teardown, report five).
+  // This was `host.className = 'vl'`, which ERASES whatever the caller put
+  // there. ttsrow marks this element `.tts-list` so its in-place updater can
+  // find it again; the first render silently replaced that with `vl`, so from
+  // then on syncInPlace() could not locate the list, refused, and rebuilt the
+  // ENTIRE section on every state change — which is exactly the teardown she
+  // reported three times while I fixed the two layers underneath it.
+  //
+  // A component that styles a host it does not own must contribute a class, not
+  // seize the attribute. classList.add is the whole fix.
+  host.classList.add('vl');
+  // 🔴 A SELECTION CHANGE MUST NOT REBUILD THE LIST (R, 2026-08-16, asking for
+  // the third time and rightly annoyed: "the whole panel is *still* tearing
+  // down when you select one radio button or the other… fix this issue for
+  // EVERY element").
+  //
+  // This function wiped `host` unconditionally, so every caller — including the
+  // ones that had just been fixed not to tear down — got the rows destroyed and
+  // recreated anyway. Marking a different radio is the commonest interaction
+  // there is, and it was the most destructive.
+  //
+  // If the same voices are already rendered, only the SELECTION and the
+  // loading/busy text have changed: write those and return. Anything
+  // structural (a voice added or removed) still falls through to a real build.
+  if (syncSelection(host, { items, selected, busy, loading })) return;
   host.textContent = '';
   // The scrolling part. Only the voices go in here; the "+ add" rows stay below
   // it, so the thing you click to fix an empty list is never itself scrolled
@@ -143,6 +275,11 @@ export function renderVoiceList(host, { items, selected, on, busy, loading }) {
   for (const it of items) {
     const row = document.createElement('div');
     row.className = 'vl-row';
+    // Identity ON the node, so an update can find its row without rebuilding
+    // the list. Without this, syncSelection has nothing to match and silently
+    // falls back to a full teardown — the fix would look applied and do
+    // nothing, which is the failure mode this whole morning was made of.
+    row.dataset.id = it.id;
     row.tabIndex = 0;
     row.title = it.note || it.name;
     const mark = document.createElement('span');
