@@ -121,6 +121,10 @@ try {
                : bad('no audible envelope at B');
 
   // Revocation must be a memory write, not an SDP round trip — measure it.
+  // 🔴 ONLY MEANINGFUL IF AUDIO WAS FLOWING: with a dead analyser (envelope
+  // 0.000) "audio stopped" is vacuously true and the check laundered a FAIL
+  // into a green row (observed 2026-08-20). A dead instrument fails BOTH rows.
+  if (!(level > 0.02)) bad('revocation unmeasurable — envelope instrument was dead before revoke');
   const t0 = Date.now();
   await B.evaluate(async () => (await import('./lib/voiceconsent.js')).setReceiveVoice(false));
   const quiet = await B.evaluate(async () => {
