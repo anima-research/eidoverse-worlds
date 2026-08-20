@@ -83,6 +83,7 @@ import { updateVoiceMouths } from './lib/voicemouths.js';
 import { initEmoteBar } from './lib/emotebar.js';
 import { initCommands, saveScreenshot } from './lib/commands/handlers.js';
 import { deriveLandmarks, debugMarkers, landmarkWorld } from './lib/landmarks.js';
+import { measureChain, solveChain } from './lib/reachbone.js';
 import { canonicalPoint } from '../shared/contact.js';
 
 // (Crash breadcrumbs live in lib/bc.js now; the frame loop stamps each
@@ -630,6 +631,45 @@ globalThis.EW = {
     const e = av.__marks.get(canonicalPoint(name) ?? name);
     const hit = e && landmarkWorld(e, standoff);
     return hit ? hit.pos.toArray() : null;
+  },
+  // Which contact points can a hand ACTUALLY get to on this body? One solve
+  // per (point, hand) against the real derived landmarks — no frames needed,
+  // because the solve is a pure function of pose and target. Answers the
+  // question a demo cannot: not "does reaching work" but "what is in range".
+  reachAudit: (who, standoff = 0.02) => {
+    // Landmarks come from the body being TOUCHED; the chains doing the
+    // reaching are always mine. Using one avatar for both asks "can that body
+    // reach its own shoulder", which is a different and much harder question —
+    // and it returns identical numbers whoever you name, which is how this was
+    // caught.
+    const av = getMe();
+    const subject = who ? remotes.get(who)?.avatar : av;
+    if (!av || !subject) return null;
+    subject.__marks ??= deriveLandmarks(subject);
+    const self = subject === av;
+    const rows = [];
+    for (const [name, e] of subject.__marks) {
+      const hit = landmarkWorld(e, standoff);
+      if (!hit) continue;
+      const t = hit.pos.toArray();
+      const best = { hand: null, gap: Infinity, bound: [] };
+      for (const key of ['leftHand', 'rightHand']) {
+        const ch = measureChain(av, key);
+        if (!ch) continue;
+        // A limb cannot meaningfully touch itself: scoring the left hand
+        // against a point ON the left arm returns a triumphant 0mm that means
+        // nothing. Skip the chain that owns the landmark.
+        if (self && (ch.spec.root === e.bone || ch.spec.mid === e.bone || ch.spec.end === e.bone)) continue;
+        const out = solveChain(ch, av, t, null);
+        if (!out?.ok) continue;
+        if (out.res.gap < best.gap) { best.hand = key === 'leftHand' ? 'L' : 'R'; best.gap = out.res.gap; best.bound = out.res.bound; }
+      }
+      rows.push({ point: name, tier: e.tier, hand: best.hand ?? '-',
+                  mm: Number.isFinite(best.gap) ? Math.round(best.gap * 1000) : null,
+                  bound: best.bound.join(',') || '-' });
+    }
+    rows.sort((a, b) => (a.mm ?? 1e9) - (b.mm ?? 1e9));
+    return rows;
   },
   showLandmarks: (on = true, who) => {
     const av = who ? remotes.get(who)?.avatar : getMe();
