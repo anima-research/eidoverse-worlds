@@ -604,6 +604,12 @@ globalThis.EW = {
   me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus,
   skyArgs, sendVerb, setPosable, get posable() { return posable(); },
   setPushable, get pushable() { return pushable(); }, dragState,
+  // reach: aim a hand at a world point, or at anything that moves. Pass a
+  // function and it re-solves every frame; `EW.reach('leftHand', () =>
+  // EW.remotes.get('mythos').avatar.root.position.toArray())` follows a body.
+  reach: (key, target, opts) => getMe()?.setReach(key, target, opts),
+  clearReach: (key) => getMe()?.clearReach(key),
+  reachStatus: () => getMe()?.reachStatus(),
   lease: leaseApi,   // the entity-lease surface runtime plugins script against
   mods: modsApi,     // load/run/offer runtime client scripts (🧩)
   bodysim: { engine: bodyEngine, setEngine: setBodyEngine, list: listBodyEngines },  // swappable body physics
