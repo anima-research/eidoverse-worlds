@@ -211,5 +211,54 @@ if (!report || !Array.isArray(report.sharedObjects)) {
 }
 
 
+// ----------------------------------------- 4. the fail-closed seam (#136 review)
+// Resolution and import are different facts. A nested copy that RESOLVES but
+// fails to IMPORT (ABI mismatch, missing dylib, damaged install) must not send
+// the process to the bare specifier — that loads the root copy beside the one
+// gltf-transform already has and rebuilds the two-libvips condition, in the
+// one situation where things are already going wrong.
+//
+// Driven through pickSharp's injected effects, so this is deterministic on
+// every box rather than dependent on an install actually being broken. The
+// load hook RECORDS every specifier it is handed: the assertion is not merely
+// that the call rejected, but that "sharp" was never reached for.
+if (typeof (OPT as any).pickSharp !== "function") {
+  check("pickSharp is exported (resolution split from import)", false, "absent — pre-#136 optimize.ts");
+} else {
+  const pickSharp = (OPT as any).pickSharp as (
+    r: () => string | null, l: (s: string) => Promise<any>,
+  ) => Promise<{ sharp: any; from: string }>;
+  const NESTED = "/probe/ndarray-pixels/node_modules/sharp/index.js";
+
+  const attempted: string[] = [];
+  let rejection = "";
+  try {
+    await pickSharp(() => NESTED, async (spec) => {
+      attempted.push(spec);
+      throw new Error(`native import failed: ${spec}`);
+    });
+  } catch (e) { rejection = (e as Error).message; }
+
+  check("a nested copy that fails to import REJECTS instead of falling back",
+    /native import failed/.test(rejection),
+    rejection || "returned a module instead of rejecting");
+  check("...and the bare specifier is never even attempted",
+    !attempted.includes("sharp"),
+    `load() was handed: ${attempted.join(", ") || "(nothing)"}`);
+  check("...having attempted exactly the nested path, once",
+    attempted.length === 1 && attempted[0] === NESTED,
+    `load() was handed: ${attempted.join(", ") || "(nothing)"}`);
+
+  // The other side of the same rule: with NO nested copy to resolve, the bare
+  // specifier is the single install and must still be used, or a deduped
+  // machine loses its texture pass for no reason.
+  const bare: string[] = [];
+  const picked = await pickSharp(() => null, async (spec) => { bare.push(spec); return { default: {} }; });
+  check("a genuinely absent nested copy DOES fall back to the bare specifier",
+    bare.length === 1 && bare[0] === "sharp" && picked.from === "sharp (bare specifier)",
+    `load() was handed: ${bare.join(", ")}, from=${picked.from}`);
+}
+
+
 console.log(`\n${failures === 0 ? "\x1b[32m" : "\x1b[31m"}${failures} failed\x1b[0m\n`);
 process.exit(failures ? 1 : 0);
