@@ -155,7 +155,7 @@ const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
 const TOOLS = [
   { name: "look", description: "Text-tier perception: where you are, who's present and what they're doing, every placed thing with distance/bearing, and chat since you last looked.", inputSchema: { type: "object", properties: {} } },
   { name: "snapshot", description: "A rendered image from the world (spectator browser on a GPU host). Slower than look — use when spatial/visual detail matters. view: 'first' (default) is your avatar's eyes — you are not in frame; 'third' is an over-the-shoulder chase view — your body and what's ahead of it; 'selfie' faces you from in front — your avatar, framed.", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["first", "third", "selfie"] } } } },
-  { name: "walk_to", description: "Walk (or run) to world coordinates. Returns when you arrive; others see you walking.", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, run: { type: "boolean" } }, required: ["x", "z"] } },
+  { name: "walk_to", description: "Walk (or run) to world coordinates. Returns when you arrive; others see you walking. If you are seated or riding something, walking gets you off it first, from wherever the seat has carried you — no separate dismount needed.", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, run: { type: "boolean" } }, required: ["x", "z"] } },
   { name: "face", description: "Turn to face a point (x,z) or a participant/entity id (target).", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, target: { type: "string" } } } },
   { name: "stop", description: "Stop walking.", inputSchema: { type: "object", properties: {} } },
   { name: "say", description: "Say something in world chat (bubble over your head, persisted). Equivalent to publishing on the world channel. Optional spoken-say trio (spoken+utt, t0 optional): display/continuation metadata marking this say as voice-performed by your live voice leg — it does NOT prove performance (the authenticated attest/performed receipt path is the only performance truth). The trio travels together or the door refuses loudly.", inputSchema: { type: "object", properties: { text: { type: "string" }, spoken: { type: "boolean", description: "true = a live voice leg is performing this say (display metadata only)" }, utt: { type: "integer", minimum: 0, description: "utterance counter: author-controlled display/continuation metadata (does NOT prove performance)" }, t0: { type: "number", description: "performance start, epoch ms (optional, finite)" } }, required: ["text"] } },
@@ -868,7 +868,15 @@ class Session {
         const clip = { sit: "sit", sitchair: "sitchair", lie: "lie", stand: "idle" }[kind];
         if (!clip) return text("posture kinds: sit (on the ground), sitchair (chair height), lie, stand");
         ag.setPosture(clip);
-        return text(kind === "stand" ? "you stand up" : `you ${kind === "lie" ? "lie down" : "sit down"} — walking stands you back up`);
+        // Standing up is the other door onto a dismount, so it owes the
+        // resident the same declaration a walk does (#98 review, B1).
+        // setPosture is synchronous — this gap is that act's own.
+        const pg = ag.lastDismountGap;
+        const pnote = pg
+          ? ` — note: you left ${pg.to} without a seat this side could resolve (${pg.why}), so you are standing at ${
+              pg.landedOn === "parent" ? `${pg.to}'s own frame` : "your last stamped position"}`
+          : "";
+        return text(kind === "stand" ? `you stand up${pnote}` : `you ${kind === "lie" ? "lie down" : "sit down"} — walking stands you back up`);
       }
       case "library_sheet": {
         const kind = a.kind === "models" ? "models" : "avatars";
@@ -919,8 +927,24 @@ class Session {
         return text(`no preview for "${want}" — avatar portraits appear once a body has been worn; library models ship _preview.jpg files`);
       }
       case "walk_to": {
-        const arrived = await ag.walkTo(Number(a.x), Number(a.z), Boolean(a.run));
-        return text(arrived ? `arrived at (${ag.pos.x.toFixed(1)}, ${ag.pos.z.toFixed(1)})` : "walk interrupted or timed out");
+        // walkTo dismounts SYNCHRONOUSLY, before it returns its promise — so
+        // reading the gap here, between the call and the await, captures the
+        // one belonging to THIS walk. Reading it after the await would risk
+        // reporting a gap from some later act (#98 review, B1).
+        const walking = ag.walkTo(Number(a.x), Number(a.z), Boolean(a.run));
+        const gap = ag.lastDismountGap;
+        const arrived = await walking;
+        // A fallback landing is the resident's business: they asked to walk
+        // off a seat, and where they started walking FROM was a guess. Saying
+        // so on the founding path is the difference between a declared seam
+        // and the silent teleport this whole change is about.
+        const note = gap
+          ? ` — note: you left ${gap.to} without a seat this side could resolve (${gap.why}), so the walk began from ${
+              gap.landedOn === "parent" ? `${gap.to}'s own frame` : "your last stamped position"}`
+          : "";
+        return text(arrived
+          ? `arrived at (${ag.pos.x.toFixed(1)}, ${ag.pos.z.toFixed(1)})${note}`
+          : `walk interrupted or timed out${note}`);
       }
       case "face": {
         if (a.target) {
@@ -1122,6 +1146,20 @@ class Session {
         // must survive (#88)
         const why = rawShapeError(String(a.verb), (a.args ?? {}) as Record<string, unknown>);
         if (why) return { content: [{ type: "text", text: `refused ${a.verb}: ${why}` }], isError: true };
+        // Getting off your OWN seat is not a raw forward: it must stamp the
+        // absolute landing derived from the live socket, the same act the
+        // browser performs and the same one look() promises when it says a
+        // dismount "restores a stamped position" (#18). A caller who supplies
+        // its own pos has chosen a landing — forward that verbatim.
+        const ra = (a.args ?? {}) as Record<string, unknown>;
+        if (String(a.verb) === "dismount" && ra.id === ag.name && ra.pos == null) {
+          const at = ag.dismountSelf();
+          if (!at) return text("you are not mounted on anything");
+          const gap = ag.lastDismountGap;
+          return text(`dismounted at (${at.x.toFixed(1)}, ${at.z.toFixed(1)})${
+            gap ? ` — seat unresolved (${gap.why}); landed on ${
+              gap.landedOn === "parent" ? `${gap.to}'s own frame` : "your last stamped position"}` : ""}`);
+        }
         ag.verb(String(a.verb), a.args ?? {});
         return text(`sent ${a.verb}`);
       }
