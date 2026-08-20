@@ -286,10 +286,25 @@ export const qRot = (q, v) => {
  * @returns {{upper: number[], lower: number[]}} local quaternions, ready to
  *          write onto the normalized bone nodes.
  */
-export function chainLocalQuats(dRestUpper, dRestLower, dWantUpper, dWantLower) {
-  const QU = qFromUnitVectors(dRestUpper, dWantUpper);
-  const QL = qFromUnitVectors(dRestLower, dWantLower);
-  // the lower bone hangs off the upper one, so its LOCAL rotation is whatever
-  // is left after the parent's has been accounted for
-  return { upper: QU, lower: qMulq(qConj(QU), QL) };
+export function chainLocalQuats(dRestUpper, dRestLower, dWantUpper, dWantLower, qParent = null) {
+  // The rest directions are measured in the frame where the rest pose has
+  // identity rotations (the avatar root's). But the bone's PARENT is not at
+  // rest while anything is playing — the locomotion clip rotates the chest
+  // every frame — so the arm's rest direction right now is the measured one
+  // carried by the parent's current rotation. Ignoring that is a reach that
+  // drifts with the walk cycle: correct in T-pose, wrong the moment the torso
+  // turns. qParent = null is the rest case, and the identity of this formula.
+  const restU = qParent ? qRot(qParent, dRestUpper) : dRestUpper;
+  const QU = qParent ? qMulq(qFromUnitVectors(restU, dWantUpper), qParent)
+                     : qFromUnitVectors(restU, dWantUpper);
+  // ...and the lower bone's rest direction is carried by the upper bone's NEW
+  // orientation, not by the parent's — it hangs off the bone we just moved.
+  const restL = qRot(QU, dRestLower);
+  const QL = qMulq(qFromUnitVectors(restL, dWantLower), QU);
+  return {
+    upper: qParent ? qMulq(qConj(qParent), QU) : QU,
+    lower: qMulq(qConj(QU), QL),
+    upperFrame: QU,   // the bone's orientation in the measurement frame
+    lowerFrame: QL,
+  };
 }

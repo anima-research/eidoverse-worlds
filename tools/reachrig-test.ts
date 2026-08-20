@@ -161,5 +161,68 @@ console.log("\njoint limits actually bind on real rigs");
     `worst cone dot ${worstCone.toFixed(6)}`);
 }
 
+console.log("\nwith the torso turned (the walking case)");
+{
+  // The chest is rotated by the clip every frame. A conversion that assumes
+  // the arm's parent is at rest is correct in T-pose and wrong the moment the
+  // body turns — so drive the parent with real rotations and demand the hand
+  // still lands on target, rebuilt by FK through parent ∘ local.
+  let worstGap2 = 0, worstLen2 = 0, worstFrame = 0, n = 0;
+  let seed = 7;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const randQuat = () => {
+    const u1 = rnd(), u2 = rnd(), u3 = rnd();
+    const a = Math.sqrt(1 - u1), b = Math.sqrt(u1);
+    return [a * Math.sin(2 * Math.PI * u2), a * Math.cos(2 * Math.PI * u2),
+            b * Math.sin(2 * Math.PI * u3), b * Math.cos(2 * Math.PI * u3)];
+  };
+  for (const rig of good) {
+    const P: Record<string, number[]> = {};
+    for (const [k, v] of Object.entries(rig.P)) P[k] = V(v);
+    const F = bodyFrame(P); if (!F) continue;
+    const U = "leftUpperArm", M = "leftLowerArm", H = "leftHand";
+    if (!P[U] || !P[M] || !P[H]) continue;
+    const L1 = len(sub(P[M], P[U])), L2 = len(sub(P[H], P[M]));
+    const dRestU = nrm(sub(P[M], P[U])), dRestL = nrm(sub(P[H], P[M]));
+
+    for (let i = 0; i < 40; i++) {
+      const qParent = randQuat();
+      // everything the shoulder's limits are stated against is carried by the
+      // parent too — the cone turns with the torso
+      const dRestU_live = qRot(qParent, dRestU);
+      const fwdLive = qRot(qParent, F.f);
+      const lim = limitsFor(U);
+      const coneLive = nrm(qRot(qParent, fromBody(coneAxisBody(toBody(dRestU, F), lim.coneTilt ?? 0), F)));
+      // a target comfortably inside the reachable set, in front of the cone
+      const target = add(P[U], mul(coneLive, (L1 + L2) * 0.7));
+
+      const r: any = solveTwoBone({
+        root: P[U], target, L1, L2, pole: dRestU_live, fwd: fwdLive, coneAxis: coneLive,
+        limits: { coneHalf: lim.coneHalf, behind: lim.behind, maxFlex: lim.maxFlex },
+      });
+      if (!r.ok) continue;
+      const q: any = chainLocalQuats(dRestU, dRestL, r.upper, r.lower, qParent);
+
+      // rebuild the bone orientations the way a scene graph would: parent ∘ local
+      const upperFrame = qMulq(qParent, q.upper);
+      const lowerFrame = qMulq(upperFrame, q.lower);
+      worstFrame = Math.max(worstFrame,
+        len(sub(qRot(upperFrame, dRestU), qRot(q.upperFrame, dRestU))),
+        len(sub(qRot(lowerFrame, dRestL), qRot(q.lowerFrame, dRestL))));
+
+      const elbow = add(P[U], mul(qRot(upperFrame, dRestU), L1));
+      const hand = add(elbow, mul(qRot(lowerFrame, dRestL), L2));
+      worstLen2 = Math.max(worstLen2, Math.abs(len(sub(elbow, P[U])) - L1), Math.abs(len(sub(hand, elbow)) - L2));
+      if (!r.bound.length) { worstGap2 = Math.max(worstGap2, len(sub(hand, target))); n++; }
+    }
+  }
+  check(`parent ∘ local reproduces the solved frames (${n} unbound reaches)`, worstFrame < 1e-6,
+    `worst ${(worstFrame * 1e6).toFixed(3)}µm`);
+  check("bones keep their length through a turned torso", worstLen2 < 1e-6, `worst ${(worstLen2 * 1e6).toFixed(3)}µm`);
+  check("the hand still lands ON the target with the torso turned", worstGap2 < 1e-4,
+    `worst ${(worstGap2 * 1000).toFixed(4)}mm`);
+  check("...and unbound reaches actually occurred", n > 0);
+}
+
 console.log(failures ? `\n\x1b[31m${failures} failed\x1b[0m\n` : "\n\x1b[32mall passed\x1b[0m\n");
 process.exit(failures ? 1 : 0);
