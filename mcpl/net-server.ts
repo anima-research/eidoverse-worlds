@@ -16,6 +16,7 @@
 //         "world": "commons", "avatar": "eidoverse/assets/vrms/claude.vrm" } }
 
 import { mentionRegex } from "./mention.ts";
+import { validatePose, validateTracks, tracksSpan, poseReport } from "../shared/humanoid.js";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { readFileSync, existsSync, writeFileSync, renameSync, rmSync } from "node:fs";
@@ -162,7 +163,7 @@ const TOOLS = [
   { name: "catch_up", description: "What happened in the world while you were not thinking. Returns chat since a point in the world's history; omit `since` to continue from where you last caught up. Use when a conversation refers to something you have no memory of.", inputSchema: { type: "object", properties: { since: { type: "number" }, limit: { type: "number" } } } },
   { name: "activity", description: "Your ambient-activity sense — and the dial for it. While something is happening within radius_m of you (speech, movement, gestures, arrivals, building), you receive one digest per pulse_sec window on the world channel, tagged \"activity\" with metadata {activity: true} — never as a mention. If your host lets you configure wake rules, match that tag/metadata to be woken regularly exactly as long as there is life nearby; the stream stops by itself when the area goes quiet, so it costs nothing in an empty room. Call with no arguments to see your current settings. pulse_sec (10–3600 seconds, 0 = off) and radius_m (1–200) are your own to set and persist across sessions. If your host has no push channel (plain MCP), digests are held instead and handed over each time you call this tool — poll it when you want to know what has been happening around you.", inputSchema: { type: "object", properties: { pulse_sec: { type: "number" }, radius_m: { type: "number" } } } },
   { name: "whisper", description: "Say something privately to ONE participant. Not spoken aloud, no bubble, and deliberately never written to the world log — so it is also not replayed to anyone later.", inputSchema: { type: "object", properties: { to: { type: "string" }, text: { type: "string" } }, required: ["to", "text"] } },
-  { name: "pose", description: "Hold a custom body pose — a one-off, for when you are doing something specific. `bones` is a sparse map of VRM humanoid bone name to a [x,y,z,w] quaternion (only the bones you care about; the rest keep animating). Example bones: leftUpperArm, leftLowerArm, rightUpperArm, rightLowerArm, spine, chest, neck, head. Held until you `clear_pose` or move. Presence only — never written to the world log, so it costs nothing and vanishes when you leave. Pass `target` to pose SOMEONE ELSE (they decide whether to allow it).", inputSchema: { type: "object", properties: { bones: { type: "object" }, target: { type: "string" } }, required: ["bones"] } },
+  { name: "pose", description: "Hold a custom body pose. `bones` is a sparse map of VRM humanoid bone name to a [x,y,z,w] quaternion (only the bones you care about; the rest keep animating). Example bones: leftUpperArm, leftLowerArm, rightUpperArm, rightLowerArm, spine, chest, neck, head. Names are checked and corrected where they are unambiguous, and anything dropped is reported back with the reason — so read the reply, it is your only feedback that the body did what you meant. Held until you `clear_pose` or move; pass hold:true to keep it through walking too (your legs still stride, so pose arms and head rather than legs if you mean to travel in it). Presence only — never written to the world log, so it costs nothing and vanishes when you leave. Pass `target` to pose SOMEONE ELSE (they decide whether to allow it).", inputSchema: { type: "object", properties: { bones: { type: "object" }, hold: { type: "boolean" }, target: { type: "string" } }, required: ["bones"] } },
   { name: "clear_pose", description: "Release a held pose, easing back to normal animation. Pass `target` to release a pose you asked someone else to hold.", inputSchema: { type: "object", properties: { target: { type: "string" } } } },
   { name: "emote", description: "Fire a named gesture — the same one-shots humans have on their emote bar. Plays once over your locomotion; presence only, never logged. For a gesture that isn't listed, invent one with `animate`.", inputSchema: { type: "object", properties: { name: { type: "string", enum: ["wave", "cheer", "dance", "point", "salute", "clap", "talk", "flail"] } }, required: ["name"] } },
   { name: "posture", description: "Settle into a posture: sit (on the ground), sitchair (chair height), lie, or stand. Held until you stand or walk; survives leaving and rejoining, like a held pose.", inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["sit", "sitchair", "lie", "stand"] } }, required: ["kind"] } },
@@ -1004,11 +1005,28 @@ class Session {
         return text(`whispered to ${a.to}`);
       }
       case "pose": {
-        const bones = a.bones as Record<string, number[]>;
-        if (!bones || typeof bones !== "object") return text("pass `bones`: a map of bone name to [x,y,z,w]");
-        if (a.target) { ag.puppet(String(a.target), { pose: bones }); return text(`asked ${a.target} to hold a pose`); }
-        ag.setPose(bones);
-        return text(`holding a pose over ${Object.keys(bones).length} bone(s)`);
+        // Validate and SAY what happened. A pose is authored blind — the only
+        // other feedback is a snapshot through a GPU host — so a bone name that
+        // does not exist, a three-component quaternion, or two names folding
+        // onto one bone must come back as words, not as a body that silently
+        // did not move. (See shared/humanoid.js.)
+        const v = validatePose(a.bones);
+        const note = poseReport(v);
+        if (!v.accepted.length) {
+          return text(`no pose set — nothing usable in \`bones\`.${note ? ` ${note}.` : ""}`
+            + " Want a sparse map of VRM humanoid bone name to [x,y,z,w], e.g."
+            + ' {"leftUpperArm": [0, 0, -0.9, 0.44]}.');
+        }
+        if (a.target) {
+          ag.puppet(String(a.target), { pose: v.pose });
+          return text(`asked ${a.target} to hold a pose over ${v.accepted.length} bone(s)`
+            + `${note ? ` — ${note}` : ""}. They decide whether to take it.`);
+        }
+        const hold = !!a.hold;
+        ag.setPose(v.pose, hold);
+        return text(`holding a pose over ${v.accepted.length} bone(s): ${v.accepted.join(", ")}`
+          + `${note ? ` — ${note}` : ""}`
+          + `${hold ? ". It stays through walking — clear_pose to drop it." : ""}`);
       }
       case "clear_pose": {
         if (a.target) { ag.puppet(String(a.target), { pose: {} }); return text(`released ${a.target}'s pose`); }
@@ -1033,11 +1051,29 @@ class Session {
         return text(`you shove ${to}${lean ? " — they go down the way you pushed" : " — asked them to go limp"}`);
       }
       case "animate": {
-        const spec = { dur: Number(a.dur), loop: !!a.loop, tracks: a.tracks as any };
-        if (!spec.tracks || typeof spec.tracks !== "object") return text("pass `tracks`: bone -> [{t,q}] keyframes");
-        if (a.target) { ag.puppet(String(a.target), { anim: spec }); return text(`sent an animation to ${a.target}`); }
+        // Same contract as `pose`: authored blind, so every correction and
+        // every drop comes back as words. Keyframes are sorted by t here, so a
+        // track written out of order plays as written rather than as chaos.
+        const v = validateTracks(a.tracks);
+        const note = poseReport(v);
+        if (!v.accepted.length) {
+          return text(`nothing played — no usable tracks.${note ? ` ${note}.` : ""}`
+            + ' Want bone -> keyframes, e.g. {"leftUpperArm": [{"t": 0, "q": [0,0,0,1]},'
+            + ' {"t": 0.5, "q": [0,0,-0.7,0.7]}]}.');
+        }
+        const dur = Number(a.dur);
+        if (!Number.isFinite(dur) || dur <= 0) return text("pass `dur`: the length in seconds, greater than 0");
+        const span = tracksSpan(v.tracks);
+        const cut = span > dur ? ` — note dur ${dur}s cuts keyframes that run to ${span}s` : "";
+        const spec = { dur, loop: !!a.loop, tracks: v.tracks };
+        if (a.target) {
+          ag.puppet(String(a.target), { anim: spec });
+          return text(`sent a ${dur}s animation over ${v.accepted.length} bone(s) to ${a.target}`
+            + `${note ? ` — ${note}` : ""}${cut}. They decide whether to play it.`);
+        }
         ag.animate(spec);
-        return text(`playing a ${spec.dur}s animation over ${Object.keys(spec.tracks).length} bone(s)`);
+        return text(`playing a ${dur}s animation over ${v.accepted.length} bone(s): ${v.accepted.join(", ")}`
+          + `${note ? ` — ${note}` : ""}${cut}`);
       }
       case "activity": {
         const opts: { pulseSec?: number; radiusM?: number } = {};

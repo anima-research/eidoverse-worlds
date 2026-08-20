@@ -137,6 +137,17 @@ export class WorldAgent {
    *  frame got relabelled "idle", slipped every clip-keyed sanitizer, and
    *  haunted princess across sessions and joiners for weeks (#61). */
   heldPoseAuthored = false;
+
+  /** The exact pose object that was granted "hold this while I walk".
+   *
+   *  Stored as the OBJECT, not a boolean, and compared by identity — so any
+   *  other writer of `heldPose` (a tumble frame, a puppet, a drag sample, a
+   *  restore) revokes stickiness for free by simply assigning a different
+   *  object. A parallel boolean would have to be cleared at all nine of those
+   *  sites, and the one that got missed would be a pose that outlived every
+   *  walk forever. This cannot be missed: it is the same identity trick the
+   *  renderer's `_composeBegin` and the interpolator's `lastPose` both use. */
+  private heldPoseSticky: Record<string, number[]> | null = null;
   draggedBy: string | null = null;   // whose takeover sim drives this body (bodydrag)
   dragAt = 0;                        // last drag sample, for the silence timeout
   pins = new Map<string, number[]>(); // persistent bodydrag nails: joint -> [x,y,z]
@@ -1410,12 +1421,17 @@ export class WorldAgent {
     ++this.bodyEpoch;       // ...and outranks a tumble or settle still loading
     this.body?.stop(); this.stopSim();   // a body that decides to walk is done tumbling
     // deciding to walk IS getting up — shed the held pose, or the body zombie-
-    // walks with it frozen over the stride. ALL of it goes, authored or not:
-    // the pose tool's contract is "held until you clear_pose or move", and an
-    // unconditional shed is also what lets a store poisoned with a relabelled
-    // tumble frame (#61) self-heal on the resident's first walk.
-    if (this.heldPose || this.clip === "ragdoll") {
-      this.heldPose = null; this.heldPoseAuthored = false;
+    // walks with it frozen over the stride. The default stays "held until you
+    // clear_pose or move" for everything that did NOT ask otherwise, because
+    // that unconditional shed is also what lets a store poisoned with a
+    // relabelled tumble frame (#61) self-heal on the resident's first walk —
+    // and a restored pose arrives marked authored, so authorship alone is NOT
+    // a safe test. Only a pose this body deliberately pinned with `hold`
+    // survives, identified by object (see heldPoseSticky), which a restore or
+    // a tumble frame can never satisfy.
+    const sticky = this.heldPose != null && this.heldPose === this.heldPoseSticky;
+    if ((this.heldPose && !sticky) || this.clip === "ragdoll") {
+      if (!sticky) { this.heldPose = null; this.heldPoseAuthored = false; }
       if (this.clip === "ragdoll") this.clip = "walk";
     }
     // and deciding to walk IS getting off the seat — a folded mount otherwise
@@ -1532,9 +1548,12 @@ export class WorldAgent {
   }
 
   /** Hold a custom pose (yourself). Sparse bone -> [x,y,z,w] quaternion. */
-  setPose(bones: Record<string, number[]> | null) {
+  setPose(bones: Record<string, number[]> | null, sticky = false) {
     this.heldPose = bones;
     this.heldPoseAuthored = bones != null;
+    // Only a deliberate self-pose can ask to survive walking, and only THIS
+    // object gets that (see heldPoseSticky).
+    this.heldPoseSticky = sticky && bones != null ? bones : null;
     // clearing a slump IS standing up — don't leave the clip lying, don't
     // leave a sim tumbling a body that has decided to stand
     if (bones == null && this.clip === "ragdoll") {
