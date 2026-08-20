@@ -82,6 +82,7 @@ import { posable, pushable, setPosable, setPushable } from './lib/consent.js';
 import { updateVoiceMouths } from './lib/voicemouths.js';
 import { initEmoteBar } from './lib/emotebar.js';
 import { initCommands, saveScreenshot } from './lib/commands/handlers.js';
+import { deriveLandmarks, debugMarkers } from './lib/landmarks.js';
 
 // (Crash breadcrumbs live in lib/bc.js now; the frame loop stamps each
 // system's name as it runs. avatar.js still reads globalThis.__ewBC.)
@@ -608,6 +609,22 @@ globalThis.EW = {
   // function and it re-solves every frame; `EW.reach('leftHand', () =>
   // EW.remotes.get('mythos').avatar.root.position.toArray())` follows a body.
   reach: (key, target, opts) => getMe()?.setReach(key, target, opts),
+  // landmarks: named contact points, derived per body from its own mesh.
+  // EW.landmarks() derives + caches; EW.showLandmarks() draws them to be
+  // LOOKED at, which is the only check the derivation cannot do itself.
+  landmarks: (who) => {
+    const av = who ? remotes.get(who)?.avatar : getMe();
+    if (!av) return null;
+    av.__marks ??= deriveLandmarks(av);
+    return av.__marks;
+  },
+  showLandmarks: (on = true, who) => {
+    const av = who ? remotes.get(who)?.avatar : getMe();
+    if (!av) return null;
+    av.__marks ??= deriveLandmarks(av);
+    debugMarkers(av, av.__marks, scene, on);
+    return [...av.__marks].map(([n, e]) => `${n}:${e.how}`).join(' ');
+  },
   clearReach: (key) => getMe()?.clearReach(key),
   reachStatus: () => getMe()?.reachStatus(),
   lease: leaseApi,   // the entity-lease surface runtime plugins script against
