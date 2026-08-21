@@ -212,7 +212,7 @@ export function solveTwoBone(o) {
     const rU = o.rUpper ?? 0;
     let out = v, moved = false;
     for (const g of o.guards) {
-      const min = g.r + rU;
+      const min = g.r + rU * CONTACT;
       const cc = segSegClosest(root, add(root, mul(out, L1)), g.a, g.b);
       if (cc.d >= min) continue;
       const arm = sub(cc.c1, root);
@@ -422,10 +422,27 @@ export function segSegDist(p1, q1, p2, q2) {
 
 /** How far the solved limb is inside anything it should not be, in metres
  *  summed over every offending pair. Zero means clear. */
+// How much of a limb's own thickness may sink into the body before it counts
+// as penetrating. NOT 1.
+//
+// Requiring capsules to be fully separated means the upper arm must stay
+// (torsoRadius + armRadius) from the SPINE AXIS — measured at 14-22cm on the
+// shipped rigs, which is further than the body is wide. An arm hanging
+// naturally against the side is then "penetrating" and gets pushed off, and
+// anything that needs contact (a hand on your own hip) cannot be reached:
+// measured, the guards alone cost 80-190mm of reach on hip_l, and 228 -> 41mm
+// on msaligned. Real arms rest against real bodies.
+//
+// The artefact worth preventing is the limb passing THROUGH the body — its
+// centreline crossing the interior. Its own radius overlapping the surface is
+// contact, which is what touching IS. So most of the limb's radius is allowed
+// to sink in, and the centreline is what must stay outside.
+const CONTACT = 0.25;
+
 export function penetration(root, elbow, hand, rUpper, rLower, guards) {
   let pen = 0;
   for (const g of guards) {
-    const min1 = g.r + rUpper, min2 = g.r + rLower;
+    const min1 = g.r + rUpper * CONTACT, min2 = g.r + rLower * CONTACT;
     const d1 = segSegDist(root, elbow, g.a, g.b);
     if (d1 < min1) pen += min1 - d1;
     const d2 = segSegDist(elbow, hand, g.a, g.b);
@@ -469,7 +486,7 @@ export function solveTwoBoneClear(o, guards) {
   // exist to stop the arm passing through the body on the WAY, not to forbid
   // arriving. Filtered once and handed down, so the upper-bone projection
   // inside solveTwoBone works from the same set.
-  guards = (guards ?? []).filter((g) => segSegDist(o.target, o.target, g.a, g.b) >= g.r + rL);
+  guards = (guards ?? []).filter((g) => segSegDist(o.target, o.target, g.a, g.b) >= g.r + rL * CONTACT);
   o = { ...o, guards };
 
   const base = solveTwoBone(o);
