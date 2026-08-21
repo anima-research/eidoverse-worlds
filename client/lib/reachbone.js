@@ -144,7 +144,8 @@ export function solveChain(chain, avatar, targetWorld, poleHint = null) {
     coneAxis: qRot(qParent, chain.coneAxis),
     inward: qRot(qParent, chain.inward),
     limits: { coneHalf: chain.lim.coneHalf, coneAcross: chain.lim.coneAcross,
-              behind: chain.lim.behind, maxFlex: chain.lim.maxFlex },
+              behind: chain.lim.behind, maxFlex: chain.lim.maxFlex,
+              hingeDir: chain.lim.hingeDir },
   }, guards);
   if (!res.ok) return { ok: false, why: res.why };
 
