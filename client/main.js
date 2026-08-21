@@ -640,6 +640,10 @@ globalThis.EW = {
   // code produced its numbers. A stale tab is otherwise indistinguishable from
   // a real disagreement about what the arm is doing.
   reachVersion: 'reach-6 contact-allowance 2026-08-20',
+  // Which body is being worn — vrm.scene.name is often blank, and "which rig"
+  // is the first question when one person's arm does something another's does
+  // not.
+  get avatarPath() { try { return getMyAvatarPath() || '(unknown)'; } catch { return '(unknown)'; } },
   reachAudit: (who, standoff = 0.02) => {
     // Landmarks come from the body being TOUCHED; the chains doing the
     // reaching are always mine. Using one avatar for both asks "can that body
