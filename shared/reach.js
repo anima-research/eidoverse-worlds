@@ -212,6 +212,16 @@ export function solveTwoBone(o) {
     const rU = o.rUpper ?? 0;
     let out = v, moved = false;
     for (const g of o.guards) {
+      // The UPPER bone only, deliberately. Rotating the shoulder is the sole
+      // lever here, and using it to resolve a FOREARM collision swings the
+      // whole arm away rather than tucking the forearm: measured on orion,
+      // reaching the opposite hip went from a 75mm gap to 512mm with the arm
+      // beside the head. The forearm crossing in front of the belly is a real
+      // pose that a spine-centred CAPSULE cannot represent — it is isotropic,
+      // so a half-width becomes a half-depth and "in front of" reads as
+      // "inside". Shrinking the column did not rescue it either. The forearm
+      // therefore stays the swivel's business, and the honest fix is a torso
+      // shape with a front to it.
       const min = g.r + rU * CONTACT;
       const cc = segSegClosest(root, add(root, mul(out, L1)), g.a, g.b);
       if (cc.d >= min) continue;
@@ -221,14 +231,14 @@ export function solveTwoBone(o) {
       const n = norm(sub(cc.c1, cc.c2));
       if (!n) continue;                       // dead centre: no direction to push
       const ax = norm(cross(arm, n));
-      if (!ax) continue;                      // already pushing straight along the bone
-      // small-angle: the arc a point at armLen travels is armLen * theta
+      if (!ax) continue;                      // already pushing along the bone
       const theta = Math.min(0.6, (min - cc.d) / armLen);
       out = norm(rotateAbout(out, ax, theta)) ?? out;
       moved = true;
     }
     return { v: out, moved };
   };
+
 
   if ((o.coneAxis && lim.coneHalf != null) || (o.fwd && lim.behind != null) || o.guards?.length) {
     const minFwd = lim.behind != null ? -Math.sin(lim.behind) : null;
@@ -466,6 +476,38 @@ export function penetration(root, elbow, hand, rUpper, rLower, guards) {
   return pen;
 }
 
+/**
+ * Cut the part of a guard that lies within `R` of the target, keeping the rest.
+ *
+ * You cannot touch a hip without putting your hand inside the hip's own
+ * capsule, so something has to give near the target. DROPPING the whole guard
+ * was the first answer and it is far too coarse: the torso is one long capsule
+ * from hips to chest, a hand reaching the HIP is within R of its lower end, and
+ * the entire column would vanish — after which the forearm passed straight
+ * through the chest with the solver reporting zero penetration, because by then
+ * there was nothing left to report. Measured on orion: forearm 3mm from the
+ * spine where 162mm was required, and a clean bill of health.
+ *
+ * Clipping keeps every part of the body that is not where the hand is going.
+ * The excluded span is one contiguous interval (a segment through a sphere),
+ * so the remainder is at most two pieces.
+ */
+export function clipGuardNear(g, target, R) {
+  const d = sub(g.b, g.a), m = sub(g.a, target);
+  const A = dot(d, d);
+  if (A < 1e-12) return segSegDist(target, target, g.a, g.b) < R ? [] : [g];
+  const B = 2 * dot(m, d), C = dot(m, m) - R * R;
+  const disc = B * B - 4 * A * C;
+  if (disc <= 0) return [g];                       // never within R: keep whole
+  const rt = Math.sqrt(disc);
+  const s0 = (-B - rt) / (2 * A), s1 = (-B + rt) / (2 * A);
+  const lo = clamp(s0, 0, 1), hi = clamp(s1, 0, 1);
+  const out = [];
+  if (lo > 1e-3) out.push({ ...g, b: add(g.a, mul(d, lo)) });
+  if (hi < 1 - 1e-3) out.push({ ...g, a: add(g.a, mul(d, hi)) });
+  return out;
+}
+
 const SWIVELS = (() => {
   // ordered by |angle|, so the FIRST clear one is the least departure from the
   // pose the pole hint asked for. Deterministic — every client sweeps the same
@@ -501,7 +543,7 @@ export function solveTwoBoneClear(o, guards) {
   // exist to stop the arm passing through the body on the WAY, not to forbid
   // arriving. Filtered once and handed down, so the upper-bone projection
   // inside solveTwoBone works from the same set.
-  guards = (guards ?? []).filter((g) => segSegDist(o.target, o.target, g.a, g.b) >= g.r + rL * CONTACT);
+  guards = (guards ?? []).flatMap((g) => clipGuardNear(g, o.target, g.r + rL * CONTACT));
   o = { ...o, guards };
 
   const base = solveTwoBone(o);

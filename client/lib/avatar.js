@@ -265,6 +265,8 @@ const _rq2 = new THREE.Quaternion();
 const _rq3 = new THREE.Quaternion();
 const _rv = new THREE.Vector3();
 const _rv2 = new THREE.Vector3();
+const _rv3 = new THREE.Vector3();
+const _rv4 = new THREE.Vector3();
 const _Y2 = new THREE.Vector3(0, 1, 0);
 const _Z2 = new THREE.Vector3(0, 0, 1);
 const _gq = new THREE.Quaternion();        // gaze scratch — hot path, no allocs
@@ -926,7 +928,7 @@ export class Avatar {
    *  a hand did NOT get there (out of range, or stopped by a joint). */
   reachStatus() {
     const out = {};
-    for (const [k, r] of this._reach ?? []) out[k] = { weight: r.weight, gap: r.gap ?? null, bound: r.bound };
+    for (const [k, r] of this._reach ?? []) out[k] = { weight: r.weight, gap: r.gap ?? null, bound: r.bound, penetration: r.penetration ?? null, solved: r.solved ?? null };
     return out;
   }
 
@@ -950,7 +952,11 @@ export class Avatar {
 
       const out = solveChain(ch, this, tw, r.lastElbow);
       if (!out.ok) { r.bound = [out.why]; continue; }
-      r.bound = out.res.bound; r.gap = out.res.gap; r.lastElbow = out.elbowOffset;
+      r.bound = out.res.bound; r.gap = out.res.gap; r.penetration = out.penetration ?? 0; r.lastElbow = out.elbowOffset;
+      // what the solver BELIEVES it placed, in world space, so a probe can
+      // compare it against where the bones actually ended up
+      r.solved = { elbow: this.root.localToWorld(_rv3.set(...out.res.elbow)).toArray(),
+                   hand: this.root.localToWorld(_rv4.set(...out.res.hand)).toArray() };
       const q = { upper: out.upper, lower: out.lower };
       r._nu = ch.nodes.upper; r._nl = ch.nodes.lower;
       this._writeBone(ch.nodes.upper, q.upper, r.weight);
