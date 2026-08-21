@@ -349,6 +349,57 @@ function parseGlb(bytes: Uint8Array): GlbParts {
   return { json, bin: binChunks[0]?.data ?? new Uint8Array(0), total };
 }
 
+// ---- output validation ------------------------------------------------------
+// The write below is already careful about TRUNCATION (tmp+rename: "a killed
+// pass must never leave a truncated GLB where the server will trustingly serve
+// it"). A whole GLB can still arrive intact and carry image bytes that are not
+// images: `textureCompress` runs ndarray-pixels' vendored sharp alongside ours,
+// and two libvips copies in one process can corrupt each other's state (the
+// hazard documented at ktx2CompressTextures). When that happens the encoder
+// returns a buffer, gltf-transform stamps `image/webp` on it, draco packs it,
+// and the file ships. Nothing downstream looks, because every consumer trusts
+// the mimeType — so the failure surfaces as one asset rendering untextured
+// white, days later, in someone's screenshot (#122).
+//
+// The rule: an optimizer may give up, but it may not emit bytes it has not
+// checked. The VRM arm already validates its own output and throws rather than
+// return anything questionable; this is the same doctrine for the other arms,
+// at the one place where a lie is cheap to detect — the first four bytes.
+
+const IMAGE_MAGIC: { mime: string; test: (b: Uint8Array) => boolean }[] = [
+  { mime: "image/png", test: (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
+  { mime: "image/jpeg", test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  { mime: "image/webp", test: (b) => b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
+    && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50 },
+  { mime: "image/ktx2", test: (b) => KTX2_ID.every((v, i) => b[i] === v) },
+];
+
+export type ImageLie = { index: number; name: string; declared: string; actual: string; head: string };
+
+/** Every embedded image's DECLARED mimeType against what its bytes actually
+ *  are. Images referenced by URI are somebody else's file and are left alone;
+ *  an image with no recognizable magic reports "unrecognized", which is the
+ *  case that matters — corruption does not usually land on another format. */
+export function findImageLies(bytes: Uint8Array): ImageLie[] {
+  const { json, bin } = parseGlb(bytes);
+  const out: ImageLie[] = [];
+  const images: any[] = json.images ?? [];
+  for (let i = 0; i < images.length; i++) {
+    const im = images[i];
+    if (im.bufferView == null) continue;              // external URI — not ours to vouch for
+    const bv = json.bufferViews?.[im.bufferView];
+    if (!bv) continue;
+    const b = bin.subarray(bv.byteOffset ?? 0, (bv.byteOffset ?? 0) + (bv.byteLength ?? 0));
+    const actual = IMAGE_MAGIC.find((m) => m.test(b))?.mime ?? "unrecognized";
+    if (actual === im.mimeType) continue;
+    out.push({
+      index: i, name: im.name ?? "", declared: im.mimeType ?? "(none)", actual,
+      head: [...b.subarray(0, 12)].map((x) => x.toString(16).padStart(2, "0")).join(" "),
+    });
+  }
+  return out;
+}
+
 /** Slot classification from the JSON alone — the three vocabularies a VRM can
  *  speak, folded onto IMAGES (encoding is per image; textures sharing one
  *  image accumulate their marks onto it):
@@ -820,6 +871,22 @@ if (import.meta.main) {
     if (out.length >= src.length * (ktx2Mode ? 1.25 : 0.95)) {
       console.error(`[optimize] not smaller (${src.length} -> ${out.length}, ${ms}ms) — keeping original`);
       process.exit(2);
+    }
+    // …and the same care about CONTENT: a GLB whose images are not images is
+    // worse than no variant, because it serves confidently (#122). --ktx2-img
+    // emits a bare KTX2 file rather than a container, so it has nothing to walk.
+    if (mode !== "--ktx2-img") {
+      const lies = findImageLies(out);
+      if (lies.length) {
+        for (const l of lies) {
+          console.error(`[optimize] image[${l.index}]${l.name ? ` "${l.name}"` : ""} declares ${l.declared} `
+            + `but the bytes are ${l.actual} — head: ${l.head}`);
+        }
+        console.error(`[optimize] REFUSED ${basename(inPath)}: ${lies.length} image(s) failed the container `
+          + `check — keeping the original. The SOURCE is fine; this is the pass corrupting its own output `
+          + `(see the two-libvips note at ktx2CompressTextures), so it is worth retrying, not marking failed.`);
+        process.exit(4);
+      }
     }
     // tmp+rename: a killed pass must never leave a truncated GLB where the
     // server will trustingly serve it
