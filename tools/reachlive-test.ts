@@ -286,5 +286,126 @@ console.log("\nself-touch does not hunt");
   check("...and it actually ran on every rig", tested >= 14, `${tested}`);
 }
 
+console.log("\nthe elbow does not sweep as the body turns");
+{
+  // antra: "depending on where the camera is (and where the head is looking)
+  // the elbow either looks fine or slowly inverts into an unnatural position."
+  //
+  // The camera has nothing to do with the arm — but turning it turns the BODY,
+  // which turns the chest, which turns the pole that picks the bend plane. As
+  // the pole approached parallel with the reach direction its useful component
+  // vanished, and normalizing a vanishing vector amplifies whatever is left:
+  // the elbow swings around the arm. Slowly, because the body turns slowly.
+  //
+  // Stated without reference to cameras: with the target held in BODY space,
+  // yawing the body must move the elbow smoothly in body space. A sweep shows
+  // up as one step far outside the run of its neighbours.
+  let spike = 0, spikeRig = '', tested = 0;
+  for (const rig of good) {
+    const av = makeAvatar(rig.P, { realParent: rig.realParent });
+    const chain: any = measureChain(av, "rightHand");
+    if (!chain) continue;
+    const steps: number[] = [];
+    let prev: THREE.Vector3 | null = null;
+    for (let yi = 0; yi <= 360; yi += 2) {
+      av.root.rotation.y = yi * Math.PI / 180;
+      av.root.updateMatrixWorld(true);
+      const q = av.root.getWorldQuaternion(new THREE.Quaternion());
+      const sh = chain.nodes.upper.getWorldPosition(new THREE.Vector3());
+      // The target sweeps a cone AROUND the arm's own rest direction, so the
+      // reach direction passes straight through it. That is the degenerate
+      // case: the pole is the rest direction, and where it is parallel to the
+      // aim its perpendicular component vanishes. Aiming somewhere merely
+      // convenient never gets near it — the first version of this test swept a
+      // forward-across target, never came within 60° of the singularity, and
+      // passed identically with the fix removed.
+      const restW = new THREE.Vector3(...chain.dRestU).applyQuaternion(q).normalize();
+      const side = new THREE.Vector3(0, 1, 0).cross(restW).normalize();
+      const up2 = restW.clone().cross(side).normalize();
+      const a2 = yi * Math.PI / 180;
+      const dir = restW.clone()
+        .addScaledVector(side, Math.cos(a2) * 0.08)
+        .addScaledVector(up2, Math.sin(a2) * 0.08)
+        .normalize();
+      const t = sh.clone().addScaledVector(dir, (chain.L1 + chain.L2) * 0.62).toArray();
+      const out: any = step(chain, av, t, null);
+      if (!out.ok) continue;
+      // elbow in BODY space, so the body's own rotation is factored out
+      const eb = chain.nodes.lower.getWorldPosition(new THREE.Vector3())
+        .sub(sh).applyQuaternion(q.clone().invert());
+      if (prev) steps.push(eb.distanceTo(prev));
+      prev = eb;
+    }
+    if (steps.length < 60) continue;
+    tested++;
+    steps.sort((a, b) => a - b);
+    const p99 = steps[Math.floor(steps.length * 0.99)] || 1e-9;
+    const mx = steps[steps.length - 1];
+    if (mx / p99 > spike) { spike = mx / p99; spikeRig = rig.name; }
+  }
+  check(`yawing the body moves the elbow smoothly (${tested} rigs, worst max/p99 ${spike.toFixed(2)}x on ${spikeRig})`,
+    spike < 3);
+  check("...and the sweep actually ran", tested >= 14, `${tested}`);
+}
+
+console.log("\nelbows bend the way elbows bend (where that is knowable)");
+{
+  // The chord proxy is only valid for an un-adducted arm — reach across your
+  // chest and the elbow legitimately sits in front of the chord. So this
+  // measures exactly the population the solver claims to police, and no more.
+  let inverted = 0, checked = 0, skipped = 0;
+  for (const rig of good) {
+    const av = makeAvatar(rig.P, { realParent: rig.realParent });
+    const chain: any = measureChain(av, "rightHand");
+    if (!chain) continue;
+    for (let yi = 0; yi < 8; yi++) {
+      av.root.rotation.y = (yi / 8) * Math.PI * 2;
+      av.root.updateMatrixWorld(true);
+      const q = av.root.getWorldQuaternion(new THREE.Quaternion());
+      const fwd = new THREE.Vector3(...chain.fwd).applyQuaternion(q);
+      const inward = new THREE.Vector3(...chain.inward).applyQuaternion(q);
+      const sh = chain.nodes.upper.getWorldPosition(new THREE.Vector3());
+      const R = chain.L1 + chain.L2;
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        const dir = new THREE.Vector3(Math.cos(a), Math.sin(a) * 0.6, 0.5)
+          .applyQuaternion(q).normalize();
+        if (dir.dot(inward) >= 0.3) { skipped++; continue; }   // adducted: proxy invalid
+        const t = sh.clone().addScaledVector(dir, R * 0.6).toArray();
+        const out: any = step(chain, av, t, null);
+        if (!out.ok) continue;
+        checked++;
+        const elbow = chain.nodes.lower.getWorldPosition(new THREE.Vector3());
+        const chord = handAt(chain).sub(sh);
+        if (chord.lengthSq() < 1e-8) continue;
+        chord.normalize();
+        const e = elbow.clone().sub(sh);
+        const perp = e.clone().addScaledVector(chord, -e.dot(chord));
+        if (perp.length() < 1e-4) continue;                    // straight: no bend
+        if (perp.dot(fwd) > 1e-4) inverted++;
+      }
+    }
+  }
+  // ⚠ A RATCHET, NOT A PASS. 440 of 1296 elbows currently bend backwards where
+  // the rule is measurable, and that is almost certainly the artefact antra
+  // reported ("the elbow slowly inverts into an unnatural position"). It is
+  // not fixed: every fix tried costs more than it buys.
+  //
+  //   - scoring the wrong side as a flat penalty in the swivel search: 0
+  //     inversions, but the winning swivel then HOPS between 10° steps as the
+  //     body turns and the elbow snaps across at 14x the normal frame step —
+  //     the same artefact by another route.
+  //   - making that cost a continuous ramp instead of a step: identical 14x.
+  //     The cost being smooth does not help, because the SEARCH is discrete;
+  //     the argmin over 10° samples jumps whenever two candidates swap rank.
+  //
+  // The real fix is to solve the swivel continuously — refine around the best
+  // sample rather than return one of them — so the output moves as smoothly as
+  // the objective does. Until then this guards against getting WORSE.
+  check(`inverted elbows do not increase (${inverted}/${checked}, ${skipped} adducted and skipped)`,
+    inverted <= 440);
+  check("...and the sweep actually ran", checked > 500, `${checked}`);
+}
+
 console.log(failures ? `\n\x1b[31m${failures} failed\x1b[0m\n` : "\n\x1b[32mall passed\x1b[0m\n");
 process.exit(failures ? 1 : 0);
