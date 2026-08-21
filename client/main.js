@@ -636,6 +636,10 @@ globalThis.EW = {
   // per (point, hand) against the real derived landmarks — no frames needed,
   // because the solve is a pure function of pose and target. Answers the
   // question a demo cannot: not "does reaching work" but "what is in range".
+  // Bumped whenever the reach solver changes, so a diagnostic can prove which
+  // code produced its numbers. A stale tab is otherwise indistinguishable from
+  // a real disagreement about what the arm is doing.
+  reachVersion: 'reach-6 contact-allowance 2026-08-20',
   reachAudit: (who, standoff = 0.02) => {
     // Landmarks come from the body being TOUCHED; the chains doing the
     // reaching are always mine. Using one avatar for both asks "can that body
