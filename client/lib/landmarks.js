@@ -33,6 +33,13 @@ const _q = new THREE.Quaternion();
 const _m = new THREE.Matrix3();
 const _ray = new THREE.Raycaster();
 
+/** Every drawable with geometry under a scene. */
+function meshesOf(scene) {
+  const out = [];
+  scene.traverse((o) => { if ((o.isMesh || o.isSkinnedMesh) && o.geometry) out.push(o); });
+  return out;
+}
+
 /**
  * Derive every contact point for one avatar. Call once per body.
  * @returns {Map<string, {bone: string, node: object, offset: THREE.Vector3,
@@ -65,6 +72,22 @@ export function deriveLandmarks(avatar) {
 
   const out = new Map();
   try {
+    // ⚠ AND the skinning has to be recomputed, or the rays are cast at one
+    // pose and hit another.
+    //
+    // three only refreshes Skeleton.boneMatrices at DRAW time. Posing the rig
+    // and calling updateMatrixWorld moves the bones but leaves those matrices
+    // describing the last RENDERED pose — so a cast aimed at a rest-pose bone
+    // meets a mesh still skinned to the idle pose. Deriving from the console
+    // (after a render) hides it; deriving inside a frame, which is what the
+    // first contactAt() in a reach does, does not.
+    //
+    // On claude the idle and rest poses are close enough that the answers
+    // agreed and this looked fine for a day. On orion they are not: hip_l came
+    // out ABOVE the shoulder, the reach dutifully raised the arm to it, and
+    // the landmark table dumped afterwards from the console read perfectly
+    // correct — the two derivations disagreeing was the whole bug.
+    for (const o of meshesOf(scene)) o.skeleton?.update?.();
     const P = {};
     for (const name of Object.keys(h.humanBones ?? {})) {
       const n = h.getNormalizedBoneNode(name);
@@ -73,8 +96,7 @@ export function deriveLandmarks(avatar) {
     const F = bodyFrame(P);
     if (!F) return out;
 
-    const meshes = [];
-    scene.traverse((o) => { if ((o.isMesh || o.isSkinnedMesh) && o.geometry) meshes.push(o); });
+    const meshes = meshesOf(scene);
     if (!meshes.length) return out;
 
     // A body's own size sets both how far to stand back and how far a
@@ -131,6 +153,7 @@ export function deriveLandmarks(avatar) {
     for (const [n, q] of saved) n.quaternion.copy(q);
     h.update();
     avatar.root.updateMatrixWorld(true);
+    for (const o of meshesOf(scene)) o.skeleton?.update?.();
   }
   return out;
 }

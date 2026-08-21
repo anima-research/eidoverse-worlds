@@ -341,28 +341,43 @@ export const qRot = (q, v) => {
  * @returns {{upper: number[], lower: number[]}} local quaternions, ready to
  *          write onto the normalized bone nodes.
  */
-export function chainLocalQuats(dRestUpper, dRestLower, dWantUpper, dWantLower, qParent = null) {
-  // The rest directions are measured in the frame where the rest pose has
-  // identity rotations (the avatar root's). But the bone's PARENT is not at
-  // rest while anything is playing — the locomotion clip rotates the chest
-  // every frame — so the arm's rest direction right now is the measured one
-  // carried by the parent's current rotation. Ignoring that is a reach that
-  // drifts with the walk cycle: correct in T-pose, wrong the moment the torso
-  // turns. qParent = null is the rest case, and the identity of this formula.
-  const restU = qParent ? qRot(qParent, dRestUpper) : dRestUpper;
-  const QU = qParent ? qMulq(qFromUnitVectors(restU, dWantUpper), qParent)
-                     : qFromUnitVectors(restU, dWantUpper);
-  // ...and the lower bone's rest direction is carried by the upper bone's NEW
-  // orientation, not by the parent's — it hangs off the bone we just moved.
-  const restL = qRot(QU, dRestLower);
-  const QL = qMulq(qFromUnitVectors(restL, dWantLower), QU);
+export function chainLocalQuats(dRestUpper, dRestLower, dWantUpper, dWantLower, rest = null) {
+  // `rest` carries what the rig actually IS at rest, in the avatar root's
+  // frame: qU/qL the two bones' rest orientations, qP the parent's. Passing
+  // null keeps the old assumption — that rest is identity in root space —
+  // which is true on many rigs and false on any Mixamo-derived one, where the
+  // whole normalized hierarchy sits 180° from the root. Under that assumption
+  // every rest direction is carried by an extra half-turn and the arm reaches
+  // the mirror image of where it was sent: orion put its hand 0.35m ABOVE the
+  // shoulder for a target 0.38m below it, while the solver's own arithmetic
+  // reported a 34mm gap, because the maths was right and the frame was not.
+  const qP0 = rest?.qP ?? [0, 0, 0, 1];
+  const qU0 = rest?.qU ?? [0, 0, 0, 1];
+  const qL0 = rest?.qL ?? [0, 0, 0, 1];
+  const qPnow = rest?.qPnow ?? qP0;
+
+  // how far the parent has turned since rest — the only thing that carries a
+  // rest-frame direction into the current pose
+  const dP = qMulq(qPnow, qConj(qP0));
+
+  // upper: rest direction carried by the parent, then swung onto the target
+  const restU = qRot(dP, dRestUpper);
+  const U = qMulq(qFromUnitVectors(restU, dWantUpper), qMulq(dP, qU0));
+
+  // lower: hangs off the upper, so its rest is carried by the upper's OWN
+  // change since rest, not by the parent's
+  const dU = qMulq(U, qConj(qU0));
+  const restL = qRot(dU, dRestLower);
+  const V = qMulq(qFromUnitVectors(restL, dWantLower), qMulq(dU, qL0));
+
   return {
-    upper: qParent ? qMulq(qConj(qParent), QU) : QU,
-    lower: qMulq(qConj(QU), QL),
-    upperFrame: QU,   // the bone's orientation in the measurement frame
-    lowerFrame: QL,
+    upper: qMulq(qConj(qPnow), U),
+    lower: qMulq(qConj(U), V),
+    upperFrame: U,
+    lowerFrame: V,
   };
 }
+
 
 // ---- not through your own body ---------------------------------------------
 //

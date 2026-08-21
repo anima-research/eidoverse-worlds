@@ -27,6 +27,30 @@ const dirLen = (u, v) => {
   return { l, u: l > 1e-9 ? [w[0] / l, w[1] / l, w[2] / l] : [1, 0, 0] };
 };
 
+/** Each chain bone's orientation, and its parent's, in the avatar root's frame
+ *  with the rig held at rest. Measured the same way restBonePositions does:
+ *  identity every humanoid rotation, look, put it all back. */
+function restOrientations(avatar, nodes) {
+  const h = avatar?.vrm?.humanoid;
+  if (!h) return null;
+  const saved = [];
+  for (const name of Object.keys(h.humanBones ?? {})) {
+    const n = h.getNormalizedBoneNode(name);
+    if (n) { saved.push([n, n.quaternion.clone()]); n.quaternion.identity(); }
+  }
+  avatar.root.updateMatrixWorld(true);
+  const inv = avatar.root.getWorldQuaternion(_q).clone().invert();
+  const rel = (node) => node.getWorldQuaternion(_q2).premultiply(inv).toArray();
+  const out = {
+    qU: rel(nodes.upper),
+    qL: rel(nodes.lower),
+    qP: rel(nodes.upper.parent),
+  };
+  for (const [n, q] of saved) n.quaternion.copy(q);
+  avatar.root.updateMatrixWorld(true);
+  return out;
+}
+
 /**
  * The fixed facts about one chain, measured once, in the avatar ROOT's local
  * frame — the frame in which the rest pose has identity rotations, which is
@@ -52,8 +76,14 @@ export function measureChain(avatar, key) {
   // if some rig ever says otherwise.
   if (nodes.lower.parent !== nodes.upper) return null;
 
+  // The bones' REST ORIENTATIONS in the root's frame, not just their rest
+  // positions. Assuming rest is identity here is true on many rigs and false
+  // on any Mixamo-derived one (orion's normalized hierarchy sits 180° from
+  // the root), and the failure is silent: the solver's own arithmetic stays
+  // self-consistent while the actual arm reaches the mirror image.
+  const restQ = restOrientations(avatar, nodes);
   const restW = avatar.restBonePositions();
-  if (!restW) return null;
+  if (!restW || !restQ) return null;
   const P = {};
   for (const [n, v] of Object.entries(restW)) P[n] = avatar.root.worldToLocal(v.clone()).toArray();
   const F = bodyFrame(P);
@@ -90,7 +120,7 @@ export function measureChain(avatar, key) {
 
   return {
     key, spec, nodes, L1: up.l, L2: lo.l, dRestU: up.u, dRestL: lo.u, lim,
-    fwd: F.f, rUpper, rLower, guards,
+    fwd: F.f, rUpper, rLower, guards, restQ,
     // toward the body's midline from THIS shoulder: the rest direction points
     // laterally outward, so the midline is the other way along the body's
     // lateral axis
@@ -119,7 +149,11 @@ export function solveChain(chain, avatar, targetWorld, poleHint = null) {
   const qRootInv = qConj(root.getWorldQuaternion(_q).toArray());
   const target = root.worldToLocal(_v.set(targetWorld[0], targetWorld[1], targetWorld[2])).toArray();
   const shoulder = root.worldToLocal(chain.nodes.upper.getWorldPosition(_v2)).toArray();
-  const qParent = qMulq(qRootInv, chain.nodes.upper.parent.getWorldQuaternion(_q2).toArray());
+  const qParentNow = qMulq(qRootInv, chain.nodes.upper.parent.getWorldQuaternion(_q2).toArray());
+  // Everything measured at rest is carried into the current pose by how far
+  // the parent has TURNED since rest — not by the parent's absolute
+  // orientation, which is only the same thing when rest happens to be identity.
+  const qParent = qMulq(qParentNow, qConj(chain.restQ.qP));
 
   // guards, live and in the same frame the solve happens in — the torso moves
   const guards = [];
@@ -149,7 +183,8 @@ export function solveChain(chain, avatar, targetWorld, poleHint = null) {
   }, guards);
   if (!res.ok) return { ok: false, why: res.why };
 
-  const q = chainLocalQuats(chain.dRestU, chain.dRestL, res.upper, res.lower, qParent);
+  const q = chainLocalQuats(chain.dRestU, chain.dRestL, res.upper, res.lower,
+    { ...chain.restQ, qPnow: qParentNow });
   return {
     ok: true, res, upper: q.upper, lower: q.lower,
     swivel: res.swivel ?? 0, penetration: res.penetration ?? 0,

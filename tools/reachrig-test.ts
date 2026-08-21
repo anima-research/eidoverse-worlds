@@ -205,7 +205,13 @@ console.log("\nwith the torso turned (the walking case)");
         limits: { coneHalf: lim.coneHalf, behind: lim.behind, maxFlex: lim.maxFlex },
       });
       if (!r.ok) continue;
-      const q: any = chainLocalQuats(dRestU, dRestL, r.upper, r.lower, qParent);
+      // makeAvatar builds its bones with identity rotations, so rest IS
+      // identity here and only the parent has moved. On a real rig the rest
+      // orientations are whatever the VRM says — orion's normalized hierarchy
+      // sits 180° from the root — which is why this argument became a record
+      // rather than a bare quaternion.
+      const q: any = chainLocalQuats(dRestU, dRestL, r.upper, r.lower,
+        { qP: [0, 0, 0, 1], qU: [0, 0, 0, 1], qL: [0, 0, 0, 1], qPnow: qParent });
 
       // rebuild the bone orientations the way a scene graph would: parent ∘ local
       const upperFrame = qMulq(qParent, q.upper);
