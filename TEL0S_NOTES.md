@@ -390,6 +390,21 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-21 — §24: the rimward pivot (opened).** Team consensus: the
+  engine has outgrown a three.js webpage — port to another engine and
+  rework the systems to be "more Rimworld-y" (modular, data-driven,
+  extensible). Grass optimization paused. Branch `overhaul/rimward`
+  opened; `docs/overhaul-charter.md` drafted (11fa681) — nothing locked.
+  Thesis on the table: split an engine-agnostic sim core (fixed tick,
+  defs, the append-only log promoted to event spine) from a swappable
+  presentation layer, so the port becomes a *client* port and the
+  log-replay invariant lives where no engine can break it. Draft engine
+  lean: Godot 4, Bevy runner-up; the deciding ⚑ is whether browser
+  delivery is still a requirement. Other ⚑s: braid policy with Skye
+  (a people question first), sim-core language (draft: stays TS/Deno
+  through phase 2), strangler migration with the old client alive to
+  parity. Charter awaiting team ratification.
+
 - **2026-08-15 — §23: the lines braid — upstream merge + sunflower.**
   Skye merged tel0s/main d9925d9 into the upstream line (462efec, with
   her own merge fixups) — the §22 grass arc now ships upstream via the
