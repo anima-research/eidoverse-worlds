@@ -1,7 +1,8 @@
 # Eidoverse Overhaul Charter — DRAFT
 
-Branch: `overhaul/rimward`. Status: **draft for discussion** — nothing below is
-locked until the team ratifies it. Decision points are marked ⚑.
+Branch: `overhaul/rimward`. Status: **ratified 2026-08-21** on the four
+founding ⚑s (braid policy, web delivery, engine, sim-core language) — see
+resolutions inline, marked ✅. Remaining open points stay marked ⚑.
 
 ## 1. Why
 
@@ -31,12 +32,12 @@ Team consensus: port to another engine, and rework the systems to be
    Any engine choice must keep the world fully drivable through a wire
    protocol — no logic locked inside a scene graph.
 4. **Content.** Worlds, assets, species/flora definitions, avatars carry over.
-5. ⚑ **The braid with eidoverse-video.** Skye's line and ours currently share
-   an engine. A port ends that sharing at the engine layer unless upstream
-   comes along. Decide early: does the overhaul happen inside the braid
-   (coordinated with Skye), beside it (new client, shared server/protocol), or
-   does it fork the destiny? This is a people question before it is a
-   technical one.
+5. ✅ **Braid policy (resolved 2026-08-21).** eidoverse-worlds is **our own
+   thing**; eidoverse-video becomes an **upstream asset library** — art,
+   models, fitted envelopes, species data flow downstream to us; engine code
+   no longer shared. The `upstream` remote stays fetch-only. The
+   upstream-patched override mechanism keeps the *legacy* client alive
+   unchanged while it remains the reference renderer (§6 phase 2).
 
 ## 3. "Rimworld-y", defined
 
@@ -80,10 +81,10 @@ The load-bearing move, more than the engine choice:
 - Consequence: the engine port becomes a **client port**, and the invariants
   in §2 live in the sim core where no engine migration can break them again.
 
-⚑ Open: does the sim core stay TypeScript on the Deno server (lowest-risk —
-it's a refactor of `server/`, not a rewrite), or move into the new engine's
-language? Draft position: **stays TS/Deno for phase 1–2**; revisit only if the
-tick can't hold rate at target world sizes.
+✅ Resolved 2026-08-21: **the sim core stays TypeScript on the Deno server
+for now** — phase 1 is a refactor of `server/`, not a rewrite. tel0s has
+ideas for a later ground-up sim-core redo; the §4 split is deliberately
+shaped so that redo swaps in behind the same protocol when it comes.
 
 ## 5. Engine candidates (presentation layer)
 
@@ -98,28 +99,44 @@ tick can't hold rate at target world sizes.
 | Small-team velocity | High | Medium (Rust ramp, pre-1.0 churn) | High but licensed | Low |
 | Risk | Web story; C# interop edges | API churn; no editor; hiring/onboarding | License terms drift; closed | The rewrite trap, in full |
 
-Draft recommendation: **Godot 4** — open source (matters for a research
-project and for anything we'd share back with Skye), an actual editor for an
-actual team, C# available where GDScript runs out, headless mode if we ever
-want sim-in-engine, and a mod story (PCK loading, GDExtension). **Bevy** is
-the honest runner-up: its ECS is the most Rimworld-y thing in existence, and
-if we keep the sim in TS anyway, the client being Rust matters less — but
-pre-1.0 churn plus no editor is a real tax on a small team.
+✅ Resolved 2026-08-21: **Godot 4 (current stable 4.6.x), web delivery
+required, native builds for local dev/testing on this branch.** Bevy is the
+named fallback if — and only if — the phase-0 web-export gate fails.
 
-⚑ The deciding constraint: **is browser delivery still a requirement?**
-"Outgrown a three.js webpage" suggests native builds are now acceptable. If
-web stays mandatory, the table tilts hard toward Bevy (or staying web-native);
-if native is fine, Godot wins on velocity. This one question does most of the
-choosing — answer it first.
+### 5.1 Godot web reality (verified 2026-08, Godot 4.6.3 stable)
+
+The constraints we are signing up for, so nobody is surprised in phase 2:
+
+- **Renderer: Compatibility only (WebGL 2).** Forward+/Mobile don't export
+  to web; WebGPU support is unimplemented. This is a *downgrade* from our
+  current three.js WebGPU client — the meadow currently leans on TBDR HSR
+  behavior we measured under WebGPU. Hence the phase-0 gate: the meadow at
+  60fps **in the web export**, not just the native editor build.
+- **No C# on web.** The .NET runtime doesn't run in the browser sandbox;
+  web C# export is roadmapped, not shipped. **Client scripting is GDScript.**
+- **Threads need COOP/COEP** (`Cross-Origin-Opener-Policy: same-origin`,
+  `Cross-Origin-Embedder-Policy: require-corp`) for SharedArrayBuffer. We
+  own the Deno server — adding the headers is a two-line change to
+  `routes.ts`. 4.3+ also offers a single-threaded export (no headers,
+  larger binary) as a fallback. ⚑ pick threaded-with-headers vs
+  single-threaded during phase 0, by measurement.
+- **Payload:** engine wasm ≈ 5MB brotli (~35-40MB raw). Our server already
+  gzips wasm (§23); add brotli for the engine payload.
+- ⚑ COEP `require-corp` constrains cross-origin asset fetches — audit how
+  eidoverse-video asset-library URLs are served before committing to the
+  threaded build.
 
 ## 6. Migration strategy: strangler, not big-bang
 
 Keep the current client alive and shipping until the new one earns its place.
 
-- **Phase 0 — spike (timeboxed).** One vertical slice per finalist engine:
-  connect to the *existing* Deno server, boot one real world log, walk an
-  avatar through the meadow, hold 60fps. No system rework, ugly code allowed.
-  The slice that feels best under the hands wins; measurements decide ties.
+- **Phase 0 — Godot spike (timeboxed).** One vertical slice: a Godot 4.6
+  client connects to the *existing* Deno server over the current WS verbs,
+  boots one real world log, walks an avatar through the meadow. Develop
+  native for speed, but the **exit gate runs in the web export**
+  (Compatibility renderer): meadow at 60fps, boot time sane, payload
+  measured. No system rework, ugly code allowed. If the web gate fails
+  after honest effort, Bevy gets the same timebox before we reconvene.
 - **Phase 1 — sim extraction.** Refactor `server/` toward the §4 shape:
   fixed tick, def registry, event bus over the log. Current three.js client
   keeps working throughout — this phase has no visible surface and is gated
@@ -153,16 +170,23 @@ not the shaders.
 
 - **The rewrite trap / second-system effect.** Mitigation: strangler phasing,
   vertical-slice gates, old client alive until phase 4, no-new-gameplay rule.
-- **Losing the braid.** Mitigation: decide §2.5 *with* Skye, early; keep the
-  server/protocol shared even if clients diverge.
-- **Engine-specific dead ends** (Godot web export, Bevy churn). Mitigation:
-  the §4 split keeps the blast radius to the presentation layer.
+- **Braid drift.** Resolved by policy (§2.5): video is an asset library,
+  not an engine peer. Residual risk is asset-format drift — mitigated by
+  keeping the vendor/override recipe until the legacy client retires.
+- **Godot web export dead ends** (WebGL2 perf, wasm payload, COEP vs
+  assets). Mitigation: the phase-0 gate runs in the web export, Bevy is
+  the named fallback, and the §4 split keeps the blast radius to the
+  presentation layer.
 - **Team bandwidth.** The rebuild taught us slices + gates beat ambition;
   the charter's phases are sized to be droppable at any boundary.
 
 ## 10. Immediately next
 
-1. Ratify or amend this charter (the ⚑ marks: braid policy, sim-core
-   language, web-vs-native, engine finalists).
-2. Answer web-vs-native — it collapses most of §5.
-3. Timebox phase-0 spikes for the finalists.
+1. ~~Ratify the founding ⚑s~~ — done 2026-08-21 (braid: worlds is ours,
+   video is an asset library; web required, native for dev; Godot 4;
+   sim stays TS with a later redo in tel0s's pocket).
+2. Phase-0 spike scaffold: `godot/` project on this branch, WS client
+   speaking the existing driver verbs, world-log boot.
+3. During the spike: measure threaded-vs-single-threaded web export;
+   audit COEP vs asset-library URLs; pick GDScript patterns for the
+   def-consuming client early (they set the tone for phase 3).
