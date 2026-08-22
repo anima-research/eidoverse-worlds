@@ -122,6 +122,20 @@ The constraints we are signing up for, so nobody is surprised in phase 2:
   single-threaded during phase 0, by measurement.
 - **Payload:** engine wasm ≈ 5MB brotli (~35-40MB raw). Our server already
   gzips wasm (§23); add brotli for the engine payload.
+- **The WebGPU fork** (dwalter/godotwebgpu, assessed 2026-08-21): a real,
+  MIT-licensed fork of 4.6.2 with a WebGPU RenderingDevice driver
+  (SPIR-V→WGSL via Tint), running the **Forward Mobile** path in-browser —
+  claims ~80% of native Vulkan/Metal fps and ~5× WebGL, zero GPU errors
+  across Chrome/Firefox/Safari. But: **one maintainer, public beta
+  2026-05-10, dormant since 2026-05-13**, 53 stars, no upstreaming
+  planned, pinned to 4.6.2 while official is at 4.7, threads=no baked in
+  (silver lining: no COOP/COEP), custom editor build + export template
+  required (Emscripten 4.0.10+). **Verdict: an experiment, not a
+  foundation.** The phase-0 gate stays on official Compatibility/WebGL2;
+  the fork gets a timeboxed side-benchmark of the same meadow slice. If
+  it delivers and the meadow needs it, adopt via our vendor/pin/rebase
+  discipline (§23 recipe culture) with eyes open about the bus factor —
+  or treat its existence as proof the door reopens later.
 - ⚑ COEP `require-corp` constrains cross-origin asset fetches — audit how
   eidoverse-video asset-library URLs are served before committing to the
   threaded build.
