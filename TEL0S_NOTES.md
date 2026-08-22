@@ -403,7 +403,16 @@ fixture/tool matrix.
   delivery is still a requirement. Other ⚑s: braid policy with Skye
   (a people question first), sim-core language (draft: stays TS/Deno
   through phase 2), strangler migration with the old client alive to
-  parity. Charter awaiting team ratification.
+  parity. RATIFIED same day (be7d784): worlds is our own thing,
+  eidoverse-video an upstream *asset library*; web delivery required
+  (native ok for on-branch dev); engine = Godot 4.6, Bevy fallback
+  only if the web gate fails; sim stays TS (tel0s holds ideas for a
+  later sim redo behind the same protocol). Godot web reality,
+  verified: Compatibility/WebGL2 only (no WebGPU — a renderer
+  downgrade from our three.js client, hence the gate), no C# on web
+  (GDScript it is), COOP/COEP for threads (we own the server),
+  ~5MB brotli engine wasm. Phase 0: one Godot spike against the
+  existing Deno server, exit gate runs in the web export.
 
 - **2026-08-15 — §23: the lines braid — upstream merge + sunflower.**
   Skye merged tel0s/main d9925d9 into the upstream line (462efec, with
