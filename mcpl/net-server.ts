@@ -40,7 +40,7 @@ import { WorldAgent } from "./agent.ts";
 import { rawShapeError } from "./shape.ts";
 import { MANIFEST_WITH_REVISION, ManifestAnnouncer } from "./manifest.ts";
 import { verifyToken } from "../server/aid1.ts";
-import { readTokenRegistry, type TokenAuth } from "./token-registry.ts";
+import { lookupToken, readTokenRegistry, type TokenAuth } from "./token-registry.ts";
 import sharp from "sharp";
 
 const PORT = Number(process.env.MCPL_PORT ?? 8941);
@@ -1245,7 +1245,8 @@ function refuseWithGuidance(ws: WebSocket, why: string) {
 const sessions = new Map<string, Session>(); // identity → live session (newest wins)
 wss.on("connection", (ws, req) => {
   const token = new URL(req.url ?? "/", "http://localhost").searchParams.get("token");
-  let auth = token ? readTokens()[token] : undefined;
+  const registry = readTokens();
+  let auth = token ? lookupToken(registry, token) : undefined;
   let aidReason: string | null = null;
   if (!auth && token?.startsWith("aid1.") && HN_ISSUER_KEY) {
     const v = verifyToken(token, { issuerId: HN_ISSUER_KEY, iss: HN_ISS, aud: HN_AUD, requireScopes: ["worlds:join"] });

@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { readTokenRegistry } from "../mcpl/token-registry.ts";
+import { lookupToken, readTokenRegistry } from "../mcpl/token-registry.ts";
 
 let passed = 0;
 const check = (condition: unknown, name: string) => {
@@ -26,6 +26,10 @@ try {
     "malformed-private": { name: "No ID" },
   }));
   const accepted = readTokenRegistry(live, example, log);
+  check(Object.getPrototypeOf(accepted) === null, "accepted registry has no prototype chain");
+  check(lookupToken(accepted, "__proto__") === undefined, "__proto__ cannot authenticate through prototype chain");
+  check(lookupToken(accepted, "constructor") === undefined, "constructor cannot authenticate through prototype chain");
+  check(lookupToken(accepted, "toString") === undefined, "toString cannot authenticate through prototype chain");
   check(!accepted["public-example"], "tracked example credential is rejected");
   check(accepted["private-random"]?.id === "resident", "private credential remains accepted");
   check(accepted["private-random"]?.name === "resident", "empty name falls back to id");
@@ -37,7 +41,7 @@ try {
   writeFileSync(example, "{");
   check(Object.keys(readTokenRegistry(live, example, log)).length === 0, "malformed example registry fails closed");
 
-  console.log(`${passed}/9 token-registry tests passed`);
+  console.log(`${passed}/13 token-registry tests passed`);
 } finally {
   rmSync(root, { recursive: true, force: true });
 }

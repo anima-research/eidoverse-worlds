@@ -47,7 +47,9 @@ export function readTokenRegistry(tokensPath: string, examplePath: string, log: 
     return {};
   }
 
-  const accepted: Record<string, TokenAuth> = {};
+  // Null-prototype map: an attacker-controlled token such as `__proto__` or
+  // `constructor` must never resolve through Object.prototype.
+  const accepted: Record<string, TokenAuth> = Object.create(null);
   for (const [token, candidate] of Object.entries(live)) {
     const digest = createHash("sha256").update(token).digest("hex").slice(0, 12);
     if (exampleKeys.has(token)) {
@@ -68,4 +70,8 @@ export function readTokenRegistry(tokensPath: string, examplePath: string, log: 
     };
   }
   return accepted;
+}
+/** Look up an attacker-controlled credential as an OWN registry key only. */
+export function lookupToken(registry: Record<string, TokenAuth>, token: string): TokenAuth | undefined {
+  return Object.hasOwn(registry, token) ? registry[token] : undefined;
 }
