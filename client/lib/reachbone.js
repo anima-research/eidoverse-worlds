@@ -259,7 +259,15 @@ export function solveChain(chain, avatar, targetWorld, poleHint = null, opts = {
     const op = orientPalm({
       lowerFrame: q.lowerFrame, dLower: res.lower, palmRest: chain.palmRest,
       qL0: chain.restQ.qL, qH0: chain.restQ.qH,
-      want: palmWant.dir, twistMax: chain.lim.foreTwistMax,
+      // ⚠ INTO THE ROOT'S FRAME. Everything else here — the bones' rest
+      // orientations, palmRest, the solved directions — lives in the avatar
+      // root's local frame, while a surface normal arrives from the world. The
+      // two agree exactly when the body's yaw is zero and drift apart as it
+      // turns, which is why this looked perfect in every measurement taken on
+      // a body facing down +Z and put the BACK of the hand on the hip as soon
+      // as anyone turned around. The position was being converted two lines
+      // up; the direction was not.
+      want: qRot(qRootInv, palmWant.dir), twistMax: chain.lim.foreTwistMax,
     });
     lower = qMulq(qConj(q.upperFrame), op.lowerFrame);
     hand = op.handLocal;

@@ -709,6 +709,33 @@ const EW = globalThis.EW = {
     const hit = e && landmarkWorld(e, standoff);
     return hit ? { pos: hit.pos.toArray(), normal: hit.normal.toArray() } : null;
   },
+  // Paint the side of the hand the code believes is the PALM: a green disc
+  // sitting just off the skin, following the bone. If it ends up against
+  // whatever is being touched, the orientation is right and you are simply
+  // seeing the back of a hand from outside — which is what you see when a palm
+  // is on a hip. If it points away, the palm axis is wrong on that rig and I
+  // want to know.
+  showPalm: (on = true, key = 'rightHand') => {
+    const me = getMe(); if (!me) return null;
+    const ch = me._chains?.get(key);
+    if (!ch) return 'reach something first, so the chain is measured';
+    const node = ch.nodes.end;
+    const NAME = '__palmDisc';
+    const old = node.getObjectByName(NAME);
+    if (old) { node.remove(old); old.geometry.dispose(); old.material.dispose(); }
+    if (!on) return 'off';
+    const qH0 = new THREE.Quaternion(...ch.restQ.qH);
+    const aPalm = new THREE.Vector3(...ch.palmRest).applyQuaternion(qH0.clone().invert());
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(0.035, 20),
+      new THREE.MeshBasicMaterial({ color: 0x33ff66, side: THREE.DoubleSide, depthTest: false }));
+    disc.name = NAME;
+    disc.renderOrder = 999;
+    disc.position.copy(aPalm).multiplyScalar(0.03);
+    disc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), aPalm.clone().normalize());
+    node.add(disc);
+    return 'green disc marks the palm side';
+  },
   showLandmarks: (on = true, who) => {
     const av = who ? remotes.get(who)?.avatar : getMe();
     if (!av) return null;

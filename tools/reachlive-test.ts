@@ -515,12 +515,23 @@ console.log("\ntouching with the palm, not the back of the hand");
     const R = chain.L1 + chain.L2;
     const qH0 = new THREE.Quaternion(...chain.restQ.qH);
     const aPalm = new THREE.Vector3(...chain.palmRest).applyQuaternion(qH0.clone().invert());
+    // world-space palm direction, to compare against a world-space want
     const palmNow = () => aPalm.clone().applyQuaternion(
       chain.nodes.end.getWorldQuaternion(new THREE.Quaternion()));
     for (let i = 0; i < 6; i++) {
+      // ⚠ TURN THE BODY. The palm target arrives as a WORLD direction while
+      // everything else is in the root's frame, and those two agree exactly
+      // when the yaw is zero — which is the only case this test used to run,
+      // so it passed happily while a turned avatar put the BACK of its hand on
+      // whatever it touched. antra: "the orientation of the palm changes as i
+      // turn the avatar."
+      av.root.rotation.y = (i / 6) * Math.PI * 2;
+      av.root.updateMatrixWorld(true);
+      const q = av.root.getWorldQuaternion(new THREE.Quaternion());
+      const sh2 = at('rightUpperArm');
       const a = (i / 6) * Math.PI * 2;
-      const dir = new THREE.Vector3(Math.cos(a) * 0.6, Math.sin(a) * 0.5, 0.7).normalize();
-      const target = sh.clone().addScaledVector(dir, R * 0.6);
+      const dir = new THREE.Vector3(Math.cos(a) * 0.6, Math.sin(a) * 0.5, 0.7).normalize().applyQuaternion(q);
+      const target = sh2.clone().addScaledVector(dir, R * 0.6);
       const want = dir.clone().negate();          // meet the surface head-on
 
       let out: any = solveChain(chain, av, target.toArray(), null);
