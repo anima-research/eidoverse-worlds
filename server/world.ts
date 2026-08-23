@@ -23,6 +23,7 @@ import { join } from "node:path";
 import { WORLDS_DIR, FOLD_EVERY } from "./config.ts";
 import { BehaviorHost } from "./behaviors.ts";
 import { foldEntry, emptyState, type LogEntry, type WorldState } from "../shared/fold.js";
+import { publishEntry } from "./events.ts";
 import type { HnSession } from "./auth.ts";
 
 // The settle rule — what a pose looks like TO SOMEONE ELSE — is pinned to
@@ -327,7 +328,11 @@ export class WorldSession {
   recPath: string | null = null; // frames archive, created lazily on first recorded frame
   lastRoster = "";               // last written roster line — deltas only
 
-  constructor(private log: WorldLog) {}
+  /** `commit` is the facade's append-and-publish (§24 entry bus) — injected
+   *  so the session's settlements ride the same spine as every other entry
+   *  without the session ever learning the bus (or the facade) exists. */
+  constructor(private log: WorldLog,
+    private commit: (actor: string, verb: string, args: Record<string, unknown>) => LogEntry) {}
 
   /** Commit-and-forget one entity lease (docs/leases.md): the last streamed
    *  transform becomes an ordinary `place` entry — server-authored like a
@@ -340,10 +345,9 @@ export class WorldSession {
     const yaw = final?.yaw ?? L.lastState?.yaw;
     this.leases.delete(id);
     if (p && this.log.state.entities[id]) {
-      const entry = this.log.append("world", "place", {
+      this.commit("world", "place", {
         id, pos: p, ...(yaw != null ? { yaw } : {}), by: L.holder.id, via: "lease",
       });
-      this.broadcast({ type: "log", entry });
     }
     this.broadcast({ type: "lease", op: "released", id });
   }
@@ -382,7 +386,7 @@ export class World {
   constructor(name: string) {
     this.name = name;
     this.log = new WorldLog(name);
-    this.session = new WorldSession(this.log);
+    this.session = new WorldSession(this.log, (a, v, ar) => this.commit(a, v, ar));
     // Runtime scripts wake with the world — a behavior keeps behaving with
     // nobody connected (timers), which is the point of running server-side.
     this.bhv = new BehaviorHost(this);
@@ -414,6 +418,14 @@ export class World {
 
   append(actor: string, verb: string, args: Record<string, unknown>): LogEntry {
     return this.log.append(actor, verb, args);
+  }
+  /** Append AND publish (§24 entry bus): birth is publication. Every entry
+   *  that an audience should hear goes through here; bare append() remains
+   *  for the deliberate silences (genesis — see events.ts's rulings). */
+  commit(actor: string, verb: string, args: Record<string, unknown>): LogEntry {
+    const entry = this.log.append(actor, verb, args);
+    publishEntry(this, entry);
+    return entry;
   }
   broadcast(msg: unknown, except?: Client) { this.session.broadcast(msg, except); }
   settleLease(id: string, final?: { p?: number[] | null; yaw?: number | null }) {

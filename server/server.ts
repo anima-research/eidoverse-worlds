@@ -31,6 +31,7 @@ import { World, type Client, worlds, getWorld, forkWorld, wireSettledPose } from
 // snapshot, pendingSnaps for the renderer's snap-result replies.
 import { route, avatarRoster, pendingSnaps } from "./routes.ts";
 import { registerSystem, startTick } from "./tick.ts";
+import { onEntryCommitted } from "./events.ts";
 // The reference fold lives in shared/ (house rule 1 by construction; the
 // world folds with it in world.ts) — what remains here is the role ladder.
 import { ROLE_RANK } from "../shared/fold.js";
@@ -85,6 +86,13 @@ function settledPose(pose: unknown): Record<string, unknown> | null {
 // both planes. world.ts takes it by injection because the source-text gates
 // (§15.1: settled-pose-test regexes this file) pin the definition here.
 wireSettledPose(settledPose);
+
+// The entry bus's boot-time subscribers (§24, events.ts): every committed
+// entry reaches these, uniformly, in this order — the wire's seq stream
+// first, then the scripts. Future systems (seats, recorders, the sim core)
+// subscribe here instead of teaching another append site to fan out.
+onEntryCommitted("client-fanout", (w, entry) => w.broadcast({ type: "log", entry }));
+onEntryCommitted("behaviors", (w, entry) => w.bhv.onEntry(entry));
 
 // ------------------------------------------------------------------ presence
 
@@ -620,9 +628,8 @@ const server = Bun.serve({
           // still belongs to whoever steps in first)
           if (!c.spectator && w.snapSeq < 0
             && w.entries.every((e) => e.verb === "genesis")) {
-            const entry = w.append("world", "grant",
+            w.commit("world", "grant",
               { id: c.id, role: "owner", gen: true, ...(c.sub ? { sub: c.sub } : {}) });
-            w.broadcast({ type: "log", entry });
             console.log(`[world:${w.name}] new world — ${c.id} is its owner`);
           }
           // snapshot = full log replay (folding comes later) + who's present now
@@ -1147,8 +1154,7 @@ const server = Bun.serve({
             .map(([id]) => id);
           const arch = w.reset();
           for (const id of owners) {
-            const entry = w.append("world", "grant", { id, role: "owner", gen: true });
-            w.broadcast({ type: "log", entry });
+            w.commit("world", "grant", { id, role: "owner", gen: true });
           }
           console.log(`[world:${w.name}] ERASED to zero by ${c.id} — history archived in ${arch}`);
           w.broadcast({ type: "world-reset", world: w.name, by: c.id });

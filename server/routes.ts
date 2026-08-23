@@ -21,6 +21,7 @@ import { worlds, getWorld, type World } from "./world.ts";
 import { handleUpload } from "./upload.ts";
 import { defsPayload } from "./defs.ts";
 import { tickStats } from "./tick.ts";
+import { entryBusStats } from "./events.ts";
 
 /** What the routes need from Bun's server object, structurally: the WS
  *  upgrade and the socket address (X-Real-IP's fallback). */
@@ -417,7 +418,7 @@ const ROUTES: Route[] = [
     // errors. Public and cheap like /version — "is the tick healthy" must
     // be a lookup, not an inference from symptoms.
     match: (u) => u.pathname === "/tick",
-    handler: () => new Response(JSON.stringify(tickStats()),
+    handler: () => new Response(JSON.stringify({ ...tickStats(), entryBus: entryBusStats() }),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {

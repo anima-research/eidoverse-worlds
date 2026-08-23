@@ -39,6 +39,7 @@ export type VerbWorld = {
   leases: Map<string, { lastState: { p: number[]; yaw?: number; q?: number[] } | null }>;
   bhv: { sync(): void; onEntry(entry: LogEntry): void };
   append(actor: string, verb: string, args: Record<string, unknown>): LogEntry;
+  commit(actor: string, verb: string, args: Record<string, unknown>): LogEntry;
   broadcast(msg: unknown, except?: VerbClient): void;
   debug(kind: string, detail: Record<string, unknown>): void;
 };
@@ -404,9 +405,10 @@ export function runVerb(ctx: VerbCtx, verb: string, rawArgs: unknown): void {
     }
     args = r.args;
   }
-  const entry = w.append(c.id, verb, args);
-  w.broadcast({ type: "log", entry }); // everyone, including author (authoritative echo)
+  // §24 entry bus: commit = append + publish (client fanout with the
+  // authoritative echo, then behaviors — see events.ts's ordering ruling).
+  // After-hooks run once the CAUSE is on the wire, so the effect entries
+  // they commit publish in seq order.
+  const entry = w.commit(c.id, verb, args);
   if (isVerbStr) row.after?.(ctx, entry);
-  // Runtime scripts hear causes too.
-  w.bhv.onEntry(entry);
 }
