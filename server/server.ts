@@ -32,6 +32,7 @@ import { World, type Client, worlds, getWorld, forkWorld, wireSettledPose } from
 import { route, avatarRoster, pendingSnaps } from "./routes.ts";
 import { registerSystem, startTick } from "./tick.ts";
 import { onEntryCommitted } from "./events.ts";
+import { defsFingerprint } from "./defs.ts";
 // The reference fold lives in shared/ (house rule 1 by construction; the
 // world folds with it in world.ts) — what remains here is the role ladder.
 import { ROLE_RANK } from "../shared/fold.js";
@@ -185,6 +186,22 @@ registerSystem({ name: "behaviors", everyMs: 1000, fn: (now) => {
   for (const w of worlds.values()) {
     try { w.bhv.tick(now); } catch (err) { console.error(`[world:${w.name}] behavior tick`, err); }
   }
+} });
+
+// Def hot-reload (charter §3): a def edited on disk reaches every LIVE
+// client — the watch fingerprints defs/ once a second and pushes one
+// `defs-updated` when it moves; clients re-fetch /defs and regrow what the
+// changed content shapes. The first fingerprint is the baseline, not a change.
+let defsFp: string | null = null;
+registerSystem({ name: "defs-watch", everyMs: 1000, fn: () => {
+  const fp = defsFingerprint();
+  if (defsFp !== null && fp !== defsFp) {
+    const update = JSON.stringify({ type: "defs-updated" });
+    let notified = 0;
+    for (const w of worlds.values()) for (const c of w.clients) { c.ws.send(update); notified++; }
+    console.log(`[defs] changed on disk → defs-updated pushed to ${notified} client(s)`);
+  }
+  defsFp = fp;
 } });
 
 // Boot sweep: worlds load lazily on first touch, but a world with scripts

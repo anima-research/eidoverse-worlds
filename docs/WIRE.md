@@ -151,7 +151,9 @@ upstream-patched > store > eidoverse-video precedence) · `/upload` POST ·
 Wire additions since the v0 freeze (each flagged in its commit):
 `/defs` (the def registry, charter §3 — instance content as data, slice 2) ·
 `/tick` (heartbeat gauges, charter §4 — per-system runs/worst-ms/errors,
-slice 3).
+slice 3) · server→client `defs-updated` `{}` (def hot-reload push, slice 6 —
+a def file changed on disk; clients re-fetch /defs and regrow what the
+changed content shapes; presence-plane, never logged).
 
 ## 7. Quirks recorded, not yet ruled on
 

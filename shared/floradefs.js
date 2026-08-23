@@ -60,3 +60,18 @@ export function validateFloraDef(name, def) {
   }
   return errs;
 }
+
+/** Validate the palette sidecar (defs/flora/_colors.json): each entry is a
+ *  [r,g,b] multiplier or a {recolor: [r,g,b]} hue-changer. `doc` rides free
+ *  like everywhere else. Returns problems; empty = servable.
+ *  @param {unknown} colors @returns {string[]} */
+export function validateFloraColors(colors) {
+  if (!isObj(colors)) return ['_colors must be a JSON object'];
+  const errs = [];
+  for (const [name, v] of Object.entries(colors)) {
+    if (name === 'doc') continue;
+    const ok = isVec(v, 3) || (isObj(v) && isVec(/** @type {any} */ (v).recolor, 3));
+    if (!ok) errs.push(`${name} must be [r,g,b] or {recolor: [r,g,b]}`);
+  }
+  return errs;
+}

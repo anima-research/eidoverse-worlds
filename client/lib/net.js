@@ -590,6 +590,13 @@ async function handle(msg) {
       break;
     }
 
+    case 'defs-updated': {
+      // a def changed on disk (§24 hot reload) — wire → bus hop; world.js
+      // re-fetches the registry and regrows what the changed content shapes
+      bus.emit('defs-updated', msg);
+      break;
+    }
+
     case 'world-forked': {
       // The link stands alone at the end of the line, never inside brackets —
       // naive linkifiers (ours included, once) swallow closing punctuation

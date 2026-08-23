@@ -17,7 +17,7 @@ import { prepareObject } from './materials.js';
 import { beginWork } from './loadwork.js';
 import { reindexCollider } from './colliders.js';
 import { setTerrain, setGrass, clearGrass, heightAt } from './terrain.js';
-import { buildFloraField, warmField } from './flora.js';
+import { buildFloraField, warmField, loadFloraModule } from './flora.js';
 import { applySky, whenSkyWarm } from './sky.js';
 import { whenBooted, bootDone } from './boot.js';
 import { warm, P_GATE } from './warmqueue.js';
@@ -152,6 +152,24 @@ export function applyTerrainState(args) {
     }
   });
 }
+
+// Def hot-reload (§24): the sequencer pushes `defs-updated` when a def file
+// changes on disk. Re-hydrate the registry (replacing — edits land, removals
+// leave) and regrow the meadow from the SAME authored args: the world state
+// is untouched, only the content the defs shape rebuilds. The dedupe key is
+// cleared so applyGrassState treats the regrow as new work.
+bus.on('defs-updated', async () => {
+  try {
+    const mod = await loadFloraModule();
+    await mod.refreshFloraDefs?.();
+    if (!lastGrassArgs) return;
+    const args = JSON.parse(lastGrassArgs);
+    lastGrassArgs = null;
+    applyGrassState(args);
+  } catch (e) {
+    console.warn('[defs] hot reload failed — old defs stand:', e);
+  }
+});
 
 /** Grow (or mow) the grass field. Same dedupe-by-args contract. */
 export function applyGrassState(args) {

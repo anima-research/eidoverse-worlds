@@ -8,24 +8,25 @@
 // on the next client boot without a server restart; clients fetch once per
 // boot, so the rescan costs nothing in steady state.
 
-import { readdirSync, readFileSync, existsSync } from "node:fs";
+import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ROOT } from "./config.ts";
-import { validateFloraDef } from "../shared/floradefs.js";
+import { validateFloraDef, validateFloraColors } from "../shared/floradefs.js";
 import { validateAvatarDef } from "../shared/avatardefs.js";
 
 // Scratch sequencers point this elsewhere, same pattern as WORLDS_DIR.
 export const DEFS_DIR = resolve(process.env.DEFS_DIR ?? join(ROOT, "defs"));
 
 const TTL_MS = 1000;
-let cached: { at: number; reg: { flora: Record<string, unknown>; avatars: Record<string, unknown> }; json: string } | null = null;
+let cached: { at: number; reg: Record<string, Record<string, unknown>>; json: string } | null = null;
 
 function loadDomain(domain: string, validate: (name: string, def: unknown) => string[]) {
   const dir = join(DEFS_DIR, domain);
   const out: Record<string, unknown> = {};
   if (!existsSync(dir)) return out;
   for (const f of readdirSync(dir).sort()) {
-    if (!f.endsWith(".json")) continue;
+    // underscore files are domain SIDECARS (_colors.json), not defs
+    if (!f.endsWith(".json") || f.startsWith("_")) continue;
     const name = f.slice(0, -5);
     try {
       const def = JSON.parse(readFileSync(join(dir, f), "utf8"));
@@ -42,11 +43,28 @@ function loadDomain(domain: string, validate: (name: string, def: unknown) => st
   return out;
 }
 
+/** The palette sidecar — a domain-shaped table, not a def-per-file. */
+function loadFloraColors(): Record<string, unknown> {
+  const p = join(DEFS_DIR, "flora", "_colors.json");
+  if (!existsSync(p)) return {};
+  try {
+    const colors = JSON.parse(readFileSync(p, "utf8"));
+    const errs = validateFloraColors(colors);
+    if (errs.length) { console.error(`[defs] REFUSED flora/_colors.json: ${errs.join("; ")}`); return {}; }
+    const { doc: _doc, ...rest } = colors;
+    return rest;
+  } catch (err) {
+    console.error(`[defs] REFUSED flora/_colors.json: unparseable JSON —`, err);
+    return {};
+  }
+}
+
 function registry() {
   const now = Date.now();
   if (cached && now - cached.at < TTL_MS) return cached;
   const reg = {
     flora: loadDomain("flora", validateFloraDef),
+    floraColors: loadFloraColors(),
     avatars: loadDomain("avatars", validateAvatarDef),
   };
   const json = JSON.stringify(reg);
@@ -64,4 +82,23 @@ export function defsPayload(): string { return registry().json; }
 /** The avatar overlay, for the roster (routes.ts avatarRoster). */
 export function avatarDefs(): Record<string, { vrm?: string; height?: number } & Record<string, unknown>> {
   return registry().reg.avatars as ReturnType<typeof avatarDefs>;
+}
+
+/** A cheap change fingerprint over every def file's (path, mtime, size) —
+ *  the defs-watch tick system compares it once a second and broadcasts
+ *  `defs-updated` when it moves, which is the whole hot-reload push. */
+export function defsFingerprint(): string {
+  const parts: string[] = [];
+  if (!existsSync(DEFS_DIR)) return "";
+  for (const domain of readdirSync(DEFS_DIR).sort()) {
+    const dir = join(DEFS_DIR, domain);
+    let st; try { st = statSync(dir); } catch { continue; }
+    if (!st.isDirectory()) continue;
+    for (const f of readdirSync(dir).sort()) {
+      if (!f.endsWith(".json")) continue;
+      try { const s = statSync(join(dir, f)); parts.push(`${domain}/${f}:${s.mtimeMs}:${s.size}`); }
+      catch { /* vanished mid-scan — the next tick sees the truth */ }
+    }
+  }
+  return parts.join("|");
 }

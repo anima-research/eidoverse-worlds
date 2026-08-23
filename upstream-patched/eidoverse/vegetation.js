@@ -37,26 +37,10 @@ const ASSET_DIR = 'eidoverse/assets/grass/';
 // `color:` accepts a name below or a custom [r,g,b] multiplier.
 // Values are LUMINANCE-PRESERVING vs the atlas mean — a hue swap, not a
 // darkening (naive multipliers crushed every fall colour to muck).
-export const GRASS_COLORS = {
-    // multipliers (green family) + luminance recolors (hue-changers),
-    // NORMALIZED against Sol's blade atlas (opaque mean 91/138/35)
-    lime:          [1.15, 1.13, 0.48],
-    emerald:       [0.56, 1.04, 0.61],
-    blue:          [0.64, 1.05, 1.61],
-    'blue-green':  [0.6, 1.07, 1.18],
-    // GREEN is a recolor, not a multiplier: a species whose sheet is
-    // authored another hue (galleta's straw) can only be brought BACK to
-    // green by discarding hue and re-tinting. Value reproduces the blade
-    // atlas's own mean green from its luminance.
-    green:         { recolor: [0.755, 1.145, 0.29] },
-    'gray-green':  { recolor: [0.92, 0.97, 0.83] },
-    burgundy:      { recolor: [1.95, 0.57, 0.81] },
-    rust:          { recolor: [1.93, 0.79, 0.32] },
-    copper:        { recolor: [1.72, 0.93, 0.3] },
-    orange:        { recolor: [1.83, 0.98, 0.19] },
-    straw:         { recolor: [1.35, 1.14, 0.64] },
-    brown:         { recolor: [1.24, 0.91, 0.52] },
-};
+// §24 defs: the palette table lives in defs/flora/_colors.json now —
+// hydrated with the species (see hydrateFloraDefs), same object-identity
+// rule as FLORA_SPECIES.
+export const GRASS_COLORS = {};
 
 import { buildShrubGeometry } from './vegetation_shrub_gen.js';
 import { buildCornGeometry } from './vegetation_corn_gen.js';
@@ -79,11 +63,14 @@ export const FLORA_SPECIES = {};
 // because the loader shim publishes the reference on globalThis.
 let defsLoading = null;
 
-/** Fold a def registry into FLORA_SPECIES. Exported so tests and
- *  non-sequencer contexts hydrate by hand instead of fetching.
- *  `leafRecolor` may name a GRASS_COLORS entry — resolved here, so the
- *  defs stay declarative. */
-export function hydrateFloraDefs(flora) {
+/** Fold a def registry into GRASS_COLORS + FLORA_SPECIES. Exported so
+ *  tests and non-sequencer contexts hydrate by hand instead of fetching.
+ *  Accepts the whole /defs registry ({flora, floraColors}) or a bare
+ *  species map. Colors land FIRST — `leafRecolor` may name a palette
+ *  entry, resolved here so the defs stay declarative. */
+export function hydrateFloraDefs(reg) {
+    const flora = reg?.flora ?? reg;
+    for (const [name, c] of Object.entries(reg?.floraColors ?? {})) GRASS_COLORS[name] = c;
     for (const [name, def] of Object.entries(flora ?? {})) {
         const d = { ...def };
         if (typeof d.leafRecolor === 'string') {
@@ -108,12 +95,27 @@ export async function ensureFloraDefs() {
             const r = await fetch('/defs');
             if (!r.ok) throw new Error(`[grass2] GET /defs -> ${r.status} — species defs unavailable (serve defs/, or hydrateFloraDefs() by hand)`);
             const reg = await r.json();
-            hydrateFloraDefs(reg.flora);
+            hydrateFloraDefs(reg);
             console.log(`[grass2] flora defs hydrated: ${Object.keys(FLORA_SPECIES).length} species`);
             return FLORA_SPECIES;
         })().catch((err) => { defsLoading = null; throw err; });
     }
     return defsLoading;
+}
+
+/** Re-fetch /defs and RE-hydrate, replacing: an edited def lands, a
+ *  removed one leaves. The caller (the client's defs-updated handler)
+ *  decides what to regrow. Object identities are preserved — consumers
+ *  holding FLORA_SPECIES / GRASS_COLORS see the new tables in place. */
+export async function refreshFloraDefs() {
+    const r = await fetch('/defs');
+    if (!r.ok) throw new Error(`[grass2] GET /defs -> ${r.status} — refresh refused`);
+    const reg = await r.json();
+    for (const k of Object.keys(FLORA_SPECIES)) if (!(k in (reg.flora ?? {}))) delete FLORA_SPECIES[k];
+    for (const k of Object.keys(GRASS_COLORS)) if (!(k in (reg.floraColors ?? {}))) delete GRASS_COLORS[k];
+    hydrateFloraDefs(reg);
+    console.log(`[grass2] flora defs refreshed: ${Object.keys(FLORA_SPECIES).length} species`);
+    return FLORA_SPECIES;
 }
 
 // ── map loading ──────────────────────────────────────────────────────────────

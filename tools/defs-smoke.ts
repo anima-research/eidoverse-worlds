@@ -76,7 +76,8 @@ mkdirSync(join(DEFS, "flora"), { recursive: true });
 for (const f of readdirSync(join(ROOT, "defs", "flora"))) {
   if (f.endsWith(".json")) copyFileSync(join(ROOT, "defs", "flora", f), join(DEFS, "flora", f));
 }
-const REPO_COUNT = readdirSync(join(DEFS, "flora")).length;
+// underscore files (_colors.json) are domain sidecars, not species defs
+const REPO_COUNT = readdirSync(join(DEFS, "flora")).filter((f) => !f.startsWith("_")).length;
 // the def-only species: exists in NO .js file — if it renders, the lane works
 writeFileSync(join(DEFS, "flora", "smoketest_lavender.json"), JSON.stringify({
   doc: "defs-smoke's witness species — a burgundy meadow no engine file knows.",
@@ -308,11 +309,42 @@ await bootInto(WORLDS.std);
   check("blades mode still opaque (§22m)", g?.mode === "opaque", `mode ${g?.mode}`);
 }
 
+// ---- hot reload -------------------------------------------------------------
+// Edit a def on disk while a client stands in the meadow: the defs-watch
+// tick pushes `defs-updated`, the client re-hydrates and regrows from the
+// SAME authored args — no reboot, no log entry, new content.
+console.log(`\n${bold("── hot reload")}  ${dim("editing grass.json under a live client")}`);
+{
+  const before = await evalJson(`(() => { try {
+    const s = EW.grass()?.strokes ?? []; return s.length ? s[0].planted : null;
+  } catch { return null } })()`);
+  const gp = join(DEFS, "flora", "grass.json");
+  const gdef = JSON.parse(readFileSync(gp, "utf8"));
+  gdef.density = 5.0;   // 22 → 5: the regrown field plants far fewer
+  writeFileSync(gp, JSON.stringify(gdef, null, 2));
+  let after: number | null = null;
+  for (let i = 0; i < 60 && after === null; i++) {
+    await sleep(1000);
+    const p = await evalJson(`(() => { try {
+      const s = EW.grass()?.strokes ?? []; return s.length ? s[0].planted : null;
+    } catch { return null } })()`);
+    if (p != null && p !== before) after = p;
+  }
+  const refreshed = consoleLines.find((l) => l.includes("flora defs refreshed"));
+  check("client re-hydrated on the push", !!refreshed, refreshed ?? "no refresh line");
+  check("meadow regrew from the edited def (no reboot)", after != null && after < (before ?? 0),
+    `planted ${before} → ${after}`);
+}
+
 console.log(`\n${bold("── def-only species")}  ${dim(`world ${WORLDS.novel}`)}`);
 await bootInto(WORLDS.novel);
 {
   const g = await grassDrawn();
   check("a species no .js file knows RENDERS", !!g && g.drawn > 0, g ? `drawn ${g.drawn}, mode ${g.mode}` : "no drawn instances");
+  // the lavender's leafRecolor names "burgundy" — resolvable only if the
+  // palette sidecar (_colors.json) hydrated; a miss warns and drops it
+  check("palette sidecar hydrated (no unknown-color warning)",
+    !consoleLines.some((l) => l.includes("names unknown color")));
 }
 
 console.log(`\n${bold("── unknown species")}  ${dim(`world ${WORLDS.bogus}`)}`);
