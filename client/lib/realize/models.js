@@ -29,7 +29,7 @@ import { makeLight, updateLight, disposeLight } from '../lights.js';
 import { entities, entityMeta, comps, avatarMounts, findPart, editHolds } from '../world.js';
 import { state, onWorldChange } from '../state.js';
 import { schedule, cancelOwner } from '../scheduler.js';
-import { planReconcile, bandForDistance, mountsTouching } from './models_field.js';
+import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere } from './models_field.js';
 
 /** The verbs this realizer owns — the whole flat entity-id namespace. */
 export const PORTED = new Set(['spawn', 'place', 'remove', 'light', 'comp', 'motion', 'mount', 'dismount']);
@@ -328,7 +328,13 @@ function runPromoteTail(id, obj) {
   registerCaster(id, obj);
   // a mount verb may have landed in the gap: a mounted child carries no
   // collider of its own (execMount law — the pair collides as the carrier)
-  if (!obj.userData.mountedTo) {
+  // ...and neither does a BUILDING'S ANCHOR. A `structure` entity's collision
+  // is DECLARED by the structure realizer (fitStructureBoxes: walls, floors,
+  // corner fills), so inferring a box from its placeholder lib leaves an
+  // invisible crate-sized obstacle at the origin of every building — the mesh
+  // is hidden, the collider was not. Same law as the mounted case above: an
+  // entity whose collision is owned elsewhere does not get one fitted here.
+  if (!collisionOwnedElsewhere(cur, obj.userData.mountedTo)) {
     // localFrame: the spawn transform is already applied here (unlike the
     // old at-identity fit), so the box must be computed root-local. The fit
     // buckets at the live position — the old post-transform reindexCollider
