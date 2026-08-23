@@ -19,6 +19,7 @@ import { jointPositions } from './ragdoll.js';
 import { initBodyDrag, beingDragged, revokeDragged } from './bodydrag.js';
 import { toast, flashHint, setAmbientHint } from './ui.js';
 import { posable, pushable } from './consent.js';
+import { clearMyReach } from './reachnet.js';
 import { getMe } from './mybody.js';
 
 let logChat = () => {};
@@ -55,6 +56,7 @@ export function goLimp(lean = null) {
   // it measures its limits against, and the live pose the tumble starts from —
   // and neither may still have the walk cycle in it.
   me.setLimp(true);
+  clearMyReach();   // a knocked-over body's reach is gone — descriptor AND arm (mirrors agent.ts knockDown)
   ragdoll = makeRagdoll(me, lean ?? toppleVelocity(), me.restBonePositions());
   myState.clip = 'ragdoll';
   flashHint('limp — move to get up');

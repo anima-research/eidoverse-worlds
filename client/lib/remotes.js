@@ -10,6 +10,7 @@ import { THREE, camera, scene, report, angleDelta } from './core.js';
 import { makeAvatar } from './avatar.js';
 import { avatarMounts, mountTransform } from './world.js';
 import { declareSeatState, clearSeatState } from './seats.js';
+import { applyRemoteReach, noteReachEvents } from './reachnet.js';
 
 export const remotes = new Map(); // id -> RemoteBody
 
@@ -136,6 +137,9 @@ export function pushPose(id, pose, t) {
   if (last && stamp <= last.t) return;    // out of order — drop
   r.buf.push({ t: stamp, ...pose });
   while (r.buf.length > BUF_MAX) r.buf.shift();
+  // reach/touch events ride the RAW stream, not the applied one — a touch
+  // that begins while this body's avatar is still loading must be heard
+  noteReachEvents(r, pose);
 }
 
 function applyImmediate(r) {
@@ -220,6 +224,9 @@ function applyPresenceExtras(r, s) {
     if (clip === 'ragdoll') r.avatar.setLimp(true);
     else { r.avatar.setLimp(false); r.avatar.setClip(clip, s.speed ?? 0); }
   }
+  // reach descriptors ride the same newest sample; the diff inside is
+  // edge-triggered, so per-frame reapplication costs nothing when idle
+  applyRemoteReach(r, s);
 }
 
 const _a = new THREE.Vector3();
@@ -276,6 +283,7 @@ export function updateRemotes(dt, now = performance.now()) {
             r.lastEmote = s.emote;
             r.avatar.playEmote(s.emote);
           } else if (!s.emote) r.lastEmote = null;
+          applyRemoteReach(r, s);   // a seated body still puts a hand out
         }
         r.avatar.setLimp(false);
         if (r.lastClip !== sw.pose) { r.lastClip = sw.pose; }

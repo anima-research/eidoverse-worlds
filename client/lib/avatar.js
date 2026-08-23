@@ -1251,6 +1251,7 @@ export class Avatar {
     this.speakUntil = 0;
     this.voiceLevel = null;
     this.clearPose();
+    this.clearReach();      // a transplanted body must not keep reaching at the predecessor's target
     this.setLimp(false);
     this.setGazeTarget(null);
     this.setClip('idle');

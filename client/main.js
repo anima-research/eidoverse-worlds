@@ -85,6 +85,7 @@ import { initCommands, saveScreenshot } from './lib/commands/handlers.js';
 import { deriveLandmarks, debugMarkers, landmarkWorld } from './lib/landmarks.js';
 import { measureChain, solveChain } from './lib/reachbone.js';
 import { canonicalPoint } from '../shared/contact.js';
+import { initReachNet, setMyReach, clearMyReach } from './lib/reachnet.js';
 
 // (Crash breadcrumbs live in lib/bc.js now; the frame loop stamps each
 // system's name as it runs. avatar.js still reads globalThis.__ewBC.)
@@ -266,6 +267,13 @@ bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 // localbody.js, handed logChat instead of importing chat (§14.2).
 
 initPhysObj({ myPos: () => myState.pos });
+// reach descriptors resolve against the same bodies everyone renders; my own
+// id is how "a landmark on me" and "a point in my frame" find this body
+initReachNet({
+  me: () => getMe(),
+  myId: () => CONFIG.name,
+  avatarOf: (id) => (id === CONFIG.name ? getMe() : remotes.get(id)?.avatar ?? null),
+});
 initMods();   // 🧩 runtime client scripts: local trusted mods + world offers
 initLocalBody({ logChat });
 initCommands();   // the /command surface (lib/commands/) + its bus subscriptions
@@ -622,14 +630,16 @@ const EW = globalThis.EW = {
   // to face and the palm stays wherever the forearm left it. That is not
   // visible as a bug — the hand still arrives — until you look at a headpat
   // and find the palm pointing at the sky.
+  // Serializable targets (a name, [who, name], [x,y,z], or the wire forms
+  // {who, point} / {p, space}) go through reachnet: the descriptor rides the
+  // presence stream and EVERY client re-solves the same relation, so other
+  // people see the arm too. A function target stays local-only — it cannot
+  // travel, and this tab is the only one that can evaluate it.
   reach: (key, target, opts) => {
-    let t = target;
-    if (typeof target === 'string') t = () => EW.contactFrame(null, target);
-    else if (Array.isArray(target) && target.length === 2 && typeof target[1] === 'string') {
-      const [who, name] = target;
-      t = () => EW.contactFrame(who, name);
-    }
-    return getMe()?.setReach(key, t, opts);
+    if (typeof target === 'function') return getMe()?.setReach(key, target, opts);
+    const err = setMyReach(key, target, opts);
+    if (err) { console.warn(`[reach] ${err}`); return false; }
+    return true;
   },
   // landmarks: named contact points, derived per body from its own mesh.
   // EW.landmarks() derives + caches; EW.showLandmarks() draws them to be
@@ -743,7 +753,7 @@ const EW = globalThis.EW = {
     debugMarkers(av, av.__marks, scene, on);
     return [...av.__marks].map(([n, e]) => `${n}:${e.how}`).join(' ');
   },
-  clearReach: (key) => getMe()?.clearReach(key),
+  clearReach: (key) => clearMyReach(key ?? null),
   reachStatus: () => getMe()?.reachStatus(),
   lease: leaseApi,   // the entity-lease surface runtime plugins script against
   mods: modsApi,     // load/run/offer runtime client scripts (🧩)

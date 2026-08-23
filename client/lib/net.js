@@ -15,6 +15,7 @@ import { pending, P } from './scheduler.js';
 // listens — emitted rather than imported so this file adds no lap around
 // the net → chat → net cycle). One writer per verb, always.
 import { remotes, ensureRemote, dropRemote, pushPose, noteServerTime, noteSpeaking } from './remotes.js';
+import { myReachBag } from './reachnet.js';
 import { logChat, logWhisper, noteTyping, noteHistoryContext } from './chat.js';
 import { composeFirstPerson } from './fp_view.js';
 import { markPhase } from './boot.js';
@@ -189,6 +190,10 @@ export function sendPose(now) {
   // Persistent body pins (bodydrag nails) ride presence the same way: state
   // of a BODY, visible to everyone, never the log. Null clears.
   if (s.pins !== undefined) pose.pins = s.pins;
+  // Reach descriptors (shared/reachwire.js): a relation, not bones — every
+  // receiver re-solves it live. Rides while active; absence means let go.
+  const reach = myReachBag();
+  if (reach !== undefined) pose.reach = reach;
   net.ws.send(JSON.stringify({ type: 'pose', pose }));
 }
 
