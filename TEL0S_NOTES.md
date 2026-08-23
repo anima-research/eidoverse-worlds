@@ -390,6 +390,29 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-22 — §24d: phase-1 slices 4+5 — the entry bus, avatar defs.**
+  BUS (6ad41f8): birth IS publication. Seven append sites hand-rolled
+  append + broadcast({type:'log'}) and only runVerb told the behavior
+  host; now World.commit() appends + publishes on server/events.ts and
+  boot-registered subscribers (client-fanout, behaviors) hear every
+  committed entry uniformly, error-isolated per listener. Rulings in
+  events.ts: genesis stays silent; fanout precedes behaviors (effect
+  entries publish after their cause, seq order dense on the wire); the
+  one reordering (bhv.onEntry before after-hooks) ruled acceptable —
+  only `use` overlaps, and a script hearing it a beat before the
+  reaction's effect sees a legal moment of the world. Bus gauges ride
+  GET /tick. Future systems (seats, recorders, the sim core) subscribe
+  in server.ts instead of teaching another append site to fan out.
+  Per tel0s's ruling on the braid: with defs + (eventually) our own
+  renderer, the upstream-patched override mechanism is on the road to
+  retirement — overrides become defs, not forked engine files.
+  AVATAR DEFS (a0dd10a): defs/avatars/<name>.json OVERLAYS the
+  discovered roster — drop-a-vrm stays live defless; a matching def
+  overrides height (beats the thumbs sidecar); `vrm` declares or
+  repoints a name at any /library path; unresolvable paths refused
+  loudly, roster stands. Gates: defs-smoke 17/17, behaviortest 27/27,
+  smoke 85/85, leasetest 19/19, paritybench PASS, replaybench green.
+
 - **2026-08-22 — §24c: THE CLOBBER — §22 grass was reverted on main
   since Aug 18.** defs-smoke's engagement check (mode cards-sss where
   opaque belonged) exposed it: upstream's 95303a7 (Mica, "bring prod's
