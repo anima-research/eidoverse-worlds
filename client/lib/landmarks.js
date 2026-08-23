@@ -129,10 +129,21 @@ export function deriveLandmarks(avatar) {
         normal = hit.face
           ? hit.face.normal.clone().applyMatrix3(_m.getNormalMatrix(hit.object.matrixWorld)).normalize()
           : dir.clone();
-        // A back-facing hit means the ray started INSIDE the mesh (an
-        // accessory wrapping the cast origin). Flip it rather than hand back
-        // a normal pointing into the body.
-        if (normal.dot(dir) > 0) normal.negate();
+        // ⚠ SIGN. The ray travels along -dir (from outside, inward), so a
+        // surface facing OUT of the body has its normal along +dir — back the
+        // way the ray came. This test used to negate exactly those, which
+        // inverted every landmark normal in the table.
+        //
+        // It went unnoticed because nothing consumed the normal until the palm
+        // did, and then it was wrong in the one way that is hard to see: the
+        // hand still arrived at the right PLACE, just turned inside out. antra
+        // caught it on head_top, where a palm facing the sky is unmistakable —
+        // on a shoulder or a hip the same error reads as merely an awkward
+        // wrist.
+        //
+        // A normal pointing along -dir means the ray began inside the mesh (an
+        // accessory wrapping the cast origin); THOSE are the ones to flip.
+        if (normal.dot(dir) < 0) normal.negate();
         how = 'surface';
       } else {
         // No surface on that line: a concave region, or a body with nothing

@@ -707,3 +707,82 @@ export function solveTwoBoneClear(o, guards) {
     bound: [...(best.res.bound ?? []), 'body'],
   };
 }
+
+// ---- and which way the palm faces ------------------------------------------
+//
+// Position IK says where the hand goes and nothing about how it is turned, so
+// a hand arrives at a shoulder with the BACK of it against the skin as often
+// as not. Touching is done with the palm.
+//
+// Most of the correction belongs to the forearm: pronation/supination is the
+// joint that turns a palm over, and the ragdoll already measured how far it
+// goes (TWIST.lowerArm = 80°). Whatever is left goes to the wrist, clamped,
+// because a wrist is not a ball joint and a hand bent past its range reads
+// worse than a palm that is merely off-angle.
+
+/** Quaternion from an axis and angle. */
+export const qAxisAngle = (axis, ang) => {
+  const s = Math.sin(ang / 2);
+  return [axis[0] * s, axis[1] * s, axis[2] * s, Math.cos(ang / 2)];
+};
+
+/** Shorten a rotation to at most `maxAng`, keeping its axis. */
+export function qClampAngle(q, maxAng) {
+  const w = clamp(Math.abs(q[3]), -1, 1);
+  const ang = 2 * Math.acos(w);
+  if (ang <= maxAng || ang < 1e-6) return q;
+  const s = Math.sqrt(Math.max(0, 1 - w * w));
+  if (s < 1e-8) return [0, 0, 0, 1];
+  const sign = q[3] < 0 ? -1 : 1;
+  const axis = [sign * q[0] / s, sign * q[1] / s, sign * q[2] / s];
+  return qAxisAngle(axis, maxAng);
+}
+
+/**
+ * Turn the palm toward `want`, by twisting the forearm and then bending the
+ * wrist for the remainder.
+ *
+ * @param {object} o
+ * @param {number[]} o.lowerFrame solved orientation of the forearm
+ * @param {number[]} o.dLower     forearm direction (unit), same frame
+ * @param {number[]} o.palmRest   palm normal at rest, same frame
+ * @param {number[]} o.qL0        forearm rest orientation
+ * @param {number[]} o.qH0        hand rest orientation
+ * @param {number[]} o.want       desired palm direction (unit)
+ * @returns {{lowerFrame: number[], handLocal: number[], residualDeg: number}}
+ */
+export function orientPalm(o) {
+  const relH = qMulq(qConj(o.qL0), o.qH0);          // hand, relative to forearm
+  const aPalm = qRot(qConj(o.qH0), o.palmRest);      // palm axis in the hand's own frame
+  const twistMax = o.twistMax ?? (80 * Math.PI / 180);
+  const wristMax = o.wristMax ?? (50 * Math.PI / 180);
+
+  const axis = norm(o.dLower);
+  let lowerFrame = o.lowerFrame;
+  let H = qMulq(lowerFrame, relH);
+  let palm = qRot(H, aPalm);
+  if (!axis) return { lowerFrame, handLocal: relH, residualDeg: 0 };
+
+  // ---- pronation: the component of the correction the forearm can make
+  const flat = (v) => norm(sub(v, mul(axis, dot(v, axis))));
+  const p0 = flat(palm), p1 = flat(o.want);
+  if (p0 && p1) {
+    const c = clamp(dot(p0, p1), -1, 1);
+    const sgn = Math.sign(dot(cross(p0, p1), axis)) || 1;
+    const twist = clamp(sgn * Math.acos(c), -twistMax, twistMax);
+    lowerFrame = qMulq(qAxisAngle(axis, twist), lowerFrame);
+    H = qMulq(lowerFrame, relH);
+    palm = qRot(H, aPalm);
+  }
+
+  // ---- the wrist takes what is left, within its range
+  const delta = qClampAngle(qFromUnitVectors(palm, o.want), wristMax);
+  const H2 = qMulq(delta, H);
+  const after = qRot(H2, aPalm);
+  const residual = Math.acos(clamp(dot(after, o.want), -1, 1));
+  return {
+    lowerFrame,
+    handLocal: qMulq(qConj(lowerFrame), H2),
+    residualDeg: residual * 180 / Math.PI,
+  };
+}

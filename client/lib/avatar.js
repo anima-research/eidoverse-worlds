@@ -928,7 +928,7 @@ export class Avatar {
    *  a hand did NOT get there (out of range, or stopped by a joint). */
   reachStatus() {
     const out = {};
-    for (const [k, r] of this._reach ?? []) out[k] = { weight: r.weight, gap: r.gap ?? null, bound: r.bound, penetration: r.penetration ?? null, solved: r.solved ?? null };
+    for (const [k, r] of this._reach ?? []) out[k] = { weight: r.weight, gap: r.gap ?? null, bound: r.bound, penetration: r.penetration ?? null, palmResidual: r.palmResidual ?? null };
     return out;
   }
 
@@ -937,7 +937,7 @@ export class Avatar {
     for (const [key, r] of [...this._reach]) {
       r.weight += (r.wantWeight - r.weight) * Math.min(1, 12 * dt);
       if (r.wantWeight === 0 && r.weight < 0.02) {
-        for (const node of [r._nu, r._nl]) {
+        for (const node of [r._nu, r._nl, r._nh]) {
           const c = node && this._composed.get(node);
           if (c?.live && node.quaternion.equals(c.out)) { node.quaternion.copy(c.base); c.live = false; }
         }
@@ -947,10 +947,19 @@ export class Avatar {
       const ch = this._measureChain(key);
       if (!ch) { this._reach.delete(key); continue; }
 
-      const tw = typeof r.target === 'function' ? r.target() : r.target;
+      // A target may be a bare point, or a {pos, normal} — the normal being
+      // the surface the hand is meeting, which is what lets the palm face it
+      // rather than arriving back-first.
+      const raw = typeof r.target === 'function' ? r.target() : r.target;
+      const tw = Array.isArray(raw) ? raw : raw?.pos;
+      const normal = Array.isArray(raw) ? null : raw?.normal;
       if (!tw || tw.length !== 3 || !tw.every(Number.isFinite)) { r.bound = ['no-target']; continue; }
 
-      const out = solveChain(ch, this, tw, r.lastElbow);
+      // the palm faces INTO the surface, so it wants the opposite of the
+      // outward normal
+      const palm = (r.palm !== false && normal && normal.length === 3 && normal.every(Number.isFinite))
+        ? { dir: [-normal[0], -normal[1], -normal[2]] } : null;
+      const out = solveChain(ch, this, tw, r.lastElbow, { palm });
       if (!out.ok) { r.bound = [out.why]; continue; }
       r.bound = out.res.bound; r.gap = out.res.gap; r.penetration = out.penetration ?? 0; r.lastElbow = out.elbowOffset;
       // what the solver BELIEVES it placed, in world space, so a probe can
@@ -961,6 +970,8 @@ export class Avatar {
       r._nu = ch.nodes.upper; r._nl = ch.nodes.lower;
       this._writeBone(ch.nodes.upper, q.upper, r.weight);
       this._writeBone(ch.nodes.lower, q.lower, r.weight);
+      if (out.hand) { r._nh = ch.nodes.end; this._writeBone(ch.nodes.end, out.hand, r.weight); }
+      r.palmResidual = out.palmResidual ?? null;
     }
   }
 

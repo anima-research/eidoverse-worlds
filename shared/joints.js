@@ -144,6 +144,9 @@ export function limitsFor(bone) {
     ...(behind ? { behind: behind[2] * D2R } : {}),
     ...(hinge ? { maxFlex: hinge[4] * D2R, hingeDir: hinge[3], hingeSide: hinge[5] * D2R } : {}),
     ...(TWIST[bone] != null ? { twistMax: TWIST[bone] * D2R } : {}),
+    // the forearm's roll is what turns a palm over, so a chain rooted at the
+    // upper arm needs its CHILD's twist limit, not its own
+    ...(hinge && TWIST[hinge[1]] != null ? { foreTwistMax: TWIST[hinge[1]] * D2R } : {}),
     ...(TWIST_PARENT[bone] ? { twistParent: TWIST_PARENT[bone] } : {}),
   };
 }

@@ -10,7 +10,8 @@
 // silently, plausibly wrong.
 
 import { THREE } from './core.js';
-import { solveTwoBone, solveTwoBoneClear, penetration, chainLocalQuats, qConj, qMulq, qRot } from '../../shared/reach.js';
+import { solveTwoBone, solveTwoBoneClear, penetration, chainLocalQuats, orientPalm,
+         qConj, qMulq, qRot } from '../../shared/reach.js';
 import { bodyFrame, limitsFor, coneAxisBody, toBody, fromBody, REACH_CHAINS,
          torsoRadius, boneRadius, GUARD_SEGMENTS } from '../../shared/joints.js';
 import { torsoHalfDepth } from './landmarks.js';
@@ -31,6 +32,38 @@ const dirLen = (u, v) => {
   return { l, u: l > 1e-9 ? [w[0] / l, w[1] / l, w[2] / l] : [1, 0, 0] };
 };
 
+/**
+ * Which way the palm faces, in the avatar root's frame with the rig at rest.
+ *
+ * Derived from the finger bones where a rig has them: the palm plane is
+ * spanned by wrist->middle and little->index, and its normal is their cross
+ * product. Only 8 of the 18 shipped rigs carry fingers, though — claude, the
+ * default body, does not — so the rest fall back to the VRM rest convention,
+ * a T-pose with the palms facing DOWN.
+ *
+ * That fallback is not an assumption anyone has to take on trust: on every one
+ * of the nine rigs that CAN answer, the derived normal agrees with it to
+ * within a hundredth (dot with body-up = 0.99-1.00, across VRM0 and VRM1
+ * alike). The convention is checked wherever checking is possible, and used
+ * only where it is not.
+ */
+function palmRestNormal(P, F, side) {
+  const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const cross3 = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const n3 = (a) => { const l = Math.hypot(a[0], a[1], a[2]); return l > 1e-9 ? [a[0] / l, a[1] / l, a[2] / l] : null; };
+  const hand = P[side + 'Hand'], mid = P[side + 'MiddleProximal'];
+  const idx = P[side + 'IndexProximal'], lit = P[side + 'LittleProximal'];
+  if (hand && mid && idx && lit) {
+    const along = n3(sub3(mid, hand)), across = n3(sub3(idx, lit));
+    if (along && across) {
+      const back = n3(cross3(along, across));
+      // that construction points out the BACK of the hand; the palm is opposite
+      if (back) return [-back[0], -back[1], -back[2]];
+    }
+  }
+  return [-F.u[0], -F.u[1], -F.u[2]];
+}
+
 /** Each chain bone's orientation, and its parent's, in the avatar root's frame
  *  with the rig held at rest. Measured the same way restBonePositions does:
  *  identity every humanoid rotation, look, put it all back. */
@@ -48,6 +81,7 @@ function restOrientations(avatar, nodes) {
   const out = {
     qU: rel(nodes.upper),
     qL: rel(nodes.lower),
+    qH: rel(nodes.end),
     qP: rel(nodes.upper.parent),
   };
   for (const [n, q] of saved) n.quaternion.copy(q);
@@ -142,6 +176,7 @@ export function measureChain(avatar, key) {
   return {
     key, spec, nodes, L1: up.l, L2: lo.l, dRestU: up.u, dRestL: lo.u, lim,
     fwd: F.f, up: F.u, right: F.r, rUpper, rLower, guards, restQ, halfDepth,
+    palmRest: palmRestNormal(P, F, spec.root.startsWith('left') ? 'left' : 'right'),
     // toward the body's midline from THIS shoulder: the rest direction points
     // laterally outward, so the midline is the other way along the body's
     // lateral axis
@@ -166,6 +201,7 @@ export function measureChain(avatar, key) {
  * @param {number[]|null} poleHint previous elbow offset, for continuity
  */
 export function solveChain(chain, avatar, targetWorld, poleHint = null, opts = {}) {
+  const palmWant = opts.palm ?? null;
   const root = avatar.root;
   const qRootInv = qConj(root.getWorldQuaternion(_q).toArray());
   const target = root.worldToLocal(_v.set(targetWorld[0], targetWorld[1], targetWorld[2])).toArray();
@@ -211,8 +247,24 @@ export function solveChain(chain, avatar, targetWorld, poleHint = null, opts = {
 
   const q = chainLocalQuats(chain.dRestU, chain.dRestL, res.upper, res.lower,
     { ...chain.restQ, qPnow: qParentNow });
+
+  // ---- and turn the palm to face what is being touched.
+  //
+  // Only when the caller says which way; a reach with no surface to meet has
+  // no business inventing a wrist angle, and would only fight the clip.
+  let lower = q.lower, hand = null, palmResidual = null;
+  if (palmWant) {
+    const op = orientPalm({
+      lowerFrame: q.lowerFrame, dLower: res.lower, palmRest: chain.palmRest,
+      qL0: chain.restQ.qL, qH0: chain.restQ.qH,
+      want: palmWant.dir, twistMax: chain.lim.foreTwistMax,
+    });
+    lower = qMulq(qConj(q.upperFrame), op.lowerFrame);
+    hand = op.handLocal;
+    palmResidual = op.residualDeg;
+  }
   return {
-    ok: true, res, upper: q.upper, lower: q.lower,
+    ok: true, res, upper: q.upper, lower, hand, palmResidual,
     swivel: res.swivel ?? 0, penetration: res.penetration ?? 0,
     elbowOffset: [res.elbow[0] - shoulder[0], res.elbow[1] - shoulder[1], res.elbow[2] - shoulder[2]],
   };

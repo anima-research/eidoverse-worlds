@@ -495,5 +495,59 @@ console.log("\nthe forearm, crossing the body");
   check('...and it actually ran', tested >= 14, `${tested}`);
 }
 
+console.log("\ntouching with the palm, not the back of the hand");
+{
+  // Position IK says nothing about how a hand is turned, so before this a hand
+  // arrived at a shoulder back-first as often as not — measured in the browser
+  // at 148° off for shoulder_l and upper_back, which is very nearly inside-out.
+  //
+  // No mesh here, so no derived surface normals: the normal is synthesised
+  // (pointing from the target back toward the shoulder, i.e. the hand meets it
+  // head-on), which exercises the same machinery — forearm pronation first,
+  // then a clamped wrist.
+  let worstOff = 0, worstRig = '', tested = 0, sumBefore = 0, sumAfter = 0;
+  for (const rig of good) {
+    const av = makeAvatar(rig.P, { realParent: rig.realParent, vrm0: rig.vrm0 });
+    const chain: any = measureChain(av, 'rightHand');
+    if (!chain?.restQ?.qH || !chain.palmRest) continue;
+    const at = (n: string) => av.nodes[n]?.getWorldPosition(new THREE.Vector3());
+    const sh = at('rightUpperArm');
+    const R = chain.L1 + chain.L2;
+    const qH0 = new THREE.Quaternion(...chain.restQ.qH);
+    const aPalm = new THREE.Vector3(...chain.palmRest).applyQuaternion(qH0.clone().invert());
+    const palmNow = () => aPalm.clone().applyQuaternion(
+      chain.nodes.end.getWorldQuaternion(new THREE.Quaternion()));
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const dir = new THREE.Vector3(Math.cos(a) * 0.6, Math.sin(a) * 0.5, 0.7).normalize();
+      const target = sh.clone().addScaledVector(dir, R * 0.6);
+      const want = dir.clone().negate();          // meet the surface head-on
+
+      let out: any = solveChain(chain, av, target.toArray(), null);
+      if (!out.ok) continue;
+      chain.nodes.upper.quaternion.set(...out.upper as any);
+      chain.nodes.lower.quaternion.set(...out.lower as any);
+      av.root.updateMatrixWorld(true);
+      const before = Math.acos(Math.max(-1, Math.min(1, palmNow().dot(want)))) * 180 / Math.PI;
+
+      out = solveChain(chain, av, target.toArray(), null, { palm: { dir: want.toArray() } });
+      if (!out.ok || !out.hand) continue;
+      chain.nodes.upper.quaternion.set(...out.upper as any);
+      chain.nodes.lower.quaternion.set(...out.lower as any);
+      chain.nodes.end.quaternion.set(...out.hand as any);
+      av.root.updateMatrixWorld(true);
+      const after = Math.acos(Math.max(-1, Math.min(1, palmNow().dot(want)))) * 180 / Math.PI;
+
+      tested++; sumBefore += before; sumAfter += after;
+      if (after > worstOff) { worstOff = after; worstRig = rig.name; }
+    }
+  }
+  const mb = sumBefore / Math.max(1, tested), ma = sumAfter / Math.max(1, tested);
+  console.log(`  ${tested} reaches: palm off-target ${mb.toFixed(0)}° -> ${ma.toFixed(0)}° mean, worst ${worstOff.toFixed(0)}° on ${worstRig}`);
+  check(`the palm turns to face what it touches (mean ${mb.toFixed(0)}° -> ${ma.toFixed(0)}°)`, ma < mb / 2);
+  check(`no palm is left facing away (worst ${worstOff.toFixed(0)}°)`, worstOff < 90, `on ${worstRig}`);
+  check('...and it ran on every rig', tested >= 14, `${tested}`);
+}
+
 console.log(failures ? `\n\x1b[31m${failures} failed\x1b[0m\n` : "\n\x1b[32mall passed\x1b[0m\n");
 process.exit(failures ? 1 : 0);

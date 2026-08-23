@@ -679,6 +679,16 @@ globalThis.EW = {
     rows.sort((a, b) => (a.mm ?? 1e9) - (b.mm ?? 1e9));
     return rows;
   },
+  // Position AND the surface normal, so a reach can put the PALM on it.
+  // EW.reach('rightHand', () => EW.contactFrame('mythos', 'shoulder_l'))
+  contactFrame: (who, name, standoff = 0.02) => {
+    const av = who ? remotes.get(who)?.avatar : getMe();
+    if (!av) return null;
+    av.__marks ??= deriveLandmarks(av);
+    const e = av.__marks.get(canonicalPoint(name) ?? name);
+    const hit = e && landmarkWorld(e, standoff);
+    return hit ? { pos: hit.pos.toArray(), normal: hit.normal.toArray() } : null;
+  },
   showLandmarks: (on = true, who) => {
     const av = who ? remotes.get(who)?.avatar : getMe();
     if (!av) return null;
