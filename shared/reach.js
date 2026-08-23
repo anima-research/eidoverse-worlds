@@ -223,16 +223,20 @@ export function solveTwoBone(o) {
       // therefore stays the swivel's business, and the honest fix is a torso
       // shape with a front to it.
       const min = g.r + rU * CONTACT;
-      const cc = segSegClosest(root, add(root, mul(out, L1)), g.a, g.b);
+      const w = g.warp;
+      const elbow = add(root, mul(out, L1));
+      const cc = segSegClosest(warpPt(root, w), warpPt(elbow, w), warpPt(g.a, w), warpPt(g.b, w));
       if (cc.d >= min) continue;
-      const arm = sub(cc.c1, root);
+      const arm = sub(cc.c1, warpPt(root, w));
       const armLen = len(arm);
       if (armLen < 1e-4) continue;
-      const n = norm(sub(cc.c1, cc.c2));
-      if (!n) continue;                       // dead centre: no direction to push
-      const ax = norm(cross(arm, n));
+      // the push direction is discovered in warped space and has to be carried
+      // back, or the arm is shoved along an axis the body does not have
+      const n = unwarpDir(norm(sub(cc.c1, cc.c2)) ?? [0, 0, 0], w);
+      if (!n || !len(n)) continue;            // dead centre: no direction to push
+      const ax = norm(cross(sub(elbow, root), n));
       if (!ax) continue;                      // already pushing along the bone
-      const theta = Math.min(0.6, (min - cc.d) / armLen);
+      const theta = Math.min(0.6, (min - cc.d) / Math.max(armLen, 1e-4));
       out = norm(rotateAbout(out, ax, theta)) ?? out;
       moved = true;
     }
@@ -464,13 +468,44 @@ export function segSegDist(p1, q1, p2, q2) {
 // to sink in, and the centreline is what must stay outside.
 const CONTACT = 0.25;
 
+
+// ---- bodies are not round ---------------------------------------------------
+//
+// A guard may carry a WARP: the body-frame basis it is elliptical in, plus how
+// much thinner it is front-to-back than side-to-side. Distances are then
+// measured in a space where that ellipse is a circle, which is the whole trick
+// — scaling is linear, so segment-segment distance survives it, and the answer
+// comes back meaning "is the arm inside the real shape" instead of "is the arm
+// inside the cylinder that a half-width implies".
+//
+// Without it, torsoRadius (0.42x the wider of shoulder or hip span, a
+// half-WIDTH) also becomes the half-depth, and a forearm crossing in FRONT of
+// the belly reads as buried in it. That is not a tuning error; a capsule has
+// no front.
+const warpPt = (p, w) => (!w ? p : [
+  dot(p, w.r), dot(p, w.u), dot(p, w.f) * w.k,
+]);
+/** Carry a direction measured in warped space back to the real one. */
+const unwarpDir = (n, w) => {
+  if (!w) return n;
+  const v = [
+    n[0] * w.r[0] + n[1] * w.u[0] + (n[2] / w.k) * w.f[0],
+    n[0] * w.r[1] + n[1] * w.u[1] + (n[2] / w.k) * w.f[1],
+    n[0] * w.r[2] + n[1] * w.u[2] + (n[2] / w.k) * w.f[2],
+  ];
+  return norm(v) ?? n;
+};
+
 export function penetration(root, elbow, hand, rUpper, rLower, guards) {
   let pen = 0;
   for (const g of guards) {
+    const w = g.warp;
+    const R = warpPt(root, w), E = warpPt(elbow, w), H = warpPt(hand, w);
+    const A = warpPt(g.a, w), B = warpPt(g.b, w);
     const min1 = g.r + rUpper * CONTACT, min2 = g.r + rLower * CONTACT;
-    const d1 = segSegDist(root, elbow, g.a, g.b);
+    const d1 = segSegDist(R, E, A, B);
     if (d1 < min1) pen += min1 - d1;
-    const d2 = segSegDist(elbow, hand, g.a, g.b);
+    const d2 = segSegDist(E, H, A, B);
     if (d2 < min2) pen += min2 - d2;
   }
   return pen;
@@ -537,129 +572,84 @@ export function solveTwoBoneClear(o, guards) {
   const rU = o.rUpper ?? 0, rL = o.rLower ?? 0;
   const lim = o.limits ?? {};
 
-  // You cannot touch a shoulder without putting your hand inside the shoulder's
-  // own capsule. A guard the TARGET sits inside can never be satisfied, so
-  // keeping it means nothing ever clears and the arm hunts. Drop those: guards
-  // exist to stop the arm passing through the body on the WAY, not to forbid
-  // arriving. Filtered once and handed down, so the upper-bone projection
-  // inside solveTwoBone works from the same set.
+  // Clip each guard where the hand is going, rather than dropping it: the
+  // torso is ONE capsule from hips to chest, and deleting it because the
+  // target sits inside its lower end leaves nothing to stop the forearm
+  // crossing the chest.
   guards = (guards ?? []).flatMap((g) => clipGuardNear(g, o.target, g.r + rL * CONTACT));
   o = { ...o, guards };
 
-  const base = solveTwoBone(o);
-  if (!base.ok) return base;
+  const root = o.root;
+  const toTarget = sub(o.target, root);
+  const reachDir = norm(toTarget);
+  const fullDist = len(toTarget);
 
-  const to = sub(o.target, o.root);
-  const aim = norm(to);
-  const basePole = o.pole ?? base.elbow;
-  const at = (th) => (th === 0 || !aim)
-    ? base
-    : solveTwoBone({ ...o, pole: rotateAbout(basePole, aim, th) });
-  const penOf = (res) => (res?.ok && guards.length)
-    ? penetration(o.root, res.elbow, res.hand, rU, rL, guards) : 0;
+  // ---- best pose for ONE target: the least swivel that clears the body.
+  const bestFor = (target) => {
+    const oo = { ...o, target };
+    const base = solveTwoBone(oo);
+    if (!base.ok) return null;
+    const aim = norm(sub(target, root));
+    const basePole = o.pole ?? base.elbow;
+    const at = (th) => (th === 0 || !aim)
+      ? base : solveTwoBone({ ...oo, pole: rotateAbout(basePole, aim, th) });
+    const penOf = (res) => (res?.ok && guards.length)
+      ? penetration(root, res.elbow, res.hand, rU, rL, guards) : 0;
 
-  // ---- which side of the chord the elbow is on, as a continuous signed
-  // quantity: +1 fully correct, -1 fully inverted. An elbow folds toward the
-  // biceps side of the UPPER ARM, a frame that rotates with the arm including
-  // its twist, and position-only IK never determines twist — so the chord test
-  // is a PROXY, valid only while the arm is out to the side. Reach across your
-  // chest and the elbow legitimately sits in front of the chord. Where the
-  // proxy cannot speak, nothing is constrained; where it can, it is HARD.
-  const aimDir = aim;
-  const adducted = o.inward && aimDir ? Math.max(0, dot(aimDir, o.inward)) : 0;
-  const sideKnown = !!(lim.hingeDir && o.fwd) && adducted < 0.35;
-  const sideOf = (res) => {
-    if (!res?.ok) return 1;
-    const chord = norm(sub(res.hand, o.root));
-    if (!chord) return 1;
-    const e = sub(res.elbow, o.root);
-    const perp = sub(e, mul(chord, dot(e, chord)));
-    const pl = len(perp);
-    if (pl < 1e-4) return 1;                       // straight arm: no bend to judge
-    return dot(mul(perp, 1 / pl), o.fwd) * -Math.sign(lim.hingeDir);
-  };
-
-  // ---- the feasible arc.
-  //
-  // Swivel is one angle on a circle, and the correct-side set is one
-  // contiguous arc of it (the elbow's offset direction rotates with the
-  // swivel, so the side is essentially a cosine). Find the arc containing the
-  // most natural pose and BISECT its edges, rather than accepting whichever
-  // 10° sample happened to be sampled. A boundary found by bisection moves
-  // continuously as the body does; a sample does not, and that difference is
-  // the elbow snapping across at 14x the frame step.
-  const STEP = 10 * Math.PI / 180;
-  const N = 36;
-  let lo = -Math.PI, hi = Math.PI;
-  if (sideKnown) {
-    const sv = [];
-    for (let i = 0; i <= N; i++) { const th = -Math.PI + (i / N) * 2 * Math.PI; sv.push([th, sideOf(at(th))]); }
-    // the sample nearest 0 that is on the correct side anchors the arc
-    let anchor = -1, bestAbs = Infinity;
-    for (let i = 0; i <= N; i++) {
-      if (sv[i][1] >= 0 && Math.abs(sv[i][0]) < bestAbs) { bestAbs = Math.abs(sv[i][0]); anchor = i; }
-    }
-    if (anchor < 0) return { ...base, swivel: 0, penetration: penOf(base), bound: [...(base.bound ?? []), 'inverted'] };
-    const edge = (from, dir) => {
-      let i = from;
-      while (true) {
-        const j = i + dir;
-        if (j < 0 || j > N) return sv[i][0] + dir * STEP;      // wraps: whole circle
-        if (sv[j][1] < 0) break;
-        i = j;
-      }
-      // bisect between the last good sample and the first bad one
-      let a = sv[i][0], b = sv[i + dir][0];
-      for (let k = 0; k < 20; k++) {
-        const m = (a + b) / 2;
-        if (sideOf(at(m)) >= 0) a = m; else b = m;
-      }
-      return a;
-    };
-    lo = edge(anchor, -1); hi = edge(anchor, +1);
-    if (lo > hi) { const t = lo; lo = hi; hi = t; }
-  }
-  const clampArc = (th) => (th < lo ? lo : th > hi ? hi : th);
-
-  // ---- inside the arc, the least swivel that clears the body.
-  //
-  // Preferring the smallest |swivel| that reaches zero penetration keeps the
-  // pose natural AND continuous: the edge of the zero-penetration set is
-  // itself a continuous function of the geometry, so bisecting to it gives an
-  // answer that moves smoothly. Picking the best of N samples does not.
-  const th0 = clampArc(0);
-  const r0 = at(th0);
-  if (penOf(r0) <= 0) return { ...r0, swivel: th0, penetration: 0 };
-
-  let bestTh = th0, bestPen = penOf(r0), bestRes = r0;
-  for (let i = 1; i <= N; i++) {
-    for (const dir of [1, -1]) {
-      const th = th0 + dir * i * STEP;
-      if (th < lo || th > hi) continue;
+    let best = { res: base, pen: penOf(base), swivel: 0 };
+    if (best.pen <= 0) return best;
+    for (const th of SWIVELS) {
+      if (th === 0) continue;
       const res = at(th);
       if (!res.ok) continue;
       const pen = penOf(res);
-      if (pen <= 0) {
-        // bisect back toward th0 for the nearest clear angle
-        let a = th0 + dir * (i - 1) * STEP, b = th;
-        for (let k = 0; k < 18; k++) {
-          const m = (a + b) / 2;
-          if (penOf(at(m)) <= 0) b = m; else a = m;
-        }
-        const out = at(b);
-        return { ...out, swivel: b, penetration: 0 };
-      }
-      if (pen < bestPen) { bestPen = pen; bestTh = th; bestRes = res; }
+      if (pen <= 0) return { res, pen: 0, swivel: th };
+      if (pen < best.pen) best = { res, pen, swivel: th };
     }
+    return best;
+  };
+
+  const full = bestFor(o.target);
+  if (!full) return solveTwoBone(o);
+  if (full.pen <= 0) {
+    return { ...full.res, swivel: full.swivel, penetration: 0, retreat: 1 };
   }
-  // nothing clears anywhere in the arc: refine around the least-bad angle so
-  // the answer is still continuous rather than quantized to a sample
-  let a = bestTh - STEP, b = bestTh + STEP;
-  for (let k = 0; k < 18; k++) {
-    const m1 = a + (b - a) / 3, m2 = b - (b - a) / 3;
-    if (penOf(at(clampArc(m1))) < penOf(at(clampArc(m2)))) b = m2; else a = m1;
+
+  // ---- it cannot get there. Find how far it CAN get.
+  //
+  // Not by giving up, and not by driving the arm through the body to a point
+  // it was never going to touch. The straight line from one shoulder to the
+  // opposite hip runs through the torso, so a target out there is unreachable
+  // in the only sense that matters — but there is a nearest point ON THE WAY
+  // that the body does allow, and that is the pose a person actually adopts.
+  //
+  // Bisect the reach: the furthest fraction of the way to the target whose
+  // best pose is clear. Monotone in practice (a shorter reach is an easier
+  // one), continuous in the geometry, and it keeps the hand on the line the
+  // reach was asking for instead of inventing a direction of its own.
+  if (!reachDir || fullDist < 1e-6) {
+    return { ...full.res, swivel: full.swivel, penetration: full.pen, retreat: 1 };
   }
-  const th = clampArc((a + b) / 2);
-  const out = at(th);
-  return { ...out, swivel: th, penetration: penOf(out) };
+  let lo = 0, hi = 1, bestClear = null;
+  const near = bestFor(add(root, mul(reachDir, fullDist * 0.05)));
+  if (!near || near.pen > 0) {
+    // even a token reach is blocked — hold the least-bad full attempt rather
+    // than collapse the arm to nothing
+    return { ...full.res, swivel: full.swivel, penetration: full.pen, retreat: 1 };
+  }
+  bestClear = { ...near, t: 0.05 };
+  lo = 0.05;
+  for (let i = 0; i < 12; i++) {
+    const mid = (lo + hi) / 2;
+    const r = bestFor(add(root, mul(reachDir, fullDist * mid)));
+    if (r && r.pen <= 0) { bestClear = { ...r, t: mid }; lo = mid; } else hi = mid;
+  }
+  // report the shortfall against what was ASKED for, not against the
+  // compromise — a caller deciding whether the touch landed needs the truth
+  const gap = len(sub(o.target, bestClear.res.hand));
+  return {
+    ...bestClear.res, swivel: bestClear.swivel, penetration: 0,
+    retreat: bestClear.t, gap,
+    bound: [...(bestClear.res.bound ?? []), 'body'],
+  };
 }

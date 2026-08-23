@@ -208,3 +208,64 @@ export function debugMarkers(avatar, marks, scene, on = true) {
   scene.add(group);
   return group;
 }
+
+/**
+ * How deep the torso actually is, measured — half-depth front-to-back at chest
+ * height, in metres.
+ *
+ * The collision model inherits torsoRadius from the ragdoll, which is 0.42x
+ * the wider of shoulder or hip span: a half-WIDTH. A capsule is isotropic, so
+ * that number silently becomes the half-depth too, and a forearm crossing in
+ * FRONT of the belly — exactly what reaching your opposite hip requires — reads
+ * as inside the body. Bodies are not round. This asks the mesh how deep this
+ * one is, the same way the contact points ask it where its shoulder is.
+ *
+ * Returns null if it cannot be measured, so a caller can fall back rather than
+ * silently use a guess.
+ */
+export function torsoHalfDepth(avatar) {
+  const h = avatar?.vrm?.humanoid;
+  const scene = avatar?.vrm?.scene;
+  if (!h || !scene) return null;
+  const saved = [];
+  for (const name of Object.keys(h.humanBones ?? {})) {
+    const n = h.getNormalizedBoneNode(name);
+    if (n) { saved.push([n, n.quaternion.clone()]); n.quaternion.identity(); }
+  }
+  h.update();
+  avatar.root.updateMatrixWorld(true);
+  try {
+    const meshes = meshesOf(scene);
+    if (!meshes.length) return null;
+    for (const o of meshes) o.skeleton?.update?.();
+    const P = {};
+    for (const name of Object.keys(h.humanBones ?? {})) {
+      const n = h.getNormalizedBoneNode(name);
+      if (n) P[name] = n.getWorldPosition(new THREE.Vector3()).toArray();
+    }
+    const F = bodyFrame(P);
+    const chest = P.chest ?? P.spine;
+    if (!F || !chest) return null;
+    const at = new THREE.Vector3(...chest);
+    const fwd = new THREE.Vector3(...fromBody([0, 0, 1], F)).normalize();
+    const reach = 3 * Math.max(0.2, Math.hypot(
+      (P.head?.[0] ?? 0) - chest[0], (P.head?.[1] ?? 0) - chest[1], (P.head?.[2] ?? 0) - chest[2]));
+    const hitAt = (dir) => {
+      _ray.set(_v.copy(at).addScaledVector(dir, reach), dir.clone().negate());
+      const hits = _ray.intersectObjects(meshes, true);
+      const hit = hits.find((x) => x.point && x.distance > 1e-4);
+      return hit ? hit.point.distanceTo(at) : null;
+    };
+    const front = hitAt(fwd), back = hitAt(fwd.clone().negate());
+    if (front == null && back == null) return null;
+    // the spine does not sit centred front-to-back, so take the mean of the
+    // two surfaces rather than either one
+    const d = (front != null && back != null) ? (front + back) / 2 : (front ?? back);
+    return d > 1e-3 ? d : null;
+  } finally {
+    for (const [n, q] of saved) n.quaternion.copy(q);
+    h.update();
+    avatar.root.updateMatrixWorld(true);
+    for (const o of meshesOf(scene)) o.skeleton?.update?.();
+  }
+}

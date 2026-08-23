@@ -13,6 +13,7 @@ import { THREE } from './core.js';
 import { solveTwoBone, solveTwoBoneClear, penetration, chainLocalQuats, qConj, qMulq, qRot } from '../../shared/reach.js';
 import { bodyFrame, limitsFor, coneAxisBody, toBody, fromBody, REACH_CHAINS,
          torsoRadius, boneRadius, GUARD_SEGMENTS } from '../../shared/joints.js';
+import { torsoHalfDepth } from './landmarks.js';
 
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
@@ -20,6 +21,9 @@ const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _v3 = new THREE.Vector3();
 const _v4 = new THREE.Vector3();
+
+/** The spine column: the guards that are elliptical rather than round. */
+const TORSO_COLUMN = new Set(['hips', 'spine', 'chest', 'neck', 'head']);
 
 const dirLen = (u, v) => {
   const w = [v[0] - u[0], v[1] - u[1], v[2] - u[2]];
@@ -100,6 +104,13 @@ export function measureChain(avatar, key) {
   // of shoulder/hip span, anatomical fractions per bone), so a reach and a
   // fall agree about how thick this body is.
   const torsoR = torsoRadius(P);
+  // How much thinner this body is front-to-back than side-to-side, MEASURED
+  // off its own mesh rather than assumed. torsoRadius is a half-width; using
+  // it as the half-depth too is what makes a forearm crossing in front of the
+  // belly read as inside it. Falls back to round if the mesh cannot answer —
+  // no worse than before, and it says so by simply not warping.
+  const halfDepth = torsoHalfDepth(avatar);
+  const warpK = (halfDepth && halfDepth > 1e-3) ? Math.max(1, torsoR / halfDepth) : null;
   const rUpper = boneRadius(spec.root, torsoR);
   const rLower = boneRadius(spec.mid, torsoR);
   const own = new Set([spec.root, spec.mid, spec.end]);
@@ -108,7 +119,9 @@ export function measureChain(avatar, key) {
     if (own.has(ga) || own.has(gb)) continue;          // a limb cannot hit itself
     const na = h.getNormalizedBoneNode(ga), nb = h.getNormalizedBoneNode(gb);
     if (!na || !nb || !P[ga] || !P[gb]) continue;
-    const g = { na, nb, r: (boneRadius(ga, torsoR) + boneRadius(gb, torsoR)) / 2 };
+    const torsoCol = TORSO_COLUMN.has(ga) && TORSO_COLUMN.has(gb);
+    const g = { na, nb, r: (boneRadius(ga, torsoR) + boneRadius(gb, torsoR)) / 2,
+                ...(torsoCol && warpK ? { warpK } : {}) };
     // Drop anything already overlapping at REST. A shoulder sits inside the
     // chest capsule on most rigs; guarding against it would report the arm as
     // permanently stuck in the body and swivel forever chasing a clearance
@@ -120,7 +133,7 @@ export function measureChain(avatar, key) {
 
   return {
     key, spec, nodes, L1: up.l, L2: lo.l, dRestU: up.u, dRestL: lo.u, lim,
-    fwd: F.f, rUpper, rLower, guards, restQ,
+    fwd: F.f, up: F.u, right: F.r, rUpper, rLower, guards, restQ, halfDepth,
     // toward the body's midline from THIS shoulder: the rest direction points
     // laterally outward, so the midline is the other way along the body's
     // lateral axis
@@ -162,6 +175,10 @@ export function solveChain(chain, avatar, targetWorld, poleHint = null) {
       a: root.worldToLocal(g.na.getWorldPosition(_v3)).toArray(),
       b: root.worldToLocal(g.nb.getWorldPosition(_v4)).toArray(),
       r: g.r,
+      ...(g.warpK ? { warp: {
+        r: qRot(qParent, chain.right), u: qRot(qParent, chain.up), f: qRot(qParent, chain.fwd),
+        k: g.warpK,
+      } } : {}),
     });
   }
 
