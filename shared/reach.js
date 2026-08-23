@@ -585,6 +585,21 @@ export function solveTwoBoneClear(o, guards) {
   const fullDist = len(toTarget);
 
   // ---- best pose for ONE target: the least swivel that clears the body.
+  // An elbow folds one way. The chord test is a PROXY for that, sound only
+  // while the arm is not adducted — reach across your chest and the elbow
+  // legitimately sits in front of the chord — so it is gated on how far across
+  // the REACH is asking to go, and simply not applied where it cannot speak.
+  const sideOf = (res, target) => {
+    if (!o.fwd || !lim.hingeDir || !res?.ok) return 1;
+    const chord = norm(sub(res.hand, root));
+    if (!chord) return 1;
+    const e = sub(res.elbow, root);
+    const perp = sub(e, mul(chord, dot(e, chord)));
+    const pl = len(perp);
+    if (pl < 1e-4) return 1;                       // straight arm: no bend to judge
+    return dot(mul(perp, 1 / pl), o.fwd) * -Math.sign(lim.hingeDir);
+  };
+
   const bestFor = (target) => {
     const oo = { ...o, target };
     const base = solveTwoBone(oo);
@@ -595,18 +610,25 @@ export function solveTwoBoneClear(o, guards) {
       ? base : solveTwoBone({ ...oo, pole: rotateAbout(basePole, aim, th) });
     const penOf = (res) => (res?.ok && guards.length)
       ? penetration(root, res.elbow, res.hand, rU, rL, guards) : 0;
+    const aimDir = aim;
+    const adducted = o.inward && aimDir ? Math.max(0, dot(aimDir, o.inward)) : 0;
+    const judgeSide = !!(lim.hingeDir && o.fwd) && adducted < 0.35;
+    const okSide = (res) => !judgeSide || sideOf(res, target) >= 0;
 
-    let best = { res: base, pen: penOf(base), swivel: 0 };
-    if (best.pen <= 0) return best;
+    let best = null, fallback = { res: base, pen: penOf(base), swivel: 0 };
+    if (fallback.pen <= 0 && okSide(base)) return fallback;
     for (const th of SWIVELS) {
       if (th === 0) continue;
       const res = at(th);
       if (!res.ok) continue;
       const pen = penOf(res);
-      if (pen <= 0) return { res, pen: 0, swivel: th };
-      if (pen < best.pen) best = { res, pen, swivel: th };
+      if (pen <= 0 && okSide(res)) return { res, pen: 0, swivel: th };
+      // keep the least-bad CORRECT-SIDE option ahead of any inverted one
+      const cand = { res, pen, swivel: th };
+      if (okSide(res) && (!best || pen < best.pen)) best = cand;
+      if (pen < fallback.pen) fallback = cand;
     }
-    return best;
+    return best ?? fallback;
   };
 
   if (o.trace) o.trace.push({ t: 1, pen: null, note: 'full attempt below' });
@@ -617,54 +639,71 @@ export function solveTwoBoneClear(o, guards) {
     return { ...full.res, swivel: full.swivel, penetration: 0, retreat: 1 };
   }
 
-  // ---- it cannot get there. Find how far it CAN get.
+  // ---- it cannot get there. Find the closest place it CAN reach.
   //
   // Not by giving up, and not by driving the arm through the body to a point
-  // it was never going to touch: there is a nearest place ON THE WAY that the
-  // body allows, and that is the pose a person actually adopts.
+  // it was never going to touch. There is a nearest pose the body allows, and
+  // that is the one a person adopts.
   //
-  // ⚠ Penetration is NOT monotone in reach distance, which the first version
-  // of this assumed ("a shorter reach is an easier one") and built a bisection
-  // on. Measured on orion, reaching across for the far hip:
-  //     t=0.05  74mm   t=0.20  62mm   t=0.40  0mm   t=0.60  7mm   t=1.0  364mm
-  // A tightly folded arm jams its elbow into the chest, so the near end is
-  // blocked too and the clear band sits in the MIDDLE. The bisection probed
-  // 5%, found it blocked, concluded the whole line was impossible and returned
-  // the full reach — which is why the retreat never engaged and the forearm
-  // went on crossing the torso.
+  // ⚠ It is NOT on the line to the target, which is what the first two
+  // versions of this searched. Traced on orion reaching the far hip, every
+  // point along that line penetrates — floor ~65mm — because near the shoulder
+  // the line means an arm folded against the chest, and far out it means an
+  // arm through the torso. The clear poses are OFF the line: lower, or further
+  // round. Searching the line could not find them however cleverly it scanned,
+  // which is a lesson about search SPACES rather than about search.
   //
-  // So: scan inwards for the furthest clear fraction, then refine outwards
-  // from it. Scanning from the far end means the first clear sample IS the
-  // best one, and the refinement only sharpens it.
+  // So: sample directions in a cone about the target and distances along each,
+  // score every feasible one by how close its hand actually lands to what was
+  // asked for, and take the best. Cheap probe first (one solve, no swivel
+  // sweep), full search only on the handful worth it.
   if (!reachDir || fullDist < 1e-6) {
     return { ...full.res, swivel: full.swivel, penetration: full.pen, retreat: 1 };
   }
-  const SCAN = 20;
-  let found = null;
-  for (let i = 1; i <= SCAN; i++) {
-    const t = 1 - i / (SCAN + 1);
-    const r = bestFor(add(root, mul(reachDir, fullDist * t)));
-    if (o.trace) o.trace.push({ t: +t.toFixed(3), pen: r ? +(r.pen * 1000).toFixed(1) : null });
-    if (r && r.pen <= 0) { found = { ...r, t }; break; }
+  const perp = norm(cross(reachDir, Math.abs(reachDir[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]))
+    ?? norm(cross(reachDir, [0, 0, 1])) ?? [1, 0, 0];
+  const perp2 = norm(cross(reachDir, perp)) ?? [0, 1, 0];
+  const DEV = [0, 20, 40, 60].map((deg) => deg * Math.PI / 180);
+  const AZ = [0, 60, 120, 180, 240, 300].map((deg) => deg * Math.PI / 180);
+  const FRAC = [1, 0.85, 0.7, 0.55, 0.4];
+
+  const cheapPen = (target) => {
+    const r = solveTwoBone({ ...o, target });
+    if (!r.ok) return null;
+    return { r, pen: guards.length ? penetration(root, r.elbow, r.hand, rU, rL, guards) : 0 };
+  };
+
+  const shortlist = [];
+  for (const dev of DEV) {
+    for (const az of (dev === 0 ? [0] : AZ)) {
+      const axis = norm(add(mul(perp, Math.cos(az)), mul(perp2, Math.sin(az))));
+      const dir = axis ? norm(rotateAbout(reachDir, axis, dev)) : reachDir;
+      if (!dir) continue;
+      for (const f of FRAC) {
+        const target = add(root, mul(dir, fullDist * f));
+        const c = cheapPen(target);
+        if (!c) continue;
+        // score by where the HAND lands against what was asked for — the whole
+        // point is closeness to the target, not closeness to some proxy
+        shortlist.push({ target, miss: len(sub(o.target, c.r.hand)), pen: c.pen });
+      }
+    }
   }
-  if (!found) {
-    // genuinely nowhere on the line works: hold the least-bad full attempt
-    // rather than collapse the arm to nothing
+  shortlist.sort((a, b) => (a.pen > 0) - (b.pen > 0) || a.miss - b.miss);
+
+  let best = null;
+  for (const cand of shortlist.slice(0, 6)) {
+    const r = bestFor(cand.target);
+    if (!r || r.pen > 0) continue;
+    const miss = len(sub(o.target, r.res.hand));
+    if (!best || miss < best.miss) best = { ...r, miss };
+  }
+  if (!best) {
     return { ...full.res, swivel: full.swivel, penetration: full.pen, retreat: 1 };
   }
-  // push back out toward the target as far as it stays clear
-  let lo = found.t, hi = Math.min(1, found.t + 1 / (SCAN + 1));
-  for (let i = 0; i < 8; i++) {
-    const mid = (lo + hi) / 2;
-    const r = bestFor(add(root, mul(reachDir, fullDist * mid)));
-    if (r && r.pen <= 0) { found = { ...r, t: mid }; lo = mid; } else hi = mid;
-  }
-  // report the shortfall against what was ASKED for, not against the
-  // compromise — a caller deciding whether the touch landed needs the truth
-  const gap = len(sub(o.target, found.res.hand));
   return {
-    ...found.res, swivel: found.swivel, penetration: 0,
-    retreat: found.t, gap,
-    bound: [...(found.res.bound ?? []), 'body'],
+    ...best.res, swivel: best.swivel, penetration: 0,
+    gap: best.miss,
+    bound: [...(best.res.bound ?? []), 'body'],
   };
 }

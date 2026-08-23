@@ -133,8 +133,8 @@ console.log("\nand it KEEPS going where it is sent (the moving target)");
   // rotating until the nearest edge switches ends, so the pose crosses in one
   // step. Fixing it needs the arc edge chosen with continuity across frames,
   // which is the piece that is not built.
-  check(`elbow snap does not worsen (max/p99 ${spike.toFixed(2)}x on ${spikeRig})`,
-    spike <= 67, `worst frame step overall ${(worstJump * 1000).toFixed(2)}mm`);
+  check(`the elbow never SNAPS: worst step is no outlier (max/p99 ${spike.toFixed(2)}x on ${spikeRig})`,
+    spike <= 6, `worst frame step overall ${(worstJump * 1000).toFixed(2)}mm`);
 }
 
 console.log("\nwith the body moving under it");
@@ -431,8 +431,8 @@ console.log("\nelbows bend the way elbows bend (where that is knowable)");
   // The real fix is to solve the swivel continuously — refine around the best
   // sample rather than return one of them — so the output moves as smoothly as
   // the objective does. Until then this guards against getting WORSE.
-  check(`inverted elbows do not increase (${inverted}/${checked}, ${skipped} adducted and skipped)`,
-    inverted <= 440);
+  check(`no elbow bends backwards where the rule applies (${inverted}/${checked}, ${skipped} adducted and skipped)`,
+    inverted === 0);
   check("...and the sweep actually ran", checked > 500, `${checked}`);
 }
 
@@ -491,7 +491,7 @@ console.log("\nthe forearm, crossing the body");
   // forearm crosses through the torso because nothing acts on it once the
   // elbow is placed. Lower this number when that is fixed; it exists so the
   // number cannot quietly grow while the fix is pending.
-  check(`forearm-through-torso does not worsen (${worstDeficitMM.toFixed(0)}mm)`, worstDeficitMM <= 170);
+  check(`forearm-through-torso does not worsen (${worstDeficitMM.toFixed(0)}mm)`, worstDeficitMM <= 45);
   check('...and it actually ran', tested >= 14, `${tested}`);
 }
 
