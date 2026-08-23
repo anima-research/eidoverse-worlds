@@ -30,6 +30,7 @@ import { World, type Client, worlds, getWorld, forkWorld, wireSettledPose } from
 // 7c). fetch() below delegates; avatarRoster rides back for the join
 // snapshot, pendingSnaps for the renderer's snap-result replies.
 import { route, avatarRoster, pendingSnaps } from "./routes.ts";
+import { registerSystem, startTick } from "./tick.ts";
 // The reference fold lives in shared/ (house rule 1 by construction; the
 // world folds with it in world.ts) — what remains here is the role ladder.
 import { ROLE_RANK } from "../shared/fold.js";
@@ -161,7 +162,7 @@ function describe(w: World): string {
 // the running server notices here: reload, diff, and push the same
 // generation-bearing event a proposal gets. Late profile arrival is
 // event-driven for every consumer, not wishful polling.
-setInterval(() => {
+registerSystem({ name: "seat-store-poll", everyMs: 5000, fn: () => {
   const ext = seatStore.pollExternalChange();
   if (!ext) return;
   for (const ch of ext.changed) {
@@ -170,14 +171,13 @@ setInterval(() => {
     for (const w of worlds.values()) for (const c of w.clients) { c.ws.send(update); notified++; }
     console.log(`[seats] external change ${ch.name}/${ch.pose} rev ${ext.rev} → ${notified} client(s)`);
   }
-}, 5000);
+} });
 
-setInterval(() => {
-  const now = Date.now();
+registerSystem({ name: "behaviors", everyMs: 1000, fn: (now) => {
   for (const w of worlds.values()) {
     try { w.bhv.tick(now); } catch (err) { console.error(`[world:${w.name}] behavior tick`, err); }
   }
-}, 1000);
+} });
 
 // Boot sweep: worlds load lazily on first touch, but a world with scripts
 // must wake WITH the server, not with its first visitor — otherwise a
@@ -1243,7 +1243,7 @@ const server = Bun.serve({
 // tick. Frames are disposable (latest-value-wins): a client whose socket is
 // backed up skips ticks instead of queueing history it will only fast-forward
 // through. Idle worlds cost one Map.size check.
-setInterval(() => {
+registerSystem({ name: "stage-frames", everyMs: FRAME_MS, fn: () => {
   // per-world guard, same idiom as the behavior tick: one world's failure
   // (the RECORD path appends to disk) must cost that world one tick, not
   // exit the process or stall every other world's frames (house rule 3 —
@@ -1269,13 +1269,12 @@ setInterval(() => {
     }
     } catch (err) { console.error(`[world:${w.name}] frame tick`, err); }
   }
-}, FRAME_MS);
+} });
 
 // Stale-lease sweep: a holder that stops streaming (hung tab, wedged plugin)
 // loses the object — committed at its last known transform, like a
 // disconnect. Nothing hovers forever; nothing stays possessed.
-setInterval(() => {
-  const now = Date.now();
+registerSystem({ name: "lease-sweep", everyMs: 5_000, fn: (now) => {
   for (const w of worlds.values()) {
     // per-world guard (house rule 3): settleLease appends to disk
     try {
@@ -1287,7 +1286,11 @@ setInterval(() => {
       }
     } catch (err) { console.error(`[world:${w.name}] lease sweep`, err); }
   }
-}, 5_000);
+} });
+
+// The heartbeat starts once every system is on it — the base is the finest
+// cadence in the registry (stage frames); everything coarser rides it.
+startTick(FRAME_MS);
 
 // Fold on the way out so a restart resumes from the snapshot rather than
 // re-reading a tail that was already folded in memory.

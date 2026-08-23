@@ -20,6 +20,7 @@ import { summarizeGlb } from "./geometry.ts";
 import { worlds, getWorld, type World } from "./world.ts";
 import { handleUpload } from "./upload.ts";
 import { defsPayload } from "./defs.ts";
+import { tickStats } from "./tick.ts";
 
 /** What the routes need from Bun's server object, structurally: the WS
  *  upgrade and the socket address (X-Real-IP's fallback). */
@@ -409,6 +410,14 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname === "/avatars",
     handler: () => new Response(JSON.stringify(avatarRoster()),
+      { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
+  },
+  {
+    // The heartbeat's gauges (charter §4): per-system runs / worst ms /
+    // errors. Public and cheap like /version — "is the tick healthy" must
+    // be a lookup, not an inference from symptoms.
+    match: (u) => u.pathname === "/tick",
+    handler: () => new Response(JSON.stringify(tickStats()),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {

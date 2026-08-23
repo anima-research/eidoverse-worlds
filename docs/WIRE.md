@@ -148,6 +148,11 @@ upstream-patched > store > eidoverse-video precedence) · `/upload` POST ·
 `/perflog` POST (client perf beacons) · `/shared/*`, `/node_modules/*`, `/`
 (client serving).
 
+Wire additions since the v0 freeze (each flagged in its commit):
+`/defs` (the def registry, charter §3 — instance content as data, slice 2) ·
+`/tick` (heartbeat gauges, charter §4 — per-system runs/worst-ms/errors,
+slice 3).
+
 ## 7. Quirks recorded, not yet ruled on
 
 Flagged for the phase-1 protocol review — each is as-built behavior a new
