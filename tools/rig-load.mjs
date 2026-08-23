@@ -35,6 +35,16 @@ export function glbJson(buf) {
 }
 
 /** humanoid bone name -> node index, for VRM 0.x and 1.0 alike. */
+/** VRM0 models face -Z. three-vrm turns them 180° about Y so they face +Z like
+ *  everything else, which means their whole NORMALIZED bone hierarchy sits a
+ *  half-turn from the avatar root. Six of the eighteen shipped rigs are VRM0
+ *  (meebit, orion, shino, victoria, vroid_fem, vroid_masc), and a harness that
+ *  ignores this tests a body nobody wears — which is how a solver that pointed
+ *  orion's arm at the ceiling passed every suite here. */
+export function isVrm0(g) {
+  return !g.extensions?.VRMC_vrm && !!g.extensions?.VRM;
+}
+
 export function humanBones(g) {
   const v1 = g.extensions?.VRMC_vrm?.humanoid?.humanBones;
   if (v1) return Object.fromEntries(Object.entries(v1).map(([b, v]) => [b, v.node]));
@@ -113,7 +123,7 @@ export function libraryRigs(dir = process.env.EIDOVERSE_DIR
       while (a !== undefined && !nodeOf.has(a)) a = up.get(a);
       realParent[b] = a === undefined ? null : nodeOf.get(a);
     }
-    out.push({ name, P, realParent, boneCount: Object.keys(P).length });
+    out.push({ name, P, realParent, vrm0: isVrm0(g), boneCount: Object.keys(P).length });
   }
   return out;
 }
@@ -143,7 +153,7 @@ export function rigs() {
       while (a !== undefined && !nodeOf.has(a)) a = up.get(a);
       realParent[b] = a === undefined ? null : nodeOf.get(a);
     }
-    out.push({ name, P, realParent, boneCount: Object.keys(P).length });
+    out.push({ name, P, realParent, vrm0: isVrm0(g), boneCount: Object.keys(P).length });
   }
   return out;
 }
@@ -167,8 +177,15 @@ export const PARENT = {
  *  sim ever sees the skeleton — the case that used to poison the sim's idea of
  *  "rest". restBonePositions() still reports the NEUTRAL pose, as the real
  *  Avatar does, so a test can prove the two are decoupled. */
-export function makeAvatar(P, { stride = 0, realParent = null } = {}) {
+export function makeAvatar(P, { stride = 0, realParent = null, vrm0 = false } = {}) {
   const root = new THREE.Object3D();
+  // three-vrm's half-turn for VRM0, reproduced as a pivot the bones hang from,
+  // so every normalized bone reads a 180° world rotation against the root
+  // exactly as it does in the browser. Without it the harness silently models
+  // a VRM1 body and any frame error on the other six goes unseen.
+  const pivot = new THREE.Object3D();
+  if (vrm0) pivot.rotation.y = Math.PI;
+  root.add(pivot);
   const nodes = {};
   // `realParent` builds the rig's ACTUAL humanoid hierarchy — upperChest,
   // shoulders and all — so `d.parent` is the node the shipped rig would give.
@@ -183,7 +200,7 @@ export function makeAvatar(P, { stride = 0, realParent = null } = {}) {
     const p = par[j];
     const base = p && P[p] ? P[p] : new THREE.Vector3(0, 0, 0);
     n.position.copy(P[j]).sub(base);
-    ((p && nodes[p]) ? nodes[p] : root).add(n);
+    ((p && nodes[p]) ? nodes[p] : pivot).add(n);
     nodes[j] = n;
   }
   root.updateMatrixWorld(true);

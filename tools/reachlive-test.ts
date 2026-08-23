@@ -51,7 +51,7 @@ console.log("\na hand goes where it is sent");
 {
   let worst = 0, n = 0, unmeasurable: string[] = [];
   for (const rig of good) {
-    const av = makeAvatar(rig.P, { realParent: rig.realParent });
+    const av = makeAvatar(rig.P, { realParent: rig.realParent, vrm0: rig.vrm0 });
     const chain: any = measureChain(av, "leftHand");
     if (!chain) { unmeasurable.push(rig.name); continue; }
     const sh = chain.nodes.upper.getWorldPosition(new THREE.Vector3());
@@ -75,7 +75,7 @@ console.log("\nand it KEEPS going where it is sent (the moving target)");
   // not snapped to once
   let worst = 0, frames = 0, worstJump = 0, spike = 0, spikeRig = '';
   for (const rig of good) {
-    const av = makeAvatar(rig.P, { realParent: rig.realParent });
+    const av = makeAvatar(rig.P, { realParent: rig.realParent, vrm0: rig.vrm0 });
     const chain: any = measureChain(av, "leftHand");
     if (!chain) continue;
     const sh = chain.nodes.upper.getWorldPosition(new THREE.Vector3());
@@ -144,7 +144,7 @@ console.log("\nwith the body moving under it");
   // first frame and drifts thereafter.
   let worst = 0, frames = 0;
   for (const rig of good) {
-    const av = makeAvatar(rig.P, { realParent: rig.realParent });
+    const av = makeAvatar(rig.P, { realParent: rig.realParent, vrm0: rig.vrm0 });
     const chain: any = measureChain(av, "leftHand");
     if (!chain) continue;
     const chest = av.nodes.chest ?? av.nodes.spine;
@@ -176,7 +176,7 @@ console.log("\nthe limits hold on live bones");
 {
   let violations = 0, tested = 0, reported = 0;
   for (const rig of good) {
-    const av = makeAvatar(rig.P, { realParent: rig.realParent });
+    const av = makeAvatar(rig.P, { realParent: rig.realParent, vrm0: rig.vrm0 });
     const chain: any = measureChain(av, "leftHand");
     if (!chain) continue;
     const sh = chain.nodes.upper.getWorldPosition(new THREE.Vector3());
@@ -210,7 +210,7 @@ console.log("\nnot through your own body");
   // measured against a number and not against an impression.
   let before = 0, after = 0, worstAfter = 0, cases = 0, cleared = 0, gapWorst = 0;
   for (const rig of good) {
-    const av = makeAvatar(rig.P, { realParent: rig.realParent });
+    const av = makeAvatar(rig.P, { realParent: rig.realParent, vrm0: rig.vrm0 });
     const chain: any = measureChain(av, "leftHand");
     if (!chain?.guards?.length) continue;
     const sh = chain.nodes.upper.getWorldPosition(new THREE.Vector3());
@@ -267,7 +267,7 @@ console.log("\nself-touch does not hunt");
   // suite did not.
   let worstFlips = 0, worstRig = '', tested = 0;
   for (const rig of good) {
-    const av = makeAvatar(rig.P, { realParent: rig.realParent });
+    const av = makeAvatar(rig.P, { realParent: rig.realParent, vrm0: rig.vrm0 });
     const chain: any = measureChain(av, "rightHand");
     if (!chain) continue;
     // a point just off the LEFT upper arm — anchored on a bone that is also
@@ -313,7 +313,7 @@ console.log("\nthe elbow does not sweep as the body turns");
   // up as one step far outside the run of its neighbours.
   let spike = 0, spikeRig = '', tested = 0;
   for (const rig of good) {
-    const av = makeAvatar(rig.P, { realParent: rig.realParent });
+    const av = makeAvatar(rig.P, { realParent: rig.realParent, vrm0: rig.vrm0 });
     const chain: any = measureChain(av, "rightHand");
     if (!chain) continue;
     const steps: number[] = [];
@@ -384,7 +384,7 @@ console.log("\nelbows bend the way elbows bend (where that is knowable)");
   // measures exactly the population the solver claims to police, and no more.
   let inverted = 0, checked = 0, skipped = 0;
   for (const rig of good) {
-    const av = makeAvatar(rig.P, { realParent: rig.realParent });
+    const av = makeAvatar(rig.P, { realParent: rig.realParent, vrm0: rig.vrm0 });
     const chain: any = measureChain(av, "rightHand");
     if (!chain) continue;
     for (let yi = 0; yi < 8; yi++) {
@@ -434,6 +434,65 @@ console.log("\nelbows bend the way elbows bend (where that is knowable)");
   check(`inverted elbows do not increase (${inverted}/${checked}, ${skipped} adducted and skipped)`,
     inverted <= 440);
   check("...and the sweep actually ran", checked > 500, `${checked}`);
+}
+
+console.log("\nthe forearm, crossing the body");
+{
+  // The bug antra can see and the harness could not, until it learned that six
+  // of the eighteen rigs are VRM0 and sit a half-turn from the root.
+  //
+  // Reaching the opposite hip drags the forearm across the torso. The upper
+  // bone is pushed clear (that works); nothing acts on the FOREARM, whose
+  // path is fixed once the elbow is placed, so it crosses through the body.
+  // Measured against the browser before this test existed: orion forearm 57mm
+  // from the spine column where 162mm is required — and the headless numbers
+  // now agree (48/55/123 vs the browser's 4/57/147).
+  const segDist = (p1: any, q1: any, p2: any, q2: any) => {
+    const d1 = q1.clone().sub(p1), d2 = q2.clone().sub(p2), r = p1.clone().sub(p2);
+    const a = d1.dot(d1), e = d2.dot(d2), f = d2.dot(r); let s: number, t: number;
+    if (a <= 1e-12 && e <= 1e-12) return p1.distanceTo(p2);
+    if (a <= 1e-12) { s = 0; t = Math.max(0, Math.min(1, f / e)); }
+    else { const c = d1.dot(r);
+      if (e <= 1e-12) { t = 0; s = Math.max(0, Math.min(1, -c / a)); }
+      else { const b = d1.dot(d2), den = a * e - b * b;
+        s = den > 1e-12 ? Math.max(0, Math.min(1, (b * f - c * e) / den)) : 0;
+        t = (b * s + f) / e;
+        if (t < 0) { t = 0; s = Math.max(0, Math.min(1, -c / a)); }
+        else if (t > 1) { t = 1; s = Math.max(0, Math.min(1, (b - c) / a)); } } }
+    return p1.clone().addScaledVector(d1, s).distanceTo(p2.clone().addScaledVector(d2, t));
+  };
+  let worstDeficitMM = 0, worstRig = '', tested = 0;
+  for (const rig of good) {
+    const av = makeAvatar(rig.P, { realParent: rig.realParent, vrm0: rig.vrm0 });
+    const chain: any = measureChain(av, 'rightHand');
+    if (!chain || !av.nodes.leftUpperLeg || !av.nodes.rightUpperLeg) continue;
+    const at = (n: string) => av.nodes[n]?.getWorldPosition(new THREE.Vector3());
+    const sh = at('rightUpperArm');
+    const lat = at('leftUpperLeg').clone().sub(at('rightUpperLeg')).normalize();
+    const target = at('leftUpperLeg').clone().addScaledVector(lat, 0.09);
+    const out: any = step(chain, av, target.toArray(), null);
+    if (!out.ok) continue;
+    tested++;
+    const el = at('rightLowerArm'), hd = at('rightHand');
+    for (const g of chain.guards ?? []) {
+      const A = g.na.getWorldPosition(new THREE.Vector3());
+      const B = g.nb.getWorldPosition(new THREE.Vector3());
+      const req = g.r + chain.rLower * 0.25;
+      const d = segDist(el, hd, A, B);
+      // the guard nearest the TARGET is clipped on purpose — the hand has to
+      // arrive somewhere — so only count the torso the hand is not reaching for
+      if (segDist(target, target, A, B) < req) continue;
+      const deficit = (req - d) * 1000;
+      if (deficit > worstDeficitMM) { worstDeficitMM = deficit; worstRig = rig.name; }
+    }
+  }
+  console.log(`  ${tested} rigs, worst forearm shortfall ${worstDeficitMM.toFixed(0)}mm on ${worstRig || '-'}`);
+  // ⚠ RATCHET at the measured value. This is the open bug, not a pass: the
+  // forearm crosses through the torso because nothing acts on it once the
+  // elbow is placed. Lower this number when that is fixed; it exists so the
+  // number cannot quietly grow while the fix is pending.
+  check(`forearm-through-torso does not worsen (${worstDeficitMM.toFixed(0)}mm)`, worstDeficitMM <= 170);
+  check('...and it actually ran', tested >= 14, `${tested}`);
 }
 
 console.log(failures ? `\n\x1b[31m${failures} failed\x1b[0m\n` : "\n\x1b[32mall passed\x1b[0m\n");
