@@ -9,7 +9,9 @@ import * as THREE_W from "three/webgpu";
 import * as TSL from "three/tsl";
 import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS,
   ACTIVITY_RADIUS_M, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
-import { HeadlessBody, setHeightField, registerSupport, registerSupportGrid, removeSupport } from "./physics.ts";
+import { HeadlessBody, ReachBody, setHeightField, registerSupport, registerSupportGrid, removeSupport } from "./physics.ts";
+import { canonicalLimb, normalizeReachTarget, normalizeReachBag, describeTarget, diffReach,
+  TOUCH_GAP } from "../shared/reachwire.js";
 import { decideSupportClass, CERT_MAX_WORLD } from "../client/lib/supportclass.js";
 import { isFiniteVec3 } from "./shape.ts";
 // The same pure sky fold + weather derivation the browser client and the
@@ -55,6 +57,17 @@ function posePosition(pose: Pose | null | undefined): [number, number, number] |
   return typeof x === "number" && Number.isFinite(x)
     && typeof y === "number" && Number.isFinite(y)
     && typeof z === "number" && Number.isFinite(z) ? [x, y, z] : null;
+}
+/** A point in a body's root frame → world, matching THREE's rotation.y=yaw
+ *  (x' = x·cos + z·sin, z' = −x·sin + z·cos) — the same transform every
+ *  browser's localToWorld applies to the same descriptor. */
+function frameToWorld(p: number[], yaw: number, local: number[]): number[] {
+  const c = Math.cos(yaw ?? 0), s = Math.sin(yaw ?? 0);
+  return [
+    p[0] + local[0] * c + local[2] * s,
+    (p[1] ?? 0) + local[1],
+    p[2] - local[0] * s + local[2] * c,
+  ];
 }
 type InboxItem = { ts: number; kind: "say" | "arrive" | "leave" | "act"; who: string; text?: string; seq?: number | null };
 
@@ -169,7 +182,7 @@ export class WorldAgent {
    *  server restart re-appended history and the next look() dumped chat the
    *  agent had already seen. */
   private inboxSeen = -Infinity;
-  pings: { ts: number; kind: "mention" | "approach" | "whisper"; who: string; text?: string }[] = [];
+  pings: { ts: number; kind: "mention" | "approach" | "whisper" | "reach" | "touch"; who: string; text?: string }[] = [];
   onPing: ((p: { ts: number; kind: string; who: string; text?: string }) => void) | null = null;
   /** live world events (say/arrive/leave/activity) — the channel fan-out hook */
   onEvent: ((ev: { ts: number; kind: "say" | "arrive" | "leave" | "whisper" | "act" | "activity" | "weather" | "world-change"; who: string; text?: string; mention?: boolean }) => void) | null = null;
@@ -183,6 +196,17 @@ export class WorldAgent {
   private nearArmed = new Map<string, boolean>();
   /** participant -> when their current non-locomotion stint began (jump, sit…) */
   private nonLocoSince = new Map<string, number>();
+  /** My live reach descriptors, one entry per limb (shared/reachwire.js).
+   *  They ride every presence packet; every receiver re-solves the relation
+   *  against its own scene. The `reached` rider is MY solver's attestation,
+   *  kept honest by reachTick(). */
+  reaches = new Map<string, { t: any; palm?: false; reached?: true }>();
+  private reachBodies = new Map<string, ReachBody | null>();               // avatar path -> solver body
+  private reachBodyLoads = new Map<string, Promise<ReachBody | null>>();
+  private reachTicks = 0;
+  /** reach/touch ping refractory, keyed "kind:who:limb" — a hand trembling
+   *  across the touch threshold must not knock twice. */
+  private lastReachPing = new Map<string, number>();
   /** Local-awareness accumulator, reset every pulse. Records what happened
    *  within ACTIVITY_RADIUS_M since the last pulse — RAW where rawness is
    *  truth (movement, says: jump spam is genuine liveliness even when its
@@ -623,6 +647,9 @@ export class WorldAgent {
             this.lastNear.delete(msg.id);
             this.nearArmed.delete(msg.id);
             this.nonLocoSince.delete(msg.id);
+            for (const k of this.lastReachPing.keys()) {
+              if (k.endsWith(`:${msg.id}`)) this.lastReachPing.delete(k);
+            }
             this.gate.presence(msg.id, "leave");
             break;
           case "avatar-updated":
@@ -672,6 +699,9 @@ export class WorldAgent {
     const p = this.people.get(id) ?? { id, avatar: "", pose: null };
     const prev = p.pose;
     p.pose = pose; this.people.set(id, p);
+    // hands aimed at this body — before the spatial gate below, because a
+    // reach descriptor is legible even from a sample with no usable position
+    if (id !== this.name) this.noteReachEvents(id, prev, pose);
     const xyz = posePosition(pose);
     if (!xyz) return; // keep the shell for identity/roster; no spatial inference yet
     const [x, , z] = xyz;
@@ -1017,7 +1047,7 @@ export class WorldAgent {
    *  unbounded buffer whose only consumer is optional is a leak with a plan. */
   private static readonly PING_RING = 64;
 
-  private ping(p: { ts: number; kind: "mention" | "approach" | "whisper"; who: string; text?: string }) {
+  private ping(p: { ts: number; kind: "mention" | "approach" | "whisper" | "reach" | "touch"; who: string; text?: string }) {
     this.pings.push(p);
     if (this.pings.length > WorldAgent.PING_RING) this.pings.splice(0, this.pings.length - WorldAgent.PING_RING);
     this.onPing?.(p);
@@ -1264,6 +1294,10 @@ export class WorldAgent {
     if (!this.draggedBy && this.pins.size === 0 && this.clip !== "ragdoll") {
       this.pos.y = this.heightAt(this.pos.x, this.pos.z);
     }
+    // keep the `reached` attestation honest at ~2Hz while reaching: the
+    // target moves, this body moves, and the far end's touch event fires on
+    // the rising edge of what is re-checked here
+    if (this.reaches.size && ++this.reachTicks % 5 === 0) this.reachTick();
     this.ws?.send(JSON.stringify({
       type: "pose",
       pose: {
@@ -1275,6 +1309,7 @@ export class WorldAgent {
         ...(this.heldPose && (this.heldPoseAuthored || this.clip === "ragdoll") ? { pose: this.heldPose } : {}),
         ...(this.pins.size ? { pins: [...this.pins].map(([j, at]) => ({ j, at })) } : {}),
         ...(this.pendingEmote ? { emote: this.pendingEmote } : {}),
+        ...(this.reaches.size ? { reach: Object.fromEntries(this.reaches) } : {}),
       },
     }));
     this.pendingEmote = null; // one-shot: rides exactly one packet
@@ -1301,6 +1336,7 @@ export class WorldAgent {
     // real pose, exactly as it does when there is no sim at all.
     this.clip = "ragdoll";
     this.heldPose ??= DOWNED_POSE;
+    this.reaches.clear();   // a knocked-over body's reach is gone — the arms are the ragdoll's now
     this.onEvent?.({ ts: Date.now(), kind: "say", who: by, text: notice } as any);
     void this.tumble(lean);
   }
@@ -1560,6 +1596,192 @@ export class WorldAgent {
       this.body?.stop(); this.stopSim();
       this.clip = "idle";
       this.pos.y = this.heightAt(this.pos.x, this.pos.z);
+    }
+  }
+
+  // ---- reaching: a relation streamed as a descriptor ----------------------
+  //
+  // The descriptor (shared/reachwire.js) rides the presence packet; every
+  // browser re-solves the same closed-form IK against its own scene and draws
+  // this body's arm tracking the target. What happens HERE is only the part a
+  // blind body needs: resolving the target from streamed presence + stand-in
+  // skeletons (physics.ts ReachBody), solving its own arm once for the tool
+  // reply, and keeping the `reached` attestation honest as things move —
+  // that attestation's rising edge is the touch event at the other end.
+
+  private static readonly LIMB_WORD: Record<string, string> = {
+    leftHand: "left hand", rightHand: "right hand", leftFoot: "left foot", rightFoot: "right foot",
+  };
+  private static readonly DEFAULT_BODY = "eidoverse/assets/vrms/claude.vrm";
+
+  private reachBodyFor(path: string): Promise<ReachBody | null> {
+    if (this.reachBodies.has(path)) return Promise.resolve(this.reachBodies.get(path) ?? null);
+    let p = this.reachBodyLoads.get(path);
+    if (!p) {
+      p = ReachBody.create(this.httpBase, path)
+        .catch(() => null)
+        .then((b) => { this.reachBodies.set(path, b); this.reachBodyLoads.delete(path); return b; });
+      this.reachBodyLoads.set(path, p);
+    }
+    return p;
+  }
+  /** undefined = not loaded yet; null = tried and failed. */
+  private reachBodySync(path: string): ReachBody | null | undefined { return this.reachBodies.get(path); }
+
+  /** A normalized target → a world point (+ surface normal for a landmark),
+   *  from streamed presence. Sync; undefined means a needed skeleton is still
+   *  loading (reach() awaits the loads before asking). */
+  private reachTargetPoint(t: { who?: string; point?: string; standoff?: number; p?: number[]; space?: string }):
+    { pos: number[]; normal?: number[] } | { err: string } | undefined {
+    if (t.p) {
+      if (!t.space) return { pos: t.p };
+      if (t.space === "self") return { pos: frameToWorld([this.pos.x, this.pos.y, this.pos.z], this.yaw, t.p) };
+      const person = this.people.get(t.space);
+      const pp = posePosition(person?.pose);
+      if (!person || !pp) return { err: `${t.space} is not here (or has no position yet)` };
+      return { pos: frameToWorld(pp, person.pose?.yaw ?? 0, t.p) };
+    }
+    const self = t.who === this.name;
+    const person = self ? null : this.people.get(t.who!);
+    if (!self && !person) return { err: `nobody called "${t.who}" is present` };
+    const path = self ? this.avatar : (person!.avatar || WorldAgent.DEFAULT_BODY);
+    const body = this.reachBodySync(path);
+    if (body === undefined) return undefined;
+    if (!body) return { err: `${t.who}'s skeleton could not be read` };
+    if (self) body.poseAt([this.pos.x, this.pos.y, this.pos.z], this.yaw, this.heldPose ?? null);
+    else {
+      const pose = person!.pose;
+      const pp = posePosition(pose);
+      if (!pp) return { err: `${t.who} has no known position yet` };
+      body.poseAt(pp, pose?.yaw ?? 0, (pose as { pose?: Record<string, number[]> | null })?.pose ?? null);
+    }
+    const c = body.contact(t.point!, t.standoff ?? 0.02);
+    if (!c) return { err: `${t.who}'s rig has no ${t.point}` };
+    return c;
+  }
+
+  /** One full verdict for one limb entry, at this instant. */
+  private solveReachEntry(limb: string, entry: { t: any; palm?: false }):
+    | { state: "pending" } | { state: "err"; err: string }
+    | { state: "ok"; reached: boolean; gap: number; bound: string[]; dist: number | null; arm: number | null; palmResidual: number | null } {
+    const tp = this.reachTargetPoint(entry.t);
+    if (tp === undefined) return { state: "pending" };
+    if ("err" in tp) return { state: "err", err: tp.err };
+    const own = this.reachBodySync(this.avatar);
+    if (own === undefined) return { state: "pending" };
+    if (!own) return { state: "err", err: "this body's own skeleton could not be read, so there is no local verdict" };
+    own.poseAt([this.pos.x, this.pos.y, this.pos.z], this.yaw, this.heldPose ?? null);
+    const s = own.solve(limb, tp, { palm: entry.palm !== false });
+    if (!s.ok) return { state: "err", err: s.why };
+    const reached = Number.isFinite(s.gap) && s.gap <= TOUCH_GAP && !s.bound.includes("no-target");
+    const dist = s.shoulder
+      ? Math.hypot(tp.pos[0] - s.shoulder[0], tp.pos[1] - s.shoulder[1], tp.pos[2] - s.shoulder[2]) : null;
+    return { state: "ok", reached, gap: s.gap, bound: s.bound, dist, arm: own.armLength(limb), palmResidual: s.palmResidual };
+  }
+
+  /** Reach a limb toward a target (wire grammar: {who, point, standoff?} or
+   *  {p:[x,y,z], space?: 'world'|'self'|id}). Sets the descriptor streaming
+   *  either way; the reply says what the arm actually achieves. */
+  async reach(limbRaw: string | undefined, targetRaw: unknown, opts: { palm?: boolean } = {}): Promise<{ ok: boolean; text: string }> {
+    const limb = canonicalLimb(limbRaw ?? "rightHand");
+    if (!limb) return { ok: false, text: `unknown limb "${limbRaw}" — leftHand, rightHand, leftFoot or rightFoot` };
+    const t = normalizeReachTarget(targetRaw);
+    if (!t) {
+      return { ok: false, text: "unusable target — pass {who, point} for a named contact point on a body, or {x, y, z} with optional space ('world' by default, 'self' for your own frame, or a participant id for theirs)" };
+    }
+    // load the skeletons this reach needs BEFORE solving, so the reply is a
+    // real verdict rather than a shrug
+    await this.reachBodyFor(this.avatar);
+    if (t.who !== undefined && t.who !== this.name) {
+      const person = this.people.get(t.who);
+      if (!person) {
+        const names = [...this.people.keys()].filter((n) => n !== this.name).slice(0, 12);
+        return { ok: false, text: `nobody called "${t.who}" is here${names.length ? ` (present: ${names.join(", ")})` : ""}` };
+      }
+      await this.reachBodyFor(person.avatar || WorldAgent.DEFAULT_BODY);
+    }
+    const entry: { t: any; palm?: false; reached?: true } = { t, ...(opts.palm === false ? { palm: false as const } : {}) };
+    const res = this.solveReachEntry(limb, entry);
+    if (res.state === "ok" && res.reached) entry.reached = true;
+    this.reaches.set(limb, entry);
+    const limbW = WorldAgent.LIMB_WORD[limb];
+    const what = describeTarget(t, this.name);
+    if (res.state !== "ok") {
+      const why = res.state === "err" ? res.err : "skeletons still loading; the verdict follows on the next check";
+      return { ok: true, text: `${limbW} reaching toward ${what} — streamed, but unverified: ${why}` };
+    }
+    if (res.reached) {
+      return { ok: true, text: `${limbW} rests on ${what} (gap ${Math.round(res.gap * 1000)}mm). It tracks the target until clear_reach — or until you are knocked over.` };
+    }
+    const short = Number.isFinite(res.gap) ? `${res.gap.toFixed(2)}m short` : "not arriving";
+    const why = res.bound.length ? ` (limited by: ${res.bound.join(", ")})` : "";
+    const advice = res.bound.includes("reach") && res.dist != null && res.arm != null
+      ? ` — the target is ${res.dist.toFixed(1)}m from your shoulder and your arm is ${res.arm.toFixed(2)}m long; walk closer and it will land`
+      : "";
+    return { ok: true, text: `${limbW} reaching toward ${what}: ${short}${why}${advice}. The arm extends that way and keeps tracking; it touches if the distance closes.` };
+  }
+
+  /** Let go with one limb, or all of them. Propagates as absence: the next
+   *  presence packet simply stops carrying the descriptor. */
+  releaseReach(limbRaw?: string | null): string {
+    if (limbRaw == null) {
+      const n = this.reaches.size;
+      this.reaches.clear();
+      return n ? "let go — all reaches released" : "you weren't reaching for anything";
+    }
+    const limb = canonicalLimb(limbRaw);
+    if (!limb) return `unknown limb "${limbRaw}" — leftHand, rightHand, leftFoot or rightFoot`;
+    return this.reaches.delete(limb)
+      ? `${WorldAgent.LIMB_WORD[limb]} released`
+      : `your ${WorldAgent.LIMB_WORD[limb]} wasn't reaching for anything`;
+  }
+
+  /** Re-attest `reached` for every live reach (runs at ~2Hz off tick()).
+   *  While a needed skeleton is missing the last attestation HOLDS — flapping
+   *  to "not touching" because a load is slow would fire spurious release/
+   *  touch edges at the other end. Loads are kicked here so blindness heals. */
+  private reachTick() {
+    for (const [limb, entry] of this.reaches) {
+      const t = entry.t;
+      if (t.who !== undefined) {
+        const path = t.who === this.name ? this.avatar : (this.people.get(t.who)?.avatar || WorldAgent.DEFAULT_BODY);
+        void this.reachBodyFor(path);
+      }
+      void this.reachBodyFor(this.avatar);
+      const res = this.solveReachEntry(limb, entry);
+      if (res.state !== "ok") continue;
+      if (res.reached) entry.reached = true; else delete entry.reached;
+    }
+  }
+
+  /** Someone's hands, read off their presence stream: reach/touch events for
+   *  hands aimed at THIS body. Ping-grade (a touch is a knock, like an
+   *  approach), edge-triggered by diffReach, with a per-(kind,limb,person)
+   *  refractory so a hand trembling across the threshold knocks once. */
+  private noteReachEvents(id: string, prev: Pose | null, pose: Pose) {
+    const bag = normalizeReachBag((pose as { reach?: unknown }).reach);
+    const prevBag = prev ? normalizeReachBag((prev as { reach?: unknown }).reach) : null;
+    if (!bag && !prevBag) return;
+    // First observation of this body is a BASELINE, not a transition (issue
+    // #39): rejoin/replay lands here for hands resting where they have been
+    // for an hour. Seed silently; edges count from the next sample.
+    if (!prev) return;
+    const REACH_REFRACT_MS = 15_000;
+    for (const ev of diffReach(prevBag, bag, this.name)) {
+      const limbW = WorldAgent.LIMB_WORD[ev.limb] ?? ev.limb;
+      if (ev.type === "release") {
+        this.gate.act(id, `reach-release:${ev.limb}`, `withdraws their ${limbW}`);
+        continue;
+      }
+      const key = `${ev.type}:${ev.limb}:${id}`;
+      const now = Date.now();
+      if (now - (this.lastReachPing.get(key) ?? 0) < REACH_REFRACT_MS) continue;
+      this.lastReachPing.set(key, now);
+      const what = describeTarget(ev.entry!.t, this.name);
+      this.ping({
+        ts: now, kind: ev.type, who: id,
+        text: ev.type === "touch" ? `touches ${what} (${limbW})` : `reaches toward ${what} (${limbW})`,
+      });
     }
   }
 

@@ -17,6 +17,7 @@
 
 import { mentionRegex } from "./mention.ts";
 import { validatePose, validateTracks, tracksSpan, poseReport } from "../shared/humanoid.js";
+import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { readFileSync, existsSync, writeFileSync, renameSync, rmSync } from "node:fs";
@@ -144,6 +145,8 @@ const TOOLS = [
   { name: "pose", description: "Hold a custom body pose. `bones` is a sparse map of VRM humanoid bone name to a [x,y,z,w] quaternion (only the bones you care about; the rest keep animating). Example bones: leftUpperArm, leftLowerArm, rightUpperArm, rightLowerArm, spine, chest, neck, head. Names are checked and corrected where they are unambiguous, and anything dropped is reported back with the reason — so read the reply, it is your only feedback that the body did what you meant. Held until you `clear_pose` or move; pass hold:true to keep it through walking too (your legs still stride, so pose arms and head rather than legs if you mean to travel in it). Presence only — never written to the world log, so it costs nothing and vanishes when you leave. Pass `target` to pose SOMEONE ELSE (they decide whether to allow it).", inputSchema: { type: "object", properties: { bones: { type: "object" }, hold: { type: "boolean" }, target: { type: "string" } }, required: ["bones"] } },
   { name: "clear_pose", description: "Release a held pose, easing back to normal animation. Pass `target` to release a pose you asked someone else to hold.", inputSchema: { type: "object", properties: { target: { type: "string" } } } },
   { name: "emote", description: "Fire a named gesture — the same one-shots humans have on their emote bar. Plays once over your locomotion; presence only, never logged. For a gesture that isn't listed, invent one with `animate`.", inputSchema: { type: "object", properties: { name: { type: "string", enum: ["wave", "cheer", "dance", "point", "salute", "clap", "talk", "flail"] } }, required: ["name"] } },
+  { name: "reach", description: `Reach out with a hand (or foot) — real IK: everyone sees your arm extend toward the target and TRACK it (your walking, their moving) until clear_reach, and the palm turns to rest on the surface it meets. Two ways to aim it: (1) a contact point on a body — \`who\` (participant id; omit to touch your own body) + \`point\`, one of: ${Object.keys(CONTACT_POINTS).join(", ")}; the person you touch hears about it (they get a 'reaches toward you' event, then a 'touches' event when your hand arrives — you hear the same when someone touches you). (2) a bare point — x, y, z with \`space\`: 'world' (default, fixed), 'self' (your own root frame — moves with you), or a participant id (their root frame — tracks them). READ THE REPLY, it is your only feedback: it says whether the hand actually arrives, what limited it (joints, body, distance), and how far to walk if it fell short. A reach composes over walking, sitting and held poses; being knocked over drops it. Presence-only, never logged.`, inputSchema: { type: "object", properties: { limb: { type: "string", enum: ["rightHand", "leftHand", "rightFoot", "leftFoot"], description: "default rightHand" }, who: { type: "string" }, point: { type: "string" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, space: { type: "string" }, standoff: { type: "number", description: "metres to hover off the surface (default 0.02 — resting on it)" }, palm: { type: "boolean", description: "false = don't orient the palm to the surface" } } } },
+  { name: "clear_reach", description: "Let go: release one reaching limb (or all of them when called bare), easing back to normal animation. Anyone you were touching sees the hand withdraw.", inputSchema: { type: "object", properties: { limb: { type: "string", enum: ["rightHand", "leftHand", "rightFoot", "leftFoot"] } } } },
   { name: "posture", description: "Settle into a posture: sit (on the ground), sitchair (chair height), lie, or stand. Held until you stand or walk; survives leaving and rejoining, like a held pose.", inputSchema: { type: "object", properties: { kind: { type: "string", enum: ["sit", "sitchair", "lie", "stand"] } }, required: ["kind"] } },
   { name: "ragdoll", description: "Shove another body over — a physics ragdoll. `target` is who falls; THEY simulate it on their own body (you never simulate someone else), and it settles into a held pose everyone sees. The shove is directed from where YOU stand through them (walk to the right side of someone before pushing); `strength` 0.5–4 m/s, default 2.2. Being knocked over is opt-in for humans and default for agent performers.", inputSchema: { type: "object", properties: { target: { type: "string" }, strength: { type: "number" } }, required: ["target"] } },
   { name: "animate", description: "Play a one-off animation — for a specific gesture you are inventing on the spot. `tracks` maps a VRM humanoid bone name to a list of keyframes [{ t: seconds, q: [x,y,z,w] }]; `dur` is the length in seconds. Only list the bones that move. It plays once (or set loop:true), over your locomotion, and is relayed to everyone but never logged. Keep it small and sparse — a few bones, a few keyframes. Pass `target` to play it on someone else (they decide).", inputSchema: { type: "object", properties: { dur: { type: "number" }, loop: { type: "boolean" }, tracks: { type: "object" }, target: { type: "string" } }, required: ["dur", "tracks"] } },
@@ -513,6 +516,13 @@ class Session {
         // event lives in this world's namespace.
         this.deliver(`* ${p.who} walked up to you`, { id: "world", name: this.agent.world },
           { tags: tags(CHAT.addressed, EIDO.approach, this.agent.isAgent(p.who) ? CHAT.fromAgent : null), mentioned: true });
+      } else if (p.kind === "reach" || p.kind === "touch") {
+        // A hand aimed at (or resting on) this body: directed like an
+        // approach, worded by the agent ("reaches toward your shoulder_l
+        // (right hand)" / "touches your head_top (left hand)").
+        this.deliver(`* ${p.who} ${p.text}`, { id: "world", name: this.agent.world },
+          { tags: tags(CHAT.addressed, p.kind === "touch" ? EIDO.touch : EIDO.reach,
+            this.agent.isAgent(p.who) ? CHAT.fromAgent : null), mentioned: true });
       }
     };
 
@@ -1010,6 +1020,30 @@ class Session {
         if (a.target) { ag.puppet(String(a.target), { pose: {} }); return text(`released ${a.target}'s pose`); }
         ag.setPose(null);
         return text("released pose");
+      }
+      case "reach": {
+        // Two target grammars, checked here so the refusal can TEACH: the
+        // named-point form (who/point) and the bare-point form (x,y,z/space).
+        const hasName = a.who != null || a.point != null;
+        const hasXYZ = typeof a.x === "number" && typeof a.y === "number" && typeof a.z === "number";
+        if (!hasName && !hasXYZ) {
+          return text("reach needs a target: either `point` (a contact point on a body; add `who` for someone else's) or `x`,`y`,`z` (with optional `space`: 'world' default, 'self', or a participant id).");
+        }
+        let target: Record<string, unknown>;
+        if (hasName) {
+          if (a.point == null) return text("reaching for someone needs `point` too — which contact point on them: " + Object.keys(CONTACT_POINTS).join(", "));
+          const pt = canonicalPoint(String(a.point));
+          if (!pt) return text(`unknown contact point "${a.point}" — one of: ${Object.keys(CONTACT_POINTS).join(", ")}`);
+          target = { who: String(a.who ?? ag.name), point: pt, ...(typeof a.standoff === "number" ? { standoff: a.standoff } : {}) };
+        } else {
+          target = { p: [a.x, a.y, a.z], ...(typeof a.space === "string" ? { space: a.space } : {}) };
+        }
+        const r = await ag.reach(typeof a.limb === "string" ? a.limb : undefined, target,
+          a.palm === false ? { palm: false } : {});
+        return r.ok ? text(r.text) : { content: [{ type: "text", text: r.text }], isError: true };
+      }
+      case "clear_reach": {
+        return text(ag.releaseReach(typeof a.limb === "string" ? a.limb : null));
       }
       case "ragdoll": {
         if (!a.target) return text("ragdoll needs a `target` — the body that falls simulates it");

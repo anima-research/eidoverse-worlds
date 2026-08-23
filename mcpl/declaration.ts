@@ -48,6 +48,8 @@ export const CHAT = {
 export const EIDO = {
   whisper: "eidoverse:whisper",
   approach: "eidoverse:approach",
+  reach: "eidoverse:reach",
+  touch: "eidoverse:touch",
   act: "eidoverse:act",
   presence: "eidoverse:presence",
   activityDigest: "eidoverse:activity-digest",
@@ -174,6 +176,16 @@ const TAG_ONTOLOGY = {
     },
     [EIDO.approach]: {
       desc: "Someone walked up to your body and stopped within arm's reach. Directed at you, but not speech — nothing was said.",
+      facet: "addressing",
+      implies: [CHAT.addressed],
+    },
+    [EIDO.reach]: {
+      desc: "Someone's hand (or foot) is reaching toward your body — a named contact point on you, or a point in your frame. Directed at you, but not yet contact; the touch, if it lands, follows as eidoverse:touch.",
+      facet: "addressing",
+      implies: [CHAT.addressed],
+    },
+    [EIDO.touch]: {
+      desc: "The reaching hand arrived: it now rests on the named point of your body, and tracks you until withdrawn. Attested by the toucher's own solver — the same trust as the pose stream itself.",
       facet: "addressing",
       implies: [CHAT.addressed],
     },
