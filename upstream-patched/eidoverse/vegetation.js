@@ -67,117 +67,54 @@ import { buildSunflowerGeometry } from './vegetation_sunflower_gen.js';
 // tuft:    N cards crossed around a shared root (grass archetype)
 // shrub:   N cards fanned outward on a shell around the cluster centre
 // rosette: crossed vertical fans + a low horizontal card (radial sheet)
-export const FLORA_SPECIES = {
-    grass: {
-        // THE standard green grass — the Halo blade-card hybrid: segmented
-        // planes fitted to an individual-blade alpha atlas (blades_meadow_* —
-        // Sol's art replaces the stand-in by filename). clump: 1 disables the
-        // bare-patch gate — turf is CONTINUOUS; bunches are a desert habit.
-        // `height` (metres) sets blade length AND scales the wind response:
-        // a lawn barely stirs, tallgrass sways hard (see createFlora).
-        archetype: 'blades', maps: 'blades_meadow',
-        // SPREAD habit, not the desert bunch: few blades per instance thrown
-        // WIDE (bunchR > instance spacing) so neighbours interleave into an
-        // even carpet — a 14-blade tight bunch shares one shade tint and reads
-        // as a tussock; 5 wide-scattered blades put shade variation at blade
-        // scale instead
-        blades: { perBunch: 8, bunchR: 0.5, h: 0.38, w: 0.042, lean: 0.42 },
-        colors: { jitter: 0.22 },
-        baseScale: [0.8, 1.3], density: 22.0, clump: 1.0,
-        wind: { base: 0.35, gust: 0.7, gustFreq: 0.3, flutter: 0.5 },
-        sss: 0.5, rough: 0.6, pushScale: 1.0,
-    },
-    galleta_dry: {
-        // Mojave BUNCH grass (big galleta / indian ricegrass): the bunch habit
-        // is the realistic one for desert. SAME blade atlas as 'grass' — a
-        // species is habit params + colour, not its own texture set
-        archetype: 'blades', maps: 'blades_meadow',
-        leafRecolor: GRASS_COLORS.straw.recolor,
-        blades: { perBunch: 34, bunchR: 0.26, h: 0.44, w: 0.036, lean: 0.75 },
-        colors: { jitter: 0.26 },
-        baseScale: [0.7, 1.25], density: 0.9, clump: 0.55,
-        wind: { base: 0.28, gust: 0.5, gustFreq: 0.3, flutter: 0.7 },
-        sss: 0.55, rough: 0.7, pushScale: 1.0,
-    },
-    // the three Mojave shrubs grow from the vendored SeedThree dichotomous
-    // math (shrub_gen.js): a real multi-stem crown skeleton, welded tube wood
-    // with bark maps, spray cards anchored on the terminal twigs. `gen` picks
-    // the growth preset; wind/density/pushScale stay the field-approved values.
-    blackbrush: {
-        archetype: 'shrub', gen: 'blackbrush', maps: 'blackbrush',
-        stem: 'blackbrush_stem', stemColor: 0x6d5a46,
-        // halfway between the dark namesake tile and the sheet's pale spiny
-        // twigs (painted stem 122/113/99 vs tile 86/78/72) — old wood dark,
-        // young growth pale
-        stemTint: [1.7, 1.75, 1.6],
-        footRadius: 0.75,
-        baseScale: [0.7, 1.25], density: 0.06, clump: 0.5,
-        wind: { base: 0.06, gust: 0.14, gustFreq: 0.3, flutter: 1.1 },
-        sss: 0.35, rough: 0.9, pushScale: 0.4,
-    },
-    creosote: {
-        archetype: 'shrub', gen: 'creosote', maps: 'creosote',
-        stem: 'creosote_stem', stemColor: 0x8a7358,
-        // linear lift matching the bark tile to the sheet's own painted stem
-        // (tile mean 75/62/53 sRGB vs painted stem 117/99/67 — the wood must
-        // read as the same branch the card art continues)
-        stemTint: [2.6, 2.7, 1.7],
-        footRadius: 1.1,
-        baseScale: [0.7, 1.3], density: 0.035, clump: 0.3,
-        wind: { base: 0.10, gust: 0.22, gustFreq: 0.3, flutter: 1.3 },
-        sss: 0.45, rough: 0.85, pushScale: 0.7,
-    },
-    sagebrush: {
-        archetype: 'shrub', gen: 'sagebrush', maps: 'sagebrush',
-        stem: 'blackbrush_stem', stemColor: 0x8b8378,  // no own bark set yet — borrows blackbrush's
-        // lift toward the sheet's pale shredded-silver stem (painted 189/180/162
-        // vs tile 86/78/72) — the full measured ×6 washed the fissures to chalk,
-        // this keeps the grain readable while staying silver
-        stemTint: [3.2, 3.5, 3.3],
-        footRadius: 0.65,
-        baseScale: [0.75, 1.3], density: 0.05, clump: 0.45,
-        wind: { base: 0.08, gust: 0.18, gustFreq: 0.3, flutter: 1.0 },
-        sss: 0.4, rough: 0.9, pushScale: 0.45,
-    },
-    yucca: {
-        // real geometry rosette — ~30 V-folded spike leaves (crossed cards
-        // read as crossed cards; a yucca is structural)
-        archetype: 'yucca', maps: 'yucca_kit',
-        rosette: { r: 0.55, spikes: 64 },   // density is what hides the crown bases
-        footRadius: 0.6,
-        baseScale: [1.0, 1.6], density: 0.10, clump: 0.15,
-        wind: { base: 0.03, gust: 0.06, gustFreq: 0.3, flutter: 0.5 },
-        sss: 0.5, rough: 0.8, pushScale: 0.12,
-    },
-    corn: {
-        // the crop (corn_gen.js): cane stalk, ranked arching leaves, husked
-        // ear, silk, tassel — one geometry on the ONE corn_ trim sheet, her
-        // baked cob included (peel: true stands it up bare on the first ear).
-        // Pair with `rows` for a planted field; without rows it volunteers as
-        // a wild patch. Crop uniformity: tight baseScale, near-vertical.
-        archetype: 'corn', maps: 'corn',
-        corn: { height: 2.3, leaves: 10, leafLen: 0.95, ears: 3, peel: false },
-        // plume art is dark red-brown; a mature field's tassels read tan-straw
-        regionTint: { u0: 0.5, u1: 1.0, v0: 0.7, v1: 1.0, mul: [1.9, 2.7, 2.2] },
-        footRadius: 0.32,
-        baseScale: [0.88, 1.14], density: 1.4, clump: 0.85,
-        wind: { base: 0.05, gust: 0.11, gustFreq: 0.3, flutter: 1.2 },
-        sss: 0.55, rough: 0.75, pushScale: 0.55,
-    },
-    sunflower: {
-        // the sunflower (sunflower_gen.js): cane stalk, spiral heart-leaves,
-        // one nodding head — seed-disc lathe (Skye's highpoly cut + baked),
-        // ray-petal card ring, bract star behind — all on the ONE sunflower_
-        // trim sheet. Pair with `rows` for a planted field.
-        archetype: 'sunflower', maps: 'sunflower',
-        sunflower: { height: 1.9, leaves: 11, leafLen: 0.62, headR: 0.20, petals: 26 },
-        footRadius: 0.3,
-        baseScale: [0.9, 1.12], density: 1.2, clump: 0.8,
-        // stiffer cane than corn, and the heavy head barely flutters
-        wind: { base: 0.04, gust: 0.09, gustFreq: 0.3, flutter: 0.8 },
-        sss: 0.5, rough: 0.8, pushScale: 0.4,
-    },
-};
+export const FLORA_SPECIES = {};
+
+// §24 defs (overhaul charter §3): the species table that lived here became
+// DATA — defs/flora/<name>.json, validated by shared/floradefs.js, served
+// at GET /defs. FLORA_SPECIES starts empty and hydrates ONCE before the
+// first build (createFlora awaits it; client/lib/flora.js's loadFloraModule
+// does too). Adding a species to every world this instance serves is now
+// adding a file — no engine edit. The object identity is load-bearing:
+// hydration MUTATES this export (assignment into it, never replacement),
+// because the loader shim publishes the reference on globalThis.
+let defsLoading = null;
+
+/** Fold a def registry into FLORA_SPECIES. Exported so tests and
+ *  non-sequencer contexts hydrate by hand instead of fetching.
+ *  `leafRecolor` may name a GRASS_COLORS entry — resolved here, so the
+ *  defs stay declarative. */
+export function hydrateFloraDefs(flora) {
+    for (const [name, def] of Object.entries(flora ?? {})) {
+        const d = { ...def };
+        if (typeof d.leafRecolor === 'string') {
+            const e = GRASS_COLORS[d.leafRecolor];
+            if (!e) {
+                console.warn(`[grass2] def '${name}' names unknown color '${d.leafRecolor}' — leafRecolor dropped`);
+                delete d.leafRecolor;
+            } else d.leafRecolor = e.recolor ?? e;
+        }
+        FLORA_SPECIES[name] = d;
+    }
+    return FLORA_SPECIES;
+}
+
+/** Hydrate from the sequencer (GET /defs), once. Memoized and safe to
+ *  race; a FAILED fetch clears the memo so the next build may retry. A
+ *  registry someone already hand-hydrated is respected untouched. */
+export async function ensureFloraDefs() {
+    if (Object.keys(FLORA_SPECIES).length) return FLORA_SPECIES;
+    if (!defsLoading) {
+        defsLoading = (async () => {
+            const r = await fetch('/defs');
+            if (!r.ok) throw new Error(`[grass2] GET /defs -> ${r.status} — species defs unavailable (serve defs/, or hydrateFloraDefs() by hand)`);
+            const reg = await r.json();
+            hydrateFloraDefs(reg.flora);
+            console.log(`[grass2] flora defs hydrated: ${Object.keys(FLORA_SPECIES).length} species`);
+            return FLORA_SPECIES;
+        })().catch((err) => { defsLoading = null; throw err; });
+    }
+    return defsLoading;
+}
 
 // ── map loading ──────────────────────────────────────────────────────────────
 async function loadMap(name, { srgb = false } = {}) {
@@ -780,6 +717,7 @@ function gustTex() {
 
 // ── main ─────────────────────────────────────────────────────────────────────
 export async function createFlora(opts = {}) {
+    await ensureFloraDefs();   // §24 defs: species are data — see the registry block
     let spec = FLORA_SPECIES[opts.species === 'meadow_blades' ? 'grass' : opts.species];
     if (!spec) throw new Error(`[grass2] unknown species '${opts.species}' — have: ${Object.keys(FLORA_SPECIES).join(', ')}`);
     const o = {

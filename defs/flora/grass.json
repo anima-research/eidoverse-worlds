@@ -1,0 +1,9 @@
+{
+  "doc": "THE standard green grass — the Halo blade-card hybrid: segmented planes fitted to an individual-blade alpha atlas (blades_meadow_* — Sol's art replaces the stand-in by filename). clump 1 disables the bare-patch gate — turf is CONTINUOUS; bunches are a desert habit. SPREAD habit: few blades per instance thrown WIDE (bunchR > instance spacing) so neighbours interleave into an even carpet — shade variation lands at blade scale, not tussock scale.",
+  "archetype": "blades", "maps": "blades_meadow",
+  "blades": { "perBunch": 8, "bunchR": 0.5, "h": 0.38, "w": 0.042, "lean": 0.42 },
+  "colors": { "jitter": 0.22 },
+  "baseScale": [0.8, 1.3], "density": 22.0, "clump": 1.0,
+  "wind": { "base": 0.35, "gust": 0.7, "gustFreq": 0.3, "flutter": 0.5 },
+  "sss": 0.5, "rough": 0.6, "pushScale": 1.0
+}

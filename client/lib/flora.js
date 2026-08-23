@@ -36,7 +36,12 @@ let floraMod = null;
 const runtimeImport = new Function('s', 'return import(s)');
 export async function loadFloraModule() {
   if (!floraMod) {
-    floraMod = runtimeImport(FLORA_URL).then((m) => {
+    floraMod = runtimeImport(FLORA_URL).then(async (m) => {
+      // §24 defs: species are data now — hydrate the registry from /defs
+      // BEFORE anyone resolves the module, so every FLORA_SPECIES read
+      // below and in the build path sees a populated table. Optional-chained
+      // so a cached pre-defs engine build still loads (its table is baked in).
+      await m.ensureFloraDefs?.();
       // engine parity: the loader shim registers these globally
       globalThis.createFlora = m.createFlora;
       globalThis.FLORA_SPECIES = m.FLORA_SPECIES;

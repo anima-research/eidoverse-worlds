@@ -19,6 +19,7 @@ import { resolveLibFile } from "./lint.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { worlds, getWorld, type World } from "./world.ts";
 import { handleUpload } from "./upload.ts";
+import { defsPayload } from "./defs.ts";
 
 /** What the routes need from Bun's server object, structurally: the WS
  *  upgrade and the socket address (X-Real-IP's fallback). */
@@ -408,6 +409,15 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname === "/avatars",
     handler: () => new Response(JSON.stringify(avatarRoster()),
+      { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
+  },
+  {
+    // The def registry (charter §3): instance content as data, one fetch per
+    // client boot. no-store for the same reason the rosters are — an edited
+    // def must reach the next boot, and the registry's own TTL already
+    // bounds the read cost.
+    match: (u) => u.pathname === "/defs",
+    handler: () => new Response(defsPayload(),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {
