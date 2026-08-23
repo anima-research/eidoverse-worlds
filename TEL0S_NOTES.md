@@ -390,6 +390,28 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-22 — §24a: phase-1 slice 1 — the gate before the surgery.**
+  Engine choice reopened by colleague deliberation (Godot's own-engine
+  detour ended "not just right now"; the godotwebgpu fork measured
+  stuttery by a colleague, matching its 3-months-dormant beta state) —
+  so work moved to the lane no colleague decision blocks: sim
+  extraction. Landed: `tools/replaybench.ts` (36bd3c8) — the log-replay
+  parity gate. Four pure-read checks per world: fold determinism
+  (two independent parses+folds), snapshot-path ≡ genesis-path (the two
+  WorldLog boot paths), stateToEntries roundtrip (documented
+  exclusions: sky, chat window, bans, roles.sub), and a per-machine
+  baseline digest in worlds/.replaybench.json. Adversarially verified
+  (doctored snapshot, malformed line, baseline mismatch each RED as
+  intended); commons green, baseline recorded. And `docs/WIRE.md`
+  (8e7afe6) — the live-wire protocol inventory freeze v0: WS session
+  model (legs/gen/takeover/close codes/rate caps), both planes, every
+  message both directions, the rank-gated verb table, HTTP surface,
+  five as-built quirks flagged for a phase-1 ruling. Wire changes now
+  must be flagged as wire changes in review. Also: three.js-vs-wasm
+  renderer estimate delivered to colleagues (GPU: identical; browser
+  vs native ~10-25% paid by both; JS-vs-wasm ≈ 1-3ms/frame CPU encode
+  at our draw counts — we are fill-bound, so ≈ nothing today).
+
 - **2026-08-21 — §24: the rimward pivot (opened).** Team consensus: the
   engine has outgrown a three.js webpage — port to another engine and
   rework the systems to be "more Rimworld-y" (modular, data-driven,
