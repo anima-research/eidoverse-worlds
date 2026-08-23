@@ -24,6 +24,9 @@ import { EMOTE_ORDER, EMOTES } from '../avatar.js';
 import { setPushable, pushable } from '../consent.js';
 import { trySitOn } from '../localbody.js';
 import { getMe } from '../mybody.js';
+import { setMyReach, clearMyReach } from '../reachnet.js';
+import { canonicalPoint, CONTACT_POINTS } from '../../../shared/contact.js';
+import { TOUCH_GAP } from '../../../shared/reachwire.js';
 
 register('help', () => toggleHelp());
 
@@ -137,6 +140,86 @@ register('push', (arg) => {
   logChat('*', `you push ${target}`);
 });
 
+// ---- /touch — the human hand on the reach surface (shared/reachwire.js).
+// The same descriptor an agent's `reach` tool streams: every client
+// re-solves it, the arm tracks the person, and THEY hear about it (a
+// "reaches toward you" line, then a "rests on" line when the hand lands).
+const LIMB_WORD = { leftHand: 'left hand', rightHand: 'right hand', leftFoot: 'left foot', rightFoot: 'right foot' };
+const pointOf = (words) => {
+  const joined = words.join(' ');
+  if (!joined) return null;
+  if (/^head$/i.test(joined)) return 'head_top';   // the one name canonicalPoint can't guess
+  return canonicalPoint(joined);
+};
+
+register('touch', (arg) => {
+  const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
+  // a person's name may lead; resolve it among those present (or yourself)
+  let who = null, rest = parts;
+  if (parts.length) {
+    const first = parts[0].toLowerCase();
+    if (first === 'me' || first === 'self' || first === CONFIG.name.toLowerCase()) {
+      who = CONFIG.name; rest = parts.slice(1);
+    } else {
+      const hit = [...remotes.keys()].find((id) => id.toLowerCase() === first);
+      if (hit) { who = hit; rest = parts.slice(1); }
+    }
+  }
+  // your hand rides at the END ("/touch bob shoulder left") — and "left" is
+  // only a hand when the words before it still name a point without it, so
+  // "/touch bob left shoulder" keeps meaning the shoulder
+  let limb = 'rightHand';
+  let words = rest;
+  const last = rest[rest.length - 1]?.toLowerCase();
+  if (last === 'left' || last === 'right') {
+    const before = rest.slice(0, -1);
+    if (before.length === 0 || pointOf(before)) {
+      limb = last === 'left' ? 'leftHand' : 'rightHand';
+      words = before;
+    }
+  }
+  const point = words.length ? pointOf(words) : 'shoulder_l';
+  if (!point) {
+    // an unresolved first word is at least as likely a name as a point —
+    // say both, or an absent person masquerades as a bad landmark
+    if (!who && parts.length) {
+      return logChat('*', `nobody here called "${parts[0]}" (and no contact point by that name) — /who lists people; points: ${Object.keys(CONTACT_POINTS).join(', ')}`);
+    }
+    return logChat('*', `no contact point called "${words.join(' ')}" — try: ${Object.keys(CONTACT_POINTS).join(', ')}`);
+  }
+  if (!who) {
+    // nearest person — the reach tracks, so a few metres is a fine start
+    let bestD = 6;
+    for (const [id, r] of remotes) {
+      if (!r.avatar) continue;
+      const d = Math.hypot(r.avatar.root.position.x - myState.pos.x, r.avatar.root.position.z - myState.pos.z);
+      if (d < bestD) { bestD = d; who = id; }
+    }
+    if (!who) return logChat('*', 'nobody nearby to touch — /touch <name> works from farther away');
+  }
+  if (who !== CONFIG.name && !remotes.get(who)?.avatar) return logChat('*', `${who} isn't here (or still loading)`);
+  const err = setMyReach(limb, { who, point });
+  if (err) return logChat('*', err);
+  const whose = who === CONFIG.name ? 'your own' : `${who}'s`;
+  logChat('*', `you reach for ${whose} ${point} (${LIMB_WORD[limb]})…`);
+  // the solve runs in the frame loop; read the verdict once the arm settles
+  setTimeout(() => {
+    const s = getMe()?.reachStatus?.()?.[limb];
+    if (!s || !Number.isFinite(s.gap)) return;
+    if (s.gap <= TOUCH_GAP) {
+      logChat('*', `…your ${LIMB_WORD[limb]} rests on ${whose} ${point} — it follows them until /letgo`);
+    } else {
+      logChat('*', `…${s.gap.toFixed(2)}m short${s.bound?.length ? ` (${s.bound.join(', ')})` : ''} — the arm stays reaching; step closer and it will land`);
+    }
+  }, 600);
+});
+
+register('letgo', (arg) => {
+  const v = (arg || '').trim().toLowerCase();
+  const limb = v === 'left' ? 'leftHand' : v === 'right' ? 'rightHand' : null;
+  clearMyReach(limb);
+  logChat('*', limb ? `you lower your ${LIMB_WORD[limb]}` : 'you let go');
+});
 register('pushable', (arg) => {
   const v = (arg || '').trim().toLowerCase();
   if (v === 'on' || v === 'off') setPushable(v === 'on');
@@ -272,4 +355,26 @@ export function initCommands() {
   });
 
   bus.on('command', ({ cmd, arg }) => dispatch(cmd, arg));
+
+  // Hands aimed at YOUR body (reachnet's bus edges) become chat lines — the
+  // human ear for the same events an agent hears through its door. Reach and
+  // touch carry a per-(person, hand) quiet window because a hand trembling
+  // across the touch threshold re-fires the edge; a release only happens on
+  // purpose, so it always speaks.
+  const recentReach = new Map();
+  const narrate = (type, { who, limb, point }) => {
+    const lw = LIMB_WORD[limb] ?? limb;
+    if (type !== 'release') {
+      const key = `${type}:${who}:${limb}`;
+      const now = performance.now();
+      if (now - (recentReach.get(key) ?? 0) < 10_000) return;
+      recentReach.set(key, now);
+    }
+    if (type === 'reach') logChat('*', `${who} reaches toward your ${point ?? 'position'} (${lw})`);
+    else if (type === 'touch') logChat('*', `${who}'s ${lw} rests on your ${point ?? 'position'}`);
+    else logChat('*', `${who} withdraws their ${lw}`);
+  };
+  bus.on('reach', (e) => narrate('reach', e));
+  bus.on('touch', (e) => narrate('touch', e));
+  bus.on('release', (e) => narrate('release', e));
 }

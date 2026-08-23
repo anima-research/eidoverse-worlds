@@ -19,6 +19,8 @@ export const COMMANDS = [
   { name: 'emote', help: '/emote dance · wave cheer dance point salute clap' },
   { name: 'sit', help: 'sit down, on a seat if one is near' },
   { name: 'push', aliases: ['shove'], help: '/push [name] [power] — shove someone within reach (their client decides); /push <thing> works the thing' },
+  { name: 'touch', help: '/touch [name] [point] [left|right] — reach out and rest a hand on someone (nearest person, their shoulder, your right hand by default); the hand tracks them until /letgo' },
+  { name: 'letgo', aliases: ['release'], help: 'let go — lower your reaching hand (or just one: /letgo left|right)' },
   { name: 'eyes', help: '/eyes close|open — hold your eyes shut, if your rig has eyelid bones' },
   { name: 'pushable', help: '/pushable on|off — whether shoves and blasts can knock you over (on by default)' },
   { name: 'boom', aliases: ['blast'], help: '/boom [power] [radius] — a blast where you stand, you included (builder)' },

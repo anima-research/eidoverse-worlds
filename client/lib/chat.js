@@ -549,6 +549,14 @@ function runCommand(raw) {
     case 'push': case 'shove':
       bus.emit('command', { cmd: 'push', arg });
       return true;
+    case 'touch':
+      // /touch [name] [point] [left|right] — a reaching hand on the same
+      // wire agents use; the touched person's client narrates it to them
+      bus.emit('command', { cmd: 'touch', arg });
+      return true;
+    case 'letgo': case 'release':
+      bus.emit('command', { cmd: 'letgo', arg });
+      return true;
     case 'pushable':
       bus.emit('command', { cmd: 'pushable', arg });
       return true;
