@@ -603,14 +603,34 @@ globalThis.whyIsItSilent = () => {
   return { ...s, detail: a };
 };
 
-globalThis.EW = {
+const EW = globalThis.EW = {
   me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus,
   skyArgs, sendVerb, setPosable, get posable() { return posable(); },
   setPushable, get pushable() { return pushable(); }, dragState,
   // reach: aim a hand at a world point, or at anything that moves. Pass a
   // function and it re-solves every frame; `EW.reach('leftHand', () =>
   // EW.remotes.get('mythos').avatar.root.position.toArray())` follows a body.
-  reach: (key, target, opts) => getMe()?.setReach(key, target, opts),
+  // reach: aim a hand at a world point, at a live function, or — simplest —
+  // at a NAMED contact point, in which case the surface normal comes with it
+  // and the palm turns to meet the surface:
+  //     EW.reach('rightHand', 'head_top')                 // your own head
+  //     EW.reach('rightHand', ['mythos', 'shoulder_l'])   // someone else's
+  //     EW.reach('rightHand', () => [x, y, z])            // a bare point
+  //
+  // The name form exists because the point form is a trap: EW.contactAt()
+  // returns a position and nothing else, so a reach built on it has no surface
+  // to face and the palm stays wherever the forearm left it. That is not
+  // visible as a bug — the hand still arrives — until you look at a headpat
+  // and find the palm pointing at the sky.
+  reach: (key, target, opts) => {
+    let t = target;
+    if (typeof target === 'string') t = () => EW.contactFrame(null, target);
+    else if (Array.isArray(target) && target.length === 2 && typeof target[1] === 'string') {
+      const [who, name] = target;
+      t = () => EW.contactFrame(who, name);
+    }
+    return getMe()?.setReach(key, t, opts);
+  },
   // landmarks: named contact points, derived per body from its own mesh.
   // EW.landmarks() derives + caches; EW.showLandmarks() draws them to be
   // LOOKED at, which is the only check the derivation cannot do itself.
