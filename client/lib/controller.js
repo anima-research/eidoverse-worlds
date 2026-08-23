@@ -11,7 +11,9 @@ import { heightAt } from './terrain.js';
 import { resolveColliders, lastBlockedTop, findSeat, raySegment } from './colliders.js';
 import { chat } from './chat.js';
 import { isOverlayOpen, flashHint } from './ui.js';
-import { resolveFirstPersonAnchor, FP_FORWARD, FP_GAZE_AHEAD, FP_GAZE_DROP } from './fp_view.js';
+import {
+  resolveFirstPersonAnchor, FP_FORWARD, FP_EYE_LIFT, FP_GAZE_AHEAD, FP_GAZE_DROP,
+} from './fp_view.js';
 
 export const myState = {
   pos: new THREE.Vector3(0, 0, 0),
@@ -348,11 +350,30 @@ export function updateMe(dt, me) {
 
 // ---------------------------------------------------------------- camera
 
+// Clips whose head sits where the fixed standing-height guess puts it. Any
+// other clip — sit/sitchair/lie, whatever pose a socket declares — moves the
+// head somewhere a constant offset from the root can't know.
+const STANDING_CLIPS = new Set(['idle', 'walk', 'run', 'jump', 'climb']);
+const _headWp = new THREE.Vector3();
+
 export function updateFollowCamera(dt, me) {
   const headY = 1.45;
   const focus = _eye.set(myState.pos.x, myState.pos.y + headY, myState.pos.z);
 
   if (firstPerson) {
+    // Seated/lying (and any held ragdoll pose) put the head somewhere the
+    // standing offset can't predict — a chair leans you back, lying puts the
+    // head a body-length from the root near the floor. Anchor on the LIVE
+    // head bone instead (#75's contract, same as the snap/spectator views):
+    // me.update() keeps the mixer animating while the mesh is hidden in
+    // first person, so the bone tracks the sit-down/lie-down transition
+    // frame by frame and rides a moving socket. Standing locomotion keeps
+    // the fixed height — bolting the eye to the bone there would add the
+    // walk cycle's head bob to every step.
+    if (me && (myState.pose || !STANDING_CLIPS.has(myState.clip))) {
+      const hp = me.headWorldPosition(_headWp);
+      if (hp) focus.set(hp.x, hp.y + FP_EYE_LIFT, hp.z);
+    }
     // Eye slightly forward of the head joint so the face doesn't clip the near
     // plane, aimed along the orbit angles (which are now the LOOK angles).
     _facing.set(Math.sin(camYaw), 0, Math.cos(camYaw));
