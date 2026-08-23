@@ -390,6 +390,44 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-22 — §24c: THE CLOBBER — §22 grass was reverted on main
+  since Aug 18.** defs-smoke's engagement check (mode cards-sss where
+  opaque belonged) exposed it: upstream's 95303a7 (Mica, "bring prod's
+  hand-patched vegetation.js into the repo — NOT MY WORK") rode the
+  7fed06e anima-research merge and CLOBBERED our override — and that
+  "hand-patched" file is byte-identical to stock engine 62365e9, so
+  the hand patch contained nothing and the merge silently reverted the
+  whole §22 arc + §23 sunflower rebase. Every stack on main since
+  Aug 18 served the pre-§22 cards-SSS meadow (~26fps class). RESTORED
+  on main (2abcd3a, from 65ea7aa's file — 17 markers, species data
+  verified identical) and pushed. LESSON for the braid: any merge
+  touching upstream-patched/ must re-run the marker count
+  (grep -c 'lodGrow|fastShade|opaqueBlades|baseKeep|sampleBladePalette'
+  = 17) — or just run defs-smoke, which now checks engagement.
+
+- **2026-08-22 — §24b: phase-1 slices 2+3 — defs and the heartbeat.**
+  DEFS (1c9104c): flora species left vegetation.js for
+  defs/flora/<name>.json — shared/floradefs.js validates (type-level,
+  unknown keys preserved, doc field for lore), server/defs.ts serves
+  GET /defs (1s TTL, broken defs refused loudly + individually),
+  FLORA_SPECIES hydrates once before first build (createFlora +
+  loadFloraModule both await; object identity preserved for
+  globalThis). Adding a species = adding a JSON file — proven by
+  tools/defs-smoke.ts: a def-only burgundy species rendered opaque
+  (drawn 6133) existing in no .js file; unknown species fails loudly,
+  world stands. GRASS_COLORS stays engine-side for now (calibrated to
+  Sol's atlas); candidate for defs later. NOTE: future upstream
+  species-table edits now conflict with a deletion — port them to
+  defs JSON (the §23 merge-file recipe still covers the rest of the
+  file). TICK (dc6dffc): the sequencer's four naked setIntervals
+  became named systems on server/tick.ts — one scheduler (§3's client
+  principle, server-side), per-beat error isolation, gauges at
+  GET /tick. Verbatim bodies, cadences unchanged; the seam for the
+  future fixed-step sim core. Wire additions /defs + /tick recorded
+  in WIRE.md. Gates across both: defs-smoke 12/12, flora.test 67/67,
+  tick-test 7/7, smoke 85/85, leasetest 19/19, paritybench PASS,
+  lightbench 30/30, bootjank clean at 153k planted, replaybench green.
+
 - **2026-08-22 — §24a: phase-1 slice 1 — the gate before the surgery.**
   Engine choice reopened by colleague deliberation (Godot's own-engine
   detour ended "not just right now"; the godotwebgpu fork measured
