@@ -549,5 +549,45 @@ console.log("\ntouching with the palm, not the back of the hand");
   check('...and it ran on every rig', tested >= 14, `${tested}`);
 }
 
+console.log("\nno flicker between two poses");
+{
+  // antra: "hip_r does not converge and flickers between two poses rapidly."
+  //
+  // The body is never perfectly still — an idle clip breathes — and a pose
+  // sitting exactly on a decision boundary flips with it. Measured at 18-64mm
+  // of elbow movement per frame on four rigs while the input moved half a
+  // millimetre. A sub-millimetre input must not produce a centimetre of output.
+  let worstMM = 0, worstRig = '', tested = 0;
+  for (const rig of good) {
+    const av = makeAvatar(rig.P, { realParent: rig.realParent, vrm0: rig.vrm0 });
+    const chain: any = measureChain(av, 'rightHand');
+    if (!chain || !av.nodes.rightUpperLeg || !av.nodes.leftUpperLeg) continue;
+    const at = (n: string) => av.nodes[n]?.getWorldPosition(new THREE.Vector3());
+    const lat = at('leftUpperLeg').clone().sub(at('rightUpperLeg')).normalize();
+    let prev: THREE.Vector3 | null = null, lp: any = null, ls: any = null;
+    tested++;
+    for (let f = 0; f < 80; f++) {
+      av.root.position.y = Math.sin(f / 9) * 0.004;      // half a millimetre of breath
+      av.root.updateMatrixWorld(true);
+      const t = at('rightUpperLeg').clone().addScaledVector(lat, -0.09);
+      const out: any = solveChain(chain, av, t.toArray(), null, { lastPick: lp, lastSwivel: ls });
+      if (!out.ok) continue;
+      lp = out.pick ?? null; ls = out.swivelUsed ?? null;
+      chain.nodes.upper.quaternion.set(...out.upper as any);
+      chain.nodes.lower.quaternion.set(...out.lower as any);
+      av.root.updateMatrixWorld(true);
+      const el = chain.nodes.lower.getWorldPosition(new THREE.Vector3()).sub(av.root.position);
+      if (prev) {
+        const jump = el.distanceTo(prev) * 1000;
+        if (jump > worstMM) { worstMM = jump; worstRig = rig.name; }
+      }
+      prev = el;
+    }
+  }
+  check(`a breathing body does not make the elbow jump (worst ${worstMM.toFixed(1)}mm${worstRig ? ` on ${worstRig}` : ''})`,
+    worstMM < 5);
+  check('...and it ran on every rig', tested >= 14, `${tested}`);
+}
+
 console.log(failures ? `\n\x1b[31m${failures} failed\x1b[0m\n` : "\n\x1b[32mall passed\x1b[0m\n");
 process.exit(failures ? 1 : 0);

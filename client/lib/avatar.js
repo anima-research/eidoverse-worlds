@@ -959,9 +959,9 @@ export class Avatar {
       // outward normal
       const palm = (r.palm !== false && normal && normal.length === 3 && normal.every(Number.isFinite))
         ? { dir: [-normal[0], -normal[1], -normal[2]] } : null;
-      const out = solveChain(ch, this, tw, r.lastElbow, { palm });
+      const out = solveChain(ch, this, tw, r.lastElbow, { palm, lastPick: r.lastPick, lastSwivel: r.lastSwivel });
       if (!out.ok) { r.bound = [out.why]; continue; }
-      r.bound = out.res.bound; r.gap = out.res.gap; r.penetration = out.penetration ?? 0; r.lastElbow = out.elbowOffset;
+      r.bound = out.res.bound; r.gap = out.res.gap; r.lastPick = out.pick ?? null; r.lastSwivel = out.swivelUsed ?? null; r.penetration = out.penetration ?? 0; r.lastElbow = out.elbowOffset;
       // what the solver BELIEVES it placed, in world space, so a probe can
       // compare it against where the bones actually ended up
       r.solved = { elbow: this.root.localToWorld(_rv3.set(...out.res.elbow)).toArray(),

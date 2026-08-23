@@ -228,6 +228,8 @@ export function solveChain(chain, avatar, targetWorld, poleHint = null, opts = {
 
   const res = solveTwoBoneClear({
     trace: opts.trace,
+    lastPick: opts.lastPick ?? null,
+    lastSwivel: opts.lastSwivel ?? null,
     root: shoulder, target, L1: chain.L1, L2: chain.L2,
     rUpper: chain.rUpper, rLower: chain.rLower,
     // The rest direction carried by the parent — a pure function of the
@@ -264,7 +266,8 @@ export function solveChain(chain, avatar, targetWorld, poleHint = null, opts = {
     palmResidual = op.residualDeg;
   }
   return {
-    ok: true, res, upper: q.upper, lower, hand, palmResidual,
+    ok: true, res, upper: q.upper, lower, hand, palmResidual, pick: res.pick ?? null,
+    swivelUsed: res.swivel ?? 0,
     swivel: res.swivel ?? 0, penetration: res.penetration ?? 0,
     elbowOffset: [res.elbow[0] - shoulder[0], res.elbow[1] - shoulder[1], res.elbow[2] - shoulder[2]],
   };

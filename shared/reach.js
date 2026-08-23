@@ -571,6 +571,13 @@ const SWIVELS = (() => {
 export function solveTwoBoneClear(o, guards) {
   const rU = o.rUpper ?? 0, rL = o.rLower ?? 0;
   const lim = o.limits ?? {};
+  // A pose sitting exactly ON the penetration boundary has its feasibility
+  // flicker as the body breathes, and a latch cannot hold what keeps becoming
+  // invalid: measured on princess0, the search alternated between a pose that
+  // reached the target exactly and one 61mm short, every other frame, because
+  // the good one kept crossing zero. A millimetre of tolerance is invisible on
+  // screen and turns a knife edge into something a body can rest against.
+  const CLEAR = 0.001;
 
   // Clip each guard where the hand is going, rather than dropping it: the
   // torso is ONE capsule from hips to chest, and deleting it because the
@@ -613,16 +620,44 @@ export function solveTwoBoneClear(o, guards) {
     const aimDir = aim;
     const adducted = o.inward && aimDir ? Math.max(0, dot(aimDir, o.inward)) : 0;
     const judgeSide = !!(lim.hingeDir && o.fwd) && adducted < 0.35;
+    // Two different questions, and they want different answers.
+    //
+    // ACCEPTING a fresh pose is strict: an elbow on the wrong side of the
+    // chord is the artefact this rule exists to prevent, and letting it in
+    // "just a little" let 72 of them back through.
+    //
+    // KEEPING the pose we already have is tolerant: an elbow sitting ON the
+    // plane makes a strict boolean flip on noise, which throws away something
+    // fine and sends the search elsewhere — chatter by another route. A few
+    // degrees the wrong side of the plane is not meaningfully inverted, and
+    // allowing it only to an incumbent keeps the latch's grip without opening
+    // the door.
     const okSide = (res) => !judgeSide || sideOf(res, target) >= 0;
+    const okSideHeld = (res) => !judgeSide || sideOf(res, target) >= -0.08;
+
+    // ---- keep the swivel we had, while it still works.
+    //
+    // The chosen swivel is one of a discrete set, and penetration hovering
+    // around zero at one of them makes the winner alternate frame to frame —
+    // measured as an 18-64mm elbow jump on four rigs while the body drifted
+    // half a millimetre. A latch on the incumbent removes it without adding
+    // feedback: the previous angle is simply tried FIRST and kept if it is
+    // still clear, so nothing switches until the pose genuinely stops working.
+    if (o.lastSwivel != null) {
+      const held = at(o.lastSwivel);
+      if (held?.ok && penOf(held) <= CLEAR && okSideHeld(held)) {
+        return { res: held, pen: 0, swivel: o.lastSwivel };
+      }
+    }
 
     let best = null, fallback = { res: base, pen: penOf(base), swivel: 0 };
-    if (fallback.pen <= 0 && okSide(base)) return fallback;
+    if (fallback.pen <= CLEAR && okSide(base)) return fallback;
     for (const th of SWIVELS) {
       if (th === 0) continue;
       const res = at(th);
       if (!res.ok) continue;
       const pen = penOf(res);
-      if (pen <= 0 && okSide(res)) return { res, pen: 0, swivel: th };
+      if (pen <= CLEAR && okSide(res)) return { res, pen: 0, swivel: th };
       // keep the least-bad CORRECT-SIDE option ahead of any inverted one
       const cand = { res, pen, swivel: th };
       if (okSide(res) && (!best || pen < best.pen)) best = cand;
@@ -635,7 +670,7 @@ export function solveTwoBoneClear(o, guards) {
   const full = bestFor(o.target);
   if (!full) return solveTwoBone(o);
   if (o.trace) o.trace[o.trace.length - 1].pen = +(full.pen * 1000).toFixed(1);
-  if (full.pen <= 0) {
+  if (full.pen <= CLEAR) {
     return { ...full.res, swivel: full.swivel, penetration: 0, retreat: 1 };
   }
 
@@ -673,6 +708,20 @@ export function solveTwoBoneClear(o, guards) {
     return { r, pen: guards.length ? penetration(root, r.elbow, r.hand, rU, rL, guards) : 0 };
   };
 
+  // ---- stickiness, so a near-tie does not chatter.
+  //
+  // Two candidates can sit within a hair of each other, and then a body
+  // breathing by half a millimetre swaps their rank and the elbow jumps —
+  // measured at 18-64mm per frame on four rigs while the input moved 0.5mm.
+  //
+  // This is a DEADBAND LATCH, not feedback. The earlier oscillator was the
+  // solve depending on its own output, which can self-excite; this only lets
+  // an incumbent keep its place until a rival is better by a clear margin, and
+  // noise below that margin cannot move it either way. Switching requires
+  // beating the incumbent by STICK, and switching back requires beating the
+  // new one by STICK again, so a small perturbation cannot drive a cycle.
+  const STICK = 0.03;                       // metres of "clearly better"
+  const prev = o.lastPick ?? null;
   const shortlist = [];
   for (const dev of DEV) {
     for (const az of (dev === 0 ? [0] : AZ)) {
@@ -694,16 +743,28 @@ export function solveTwoBoneClear(o, guards) {
   let best = null;
   for (const cand of shortlist.slice(0, 6)) {
     const r = bestFor(cand.target);
-    if (!r || r.pen > 0) continue;
+    if (!r || r.pen > CLEAR) continue;
     const miss = len(sub(o.target, r.res.hand));
-    if (!best || miss < best.miss) best = { ...r, miss };
+    if (!best || miss < best.miss) best = { ...r, miss, pick: cand.target };
+  }
+
+  // The incumbent gets a FULL evaluation, outside the shortlist. Scoring it
+  // with the cheap probe and then letting it fall out of the top six was the
+  // whole failure: a pose that was fine, and that the latch existed to keep,
+  // never got asked. It keeps its place unless a rival beats it by STICK.
+  if (prev) {
+    const r = bestFor(prev);
+    if (r && r.pen <= CLEAR) {
+      const miss = len(sub(o.target, r.res.hand));
+      if (!best || miss <= best.miss + STICK) best = { ...r, miss, pick: prev };
+    }
   }
   if (!best) {
     return { ...full.res, swivel: full.swivel, penetration: full.pen, retreat: 1 };
   }
   return {
     ...best.res, swivel: best.swivel, penetration: 0,
-    gap: best.miss,
+    gap: best.miss, pick: best.pick,
     bound: [...(best.res.bound ?? []), 'body'],
   };
 }
