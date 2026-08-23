@@ -139,6 +139,48 @@ check("broken def is NOT served", !names.includes("broken"));
   check("broken def refused LOUDLY", log.includes("REFUSED") && log.includes("broken.json"));
 }
 
+// ---- avatar overlay ---------------------------------------------------------
+// Defs overlay the DISCOVERED roster (declared beats discovered): an
+// override def restates a scanned avatar's height, an alias def points a
+// new name at an existing .vrm, and a def with an unresolvable path is
+// refused without costing the roster anything.
+
+console.log(`\n${bold("── avatars")}`);
+{
+  const before: { name: string; path: string; height: number | null }[] =
+    await (await fetch(`${BASE}/avatars`)).json();
+  if (!before.length) {
+    check("roster has at least one discovered avatar", false, "empty roster — no .vrm in library?");
+  } else {
+    const first = before[0];
+    mkdirSync(join(DEFS, "avatars"), { recursive: true });
+    writeFileSync(join(DEFS, "avatars", `${first.name}.json`),
+      JSON.stringify({ doc: "defs-smoke height override", height: 9.99 }));
+    writeFileSync(join(DEFS, "avatars", "defsmoke_alias.json"),
+      JSON.stringify({ doc: "defs-smoke alias", vrm: first.path.split("?")[0], height: 1.23 }));
+    writeFileSync(join(DEFS, "avatars", "defsmoke_broken.json"),
+      JSON.stringify({ vrm: "eidoverse/assets/vrms/does_not_exist.vrm" }));
+    await sleep(1300);   // past the registry TTL
+    const after: typeof before = await (await fetch(`${BASE}/avatars`)).json();
+    const over = after.find((a) => a.name === first.name);
+    const alias = after.find((a) => a.name === "defsmoke_alias");
+    check("def height overrides the discovered avatar", over?.height === 9.99,
+      `${first.name} height ${over?.height}`);
+    check("alias def declares an avatar the scan wouldn't find",
+      !!alias && alias.height === 1.23 && /\?v=\d+$/.test(alias.path), JSON.stringify(alias));
+    check("unresolvable vrm def costs the roster nothing",
+      !after.find((a) => a.name === "defsmoke_broken") && after.length === before.length + 1,
+      `${after.length} vs ${before.length}+1`);
+    // the broken def VALIDATES (the registry can't stat the library) — the
+    // roster is where its path fails to resolve, loudly
+    const reg2 = await (await fetch(`${BASE}/defs`)).json();
+    check("/defs serves the avatars domain", Object.keys(reg2.avatars ?? {}).length === 3,
+      Object.keys(reg2.avatars ?? {}).join(", "));
+    const log2 = readFileSync(join(SCRATCH, "sequencer.log"), "utf8");
+    check("unresolvable vrm refused LOUDLY", log2.includes(`avatar "defsmoke_broken"`));
+  }
+}
+
 // ---- driver: author the three worlds ---------------------------------------
 
 type Driver = { verb(v: string, a: unknown): Promise<void>; close(): void };

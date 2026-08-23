@@ -12,12 +12,13 @@ import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ROOT } from "./config.ts";
 import { validateFloraDef } from "../shared/floradefs.js";
+import { validateAvatarDef } from "../shared/avatardefs.js";
 
 // Scratch sequencers point this elsewhere, same pattern as WORLDS_DIR.
 export const DEFS_DIR = resolve(process.env.DEFS_DIR ?? join(ROOT, "defs"));
 
 const TTL_MS = 1000;
-let cached: { at: number; json: string } | null = null;
+let cached: { at: number; reg: { flora: Record<string, unknown>; avatars: Record<string, unknown> }; json: string } | null = null;
 
 function loadDomain(domain: string, validate: (name: string, def: unknown) => string[]) {
   const dir = join(DEFS_DIR, domain);
@@ -41,15 +42,26 @@ function loadDomain(domain: string, validate: (name: string, def: unknown) => st
   return out;
 }
 
-/** The /defs response body, rebuilt at most once per TTL. */
-export function defsPayload(): string {
+function registry() {
   const now = Date.now();
-  if (cached && now - cached.at < TTL_MS) return cached.json;
-  const flora = loadDomain("flora", validateFloraDef);
-  const json = JSON.stringify({ flora });
+  if (cached && now - cached.at < TTL_MS) return cached;
+  const reg = {
+    flora: loadDomain("flora", validateFloraDef),
+    avatars: loadDomain("avatars", validateAvatarDef),
+  };
+  const json = JSON.stringify(reg);
   if (!cached || cached.json !== json) {
-    console.log(`[defs] serving ${Object.keys(flora).length} flora def(s) from ${DEFS_DIR}`);
+    console.log(`[defs] serving ${Object.keys(reg.flora).length} flora`
+      + ` + ${Object.keys(reg.avatars).length} avatar def(s) from ${DEFS_DIR}`);
   }
-  cached = { at: now, json };
-  return json;
+  cached = { at: now, reg, json };
+  return cached;
+}
+
+/** The /defs response body, rebuilt at most once per TTL. */
+export function defsPayload(): string { return registry().json; }
+
+/** The avatar overlay, for the roster (routes.ts avatarRoster). */
+export function avatarDefs(): Record<string, { vrm?: string; height?: number } & Record<string, unknown>> {
+  return registry().reg.avatars as ReturnType<typeof avatarDefs>;
 }

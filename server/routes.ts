@@ -19,7 +19,7 @@ import { resolveLibFile } from "./lint.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { worlds, getWorld, type World } from "./world.ts";
 import { handleUpload } from "./upload.ts";
-import { defsPayload } from "./defs.ts";
+import { defsPayload, avatarDefs } from "./defs.ts";
 import { tickStats } from "./tick.ts";
 import { entryBusStats } from "./events.ts";
 
@@ -75,13 +75,26 @@ export function avatarRoster(): { name: string; path: string; height: number | n
       if (f.endsWith(".vrm") && !f.endsWith(".ktx2.vrm")) seen.set(f.replace(".vrm", ""), `eidoverse/assets/vrms/${f}?v=${Math.round(Bun.file(join(dir, f)).lastModified)}`);
     }
   }
-  // stature metadata, contributed alongside portraits (see POST /thumb)
+  // The def overlay (§24, defs/avatars/): declared beats discovered. A def
+  // with `vrm` adds — or repoints — a named avatar at any /library path the
+  // scan wouldn't find; a path that doesn't resolve is refused loudly and
+  // the discovered roster stands (a typo'd def must not vanish a body).
+  const defs = avatarDefs();
+  for (const [name, d] of Object.entries(defs)) {
+    if (!d.vrm) continue;
+    const file = resolveLibFile(d.vrm);
+    if (!file) { console.error(`[defs] avatar "${name}": vrm not found in library — ${d.vrm}`); continue; }
+    seen.set(name, `${d.vrm}?v=${Math.round(Bun.file(file).lastModified)}`);
+  }
+  // stature metadata, contributed alongside portraits (see POST /thumb);
+  // a def's declared height wins over the measured sidecar
   let hmeta: Record<string, { h: number }> = {};
   try {
     const mp = join(OPT_DIR, "thumbs", "meta.json");
     if (existsSync(mp)) hmeta = JSON.parse(readFileSync(mp, "utf8"));
   } catch { /* roster works without heights */ }
-  return [...seen].map(([name, path]) => ({ name, path, height: hmeta[name.replace(/[^a-zA-Z0-9_-]/g, "_")]?.h ?? null }));
+  return [...seen].map(([name, path]) => ({ name, path,
+    height: defs[name]?.height ?? hmeta[name.replace(/[^a-zA-Z0-9_-]/g, "_")]?.h ?? null }));
 }
 
 /** The animation clips, each at a path stamped with its mtime — the same

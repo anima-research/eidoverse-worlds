@@ -6,7 +6,13 @@ to every world this instance serves means adding a JSON file here — no
 engine edit, no client edit, no deploy beyond the file.
 
 - One def per file, `defs/<domain>/<name>.json`; the filename (minus `.json`)
-  is the def's name. Domains so far: `flora/`.
+  is the def's name. Domains so far: `flora/`, `avatars/`.
+- **Avatars are an overlay, not a gate** (`shared/avatardefs.js`): dropping
+  a .vrm into the library/overlay stays a live avatar with no def. A def
+  matching a discovered name overrides its metadata (`height`); a def
+  carrying `vrm` (a /library path) declares an avatar the scan wouldn't
+  find, or repoints a name — declared beats discovered. A def whose vrm
+  path doesn't resolve is refused loudly and the discovered roster stands.
 - The contract per domain lives in `shared/` as a pure validator
   (`shared/floradefs.js`) — the server refuses to serve a def that fails it
   (loudly, at load), so a typo becomes a boot log line, not a broken world.
