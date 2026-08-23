@@ -109,8 +109,16 @@ export function measureChain(avatar, key) {
   // it as the half-depth too is what makes a forearm crossing in front of the
   // belly read as inside it. Falls back to round if the mesh cannot answer —
   // no worse than before, and it says so by simply not warping.
-  const halfDepth = torsoHalfDepth(avatar);
-  const warpK = (halfDepth && halfDepth > 1e-3) ? Math.max(1, torsoR / halfDepth) : null;
+  // Measured off the mesh where there IS one. A headless stand-in has no mesh,
+  // and falling back to "round" there makes the harness strictly harsher than
+  // the browser — every folded pose reads as penetrating and a search for a
+  // clear one finds nothing, which is not a fact about the body but about the
+  // test rig. The fallback is the ratio the real bodies actually show
+  // (claude 111/150 = 0.74, orion 115/150 = 0.77).
+  const DEPTH_RATIO_FALLBACK = 0.75;
+  const measured = torsoHalfDepth(avatar);
+  const halfDepth = (measured && measured > 1e-3) ? measured : torsoR * DEPTH_RATIO_FALLBACK;
+  const warpK = halfDepth > 1e-3 ? Math.max(1, torsoR / halfDepth) : null;
   const rUpper = boneRadius(spec.root, torsoR);
   const rLower = boneRadius(spec.mid, torsoR);
   const own = new Set([spec.root, spec.mid, spec.end]);
@@ -157,7 +165,7 @@ export function measureChain(avatar, key) {
  * @param {number[]} targetWorld
  * @param {number[]|null} poleHint previous elbow offset, for continuity
  */
-export function solveChain(chain, avatar, targetWorld, poleHint = null) {
+export function solveChain(chain, avatar, targetWorld, poleHint = null, opts = {}) {
   const root = avatar.root;
   const qRootInv = qConj(root.getWorldQuaternion(_q).toArray());
   const target = root.worldToLocal(_v.set(targetWorld[0], targetWorld[1], targetWorld[2])).toArray();
@@ -183,6 +191,7 @@ export function solveChain(chain, avatar, targetWorld, poleHint = null) {
   }
 
   const res = solveTwoBoneClear({
+    trace: opts.trace,
     root: shoulder, target, L1: chain.L1, L2: chain.L2,
     rUpper: chain.rUpper, rLower: chain.rLower,
     // The rest direction carried by the parent — a pure function of the

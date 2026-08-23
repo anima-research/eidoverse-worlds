@@ -609,8 +609,10 @@ export function solveTwoBoneClear(o, guards) {
     return best;
   };
 
+  if (o.trace) o.trace.push({ t: 1, pen: null, note: 'full attempt below' });
   const full = bestFor(o.target);
   if (!full) return solveTwoBone(o);
+  if (o.trace) o.trace[o.trace.length - 1].pen = +(full.pen * 1000).toFixed(1);
   if (full.pen <= 0) {
     return { ...full.res, swivel: full.swivel, penetration: 0, retreat: 1 };
   }
@@ -618,38 +620,51 @@ export function solveTwoBoneClear(o, guards) {
   // ---- it cannot get there. Find how far it CAN get.
   //
   // Not by giving up, and not by driving the arm through the body to a point
-  // it was never going to touch. The straight line from one shoulder to the
-  // opposite hip runs through the torso, so a target out there is unreachable
-  // in the only sense that matters — but there is a nearest point ON THE WAY
-  // that the body does allow, and that is the pose a person actually adopts.
+  // it was never going to touch: there is a nearest place ON THE WAY that the
+  // body allows, and that is the pose a person actually adopts.
   //
-  // Bisect the reach: the furthest fraction of the way to the target whose
-  // best pose is clear. Monotone in practice (a shorter reach is an easier
-  // one), continuous in the geometry, and it keeps the hand on the line the
-  // reach was asking for instead of inventing a direction of its own.
+  // ⚠ Penetration is NOT monotone in reach distance, which the first version
+  // of this assumed ("a shorter reach is an easier one") and built a bisection
+  // on. Measured on orion, reaching across for the far hip:
+  //     t=0.05  74mm   t=0.20  62mm   t=0.40  0mm   t=0.60  7mm   t=1.0  364mm
+  // A tightly folded arm jams its elbow into the chest, so the near end is
+  // blocked too and the clear band sits in the MIDDLE. The bisection probed
+  // 5%, found it blocked, concluded the whole line was impossible and returned
+  // the full reach — which is why the retreat never engaged and the forearm
+  // went on crossing the torso.
+  //
+  // So: scan inwards for the furthest clear fraction, then refine outwards
+  // from it. Scanning from the far end means the first clear sample IS the
+  // best one, and the refinement only sharpens it.
   if (!reachDir || fullDist < 1e-6) {
     return { ...full.res, swivel: full.swivel, penetration: full.pen, retreat: 1 };
   }
-  let lo = 0, hi = 1, bestClear = null;
-  const near = bestFor(add(root, mul(reachDir, fullDist * 0.05)));
-  if (!near || near.pen > 0) {
-    // even a token reach is blocked — hold the least-bad full attempt rather
-    // than collapse the arm to nothing
+  const SCAN = 20;
+  let found = null;
+  for (let i = 1; i <= SCAN; i++) {
+    const t = 1 - i / (SCAN + 1);
+    const r = bestFor(add(root, mul(reachDir, fullDist * t)));
+    if (o.trace) o.trace.push({ t: +t.toFixed(3), pen: r ? +(r.pen * 1000).toFixed(1) : null });
+    if (r && r.pen <= 0) { found = { ...r, t }; break; }
+  }
+  if (!found) {
+    // genuinely nowhere on the line works: hold the least-bad full attempt
+    // rather than collapse the arm to nothing
     return { ...full.res, swivel: full.swivel, penetration: full.pen, retreat: 1 };
   }
-  bestClear = { ...near, t: 0.05 };
-  lo = 0.05;
-  for (let i = 0; i < 12; i++) {
+  // push back out toward the target as far as it stays clear
+  let lo = found.t, hi = Math.min(1, found.t + 1 / (SCAN + 1));
+  for (let i = 0; i < 8; i++) {
     const mid = (lo + hi) / 2;
     const r = bestFor(add(root, mul(reachDir, fullDist * mid)));
-    if (r && r.pen <= 0) { bestClear = { ...r, t: mid }; lo = mid; } else hi = mid;
+    if (r && r.pen <= 0) { found = { ...r, t: mid }; lo = mid; } else hi = mid;
   }
   // report the shortfall against what was ASKED for, not against the
   // compromise — a caller deciding whether the touch landed needs the truth
-  const gap = len(sub(o.target, bestClear.res.hand));
+  const gap = len(sub(o.target, found.res.hand));
   return {
-    ...bestClear.res, swivel: bestClear.swivel, penetration: 0,
-    retreat: bestClear.t, gap,
-    bound: [...(bestClear.res.bound ?? []), 'body'],
+    ...found.res, swivel: found.swivel, penetration: 0,
+    retreat: found.t, gap,
+    bound: [...(found.res.bound ?? []), 'body'],
   };
 }
