@@ -390,6 +390,22 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-22 — §24e: phase-1 slice 6 — the palette def + LIVE defs.**
+  (0cecb57) GRASS_COLORS left vegetation.js for defs/flora/_colors.json
+  (underscore = domain sidecar convention), hydrated before species so
+  leafRecolor names resolve. And the Rimworld-y payoff: DEFS ARE LIVE —
+  a defs-watch tick system fingerprints defs/ (1s, mtime+size) and
+  pushes `defs-updated` (wire addition); clients re-fetch /defs,
+  re-hydrate REPLACING, and regrow the meadow from the same authored
+  args. Proven under a live headless client: grass.json density edited
+  22→5 on disk → planted 24352→5556, no reboot, no log entry. RULING
+  recorded in defs/README.md: seats are NOT defs — they're a judged
+  store (proposals, countersigns, provenance, locks; #101/#105); the
+  line is "if writing it requires authority/judgment/provenance it's a
+  store; if editing it is authorship it's a def". Gates: defs-smoke
+  20/20, flora.test 67/67, smoke 85/85, paritybench PASS, lightbench
+  30/30, replaybench green.
+
 - **2026-08-22 — §24d: phase-1 slices 4+5 — the entry bus, avatar defs.**
   BUS (6ad41f8): birth IS publication. Seven append sites hand-rolled
   append + broadcast({type:'log'}) and only runVerb told the behavior

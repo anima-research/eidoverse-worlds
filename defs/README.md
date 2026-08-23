@@ -35,5 +35,27 @@ engine edit, no client edit, no deploy beyond the file.
   leaves the rest of the world standing — the log itself is untouched
   (append-only, forever).
 
+- **Underscore files are domain sidecars, not defs** — `flora/_colors.json`
+  is the palette table (validated whole, served as `floraColors`), skipped
+  by the def-per-file loader.
+- **Hot reload:** the sequencer fingerprints this directory once a second
+  (the `defs-watch` tick system) and pushes `defs-updated` to every live
+  client when it changes — clients re-hydrate and regrow what the changed
+  content shapes. Editing a def under a running world is a live act.
+
+## What is NOT a def
+
+Defs are **authored** content: hand-written, declarative, reviewable in a
+diff, safe to hot-reload. Not everything data-shaped belongs here:
+
+- **Seat profiles** (server/seats.ts) stay a *store*, not defs: they are
+  runtime-*judged* state — named-actor proposals, operator countersigns
+  with no HTTP path, provenance-first atomic writes, cross-process locks,
+  revision preconditions (#101/#105). Flattening that into TTL-rescanned
+  JSON files would delete the security model. The line: if writing it
+  requires authority, judgment, or provenance, it's a store; if editing it
+  is authorship, it's a def.
+- **World state** is the log's, always.
+
 `DEFS_DIR` env overrides the directory (scratch sequencers, tests) — same
 pattern as `WORLDS_DIR`.
