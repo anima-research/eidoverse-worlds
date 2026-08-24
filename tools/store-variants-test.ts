@@ -102,12 +102,13 @@ console.log("\nthe store's KTX2 shadow (store-variants.ts, shared/ktx2.js):\n");
   check("both present → nothing to queue", !m.min && !m.ktx2);
 
   // the negotiation key is a generation, shared by both sides
-  check("the current key is 2 (1 retired 2026-08-24 — its flagged answers had been pinned immutable)", KTX2_KEY === "2" && KTX2_QUERY === "ktx2=2");
-  check("the current key negotiates", wantsKtx2(new URLSearchParams("ktx2=2")));
-  check("the retired key does NOT — it is an unflagged fetch now", !wantsKtx2(new URLSearchParams("ktx2=1")));
+  check("the current key is 3 (1 and rollout-key 2 retired — their flagged answers had been pinned immutable)", KTX2_KEY === "3" && KTX2_QUERY === "ktx2=3");
+  check("the current key negotiates", wantsKtx2(new URLSearchParams("ktx2=3")));
+  check("the just-retired rollout key does NOT — it is an unflagged fetch now", !wantsKtx2(new URLSearchParams("ktx2=2")));
+  check("the original retired key does not negotiate either", !wantsKtx2(new URLSearchParams("ktx2=1")));
   check("no key does not", !wantsKtx2(new URLSearchParams("v=123")));
-  check("withKtx2 appends with ? on a bare path", withKtx2("store/x.glb") === "store/x.glb?ktx2=2");
-  check("…and with & when ?v= is already there (avatar URLs)", withKtx2("eidoverse/assets/vrms/a.vrm?v=9") === "eidoverse/assets/vrms/a.vrm?v=9&ktx2=2");
+  check("withKtx2 appends with ? on a bare path", withKtx2("store/x.glb") === "store/x.glb?ktx2=3");
+  check("…and with & when ?v= is already there (avatar URLs)", withKtx2("eidoverse/assets/vrms/a.vrm?v=9") === "eidoverse/assets/vrms/a.vrm?v=9&ktx2=3");
 }
 
 // ---------------------------------------------- 2. the ghost-listing rule
@@ -407,8 +408,8 @@ console.log("\n  the real sequencer — an upload becomes a served variant:");
       const flagged = await S.get(withKtx2(`store/${hash}.glb`));
       check("flagged (current key) → the variant, really KTX2, immutable", flagged.status === 200 && isKtx2Glb(flagged.bytes) && flagged.cc.includes("immutable"),
         `cc=${flagged.cc} ktx2=${isKtx2Glb(flagged.bytes)}`);
-      const retired = await S.get(`store/${hash}.glb?ktx2=1`);
-      check("the retired key (=1) is an unflagged fetch: not the variant, immutable like the address", retired.status === 200 && !isKtx2Glb(retired.bytes) && retired.cc.includes("immutable"),
+      const retired = await S.get(`store/${hash}.glb?ktx2=2`);
+      check("the just-retired key (=2) is an unflagged fetch: not the variant, immutable like the address", retired.status === 200 && !isKtx2Glb(retired.bytes) && retired.cc.includes("immutable"),
         `cc=${retired.cc} ktx2=${isKtx2Glb(retired.bytes)}`);
       const bare = await S.get(`store/${hash}.glb`);
       check("unflagged → not the variant, immutable", bare.status === 200 && !isKtx2Glb(bare.bytes) && bare.cc.includes("immutable"), bare.cc);

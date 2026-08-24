@@ -14,8 +14,10 @@
 // asked for. Bump this when a flagged answer has been pinned wrong.
 //
 // Generations: 1 — the §20 launch key (2026-08-10), retired 2026-08-24 because
-// provisional fall-throughs had been served immutable under it.
-export const KTX2_KEY = '2';
+// provisional fall-throughs had been served immutable under it. 2 — the PR #142
+// rollout key, retired immediately when an already-poisoned nginx cache entry was
+// observed during rollout. 3 — the clean post-rollout generation.
+export const KTX2_KEY = '3';
 export const KTX2_QUERY = `ktx2=${KTX2_KEY}`;
 
 /** Does this request negotiate KTX2 — the CURRENT key only. A retired key is

@@ -871,7 +871,7 @@ globalThis.loadImageTexture = async (bytes, opts = {}) => {
     const u8 = bytes instanceof Uint8Array ? bytes
       : bytes instanceof ArrayBuffer ? new Uint8Array(bytes)
         : new Uint8Array(bytes);
-    // §20d: the file layer negotiates KTX2 (primeFiles ?ktx2=1), so library
+    // §20d: the file layer negotiates KTX2 (primeFiles ?ktx2=<key>), so library
     // bytes may arrive GPU-native — route by the container itself, never the
     // path. The 12-byte KTX2 identifier can't prefix a PNG/JPEG, so non-KTX2
     // bytes fall through to EXACTLY today's path.

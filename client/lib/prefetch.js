@@ -97,7 +97,7 @@ async function buildQueue() {
   const push = (path, size = 0) => {
     let url = path.startsWith('/') ? path : `/library/${path}`;
     // Warm the SAME cache key demand fetches will use (§20c gate finding):
-    // capable clients fetch .glb/.vrm with ?ktx2=1 — unflagged warmth lands
+    // capable clients fetch .glb/.vrm with ?ktx2=<key> — unflagged warmth lands
     // in a different HTTP-cache entry and is pure waste for them. Loose
     // images (§20d) negotiate too, but ONLY where the file layer does
     // (primeFiles, i.e. the curated toolkit dirs) — catalog previews and
