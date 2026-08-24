@@ -8,6 +8,7 @@
 //   vrmPool    whole parsed VRM instances at rest (§19b — no clone exists
 //              for a bound rig, so released bodies are reworn intact)
 
+import { withKtx2 } from '../../shared/ktx2.js';
 import { THREE, renderer, camera, scene, report, bus } from './core.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
@@ -148,7 +149,7 @@ const draco = new DRACOLoader().setDecoderPath('https://www.gstatic.com/draco/ve
 const ktx2 = new KTX2Loader()
   .setTranscoderPath('/node_modules/three/examples/jsm/libs/basis/')
   .detectSupport(renderer);
-/** Whether this GPU/browser negotiates KTX2 variants (?ktx2=1) — prefetch
+/** Whether this GPU/browser negotiates KTX2 variants (?ktx2=<key>, shared/ktx2.js) — prefetch
  *  must warm the SAME cache key demand fetches will use. */
 export const ktx2Capable = () => !!ktx2.workerConfig;
 function makeLoader(vrm = false) {
@@ -283,9 +284,8 @@ export async function loadVRM(libPath, { priority = 1 } = {}) {
     // byteCache (variant and original are distinct byte entries — correct),
     // while the vrmPool and its vrmMeta ledger key on libPath UNTOUCHED, so
     // pool identity is unaffected by negotiation.
-    const flag = libPath.split('?')[0].endsWith('.vrm') && ktx2.workerConfig
-      ? (libPath.includes('?') ? '&ktx2=1' : '?ktx2=1') : '';
-    const buf = await fetchBytes(`/library/${libPath}${flag}`);
+    const url = libPath.split('?')[0].endsWith('.vrm') && ktx2.workerConfig ? withKtx2(libPath) : libPath;
+    const buf = await fetchBytes(`/library/${url}`);
     work.phase('queued');
     // The parse and skeleton passes are the irreducibly-synchronous chunk of a
     // body: serialize so two arrivals can't stack theirs into the same frames,
@@ -477,8 +477,8 @@ export async function loadGLB(libPath) {
         // paths — the server answers with the variant when one exists, the
         // original otherwise. The full URL keys byteCache, so variant and
         // original are distinct entries, which is correct.
-        const flag = libPath.endsWith('.glb') && ktx2.workerConfig ? '?ktx2=1' : '';
-        const buf = await fetchBytes(`/library/${libPath}${flag}`);
+        const url = libPath.endsWith('.glb') && ktx2.workerConfig ? withKtx2(libPath) : libPath;
+        const buf = await fetchBytes(`/library/${url}`);
         work.phase('queued');
         return await enqueue(async () => {
           work.phase('parse');
@@ -775,9 +775,8 @@ export async function primeFiles(paths, { concurrency = 6 } = {}) {
         // cache (§16.2.B), and every toolkit module see the same identities —
         // the bytes just arrive GPU-native, and loadImageTexture sniffs the
         // container magic to tell which shape it got.
-        const flag = ktx2Capable() && /\.(png|jpe?g)$/i.test(p)
-          ? (p.includes('?') ? '&ktx2=1' : '?ktx2=1') : '';
-        const buf = await fetchBytes(`/library/${p}${flag}`);
+        const url = ktx2Capable() && /\.(png|jpe?g)$/i.test(p) ? withKtx2(p) : p;
+        const buf = await fetchBytes(`/library/${url}`);
         denoFiles.set(p, new Uint8Array(buf));
       } catch (e) { missing.push(p); }
     }

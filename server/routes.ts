@@ -13,6 +13,8 @@ import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdir
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, JOIN_TOKEN } from "./config.ts";
+import { isStoreOriginal, isServingArtifact } from "./store-variants.ts";
+import { wantsKtx2 } from "../shared/ktx2.js";
 import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
 import { resolveLibFile } from "./lint.ts";
@@ -186,7 +188,11 @@ const gzCache = new Map<string, { mtime: number; gz: Uint8Array }>();
 const hardCacheable = (path: string) =>
   !/\.vrma?$/i.test(path) && !/\.(m?js|json)$/i.test(path);
 
-function serveFrom(base: string, rel: string, cache = false, req?: Request, immutable = false): Response {
+// `provisional`: this answer is not the final one for this URL (a flagged
+// fetch whose variant does not exist yet — see the /library route). It wins
+// over `immutable`: no-cache, riding the ETag, so the moment a different file
+// answers the same URL its bytes get through.
+function serveFrom(base: string, rel: string, cache = false, req?: Request, immutable = false, provisional = false): Response {
   const path = normalize(join(base, rel));
   if (!path.startsWith(base)) return new Response("forbidden", { status: 403 });
   // A missing file must be a 404, not a Bun.file stream blowing up into a 500 —
@@ -203,7 +209,8 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
     headers["etag"] = etag;
     if (req?.headers.get("if-none-match") === etag) {
       // cache-control must ride along on the 304 (it refreshes the stored response's lifetime)
-      headers["cache-control"] = immutable ? "public, max-age=31536000, immutable"
+      headers["cache-control"] = provisional ? "no-cache"
+        : immutable ? "public, max-age=31536000, immutable"
         : cache && hardCacheable(path) ? "public, max-age=86400" : cache ? "no-cache" : "no-store";
       return new Response(null, { status: 304, headers });
     }
@@ -214,7 +221,8 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
   // (2026-07-22: "sydney's arms are swapped" was three of us looking at three
   // different cached rigs). no-cache = revalidate each load, still cheap.
   const hard = cache && hardCacheable(path);
-  headers["cache-control"] = immutable ? "public, max-age=31536000, immutable"
+  headers["cache-control"] = provisional ? "no-cache"
+    : immutable ? "public, max-age=31536000, immutable"
     : hard ? "public, max-age=86400" : cache ? "no-cache" : "no-store";
   // gzip the JS modules: three.webgpu.js is 2.1MB raw / ~500KB gzipped, and
   // over a DERP-relayed tailnet link that difference is seconds.
@@ -528,7 +536,12 @@ const ROUTES: Route[] = [
         for (const e of readdirSync(abs, { withFileTypes: true })) {
           const childRel = sub ? `${sub}/${e.name}` : e.name;
           if (e.isDirectory()) walk(base, childRel, depth + 1);
-          else out.push({ path: childRel, size: Bun.file(join(abs, e.name)).size });
+          // Serving artifacts are not entries: a KTX2 variant (<rel>.ktx2.glb /
+          // .ktx2.vrm / <img>.ktx2) is reached only as the path beside it +
+          // the negotiation, a .failed marker is the pump's verdict, a .tmp is
+          // a pass mid-write. Listed, the prefetcher fetches each one as an
+          // asset — a variant twice, a marker as a model (store-variants.ts).
+          else if (!isServingArtifact(e.name)) out.push({ path: childRel, size: Bun.file(join(abs, e.name)).size });
         }
       };
       // opt first: /library/ serving prefers the optimized mirror, so the
@@ -588,7 +601,10 @@ const ROUTES: Route[] = [
         let man: Record<string, { name?: string; by?: string; ts?: number }> = {};
         try { man = JSON.parse(readFileSync(join(storeDir, "manifest.json"), "utf8")); } catch { /* unnamed */ }
         const store = readdirSync(storeDir)
-          .filter((f) => f.endsWith(".glb"))
+          // a KTX2 variant (<hash>.glb.ktx2.glb) is the same model, not a
+          // catalog entry — the ghost-listing rule the library list already
+          // follows above (store-variants.ts)
+          .filter(isStoreOriginal)
           .map((f) => {
             const hash = f.replace(/\.glb$/i, "");
             const m = man[hash];
@@ -627,7 +643,7 @@ const ROUTES: Route[] = [
       // KHR_texture_basisu sits in extensionsRequired, and parsers without a
       // KTX2 decoder — agents, tools, old clients — THROW on required
       // extensions (GLTFLoader.js:1476). Only a client that detected support
-      // asks with ?ktx2=1; everyone else gets exactly today's bytes. Same
+      // asks with ?ktx2=<key>; everyone else gets exactly today's bytes. Same
       // cache ladder as the base file (non-immutable, ETag revalidates), and
       // the distinct URL is its own clean nginx/browser cache entry.
       // VRMs (§20c) negotiate identically — avatar URLs carry ?v= minted from
@@ -642,8 +658,11 @@ const ROUTES: Route[] = [
       // flagged fetch; contentType serves it as image/ktx2. The client's
       // loadImageTexture sniffs the container magic, so the SAME path carries
       // either byte shape.
-      if (url.searchParams.get("ktx2") === "1"
-          && (rel.endsWith(".glb") || rel.endsWith(".vrm") || /\.(png|jpe?g)$/i.test(rel))) {
+      const negotiable = rel.endsWith(".glb") || rel.endsWith(".vrm") || /\.(png|jpe?g)$/i.test(rel);
+      // The key is a generation (shared/ktx2.js): a retired one is an
+      // unflagged fetch — whatever that client pinned under it, it keeps.
+      const wantKtx2 = wantsKtx2(url.searchParams) && negotiable;
+      if (wantKtx2) {
         const kRel = rel.endsWith(".glb") ? `${rel}.ktx2.glb`
           : rel.endsWith(".vrm") ? `${rel}.ktx2.vrm` : `${rel}.ktx2`;
         const k = normalize(join(OPT_DIR, kRel));
@@ -657,17 +676,28 @@ const ROUTES: Route[] = [
           if (fresh) return serveFrom(OPT_DIR, kRel, true, req, versioned);
         }
       }
+      // A flagged fetch that falls through is PROVISIONAL for that URL, not
+      // final: the variant may still be encoding (a store upload's, seconds to
+      // minutes after landing; the library's, the boot sweep) — or the box has
+      // no encoder yet. Content-addressed does not make the fall-through final
+      // either: the ADDRESS is immutable, the flagged ANSWER is not, and a
+      // browser or nginx that pins the webp bytes under ?ktx2=1 for a year
+      // never sees the variant land (the show box, 2026-08-24: every store
+      // ?ktx2=1 answer immutable, every one webp). no-cache rides the ETag —
+      // a 304 while nothing changed, the variant's bytes the moment it exists;
+      // nginx honors it (nginx-show.conf) and simply does not cache these.
+      const provisional = wantKtx2;
       // store uploads: prefer the store-min shadow — same address, the
       // original stays as provenance and as the fallback while (or if) the
       // optimize pass hasn't landed for this hash
       if (rel.startsWith("store/")) {
         const minRel = `store-min/${rel.slice("store/".length)}`;
         const min = normalize(join(OPT_DIR, minRel));
-        if (min.startsWith(OPT_DIR) && existsSync(min)) return serveFrom(OPT_DIR, minRel, true, req, true);
+        if (min.startsWith(OPT_DIR) && existsSync(min)) return serveFrom(OPT_DIR, minRel, true, req, true, provisional);
       }
       const opt = normalize(join(OPT_DIR, rel));
-      if (opt.startsWith(OPT_DIR) && existsSync(opt)) return serveFrom(OPT_DIR, rel, true, req, versioned);
-      return serveFrom(LIBRARY_DIR, rel, true, req, versioned);
+      if (opt.startsWith(OPT_DIR) && existsSync(opt)) return serveFrom(OPT_DIR, rel, true, req, versioned, provisional);
+      return serveFrom(LIBRARY_DIR, rel, true, req, versioned, provisional);
     },
   },
   {

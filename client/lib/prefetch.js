@@ -21,6 +21,7 @@
 //      policy — assets that get USED are the ones that stay warm, and a newly
 //      needed asset displaces stale speculative ones by construction.
 
+import { withKtx2 } from '../../shared/ktx2.js';
 import { bus, CONFIG, report } from './core.js';
 import { whenBooted } from './boot.js';
 import { whenCalm } from './governor.js';
@@ -105,7 +106,7 @@ async function buildQueue() {
     const bare = url.split('?')[0];
     if (ktx2Capable() && (/\.(glb|vrm)$/.test(bare)
       || (/^\/library\/eidoverse\/assets\/(grass|sky|particle_textures)\//.test(bare) && /\.(png|jpe?g)$/i.test(bare)))) {
-      url += (url.includes('?') ? '&' : '?') + 'ktx2=1';
+      url = withKtx2(url);
     }
     if (!seen.has(url) && seen.add(url)) q.push({ url, size });
   };
