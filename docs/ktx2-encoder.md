@@ -72,6 +72,13 @@ lands.
 
 ## Either platform
 
+The negotiation key a client sends (`?ktx2=<key>`) is a generation, defined
+once in `shared/ktx2.js` and imported by both the client and the sequencer.
+Bump it when a flagged answer has been served with the wrong caching — the
+old key's cache entries are simply never asked for again (a purge cannot
+reach browsers). The fall-through answer under the current key is served
+`no-cache` until a variant exists, then the variant is served immutable.
+
 `KTX2_TOKTX` may point at either `toktx` or the newer `ktx` binary — the
 probe (`findKtx2Encoder`) detects which by name. Without the env it also
 checks PATH for both. The sweep runs once per boot, serial, ~5-30s per

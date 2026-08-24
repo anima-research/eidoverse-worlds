@@ -24,7 +24,7 @@ let tripoImportBusy = false;   // one Tripo import at a time — they cost CPU-s
 // ---- store optimization -----------------------------------------------------
 // Every uploaded GLB (drag-drop, Orrery conjures) gets a draco+webp shadow in
 // store-min/ AND a KTX2 variant beside the original (store-variants.ts — the
-// ?ktx2=1 answer, the §20a diet), both built by a SUBPROCESS — draco encoding is CPU-seconds of
+// ?ktx2=<key> answer, shared/ktx2.js; the §20a diet), both built by a SUBPROCESS — draco encoding is CPU-seconds of
 // synchronous wasm, and inside this process it would freeze pose relay for
 // every world. One file at a time; the sequencer never waits on it.
 type OptItem = { src: string; dest: string; mode?: "--ktx2" | "--ktx2-vrm" | "--ktx2-img" };
@@ -86,6 +86,14 @@ async function pumpOptimize() {
         console.log("[ktx2] no encoder — set KTX2_TOKTX or put toktx/ktx on PATH (docs/ktx2-encoder.md); variants skipped this boot");
         ktx2Skip = true;
         for (let i = optQueue.length - 1; i >= 0; i--) if (optQueue[i].mode) optQueue.splice(i, 1);
+      } else if (code === 5 && mode) {
+        // An encoder answered, but not every eligible texture converted — the
+        // CLI REFUSED to write a variant whose name would lie about its
+        // contents (the #122 class, and it would be served immutable).
+        // ENVIRONMENTAL like code 3 (a flaky or misconfigured encoder, not a
+        // bad model): no marker, so the next boot sweep retries; and no
+        // ktx2Skip either — the encoder is there, one file did not convert.
+        console.error(`[ktx2] ${base} REFUSED — partial conversion, serving the original: ${err.split("\n").pop() ?? `exit ${code}`}`);
       } else {
         // Environmental failures (deps not installed yet) must NOT mark the
         // file — that would permanently skip every upload made before the
@@ -120,7 +128,7 @@ setTimeout(() => {
 // model gets a GPU-native-texture variant at OPT_DIR/<rel>.ktx2.glb, every
 // avatar a surgical-rewrite variant at OPT_DIR/<rel>.ktx2.vrm, and every
 // curated loose texture a flip-baked variant at OPT_DIR/<rel>.ktx2 — all
-// served only on ?ktx2=1 (routes.ts). PATH-PRESERVING, unlike the store arm — basename()
+// served only on ?ktx2=<key> (routes.ts, shared/ktx2.js). PATH-PRESERVING, unlike the store arm — basename()
 // collides across library rels — and through the SAME serial pump, deferred
 // further so boot stays about serving worlds. GLBs go through the full
 // gltf-transform diet; VRMs go through --ktx2-vrm ONLY (optimize.ts header

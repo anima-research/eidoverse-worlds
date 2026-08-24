@@ -33,7 +33,7 @@ export const PATCH_DIR = join(ROOT, "upstream-patched");
 // Optimized shadows of store uploads (draco+webp@1024, see server/optimize.ts).
 // Originals in store/ are never touched; /library serving prefers a store-min
 // sibling when one exists. `.failed` markers stop hopeless files from being
-// retried every boot. The KTX2 shadow (the ?ktx2=1 answer) lives beside the
+// retried every boot. The KTX2 shadow (the ?ktx2=<key> answer, shared/ktx2.js) lives beside the
 // original instead — store/<hash>.glb.ktx2.glb, the library's <rel>.ktx2.glb
 // convention (server/store-variants.ts).
 export const STORE_MIN = join(OPT_DIR, "store-min");

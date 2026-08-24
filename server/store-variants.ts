@@ -6,7 +6,7 @@
 //
 //   store-min/<hash>.glb        draco + webp@1024 — the unflagged answer, what
 //                               every client without a KTX2 decoder gets
-//   store/<hash>.glb.ktx2.glb   draco + KTX2 (the §20a diet) — the ?ktx2=1
+//   store/<hash>.glb.ktx2.glb   draco + KTX2 (the §20a diet) — the ?ktx2=<key>
 //                               answer, beside the original exactly like every
 //                               library variant (OPT_DIR/<rel>.ktx2.glb), which
 //                               is the path the /library route already resolves
@@ -27,7 +27,9 @@
 // from) skips isKtx2Variant, or each variant is downloaded a second time under
 // its own name.
 //
-// And one serving rule, in routes.ts: a flagged fetch (?ktx2=1) that falls
+// And one serving rule, in routes.ts: a flagged fetch (?ktx2=<key>, the key
+// being shared/ktx2.js's — a generation, rotated when a flagged answer has
+// been pinned wrong, as it had been under =1) that falls
 // through to the webp shadow is PROVISIONAL for that URL — served no-cache,
 // never immutable — because the variant may still be encoding, or the box may
 // have no encoder yet. Content-addressed makes the ADDRESS immutable, not the
@@ -43,10 +45,19 @@ export const KTX2_SUFFIX = ".ktx2.glb";
 
 /** Any KTX2 serving artifact, of any asset class: `<rel>.ktx2.glb` (models,
  *  library and store), `<rel>.ktx2.vrm` (bodies, §20c), `<img>.ktx2` (loose
- *  toolkit images, §20d). Reached only through the ORIGINAL's path + ?ktx2=1;
- *  never a listing entry of its own. */
+ *  toolkit images, §20d). Reached only through the ORIGINAL's path + the
+ *  ?ktx2=<key> negotiation; never a listing entry of its own. */
 export function isKtx2Variant(name: string): boolean {
   return /\.ktx2(\.glb|\.vrm)?$/i.test(name);
+}
+
+/** Anything the opt tree holds that is not an asset a client addresses by
+ *  name: a KTX2 variant, a `.failed` marker (the pump's diagnostic verdict on
+ *  a pass), a `.tmp` (a pass mid-write). None is a listing entry — the
+ *  prefetcher pushes every listed store path as a fetch, and a marker fetched
+ *  as a model is a 404 on a good day. */
+export function isServingArtifact(name: string): boolean {
+  return isKtx2Variant(name) || /\.(failed|tmp)$/i.test(name);
 }
 
 /** Is this store/ entry an upload, as opposed to a variant of one? The

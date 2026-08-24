@@ -13,7 +13,8 @@ import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdir
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, JOIN_TOKEN } from "./config.ts";
-import { isStoreOriginal, isKtx2Variant } from "./store-variants.ts";
+import { isStoreOriginal, isServingArtifact } from "./store-variants.ts";
+import { wantsKtx2 } from "../shared/ktx2.js";
 import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
 import { resolveLibFile } from "./lint.ts";
@@ -535,11 +536,12 @@ const ROUTES: Route[] = [
         for (const e of readdirSync(abs, { withFileTypes: true })) {
           const childRel = sub ? `${sub}/${e.name}` : e.name;
           if (e.isDirectory()) walk(base, childRel, depth + 1);
-          // KTX2 variants (<rel>.ktx2.glb / .ktx2.vrm / <img>.ktx2) are serving
-          // artifacts of the path beside them, reached only as that path +
-          // ?ktx2=1 — never an entry of their own. Listed, the prefetcher warms
-          // each one a second time under its own name (store-variants.ts).
-          else if (!isKtx2Variant(e.name)) out.push({ path: childRel, size: Bun.file(join(abs, e.name)).size });
+          // Serving artifacts are not entries: a KTX2 variant (<rel>.ktx2.glb /
+          // .ktx2.vrm / <img>.ktx2) is reached only as the path beside it +
+          // the negotiation, a .failed marker is the pump's verdict, a .tmp is
+          // a pass mid-write. Listed, the prefetcher fetches each one as an
+          // asset — a variant twice, a marker as a model (store-variants.ts).
+          else if (!isServingArtifact(e.name)) out.push({ path: childRel, size: Bun.file(join(abs, e.name)).size });
         }
       };
       // opt first: /library/ serving prefers the optimized mirror, so the
@@ -641,7 +643,7 @@ const ROUTES: Route[] = [
       // KHR_texture_basisu sits in extensionsRequired, and parsers without a
       // KTX2 decoder — agents, tools, old clients — THROW on required
       // extensions (GLTFLoader.js:1476). Only a client that detected support
-      // asks with ?ktx2=1; everyone else gets exactly today's bytes. Same
+      // asks with ?ktx2=<key>; everyone else gets exactly today's bytes. Same
       // cache ladder as the base file (non-immutable, ETag revalidates), and
       // the distinct URL is its own clean nginx/browser cache entry.
       // VRMs (§20c) negotiate identically — avatar URLs carry ?v= minted from
@@ -657,7 +659,9 @@ const ROUTES: Route[] = [
       // loadImageTexture sniffs the container magic, so the SAME path carries
       // either byte shape.
       const negotiable = rel.endsWith(".glb") || rel.endsWith(".vrm") || /\.(png|jpe?g)$/i.test(rel);
-      const wantKtx2 = url.searchParams.get("ktx2") === "1" && negotiable;
+      // The key is a generation (shared/ktx2.js): a retired one is an
+      // unflagged fetch — whatever that client pinned under it, it keeps.
+      const wantKtx2 = wantsKtx2(url.searchParams) && negotiable;
       if (wantKtx2) {
         const kRel = rel.endsWith(".glb") ? `${rel}.ktx2.glb`
           : rel.endsWith(".vrm") ? `${rel}.ktx2.vrm` : `${rel}.ktx2`;
