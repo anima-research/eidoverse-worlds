@@ -39,8 +39,10 @@ const ASSET_DIR = 'eidoverse/assets/grass/';
 // darkening (naive multipliers crushed every fall colour to muck).
 // §24 defs: the palette table lives in defs/flora/_colors.json now —
 // hydrated with the species (see hydrateFloraDefs), same object-identity
-// rule as FLORA_SPECIES.
+// rule as FLORA_SPECIES. FLORA_PRESETS (defs/flora/_presets.json) rides
+// the same registry — consumed by the client's presetStrokes composer.
 export const GRASS_COLORS = {};
+export const FLORA_PRESETS = {};
 
 import { buildShrubGeometry } from './vegetation_shrub_gen.js';
 import { buildCornGeometry } from './vegetation_corn_gen.js';
@@ -71,6 +73,7 @@ let defsLoading = null;
 export function hydrateFloraDefs(reg) {
     const flora = reg?.flora ?? reg;
     for (const [name, c] of Object.entries(reg?.floraColors ?? {})) GRASS_COLORS[name] = c;
+    for (const [name, p] of Object.entries(reg?.floraPresets ?? {})) FLORA_PRESETS[name] = p;
     for (const [name, def] of Object.entries(flora ?? {})) {
         const d = { ...def };
         if (typeof d.leafRecolor === 'string') {
@@ -113,6 +116,7 @@ export async function refreshFloraDefs() {
     const reg = await r.json();
     for (const k of Object.keys(FLORA_SPECIES)) if (!(k in (reg.flora ?? {}))) delete FLORA_SPECIES[k];
     for (const k of Object.keys(GRASS_COLORS)) if (!(k in (reg.floraColors ?? {}))) delete GRASS_COLORS[k];
+    for (const k of Object.keys(FLORA_PRESETS)) if (!(k in (reg.floraPresets ?? {}))) delete FLORA_PRESETS[k];
     hydrateFloraDefs(reg);
     console.log(`[grass2] flora defs refreshed: ${Object.keys(FLORA_SPECIES).length} species`);
     return FLORA_SPECIES;

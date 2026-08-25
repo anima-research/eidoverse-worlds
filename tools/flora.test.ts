@@ -14,6 +14,8 @@
 // Both modules are deliberately DOM-free and THREE-free so this runs as a
 // plain bun script:  bun tools/flora.test.ts
 
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { mapGrassArgs, presetStrokes, hexToMultiplier, isLegacyArgs } from "../client/lib/flora_args.js";
 import { composeField, retireField } from "../client/lib/flora_field.js";
 import { bladeLodIndex, bladeCoarseIndex, BLADE_VERTS, BLADE_INDICES,
@@ -69,8 +71,18 @@ console.log("\npreset + variety strokes (one verb, several strokes)");
   const one = presetStrokes({ species: "grass", width: 30 });
   check("a plain grass bag is ONE stroke", one.length === 1);
 
-  const mojave = presetStrokes({ preset: "mojave", width: 90, depth: 80, center: [0, 0] });
+  // named presets are defs now (§24): the test feeds the composer the
+  // SHIPPED table, so this suite also gates the def file itself
+  const { doc: _pd, ...PRESETS } = JSON.parse(
+    readFileSync(join(import.meta.dir, "..", "defs", "flora", "_presets.json"), "utf8"));
+  const mojave = presetStrokes({ preset: "mojave", width: 90, depth: 80, center: [0, 0] }, PRESETS);
   check("mojave composes the full recipe", mojave.length === 7, String(mojave.length));
+  check("a preset this instance lacks fails LOUDLY, never a default lawn",
+    (() => { try { presetStrokes({ preset: "atlantis" }, PRESETS); return false; }
+      catch (e) { return String(e).includes("unknown preset"); } })());
+  check("the de-centring reaches the composed centers (offset fractions)",
+    mojave.some((s: any) => s.center[0] !== 0 || s.center[1] !== 0));
+  check("insets shrink extents", mojave.some((s: any) => s.width === 88 && s.depth === 78));
   const species = new Set(mojave.map((s: any) => s.species));
   check("mojave spans galleta + 3 shrubs + yucca",
     ["galleta_dry", "blackbrush", "creosote", "sagebrush", "yucca"].every((s) => species.has(s)));
@@ -108,9 +120,9 @@ console.log("\npreset + variety strokes (one verb, several strokes)");
   // the sparse/normal/lush dial has to REACH the composed biomes: every
   // preset stroke carries an authored density, and a preset that dropped the
   // caller's factor left the dial doing nothing at all on mojave
-  const base = presetStrokes({ preset: "mojave", width: 90, depth: 80 });
-  const thin = presetStrokes({ preset: "mojave", width: 90, depth: 80, density: 0.5 });
-  const lush = presetStrokes({ preset: "mojave", width: 90, depth: 80, density: 1.4 });
+  const base = presetStrokes({ preset: "mojave", width: 90, depth: 80 }, PRESETS);
+  const thin = presetStrokes({ preset: "mojave", width: 90, depth: 80, density: 0.5 }, PRESETS);
+  const lush = presetStrokes({ preset: "mojave", width: 90, depth: 80, density: 1.4 }, PRESETS);
   check("density thins every mojave stroke",
     thin.every((s: any, i: number) => near(s.density, base[i].density * 0.5)));
   check("density enriches every mojave stroke",

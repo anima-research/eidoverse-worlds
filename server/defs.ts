@@ -11,7 +11,7 @@
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { ROOT } from "./config.ts";
-import { validateFloraDef, validateFloraColors } from "../shared/floradefs.js";
+import { validateFloraDef, validateFloraColors, validateFloraPresets } from "../shared/floradefs.js";
 import { validateAvatarDef } from "../shared/avatardefs.js";
 
 // Scratch sequencers point this elsewhere, same pattern as WORLDS_DIR.
@@ -43,18 +43,18 @@ function loadDomain(domain: string, validate: (name: string, def: unknown) => st
   return out;
 }
 
-/** The palette sidecar — a domain-shaped table, not a def-per-file. */
-function loadFloraColors(): Record<string, unknown> {
-  const p = join(DEFS_DIR, "flora", "_colors.json");
+/** Domain sidecars — whole tables validated as one, not def-per-file. */
+function loadSidecar(rel: string, validate: (v: unknown) => string[]): Record<string, unknown> {
+  const p = join(DEFS_DIR, rel);
   if (!existsSync(p)) return {};
   try {
-    const colors = JSON.parse(readFileSync(p, "utf8"));
-    const errs = validateFloraColors(colors);
-    if (errs.length) { console.error(`[defs] REFUSED flora/_colors.json: ${errs.join("; ")}`); return {}; }
-    const { doc: _doc, ...rest } = colors;
+    const table = JSON.parse(readFileSync(p, "utf8"));
+    const errs = validate(table);
+    if (errs.length) { console.error(`[defs] REFUSED ${rel}: ${errs.join("; ")}`); return {}; }
+    const { doc: _doc, ...rest } = table;
     return rest;
   } catch (err) {
-    console.error(`[defs] REFUSED flora/_colors.json: unparseable JSON —`, err);
+    console.error(`[defs] REFUSED ${rel}: unparseable JSON —`, err);
     return {};
   }
 }
@@ -64,7 +64,8 @@ function registry() {
   if (cached && now - cached.at < TTL_MS) return cached;
   const reg = {
     flora: loadDomain("flora", validateFloraDef),
-    floraColors: loadFloraColors(),
+    floraColors: loadSidecar("flora/_colors.json", validateFloraColors),
+    floraPresets: loadSidecar("flora/_presets.json", validateFloraPresets),
     avatars: loadDomain("avatars", validateAvatarDef),
   };
   const json = JSON.stringify(reg);

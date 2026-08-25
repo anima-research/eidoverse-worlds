@@ -203,12 +203,17 @@ function joinDriver(world: string, id: string): Promise<Driver> {
   });
 }
 const stamp = Math.random().toString(36).slice(2, 7);
-const WORLDS = { std: `defsmoke-std-${stamp}`, novel: `defsmoke-novel-${stamp}`, bogus: `defsmoke-bogus-${stamp}` };
+const WORLDS = { std: `defsmoke-std-${stamp}`, novel: `defsmoke-novel-${stamp}`,
+  preset: `defsmoke-preset-${stamp}`, bogus: `defsmoke-bogus-${stamp}` };
 for (const [kind, name] of Object.entries(WORLDS)) {
   const d = await joinDriver(name, "defsdriver");
   await d.verb("terrain", { size: 64 });
-  const species = kind === "std" ? "grass" : kind === "novel" ? "smoketest_lavender" : "bogus_nope";
-  await d.verb("grass", { species, width: 40, depth: 40, center: [0, 0], height: 0.42, density: 1.0 });
+  if (kind === "preset") {
+    await d.verb("grass", { preset: "mojave", width: 36, depth: 36, center: [0, 0], density: 0.5 });
+  } else {
+    const species = kind === "std" ? "grass" : kind === "novel" ? "smoketest_lavender" : "bogus_nope";
+    await d.verb("grass", { species, width: 40, depth: 40, center: [0, 0], height: 0.42, density: 1.0 });
+  }
   d.close();
 }
 
@@ -345,6 +350,25 @@ await bootInto(WORLDS.novel);
   // palette sidecar (_colors.json) hydrated; a miss warns and drops it
   check("palette sidecar hydrated (no unknown-color warning)",
     !consoleLines.some((l) => l.includes("names unknown color")));
+}
+
+console.log(`\n${bold("── def-composed biome")}  ${dim(`world ${WORLDS.preset}`)}`);
+await bootInto(WORLDS.preset);
+{
+  // the mojave recipe now lives in defs/flora/_presets.json — seven strokes
+  // (galleta + 2 blackbrush + 2 creosote + sagebrush + yucca) composed from
+  // the def's template vocabulary, no recipe in any .js file
+  let strokes: any[] = [];
+  for (let i = 0; i < 120 && strokes.length < 7; i++) {
+    await sleep(500);
+    strokes = (await evalJson(`(() => { try {
+      return (EW.grass()?.strokes ?? []).map(s => ({ label: s.stroke, planted: s.planted }));
+    } catch { return [] } })()`)) ?? [];
+  }
+  const planted = strokes.reduce((n, s) => n + (s.planted ?? 0), 0);
+  check("mojave composes 7 strokes from the def", strokes.length === 7,
+    `${strokes.length} strokes: ${strokes.map((s) => s.label).join(" ")}`);
+  check("the biome plants", planted > 0, `${planted} planted`);
 }
 
 console.log(`\n${bold("── unknown species")}  ${dim(`world ${WORLDS.bogus}`)}`);

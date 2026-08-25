@@ -617,7 +617,9 @@ function wirePushers(field) {
 export async function buildFloraField(rawArgs, { scene, heightFn }) {
   const mod = await loadFloraModule();
   const args = mapGrassArgs(rawArgs);
-  const strokes = presetStrokes(args);
+  // named presets come from the hydrated def registry (§24) — the module
+  // resolved AFTER ensureFloraDefs, so the table is populated here
+  const strokes = presetStrokes(args, mod.FLORA_PRESETS);
   const species = [...new Set(strokes.map((st) => st.species ?? 'grass'))];
   for (const sp of species) await ensureFloraAssets(mod, sp);
   // the grass verb is a world singleton: each build starts a fresh occupancy

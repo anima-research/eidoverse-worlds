@@ -61,6 +61,32 @@ export function validateFloraDef(name, def) {
   return errs;
 }
 
+/** Validate the presets sidecar (defs/flora/_presets.json): each named
+ *  preset carries a non-empty `strokes` list of templates — `species`
+ *  required per stroke; `density`/`inset`/`seedAdd` numeric; `offset` a
+ *  [fx, fz] pair; everything else passes through (preserved, as always).
+ *  @param {unknown} presets @returns {string[]} */
+export function validateFloraPresets(presets) {
+  if (!isObj(presets)) return ['_presets must be a JSON object'];
+  const errs = [];
+  for (const [name, p] of Object.entries(presets)) {
+    if (name === 'doc') continue;
+    if (!DEF_NAME_RE.test(name)) { errs.push(`preset name "${name}" fails the def-name rule`); continue; }
+    if (!isObj(p) || !Array.isArray(/** @type {any} */ (p).strokes) || !(/** @type {any} */ (p).strokes.length)) {
+      errs.push(`${name} must carry a non-empty strokes[]`); continue;
+    }
+    for (const [i, s] of /** @type {any} */ (p).strokes.entries()) {
+      if (!isObj(s)) { errs.push(`${name}.strokes[${i}] must be an object`); continue; }
+      if (!isStr(s.species)) errs.push(`${name}.strokes[${i}].species is required (string)`);
+      for (const k of ['density', 'inset', 'seedAdd']) {
+        if (s[k] != null && !isNum(s[k])) errs.push(`${name}.strokes[${i}].${k} must be a number`);
+      }
+      if (s.offset != null && !isVec(s.offset, 2)) errs.push(`${name}.strokes[${i}].offset must be [fx, fz]`);
+    }
+  }
+  return errs;
+}
+
 /** Validate the palette sidecar (defs/flora/_colors.json): each entry is a
  *  [r,g,b] multiplier or a {recolor: [r,g,b]} hue-changer. `doc` rides free
  *  like everywhere else. Returns problems; empty = servable.

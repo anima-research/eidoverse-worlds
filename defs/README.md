@@ -36,8 +36,11 @@ engine edit, no client edit, no deploy beyond the file.
   (append-only, forever).
 
 - **Underscore files are domain sidecars, not defs** — `flora/_colors.json`
-  is the palette table (validated whole, served as `floraColors`), skipped
-  by the def-per-file loader.
+  is the palette table (served as `floraColors`), `flora/_presets.json` the
+  named biome recipes (served as `floraPresets`; template vocabulary
+  documented in its own `doc`) — each validated whole, skipped by the
+  def-per-file loader. A logged `grass` bag naming a preset this instance
+  lacks fails loudly, exactly like an unknown species.
 - **Hot reload:** the sequencer fingerprints this directory once a second
   (the `defs-watch` tick system) and pushes `defs-updated` to every live
   client when it changes — clients re-hydrate and regrow what the changed
