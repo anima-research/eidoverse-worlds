@@ -17,10 +17,10 @@
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 
 const { check, done } = checker();
+const browser = await launchBrowser({ mic: true });
 
 async function boot(world, param) {
-  const { page, close } = await launchBrowser({ mic: true });
-  const pg = await page();
+  const pg = await browser.page();
   const errs = [];
   pg.on('pageerror', (e) => errs.push(e.message));
   pg.on('dialog', (d) => d.dismiss().catch(() => {}));
@@ -36,7 +36,7 @@ async function boot(world, param) {
     transport: window.__voiceTransport ?? '(none)',
     panels: document.querySelectorAll('.sec').length,
   }));
-  await close();
+  await pg.context().close();
   return { ...r, errs };
 }
 
@@ -64,4 +64,5 @@ async function boot(world, param) {
   } finally { await world.close(); }
 }
 
+await browser.close();
 done();
