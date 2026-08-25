@@ -23,7 +23,7 @@
 // Scaffolding follows tools/lightbench.ts (scratch sequencer, driver socket,
 // CDP page probe) — see its header for the four browser lessons.
 
-import { existsSync, mkdtempSync, rmSync, readFileSync, readdirSync, copyFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, readFileSync, readdirSync, copyFileSync, mkdirSync, writeFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -72,9 +72,14 @@ const check = (name: string, ok: boolean, detail = "") => {
 // ---- the scratch def registry ----------------------------------------------
 
 const DEFS = join(SCRATCH, "defs");
-mkdirSync(join(DEFS, "flora"), { recursive: true });
-for (const f of readdirSync(join(ROOT, "defs", "flora"))) {
-  if (f.endsWith(".json")) copyFileSync(join(ROOT, "defs", "flora", f), join(DEFS, "flora", f));
+for (const domain of readdirSync(join(ROOT, "defs"))) {
+  const src = join(ROOT, "defs", domain);
+  let st; try { st = statSync(src); } catch { continue; }
+  if (!st.isDirectory()) continue;
+  mkdirSync(join(DEFS, domain), { recursive: true });
+  for (const f of readdirSync(src)) {
+    if (f.endsWith(".json")) copyFileSync(join(src, f), join(DEFS, domain, f));
+  }
 }
 // underscore files (_colors.json) are domain sidecars, not species defs
 const REPO_COUNT = readdirSync(join(DEFS, "flora")).filter((f) => !f.startsWith("_")).length;
@@ -138,6 +143,40 @@ check("broken def is NOT served", !names.includes("broken"));
   check("grass def round-trips exactly", JSON.stringify(reg.flora.grass) === JSON.stringify(disk));
   const log = readFileSync(join(SCRATCH, "sequencer.log"), "utf8");
   check("broken def refused LOUDLY", log.includes("REFUSED") && log.includes("broken.json"));
+  check("sky presets ride the registry", ["dawn", "noon", "golden", "dusk", "night"]
+    .every((n) => reg.skyPresets?.[n]?.hours != null), Object.keys(reg.skyPresets ?? {}).join(", "));
+}
+
+// ---- animation overlay ------------------------------------------------------
+// Same contract as avatars: declared beats discovered, unresolvable paths
+// cost the roster nothing.
+
+console.log(`\n${bold("── animations")}`);
+{
+  const before: { name: string; path: string; size: number }[] =
+    await (await fetch(`${BASE}/animations`)).json();
+  if (!before.length) {
+    check("roster has at least one discovered clip", false, "empty roster — no .vrma in library?");
+  } else {
+    const first = before[0];
+    mkdirSync(join(DEFS, "animations"), { recursive: true });
+    writeFileSync(join(DEFS, "animations", "defsmoke_wave.json"),
+      JSON.stringify({ doc: "defs-smoke clip alias", vrma: first.path.split("?")[0], tags: ["smoke"] }));
+    writeFileSync(join(DEFS, "animations", "defsmoke_ghost.json"),
+      JSON.stringify({ vrma: "eidoverse/assets/animations/does_not_exist.vrma" }));
+    await sleep(1300);   // past the registry TTL
+    const after: typeof before = await (await fetch(`${BASE}/animations`)).json();
+    const alias = after.find((a) => a.name === "defsmoke_wave");
+    check("alias def declares a clip the scan wouldn't find",
+      !!alias && alias.size === first.size && /\?v=\d+$/.test(alias.path), JSON.stringify(alias));
+    check("unresolvable vrma costs the roster nothing",
+      !after.find((a) => a.name === "defsmoke_ghost") && after.length === before.length + 1,
+      `${after.length} vs ${before.length}+1`);
+    const reg3 = await (await fetch(`${BASE}/defs`)).json();
+    check("/defs serves the animations domain (tags ride there)",
+      reg3.animations?.defsmoke_wave?.tags?.[0] === "smoke",
+      JSON.stringify(reg3.animations ?? {}));
+  }
 }
 
 // ---- avatar overlay ---------------------------------------------------------

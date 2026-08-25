@@ -13,6 +13,7 @@
 import { THREE, scene, camera, canvas, CONFIG, report, bus } from './core.js';
 import { loadGLB, libLabels, listLibrary } from './assets.js';
 import { makeLightGizmo } from './lights.js';
+import { defsRegistry } from './defs.js';
 import { entities, entityMeta, comps, findPart, editHolds } from './world.js';
 import { surfaceUnder, reindexCollider } from './colliders.js';
 import { heightAt, GRASS_QUALITY, getGrassQuality, setGrassQuality,
@@ -989,15 +990,11 @@ const SLIDERS = [
   ['exposure', 'expos', 0.3, 1.8, 0.05, 1],
   ['fog', 'fog', 0, 3, 0.05, 1],
 ];
-// Named times beat eight raw sliders for the 95% case — you want "golden", not
-// hours=17.4, exposure=0.86.
-const PRESETS = {
-  dawn: { hours: 6.4, clouds: 'stratus' },
-  noon: { hours: 12, clouds: 'cumulus' },
-  golden: { hours: 17.6, clouds: 'cumulus' },
-  dusk: { hours: 19.4, clouds: 'cirrus' },
-  night: { hours: 0.5, clouds: 'clear' },
-};
+// Named times beat eight raw sliders for the 95% case — you want "golden",
+// not hours=17.4, exposure=0.86. The presets themselves are DATA now
+// (§24, defs/sky/_presets.json) — authoring conveniences only: they fill
+// the sliders and preview; commit writes concrete args, so the log never
+// stores a preset name and logged meaning never depends on the def file.
 
 function paintSky(body) {
   if (body.dataset.init) { syncSky(body); return; }
@@ -1044,21 +1041,26 @@ function paintSky(body) {
     return row;
   };
 
-  // presets
+  // presets — populated from the def registry, repopulated on a defs push
   const presetWrap = document.createElement('div');
   presetWrap.style.cssText = 'display:flex; flex-wrap:wrap; gap:3px; margin-bottom:4px;';
-  for (const [name, vals] of Object.entries(PRESETS)) {
-    const b = document.createElement('button');
-    b.textContent = name;
-    b.style.flex = '1 0 auto';
-    b.onclick = () => {
-      inputs.hours.value = vals.hours;
-      if (vals.clouds) cl.value = vals.clouds;
-      inputs.hours.dispatchEvent(new Event('input'));   // previews via the slider path
-      preview({ ...vals });
-    };
-    presetWrap.appendChild(b);
-  }
+  const fillPresets = () => defsRegistry().then((reg) => {
+    presetWrap.innerHTML = '';
+    for (const [name, vals] of Object.entries(reg.skyPresets ?? {})) {
+      const b = document.createElement('button');
+      b.textContent = name;
+      b.style.flex = '1 0 auto';
+      b.onclick = () => {
+        if (vals.hours != null) inputs.hours.value = vals.hours;
+        if (vals.clouds) cl.value = vals.clouds;
+        inputs.hours.dispatchEvent(new Event('input'));   // previews via the slider path
+        preview({ ...vals });
+      };
+      presetWrap.appendChild(b);
+    }
+  }).catch((e) => report('sky presets', e));
+  fillPresets();
+  bus.on('defs-updated', fillPresets);
   body.appendChild(presetWrap);
 
   // weather — a first-class verb, not a slider

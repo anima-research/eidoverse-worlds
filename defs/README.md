@@ -6,7 +6,11 @@ to every world this instance serves means adding a JSON file here — no
 engine edit, no client edit, no deploy beyond the file.
 
 - One def per file, `defs/<domain>/<name>.json`; the filename (minus `.json`)
-  is the def's name. Domains so far: `flora/`, `avatars/`.
+  is the def's name. Domains so far: `flora/`, `avatars/`, `animations/`
+  (clip overlay, same declared-beats-discovered contract as avatars — `vrma`
+  adds/repoints, tags/doc ride /defs), `sky/` (the `_presets.json` sidecar:
+  named skies for the build panel — authoring conveniences only; commit
+  writes concrete args, the log never stores a preset name).
 - **Avatars are an overlay, not a gate** (`shared/avatardefs.js`): dropping
   a .vrm into the library/overlay stays a live avatar with no def. A def
   matching a discovered name overrides its metadata (`height`); a def

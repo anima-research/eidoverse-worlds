@@ -13,6 +13,8 @@ import { join, resolve } from "node:path";
 import { ROOT } from "./config.ts";
 import { validateFloraDef, validateFloraColors, validateFloraPresets } from "../shared/floradefs.js";
 import { validateAvatarDef } from "../shared/avatardefs.js";
+import { validateAnimationDef } from "../shared/animdefs.js";
+import { validateSkyPresets } from "../shared/skydefs.js";
 
 // Scratch sequencers point this elsewhere, same pattern as WORLDS_DIR.
 export const DEFS_DIR = resolve(process.env.DEFS_DIR ?? join(ROOT, "defs"));
@@ -67,6 +69,8 @@ function registry() {
     floraColors: loadSidecar("flora/_colors.json", validateFloraColors),
     floraPresets: loadSidecar("flora/_presets.json", validateFloraPresets),
     avatars: loadDomain("avatars", validateAvatarDef),
+    animations: loadDomain("animations", validateAnimationDef),
+    skyPresets: loadSidecar("sky/_presets.json", validateSkyPresets),
   };
   const json = JSON.stringify(reg);
   if (!cached || cached.json !== json) {
@@ -83,6 +87,11 @@ export function defsPayload(): string { return registry().json; }
 /** The avatar overlay, for the roster (routes.ts avatarRoster). */
 export function avatarDefs(): Record<string, { vrm?: string; height?: number } & Record<string, unknown>> {
   return registry().reg.avatars as ReturnType<typeof avatarDefs>;
+}
+
+/** The animation overlay, for the clip roster (routes.ts animationRoster). */
+export function animationDefs(): Record<string, { vrma?: string } & Record<string, unknown>> {
+  return registry().reg.animations as ReturnType<typeof animationDefs>;
 }
 
 /** A cheap change fingerprint over every def file's (path, mtime, size) —

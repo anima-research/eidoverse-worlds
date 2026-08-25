@@ -19,7 +19,7 @@ import { resolveLibFile } from "./lint.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { worlds, getWorld, type World } from "./world.ts";
 import { handleUpload } from "./upload.ts";
-import { defsPayload, avatarDefs } from "./defs.ts";
+import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
 import { tickStats } from "./tick.ts";
 import { entryBusStats } from "./events.ts";
 
@@ -127,6 +127,30 @@ export function animationRoster(): { name: string; path: string; size: number }[
       seen.set(f.replace(".vrma", ""),
         { path: `eidoverse/assets/animations/${f}?v=${Math.round(file.lastModified)}`, size: file.size });
     }
+  }
+  // The def overlay (§24, defs/animations/): declared beats discovered —
+  // same contract as the avatar roster. A def's `vrma` adds or repoints a
+  // named clip; an unresolvable path is refused loudly and the discovered
+  // roster stands. Non-path metadata (tags, doc) rides /defs, not here —
+  // this roster stays the prefetcher's byte-budget shape. Resolution walks
+  // the clip ladder above (resolveLibFile is the glb/vrm resolver and
+  // deliberately doesn't know .vrma or PATCH_DIR).
+  const resolveClip = (lib: string): string | null => {
+    const rel = normalize(lib).replace(/^\/+/, "");
+    if (rel.includes("..") || !/\.vrma$/i.test(rel)) return null;
+    for (const base of [PATCH_DIR, OPT_DIR, LIBRARY_DIR]) {
+      const p = normalize(join(base, rel));
+      if (p.startsWith(base) && existsSync(p)) return p;
+    }
+    return null;
+  };
+  const defs = animationDefs();
+  for (const [name, d] of Object.entries(defs)) {
+    if (!d.vrma) continue;
+    const file = resolveClip(d.vrma);
+    if (!file) { console.error(`[defs] animation "${name}": vrma not found in library — ${d.vrma}`); continue; }
+    const bf = Bun.file(file);
+    seen.set(name, { path: `${d.vrma}?v=${Math.round(bf.lastModified)}`, size: bf.size });
   }
   return [...seen].map(([name, e]) => ({ name, ...e }));
 }
