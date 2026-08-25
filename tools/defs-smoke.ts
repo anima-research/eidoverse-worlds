@@ -145,6 +145,8 @@ check("broken def is NOT served", !names.includes("broken"));
   check("broken def refused LOUDLY", log.includes("REFUSED") && log.includes("broken.json"));
   check("sky presets ride the registry", ["dawn", "noon", "golden", "dusk", "night"]
     .every((n) => reg.skyPresets?.[n]?.hours != null), Object.keys(reg.skyPresets ?? {}).join(", "));
+  check("structure palette rides the registry", reg.structurePalette?.wall?.finish === "plaster"
+    && reg.structurePalette?.glass?.opacity === 0.22, Object.keys(reg.structurePalette ?? {}).join(", "));
 }
 
 // ---- animation overlay ------------------------------------------------------
