@@ -390,6 +390,30 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-25 — §24g: three more domains — clips, skies, building style.**
+  ANIMATIONS (9b4a44b): defs/animations/ overlays the clip roster,
+  same declared-beats-discovered contract as avatars; vrma resolves on
+  the clip ladder (PATCH>OPT>LIBRARY — resolveLibFile deliberately
+  doesn't know .vrma); tags/doc ride /defs, /animations stays the
+  prefetcher's byte-budget shape. SKY (9b4a44b): build.js's five named
+  skies → defs/sky/_presets.json — authoring conveniences ONLY (commit
+  writes concrete args; foldSkyEntry computes at fold time, so a
+  def-referenced preset would let a mutable file rewrite logged
+  meaning — presets live strictly on the authoring side). New
+  client/lib/defs.js = shared client registry view (one fetch,
+  invalidated by defs-updated; the preset row repopulates live).
+  STRUCTURE (3338803): investigated — the grid engine is pure
+  algorithm, NOT def material; the def-able surface was the realizer's
+  PALETTE, the "style catalog seam" its own comment anticipated.
+  defs/structure/_palette.json restyles the five slots by MUTATING the
+  live shared materials (colorNode rebuilt through the named finish) —
+  standing buildings restyle on the push. Overlay doctrine (style is
+  never a gate; missing def = built-in style), vs single-source for
+  species. Gates: defs-smoke 27/27, structure-field 159/159,
+  flora.test 70/70, smoke 85/85, paritybench PASS, lightbench 30/30,
+  replaybench green. Def domains now: flora (species+colors+presets),
+  avatars, animations, sky presets, structure palette.
+
 - **2026-08-25 — §24f: the determinism ruling + biome presets as data.**
   RULING RATIFIED by tel0s: the log stores INTENTS, outcomes recomputed
   by a deterministic sim — drafted as spec/PROTOCOL_v2.md (f8e81fa,

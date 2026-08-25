@@ -10,7 +10,10 @@ engine edit, no client edit, no deploy beyond the file.
   (clip overlay, same declared-beats-discovered contract as avatars — `vrma`
   adds/repoints, tags/doc ride /defs), `sky/` (the `_presets.json` sidecar:
   named skies for the build panel — authoring conveniences only; commit
-  writes concrete args, the log never stores a preset name).
+  writes concrete args, the log never stores a preset name), `structure/`
+  (the `_palette.json` sidecar: the instance's building style, an overlay
+  mutating the realizer's live materials — restyles standing buildings on
+  the hot-reload push; missing def keeps the built-in style).
 - **Avatars are an overlay, not a gate** (`shared/avatardefs.js`): dropping
   a .vrm into the library/overlay stays a live avatar with no def. A def
   matching a discovered name overrides its metadata (`height`); a def
