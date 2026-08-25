@@ -14,7 +14,7 @@ import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, JOIN_TOKEN } from "./config.ts";
 import { isStoreOriginal, isServingArtifact } from "./store-variants.ts";
-import { wantsKtx2 } from "../shared/ktx2.js";
+import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
 import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
 import { resolveLibFile } from "./lint.ts";
@@ -440,10 +440,15 @@ const ROUTES: Route[] = [
     // challenge-response the SERVER answers is the portable proof; the OS check
     // stays as a second, stricter opinion where the platform offers one.
     match: (u) => u.pathname === "/version",
+    // `ktx2Key` is the negotiation key THIS process imported at boot — the
+    // only key a browser may use (shared/ktx2.js: a client that reads it off
+    // the served file instead asks a server that may not know it yet, and
+    // nginx pins the wrong answer — the =2 collision). no-store, so it is
+    // always the running process answering, never nginx remembering one.
     handler: () => new Response(
       JSON.stringify(process.env.WORLD_INSTANCE_NONCE
-        ? { ...BUILD, instance: process.env.WORLD_INSTANCE_NONCE }
-        : BUILD),
+        ? { ...BUILD, ktx2Key: KTX2_KEY, instance: process.env.WORLD_INSTANCE_NONCE }
+        : { ...BUILD, ktx2Key: KTX2_KEY }),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {
