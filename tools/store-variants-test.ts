@@ -15,7 +15,9 @@
 // enumerated as an asset, not by the store catalog (/library-models), not by
 // the listing the prefetcher warms from (/library-list), not by the boot
 // sweep; the negotiation key is a GENERATION (shared/ktx2.js): the current
-// key negotiates, a retired one is an unflagged fetch; and a flagged fetch
+// key negotiates, a retired one is an unflagged fetch, and a browser only
+// ever uses the key the RUNNING sequencer published on /version — none
+// published, none used (the rollout collision, made impossible); and a flagged fetch
 // answered by the webp shadow is PROVISIONAL — no-cache, never immutable —
 // so the variant's bytes get through the moment it exists, which the
 // If-None-Match round-trip here demonstrates.
@@ -45,7 +47,7 @@ import { Document, NodeIO } from "@gltf-transform/core";
 import { PNG } from "pngjs";
 import { isStoreOriginal, isKtx2Variant, isServingArtifact, ktx2VariantPath, storeShadowsMissing, KTX2_SUFFIX } from "../server/store-variants.ts";
 import { findKtx2Encoder, isKtx2Container } from "../server/optimize.ts";
-import { KTX2_KEY, KTX2_QUERY, wantsKtx2, withKtx2 } from "../shared/ktx2.js";
+import { KTX2_KEY, KTX2_QUERY, wantsKtx2, withKtx2, keyFromVersion, negotiate } from "../shared/ktx2.js";
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
@@ -109,6 +111,18 @@ console.log("\nthe store's KTX2 shadow (store-variants.ts, shared/ktx2.js):\n");
   check("no key does not", !wantsKtx2(new URLSearchParams("v=123")));
   check("withKtx2 appends with ? on a bare path", withKtx2("store/x.glb") === "store/x.glb?ktx2=3");
   check("…and with & when ?v= is already there (avatar URLs)", withKtx2("eidoverse/assets/vrms/a.vrm?v=9") === "eidoverse/assets/vrms/a.vrm?v=9&ktx2=3");
+
+  // The browser's half: the key it uses is the one the RUNNING sequencer
+  // published on /version — never one read off a served file.
+  check("keyFromVersion reads the published key", keyFromVersion({ sha: "abc", ktx2Key: "3" }) === "3");
+  check("…an older sequencer publishes none → null (the rollout collision, made impossible)", keyFromVersion({ sha: "abc", commitTime: "…" }) === null);
+  check("…garbage is not a key", keyFromVersion(null) === null && keyFromVersion("3") === null && keyFromVersion({ ktx2Key: "" }) === null && keyFromVersion({ ktx2Key: "a b?" }) === null);
+  check("negotiate with a key appends it", negotiate("store/x.glb", "3") === "store/x.glb?ktx2=3" && negotiate("a.vrm?v=9", "3") === "a.vrm?v=9&ktx2=3");
+  check("negotiate with NO key is the bare URL — an unflagged fetch, never pinned wrong", negotiate("store/x.glb", null) === "store/x.glb");
+  // the collision itself, as a table: what the client asked vs what the server knew
+  const onDisk = "2", running = null;                   // pull landed, restart pending
+  check("rollout window: the client, taking the key from /version, does not negotiate (old: it asked ?ktx2=2 off disk and got pinned)",
+    negotiate("store/x.glb", keyFromVersion({ sha: "old", ktx2Key: running })) === "store/x.glb" && onDisk !== running);
 }
 
 // ---------------------------------------------- 2. the ghost-listing rule
@@ -374,7 +388,9 @@ async function startServer(extra: Record<string, string | undefined>) {
     return { status: res.status, body: res.ok ? await res.json() : await res.text() };
   };
   const stop = async () => { try { proc.kill(); } catch { /* gone */ } live = null; await sleep(300); };
-  return { up, PORT, base, get, upload, stop, log: () => log };
+  // the key THIS child publishes — what a browser would use (assets.js)
+  const key = up ? keyFromVersion(await fetch(`${base}/version`).then((r) => r.json()).catch(() => null)) : null;
+  return { up, PORT, base, get, upload, stop, log: () => log, key };
 }
 const same = (a: Uint8Array, b: Uint8Array) => a.length === b.length && a.every((v, i) => v === b[i]);
 const whichFile = (b: Uint8Array) => { try { return String(glbJson(b).nodes?.[0]?.name ?? "?").split("-")[0]; } catch { return "unparseable"; } };
@@ -387,6 +403,7 @@ console.log("\n  the real sequencer — an upload becomes a served variant:");
   if (S.up) {
     const glb = await fixtureGlb("uploaded", 2);
     const hash = hashOf(glb); mine.add(hash);
+    check("the running sequencer publishes its key on /version — the one a browser negotiates with", S.key === KTX2_KEY, `published ${S.key}, defined ${KTX2_KEY}`);
     const up = await S.upload(glb, "store-variants-test");
     check("POST /upload landed it content-addressed", up.status === 200 && up.body?.path === `store/${hash}.glb`, `${up.status} ${JSON.stringify(up.body)}`);
     // ownership: only the tree we spawned from holds this run's fixture
@@ -398,14 +415,14 @@ console.log("\n  the real sequencer — an upload becomes a served variant:");
       // The pump runs store-min then --ktx2, serially, off the request path.
       // Until the variant lands, the flagged answer is whatever the unflagged
       // one is, marked provisional; once it lands, the variant, immutable.
-      const early = await S.get(withKtx2(`store/${hash}.glb`));
+      const early = await S.get(negotiate(`store/${hash}.glb`, S.key));
       const earlyIsVariant = isKtx2Glb(early.bytes);
       check("a flagged fetch is answered either way, and its caching says which", early.status === 200
         && (earlyIsVariant ? early.cc.includes("immutable") : early.cc === "no-cache"), `variant=${earlyIsVariant} cc=${early.cc}`);
       const landed = await until(() => existsSync(ktx2VariantPath(join(STORE, `${hash}.glb`))), 30_000);
       check("the queue built the KTX2 shadow beside the original", landed, ktx2VariantPath(join(STORE, `${hash}.glb`)));
       check("…and it says so in the sequencer's log", /\[ktx2\] .*→ .*\.ktx2\.glb/.test(S.log()), S.log().split("\n").filter((l) => l.includes("ktx2")).join(" | "));
-      const flagged = await S.get(withKtx2(`store/${hash}.glb`));
+      const flagged = await S.get(negotiate(`store/${hash}.glb`, S.key));
       check("flagged (current key) → the variant, really KTX2, immutable", flagged.status === 200 && isKtx2Glb(flagged.bytes) && flagged.cc.includes("immutable"),
         `cc=${flagged.cc} ktx2=${isKtx2Glb(flagged.bytes)}`);
       const retired = await S.get(`store/${hash}.glb?ktx2=2`);
@@ -459,7 +476,7 @@ console.log("\n  the boot sweep — a partial conversion is refused, retryably:"
     check("…no variant written", !existsSync(join(STORE, `${hash}.glb.ktx2.glb`)));
     check("…and NO .failed marker — environmental, retried next boot", !existsSync(join(STORE, `${hash}.glb.ktx2.glb.failed`)));
     check("…and no ktx2Skip: the encoder is there (no 'no encoder' line)", !/no encoder/.test(S.log()));
-    const flagged = await S.get(withKtx2(`store/${hash}.glb`));
+    const flagged = await S.get(negotiate(`store/${hash}.glb`, S.key));
     check("meanwhile a flagged fetch falls through, provisional (no-cache) — not pinned", flagged.status === 200 && !isKtx2Glb(flagged.bytes) && flagged.cc === "no-cache", flagged.cc);
   }
   await S.stop();
@@ -500,17 +517,17 @@ console.log("\n  the swap a browser makes when the variant lands:");
   const S = await startServer(NO_ENCODER);
   check("child server came up", S.up, `:${S.PORT}`);
   if (S.up) {
-    const before = await S.get(withKtx2(`store/${hash}.glb`));
+    const before = await S.get(negotiate(`store/${hash}.glb`, S.key));
     check("no variant yet: flagged → the original, no-cache, with an ETag", before.status === 200 && same(before.bytes, glb) && before.cc === "no-cache" && before.etag !== "",
       `cc=${before.cc} etag=${before.etag}`);
-    const revalidated = await S.get(withKtx2(`store/${hash}.glb`), { "if-none-match": before.etag });
+    const revalidated = await S.get(negotiate(`store/${hash}.glb`, S.key), { "if-none-match": before.etag });
     check("revalidating while nothing changed is a 304 (no body), still no-cache", revalidated.status === 304 && revalidated.cc === "no-cache", `${revalidated.status} ${revalidated.cc}`);
     writeFileSync(ktx2VariantPath(join(STORE, `${hash}.glb`)), variant);   // the variant lands
-    const swapped = await S.get(withKtx2(`store/${hash}.glb`), { "if-none-match": before.etag });
+    const swapped = await S.get(negotiate(`store/${hash}.glb`, S.key), { "if-none-match": before.etag });
     check("the variant landed: the same If-None-Match now gets a 200 with the VARIANT — the swap", swapped.status === 200 && same(swapped.bytes, variant),
       `${swapped.status} file=${whichFile(swapped.bytes)}`);
     check("…immutable from here on, under a new ETag", swapped.cc.includes("immutable") && swapped.etag !== before.etag, `cc=${swapped.cc}`);
-    const settled = await S.get(withKtx2(`store/${hash}.glb`), { "if-none-match": swapped.etag });
+    const settled = await S.get(negotiate(`store/${hash}.glb`, S.key), { "if-none-match": swapped.etag });
     check("…and revalidating the variant is a 304 that says immutable", settled.status === 304 && settled.cc.includes("immutable"), `${settled.status} ${settled.cc}`);
     const bare = await S.get(`store/${hash}.glb`);
     check("the unflagged answer never moved: the original, immutable — the address IS content-addressed", same(bare.bytes, glb) && bare.cc.includes("immutable"), bare.cc);
