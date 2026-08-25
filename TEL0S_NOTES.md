@@ -390,6 +390,26 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-25 — §24f: the determinism ruling + biome presets as data.**
+  RULING RATIFIED by tel0s: the log stores INTENTS, outcomes recomputed
+  by a deterministic sim — drafted as spec/PROTOCOL_v2.md (f8e81fa,
+  dialect 3, CC0 like v1). The four covenants: owned numerics (no host
+  transcendentals; wasm kernel makes bit-exactness a build artifact),
+  sim epochs + snapshot barriers ("every log is always replayable"
+  beats "one sim replays everything forever"), the planes stand
+  (presence never a sim input; influence crosses as stamped intents;
+  leases stay presence choreography), tick-indexed time (ceil
+  quantization from the epoch entry). Instant fold untouched in every
+  dialect; v1/v2 logs valid forever; intent vocabulary + sim-ownership
+  ⚑-open for ratification. PRESETS (0d0c8fb): the mojave recipe left
+  flora_args.js for defs/flora/_presets.json — declarative template
+  vocabulary (inset/offset-fractions/seedAdd/density×k), interpreted
+  by presetStrokes(args, presets); unknown preset now fails LOUDLY
+  (was silent fallthrough — logged meaning must not drift). The
+  corn/sunflower variety recipes stay in code (generator-coupled).
+  Proven: 7-stroke mojave composed from the def in a live client
+  (defs-smoke 22/22, flora.test 70/70 feeding the shipped file).
+
 - **2026-08-22 — §24e: phase-1 slice 6 — the palette def + LIVE defs.**
   (0cecb57) GRASS_COLORS left vegetation.js for defs/flora/_colors.json
   (underscore = domain sidecar convention), hydrated before species so
