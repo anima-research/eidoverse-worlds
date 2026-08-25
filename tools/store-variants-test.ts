@@ -17,7 +17,8 @@
 // sweep; the negotiation key is a GENERATION (shared/ktx2.js): the current
 // key negotiates, a retired one is an unflagged fetch, and a browser only
 // ever uses the key the RUNNING sequencer published on /version — none
-// published, none used (the rollout collision, made impossible); and a flagged fetch
+// published, none used — and section 8 replays the collision itself as a canary:
+// a pull landing under a running sequencer cannot poison the next key; and a flagged fetch
 // answered by the webp shadow is PROVISIONAL — no-cache, never immutable —
 // so the variant's bytes get through the moment it exists, which the
 // If-None-Match round-trip here demonstrates.
@@ -533,6 +534,55 @@ console.log("\n  the swap a browser makes when the variant lands:");
     check("the unflagged answer never moved: the original, immutable — the address IS content-addressed", same(bare.bytes, glb) && bare.cc.includes("immutable"), bare.cc);
   }
   await S.stop();
+}
+
+// ---------------------------------------------- 8. the canary — pull before restart cannot poison
+// The =2 incident, replayed: a sequencer is RUNNING, then `git pull` lands a
+// shared/ktx2.js with a new key on its disk. The old process keeps serving
+// that new file (/shared/ktx2.js) while its own key — the one it imported at
+// boot — is unchanged. A client that read the key off the served file asked
+// with the new key and got pinned; a client that reads /version asks with
+// the running key and is answered correctly. Both fetches are made here, so
+// the poison is demonstrated, not assumed. The served file is rewritten IN
+// PLACE for the duration and restored byte-for-byte (finally + exit hook).
+console.log("\n  the canary — a pull lands under a running sequencer:");
+{
+  const SHARED = join(ROOT, "shared", "ktx2.js");
+  const pristine = readFileSync(SHARED);
+  const restore = () => { try { writeFileSync(SHARED, pristine); } catch { /* best effort */ } };
+  process.on("exit", restore);
+  const glb = await fixtureGlb("canary", 1);
+  const variant = await fixtureGlb("canary-variant", 1, true);
+  const hash = hashOf(glb); mine.add(hash);
+  writeFileSync(join(STORE, `${hash}.glb`), glb);
+  writeFileSync(ktx2VariantPath(join(STORE, `${hash}.glb`)), variant);
+  writeFileSync(join(STORE_MIN, `${hash}.glb.failed`), "fixture");
+  const S = await startServer(NO_ENCODER);
+  check("child server came up — with the PRISTINE key in memory", S.up && S.key === KTX2_KEY, `${S.up} key=${S.key}`);
+  try {
+    if (S.up) {
+      const NEXT = "99";   // the pulled generation, not yet running anywhere
+      const bumped = pristine.toString("utf8").replace(`export const KTX2_KEY = '${KTX2_KEY}';`, `export const KTX2_KEY = '${NEXT}';`);
+      check("(fixture) the pull rewrites the key on disk", bumped !== pristine.toString("utf8"));
+      writeFileSync(SHARED, bumped);
+      const served = await fetch(`${S.base}/shared/ktx2.js`, { cache: "no-store" }).then((r) => r.text());
+      check("the running sequencer now SERVES the pulled file — key 99 — to any client that reads it", served.includes(`KTX2_KEY = '${NEXT}'`));
+      const version = keyFromVersion(await fetch(`${S.base}/version`).then((r) => r.json()));
+      check("…but /version still publishes the key the process RUNS with", version === KTX2_KEY, `published ${version}`);
+      // the new client: keyed from /version
+      const good = await S.get(negotiate(`store/${hash}.glb`, version));
+      check("a client keyed from /version asks with the running key → the variant, immutable: correct", good.status === 200 && same(good.bytes, variant) && good.cc.includes("immutable"), `file=${whichFile(good.bytes)} cc=${good.cc}`);
+      // the old client: keyed off the served file — the incident
+      const bad = await S.get(negotiate(`store/${hash}.glb`, NEXT));
+      check("a client keyed off the served file asks ?ktx2=99 → the server does not know it: unflagged, NOT the variant, immutable — this is the poison, and it would have been pinned under the NEXT generation before it ever ran",
+        bad.status === 200 && !same(bad.bytes, variant) && bad.cc.includes("immutable"), `file=${whichFile(bad.bytes)} cc=${bad.cc}`);
+      check("the two answers differ — the split brain is real, and only the on-disk path walks into it", good.etag !== bad.etag);
+    }
+  } finally {
+    restore();
+    await S.stop();
+  }
+  check("the served file is restored byte-for-byte", same(new Uint8Array(readFileSync(SHARED)), new Uint8Array(pristine)));
 }
 
 cleanup();
