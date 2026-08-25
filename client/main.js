@@ -33,7 +33,6 @@ import {
 } from './lib/net.js';
 import { initPalette, updateBuild, toggleEditMode, isEditing } from './lib/build.js';
 import { initConjure } from './lib/conjure.js';
-import { initVoice } from './lib/voice.js';
 import './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
 import { initAudioPanel } from './lib/audiopanel.js';
 import { initSceneGraph } from './lib/scenegraph.js';
@@ -194,7 +193,20 @@ function start() {
   connect();
   initPalette();
   initConjure();   // the orrery panel — prompt → your pick of images → mesh → world
-  initVoice(CONFIG.name);
+  // 🔴 ONE TRANSPORT, EXACTLY ONE PLAYBACK OWNER (#104 amendment 6, the #132
+  // cutover). The P2P mesh is deleted; the in-process SFU is not a flag or a
+  // URL param, it is the only voice path the client has. That is deliberate —
+  // when transports selected by flag coexisted, a dropped ?sfu=1 served R the
+  // mesh for an hour while every result was reported as "SFU" (2026-08-15),
+  // and amendment 6's "exactly one playback owner must be visible at all
+  // times" is only IMPOSSIBLE to violate when a second owner cannot
+  // initialise. The requirement is that the wrong path be impossible, not
+  // discouraged. If cutover acceptance fails, the remedy is deploying the
+  // previous release during the migration window (notes/CUTOVER-ROLLBACK.md),
+  // not a runtime branch back to a transport this bundle no longer contains.
+  window.__voiceTransport = 'pending:sfu';
+  import('./lib/voicesfubridge.js').then((m) => { m.initVoiceSfu(CONFIG.name); window.__voiceTransport = 'sfu'; })
+    .catch((e) => { window.__voiceTransport = 'failed:sfu'; window.__voiceTransportError = String(e); console.error('voice init failed', e); });
   initAudioPanel();   // 🔊 categories: voices / world / TTS + consent rows
   // HEARING YOURSELF IS THE POINT. This hook — your own says going through the
   // selected voice — used to be installed ONLY inside the `?tts=PORT` block, so
@@ -516,8 +528,26 @@ if (typeof window !== 'undefined') window.setVoice = setVoice;
         // stalled. Observability must not sit downstream of the risky call.
         globalThis.__voiceProbe = () => ({ ...vs.mouthInfo(), track: vs.genTrackInfo() });
         globalThis.__voiceSpeak = (t) => vs.speak(t);   // the APP's mouth, for probes
-        const { toggleMic, micOn } = await import('./lib/voice.js');
-        if (!micOn()) await toggleMic(me);
+        const { toggleMic, micOn } = await import('./lib/micstate.js');
+        // 🔴 `me` IS NOT IN SCOPE HERE — it was a ReferenceError that threw
+        // before the mouth ever opened, so a body with ?tts= joined, logged
+        // "synthesized voice ready", and was mute. The comment six lines up
+        // already warned that an older copy "passed `me`, the avatar OBJECT";
+        // the fix deleted the definition and left the call. toggleMic wants the
+        // actor NAME, which is CONFIG.name — the same value every other caller
+        // passes.
+        // 🔴 OPEN THE LANE THE TRANSPORT ACTUALLY OWNS (2026-08-15). This read
+        // the mesh's own mic-state getter and toggle unconditionally — so a
+        // ?tts= body on an SFU server opened the MESH mic lane, published to a
+        // transport nobody was on, and reported success. Same defect as the
+        // HUD mic button had, on the path a voiced agent body depends on, and
+        // it violates the "EXACTLY ONE PLAYBACK OWNER" invariant asserted at
+        // the top of start(). Ask the bridge first; fall back to the mesh.
+        if (typeof window.__sfuMic === 'function') {
+          if (!window.__sfuMicOn?.()) await window.__sfuMic();
+        } else if (!micOn()) {
+          await toggleMic(CONFIG.name);
+        }
         console.log('[voice] TTS wiring complete');
       })
       // 🔴 NEVER SWALLOW THIS. It was `.catch(() => {})`, so anything after the

@@ -41,7 +41,7 @@ export async function launchBrowser({ mic = false } = {}) {
 /** Spawn a world server this run OWNS, prove it is ours, hand back origin +
  *  teardown. Pass `live: "http://host:port"` to probe a deployment instead
  *  (explicit, identity unchecked — it is not our child). */
-export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'dev' } = {}) {
+export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'dev', env: extraEnv = {} } = {}) {
   if (live) return { origin: live, key, owned: false, close: async () => {} };
   // Wide range: with a narrow one, two concurrent runs collide ~1/15 and the
   // loser's readiness poll can reach the WINNER's just-started server, which
@@ -57,7 +57,7 @@ export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'd
     : (process.env.BUN_PATH || '/home/claude/.bun/bin/bun');
   const srv = spawn(BUN, ['server/server.ts'], {
     env: { ...process.env, PORT: String(PORT), JOIN_TOKEN: key, WORLDS_DIR: scratch,
-           EIDO_BOOT_NONCE: NONCE },
+           EIDO_BOOT_NONCE: NONCE, ...extraEnv },
     stdio: ['ignore', 'ignore', 'ignore'],
   });
   const origin = `http://127.0.0.1:${PORT}`;

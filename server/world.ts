@@ -453,6 +453,15 @@ export const worlds = new Map<string, World>();
 // A function DECLARATION on purpose (§15.1): hoisting is load-bearing for
 // module-scope callers — the unsplit boot sweep called it above its
 // definition, and keeping the declaration form keeps that shape legal.
+/** Does this world already exist — in memory or on disk — WITHOUT creating it?
+ *  getWorld() founds on miss, which is right for a join by someone entitled to
+ *  found and wrong for everyone else (RFC-005 §3.2.7: founding is not joining).
+ *  Same test forkWorld uses to refuse an occupied name. */
+export function worldExists(name: string): boolean {
+  if (!/^[a-z0-9_-]{1,64}$/i.test(name)) return false;
+  return worlds.has(name) || existsSync(join(WORLDS_DIR, name));
+}
+
 export function getWorld(name: string): World {
   if (!/^[a-z0-9_-]{1,64}$/i.test(name)) throw new Error(`bad world name: ${name}`);
   let w = worlds.get(name);

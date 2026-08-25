@@ -1,7 +1,13 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 
-export type TokenAuth = { id: string; name: string; world?: string; avatar?: string };
+export type TokenAuth = {
+  id: string; name: string; world?: string; avatar?: string;
+  /** Existing-world travel policy ("*" = any existing world). */
+  worlds?: string[];
+  /** Founding authority is separate from travel policy. */
+  create?: boolean;
+};
 
 type Log = Pick<Console, "error" | "warn">;
 
@@ -67,6 +73,12 @@ export function readTokenRegistry(tokensPath: string, examplePath: string, log: 
       name: typeof auth.name === "string" && auth.name ? auth.name : auth.id,
       world: typeof auth.world === "string" ? auth.world : undefined,
       avatar: typeof auth.avatar === "string" ? auth.avatar : undefined,
+      // RFC-005 travel/founding fields survive the fail-closed registry seam.
+      // Travel to an existing world and permission to found one are distinct.
+      worlds: Array.isArray(auth.worlds)
+        ? auth.worlds.filter((world): world is string => typeof world === "string")
+        : undefined,
+      create: typeof auth.create === "boolean" ? auth.create : undefined,
     };
   }
   return accepted;
