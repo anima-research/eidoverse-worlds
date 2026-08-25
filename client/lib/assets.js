@@ -8,7 +8,7 @@
 //   vrmPool    whole parsed VRM instances at rest (§19b — no clone exists
 //              for a bound rig, so released bodies are reworn intact)
 
-import { withKtx2 } from '../../shared/ktx2.js';
+import { keyFromVersion, negotiate } from '../../shared/ktx2.js';
 import { THREE, renderer, camera, scene, report, bus } from './core.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
@@ -152,6 +152,27 @@ const ktx2 = new KTX2Loader()
 /** Whether this GPU/browser negotiates KTX2 variants (?ktx2=<key>, shared/ktx2.js) — prefetch
  *  must warm the SAME cache key demand fetches will use. */
 export const ktx2Capable = () => !!ktx2.workerConfig;
+// The negotiation key comes from the RUNNING sequencer, never from a file it
+// merely serves. In the window between `git pull` and the restart the old
+// process serves the new shared/ktx2.js; a client that read the key off that
+// file asked a server that had never heard of it, got an unflagged answer
+// (webp, immutable), and nginx pinned it under the new key — the =2
+// collision of 2026-08-24, retired within minutes. /version is the running
+// process talking (no-store; resolved at ITS boot). No key there — an older
+// sequencer, a failed fetch — means no negotiation at all: an unflagged
+// fetch is always the right answer for its URL, so nothing can be pinned
+// wrong, on any deploy, in any order. One fetch per page, awaited by every
+// negotiating load (they are all async already; the prefetcher awaits it
+// once before building its queue).
+export const ktx2KeyReady = fetch('/version', { cache: 'no-store' })
+  .then((r) => (r.ok ? r.json() : null)).then(keyFromVersion).catch(() => null);
+/** The path a negotiating load fetches: the running server's key appended
+ *  when this GPU decodes KTX2 and `eligible` (the asset class negotiates),
+ *  the bare path otherwise. */
+async function negotiated(path, eligible) {
+  const key = eligible && ktx2.workerConfig ? await ktx2KeyReady : null;
+  return negotiate(path, key);
+}
 function makeLoader(vrm = false) {
   const l = new GLTFLoader();
   l.setDRACOLoader(draco);
@@ -284,7 +305,7 @@ export async function loadVRM(libPath, { priority = 1 } = {}) {
     // byteCache (variant and original are distinct byte entries — correct),
     // while the vrmPool and its vrmMeta ledger key on libPath UNTOUCHED, so
     // pool identity is unaffected by negotiation.
-    const url = libPath.split('?')[0].endsWith('.vrm') && ktx2.workerConfig ? withKtx2(libPath) : libPath;
+    const url = await negotiated(libPath, libPath.split('?')[0].endsWith('.vrm'));
     const buf = await fetchBytes(`/library/${url}`);
     work.phase('queued');
     // The parse and skeleton passes are the irreducibly-synchronous chunk of a
@@ -477,7 +498,7 @@ export async function loadGLB(libPath) {
         // paths — the server answers with the variant when one exists, the
         // original otherwise. The full URL keys byteCache, so variant and
         // original are distinct entries, which is correct.
-        const url = libPath.endsWith('.glb') && ktx2.workerConfig ? withKtx2(libPath) : libPath;
+        const url = await negotiated(libPath, libPath.endsWith('.glb'));
         const buf = await fetchBytes(`/library/${url}`);
         work.phase('queued');
         return await enqueue(async () => {
@@ -775,7 +796,7 @@ export async function primeFiles(paths, { concurrency = 6 } = {}) {
         // cache (§16.2.B), and every toolkit module see the same identities —
         // the bytes just arrive GPU-native, and loadImageTexture sniffs the
         // container magic to tell which shape it got.
-        const url = ktx2Capable() && /\.(png|jpe?g)$/i.test(p) ? withKtx2(p) : p;
+        const url = await negotiated(p, /\.(png|jpe?g)$/i.test(p));
         const buf = await fetchBytes(`/library/${url}`);
         denoFiles.set(p, new Uint8Array(buf));
       } catch (e) { missing.push(p); }

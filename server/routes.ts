@@ -15,7 +15,7 @@ import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
 import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, JOIN_TOKEN } from "./config.ts";
 import { isStoreOriginal, isServingArtifact } from "./store-variants.ts";
-import { wantsKtx2 } from "../shared/ktx2.js";
+import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
 import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
 import { resolveLibFile } from "./lint.ts";
@@ -448,11 +448,12 @@ const ROUTES: Route[] = [
     // challenge-response the SERVER answers is the portable proof; the OS check
     // stays as a second, stricter opinion where the platform offers one.
     match: (u) => u.pathname === "/version",
-    // EIDO_BOOT_NONCE (`nonce`) rides in via BUILD; WORLD_INSTANCE_NONCE
-    // remains the independent owned-process challenge used by other harnesses.
+    // The representation key and both owned-process nonces come from this
+    // running process; clients never infer them from a newly served disk file.
     handler: () => new Response(
       JSON.stringify({
         ...BUILD,
+        ktx2Key: KTX2_KEY,
         ...(process.env.WORLD_INSTANCE_NONCE ? { instance: process.env.WORLD_INSTANCE_NONCE } : {}),
       }),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),

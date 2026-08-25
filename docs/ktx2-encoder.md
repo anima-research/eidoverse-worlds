@@ -73,11 +73,17 @@ lands.
 ## Either platform
 
 The negotiation key a client sends (`?ktx2=<key>`) is a generation, defined
-once in `shared/ktx2.js` and imported by both the client and the sequencer.
-Bump it when a flagged answer has been served with the wrong caching — the
-old key's cache entries are simply never asked for again (a purge cannot
-reach browsers). The fall-through answer under the current key is served
-`no-cache` until a variant exists, then the variant is served immutable.
+once in `shared/ktx2.js` and **published by the running sequencer on
+`/version`** (`ktx2Key`, no-store). The browser uses only what `/version`
+handed it — never the served file: in the `git pull` → restart window the old
+process serves the new file, and a client that read the key off disk asked a
+server that did not know it and got pinned (the =2 collision, 2026-08-24).
+No key on `/version` (an older sequencer) means the client does not negotiate
+at all, which is always safe. Bump the key when a flagged answer has been
+served with the wrong caching — the old key's cache entries are simply never
+asked for again (a purge cannot reach browsers). The fall-through answer under
+the current key is served `no-cache` until a variant exists, then the variant
+is served immutable.
 
 `KTX2_TOKTX` may point at either `toktx` or the newer `ktx` binary — the
 probe (`findKtx2Encoder`) detects which by name. Without the env it also
