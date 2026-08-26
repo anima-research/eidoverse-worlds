@@ -22,7 +22,28 @@ const KEY = 'eido.audio.prefs';
 // accepted, false = refused. A boolean cannot tell "not asked" from "said no",
 // so a refusal would be re-prompted on the next mic-on — turning a no into a
 // recurring negotiation, which is the opposite of asking once (review catch).
-const DEFAULTS = { recvVoice: false, volVoices: 1, volWorld: 0.6, volTts: 1, sttConsent: null,
+// 🔴 volWorld DEFAULTS TO 1, not 0.6 (R, 2026-08-16: "maybe we should set world
+// volume to 100% by default as well. We don't really have anything to test it
+// against right now but at least it will be starting from a default that makes
+// sense").
+//
+// 🔴 volumeFor('world') HAS NO CALLER, AND THAT IS DELIBERATE — not an unwired
+// loose end (R, 2026-08-16: "we shipped some PRs related to this and closed
+// them because it was getting into component-editing territory and we decided
+// to punt on it. That's correct for the time being").
+//
+// So do not "fix" this by hunting for the missing consumer: world/ambient audio
+// volume waits on the component-editing work, and the slider is the surface
+// held ready for it. It is a parked feature with a visible control, which is a
+// different thing from a control that lies — the TTS slider an hour ago was the
+// latter, promising listener-side control that its own architecture had already
+// made impossible.
+//
+// 1.0 rather than 0.6 for exactly that reason: 0.6 was a guess about the
+// balance of a mix that does not exist yet. When ambient audio does land, the
+// first person to hear it should hear it as authored, not through a 40% cut
+// nobody chose on purpose.
+const DEFAULTS = { recvVoice: false, volVoices: 1, volWorld: 1, volTts: 1, sttConsent: null,
   // Sensitivity, not an absolute level: it scales the margin a sound must clear
   // ABOVE the measured room noise (see onsetTick). 0.06 is the lowest value that
   // took zero false triggers across 200 simulated room/noise combinations while

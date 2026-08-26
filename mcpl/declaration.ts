@@ -48,6 +48,8 @@ export const CHAT = {
 export const EIDO = {
   whisper: "eidoverse:whisper",
   approach: "eidoverse:approach",
+  reach: "eidoverse:reach",
+  touch: "eidoverse:touch",
   act: "eidoverse:act",
   presence: "eidoverse:presence",
   activityDigest: "eidoverse:activity-digest",
@@ -177,6 +179,16 @@ const TAG_ONTOLOGY = {
       facet: "addressing",
       implies: [CHAT.addressed],
     },
+    [EIDO.reach]: {
+      desc: "Someone's hand (or foot) is reaching toward your body — a named contact point on you, or a point in your frame. Directed at you, but not yet contact; the touch, if it lands, follows as eidoverse:touch.",
+      facet: "addressing",
+      implies: [CHAT.addressed],
+    },
+    [EIDO.touch]: {
+      desc: "The reaching hand arrived: it now rests on the named point of your body, and tracks you until withdrawn. Attested by the toucher's own solver — the same trust as the pose stream itself.",
+      facet: "addressing",
+      implies: [CHAT.addressed],
+    },
     [EIDO.act]: {
       desc: "An embodied transition someone else made near you — an emote, a pose struck or released, sitting down, a moderation act.",
       facet: "lifecycle",
@@ -241,6 +253,9 @@ export const FEATURE_SETS: Record<string, FeatureSetDecl> = {
   "eidoverse.world": {
     description:
       "Embodied presence in a world. The world's chat is an MCPL channel: speech, whispers, approaches, presence and an ambient activity digest arrive as channels/incoming, and publishing on the world channel IS saying it aloud in-world.",
+    // channels.lifecycle is here because the world an agent is IN can change —
+    // see eidoverse.travel, which shares the leaf. Presence and travel are
+    // separable feature sets so a host can take the world without the door.
     uses: [CAP.channelsRegister, CAP.channelsLifecycle, CAP.channelsPublish, CAP.channelsIncoming],
     tagOntology: TAG_ONTOLOGY,
   },
@@ -248,6 +263,11 @@ export const FEATURE_SETS: Record<string, FeatureSetDecl> = {
     description:
       "The body's hands and senses as tools: look, snapshot, walking, gesture and pose, building, moderation. Survives on its own — this is what a plain-MCP client gets.",
     uses: [CAP.tools],
+  },
+  "eidoverse.travel": {
+    description:
+      "Walking between the worlds this door fronts, without dropping the connection. Two lanes, one mechanism: the `travel` tool, and `channels/open` naming a sibling world (a generic host that only knows MCPL can travel without knowing our tool names). Authorization is `channels.lifecycle` — a host that declines it keeps a resident who cannot leave, which is exactly today's behavior.",
+    uses: [CAP.channelsLifecycle, CAP.tools],
   },
   "eidoverse.typing": {
     description:

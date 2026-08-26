@@ -13,10 +13,11 @@
 // What remains is BYOV: a model file from your disk, or a speech server you run.
 // Both transmit; nothing here is local-only, because a voice that only you can
 // hear is indistinguishable from a working one until nobody answers.
-import { renderVoiceList } from './voicelist.js';
+import { renderVoiceList } from './ttslist.js';
+import { why } from './debuglog.js';
 import { ttsAvailable, ttsVoiceName, isTtsEnabled, setTtsEnabled, setTtsSource } from './tts.js';
 import { setEndpointVoice } from './browservoice.js';
-import { report } from './core.js';
+import { report, bus } from './core.js';
 // The id of whatever is currently installed, so the list can show a filled dot
 // against it. Null when nothing is loaded — which is a real state, not an error.
 let _selected = null;
@@ -36,6 +37,21 @@ let _busy = null;          // a phase string while loading, else null
  *  running timer, so a slow prepare (the phonemizer build is ~27s on first use)
  *  reads as work rather than as nothing happening. */
 let _loadingId = null, _loadingName = null, _loadingSince = 0;
+// The tick's own await window: onchange awaits collectVoices() BEFORE pick()
+// sets _loadingId, and a repaint in that gap read "not loading, not enabled"
+// and blanked the freshly-clicked box. Set at the tick, cleared when the load
+// path owns the state (or on any early exit).
+let _tickPending = false;
+/** 🔴 THE USER'S LAST WORD ON "should this speak?" — written ONLY by the
+ *  checkbox change handler (round-3 review, 2026-08-17). Round 1 used a
+ *  generation counter (self-cancelled on re-tick); round 2 used the box's own
+ *  checked state ("the checkbox IS the truth") — but the box is a DERIVED
+ *  display: syncHead/syncInPlace/build all recompute it from
+ *  isTtsEnabled()||loading, so the untick branch's own syncHead() call forced
+ *  the box back to checked mid-load and the completion guard could never see
+ *  the no. A plain boolean that no repaint recomputes is the only state here
+ *  that cannot be clobbered by its own sync machinery. */
+let _wantSpeech = false;
 /** 🔴 ONE LOAD AT A TIME (R, 2026-08-09: "re-clicking the box appears to make it
  *  thrash and start over"). Compiling the graph takes 30s+, and nothing stopped
  *  a second click from starting a SECOND compile racing the first — two 63 MB
@@ -106,17 +122,35 @@ export function ttsSection(host, onPaint = () => {}) {
      *  One entry point, one guard, one row. */
     async function pick(id) {
       if (id === '__pending') return resumePending();
-      if (id === _selected && ttsAvailable()) return;    // already live
+      if (id === _selected && ttsAvailable()) return true;   // already live — the ask IS satisfied
       if (_inFlight) {
         // A second click during a 30s compile used to start a SECOND compile
         // racing the first — two 63 MB graphs fighting for the same cores.
+        // 🔴 Return false, not undefined (review agent, 2026-08-17): the tick
+        // handler undoes its enable on `ok === false`, and this path's bare
+        // return slipped past that — the box enabled TTS for a pick that
+        // never took.
         console.log(`[voice] already loading ${_inFlight}; ignoring ${id}`);
-        return;
+        return false;
       }
       _inFlight = id;
       // The loading row + clock, for EVERY path into a load.
       _loadingId = id;
+      // 🔴 SHOW THE VOICE'S NAME, NOT ITS ID (R, 2026-08-16: "it says 'loading'
+      // with a huuuuge hash next to it"). Stored voices are keyed by CONTENT
+      // DIGEST — `sha256:<16 hex>+<16 hex>` (voicestore.js:82) — so stripping
+      // the file:/ep: prefixes left the raw hash on screen. Those prefixes only
+      // ever covered the two import paths; a voice loaded from the list has
+      // neither, which is the common case and the one nobody looked at.
+      //
+      // The list already knows the human name, so ask it. Falls back to the
+      // stripped id for a voice not yet in the list (mid-import), which is
+      // exactly when file:/ep: DO apply.
       _loadingName = id.replace(/^file:/, '').replace(/^ep:/, '');
+      void collectVoices().then((vs) => {
+        const hit = vs.find((v) => v.id === id);
+        if (hit?.name && _loadingId === id) { _loadingName = hit.name; build(); }
+      }).catch(() => { /* keep the fallback */ });
       _loadingSince = Date.now();
       build();
       try {
@@ -127,6 +161,10 @@ export function ttsSection(host, onPaint = () => {}) {
       }
     }
     async function pickInner(id) {
+    // Captured BEFORE anything below clears it: "was the user already asking to
+    // speak, and only missing a voice?" TTS already being on counts too — then
+    // this is a SWITCH between voices and must stay on, not silently mute.
+    const wantedSpeech = _needVoice || isTtsEnabled();
     try {
       if (id.startsWith('ep:')) {
         await setEndpointVoice(id.slice(3));
@@ -148,7 +186,22 @@ export function ttsSection(host, onPaint = () => {}) {
     // Remember it so ticking the box later picks what they used last.
     try { localStorage.setItem('eido.tts.lastVoice', id); } catch { /* private mode */ }
     _needVoice = false;   // they acted on the prompt; it has served its purpose
-      setTtsEnabled(true);
+      // 🔴 CHOOSING IS NOT ENABLING (R, 2026-08-16: "can you make it possible to
+      // interact with the text-to-speech model radio buttons between 2+ models
+      // even without the check box checked? That way if there's more than one,
+      // you can select the one you want, getting around uploading one you don't
+      // want first when you click the checkbox").
+      //
+      // Selecting used to force TTS on unconditionally, which made the two
+      // controls one control: with several voices remembered you could not
+      // switch to the one you wanted without also starting to speak in it, and
+      // ticking the box grabbed whichever voice the rules landed on first.
+      //
+      // Now the tick decides WHETHER, the list decides WHICH. Enabling on
+      // select happens only when the user was already asking to speak and the
+      // one thing missing was a voice — the _needVoice prompt is exactly that
+      // state, so it keeps its old behaviour and nothing else does.
+      if (wantedSpeech) setTtsEnabled(true);
     } catch (e) {
       report('tts voice', e);
       _busy = String(e?.message || e).slice(0, 80);
@@ -188,7 +241,7 @@ export function ttsSection(host, onPaint = () => {}) {
     const shown = (files.find((f) => /\.onnx$/i.test(f.name)) || files[0])?.name || 'voice';
     const name = shown.replace(/\.onnx$/i, '');
       // 🔴 _busy MUST BE CLEARED ON EVERY EXIT. The add button greys itself while
-      // busy (voicelist.js), so a throw in here left it grey FOREVER — R,
+      // busy (ttslist.js), so a throw in here left it grey FOREVER — R,
       // 2026-08-09: "the add a text-to-speech model button goes gray after one is
       // added, so you can't add more". try/finally, not a trailing assignment.
       _busy = `loading ${name}…`;
@@ -264,6 +317,40 @@ export function ttsSection(host, onPaint = () => {}) {
       report('resume voice import', e);
     }
   }
+  /** Look for the other half of a piper pair in the folder the user points at.
+   *
+   *  Piper names them `X.onnx` and `X.onnx.json`, so the sibling of `a.onnx` is
+   *  `a.onnx.json` and the sibling of `a.onnx.json` is `a.onnx` — NOT a naive
+   *  "strip the extension", which would turn `a.onnx.json` into `a.onnx` only
+   *  by luck and `a.json` into `a` wrongly.
+   *
+   *  Returns {handle, file} or null. Never throws at the caller: a declined
+   *  directory prompt is an ordinary outcome, not an error.
+   */
+  async function pairFromDirectory(have, want) {
+    if (!window.showDirectoryPicker) return null;
+    const base = /\.onnx$/i.test(have) ? have : have.replace(/\.json$/i, '');
+    const target = want === '.onnx.json' ? `${base}.json` : base;
+    // Say what granting the folder BUYS, not just what it wants. This is the
+    // second ask in a row; "pick the folder" with no reason reads as the app
+    // being fussy rather than as a shortcut being offered.
+    _busy = `optional: pick the folder holding ${have} and I'll find ${target} myself`;
+    build();
+    let dir;
+    try {
+      dir = await window.showDirectoryPicker({ mode: 'read', id: 'piper-voices' });
+    } catch { return null; }          // declined, or unsupported: fall back to asking
+    // getFileHandle throws NotFoundError when the name is absent — which is the
+    // ordinary "they picked the wrong folder" case, not a failure worth
+    // reporting. Confirm the ORIGINAL is here too, so we cannot pair a model
+    // with a config belonging to a different copy of the same filename.
+    try {
+      const mate = await dir.getFileHandle(target);
+      await dir.getFileHandle(have);   // throws if this is not that folder
+      return { handle: mate, file: await mate.getFile() };
+    } catch { return null; }
+  }
+
   async function addFile() {
     try {
       const { loadFromFiles, matchEngine } = await import('./voiceengines.js');
@@ -284,14 +371,63 @@ export function ttsSection(host, onPaint = () => {}) {
       if (!matchEngine(files) || files.length === 1) {
         const have = files[0]?.name || 'a file';
         const want = /\.onnx$/i.test(have) ? '.onnx.json' : '.onnx';
+
+        // 🔴 TRY THE SIBLING FIRST (R, 2026-08-16: "when the TTS model is trying
+        // to bring in a piper model and the user selects an onnx or onnx.jsonl,
+        // can it grab the other pair in that same directory if it has the same
+        // file name?").
+        //
+        // The constraint that makes this awkward: showOpenFilePicker hands back
+        // a FileSystemFileHandle, and a file handle gives NO access to its
+        // siblings — by design, and there is no .getParent(). The only lawful
+        // route to the folder is asking for the folder. So we ask ONCE, and if
+        // the user grants it we never bother them again for this pair.
+        //
+        // A user who declines is not stuck: the explicit second pick below is
+        // still there, unchanged. This is a shortcut, never the only path.
+        // 🔴 ASK FOR THE FILE, NOT THE FOLDER (R, 2026-08-16: "I don't like
+        // that the second dialogue is asking for a *folder* instead of the
+        // other file pair, that's not great UX").
+        //
+        // She is right and this was ordered backwards. The folder prompt used
+        // to come FIRST, so picking one .onnx immediately demanded read access
+        // to a whole directory — a large, strange-looking permission, asked
+        // before the small obvious question. The plain "pick the other file"
+        // dialogue only appeared if you declined it.
+        //
+        // Now the obvious ask comes first and the folder shortcut is offered
+        // only if that one is declined — i.e. exactly when the user is signalling
+        // that picking files one at a time is not what they want.
+        //
+        // Why we cannot just read the sibling: showOpenFilePicker returns a
+        // FileSystemFileHandle, which is deliberately sibling-blind — no
+        // .getParent(), no directory access, by design. Asking for the folder is
+        // the ONLY lawful route to the file next door, which is why the shortcut
+        // exists at all rather than us silently globbing the directory.
         _busy = `${have} selected — now pick the matching ${want}`;
         build();
-        const more = await window.showOpenFilePicker({
+        let more = await window.showOpenFilePicker({
           multiple: true,
           types: [{ description: `Matching ${want} for ${have}`,
                     accept: want === '.onnx' ? { 'application/octet-stream': ['.onnx'] }
                                              : { 'application/json': ['.json'] } }],
         }).catch(() => null);
+
+        // Declined the file pick? THEN offer the folder — it saves this step
+        // next time, and someone who just dismissed a file dialog is the person
+        // most likely to want that. Still optional; declining both lands on the
+        // half-finished row below, unchanged.
+        if (!more?.length) {
+          const paired = await pairFromDirectory(have, want).catch(() => null);
+          if (paired) {
+            handles = [...handles, paired.handle];
+            files = [...files, paired.file];
+            _busy = `found ${paired.file.name} beside it`;
+            build();
+            await finishImport(handles, files);
+            return;
+          }
+        }
         if (more?.length) {
           handles = [...handles, ...more];
           files = [...files, ...await Promise.all(more.map((h) => h.getFile()))];
@@ -342,18 +478,200 @@ export function ttsSection(host, onPaint = () => {}) {
       row.textContent = text || '';
       return true;
     }
+
+    /** 🔴 THE TICK CHANGES TWO THINGS, SO WRITE TWO THINGS (R, 2026-08-16:
+     *  "looks like panel is tearing down when you click the text-to-speech
+     *  model checkbox").
+     *
+     *  Same defect as the audio panel's, one file over: the checkbox handler
+     *  called repaint() → build() → host.textContent = '', destroying and
+     *  recreating the whole section for a state change that touches a label's
+     *  opacity and a note's text. My teardown probe missed it because it
+     *  clicked 'hear voices' — a probe proves the path it walks and nothing
+     *  else, and I let a green light stand for the panel as a whole.
+     *
+     *  Returns false if the nodes are not there yet, so callers keep their
+     *  build() fallback and a first paint still works. */
+    function syncHead() {
+      const label = host.querySelector('.row.wide .nm');
+      const note = host.querySelector('.row.wide .note');
+      const box = host.querySelector('.row.wide input[type=checkbox]');
+      if (!label || !note || !box) return false;
+      const live = ttsAvailable() && isTtsEnabled();
+      label.style.opacity = headDimmed() ? '.45' : '1';
+      // 🔴 A LOADING VOICE IS A TICKED BOX, FADED (R, 2026-08-16: "check that
+      // box right away so it shows as registered, but greyed out or faded, and
+      // it goes full strength once the model is finished loading"). The user's
+      // click ticks the box natively — then every repaint during the ~27s load
+      // ran this line while isTtsEnabled() was still false (pick() enables at
+      // the END), snapping the box back to unchecked mid-load and popping it
+      // on at completion. The intent is registered the moment they click;
+      // the box says so immediately and the fade says "working on it".
+      const loadingNow = (!!_loadingId || _tickPending) && (_wantSpeech || !_tickPending);
+      box.checked = isTtsEnabled() || loadingNow;
+      box.style.opacity = loadingNow && !isTtsEnabled() ? '.45' : '';
+      note.textContent = headNote();
+      return true;
+    }
+  /** 🔴 THE PANEL MUST NOT TEAR DOWN ON A STATE CHANGE — FOR EVERY ELEMENT
+   *  (R, 2026-08-16, third report: "Can you please check and fix this issue for
+   *  EVERY element in the audio panel? I don't like having to call out this
+   *  issue repeatedly for every element.")
+   *
+   *  She is right that this kept recurring, and the reason is that the previous
+   *  two fixes were applied AT THE CALL SITE — a bespoke syncHead() for the
+   *  checkbox, liveStatus() for the loading note — while build() itself stayed
+   *  destructive and 24 other callers kept invoking it. Fixing the instance
+   *  three times is how you get asked a fourth.
+   *
+   *  So the fix moves into build(): if the section is already built, UPDATE the
+   *  existing nodes and return. Nothing is destroyed, so nothing loses focus,
+   *  scroll position, or an in-flight interaction — regardless of which of the
+   *  24 callers fired. A full construction happens once, and after any
+   *  deliberate teardown.
+   *
+   *  The bespoke helpers stay: they are cheaper for the hot path (a status
+   *  string once a second) and they already have their own callers. This is the
+   *  floor beneath them, not a replacement. */
+  /** Update every node build() renders, without destroying any of them.
+   *
+   *  🔴 IT MUST COVER EVERYTHING build() PAINTS, or a state change silently
+   *  stops reaching the screen — a stale panel is worse than a torn-down one,
+   *  because it looks fine. The pieces are: the label's dimming, the checkbox's
+   *  checked state, the status note, and the voice list.
+   *
+   *  Returns false if the expected nodes are missing (first paint, or a
+   *  structure change), so the caller falls back to a real build. */
+
+/** 🔴 MIC LIVE MEANS TTS IS UNAVAILABLE, AND IT MUST SAY SO (R, 2026-08-16:
+ *  "I was lobbying for *greying out* TTS model if mic was live… it doesn't give
+ *  you the silent failure of TTS being on in the audio panel and not working").
+ *
+ *  The priority itself is hers from PR #91 and stays: one publishing source, a
+ *  live mic wins outright. What was wrong is that the panel kept claiming TTS
+ *  was on while tts.js silently discarded every typed say — a control showing a
+ *  state the system was not in, which is the same defect as the mic meter and
+ *  the dead volume slider this morning.
+ *
+ *  Nothing is turned OFF here: isTtsEnabled() stays true, so mic-off drops
+ *  straight back to speaking with nothing to re-enable — the "setting stays
+ *  STANDING" property #91 was built around. Only the DISPLAY yields.
+ *
+ *  🔴 ONE function, because this text had drifted into THREE copies (483, 540,
+ *  619) and the first was already missing the loading branch. A status line
+ *  computed in three places is three chances to disagree with itself. */
+function micIsPublishing() {
+  try {
+    if (typeof window.__sfuMicOn === 'function') return !!window.__sfuMicOn();
+  } catch { /* no window */ }
+  return false;
+}
+
+function headNote() {
+  if (_busy) return _busy;
+  if (_loadingId) return `loading ${_loadingName || 'voice'}…`;
+  if (micIsPublishing()) return 'not available while your mic is on';
+  if (_needVoice) return 'add a voice with one of the options below';
+  const live = ttsAvailable() && isTtsEnabled();
+  return live ? ttsVoiceName() : ttsAvailable() ? 'ready' : '';
+}
+
+/** Dimmed when TTS cannot actually speak — either off, or outranked by a live
+ *  mic. The label and the list both read this, so "greyed out" is one answer. */
+function headDimmed() {
+  return !(ttsAvailable() && isTtsEnabled()) || micIsPublishing();
+}
+
+  function syncInPlace() {
+    const label = host.querySelector('.nm');
+    const box = host.querySelector('input[type=checkbox]');
+    const note = host.querySelector('.note');
+    const listHost = host.querySelector('.tts-list');
+    // 🔴 NAME THE MISSING NODE. Four lookups behind ONE combined guard meant a
+    // refusal said only "something is absent" — and I reasoned about which for
+    // three rounds instead of asking. Every predicate in this file that can
+    // decline for several reasons now says which one it used; that is the
+    // difference between one reload and three.
+    if (!label || !box || !note || !listHost) {
+      const missing = [!label && '.nm', !box && 'checkbox', !note && '.note',
+                       !listHost && '.tts-list'].filter(Boolean).join(', ');
+      why('tts-section', `sync refused: missing ${missing}`);
+      return false;
+    }
+
+    const live = ttsAvailable() && isTtsEnabled();
+    label.style.opacity = headDimmed() ? '.45' : '1';
+    // Never fight the user's own click: if the box already shows what state
+    // says, leave the node alone. Writing .checked during their interaction is
+    // how a control starts feeling like it is arguing back.
+    //
+    // 🔴 THE SECOND WRITER (R, reload, 2026-08-16: "it's the same"). The
+    // ticked-but-faded-while-loading fix went into syncHead() above — and THIS
+    // function is a second, older copy of the same head-sync that still wrote
+    // checked from isTtsEnabled() alone, snapping the box blank mid-load on
+    // every path that runs through here. Two copies of one truth is the whole
+    // disease; until they merge, they must at least agree.
+    const wantChecked = isTtsEnabled() || ((!!_loadingId || _tickPending) && (_wantSpeech || !_tickPending));
+    if (box.checked !== wantChecked) box.checked = wantChecked;
+    box.style.opacity = wantChecked && !isTtsEnabled() ? '.45' : '';
+    note.textContent = headNote();
+
+    // The list owns its own in-place update (ttslist.js renders per-element),
+    // so re-rendering it here is not a teardown of the rows.
+    collectVoices().then((items) => {
+      if (!_selected && items.length) {
+        const last = (() => { try { return localStorage.getItem('eido.tts.lastVoice'); } catch { return null; } })();
+        const real = items.filter((i) => i.id !== '__pending');
+        if (real.length) _selected = (last && real.some((i) => i.id === last)) ? last : real[0].id;
+      }
+      renderVoiceList(listHost, {
+        items, selected: _selected, busy: _busy,
+        loading: _loadingId ? { id: _loadingId, name: _loadingName, since: _loadingSince, status: _busy } : null,
+        on: {
+          select: (id) => {
+            if (id === '__pending') return pick(id);
+            if (isTtsEnabled()) return pick(id);
+            _selected = id;
+            try { localStorage.setItem('eido.tts.lastVoice', id); } catch { /* private mode */ }
+            build();
+          },
+          remove, addFile, addEndpoint,
+        },
+      });
+    });
+    return true;
+  }
+
   function build() {
+    // 🔴 REPORT WHICH LAYER REBUILT. There are two nested in-place paths —
+    // this one for the section, syncSelection() for the list inside it — and
+    // when the panel still tore down, "no rendered rows carry data-id" from the
+    // INNER one was ambiguous: it means the same thing whether the list host
+    // was just recreated by THIS function or the rows genuinely lack the
+    // attribute. Four layers traced by hand, all looking correct, is the point
+    // at which the code should be saying it rather than me reading it.
+    if (host.firstChild) {
+      if (syncInPlace()) { why('tts-section', 'in place'); return; }
+      why('tts-section', 'REBUILT (syncInPlace refused)');
+    } else {
+      why('tts-section', 'first paint');
+    }
     host.textContent = '';
     const head = document.createElement('div');
-    head.className = 'sp-row';
+    head.className = 'row wide';
     const live = ttsAvailable() && isTtsEnabled();
     // Same two columns as every other row: label, then control. The status note
     // rides in the control column beside the tick rather than starting a third
     // ragged column of its own.
     head.innerHTML =
-      `<label class="sp-label" style="opacity:${live ? '1' : '.45'}">text-to-speech</label>` +
-      `<span class="sp-ctl">` +
-      `<input type="checkbox" ${isTtsEnabled() ? 'checked' : ''} ` +
+      // "text-to-speech MODEL" (R, 2026-08-16): the audio panel already has a
+      // "text-to-speech volume" slider, and two different controls carrying the
+      // identical label "text-to-speech" is the ambiguity she hit. This one
+      // selects WHICH VOICE; that one sets how loud it is.
+      `<label class="nm" style="opacity:${headDimmed() ? '.45' : '1'}">text-to-speech model</label>` +
+      `<span class="ctl">` +
+      `<input type="checkbox" ${isTtsEnabled() || ((_loadingId || _tickPending) && (_wantSpeech || !_tickPending)) ? 'checked' : ''} `
+        + `${(_loadingId || _tickPending) && (_wantSpeech || !_tickPending) && !isTtsEnabled() ? 'style="opacity:.45" ' : ''}` +
         // 🔴 NOT `disabled` WHEN THERE IS NO VOICE (R, 2026-08-09: "there's no
         // warning to load a model if you try to checkbox text-to-speech, it just
         // fails silently"). A disabled checkbox fires NO change event, so the
@@ -361,24 +679,58 @@ export function ttsSection(host, onPaint = () => {}) {
         // its own precondition. It must be clickable precisely so the click can
         // be answered: the handler unticks it and names what is missing.
       `title="speak with the voice marked below">` +
-      `<span class="sp-note">` +
+      `<span class="note">` +
       // THE NOTE SAYS ONE THING: what is loading, or what is loaded. Not what to
       // do next — the rows below ARE what to do next, and a note pointing at them
       // was the second "add a voice below" R found. Empty when there is nothing to
       // report: a row with nothing to say should be quiet.
-      `${_busy || (_needVoice ? 'add a voice with one of the options below'
-        : live ? ttsVoiceName() : ttsAvailable() ? 'ready' : '')}</span>` +
+      // 🔴 SAY IT IS IN FLIGHT, ON THIS LINE (R, 2026-08-16: "maybe put a
+      // 'loading...' next to the checkbox line so people know it's in flight").
+      // _busy carries the engine's own phase text once loading starts, but
+      // there is a gap between the tick and the first phase report where the
+      // line said "ready" — i.e. it claimed the voice was available while a
+      // 63MB graph was still downloading. _loadingId is set for EVERY path into
+      // a load, so it closes that gap; the engine's phase text still wins once
+      // it arrives, because it says more.
+      `${headNote()}</span>` +
       `</span>`;
     head.querySelector('input').onchange = async (e) => {
-      if (!e.target.checked) { _needVoice = false; setTtsEnabled(false); repaint(); return; }
+      // Untick: nothing structural changes — no row appears or vanishes — so
+      // write the two affected nodes instead of rebuilding the section.
+      _wantSpeech = e.target.checked;
+      if (!e.target.checked) {
+        // 🔴 AN UNTICK OUTRANKS A TICK STILL IN FLIGHT (round 1), and a
+        // RE-TICK outranks the untick (round 2 — the generation-counter
+        // version of this fix made tick→untick→re-tick self-cancel: the
+        // re-tick hit the busy path and unchecked itself while the counter
+        // voided the running load's enable, so the LAST click did not win).
+        // The box's checked state IS the user's last word, so the load's
+        // completion consults IT rather than a counter — see below.
+        _needVoice = false; setTtsEnabled(false);
+        if (!syncHead()) repaint(); else onPaint();
+        return;
+      }
+      // A tick while a tick-initiated load is already running: the box stays
+      // checked, and the running load's completion will honour it. Calling
+      // pick() again would only hit the busy path and untick a box the user
+      // just ticked.
+      if (_tickPending) return;
       // TICKING THE BOX MEANS "SPEAK" — so make that true if it can be
       // (R, 2026-08-09). Three cases:
       //   no voices  → refuse, and SAY why (transient, clears when they add one)
       //   one voice  → use it; asking which of one is busywork
       //   several    → last used, else the first
-      if (ttsAvailable()) { _needVoice = false; setTtsEnabled(true); repaint(); return; }
+      // Tick with a voice already loaded: same two nodes, same reasoning.
+      if (ttsAvailable()) {
+        _needVoice = false; setTtsEnabled(true);
+        if (!syncHead()) repaint(); else onPaint();
+        return;
+      }
+      _tickPending = true;
       const items = await collectVoices();
+      if (!_wantSpeech) { _tickPending = false; return; }      // unticked while listing
       if (!items.length) {
+        _tickPending = false;
         e.target.checked = false;          // the tick did not take; do not lie about it
         _needVoice = true;
         // Clear itself after 5s (R, 2026-08-09). It answers ONE click; leaving it
@@ -394,15 +746,42 @@ export function ttsSection(host, onPaint = () => {}) {
         return;
       }
       _needVoice = false;
+      // 🔴 THE VISIBLE SELECTION WINS (R, 2026-08-16). Now that choosing a voice
+      // no longer enables TTS, a user can mark the one they want and THEN tick
+      // the box — so the tick must honour what the radio shows. Reading only
+      // localStorage here would load a different voice than the one marked on
+      // screen, which is the display-vs-reality split in its purest form: the
+      // dot says one thing, the speaker says another.
+      //
+      // Order: what is selected right now → last used → the first row. The
+      // second and third are the pre-existing rule, unchanged.
       const last = (() => { try { return localStorage.getItem('eido.tts.lastVoice'); } catch { return null; } })();
-      const pickId = (last && items.some((i) => i.id === last)) ? last : items[0].id;
+      const marked = _selected && items.some((i) => i.id === _selected) ? _selected : null;
+      const pickId = marked ?? ((last && items.some((i) => i.id === last)) ? last : items[0].id);
         // If loading fails the box must not stay ticked over a voice that never
         // arrived — that is the same silent failure by a different route.
         try {
-          const ok = await pick(pickId);      // loads, sets the source, enables
+          const ok = await pick(pickId);      // loads and sets the source
           // pickInner reports failure as `false`, not a throw — its catch
-          // owns the error UI. Only the tick needs undoing here.
+          // owns the error UI. Only the tick needs undoing here. (pick's
+          // busy-ignore path also returns false now — an enable for a pick
+          // that never took was the same lie by a quieter route.)
           if (ok === false) { e.target.checked = false; return; }
+          // _wantSpeech at load-completion is the user's LAST action —
+          // unticked mid-load means no enable; unticked-then-re-ticked means
+          // enable. Deliberately NOT the checkbox: the box is re-derived by
+          // every sync during the load window and cannot carry the no.
+          if (!_wantSpeech) return;
+          // 🔴 ENABLE HERE, NOT IN pickInner (R, 2026-08-16: "TTS gets stuck
+          // faded out and 'ready' and never goes live"). pickInner only enables
+          // when `wantedSpeech` — captured from `_needVoice || isTtsEnabled()`
+          // at its entry — and THIS path sets _needVoice=false four lines
+          // before calling it, so the tick-then-load flow could never enable:
+          // the model landed, the note said "ready", and nothing spoke. The
+          // file's own doctrine says it plainly — the tick decides WHETHER,
+          // the list decides WHICH — so the tick's handler owns the enable the
+          // moment its load succeeds.
+          setTtsEnabled(true);
         } catch (err) {
           e.target.checked = false;
           _needVoice = true;
@@ -413,24 +792,83 @@ export function ttsSection(host, onPaint = () => {}) {
         clearTimeout(_needVoiceTimer);
         _needVoiceTimer = setTimeout(() => { _needVoice = false; build(); }, 5000);
           console.warn('[voice] could not load the saved voice:', err);
+        } finally {
+          // EVERY exit — success, refusal, throw. The first version cleared
+          // this only on the no-items branch, so a successful load left the
+          // box faded forever (the leak R reported as "stuck faded out").
+          _tickPending = false;
         }
         repaint();
     };
     host.appendChild(head);
     const listHost = document.createElement('div');
-    // Indent to the CONTROL column (label 104px + 10px gap), so the voices hang
-    // under the checkbox that switches them on rather than floating mid-panel.
-    listHost.style.cssText = 'margin:2px 0 8px 142px';
+    listHost.className = 'tts-list';   // findable by syncInPlace
+    // Indent to the CONTROL column so the voices hang under the checkbox that
+    // switches them on rather than floating mid-panel.
+    //
+    // 🔴 DERIVED, NOT HARDCODED. This was `margin-left: 142px` from "label
+    // 104px + 10px gap" — a measurement of one particular layout, which silently
+    // became wrong the moment the panel's label column changed width (it went
+    // 5.5rem → 8.5rem on 2026-08-14 because the longest label did not fit).
+    // The grid owns the gutter; read it from the grid.
+    const col = getComputedStyle(host.closest('.row.wide')?.parentElement ?? host)
+      .getPropertyValue('--row-label-col') || '8.5rem';
+    listHost.style.cssText = `margin:2px 0 8px calc(${col} + 10px)`;
     host.appendChild(listHost);
     collectVoices().then((items) => {
+      // 🔴 SOMETHING IS ALWAYS MARKED (R, 2026-08-16: "maybe leave top radio'd
+      // by default, or last if one exists, per existing rules"). _selected
+      // starts null, so a fresh page with remembered voices showed a list with
+      // NO dot — and "which one will the checkbox use?" had no visible answer.
+      //
+      // Same order the tick uses, so the dot is a PREDICTION of what ticking
+      // will do rather than a separate opinion: last used, else the first row.
+      // Marking is display only — no load, no permission prompt, nothing
+      // enabled. The voice is not touched until the user asks for it.
+      if (!_selected && items.length) {
+        const last = (() => { try { return localStorage.getItem('eido.tts.lastVoice'); } catch { return null; } })();
+        const real = items.filter((i) => i.id !== '__pending');
+        if (real.length) _selected = (last && real.some((i) => i.id === last)) ? last : real[0].id;
+      }
       renderVoiceList(listHost, {
         items, selected: _selected, busy: _busy,
         // The in-flight import, shown as a ghost row with a running clock.
         loading: _loadingId ? { id: _loadingId, name: _loadingName, since: _loadingSince, status: _busy } : null,
-        on: { select: pick, remove, addFile, addEndpoint },
+        // 🔴 MARKING IS NOT LOADING (R, 2026-08-16: "when someone selects a
+        // model radio button and the checkbox isn't checked, can you *not*
+        // load the model yet?"). The comment above claimed marking was display
+        // only — it was not: `select` called pick(), which imports the engine
+        // and pulls a ~63MB graph. So glancing at the list cost a download.
+        //
+        // Now the radio only MARKS while TTS is off; the load happens when the
+        // checkbox is ticked, which already honours the visible selection. If
+        // TTS is already ON this is a live switch between voices and must load
+        // immediately — otherwise the dot would say one thing and the speaker
+        // another, which is the display-vs-reality split this file keeps
+        // fixing.
+        on: {
+          select: (id) => {
+            if (id === '__pending') return pick(id);   // resuming IS the ask
+            if (isTtsEnabled()) return pick(id);       // live switch: load now
+            _selected = id;
+            try { localStorage.setItem('eido.tts.lastVoice', id); } catch { /* private mode */ }
+            build();
+          },
+          remove, addFile, addEndpoint,
+        },
       });
     });
   }
   build();
+  // 🔴 REPAINT WHEN THE MIC CHANGES, or the greying is a lie one toggle old.
+  // The row now displays a state it does not own — whether a live mic is
+  // outranking TTS — so it has to hear about that state changing. audio:mic is
+  // emitted by both the panel's own checkbox and the HUD glyph (mictoggle), so
+  // one subscription covers every way the mic goes on or off.
+  //
+  // build() is safe to call repeatedly now that it updates in place; before the
+  // syncInPlace work earlier today this subscription would have torn the
+  // section down on every mic toggle.
+  bus.on('audio:mic', () => build());
   return host;
 }

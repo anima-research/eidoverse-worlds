@@ -41,6 +41,9 @@
 import { plugin } from "bun";
 import { fileURLToPath } from "node:url";
 import { isFiniteVec3 } from "./shape.ts";
+// pure shared geometry — no client import cone, safe to load eagerly
+import { CONTACT_POINTS } from "../shared/contact.js";
+import { bodyFrame, fromBody } from "../shared/joints.js";
 
 const STUB = fileURLToPath(new URL("../tools/core-stub.mjs", import.meta.url));
 
@@ -52,6 +55,7 @@ let simMods: {
   THREE: any;
   terrain: any;
   colliders: any;
+  reachbone: { measureChain: any; solveChain: any };
 } | null = null;
 let simFailed = false;
 // The in-flight load, not just the finished one. A joining agent asserts its
@@ -77,6 +81,10 @@ function loadSim(): Promise<typeof simMods> {
       const rig = await import("../tools/rig-load.mjs");
       const terrain = await import("../client/lib/terrain.js");
       const colliders = await import("../client/lib/colliders.js");
+      // the reach solver's frame algebra — same door, same stub (its own
+      // import cone is core.js + pure shared modules; tools/reachlive-test.ts
+      // is the standing proof it runs headless)
+      const reachbone = await import("../client/lib/reachbone.js");
       // Bullet, not the Verlet floor. The browser has defaulted to ammo since
       // it beat every other engine on live falls (bodysim.js), but a headless
       // body hard-coded Ragdoll -- so a shoved agent tumbled under one solver
@@ -101,7 +109,7 @@ function loadSim(): Promise<typeof simMods> {
       // from a toggle that does not work -- the same ambiguity bodysim.js's
       // status string was added to kill.
       console.log(`[physics] headless body engine: ${engine}`);
-      simMods = { Ragdoll: rag.Ragdoll, Body, engine, rig, THREE: stub.THREE, terrain, colliders };
+      simMods = { Ragdoll: rag.Ragdoll, Body, engine, rig, THREE: stub.THREE, terrain, colliders, reachbone };
       return simMods;
     } catch (e) {
       simFailed = true;
@@ -238,6 +246,10 @@ async function skeletonFor(httpBase: string, avatarPath: string) {
     if (Object.keys(hairParent).length) {
       Object.defineProperty(P, "__hairParent", { value: hairParent, enumerable: false });
     }
+    // VRM 0.x bodies face -Z; the reach frame algebra needs to know (six of
+    // the shipped rigs). The ragdoll never asked, so this rides as a
+    // non-enumerable rider rather than a change to its P contract.
+    Object.defineProperty(P, "__vrm0", { value: !!g.extensions?.VRM, enumerable: false });
     skeletons.set(key, P);
     return P;
   } catch (e) {
@@ -386,4 +398,126 @@ export class HeadlessBody {
   /** Drop the body. dispose() before the reference goes: under ammo the
    *  reference is the only handle on a wasm world. */
   stop() { this.rd?.dispose?.(); this.rd = null; }
+}
+
+// ---------------------------------------------------------------- reaching
+//
+// The same stand-in skeleton, driven by the reach solver instead of the
+// ragdoll. A headless body reaching for something needs two answers a browser
+// gets from its scene: "where is the target" (for a landmark, on the OTHER
+// body) and "does my arm get there" (measureChain/solveChain on its own).
+// Both run on rig-load stand-ins here — no mesh, no renderer.
+//
+// One honest limitation, stated rather than hidden: a browser derives
+// landmarks by raycasting the actual mesh (client/lib/landmarks.js); a
+// stand-in has no mesh, so contact() uses the derivation's own FALLBACK rule
+// (proportionally off the bone, along the approach direction). The two agree
+// to a few centimetres — good enough for "did my hand arrive" and for the
+// reply an agent reads, while every browser still renders against its own
+// mesh-derived truth.
+
+/** A body the reach solver can pose and interrogate, per VRM. */
+export class ReachBody {
+  private m: NonNullable<typeof simMods>;
+  av: any;
+  private chains = new Map<string, any>();
+
+  private constructor(m: NonNullable<typeof simMods>, P: Record<string, any>) {
+    this.m = m;
+    // humanoid chain only (no hair): measureChain wants the simplified
+    // hierarchy, and refuses chains whose lower bone is not the upper's child.
+    this.av = m.rig.makeAvatar(P, { vrm0: !!(P as any).__vrm0 });
+  }
+
+  static async create(httpBase: string, avatarPath: string): Promise<ReachBody | null> {
+    const m = await loadSim();
+    if (!m) return null;
+    const P = await skeletonFor(httpBase, avatarPath);
+    if (!P) return null;
+    return new ReachBody(m, P);
+  }
+
+  /** Test seam: build from an already-parsed skeleton (tools/rig-load's P
+   *  map), so suites run against shipped rigs without a sequencer to fetch
+   *  from. Same constructor the live path uses. */
+  static async fromSkeleton(P: Record<string, any>): Promise<ReachBody | null> {
+    const m = await loadSim();
+    return m ? new ReachBody(m, P) : null;
+  }
+
+  /** Put the stand-in where the streamed presence says the body is. `pose` is
+   *  the sparse bone map off the wire (held pose / ragdoll frame), or null. */
+  poseAt(p: number[], yaw: number, pose: Record<string, number[]> | null) {
+    this.av.root.position.set(p[0], p[1] ?? 0, p[2]);
+    this.av.root.rotation.y = yaw ?? 0;
+    for (const n of Object.values(this.av.nodes) as any[]) n.quaternion.identity();
+    if (pose) {
+      for (const [j, q] of Object.entries(pose)) {
+        const n = this.av.nodes[j];
+        if (n && Array.isArray(q) && q.length === 4) n.quaternion.set(q[0], q[1], q[2], q[3]);
+      }
+    }
+    this.av.root.updateMatrixWorld(true);
+  }
+
+  private chain(limb: string) {
+    if (!this.chains.has(limb)) this.chains.set(limb, this.m.reachbone.measureChain(this.av, limb));
+    return this.chains.get(limb);
+  }
+
+  /** Arm span of one chain, for "walk closer" advice. */
+  armLength(limb: string): number | null {
+    const ch = this.chain(limb);
+    return ch ? ch.L1 + ch.L2 : null;
+  }
+
+  /** Solve one limb toward a world target at the CURRENT pose. Returns plain
+   *  data — the same verdict fields the browser's reachStatus reports. */
+  solve(limb: string, target: number[] | { pos: number[]; normal?: number[] }, opts: { palm?: boolean } = {}) {
+    const ch = this.chain(limb);
+    if (!ch) return { ok: false as const, why: `no measurable ${limb} chain on this rig` };
+    const tw = Array.isArray(target) ? target : target.pos;
+    const n = !Array.isArray(target) && opts.palm !== false ? target.normal : null;
+    const palm = Array.isArray(n) && n.length === 3 ? { dir: [-n[0], -n[1], -n[2]] } : null;
+    const out = this.m.reachbone.solveChain(ch, this.av, tw, null, { palm });
+    if (!out.ok) return { ok: false as const, why: String(out.why) };
+    return {
+      ok: true as const,
+      gap: Number(out.res.gap ?? NaN),
+      bound: (out.res.bound ?? []) as string[],
+      penetration: Number(out.penetration ?? 0),
+      palmResidual: out.palmResidual == null ? null : Number(out.palmResidual),
+      shoulder: ch.nodes.upper.getWorldPosition(new this.m.THREE.Vector3()).toArray() as number[],
+    };
+  }
+
+  /** A named contact point on THIS body at its current pose — the fallback
+   *  derivation (landmarks.js), sans mesh: proportionally off the bone along
+   *  the body-frame approach direction, normal facing out the same way. */
+  contact(point: string, standoff = 0.02): { pos: number[]; normal: number[] } | null {
+    const spec = (CONTACT_POINTS as any)[point];
+    if (!spec) return null;
+    const node = this.av.nodes[spec.bone];
+    if (!node) return null;
+    const P: Record<string, number[]> = {};
+    for (const [k, n] of Object.entries(this.av.nodes) as [string, any][]) {
+      P[k] = n.getWorldPosition(new this.m.THREE.Vector3()).toArray();
+    }
+    const F = bodyFrame(P);
+    if (!F) return null;
+    const d = fromBody(spec.from, F);
+    const l = Math.hypot(d[0], d[1], d[2]);
+    if (!(l > 1e-9)) return null;
+    const dir = [d[0] / l, d[1] / l, d[2] / l];
+    const hips = P.hips, head = P.head;
+    const scale = hips && head
+      ? Math.max(0.2, Math.hypot(head[0] - hips[0], head[1] - hips[1], head[2] - hips[2]))
+      : 0.6;
+    const at = P[spec.bone];
+    const r = scale * 0.18 + standoff;
+    return {
+      pos: [at[0] + dir[0] * r, at[1] + dir[1] * r, at[2] + dir[2] * r],
+      normal: dir,
+    };
+  }
 }

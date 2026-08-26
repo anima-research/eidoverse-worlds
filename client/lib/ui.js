@@ -285,7 +285,11 @@ export function buildHelp() {
       <i>thing action</i>) works for everyone, even visitors — using the world
       is not building it. Builders can give things motion (a swing, a windmill,
       a ferry on a route) and reactions; what a push does was decided by
-      whoever built the thing.</p>
+      whoever built the thing. People react too: <b>/touch name</b> rests a
+      hand on their shoulder (<b>/touch name head</b> for a headpat,
+      <b>/letgo</b> to lower it) — the hand really reaches, follows them,
+      and they see it land. <b>/push name</b> shoves; their client always
+      decides what actually happens to their body.</p>
     <h2>If it runs slowly</h2>
     <p class="sub">Cloud quality below <b>high</b> shows a baked sky — the
       full volumetric clouds rendered once to a texture, refreshed when the

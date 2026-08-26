@@ -8,6 +8,7 @@
 //   vrmPool    whole parsed VRM instances at rest (§19b — no clone exists
 //              for a bound rig, so released bodies are reworn intact)
 
+import { keyFromVersion, negotiate } from '../../shared/ktx2.js';
 import { THREE, renderer, camera, scene, report, bus } from './core.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
@@ -148,9 +149,30 @@ const draco = new DRACOLoader().setDecoderPath('https://www.gstatic.com/draco/ve
 const ktx2 = new KTX2Loader()
   .setTranscoderPath('/node_modules/three/examples/jsm/libs/basis/')
   .detectSupport(renderer);
-/** Whether this GPU/browser negotiates KTX2 variants (?ktx2=1) — prefetch
+/** Whether this GPU/browser negotiates KTX2 variants (?ktx2=<key>, shared/ktx2.js) — prefetch
  *  must warm the SAME cache key demand fetches will use. */
 export const ktx2Capable = () => !!ktx2.workerConfig;
+// The negotiation key comes from the RUNNING sequencer, never from a file it
+// merely serves. In the window between `git pull` and the restart the old
+// process serves the new shared/ktx2.js; a client that read the key off that
+// file asked a server that had never heard of it, got an unflagged answer
+// (webp, immutable), and nginx pinned it under the new key — the =2
+// collision of 2026-08-24, retired within minutes. /version is the running
+// process talking (no-store; resolved at ITS boot). No key there — an older
+// sequencer, a failed fetch — means no negotiation at all: an unflagged
+// fetch is always the right answer for its URL, so nothing can be pinned
+// wrong, on any deploy, in any order. One fetch per page, awaited by every
+// negotiating load (they are all async already; the prefetcher awaits it
+// once before building its queue).
+export const ktx2KeyReady = fetch('/version', { cache: 'no-store' })
+  .then((r) => (r.ok ? r.json() : null)).then(keyFromVersion).catch(() => null);
+/** The path a negotiating load fetches: the running server's key appended
+ *  when this GPU decodes KTX2 and `eligible` (the asset class negotiates),
+ *  the bare path otherwise. */
+async function negotiated(path, eligible) {
+  const key = eligible && ktx2.workerConfig ? await ktx2KeyReady : null;
+  return negotiate(path, key);
+}
 function makeLoader(vrm = false) {
   const l = new GLTFLoader();
   l.setDRACOLoader(draco);
@@ -283,9 +305,8 @@ export async function loadVRM(libPath, { priority = 1 } = {}) {
     // byteCache (variant and original are distinct byte entries — correct),
     // while the vrmPool and its vrmMeta ledger key on libPath UNTOUCHED, so
     // pool identity is unaffected by negotiation.
-    const flag = libPath.split('?')[0].endsWith('.vrm') && ktx2.workerConfig
-      ? (libPath.includes('?') ? '&ktx2=1' : '?ktx2=1') : '';
-    const buf = await fetchBytes(`/library/${libPath}${flag}`);
+    const url = await negotiated(libPath, libPath.split('?')[0].endsWith('.vrm'));
+    const buf = await fetchBytes(`/library/${url}`);
     work.phase('queued');
     // The parse and skeleton passes are the irreducibly-synchronous chunk of a
     // body: serialize so two arrivals can't stack theirs into the same frames,
@@ -477,8 +498,8 @@ export async function loadGLB(libPath) {
         // paths — the server answers with the variant when one exists, the
         // original otherwise. The full URL keys byteCache, so variant and
         // original are distinct entries, which is correct.
-        const flag = libPath.endsWith('.glb') && ktx2.workerConfig ? '?ktx2=1' : '';
-        const buf = await fetchBytes(`/library/${libPath}${flag}`);
+        const url = await negotiated(libPath, libPath.endsWith('.glb'));
+        const buf = await fetchBytes(`/library/${url}`);
         work.phase('queued');
         return await enqueue(async () => {
           work.phase('parse');
@@ -640,9 +661,39 @@ const vrmaCache = new Map();
 // identity; the hash of what arrived is.
 const vrmaSha = new Map(); // slot → hex sha256, present only once resolved
 export function vrmaShaLoaded(slot) { return vrmaSha.get(slot) ?? null; }
+// Clip URLs carry ?v=<mtime>, exactly as avatar URLs do — the server's
+// /animations roster mints the stamp against the file it would actually
+// SERVE (upstream-patched over opt over library), so a fork and its original
+// never share a version. Without it a clip has no invalidation story at all:
+// prod 2026-08-19, a corrected sit clip was live and byte-verified on the
+// wire while a browser kept animating from a copy stored under the older
+// `immutable` headers and never re-requested it — no 304s, nothing this end
+// could purge. A version in the URL is the only invalidation that reaches a
+// cache we do not control; with one, `serveFrom` may also hand the clip the
+// year-long immutable lifetime, so an UNCHANGED clip costs zero requests.
+//
+// Fetched lazily rather than at module load: the first call rides alongside
+// loadVRM, whose megabytes dwarf this JSON, so it costs no wall-clock — and a
+// top-level fetch here is what once gated the whole module graph.
+//
+// A roster failure degrades to the bare, unversioned URL: exactly today's
+// behaviour (no-cache + ETag), never worse. Clips must not stop loading
+// because a listing did.
+let clipRoster = null;
+function clipPath(file) {
+  clipRoster ??= fetch('/animations', { cache: 'no-store' })
+    .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`animations ${r.status}`))))
+    .then((list) => new Map(list.map((e) => [e.name, e.path])))
+    .catch((e) => {
+      console.warn('[clips] roster unavailable — clips load unversioned, and a changed clip may serve stale', e);
+      return new Map();
+    });
+  return clipRoster.then((m) => m.get(file) ?? `eidoverse/assets/animations/${file}.vrma`);
+}
+
 export function vrmaBytes(slot) {
   if (!vrmaCache.has(slot)) {
-    const p = fetchBytes(`/library/eidoverse/assets/animations/${CLIP_FILES[slot] ?? slot}.vrma`);
+    const p = clipPath(CLIP_FILES[slot] ?? slot).then((rel) => fetchBytes(`/library/${rel}`));
     vrmaCache.set(slot, p);
     p.then(async (buf) => {
       const d = await crypto.subtle.digest('SHA-256', buf);
@@ -745,9 +796,8 @@ export async function primeFiles(paths, { concurrency = 6 } = {}) {
         // cache (§16.2.B), and every toolkit module see the same identities —
         // the bytes just arrive GPU-native, and loadImageTexture sniffs the
         // container magic to tell which shape it got.
-        const flag = ktx2Capable() && /\.(png|jpe?g)$/i.test(p)
-          ? (p.includes('?') ? '&ktx2=1' : '?ktx2=1') : '';
-        const buf = await fetchBytes(`/library/${p}${flag}`);
+        const url = await negotiated(p, /\.(png|jpe?g)$/i.test(p));
+        const buf = await fetchBytes(`/library/${url}`);
         denoFiles.set(p, new Uint8Array(buf));
       } catch (e) { missing.push(p); }
     }
@@ -842,7 +892,7 @@ globalThis.loadImageTexture = async (bytes, opts = {}) => {
     const u8 = bytes instanceof Uint8Array ? bytes
       : bytes instanceof ArrayBuffer ? new Uint8Array(bytes)
         : new Uint8Array(bytes);
-    // §20d: the file layer negotiates KTX2 (primeFiles ?ktx2=1), so library
+    // §20d: the file layer negotiates KTX2 (primeFiles ?ktx2=<key>), so library
     // bytes may arrive GPU-native — route by the container itself, never the
     // path. The 12-byte KTX2 identifier can't prefix a PNG/JPEG, so non-KTX2
     // bytes fall through to EXACTLY today's path.

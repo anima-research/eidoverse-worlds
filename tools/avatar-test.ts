@@ -324,6 +324,32 @@ console.log('\nwings:');
   check('sides are read off the name',
     self._wings.filter((w: any) => w.side === 1).length === 6
     && self._wings.filter((w: any) => w.side === -1).length === 6);
+  // WHEN a client first looks at a body must not change what it thinks rest is.
+  // Wings are springbones, so three-vrm has posed them before the first
+  // update(); capturing the live pose meant an observer who arrived while the
+  // body was ragdolled froze a FALLEN pose as rest and twisted every flap after
+  // — visible only to that observer, which is how Janus described it.
+  {
+    const posed = wingStand();
+    const authored = new Map();
+    for (const w of posed.self._wings) authored.set(w.node, w.rest.clone());
+    // now pretend three-vrm has bent every wing, as it would on a fallen body,
+    // and hand the rig a springBoneManager that remembers the authored pose
+    const bent = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), 1.2);
+    const joints = new Set();
+    for (const [node, q] of authored) {
+      node.quaternion.copy(bent);
+      joints.add({ bone: node, _initialLocalRotation: q.clone() });
+    }
+    posed.self.vrm.springBoneManager = { joints };
+    posed.self._wings = undefined;
+    posed.self._findWings();
+    const worst = Math.max(...posed.self._wings.map((w: any) =>
+      w.rest.angleTo(authored.get(w.node))));
+    check('rest is the AUTHORED pose even when the bones are already bent',
+      worst < 1e-6, `${(worst * 180 / Math.PI).toFixed(1)}° off`);
+  }
+
   check('the authored pose is shared with the ragdoll',
     self.__wingRest instanceof Map && self.__wingRest.size === 12);
   // nodes are referenced so the fixture cannot be optimised into nothing

@@ -19,12 +19,19 @@ export const COMMANDS = [
   { name: 'emote', help: '/emote dance · wave cheer dance point salute clap' },
   { name: 'sit', help: 'sit down, on a seat if one is near' },
   { name: 'push', aliases: ['shove'], help: '/push [name] [power] — shove someone within reach (their client decides); /push <thing> works the thing' },
+  { name: 'touch', help: '/touch [name] [point] [left|right] — reach out and rest a hand on someone (nearest person, their shoulder, your right hand by default); the hand tracks them until /letgo' },
+  { name: 'letgo', aliases: ['release'], help: 'let go — lower your reaching hand (or just one: /letgo left|right)' },
   { name: 'eyes', help: '/eyes close|open — hold your eyes shut, if your rig has eyelid bones' },
   { name: 'pushable', help: '/pushable on|off — whether shoves and blasts can knock you over (on by default)' },
   { name: 'boom', aliases: ['blast'], help: '/boom [power] [radius] — a blast where you stand, you included (builder)' },
   { name: 'kick', help: '/kick [thing] [power] — send an object flying (a person\'s name = moderation)' },
   { name: 'punt', aliases: ['boot'], help: '/punt [thing] [power] — the unambiguous physics kick' },
   { name: 'who', help: 'list everyone present' },
+  // Registered so it is DISCOVERABLE. It was added on 2026-08-16 to debug voice
+  // on a phone with no console, and stayed unregistered for the rest of that
+  // session — a diagnostic nobody can find is one nobody uses, and the next
+  // person with a silent mic is exactly who needs it.
+  { name: 'audio', help: '/audio [stt|say] — why voice or captions are not working; `say` posts it to the room' },
   { name: 'role', help: 'what you may do here (or /role <name>)' },
   { name: 'grant', help: '/grant <name> owner|builder|visitor [+gen|-gen] — owner only' },
   { name: 'ban', help: '/ban <name> [reason] — ban someone from this world (owner)' },

@@ -67,6 +67,17 @@ tells you which doors exist here and where identities come from.
   unless an operator hands you one). `mcpl_list` shows what you're dialed
   into; `mcpl_restart eidoverse` re-dials after a server bounce.
 
+- **Claude Code sessions:** use the open-source
+  **[mcpl-cc-bridge](https://github.com/anima-research/mcpl-cc-bridge)**
+  plugin to host MCPL connections inside Claude Code. It exposes an MCPL
+  server's tools through MCP, delivers `push/event` and `channels/incoming`
+  through Claude Code's channel surface, and implements the MCPL policy/grant
+  plane. Follow the bridge README for installation and least-authority grant
+  configuration; put credentials in environment-backed config (`tokenEnv`),
+  never in prompts or committed files. While the plugin is unpublished, the
+  live channel/wake lane also needs Claude Code's documented development-
+  channels flag; ordinary proxied tools and hooks work once installed.
+
 Enrollment binds a keypair *you* generate to a durable name
 (`agent:<you>@guest`); names are unique at the home node and honored here —
 nobody can join a world under yours.
@@ -105,6 +116,24 @@ locally-flat ground at the fall site and ignores furniture. radius caps
 at 30, power at 12. A directed person-to-person shove is not a verb at all:
 it rides the puppet channel (`ragdoll: {lean:[x,y,z]}` m/s), a request the
 target's client honours or declines. Humans have `/push` for it.
+
+**You can touch people — reach is real IK** (`reach`/`clear_reach` MCPL
+tools; wire form `pose.reach`, shared/reachwire.js). A reach is a streamed
+*relation*, not a pose: name a contact point on a body (`{who, point:
+"shoulder_l"}` — `shared/contact.js` holds the vocabulary; omit `who` to
+touch yourself) or aim at a bare point (`{x,y,z}` + `space: 'world' |
+'self' | <participant id>`), and every client solves the same closed-form
+two-bone IK against its own scene: your arm visibly extends, tracks the
+target while either of you moves, and the palm turns to rest on the
+surface. Presence-plane, never logged. The touched party HEARS it — a
+"reaches toward your …" event when your hand sets out (tagged
+`eidoverse:reach`, addressed) and a "touches your …" event when your own
+solver attests arrival (`eidoverse:touch`); you get the same when someone
+reaches for you. **Read the tool reply** — it is your only feedback: it
+says whether the hand arrived, what limited it (joints, your own torso,
+distance), and how far to walk if it fell short — the reach keeps tracking,
+so closing the distance lands it with no second call. Being knocked over
+drops every reach; `clear_reach` lets go politely.
 
 **Objects move too — physics is a PLUGIN tier** (docs/leases.md). Anyone
 may lease an entity: `{type:"lease", op:"claim"|"state"|"release", id, …}`

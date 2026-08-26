@@ -4,11 +4,14 @@
 // terrain replicated (Skye's terrain.js eval'd in Bun) so feet agree with
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
+import { mentionRegex } from "./mention.ts";
 import * as THREE_W from "three/webgpu";
 import * as TSL from "three/tsl";
 import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS,
   ACTIVITY_RADIUS_M, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
-import { HeadlessBody, setHeightField, registerSupport, registerSupportGrid, removeSupport } from "./physics.ts";
+import { HeadlessBody, ReachBody, setHeightField, registerSupport, registerSupportGrid, removeSupport } from "./physics.ts";
+import { canonicalLimb, normalizeReachTarget, normalizeReachBag, describeTarget, diffReach,
+  TOUCH_GAP } from "../shared/reachwire.js";
 import { decideSupportClass, CERT_MAX_WORLD } from "../client/lib/supportclass.js";
 import { isFiniteVec3 } from "./shape.ts";
 // The same pure sky fold + weather derivation the browser client and the
@@ -22,6 +25,7 @@ import { stateToEntries as sharedStateToEntries } from "../shared/fold.js";
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
 import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
+import { describeStructure, describeHere, localizePoint, planStructure, routeLocal } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
 
@@ -53,6 +57,17 @@ function posePosition(pose: Pose | null | undefined): [number, number, number] |
   return typeof x === "number" && Number.isFinite(x)
     && typeof y === "number" && Number.isFinite(y)
     && typeof z === "number" && Number.isFinite(z) ? [x, y, z] : null;
+}
+/** A point in a body's root frame → world, matching THREE's rotation.y=yaw
+ *  (x' = x·cos + z·sin, z' = −x·sin + z·cos) — the same transform every
+ *  browser's localToWorld applies to the same descriptor. */
+function frameToWorld(p: number[], yaw: number, local: number[]): number[] {
+  const c = Math.cos(yaw ?? 0), s = Math.sin(yaw ?? 0);
+  return [
+    p[0] + local[0] * c + local[2] * s,
+    (p[1] ?? 0) + local[1],
+    p[2] - local[0] * s + local[2] * c,
+  ];
 }
 type InboxItem = { ts: number; kind: "say" | "arrive" | "leave" | "act"; who: string; text?: string; seq?: number | null };
 
@@ -119,6 +134,9 @@ export class WorldAgent {
   pos = { x: 0, y: 0, z: 0 };
   yaw = 0; speed = 0; clip = "idle";
   private target: (Vec2 & { run: boolean }) | null = null;
+  /** Remaining waypoints of a routed walk — see walkTo. Empty means the target
+   *  is reachable in a straight line, which is every case outside a building. */
+  private legs: Vec2[] = [];
   /** A held custom pose — sparse humanoid-bone quaternions. Presence only:
    *  it rides the pose packet and is never a log verb, because it is a moment,
    *  not a change to the world. `null` clears. */
@@ -132,6 +150,17 @@ export class WorldAgent {
    *  frame got relabelled "idle", slipped every clip-keyed sanitizer, and
    *  haunted princess across sessions and joiners for weeks (#61). */
   heldPoseAuthored = false;
+
+  /** The exact pose object that was granted "hold this while I walk".
+   *
+   *  Stored as the OBJECT, not a boolean, and compared by identity — so any
+   *  other writer of `heldPose` (a tumble frame, a puppet, a drag sample, a
+   *  restore) revokes stickiness for free by simply assigning a different
+   *  object. A parallel boolean would have to be cleared at all nine of those
+   *  sites, and the one that got missed would be a pose that outlived every
+   *  walk forever. This cannot be missed: it is the same identity trick the
+   *  renderer's `_composeBegin` and the interpolator's `lastPose` both use. */
+  private heldPoseSticky: Record<string, number[]> | null = null;
   draggedBy: string | null = null;   // whose takeover sim drives this body (bodydrag)
   dragAt = 0;                        // last drag sample, for the silence timeout
   pins = new Map<string, number[]>(); // persistent bodydrag nails: joint -> [x,y,z]
@@ -153,10 +182,46 @@ export class WorldAgent {
    *  server restart re-appended history and the next look() dumped chat the
    *  agent had already seen. */
   private inboxSeen = -Infinity;
-  pings: { ts: number; kind: "mention" | "approach" | "whisper"; who: string; text?: string }[] = [];
+  pings: { ts: number; kind: "mention" | "approach" | "whisper" | "reach" | "touch"; who: string; text?: string }[] = [];
   onPing: ((p: { ts: number; kind: string; who: string; text?: string }) => void) | null = null;
   /** live world events (say/arrive/leave/activity) — the channel fan-out hook */
   onEvent: ((ev: { ts: number; kind: "say" | "arrive" | "leave" | "whisper" | "act" | "activity" | "weather" | "world-change"; who: string; text?: string; mention?: boolean }) => void) | null = null;
+  /** MEDIA seam (#104 / #57): the SFU's publish path is gated to the EMBODIED
+   *  PRIMARY (`relay-cred is the embodied primary's ask`, server.ts) — and for
+   *  an agent, the primary IS this door. So an agent with a local synthesizer
+   *  could not publish at all: its sidecar has the audio and no credential, the
+   *  door has the credential and no audio.
+   *
+   *  Same shape as #100's fix, one layer out: rather than forcing the agent onto
+   *  a raw world-ws side connection (which is what my media-peer was, and it
+   *  landed on the MESH while everyone else was on the SFU), the door forwards
+   *  the media-signalling frames it is the only one authorized to carry. The
+   *  door NEVER synthesizes, encodes, or holds a peer connection — it relays
+   *  four message types and stays a text-tier participant.
+   *
+   *  Frames out (server→sidecar): relay-cred · sfu-offer · sfu-ice · sfu-route
+   *  Frames in  (sidecar→server): sfu-answer · sfu-ice · sfu-want-negotiate
+   *  Nothing else is forwarded in either direction — a whitelist, not a pipe,
+   *  for exactly #100's reason: server-side validation stays the one authority. */
+  onMedia: ((frame: Record<string, unknown>) => void) | null = null;
+  /** Our own recent says (seq → text) and our surface generation, both needed
+   *  to mint a performance receipt on a sidecar's behalf. */
+  ownSays = new Map<number, string>();
+  surfaceGen: number | null = null;
+
+  /** The performance receipt (#57 B1 / PR #103). Sent by the DOOR, never by the
+   *  sidecar: attest is identity-bearing and generation-stamped, and a loopback
+   *  peer able to mint one could suppress every listener's TTS fallback for
+   *  audio it never aired. The digest is over the WORLD's copy of the text. */
+  async attestSay(seq: number): Promise<boolean> {
+    const text = this.ownSays.get(seq);
+    if (text == null || this.ws?.readyState !== 1) return false;
+    const digest = Array.from(new Uint8Array(
+      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text))))
+      .map((b) => b.toString(16).padStart(2, "0")).join("");
+    this.ws.send(JSON.stringify({ type: "attest", seq, digest, gen: this.surfaceGen }));
+    return true;
+  }
   /** Open coalescing windows for world-change narration, keyed by entity id.
    *  See noteEmitter. */
   private emitterNarration = new Map<string, { announced: unknown; latest: unknown; actor: string; timer: ReturnType<typeof setTimeout> }>();
@@ -167,6 +232,17 @@ export class WorldAgent {
   private nearArmed = new Map<string, boolean>();
   /** participant -> when their current non-locomotion stint began (jump, sit…) */
   private nonLocoSince = new Map<string, number>();
+  /** My live reach descriptors, one entry per limb (shared/reachwire.js).
+   *  They ride every presence packet; every receiver re-solves the relation
+   *  against its own scene. The `reached` rider is MY solver's attestation,
+   *  kept honest by reachTick(). */
+  reaches = new Map<string, { t: any; palm?: false; reached?: true }>();
+  private reachBodies = new Map<string, ReachBody | null>();               // avatar path -> solver body
+  private reachBodyLoads = new Map<string, Promise<ReachBody | null>>();
+  private reachTicks = 0;
+  /** reach/touch ping refractory, keyed "kind:who:limb" — a hand trembling
+   *  across the touch threshold must not knock twice. */
+  private lastReachPing = new Map<string, number>();
   /** Local-awareness accumulator, reset every pulse. Records what happened
    *  within ACTIVITY_RADIUS_M since the last pulse — RAW where rawness is
    *  truth (movement, says: jump spam is genuine liveliness even when its
@@ -408,6 +484,12 @@ export class WorldAgent {
         // door, holding up bodies in later worlds at the same coordinates
         // (#83; the #17 symptom reached through a ban).
         if ((ev as { code?: number } | undefined)?.code === 4006) { this.close(); return; }
+        // 4005 = the sequencer REFUSED the join (bad/reserved name, bad token).
+        // A refusal is an answer, not an outage — redialing it every 1.5s is
+        // the polite-DoS the sequencer's own comments warn about (RFC-005
+        // review D1: a granted ?world= dial with a name the sequencer rejects
+        // used to hammer forever).
+        if ((ev as { code?: number } | undefined)?.code === 4005) { this.close(); return; }
         if (!this.closed) setTimeout(() => this.connect().catch(() => {}), 1500);
       };
       ws.onmessage = async (ev) => {
@@ -442,7 +524,41 @@ export class WorldAgent {
             // Moderation replies (ban lists, global-ban confirmations).
             this.lastMod = { ts: Date.now(), text: String(msg.text ?? "") };
             break;
+          // ── media signalling (see onMedia) ─────────────────────────────
+          // Forwarded verbatim to whoever holds this identity's audio. The
+          // door does not interpret SDP; it is the authenticated carrier, and
+          // nothing more. If no sidecar is attached these are dropped, which
+          // is the correct behaviour for a text-only agent — it never asked
+          // for a credential, so the server never sends these.
+          case "relay-cred": case "sfu-offer": case "sfu-ice": case "sfu-route":
+          case "voice-consent":   // the world's ack of our own receive toggle
+          // A speaker's voice leg was (re)born. The media half needs this to
+          // restate consent — the server clears standing consent when a leg is
+          // revoked (deliberately: a reconnect must not inherit a yes), so
+          // after both sides reconnect nobody hears anybody and nothing errors.
+          case "surface-transition":
+          // 🔴 ADDED 2026-08-16 — the server broadcasts both of these to every
+          // client and the door dropped them on the floor, so an agent could
+          // not learn that its own voice had degraded or that a moderator had
+          // silenced it. Both are facts ABOUT THIS IDENTITY's audio, which is
+          // exactly what the media lane carries.
+          //
+          // voice-service: the SFU's supervised state {state, incarnation}. A
+          // sidecar holding a peer connection needs it — a degraded service
+          // means its frames are going nowhere, and the incarnation tells it
+          // whether the service RESTARTED (rejoin) or merely flapped (wait).
+          case "voice-service":
+          // voice-moderated: a moderator muted/unmuted someone for everyone. If
+          // that someone is us, our audio is being dropped at ingress and no
+          // other signal says so — the alternative is an agent that keeps
+          // speaking into a void and cannot tell.
+          case "voice-moderated":
+            this.onMedia?.(msg);
+            break;
           case "snapshot":
+            // Our surface generation, issued by the server on acceptance —
+            // every attest must echo it or the receipt is refused (PR #103 B2).
+            if (typeof msg.gen === "number") this.surfaceGen = msg.gen;
             this.entities.clear(); this.people.clear();
             // wake where you fell asleep — fresh body only; a body that has
             // walked this process keeps its own truth on mid-life reconnects
@@ -562,6 +678,18 @@ export class WorldAgent {
             break;
           case "log":
             this.lastSeq = Math.max(this.lastSeq, msg.entry?.seq ?? -1);
+            // Remember our OWN says briefly, so a sidecar that airs one can be
+            // attested for it: the receipt is sha256 of the text the world
+            // logged, and only the world's copy is authoritative (ours could
+            // differ by a trailing space and the digest would not match).
+            // Small ring — a receipt is valid for 5 minutes server-side, so
+            // holding more than a handful of utterances is pointless.
+            if (msg.entry?.verb === "say" && msg.entry?.actor === this.name
+                && typeof msg.entry?.args?.text === "string") {
+              this.ownSays.set(msg.entry.seq, String(msg.entry.args.text));
+              if (this.ownSays.size > 32) this.ownSays.delete(this.ownSays.keys().next().value as number);
+              this.onMedia?.({ type: "speak", seq: msg.entry.seq, text: msg.entry.args.text });
+            }
             await this.applyEntry(msg.entry, true);
             break;
           case "history": {
@@ -593,6 +721,23 @@ export class WorldAgent {
             break;
           case "leave":
             this.people.delete(msg.id);
+            // 🔴 THE PER-PARTICIPANT MAPS MUST GO TOO (2026-08-16). `people` was
+            // cleaned here and these three were not, so every identity that ever
+            // appeared kept an entry for the LIFE OF THE PROCESS — a door in a
+            // busy world grows without bound, and the local convention elsewhere
+            // in this file is explicitly bounded rings (pings 64, heldActivity
+            // 8, malformedSeen 5). These were the exception, not the rule.
+            //
+            // Correctness, not just memory: nearArmed is the approach-ping
+            // re-arm bit, so a returning visitor inherited the arm state from
+            // their PREVIOUS visit — walking away and back could fail to
+            // re-announce them, or announce them twice.
+            this.lastNear.delete(msg.id);
+            this.nearArmed.delete(msg.id);
+            this.nonLocoSince.delete(msg.id);
+            for (const k of this.lastReachPing.keys()) {
+              if (k.endsWith(`:${msg.id}`)) this.lastReachPing.delete(k);
+            }
             this.gate.presence(msg.id, "leave");
             break;
           case "avatar-updated":
@@ -642,6 +787,9 @@ export class WorldAgent {
     const p = this.people.get(id) ?? { id, avatar: "", pose: null };
     const prev = p.pose;
     p.pose = pose; this.people.set(id, p);
+    // hands aimed at this body — before the spatial gate below, because a
+    // reach descriptor is legible even from a sample with no usable position
+    if (id !== this.name) this.noteReachEvents(id, prev, pose);
     const xyz = posePosition(pose);
     if (!xyz) return; // keep the shell for identity/roster; no spatial inference yet
     const [x, , z] = xyz;
@@ -849,8 +997,11 @@ export class WorldAgent {
         const pp = this.people.get(actor)?.pose;
         if (!pp || Math.hypot(pp.p[0] - this.pos.x, pp.p[2] - this.pos.z) <= this.activityRadiusM)
           this.act30.says.set(actor, (this.act30.says.get(actor) ?? 0) + 1);
-        const rx = new RegExp(`(@${this.name}\\b|\\b${this.name}\\b)`, "i");
-        const mention = rx.test(String(args.text));
+        // A null regex means this body has no usable name (a malformed tokens
+        // entry). Not being mentionable is degraded, not fatal — the body still
+        // hears the room; it just cannot be addressed by name.
+        const rx = mentionRegex(this.name);
+        const mention = rx ? rx.test(String(args.text)) : false;
         if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
         this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
       }
@@ -970,8 +1121,23 @@ export class WorldAgent {
     }
   }
 
-  private ping(p: { ts: number; kind: "mention" | "approach" | "whisper"; who: string; text?: string }) {
+  /** Recent pings, for a host that polls instead of subscribing.
+   *
+   *  🔴 BOUNDED (2026-08-16). This array grew forever: the live path is
+   *  `onPing` (net-server subscribes), and `takePings` — the only drain — has no
+   *  caller in this repo. So on a push host the array accumulated every mention,
+   *  approach and whisper for the life of the process and nothing ever read it.
+   *
+   *  Kept rather than deleted because a PLAIN-MCP host has no push channel and
+   *  polling is its documented path (AGENTS.md says digests are "held and handed
+   *  over each time you call the tool"). But it is a RING now, like every other
+   *  buffer in this file — pings 64, heldActivity 8, malformedSeen 5. An
+   *  unbounded buffer whose only consumer is optional is a leak with a plan. */
+  private static readonly PING_RING = 64;
+
+  private ping(p: { ts: number; kind: "mention" | "approach" | "whisper" | "reach" | "touch"; who: string; text?: string }) {
     this.pings.push(p);
+    if (this.pings.length > WorldAgent.PING_RING) this.pings.splice(0, this.pings.length - WorldAgent.PING_RING);
     this.onPing?.(p);
   }
 
@@ -1192,8 +1358,16 @@ export class WorldAgent {
       const dx = this.target.x - this.pos.x, dz = this.target.z - this.pos.z;
       const dist = Math.hypot(dx, dz);
       if (dist < ARRIVE) {
-        this.target = null; this.speed = 0; this.clip = "idle";
-        this.walkDone?.(true); this.walkDone = null;
+        // A route through a building arrives in legs. Only the LAST one
+        // finishes the walk; the rest hand off to the next waypoint, so a body
+        // rounds a doorway instead of driving at the wall behind it.
+        const next = this.legs.shift();
+        if (next) {
+          this.target = { x: next.x, z: next.z, run: this.target.run };
+        } else {
+          this.target = null; this.speed = 0; this.clip = "idle";
+          this.walkDone?.(true); this.walkDone = null;
+        }
       } else {
         const sp = this.target.run ? RUN : WALK;
         this.speed = sp; this.clip = this.target.run ? "run" : "walk";
@@ -1208,6 +1382,10 @@ export class WorldAgent {
     if (!this.draggedBy && this.pins.size === 0 && this.clip !== "ragdoll") {
       this.pos.y = this.heightAt(this.pos.x, this.pos.z);
     }
+    // keep the `reached` attestation honest at ~2Hz while reaching: the
+    // target moves, this body moves, and the far end's touch event fires on
+    // the rising edge of what is re-checked here
+    if (this.reaches.size && ++this.reachTicks % 5 === 0) this.reachTick();
     this.ws?.send(JSON.stringify({
       type: "pose",
       pose: {
@@ -1219,6 +1397,7 @@ export class WorldAgent {
         ...(this.heldPose && (this.heldPoseAuthored || this.clip === "ragdoll") ? { pose: this.heldPose } : {}),
         ...(this.pins.size ? { pins: [...this.pins].map(([j, at]) => ({ j, at })) } : {}),
         ...(this.pendingEmote ? { emote: this.pendingEmote } : {}),
+        ...(this.reaches.size ? { reach: Object.fromEntries(this.reaches) } : {}),
       },
     }));
     this.pendingEmote = null; // one-shot: rides exactly one packet
@@ -1232,7 +1411,7 @@ export class WorldAgent {
    *  is something that happens TO this body, not just to its pixels. */
   knockDown(by: string, lean: number[] | null, notice: string) {
     if (!this.pushable || this.draggedBy) return;
-    if (this.target) { this.walkDone?.(false); this.walkDone = null; this.target = null; }
+    if (this.target) { this.walkDone?.(false); this.walkDone = null; this.target = null; this.legs = []; }
     this.speed = 0;
     // Down NOW, not when the physics finishes loading. tumble() awaits the
     // skeleton, the height field and the support barrier before it can set
@@ -1245,6 +1424,7 @@ export class WorldAgent {
     // real pose, exactly as it does when there is no sim at all.
     this.clip = "ragdoll";
     this.heldPose ??= DOWNED_POSE;
+    this.reaches.clear();   // a knocked-over body's reach is gone — the arms are the ragdoll's now
     this.onEvent?.({ ts: Date.now(), kind: "say", who: by, text: notice } as any);
     void this.tumble(lean);
   }
@@ -1365,12 +1545,17 @@ export class WorldAgent {
     ++this.bodyEpoch;       // ...and outranks a tumble or settle still loading
     this.body?.stop(); this.stopSim();   // a body that decides to walk is done tumbling
     // deciding to walk IS getting up — shed the held pose, or the body zombie-
-    // walks with it frozen over the stride. ALL of it goes, authored or not:
-    // the pose tool's contract is "held until you clear_pose or move", and an
-    // unconditional shed is also what lets a store poisoned with a relabelled
-    // tumble frame (#61) self-heal on the resident's first walk.
-    if (this.heldPose || this.clip === "ragdoll") {
-      this.heldPose = null; this.heldPoseAuthored = false;
+    // walks with it frozen over the stride. The default stays "held until you
+    // clear_pose or move" for everything that did NOT ask otherwise, because
+    // that unconditional shed is also what lets a store poisoned with a
+    // relabelled tumble frame (#61) self-heal on the resident's first walk —
+    // and a restored pose arrives marked authored, so authorship alone is NOT
+    // a safe test. Only a pose this body deliberately pinned with `hold`
+    // survives, identified by object (see heldPoseSticky), which a restore or
+    // a tumble frame can never satisfy.
+    const sticky = this.heldPose != null && this.heldPose === this.heldPoseSticky;
+    if ((this.heldPose && !sticky) || this.clip === "ragdoll") {
+      if (!sticky) { this.heldPose = null; this.heldPoseAuthored = false; }
       if (this.clip === "ragdoll") this.clip = "walk";
     }
     // and deciding to walk IS getting off the seat — a folded mount otherwise
@@ -1378,14 +1563,43 @@ export class WorldAgent {
     if (this.joined && this.mounts.has(this.name)) this.verb("dismount", { id: this.name });
     // and stand on the ground you got up onto
     this.pos.y = this.heightAt(this.pos.x, this.pos.z);
-    this.target = { x, z, run };
+    // ROUTE THROUGH WALLS RATHER THAN INTO THEM. Straight-line walking samples
+    // only the height field, so a body crosses walls as if they were not there.
+    // Inside a griddled building the grid IS the navigation graph, so ask it.
+    // Failure is silent and total on purpose: no route (target outdoors, no
+    // structure, a sealed room) falls back to the old straight line, which is
+    // exactly the behaviour everywhere that has no building.
+    this.legs = [];
+    try {
+      for (const e of this.entities.values()) {
+        const data = (e.comp ?? {}).structure;
+        if (!data) continue;
+        const plan = planStructure(data);
+        const [ax, , az] = localizePoint(e, this.pos.x, this.pos.y, this.pos.z);
+        const [bx, , bz] = localizePoint(e, x, this.pos.y, z);
+        const pts = routeLocal(plan, ax, az, bx, bz);
+        if (!pts || pts.length < 3) continue;    // straight line is already fine
+        const yaw = Number.isFinite(e.yaw) ? e.yaw : 0;
+        const sc = Number.isFinite(e.scale) && e.scale > 0 ? e.scale : 1;
+        const [px, , pz] = Array.isArray(e.pos) ? e.pos : [0, 0, 0];
+        const c = Math.cos(yaw), n = Math.sin(yaw);
+        // grid-local back to world: the inverse of localizePoint
+        this.legs = pts.slice(1).map(([lx, lz]) => ({
+          x: px + (lx * c + lz * n) * sc,
+          z: pz + (-lx * n + lz * c) * sc,
+        }));
+        break;
+      }
+    } catch { this.legs = []; }
+    const first = this.legs.shift();
+    this.target = first ? { x: first.x, z: first.z, run } : { x, z, run };
     return new Promise((resolve) => {
       this.walkDone = resolve;
       setTimeout(() => { if (this.walkDone === resolve) { this.target = null; this.walkDone = null; resolve(false); } }, timeoutMs);
     });
   }
 
-  stop() { this.target = null; this.speed = 0; this.clip = "idle"; this.walkDone?.(false); this.walkDone = null; }
+  stop() { this.target = null; this.legs = []; this.speed = 0; this.clip = "idle"; this.walkDone?.(false); this.walkDone = null; }
 
   face(x: number, z: number) { this.yaw = Math.atan2(x - this.pos.x, z - this.pos.z); }
 
@@ -1409,6 +1623,44 @@ export class WorldAgent {
   sendMod(type: "world-bans" | "global-ban" | "global-unban" | "global-bans", extra: Record<string, unknown> = {}) {
     if (!this.joined || this.ws?.readyState !== 1) throw new Error("not joined");
     this.ws.send(JSON.stringify({ type, ...extra }));
+  }
+
+  /** Ask the world to mint this identity's media credential (#104 phase-1).
+   *  Only the embodied primary may — which is this door. The answer arrives as
+   *  a `relay-cred` frame on onMedia; a sidecar then publishes on it. */
+  requestMediaCredential(scopes: { publish?: boolean; subscribe?: boolean } = {}) {
+    if (!this.joined || this.ws?.readyState !== 1) throw new Error("not joined");
+    this.ws.send(JSON.stringify({ type: "relay-cred", ...scopes }));
+  }
+
+  /** Carry ONE media-signalling frame from the sidecar to the world. Whitelisted
+   *  by type for #100's reason — the door must not become a general tunnel into
+   *  the sequencer, and server-side validation stays the single authority.
+   *  Payload shape is deliberately NOT inspected here: SDP and ICE are the
+   *  server's to validate, and a door that parsed them would be a second,
+   *  weaker validator that could disagree. */
+  sendMedia(frame: { type: string; [k: string]: unknown }): void {
+    if (!this.joined || this.ws?.readyState !== 1) return;
+    const t = String(frame?.type ?? "");
+    // `voice-consent` is the LISTENER half: the world requires it from the
+    // primary (server.ts refuses a spectator and keys on c.id/c.gen), so an
+    // agent that wants to HEAR must send it through this door too. It carries
+    // no audio and no identity claim beyond the one the door already holds —
+    // it is a boolean about our own ears.
+    //
+    // 🔴 `voice-moderate` is DELIBERATELY NOT HERE (2026-08-16). It silences a
+    // speaker for EVERYONE and needs owner rank — a moderation act, not media.
+    // The door already exposes moderation as first-class tools (kick/ban), which
+    // go through the verb path with its rights check and its `mod` confirmation.
+    // Letting it ride the media lane would give a SIDECAR — a process holding a
+    // peer connection, not an identity — the ability to mute people, which is
+    // precisely the authority the whitelist exists to withhold.
+    if (t !== "sfu-answer" && t !== "sfu-ice" && t !== "sfu-want-negotiate"
+        && t !== "sfu-pos" && t !== "voice-consent") {
+      console.warn(`[door] refusing to forward non-media frame "${t}"`);
+      return;
+    }
+    this.ws.send(JSON.stringify(frame));
   }
 
   /** Wait briefly for the world's answer to a moderation act issued at t0: a
@@ -1458,15 +1710,204 @@ export class WorldAgent {
   }
 
   /** Hold a custom pose (yourself). Sparse bone -> [x,y,z,w] quaternion. */
-  setPose(bones: Record<string, number[]> | null) {
+  setPose(bones: Record<string, number[]> | null, sticky = false) {
     this.heldPose = bones;
     this.heldPoseAuthored = bones != null;
+    // Only a deliberate self-pose can ask to survive walking, and only THIS
+    // object gets that (see heldPoseSticky).
+    this.heldPoseSticky = sticky && bones != null ? bones : null;
     // clearing a slump IS standing up — don't leave the clip lying, don't
     // leave a sim tumbling a body that has decided to stand
     if (bones == null && this.clip === "ragdoll") {
       this.body?.stop(); this.stopSim();
       this.clip = "idle";
       this.pos.y = this.heightAt(this.pos.x, this.pos.z);
+    }
+  }
+
+  // ---- reaching: a relation streamed as a descriptor ----------------------
+  //
+  // The descriptor (shared/reachwire.js) rides the presence packet; every
+  // browser re-solves the same closed-form IK against its own scene and draws
+  // this body's arm tracking the target. What happens HERE is only the part a
+  // blind body needs: resolving the target from streamed presence + stand-in
+  // skeletons (physics.ts ReachBody), solving its own arm once for the tool
+  // reply, and keeping the `reached` attestation honest as things move —
+  // that attestation's rising edge is the touch event at the other end.
+
+  private static readonly LIMB_WORD: Record<string, string> = {
+    leftHand: "left hand", rightHand: "right hand", leftFoot: "left foot", rightFoot: "right foot",
+  };
+  private static readonly DEFAULT_BODY = "eidoverse/assets/vrms/claude.vrm";
+
+  private reachBodyFor(path: string): Promise<ReachBody | null> {
+    if (this.reachBodies.has(path)) return Promise.resolve(this.reachBodies.get(path) ?? null);
+    let p = this.reachBodyLoads.get(path);
+    if (!p) {
+      p = ReachBody.create(this.httpBase, path)
+        .catch(() => null)
+        .then((b) => { this.reachBodies.set(path, b); this.reachBodyLoads.delete(path); return b; });
+      this.reachBodyLoads.set(path, p);
+    }
+    return p;
+  }
+  /** undefined = not loaded yet; null = tried and failed. */
+  private reachBodySync(path: string): ReachBody | null | undefined { return this.reachBodies.get(path); }
+
+  /** A normalized target → a world point (+ surface normal for a landmark),
+   *  from streamed presence. Sync; undefined means a needed skeleton is still
+   *  loading (reach() awaits the loads before asking). */
+  private reachTargetPoint(t: { who?: string; point?: string; standoff?: number; p?: number[]; space?: string }):
+    { pos: number[]; normal?: number[] } | { err: string } | undefined {
+    if (t.p) {
+      if (!t.space) return { pos: t.p };
+      if (t.space === "self") return { pos: frameToWorld([this.pos.x, this.pos.y, this.pos.z], this.yaw, t.p) };
+      const person = this.people.get(t.space);
+      const pp = posePosition(person?.pose);
+      if (!person || !pp) return { err: `${t.space} is not here (or has no position yet)` };
+      return { pos: frameToWorld(pp, person.pose?.yaw ?? 0, t.p) };
+    }
+    const self = t.who === this.name;
+    const person = self ? null : this.people.get(t.who!);
+    if (!self && !person) return { err: `nobody called "${t.who}" is present` };
+    const path = self ? this.avatar : (person!.avatar || WorldAgent.DEFAULT_BODY);
+    const body = this.reachBodySync(path);
+    if (body === undefined) return undefined;
+    if (!body) return { err: `${t.who}'s skeleton could not be read` };
+    if (self) body.poseAt([this.pos.x, this.pos.y, this.pos.z], this.yaw, this.heldPose ?? null);
+    else {
+      const pose = person!.pose;
+      const pp = posePosition(pose);
+      if (!pp) return { err: `${t.who} has no known position yet` };
+      body.poseAt(pp, pose?.yaw ?? 0, (pose as { pose?: Record<string, number[]> | null })?.pose ?? null);
+    }
+    const c = body.contact(t.point!, t.standoff ?? 0.02);
+    if (!c) return { err: `${t.who}'s rig has no ${t.point}` };
+    return c;
+  }
+
+  /** One full verdict for one limb entry, at this instant. */
+  private solveReachEntry(limb: string, entry: { t: any; palm?: false }):
+    | { state: "pending" } | { state: "err"; err: string }
+    | { state: "ok"; reached: boolean; gap: number; bound: string[]; dist: number | null; arm: number | null; palmResidual: number | null } {
+    const tp = this.reachTargetPoint(entry.t);
+    if (tp === undefined) return { state: "pending" };
+    if ("err" in tp) return { state: "err", err: tp.err };
+    const own = this.reachBodySync(this.avatar);
+    if (own === undefined) return { state: "pending" };
+    if (!own) return { state: "err", err: "this body's own skeleton could not be read, so there is no local verdict" };
+    own.poseAt([this.pos.x, this.pos.y, this.pos.z], this.yaw, this.heldPose ?? null);
+    const s = own.solve(limb, tp, { palm: entry.palm !== false });
+    if (!s.ok) return { state: "err", err: s.why };
+    const reached = Number.isFinite(s.gap) && s.gap <= TOUCH_GAP && !s.bound.includes("no-target");
+    const dist = s.shoulder
+      ? Math.hypot(tp.pos[0] - s.shoulder[0], tp.pos[1] - s.shoulder[1], tp.pos[2] - s.shoulder[2]) : null;
+    return { state: "ok", reached, gap: s.gap, bound: s.bound, dist, arm: own.armLength(limb), palmResidual: s.palmResidual };
+  }
+
+  /** Reach a limb toward a target (wire grammar: {who, point, standoff?} or
+   *  {p:[x,y,z], space?: 'world'|'self'|id}). Sets the descriptor streaming
+   *  either way; the reply says what the arm actually achieves. */
+  async reach(limbRaw: string | undefined, targetRaw: unknown, opts: { palm?: boolean } = {}): Promise<{ ok: boolean; text: string }> {
+    const limb = canonicalLimb(limbRaw ?? "rightHand");
+    if (!limb) return { ok: false, text: `unknown limb "${limbRaw}" — leftHand, rightHand, leftFoot or rightFoot` };
+    const t = normalizeReachTarget(targetRaw);
+    if (!t) {
+      return { ok: false, text: "unusable target — pass {who, point} for a named contact point on a body, or {x, y, z} with optional space ('world' by default, 'self' for your own frame, or a participant id for theirs)" };
+    }
+    // load the skeletons this reach needs BEFORE solving, so the reply is a
+    // real verdict rather than a shrug
+    await this.reachBodyFor(this.avatar);
+    if (t.who !== undefined && t.who !== this.name) {
+      const person = this.people.get(t.who);
+      if (!person) {
+        const names = [...this.people.keys()].filter((n) => n !== this.name).slice(0, 12);
+        return { ok: false, text: `nobody called "${t.who}" is here${names.length ? ` (present: ${names.join(", ")})` : ""}` };
+      }
+      await this.reachBodyFor(person.avatar || WorldAgent.DEFAULT_BODY);
+    }
+    const entry: { t: any; palm?: false; reached?: true } = { t, ...(opts.palm === false ? { palm: false as const } : {}) };
+    const res = this.solveReachEntry(limb, entry);
+    if (res.state === "ok" && res.reached) entry.reached = true;
+    this.reaches.set(limb, entry);
+    const limbW = WorldAgent.LIMB_WORD[limb];
+    const what = describeTarget(t, this.name);
+    if (res.state !== "ok") {
+      const why = res.state === "err" ? res.err : "skeletons still loading; the verdict follows on the next check";
+      return { ok: true, text: `${limbW} reaching toward ${what} — streamed, but unverified: ${why}` };
+    }
+    if (res.reached) {
+      return { ok: true, text: `${limbW} rests on ${what} (gap ${Math.round(res.gap * 1000)}mm). It tracks the target until clear_reach — or until you are knocked over.` };
+    }
+    const short = Number.isFinite(res.gap) ? `${res.gap.toFixed(2)}m short` : "not arriving";
+    const why = res.bound.length ? ` (limited by: ${res.bound.join(", ")})` : "";
+    const advice = res.bound.includes("reach") && res.dist != null && res.arm != null
+      ? ` — the target is ${res.dist.toFixed(1)}m from your shoulder and your arm is ${res.arm.toFixed(2)}m long; walk closer and it will land`
+      : "";
+    return { ok: true, text: `${limbW} reaching toward ${what}: ${short}${why}${advice}. The arm extends that way and keeps tracking; it touches if the distance closes.` };
+  }
+
+  /** Let go with one limb, or all of them. Propagates as absence: the next
+   *  presence packet simply stops carrying the descriptor. */
+  releaseReach(limbRaw?: string | null): string {
+    if (limbRaw == null) {
+      const n = this.reaches.size;
+      this.reaches.clear();
+      return n ? "let go — all reaches released" : "you weren't reaching for anything";
+    }
+    const limb = canonicalLimb(limbRaw);
+    if (!limb) return `unknown limb "${limbRaw}" — leftHand, rightHand, leftFoot or rightFoot`;
+    return this.reaches.delete(limb)
+      ? `${WorldAgent.LIMB_WORD[limb]} released`
+      : `your ${WorldAgent.LIMB_WORD[limb]} wasn't reaching for anything`;
+  }
+
+  /** Re-attest `reached` for every live reach (runs at ~2Hz off tick()).
+   *  While a needed skeleton is missing the last attestation HOLDS — flapping
+   *  to "not touching" because a load is slow would fire spurious release/
+   *  touch edges at the other end. Loads are kicked here so blindness heals. */
+  private reachTick() {
+    for (const [limb, entry] of this.reaches) {
+      const t = entry.t;
+      if (t.who !== undefined) {
+        const path = t.who === this.name ? this.avatar : (this.people.get(t.who)?.avatar || WorldAgent.DEFAULT_BODY);
+        void this.reachBodyFor(path);
+      }
+      void this.reachBodyFor(this.avatar);
+      const res = this.solveReachEntry(limb, entry);
+      if (res.state !== "ok") continue;
+      if (res.reached) entry.reached = true; else delete entry.reached;
+    }
+  }
+
+  /** Someone's hands, read off their presence stream: reach/touch events for
+   *  hands aimed at THIS body. Ping-grade (a touch is a knock, like an
+   *  approach), edge-triggered by diffReach, with a per-(kind,limb,person)
+   *  refractory so a hand trembling across the threshold knocks once. */
+  private noteReachEvents(id: string, prev: Pose | null, pose: Pose) {
+    const bag = normalizeReachBag((pose as { reach?: unknown }).reach);
+    const prevBag = prev ? normalizeReachBag((prev as { reach?: unknown }).reach) : null;
+    if (!bag && !prevBag) return;
+    // First observation of this body is a BASELINE, not a transition (issue
+    // #39): rejoin/replay lands here for hands resting where they have been
+    // for an hour. Seed silently; edges count from the next sample.
+    if (!prev) return;
+    const REACH_REFRACT_MS = 15_000;
+    for (const ev of diffReach(prevBag, bag, this.name)) {
+      const limbW = WorldAgent.LIMB_WORD[ev.limb] ?? ev.limb;
+      if (ev.type === "release") {
+        this.gate.act(id, `reach-release:${ev.limb}`, `withdraws their ${limbW}`);
+        continue;
+      }
+      const key = `${ev.type}:${ev.limb}:${id}`;
+      const now = Date.now();
+      if (now - (this.lastReachPing.get(key) ?? 0) < REACH_REFRACT_MS) continue;
+      this.lastReachPing.set(key, now);
+      const what = describeTarget(ev.entry!.t, this.name);
+      this.ping({
+        ts: now, kind: ev.type, who: id,
+        text: ev.type === "touch" ? `touches ${what} (${limbW})` : `reaches toward ${what} (${limbW})`,
+      });
     }
   }
 
@@ -1656,6 +2097,22 @@ export class WorldAgent {
     } else {
       L.push(`You are "${this.name}" in world "${this.world}", position unknown (${selfEff && !selfEff.ok ? selfEff.why : "seat unresolved"}), facing ${this.bearing(Math.sin(this.yaw), Math.cos(this.yaw))}${seated}. Distances are withheld until your seat resolves — dismount {id: "${this.name}"} restores a stamped position.`);
     }
+    // WHERE YOU ARE, ARCHITECTURALLY. A conjured building can only ever be
+    // "a mesh 4m away"; a griddled one knows its own rooms, so standing inside
+    // one is a fact perception can state. Derived from folded state alone —
+    // this runs in a headless agent with no scene and no triangles, which is
+    // the entire point of keeping the planner pure.
+    if (meKnown) {
+      for (const e of this.entities.values()) {
+        const data = (e.comp ?? {}).structure;
+        if (!data) continue;
+        try {
+          const [lx, ly, lz] = localizePoint(e, me.x, me.y, me.z);
+          const here = describeHere(planStructure(data), lx, lz, ly);
+          if (here) { L.push(`${here} (inside [${e.id}]; sides are the building's own compass.)`); break; }
+        } catch { /* one malformed house must not cost the whole percept */ }
+      }
+    }
     // Structured object, NEVER a bare string: consumers of look() were
     // reading {hours, azimuth, clouds, ts, …} long before the forecast
     // existed, and a type change here silently breaks them (Sill, postdeploy
@@ -1726,7 +2183,12 @@ export class WorldAgent {
       // locked = nailed down: the server refuses every move/replace/remove on
       // it. Saying so here saves an agent a refused verb round-trip.
       if (c.lock) aff.push(`🔒 locked (immovable until comp {id, type: "lock", data: null})`);
-      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "lock"].includes(k));
+      // A griddled building says what it IS — rooms, walls, doors — because
+      // unlike a conjured mesh it knows. This is the whole difference the
+      // structure component buys: `components: structure` would be true and
+      // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
+      if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
+      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "lock", "structure"].includes(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);
       if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);

@@ -21,6 +21,19 @@ assets/
 *.vrm
 *.hdr
 
+# ...EXCEPT upstream-patched/, whose whole contract is that a deliberate fork
+# of a library file travels with this repo ("every machine gets it via ordinary
+# git pull"). `assets/` above matches a directory of that name at ANY depth, so
+# without these negations a patched asset is silently untracked: it works on the
+# machine that baked it and does not exist for anyone else. The directory must
+# be re-included before its files can be — git cannot re-include a path whose
+# parent directory is excluded.
+!upstream-patched/**/assets/
+!upstream-patched/**/*.glb
+!upstream-patched/**/*.vrm
+!upstream-patched/**/*.vrma
+!upstream-patched/**/*.hdr
+
 # generated
 assets/opt/thumbs/
 *.zip

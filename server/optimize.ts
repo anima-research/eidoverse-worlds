@@ -29,7 +29,91 @@ import { dedup, prune, resample, textureCompress, draco, listTextureSlots } from
 import draco3d from "draco3dgltf";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, basename } from "node:path";
+import { join, basename, dirname } from "node:path";
+
+// ---- ONE libvips per process (#122) -----------------------------------------
+// The store's root manifest declares `sharp: ^0.33.5`; @gltf-transform/
+// functions reaches sharp through ndarray-pixels, which declares `^0.35.0`.
+// The ranges do not intersect, so no installer can dedupe them and BOTH land
+// on disk — node_modules/sharp (0.33.5) beside
+// node_modules/ndarray-pixels/node_modules/sharp (0.35.3). Importing plain
+// "sharp" here therefore loads a SECOND native libvips into a process that
+// already has one, and the two disagree about libvips' own enums:
+//
+//   GLib-GObject-CRITICAL: value "32" of type 'gint' is invalid or out of
+//   range for property 'space' of type 'VipsInterpretation'
+//   Error: colourspace: parameter space not set   (sharp/lib/output.js)
+//
+// On win32 that THROWS, which is the merciful outcome — the pass dies and the
+// original is kept. On the show box's libvips it does not throw: encoding
+// returns a buffer of uninitialized memory (a repeated LE uint32, then
+// zeros), gltf-transform stamps it `image/webp`, and the store serves an
+// image that is not an image. That is #122 — the threshold-lantern's
+// baseColor and normal (both JPEG-sourced, so both routed through the
+// converting path) came out undecodable, the material fell back to
+// baseColorFactor 1,1,1,1, and the lantern rendered white.
+//
+// So: never import "sharp" by bare specifier in this file. Resolve the copy
+// @gltf-transform/functions itself will use, and hand that same module back
+// to it as the encoder — one libvips, end to end.
+//
+// RESOLUTION and IMPORT are kept separate, and the bare specifier is reached
+// on exactly one condition: no nested copy could be RESOLVED. That means a
+// deduped (or single-copy) install, where the bare import is the same single
+// copy and is therefore safe.
+//
+// A nested copy that resolves but fails to IMPORT — ABI mismatch, missing
+// dylib, damaged install — must NOT fall back (#136 review). Doing so loads
+// the root copy beside the one gltf-transform already has and recreates the
+// exact two-libvips condition this module exists to forbid, in the one
+// situation where things are already going wrong. It fails closed instead:
+// the rejection propagates, both callers skip the texture pass, and a
+// draco-only result ships. Less compression is a cost; an image that is not
+// an image is a lie.
+/** Where gltf-transform's own sharp lives, or null when there is no nested
+ *  copy at all (a deduped install — the state this whole fix is chasing).
+ *  RESOLUTION ONLY: it must not import, because import failure and absence
+ *  are different facts and only one of them makes a bare import safe. */
+export function resolveNestedSharp(): string | null {
+  try {
+    const fnDir = dirname(Bun.resolveSync("@gltf-transform/functions", import.meta.dir));
+    const npDir = dirname(Bun.resolveSync("ndarray-pixels", fnDir));
+    return Bun.resolveSync("sharp", npDir);
+  } catch {
+    return null;
+  }
+}
+
+/** The choice itself, with its two effects injected so a test can drive the
+ *  branch that matters (#136 review). Fails CLOSED: once a nested copy has
+ *  been resolved, an import failure PROPAGATES. It must not fall back to the
+ *  bare specifier — that would load the root copy beside the one
+ *  gltf-transform already has and recreate the exact two-libvips condition
+ *  this module forbids, in the one situation (ABI mismatch, missing dylib,
+ *  damaged install) where things are already going wrong. Both callers
+ *  already know how to degrade on rejection by skipping the texture pass,
+ *  which is the correct outcome: a draco-only pass ships nothing false. */
+export async function pickSharp(
+  resolveNested: () => string | null,
+  load: (specifier: string) => Promise<any>,
+): Promise<{ sharp: any; from: string }> {
+  const nested = resolveNested();
+  if (nested !== null) {
+    const mod = await load(nested);          // no catch: fail closed
+    return { sharp: mod.default ?? mod, from: nested };
+  }
+  // No nested copy exists, so the bare specifier IS the single copy.
+  const mod = await load("sharp");
+  return { sharp: mod.default ?? mod, from: "sharp (bare specifier)" };
+}
+
+let sharpP: Promise<{ sharp: any; from: string }> | null = null;
+/** Exported for tools/one-libvips-test.ts, which asserts `from` lands on the
+ *  nested copy whenever one exists — the whole fix in one readable value. */
+export function getSharp(): Promise<{ sharp: any; from: string }> {
+  sharpP ??= pickSharp(resolveNestedSharp, (s) => import(s));
+  return sharpP;
+}
 
 let ioP: Promise<NodeIO> | null = null;
 function getIO(): Promise<NodeIO> {
@@ -54,7 +138,10 @@ export async function optimizeGlb(bytes: Uint8Array): Promise<Uint8Array> {
   // Texture recompression needs sharp (native). If it can't load on this box,
   // a draco-only pass is still most of the win — degrade, don't die.
   try {
-    const sharp = (await import("sharp")).default;
+    // getSharp, never a bare import: this encoder must be the SAME module
+    // gltf-transform decodes with, or the two libvips corrupt each other's
+    // output and we ship it (#122).
+    const { sharp } = await getSharp();
     transforms.push(textureCompress({
       encoder: sharp,
       targetFormat: "webp",
@@ -124,23 +211,31 @@ function ktx2EncodeArgs(encoder: string, isToktx: boolean, srgb: boolean, uastc:
 
 /** Per-texture KTX2 encode, in place on the Document. Supports both
  *  KTX-Software CLIs — toktx (v4.4.2, the primary target) and the newer
- *  unified `ktx create` — detected by basename. Content problems skip the
- *  TEXTURE, never the file. Returns how many textures were converted. */
-async function ktx2CompressTextures(doc: Document, encoder: string): Promise<number> {
+ *  unified `ktx create` — detected by basename. A texture that will not
+ *  convert is skipped and NAMED in the tally; the caller decides whether a
+ *  partial result is a file at all (the GLB arm refuses one — a .ktx2.glb
+ *  with png inside is #122's class of lie, served immutable). Every encoder
+ *  output is checked for the KTX2 container magic before it is accepted. */
+export type Ktx2Tally = { eligible: number; converted: number; failed: string[] };
+const KTX2_MAGIC = [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a];
+export const isKtx2Container = (b: Uint8Array) => b.length >= 12 && KTX2_MAGIC.every((v, i) => b[i] === v);
+async function ktx2CompressTextures(doc: Document, encoder: string): Promise<Ktx2Tally> {
   const isToktx = basename(encoder).toLowerCase().includes("toktx");
   // sharp converts non-PNG sources (webp/jpeg) and 4-aligns dimensions —
   // KHR_texture_basisu (and WebGPU BC upload) wants width/height % 4 == 0.
   // sharp is optional today: without it, only already-aligned PNGs encode.
   let sharp: any = null;
-  try { sharp = (await import("sharp")).default; } catch { /* PNG-only pass below */ }
+  try { sharp = (await getSharp()).sharp; } catch { /* PNG-only pass below */ }
   const tmp = mkdtempSync(join(tmpdir(), "ew-ktx2-"));
-  let converted = 0;
+  let converted = 0, eligible = 0;
+  const failed: string[] = [];
   try {
     const textures = doc.getRoot().listTextures();
     for (let i = 0; i < textures.length; i++) {
       const tex = textures[i];
       const image = tex.getImage();
       if (!image) continue;
+      eligible++;
       const label = tex.getName() || tex.getURI() || `#${i}`;
       const slots = listTextureSlots(tex);
       const srgb = slots.some((s) => COLOR_SLOT.test(s));
@@ -171,11 +266,11 @@ async function ktx2CompressTextures(doc: Document, encoder: string): Promise<num
           await Bun.write(inPath, await s.png().toBuffer());
         } catch (e) {
           console.error(`[optimize] ktx2: skip ${label} — sharp convert failed (${(e as Error).message})`);
-          continue;
+          failed.push(label); continue;
         }
       } else {
         console.error(`[optimize] ktx2: skip ${label} (${mime}${aligned ? "" : ", not 4-aligned"}) — sharp unavailable`);
-        continue;
+        failed.push(label); continue;
       }
       const outPath = join(tmp, `${i}.ktx2`);
       const args = ktx2EncodeArgs(encoder, isToktx, srgb, uastc, inPath, outPath);
@@ -184,9 +279,16 @@ async function ktx2CompressTextures(doc: Document, encoder: string): Promise<num
       const err = (await new Response(proc.stderr).text()).trim();
       if (code !== 0 || !existsSync(outPath)) {
         console.error(`[optimize] ktx2: encode failed on ${label} (${err.split("\n")[0] || `exit ${code}`}) — texture kept as-is`);
-        continue;
+        failed.push(label); continue;
       }
-      tex.setImage(new Uint8Array(await Bun.file(outPath).arrayBuffer())).setMimeType("image/ktx2");
+      const encoded = new Uint8Array(await Bun.file(outPath).arrayBuffer());
+      // an image must be what it says it is (#122/#124): the encoder exited 0,
+      // now the bytes have to carry the container they will be labelled with
+      if (!isKtx2Container(encoded)) {
+        console.error(`[optimize] ktx2: ${label} — encoder wrote ${encoded.length} bytes that are not a KTX2 container — texture kept as-is`);
+        failed.push(label); continue;
+      }
+      tex.setImage(encoded).setMimeType("image/ktx2");
       const uri = tex.getURI();
       if (uri) tex.setURI(uri.replace(/\.[a-zA-Z0-9]+$/, "") + ".ktx2");
       converted++;
@@ -197,18 +299,24 @@ async function ktx2CompressTextures(doc: Document, encoder: string): Promise<num
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
-  return converted;
+  return { eligible, converted, failed };
 }
 
 /** The --ktx2 diet: dedup + prune + resample (the store recipe minus webp —
- *  KTX2 encodes from the best source) + per-texture KTX2 + draco. */
-export async function optimizeGlbKtx2(bytes: Uint8Array, encoder: string): Promise<Uint8Array> {
+ *  KTX2 encodes from the best source) + per-texture KTX2 + draco. ALL or
+ *  nothing: `out` is null unless every eligible texture converted. A variant
+ *  with some — or no — KTX2 in it is a .ktx2.glb whose name lies about its
+ *  contents, and it would be served immutable to every capable client (the
+ *  #122 class). The tally says which it was: nothing eligible is exit 2's
+ *  business, anything unconverted is exit 5's (see the CLI). */
+export async function optimizeGlbKtx2(bytes: Uint8Array, encoder: string): Promise<{ out: Uint8Array | null } & Ktx2Tally> {
   const io = await getIO();
   const doc = await io.readBinary(bytes);
   await doc.transform(dedup(), prune(), resample());
-  await ktx2CompressTextures(doc, encoder);
+  const tally = await ktx2CompressTextures(doc, encoder);
+  if (tally.eligible === 0 || tally.converted < tally.eligible) return { out: null, ...tally };
   await doc.transform(draco());
-  return io.writeBinary(doc);
+  return { out: await io.writeBinary(doc), ...tally };
 }
 
 // ---- KTX2 for VRMs (§20c): the surgical container rewrite -------------------
@@ -260,6 +368,57 @@ function parseGlb(bytes: Uint8Array): GlbParts {
   if (binChunks.length > 1) throw new Error("multiple BIN chunks");
   const json = JSON.parse(new TextDecoder().decode(chunks[0].data));
   return { json, bin: binChunks[0]?.data ?? new Uint8Array(0), total };
+}
+
+// ---- output validation ------------------------------------------------------
+// The write below is already careful about TRUNCATION (tmp+rename: "a killed
+// pass must never leave a truncated GLB where the server will trustingly serve
+// it"). A whole GLB can still arrive intact and carry image bytes that are not
+// images: `textureCompress` runs ndarray-pixels' vendored sharp alongside ours,
+// and two libvips copies in one process can corrupt each other's state (the
+// hazard documented at ktx2CompressTextures). When that happens the encoder
+// returns a buffer, gltf-transform stamps `image/webp` on it, draco packs it,
+// and the file ships. Nothing downstream looks, because every consumer trusts
+// the mimeType — so the failure surfaces as one asset rendering untextured
+// white, days later, in someone's screenshot (#122).
+//
+// The rule: an optimizer may give up, but it may not emit bytes it has not
+// checked. The VRM arm already validates its own output and throws rather than
+// return anything questionable; this is the same doctrine for the other arms,
+// at the one place where a lie is cheap to detect — the first four bytes.
+
+const IMAGE_MAGIC: { mime: string; test: (b: Uint8Array) => boolean }[] = [
+  { mime: "image/png", test: (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
+  { mime: "image/jpeg", test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  { mime: "image/webp", test: (b) => b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
+    && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50 },
+  { mime: "image/ktx2", test: (b) => KTX2_ID.every((v, i) => b[i] === v) },
+];
+
+export type ImageLie = { index: number; name: string; declared: string; actual: string; head: string };
+
+/** Every embedded image's DECLARED mimeType against what its bytes actually
+ *  are. Images referenced by URI are somebody else's file and are left alone;
+ *  an image with no recognizable magic reports "unrecognized", which is the
+ *  case that matters — corruption does not usually land on another format. */
+export function findImageLies(bytes: Uint8Array): ImageLie[] {
+  const { json, bin } = parseGlb(bytes);
+  const out: ImageLie[] = [];
+  const images: any[] = json.images ?? [];
+  for (let i = 0; i < images.length; i++) {
+    const im = images[i];
+    if (im.bufferView == null) continue;              // external URI — not ours to vouch for
+    const bv = json.bufferViews?.[im.bufferView];
+    if (!bv) continue;
+    const b = bin.subarray(bv.byteOffset ?? 0, (bv.byteOffset ?? 0) + (bv.byteLength ?? 0));
+    const actual = IMAGE_MAGIC.find((m) => m.test(b))?.mime ?? "unrecognized";
+    if (actual === im.mimeType) continue;
+    out.push({
+      index: i, name: im.name ?? "", declared: im.mimeType ?? "(none)", actual,
+      head: [...b.subarray(0, 12)].map((x) => x.toString(16).padStart(2, "0")).join(" "),
+    });
+  }
+  return out;
 }
 
 /** Slot classification from the JSON alone — the three vocabularies a VRM can
@@ -438,7 +597,7 @@ export async function transcodeVrmKtx2(bytes: Uint8Array, encoder: string):
   const marks = classifyVrmImages(json);
   const isToktx = basename(encoder).toLowerCase().includes("toktx");
   let sharp: any = null;
-  try { sharp = (await import("sharp")).default; } catch { /* aligned-PNG/JPEG-only pass below */ }
+  try { sharp = (await getSharp()).sharp; } catch { /* aligned-PNG/JPEG-only pass below */ }
   const tmp = mkdtempSync(join(tmpdir(), "ew-ktx2vrm-"));
   const newImageBytes = new Map<number, Uint8Array>(); // image idx -> ktx2 bytes
   let etc1s = 0, uastcN = 0;
@@ -683,6 +842,10 @@ export async function transcodeImageKtx2(src: Uint8Array, srcPath: string, encod
 // failure, reason on stderr.
 // Exit 3 (any --ktx2* mode) = no KTX2 encoder on this box — environmental,
 // the caller must env-skip (never a .failed marker).
+// Exit 5 (--ktx2) = an encoder answered but not every eligible texture
+// converted — the variant is REFUSED, nothing written. Environmental too (a
+// flaky or misconfigured encoder, not a bad model): no marker, retried next
+// boot; and not exit 3's ktx2Skip either — the encoder is there.
 
 if (import.meta.main) {
   const argv = process.argv.slice(2);
@@ -720,8 +883,20 @@ if (import.meta.main) {
       }
       console.log(`[optimize] ktx2-vrm: ${r.converted} image(s) → ${r.etc1s} etc1s + ${r.uastc} uastc`);
       out = r.out;
+    } else if (mode === "--ktx2") {
+      const r = await optimizeGlbKtx2(src, encoder!);
+      if (r.eligible === 0) {
+        console.error(`[optimize] ktx2: no convertible raster images (${Math.round(performance.now() - t0)}ms) — keeping original`);
+        process.exit(2);
+      }
+      if (!r.out) {
+        console.error(`[optimize] ktx2: ${r.converted}/${r.eligible} texture(s) converted — REFUSING a partial variant (${r.failed.join(", ")}); retry when the encoder is sane`);
+        process.exit(5);
+      }
+      console.log(`[optimize] ktx2: ${r.converted}/${r.eligible} texture(s) → KTX2`);
+      out = r.out;
     } else {
-      out = mode === "--ktx2" ? await optimizeGlbKtx2(src, encoder!) : await optimizeGlb(src);
+      out = await optimizeGlb(src);
     }
     const ms = Math.round(performance.now() - t0);
     // An already-lean upload (someone re-uploading our own optimized output,
@@ -733,6 +908,22 @@ if (import.meta.main) {
     if (out.length >= src.length * (ktx2Mode ? 1.25 : 0.95)) {
       console.error(`[optimize] not smaller (${src.length} -> ${out.length}, ${ms}ms) — keeping original`);
       process.exit(2);
+    }
+    // …and the same care about CONTENT: a GLB whose images are not images is
+    // worse than no variant, because it serves confidently (#122). --ktx2-img
+    // emits a bare KTX2 file rather than a container, so it has nothing to walk.
+    if (mode !== "--ktx2-img") {
+      const lies = findImageLies(out);
+      if (lies.length) {
+        for (const l of lies) {
+          console.error(`[optimize] image[${l.index}]${l.name ? ` "${l.name}"` : ""} declares ${l.declared} `
+            + `but the bytes are ${l.actual} — head: ${l.head}`);
+        }
+        console.error(`[optimize] REFUSED ${basename(inPath)}: ${lies.length} image(s) failed the container `
+          + `check — keeping the original. The SOURCE is fine; this is the pass corrupting its own output `
+          + `(see the two-libvips note at ktx2CompressTextures), so it is worth retrying, not marking failed.`);
+        process.exit(4);
+      }
     }
     // tmp+rename: a killed pass must never leave a truncated GLB where the
     // server will trustingly serve it
