@@ -37,11 +37,55 @@
 //
 // DOM-free and side-effect-free: unit-tested in tools/store-variants-test.ts.
 
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, basename } from "node:path";
 
 /** The variant suffix. `<hash>.glb` + this = the KTX2 shadow's file name. */
 export const KTX2_SUFFIX = ".ktx2.glb";
+
+// ---- the texel budget ------------------------------------------------------
+// The unflagged answer — the webp shadow every client without a KTX2 decoder
+// gets — is capped at 1024² (optimize.ts, `resize: [1024, 1024]`; the
+// library's day-one mirror is "draco+webp@1024" too). That is the house
+// budget: what a model is allowed to look like in this world. The KTX2 arm
+// used to encode from the full-resolution source instead — a Tripo conjure's
+// 2048² maps, three of them, two UASTC — and the "variant" came out 1.5× the
+// ORIGINAL on the wire (the show box, 2026-08-25: `not smaller (17600988 ->
+// 26716692)`, sixteen times over), which the size gate rightly refused. A
+// flagged fetch was a silent quality UPGRADE over the unflagged one at ~13×
+// the bytes of the webp shadow. So: same budget as the shadow, GPU-native —
+// downscale (never up) so the longest side is KTX2_TEXEL_CAP, 4-aligned for
+// the block format. toktx does it (--resize) and libvips never touches it.
+export const KTX2_TEXEL_CAP = 1024;
+
+/** The resize a texture of `size` needs to fit the budget, or null when it
+ *  already does. Aspect kept; both sides rounded to a multiple of 4. */
+export function capTexels(size: [number, number] | null | undefined, cap = KTX2_TEXEL_CAP): [number, number] | null {
+  if (!size || !(size[0] > 0) || !(size[1] > 0)) return null;
+  const [w, h] = size;
+  if (w <= cap && h <= cap) return null;
+  const k = cap / Math.max(w, h);
+  const r = (v: number) => Math.max(4, Math.round((v * k) / 4) * 4);
+  return [r(w), r(h)];
+}
+
+// A size-gate verdict (`.failed` = "not smaller") is only as durable as the
+// RECIPE that produced it: change the recipe and every refusal is a question
+// again. So the CLI stamps the recipe into the verdict, and the sweeps treat
+// a size verdict without the CURRENT stamp as stale — re-measured once, then
+// re-stamped. The sixteen refusals above get retried the first boot after
+// this lands, with no operator step. Content verdicts ("no convertible raster
+// images", a corrupt container) carry no stamp and stand.
+export const KTX2_RECIPE = "texel1024";
+export const recipeStamp = (recipe = KTX2_RECIPE) => `recipe=${recipe}`;
+
+/** Does a `.failed` verdict still stand under the current recipe? A size
+ *  verdict ("not smaller") stands only if it carries the current stamp;
+ *  anything else stands regardless. */
+export function verdictStands(content: string, recipe = KTX2_RECIPE): boolean {
+  if (!/not smaller/i.test(content)) return true;
+  return content.includes(recipeStamp(recipe));
+}
 
 /** Any KTX2 serving artifact, of any asset class: `<rel>.ktx2.glb` (models,
  *  library and store), `<rel>.ktx2.vrm` (bodies, §20c), `<img>.ktx2` (loose
@@ -77,17 +121,20 @@ export function ktx2VariantPath(original: string): string {
 
 /** Which shadows a store original still lacks. A `.failed` marker counts as
  *  present — the pass already gave its answer (not smaller / not convertible)
- *  and the sweep must not re-measure it every boot. `exists` is injectable
- *  for tests; production passes nothing and reads the disk. */
+ *  and the sweep must not re-measure it every boot — EXCEPT a KTX2 size
+ *  verdict from an older recipe (verdictStands), which is a question again.
+ *  `exists`/`read` are injectable for tests; production reads the disk. */
 export function storeShadowsMissing(
   original: string,
   minDir: string,
   exists: (p: string) => boolean = existsSync,
+  read: (p: string) => string = (p) => { try { return readFileSync(p, "utf8"); } catch { return ""; } },
 ): { min: boolean; ktx2: boolean } {
   const min = join(minDir, basename(original));
   const k = ktx2VariantPath(original);
+  const kFailed = `${k}.failed`;
   return {
     min: !exists(min) && !exists(`${min}.failed`),
-    ktx2: !exists(k) && !exists(`${k}.failed`),
+    ktx2: !exists(k) && !(exists(kFailed) && verdictStands(read(kFailed))),
   };
 }

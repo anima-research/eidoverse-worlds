@@ -27,6 +27,7 @@ import { NodeIO, type Document } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, KHRTextureBasisu } from "@gltf-transform/extensions";
 import { dedup, prune, resample, textureCompress, draco, listTextureSlots } from "@gltf-transform/functions";
 import draco3d from "draco3dgltf";
+import { capTexels, recipeStamp } from "./store-variants.ts";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename, dirname } from "node:path";
@@ -195,10 +196,14 @@ const COLOR_SLOT = /baseColor|emissive/i;
  *  (λ=1.0, quality-preserving) + zstd 18 — raw UASTC is a flat 8bpp and zstd
  *  alone barely dents it (the crow's 2048² maps came out 2.6× the JPEG
  *  source; RDO is what makes zstd bite). --genmipmap always: compressed mips
- *  can't be generated at runtime. */
-function ktx2EncodeArgs(encoder: string, isToktx: boolean, srgb: boolean, uastc: boolean, inPath: string, outPath: string): string[] {
+ *  can't be generated at runtime. `resize` (the GLB arm's texel budget,
+ *  store-variants.ts capTexels) rides toktx's own --resize — the encoder
+ *  scales before it generates mips, and libvips is nowhere in the loop. */
+function ktx2EncodeArgs(encoder: string, isToktx: boolean, srgb: boolean, uastc: boolean, inPath: string, outPath: string,
+  resize: [number, number] | null = null): string[] {
   return isToktx
     ? [encoder, "--t2", "--genmipmap", "--assign_oetf", srgb ? "srgb" : "linear",
+       ...(resize ? ["--resize", `${resize[0]}x${resize[1]}`] : []),
        ...(uastc ? ["--encode", "uastc", "--uastc_quality", "2", "--uastc_rdo_l", "1.0", "--zcmp", "18"]
                  : ["--encode", "etc1s", "--qlevel", "128"]),
        outPath, inPath]
@@ -273,7 +278,10 @@ async function ktx2CompressTextures(doc: Document, encoder: string): Promise<Ktx
         failed.push(label); continue;
       }
       const outPath = join(tmp, `${i}.ktx2`);
-      const args = ktx2EncodeArgs(encoder, isToktx, srgb, uastc, inPath, outPath);
+      // the house texel budget: the shadow's 1024², never more (store-variants.ts)
+      const resize = capTexels(size as [number, number] | null);
+      if (resize && !isToktx) console.error(`[optimize] ktx2: ${label} is ${size![0]}x${size![1]} — ktx create has no --resize here, encoding at source size`);
+      const args = ktx2EncodeArgs(encoder, isToktx, srgb, uastc, inPath, outPath, isToktx ? resize : null);
       const proc = Bun.spawn(args, { stdout: "ignore", stderr: "pipe" });
       const code = await proc.exited;
       const err = (await new Response(proc.stderr).text()).trim();
@@ -906,7 +914,9 @@ if (import.meta.main) {
     // VRAM), not just wire bytes — accept anything not grossly bigger than
     // the ORIGINAL source (>1.25×).
     if (out.length >= src.length * (ktx2Mode ? 1.25 : 0.95)) {
-      console.error(`[optimize] not smaller (${src.length} -> ${out.length}, ${ms}ms) — keeping original`);
+      // the KTX2 verdict carries its recipe: a later recipe re-measures it
+      // (store-variants.ts verdictStands) instead of inheriting the refusal
+      console.error(`[optimize] not smaller (${src.length} -> ${out.length}, ${ms}ms)${ktx2Mode ? ` ${recipeStamp()}` : ""} — keeping original`);
       process.exit(2);
     }
     // …and the same care about CONTENT: a GLB whose images are not images is
