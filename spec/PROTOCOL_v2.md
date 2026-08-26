@@ -3,7 +3,13 @@
 **License: CC0 1.0 (public domain)** — same grant as PROTOCOL.md; the
 contract is free.
 
-Status: **DRAFT** (2026-08-25, ruling accepted; details open where marked).
+Status: **DRAFT, with a reference implementation** (ruling accepted
+2026-08-25; `eidosim@0.1.0` landed 2026-08-26 — `shared/sim.js`, scope:
+the `punt` intent, ballistic flight with bounces on the body's own ground
+plane, authored-word-wins release, epoch adoption via snapshot cuts.
+Covenant I proven cross-engine: one flight computed by JavaScriptCore
+twice-independently and V8 once, bit-identical — see tools/sim-smoke.ts.
+Terrain-aware collision, `force`, and the ⚑s of §6 remain open).
 Normative, once ratified, for logs whose `genesis` (or `epoch`, §3) says
 `dialect: "eidoverse-log", v: 3`. Everything in PROTOCOL.md (v1, dialects
 1–2) stands unless amended here. MUST/SHOULD/MAY are RFC-2119.

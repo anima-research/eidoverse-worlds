@@ -390,6 +390,31 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-26 — §24h: THE SIM IS REAL — eidosim@0.1.0, proven
+  cross-engine.** PROTOCOL_v2 implementation, four slices, one day:
+  (1) shared/sim.js (75328cf) — exact-ops ballistics (no
+  transcendentals/clock/randomness), ceil quantization, dialect-3 punt
+  (dir required), resting-contact + slide-friction (the terminal
+  micro-bounce taught the contact branch), authored-word-wins release,
+  foreign-epoch refusal, schedule-independent advancement; sim-test
+  13/13. (2) sequencer (580e7a0) — epoch verb rank 2 (validated
+  against the carried sim, after-hook folds the barrier), fold.js
+  epoch case + stateToEntries preserving the tick-0 anchor ts,
+  WorldLog folds sim beside instant (normative order), snapshots +
+  join payload carry the cut, 'sim' tick system, debug {sim:true},
+  punt-requires-dir + sim-aware reach. (3+4) client + proof (cc5201e)
+  — shadow sim in state.js, simworld.js applier on the engine frame
+  hook, physobj punt-volunteering stands down under epoch (drags/
+  hand-offs untouched), kick UI stamps full launch vector. THE PROOF
+  (sim-smoke 8/8): one punt computed by JSC (sequencer), JSC
+  (independent refold from fetched entries), and V8 (browser shadow) —
+  rest p=[8.143363781124814, 0, 3.1430091343374413] BIT FOR BIT in all
+  three. Covenant I holds across engines. replaybench grew sim legs
+  (self-agreement + sim-snapshot parity, adversarially verified).
+  v0.1 scope honest: punt only, own-ground-plane collision (terrain =
+  sim@0.2 epoch bump), force + §6 ⚑s open. Worlds OPT IN via /epoch —
+  nothing changes for any world until its owner speaks it.
+
 - **2026-08-25 — §24g: three more domains — clips, skies, building style.**
   ANIMATIONS (9b4a44b): defs/animations/ overlays the clip roster,
   same declared-beats-discovered contract as avatars; vrma resolves on

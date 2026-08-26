@@ -149,6 +149,11 @@ upstream-patched > store > eidoverse-video precedence) · `/upload` POST ·
 (client serving).
 
 Wire additions since the v0 freeze (each flagged in its commit):
+dialect 3 (PROTOCOL_v2): the `epoch` verb (rank 2 — enters/upgrades the
+deterministic-sim epoch; validated against the sim the sequencer carries) ·
+`snapshot.sim` (the sim fold's cut, adopted by joiners; absent pre-epoch) ·
+`debug {sim: true}` → `{type:"debug", sim}` (the sequencer's sim state on
+request) · under an epoch, `punt` REQUIRES `dir: [x,y,z]` ·
 `/defs` (the def registry, charter §3 — instance content as data, slice 2) ·
 `/tick` (heartbeat gauges, charter §4 — per-system runs/worst-ms/errors,
 slice 3) · server→client `defs-updated` `{}` (def hot-reload push, slice 6 —
