@@ -33,6 +33,7 @@ import { route, avatarRoster, pendingSnaps } from "./routes.ts";
 import { registerSystem, startTick } from "./tick.ts";
 import { onEntryCommitted } from "./events.ts";
 import { defsFingerprint } from "./defs.ts";
+import { advanceSim, tickOf, simSnapshot } from "../shared/sim.js";
 // The reference fold lives in shared/ (house rule 1 by construction; the
 // world folds with it in world.ts) — what remains here is the role ladder.
 import { ROLE_RANK } from "../shared/fold.js";
@@ -185,6 +186,18 @@ registerSystem({ name: "seat-store-poll", everyMs: 5000, fn: () => {
 registerSystem({ name: "behaviors", everyMs: 1000, fn: (now) => {
   for (const w of worlds.values()) {
     try { w.bhv.tick(now); } catch (err) { console.error(`[world:${w.name}] behavior tick`, err); }
+  }
+} });
+
+// The sim heartbeat (PROTOCOL_v2 §5): advance every epoch world's sim fold
+// to the tick "now" quantizes to. Advancement is schedule-independent, so
+// this cadence is presentation-freshness policy, not physics — a slower
+// beat computes the same states later, never different ones.
+registerSystem({ name: "sim", everyMs: 250, fn: (now) => {
+  for (const w of worlds.values()) {
+    try {
+      if (w.sim.epoch && !w.sim.epoch.foreign) advanceSim(w.sim, tickOf(w.sim, now));
+    } catch (err) { console.error(`[world:${w.name}] sim advance`, err); }
   }
 } });
 
@@ -668,6 +681,9 @@ const server = Bun.serve({
             state: jp.state,
             throughSeq: jp.throughSeq,
             entries: jp.tail,
+            // dialect 3: the sim fold's cut, adopted by the joiner (absent
+            // pre-epoch — see joinPayload)
+            ...("sim" in jp ? { sim: (jp as { sim?: unknown }).sim } : {}),
             // the body roster rides along — a joiner resolves names with no
             // extra round-trip (bbox geometry follows as its own message)
             avatars: avatarRoster(),
@@ -733,6 +749,14 @@ const server = Bun.serve({
           // so the reasons things failed to reach it are public too.
           if (!c.world) return;
           const limit = Math.min(300, Math.max(1, Number(msg.limit ?? 50)));
+          if (msg.sim) {
+            // the sim fold's cut, on request — the determinism proof's
+            // server leg (sim-smoke compares this against an independent
+            // recompute), and any client's "what does the sequencer think"
+            ws.send(JSON.stringify({ type: "debug", reqId: msg.reqId ?? null,
+              sim: simSnapshot(c.world.sim) }));
+            break;
+          }
           if (msg.behavior != null) {
             // one script's own log ring + status — the author's console
             const b = c.world.bhv.inspect(String(msg.behavior));

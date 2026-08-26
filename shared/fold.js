@@ -67,6 +67,10 @@ import { foldSkyEntry } from './forecast.js';
  *   yaw?: number }>} [mounts]
  *   Attachments of non-entity bodies (avatars) — a sitter on a swing seat, a
  *   passenger on a deck. Same shape as entity.parent, keyed by principal.
+ * @property {{ sim: string, tickMs: number, ts: number, seq: number }} [epoch]
+ *   The active deterministic-sim epoch (dialect 3, PROTOCOL_v2 §3). `ts` is
+ *   the tick-0 anchor — preserved through snapshot rehydration, or every
+ *   joiner would disagree about what tick it is.
  * @property {Record<string, unknown> | null} terrain
  * @property {Record<string, unknown> | null} grass
  * @property {(Record<string, unknown> & { ts?: number }) | null} sky
@@ -242,6 +246,15 @@ export function foldEntry(st, e) {
         }
       }
       delete st.entities[a?.id];
+      return;
+    }
+    case "epoch": {
+      // Dialect 3 (PROTOCOL_v2 §3): the world enters — or upgrades — its
+      // deterministic-sim epoch. The instant fold records WHICH epoch is
+      // active (joiners and validators need it); the sim fold (shared/
+      // sim.js, run beside this one) owns everything the epoch means.
+      if (typeof a?.sim !== "string" || !Number.isInteger(a?.tickMs)) return;
+      st.epoch = { sim: a.sim, tickMs: a.tickMs, ts: e.ts, seq: e.seq };
       return;
     }
     case "terrain": st.terrain = a; return;
@@ -443,6 +456,8 @@ export function stateToEntries(state, {
       add('grant', { id, role: r.role, ...(r.gen ? { gen: true } : {}) });
     }
   }
+  if (state.epoch) add('epoch', { sim: state.epoch.sim, tickMs: state.epoch.tickMs },
+    'world', state.epoch.ts ?? now);
   if (state.terrain) add('terrain', state.terrain);
   if (state.grass) add('grass', state.grass);
   if (state.sky) add('sky', state.sky, 'world', state.sky.ts ?? now);

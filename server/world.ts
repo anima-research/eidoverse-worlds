@@ -23,7 +23,17 @@ import { join } from "node:path";
 import { WORLDS_DIR, FOLD_EVERY } from "./config.ts";
 import { BehaviorHost } from "./behaviors.ts";
 import { foldEntry, emptyState, type LogEntry, type WorldState } from "../shared/fold.js";
+import { emptySim, simEntry, simSnapshot } from "../shared/sim.js";
 import { publishEntry } from "./events.ts";
+
+/** The sim fold's state (shared/sim.js — JSDoc-typed JS; mirrored here
+ *  structurally for the TS side of the house). */
+export type SimState = {
+  epoch: { sim: string; tickMs: number; ts: number; seq: number; foreign?: boolean } | null;
+  tick: number;
+  bodies: Record<string, { p: number[]; v: number[]; yaw: number; ground: number;
+    seq: number; born: number; resting: boolean }>;
+};
 import type { HnSession } from "./auth.ts";
 
 // The settle rule — what a pose looks like TO SOMEONE ELSE — is pinned to
@@ -79,6 +89,10 @@ export class WorldLog {
   /** The folded world. Kept live: every append updates it, so writing a
    *  snapshot is O(1) rather than a replay. */
   state: WorldState = emptyState();
+  /** The sim fold beside it (dialect 3, PROTOCOL_v2): folded through the
+   *  same entries in the same order, advanced to "now" by the sequencer's
+   *  tick system, carried in the snapshot so boot stays tail-proportional. */
+  sim: SimState = emptySim() as SimState;
   /** How much of the log the snapshot already accounts for. Entries after this
    *  are the tail a joiner still has to be told about. */
   snapSeq = -1;
@@ -114,6 +128,9 @@ export class WorldLog {
           this.state = snap.state;
           this.snapSeq = snap.seq;
           this.snapBytes = snap.bytes ?? 0;
+          // pre-sim snapshots simply lack the field — an empty sim is right
+          // for them, since no epoch entry can predate the sim existing
+          if (snap.sim?.bodies) this.sim = snap.sim;
         }
       } catch { /* a corrupt cache is not a corrupt world — rebuild below */ }
     }
@@ -130,6 +147,7 @@ export class WorldLog {
         const e = JSON.parse(line) as LogEntry;
         this.entries.push(e);
         foldEntry(this.state, e);
+        simEntry(this.sim, e, this.state);   // conformance order: instant fold first
       }
       this.dirtySinceFold = this.entries.length;
     }
@@ -150,7 +168,10 @@ export class WorldLog {
     const bytes = this.logBytes;
     const seq = this.snapSeq + this.entries.length;
     if (seq < 0) return;
-    const payload = JSON.stringify({ v: 1, seq, bytes, ts: Date.now(), state: this.state });
+    const payload = JSON.stringify({ v: 1, seq, bytes, ts: Date.now(), state: this.state,
+      // the sim fold rides the snapshot (PROTOCOL_v2 §3): advancement is
+      // schedule-independent, so a state cut at ANY tick resumes exactly
+      ...(this.sim.epoch ? { sim: simSnapshot(this.sim) } : {}) });
     try {
       // the snapshot's `bytes` is a promise about the FILE — the batch must
       // land first, or the recorded offset points past bytes that aren't
@@ -186,6 +207,7 @@ export class WorldLog {
     }
     this.entries = [];
     this.state = emptyState();
+    this.sim = emptySim() as SimState;
     this.snapSeq = -1;
     this.snapBytes = 0;
     this.logBytes = 0;
@@ -230,9 +252,14 @@ export class WorldLog {
     return { entries: out, oldestSeq: oldest, hasMore: oldest !== null && oldest > 0 };
   }
 
-  /** What a joiner needs: the world as it is, plus anything since. */
+  /** What a joiner needs: the world as it is, plus anything since. Under a
+   *  sim epoch the sim state rides along: a joiner cannot recompute flights
+   *  whose intents were folded out of the tail, and adoption is exact —
+   *  advancement is schedule-independent, so resuming from the sequencer's
+   *  cut agrees bit-for-bit with having replayed from genesis. */
   joinPayload() {
-    return { state: this.state, tail: this.entries, throughSeq: this.snapSeq };
+    return { state: this.state, tail: this.entries, throughSeq: this.snapSeq,
+      ...(this.sim.epoch ? { sim: simSnapshot(this.sim) } : {}) };
   }
 
   rememberPose(id: string, pose: unknown) {
@@ -284,6 +311,7 @@ export class WorldLog {
       }, 0);
     }
     foldEntry(this.state, entry);
+    simEntry(this.sim, entry, this.state);   // conformance order: instant fold first
     if (++this.dirtySinceFold >= FOLD_EVERY) this.fold();
     return entry;
   }
@@ -400,6 +428,7 @@ export class World {
 
   // the authored plane, read through the log
   get entries() { return this.log.entries; }
+  get sim() { return this.log.sim; }
   get recentSays() { return this.log.recentSays; }
   get state() { return this.log.state; }
   get snapSeq() { return this.log.snapSeq; }

@@ -19,6 +19,7 @@ import { lintMotion, lintParticles } from "./lint.ts";
 import { reactToUse } from "./reactions.ts";
 import { behaviorLimits } from "./behaviors.ts";
 import { ROLE_RANK, type LogEntry, type WorldState } from "../shared/fold.js";
+import { SIM_ID } from "../shared/sim.js";
 
 // ---- what runVerb needs from the session (structural) ----------------------
 
@@ -37,11 +38,13 @@ export type VerbWorld = {
   state: WorldState;
   clients: Set<VerbClient>;
   leases: Map<string, { lastState: { p: number[]; yaw?: number; q?: number[] } | null }>;
+  sim: { epoch: unknown; bodies: Record<string, { p: number[] }> };
   bhv: { sync(): void; onEntry(entry: LogEntry): void };
   append(actor: string, verb: string, args: Record<string, unknown>): LogEntry;
   commit(actor: string, verb: string, args: Record<string, unknown>): LogEntry;
   broadcast(msg: unknown, except?: VerbClient): void;
   debug(kind: string, detail: Record<string, unknown>): void;
+  fold(reason?: string): void;
 };
 
 /** Built by server.ts per dispatch. `now` is the message handler's clock, so
@@ -125,7 +128,9 @@ function vPunt(ctx: VerbCtx, args: Record<string, unknown>) {
   if (!id || !w.state.entities[id]) {
     return { error: `nothing here called "${id}" to kick` };
   }
-  const at = w.leases.get(id)?.lastState?.p ?? w.state.entities[id].pos;
+  // live position, most-authoritative first: a sim-owned flight, then a
+  // leased volunteer's stream, then the log's word
+  const at = w.sim.bodies[id]?.p ?? w.leases.get(id)?.lastState?.p ?? w.state.entities[id].pos;
   const me = (c.lastPose as { p?: number[] } | null | undefined)?.p;
   if (!me || Math.hypot(me[0] - at[0], me[2] - at[2]) > 4) {
     w.debug("denied", { who: c.id, verb: "punt", why: `${id} is out of reach` });
@@ -133,7 +138,15 @@ function vPunt(ctx: VerbCtx, args: Record<string, unknown>) {
   }
   const power = Math.min(10, Math.max(0.5, Number(args.power ?? 5)));
   const dir = Array.isArray(args.dir) ? (args.dir as unknown[]).slice(0, 3).map(Number) : null;
-  return { args: { id, power, ...(dir && dir.length === 3 && dir.every(Number.isFinite) ? { dir } : {}) } };
+  const dirOk = dir && dir.length === 3 && dir.every(Number.isFinite) && dir.some((v) => v !== 0);
+  // Dialect 3 (PROTOCOL_v2, Covenant III): under an epoch the sim owns the
+  // flight, and the sim may read NOTHING off the presence plane — so the
+  // intent must carry its whole vector, or it is refused at the door
+  // rather than logged as an entry the sim will treat as inert.
+  if (w.state.epoch && !dirOk) {
+    return { error: "this world runs a deterministic sim — punt needs dir: [x, y, z] (the intent carries its whole vector)" };
+  }
+  return { args: { id, power, ...(dirOk ? { dir } : {}) } };
 }
 
 function vComp(ctx: VerbCtx, args: Record<string, unknown>) {
@@ -320,6 +333,22 @@ const extras: Record<string, Pick<VerbRow, "selfRankZero" | "validate" | "after"
   grant: { validate: vGrant },
   force: { validate: vForce },
   punt: { validate: vPunt },
+  // Entering the deterministic-sim epoch (PROTOCOL_v2 §3). The sim named
+  // must be one THIS build carries — authoring an epoch nobody can compute
+  // would orphan the world's physics on its own sequencer. The after-hook
+  // folds the barrier snapshot the spec requires around epoch boundaries.
+  epoch: {
+    validate: (ctx, args) => {
+      const sim = String(args.sim ?? "");
+      const tickMs = Number(args.tickMs ?? 66);
+      if (sim !== SIM_ID) return { error: `this sequencer carries ${SIM_ID} — epoch must name it exactly` };
+      if (!Number.isInteger(tickMs) || tickMs < 16 || tickMs > 1000) {
+        return { error: "epoch tickMs must be an integer in [16, 1000]" };
+      }
+      return { args: { sim, tickMs } };
+    },
+    after: (ctx) => ctx.w.fold("epoch-barrier"),
+  },
   comp: { validate: vComp, after: afterComp },
   motion: { after: (ctx, entry) => lintMotion(ctx.w, entry) },
   // ...and a (re)bind reconciles sandboxes before scripts hear anything else.

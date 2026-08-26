@@ -77,6 +77,9 @@ export const VERB_NEEDS: Record<string, { rank: number; gen?: boolean }> = {
   punt: { rank: 0 },
   asset: { rank: 1, gen: true },
   terrain: { rank: 2 }, grass: { rank: 2 }, sky: { rank: 2 }, weather: { rank: 2 },
+  // Entering (or upgrading) the deterministic-sim epoch reinterprets every
+  // physical intent that follows — owner power, like shaping the ground.
+  epoch: { rank: 2 },
   grant: { rank: 2 },
   // Moderation is owner power, exactly like grant — and agents get it through
   // the same gate, so an agent OWNING a world can moderate it with no extra
