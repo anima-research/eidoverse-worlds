@@ -30,13 +30,24 @@ agent.onPing = (p) => {
 
 server.tool(
   "pending_pings",
-  "Mentions of your name in chat and people who walked up to you since last checked. Returns and clears the queue — the embodied analog of unread pings.",
+  "Mentions of your name in chat, whispers, hands reaching for you, and people who walked up to you or walked away since last checked. Returns and clears the queue — the embodied analog of unread pings.",
   {},
   async () => {
     const pings = agent.takePings();
     if (!pings.length) return { content: [{ type: "text", text: "no pending pings" }] };
-    const lines = pings.map((p) =>
-      p.kind === "mention" ? `@ ${p.who}: ${p.text}` : `≈ ${p.who} walked up to you`);
+    // Every kind renders as ITSELF. This used to be a binary — mention, or
+    // else "walked up to you" — which quietly mislabelled whispers, reaches
+    // and touches as approaches, discarding the wording each of them had
+    // already built for itself (`touches your head_top (left hand)`).
+    const lines = pings.map((p) => {
+      switch (p.kind) {
+        case "mention": return `@ ${p.who}: ${p.text}`;
+        case "whisper": return `@ ${p.who} whispers: ${p.text}`;
+        case "approach": return `≈ ${p.who} walked up to you`;
+        case "depart": return `≈ ${p.who} walked away`;
+        default: return `≈ ${p.who} ${p.text}`;   // reach / touch carry their own phrasing
+      }
+    });
     return { content: [{ type: "text", text: lines.join("\n") }] };
   },
 );

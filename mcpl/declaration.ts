@@ -48,6 +48,7 @@ export const CHAT = {
 export const EIDO = {
   whisper: "eidoverse:whisper",
   approach: "eidoverse:approach",
+  depart: "eidoverse:depart",
   reach: "eidoverse:reach",
   touch: "eidoverse:touch",
   act: "eidoverse:act",
@@ -178,6 +179,14 @@ const TAG_ONTOLOGY = {
       desc: "Someone walked up to your body and stopped within arm's reach. Directed at you, but not speech — nothing was said.",
       facet: "addressing",
       implies: [CHAT.addressed],
+    },
+    [EIDO.depart]: {
+      desc: "Someone who had walked up to you has left your immediate surroundings. The closing bracket of eidoverse:approach — you only ever receive one for a person you were told had arrived.",
+      // AMBIENT, not addressing: a departure is worth knowing and not worth
+      // waking for, and the whole point of this pair is fewer interruptions,
+      // not one more. Consumers who do want to wake on it can say so in their
+      // own rules — the reverse (unpicking a wake we declared) they cannot.
+      facet: "lifecycle",
     },
     [EIDO.reach]: {
       desc: "Someone's hand (or foot) is reaching toward your body — a named contact point on you, or a point in your frame. Directed at you, but not yet contact; the touch, if it lands, follows as eidoverse:touch.",

@@ -8,6 +8,7 @@ import { mentionRegex } from "./mention.ts";
 import * as THREE_W from "three/webgpu";
 import * as TSL from "three/tsl";
 import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS,
+  APPROACH_DWELL_MS, APPROACH_STILL_MPS, APPROACH_MAX_WAIT_MS,
   ACTIVITY_RADIUS_M, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
 import { HeadlessBody, ReachBody, setHeightField, registerSupport, registerSupportGrid, removeSupport } from "./physics.ts";
 import { canonicalLimb, normalizeReachTarget, normalizeReachBag, describeTarget, diffReach,
@@ -182,7 +183,7 @@ export class WorldAgent {
    *  server restart re-appended history and the next look() dumped chat the
    *  agent had already seen. */
   private inboxSeen = -Infinity;
-  pings: { ts: number; kind: "mention" | "approach" | "whisper" | "reach" | "touch"; who: string; text?: string }[] = [];
+  pings: { ts: number; kind: "mention" | "approach" | "depart" | "whisper" | "reach" | "touch"; who: string; text?: string }[] = [];
   onPing: ((p: { ts: number; kind: string; who: string; text?: string }) => void) | null = null;
   /** live world events (say/arrive/leave/activity) — the channel fan-out hook */
   onEvent: ((ev: { ts: number; kind: "say" | "arrive" | "leave" | "whisper" | "act" | "activity" | "weather" | "world-change"; who: string; text?: string; mention?: boolean }) => void) | null = null;
@@ -230,6 +231,17 @@ export class WorldAgent {
    *  away (> REARM_RADIUS) before another boundary crossing can ever count —
    *  someone pacing at 2–3m otherwise re-triggers on every crossing. */
   private nearArmed = new Map<string, boolean>();
+  /** An inward crossing that has NOT yet earned its ping. `since` is when they
+   *  crossed into arm's reach, `stillSince` when they were last observed
+   *  moving faster than APPROACH_STILL_MPS, and `at`/`atTs` the previous
+   *  sample, so the next one yields an observed speed. Cleared the moment they
+   *  leave the radius — that clearing IS the pass-through fix. */
+  private approachPending = new Map<string, { since: number; stillSince: number; at: [number, number]; atTs: number }>();
+  /** Someone whose approach was DELIVERED and whose departure therefore still
+   *  owes a ping. Gating "walked away" on this is what stops the fix at the
+   *  top of the radius being undone at the bottom: a passer-by never earned an
+   *  approach, so their leaving is not a departure — it is just traffic. */
+  private approachOpen = new Set<string>();
   /** participant -> when their current non-locomotion stint began (jump, sit…) */
   private nonLocoSince = new Map<string, number>();
   /** My live reach descriptors, one entry per limb (shared/reachwire.js).
@@ -735,6 +747,13 @@ export class WorldAgent {
             this.lastNear.delete(msg.id);
             this.nearArmed.delete(msg.id);
             this.nonLocoSince.delete(msg.id);
+            // Same rule for the dwell/depart pair. Dropping approachOpen here
+            // is also CORRECTNESS, not just hygiene: someone who disconnects
+            // while standing next to you has already been narrated by the
+            // presence gate ("left the world"), and must not ALSO be reported
+            // as having walked away — one exit, one line.
+            this.approachPending.delete(msg.id);
+            this.approachOpen.delete(msg.id);
             for (const k of this.lastReachPing.keys()) {
               if (k.endsWith(`:${msg.id}`)) this.lastReachPing.delete(k);
             }
@@ -779,11 +798,24 @@ export class WorldAgent {
   /** Track someone's latest pose + fire the approach ping when they cross
    *  into conversational range. An approach is precious as a knock — and
    *  worthless as a metronome (Fable: Digi "walked up" six times in a row,
-   *  just strolling nearby). Three gates: edge-triggered at the radius,
+   *  just strolling nearby). Four gates now: edge-triggered at the radius,
    *  RE-ARMED only after the person actually goes away (> REARM_RADIUS),
-   *  and a long per-person refractory on top. First approach wakes;
-   *  repeats within the window are background. */
-  private notePose(id: string, pose: Pose) {
+   *  a long per-person refractory on top, and — since 2026-08-26 — DWELL.
+   *
+   *  The first three all suppress REPEATS. None of them could tell a knock
+   *  from someone crossing your bubble on the way to the door, so the event
+   *  did not mean what declaration.ts promised it meant: "walked up to your
+   *  body AND STOPPED within arm's reach". Now the crossing only opens a
+   *  pending approach; delivery waits for stillness (see stepApproach).
+   *
+   *  The symmetric half, also asked for and also missing: the outward crossing
+   *  used to re-arm in silence. It now pings `depart` — but only for someone
+   *  whose approach was actually delivered.
+   *
+   *  `now` is injectable because dwell is a claim about TIME, and a test that
+   *  cannot control the clock either sleeps (slow, flaky) or asserts nothing.
+   *  Same reason and same shape as NoiseGate.presence/act's `ts`. */
+  private notePose(id: string, pose: Pose, now = Date.now()) {
     const p = this.people.get(id) ?? { id, avatar: "", pose: null };
     const prev = p.pose;
     p.pose = pose; this.people.set(id, p);
@@ -807,15 +839,14 @@ export class WorldAgent {
       return;
     }
     const prevDist = Math.hypot(prevXYZ[0] - this.pos.x, prevXYZ[2] - this.pos.z);
-    if (dist > REARM_RADIUS) this.nearArmed.set(id, true);
-    const armed = this.nearArmed.get(id) ?? true;
-    const cooled = Date.now() - (this.lastNear.get(id) ?? 0) > APPROACH_REFRACT_MS;
-    if (dist < APPROACH_RADIUS && prevDist >= APPROACH_RADIUS && armed && cooled) {
-      this.lastNear.set(id, Date.now());
-      this.nearArmed.set(id, false);
-      this.ping({ ts: Date.now(), kind: "approach", who: id });
-    }
     if (id !== this.name) {
+      // Approach/depart is about OTHER bodies. Guarded like noteActs and
+      // noteReachEvents beside it: self arrives here from the roster path too,
+      // and a self-echo that lands >REARM_RADIUS from our own authoritative
+      // pos (a teleport, mid-update) must not report that we walked away from
+      // ourselves. Under the old edge-trigger self could never cross the
+      // radius at all, so nothing depended on the omission.
+      this.stepApproach(id, x, z, dist, prevDist, now);
       // Movement feeds the activity pulse as accumulated DISPLACEMENT, not a
       // speed flag — idle jitter and a body parked mid-walk-cycle never
       // qualify; actually going somewhere does. Steps over 8m in one packet
@@ -827,6 +858,73 @@ export class WorldAgent {
       }
       this.noteActs(id, prev, pose, dist);
     }
+  }
+
+  /** One spatial sample of someone else, run through the approach/depart state
+   *  machine. Three zones, and the whole fix lives in which zone clears what:
+   *
+   *    dist > REARM_RADIUS      gone. Re-arm, and settle any owed departure.
+   *    APPROACH_RADIUS..REARM   nearby but not close. CANCELS a pending
+   *                             approach — this is the pass-through case, the
+   *                             body that entered arm's reach and kept going.
+   *    dist < APPROACH_RADIUS   close. Open a pending approach on the inward
+   *                             crossing; deliver it once they hold still.
+   *
+   *  Stillness is measured from the positions WE watched (metres over the
+   *  observed interval), never from `pose.speed` — a sender fills that field
+   *  in itself, and the activity pulse below already refuses to trust it.
+   *
+   *  Note the asymmetry between the zones, which is deliberate: leaving arm's
+   *  reach cancels a pending approach, but does NOT close a delivered one.
+   *  Someone who walked up and then drifted to 3m has not departed; making the
+   *  departure edge the same radius as the arrival edge would fire a
+   *  walked-up/walked-away pair every time a seated body's pose jittered
+   *  across 2.5m. Departure is the honest, already-existing re-arm boundary. */
+  private stepApproach(id: string, x: number, z: number, dist: number, prevDist: number, now: number) {
+    if (dist > REARM_RADIUS) {
+      this.nearArmed.set(id, true);
+      this.approachPending.delete(id);
+      if (this.approachOpen.delete(id))
+        this.ping({ ts: now, kind: "depart", who: id });
+      return;
+    }
+    if (dist >= APPROACH_RADIUS) {
+      this.approachPending.delete(id);
+      return;
+    }
+
+    // --- inside arm's reach ---
+    const pend = this.approachPending.get(id);
+    if (!pend) {
+      // Only the CROSSING opens a pending approach, exactly as before — a body
+      // already inside the radius when we started watching never "walks up".
+      const armed = this.nearArmed.get(id) ?? true;
+      const cooled = now - (this.lastNear.get(id) ?? 0) > APPROACH_REFRACT_MS;
+      if (prevDist >= APPROACH_RADIUS && armed && cooled)
+        this.approachPending.set(id, { since: now, stillSince: now, at: [x, z], atTs: now });
+      return;
+    }
+
+    // Observed speed over the gap since the last sample. A zero/negative gap
+    // (two samples in one millisecond) yields no evidence either way, so it
+    // leaves stillSince alone rather than dividing by zero.
+    const dt = now - pend.atTs;
+    if (dt > 0) {
+      const speed = Math.hypot(x - pend.at[0], z - pend.at[1]) / (dt / 1000);
+      if (speed >= APPROACH_STILL_MPS) pend.stillSince = now;
+      pend.at = [x, z];
+      pend.atTs = now;
+    }
+
+    const held = now - pend.stillSince >= APPROACH_DWELL_MS;
+    const waited = now - pend.since >= APPROACH_MAX_WAIT_MS;
+    if (!held && !waited) return;
+
+    this.approachPending.delete(id);
+    this.lastNear.set(id, now);
+    this.nearArmed.set(id, false);
+    this.approachOpen.add(id);
+    this.ping({ ts: now, kind: "approach", who: id });
   }
 
   /** Embodied acts as events. The presence stream is 15Hz noise; what an
@@ -1135,7 +1233,7 @@ export class WorldAgent {
    *  unbounded buffer whose only consumer is optional is a leak with a plan. */
   private static readonly PING_RING = 64;
 
-  private ping(p: { ts: number; kind: "mention" | "approach" | "whisper" | "reach" | "touch"; who: string; text?: string }) {
+  private ping(p: { ts: number; kind: "mention" | "approach" | "depart" | "whisper" | "reach" | "touch"; who: string; text?: string }) {
     this.pings.push(p);
     if (this.pings.length > WorldAgent.PING_RING) this.pings.splice(0, this.pings.length - WorldAgent.PING_RING);
     this.onPing?.(p);

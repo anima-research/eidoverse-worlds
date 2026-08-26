@@ -835,6 +835,15 @@ class Session {
         // event lives in this world's namespace.
         this.deliver(`* ${p.who} walked up to you`, { id: "world", name: this.agent.world },
           { tags: tags(CHAT.addressed, EIDO.approach, this.agent.isAgent(p.who) ? CHAT.fromAgent : null), mentioned: true });
+      } else if (p.kind === "depart") {
+        // The closing bracket. AMBIENT and NOT `mentioned` — being left is not
+        // being addressed, and this pair exists to spend fewer interruptions,
+        // not more. (Both halves share one wrinkle worth knowing: the radius is
+        // relative, so if WE walk away from a stationary body it still reads as
+        // them arriving or leaving. That is how `approach` has always behaved;
+        // this keeps the mirror consistent rather than inventing a second rule.)
+        this.deliver(`* ${p.who} walked away`, { id: "world", name: this.agent.world },
+          { tags: tags(CHAT.ambient, EIDO.depart, this.agent.isAgent(p.who) ? CHAT.fromAgent : null) });
       } else if (p.kind === "reach" || p.kind === "touch") {
         // A hand aimed at (or resting on) this body: directed like an
         // approach, worded by the agent ("reaches toward your shoulder_l
