@@ -18,6 +18,7 @@ import { initModelsRealizer, reconcileModels, residencyDebug, setResidencyFocus,
 import { initEnvironmentRealizer } from './lib/realize/environment.js';
 import { initSocialRealizer } from './lib/realize/social.js';
 import { initStructureRealizer } from './lib/realize/structure.js';
+import { initSimWorld, simState } from './lib/simworld.js';
 import { initStructureUI } from './lib/structure_ui.js';
 import { initCauses } from './lib/realize/causes.js';
 // side-effecting: the `particles` component's host wires itself to the comp
@@ -113,6 +114,9 @@ initSocialRealizer();
 initStructureRealizer();
 initStructureUI();
 initCauses();
+// the deterministic sim's applier (PROTOCOL_v2 dialect 3): advances the
+// shadow sim fold to now and moves sim-owned bodies — inert pre-epoch
+initSimWorld();
 
 // ---------------------------------------------------------------- boot
 
@@ -616,6 +620,7 @@ globalThis.EW = {
   gpu: () => ({ ...renderer.info.memory, ...protoStats() }),   // bytes + proto/byte tiers
   frame: frameDebug,           // per-system rolling ms + strides (§14.2 6b)
   grass: grassTiles,           // tile-level draw truth (§13.2, landed 8e)
+  simFold: simState,           // the deterministic sim's shadow cut (PROTOCOL_v2)
   grassDiag,                   // §22: `await EW.grassDiag()` — the meadow's GPU cost, attributed by difference
   setCloudQuality,             // §22b: the sky pane's tier knob, console-reachable for diagnosis
   warm: warmStats,             // the conductor's queue (§16.2.A)

@@ -47,6 +47,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { WORLDS_DIR } from "../server/config.ts";
 import { foldEntry, emptyState, stateToEntries, type LogEntry, type WorldState } from "../shared/fold.js";
+import { emptySim, simEntry, advanceSim } from "../shared/sim.js";
 
 const args = process.argv.slice(2);
 const WRITE = args.includes("--write");
@@ -87,6 +88,20 @@ function foldAll(entries: LogEntry[]): WorldState {
   for (const e of entries) foldEntry(st, e);
   return st;
 }
+
+/** The sim fold beside the instant one (dialect 3): fold, then settle far
+ *  past the last entry so rest states are reached — the digest below is of
+ *  epoch + bodies, never the tick counter (which is query-time trivia). */
+function foldSimAll(entries: LogEntry[], settleTicks = 100_000) {
+  const st = emptyState();
+  const sim = emptySim();
+  for (const e of entries) { foldEntry(st, e); simEntry(sim, e, st); }
+  if (sim.epoch && !sim.epoch.foreign) advanceSim(sim, sim.tick + settleTicks);
+  return sim;
+}
+const simDigest = (sim: ReturnType<typeof emptySim>) =>
+  createHash("sha256").update(canonical({ epoch: sim.epoch, bodies: sim.bodies }))
+    .digest("hex").slice(0, 16);
 
 /** The world-shaping subset the stateToEntries roundtrip contract covers —
  *  see the header for what each exclusion means and why it is deliberate. */
@@ -146,6 +161,16 @@ for (const name of names) {
   const d2 = digest(foldAll(parseLog(raw.toString("utf8")).entries));
   if (d1 !== d2) fails.push(`NONDETERMINISTIC fold (${d1} vs ${d2}) — impurity in shared/fold.js`);
 
+  // 1b. the sim fold (dialect 3), where an epoch exists: same double-fold
+  // self-agreement, settled far past the last entry so rest is reached
+  const fullSim = foldSimAll(entries);
+  if (fullSim.epoch) {
+    const s1 = simDigest(fullSim);
+    const s2 = simDigest(foldSimAll(parseLog(raw.toString("utf8")).entries));
+    if (s1 !== s2) fails.push(`NONDETERMINISTIC sim fold (${s1} vs ${s2}) — impurity in shared/sim.js`);
+    notes.push(`sim ${fullSim.epoch.sim}${fullSim.epoch.foreign ? " (FOREIGN — refused, barrier truth)" : ` digest ${s1}, ${Object.keys(fullSim.bodies).length} body/ies`}`);
+  }
+
   // 2. snapshot parity — the two boot paths must agree
   const snapPath = join(dir, "snapshot.json");
   if (existsSync(snapPath)) {
@@ -157,11 +182,22 @@ for (const name of names) {
         notes.push("snapshot offset not credible — boot would full-replay (as WorldLog does)");
       } else {
         const st = structuredClone(snap.state) as WorldState;
+        const snapSim = snap.sim?.bodies ? structuredClone(snap.sim) : emptySim();
         const { entries: tail } = parseLog(raw.toString("utf8", snap.bytes));
-        for (const e of tail) foldEntry(st, e);
+        for (const e of tail) { foldEntry(st, e); simEntry(snapSim, e, st); }
         const ds = digest(st);
         if (ds !== d1) fails.push(`SNAPSHOT DIVERGES from genesis replay (${ds} vs ${d1})`
           + ` — stale derived cache; delete ${name}/snapshot.json to rebuild`);
+        // the sim's two boot paths must agree too (adoption is exact —
+        // advancement is schedule-independent, PROTOCOL_v2 §1/§3)
+        if (fullSim.epoch && !fullSim.epoch.foreign) {
+          if (snapSim.epoch && !snapSim.epoch.foreign) advanceSim(snapSim, snapSim.tick + 100_000);
+          const dss = simDigest(snapSim);
+          if (dss !== simDigest(fullSim)) {
+            fails.push(`SIM SNAPSHOT DIVERGES from genesis recompute (${dss})`
+              + ` — delete ${name}/snapshot.json to rebuild`);
+          }
+        }
       }
     } catch { notes.push("snapshot unparseable — boot would full-replay"); }
   } else notes.push("no snapshot (young world)");

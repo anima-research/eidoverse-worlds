@@ -23,6 +23,7 @@ import { colliders, nearColliders } from './colliders.js';
 import { sendLease, sendVerb } from './net.js';
 import { flashHint } from './ui.js';
 import { logChat } from './chat.js';
+import { state } from './state.js';
 
 const GRAVITY = -9.8;
 const STREAM_MS = 66;
@@ -241,7 +242,11 @@ export function kick(arg) {
   // so history says which way, whoever ends up simulating it
   const dx = at.x - me.x, dz = at.z - me.z;
   const d = Math.hypot(dx, dz) || 1;
-  sendVerb('punt', { id, power, dir: [dx / d, 0, dz / d] });
+  // Dialect 3: under a sim epoch the intent carries its WHOLE vector — the
+  // upward component included, since the sim adds no launch lift of its own
+  // (the volunteer path added 0.45·power itself; here the ratio rides dir).
+  const lift = state.sim?.epoch && !state.sim.epoch.foreign ? 0.45 : 0;
+  sendVerb('punt', { id, power, dir: [dx / d, lift, dz / d] });
 }
 
 /** Every punt in the world lands here off the live log — mine, another
@@ -252,6 +257,11 @@ export function kick(arg) {
  *  the lease table settles any remaining race. */
 bus.on('punt', ({ actor, id, dir, power }) => {
   if (!enabled) return;                       // volunteering is the mod's act
+  // Dialect 3 (PROTOCOL_v2): under a sim epoch the SIM owns punt flights —
+  // recomputation, not volunteering. Standing down here is what retires
+  // the lease race for punts without touching any other physics this mod
+  // does (drags, hand-offs, non-punt sims stay exactly as they were).
+  if (state.sim?.epoch && !state.sim.epoch.foreign) return;
   const obj = entities.get(id);
   if (!obj || comps.get(id)?.motion) return;
   const p = Math.min(MAX_KICK, Math.max(0.5, Number(power) || 5));

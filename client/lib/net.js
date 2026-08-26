@@ -707,7 +707,7 @@ async function onSnapshot(msg) {
   shadowHydrate(msg.state, [], Math.max(
     typeof msg.throughSeq === 'number' ? msg.throughSeq : -1,
     ...(msg.entries?.length ? msg.entries.map((e) => e.seq ?? -1) : [-1]),
-  ));
+  ), msg.sim ?? null);
 
   // Warm the bytes for every still-live spawn in parallel BEFORE the ordered
   // replay — join time becomes the slowest asset, not the sum of all of them.
