@@ -39,6 +39,7 @@ import {
   CHAT, EIDO, CAP, tags, capabilityMatches, MCPL_ADVERTISEMENT, FEATURE_SETS,
 } from "./declaration.ts";
 import { WorldAgent } from "./agent.ts";
+import { pingDelivery, type WirePing } from "./ping-wire.ts";
 import { rawShapeError } from "./shape.ts";
 import { MANIFEST_WITH_REVISION, ManifestAnnouncer } from "./manifest.ts";
 import { verifyToken } from "../server/aid1.ts";
@@ -829,29 +830,12 @@ class Session {
       }
     };
     this.agent.onPing = (p) => {
-      if (p.kind === "approach") {
-        // Directed at this body — but nothing was said, so it is not chat and
-        // not a mention. `chat:addressed` is the honest umbrella; the specific
-        // event lives in this world's namespace.
-        this.deliver(`* ${p.who} walked up to you`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.addressed, EIDO.approach, this.agent.isAgent(p.who) ? CHAT.fromAgent : null), mentioned: true });
-      } else if (p.kind === "depart") {
-        // The closing bracket. AMBIENT and NOT `mentioned` — being left is not
-        // being addressed, and this pair exists to spend fewer interruptions,
-        // not more. (Both halves share one wrinkle worth knowing: the radius is
-        // relative, so if WE walk away from a stationary body it still reads as
-        // them arriving or leaving. That is how `approach` has always behaved;
-        // this keeps the mirror consistent rather than inventing a second rule.)
-        this.deliver(`* ${p.who} walked away`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.ambient, EIDO.depart, this.agent.isAgent(p.who) ? CHAT.fromAgent : null) });
-      } else if (p.kind === "reach" || p.kind === "touch") {
-        // A hand aimed at (or resting on) this body: directed like an
-        // approach, worded by the agent ("reaches toward your shoulder_l
-        // (right hand)" / "touches your head_top (left hand)").
-        this.deliver(`* ${p.who} ${p.text}`, { id: "world", name: this.agent.world },
-          { tags: tags(CHAT.addressed, p.kind === "touch" ? EIDO.touch : EIDO.reach,
-            this.agent.isAgent(p.who) ? CHAT.fromAgent : null), mentioned: true });
-      }
+      // The ping→channel mapping (approach addressed+mentioned, depart
+      // ambient, reach/touch worded by the agent) lives in ping-wire.ts,
+      // where a test can hold it to what declaration.ts promises.
+      const d = pingDelivery(p as WirePing, this.agent.isAgent(p.who));
+      if (d) this.deliver(d.text, { id: "world", name: this.agent.world },
+        { tags: d.tags, ...(d.mentioned ? { mentioned: true } : {}) });
     };
 
     // §5.3 ORDERING (the discord-mcpl canary's rule: NOTHING runs between

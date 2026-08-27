@@ -40,8 +40,8 @@ function rig() {
   // defaults to 0, so a clock starting near zero reads as "approached a moment
   // ago" and refuses the very first knock.
   const T0 = Date.now();
-  const seen: { kind: string; who: string }[] = [];
-  ag.onPing = (p: any) => seen.push({ kind: p.kind, who: p.who });
+  const seen: { kind: string; who: string; text?: string }[] = [];
+  ag.onPing = (p: any) => seen.push({ kind: p.kind, who: p.who, ...(p.text != null ? { text: p.text } : {}) });
   return {
     ag, T0, seen,
     at: (t: number, x: number, z: number, clip?: string, speed?: number, who = "digi") =>
@@ -141,6 +141,9 @@ const DIST = (x: number, z: number) => Math.hypot(x, z);
 
   at(21_000, REARM_RADIUS + 2, 0);
   check("going properly away IS a departure", count("depart") === 1);
+  check("...and their own movement carried them out, so the wire may say so",
+    seen.find((p) => p.kind === "depart")?.text === "walked away",
+    JSON.stringify(seen.filter((p) => p.kind === "depart")));
 
   at(22_000, REARM_RADIUS + 5, 0);
   at(23_000, REARM_RADIUS + 9, 0);
@@ -191,6 +194,49 @@ const DIST = (x: number, z: number) => Math.hypot(x, z);
   check("the stopper is announced and the passer-by is not",
     count("approach") === 1 && seen.find((p) => p.kind === "approach")?.who === "digi",
     JSON.stringify(seen));
+}
+
+// ---------------------------------------------------------------- who moved? the wire must not author OUR walk as THEIRS
+
+// Antra's review vector (PR #145): after digi earns an approach at (1.5,0),
+// the AGENT teleports to (10,0) and digi's next sample is the same unmoved
+// pose. The bracket must close — the relation really did end — but the old
+// wire said "* digi walked away" about a body that never took a step. The
+// depart ping now carries its own text: "walked away" only when the departing
+// body is beyond the re-arm edge measured from where WE stood when the
+// approach fired; otherwise the actor-neutral "is no longer nearby".
+
+{
+  const { ag, at, count, seen } = rig();
+  at(0, 10, 0);
+  at(100, 1.5, 0);
+  for (let i = 0; i <= APPROACH_DWELL_MS + 400; i += 200) at(100 + i, 1.5, 0);
+  check("(setup) approached", count("approach") === 1);
+
+  ag.pos = { x: 10, y: 0, z: 0 };       // WE move; digi does not
+  at(20_000, 1.5, 0);                    // digi's unmoved pose, now 8.5m from us
+  check("self walking away still closes the bracket", count("depart") === 1,
+    `${count("depart")} pings`);
+  check("...but the wire does not claim digi moved",
+    seen.find((p) => p.kind === "depart")?.text === "is no longer nearby",
+    JSON.stringify(seen.filter((p) => p.kind === "depart")));
+}
+
+{
+  const { ag, at, count, seen } = rig();
+  at(0, 10, 0);
+  at(100, 1.5, 0);
+  for (let i = 0; i <= APPROACH_DWELL_MS + 400; i += 200) at(100 + i, 1.5, 0);
+  check("(setup) approached", count("approach") === 1);
+
+  // Both drift apart: we to (-4,0), digi to (4,0). 8m apart — past the re-arm
+  // edge — but digi is only 4m from where we stood at the approach, so no
+  // single party "walked away"; the separation is shared.
+  ag.pos = { x: -4, y: 0, z: 0 };
+  at(20_000, 4, 0);
+  check("a separation both parties caused is worded neutrally",
+    count("depart") === 1 && seen.find((p) => p.kind === "depart")?.text === "is no longer nearby",
+    JSON.stringify(seen.filter((p) => p.kind === "depart")));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

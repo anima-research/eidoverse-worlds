@@ -181,7 +181,7 @@ const TAG_ONTOLOGY = {
       implies: [CHAT.addressed],
     },
     [EIDO.depart]: {
-      desc: "Someone who had walked up to you has left your immediate surroundings. The closing bracket of eidoverse:approach — you only ever receive one for a person you were told had arrived.",
+      desc: "Someone who had walked up to you is no longer in your immediate surroundings. The closing bracket of eidoverse:approach — you only ever receive one for a person you were told had arrived. The wire text names who moved when there is evidence ('walked away' only when their own movement carried them out); otherwise it states the relation neutrally ('is no longer nearby' — you may be the one who left).",
       // AMBIENT, not addressing: a departure is worth knowing and not worth
       // waking for, and the whole point of this pair is fewer interruptions,
       // not one more. Consumers who do want to wake on it can say so in their

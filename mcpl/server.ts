@@ -11,6 +11,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { readdirSync } from "node:fs";
 import { WorldAgent } from "./agent.ts";
+import { pingLine } from "./ping-wire.ts";
 
 const agent = new WorldAgent();
 await agent.connect();
@@ -35,19 +36,9 @@ server.tool(
   async () => {
     const pings = agent.takePings();
     if (!pings.length) return { content: [{ type: "text", text: "no pending pings" }] };
-    // Every kind renders as ITSELF. This used to be a binary — mention, or
-    // else "walked up to you" — which quietly mislabelled whispers, reaches
-    // and touches as approaches, discarding the wording each of them had
-    // already built for itself (`touches your head_top (left hand)`).
-    const lines = pings.map((p) => {
-      switch (p.kind) {
-        case "mention": return `@ ${p.who}: ${p.text}`;
-        case "whisper": return `@ ${p.who} whispers: ${p.text}`;
-        case "approach": return `≈ ${p.who} walked up to you`;
-        case "depart": return `≈ ${p.who} walked away`;
-        default: return `≈ ${p.who} ${p.text}`;   // reach / touch carry their own phrasing
-      }
-    });
+    // Every kind renders as ITSELF — see ping-wire.ts, where the wording is
+    // testable alongside the channel mapping the MCPL door uses.
+    const lines = pings.map(pingLine);
     return { content: [{ type: "text", text: lines.join("\n") }] };
   },
 );

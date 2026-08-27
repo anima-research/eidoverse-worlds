@@ -240,8 +240,16 @@ export class WorldAgent {
   /** Someone whose approach was DELIVERED and whose departure therefore still
    *  owes a ping. Gating "walked away" on this is what stops the fix at the
    *  top of the radius being undone at the bottom: a passer-by never earned an
-   *  approach, so their leaving is not a departure — it is just traffic. */
-  private approachOpen = new Set<string>();
+   *  approach, so their leaving is not a departure — it is just traffic.
+   *
+   *  The value is OUR OWN (x,z) at the moment the approach fired — the
+   *  vantage the walk-up was true from. The radius is relative, so "they
+   *  crossed the re-arm edge" alone cannot say who moved; measuring the
+   *  departing body against this anchor can: past REARM_RADIUS from where we
+   *  STOOD, their own movement accounts for the exit and the wire may say
+   *  "walked away". Anything less means we carried some (or all) of the
+   *  separation ourselves, and the wire only claims the relation ended. */
+  private approachOpen = new Map<string, [number, number]>();
   /** participant -> when their current non-locomotion stint began (jump, sit…) */
   private nonLocoSince = new Map<string, number>();
   /** My live reach descriptors, one entry per limb (shared/reachwire.js).
@@ -732,32 +740,7 @@ export class WorldAgent {
             this.gate.presence(msg.id, "arrive");
             break;
           case "leave":
-            this.people.delete(msg.id);
-            // 🔴 THE PER-PARTICIPANT MAPS MUST GO TOO (2026-08-16). `people` was
-            // cleaned here and these three were not, so every identity that ever
-            // appeared kept an entry for the LIFE OF THE PROCESS — a door in a
-            // busy world grows without bound, and the local convention elsewhere
-            // in this file is explicitly bounded rings (pings 64, heldActivity
-            // 8, malformedSeen 5). These were the exception, not the rule.
-            //
-            // Correctness, not just memory: nearArmed is the approach-ping
-            // re-arm bit, so a returning visitor inherited the arm state from
-            // their PREVIOUS visit — walking away and back could fail to
-            // re-announce them, or announce them twice.
-            this.lastNear.delete(msg.id);
-            this.nearArmed.delete(msg.id);
-            this.nonLocoSince.delete(msg.id);
-            // Same rule for the dwell/depart pair. Dropping approachOpen here
-            // is also CORRECTNESS, not just hygiene: someone who disconnects
-            // while standing next to you has already been narrated by the
-            // presence gate ("left the world"), and must not ALSO be reported
-            // as having walked away — one exit, one line.
-            this.approachPending.delete(msg.id);
-            this.approachOpen.delete(msg.id);
-            for (const k of this.lastReachPing.keys()) {
-              if (k.endsWith(`:${msg.id}`)) this.lastReachPing.delete(k);
-            }
-            this.gate.presence(msg.id, "leave");
+            this.noteLeave(msg.id);
             break;
           case "avatar-updated":
             // avatar bytes changed: the held verdict demotes to pending NOW
@@ -884,8 +867,19 @@ export class WorldAgent {
     if (dist > REARM_RADIUS) {
       this.nearArmed.set(id, true);
       this.approachPending.delete(id);
-      if (this.approachOpen.delete(id))
-        this.ping({ ts: now, kind: "depart", who: id });
+      const anchor = this.approachOpen.get(id);
+      if (anchor) {
+        this.approachOpen.delete(id);
+        // Who moved? `dist` is measured from wherever WE are now, so on its
+        // own it authored our movement as theirs ("* digi walked away" while
+        // digi stood still and we left). Measure them against the anchor —
+        // our position when the approach fired: beyond the re-arm edge from
+        // THERE, their own legs did it. Anything closer and the separation
+        // is at least partly ours, so the ping carries the actor-neutral
+        // sentence instead. Both renderers print `who` + this text verbatim.
+        const walked = Math.hypot(x - anchor[0], z - anchor[1]) > REARM_RADIUS;
+        this.ping({ ts: now, kind: "depart", who: id, text: walked ? "walked away" : "is no longer nearby" });
+      }
       return;
     }
     if (dist >= APPROACH_RADIUS) {
@@ -923,8 +917,41 @@ export class WorldAgent {
     this.approachPending.delete(id);
     this.lastNear.set(id, now);
     this.nearArmed.set(id, false);
-    this.approachOpen.add(id);
+    this.approachOpen.set(id, [this.pos.x, this.pos.z]); // the vantage the walk-up was true from
     this.ping({ ts: now, kind: "approach", who: id });
+  }
+
+  /** A body left the WORLD (the `leave` message; extracted so the seam is
+   *  testable without a socket).
+   *
+   *  🔴 THE PER-PARTICIPANT MAPS MUST GO TOO (2026-08-16). `people` was
+   *  cleaned here and these three were not, so every identity that ever
+   *  appeared kept an entry for the LIFE OF THE PROCESS — a door in a
+   *  busy world grows without bound, and the local convention elsewhere
+   *  in this file is explicitly bounded rings (pings 64, heldActivity
+   *  8, malformedSeen 5). These were the exception, not the rule.
+   *
+   *  Correctness, not just memory: nearArmed is the approach-ping
+   *  re-arm bit, so a returning visitor inherited the arm state from
+   *  their PREVIOUS visit — walking away and back could fail to
+   *  re-announce them, or announce them twice.
+   *
+   *  Same rule for the dwell/depart pair. Dropping approachOpen here
+   *  is also CORRECTNESS, not just hygiene: someone who disconnects
+   *  while standing next to you has already been narrated by the
+   *  presence gate ("left the world"), and must not ALSO be reported
+   *  as having walked away — one exit, one line. */
+  private noteLeave(id: string) {
+    this.people.delete(id);
+    this.lastNear.delete(id);
+    this.nearArmed.delete(id);
+    this.nonLocoSince.delete(id);
+    this.approachPending.delete(id);
+    this.approachOpen.delete(id);
+    for (const k of this.lastReachPing.keys()) {
+      if (k.endsWith(`:${id}`)) this.lastReachPing.delete(k);
+    }
+    this.gate.presence(id, "leave");
   }
 
   /** Embodied acts as events. The presence stream is 15Hz noise; what an
