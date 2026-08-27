@@ -29,7 +29,7 @@
 import { bus } from './base.js';
 const flashHint = (msg) => import('./ui.js').then((u) => u.flashHint(msg)).catch(() => {});
 import { sendTyping } from './net.js';
-import { gateThreshold } from './voiceconsent.js';
+import { gateThreshold, pttMode } from './voiceconsent.js';
 import { gateStream, attachSource, detachSource, driveGate, setMonitor, monitoring,
          gateUnavailable, ungatedConsent, isGated,
          makeOnsetGate, makeLevelMeter } from './micgate.js';
@@ -56,6 +56,35 @@ export function toggleMute(on) {
   return _muted;
 }
 
+// ── push-to-talk: the key IS the gate ───────────────────────────────────────
+// In PTT mode the level machinery keeps running — it still feeds the meter and
+// the noise floor — but the gate DECISION is the held key alone. Not key AND
+// level: the person pressing the key has already answered "do I mean to be
+// heard", which is the only question the level gate ever existed to guess at.
+// (Discord and VRChat both transmit everything while held, for the same
+// reason.) The envelope and lookahead in micgate.js still shape the open, so
+// a PTT press catches its first consonant instead of clicking — something a
+// hardware PTT switch cannot do.
+//
+// Mute stays authoritative above this, unchanged: a muted mic ignores the key
+// exactly as it ignores speech.
+let _pttHeld = false;
+export const pttHeld = () => _pttHeld;
+export function setPttHeld(on) {
+  const next = !!on;
+  if (next === _pttHeld) return;
+  _pttHeld = next;
+  const now = Date.now();
+  // The press is a GESTURE — intent declared, not inferred. Announce the 🎙
+  // on the press itself rather than waiting for the level to clear a floor
+  // the mode no longer uses. It goes through the machine's own once-per-1.5s
+  // rate-limit (the same one the level onset uses), so a mode flip or a
+  // rapid re-press cannot double-fire it.
+  if (next && pttMode() && micOn()) _onset.press(now);
+  gateAudio(now);   // apply immediately — a 20ms tick is an audible latency here
+}
+bus.on('audio:ptt', (on) => { if (!on && _pttHeld) { _pttHeld = false; gateAudio(Date.now()); } });
+
 // 🔴 THE ONSET WATCHER'S STATE. Extracted from voice.js:680-682 — the slice
 // that moved the FUNCTIONS started below these declarations, so every one of
 // them was a free variable here: startOnsetWatch/onsetTick/gateAudio threw
@@ -75,6 +104,9 @@ const _onset = makeOnsetGate({
   threshold: gateThreshold,
   drive: (open) => driveGate((!_lane || _muted) ? false : open),
   announce: () => sendTyping(null, 'mic'),
+  // Push-to-talk hands the machine a HELD answer instead of a level to judge;
+  // null means "no override, decide by level" — see setPttHeld above.
+  held: () => (pttMode() ? _pttHeld : null),
 });
 const gateAudio = (now) => _onset.apply(now);
 const startOnsetWatch = () => _onset.start();

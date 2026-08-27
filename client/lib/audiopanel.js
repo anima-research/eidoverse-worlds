@@ -15,7 +15,7 @@
 import { makeSection } from './ui.js';
 import { audioPrefs, setVolume, receivingVoice, setReceiveVoice,
   sttConsented, setSttConsent, isHushed, setHush,
-  micFloor, setMicFloor } from './voiceconsent.js';
+  micFloor, setMicFloor, pttMode, setPttMode } from './voiceconsent.js';
 import { micAnalyserLevel as meshMicLevel } from './micstate.js';
 // 🔴 ASK THE LIVE TRANSPORT (2026-08-15, R found this one in the HUD: "the mic
 // icon isn't turning gold anymore when it is transmitting"). voice.js's
@@ -334,7 +334,29 @@ function paint(body) {
     });
   _sync.mic = micRow.querySelector('input');
   body_.append(micRow);
-  body_.append(micFloorRow());   // sensitivity belongs UNDER the switch it serves
+  // PTT sits between the mic switch and the sensitivity floor because it
+  // DECIDES which of the two regimes below it is real: checked, the gate is
+  // the held key and the floor drives nothing; unchecked, voice activation
+  // owns the gate and V goes back to being the mic toggle.
+  body_.append(checkRow('push-to-talk',
+    'transmit only while V is held down — replaces voice activation, so the ' +
+    'sensitivity floor below is not used while this is on. Release V and the ' +
+    'room hears nothing.',
+    pttMode(), (on) => setPttMode(on)));
+  const floorRow = micFloorRow();
+  body_.append(floorRow);        // sensitivity belongs UNDER the switch it serves
+  // Under PTT the floor is a control that does nothing — the exact thing this
+  // panel's history says must never LOOK functional. Dimmed and inert, not
+  // hidden: hiding it would make "where did my sensitivity slider go" a
+  // support question, and the dim states the relationship (this row belongs
+  // to the mode you are not in).
+  const dimFloor = () => {
+    const off = pttMode();
+    floorRow.style.opacity = off ? '0.45' : '';
+    floorRow.style.pointerEvents = off ? 'none' : '';
+  };
+  dimFloor();
+  bus.on('audio:ptt', dimFloor);
 
   const hearRow = checkRow('hear voices',
     'peers and agent speech — the 🎧 glyph is this same switch',

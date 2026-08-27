@@ -34,6 +34,7 @@ mock.module(new URL("../client/lib/ui.js", import.meta.url).pathname, () => ({
 mock.module(new URL("../client/lib/net.js", import.meta.url).pathname, () => ({ sendTyping: () => {} }));
 mock.module(new URL("../client/lib/voiceconsent.js", import.meta.url).pathname, () => ({
   gateThreshold: () => 0.02,
+  pttMode: () => false,   // voice activation: the level decides (mic-ptt-test covers the other regime)
 }));
 mock.module(new URL("../client/lib/audioctx.js", import.meta.url).pathname, () => ({
   audioContext: () => { throw new Error("no audio in a test"); },
