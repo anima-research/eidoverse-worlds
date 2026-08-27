@@ -11,6 +11,7 @@
 // Run: bun tools/approach-seed-test.ts
 
 import { WorldAgent } from "../mcpl/agent.ts";
+import { APPROACH_DWELL_MS } from "../mcpl/denoise.ts";
 
 let pass = 0, fail = 0;
 function check(name: string, ok: boolean, detail = "") {
@@ -26,13 +27,17 @@ function rig() {
   ag.pos = { x: 0, y: 0, z: 0 };
   const acts: any[] = [];
   ag.onEvent = (ev: any) => { if (ev.kind === "act") acts.push(ev); };
-  return { ag, acts, pings: () => ag.takePings().filter((p: any) => p.kind === "approach") };
+  // Offset from a REAL epoch: `cooled` measures against a last-approach time
+  // that defaults to 0, so a clock starting near zero reads as "approached a
+  // moment ago" and refuses the first knock.
+  const T0 = Date.now();
+  return { ag, acts, T0, pings: () => ag.takePings().filter((p: any) => p.kind === "approach") };
 }
 
 // ---------------------------------------------------------------- the incident: body already beside you at (re)join
 
 {
-  const { ag, acts, pings } = rig();
+  const { ag, acts, T0, pings } = rig();
   ag.notePose("digi", pose(1.0, 0.5, "sitstool", { pose: { head: [0, 0, 0, 1] } }));
   check("first observation within arm's reach pings NO approach", pings().length === 0);
   check("first observation narrates NO acts (sitting body stays silent)", acts.length === 0, JSON.stringify(acts));
@@ -42,23 +47,29 @@ function rig() {
   ag.notePose("digi", pose(0.8, 0.3, "sitstool", { pose: { head: [0, 0, 0, 1] } }));
   check("shuffling in place near you still pings nothing", pings().length === 0);
 
-  // leave properly (> re-arm radius), come back: NOW it is a real walk-up
-  ag.notePose("digi", pose(9, 0));
-  ag.notePose("digi", pose(1.5, 0));
-  check("leave-and-return is a REAL approach and pings once", pings().length === 1);
+  // leave properly (> re-arm radius), come back: NOW it is a real walk-up —
+  // but only once they STOP. The crossing alone no longer speaks.
+  ag.notePose("digi", pose(9, 0), T0);
+  ag.notePose("digi", pose(1.5, 0), T0 + 100);
+  check("the crossing alone is not yet an approach", pings().length === 0);
+  ag.notePose("digi", pose(1.5, 0), T0 + 100 + APPROACH_DWELL_MS + 50);
+  check("leave-and-return and STAY is a REAL approach and pings once", pings().length === 1);
 }
 
 // ---------------------------------------------------------------- the normal path is untouched
 
 {
-  const { ag, acts, pings } = rig();
-  ag.notePose("visitor", pose(15, 0));           // first seen far — baseline, armed
+  const { ag, acts, T0, pings } = rig();
+  ag.notePose("visitor", pose(15, 0), T0);       // first seen far — baseline, armed
   check("first observation far away pings nothing", pings().length === 0);
-  ag.notePose("visitor", pose(6, 0, "walk"));
-  ag.notePose("visitor", pose(2.0, 0, "walk"));
+  ag.notePose("visitor", pose(6, 0, "walk"), T0 + 100);
+  ag.notePose("visitor", pose(2.0, 0, "walk"), T0 + 200);
+  // Note the clip is still "walk" and the pose's own `speed` is 0 — neither is
+  // consulted. Stillness is the distance WE watched them not cover.
+  ag.notePose("visitor", pose(2.0, 0, "walk"), T0 + 200 + APPROACH_DWELL_MS + 50);
   check("a live walk-up still pings approach", pings().length === 1);
   const before = acts.length;
-  ag.notePose("visitor", pose(2.0, 0, "sitchair"));
+  ag.notePose("visitor", pose(2.0, 0, "sitchair"), T0 + 400 + APPROACH_DWELL_MS);
   check("a live posture TRANSITION still narrates", acts.length === before + 1 && /sits down/.test(acts.at(-1)?.text),
     JSON.stringify(acts.at(-1)));
 }
