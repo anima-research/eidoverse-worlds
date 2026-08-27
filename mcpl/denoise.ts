@@ -78,20 +78,39 @@ export const APPROACH_DWELL_MS = env("EW_APPROACH_DWELL_SEC", 2.5) * 1000;
  *  flag, so idle jitter and a body parked mid-walk-cycle never qualify"), and a
  *  sender is free to put anything in `speed`. Walking is ~1.4 m/s, so this sits
  *  well clear of it while tolerating idle sway and pose jitter. */
-export const APPROACH_STILL_MPS = env("EW_APPROACH_STILL_MPS", 0.35);
+export const APPROACH_STILL_MPS = (() => {
+  const v = env("EW_APPROACH_STILL_MPS", 0.35);
+  if (v > 0) return v;
+  // ≤ 0 would make every observed speed count as "moving": stillness never
+  // accumulates, dwell never fires, and EVERY approach ships via the max-wait
+  // hatch — the headline defect, for everyone, from one env var. Refused.
+  console.warn(`[denoise] EW_APPROACH_STILL_MPS=${v} rejected (must be > 0); using 0.35`);
+  return 0.35;
+})();
 /** Someone who stays inside arm's reach but never actually settles — pacing,
  *  circling, fidgeting in your face — has still approached you. Deliver anyway
  *  once they have been in the radius this long. Without this a body that never
  *  reads as still is never announced at all, which trades Antra's false
  *  positives for false NEGATIVES; it also bounds the pending state.
  *
- *  INVARIANT worth keeping if you retune any of these: a straight-line
+ *  INVARIANT, now ENFORCED rather than commented: a straight-line
  *  pass-through must not be able to reach this escape hatch. The longest a
  *  body still counting as "moving" can spend inside the radius on a straight
  *  path is (2 × APPROACH_RADIUS) / APPROACH_STILL_MPS — 14.3s at the defaults,
- *  comfortably under 20s. Lower APPROACH_STILL_MPS far enough (below ~0.25)
- *  and a very slow crosser starts being announced by the max wait instead. */
-export const APPROACH_MAX_WAIT_MS = env("EW_APPROACH_MAX_WAIT_SEC", 20) * 1000;
+ *  comfortably under 20s. Both knobs are advertised as LIVE tuning controls,
+ *  and either one alone could silently reintroduce the pass-through ping this
+ *  whole file exists to kill (a small EW_APPROACH_MAX_WAIT_SEC directly; a
+ *  small EW_APPROACH_STILL_MPS by widening what counts as a slow crosser
+ *  under the default wait). So the wait CLAMPS to the safe bound derived from
+ *  whatever stillness threshold is in force — tune freely, the invariant
+ *  holds itself. */
+export const APPROACH_SAFE_WAIT_MS = Math.ceil(((2 * APPROACH_RADIUS) / APPROACH_STILL_MPS) * 1000);
+export const APPROACH_MAX_WAIT_MS = (() => {
+  const v = env("EW_APPROACH_MAX_WAIT_SEC", 20) * 1000;
+  if (v >= APPROACH_SAFE_WAIT_MS) return v;
+  console.warn(`[denoise] EW_APPROACH_MAX_WAIT_SEC=${v / 1000}s would let a straight pass-through be announced as an approach; clamped to ${APPROACH_SAFE_WAIT_MS / 1000}s (2·APPROACH_RADIUS / APPROACH_STILL_MPS)`);
+  return APPROACH_SAFE_WAIT_MS;
+})();
 
 /** The denoiser's complement: the ACTIVITY PULSE. Where the gate above takes
  *  individual events away, the pulse gives one back — a digest of everything
