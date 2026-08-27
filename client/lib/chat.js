@@ -617,6 +617,10 @@ function runCommand(raw) {
       // /debug [n] — the world's flight recorder: why things bounced
       bus.emit('command', { cmd: 'debug', arg });
       return true;
+    case 'receipt':
+      // /receipt [secs] — the #42 performance receipt (console table + JSON download)
+      bus.emit('command', { cmd: 'receipt', arg });
+      return true;
     case 'audio':
       // 🔴 /audio — the phone's own console (R, 2026-08-16: "maybe you can
       // temporarily add a chatlog command that can return something?").

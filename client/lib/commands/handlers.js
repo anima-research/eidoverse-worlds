@@ -24,6 +24,7 @@ import { EMOTE_ORDER, EMOTES } from '../avatar.js';
 import { setPushable, pushable } from '../consent.js';
 import { trySitOn } from '../localbody.js';
 import { getMe } from '../mybody.js';
+import { perfReceipt } from '../receipt.js';
 import { setMyReach, clearMyReach } from '../reachnet.js';
 import { canonicalPoint, CONTACT_POINTS } from '../../../shared/contact.js';
 import { TOUCH_GAP } from '../../../shared/reachwire.js';
@@ -270,6 +271,25 @@ register('debug', (arg) => {
       logChat('*', `${t} [${kind}] ${Object.entries(rest).map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`).join(' ')}`);
     }
   });
+});
+
+register('receipt', (arg) => {
+  // /receipt [secs] — the #42 performance receipt: measures this tab through
+  // one-at-a-time subsystem toggles, prints the table to the console, and
+  // downloads the JSON for attaching to the issue. World state is untouched.
+  const secsPer = Math.min(20, Math.max(2, parseInt(arg, 10) || 5));
+  const phaseCount = 5;   // baseline + up to four toggles
+  logChat('*', `taking a performance receipt (~${Math.round(phaseCount * (secsPer + 1.5))}s) — keep this tab visible and hands off the camera`);
+  perfReceipt({ secsPer }).then((receipt) => {
+    const blob = new Blob([JSON.stringify(receipt, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `receipt-${receipt.identity.world}-${receipt.identity.capturedAt.replace(/[:.]/g, '-')}.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+    const base = receipt.phases[0];
+    logChat('*', `receipt done: ${base.fps}fps baseline on ${receipt.environment.backend}; full table in the console, JSON downloaded`);
+  }).catch((e) => logChat('*', `receipt failed: ${e.message}`));
 });
 
 register('mount', (arg) => {
