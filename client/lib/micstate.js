@@ -29,7 +29,7 @@
 import { bus } from './core.js';
 const flashHint = (msg) => import('./ui.js').then((u) => u.flashHint(msg)).catch(() => {});
 import { sendTyping } from './net.js';
-import { gateThreshold } from './voiceconsent.js';
+import { gateThreshold, pttMode } from './voiceconsent.js';
 import { gateStream, attachSource, detachSource, driveGate, setMonitor, monitoring,
          gateUnavailable, ungatedConsent, isGated } from './micgate.js';
 // 🔴 The analyser hangs off the shared context; omitting this import made
@@ -54,6 +54,39 @@ export function toggleMute(on) {
   bus.emit('audio:mute', _muted);
   return _muted;
 }
+
+// ── push-to-talk: the key IS the gate ───────────────────────────────────────
+// In PTT mode the level machinery keeps running — it still feeds the meter and
+// the noise floor — but the gate DECISION is the held key alone. Not key AND
+// level: the person pressing the key has already answered "do I mean to be
+// heard", which is the only question the level gate ever existed to guess at.
+// (Discord and VRChat both transmit everything while held, for the same
+// reason.) The envelope and lookahead in micgate.js still shape the open, so
+// a PTT press catches its first consonant instead of clicking — something a
+// hardware PTT switch cannot do.
+//
+// Mute stays authoritative above this, unchanged: a muted mic ignores the key
+// exactly as it ignores speech.
+let _pttHeld = false;
+export const pttHeld = () => _pttHeld;
+export function setPttHeld(on) {
+  const next = !!on;
+  if (next === _pttHeld) return;
+  _pttHeld = next;
+  const now = Date.now();
+  // The press is a GESTURE — intent declared, not inferred. Announce the 🎙
+  // on the press itself rather than waiting for the level to clear a floor
+  // the mode no longer uses. Same rate-limit as the onset watcher's announce,
+  // through the same _lastOnset, so flipping modes cannot double-fire it.
+  if (next && pttMode() && micOn() && now - _lastOnset > 1500) {
+    _lastOnset = now;
+    sendTyping(null, 'mic');
+  }
+  gateAudio(now);   // apply immediately — a 20ms tick is an audible latency here
+}
+// Leaving PTT mode with the key down must not leave a phantom finger on the
+// gate: the next regime starts from closed and earns its own open.
+bus.on('audio:ptt', (on) => { if (!on && _pttHeld) { _pttHeld = false; gateAudio(Date.now()); } });
 
 // 🔴 THE ONSET WATCHER'S STATE. Extracted from voice.js:680-682 — the slice
 // that moved the FUNCTIONS started below these declarations, so every one of
@@ -182,6 +215,10 @@ function onsetTick() {
 // being unintelligible.
 function gateAudio(now) {
   if (!_lane || _muted) { driveGate(false); return; }   // mute is authoritative
+  // PTT replaces the level decision entirely — see setPttHeld. The watcher
+  // still calls here every 20ms, which is what keeps a mode flip honest: the
+  // first tick after the change re-derives the gate from the new regime.
+  if (pttMode()) { driveGate(_pttHeld); return; }
   driveGate(_above || now <= _openUntil);
 }
 /** What the gate is actually doing right now — for the meter and for tuning.
