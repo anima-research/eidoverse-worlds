@@ -6,10 +6,10 @@
 // the deferred boot sweep that queues whatever accumulated while the server
 // was down. routes.ts delegates the endpoint here; nothing else changes hands.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync, rmSync } from "node:fs";
 import { join, basename, dirname, relative } from "node:path";
 import { JOIN_TOKEN, UPLOAD_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DIR } from "./config.ts";
-import { isStoreOriginal, ktx2VariantPath, storeShadowsMissing } from "./store-variants.ts";
+import { isStoreOriginal, ktx2VariantPath, storeShadowsMissing, verdictStands } from "./store-variants.ts";
 import { agentTokens, HN_ISSUER_KEY, HN_ISS, HN_AUD } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
 import { worlds } from "./world.ts";
@@ -56,7 +56,9 @@ async function pumpOptimize() {
       const { src, dest, mode } = optQueue.shift()!;
       const base = basename(src);                      // <hash>.glb / <model>.glb
       const failed = `${dest}.failed`;
-      if (!existsSync(src) || existsSync(failed)) continue;
+      // a KTX2 size verdict from an older recipe does not stand (store-variants.ts)
+      const refused = existsSync(failed) && (!mode || verdictStands(readFileSync(failed, "utf8")));
+      if (!existsSync(src) || refused) continue;
       // Store shadows are content-addressed — existing means done forever.
       // KTX2 variants shadow MUTABLE library files, so a variant older than
       // its source rebuilds (the sweep filters too, but a file can change
@@ -69,6 +71,8 @@ async function pumpOptimize() {
       const code = await proc.exited;
       const err = (await new Response(proc.stderr).text()).trim();
       if (code === 0) {
+        // a verdict that was re-measured and answered differently is history
+        if (existsSync(failed)) try { rmSync(failed); } catch { /* best effort */ }
         const ratio = (Bun.file(src).size / Math.max(1, Bun.file(dest).size)).toFixed(1);
         console.log(mode ? `[ktx2] ${base} → ${basename(dest)} (${ratio}x)` : `[store] optimized ${base} (${ratio}x)`);
       } else if (code === 2) {
@@ -166,7 +170,7 @@ setTimeout(() => {
       // a loose image's variant IS the ktx2 (<rel>.ktx2 — routes.ts serves it
       // as image/ktx2)
       const dest = join(OPT_DIR, mode === "--ktx2-img" ? `${rel}.ktx2` : `${rel}.ktx2${ext}`);
-      if (existsSync(`${dest}.failed`)) continue;
+      if (existsSync(`${dest}.failed`) && verdictStands(readFileSync(`${dest}.failed`, "utf8"))) continue;
       // mtime, not mere existence: library files are mutable — an updated
       // model/body/texture rebuilds its variant next boot
       if (existsSync(dest) && statSync(dest).mtimeMs > statSync(p).mtimeMs) continue;

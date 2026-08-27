@@ -18,7 +18,11 @@
 // key negotiates, a retired one is an unflagged fetch, and a browser only
 // ever uses the key the RUNNING sequencer published on /version — none
 // published, none used — and section 8 replays the collision itself as a canary:
-// a pull landing under a running sequencer cannot poison the next key; and a flagged fetch
+// a pull landing under a running sequencer cannot poison the next key; the KTX2
+// arm keeps the shadow's TEXEL BUDGET (1024², capTexels → toktx --resize) so a
+// variant is never a 1.5× quality upgrade the size gate refuses, and a size
+// verdict carries its recipe (verdictStands) so a new recipe re-measures the
+// old refusals at the next boot; and a flagged fetch
 // answered by the webp shadow is PROVISIONAL — no-cache, never immutable —
 // so the variant's bytes get through the moment it exists, which the
 // If-None-Match round-trip here demonstrates.
@@ -46,7 +50,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Document, NodeIO } from "@gltf-transform/core";
 import { PNG } from "pngjs";
-import { isStoreOriginal, isKtx2Variant, isServingArtifact, ktx2VariantPath, storeShadowsMissing, KTX2_SUFFIX } from "../server/store-variants.ts";
+import { isStoreOriginal, isKtx2Variant, isServingArtifact, ktx2VariantPath, storeShadowsMissing, KTX2_SUFFIX,
+  capTexels, verdictStands, recipeStamp, KTX2_TEXEL_CAP } from "../server/store-variants.ts";
 import { findKtx2Encoder, isKtx2Container } from "../server/optimize.ts";
 import { KTX2_KEY, KTX2_QUERY, wantsKtx2, withKtx2, keyFromVersion, negotiate } from "../shared/ktx2.js";
 
@@ -103,6 +108,32 @@ console.log("\nthe store's KTX2 shadow (store-variants.ts, shared/ktx2.js):\n");
   check("a variant .failed counts as answered too", m.min && !m.ktx2);
   m = missing([join(minDir, `${hash}.glb`), ktx2VariantPath(original)]);
   check("both present → nothing to queue", !m.min && !m.ktx2);
+
+  // the texel budget: the shadow's 1024², never more, never UP
+  check("the budget is the webp shadow's 1024²", KTX2_TEXEL_CAP === 1024);
+  check("a 1024² texture is within budget — no resize", capTexels([1024, 1024]) === null);
+  check("a 512² texture is not upscaled", capTexels([512, 512]) === null);
+  check("2048² → 1024²", JSON.stringify(capTexels([2048, 2048])) === "[1024,1024]");
+  check("2048×1024 → 1024×512 (aspect kept)", JSON.stringify(capTexels([2048, 1024])) === "[1024,512]");
+  check("4096×3072 → 1024×768", JSON.stringify(capTexels([4096, 3072])) === "[1024,768]");
+  check("2048×1500 → 1024×752 (4-aligned for the block format)", JSON.stringify(capTexels([2048, 1500])) === "[1024,752]");
+  check("no size → no resize", capTexels(null) === null && capTexels([0, 0]) === null);
+
+  // the verdict: a size refusal is only as durable as its recipe
+  const prodMarker = "[optimize] not smaller (17600988 -> 26716692, 91234ms) — keeping original";   // the show box, 2026-08-25, ×16
+  check("the show box's sixteen refusals carry no stamp → stale, a question again", !verdictStands(prodMarker));
+  check("a refusal under the CURRENT recipe stands", verdictStands(`[optimize] not smaller (1 -> 2, 3ms) ${recipeStamp()} — keeping original`));
+  check("a refusal under an OLDER recipe does not", !verdictStands(`[optimize] not smaller (1 -> 2, 3ms) ${recipeStamp("texel2048")} — keeping original`));
+  check("a content verdict stands regardless (nothing to convert)", verdictStands("[optimize] ktx2: no convertible raster images (12ms) — keeping original"));
+  check("…and so does a hard failure", verdictStands("exit 1") && verdictStands(""));
+  {
+    const minDir2 = join(OPT, "store-min");
+    const marker = `${ktx2VariantPath(original)}.failed`;
+    const m1 = storeShadowsMissing(original, minDir2, (p) => p === marker, () => prodMarker);
+    check("storeShadowsMissing: a stale size verdict → the KTX2 shadow is MISSING (retry)", m1.ktx2);
+    const m2 = storeShadowsMissing(original, minDir2, (p) => p === marker, () => `not smaller ${recipeStamp()}`);
+    check("…a current one → not missing (no retry)", !m2.ktx2);
+  }
 
   // the negotiation key is a generation, shared by both sides
   check("the current key is 3 (1 and rollout-key 2 retired — their flagged answers had been pinned immutable)", KTX2_KEY === "3" && KTX2_QUERY === "ktx2=3");
@@ -173,12 +204,12 @@ function pngBytes(seed: number, W = 64): Uint8Array {
 }
 /** `textures`: 0 = untextured mesh, 1 = baseColor, 2 = baseColor + normal
  *  (the normal takes the UASTC branch — a different encoder argv). */
-async function fixtureGlb(tag: string, textures: 0 | 1 | 2, extraNode = false): Promise<Uint8Array> {
+async function fixtureGlb(tag: string, textures: 0 | 1 | 2, extraNode = false, texSize = 64): Promise<Uint8Array> {
   const doc = new Document();
   const buf = doc.createBuffer();
   const mat = doc.createMaterial("probeMat");
-  if (textures >= 1) mat.setBaseColorTexture(doc.createTexture("base").setImage(pngBytes(1)).setMimeType("image/png"));
-  if (textures >= 2) mat.setNormalTexture(doc.createTexture("normal").setImage(pngBytes(7)).setMimeType("image/png"));
+  if (textures >= 1) mat.setBaseColorTexture(doc.createTexture("base").setImage(pngBytes(1, texSize)).setMimeType("image/png"));
+  if (textures >= 2) mat.setNormalTexture(doc.createTexture("normal").setImage(pngBytes(7, texSize)).setMimeType("image/png"));
   const prim = doc.createPrimitive().setMaterial(mat)
     .setAttribute("POSITION", doc.createAccessor().setType("VEC3").setBuffer(buf)
       .setArray(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0])))
@@ -198,6 +229,17 @@ const hashOf = (b: Uint8Array) => new Bun.CryptoHasher("sha256").update(b).diges
 const glbJson = (bytes: Uint8Array) => {
   const dv = new DataView(bytes.buffer, bytes.byteOffset);
   return JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + dv.getUint32(12, true))));
+};
+/** [pixelWidth, pixelHeight] of every embedded image, read off the KTX2
+ *  header (u32 at 20 and 24) — the encoder's own statement of the size. */
+const ktx2Dims = (bytes: Uint8Array): [number, number][] => {
+  const j = glbJson(bytes);
+  const dv = new DataView(bytes.buffer, bytes.byteOffset);
+  const jsonLen = dv.getUint32(12, true), binOff = 20 + jsonLen + 8;
+  return (j.images ?? []).map((im: any) => {
+    const v = j.bufferViews[im.bufferView], o = binOff + (v.byteOffset ?? 0);
+    return [dv.getUint32(o + 20, true), dv.getUint32(o + 24, true)] as [number, number];
+  });
 };
 const isKtx2Glb = (bytes: Uint8Array) => {
   try {
@@ -224,6 +266,7 @@ writeFileSync(FAKE_SCRIPT, `// fake toktx — argv shape is toktx's: [...flags, 
 const argv = process.argv.slice(2);
 const outPath = argv[argv.length - 2], inPath = argv[argv.length - 1];
 const mode = process.env.FAKE_TOKTX_MODE ?? "ok";
+if (process.env.FAKE_TOKTX_ARGLOG) (await import("node:fs")).appendFileSync(process.env.FAKE_TOKTX_ARGLOG, argv.join(" ") + String.fromCharCode(10));
 const counter = process.env.FAKE_TOKTX_COUNTER;
 let n = 1;
 if (counter) {
@@ -234,6 +277,10 @@ if (counter) {
 if (mode === "fail" || (mode === "fail-second" && n % 2 === 0)) { console.error("fake toktx: refusing " + inPath); process.exit(1); }
 const fs = await import("node:fs");
 if (mode === "garbage") { fs.writeFileSync(outPath, fs.readFileSync(inPath)); process.exit(0); }   // exit 0, bytes are the PNG
+if (mode === "bloat") {   // a real KTX2 header followed by a megabyte of padding — bigger than any fixture source
+  const canned = fs.readFileSync(new URL("./canned.ktx2", import.meta.url));
+  fs.writeFileSync(outPath, Buffer.concat([canned, Buffer.alloc(1 << 20)])); process.exit(0);
+}
 fs.copyFileSync(new URL("./canned.ktx2", import.meta.url), outPath);
 process.exit(0);
 `);
@@ -303,12 +350,31 @@ console.log("\n  the optimizer, against the fake encoder:");
     r = await runKtx2(one, ktx2VariantPath(one) + ".noenc", { KTX2_TOKTX: join(tmp, "no-such-toktx"), PATH: tmp, HOME: tmp, USERPROFILE: tmp });
     check("no encoder anywhere → exit 3 (the env-skip, unchanged)", r.code === 3 && !r.wrote, `exit ${r.code}: ${r.err.split("\n").pop()}`);
 
+    // the texel budget, as the encoder is asked for it: a 2048² source gets
+    // --resize 1024x1024 in its argv, a 64² source does not
+    const big = place(await fixtureGlb("big", 2, false, 2048));
+    const arglog = join(tmp, "argv.log");
+    r = await runKtx2(big, ktx2VariantPath(big), { KTX2_TOKTX: FAKE_TOKTX, FAKE_TOKTX_MODE: "ok", FAKE_TOKTX_ARGLOG: arglog });
+    let argv = existsSync(arglog) ? readFileSync(arglog, "utf8") : "";
+    check("2048² textures: the encoder is asked to --resize 1024x1024, once per texture", r.code === 0 && (argv.match(/--resize 1024x1024/g) ?? []).length === 2, argv.trim().split("\n").map((l) => l.slice(0, 80)).join(" | "));
+    rmSync(arglog, { force: true });
+    r = await runKtx2(two, ktx2VariantPath(two) + ".small", { KTX2_TOKTX: FAKE_TOKTX, FAKE_TOKTX_MODE: "ok", FAKE_TOKTX_ARGLOG: arglog });
+    argv = existsSync(arglog) ? readFileSync(arglog, "utf8") : "";
+    check("64² textures: no --resize (never upscaled)", r.code === 0 && !argv.includes("--resize"));
+    // a size refusal names its recipe
+    r = await runKtx2(two, ktx2VariantPath(two) + ".bloat", { KTX2_TOKTX: FAKE_TOKTX, FAKE_TOKTX_MODE: "bloat" });
+    check("a size refusal (exit 2) carries the recipe stamp — a later recipe can tell it is stale", r.code === 2 && !r.wrote && r.err.includes(recipeStamp()), `exit ${r.code}: ${r.err.split("\n").pop()}`);
+
     const real = findKtx2Encoder();
     if (!real) console.log("  - real encoder: skipped — none on this box (KTX2_TOKTX / toktx / ktx; docs/ktx2-encoder.md)");
     else {
       r = await runKtx2(two, ktx2VariantPath(two) + ".real", { KTX2_TOKTX: real });
       check(`the real encoder (${real.split(/[\\/]/).pop()}): exit 0, a KTX2 variant`, r.code === 0 && r.wrote && isKtx2Glb(new Uint8Array(readFileSync(ktx2VariantPath(two) + ".real"))),
         `exit ${r.code}: ${r.err.split("\n").pop()}`);
+      r = await runKtx2(big, ktx2VariantPath(big) + ".real", { KTX2_TOKTX: real });
+      const dims = r.wrote ? ktx2Dims(new Uint8Array(readFileSync(ktx2VariantPath(big) + ".real"))) : [];
+      check("…and a 2048² source comes out 1024² in the KTX2 headers — the shadow's budget, GPU-native", r.code === 0 && dims.length === 2 && dims.every((d) => d[0] === 1024 && d[1] === 1024),
+        `exit ${r.code} dims=${JSON.stringify(dims)}`);
     }
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 }
@@ -422,7 +488,9 @@ console.log("\n  the real sequencer — an upload becomes a served variant:");
         && (earlyIsVariant ? early.cc.includes("immutable") : early.cc === "no-cache"), `variant=${earlyIsVariant} cc=${early.cc}`);
       const landed = await until(() => existsSync(ktx2VariantPath(join(STORE, `${hash}.glb`))), 30_000);
       check("the queue built the KTX2 shadow beside the original", landed, ktx2VariantPath(join(STORE, `${hash}.glb`)));
-      check("…and it says so in the sequencer's log", /\[ktx2\] .*→ .*\.ktx2\.glb/.test(S.log()), S.log().split("\n").filter((l) => l.includes("ktx2")).join(" | "));
+      // the parent logs a beat after the child's rename lands the file — poll
+      const logged = await until(() => /\[ktx2\] .*→ .*\.ktx2\.glb/.test(S.log()), 5_000);
+      check("…and it says so in the sequencer's log", logged, S.log().split("\n").filter((l) => l.includes("ktx2")).join(" | "));
       const flagged = await S.get(negotiate(`store/${hash}.glb`, S.key));
       check("flagged (current key) → the variant, really KTX2, immutable", flagged.status === 200 && isKtx2Glb(flagged.bytes) && flagged.cc.includes("immutable"),
         `cc=${flagged.cc} ktx2=${isKtx2Glb(flagged.bytes)}`);
@@ -479,6 +547,36 @@ console.log("\n  the boot sweep — a partial conversion is refused, retryably:"
     check("…and no ktx2Skip: the encoder is there (no 'no encoder' line)", !/no encoder/.test(S.log()));
     const flagged = await S.get(negotiate(`store/${hash}.glb`, S.key));
     check("meanwhile a flagged fetch falls through, provisional (no-cache) — not pinned", flagged.status === 200 && !isKtx2Glb(flagged.bytes) && flagged.cc === "no-cache", flagged.cc);
+  }
+  await S.stop();
+}
+
+// ---------------------------------------------- 5b. the boot sweep re-measures a stale verdict — and only a stale one
+// The show box holds sixteen `not smaller` markers from the native-source
+// recipe. Under the texel budget they are questions again: the first boot
+// after this lands retries them, with no operator step. A verdict that
+// carries the current stamp is not retried.
+console.log("\n  the boot sweep — a stale size verdict is re-measured, a current one stands:");
+{
+  const stale = await fixtureGlb("stale", 1);
+  const current = await fixtureGlb("current", 1);
+  const hs = hashOf(stale), hc = hashOf(current); mine.add(hs); mine.add(hc);
+  writeFileSync(join(STORE, `${hs}.glb`), stale);
+  writeFileSync(join(STORE, `${hc}.glb`), current);
+  // both have a store-min verdict so only the KTX2 arm is in play
+  writeFileSync(join(STORE_MIN, `${hs}.glb.failed`), "fixture"); writeFileSync(join(STORE_MIN, `${hc}.glb.failed`), "fixture");
+  writeFileSync(`${ktx2VariantPath(join(STORE, `${hs}.glb`))}.failed`, "[optimize] not smaller (17600988 -> 26716692, 91234ms) — keeping original");   // prod's shape
+  writeFileSync(`${ktx2VariantPath(join(STORE, `${hc}.glb`))}.failed`, `[optimize] not smaller (1 -> 2, 3ms) ${recipeStamp()} — keeping original`);
+  const S = await startServer({ KTX2_TOKTX: FAKE_TOKTX, FAKE_TOKTX_MODE: "ok" });
+  check("child server came up", S.up, `:${S.PORT}`);
+  if (S.up) {
+    const landed = await until(() => existsSync(ktx2VariantPath(join(STORE, `${hs}.glb`))), 40_000);
+    check("the stale verdict was re-measured: its variant landed", landed);
+    check("…and the old verdict is gone (a landed variant retires it)", landed && !existsSync(`${ktx2VariantPath(join(STORE, `${hs}.glb`))}.failed`));
+    await sleep(1500);
+    check("the current verdict stands: no variant, marker intact", !existsSync(ktx2VariantPath(join(STORE, `${hc}.glb`))) && existsSync(`${ktx2VariantPath(join(STORE, `${hc}.glb`))}.failed`));
+    const flagged = await S.get(negotiate(`store/${hs}.glb`, S.key));
+    check("…and the re-measured one now serves its variant", flagged.status === 200 && isKtx2Glb(flagged.bytes));
   }
   await S.stop();
 }
