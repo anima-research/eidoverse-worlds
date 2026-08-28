@@ -696,7 +696,16 @@ function onsetTick() {
   // stayed open and the monitor played straight through: R, twice, "hear myself
   // isn't obeying the mic sensitivity". A control loop that skips its output
   // stage is not a control loop.
-  if (level <= 0) { gateAudio(Date.now()); return; }   // muted: close, do not learn
+  if (level <= 0) {
+    // Muted: close, do not learn — and DROP THE SPEAKING LATCH (§24k R0,
+    // ported from micstate.js's copy of this machine, where the fix landed
+    // 2026-08-17 and never made it back here): returning before the
+    // hysteresis branch left _above/_openUntil frozen from mid-speech, so
+    // micGateInfo().speaking reported true forever while the gate was
+    // forced shut — the exported truth API lying in exactly the muted case.
+    _above = false; _openUntil = 0;
+    gateAudio(Date.now()); return;
+  }
 
   // LEARN BEFORE JUDGING. The floor starts cold at 0.01, so in a loud room the
   // first second reads as "way above the floor" and fires the 🎙 at the room
@@ -835,7 +844,7 @@ function stopOnsetWatch() {
 
 // live mic level 0..1 for UI (the mic glyph's hot-glow) — analyser built
 // lazily on first ask, rebuilt if the stream changed
-let _an = null, _anStream = null, _anBuf = null, _anCtx = null;
+let _an = null, _anStream = null, _anBuf = null, _anCtx = null, _anSrc = null;
 export function micAnalyserLevel() {
   // muted → 0 (nothing is being sent, and the gate must not learn a floor from
   // a muted mic). But NOT gated → 0: the gate needs the true input level to
@@ -850,9 +859,15 @@ export function micAnalyserLevel() {
       // SILENTLY so. Toggle the mic a few times and whatever asks next gets a
       // dead one.
       const ctx = audioContext();
+      // Disconnect the pair we are replacing — the context is shared and
+      // lives forever, so dropped-but-connected nodes accumulate in its
+      // graph on every stream change (§24k R0, ported from micstate.js's
+      // copy where the review agent landed it 2026-08-17).
+      try { _anSrc?.disconnect(); _an?.disconnect(); } catch { /* gone */ }
       const src = ctx.createMediaStreamSource(measured);
       _an = ctx.createAnalyser(); _an.fftSize = 512;
       src.connect(_an);
+      _anSrc = src;
       _anStream = measured;
       _anBuf = new Float32Array(_an.fftSize);
     } catch { return 0; }

@@ -36,7 +36,10 @@ const server = read("server/server.ts");
 for (const [label, src] of [["main.js", main], ["voicemouths.js", mouths]] as const) {
   for (const fn of ["initVoice", "updateVoiceMouths", "micOn", "isMuted", "micAnalyserLevel", "peerLevels"]) {
     const called = new RegExp(`\\b${fn}\\s*\\(`).test(src);
-    const bound = new RegExp(`\\b${fn}\\b[^\\n]*from|function ${fn}|import[^\\n]*\\b${fn}\\b`).test(src);
+    // the last alternative is the dynamic-import destructure form
+    // (`const { micOn } = await import(...)`) — bound at call time, same
+    // guarantee, which the original regexes predate
+    const bound = new RegExp(`\\b${fn}\\b[^\\n]*from|function ${fn}|import[^\\n]*\\b${fn}\\b|\\b${fn}\\b[^\\n]*=\\s*await import\\(`).test(src);
     check(`${label} binds ${fn} before calling it`, !called || bound);
   }
 }

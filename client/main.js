@@ -509,7 +509,11 @@ if (typeof window !== 'undefined') window.setVoice = setVoice;
         // stalled. Observability must not sit downstream of the risky call.
         globalThis.__voiceProbe = () => ({ ...vs.mouthInfo(), track: vs.genTrackInfo() });
         globalThis.__voiceSpeak = (t) => vs.speak(t);   // the APP's mouth, for probes
-        const { toggleMic, micOn } = await import('./lib/voice.js');
+        // §24k R0: through micstate — THE one mic entry point — not the mesh
+        // directly. The direct import skipped the only path that emits
+        // 'audio:mic', so the TTS-boot mic-open never reached the HUD badge,
+        // audiopanel.syncRows, or ttsrow's listener.
+        const { toggleMic, micOn } = await import('./lib/micstate.js');
         if (!micOn()) await toggleMic(me);
         console.log('[voice] TTS wiring complete');
       })
