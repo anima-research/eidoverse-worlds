@@ -12,7 +12,9 @@
     "meshoptimizer": "^1.2.0",
     "pngjs": "^7.0.0",
     "quickjs-emscripten": "^0.32.0",
-    "sharp": "^0.33.5"
+    "sharp": "^0.33.5",
+    "three": "^0.184.0",
+    "werift": "^0.24.4"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.11.1",

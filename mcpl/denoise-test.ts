@@ -16,6 +16,7 @@ process.env.EW_PRESENCE_TAU_SEC = "1000";   // effectively no decay within the t
 process.env.EW_ACT_REFRACT_SEC = "0.2";
 process.env.EW_STINT_MIN_SEC = "0.15";
 process.env.EW_APPROACH_REFRACT_SEC = "0.3";
+process.env.EW_APPROACH_DWELL_SEC = "0.05";
 process.env.EW_ACTIVITY_PULSE_SEC = "0.12";
 process.env.EW_ACTIVITY_REFRESH_SEC = "0.35";
 
@@ -122,30 +123,51 @@ console.log("\n━━ agent: own say is not an event ━━");
 console.log("\n━━ agent: approach = knock once, not a metronome ━━");
 {
   const agent = new WorldAgent({ name: "claude" }); // agent at origin
-  const np = (id: string, x: number, z: number) =>
-    (agent as any).notePose(id, { p: [x, 0, z], yaw: 0, speed: 0, clip: "walk" });
+  // VIRTUAL CLOCK. An approach is now confirmed by DWELL, so every assertion
+  // here is a claim about time; driving it off real sleeps would make the
+  // block both slow and racy (the refractory is 300ms and the old version had
+  // no sleeps at all inside it, so added sleeps eat that margin). notePose
+  // takes `now` for exactly this reason.
+  // Offset from a real epoch, not from 0: `cooled` measures against a
+  // last-approach time that defaults to 0, so a clock starting near zero reads
+  // as "approached a moment ago" and refuses the very first knock.
+  const T0 = Date.now();
+  const np = (id: string, x: number, z: number, t: number) =>
+    (agent as any).notePose(id, { p: [x, 0, z], yaw: 0, speed: 0, clip: "walk" }, T0 + t);
+  const approaches = () => agent.pings.filter((p) => p.kind === "approach").length;
 
-  np("digi", 10, 0);
-  np("digi", 2, 0); // crosses 2.5m
-  check("first approach pings", agent.pings.filter((p) => p.kind === "approach").length === 1);
+  np("digi", 10, 0, 0);    // baseline, far → armed
+  np("digi", 2, 0, 10);    // crosses 2.5m — opens a pending approach
+  np("digi", 2, 0, 100);   // still there 90ms later (dwell is 50ms here)
+  check("first approach pings", approaches() === 1);
 
-  np("digi", 3, 0); // steps out — but NOT past the re-arm radius
-  np("digi", 2, 0); // crosses again
-  np("digi", 4, 0);
-  np("digi", 2, 0);
+  np("digi", 3, 0, 110);   // steps out — but NOT past the re-arm radius
+  np("digi", 2, 0, 120);   // crosses again
+  np("digi", 2, 0, 170);
+  np("digi", 4, 0, 180);
+  np("digi", 2, 0, 190);
+  np("digi", 2, 0, 240);
   check("pacing at the boundary does not re-ping (not re-armed)",
-    agent.pings.filter((p) => p.kind === "approach").length === 1, String(agent.pings.length));
+    approaches() === 1, String(agent.pings.length));
 
-  np("digi", 8, 0); // genuinely goes away — re-arms
-  np("digi", 2, 0); // comes right back, but refractory still holds
+  np("digi", 8, 0, 250);   // genuinely goes away — re-arms
+  np("digi", 2, 0, 260);   // comes right back, but refractory (300ms) still holds
+  np("digi", 2, 0, 320);
   check("re-armed but inside the refractory: still silent",
-    agent.pings.filter((p) => p.kind === "approach").length === 1, String(agent.pings.length));
+    approaches() === 1, String(agent.pings.length));
 
-  await sleep(350); // refractory expires
-  np("digi", 8, 0);
-  np("digi", 2, 0);
+  np("digi", 8, 0, 500);   // away again; refractory expires at 400
+  np("digi", 2, 0, 510);
+  np("digi", 2, 0, 600);
   check("gone away + refractory over → the knock counts again",
-    agent.pings.filter((p) => p.kind === "approach").length === 2, String(agent.pings.length));
+    approaches() === 2, String(agent.pings.length));
+
+  // The departure earned by the first walk-away, at t=250. Exactly one: the
+  // second trip past the re-arm radius (t=500) had no delivered approach
+  // outstanding, because the visit at t=260 was refused by the refractory.
+  check("going away past the re-arm radius pings depart — once, for the visit that counted",
+    agent.pings.filter((p) => p.kind === "depart").length === 1,
+    JSON.stringify(agent.pings.map((p) => p.kind)));
   agent.close();
 }
 

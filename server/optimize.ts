@@ -27,6 +27,7 @@ import { NodeIO, type Document } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, KHRTextureBasisu } from "@gltf-transform/extensions";
 import { dedup, prune, resample, textureCompress, draco, listTextureSlots } from "@gltf-transform/functions";
 import draco3d from "draco3dgltf";
+import { capTexels, recipeStamp } from "./store-variants.ts";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename, dirname } from "node:path";
@@ -195,10 +196,14 @@ const COLOR_SLOT = /baseColor|emissive/i;
  *  (λ=1.0, quality-preserving) + zstd 18 — raw UASTC is a flat 8bpp and zstd
  *  alone barely dents it (the crow's 2048² maps came out 2.6× the JPEG
  *  source; RDO is what makes zstd bite). --genmipmap always: compressed mips
- *  can't be generated at runtime. */
-function ktx2EncodeArgs(encoder: string, isToktx: boolean, srgb: boolean, uastc: boolean, inPath: string, outPath: string): string[] {
+ *  can't be generated at runtime. `resize` (the GLB arm's texel budget,
+ *  store-variants.ts capTexels) rides toktx's own --resize — the encoder
+ *  scales before it generates mips, and libvips is nowhere in the loop. */
+function ktx2EncodeArgs(encoder: string, isToktx: boolean, srgb: boolean, uastc: boolean, inPath: string, outPath: string,
+  resize: [number, number] | null = null): string[] {
   return isToktx
     ? [encoder, "--t2", "--genmipmap", "--assign_oetf", srgb ? "srgb" : "linear",
+       ...(resize ? ["--resize", `${resize[0]}x${resize[1]}`] : []),
        ...(uastc ? ["--encode", "uastc", "--uastc_quality", "2", "--uastc_rdo_l", "1.0", "--zcmp", "18"]
                  : ["--encode", "etc1s", "--qlevel", "128"]),
        outPath, inPath]
@@ -211,9 +216,15 @@ function ktx2EncodeArgs(encoder: string, isToktx: boolean, srgb: boolean, uastc:
 
 /** Per-texture KTX2 encode, in place on the Document. Supports both
  *  KTX-Software CLIs — toktx (v4.4.2, the primary target) and the newer
- *  unified `ktx create` — detected by basename. Content problems skip the
- *  TEXTURE, never the file. Returns how many textures were converted. */
-async function ktx2CompressTextures(doc: Document, encoder: string): Promise<number> {
+ *  unified `ktx create` — detected by basename. A texture that will not
+ *  convert is skipped and NAMED in the tally; the caller decides whether a
+ *  partial result is a file at all (the GLB arm refuses one — a .ktx2.glb
+ *  with png inside is #122's class of lie, served immutable). Every encoder
+ *  output is checked for the KTX2 container magic before it is accepted. */
+export type Ktx2Tally = { eligible: number; converted: number; failed: string[] };
+const KTX2_MAGIC = [0xab, 0x4b, 0x54, 0x58, 0x20, 0x32, 0x30, 0xbb, 0x0d, 0x0a, 0x1a, 0x0a];
+export const isKtx2Container = (b: Uint8Array) => b.length >= 12 && KTX2_MAGIC.every((v, i) => b[i] === v);
+async function ktx2CompressTextures(doc: Document, encoder: string): Promise<Ktx2Tally> {
   const isToktx = basename(encoder).toLowerCase().includes("toktx");
   // sharp converts non-PNG sources (webp/jpeg) and 4-aligns dimensions —
   // KHR_texture_basisu (and WebGPU BC upload) wants width/height % 4 == 0.
@@ -221,13 +232,15 @@ async function ktx2CompressTextures(doc: Document, encoder: string): Promise<num
   let sharp: any = null;
   try { sharp = (await getSharp()).sharp; } catch { /* PNG-only pass below */ }
   const tmp = mkdtempSync(join(tmpdir(), "ew-ktx2-"));
-  let converted = 0;
+  let converted = 0, eligible = 0;
+  const failed: string[] = [];
   try {
     const textures = doc.getRoot().listTextures();
     for (let i = 0; i < textures.length; i++) {
       const tex = textures[i];
       const image = tex.getImage();
       if (!image) continue;
+      eligible++;
       const label = tex.getName() || tex.getURI() || `#${i}`;
       const slots = listTextureSlots(tex);
       const srgb = slots.some((s) => COLOR_SLOT.test(s));
@@ -258,22 +271,32 @@ async function ktx2CompressTextures(doc: Document, encoder: string): Promise<num
           await Bun.write(inPath, await s.png().toBuffer());
         } catch (e) {
           console.error(`[optimize] ktx2: skip ${label} — sharp convert failed (${(e as Error).message})`);
-          continue;
+          failed.push(label); continue;
         }
       } else {
         console.error(`[optimize] ktx2: skip ${label} (${mime}${aligned ? "" : ", not 4-aligned"}) — sharp unavailable`);
-        continue;
+        failed.push(label); continue;
       }
       const outPath = join(tmp, `${i}.ktx2`);
-      const args = ktx2EncodeArgs(encoder, isToktx, srgb, uastc, inPath, outPath);
+      // the house texel budget: the shadow's 1024², never more (store-variants.ts)
+      const resize = capTexels(size as [number, number] | null);
+      if (resize && !isToktx) console.error(`[optimize] ktx2: ${label} is ${size![0]}x${size![1]} — ktx create has no --resize here, encoding at source size`);
+      const args = ktx2EncodeArgs(encoder, isToktx, srgb, uastc, inPath, outPath, isToktx ? resize : null);
       const proc = Bun.spawn(args, { stdout: "ignore", stderr: "pipe" });
       const code = await proc.exited;
       const err = (await new Response(proc.stderr).text()).trim();
       if (code !== 0 || !existsSync(outPath)) {
         console.error(`[optimize] ktx2: encode failed on ${label} (${err.split("\n")[0] || `exit ${code}`}) — texture kept as-is`);
-        continue;
+        failed.push(label); continue;
       }
-      tex.setImage(new Uint8Array(await Bun.file(outPath).arrayBuffer())).setMimeType("image/ktx2");
+      const encoded = new Uint8Array(await Bun.file(outPath).arrayBuffer());
+      // an image must be what it says it is (#122/#124): the encoder exited 0,
+      // now the bytes have to carry the container they will be labelled with
+      if (!isKtx2Container(encoded)) {
+        console.error(`[optimize] ktx2: ${label} — encoder wrote ${encoded.length} bytes that are not a KTX2 container — texture kept as-is`);
+        failed.push(label); continue;
+      }
+      tex.setImage(encoded).setMimeType("image/ktx2");
       const uri = tex.getURI();
       if (uri) tex.setURI(uri.replace(/\.[a-zA-Z0-9]+$/, "") + ".ktx2");
       converted++;
@@ -284,18 +307,24 @@ async function ktx2CompressTextures(doc: Document, encoder: string): Promise<num
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
-  return converted;
+  return { eligible, converted, failed };
 }
 
 /** The --ktx2 diet: dedup + prune + resample (the store recipe minus webp —
- *  KTX2 encodes from the best source) + per-texture KTX2 + draco. */
-export async function optimizeGlbKtx2(bytes: Uint8Array, encoder: string): Promise<Uint8Array> {
+ *  KTX2 encodes from the best source) + per-texture KTX2 + draco. ALL or
+ *  nothing: `out` is null unless every eligible texture converted. A variant
+ *  with some — or no — KTX2 in it is a .ktx2.glb whose name lies about its
+ *  contents, and it would be served immutable to every capable client (the
+ *  #122 class). The tally says which it was: nothing eligible is exit 2's
+ *  business, anything unconverted is exit 5's (see the CLI). */
+export async function optimizeGlbKtx2(bytes: Uint8Array, encoder: string): Promise<{ out: Uint8Array | null } & Ktx2Tally> {
   const io = await getIO();
   const doc = await io.readBinary(bytes);
   await doc.transform(dedup(), prune(), resample());
-  await ktx2CompressTextures(doc, encoder);
+  const tally = await ktx2CompressTextures(doc, encoder);
+  if (tally.eligible === 0 || tally.converted < tally.eligible) return { out: null, ...tally };
   await doc.transform(draco());
-  return io.writeBinary(doc);
+  return { out: await io.writeBinary(doc), ...tally };
 }
 
 // ---- KTX2 for VRMs (§20c): the surgical container rewrite -------------------
@@ -347,6 +376,57 @@ function parseGlb(bytes: Uint8Array): GlbParts {
   if (binChunks.length > 1) throw new Error("multiple BIN chunks");
   const json = JSON.parse(new TextDecoder().decode(chunks[0].data));
   return { json, bin: binChunks[0]?.data ?? new Uint8Array(0), total };
+}
+
+// ---- output validation ------------------------------------------------------
+// The write below is already careful about TRUNCATION (tmp+rename: "a killed
+// pass must never leave a truncated GLB where the server will trustingly serve
+// it"). A whole GLB can still arrive intact and carry image bytes that are not
+// images: `textureCompress` runs ndarray-pixels' vendored sharp alongside ours,
+// and two libvips copies in one process can corrupt each other's state (the
+// hazard documented at ktx2CompressTextures). When that happens the encoder
+// returns a buffer, gltf-transform stamps `image/webp` on it, draco packs it,
+// and the file ships. Nothing downstream looks, because every consumer trusts
+// the mimeType — so the failure surfaces as one asset rendering untextured
+// white, days later, in someone's screenshot (#122).
+//
+// The rule: an optimizer may give up, but it may not emit bytes it has not
+// checked. The VRM arm already validates its own output and throws rather than
+// return anything questionable; this is the same doctrine for the other arms,
+// at the one place where a lie is cheap to detect — the first four bytes.
+
+const IMAGE_MAGIC: { mime: string; test: (b: Uint8Array) => boolean }[] = [
+  { mime: "image/png", test: (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 },
+  { mime: "image/jpeg", test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
+  { mime: "image/webp", test: (b) => b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
+    && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50 },
+  { mime: "image/ktx2", test: (b) => KTX2_ID.every((v, i) => b[i] === v) },
+];
+
+export type ImageLie = { index: number; name: string; declared: string; actual: string; head: string };
+
+/** Every embedded image's DECLARED mimeType against what its bytes actually
+ *  are. Images referenced by URI are somebody else's file and are left alone;
+ *  an image with no recognizable magic reports "unrecognized", which is the
+ *  case that matters — corruption does not usually land on another format. */
+export function findImageLies(bytes: Uint8Array): ImageLie[] {
+  const { json, bin } = parseGlb(bytes);
+  const out: ImageLie[] = [];
+  const images: any[] = json.images ?? [];
+  for (let i = 0; i < images.length; i++) {
+    const im = images[i];
+    if (im.bufferView == null) continue;              // external URI — not ours to vouch for
+    const bv = json.bufferViews?.[im.bufferView];
+    if (!bv) continue;
+    const b = bin.subarray(bv.byteOffset ?? 0, (bv.byteOffset ?? 0) + (bv.byteLength ?? 0));
+    const actual = IMAGE_MAGIC.find((m) => m.test(b))?.mime ?? "unrecognized";
+    if (actual === im.mimeType) continue;
+    out.push({
+      index: i, name: im.name ?? "", declared: im.mimeType ?? "(none)", actual,
+      head: [...b.subarray(0, 12)].map((x) => x.toString(16).padStart(2, "0")).join(" "),
+    });
+  }
+  return out;
 }
 
 /** Slot classification from the JSON alone — the three vocabularies a VRM can
@@ -770,6 +850,10 @@ export async function transcodeImageKtx2(src: Uint8Array, srcPath: string, encod
 // failure, reason on stderr.
 // Exit 3 (any --ktx2* mode) = no KTX2 encoder on this box — environmental,
 // the caller must env-skip (never a .failed marker).
+// Exit 5 (--ktx2) = an encoder answered but not every eligible texture
+// converted — the variant is REFUSED, nothing written. Environmental too (a
+// flaky or misconfigured encoder, not a bad model): no marker, retried next
+// boot; and not exit 3's ktx2Skip either — the encoder is there.
 
 if (import.meta.main) {
   const argv = process.argv.slice(2);
@@ -807,8 +891,20 @@ if (import.meta.main) {
       }
       console.log(`[optimize] ktx2-vrm: ${r.converted} image(s) → ${r.etc1s} etc1s + ${r.uastc} uastc`);
       out = r.out;
+    } else if (mode === "--ktx2") {
+      const r = await optimizeGlbKtx2(src, encoder!);
+      if (r.eligible === 0) {
+        console.error(`[optimize] ktx2: no convertible raster images (${Math.round(performance.now() - t0)}ms) — keeping original`);
+        process.exit(2);
+      }
+      if (!r.out) {
+        console.error(`[optimize] ktx2: ${r.converted}/${r.eligible} texture(s) converted — REFUSING a partial variant (${r.failed.join(", ")}); retry when the encoder is sane`);
+        process.exit(5);
+      }
+      console.log(`[optimize] ktx2: ${r.converted}/${r.eligible} texture(s) → KTX2`);
+      out = r.out;
     } else {
-      out = mode === "--ktx2" ? await optimizeGlbKtx2(src, encoder!) : await optimizeGlb(src);
+      out = await optimizeGlb(src);
     }
     const ms = Math.round(performance.now() - t0);
     // An already-lean upload (someone re-uploading our own optimized output,
@@ -818,8 +914,26 @@ if (import.meta.main) {
     // VRAM), not just wire bytes — accept anything not grossly bigger than
     // the ORIGINAL source (>1.25×).
     if (out.length >= src.length * (ktx2Mode ? 1.25 : 0.95)) {
-      console.error(`[optimize] not smaller (${src.length} -> ${out.length}, ${ms}ms) — keeping original`);
+      // the KTX2 verdict carries its recipe: a later recipe re-measures it
+      // (store-variants.ts verdictStands) instead of inheriting the refusal
+      console.error(`[optimize] not smaller (${src.length} -> ${out.length}, ${ms}ms)${ktx2Mode ? ` ${recipeStamp()}` : ""} — keeping original`);
       process.exit(2);
+    }
+    // …and the same care about CONTENT: a GLB whose images are not images is
+    // worse than no variant, because it serves confidently (#122). --ktx2-img
+    // emits a bare KTX2 file rather than a container, so it has nothing to walk.
+    if (mode !== "--ktx2-img") {
+      const lies = findImageLies(out);
+      if (lies.length) {
+        for (const l of lies) {
+          console.error(`[optimize] image[${l.index}]${l.name ? ` "${l.name}"` : ""} declares ${l.declared} `
+            + `but the bytes are ${l.actual} — head: ${l.head}`);
+        }
+        console.error(`[optimize] REFUSED ${basename(inPath)}: ${lies.length} image(s) failed the container `
+          + `check — keeping the original. The SOURCE is fine; this is the pass corrupting its own output `
+          + `(see the two-libvips note at ktx2CompressTextures), so it is worth retrying, not marking failed.`);
+        process.exit(4);
+      }
     }
     // tmp+rename: a killed pass must never leave a truncated GLB where the
     // server will trustingly serve it (atomicWrite, the house idiom — this

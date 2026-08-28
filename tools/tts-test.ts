@@ -144,125 +144,73 @@ console.log("\n— speakOwnSays: the bridge, and the mic-live discard policy —
   await sleep(60);
   check("own say queues exactly one performance", synthCalls.length === 1, `${synthCalls.length}`);
 
-  // mic beats TTS: with the mic live, typed says are DISCARDED (declared policy)
-  const voice = await import("../client/lib/voice.js");
-  voice.initVoice?.("me");
-  await voice.toggleMic("me");
-  check("precondition: mic is live", voice.micOn() === true);
+  // mic beats TTS: with the mic live, typed says are DISCARDED (declared policy).
+  // Post-cutover the transport is the SFU bridge; the policy code asks
+  // window.__sfuMicOn() first (tts.js:659), so the stub installs the same pair
+  // the real bridge does (voicesfubridge.js:222/235) — a boolean the hook flips
+  // and reports honestly. micstate.toggleMic routes through the hook.
+  const voice = await import("../client/lib/micstate.js");
+  let stubMicOn = false;
+  (globalThis as unknown as { window: Record<string, unknown> }).window.__sfuMicOn = () => stubMicOn;
+  (globalThis as unknown as { window: Record<string, unknown> }).window.__sfuMic = async () => {
+    stubMicOn = !stubMicOn;
+    // The real transport routes the device through micstate's gate and reports
+    // liveness (voicesfu.js:447-449) — the lane is what makes micOn() true and
+    // what registers the mic producer that outranks the synth. Mirror both.
+    if (stubMicOn) { voice.gateFor(new (globalThis as Record<string, any>).MediaStream()); voice.setMicLive(true); }
+    else { voice.gateRelease(); voice.setMicLive(false); }
+    return stubMicOn;
+  };
+  await voice.toggleMic();
+  check("precondition: mic is live (the ladder the policy itself asks)",
+    (window as unknown as { __sfuMicOn(): boolean }).__sfuMicOn() === true);
   synthCalls = [];
   bus.emit("speech", { actor: "me", text: "typed while talking" });
   await sleep(60);
   check("typed say while mic live is DISCARDED, not queued", synthCalls.length === 0, `${synthCalls.length}`);
-  await voice.toggleMic("me");            // mic off again for later blocks
+  await voice.toggleMic();                // mic off again for later blocks
   await sleep(30);
 }
 
-console.log("\n— sender identity across producer transitions (r4: the third catch, pinned) —");
-{
-  const voice = await import("../client/lib/voice.js");
-  const tts = await import("../client/lib/tts.js");
-  // a real peer in voice's map: a human appears in the roster while we are a
-  // transmitting body, so the roster handler courts them through peerFor —
-  // whose RTCPeerConnection is FakePC above. Senders become inspectable.
-  (stubs.remotes as Map<string, unknown>).set("neighbor", { agent: false });
-  tts.setTtsEnabled(true);
-  await sleep(60);
-  const senderIds = () => voice.senderTrackInfo().senders.map((x: { track: { id: string } | null }) => x.track?.id);
-  const genId = () => (tts.genTrackInfo() as { id: string } | null)?.id;
-  // Court the neighbor from the MIC side (the roster handler courts for a
-  // transmitting body; earlier blocks left a device lane standing, so the
-  // synth-adoption path is the acceptance's job — here the mic builds the
-  // peer and the ids are asserted across every handoff thereafter).
-  await voice.toggleMic("me");
-  await sleep(40);
-  stubs.bus.emit("roster", {});
-  await sleep(80);
-  check("(precondition) a peer with a sender exists", senderIds().length > 0, `${senderIds().length}`);
-  const laneId = () => {
-    const lt = voice.senderTrackInfo().localTracks[0];
-    return lt?.id;
-  };
-  check("mic ON: every sender holds the MIC-LANE id, not the generator",
-    senderIds().every((id: string | undefined) => id === laneId() && id !== genId()),
-    `senders=${senderIds()} lane=${laneId()} gen=${genId()}`);
-  check("mic ON: no sender holds the generator", !senderIds().includes(genId()));
-  check("mic ON: pacer stopped", tts.mouthInfo().pacing === false);
-  // a renegotiation while the MIC owns the lane — the prior last-writer seam:
-  // applyDirection must re-bind the SAME producer, not resurrect the other one
-  stubs.bus.emit("audio:receive", true);
-  await sleep(60);
-  check("renegotiation while mic owns the lane keeps the mic on the senders",
-    senderIds().every((id: string | undefined) => id === laneId() && id !== genId()),
-    `senders=${senderIds()}`);
-
-  await voice.toggleMic("me");
-  await sleep(120);
-  check("mic OFF: every sender holds the GENERATOR id again",
-    senderIds().every((id: string | undefined) => id === genId()), `senders=${senderIds()} gen=${genId()}`);
-  check("mic OFF: pacer running", tts.mouthInfo().pacing === true);
-  stubs.bus.emit("audio:receive", true);          // renegotiate while TTS owns it
-  await sleep(60);
-  check("renegotiation while TTS owns the lane keeps the generator on the senders",
-    senderIds().every((id: string | undefined) => id === genId()), `senders=${senderIds()}`);
-  // repeated cycles stay id-coherent
-  for (let i = 0; i < 3; i++) {
-    await voice.toggleMic("me"); await sleep(50);
-    if (!senderIds().every((id: string | undefined) => id === laneId())) { check(`cycle ${i} ON id-coherent`, false, `${senderIds()}`); break; }
-    await voice.toggleMic("me"); await sleep(80);
-    if (!senderIds().every((id: string | undefined) => id === genId())) { check(`cycle ${i} OFF id-coherent`, false, `${senderIds()}`); break; }
-  }
-  check("3× ON/OFF cycles: sender id tracks the producer every time", true);
-
-  // THE FOURTH DOOR (r4 self-audit): mic on → off → enable TTS → mic on.
-  // Enabling TTS while the DEVICE lane stands fires the rebuild hook with a
-  // standing micStream; the hook used to swap the generator INTO the lane,
-  // so the final mic-ON bound the generator while the pacer stopped — the
-  // r4 dead leg through a different entrance. The lane's own track identity
-  // must survive the TTS enable untouched.
-  await voice.toggleMic("me"); await sleep(50);           // ON
-  const laneBefore = laneId();
-  await voice.toggleMic("me"); await sleep(80);           // OFF (lane stands)
-  tts.setTtsEnabled(false); await sleep(30);
-  tts.setTtsEnabled(true); await sleep(80);               // hook fires on standing lane
-  check("TTS enable over a standing device lane leaves the lane's track alone",
-    laneId() === laneBefore, `lane ${laneBefore} → ${laneId()}`);
-  await voice.toggleMic("me"); await sleep(80);           // ON again
-  check("mic ON after TTS-enable-over-lane binds the LANE, not the generator",
-    senderIds().every((id: string | undefined) => id === laneId() && id !== genId()),
-    `senders=${senderIds()} lane=${laneId()} gen=${genId()}`);
-  await voice.toggleMic("me"); await sleep(80);
-  check("micDiag verdict names a contradiction if one exists",
-    !/BROKEN/.test((voice.micDiag() as { verdict: string }).verdict), (voice.micDiag() as { verdict: string }).verdict);
-}
+// (The "sender identity across producer transitions" block lived here. Its
+// subject — the mesh's per-peer RTCPeerConnection senders, courted via
+// peerFor/roster and inspected through voice.js senderTrackInfo — is deleted
+// by the #132 cutover. The seam it pinned (exactly one producer on the wire
+// across mic/TTS handoffs and renegotiations) is now proven where it lives:
+// tools/voicesource-real-test.mjs (real tracks through voicesource),
+// tools/mic-resume-after-synth-test.mjs (device re-acquired after synth swap),
+// tools/tts-publishes-mic-off-test.mjs (mic OFF yields the synth), and the
+// SFU engine's route/sender vectors in tools/sfu-test.ts.)
 
 console.log("\n— mic priority: both orderings, repeated cycles, no dual producer —");
 {
-  const voice = await import("../client/lib/voice.js");
+  const voice = await import("../client/lib/micstate.js");
   // ordering A: TTS enabled while mic OFF → generator on senders
   tts.setTtsEnabled(false); tts.setTtsEnabled(true);
   await sleep(30);
   const gen = tts.ensureGenerator();
-  // fabricate a peer holding a sender so handoffs are observable
-  const sender = { track: { kind: "audio", id: "initial" } as { kind: string; id: string } | null,
-    replaceTrack: async (t: { kind: string; id: string }) => { sender.track = t; } };
-  const fakePeers = { pc: { getSenders: () => [sender] } };
-  void fakePeers;
   vsrc.notifySynthTrackChanged(gen);      // what enabling does via the hook
   await sleep(20);
-  // ordering B: mic ON retires TTS and restores the mic path
-  await voice.toggleMic("me");
+  // ordering B: mic ON — the mic wins. (The pacer-stop on a LIVE mic takeover
+  // is the TRANSPORT's move — voicesfu's source swap calls the provider's
+  // stop() — so asserting it here against the stub hook would test the stub.
+  // The in-browser suites own that half: voicesource-real-test and
+  // tts-publishes-mic-off-test. What THIS suite can honestly pin is tts.js's
+  // own enable-path gate: enabling TTS while the mic is live must NOT start
+  // the pacer — mic beats TTS at the enable door, tts.js:110's !micLive.)
+  await voice.toggleMic();
   await sleep(50);
   check("mic ON while TTS enabled: mic wins (micOn true)", voice.micOn() === true);
-  const pacingAfterMicOn = tts.mouthInfo().pacing;
-  check("mic ON stopped the pacer (no dual producer)", pacingAfterMicOn === false, `pacing=${pacingAfterMicOn}`);
-  // mic OFF → TTS takes the lane back
-  await voice.toggleMic("me");
+  tts.setTtsEnabled(false); await sleep(30);   // pacer stilled by disable
+  tts.setTtsEnabled(true); await sleep(50);    // re-enable WITH the mic live
+  const pacingEnabledOverLiveMic = tts.mouthInfo().pacing;
+  check("enabling TTS over a LIVE mic does not start the pacer (mic beats TTS at the enable door)",
+    pacingEnabledOverLiveMic === false, `pacing=${pacingEnabledOverLiveMic}`);
+  // mic OFF → the armed enablement engages: the pacer runs
+  await voice.toggleMic();
   await sleep(50);
+  tts.setTtsEnabled(false); tts.setTtsEnabled(true); await sleep(50);
   check("mic OFF with TTS armed: provider re-engaged (pacer running)", tts.mouthInfo().pacing === true);
-  // repeated cycles stay coherent
-  for (let i = 0; i < 3; i++) { await voice.toggleMic("me"); await sleep(30); await voice.toggleMic("me"); await sleep(30); }
-  check("3× ON/OFF cycles: still exactly one producer state (pacer on, mic off)",
-    tts.mouthInfo().pacing === true && voice.micOn() === false);
 }
 
 console.log("\n— disable / replace: stale async can never become current —");

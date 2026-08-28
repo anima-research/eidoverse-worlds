@@ -26,17 +26,16 @@ export { retireField } from './flora_field.js';
 
 // ---- module ----------------------------------------------------------------
 
-const FLORA_URL = '/library/eidoverse/vegetation.js';
 let floraMod = null;
-/** Import the vegetation module off the library route. Native ESM — relative
- *  imports inside it (shrub/corn generators) resolve against the same route.
- *  The specifier goes through an indirect import so a BUNDLER treats it as
- *  runtime data: `/library/` exists only on the sequencer at run time, and a
- *  literal dynamic import made the bundle fail trying to resolve it. */
-const runtimeImport = new Function('s', 'return import(s)');
+/** Import the vegetation engine. §24j: it is a FIRST-CLASS CLIENT MODULE now
+ *  (client/lib/vegetation/) — the upstream-patched /library override retired
+ *  with the braid (eidoverse-video is an asset library, not an engine peer).
+ *  Still a lazy dynamic import: the module reads globalThis.THREE and the
+ *  Deno asset shim, both of which exist by the time flora work starts, and
+ *  its weight stays off the boot path. */
 export async function loadFloraModule() {
   if (!floraMod) {
-    floraMod = runtimeImport(FLORA_URL).then(async (m) => {
+    floraMod = import('./vegetation/vegetation.js').then(async (m) => {
       // §24 defs: species are data now — hydrate the registry from /defs
       // BEFORE anyone resolves the module, so every FLORA_SPECIES read
       // below and in the build path sees a populated table. Optional-chained

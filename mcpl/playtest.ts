@@ -69,7 +69,7 @@ const hears = async (feed: Feed, frag: string, ms = 3000) => {
 };
 
 console.log("\n━━ agent-framework host connects (token auth + handshake) ━━");
-const { conn, feed, registered } = await connectHost(process.env.PLAYTEST_MCPL ?? "ws://127.0.0.1:8941", "dev-token");
+const { conn, feed, registered } = await connectHost(process.env.PLAYTEST_MCPL ?? "ws://127.0.0.1:8941", process.env.PLAYTEST_TOKEN ?? "dev-token");
 await Bun.sleep(800);
 check("channels/register announced the world channel", registered.includes("world:commons"), registered.join(","));
 
@@ -97,6 +97,58 @@ await bystander.walkTo(2.5, -1.6, true);
 await hears(feed, "walked up to you", 5000);
 const approach = feed.find((f) => f.text.includes("walked up to you"));
 check("walk-up delivered with metadata.mentioned", approach?.mentioned === true, JSON.stringify(approach));
+
+console.log("\n━━ reach → verdict for the reacher, events for the touched ━━");
+// the bystander stands ~0.6m away after the walk-up; a shoulder is in range
+const bystanderPings: any[] = [];
+bystander.onPing = (p) => bystanderPings.push(p);
+const pinged = async (list: any[], kind: string, ms = 4000) => {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (list.some((p) => p.kind === kind)) return true;
+    await Bun.sleep(25);
+  }
+  return false;
+};
+const reachRes = await conn.sendToolsCall("reach", { who: "bystander", point: "left shoulder" });
+const reachText = (reachRes.content as any[]).filter((b) => b.type === "text").map((b) => b.text).join("");
+console.log(`  \x1b[36mverdict\x1b[0m  ${reachText}`);
+check("reach replies with a verdict, not silence", /rests on|short|reaching/.test(reachText), reachText);
+check("generous point name resolved", reachText.includes("shoulder_l"), reachText);
+check("the touched party hears the reach", await pinged(bystanderPings, "reach"), JSON.stringify(bystanderPings));
+const reachPing = bystanderPings.find((p) => p.kind === "reach");
+check("...with the point and limb in words",
+  !!reachPing?.text?.includes("your shoulder_l") && !!reachPing.text.includes("right hand"), reachPing?.text);
+// the verdict said how to fix a short reach — close the distance and the
+// STANDING descriptor must re-attest by itself (reachTick), landing a touch
+// knock at the far end with no further tool call
+if (!reachText.includes("rests on")) {
+  bystander.pos.x = 2.3; bystander.pos.z = -2.0;   // step within arm's reach
+}
+check("closing the distance turns the reach into a touch, hands-free",
+  await pinged(bystanderPings, "touch", 6000), JSON.stringify(bystanderPings));
+const touchPing = bystanderPings.find((p) => p.kind === "touch");
+check("the touch names the point", !!touchPing?.text?.includes("your shoulder_l"), touchPing?.text);
+// the descriptor is presence-plane state: a LATE JOINER's snapshot carries it
+{
+  const newcomer = new WorldAgent({ name: "newcomer" });
+  await newcomer.connect();
+  await Bun.sleep(300);
+  const seen = (newcomer.people.get("claude")?.pose as any)?.reach;
+  check("late joiner's snapshot carries the live reach", !!seen?.rightHand, JSON.stringify(seen));
+  check("...and seeds as baseline, not as a live knock", !newcomer.pings.some((p: any) => p.kind === "reach"));
+  newcomer.close();
+}
+// and the other direction: an agent reaches at the DOOR's body → tagged push
+const back = await bystander.reach("leftHand", { who: "claude", point: "shoulder_r" });
+console.log(`  \x1b[36mbystander's verdict\x1b[0m  ${back.text}`);
+await hears(feed, "reaches toward your shoulder_r", 4000);
+const reachMsg = feed.find((f) => f.text.includes("reaches toward your shoulder_r"));
+check("the door delivers the reach addressed + tagged",
+  reachMsg?.mentioned === true && !!reachMsg?.tags?.includes("eidoverse:reach"), JSON.stringify(reachMsg));
+bystander.releaseReach(null);
+const clearRes = await conn.sendToolsCall("clear_reach", {});
+check("clear_reach lets go in words", JSON.stringify(clearRes).includes("released"), JSON.stringify(clearRes));
 
 console.log("\n━━ activity tool — the agent tunes their own ambient sense ━━");
 const actGet = await conn.sendToolsCall("activity", {});
@@ -153,7 +205,7 @@ await Bun.sleep(400);
   await Bun.sleep(800);                    // let the world log it past the cursor
   sleeper.close();
 }
-const again = await connectHost(process.env.PLAYTEST_MCPL ?? "ws://127.0.0.1:8941", "dev-token");
+const again = await connectHost(process.env.PLAYTEST_MCPL ?? "ws://127.0.0.1:8941", process.env.PLAYTEST_TOKEN ?? "dev-token");
 await hears(again.feed, "missed one", 6000);
 const replayed = again.feed.find((f) => f.text.includes("missed one"));
 check("missed mention is replayed on reconnect", !!replayed, again.feed.map((f) => f.text.slice(0, 40)).join(" | "));

@@ -11,6 +11,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { readdirSync } from "node:fs";
 import { WorldAgent } from "./agent.ts";
+import { pingLine } from "./ping-wire.ts";
 
 const agent = new WorldAgent();
 await agent.connect();
@@ -30,13 +31,14 @@ agent.onPing = (p) => {
 
 server.tool(
   "pending_pings",
-  "Mentions of your name in chat and people who walked up to you since last checked. Returns and clears the queue — the embodied analog of unread pings.",
+  "Mentions of your name in chat, whispers, hands reaching for you, and people who walked up to you or walked away since last checked. Returns and clears the queue — the embodied analog of unread pings.",
   {},
   async () => {
     const pings = agent.takePings();
     if (!pings.length) return { content: [{ type: "text", text: "no pending pings" }] };
-    const lines = pings.map((p) =>
-      p.kind === "mention" ? `@ ${p.who}: ${p.text}` : `≈ ${p.who} walked up to you`);
+    // Every kind renders as ITSELF — see ping-wire.ts, where the wording is
+    // testable alongside the channel mapping the MCPL door uses.
+    const lines = pings.map(pingLine);
     return { content: [{ type: "text", text: lines.join("\n") }] };
   },
 );

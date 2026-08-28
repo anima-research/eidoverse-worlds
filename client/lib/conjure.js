@@ -4,7 +4,8 @@
 // Orrery (orrery.animalabs.ai) is the multistage 3D prompting service:
 // gpt-image turnarounds → Tripo mesh → texture/rig, stored as a version
 // tree. This panel drives its API directly, cross-origin with credentials
-// (Orrery ships CORS + a SameSite=None session for exactly this). The heavy
+// (Orrery ships CORS + a SameSite=None session for exactly this — including on
+// the asset endpoint, checked 2026-08-16). The heavy
 // bytes NEVER pass through this client: Orrery pushes finished GLBs to the
 // sequencer's /upload itself, and what we place is the returned store path.
 //
@@ -113,7 +114,20 @@ function progressOf(j) {
 
 function imageCandidates(j) {
   // the chain's first group = the image_gen siblings; thumbnails are their
-  // image assets, fetched straight from Orrery (plain <img>, cookie rides)
+  // image assets, fetched straight from Orrery.
+  //
+  // 🔴 NOT a plain <img> any more (2026-08-16). A bare <img> is a NO-CORS
+  // subresource, and under COEP `credentialless` — which this server now sends
+  // so wasm gets its threads — no-cors requests are sent WITHOUT credentials.
+  // These are private per-user assets, so they would have 404'd/403'd and the
+  // pick stage would have shown broken thumbnails with no explanation.
+  //
+  // crossorigin="use-credentials" moves them to CORS mode, which COEP does not
+  // touch. VERIFIED against the live service rather than assumed: the asset
+  // endpoint answers an eidoverse Origin with
+  //   access-control-allow-credentials: true
+  //   access-control-allow-origin: https://eidoverse.animalabs.ai
+  // (non-wildcard, as credentialed CORS requires).
   return (j.nodes ?? [])
     .filter((n) => n.op_type === 'image_gen' && n.status === 'completed')
     .map((n) => ({
@@ -142,15 +156,62 @@ async function paint(body) {
       try {
         const cfg = await api('/api/auth/config');
         const w = window.open(cfg.login_url, 'orrery-auth', 'width=520,height=680');
+        // 🔴 DO NOT DEPEND ON postMessage FROM THE POPUP (2026-08-16). Under
+        // COOP `same-origin` — which cross-origin isolation requires, and which
+        // this server now sends so wasm gets its threads — a cross-origin popup
+        // lands in a different browsing-context group: its `window.opener` is
+        // null, so it CANNOT message us back, and our handle `w` is a severed
+        // proxy whose close() is a no-op. Sign-in would hang forever with no
+        // error anywhere.
+        //
+        // So: keep the message path (it still works when isolation is off, and
+        // it is instant), but treat it as an optimisation over POLLING, which
+        // needs no opener relationship at all. /api/auth/me is a CORS fetch —
+        // credentialless does not touch cors-mode requests, only no-cors
+        // subresources (MDN: "requests made in cors mode won't be blocked by
+        // COEP"), so the session cookie still rides.
+        let done = false;
+        // ONE teardown, idempotent, shared by every exit (review on the
+        // isolation PR: the timeout branch used to clear only the interval —
+        // the message listener stayed installed and accumulated across retry
+        // attempts, `done` stayed false, and the abandoned flow had no
+        // visible completion or retry state).
+        const cleanup = () => {
+          if (done) return false;
+          done = true;
+          removeEventListener('message', onMsg);
+          clearInterval(poll);
+          try { w?.close(); } catch { /* severed under COOP, or already closed */ }
+          return true;
+        };
+        const finish = () => {
+          if (!cleanup()) return;
+          connected = null;                       // unknown → paint re-checks auth
+          paint(body).catch((e) => report('conjure', e));
+        };
+        const abandon = (reason) => {
+          if (!cleanup()) return;
+          connected = false;                      // retryable: the connect button paints again
+          console.warn(`[conjure] orrery login ${reason}`);
+          paint(body).catch((e) => report('conjure', e));
+        };
         const onMsg = (ev) => {
-          if (ev.data === 'orrery:signed-in') {
-            removeEventListener('message', onMsg);
-            connected = null;
-            try { w?.close(); } catch { /* it closes itself */ }
-            paint(body).catch((e) => report('conjure', e));
-          }
+          // The message path is an optimisation retained for non-isolated
+          // browsers — but the data string alone is not identity: any window
+          // that can obtain a reference could post it. Origin must match the
+          // configured Orrery.
+          if (ev.origin !== new URL(ORRERY).origin) return;
+          if (ev.data === 'orrery:signed-in') finish();
         };
         addEventListener('message', onMsg);
+        // 90s at 2s intervals: long enough for a slow Discord sign-in, bounded
+        // so a user who abandons the popup does not leave a timer running.
+        let tries = 0;
+        const poll = setInterval(async () => {
+          if (done) return;
+          if (++tries > 45) { abandon('timed out after 90s — connect again to retry'); return; }
+          try { await api('/api/auth/me'); finish(); } catch { /* not yet */ }
+        }, 2000);
       } catch (e) { report('orrery login', e); }
     };
     return;
@@ -163,7 +224,8 @@ async function paint(body) {
     let inner = '';
     if (j.status === 'waiting_selection') {
       inner = `<div class="cj-pick">${imageCandidates(j).map((c) => `
-        <img src="${ORRERY}/api/assets/${esc(c.img.id)}/file" data-star="${esc(c.node.id)}"
+        <img crossorigin="use-credentials"
+             src="${ORRERY}/api/assets/${esc(c.img.id)}/file" data-star="${esc(c.node.id)}"
              title="use this one (starts the mesh)">`).join('')
         || '<span class="sub">candidates finished but none readable — open orrery</span>'}</div>`;
     } else if (j.status === 'completed') {

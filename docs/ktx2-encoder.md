@@ -46,7 +46,44 @@ curl -LO https://github.com/KhronosGroup/KTX-Software/releases/download/v4.4.2/K
 # binaries at ktx/bin/toktx.exe — point KTX2_TOKTX at it
 ```
 
+## Linux (the show VPS is Ubuntu) — the .deb, or portable
+
+The release ships `Linux-x86_64` as `.deb`, `.rpm` and `.tar.bz2`. The .deb
+puts `toktx` and `ktx` on PATH, which is all the probe needs:
+
+```sh
+curl -LO https://github.com/KhronosGroup/KTX-Software/releases/download/v4.4.2/KTX-Software-4.4.2-Linux-x86_64.deb
+sudo apt install ./KTX-Software-4.4.2-Linux-x86_64.deb
+toktx --version                    # toktx v4.4.2
+```
+
+Portable, no root: `tar xjf KTX-Software-4.4.2-Linux-x86_64.tar.bz2` and
+point `KTX2_TOKTX` at `<extracted>/bin/toktx` (the `bin/` + `lib/` sibling
+layout is load-bearing here too — the tools find `libktx` by rpath).
+
+Under systemd the sequencer's PATH is not your shell's (the same reason
+upload.ts spawns `process.execPath` and not `bun`): put
+`Environment=KTX2_TOKTX=/usr/bin/toktx` in the unit, or the boot sweep logs
+`no encoder` and every `?ktx2=1` answer stays webp. That is the show box's
+state as of 2026-08-24 — verified from outside: every library and store
+model fetched with `?ktx2=1` came back `EXT_texture_webp`, none
+`KHR_texture_basisu`. The §20 arc is built and dormant there until this
+lands.
+
 ## Either platform
+
+The negotiation key a client sends (`?ktx2=<key>`) is a generation, defined
+once in `shared/ktx2.js` and **published by the running sequencer on
+`/version`** (`ktx2Key`, no-store). The browser uses only what `/version`
+handed it — never the served file: in the `git pull` → restart window the old
+process serves the new file, and a client that read the key off disk asked a
+server that did not know it and got pinned (the =2 collision, 2026-08-24).
+No key on `/version` (an older sequencer) means the client does not negotiate
+at all, which is always safe. Bump the key when a flagged answer has been
+served with the wrong caching — the old key's cache entries are simply never
+asked for again (a purge cannot reach browsers). The fall-through answer under
+the current key is served `no-cache` until a variant exists, then the variant
+is served immutable.
 
 `KTX2_TOKTX` may point at either `toktx` or the newer `ktx` binary — the
 probe (`findKtx2Encoder`) detects which by name. Without the env it also

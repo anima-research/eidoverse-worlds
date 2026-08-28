@@ -137,9 +137,13 @@ Everything else in a bag is somebody's annotation. Preserve it.
 ## 5. Two planes
 
 - **Authored plane**: the log. Low frequency, high value, persisted forever.
-- **Presence plane**: avatar/body poses, emotes, transient gestures, ~15 Hz,
-  interpolated, lossy, **never persisted**. Anything at frame rate belongs
-  here; writing per-frame transforms into the log is non-conforming.
+- **Presence plane**: avatar/body poses, emotes, transient gestures, reach
+  descriptors, ~15 Hz, interpolated, lossy, **never persisted**. Anything at
+  frame rate belongs here; writing per-frame transforms into the log is
+  non-conforming. A reach travels as a *declarative relation*
+  (`pose.reach`, shared/reachwire.js) — a target, not solved bones — and
+  every client re-solves it locally with the same closed-form IK; the
+  server relays the bag opaquely.
 - **The plane-transition invariant**: anything returning from live motion to
   rest MUST stamp its absolute pose into the verb that ends the ride
   (`dismount {pos, yaw}`; `motion {type: null}` + `place`). The log never

@@ -15,6 +15,7 @@
 
 import { runVerb } from "./verbs.ts";
 import { LIMITS } from "./limits.ts";
+import { currentIncarnation } from "./transport.ts";
 import { rightsOf, isAdminId } from "./rights.ts";
 import { ROLE_RANK } from "../shared/fold.js";
 import { simSnapshot } from "../shared/sim.js";
@@ -316,36 +317,12 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     c.world.broadcast({ type: "caption", id: c.id, text: capText,
       utt: Number.isSafeInteger(capUtt) && capUtt >= 0 ? capUtt : 0 }, c);
   },
-  "rtc": ({ c, ws, now, expel }, msg) => {
-    // Voice/media signaling: point-to-point like a whisper and never
-    // logged for the same reason — but unlike a whisper, a stale SDP is
-    // worthless (an offer for a peer who left answers nothing), so there
-    // is no pending queue: absent recipient = silently dropped.
-    const aux = c.surface && c.surface !== "world";
-    if (!c.world || (c.spectator && !aux)) return;
-    const rto = String(msg.to ?? "").slice(0, LIMITS.ID_LEN);
-    if (!rto || msg.payload == null) return;
-    if (JSON.stringify(msg.payload).length > LIMITS.RTC_PAYLOAD_BYTES) return;
-    // Per-surface ADDRESSING (review finding 7): a voice leg IS an rtc
-    // endpoint, but the old any-leg fanout delivered an offer meant for
-    // X's voice leg to X's browser primary too — whose per-id state
-    // machine answers offers unconditionally, so both of the offerer's
-    // legs got answers: SDP glare precisely in the human-with-voice-leg
-    // case the feature enables. `toSurface` names the target leg;
-    // omitted = "world", which is byte-identical to today's mesh (the
-    // current voice.js neither sends nor reads it). fromGen/fromSurface
-    // are stamped for the receiving side's (id, surface, gen) peer
-    // keying — today's mesh client reads neither (it keys by id alone);
-    // the consumers arrive with the sidecar/relay client half (#104),
-    // and stamping now means old servers never have to be told apart.
-    const toSurface = String(msg.toSurface ?? "world").toLowerCase().slice(0, LIMITS.SURFACE_LEN) || "world";
-    const rpacket = JSON.stringify({ type: "rtc", from: c.id, to: rto, payload: msg.payload,
-      fromGen: c.gen, fromSurface: c.surface ?? "world" });
-    for (const t of c.world.clients)
-      if (t.id === rto && (t.surface ?? "world") === toSurface
-          && (!t.spectator || (t.surface && t.surface !== "world"))) t.ws.send(rpacket);
-    return;
-  },
+  // 🔴 the `rtc` handler is GONE (#104 phase-1 cutover, upstream 2026-08-16,
+  // adopted in the anima merge): it was the MESH's point-to-point SDP lane
+  // and its only client was voice.js, now deleted. It was deliberately
+  // ungated on transport, which made it an unauthenticated relay with no
+  // consumer. SFU signaling is separate verbs, inline in server.ts's switch
+  // (they mint gens and ride upstream's active development).
   "attest": ({ c, ws, now, expel }, msg) => {
     // B1 (#57): the per-utterance performance receipt. ONLY message an
     // aux media leg is allowed beyond signalling — and only for its own
@@ -395,7 +372,14 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       ws.send(JSON.stringify({ type: "error", error: "attest digest mismatch" }));
       return;
     }
+    // 🔴 AMENDMENT 5: NAME THE RUNG (antra, 2026-08-13). What this receipt
+    // proves is that an AUTHORIZED LEG CLAIMED it performed the utterance —
+    // nothing about SFU ingress, forwarding, decoding, rendering, or
+    // hearing. `rung` says so on the wire, so a consumer cannot quietly
+    // read it as "this was heard"; the incarnation scopes the claim.
     const performed = JSON.stringify({ type: "performed",
+      rung: "authorized-claim",
+      incarnation: currentIncarnation(),
       id: c.id, seq, gen: c.gen, surface: c.surface });
     for (const t of c.world.clients) t.ws.send(performed);
     return;
