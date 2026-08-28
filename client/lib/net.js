@@ -15,6 +15,7 @@ import { pending, P } from './scheduler.js';
 // listens — emitted rather than imported so this file adds no lap around
 // the net → chat → net cycle). One writer per verb, always.
 import { remotes, ensureRemote, dropRemote, pushPose, noteServerTime, noteSpeaking } from './remotes.js';
+import { myReachBag } from './reachnet.js';
 import { logChat, logWhisper, noteTyping, noteHistoryContext } from './chat.js';
 import { composeFirstPerson } from './fp_view.js';
 import { markPhase } from './boot.js';
@@ -129,8 +130,13 @@ export function sendMod(type, extra = {}) {
 export function sendWhisper(to, text) {
   if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'whisper', to, text }));
 }
-export function sendRtc(to, payload) {
-  if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'rtc', to, payload }));
+/** #104 phase-1: ask the sequencer to mint this body's media credential. */
+export function sendRelayCredRequest(scopes = {}) {
+  if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'relay-cred', ...scopes }));
+}
+/** #104 amendment 3: listener-authored receive consent, server-enforced. */
+export function sendVoiceConsent(recv) {
+  if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'voice-consent', recv: !!recv }));
 }
 export function sendTyping(to, state) {
   if (net.joined && net.ws?.readyState === 1) net.ws.send(JSON.stringify({ type: 'typing', to, ...(state ? { state } : {}) }));
@@ -189,6 +195,10 @@ export function sendPose(now) {
   // Persistent body pins (bodydrag nails) ride presence the same way: state
   // of a BODY, visible to everyone, never the log. Null clears.
   if (s.pins !== undefined) pose.pins = s.pins;
+  // Reach descriptors (shared/reachwire.js): a relation, not bones — every
+  // receiver re-solves it live. Rides while active; absence means let go.
+  const reach = myReachBag();
+  if (reach !== undefined) pose.reach = reach;
   net.ws.send(JSON.stringify({ type: 'pose', pose }));
 }
 
@@ -492,10 +502,22 @@ async function handle(msg) {
       break;
     }
 
-    case 'rtc':
-      bus.emit('rtc', msg);
+    // SFU transport (VOICE_TRANSPORT=sfu). This switch has NO default branch —
+    // an unrouted type is silently dropped — which is why the first version of
+    // the SFU client sat at active:false forever: the server offered, the
+    // browser never saw it, and nothing anywhere said so.
+    case 'sfu-offer': bus.emit('sfu-offer', msg); break;
+    case 'sfu-ice':   bus.emit('sfu-ice', msg);   break;
+    case 'sfu-route': bus.emit('sfu-route', msg); break;
+    case 'relay-cred':          // #104: the minted media credential (voicerelay.js)
+      bus.emit('relay-cred', msg);
       break;
-
+    case 'voice-consent':       // #104: server's ack of a receive-consent change
+      bus.emit('voice-consent-ack', msg);
+      break;
+    case 'voice-service':       // #104 A2: relay service state, incarnation-stamped
+      bus.emit('voice-service', { state: msg.state, incarnation: msg.incarnation });
+      break;
     // #57 B1/B4 presence messages (never logged):
     // performed — an authenticated voice leg attested it aired this say;
     // surface-transition — an aux leg joined or took over (capability signal).

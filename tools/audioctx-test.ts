@@ -67,9 +67,9 @@ check('audioContextState() reports the shared instance', mod.audioContextState()
 // The failure mode is not "audioctx.js breaks" — it is "somebody adds a direct
 // construction somewhere else and this module stops being the only door."
 // Reading the source is the only way to see that from here.
-const src = await Bun.file(new URL('../client/lib/voice.js', import.meta.url)).text();
+const src = await Bun.file(new URL('../client/lib/micstate.js', import.meta.url)).text();
 const direct = [...src.matchAll(/new\s+(?:\(window\.)?(?:webkit)?AudioContext/g)].length;
-check('voice.js constructs no AudioContext directly', direct === 0,
+check('micstate.js constructs no AudioContext directly', direct === 0,
       `${direct} direct construction(s) — they must go through audioctx.js`);
 
 console.log(`\n  ${pass} passed, ${fail} failed`);

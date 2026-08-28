@@ -6,9 +6,10 @@
 // the deferred boot sweep that queues whatever accumulated while the server
 // was down. routes.ts delegates the endpoint here; nothing else changes hands.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync, rmSync } from "node:fs";
 import { join, basename, dirname, relative } from "node:path";
 import { JOIN_TOKEN, UPLOAD_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DIR } from "./config.ts";
+import { isStoreOriginal, ktx2VariantPath, storeShadowsMissing, verdictStands } from "./store-variants.ts";
 import { agentTokens, HN_ISSUER_KEY, HN_ISS, HN_AUD } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
 import { worlds } from "./world.ts";
@@ -22,7 +23,8 @@ let tripoImportBusy = false;   // one Tripo import at a time — they cost CPU-s
 
 // ---- store optimization -----------------------------------------------------
 // Every uploaded GLB (drag-drop, Orrery conjures) gets a draco+webp shadow in
-// store-min/, built by a SUBPROCESS — draco encoding is CPU-seconds of
+// store-min/ AND a KTX2 variant beside the original (store-variants.ts — the
+// ?ktx2=<key> answer, shared/ktx2.js; the §20a diet), both built by a SUBPROCESS — draco encoding is CPU-seconds of
 // synchronous wasm, and inside this process it would freeze pose relay for
 // every world. One file at a time; the sequencer never waits on it.
 type OptItem = { src: string; dest: string; mode?: "--ktx2" | "--ktx2-vrm" | "--ktx2-img" };
@@ -30,10 +32,21 @@ const optQueue: OptItem[] = [];
 let optRunning = false;
 let ktx2Skip = false; // set when a --ktx2 run exits 3 (no encoder) — stop queuing variants this boot
 function queueOptimize(absPath: string) {
+  let pushed = false;
   if (!optQueue.some((q) => q.src === absPath && !q.mode)) {
     optQueue.push({ src: absPath, dest: join(STORE_MIN, basename(absPath)) });
-    pumpOptimize();
+    pushed = true;
   }
+  // The KTX2 shadow too: same source (the ORIGINAL — the §20a diet encodes
+  // from the best bytes, and store-min has been wrong before, #122), the
+  // variant beside it where routes.ts already looks. Not once this boot has
+  // learned there is no encoder — every upload would otherwise spawn a pass
+  // that exits 3 and relearns it.
+  if (!ktx2Skip && !optQueue.some((q) => q.src === absPath && q.mode === "--ktx2")) {
+    optQueue.push({ src: absPath, dest: ktx2VariantPath(absPath), mode: "--ktx2" });
+    pushed = true;
+  }
+  if (pushed) pumpOptimize();
 }
 async function pumpOptimize() {
   if (optRunning) return;
@@ -43,7 +56,9 @@ async function pumpOptimize() {
       const { src, dest, mode } = optQueue.shift()!;
       const base = basename(src);                      // <hash>.glb / <model>.glb
       const failed = `${dest}.failed`;
-      if (!existsSync(src) || existsSync(failed)) continue;
+      // a KTX2 size verdict from an older recipe does not stand (store-variants.ts)
+      const refused = existsSync(failed) && (!mode || verdictStands(readFileSync(failed, "utf8")));
+      if (!existsSync(src) || refused) continue;
       // Store shadows are content-addressed — existing means done forever.
       // KTX2 variants shadow MUTABLE library files, so a variant older than
       // its source rebuilds (the sweep filters too, but a file can change
@@ -56,6 +71,8 @@ async function pumpOptimize() {
       const code = await proc.exited;
       const err = (await new Response(proc.stderr).text()).trim();
       if (code === 0) {
+        // a verdict that was re-measured and answered differently is history
+        if (existsSync(failed)) try { rmSync(failed); } catch { /* best effort */ }
         const ratio = (Bun.file(src).size / Math.max(1, Bun.file(dest).size)).toFixed(1);
         console.log(mode ? `[ktx2] ${base} → ${basename(dest)} (${ratio}x)` : `[store] optimized ${base} (${ratio}x)`);
       } else if (code === 2) {
@@ -65,6 +82,13 @@ async function pumpOptimize() {
         writeFileSync(failed, err.slice(0, 2000) || "not-smaller");
         console.log(mode ? `[ktx2] ${base} — no variant (${err.split("\n").pop()?.replace(/^\[optimize\]\s*/, "") || "not smaller"})`
           : `[store] ${base} already lean — serving original`);
+      } else if (code === 4) {
+        // Output failed its own container check — the pass corrupted its
+        // images (#122). ENVIRONMENTAL, like code 3: the source is good, so a
+        // .failed marker here would permanently skip an asset that will
+        // convert fine once the encoder stack is sane. Loud, and retried.
+        console.error(`[${mode ? "ktx2" : "store"}] ${base} REFUSED — optimized output failed its image check, `
+          + `serving the original: ${err.split("\n").filter((l) => l.includes("declares")).join(" | ") || err.split("\n").pop()}`);
       } else if (code === 3 && mode) {
         // No KTX2 encoder on this box — ENVIRONMENTAL, never a .failed marker
         // (that would permanently skip every model authored before
@@ -73,6 +97,14 @@ async function pumpOptimize() {
         console.log("[ktx2] no encoder — set KTX2_TOKTX or put toktx/ktx on PATH (docs/ktx2-encoder.md); variants skipped this boot");
         ktx2Skip = true;
         for (let i = optQueue.length - 1; i >= 0; i--) if (optQueue[i].mode) optQueue.splice(i, 1);
+      } else if (code === 5 && mode) {
+        // An encoder answered, but not every eligible texture converted — the
+        // CLI REFUSED to write a variant whose name would lie about its
+        // contents (the #122 class, and it would be served immutable).
+        // ENVIRONMENTAL like code 3 (a flaky or misconfigured encoder, not a
+        // bad model): no marker, so the next boot sweep retries; and no
+        // ktx2Skip either — the encoder is there, one file did not convert.
+        console.error(`[ktx2] ${base} REFUSED — partial conversion, serving the original: ${err.split("\n").pop() ?? `exit ${code}`}`);
       } else {
         // Environmental failures (deps not installed yet) must NOT mark the
         // file — that would permanently skip every upload made before the
@@ -90,17 +122,24 @@ async function pumpOptimize() {
 setTimeout(() => {
   const dir = join(OPT_DIR, "store");
   if (!existsSync(dir)) return;
-  const pending = readdirSync(dir).filter((f) => f.endsWith(".glb")
-    && !existsSync(join(STORE_MIN, f)) && !existsSync(join(STORE_MIN, `${f}.failed`)));
+  // isStoreOriginal, not endsWith(".glb"): the KTX2 variants live in this
+  // same dir and end in .glb too — a variant must never queue as an upload
+  // of its own (the ghost-listing rule, §20c). An original lacking EITHER
+  // shadow queues both; the pump skips the one that already exists.
+  const pending = readdirSync(dir).filter((f) => {
+    if (!isStoreOriginal(f)) return false;
+    const m = storeShadowsMissing(join(dir, f), STORE_MIN);
+    return m.min || m.ktx2;
+  });
   if (!pending.length) return;
-  console.log(`[store] boot sweep: ${pending.length} unoptimized upload(s) queued`);
+  console.log(`[store] boot sweep: ${pending.length} upload(s) missing a shadow queued`);
   for (const f of pending) queueOptimize(join(dir, f));
 }, 5000);
 // Library KTX2 sweep (§20a, VRMs §20c, loose images §20d): every library
 // model gets a GPU-native-texture variant at OPT_DIR/<rel>.ktx2.glb, every
 // avatar a surgical-rewrite variant at OPT_DIR/<rel>.ktx2.vrm, and every
 // curated loose texture a flip-baked variant at OPT_DIR/<rel>.ktx2 — all
-// served only on ?ktx2=1 (routes.ts). PATH-PRESERVING, unlike the store arm — basename()
+// served only on ?ktx2=<key> (routes.ts, shared/ktx2.js). PATH-PRESERVING, unlike the store arm — basename()
 // collides across library rels — and through the SAME serial pump, deferred
 // further so boot stays about serving worlds. GLBs go through the full
 // gltf-transform diet; VRMs go through --ktx2-vrm ONLY (optimize.ts header
@@ -131,7 +170,7 @@ setTimeout(() => {
       // a loose image's variant IS the ktx2 (<rel>.ktx2 — routes.ts serves it
       // as image/ktx2)
       const dest = join(OPT_DIR, mode === "--ktx2-img" ? `${rel}.ktx2` : `${rel}.ktx2${ext}`);
-      if (existsSync(`${dest}.failed`)) continue;
+      if (existsSync(`${dest}.failed`) && verdictStands(readFileSync(`${dest}.failed`, "utf8"))) continue;
       // mtime, not mere existence: library files are mutable — an updated
       // model/body/texture rebuilds its variant next boot
       if (existsSync(dest) && statSync(dest).mtimeMs > statSync(p).mtimeMs) continue;

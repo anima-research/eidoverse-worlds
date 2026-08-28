@@ -21,10 +21,11 @@
 //      policy — assets that get USED are the ones that stay warm, and a newly
 //      needed asset displaces stale speculative ones by construction.
 
+import { negotiate } from '../../shared/ktx2.js';
 import { bus, CONFIG, report } from './core.js';
 import { whenBooted } from './boot.js';
 import { whenCalm } from './governor.js';
-import { demandState, listLibrary, ktx2Capable } from './assets.js';
+import { demandState, listLibrary, ktx2Capable, ktx2KeyReady } from './assets.js';
 
 const QUIET_MS = 1500;      // demand-free time required before (re)taking the wire
 const SESSION_CAP = 600e6;  // max bytes streamed per session — a long visit warms a lot, a peek doesn't
@@ -93,19 +94,22 @@ async function quotaTight() {
 async function buildQueue() {
   const q = [];
   const seen = new Set();
+  // the running sequencer's key, or null — the same answer every demand
+  // fetch gets, so warmth lands in the same cache entry (assets.js)
+  const key = ktx2Capable() ? await ktx2KeyReady : null;
   const push = (path, size = 0) => {
     let url = path.startsWith('/') ? path : `/library/${path}`;
     // Warm the SAME cache key demand fetches will use (§20c gate finding):
-    // capable clients fetch .glb/.vrm with ?ktx2=1 — unflagged warmth lands
+    // capable clients fetch .glb/.vrm with ?ktx2=<key> — unflagged warmth lands
     // in a different HTTP-cache entry and is pure waste for them. Loose
     // images (§20d) negotiate too, but ONLY where the file layer does
     // (primeFiles, i.e. the curated toolkit dirs) — catalog previews and
     // other images are consumed unflagged, and flagging them here would be
     // the same wasted-warmth bug in the other direction.
     const bare = url.split('?')[0];
-    if (ktx2Capable() && (/\.(glb|vrm)$/.test(bare)
+    if (key && (/\.(glb|vrm)$/.test(bare)
       || (/^\/library\/eidoverse\/assets\/(grass|sky|particle_textures)\//.test(bare) && /\.(png|jpe?g)$/i.test(bare)))) {
-      url += (url.includes('?') ? '&' : '?') + 'ktx2=1';
+      url = negotiate(url, key);
     }
     if (!seen.has(url) && seen.add(url)) q.push({ url, size });
   };

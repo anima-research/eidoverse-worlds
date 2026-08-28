@@ -33,7 +33,6 @@ import {
 } from './lib/net.js';
 import { initPalette, updateBuild, toggleEditMode, isEditing } from './lib/build.js';
 import { initConjure } from './lib/conjure.js';
-import { initVoice } from './lib/voice.js';
 import './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
 import { initAudioPanel } from './lib/audiopanel.js';
 import { initSceneGraph } from './lib/scenegraph.js';
@@ -82,6 +81,10 @@ import { posable, pushable, setPosable, setPushable } from './lib/consent.js';
 import { updateVoiceMouths } from './lib/voicemouths.js';
 import { initEmoteBar } from './lib/emotebar.js';
 import { initCommands, saveScreenshot } from './lib/commands/handlers.js';
+import { deriveLandmarks, debugMarkers, landmarkWorld } from './lib/landmarks.js';
+import { measureChain, solveChain } from './lib/reachbone.js';
+import { canonicalPoint } from '../shared/contact.js';
+import { initReachNet, setMyReach, clearMyReach } from './lib/reachnet.js';
 
 // (Crash breadcrumbs live in lib/bc.js now; the frame loop stamps each
 // system's name as it runs. avatar.js still reads globalThis.__ewBC.)
@@ -190,7 +193,20 @@ function start() {
   connect();
   initPalette();
   initConjure();   // the orrery panel — prompt → your pick of images → mesh → world
-  initVoice(CONFIG.name);
+  // 🔴 ONE TRANSPORT, EXACTLY ONE PLAYBACK OWNER (#104 amendment 6, the #132
+  // cutover). The P2P mesh is deleted; the in-process SFU is not a flag or a
+  // URL param, it is the only voice path the client has. That is deliberate —
+  // when transports selected by flag coexisted, a dropped ?sfu=1 served R the
+  // mesh for an hour while every result was reported as "SFU" (2026-08-15),
+  // and amendment 6's "exactly one playback owner must be visible at all
+  // times" is only IMPOSSIBLE to violate when a second owner cannot
+  // initialise. The requirement is that the wrong path be impossible, not
+  // discouraged. If cutover acceptance fails, the remedy is deploying the
+  // previous release during the migration window (notes/CUTOVER-ROLLBACK.md),
+  // not a runtime branch back to a transport this bundle no longer contains.
+  window.__voiceTransport = 'pending:sfu';
+  import('./lib/voicesfubridge.js').then((m) => { m.initVoiceSfu(CONFIG.name); window.__voiceTransport = 'sfu'; })
+    .catch((e) => { window.__voiceTransport = 'failed:sfu'; window.__voiceTransportError = String(e); console.error('voice init failed', e); });
   initAudioPanel();   // 🔊 categories: voices / world / TTS + consent rows
   // HEARING YOURSELF IS THE POINT. This hook — your own says going through the
   // selected voice — used to be installed ONLY inside the `?tts=PORT` block, so
@@ -263,6 +279,13 @@ bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 // localbody.js, handed logChat instead of importing chat (§14.2).
 
 initPhysObj({ myPos: () => myState.pos });
+// reach descriptors resolve against the same bodies everyone renders; my own
+// id is how "a landmark on me" and "a point in my frame" find this body
+initReachNet({
+  me: () => getMe(),
+  myId: () => CONFIG.name,
+  avatarOf: (id) => (id === CONFIG.name ? getMe() : remotes.get(id)?.avatar ?? null),
+});
 initMods();   // 🧩 runtime client scripts: local trusted mods + world offers
 initLocalBody({ logChat });
 initCommands();   // the /command surface (lib/commands/) + its bus subscriptions
@@ -505,8 +528,26 @@ if (typeof window !== 'undefined') window.setVoice = setVoice;
         // stalled. Observability must not sit downstream of the risky call.
         globalThis.__voiceProbe = () => ({ ...vs.mouthInfo(), track: vs.genTrackInfo() });
         globalThis.__voiceSpeak = (t) => vs.speak(t);   // the APP's mouth, for probes
-        const { toggleMic, micOn } = await import('./lib/voice.js');
-        if (!micOn()) await toggleMic(me);
+        const { toggleMic, micOn } = await import('./lib/micstate.js');
+        // 🔴 `me` IS NOT IN SCOPE HERE — it was a ReferenceError that threw
+        // before the mouth ever opened, so a body with ?tts= joined, logged
+        // "synthesized voice ready", and was mute. The comment six lines up
+        // already warned that an older copy "passed `me`, the avatar OBJECT";
+        // the fix deleted the definition and left the call. toggleMic wants the
+        // actor NAME, which is CONFIG.name — the same value every other caller
+        // passes.
+        // 🔴 OPEN THE LANE THE TRANSPORT ACTUALLY OWNS (2026-08-15). This read
+        // the mesh's own mic-state getter and toggle unconditionally — so a
+        // ?tts= body on an SFU server opened the MESH mic lane, published to a
+        // transport nobody was on, and reported success. Same defect as the
+        // HUD mic button had, on the path a voiced agent body depends on, and
+        // it violates the "EXACTLY ONE PLAYBACK OWNER" invariant asserted at
+        // the top of start(). Ask the bridge first; fall back to the mesh.
+        if (typeof window.__sfuMic === 'function') {
+          if (!window.__sfuMicOn?.()) await window.__sfuMic();
+        } else if (!micOn()) {
+          await toggleMic(CONFIG.name);
+        }
         console.log('[voice] TTS wiring complete');
       })
       // 🔴 NEVER SWALLOW THIS. It was `.catch(() => {})`, so anything after the
@@ -600,10 +641,150 @@ globalThis.whyIsItSilent = () => {
   return { ...s, detail: a };
 };
 
-globalThis.EW = {
+const EW = globalThis.EW = {
   me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus,
   skyArgs, sendVerb, setPosable, get posable() { return posable(); },
   setPushable, get pushable() { return pushable(); }, dragState,
+  // reach: aim a hand at a world point, or at anything that moves. Pass a
+  // function and it re-solves every frame; `EW.reach('leftHand', () =>
+  // EW.remotes.get('mythos').avatar.root.position.toArray())` follows a body.
+  // reach: aim a hand at a world point, at a live function, or — simplest —
+  // at a NAMED contact point, in which case the surface normal comes with it
+  // and the palm turns to meet the surface:
+  //     EW.reach('rightHand', 'head_top')                 // your own head
+  //     EW.reach('rightHand', ['mythos', 'shoulder_l'])   // someone else's
+  //     EW.reach('rightHand', () => [x, y, z])            // a bare point
+  //
+  // The name form exists because the point form is a trap: EW.contactAt()
+  // returns a position and nothing else, so a reach built on it has no surface
+  // to face and the palm stays wherever the forearm left it. That is not
+  // visible as a bug — the hand still arrives — until you look at a headpat
+  // and find the palm pointing at the sky.
+  // Serializable targets (a name, [who, name], [x,y,z], or the wire forms
+  // {who, point} / {p, space}) go through reachnet: the descriptor rides the
+  // presence stream and EVERY client re-solves the same relation, so other
+  // people see the arm too. A function target stays local-only — it cannot
+  // travel, and this tab is the only one that can evaluate it.
+  reach: (key, target, opts) => {
+    if (typeof target === 'function') return getMe()?.setReach(key, target, opts);
+    const err = setMyReach(key, target, opts);
+    if (err) { console.warn(`[reach] ${err}`); return false; }
+    return true;
+  },
+  // landmarks: named contact points, derived per body from its own mesh.
+  // EW.landmarks() derives + caches; EW.showLandmarks() draws them to be
+  // LOOKED at, which is the only check the derivation cannot do itself.
+  landmarks: (who) => {
+    const av = who ? remotes.get(who)?.avatar : getMe();
+    if (!av) return null;
+    av.__marks ??= deriveLandmarks(av);
+    return av.__marks;
+  },
+  // Where a named contact point on a body IS, right now, in world space.
+  // `standoff` lifts it off the skin so a hand rests ON it, not inside it.
+  // This is the piece a touch is made of:
+  //   EW.reach('rightHand', () => EW.contactAt('mythos', 'shoulder_l', 0.02))
+  contactAt: (who, name, standoff = 0.02) => {
+    const av = who ? remotes.get(who)?.avatar : getMe();
+    if (!av) return null;
+    av.__marks ??= deriveLandmarks(av);
+    const e = av.__marks.get(canonicalPoint(name) ?? name);
+    const hit = e && landmarkWorld(e, standoff);
+    return hit ? hit.pos.toArray() : null;
+  },
+  // Which contact points can a hand ACTUALLY get to on this body? One solve
+  // per (point, hand) against the real derived landmarks — no frames needed,
+  // because the solve is a pure function of pose and target. Answers the
+  // question a demo cannot: not "does reaching work" but "what is in range".
+  // Bumped whenever the reach solver changes, so a diagnostic can prove which
+  // code produced its numbers. A stale tab is otherwise indistinguishable from
+  // a real disagreement about what the arm is doing.
+  reachVersion: 'reach-6 contact-allowance 2026-08-20',
+  // Which body is being worn — vrm.scene.name is often blank, and "which rig"
+  // is the first question when one person's arm does something another's does
+  // not.
+  get avatarPath() { try { return getMyAvatarPath() || '(unknown)'; } catch { return '(unknown)'; } },
+  reachAudit: (who, standoff = 0.02) => {
+    // Landmarks come from the body being TOUCHED; the chains doing the
+    // reaching are always mine. Using one avatar for both asks "can that body
+    // reach its own shoulder", which is a different and much harder question —
+    // and it returns identical numbers whoever you name, which is how this was
+    // caught.
+    const av = getMe();
+    const subject = who ? remotes.get(who)?.avatar : av;
+    if (!av || !subject) return null;
+    subject.__marks ??= deriveLandmarks(subject);
+    const self = subject === av;
+    const rows = [];
+    for (const [name, e] of subject.__marks) {
+      const hit = landmarkWorld(e, standoff);
+      if (!hit) continue;
+      const t = hit.pos.toArray();
+      const best = { hand: null, gap: Infinity, bound: [] };
+      for (const key of ['leftHand', 'rightHand']) {
+        const ch = measureChain(av, key);
+        if (!ch) continue;
+        // A limb cannot meaningfully touch itself: scoring the left hand
+        // against a point ON the left arm returns a triumphant 0mm that means
+        // nothing. Skip the chain that owns the landmark.
+        if (self && (ch.spec.root === e.bone || ch.spec.mid === e.bone || ch.spec.end === e.bone)) continue;
+        const out = solveChain(ch, av, t, null);
+        if (!out?.ok) continue;
+        if (out.res.gap < best.gap) { best.hand = key === 'leftHand' ? 'L' : 'R'; best.gap = out.res.gap; best.bound = out.res.bound; }
+      }
+      rows.push({ point: name, tier: e.tier, hand: best.hand ?? '-',
+                  mm: Number.isFinite(best.gap) ? Math.round(best.gap * 1000) : null,
+                  bound: best.bound.join(',') || '-' });
+    }
+    rows.sort((a, b) => (a.mm ?? 1e9) - (b.mm ?? 1e9));
+    return rows;
+  },
+  // Position AND the surface normal, so a reach can put the PALM on it.
+  // EW.reach('rightHand', () => EW.contactFrame('mythos', 'shoulder_l'))
+  contactFrame: (who, name, standoff = 0.02) => {
+    const av = who ? remotes.get(who)?.avatar : getMe();
+    if (!av) return null;
+    av.__marks ??= deriveLandmarks(av);
+    const e = av.__marks.get(canonicalPoint(name) ?? name);
+    const hit = e && landmarkWorld(e, standoff);
+    return hit ? { pos: hit.pos.toArray(), normal: hit.normal.toArray() } : null;
+  },
+  // Paint the side of the hand the code believes is the PALM: a green disc
+  // sitting just off the skin, following the bone. If it ends up against
+  // whatever is being touched, the orientation is right and you are simply
+  // seeing the back of a hand from outside — which is what you see when a palm
+  // is on a hip. If it points away, the palm axis is wrong on that rig and I
+  // want to know.
+  showPalm: (on = true, key = 'rightHand') => {
+    const me = getMe(); if (!me) return null;
+    const ch = me._chains?.get(key);
+    if (!ch) return 'reach something first, so the chain is measured';
+    const node = ch.nodes.end;
+    const NAME = '__palmDisc';
+    const old = node.getObjectByName(NAME);
+    if (old) { node.remove(old); old.geometry.dispose(); old.material.dispose(); }
+    if (!on) return 'off';
+    const qH0 = new THREE.Quaternion(...ch.restQ.qH);
+    const aPalm = new THREE.Vector3(...ch.palmRest).applyQuaternion(qH0.clone().invert());
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(0.035, 20),
+      new THREE.MeshBasicMaterial({ color: 0x33ff66, side: THREE.DoubleSide, depthTest: false }));
+    disc.name = NAME;
+    disc.renderOrder = 999;
+    disc.position.copy(aPalm).multiplyScalar(0.03);
+    disc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), aPalm.clone().normalize());
+    node.add(disc);
+    return 'green disc marks the palm side';
+  },
+  showLandmarks: (on = true, who) => {
+    const av = who ? remotes.get(who)?.avatar : getMe();
+    if (!av) return null;
+    av.__marks ??= deriveLandmarks(av);
+    debugMarkers(av, av.__marks, scene, on);
+    return [...av.__marks].map(([n, e]) => `${n}:${e.how}`).join(' ');
+  },
+  clearReach: (key) => clearMyReach(key ?? null),
+  reachStatus: () => getMe()?.reachStatus(),
   lease: leaseApi,   // the entity-lease surface runtime plugins script against
   mods: modsApi,     // load/run/offer runtime client scripts (🧩)
   bodysim: { engine: bodyEngine, setEngine: setBodyEngine, list: listBodyEngines },  // swappable body physics

@@ -35,6 +35,16 @@ export function glbJson(buf) {
 }
 
 /** humanoid bone name -> node index, for VRM 0.x and 1.0 alike. */
+/** VRM0 models face -Z. three-vrm turns them 180° about Y so they face +Z like
+ *  everything else, which means their whole NORMALIZED bone hierarchy sits a
+ *  half-turn from the avatar root. Six of the eighteen shipped rigs are VRM0
+ *  (meebit, orion, shino, victoria, vroid_fem, vroid_masc), and a harness that
+ *  ignores this tests a body nobody wears — which is how a solver that pointed
+ *  orion's arm at the ceiling passed every suite here. */
+export function isVrm0(g) {
+  return !g.extensions?.VRMC_vrm && !!g.extensions?.VRM;
+}
+
 export function humanBones(g) {
   const v1 = g.extensions?.VRMC_vrm?.humanoid?.humanBones;
   if (v1) return Object.fromEntries(Object.entries(v1).map(([b, v]) => [b, v.node]));
@@ -78,6 +88,46 @@ export function worldPositions(g) {
 /** Every shipped rig, as { name, P } where P maps humanoid bone -> world rest
  *  position. Rigs without a humanoid extension or without hips are skipped
  *  loudly rather than silently. */
+/** The rigs the WORLD offers that assets/opt does not hold.
+ *
+ *  The optimized store and the avatar roster are not the same set: the world
+ *  serves claude, claude_suit, aletheia and aporia straight from the library,
+ *  and claude is the DEFAULT body. Every suite here ran on the 14 optimized
+ *  rigs and none of them on the body most people are actually wearing, which
+ *  is how a cross-body reach shipped looking wrong on it. Opt-in so the
+ *  ragdoll's measured baseline is not silently re-based; the reach suites take
+ *  it. Returns [] if the library is not on disk.
+ */
+export function libraryRigs(dir = process.env.EIDOVERSE_DIR
+  ? `${process.env.EIDOVERSE_DIR}/eidoverse/assets/vrms/`
+  : fileURLToPath(new URL('../../eidoverse-video/eidoverse/assets/vrms/', import.meta.url))) {
+  let names = [];
+  try { names = readdirSync(dir).filter((n) => n.endsWith('.vrm')).sort(); }
+  catch { return []; }
+  const out = [];
+  for (const f of names) {
+    const name = f.replace('.vrm', '');
+    let g, bones, wp;
+    try { g = glbJson(readFileSync(dir + f)); bones = humanBones(g); wp = worldPositions(g); }
+    catch (e) { out.push({ name, err: e.message }); continue; }
+    if (!bones) { out.push({ name, err: 'no humanoid extension' }); continue; }
+    const P = {};
+    for (const [b, n] of Object.entries(bones)) if (g.nodes[n]) P[b] = wp(n);
+    if (!P.hips) { out.push({ name, err: 'no hips bone' }); continue; }
+    const nodeOf = new Map(Object.entries(bones).map(([b, n]) => [n, b]));
+    const up = new Map();
+    g.nodes.forEach((n, i) => (n.children ?? []).forEach((c) => up.set(c, i)));
+    const realParent = {};
+    for (const [b, n] of Object.entries(bones)) {
+      let a = up.get(n);
+      while (a !== undefined && !nodeOf.has(a)) a = up.get(a);
+      realParent[b] = a === undefined ? null : nodeOf.get(a);
+    }
+    out.push({ name, P, realParent, vrm0: isVrm0(g), boneCount: Object.keys(P).length });
+  }
+  return out;
+}
+
 export function rigs() {
   const out = [];
   for (const f of readdirSync(VRM_DIR).filter((n) => n.endsWith('.vrm')).sort()) {
@@ -103,7 +153,7 @@ export function rigs() {
       while (a !== undefined && !nodeOf.has(a)) a = up.get(a);
       realParent[b] = a === undefined ? null : nodeOf.get(a);
     }
-    out.push({ name, P, realParent, boneCount: Object.keys(P).length });
+    out.push({ name, P, realParent, vrm0: isVrm0(g), boneCount: Object.keys(P).length });
   }
   return out;
 }
@@ -127,8 +177,15 @@ export const PARENT = {
  *  sim ever sees the skeleton — the case that used to poison the sim's idea of
  *  "rest". restBonePositions() still reports the NEUTRAL pose, as the real
  *  Avatar does, so a test can prove the two are decoupled. */
-export function makeAvatar(P, { stride = 0, realParent = null } = {}) {
+export function makeAvatar(P, { stride = 0, realParent = null, vrm0 = false } = {}) {
   const root = new THREE.Object3D();
+  // three-vrm's half-turn for VRM0, reproduced as a pivot the bones hang from,
+  // so every normalized bone reads a 180° world rotation against the root
+  // exactly as it does in the browser. Without it the harness silently models
+  // a VRM1 body and any frame error on the other six goes unseen.
+  const pivot = new THREE.Object3D();
+  if (vrm0) pivot.rotation.y = Math.PI;
+  root.add(pivot);
   const nodes = {};
   // `realParent` builds the rig's ACTUAL humanoid hierarchy — upperChest,
   // shoulders and all — so `d.parent` is the node the shipped rig would give.
@@ -143,7 +200,7 @@ export function makeAvatar(P, { stride = 0, realParent = null } = {}) {
     const p = par[j];
     const base = p && P[p] ? P[p] : new THREE.Vector3(0, 0, 0);
     n.position.copy(P[j]).sub(base);
-    ((p && nodes[p]) ? nodes[p] : root).add(n);
+    ((p && nodes[p]) ? nodes[p] : pivot).add(n);
     nodes[j] = n;
   }
   root.updateMatrixWorld(true);

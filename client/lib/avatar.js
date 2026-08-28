@@ -3,6 +3,8 @@
 // blink, head pitch, mouth movement while speaking).
 
 import { THREE, scene, camera, renderer, report, angleDelta } from './core.js';
+import { measureChain, solveChain } from './reachbone.js';
+import { REACH_CHAINS } from '../../shared/joints.js';
 import {
   loadVRM, clipFor, vrmaBytes, loadTrack, loadDone,
   CLIP_SLOTS, CLIP_SPEED, releaseVRM, vrmWarmed, markVrmWarmed,
@@ -258,6 +260,13 @@ function drawTypingDots(sprite, t, state) {
 
 const _v = new THREE.Vector3();
 const _pq = new THREE.Quaternion();
+const _rq = new THREE.Quaternion();
+const _rq2 = new THREE.Quaternion();
+const _rq3 = new THREE.Quaternion();
+const _rv = new THREE.Vector3();
+const _rv2 = new THREE.Vector3();
+const _rv3 = new THREE.Vector3();
+const _rv4 = new THREE.Vector3();
 const _Y2 = new THREE.Vector3(0, 1, 0);
 const _Z2 = new THREE.Vector3(0, 0, 1);
 const _gq = new THREE.Quaternion();        // gaze scratch — hot path, no allocs
@@ -868,6 +877,125 @@ export class Avatar {
     };
   }
 
+  // ---- reaching: IK that re-solves every frame ------------------------------
+  //
+  // A reach is not a pose. A pose is a set of angles; a reach is a RELATION to
+  // a point that may be moving — someone else's shoulder, a thrown ball, a
+  // door handle on a swinging door. So it is stored as a target FUNCTION and
+  // re-solved every frame, which is what makes it track. The cost is one
+  // closed-form solve per reaching arm per frame: no iteration, no history.
+  //
+  // It gets its own override slot rather than sharing `_override`, because a
+  // held pose and a reach have to coexist — an agent holding a posture and
+  // still putting a hand out is the ordinary case, not an exotic one. Where
+  // both would write the same bone the reach wins and the pose skips it, so
+  // the one-author-per-bone-per-frame rule that _composeBegin depends on still
+  // holds. (Two authors on one bone is the recurring bug in this file: eyes vs
+  // three-vrm lookAt, hair vs Bullet, wings vs ragdoll.)
+
+  /** Measure the fixed facts about one arm/leg chain, once. Everything here is
+   *  in the avatar ROOT's local frame, where the rest pose has identity
+   *  rotations — the frame shared/reach.js does its algebra in. */
+  _measureChain(key) {
+    this._chains ??= new Map();
+    if (!this._chains.has(key)) this._chains.set(key, measureChain(this, key));
+    return this._chains.get(key);
+  }
+
+  /** Reach `key` ('leftHand' | 'rightHand' | ...) toward a point.
+   *  `target` is either [x,y,z] in WORLD space or a function returning one —
+   *  pass the function when the thing being reached for can move. */
+  setReach(key, target, opts = {}) {
+    if (!REACH_CHAINS[key]) return false;
+    if (!this._measureChain(key)) return false;
+    this._reach ??= new Map();
+    const prev = this._reach.get(key);
+    this._reach.set(key, {
+      key, target, weight: prev?.weight ?? 0, wantWeight: opts.weight ?? 1,
+      pole: opts.pole ?? null, lastElbow: prev?.lastElbow ?? null, bound: [],
+    });
+    return true;
+  }
+
+  /** Let an arm go, easing back to whatever the clip was doing. */
+  clearReach(key) {
+    if (key == null) { for (const r of this._reach?.values() ?? []) r.wantWeight = 0; return; }
+    const r = this._reach?.get(key);
+    if (r) r.wantWeight = 0;
+  }
+
+  /** What each live reach achieved last frame — for callers that need to know
+   *  a hand did NOT get there (out of range, or stopped by a joint). */
+  reachStatus() {
+    const out = {};
+    for (const [k, r] of this._reach ?? []) out[k] = { weight: r.weight, gap: r.gap ?? null, bound: r.bound, penetration: r.penetration ?? null, palmResidual: r.palmResidual ?? null };
+    return out;
+  }
+
+  _applyReach(dt, now) {
+    if (!this._reach?.size) return;
+    for (const [key, r] of [...this._reach]) {
+      r.weight += (r.wantWeight - r.weight) * Math.min(1, 12 * dt);
+      if (r.wantWeight === 0 && r.weight < 0.02) {
+        for (const node of [r._nu, r._nl, r._nh]) {
+          const c = node && this._composed.get(node);
+          if (c?.live && node.quaternion.equals(c.out)) { node.quaternion.copy(c.base); c.live = false; }
+        }
+        this._reach.delete(key);
+        continue;
+      }
+      const ch = this._measureChain(key);
+      if (!ch) { this._reach.delete(key); continue; }
+
+      // A target may be a bare point, or a {pos, normal} — the normal being
+      // the surface the hand is meeting, which is what lets the palm face it
+      // rather than arriving back-first.
+      const raw = typeof r.target === 'function' ? r.target() : r.target;
+      const tw = Array.isArray(raw) ? raw : raw?.pos;
+      const normal = Array.isArray(raw) ? null : raw?.normal;
+      if (!tw || tw.length !== 3 || !tw.every(Number.isFinite)) { r.bound = ['no-target']; continue; }
+
+      // the palm faces INTO the surface, so it wants the opposite of the
+      // outward normal
+      const palm = (r.palm !== false && normal && normal.length === 3 && normal.every(Number.isFinite))
+        ? { dir: [-normal[0], -normal[1], -normal[2]] } : null;
+      const out = solveChain(ch, this, tw, r.lastElbow, { palm, lastPick: r.lastPick, lastSwivel: r.lastSwivel });
+      if (!out.ok) { r.bound = [out.why]; continue; }
+      r.bound = out.res.bound; r.gap = out.res.gap; r.lastPick = out.pick ?? null; r.lastSwivel = out.swivelUsed ?? null; r.penetration = out.penetration ?? 0; r.lastElbow = out.elbowOffset;
+      // what the solver BELIEVES it placed, in world space, so a probe can
+      // compare it against where the bones actually ended up
+      r.solved = { elbow: this.root.localToWorld(_rv3.set(...out.res.elbow)).toArray(),
+                   hand: this.root.localToWorld(_rv4.set(...out.res.hand)).toArray() };
+      const q = { upper: out.upper, lower: out.lower };
+      r._nu = ch.nodes.upper; r._nl = ch.nodes.lower;
+      this._writeBone(ch.nodes.upper, q.upper, r.weight);
+      this._writeBone(ch.nodes.lower, q.lower, r.weight);
+      if (out.hand) { r._nh = ch.nodes.end; this._writeBone(ch.nodes.end, out.hand, r.weight); }
+      r.palmResidual = out.palmResidual ?? null;
+    }
+  }
+
+  /** Slerp one bone from whatever the clip left toward `q`, composed so the
+   *  fade-out actually returns to the clip rather than converging near it. */
+  _writeBone(node, q, weight) {
+    const c = this._composeBegin(node);
+    _rq3.set(q[0], q[1], q[2], q[3]);
+    node.quaternion.slerp(_rq3, weight);
+    this._composeEnd(node, c);
+  }
+
+  /** Bones a live reach owns this frame — a held pose must not also write
+   *  them, or two authors compose onto each other and both drift. */
+  _reachOwned() {
+    if (!this._reach?.size) return null;
+    const s = new Set();
+    for (const r of this._reach.values()) {
+      const ch = this._chains?.get(r.key);
+      if (ch && r.weight > 0.02) { s.add(ch.nodes.upper); s.add(ch.nodes.lower); }
+    }
+    return s.size ? s : null;
+  }
+
   clearPose() { if (this._override) this._override.wantWeight = 0; }
 
   /** Go limp, or stand back up.
@@ -1040,6 +1168,11 @@ export class Avatar {
   _applyOverride(dt, now) {
     const o = this._override;
     if (!o) return;
+    // A live reach owns its two bones outright this frame. Letting the held
+    // pose write them too would put two authors on one bone, and the compose
+    // guard cannot tell them apart: each would read the other's output as the
+    // clip's value and both would integrate.
+    const taken = this._reachOwned();
     // ramp toward the wanted weight (ease ~120ms)
     o.weight += (o.wantWeight - o.weight) * Math.min(1, 12 * dt);
     if (o.wantWeight === 0 && o.weight < 0.02) {
@@ -1057,7 +1190,7 @@ export class Avatar {
     if (o.kind === 'pose') {
       for (const [name, node] of o.nodes) {
         const target = o.targets.get(name);
-        if (!target) continue;
+        if (!target || taken?.has(node)) continue;
         // Composed, so the fade-OUT actually returns to the clip: slerping
         // from wherever the bone happens to sit only converges toward the
         // target, it never walks back. With a still track that made clearPose
@@ -1073,6 +1206,7 @@ export class Avatar {
         if (o.loop) tt %= o.dur; else { o.wantWeight = 0; tt = o.dur; }
       }
       for (const [name, node] of o.nodes) {
+        if (taken?.has(node)) continue;
         this._sampleTrack(o.tracks.get(name), tt, o._scratch);
         node.quaternion.slerp(o._scratch, o.weight);
       }
@@ -1117,6 +1251,7 @@ export class Avatar {
     this.speakUntil = 0;
     this.voiceLevel = null;
     this.clearPose();
+    this.clearReach();      // a transplanted body must not keep reaching at the predecessor's target
     this.setLimp(false);
     this.setGazeTarget(null);
     this.setClip('idle');
@@ -1195,6 +1330,14 @@ export class Avatar {
     }
     BC('av:override');
     if (this._override) this._applyOverride(dt, now);
+
+    // ---- reach: solved fresh every frame, so it TRACKS. After the held pose
+    // (which yields any bone a reach owns) and before vrm.update, same as
+    // every other humanoid-bone writer here. Not while limp: a corpse does not
+    // keep reaching for what it wanted.
+    BC('av:reach');
+    if (this._reach?.size && !this._limp) this._applyReach(dt, now);
+    else if (this._limp && this._reach?.size) this._reach.clear();
 
     // ---- gaze: ease the target so eyes track instead of snapping
     if (this._hasGaze) this.gaze.position.lerp(this.gazeGoal, 1 - Math.exp(-6 * dt));

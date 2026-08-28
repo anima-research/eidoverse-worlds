@@ -11,6 +11,7 @@
 // species are reading different rooms.
 
 import { CONFIG, bus, colorFor, assignColors } from './core.js';
+import { lastWhy } from './debuglog.js';
 import { makeFrame } from './frames.js';
 import { requestHistory } from './net.js';
 // ONLY the registry — never handlers.js, or the cycle chat→handlers→net→chat
@@ -470,6 +471,112 @@ function acceptAC() {
 
 // ---- commands ---------------------------------------------------------------
 
+// The build actually SERVED, from the server's own /version — replacing a
+// hand-bumped 'src-N' stamp that had reached 10 in one day and would have been
+// forgotten by the next. Its purpose is unchanged: a report from a stale page
+// must carry a visibly different value than a fresh one, because a stale page
+// and a broken probe are otherwise indistinguishable and three diagnoses in
+// one morning chased the wrong one.
+let _build = 'unknown';
+fetch('/version').then((r) => r.json())
+  .then((v) => { _build = `${String(v.sha ?? '').slice(0, 7) || 'unknown'}${v.dirty === true ? '+dirty' : ''}`; })
+  .catch(() => { /* stays 'unknown' — itself a diagnostic */ });
+
+/** What this device actually knows about its own audio, for a person with no
+ *  console. Every line is READ LIVE at call time — a cached "we connected"
+ *  claim is exactly what this exists to get past. Each probe is individually
+ *  guarded: a missing subsystem must print "unknown", never take the report
+ *  down with it (a diagnostic that throws is worse than none). */
+
+function audioReport() {
+  const L = [];
+  const probe = (label, fn) => {
+    try { L.push(`${label}: ${fn()}`); }
+    catch (e) { L.push(`${label}: unreadable (${(e?.message ?? e)})`); }
+  };
+
+  probe('transport', () => window.__voiceTransport ?? '(none — voice never initialised)');
+  probe('mic', () => {
+    const on = typeof window.__sfuMicOn === 'function' ? window.__sfuMicOn() : null;
+    return on === null ? 'unknown (no sfu bridge)' : (on ? 'ON' : 'off');
+  });
+  // The peer connection's own view — the only honest answer to "is there a
+  // media path", and the thing that was stalling in 'checking' this morning.
+  probe('ice', () => {
+    const d = typeof window.relayDiag === 'function' ? window.relayDiag() : null;
+    if (!d) return 'unknown (no diag)';
+    return `${d.iceConnectionState ?? '?'} / conn=${d.connectionState ?? '?'}`;
+  });
+  probe('speakers', () => {
+    const d = typeof window.relayDiag === 'function' ? window.relayDiag() : null;
+    const s = d?.speakers ?? d?.peers;
+    if (!s) return 'unknown';
+    // sfuDiagClient returns [{id, hasStream}] — name each one and whether a
+    // track actually landed, since "attached but no stream" is its own bug.
+    const list = (Array.isArray(s) ? s : Object.entries(s).map(([id, v]) => ({ id, ...v })))
+      .map((x) => (typeof x === 'string' ? x : `${x.id}${x.hasStream === false ? '(no stream)' : ''}`));
+    return list.length ? `${list.length} — ${list.join(', ')}` : 'none attached';
+  });
+  // Playback is the half that failed silently on Android: packets arrive, the
+  // <audio> element refuses to start, and nothing anywhere says so.
+  probe('playback', () => {
+    // 🔴 DO NOT querySelectorAll('audio') — voicesfu builds `new Audio()`
+    // elements that are NEVER appended to the DOM, so the document cannot see
+    // them and this printed "no <audio> elements yet" on a phone that was
+    // audibly playing two speakers (R, 2026-08-16). A probe that reads the
+    // wrong source reports a failure that is not happening, which is worse
+    // than reporting nothing. Ask the transport for its own elements.
+    const entries = typeof window.__voiceSpeakerEls === 'function' ? window.__voiceSpeakerEls() : null;
+    if (!entries) return 'unknown (transport exposes no elements)';
+    if (!entries.length) return 'no speaker elements yet';
+    let playing = 0, paused = 0;
+    const stuck = [];
+    for (const { id, audio } of entries) {
+      if (audio?.paused) { paused++; stuck.push(id); } else playing++;
+    }
+    return `${entries.length} — ${playing} playing, ${paused} paused`
+      + (paused ? `  ← ${stuck.join(', ')} held; tap the page to unlock` : '');
+  });
+  probe('captions', () => {
+    const has = !!(window.SpeechRecognition ?? window.webkitSpeechRecognition);
+    if (!has) return 'no SpeechRecognition in this browser';
+    // The TALLY is the load-bearing part: a last-event slot cannot prove that
+    // something never happened, and on 2026-08-16 I read exactly that absence
+    // out of it and was wrong twice.
+    return `${window.__sttOn?.() ? 'ON' : 'off'}`
+      + (window.__sttTally ? ` [${window.__sttTally()}]` : '')
+      + (window.__sttLast ? ` — last: ${window.__sttLast}` : ' — no events yet');
+  });
+  // Each subsystem's own last narrated decision (debuglog.js — the shared
+  // "name which guard refused" channel; __why('<topic>') in the console shows
+  // recent history for any of them).
+  probe('panel', () => `${lastWhy('tts-section')} | ${lastWhy('tts-list')}`);
+  probe('source', () => lastWhy('publish'));
+  probe('secure', () => `${window.isSecureContext} · isolated=${window.crossOriginIsolated}`);
+
+  // 🔴 STAMP THE BUILD (2026-08-16). Three times this morning I diagnosed a
+  // "bug" that was really the phone running an older copy of a module — most
+  // recently for a full round trip, because her output said "last event:" while
+  // the server had been serving "last:" for ten minutes. Without a version in
+  // the report, a stale page and a broken probe are indistinguishable, and I
+  // will chase the wrong one every time.
+  L.push(`build: ${_build}`);
+  return 'audio ▸ ' + L.join('  ·  ');
+}
+
+/** Just the captions answer, short enough to copy on a phone. */
+function sttReport() {
+  const parts = [`build ${_build}`];
+  // The recognizer's language — a wrong one returns confident nothing (nomatch)
+  // rather than an error, which is exactly what R's Galaxy reported.
+  try { if (window.__sttLang) parts.push(`lang ${window.__sttLang}`); } catch { /* ignore */ }
+  try { parts.push(window.__sttOn?.() ? 'stt ON' : 'stt off'); } catch { parts.push('stt ?'); }
+  try { parts.push(window.__sttTally ? window.__sttTally() : 'NO TALLY (stale page)'); }
+  catch (e) { parts.push(`tally unreadable: ${e?.message ?? e}`); }
+  try { if (window.__sttLast) parts.push(`last: ${window.__sttLast}`); } catch { /* ignore */ }
+  return 'stt ▸ ' + parts.join(' · ');
+}
+
 function runCommand(raw) {
   const [cmd, ...rest] = raw.slice(1).split(/\s+/);
   const arg = rest.join(' ');
@@ -510,6 +617,29 @@ function runCommand(raw) {
       // /debug [n] — the world's flight recorder: why things bounced
       bus.emit('command', { cmd: 'debug', arg });
       return true;
+    case 'audio':
+      // 🔴 /audio — the phone's own console (R, 2026-08-16: "maybe you can
+      // temporarily add a chatlog command that can return something?").
+      //
+      // Android Chrome has no on-device console, so every mobile-only voice bug
+      // this morning was diagnosed by me guessing and her testing. The page
+      // already knows all of this; it just had nowhere to say it. Answers
+      // LOCALLY (logChat, not the world) — it is a self-report, and nobody else
+      // in the room needs to read someone's mic diagnostics.
+      // Three forms, because the full report is unreadable on the device that
+      // needs it most (R, 2026-08-16 — mobile copy/paste "exceeds the window
+      // size", and she relayed one in two batches):
+      //   /audio       full picture, for a desk
+      //   /audio stt   captions only, short enough to read on a phone
+      //   /audio say   posts the short form INTO the world — no copy/paste
+      // `say` is opt-in because a diagnostic is a self-report by default; the
+      // room does not need everyone's mic internals unprompted.
+      {
+        const mode = arg.trim().toLowerCase();
+        if (mode === 'say') { onSend(sttReport()); return true; }
+        logChat('*', mode === 'stt' ? sttReport() : audioReport());
+        return true;
+      }
     case 'use': case 'pull': case 'ring': case 'open':
       // /use <thing> [action] — the universal interact. The aliases are the
       // same verb with the action already in hand: /pull lever1.
@@ -548,6 +678,14 @@ function runCommand(raw) {
       return true;
     case 'push': case 'shove':
       bus.emit('command', { cmd: 'push', arg });
+      return true;
+    case 'touch':
+      // /touch [name] [point] [left|right] — a reaching hand on the same
+      // wire agents use; the touched person's client narrates it to them
+      bus.emit('command', { cmd: 'touch', arg });
+      return true;
+    case 'letgo': case 'release':
+      bus.emit('command', { cmd: 'letgo', arg });
       return true;
     case 'pushable':
       bus.emit('command', { cmd: 'pushable', arg });
