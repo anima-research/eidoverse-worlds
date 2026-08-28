@@ -1,0 +1,433 @@
+{
+  "issue": 42,
+  "label": "chrome-151",
+  "startedAt": "2026-08-28T20:24:00.775Z",
+  "secsPerArm": 25,
+  "camera": {
+    "photoMode": true,
+    "pos": [
+      -0.62,
+      2.771,
+      -3.987
+    ],
+    "yaw": 3.1416,
+    "pitch": 0.32,
+    "fov": 55
+  },
+  "env": {
+    "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+    "platform": "Windows",
+    "cores": 16,
+    "deviceMemoryGB": 32,
+    "backend": "WebGPUBackend",
+    "isWebGPU": true,
+    "hasNavigatorGpu": true,
+    "adapter": {
+      "vendor": "nvidia",
+      "architecture": "turing",
+      "device": "",
+      "description": "",
+      "isFallback": null
+    },
+    "deviceLimits": {
+      "maxTextureDimension2D": 8192,
+      "maxBufferSize": 268435456,
+      "maxBindGroups": 4
+    },
+    "devicePixelRatio": 1,
+    "rendererPixelRatio": 1,
+    "drawingBuffer": [
+      1280,
+      800
+    ],
+    "viewport": [
+      1280,
+      800
+    ],
+    "renderScale": "auto",
+    "casterBudget": 6,
+    "slotCap": 8,
+    "emitters": "auto",
+    "grassDensity": 1,
+    "detailShed": false,
+    "refreshHint": "60Hz-ish (fastest arm p50 16.67ms)"
+  },
+  "scene": {
+    "people": 0,
+    "skinnedMeshes": 5,
+    "meshes": 175,
+    "lights": 11,
+    "shadowCasters": 1,
+    "drawCalls": 6186,
+    "triangles": 2725031,
+    "geometries": 159,
+    "textures": 38,
+    "grassStrokes": [
+      {
+        "stroke": "0:grass",
+        "mode": "cards-sss",
+        "drawn": 85910,
+        "planted": 153236,
+        "tiles": 126,
+        "visible": 126,
+        "lodTiles": 0
+      }
+    ],
+    "grassDrawn": 85910
+  },
+  "foliage": "present",
+  "arms": [
+    {
+      "arm": "full",
+      "frames": 1499,
+      "seconds": 25,
+      "p50": 16.67,
+      "p95": 16.69,
+      "p99": 16.75,
+      "min": 3.17,
+      "max": 33.31,
+      "mean": 16.68,
+      "fpsFromP50": 60.01,
+      "over40ms": 0,
+      "over100ms": 0,
+      "hud": {
+        "fps": 60,
+        "ms": 16.67,
+        "worst": 16.69000000000233,
+        "doubled": 0,
+        "spikes": 0
+      },
+      "blades": 85910,
+      "grassField": true,
+      "drawCalls": 6186,
+      "triangles": 2725031,
+      "counter": "per-frame (read directly)",
+      "focus": {
+        "before": true,
+        "after": true
+      },
+      "visibility": "visible"
+    },
+    {
+      "arm": "static",
+      "frames": 1501,
+      "seconds": 25.01,
+      "p50": 16.67,
+      "p95": 16.68,
+      "p99": 16.69,
+      "min": 4.21,
+      "max": 16.78,
+      "mean": 16.66,
+      "fpsFromP50": 60.01,
+      "over40ms": 0,
+      "over100ms": 0,
+      "hud": {
+        "fps": 60,
+        "ms": 16.67,
+        "worst": 16.689999999995052,
+        "doubled": 0,
+        "spikes": 0
+      },
+      "blades": 85910,
+      "grassField": true,
+      "drawCalls": 11058,
+      "triangles": 2725031,
+      "counter": "per-frame (read directly)",
+      "focus": {
+        "before": true,
+        "after": true
+      },
+      "visibility": "visible"
+    },
+    {
+      "arm": "off",
+      "frames": 1501,
+      "seconds": 25.01,
+      "p50": 16.67,
+      "p95": 16.68,
+      "p99": 16.7,
+      "min": 9.68,
+      "max": 16.8,
+      "mean": 16.66,
+      "fpsFromP50": 60.01,
+      "over40ms": 0,
+      "over100ms": 0,
+      "hud": {
+        "fps": 60,
+        "ms": 16.67,
+        "worst": 16.70000000001164,
+        "doubled": 0,
+        "spikes": 0
+      },
+      "blades": 0,
+      "grassField": true,
+      "drawCalls": 15930,
+      "triangles": 192039,
+      "counter": "per-frame (read directly)",
+      "focus": {
+        "before": true,
+        "after": true
+      },
+      "visibility": "visible"
+    }
+  ],
+  "observed": {
+    "contextEvents": [],
+    "messages": []
+  },
+  "tainted": null,
+  "markdown": "### browserlab receipt — chrome-151\n\n`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36`\n\n| | |\n|---|---|\n| backend | `WebGPUBackend` (isWebGPURenderer true, navigator.gpu true) |\n| adapter | vendor `nvidia` · arch `turing` · device `` · fallback _not exposed_ |\n| pixel ratio | device 1 · renderer 1 · render scale auto |\n| buffer | 1280×800 (viewport 1280×800) |\n| cadence | 60Hz-ish (fastest arm p50 16.67ms) |\n| cores / memory | 16 / 32GB |\n| quality tier | casters 6 · light slots 8 · emitters auto · grass 1 · detail shed false |\n| scene | 0 people · 5 skinned · 6186 draws · 2,725,031 tris · 38 textures · 85,910 blades |\n| camera | pos [-0.62, 2.771, -3.987] yaw 3.1416 pitch 0.32 fov 55 |\n\n**25s per arm, fixed camera, UI hidden.** Frame time in ms — lower is better.\n\n| foliage | p50 | p95 | p99 | max | mean | fps (p50) | >40ms | >100ms | blades drawn |\n|---|---|---|---|---|---|---|---|---|---|\n| full | 16.67 | 16.69 | 16.75 | 33.31 | 16.68 | 60.01 | 0 | 0 | 85,910 |\n| static | 16.67 | 16.68 | 16.69 | 16.78 | 16.66 | 60.01 | 0 | 0 | 85,910 |\n| off | 16.67 | 16.68 | 16.7 | 16.8 | 16.66 | 60.01 | 0 | 0 | 0 |\n\nFoliage costs **0ms** at the median and **0.01ms** at p95 from this camera.\n\n**Console during the run:** _clean_\n**Context loss:** _none_\n\n> Comparability: this receipt is only a browser delta against another\n> receipt with the same camera pose, the same people count, and the same\n> world. Check those three lines before reading the frame times.",
+  "driver": {
+    "browserChannel": "chrome",
+    "playwrightManagedBuild": false,
+    "url": "http://localhost:8949/?name=viewer&world=meadow&key=lab-door",
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    },
+    "cameraFrom": null,
+    "launcher": "node v24.18.0",
+    "consoleLines": [
+      {
+        "type": "error",
+        "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)"
+      },
+      {
+        "type": "log",
+        "text": "[eidoverse] server build 6006d6d (DIRTY TREE) (code from 2026-08-26T21:13:13-07:00), up since 2026-08-28T20:15:07.983Z"
+      },
+      {
+        "type": "warning",
+        "text": "[longtask] 142ms during: avatar viewer[body] + vrm claude.vrm?v=1786342444754[download] + build grass + glb palm_date_tree_tropical_dese[download] + glb stylized_yucca_joshua_tree_d[download] + glb streetlight_lamp_light_stree[download]"
+      },
+      {
+        "type": "warning",
+        "text": "VRMUtils.removeUnnecessaryJoints: removeUnnecessaryJoints is deprecated. Use combineSkeletons instead. combineSkeletons contributes more to the performance improvement. This function will be removed in the next major version."
+      },
+      {
+        "type": "warning",
+        "text": "[jank] 350ms frame gap during: avatar viewer[body] + vrm claude.vrm?v=1786342444754[skeleton] + build grass + glb palm_date_tree_tropical_dese[queued] + glb stylized_yucca_joshua_tree_d[queued] + glb streetlight_lamp_light_stree[parse]"
+      },
+      {
+        "type": "log",
+        "text": "[load] vrm claude.vrm?v=1786342444754: download 187ms · parse 36ms · skeleton 298ms · textures 5ms — 526ms over 3 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] glb streetlight_lamp_light_stree: download 173ms · parse 205ms · textures 49ms — 427ms over 4 frame(s)"
+      },
+      {
+        "type": "warning",
+        "text": "createVRMAnimationClip: VRMLookAtQuaternionProxy is not found. Creating a new one automatically. To suppress this warning, create a VRMLookAtQuaternionProxy manually"
+      },
+      {
+        "type": "warning",
+        "text": "[longtask] 93ms during: avatar viewer[clips] + build grass + glb palm_date_tree_tropical_dese[textures] + glb stylized_yucca_joshua_tree_d[parse] + compile streetlight_lamp_light_stree[warm] + vrma walk[queued]"
+      },
+      {
+        "type": "log",
+        "text": "[load] glb palm_date_tree_tropical_dese: download 215ms · queued 142ms · parse 175ms · textures 22ms — 554ms over 3 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] glb stylized_yucca_joshua_tree_d: download 282ms · queued 200ms · parse 170ms · textures 34ms — 686ms over 4 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile streetlight_lamp_light_stree: warm 974ms — 974ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile palm_date_tree_tropical_dese: queued 865ms · warm 298ms — 1163ms over 1 frame(s)"
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "log",
+        "text": "[load] avatar viewer: queued 1192ms · warm 1451ms — 2644ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] avatar viewer: body 530ms · clips 192ms · compile 2649ms — 3372ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[boot] ready in 3692ms (ready) {engine: 661, connect: 201, body: 3411}"
+      },
+      {
+        "type": "log",
+        "text": "[grass2] grass: 153236 instances × 80 verts (blades)"
+      },
+      {
+        "type": "log",
+        "text": "[flora] 0:grass blades mode: cards-sss"
+      },
+      {
+        "type": "warning",
+        "text": "[longtask] 324ms during: build grass + compile stylized_yucca_joshua_tree_d[warm] + compile streetlight_lamp_light_stree[queued] + depth lab2[queued] + compile palm_date_tree_tropical_dese[queued] + compile palm_date_tree_tropical_dese[queued] + compile streetlight_lamp_light_stree[queued] + depth lab0[queued]"
+      },
+      {
+        "type": "warning",
+        "text": "[jank] 317ms frame gap during: build grass + compile stylized_yucca_joshua_tree_d[warm] + compile streetlight_lamp_light_stree[queued] + depth lab2[queued] + compile palm_date_tree_tropical_dese[queued] + compile palm_date_tree_tropical_dese[queued] + compile streetlight_lamp_light_stree[queued] + depth lab0[queued]"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile stylized_yucca_joshua_tree_d: queued 2547ms · warm 687ms — 3233ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile streetlight_lamp_light_stree: queued 2535ms · warm 2ms — 2537ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile palm_date_tree_tropical_dese: queued 2236ms · warm 2ms — 2238ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile palm_date_tree_tropical_dese: queued 2252ms — 2253ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile streetlight_lamp_light_stree: queued 2268ms — 2269ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile stylized_yucca_joshua_tree_d: queued 98ms · warm 43ms — 141ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile streetlight_lamp_light_stree: queued 126ms · warm 43ms — 169ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] depth lab2: queued 2817ms · warm 232ms — 3049ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] depth lab0: queued 2752ms · warm 134ms — 2886ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] depth lab15: queued 571ms · warm 84ms — 655ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] depth lab10: queued 659ms · warm 51ms — 710ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] depth lab11: queued 752ms · warm 136ms — 888ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] depth lab16: queued 932ms · warm 45ms — 977ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] depth lab20: queued 1026ms · warm 136ms — 1162ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] depth lab5: queued 1206ms · warm 136ms — 1342ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] depth lab12: queued 1385ms · warm 91ms — 1476ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] depth lab6: queued 1479ms · warm 83ms — 1562ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] depth lab13: queued 1564ms · warm 51ms — 1615ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] depth lab7: queued 1658ms · warm 44ms — 1702ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] depth lab1: queued 1752ms · warm 42ms — 1794ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] depth lab17: queued 1495ms · warm 135ms — 1630ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] depth lab21: queued 1672ms · warm 92ms — 1764ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] build grass:  — 9869ms over 1 frame(s)"
+      }
+    ]
+  }
+}
