@@ -15,6 +15,7 @@ import { loadGLB, libLabels, listLibrary } from './assets.js';
 import { makeLightGizmo } from './lights.js';
 import { entities, entityMeta, comps, findPart, editHolds } from './world.js';
 import { surfaceUnder, reindexCollider } from './colliders.js';
+import { getGrassMotion, setGrassMotion } from './terrain.js';
 import { heightAt, GRASS_QUALITY, getGrassQuality, setGrassQuality,
   getGrassDensity, getGrassShed, getGrassApplied } from './terrain.js';
 import { sendVerb, sendDrag } from './net.js';
@@ -1152,6 +1153,36 @@ function paintSky(body) {
   syncGrassRow();
   bus.on('grass-budget', syncGrassRow);   // governor sheds repaint immediately
   body.appendChild(gqRow);
+
+  // Whether YOUR meadow sways. A second local dial rather than a fifth rung on
+  // the cap: density and motion are different costs for different reasons —
+  // "my poor gpu" is one, "the swaying makes me ill" is another, and someone
+  // who wants a still meadow at full detail should not have to mow it to get
+  // one. Off/static/full (#42) are the two dials' named points, reachable here
+  // or as `/foliage full|static|off`.
+  const gm = document.createElement('input');
+  gm.type = 'checkbox';
+  gm.style.cssText = 'accent-color:var(--accent); margin:0;';
+  gm.setAttribute('aria-label', 'grass sway — local only, never shared with the world');
+  const gmRow = mkRow('sway⚙', gm);
+  const syncMotionRow = () => {
+    gm.checked = getGrassMotion() === 'on';
+    // Nothing is drawn at cap off, so nothing can sway: disable rather than
+    // offer a control that would silently do nothing.
+    const nothingToMove = getGrassQuality() === 'off';
+    gm.disabled = nothingToMove;
+    gmRow.title = nothingToMove
+      ? 'nothing to sway — the grass cap is off'
+      : `your meadow ${gm.checked ? 'sways' : 'is still'} — local setting, not shared with the world`;
+  };
+  gm.onchange = () => {
+    setGrassMotion(gm.checked ? 'on' : 'off');
+    syncMotionRow();
+    flashHint(`grass sway: ${gm.checked ? 'on' : 'off'} (yours only)`);
+  };
+  syncMotionRow();
+  bus.on('grass-budget', syncMotionRow);
+  body.appendChild(gmRow);
 
   // Render scale is YOURS too (§22k) — the whole frame's pixel budget, the
   // one lever a pixel-bound machine actually answers to (§22j's tables).

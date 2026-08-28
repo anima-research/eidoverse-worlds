@@ -6,7 +6,8 @@
 
 import { scene, ground, grid, bus } from './core.js';
 import { retireField } from './flora_field.js';
-import { makeGrassQuality, GRASS_QUALITY } from './grass_quality.js';
+import { makeGrassQuality, GRASS_QUALITY, GRASS_MOTION } from './grass_quality.js';
+import { autoHooks, releaseHook } from './autohooks.js';
 
 let current = null;
 
@@ -74,8 +75,13 @@ export function setGrass(field) {
   currentGrass = field ?? null;
   // sticky budget: a machine that had to thin its meadow keeps it thin
   // across re-grows, instead of re-discovering the same slow frame rate —
-  // and a resident's chosen cap (persisted) survives them the same way
-  if (field && budget.effective() < 1) applyGrassBudget();
+  // and a resident's chosen cap (persisted) survives them the same way.
+  // The motion dial is sticky for the same reason and by the same route: a
+  // re-grow that quietly restarted the sway would undo the choice without
+  // saying so. (Both are re-applied against the NEW field — the old field's
+  // frozen hooks left with it, so the freeze state is rebuilt, not carried.)
+  frozenHooks = []; frozenWind = [];
+  if (field && (budget.effective() < 1 || !budget.animates())) applyGrassBudget();
 }
 export const clearGrass = () => setGrass(null);
 export const hasGrass = () => currentGrass !== null;
@@ -86,8 +92,60 @@ export const getGrassField = () => currentGrass;
 // shed (grass_quality.js owns the semantics — effective is their min).
 const budget = makeGrassQuality(globalThis.localStorage);
 
+// ---- the motion dial (the 'static' half of #42's off/static/full) ----------
+//
+// Freezing foliage animation must touch ONLY foliage. The engine's per-frame
+// hook array is shared with the sky and with every entity emitter, so the
+// coarse move — emptying it, which is what the grassdiag phase does for one
+// measured second — would stop the clouds and every particle system in the
+// world for as long as a resident left the setting on.
+//
+// So: by identity, and narrowly.
+//   · each stroke's own `update(t){ uT.value = t }` (vegetation.js) — the wind
+//     clock. Released from the array, put back on the way out.
+//   · that stroke's `base`/`gust` wind amplitudes, zeroed. Freezing the clock
+//     alone leaves the blades stopped mid-gust, leaning; zeroing the amplitude
+//     settles them upright, which is what "static" should look like.
+//
+// NOT frozen: the per-tile ticks. They re-settle LOD and visibility against
+// the camera, so freezing them leaves a stale meadow behind a walking viewer —
+// a still meadow is the ask, a wrong one is not. And not the pushers: a
+// motionless field that still parts around your feet is honest interaction,
+// not ambient animation.
+//
+// ⚠ This is a COMFORT setting, not established as a performance one. The
+// shader still evaluates its wind term with the amplitude at zero, and no
+// measurement on this hardware separates static from full (both sit on the
+// vsync interval — tools/receipts-42/). Claim what is measured: 'off' is the
+// lever that removes work.
+let frozenHooks = [];
+let frozenWind = [];   // [{ u, base, gust }] — the amplitudes we zeroed
+
+function applyGrassMotion() {
+  const want = budget.animates();
+  if (!currentGrass) { frozenHooks = []; frozenWind = []; return; }
+  const strokes = currentGrass._strokes ?? [];
+  if (!want && !frozenHooks.length && !frozenWind.length) {
+    for (const st of strokes) {
+      if (typeof st.update === 'function' && releaseHook(st.update)) frozenHooks.push(st.update);
+      const u = st.uniforms;
+      if (u?.base && u?.gust) {
+        frozenWind.push({ u, base: u.base.value, gust: u.gust.value });
+        u.base.value = 0; u.gust.value = 0;
+      }
+    }
+  } else if (want && (frozenHooks.length || frozenWind.length)) {
+    // plain push, not pushHostHook: these were never marked host-owned, and
+    // restoring must leave the array exactly as it was found
+    if (frozenHooks.length) autoHooks().push(...frozenHooks);
+    for (const f of frozenWind) { f.u.base.value = f.base; f.u.gust.value = f.gust; }
+    frozenHooks = []; frozenWind = [];
+  }
+}
+
 function applyGrassBudget() {
   const eff = budget.effective();
+  applyGrassMotion();
   if (currentGrass) {
     // `off` retires the draw entirely: count 0 stops the fill, and hiding the
     // group spares raycasts/shadows too. The field object stays whole — shared
@@ -176,4 +234,26 @@ export function setGrassQuality(q) {
 export const getGrassQuality = () => budget.quality;
 /** the governor's uncapped session dial, for inspection */
 export const getGrassShed = () => budget.shed;
-export { GRASS_QUALITY };
+
+/** The resident's second dial: does their meadow sway? Local, persisted,
+ *  never a verb — exactly like the cap. */
+export function setGrassMotion(m) {
+  const applied = budget.setMotion(m);
+  applyGrassBudget();
+  return applied;
+}
+export const getGrassMotion = () => budget.motion;
+/** Whether the meadow is animating right now — 'off' at cap 0, where there
+ *  is nothing drawn to animate. */
+export const grassAnimates = () => budget.animates();
+
+/** #42's three names, as one call. Returns the dial pair it landed on. */
+export function setFoliagePreset(name) {
+  const pair = budget.setPreset(name);
+  applyGrassBudget();
+  return pair;
+}
+/** The name for the current pair, or null when the dials sit between names. */
+export const getFoliagePreset = () => budget.preset();
+
+export { GRASS_QUALITY, GRASS_MOTION };
