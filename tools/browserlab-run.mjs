@@ -104,10 +104,15 @@ if (managedBuild) {
 // → same digest, on any machine.
 function treeDigest() {
   const git = (args) => execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  // The receipts directory is this tool's OUTPUT, not the code under test.
+  // Counting it made the digest self-referential: writing a receipt dirtied the
+  // tree that the next receipt then reported as dirty, so a clean checkout
+  // could never produce a receipt that said so.
+  const notOutput = ['--', '.', `:(exclude)${OUT}`];
   try {
     const sha = git(['rev-parse', 'HEAD']).trim();
-    const diff = git(['diff', 'HEAD']);
-    const untracked = git(['ls-files', '--others', '--exclude-standard']).split('\n').filter(Boolean).sort();
+    const diff = git(['diff', 'HEAD', ...notOutput]);
+    const untracked = git(['ls-files', '--others', '--exclude-standard', ...notOutput]).split('\n').filter(Boolean).sort();
     const parts = [`commit ${sha}`, `diff ${createHash('sha256').update(diff).digest('hex')}`];
     for (const f of untracked) {
       let h = 'unreadable';
@@ -118,7 +123,7 @@ function treeDigest() {
     return {
       sha, clean,
       digest: createHash('sha256').update(parts.join('\n')).digest('hex').slice(0, 16),
-      digestOf: clean ? 'clean checkout' : `${diff.split('\n').length - 1} diff lines + ${untracked.length} untracked`,
+      digestOf: clean ? `clean checkout (excluding ${OUT})` : `${diff.split('\n').length - 1} diff lines + ${untracked.length} untracked, excluding ${OUT}`,
     };
   } catch (e) {
     return { sha: null, clean: null, digest: null, digestOf: `git unavailable: ${String(e).slice(0, 80)}` };
