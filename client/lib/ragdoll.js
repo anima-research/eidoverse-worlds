@@ -1132,7 +1132,10 @@ export class Ragdoll {
    *  velocity, so releasing mid-swing throws the body the way it was moving.
    *  setPin(joint, null) releases that joint alone; setPin(null) releases
    *  everything. */
-  setPin(joint, target) {
+  setPin(joint, target, _firm = false) {
+    // `_firm` (nail vs hand — see ammodoll.setPin) is accepted for engine
+    // interface parity and deliberately unused: a Verlet pin zeroes inverse
+    // mass, which IS the rigid nail — there is no softer hand mode to pick.
     this.pins ??= new Map();
     const unpin = (j) => { this.iw[j] = 1 / (MASS[j] ?? 1); this.pins.delete(j); };
     if (!joint) { for (const j of [...this.pins.keys()]) unpin(j); return; }

@@ -76,7 +76,13 @@ function shapeOf(id) {
   const c = colliders.get(id);
   const obj = entities.get(id);
   if (!c || !obj) return null;
-  const size = c.box.getSize(new THREE.Vector3()).multiplyScalar(obj.scale?.x || 1);
+  // per-axis scale, not scale.x uniformly (§24k R0): a non-uniformly scaled
+  // crate classified by one axis's scale could read as a ball. (Rotation is
+  // deliberately absent — this is INTRINSIC size for shape classification,
+  // not a world-space box; the dolls' world-box math is the other job.)
+  const size = c.box.getSize(new THREE.Vector3());
+  const s = obj.scale ?? null;
+  if (s) size.set(size.x * (s.x || 1), size.y * (s.y || 1), size.z * (s.z || 1));
   const dims = [size.x, size.y, size.z].sort((a, b) => a - b);
   // round-ish in all three = ball; anything else lands like a crate
   const ball = dims[0] > 0.01 && dims[2] / dims[0] < 1.35;

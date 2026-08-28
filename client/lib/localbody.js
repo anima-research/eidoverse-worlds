@@ -259,7 +259,12 @@ function syncPins() {
 }
 function applyMyPins() {
   if (!ragdoll) return;
-  for (const [j, at] of myPins) ragdoll.setPin(j, _pinV.set(at[0], at[1], at[2]));
+  // §24k R0: everything in myPins is a NAIL (placed on release / pulled on
+  // request), so it takes the nail's firm tuning — the dragger's takeover
+  // sim already passed firm=true (bodydrag.js), while the owner's own
+  // re-apply here didn't: the same nail held with different physics
+  // depending on whose machine was simulating.
+  for (const [j, at] of myPins) ragdoll.setPin(j, _pinV.set(at[0], at[1], at[2]), true);
 }
 function addPin(j, at) {
   if (!Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) return;
