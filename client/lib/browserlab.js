@@ -311,7 +311,17 @@ function armControls() {
       if (savedVisible === null && f) savedVisible = new Map(meshes().map((m) => [m, m.visible]));
 
       if (arm === 'static') {
-        for (const fn of meadowHooks()) if (releaseHook(fn)) frozenHooks.push(fn);
+        // Record WHERE each hook sat and remove back-to-front, so the indices
+        // stay valid as the array shortens. Appending them back would restore
+        // membership but not POSITION, and the engine drains this array in
+        // order — "the array is left exactly as it was found" has to be true
+        // rather than nearly true. (Raised on the sibling change in #151.)
+        const live = autoHooks();
+        const mine = meadowHooks()
+          .map((fn) => ({ fn, at: live.indexOf(fn) }))
+          .filter((h) => h.at >= 0)
+          .sort((a, b) => b.at - a.at);
+        for (const h of mine) if (releaseHook(h.fn)) frozenHooks.push(h);
         for (const st of (f?._strokes ?? [])) {
           const u = st.uniforms;
           if (u?.base && u?.gust) {
@@ -324,9 +334,17 @@ function armControls() {
       }
     },
     restore() {
-      // plain push, not pushHostHook: these were never marked host-owned, and
-      // restoring must leave the array exactly as it was found
-      if (frozenHooks.length) { autoHooks().push(...frozenHooks); frozenHooks = []; }
+      // plain splice, not pushHostHook: these were never marked host-owned,
+      // and restoring must leave the array exactly as it was found — order
+      // included
+      if (frozenHooks.length) {
+        // ascending, so each splice lands before the ones still to come
+        const live = autoHooks();
+        for (const h of [...frozenHooks].sort((a, b) => a.at - b.at)) {
+          live.splice(Math.min(h.at, live.length), 0, h.fn);
+        }
+        frozenHooks = [];
+      }
       for (const w of frozenWind) { w.u.base.value = w.base; w.u.gust.value = w.gust; }
       frozenWind = [];
       if (savedVisible) for (const [m, v] of savedVisible) m.visible = v;

@@ -227,7 +227,13 @@ console.log("\nsource-level: the arm is scoped, the cleanup is guaranteed");
     !/_autoParticleSystems\s*\.length\s*=\s*0/.test(src) && !/autos\.length\s*=\s*0/.test(src),
     "that array's owners include the sky and every entity emitter");
   check("…it releases meadow-owned hooks by identity instead",
-    src.includes("releaseHook(fn)") && src.includes("meadowHooks()"));
+    /releaseHook\(\w+(\.\w+)?\)/.test(src) && src.includes("meadowHooks()"));
+  // membership is not enough: the engine drains this array IN ORDER, so a
+  // restore that appends hands it back rearranged. Raised on the sibling
+  // change in #151 and fixed here the same way.
+  check("…and puts them back at their original INDICES, not on the end",
+    src.includes("live.splice(") && !/autoHooks\(\)\.push\(\.\.\./.test(src),
+    "an appending restore reorders the array it claims to have left as found");
   check("…and reports how many foreign hooks it left running",
     src.includes("foreignHooksLeftRunning"));
 

@@ -147,11 +147,18 @@ try {
   // own ticks, standing in for the cloud drift and the entity emitters that a
   // real world would have in that array. The static arm must leave it running.
   console.log('\nwith a foreign per-frame hook planted in the shared array');
-  await page.evaluate(async () => {
+  // one on each SIDE of the meadow's own hooks: an appending restore keeps
+  // membership and still hands the array back rearranged, and only a
+  // neighbour behind the meadow can see that (raised on the sibling change in
+  // #151, fixed here the same way).
+  const orderBefore = await page.evaluate(async () => {
     const { autoHooks } = await import('/lib/autohooks.js');
     globalThis.__sentinelTicks = 0;
-    globalThis.__sentinel = () => { globalThis.__sentinelTicks++; };
+    globalThis.__sentinel = function sentinelAfter() { globalThis.__sentinelTicks++; };
+    globalThis.__sentinelHead = function sentinelBefore() {};
+    autoHooks().unshift(globalThis.__sentinelHead);
     autoHooks().push(globalThis.__sentinel);
+    return autoHooks().map((f) => f.name || 'anon');
   });
   const ticksBefore = await page.evaluate(() => globalThis.__sentinelTicks);
   const lab2 = await page.evaluate(() => globalThis.EW.browserlab({
@@ -169,12 +176,22 @@ try {
   check('…it kept ticking THROUGH the static arm',
     sentinel.ticks > ticksBefore + 100, `${ticksBefore} → ${sentinel.ticks} over ~5s`);
   check('…and it is still in the array afterwards', sentinel.present);
+  const orderAfter = await page.evaluate(async () => {
+    const { autoHooks } = await import('/lib/autohooks.js');
+    return autoHooks().map((f) => f.name || 'anon');
+  });
+  check('…and the whole array came back in exactly the order it was found',
+    JSON.stringify(orderAfter) === JSON.stringify(orderBefore),
+    `${JSON.stringify(orderBefore)} → ${JSON.stringify(orderAfter)}`);
+  check('…with the neighbours still on their original sides',
+    orderAfter[0] === 'sentinelBefore' && orderAfter[orderAfter.length - 1] === 'sentinelAfter',
+    JSON.stringify(orderAfter));
   check('…while the meadow hooks really were released during it',
     !!st && st.hooksFrozen > 0, JSON.stringify(st));
 
   await page.evaluate(async () => {
     const { releaseHook } = await import('/lib/autohooks.js');
-    releaseHook(globalThis.__sentinel);
+    releaseHook(globalThis.__sentinel); releaseHook(globalThis.__sentinelHead);
   });
 
   // the counter contract, live
