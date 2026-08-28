@@ -53,6 +53,9 @@ tools/node_modules/
 client/voices/*.onnx
 client/accept-*.onnx*
 
+# Assets/opt overlay exclusions (these are on prod only
+assets/opt/eidoverse/
+
 # a SYMLINK named node_modules dodges the dir-only pattern above — the
 # worktree-symlink footgun that shipped a Mac path to the VPS (2026-08-12)
 node_modules
