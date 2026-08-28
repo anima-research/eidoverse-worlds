@@ -35,6 +35,8 @@
 
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { chromium, firefox } from 'playwright';
 
 const argv = Object.fromEntries(process.argv.slice(2)
@@ -45,7 +47,19 @@ const argv = Object.fromEntries(process.argv.slice(2)
 // it the page loads, boots the renderer and draws an EMPTY world — no entities,
 // no grass field, every arm identical — while looking entirely healthy. The
 // first three runs of this harness were measuring a lobby.
-const URL_ = argv.url ?? 'http://localhost:8949/?name=viewer&world=meadow&key=lab-door';
+//
+// There is no default WORLD any more: browserlab-seed generates a fresh one per
+// run and prints the exact command, and a hardcoded name here was how the
+// seeder came to have one too.
+if (!argv.url && !argv.world) {
+  console.error('browserlab-run: pass --url=... (or --world=... with the defaults below).');
+  console.error('  seed a scratch world first:  node tools/browserlab-seed.mjs');
+  console.error('  it prints the exact --url for the world it just made.');
+  process.exit(1);
+}
+const HOST = argv.host ?? 'http://localhost:8949';
+const KEY = argv.key ?? 'lab-door';
+const URL_ = argv.url ?? `${HOST}/?name=${argv.name ?? 'viewer'}&world=${argv.world}&key=${KEY}`;
 const BROWSER = argv.browser ?? 'chrome';
 const SECS = Number(argv.secs ?? 25);
 const LABEL = argv.label ?? BROWSER;
@@ -79,6 +93,39 @@ if (managedBuild) {
   console.warn(`⚠ "${BROWSER}" is Playwright's own build, not an installed browser.`);
   console.warn('  Usable to check this script runs; NOT a receipt about that browser.');
 }
+
+// ---- what code produced this receipt ---------------------------------------
+//
+// The committed receipts said "server build 6006d6d (DIRTY TREE)", which names
+// a commit the tree is NOT and says nothing about what the difference was. A
+// receipt cannot authenticate itself by later being committed, so the working
+// tree gets a deterministic digest here: the commit, plus a hash over the full
+// diff against it, plus every untracked file's path and content hash. Same tree
+// → same digest, on any machine.
+function treeDigest() {
+  const git = (args) => execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  try {
+    const sha = git(['rev-parse', 'HEAD']).trim();
+    const diff = git(['diff', 'HEAD']);
+    const untracked = git(['ls-files', '--others', '--exclude-standard']).split('\n').filter(Boolean).sort();
+    const parts = [`commit ${sha}`, `diff ${createHash('sha256').update(diff).digest('hex')}`];
+    for (const f of untracked) {
+      let h = 'unreadable';
+      try { h = createHash('sha256').update(readFileSync(f)).digest('hex').slice(0, 16); } catch { /* keep */ }
+      parts.push(`untracked ${f} ${h}`);
+    }
+    const clean = diff.length === 0 && untracked.length === 0;
+    return {
+      sha, clean,
+      digest: createHash('sha256').update(parts.join('\n')).digest('hex').slice(0, 16),
+      digestOf: clean ? 'clean checkout' : `${diff.split('\n').length - 1} diff lines + ${untracked.length} untracked`,
+    };
+  } catch (e) {
+    return { sha: null, clean: null, digest: null, digestOf: `git unavailable: ${String(e).slice(0, 80)}` };
+  }
+}
+const TREE = treeDigest();
+console.log(`[browserlab-run] code under test: ${TREE.sha ?? '?'} ${TREE.clean ? '(clean)' : `+ local changes, digest ${TREE.digest}`}`);
 
 console.log(`[browserlab-run] launching ${BROWSER} (headed) → ${URL_}`);
 const browser = await engine.launch({
@@ -133,8 +180,8 @@ try {
   const total = SECS * 3 + 8;
   console.log(`[browserlab-run] running 3 arms × ${SECS}s (~${total}s). Do not touch the window.`);
   lab = await page.evaluate(
-    ({ secs, label, cam }) => globalThis.EW.browserlab({ secs, label, ...(cam ? { camera: cam } : {}) }),
-    { secs: SECS, label: LABEL, cam: camera },
+    ({ secs, label, cam, build }) => globalThis.EW.browserlab({ secs, label, buildStamp: build, ...(cam ? { camera: cam } : {}) }),
+    { secs: SECS, label: LABEL, cam: camera, build: TREE },
   );
 } finally {
   if (!KEEP) await browser.close();
