@@ -169,7 +169,7 @@ export function toggleRoster() {
   whoFrame?.toggle();
   paintRoster();
 }
-const escapeHtml = (v) => String(v).replace(/[&<>"]/g, (c) => (
+export const escapeHtml = (v) => String(v).replace(/[&<>"]/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // ============================================================ dock

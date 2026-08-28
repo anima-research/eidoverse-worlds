@@ -20,7 +20,7 @@ import { heightAt, GRASS_QUALITY, getGrassQuality, setGrassQuality,
   getGrassDensity, getGrassShed, getGrassApplied } from './terrain.js';
 import { sendVerb, sendDrag } from './net.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
-import { makeSection, toast, flashHint, collapseAll, panelFrame } from './ui.js';
+import { makeSection, toast, flashHint, collapseAll, panelFrame, escapeHtml } from './ui.js';
 import { sceneSelect } from './scenegraph.js';
 import { previewSky, skyArgs, skyImpl, WEATHERS, CLOUDS, SKY_WORLDS,
   CLOUD_QUALITY, getCloudQuality, setCloudQuality } from './sky.js';
@@ -916,7 +916,7 @@ async function paintBuild(body) {
       const img = it.preview
         ? `<img alt="" loading="lazy" src="/library/${it.preview}" onerror="this.style.visibility='hidden'">`
         : '<div style="width:100%;aspect-ratio:1"></div>';
-      card.innerHTML = `${img}<span>${it.name}</span>`;
+      card.innerHTML = `${img}<span>${escapeHtml(it.name)}</span>`;   // server-supplied name (§24k hygiene)
       card.onclick = () => holdGhost(it.path, it.name);
       grid.appendChild(card);
     }
@@ -971,7 +971,7 @@ async function paintAvatars(body) {
          onerror="this.parentNode.querySelector('.ph').style.display='flex';this.style.display='none'">
        <div class="ph" style="display:none;width:100%;aspect-ratio:1;align-items:center;
          justify-content:center;background:rgba(0,0,0,.3);border-radius:4px;font-size:18px">🧍</div>
-       <span>${name}</span>`;
+       <span>${escapeHtml(name)}</span>`;
     card.onclick = () => onSwitchAvatar?.(path, name);
     grid.appendChild(card);
   }
