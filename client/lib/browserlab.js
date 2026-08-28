@@ -35,7 +35,7 @@
 
 import { renderer, scene, THREE } from './core.js';
 import { perf } from './perf.js';
-import { governorDebug } from './governor.js';
+import { governorDebug, getRenderScale, setRenderScale, RENDER_SCALES } from './governor.js';
 import { getGrassField, grassTiles } from './terrain.js';
 import { autoHooks, releaseHook } from './autohooks.js';
 import { entities } from './world.js';
@@ -87,7 +87,7 @@ async function environment() {
     rendererPixelRatio: renderer.getPixelRatio?.() ?? null,
     drawingBuffer: size ? [size.x, size.y] : null,
     viewport: [innerWidth, innerHeight],
-    renderScale: g.renderScale, casterBudget: g.casterBudget, slotCap: g.slotCap,
+    renderScale: g.renderScale, renderScalePinned: g.renderScale !== 'auto', casterBudget: g.casterBudget, slotCap: g.slotCap,
     emitters: g.emitters, grassDensity: g.grass, detailShed: g.detailShed,
     refreshHint: null,
   };
@@ -362,13 +362,32 @@ async function waitForGrass(ms) {
 const ARMS = ['full', 'static', 'off'];
 
 export async function browserlab({ secs = 25, settleMs = 2000, arms = ARMS, camera: pose = null,
-  label = null, hideUI = true, buildStamp = null, _throwOnArm = null } = {}) {
+  label = null, hideUI = true, buildStamp = null, renderScale = '1', _throwOnArm = null } = {}) {
   if (!(secs >= 5 && secs <= 120)) throw new Error('browserlab: secs must be 5–120');
   const bad = arms.filter((a) => !ARMS.includes(a));
   if (bad.length) throw new Error(`browserlab: unknown arm(s) ${bad.join(', ')} — use ${ARMS.join('/')}`);
   if (document.hidden) throw new Error(
     'browserlab: this tab is BACKGROUNDED — requestAnimationFrame is throttled to nothing, '
     + 'so every frame time would be a lie. Front the tab, leave it fronted, and run again.');
+
+  // 🔴 PIN THE PIXEL BUDGET. The frame governor's cruise moves the render
+  // scale under load, so an identical --size can still produce different
+  // drawing buffers in two browsers: the first re-run after the review had
+  // Chrome at 1280x800 and Firefox at 960x600, because Firefox's governor had
+  // shed a quarter of the pixels and nothing said so. A browser comparison
+  // cannot let an adaptive dial change the workload mid-experiment. Pass
+  // renderScale: 'auto' to measure WITH the governor deliberately.
+  // setRenderScale REFUSES an unknown value and returns the current one, so an
+  // invalid setting would silently leave the governor in charge — the exact
+  // failure this pin exists to prevent. Refuse loudly instead.
+  if (renderScale && !RENDER_SCALES.includes(renderScale)) {
+    throw new Error(`browserlab: renderScale must be one of ${RENDER_SCALES.join(', ')} — got "${renderScale}"`);
+  }
+  const priorScale = getRenderScale();
+  if (renderScale && renderScale !== priorScale) {
+    const got = setRenderScale(renderScale);
+    if (got !== renderScale) throw new Error(`browserlab: render scale would not pin (asked ${renderScale}, got ${got})`);
+  }
 
   const enteredPhoto = !photoMode;
   if (pose) setPhotoCamera(pose);
@@ -408,7 +427,7 @@ export async function browserlab({ secs = 25, settleMs = 2000, arms = ARMS, came
       const focusBefore = document.hasFocus();
       const m = await measure(secs, settleMs);
       const cost = await frameCost();
-      if (arm === 'full') census = sceneCensus();
+      if (arm === 'full') { census = sceneCensus(); census.triangles = cost.triangles; census.drawCalls = cost.drawCalls; }
       const suspect = throttleVerdict(m);
       results.push({ arm, ...m, blades: bladesDrawn(), grassField: controls.ready, armEffect: controls.effect(),
         drawCalls: cost.drawCalls, drawCounter: cost.drawCounter,
@@ -421,6 +440,7 @@ export async function browserlab({ secs = 25, settleMs = 2000, arms = ARMS, came
     }
   } finally {
     controls.restore();
+    if (renderScale && renderScale !== priorScale) setRenderScale(priorScale);
     observed = trouble.stop();
     document.removeEventListener('visibilitychange', onVis);
     if (hideUI && !hadPhotoClass) document.body.classList.remove('photo');
