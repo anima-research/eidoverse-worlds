@@ -20,7 +20,20 @@ the emote vocabulary is a def (`defs/animations/_emotes.json` — bar,
 number keys, /emote and help all derive); and the onset gate/level meter
 are ONE factory in micgate.js (both transports' twin copies deleted,
 −316 lines). The stdio-door tool-table unification was deliberately left
-out of R1 — it rides the pending §C call. R2–R4 not yet begun.
+out of R1 — it rides the pending §C call.
+
+**R2 is DONE** (90cc9fc…4be976d): the ws switch is a handler table
+(`server/messages.ts`, bodies verbatim; server.ts 1379→851); join split
+into admitJoin/installJoin/buildSnapshot — admission-before-takeover is
+structural, the join payload testable without a socket; every wire limit
+has a name (`server/limits.ts`, env-overridable, 27 sites); `atomicWrite`
+replaced eight hand-rolled pairs (seats deliberately untouched — pending
+call); the /library LADDER is named (a generic resolver was considered
+and SKIPPED: one consumer = theater); `tools/harness.ts` owns the scratch
+bench (both §24 smokes converted). Deferred with the §C calls:
+net-server's handleTool table (its shape depends on retire-vs-unify).
+R3 (the dolls' shared core + skeleton def) and R4 (panels + defs round
+two) not yet begun.
 
 ## The verdict
 

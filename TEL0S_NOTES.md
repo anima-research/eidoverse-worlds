@@ -390,6 +390,28 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-27 — §24m: R2 — the tables, delivered.** (1) The ws switch
+  is a handler table (90cc9fc): server/messages.ts, 20 entries, bodies
+  moved VERBATIM (the verbs.ts precedent — expel rides ctx, module
+  never imports server.ts); held-whisper machinery moved with its
+  writers; the two source-text suites retargeted; server.ts 1379→851.
+  (2) atomicWrite (server/fsutil.ts) replaced eight tmp+rename pairs —
+  seats untouched (pending call). (3) Every wire limit has a name
+  (a35f193): server/limits.ts, 27 sites, env-overridable, values
+  unchanged; LADDER named in config; generic resolveInLadder SKIPPED
+  (one consumer = theater). (4) JOIN SPLIT (11b924a): admitJoin (can
+  only answer and refuse — never touches the roster) / installJoin
+  (the only roster mutator) / buildSnapshot (pure read, finally
+  testable without a socket) — ADMISSION BEFORE TAKEOVER is structural
+  now, not a comment. (5) tools/harness.ts (4be976d): the scratch
+  bench, one copy; both §24 smokes converted (~180 lines gone);
+  lightbench/paritybench keep bespoke scaffolds until next touched
+  (their Windows/Edge lessons live there). Deferred with §C: handleTool
+  table. Gates held throughout: smoke 85/85 through the table,
+  behaviortest 27/27, leasetest 19/19, sim-smoke 8/8, defs-smoke
+  28/28, authtest 22/1-known, settled-pose 19/19, whisper-disable 5/5,
+  voice-wiring 35/35, paritybench, lightbench, replaybench.
+
 - **2026-08-27 — §24l: R1 — one truth, delivered.** Five mirrors dead:
   (1) aid1Slug in server/aid1.ts + aid1JoinIdentity in auth.ts — the
   three doors share one identity derivation (0eb5fe3); (2)
