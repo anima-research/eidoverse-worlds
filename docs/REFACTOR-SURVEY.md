@@ -11,8 +11,16 @@ prioritized synthesis.
 `upstream-patched/` (grass engine now `client/lib/vegetation/`, asset
 overlay lives at `patched/`) and rapierdoll (−1,589 lines). The #88
 strictness was upstreamed into `shared/fold.js` as part of A6. §C's other
-two calls (seats write-half, stdio door) await colleague input; R1–R4 are
-not yet begun.
+two calls (seats write-half, stdio door) await colleague input.
+
+**R1 is DONE** (0eb5fe3…93eac2e): aid1 slug + verifyJoinIdentity in one
+place; `shared/force.js` owns the radial falloff; the command registry is
+the whole alias truth (chat.js keeps only its five chat-owned handlers);
+the emote vocabulary is a def (`defs/animations/_emotes.json` — bar,
+number keys, /emote and help all derive); and the onset gate/level meter
+are ONE factory in micgate.js (both transports' twin copies deleted,
+−316 lines). The stdio-door tool-table unification was deliberately left
+out of R1 — it rides the pending §C call. R2–R4 not yet begun.
 
 ## The verdict
 

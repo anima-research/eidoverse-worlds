@@ -390,6 +390,26 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-27 — §24l: R1 — one truth, delivered.** Five mirrors dead:
+  (1) aid1Slug in server/aid1.ts + aid1JoinIdentity in auth.ts — the
+  three doors share one identity derivation (0eb5fe3); (2)
+  shared/force.js owns the radial-cause falloff — bodies keep only
+  consent + ground-zero direction; (3) the command registry is the
+  WHOLE alias truth (29aee4f): chat.js's 26-case switch → five
+  chat-owned handlers + resolveCommand; use/mount/dismount/debug join
+  as listed:false rows; /use's alias-is-the-action is declared data;
+  (4) the emote vocabulary is a def (bdb1580,
+  defs/animations/_emotes.json): key order = bar/number-key order,
+  clip/icon/listed; avatar.js hydrates in place, the bar rebuilds on
+  the push, Digit[1-9] follows the order — four drifted copies gone;
+  (5) ONE onset machine (93eac2e): makeOnsetGate/makeLevelMeter in
+  micgate.js, both transports instantiate, twins deleted (voice
+  1388→1207, micstate 429→255, net −316). Full voice suite green incl.
+  micstate-exec (executes, not reads). Deferred with the §C calls:
+  stdio-door tool table (rides the retire-or-unify decision). Lesson
+  paid twice now: backticks inside double-quoted commit -m get
+  command-substituted by zsh — single-quote or drop them.
+
 - **2026-08-27 — §24k: two retirements + R0, the bleeding stopped.**
   RAPIERDOLL RETIRED (41422ba, −1,589 lines): panel-only reachability,
   no feature parity, permanent divergence tax; tone motors recoverable
