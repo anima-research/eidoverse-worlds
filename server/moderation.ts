@@ -5,7 +5,8 @@
 // what is REMEMBERED, not what is done. Imported by server.ts right after
 // auth, so the restore-at-boot block runs exactly where it always did.
 
-import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { atomicWrite } from "./fsutil.ts";
 import { join } from "node:path";
 import { WORLDS_DIR } from "./config.ts";
 
@@ -22,8 +23,7 @@ export const BANS_FILE = join(WORLDS_DIR, ".bans.json");
 export const globalBans: Record<string, BanRec> = {};
 export function saveGlobalBans() {
   try {
-    writeFileSync(`${BANS_FILE}.tmp`, JSON.stringify(globalBans, null, 2), { mode: 0o600 });
-    renameSync(`${BANS_FILE}.tmp`, BANS_FILE);
+    atomicWrite(BANS_FILE, JSON.stringify(globalBans, null, 2), { mode: 0o600 });
   } catch (e) { console.log(`[mod] global ban save failed: ${e}`); }
 }
 try {

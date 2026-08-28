@@ -822,10 +822,10 @@ if (import.meta.main) {
       process.exit(2);
     }
     // tmp+rename: a killed pass must never leave a truncated GLB where the
-    // server will trustingly serve it
-    await Bun.write(`${outPath}.tmp`, out);
-    const { renameSync } = await import("node:fs");
-    renameSync(`${outPath}.tmp`, outPath);
+    // server will trustingly serve it (atomicWrite, the house idiom — this
+    // site used to be the odd one out with a lazy fs import)
+    const { atomicWrite } = await import("./fsutil.ts");
+    atomicWrite(outPath, out);
     console.log(`[optimize] ${src.length} -> ${out.length} bytes (${(src.length / out.length).toFixed(1)}x, ${ms}ms)`);
     process.exit(0);
   } catch (e) {

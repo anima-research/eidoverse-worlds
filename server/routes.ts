@@ -22,6 +22,7 @@ import { handleUpload } from "./upload.ts";
 import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
 import { tickStats } from "./tick.ts";
 import { entryBusStats } from "./events.ts";
+import { atomicWrite } from "./fsutil.ts";
 
 /** What the routes need from Bun's server object, structurally: the WS
  *  upgrade and the socket address (X-Real-IP's fallback). */
@@ -552,8 +553,7 @@ const ROUTES: Route[] = [
         let meta: Record<string, { h: number }> = {};
         try { if (existsSync(metaPath)) meta = JSON.parse(readFileSync(metaPath, "utf8")); } catch { /* fresh */ }
         meta[safe] = { h: Math.round(height * 100) / 100 };
-        writeFileSync(`${metaPath}.tmp`, JSON.stringify(meta));
-        renameSync(`${metaPath}.tmp`, metaPath);
+        atomicWrite(metaPath, JSON.stringify(meta));
       }
       // First contributor wins (re-posting on every join would be pointless
       // write traffic) — unless a re-mint pass explicitly forces the refresh.

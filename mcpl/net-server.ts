@@ -40,6 +40,7 @@ import { WorldAgent } from "./agent.ts";
 import { rawShapeError } from "./shape.ts";
 import { MANIFEST_WITH_REVISION, ManifestAnnouncer } from "./manifest.ts";
 import { verifyToken, aid1Slug } from "../server/aid1.ts";
+import { atomicWrite } from "../server/fsutil.ts";
 import sharp from "sharp";
 
 const PORT = Number(process.env.MCPL_PORT ?? 8941);
@@ -121,8 +122,9 @@ const lastSeen: Record<string, number> = Object.fromEntries(
 ) as Record<string, number>;
 function persistState() {
   try {
-    writeFileSync(STATE_TMP, JSON.stringify({ ...lastSeen, __seq: lastSeenSeq, __avatar: chosenAvatar, __activity: activityCfg }));
-    renameSync(STATE_TMP, STATE_PATH);
+    // atomicWrite (server/fsutil.ts — the house idiom, R2); this door keeps
+    // its own orphan-tmp cleanup below, the one refinement the others lacked
+    atomicWrite(STATE_PATH, JSON.stringify({ ...lastSeen, __seq: lastSeenSeq, __avatar: chosenAvatar, __activity: activityCfg }));
   } catch (e) {
     // A failed persist must not leave its tmp behind — an orphaned tmp reads
     // as a mid-write crash to the next observer. STATE_PATH keeps the last

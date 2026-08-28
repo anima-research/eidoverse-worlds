@@ -11,6 +11,7 @@ import { join, basename, dirname, relative } from "node:path";
 import { JOIN_TOKEN, UPLOAD_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DIR } from "./config.ts";
 import { agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { worlds } from "./world.ts";
+import { atomicWrite } from "./fsutil.ts";
 
 /** What the handler needs from Bun's server object, structurally (the
  *  VerbWorld precedent): the socket address behind the nginx front. */
@@ -294,8 +295,7 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     let man: Record<string, { name?: string; by: string; ts: number }> = {};
     try { if (existsSync(mp)) man = JSON.parse(readFileSync(mp, "utf8")); } catch { /* fresh */ }
     man[hash] = { ...(upName ? { name: upName } : {}), by: upBy, ts: Date.now() };
-    writeFileSync(`${mp}.tmp`, JSON.stringify(man));
-    renameSync(`${mp}.tmp`, mp);
+    atomicWrite(mp, JSON.stringify(man));
   }
   console.log(`[upload] model ${rel}${upName ? ` ("${upName}")` : ""} (${(body.length / 1e6).toFixed(1)}MB) by ${upBy}`);
   return new Response(JSON.stringify({ path: rel }), { headers: { "content-type": "application/json" } });

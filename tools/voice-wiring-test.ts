@@ -27,7 +27,8 @@ const voice = read("client/lib/voice.js");
 const consent = read("client/lib/voiceconsent.js");
 const mictoggle = read("client/lib/mictoggle.js");
 const net = read("client/lib/net.js");
-const server = read("server/server.ts");
+// ws handler bodies live in the message table (R2, server/messages.ts)
+const server = read("server/messages.ts");
 
 // --- entry point imports everything it calls (the bug this file was born from)
 // The mouth/amplitude driver lives in lib/voicemouths.js now (§14 6c); the
@@ -108,7 +109,7 @@ check("headphone toggle never references world volume",
   !/volWorld|volumeFor\(['"]world['"]\)/.test(mictoggle));
 
 // --- server side of the protocol exists for what the client sends
-check("server relays rtc", /case "rtc"/.test(server));
+check("server relays rtc", /"rtc": \(/.test(server));
 check("server whitelists typing state", /\["ear", "think", "tool", "mic"\]/.test(server));
 check("rtc payloads are size-capped", /length\s*>\s*\d{4}/.test(server));
 check("client can send rtc", /export function sendRtc/.test(net));

@@ -25,6 +25,7 @@ import { BehaviorHost } from "./behaviors.ts";
 import { foldEntry, emptyState, type LogEntry, type WorldState } from "../shared/fold.js";
 import { emptySim, simEntry, simSnapshot } from "../shared/sim.js";
 import { publishEntry } from "./events.ts";
+import { atomicWrite } from "./fsutil.ts";
 
 /** The sim fold's state (shared/sim.js — JSDoc-typed JS; mirrored here
  *  structurally for the TS side of the house). */
@@ -179,8 +180,7 @@ export class WorldLog {
       // async-append constraint). A flush failure aborts the fold: state
       // stays unfolded, retried on the next threshold, honestly.
       this.flushLog();
-      writeFileSync(this.snapPath + ".tmp", payload);
-      renameSync(this.snapPath + ".tmp", this.snapPath);
+      atomicWrite(this.snapPath, payload);
       this.snapSeq = seq;
       this.snapBytes = bytes;
       this.entries = [];          // history lives in the file; memory holds the tail
@@ -266,8 +266,7 @@ export class WorldLog {
     if (!pose) return;
     const still = settle(pose)!;
     this.poses[id] = still;
-    writeFileSync(this.posesPath + ".tmp", JSON.stringify(this.poses));
-    renameSync(this.posesPath + ".tmp", this.posesPath);
+    atomicWrite(this.posesPath, JSON.stringify(this.poses));
   }
 
   append(actor: string, verb: string, args: Record<string, unknown>): LogEntry {

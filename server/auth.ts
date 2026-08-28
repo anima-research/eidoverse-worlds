@@ -8,6 +8,7 @@ import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { JtiCache, verifyToken, aid1Slug, type Aid1Payload } from "./aid1.ts";
 import { ROOT } from "./config.ts";
+import { atomicWrite } from "./fsutil.ts";
 
 // ---- archipelago-home identity (docs/home-node.md §7) ----------------------
 // The second door, alongside JOIN_TOKEN: humans log in with Discord at the
@@ -59,7 +60,7 @@ export const SESSIONS_FILE = join(ROOT, ".sessions.json");
 export function saveSessions() {
   try {
     const live = [...hnSessions].filter(([, s]) => s.exp > Date.now());
-    writeFileSync(`${SESSIONS_FILE}.tmp`, JSON.stringify(Object.fromEntries(live)), { mode: 0o600 });
+    atomicWrite(SESSIONS_FILE, JSON.stringify(Object.fromEntries(live)), { mode: 0o600 });
     renameSync(`${SESSIONS_FILE}.tmp`, SESSIONS_FILE); // atomic — a crash mid-write never truncates the live file
   } catch (e) { console.log(`[auth] session save failed: ${e}`); }
 }
