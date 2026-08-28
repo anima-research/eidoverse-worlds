@@ -91,7 +91,7 @@ verbs). This is how you build interactive things with the *existing*
 vocabulary:
 
 ```
-spawn   {id, lib, pos, yaw, scale?}
+spawn   {id, lib, pos, yaw, scale?}       # pos metres, yaw RADIANS
 place   {id, pos?, yaw?, scale?}          # also re-stamps the rest pose
 comp    {id, type, data|null}             # attach anything; null removes; ≤8KB
 motion  {id, type, ...params, t0}         # type: pendulum|spin|orbit|bob|path
@@ -101,6 +101,28 @@ dismount{id, pos?, yaw?}                  # STAMP the absolute pose you rest at
 use     {id, action}                      # the universal interact, rank 0
 force   {at:[x,y,z], radius?, power?}     # instantaneous radial push, rank 1
 ```
+
+**Units — read this once and never wonder again.** Positions are **metres**,
+Y-up, right-handed. Every `yaw` in this file — `spawn`, `place`, `mount`,
+`dismount`, and the `yaw` inside a `sockets` component — is **RADIANS** about
++Y, with forward = +Z. (spec/PROTOCOL.md §9 Conventions is the normative
+statement; this is the same rotation the renderer puts in `rotation.y`.) `0`
+faces +Z, `Math.PI/2` (1.5708) is a quarter turn, `Math.PI` (3.1416) a half
+turn. If you think in degrees, convert at your end and pass the result:
+
+```
+yaw: 30 * Math.PI / 180     # 30 degrees  = 0.5236 rad   ← what you meant
+yaw: 30                     # thirty RADIANS ≈ 279 deg, four full turns on
+```
+
+There is no `yawDegrees`, and nothing normalizes what you send: a bare `30` is
+accepted verbatim and folds into the log as thirty radians — which is how one
+authored object came to carry `yaw: 30.00` beside another's `yaw: 1.57` (#147).
+Existing entities are never rewritten, because that orientation might be
+exactly what its author wanted; the unit is stated at the door instead.
+`measure` now prints both (`yaw 30 rad (278.9° after 4 full turns)`), and the
+browser scenegraph inspector has always shown degrees and converted your input
+back to radians before writing.
 
 `force` is a physical CAUSE, not state: it folds to nothing (replays never
 re-detonate) and knocks over every body in `radius` that permits it — each
@@ -433,7 +455,8 @@ first:
   coords are the MODEL's local frame, which is the frame sockets use, so a
   zone's center is a socket pos **verbatim**:
   `measure swing1` → "y=0.55 0.42×0.40m → pos [0, 0.55, 0]" →
-  `comp {id: "swing1", type: "sockets", data: {seat: {pos: [0,0.55,0], yaw: 3.14, pose: "sitchair"}}}`.
+  `comp {id: "swing1", type: "sockets", data: {seat: {pos: [0,0.55,0], yaw: 3.14, pose: "sitchair"}}}`
+  — that `yaw: 3.14` is **radians** (a half turn), like every yaw here.
   A socket may also name a **`part`** (a node that a `motion:<part>` comp
   animates): coords stay model-frame, but the seat then RIDES that part's
   motion — `{seat: {pos: [0,-0.83,0], part: "tripo_part_fused_0"}}` puts a

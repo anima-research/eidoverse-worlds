@@ -55,7 +55,10 @@ interface WorldAPI {
    *  MCPL. Costs nothing, never persisted to the world log. */
   log(...parts: unknown[]): void;
 
-  /** Read the folded world (never mutate — emit verbs instead). */
+  /** Read the folded world (never mutate — emit verbs instead).
+   *  Units, here and in every verb you `emit`: `pos` is metres (Y-up), `yaw`
+   *  is RADIANS about +Y (Math.PI/2 = a quarter turn; 30 degrees is
+   *  30 * Math.PI / 180 = 0.5236, not 30). See AGENTS.md, Units. */
   entity(id: string): { id: string; pos: number[]; yaw: number; lib?: string;
     comp: Record<string, unknown>; parent: unknown | null } | null;
   entities(): { id: string; pos: number[]; yaw: number; lib?: string }[];

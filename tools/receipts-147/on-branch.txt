@@ -1,0 +1,74 @@
+on-branch receipt for #147 — the same guard on this head.
+
+cmd: bun run tools/yaw-units-test.ts
+
+
+the one conversion boundary
+  ✓ 0deg = 0 rad
+  ✓ 90deg = Math.PI/2
+  ✓ 180deg = Math.PI
+  ✓ -45deg = -Math.PI/4
+  ✓ 30deg = 0.5236 rad (the worked example)
+  ✓ radiansToDegrees inverts it
+  ✓ the confusion is real: 30 rad is not 30deg
+
+yaw reads back with its unit
+  ✓ a right angle names degrees
+  ✓ zero is zero
+  ✓ a half turn
+  ✓ the 30-radian specimen confesses
+  ✓ negative winding names its turns too
+  ✓ a non-rotation says so
+
+the schema's own example cannot drift wrong
+  ✓ YAW_UNITS says RADIANS
+  ✓ YAW_UNITS carries the conversion
+  ✓ YAW_UNITS states a worked degree-to-radian pair
+  ✓ its arithmetic holds (30deg = 0.5236)
+  ✓ YAW_UNITS warns what a bare degree value becomes
+
+the scanner bites (positive control — these are the drifts)
+  ✓ finds a bare zod yaw
+  ✓ finds a bare JSON-Schema yaw
+  ✓ refuses a hand-inlined description
+  ✓ ignores non-schema yaw code
+  ✓ accepts the labelled zod form
+  ✓ accepts the labelled schema form
+
+every typed yaw on every agent door
+  ✓ mcpl/server.ts still declares yaw (2 found, 2+ expected)
+  ✓ mcpl/server.ts: yaw: z.number().optional().describe(YAW_UNITS)
+  ✓ mcpl/server.ts: yaw: z.number().optional().describe(YAW_UNITS)
+  ✓ mcpl/server.ts imports the one boundary
+  ✓ mcpl/net-server.ts still declares yaw (2 found, 2+ expected)
+  ✓ mcpl/net-server.ts: yaw: { type: "number", description: YAW_UNITS }
+  ✓ mcpl/net-server.ts: yaw: { type: "number", description: YAW_UNITS }
+  ✓ mcpl/net-server.ts imports the one boundary
+
+the raw verb door and the reader
+  ✓ world_verb states the unit (net-server)
+  ✓ world_verb states the unit (stdio server)
+  ✓ the sockets example in measure states the unit
+  ✓ measure prints yaw through formatYaw
+  ✓ measure no longer prints a bare scalar
+
+AGENTS.md — the verb table an author reads
+  ✓ the verb block marks the unit
+  ✓ a Units section exists
+  ✓ it names radians about +Y
+  ✓ it names the verbs the unit covers
+  ✓ the sockets example declares its 3.14 is radians
+  ✓ it works one degree-to-radian example
+  ✓ the example converts the degrees it claims
+  ✓ the example's arithmetic holds (30deg = 0.5236 rad)
+  ✓ it warns that a bare degree value is taken literally
+  ✓ it promises not to rewrite existing entities
+
+the behavior SDK, the third place an author types a yaw
+  ✓ behavior.d.ts states the unit for pos and yaw
+
+the normative sentence everything points at
+  ✓ spec/PROTOCOL.md still says yaw is radians about +Y
+  ✓ ...with forward = +Z
+
+all green — yaw is radians, and says so

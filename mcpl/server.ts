@@ -11,6 +11,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { readdirSync } from "node:fs";
 import { WorldAgent } from "./agent.ts";
+import { YAW_UNITS } from "./units.ts";
 import { pingLine } from "./ping-wire.ts";
 
 const agent = new WorldAgent();
@@ -161,7 +162,7 @@ server.tool(
   {
     lib: z.string().optional(), query: z.string().optional(),
     x: z.number().optional(), z: z.number().optional(), y: z.number().optional(),
-    yaw: z.number().optional(), id: z.string().optional(),
+    yaw: z.number().optional().describe(YAW_UNITS), id: z.string().optional(),
   },
   async (a) => {
     const lib = a.lib ?? (a.query ? (await searchLibrary(a.query))[0] : undefined);
@@ -177,7 +178,7 @@ server.tool(
 server.tool(
   "place",
   "Move an existing entity (id from look) to a position. y defaults to terrain height — pass y explicitly to seat things on furniture.",
-  { id: z.string(), x: z.number(), z: z.number(), y: z.number().optional(), yaw: z.number().optional() },
+  { id: z.string(), x: z.number(), z: z.number(), y: z.number().optional(), yaw: z.number().optional().describe(YAW_UNITS) },
   async (a) => {
     if (!agent.entities.has(a.id)) return { content: [{ type: "text", text: `no entity ${a.id}` }] };
     agent.verb("place", { id: a.id, pos: [a.x, a.y ?? agent.heightAt(a.x, a.z), a.z], ...(a.yaw != null ? { yaw: a.yaw } : {}) });
@@ -249,7 +250,7 @@ server.tool(
 
 server.tool(
   "world_verb",
-  "Escape hatch: send any raw verb to the world log (terrain, grass, sky, …). Trusted-participant v1 — use judiciously.",
+  "Escape hatch: send any raw verb to the world log (terrain, grass, sky, …). Trusted-participant v1 — use judiciously. Units: pos is metres, Y-up; every yaw — place, mount, dismount, socket components — is RADIANS about +Y (Math.PI/2 is a quarter turn; 30 degrees is 30*Math.PI/180 = 0.5236, not 30).",
   { verb: z.string(), args: z.record(z.unknown()) },
   async ({ verb, args }) => { agent.verb(verb, args as Record<string, unknown>); return { content: [{ type: "text", text: `sent ${verb}` }] }; },
 );
