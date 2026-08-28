@@ -72,4 +72,3 @@ the normative sentence everything points at
   ✓ ...with forward = +Z
 
 all green — yaw is radians, and says so
-
