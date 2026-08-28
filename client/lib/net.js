@@ -27,6 +27,12 @@ export const net = {
   myId: null,
   status: 'connecting',   // connecting | live | retrying | rejected
   latency: null,
+  // How far into the world's log this client has folded. Read-only, and a
+  // getter rather than a mirrored field so it cannot go stale: two receipts
+  // that agree on camera, buffer and triangle count can still have folded
+  // different histories, and a comparison that cannot see that will attribute
+  // the difference to the browser (#42 review).
+  get lastSeq() { return lastSeq; },
 };
 
 let restoredPose = false;

@@ -1,0 +1,780 @@
+{
+  "issue": 42,
+  "label": "firefox-154",
+  "startedAt": "2026-08-28T23:02:39.400Z",
+  "secsPerArm": 25,
+  "camera": {
+    "photoMode": true,
+    "pos": [
+      -0.62,
+      2.771,
+      -3.987
+    ],
+    "yaw": 3.1416,
+    "pitch": 0.32,
+    "fov": 55
+  },
+  "env": {
+    "ua": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:154.0) Gecko/20100101 Firefox/154.0",
+    "platform": "Win32",
+    "cores": 16,
+    "deviceMemoryGB": null,
+    "backend": "WebGPUBackend",
+    "isWebGPU": true,
+    "hasNavigatorGpu": true,
+    "adapter": {
+      "vendor": "",
+      "architecture": "",
+      "device": "",
+      "description": "",
+      "isFallback": null
+    },
+    "deviceLimits": {
+      "maxTextureDimension2D": 8192,
+      "maxBufferSize": 268435456,
+      "maxBindGroups": 4
+    },
+    "devicePixelRatio": 1,
+    "rendererPixelRatio": 1,
+    "drawingBuffer": [
+      1280,
+      800
+    ],
+    "viewport": [
+      1280,
+      800
+    ],
+    "renderScale": "1",
+    "renderScalePinned": true,
+    "casterBudget": 6,
+    "slotCap": 8,
+    "emitters": "auto",
+    "grassDensity": 1,
+    "detailShed": false,
+    "refreshHint": "60Hz-ish (fastest arm p50 16.66ms)"
+  },
+  "build": {
+    "sha": "737525ceb2870c6635b1d1c682632e87c56be740",
+    "dirty": true,
+    "commitTime": "2026-08-26T21:13:13-07:00",
+    "startedAt": "2026-08-28T20:15:07.983Z",
+    "clean": true,
+    "digest": "2dca5e7881a5f388",
+    "digestOf": "clean checkout (excluding tools/receipts-42)"
+  },
+  "scene": {
+    "people": 0,
+    "entities": [
+      {
+        "id": "lab0",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab1",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab2",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab3",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab4",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab5",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab6",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab7",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab8",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab9",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab10",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab11",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab12",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab13",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab14",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab15",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab16",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab17",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab18",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab19",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab20",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab21",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab22",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      },
+      {
+        "id": "lab23",
+        "lib": null,
+        "pos": null,
+        "yaw": 0,
+        "scale": {
+          "x": 1,
+          "y": 1,
+          "z": 1
+        },
+        "visible": true
+      }
+    ],
+    "peopleList": [],
+    "worldSeq": 26,
+    "skinnedMeshes": 5,
+    "meshes": 175,
+    "lights": 11,
+    "shadowCasters": 1,
+    "geometries": 159,
+    "textures": 38,
+    "grassStrokes": [
+      {
+        "stroke": "0:grass",
+        "mode": "cards-sss",
+        "drawn": 85910,
+        "planted": 153236,
+        "tiles": 126,
+        "visible": 126,
+        "lodTiles": 0
+      }
+    ],
+    "grassDrawn": 85910,
+    "digest": {
+      "worldSeq": 26,
+      "entities": 24,
+      "peopleCount": 0,
+      "hash": "2e324e3b"
+    },
+    "triangles": 2725031,
+    "drawCalls": 110
+  },
+  "foliage": "present",
+  "arms": [
+    {
+      "arm": "full",
+      "frames": 1496,
+      "p50": 16.66,
+      "p95": 16.68,
+      "p99": 16.68,
+      "min": 16.66,
+      "max": 33.34,
+      "mean": 16.71,
+      "fpsFromP50": 60.02,
+      "over40ms": 0,
+      "over100ms": 0,
+      "seconds": 25,
+      "hud": {
+        "fps": 60,
+        "ms": 16.67,
+        "worst": 16.68000000000029,
+        "doubled": 0,
+        "spikes": 0
+      },
+      "blades": 85910,
+      "grassField": true,
+      "armEffect": {
+        "hooksFrozen": 0,
+        "windZeroed": 0,
+        "foreignHooksLeftRunning": 0,
+        "foreignHooksAtStart": 0,
+        "totalHooks": 3
+      },
+      "drawCalls": 110,
+      "drawCounter": "per-frame — identical across frames — the renderer resets it",
+      "triangles": 2725031,
+      "triangleCounter": "per-frame — identical across frames — the renderer resets it",
+      "lifetimeCalls": {
+        "kind": "cumulative",
+        "perFrame": 3,
+        "last": 5793
+      },
+      "focus": {
+        "before": true,
+        "after": true
+      },
+      "visibility": "visible"
+    },
+    {
+      "arm": "static",
+      "frames": 1501,
+      "p50": 16.66,
+      "p95": 16.68,
+      "p99": 16.68,
+      "min": 10.46,
+      "max": 16.68,
+      "mean": 16.66,
+      "fpsFromP50": 60.02,
+      "over40ms": 0,
+      "over100ms": 0,
+      "seconds": 25.01,
+      "hud": {
+        "fps": 60,
+        "ms": 16.67,
+        "worst": 16.680000000007567,
+        "doubled": 0,
+        "spikes": 0
+      },
+      "blades": 85910,
+      "grassField": true,
+      "armEffect": {
+        "hooksFrozen": 3,
+        "windZeroed": 1,
+        "foreignHooksLeftRunning": 0,
+        "foreignHooksAtStart": 0,
+        "totalHooks": 0
+      },
+      "drawCalls": 110,
+      "drawCounter": "per-frame — identical across frames — the renderer resets it",
+      "triangles": 2725031,
+      "triangleCounter": "per-frame — identical across frames — the renderer resets it",
+      "lifetimeCalls": {
+        "kind": "cumulative",
+        "perFrame": 3,
+        "last": 10668
+      },
+      "focus": {
+        "before": true,
+        "after": true
+      },
+      "visibility": "visible"
+    },
+    {
+      "arm": "off",
+      "frames": 1501,
+      "p50": 16.66,
+      "p95": 16.68,
+      "p99": 16.68,
+      "min": 10.54,
+      "max": 16.68,
+      "mean": 16.66,
+      "fpsFromP50": 60.02,
+      "over40ms": 0,
+      "over100ms": 0,
+      "seconds": 25.01,
+      "hud": {
+        "fps": 60,
+        "ms": 16.67,
+        "worst": 16.680000000007567,
+        "doubled": 0,
+        "spikes": 0
+      },
+      "blades": 0,
+      "grassField": true,
+      "armEffect": {
+        "hooksFrozen": 0,
+        "windZeroed": 0,
+        "foreignHooksLeftRunning": 0,
+        "foreignHooksAtStart": 0,
+        "totalHooks": 3
+      },
+      "drawCalls": 67,
+      "drawCounter": "per-frame — identical across frames — the renderer resets it",
+      "triangles": 192039,
+      "triangleCounter": "per-frame — identical across frames — the renderer resets it",
+      "lifetimeCalls": {
+        "kind": "cumulative",
+        "perFrame": 3,
+        "last": 15543
+      },
+      "focus": {
+        "before": true,
+        "after": true
+      },
+      "visibility": "visible"
+    }
+  ],
+  "observed": {
+    "contextEvents": [],
+    "messages": []
+  },
+  "tainted": null,
+  "markdown": "### browserlab receipt — firefox-154\n\n`Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:154.0) Gecko/20100101 Firefox/154.0`\n\n| | |\n|---|---|\n| backend | `WebGPUBackend` (isWebGPURenderer true, navigator.gpu true) |\n| adapter | vendor `` · arch `` · device `` · fallback _not exposed_ |\n| pixel ratio | device 1 · renderer 1 · render scale 1 |\n| buffer | 1280×800 (viewport 1280×800) |\n| cadence | 60Hz-ish (fastest arm p50 16.66ms) |\n| cores / memory | 16 / _not exposed_ |\n| quality tier | casters 6 · light slots 8 · emitters auto · grass 1 · detail shed false |\n| scene | 0 people · 5 skinned · 24 entities · 38 textures · 85,910 blades |\n| scene digest | `2e324e3b` · world seq 26 |\n| camera | pos [-0.62, 2.771, -3.987] yaw 3.1416 pitch 0.32 fov 55 |\n| build | server `737525ceb2870c6635b1d1c682632e87c56be740` (dirty tree) · tree `2dca5e7881a5f388` (clean checkout (excluding tools/receipts-42)) |\n\n**25s per arm, fixed camera, UI hidden.** Frame time in ms — lower is better.\n\n| foliage | p50 | p95 | p99 | max | mean | fps (p50) | >40ms | >100ms | blades | draws/frame |\n|---|---|---|---|---|---|---|---|---|---|---|\n| full | 16.66 | 16.68 | 16.68 | 33.34 | 16.71 | 60.02 | 0 | 0 | 85,910 | 110 |\n| static | 16.66 | 16.68 | 16.68 | 16.68 | 16.66 | 60.02 | 0 | 0 | 85,910 | 110 |\n| off | 16.66 | 16.68 | 16.68 | 16.68 | 16.66 | 60.02 | 0 | 0 | 0 | 67 |\n\nFoliage costs **0ms** at the median and **0ms** at p95 from this camera.\n\n_Static arm scope: 3 meadow-owned hooks released and 1 wind amplitudes zeroed; 0 non-meadow hooks (sky, weather, entity emitters) left running — 0 at start._\n\n**Console during the run:** _clean_\n**Context loss:** _none_\n\n> Comparability: this receipt is a browser delta only against another\n> receipt whose scene digest, world seq, camera pose and buffer match.\n> tools/browserlab-compare.mjs checks that before it prints one.",
+  "driver": {
+    "browserChannel": "moz-firefox",
+    "playwrightManagedBuild": false,
+    "url": "http://localhost:8949/?name=viewer&world=browserlab-ei4pth6q&key=lab-door",
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    },
+    "cameraFrom": "tools/receipts-42/chrome-151.json",
+    "launcher": "node v24.18.0",
+    "consoleLines": [
+      {
+        "type": "warning",
+        "text": "[jank] 181ms frame gap during: (unattributed)"
+      },
+      {
+        "type": "log",
+        "text": "[eidoverse] server build 6006d6d (DIRTY TREE) (code from 2026-08-26T21:13:13-07:00), up since 2026-08-28T20:15:07.983Z"
+      },
+      {
+        "type": "warning",
+        "text": "[jank] 200ms frame gap during: build grass + glb palm_date_tree_tropical_dese[download] + glb stylized_yucca_joshua_tree_d[download] + glb streetlight_lamp_light_stree[download] + avatar viewer[body] + vrm claude.vrm?v=1786342444754[parse]"
+      },
+      {
+        "type": "warning",
+        "text": "VRMUtils.removeUnnecessaryJoints: removeUnnecessaryJoints is deprecated. Use combineSkeletons instead. combineSkeletons contributes more to the performance improvement. This function will be removed in the next major version."
+      },
+      {
+        "type": "warning",
+        "text": "[jank] 1100ms frame gap during: build grass + glb palm_date_tree_tropical_dese[queued] + glb stylized_yucca_joshua_tree_d[queued] + glb streetlight_lamp_light_stree[parse] + avatar viewer[body] + vrm claude.vrm?v=1786342444754[skeleton]"
+      },
+      {
+        "type": "log",
+        "text": "[load] vrm claude.vrm?v=1786342444754: download 185ms · parse 22ms · skeleton 1096ms · textures 3ms — 1305ms over 3 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] glb streetlight_lamp_light_stree: download 308ms · parse 1004ms · textures 77ms — 1389ms over 4 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] vrma idle: queued 76ms · parse 94ms — 170ms over 1 frame(s)"
+      },
+      {
+        "type": "warning",
+        "text": "createVRMAnimationClip: VRMLookAtQuaternionProxy is not found. Creating a new one automatically. To suppress this warning, create a VRMLookAtQuaternionProxy manually"
+      },
+      {
+        "type": "warning",
+        "text": "[jank] 167ms frame gap during: build grass + glb palm_date_tree_tropical_dese[parse] + glb stylized_yucca_joshua_tree_d[parse] + avatar viewer[clips] + compile streetlight_lamp_light_stree[warm] + vrma walk[queued]"
+      },
+      {
+        "type": "warning",
+        "text": "[jank] 367ms frame gap during: build grass + glb palm_date_tree_tropical_dese[textures] + glb stylized_yucca_joshua_tree_d[parse] + avatar viewer[clips] + compile streetlight_lamp_light_stree[warm] + vrma walk[queued]"
+      },
+      {
+        "type": "log",
+        "text": "[load] glb palm_date_tree_tropical_dese: download 412ms · queued 891ms · parse 246ms · textures 408ms — 1957ms over 4 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] vrma walk: queued 454ms · parse 6ms — 460ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] glb stylized_yucca_joshua_tree_d: download 463ms · queued 1015ms · parse 439ms · textures 143ms — 2060ms over 5 frame(s)"
+      },
+      {
+        "type": "warning",
+        "text": "[jank] 350ms frame gap during: build grass + avatar viewer[compile] + compile streetlight_lamp_light_stree[warm] + compile palm_date_tree_tropical_dese[queued] + avatar viewer[queued] + compile stylized_yucca_joshua_tree_d[queued]"
+      },
+      {
+        "type": "warning",
+        "text": "[jank] 400ms frame gap during: build grass + avatar viewer[compile] + compile streetlight_lamp_light_stree[warm] + compile palm_date_tree_tropical_dese[queued] + avatar viewer[queued] + compile stylized_yucca_joshua_tree_d[queued]"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile streetlight_lamp_light_stree: warm 1489ms — 1489ms over 1 frame(s)"
+      },
+      {
+        "type": "warning",
+        "text": "[jank] 367ms frame gap during: build grass + avatar viewer[compile] + compile palm_date_tree_tropical_dese[warm] + avatar viewer[queued] + compile stylized_yucca_joshua_tree_d[queued] + compile streetlight_lamp_light_stree[queued]"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile palm_date_tree_tropical_dese: queued 940ms · warm 422ms — 1362ms over 1 frame(s)"
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "[jank] 250ms frame gap during: build grass + avatar viewer[compile] + avatar viewer[warm] + compile stylized_yucca_joshua_tree_d[queued] + compile streetlight_lamp_light_stree[queued] + depth lab2[queued] + compile palm_date_tree_tropical_dese[queued] + compile palm_date_tree_tropical_dese[queued] + compile streetlight_lamp_light_stree[queued]"
+      },
+      {
+        "type": "warning",
+        "text": "[jank] 217ms frame gap during: build grass + avatar viewer[compile] + avatar viewer[warm] + compile stylized_yucca_joshua_tree_d[queued] + compile streetlight_lamp_light_stree[queued] + depth lab2[queued] + compile palm_date_tree_tropical_dese[queued] + compile palm_date_tree_tropical_dese[queued] + compile streetlight_lamp_light_stree[queued] + depth lab0[queued]"
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "[jank] 200ms frame gap during: build grass + avatar viewer[compile] + avatar viewer[warm] + compile stylized_yucca_joshua_tree_d[queued] + compile streetlight_lamp_light_stree[queued] + depth lab2[queued] + compile palm_date_tree_tropical_dese[queued] + compile palm_date_tree_tropical_dese[queued] + compile streetlight_lamp_light_stree[queued] + depth lab0[queued]"
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "warning",
+        "text": "THREE.TSL: \"transformedNormalView\" is deprecated. Use \"normalView\" instead. Stack trace not available. Enable \"THREE.Node.captureStackTrace\" to capture stack traces."
+      },
+      {
+        "type": "log",
+        "text": "[load] avatar viewer: queued 1380ms · warm 2004ms — 3383ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] avatar viewer: body 1309ms · clips 653ms · compile 3386ms — 5348ms over 1 frame(s)"
+      },
+      {
+        "type": "warning",
+        "text": "[jank] 183ms frame gap during: build grass + compile stylized_yucca_joshua_tree_d[warm] + compile streetlight_lamp_light_stree[queued] + depth lab2[queued] + compile palm_date_tree_tropical_dese[queued] + compile palm_date_tree_tropical_dese[queued] + compile streetlight_lamp_light_stree[queued] + depth lab0[queued]"
+      },
+      {
+        "type": "warning",
+        "text": "[jank] 433ms frame gap during: build grass + compile stylized_yucca_joshua_tree_d[warm] + compile streetlight_lamp_light_stree[queued] + depth lab2[queued] + compile palm_date_tree_tropical_dese[queued] + compile palm_date_tree_tropical_dese[queued] + compile streetlight_lamp_light_stree[queued] + depth lab0[queued]"
+      },
+      {
+        "type": "log",
+        "text": "[boot] ready in 6172ms (ready) {engine: 2441, connect: 184, body: 5534}"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile stylized_yucca_joshua_tree_d: queued 3441ms · warm 517ms — 3958ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile streetlight_lamp_light_stree: queued 3148ms · warm 2ms — 3149ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile palm_date_tree_tropical_dese: queued 2726ms · warm 7ms — 2733ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile palm_date_tree_tropical_dese: queued 2755ms · warm 2ms — 2756ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile streetlight_lamp_light_stree: queued 2783ms · warm 2ms — 2785ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[grass2] grass: 153236 instances × 80 verts (blades)"
+      },
+      {
+        "type": "log",
+        "text": "[flora] 0:grass blades mode: cards-sss"
+      },
+      {
+        "type": "warning",
+        "text": "[jank] 300ms frame gap during: build grass + depth lab2[queued] + depth lab0[queued] + compile stylized_yucca_joshua_tree_d[queued] + compile streetlight_lamp_light_stree[queued] + compile palm_date_tree_tropical_dese[queued] + compile palm_date_tree_tropical_dese[queued] + compile stylized_yucca_joshua_tree_d[queued] + compile stylized_yucca_joshua_tree_d[queued]"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile stylized_yucca_joshua_tree_d: queued 393ms · warm 1ms — 395ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile streetlight_lamp_light_stree: queued 399ms · warm 1ms — 400ms over 1 frame(s)"
+      },
+      {
+        "type": "warning",
+        "text": "[jank] 517ms frame gap during: build grass + depth lab2[queued] + depth lab0[queued] + compile palm_date_tree_tropical_dese[queued] + compile palm_date_tree_tropical_dese[queued] + compile stylized_yucca_joshua_tree_d[queued] + compile stylized_yucca_joshua_tree_d[queued] + depth lab5[queued] + depth lab6[queued] + depth lab1[queued] + depth lab3[queued] + compile stylized_yucca_joshua_tree_d[queu"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile palm_date_tree_tropical_dese: queued 900ms · warm 1ms — 902ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile palm_date_tree_tropical_dese: queued 891ms · warm 62ms — 953ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile stylized_yucca_joshua_tree_d: queued 993ms · warm 1ms — 995ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile stylized_yucca_joshua_tree_d: queued 1033ms · warm 1ms — 1034ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] compile stylized_yucca_joshua_tree_d: queued 792ms — 793ms over 1 frame(s)"
+      }
+    ]
+  }
+}

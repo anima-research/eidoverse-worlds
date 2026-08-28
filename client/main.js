@@ -58,6 +58,7 @@ import { initBoot, markPhase, finishBoot, bootDone } from './lib/boot.js';
 import { protoStats } from './lib/assets.js';
 import { grassTiles } from './lib/terrain.js';
 import { grassDiag } from './lib/grassdiag.js';
+import { browserlab } from './lib/browserlab.js';
 import { warmStats } from './lib/warmqueue.js';
 import { laneStats as schedLaneStats } from './lib/scheduler.js';
 import { laneStats as loadLaneStats } from './lib/loadwork.js';
@@ -798,6 +799,7 @@ const EW = globalThis.EW = {
   frame: frameDebug,           // per-system rolling ms + strides (§14.2 6b)
   grass: grassTiles,           // tile-level draw truth (§13.2, landed 8e)
   grassDiag,                   // §22: `await EW.grassDiag()` — the meadow's GPU cost, attributed by difference
+  browserlab,                  // #42: `await EW.browserlab()` — one fixed camera, 3 foliage arms, p50/p95 receipt
   setCloudQuality,             // §22b: the sky pane's tier knob, console-reachable for diagnosis
   warm: warmStats,             // the conductor's queue (§16.2.A)
   lanes: () => ({ sched: schedLaneStats(), load: loadLaneStats() }),  // queue depths vs caps
