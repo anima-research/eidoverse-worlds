@@ -4,12 +4,15 @@
 // (§14.2). Handlers live in handlers.js and register themselves here at boot;
 // this file only holds the names, the help lines, and the dispatch map.
 //
-// The metadata below is the user-facing command surface (what autocomplete
-// shows), in display order. It replaced a hand-kept copy in chat.js that had
-// drifted — a duplicate /kick row (chat.js:406/411) died in the move. Not
-// every dispatchable command is listed (/use, /mount, /dismount, /debug,
-// /rename ride their chat aliases or the help sheet), exactly as before:
-// listing is presentation, registration is behavior.
+// The table below is the WHOLE command surface now (§24l R1, survey §1):
+// names, aliases, help — the one source chat.js resolves dispatch through
+// AND derives autocomplete from. The first extraction moved only
+// autocomplete, which left chat.js's switch as a second, drifting alias
+// table (each copy carried aliases the other lacked). `listed: false`
+// keeps a command dispatchable but out of autocomplete (listing is
+// presentation, registration is behavior — unchanged doctrine);
+// `aliasAsAction` is /use's trick: typing the alias IS the action
+// (/pull lever1 → use "lever1 pull").
 
 export const COMMANDS = [
   { name: 'w', aliases: ['whisper'], help: '/w <name> <message> — whisper, privately' },
@@ -38,7 +41,22 @@ export const COMMANDS = [
   { name: 'goto', help: '/goto <name> — walk to someone' },
   { name: 'clear', help: 'clear your chat log' },
   { name: 'help', help: 'open the help sheet' },
+  // dispatchable but unlisted — reachable, just not autocomplete noise
+  { name: 'use', aliases: ['pull', 'ring', 'open'], aliasAsAction: true, listed: false,
+    help: '/use <thing> [action] — the universal interact' },
+  { name: 'mount', aliases: ['attach'], listed: false, help: '/mount <thing> <onto> [slot]' },
+  { name: 'dismount', aliases: ['detach'], listed: false, help: '/dismount <thing>' },
+  { name: 'debug', listed: false, help: '/debug [n] — the world\'s flight recorder' },
 ];
+
+/** Resolve a typed word (name or alias) to its row — the ONE alias truth.
+ *  Lazy map, rebuilt never: the table is a module-load constant. */
+const byWord = new Map();
+for (const row of COMMANDS) {
+  byWord.set(row.name, row);
+  for (const a of row.aliases ?? []) byWord.set(a, row);
+}
+export const resolveCommand = (word) => byWord.get(word) ?? null;
 
 const handlers = new Map();
 

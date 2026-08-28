@@ -15,7 +15,7 @@ import { makeFrame } from './frames.js';
 import { requestHistory } from './net.js';
 // ONLY the registry — never handlers.js, or the cycle chat→handlers→net→chat
 // closes (§14.2). The registry is a pure table with no imports of its own.
-import { COMMANDS } from './commands/registry.js';
+import { COMMANDS, resolveCommand } from './commands/registry.js';
 
 const MAX_LINES = 400;
 const HISTORY = 'ew-chat-history';
@@ -415,7 +415,7 @@ function updateAC() {
   const cmd = /^\/(\w*)$/.exec(upto);
   if (cmd) {
     const q = cmd[1].toLowerCase();
-    const hits = COMMANDS.filter(({ name }) => name.startsWith(q));
+    const hits = COMMANDS.filter(({ name, listed }) => listed !== false && name.startsWith(q));
     return showAC(hits.map(({ name, help }) => ({ value: `/${name}`, label: `/${name}`, hint: help })), 0, 'cmd');
   }
 
@@ -470,119 +470,54 @@ function acceptAC() {
 
 // ---- commands ---------------------------------------------------------------
 
+// The five commands chat OWNS — they need this module's local state (the
+// whisper tab machinery, the log element, the roster read). Everything else
+// resolves through the registry's one alias table and rides the bus (§24l
+// R1: the switch here was a second, drifted copy of that table — each side
+// carried aliases the other lacked, and /kick was once listed twice).
+const CHAT_LOCAL = {
+  w(rest, arg) {
+    const to = rest[0];
+    const body = rest.slice(1).join(' ');
+    if (!to) { logChat('*', 'usage: /w <name> <message>'); return; }
+    if (!body) { openConvo(to); return; }          // no message = just open the tab
+    onWhisper(to, body);
+  },
+  r(rest, arg) {
+    if (!lastWhisperFrom) { logChat('*', 'nobody has whispered you yet'); return; }
+    if (!arg) { openConvo(lastWhisperFrom); return; }
+    onWhisper(lastWhisperFrom, arg);
+  },
+  name(rest, arg) {
+    if (!arg) { logChat('*', `you are ${CONFIG.name} — /name <new name> to change it`); return; }
+    bus.emit('command', { cmd: 'rename', arg });   // the handler owns the (un)support answer
+  },
+  me(rest, arg) { if (arg) onSend(`* ${CONFIG.name} ${arg}`); },
+  who() {
+    const list = getPeople().map((p) => p.id).join(', ');
+    logChat('*', `here now: ${list || 'just you'}`);
+  },
+  clear() {
+    logEl.innerHTML = '';
+    lastAuthor = null;
+  },
+};
+
 function runCommand(raw) {
   const [cmd, ...rest] = raw.slice(1).split(/\s+/);
   const arg = rest.join(' ');
-  switch (cmd.toLowerCase()) {
-    case 'w': case 'whisper': {
-      const to = rest[0];
-      const body = rest.slice(1).join(' ');
-      if (!to) { logChat('*', 'usage: /w <name> <message>'); return true; }
-      if (!body) { openConvo(to); return true; }   // no message = just open the tab
-      onWhisper(to, body);
-      return true;
-    }
-    case 'r': case 'reply': {
-      if (!lastWhisperFrom) { logChat('*', 'nobody has whispered you yet'); return true; }
-      if (!arg) { openConvo(lastWhisperFrom); return true; }
-      onWhisper(lastWhisperFrom, arg);
-      return true;
-    }
-    case 'name': case 'rename': {
-      if (!arg) { logChat('*', `you are ${CONFIG.name} — /name <new name> to change it`); return true; }
-      bus.emit('command', { cmd: 'rename', arg });
-      return true;
-    }
-    case 'me':
-      if (arg) onSend(`* ${CONFIG.name} ${arg}`);
-      return true;
-    case 'emote':
-      bus.emit('command', { cmd: 'emote', arg });
-      return true;
-    case 'sit':
-      // /sit [thing] — a nearby declared seat wins over sitting on the ground
-      bus.emit('command', { cmd: 'sit', arg });
-      return true;
-    case 'goto':
-      bus.emit('command', { cmd: 'goto', arg });
-      return true;
-    case 'debug':
-      // /debug [n] — the world's flight recorder: why things bounced
-      bus.emit('command', { cmd: 'debug', arg });
-      return true;
-    case 'use': case 'pull': case 'ring': case 'open':
-      // /use <thing> [action] — the universal interact. The aliases are the
-      // same verb with the action already in hand: /pull lever1.
-      // (/push is NOT in this row: it goes through the push command, which
-      // sorts people from things — pushing a swing and shoving a person are
-      // different acts that share a word.)
-      bus.emit('command', {
-        cmd: 'use',
-        arg: cmd.toLowerCase() === 'use' ? arg : `${arg} ${cmd.toLowerCase()}`.trim(),
-      });
-      return true;
-    case 'mount': case 'attach':
-      // /mount <thing> <onto> [slot] — parent one thing to another, keeping
-      // its current world pose (glue, don't teleport). The 🌳 scene panel is
-      // the visual way to do the same.
-      bus.emit('command', { cmd: 'mount', arg });
-      return true;
-    case 'dismount': case 'detach':
-      bus.emit('command', { cmd: 'dismount', arg });
-      return true;
-    case 'role':
-      bus.emit('command', { cmd: 'role', arg });
-      return true;
-    case 'grant':
-      bus.emit('command', { cmd: 'grant', arg });
-      return true;
-    case 'kick':
-      // one word, two acts (same split as /push): kicking a THING is
-      // physics, kicking a PERSON is moderation — main.js sorts by what the
-      // name denotes. /punt and /boot are unambiguous.
-      bus.emit('command', { cmd: 'kick', arg });
-      return true;
-    case 'ban': case 'unban': case 'bans':
-    case 'gban': case 'gunban': case 'gbans':
-      bus.emit('command', { cmd: cmd.toLowerCase(), arg });
-      return true;
-    case 'push': case 'shove':
-      bus.emit('command', { cmd: 'push', arg });
-      return true;
-    case 'pushable':
-      bus.emit('command', { cmd: 'pushable', arg });
-      return true;
-    case 'eyes':
-      bus.emit('command', { cmd: 'eyes', arg });
-      return true;
-    case 'boom': case 'blast':
-      bus.emit('command', { cmd: 'boom', arg });
-      return true;
-    case 'punt': case 'boot':
-      bus.emit('command', { cmd: 'punt', arg });
-      return true;
-    case 'fork': case 'copy':
-      bus.emit('command', { cmd: 'fork', arg });
-      return true;
-    case 'reset': case 'erase':
-      bus.emit('command', { cmd: 'reset', arg });
-      return true;
-    case 'who': {
-      const list = getPeople().map((p) => p.id).join(', ');
-      logChat('*', `here now: ${list || 'just you'}`);
-      return true;
-    }
-    case 'clear':
-      logEl.innerHTML = '';
-      lastAuthor = null;
-      return true;
-    case 'help':
-      bus.emit('command', { cmd: 'help' });
-      return true;
-    default:
-      logChat('*', `unknown command /${cmd} — try /help`);
-      return true;
+  const typed = cmd.toLowerCase();
+  const row = resolveCommand(typed);
+  const canon = row?.name ?? typed;
+  if (CHAT_LOCAL[canon]) { CHAT_LOCAL[canon](rest, arg); return true; }
+  if (row) {
+    // aliasAsAction (/pull lever1): typing the alias IS the action
+    const a = row.aliasAsAction && typed !== row.name ? `${arg} ${typed}`.trim() : arg;
+    bus.emit('command', { cmd: row.name, arg: a });
+    return true;
   }
+  logChat('*', `unknown command /${cmd} — try /help`);
+  return true;
 }
 
 // ---------------------------------------------------------------- lifecycle
