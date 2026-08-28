@@ -236,7 +236,7 @@ export const KEYMAP = [
   ['Walk slowly', '<kbd>Alt</kbd> — for precise positioning'],
   ['Jump / climb','<kbd>Space</kbd> — against a low ledge, mantles onto it'],
   ['Sit / lie',   '<kbd>X</kbd> / <kbd>Z</kbd> — near a seat, sits ON it'],
-  ['Emotes',      '<kbd>1</kbd>–<kbd>6</kbd> — wave, cheer, dance, point, salute, clap'],
+  ['Emotes',      'number keys play the emote bar\'s gestures, in its order (🎭 shows them)'],
   ['Chat',        '<kbd>Enter</kbd> to open · <kbd>@</kbd> mentions · <kbd>/</kbd> commands · <kbd>↑</kbd> recalls'],
   ['Look',        'drag the scene · <kbd>wheel</kbd> zooms (through to first person)'],
   ['Mouselook',   '<kbd>M</kbd> toggles · <kbd>Esc</kbd> frees the cursor (browsers only let Esc release it)'],

@@ -147,6 +147,9 @@ check("broken def is NOT served", !names.includes("broken"));
     .every((n) => reg.skyPresets?.[n]?.hours != null), Object.keys(reg.skyPresets ?? {}).join(", "));
   check("structure palette rides the registry", reg.structurePalette?.wall?.finish === "plaster"
     && reg.structurePalette?.glass?.opacity === 0.22, Object.keys(reg.structurePalette ?? {}).join(", "));
+  check("the emote vocabulary rides the registry (order = key order)",
+    reg.emotes?.wave?.clip === "raise" && reg.emotes?.talk?.listed === false
+    && Object.keys(reg.emotes ?? {})[0] === "wave", Object.keys(reg.emotes ?? {}).join(", "));
 }
 
 // ---- animation overlay ------------------------------------------------------

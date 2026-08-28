@@ -1,0 +1,11 @@
+{
+  "doc": "The emote vocabulary — names, clips, icons, bar order. This table used to live in FOUR places (avatar.js EMOTES + EMOTE_ORDER, emotebar's ICON map, the /emote help string — which listed dance twice — and the help sheet's prose), inconsistently. One place now: key order IS the bar/number-key order; `clip` names the animation the roster serves; `icon` is the bar's glyph; `listed: false` keeps an emote dispatchable by /emote but off the bar and number keys (same flag doctrine as the command registry).",
+  "wave":   { "clip": "raise",  "icon": "👋" },
+  "cheer":  { "clip": "cheer",  "icon": "🙌" },
+  "dance":  { "clip": "dance",  "icon": "💃" },
+  "point":  { "clip": "reach",  "icon": "👉" },
+  "salute": { "clip": "salute", "icon": "🫡" },
+  "clap":   { "clip": "fist",   "icon": "👏" },
+  "talk":   { "clip": "talk",  "listed": false },
+  "flail":  { "clip": "crazy", "listed": false }
+}

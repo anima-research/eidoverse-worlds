@@ -13,7 +13,7 @@ import { join, resolve } from "node:path";
 import { ROOT } from "./config.ts";
 import { validateFloraDef, validateFloraColors, validateFloraPresets } from "../shared/floradefs.js";
 import { validateAvatarDef } from "../shared/avatardefs.js";
-import { validateAnimationDef } from "../shared/animdefs.js";
+import { validateAnimationDef, validateEmotes } from "../shared/animdefs.js";
 import { validateSkyPresets } from "../shared/skydefs.js";
 import { validateStructurePalette } from "../shared/structdefs.js";
 
@@ -71,6 +71,7 @@ function registry() {
     floraPresets: loadSidecar("flora/_presets.json", validateFloraPresets),
     avatars: loadDomain("avatars", validateAvatarDef),
     animations: loadDomain("animations", validateAnimationDef),
+    emotes: loadSidecar("animations/_emotes.json", validateEmotes),
     skyPresets: loadSidecar("sky/_presets.json", validateSkyPresets),
     structurePalette: loadSidecar("structure/_palette.json", validateStructurePalette),
   };

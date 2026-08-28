@@ -8,7 +8,9 @@ engine edit, no client edit, no deploy beyond the file.
 - One def per file, `defs/<domain>/<name>.json`; the filename (minus `.json`)
   is the def's name. Domains so far: `flora/`, `avatars/`, `animations/`
   (clip overlay, same declared-beats-discovered contract as avatars — `vrma`
-  adds/repoints, tags/doc ride /defs), `sky/` (the `_presets.json` sidecar:
+  adds/repoints, tags/doc ride /defs; the `_emotes.json` sidecar is the
+  emote vocabulary: key order = bar/number-key order, `clip`/`icon`/
+  `listed`, hot-reloads the bar), `sky/` (the `_presets.json` sidecar:
   named skies for the build panel — authoring conveniences only; commit
   writes concrete args, the log never stores a preset name), `structure/`
   (the `_palette.json` sidecar: the instance's building style, an overlay

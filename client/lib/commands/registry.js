@@ -19,7 +19,7 @@ export const COMMANDS = [
   { name: 'r', aliases: ['reply'], help: 'reply to the last whisper you got' },
   { name: 'name', aliases: ['rename'], help: '/name <new name> — change what the world calls you' },
   { name: 'me', help: 'describe an action — "/me waves"' },
-  { name: 'emote', help: '/emote dance · wave cheer dance point salute clap' },
+  { name: 'emote', help: '/emote <name> — the emote bar\'s gestures (🎭, or number keys)' },
   { name: 'sit', help: 'sit down, on a seat if one is near' },
   { name: 'push', aliases: ['shove'], help: '/push [name] [power] — shove someone within reach (their client decides); /push <thing> works the thing' },
   { name: 'eyes', help: '/eyes close|open — hold your eyes shut, if your rig has eyelid bones' },

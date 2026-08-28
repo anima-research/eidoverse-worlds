@@ -2,7 +2,8 @@
 // the small autonomic behaviours that make a puppet read as present (gaze,
 // blink, head pitch, mouth movement while speaking).
 
-import { THREE, scene, camera, renderer, report, angleDelta } from './core.js';
+import { THREE, scene, camera, renderer, report, angleDelta, bus } from './core.js';
+import { defsRegistry } from './defs.js';
 import {
   loadVRM, clipFor, vrmaBytes, loadTrack, loadDone,
   CLIP_SLOTS, CLIP_SPEED, releaseVRM, vrmWarmed, markVrmWarmed,
@@ -121,11 +122,34 @@ const CLIP_FALLBACK = {
 
 // Emote slots are loaded lazily — a body needs locomotion to exist, but it
 // doesn't need to know how to dance until someone dances.
-export const EMOTES = {
-  wave: 'raise', cheer: 'cheer', dance: 'dance', salute: 'salute',
-  point: 'reach', clap: 'fist', talk: 'talk', flail: 'crazy',
-};
-export const EMOTE_ORDER = ['wave', 'cheer', 'dance', 'point', 'salute', 'clap'];
+//
+// §24l R1: the vocabulary itself is DATA now — defs/animations/_emotes.json,
+// hydrated below (object identity preserved, the FLORA_SPECIES trick) and
+// re-hydrated on the defs-updated push. It used to live in four places
+// (this table, emotebar's ICON map, the /emote help string, the help
+// sheet's prose), each drifted from the others.
+export const EMOTES = {};      // name → clip
+export const EMOTE_ORDER = []; // listed names, def key order = bar/number-key order
+export const EMOTE_ICONS = {}; // name → bar glyph
+export function hydrateEmotes(table) {
+  for (const k of Object.keys(EMOTES)) delete EMOTES[k];
+  for (const k of Object.keys(EMOTE_ICONS)) delete EMOTE_ICONS[k];
+  EMOTE_ORDER.length = 0;
+  for (const [name, e] of Object.entries(table ?? {})) {
+    if (!e?.clip) continue;
+    EMOTES[name] = e.clip;
+    if (e.icon) EMOTE_ICONS[name] = e.icon;
+    if (e.listed !== false) EMOTE_ORDER.push(name);
+  }
+  bus.emit('emotes-updated');
+}
+{
+  const refresh = () => defsRegistry()
+    .then((reg) => hydrateEmotes(reg.emotes))
+    .catch((e) => console.warn('[emotes] def hydration failed — no emotes until it lands:', e));
+  refresh();
+  bus.on('defs-updated', refresh);
+}
 // Seated postures differ by what you're sitting ON — the ground clip on a
 // chair leaves you cross-legged in mid-air.
 export const SEAT_CLIPS = { ground: 'sitting_on_ground', chair: SEAT_CLIP_FILE };

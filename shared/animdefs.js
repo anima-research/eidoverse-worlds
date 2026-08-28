@@ -15,6 +15,22 @@ export const ANIM_NAME_RE = AVATAR_NAME_RE;
 
 const isStr = (v) => typeof v === 'string' && v.length > 0;
 
+/** Validate the emote sidecar (defs/animations/_emotes.json): each entry
+ *  {clip (required), icon?, listed?}. Key order is bar order — normative.
+ *  @param {unknown} emotes @returns {string[]} */
+export function validateEmotes(emotes) {
+  if (emotes == null || typeof emotes !== 'object' || Array.isArray(emotes)) return ['_emotes must be a JSON object'];
+  const errs = [];
+  for (const [name, e] of Object.entries(emotes)) {
+    if (name === 'doc') continue;
+    if (!ANIM_NAME_RE.test(name)) { errs.push(`emote name "${name}" fails the name rule`); continue; }
+    if (e == null || typeof e !== 'object' || Array.isArray(e)) { errs.push(`${name} must be an object`); continue; }
+    if (!isStr(/** @type {any} */ (e).clip)) errs.push(`${name}.clip is required (string)`);
+    if (/** @type {any} */ (e).icon != null && !isStr(/** @type {any} */ (e).icon)) errs.push(`${name}.icon must be a string`);
+  }
+  return errs;
+}
+
 /** Validate one animation def. Empty list = servable.
  *  @param {string} name @param {unknown} def @returns {string[]} */
 export function validateAnimationDef(name, def) {

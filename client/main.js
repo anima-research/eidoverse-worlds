@@ -287,10 +287,13 @@ bus.on('key', (e) => {
   if (isDowned() && ['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) getUp();
   // emotes on the number row — the world is a performance space and there was
   // no way to wave at anyone
-  const n = /^Digit([1-6])$/.exec(e.code);
+  // the range follows the def-hydrated bar order (§24l) — a ninth listed
+  // emote in _emotes.json gets a key with no code change
+  const n = /^Digit([1-9])$/.exec(e.code);
   const me = getMe();
   if (n && me) {
     const name = EMOTE_ORDER[Number(n[1]) - 1];
+    if (!name) return;
     me.playEmote(name);
     myState.emote = name;
     flashHint(name);
