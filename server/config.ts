@@ -25,16 +25,24 @@ export const WORLDS_DIR = resolve(process.env.WORLDS_DIR ?? join(ROOT, "worlds")
 // The eidoverse-video checkout = the asset library (models, VRMs, animations).
 export const LIBRARY_DIR = resolve(process.env.EIDOVERSE_DIR ?? join(ROOT, "..", "eidoverse-video"));
 export const OPT_DIR = join(ROOT, "assets", "opt");
-// Deliberate forks of upstream library files (versioned IN this repo —
-// upstream-patched/README.md carries the doctrine): /library serves these
-// with TOP precedence, so every machine gets the standing-permission
-// upstream redos via ordinary git pull while eidoverse-video stays pristine.
-export const PATCH_DIR = join(ROOT, "upstream-patched");
+// Deliberate ASSET fixes over the library (versioned IN this repo —
+// patched/README.md carries the doctrine): /library serves these with TOP
+// precedence, so every machine gets the fix via ordinary git pull while
+// eidoverse-video stays pristine. §24j: this is the successor of
+// upstream-patched/, which also carried ENGINE-code overrides — those
+// retired with the braid (video is an asset library now); the grass engine
+// lives in client/lib/vegetation/ as first-class client code. Only assets
+// belong here, and each one is a candidate for upstreaming to the library.
+export const PATCH_DIR = join(ROOT, "patched");
 // Optimized shadows of store uploads (draco+webp@1024, see server/optimize.ts).
 // Originals in store/ are never touched; /library serving prefers a store-min
 // sibling when one exists. `.failed` markers stop hopeless files from being
 // retried every boot.
 export const STORE_MIN = join(OPT_DIR, "store-min");
+// The /library precedence ladder, NAMED (R2): patched fork > upload overlay
+// > the asset library. Every walk of these three dirs should spell it this
+// way — seats.ts documents what a wrong-order copy costs.
+export const LADDER = [PATCH_DIR, OPT_DIR, LIBRARY_DIR];
 
 mkdirSync(WORLDS_DIR, { recursive: true });
 

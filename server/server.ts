@@ -30,6 +30,7 @@ import { World, type Client, worlds, getWorld, wireSettledPose } from "./world.t
 import { route, avatarRoster } from "./routes.ts";
 import { registerSystem, startTick } from "./tick.ts";
 import { MESSAGES, pendingWhispers, whisperKey } from "./messages.ts";
+import { LIMITS } from "./limits.ts";
 import { onEntryCommitted } from "./events.ts";
 import { defsFingerprint } from "./defs.ts";
 import { advanceSim, tickOf } from "../shared/sim.js";
@@ -443,7 +444,7 @@ const server = Bun.serve({
           // Identity: a verified session OWNS the id — the client's msg.id is
           // ignored (the name came from Discord via the home node, and the
           // sub underneath it survives renames).
-          c.id = (auth ? auth.name : String(msg.id ?? c.id)).slice(0, 64);
+          c.id = (auth ? auth.name : String(msg.id ?? c.id)).slice(0, LIMITS.ID_LEN);
           // Actor names are the log's ink — refuse the ones that forge system
           // or script authorship ("world" authors grants; "bhv:*" authors
           // script effects; the behavior loop-guard trusts that prefix), and
@@ -475,7 +476,7 @@ const server = Bun.serve({
           // skip every aux-only admission gate on the way in.
           {
             const rawSurface = msg.surface == null ? "world" : String(msg.surface);
-            c.surface = rawSurface.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 16);
+            c.surface = rawSurface.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, LIMITS.SURFACE_LEN);
             if (!c.surface) {
               ws.send(JSON.stringify({ type: "error", error: `unusable surface name — letters, digits, - and _ only` }));
               ws.close(4005, "bad surface");
@@ -492,7 +493,7 @@ const server = Bun.serve({
           if (auth && !c.spectator) {
             for (const other of w.clients) {
               if (other !== c && !other.spectator && other.id === c.id && other.sub && other.sub !== c.sub) {
-                c.id = `${c.id}-${c.sub!.replace(/\D/g, "").slice(-4) || "2"}`.slice(0, 64);
+                c.id = `${c.id}-${c.sub!.replace(/\D/g, "").slice(-4) || "2"}`.slice(0, LIMITS.ID_LEN);
                 break;
               }
             }
@@ -595,7 +596,7 @@ const server = Bun.serve({
             // successor (and a cap refusal must never have kicked it first).
             const auxCount = [...w.clients].filter(t => t !== c && t.id === c.id
               && (t.surface ?? "world") !== "world" && t.surface !== c.surface).length;
-            if (auxCount >= 4) {
+            if (auxCount >= LIMITS.AUX_LEGS) {
               ws.send(JSON.stringify({ type: "error", error: "too many auxiliary legs for this identity" }));
               ws.close(4008, "aux cap");
               // (c is not yet in w.clients here — add happens after these
@@ -772,7 +773,7 @@ registerSystem({ name: "lease-sweep", everyMs: 5_000, fn: (now) => {
     // per-world guard (house rule 3): settleLease appends to disk
     try {
       for (const [id, L] of [...w.leases]) {
-        if (now - L.lastAt > 10_000) {
+        if (now - L.lastAt > LIMITS.LEASE_SWEEP_MS) {
           w.debug("lease-swept", { id, holder: L.holder.id });
           w.settleLease(id);
         }

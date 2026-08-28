@@ -111,7 +111,7 @@ check("headphone toggle never references world volume",
 // --- server side of the protocol exists for what the client sends
 check("server relays rtc", /"rtc": \(/.test(server));
 check("server whitelists typing state", /\["ear", "think", "tool", "mic"\]/.test(server));
-check("rtc payloads are size-capped", /length\s*>\s*\d{4}/.test(server));
+check("rtc payloads are size-capped", /length > LIMITS\.RTC_PAYLOAD_BYTES/.test(server));
 check("client can send rtc", /export function sendRtc/.test(net));
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

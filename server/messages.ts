@@ -14,6 +14,7 @@
 // body again means moving their patterns with it.
 
 import { runVerb } from "./verbs.ts";
+import { LIMITS } from "./limits.ts";
 import { rightsOf, isAdminId } from "./rights.ts";
 import { ROLE_RANK } from "../shared/fold.js";
 import { simSnapshot } from "../shared/sim.js";
@@ -51,7 +52,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     const r = c.world.readHistory({
       before: typeof msg.before === "number" ? msg.before : Infinity,
       after: typeof msg.after === "number" ? msg.after : -Infinity,
-      limit: Math.min(300, Math.max(1, Number(msg.limit ?? 50))),
+      limit: Math.min(LIMITS.PAGE_MAX, Math.max(1, Number(msg.limit ?? LIMITS.PAGE_DEFAULT))),
       verbs: Array.isArray(msg.verbs) && msg.verbs.length ? new Set(msg.verbs.map(String)) : null,
     });
     ws.send(JSON.stringify({ type: "history", reqId: msg.reqId ?? null, ...r }));
@@ -62,7 +63,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // spectators for the same reason history is: the log is public,
     // so the reasons things failed to reach it are public too.
     if (!c.world) return;
-    const limit = Math.min(300, Math.max(1, Number(msg.limit ?? 50)));
+    const limit = Math.min(LIMITS.PAGE_MAX, Math.max(1, Number(msg.limit ?? LIMITS.PAGE_DEFAULT)));
     if (msg.sim) {
       // the sim fold's cut, on request — the determinism proof's
       // server leg (sim-smoke compares this against an independent
@@ -110,8 +111,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // is the honest trade — a private message should be more willing to
     // vanish than to become permanent public record.
     if (!c.world || c.spectator) return;
-    const to = String(msg.to ?? "").slice(0, 64);
-    const text = String(msg.text ?? "").slice(0, 4000);
+    const to = String(msg.to ?? "").slice(0, LIMITS.ID_LEN);
+    const text = String(msg.text ?? "").slice(0, LIMITS.WHISPER_LEN);
     if (!to || !text) return;
     const packet = { type: "whisper", from: c.id, to, text, ts: Date.now() };
     const targets = [...c.world.clients].filter((o) => o.id === to && !o.spectator);
@@ -121,7 +122,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       const key = whisperKey(c.world.name, to);
       const q = pendingWhispers.get(key) ?? [];
       q.push(packet);
-      while (q.length > 20) q.shift();
+      while (q.length > LIMITS.WHISPER_HOLD) q.shift();
       pendingWhispers.set(key, q);
       ws.send(JSON.stringify({ type: "error", error: `${to} isn't here — they'll get it when they arrive` }));
     }
@@ -136,7 +137,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     if (typeof msg.dur !== "number" || typeof msg.tracks !== "object") return;
     // one guard against a pathological payload — poses are tiny, so
     // anything approaching a real asset is a mistake or an attack
-    if (JSON.stringify(msg.tracks).length > 64_000) {
+    if (JSON.stringify(msg.tracks).length > LIMITS.ANIM_TRACKS_BYTES) {
       ws.send(JSON.stringify({ type: "error", error: "animation too large — keep custom clips small and sparse" }));
       return;
     }
@@ -150,7 +151,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // presence, like any other input) — not a pose asserted onto it from
     // outside. The target decides whether to honour it.
     if (!c.world || c.spectator) return;
-    const to = String(msg.target ?? "").slice(0, 64);
+    const to = String(msg.target ?? "").slice(0, LIMITS.ID_LEN);
     const tc = [...c.world.clients].find((o) => o.id === to && !o.spectator);
     if (!tc) { ws.send(JSON.stringify({ type: "error", error: `${to || "target"} isn't here to pose` })); return; }
     // ragdoll rides as `true` (undirected knock-over, the old wire) or
@@ -168,8 +169,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // dev crash forensics: keep the client's last N breadcrumbs in
     // memory, printed on disconnect (see close). Never persisted.
     const ring = (c.bcRing ??= []);
-    ring.push(String(msg.tag ?? "").slice(0, 64));
-    if (ring.length > 40) ring.shift();
+    ring.push(String(msg.tag ?? "").slice(0, LIMITS.ID_LEN));
+    if (ring.length > LIMITS.BC_RING) ring.shift();
     return;
   },
   "lease": ({ c, ws, now, expel }, msg) => {
@@ -180,7 +181,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // one `place` verb at rest. Presence semantics: never logged.
     if (!c.world || c.spectator) return;
     const w = c.world;
-    const id = String(msg.id ?? "").slice(0, 64);
+    const id = String(msg.id ?? "").slice(0, LIMITS.ID_LEN);
     const op = String(msg.op ?? "");
     if (!id) return;
 
@@ -198,13 +199,13 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       // per-world knob can gate this later without protocol changes
       const cur = w.leases.get(id);
       if (cur && cur.holder !== c) {
-        const stale = Date.now() - cur.lastAt > 5000;
+        const stale = Date.now() - cur.lastAt > LIMITS.LEASE_STALE_MS;
         // proximity take: you can take what you can reach — the ball
         // being dribbled past you is kickable, the one across the
         // field is not. Distance vs the OBJECT's live position.
         const at = cur.lastState?.p ?? w.state.entities[id].pos;
         const me = c.lastPose?.p;
-        const near = !!me && Math.hypot(me[0] - at[0], me[2] - at[2]) <= 3.5;
+        const near = !!me && Math.hypot(me[0] - at[0], me[2] - at[2]) <= LIMITS.LEASE_TAKE_M;
         if (!stale && !(msg.take && near)) {
           ws.send(JSON.stringify({ type: "lease", op: "denied", id, why: `${cur.holder.id} is animating it` }));
           return;
@@ -214,7 +215,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       // per-client cap: a runaway plugin must not lease a whole world
       let held = 0;
       for (const L of w.leases.values()) if (L.holder === c) held++;
-      if (held >= 8 && !w.leases.has(id)) {
+      if (held >= LIMITS.LEASES_PER_CLIENT && !w.leases.has(id)) {
         ws.send(JSON.stringify({ type: "lease", op: "denied", id, why: "too many live leases — release something" }));
         return;
       }
@@ -269,8 +270,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // any of it — grab, stream and release are all just requests.
     if (!c.world || c.spectator) return;
     const raw = String(msg.pose ? JSON.stringify(msg.pose) : "");
-    if (raw.length > 24_000) return;      // a pose is tiny; anything else is an attack
-    const to = String(msg.target ?? "").slice(0, 64);
+    if (raw.length > LIMITS.BODYDRAG_POSE_BYTES) return;      // a pose is tiny; anything else is an attack
+    const to = String(msg.target ?? "").slice(0, LIMITS.ID_LEN);
     const tc = [...c.world.clients].find((o) => o.id === to && !o.spectator);
     if (process.env.BD_DEBUG) console.log(`[bd] ${c.id} -> ${to} (${msg.grab ? "grab" : msg.end ? "end" : "sample"}) ${tc ? "relayed" : `NO TARGET among [${[...c.world.clients].map((o) => o.id).join(",")}]`}`);
     if (!tc) return;                       // dragging the departed: silently moot
@@ -309,7 +310,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // legs stay presence-mute spectators.
     const voiceLeg = c.surface === "voice" && c.auxBound === true;
     if (!c.world || (c.spectator && !voiceLeg)) return;
-    const capText = String(msg.text ?? "").slice(0, 500);
+    const capText = String(msg.text ?? "").slice(0, LIMITS.CAPTION_LEN);
     if (!capText) return;
     const capUtt = Number(msg.utt);
     c.world.broadcast({ type: "caption", id: c.id, text: capText,
@@ -322,9 +323,9 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // is no pending queue: absent recipient = silently dropped.
     const aux = c.surface && c.surface !== "world";
     if (!c.world || (c.spectator && !aux)) return;
-    const rto = String(msg.to ?? "").slice(0, 64);
+    const rto = String(msg.to ?? "").slice(0, LIMITS.ID_LEN);
     if (!rto || msg.payload == null) return;
-    if (JSON.stringify(msg.payload).length > 20000) return; // SDP-sized, not file-sized
+    if (JSON.stringify(msg.payload).length > LIMITS.RTC_PAYLOAD_BYTES) return;
     // Per-surface ADDRESSING (review finding 7): a voice leg IS an rtc
     // endpoint, but the old any-leg fanout delivered an offer meant for
     // X's voice leg to X's browser primary too — whose per-id state
@@ -337,7 +338,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // keying — today's mesh client reads neither (it keys by id alone);
     // the consumers arrive with the sidecar/relay client half (#104),
     // and stamping now means old servers never have to be told apart.
-    const toSurface = String(msg.toSurface ?? "world").toLowerCase().slice(0, 16) || "world";
+    const toSurface = String(msg.toSurface ?? "world").toLowerCase().slice(0, LIMITS.SURFACE_LEN) || "world";
     const rpacket = JSON.stringify({ type: "rtc", from: c.id, to: rto, payload: msg.payload,
       fromGen: c.gen, fromSurface: c.surface ?? "world" });
     for (const t of c.world.clients)
@@ -387,7 +388,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       ws.send(JSON.stringify({ type: "error", error: "attest names no recent say of yours" }));
       return;
     }
-    if (Date.now() - (e.ts ?? 0) > 300_000) return;   // stale receipt: refuse
+    if (Date.now() - (e.ts ?? 0) > LIMITS.ATTEST_FRESH_MS) return;   // stale receipt: refuse
     const text = String((e.args as Record<string, unknown>)?.text ?? "");
     const want = new Bun.CryptoHasher("sha256").update(text).digest("hex");
     if (digest !== want) {
@@ -460,7 +461,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       ws.send(JSON.stringify({ type: "error", error: `copying a world needs its owner — you are a ${rights.role} here` }));
       return;
     }
-    const to = String(msg.to ?? "").slice(0, 64);
+    const to = String(msg.to ?? "").slice(0, LIMITS.ID_LEN);
     const r = forkWorld(c.world, to);
     if (!r.ok) {
       ws.send(JSON.stringify({ type: "error", error: r.err }));
@@ -529,7 +530,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       ws.send(JSON.stringify({ type: "mod", text: list.length ? `global bans (${list.length}):\n${list.join("\n")}` : "no global bans" }));
       return;
     }
-    const id = String(msg.id ?? "").trim().slice(0, 64);
+    const id = String(msg.id ?? "").trim().slice(0, LIMITS.ID_LEN);
     if (!id || id === "*") {
       ws.send(JSON.stringify({ type: "error", error: `${msg.type} wants {id, reason?} — a specific participant, not everyone` }));
       return;
@@ -553,7 +554,7 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       ws.send(JSON.stringify({ type: "error", error: "you cannot moderate yourself" }));
       return;
     }
-    const reason = msg.reason != null ? String(msg.reason).slice(0, 200) : undefined;
+    const reason = msg.reason != null ? String(msg.reason).slice(0, LIMITS.BAN_REASON_LEN) : undefined;
     // catch the durable principal if the target is connected anywhere
     let tsub: string | undefined;
     for (const w2 of worlds.values()) {

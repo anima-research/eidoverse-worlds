@@ -12,7 +12,7 @@
 import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, appendFileSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
-import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, JOIN_TOKEN } from "./config.ts";
+import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, LADDER, JOIN_TOKEN } from "./config.ts";
 import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
 import { resolveLibFile } from "./lint.ts";
@@ -117,7 +117,7 @@ export function avatarRoster(): { name: string; path: string; height: number | n
 export function animationRoster(): { name: string; path: string; size: number }[] {
   const seen = new Map<string, { path: string; size: number }>();
   // later base wins, so this list runs lowest-precedence first
-  for (const base of [LIBRARY_DIR, OPT_DIR, PATCH_DIR]) {
+  for (const base of [...LADDER].reverse()) {   // lowest-precedence first: later wins the map
     const dir = join(base, "eidoverse/assets/animations");
     if (!existsSync(dir)) continue;
     for (const f of readdirSync(dir)) {
@@ -139,7 +139,7 @@ export function animationRoster(): { name: string; path: string; size: number }[
   const resolveClip = (lib: string): string | null => {
     const rel = normalize(lib).replace(/^\/+/, "");
     if (rel.includes("..") || !/\.vrma$/i.test(rel)) return null;
-    for (const base of [PATCH_DIR, OPT_DIR, LIBRARY_DIR]) {
+    for (const base of LADDER) {
       const p = normalize(join(base, rel));
       if (p.startsWith(base) && existsSync(p)) return p;
     }
