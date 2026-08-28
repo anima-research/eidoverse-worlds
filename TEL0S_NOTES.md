@@ -390,6 +390,47 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-28 — §24n: THE CATCH-UP MERGE — 283 upstream commits, the
+  refactor holds.** anima/main (the live org line; the SkyeShark
+  `upstream` remote is stale — new fetch-only remote `anima`, push
+  DISABLED) merged into rimward (febba9e) and main (af200de, clean —
+  the §22 restore's 17 markers survive). Upstream's arc: the #104
+  relay-floor cutover (voice.js DELETED, in-process SFU via werift,
+  credentialed sfu-* wire, incarnation-stamped voice-service), the
+  reach/touch lane (declarative pose.reach re-solved per client,
+  shared/contact+joints+humanoid+reachwire — they did their own
+  joints-table extraction, superseding half of our R3 plan), KTX2
+  store shadows + negotiation keys, RFC-005 channels, mcpl-core-ts as
+  a sibling file: dependency (cloned + built at ../mcpl-core-ts; mcpl/
+  has its own bun install now). WHERE UPSTREAM MET THE REFACTOR:
+  micstate = our factories + their delegation removal (the cutover its
+  comments predicted); server.ts = our table/join-split + their seven
+  SFU cases inlined verbatim (gen-coupled, upstream-hot) + their
+  takeover→retireRelayLeg in installJoin + attest rung in messages.ts;
+  chat = our dispatcher + their /audio as chat-local + touch/letgo via
+  registry rows; agent = our shared-fold structure intact around their
+  reach subsystems. UPSTREAM BUGS FOUND (fixed here, FLAG TO THEM):
+  (1) their smoke asserts rtc delivery their server deleted; (2) their
+  mesh-fallback suite tests the deleted delegation (ours rewritten
+  post-cutover); (3) agent.ts imports three/webgpu with no three in
+  any root lockfile — the door can't boot clean (root gains three
+  ^0.184.0); (4) the hardened token registry rejects example keys and
+  dev-token IS an example key — their typing suite can never pass
+  (ours uses a scratch registry). MERGE MISHAP SURVIVED: a stash
+  during the merge dropped MERGE_HEAD; restored by hand (echo sha >
+  .git/MERGE_HEAD) — never stash mid-merge. GATES (all green):
+  smoke 85/85 (rtc check now asserts the CLOSED lane), paritybench,
+  lightbench 30/30, defs-smoke 28/28, sim-smoke 8/8 (the whole §24
+  arc survives), sim/tick/state/foldfix/flora/replaybench, leasetest
+  19/19, behaviortest 27/27, incident-88 18/2-known, typing-mcpl,
+  micstate suite, THEIR suites: sfu-test 70/70, sfu-adapter 42,
+  relay-decision 23, reach-test, mini-sfu. MYTHOS-WINGS landed
+  (tel0s, assets/opt — local only, ignored): ammodoll 66/2, ragdoll
+  56/3, IDENTICAL at pre-anima-merge = zero merge regressions; the
+  remaining doll reds are pre-existing tuning/fleet items
+  (ktx2-variant knees, wings knee+shove, 8.6cm handover, missing
+  no-upperChest rig) — STILL THE PRE-UPSTREAM-MERGE BLOCKER.
+
 - **2026-08-27 — §24m: R2 — the tables, delivered.** (1) The ws switch
   is a handler table (90cc9fc): server/messages.ts, 20 entries, bodies
   moved VERBATIM (the verbs.ts precedent — expel rides ctx, module

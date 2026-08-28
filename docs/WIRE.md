@@ -148,6 +148,16 @@ upstream-patched > store > eidoverse-video precedence) · `/upload` POST ·
 `/perflog` POST (client perf beacons) · `/shared/*`, `/node_modules/*`, `/`
 (client serving).
 
+The anima merge (§24n) adopted upstream's #104 relay-floor wire wholesale:
+the `rtc` message is RETIRED (the mesh's SDP lane, deleted with voice.js);
+seven SFU-signaling messages arrive (`sfu-answer`, `sfu-ice`, `sfu-pos`,
+`sfu-want-negotiate`, `relay-cred`, `voice-moderate`, `voice-consent` —
+credentialed, gen-bound, inline in server.ts's switch beside join), plus
+server→client `voice-service` (incarnation-stamped state) and the attest
+`performed` receipt gaining `rung: "authorized-claim"` + `incarnation`.
+Reach travels inside presence pose bags (`pose.reach`, relayed opaquely —
+see the amended spec/PROTOCOL.md §5).
+
 Wire additions since the v0 freeze (each flagged in its commit):
 dialect 3 (PROTOCOL_v2): the `epoch` verb (rank 2 — enters/upgrades the
 deterministic-sim epoch; validated against the sim the sequencer carries) ·
