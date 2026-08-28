@@ -20,6 +20,7 @@ import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hour
 // deliberate omissions ride as flags (see stateToEntries below).
 import { stateToEntries as sharedStateToEntries, foldEntry, emptyState } from "../shared/fold.js";
 import { emptySim, simEntry, advanceSim, tickOf } from "../shared/sim.js";
+import { radialForce, FORCE_MIN } from "../shared/force.js";
 // The `particles` component's meaning, shared verbatim with the browser host:
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
@@ -875,22 +876,19 @@ export class WorldAgent {
       if (this.sim.bodies?.[args?.id]) this.dropSupport(args.id);
     } else if (verb === "force") {
       // an instantaneous radial CAUSE (blast, gust) — live only, because a
-      // replay must never re-detonate. Same falloff math as browser bodies
-      // (mirrored from client/lib/localbody.js — keep in sync), same consent.
-      if (live && Array.isArray(args?.at) && args.at.length === 3) {
-        const dx = this.pos.x - args.at[0], dz = this.pos.z - args.at[2];
-        const d = Math.hypot(dx, dz);
-        const radius = Math.max(Number(args.radius ?? 4), 0.001);
-        if (d <= radius) {
-          const mag = Math.min(6, Number(args.power ?? 3) * (1 - d / radius));
-          if (mag >= 0.3) {
-            const nx = d > 0.05 ? dx / d : Math.sin(this.yaw);
-            const nz = d > 0.05 ? dz / d : Math.cos(this.yaw);
-            this.knockDown(actor, [nx * mag, 0, nz * mag],
-              actor === this.name
-                ? "(your own blast knocks you off your feet)"
-                : `(${actor}'s blast knocks you off your feet)`);
-          }
+      // replay must never re-detonate. The falloff arithmetic is
+      // shared/force.js (§24l R1) — ONE truth with the browser bodies; the
+      // consent and the ground-zero direction (a headless body topples the
+      // way it faces) stay here.
+      if (live) {
+        const f = radialForce(args?.at, this.pos.x, this.pos.z, args?.radius, args?.power);
+        if (f && f.mag >= FORCE_MIN) {
+          const nx = f.nx ?? Math.sin(this.yaw);
+          const nz = f.nz ?? Math.cos(this.yaw);
+          this.knockDown(actor, [nx * f.mag, 0, nz * f.mag],
+            actor === this.name
+              ? "(your own blast knocks you off your feet)"
+              : `(${actor}'s blast knocks you off your feet)`);
         }
       }
     } else if (verb === "say") {

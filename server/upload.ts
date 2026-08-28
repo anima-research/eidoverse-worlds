@@ -9,8 +9,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync } from "node:fs";
 import { join, basename, dirname, relative } from "node:path";
 import { JOIN_TOKEN, UPLOAD_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DIR } from "./config.ts";
-import { agentTokens, HN_ISSUER_KEY, HN_ISS, HN_AUD } from "./auth.ts";
-import { verifyToken } from "./aid1.ts";
+import { agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { worlds } from "./world.ts";
 
 /** What the handler needs from Bun's server object, structurally (the
@@ -183,10 +182,7 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
   // must be landable by the same identity, or the tier is half-open.
   // Same audience/scope/slug derivation as the two doors, no jti burn
   // (an aid1 credential is reusable until expiry at every door).
-  if (!upAgent && HN_ISSUER_KEY && upTok.startsWith("aid1.")) {
-    const v = verifyToken(upTok, { issuerId: HN_ISSUER_KEY, iss: HN_ISS, aud: HN_AUD, requireScopes: ["worlds:join"] });
-    if (v.ok) upAgent = v.payload.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || v.payload.sub;
-  }
+  if (!upAgent) upAgent = aid1JoinIdentity(upTok)?.slug;
   if (JOIN_TOKEN && upTok !== JOIN_TOKEN && !upAgent)
     return new Response("token required", { status: 401 });
   const upBy = (url.searchParams.get("by") ?? upAgent ?? "?").slice(0, 64);

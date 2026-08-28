@@ -11,7 +11,7 @@ import { join } from "node:path";
 // carry their restore-at-boot blocks, so this import order IS the unsplit
 // file's boot order: mkdir → session restore → ban restore (§15, step 7a).
 import { PORT, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
-import { type HnSession, agentTokens, HN_ISSUER_KEY, HN_ISS, HN_AUD } from "./auth.ts";
+import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, saveGlobalBans, findBan } from "./moderation.ts";
 import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal } from "./rights.ts";
 import { resolveLibFile } from "./lint.ts";
@@ -19,7 +19,6 @@ import { resolveLibFile } from "./lint.ts";
 // linters, reactions, and the behavior cap itself; server.ts keeps only what
 // the presence plane and HTTP surface still touch directly.
 import { runVerb } from "./verbs.ts";
-import { verifyToken } from "./aid1.ts";
 import { wireBehaviorGate, wireBehaviorStore } from "./behaviors.ts";
 import { summarizeGlb } from "./geometry.ts";
 // The world itself — WorldLog + WorldSession behind the unsplit facade, with
@@ -511,10 +510,7 @@ const server = Bun.serve({
             // identity the home node vouches for satisfies the reservation
             // exactly like a tokens.json bearer — same slug derivation as the
             // MCPL door, so the two doors agree on who "fable" is.
-            if (!tokId && HN_ISSUER_KEY && tokStr.startsWith("aid1.")) {
-              const v = verifyToken(tokStr, { issuerId: HN_ISSUER_KEY, iss: HN_ISS, aud: HN_AUD, requireScopes: ["worlds:join"] });
-              if (v.ok) tokId = v.payload.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || v.payload.sub;
-            }
+            if (!tokId) tokId = aid1JoinIdentity(tokStr)?.slug;
             if (tokId && tokId.toLowerCase() === c.id.toLowerCase()) c.tokenVerified = true;
             if (at.names.has(c.id.toLowerCase()) && tokId?.toLowerCase() !== c.id.toLowerCase()) {
               console.log(`[perm] join refused: "${c.id}" is a reserved agent name (token ${tokStr ? "unrecognized" : "missing"})`);

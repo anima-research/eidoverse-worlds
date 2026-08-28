@@ -6,7 +6,7 @@
 
 import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { JtiCache } from "./aid1.ts";
+import { JtiCache, verifyToken, aid1Slug, type Aid1Payload } from "./aid1.ts";
 import { ROOT } from "./config.ts";
 
 // ---- archipelago-home identity (docs/home-node.md §7) ----------------------
@@ -27,6 +27,16 @@ export const HN_AUD = process.env.HN_AUD ?? "eidoverse";
 export const HN_LOGIN_URL = process.env.HN_LOGIN_URL ?? `https://${HN_ISS}/login?audience=${HN_AUD}`;
 export const HN_REQUIRE_LOGIN = process.env.HN_REQUIRE_LOGIN === "1";
 export const SESSION_TTL_MS = 12 * 60 * 60_000; // event-length; re-login is two clicks
+
+/** Verify a forwarded aid1 credential at a join-scoped door and hand back
+ *  the identity it vouches for (§24l R1): the ws join and the upload door
+ *  each hand-rolled this verify-then-slug pair; the MCPL door (its own
+ *  process, its own HN_* env) shares aid1Slug and keeps its own verify. */
+export function aid1JoinIdentity(tok: string): { slug: string; payload: Aid1Payload } | null {
+  if (!HN_ISSUER_KEY || !tok.startsWith("aid1.")) return null;
+  const v = verifyToken(tok, { issuerId: HN_ISSUER_KEY, iss: HN_ISS, aud: HN_AUD, requireScopes: ["worlds:join"] });
+  return v.ok ? { slug: aid1Slug(v.payload), payload: v.payload } : null;
+}
 
 export type HnSession = { sub: string; name: string; scopes: string[]; claims?: Record<string, unknown>; exp: number };
 export const hnSessions = new Map<string, HnSession>();

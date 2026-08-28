@@ -39,7 +39,7 @@ import {
 import { WorldAgent } from "./agent.ts";
 import { rawShapeError } from "./shape.ts";
 import { MANIFEST_WITH_REVISION, ManifestAnnouncer } from "./manifest.ts";
-import { verifyToken } from "../server/aid1.ts";
+import { verifyToken, aid1Slug } from "../server/aid1.ts";
 import sharp from "sharp";
 
 const PORT = Number(process.env.MCPL_PORT ?? 8941);
@@ -1286,9 +1286,8 @@ wss.on("connection", (ws, req) => {
       const p = v.payload;
       // id = mention handle (world addressing is name-based); name uniqueness
       // was enforced at enrollment by the home node.
-      const slug = p.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
       auth = {
-        id: slug || p.sub,
+        id: aid1Slug(p),
         name: p.name,
         world: typeof p.claims?.world === "string" ? (p.claims.world as string) : undefined,
         avatar: typeof p.claims?.avatar === "string" ? (p.claims.avatar as string) : undefined,
