@@ -1,5 +1,6 @@
 // ammodoll — the Bullet body engine, ported from socketteer/ragdoll-physics.
-// Same interface as Ragdoll/RapierRagdoll (see rapierdoll.js's contract):
+// Same interface as Ragdoll — THE engine contract lives here now (inherited
+// from the retired rapierdoll, whose laws this file credits throughout):
 // constructor(avatar, lean, rest, seedVel), step(dt) → sparse local-quat pose
 // (and it drives the avatar directly), impulse(v), setPin(joint, target)/
 // setPin(null), .pins/.pinned/.done/.finalPose/.p/.maxV, snapshot(), dispose().
