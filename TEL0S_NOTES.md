@@ -430,6 +430,16 @@ fixture/tool matrix.
   remaining doll reds are pre-existing tuning/fleet items
   (ktx2-variant knees, wings knee+shove, 8.6cm handover, missing
   no-upperChest rig) — STILL THE PRE-UPSTREAM-MERGE BLOCKER.
+  AMENDED same day: no-upperChest resolved WITHOUT staging —
+  claude_suit.vrm (library) is a no-upperChest rig; copied into the
+  local overlay (ignored). rig-load gained the roster's own
+  .ktx2.vrm exclusion (texture variants were being tumbled as
+  bodies), and the 8.6cm HANDOVER RED WAS AN ARTIFACT RIG — it
+  passes on the real fleet. The TRUE blocker list is now four
+  tuning items, all on real rigs: knee hyperextension (claude_suit
+  117°, mythos-wings 126°), the wings 73°-vs-72° fold bound, and
+  the wings shove direction (Δx=-0.63). ragdoll 58/1, ammodoll
+  66/2.
 
 - **2026-08-27 — §24m: R2 — the tables, delivered.** (1) The ws switch
   is a handler table (90cc9fc): server/messages.ts, 20 entries, bodies
