@@ -390,6 +390,31 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-27 — §24k: two retirements + R0, the bleeding stopped.**
+  RAPIERDOLL RETIRED (41422ba, −1,589 lines): panel-only reachability,
+  no feature parity, permanent divergence tax; tone motors recoverable
+  from history. UPSTREAM-PATCHED RETIRED (69a598a): the grass engine
+  came home — client/lib/vegetation/ (vegetation.js + three generators
+  vendored @62365e9, provenance-stamped, cherry-pick-by-hand forever);
+  the ASSET overlay survives as top-level patched/ (same top /library
+  precedence, delete-to-fall-back; carries the fixed sit clip); the
+  vendor-base merge-file recipe is obsolete. R0 (survey §A, all
+  eight + hygiene): gate fixes ported into the mesh copy that runs
+  (speaking latch, analyser leak); ttsrow's mic check gains its
+  fallback; main.js mic-open goes through micstate; nails are firm on
+  the owner's machine (localbody passes firm; verlet accepts it for
+  parity); physobj per-axis scale; net-server loses the shipped \$HOME;
+  THE AGENT FOLDS WITH shared/fold.js (applyEntry's diverged mirror
+  deleted — entity/mount maps are derived views + a side-effect pass;
+  #88 strictness UPSTREAMED into the reference fold: place/dismount
+  take finite-vec3 or nothing); THE AGENT SEES THE SIM (adopts the
+  join cut, folds punts, stamps flight/rest into perception; supports
+  drop at launch, rebuild at rest); build.js escapes server names.
+  Pre-existing environmental failures noted, verified at HEAD:
+  ragdoll-test 2 (VRM fleet composition), incident-88 2 (support
+  scene), knockdown/compfold (need external servers), emitter-percept
+  passes-then-hangs. Seats + stdio-door calls still await colleagues.
+
 - **2026-08-26 — §24h: THE SIM IS REAL — eidosim@0.1.0, proven
   cross-engine.** PROTOCOL_v2 implementation, four slices, one day:
   (1) shared/sim.js (75328cf) — exact-ops ballistics (no

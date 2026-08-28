@@ -4,7 +4,15 @@ Four parallel deep-reads (UI layer · voice/embodiment lane · server+MCPL
 periphery · body-physics engines) plus a direct pass over the lanes the
 rebuild already knows. Branch `overhaul/rimward`. Everything here carries
 file:line evidence in the underlying reads; this document is the curated,
-prioritized synthesis. **Nothing in it has been acted on yet.**
+prioritized synthesis.
+
+**Status 2026-08-27:** §A (all eight bugs + hygiene) is DONE — R0 complete
+(41422ba…61da4e4). Two §C retirements are DONE by tel0s's call:
+`upstream-patched/` (grass engine now `client/lib/vegetation/`, asset
+overlay lives at `patched/`) and rapierdoll (−1,589 lines). The #88
+strictness was upstreamed into `shared/fold.js` as part of A6. §C's other
+two calls (seats write-half, stdio door) await colleague input; R1–R4 are
+not yet begun.
 
 ## The verdict
 
