@@ -67,7 +67,11 @@ name — `medium` is a legitimate place to be, and it is not `static`.
 `terrain.js` `applyGrassMotion()`, narrowly and by identity:
 
 - each stroke's own wind-clock hook is **released from the shared array by
-  identity** (`autohooks.releaseHook`) and pushed back on the way out;
+  identity** (`autohooks.releaseHook`), with **its index recorded**, and spliced
+  back at that index on the way out. Hooks are taken out back-to-front so the
+  recorded indices stay valid, and put back front-to-back so each splice lands
+  before the ones still to come. The engine drains that array in order, so
+  "restored as found" has to include the order, not only the membership;
 - that stroke's `base` and `gust` wind amplitudes are **zeroed**, and restored
   to their exact prior values. Freezing the clock alone leaves the blades
   stopped mid-gust, leaning; zeroing amplitude settles them upright, which is
@@ -133,14 +137,48 @@ Three sources of truth, because a weaker one alone would pass a broken build:
    view moved would pass while proving nothing.
 
 ```bash
-node tools/foliage-door-test.mjs      # node, not bun — see docs/browser-perf-receipt.md
+node tools/foliage-door-test.mjs      # node, not bun — Playwright's launch hangs under bun on Windows
 ```
 
-**24 checks green on this branch** (`tools/receipts-foliage/door-on-branch.txt`).
+**Runtime:** node 18+. The global `WebSocket` only arrived in node 22, so the
+socket constructor is resolved through `tools/owned-lifecycle.mjs` — global
+where there is one, the `ws` package (a declared devDependency) where there is
+not. Verified by running the whole test on **node 20.20.2**, where it reports
+`ws package (node 20.20.2 has no global)` and passes.
 
-**Negative control: 13 named failures on `origin/main` `6006d6d`** with only the
-test file copied in (`door-fail-on-main.txt`) — no `/foliage` route, no motion
-dial, Ash's meadow does not go dark, the wind keeps blowing. The world-log
+**Lifecycle:** everything the run spawns — sequencer, seed socket, browser, both
+viewer contexts — is registered with one idempotent `Lifecycle` the moment it
+exists, bound to the process so a throw, a signal, or an unhandled rejection all
+unwind through the same owner. The child sequencer is **proven** ours by nonce
+echo (`EIDO_BOOT_NONCE` on `/version`), never inferred from a 200, and its port
+is checked free before spawning and after teardown.
+
+### The harness's own controls
+
+They run first, because a product receipt from a harness that cannot fail is
+not a receipt:
+
+1. **the runtime contract** — the global is deleted at runtime to reproduce node
+   20, and the `ws` fallback must carry the test. The file is also scanned for a
+   bare `new WebSocket(` reintroducing the defect.
+2. **ownership** — an impostor HTTP server answering a healthy 200 (and even a
+   `/version` without a nonce, and another echoing somebody else's) must all be
+   REFUSED. Generic HTTP readiness would have accepted the first one.
+3. **a pre-viewer failure** — a real throw right after the child is up, then a
+   TCP check proving the port is free and the child gone. `--fault=post-server`
+   runs the same thing as a by-hand leak check.
+
+**43 checks green on this branch**, on both runtimes:
+`door-on-branch.txt` (node 24.18.0) and `door-node20.txt` (node 20.20.2, the
+runtime the previous version died on). `lifecycle-fault.txt` carries the
+deliberate-fault run with the listener census before and after.
+
+**Negative control: 14 named failures on `origin/main` `6006d6d`** with only the
+test files copied in (`door-fail-on-main.txt`, also on node 20) — no `/foliage`
+route, no motion dial, Ash's meadow does not go dark, the wind keeps blowing,
+and the hook array never loses a member during `static` (5 → 5). The harness's
+own three controls PASS on main, which is right: they test the harness, not the
+feature. The world-log
 assertions *pass* on main, and should: a build with no local foliage control
 authors nothing because it can do nothing. Those passes are the invariant, not
 the feature.

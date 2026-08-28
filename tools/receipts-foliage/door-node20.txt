@@ -1,12 +1,13 @@
-on-branch, node 24.18.0 (global WebSocket present)
+on-branch, the reviewer's runtime: node 20.20.2 (no global WebSocket)
 
+v20.20.2
 cmd: node tools/foliage-door-test.mjs
 
 
 --- harness controls -------------------------------------------------
 
 the WebSocket contract, on this node and on node 20
-  ✓ a WebSocket resolves here — global (node 24.18.0)
+  ✓ a WebSocket resolves here — ws package (node 20.20.2 has no global)
   ✓ with no global WebSocket (node < 22) it falls back to the ws package
   ✓ this file never reaches for the bare global WebSocket
 
@@ -17,7 +18,7 @@ ownership is proven, not inferred from a 200
   ✓ the control cleaned up after itself
 
 a failure before the viewers exist leaks no child
-  ✓ a child came up and PROVED it is ours (:9873, pid 15508)
+  ✓ a child came up and PROVED it is ours (:9022, pid 4388)
   ✓ …and the port really is listening
   ✓ the injected failure propagated
   ✓ …and the child is gone: nothing listens on that port
@@ -25,7 +26,7 @@ a failure before the viewers exist leaks no child
 
 --- the product door -------------------------------------------------
 
-foliage door test — world "foliagedoorkglyh" on :9377, proven ours by nonce
+foliage door test — world "foliagedoorjw45k" on :9739, proven ours by nonce
 
 two viewers standing in one meadow
 

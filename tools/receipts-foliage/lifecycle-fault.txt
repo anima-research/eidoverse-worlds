@@ -1,0 +1,47 @@
+lifecycle fault control: a deliberate throw after the child is up must leave no listener.
+
+cmd: node tools/foliage-door-test.mjs --fault=post-server
+
+--- 9xxx listeners BEFORE ---
+  TCP    127.0.0.1:9010         0.0.0.0:0              LISTENING       16392
+  TCP    127.0.0.1:9180         0.0.0.0:0              LISTENING       4912
+
+
+--- harness controls -------------------------------------------------
+
+the WebSocket contract, on this node and on node 20
+  ✓ a WebSocket resolves here — ws package (node 20.20.2 has no global)
+  ✓ with no global WebSocket (node < 22) it falls back to the ws package
+  ✓ this file never reaches for the bare global WebSocket
+
+ownership is proven, not inferred from a 200
+  ✓ the impostor answers 200 — generic HTTP readiness would accept it
+  ✓ …but the nonce proof refuses it
+  ✓ …and refuses a listener echoing somebody else's nonce
+  ✓ the control cleaned up after itself
+
+a failure before the viewers exist leaks no child
+  ✓ a child came up and PROVED it is ours (:9182, pid 24888)
+  ✓ …and the port really is listening
+  ✓ the injected failure propagated
+  ✓ …and the child is gone: nothing listens on that port
+  ✓ …and dispose is idempotent (a second call is a no-op)
+
+--fault=post-server: failing deliberately after the child is up
+  child on :9369 pid 22300 — throwing now; nothing should survive it
+file:///C:/Users/madal/Projects/ev-fol/tools/foliage-door-test.mjs:172
+  try { throw new Error('deliberate --fault=post-server'); } finally { await lifeF.dispose('fault'); }
+              ^
+
+Error: deliberate --fault=post-server
+    at file:///C:/Users/madal/Projects/ev-fol/tools/foliage-door-test.mjs:172:15
+    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+Node.js v20.20.2
+exit=1
+
+--- 9xxx listeners AFTER (both are Logitech G Hub, not ours) ---
+  TCP    127.0.0.1:9010         0.0.0.0:0              LISTENING       16392
+  TCP    127.0.0.1:9180         0.0.0.0:0              LISTENING       4912
+
+no bun/sequencer child survived the fault.

@@ -126,8 +126,25 @@ function applyGrassMotion() {
   if (!currentGrass) { frozenHooks = []; frozenWind = []; return; }
   const strokes = currentGrass._strokes ?? [];
   if (!want && !frozenHooks.length && !frozenWind.length) {
+    // Record WHERE each hook sat, and take them out back-to-front so the
+    // recorded indices stay valid as the array shortens. Restoring by
+    // appending would have put them back in the array in a different order
+    // than it found them — the engine drains the list in order, and a claim
+    // that the array is restored as found has to be true rather than nearly
+    // true (#151 review).
+    const live = autoHooks();
+    const mine = [];
     for (const st of strokes) {
-      if (typeof st.update === 'function' && releaseHook(st.update)) frozenHooks.push(st.update);
+      if (typeof st.update !== 'function') continue;
+      const at = live.indexOf(st.update);
+      if (at >= 0) mine.push({ fn: st.update, at });
+    }
+    mine.sort((a, b) => b.at - a.at);
+    for (const h of mine) if (releaseHook(h.fn)) frozenHooks.push(h);
+    // Amplitudes are a separate pass over the strokes: a stroke can carry
+    // uniforms without having had a live hook to release, and folding the two
+    // loops together silently skipped its wind.
+    for (const st of strokes) {
       const u = st.uniforms;
       if (u?.base && u?.gust) {
         frozenWind.push({ u, base: u.base.value, gust: u.gust.value });
@@ -137,7 +154,13 @@ function applyGrassMotion() {
   } else if (want && (frozenHooks.length || frozenWind.length)) {
     // plain push, not pushHostHook: these were never marked host-owned, and
     // restoring must leave the array exactly as it was found
-    if (frozenHooks.length) autoHooks().push(...frozenHooks);
+    // ascending, so each splice lands before the ones still to come
+    if (frozenHooks.length) {
+      const live = autoHooks();
+      for (const h of [...frozenHooks].sort((a, b) => a.at - b.at)) {
+        live.splice(Math.min(h.at, live.length), 0, h.fn);
+      }
+    }
     for (const f of frozenWind) { f.u.base.value = f.base; f.u.gust.value = f.gust; }
     frozenHooks = []; frozenWind = [];
   }
