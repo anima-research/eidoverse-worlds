@@ -1,0 +1,43 @@
+on-branch: node tools/foliage-door-test.mjs
+
+
+foliage door test — world "foliagedoorrhoio" on :9066, worlds dir C:\Users\madal\AppData\Local\Temp\foliage-door-PBRFka
+
+two viewers standing in one meadow
+
+  ✓ chat.js routes a typed /foliage to the handler
+  ✓ …and /grass as its alias
+  ✓ this build has the local motion dial at all
+  ✓ both viewers start from the same meadow
+  ✓ both start animating
+
+ash types /foliage off
+  ✓ the command reached a handler (via bus)
+  ✓ ASH's meadow went dark
+  ✓ BROOK's meadow is untouched
+  ✓ BROOK's dials never moved
+  ✓ the WORLD LOG did not grow
+  ✓ no grass verb was authored
+  ✓ BROOK's browser storage is untouched
+
+ash types /foliage static
+  ✓ ASH sees the meadow again
+  ✓ …and it is STILL: wind amplitude zeroed
+  ✓ …and it reads as the static preset
+  ✓ BROOK's wind is still blowing
+  ✓ BROOK's meadow is still untouched
+  ✓ the WORLD LOG still did not grow
+
+ash types /foliage full
+  ✓ ASH is restored exactly
+  ✓ …including the wind amplitudes it borrowed
+  ✓ BROOK never noticed any of it
+  ✓ the world log is byte-identical from first to last
+
+ash sets /foliage static and reloads
+  ✓ ASH gets their own meadow back the way they left it
+  ✓ a fresh field inherits the choice (sticky across the re-grow)
+  ✓ BROOK's meadow, still, is the one its author planted
+  ✓ and the world log STILL did not grow
+
+all green — one viewer changed their eyes, and the world did not notice

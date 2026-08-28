@@ -28,6 +28,7 @@
 
 import { plugin } from "bun";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 // URL.pathname yields "/D:/…" on Windows, which nothing can open —
 // fileURLToPath is the portable spelling
 const here = (f: string) => fileURLToPath(new URL(f, import.meta.url));
@@ -80,7 +81,7 @@ if (!gqMod) {
     ` (expected on main; that absence is novelty, the dial assertion above is the behavior)`);
   process.exit(1);
 }
-const { makeGrassQuality, densityCount, GRASS_QUALITY, QUALITY_DENSITY } = gqMod;
+const { makeGrassQuality, densityCount, GRASS_QUALITY, QUALITY_DENSITY, GRASS_MOTION } = gqMod;
 const terrain = await import("../client/lib/terrain.js");
 
 // A field shaped to terrain's setGrass contract, recording what it was told.
@@ -312,6 +313,61 @@ console.log("\nthe applied report through terrain (getGrassApplied)");
   rep = gApplied?.();
   check("no field at all says so", rep?.status === "no-field" && rep?.field === false);
 }
+// The SECOND local dial: does the meadow move? Orthogonal to the cap on
+// purpose — density and motion are different costs for different reasons (one
+// is "my poor gpu", the other can be "the swaying makes me ill"), so they are
+// two dials with three named points between them, not one five-rung ladder.
+console.log("\nthe motion dial, and the three names over both dials");
+{
+  const q = makeGrassQuality(undefined);
+  check("motion defaults to on", q.motion === "on" && q.animates() === true);
+  check("GRASS_MOTION is the whole vocabulary", JSON.stringify(GRASS_MOTION) === '["on","off"]');
+
+  const s2 = new Map<string, string>();
+  const fake = { getItem: (k: string) => s2.get(k) ?? null, setItem: (k: string, v: string) => s2.set(k, v) };
+  const q2 = makeGrassQuality(fake);
+  q2.setMotion("off");
+  check("setMotion persists under its own key", s2.get("ew-grass-motion") === "off");
+  check("reload sees it", makeGrassQuality(fake).motion === "off");
+  check("unknown motion refused, current stands",
+    q2.setMotion("swirly") === "off" && q2.motion === "off");
+  s2.set("ew-grass-motion", "sideways");
+  check("garbage in the store -> on", makeGrassQuality(fake).motion === "on");
+
+  // nothing drawn cannot be animated — reporting motion 'on' for an invisible
+  // meadow is a claim the UI would then have to explain away
+  const q3 = makeGrassQuality(undefined);
+  q3.setQuality("off");
+  check("animates() is false at cap off even with motion on",
+    q3.motion === "on" && q3.animates() === false);
+  q3.setQuality("full");
+  check("...and true again when there is something to move", q3.animates() === true);
+
+  // the two dials are independent: motion survives a cap change and vice versa
+  const q4 = makeGrassQuality(undefined);
+  q4.setMotion("off"); q4.setQuality("low");
+  check("the dials do not overwrite each other",
+    q4.motion === "off" && q4.quality === "low" && near(q4.cap, 0.35));
+
+  // #42's three names, as points in the two-dial space
+  const q5 = makeGrassQuality(undefined);
+  check("full = cap full + motion on",
+    JSON.stringify(q5.setPreset("full")) === '{"quality":"full","motion":"on"}' && q5.preset() === "full");
+  check("static = cap full + motion OFF, and the meadow is still drawn",
+    JSON.stringify(q5.setPreset("static")) === '{"quality":"full","motion":"off"}'
+    && q5.preset() === "static" && q5.effective() > 0 && q5.animates() === false);
+  q5.setPreset("off");
+  check("off = nothing drawn", q5.preset() === "off" && near(q5.effective(), 0));
+  q5.setQuality("medium");
+  check("a cap between the names has no name, and does not invent one", q5.preset() === null);
+  check("an unknown preset changes nothing",
+    (q5.setPreset("cinematic"), q5.quality === "medium"));
+  // a governor shed reports what the RESIDENT set, not what load did to it
+  q5.setPreset("full"); q5.shedTo(0.35);
+  check("a governor shed does not rebrand the resident's preset",
+    q5.preset() === "full" && near(q5.effective(), 0.35));
+}
+
 
 console.log("\none report for every surface (source-level)");
 {
@@ -329,6 +385,26 @@ console.log("\nnever a verb (source-level)");
     !src.includes("net.js") && !src.includes("sendVerb"));
   check("grass_quality.js is dependency-free",
     !gq.includes("import "));
+  // the motion freeze must reach the meadow's OWN hooks and nothing else: the
+  // shared per-frame array also carries the sky and every entity emitter
+  check("terrain.js freezes motion by IDENTITY, never by emptying the hook array",
+    src.includes("releaseHook(") && !/_autoParticleSystems\s*.length\s*=\s*0/.test(src),
+    "emptying the shared array would stop the clouds and every emitter too");
+  check("the per-tile ticks are NOT frozen (a still meadow must not be a stale one)",
+    !src.includes("_tileTick"));
+  // Sliced to the handler's OWN body, not a byte window: the next handler in
+  // the file is /boom, which sends `force`, and a generous window happily
+  // convicted this one of it.
+  {
+    const hsrc = readFileSync(here("../client/lib/commands/handlers.js"), "utf8");
+    const start = hsrc.indexOf("register('foliage'");
+    const end = hsrc.indexOf("\nregister(", start + 10);
+    const body = start >= 0 ? hsrc.slice(start, end > start ? end : undefined) : "";
+    check("the /foliage handler exists", start >= 0);
+    check("...and its body sends no verb of any kind",
+      !!body && !body.includes("sendVerb") && !body.includes("sendMod") && !body.includes("sendPuppet"),
+      body.slice(0, 120));
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
