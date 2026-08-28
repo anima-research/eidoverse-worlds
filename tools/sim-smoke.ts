@@ -9,94 +9,26 @@
 // process's from-the-log recompute (Bun/JSC again, but an INDEPENDENT fold
 // from independently fetched entries), and the browser client's shadow fold
 // (V8) — must agree about the resting body BIT FOR BIT. The V8 leg is the
-// real cross-engine test of Covenant I: same doubles, same operations, same
-// bits, different JavaScript engine entirely.
+// real cross-engine test of Covenant I.
 //
 // Also held: the epoch door (wrong sim name refused; dir-less punt refused),
 // the barrier fold on epoch entry, the client actually MOVING the entity to
 // the sim's word, and pre-epoch worlds keeping v1 semantics whole.
 //
-// Scaffolding follows tools/defs-smoke.ts / lightbench.ts.
+// Scaffolding: tools/harness.ts (R2 — the shared scratch bench).
 
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 import { emptySim, simEntry, advanceSim, SIM_ID } from "../shared/sim.js";
 import { foldEntry, emptyState, type LogEntry } from "../shared/fold.js";
+import { scratchBench, mkCheck, bold, dim, sleep } from "./harness.ts";
 
-const ROOT = resolve(import.meta.dir, "..");
-const EIDOVERSE_DIR = process.env.EIDOVERSE_DIR ?? join(ROOT, "..", "eidoverse-video");
 const HEADED = process.argv.includes("--headed");
 const ECHO = process.argv.includes("--console");
 
-const BROWSER_CANDIDATES: Record<string, string[]> = {
-  darwin: ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-           "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"],
-  win32: ["C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-          "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"],
-  linux: ["/usr/bin/google-chrome", "/usr/bin/chromium"],
-};
-const CHROME = process.env.CHROME
-  ?? (BROWSER_CANDIDATES[process.platform] ?? []).find((p) => existsSync(p)) ?? "chrome";
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
-const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
-if (!existsSync(join(EIDOVERSE_DIR, "eidoverse", "assets"))) {
-  console.error(`✗ asset library not found at ${EIDOVERSE_DIR}`); process.exit(2);
-}
-if (!existsSync(CHROME)) { console.error(`✗ no browser at ${CHROME}`); process.exit(2); }
-
-function freePort(from: number, tries = 40): number {
-  for (let p = from; p < from + tries; p++) {
-    try { const s = Bun.serve({ port: p, hostname: "127.0.0.1", fetch: () => new Response("") }); s.stop(true); return p; }
-    catch { /* occupied */ }
-  }
-  throw new Error(`no free port in ${from}..${from + tries}`);
-}
-const PORT = freePort(8960);
-const DEBUG_PORT = freePort(9960);
-const BASE = `http://localhost:${PORT}`;
-const SCRATCH = mkdtempSync(join(tmpdir(), "ew-simsmoke-"));
-
-let passed = 0, failed = 0;
-const check = (name: string, ok: boolean, detail = "") => {
-  console.log(`  ${ok ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m"} ${name}${detail ? dim(`  ${detail}`) : ""}`);
-  ok ? passed++ : failed++;
-};
-
-let seq: Bun.Subprocess | null = null;
-let browser: Bun.Subprocess | null = null;
-let cleaned = false;
-const reap = (p: Bun.Subprocess | null) => { try { p?.kill(); } catch { /* gone */ } };
-async function cleanup() {
-  if (cleaned) return; cleaned = true;
-  reap(browser); reap(seq);
-  await sleep(400);
-  try { rmSync(SCRATCH, { recursive: true, force: true, maxRetries: 3 }); } catch { /* best effort */ }
-}
-process.on("exit", () => { reap(browser); reap(seq); });
-for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => { void cleanup().then(() => process.exit(130)); });
-async function die(code: number, ...lines: string[]) {
-  for (const l of lines) console.error(l);
-  await cleanup(); process.exit(code);
-}
-
-console.log(`\n${bold("sim-smoke")} — ${SIM_ID}, scratch sequencer on :${PORT}`);
-seq = Bun.spawn([process.execPath, join(ROOT, "server", "server.ts")], {
-  cwd: ROOT,
-  env: { ...process.env, PORT: String(PORT), JOIN_TOKEN: "", EIDOVERSE_DIR,
-         WORLDS_DIR: join(SCRATCH, "worlds") },
-  stdout: Bun.file(join(SCRATCH, "sequencer.log")),
-  stderr: Bun.file(join(SCRATCH, "sequencer.log")),
-});
-{
-  let up = false;
-  for (let i = 0; i < 80 && !up; i++) {
-    try { up = (await fetch(`${BASE}/avatars`)).ok; } catch { await sleep(250); }
-  }
-  if (!up) await die(2, `✗ sequencer never came up on :${PORT}`);
-}
+console.log(`\n${bold("sim-smoke")} — ${SIM_ID}`);
+const { PORT, BASE, SCRATCH, cws, cdp, evalJson, cleanup, die } =
+  await scratchBench("simsmoke", { headed: HEADED, portFrom: 8960 });
+const { check, tally } = mkCheck();
 
 // ---- the driver: author the world, keep the socket for queries -------------
 
@@ -134,46 +66,6 @@ errors.length = 0;
 
 // ---- the browser client joins BEFORE the punt (it folds the intent live) ---
 
-type Cdp = { send<T = any>(m: string, p?: unknown): Promise<T> };
-function cdpOn(ws: WebSocket): Cdp {
-  let id = 0;
-  return {
-    send<T = any>(method: string, params: unknown = {}): Promise<T> {
-      const myId = ++id;
-      return new Promise((resolveP, reject) => {
-        const onMsg = (ev: MessageEvent) => {
-          const m = JSON.parse(String(ev.data));
-          if (m.id !== myId) return;
-          ws.removeEventListener("message", onMsg as any);
-          m.error ? reject(new Error(`${method}: ${m.error.message}`)) : resolveP(m.result);
-        };
-        ws.addEventListener("message", onMsg as any);
-        ws.send(JSON.stringify({ id: myId, method, params }));
-      });
-    },
-  };
-}
-browser = Bun.spawn([
-  CHROME, ...(HEADED ? [] : ["--headless=new"]),
-  `--remote-debugging-port=${DEBUG_PORT}`,
-  `--user-data-dir=${join(SCRATCH, "profile")}`,
-  "--no-first-run", "--no-default-browser-check", "--disable-extensions",
-  "--disable-background-networking", "--disable-sync", "--mute-audio",
-  "--window-size=1280,800", "--enable-unsafe-webgpu", "about:blank",
-], { stdout: "ignore", stderr: "ignore" });
-let target: any = null;
-for (let i = 0; i < 120 && !target; i++) {
-  try {
-    const list = await (await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/list`)).json();
-    target = list.find((t: any) => t.type === "page"
-      && !String(t.url).startsWith("edge://") && !String(t.url).startsWith("chrome"));
-  } catch { /* not yet */ }
-  if (!target) await sleep(150);
-}
-if (!target) await die(2, `✗ no page target on :${DEBUG_PORT}`);
-const cws = new WebSocket(target.webSocketDebuggerUrl);
-await new Promise((res, rej) => { cws.onopen = res as any; cws.onerror = rej as any; });
-const cdp = cdpOn(cws);
 let bootReady = "";
 cws.addEventListener("message", (ev: any) => {
   const m = JSON.parse(String(ev.data));
@@ -183,12 +75,6 @@ cws.addEventListener("message", (ev: any) => {
     if (line.startsWith("[boot] ready")) bootReady = line;
   }
 });
-await cdp.send("Runtime.enable");
-await cdp.send("Page.enable");
-const evalJson = async (expr: string) => {
-  const r = await cdp.send<any>("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true });
-  return r?.result?.value;
-};
 await cdp.send("Page.navigate", { url: `${BASE}/?name=simbot&world=${WORLD}` });
 for (let i = 0; i < 240 && !bootReady; i++) await sleep(250);
 if (!bootReady) await die(2, "✗ client never booted");
@@ -241,6 +127,6 @@ check("the realized entity stands at the sim's word",
           && Math.abs(shown[2] - serverSim.bodies.ball.p[2]) < 1e-9,
   `shown [${shown?.map((v: number) => v.toFixed(3)).join(", ")}]`);
 
-console.log(`\n${bold(failed ? "RED" : "GREEN")} — ${passed} passed, ${failed} failed\n`);
+console.log(`\n${bold(tally.failed ? "RED" : "GREEN")} — ${tally.passed} passed, ${tally.failed} failed\n`);
 await cleanup();
-process.exit(failed ? 1 : 0);
+process.exit(tally.failed ? 1 : 0);

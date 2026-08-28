@@ -1,77 +1,27 @@
 // defs-smoke — the def registry lane, proven end to end (charter §3, §24).
 //
 //   bun tools/defs-smoke.ts              # headless Chrome, own scratch sequencer
-//   bun tools/defs-smoke.ts --headed     # watch it
-//   bun tools/defs-smoke.ts --console    # echo every page console line
+//   bun tools/defs-smoke.ts --headed
+//   bun tools/defs-smoke.ts --console
 //
-// The Rimworld-y claim this file keeps honest: adding a species to every
-// world this instance serves is adding a JSON file — no engine edit. Run
-// against a scratch DEFS_DIR (a copy of defs/ plus one def-only species and
-// one deliberately broken def), it proves:
+// What it proves (see the section banners): the registry contract (novel
+// def served, broken def refused loudly, round-trip exact, sidecars), the
+// avatar + animation overlays, engine hydration ENGAGEMENT, hot reload
+// under a live client, a def-only species rendering, the def-composed
+// mojave biome, and unknown-species failing loudly while the boot stands.
 //
-//   server  — /defs serves the copy + the novel species, REFUSES the broken
-//             file loudly, and the on-disk grass def round-trips exactly;
-//   client  — the engine hydrates FLORA_SPECIES from /defs before the first
-//             build (the console line is the engagement proof — §22m's
-//             lesson: verify the path actually engaged before trusting any
-//             green), the standard meadow still builds opaque with
-//             instances drawn, and the DEF-ONLY species renders — a field
-//             that exists in no .js file anywhere;
-//   honesty — a log naming a species this instance lacks fails that stroke
-//             loudly while the boot itself stands.
-//
-// Scaffolding follows tools/lightbench.ts (scratch sequencer, driver socket,
-// CDP page probe) — see its header for the four browser lessons.
+// Scaffolding: tools/harness.ts (R2 — the shared scratch bench).
 
-import { existsSync, mkdtempSync, rmSync, readFileSync, readdirSync, copyFileSync, mkdirSync, writeFileSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, copyFileSync, mkdirSync, writeFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
+import { scratchBench, mkCheck, bold, dim, sleep, ROOT } from "./harness.ts";
 
-const ROOT = resolve(import.meta.dir, "..");
-const EIDOVERSE_DIR = process.env.EIDOVERSE_DIR ?? join(ROOT, "..", "eidoverse-video");
 const HEADED = process.argv.includes("--headed");
 const ECHO = process.argv.includes("--console");
 
-const BROWSER_CANDIDATES: Record<string, string[]> = {
-  darwin: ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-           "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"],
-  win32: ["C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-          "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"],
-  linux: ["/usr/bin/google-chrome", "/usr/bin/chromium"],
-};
-const CHROME = process.env.CHROME
-  ?? (BROWSER_CANDIDATES[process.platform] ?? []).find((p) => existsSync(p))
-  ?? "chrome";
-
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const bold = (s: string) => `\x1b[1m${s}\x1b[0m`;
-const dim = (s: string) => `\x1b[2m${s}\x1b[0m`;
-if (!existsSync(join(EIDOVERSE_DIR, "eidoverse", "assets"))) {
-  console.error(`✗ asset library not found at ${EIDOVERSE_DIR}`); process.exit(2);
-}
-if (!existsSync(CHROME)) { console.error(`✗ no browser at ${CHROME}`); process.exit(2); }
-
-function freePort(from: number, tries = 40): number {
-  for (let p = from; p < from + tries; p++) {
-    try { const s = Bun.serve({ port: p, hostname: "127.0.0.1", fetch: () => new Response("") }); s.stop(true); return p; }
-    catch { /* occupied */ }
-  }
-  throw new Error(`no free port in ${from}..${from + tries}`);
-}
-const PORT = freePort(8955);
-const DEBUG_PORT = freePort(9955);
-const BASE = `http://localhost:${PORT}`;
-const SCRATCH = mkdtempSync(join(tmpdir(), "ew-defsmoke-"));
-
-let passed = 0, failed = 0;
-const check = (name: string, ok: boolean, detail = "") => {
-  console.log(`  ${ok ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m"} ${name}${detail ? dim(`  ${detail}`) : ""}`);
-  ok ? passed++ : failed++;
-};
-
-// ---- the scratch def registry ----------------------------------------------
-
-const DEFS = join(SCRATCH, "defs");
+// the scratch DEFS_DIR exists BEFORE the sequencer that serves it
+const DEFS = mkdtempSync(join(tmpdir(), "ew-defsmoke-defs-"));
 for (const domain of readdirSync(join(ROOT, "defs"))) {
   const src = join(ROOT, "defs", domain);
   let st; try { st = statSync(src); } catch { continue; }
@@ -81,6 +31,14 @@ for (const domain of readdirSync(join(ROOT, "defs"))) {
     if (f.endsWith(".json")) copyFileSync(join(src, f), join(DEFS, domain, f));
   }
 }
+
+console.log(`\n${bold("defs-smoke")} — defs in ${DEFS}`);
+const { PORT, BASE, SCRATCH, cws, cdp, evalJson, cleanup, die } =
+  await scratchBench("defsmoke", { headed: HEADED, portFrom: 8955, serverEnv: { DEFS_DIR: DEFS } });
+const { check, tally } = mkCheck();
+
+// ---- the scratch def registry ----------------------------------------------
+
 // underscore files (_colors.json) are domain sidecars, not species defs
 const REPO_COUNT = readdirSync(join(DEFS, "flora")).filter((f) => !f.startsWith("_")).length;
 // the def-only species: exists in NO .js file — if it renders, the lane works
@@ -93,41 +51,7 @@ writeFileSync(join(DEFS, "flora", "smoketest_lavender.json"), JSON.stringify({
   sss: 0.5, rough: 0.6, pushScale: 1.0,
 }, null, 2));
 writeFileSync(join(DEFS, "flora", "broken.json"), JSON.stringify({ doc: "no archetype — must be refused" }));
-
-// ---- sequencer --------------------------------------------------------------
-
-let seq: Bun.Subprocess | null = null;
-let browser: Bun.Subprocess | null = null;
-let cleaned = false;
-const reap = (p: Bun.Subprocess | null) => { try { p?.kill(); } catch { /* gone */ } };
-async function cleanup() {
-  if (cleaned) return; cleaned = true;
-  reap(browser); reap(seq);
-  await sleep(400);
-  try { rmSync(SCRATCH, { recursive: true, force: true, maxRetries: 3 }); } catch { /* best effort */ }
-}
-process.on("exit", () => { reap(browser); reap(seq); });
-for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => { void cleanup().then(() => process.exit(130)); });
-async function die(code: number, ...lines: string[]) {
-  for (const l of lines) console.error(l);
-  await cleanup(); process.exit(code);
-}
-
-console.log(`\n${bold("defs-smoke")} — scratch sequencer on :${PORT}, defs in ${DEFS}`);
-seq = Bun.spawn([process.execPath, join(ROOT, "server", "server.ts")], {
-  cwd: ROOT,
-  env: { ...process.env, PORT: String(PORT), JOIN_TOKEN: "", EIDOVERSE_DIR,
-         WORLDS_DIR: join(SCRATCH, "worlds"), DEFS_DIR: DEFS },
-  stdout: Bun.file(join(SCRATCH, "sequencer.log")),
-  stderr: Bun.file(join(SCRATCH, "sequencer.log")),
-});
-{
-  let up = false;
-  for (let i = 0; i < 80 && !up; i++) {
-    try { up = (await fetch(`${BASE}/avatars`)).ok; } catch { await sleep(250); }
-  }
-  if (!up) await die(2, `✗ sequencer never came up on :${PORT}`);
-}
+await sleep(1300);   // past the registry TTL — the server booted before these writes
 
 // ---- server contract --------------------------------------------------------
 
@@ -263,53 +187,11 @@ for (const [kind, name] of Object.entries(WORLDS)) {
 
 // ---- browser ----------------------------------------------------------------
 
-type Cdp = { send<T = any>(m: string, p?: unknown): Promise<T> };
-function cdpOn(ws: WebSocket): Cdp {
-  let id = 0;
-  return {
-    send<T = any>(method: string, params: unknown = {}): Promise<T> {
-      const myId = ++id;
-      return new Promise((resolveP, reject) => {
-        const onMsg = (ev: MessageEvent) => {
-          const m = JSON.parse(String(ev.data));
-          if (m.id !== myId) return;
-          ws.removeEventListener("message", onMsg as any);
-          m.error ? reject(new Error(`${method}: ${m.error.message}`)) : resolveP(m.result);
-        };
-        ws.addEventListener("message", onMsg as any);
-        ws.send(JSON.stringify({ id: myId, method, params }));
-      });
-    },
-  };
-}
-browser = Bun.spawn([
-  CHROME, ...(HEADED ? [] : ["--headless=new"]),
-  `--remote-debugging-port=${DEBUG_PORT}`,
-  `--user-data-dir=${join(SCRATCH, "profile")}`,
-  "--no-first-run", "--no-default-browser-check", "--disable-extensions",
-  "--disable-background-networking", "--disable-sync", "--mute-audio",
-  "--window-size=1280,800", "--enable-unsafe-webgpu", "about:blank",
-], { stdout: "ignore", stderr: "ignore" });
-
-let target: any = null;
-for (let i = 0; i < 120 && !target; i++) {
-  try {
-    const list = await (await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/list`)).json();
-    target = list.find((t: any) => t.type === "page"
-      && !String(t.url).startsWith("edge://") && !String(t.url).startsWith("chrome"));
-  } catch { /* not yet */ }
-  if (!target) await sleep(150);
-}
-if (!target) await die(2, `✗ no page target on :${DEBUG_PORT}`);
-const ws = new WebSocket(target.webSocketDebuggerUrl);
-await new Promise((res, rej) => { ws.onopen = res as any; ws.onerror = rej as any; });
-const cdp = cdpOn(ws);
-
 let consoleLines: string[] = [];
 let pageErrors: string[] = [];
 let bootReady = "";
 const textOf = (a: any) => a?.value !== undefined ? String(a.value) : a?.description ?? "";
-ws.addEventListener("message", (ev: any) => {
+cws.addEventListener("message", (ev: any) => {
   const m = JSON.parse(String(ev.data));
   if (m.method === "Runtime.consoleAPICalled") {
     const line = (m.params.args ?? []).map(textOf).join(" ");
@@ -322,12 +204,6 @@ ws.addEventListener("message", (ev: any) => {
     pageErrors.push(String(d?.exception?.description ?? d?.text ?? "(exception)"));
   }
 });
-await cdp.send("Runtime.enable");
-await cdp.send("Page.enable");
-const evalJson = async (expr: string) => {
-  const r = await cdp.send<any>("Runtime.evaluate", { expression: expr, returnByValue: true, awaitPromise: true });
-  return r?.result?.value;
-};
 async function bootInto(world: string) {
   bootReady = ""; consoleLines = []; pageErrors = [];
   await cdp.send("Page.navigate", { url: `${BASE}/?name=defsbot&world=${world}` });
@@ -424,6 +300,6 @@ await bootInto(WORLDS.bogus);
   check("the world still stands", !!bootReady);
 }
 
-console.log(`\n${bold(failed ? "RED" : "GREEN")} — ${passed} passed, ${failed} failed\n`);
+console.log(`\n${bold(tally.failed ? "RED" : "GREEN")} — ${tally.passed} passed, ${tally.failed} failed\n`);
 await cleanup();
-process.exit(failed ? 1 : 0);
+process.exit(tally.failed ? 1 : 0);
