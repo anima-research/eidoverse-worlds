@@ -513,6 +513,30 @@ function updatePhotoCamera(dt) {
   camera.lookAt(_f.add(photo.pos));   // _f is spent here — recomputed next frame
 }
 
+// A cross-browser frame-time comparison is only evidence if both browsers
+// photograph the SAME frame (#42). Flying to "roughly the same spot" by hand
+// is not that: a few metres of dolly changes the grass tile count, the skinned
+// bodies in frustum and the draw call count together, and the delta you
+// measure is the delta you introduced. So the photo camera takes a pose
+// directly — set it from the receipt the other browser printed, and the two
+// runs are looking at one scene.
+/** Place the photo camera exactly (entering photo mode if needed). */
+export function setPhotoCamera({ pos, yaw, pitch, fov } = {}) {
+  if (!photoMode) togglePhotoMode();
+  if (Array.isArray(pos) && pos.length === 3 && pos.every(Number.isFinite)) photo.pos.set(pos[0], pos[1], pos[2]);
+  if (Number.isFinite(yaw)) { photo.yaw = yaw; camYaw = yaw; }
+  if (Number.isFinite(pitch)) { photo.pitch = pitch; camPitch = pitch; }
+  if (Number.isFinite(fov)) { photo.fov = fov; camera.fov = fov; camera.updateProjectionMatrix(); }
+  photo.vel.set(0, 0, 0);   // arrive at rest: no inherited drift to damp out
+  return getPhotoCamera();
+}
+/** The pose to write into a receipt so another browser can stand here. */
+export const getPhotoCamera = () => ({
+  photoMode,
+  pos: photo.pos.toArray().map((n) => +n.toFixed(3)),
+  yaw: +photo.yaw.toFixed(4), pitch: +photo.pitch.toFixed(4), fov: +photo.fov.toFixed(2),
+});
+
 /** Spectator/retina camera: first person from a followed body's head.
  *  Same eye/exclusion semantics as the snap `first` view (#75): the eye
  *  anchors on the live head bone (bounds when the rig has none) so it follows
