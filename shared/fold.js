@@ -180,7 +180,11 @@ export function foldEntry(st, e) {
     case "place": {
       const ent = st.entities[a?.id];
       if (!ent) return;
-      if (a.pos) ent.pos = a.pos;
+      // finite-vec3 or nothing (§24k, upstreamed from the agent's #88 fix,
+      // where a malformed raw packet's pos walked into a support transform
+      // and crash-looped the door): a place with an unusable pos KEEPS the
+      // prior position — malformed shapes nothing, per §1's totality rule.
+      if (Array.isArray(a.pos) && a.pos.length === 3 && a.pos.every(Number.isFinite)) ent.pos = a.pos;
       if (a.yaw != null) ent.yaw = a.yaw;
       if (a.scale != null) ent.scale = a.scale;
       return;
@@ -367,8 +371,9 @@ export function foldEntry(st, e) {
       if (ent) {
         delete ent.parent;
         // Plane-transition invariant: the verb STAMPS absolute pose. The log
-        // must never depend on reconstructing where the parent was.
-        if (Array.isArray(a.pos)) ent.pos = a.pos;
+        // must never depend on reconstructing where the parent was. Finite
+        // or nothing, same rule as place (§24k).
+        if (Array.isArray(a.pos) && a.pos.length === 3 && a.pos.every(Number.isFinite)) ent.pos = a.pos;
         if (a.yaw != null) ent.yaw = a.yaw;
       }
       if (st.mounts) {

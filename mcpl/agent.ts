@@ -18,7 +18,8 @@ import { isFiniteVec3 } from "./shape.ts";
 import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hoursAt } from "../shared/forecast.js";
 // The snapshot re-synthesizer, shared with the browser — this agent's
 // deliberate omissions ride as flags (see stateToEntries below).
-import { stateToEntries as sharedStateToEntries } from "../shared/fold.js";
+import { stateToEntries as sharedStateToEntries, foldEntry, emptyState } from "../shared/fold.js";
+import { emptySim, simEntry, advanceSim, tickOf } from "../shared/sim.js";
 // The `particles` component's meaning, shared verbatim with the browser host:
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
@@ -43,6 +44,10 @@ type Entity = { id: string; lib: string; pos: number[]; yaw: number; actor: stri
    *  this is how affordances reach text-tier perception */
   comp?: Record<string, any> };
 type Person = { id: string; avatar: string; pose: Pose | null; agent?: boolean };
+
+/** Verbs whose fold shapes the entity/mount views (epoch/sky shape other
+ *  state; say/use/force shape nothing). */
+const ENTITY_VERBS = new Set(["spawn", "light", "place", "remove", "comp", "motion", "mount", "dismount"]);
 
 /** Presence is a live, lossy plane: a just-joining browser can briefly send a
  * pose shell whose coordinates are null/non-finite before its controller has
@@ -144,6 +149,21 @@ export class WorldAgent {
   body: HeadlessBody | null | undefined = undefined; // the REAL ragdoll (undefined = not tried yet)
   private simTicker: ReturnType<typeof setInterval> | null = null;
   private walkDone: ((arrived: boolean) => void) | null = null;
+  /** THE fold (§24k R0, survey A6): one implementation of what an entry
+   *  means — shared/fold.js — replacing this file's hand-mirrored copy,
+   *  which had already drifted on four verbs (place strictness, light's
+   *  partial merge, remove's cargo cascade, spawn's collide). The maps
+   *  below are DERIVED VIEWS reconciled from this state after every
+   *  entity-shaping entry; side effects (percepts, supports, pings) run in
+   *  a separate pass that never touches state. */
+  private st = emptyState();
+  /** The sim fold beside it (§24k R0, survey A7): the agent was blind to
+   *  dialect-3 flights — look() reported a punted crate at its last placed
+   *  spot while every renderer showed it flying. Adopted from the join
+   *  snapshot's cut, folded per entry in the normative order, advanced on
+   *  the tick; live body positions are stamped into the entity view. */
+  private sim: ReturnType<typeof emptySim> = emptySim();
+  private simRested = new Set<string>();
   entities = new Map<string, Entity>();
   /** who/what rides what: mount verbs, keyed by the rider (body or thing) */
   /** Every mount's full wire shape — offset/yaw OVERRIDE socket defaults in
@@ -448,7 +468,15 @@ export class WorldAgent {
             this.lastMod = { ts: Date.now(), text: String(msg.text ?? "") };
             break;
           case "snapshot":
-            this.entities.clear(); this.people.clear();
+            this.entities.clear(); this.people.clear(); this.mounts.clear();
+            // fresh folds for a fresh world (§24k): the instant fold restarts
+            // empty; the sim fold ADOPTS the sequencer's cut — a joiner
+            // cannot recompute flights whose intents were folded out of the
+            // tail, and adoption is exact (advancement is schedule-
+            // independent, PROTOCOL_v2).
+            this.st = emptyState();
+            this.sim = (msg as any).sim?.epoch ? structuredClone((msg as any).sim) : emptySim();
+            this.simRested.clear();
             // wake where you fell asleep — fresh body only; a body that has
             // walked this process keeps its own truth on mid-life reconnects
             if (msg.restore && !this.restoredPose && !this.target && this.pos.x === 0 && this.pos.z === 0) {
@@ -736,47 +764,74 @@ export class WorldAgent {
     for (const a of acts) this.gate.act(id, a.key, a.text);
   }
 
+  /** Reconcile the derived maps from the folded state — the ONLY writer of
+   *  this.entities/this.mounts outside the sim stamp. Fresh objects each
+   *  pass: nothing stale survives a spawn-replace or a fold-side cascade. */
+  private reconcileFromFold() {
+    const seen = new Set<string>();
+    for (const [id, e] of Object.entries(this.st.entities)) {
+      seen.add(id);
+      this.entities.set(id, {
+        id,
+        lib: (e as any).kind === "light" ? "(light)" : String((e as any).lib ?? ""),
+        pos: (e as any).pos, yaw: (e as any).yaw ?? 0,
+        ...((e as any).scale != null ? { scale: (e as any).scale } : {}),
+        actor: (e as any).actor,
+        ...((e as any).comp ? { comp: (e as any).comp } : {}),
+      });
+    }
+    for (const id of [...this.entities.keys()]) if (!seen.has(id)) this.entities.delete(id);
+    // both mount species land in one view, as the old fold kept them:
+    // entity cargo rides ent.parent, bodies ride st.mounts
+    this.mounts.clear();
+    for (const [id, e] of Object.entries(this.st.entities)) {
+      const p = (e as any).parent;
+      if (p) this.mounts.set(id, { to: p.to, slot: p.slot,
+        ...(p.offset != null ? { offset: p.offset } : {}),
+        ...(p.yaw != null ? { yaw: p.yaw } : {}) });
+    }
+    for (const [id, m] of Object.entries(this.st.mounts ?? {})) {
+      this.mounts.set(id, { to: (m as any).to, slot: (m as any).slot,
+        ...((m as any).offset != null ? { offset: (m as any).offset } : {}),
+        ...((m as any).yaw != null ? { yaw: (m as any).yaw } : {}) });
+    }
+  }
+
   private async applyEntry(entry: any, live: boolean) {
     const { verb, args, actor, ts } = entry;
+    // pre-fold captures the side effects need (state the fold will consume)
+    const preRemovePos = verb === "remove" ? this.entities.get(args?.id)?.pos : undefined;
+    const preComp = verb === "comp" && typeof args?.type === "string"
+      ? (this.entities.get(args?.id)?.comp?.[args.type] ?? null) : null;
+    const hadEntity = args?.id != null ? this.entities.has(args.id) : false;
+
+    // §24k R0: THE fold, then the sim fold, in the normative order — one
+    // implementation of what an entry means, for every species of client.
+    foldEntry(this.st, entry);
+    simEntry(this.sim, entry, this.st);
+    if (ENTITY_VERBS.has(verb)) this.reconcileFromFold();
+
+    // ---- side effects only below: percepts, supports, pings — no state ----
     if (verb === "spawn") {
-      this.entities.set(args.id, { id: args.id, lib: args.lib, pos: args.pos ?? [0, 0, 0], yaw: args.yaw ?? 0,
-        ...(args.scale != null ? { scale: args.scale } : {}), actor });
       if (live) this.noteBuild(actor, args.pos);
       this.trackSupport(this.syncSupport(args.id));   // a placed thing is a thing bodies can rest on (#17)
     } else if (verb === "light") {
-      // a light is an entity too, so text-tier perception can see it and it can
-      // be moved/removed by id like anything else. Re-issued on an existing id
-      // it is a partial update — an entry without pos must not teleport the
-      // text-tier's idea of the light to the default spot.
-      const prevLight = this.entities.get(args.id);
-      this.entities.set(args.id, { id: args.id, lib: "(light)", pos: args.pos ?? prevLight?.pos ?? [0, 1, 0], yaw: 0, actor });
       if (live) this.noteBuild(actor, args.pos);
     } else if (verb === "place") {
-      const e = this.entities.get(args.id);
-      if (e) {
-        // mirror the server fold's partial-update semantics: a place without
-        // a usable pos KEEPS the prior position. Assigning args.pos
-        // unconditionally is how one malformed raw packet crash-looped the
-        // whole door — undefined walked into the support transform (#88).
-        if (isFiniteVec3(args.pos)) e.pos = args.pos;
-        else if (args.pos != null || args.x != null || args.y != null || args.z != null) this.noteMalformed(verb, args);
-        if (args.yaw != null) e.yaw = args.yaw;
-        if (args.scale != null) e.scale = args.scale;
-      }
-      if (live) this.noteBuild(actor, isFiniteVec3(args.pos) ? args.pos : e?.pos);
+      // the malformed-pos NOTE survives the fold move (#88's forensics);
+      // the fold itself now carries the guard (shared/fold.js, upstreamed)
+      if (hadEntity && !isFiniteVec3(args.pos)
+        && (args.pos != null || args.x != null || args.y != null || args.z != null)) this.noteMalformed(verb, args);
+      if (live) this.noteBuild(actor, isFiniteVec3(args.pos) ? args.pos : this.entities.get(args.id)?.pos);
       this.trackSupport(this.syncSupport(args.id));   // support follows the thing it belongs to
     } else if (verb === "remove") {
-      if (live) this.noteBuild(actor, this.entities.get(args.id)?.pos);
-      this.entities.delete(args.id);
+      if (live) this.noteBuild(actor, preRemovePos);
       this.dropSupport(args.id);
-      for (const [rid, m] of this.mounts) if (m.to === args.id) this.mounts.delete(rid);
     } else if (verb === "comp") {
-      // affordances are components — track them or look() can't tell anyone
+      // affordances are components — the fold tracked them; percepts here
       const e = this.entities.get(args.id);
       if (e && typeof args.type === "string") {
-        const before = e.comp?.[args.type] ?? null;
-        e.comp ??= {};
-        if (args.data == null) delete e.comp[args.type]; else e.comp[args.type] = args.data;
+        const before = preComp;
         // An emitter beginning, changing or ending is something you SEE happen
         // in the world — the one component type with a live sensory event.
         // Replay reconstructs the state above and stops there: a fire that was
@@ -797,20 +852,12 @@ export class WorldAgent {
         if (args.type === "motion" || args.type.startsWith("motion:")) this.trackSupport(this.syncSupport(args.id));
       }
     } else if (verb === "motion") {
-      const e = this.entities.get(args.id);
-      if (e) {
-        e.comp ??= {};
-        const { id: _id, ...m } = args;
-        if (m.type == null) delete e.comp.motion; else e.comp.motion = m;
+      if (this.entities.has(args.id)) {
         this.trackSupport(this.syncSupport(args.id));   // starts moving = stops supporting, and back
       }
     } else if (verb === "mount") {
-      // offset/yaw are kept RAW: effective.ts refuses non-finite values with
-      // a named link rather than silently substituting the socket default —
-      // a substitution would disagree with what the browser renders.
-      this.mounts.set(args.id, { to: args.to, slot: args.slot,
-        ...(args.offset != null ? { offset: args.offset } : {}),
-        ...(args.yaw != null ? { yaw: args.yaw } : {}) });
+      // (offset/yaw stay RAW in the fold's record: effective.ts refuses
+      // non-finite values with a named link rather than substituting.)
       // Cargo rides its parent, so its own support goes stale the instant the
       // parent moves — world.js drops the collider here for exactly that
       // reason and lets the pair collide as the parent. Entities only: a
@@ -818,19 +865,18 @@ export class WorldAgent {
       // support and is a separate seam.
       if (this.entities.has(args.id)) this.dropSupport(args.id);
     } else if (verb === "dismount") {
-      this.mounts.delete(args.id);
-      const e = this.entities.get(args.id);
-      if (e) {
-        // a dismount stamps where the ride let go; the support must be built
-        // from THAT, not from the transform the thing had before it mounted
-        if (isFiniteVec3(args.pos)) e.pos = args.pos;
-        if (args.yaw != null) e.yaw = args.yaw;
-        this.trackSupport(this.syncSupport(args.id));   // stand it back up
+      if (this.entities.has(args.id)) {
+        // the fold stamped where the ride let go; stand the support back up
+        this.trackSupport(this.syncSupport(args.id));
       }
+    } else if (verb === "punt") {
+      // dialect 3: the sim owns the flight (folded above) — a flying thing
+      // stops being a support the moment it launches; rest re-syncs it
+      if (this.sim.bodies?.[args?.id]) this.dropSupport(args.id);
     } else if (verb === "force") {
       // an instantaneous radial CAUSE (blast, gust) — live only, because a
       // replay must never re-detonate. Same falloff math as browser bodies
-      // (mirrored from client/main.js — keep in sync), same consent.
+      // (mirrored from client/lib/localbody.js — keep in sync), same consent.
       if (live && Array.isArray(args?.at) && args.at.length === 3) {
         const dx = this.pos.x - args.at[0], dz = this.pos.z - args.at[2];
         const d = Math.hypot(dx, dz);
@@ -891,10 +937,9 @@ export class WorldAgent {
       await this.buildTerrain(args);
       this.worldInfo.terrain = { seed: args.seed, size: args.size, amplitude: args.amplitude, flatRadius: args.flatRadius };
     } else if (verb === "sky" || verb === "weather") {
-      // fold, don't overwrite: weather merges onto the standing sky (with the
-      // hours-rebase and override provenance), exactly as the server folds it
-      this.skyState = foldSkyEntry(verb === "sky" ? null : this.skyState,
-        { verb, args, ts, seq: entry.seq, actor });
+      // the fold above already ran foldSkyEntry with the same rebase and
+      // provenance rules — the view just adopts its answer (§24k: one fold)
+      this.skyState = this.st.sky as typeof this.skyState;
     } else if (verb === "grass") {
       this.worldInfo.grass = { area: `${args.species ?? "grass"}, ${args.width ?? args.size}×${args.depth ?? args.size}m around ${JSON.stringify(args.center ?? [0, 0])}` };
     }
@@ -1211,6 +1256,23 @@ export class WorldAgent {
   private tick() {
     if (!this.joined) return;
     const dt = TICK_MS / 1000;
+    // §24k R0 (survey A7): advance the sim fold and stamp live body
+    // positions into the entity view — text-tier perception now sees a
+    // punted crate WHERE IT IS (and, at rest, where it CAME TO REST —
+    // recomputed, bit-identical with every renderer). Support rebuilds
+    // when a body rests; the punt side effect dropped it at launch.
+    if (this.sim.epoch && !this.sim.epoch.foreign) {
+      advanceSim(this.sim, tickOf(this.sim, this.serverNow()));
+      for (const id in this.sim.bodies) {
+        const b = this.sim.bodies[id];
+        const e = this.entities.get(id);
+        if (e) e.pos = [b.p[0], b.p[1], b.p[2]];
+        if (b.resting && !this.simRested.has(id)) {
+          this.simRested.add(id);
+          this.trackSupport(this.syncSupport(id));
+        } else if (!b.resting) this.simRested.delete(id);
+      }
+    }
     // ambient sky perception rides the body tick at 1Hz — cheap (cursor keeps
     // it O(1)) and quiet (emits only on segment/override/day-phase boundaries)
     if (Date.now() - this.lastSkyCheck >= 1000) {

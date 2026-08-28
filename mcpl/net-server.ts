@@ -187,25 +187,36 @@ const TOOLS = [
 ];
 
 import { readdirSync } from "node:fs";
+// §24k R0 (survey A5): this fallback used to be a hardcoded developer home
+// directory — the SAME bug mcpl/server.ts:120 fixed with an incident note
+// ("hardcoded Mac path threw for everyone else"); this copy never got the
+// fix, and its readdirSync sat OUTSIDE the try, so any box without
+// EIDOVERSE_DIR where the route failed threw ENOENT with someone else's
+// $HOME in the message. Local scan only when a checkout is actually named;
+// otherwise the sequencer's catalog is the one source of truth and its
+// unreachability is a soft, honest miss.
 const MODELS_DIR = process.env.EIDOVERSE_DIR
   ? `${process.env.EIDOVERSE_DIR}/eidoverse/assets/models`
-  : "/Users/antra/connectome-local/eidoverse-video/eidoverse/assets/models";
+  : null;
 /** Search the catalog through the sequencer (one source of truth — includes
  *  the content-addressed store, so conjured/orrery-delivered objects are
- *  findable), falling back to a local dir scan if the route is unreachable. */
+ *  findable), falling back to a local dir scan only when a checkout exists. */
 async function searchLibrary(httpBase: string, query: string): Promise<{ path: string; name?: string }[]> {
   try {
     const r = await fetch(`${httpBase}/library-models?q=${encodeURIComponent(query)}`);
     if (r.ok) return ((await r.json()) as { path: string; name?: string }[]).slice(0, 24);
-  } catch { /* sequencer route unreachable — scan what we can see */ }
-  const toks = query.toLowerCase().split(/\s+/).filter(Boolean);
-  return readdirSync(MODELS_DIR)
-    .filter((f) => f.endsWith(".glb"))
-    .map((f) => ({ f, score: toks.filter((t) => f.toLowerCase().includes(t)).length }))
-    .filter((r) => r.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 12)
-    .map((r) => ({ path: `eidoverse/assets/models/${r.f}` }));
+  } catch { /* sequencer route unreachable — scan what we can see, if anything */ }
+  if (!MODELS_DIR) return [];
+  try {
+    const toks = query.toLowerCase().split(/\s+/).filter(Boolean);
+    return readdirSync(MODELS_DIR)
+      .filter((f) => f.endsWith(".glb"))
+      .map((f) => ({ f, score: toks.filter((t) => f.toLowerCase().includes(t)).length }))
+      .filter((r) => r.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 12)
+      .map((r) => ({ path: `eidoverse/assets/models/${r.f}` }));
+  } catch { return []; }
 }
 
 // ---- contact sheets ---------------------------------------------------------
