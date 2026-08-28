@@ -14,15 +14,15 @@
 | scene | 0 people · 5 skinned · 24 entities · 38 textures · 85,910 blades |
 | scene digest | `2e324e3b` · world seq 26 |
 | camera | pos [-0.62, 2.771, -3.987] yaw 3.1416 pitch 0.32 fov 55 |
-| build | server `08276caece04518cf194668f35ce728cb9117c76` (dirty tree) · tree `2947d074a629935f` (clean checkout (excluding tools/receipts-42)) |
+| build | server `737525ceb2870c6635b1d1c682632e87c56be740` (dirty tree) · tree `2dca5e7881a5f388` (clean checkout (excluding tools/receipts-42)) |
 
 **25s per arm, fixed camera, UI hidden.** Frame time in ms — lower is better.
 
 | foliage | p50 | p95 | p99 | max | mean | fps (p50) | >40ms | >100ms | blades | draws/frame |
 |---|---|---|---|---|---|---|---|---|---|---|
-| full | 16.67 | 16.69 | 16.74 | 33.31 | 16.67 | 60.01 | 0 | 0 | 85,910 | 110 |
-| static | 16.67 | 16.68 | 16.69 | 16.76 | 16.66 | 60.01 | 0 | 0 | 85,910 | 110 |
-| off | 16.67 | 16.68 | 16.71 | 16.81 | 16.66 | 60.01 | 0 | 0 | 0 | 67 |
+| full | 16.67 | 16.69 | 16.72 | 17.13 | 16.67 | 60.01 | 0 | 0 | 85,910 | 110 |
+| static | 16.67 | 16.68 | 16.69 | 16.77 | 16.66 | 60.01 | 0 | 0 | 85,910 | 110 |
+| off | 16.67 | 16.68 | 16.71 | 16.9 | 16.66 | 60.01 | 0 | 0 | 0 | 67 |
 
 Foliage costs **0ms** at the median and **0.01ms** at p95 from this camera.
 

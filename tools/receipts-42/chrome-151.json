@@ -1,7 +1,7 @@
 {
   "issue": 42,
   "label": "chrome-151",
-  "startedAt": "2026-08-28T21:40:13.553Z",
+  "startedAt": "2026-08-28T23:00:45.497Z",
   "secsPerArm": 25,
   "camera": {
     "photoMode": true,
@@ -54,12 +54,12 @@
     "refreshHint": "60Hz-ish (fastest arm p50 16.67ms)"
   },
   "build": {
-    "sha": "08276caece04518cf194668f35ce728cb9117c76",
+    "sha": "737525ceb2870c6635b1d1c682632e87c56be740",
     "dirty": true,
     "commitTime": "2026-08-26T21:13:13-07:00",
     "startedAt": "2026-08-28T20:15:07.983Z",
     "clean": true,
-    "digest": "2947d074a629935f",
+    "digest": "2dca5e7881a5f388",
     "digestOf": "clean checkout (excluding tools/receipts-42)"
   },
   "scene": {
@@ -387,21 +387,21 @@
   "arms": [
     {
       "arm": "full",
-      "frames": 1500,
+      "frames": 1501,
       "p50": 16.67,
       "p95": 16.69,
-      "p99": 16.74,
-      "min": 2.73,
-      "max": 33.31,
+      "p99": 16.72,
+      "min": 12.94,
+      "max": 17.13,
       "mean": 16.67,
       "fpsFromP50": 60.01,
       "over40ms": 0,
       "over100ms": 0,
-      "seconds": 25,
+      "seconds": 25.01,
       "hud": {
         "fps": 60,
         "ms": 16.67,
-        "worst": 16.69499999999971,
+        "worst": 16.685000000004948,
         "doubled": 0,
         "spikes": 0
       },
@@ -435,17 +435,17 @@
       "p50": 16.67,
       "p95": 16.68,
       "p99": 16.69,
-      "min": 3.42,
-      "max": 16.76,
+      "min": 7.17,
+      "max": 16.77,
       "mean": 16.66,
       "fpsFromP50": 60.01,
       "over40ms": 0,
       "over100ms": 0,
-      "seconds": 25,
+      "seconds": 25.01,
       "hud": {
         "fps": 60,
         "ms": 16.67,
-        "worst": 16.69000000000233,
+        "worst": 16.69999999999709,
         "doubled": 0,
         "spikes": 0
       },
@@ -479,8 +479,8 @@
       "p50": 16.67,
       "p95": 16.68,
       "p99": 16.71,
-      "min": 12.29,
-      "max": 16.81,
+      "min": 12.52,
+      "max": 16.9,
       "mean": 16.66,
       "fpsFromP50": 60.01,
       "over40ms": 0,
@@ -489,7 +489,7 @@
       "hud": {
         "fps": 60,
         "ms": 16.67,
-        "worst": 16.705000000001746,
+        "worst": 16.69999999999709,
         "doubled": 0,
         "spikes": 0
       },
@@ -523,11 +523,11 @@
     "messages": []
   },
   "tainted": null,
-  "markdown": "### browserlab receipt — chrome-151\n\n`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36`\n\n| | |\n|---|---|\n| backend | `WebGPUBackend` (isWebGPURenderer true, navigator.gpu true) |\n| adapter | vendor `nvidia` · arch `turing` · device `` · fallback _not exposed_ |\n| pixel ratio | device 1 · renderer 1 · render scale 1 |\n| buffer | 1280×800 (viewport 1280×800) |\n| cadence | 60Hz-ish (fastest arm p50 16.67ms) |\n| cores / memory | 16 / 32GB |\n| quality tier | casters 6 · light slots 8 · emitters auto · grass 1 · detail shed false |\n| scene | 0 people · 5 skinned · 24 entities · 38 textures · 85,910 blades |\n| scene digest | `2e324e3b` · world seq 26 |\n| camera | pos [-0.62, 2.771, -3.987] yaw 3.1416 pitch 0.32 fov 55 |\n| build | server `08276caece04518cf194668f35ce728cb9117c76` (dirty tree) · tree `2947d074a629935f` (clean checkout (excluding tools/receipts-42)) |\n\n**25s per arm, fixed camera, UI hidden.** Frame time in ms — lower is better.\n\n| foliage | p50 | p95 | p99 | max | mean | fps (p50) | >40ms | >100ms | blades | draws/frame |\n|---|---|---|---|---|---|---|---|---|---|---|\n| full | 16.67 | 16.69 | 16.74 | 33.31 | 16.67 | 60.01 | 0 | 0 | 85,910 | 110 |\n| static | 16.67 | 16.68 | 16.69 | 16.76 | 16.66 | 60.01 | 0 | 0 | 85,910 | 110 |\n| off | 16.67 | 16.68 | 16.71 | 16.81 | 16.66 | 60.01 | 0 | 0 | 0 | 67 |\n\nFoliage costs **0ms** at the median and **0.01ms** at p95 from this camera.\n\n_Static arm scope: 3 meadow-owned hooks released and 1 wind amplitudes zeroed; 0 non-meadow hooks (sky, weather, entity emitters) left running — 0 at start._\n\n**Console during the run:** _clean_\n**Context loss:** _none_\n\n> Comparability: this receipt is a browser delta only against another\n> receipt whose scene digest, world seq, camera pose and buffer match.\n> tools/browserlab-compare.mjs checks that before it prints one.",
+  "markdown": "### browserlab receipt — chrome-151\n\n`Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36`\n\n| | |\n|---|---|\n| backend | `WebGPUBackend` (isWebGPURenderer true, navigator.gpu true) |\n| adapter | vendor `nvidia` · arch `turing` · device `` · fallback _not exposed_ |\n| pixel ratio | device 1 · renderer 1 · render scale 1 |\n| buffer | 1280×800 (viewport 1280×800) |\n| cadence | 60Hz-ish (fastest arm p50 16.67ms) |\n| cores / memory | 16 / 32GB |\n| quality tier | casters 6 · light slots 8 · emitters auto · grass 1 · detail shed false |\n| scene | 0 people · 5 skinned · 24 entities · 38 textures · 85,910 blades |\n| scene digest | `2e324e3b` · world seq 26 |\n| camera | pos [-0.62, 2.771, -3.987] yaw 3.1416 pitch 0.32 fov 55 |\n| build | server `737525ceb2870c6635b1d1c682632e87c56be740` (dirty tree) · tree `2dca5e7881a5f388` (clean checkout (excluding tools/receipts-42)) |\n\n**25s per arm, fixed camera, UI hidden.** Frame time in ms — lower is better.\n\n| foliage | p50 | p95 | p99 | max | mean | fps (p50) | >40ms | >100ms | blades | draws/frame |\n|---|---|---|---|---|---|---|---|---|---|---|\n| full | 16.67 | 16.69 | 16.72 | 17.13 | 16.67 | 60.01 | 0 | 0 | 85,910 | 110 |\n| static | 16.67 | 16.68 | 16.69 | 16.77 | 16.66 | 60.01 | 0 | 0 | 85,910 | 110 |\n| off | 16.67 | 16.68 | 16.71 | 16.9 | 16.66 | 60.01 | 0 | 0 | 0 | 67 |\n\nFoliage costs **0ms** at the median and **0.01ms** at p95 from this camera.\n\n_Static arm scope: 3 meadow-owned hooks released and 1 wind amplitudes zeroed; 0 non-meadow hooks (sky, weather, entity emitters) left running — 0 at start._\n\n**Console during the run:** _clean_\n**Context loss:** _none_\n\n> Comparability: this receipt is a browser delta only against another\n> receipt whose scene digest, world seq, camera pose and buffer match.\n> tools/browserlab-compare.mjs checks that before it prints one.",
   "driver": {
     "browserChannel": "chrome",
     "playwrightManagedBuild": false,
-    "url": "http://localhost:8949/?name=viewer&world=browserlab-1su10ixv&key=lab-door",
+    "url": "http://localhost:8949/?name=viewer&world=browserlab-ei4pth6q&key=lab-door",
     "viewport": {
       "width": 1280,
       "height": 800
@@ -545,11 +545,11 @@
       },
       {
         "type": "warning",
-        "text": "[jank] 167ms frame gap during: build grass + glb palm_date_tree_tropical_dese[download] + glb stylized_yucca_joshua_tree_d[download] + glb streetlight_lamp_light_stree[download] + avatar viewer[body] + vrm claude.vrm?v=1786342444754[download]"
+        "text": "[jank] 167ms frame gap during: avatar viewer[body] + vrm claude.vrm?v=1786342444754[download] + build grass + glb palm_date_tree_tropical_dese[download] + glb stylized_yucca_joshua_tree_d[download] + glb streetlight_lamp_light_stree[download]"
       },
       {
         "type": "warning",
-        "text": "[longtask] 142ms during: build grass + glb palm_date_tree_tropical_dese[download] + glb stylized_yucca_joshua_tree_d[download] + glb streetlight_lamp_light_stree[download] + avatar viewer[body] + vrm claude.vrm?v=1786342444754[download]"
+        "text": "[longtask] 144ms during: avatar viewer[body] + vrm claude.vrm?v=1786342444754[download] + build grass + glb palm_date_tree_tropical_dese[download] + glb stylized_yucca_joshua_tree_d[download] + glb streetlight_lamp_light_stree[download]"
       },
       {
         "type": "warning",
@@ -557,15 +557,15 @@
       },
       {
         "type": "warning",
-        "text": "[jank] 400ms frame gap during: build grass + glb palm_date_tree_tropical_dese[queued] + glb stylized_yucca_joshua_tree_d[queued] + glb streetlight_lamp_light_stree[parse] + avatar viewer[body] + vrm claude.vrm?v=1786342444754[skeleton]"
+        "text": "[jank] 400ms frame gap during: avatar viewer[body] + vrm claude.vrm?v=1786342444754[skeleton] + build grass + glb palm_date_tree_tropical_dese[queued] + glb stylized_yucca_joshua_tree_d[queued] + glb streetlight_lamp_light_stree[parse]"
       },
       {
         "type": "log",
-        "text": "[load] vrm claude.vrm?v=1786342444754: download 156ms · parse 42ms · skeleton 366ms · textures 5ms — 570ms over 3 frame(s)"
+        "text": "[load] vrm claude.vrm?v=1786342444754: download 192ms · parse 42ms · skeleton 360ms · textures 5ms — 599ms over 3 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] glb streetlight_lamp_light_stree: download 287ms · parse 299ms · textures 26ms — 613ms over 4 frame(s)"
+        "text": "[load] glb streetlight_lamp_light_stree: download 262ms · parse 317ms · textures 31ms — 610ms over 4 frame(s)"
       },
       {
         "type": "warning",
@@ -573,23 +573,19 @@
       },
       {
         "type": "log",
-        "text": "[load] glb palm_date_tree_tropical_dese: download 328ms · queued 237ms · parse 215ms · textures 30ms — 810ms over 3 frame(s)"
+        "text": "[load] glb palm_date_tree_tropical_dese: download 303ms · queued 255ms · parse 202ms · textures 28ms — 788ms over 3 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] vrma walk: queued 116ms · parse 6ms — 122ms over 1 frame(s)"
+        "text": "[load] glb stylized_yucca_joshua_tree_d: download 392ms · queued 267ms · parse 166ms · textures 30ms — 854ms over 4 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] glb stylized_yucca_joshua_tree_d: download 394ms · queued 269ms · parse 161ms · textures 20ms — 843ms over 4 frame(s)"
+        "text": "[load] compile streetlight_lamp_light_stree: warm 991ms — 991ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] compile streetlight_lamp_light_stree: warm 993ms — 993ms over 1 frame(s)"
-      },
-      {
-        "type": "log",
-        "text": "[load] compile palm_date_tree_tropical_dese: queued 813ms · warm 299ms — 1112ms over 1 frame(s)"
+        "text": "[load] compile palm_date_tree_tropical_dese: queued 831ms · warm 299ms — 1130ms over 1 frame(s)"
       },
       {
         "type": "warning",
@@ -661,15 +657,15 @@
       },
       {
         "type": "log",
-        "text": "[load] avatar viewer: queued 1142ms · warm 1451ms — 2593ms over 1 frame(s)"
+        "text": "[load] avatar viewer: queued 1159ms · warm 1451ms — 2610ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] avatar viewer: body 574ms · clips 240ms · compile 2599ms — 3413ms over 1 frame(s)"
+        "text": "[load] avatar viewer: body 603ms · clips 226ms · compile 2616ms — 3445ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[boot] ready in 3672ms (ready) {engine: 685, connect: 75, body: 3492}"
+        "text": "[boot] ready in 3659ms (ready) {engine: 652, connect: 68, body: 3479}"
       },
       {
         "type": "log",
@@ -681,7 +677,7 @@
       },
       {
         "type": "warning",
-        "text": "[longtask] 319ms during: build grass + compile stylized_yucca_joshua_tree_d[warm] + compile streetlight_lamp_light_stree[queued] + depth lab2[queued] + compile palm_date_tree_tropical_dese[queued] + compile palm_date_tree_tropical_dese[queued] + compile streetlight_lamp_light_stree[queued] + depth lab0[queued]"
+        "text": "[longtask] 312ms during: build grass + compile stylized_yucca_joshua_tree_d[warm] + compile streetlight_lamp_light_stree[queued] + depth lab2[queued] + compile palm_date_tree_tropical_dese[queued] + compile palm_date_tree_tropical_dese[queued] + compile streetlight_lamp_light_stree[queued] + depth lab0[queued]"
       },
       {
         "type": "warning",
@@ -689,91 +685,95 @@
       },
       {
         "type": "log",
-        "text": "[load] compile stylized_yucca_joshua_tree_d: queued 2597ms · warm 635ms — 3232ms over 1 frame(s)"
+        "text": "[load] compile stylized_yucca_joshua_tree_d: queued 2580ms · warm 609ms — 3188ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] compile streetlight_lamp_light_stree: queued 2485ms — 2486ms over 1 frame(s)"
+        "text": "[load] compile streetlight_lamp_light_stree: queued 2451ms · warm 2ms — 2453ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] compile palm_date_tree_tropical_dese: queued 2185ms · warm 2ms — 2187ms over 1 frame(s)"
+        "text": "[load] compile palm_date_tree_tropical_dese: queued 2157ms · warm 3ms — 2159ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] compile palm_date_tree_tropical_dese: queued 2202ms — 2203ms over 1 frame(s)"
+        "text": "[load] compile palm_date_tree_tropical_dese: queued 2169ms — 2170ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] compile streetlight_lamp_light_stree: queued 2218ms — 2219ms over 1 frame(s)"
+        "text": "[load] compile streetlight_lamp_light_stree: queued 2184ms — 2185ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] compile stylized_yucca_joshua_tree_d: queued 99ms · warm 44ms — 143ms over 1 frame(s)"
+        "text": "[load] compile palm_date_tree_tropical_dese: queued 98ms · warm 43ms — 141ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] compile streetlight_lamp_light_stree: queued 128ms · warm 41ms — 169ms over 1 frame(s)"
+        "text": "[load] compile stylized_yucca_joshua_tree_d: queued 170ms — 171ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] depth lab2: queued 2771ms · warm 224ms — 2994ms over 1 frame(s)"
+        "text": "[load] compile streetlight_lamp_light_stree: queued 202ms · warm 2ms — 204ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] depth lab0: queued 2696ms · warm 135ms — 2831ms over 1 frame(s)"
+        "text": "[load] depth lab2: queued 2767ms · warm 229ms — 2997ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] depth lab15: queued 566ms · warm 82ms — 648ms over 1 frame(s)"
+        "text": "[load] depth lab0: queued 2699ms · warm 133ms — 2832ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] depth lab10: queued 652ms · warm 49ms — 701ms over 1 frame(s)"
+        "text": "[load] depth lab15: queued 618ms · warm 92ms — 710ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] depth lab11: queued 743ms · warm 131ms — 873ms over 1 frame(s)"
+        "text": "[load] depth lab10: queued 712ms · warm 43ms — 755ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] depth lab16: queued 915ms · warm 52ms — 968ms over 1 frame(s)"
+        "text": "[load] depth lab11: queued 804ms · warm 129ms — 933ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] depth lab20: queued 1009ms · warm 134ms — 1143ms over 1 frame(s)"
+        "text": "[load] depth lab16: queued 984ms · warm 43ms — 1027ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] depth lab5: queued 1185ms · warm 134ms — 1320ms over 1 frame(s)"
+        "text": "[load] depth lab20: queued 1070ms · warm 136ms — 1207ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] depth lab12: queued 1361ms · warm 88ms — 1449ms over 1 frame(s)"
+        "text": "[load] depth lab5: queued 1249ms · warm 137ms — 1386ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] depth lab6: queued 1452ms · warm 83ms — 1535ms over 1 frame(s)"
+        "text": "[load] depth lab12: queued 1436ms · warm 82ms — 1518ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] depth lab13: queued 1537ms · warm 52ms — 1589ms over 1 frame(s)"
+        "text": "[load] depth lab6: queued 1520ms · warm 89ms — 1609ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] depth lab7: queued 1629ms · warm 42ms — 1671ms over 1 frame(s)"
+        "text": "[load] depth lab7: queued 1612ms · warm 42ms — 1654ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] depth lab1: queued 1720ms · warm 48ms — 1768ms over 1 frame(s)"
+        "text": "[load] depth lab1: queued 1696ms · warm 51ms — 1747ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] depth lab17: queued 1474ms · warm 128ms — 1602ms over 1 frame(s)"
+        "text": "[load] depth lab8: queued 1790ms · warm 143ms — 1932ms over 1 frame(s)"
       },
       {
         "type": "log",
-        "text": "[load] depth lab21: queued 1644ms · warm 90ms — 1735ms over 1 frame(s)"
+        "text": "[load] depth lab17: queued 1626ms · warm 137ms — 1763ms over 1 frame(s)"
+      },
+      {
+        "type": "log",
+        "text": "[load] depth lab21: queued 1810ms · warm 95ms — 1905ms over 1 frame(s)"
       }
     ]
   }

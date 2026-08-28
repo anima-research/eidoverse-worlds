@@ -116,7 +116,7 @@ Paste the block `browserlab` prints. It looks like this:
 | scene | 0 people · 5 skinned · 24 entities · 38 textures · 85,910 blades |
 | scene digest | `2e324e3b` · world seq 26 |
 | camera | pos [-0.62, 2.771, -3.987] yaw 3.1416 pitch 0.32 fov 55 |
-| build | server `08276ca…` · tree `2947d074a629935f` (clean checkout) |
+| build | server `737525c…` · tree `2dca5e7881a5f388` (clean checkout) |
 
 | foliage | p50 | p95 | p99 | max | mean | fps (p50) | >40ms | >100ms | blades | draws/frame |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -170,8 +170,8 @@ an identical 1280×800 buffer and an identical scene (2,725,031 triangles,
   41 skinned VRMs — is not in this specimen at all.
 - **Draws per frame: 110 with the meadow, 67 without**, identical in both
   browsers, from the classified per-frame counter.
-- **Both receipts name their build:** commit `08276ca`, tree digest
-  `2947d074a629935f`, clean checkout excluding the receipts directory. The
+- **Both receipts name their build:** commit `737525c`, tree digest
+  `2dca5e7881a5f388`, clean checkout excluding the receipts directory. The
   server's own `/version` flag counts that directory and so reports "dirty";
   the tree digest is the line to read.
 

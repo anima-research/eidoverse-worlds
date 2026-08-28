@@ -11,7 +11,7 @@
 | ✓ triangles | `2725031` · `2725031` |  |
 | ✓ blades planted | `85910` · `85910` |  |
 | ✓ seconds per arm | `25` · `25` |  |
-| ✓ code under test | `"2947d074a629935f"` · `"2947d074a629935f"` |  |
+| ✓ code under test | `"2dca5e7881a5f388"` · `"2dca5e7881a5f388"` |  |
 
 ### environment
 
@@ -23,11 +23,11 @@
 | navigator.gpu | true | true |
 | devicePixelRatio | 1 | 1 |
 | render scale | 1 | 1 |
-| shadow casters | 6 | 12 |
+| shadow casters | 6 | 6 |
 | cadence | 60Hz-ish (fastest arm p50 16.67ms) | 60Hz-ish (fastest arm p50 16.66ms) |
 | cores / memory | 16 / 32GB | 16 / ? |
 | draws / frame | 110 (per-frame) | 110 (per-frame) |
-| code under test | 08276ca · 2947d074a629935f | 08276ca · 2947d074a629935f |
+| code under test | 737525c · 2dca5e7881a5f388 | 737525c · 2dca5e7881a5f388 |
 
 ### frame time by arm (ms)
 
@@ -35,18 +35,18 @@
 |---|---|---|---|---|
 | full | p50 | 16.67 | 16.66 | -0.01 |
 | full | p95 | 16.69 | 16.68 | -0.01 |
-| full | p99 | 16.74 | 16.68 | -0.06 |
-| full | max | 33.31 | 33.32 | +0.01 |
+| full | p99 | 16.72 | 16.68 | -0.04 |
+| full | max | 17.13 | 33.34 | +16.21 |
 | full | over40ms | 0 | 0 | 0 |
 | static | p50 | 16.67 | 16.66 | -0.01 |
 | static | p95 | 16.68 | 16.68 | 0 |
 | static | p99 | 16.69 | 16.68 | -0.01 |
-| static | max | 16.76 | 16.68 | -0.08 |
+| static | max | 16.77 | 16.68 | -0.09 |
 | static | over40ms | 0 | 0 | 0 |
 | off | p50 | 16.67 | 16.66 | -0.01 |
 | off | p95 | 16.68 | 16.68 | 0 |
 | off | p99 | 16.71 | 16.68 | -0.03 |
-| off | max | 16.81 | 16.68 | -0.13 |
+| off | max | 16.9 | 16.68 | -0.22 |
 | off | over40ms | 0 | 0 | 0 |
 
 chrome-151 — foliage cost: **0ms** p50, **0.01ms** p95
