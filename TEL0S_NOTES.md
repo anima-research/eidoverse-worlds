@@ -390,6 +390,43 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-29 — §24o: THE DOLL BOARD GOES GREEN — the four reds were
+  two bugs and two lying instruments (253bf10).** Ruling from tel0s:
+  fix knee/fold in how the dolls APPLY limits, not in the tuned tables
+  — and the tables indeed needed nothing (shared/joints.js untouched).
+  (1) Knee "hyperextension" (claude_suit 117°, mythos-wings 126°) was
+  the tumble suite's POSITIONAL instrument misreading a legal fetal
+  fold: it compared shin deviation against torso-forward, valid only
+  below 90° of thigh flexion in the measuring frame — hips at their
+  stop plus legal spine curl put the thigh at ~119°, where a legal
+  backward fold reads a forward component of exactly −cos(thigh angle)
+  (predicted 0.49, measured 0.48). Every leg joint sat within 6° of
+  its table the whole time. The instrument now predicts the legal fold
+  direction from the thigh's own swing-from-rest; control with
+  inverted knees fires at 123°. (2) The hand-tuned hip row (flex 90 /
+  ext 8 / twist 0 / z ±13) RESTORED — parked for the wrap-point class,
+  whose fix (range centering) landed months ago with a "put the row
+  back" note nobody collected. (3) The wings 73°-vs-72° crumple was
+  foldOf normalizing mythos-wings' 7.2mm hips→spine bone (the rig
+  authors its real span in upperChest) — direction noise under a
+  millimeter of Bullet linear slack while both spine joints sat at
+  their 10°/20° stops; lower axis now hips→chest, same function for
+  both engines. (4) The wings shove Δx=−0.63 was not direction bias
+  but CHAOS: the verlet's hips-spine-chest FLEX cone read that same
+  7mm link's noise-direction and swung the real spine→chest link in
+  answer, every substep — 65 m/s peak at ground impact on a plain
+  topple (claude_suit 3.8), six seconds of thrash drowning a 2.5 m/s
+  shove. FLEX rows whose rest link is under 3cm are skipped at build.
+  Peak 65.6→3.3, settle 257→125 steps, shove lands +0.14 the way
+  pushed. BOARD: ragdoll 59/0, ammodoll 68/0 — first fully green doll
+  board this arc. Gates: settled-pose 19/19, reach/reachrig/reachwire,
+  paritybench, lightbench 30/30. THE PRE-UPSTREAM-MERGE DOLL BLOCKER
+  IS CLEARED (the fleet is still the local 2-rig overlay — worth one
+  run on prod's 14 before the colleagues' merge). LESSON, twice in one
+  day: a rig that authors a 7mm bone breaks any instrument or
+  constraint that treats segment direction as free — length-floor
+  every direction read. R3 extraction is now unblocked.
+
 - **2026-08-28 — §24n: THE CATCH-UP MERGE — 283 upstream commits, the
   refactor holds.** anima/main (the live org line; the SkyeShark
   `upstream` remote is stale — new fetch-only remote `anima`, push
