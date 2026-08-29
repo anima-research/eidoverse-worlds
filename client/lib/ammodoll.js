@@ -1,9 +1,8 @@
 // ammodoll — the Bullet body engine, ported from socketteer/ragdoll-physics.
-// Same interface as Ragdoll — THE engine contract lives here now (inherited
-// from the retired rapierdoll, whose laws this file credits throughout):
-// constructor(avatar, lean, rest, seedVel), step(dt) → sparse local-quat pose
-// (and it drives the avatar directly), impulse(v), setPin(joint, target)/
-// setPin(null), .pins/.pinned/.done/.finalPose/.p/.maxV, snapshot(), dispose().
+// Same interface as Ragdoll — THE engine contract is stated on
+// BodyEngineBase (bodyengine.js), which both engines extend; the shared
+// measurement/format truths live in rigmeasure.js. The rapierdoll laws this
+// file credits throughout are the retired third engine's.
 //
 // What this engine IS: Janus's measured rig, retargeted. ragdoll-physics
 // derived its joint-limit tables, finger springs, tendon coupling and grab
@@ -68,7 +67,9 @@
 
 import { THREE } from './core.js';
 import { heightAt } from './terrain.js';
-import { colliders } from './colliders.js';
+import { nearColliders } from './colliders.js';
+import { SEGMENTS, segDistance, rigFrameOf, snapshotPacker, seedJoints } from './rigmeasure.js';
+import { BodyEngineBase } from './bodyengine.js';
 
 let AMMO = null;
 let ammoLoading = null;
@@ -398,18 +399,12 @@ export const JOINT_SPECS = {
   thumb: { ref: 'pinky', flex: 55, ext: 10, want: 'pinky', twist: 12, z: [-25, 25] },
 };
 
-// The body cut. Core mirrors rapierdoll's SEGMENTS (the torso rows share one
-// rigid body); hands and feet are the source's additions, and the fingers ride
-// on the hands. `tip` marks endpoints that may need extrapolating on rigs
-// whose VRM lacks the child bone.
+// The body cut is rigmeasure.js's SEGMENTS — one table for both engines (it
+// was byte-identical here and in ragdoll.js). This engine's additions ride
+// beside it: the torso rows share rigid bodies (TORSO_KEYS), hands and feet
+// are the source's extra segments, and the fingers ride on the hands.
 const TORSO_KEYS = new Set(['hips|spine', 'spine|chest', 'chest|neck']);
-const CORE_SEGMENTS = [
-  ['hips', 'spine'], ['spine', 'chest'], ['chest', 'neck'], ['neck', 'head'],
-  ['leftUpperArm', 'leftLowerArm'], ['leftLowerArm', 'leftHand'],
-  ['rightUpperArm', 'rightLowerArm'], ['rightLowerArm', 'rightHand'],
-  ['leftUpperLeg', 'leftLowerLeg'], ['leftLowerLeg', 'leftFoot'],
-  ['rightUpperLeg', 'rightLowerLeg'], ['rightLowerLeg', 'rightFoot'],
-];
+const CORE_SEGMENTS = SEGMENTS;
 const EXTRA_SEGMENTS = [
   { a: 'leftHand', b: 'leftMiddleProximal', part: 'hand' },
   { a: 'rightHand', b: 'rightMiddleProximal', part: 'hand' },
@@ -614,20 +609,13 @@ function shortestArc(from, to, out = new THREE.Quaternion()) {
   return out.normalize();
 }
 
-export class AmmoRagdoll {
+export class AmmoRagdoll extends BodyEngineBase {
   constructor(avatar, lean = null, rest = null, seedVel = null) {
+    super(avatar);                  // lifecycle fields — see bodyengine.js
     if (!AMMO) throw new Error('ammodoll: wasm not ready — ensureAmmo() first');
-    this.avatar = avatar;
-    this.done = false;
-    this.pose = null;
-    this.finalPose = null;
     this.pins = new Map();          // joint -> THREE.Vector3 (world) — bodydrag reads this
     this._pinCons = new Map();      // joint -> { con, body }
-    this.settledFor = 0;
-    this.elapsed = 0;
-    this.maxV = Infinity;
     this.maxW = Infinity;
-    this.p = {};                    // joint -> world pos (debug + parity surface)
     this._refs = [];                // every wasm object we own, freed in dispose()
     const keep = (o) => { this._refs.push(o); return o; };
 
@@ -659,11 +647,9 @@ export class AmmoRagdoll {
     }
     const seedV = {};
     if (seedVel?.j) {
-      const { j: names, p: pos, v: vel, dy = 0 } = seedVel;
-      for (let i = 0; i < names.length; i++) {
-        const n = names[i], k = i * 3;
-        if (live[n]) live[n].set(pos[k], pos[k + 1] + dy, pos[k + 2]);
-        seedV[n] = new THREE.Vector3(vel[k], vel[k + 1], vel[k + 2]);
+      for (const s of seedJoints(seedVel)) {
+        if (live[s.name]) live[s.name].set(s.px, s.py, s.pz);
+        seedV[s.name] = new THREE.Vector3(s.vx, s.vy, s.vz);
       }
     } else if (seedVel) {
       for (const j of Object.keys(live)) {
@@ -694,18 +680,8 @@ export class AmmoRagdoll {
     this.restP = restP;
 
     // ---- rig frame + scale --------------------------------------------------
-    const rigUp = (restP.neck ?? restP.chest ?? restP.spine ?? restP.head)
-      ?.clone().sub(restP.hips ?? new THREE.Vector3()).normalize() ?? new THREE.Vector3(0, 1, 0);
-    let rigLat = restP.leftUpperArm && restP.rightUpperArm
-      ? restP.leftUpperArm.clone().sub(restP.rightUpperArm)
-      : (restP.leftUpperLeg && restP.rightUpperLeg
-        ? restP.leftUpperLeg.clone().sub(restP.rightUpperLeg)
-        : new THREE.Vector3(1, 0, 0));
-    rigLat.addScaledVector(rigUp, -rigLat.dot(rigUp));
-    if (rigLat.lengthSq() < 1e-9) rigLat.set(1, 0, 0);
-    rigLat.normalize();
-    const rigFwd = new THREE.Vector3().crossVectors(rigLat, rigUp).normalize();
-    this.rig = { up: rigUp, lateral: rigLat, forward: rigFwd };
+    this.rig = rigFrameOf(restP);   // measured, one derivation — rigmeasure.js
+    const rigUp = this.rig.up, rigLat = this.rig.lateral, rigFwd = this.rig.forward;
     // VRM binds a T-pose with the palms DOWN, and rest here IS the bind pose
     // (restBonePositions zeroes every humanoid rotation) — so the palm normal
     // is the rig's down, and finger flexion curls toward it
@@ -820,7 +796,11 @@ export class AmmoRagdoll {
         }
       }
     }
-    for (const [, c] of colliders) {
+    // The spatial hash answers "what is near the fall", never the whole map —
+    // rapierdoll carried a grid-bounded query for exactly this and the port
+    // originally regressed it to a full scan of `colliders` with a distance
+    // filter; nearColliders is that service query, promoted (§14.2 6a).
+    for (const [, c] of nearColliders(hips.x, hips.z, 8)) {
       const obj = c.obj;
       if (!obj || c.interior || !c.box) continue;
       if (Math.hypot(obj.position.x - hips.x, obj.position.z - hips.z) > 8) continue;
@@ -1087,26 +1067,8 @@ export class AmmoRagdoll {
     // the only per-pair lever, and it freezes at addRigidBody — everything is
     // computed before the bodies enter the world.
     {
-      const segd = (p1, q1, p2, q2) => {
-        const d1 = q1.clone().sub(p1), d2 = q2.clone().sub(p2), rr = p1.clone().sub(p2);
-        const A = d1.dot(d1), E = d2.dot(d2), F = d2.dot(rr);
-        let s3 = 0, t3 = 0;
-        if (A > 1e-9 || E > 1e-9) {
-          if (A < 1e-9) { t3 = Math.min(1, Math.max(0, F / E)); }
-          else {
-            const C = d1.dot(rr);
-            if (E < 1e-9) s3 = Math.min(1, Math.max(0, -C / A));
-            else {
-              const B = d1.dot(d2), den = A * E - B * B;
-              s3 = den > 1e-9 ? Math.min(1, Math.max(0, (B * F - C * E) / den)) : 0;
-              t3 = (B * s3 + F) / E;
-              if (t3 < 0) { t3 = 0; s3 = Math.min(1, Math.max(0, -C / A)); }
-              else if (t3 > 1) { t3 = 1; s3 = Math.min(1, Math.max(0, (B - C) / A)); }
-            }
-          }
-        }
-        return p1.clone().addScaledVector(d1, s3).sub(p2.clone().addScaledVector(d2, t3)).length();
-      };
+      // segment-vs-segment distance is rigmeasure.js's (it was this file's
+      // second, differently-spelled copy of the verlet's closestParams)
       const segList = [...this.segs.values()];
       const adjacent = (x, y) => x.body === y.body
         || x.a === y.a || x.a === y.b || x.b === y.a || x.b === y.b;
@@ -1123,7 +1085,7 @@ export class AmmoRagdoll {
           if (adjacent(A2, B2)) { exclude(A2.body, B2.body); continue; }
           // deep at rest = buried, pumps contact energy every frame; grazing
           // is fine (rapierdoll's threshold)
-          if (segd(A2.restA, A2.restB, B2.restA, B2.restB) < (A2.r + B2.r) * 1.05) {
+          if (segDistance(A2.restA, A2.restB, B2.restA, B2.restB) < (A2.r + B2.r) * 1.05) {
             exclude(A2.body, B2.body);
           }
         }
@@ -2139,12 +2101,9 @@ export class AmmoRagdoll {
     }
   }
 
-  impulse(v) {
-    if (this.done) return;
-    this._topple(v);
-    this.settledFor = 0;
-    this.elapsed = 0;
-  }
+  // impulse lives on BodyEngineBase — the cap (also applied in _topple above,
+  // which the constructor's lean rides through), the topple application and
+  // the clock restarts are the shared law.
 
   /** `firm` distinguishes a NAIL from a HAND. The source has two settings and
    *  ammodoll shipped only the nail's: a drag calls setPin on every mousemove,
@@ -2197,15 +2156,15 @@ export class AmmoRagdoll {
     for (const body of this._bodies) body.activate();
   }
 
-  get pinned() { return this.pins.size > 0; }
-
-  /** Drag-release handover, the house packed format: joint names + positions
-   *  + endpoint velocities (v + ω × r from the centre of mass). */
+  /** Drag-release handover, the house packed format (rigmeasure.js's
+   *  snapshotPacker — the parse on the far side may be the verlet's): joint
+   *  names + positions + endpoint velocities (v + ω × r from the centre of
+   *  mass). */
   snapshot() {
     // {j:[],p:[],v:[]} would be TRUTHY on `seedVel?.j` — say nothing instead
     if (this._freed) return null;
     this._syncP();
-    const j = [], p = [], v = [];
+    const pack = snapshotPacker();
     const seen = new Set();
     for (const s of this.segs.values()) {
       if (s.finger) continue;          // the wire carries the core skeleton
@@ -2215,14 +2174,12 @@ export class AmmoRagdoll {
         if (seen.has(name) || !this.p[name]) continue;
         seen.add(name);
         const q2 = this.p[name];
-        j.push(name);
-        p.push(+q2.x.toFixed(4), +q2.y.toFixed(4), +q2.z.toFixed(4));
         _a.set(q2.x - t.x(), q2.y - t.y(), q2.z - t.z());
         _b.set(av.x(), av.y(), av.z()).cross(_a).add(_v.set(lv.x(), lv.y(), lv.z()));
-        v.push(+_b.x.toFixed(3), +_b.y.toFixed(3), +_b.z.toFixed(3));
+        pack.add(name, q2, _b);
       }
     }
-    return { j, p, v };
+    return pack.pack();
   }
 
   _syncP() {
@@ -2286,22 +2243,14 @@ export class AmmoRagdoll {
     this.maxV = maxSpeed;
     this.maxW = maxSpin;
 
-    this.elapsed += dt;
-    if (this.pinned) { this.settledFor = 0; this.elapsed = 0; }
-    if (this.maxV < SETTLE_V && this.maxW < SETTLE_W) this.settledFor += dt;
-    else this.settledFor = 0;
+    // the clock law is the base's; this engine's quiet test is linear AND
+    // angular, and any noise cancels (no hysteresis band — Bullet's velocities
+    // are the solver's own, not a positional estimate that flickers)
+    this._settleTick(dt, this.maxV < SETTLE_V && this.maxW < SETTLE_W);
 
     this._syncP();
 
-    // root follows the hips; the falling-only ceiling lifts while pinned
-    const hips = this.p.hips;
-    if (hips) {
-      this.avatar.root.position.x = hips.x;
-      this.avatar.root.position.z = hips.z;
-      const y = hips.y - this.hipsOffset;
-      if (this.pinned && y > this.rootStartY) this.rootStartY = y;
-      this.avatar.root.position.y = Math.min(this.rootStartY, y);
-    }
+    this._followRoot();   // the body lies where it fell — see bodyengine.js
 
     // bones: rest direction → live direction, world-reference, parents first
     // (drive is in construction order: torso out to fingertips). The node's
