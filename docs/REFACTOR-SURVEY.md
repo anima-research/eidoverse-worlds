@@ -44,6 +44,25 @@ extraction (`rigmeasure.js` + `BodyEngineBase`), the engine-seam test
 through `makeRagdoll`, and recovering the grid-bounded collider query
 from retired rapierdoll into the survivors.
 
+**R3 is DONE** (453aaf2): `client/lib/rigmeasure.js` holds the truths
+the two surviving engines must agree on — the 12-pair body cut (was
+byte-identical as CHAINS/CORE_SEGMENTS), closestParams/segDistance (was
+re-spelled inline as ammodoll's segd), rigFrameOf, and the {j,p,v,dy}
+handover format packed and parsed ONCE (a wire surface: a verlet seeds a
+bullet rig across machines). `client/lib/bodyengine.js` is
+BodyEngineBase — the engine contract stated once, plus the shared
+lifecycle law (impulse cap+topple+clock restart, the settle clock,
+root-follows-hips; thresholds stay engine-tuned). The verlet now calls
+shared/joints.js `torsoRadius` instead of mirroring it. The rapierdoll
+recovery landed as `nearColliders` in ammodoll's static build (no more
+full-map scan). `tools/bodysim-test.ts` (20 checks) covers the
+engine-selection seam for the first time — dropped-seedVel is now a
+failing test, not an incident. The 236-line harness duplication is down
+to 27 incidental scaffolding lines (rig-load.mjs absorbed the rest);
+extracting those was SKIPPED — generic boilerplate, not mirrored truth.
+Boards unchanged through the whole extraction: ragdoll 59/0, ammodoll
+68/0.
+
 ## The verdict
 
 The hypothesis was right, with a sharper shape than expected. The core —

@@ -390,6 +390,42 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-29 — §24p: R3 — the dolls share a spine (453aaf2).** The
+  survey planned R3 against three engines; rapierdoll's retirement and
+  upstream's shared/joints+humanoid shrank the honest remainder, and
+  this is it. NEW client/lib/rigmeasure.js: the truths the two
+  survivors must AGREE on, one copy each — the 12-pair body cut
+  (byte-identical as CHAINS/CORE_SEGMENTS until now; JOINTS +
+  DRIVEN_BONES derive, re-exported from ragdoll.js for avatar/bodydrag),
+  closestParams + segDistance (ammodoll had re-spelled the solve inline
+  as segd), rigFrameOf, and the {j,p,v,dy} HANDOVER FORMAT packed and
+  parsed once — that one is a wire surface (a verlet on one machine
+  seeds a bullet rig on another; four spellings before). NEW
+  client/lib/bodyengine.js: BodyEngineBase, the engine contract stated
+  where both engines stand on it — lifecycle fields, .pinned, the
+  impulse law (cap 8 + _topple + clock restart), the settle CLOCK law
+  (pinned resets, quiet accumulates, cancel clears; thresholds stay
+  engine-tuned — the verlet keeps its hysteresis band, the bullet its
+  linear+angular quiet), root-follows-hips. The verlet stops mirroring
+  shared/joints.js torsoRadius (calls it now — the comment there had
+  promised "the same derivation the ragdoll uses"). RAPIERDOLL
+  RECOVERY: ammodoll's static build asks nearColliders (the §14.2
+  service query) instead of scanning the whole colliders map. NEW
+  tools/bodysim-test.ts, 20 checks: the makeRagdoll seam had ZERO
+  coverage (how dropped-seedVel lived a month) — now asserted: verlet
+  floor while wasm warms, loaded engine answers, stored choice,
+  unknown-name fallback, interface parity, single ownership of the
+  shared spine, and a handover snapshot with hips 0.5m from the bones
+  reaching BOTH engines through the door. Harness dedupe SKIPPED: the
+  236 identical lines are down to 27 of generic scaffolding (rig-load
+  absorbed the truth); boilerplate is not a mirror. Boards unchanged
+  through the whole extraction: ragdoll 59/0, ammodoll 68/0. Gates:
+  bodysim 20/0, settled-pose 19/19, reach/reachrig/reachwire,
+  paritybench, lightbench 30/30, bootjank clean. KNOWN-RED (pre-
+  existing at HEAD, upstream's): avatar-test — their reach integration
+  calls _reachOwned on the test stand-in avatar, which lacks it; add to
+  the flag-to-upstream list. R4 remains; §C colleague calls unchanged.
+
 - **2026-08-29 — §24o: THE DOLL BOARD GOES GREEN — the four reds were
   two bugs and two lying instruments (253bf10).** Ruling from tel0s:
   fix knee/fold in how the dolls APPLY limits, not in the tuned tables
