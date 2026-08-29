@@ -1,0 +1,25 @@
+{
+  "doc": "The 🌿 ground panel's vocabulary — authoring conveniences only: every option is applied as a concrete terrain/grass verb on a deliberate click, so the log never stores one of these names and logged meaning never depends on this file. `tints` pair a terrain layer colour with the seasonal recolor each blade species takes (the two grass keys differ because the sheets are authored in different hues — the meadow sheet is already green so it keeps its own art (null), while bunch grass ships a straw recolor and only the `green` recolor brings it back). `shapes` are terrain amplitudes; `grassHeight` doubles as the wind response (lawns are stiff, tallgrass sways); `grassDensity` is kept modest — blades are fill-rate. A planting is one bag on the singleton grass verb; `blade: true` plantings take the height dial and a tint colour (the `tint` key names which column of the tint row applies).",
+  "tints": {
+    "meadow": { "layer": "#4a5d33", "grass": null,         "tufts": "green" },
+    "arid":   { "layer": "#7a6b48", "grass": "straw",      "tufts": "straw" },
+    "tundra": { "layer": "#5a6b6b", "grass": "gray-green", "tufts": "gray-green" }
+  },
+  "shapes": { "flat": 0.2, "hills": 2.6, "rugged": 6.0 },
+  "grassHeight": { "lawn": 0.15, "meadow": 0.42, "tall": 0.7 },
+  "grassDensity": { "sparse": 0.5, "normal": 1, "lush": 1.4 },
+  "plantings": {
+    "meadow": { "blade": true, "tint": "grass",
+      "args": { "species": "grass", "width": 90, "depth": 80, "center": [0, 0] } },
+    "tufts": { "blade": true, "tint": "tufts",
+      "args": { "species": "galleta_dry", "width": 80, "depth": 70, "center": [0, 0] } },
+    "mojave desert": {
+      "args": { "preset": "mojave", "width": 90, "depth": 80, "center": [0, 0] } },
+    "corn field": {
+      "args": { "species": "corn", "width": 40, "depth": 30, "center": [0, 0],
+        "rows": { "spacing": 0.9, "plant": 0.26 }, "corn": { "peelChance": 0.25 } } },
+    "sunflower field": {
+      "args": { "species": "sunflower", "width": 34, "depth": 26, "center": [0, 0],
+        "rows": { "spacing": 0.85, "plant": 0.5 } } }
+  }
+}

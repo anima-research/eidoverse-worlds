@@ -16,6 +16,7 @@ import { validateAvatarDef } from "../shared/avatardefs.js";
 import { validateAnimationDef, validateEmotes } from "../shared/animdefs.js";
 import { validateSkyPresets } from "../shared/skydefs.js";
 import { validateStructurePalette } from "../shared/structdefs.js";
+import { validateGroundPalette } from "../shared/grounddefs.js";
 
 // Scratch sequencers point this elsewhere, same pattern as WORLDS_DIR.
 export const DEFS_DIR = resolve(process.env.DEFS_DIR ?? join(ROOT, "defs"));
@@ -74,6 +75,7 @@ function registry() {
     emotes: loadSidecar("animations/_emotes.json", validateEmotes),
     skyPresets: loadSidecar("sky/_presets.json", validateSkyPresets),
     structurePalette: loadSidecar("structure/_palette.json", validateStructurePalette),
+    groundPalette: loadSidecar("ground/_palette.json", validateGroundPalette),
   };
   const json = JSON.stringify(reg);
   if (!cached || cached.json !== json) {

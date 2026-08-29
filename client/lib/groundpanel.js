@@ -4,112 +4,113 @@
 // person to grow either. These are AUTHORED (they persist and fold), so —
 // unlike the sky tuner's live sliders — each is a deliberate commit on a
 // click, which is also why they don't spam the log.
+//
+// The vocabulary itself — tints, shapes, the grass dials, what "grow" can
+// plant — is a DEF now (defs/ground/_palette.json, §R4 defs round two), on
+// the sky-presets law: the panel applies a choice as concrete verb args, so
+// the log never stores a palette name and logged meaning never depends on
+// the def file. SINGLE-SOURCE posture: no hardcoded fallback vocabulary —
+// a fallback would be the mirror this extraction exists to kill, so a world
+// serving no palette gets a panel that says so.
 
+import { bus, report } from './core.js';
+import { defsRegistry } from './defs.js';
 import { sendVerb } from './net.js';
 import { flashHint } from './ui.js';
 import { selectRow, btn, btnRow } from './rows.js';
 
-// A tint is a ground palette: the terrain layer colour, plus the createFlora
-// seasonal colour each blade species takes (GRASS_COLORS name). The two grass
-// keys differ because the sheets are authored in different hues — the meadow
-// sheet is already green so it keeps its own art (null), while bunch grass
-// ships a straw recolor and can only be brought back to green by the `green`
-// recolor (a multiplier cannot survive a species' own recolor).
-const GROUND_TINTS = {
-  meadow: { layer: '#4a5d33', grass: null,          tufts: 'green' },
-  arid:   { layer: '#7a6b48', grass: 'straw',       tufts: 'straw' },
-  tundra: { layer: '#5a6b6b', grass: 'gray-green',  tufts: 'gray-green' },
-};
-const TERRAIN_SHAPES = { flat: 0.2, hills: 2.6, rugged: 6.0 };
-// blade length drives the wind response too (lawns are stiff, tallgrass sways)
-const GRASS_HEIGHT = { lawn: 0.15, meadow: 0.42, tall: 0.7 };
-const GRASS_DENSITY = {
-  sparse: 0.5,
-  normal: 1,
-  lush:   1.4,   // kept modest — blades are fill-rate
-};
+// panel state, OUTSIDE the paint: a defs push repaints the rows and must not
+// forget what the author had dialed in
+const st = { tint: null, shape: null, seed: 7, density: null, grass: false, plant: null, height: null };
 
 export function paintGround(body) {
   if (body.dataset.init) return;
   body.dataset.init = '1';
-  body.innerHTML = '';
-  const st = { tint: 'meadow', shape: 'hills', seed: 7, density: 'normal', grass: false, plant: 'meadow', height: 'meadow' };
+  const paint = (reg) => {
+    body.innerHTML = '';
+    const pal = reg.groundPalette;
+    if (!pal?.tints || !pal.shapes || !pal.plantings) {
+      body.innerHTML = '<div style="color:var(--dim);font-size:11px">this world serves no ground palette (defs/ground/_palette.json)</div>';
+      return;
+    }
+    const first = (o) => Object.keys(o)[0];
+    // carry the author's dials across a defs push; fall back when an edit
+    // removed the very option they had selected
+    if (!pal.tints[st.tint]) st.tint = pal.tints.meadow ? 'meadow' : first(pal.tints);
+    if (pal.shapes[st.shape] == null) st.shape = pal.shapes.hills != null ? 'hills' : first(pal.shapes);
+    if (pal.grassHeight[st.height] == null) st.height = pal.grassHeight.meadow != null ? 'meadow' : first(pal.grassHeight);
+    if (pal.grassDensity[st.density] == null) st.density = pal.grassDensity.normal != null ? 'normal' : first(pal.grassDensity);
+    if (!pal.plantings[st.plant]) st.plant = pal.plantings.meadow ? 'meadow' : first(pal.plantings);
 
-  const growTerrain = () => sendVerb('terrain', {
-    seed: st.seed, size: 160, segments: 200, amplitude: TERRAIN_SHAPES[st.shape], flatRadius: 16,
-    layers: [{ color: GROUND_TINTS[st.tint].layer, repeat: 16 }],
-  });
-  // what "grow" plants — every option is one bag on the singleton grass verb
-  const PLANTINGS = {
-    meadow: () => {
-      const args = { species: 'grass', width: 90, depth: 80, center: [0, 0],
-        height: GRASS_HEIGHT[st.height] };
-      if (GROUND_TINTS[st.tint].grass) args.color = GROUND_TINTS[st.tint].grass;
-      return args;
-    },
-    tufts: () => {
-      // bunch grass — a blade grass like the meadow, so it takes the same
-      // length and seasonal-colour dials
-      const args = { species: 'galleta_dry', width: 80, depth: 70, center: [0, 0],
-        height: GRASS_HEIGHT[st.height] };
-      if (GROUND_TINTS[st.tint].tufts) args.color = GROUND_TINTS[st.tint].tufts;
-      return args;
-    },
-    'mojave desert': () => ({ preset: 'mojave', width: 90, depth: 80, center: [0, 0] }),
-    'corn field': () => ({ species: 'corn', width: 40, depth: 30, center: [0, 0],
-      rows: { spacing: 0.9, plant: 0.26 }, corn: { peelChance: 0.25 } }),
-    'sunflower field': () => ({ species: 'sunflower', width: 34, depth: 26, center: [0, 0],
-      rows: { spacing: 0.85, plant: 0.5 } }),
-  };
-  const growGrass = () => {
-    st.grass = true;
-    sendVerb('grass', { ...PLANTINGS[st.plant](), density: GRASS_DENSITY[st.density] });
-  };
+    const growTerrain = () => sendVerb('terrain', {
+      seed: st.seed, size: 160, segments: 200, amplitude: pal.shapes[st.shape], flatRadius: 16,
+      layers: [{ color: pal.tints[st.tint].layer, repeat: 16 }],
+    });
+    // what "grow" plants — every option is one bag on the singleton grass
+    // verb, straight from the def; blade plantings take the height dial and
+    // the tint row's colour column
+    const growGrass = () => {
+      st.grass = true;
+      const p = pal.plantings[st.plant];
+      const args = structuredClone(p.args);
+      if (p.blade) {
+        args.height = pal.grassHeight[st.height];
+        const color = pal.tints[st.tint][p.tint];
+        if (color) args.color = color;
+      }
+      sendVerb('grass', { ...args, density: pal.grassDensity[st.density] });
+    };
+    const isBlade = () => !!pal.plantings[st.plant]?.blade;
 
-  // terrain shape
-  body.appendChild(btnRow(...Object.keys(TERRAIN_SHAPES).map((k) =>
-    btn(k, () => { st.shape = k; growTerrain(); flashHint(`terrain: ${k}`); }))));
-  body.appendChild(btnRow(btn('↻ reshuffle', () => { st.seed = Math.floor(Math.random() * 9999); growTerrain(); })));
+    // terrain shape
+    body.appendChild(btnRow(...Object.keys(pal.shapes).map((k) =>
+      btn(k, () => { st.shape = k; growTerrain(); flashHint(`terrain: ${k}`); }))));
+    body.appendChild(btnRow(btn('↻ reshuffle', () => { st.seed = Math.floor(Math.random() * 9999); growTerrain(); })));
 
-  // what to plant
-  const plant = selectRow('plant', Object.keys(PLANTINGS), st.plant, (v) => {
-    st.plant = v;
+    // what to plant
+    const plant = selectRow('plant', Object.keys(pal.plantings), st.plant, (v) => {
+      st.plant = v;
+      syncPlantControls();
+      if (st.grass) growGrass();
+    });
+    body.appendChild(plant.row);
+
+    // blade length — a BLADE-grass control. Structural species (shrubs,
+    // yucca, corn) carry their own size, and the engine ignores `height` for
+    // them, so the row hides rather than sitting there as a dial that does
+    // nothing.
+    const h = selectRow('height', Object.keys(pal.grassHeight), st.height, (v) => {
+      st.height = v;
+      if (st.grass && isBlade()) growGrass();
+    });
+    body.appendChild(h.row);
     syncPlantControls();
-    if (st.grass) growGrass();
-  });
-  body.appendChild(plant.row);
 
-  // blade length — a BLADE-grass control. Structural species (shrubs, yucca,
-  // corn) carry their own size, and the engine ignores `height` for them, so
-  // the row hides rather than sitting there as a dial that does nothing.
-  const BLADE_PLANTINGS = new Set(['meadow', 'tufts']);
-  const h = selectRow('height', Object.keys(GRASS_HEIGHT), st.height, (v) => {
-    st.height = v;
-    if (st.grass && BLADE_PLANTINGS.has(st.plant)) growGrass();
-  });
-  body.appendChild(h.row);
-  syncPlantControls();
+    function syncPlantControls() {
+      h.row.style.display = isBlade() ? '' : 'none';
+    }
 
-  function syncPlantControls() {
-    h.row.style.display = BLADE_PLANTINGS.has(st.plant) ? '' : 'none';
-  }
+    // grass
+    const dens = selectRow('grass', Object.keys(pal.grassDensity), st.density, (v) => {
+      st.density = v;
+      if (st.grass) growGrass();
+    });
+    body.appendChild(dens.row);
+    body.appendChild(btnRow(
+      btn('🌱 grow', () => { growGrass(); flashHint(`${st.plant} growing`); }),
+      btn('mow', () => { st.grass = false; sendVerb('grass', { clear: true }); flashHint('field cleared'); }),
+    ));
 
-  // grass
-  const dens = selectRow('grass', Object.keys(GRASS_DENSITY), st.density, (v) => {
-    st.density = v;
-    if (st.grass) growGrass();
-  });
-  body.appendChild(dens.row);
-  body.appendChild(btnRow(
-    btn('🌱 grow', () => { growGrass(); flashHint(`${st.plant} growing`); }),
-    btn('mow', () => { st.grass = false; sendVerb('grass', { clear: true }); flashHint('field cleared'); }),
-  ));
+    // tint drives both terrain layer and grass colour
+    const tint = selectRow('tint', Object.keys(pal.tints), st.tint, (v) => {
+      st.tint = v;
+      growTerrain();
+      if (st.grass) growGrass();
+    });
+    body.appendChild(tint.row);
+  };
 
-  // tint drives both terrain layer and grass colour
-  const tint = selectRow('tint', Object.keys(GROUND_TINTS), st.tint, (v) => {
-    st.tint = v;
-    growTerrain();
-    if (st.grass) growGrass();
-  });
-  body.appendChild(tint.row);
+  const fill = () => defsRegistry().then(paint).catch((e) => report('ground palette', e));
+  fill();
+  bus.on('defs-updated', fill);
 }
