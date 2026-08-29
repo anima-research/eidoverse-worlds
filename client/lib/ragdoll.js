@@ -452,9 +452,23 @@ export class Ragdoll {
       out.set(world.dot(r0), world.dot(u0), world.dot(f0));
 
     // ---- FLEX: symmetric cones between adjacent links, off the rest angle
+    //
+    // A link only has a DIRECTION if it has a LENGTH. mythos-wings authors its
+    // spine 7.2mm above its hips (the real span is in upperChest), so the
+    // hips→spine link's direction is noise — a millimeter of solver jitter
+    // reads as ~8° of flexion — and this constraint answered the noise by
+    // swinging the real spine→chest link, every substep, in whatever direction
+    // the jitter pointed. Measured: 65 m/s peak particle velocity at ground
+    // impact on a plain topple (claude_suit: 3.8), a six-second thrash that
+    // drowned the shove test's 2.5 m/s signal entirely. A row whose rest link
+    // cannot carry a direction is skipped; the next row's longer links keep
+    // bounding the trunk, and CONE/BEHIND/HINGE never read torso micro-links.
     this.flex = [];
+    const FLEX_MIN_LINK = 0.03;
     for (const [a, b, c, max] of FLEX) {
       if (!this.rest[a] || !this.rest[b] || !this.rest[c]) continue;
+      if (this.rest[b].distanceTo(this.rest[a]) < FLEX_MIN_LINK
+        || this.rest[c].distanceTo(this.rest[b]) < FLEX_MIN_LINK) continue;
       _a.copy(this.rest[b]).sub(this.rest[a]).normalize();
       _b.copy(this.rest[c]).sub(this.rest[b]).normalize();
       const at = Math.acos(THREE.MathUtils.clamp(_a.dot(_b), -1, 1));

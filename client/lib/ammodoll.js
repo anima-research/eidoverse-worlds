@@ -374,24 +374,23 @@ export const JOINT_SPECS = {
   upperArm: { ref: 'fwd', x: [-85, 85], twist: 56, z: [-85, 85] },
   lowerArm: { ref: 'fwd', flex: 145, ext: 2, want: 'fwd', twist: 5, z: [-5, 5] },
   hand: { ref: 'palm', flex: 45, ext: 45, want: 'palm', twist: 8, z: [-15, 15] },
-  // THE ONE ROW NOT AS TUNED. The hand-tuned hip was flex 90 / ext 8 /
-  // twist 0 / z ±13, and it looks better in the world — but narrowing the hip
-  // that far makes the KNEE fold backwards: 125 degrees of "hyperextension" on
-  // all three rigs, which tools/ammodoll-test.ts catches and which is the same
-  // thing as "a joint gets twisted and then is stuck like that".
-  //
-  // It is not the knee bending too far. The magnitude tracks the knee's own
-  // flexion limit exactly (flex 123 -> 125 deg, flex 145 -> 146 deg): the knee
-  // is sitting AT its legal limit, measured on the wrong side of Bullet's
-  // angular wrap, and it stays there. A hip that cannot rotate about the leg's
-  // axis has to send that rotation somewhere and the knee is next in the chain.
-  // Measured: restoring ext alone leaves 48-83 deg, twist alone 77 deg on two
-  // rigs; only all three together come back clean.
-  //
-  // The real fix is upstream of any of these numbers — build the constraint
-  // frames at the pose like the source rig does, so joints operate near zero
-  // where no wrap point is reachable. Put the tuned row back once that lands.
-  upperLeg: { ref: 'fwd', flex: 90, ext: 45, want: 'fwd', twist: 30, z: [-45, 45] },
+  // THE HAND-TUNED ROW, RESTORED (2026-08-29). This row was parked at
+  // flex 90 / ext 45 / twist 30 / z ±45 for months because narrowing it made
+  // the knees read 125° of "hyperextension" — the wrap-point class: a wide
+  // one-sided range put Bullet's wrap midpoint inside reach, and the limit
+  // then HELD the knee on the wrong side. The range-centering below (rotate
+  // the parent frame by the range midpoint, wrap at 180°) killed that class,
+  // and the parking comment said to put this row back once it landed; it
+  // landed and the row was forgotten. Measured on restore: every leg joint
+  // stays within limits through a full topple on both fleet rigs (worst
+  // constraint-frame excursion 6°, the ERP slack), and the 125°-signature
+  // reads that remained were the tumble suite's POSITIONAL instrument
+  // misreading a legal fetal fold — hips at their 90° stop plus legal spine
+  // curl put the thigh past 90° in the torso frame, where a legal backward
+  // knee fold has a forward deviation component of exactly -cos(thigh angle).
+  // The instrument now predicts the legal fold direction from the thigh's own
+  // swing (tools/ammodoll-test.ts).
+  upperLeg: { ref: 'fwd', flex: 90, ext: 8, want: 'fwd', twist: 0, z: [-13, 13] },
   lowerLeg: { ref: 'fwd', flex: 123, ext: 0, want: 'back', twist: 3, z: [0, 0] },
   foot: { ref: 'up', x: [-35, 35], twist: 12, z: [-12, 12] },
   fingerProx: { ref: 'palm', flex: 90, ext: 6, want: 'palm', twist: 8, z: [-12, 12] },
