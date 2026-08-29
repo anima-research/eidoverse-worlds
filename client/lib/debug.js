@@ -20,6 +20,7 @@ import { closestParams, TUNING } from './ragdoll.js';
 import { JOINT_SPECS, HAIR_TUNING, WING_TUNING } from './ammodoll.js';
 import { BLINK, WING_IDLE, LIMP_SPRINGS } from './avatar.js';
 import { makeFrame } from './frames.js';
+import { sliderTable, checkRow, selectRow, btn, sectionHead } from './rows.js';
 
 // box = an OBB, walkable on top, solid on the sides between min.y and max.y
 // pillar = anything over 2.4m tall, collapsed to a slim centre column so you
@@ -305,38 +306,8 @@ const DIALS = [
   ['GRAVITY', -20, 0, 0.5], ['SETTLE_V', 0, 0.4, 0.01], ['DEADLINE', 1, 30, 1],
 ];
 const DEFAULTS = {};
-
-function switchRow(key, label) {
-  const wrap = document.createElement('label');
-  wrap.className = 'row dbg-row';
-  const cb = document.createElement('input');
-  cb.type = 'checkbox';
-  cb.checked = !!TUNING[key];
-  cb.onchange = () => { TUNING[key] = cb.checked ? 1 : 0; };
-  const nm = document.createElement('span');
-  nm.textContent = label;
-  wrap.append(cb, nm);
-  return wrap;
-}
-
-function dialRow(key, lo, hi, step) {
-  const wrap = document.createElement('div');
-  wrap.className = 'row';
-  const nm = document.createElement('span');
-  nm.className = 'nm';
-  nm.style.width = '92px';
-  nm.textContent = key.toLowerCase().replace(/_/g, ' ');
-  const sl = document.createElement('input');
-  sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = step; sl.value = TUNING[key];
-  const val = document.createElement('span');
-  val.className = 'v';
-  val.style.width = '46px';
-  const paint = () => { val.textContent = String(TUNING[key]); };
-  sl.oninput = () => { TUNING[key] = Number(sl.value); paint(); };
-  paint();
-  wrap.append(nm, sl, val);
-  return { wrap, reset: () => { TUNING[key] = DEFAULTS[key]; sl.value = DEFAULTS[key]; paint(); } };
-}
+// (the row builders themselves live in rows.js — this panel spelled the
+// slider-table loop six private times before that file existed)
 
 // ---- joint limits ----------------------------------------------------------
 //
@@ -365,86 +336,54 @@ const setF = (S, f, v) => {
   else S[f] = v;
 };
 
-let jointSel = null, jointRows = null, jointDefaults = null;
+/** The retune hook the live-tuning tables share: push the edited table into
+ *  the running doll, if one exists and answers. */
+const retune = (method) => () => { providers.ragdoll?.()?.[method]?.(); };
+
+/** The keep-the-answer button: tuning a number and losing it is the
+ *  difference between a nice afternoon and a number you have to find twice. */
+function copyBtn(label, make) {
+  return btn(label, async () => {
+    const out = make();
+    try { await navigator.clipboard.writeText(out); toastLike(`${label.replace(/^copy /, '')} copied`); }
+    catch { console.log(out); toastLike(`${label.replace(/^copy /, '')} logged to console`); }
+  });
+}
 
 function buildJointPanel(stack) {
   // one snapshot of the shipped table, so "reset" means the defaults and not
   // whatever was on the sliders when the panel was opened
-  jointDefaults = JSON.parse(JSON.stringify(JOINT_SPECS));
+  const jointDefaults = JSON.parse(JSON.stringify(JOINT_SPECS));
+  const apply = retune('retune');
 
-  const pick = document.createElement('select');
-  for (const k of Object.keys(JOINT_SPECS)) {
-    const o = document.createElement('option');
-    o.value = k; o.textContent = k;
-    pick.appendChild(o);
-  }
-  jointSel = pick;
+  const { row: head, select: pick } = selectRow('joint', Object.keys(JOINT_SPECS), null, () => table.repaint());
+  head.querySelector('.nm').style.width = '42px';
 
-  const rows = document.createElement('div');
-  rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
-  jointRows = rows;
-
-  const apply = () => {
-    const rd = providers.ragdoll?.();
-    if (rd?.retune) rd.retune();
-  };
-
-  const paint = () => {
-    rows.textContent = '';
-    const S = JOINT_SPECS[pick.value];
-    if (!S) return;
-    for (const [f, lo, hi, st] of LIMIT_FIELDS) {
-      if (getF(S, f) === undefined) continue;
-      const wrap = document.createElement('div');
-      wrap.className = 'row';
-      const nm = document.createElement('span');
-      nm.className = 'nm'; nm.style.width = '42px'; nm.textContent = f;
-      const sl = document.createElement('input');
-      sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = getF(S, f);
-      const val = document.createElement('span');
-      val.className = 'v'; val.style.width = '34px';
-      const show = () => { val.textContent = `${getF(S, f)}°`; };
-      sl.oninput = () => { setF(S, f, Number(sl.value)); show(); apply(); };
-      show();
-      wrap.append(nm, sl, val);
-      rows.appendChild(wrap);
-    }
-  };
-  pick.onchange = paint;
-  paint();
+  const table = sliderTable(LIMIT_FIELDS, null, {
+    get: (f) => getF(JOINT_SPECS[pick.value], f),
+    set: (f, v) => setF(JOINT_SPECS[pick.value], f, v),
+    fmt: (f, v) => `${v}°`, onSet: apply, nmW: '42px', vW: '34px',
+  });
 
   const btns = document.createElement('div');
   btns.className = 'row';
-  const mk = (label, fn) => {
-    const b = document.createElement('button');
-    b.textContent = label; b.onclick = fn; btns.appendChild(b); return b;
-  };
-  mk('reset joint', () => {
-    Object.assign(JOINT_SPECS[pick.value], JSON.parse(JSON.stringify(jointDefaults[pick.value])));
-    paint(); apply();
-  });
-  // The point of tuning is to KEEP the answer. Printing the whole table as a
-  // paste-able literal is the difference between a nice afternoon and a number
-  // you have to find twice.
-  mk('copy table', async () => {
-    const txt = Object.entries(JOINT_SPECS).map(([k, S]) => {
-      const parts = [`ref: '${S.ref}'`];
-      if (S.flex != null) parts.push(`flex: ${S.flex}`, `ext: ${S.ext}`, `want: '${S.want}'`);
-      else parts.push(`x: [${S.x[0]}, ${S.x[1]}]`);
-      parts.push(`twist: ${S.twist}`, `z: [${S.z[0]}, ${S.z[1]}]`);
-      return `  ${k}: { ${parts.join(', ')} },`;
-    }).join('\n');
-    const out = `const JOINT_SPECS = {\n${txt}\n};`;
-    try { await navigator.clipboard.writeText(out); toastLike('joint table copied'); }
-    catch { console.log(out); toastLike('joint table logged to console'); }
-  });
-
-  const head = document.createElement('div');
-  head.className = 'row';
-  const hl = document.createElement('span');
-  hl.className = 'nm'; hl.style.width = '42px'; hl.textContent = 'joint';
-  head.append(hl, pick);
-  stack.append(head, rows, btns);
+  btns.append(
+    btn('reset joint', () => {
+      Object.assign(JOINT_SPECS[pick.value], JSON.parse(JSON.stringify(jointDefaults[pick.value])));
+      table.repaint(); apply();
+    }),
+    copyBtn('copy table', () => {
+      const txt = Object.entries(JOINT_SPECS).map(([k, S]) => {
+        const parts = [`ref: '${S.ref}'`];
+        if (S.flex != null) parts.push(`flex: ${S.flex}`, `ext: ${S.ext}`, `want: '${S.want}'`);
+        else parts.push(`x: [${S.x[0]}, ${S.x[1]}]`);
+        parts.push(`twist: ${S.twist}`, `z: [${S.z[0]}, ${S.z[1]}]`);
+        return `  ${k}: { ${parts.join(', ')} },`;
+      }).join('\n');
+      return `const JOINT_SPECS = {\n${txt}\n};`;
+    }),
+  );
+  stack.append(head, table.el, btns);
 }
 
 // ---- hair -------------------------------------------------------------------
@@ -479,30 +418,12 @@ const HAIR_FIELDS = [
 ];
 
 function buildBlinkPanel(stack) {
-  const rows = document.createElement('div');
-  rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
-  for (const [f, lo, hi, st] of BLINK_FIELDS) {
-    const wrap = document.createElement('div');
-    wrap.className = 'row';
-    const nm = document.createElement('span');
-    nm.className = 'nm'; nm.style.width = '54px'; nm.textContent = f;
-    const sl = document.createElement('input');
-    sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = BLINK[f];
-    const val = document.createElement('span');
-    val.className = 'v'; val.style.width = '44px';
-    const show = () => {
-      val.textContent = (f === 'closed' || f === 'lower')
-        ? `${(BLINK[f] * 180 / Math.PI).toFixed(0)}°`
-        : f === 'dur' ? `${(BLINK[f] * 1000).toFixed(0)}ms`
-          : f === 'eyeMax' ? `${(BLINK[f] * 180 / Math.PI).toFixed(0)}°`
-            : f === 'axis' ? ['x', 'y', 'z'][BLINK[f]] ?? '?' : `${BLINK[f]}x`;
-    };
-    sl.oninput = () => { BLINK[f] = Number(sl.value); show(); };
-    show();
-    wrap.append(nm, sl, val);
-    rows.appendChild(wrap);
-  }
-  stack.appendChild(rows);
+  stack.appendChild(sliderTable(BLINK_FIELDS, BLINK, {
+    fmt: (f, v) => (f === 'closed' || f === 'lower' || f === 'eyeMax'
+      ? `${(v * 180 / Math.PI).toFixed(0)}°`
+      : f === 'dur' ? `${(v * 1000).toFixed(0)}ms`
+        : f === 'axis' ? ['x', 'y', 'z'][v] ?? '?' : `${v}x`),
+  }).el);
 }
 
 // A limp body with no sim of its own falls back to three-vrm, whose springs
@@ -516,73 +437,30 @@ const LIMP_FIELDS = [
 ];
 
 function buildLimpPanel(stack) {
-  const rows = document.createElement('div');
-  rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
-  for (const [f, lo, hi, st] of LIMP_FIELDS) {
-    const wrap = document.createElement('div');
-    wrap.className = 'row';
-    const nm = document.createElement('span');
-    nm.className = 'nm'; nm.style.width = '54px'; nm.textContent = f;
-    const sl = document.createElement('input');
-    sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = LIMP_SPRINGS[f];
-    const val = document.createElement('span');
-    val.className = 'v'; val.style.width = '44px';
-    const show = () => { val.textContent = f === 'stiffness'
-      ? `${LIMP_SPRINGS[f]}x` : String(LIMP_SPRINGS[f]); };
-    sl.oninput = () => { LIMP_SPRINGS[f] = Number(sl.value); show(); };
-    show();
-    wrap.append(nm, sl, val);
-    rows.appendChild(wrap);
-  }
-  stack.appendChild(rows);
+  stack.appendChild(sliderTable(LIMP_FIELDS, LIMP_SPRINGS, {
+    fmt: (f, v) => (f === 'stiffness' ? `${v}x` : String(v)),
+  }).el);
 }
+
+/** The tuning-table literal, ready to paste back into the source. */
+const tableLiteral = (name, o) => `export const ${name} = {\n`
+  + Object.entries(o).map(([k, v]) => `  ${k}: ${v},`).join('\n') + '\n};';
 
 function buildHairPanel(stack) {
   const defaults = { ...HAIR_TUNING };
-  const rows = document.createElement('div');
-  rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
-  const apply = () => {
-    const rd = providers.ragdoll?.();
-    if (rd?.retuneHair) rd.retuneHair();
-  };
-  const mk = () => {
-    rows.textContent = '';
-    for (const [f, lo, hi, st] of HAIR_FIELDS) {
-      const wrap = document.createElement('div');
-      wrap.className = 'row';
-      const nm = document.createElement('span');
-      nm.className = 'nm'; nm.style.width = '54px'; nm.textContent = f;
-      const sl = document.createElement('input');
-      sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = HAIR_TUNING[f];
-      const val = document.createElement('span');
-      val.className = 'v'; val.style.width = '44px';
-      const show = () => {
-        val.textContent = f === 'mass' ? `${(HAIR_TUNING[f] * 1000).toFixed(1)}g`
-          : f === 'limit' ? `${HAIR_TUNING[f]}°` : String(HAIR_TUNING[f]);
-      };
-      sl.oninput = () => { HAIR_TUNING[f] = Number(sl.value); show(); apply(); };
-      show();
-      wrap.append(nm, sl, val);
-      rows.appendChild(wrap);
-    }
-  };
-  mk();
+  const apply = retune('retuneHair');
+  const table = sliderTable(HAIR_FIELDS, HAIR_TUNING, {
+    fmt: (f, v) => (f === 'mass' ? `${(v * 1000).toFixed(1)}g`
+      : f === 'limit' ? `${v}°` : String(v)),
+    onSet: apply,
+  });
   const btns = document.createElement('div');
   btns.className = 'row';
-  const b1 = document.createElement('button');
-  b1.textContent = 'reset hair';
-  b1.onclick = () => { Object.assign(HAIR_TUNING, defaults); mk(); apply(); };
-  const b2 = document.createElement('button');
-  b2.textContent = 'copy hair';
-  b2.onclick = async () => {
-    const out = 'export const HAIR_TUNING = {\n'
-      + Object.entries(HAIR_TUNING).map(([k, v]) => `  ${k}: ${v},`).join('\n')
-      + '\n};';
-    try { await navigator.clipboard.writeText(out); toastLike('hair tuning copied'); }
-    catch { console.log(out); toastLike('hair tuning logged'); }
-  };
-  btns.append(b1, b2);
-  stack.append(rows, btns);
+  btns.append(
+    btn('reset hair', () => { Object.assign(HAIR_TUNING, defaults); table.repaint(); apply(); }),
+    copyBtn('copy hair', () => tableLiteral('HAIR_TUNING', HAIR_TUNING)),
+  );
+  stack.append(table.el, btns);
 }
 
 // ---- wings ------------------------------------------------------------------
@@ -615,42 +493,20 @@ const WING_SIM_FIELDS = [
 function buildWingPanel(stack) {
   const idleDefaults = { ...WING_IDLE };
   const simDefaults = { ...WING_TUNING };
-  const apply = () => {
-    const rd = providers.ragdoll?.();
-    if (rd?.retuneWings) rd.retuneWings();
-  };
-  const table = (fields, obj, live, fmt) => {
-    const rows = document.createElement('div');
-    rows.style.cssText = 'display:flex;flex-direction:column;gap:3px';
-    const mk = () => {
-      rows.textContent = '';
-      for (const [f, lo, hi, st] of fields) {
-        const wrap = document.createElement('div');
-        wrap.className = 'row';
-        const nm = document.createElement('span');
-        nm.className = 'nm'; nm.style.width = '54px'; nm.textContent = f;
-        const sl = document.createElement('input');
-        sl.type = 'range'; sl.min = lo; sl.max = hi; sl.step = st; sl.value = obj[f];
-        const val = document.createElement('span');
-        val.className = 'v'; val.style.width = '44px';
-        const show = () => { val.textContent = fmt(f); };
-        sl.oninput = () => { obj[f] = Number(sl.value); show(); if (live) apply(); };
-        show();
-        wrap.append(nm, sl, val);
-        rows.appendChild(wrap);
-      }
-    };
-    mk();
-    return { rows, mk };
-  };
-  const idle = table(WING_IDLE_FIELDS, WING_IDLE, false, (f) => (
-    f === 'deg' || f === 'bias' || f === 'sweep' ? `${WING_IDLE[f]}°`
-      : f === 'hz' ? `${WING_IDLE[f]}Hz`
-        : f === 'recover' ? `${(WING_IDLE[f] * 1000).toFixed(0)}ms`
-          : String(WING_IDLE[f])));
-  const sim = table(WING_SIM_FIELDS, WING_TUNING, true, (f) => (
-    f === 'mass' ? `${(WING_TUNING[f] * 1000).toFixed(0)}g`
-      : f === 'limit' ? `${WING_TUNING[f]}°` : String(WING_TUNING[f])));
+  const apply = retune('retuneWings');
+  // WING_IDLE is read fresh every frame by avatar.js, so its table needs no
+  // retune hook; WING_TUNING has to be pushed into constraints that already
+  // exist, which is what `apply` does.
+  const idle = sliderTable(WING_IDLE_FIELDS, WING_IDLE, {
+    fmt: (f, v) => (f === 'deg' || f === 'bias' || f === 'sweep' ? `${v}°`
+      : f === 'hz' ? `${v}Hz`
+        : f === 'recover' ? `${(v * 1000).toFixed(0)}ms` : String(v)),
+  });
+  const sim = sliderTable(WING_SIM_FIELDS, WING_TUNING, {
+    fmt: (f, v) => (f === 'mass' ? `${(v * 1000).toFixed(0)}g`
+      : f === 'limit' ? `${v}°` : String(v)),
+    onSet: apply,
+  });
   const sub = (text) => {
     const h = document.createElement('div');
     h.className = 'nm'; h.style.cssText = 'opacity:0.6;margin-top:4px';
@@ -659,24 +515,16 @@ function buildWingPanel(stack) {
   };
   const btns = document.createElement('div');
   btns.className = 'row';
-  const b1 = document.createElement('button');
-  b1.textContent = 'reset wings';
-  b1.onclick = () => {
-    Object.assign(WING_IDLE, idleDefaults);
-    Object.assign(WING_TUNING, simDefaults);
-    idle.mk(); sim.mk(); apply();
-  };
-  const b2 = document.createElement('button');
-  b2.textContent = 'copy wings';
-  b2.onclick = async () => {
-    const one = (name, o) => `export const ${name} = {\n`
-      + Object.entries(o).map(([k, v]) => `  ${k}: ${v},`).join('\n') + '\n};';
-    const out = `${one('WING_IDLE', WING_IDLE)}\n\n${one('WING_TUNING', WING_TUNING)}`;
-    try { await navigator.clipboard.writeText(out); toastLike('wing tuning copied'); }
-    catch { console.log(out); toastLike('wing tuning logged'); }
-  };
-  btns.append(b1, b2);
-  stack.append(sub('flap (live)'), idle.rows, sub('limp (needs a ragdoll)'), sim.rows, btns);
+  btns.append(
+    btn('reset wings', () => {
+      Object.assign(WING_IDLE, idleDefaults);
+      Object.assign(WING_TUNING, simDefaults);
+      idle.repaint(); sim.repaint(); apply();
+    }),
+    copyBtn('copy wings', () =>
+      `${tableLiteral('WING_IDLE', WING_IDLE)}\n\n${tableLiteral('WING_TUNING', WING_TUNING)}`),
+  );
+  stack.append(sub('flap (live)'), idle.el, sub('limp (needs a ragdoll)'), sim.el, btns);
 }
 
 // the panel has no toast of its own; keep the dependency to one line
@@ -684,18 +532,8 @@ function toastLike(msg) { console.log(`[debug] ${msg}`); }
 
 // ---- panel -----------------------------------------------------------------
 
-function row(label, key, onChange) {
-  const wrap = document.createElement('label');
-  wrap.className = 'row dbg-row';
-  const cb = document.createElement('input');
-  cb.type = 'checkbox';
-  cb.checked = on[key];
-  cb.onchange = () => { on[key] = cb.checked; onChange?.(cb.checked); };
-  const nm = document.createElement('span');
-  nm.textContent = label;
-  wrap.append(cb, nm);
-  return wrap;
-}
+const viewRow = (label, key, onChange) => checkRow(label,
+  () => on[key], (v) => { on[key] = v; onChange?.(v); }, { className: 'row dbg-row' });
 
 /** @param p { ragdoll(), downed(), fps() } — passed in rather than imported,
  *  so this module stays a leaf and never draws main.js into a cycle. */
@@ -715,29 +553,26 @@ export function initDebug(p = {}) {
   framePre.style.cssText = 'flex:none;margin:0 0 4px';
   stack.appendChild(framePre);
   stack.append(
-    row('collider volumes', 'colliders', (v) => { if (!v) clearColliders(); }),
-    row('ragdoll skeleton', 'ragdoll', (v) => { if (!v) clearRagdoll(); }),
+    viewRow('collider volumes', 'colliders', (v) => { if (!v) clearColliders(); }),
+    viewRow('ragdoll skeleton', 'ragdoll', (v) => { if (!v) clearRagdoll(); }),
   );
   for (const [k] of DIALS) DEFAULTS[k] = TUNING[k];
   for (const [k] of SWITCHES) DEFAULTS[k] = TUNING[k];
 
   const btns = document.createElement('div');
   btns.className = 'row';
-  const mk = (label, fn) => {
-    const b = document.createElement('button');
-    b.textContent = label; b.onclick = fn;
-    b.style.cssText = 'flex:1;font-size:var(--fs-sm);padding:3px 0';
-    return b;
-  };
-  const pause = mk('pause', () => {
+  const BTN_CSS = 'flex:1;font-size:var(--fs-sm);padding:3px 0';
+  const pause = btn('pause', () => {
     TUNING.PAUSED = TUNING.PAUSED ? 0 : 1;
     pause.textContent = TUNING.PAUSED ? '▶ resume' : 'pause';
-  });
-  const resets = [];
+  }, BTN_CSS);
   btns.append(
-    mk('re-drop', () => providers.reLimp?.()),
+    btn('re-drop', () => providers.reLimp?.(), BTN_CSS),
     pause,
-    mk('reset', () => { for (const r of resets) r(); for (const [k] of SWITCHES) TUNING[k] = DEFAULTS[k]; repaintSwitches(); }),
+    btn('reset', () => {
+      for (const [k] of [...DIALS, ...SWITCHES]) TUNING[k] = DEFAULTS[k];
+      dials.repaint(); repaintSwitches();
+    }, BTN_CSS),
   );
   stack.appendChild(btns);
 
@@ -745,57 +580,32 @@ export function initDebug(p = {}) {
   // NOT .stack — that is flex:1 with its own scroller, and nested inside the
   // panel's stack it collapses to nothing and the switches vanish.
   swBox.style.cssText = 'display:flex;flex-direction:column;gap:3px';
-  for (const [k, label] of SWITCHES) swBox.appendChild(switchRow(k, label));
+  for (const [k, label] of SWITCHES) {
+    swBox.appendChild(checkRow(label,
+      () => !!TUNING[k], (v) => { TUNING[k] = v ? 1 : 0; }, { className: 'row dbg-row' }));
+  }
   const repaintSwitches = () => {
     [...swBox.querySelectorAll('input')].forEach((cb, i) => { cb.checked = !!TUNING[SWITCHES[i][0]]; });
   };
   stack.appendChild(swBox);
 
-  for (const [k, lo, hi, st] of DIALS) {
-    const d = dialRow(k, lo, hi, st);
-    resets.push(d.reset);
-    stack.appendChild(d.wrap);
+  const dials = sliderTable(DIALS, TUNING, {
+    label: (k) => k.toLowerCase().replace(/_/g, ' '),
+    nmW: '92px', vW: '46px',
+  });
+  stack.appendChild(dials.el);
+
+  // the tuning families, one head + one builder each
+  for (const [head, build] of [
+    ['blink (live)', buildBlinkPanel],
+    ['hair (live, while ragdolled)', buildHairPanel],
+    ['limp hair, no local sim', buildLimpPanel],
+    ['wings', buildWingPanel],
+    ['joint limits (live)', buildJointPanel],
+  ]) {
+    stack.appendChild(sectionHead(head));
+    build(stack);
   }
-
-  // blink, live
-  const bhead = document.createElement('div');
-  bhead.className = 'row';
-  bhead.style.cssText = 'margin-top:6px;opacity:.75';
-  bhead.textContent = '— blink (live) —';
-  stack.appendChild(bhead);
-  buildBlinkPanel(stack);
-
-  // hair, live
-  const hhead = document.createElement('div');
-  hhead.className = 'row';
-  hhead.style.cssText = 'margin-top:6px;opacity:.75';
-  hhead.textContent = '— hair (live, while ragdolled) —';
-  stack.appendChild(hhead);
-  buildHairPanel(stack);
-
-  // limp springbones (remotes and post-dispose), live
-  const lhead = document.createElement('div');
-  lhead.className = 'row';
-  lhead.style.cssText = 'margin-top:6px;opacity:.75';
-  lhead.textContent = '— limp hair, no local sim —';
-  stack.appendChild(lhead);
-  buildLimpPanel(stack);
-
-  // wings, live
-  const whead = document.createElement('div');
-  whead.className = 'row';
-  whead.style.cssText = 'margin-top:6px;opacity:.75';
-  whead.textContent = '— wings —';
-  stack.appendChild(whead);
-  buildWingPanel(stack);
-
-  // joint limits, live
-  const jhead = document.createElement('div');
-  jhead.className = 'row';
-  jhead.style.cssText = 'margin-top:6px;opacity:.75';
-  jhead.textContent = '— joint limits (live) —';
-  stack.appendChild(jhead);
-  buildJointPanel(stack);
 
   statsEl = document.createElement('pre');
   statsEl.className = 'dbg-stats';
