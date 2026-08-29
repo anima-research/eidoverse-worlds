@@ -229,13 +229,32 @@ export function paintSky(body) {
   // and the time slider yields. World policy like everything else here — it
   // previews live and commits with ✓. Clearing stashes undefined so the JSON
   // the verb carries simply drops the keys (a null would linger in the fold).
-  const { row: ckRow, select: ck } = selectRow('clock', [
-    ['', 'authored (slider)'],
-    ['real', 'real time — Los Angeles'],
-  ], skyArgs().clock === 'real' ? 'real' : '', null);
-  const syncClockUi = () => { inputs.hours.disabled = ck.value === 'real'; };
+  //
+  // WHICH clocks the row offers is a def (defs/sky/_clocks.json, option value
+  // = the IANA tz) — the commit still writes concrete clock/tz args, so the
+  // log never stores a clock's def name. The one hardcoded LA entry this row
+  // shipped with (survey §B4) lives there now.
+  const { row: ckRow, select: ck } = selectRow('clock',
+    [['', 'authored (slider)']], '', null);
+  const fillClocks = () => defsRegistry().then((reg) => {
+    const want = skyArgs().clock === 'real' ? (skyArgs().tz ?? '') : ck.value;
+    ck.textContent = '';
+    ck.appendChild(new Option('authored (slider)', ''));
+    for (const c of Object.values(reg.skyClocks ?? {})) {
+      if (c?.tz) ck.appendChild(new Option(c.label ?? c.tz, c.tz));
+    }
+    // a world already committed to a tz the def no longer lists: show the
+    // truth (the raw tz) rather than silently displaying "authored"
+    if (want && ![...ck.options].some((o) => o.value === want)) {
+      ck.appendChild(new Option(`real time — ${want}`, want));
+    }
+    ck.value = want;
+  }).catch((e) => report('sky clocks', e));
+  fillClocks();
+  bus.on('defs-updated', fillClocks);
+  const syncClockUi = () => { inputs.hours.disabled = ck.value !== ''; };
   ck.onchange = () => {
-    if (ck.value === 'real') { local.clock = 'real'; local.tz = 'America/Los_Angeles'; }
+    if (ck.value !== '') { local.clock = 'real'; local.tz = ck.value; }
     else {
       local.clock = undefined; local.tz = undefined;
       // returning to the authored clock: the fold parked the prior rated
@@ -252,7 +271,7 @@ export function paintSky(body) {
     commit.classList.add('dirty');
   };
   syncClockUi();
-  ckRow.title = 'real time: the sun tracks the actual LA clock — noon is noon';
+  ckRow.title = 'real time: the sun tracks the named city’s actual clock — noon is noon';
   body.appendChild(ckRow);
 
   commit.textContent = '✓ log to world';
@@ -276,7 +295,10 @@ export function paintSky(body) {
     if (a.weather) wx.value = a.weather;
     if (a.clouds) cl.value = a.clouds;
     if (a.world) wl.value = a.world;
-    ck.value = a.clock === 'real' ? 'real' : '';
+    // the option list is def-fed; fillClocks appends a raw-tz option when the
+    // world's committed clock is one the def no longer lists
+    ck.value = a.clock === 'real' ? (a.tz ?? '') : '';
+    if (a.clock === 'real' && ck.value !== (a.tz ?? '')) fillClocks();
     syncClockUi();
     syncBasicOnly();
     syncGrassRow();

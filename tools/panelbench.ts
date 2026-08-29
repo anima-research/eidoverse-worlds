@@ -58,6 +58,23 @@ console.log('\nedit mode (the gesture core survives the split):');
   check('Esc leaves it', !(await evalJson(`document.body.classList.contains('edit-mode')`)));
 }
 
+console.log('\nthe help overlay (def-fed prose):');
+{
+  const built = await evalJson(`(() => {
+    const s = document.querySelector('#help .sheet');
+    if (!s) return null;
+    return {
+      keys: s.querySelectorAll('dl.keys dt').length,
+      sections: s.querySelectorAll('h2').length,
+      reset: !!s.querySelector('#help-reset'),
+    };
+  })()`);
+  check('help sheet builds from the def', !!built, JSON.stringify(built));
+  check('...key table populated (≥15 rows)', (built?.keys ?? 0) >= 15, `${built?.keys}`);
+  check('...prose sections + the code-side layout section', (built?.sections ?? 0) >= 6 && !!built?.reset,
+    `${built?.sections} sections`);
+}
+
 console.log('\ndebug panel (rows.js builds every family):');
 {
   await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'F3' })), true`);

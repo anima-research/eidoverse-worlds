@@ -76,6 +76,13 @@ check("broken def is NOT served", !names.includes("broken"));
     && reg.groundPalette?.plantings?.["mojave desert"]?.args?.preset === "mojave"
     && reg.groundPalette?.shapes?.rugged === 6.0,
   Object.keys(reg.groundPalette ?? {}).join(", "));
+  check("sky clocks ride the registry (tz validated against host IANA)",
+    reg.skyClocks?.["los angeles"]?.tz === "America/Los_Angeles",
+    Object.keys(reg.skyClocks ?? {}).join(", "));
+  check("help def rides the registry", typeof reg.uiHelp?.title === "string"
+    && Array.isArray(reg.uiHelp?.keys) && reg.uiHelp.keys.length >= 15
+    && Array.isArray(reg.uiHelp?.sections) && reg.uiHelp.sections.length >= 4,
+  `${reg.uiHelp?.keys?.length ?? 0} keys, ${reg.uiHelp?.sections?.length ?? 0} sections`);
   check("the emote vocabulary rides the registry (order = key order)",
     reg.emotes?.wave?.clip === "raise" && reg.emotes?.talk?.listed === false
     && Object.keys(reg.emotes ?? {})[0] === "wave", Object.keys(reg.emotes ?? {}).join(", "));
