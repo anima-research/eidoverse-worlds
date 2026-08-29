@@ -35,6 +35,15 @@ net-server's handleTool table (its shape depends on retire-vs-unify).
 R3 (the dolls' shared core + skeleton def) and R4 (panels + defs round
 two) not yet begun.
 
+**Status 2026-08-29:** The doll board is GREEN (253bf10; ragdoll 59/0,
+ammodoll 68/0) — R3's gate is cleared. R3 is also RE-SCOPED by the anima
+merge: upstream's `shared/joints.js` + `shared/humanoid.js` supersede the
+skeleton-def half (their joint tables are now shared with the reach
+solver — do not re-fork them); what remains ours is the shared-core
+extraction (`rigmeasure.js` + `BodyEngineBase`), the engine-seam test
+through `makeRagdoll`, and recovering the grid-bounded collider query
+from retired rapierdoll into the survivors.
+
 ## The verdict
 
 The hypothesis was right, with a sharper shape than expected. The core —
