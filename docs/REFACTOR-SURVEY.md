@@ -44,6 +44,26 @@ extraction (`rigmeasure.js` + `BodyEngineBase`), the engine-seam test
 through `makeRagdoll`, and recovering the grid-bounded collider query
 from retired rapierdoll into the survivors.
 
+**R4 is DONE** (20e998c…b7254d9): `rows.js` is the house row builder —
+the slider-table loop was spelled six private times in debug.js alone
+(§B5); debug.js collapsed onto it 917→727. build.js split five ways
+along its own banners (1301→504 core + seatedit/palette/groundpanel/
+skypanel), with the pointer/key ROUTER kept singular and seat gestures
+handed across the seam; `toggleBuildMenu` was a zero-consumer export and
+died. Defs round two: the ground vocabulary (tints/shapes/grass dials/
+plantings — the mojave planting now NAMES its preset as data), the sky
+clock row's timezones (tz validated against host IANA at load), and the
+? overlay's prose (`defs/ui/_help.json` — a world can reword its own
+welcome). All three ride the presets law (commits write concrete args;
+the log never stores a def name) and the SINGLE-SOURCE posture (no
+hardcoded fallback vocabulary — that would be the mirror reborn).
+`tools/panelbench.ts` (16 checks) is the panels' first gate ever: the
+sections lazy-build on open, so a construction error was invisible to
+every boot gate. NOT def-ized, deliberately: the sky slider specs (UI
+plumbing wired to gather/sync, one consumer, code-shaped) and the Piper
+voice character + STARTER catalog (§B4 leftovers — small, and STARTER
+is already superseded by the live catalog search; revisit on demand).
+
 **R3 is DONE** (453aaf2): `client/lib/rigmeasure.js` holds the truths
 the two surviving engines must agree on — the 12-pair body cut (was
 byte-identical as CHAINS/CORE_SEGMENTS), closestParams/segDistance (was

@@ -390,6 +390,50 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-29 — §24q: R4 — panels and defs round two, delivered
+  (20e998c…b7254d9).** Four gated slices. (1) NEW client/lib/rows.js —
+  the house row builders (sliderTable/checkRow/selectRow/btn/btnRow/
+  sectionHead + the SELECT_CSS skin), dumb on purpose: layout and
+  wiring, never state, so reset stays write-then-repaint everywhere.
+  debug.js collapsed onto it 917→727 (the slider-table loop was
+  spelled SIX private times in that one file; three copy-buttons →
+  copyBtn+tableLiteral; five section heads → a [head, builder] loop).
+  (2) BUILD.JS FIVE-WAY SPLIT along its own banners: 1301→504 gesture
+  core (mode/selection/ghost/drag/undo + the ONE pointer/key router) +
+  seatedit.js (the seat-anchor grammar; the router hands gestures
+  across the seam — armed placement outranks the ghost, gizmo picks
+  lose to it, exactly the old ladder; hooks back = build.js exports,
+  cycle eval-safe by construction) + palette.js (models/avatars/
+  upload/STARTER) + groundpanel.js + skypanel.js. main.js/mybody.js
+  retargeted; toggleBuildMenu had ZERO consumers and died. (3) THE
+  GROUND VOCABULARY IS A DEF (defs/ground/_palette.json +
+  shared/grounddefs.js): tints (the hexes that sat beside _colors.json
+  references), shapes, grass dials, and the five planting bags — blade
+  plantings declare their tint column and take the height dial, the
+  mojave planting NAMES its flora preset as data. SINGLE-SOURCE: no
+  fallback vocabulary (the fallback would be the mirror reborn); a
+  defs push repaints in place carrying the author's dials. (4) SKY
+  CLOCKS + HELP AS DEFS: defs/sky/_clocks.json (the hardcoded LA tz;
+  validator checks every tz against host IANA — a typo would throw
+  inside hoursAt on every client at once; a committed tz the def
+  dropped shows as a raw-tz option, never as "authored") and
+  defs/ui/_help.json (ui.js's 120 lines of prose; a world can reword
+  its own welcome; the layout section stays code-side for its live
+  reset button; KEYMAP export dead). All on the presets law — commits
+  write concrete args, the log never stores a def name. NEW GATE:
+  tools/panelbench.ts (16 checks) — the panels lazy-build on open, so
+  construction errors were invisible to every boot gate and the
+  surfaces went their whole lives eyeball-only; now a scratch world +
+  headless Chrome opens all four sections, round-trips edit mode,
+  reads the help sheet, counts the debug panel's 45 sliders, and
+  demands zero console errors. NOT def-ized deliberately: sky slider
+  specs (code-shaped UI plumbing), Piper voice + STARTER (small; on
+  demand). Gates held per slice: panelbench 16/0, defs-smoke 31/0
+  (was 28 — +ground/clocks/help), paritybench, lightbench 30/30,
+  smoke 85/85. THE SURVEY'S PROGRAM (R0–R4) IS COMPLETE; outstanding:
+  the two §C colleague calls (seats write-half, stdio door) and the
+  handleTool table that rides them.
+
 - **2026-08-29 — §24p: R3 — the dolls share a spine (453aaf2).** The
   survey planned R3 against three engines; rapierdoll's retirement and
   upstream's shared/joints+humanoid shrank the honest remainder, and
