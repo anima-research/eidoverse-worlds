@@ -32,7 +32,8 @@ import { remotes, updateRemotes, updateGaze } from './lib/remotes.js';
 import {
   net, connect, initIdentity, loginUrl, wireNet, sendVerb, sendPose, sendWhisper, sendTyping,
 } from './lib/net.js';
-import { initPalette, updateBuild, toggleEditMode, isEditing } from './lib/build.js';
+import { updateBuild, toggleEditMode, isEditing } from './lib/build.js';
+import { initPalette } from './lib/palette.js';
 import { initConjure } from './lib/conjure.js';
 import './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
 import { initAudioPanel } from './lib/audiopanel.js';

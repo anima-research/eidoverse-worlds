@@ -6,7 +6,7 @@
 
 import { CONFIG, bus, report } from './core.js';
 import { makeAvatar, contributeThumbnail } from './avatar.js';
-import { setMyAvatarPath, wireAvatarSwitch } from './build.js';
+import { setMyAvatarPath, wireAvatarSwitch } from './palette.js';
 import { toast } from './ui.js';
 import { net } from './net.js';
 

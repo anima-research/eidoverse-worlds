@@ -10,38 +10,28 @@
 // the table rather than beside it, because the collider tops that already
 // compute walkable ground are the same data as "what can I put things on".
 
-import { THREE, scene, camera, canvas, CONFIG, report, bus } from './core.js';
-import { loadGLB, libLabels, listLibrary } from './assets.js';
+// SPLIT (R4): this file is the gesture CORE — mode, selection, ghost, drag,
+// undo, and the one pointer/key router. The panel sections live beside it
+// (palette.js models+avatars+upload, groundpanel.js, skypanel.js), and the
+// seat-anchor grammar in seatedit.js; the router here hands seat gestures
+// across that seam and never re-implements them.
+
+import { THREE, scene, camera, canvas, bus, report } from './core.js';
+import { loadGLB, libLabels } from './assets.js';
 import { makeLightGizmo } from './lights.js';
-import { defsRegistry } from './defs.js';
-import { entities, entityMeta, comps, findPart, editHolds } from './world.js';
-import { surfaceUnder, reindexCollider } from './colliders.js';
-import { heightAt, GRASS_QUALITY, getGrassQuality, setGrassQuality,
-  getGrassDensity, getGrassShed, getGrassApplied } from './terrain.js';
+import { entities, entityMeta, comps, editHolds } from './world.js';
+import { reindexCollider } from './colliders.js';
+import { heightAt } from './terrain.js';
 import { sendVerb, sendDrag } from './net.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
-import { makeSection, toast, flashHint, collapseAll, panelFrame, escapeHtml } from './ui.js';
+import { flashHint, collapseAll, panelFrame } from './ui.js';
 import { sceneSelect } from './scenegraph.js';
-import { previewSky, skyArgs, skyImpl, WEATHERS, CLOUDS, SKY_WORLDS,
-  CLOUD_QUALITY, getCloudQuality, setCloudQuality } from './sky.js';
-import { RENDER_SCALES, getRenderScale, setRenderScale } from './governor.js';
+import { refreshSeatGizmos, resetSeats, armSeatPlacement, seatArmed, seatSelected,
+  cancelSeatArm, deselectSeat, seatMouseDown, seatKeyDown, updateSeatDrag } from './seatedit.js';
 
 const raycaster = new THREE.Raycaster();
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 const _hit = new THREE.Vector3();
-
-// The starter vocabulary. Everything else arrives through the catalog or an
-// `asset` verb, so this list is a doorway, not a limit.
-const STARTER = [
-  ['crate (red)', 'eidoverse/assets/models/crate_large_red.glb'],
-  ['crate (blue)', 'eidoverse/assets/models/crate_large_blue.glb'],
-  ['palm tree', 'eidoverse/assets/models/palm_date_tree_tropical_deseert_oasis_plant.glb'],
-  ['joshua tree', 'eidoverse/assets/models/stylized_yucca_joshua_tree_desert_cactus_plant.glb'],
-  ['streetlight', 'eidoverse/assets/models/streetlight_lamp_light_street_blade_runner_cyberpunk.glb'],
-  ['deco desk', 'eidoverse/assets/models/scifi_art_deco_office_desk.glb'],
-  ['retro computer', 'eidoverse/assets/models/scif_cyberpunk_crt_retro_computer_monitor_screen_keyboard_tower.glb'],
-  ['barrels', 'eidoverse/assets/models/scifi_barrels_group_of_four.glb'],
-];
 
 // ============================================================ state
 
@@ -65,7 +55,7 @@ export function setEditMode(on, { quiet = false } = {}) {
   if (editMode === on) return editMode;
   editMode = on;
   document.body.classList.toggle('edit-mode', on);
-  if (!on) { cancelGhost(); deselect(); seatArm = null; deselectSeat(); }
+  if (!on) { cancelGhost(); deselect(); resetSeats(); }
   refreshSeatGizmos();   // anchors are visible exactly while you are editing
   // Saying you are building should put the tools in front of you — B is now
   // the mode, so the catalog needs to arrive with it rather than behind a
@@ -94,8 +84,7 @@ outline.userData.noCamCollide = true;
 scene.add(outline);
 
 let inspector = null;
-function showInspector(id) {
-  const meta = entityMeta.get(id) ?? {};
+function ensureInspector() {
   if (!inspector) {
     inspector = document.createElement('div');
     inspector.className = 'panel';
@@ -103,6 +92,17 @@ function showInspector(id) {
       z-index:7; padding:9px 13px; font-size:var(--fs-sm); display:flex; gap:14px; align-items:center;`;
     document.body.appendChild(inspector);
   }
+  return inspector;
+}
+/** The inspector bar as a surface other editors write to — seatedit paints
+ *  its anchor line through this rather than reaching into the element. */
+export function setInspectorHtml(html) {
+  ensureInspector().innerHTML = html;
+  inspector.style.display = 'flex';
+}
+function showInspector(id) {
+  const meta = entityMeta.get(id) ?? {};
+  ensureInspector();
   const label = libLabels.get(meta.lib) ?? meta.lib?.split('/').pop()?.replace(/\.glb$/, '') ?? id;
   const locked = isLocked(id);
   inspector.innerHTML =
@@ -125,7 +125,7 @@ function showInspector(id) {
   inspector.querySelector('[data-bact="seat"]').onclick = () => armSeatPlacement(selected?.id ?? id);
   inspector.style.display = 'flex';
 }
-function hideInspector() { if (inspector) inspector.style.display = 'none'; }
+export function hideInspector() { if (inspector) inspector.style.display = 'none'; }
 
 export function select(id) {
   const obj = entities.get(id);
@@ -279,7 +279,8 @@ bus.on('drag', ({ id, pos, yaw }) => {
 
 // ============================================================ commits + undo
 
-function pushUndo(inverse, describe) {
+/** Exported for the sibling editors (seatedit) — one stack, one Ctrl+Z. */
+export function pushUndo(inverse, describe) {
   undoStack.push({ inverse, describe });
   while (undoStack.length > 40) undoStack.shift();
 }
@@ -358,253 +359,27 @@ function removeSelected() {
   deselect();
 }
 
-// ============================================================ seat anchors
-// Sit anchors (the `sockets` component) get the same editing grammar as
-// things: visible in edit mode as gold gizmos, click to select, drag to
-// refine, Q/E to face, Del to remove, one undoable log entry per commit.
-// Zero server involvement — this is all authoring UI over the comp verb.
-
-const seatGizmos = new Map();   // "id\x00slot" -> gizmo (child of entity root)
-let seatSel = null;             // { id, slot } — the anchor under edit
-let seatDrag = null;            // { armed, startX, startY, pending } drag state
-let seatArm = null;             // entity id waiting for a placement click
-
-function makeSeatGizmo() {
-  const g = new THREE.Group();
-  const mat = new THREE.MeshBasicMaterial({ color: 0xf5c96b, depthTest: false, transparent: true, opacity: 0.9 });
-  const seat = new THREE.Mesh(new THREE.OctahedronGeometry(0.07), mat);
-  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.12, 6), mat);
-  nose.position.set(0, 0, 0.16);
-  nose.rotation.x = Math.PI / 2;              // the arrow is the sit-facing
-  g.add(seat, nose);
-  // markers are pointed at, never raycast INTO — picking is ray-to-point, so
-  // these meshes must not catch the placement/selection rays around them
-  g.traverse((o) => { o.raycast = () => {}; o.renderOrder = 9; o.userData.noCamCollide = true; });
-  return g;
-}
-
-/** Rebuild all markers from the comps map. Parented to the entity ROOT in
- *  model frame — the anchor's rest spot, matching socketWorldPos semantics
- *  (reach never oscillates with a part's motion, neither should the gizmo). */
-function refreshSeatGizmos() {
-  for (const [k, g] of seatGizmos) { g.parent?.remove(g); seatGizmos.delete(k); }
-  if (!editMode) return;
-  for (const [id, bag] of comps) {
-    if (!bag.sockets) continue;
-    const root = entities.get(id);
-    if (!root) continue;
-    for (const [slot, sock] of Object.entries(bag.sockets)) {
-      const g = makeSeatGizmo();
-      g.position.set(...(sock.pos ?? [0, 0.5, 0]));
-      g.rotation.y = sock.yaw ?? 0;
-      root.add(g);
-      seatGizmos.set(`${id}\x00${slot}`, g);
-    }
-  }
-  if (seatSel && !seatGizmos.has(`${seatSel.id}\x00${seatSel.slot}`)) deselectSeat();
-  else refreshSeatHighlight();
-}
-bus.on('comp', ({ type }) => { if (type === 'sockets') refreshSeatGizmos(); });
-bus.on('entity', () => { if (editMode) refreshSeatGizmos(); });
-
-function refreshSeatHighlight() {
-  for (const [k, g] of seatGizmos) {
-    const on = seatSel && k === `${seatSel.id}\x00${seatSel.slot}`;
-    g.scale.setScalar(on ? 1.6 : 1);
-    g.traverse((o) => o.material?.color.setHex(on ? 0x8fe8c8 : 0xf5c96b));
-  }
-}
-
-/** Ray-to-point picking, the bodydrag-joint trick: a 7cm marker against a
- *  busy mesh is unhittable by triangle raycast and trivially hittable by
- *  distance-to-center. Tolerance grows a little with camera distance. */
-const _spV = new THREE.Vector3();
-function pickSeat(ray) {
-  let best = null, bestD = Infinity;
-  for (const [k, g] of seatGizmos) {
-    g.getWorldPosition(_spV);
-    const tol = Math.min(0.3, 0.06 + camera.position.distanceTo(_spV) * 0.015);
-    const d = ray.distanceToPoint(_spV);
-    if (d < tol && d < bestD) { bestD = d; best = k; }
-  }
-  if (!best) return null;
-  const [id, slot] = best.split('\x00');
-  return { id, slot };
-}
-
-function selectSeat(pick) {
-  deselect();                              // a seat and a thing never co-hold the keys
-  seatSel = pick;
-  refreshSeatHighlight();
-  if (!inspector) showInspector(pick.id);  // ensure the bar exists
-  const meta = entityMeta.get(pick.id) ?? {};
-  const label = libLabels.get(meta.lib) ?? meta.lib?.split('/').pop()?.replace(/\.glb$/, '') ?? pick.id;
-  inspector.innerHTML =
-    `<span><b>${pick.slot}</b> anchor on <b>${label.slice(0, 24)}</b></span>` +
-    `<span style="color:var(--dim)">drag move · <kbd>Q</kbd><kbd>E</kbd> face · <kbd>Del</kbd> remove · <kbd>Esc</kbd> done</span>`;
-  inspector.style.display = 'flex';
-}
-function deselectSeat() {
-  seatSel = null; seatDrag = null;
-  refreshSeatHighlight();
-  hideInspector();
-}
-
-function socketsOf(id) { return structuredClone(comps.get(id)?.sockets ?? {}); }
-
-/** One merged comp entry per gesture, with its inverse on the undo stack —
- *  merged, because comp data replaces wholesale and a naive write would
- *  silently eat every OTHER anchor on the thing. */
-function commitSockets(id, next, describe) {
-  const before = comps.get(id)?.sockets;
-  sendVerb('comp', { id, type: 'sockets', data: Object.keys(next).length ? next : null });
-  pushUndo({ verb: 'comp', args: { id, type: 'sockets', data: before ? structuredClone(before) : null } }, describe);
-}
-
-const _saM = new THREE.Matrix4();
-const _saM2 = new THREE.Matrix4();
-const _saQ = new THREE.Quaternion();
-const _saV = new THREE.Vector3();
-function worldYawOf(root) {
-  root.getWorldQuaternion(_saQ);
-  _saV.set(0, 0, 1).applyQuaternion(_saQ);
-  return Math.atan2(_saV.x, _saV.z);
-}
-
-/** The name of the motion-animated part the hit landed in, if any — that is
- *  the `part` that makes an anchor RIDE. Only parts a motion comp actually
- *  names count: naming arbitrary mesh nodes would freeze junk into the log. */
-function partUnderHit(id, hitObj) {
-  const bag = comps.get(id) ?? {};
-  const names = new Set();
-  for (const key in bag) {
-    if (key.startsWith('motion:')) names.add(key.slice(7));
-    else if (key === 'motion' && typeof bag[key]?.part === 'string') names.add(bag[key].part);
-  }
-  if (!names.size) return null;
-  for (let o = hitObj; o && !o.userData.entityId; o = o.parent) if (names.has(o.name)) return o.name;
-  return null;
-}
-
-/** A click on a plank MID-SWING must not bake the swing's phase into the
- *  anchor: carry the hit point back through the part's displacement to where
- *  it sits at rest (the inverse of mountTransform's ride). */
-function unrideHitPoint(root, partName, wp) {
-  const part = partName ? findPart(root, partName) : null;
-  const b = part?.userData?.mbase;
-  if (!part || !part.parent || !b) return wp;
-  part.updateWorldMatrix(true, false);
-  _saM.compose(_saV.set(...b.pos), _saQ.fromArray(b.quat), part.scale)
-    .premultiply(part.parent.matrixWorld);                  // part-at-rest → world
-  return wp.applyMatrix4(_saM2.copy(part.matrixWorld).invert()).applyMatrix4(_saM);
-}
-
-const round3 = (n) => +n.toFixed(3);
-function seatFromHit(id, root, hit) {
-  const part = partUnderHit(id, hit.object);
-  const wp = unrideHitPoint(root, part, hit.point.clone());
-  root.updateWorldMatrix(true, false);
-  const mp = wp.applyMatrix4(_saM2.copy(root.matrixWorld).invert());   // world → model frame
-  return { pos: [round3(mp.x), round3(mp.y), round3(mp.z)], part };
-}
-
-export function armSeatPlacement(id) {
-  if (!id || !entities.get(id)) return;
-  setEditMode(true, { quiet: true });
-  seatArm = id;
-  flashHint('click the spot where a sitter goes — the arrow will face you · <kbd>Esc</kbd> cancels', 8000);
-}
-
-function placeSeatAt(e) {
-  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
-  raycaster.setFromCamera(mouse, camera);
-  const id = seatArm;
-  const root = entities.get(id);
-  if (!root) { seatArm = null; return; }
-  const hit = raycaster.intersectObject(root, true)[0];
-  if (!hit) { flashHint('that missed the thing — click ON it, or <kbd>Esc</kbd>'); return; }
-  seatArm = null;
-  const { pos, part } = seatFromHit(id, root, hit);
-  // face the declarer: you are looking at the seat from where a sitter's
-  // knees would point. Q/E refines from there.
-  const yaw = +(Math.atan2(camera.position.x - hit.point.x, camera.position.z - hit.point.z) - worldYawOf(root)).toFixed(3);
-  const sockets = socketsOf(id);
-  let slot = 'seat', n = 2;
-  while (sockets[slot]) slot = `seat${n++}`;
-  sockets[slot] = { pos, yaw, ...(part ? { part } : {}) };
-  commitSockets(id, sockets, 'seat anchor');
-  selectSeat({ id, slot });      // the comp echo builds the gizmo already selected
-  flashHint(`<b>${slot}</b> declared${part ? ' (rides ' + part + ')' : ''} — drag refines · <kbd>Q</kbd><kbd>E</kbd> face · <kbd>Del</kbd> removes`);
-}
-
-/** Called each frame from updateBuild while a seat drag is armed: the anchor
- *  slides along ITS OWN entity's surfaces — it cannot fall off the thing. */
-function updateSeatDrag() {
-  if (!seatDrag?.armed || !seatSel) return;
-  raycaster.setFromCamera(mouse, camera);
-  const root = entities.get(seatSel.id);
-  if (!root) return;
-  const hit = raycaster.intersectObject(root, true)[0];
-  if (!hit) return;
-  const next = seatFromHit(seatSel.id, root, hit);
-  seatDrag.pending = next;
-  const g = seatGizmos.get(`${seatSel.id}\x00${seatSel.slot}`);
-  if (g) g.position.set(...next.pos);
-}
-
-function commitSeatDrag() {
-  if (!seatDrag?.pending || !seatSel) return;
-  const sockets = socketsOf(seatSel.id);
-  const cur = sockets[seatSel.slot] ?? {};
-  sockets[seatSel.slot] = { ...cur, pos: seatDrag.pending.pos,
-    ...(seatDrag.pending.part ? { part: seatDrag.pending.part } : {}) };
-  if (!seatDrag.pending.part) delete sockets[seatSel.slot].part;
-  commitSockets(seatSel.id, sockets, 'seat move');
-}
-
-function turnSeat(d) {
-  if (!seatSel) return;
-  const sockets = socketsOf(seatSel.id);
-  const cur = sockets[seatSel.slot];
-  if (!cur) return;
-  sockets[seatSel.slot] = { ...cur, yaw: +(((cur.yaw ?? 0) + d)).toFixed(3) };
-  commitSockets(seatSel.id, sockets, 'seat facing');
-}
-
-function removeSeat() {
-  if (!seatSel) return;
-  const sockets = socketsOf(seatSel.id);
-  delete sockets[seatSel.slot];
-  commitSockets(seatSel.id, sockets, 'seat removal');
-  deselectSeat();
-}
-
 // ============================================================ pointer
 
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0 || !editMode) return;  // outside edit mode the canvas is for looking
-  if (seatArm) { placeSeatAt(e); e.preventDefault(); return; }
+  // an armed seat placement outranks everything, the ghost included
+  if (seatArmed()) { seatMouseDown(e); e.preventDefault(); return; }
   if (ghost) return;                        // click-to-place handled on click
+  // gizmo picks next — a marker is small and deliberate, and the mesh it
+  // floats over would otherwise win every contested click
+  if (seatMouseDown(e)) { e.preventDefault(); return; }
   // Pick from THIS event's coordinates. Relying on the last mousemove to have
   // left `mouse` in the right place works for a real pointer and fails for
   // anything that presses without moving first — a touch, a synthetic click,
   // a tab that regained focus under the cursor.
   mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
   raycaster.setFromCamera(mouse, camera);
-  // seat markers pick FIRST — a gizmo is small and deliberate, and the mesh
-  // it floats over would otherwise win every contested click
-  const sp = pickSeat(raycaster.ray);
-  if (sp) {
-    selectSeat(sp);
-    seatDrag = { armed: false, startX: e.clientX, startY: e.clientY };
-    e.preventDefault();
-    return;
-  }
   const targets = [];
   for (const o of entities.values()) if (o) targets.push(o);
   const hit = raycaster.intersectObjects(targets, true)[0];
-  if (!hit) { if (selected) deselect(); if (seatSel) deselectSeat(); return; }
-  if (seatSel) deselectSeat();
+  if (!hit) { if (selected) deselect(); if (seatSelected()) deselectSeat(); return; }
+  if (seatSelected()) deselectSeat();
   let root = hit.object;
   while (root && !root.userData.entityId) root = root.parent;
   if (!root) return;
@@ -636,10 +411,6 @@ canvas.addEventListener('mousedown', (e) => {
 // desktop UI uses to tell a click from a drag.
 const DRAG_SLOP = 4;
 addEventListener('mousemove', (e) => {
-  if (seatDrag && !seatDrag.armed
-      && Math.hypot(e.clientX - seatDrag.startX, e.clientY - seatDrag.startY) > DRAG_SLOP) {
-    seatDrag.armed = true;
-  }
   if (!dragging) return;
   dragging.clientY = e.clientY;                 // vertical drag reads this each frame
   if (!dragging.armed
@@ -652,8 +423,6 @@ addEventListener('mousemove', (e) => {
 });
 
 addEventListener('mouseup', () => {
-  if (seatDrag?.armed) commitSeatDrag();
-  seatDrag = null;
   if (dragging?.armed && selected) {
     const moved = dragging.before;
     const o = selected.obj;
@@ -675,9 +444,9 @@ canvas.addEventListener('click', (e) => {
 
 bus.on('key', (e) => {
   if (e.code === 'Escape') {
-    if (seatArm) { seatArm = null; flashHint('seat placement cancelled'); }
+    if (cancelSeatArm()) { /* an armed placement is the most transient state */ }
     else if (ghost) cancelGhost();
-    else if (seatSel) deselectSeat();
+    else if (seatSelected()) deselectSeat();
     else if (selected) deselect();
     else if (editMode) setEditMode(false);
     return;
@@ -719,12 +488,7 @@ bus.on('key', (e) => {
     commitPlace(before);
   };
   // a selected seat anchor holds the editing keys before things do
-  if (seatSel) {
-    if (e.code === 'KeyQ') turnSeat(e.shiftKey ? 0.02 : Math.PI / 12);
-    if (e.code === 'KeyE') turnSeat(e.shiftKey ? -0.02 : -Math.PI / 12);
-    if (e.code === 'Delete' || e.code === 'Backspace') removeSeat();
-    return;
-  }
+  if (seatKeyDown(e)) return;
   // Q/E only steer objects when something is being edited — otherwise they're
   // photo-mode fly keys and must stay free.
   if (ghost || selected) {
@@ -736,566 +500,4 @@ bus.on('key', (e) => {
     if (e.code === 'KeyF') raise(e.shiftKey ? -0.05 : -0.25);
   }
   if ((e.code === 'Delete' || e.code === 'Backspace') && selected) removeSelected();
-});
-
-// ============================================================ palette UI
-
-let buildSec = null;
-
-export function initPalette() {
-  buildSec = makeSection('🧱 build', async (body) => { if (!body.dataset.init) await paintBuild(body); },
-    { id: 'build' });
-  makeSection('🧍 avatar', paintAvatars, { id: 'avatar' });
-  makeSection('🌿 ground', paintGround, { id: 'ground' });
-  makeSection('☀ sky', paintSky, { id: 'sky' });
-  return { buildSec };
-}
-
-// ---- terrain & grass -------------------------------------------------------
-// Ground was agent-only (terrain/grass verbs); an empty world had no way for a
-// person to grow either. These are AUTHORED (they persist and fold), so —
-// unlike the sky tuner's live sliders — each is a deliberate commit on a
-// click, which is also why they don't spam the log.
-
-// A tint is a ground palette: the terrain layer colour, plus the createFlora
-// seasonal colour each blade species takes (GRASS_COLORS name). The two grass
-// keys differ because the sheets are authored in different hues — the meadow
-// sheet is already green so it keeps its own art (null), while bunch grass
-// ships a straw recolor and can only be brought back to green by the `green`
-// recolor (a multiplier cannot survive a species' own recolor).
-const GROUND_TINTS = {
-  meadow: { layer: '#4a5d33', grass: null,          tufts: 'green' },
-  arid:   { layer: '#7a6b48', grass: 'straw',       tufts: 'straw' },
-  tundra: { layer: '#5a6b6b', grass: 'gray-green',  tufts: 'gray-green' },
-};
-const TERRAIN_SHAPES = { flat: 0.2, hills: 2.6, rugged: 6.0 };
-// blade length drives the wind response too (lawns are stiff, tallgrass sways)
-const GRASS_HEIGHT = { lawn: 0.15, meadow: 0.42, tall: 0.7 };
-const GRASS_DENSITY = {
-  sparse: 0.5,
-  normal: 1,
-  lush:   1.4,   // kept modest — blades are fill-rate
-};
-
-function paintGround(body) {
-  if (body.dataset.init) return;
-  body.dataset.init = '1';
-  body.innerHTML = '';
-  const st = { tint: 'meadow', shape: 'hills', seed: 7, density: 'normal', grass: false, plant: 'meadow', height: 'meadow' };
-
-  const row = (label, node) => {
-    const r = document.createElement('div');
-    r.className = 'row';
-    const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = label;
-    r.append(nm, node); body.appendChild(r); return r;
-  };
-  const btnRow = (...btns) => {
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'display:flex; flex-wrap:wrap; gap:3px;';
-    btns.forEach((b) => { b.style.flex = '1 0 auto'; wrap.appendChild(b); });
-    return wrap;
-  };
-  const mkBtn = (text, on) => { const b = document.createElement('button'); b.textContent = text; b.onclick = on; return b; };
-
-  const growTerrain = () => sendVerb('terrain', {
-    seed: st.seed, size: 160, segments: 200, amplitude: TERRAIN_SHAPES[st.shape], flatRadius: 16,
-    layers: [{ color: GROUND_TINTS[st.tint].layer, repeat: 16 }],
-  });
-  // what "grow" plants — every option is one bag on the singleton grass verb
-  const PLANTINGS = {
-    meadow: () => {
-      const args = { species: 'grass', width: 90, depth: 80, center: [0, 0],
-        height: GRASS_HEIGHT[st.height] };
-      if (GROUND_TINTS[st.tint].grass) args.color = GROUND_TINTS[st.tint].grass;
-      return args;
-    },
-    tufts: () => {
-      // bunch grass — a blade grass like the meadow, so it takes the same
-      // length and seasonal-colour dials
-      const args = { species: 'galleta_dry', width: 80, depth: 70, center: [0, 0],
-        height: GRASS_HEIGHT[st.height] };
-      if (GROUND_TINTS[st.tint].tufts) args.color = GROUND_TINTS[st.tint].tufts;
-      return args;
-    },
-    'mojave desert': () => ({ preset: 'mojave', width: 90, depth: 80, center: [0, 0] }),
-    'corn field': () => ({ species: 'corn', width: 40, depth: 30, center: [0, 0],
-      rows: { spacing: 0.9, plant: 0.26 }, corn: { peelChance: 0.25 } }),
-    'sunflower field': () => ({ species: 'sunflower', width: 34, depth: 26, center: [0, 0],
-      rows: { spacing: 0.85, plant: 0.5 } }),
-  };
-  const growGrass = () => {
-    st.grass = true;
-    sendVerb('grass', { ...PLANTINGS[st.plant](), density: GRASS_DENSITY[st.density] });
-  };
-
-  // terrain shape
-  body.appendChild(btnRow(...Object.keys(TERRAIN_SHAPES).map((k) =>
-    mkBtn(k, () => { st.shape = k; growTerrain(); flashHint(`terrain: ${k}`); }))));
-  body.appendChild(btnRow(mkBtn('↻ reshuffle', () => { st.seed = Math.floor(Math.random() * 9999); growTerrain(); })));
-
-  // what to plant
-  const plantSel = document.createElement('select');
-  plantSel.style.cssText = 'font:11px var(--font); background:rgba(4,14,20,.9); color:var(--fg); border:1px solid var(--edge); border-radius:5px; padding:5px;';
-  for (const k of Object.keys(PLANTINGS)) plantSel.appendChild(new Option(k, k));
-  plantSel.value = st.plant;
-  plantSel.onchange = () => {
-    st.plant = plantSel.value;
-    syncPlantControls();
-    if (st.grass) growGrass();
-  };
-  row('plant', plantSel);
-
-  // blade length — a BLADE-grass control. Structural species (shrubs, yucca,
-  // corn) carry their own size, and the engine ignores `height` for them, so
-  // the row hides rather than sitting there as a dial that does nothing.
-  const BLADE_PLANTINGS = new Set(['meadow', 'tufts']);
-  const hSel = document.createElement('select');
-  hSel.style.cssText = 'font:11px var(--font); background:rgba(4,14,20,.9); color:var(--fg); border:1px solid var(--edge); border-radius:5px; padding:5px;';
-  for (const k of Object.keys(GRASS_HEIGHT)) hSel.appendChild(new Option(k, k));
-  hSel.value = st.height;
-  hSel.onchange = () => { st.height = hSel.value; if (st.grass && BLADE_PLANTINGS.has(st.plant)) growGrass(); };
-  const hRow = row('height', hSel);
-  syncPlantControls();
-
-  function syncPlantControls() {
-    hRow.style.display = BLADE_PLANTINGS.has(st.plant) ? '' : 'none';
-  }
-
-  // grass
-  const dens = document.createElement('select');
-  dens.style.cssText = 'font:11px var(--font); background:rgba(4,14,20,.9); color:var(--fg); border:1px solid var(--edge); border-radius:5px; padding:5px;';
-  for (const k of Object.keys(GRASS_DENSITY)) dens.appendChild(new Option(k, k));
-  dens.value = st.density;
-  dens.onchange = () => { st.density = dens.value; if (st.grass) growGrass(); };
-  row('grass', dens);
-  body.appendChild(btnRow(
-    mkBtn('🌱 grow', () => { growGrass(); flashHint(`${st.plant} growing`); }),
-    mkBtn('mow', () => { st.grass = false; sendVerb('grass', { clear: true }); flashHint('field cleared'); }),
-  ));
-
-  // tint drives both terrain layer and grass colour
-  const tint = document.createElement('select');
-  tint.style.cssText = dens.style.cssText;
-  for (const k of Object.keys(GROUND_TINTS)) tint.appendChild(new Option(k, k));
-  tint.value = st.tint;
-  tint.onchange = () => { st.tint = tint.value; growTerrain(); if (st.grass) growGrass(); };
-  row('tint', tint);
-}
-
-export function toggleBuildMenu() { buildSec?.toggle(); }
-
-// ---- models ----------------------------------------------------------------
-
-async function paintBuild(body) {
-  body.dataset.init = '1';
-  body.innerHTML = '';
-
-  // primitives that aren't library models — a light is the first
-  const prim = document.createElement('button');
-  prim.textContent = '💡 add light';
-  prim.title = 'place a light source';
-  prim.onclick = () => holdGhost('@light', 'light');
-  body.appendChild(prim);
-
-  const search = document.createElement('input');
-  search.type = 'search';
-  search.placeholder = 'search the library…';
-  search.addEventListener('keydown', (e) => e.stopPropagation()); // typing ≠ walking
-  body.appendChild(search);
-
-  const grid = document.createElement('div');
-  grid.className = 'grid';
-  body.appendChild(grid);
-
-  const paint = (items) => {
-    grid.innerHTML = '';
-    for (const it of items) {
-      libLabels.set(it.path, it.name);
-      const card = document.createElement('button');
-      card.className = 'card panel';
-      const img = it.preview
-        ? `<img alt="" loading="lazy" src="/library/${it.preview}" onerror="this.style.visibility='hidden'">`
-        : '<div style="width:100%;aspect-ratio:1"></div>';
-      card.innerHTML = `${img}<span>${escapeHtml(it.name)}</span>`;   // server-supplied name (§24k hygiene)
-      card.onclick = () => holdGhost(it.path, it.name);
-      grid.appendChild(card);
-    }
-    if (!items.length) grid.innerHTML = '<div style="color:var(--dim);font-size:11px">nothing matched</div>';
-  };
-
-  // The catalog agents already had (mcpl list_library), now served to people —
-  // with the _preview.jpg Skye ships beside every model, so it's a real
-  // catalog instead of a list of filenames.
-  const starter = () => STARTER.map(([name, path]) =>
-    ({ name, path, preview: path.replace(/\.glb$/, '_preview.jpg') }));
-
-  let timer = null;
-  const run = async (q) => {
-    // An empty box shows the curated starters, not an alphabetical dump of the
-    // whole library — otherwise opening the panel greets you with four
-    // varieties of apocalyptic rubble.
-    if (!q) { paint(starter()); return; }
-    try {
-      const r = await fetch(`/library-models?q=${encodeURIComponent(q)}`);
-      paint(await r.json());
-    } catch (e) { report('catalog', e); }
-  };
-  search.oninput = () => { clearTimeout(timer); timer = setTimeout(() => run(search.value.trim()), 160); };
-
-  paint(starter());
-}
-
-// Assets uploaded into the world join the palette live, for everyone.
-bus.on('asset', ({ name, path }) => {
-  libLabels.set(path, name);
-  toast(`${name} joined the world's palette`, 'info');
-});
-
-// ---- avatars ---------------------------------------------------------------
-
-let onSwitchAvatar = null;
-export function wireAvatarSwitch(fn) { onSwitchAvatar = fn; }
-let myAvatarPath = '';
-export function setMyAvatarPath(p) { myAvatarPath = p; }
-
-async function paintAvatars(body) {
-  const list = await fetch('/avatars').then((r) => r.json()).catch(() => []);
-  body.innerHTML = '';
-  const grid = document.createElement('div');
-  grid.className = 'grid';
-  for (const { name, path } of list) {
-    const card = document.createElement('button');
-    card.className = `card panel ${path === myAvatarPath ? 'on' : ''}`;
-    card.innerHTML =
-      `<img alt="" loading="lazy" src="/thumb/${encodeURIComponent(name)}.png"
-         onerror="this.parentNode.querySelector('.ph').style.display='flex';this.style.display='none'">
-       <div class="ph" style="display:none;width:100%;aspect-ratio:1;align-items:center;
-         justify-content:center;background:rgba(0,0,0,.3);border-radius:4px;font-size:18px">🧍</div>
-       <span>${escapeHtml(name)}</span>`;
-    card.onclick = () => onSwitchAvatar?.(path, name);
-    grid.appendChild(card);
-  }
-  body.appendChild(grid);
-}
-
-// ---- sky + weather ---------------------------------------------------------
-
-const SLIDERS = [
-  ['hours', 'time', 0, 24, 0.1, 12],
-  ['rate', 'rate', 0, 48, 0.5, 0],
-  ['azimuth', 'azim', 0, 360, 5, 180],
-  ['sun', 'sun', 0, 2.5, 0.05, 1],
-  ['ambient', 'ambnt', 0, 2.5, 0.05, 1],
-  ['fill', 'fill', 0, 2.5, 0.05, 1],
-  ['exposure', 'expos', 0.3, 1.8, 0.05, 1],
-  ['fog', 'fog', 0, 3, 0.05, 1],
-];
-// Named times beat eight raw sliders for the 95% case — you want "golden",
-// not hours=17.4, exposure=0.86. The presets themselves are DATA now
-// (§24, defs/sky/_presets.json) — authoring conveniences only: they fill
-// the sliders and preview; commit writes concrete args, so the log never
-// stores a preset name and logged meaning never depends on the def file.
-
-function paintSky(body) {
-  if (body.dataset.init) { syncSky(body); return; }
-  body.dataset.init = '1';
-  body.innerHTML = '';
-  const inputs = {};
-  const commit = document.createElement('button');
-
-  // Everything in this panel PREVIEWS. Only the commit button writes to the
-  // world.
-  //
-  // Presets and dropdowns used to send a verb on every click while the sliders
-  // only previewed — so idly exploring the sky wrote 53 permanent entries into
-  // one world's log, every one of which replays for every future joiner. The
-  // log is history; trying things out is not.
-  const local = {};
-  const preview = (patch) => {
-    Object.assign(local, patch);
-    previewSky({ ...gather() }).catch((e) => report('sky preview', e));
-    commit.classList.add('dirty');
-  };
-
-  const gather = () => {
-    // `local` carries the NON-slider knobs (clouds/weather/world/colors). The
-    // sliders own their own keys and must WIN over local — otherwise a preset
-    // that stashed a slider key (hours) into local would shadow the time slider
-    // for the rest of the session: moving it wrote a.hours, but the stale
-    // local.hours overrode it, so lighting stopped changing after you pressed
-    // dusk (or any preset). Apply local first, then let the sliders assert.
-    const a = { ...skyArgs(), ...local };
-    for (const [key, , , , , dflt] of SLIDERS) {
-      const v = Number(inputs[key].value);
-      if (key === 'hours' || key === 'azimuth' || v !== dflt) a[key] = v;
-    }
-    return a;
-  };
-
-  const mkRow = (label, node) => {
-    const row = document.createElement('div');
-    row.className = 'row';
-    const nm = document.createElement('span');
-    nm.className = 'nm'; nm.textContent = label;
-    row.append(nm, node);
-    return row;
-  };
-
-  // presets — populated from the def registry, repopulated on a defs push
-  const presetWrap = document.createElement('div');
-  presetWrap.style.cssText = 'display:flex; flex-wrap:wrap; gap:3px; margin-bottom:4px;';
-  const fillPresets = () => defsRegistry().then((reg) => {
-    presetWrap.innerHTML = '';
-    for (const [name, vals] of Object.entries(reg.skyPresets ?? {})) {
-      const b = document.createElement('button');
-      b.textContent = name;
-      b.style.flex = '1 0 auto';
-      b.onclick = () => {
-        if (vals.hours != null) inputs.hours.value = vals.hours;
-        if (vals.clouds) cl.value = vals.clouds;
-        inputs.hours.dispatchEvent(new Event('input'));   // previews via the slider path
-        preview({ ...vals });
-      };
-      presetWrap.appendChild(b);
-    }
-  }).catch((e) => report('sky presets', e));
-  fillPresets();
-  bus.on('defs-updated', fillPresets);
-  body.appendChild(presetWrap);
-
-  // weather — a first-class verb, not a slider
-  const wx = document.createElement('select');
-  wx.style.cssText = 'font:11px var(--font); background:rgba(4,14,20,.9); color:var(--fg); border:1px solid var(--edge); border-radius:5px; padding:5px;';
-  for (const w of WEATHERS) wx.appendChild(new Option(w, w));
-  wx.onchange = () => preview({ weather: wx.value, weatherSeconds: 12 });
-  body.appendChild(mkRow('wx', wx));
-
-  const cl = document.createElement('select');
-  cl.style.cssText = wx.style.cssText;
-  for (const c of CLOUDS) cl.appendChild(new Option(c, c));
-  cl.value = 'cumulus';
-  cl.onchange = () => preview({ clouds: cl.value });
-  body.appendChild(mkRow('cloud', cl));
-
-  const wl = document.createElement('select');
-  wl.style.cssText = wx.style.cssText;
-  for (const w of SKY_WORLDS) wl.appendChild(new Option(w, w));
-  wl.onchange = () => preview({ world: wl.value });
-  body.appendChild(mkRow('world', wl));
-
-  // Cloud budget is YOURS, not the world's — it never becomes a verb. The
-  // volumetric march is the most expensive thing the client draws and its cost
-  // is per-fragment, so a big high-refresh display pays several times what a
-  // small window does for the same sky.
-  const cq = document.createElement('select');
-  cq.style.cssText = wx.style.cssText;
-  for (const q of CLOUD_QUALITY) cq.appendChild(new Option(q, q));
-  cq.value = getCloudQuality();
-  cq.onchange = () => { setCloudQuality(cq.value); flashHint(`clouds: ${cq.value} (yours only)`); };
-  const cqRow = mkRow('clouds⚙', cq);
-  cqRow.title = 'local performance setting — not shared with the world';
-  body.appendChild(cqRow);
-
-  // The meadow budget is likewise YOURS (#60) — a persisted cap on how much
-  // of the field this machine draws. Species/seed/extent stay world state;
-  // the auto governor may thin below the cap under load, never above it.
-  const gq = document.createElement('select');
-  gq.style.cssText = wx.style.cssText;
-  gq.setAttribute('aria-label', 'grass quality — local only, never shared with the world');
-  for (const q of GRASS_QUALITY) gq.appendChild(new Option(q, q));
-  const gqRow = mkRow('grass⚙', gq);
-  // Live dial state as visible text, not a tooltip — the governor's shed is
-  // state a keyboard or screen-reader user must be able to learn too. The
-  // two dials stay attributed to their owners: the select is the RESIDENT's
-  // cap, ⚙× is the GOVERNOR's own session dial, ×draws is what min() yields.
-  const gqState = document.createElement('span');
-  // NOT `.v` — that's the sliders' fixed 34px readout column; this text
-  // would wrap inside it, reflowing the whole row. The visible half is
-  // compact enough to fit the default 232px panel on one line (measured:
-  // ≤62px available beside the select); the aria-live announcement reads a
-  // whole sentence instead, via a visually-hidden twin.
-  gqState.style.cssText = 'margin-left:auto; white-space:nowrap; color:var(--accent); font-size:10px;';
-  gqState.setAttribute('aria-live', 'polite');
-  const gqStateEye = document.createElement('span');
-  gqStateEye.setAttribute('aria-hidden', 'true');
-  const gqStateEar = document.createElement('span');
-  gqStateEar.style.cssText = 'position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0);';
-  gqState.append(gqStateEye, gqStateEar);
-  gqRow.appendChild(gqState);
-  const syncGrassRow = () => {
-    gq.value = getGrassQuality();
-    const shed = getGrassShed(), eff = getGrassDensity();
-    const active = shed < 1 && gq.value !== 'off';
-    // Applied truth (#74): the same report the programmatic surface serves —
-    // one source, so the row can never claim a density the renderer didn't.
-    // A false cap outranks governor detail for the row's scarce pixels.
-    const rep = getGrassApplied();
-    const bad = rep.field && rep.status !== 'applied';
-    if (bad) {
-      const names = rep.strokes.filter((s) => !s.ok).map((s) => s.stroke).join(', ');
-      gqStateEye.textContent = `⚠${rep.status}`;
-      gqStateEar.textContent = `grass cap ${gq.value} ${rep.status}` +
-        (names ? `: stroke ${names} has no working density dial` : '');
-      gqRow.title = `your cap asked for ×${eff} but the renderer did not fully apply it` +
-        ` (${rep.status}${names ? `: ${names}` : ''}) — affected strokes draw at their built density`;
-      return;
-    }
-    gqStateEye.textContent = active ? `⚙${shed}→${eff}` : '';
-    gqStateEar.textContent = active ? `auto governor dial ${shed}, drawing ${eff}` : '';
-    gqRow.title = active
-      ? `your cap: ${gq.value} — the auto governor's session dial is ×${shed}; the field draws the lower of the two`
-      : 'local performance setting — not shared with the world';
-  };
-  gq.onchange = () => {
-    setGrassQuality(gq.value);
-    syncGrassRow();
-    flashHint(`grass: ${gq.value} (yours only)`);
-  };
-  syncGrassRow();
-  bus.on('grass-budget', syncGrassRow);   // governor sheds repaint immediately
-  body.appendChild(gqRow);
-
-  // Render scale is YOURS too (§22k) — the whole frame's pixel budget, the
-  // one lever a pixel-bound machine actually answers to (§22j's tables).
-  // 'auto' lets the governor's cruise drive; a pinned % is the resident's
-  // word and turns the cruise off. Persisted like the other two dials.
-  const rs = document.createElement('select');
-  rs.style.cssText = wx.style.cssText;
-  rs.setAttribute('aria-label', 'render scale — local only, never shared with the world');
-  for (const v of RENDER_SCALES) rs.appendChild(new Option(v === 'auto' ? 'auto' : `${Math.round(v * 100)}%`, v));
-  rs.value = getRenderScale();
-  rs.onchange = () => {
-    setRenderScale(rs.value);
-    flashHint(`render scale: ${rs.value === 'auto' ? 'auto' : `${Math.round(rs.value * 100)}%`} (yours only)`);
-  };
-  const rsRow = mkRow('scale⚙', rs);
-  rsRow.title = 'local performance setting — not shared with the world';
-  body.appendChild(rsRow);
-
-  // Sliders that only the BASIC sky answers. On the real sky the engine owns
-  // sun direction and supplies its own bounce fill (sky.js documents the
-  // ownership boundary) — a slider that does nothing must say so, not sit
-  // there lying. sun/ambient/fog work on BOTH paths now: fog density was
-  // always ours, and sun/ambient ride as post-update multipliers (§12.6).
-  const BASIC_ONLY = new Set(['azimuth', 'fill']);
-  const basicRows = [];
-  const syncBasicOnly = () => {
-    const dead = skyImpl() === 'eidoverse';
-    for (const { row, input } of basicRows) {
-      input.disabled = dead;
-      row.style.opacity = dead ? '.45' : '';
-      row.title = dead ? 'the detailed sky drives this itself — basic sky only' : '';
-    }
-  };
-
-  for (const [key, label, min, max, step, dflt] of SLIDERS) {
-    const input = document.createElement('input');
-    input.type = 'range';
-    input.min = min; input.max = max; input.step = step; input.value = dflt;
-    const val = document.createElement('span');
-    val.className = 'v';
-    val.textContent = dflt;
-    input.oninput = () => {
-      val.textContent = input.value;
-      previewSky(gather()).catch((e) => report('sky preview', e));
-      commit.classList.add('dirty');
-    };
-    inputs[key] = input;
-    const row = mkRow(label, input);
-    row.appendChild(val);
-    if (BASIC_ONLY.has(key)) basicRows.push({ row, input });
-    body.appendChild(row);
-  }
-  syncBasicOnly();
-
-  // The sun can follow a REAL clock: `clock: real` makes the world's hour BE
-  // the named timezone's wall hour (DST included, hoursAt owns the formula)
-  // and the time slider yields. World policy like everything else here — it
-  // previews live and commits with ✓. Clearing stashes undefined so the JSON
-  // the verb carries simply drops the keys (a null would linger in the fold).
-  const ck = document.createElement('select');
-  ck.appendChild(new Option('authored (slider)', ''));
-  ck.appendChild(new Option('real time — Los Angeles', 'real'));
-  const syncClockUi = () => { inputs.hours.disabled = ck.value === 'real'; };
-  ck.value = skyArgs().clock === 'real' ? 'real' : '';
-  ck.onchange = () => {
-    if (ck.value === 'real') { local.clock = 'real'; local.tz = 'America/Los_Angeles'; }
-    else {
-      local.clock = undefined; local.tz = undefined;
-      // returning to the authored clock: the fold parked the prior rated
-      // fields under dormantRated (#65) — hand them back to the sliders so
-      // commit restores the old day/rate instead of noon-at-rate-0
-      const d = skyArgs().dormantRated;
-      if (d) for (const k of ['hours', 'rate']) if (d[k] != null && inputs[k]) {
-        inputs[k].value = d[k];
-        inputs[k].parentNode.querySelector('.v').textContent = inputs[k].value;
-      }
-    }
-    syncClockUi();
-    previewSky(gather()).catch((e) => report('sky preview', e));
-    commit.classList.add('dirty');
-  };
-  syncClockUi();
-  const ckRow = mkRow('clock', ck);
-  ckRow.title = 'real time: the sun tracks the actual LA clock — noon is noon';
-  body.appendChild(ckRow);
-
-  commit.textContent = '✓ log to world';
-  commit.title = 'share this sky with everyone, permanently';
-  commit.onclick = () => {
-    sendVerb('sky', gather());
-    commit.classList.remove('dirty');
-    commit.textContent = '✓ logged';
-    setTimeout(() => { commit.textContent = '✓ log to world'; }, 1200);
-  };
-  body.appendChild(commit);
-
-  body._sync = () => {
-    const a = skyArgs();
-    for (const [key, , , , , dflt] of SLIDERS) {
-      // under a real clock hours/rate live in dormantRated (#65); show them
-      // (disabled) as what the world would return to
-      inputs[key].value = a[key] ?? a.dormantRated?.[key] ?? dflt;
-      inputs[key].parentNode.querySelector('.v').textContent = inputs[key].value;
-    }
-    if (a.weather) wx.value = a.weather;
-    if (a.clouds) cl.value = a.clouds;
-    if (a.world) wl.value = a.world;
-    ck.value = a.clock === 'real' ? 'real' : '';
-    syncClockUi();
-    syncBasicOnly();
-    syncGrassRow();
-  };
-  body._sync();
-}
-function syncSky(body) { body._sync?.(); }
-
-// ============================================================ upload
-
-addEventListener('dragover', (e) => e.preventDefault());
-addEventListener('drop', async (e) => {
-  e.preventDefault();
-  const file = e.dataTransfer?.files?.[0];
-  if (!file) return;
-  const isVrm = /\.vrm$/i.test(file.name);
-  if (!/\.(glb|vrm)$/i.test(file.name)) {
-    toast(`can't ingest ${file.name} — .glb and .vrm only`, 'warn');
-    return;
-  }
-  toast(`uploading ${file.name} (${(file.size / 1e6).toFixed(1)}MB)…`, 'info');
-  try {
-    const q = new URLSearchParams();
-    if (isVrm) { q.set('as', 'avatar'); q.set('name', file.name); }
-    if (CONFIG.token) q.set('token', CONFIG.token);
-    const r = await fetch(`/upload${q.size ? `?${q}` : ''}`, { method: 'POST', body: file });
-    if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-    const { path, name } = await r.json();
-    if (isVrm) {
-      toast(`avatar "${name}" is on the roster — pick it in the avatar panel`, 'info', 9000);
-    } else {
-      const label = file.name.replace(/\.glb$/i, '');
-      sendVerb('asset', { name: label, path });  // world vocabulary grows for everyone
-      await holdGhost(path, label);
-    }
-  } catch (err) { report(`upload ${file.name}`, err); }
 });
