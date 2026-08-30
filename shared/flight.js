@@ -156,6 +156,28 @@ export function glideRatio(cfg, airspeed) {
   return v / sinkRate(cfg, v);
 }
 
+/** Airspeed after one frame at a given pitch.
+ *
+ *  Nose down trades altitude for speed; nose up trades it back. This is the
+ *  exchange a glider pilot actually has, and the reason a stall is reachable by
+ *  holding the nose up rather than by a hidden rule -- R1 is then a reflex that
+ *  catches a thing the pilot did, not a scripted event.
+ *
+ *  Lives here rather than in flightpilot.js because it is PHYSICS, not input
+ *  mapping: a verb-flown climb spends speed on the same curve a hand-flown one
+ *  does. (It briefly lived over there, and the integrator called a function it
+ *  had never imported -- which the module graph happily loaded and only failed
+ *  at the first step. Hence the pilot smoke test.)
+ */
+export function airspeedAfter(cfg, airspeed, pitch, dt) {
+  const p = cfg.polar;
+  const g = 9.81;
+  const accel = -Math.sin(pitch) * g * 0.55;      // 0.55: drag eats the rest
+  const toward = (p.bestSpeed - airspeed) * 0.25; // drag pulls toward best glide
+  const v = airspeed + (accel + toward) * dt;
+  return clamp(v, p.minSpeed * 0.6, p.maxSpeed);
+}
+
 /** How far this altitude can carry you at best glide, in metres.
  *
  *  This is the function that makes spec T2 honest: `glide_to` beyond range
@@ -318,12 +340,87 @@ export function step(cfg, state, dt, env = {}) {
     case 'LEAF':      stepLeaf(cfg, s, dt, groundY); break;
     case 'RECOVER':   stepRecover(cfg, s, dt, groundY); break;
     case 'GLIDE':     stepGlide(cfg, s, dt, env); break;
+    case 'PILOT':     stepPilot(cfg, s, dt, env); break;
     case 'RAGDOLL':   /* the ragdoll owns the body; nothing to integrate */ break;
     case 'GROUND':
     case 'LANDED':    stepGround(cfg, s, dt); break;
     default:          break;
   }
   return s;
+}
+
+/** Hand-flown flight. The same physics as GLIDE with a stick on it: the
+ *  attitude comes from `env.input` (see shared/flightpilot.js) instead of from
+ *  a verb's autopilot, and everything downstream -- polar, stamina, bounds,
+ *  ground contact, and the leaf if a cut arrives -- is identical.
+ *
+ *  That identity is the point. A pilot and an agent fly the same integrator, so
+ *  what a human learns on the stick is true of what Mythos will fly, and the
+ *  bench is not proving something about a bench. */
+function stepPilot(cfg, s, dt, env) {
+  const groundY = env.groundY ?? (() => 0);
+  const inp = env.input || { bank: 0, pitch: 0, yawRate: 0, flap: false, spoil: false };
+  s.bank = inp.bank ?? 0;
+  s.pitch = inp.pitch ?? 0;
+  s.yaw += (inp.yawRate ?? 0) * dt;
+
+  // Airspeed is the pilot's to spend: nose down buys it, nose up sells it.
+  s.airspeed = airspeedAfter(cfg, s.airspeed || cfg.polar.bestSpeed, s.pitch, dt);
+
+  // R1 STALL RECOVERY, as a reflex and not as a punishment (spec §3 R1):
+  // below stall the nose drops and the polar resumes. No flap-panic.
+  if (s.airspeed < cfg.polar.minSpeed) {
+    s.pitch = Math.min(s.pitch, -0.25);
+    s.airspeed = cfg.polar.minSpeed;
+    if (s.mode !== 'reflex') s.events.push({ t: s.t, kind: 'reflex.r1_stall' });
+  }
+
+  const lift = env.lift ? env.lift(s.pos.x, s.pos.y, s.pos.z) : 0;
+  let sink = sinkRate(cfg, s.airspeed);
+  if (inp.spoil) sink += (cfg.pilot?.spoilSink ?? 2.5);
+
+  // Flapping is the expensive way to stay up (spec §5: -2/s, "I am a glider").
+  let climb = 0;
+  if (inp.flap && s.stamina > 0) {
+    climb = cfg.pilot?.flapClimb ?? 2.2;
+    s.stamina = Math.max(0, s.stamina - cfg.stamina.flapSustainPerSec * dt);
+    if (s.stamina === 0) s.events.push({ t: s.t, kind: 'winded' });
+  }
+
+  s.vel.y = -sink + lift + climb;
+  s.vel.x = Math.cos(s.yaw) * s.airspeed;
+  s.vel.z = Math.sin(s.yaw) * s.airspeed;
+  s.pos.x += s.vel.x * dt;
+  s.pos.y += s.vel.y * dt;
+  s.pos.z += s.vel.z * dt;
+
+  bounds(cfg, s, dt);
+  groundContact(cfg, s, groundY, /*ragdoll=*/false);
+}
+
+/** R3 CEILING/BOUNDS: soft, banking you back, "never a wall-slam" (spec §3). */
+function bounds(cfg, s, dt) {
+  const b = cfg.bounds;
+  const r = Math.hypot(s.pos.x, s.pos.z);
+  if (r > b.radius) {
+    // Turn toward the origin rather than stopping: a wall you can feel is a
+    // wall, and the spec forbids one.
+    const inward = Math.atan2(-s.pos.z, -s.pos.x);
+    s.yaw += angleTo(s.yaw, inward) * Math.min(1, 1.5 * dt);
+    if (!s._boundNote) { s.events.push({ t: s.t, kind: 'reflex.r3_bounds' }); s._boundNote = 1; }
+  } else s._boundNote = 0;
+  if (s.pos.y > b.ceiling) {
+    s.pos.y = b.ceiling;
+    if (s.vel.y > 0) s.vel.y = 0;
+    s.events.push({ t: s.t, kind: 'reflex.r3_ceiling', altitude: s.pos.y });
+  }
+}
+
+function angleTo(from, to) {
+  let d = to - from;
+  while (d > Math.PI) d -= 2 * Math.PI;
+  while (d < -Math.PI) d += 2 * Math.PI;
+  return d;
 }
 
 function stepLeaf(cfg, s, dt, groundY) {

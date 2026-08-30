@@ -10,8 +10,10 @@
 import {
   makeConfig, initialState, step, bodyDown, bodyRecovered,
   leafAt, beatRemaining, sinkRate, glideRatio, glideRange,
-  denyAllConsent, fakeConsent, BREATH,
+  denyAllConsent, fakeConsent, BREATH, airspeedAfter,
 } from '../shared/flight.js';
+import { pilotInput, pilotHelp, DEFAULT_BINDS } from '../shared/flightpilot.js';
+import { inspectBody, describeBody } from '../shared/flightbody.js';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => {
@@ -307,6 +309,106 @@ console.log('\nCONFIG, not constants');
   const c3 = makeConfig({ leaf: { period: 5 } });
   check('a different period really changes the leaf',
         Math.abs(leafAt(c3, 1.25).bank) !== Math.abs(leafAt(makeConfig(), 1.25).bank));
+}
+
+// ---------------------------------------------------------------- pilot
+console.log('\nPILOT -- a human flies the same integrator an agent does');
+{
+  const cfg = makeConfig();
+  const flatG = () => 0;
+
+  // SMOKE FIRST. An earlier cut had the integrator calling a function it never
+  // imported: the module graph loaded happily and it only threw on the first
+  // step. Any test that does not actually STEP the phase would have missed it.
+  let s = initialState({ phase: 'PILOT', pos: { x: 0, y: 30, z: 0 }, airspeed: 11 });
+  let threw = '';
+  try { s = step(cfg, s, DT, { groundY: flatG, input: pilotInput(new Set(), s, DT) }); }
+  catch (e: any) { threw = e.message; }
+  check('a PILOT step runs at all', threw === '', threw);
+
+  // Hands off, she glides: altitude falls on the polar, heading holds.
+  s = initialState({ phase: 'PILOT', pos: { x: 0, y: 30, z: 0 }, airspeed: cfg.polar.bestSpeed });
+  const y0 = s.pos.y, yaw0 = s.yaw;
+  for (let i = 0; i < 240; i++) s = step(cfg, s, DT, { groundY: flatG, input: pilotInput(new Set(), s, DT) });
+  check('hands off: she descends', s.pos.y < y0);
+  check('hands off: heading holds', near(s.yaw, yaw0, 1e-9));
+  const sinkObs = (y0 - s.pos.y) / 2;
+  check(`hands-off sink ${sinkObs.toFixed(2)} m/s matches the polar ${sinkRate(cfg, cfg.polar.bestSpeed).toFixed(2)}`,
+        near(sinkObs, sinkRate(cfg, cfg.polar.bestSpeed), 0.1));
+
+  // A banked wing turns, and the wings return to level hands-off.
+  s = initialState({ phase: 'PILOT', pos: { x: 0, y: 40, z: 0 }, airspeed: cfg.polar.bestSpeed });
+  const right = new Set(['KeyD']);
+  for (let i = 0; i < 120; i++) s = step(cfg, s, DT, { groundY: flatG, input: pilotInput(right, s, DT) });
+  check('banking right turns right', s.yaw > 0.5);
+  const banked = s.bank;
+  for (let i = 0; i < 240; i++) s = step(cfg, s, DT, { groundY: flatG, input: pilotInput(new Set(), s, DT) });
+  check(`wings return toward level (${banked.toFixed(2)} -> ${s.bank.toFixed(2)})`,
+        Math.abs(s.bank) < Math.abs(banked) * 0.2);
+
+  // Nose down buys speed; nose up sells it and eventually stalls into R1.
+  check('nose down accelerates', airspeedAfter(cfg, 11, -0.5, 1) > 11);
+  check('nose up decelerates', airspeedAfter(cfg, 11, 0.5, 1) < 11);
+  s = initialState({ phase: 'PILOT', pos: { x: 0, y: 50, z: 0 }, airspeed: cfg.polar.minSpeed + 0.2 });
+  const up = new Set(['KeyS']);
+  let sawR1 = false;
+  for (let i = 0; i < 600; i++) {
+    s = step(cfg, s, DT, { groundY: flatG, input: pilotInput(up, s, DT) });
+    if (s.events.some(e => e.kind === 'reflex.r1_stall')) sawR1 = true;
+  }
+  check('holding the nose up reaches R1 STALL RECOVERY', sawR1);
+  check('R1 recovers rather than punishing (still flying)', s.phase === 'PILOT' || s.phase === 'LANDED');
+
+  // Flapping is expensive; spoiling costs altitude without speed.
+  s = initialState({ phase: 'PILOT', pos: { x: 0, y: 40, z: 0 }, airspeed: cfg.polar.bestSpeed, stamina: 100 });
+  const flap = new Set(['Space']);
+  for (let i = 0; i < 120; i++) s = step(cfg, s, DT, { groundY: flatG, input: pilotInput(flap, s, DT) });
+  check(`flapping costs ~2/s stamina (100 -> ${s.stamina.toFixed(1)})`, near(s.stamina, 98, 0.2));
+
+  // A cut while hand-flying is the same cut: the pilot cannot refuse the leaf.
+  s = initialState({ phase: 'PILOT', pos: { x: 0, y: 25, z: 0 }, airspeed: 12 });
+  s = bodyDown(s, { eventId: 'ev-pilot-cut' });
+  check('a cut while piloting still enters LEAF', s.phase === 'LEAF' && s.wings === 'LIMP');
+  let g2 = 0;
+  while (s.phase === 'LEAF' && g2++ < 200000) s = step(cfg, s, DT, { groundY: flatG, input: pilotInput(new Set(['KeyW','KeyD']), s, DT) });
+  check('and the stick cannot fly it out (only RECOVER can)', s.phase === 'RAGDOLL');
+
+  check('rehearsal keys are edges, not verbs',
+        pilotInput(new Set(['KeyX']), initialState({}), DT).edges.includes('down') &&
+        pilotInput(new Set(['KeyR']), initialState({}), DT).edges.includes('recover'));
+  check('pilotHelp names every bound key',
+        ['W', 'A', 'Shift', 'Space', 'X', 'R'].every(k => pilotHelp().includes(k)));
+}
+
+// ---------------------------------------------------------------- body contract
+console.log('\nBODY -- flight binds to bone NAMES, not to an avatar hash');
+{
+  const real = ['Hip','Spine01','Spine02','Head','NeckTwist01',
+    'L_Wing_Upper','L_Wing_Upper_1','L_Wing_Upper_2','L_Wing_Lower','L_Wing_Lower_1','L_Wing_Lower_2',
+    'R_Wing_Upper','R_Wing_Upper_1','R_Wing_Upper_2','R_Wing_Lower','R_Wing_Lower_1','R_Wing_Lower_2'];
+  const r = inspectBody(real);
+  check('the shipped body is flight-capable', r.canFly && r.canAnimateWings);
+  check('four chains, twelve bones', Object.keys(r.chains).length === 4 && r.wingCount === 12);
+  check('chains are ordered root-first',
+        r.chains['L_Upper'][0] === 'L_Wing_Upper' && r.chains['L_Upper'][2] === 'L_Wing_Upper_2');
+
+  // "More compatible than that": a body with no wings still flies the physics.
+  const wingless = inspectBody(['Hip','Spine01','Spine02','Head']);
+  check('a wingless body still flies (wings just do not animate)',
+        wingless.canFly && !wingless.canAnimateWings);
+  check('and it SAYS so rather than failing silently',
+        wingless.notes.some(n => n.includes('will not animate')));
+
+  // Deeper chains are the case that already happened once (2->3 bones, 08-17).
+  const deeper = inspectBody([...real, 'L_Wing_Upper_3', 'R_Wing_Upper_3']);
+  check('a re-export with DEEPER wing chains still works',
+        deeper.canFly && deeper.canAnimateWings && deeper.wingCount === 14);
+
+  const renamed = inspectBody(['Hip','Spine01','Spine02','Head','L_Pinion_1','R_Pinion_1']);
+  check('RENAMED wing bones are reported, not silently ignored',
+        !renamed.canAnimateWings && renamed.notes.length > 0);
+  check('a body with no skeleton at all is refused',
+        inspectBody([]).canFly === false);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
