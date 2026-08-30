@@ -390,6 +390,43 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-30 — §24s: THE OPEN ROAD — owned numerics + the renderer
+  seam (4235a38, fb85d8c, 8a739fa).** (1) docs/UPSTREAM-FLAGS.md: the
+  one-document merge briefing for colleagues (6 upstream reds w/ fixes,
+  the now-live dormant features, the physics instrument fixes prod may
+  want, process lessons, the structural map). (2) shared/simmath.js
+  (simmath@0.1.0): Covenant I's owned-numerics kernel, delivered in
+  no-build plain JS instead of the promised wasm — sinT/cosT/atan2T/
+  expT from ONLY the covenant-blessed exact-op set (Cody–Waite two-word
+  reduction, fixed-order Taylor with exact-op coefficient divisions,
+  atan argument-halving, exponent-bit 2^k with a load-time self-check).
+  Bit-identity is a property of the CONSTRUCTION; coefficients are the
+  version. Accuracy ≤1 ulp sin/cos to 1e7 rad. tools/simmath-test 14/0:
+  a 48,000-point sweep digests IDENTICALLY under Bun-JSC, node-V8 and
+  deno-V8, pinned to a committed golden. No shipped sim uses it yet —
+  it exists so §6's vocabulary can grow without reopening Covenant I
+  (PROTOCOL_v2 §2 records the delivery; wasm stays the named fallback).
+  (3) docs/RENDERER-SEAM.md: full 113-module inventory of the charter
+  thesis — ALREADY ~63% TRUE by line count (shared/ provably
+  three-free; 72 modules import no three; the 17k coupled lines
+  concentrate in ten files); two channels (core.js import chokepoint,
+  the globalThis host contract — the big unsealed one); four-move
+  program. MOVES 1+2 EXECUTED same day: client/lib/capture.js (the one
+  framebuffer-readback primitive — net.js snap + screenshots; avatar
+  portraits deliberately NOT unified, offscreen-subject ≠ frame
+  capture; survey correction: world.js compileAsync was already
+  warmqueue-conducted) and client/lib/base.js (bus/CONFIG/report/
+  colours/helpers split from core.js, 59 modules retargeted; core.js =
+  127 lines of pure presentation substrate; headless suites now run
+  the REAL bus/report). Move 3 counted: first-party code uses 76 THREE
+  symbols — a written-downable interface. Move 4 (replace the globals
+  contract) is upstream-shaped and waits on coordination. Gates all
+  green (parity/light/panel, both dolls, bodysim, defs-smoke, smoke,
+  sim suite + simmath). REMAINING OPEN ROAD: seam move 3 (mechanical,
+  large churn), move 4 (needs Skye/colleagues), §6 sim vocabulary
+  (⚑-open, colleague call), the doll run on prod's fleet, and the
+  engine decision itself (Phase 0/2 — reopened, colleague territory).
+
 - **2026-08-30 — §24r: THE TWO §C CALLS, delivered (3a5d93d, d44dc02).**
   tel0s ruled: port the seats write-half, unify the stdio door. (1)
   SEATS: the #101/#105 store was three-review-rounds-hardened with ~90%

@@ -118,8 +118,10 @@ irreducible cost centre of any renderer move.
    stub's. core.js is 127 lines of pure presentation substrate and
    imports only base.
 3. **Narrow core.js's export** from the whole namespace to an explicit
-   surface (the list of what the client actually uses — countable now
-   that move 2 landed).
+   surface. Now counted: first-party code lines use **76 THREE symbols**
+   (out of a 1000+-name namespace); the vendored vegetation engine uses
+   zero directly — it binds the `globalThis.THREE` contract instead
+   (move 4's territory). 76 names is a written-downable interface.
 4. **Replace the globals host contract** with an explicit host object
    passed to eval-loaded modules. The hard one, and upstream-shaped
    (vendored vegetation + Skye's toolkit) — needs coordination, not just
