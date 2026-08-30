@@ -37,13 +37,16 @@ import { advanceSim, tickOf } from "../shared/sim.js";
 // The reference fold lives in shared/ (house rule 1 by construction; the
 // world folds with it in world.ts) — what remains here is the role ladder.
 import { ROLE_RANK } from "../shared/fold.js";
-// Seat profiles (#101, upstream): the store + its external-change poll are
-// wired; the proposal/countersign HTTP routes are NOT ported into the route
-// table yet — the feature is dormant here, not torn. (The crash this line
-// heals: the poll timer auto-merged in while the declaration hunk fell on
-// the fork side of a conflict — restart counter reached 15 before anyone
-// noticed, because /version kept answering from the brief up-windows.)
-import { SeatStore } from "./seats.ts";
+// Seat profiles (#101, upstream; write-half ported §24r): the store, its
+// external-change poll, the verdict lane on /avatars and the POST
+// /seat-profile proposal door are all wired — routes.ts owns the HTTP half,
+// seats.ts owns the one store instance and the update push. (The crash this
+// import once healed: the poll timer auto-merged in while the declaration
+// hunk fell on the fork side of a conflict — restart counter reached 15
+// before anyone noticed, because /version kept answering from the brief
+// up-windows.)
+import { seatStore } from "./seats.ts";
+import { announceProfileUpdate } from "./seats.ts";
 import { OPT_DIR, PATCH_DIR } from "./config.ts";
 // Relay-floor (#104): transport selection + durable voice-service identity.
 import { relayEnabled, bootIncarnation, currentIncarnation, voiceTransport } from "./transport.ts";
@@ -51,8 +54,6 @@ import { installSfuTransportGuard } from "./sfuguard.ts";
 import { onVoiceServiceChange, markVoiceDegraded, voiceServiceState } from "./sfusupervisor.ts";
 import { mintSfuCredential, setSfuConsent, setSfuModeratorMute, revokeSfuLeg, sfuDiag,
   sfuAcceptAnswer, sfuAcceptIce, sfuNegotiate, sfuSetPosition, registerSfuSender, admitSfuLeg, liveLegState, sfuLegAdmitted, markSfuLegAdmitted } from "./sfuadapter.ts";
-const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR, {}, { patchDir: PATCH_DIR });
-
 // The resident-visible service chart (amendment 2): every voice-service
 // transition reaches every client of every world, stamped with the
 // incarnation so a client can tell "the relay restarted" from "it flapped".
@@ -235,9 +236,7 @@ registerSystem({ name: "seat-store-poll", everyMs: 5000, fn: () => {
   const ext = seatStore.pollExternalChange();
   if (!ext) return;
   for (const ch of ext.changed) {
-    const update = JSON.stringify({ type: "avatar-profile-updated", name: ch.name, pose: ch.pose, rev: ext.rev });
-    let notified = 0;
-    for (const w of worlds.values()) for (const c of w.clients) { c.ws.send(update); notified++; }
+    const notified = announceProfileUpdate(ch.name, ch.pose, ext.rev);
     console.log(`[seats] external change ${ch.name}/${ch.pose} rev ${ext.rev} → ${notified} client(s)`);
   }
 } });

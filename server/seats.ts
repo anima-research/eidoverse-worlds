@@ -46,6 +46,8 @@
 import { mkdirSync, existsSync, readFileSync, writeFileSync, renameSync, appendFileSync, statSync, openSync, closeSync, writeSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { validateProfile, profileStatus } from "../client/lib/seatcore.js";
+import { OPT_DIR, LIBRARY_DIR, PATCH_DIR } from "./config.ts";
+import { worlds } from "./world.ts";
 
 export const SEAT_POSE = "sitchair";
 export const CLIP_REL = "eidoverse/assets/animations/sitting_normal_chair.vrma";
@@ -482,4 +484,23 @@ export class SeatStore {
       }
     return { rev: this.store.rev, records: out, ...(this.quarantined ? { quarantined: this.quarantined } : {}) };
   }
+}
+
+// ---- the server's one store + the update push -------------------------------
+
+/** The live sequencer's store. One instance, importable by the route table
+ *  (which never imports server.ts) and the tick systems alike; the operator
+ *  tool and the tests construct their own stores over the same directory —
+ *  the on-disk lock is what serializes them, never this reference. */
+export const seatStore = new SeatStore(OPT_DIR, LIBRARY_DIR, {}, { patchDir: PATCH_DIR });
+
+/** Announce one profile change to every connected client — the same
+ *  generation-bearing event whether the write came through the live door
+ *  (POST /seat-profile) or from the operator tool (whose external write the
+ *  5s poll notices). One copy, so the two paths cannot drift. */
+export function announceProfileUpdate(name: string, pose: string, rev: number): number {
+  const update = JSON.stringify({ type: "avatar-profile-updated", name, pose, rev });
+  let notified = 0;
+  for (const w of worlds.values()) for (const c of w.clients) { c.ws.send(update); notified++; }
+  return notified;
 }
