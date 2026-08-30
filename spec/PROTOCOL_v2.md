@@ -65,6 +65,18 @@ and decades. Therefore, inside the sim fold:
 The reference implementation SHOULD keep the sim kernel wasm-compiled so
 "same epoch, same bits" is a build artifact rather than a discipline.
 
+*Delivered (2026-08-30):* `shared/simmath.js` (`simmath@0.1.0`) is the
+owned-numerics kernel — `sinT/cosT/atan2T/expT` built exclusively from the
+blessed exact-op set (Cody–Waite two-word reduction, fixed-order
+polynomials, explicit-endian bit assembly), in the house's no-build plain
+JS. Its coefficients are its version under Covenant II. Proven bit-identical
+across JavaScriptCore, node-V8 and deno-V8 on a 48,000-point sweep with a
+committed golden digest (tools/simmath-test.ts); accuracy ≤2 ulp on
+sin/cos/exp over the working domain. The wasm form remains the named
+fallback if any host engine is ever caught breaking IEEE exactness. No
+shipped sim uses it yet — eidosim@0.1.0's vocabulary needs none of it; it
+exists so the vocabulary MAY grow (§6) without reopening this covenant.
+
 ## 3. Covenant II — sim epochs and snapshot barriers
 
 The instant fold is small enough to freeze in a spec. A physics sim is
