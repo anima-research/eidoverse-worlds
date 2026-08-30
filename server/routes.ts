@@ -16,6 +16,7 @@ import { randomBytes } from "node:crypto";
 import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, JOIN_TOKEN } from "./config.ts";
 import { isStoreOriginal, isServingArtifact } from "./store-variants.ts";
 import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
+import { LOD_RECIPE } from "./store-variants.ts";
 import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
 import { resolveLibFile } from "./lint.ts";
@@ -454,6 +455,7 @@ const ROUTES: Route[] = [
       JSON.stringify({
         ...BUILD,
         ktx2Key: KTX2_KEY,
+        lodRecipe: LOD_RECIPE,
         ...(process.env.WORLD_INSTANCE_NONCE ? { instance: process.env.WORLD_INSTANCE_NONCE } : {}),
       }),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
@@ -674,6 +676,16 @@ const ROUTES: Route[] = [
       // The key is a generation (shared/ktx2.js): a retired one is an
       // unflagged fetch — whatever that client pinned under it, it keeps.
       const wantKtx2 = wantsKtx2(url.searchParams) && negotiable;
+      // The LOD tier rides the ktx2 negotiation (a LOD variant carries KTX2
+      // textures) and the same split-brain rule: a client only asks for it
+      // when /version published lodRecipe, so an older sequencer is never
+      // asked with a param it would fall through immutable (the =2 lesson).
+      const wantLod = url.searchParams.get("lod") === "1" && wantKtx2 && rel.endsWith(".glb");
+      if (wantLod) {
+        const lRel = `${rel}.lod1.glb`;
+        const l = normalize(join(OPT_DIR, lRel));
+        if (l.startsWith(OPT_DIR) && existsSync(l)) return serveFrom(OPT_DIR, lRel, true, req, versioned);
+      }
       if (wantKtx2) {
         const kRel = rel.endsWith(".glb") ? `${rel}.ktx2.glb`
           : rel.endsWith(".vrm") ? `${rel}.ktx2.vrm` : `${rel}.ktx2`;
@@ -685,7 +697,9 @@ const ROUTES: Route[] = [
               .find(([base, p]) => p.startsWith(base) && existsSync(p))?.[1];
             fresh = !!orig && Bun.file(k).lastModified > Bun.file(orig).lastModified;
           }
-          if (fresh) return serveFrom(OPT_DIR, kRel, true, req, versioned);
+          // a lod-requesting fetch answered by the plain ktx2 variant is
+          // still PROVISIONAL — the lod may land later under this same URL
+          if (fresh) return serveFrom(OPT_DIR, kRel, true, req, versioned, wantLod);
         }
       }
       // A flagged fetch that falls through is PROVISIONAL for that URL, not
