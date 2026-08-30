@@ -44,6 +44,17 @@ extraction (`rigmeasure.js` + `BodyEngineBase`), the engine-seam test
 through `makeRagdoll`, and recovering the grid-bounded collider query
 from retired rapierdoll into the survivors.
 
+**The §C calls are RESOLVED (2026-08-30, §24r):** the seats write-half
+is PORTED (POST /seat-profile named-actor door, verdicts + x-profiles-rev
+on /avatars, immediate announce; countersign stays operator-only by
+design; seat-lifecycle 37/37 — it was authored to fail until this) and
+the stdio door is UNIFIED (mcpl/tools.ts: one TOOLS table + one HANDLERS
+dispatcher with a load-time advertise⇔handle assertion — §B3's deferred
+handleTool table landed with it; the stdio server is a pure transport
+now, 16→34 tools; stdio-door-test 13/0, its first test ever). Every item
+in this survey — §A's eight bugs, §B's themes, §C's four calls, D's
+R0–R4 — is now closed.
+
 **R4 is DONE** (20e998c…b7254d9): `rows.js` is the house row builder —
 the slider-table loop was spelled six private times in debug.js alone
 (§B5); debug.js collapsed onto it 917→727. build.js split five ways

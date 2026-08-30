@@ -390,6 +390,40 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-30 — §24r: THE TWO §C CALLS, delivered (3a5d93d, d44dc02).**
+  tel0s ruled: port the seats write-half, unify the stdio door. (1)
+  SEATS: the #101/#105 store was three-review-rounds-hardened with ~90%
+  unreachable — no HTTP proposal door, no verdicts served, judge()
+  never called. The spec already existed as tools/seat-lifecycle-test
+  (37 checks, authored to FAIL ON MAIN); it passes whole now. POST
+  /seat-profile: NAMED actor only (tokens.json bearer or aid1 — the
+  /upload legs; the anonymous door token is 401, a seat profile moves
+  every wearer), proposals ONLY (countersign keeps NO HTTP path — the
+  operator tool on the box), immediate announce (the store's mtime
+  bookkeeping keeps the 5s poll from repeating it). /avatars entries
+  carry the PRE-JUDGED `seat` verdict + x-profiles-rev. seats.ts owns
+  the one live store + announceProfileUpdate (one push, two writers,
+  no drift). Test fix: the clip sha now resolves the SAME serve ladder
+  the store judges (patched fork first) — hashing the library copy
+  read "stale" forever against bytes no client animates. (2) STDIO
+  DOOR: mcpl/tools.ts is the ONE table + ONE dispatcher — TOOLS moved
+  verbatim; the 26-case 460-line handleTool switch became HANDLERS
+  (verbs.ts treatment, §B3's deferred item, bodies verbatim) with a
+  LOAD-TIME advertise⇔handle assertion; host differences ride ToolCtx
+  (persistence hooks, push/hold activity truth, catch_up cursor,
+  travel as a session-only hook). net-server 1981→1445; the stdio
+  server 258→82 — a pure transport now, 16→34 tools (pose, reach,
+  animate, measure, world_history, sheets… free forever). NEW
+  tools/stdio-door-test.ts 13/0 — that door's first test EVER, real
+  JSON-RPC over stdin/stdout. Gates: seat-lifecycle 37/37,
+  seats-store, seatcore, smoke 85/85, typing-mcpl, whisper-disable
+  5/5 (regexes retargeted to the table), join-rfc005 59/0,
+  door-cap-gate-live 23/0, channel-cap-gate 19/0, approach-wire 27/0,
+  media-whitelist 27/0, defs-smoke 31/0, paritybench. Pre-existing
+  env reds verified unchanged at HEAD: spoken-say-door, keepalive,
+  incident-88-door (fixed-port class). EVERY SURVEY ITEM (§A–§D,
+  R0–R4, both §C calls) IS NOW CLOSED.
+
 - **2026-08-29 — §24q: R4 — panels and defs round two, delivered
   (20e998c…b7254d9).** Four gated slices. (1) NEW client/lib/rows.js —
   the house row builders (sliderTable/checkRow/selectRow/btn/btnRow/
