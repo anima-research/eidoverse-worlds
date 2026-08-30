@@ -13,7 +13,7 @@
 // EW.bodysim: the lease thesis applied to our own house physics.
 
 import { Ragdoll } from './ragdoll.js';
-import { report } from './core.js';
+import { report } from './base.js';
 
 const KEY = 'ew-bodysim';
 

@@ -19,7 +19,7 @@
 // wrap a caller that itself awaits a serialized callee — that is a deadlock,
 // the chain waits on itself.
 
-import { bus } from './core.js';
+import { bus } from './base.js';
 
 // ---- yields -----------------------------------------------------------------
 

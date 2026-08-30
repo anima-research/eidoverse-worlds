@@ -21,7 +21,7 @@
 // be SENT must come from a synthesizer that returns bytes.
 
 import { setTtsSource } from './tts.js';
-import { report } from './core.js';
+import { report } from './base.js';
 
 /** Point the mouth at a synthesizer already running locally — the same ws
  *  protocol an agent's harness uses, so a human and an agent are pointing at

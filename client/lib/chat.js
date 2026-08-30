@@ -10,7 +10,7 @@
 // a person sees highlighted must be exactly what pings the agent, or the two
 // species are reading different rooms.
 
-import { CONFIG, bus, colorFor, assignColors } from './core.js';
+import { CONFIG, bus, colorFor, assignColors } from './base.js';
 import { lastWhy } from './debuglog.js';
 import { makeFrame } from './frames.js';
 import { requestHistory } from './net.js';

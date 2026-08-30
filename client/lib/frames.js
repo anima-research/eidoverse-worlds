@@ -9,7 +9,7 @@
 // by its title, drag its corner to resize, collapse it to a title bar, lock
 // the whole layout when you're happy, and have it still be there tomorrow.
 
-import { bus } from './core.js';
+import { bus } from './base.js';
 
 const LS = (id) => `ew-frame-${id}`;
 const frames = new Map();

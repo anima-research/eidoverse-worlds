@@ -6,7 +6,8 @@
 // the latest sample with an exponential factor, which stutters under jitter and
 // freezes-then-teleports under loss.
 
-import { THREE, camera, scene, report, angleDelta } from './core.js';
+import { THREE, camera, scene } from './core.js';
+import { report, angleDelta } from './base.js';
 import { makeAvatar } from './avatar.js';
 import { avatarMounts, mountTransform } from './world.js';
 import { declareSeatState, clearSeatState } from './seats.js';

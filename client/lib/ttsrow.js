@@ -17,7 +17,7 @@ import { renderVoiceList } from './ttslist.js';
 import { why } from './debuglog.js';
 import { ttsAvailable, ttsVoiceName, isTtsEnabled, setTtsEnabled, setTtsSource } from './tts.js';
 import { setEndpointVoice } from './browservoice.js';
-import { report, bus } from './core.js';
+import { report, bus } from './base.js';
 import { micOn } from './micstate.js';
 // The id of whatever is currently installed, so the list can show a filled dot
 // against it. Null when nothing is loaded — which is a real state, not an error.

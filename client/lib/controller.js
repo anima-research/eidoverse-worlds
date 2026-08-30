@@ -6,7 +6,8 @@
 // shoulder offset (your own body stops occluding what you're aiming at), and
 // a continuous zoom that passes through into first person.
 
-import { THREE, camera, canvas, CONFIG, angleDelta, bus } from './core.js';
+import { THREE, camera, canvas } from './core.js';
+import { CONFIG, angleDelta, bus } from './base.js';
 import { heightAt } from './terrain.js';
 import { resolveColliders, lastBlockedTop, findSeat, raySegment } from './colliders.js';
 import { chat } from './chat.js';

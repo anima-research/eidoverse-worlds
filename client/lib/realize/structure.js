@@ -30,7 +30,8 @@
 // every time somebody painted a wall. Style is an INDEX and a uniform, never a
 // new graph.
 
-import { THREE, TSL, scene, bus, report } from '../core.js';
+import { THREE, TSL, scene } from '../core.js';
+import { bus, report } from '../base.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { state, onWorldChange } from '../state.js';
 import { prepareObject } from '../materials.js';

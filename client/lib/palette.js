@@ -3,7 +3,7 @@
 // EDITING gestures (ghost, select, drag, undo) stay in build.js; this module
 // is how a thing gets INTO your hand, build.js is what your hand does with it.
 
-import { CONFIG, report, bus } from './core.js';
+import { CONFIG, report, bus } from './base.js';
 import { libLabels } from './assets.js';
 import { sendVerb } from './net.js';
 import { makeSection, toast, escapeHtml } from './ui.js';

@@ -2,7 +2,7 @@
 // Toasts, the loading tray, the HUD, the hint bar, the panel frames, the dock,
 // and the two overlays (help, front door).
 
-import { bus, CONFIG, setName, setToken, setErrorSink, report, colorFor } from './core.js';
+import { bus, CONFIG, setName, setToken, setErrorSink, report, colorFor } from './base.js';
 import { loadingItems } from './assets.js';
 import { makeFrame, getFrame, isLocked, setLocked, resetLayout } from './frames.js';
 import { defsRegistry } from './defs.js';

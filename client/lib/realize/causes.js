@@ -15,7 +15,7 @@
 // from a module net imports would add yet another lap around the
 // net → chat → net cycle this rebuild is unwinding.
 
-import { bus } from '../core.js';
+import { bus } from '../base.js';
 import { logChat } from '../chat.js';
 import { PORTED } from './models.js';
 

@@ -16,7 +16,8 @@
 // seat-anchor grammar in seatedit.js; the router here hands seat gestures
 // across that seam and never re-implements them.
 
-import { THREE, scene, camera, canvas, bus, report } from './core.js';
+import { THREE, scene, camera, canvas } from './core.js';
+import { bus, report } from './base.js';
 import { loadGLB, libLabels } from './assets.js';
 import { makeLightGizmo } from './lights.js';
 import { entities, entityMeta, comps, editHolds } from './world.js';

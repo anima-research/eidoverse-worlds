@@ -9,7 +9,8 @@
 //              for a bound rig, so released bodies are reworn intact)
 
 import { keyFromVersion, negotiate } from '../../shared/ktx2.js';
-import { THREE, renderer, camera, scene, report, bus } from './core.js';
+import { THREE, renderer, camera, scene } from './core.js';
+import { report, bus } from './base.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';

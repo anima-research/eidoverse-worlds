@@ -49,7 +49,8 @@
 // The seam deletes the day upstream grows a strikeLight injection
 // (docs/upstream-wrap-once.md addendum).
 
-import { THREE, scene, camera, renderer, sun, CONFIG } from './core.js';
+import { THREE, scene, camera, renderer, sun } from './core.js';
+import { CONFIG } from './base.js';
 import { warmDepth } from './warmqueue.js';
 
 // ---- the fixed inventory ----------------------------------------------------

@@ -2,7 +2,8 @@
 // the small autonomic behaviours that make a puppet read as present (gaze,
 // blink, head pitch, mouth movement while speaking).
 
-import { THREE, scene, camera, renderer, report, angleDelta, bus } from './core.js';
+import { THREE, scene, camera, renderer } from './core.js';
+import { report, angleDelta, bus } from './base.js';
 import { defsRegistry } from './defs.js';
 import { measureChain, solveChain } from './reachbone.js';
 import { REACH_CHAINS } from '../../shared/joints.js';

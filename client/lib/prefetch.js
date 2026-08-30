@@ -22,7 +22,7 @@
 //      needed asset displaces stale speculative ones by construction.
 
 import { negotiate } from '../../shared/ktx2.js';
-import { bus, CONFIG, report } from './core.js';
+import { bus, CONFIG, report } from './base.js';
 import { whenBooted } from './boot.js';
 import { whenCalm } from './governor.js';
 import { demandState, listLibrary, ktx2Capable, ktx2KeyReady } from './assets.js';

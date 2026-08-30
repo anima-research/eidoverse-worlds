@@ -8,7 +8,8 @@
 // semantic (things win the name lookup because they were here first), and
 // it is preserved inside the handler bodies rather than across them.
 
-import { scene, camera, renderer, CONFIG, bus, report } from '../core.js';
+import { CONFIG, bus, report } from '../base.js';
+import { captureFrame } from '../capture.js';
 import { register, dispatch } from './registry.js';
 import { entities, roleOf, worldHasOwner } from '../world.js';
 import {
@@ -334,8 +335,7 @@ function bearingTo(p) {
 
 export async function saveScreenshot() {
   try {
-    renderer.render(scene, camera);
-    const url = renderer.domElement.toDataURL('image/png');
+    const url = captureFrame();
     const a = document.createElement('a');
     a.href = url;
     a.download = `eidoverse-${CONFIG.world}-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;

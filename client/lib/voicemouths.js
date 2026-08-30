@@ -5,7 +5,7 @@
 // amplitude, 🎙 glyph while the mic is hot. STT stays on the LOG plane, landing
 // afterward as an ordinary say. Nobody waits for words to know you're talking.
 
-import { CONFIG, bus } from './core.js';
+import { CONFIG, bus } from './base.js';
 import { micOn as meshMicOn, isMuted, micAnalyserLevel as meshMicLevel } from './micstate.js';
 
 import { remotes, noteSpeaking } from './remotes.js';

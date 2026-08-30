@@ -26,7 +26,7 @@
 // site rather than statically: a hint is UI, this file is machinery, and the
 // static form dragged all of ui.js (and its THREE import) into every context
 // that touches the mic — including headless ones with no DOM at all.
-import { bus } from './core.js';
+import { bus } from './base.js';
 const flashHint = (msg) => import('./ui.js').then((u) => u.flashHint(msg)).catch(() => {});
 import { sendTyping } from './net.js';
 import { gateThreshold } from './voiceconsent.js';

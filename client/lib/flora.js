@@ -10,7 +10,8 @@
 //   flora_field.js — field composition + retirement lifecycle
 //   flora_lod.js   — blade-LOD index subsets for tiled strokes (§17b)
 // All are covered by tools/flora.test.ts.
-import { THREE, TSL, bus, camera, renderer, CONFIG } from './core.js';
+import { THREE, TSL, camera, renderer } from './core.js';
+import { bus, CONFIG } from './base.js';
 import { primeFiles } from './assets.js';
 import { colliders } from './colliders.js';
 import { myState } from './controller.js';

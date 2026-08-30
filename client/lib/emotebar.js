@@ -6,7 +6,7 @@ import { makeFrame } from './frames.js';
 import { EMOTE_ORDER, EMOTE_ICONS } from './avatar.js';
 import { myState } from './controller.js';
 import { getMe } from './mybody.js';
-import { bus } from './core.js';
+import { bus } from './base.js';
 
 export function initEmoteBar() {
   const f = makeFrame('emotes', {

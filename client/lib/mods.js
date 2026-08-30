@@ -26,7 +26,7 @@
 // panels — but a module, once imported, cannot be UNLOADED; a mod that
 // grabbed globals keeps them until reload. Trusted means trusted.
 
-import { bus, CONFIG, report } from './core.js';
+import { bus, CONFIG, report } from './base.js';
 import { behaviors } from './world.js';
 import { sendVerb } from './net.js';
 import { makeSection, toast, flashHint } from './ui.js';

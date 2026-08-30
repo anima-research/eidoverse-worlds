@@ -21,7 +21,8 @@
 // same-id spawn REPLACES wholesale — PROTOCOL.md §3.1, the 2026-08-09
 // erratum, pinned by fixture 04-overwrite.
 
-import { THREE, scene, camera, report, bus } from '../core.js';
+import { THREE, scene, camera } from '../core.js';
+import { report, bus } from '../base.js';
 import { loadGLB, retainGLB, releaseGLB, evictIdleProtos } from '../assets.js';
 import { colliders, fitCollider, removeCollider, reindexCollider, refitCollider } from '../colliders.js';
 import { attachLamps, releaseOwner, registerCaster, releaseCaster } from '../lightrig.js';

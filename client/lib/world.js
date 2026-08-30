@@ -11,7 +11,8 @@
 // gone: state is folded once, realizers read it, and every load
 // completion re-reads current state (TEL0S_NOTES §11).
 
-import { THREE, scene, camera, renderer, report, bus } from './core.js';
+import { THREE, scene, camera, renderer } from './core.js';
+import { report, bus } from './base.js';
 import { loadEidoModule, noiseTexture, loadTrack, loadDone, libLabels } from './assets.js';
 import { prepareObject } from './materials.js';
 import { beginWork } from './loadwork.js';

@@ -100,16 +100,26 @@ irreducible cost centre of any renderer move.
 
 ## The program (four moves, in order of cheapness)
 
-1. **`captureFrame()`** — one primitive (`{camera pose, size} → PNG`)
-   dissolves the D-coupling of net.js, commands/handlers.js and
-   avatar.js's portrait path (three private copies of one intent today).
-   Also: route world.js's stray compileAsync through warmqueue.
-2. **Split the non-renderer core out of core.js** — `bus`, `CONFIG`,
-   `report`, `colorFor` into their own leaf so ~35 F-band modules stop
-   importing the renderer transitively. Mechanical.
+1. **`captureFrame()` — DONE (§24s).** `client/lib/capture.js` is the one
+   framebuffer-readback primitive; net.js's snap handler and the
+   screenshot command dispatch through it (their private renderer calls
+   deleted, their core.js imports narrowed). Two corrections to the
+   survey while landing it: world.js's compileAsync was ALREADY routed
+   through the warmqueue conductor (the inline call sits inside a warm()
+   thunk), and avatar.js's portrait path is deliberately NOT unified —
+   it is an offscreen-SUBJECT renderer (own RenderTarget, isolated
+   scene, async pixel reads), and one primitive with five booleans would
+   be worse than two honest ones.
+2. **base.js — DONE (§24s).** The renderer-free substrate (`bus`,
+   `CONFIG`, `setName/setToken`, `report`/`setErrorSink`, `angleDelta`,
+   `parallelMap`, the participant colours) split out of core.js; 59
+   modules retargeted mechanically. base.js guards its browser touches,
+   so headless suites now import the REAL bus and report instead of a
+   stub's. core.js is 127 lines of pure presentation substrate and
+   imports only base.
 3. **Narrow core.js's export** from the whole namespace to an explicit
-   surface (the list of what the client actually uses — countable after
-   move 2).
+   surface (the list of what the client actually uses — countable now
+   that move 2 landed).
 4. **Replace the globals host contract** with an explicit host object
    passed to eval-loaded modules. The hard one, and upstream-shaped
    (vendored vegetation + Skye's toolkit) — needs coordination, not just

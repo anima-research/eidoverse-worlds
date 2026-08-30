@@ -12,7 +12,8 @@
 // bar) are build.js exports — the modules call across the seam at gesture
 // time only, so the import cycle is eval-safe by construction.
 
-import { THREE, camera, bus } from './core.js';
+import { THREE, camera } from './core.js';
+import { bus } from './base.js';
 import { libLabels } from './assets.js';
 import { entities, entityMeta, comps, findPart } from './world.js';
 import { sendVerb } from './net.js';

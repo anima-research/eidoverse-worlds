@@ -12,7 +12,7 @@
 //   3. The wait made useful: the controls are on the splash, so the time is
 //      spent learning them instead of watching a bar.
 
-import { bus } from './core.js';
+import { bus } from './base.js';
 import { bootBytes } from './assets.js';
 
 // Phase weights are rough shares of a cold boot, measured rather than guessed

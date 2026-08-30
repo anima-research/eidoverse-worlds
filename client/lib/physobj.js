@@ -15,7 +15,8 @@
 // final transform as an ordinary `place` (fold-clean, late-joiner-true),
 // and the lease table forgets us.
 
-import { THREE, bus, CONFIG } from './core.js';
+import { THREE } from './core.js';
+import { bus, CONFIG } from './base.js';
 import { entities, comps } from './world.js';
 import { remotes } from './remotes.js';
 import { heightAt } from './terrain.js';

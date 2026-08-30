@@ -8,7 +8,8 @@
 // in the world→flora→controller→chat→net→world knot, and this module must
 // not add another edge into it (§14.2).
 
-import { THREE, CONFIG, bus } from './core.js';
+import { THREE } from './core.js';
+import { CONFIG, bus } from './base.js';
 import { radialForce, FORCE_MIN } from '../../shared/force.js';
 import {
   myState, updateFollowCamera, setPosture, keys, setSeatHook,

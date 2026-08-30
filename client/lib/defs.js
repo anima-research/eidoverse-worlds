@@ -8,7 +8,7 @@
 // import client lib modules. Two fetch sites, one per layer, both cheap
 // and both invalidated by the same push (world.js handles the engine's
 // refresh + regrow).
-import { bus } from './core.js';
+import { bus } from './base.js';
 
 let reg = null;
 bus.on('defs-updated', () => { reg = null; });

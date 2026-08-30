@@ -29,7 +29,7 @@
 // the same reason a human is, with no second code path to maintain.
 
 import { audioContext } from './audioctx.js';
-import { report } from './core.js';
+import { report } from './base.js';
 
 // 🔴 THE ENVELOPE IS setTargetAtTime, AND THE TICK IS A FLOOR UNDER IT.
 //

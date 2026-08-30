@@ -13,7 +13,7 @@
 // a fallback would be the mirror this extraction exists to kill, so a world
 // serving no palette gets a panel that says so.
 
-import { bus, report } from './core.js';
+import { bus, report } from './base.js';
 import { defsRegistry } from './defs.js';
 import { sendVerb } from './net.js';
 import { flashHint } from './ui.js';

@@ -28,7 +28,8 @@
 // Everything here READS client state and EMITS verbs — no private channel,
 // no authority. The server enforces rights; buttons just try.
 
-import { THREE, CONFIG, bus } from './core.js';
+import { THREE } from './core.js';
+import { CONFIG, bus } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
 import { editorsFor } from './inspect.js';
 import './lights.js';   // for its registered light editor (world.js pulls it in anyway)

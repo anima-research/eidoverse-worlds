@@ -8,7 +8,7 @@
 // one world's log, every one of which replays for every future joiner. The
 // log is history; trying things out is not.
 
-import { bus, report } from './core.js';
+import { bus, report } from './base.js';
 import { defsRegistry } from './defs.js';
 import { sendVerb } from './net.js';
 import { flashHint } from './ui.js';
