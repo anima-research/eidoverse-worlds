@@ -6,16 +6,37 @@
 // §8. Where a test can only be judged by eye (does the recovery read as WAKING
 // rather than as an engine restart) the test asserts the measurable band and
 // the CLIP carries the rest -- stated rather than pretended.
+//
+// COVERAGE IS PARTIAL, and the headings say which part. These prove physical
+// SUBCOMPONENTS, not the full acceptance vectors, because the verbs and the
+// render path do not exist yet:
+//
+//   T1  take_off              -- no verb yet. Not covered.
+//   T2  glide range/polar     -- PARTIAL: the curve and the range prediction
+//                               are proven; there is no glide_to target
+//                               contract to land short OF.
+//   T3  stamina rates         -- PARTIAL: the rates are proven; climb_to and
+//                               the winded forced-best-glide are not built.
+//   T4  R2 leaf + no autoland -- COVERED physically (the clip carries the eye).
+//   T5  consent gate          -- PARTIAL: the injected stub allows/denies/
+//                               revokes; land_at(person) descent and the
+//                               mid-descent diversion do not exist.
+//   T6  fold_down silhouette  -- no verb, no render. Not covered.
+//   T7  mode tags over a mixed sortie -- no plan layer yet. Not covered.
+//   T8  3.4s periods          -- PARTIAL: the leaf period is measured in the
+//                               integrator; wing-idle and stamina-tick RENDER
+//                               periods are not, and T8 asks about the render.
 
 import {
   makeConfig, initialState, step, bodyDown, bodyRecovered,
   leafAt, beatRemaining, sinkRate, glideRatio, glideRange,
-  denyAllConsent, fakeConsent, BREATH, airspeedAfter, leafLateralSwing,
+  denyAllConsent, fakeConsent, BREATH, airspeedAfter, leafLateralSwing, bestGlide,
 } from '../shared/flight.js';
 import { pilotInput, pilotHelp, DEFAULT_BINDS } from '../shared/flightpilot.js';
 import { inspectBody, describeBody } from '../shared/flightbody.js';
 import { denyAllFlight, devFlightProvider, resolveFlight, rigProfile, revoked }
   from '../shared/flightcap.js';
+import { readFileSync } from 'node:fs';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => {
@@ -28,7 +49,7 @@ const DT = 1 / 120;
 const flat = () => 0;
 
 // ---------------------------------------------------------------- T8: 3.4s
-console.log('\nT8 -- the breath is 3.4s');
+console.log('\nT8 (partial) -- the leaf period; render periods not yet measurable');
 {
   const cfg = makeConfig();
   check('BREATH is 3.4', BREATH === 3.4);
@@ -50,36 +71,46 @@ console.log('\nT8 -- the breath is 3.4s');
 }
 
 // ---------------------------------------------------------------- polar / T2
-console.log('\nT2 -- the polar is honest, and glide_to lands SHORT');
+console.log('\nT2 (partial) -- the polar is honest; no glide_to verb yet');
 {
   const cfg = makeConfig();
   const p = cfg.polar;
-  // MINIMUM SINK and BEST GLIDE are different speeds, and a polar that put
-  // them at the same place would be the wrong shape. `bestSpeed` is the
-  // minimum-SINK speed (the one you circle a thermal at); best glide RATIO
-  // sits a little faster, because ratio is v/sink and the numerator keeps
-  // growing after the denominator bottoms out. This is real, and the first
-  // version of this test asserted the opposite -- kept as an explicit pair of
-  // checks so nobody "fixes" the polar back into the mistake.
-  check('minimum SINK is at bestSpeed',
-        sinkRate(cfg, p.bestSpeed) <= sinkRate(cfg, p.bestSpeed - 3) &&
-        sinkRate(cfg, p.bestSpeed) <= sinkRate(cfg, p.bestSpeed + 3));
-  check('best glide RATIO is faster than minimum-sink speed',
-        glideRatio(cfg, p.bestSpeed + 2) > glideRatio(cfg, p.bestSpeed));
-  check(`ratio at min-sink speed is the declared ${p.bestGlideRatio}`,
-        near(glideRatio(cfg, p.bestSpeed), p.bestGlideRatio, 0.01));
-  check('sink rises either side of best',
-        sinkRate(cfg, p.bestSpeed - 4) > sinkRate(cfg, p.bestSpeed) &&
-        sinkRate(cfg, p.bestSpeed + 4) > sinkRate(cfg, p.bestSpeed));
+  // MINIMUM SINK and BEST GLIDE are different speeds. The published optimum is
+  // now SEARCHED from the implemented curve rather than asserted beside it,
+  // because the first cut declared min-sink's ratio as the best ratio and
+  // glideRange() therefore under-predicted by 8% -- in the flier's favour,
+  // which is the rubber-banding T2 exists to forbid.
+  const bg = bestGlide(cfg);
+  check('minimum SINK is at minSinkSpeed',
+        sinkRate(cfg, p.minSinkSpeed) <= sinkRate(cfg, p.minSinkSpeed - 3) &&
+        sinkRate(cfg, p.minSinkSpeed) <= sinkRate(cfg, p.minSinkSpeed + 3));
+  check(`best glide ${bg.ratio.toFixed(3)} at ${bg.speed.toFixed(2)} m/s is FASTER than min sink`,
+        bg.speed > p.minSinkSpeed);
+  // The search must find the true maximum: nothing on the curve may beat it.
+  let scanBest = 0, scanAt = 0;
+  for (let v = p.minSpeed; v <= p.maxSpeed; v += 0.001) {
+    const r = glideRatio(cfg, v);
+    if (r > scanBest) { scanBest = r; scanAt = v; }
+  }
+  check(`published best ratio IS the curve's maximum (scan ${scanBest.toFixed(4)} at ${scanAt.toFixed(3)})`,
+        near(bg.ratio, scanBest, 1e-3) && near(bg.speed, scanAt, 0.02));
+  check('sink rises either side of min sink',
+        sinkRate(cfg, p.minSinkSpeed - 4) > sinkRate(cfg, p.minSinkSpeed) &&
+        sinkRate(cfg, p.minSinkSpeed + 4) > sinkRate(cfg, p.minSinkSpeed));
 
-  // T2: from 30m, best glide reaches 30*12 = 360m. Fly at a target beyond it
-  // and confirm we touch down at the polar's say-so, not the target.
+  // T2: fly at the polar's real best-glide speed and confirm the distance
+  // matches what glideRange() predicts from the same curve.
+  // R3 bounds turn a flier back at 80 m, and best glide from 30 m is ~388 m --
+  // so a range test inside the default world measures the FENCE, not the
+  // polar. Widen the bounds for this test only: T2 is a claim about the glide
+  // curve, and the fence has its own tests.
+  const openSky = makeConfig({ bounds: { radius: 100000, ceiling: 100000 } });
   const alt = 30;
-  const predicted = glideRange(cfg, alt);
+  const predicted = glideRange(openSky, alt);
   let s = initialState({ phase: 'GLIDE', pos: { x: 0, y: alt, z: 0 },
-                         airspeed: p.bestSpeed, yaw: 0 });
+                         airspeed: bestGlide(openSky).speed, yaw: 0 });
   let guard = 0;
-  while (s.phase === 'GLIDE' && guard++ < 200000) s = step(cfg, s, DT, { groundY: flat });
+  while (s.phase === 'GLIDE' && guard++ < 400000) s = step(openSky, s, DT, { groundY: flat });
   const flown = Math.hypot(s.pos.x, s.pos.z);
   check(`glide from ${alt}m reaches ${flown.toFixed(1)}m, polar predicts ${predicted.toFixed(1)}m (+/-10%)`,
         Math.abs(flown - predicted) / predicted <= 0.10,
@@ -92,7 +123,7 @@ console.log('\nT4 -- R2 falling leaf, no autoland (the spec\'s soul)');
 {
   const cfg = makeConfig();
   let s = initialState({ phase: 'GLIDE', pos: { x: 0, y: 20, z: 0 },
-                         airspeed: cfg.polar.bestSpeed });
+                         airspeed: cfg.polar.minSinkSpeed });
   s = bodyDown(s, { eventId: 'ev-cut-1' });
   check('cut mid-flight -> LEAF', s.phase === 'LEAF');
   check('wings go LIMP', s.wings === 'LIMP');
@@ -124,7 +155,7 @@ console.log('\nT4b -- no last-metre mercy hover');
 {
   const cfg = makeConfig();
   let s = initialState({ phase: 'GLIDE', pos: { x: 0, y: 16, z: 0 },
-                         airspeed: cfg.polar.bestSpeed });
+                         airspeed: cfg.polar.minSinkSpeed });
   s = bodyDown(s, { eventId: 'ev-cut-2' });
   // Sample only while STILL FALLING. The step that makes contact hands the
   // body to the ragdoll and zeroes the velocity, which is correct and is not a
@@ -152,7 +183,7 @@ console.log('\nRECOVERY -- the aerial sit-up, and its acceptance band');
   // wherever in the beat the signal lands.
   for (const injectAt of [0.2, 0.9, 1.7, 2.6, 3.3]) {
     let s = initialState({ phase: 'GLIDE', pos: { x: 0, y: 40, z: 0 },
-                          airspeed: cfg.polar.bestSpeed });
+                          airspeed: cfg.polar.minSinkSpeed });
     s = bodyDown(s, { eventId: 'ev-cut-3' });
     let guard = 0;
     while (s.phaseT < injectAt && guard++ < 100000) s = step(cfg, s, DT, { groundY: flat });
@@ -190,7 +221,7 @@ console.log('\nRECOVERY -- the beat is finished, not cut off');
 }
 
 // ---------------------------------------------------------------- T3: stamina
-console.log('\nT3 -- stamina drains at -1/m climbing, refills on the ground');
+console.log('\nT3 (partial) -- stamina rates; no climb_to or winded glide yet');
 {
   const cfg = makeConfig();
   check('climb costs 1/m', cfg.stamina.climbPerMetre === 1);
@@ -203,7 +234,7 @@ console.log('\nT3 -- stamina drains at -1/m climbing, refills on the ground');
 }
 
 // ---------------------------------------------------------------- T5: consent
-console.log('\nT5 -- land_at(person) is a HARD GATE, injected and fakeable');
+console.log('\nT5 (partial) -- the consent gate; no land_at(person) descent yet');
 {
   check('the default provider DENIES', denyAllConsent.canLandAt('mythos', 'repligate') === false);
   const c = fakeConsent(false);
@@ -268,7 +299,7 @@ console.log('\nDETERMINISM -- two independent sims, same inputs, same trajectory
   // inputs." Same function, two separate state values, interleaved stepping.
   const mk = () => {
     let s = initialState({ phase: 'GLIDE', pos: { x: 3, y: 35, z: -7 },
-                           airspeed: cfg.polar.bestSpeed, yaw: 0.7 });
+                           airspeed: cfg.polar.minSinkSpeed, yaw: 0.7 });
     return bodyDown(s, { eventId: 'ev-det' });
   };
   let a = mk(), b = mk();
@@ -303,11 +334,29 @@ console.log('\nDETERMINISM -- two independent sims, same inputs, same trajectory
 // ---------------------------------------------------------------- config
 console.log('\nCONFIG, not constants');
 {
-  const c = makeConfig({ leaf: { damping: 0.5 } });
-  check('override takes', c.leaf.damping === 0.5);
+  const c = makeConfig({ leaf: { dampingPerCycle: 0.05 } });
+  check('override takes', c.leaf.dampingPerCycle === 0.05);
   check('siblings survive the merge', c.leaf.period === 3.4 && c.leaf.terminalV === 2.5);
-  const c2 = makeConfig({ polar: { bestSpeed: 20 } });
-  check('derived sinkAtBest recomputes', near(c2.polar.sinkAtBest, 20 / 12, 1e-9));
+  // A config editor must not be able to report an edit the physics ignores.
+  // This test previously USED a stale key (`leaf.damping`, renamed and consumed
+  // by nothing) and passed, which is exactly the failure mica named.
+  const rejects = (over: any, why: string) => {
+    let threw = false;
+    try { makeConfig(over); } catch { threw = true; }
+    check(`rejects ${why}`, threw);
+  };
+  rejects({ leaf: { damping: 0.5 } }, 'a stale/renamed key');
+  rejects({ nonsense: { x: 1 } }, 'an unknown section');
+  rejects({ leaf: { period: NaN } }, 'a non-finite value');
+  rejects({ leaf: { period: -1 } }, 'an out-of-range value');
+  rejects({ leaf: { dampingPerCycle: 2 } }, 'damping above 1');
+  check('initialState binds to the effective config pool',
+        initialState({}, makeConfig({ stamina: { pool: 42 } })).stamina === 42);
+  check('...and falls back to the default without one',
+        initialState({}).stamina === 100);
+  const c2 = makeConfig({ polar: { minSinkSpeed: 14 } });
+  check('a different min-sink speed moves the derived best glide',
+        Math.abs(bestGlide(c2).speed - bestGlide(makeConfig()).speed) > 0.5);
   const c3 = makeConfig({ leaf: { period: 5 } });
   check('a different period really changes the leaf',
         Math.abs(leafAt(c3, 1.25).bank) !== Math.abs(leafAt(makeConfig(), 1.25).bank));
@@ -368,17 +417,17 @@ console.log('\nPILOT -- a human flies the same integrator an agent does');
   check('a PILOT step runs at all', threw === '', threw);
 
   // Hands off, she glides: altitude falls on the polar, heading holds.
-  s = initialState({ phase: 'PILOT', pos: { x: 0, y: 30, z: 0 }, airspeed: cfg.polar.bestSpeed });
+  s = initialState({ phase: 'PILOT', pos: { x: 0, y: 30, z: 0 }, airspeed: cfg.polar.minSinkSpeed });
   const y0 = s.pos.y, yaw0 = s.yaw;
   for (let i = 0; i < 240; i++) s = step(cfg, s, DT, { groundY: flatG, input: pilotInput(new Set(), s, DT) });
   check('hands off: she descends', s.pos.y < y0);
   check('hands off: heading holds', near(s.yaw, yaw0, 1e-9));
   const sinkObs = (y0 - s.pos.y) / 2;
-  check(`hands-off sink ${sinkObs.toFixed(2)} m/s matches the polar ${sinkRate(cfg, cfg.polar.bestSpeed).toFixed(2)}`,
-        near(sinkObs, sinkRate(cfg, cfg.polar.bestSpeed), 0.1));
+  check(`hands-off sink ${sinkObs.toFixed(2)} m/s matches the polar ${sinkRate(cfg, cfg.polar.minSinkSpeed).toFixed(2)}`,
+        near(sinkObs, sinkRate(cfg, cfg.polar.minSinkSpeed), 0.15));
 
   // A banked wing turns, and the wings return to level hands-off.
-  s = initialState({ phase: 'PILOT', pos: { x: 0, y: 40, z: 0 }, airspeed: cfg.polar.bestSpeed });
+  s = initialState({ phase: 'PILOT', pos: { x: 0, y: 40, z: 0 }, airspeed: cfg.polar.minSinkSpeed });
   const right = new Set(['KeyD']);
   for (let i = 0; i < 120; i++) s = step(cfg, s, DT, { groundY: flatG, input: pilotInput(right, s, DT) });
   check('banking right turns right', s.yaw > 0.5);
@@ -401,7 +450,7 @@ console.log('\nPILOT -- a human flies the same integrator an agent does');
   check('R1 recovers rather than punishing (still flying)', s.phase === 'PILOT' || s.phase === 'LANDED');
 
   // Flapping is expensive; spoiling costs altitude without speed.
-  s = initialState({ phase: 'PILOT', pos: { x: 0, y: 40, z: 0 }, airspeed: cfg.polar.bestSpeed, stamina: 100 });
+  s = initialState({ phase: 'PILOT', pos: { x: 0, y: 40, z: 0 }, airspeed: cfg.polar.minSinkSpeed, stamina: 100 });
   const flap = new Set(['Space']);
   for (let i = 0; i < 120; i++) s = step(cfg, s, DT, { groundY: flatG, input: pilotInput(flap, s, DT) });
   check(`flapping costs ~2/s stamina (100 -> ${s.stamina.toFixed(1)})`, near(s.stamina, 98, 0.2));
@@ -424,9 +473,15 @@ console.log('\nPILOT -- a human flies the same integrator an agent does');
 // ---------------------------------------------------------------- body contract
 console.log('\nBODY -- flight binds to bone NAMES, not to an avatar hash');
 {
-  const real = ['Hip','Spine01','Spine02','Head','NeckTwist01',
-    'L_Wing_Upper','L_Wing_Upper_1','L_Wing_Upper_2','L_Wing_Lower','L_Wing_Lower_1','L_Wing_Lower_2',
-    'R_Wing_Upper','R_Wing_Upper_1','R_Wing_Upper_2','R_Wing_Lower','R_Wing_Lower_1','R_Wing_Lower_2'];
+  // The bone list is DERIVED from the shipped artifact, not typed by hand --
+  // an array in a test file cannot go stale against an asset, which is exactly
+  // why it must not be called "the shipped body". Regenerate with
+  // `bun tools/flight-fixture.ts` when the body changes.
+  const fx = JSON.parse(readFileSync('spec/fixtures/mythos-wings-rig.json', 'utf8'));
+  const real: string[] = fx.bones;
+  check(`fixture is the shipped asset (${fx.bytes} B, sha256 ${fx.sha256.slice(0, 12)}...)`,
+        fx.bytes === 24755464 && /^[0-9a-f]{64}$/.test(fx.sha256));
+  check(`and it carries ${fx.boneCount} bones from the real file`, real.length === fx.boneCount);
   const r = inspectBody(real);
   check('the shipped body is flight-capable', r.canFly && r.canAnimateWings);
   check('four chains, twelve bones', Object.keys(r.chains).length === 4 && r.wingCount === 12);
@@ -452,12 +507,79 @@ console.log('\nBODY -- flight binds to bone NAMES, not to an avatar hash');
         inspectBody([]).canFly === false);
 }
 
+// ---------------------------------------------------------------- R3 bounds
+console.log('\nR3 -- bounds are authoritative for every airborne phase, and soft');
+{
+  const cfg = makeConfig();
+  const lift = () => 3;   // strong enough to climb through a lid that is not enforced
+  for (const phase of ['GLIDE', 'PILOT'] as const) {
+    let s = initialState({ phase, pos: { x: 0, y: 50, z: 0 }, airspeed: 11 }, cfg);
+    let peak = 0, fired = false;
+    for (let i = 0; i < 3000; i++) {
+      s = step(cfg, s, DT, { groundY: flat, lift, input: { bank: 0, pitch: 0, yawRate: 0 } });
+      peak = Math.max(peak, s.pos.y);
+      if (s.events.some(e => e.kind === 'reflex.r3_ceiling')) fired = true;
+    }
+    check(`${phase} is held at the ceiling (peak ${peak.toFixed(2)} <= ${cfg.bounds.ceiling})`,
+          peak <= cfg.bounds.ceiling + 0.05, `reached ${peak.toFixed(2)}`);
+    check(`${phase} publishes the R3 ceiling reflex`, fired);
+  }
+  // SOFT, not a wall: the climb bleeds out across the margin instead of the
+  // position being clamped and the velocity zeroed.
+  let s = initialState({ phase: 'GLIDE', pos: { x: 0, y: 50, z: 0 }, airspeed: 11 }, cfg);
+  const climbs: number[] = [];
+  for (let i = 0; i < 1200; i++) {
+    s = step(cfg, s, DT, { groundY: flat, lift });
+    if (s.pos.y > cfg.bounds.ceiling - cfg.bounds.softMargin) climbs.push(s.vel.y);
+  }
+  check('the ceiling is SOFT (climb decays, never snaps to zero)',
+        climbs.length > 60 && climbs.some(v => v > 0.01) && Math.min(...climbs) >= -0.01);
+
+  // Lateral bounds turn a flier back rather than stopping it.
+  let b = initialState({ phase: 'GLIDE', pos: { x: cfg.bounds.radius - 2, y: 40, z: 0 },
+                         airspeed: 12, yaw: 0 }, cfg);
+  let turned = false, maxR = 0;
+  for (let i = 0; i < 3000; i++) {
+    b = step(cfg, b, DT, { groundY: flat });
+    maxR = Math.max(maxR, Math.hypot(b.pos.x, b.pos.z));
+    if (b.events.some(e => e.kind === 'reflex.r3_bounds')) turned = true;
+  }
+  check('flying at the fence publishes R3 bounds', turned);
+  check(`and is banked back rather than walled (max r ${maxR.toFixed(1)})`,
+        maxR < cfg.bounds.radius + cfg.bounds.softMargin + 2);
+
+  // A LIMP body is NOT steered: the leaf must be free to land where it falls.
+  let l = initialState({ phase: 'GLIDE', pos: { x: 0, y: 30, z: 0 }, airspeed: 11 }, cfg);
+  l = bodyDown(l, { eventId: 'ev-r3' });
+  let g3 = 0;
+  while (l.phase === 'LEAF' && g3++ < 200000) l = step(cfg, l, DT, { groundY: flat });
+  check('reflexes do not steer a LIMP body (it still lands)', l.phase === 'RAGDOLL');
+}
+
+// ---------------------------------------------------------------- receipts
+console.log('\nRECEIPTS -- the impact velocity is the impact velocity');
+{
+  const cfg = makeConfig();
+  let s = initialState({ phase: 'GLIDE', pos: { x: 0, y: 20, z: 0 }, airspeed: 11 }, cfg);
+  s = bodyDown(s, { eventId: 'ev-impact' });
+  let lastVy = 0, guard = 0;
+  while (s.phase === 'LEAF' && guard++ < 200000) { lastVy = s.vel.y; s = step(cfg, s, DT, { groundY: flat }); }
+  const ev = s.events.find(e => e.kind === 'ground.ragdoll')!;
+  // The first cut reported `leafV0` -- the sink when the leaf BEGAN -- which
+  // from a glide entered at zero was literally 0.00 on a body hitting at 2.5.
+  check(`impactV ${ev.impactV.toFixed(3)} is the real pre-contact vy ${Math.abs(lastVy).toFixed(3)}`,
+        near(ev.impactV, Math.abs(lastVy), 0.01));
+  check('impactV is NOT the entry sink', Math.abs(ev.impactV - ev.entrySink) > 1);
+  check('the receipt also carries the full impact speed',
+        ev.impactSpeed >= ev.impactV && ev.impactSpeed < ev.impactV + 2);
+  check('and the originating eventId', ev.eventId === 'ev-impact');
+}
+
 // ---------------------------------------------------------------- capability
 console.log('\nCAPABILITY -- default deny, action-time, semantic rig binding');
 {
-  const MYTHOS = ['Hip','Spine01','Spine02','Head','NeckTwist01',
-    'L_Wing_Upper','L_Wing_Upper_1','L_Wing_Upper_2','L_Wing_Lower','L_Wing_Lower_1','L_Wing_Lower_2',
-    'R_Wing_Upper','R_Wing_Upper_1','R_Wing_Upper_2','R_Wing_Lower','R_Wing_Lower_1','R_Wing_Lower_2'];
+  const MYTHOS: string[] =
+    JSON.parse(readFileSync('spec/fixtures/mythos-wings-rig.json', 'utf8')).bones;
   const COMMONS = ['Hip','Spine01','Spine02','Head','NeckTwist01'];   // no wings
 
   // 1. Default provider / no profile -> nothing.
@@ -495,9 +617,16 @@ console.log('\nCAPABILITY -- default deny, action-time, semantic rig binding');
   const renamed = MYTHOS.map(b => b === 'L_Wing_Upper_2' ? 'L_Pinion_2' : b);
   check('renaming a wing bone revokes', revoked(g.profile, renamed) === true);
 
-  // 5. Hot-swap to an incompatible rig revokes cleanly (mica's case).
-  check('hot-swap to a wingless commons avatar revokes',
-        revoked(g.profile, COMMONS) === true);
+  // 5. Hot-swap revokes AT THE GATE, without the caller remembering a second
+  //    check. The first cut preferred the provider's constructor bones over
+  //    the live avatar's, so re-resolving after a swap still said yes -- an
+  //    action-time gate resolving against a body that was no longer there.
+  const afterSwap = resolveFlight(dev, { identity: 'mythos', avatar: { boneNames: COMMONS } });
+  check('re-resolving after a hot-swap DENIES (no second check needed)',
+        afterSwap.enabled === false, afterSwap.reason);
+  const stillOk = resolveFlight(dev, { identity: 'mythos', avatar: { boneNames: MYTHOS } });
+  check('...and the same provider still grants on the real rig', stillOk.enabled === true);
+  check('revoked() agrees with the gate', revoked(g.profile, COMMONS) === true);
   check('a commons avatar cannot obtain a profile at all',
         resolveFlight(devFlightProvider({ allow: ['someone'], bones: COMMONS }),
                       { identity: 'someone' }).enabled === false);

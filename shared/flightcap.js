@@ -105,11 +105,19 @@ export function devFlightProvider({ allow = [], bones = null, label = 'local-dev
   const allowed = new Set(allow);
   return {
     name: label,
-    flightCapability({ identity, avatar, world } = {}) {
+    /** @param {{identity?:string, avatar?:{boneNames?:string[]}, world?:any}} [ctx] */
+    flightCapability(ctx = {}) {
+      const { identity, avatar } = ctx;
       if (!allowed.has(identity)) {
         return { enabled: false, reason: `identity ${identity ?? '(none)'} not in the bench allow-list` };
       }
-      const names = bones ?? avatar?.boneNames ?? null;
+      // THE LIVE BODY WINS. The first cut preferred the constructor's `bones`,
+      // so a provider built with Mythos's rig kept granting flight after the
+      // avatar hot-swapped to a wingless one -- the action-time gate resolving
+      // against a body that was no longer there. The constructor list is only a
+      // FALLBACK for a headless caller that has no avatar to inspect, which is
+      // the one case it was meant for.
+      const names = avatar?.boneNames ?? bones ?? null;
       if (!names) return { enabled: false, reason: 'no bone list available for this avatar' };
       const r = rigProfile(names);
       if (!r.ok) return { enabled: false, reason: r.reason };

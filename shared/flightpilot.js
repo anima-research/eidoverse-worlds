@@ -56,9 +56,9 @@ const held = (keys, list) => list.some((k) => keys.has(k));
  * One frame of piloting.
  *
  * @param {Set<string>} keys      held key codes
- * @param {object} state          flight state (read-only here)
+ * @param {{bank?:number, pitch?:number}} state   flight state (read-only here)
  * @param {number} dt             seconds
- * @param {object} [opts]         { binds, authority }
+ * @param {{binds?:object, authority?:object}} [opts]
  * @returns {{bank:number, pitch:number, yawRate:number, flap:boolean,
  *            spoil:boolean, edges:string[]}}
  *   `edges` names one-shot intents the caller must debounce (rehearsal
