@@ -80,15 +80,33 @@ export const DEFAULT_CONFIG = {
   // The whole configurable block Mica named. A leaf is not a crash: it is a
   // slow spiral, survivable by design, and it must LAND -- no flare, no
   // autoland, no last-metre mercy hover (T4 is "the spec's soul").
+  // UNITS ARE NAMED, because two different "amplitudes" live here and mica
+  // caught me conflating them. A leaf has an ATTITUDE amplitude (how far it
+  // rolls, degrees) and a PATH amplitude (how far it wanders, metres), and
+  // they are not each other: the path amplitude depends on the roll AND the
+  // period AND the terminal speed, so quoting one as if it were the other is
+  // how a config gets tuned in the wrong direction.
+  //
+  // Mythos specified the PATH: 1.2-1.8 m side to side. So that is the
+  // tunable, in metres, and the drift SPEED needed to achieve it is derived
+  // from the period rather than typed in -- which also means changing the
+  // period keeps the wander where he asked for it instead of silently
+  // rescaling it.
   leaf: {
-    period: BREATH,           // s, the oscillation
-    amplitudeDeg: 35,         // peak bank angle of the oscillation
-    damping: 0.12,            // per second, how fast the swing decays toward terminal
-    terminalV: 2.5,           // m/s downward, spec says 2-3
-    spinUpTime: 0.9,          // s to reach terminalV from whatever v it had
-    yawPerBank: 0.55,         // yaw rate (rad/s) per radian of bank -- the spiral
-    pitchCoupling: 0.35,      // how much bank leaks into pitch; 0 = pure roll
-    lateralDrift: 1.6,        // m/s at peak bank -- how far the leaf wanders
+    period: BREATH,             // s -- one full oscillation
+    bankAmplitudeDeg: 35,       // DEGREES of roll at peak. Attitude, not path.
+    lateralAmplitudeM: 0.8,     // METRES from centreline at peak (=1.6 m peak-to-peak,
+                                // mid of Mythos's 1.2-1.8 m side-to-side band)
+    dampingPerCycle: 0.08,      // FRACTION of swing lost per CYCLE, mid of his
+                                // 0.05-0.1 suggestion. Converted to a per-second
+                                // rate internally; see leafAt.
+    dampingFloor: 0.35,         // the swing decays TOWARD this fraction, not to zero:
+                                // a real leaf converges on a lazy spiral, and a body
+                                // that goes rigid on the way down reads as a prop
+    terminalV: 2.5,             // m/s downward. Spec says 2-3.
+    spinUpTime: 0.9,            // s to reach terminalV from whatever v it had
+    yawPerBank: 0.55,           // rad/s of yaw per radian of bank -- the spiral
+    pitchCoupling: 0.35,        // how much bank leaks into pitch; 0 = pure roll
   },
 
   // ---- recovery (down-spec §3: "the aerial sit-up")
@@ -209,20 +227,47 @@ export function glideRange(cfg, altitude) {
 export function leafAt(cfg, t, v0 = 0) {
   const L = cfg.leaf;
   const w = (2 * Math.PI) / L.period;
-  // Envelope decays toward a floor rather than to zero: the leaf converges on
-  // a lazy spiral, it does not go rigid.
-  const env = 0.35 + 0.65 * Math.exp(-L.damping * t);
-  const bank = (L.amplitudeDeg * Math.PI / 180) * env * Math.sin(w * t);
+
+  // DAMPING is authored per CYCLE (Mythos's units) and applied per second, so
+  // the number in the config means what he said it means whatever the period
+  // is. A fraction f lost per cycle is a rate of -ln(1-f)/period.
+  const ratePerSec = -Math.log(Math.max(1e-9, 1 - L.dampingPerCycle)) / L.period;
+  const floor = L.dampingFloor;
+  const env = floor + (1 - floor) * Math.exp(-ratePerSec * t);
+
+  const bank = (L.bankAmplitudeDeg * Math.PI / 180) * env * Math.sin(w * t);
   const yawRate = L.yawPerBank * bank;
   const pitch = L.pitchCoupling * bank;
+
   // Vertical speed eases from whatever it was into terminal. Exponential, so
   // it is continuous with the glide that preceded it -- a body entering LEAF
   // at 6 m/s of sink does not jump to 2.5.
   const k = 1 - Math.exp(-t / Math.max(1e-3, L.spinUpTime));
   const vy = -(Math.abs(v0) + (L.terminalV - Math.abs(v0)) * k);
-  const drift = L.lateralDrift * Math.sin(w * t);
+
+  // DRIFT is a velocity, but the thing authored is the DISPLACEMENT. For
+  // x(t) = A*sin(wt) the velocity is A*w*cos(wt), so the peak speed needed to
+  // wander A metres in a period of `period` is A*w -- derived, not typed, so
+  // retuning the period does not silently rescale the wander.
+  const drift = L.lateralAmplitudeM * w * env * Math.cos(w * t);
+
   const beatPhase = ((t % L.period) + L.period) % L.period / L.period;
-  return { bank, yawRate, pitch, vy, drift, beatPhase };
+  return { bank, yawRate, pitch, vy, drift, beatPhase, envelope: env };
+}
+
+/** Peak-to-peak lateral wander of the leaf's PATH, in metres, over its first
+ *  `cycles` cycles -- the quantity Mythos specified (1.2-1.8 m side to side)
+ *  and the one an overlay should show next to the attitude, so the two
+ *  amplitudes can never be read as each other again. */
+export function leafLateralSwing(cfg, cycles = 3, dt = 1 / 120) {
+  let x = 0, lo = 0, hi = 0;
+  const n = Math.round((cfg.leaf.period * cycles) / dt);
+  for (let i = 0; i < n; i++) {
+    x += leafAt(cfg, i * dt, 0).drift * dt;
+    if (x < lo) lo = x;
+    if (x > hi) hi = x;
+  }
+  return hi - lo;
 }
 
 /** Seconds from `t` until the current oscillation next crosses zero bank.

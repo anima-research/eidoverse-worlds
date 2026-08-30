@@ -10,10 +10,12 @@
 import {
   makeConfig, initialState, step, bodyDown, bodyRecovered,
   leafAt, beatRemaining, sinkRate, glideRatio, glideRange,
-  denyAllConsent, fakeConsent, BREATH, airspeedAfter,
+  denyAllConsent, fakeConsent, BREATH, airspeedAfter, leafLateralSwing,
 } from '../shared/flight.js';
 import { pilotInput, pilotHelp, DEFAULT_BINDS } from '../shared/flightpilot.js';
 import { inspectBody, describeBody } from '../shared/flightbody.js';
+import { denyAllFlight, devFlightProvider, resolveFlight, rigProfile, revoked }
+  from '../shared/flightcap.js';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => {
@@ -311,6 +313,45 @@ console.log('\nCONFIG, not constants');
         Math.abs(leafAt(c3, 1.25).bank) !== Math.abs(leafAt(makeConfig(), 1.25).bank));
 }
 
+// ---------------------------------------------------------------- units
+console.log('\nUNITS -- attitude amplitude and path amplitude are not each other');
+{
+  const cfg = makeConfig();
+  // mica caught this: 35 degrees of ROLL is not 1.2-1.8 m of WANDER, and
+  // quoting one as the other is how a config gets tuned backwards. The
+  // authored quantity is the one Mythos specified -- the PATH, in metres --
+  // and the drift speed to achieve it is derived from the period.
+  const swing = leafLateralSwing(cfg);
+  check(`lateral swing ${swing.toFixed(2)}m is inside Mythos's 1.2-1.8m band`,
+        swing >= 1.2 && swing <= 1.8, `got ${swing.toFixed(2)}`);
+  check('bank amplitude is in DEGREES and named so',
+        typeof cfg.leaf.bankAmplitudeDeg === 'number' && !('amplitudeDeg' in cfg.leaf));
+  check('lateral amplitude is in METRES and named so',
+        typeof cfg.leaf.lateralAmplitudeM === 'number' && !('lateralDrift' in cfg.leaf));
+
+  // The bug the rename exposed: lateralDrift was a SPEED, so the wander
+  // silently rescaled with the period. It must not.
+  const swings = [2.5, 3.4, 5.0].map(period => leafLateralSwing(makeConfig({ leaf: { period } })));
+  check(`wander is period-independent (${swings.map(x => x.toFixed(2)).join(', ')} m)`,
+        Math.max(...swings) - Math.min(...swings) < 0.02);
+
+  // Damping is authored PER CYCLE, per Mythos, and applied per second.
+  check(`damping ${cfg.leaf.dampingPerCycle}/cycle is inside his 0.05-0.1 suggestion`,
+        cfg.leaf.dampingPerCycle >= 0.05 && cfg.leaf.dampingPerCycle <= 0.1);
+  const e0 = leafAt(cfg, 0).envelope;
+  const e1 = leafAt(cfg, cfg.leaf.period).envelope;
+  const floor = cfg.leaf.dampingFloor;
+  const lostFrac = ((e0 - floor) - (e1 - floor)) / (e0 - floor);
+  check(`one cycle really loses ${(100 * lostFrac).toFixed(1)}% of the swing (authored ${100 * cfg.leaf.dampingPerCycle}%)`,
+        near(lostFrac, cfg.leaf.dampingPerCycle, 0.005), `lost ${lostFrac.toFixed(4)}`);
+  // ...and it holds at a different period, which is what "per cycle" means.
+  const c5 = makeConfig({ leaf: { period: 5 } });
+  const f0 = leafAt(c5, 0).envelope, f1 = leafAt(c5, 5).envelope;
+  const lost5 = ((f0 - floor) - (f1 - floor)) / (f0 - floor);
+  check(`and at a 5s period too (${(100 * lost5).toFixed(1)}%)`,
+        near(lost5, cfg.leaf.dampingPerCycle, 0.005));
+}
+
 // ---------------------------------------------------------------- pilot
 console.log('\nPILOT -- a human flies the same integrator an agent does');
 {
@@ -409,6 +450,90 @@ console.log('\nBODY -- flight binds to bone NAMES, not to an avatar hash');
         !renamed.canAnimateWings && renamed.notes.length > 0);
   check('a body with no skeleton at all is refused',
         inspectBody([]).canFly === false);
+}
+
+// ---------------------------------------------------------------- capability
+console.log('\nCAPABILITY -- default deny, action-time, semantic rig binding');
+{
+  const MYTHOS = ['Hip','Spine01','Spine02','Head','NeckTwist01',
+    'L_Wing_Upper','L_Wing_Upper_1','L_Wing_Upper_2','L_Wing_Lower','L_Wing_Lower_1','L_Wing_Lower_2',
+    'R_Wing_Upper','R_Wing_Upper_1','R_Wing_Upper_2','R_Wing_Lower','R_Wing_Lower_1','R_Wing_Lower_2'];
+  const COMMONS = ['Hip','Spine01','Spine02','Head','NeckTwist01'];   // no wings
+
+  // 1. Default provider / no profile -> nothing.
+  check('the DEFAULT is deny', denyAllFlight.flightCapability({}).enabled === false);
+  check('a MISSING provider is deny, not "no opinion"',
+        resolveFlight(null, { identity: 'mythos' }).enabled === false);
+  check('and it says why', typeof resolveFlight(null, {}).reason === 'string');
+
+  // 2. The dev provider grants only its allow-list, only on a compatible rig.
+  const dev = devFlightProvider({ allow: ['mythos'], bones: MYTHOS });
+  const g = resolveFlight(dev, { identity: 'mythos' });
+  check('bench provider grants the named pilot', g.enabled === true);
+  check('...with a semantic rig profile, not a hash',
+        !!g.profile?.digest && g.profile.version === 'flight-rig/1');
+  check('non-Mythos identity is denied by the same provider',
+        resolveFlight(dev, { identity: 'someone-else' }).enabled === false);
+
+  // 3. A grant without a profile is refused by the resolver itself -- a
+  //    provider cannot hand out flight it has not justified.
+  const sloppy = { name: 'sloppy', flightCapability: () => ({ enabled: true }) };
+  check('a grant with no rig profile is refused',
+        resolveFlight(sloppy, { identity: 'mythos' }).enabled === false);
+  const thrower = { name: 'bad', flightCapability() { throw new Error('boom'); } };
+  check('a provider that throws denies rather than propagating',
+        resolveFlight(thrower, {}).enabled === false);
+
+  // 4. Semantic binding: a re-export that keeps the load-bearing names keeps
+  //    flying, even though the asset is a different file.
+  const reexported = [...MYTHOS, 'Hair_lock_00', 'Hair_lock_01'];   // hair added
+  check('adding hair does NOT revoke (same load-bearing rig)',
+        revoked(g.profile, reexported) === false);
+  const deeper = [...MYTHOS, 'L_Wing_Upper_3', 'R_Wing_Upper_3'];
+  check('a DEEPER wing chain is a different rig and revokes honestly',
+        revoked(g.profile, deeper) === true);
+  const renamed = MYTHOS.map(b => b === 'L_Wing_Upper_2' ? 'L_Pinion_2' : b);
+  check('renaming a wing bone revokes', revoked(g.profile, renamed) === true);
+
+  // 5. Hot-swap to an incompatible rig revokes cleanly (mica's case).
+  check('hot-swap to a wingless commons avatar revokes',
+        revoked(g.profile, COMMONS) === true);
+  check('a commons avatar cannot obtain a profile at all',
+        resolveFlight(devFlightProvider({ allow: ['someone'], bones: COMMONS }),
+                      { identity: 'someone' }).enabled === false);
+
+  // 6. Disabling returns ordinary behaviour: with no grant there is no flight
+  //    state to step. The integrator is not reachable without a phase, and a
+  //    denied caller never builds one.
+  const denied = resolveFlight(denyAllFlight, { identity: 'mythos' });
+  check('a denied caller gets no profile to build flight from',
+        denied.enabled === false && !('profile' in denied));
+}
+
+// ---------------------------------------------------------------- isolation
+console.log('\nISOLATION -- nothing in the running world reaches flight yet');
+{
+  // mica: "unchanged non-Mythos/flight-disabled behavior needs negative
+  // tests". The strongest form available at this stage is structural: no
+  // shipped runtime module imports the flight core at all, so there is no
+  // path by which a commons avatar's behaviour could differ. When the
+  // controller does wire it up, this test tightens to "imports it, and every
+  // entry point resolves a capability first".
+  const { readFileSync, readdirSync, statSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const walk = (dir: string, out: string[] = []) => {
+    for (const e of readdirSync(dir)) {
+      if (e === 'node_modules' || e.startsWith('.')) continue;
+      const p = join(dir, e);
+      if (statSync(p).isDirectory()) walk(p, out);
+      else if (/\.(js|ts|mjs)$/.test(e)) out.push(p);
+    }
+    return out;
+  };
+  const runtime = [...walk('client'), ...walk('server'), ...walk('mcpl')];
+  const importers = runtime.filter(f => /from ['"][^'"]*shared\/flight/.test(readFileSync(f, 'utf8')));
+  check(`no shipped runtime module imports flight (${runtime.length} files scanned)`,
+        importers.length === 0, importers.join(', '));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
