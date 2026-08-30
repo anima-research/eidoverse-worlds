@@ -1,0 +1,111 @@
+# Flags for upstream — what rimward found, fixed, and changed
+
+For whoever merges `overhaul/rimward` into anima/main (or cherry-picks from
+it). Everything here carries a commit on this branch; the sections are
+ordered by what upstream most needs to know. Compiled 2026-08-30 (§24r).
+
+## 1. Bugs found in upstream's own tree (fixed here, unfixed there)
+
+Found during the 2026-08-28 catch-up merge (283 commits, febba9e) and after.
+Each is red on anima/main as it stands:
+
+1. **`tools/smoke.ts` asserts rtc delivery the server deleted.** The #104
+   SFU cutover removed the rtc lane; upstream's smoke still asserts a
+   message arrives through it. Ours asserts the lane is CLOSED (be36cb0).
+2. **The mesh-fallback suite tests deleted delegation.** micstate's
+   delegation back to voice.js was removed by the cutover; the suite still
+   exercises it. Ours was rewritten post-cutover
+   (tools/micstate-mesh-fallback-test.mjs, 5 checks).
+3. **`mcpl/agent.ts` imports `three/webgpu` with no `three` in any root
+   lockfile** — the agent door cannot boot clean from a fresh clone. Root
+   package.json needs `three` (we pinned ^0.184.0).
+4. **The typing suite can never pass against the hardened token registry.**
+   The registry rejects any key that appears in the tracked example file,
+   and `dev-token` is in the example. Ours uses a scratch registry
+   (tools/typing-mcpl.test.ts writes its own tokens.json).
+5. **`tools/avatar-test.ts` is red at HEAD**: the reach integration calls
+   `avatar._reachOwned()` on the test's stand-in avatar, which doesn't
+   define it. The stand-in needs the method (or the call needs a `?.`).
+6. **The seat-lifecycle clip sha must resolve the serve ladder.** The suite
+   hashes the LIBRARY's `sitting_normal_chair.vrma` directly; any deploy
+   that serves a patched fork of that clip (prod does — seats.ts's own
+   ladder comment records it, live 2026-08-19) gets every verdict reading
+   "stale (clip bytes changed)" against bytes no client animates from. Fix
+   in 3a5d93d: hash the first existing of [patched, opt, library] + rel —
+   the same order the store judges.
+
+## 2. Features upstream shipped dormant, now live here (port candidates)
+
+- **The seat-profile write half (#101/#105) is wired** (3a5d93d):
+  `POST /seat-profile` (named actor only — tokens.json bearer or aid1; the
+  anonymous door token is 401; proposals only, 4KB cap), verdicts ride
+  `/avatars` as `seat` with the `x-profiles-rev` header, a live proposal
+  announces immediately. Countersign remains operator-only (no HTTP path),
+  exactly per the #101 B4 design. `tools/seat-lifecycle-test.ts` — which
+  was authored to fail until these routes exist — passes 37/37.
+- **The stdio MCP door registers from the shared tool table** (d44dc02):
+  `mcpl/tools.ts` holds ONE `TOOLS` schema table + ONE `HANDLERS`
+  dispatcher (load-time advertise⇔handle assertion), `mcpl/server.ts` is a
+  pure transport (16 → 34 tools), and `net-server.ts`'s 460-line switch is
+  gone. Host differences ride a small `ToolCtx`. First-ever stdio door
+  test: `tools/stdio-door-test.ts` (13 checks, real JSON-RPC over stdio).
+
+## 3. Physics: instrument fixes upstream's fleet may want (253bf10)
+
+The doll suites' knee/crumple instruments have false-positive regimes that
+our 2-rig local fleet tripped; prod's 14-rig fleet may trip them too:
+
+- **Knee "hyperextension" reads a legal fetal fold as wrong-way** when the
+  thigh passes 90° of flexion in the measuring frame (hips at their stop +
+  legal spine curl): a legal backward fold then shows a forward deviation
+  of exactly −cos(thigh angle). Fixed by predicting the legal fold
+  direction from the thigh's own swing-from-rest; a control with inverted
+  knees still fires at 123°.
+- **The crumple metric trusted the direction of a 7mm bone** (mythos-class
+  rigs author the spine millimetres above the hips) — tens of degrees of
+  phantom fold from a millimetre of solver slack while the spine joints sat
+  at their stops. The metric's lower axis is hips→chest now.
+- **The verlet FLEX cone ate the same 7mm bone and exploded** (65 m/s peak
+  on a plain topple; six seconds of thrash). FLEX rows whose rest link is
+  under 3cm are skipped at build. **Lesson, twice in one day: length-floor
+  every direction read.**
+- **`JOINT_SPECS.upperLeg` is the hand-tuned row again** (flex 90 / ext 8 /
+  twist 0 / z ±13). It was parked for the Bullet wrap-point bug; the
+  range-centering fix landed long ago with a "put the row back" note nobody
+  collected. Note the coupling since the reach merge: shared/joints.js's
+  tables now serve BOTH the tumble clamps and the reach IK — widening a
+  limit moves what an arm can reach, not just how a body falls.
+- **`tools/rig-load.mjs` excludes `.ktx2.vrm` from the fleet** (3b8e67a):
+  texture serving-variants were being tumbled as bodies, and one
+  long-standing "8.6cm handover" red was an artifact rig all along.
+
+## 4. Merge-conflict lessons (process)
+
+- **Never `git stash` mid-merge** — it drops MERGE_HEAD (restored by hand:
+  `git rev-parse <remote>/main > .git/MERGE_HEAD`). Cost us one scare.
+- **The vegetation clobber class**: a merge once took "prod's hand-patched
+  vegetation.js" (byte-identical to stock) over a carried override and
+  silently dropped a tuned engine. The engine now lives as first-class
+  client code (`client/lib/vegetation/`) precisely so a merge cannot do
+  this again; the `patched/` directory is an ASSET overlay only.
+- `mcpl-core-ts` is a sibling `file:` dependency — clone and `bun run
+  build` it BEFORE `bun install` in mcpl/, or the copy under node_modules
+  is missing its dist.
+
+## 5. Structural changes a merge will meet on this branch
+
+The refactor survey program (docs/REFACTOR-SURVEY.md, all items closed):
+
+- server: ws handler table (`server/messages.ts`), join split
+  (admitJoin/installJoin/buildSnapshot), `server/limits.ts`, `fsutil.ts`
+  atomicWrite, one tick heartbeat (`server/tick.ts`), entry bus
+  (`server/events.ts`), def registry (`server/defs.ts` + `defs/`).
+- client: def-driven panels (`palette/groundpanel/skypanel/seatedit` split
+  from build.js; `rows.js` row builders), `rigmeasure.js` +
+  `bodyengine.js` under both body engines, `vegetation/` engine home.
+- shared: `sim.js` (eidosim@0.1.0 — PROTOCOL_v2, deterministic sim over
+  stamped intents), `force.js`, def validators (`floradefs`, `avatardefs`,
+  `animdefs`, `skydefs`, `structdefs`, `grounddefs`, `uidefs`).
+- Suites that pin source text were retargeted with the moves
+  (whisper-disable, the two ws-switch suites). If you move these files
+  again, those suites say so by name.
