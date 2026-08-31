@@ -21,6 +21,10 @@ import { behaviorLimits } from "./behaviors.ts";
 import { ROLE_RANK, type LogEntry, type WorldState } from "../shared/fold.js";
 import { SIM_ID } from "../shared/sim.js";
 
+// Bodies alive at the moment an epoch entry is validated — consumed by the
+// epoch after-hook to release them into the fold (see the verb below).
+const epochRelease = new WeakMap<object, { id: string; p: number[]; yaw: number }[]>();
+
 // ---- what runVerb needs from the session (structural) ----------------------
 
 export type VerbClient = {
@@ -345,9 +349,39 @@ const extras: Record<string, Pick<VerbRow, "selfRankZero" | "validate" | "after"
       if (!Number.isInteger(tickMs) || tickMs < 16 || tickMs > 1000) {
         return { error: "epoch tickMs must be an integer in [16, 1000]" };
       }
+      // IDEMPOTENT (tel0s, playtest 2026-08-31: ran /epoch twice): re-entering
+      // the SAME epoch is refused before anything is logged — the entry would
+      // clear every live body (a mid-flight barrel freezes in the air) and
+      // reset the tick for no semantic gain. A different tickMs is a real
+      // re-epoch and proceeds, with the release below.
+      const live = ctx.w.sim.epoch as { sim?: string; tickMs?: number; foreign?: boolean } | null;
+      if (live && !live.foreign && live.sim === sim && live.tickMs === tickMs) {
+        return { error: `already under ${sim} at a ${tickMs}ms tick — nothing to re-enter (flights and rest poses stand)` };
+      }
+      // Stash the live bodies NOW — by the time the after-hook runs, the
+      // folded epoch entry has already cleared them.
+      const held = Object.entries(ctx.w.sim.bodies as Record<string, { p: number[]; yaw?: number }>)
+        .map(([id, b]) => ({ id, p: [...b.p], yaw: typeof b.yaw === "number" ? b.yaw : 0 }));
+      epochRelease.set(ctx.w, held);
       return { args: { sim, tickMs } };
     },
-    after: (ctx) => ctx.w.fold("epoch-barrier"),
+    after: (ctx) => {
+      // A real re-epoch RELEASED every live body when its entry folded — but
+      // the instant fold still holds their last AUTHORED positions, which by
+      // now can be a spawn point a dozen punts ago. Commit each body’s last
+      // sim word as a place (the same server-authored release the lease
+      // table performs), so the fold, every client and every late joiner
+      // agree where things actually stand instead of orphaning the meshes
+      // where each client’s applier last drew them.
+      for (const b of epochRelease.get(ctx.w) ?? []) {
+        ctx.w.commit("world", "place", {
+          id: b.id, pos: [+b.p[0].toFixed(4), +b.p[1].toFixed(4), +b.p[2].toFixed(4)],
+          yaw: b.yaw, via: "epoch-release",
+        });
+      }
+      epochRelease.delete(ctx.w);
+      ctx.w.fold("epoch-barrier");
+    },
   },
   comp: { validate: vComp, after: afterComp },
   motion: { after: (ctx, entry) => lintMotion(ctx.w, entry) },

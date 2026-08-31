@@ -65,7 +65,14 @@ export function initSimWorld() {
       let q = spins.get(id);
       if (!q) { q = obj.quaternion.clone(); spins.set(id, q); }
       const flat = Math.hypot(b.v[0], b.v[2]);
-      if (!b.resting && b.p[1] > b.ground + 0.02 && flat > 0.05) {
+      // Airborne = the sim's OWN word (v[1] ≠ 0), never a height threshold:
+      // tick-quantized positions hover under any threshold late in a fall
+      // and through the tiny bounce tail, so a threshold righted the barrel
+      // in mid-air (tel0s, playtest 2026-08-31 — "return to normal
+      // orientation before they hit the ground"). The sim zeroes v[1]
+      // exactly when grounded contact begins, which is exactly when a
+      // tumbling thing should start righting itself.
+      if (!b.resting && b.v[1] !== 0 && flat > 0.05) {
         _axis.set(b.v[2], 0, -b.v[0]).normalize();
         _dq.setFromAxisAngle(_axis, TUMBLE * dt);
         q.premultiply(_dq);
