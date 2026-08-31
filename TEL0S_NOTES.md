@@ -390,6 +390,25 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-31 — §24t-2: PLAYTEST ROUND 2 (82ae29a).** Three reports,
+  one root: the fold and the sim disagreeing about where a punted thing
+  IS. (1) /epoch IDEMPOTENT — same sim+tick refused pre-log (the entry
+  would clear every live body: a mid-flight barrel freezing in the air
+  IS the "stopped above the ground"). (2) A REAL re-epoch (different
+  tick) now RELEASES bodies into the fold: the after-hook commits each
+  live body's last sim word as place {via:"epoch-release"} (the lease
+  table's own release shape) — the stale-fold orphaning was also the
+  true "too far to kick while standing next to it" (vPunt composes
+  sim→lease→FOLD, and the fold held a spawn point punts ago). Verified
+  live: rest 3.78m → re-epoch → fold reads [3.7834,0,0] + release
+  entry in history. (3) /geom composes simPose like vPunt already did
+  (agents measured punted crates where they USED to be). (4) the
+  cosmetic tumble rights on the sim's own word (v[1]!==0), not a
+  height threshold — tick-quantized descent+bounce-tail righted
+  barrels visibly mid-air. replaybench baseline re-recorded (the local
+  commons log grew — the playtest itself). NO sim-law change. Gates:
+  sim-smoke 8/0, sim-test 13/0, replaybench 1/1, smoke 85/85, parity.
+
 - **2026-08-31 — §24t: THE PUNT PLAYTEST (f6c7eed).** tel0s booted
   barrels: "spin through the ground in a wide arc, then slide far
   away". Three findings, ZERO sim-law changes (no epoch bump): (1) the
