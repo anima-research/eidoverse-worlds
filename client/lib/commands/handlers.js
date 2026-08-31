@@ -26,6 +26,7 @@ import { setPushable, pushable } from '../consent.js';
 import { trySitOn } from '../localbody.js';
 import { getMe } from '../mybody.js';
 import { setMyReach, clearMyReach } from '../reachnet.js';
+import { SIM_ID } from '../../../shared/sim.js';
 import { canonicalPoint, CONTACT_POINTS } from '../../../shared/contact.js';
 import { TOUCH_GAP } from '../../../shared/reachwire.js';
 
@@ -76,16 +77,37 @@ function moderate(cmd, arg) {
   sendVerb(cmd, { id, ...(rest.length ? { reason: rest.join(' ') } : {}) });
 }
 
-register('kick', (arg) => {
-  // one word, two acts (the /push pattern): a THING within the world gets
-  // the physics kick; a PERSON gets moderation. Things win the lookup —
-  // and /punt is always the physics verb, /ban always the moderation one.
-  const first = (arg || '').trim().split(/\s+/)[0];
-  if (!first || entities.has(first) || !remotes.has(first)) { kick(arg); return; }
-  moderate('kick', arg);   // a person's name — the old chain's fallthrough
+// /kick is MODERATION, solidly (tel0s ruling, playtest 2026-08-31). The old
+// one-word-two-acts overload sent a typo'd object name into the moderation
+// path and made "kick the barrel" and "kick the visitor" the same word for
+// two very different acts. /punt owns the physics wholly now — and gained
+// the fun half: punting a PERSON is the consented ragdoll shove (their
+// client owns their body and decides, exactly as /push).
+register('kick', (arg) => moderate('kick', arg));
+register('punt', (arg) => {
+  const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
+  const named = parts.find((x) => !/^[\d.]+$/.test(x));
+  // things win the name lookup (they were here first); a person's name is
+  // the shove. No name at all = the object kick's nearest-thing search.
+  if (named && !entities.has(named) && remotes.has(named)) {
+    const pow = Math.min(4, Math.max(0.5, parseFloat(parts.find((x) => /^[\d.]+$/.test(x))) || 2.6));
+    shovePerson(named, pow, 'punt');
+    return;
+  }
+  kick(arg);
 });
-register('punt', (arg) => { kick(arg); });
 register('ban', (arg) => moderate('ban', arg));
+
+// /epoch [tickMs] — enter the deterministic-sim epoch (PROTOCOL_v2 §3).
+// Owner-ranked: the server refuses below rank 2 and refuses any sim name
+// this sequencer does not carry; the client only makes the door REACHABLE
+// (before this, entering an epoch took a raw world_verb — which is how a
+// playtest "of the new physics" ran the legacy volunteer sim instead).
+register('epoch', (arg) => {
+  const tickMs = Math.round(Number((arg || '').trim())) || 66;
+  sendVerb('epoch', { sim: SIM_ID, tickMs });
+  logChat('*', `asked the world to enter ${SIM_ID} at a ${tickMs}ms tick — flights become log-replayable physics (owners only; the world will refuse or announce)`);
+});
 
 register('unban', (arg) => {
   const id = (arg || '').trim();
@@ -128,18 +150,26 @@ register('push', (arg) => {
     }
     if (!target) return logChat('*', 'nobody within reach to push');
   }
+  shovePerson(target, pow, 'push');
+});
+
+/** The person-shove, shared by /push and /punt: a REQUEST to the target's
+ *  client, which owns the body and decides (pushable). Range-gated here out
+ *  of honesty, not security — the receiver caps magnitude anyway. */
+function shovePerson(target, pow, word) {
+  const REACH = 2.5;
   const r = remotes.get(target);
-  if (!r?.avatar) return logChat('*', `${target} isn't here to push`);
+  if (!r?.avatar) return logChat('*', `${target} isn't here to ${word}`);
   const tp = r.avatar.root.position;
   const d = Math.hypot(tp.x - myState.pos.x, tp.z - myState.pos.z);
-  if (d > REACH) return logChat('*', `${target} is too far away to push (${d.toFixed(1)}m)`);
+  if (d > REACH) return logChat('*', `${target} is too far away to ${word} (${d.toFixed(1)}m)`);
   // straight through the target from where I stand; face-to-face at zero
   // distance falls back to the way I'm facing
   const nx = d > 0.05 ? (tp.x - myState.pos.x) / d : Math.sin(myState.yaw);
   const nz = d > 0.05 ? (tp.z - myState.pos.z) / d : Math.cos(myState.yaw);
   sendPuppet(target, { ragdoll: { lean: [nx * pow, 0, nz * pow] } });
-  logChat('*', `you push ${target}`);
-});
+  logChat('*', word === 'punt' ? `you punt ${target} — they go flying (their client willing)` : `you push ${target}`);
+}
 
 // ---- /touch — the human hand on the reach surface (shared/reachwire.js).
 // The same descriptor an agent's `reach` tool streams: every client

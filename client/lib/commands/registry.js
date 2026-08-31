@@ -27,8 +27,9 @@ export const COMMANDS = [
   { name: 'eyes', help: '/eyes close|open — hold your eyes shut, if your rig has eyelid bones' },
   { name: 'pushable', help: '/pushable on|off — whether shoves and blasts can knock you over (on by default)' },
   { name: 'boom', aliases: ['blast'], help: '/boom [power] [radius] — a blast where you stand, you included (builder)' },
-  { name: 'kick', help: '/kick [thing] [power] — send an object flying (a person\'s name = moderation)' },
-  { name: 'punt', aliases: ['boot'], help: '/punt [thing] [power] — the unambiguous physics kick' },
+  { name: 'kick', help: '/kick <name> [reason] — moderation: remove someone from this world (owner). Objects fly with /punt' },
+  { name: 'punt', aliases: ['boot'], help: '/punt [thing|person] [power] — boot an object into flight; a person\'s name is the ragdoll shove (their client decides)' },
+  { name: 'epoch', help: '/epoch [tickMs] — owner: hand this world\'s punt flights to the deterministic sim (replayed bit-identically everywhere)' },
   { name: 'who', help: 'list everyone present' },
   // Registered so it is DISCOVERABLE. It was added on 2026-08-16 to debug voice
   // on a phone with no console, and stayed unregistered for the rest of that

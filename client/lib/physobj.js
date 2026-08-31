@@ -85,8 +85,15 @@ function shapeOf(id) {
   const s = obj.scale ?? null;
   if (s) size.set(size.x * (s.x || 1), size.y * (s.y || 1), size.z * (s.z || 1));
   const dims = [size.x, size.y, size.z].sort((a, b) => a - b);
-  // round-ish in all three = ball; anything else lands like a crate
-  const ball = dims[0] > 0.01 && dims[2] / dims[0] < 1.35;
+  // Round-ish in all three AND ball-sized = ball; anything else lands like a
+  // crate. The size gate is load-bearing: a bounding box cannot tell a
+  // sphere from a cube from a 2×2 barrel cluster, and the old ratio-only
+  // test rolled the whole barrels GROUP about its origin — the mesh swept
+  // through the ground in a wide arc and slid out on ball friction (tel0s,
+  // playtest 2026-08-31). Real kickable balls are under a metre; furniture-
+  // scale round-ish things tumble and settle like crates, which is what a
+  // barrel actually does.
+  const ball = dims[0] > 0.01 && dims[2] / dims[0] < 1.25 && dims[2] < 0.9;
   return {
     kind: ball ? 'ball' : 'box',
     r: ball ? (size.x + size.y + size.z) / 6 : Math.max(0.05, size.y / 2),
@@ -223,7 +230,10 @@ export function kick(arg) {
   if (!enabled) return logChat('*', 'your physics mod is off — flip it in 🧩 mods (someone else present can still simulate your punts)');
   const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
   const named = parts.find((x) => !/^[\d.]+$/.test(x));
-  const power = Math.min(MAX_KICK, Math.max(1, parseFloat(parts.find((x) => /^[\d.]+$/.test(x))) || 5));
+  // default 4, down from 5 (playtest 2026-08-31: "probably smaller") — a
+  // barrel should hop a couple of metres by default, not cross the meadow;
+  // /punt thing 10 still throws hard when thrown hard is meant
+  const power = Math.min(MAX_KICK, Math.max(1, parseFloat(parts.find((x) => /^[\d.]+$/.test(x))) || 4));
   const me = hooks.myPos();
 
   let id = named ?? null;
@@ -251,8 +261,12 @@ export function kick(arg) {
   const d = Math.hypot(dx, dz) || 1;
   // Dialect 3: under a sim epoch the intent carries its WHOLE vector — the
   // upward component included, since the sim adds no launch lift of its own
-  // (the volunteer path added 0.45·power itself; here the ratio rides dir).
-  const lift = state.sim?.epoch && !state.sim.epoch.foreign ? 0.45 : 0;
+  // (the volunteer path adds 0.45·power itself; here the ratio rides dir).
+  // 0.9, up from 0.45 (playtest 2026-08-31): the sim normalizes the whole
+  // vector, so at 0.45 a default punt apexed at 6cm — a scoot, not a punt.
+  // Swept against the law: lift 0.9 @ power 4 = a knee-high hop resting
+  // ~3m out. An INPUT ratio, not sim law — tuning it is no epoch bump.
+  const lift = state.sim?.epoch && !state.sim.epoch.foreign ? 0.9 : 0;
   sendVerb('punt', { id, power, dir: [dx / d, lift, dz / d] });
 }
 
