@@ -92,18 +92,23 @@ export const recipeStamp = (recipe = KTX2_RECIPE) => `recipe=${recipe}`;
 // exact tool versions. Named nodes, materials, and bounds are asserted
 // unchanged after the reduce — a failed assert is a typed verdict too, not
 // a half-valid object.
-export const LOD_SUFFIX = ".lod1.glb";
 export const LOD_RECIPE = "lod1-r25e01-texel1024";   // ratio 0.25, error 0.01, ktx2 texel budget
 export const LOD_MIN_VERTS = 12_000;                 // under this, there is nothing worth reducing
 
-/** A geometry-LOD serving artifact (`<rel>.lod1.glb`, future tiers too). */
+/** A geometry-LOD serving artifact — ANY recipe generation's, not only the
+ *  current one (old generations must stay unlisted and uncatalogued too). */
 export function isLodVariant(name: string): boolean {
-  return /\.lod\d+\.glb$/i.test(name);
+  return /\.lod\.[a-z0-9.-]+\.glb$/i.test(name);
 }
 
-/** Where the LOD shadow of an original lives: beside it, like the KTX2 one. */
-export function lodVariantPath(original: string): string {
-  return `${original}${LOD_SUFFIX}`;
+/** Where the LOD shadow of an original lives: beside it, like the KTX2 one —
+ *  and the RECIPE IS IN THE NAME, exactly as it is in the URL (review of
+ *  #156, point 1): a new recipe is a new file under a new URL, so a recipe
+ *  change can never serve yesterday's reduction under today's address. The
+ *  old generation's file simply stops being asked for (and the pump deletes
+ *  it when the new one lands). */
+export function lodVariantPath(original: string, recipe = LOD_RECIPE): string {
+  return `${original}.lod.${recipe}.glb`;
 }
 
 /** Does a `.failed` verdict still stand under the current recipe? A size

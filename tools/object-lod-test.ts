@@ -1,44 +1,47 @@
 // The geometry LOD for placeable objects (server/optimize.ts --lod,
 // store-variants.ts), run headless — v1 of the contract agreed in the #142
-// thread: OBJECTS ONLY, BODIES FAIL CLOSED.
+// thread, revised per the #156 review: OBJECTS ONLY, BODIES FAIL CLOSED,
+// STATIC GEOMETRY ONLY, and the recipe is a GENERATION carried in both the
+// URL and the variant's filename.
 //
 //   bun tools/object-lod-test.ts
 //
-// The contract under test, in the reviewer's terms:
-//   - bodies are excluded by POSITIVE STRUCTURAL DETECTION on the raw
-//     container — skins, joint weights, VRM metadata, morph targets,
-//     morph-weight animation channels — with a truthful typed verdict
-//     (`unsupported: skinned/avatar asset`), no geometry LOD, no silent
-//     attempt; the original stays the only served representation;
-//   - the original is preserved byte-identically (the variant is a sibling);
-//   - variant identity binds source content hash + recipe + tool versions
-//     (asset.extras: lodOf / recipe / tools);
-//   - named nodes, materials, and bounds are asserted unchanged after the
-//     reduce — a failed assert or an ineffective reduce is a typed verdict,
-//     never a half-valid object;
-//   - the client asks with ?lod=1 riding the ktx2 negotiation, and ONLY when
-//     /version published lodRecipe (the ?ktx2=2 split-brain lesson);
-//   - a missing variant falls back to the original/ktx2 chain, PROVISIONAL
-//     (no-cache) so the variant's bytes get through the moment it lands;
-//   - variants and their markers never leak into catalogs or listings.
+// The contract under test, in the reviewer's terms — each repaired seam of
+// the #156 review has a named control here, and deleting the mechanism
+// turns its control red:
+//   1. the URL carries the recipe (`?lod=<recipe>`), the filename carries it
+//      too, and an unrecognized generation is answered PROVISIONALLY — a
+//      recipe change can never pin yesterday's bytes under today's address
+//      (the mutation canary rewrites the on-disk recipe under a live child);
+//   2. the library sweep queues LODs (the shared `seen` set that killed it
+//      is keyed by mode now) — proven with a pre-existing library GLB, not
+//      an upload;
+//   3. a missing encoder does not delete valid untextured LOD work — the
+//      no-encoder child reduces an untextured upload while the textured one
+//      keeps its original, no marker, one log line;
+//   4. a MUTABLE library source newer than its variant is never served the
+//      old variant — provisional until the next boot rebuilds it, then fresh;
+//   5. bodies fail closed on STRUCTURE, not well-formedness: top-level
+//      `extensions` keys and any JOINTS_n/WEIGHTS_n set, not just
+//      extensionsUsed and set 0;
+//   6. claims match assertions: node hierarchy + transforms and per-primitive
+//      material assignments are signature-checked (not just sorted names),
+//      source asset.extras survive under ours, and ANY animation is a typed
+//      v1 refusal rather than an untested claim of preservation;
+//   7. the child is process-owned: piped diagnostics, a per-run
+//      content-hashed fixture as the nonce, failure prints the log tail.
 //
 // The fake toktx (the store-variants-test pattern) stands in for the
-// encoder, so no KTX-Software is needed; the one real-encoder receipt runs
-// when the box has one.
-//
-// Negative control: on main this file dies at import (no isLodVariant, no
-// optimizeGlbLod); the serving checks fail on main with the variant never
-// built and ?lod=1 answered immutable (the poison this arm's negotiation
-// gate exists to prevent).
+// encoder; the one real-encoder receipt runs when the box has one.
 
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, rmdirSync, chmodSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, rmdirSync, chmodSync, utimesSync } from "node:fs";
+import { spawn, type ChildProcess } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { Document, NodeIO } from "@gltf-transform/core";
 import { PNG } from "pngjs";
 import { isLodVariant, isServingArtifact, isStoreOriginal, lodVariantPath, storeShadowsMissing,
-  LOD_RECIPE, LOD_MIN_VERTS, recipeStamp } from "../server/store-variants.ts";
+  LOD_RECIPE, LOD_MIN_VERTS } from "../server/store-variants.ts";
 import { lodExclusion, findKtx2Encoder } from "../server/optimize.ts";
 import { lodFromVersion, withLod, keyFromVersion, negotiate } from "../shared/ktx2.js";
 
@@ -56,28 +59,29 @@ const until = async (pred: () => boolean, ms: number, step = 250) => {
 const ROOT = join(import.meta.dir, "..");
 const OPTIMIZE = join(ROOT, "server", "optimize.ts");
 
-console.log("\ngeometry LOD for placeable objects — bodies fail closed:\n");
+console.log("\ngeometry LOD for placeable objects — bodies fail closed, recipes are generations:\n");
 
 // ---------------------------------------------- 1. names, predicates, negotiation
 {
-  check("a lod variant is named beside its original", lodVariantPath("/x/store/abc.glb") === "/x/store/abc.glb.lod1.glb");
-  for (const v of ["abc.glb.lod1.glb", "model.glb.lod2.glb", "UPPER.GLB.LOD1.GLB"])
-    check(`${v} is a lod variant and a serving artifact`, isLodVariant(v) && isServingArtifact(v) && !isStoreOriginal(v));
-  for (const o of ["abc.glb", "abc.glb.ktx2.glb", "lod1.glb", "model.lod.glb"])
+  check("the variant's filename carries the recipe generation", lodVariantPath("/x/store/abc.glb") === `/x/store/abc.glb.lod.${LOD_RECIPE}.glb`);
+  check("…and an explicit recipe names that generation's file", lodVariantPath("/x/a.glb", "lod1-r10") === "/x/a.glb.lod.lod1-r10.glb");
+  for (const v of [`abc.glb.lod.${LOD_RECIPE}.glb`, "abc.glb.lod.lod1-r10.glb", "M.GLB.LOD.OLD-GEN.GLB"])
+    check(`${v} is a lod variant of SOME generation — artifact, never original`, isLodVariant(v) && isServingArtifact(v) && !isStoreOriginal(v));
+  for (const o of ["abc.glb", "abc.glb.ktx2.glb", "lod.glb", "model.lod.glb.txt"])
     check(`${o} is not a lod variant`, !isLodVariant(o));
-  check("a lod .failed marker is an artifact, never a listing entry", isServingArtifact("abc.glb.lod1.glb.failed"));
+  check("a lod .failed marker is an artifact, never a listing entry", isServingArtifact(`abc.glb.lod.${LOD_RECIPE}.glb.failed`));
   const m = storeShadowsMissing("/x/store/abc.glb", "/x/store-min", () => false);
   check("a fresh original lacks all three shadows", m.min && m.ktx2 && m.lod);
   const m2 = storeShadowsMissing("/x/store/abc.glb", "/x/store-min",
-    (p) => p === "/x/store/abc.glb.lod1.glb.failed", () => "[optimize] lod: unsupported: skinned/avatar asset (skins)");
+    (p) => p === `/x/store/abc.glb.lod.${LOD_RECIPE}.glb.failed`, () => "[optimize] lod: unsupported: skinned/avatar asset (skins)");
   check("a typed exclusion verdict STANDS (a body never becomes a retry loop)", !m2.lod);
-  const m3 = storeShadowsMissing("/x/store/abc.glb", "/x/store-min",
-    (p) => p === "/x/store/abc.glb.lod1.glb.failed", () => "[optimize] not smaller (9 -> 10, 1ms) — keeping original");
-  check("an unstamped lod size verdict is stale — re-measured under the current recipe", m3.lod);
 
   check("the client only asks for a tier the running sequencer published", lodFromVersion({ lodRecipe: LOD_RECIPE }) === LOD_RECIPE);
   check("an older sequencer publishes none → null → no ?lod (the split-brain gate)", lodFromVersion({ sha: "old" }) === null && lodFromVersion(null) === null);
-  check("withLod appends", withLod("store/x.glb?ktx2=3") === "store/x.glb?ktx2=3&lod=1" && withLod("x.glb") === "x.glb?lod=1");
+  check("withLod carries the RECIPE, never a boolean — two recipes are two URLs",
+    withLod("store/x.glb?ktx2=3", "lod1-rA") === "store/x.glb?ktx2=3&lod=lod1-rA"
+    && withLod("store/x.glb?ktx2=3", "lod1-rB") !== withLod("store/x.glb?ktx2=3", "lod1-rA"));
+  check("…and no recipe → the URL untouched (an unflagged fetch)", withLod("store/x.glb", null) === "store/x.glb");
 }
 
 // ---------------------------------------------- 2. the structural exclusion, pure
@@ -85,14 +89,16 @@ console.log("\ngeometry LOD for placeable objects — bodies fail closed:\n");
   const base = { meshes: [{ primitives: [{ attributes: { POSITION: 0 } }] }] };
   check("a plain object is not excluded", lodExclusion(base) === null);
   check("skins exclude", /skinned\/avatar/.test(lodExclusion({ ...base, skins: [{}] }) ?? ""));
-  check("joint weights exclude even without a skins array",
-    /skinned\/avatar/.test(lodExclusion({ meshes: [{ primitives: [{ attributes: { POSITION: 0, JOINTS_0: 1, WEIGHTS_0: 2 } }] }] }) ?? ""));
-  check("VRM metadata excludes (VRMC_vrm)", /VRM metadata/.test(lodExclusion({ ...base, extensionsUsed: ["VRMC_vrm"] }) ?? ""));
-  check("…and legacy VRM 0.x", /VRM metadata/.test(lodExclusion({ ...base, extensionsUsed: ["VRM"] }) ?? ""));
+  check("VRM in extensionsUsed excludes", /VRM metadata/.test(lodExclusion({ ...base, extensionsUsed: ["VRMC_vrm"] }) ?? ""));
+  check("VRM in extensionsRequired excludes", /VRM metadata/.test(lodExclusion({ ...base, extensionsRequired: ["VRMC_vrm"] }) ?? ""));
+  // the reviewer's probes: fail-closed must not trust well-formedness
+  check("a VRM extension OBJECT excludes even when extensionsUsed forgot it (review probe)",
+    /VRM metadata/.test(lodExclusion({ ...base, extensions: { VRMC_vrm: {} } }) ?? ""));
+  check("JOINTS_1/WEIGHTS_1 exclude without set 0 (review probe)",
+    /skinned\/avatar/.test(lodExclusion({ meshes: [{ primitives: [{ attributes: { POSITION: 0, JOINTS_1: 1, WEIGHTS_1: 2 } }] }] }) ?? ""));
   check("morph targets exclude", /morph targets/.test(lodExclusion({ meshes: [{ primitives: [{ attributes: { POSITION: 0 }, targets: [{}] }] }] }) ?? ""));
-  check("morph-weight animation excludes", /morph-weight/.test(lodExclusion({ ...base, animations: [{ channels: [{ target: { path: "weights" } }] }] }) ?? ""));
-  check("node TRS animation does NOT exclude (structure is asserted instead)",
-    lodExclusion({ ...base, animations: [{ channels: [{ target: { path: "rotation" } }] }] }) === null);
+  check("ANY animation is a typed v1 refusal — static geometry only, preservation is earned not claimed",
+    /animated object/.test(lodExclusion({ ...base, animations: [{ channels: [{ target: { path: "rotation" } }] }] }) ?? ""));
 }
 
 // ---------------------------------------------- fixtures
@@ -105,11 +111,9 @@ function pngBytes(seed: number, W = 64): Uint8Array {
   }
   return new Uint8Array(PNG.sync.write(png));
 }
-/** A dense smooth grid — the kind of mesh a reducer actually reduces.
- *  `cells`² quads ≈ (cells+1)² verts; gentle height noise keeps prune()
- *  honest and simplify effective. Textured when `textured`. */
-async function gridGlb(tag: string, cells: number, textured: boolean, nodeName = "hero"): Promise<Uint8Array> {
+async function gridGlb(tag: string, cells: number, textured: boolean, extras: object | null = null): Promise<Uint8Array> {
   const doc = new Document();
+  if (extras) doc.getRoot().getAsset().extras = extras;
   const buf = doc.createBuffer();
   const n = cells + 1;
   const pos = new Float32Array(n * n * 3), uv = new Float32Array(n * n * 2);
@@ -130,21 +134,31 @@ async function gridGlb(tag: string, cells: number, textured: boolean, nodeName =
     .setIndices(doc.createAccessor().setType("SCALAR").setBuffer(buf).setArray(idx))
     .setAttribute("POSITION", doc.createAccessor().setType("VEC3").setBuffer(buf).setArray(pos))
     .setAttribute("TEXCOORD_0", doc.createAccessor().setType("VEC2").setBuffer(buf).setArray(uv));
-  doc.createScene("s").addChild(doc.createNode(`${nodeName}-${tag}-${NONCE}`).setMesh(doc.createMesh("gridMesh").addPrimitive(prim)));
+  doc.createScene("s").addChild(doc.createNode(`hero-${tag}-${NONCE}`).setMesh(doc.createMesh("gridMesh").addPrimitive(prim)));
   return new NodeIO().writeBinary(doc);
 }
-/** The same grid with a skin bound on — a BODY, structurally. */
 async function skinnedGlb(tag: string): Promise<Uint8Array> {
   const doc = new Document();
   const buf = doc.createBuffer();
   const prim = doc.createPrimitive()
     .setAttribute("POSITION", doc.createAccessor().setType("VEC3").setBuffer(buf).setArray(new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0])))
-    .setAttribute("JOINTS_0", doc.createAccessor().setType("VEC4").setBuffer(buf).setArray(new Uint8Array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])))
+    .setAttribute("JOINTS_0", doc.createAccessor().setType("VEC4").setBuffer(buf).setArray(new Uint8Array(12)))
     .setAttribute("WEIGHTS_0", doc.createAccessor().setType("VEC4").setBuffer(buf).setArray(new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0])));
   const joint = doc.createNode(`joint-${tag}`);
   const skin = doc.createSkin("rig").addJoint(joint);
-  const node = doc.createNode(`body-${tag}-${NONCE}`).setMesh(doc.createMesh("m").addPrimitive(prim)).setSkin(skin);
-  doc.createScene("s").addChild(node).addChild(joint);
+  doc.createScene("s").addChild(doc.createNode(`body-${tag}-${NONCE}`).setMesh(doc.createMesh("m").addPrimitive(prim)).setSkin(skin)).addChild(joint);
+  return new NodeIO().writeBinary(doc);
+}
+/** A dense grid with a node-TRS animation bound on — v1 must refuse it. */
+async function animatedGlb(tag: string): Promise<Uint8Array> {
+  const bytes = await gridGlb(tag, 160, false);
+  const doc = await new NodeIO().readBinary(bytes);
+  const buf = doc.getRoot().listBuffers()[0];
+  const input = doc.createAccessor().setType("SCALAR").setBuffer(buf).setArray(new Float32Array([0, 1]));
+  const output = doc.createAccessor().setType("VEC3").setBuffer(buf).setArray(new Float32Array([0, 0, 0, 0, 1, 0]));
+  const sampler = doc.createAnimationSampler().setInput(input).setOutput(output).setInterpolation("LINEAR");
+  const channel = doc.createAnimationChannel().setTargetNode(doc.getRoot().listNodes()[0]).setTargetPath("translation").setSampler(sampler);
+  doc.createAnimation("bob").addSampler(sampler).addChannel(channel);
   return new NodeIO().writeBinary(doc);
 }
 const hashOf = (b: Uint8Array) => new Bun.CryptoHasher("sha256").update(b).digest("hex").slice(0, 16);
@@ -173,6 +187,8 @@ if (process.platform === "win32") {
   writeFileSync(FAKE_TOKTX, `#!/bin/sh\nexec "${process.execPath}" run "${join(FAKE_DIR, "fake-toktx.ts")}" "$@"\n`);
   chmodSync(FAKE_TOKTX, 0o755);
 }
+const NOWHERE = mkdtempSync(join(tmpdir(), "ew-lod-nowhere-"));
+const NO_ENCODER = { KTX2_TOKTX: join(NOWHERE, "no-such"), PATH: NOWHERE, HOME: NOWHERE, USERPROFILE: NOWHERE };
 async function runLod(src: string, dest: string, env: Record<string, string> = {}) {
   const proc = Bun.spawn([process.execPath, "run", OPTIMIZE, "--lod", src, dest],
     { stdout: "pipe", stderr: "pipe", env: { ...process.env, KTX2_TOKTX: FAKE_TOKTX, ...env } });
@@ -181,24 +197,29 @@ async function runLod(src: string, dest: string, env: Record<string, string> = {
 }
 
 // ---------------------------------------------- 3. the CLI: verdicts, identity, preservation
-console.log("\n  the CLI — bodies refused, objects reduced, identity stamped:");
+console.log("\n  the CLI — bodies and animation refused, objects reduced, identity stamped:");
 {
   const tmp = mkdtempSync(join(tmpdir(), "ew-lod-"));
   try {
     const place = (bytes: Uint8Array, name: string) => { const p = join(tmp, name); writeFileSync(p, bytes); return p; };
     const bodyPath = place(await skinnedGlb("a"), "body.glb");
     const bodyBytes = readFileSync(bodyPath);
-    let r = await runLod(bodyPath, join(tmp, "body.glb.lod1.glb"));
+    let r = await runLod(bodyPath, lodVariantPath(bodyPath));
     check("a skinned asset → exit 2, the typed verdict, NOTHING written", r.code === 2 && !r.wrote && r.err.includes("unsupported: skinned/avatar asset"),
       `exit ${r.code}: ${r.err.split("\n").pop()}`);
     check("…and the original is byte-identical after the refusal", readFileSync(bodyPath).equals(bodyBytes));
 
+    const animPath = place(await animatedGlb("anim"), "anim.glb");
+    r = await runLod(animPath, lodVariantPath(animPath));
+    check("an ANIMATED object → typed v1 refusal, nothing written", r.code === 2 && !r.wrote && r.err.includes("animated object"),
+      `exit ${r.code}: ${r.err.split("\n").pop()}`);
+
     const vrmish = await gridGlb("vrmish", 8, false);
-    { // stamp VRM metadata into the raw container — the exclusion must fire off the JSON, not a filename
+    { // stamp a VRM extension OBJECT (not extensionsUsed) into the raw container
       const dv = new DataView(vrmish.buffer, vrmish.byteOffset);
       const jl = dv.getUint32(12, true);
       const j = JSON.parse(new TextDecoder().decode(vrmish.subarray(20, 20 + jl)));
-      j.extensionsUsed = ["VRMC_vrm"];
+      j.extensions = { VRMC_vrm: {} };   // a producer that forgot extensionsUsed — fail-closed must still see it
       let jt = JSON.stringify(j); while (jt.length % 4) jt += " ";
       const jb = new TextEncoder().encode(jt);
       const rest = vrmish.subarray(20 + jl);
@@ -208,24 +229,23 @@ console.log("\n  the CLI — bodies refused, objects reduced, identity stamped:"
       odv.setUint32(12, jb.length, true); odv.setUint32(16, 0x4e4f534a, true);
       outB.set(jb, 20); outB.set(rest, 20 + jb.length);
       const p = place(outB, "vrmish.glb");
-      r = await runLod(p, join(tmp, "vrmish.glb.lod1.glb"));
-      check("VRM metadata in a .glb → refused off the CONTAINER, not the filename", r.code === 2 && !r.wrote && r.err.includes("VRM metadata"),
-        `exit ${r.code}: ${r.err.split("\n").pop()}`);
+      r = await runLod(p, lodVariantPath(p));
+      check("a VRM extension OBJECT in a .glb → refused off the CONTAINER (malformed producer, still a body)",
+        r.code === 2 && !r.wrote && r.err.includes("VRM metadata"), `exit ${r.code}: ${r.err.split("\n").pop()}`);
     }
 
     const tiny = place(await gridGlb("tiny", 8, true), "tiny.glb");
-    r = await runLod(tiny, join(tmp, "tiny.glb.lod1.glb"));
+    r = await runLod(tiny, lodVariantPath(tiny));
     check(`an already-light object (< ${LOD_MIN_VERTS} verts) → typed verdict, nothing written`, r.code === 2 && !r.wrote && r.err.includes("already light"),
       `exit ${r.code}: ${r.err.split("\n").pop()}`);
 
-    const heroBytes = await gridGlb("hero", 160, true);   // ~26k verts, textured
+    const heroBytes = await gridGlb("hero", 160, true, { producer: "someone-else", note: "must survive" });
     const hero = place(heroBytes, "hero.glb");
-    const dest = join(tmp, "hero.glb.lod1.glb");
+    const dest = lodVariantPath(hero);
     r = await runLod(hero, dest);
-    check("a dense textured object → exit 0, variant written", r.code === 0 && r.wrote, `exit ${r.code}: ${r.err.split("\n").pop()}`);
+    check("a dense textured object → exit 0, variant written at the recipe-named path", r.code === 0 && r.wrote, `exit ${r.code}: ${r.err.split("\n").pop()}`);
     if (r.wrote) {
-      const v = new Uint8Array(readFileSync(dest));
-      const j = glbJson(v);
+      const j = glbJson(new Uint8Array(readFileSync(dest)));
       check("…really reduced (the CLI names the counts)", /\d+ -> \d+ verts/.test(r.out), r.out);
       check("…textures at the budget, KTX2, required", (j.extensionsRequired ?? []).includes("KHR_texture_basisu"));
       const ex = j.asset?.extras ?? {};
@@ -234,119 +254,254 @@ console.log("\n  the CLI — bodies refused, objects reduced, identity stamped:"
       check("…extras.recipe is the versioned recipe", ex.recipe === LOD_RECIPE, ex.recipe);
       check("…extras.tools names the reducer and encoder versions", typeof ex.tools?.meshoptimizer === "string" && typeof ex.tools?.encoder === "string",
         JSON.stringify(ex.tools));
-      check("named nodes preserved (parts and socket frames live there)",
-        (j.nodes ?? []).some((n: any) => String(n.name ?? "").startsWith("hero-hero-")), (j.nodes ?? []).map((n: any) => n.name).join(", "));
+      check("…and the SOURCE's own extras survive under ours (never clobbered)", ex.producer === "someone-else" && ex.note === "must survive",
+        JSON.stringify(ex));
+      check("named nodes preserved", (j.nodes ?? []).some((n: any) => String(n.name ?? "").startsWith("hero-hero-")));
       check("…and the original is byte-identical", readFileSync(hero).equals(Buffer.from(heroBytes)));
     }
 
     const untex = place(await gridGlb("untex", 160, false), "untex.glb");
-    r = await runLod(untex, join(tmp, "untex.glb.lod1.glb"), { KTX2_TOKTX: join(tmp, "no-such"), PATH: tmp, HOME: tmp, USERPROFILE: tmp });
+    r = await runLod(untex, lodVariantPath(untex), NO_ENCODER);
     check("an UNTEXTURED object reduces with no encoder at all", r.code === 0 && r.wrote, `exit ${r.code}: ${r.err.split("\n").pop()}`);
-    r = await runLod(hero, join(tmp, "hero2.glb.lod1.glb"), { KTX2_TOKTX: join(tmp, "no-such"), PATH: tmp, HOME: tmp, USERPROFILE: tmp });
-    check("a TEXTURED object with no encoder → exit 3 (environmental, no marker's business)", r.code === 3 && !existsSync(join(tmp, "hero2.glb.lod1.glb")),
-      `exit ${r.code}: ${r.err.split("\n").pop()}`);
+    const t0 = Date.now();
+    r = await runLod(hero, join(tmp, "hero2.out"), NO_ENCODER);
+    check("a TEXTURED object with no encoder → exit 3, answered from the RAW container (fast, the pump retries this every boot)",
+      r.code === 3 && !r.wrote && Date.now() - t0 < 10_000, `exit ${r.code} in ${Date.now() - t0}ms`);
 
     const real = findKtx2Encoder();
     if (!real) console.log("  - real encoder: skipped — none on this box");
     else {
-      r = await runLod(hero, join(tmp, "hero.real.lod1.glb"), { KTX2_TOKTX: real });
+      r = await runLod(hero, join(tmp, "hero.real.out"), { KTX2_TOKTX: real });
       check(`the real encoder (${real.split(/[\\/]/).pop()}): a reduced, KTX2-textured variant`, r.code === 0 && r.wrote, `exit ${r.code}`);
     }
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 }
 
-// ---------------------------------------------- 4. the sequencer: upload → shadows → served tier
-console.log("\n  the real sequencer — choose the tier before the fetch:");
-{
-  const OPT = join(ROOT, "assets", "opt");
-  const STORE = join(OPT, "store"), STORE_MIN = join(OPT, "store-min");
-  const madeStore = !existsSync(STORE), madeMin = !existsSync(STORE_MIN);
-  mkdirSync(STORE, { recursive: true }); mkdirSync(STORE_MIN, { recursive: true });
-  const EMPTY_LIB = mkdtempSync(join(tmpdir(), "ew-lod-lib-"));
-  const DOOR = "test-door";
-  const mine = new Set<string>();
-  let server: ReturnType<typeof spawn> | null = null;
-  const cleanup = () => {
-    try { server?.kill(); } catch { /* gone */ }
-    for (const h of mine) for (const p of [join(STORE, `${h}.glb`), join(STORE, `${h}.glb.ktx2.glb`), join(STORE, `${h}.glb.ktx2.glb.failed`),
-      join(STORE, `${h}.glb.lod1.glb`), join(STORE, `${h}.glb.lod1.glb.failed`), join(STORE_MIN, `${h}.glb`), join(STORE_MIN, `${h}.glb.failed`)])
+// ---------------------------------------------- the owned-process harness
+const OPT = join(ROOT, "assets", "opt");
+const STORE = join(OPT, "store"), STORE_MIN = join(OPT, "store-min");
+const madeStore = !existsSync(STORE), madeMin = !existsSync(STORE_MIN);
+mkdirSync(STORE, { recursive: true }); mkdirSync(STORE_MIN, { recursive: true });
+const DOOR = "test-door";
+const mine = new Set<string>();          // store hashes this run created
+const mineOpt: string[] = [];            // OPT_DIR-relative files the library sweep created for us
+let live: ChildProcess | null = null;
+const cleanup = () => {
+  try { live?.kill(); } catch { /* gone */ }
+  for (const h of mine) {
+    for (const p of [join(STORE, `${h}.glb`), join(STORE, `${h}.glb.ktx2.glb`), join(STORE, `${h}.glb.ktx2.glb.failed`),
+      join(STORE_MIN, `${h}.glb`), join(STORE_MIN, `${h}.glb.failed`), lodVariantPath(join(STORE, `${h}.glb`)), `${lodVariantPath(join(STORE, `${h}.glb`))}.failed`])
       try { rmSync(p, { force: true }); } catch { /* best effort */ }
-    try {
-      const mp = join(STORE, "manifest.json");
-      if (existsSync(mp)) {
-        const man = JSON.parse(readFileSync(mp, "utf8"));
-        for (const h of mine) delete man[h];
-        if (Object.keys(man).length) writeFileSync(mp, JSON.stringify(man)); else rmSync(mp);
-      }
-    } catch { /* best effort */ }
-    if (madeStore) try { rmdirSync(STORE); } catch { /* not empty */ }
-    if (madeMin) try { rmdirSync(STORE_MIN); } catch { /* same */ }
-    try { rmSync(FAKE_DIR, { recursive: true, force: true }); } catch { /* best effort */ }
-    try { rmSync(EMPTY_LIB, { recursive: true, force: true }); } catch { /* best effort */ }
-  };
-  process.on("exit", cleanup);
-  let PORT = 0;
-  for (let i = 0; i < 20 && !PORT; i++) {
-    const cand = 20000 + Math.floor(Math.random() * 20000);
-    try { await fetch(`http://127.0.0.1:${cand}/`, { signal: AbortSignal.timeout(400) }); } catch { PORT = cand; }
   }
-  server = spawn(process.execPath, [join(ROOT, "server", "server.ts")],
-    { env: { ...process.env, PORT: String(PORT), JOIN_TOKEN: DOOR, KTX2_TOKTX: FAKE_TOKTX,
-      WORLDS_DIR: mkdtempSync(join(tmpdir(), "ew-lod-w-")), EIDOVERSE_DIR: EMPTY_LIB }, stdio: "ignore" });
+  for (const rel of mineOpt) { try { rmSync(join(OPT, rel), { force: true }); } catch { /* best effort */ } }
+  for (const rel of mineOpt) { let d = dirname(join(OPT, rel)); while (d !== OPT) { try { rmdirSync(d); } catch { break; } d = dirname(d); } }
+  try {
+    const mp = join(STORE, "manifest.json");
+    if (existsSync(mp)) {
+      const man = JSON.parse(readFileSync(mp, "utf8"));
+      for (const h of mine) delete man[h];
+      if (Object.keys(man).length) writeFileSync(mp, JSON.stringify(man)); else rmSync(mp);
+    }
+  } catch { /* best effort */ }
+  if (madeStore) try { rmdirSync(STORE); } catch { /* not empty */ }
+  if (madeMin) try { rmdirSync(STORE_MIN); } catch { /* same */ }
+  for (const d of [FAKE_DIR, NOWHERE]) try { rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ }
+};
+process.on("exit", cleanup);
+
+async function freePort(): Promise<number> {
+  for (let i = 0; i < 20; i++) {
+    const cand = 20000 + Math.floor(Math.random() * 20000);
+    try { await fetch(`http://127.0.0.1:${cand}/`, { signal: AbortSignal.timeout(400) }); } catch { return cand; }
+  }
+  throw new Error("no free port in 20 tries");
+}
+/** Spawn the sequencer PROCESS-OWNED (review point 7): logs piped so startup
+ *  failure is diagnosable, ownership proven by a nonce round-trip the caller
+ *  performs against per-run content it alone placed, and a failed boot
+ *  prints the log tail instead of a bare ✗. */
+async function startServer(extra: Record<string, string | undefined>, lib?: string) {
+  const PORT = await freePort();
+  const env: Record<string, string | undefined> = { ...process.env, PORT: String(PORT), JOIN_TOKEN: DOOR,
+    WORLDS_DIR: mkdtempSync(join(tmpdir(), "ew-lod-w-")), EIDOVERSE_DIR: lib ?? mkdtempSync(join(tmpdir(), "ew-lod-lib-")), ...extra };
+  const proc = spawn(process.execPath, [join(ROOT, "server", "server.ts")], { env, stdio: ["ignore", "pipe", "pipe"] });
+  live = proc;
+  let log = "";
+  proc.stdout!.on("data", (d) => { log += d; });
+  proc.stderr!.on("data", (d) => { log += d; });
   let up = false;
-  for (let i = 0; i < 60 && !up; i++) { try { await fetch(`http://127.0.0.1:${PORT}/`); up = true; } catch { await sleep(250); } }
-  check("child server came up on a verified-free port", up, `:${PORT}`);
-  if (up) {
-    const base = `http://127.0.0.1:${PORT}`;
-    const version = await fetch(`${base}/version`).then((r) => r.json());
-    check("the running sequencer publishes the LOD recipe on /version — the only gate a client trusts",
-      lodFromVersion(version) === LOD_RECIPE, JSON.stringify(version.lodRecipe));
-    const key = keyFromVersion(version);
+  for (let i = 0; i < 60 && !up; i++) {
+    if (proc.exitCode != null) break;   // died at boot — the tail says why
+    try { await fetch(`http://127.0.0.1:${PORT}/version`); up = true; } catch { await sleep(250); }
+  }
+  if (!up) console.log(`      child did not come up — log tail:\n      ${log.split("\n").slice(-6).join("\n      ")}`);
+  const base = `http://127.0.0.1:${PORT}`;
+  const stop = async () => { try { proc.kill(); } catch { /* gone */ } live = null; await sleep(300); };
+  const version = up ? await fetch(`${base}/version`).then((r) => r.json()).catch(() => null) : null;
+  return { up, PORT, base, stop, log: () => log, version,
+    key: keyFromVersion(version), lod: lodFromVersion(version),
+    get: async (rel: string, headers: Record<string, string> = {}) => {
+      const res = await fetch(`${base}/library/${rel}`, { headers });
+      return { status: res.status, cc: res.headers.get("cache-control") ?? "",
+        bytes: res.status === 200 ? new Uint8Array(await res.arrayBuffer()) : new Uint8Array(0) };
+    },
+    upload: async (bytes: Uint8Array, name: string) => fetch(`${base}/upload?token=${DOOR}&name=${name}`, { method: "POST", body: bytes }) };
+}
+const isLodGlb = (bytes: Uint8Array) => { try { return glbJson(bytes)?.asset?.extras?.recipe === LOD_RECIPE; } catch { return false; } };
+
+// ---------------------------------------------- 4. store door: upload → tier chosen by recipe URL
+console.log("\n  the store door — the tier URL carries the generation:");
+{
+  const S = await startServer({ KTX2_TOKTX: FAKE_TOKTX });
+  check("child server came up (owned harness, logs piped)", S.up, `:${S.PORT}`);
+  if (S.up) {
+    check("the running sequencer publishes the LOD recipe on /version", S.lod === LOD_RECIPE, JSON.stringify(S.version?.lodRecipe));
     const glb = await gridGlb("served", 160, true);
     const hash = hashOf(glb); mine.add(hash);
-    const upRes = await fetch(`${base}/upload?token=${DOOR}&name=lod-test`, { method: "POST", body: glb });
-    check("POST /upload landed it", upRes.status === 200);
-    const flaggedUrl = `${base}/library/${withLod(negotiate(`store/${hash}.glb`, key))}`;
-    const early = await fetch(flaggedUrl);
-    const earlyBytes = new Uint8Array(await early.arrayBuffer());
-    const earlyIsLod = (() => { try { return glbJson(earlyBytes)?.asset?.extras?.recipe === LOD_RECIPE; } catch { return false; } })();
-    check("before the variant lands, a ?lod fetch is answered PROVISIONALLY — never pinned",
-      earlyIsLod || early.headers.get("cache-control") === "no-cache", `lod=${earlyIsLod} cc=${early.headers.get("cache-control")}`);
-    const landed = await until(() => existsSync(join(STORE, `${hash}.glb.lod1.glb`)), 45_000);
-    check("the queue built the LOD shadow beside the original", landed);
+    await S.upload(glb, "lod-test");
+    // ownership: only the tree we spawned from holds this run's fixture
+    const own = await S.get(`store/${hash}.glb`);
+    check("listener is OUR child (per-run fixture round-trips)", own.status === 200 && own.bytes.length === glb.length, `status=${own.status}`);
+    const url = withLod(negotiate(`store/${hash}.glb`, S.key), S.lod);
+    const early = await S.get(url);
+    check("before the variant lands, the recipe URL answers PROVISIONALLY", isLodGlb(early.bytes) || early.cc === "no-cache", `cc=${early.cc}`);
+    const landed = await until(() => existsSync(lodVariantPath(join(STORE, `${hash}.glb`))), 45_000);
+    check("the queue built the recipe-named LOD shadow", landed, lodVariantPath(join(STORE, `${hash}.glb`)));
     if (landed) {
-      const res = await fetch(flaggedUrl);
-      const bytes = new Uint8Array(await res.arrayBuffer());
-      const j = glbJson(bytes);
-      check("?ktx2=<key>&lod=1 → the LOD variant, identity-stamped, immutable",
-        j?.asset?.extras?.recipe === LOD_RECIPE && (res.headers.get("cache-control") ?? "").includes("immutable"),
-        `recipe=${j?.asset?.extras?.recipe} cc=${res.headers.get("cache-control")}`);
-      const noLod = await fetch(`${base}/library/${negotiate(`store/${hash}.glb`, key)}`);
-      const noLodJ = glbJson(new Uint8Array(await noLod.arrayBuffer()));
-      check("without ?lod the same client gets the plain ktx2 chain — tiers are chosen, never imposed",
-        noLodJ?.asset?.extras?.recipe !== LOD_RECIPE);
-      const listing: { path: string }[] = await fetch(`${base}/library-list?dir=store`).then((r) => r.json());
-      check("/library-list shows the original once, no lod artifacts", listing.filter((f) => f.path.includes(hash)).length === 1
-        && !listing.some((f) => isLodVariant(f.path)), listing.map((f) => f.path).filter((p) => p.includes(hash)).join(", "));
-      const catalog: { path: string }[] = await fetch(`${base}/library-models`).then((r) => r.json());
-      check("/library-models lists it once, never the variant", catalog.filter((h) => h.path === `store/${hash}.glb`).length === 1
-        && !catalog.some((h) => isLodVariant(h.path)));
+      const res = await S.get(url);
+      check("?ktx2=<key>&lod=<recipe> → the stamped variant, immutable", isLodGlb(res.bytes) && res.cc.includes("immutable"), `cc=${res.cc}`);
+      const other = await S.get(withLod(negotiate(`store/${hash}.glb`, S.key), "some-future-recipe"));
+      check("an UNRECOGNIZED generation answers provisionally — the next process may negotiate it, nothing gets pinned",
+        !isLodGlb(other.bytes) && other.cc === "no-cache", `cc=${other.cc}`);
+      const noLod = await S.get(negotiate(`store/${hash}.glb`, S.key));
+      check("without ?lod the same client gets the plain ktx2 chain — tiers chosen, never imposed", !isLodGlb(noLod.bytes));
+      const listing: { path: string }[] = await fetch(`${S.base}/library-list?dir=store`).then((r) => r.json());
+      check("/library-list shows the original once, no lod artifacts",
+        listing.filter((f) => f.path.includes(hash)).length === 1 && !listing.some((f) => isLodVariant(f.path)));
+      const catalog: { path: string }[] = await fetch(`${S.base}/library-models`).then((r) => r.json());
+      check("/library-models lists it once, never the variant",
+        catalog.filter((h) => h.path === `store/${hash}.glb`).length === 1 && !catalog.some((h) => isLodVariant(h.path)));
     }
-    // a body through the same door: the pump must fail it closed with the typed verdict
     const body = await skinnedGlb("served");
     const bh = hashOf(body); mine.add(bh);
-    await fetch(`${base}/upload?token=${DOOR}&name=body-test`, { method: "POST", body });
-    const refused = await until(() => existsSync(join(STORE, `${bh}.glb.lod1.glb.failed`)), 45_000);
-    const verdict = refused ? readFileSync(join(STORE, `${bh}.glb.lod1.glb.failed`), "utf8") : "";
-    check("an uploaded BODY gets the typed verdict marker and no lod variant",
-      refused && verdict.includes("unsupported: skinned/avatar asset") && !existsSync(join(STORE, `${bh}.glb.lod1.glb`)), verdict.slice(0, 80));
-    const bodyRes = await fetch(`${base}/library/${withLod(negotiate(`store/${bh}.glb`, key))}`);
-    const bodyJ = glbJson(new Uint8Array(await bodyRes.arrayBuffer()));
-    check("…and a ?lod fetch for it falls back to the original chain — never a half-valid object",
-      bodyJ?.asset?.extras?.recipe !== LOD_RECIPE);
+    await S.upload(body, "body-test");
+    const refused = await until(() => existsSync(`${lodVariantPath(join(STORE, `${bh}.glb`))}.failed`), 45_000);
+    const verdict = refused ? readFileSync(`${lodVariantPath(join(STORE, `${bh}.glb`))}.failed`, "utf8") : "";
+    check("an uploaded BODY gets the typed verdict marker and no variant",
+      refused && verdict.includes("unsupported: skinned/avatar asset") && !existsSync(lodVariantPath(join(STORE, `${bh}.glb`))), verdict.slice(0, 80));
+    const bodyRes = await S.get(withLod(negotiate(`store/${bh}.glb`, S.key), S.lod));
+    check("…and its recipe-URL fetch falls back whole — never a half-valid object", !isLodGlb(bodyRes.bytes));
   }
-  cleanup();
+  await S.stop();
 }
 
+// ---------------------------------------------- 5. the library arm + mutable-source freshness
+console.log("\n  the library arm — the sweep queues LODs, and mutable sources are never served stale:");
+{
+  const LIB = mkdtempSync(join(tmpdir(), "ew-lod-reallib-"));
+  const modelsDir = join(LIB, "eidoverse", "assets", "models");
+  mkdirSync(modelsDir, { recursive: true });
+  const libGlb = await gridGlb("library", 160, true);
+  const REL = "eidoverse/assets/models/lod_probe_fixture.glb";
+  writeFileSync(join(LIB, REL), libGlb);
+  mineOpt.push(`${REL}.ktx2.glb`, `${REL}.ktx2.glb.failed`,
+    ...[LOD_RECIPE, "x"].map((r0) => `${REL}.lod.${r0}.glb`), `${REL}.lod.${LOD_RECIPE}.glb.failed`);
+  let S = await startServer({ KTX2_TOKTX: FAKE_TOKTX }, LIB);
+  check("child server came up over the fixture library", S.up, `:${S.PORT}`);
+  if (S.up) {
+    const own = await S.get(REL);
+    check("listener is OUR child (the per-run library fixture round-trips)", own.status === 200 && own.bytes.length === libGlb.length);
+    const lodPath = join(OPT, `${REL}.lod.${LOD_RECIPE}.glb`);
+    const landed = await until(() => existsSync(lodPath), 60_000);
+    check("the LIBRARY sweep queued and built the LOD (the shared-seen bug is dead)", landed,
+      S.log().split("\n").filter((l) => l.includes("lod") || l.includes("ktx2")).slice(-4).join(" | "));
+    check("…and the ktx2 arm still built its own variant beside it", await until(() => existsSync(join(OPT, `${REL}.ktx2.glb`)), 60_000));
+    if (landed) {
+      const res = await S.get(withLod(negotiate(REL, S.key), S.lod));
+      check("the library LOD serves under the recipe URL", isLodGlb(res.bytes));
+      // the source mutates (a library file is MUTABLE): the old variant must
+      // never serve under the new source — provisional until rebuilt
+      await sleep(1100);   // a strictly newer mtime, beyond timestamp granularity
+      const libGlb2 = await gridGlb("library-v2", 160, true);
+      writeFileSync(join(LIB, REL), libGlb2);
+      const now = new Date();
+      utimesSync(join(LIB, REL), now, now);
+      const stale = await S.get(withLod(negotiate(REL, S.key), S.lod));
+      check("source newer than variant → the variant is NOT served; the fall-through is provisional",
+        !isLodGlb(stale.bytes) && stale.cc === "no-cache", `cc=${stale.cc}`);
+      await S.stop();
+      // the next boot's sweep rebuilds it (mtime), and the fresh variant serves
+      S = await startServer({ KTX2_TOKTX: FAKE_TOKTX }, LIB);
+      check("child rebooted", S.up);
+      if (S.up) {
+        const rebuilt = await until(() => existsSync(lodPath) && Bun.file(lodPath).lastModified > Bun.file(join(LIB, REL)).lastModified, 60_000);
+        check("the next boot re-swept the mutated source into a FRESH variant", rebuilt);
+        if (rebuilt) {
+          const res2 = await S.get(withLod(negotiate(REL, S.key), S.lod));
+          check("…which serves — bound to the new source", isLodGlb(res2.bytes));
+        }
+      }
+    }
+  }
+  await S.stop();
+  try { rmSync(LIB, { recursive: true, force: true }); } catch { /* best effort */ }
+}
+
+// ---------------------------------------------- 6. no encoder: untextured LOD work survives
+console.log("\n  no encoder — geometry work is not the encoder's hostage:");
+{
+  const S = await startServer(NO_ENCODER);
+  check("child server came up with no encoder anywhere", S.up, `:${S.PORT}`);
+  if (S.up) {
+    const untex = await gridGlb("noenc-untex", 160, false);
+    const uh = hashOf(untex); mine.add(uh);
+    await S.upload(untex, "noenc-untex");
+    const tex = await gridGlb("noenc-tex", 160, true);
+    const th = hashOf(tex); mine.add(th);
+    await S.upload(tex, "noenc-tex");
+    const landed = await until(() => existsSync(lodVariantPath(join(STORE, `${uh}.glb`))), 45_000);
+    check("the UNTEXTURED upload got its LOD — ktx2Skip no longer deletes valid geometry work", landed,
+      S.log().split("\n").filter((l) => l.includes("lod") || l.includes("encoder")).slice(-4).join(" | "));
+    await until(() => existsSync(join(STORE_MIN, `${th}.glb`)) || existsSync(join(STORE_MIN, `${th}.glb.failed`)), 45_000);
+    await sleep(1500);
+    check("the TEXTURED upload kept its original: no variant, NO marker (environmental)",
+      !existsSync(lodVariantPath(join(STORE, `${th}.glb`))) && !existsSync(`${lodVariantPath(join(STORE, `${th}.glb`))}.failed`));
+    check("…with the --lod arm's own once-per-boot note, and no ktx2Skip purge of lod items",
+      S.log().split("\n").filter((l) => l.includes("[lod] no KTX2 encoder")).length === 1, `${S.log().split("\n").filter((l) => l.includes("[lod] no KTX2 encoder")).length} line(s)`);
+  }
+  await S.stop();
+}
+
+// ---------------------------------------------- 7. the mutation canary: a recipe change cannot pin
+console.log("\n  the canary — a pulled recipe lands under a running sequencer:");
+{
+  const SV = join(ROOT, "server", "store-variants.ts");
+  const pristine = readFileSync(SV);
+  const restore = () => { try { writeFileSync(SV, pristine); } catch { /* best effort */ } };
+  process.on("exit", restore);
+  const glb = await gridGlb("canary", 160, true);
+  const hash = hashOf(glb); mine.add(hash);
+  writeFileSync(join(STORE, `${hash}.glb`), glb);
+  const S = await startServer({ KTX2_TOKTX: FAKE_TOKTX });
+  check("child server came up with the PRISTINE recipe in memory", S.up && S.lod === LOD_RECIPE, `${S.up} lod=${S.lod}`);
+  try {
+    if (S.up) {
+      const landed = await until(() => existsSync(lodVariantPath(join(STORE, `${hash}.glb`))), 45_000);
+      check("its boot sweep built the current-generation variant", landed);
+      const NEXT = "lod1-r10-future";
+      writeFileSync(SV, pristine.toString("utf8").replace(`export const LOD_RECIPE = "${LOD_RECIPE}";`, `export const LOD_RECIPE = "${NEXT}";`));
+      const version2 = await fetch(`${S.base}/version`).then((r) => r.json());
+      check("the pull landed; /version still publishes the RUNNING recipe", lodFromVersion(version2) === LOD_RECIPE, JSON.stringify(version2.lodRecipe));
+      const good = await S.get(withLod(negotiate(`store/${hash}.glb`, S.key), LOD_RECIPE));
+      check("a client keyed from /version gets the variant, immutable — correct", isLodGlb(good.bytes) && good.cc.includes("immutable"), good.cc);
+      const bad = await S.get(withLod(negotiate(`store/${hash}.glb`, S.key), NEXT));
+      check("the NEXT generation's URL answers no-cache and NOT the old variant — nothing for the new recipe to inherit",
+        !isLodGlb(bad.bytes) && bad.cc === "no-cache", `cc=${bad.cc} lod=${isLodGlb(bad.bytes)}`);
+    }
+  } finally { restore(); await S.stop(); }
+  check("the on-disk recipe is restored byte-for-byte", readFileSync(SV).equals(pristine));
+}
+
+cleanup();
 console.log(failures ? `\n\x1b[31m${failures} failed\x1b[0m` : "\n\x1b[32m0 failed\x1b[0m");
 process.exit(failures ? 1 : 0);

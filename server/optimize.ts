@@ -341,15 +341,24 @@ export async function optimizeGlbKtx2(bytes: Uint8Array, encoder: string): Promi
  *  body is a body (it drops extensions it does not know). */
 export function lodExclusion(json: any): string | null {
   if (json?.skins?.length) return "unsupported: skinned/avatar asset (skins)";
-  const used: string[] = json?.extensionsUsed ?? [];
-  if (used.some((e) => /^VRM/i.test(e) || /^VRMC_/i.test(e))) return "unsupported: skinned/avatar asset (VRM metadata)";
+  // fail-closed means NOT trusting well-formedness (review of #156, point 5):
+  // a VRM that forgot extensionsUsed still carries the extension OBJECT, and
+  // multi-set skinning may skip set 0 — look everywhere the structure can be
+  const extNames = [...(json?.extensionsUsed ?? []), ...(json?.extensionsRequired ?? []),
+    ...Object.keys(json?.extensions ?? {})];
+  if (extNames.some((e) => /^VRM/i.test(e) || /^VRMC_/i.test(e))) return "unsupported: skinned/avatar asset (VRM metadata)";
   for (const m of json?.meshes ?? []) for (const p of m.primitives ?? []) {
     if (p.targets?.length) return "unsupported: morph targets the reducer cannot prove preserved";
-    if (p.attributes && ("JOINTS_0" in p.attributes || "WEIGHTS_0" in p.attributes)) return "unsupported: skinned/avatar asset (joint weights)";
+    for (const k of Object.keys(p.attributes ?? {}))
+      if (/^(JOINTS|WEIGHTS)_\d+$/.test(k)) return "unsupported: skinned/avatar asset (joint weights)";
   }
-  for (const a of json?.animations ?? []) for (const c of a.channels ?? [])
-    if (c.target?.path === "weights") return "unsupported: morph-weight animation";
-  return null;   // node TRS animations are fine — the reduce never touches the node tree, and the assert below proves it
+  // v1 reduces STATIC geometry only. An animated object could survive the
+  // reduce structurally, but "could" is not the contract — preservation of
+  // channels/samplers through the diet is unproven here, and fail-closed is
+  // the reviewer-offered v1 answer. A later recipe can earn animation back
+  // with end-to-end evidence.
+  if (json?.animations?.length) return "unsupported: animated object (v1 reduces static geometry only)";
+  return null;
 }
 
 const totalVerts = (doc: Document) => {
@@ -375,23 +384,35 @@ export type LodResult = { out: Uint8Array | null; verdict: string | null; before
  *  (marker's business); textures follow --ktx2's all-or-nothing. */
 export async function optimizeGlbLod(bytes: Uint8Array, encoder: string | null): Promise<LodResult & Ktx2Tally> {
   const none = { eligible: 0, converted: 0, failed: [] as string[] };
-  const excluded = lodExclusion(parseGlb(bytes).json);
+  const rawJson = parseGlb(bytes).json;
+  const excluded = lodExclusion(rawJson);
   if (excluded) return { out: null, verdict: excluded, before: 0, after: 0, ...none };
+  // a textured object on an encoder-less box is environmental — and known
+  // from the raw container, BEFORE any expensive transform runs (the pump
+  // retries this every boot; it must cost a JSON parse, not a simplify)
+  if (!encoder && (rawJson?.images?.length ?? 0) > 0) return { out: null, verdict: "__no_encoder__", before: 0, after: 0, ...none };
   const io = await getIO();
   const doc = await io.readBinary(bytes);
   // same head as the ktx2 diet, so the two variants agree on structure
   await doc.transform(dedup(), prune(), resample());
   const before = totalVerts(doc);
   if (before < LOD_MIN_VERTS) return { out: null, verdict: `already light (${before} verts < ${LOD_MIN_VERTS})`, before, after: before, ...none };
-  // what the world depends on, captured AFTER the shared head (parity with
-  // the ktx2 variant) and asserted after the reduce
-  const names = (d: Document) => d.getRoot().listNodes().map((n) => n.getName()).sort().join("\u0000");
-  const mats = (d: Document) => d.getRoot().listMaterials().map((m) => m.getName()).sort().join("\u0000");
-  const preNames = names(doc), preMats = mats(doc), [preMin, preMax] = sceneBounds(doc);
+  // What the world depends on, captured AFTER the shared head (parity with
+  // the ktx2 variant) and asserted after the reduce. Not just names (review
+  // of #156, point 6): the HIERARCHY with each node's transform, and each
+  // primitive's material ASSIGNMENT — the reduce may only touch vertex data.
+  const nodesSig = (d: Document) => {
+    const walk = (n: any): any => [n.getName(), n.getTranslation(), n.getRotation(), n.getScale(),
+      n.getMesh()?.getName() ?? null, n.listChildren().map(walk)];
+    return JSON.stringify(d.getRoot().listScenes().map((sc) => sc.listChildren().map(walk)));
+  };
+  const matsSig = (d: Document) => JSON.stringify(d.getRoot().listMeshes().map((m) =>
+    [m.getName(), m.listPrimitives().map((p) => { const mt = p.getMaterial(); return mt ? d.getRoot().listMaterials().indexOf(mt) : -1; })]));
+  const preNodes = nodesSig(doc), preMats = matsSig(doc), [preMin, preMax] = sceneBounds(doc);
   await doc.transform(weld(), simplify({ simplifier: MeshoptSimplifier, ratio: 0.25, error: 0.01 }));
   const after = totalVerts(doc);
-  if (names(doc) !== preNames) return { out: null, verdict: "preservation failed: named nodes changed", before, after, ...none };
-  if (mats(doc) !== preMats) return { out: null, verdict: "preservation failed: materials changed", before, after, ...none };
+  if (nodesSig(doc) !== preNodes) return { out: null, verdict: "preservation failed: node hierarchy/transforms changed", before, after, ...none };
+  if (matsSig(doc) !== preMats) return { out: null, verdict: "preservation failed: material assignments changed", before, after, ...none };
   const [postMin, postMax] = sceneBounds(doc);
   for (let i = 0; i < 3; i++) {
     const tol = Math.max((preMax[i] - preMin[i]) * 0.02, 0.01);
@@ -411,7 +432,10 @@ export async function optimizeGlbLod(bytes: Uint8Array, encoder: string | null):
   const srcHash = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
   let meshoptVer = "unknown";
   try { meshoptVer = JSON.parse(await Bun.file(Bun.resolveSync("meshoptimizer/package.json", import.meta.dir)).text()).version; } catch { /* stays unknown */ }
-  doc.getRoot().getAsset().extras = { lodOf: srcHash, recipe: LOD_RECIPE,
+  // the SOURCE's extras survive; ours ride alongside (never clobber a
+  // producer's own annotations — review of #156, point 6)
+  const asset = doc.getRoot().getAsset();
+  asset.extras = { ...(asset.extras ?? {}), lodOf: srcHash, recipe: LOD_RECIPE,
     tools: { meshoptimizer: meshoptVer, encoder: encoder ? basename(encoder) : "none" } };
   await doc.transform(draco());
   return { out: await io.writeBinary(doc), verdict: null, before, after, ...tally };

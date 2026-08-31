@@ -64,11 +64,15 @@ export function lodFromVersion(json) {
   return typeof l === 'string' && l.length > 0 && l.length <= 64 ? l : null;
 }
 
-/** Append the LOD tier request. Only meaningful alongside the ktx2
- *  negotiation (a LOD variant carries KTX2 textures) and only when
- *  lodFromVersion said the running sequencer builds them. */
-export function withLod(url) {
-  return url + (url.includes('?') ? '&' : '?') + 'lod=1';
+/** Append the LOD tier request — the RECIPE the running sequencer published,
+ *  never a bare boolean (review of #156, point 1: `lod=1` under two recipes
+ *  is one immutable URL for two different byte-streams — the ?ktx2=2
+ *  split-brain, one level down). No recipe → the URL untouched. Only
+ *  meaningful alongside the ktx2 negotiation (a LOD variant carries KTX2
+ *  textures). */
+export function withLod(url, recipe) {
+  if (!recipe) return url;
+  return url + (url.includes('?') ? '&' : '?') + `lod=${encodeURIComponent(recipe)}`;
 }
 
 /** The sequencer's own spelling (tests, tools): negotiate with the key this
