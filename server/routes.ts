@@ -16,6 +16,7 @@ import { randomBytes } from "node:crypto";
 import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, JOIN_TOKEN } from "./config.ts";
 import { isStoreOriginal, isServingArtifact } from "./store-variants.ts";
 import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
+import { LOD_RECIPE, lodVariantPath } from "./store-variants.ts";
 import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
 import { resolveLibFile } from "./lint.ts";
@@ -454,6 +455,7 @@ const ROUTES: Route[] = [
       JSON.stringify({
         ...BUILD,
         ktx2Key: KTX2_KEY,
+        lodRecipe: LOD_RECIPE,
         ...(process.env.WORLD_INSTANCE_NONCE ? { instance: process.env.WORLD_INSTANCE_NONCE } : {}),
       }),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
@@ -674,6 +676,29 @@ const ROUTES: Route[] = [
       // The key is a generation (shared/ktx2.js): a retired one is an
       // unflagged fetch — whatever that client pinned under it, it keeps.
       const wantKtx2 = wantsKtx2(url.searchParams) && negotiable;
+      // The LOD tier rides the ktx2 negotiation (a LOD variant carries KTX2
+      // textures) and the same split-brain rule twice over: a client only
+      // asks with the RECIPE /version published — the URL carries the
+      // generation, so a recipe change is a fresh URL and a fresh file, and
+      // yesterday's reduction can never sit pinned under today's address.
+      const lodAsked = url.searchParams.get("lod");
+      const wantLod = lodAsked === LOD_RECIPE && wantKtx2 && rel.endsWith(".glb");
+      if (wantLod) {
+        const lRel = lodVariantPath(rel);
+        const l = normalize(join(OPT_DIR, lRel));
+        if (l.startsWith(OPT_DIR) && existsSync(l)) {
+          // library sources are MUTABLE: an updated model with a not-yet-
+          // rebuilt variant must fall through provisional, never serve the
+          // old body under the new ?v= (the §20c vrm freshness discipline)
+          let fresh = true;
+          if (!rel.startsWith("store/")) {
+            const src = [[PATCH_DIR, normalize(join(PATCH_DIR, rel))], [OPT_DIR, normalize(join(OPT_DIR, rel))], [LIBRARY_DIR, normalize(join(LIBRARY_DIR, rel))]]
+              .find(([b, p]) => p.startsWith(b) && existsSync(p))?.[1];
+            fresh = !!src && Bun.file(l).lastModified > Bun.file(src).lastModified;
+          }
+          if (fresh) return serveFrom(OPT_DIR, lRel, true, req, versioned);
+        }
+      }
       if (wantKtx2) {
         const kRel = rel.endsWith(".glb") ? `${rel}.ktx2.glb`
           : rel.endsWith(".vrm") ? `${rel}.ktx2.vrm` : `${rel}.ktx2`;
@@ -685,7 +710,9 @@ const ROUTES: Route[] = [
               .find(([base, p]) => p.startsWith(base) && existsSync(p))?.[1];
             fresh = !!orig && Bun.file(k).lastModified > Bun.file(orig).lastModified;
           }
-          if (fresh) return serveFrom(OPT_DIR, kRel, true, req, versioned);
+          // a lod-requesting fetch answered by the plain ktx2 variant is
+          // still PROVISIONAL — the lod may land later under this same URL
+          if (fresh) return serveFrom(OPT_DIR, kRel, true, req, versioned, wantLod || (lodAsked != null && !wantLod));
         }
       }
       // A flagged fetch that falls through is PROVISIONAL for that URL, not
@@ -698,7 +725,10 @@ const ROUTES: Route[] = [
       // ?ktx2=1 answer immutable, every one webp). no-cache rides the ETag —
       // a 304 while nothing changed, the variant's bytes the moment it exists;
       // nginx honors it (nginx-show.conf) and simply does not cache these.
-      const provisional = wantKtx2;
+      // an unrecognized lod value is a generation this process does not run
+      // (a pull mid-window, a buggy client): whatever answers must not be
+      // pinned under that URL — the NEXT process may negotiate it
+      const provisional = wantKtx2 || (lodAsked != null && !wantLod);
       // store uploads: prefer the store-min shadow — same address, the
       // original stays as provenance and as the fallback while (or if) the
       // optimize pass hasn't landed for this hash
