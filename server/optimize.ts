@@ -378,11 +378,28 @@ const sceneBounds = (doc: Document): [number[], number[]] => {
 
 export type LodResult = { out: Uint8Array | null; verdict: string | null; before: number; after: number };
 
+/** The node contract, as a signature: names, transforms, mesh-bearing, and
+ *  hierarchy (child order), per scene. Exported so its DETECTION power is a
+ *  unit test of its own, separate from the pipeline that consumes it. */
+export const lodNodesSig = (d: Document): string => {
+  const walk = (n: any): any => [n.getName(), n.getTranslation(), n.getRotation(), n.getScale(),
+    n.getMesh()?.getName() ?? null, n.listChildren().map(walk)];
+  return JSON.stringify(d.getRoot().listScenes().map((sc) => sc.listChildren().map(walk)));
+};
+/** Which material each primitive of each mesh wears, by index. */
+export const lodMatsSig = (d: Document): string => JSON.stringify(d.getRoot().listMeshes().map((m) =>
+  [m.getName(), m.listPrimitives().map((p) => { const mt = p.getMaterial(); return mt ? d.getRoot().listMaterials().indexOf(mt) : -1; })]));
+
 /** The lod1 diet: the ktx2 diet (dedup/prune/resample + texel-budget KTX2 +
  *  draco) with weld + meshopt-simplify between — and the preservation
  *  asserts around the reduce. `verdict` non-null = a typed content refusal
  *  (marker's business); textures follow --ktx2's all-or-nothing. */
-export async function optimizeGlbLod(bytes: Uint8Array, encoder: string | null): Promise<LodResult & Ktx2Tally> {
+/** `mutate` is the MUTATION-CONTROL SEAM demanded by the #156 re-review:
+ *  the test suite injects a post-reduce corruption (a renamed node, a
+ *  swapped material assignment) and asserts the guard REFUSES it — so
+ *  deleting either guard turns a named test red instead of leaving the
+ *  suite green. Production callers (the CLI) never pass it. */
+export async function optimizeGlbLod(bytes: Uint8Array, encoder: string | null, mutate?: (doc: Document) => void): Promise<LodResult & Ktx2Tally> {
   const none = { eligible: 0, converted: 0, failed: [] as string[] };
   const rawJson = parseGlb(bytes).json;
   const excluded = lodExclusion(rawJson);
@@ -393,26 +410,26 @@ export async function optimizeGlbLod(bytes: Uint8Array, encoder: string | null):
   if (!encoder && (rawJson?.images?.length ?? 0) > 0) return { out: null, verdict: "__no_encoder__", before: 0, after: 0, ...none };
   const io = await getIO();
   const doc = await io.readBinary(bytes);
-  // same head as the ktx2 diet, so the two variants agree on structure
-  await doc.transform(dedup(), prune(), resample());
+  // The node contract is captured BEFORE any destructive transform (re-review
+  // of #156, blocker 1: a plain prune() deleted an empty named socket helper
+  // before the old post-head signature existed — the loss was invisible).
+  // prune() runs with keepLeaves so named empty helpers — socket frames,
+  // attachment points — survive the head at all; the whole-diet signature
+  // then PROVES nothing was lost, or the variant is refused.
+  const preNodes = lodNodesSig(doc);
+  await doc.transform(dedup(), prune({ keepLeaves: true }), resample());
   const before = totalVerts(doc);
   if (before < LOD_MIN_VERTS) return { out: null, verdict: `already light (${before} verts < ${LOD_MIN_VERTS})`, before, after: before, ...none };
-  // What the world depends on, captured AFTER the shared head (parity with
-  // the ktx2 variant) and asserted after the reduce. Not just names (review
-  // of #156, point 6): the HIERARCHY with each node's transform, and each
-  // primitive's material ASSIGNMENT — the reduce may only touch vertex data.
-  const nodesSig = (d: Document) => {
-    const walk = (n: any): any => [n.getName(), n.getTranslation(), n.getRotation(), n.getScale(),
-      n.getMesh()?.getName() ?? null, n.listChildren().map(walk)];
-    return JSON.stringify(d.getRoot().listScenes().map((sc) => sc.listChildren().map(walk)));
-  };
-  const matsSig = (d: Document) => JSON.stringify(d.getRoot().listMeshes().map((m) =>
-    [m.getName(), m.listPrimitives().map((p) => { const mt = p.getMaterial(); return mt ? d.getRoot().listMaterials().indexOf(mt) : -1; })]));
-  const preNodes = nodesSig(doc), preMats = matsSig(doc), [preMin, preMax] = sceneBounds(doc);
+  // material assignments are captured after the head — dedup may merge
+  // byte-identical materials, which is the ktx2 variant's existing behavior;
+  // what may not change from HERE on is which material each primitive wears
+  const preMats = lodMatsSig(doc);
+  const [preMin, preMax] = sceneBounds(doc);
   await doc.transform(weld(), simplify({ simplifier: MeshoptSimplifier, ratio: 0.25, error: 0.01 }));
+  mutate?.(doc);   // the mutation-control seam (tests only) — see the param doc
   const after = totalVerts(doc);
-  if (nodesSig(doc) !== preNodes) return { out: null, verdict: "preservation failed: node hierarchy/transforms changed", before, after, ...none };
-  if (matsSig(doc) !== preMats) return { out: null, verdict: "preservation failed: material assignments changed", before, after, ...none };
+  if (lodNodesSig(doc) !== preNodes) return { out: null, verdict: "preservation failed: node hierarchy/transforms changed", before, after, ...none };
+  if (lodMatsSig(doc) !== preMats) return { out: null, verdict: "preservation failed: material assignments changed", before, after, ...none };
   const [postMin, postMax] = sceneBounds(doc);
   for (let i = 0; i < 3; i++) {
     const tol = Math.max((preMax[i] - preMin[i]) * 0.02, 0.01);

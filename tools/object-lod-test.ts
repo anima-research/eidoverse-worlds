@@ -42,7 +42,7 @@ import { Document, NodeIO } from "@gltf-transform/core";
 import { PNG } from "pngjs";
 import { isLodVariant, isServingArtifact, isStoreOriginal, lodVariantPath, storeShadowsMissing,
   LOD_RECIPE, LOD_MIN_VERTS } from "../server/store-variants.ts";
-import { lodExclusion, findKtx2Encoder } from "../server/optimize.ts";
+import { lodExclusion, findKtx2Encoder, optimizeGlbLod, lodNodesSig, lodMatsSig } from "../server/optimize.ts";
 import { lodFromVersion, withLod, keyFromVersion, negotiate } from "../shared/ktx2.js";
 
 let failures = 0;
@@ -161,6 +161,32 @@ async function animatedGlb(tag: string): Promise<Uint8Array> {
   doc.createAnimation("bob").addSampler(sampler).addChannel(channel);
   return new NodeIO().writeBinary(doc);
 }
+/** The re-review's own fixture, verbatim shape: a dense mesh on `root` at
+ *  [2,3,4] with an EMPTY NAMED child `seat_socket` at [0.2,1.1,-0.3] — the
+ *  node a plain prune() deleted before the old signature existed. */
+async function socketGlb(tag: string): Promise<Uint8Array> {
+  const bytes = await gridGlb(tag, 160, false);
+  const doc = await new NodeIO().readBinary(bytes);
+  const root = doc.getRoot().listNodes()[0];
+  root.setName("root").setTranslation([2, 3, 4]);
+  root.addChild(doc.createNode("seat_socket").setTranslation([0.2, 1.1, -0.3]));
+  return new NodeIO().writeBinary(doc);
+}
+/** Two dense primitives wearing two DIFFERENT materials — the assignment
+ *  the material guard must notice being swapped. */
+async function twoMatGlb(tag: string): Promise<Uint8Array> {
+  const a = await gridGlb(`${tag}-a`, 120, false);
+  const doc = await new NodeIO().readBinary(a);
+  const buf = doc.getRoot().listBuffers()[0];
+  const matB = doc.createMaterial("probeMatB");
+  const prim0 = doc.getRoot().listMeshes()[0].listPrimitives()[0];
+  const prim2 = doc.createPrimitive().setMaterial(matB)
+    .setIndices(prim0.getIndices())
+    .setAttribute("POSITION", prim0.getAttribute("POSITION"))
+    .setAttribute("TEXCOORD_0", prim0.getAttribute("TEXCOORD_0"));
+  doc.getRoot().listMeshes()[0].addPrimitive(prim2);
+  return new NodeIO().writeBinary(doc);
+}
 const hashOf = (b: Uint8Array) => new Bun.CryptoHasher("sha256").update(b).digest("hex").slice(0, 16);
 const glbJson = (bytes: Uint8Array) => {
   const dv = new DataView(bytes.buffer, bytes.byteOffset);
@@ -260,6 +286,55 @@ console.log("\n  the CLI — bodies and animation refused, objects reduced, iden
       check("…and the original is byte-identical", readFileSync(hero).equals(Buffer.from(heroBytes)));
     }
 
+    // the socket fixture: v1's whole promise, executable
+    const sockBytes = await socketGlb("sock");
+    const sock = place(sockBytes, "sock.glb");
+    r = await runLod(sock, lodVariantPath(sock));
+    check("a dense object with an EMPTY NAMED SOCKET child reduces — the socket is not prune()'s to take", r.code === 0 && r.wrote,
+      `exit ${r.code}: ${r.err.split("\n").pop()}`);
+    if (r.wrote) {
+      const j = glbJson(new Uint8Array(readFileSync(lodVariantPath(sock))));
+      const nodes: any[] = j.nodes ?? [];
+      const sk = nodes.find((n) => n.name === "seat_socket");
+      const rt = nodes.find((n) => n.name === "root");
+      const near = (a: number[] | undefined, b: number[]) => !!a && a.every((v, i) => Math.abs(v - b[i]) < 1e-5);
+      check("…seat_socket survives WITH its translation", !!sk && near(sk.translation, [0.2, 1.1, -0.3]), JSON.stringify(sk));
+      check("…still a child of root, which kept its own transform", !!rt && near(rt.translation, [2, 3, 4])
+        && (rt.children ?? []).includes(nodes.indexOf(sk)), JSON.stringify(rt));
+    }
+
+    // MUTATION CONTROLS (re-review blocker 1): each preservation guard gets a
+    // corruption injected through the pipeline's own test seam — delete the
+    // guard and its control goes red, because the corrupted variant would
+    // ship. In-process on purpose: the seam must never be CLI-reachable.
+    const mutBytes = await gridGlb("mut", 160, false);
+    let mres = await optimizeGlbLod(mutBytes, null, (doc) => { doc.getRoot().listNodes()[0].setName("renamed-by-mutation"); });
+    check("mutation control, node guard: a node renamed after the reduce is REFUSED", mres.out === null && /node hierarchy/.test(mres.verdict ?? ""),
+      String(mres.verdict));
+    mres = await optimizeGlbLod(mutBytes, null, (doc) => { doc.getRoot().listNodes()[0].setTranslation([9, 9, 9]); });
+    check("…and so is a moved one (transforms are part of the contract)", mres.out === null && /node hierarchy/.test(mres.verdict ?? ""));
+    const twoMat = await twoMatGlb("mut2");
+    mres = await optimizeGlbLod(twoMat, null, (doc) => {
+      const ms = doc.getRoot().listMaterials();
+      doc.getRoot().listMeshes()[0].listPrimitives()[0].setMaterial(ms[1]);
+    });
+    check("mutation control, material guard: a swapped assignment is REFUSED", mres.out === null && /material assignments/.test(mres.verdict ?? ""),
+      String(mres.verdict));
+    mres = await optimizeGlbLod(twoMat, null);
+    check("…and the same fixture un-mutated passes — the guards fire on corruption, not on the reduce", mres.out !== null, String(mres.verdict));
+
+    // the detectors themselves, unit-tested
+    {
+      const d1 = new Document(); d1.createScene("s").addChild(d1.createNode("a").setTranslation([1, 2, 3]));
+      const d2 = new Document(); d2.createScene("s").addChild(d2.createNode("a").setTranslation([1, 2, 4]));
+      check("lodNodesSig distinguishes a moved node", lodNodesSig(d1) !== lodNodesSig(d2) && lodNodesSig(d1) === lodNodesSig(d1));
+      const m1 = new Document(); { const A = m1.createMaterial("A"), B = m1.createMaterial("B");
+        m1.createMesh("m").addPrimitive(m1.createPrimitive().setMaterial(A)).addPrimitive(m1.createPrimitive().setMaterial(B)); }
+      const m2 = new Document(); { const A = m2.createMaterial("A"), B = m2.createMaterial("B");
+        m2.createMesh("m").addPrimitive(m2.createPrimitive().setMaterial(B)).addPrimitive(m2.createPrimitive().setMaterial(A)); }
+      check("lodMatsSig distinguishes swapped assignments", lodMatsSig(m1) !== lodMatsSig(m2));
+    }
+
     const untex = place(await gridGlb("untex", 160, false), "untex.glb");
     r = await runLod(untex, lodVariantPath(untex), NO_ENCODER);
     check("an UNTEXTURED object reduces with no encoder at all", r.code === 0 && r.wrote, `exit ${r.code}: ${r.err.split("\n").pop()}`);
@@ -316,13 +391,22 @@ async function freePort(): Promise<number> {
   }
   throw new Error("no free port in 20 tries");
 }
-/** Spawn the sequencer PROCESS-OWNED (review point 7): logs piped so startup
- *  failure is diagnosable, ownership proven by a nonce round-trip the caller
- *  performs against per-run content it alone placed, and a failed boot
- *  prints the log tail instead of a bare ✗. */
+/** Is this /version body the child WE spawned? Nonce-bound: nothing but our
+ *  child was handed this run's WORLD_INSTANCE_NONCE, so no squatter, stale
+ *  server, or TOCTOU winner on the probed port can answer with it. */
+const ownedBy = (version: any, nonce: string) => version != null && typeof version === "object" && version.instance === nonce;
+
+/** Spawn the sequencer PROCESS-OWNED (re-review blocker 2): a per-run
+ *  WORLD_INSTANCE_NONCE goes INTO the child and must come back on /version
+ *  before anything counts as up — readiness and identity are one check, so a
+ *  foreign responder on the probed port never greens a claim. Logs piped (a
+ *  failed boot prints its tail); stop() is the one cleanup owner and every
+ *  section holds it in a finally. */
 async function startServer(extra: Record<string, string | undefined>, lib?: string) {
   const PORT = await freePort();
+  const nonce = crypto.randomUUID();
   const env: Record<string, string | undefined> = { ...process.env, PORT: String(PORT), JOIN_TOKEN: DOOR,
+    WORLD_INSTANCE_NONCE: nonce,
     WORLDS_DIR: mkdtempSync(join(tmpdir(), "ew-lod-w-")), EIDOVERSE_DIR: lib ?? mkdtempSync(join(tmpdir(), "ew-lod-lib-")), ...extra };
   const proc = spawn(process.execPath, [join(ROOT, "server", "server.ts")], { env, stdio: ["ignore", "pipe", "pipe"] });
   live = proc;
@@ -330,15 +414,19 @@ async function startServer(extra: Record<string, string | undefined>, lib?: stri
   proc.stdout!.on("data", (d) => { log += d; });
   proc.stderr!.on("data", (d) => { log += d; });
   let up = false;
-  for (let i = 0; i < 60 && !up; i++) {
+  let version: any = null;
+  for (let i = 0; i < 120 && !up; i++) {   // a cold transpile can eat 15s before the first log line
     if (proc.exitCode != null) break;   // died at boot — the tail says why
-    try { await fetch(`http://127.0.0.1:${PORT}/version`); up = true; } catch { await sleep(250); }
+    try {
+      version = await fetch(`http://127.0.0.1:${PORT}/version`).then((r) => r.json());
+      if (ownedBy(version, nonce)) up = true;            // OUR child, not merely A server
+      else break;                                        // someone else answers here — refuse, do not retry into their world
+    } catch { await sleep(250); }
   }
-  if (!up) console.log(`      child did not come up — log tail:\n      ${log.split("\n").slice(-6).join("\n      ")}`);
+  if (!up) console.log(`      child did not come up OWNED — log tail:\n      ${log.split("\n").slice(-6).join("\n      ")}`);
   const base = `http://127.0.0.1:${PORT}`;
   const stop = async () => { try { proc.kill(); } catch { /* gone */ } live = null; await sleep(300); };
-  const version = up ? await fetch(`${base}/version`).then((r) => r.json()).catch(() => null) : null;
-  return { up, PORT, base, stop, log: () => log, version,
+  return { up, PORT, base, stop, log: () => log, version, nonce,
     key: keyFromVersion(version), lod: lodFromVersion(version),
     get: async (rel: string, headers: Record<string, string> = {}) => {
       const res = await fetch(`${base}/library/${rel}`, { headers });
@@ -353,9 +441,13 @@ const isLodGlb = (bytes: Uint8Array) => { try { return glbJson(bytes)?.asset?.ex
 console.log("\n  the store door — the tier URL carries the generation:");
 {
   const S = await startServer({ KTX2_TOKTX: FAKE_TOKTX });
-  check("child server came up (owned harness, logs piped)", S.up, `:${S.PORT}`);
+  try {
+  check("child server came up OWNED (nonce-bound readiness)", S.up, `:${S.PORT}`);
   if (S.up) {
     check("the running sequencer publishes the LOD recipe on /version", S.lod === LOD_RECIPE, JSON.stringify(S.version?.lodRecipe));
+    check("readiness IS identity: /version carries this run's nonce", ownedBy(S.version, S.nonce), JSON.stringify(S.version?.instance));
+    check("impostor control: the same body under a WRONG or MISSING nonce is refused by the verifier",
+      !ownedBy(S.version, crypto.randomUUID()) && !ownedBy({ ...S.version, instance: undefined }, S.nonce) && !ownedBy(null, S.nonce));
     const glb = await gridGlb("served", 160, true);
     const hash = hashOf(glb); mine.add(hash);
     await S.upload(glb, "lod-test");
@@ -392,7 +484,7 @@ console.log("\n  the store door — the tier URL carries the generation:");
     const bodyRes = await S.get(withLod(negotiate(`store/${bh}.glb`, S.key), S.lod));
     check("…and its recipe-URL fetch falls back whole — never a half-valid object", !isLodGlb(bodyRes.bytes));
   }
-  await S.stop();
+  } finally { await S.stop(); }
 }
 
 // ---------------------------------------------- 5. the library arm + mutable-source freshness
@@ -407,7 +499,8 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
   mineOpt.push(`${REL}.ktx2.glb`, `${REL}.ktx2.glb.failed`,
     ...[LOD_RECIPE, "x"].map((r0) => `${REL}.lod.${r0}.glb`), `${REL}.lod.${LOD_RECIPE}.glb.failed`);
   let S = await startServer({ KTX2_TOKTX: FAKE_TOKTX }, LIB);
-  check("child server came up over the fixture library", S.up, `:${S.PORT}`);
+  try {
+  check("child server came up OWNED over the fixture library", S.up, `:${S.PORT}`);
   if (S.up) {
     const own = await S.get(REL);
     check("listener is OUR child (the per-run library fixture round-trips)", own.status === 200 && own.bytes.length === libGlb.length);
@@ -443,15 +536,15 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
       }
     }
   }
-  await S.stop();
-  try { rmSync(LIB, { recursive: true, force: true }); } catch { /* best effort */ }
+  } finally { await S.stop(); try { rmSync(LIB, { recursive: true, force: true }); } catch { /* best effort */ } }
 }
 
 // ---------------------------------------------- 6. no encoder: untextured LOD work survives
 console.log("\n  no encoder — geometry work is not the encoder's hostage:");
 {
   const S = await startServer(NO_ENCODER);
-  check("child server came up with no encoder anywhere", S.up, `:${S.PORT}`);
+  try {
+  check("child server came up OWNED with no encoder anywhere", S.up, `:${S.PORT}`);
   if (S.up) {
     const untex = await gridGlb("noenc-untex", 160, false);
     const uh = hashOf(untex); mine.add(uh);
@@ -469,7 +562,7 @@ console.log("\n  no encoder — geometry work is not the encoder's hostage:");
     check("…with the --lod arm's own once-per-boot note, and no ktx2Skip purge of lod items",
       S.log().split("\n").filter((l) => l.includes("[lod] no KTX2 encoder")).length === 1, `${S.log().split("\n").filter((l) => l.includes("[lod] no KTX2 encoder")).length} line(s)`);
   }
-  await S.stop();
+  } finally { await S.stop(); }
 }
 
 // ---------------------------------------------- 7. the mutation canary: a recipe change cannot pin
