@@ -1,0 +1,98 @@
+unit: bun run tools/grass-quality-test.ts
+
+
+flora's shipped density dial (source-extracted, both trees)
+  ✓ factor 0 keeps ZERO of 1000 instances (main keeps 50)
+
+the dial itself (makeGrassQuality)
+  ✓ no store → full, effective 1
+  ✓ persisted level loads
+  ✓ setQuality persists
+  ✓ reload sees the change
+  ✓ unknown level refused, current stands
+  ✓ garbage in the store → full
+  ✓ governor may lower below the cap
+  ✓ governor cannot raise above the cap
+  ✓ raising the cap does not un-shed the session
+  ✓ off is zero regardless of shed
+  ✓ shed clamps to [0,1]
+  ✓ levels and factors agree
+
+the instance-count dial (densityCount)
+  ✓ full keeps the field
+  ✓ 0.6 keeps 600
+  ✓ tiny factors floor at 5%
+  ✓ a thinned field never reads as mowed
+  ✓ off draws ZERO (main keeps ≥1 per stroke)
+  ✓ negative is zero too
+
+terrain lifecycle (the real setGrass/setGrassDensity path)
+  ✓ cap set BEFORE any field load is live
+  ✓ field arriving finds the cap waiting
+  ✓ chosen and effective are separately inspectable
+  ✓ cap change applies to the loaded field
+  ✓ replacement field inherits the cap (sticky re-grow)
+  ✓ replaced field was retired, not mutated
+  ✓ off tells the field to draw zero
+  ✓ off hides the group locally
+  ✓ off leaves the field object whole (shared state untouched)
+  ✓ raising the cap restores in place
+  ✓ governor thins the live field
+  ✓ governor recovery still honors the cap
+  ✓ the chosen level persisted for the next session
+  ✓ unknown level via terrain refused
+
+the silent no-op seam (flora's shipped wireDensityDial, both trees)
+  ✓ wireDensityDial extracted from flora.js
+  ✓ a stroke with instanced attributes gets a dial
+  ✓ missing attributes leave NO dial — the seam is real
+  ✓ a dialed stroke's LIVE count follows densityCount
+  ✓ shrub report covers both leaf and stem draw meshes
+  ✓ shrub stem mismatch makes the live report fail
+  ✓ the composed dial silently no-ops on the dial-less stroke
+  ✓ this tree can NAME that no-op (field.applied)
+  ✓ mixed field reports PARTIAL and identifies the stroke
+  ✓ a planted-nothing stroke is vacuously applied, never a failure
+
+the applied report through terrain (getGrassApplied)
+  ✓ terrain exports getGrassApplied
+  ✓ low on a compatible field: APPLIED, consistent with live mesh.count
+  ✓ the report carries the whole chain: chosen, cap, shed, requested
+  ✓ low on an incompatible field: UNAVAILABLE, not success at 0.35
+  ✓ getGrassDensity still names the REQUEST — truth lives in the report
+  ✓ off is honestly APPLIED via visibility even without a dial
+  ✓ restore from off re-evaluates: UNAVAILABLE again, not remembered success
+  ✓ full on an incompatible field is honestly applied (it IS drawing full)
+  ✓ re-grow preserves the choice and re-evaluates applied capability
+  ✓ a field that cannot report draw state is UNKNOWN, not success
+  ✓ no field at all says so
+
+the motion dial, and the three names over both dials
+  ✓ motion defaults to on
+  ✓ GRASS_MOTION is the whole vocabulary
+  ✓ setMotion persists under its own key
+  ✓ reload sees it
+  ✓ unknown motion refused, current stands
+  ✓ garbage in the store -> on
+  ✓ animates() is false at cap off even with motion on
+  ✓ ...and true again when there is something to move
+  ✓ the dials do not overwrite each other
+  ✓ full = cap full + motion on
+  ✓ static = cap full + motion OFF, and the meadow is still drawn
+  ✓ off = nothing drawn
+  ✓ a cap between the names has no name, and does not invent one
+  ✓ an unknown preset changes nothing
+  ✓ a governor shed does not rebrand the resident's preset
+
+one report for every surface (source-level)
+  ✓ the browser grass⚙ row reads the SAME report (getGrassApplied) as code does
+
+never a verb (source-level)
+  ✓ terrain.js does not import net.js or send verbs
+  ✓ grass_quality.js is dependency-free
+  ✓ terrain.js freezes motion by IDENTITY, never by emptying the hook array
+  ✓ the per-tile ticks are NOT frozen (a still meadow must not be a stale one)
+  ✓ the /foliage handler exists
+  ✓ ...and its body sends no verb of any kind
+
+76 passed, 0 failed

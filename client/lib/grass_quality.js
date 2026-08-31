@@ -19,13 +19,32 @@
 export const GRASS_QUALITY = ['full', 'medium', 'low', 'off'];
 export const QUALITY_DENSITY = { full: 1, medium: 0.6, low: 0.35, off: 0 };
 
+// A SECOND local dial, orthogonal to the first: whether the meadow MOVES.
+//
+// The cap answers "how many blades does this machine fill pixels with". It
+// cannot answer "draw them, but stop them swaying", and that is a different
+// question with a different answer — a machine can be fill-bound or bound by
+// the per-vertex wind and pusher work, and #42's field evidence points at the
+// second (grass out of frame: 40fps → 120fps on an M3 Max). Density and motion
+// are not one ladder, so they are not modelled as one.
+//
+// The three names #42 asks about are POINTS in that two-dial space, not a
+// third dial:
+//   full   = cap 'full'  + motion on
+//   static = cap 'full'  + motion off      (drawn, not animated)
+//   off    = cap 'off'                     (not drawn; motion moot)
+export const GRASS_MOTION = ['on', 'off'];
+
 const KEY = 'ew-grass-quality';
+const MOTION_KEY = 'ew-grass-motion';
 
 /** The dial state. `store` is localStorage in the browser, anything with
  *  getItem/setItem in tests, or absent (state then lives for the session). */
 export function makeGrassQuality(store) {
   const saved = store?.getItem?.(KEY);
   let quality = GRASS_QUALITY.includes(saved) ? saved : 'full';
+  const savedMotion = store?.getItem?.(MOTION_KEY);
+  let motion = GRASS_MOTION.includes(savedMotion) ? savedMotion : 'on';
   let shed = 1;
   return {
     /** the resident's chosen level ('full' | 'medium' | 'low' | 'off') */
@@ -47,6 +66,34 @@ export function makeGrassQuality(store) {
     shedTo(f) {
       shed = Math.min(1, Math.max(0, Number.isFinite(f) ? f : 1));
       return shed;
+    },
+
+    /** does this viewer's meadow sway? ('on' | 'off') */
+    get motion() { return motion; },
+    setMotion(m) {
+      if (!GRASS_MOTION.includes(m)) return motion;
+      motion = m;
+      store?.setItem?.(MOTION_KEY, m);
+      return motion;
+    },
+    /** Nothing is drawn at cap 'off', so nothing can be animated either —
+     *  reporting motion 'on' for an invisible meadow would be a lie the UI
+     *  then has to explain. */
+    animates() { return motion === 'on' && this.effective() > 0; },
+
+    /** The preset an onlooker would name for the current pair, or null when
+     *  the two dials sit somewhere without a common name. */
+    preset() {
+      if (QUALITY_DENSITY[quality] <= 0) return 'off';
+      if (quality !== 'full') return null;
+      return motion === 'on' ? 'full' : 'static';
+    },
+    /** Apply one of #42's three names. Returns the pair it set. */
+    setPreset(name) {
+      if (name === 'off') this.setQuality('off');
+      else if (name === 'static') { this.setQuality('full'); this.setMotion('off'); }
+      else if (name === 'full') { this.setQuality('full'); this.setMotion('on'); }
+      return { quality, motion };
     },
   };
 }

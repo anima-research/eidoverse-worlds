@@ -1,0 +1,73 @@
+fail-on-main control: the SAME test on origin/main 6006d6d, only the test files copied in.
+run on node 20.20.2, the reviewer's runtime.
+
+
+--- harness controls -------------------------------------------------
+
+the WebSocket contract, on this node and on node 20
+  ✓ a WebSocket resolves here — ws package (node 20.20.2 has no global)
+  ✓ with no global WebSocket (node < 22) it falls back to the ws package
+  ✓ this file never reaches for the bare global WebSocket
+
+ownership is proven, not inferred from a 200
+  ✓ the impostor answers 200 — generic HTTP readiness would accept it
+  ✓ …but the nonce proof refuses it
+  ✓ …and refuses a listener echoing somebody else's nonce
+  ✓ the control cleaned up after itself
+
+a failure before the viewers exist leaks no child
+  ✓ a child came up and PROVED it is ours (:9762, pid 11996)
+  ✓ …and the port really is listening
+  ✓ the injected failure propagated
+  ✓ …and the child is gone: nothing listens on that port
+  ✓ …and dispose is idempotent (a second call is a no-op)
+
+--- the product door -------------------------------------------------
+
+foliage door test — world "foliagedoortoxin" on :9011, proven ours by nonce
+
+two viewers standing in one meadow
+
+  ✗ chat.js routes a typed /foliage to the handler
+  ✗ …and /grass as its alias
+  ✗ this build has the local motion dial at all — []
+  ✓ both viewers start from the same meadow
+  ✗ both start animating
+
+ash types /foliage off
+  ✓ the command reached a handler (via bus)
+  ✗ ASH's meadow went dark — {"blades":39283,"visible":true}
+  ✓ BROOK's meadow is untouched
+  ✓ BROOK's dials never moved
+  ✓ the WORLD LOG did not grow
+  ✓ no grass verb was authored
+  ✓ BROOK's browser storage is untouched
+
+ash types /foliage static
+  ✓ ASH sees the meadow again
+  ✗ …and it is STILL: wind amplitude zeroed — [[0.4026428724420452,0.8052857448840904]]
+  ✗ …and it reads as the static preset — null/null
+  ✓ BROOK's wind is still blowing
+  ✗ BROOK's meadow is still untouched
+  ✓ …and BROOK's hook array was never touched
+  ✓ the WORLD LOG still did not grow
+
+ash types /foliage full
+  ✗ ASH is restored exactly — {"blades":39283,"was":39283,"preset":null}
+  ✓ …including the wind amplitudes it borrowed
+  ✗ BROOK never noticed any of it
+  ✓ the world log is byte-identical from first to last
+
+with neighbours on both sides of the meadow in the hook array
+  ✗ the meadow hooks really left the array during static — 5 → 5
+  ✓ …and the whole array came back in exactly the order it was found
+  ✓ …with the neighbours still on their original sides
+
+ash sets /foliage static and reloads
+  ✗ ASH gets their own meadow back the way they left it — null/null
+  ✗ a fresh field inherits the choice (sticky across the re-grow) — [[0.4026428724420452,0.8052857448840904]]
+  ✗ BROOK's meadow, still, is the one its author planted
+  ✓ and the world log STILL did not grow
+  ✓ the harness left nothing listening behind it
+
+14 failed — a viewer's choice reached something it should not have

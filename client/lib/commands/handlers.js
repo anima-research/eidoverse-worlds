@@ -22,6 +22,10 @@ import { toggleHelp, flashHint } from '../ui.js';
 import { sceneAttach, sceneDetach } from '../scenegraph.js';
 import { EMOTE_ORDER, EMOTES } from '../avatar.js';
 import { setPushable, pushable } from '../consent.js';
+import {
+  GRASS_QUALITY, getGrassQuality, setGrassQuality, getGrassShed,
+  getGrassMotion, setGrassMotion, setFoliagePreset, getFoliagePreset,
+} from '../terrain.js';
 import { trySitOn } from '../localbody.js';
 import { getMe } from '../mybody.js';
 import { setMyReach, clearMyReach } from '../reachnet.js';
@@ -224,6 +228,34 @@ register('pushable', (arg) => {
   const v = (arg || '').trim().toLowerCase();
   if (v === 'on' || v === 'off') setPushable(v === 'on');
   return logChat('*', `shoves and blasts ${pushable() ? 'CAN' : 'can NOT'} knock you over${v ? '' : ' — /pushable on|off to change'}`);
+});
+
+// The meadow through YOUR eyes. Two local dials — how much is drawn (the
+// resident's cap, #60) and whether it sways — plus the three names #42 uses
+// for the points that matter: full, static, off.
+//
+// Nothing here is a verb. The shared field — species, seed, extent, who
+// planted it — is world state and stays exactly as its author left it; how
+// many blades this machine fills pixels with, and whether they move, is not
+// world state and never was. Another viewer standing beside you sees their
+// own answer, unchanged. (Proof, not assertion: tools/foliage-door-test.mjs.)
+register('foliage', (arg) => {
+  const v = (arg || '').trim().toLowerCase();
+  const say = () => {
+    const preset = getFoliagePreset();
+    const shed = getGrassShed();
+    return logChat('*', `your meadow: ${getGrassQuality()} · sway ${getGrassMotion()}`
+      + (preset ? ` (${preset})` : '')
+      + (shed < 1 ? ` — the auto governor is thinning to ×${shed}` : '')
+      + ' — yours only, never shared. /foliage full|static|off|medium|low|sway on|off');
+  };
+  if (!v) return say();
+  if (v === 'full' || v === 'static' || v === 'off') { setFoliagePreset(v); return say(); }
+  if (GRASS_QUALITY.includes(v)) { setGrassQuality(v); return say(); }
+  const m = /^(?:sway|motion|wind)\s+(on|off)$/.exec(v);
+  if (m) { setGrassMotion(m[1]); return say(); }
+  if (v === 'sway' || v === 'motion' || v === 'wind') { setGrassMotion(getGrassMotion() === 'on' ? 'off' : 'on'); return say(); }
+  return logChat('*', `no such foliage setting "${v}" — try full, static, off, medium, low, or sway on|off`);
 });
 
 register('boom', (arg) => {

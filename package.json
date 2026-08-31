@@ -17,6 +17,7 @@
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.11.1",
-    "playwright": "^1.62.1"
+    "playwright": "^1.62.1",
+    "ws": "^8.21.1"
   }
 }

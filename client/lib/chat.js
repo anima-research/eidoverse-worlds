@@ -690,6 +690,9 @@ function runCommand(raw) {
     case 'pushable':
       bus.emit('command', { cmd: 'pushable', arg });
       return true;
+    case 'foliage': case 'grass':
+      bus.emit('command', { cmd: 'foliage', arg });
+      return true;
     case 'eyes':
       bus.emit('command', { cmd: 'eyes', arg });
       return true;
