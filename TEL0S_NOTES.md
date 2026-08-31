@@ -390,6 +390,28 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-31 — §24t: THE PUNT PLAYTEST (f6c7eed).** tel0s booted
+  barrels: "spin through the ground in a wide arc, then slide far
+  away". Three findings, ZERO sim-law changes (no epoch bump): (1) the
+  world had NO EPOCH — entering one took a raw world_verb, so the
+  playtest of the new physics ran the LEGACY volunteer sim; /epoch
+  [tickMs] is a command now (owner-ranked server-side). (2) shapeOf
+  classified any round-ish bbox as a BALL — the 2×2 barrels group
+  rolled about its origin (mesh sweeping the ground) on ball friction;
+  the ball test now requires ball SIZE (<0.9m), furniture-scale things
+  tumble+settle like crates. (3) feel: default power 5→4, epoch lift
+  ratio 0.45→0.9 (the sim normalizes the stamped vector — at 0.45 a
+  default punt apexed at 6cm, a scoot; now a knee-high hop, apex
+  0.28m, rest 2.8m; all INPUTS, logged meaning unchanged), plus a
+  COSMETIC tumble in simworld (airborne bodies tumble ⊥ travel, right
+  themselves grounded — presentation-only, position untouched, parity
+  reads position). /KICK IS MODERATION, SOLIDLY (ruling): the
+  one-word-two-acts overload died; /punt owns physics and gained
+  people — /punt <person> = the consented ragdoll shove (shovePerson
+  shared with /push; the target's client decides). Help def +
+  registry updated. Gates: sim-smoke 8/0 (browser leg runs the tumble
+  applier), defs-smoke 31/0, smoke 85/85, paritybench, panelbench.
+
 - **2026-08-30 — §24s: THE OPEN ROAD — owned numerics + the renderer
   seam (4235a38, fb85d8c, 8a739fa).** (1) docs/UPSTREAM-FLAGS.md: the
   one-document merge briefing for colleagues (6 upstream reds w/ fixes,
