@@ -20,8 +20,12 @@ Current patches:
   grow (survivors of the host's distance thinning scale up to `cap`) and,
   with `lodGrow.exp`, the per-instance dither that moves the count-falloff
   curve into the shader (draw-order rank vs keep(d) — continuous density,
-  no tile seams). Without the opt: byte-identical to upstream. PR material
-  for Skye alongside docs/upstream-wrap-once.md.
+  no tile seams). It also loads the optional sunflower generator only when
+  sunflower is requested, so a separately updated companion checkout that
+  predates sunflower cannot disable every established flora species. A
+  missing generator still fails the sunflower request clearly. Without the
+  LOD opt, established-species rendering stays byte-identical to upstream.
+  PR material for Skye alongside docs/upstream-wrap-once.md.
 
 - `eidoverse/assets/animations/sitting_normal_chair.vrma` — hips translation
   track lowered by 0.409 (track units; 169 keyframes, Y lane only, X/Z and

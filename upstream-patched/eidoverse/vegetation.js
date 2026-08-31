@@ -59,7 +59,6 @@ export const GRASS_COLORS = {
 
 import { buildShrubGeometry } from './vegetation_shrub_gen.js';
 import { buildCornGeometry } from './vegetation_corn_gen.js';
-import { buildSunflowerGeometry } from './vegetation_sunflower_gen.js';
 
 // ── species registry ─────────────────────────────────────────────────────────
 // card:    { w, h, curve, cup, segH } — one curved strip, full sheet per card
@@ -783,6 +782,7 @@ export async function createFlora(opts = {}) {
         console.log(`[grass2] corn plant: ${cornBuild.stats.verts} verts, ${cornBuild.stats.tris} tris`);
     }
     if (spec.archetype === 'sunflower') {
+        const { buildSunflowerGeometry } = await import('./vegetation_sunflower_gen.js');
         // fitted card envelopes measured from the delivered art (overdraw
         // pull-in); the gen has a stand-in fallback if the json is absent
         let sunFit = null;
