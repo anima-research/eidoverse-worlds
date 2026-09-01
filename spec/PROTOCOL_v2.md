@@ -142,6 +142,14 @@ v1 §5 is not weakened; it is what makes this amendment affordable:
   folding to the tick that `now` quantizes to — clients interpolate
   presentation between ticks exactly as they interpolate presence.
 
+*Delivered (2026-09-01):* the reference client interpolates. Because the
+quantization rounds up, the sim's current state is the end of the interval
+`now` falls in and the previous tick's state is its start; the applier
+shows their lerp at `now`'s fractional phase — exact sim time, no added
+latency, no extrapolation. Presentation only: no sim number is read back
+from the display (client/lib/simworld.js; tools/sim-smoke.ts holds the
+every-frame-moves check).
+
 ## 6. Intent vocabulary (sketch — the open section)
 
 Dialect 3 re-scopes the existing physical causes and reserves room to

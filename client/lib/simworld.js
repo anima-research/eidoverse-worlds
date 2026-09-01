@@ -10,10 +10,20 @@
 // sequencer shifts the flight's phase by the skew and nothing else — the
 // rest pose is recomputation, not observation, and cannot drift.
 //
-// v0.1 presentation is tick-stepped (the epoch's tickMs, 15Hz at 66):
-// matching the pose stream's cadence. Interpolation between ticks is
-// presentation polish the spec sanctions; it can come later without
-// touching a single number the sim owns.
+// Presentation INTERPOLATES between ticks (PROTOCOL_v2 §5: "clients
+// interpolate presentation between ticks exactly as they interpolate
+// presence"). The sim's tick-T state is where a body stands at wall time
+// epoch.ts + T·tickMs, and tickOf rounds UP — so the sim's current state is
+// the END of the interval "now" falls in, and the state one tick earlier is
+// its START. Each frame the applier remembers every body's position at the
+// tick before advancing across a boundary, then shows the lerp of the two at
+// the fractional phase of now within the tick: exact sim time, zero added
+// latency, no extrapolation (nothing ever overshoots a bounce or the ground).
+// At 15Hz ticks on a 60Hz+ display the tick-stepped v0.1 painted each
+// position four frames running (tel0s, playtest 2026-09-01: "I can sort of
+// see the individual physics updates in the form of juddering"). Not one
+// number the sim owns is touched: the displayed lerp never feeds back, and
+// the parity legs read state.sim, never obj.position.
 
 import { THREE } from './core.js';
 import { state } from './state.js';
@@ -46,13 +56,42 @@ const TUMBLE = 2.2;        // rad/s while airborne — a hop reads as a tumble
  *  against the sequencer's and any independent recompute. */
 export const simState = () => state.sim;
 
+// ---- between-tick interpolation (presentation) -------------------------------
+// prev: id -> position at the tick BEFORE the sim's current one — the start
+// of the interval the display is inside. Captured only when THIS applier
+// steps the sim across a boundary; if anything else moved the sim since
+// (a folded intent whose ts ran ahead of this clock, a new epoch), the
+// remembered starts are stale and are dropped — those bodies show the sim's
+// word outright until the next boundary, which is exactly v0.1's behaviour
+// and exactly the skew doctrine in the header (phase shifts, nothing else).
+const prev = new Map();    // id -> [x, y, z]
+let tickSeen = -1;         // the tick the applier itself last left the sim at
+
 /** Wire the applier. Called once from main.js, beside the realizers. */
 let lastAt = 0;
 export function initSimWorld() {
   pushHostHook(() => {
     const sim = state.sim;
     if (!sim?.epoch || sim.epoch.foreign) return;
-    advanceSim(sim, tickOf(sim, Date.now()));
+    const wall = Date.now();
+    const target = tickOf(sim, wall);
+    if (sim.tick !== tickSeen) prev.clear();
+    if (sim.tick < target) {
+      // crossing a boundary this frame: stand at the tick before, remember
+      // every body there, then step to the interval's end
+      if (sim.tick < target - 1) advanceSim(sim, target - 1);
+      for (const id in sim.bodies) {
+        const b = sim.bodies[id];
+        let pv = prev.get(id);
+        if (!pv) { pv = [0, 0, 0]; prev.set(id, pv); }
+        pv[0] = b.p[0]; pv[1] = b.p[1]; pv[2] = b.p[2];
+      }
+      advanceSim(sim, target);
+    }
+    tickSeen = sim.tick;
+    // the phase of now inside the sim's current tick, (0, 1]: 1 is the
+    // boundary itself, i.e. the sim's word verbatim
+    const k = Math.min(1, Math.max(0, (wall - sim.epoch.ts) / sim.epoch.tickMs - (sim.tick - 1)));
     const now = performance.now();
     const dt = Math.min(0.1, (now - (lastAt || now)) / 1000);
     lastAt = now;
@@ -60,7 +99,15 @@ export function initSimWorld() {
       const b = sim.bodies[id];
       const obj = entities.get(id);
       if (!obj) continue;
-      obj.position.set(b.p[0], b.p[1], b.p[2]);
+      // a resting body stands on the sim's word exactly (the collider index
+      // below reads it); a moving one shows the lerp of its two tick poses
+      const pv = b.resting ? undefined : prev.get(id);
+      if (pv) {
+        obj.position.set(pv[0] + (b.p[0] - pv[0]) * k, pv[1] + (b.p[1] - pv[1]) * k,
+          pv[2] + (b.p[2] - pv[2]) * k);
+      } else {
+        obj.position.set(b.p[0], b.p[1], b.p[2]);
+      }
       // cosmetic tumble/settle (see the header block above)
       let sp = spins.get(id);
       if (!sp) {
@@ -111,5 +158,6 @@ export function initSimWorld() {
     // released bodies drop their presentation state — the realizers
     // re-assert the authored transform the moment the fold owns them again
     for (const id of spins.keys()) if (!(id in sim.bodies)) spins.delete(id);
+    for (const id of prev.keys()) if (!(id in sim.bodies)) prev.delete(id);
   });
 }

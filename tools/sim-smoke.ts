@@ -83,6 +83,38 @@ if (!bootReady) await die(2, "✗ client never booted");
 
 console.log(`\n${bold("── the flight")}`);
 await verb("punt", { id: "ball", dir: [1, 0.45, 0.3], power: 8 });
+
+// the client SHOWS the flight smoothly (PROTOCOL_v2 §5 — presentation
+// interpolates between ticks): sample the realized entity every animation
+// frame while the sim still has the ball in flight. Tick-stepped display
+// (v0.1) moved it on ~1 frame in 4 (66ms ticks on a 60Hz display); the
+// interpolating applier moves it on every frame the wall clock advanced.
+// A pure presentation check — the sim legs below never read obj.position.
+const frames = await evalJson(`new Promise((done) => { try {
+  const out = []; let n = 0;
+  const step = () => {
+    const o = EW.entities.get('ball'); const b = EW.simFold().bodies.ball;
+    if (o && b) out.push([o.position.x, o.position.y, o.position.z, b.resting ? 1 : 0, Date.now()]);
+    if (++n < 48) requestAnimationFrame(step); else done(out);
+  };
+  requestAnimationFrame(step);
+} catch (e) { done({ err: String(e) }) } })`);
+{
+  const rows: number[][] = Array.isArray(frames) ? frames : [];
+  // consecutive pairs where the sim still had the ball moving and the
+  // clock actually advanced between the two frames
+  let live = 0, moved = 0;
+  for (let i = 1; i < rows.length; i++) {
+    const a = rows[i - 1], b = rows[i];
+    if (a[3] || b[3] || b[4] === a[4]) continue;
+    live++;
+    if (a[0] !== b[0] || a[1] !== b[1] || a[2] !== b[2]) moved++;
+  }
+  check("the client moves the ball on (nearly) every frame in flight — interpolated, not tick-stepped",
+    live >= 12 && moved / live >= 0.9,
+    frames?.err ?? `${moved}/${live} live frame pairs moved (${rows.length} frames sampled)`);
+}
+
 // wait for rest on the sequencer's side
 let serverSim: any = null;
 for (let i = 0; i < 40; i++) {
