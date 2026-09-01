@@ -390,6 +390,31 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-31 — §24t-4: THE BARRELS' TWO-METRE GHOST (d6295cd).**
+  Round 4 closed the constant-direction mystery with a ruler:
+  scifi_barrels_group_of_four.glb ships its geometry 1.95m from the
+  model origin (bbox center [−0.001, 0.504, −1.953]). The entity
+  origin — what /punt aimed through, what reach measured, what every
+  rotation pivots on — hangs in EMPTY AIR 2m from the visible
+  cluster: standing "directly in its way" still put tel0s behind the
+  ghost, so all nine logged punts stamped +z (the log reconstruction
+  shows the barrel marching 24m north, puncher forever 1–3m behind
+  the origin). The same offset powered round one's "wide arc through
+  the ground" (any rotation sweeps the mesh on a 2m arm). FIXES:
+  colliders.entityWorldCenter(id) — where a thing VISIBLY is (box
+  center × scale × yaw + position); physobj kick() measures nearest/
+  reach/direction by the center (proven with the real model in a real
+  client: north-of-visible stamps [0,0.9,−1], south stamps
+  [0,0.9,+1]); the cosmetic tumble AND the legacy spin are arm-gated
+  (visual center >0.5m off origin ⇒ arc without spinning).
+  UPSTREAM-FLAGS §3b: the asset wants re-exporting origin-centred;
+  summarizeGlb makes a library-wide offender audit a one-liner.
+  MEANWHILE the righting-mid-air report persists because commons
+  NEVER ENTERED 0.2.0 — the log has no new epoch entry (old sequencer
+  build still running, or /epoch not re-run): restart the sequencer,
+  /epoch once, and the flat floor is history. Gates: sim-test 21/0,
+  sim-smoke 8/0, replaybench 1/1, parity, panelbench.
+
 - **2026-08-31 — §24t-3: EIDOSIM@0.2.0 — terrain-aware ground
   (c5ba7ed).** Round 3 solved the whole mystery: tel0s plays on HILLY
   terrain, and 0.1.0's flat floor grounds every flight at launch
