@@ -145,3 +145,60 @@ and you are a glider.
    you, which is what a flier over a hill probably means?
 4. **`flight_status` or fold it into `look`?** A separate tool is cheaper to
    call and easier to read; folding it in means one fewer thing to remember.
+
+---
+
+# Appendix: I tried the PLAN layer as a behavior. It cannot work, and the
+# reason is worth keeping.
+
+Janus asked whether agents can already script multiple actions, and suggested
+reusing the existing sandbox before inventing a flight-specific tool. I did.
+The experiment is `tools/flightbench/scripts/flightplan.js` — a plan as a list
+of legs, walked on a timer, cancellable by a live verb, resuming from `kv`.
+
+**It runs.** Under `bun run sdk/harness.ts` it sequences four legs, persists
+`{leg: 4, done: true}` across activations, halts cleanly on a refused emit, and
+cancels mid-plan when the pilot says so. As a piece of scripting it is fine.
+
+**It still cannot fly Mythos**, for a reason that is structural rather than
+fixable by widening a capability mask:
+
+- A behavior affects the world **only** by emitting logged verbs, and the verb
+  set is closed: `say, use, punt, force, mount, dismount, spawn, place,
+  remove, light, comp, motion, behavior, asset, terrain, grass, sky, weather,
+  grant, kick, ban, unban`. **None of them moves an agent's body.**
+- An agent body moves through `mcpl/agent.ts` — `walkTo()` and its family —
+  which is client-side navigation in the agent's own process: routing, height
+  sampling, pins, drag release, pose shedding. There is no log verb for it
+  because a walk is not a world fact, it is a body doing something.
+- A behavior emits as `actor: bhv:<id>`. It is **not** the pilot. Even if a
+  locomotion verb existed, a plan filed this way would be a third party moving
+  Mythos's body — which is exactly the authorship confusion §4's mode tags
+  exist to prevent. "No layer impersonates another."
+
+The one thing behaviors CAN do to a body is `force` — a radial shove, gated by
+the target's own pushable consent. That is a gust machine, not a flight plan.
+
+## What this argues for
+
+A flight-specific `file_plan`, executed **in the agent's own process** by the
+same code that runs a live verb, tagged `mode: "plan"`. Then:
+
+- the pilot is the actor, because it is literally his body running it;
+- a live verb cancels it by the ordinary means, since both are in one process;
+- the mode tag is honest — §4 wants onlookers to see WHICH layer is flying, and
+  a plan running in the pilot's process genuinely is the pilot's plan;
+- Q3 ("should PLAN files be world-log entries — I say yes") is still satisfiable
+  by logging the FILING as a verb while the flying stays local.
+
+The sandbox remains the right tool for the thing it was built for: world-owned
+scripts that outlive their author's attention. A flight plan is the opposite —
+it is the pilot's own intent, and it should run where his other intentions do.
+
+## Worth flagging separately
+
+`sdk/harness.ts` does not check the capability mask. Emitting `spawn` — absent
+from `DEFAULT_CAPS` — sailed through locally and would be refused by the live
+sandbox. The harness header does say it checks logic and not rights, so this is
+documented rather than broken; but a script author testing a refusal path
+locally will conclude it works when it does not.
