@@ -9,7 +9,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync, rmSync } from "node:fs";
 import { join, basename, dirname, relative } from "node:path";
 import { JOIN_TOKEN, UPLOAD_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DIR } from "./config.ts";
-import { isStoreOriginal, ktx2VariantPath, storeShadowsMissing, verdictStands } from "./store-variants.ts";
+// merge 2026-09-01 (anima a468cba, geometry LOD): upstream's LOD names ride
+// in; the door stays on R1's aid1JoinIdentity (the HN_*/verifyToken form is
+// what it replaced — the merged body references neither)
+import { isStoreOriginal, ktx2VariantPath, lodVariantPath, storeShadowsMissing, verdictStands, KTX2_RECIPE, LOD_RECIPE } from "./store-variants.ts";
 import { agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { worlds } from "./world.ts";
 import { atomicWrite } from "./fsutil.ts";
@@ -27,10 +30,11 @@ let tripoImportBusy = false;   // one Tripo import at a time — they cost CPU-s
 // ?ktx2=<key> answer, shared/ktx2.js; the §20a diet), both built by a SUBPROCESS — draco encoding is CPU-seconds of
 // synchronous wasm, and inside this process it would freeze pose relay for
 // every world. One file at a time; the sequencer never waits on it.
-type OptItem = { src: string; dest: string; mode?: "--ktx2" | "--ktx2-vrm" | "--ktx2-img" };
+type OptItem = { src: string; dest: string; mode?: "--ktx2" | "--ktx2-vrm" | "--ktx2-img" | "--lod" };
 const optQueue: OptItem[] = [];
 let optRunning = false;
 let ktx2Skip = false; // set when a --ktx2 run exits 3 (no encoder) — stop queuing variants this boot
+let lodEncoderWarned = false; // the --lod arm's own once-per-boot note; it never sets ktx2Skip
 function queueOptimize(absPath: string) {
   let pushed = false;
   if (!optQueue.some((q) => q.src === absPath && !q.mode)) {
@@ -46,6 +50,17 @@ function queueOptimize(absPath: string) {
     optQueue.push({ src: absPath, dest: ktx2VariantPath(absPath), mode: "--ktx2" });
     pushed = true;
   }
+  // The geometry LOD too (objects only — the CLI fails closed on anything
+  // skinned, with a typed verdict; the exclusion lives THERE, on the raw
+  // container, never here on a filename). NOT gated on ktx2Skip: geometry
+  // reduction of an untextured object needs no encoder at all, and killing
+  // it for the encoder's absence deleted valid work (review of #156, point
+  // 3) — the CLI decides per FILE, from the raw container, for a JSON
+  // parse's price.
+  if (!optQueue.some((q) => q.src === absPath && q.mode === "--lod")) {
+    optQueue.push({ src: absPath, dest: lodVariantPath(absPath), mode: "--lod" });
+    pushed = true;
+  }
   if (pushed) pumpOptimize();
 }
 async function pumpOptimize() {
@@ -56,8 +71,9 @@ async function pumpOptimize() {
       const { src, dest, mode } = optQueue.shift()!;
       const base = basename(src);                      // <hash>.glb / <model>.glb
       const failed = `${dest}.failed`;
-      // a KTX2 size verdict from an older recipe does not stand (store-variants.ts)
-      const refused = existsSync(failed) && (!mode || verdictStands(readFileSync(failed, "utf8")));
+      // a size verdict from an older recipe does not stand (store-variants.ts)
+      const refused = existsSync(failed)
+        && (!mode || verdictStands(readFileSync(failed, "utf8"), mode === "--lod" ? LOD_RECIPE : KTX2_RECIPE));
       if (!existsSync(src) || refused) continue;
       // Store shadows are content-addressed — existing means done forever.
       // KTX2 variants shadow MUTABLE library files, so a variant older than
@@ -73,6 +89,15 @@ async function pumpOptimize() {
       if (code === 0) {
         // a verdict that was re-measured and answered differently is history
         if (existsSync(failed)) try { rmSync(failed); } catch { /* best effort */ }
+        // …and so is an older recipe generation's file: its URL is never
+        // asked for again (the recipe is in both), so the bytes are dead
+        if (mode === "--lod") {
+          const base = basename(src);
+          for (const f of readdirSync(dirname(dest))) {
+            if (f.startsWith(`${base}.lod.`) && f.endsWith(".glb") && join(dirname(dest), f) !== dest)
+              try { rmSync(join(dirname(dest), f)); } catch { /* best effort */ }
+          }
+        }
         const ratio = (Bun.file(src).size / Math.max(1, Bun.file(dest).size)).toFixed(1);
         console.log(mode ? `[ktx2] ${base} → ${basename(dest)} (${ratio}x)` : `[store] optimized ${base} (${ratio}x)`);
       } else if (code === 2) {
@@ -89,6 +114,11 @@ async function pumpOptimize() {
         // convert fine once the encoder stack is sane. Loud, and retried.
         console.error(`[${mode ? "ktx2" : "store"}] ${base} REFUSED — optimized output failed its image check, `
           + `serving the original: ${err.split("\n").filter((l) => l.includes("declares")).join(" | ") || err.split("\n").pop()}`);
+      } else if (code === 3 && mode === "--lod") {
+        // a TEXTURED object met a box with no encoder — per-file and cheap
+        // (the CLI answers from the raw container before any transform), so
+        // no global skip and no purge: untextured objects keep reducing.
+        if (!lodEncoderWarned) { console.log("[lod] no KTX2 encoder — textured objects keep their originals until one lands (docs/ktx2-encoder.md)"); lodEncoderWarned = true; }
       } else if (code === 3 && mode) {
         // No KTX2 encoder on this box — ENVIRONMENTAL, never a .failed marker
         // (that would permanently skip every model authored before
@@ -96,7 +126,7 @@ async function pumpOptimize() {
         // grinding the rest of the sweep against the same missing binary.
         console.log("[ktx2] no encoder — set KTX2_TOKTX or put toktx/ktx on PATH (docs/ktx2-encoder.md); variants skipped this boot");
         ktx2Skip = true;
-        for (let i = optQueue.length - 1; i >= 0; i--) if (optQueue[i].mode) optQueue.splice(i, 1);
+        for (let i = optQueue.length - 1; i >= 0; i--) if (optQueue[i].mode && optQueue[i].mode !== "--lod") optQueue.splice(i, 1);
       } else if (code === 5 && mode) {
         // An encoder answered, but not every eligible texture converted — the
         // CLI REFUSED to write a variant whose name would lie about its
@@ -129,7 +159,7 @@ setTimeout(() => {
   const pending = readdirSync(dir).filter((f) => {
     if (!isStoreOriginal(f)) return false;
     const m = storeShadowsMissing(join(dir, f), STORE_MIN);
-    return m.min || m.ktx2;
+    return m.min || m.ktx2 || m.lod;
   });
   if (!pending.length) return;
   console.log(`[store] boot sweep: ${pending.length} upload(s) missing a shadow queued`);
@@ -164,13 +194,17 @@ setTimeout(() => {
       // guard uniform)
       if (e.name.endsWith(`.ktx2${ext}`)) continue;
       const rel = relative(base, p);
-      if (seen.has(rel)) continue; // overlay walked first — it shadows the library copy
-      seen.add(rel);
+      // keyed by (mode, rel): the ktx2 walk and the lod walk cover the SAME
+      // rels on purpose — one shared set silently killed the entire library
+      // lod arm (review of #156, point 2). The overlay-shadows-library rule
+      // still holds per mode.
+      if (seen.has(`${mode}:${rel}`)) continue;
+      seen.add(`${mode}:${rel}`);
       // GLB/VRM variants are themselves GLB/VRM containers (<rel>.ktx2.glb);
       // a loose image's variant IS the ktx2 (<rel>.ktx2 — routes.ts serves it
       // as image/ktx2)
-      const dest = join(OPT_DIR, mode === "--ktx2-img" ? `${rel}.ktx2` : `${rel}.ktx2${ext}`);
-      if (existsSync(`${dest}.failed`) && verdictStands(readFileSync(`${dest}.failed`, "utf8"))) continue;
+      const dest = join(OPT_DIR, mode === "--ktx2-img" ? `${rel}.ktx2` : mode === "--lod" ? lodVariantPath(rel) : `${rel}.ktx2${ext}`);
+      if (existsSync(`${dest}.failed`) && verdictStands(readFileSync(`${dest}.failed`, "utf8"), mode === "--lod" ? LOD_RECIPE : KTX2_RECIPE)) continue;
       // mtime, not mere existence: library files are mutable — an updated
       // model/body/texture rebuilds its variant next boot
       if (existsSync(dest) && statSync(dest).mtimeMs > statSync(p).mtimeMs) continue;
@@ -178,6 +212,9 @@ setTimeout(() => {
     }
   };
   walk(LIBRARY_DIR, join(LIBRARY_DIR, "eidoverse", "assets", "models"), [".glb"], "--ktx2");
+  // the LOD sweep walks the same models (objects; the CLI's structural
+  // exclusion is the body gate, and library models are not bodies anyway)
+  walk(LIBRARY_DIR, join(LIBRARY_DIR, "eidoverse", "assets", "models"), [".glb"], "--lod");
   // overlay first (it wins in routes.ts serving and the /avatars roster)
   walk(OPT_DIR, join(OPT_DIR, "eidoverse", "assets", "vrms"), [".vrm"], "--ktx2-vrm");
   walk(LIBRARY_DIR, join(LIBRARY_DIR, "eidoverse", "assets", "vrms"), [".vrm"], "--ktx2-vrm");

@@ -79,6 +79,38 @@ export function capTexels(size: [number, number] | null | undefined, cap = KTX2_
 export const KTX2_RECIPE = "texel1024";
 export const recipeStamp = (recipe = KTX2_RECIPE) => `recipe=${recipe}`;
 
+// ---- the geometry LOD (objects only — v1 contract, PR #142 thread) ---------
+// A far or VRAM-pressed client can ask for a decimated variant of a PLACEABLE
+// OBJECT: `<rel>.lod1.glb` beside the original — weld + meshopt-simplify
+// (the avatar importer's own proven diet) at LOD_RATIO, textures at the
+// ktx2 texel budget, draco. BODIES ARE OUT OF SCOPE AND FAIL CLOSED, by
+// positive structural detection, never filename folklore: skins / joint
+// weights, VRM metadata, morph targets, morph-weight animation channels —
+// any of them means NO variant and a typed verdict ("unsupported: skinned/
+// avatar asset"), the original staying the only served representation. The
+// variant binds its identity in asset.extras: source sha256 + this recipe +
+// exact tool versions. Named nodes, materials, and bounds are asserted
+// unchanged after the reduce — a failed assert is a typed verdict too, not
+// a half-valid object.
+export const LOD_RECIPE = "lod1-r25e01-texel1024";   // ratio 0.25, error 0.01, ktx2 texel budget
+export const LOD_MIN_VERTS = 12_000;                 // under this, there is nothing worth reducing
+
+/** A geometry-LOD serving artifact — ANY recipe generation's, not only the
+ *  current one (old generations must stay unlisted and uncatalogued too). */
+export function isLodVariant(name: string): boolean {
+  return /\.lod\.[a-z0-9.-]+\.glb$/i.test(name);
+}
+
+/** Where the LOD shadow of an original lives: beside it, like the KTX2 one —
+ *  and the RECIPE IS IN THE NAME, exactly as it is in the URL (review of
+ *  #156, point 1): a new recipe is a new file under a new URL, so a recipe
+ *  change can never serve yesterday's reduction under today's address. The
+ *  old generation's file simply stops being asked for (and the pump deletes
+ *  it when the new one lands). */
+export function lodVariantPath(original: string, recipe = LOD_RECIPE): string {
+  return `${original}.lod.${recipe}.glb`;
+}
+
 /** Does a `.failed` verdict still stand under the current recipe? A size
  *  verdict ("not smaller") stands only if it carries the current stamp;
  *  anything else stands regardless. */
@@ -101,7 +133,7 @@ export function isKtx2Variant(name: string): boolean {
  *  prefetcher pushes every listed store path as a fetch, and a marker fetched
  *  as a model is a 404 on a good day. */
 export function isServingArtifact(name: string): boolean {
-  return isKtx2Variant(name) || /\.(failed|tmp)$/i.test(name);
+  return isKtx2Variant(name) || isLodVariant(name) || /\.(failed|tmp)$/i.test(name);
 }
 
 /** Is this store/ entry an upload, as opposed to a variant of one? The
@@ -109,7 +141,7 @@ export function isServingArtifact(name: string): boolean {
  *  a variant is the SAME model, not a second catalog entry and not a
  *  candidate for its own shadows. */
 export function isStoreOriginal(name: string): boolean {
-  return name.endsWith(".glb") && !isKtx2Variant(name);
+  return name.endsWith(".glb") && !isKtx2Variant(name) && !isLodVariant(name);
 }
 
 /** Where the KTX2 shadow of a store original lives: beside it, `<path>.ktx2.glb`
@@ -129,12 +161,15 @@ export function storeShadowsMissing(
   minDir: string,
   exists: (p: string) => boolean = existsSync,
   read: (p: string) => string = (p) => { try { return readFileSync(p, "utf8"); } catch { return ""; } },
-): { min: boolean; ktx2: boolean } {
+): { min: boolean; ktx2: boolean; lod: boolean } {
   const min = join(minDir, basename(original));
   const k = ktx2VariantPath(original);
   const kFailed = `${k}.failed`;
+  const l = lodVariantPath(original);
+  const lFailed = `${l}.failed`;
   return {
     min: !exists(min) && !exists(`${min}.failed`),
     ktx2: !exists(k) && !(exists(kFailed) && verdictStands(read(kFailed))),
+    lod: !exists(l) && !(exists(lFailed) && verdictStands(read(lFailed), LOD_RECIPE)),
   };
 }
