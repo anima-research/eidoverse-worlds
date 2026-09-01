@@ -102,17 +102,28 @@ export function initSimWorld() {
       if (!obj) continue;
       let sp = spins.get(id);
       if (!sp) {
-        // ARM: how far the mesh's visual center sits from the entity origin
-        // (local, horizontal). Rotating a quaternion rotates about the
-        // ORIGIN, so a far-offset model (the barrels group ships its
-        // cluster 1.95m off origin, §24t-4) would sweep its mesh in a
-        // metres-wide arc — those models arc without tumbling instead.
-        const cb = colliders.get(id)?.box;
-        const scl = obj.scale ?? { x: 1, z: 1 };
-        const cx = cb ? (cb.min.x + cb.max.x) / 2 * (scl.x || 1) : 0;
-        const cz = cb ? (cb.min.z + cb.max.z) / 2 * (scl.z || 1) : 0;
-        sp = { q: obj.quaternion.clone(), arm: Math.hypot(cx, cz), cx, cz };
+        sp = { q: obj.quaternion.clone(), arm: Infinity, cx: 0, cz: 0, box: null };
         spins.set(id, sp);
+      }
+      // ARM: how far the mesh's visual center sits from the entity origin
+      // (local, horizontal). Rotating a quaternion rotates about the ORIGIN,
+      // so a far-offset model (the barrels group ships its cluster 1.95m off
+      // origin, §24t-4) would sweep its mesh in a metres-wide arc — those
+      // models arc without tumbling instead. Fitted from the collider box
+      // WHENEVER THE BOX CHANGES, never cached at first sight: a body that is
+      // already resting in the join snapshot is seen by this applier on the
+      // first frame after hydrate, frames before its model has loaded and
+      // its box exists — and a geometry cached then said "origin-centred",
+      // so the barrels tumbled on a 1.3m arm straight through the ground on
+      // every punt after a reload (tel0s, playtest 2026-09-01, §24t-7).
+      // Unknown geometry (no box yet) = no tumble, no grounding lift.
+      const cb = colliders.get(id)?.box ?? null;
+      if (cb !== sp.box) {
+        sp.box = cb;
+        const scl = obj.scale ?? { x: 1, z: 1 };
+        sp.cx = cb ? (cb.min.x + cb.max.x) / 2 * (scl.x || 1) : 0;
+        sp.cz = cb ? (cb.min.z + cb.max.z) / 2 * (scl.z || 1) : 0;
+        sp.arm = cb ? Math.hypot(sp.cx, sp.cz) : Infinity;
       }
       // a resting body stands on the sim's word exactly (the collider index
       // below reads it); a moving one shows the lerp of its two tick poses
@@ -131,7 +142,7 @@ export function initSimWorld() {
       // Show the visual center standing on ITS ground — lift by the terrain
       // difference between the two footprints. Presentation only, like the
       // tumble: ~0 for an origin-centred model, exactly 0 without terrain.
-      if (sp.arm > 0.05) {
+      if (sp.arm > 0.05 && sp.box) {
         const c = Math.cos(b.yaw), s = Math.sin(b.yaw);
         const wx = sp.cx * c + sp.cz * s, wz = -sp.cx * s + sp.cz * c;
         const p = obj.position;

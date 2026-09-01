@@ -14,7 +14,14 @@
 //      the barrels group ships its mesh 1.95m from the origin, and the sim
 //      grounds the origin, so on a slope the mesh sank 29cm at every landing
 //      until the applier's visual grounding (§24t-6);
-//   3. at rest the cluster stands ON its ground (within 5mm).
+//   3. at rest the cluster stands ON its ground (within 5mm);
+//   4. after a RELOAD — the body already resting in the join snapshot, seen
+//      by the applier before its model has loaded — a far-offset model still
+//      does not tumble, and its rendered mesh never goes below ground. The
+//      arm gate once cached "origin-centred" from a not-yet-fitted collider
+//      and the barrels swung on a 1.3m arm through the hillside on every
+//      punt after a reload (§24t-7). This is the case the spawn-then-punt
+//      flights above cannot see.
 //
 // The terrain is commons's own (seed 7, amplitude 6) and the launch is the
 // spot where tel0s watched it happen. Presentation-only checks — the sim's
@@ -124,6 +131,50 @@ await sleep(600);   // the client's applier reaches rest too
   const dC = shown ? shown[1] - hf(shown[0] + OFF[0], shown[2] + OFF[1]) : NaN;
   check("at rest the cluster stands ON its ground (±5mm)", Number.isFinite(dC) && Math.abs(dC) < 0.005,
     shown ? `cluster ${dC >= 0 ? "+" : ""}${dC.toFixed(4)}m over its ground; origin y=${shown[1].toFixed(4)} vs sim ${sb?.p?.[1]?.toFixed(4)} (terrain under origin ${hf(shown[0], shown[2]).toFixed(4)})` : "no entity");
+}
+
+// ---- flight 3: after a reload, the body rides in the join snapshot ----------
+console.log(`\n${bold("── flight 3: after a reload (body resting in the join snapshot)")}`);
+bootReady = "";
+await cdp.send("Page.navigate", { url: `${BASE}/?name=groundbot2&world=${WORLD}` });
+for (let i = 0; i < 240 && !bootReady; i++) await sleep(250);
+if (!bootReady) await die(2, "✗ client never re-booted");
+await sleep(4000);   // model + collider land; the applier has been running since hydrate
+// rendered-mesh sampler: lowest world point of any mesh (as-rendered
+// matrixWorld) and the object's tilt from upright, per frame
+const sampleMesh = (frames: number) => evalJson(`new Promise((done) => { try {
+  const o = EW.entities.get('bar'); const T = EW.THREE; const v = new T.Vector3(); const up = new T.Vector3(0, 1, 0); const u = new T.Vector3();
+  const out = []; let n = 0;
+  const step = () => { const b = EW.simFold().bodies.bar; let m = Infinity;
+    o.traverse((nd) => { if (!nd.isMesh || !nd.geometry) return; if (!nd.geometry.boundingBox) nd.geometry.computeBoundingBox(); const bb = nd.geometry.boundingBox;
+      for (let i = 0; i < 8; i++) { v.set(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z).applyMatrix4(nd.matrixWorld); if (v.y < m) m = v.y; } });
+    const tilt = Math.acos(Math.min(1, Math.max(-1, u.copy(up).applyQuaternion(o.quaternion).dot(up)))) * 180 / Math.PI;
+    out.push([o.position.x, o.position.z, m, tilt, b ? (b.resting ? 1 : 0) : -1]);
+    if (++n < ${frames}) requestAnimationFrame(step); else done(out); };
+  requestAnimationFrame(step);
+} catch (e) { done({ err: String(e) }) } })`);
+pose([sb.p[0] + 1, 0, sb.p[2] + 1]);
+await sleep(300);
+const mp = sampleMesh(150);
+await verb("punt", { id: "bar", power: 4, dir: DIR });
+{
+  const rows: any = await mp;
+  const frames: number[][] = Array.isArray(rows) ? rows : [];
+  let inFlight = 0, maxTilt = 0, worstMesh = 0;
+  for (const r of frames) {
+    if (r[4] !== 0) continue;
+    inFlight++;
+    maxTilt = Math.max(maxTilt, r[3]);
+    // the mesh footprint is ~1.2m: allow the slope across it, judge against the ground under the cluster center
+    const gc = hf(r[0] + OFF[0], r[1] + OFF[1]);
+    worstMesh = Math.min(worstMesh, r[2] - gc);
+  }
+  check("flight 3: a far-offset model does NOT tumble after a reload (arm fitted once the box exists)",
+    inFlight >= 20 && maxTilt < 5,
+    rows?.err ?? `${inFlight} in-flight frames, max tilt from upright ${maxTilt.toFixed(1)}°`);
+  check("flight 3: the rendered mesh never swings below its ground",
+    inFlight >= 20 && worstMesh > -0.15,
+    rows?.err ?? `lowest mesh point vs ground under the cluster: ${worstMesh.toFixed(3)}m (footprint slope allowance 0.15)`);
 }
 
 console.log(`\n${bold(tally.failed ? "RED" : "GREEN")} — ${tally.passed} passed, ${tally.failed} failed\n`);
