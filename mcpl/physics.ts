@@ -43,6 +43,8 @@ import { fileURLToPath } from "node:url";
 import { isFiniteVec3 } from "./shape.ts";
 // pure shared geometry — no client import cone, safe to load eagerly
 import { CONTACT_POINTS } from "../shared/contact.js";
+// The aerodynamics of a limp fall -- forces, not a scripted path.
+import { leafForceFor, DEFAULT_LEAF_FORCE } from "../shared/leafforce.js";
 import { bodyFrame, fromBody } from "../shared/joints.js";
 
 const STUB = fileURLToPath(new URL("../tools/core-stub.mjs", import.meta.url));
@@ -399,6 +401,70 @@ export class HeadlessBody {
     // Pins arriving here are NAILS (begin's opts.pins, and the bodydrag relay's
     // pin map) — a hand is simulated by whoever is holding it, not replicated.
     this.rd.setPin(joint, new this.m.THREE.Vector3(at[0], at[1], at[2]), firm);
+  }
+
+  /** Aerodynamic forces on every body this step, so a limp fall FLUTTERS.
+   *
+   *  Janus asked for this shape: "use the normal ragdoll physics for falling,
+   *  but add forces that cause it to fall like a leaf". The alternative --
+   *  scripting the path -- cannot be hit by a thrown prop, cannot catch a wing
+   *  on a rail, and cannot land badly. Bullet can do all three; it just needs
+   *  to be told what the air is doing.
+   *
+   *  Two terms, both real (shared/leafforce.js): drag along each plate's
+   *  NORMAL rather than along its motion, which makes a plate seek edge-on and
+   *  overshoot; and a centre of pressure forward of centre, which turns that
+   *  overshoot into a periodic tumble. The oscillation is emergent.
+   *
+   *  Silently a no-op on the Verlet fallback, which has no bodies to push.
+   */
+  applyLeaf(cfg: any, t: number) {
+    const rd: any = this.rd;
+    const bodies = rd?._bodies;
+    if (!Array.isArray(bodies) || !bodies.length) return 0;
+    const A = this.m.THREE ? null : null;
+    let pushed = 0;
+    for (const rb of bodies) {
+      try {
+        if (!rb || typeof rb.getLinearVelocity !== "function") continue;
+        if (typeof rb.getMotionState !== "function") continue;
+        const v = rb.getLinearVelocity();
+        const vel = { x: v.x(), y: v.y(), z: v.z() };
+        const sp = Math.hypot(vel.x, vel.y, vel.z);
+        if (sp < 0.05) continue;
+        const shape = rb.getCollisionShape?.();
+        const he = shape?.getHalfExtentsWithMargin?.();
+        const half = he ? [he.x(), he.y(), he.z()] : [0.05, 0.12, 0.05];
+        const mass = 1 / Math.max(1e-6, rb.getInvMass?.() ?? 1);
+        // The plate's normal in WORLD space: the thinnest local axis, rotated
+        // by the body. A box's smallest face IS its plate.
+        const thin = half.indexOf(Math.min(...half));
+        const basis = rb.getWorldTransform().getBasis();
+        const col = (i: number) => {
+          const c = basis.getColumn(i);
+          return { x: c.x(), y: c.y(), z: c.z() };
+        };
+        const normal = col(thin);
+        const right = col((thin + 1) % 3);
+        const { force, torque } = leafForceFor(cfg, { mass, halfExtents: half, vel, normal, right }, t);
+        const F = new this.m.THREE.Vector3(force.x, force.y, force.z);
+        const T = new this.m.THREE.Vector3(torque.x, torque.y, torque.z);
+        rb.applyCentralForce?.(this.btVec(F));
+        rb.applyTorque?.(this.btVec(T));
+        rb.activate?.();
+        pushed++;
+      } catch { /* one awkward body must not stop the fall */ }
+    }
+    return pushed;
+  }
+
+  private _bv: any = null;
+  private btVec(v: any) {
+    const AMMO = (this.m as any).AMMO ?? (globalThis as any).Ammo;
+    if (!AMMO) return v;
+    this._bv ??= new AMMO.btVector3(0, 0, 0);
+    this._bv.setValue(v.x, v.y, v.z);
+    return this._bv;
   }
 
   /** Advance; returns what to stream, or null once the sim has captured. */

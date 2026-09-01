@@ -145,6 +145,13 @@ const TOOLS = [
   { name: "climb_to", description: "Climb to an altitude, in metres. THE expensive verb: 1 stamina per metre, and the pool only refills on the ground (0.5/s) or on a perch (2/s), never in the air. Clamped by the soft ceiling. If the pool empties on the way you stop where it ran out and the world hears 'winded' — exhaustion is legible, not lethal.", inputSchema: { type: "object", properties: { altitude: { type: "number" } }, required: ["altitude"] } },
   { name: "glide_to", description: "Glide toward world coordinates, trading altitude for distance on the published polar. FREE — costs no stamina. If you cannot reach it from your current altitude you land SHORT, honestly, where the polar runs out: no teleport-assist, no rubber-banding. Returns when you arrive or when you are down, and says which, where, and by how much you missed.", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" } }, required: ["x", "z"] } },
   { name: "land_at", description: "Descend, flare and land at world coordinates. Landing is an EVENT — the world sees it. Afterwards your body is walking again.", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" } }, required: ["x", "z"] } },
+  // REHEARSAL ONLY, and named so. down-spec section 4 is explicit that DOWN
+  // states are involuntary and unsuppressable -- "the body cannot cry wolf" --
+  // so this is NOT a verb the pilot may use to look injured. It exists so the
+  // physical half can be exercised before the Connectome adapter owns the real
+  // signal, and it emits exactly the trusted event that adapter will emit.
+  { name: "rehearse_down", description: "REHEARSAL ONLY — fire the trusted bodyDown event the Connectome adapter will one day fire for real. Not a way to appear down: the real signal is involuntary and this exists to test the body's half of it.", inputSchema: { type: "object", properties: { eventId: { type: "string" } } } },
+  { name: "rehearse_recover", description: "REHEARSAL ONLY — fire the trusted bodyRecovered event. Mid-air this begins the aerial sit-up; on the ground, the sit-up proper.", inputSchema: { type: "object", properties: { eventId: { type: "string" } } } },
   { name: "flight_status", description: "Where the sky has left you: altitude, heading, airspeed, stamina, how far your best glide still reaches from here, and which layer is flying (live/plan/reflex). Cheap — call it as often as you like.", inputSchema: { type: "object", properties: {} } },
   { name: "face", description: "Turn to face a point (x,z) or a participant/entity id (target).", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, target: { type: "string" } } } },
   { name: "stop", description: "Stop walking.", inputSchema: { type: "object", properties: {} } },
@@ -1320,6 +1327,8 @@ class Session {
       case "climb_to":      return text(await ag.climbTo(Number(a.altitude)));
       case "glide_to":      return text(await ag.glideTo(Number(a.x), Number(a.z)));
       case "land_at":       return text(await ag.landAt(Number(a.x), Number(a.z)));
+      case "rehearse_down":    return text(ag.flightBodyDown(String(a.eventId ?? "rehearsal")));
+      case "rehearse_recover": return text(ag.flightBodyRecovered(String(a.eventId ?? "rehearsal"), "gen-rehearsal"));
       case "flight_status": return text(ag.flightStatus());
       case "walk_to": {
         const arrived = await ag.walkTo(Number(a.x), Number(a.z), Boolean(a.run));

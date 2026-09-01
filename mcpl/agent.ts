@@ -19,6 +19,7 @@ import {
   bestGlide, glideRange,
 } from "../shared/flight.js";
 import { resolveFlight, devFlightProvider } from "../shared/flightcap.js";
+import { DEFAULT_LEAF_FORCE as LEAF_FORCE } from "../shared/leafforce.js";
 
 /** integrator yaw (atan2(dz,dx), forward = (cos,sin)) -> world yaw
  *  (atan2(dx,dz), which every renderer and walkTo already speak). */
@@ -1667,6 +1668,14 @@ export class WorldAgent {
     this.simTicker = setInterval(() => {
       const body = this.body;
       if (!body?.active || this.draggedBy) { this.stopSim(); return; }
+      // A LIMP FALL IS AERODYNAMIC. Before each sim step, push the air onto
+      // every body: this is R2's falling leaf as forces on the real ragdoll
+      // rather than as a curve played over it, so she can be struck, snagged
+      // and land badly on the way down.
+      if (this.flight?.wings === "LIMP" && this.pos.y > 0.4) {
+        this.leafT += 1 / 15;
+        body.applyLeaf?.(this.leafCfg, this.leafT);
+      }
       const out = body.step(1 / 15);
       if (!out) return;
       this.heldPose = out.pose; this.heldPoseAuthored = false; // a sim frame is physics even once settled
@@ -2008,8 +2017,46 @@ export class WorldAgent {
   flightBodyDown(eventId: string) {
     if (!this.flight) return "not airborne";
     this.flight = flightDown(this.flight, { eventId });
+    // R2 hands the body to the REAL ragdoll, from altitude. HeadlessBody.begin
+    // already takes a rootY "for a lifted drop", so a cut at 20m is the case it
+    // was written for -- and using it means a cut body is hit by props, catches
+    // on geometry and lands badly, none of which a scripted curve can do.
+    //
+    // The leaf is then FORCES on those bodies rather than a path: see
+    // shared/leafforce.js. The kinematic leafAt() stays for the deterministic
+    // bench and the capture path, where a bit-exact trajectory is the point.
+    if (this.flight.phase === "LEAF") void this.flightRagdoll();
     return `down — ${this.flight.phase}`;
   }
+
+  /** Drop the real ragdoll from where the flight left the body. */
+  private async flightRagdoll() {
+    const epoch = ++this.bodyEpoch;
+    const body = await this.ensureBody();
+    if (this.bodyEpoch !== epoch || !body) return;
+    await setHeightField((x, z) => this.heightAt(x, z));
+    if (this.bodyEpoch !== epoch) return;
+    await this.supportReady();
+    if (this.bodyEpoch !== epoch) return;
+    const f = this.flight;
+    body.begin({
+      x: this.pos.x, z: this.pos.z, yaw: this.yaw,
+      rootY: this.pos.y,                     // the lifted drop R2 needs
+      pose: null,
+      // Enter the tumble carrying the flight's own momentum, so a body cut
+      // out of a fast glide keeps going and one cut out of a hover drops.
+      lean: f ? [f.vel.x * 0.25, 0, f.vel.z * 0.25] : null,
+      pins: [],
+    });
+    this.clip = "ragdoll";
+    this.leafT = 0;
+    this.startSim();
+  }
+
+  /** Seconds since the leaf began -- the phase clock for the flutter torque. */
+  private leafT = 0;
+  /** Air model for the limp fall. Config, like everything else in flight. */
+  leafCfg: any = { ...LEAF_FORCE };
   flightBodyRecovered(eventId: string, recoveryGeneration?: string) {
     if (!this.flight) return "not airborne";
     this.flight = flightRecovered(this.flight, { eventId, recoveryGeneration });
