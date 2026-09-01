@@ -390,6 +390,32 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-09-01 — §24t-5: THE FLIGHT WITHOUT THE JUDDER (b629e50).**
+  tel0s confirms 0.2.0 fixes the physics (commons carries the
+  eidosim@0.2.0 epoch at seq 102) and asks for the thing PROTOCOL_v2
+  §5 always promised: "clients interpolate presentation between ticks
+  exactly as they interpolate presence" — the shadow sim advanced to
+  the ceil-quantized tick, so a 66ms tick painted four frames running
+  on a 60Hz display ("I can sort of see the individual physics
+  updates in the form of juddering"). The applier now remembers every
+  body's position at the tick BEFORE it steps the sim across a
+  boundary and shows the lerp of the two at now's fractional phase:
+  because tickOf rounds UP, the current state is the interval's END
+  and the previous tick its START — exact sim time, zero added
+  latency, never an extrapolation (nothing overshoots a bounce or the
+  ground). Remembered starts are dropped whenever anything else moved
+  the sim (an intent whose ts ran ahead of this clock, a new epoch):
+  those bodies show the word outright until the next boundary — v0.1
+  behaviour, the header's skew doctrine unchanged. Resting bodies
+  stand on the word exactly (the collider re-index reads it).
+  PRESENTATION ONLY — no sim number is read back; the parity legs
+  read state.sim. sim-smoke gains a ninth check: the realized ball
+  moves on (nearly) every animation frame while in flight — 47/47
+  live frame pairs (tick-stepped managed ~1 in 4). Also dropped the
+  round-3 PUNT-DEBUG probe line. PROTOCOL_v2 §5 records the delivery.
+  Gates: sim-smoke 9/0, sim-test 21/0, replaybench 1/1 (re-recorded —
+  the playtest grew commons), parity PASS.
+
 - **2026-08-31 — §24t-4: THE BARRELS' TWO-METRE GHOST (d6295cd).**
   Round 4 closed the constant-direction mystery with a ruler:
   scifi_barrels_group_of_four.glb ships its geometry 1.95m from the
