@@ -390,6 +390,36 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-09-01 — §24t-10: THE PHYSICS FINISHERS (f4f95e3).** Polish for
+  the 2026-09-02 demo, three items, one ruling. (1) LEAVING AN EPOCH —
+  RULED: explicit, never a toggle (a world-changing command must not
+  depend on hidden state). `/epoch off` → `epoch {sim: null}`: the
+  sequencer releases every live body into the fold at its sim word
+  (the same epoch-release places a re-epoch commits), folds the
+  barrier, v1 semantics resume (volunteer physics, dir optional);
+  nothing-to-leave is refused pre-log; a MISSING/malformed sim is not
+  an exit (totality). sim.js ends the sim epoch; fold.js clears the
+  instant fold's `epoch` record — additive (no existing log carries
+  such an entry; commons digest unchanged). PROTOCOL_v2 §3 states the
+  rule; the help overlay names /epoch and /epoch off. (2) SLOPE TILT —
+  a grounded body leans onto the terrain normal under its VISUAL
+  CENTER (finite differences at 0.5m, the footprint's scale), composed
+  ABOUT the center (center stays on its ground; the origin goes where
+  the rotated offset leaves it); airborne stays upright; things ON
+  things stay flat. The ±15cm footprint residual of §24t-6 is gone;
+  sim-ground-smoke locates the cluster through the quaternion now and
+  checks the lean (0.0° off the normal). (3) FORCE — DEFERRED to
+  eidosim@0.4.0 on purpose: a radial force claims every model in its
+  radius = the "sim-owned by default" ⚑ of §6, not an implementation's
+  call; and 0.3.0 is already minted in commons (tel0s ran /epoch;
+  punts at seq 120–123). Tests: sim-test 32→37, sim-smoke 10→15,
+  sim-ground-smoke 7→8; replaybench 1/1 (re-recorded for the log's
+  own growth), foldfix 24/0, state 31/0, tick 7/0, smoke 85/85,
+  parity PASS. DEMO STATE: commons is under eidosim@0.3.0 with boxes
+  stamped for its crates and barrels; restart the sequencer + hard
+  reload for the finishers (client + server changed), no re-epoch
+  needed.
+
 - **2026-09-01 — §24t-9: CATCH-UP MERGE (9072ffa).** anima/main was
   one commit ahead (a468cba — geometry LOD for placeable objects,
   #156: optimize.ts --lod, store-variants LOD recipe, upload.ts, a
