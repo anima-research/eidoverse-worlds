@@ -20,7 +20,7 @@ import { state } from './state.js';
 import { advanceSim, tickOf } from '../../shared/sim.js';
 import { entities } from './world.js';
 import { pushHostHook } from './autohooks.js';
-import { reindexCollider } from './colliders.js';
+import { reindexCollider, colliders } from './colliders.js';
 
 const restIndexed = new Set();
 
@@ -62,8 +62,21 @@ export function initSimWorld() {
       if (!obj) continue;
       obj.position.set(b.p[0], b.p[1], b.p[2]);
       // cosmetic tumble/settle (see the header block above)
-      let q = spins.get(id);
-      if (!q) { q = obj.quaternion.clone(); spins.set(id, q); }
+      let sp = spins.get(id);
+      if (!sp) {
+        // ARM: how far the mesh's visual center sits from the entity origin
+        // (local, horizontal). Rotating a quaternion rotates about the
+        // ORIGIN, so a far-offset model (the barrels group ships its
+        // cluster 1.95m off origin, §24t-4) would sweep its mesh in a
+        // metres-wide arc — those models arc without tumbling instead.
+        const cb = colliders.get(id)?.box;
+        const scl = obj.scale ?? { x: 1, z: 1 };
+        const arm = cb ? Math.hypot((cb.min.x + cb.max.x) / 2 * (scl.x || 1),
+          (cb.min.z + cb.max.z) / 2 * (scl.z || 1)) : 0;
+        sp = { q: obj.quaternion.clone(), arm };
+        spins.set(id, sp);
+      }
+      const q = sp.q;
       const flat = Math.hypot(b.v[0], b.v[2]);
       // Airborne = the sim's OWN word (v[1] ≠ 0), never a height threshold:
       // tick-quantized positions hover under any threshold late in a fall
@@ -72,7 +85,7 @@ export function initSimWorld() {
       // orientation before they hit the ground"). The sim zeroes v[1]
       // exactly when grounded contact begins, which is exactly when a
       // tumbling thing should start righting itself.
-      if (!b.resting && b.v[1] !== 0 && flat > 0.05) {
+      if (!b.resting && b.v[1] !== 0 && flat > 0.05 && sp.arm < 0.5) {
         _axis.set(b.v[2], 0, -b.v[0]).normalize();
         _dq.setFromAxisAngle(_axis, TUMBLE * dt);
         q.premultiply(_dq);

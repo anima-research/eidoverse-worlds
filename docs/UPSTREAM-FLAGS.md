@@ -79,6 +79,22 @@ our 2-rig local fleet tripped; prod's 14-rig fleet may trip them too:
   texture serving-variants were being tumbled as bodies, and one
   long-standing "8.6cm handover" red was an artifact rig all along.
 
+## 3b. Asset bug: the barrels model's origin is 2m from its mesh
+
+`eidoverse/assets/models/scifi_barrels_group_of_four.glb` ships its
+geometry at local z −1.35…−2.56 — the visible cluster is centred **1.95m
+from the model origin** (bbox center [−0.001, 0.504, −1.953]). Every
+system that treats an entity's origin as "where the thing is" aims at
+empty air two metres from the barrels: kick/punt direction stamps, reach
+gates, any rotation (which sweeps the mesh in a ~2m arc — this was most
+of one playtest's "spinning through the ground in a wide arc"). Our
+client now measures things by their collider-box center
+(`colliders.entityWorldCenter`, §24t-4) and skips cosmetic spin for
+far-offset models, but the honest fix is re-exporting the GLB with the
+origin at the cluster's footprint center — worth an asset-library pass
+for other offenders (`summarizeGlb` bbox centers make it a one-liner
+audit).
+
 ## 4. Merge-conflict lessons (process)
 
 - **Never `git stash` mid-merge** — it drops MERGE_HEAD (restored by hand:

@@ -492,6 +492,26 @@ export function reindexCollider(id) {
   bucketAdd(id, e);
 }
 
+/** Where a thing VISIBLY is: the collider box's world-space center. An
+ *  entity's origin is wherever its GLB author left it — the barrels group
+ *  ships its cluster 1.95m off origin (§24t-4), so anything that measures
+ *  "where the thing is" by obj.position aims at empty air two metres from
+ *  the mesh. Same composition as the walking/camera queries and the debug
+ *  overlay: local box center × per-axis scale, rotated by yaw, + position.
+ *  Returns null when the id has no collider. */
+const _ecV = new THREE.Vector3();
+export function entityWorldCenter(id, out = new THREE.Vector3()) {
+  const c = colliders.get(id);
+  const obj = c?.obj;
+  if (!c?.box || !obj) return null;
+  const sc = obj.scale ?? _ecV.set(1, 1, 1);
+  out.copy(c.box.min).add(c.box.max).multiplyScalar(0.5)
+    .multiply(_ecV.set(sc.x || 1, sc.y || 1, sc.z || 1))
+    .applyAxisAngle(UP, obj.rotation?.y ?? 0)
+    .add(obj.position);
+  return out;
+}
+
 function* near(x, z) {
   const cx = Math.floor(x / CELL), cz = Math.floor(z / CELL);
   for (let i = -1; i <= 1; i++) {

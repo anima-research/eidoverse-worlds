@@ -20,7 +20,7 @@ import { bus, CONFIG } from './base.js';
 import { entities, comps } from './world.js';
 import { remotes } from './remotes.js';
 import { heightAt } from './terrain.js';
-import { colliders, nearColliders } from './colliders.js';
+import { colliders, nearColliders, entityWorldCenter } from './colliders.js';
 import { sendLease, sendVerb } from './net.js';
 import { flashHint } from './ui.js';
 import { logChat } from './chat.js';
@@ -94,10 +94,16 @@ function shapeOf(id) {
   // scale round-ish things tumble and settle like crates, which is what a
   // barrel actually does.
   const ball = dims[0] > 0.01 && dims[2] / dims[0] < 1.25 && dims[2] < 0.9;
+  // the mesh's visual center vs the entity origin, horizontal (a rotation
+  // rotates about the ORIGIN — a far-offset model like the barrels group,
+  // cluster 1.95m off origin, would sweep its mesh in a wide arc; §24t-4)
+  const arm = Math.hypot((c.box.min.x + c.box.max.x) / 2 * (s?.x || 1),
+    (c.box.min.z + c.box.max.z) / 2 * (s?.z || 1));
   return {
     kind: ball ? 'ball' : 'box',
     r: ball ? (size.x + size.y + size.z) / 6 : Math.max(0.05, size.y / 2),
     footprint: Math.max(size.x, size.z),
+    arm,
   };
 }
 
@@ -177,7 +183,9 @@ export function tickPhysObj(dt, now = performance.now()) {
     // spin: a rolling ball turns with its travel; a flying crate tumbles a
     // little. Streamed as q so remotes see it — spheres SLIDING read as bugs.
     const flat = Math.hypot(s.v.x, s.v.z);
-    if (shape.kind === 'ball' && flat > 0.01) {
+    if (shape.arm >= 0.5) {
+      // far-offset mesh: no spin — see shapeOf's arm note
+    } else if (shape.kind === 'ball' && flat > 0.01) {
       _axis.set(s.v.x, 0, s.v.z).normalize().cross(UP).negate();
       _q.setFromAxisAngle(_axis, (flat * dt) / shape.r);
       s.q.premultiply(_q);
@@ -237,11 +245,19 @@ export function kick(arg) {
   const me = hooks.myPos();
 
   let id = named ?? null;
+  // "Where the thing is" = its collider-box CENTER, never its origin. A
+  // GLB's origin is wherever the author left it — the barrels group ships
+  // its visible cluster 1.95m off origin (§24t-4), so origin-based aim
+  // punted THROUGH a point in empty air two metres from the mesh and every
+  // flight left "the same way" no matter where the kicker stood.
+  const _ec = new THREE.Vector3();
+  const centerOf = (eid, obj) => entityWorldCenter(eid, _ec) ?? obj.position;
   if (!id) {
     let best = KICK_REACH;
     for (const [eid, obj] of entities) {
       if (!obj || !colliders.get(eid) || colliders.get(eid).interior) continue;
-      const d = Math.hypot(obj.position.x - me.x, obj.position.z - me.z);
+      const c = centerOf(eid, obj);
+      const d = Math.hypot(c.x - me.x, c.z - me.z);
       if (d < best) { best = d; id = eid; }
     }
     if (!id) return logChat('*', 'nothing at your feet to kick');
@@ -251,7 +267,7 @@ export function kick(arg) {
   if (comps.get(id)?.motion || obj.userData.lib === '(light)') {
     return logChat('*', `${id} is animated by its motion — it can't be kicked loose (yet)`);
   }
-  const at = sims.get(id)?.p ?? obj.position;
+  const at = sims.get(id)?.p ?? centerOf(id, obj);
   if (Math.hypot(at.x - me.x, at.z - me.z) > KICK_REACH + 0.8) {
     return logChat('*', `${id} is too far away to kick`);
   }
