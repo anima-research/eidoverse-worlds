@@ -390,6 +390,33 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-08-31 — §24t-3: EIDOSIM@0.2.0 — terrain-aware ground
+  (c5ba7ed).** Round 3 solved the whole mystery: tel0s plays on HILLY
+  terrain, and 0.1.0's flat floor grounds every flight at launch
+  altitude — a hilltop punt lands on an INVISIBLE floor over the
+  downhill meadow. That is BOTH remaining reports at once ("stopped
+  above the ground"; "rights before hitting the ground" — it truly
+  landed, on the flat floor; the tumble gate was innocent). The
+  "constant direction" was the chase dynamic + pre-fix orphaned fold
+  (the logged dirs seq 82–95 vary honestly). NEW shared/terrainmath.js:
+  the toolkit height law (already nearly covenant-clean: integer-hash
+  mulberry32 + value-noise fBm, NO transcendentals) in pure exact ops —
+  two stated substitutions (pow→halving, hypot→sqrt); ≥99.8%
+  bit-identical to the walked mesh, worst Δ ~1e-15. shared/sim.js:
+  SIM_ID=eidosim@0.2.0, BOTH laws carried — 0.2 folds terrain entries
+  (epoch adopts standing terrain; mid-epoch terrain releases every
+  body; grounded sliders GLUED to terrain; rising ground splats;
+  terrainless = flat fallback; snapshot carries params), 0.1 path
+  UNTOUCHED — replaybench digest for commons (0.1.0 flights) UNCHANGED
+  across the bump, the Covenant-II proof. Live upgrade is clean via
+  §24t-2's machinery: /epoch on a 0.1 world mints 0.2 (different sim ≠
+  idempotent-refusal) + epoch-release places carry bodies across.
+  End-to-end: hilly scratch world, punt launched at −0.338, rests at
+  terrain −0.453190 under it, bit-exact. Gates: sim-test 21/0 (8 new
+  incl. the 0.1.0 law pinned BY NAME), sim-smoke 8/0, replaybench 1/1,
+  smoke 85/85, parity. PROTOCOL_v2 §2 records it. tel0s's next step:
+  run /epoch once in commons — it upgrades the world in place.
+
 - **2026-08-31 — §24t-2: PLAYTEST ROUND 2 (82ae29a).** Three reports,
   one root: the fold and the sim disagreeing about where a punted thing
   IS. (1) /epoch IDEMPOTENT — same sim+tick refused pre-log (the entry
