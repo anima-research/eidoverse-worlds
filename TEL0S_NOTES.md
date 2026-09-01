@@ -390,6 +390,19 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-09-01 — §24t-9: CATCH-UP MERGE (9072ffa).** anima/main was
+  one commit ahead (a468cba — geometry LOD for placeable objects,
+  #156: optimize.ts --lod, store-variants LOD recipe, upload.ts, a
+  600-line object-lod-test). One conflict, the upload.ts import
+  block: upstream's LOD names ride in, the door stays on R1's
+  aid1JoinIdentity (the HN_*/verifyToken form is what R1 replaced;
+  the merged body references neither). Gates on the merged tree:
+  object-lod-test 0 failed (upstream's own), smoke 85/85, sim-smoke
+  10/0, sim-test 32/0, replaybench 1/1, parity PASS. rimward is 0
+  behind anima/main; colleagues take 90 commits with
+  docs/UPSTREAM-FLAGS.md as the briefing. Local `main` untouched this
+  round (tel0s's call whether it follows).
+
 - **2026-09-01 — §24t-8: COLLIDERS FOR THE SIM, AND THE PROD FLEET
   (a2c29dc, 5caa264).** tel0s's ruling: an asset's geometry reaches the
   sim the one way Covenant III allows — the SEQUENCER stamps it into
