@@ -40,14 +40,26 @@ export const DEFAULT_BINDS = {
 /** Control authority, per second, at the stick's full deflection. Config, like
  *  everything else -- an albatross is not a fighter and these numbers are how
  *  that is felt rather than said. */
+// Janus, flying it: "the avatar moves on a trajectory i can't really control".
+// The paper numbers looked reasonable and the FEEL did not, which is the whole
+// reason a stick exists next to the plots.
+//
+// The fault was levelReturn 0.7 against bankRate 1.2: holding a turn gave a NET
+// 0.5 rad/s, so the wings fought the hand the entire time and 60 degrees took
+// two seconds to reach and would not stay. A glider is stable, but stability
+// that overpowers the pilot is rails.
+//
+// levelReturn now applies only when the stick is CENTRED -- hands off she rolls
+// level, hands on she goes where she is put -- and the rates are roughly
+// doubled. An albatross is not a fighter, but it is not a tram either.
 export const DEFAULT_AUTHORITY = {
-  bankRate: 1.2,        // rad/s toward the commanded bank
-  maxBank: 1.05,        // ~60deg
-  pitchRate: 0.8,       // rad/s
-  maxPitch: 0.6,        // ~35deg
-  turnPerBank: 0.9,     // rad/s of yaw per radian of bank -- a banked wing turns
+  bankRate: 2.6,        // rad/s toward the commanded bank
+  maxBank: 1.15,        // ~66deg
+  pitchRate: 1.5,       // rad/s
+  maxPitch: 0.7,        // ~40deg
+  turnPerBank: 1.5,     // rad/s of yaw per radian of bank -- a banked wing turns
   spoilSink: 2.5,       // extra m/s of sink while spoiling
-  levelReturn: 0.7,     // rad/s the wings roll back toward level, hands off
+  levelReturn: 1.1,     // rad/s back to level -- ONLY with the stick centred
 };
 
 const held = (keys, list) => list.some((k) => keys.has(k));
@@ -75,9 +87,9 @@ export function pilotInput(keys, state, dt, opts = {}) {
   if (l && !r) bank -= A.bankRate * dt;
   else if (r && !l) bank += A.bankRate * dt;
   else {
-    // Hands off, the wings return toward level. A glider is stable; holding it
-    // banked is work. This is also what stops a pilot from parking in a spiral
-    // and calling it a thermal.
+    // Hands OFF the wings roll level. Hands ON they do not -- an autoleveller
+    // that runs while the pilot is holding a turn is not stability, it is a
+    // second pilot with an opinion.
     const back = Math.min(Math.abs(bank), A.levelReturn * dt);
     bank -= Math.sign(bank) * back;
   }

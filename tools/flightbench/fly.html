@@ -54,8 +54,8 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { VRMLoaderPlugin } from '@pixiv/three-vrm';
-import { makeConfig, initialState, step, bodyDown, bodyRecovered,
-         bestGlide, leafLateralSwing, BREATH } from '/shared/flight.js';
+import { makeConfig, initialState, step, bodyDown, bodyRecovered, takeOff,
+         bestGlide, leafLateralSwing, BREATH, LEAF_PRESETS } from '/shared/flight.js';
 import { devFlightProvider, resolveFlight } from '/shared/flightcap.js';
 import { pilotInput, pilotHelp } from '/shared/flightpilot.js';
 import { inspectBody } from '/shared/flightbody.js';
@@ -149,9 +149,16 @@ function reset() {
 // ---- wing pose. OPEN spreads and breathes on the 3.4s; LIMP trails, folded
 // back and loose, and is driven by the leaf's own bank so the wings tell the
 // same story the trajectory does.
-function poseWings(now) {
+// A wingbeat, driven by the same flag that buys the lift -- Janus flew it and
+// found she rose with no animation at all, which reads as a bug even when the
+// physics is right. Downstroke fast, recovery slow: that asymmetry IS what a
+// beat looks like, and a symmetric sine reads as flapping cardboard.
+let flapPhase = 0;
+function poseWings(now, dt, flapping) {
   if (!wings) return;
   const limp = st.wings === 'LIMP';
+  if (flapping && !limp) flapPhase += dt * 3.2;      // ~3.2 beats/s
+  else flapPhase += dt * (2 * Math.PI / BREATH) * 0.16;   // idle breath
   for (const o of wings) {
     const rest = wingRest.get(o);
     const m = /_(\d+)$/.exec(o.name);
@@ -163,9 +170,16 @@ function poseWings(now) {
       e.set(0.45 + 0.25 * depth, 0, (o.name[0] === 'L' ? -1 : 1) * (0.6 + 0.3 * depth));
       const sway = Math.sin(now / 1000 * (2 * Math.PI / BREATH)) * 0.12 * (depth + 1);
       e.x += sway;
+    } else if (flapping) {
+      // sawtooth, not a sine: a hard downstroke and a slower gather.
+      const ph = (flapPhase % 1 + 1) % 1;
+      const beat = ph < 0.35 ? (ph / 0.35) : 1 - (ph - 0.35) / 0.65;
+      const amp = 0.85 - 0.15 * depth;
+      e.set(-0.10 - beat * amp * 0.35, 0,
+            (o.name[0] === 'L' ? 1 : -1) * (0.05 + amp * (0.55 - beat * 1.05)));
     } else {
       // spread, with a slow breath and a bank-into-turn feel
-      const br = Math.sin(now / 1000 * (2 * Math.PI / BREATH)) * 0.05;
+      const br = Math.sin(flapPhase) * 0.05;
       e.set(-0.06 + br * (depth + 1) * 0.5, 0,
             (o.name[0] === 'L' ? 1 : -1) * (0.05 + 0.02 * depth) + st.bank * 0.12);
     }
@@ -199,7 +213,7 @@ function frame(now) {
     const q = new THREE.Quaternion().setFromEuler(
       new THREE.Euler(st.pitch, -st.yaw + Math.PI, st.bank, 'YXZ'));
     vrm.scene.quaternion.copy(q);
-    poseWings(now);
+    poseWings(now, dt, held.has('Space') && st.phase === 'PILOT' && st.stamina > 0);
     vrm.update(dt);
 
     // a trail, so the shape of the fall is visible in 3D too
@@ -244,7 +258,8 @@ function frame(now) {
   renderer.render(scene, camera);
 }
 
-document.getElementById('cfg').textContent = [
+let leafName = 'spec';
+function showCfg() { document.getElementById('cfg').textContent = [
   `body  ${VRM_URL.split('/').pop()}`,
   `rig   ${report.wingCount} wing bones, ${Object.keys(report.chains).length} chains`,
   ``,
@@ -256,10 +271,22 @@ document.getElementById('cfg').textContent = [
   `recover band           ${cfg.recover.minTotal}–${cfg.recover.maxTotal}s`,
   ``,
   `swing ${leafLateralSwing(cfg).toFixed(2)}m   glide ${bestGlide(cfg).ratio.toFixed(1)}:1`,
-].join('\n');
-document.getElementById('keys').textContent = pilotHelp() + '\n\ndrag to orbit, scroll to zoom';
+  ``,
+  `LEAF PRESET  [${leafName}]   1 spec / 2 brisk / 3 heavy`,
+].join('\n'); }
+showCfg();
+document.getElementById('keys').textContent = pilotHelp() +
+  '\nT  take off       1/2/3  leaf preset (spec / brisk / heavy)' +
+  '\n\ndrag to orbit, scroll to zoom';
 
 addEventListener('keydown', e => {
+  if (e.code === 'KeyT') { if (st) { st = takeOff(cfg, st); for (const v of st.events) events.push(v); } return; }
+  if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') {
+    const name = { Digit1: 'spec', Digit2: 'brisk', Digit3: 'heavy' }[e.code];
+    cfg = makeConfig({ leaf: LEAF_PRESETS[name] });
+    leafName = name; showCfg();
+    return;
+  }
   if (e.code === 'KeyX') { if (st) { st = bodyDown(st, { eventId: 'fly-cut' }); for (const v of st.events) events.push(v); } return; }
   if (e.code === 'KeyR') { if (st) { st = bodyRecovered(st, { eventId: 'fly-rec', recoveryGeneration: 'gen-fly' }); for (const v of st.events) events.push(v); } return; }
   held.add(e.code);

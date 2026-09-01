@@ -42,6 +42,7 @@
  *   airspeed:number, stamina:number, phaseT:number, leafV0:number,
  *   recoverAt:number|null,
  *   recoverPlan:{beatEnds:number, reopenEnds:number, ground:boolean}|null,
+ *   flownAs:Phase, launchV:number,
  *   lastEvent:{eventId:string|null, kind:string}|null,
  *   downEventId:string|null, recoveryGeneration:string|null,
  *   events:FlightEvent[], [k:string]:any
@@ -133,6 +134,19 @@ export const DEFAULT_CONFIG = {
     dampingFloor: 0.35,         // the swing decays TOWARD this fraction, not to zero:
                                 // a real leaf converges on a lazy spiral, and a body
                                 // that goes rigid on the way down reads as a prop
+    // TERMINAL VELOCITY IS CONTESTED, so it is config with the spec's number
+    // as the default and the disagreement recorded rather than resolved.
+    //
+    // flight-spec R2 and down-spec §3 both say 2-3 m/s. That is SLOWER THAN A
+    // PARACHUTE (~5-6) and about a twentieth of a real human terminal (~54),
+    // and Janus, flying it, reported it "way too slow -- closer to normal
+    // falling, with subtle leaf-like dynamics".
+    //
+    // Both readings are defensible and they are not a physics question. 2-3 is
+    // "survivable by design", which R2 explicitly is; a faster fall is honest
+    // weight. Mythos is the acceptance authority and the spec is his, so the
+    // DEFAULT stays his number -- but LEAF_PRESETS below make the alternative
+    // one word to try, and the clip is how he decides.
     terminalV: 2.5,             // m/s downward. Spec says 2-3.
     spinUpTime: 0.9,            // s to reach terminalV from whatever v it had
     yawPerBank: 0.55,           // rad/s of yaw per radian of bank -- the spiral
@@ -163,6 +177,24 @@ export const DEFAULT_CONFIG = {
   // presence heartbeat?"). It is config with the proposal as default, and the
   // open question is reported rather than silently decided.
   watchdogSec: 90,
+};
+
+/** Named leaf characters, so "too slow" is a word rather than a patch.
+ *
+ *  Each is a complete leaf block. `spec` is the authored default. `heavy`
+ *  answers the note above: a real-weight fall that still wanders and rolls, so
+ *  the leaf reads as a body losing a fight with gravity rather than as a leaf
+ *  in the botanical sense. `brisk` sits between them.
+ *
+ *  The period shortens as the fall speeds up, deliberately: at 12 m/s a 3.4s
+ *  oscillation is one and a half swings from 30 m, which is not a rhythm
+ *  anyone can see. The BREATH stays 3.4 everywhere else it appears -- this is
+ *  the one place the body is not breathing but falling.
+ */
+export const LEAF_PRESETS = {
+  spec:  { terminalV: 2.5,  period: BREATH, lateralAmplitudeM: 0.8, bankAmplitudeDeg: 35, spinUpTime: 0.9 },
+  brisk: { terminalV: 6.5,  period: 2.2,    lateralAmplitudeM: 1.1, bankAmplitudeDeg: 40, spinUpTime: 0.8 },
+  heavy: { terminalV: 12.0, period: 1.5,    lateralAmplitudeM: 1.4, bankAmplitudeDeg: 45, spinUpTime: 0.7 },
 };
 
 /** Deep-merge a partial config over the defaults, REJECTING anything it does
@@ -415,6 +447,8 @@ export function initialState(over = {}, cfg = null) {
     recoverPlan: null,         // { beatEnds, reopenEnds } once computed
     // --- provenance, so a log line can always say WHY the body did that
     lastEvent: null,           // { eventId, kind } of the last trusted event
+    flownAs: 'PILOT',        // the phase a cut interrupted; recovery restores it
+    launchV: 0,              // decaying launch impulse (takeOff)
     downEventId: null,
     recoveryGeneration: null,
     events: [],                // emitted this step; caller drains
@@ -447,6 +481,8 @@ export function bodyDown(state, ev = {}) {
   s.mode = 'reflex';
   // Airborne -> the leaf. Grounded -> ragdoll in place. Both are involuntary,
   // and neither plays a landing animation, ever.
+  // Remember who had the controls, so recovery can hand them back.
+  if (s.phase === 'PILOT' || s.phase === 'GLIDE') s.flownAs = s.phase;
   const airborne = s.pos.y > 0.5;
   s.phase = airborne ? 'LEAF' : 'RAGDOLL';
   s.phaseT = 0;
@@ -554,7 +590,15 @@ function stepPilot(cfg, s, dt, env) {
     if (s.stamina === 0) s.events.push({ t: s.t, kind: 'winded' });
   }
 
-  s.vel.y = -sink + lift + climb;
+  // A LAUNCH IMPULSE decays; it is not a one-frame velocity. stepPilot assigns
+  // vel.y outright from the polar every frame, so takeOff's boost was thrown
+  // away before it could lift anything -- a 9 m/s jump peaked at 0.74 m. Carry
+  // it as a term that bleeds off instead.
+  if (s.launchV > 0.01) {
+    s.launchV *= Math.exp(-dt / 0.85);
+    if (s.launchV <= 0.01) s.launchV = 0;
+  }
+  s.vel.y = -sink + lift + climb + (s.launchV || 0);
   s.vel.x = Math.cos(s.yaw) * s.airspeed;
   s.vel.z = Math.sin(s.yaw) * s.airspeed;
   s.pos.x += s.vel.x * dt;
@@ -645,8 +689,16 @@ function stepLeaf(cfg, s, dt, groundY) {
                     beatWait: beatEnds, total });
   }
   if (s.recoverPlan && s.phaseT >= s.recoverPlan.reopenEnds) {
-    // Wings reload; glide resumes. Recovery altitude is logged (down-spec §3).
-    s.phase = 'GLIDE'; s.wings = 'OPEN'; s.mode = 'live';
+    // Wings reload; flight resumes. Recovery altitude is logged (down-spec §3).
+    //
+    // RETURN TO WHOEVER WAS FLYING. This used to hardcode GLIDE -- autopilot --
+    // so a hand-flown body woke up with a dead stick and whatever bank the
+    // leaf had left it holding, which reads exactly as "stuck tilted". The
+    // phase a cut interrupted is the phase recovery owes back; `flownAs` is
+    // recorded when the cut lands so this is a restoration, not a guess.
+    s.phase = s.flownAs === 'PILOT' ? 'PILOT' : 'GLIDE';
+    s.wings = 'OPEN'; s.mode = 'live';
+    s.bank = 0; s.pitch = 0;        // wings level on waking; the leaf's attitude was not yours
     s.phaseT = 0; s.recoverPlan = null;
     s.airspeed = Math.max(cfg.polar.minSpeed, bestGlide(cfg).speed * 0.8);
     s.events.push({ t: s.t, kind: 'recover.airborne', altitude: s.pos.y,
@@ -661,7 +713,14 @@ function stepRecover(cfg, s, dt, groundY) {
   // over `reopenEnds` seconds -- but the phase is held so nothing else claims
   // the body mid-rise, and so onlookers see the honest middle state.
   if (s.phaseT >= (s.recoverPlan?.reopenEnds ?? BREATH)) {
-    s.phase = 'GROUND'; s.wings = 'OPEN'; s.mode = 'live';
+    // Standing up puts you on your feet, not back in the air. Returning
+    // straight to PILOT looked right for one frame and then the very next
+    // stepPilot found ground under it and flipped to LANDED -- a body cannot
+    // resume flying from y=0 just because it used to be flying. takeOff() is
+    // the door back to the sky, and it exists so that door is visible.
+    s.phase = 'GROUND';
+    s.wings = 'OPEN'; s.mode = 'live';
+    s.bank = 0; s.pitch = 0;
     s.phaseT = 0; s.recoverPlan = null;
     s.events.push({ t: s.t, kind: 'recover.stood' });
   }
@@ -712,6 +771,46 @@ function groundContact(cfg, s, groundY, ragdoll) {
     s.events.push({ t: s.t, kind: 'ground.landed', impactV, impactSpeed });
   }
   s.phaseT = 0;
+}
+
+/** take_off (spec §1): ground -> air.
+ *
+ *  Preconditions are the spec's: standing, and wings not folded down. A folded
+ *  wing GROUNDS the flier -- "the vigil posture costs the sky" -- and unfolding
+ *  is an explicit act, so this refuses rather than quietly unfolding for you.
+ *
+ *  Costs the climb it grants, out of the same pool a climb_to would spend, so
+ *  launching is not free just because it is the first thing you do.
+ *
+ *  The boost is a JUMP-LAUNCH, per the spec's "runway roll or jump-launch per
+ *  terrain". 3 m/s bought under a second of air on a glider that sinks at ~1 --
+ *  technically a take-off, and indistinguishable from a stumble. 9 buys about
+ *  four seconds and 4 m of altitude, which is enough to find out whether you
+ *  are flying.
+ */
+export function takeOff(cfg, state, { launchSpeed = null, boost = 9.0 } = {}) {
+  const s = { ...state, pos: { ...state.pos }, vel: { ...state.vel }, events: [] };
+  if (s.wings === 'FOLDED') {
+    s.events.push({ t: s.t, kind: 'takeoff.refused', reason: 'wings folded' });
+    return s;
+  }
+  if (s.wings === 'LIMP') {
+    s.events.push({ t: s.t, kind: 'takeoff.refused', reason: 'wings limp' });
+    return s;
+  }
+  if (s.phase !== 'GROUND' && s.phase !== 'LANDED') {
+    s.events.push({ t: s.t, kind: 'takeoff.refused', reason: `already ${s.phase}` });
+    return s;
+  }
+  s.phase = 'PILOT'; s.mode = 'live';
+  s.airspeed = launchSpeed ?? bestGlide(cfg).speed;
+  s.pos.y = Math.max(s.pos.y, cfg.bounds.groundClearance + 0.6);
+  s.launchV = boost;      // decays in stepPilot; see the note there
+  s.bank = 0; s.pitch = 0;
+  s.phaseT = 0;
+  s.stamina = Math.max(0, s.stamina - boost * cfg.stamina.climbPerMetre);
+  s.events.push({ t: s.t, kind: 'took off', altitude: s.pos.y });
+  return s;
 }
 
 // ---------------------------------------------------------------- consent

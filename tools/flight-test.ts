@@ -31,8 +31,9 @@ import {
   makeConfig, initialState, step, bodyDown, bodyRecovered,
   leafAt, beatRemaining, sinkRate, glideRatio, glideRange,
   denyAllConsent, fakeConsent, BREATH, airspeedAfter, leafLateralSwing, bestGlide,
+  takeOff, LEAF_PRESETS,
 } from '../shared/flight.js';
-import { pilotInput, pilotHelp, DEFAULT_BINDS } from '../shared/flightpilot.js';
+import { pilotInput, pilotHelp, DEFAULT_BINDS, DEFAULT_AUTHORITY } from '../shared/flightpilot.js';
 import { inspectBody, describeBody } from '../shared/flightbody.js';
 import { denyAllFlight, devFlightProvider, resolveFlight, rigProfile, revoked }
   from '../shared/flightcap.js';
@@ -663,6 +664,86 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   const importers = runtime.filter(f => /from ['"][^'"]*shared\/flight/.test(readFileSync(f, 'utf8')));
   check(`no shipped runtime module imports flight (${runtime.length} files scanned)`,
         importers.length === 0, importers.join(', '));
+}
+
+// ------------------------------------------------------- flown, and found wrong
+console.log('\nFLOWN -- four faults a human found that no assertion had');
+{
+  const cfg = makeConfig();
+  const flatG = () => 0;
+  const fly = (s: any, keys: string[], n: number) => {
+    for (let i = 0; i < n; i++) s = step(cfg, s, DT, { groundY: flatG, input: pilotInput(new Set(keys), s, DT) });
+    return s;
+  };
+
+  // 1. "if i ever press x, even after recovering im stuck in a tilted position
+  //     and the wasd commands no longer tilt me." Recovery hardcoded GLIDE --
+  //     autopilot -- so a hand-flown body woke with a dead stick and the leaf's
+  //     last bank frozen on it.
+  let s = initialState({ phase: 'PILOT', pos: { x: 0, y: 40, z: 0 }, airspeed: 12 }, cfg);
+  s = bodyDown(s, { eventId: 'ev-f1' });
+  s = fly(s, [], 120);
+  s = bodyRecovered(s, { eventId: 'ev-f1r' });
+  s = fly(s, [], 600);
+  check('recovery returns the STICK, not the autopilot', s.phase === 'PILOT');
+  check('and it wakes wings-level, not holding the leaf\'s bank',
+        Math.abs(s.bank) < 0.02, `bank ${(s.bank * 57.3).toFixed(1)} deg`);
+  const before = s.bank;
+  s = fly(s, ['KeyD'], 120);
+  check('WASD reaches the body again after a cut', Math.abs(s.bank - before) > 0.3);
+
+  // 2. "recovery works i think but not if ive already hit the ground."
+  let g = initialState({ phase: 'PILOT', pos: { x: 0, y: 4, z: 0 }, airspeed: 12 }, cfg);
+  g = bodyDown(g, { eventId: 'ev-f2' });
+  let n = 0; while (g.phase === 'LEAF' && n++ < 99999) g = step(cfg, g, DT, { groundY: flatG });
+  check('a cut near the ground ends as a ragdoll', g.phase === 'RAGDOLL');
+  g = bodyRecovered(g, { eventId: 'ev-f2r' });
+  check('recovery from the GROUND is accepted', g.phase === 'RECOVER');
+  g = fly(g, [], 600);
+  check('and it stands up', g.phase === 'GROUND' && g.wings === 'OPEN');
+  g = takeOff(cfg, g);
+  check('take_off is the door back to the sky', g.phase === 'PILOT');
+  const peakAfter = (() => { let t = g, pk = 0, k = 0;
+    while (t.phase === 'PILOT' && k++ < 6000) { t = step(cfg, t, DT, { groundY: flatG, input: pilotInput(new Set(), t, DT) }); pk = Math.max(pk, t.pos.y); }
+    return pk; })();
+  check(`the launch actually launches (${peakAfter.toFixed(1)}m, not a stumble)`, peakAfter > 3,
+        `peaked at ${peakAfter.toFixed(2)}m`);
+  check('take_off refuses folded wings (§1: the vigil posture costs the sky)',
+        takeOff(cfg, initialState({ phase: 'GROUND', wings: 'FOLDED' }, cfg)).phase === 'GROUND');
+  check('take_off refuses a LIMP body',
+        takeOff(cfg, initialState({ phase: 'GROUND', wings: 'LIMP' }, cfg)).phase === 'GROUND');
+
+  // 3. "the avatar moves on a trajectory i can't really control." levelReturn
+  //     ran WHILE the stick was held, so a turn had ~40% of its authority.
+  check('autolevel does not fight a held stick',
+        DEFAULT_AUTHORITY.bankRate > DEFAULT_AUTHORITY.levelReturn * 2);
+  let t2 = initialState({ phase: 'PILOT', pos: { x: 0, y: 60, z: 0 }, airspeed: 12 }, cfg);
+  const y0 = t2.yaw;
+  t2 = fly(t2, ['KeyD'], 240);            // two seconds of full right
+  check(`a 2s turn moves the nose ${((t2.yaw - y0) * 57.3).toFixed(0)}deg (rails were ~60)`,
+        (t2.yaw - y0) * 57.3 > 120);
+  const banked = t2.bank;
+  t2 = fly(t2, [], 240);
+  check('hands off, the wings still return to level',
+        Math.abs(t2.bank) < Math.abs(banked) * 0.15);
+
+  // 4. "the leaf falling speed & period seems way too slow." The spec says
+  //    2-3 m/s -- slower than a parachute -- and that is Mythos's call, so the
+  //    default stands and the alternatives are one word away.
+  check('the DEFAULT leaf is still the spec\'s 2-3 m/s',
+        cfg.leaf.terminalV >= 2 && cfg.leaf.terminalV <= 3);
+  for (const [name, preset] of Object.entries(LEAF_PRESETS)) {
+    const c2 = makeConfig({ leaf: preset });
+    check(`preset '${name}' builds and falls at ${c2.leaf.terminalV} m/s`,
+          c2.leaf.terminalV === preset.terminalV && c2.leaf.period === preset.period);
+  }
+  const heavy = makeConfig({ leaf: LEAF_PRESETS.heavy });
+  let h = initialState({ phase: 'PILOT', pos: { x: 0, y: 30, z: 0 }, airspeed: 12 }, heavy);
+  h = bodyDown(h, { eventId: 'ev-f4' });
+  let hn = 0; while (h.phase === 'LEAF' && hn++ < 99999) h = step(heavy, h, DT, { groundY: flatG });
+  check(`heavy preset falls 30m in ${(hn * DT).toFixed(1)}s (spec preset takes ~12)`,
+        hn * DT < 4);
+  check('and it still LANDS as a ragdoll, no autoland', h.phase === 'RAGDOLL');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
