@@ -1881,7 +1881,15 @@ export class WorldAgent {
     await this.loadBodyBones();
     const cap = this.flightAllowed();
     if (!cap.ok) return `you cannot fly here — ${cap.why}`;
-    if (!this.flight) this.flightBegin();
+    // START FROM THE BODY, ALWAYS. A stale flight state -- LANDED after a
+    // glide, or RAGDOLL after a cut -- carried the old position and phase into
+    // the new launch, so take_off "worked" and the next verb found her back on
+    // the ground with the stamina already spent. A launch is a fresh flight
+    // from wherever the body actually is.
+    if (!this.flight || this.flight.phase !== "GROUND") this.flightBegin();
+    // ...and the ragdoll, if one is still running, no longer owns her.
+    this.body?.stop(); this.stopSim();
+    this.heldPose = null; this.heldPoseAuthored = false;
     this.flight = flightTakeOff(this.flightCfg, this.flight,
       { groundY: this.heightAt(this.pos.x, this.pos.z) });
     const ev = this.flight.events.find((e: any) => e.kind === "takeoff.refused");
