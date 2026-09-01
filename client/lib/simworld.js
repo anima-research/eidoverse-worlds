@@ -49,6 +49,9 @@ const spins = new Map();   // id -> THREE.Quaternion (presentation state)
 const _axis = new THREE.Vector3();
 const _dq = new THREE.Quaternion();
 const _upq = new THREE.Quaternion();
+const _tq = new THREE.Quaternion();
+const _n = new THREE.Vector3();
+const _cv = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
 const TUMBLE = 2.2;        // rad/s while airborne — a hop reads as a tumble
 
@@ -134,22 +137,23 @@ export function initSimWorld() {
       } else {
         obj.position.set(b.p[0], b.p[1], b.p[2]);
       }
-      // VISUAL GROUNDING. The sim grounds the entity ORIGIN on the terrain —
-      // all it can know: the mesh is an asset fact, never in the log. A
-      // far-offset model stands somewhere else, and on a slope the ground
-      // there is not the ground here: the barrels' cluster sank 29cm into a
-      // hillside at every landing (tel0s, playtest 2026-09-01, §24t-6).
-      // Show the visual center standing on ITS ground — lift by the terrain
-      // difference between the two footprints. Presentation only, like the
-      // tumble: ~0 for an origin-centred model, exactly 0 without terrain.
-      // (a body the sim has standing ON another thing — eidosim@0.3.0's
-      // `on` — takes that thing's top as its ground, not the terrain's)
-      if (sp.arm > 0.05 && sp.box && !b.on) {
-        const c = Math.cos(b.yaw), s = Math.sin(b.yaw);
-        const wx = sp.cx * c + sp.cz * s, wz = -sp.cx * s + sp.cz * c;
-        const p = obj.position;
-        p.y += heightAt(p.x + wx, p.z + wz) - heightAt(p.x, p.z);
-      }
+      // THE VISUAL CENTER IS WHAT STANDS ON THE GROUND. The sim grounds the
+      // entity ORIGIN on the terrain — all it can know: the mesh is an asset
+      // fact, never in the log. A far-offset model stands somewhere else, and
+      // on a slope the ground there is not the ground here (the barrels'
+      // cluster sank 29cm into a hillside at every landing, §24t-6). So the
+      // applier works in terms of the visual center: where the sim's word +
+      // yaw puts it (cx, cz), the terrain under IT (gC), and a lift by the
+      // difference. Presentation only, like the tumble: exactly 0 for an
+      // origin-centred model, exactly 0 without terrain. A body the sim has
+      // standing ON another thing (0.3.0's `on`) takes that top as its
+      // ground — no terrain lift, no tilt.
+      const p = obj.position;
+      const cY = Math.cos(b.yaw), sY = Math.sin(b.yaw);
+      const cx = sp.box ? sp.cx * cY + sp.cz * sY : 0;
+      const cz = sp.box ? -sp.cx * sY + sp.cz * cY : 0;
+      const onTerrain = !b.on;
+      const lift = onTerrain && sp.box ? heightAt(p.x + cx, p.z + cz) - heightAt(p.x, p.z) : 0;
       // cosmetic tumble/settle (see the header block above)
       const q = sp.q;
       const flat = Math.hypot(b.v[0], b.v[2]);
@@ -166,9 +170,29 @@ export function initSimWorld() {
         q.premultiply(_dq);
       } else {
         _upq.setFromAxisAngle(UP, b.yaw);
+        // SLOPE TILT (§24t-10): a grounded thing lies on the hill it rests
+        // on — upright-in-world, an 18% slope put one edge of the barrels'
+        // 1.2m footprint 15cm into the ground and the other 15cm in the air.
+        // The target is "upright at the sim's yaw, then leaned onto the
+        // terrain normal under the visual center" (finite differences at half
+        // a metre — the footprint's own scale, so bumps don't rock it);
+        // airborne bodies stay upright, things standing ON things stay flat.
+        if (onTerrain && (b.resting || b.v[1] === 0)) {
+          const x = p.x + cx, z = p.z + cz, e = 0.5;
+          _n.set(-(heightAt(x + e, z) - heightAt(x - e, z)) / (2 * e), 1,
+            -(heightAt(x, z + e) - heightAt(x, z - e)) / (2 * e)).normalize();
+          _tq.setFromUnitVectors(UP, _n);
+          _upq.premultiply(_tq);
+        }
         q.slerp(_upq, Math.min(1, 6 * dt));
       }
       obj.quaternion.copy(q);
+      // COMPOSE ABOUT THE CENTER: the visual center goes to its place (the
+      // sim's word for it, lifted onto its ground); the origin is wherever
+      // the rotated local center offset leaves it. For an origin-centred
+      // model this is exactly "position = word + lift".
+      _cv.set(sp.cx, 0, sp.cz).applyQuaternion(q);
+      p.set(p.x + cx - _cv.x, p.y + lift - _cv.y, p.z + cz - _cv.z);
       if (obj.userData.base?.pos) {
         // the realizer's rest-pose record follows the sim's word, so
         // re-seat logic and inspectors read where the thing IS

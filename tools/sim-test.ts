@@ -211,5 +211,28 @@ console.log("\nthe sim fold (shared/sim.js) — " + SIM_ID);
     o2.sim.bodies.crate.resting === true && o2.sim.bodies.crate.p[0] > 4.5, String(o2.sim.bodies.crate.p[0]));
 }
 
+{ // LEAVING an epoch (ruling 2026-09-01): an explicit `sim: null`, never a toggle
+  const EXIT: LogEntry[] = [...SCRIPT,
+    mk(4, 700, "place", { id: "crate", pos: [3, 0.5, 3], via: "epoch-release" }),   // the sequencer's release
+    mk(5, 701, "epoch", { sim: null })];
+  const { sim } = fold(EXIT);
+  check("an explicit `sim: null` epoch ENDS the sim epoch (no bodies, no law, no boxes)",
+    sim.epoch === null && Object.keys(sim.bodies).length === 0 && sim.terrain === null
+      && sim.boxes === undefined && sim.statics === undefined);
+  const after = fold([...EXIT, mk(6, 800, "punt", { id: "crate", dir: [1, 0.5, 0], power: 8 })]);
+  check("…and a later punt keeps v1 semantics (the sim folds nothing)",
+    after.sim.epoch === null && Object.keys(after.sim.bodies).length === 0);
+  const back = fold([...EXIT, mk(6, 900, "epoch", { sim: SIM_ID, tickMs: 66 }),
+    mk(7, 950, "punt", { id: "crate", dir: [1, 0.5, 0], power: 8 })]);
+  advanceSim(back.sim, 600);
+  check("…and the world can re-enter an epoch afterwards",
+    back.sim.epoch?.sim === SIM_ID && back.sim.bodies.crate?.resting === true);
+  const noop = fold([SCRIPT[0], mk(1, 10, "epoch", { sim: null })]);
+  check("leaving with no epoch to leave is inert (totality)", noop.sim.epoch === null && noop.sim.tick === 0);
+  const missing = fold([...SCRIPT, mk(4, 700, "epoch", {})]);
+  check("an epoch entry with no `sim` at all is NOT an exit — inert, as ever", missing.sim.epoch?.sim === SIM_ID
+    && Object.keys(missing.sim.bodies).length === 1);
+}
+
 console.log(`\n${fail ? "\x1b[31mRED\x1b[0m" : "\x1b[32mGREEN\x1b[0m"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

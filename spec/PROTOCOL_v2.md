@@ -135,6 +135,16 @@ sim behavior is **versioned in the log itself**:
   conforming implementation MUST refuse to recompute an epoch whose sim it
   does not carry, and MUST use the barrier snapshot instead — a wrong
   answer is worse than a cached one.
+- **Leaving an epoch** (ruling 2026-09-01): an `epoch` entry whose `sim` is
+  literally `null` ends the sim epoch. It is explicit, never a toggle — a
+  world-changing act must not depend on hidden state. The sequencer MUST
+  release every live body into the instant fold first (result-shaped
+  `place` entries, `via: "epoch-release"`) and fold the barrier around the
+  exit; from the exit on, sim-scoped verbs keep their pre-dialect-3
+  semantics. Leaving with no epoch to leave is refused before it is logged;
+  a MISSING or malformed `sim` is not an exit and shapes nothing. Entering
+  the same sim at the same tick twice is likewise refused (idempotence);
+  a different sim or tick is a real re-epoch with the same release.
 
 ## 4. Covenant III — the planes stand
 
@@ -182,7 +192,7 @@ grow. ⚑ marks what ratification must settle:
 | verb | dialect ≤2 (unchanged there) | dialect 3 |
 |---|---|---|
 | `punt` | folds nothing; volunteer flight; landing is a `place` | **sim-scoped**: the sim owns the flight; no result entry — the resting pose is recomputed |
-| `force` | folds nothing; live clients apply to consenting bodies | **sim-scoped** for sim-owned entities; bodies keep consent semantics (presence) |
+| `force` | folds nothing; live clients apply to consenting bodies | **sim-scoped** for sim-owned entities; bodies keep consent semantics (presence). *Deferred to eidosim@0.4.0 (2026-09-01): a radial force claims every model in its radius, which is the "sim-owned by default" ⚑ below — not an implementation's call. Under 0.1–0.3 epochs `force` stays presence-only.* |
 | ⚑ `impulse`? `throw`? `grab`/`release`? | — | candidate new intents; each must carry its full physical argument (vector, magnitude, point of application) per Covenant III |
 
 | `spawn` / `epoch` | unchanged | **sequencer-stamped geometry**: `spawn.box`, `epoch.boxes` — the only door through which an asset's shape reaches the sim (Covenant III; eidosim@0.3.0) |

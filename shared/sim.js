@@ -278,6 +278,19 @@ const RESEATERS = new Set(['place', 'spawn', 'dismount']);
 export function simEntry(sim, entry, st) {
   const a = /** @type {any} */ (entry.args);
   if (entry.verb === 'epoch') {
+    if (a && a.sim === null) {
+      // LEAVING (ruling tel0s 2026-09-01 — explicit, never a toggle): an
+      // epoch entry whose `sim` is literally null ENDS the sim epoch. The
+      // sequencer released every live body into the fold first (the same
+      // epoch-release places a re-epoch commits) and folds the barrier; from
+      // here the log keeps v1 semantics whole. With no epoch to leave this is
+      // inert (the sequencer refuses it pre-log; a replay is total). A MISSING
+      // or malformed `sim` is not an exit — it shapes nothing, as ever.
+      if (!sim.epoch) return;
+      sim.epoch = null; sim.tick = 0; sim.bodies = {}; sim.terrain = null;
+      delete sim.boxes; delete sim.statics;
+      return;
+    }
     const simName = typeof a?.sim === 'string' ? a.sim : null;
     const tickMs = a?.tickMs;
     if (!simName || !Number.isInteger(tickMs) || tickMs < MIN_TICK_MS || tickMs > MAX_TICK_MS) return;

@@ -91,7 +91,7 @@
     },
     {
       "h": "Using things",
-      "html": "Some things react: <b>/push swing1</b> (or <b>/use</b> <i>thing action</i>) works for everyone, even visitors — using the world is not building it. Builders can give things motion (a swing, a windmill, a ferry on a route) and reactions; what a push does was decided by whoever built the thing. People react too: <b>/touch name</b> rests a hand on their shoulder (<b>/touch name head</b> for a headpat, <b>/letgo</b> to lower it) — the hand really reaches, follows them, and they see it land. <b>/push name</b> shoves and <b>/punt name</b> boots harder; their client always decides what actually happens to their body. Objects fly with <b>/punt thing</b> (<b>/kick</b> is moderation only)."
+      "html": "Some things react: <b>/push swing1</b> (or <b>/use</b> <i>thing action</i>) works for everyone, even visitors — using the world is not building it. Builders can give things motion (a swing, a windmill, a ferry on a route) and reactions; what a push does was decided by whoever built the thing. People react too: <b>/touch name</b> rests a hand on their shoulder (<b>/touch name head</b> for a headpat, <b>/letgo</b> to lower it) — the hand really reaches, follows them, and they see it land. <b>/push name</b> shoves and <b>/punt name</b> boots harder; their client always decides what actually happens to their body. Objects fly with <b>/punt thing</b> (<b>/kick</b> is moderation only). Owners can put a world's physics under the deterministic sim with <b>/epoch</b> — flights become log-replayable, land on the terrain and bounce off the world's things — and leave it again with <b>/epoch off</b> (everything comes to rest where it stands)."
     },
     {
       "h": "If it runs slowly",

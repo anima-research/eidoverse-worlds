@@ -104,7 +104,16 @@ register('ban', (arg) => moderate('ban', arg));
 // (before this, entering an epoch took a raw world_verb — which is how a
 // playtest "of the new physics" ran the legacy volunteer sim instead).
 register('epoch', (arg) => {
-  const tickMs = Math.round(Number((arg || '').trim())) || 66;
+  const a = (arg || '').trim();
+  // /epoch off — LEAVE the sim epoch (ruling 2026-09-01: explicit, never a
+  // toggle): every flight is released to the fold where it stands, and punts
+  // go back to the volunteer physics. Owners only; the world refuses or announces.
+  if (/^(off|leave|exit|none)$/i.test(a)) {
+    sendVerb('epoch', { sim: null });
+    logChat('*', 'asked the world to LEAVE its sim epoch — every flight comes to rest where it is and punts return to volunteer physics (owners only; the world will refuse or announce)');
+    return;
+  }
+  const tickMs = Math.round(Number(a)) || 66;
   sendVerb('epoch', { sim: SIM_ID, tickMs });
   logChat('*', `asked the world to enter ${SIM_ID} at a ${tickMs}ms tick — flights become log-replayable physics (owners only; the world will refuse or announce)`);
 });

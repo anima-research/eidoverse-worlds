@@ -360,9 +360,26 @@ const extras: Record<string, Pick<VerbRow, "selfRankZero" | "validate" | "after"
   // folds the barrier snapshot the spec requires around epoch boundaries.
   epoch: {
     validate: (ctx, args) => {
+      const stashLive = () => {
+        // Stash the live bodies NOW — by the time the after-hook runs, the
+        // folded epoch entry has already cleared them.
+        const held = Object.entries(ctx.w.sim.bodies as Record<string, { p: number[]; yaw?: number }>)
+          .map(([id, b]) => ({ id, p: [...b.p], yaw: typeof b.yaw === "number" ? b.yaw : 0 }));
+        epochRelease.set(ctx.w, held);
+      };
+      if (args.sim === null) {
+        // LEAVING the epoch (ruling tel0s 2026-09-01: explicit, never a
+        // toggle). Every live body is released into the fold at its sim word
+        // (the after-hook's epoch-release places), the barrier folds, and the
+        // world is back on v1 semantics. Nothing to leave = refused pre-log.
+        const live = ctx.w.sim.epoch as { foreign?: boolean } | null;
+        if (!live) return { error: "this world is not under a sim epoch — nothing to leave" };
+        stashLive();
+        return { args: { sim: null } };
+      }
       const sim = String(args.sim ?? "");
       const tickMs = Number(args.tickMs ?? 66);
-      if (sim !== SIM_ID) return { error: `this sequencer carries ${SIM_ID} — epoch must name it exactly` };
+      if (sim !== SIM_ID) return { error: `this sequencer carries ${SIM_ID} — epoch must name it exactly (or sim: null to leave)` };
       if (!Number.isInteger(tickMs) || tickMs < 16 || tickMs > 1000) {
         return { error: "epoch tickMs must be an integer in [16, 1000]" };
       }
@@ -375,11 +392,7 @@ const extras: Record<string, Pick<VerbRow, "selfRankZero" | "validate" | "after"
       if (live && !live.foreign && live.sim === sim && live.tickMs === tickMs) {
         return { error: `already under ${sim} at a ${tickMs}ms tick — nothing to re-enter (flights and rest poses stand)` };
       }
-      // Stash the live bodies NOW — by the time the after-hook runs, the
-      // folded epoch entry has already cleared them.
-      const held = Object.entries(ctx.w.sim.bodies as Record<string, { p: number[]; yaw?: number }>)
-        .map(([id, b]) => ({ id, p: [...b.p], yaw: typeof b.yaw === "number" ? b.yaw : 0 }));
-      epochRelease.set(ctx.w, held);
+      stashLive();
       // eidosim@0.3.0: the epoch adopts the sequencer's word on the world's
       // geometry — lib → box for every model standing here at the barrier
       // (Covenant III; ruling tel0s 2026-09-01). Warmed on the wire before

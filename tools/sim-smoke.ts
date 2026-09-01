@@ -173,6 +173,31 @@ check("the realized entity stands at the sim's word",
           && Math.abs(shown[2] - serverSim.bodies.ball.p[2]) < 1e-9,
   `shown [${shown?.map((v: number) => v.toFixed(3)).join(", ")}]`);
 
+// ---- leaving the epoch (ruling 2026-09-01: explicit sim:null, never a toggle)
+console.log(`\n${bold("── leaving the epoch")}`);
+errors.length = 0;
+await verb("epoch", { sim: null });
+check("an explicit sim:null epoch is accepted — leaving is a verb, not a toggle", errors.length === 0, errors.join(" | "));
+{
+  dws.send(JSON.stringify({ type: "history", limit: 12, reqId: "h9" }));
+  await sleep(500);
+  const h = msgs.find((x) => x.type === "history" && x.reqId === "h9");
+  const es: any[] = h?.entries ?? [];
+  const rel = es.find((e) => e.verb === "place" && e.args?.via === "epoch-release" && e.args?.id === "ball");
+  check("…the resting ball was released into the fold at its sim word",
+    !!rel && Math.abs(rel.args.pos[0] - serverSim.bodies.ball.p[0]) < 1e-3 && Math.abs(rel.args.pos[2] - serverSim.bodies.ball.p[2]) < 1e-3,
+    JSON.stringify(rel?.args?.pos));
+  check("…and the exit entry itself is in history, after the release", es.some((e) => e.verb === "epoch" && e.args?.sim === null));
+}
+errors.length = 0;
+// stand beside the ball — the reach gate (4m) is not what is under test here
+dws.send(JSON.stringify({ type: "pose", pose: { p: [serverSim.bodies.ball.p[0] + 1, 0, serverSim.bodies.ball.p[2] + 1] } }));
+await sleep(250);
+await verb("punt", { id: "ball", power: 8 });   // the v1 form, no dir
+check("…a dir-less punt is accepted again (v1 semantics resumed)", errors.length === 0, errors.join(" | "));
+await verb("epoch", { sim: null });
+check("…leaving twice is refused (nothing to leave)", errors.some((e) => /nothing to leave/.test(e)), errors.join(" | "));
+
 console.log(`\n${bold(tally.failed ? "RED" : "GREEN")} — ${tally.passed} passed, ${tally.failed} failed\n`);
 await cleanup();
 process.exit(tally.failed ? 1 : 0);

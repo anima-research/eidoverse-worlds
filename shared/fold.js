@@ -257,6 +257,12 @@ export function foldEntry(st, e) {
       // deterministic-sim epoch. The instant fold records WHICH epoch is
       // active (joiners and validators need it); the sim fold (shared/
       // sim.js, run beside this one) owns everything the epoch means.
+      // Leaving (PROTOCOL_v2 §3, ruling 2026-09-01): an explicit `sim: null`
+      // ends the epoch — joiners and validators see none. Additive: no log
+      // written before this rule carries such an entry (the sequencer
+      // refused it), so every old fold is byte-identical. A MISSING sim is
+      // still no entry at all.
+      if (a && a.sim === null) { st.epoch = null; return; }
       if (typeof a?.sim !== "string" || !Number.isInteger(a?.tickMs)) return;
       st.epoch = { sim: a.sim, tickMs: a.tickMs, ts: e.ts, seq: e.seq };
       return;

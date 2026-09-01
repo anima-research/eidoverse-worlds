@@ -81,11 +81,21 @@ const sample = (frames: number) => evalJson(`new Promise((done) => { try {
   const out = []; let n = 0;
   const step = () => {
     const o = EW.entities.get('bar'); const b = EW.simFold().bodies.bar;
-    if (o) out.push([o.position.x, o.position.y, o.position.z, b ? (b.resting ? 1 : 0) : -1]);
+    if (o) out.push([o.position.x, o.position.y, o.position.z, b ? (b.resting ? 1 : 0) : -1, o.quaternion.toArray()]);
     if (++n < ${frames}) requestAnimationFrame(step); else done(out);
   };
   requestAnimationFrame(step);
 } catch (e) { done({ err: String(e) }) } })`);
+
+/** v rotated by unit quaternion q — the visual center sits at origin + rot(q, OFF)
+ *  now that the applier composes about the center (slope tilt, §24t-10). */
+function rot(q: number[], v: number[]): number[] {
+  const [x, y, z, w] = q; const [vx, vy, vz] = v;
+  const cx = y * vz - z * vy, cy = z * vx - x * vz, cz = x * vy - y * vx;          // q_v × v
+  const ccx = y * cz - z * cy, ccy = z * cx - x * cz, ccz = x * cy - y * cx;       // q_v × (q_v × v)
+  return [vx + 2 * w * cx + 2 * ccx, vy + 2 * w * cy + 2 * ccy, vz + 2 * w * cz + 2 * ccz];
+}
+const clusterOf = (r: any) => { const o = rot(r[4] ?? [0, 0, 0, 1], [OFF[0], 0, OFF[1]]); return [r[0] + o[0], r[1] + o[1], r[2] + o[2]]; };
 
 function judge(label: string, rows: any) {
   const frames: number[][] = Array.isArray(rows) ? rows : [];
@@ -94,7 +104,8 @@ function judge(label: string, rows: any) {
     if (r[3] !== 0) continue;                      // frames where the sim has it moving
     inFlight++;
     const dO = r[1] - hf(r[0], r[2]);
-    const dC = r[1] - hf(r[0] + OFF[0], r[2] + OFF[1]);
+    const c = clusterOf(r);
+    const dC = c[1] - hf(c[0], c[2]);
     if (dO < -0.005) originBelow++;
     if (dC < -0.01) clusterBelow++;
     worstO = Math.min(worstO, dO); worstC = Math.min(worstC, dC);
@@ -127,8 +138,9 @@ sb = null;
 for (let i = 0; i < 30 && !sb?.resting; i++) { await sleep(400); sb = await serverBody(); }
 await sleep(600);   // the client's applier reaches rest too
 {
-  const shown = await evalJson(`(() => { const o = EW.entities.get('bar'); return o ? [o.position.x, o.position.y, o.position.z] : null })()`);
-  const dC = shown ? shown[1] - hf(shown[0] + OFF[0], shown[2] + OFF[1]) : NaN;
+  const shown = await evalJson(`(() => { const o = EW.entities.get('bar'); return o ? [o.position.x, o.position.y, o.position.z, 1, o.quaternion.toArray()] : null })()`);
+  const cc = shown ? clusterOf(shown) : null;
+  const dC = cc ? cc[1] - hf(cc[0], cc[2]) : NaN;
   check("at rest the cluster stands ON its ground (±5mm)", Number.isFinite(dC) && Math.abs(dC) < 0.005,
     shown ? `cluster ${dC >= 0 ? "+" : ""}${dC.toFixed(4)}m over its ground; origin y=${shown[1].toFixed(4)} vs sim ${sb?.p?.[1]?.toFixed(4)} (terrain under origin ${hf(shown[0], shown[2]).toFixed(4)})` : "no entity");
 }
@@ -149,7 +161,7 @@ const sampleMesh = (frames: number) => evalJson(`new Promise((done) => { try {
     o.traverse((nd) => { if (!nd.isMesh || !nd.geometry) return; if (!nd.geometry.boundingBox) nd.geometry.computeBoundingBox(); const bb = nd.geometry.boundingBox;
       for (let i = 0; i < 8; i++) { v.set(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z).applyMatrix4(nd.matrixWorld); if (v.y < m) m = v.y; } });
     const tilt = Math.acos(Math.min(1, Math.max(-1, u.copy(up).applyQuaternion(o.quaternion).dot(up)))) * 180 / Math.PI;
-    out.push([o.position.x, o.position.z, m, tilt, b ? (b.resting ? 1 : 0) : -1]);
+    out.push([o.position.x, o.position.z, m, tilt, b ? (b.resting ? 1 : 0) : -1, b ? b.v[1] : null, o.quaternion.toArray()]);
     if (++n < ${frames}) requestAnimationFrame(step); else done(out); };
   requestAnimationFrame(step);
 } catch (e) { done({ err: String(e) }) } })`);
@@ -160,21 +172,40 @@ await verb("punt", { id: "bar", power: 4, dir: DIR });
 {
   const rows: any = await mp;
   const frames: number[][] = Array.isArray(rows) ? rows : [];
-  let inFlight = 0, maxTilt = 0, worstMesh = 0;
+  let inFlight = 0, airborne = 0, maxTilt = 0, worstMesh = 0;
   for (const r of frames) {
     if (r[4] !== 0) continue;
     inFlight++;
-    maxTilt = Math.max(maxTilt, r[3]);
+    // tumble is judged AIRBORNE only (v[1] ≠ 0): a grounded body may lean
+    // onto the slope by design (§24t-10), a flying one must stay upright
+    if (r[5] !== 0) { airborne++; maxTilt = Math.max(maxTilt, r[3]); }
     // the mesh footprint is ~1.2m: allow the slope across it, judge against the ground under the cluster center
-    const gc = hf(r[0] + OFF[0], r[1] + OFF[1]);
+    const o = rot(r[6] as unknown as number[], [OFF[0], 0, OFF[1]]);
+    const gc = hf(r[0] + o[0], r[1] + o[2]);
     worstMesh = Math.min(worstMesh, r[2] - gc);
   }
   check("flight 3: a far-offset model does NOT tumble after a reload (arm fitted once the box exists)",
-    inFlight >= 20 && maxTilt < 5,
-    rows?.err ?? `${inFlight} in-flight frames, max tilt from upright ${maxTilt.toFixed(1)}°`);
+    inFlight >= 20 && airborne >= 10 && maxTilt < 20,   // a tumble on a 1.3m arm is 90° in a blink; the un-tilt off a slope is a few degrees
+    rows?.err ?? `${airborne} airborne frames, max tilt from upright ${maxTilt.toFixed(1)}°`);
   check("flight 3: the rendered mesh never swings below its ground",
     inFlight >= 20 && worstMesh > -0.15,
     rows?.err ?? `lowest mesh point vs ground under the cluster: ${worstMesh.toFixed(3)}m (footprint slope allowance 0.15)`);
+  // SLOPE TILT at rest (§24t-10): the thing lies on the hill it rests on —
+  // its up vector within 3° of the terrain normal under its visual center
+  const last = frames.length ? frames[frames.length - 1] : null;
+  if (last) {
+    const [qx, qy, qz, qw] = last[6] as unknown as number[];
+    const upv = [2 * (qx * qy - qw * qz), 1 - 2 * (qx * qx + qz * qz), 2 * (qw * qx + qy * qz)];   // (0,1,0) rotated by q
+    const oc = rot(last[6] as unknown as number[], [OFF[0], 0, OFF[1]]);
+    const x = last[0] + oc[0], z = last[1] + oc[2], e = 0.5;
+    const n = [-(hf(x + e, z) - hf(x - e, z)) / (2 * e), 1, -(hf(x, z + e) - hf(x, z - e)) / (2 * e)];
+    const nl = Math.hypot(n[0], n[1], n[2]); n[0] /= nl; n[1] /= nl; n[2] /= nl;
+    const ang = Math.acos(Math.min(1, Math.max(-1, upv[0] * n[0] + upv[1] * n[1] + upv[2] * n[2]))) * 180 / Math.PI;
+    const slope = Math.acos(Math.min(1, n[1])) * 180 / Math.PI;
+    check("at rest on a slope the model LEANS onto the terrain normal under its center (≤3°)",
+      last[4] === 1 && ang <= 3,
+      `up vs normal ${ang.toFixed(1)}° (the slope there is ${slope.toFixed(1)}°; resting ${last[4] === 1})`);
+  }
 }
 
 console.log(`\n${bold(tally.failed ? "RED" : "GREEN")} — ${tally.passed} passed, ${tally.failed} failed\n`);
