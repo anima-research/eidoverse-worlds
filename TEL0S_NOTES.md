@@ -390,6 +390,34 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-09-01 — §24t-6: THE GHOST'S VERTICAL HALF (aaccf29).** tel0s:
+  "gravity overrides and the barrel clips down through the ground when
+  I punt it, before it pops back up to its new resting place on the
+  meadowgrass." The sim never does — every tick of all five commons
+  0.2.0 flights has y ≥ g — and neither does the applier (a frame-
+  sampled probe in a scratch hilly world: 0 frames below the terrain
+  law in 300). It is the barrels' two-metre ghost (§24t-4), vertical:
+  the sim grounds the entity ORIGIN (all it can know — the mesh is an
+  asset fact never in the log) and the visible cluster stands 1.95m
+  away on a slope where the ground is somewhere else. Measured along
+  tel0s's own punts (seq 107–108): the cluster sat up to 29cm inside
+  the hillside at every landing, surfacing briefly at the top of each
+  hop — exactly the report. FIX: the applier shows the visual center
+  standing on ITS ground (lift by the terrain difference between the
+  two footprints — collider-box center × scale rotated by the sim's
+  yaw). Presentation only, like the tumble; ~0 for origin-centred
+  models, 0 without terrain, never read back. NEW GATE
+  tools/sim-ground-smoke.ts (commons's terrain, the barrels at seq
+  108's launch, two flights sampled per frame): origin never undercuts
+  the law, cluster never sinks (worst −0.0001m), rests ON its ground
+  (0.0000m) — the same probe read 150/150 frames below, worst −0.29m,
+  before. UPSTREAM-FLAGS §3b gains the vertical consequence + the two
+  residues only the asset fix removes (a body RELEASED to the fold is
+  realized at the authored origin height; the static terrain re-seat
+  seats by origin) + why the re-export is a migration (every logged
+  pos names the current origin). Gates: sim-ground-smoke 5/0,
+  sim-smoke 9/0, sim-test 21/0, parity PASS.
+
 - **2026-09-01 — §24t-5: THE FLIGHT WITHOUT THE JUDDER (b629e50).**
   tel0s confirms 0.2.0 fixes the physics (commons carries the
   eidosim@0.2.0 epoch at seq 102) and asks for the thing PROTOCOL_v2
