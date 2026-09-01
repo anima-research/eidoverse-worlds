@@ -662,8 +662,21 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   };
   const runtime = [...walk('client'), ...walk('server'), ...walk('mcpl')];
   const importers = runtime.filter(f => /from ['"][^'"]*shared\/flight/.test(readFileSync(f, 'utf8')));
-  check(`no shipped runtime module imports flight (${runtime.length} files scanned)`,
-        importers.length === 0, importers.join(', '));
+  // Flight is WIRED now, so "nothing imports it" has served its purpose and is
+  // false on purpose. The property that must hold from here is the one mica
+  // actually asked for: every importer gates on a capability that defaults to
+  // deny, and an agent gaining flight is not the commons gaining it.
+  check(`only mcpl/agent.ts imports flight (${importers.length} importer(s))`,
+        importers.length > 0 && importers.every(f => /mcpl\/agent\.ts$/.test(f)),
+        importers.join(', '));
+  for (const f of importers) {
+    const src = readFileSync(f, 'utf8');
+    check(`${f} resolves a capability before it flies`,
+          /resolveFlight\(/.test(src) && /flightAllowed\(\)/.test(src));
+    check(`${f} refuses out loud when denied`, /cannot fly here/.test(src));
+  }
+  const nonAgent = importers.filter(f => !/^mcpl\//.test(f));
+  check('no client/ or server/ module imports flight', nonAgent.length === 0, nonAgent.join(', '));
 }
 
 // ------------------------------------------------------- flown, and found wrong

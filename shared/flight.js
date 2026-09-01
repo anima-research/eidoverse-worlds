@@ -89,11 +89,21 @@ export const DEFAULT_CONFIG = {
   // FAVOUR is the exact rubber-banding T2 exists to forbid, so the names now
   // say which optimum they mean and the glide numbers are DERIVED from the
   // curve by search rather than asserted next to it.
+  // SPEED, flown and reported too fast. Janus, watching from the ground:
+  // "the flying speed is super fast". 11 m/s of minimum sink is ~25 mph, which
+  // is a real albatross cruising and reads as a missile at human scale in a
+  // 160m world -- she crossed a third of the commons while I typed a sentence.
+  //
+  // Halved. 5.5 m/s min sink, best glide ~6.4 m/s, which is a fast jog: quick
+  // enough to feel like flight, slow enough that an onlooker can follow her
+  // with their eyes and a 90m lap is a journey rather than a blink. The glide
+  // RATIO is untouched at ~12.9, so the polar's shape -- and every T2 number
+  // that depends on it -- is the same curve, just flown slower.
   polar: {
-    minSinkSpeed: 11,         // m/s -- minimum sink. The shape parameter.
-    sinkAtMinSink: 11 / 12,   // m/s at that speed
-    minSpeed: 6,              // stall (spec R1 triggers below this)
-    maxSpeed: 30,             // never-exceed; drag rises steeply past best
+    minSinkSpeed: 5.5,        // m/s -- minimum sink. The shape parameter.
+    sinkAtMinSink: 5.5 / 12,  // m/s at that speed
+    minSpeed: 3,              // stall (spec R1 triggers below this)
+    maxSpeed: 15,             // never-exceed; drag rises steeply past best
     curvature: 3,             // how sharply sink rises either side of min-sink
   },
 
@@ -168,7 +178,14 @@ export const DEFAULT_CONFIG = {
   bounds: {
     ceiling: 60,              // m; soft -- banks you back, never a wall-slam
     softMargin: 8,            // m of authority band below the ceiling
-    radius: 80,               // m from origin; terrain is ~160m square
+    // The terrain is ~160m SQUARE, so an 80m radius is the inscribed circle --
+    // it fences off the corners and, worse, anyone standing at x=78 is already
+    // outside it. Janus and I both ended up out there simply by walking, and
+    // R3 then banked her back toward the origin every frame while glide_to
+    // insisted on a heading: she flew 146m the wrong way. 110m circumscribes
+    // the square's half-diagonal (113m) closely enough to keep her over
+    // terrain without fencing the ground people actually stand on.
+    radius: 110,              // m from origin; terrain is ~160m square
     groundClearance: 0.15,    // m; below this counts as ground contact
   },
 
@@ -788,7 +805,7 @@ function groundContact(cfg, s, groundY, ragdoll) {
  *  four seconds and 4 m of altitude, which is enough to find out whether you
  *  are flying.
  */
-export function takeOff(cfg, state, { launchSpeed = null, boost = 9.0 } = {}) {
+export function takeOff(cfg, state, { launchSpeed = null, boost = 9.0, groundY = null } = {}) {
   const s = { ...state, pos: { ...state.pos }, vel: { ...state.vel }, events: [] };
   if (s.wings === 'FOLDED') {
     s.events.push({ t: s.t, kind: 'takeoff.refused', reason: 'wings folded' });
@@ -804,7 +821,11 @@ export function takeOff(cfg, state, { launchSpeed = null, boost = 9.0 } = {}) {
   }
   s.phase = 'PILOT'; s.mode = 'live';
   s.airspeed = launchSpeed ?? bestGlide(cfg).speed;
-  s.pos.y = Math.max(s.pos.y, cfg.bounds.groundClearance + 0.6);
+  // Clear the GROUND, not the world origin. `Math.max(pos.y, 0.75)` is only
+  // right where the terrain is at zero; on the commons at (-25,-65) the ground
+  // is -0.76m, so it launched her BELOW the surface and she "landed" on the
+  // next tick. The caller passes the height under her feet.
+  s.pos.y = (groundY ?? 0) + cfg.bounds.groundClearance + 0.6;
   s.launchV = boost;      // decays in stepPilot; see the note there
   s.bank = 0; s.pitch = 0;
   s.phaseT = 0;
