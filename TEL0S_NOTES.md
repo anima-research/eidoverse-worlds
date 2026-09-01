@@ -390,6 +390,62 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-09-01 — §24t-8: COLLIDERS FOR THE SIM, AND THE PROD FLEET
+  (a2c29dc, 5caa264).** tel0s's ruling: an asset's geometry reaches the
+  sim the one way Covenant III allows — the SEQUENCER stamps it into
+  history. EIDOSIM@0.3.0: server/boxes.ts is a warm cache of model
+  boxes (summarizeGlb, mm-rounded), filled on every join and awaited
+  on the wire before a spawn/epoch reaches its sync validator
+  (messages.ts; only a never-seen lib pays one file read);
+  `spawn.box` under a live epoch (client box discarded), `epoch.boxes`
+  for every standing lib at the barrier. The sim folds them into a
+  STATIC table (yaw-rotated scaled local box → world AABB; yaw via
+  simmath's sinT/cosT — the kernel's first shipped use); a punted body
+  carries its own. Per tick: a static whose top the body was above and
+  whose footprint it overlaps is GROUND (land on a crate, slide, rest
+  ON it — `b.on` names the support; the applier skips the terrain lift
+  then); one met from the side pushes out along the shallower
+  horizontal axis and reflects that velocity (wall bounce); a slider
+  losing its support by more than STEP_DOWN 0.3 FALLS instead of
+  gluing; a rested body is a static again. Collider changes (place/
+  remove/mount/dismount/motion) advance to their entry's tick first —
+  live fold ≡ replay, proven. 0.1.0 AND 0.2.0 carried untouched:
+  commons's 0.2.0 replay digest IDENTICAL under the new build (proved
+  against HEAD's sim.js on the real log). Scope stated: no body–body
+  collisions in flight, resting bodies not woken, structures not
+  stamped (⚑ §6). sim-test 21→32, sim-smoke 9→10 (the stamp, not the
+  client's), sim-ground-smoke 7/0, replaybench, parity. PROTOCOL_v2
+  §2 delivered note + §6 row. THE PROD FLEET (tel0s copied 44 rigs
+  into the overlay — one directory too deep; flattened): board before
+  ragdoll 56/3, ammodoll 68/1 → after ragdoll 59/1, ammodoll 69/0,
+  bodysim 20/0, reachrig, settled-pose 19/0, NO table touched. (1)
+  HANDOVER carried no hinge axes: the transported normals were rebuilt
+  from REST on a seeded doll → hands 12–22cm off after ONE step on
+  41/44 rigs (the one-rig check sat on a rig that barely moved its
+  arms — now fleet-wide); snapshots carry `h`. (2) snapshot ROUNDING
+  is chaos food: 0.1mm/1mm·s⁻¹ → 1–35cm at 80 steps on 20 rigs; exact
+  → 0.00cm; the packer is full precision. (3) tel0s's skeleton is
+  authored 0.233m forward of its root: _followRoot drew the corpse
+  23cm from its physics and the drive read bone positions 23cm off
+  the particles → spine antiparallel, stale frame, chest 42° roll —
+  drive directions from particles now, _measureHipsLocal in the base
+  (both engines). (4) ammodoll widened limits in the UNcentred Euler
+  frame while Bullet measures in the centred one (Euler angles are
+  not additive across axes): feline's stride still 8.6–10.7° over →
+  fixed-point iteration of the centering; a LOCKED axis born off locks
+  AT the born angle. OPEN, NAMED BY THE BOARD: post-landing CREEP —
+  the ground contact is a pure vertical clamp; mythos-2 after a shove
+  lands +37cm then creeps back 39cm over 5.5s while an arm fights its
+  limits (painthair 7cm). Every constraint family toggled changes the
+  outcome (chaos); a sleep-regime grip made feline flail → reverted.
+  Wants a tuned ground-friction law swept in rag-tune — colleague
+  territory; the shove check judges the shove (a second after), a new
+  check judges the creep. UPSTREAM-FLAGS §3a carries the whole run.
+  LESSONS: a per-rig check on FLEET[0] is a check on one rig's
+  temperament; a handover is the SAME body — carry every transported
+  state and carry it exactly; when an instrument-scoped fix moves the
+  board the wrong way, revert and name the item rather than tune.
+
 - **2026-09-01 — §24t-7: THE ARM FITTED TOO EARLY (8488283).** tel0s,
   after §24t-6, on FLAT ground, reloaded, private window: "the barrel
   really is dropping through the ground for a moment before resettling
