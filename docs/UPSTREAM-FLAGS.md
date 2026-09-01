@@ -79,6 +79,48 @@ our 2-rig local fleet tripped; prod's 14-rig fleet may trip them too:
   texture serving-variants were being tumbled as bodies, and one
   long-standing "8.6cm handover" red was an artifact rig all along.
 
+### 3a. The prod-fleet run (2026-09-01, 44 rigs) — four instrument fixes, one tuning item
+
+Run against prod's full avatar roster (44 VRMs incl. the two overlay rigs).
+Board before: ragdoll 56/3, ammodoll 68/1. After: **ragdoll 59/1, ammodoll
+69/0, bodysim 20/0** — the one red is a NEW check that names the tuning
+item below. None of these touch the joint tables.
+
+- **Handover carried no hinge axes** (`ragdoll.js`, `rigmeasure.js`). The
+  hinge normal is transported with the limb each step; a doll seeded from a
+  snapshot rebuilt it from REST while its particles were mid-tumble, and the
+  first step fired the full elbow/knee correction into the hands: 12–22cm off
+  after ONE step on 41/44 rigs. The one-rig check sat on a rig that barely
+  moved its arms. Snapshots now carry `h` (hinge normals, in `this.hinge`
+  order); a snapshot without it (another engine's) derives them from the live
+  limbs. The check runs on every rig.
+- **Snapshot rounding is chaos food** (`rigmeasure.js`). 0.1mm / 1mm·s⁻¹
+  rounding read as 0.01cm after a step and 1–35cm after 80 on 20 rigs; exact
+  numbers continue to 0.00cm. The packer is full-precision now (~1KB, rare).
+- **Drive directions from particles, not bone positions** (`ragdoll.js`).
+  The bone's world position is only ever placed by `_followRoot`; on a rig
+  whose skeleton is authored off its root origin (tel0s: 0.233m forward) the
+  hips bone sat 23cm from the hips particle, the hips→spine direction was
+  noise, the spine read antiparallel and held a stale frame, and the chest
+  inherited 42° of roll. `_followRoot` (bodyengine.js) now honours the
+  hips' rest offset from the root too (`_measureHipsLocal`, both engines).
+- **Bullet limits contain the born pose as Bullet measures it**
+  (`ammodoll.js`). The widening read the born excursion in the uncentred
+  frame; the constraint measures in the centred one, and Euler angles are
+  not additive across axes — feline's stride (hind leg flexed AND splayed)
+  still read 8.6–10.7° over. The widening iterates to the fixed point of its
+  own centering (1–2 rounds), and a LOCKED axis the rig is born off is locked
+  *at the born angle* (zero freedom kept, no frame-one fight).
+- **TUNING ITEM — post-landing creep** (open). A body that is down keeps
+  whatever horizontal velocity its joints chatter into it: the ground contact
+  is a pure vertical clamp (`_terrain`). mythos-2 after a 2.5 m/s shove lands
+  +37cm (correct) then creeps back 39cm over 5.5s while an arm fights its
+  limits to the 8s deadline; mythos_painthair 7cm. Disabling ANY constraint
+  family changes the outcome (chaos, no single culprit); a sleep-regime grip
+  was tried and made feline flail. Wants a tuned ground-friction law swept in
+  `rag-tune`. The new ragdoll-test check ("a body that is down does not
+  creep") is the instrument.
+
 ## 3b. Asset bug: the barrels model's origin is 2m from its mesh
 
 `eidoverse/assets/models/scifi_barrels_group_of_four.glb` ships its

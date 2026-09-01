@@ -90,12 +90,33 @@ export class BodyEngineBase {
    *  centimetres up and stops — exactly what that looked like). Once lifted,
    *  the ceiling moves up with the body: releasing from a height starts the
    *  NEXT sim's rootStartY there, and the fall brings it back down. */
+  /** Where the hips sit relative to the root, horizontally, in the ROOT's own
+   *  frame — measured from the rest pose once at build. Most rigs author the
+   *  pelvis above the origin and this is ~0; tel0s authors its whole skeleton
+   *  0.233m forward of it, and a root-follow that assumed zero drew that body
+   *  23cm from where its particles were — and, worse, fed the drive a hips
+   *  bone position 23cm off the hips particle (§24t-8). */
+  _measureHipsLocal(restHipsWorld) {
+    const root = this.avatar.root;
+    if (!restHipsWorld || !root) { this.hipsLocalX = 0; this.hipsLocalZ = 0; return; }
+    const dx = restHipsWorld.x - root.position.x, dz = restHipsWorld.z - root.position.z;
+    const yaw = root.rotation?.y ?? 0;
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    // world → root-local (inverse yaw)
+    this.hipsLocalX = dx * c - dz * s;
+    this.hipsLocalZ = dx * s + dz * c;
+  }
+
   _followRoot() {
     const hips = this.p.hips;
     if (!hips) return;
     const root = this.avatar.root.position;
-    root.x = hips.x;
-    root.z = hips.z;
+    const yaw = this.avatar.root.rotation?.y ?? 0;
+    const lx = this.hipsLocalX ?? 0, lz = this.hipsLocalZ ?? 0;
+    const c = Math.cos(yaw), s = Math.sin(yaw);
+    // root-local → world (yaw), then the root goes where the hips minus that is
+    root.x = hips.x - (lx * c + lz * s);
+    root.z = hips.z - (-lx * s + lz * c);
     const y = hips.y - this.hipsOffset;
     if (this.pinned && y > this.rootStartY) this.rootStartY = y;
     root.y = Math.min(this.rootStartY, y);

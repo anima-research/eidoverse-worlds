@@ -1247,7 +1247,16 @@ export class AmmoRagdoll extends BodyEngineBase {
         // contain the born pose would quietly hand back +/-BUILD_WIDEN of the
         // very freedom the zero was there to remove — 6.9 degrees per joint,
         // which up a three-body trunk is most of a spine's worth of corkscrew.
-        if (anatHi[i] - anatLo[i] === 0) continue;
+        if (anatHi[i] - anatLo[i] === 0) {
+          // …but a locked axis the rig is BORN off (feline's stride pose
+          // twists the upper leg 10.7° on its locked axis, §24t-8) would be
+          // annihilated on frame one all the same — so the lock MOVES to the
+          // born angle: still zero freedom, no fight. On a handover the lock
+          // may sit no further than BUILD_WIDEN from the table's zero (the
+          // same ratchet guard as below); a fresh build locks where it stands.
+          lo[i] = hi[i] = Math.max(anatLo[i] - cap, Math.min(anatHi[i] + cap, born[i]));
+          continue;
+        }
         lo[i] = Math.max(anatLo[i] - cap, Math.min(lo[i], born[i] - BUILD_WIDEN));
         hi[i] = Math.min(anatHi[i] + cap, Math.max(hi[i], born[i] + BUILD_WIDEN));
       }
@@ -1262,8 +1271,34 @@ export class AmmoRagdoll extends BodyEngineBase {
       // PARENT frame by the range midpoint makes every range symmetric and
       // pushes the wrap point to 180°: the same forbidden-way shove that ran
       // to 145° then stops at 7°, and a 10× kick still does.
-      const mid = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
-      const midQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(mid[0], mid[1], mid[2], 'XYZ'));
+      let mid = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+      let midQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(mid[0], mid[1], mid[2], 'XYZ'));
+      // …AND CONTAIN THE BORN POSE AS BULLET WILL MEASURE IT. The widening
+      // above read the born excursion as Euler angles in the UNcentred frame;
+      // the constraint measures them in the centred one and the instrument
+      // adds `mid` back — and Euler angles are not additive across axes, so a
+      // pose bent on two axes at once (feline's stride: a hind leg both
+      // flexed and splayed) still reads up to ~10° over after the widening
+      // (§24t-8). Re-measure in the centred frame and widen again until the
+      // range is a fixed point of its own centering (converges in 1–2 rounds).
+      for (let round = 0; round < 4; round++) {
+        const eulC = new THREE.Euler().setFromQuaternion(midQ.clone().invert().multiply(relF), 'XYZ');
+        const bornC = [eulC.x + mid[0], eulC.y + mid[1], eulC.z + mid[2]];
+        let moved = false;
+        for (let i = 0; i < 3; i++) {
+          if (anatHi[i] - anatLo[i] === 0) {
+            const v = Math.max(anatLo[i] - cap, Math.min(anatHi[i] + cap, bornC[i]));
+            if (v !== lo[i]) { lo[i] = hi[i] = v; moved = true; }
+            continue;
+          }
+          const nlo = Math.max(anatLo[i] - cap, Math.min(lo[i], bornC[i] - BUILD_WIDEN));
+          const nhi = Math.min(anatHi[i] + cap, Math.max(hi[i], bornC[i] + BUILD_WIDEN));
+          if (nlo !== lo[i] || nhi !== hi[i]) { lo[i] = nlo; hi[i] = nhi; moved = true; }
+        }
+        if (!moved) break;
+        mid = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+        midQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(mid[0], mid[1], mid[2], 'XYZ'));
+      }
       const basisA = basis.clone().multiply(midQ);
 
       // frames: basis from rest anatomy (parent's carries the centering),
@@ -1902,6 +1937,7 @@ export class AmmoRagdoll extends BodyEngineBase {
     const measured = (this.p.hips?.y ?? live.hips?.y ?? 0) - avatar.root.position.y;
     const constant = restHipsY != null ? restHipsY - avatar.root.position.y : measured;
     this.hipsOffset = Math.abs(measured - constant) > 0.05 ? constant : measured;
+    this._measureHipsLocal(this.restP?.hips ?? null);   // sideways too (bodyengine.js)
   }
 
   // ---------------------------------------------------------------- instruments

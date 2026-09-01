@@ -469,6 +469,30 @@ export class Ragdoll extends BodyEngineBase {
         n: new THREE.Vector3().crossVectors(_a, _c.normalize()).normalize(),
       });
     }
+    // A HANDOVER MUST CARRY THE TRANSPORTED AXES. The hinge normal is physical
+    // state: it turns with the limb every step, and a doll rebuilt mid-tumble
+    // from the REST normals measures its elbows and knees against axes the
+    // limbs left forty frames ago — the first step then fires the full
+    // correction into the lightest particles: hands 12–22cm off after ONE
+    // step on 41 of 44 fleet rigs (§24t-8; the old one-rig check happened to
+    // sit on a rig that barely moved its arms). A snapshot carries them (`h`,
+    // in this.hinge order); one that does not (another engine's) gets the
+    // next best thing — normals derived from where the limbs ARE, not where
+    // they rested.
+    if (seedVel?.j) {
+      const h = Array.isArray(seedVel.h) && seedVel.h.length === this.hinge.length * 3 ? seedVel.h : null;
+      this.hinge.forEach((H, i) => {
+        if (h) { H.n.set(h[i * 3], h[i * 3 + 1], h[i * 3 + 2]); if (H.n.lengthSq() > 1e-8) { H.n.normalize(); return; } }
+        _a.copy(this.p[H.b]).sub(this.p[H.a]);
+        if (_a.lengthSq() < 1e-8) return;
+        _a.normalize();
+        // keep the rest normal's fold sense, re-squared against the live limb
+        _c.copy(H.n).cross(_a);                    // the fold direction implied by the rest normal
+        _c.addScaledVector(_a, -_c.dot(_a));
+        if (_c.lengthSq() < 1e-8) return;
+        H.n.crossVectors(_a, _c.normalize()).normalize();
+      });
+    }
 
     // ---- capsules: every BONE is a fat segment, and pairs of them push apart
     this._buildCapsules();
@@ -536,6 +560,7 @@ export class Ragdoll extends BodyEngineBase {
     this.hipsOffset = this.rest.hips
       ? this.rest.hips.y - avatar.root.position.y
       : 0.82;
+    this._measureHipsLocal(this.rest.hips);   // ...and sideways (bodyengine.js)
   }
 
   /** The body's own frame, from its own particles: right across the pelvis, up
@@ -770,6 +795,12 @@ export class Ragdoll extends BodyEngineBase {
   }
 
   _terrain() {
+    // NOTE (§24t-8): this contact is a pure vertical clamp — a grounded joint
+    // keeps whatever horizontal velocity it has. That is why a body already
+    // down can CREEP while an arm fights its limits (mythos-2 after a shove:
+    // 39cm over 5.5s; ragdoll-test names it). A sleep-regime grip was tried
+    // and made the fleet worse (feline flailing at capture): the fix is a
+    // tuned ground-friction law, swept in rag-tune — colleague territory.
     for (const j of JOINTS) {
       const p = this.p[j]; if (!p) continue;
       const g = heightAt(p.x, p.z) + this._clear(j);
@@ -1053,7 +1084,12 @@ export class Ragdoll extends BodyEngineBase {
       _v.copy(q).sub(this.prev[name]).divideScalar(FIXED_DT);
       pack.add(name, q, _v);
     }
-    return pack.pack();
+    const s = pack.pack();
+    // the transported hinge axes — physical state the particles alone do not
+    // carry (see the constructor's handover note). Optional in the format:
+    // a receiver without hinges (another engine) ignores it.
+    s.h = this.hinge.flatMap((H) => [H.n.x, H.n.y, H.n.z]);   // exact, like p/v
+    return s;
   }
 
   /** Advance the sim and push the result into the avatar as a held pose.
@@ -1104,7 +1140,14 @@ export class Ragdoll extends BodyEngineBase {
     const pose = {};
     for (const d of this.drive) {
       const bn = this.nodes[d.bone];
-      const bwp = bn.getWorldPosition(_a);
+      // the bone's direction runs from where the sim says the joint IS —
+      // its particle — to its child's. The bone's world position is the
+      // skeleton's word, and the skeleton is only ever placed by
+      // _followRoot: on a rig whose hips sit off its root origin (tel0s:
+      // 23cm forward) the two disagreed by exactly that, the hips→spine
+      // direction was noise, the spine read antiparallel to rest and held
+      // a stale frame, and the chest inherited 42° of roll (§24t-8).
+      const bwp = this.p[d.bone] ?? bn.getWorldPosition(_a);
       _b.copy(this.p[d.child]).sub(bwp);
       if (_b.lengthSq() < 1e-6) continue;
       _b.normalize();

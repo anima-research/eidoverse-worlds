@@ -138,8 +138,14 @@ export function snapshotPacker() {
   return {
     add(name, pos, vel) {
       j.push(name);
-      p.push(+pos.x.toFixed(4), +pos.y.toFixed(4), +pos.z.toFixed(4));
-      v.push(+vel.x.toFixed(3), +vel.y.toFixed(3), +vel.z.toFixed(3));
+      // FULL PRECISION. A handover is the SAME body continuing on another
+      // machine, and a tumbling body is chaotic: rounding positions to 0.1mm
+      // and velocities to 1mm/s here read as 0.01cm after one step and
+      // 1–35cm after eighty on 20 of 44 fleet rigs, while the exact numbers
+      // continue to 0.00cm (§24t-8). JSON's shortest-round-trip formatting
+      // is exact; a snapshot is a rare event and ~1KB is nothing on the wire.
+      p.push(pos.x, pos.y, pos.z);
+      v.push(vel.x, vel.y, vel.z);
     },
     pack() { return { j, p, v }; },
   };
