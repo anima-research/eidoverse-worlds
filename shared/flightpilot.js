@@ -124,6 +124,7 @@ export function pilotHelp(binds = DEFAULT_BINDS) {
     'Shift  spoil -- bleed altitude without gaining speed',
     'Space  flap (expensive: -2/s stamina, you are a glider)',
     'X  rehearse DOWN   R  rehearse RECOVER',
+    'C  re-attach the chase camera (drag to look around)',
   ].join('\n');
 }
 
