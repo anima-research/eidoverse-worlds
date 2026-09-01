@@ -390,6 +390,39 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-09-01 — §24t-7: THE ARM FITTED TOO EARLY (8488283).** tel0s,
+  after §24t-6, on FLAT ground, reloaded, private window: "the barrel
+  really is dropping through the ground for a moment before resettling
+  on the surface" — and rightly suspicious of the interpolation, since
+  it began with that build. Two probes cleared the interpolation (a
+  convex blend of two on-or-above-ground poses cannot undercut them;
+  0/300 frames below the law; a position.y setter trap on the barrel
+  caught zero below-ground writes). The third probe — a copy of
+  commons, punting FROM the page, sampling the RENDERED mesh's lowest
+  world point per frame — showed the mesh climbing 1.37m while the
+  origin hopped 0.28m: the cosmetic tumble was running on the barrels
+  and sweeping the 1.3m (scaled) arm in an arc; for tel0s's −z/+x
+  punts the arc goes DOWN through the ground, and the righting slerp
+  brings it back — the report, verbatim. WHY the §24t-4 arm gate let
+  it through: the geometry was fitted from the collider box ONCE at
+  the applier's first sight of the body; a body already resting in
+  the join snapshot is seen on the first frame after hydrate, before
+  its model has loaded and its box exists → cached "origin-centred"
+  for the tab's life. Every earlier probe spawned then punted (model
+  loaded, arm right); tel0s's barrel has been a resting sim body since
+  punt 104, so EVERY RELOAD since — the first being for the
+  interpolation build — re-armed the tumble; the same stale fit
+  zeroed the §24t-6 lift ("still getting it to an extent"). FIX: the
+  fit re-runs whenever the collider box identity changes; unknown
+  geometry = no tumble, no lift. sim-ground-smoke flight 3 reloads the
+  page with the body in the join snapshot and asserts no tumble (max
+  tilt 0.0°) and the mesh never below its ground (0.000m) — on the
+  previous build the same flight went 1.37m up, then through the
+  floor. LESSON for the notes: a per-frame gate that reads a lazily
+  built index must re-read it, never memoize its absence. Gates:
+  sim-ground-smoke 7/0, sim-smoke 9/0, parity PASS; commons-copy probe
+  0 frames below ground.
+
 - **2026-09-01 — §24t-6: THE GHOST'S VERTICAL HALF (aaccf29).** tel0s:
   "gravity overrides and the barrel clips down through the ground when
   I punt it, before it pops back up to its new resting place on the
