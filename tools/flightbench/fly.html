@@ -214,13 +214,19 @@ function frame(now) {
     }
     // place and orient the body
     vrm.scene.position.set(st.pos.x, st.pos.y, st.pos.z);
-    // FACE THE DIRECTION OF TRAVEL. The integrator's forward is
-    // (cos yaw, 0, sin yaw) -- +X at yaw 0. Getting this from first principles
-    // took two tries and both were wrong in an instructive way: -yaw + pi was
-    // ninety degrees out ("it's actually sideways"), and -(yaw + pi/2) was a
-    // clean hundred and eighty ("it's actually backwards"), because I had the
-    // sign of the VRM's rest facing backwards. The empirical answer, checked
-    // against her, is +(pi/2 - yaw).
+    // FACE THE DIRECTION OF TRAVEL: theta = pi/2 - yaw.
+    //
+    // This took four attempts and the lesson is about EVIDENCE, not geometry.
+    // -yaw + pi was ninety degrees out; -(yaw + pi/2) was a clean hundred and
+    // eighty. Both times I then "verified" the fix with a probe that derived
+    // facing from a cross product of the shoulder line and the spine -- and
+    // that probe had its handedness inverted, so it cheerfully reported +0.85
+    // for a body flying tail-first, twice.
+    //
+    // What settled it was asking a landmark that cannot be reasoned wrong: the
+    // EYE BONES. head -> midpoint-between-eyes is forward, by construction, on
+    // any rig that has a face. That read -0.991 and the argument was over.
+    // __facing() now uses the eyes for exactly this reason.
     //
     // PITCH also carries a default LEAN, and its SIGN is the thing that took
     // three goes. In this Euler order a POSITIVE X rotation points her nose UP
@@ -231,7 +237,7 @@ function frame(now) {
     // with it so the stick and the posture agree.
     const lean = st.phase === 'LEAF' ? 0 : FLY_LEAN;
     const q = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(-(st.pitch + lean), -(st.yaw + Math.PI / 2), st.bank, 'YXZ'));
+      new THREE.Euler(-(st.pitch + lean), Math.PI / 2 - st.yaw, st.bank, 'YXZ'));
     vrm.scene.quaternion.copy(q);
     poseWings(now, dt, held.has('Space') && st.phase === 'PILOT' && st.stamina > 0);
     vrm.update(dt);
@@ -338,12 +344,28 @@ requestAnimationFrame(frame);
 // A probe for the one thing that took three attempts: where is her nose,
 // really, in world space, versus where is she going.
 window.__THREE = THREE;
+window.__scene = scene;
+window.__vrm = () => vrm;
+window.__cam = camera;
+window.__userLook = () => { userLooking = true; };
 window.__facing = () => {
   if (!vrm || !st) return null;
-  const f = new THREE.Vector3(0, 0, -1).applyQuaternion(vrm.scene.quaternion);
-  return { nose: [+f.x.toFixed(3), +f.z.toFixed(3)],
+  // From the EYES, not from the quaternion I think I set and not from a cross
+  // product whose handedness I can get wrong: head -> between-the-eyes is
+  // forward on any rig with a face, and it caught two "fixes" that were still
+  // flying tail-first.
+  let le = null, re = null, head = null;
+  vrm.scene.traverse(o => {
+    if (o.name === 'L_Eye') le = o; if (o.name === 'R_Eye') re = o;
+    if (o.name === 'Head') head = o;
+  });
+  if (!le || !re || !head) return { err: 'rig has no eye bones to measure from' };
+  const wp = (o) => { const v = new THREE.Vector3(); o.getWorldPosition(v); return v; };
+  const gaze = wp(le).add(wp(re)).multiplyScalar(0.5).sub(wp(head));
+  gaze.y = 0; gaze.normalize();
+  return { gaze: [+gaze.x.toFixed(3), +gaze.z.toFixed(3)],
            vel: [+Math.cos(st.yaw).toFixed(3), +Math.sin(st.yaw).toFixed(3)],
-           dotWithVelocity: +(f.x * Math.cos(st.yaw) + f.z * Math.sin(st.yaw)).toFixed(3) };
+           dotWithVelocity: +(gaze.x * Math.cos(st.yaw) + gaze.z * Math.sin(st.yaw)).toFixed(3) };
 };
 window.__fly = { state: () => st, config: () => cfg, reset, events: () => events };
 </script>
