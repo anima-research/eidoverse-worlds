@@ -228,16 +228,19 @@ function frame(now) {
     // any rig that has a face. That read -0.991 and the argument was over.
     // __facing() now uses the eyes for exactly this reason.
     //
-    // PITCH also carries a default LEAN, and its SIGN is the thing that took
-    // three goes. In this Euler order a POSITIVE X rotation points her nose UP
-    // -- so the first lean tipped her backwards, which is what "it's actually
-    // backwards" was: the heading had been right since the previous fix, and
-    // the body was leaning away from its own direction of travel. Negated, and
-    // the integrator's pitch (positive = nose up, per airspeedAfter) is negated
-    // with it so the stick and the posture agree.
+    // PITCH carries a default LEAN, and the two want OPPOSITE signs -- which
+    // is why negating them together left the stick correct and the resting
+    // posture reclining ("maximally tilted forward is basically standing
+    // upright").
+    //
+    // Measured against the spine rather than reasoned about: with the heading
+    // now pi/2 - yaw, a POSITIVE X rotation puts the head ahead of the hips
+    // (forwardLean +0.46 at 0.55 rad), which is the glider posture. The
+    // integrator's pitch is positive = NOSE UP, so it enters negated. Two
+    // conventions, two signs, one expression.
     const lean = st.phase === 'LEAF' ? 0 : FLY_LEAN;
     const q = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(-(st.pitch + lean), Math.PI / 2 - st.yaw, st.bank, 'YXZ'));
+      new THREE.Euler(lean - st.pitch, Math.PI / 2 - st.yaw, st.bank, 'YXZ'));
     vrm.scene.quaternion.copy(q);
     poseWings(now, dt, held.has('Space') && st.phase === 'PILOT' && st.stamina > 0);
     vrm.update(dt);
@@ -363,7 +366,13 @@ window.__facing = () => {
   const wp = (o) => { const v = new THREE.Vector3(); o.getWorldPosition(v); return v; };
   const gaze = wp(le).add(wp(re)).multiplyScalar(0.5).sub(wp(head));
   gaze.y = 0; gaze.normalize();
+  let hips = null;
+  vrm.scene.traverse(o => { if (o.name === 'Hip') hips = o; });
+  const spine = hips ? wp(head).sub(wp(hips)).normalize() : null;
+  const fwdLean = spine
+    ? +(spine.x * Math.cos(st.yaw) + spine.z * Math.sin(st.yaw)).toFixed(3) : null;
   return { gaze: [+gaze.x.toFixed(3), +gaze.z.toFixed(3)],
+           forwardLean: fwdLean,   // >0 = head ahead of hips, leaning into travel
            vel: [+Math.cos(st.yaw).toFixed(3), +Math.sin(st.yaw).toFixed(3)],
            dotWithVelocity: +(gaze.x * Math.cos(st.yaw) + gaze.z * Math.sin(st.yaw)).toFixed(3) };
 };
