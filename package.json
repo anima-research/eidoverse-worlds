@@ -21,6 +21,7 @@
   },
   "scripts": {
     "typecheck:flight": "bunx tsc -p tsconfig.flight.json",
-    "test:flight": "bun tools/flight-test.ts"
+    "test:flight": "bun tools/flight-test.ts",
+    "test:flight:headless": "bun tools/flight-headless-test.ts"
   }
 }

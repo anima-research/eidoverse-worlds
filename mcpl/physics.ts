@@ -243,8 +243,42 @@ async function skeletonFor(httpBase: string, avatarPath: string) {
       // a lock either continues another lock, or hangs off the head
       hairParent[name] = (pn && /^Hair_\d+_\d+$/.test(pn)) ? pn : "head";
     }
-    if (Object.keys(hairParent).length) {
-      Object.defineProperty(P, "__hairParent", { value: hairParent, enumerable: false });
+
+    // WINGS, by the same argument and for the same reason the hair needed it.
+    //
+    // The stand-in is built from HUMANOID bones, and [LR]_Wing_* are not
+    // humanoid -- VRM has no slot for them. So a headless body arrived with no
+    // wing nodes at all, exactly as it once arrived with no hair: ammodoll's
+    // wing block traverses looking for those names, finds nothing, and an
+    // agent's ragdoll falls with no wings while the browser's has twelve.
+    // Measured on the shipped mythos-wings.vrm: 327 hair bones grafted, 12
+    // wing bones present in the file, 0 reaching the stand-in.
+    //
+    // It matters more than a missing decoration. Those twelve bodies are 63%
+    // of the doll's broadside DRAG AREA against 10% of its mass -- so a
+    // wingless stand-in is not merely unadorned, it is aerodynamically a
+    // different object, and any leaf-force model applied to it is measuring
+    // the wrong body.
+    //
+    // Chains hang off the CLAVICLE in the rig, which has no ragdoll body in
+    // this cut (the arms hang off 'chest' for the same reason), so a root wing
+    // bone is reparented to chest and the rest continue their own chain.
+    const wingParent: Record<string, string> = {};
+    for (const [name, i] of byName) {
+      if (!/^[LR]_Wing_(Upper|Lower)(_\d+)?$/.test(name)) continue;
+      P[name] = wp(i);
+      const pi = parentOf.get(i);
+      const pn = pi != null ? g.nodes[pi]?.name : null;
+      wingParent[name] = (pn && /^[LR]_Wing_/.test(pn)) ? pn : "chest";
+    }
+
+    const extraParent = { ...hairParent, ...wingParent };
+    if (Object.keys(extraParent).length) {
+      // Named __hairParent still: ammodoll and HeadlessBody both read that key,
+      // and renaming it would be a rename in three files to say the same thing.
+      // It has always meant "bones the humanoid table does not know about".
+      Object.defineProperty(P, "__hairParent", { value: extraParent, enumerable: false });
+      Object.defineProperty(P, "__wingBones", { value: Object.keys(wingParent), enumerable: false });
     }
     // VRM 0.x bodies face -Z; the reach frame algebra needs to know (six of
     // the shipped rigs). The ragdoll never asked, so this rides as a
@@ -269,8 +303,9 @@ export class HeadlessBody {
 
   private constructor(m: NonNullable<typeof simMods>, P: Record<string, any>) {
     this.m = m;
-    // realParent carries the hair chains; without it makeAvatar drops any bone
-    // that is not in its humanoid PARENT table, hair included.
+    // realParent carries the NON-HUMANOID chains -- hair, and now wings.
+    // Without it makeAvatar drops any bone that is not in its humanoid PARENT
+    // table, which is every one of them.
     const hp = (P as any).__hairParent;
     this.av = hp ? m.rig.makeAvatar(P, { realParent: { ...(m.rig as any).PARENT, ...hp } })
       : m.rig.makeAvatar(P);
