@@ -71,8 +71,15 @@ export function rigProfile(boneNames) {
       report,
     };
   }
-  const core = ['Hip', 'Spine01', 'Spine02', 'Head', 'NeckTwist01']
-    .filter(b => boneNames.includes(b));
+  // Both vocabularies, for the same reason inspectBody accepts both -- and the
+  // digest is over whichever spellings this body actually uses, so a rig does
+  // not change identity merely by being loaded in a different runtime.
+  // Same three vocabularies as inspectBody, matched the same way -- and the
+  // digest records the spellings THIS body uses, so a rig keeps its identity
+  // across runtimes that rename it.
+  const CORE_ANY = new Set(['hip', 'hips', 'spine', 'spine01', 'spine02',
+                            'chest', 'upperchest', 'head', 'neck', 'necktwist01']);
+  const core = boneNames.filter(b => CORE_ANY.has(String(b).toLowerCase()));
   const loadBearing = [
     ...Object.values(report.chains).flat().sort(),
     ...core.sort(),

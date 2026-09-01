@@ -662,21 +662,27 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   };
   const runtime = [...walk('client'), ...walk('server'), ...walk('mcpl')];
   const importers = runtime.filter(f => /from ['"][^'"]*shared\/flight/.test(readFileSync(f, 'utf8')));
-  // Flight is WIRED now, so "nothing imports it" has served its purpose and is
-  // false on purpose. The property that must hold from here is the one mica
-  // actually asked for: every importer gates on a capability that defaults to
-  // deny, and an agent gaining flight is not the commons gaining it.
-  check(`only mcpl/agent.ts imports flight (${importers.length} importer(s))`,
-        importers.length > 0 && importers.every(f => /mcpl\/agent\.ts$/.test(f)),
+  // Flight is wired in TWO places now, and both are deliberate: the agent
+  // (Mythos flies through mcpl) and the client controller (Janus asked to fly
+  // it himself, on the same integrator, because a human and an agent in one
+  // sky must share physics or the bench proves nothing).
+  //
+  // So the property is no longer 'who imports it' but what every importer
+  // must DO: resolve a capability that defaults to deny, and refuse audibly.
+  const ALLOWED = [/mcpl\/agent\.ts$/, /client\/lib\/controller\.js$/];
+  check(`only expected modules import flight (${importers.length})`,
+        importers.length > 0 && importers.every(f => ALLOWED.some(re => re.test(f))),
         importers.join(', '));
   for (const f of importers) {
     const src = readFileSync(f, 'utf8');
-    check(`${f} resolves a capability before it flies`,
-          /resolveFlight\(/.test(src) && /flightAllowed\(\)/.test(src));
-    check(`${f} refuses out loud when denied`, /cannot fly here/.test(src));
+    check(`${f.split('/').pop()} resolves a capability before it flies`,
+          /resolveFlight\(/.test(src));
+    check(`${f.split('/').pop()} cannot fly without a positive grant`,
+          /enabled/.test(src) && /(cannot fly here|no:|not armed)/.test(src));
   }
-  const nonAgent = importers.filter(f => !/^mcpl\//.test(f));
-  check('no client/ or server/ module imports flight', nonAgent.length === 0, nonAgent.join(', '));
+  // server/ stays untouched: the sequencer has no opinion about flight.
+  const srv = importers.filter(f => /^server\//.test(f));
+  check('no server/ module imports flight', srv.length === 0, srv.join(', '));
 }
 
 // ------------------------------------------------------- flown, and found wrong

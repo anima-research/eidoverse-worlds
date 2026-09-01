@@ -60,8 +60,27 @@ export function inspectBody(boneNames) {
     chains[k].sort((a, b) => depthOf(a) - depthOf(b));
   }
   const wingCount = Object.values(chains).reduce((n, c) => n + c.length, 0);
-  const missing = [];
-  for (const c of ['Hip', 'Spine02', 'Head']) if (!names.includes(c)) missing.push(c);
+  // CORE BONES BY EITHER NAME. The rig ships Tripo names (Hip, Spine02, Head),
+  // but three-vrm NORMALISES a loaded body to the VRM humanoid vocabulary --
+  // so the browser sees `hips` where the file says `Hip`, and a check written
+  // against one is blind in the other runtime. That is exactly how human
+  // flight came to report "Hip absent" on a body with 48 perfectly good bones.
+  //
+  // Each entry is a set of acceptable spellings for the same joint.
+  // Three vocabularies reach this function and they disagree about everything
+  // except meaning: the Tripo rig ships `Hip`/`Spine02`, three-vrm's humanoid
+  // map says `hips`/`chest`, and a Mixamo-derived body in the same world says
+  // `Hips`/`Spine`. Case-insensitive matching over a set of spellings is the
+  // only check that is true in all three; a literal list was blind in two of
+  // them and reported "Hip absent" on a body with 48 perfectly good bones.
+  const CORE = [
+    ['hip', 'hips'],
+    ['spine02', 'spine01', 'spine', 'chest', 'upperchest'],
+    ['head'],
+  ];
+  const lower = new Set(names.map(n => String(n).toLowerCase()));
+  const has = (alts) => alts.some(a => lower.has(a));
+  const missing = CORE.filter(alts => !has(alts)).map(alts => alts[0]);
 
   const notes = [];
   const canAnimateWings = Object.keys(chains).length >= 2 && wingCount >= 4;

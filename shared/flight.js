@@ -42,7 +42,7 @@
  *   airspeed:number, stamina:number, phaseT:number, leafV0:number,
  *   recoverAt:number|null,
  *   recoverPlan:{beatEnds:number, reopenEnds:number, ground:boolean}|null,
- *   flownAs:Phase, launchV:number,
+ *   flownAs:Phase, launchV:number, launchV0?:number, launchT?:number, launchNow?:number,
  *   lastEvent:{eventId:string|null, kind:string}|null,
  *   downEventId:string|null, recoveryGeneration:string|null,
  *   events:FlightEvent[], [k:string]:any
@@ -465,7 +465,8 @@ export function initialState(over = {}, cfg = null) {
     // --- provenance, so a log line can always say WHY the body did that
     lastEvent: null,           // { eventId, kind } of the last trusted event
     flownAs: 'PILOT',        // the phase a cut interrupted; recovery restores it
-    launchV: 0,              // decaying launch impulse (takeOff)
+    launchV: 0,              // launch impulse (takeOff); shaped by launchT
+    launchV0: 0, launchT: 0, launchNow: 0,
     downEventId: null,
     recoveryGeneration: null,
     events: [],                // emitted this step; caller drains
@@ -611,11 +612,24 @@ function stepPilot(cfg, s, dt, env) {
   // vel.y outright from the polar every frame, so takeOff's boost was thrown
   // away before it could lift anything -- a 9 m/s jump peaked at 0.74 m. Carry
   // it as a term that bleeds off instead.
-  if (s.launchV > 0.01) {
-    s.launchV *= Math.exp(-dt / 0.85);
-    if (s.launchV <= 0.01) s.launchV = 0;
-  }
-  s.vel.y = -sink + lift + climb + (s.launchV || 0);
+  // A LAUNCH BUILDS, THEN FADES. The first cut started launchV at its peak
+  // and decayed it, which is a jump: full 9 m/s on the very first frame.
+  // Janus: "taking off is extremely fast - you just zoom up into the air. I
+  // think it would be cool if the lift started slow."
+  //
+  // So the impulse is now shaped rather than merely decaying: it eases IN over
+  // the first beat or so as the wings load, peaks, and then bleeds away. That
+  // is what a bird leaving the ground does -- the first downstroke barely
+  // moves it and the third has it climbing -- and it also gives an onlooker
+  // something to watch instead of a body that is simply elsewhere.
+  if (s.launchV > 0.01 || (s.launchT ?? 0) > 0) {
+    s.launchT = (s.launchT ?? 0) + dt;
+    const spool = 1 - Math.exp(-s.launchT / 0.55);      // ~1.5s to full
+    const fade = Math.exp(-Math.max(0, s.launchT - 1.2) / 1.4);
+    s.launchNow = (s.launchV0 ?? s.launchV) * spool * fade;
+    if (s.launchNow < 0.02 && s.launchT > 1.2) { s.launchV = 0; s.launchT = 0; s.launchNow = 0; }
+  } else s.launchNow = 0;
+  s.vel.y = -sink + lift + climb + (s.launchNow || 0);
   s.vel.x = Math.cos(s.yaw) * s.airspeed;
   s.vel.z = Math.sin(s.yaw) * s.airspeed;
   s.pos.x += s.vel.x * dt;
@@ -826,7 +840,7 @@ export function takeOff(cfg, state, { launchSpeed = null, boost = 9.0, groundY =
   // is -0.76m, so it launched her BELOW the surface and she "landed" on the
   // next tick. The caller passes the height under her feet.
   s.pos.y = (groundY ?? 0) + cfg.bounds.groundClearance + 0.6;
-  s.launchV = boost;      // decays in stepPilot; see the note there
+  s.launchV = boost; s.launchV0 = boost; s.launchT = 0;   // shaped in stepPilot
   s.bank = 0; s.pitch = 0;
   s.phaseT = 0;
   s.stamina = Math.max(0, s.stamina - boost * cfg.stamina.climbPerMetre);

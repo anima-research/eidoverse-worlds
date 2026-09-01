@@ -58,21 +58,29 @@ export const DEFAULT_LEAF_FORCE = {
   // tumble and needs no new authoring.
   cdNormal: 1.28,             // flat plate, broadside (classic value)
   cdEdge: 0.06,               // edge-on: nearly nothing
-  copOffset: 0.28,            // centre of pressure, as a fraction of the plate's
+  copOffset: 0.42,            // centre of pressure, as a fraction of the plate's
                               // half-width, forward of centre. THE flutter term.
 
   // Flutter shaping. These do not create the oscillation -- the two terms above
   // do -- they set how much of it survives contact with a solver running at
   // 60Hz on a 34-body doll.
-  swirl: 0.55,                // torque gain, N.m per (m/s)^2 of normal flow
-  damp: 0.14,                 // angular damping, so it flutters rather than spins
+  // TURNED UP, on the evidence of a fall watched from the ground: "it mostly
+  // looked like a falling body". The per-plate numbers were defensible in
+  // isolation -- 79 rad/s^2 on a wing at 4 m/s -- but a wing is not free. It is
+  // bound into a joint chain that absorbs most of a torque before it becomes
+  // rotation, so the isolated figure overstates what the body actually does by
+  // a large factor. The dial has to be set against the assembly, not the plate.
+  swirl: 2.4,                 // torque gain, N.m per (m/s)^2 of normal flow
+  damp: 0.06,                 // angular damping. LOWER is more flutter: this is
+                              // what lets a swing survive into the next one
+                              // instead of being eaten between beats.
 
   // The spec wants 3.4s. Physics wants whatever it wants. This nudges the
   // assembly toward the authored period WITHOUT scripting the path: a weak
   // sinusoidal couple about the world vertical, phase-locked to a clock the
   // caller owns. At 0 the fall is purely physical and the period is emergent;
   // at 1 it is firmly herded. Read it as "how much of the leaf is authored".
-  periodAssist: 0.35,
+  periodAssist: 0.6,
   period: 3.4,                // s, the target when periodAssist > 0
 
   // Terminal speed is a CONSEQUENCE here, not a setting -- it is where drag

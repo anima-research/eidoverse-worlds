@@ -15,6 +15,63 @@ import {
   resolveFirstPersonAnchor, FP_FORWARD, FP_EYE_LIFT, FP_GAZE_AHEAD, FP_GAZE_DROP,
 } from './fp_view.js';
 
+// ---------------------------------------------------------------- flight
+// Janus: "would it be possible to add the ability for me to also fly through
+// the client ... controls like the flightbench". Yes, and it is the SAME
+// integrator an agent flies -- shared/flight.js, one function, every runtime.
+// A human and an agent in the same sky must be flying the same physics or the
+// bench proves nothing about the world.
+//
+// Default OFF and gated: F toggles it, and only when the capability provider
+// grants this body a rig. A commons avatar with no wings gets nothing.
+import {
+  makeConfig as flightConfig, initialState as flightState, step as flightStep,
+  takeOff as flightTakeOff, bestGlide,
+} from '../../shared/flight.js';
+import { pilotInput } from '../../shared/flightpilot.js';
+import { devFlightProvider, resolveFlight } from '../../shared/flightcap.js';
+
+let flight = null, flightCfg = null, flightProv = null;
+let flightBones = null;
+
+/** Called once the body is known; without a compatible rig F does nothing. */
+export function armFlight(boneNames, identity = 'me') {
+  flightBones = boneNames ?? [];
+  flightProv = devFlightProvider({ allow: [identity], label: 'client-dev' });
+  return resolveFlight(flightProv, { identity, avatar: { boneNames: flightBones } }).enabled;
+}
+
+export const flying = () => !!flight;
+// A probe, because "F did nothing" has three possible causes and they need
+// telling apart: no provider, a rig the provider refuses, or a toggle that
+// ran and then the movement loop overwrote it.
+if (typeof globalThis !== 'undefined') {
+  globalThis.__flightDebug = () => ({
+    armed: !!flightProv, bones: flightBones?.length ?? 0,
+    flying: !!flight, phase: flight?.phase ?? null,
+    verdict: flightProv
+      ? resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones } })
+      : 'no provider',
+  });
+}
+
+function toggleFlight() {
+  if (flight) { flight = null; return 'landed'; }
+  if (!flightProv) return 'flight not armed for this body';
+  const r = resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones } });
+  if (!r.enabled) return `no: ${r.reason}`;
+  flightCfg ??= flightConfig();
+  flight = flightState({
+    phase: 'GROUND',
+    pos: { x: myState.pos.x, y: myState.pos.y, z: myState.pos.z },
+    // the world's yaw convention is atan2(dx,dz); the integrator's is
+    // atan2(dz,dx). Convert, both ways, at this boundary only.
+    yaw: Math.PI / 2 - myState.yaw,
+  }, flightCfg);
+  flight = flightTakeOff(flightCfg, flight, { groundY: myState.pos.y });
+  return 'flying — W/S pitch, A/D bank, Shift spoil, Space flap, F to land';
+}
+
 export const myState = {
   pos: new THREE.Vector3(0, 0, 0),
   yaw: 0,
@@ -66,6 +123,7 @@ addEventListener('blur', () => keys.clear());
 
 bus.on('key', (e) => {
   if (e.code === 'KeyX') toggleSit();
+  if (e.code === 'KeyF') { const m = toggleFlight(); if (m) flashHint?.(m); }
   if (e.code === 'KeyZ') { posture = posture === 'lie' ? null : 'lie'; myState.seat = null; }
 });
 
@@ -294,6 +352,22 @@ export function updateMe(dt, me) {
   // ---- vertical
   const ground = resolveColliders(myState.pos, heightAt);
   const blockedTop = lastBlockedTop();
+  // FLIGHT OWNS THE BODY while it lasts -- position, heading and clip -- the
+  // same way a mantle or a ragdoll does. Walking resumes the moment she lands.
+  if (flight) {
+    const input = pilotInput(keys, flight, dt);
+    flight = flightStep(flightCfg, flight, dt, { groundY: (x, z) => heightAt(x, z), input });
+    myState.pos.set(flight.pos.x, flight.pos.y, flight.pos.z);
+    myState.yaw = Math.PI / 2 - flight.yaw;          // back to world convention
+    myState.speed = Math.hypot(flight.vel.x, flight.vel.z);
+    myState.clip = flight.wings === 'LIMP' ? 'ragdoll'
+      : (input.flap ? 'fly' : 'soar');
+    if (flight.phase === 'LANDED' || flight.phase === 'GROUND' || flight.phase === 'RAGDOLL') {
+      flight = null; grounded = true; vy = 0;
+      myState.clip = 'idle'; myState.speed = 0;
+    }
+    return;                                           // nothing else drives her
+  }
   if (mantle) {
     mantle.t += dt / 0.55;
     const k = Math.min(1, mantle.t), e = k * k * (3 - 2 * k);
