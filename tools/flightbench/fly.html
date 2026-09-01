@@ -215,18 +215,23 @@ function frame(now) {
     // place and orient the body
     vrm.scene.position.set(st.pos.x, st.pos.y, st.pos.z);
     // FACE THE DIRECTION OF TRAVEL. The integrator's forward is
-    // (cos yaw, 0, sin yaw) -- +X at yaw 0 -- and a VRM faces -Z at rest, so
-    // the model's Y rotation is -(yaw + pi/2), not -yaw + pi. The earlier
-    // mapping was ninety degrees out, which is exactly the "it's actually
-    // sideways" Janus saw: she was flying like a crab.
+    // (cos yaw, 0, sin yaw) -- +X at yaw 0. Getting this from first principles
+    // took two tries and both were wrong in an instructive way: -yaw + pi was
+    // ninety degrees out ("it's actually sideways"), and -(yaw + pi/2) was a
+    // clean hundred and eighty ("it's actually backwards"), because I had the
+    // sign of the VRM's rest facing backwards. The empirical answer, checked
+    // against her, is +(pi/2 - yaw).
     //
-    // PITCH also carries a default LEAN. A glider does not fly with its spine
-    // vertical; it lies along its flight path. So the body sits nose-down by
-    // FLY_LEAN and W/S lean it further or bring it back up, which is what
-    // trading altitude for speed feels like from inside.
+    // PITCH also carries a default LEAN, and its SIGN is the thing that took
+    // three goes. In this Euler order a POSITIVE X rotation points her nose UP
+    // -- so the first lean tipped her backwards, which is what "it's actually
+    // backwards" was: the heading had been right since the previous fix, and
+    // the body was leaning away from its own direction of travel. Negated, and
+    // the integrator's pitch (positive = nose up, per airspeedAfter) is negated
+    // with it so the stick and the posture agree.
     const lean = st.phase === 'LEAF' ? 0 : FLY_LEAN;
     const q = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(st.pitch + lean, -(st.yaw + Math.PI / 2), st.bank, 'YXZ'));
+      new THREE.Euler(-(st.pitch + lean), -(st.yaw + Math.PI / 2), st.bank, 'YXZ'));
     vrm.scene.quaternion.copy(q);
     poseWings(now, dt, held.has('Space') && st.phase === 'PILOT' && st.stamina > 0);
     vrm.update(dt);
@@ -330,5 +335,15 @@ document.getElementById('bReset').onclick = reset;
 
 enable();
 requestAnimationFrame(frame);
+// A probe for the one thing that took three attempts: where is her nose,
+// really, in world space, versus where is she going.
+window.__THREE = THREE;
+window.__facing = () => {
+  if (!vrm || !st) return null;
+  const f = new THREE.Vector3(0, 0, -1).applyQuaternion(vrm.scene.quaternion);
+  return { nose: [+f.x.toFixed(3), +f.z.toFixed(3)],
+           vel: [+Math.cos(st.yaw).toFixed(3), +Math.sin(st.yaw).toFixed(3)],
+           dotWithVelocity: +(f.x * Math.cos(st.yaw) + f.z * Math.sin(st.yaw)).toFixed(3) };
+};
 window.__fly = { state: () => st, config: () => cfg, reset, events: () => events };
 </script>
