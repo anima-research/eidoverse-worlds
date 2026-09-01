@@ -62,6 +62,10 @@ import { inspectBody } from '/shared/flightbody.js';
 
 const VRM_URL = '/assets/opt/eidoverse/assets/vrms/mythos-wings.vrm';
 const START_Y = 30;
+// How far the body lies along its flight path when flying level, in radians.
+// Not a physics term -- the integrator's pitch is the control input; this is
+// posture, the difference between a glider and a person standing in the air.
+const FLY_LEAN = 0.55;   // ~32 degrees nose-down
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));
@@ -210,8 +214,19 @@ function frame(now) {
     }
     // place and orient the body
     vrm.scene.position.set(st.pos.x, st.pos.y, st.pos.z);
+    // FACE THE DIRECTION OF TRAVEL. The integrator's forward is
+    // (cos yaw, 0, sin yaw) -- +X at yaw 0 -- and a VRM faces -Z at rest, so
+    // the model's Y rotation is -(yaw + pi/2), not -yaw + pi. The earlier
+    // mapping was ninety degrees out, which is exactly the "it's actually
+    // sideways" Janus saw: she was flying like a crab.
+    //
+    // PITCH also carries a default LEAN. A glider does not fly with its spine
+    // vertical; it lies along its flight path. So the body sits nose-down by
+    // FLY_LEAN and W/S lean it further or bring it back up, which is what
+    // trading altitude for speed feels like from inside.
+    const lean = st.phase === 'LEAF' ? 0 : FLY_LEAN;
     const q = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(st.pitch, -st.yaw + Math.PI, st.bank, 'YXZ'));
+      new THREE.Euler(st.pitch + lean, -(st.yaw + Math.PI / 2), st.bank, 'YXZ'));
     vrm.scene.quaternion.copy(q);
     poseWings(now, dt, held.has('Space') && st.phase === 'PILOT' && st.stamina > 0);
     vrm.update(dt);
@@ -273,14 +288,26 @@ function showCfg() { document.getElementById('cfg').textContent = [
   `swing ${leafLateralSwing(cfg).toFixed(2)}m   glide ${bestGlide(cfg).ratio.toFixed(1)}:1`,
   ``,
   `LEAF PRESET  [${leafName}]   1 spec / 2 brisk / 3 heavy`,
+  `period ${cfg.leaf.period.toFixed(1)}s   [ slower / ] faster`,
 ].join('\n'); }
 showCfg();
 document.getElementById('keys').textContent = pilotHelp() +
   '\nT  take off       1/2/3  leaf preset (spec / brisk / heavy)' +
+  '\n[ / ]  leaf period slower / faster' +
   '\n\ndrag to orbit, scroll to zoom';
 
 addEventListener('keydown', e => {
   if (e.code === 'KeyT') { if (st) { st = takeOff(cfg, st); for (const v of st.events) events.push(v); } return; }
+  if (e.code === 'BracketLeft' || e.code === 'BracketRight') {
+    // The period is the one leaf number Janus wanted to keep tuning ("2 and 3
+    // look good, but the period is a bit too fast"), so it is on its own keys
+    // rather than buried in a preset.
+    const d = e.code === 'BracketRight' ? 0.2 : -0.2;
+    const next = Math.max(0.4, Math.min(8, +(cfg.leaf.period + d).toFixed(2)));
+    cfg = makeConfig({ leaf: { ...cfg.leaf, period: next } });
+    showCfg();
+    return;
+  }
   if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') {
     const name = { Digit1: 'spec', Digit2: 'brisk', Digit3: 'heavy' }[e.code];
     cfg = makeConfig({ leaf: LEAF_PRESETS[name] });

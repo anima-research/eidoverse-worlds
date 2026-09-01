@@ -29,6 +29,7 @@
     "shared/flight.js",
     "shared/flightbody.js",
     "shared/flightcap.js",
-    "shared/flightpilot.js"
+    "shared/flightpilot.js",
+    "shared/leafforce.js"
   ]
 }
