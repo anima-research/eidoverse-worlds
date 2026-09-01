@@ -729,7 +729,34 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   check('a throw during take-off releases the body instead of freezing it',
         /catch \(e\) \{\s*\n?\s*return `flight failed to start/.test(ctl));
 
-  // 4. And the whole reason this took three rounds: every report was a
+  // 4. "my view has me frozen until i exit fly mode... when i exit flying mode
+  //    i *do* suddenly teleport to a different place, so maybe i did fly."
+  //    He did fly -- /flight reported PILOT, t=31.7s, y=16.28. But the four
+  //    lines that put a body ON SCREEN (clip, root position, root rotation,
+  //    camera) live at the BOTTOM of updateMe, past the flight block's early
+  //    `return`. So myState flew and me.root sat where it took off. Measured:
+  //    on the previous build stateY climbed 0.3 -> 16.11 while rootY held at
+  //    0.30 and the camera never left 3.07.
+  //
+  //    Both other paths that skip updateMe's tail already pay this -- ragdoll
+  //    and mounted each drive the camera themselves and say why. Flight was
+  //    the third, and the only one that did not.
+  const flightBlock = /if \(flight\) \{\s*\n\s*const input = pilotInput[\s\S]*?\n  \}/.exec(ctl)?.[0] ?? '';
+  check('a flying body is actually drawn where it is flying',
+        /me\.root\.position\.copy\(myState\.pos\)/.test(flightBlock) &&
+        /me\.root\.rotation\.y = myState\.yaw/.test(flightBlock));
+  check('and the camera follows her up instead of watching the launch pad',
+        /updateFollowCamera\(dt, me\)/.test(flightBlock));
+  check('and the flight clip reaches the body',
+        /me\.setClip\(myState\.clip/.test(flightBlock));
+  // The general form of all three, and the one that would have caught this
+  // before a person had to: every path that returns early from updateMe owes
+  // the tail's work, because the tail is what makes state visible.
+  const tail = ['me.setClip(', 'me.root.position.copy(', 'updateFollowCamera('];
+  check('every early-return path in updateMe pays the render tail',
+        tail.every(t => flightBlock.includes(t)), flightBlock ? '' : 'flight block not found');
+
+  // 5. And the whole reason this took three rounds: every report was a
   //    description, because the state was only reachable from a devtools
   //    probe. /flight puts it in the chat log, where the person is.
   const reg = readFileSync('client/lib/commands/registry.js', 'utf8');

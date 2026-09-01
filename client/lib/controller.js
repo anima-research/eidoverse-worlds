@@ -494,6 +494,25 @@ export function updateMe(dt, me) {
       flight = null; grounded = true; vy = 0;
       myState.clip = 'idle'; myState.speed = 0;
     }
+    // AND NOW PUT HER ON THE SCREEN. Everything above moves `myState`, which
+    // is the streamed, authoritative body -- but the four lines that make a
+    // body VISIBLE (clip, root position, root rotation, camera) live at the
+    // bottom of this function, past the `return` below. So flight ran for
+    // thirty-one seconds at 16m while `me.root` sat on the ground where she
+    // took off, the camera watched that empty spot, and pressing F to land
+    // handed the walk path a position 100m away that it applied in one frame.
+    // From inside: frozen, then a teleport. From /flight: a perfect sortie.
+    //
+    // Both other paths that skip updateMe's tail already learned this and left
+    // a note -- stepRagdoll ("the camera lives in updateMe, which we skip
+    // while limp -- so drive it here too, or it freezes on the frame you
+    // fell") and updateMountedMe (#75, the same fix for seats). This was the
+    // third and the only one that had not paid it.
+    me.setClip(myState.clip, myState.speed);
+    me.root.position.copy(myState.pos);
+    me.root.rotation.y = myState.yaw;
+    me.pitch = firstPerson ? 0 : THREE.MathUtils.clamp(camPitch - 0.32, -0.45, 0.55);
+    updateFollowCamera(dt, me);
     return;                                           // nothing else drives her
   }
   if (mantle) {
