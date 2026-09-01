@@ -1527,7 +1527,13 @@ export class WorldAgent {
     // body's position is whatever it says. The integrator is the same function
     // the browser bench and the capture path run -- authority here is the
     // agent's own process, exactly as it is for walking.
-    if (this.flight) this.flightTick(dt);
+    // ONE AUTHOR PER BONE, and per position. Once the ragdoll owns the body
+    // the flight integrator must stop writing pos: the 15Hz sim was setting
+    // the true ragdoll position and the 10Hz flight tick was overwriting it
+    // with its own stale value a hipsOffset higher, which is exactly the
+    // "floating a few feet off the ground" Janus saw. The flight state stays
+    // alive (recovery still needs it) -- it just no longer drives.
+    if (this.flight && !this.simTicker) this.flightTick(dt);
     // keep the `reached` attestation honest at ~2Hz while reaching: the
     // target moves, this body moves, and the far end's touch event fires on
     // the rising edge of what is re-checked here
@@ -1681,6 +1687,13 @@ export class WorldAgent {
       this.heldPose = out.pose; this.heldPoseAuthored = false; // a sim frame is physics even once settled
       this.pos.x = out.p[0]; this.pos.y = out.p[1]; this.pos.z = out.p[2];
       this.tick();
+      // The ragdoll's ground truth flows BACK into the flight state, rather
+      // than the flight state overwriting it. Recovery reads this to know
+      // where it is waking up.
+      if (this.flight) {
+        this.flight.pos.x = out.p[0]; this.flight.pos.y = out.p[1]; this.flight.pos.z = out.p[2];
+        if (this.flight.phase === "LEAF" && out.done) this.flight.phase = "RAGDOLL";
+      }
       if (out.done) this.stopSim();   // captured: the held pose IS the outcome
     }, 66);
   }
