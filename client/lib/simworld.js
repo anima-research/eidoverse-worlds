@@ -31,6 +31,7 @@ import { advanceSim, tickOf } from '../../shared/sim.js';
 import { entities } from './world.js';
 import { pushHostHook } from './autohooks.js';
 import { reindexCollider, colliders } from './colliders.js';
+import { heightAt } from './terrain.js';
 
 const restIndexed = new Set();
 
@@ -99,16 +100,6 @@ export function initSimWorld() {
       const b = sim.bodies[id];
       const obj = entities.get(id);
       if (!obj) continue;
-      // a resting body stands on the sim's word exactly (the collider index
-      // below reads it); a moving one shows the lerp of its two tick poses
-      const pv = b.resting ? undefined : prev.get(id);
-      if (pv) {
-        obj.position.set(pv[0] + (b.p[0] - pv[0]) * k, pv[1] + (b.p[1] - pv[1]) * k,
-          pv[2] + (b.p[2] - pv[2]) * k);
-      } else {
-        obj.position.set(b.p[0], b.p[1], b.p[2]);
-      }
-      // cosmetic tumble/settle (see the header block above)
       let sp = spins.get(id);
       if (!sp) {
         // ARM: how far the mesh's visual center sits from the entity origin
@@ -118,11 +109,35 @@ export function initSimWorld() {
         // metres-wide arc — those models arc without tumbling instead.
         const cb = colliders.get(id)?.box;
         const scl = obj.scale ?? { x: 1, z: 1 };
-        const arm = cb ? Math.hypot((cb.min.x + cb.max.x) / 2 * (scl.x || 1),
-          (cb.min.z + cb.max.z) / 2 * (scl.z || 1)) : 0;
-        sp = { q: obj.quaternion.clone(), arm };
+        const cx = cb ? (cb.min.x + cb.max.x) / 2 * (scl.x || 1) : 0;
+        const cz = cb ? (cb.min.z + cb.max.z) / 2 * (scl.z || 1) : 0;
+        sp = { q: obj.quaternion.clone(), arm: Math.hypot(cx, cz), cx, cz };
         spins.set(id, sp);
       }
+      // a resting body stands on the sim's word exactly (the collider index
+      // below reads it); a moving one shows the lerp of its two tick poses
+      const pv = b.resting ? undefined : prev.get(id);
+      if (pv) {
+        obj.position.set(pv[0] + (b.p[0] - pv[0]) * k, pv[1] + (b.p[1] - pv[1]) * k,
+          pv[2] + (b.p[2] - pv[2]) * k);
+      } else {
+        obj.position.set(b.p[0], b.p[1], b.p[2]);
+      }
+      // VISUAL GROUNDING. The sim grounds the entity ORIGIN on the terrain —
+      // all it can know: the mesh is an asset fact, never in the log. A
+      // far-offset model stands somewhere else, and on a slope the ground
+      // there is not the ground here: the barrels' cluster sank 29cm into a
+      // hillside at every landing (tel0s, playtest 2026-09-01, §24t-6).
+      // Show the visual center standing on ITS ground — lift by the terrain
+      // difference between the two footprints. Presentation only, like the
+      // tumble: ~0 for an origin-centred model, exactly 0 without terrain.
+      if (sp.arm > 0.05) {
+        const c = Math.cos(b.yaw), s = Math.sin(b.yaw);
+        const wx = sp.cx * c + sp.cz * s, wz = -sp.cx * s + sp.cz * c;
+        const p = obj.position;
+        p.y += heightAt(p.x + wx, p.z + wz) - heightAt(p.x, p.z);
+      }
+      // cosmetic tumble/settle (see the header block above)
       const q = sp.q;
       const flat = Math.hypot(b.v[0], b.v[2]);
       // Airborne = the sim's OWN word (v[1] ≠ 0), never a height threshold:

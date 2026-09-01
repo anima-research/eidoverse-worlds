@@ -95,6 +95,22 @@ origin at the cluster's footprint center — worth an asset-library pass
 for other offenders (`summarizeGlb` bbox centers make it a one-liner
 audit).
 
+The same offset has a VERTICAL consequence on terrain (§24t-6): anything
+that grounds the origin — the deterministic sim, the terrain re-seat —
+puts the mesh 1.95m away on a slope where the ground is somewhere else;
+on commons's hills the cluster sat up to 29cm inside the hillside at
+every landing. The sim applier now shows the visual center standing on
+ITS ground (`simworld.js`, the terrain difference between the two
+footprints — presentation only; `tools/sim-ground-smoke.ts` holds the
+proof). Two residues only the asset fix removes: a body RELEASED to the
+fold (an epoch-release `place`) is realized at the authored origin
+height again, and the static terrain re-seat (world.js) still seats by
+the origin — both sink the cluster by the same slope difference.
+Re-exporting is a MIGRATION, not a drop-in: every logged `pos` for this
+model names the current origin, so a centred re-export shifts every
+existing placement 1.95m unless the fold or a one-time `place` pass
+compensates.
+
 ## 4. Merge-conflict lessons (process)
 
 - **Never `git stash` mid-merge** — it drops MERGE_HEAD (restored by hand:
