@@ -32,6 +32,7 @@ import { pilotInput } from '../../shared/flightpilot.js';
 import { devFlightProvider, resolveFlight } from '../../shared/flightcap.js';
 
 let flight = null, flightCfg = null, flightProv = null;
+let lastFlightEnd = null;   // why the last flight ended -- 'F did nothing' has causes
 let flightBones = null;
 
 /** Called once the body is known; without a compatible rig F does nothing. */
@@ -39,6 +40,30 @@ export function armFlight(boneNames, identity = 'me') {
   flightBones = boneNames ?? [];
   flightProv = devFlightProvider({ allow: [identity], label: 'client-dev' });
   return resolveFlight(flightProv, { identity, avatar: { boneNames: flightBones } }).enabled;
+}
+
+// THE SAME FLOOR WALKING STANDS ON. Flight was handed raw `heightAt` while
+// take-off measured `resolveColliders` -- two different answers for "where is
+// the ground", differing by the whole height of every deck, slab and structure
+// floor in the world. A flier launched from the resolved floor and then tested
+// against bare terrain is airborne by one measure and buried by the other.
+//
+// The scratch vector is load-bearing twice over: resolveColliders MUTATES the
+// x/z it is given (wall push-out) and resets the module's `blockedTop`, so
+// probing with the live body would shove the flier sideways and steal the
+// mantle probe the walk path reads on the same frame.
+const _gp = new THREE.Vector3();
+function groundUnder(pos) {
+  _gp.set(pos.x, pos.y, pos.z);
+  const g = resolveColliders(_gp, heightAt);
+  return g;
+}
+/** groundY(x, z) for the integrator: it has no y to offer, so probe from the
+ *  flier's own altitude -- which is what decides whether a box is floor or
+ *  wall, and the reason this is not a two-argument terrain lookup. */
+function flightGround(x, z) {
+  _gp.set(x, flight?.pos?.y ?? myState.pos.y, z);
+  return resolveColliders(_gp, heightAt);
 }
 
 export const flying = () => !!flight;
@@ -49,6 +74,11 @@ if (typeof globalThis !== 'undefined') {
   globalThis.__flightDebug = () => ({
     armed: !!flightProv, bones: flightBones?.length ?? 0,
     flying: !!flight, phase: flight?.phase ?? null,
+    y: flight?.pos?.y ?? myState.pos.y,
+    vy: flight?.vel?.y ?? null,
+    launchNow: flight?.launchNow ?? null,
+    groundHere: (() => { try { return heightAt(myState.pos.x, myState.pos.z); } catch { return null; } })(),
+    lastEnd: lastFlightEnd,
     verdict: flightProv
       ? resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones } })
       : 'no provider',
@@ -68,7 +98,13 @@ function toggleFlight() {
     // atan2(dz,dx). Convert, both ways, at this boundary only.
     yaw: Math.PI / 2 - myState.yaw,
   }, flightCfg);
-  flight = flightTakeOff(flightCfg, flight, { groundY: myState.pos.y });
+  // THE GROUND UNDER HER FEET, resolved the way walking resolves it. The first
+  // cut passed `myState.pos.y` -- where she IS, which is the same number only
+  // while she is standing still on flat ground. Mid-jump, mid-mantle or on the
+  // frame after a step-up it is metres off, and takeOff builds its launch
+  // height from it (`groundY + clearance + 0.6`), so flight began below the
+  // floor and `groundContact` ended it on the next tick: a jump that lands.
+  flight = flightTakeOff(flightCfg, flight, { groundY: groundUnder(myState.pos) });
   return 'flying — W/S pitch, A/D bank, Shift spoil, Space flap, F to land';
 }
 
@@ -122,6 +158,18 @@ addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());
 
 bus.on('key', (e) => {
+  // AUTOREPEAT IS NOT A SECOND PRESS. A held key re-fires keydown at the OS
+  // repeat rate (~30Hz after a ~500ms delay) and every binding here is a
+  // TOGGLE, so holding F for two thirds of a second took off and landed and
+  // took off and landed -- which is exactly what "switching into flying mode
+  // just makes my character jump and land immediately" looks like from the
+  // outside, and why it reproduced for a person and never for a scripted
+  // probe that synthesises one clean keydown.
+  //
+  // Guarded HERE and not on the emit, because the repeat is wanted elsewhere:
+  // build.js binds R/F and the arrows to nudge/raise/turn, where holding the
+  // key to keep moving a thing is the whole interaction.
+  if (e.repeat) return;
   if (e.code === 'KeyX') toggleSit();
   if (e.code === 'KeyF') { const m = toggleFlight(); if (m) flashHint?.(m); }
   if (e.code === 'KeyZ') { posture = posture === 'lie' ? null : 'lie'; myState.seat = null; }
@@ -356,13 +404,26 @@ export function updateMe(dt, me) {
   // same way a mantle or a ragdoll does. Walking resumes the moment she lands.
   if (flight) {
     const input = pilotInput(keys, flight, dt);
-    flight = flightStep(flightCfg, flight, dt, { groundY: (x, z) => heightAt(x, z), input });
+    flight = flightStep(flightCfg, flight, dt, { groundY: flightGround, input });
     myState.pos.set(flight.pos.x, flight.pos.y, flight.pos.z);
     myState.yaw = Math.PI / 2 - flight.yaw;          // back to world convention
     myState.speed = Math.hypot(flight.vel.x, flight.vel.z);
     myState.clip = flight.wings === 'LIMP' ? 'ragdoll'
       : (input.flap ? 'fly' : 'soar');
     if (flight.phase === 'LANDED' || flight.phase === 'GROUND' || flight.phase === 'RAGDOLL') {
+      const endedAt = +flight.t.toFixed(2);
+      lastFlightEnd = { phase: flight.phase, y: +flight.pos.y.toFixed(2),
+                        ground: +flightGround(flight.pos.x, flight.pos.z).toFixed(2),
+                        t: endedAt };
+      // A FLIGHT THAT ENDS IN ITS FIRST SECOND IS A BUG REPORTING ITSELF.
+      // "It jumps and lands immediately" arrived as a description because the
+      // client had no way to say WHY -- the receipt existed only in a devtools
+      // probe. A landing is normal; a landing before the launch has finished
+      // spooling is not, and it should arrive with its numbers attached.
+      if (endedAt < 1.5) {
+        flashHint?.(`flight ended after ${endedAt}s — landed at y=${lastFlightEnd.y}, ` +
+                    `ground ${lastFlightEnd.ground}`, 6000);
+      }
       flight = null; grounded = true; vy = 0;
       myState.clip = 'idle'; myState.speed = 0;
     }

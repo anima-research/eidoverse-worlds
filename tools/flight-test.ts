@@ -683,6 +683,34 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   // server/ stays untouched: the sequencer has no opinion about flight.
   const srv = importers.filter(f => /^server\//.test(f));
   check('no server/ module imports flight', srv.length === 0, srv.join(', '));
+
+  // TWO CLIENT PROPERTIES THAT ONLY A HUMAN COULD HAVE FOUND, pinned as source
+  // checks because both live in browser DOM code the rest of this file cannot
+  // import. Structural assertions are weaker than behavioural ones; they are
+  // what is available, and they are stronger than the nothing that was here
+  // when both bugs shipped.
+  const ctl = readFileSync('client/lib/controller.js', 'utf8');
+
+  // 1. "switching into flying mode is working for me but all that happens is
+  //    my character seems to jump and lands immediately."  The toggles ran on
+  //    every keydown INCLUDING autorepeat, so a held F took off and landed
+  //    ~30 times a second. A scripted probe never saw it: synthetic keydowns
+  //    have repeat=false, which is why this reproduced only for a person.
+  const toggles = /bus\.on\('key',[\s\S]*?\n\}\);/.exec(ctl)?.[0] ?? '';
+  check('the key toggles ignore autorepeat (a held F is one take-off)',
+        /if \(e\.repeat\) return;/.test(toggles) &&
+        toggles.indexOf('e.repeat') < toggles.indexOf('KeyF'));
+  // ...and the guard is on the LISTENER, not the emit: build.js binds R/F and
+  // the arrows to nudge and raise, where holding the key is the interaction.
+  check('but the key BUS still carries repeats (build.js nudges need them)',
+        !/if \(e\.repeat\) return;\s*\n\s*bus\.emit\('key'/.test(ctl));
+
+  // 2. Flight measured the ground with raw terrain while take-off measured it
+  //    through the colliders -- two different floors, differing by the height
+  //    of every deck and slab in the world.
+  check('client flight and client walking resolve the SAME ground',
+        !/groundY:\s*\(x, ?z\) => heightAt\(/.test(ctl) &&
+        /resolveColliders\(_gp, heightAt\)/.test(ctl));
 }
 
 // ------------------------------------------------------- flown, and found wrong
