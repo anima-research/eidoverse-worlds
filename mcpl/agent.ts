@@ -1820,10 +1820,15 @@ export class WorldAgent {
     this.speed = Math.hypot(f.vel.x, f.vel.z);
     // The clip an onlooker sees. LIMP is the truth-telling state and must read
     // as a ragdoll, not as a pose someone chose.
+    // The clip an onlooker sees. LIMP must read as a ragdoll -- it is the
+    // truth-telling state, not a pose anyone chose. Airborne uses the flight
+    // slots rather than a stride: "the running animation during flying is a
+    // bit goofy" (Janus), and it is, because a run is legs working against
+    // ground that is not underneath them.
     this.clip = f.wings === "LIMP" ? "ragdoll"
       : (f.phase === "GROUND" || f.phase === "LANDED") ? "idle"
-      : f.flapping ? "run"          // working the wings -- reads as effort
-      : "walk";
+      : f.flapping ? "fly"          // climbing: wings doing the work
+      : "soar";                     // gliding: hanging on the air
     for (const e of f.events) this.flightEvent(e);
     // EVERY tick, not only on a phase change: a glide's arrival test also
     // re-aims the heading, and a waiter that is only polled when the phase

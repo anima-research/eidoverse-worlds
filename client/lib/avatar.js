@@ -119,6 +119,9 @@ const LATER_CLIPS = CLIP_SLOTS.filter((s) => !CORE_CLIPS.includes(s));
 const CLIP_FALLBACK = {
   run: 'walk', jump: 'idle', climb: 'walk',
   sit: 'idle', lie: 'idle', sitchair: 'sit',
+  // A body with no flight clips still flies -- it just glides in its idle
+  // pose rather than falling back to a stride, which was the goofy part.
+  fly: 'soar', soar: 'idle',
 };
 
 // Emote slots are loaded lazily — a body needs locomotion to exist, but it
