@@ -230,3 +230,55 @@ Everything v1 §11 requires, plus, per dialect-3 fixture epoch:
 The reference gate is `tools/replaybench.ts`, which already enforces
 self-agreement and snapshot parity for the instant fold; dialect-3
 fixtures extend it with tick digests.
+
+## 9. Other sims — moddable physics (sketch, 2026-09-01)
+
+Asked by a colleague: *can physics mods run server-side?* In this
+architecture the honest answer is **yes, and more than server-side** — the
+epoch mechanism is already the socket. There is no "server physics" as
+such: the sequencer folds a deterministic sim over the log, and so does
+every client that carries it, and so does any replay. A **physics mod is a
+sim** — a named, versioned implementation a world selects by name in its
+`epoch` entry (`{sim: "<name>@<semver>", tickMs}`). eidosim@0.3.0 is simply
+the reference one. What a mod must be is exactly what §2–§5 say: owned
+numerics (exact ops; `shared/simmath.js` for anything transcendental), no
+clock, no randomness, ordered iteration; its constants are its version; it
+reads only what is stamped in entries; it advances at the epoch's tick.
+
+What exists today and what is missing, in the reference implementation:
+
+- **Carried set → registry.** `shared/sim.js` hard-wires `SIM_ID` and a
+  `CARRIED` set, and the sequencer's `epoch` validator accepts `SIM_ID`
+  exactly. The mod socket is a registry — `shared/sims.js`, `{ "<name@ver>":
+  { emptySim, simEntry, advanceSim, tickOf, simSnapshot } }` — with the epoch
+  validator accepting any *registered* name, and eidosim's three laws as its
+  first entries. Small.
+- **Where mods come from.** Operator-installed modules first (a `sims/`
+  directory the sequencer loads, trusted like defs — hot-reloadable, server-
+  owned). Sandboxed *uploaded* sims (the `behavior` verb's sandbox is the
+  precedent) would need a Covenant-I lint on the source before registration
+  — forbid `Math.sin/cos/exp/pow/random`, `Date`, unordered iteration — and
+  a cost ceiling per tick. Later, if wanted.
+- **Clients that do not carry the mod.** Today a foreign epoch is honored by
+  refusal: bodies are not shown (the entity stays at the fold's word). For a
+  mod that lives only on the sequencer, the sequencer MUST **stream** its sim
+  state to such clients — a presence-shaped `sim-pose` message at tick
+  cadence, never folded, consumed by the applier in place of recomputation.
+  The log stays bit-replayable by anyone who carries the mod; the barrier
+  snapshot stays truth for anyone who does not. This is the one piece of
+  real work.
+- **Conformance for mods.** `tools/sim-test.ts` is already the shape:
+  self-agreement, schedule independence, totality, snapshot round-trip,
+  cross-engine digest. Generalize it to `tools/sim-conformance.ts <module>`
+  and require a pass before a name may be registered.
+- **New intents.** A mod that wants `throw`/`grab` (§6) also needs the
+  sequencer's door: a validator in the verb table and a rank in
+  `VERB_NEEDS`. The registry entry should therefore carry `intents:
+  { verb: validate }` alongside its fold. This is where §6's ⚑s get
+  settled per mod rather than once for all.
+
+⚑ Open: whether two mods may be composed in one epoch (draft position:
+**no** — one law per epoch, compose by writing a sim that imports both);
+and whether a mod may declare which entity classes it owns by default
+(draft position: yes, in its registry entry — that is the §6 "sim-owned"
+flag, answered per sim).
