@@ -55,6 +55,20 @@ errors.length = 0;
 await verb("epoch", { sim: SIM_ID, tickMs: 66 });
 check("the real epoch is accepted", errors.length === 0, errors.join(" | "));
 await verb("spawn", { id: "ball", lib: "props/ball.glb", pos: [1, 0, 1] });
+// eidosim@0.3.0: a real model spawned under the epoch carries the SEQUENCER's
+// box stamp (Covenant III — geometry enters the sim through history), and a
+// client-authored box is discarded
+await verb("spawn", { id: "crate", lib: "eidoverse/assets/models/crate_large_blue.glb", pos: [20, 0, 20], box: [[0, 0, 0], [9, 9, 9]] });
+{
+  dws.send(JSON.stringify({ type: "history", limit: 20, reqId: "h0" }));
+  await sleep(500);
+  const h = msgs.find((x) => x.type === "history" && x.reqId === "h0");
+  const sp = (h?.entries ?? []).find((e: any) => e.verb === "spawn" && e.args?.id === "crate");
+  const box = sp?.args?.box;
+  check("a spawn under the epoch carries the sequencer's box stamp (not the client's)",
+    Array.isArray(box) && box.length === 2 && box[1][1] > 0 && box[1][1] < 5,
+    JSON.stringify(box));
+}
 await verb("punt", { id: "ball", power: 8 });
 check("a dir-less punt is refused under the epoch (Covenant III)",
   errors.some((e) => e.includes("dir")), errors.join(" | "));

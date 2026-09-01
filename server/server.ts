@@ -24,6 +24,7 @@ import { summarizeGlb } from "./geometry.ts";
 // the registry (§15, 7c). The boot sweep below stays HERE: waking scripted
 // worlds with the server is boot policy, not world mechanics.
 import { World, type Client, worlds, getWorld, wireSettledPose } from "./world.ts";
+import { warmBoxes, worldLibs } from "./boxes.ts";
 // The HTTP surface — one route table, /upload behind it in upload.ts (§15,
 // 7c). fetch() below delegates; avatarRoster rides back for the join
 // snapshot, pendingSnaps for the renderer's snap-result replies.
@@ -373,6 +374,10 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       return null;
     }
     const w = getWorld(wname);
+    // eidosim@0.3.0: know the world's standing geometry before anyone
+    // spawns or epochs into it (boxes.ts — the sync validators read a
+    // warm cache; a join is the earliest honest moment to fill it)
+    void warmBoxes(worldLibs(w.state));
     // Identity: a verified session OWNS the id — the client's msg.id is
     // ignored (the name came from Discord via the home node, and the
     // sub underneath it survives renames).

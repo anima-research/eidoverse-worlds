@@ -20,6 +20,7 @@ import { reactToUse } from "./reactions.ts";
 import { behaviorLimits } from "./behaviors.ts";
 import { ROLE_RANK, type LogEntry, type WorldState } from "../shared/fold.js";
 import { SIM_ID } from "../shared/sim.js";
+import { boxOf, worldLibs } from "./boxes.ts";
 
 // Bodies alive at the moment an epoch entry is validated — consumed by the
 // epoch after-hook to release them into the fold (see the verb below).
@@ -328,8 +329,24 @@ function afterModerate(ctx: VerbCtx, entry: LogEntry) {
 // rank/gen stay single-sourced in rights.ts's VERB_NEEDS (the behavior gate
 // reads the same numbers); each row here only adds what the shell dispatches.
 
+/** Under a live epoch the sequencer stamps the model's box into the spawn
+ *  entry (eidosim@0.3.0 folds it — PROTOCOL_v2 Covenant III: the sim reads
+ *  geometry from history, never from an asset). The client's word on a box
+ *  is discarded: asset facts are the sequencer's to write. Outside an epoch
+ *  the log is unchanged — an epoch entered later stamps `boxes` for every
+ *  standing lib itself. The cache is warmed on the wire before this runs
+ *  (messages.ts); a lib it cannot summarize simply spawns boxless. */
+function vSpawn(ctx: VerbCtx, args: Record<string, unknown>) {
+  const { box: _clientBox, ...rest } = args;
+  const live = ctx.w.sim.epoch as { foreign?: boolean } | null;
+  if (!live || live.foreign || typeof rest.lib !== "string") return { args: rest };
+  const box = boxOf(rest.lib);
+  return { args: box ? { ...rest, box } : rest };
+}
+
 const extras: Record<string, Pick<VerbRow, "selfRankZero" | "validate" | "after">> = {
   say: { validate: vSay },
+  spawn: { validate: vSpawn },
   // A `use` is a cause; reactions turn it into logged effects.
   use: { after: (ctx, entry) => reactToUse(ctx.w, entry) },
   mount: { selfRankZero: true, validate: vMount },
@@ -363,7 +380,13 @@ const extras: Record<string, Pick<VerbRow, "selfRankZero" | "validate" | "after"
       const held = Object.entries(ctx.w.sim.bodies as Record<string, { p: number[]; yaw?: number }>)
         .map(([id, b]) => ({ id, p: [...b.p], yaw: typeof b.yaw === "number" ? b.yaw : 0 }));
       epochRelease.set(ctx.w, held);
-      return { args: { sim, tickMs } };
+      // eidosim@0.3.0: the epoch adopts the sequencer's word on the world's
+      // geometry — lib → box for every model standing here at the barrier
+      // (Covenant III; ruling tel0s 2026-09-01). Warmed on the wire before
+      // this runs; a lib without a summary is left out and is no collider.
+      const boxes: Record<string, unknown> = {};
+      for (const lib of worldLibs(ctx.w.state)) { const b = boxOf(lib); if (b) boxes[lib] = b; }
+      return { args: { sim, tickMs, boxes } };
     },
     after: (ctx) => {
       // A real re-epoch RELEASED every live body when its entry folded — but

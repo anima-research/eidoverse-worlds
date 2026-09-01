@@ -65,6 +65,30 @@ and decades. Therefore, inside the sim fold:
 The reference implementation SHOULD keep the sim kernel wasm-compiled so
 "same epoch, same bits" is a build artifact rather than a discipline.
 
+*Delivered (2026-09-01):* **eidosim@0.3.0 — the world's things are
+colliders.** Ruling (tel0s): an asset's geometry enters the sim the only way
+Covenant III allows — *stamped into history by the sequencer*. Under a live
+epoch every `spawn` of a model carries `box: [[min],[max]]` (the model's
+local bounding box, millimetre-rounded; a client-authored box is discarded),
+and an `epoch` entry carries `boxes: {lib → box}` for every model standing in
+the world at the barrier. The sim folds those into a table of static
+colliders — each fold entity's yaw-rotated, scaled box as a world AABB, yaw
+through simmath's owned sin/cos (its first shipped use) — and a punted body
+carries its own. Per tick: a static whose top the body was above and whose
+footprint it overlaps is ground (land on a crate, slide, rest on it, under
+the same contact law as terrain); one met from the side pushes the body out
+along the shallower horizontal axis and reflects that velocity (a wall
+bounce); a grounded slider that loses its support by more than a step falls
+rather than gluing; a body at rest is a static again. Collider changes
+(`place`, `remove`, mount/dismount, motion) take effect at their entry's tick,
+so a live fold and a replay agree bit for bit (tools/sim-test.ts proves it,
+along with the pinned 0.2.0 replay flying *through* the same wall). Scope
+stated: flying bodies do not collide with each other; a resting body is not
+woken by a hit; things that mount, ride a motion, or have no box are not
+colliders; structures (def-built) are not yet stamped. **0.1.0 and 0.2.0
+remain CARRIED**; commons's 0.2.0 replay digest is byte-identical across the
+bump.
+
 *Delivered (2026-08-31):* **eidosim@0.2.0 — terrain-aware ground** (the
 epoch bump 0.1.0's own header scheduled). `shared/terrainmath.js` is the
 toolkit terrain height law re-expressed in the blessed exact-op set (two
@@ -161,8 +185,12 @@ grow. ⚑ marks what ratification must settle:
 | `force` | folds nothing; live clients apply to consenting bodies | **sim-scoped** for sim-owned entities; bodies keep consent semantics (presence) |
 | ⚑ `impulse`? `throw`? `grab`/`release`? | — | candidate new intents; each must carry its full physical argument (vector, magnitude, point of application) per Covenant III |
 
+| `spawn` / `epoch` | unchanged | **sequencer-stamped geometry**: `spawn.box`, `epoch.boxes` — the only door through which an asset's shape reaches the sim (Covenant III; eidosim@0.3.0) |
+
 ⚑ Also open for ratification: which entity classes are sim-owned by
-default; collision vocabulary between sim entities and terrain; whether
+default; collision vocabulary between sim bodies themselves (0.3 collides
+bodies with standing things and terrain only), and for def-built
+structures; whether
 `motion` (closed-form, v1) merges into the sim or remains a parallel
 authored lane (draft position: **remains** — a pendulum as a function of
 time is already deterministic and cheaper than integration).

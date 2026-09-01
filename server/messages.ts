@@ -14,6 +14,7 @@
 // body again means moving their patterns with it.
 
 import { runVerb } from "./verbs.ts";
+import { coldLibs, warmBoxes, worldLibs } from "./boxes.ts";
 import { LIMITS } from "./limits.ts";
 import { currentIncarnation } from "./transport.ts";
 import { rightsOf, isAdminId } from "./rights.ts";
@@ -44,6 +45,21 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // broadcast, after hooks, byte-identical. expel rides in the ctx,
     // injected: verbs.ts must never import server.ts (the cycle break
     // §15.1 pinned).
+    //
+    // eidosim@0.3.0: a spawn (its lib) or an epoch (every standing lib)
+    // needs the sequencer's box stamp, and summarizing a GLB is async
+    // while validators are not — so the cache is warmed HERE, on the
+    // wire, and the verb runs the moment it can answer. Only a lib never
+    // seen by this process pays the wait (one file read); everything
+    // else runs synchronously, in order, as before.
+    if (c.world && (msg.verb === "spawn" || msg.verb === "epoch")) {
+      const w = c.world!;
+      const libs = coldLibs(msg.verb === "spawn" ? [String(msg.args?.lib ?? "")] : worldLibs(w.state));
+      if (libs.length) {
+        void warmBoxes(libs).then(() => { if (c.world === w) runVerb({ w, c, now, expel }, msg.verb, msg.args); });
+        return;
+      }
+    }
     runVerb({ w: c.world!, c, now, expel }, msg.verb, msg.args);
   },
   "history": ({ c, ws, now, expel }, msg) => {

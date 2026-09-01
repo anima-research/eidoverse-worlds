@@ -145,5 +145,71 @@ console.log("\nthe sim fold (shared/sim.js) — " + SIM_ID);
     pose.resting === true && pose.p[1] === 1.2, String(pose.p[1]));
 }
 
+{ // eidosim@0.3.0: the world's things are colliders (§24t-8 — boxes the
+  // sequencer stamps into history; Covenant III)
+  const CRATE = [[-0.5, 0, -0.5], [0.5, 1, 0.5]];
+  const WALLBOX = [[-0.25, 0, -2], [0.25, 2, 2]];
+  const BOXES = { "crate.glb": CRATE, "wall.glb": WALLBOX };
+  const WALL: LogEntry[] = [
+    mk(0, 0, "genesis", { v: 3, dialect: "eidoverse-log" }),
+    mk(1, 5, "spawn", { id: "wall", lib: "wall.glb", pos: [4, 0, 0] }),          // standing BEFORE the epoch
+    mk(2, 10, "epoch", { sim: SIM_ID, tickMs: 66, boxes: BOXES }),
+    mk(3, 20, "spawn", { id: "crate", lib: "crate.glb", pos: [0, 0, 0] }),
+    mk(4, 30, "spawn", { id: "ghost", lib: "nobox.glb", pos: [2, 0, 0] }),       // no box: not a collider
+    mk(5, 500, "punt", { id: "crate", dir: [1, 0.3, 0], power: 8 }),
+  ];
+  const { sim } = fold(WALL);
+  check("a 0.3 epoch adopts the stamped boxes and makes every covered standing entity a static",
+    !!sim.boxes && Object.keys(sim.boxes).length === 2
+      && !!sim.statics && "wall" in sim.statics && !("ghost" in sim.statics) && !("crate" in sim.statics),
+    JSON.stringify(Object.keys(sim.statics ?? {})));
+  advanceSim(sim, 600);
+  const pose = simPose(sim, "crate")!;
+  check("a flight into a wall BOUNCES back and rests on the near side",
+    pose.resting === true && pose.p[0] + 0.5 <= 3.75 + 1e-9 && pose.p[0] > 0,
+    `rest x ${pose.p[0]} (wall face at 3.75)`);
+  check("…and the resting crate is a static again", "crate" in sim.statics!);
+  const b2 = fold(WALL);
+  advanceSim(b2.sim, 123); advanceSim(b2.sim, 600);
+  check("0.3 schedule-independence (collision law)", digest(b2.sim) === digest(sim));
+  // a collider change mid-flight takes effect at ITS tick, whatever the
+  // advance schedule: live (advance, fold, advance) ≡ replay (fold all, advance)
+  const MOVE = [...WALL, mk(6, 560, "place", { id: "wall", pos: [2.2, 0, 0] })];
+  const live = fold(WALL);
+  advanceSim(live.sim, tickOf(live.sim, T0 + 540));
+  foldEntry(live.st, MOVE[6]); simEntry(live.sim, MOVE[6], live.st);
+  advanceSim(live.sim, 600);
+  const replay = fold(MOVE); advanceSim(replay.sim, 600);
+  check("a place moving a static mid-flight lands at its entry's tick — live fold ≡ replay",
+    digest(live.sim) === digest(replay.sim));
+  check("…and the moved wall was met where it now stands",
+    replay.sim.bodies.crate.p[0] + 0.5 <= 1.95 + 1e-9, String(replay.sim.bodies.crate.p[0]));
+  // landing ON a thing: its top is ground, and the body says what it stands on
+  const STACK: LogEntry[] = [
+    mk(0, 0, "genesis", { v: 3, dialect: "eidoverse-log" }),
+    mk(1, 10, "epoch", { sim: SIM_ID, tickMs: 66, boxes: { "crate.glb": CRATE, "deck.glb": [[-3, 0, -1], [3, 1, 1]] } }),
+    mk(2, 20, "spawn", { id: "deck", lib: "deck.glb", pos: [5, 0, 0] }),
+    mk(3, 30, "spawn", { id: "crate", lib: "crate.glb", pos: [0, 0, 0] }),
+    mk(4, 500, "punt", { id: "crate", dir: [1, 1, 0], power: 8 }),
+  ];
+  const s2 = fold(STACK); advanceSim(s2.sim, 900);
+  const onDeck = s2.sim.bodies.crate;
+  check("a flight landing on a deck RESTS ON IT (its top is ground) and names its support",
+    onDeck.resting === true && onDeck.p[1] === 1 && onDeck.on === "deck" && onDeck.p[0] > 2 && onDeck.p[0] < 8,
+    `y ${onDeck.p[1]} on ${onDeck.on} x ${onDeck.p[0]}`);
+  // a spawn under the epoch carries the sequencer's stamp → a static
+  const s3 = fold([...WALL, mk(6, 700, "spawn", { id: "new", lib: "new.glb", pos: [9, 0, 9], box: CRATE })]);
+  check("a spawn's stamped box makes the new thing a static", "new" in s3.sim.statics! && !!s3.sim.boxes!["new.glb"]);
+  check("the sim snapshot carries boxes and statics", !!(simSnapshot(s3.sim) as any).boxes && !!(simSnapshot(s3.sim) as any).statics);
+  // THE 0.2.0 LAW IS CARRIED, PINNED: the same wall under a 0.2.0 epoch is air
+  const OLD2 = WALL.map((e) => e.seq === 2 ? mk(2, 10, "epoch", { sim: "eidosim@0.2.0", tickMs: 66, boxes: BOXES }) : e);
+  const o2 = fold(OLD2); advanceSim(o2.sim, 600);
+  check("a 0.2.0 epoch ignores boxes (no statics; the JSON it always had)",
+    !o2.sim.epoch!.foreign && o2.sim.boxes === undefined && o2.sim.statics === undefined
+      && !("on" in o2.sim.bodies.crate) && !("box" in o2.sim.bodies.crate));
+  check("…and its flight passes THROUGH the wall, exactly as 0.2.0 always did",
+    o2.sim.bodies.crate.resting === true && o2.sim.bodies.crate.p[0] > 4.5, String(o2.sim.bodies.crate.p[0]));
+}
+
 console.log(`\n${fail ? "\x1b[31mRED\x1b[0m" : "\x1b[32mGREEN\x1b[0m"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

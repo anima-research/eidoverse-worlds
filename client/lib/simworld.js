@@ -142,7 +142,9 @@ export function initSimWorld() {
       // Show the visual center standing on ITS ground — lift by the terrain
       // difference between the two footprints. Presentation only, like the
       // tumble: ~0 for an origin-centred model, exactly 0 without terrain.
-      if (sp.arm > 0.05 && sp.box) {
+      // (a body the sim has standing ON another thing — eidosim@0.3.0's
+      // `on` — takes that thing's top as its ground, not the terrain's)
+      if (sp.arm > 0.05 && sp.box && !b.on) {
         const c = Math.cos(b.yaw), s = Math.sin(b.yaw);
         const wx = sp.cx * c + sp.cz * s, wz = -sp.cx * s + sp.cz * c;
         const p = obj.position;
