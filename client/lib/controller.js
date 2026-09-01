@@ -477,6 +477,25 @@ export function updateMe(dt, me) {
     myState.speed = Math.hypot(flight.vel.x, flight.vel.z);
     myState.clip = flight.wings === 'LIMP' ? 'ragdoll'
       : (input.flap ? 'fly' : 'soar');
+    // WINGS THAT WORK WHEN THE PHYSICS IS WORKING. Effort is read off the
+    // flight state rather than off a timer, so the animation cannot drift out
+    // of step with what is actually lifting her:
+    //
+    //   launchNow  the shaped take-off impulse, which SPOOLS UP over ~1.5s and
+    //              fades by ~3s. Janus asked for "several, while rising" and
+    //              this is exactly that curve -- the first beat as her feet
+    //              leave, the hardest ones as she is climbing through the
+    //              second, easing off as the glide takes over. Nothing here
+    //              counts beats; the launch envelope already has the shape.
+    //   flap       Space held. A sustained climb IS the wings, so they beat
+    //              full-power for as long as it lasts.
+    //
+    // Normalised against the config's own launch boost, so retuning the
+    // take-off retunes the animation with it instead of leaving a hardcoded
+    // divisor behind to disagree.
+    const boost = flightCfg.pilot?.launchBoost ?? 9.0;
+    const fromLaunch = Math.min(1, (flight.launchNow ?? 0) / (boost * 0.55));
+    me.wingEffort = input.flap ? 1 : fromLaunch;
     if (flight.phase === 'LANDED' || flight.phase === 'GROUND' || flight.phase === 'RAGDOLL') {
       const endedAt = +flight.t.toFixed(2);
       lastFlightEnd = { phase: flight.phase, y: +flight.pos.y.toFixed(2),
@@ -493,6 +512,7 @@ export function updateMe(dt, me) {
       }
       flight = null; grounded = true; vy = 0;
       myState.clip = 'idle'; myState.speed = 0;
+      me.wingEffort = 0;              // back to the resting flap, eased in _flap
     }
     // AND NOW PUT HER ON THE SCREEN. Everything above moves `myState`, which
     // is the streamed, authoritative body -- but the four lines that make a

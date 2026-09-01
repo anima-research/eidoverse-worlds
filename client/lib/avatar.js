@@ -102,6 +102,56 @@ export const WING_IDLE = {
                     // diagonal line, just a tilted hinge.
 };
 
+// THE POWER STROKE — what the same wings do when they are holding a body up.
+//
+// Every dial here is WING_IDLE's, so the two sets interpolate term by term and
+// `_flap` needs no second code path: `wingEffort` in [0,1] crossfades between
+// them and everything downstream (lag, taper, sweep, the limp handover) is
+// unchanged. Janus, having finally seen himself fly: "can we add a more
+// dramatic wing flap animation for when taking off (that should be several,
+// while rising) and flapping wings to move up?"
+//
+// "Several, while rising" is the shape of the thing. A launch is not one beat
+// and not a steady cruise -- it is a burst that the climb pays for -- so the
+// EFFORT is driven by the flight state (controller.js), not by a timer here:
+// full through the launch impulse, full while Space is held, and decaying back
+// to the idle whenever she is only gliding. The animation follows the physics
+// instead of running beside it.
+export const WING_POWER = {
+  deg: 46,       // a real downstroke. 15 is a bird sitting on a branch; this is
+                 // the same wing doing work, and at the tip the taper and the
+                 // root's own rotation compound it well past 46.
+  hz: 2.1,       // five times the idle. Fast enough to read as effort, slow
+                 // enough that the lag below still separates tip from shoulder
+                 // -- past ~3Hz the whole chain blurs into one shape.
+  bias: -8,      // the stroke sits LOW: a power flap drives down from above,
+                 // so the arc is centred below the rest pose rather than on it.
+  tip: 0.78,     // the tip carries more of the stroke than at idle (0.65) --
+                 // under load a wing straightens out along its span instead of
+                 // curling, and the extra carry is what sells the push.
+  lag: 0.22,     // and trails further behind the shoulder, because the membrane
+                 // is being dragged through air that is pushing back.
+  sync: true,
+  recover: 0.55, // unchanged: this is the ragdoll handover, not the flap.
+  sweep: 17,     // nearly double. The ellipse is what makes a flap look like it
+                 // moves air rather than waving, and moving air is the entire
+                 // claim a power stroke makes.
+  sweepPhase: 0.25,
+};
+
+/** Blend two wing dial sets. Numbers interpolate; everything else takes the
+ *  idle's value, since `sync` is a mode rather than a magnitude and `recover`
+ *  belongs to the ragdoll handover, which is not a thing you can be halfway
+ *  through being. Scratch object reused: this runs per frame, per body. */
+const _wmix = {};
+function mixWings(a, b, t) {
+  for (const k of Object.keys(a)) {
+    const av = a[k], bv = b[k];
+    _wmix[k] = (typeof av === 'number' && typeof bv === 'number') ? av + (bv - av) * t : av;
+  }
+  return _wmix;
+}
+
 /** What a limp body's springbones become, when no sim of its own is running.
  *  Live: the debug panel dials these, and they take effect on the next body to
  *  go limp. stiffness is a FACTOR on whatever the rig declared; gravity is a
@@ -592,7 +642,21 @@ export class Avatar {
    *  one bone owns.
    */
   _flap(dt) {
-    const W = WING_IDLE;
+    // EFFORT crossfades the two dial sets, term by term. `wingEffort` is set
+    // from outside (controller.js, from the flight state) and eased HERE so a
+    // caller can slam it to 1 on the frame she leaves the ground without the
+    // wings snapping between two amplitudes: 46 degrees appearing in one frame
+    // is a glitch, arriving over ~0.2s is a downstroke.
+    //
+    // Asymmetric on purpose. Effort comes on fast (a bird commits to a beat)
+    // and bleeds off slowly (the last strokes of a climb trail into the glide),
+    // which is also what keeps a tapped Space from looking like a twitch.
+    const want = THREE.MathUtils.clamp(this.wingEffort ?? 0, 0, 1);
+    const have = this._wingEffort ?? 0;
+    const tau = want > have ? 0.18 : 0.55;
+    this._wingEffort = have + (want - have) * (1 - Math.exp(-dt / tau));
+    const e = this._wingEffort;
+    const W = e < 0.001 ? WING_IDLE : mixWings(WING_IDLE, WING_POWER, e);
     this._wingBlend = Math.min(1, (this._wingBlend ?? 1) + dt / Math.max(0.01, W.recover));
     this._wingT = (this._wingT ?? 0) + dt * Math.max(0, W.hz);
     this._wingT -= Math.floor(this._wingT);      // stays in [0,1) forever

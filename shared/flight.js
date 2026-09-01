@@ -189,6 +189,24 @@ export const DEFAULT_CONFIG = {
     groundClearance: 0.15,    // m; below this counts as ground contact
   },
 
+  // ---- the stick, when a person is holding it.
+  //
+  // These three were already load-bearing and already had values -- as `??`
+  // fallbacks at their use sites (stepPilot's spoil and flap, takeOff's boost
+  // parameter). Fallbacks are fine until something OUTSIDE the integrator needs
+  // to agree with one: the client scales the wing animation against the launch
+  // boost, and a hardcoded divisor there would quietly disagree the first time
+  // the take-off was retuned. Named config is what lets the animation follow
+  // the physics instead of tracking it by hand.
+  //
+  // Same numbers as the fallbacks they replace. Nothing about flight changes.
+  pilot: {
+    spoilSink: 2.5,      // m/s of extra sink with the spoilers out (Shift)
+    flapClimb: 2.2,      // m/s of climb while Space is held; costs stamina
+    launchBoost: 9.0,    // m/s launch impulse, SHAPED over ~1.5s in stepPilot --
+                         // 3 bought under a second of air and read as a stumble
+  },
+
   // ---- watchdog (spec R2, open question Q1)
   // Q1 is explicitly unresolved in the spec ("proposal: 90s ... tie to existing
   // presence heartbeat?"). It is config with the proposal as default, and the
@@ -819,8 +837,11 @@ function groundContact(cfg, s, groundY, ragdoll) {
  *  four seconds and 4 m of altitude, which is enough to find out whether you
  *  are flying.
  */
-export function takeOff(cfg, state, { launchSpeed = null, boost = 9.0, groundY = null } = {}) {
+export function takeOff(cfg, state, { launchSpeed = null, boost = null, groundY = null } = {}) {
   const s = { ...state, pos: { ...state.pos }, vel: { ...state.vel }, events: [] };
+  // The config's boost unless a caller overrides it, so `cfg.pilot.launchBoost`
+  // is the single number the take-off and anything watching it both read.
+  boost = boost ?? cfg.pilot?.launchBoost ?? 9.0;
   if (s.wings === 'FOLDED') {
     s.events.push({ t: s.t, kind: 'takeoff.refused', reason: 'wings folded' });
     return s;

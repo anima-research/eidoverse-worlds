@@ -756,7 +756,51 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   check('every early-return path in updateMe pays the render tail',
         tail.every(t => flightBlock.includes(t)), flightBlock ? '' : 'flight block not found');
 
-  // 5. And the whole reason this took three rounds: every report was a
+  // 5. "can we add a more dramatic wing flap animation for when taking off
+  //    (that should be several, while rising) and flapping wings to move up?"
+  //
+  //    The effort is read off the FLIGHT STATE, never a timer -- launchNow for
+  //    the take-off burst, `flap` for a held climb -- so the animation cannot
+  //    drift out of step with what is lifting her. "Several, while rising" is
+  //    the launch envelope's own shape: measured in a browser, effort held 1.0
+  //    for the first second and decayed 0.91 -> 0.58 -> 0.33 -> 0.18 over the
+  //    next five, which is a burst of hard beats easing into a glide.
+  const av = readFileSync('client/lib/avatar.js', 'utf8');
+  check('there is a power stroke distinct from the idle flap',
+        /export const WING_POWER = \{/.test(av) &&
+        /deg: 4[0-9]/.test(av.slice(av.indexOf('WING_POWER'))));
+  check('and _flap crossfades the two rather than branching',
+        /mixWings\(WING_IDLE, WING_POWER, e\)/.test(av));
+  check('effort eases, so 46 degrees never appears in one frame',
+        /want > have \? 0\.\d+ : 0\.\d+/.test(av));
+  check('the wings are driven by the launch impulse and the flap key',
+        /me\.wingEffort = input\.flap \? 1 : fromLaunch/.test(ctl) &&
+        /flight\.launchNow/.test(ctl));
+  // The divisor that would otherwise rot: the client scales effort against the
+  // launch boost, so the boost has to be a number both sides can read.
+  check('and scaled against the CONFIG boost, not a hardcoded copy',
+        /cfg\.pilot\?\.launchBoost/.test(readFileSync('shared/flight.js', 'utf8')) &&
+        /flightCfg\.pilot\?\.launchBoost/.test(ctl));
+  check('landing hands the wings back to the idle',
+        /me\.wingEffort = 0;/.test(ctl));
+  // Behavioural, not structural: the boost moved from a `??` fallback into
+  // config, and the point of moving it was that retuning it retunes everything
+  // that reads it. Same number as before -- nothing about flight changed.
+  {
+    const c0 = makeConfig();
+    check('the launch boost is config, and defaults to what it always was',
+          takeOff(c0, initialState({ phase: 'GROUND' }, c0), { groundY: 0 }).launchV === 9);
+    const c1 = makeConfig({ pilot: { spoilSink: 2.5, flapClimb: 2.2, launchBoost: 14 } });
+    check('retuning it retunes the take-off (and so the wings with it)',
+          takeOff(c1, initialState({ phase: 'GROUND' }, c1), { groundY: 0 }).launchV === 14);
+    check('an explicit caller boost still overrides the config',
+          takeOff(c0, initialState({ phase: 'GROUND' }, c0), { groundY: 0, boost: 5 }).launchV === 5);
+    let threw = false;
+    try { makeConfig({ pilot: { nope: 1 } }); } catch { threw = true; }
+    check('and the new block still rejects dead keys', threw);
+  }
+
+  // 6. And the whole reason this took three rounds: every report was a
   //    description, because the state was only reachable from a devtools
   //    probe. /flight puts it in the chat log, where the person is.
   const reg = readFileSync('client/lib/commands/registry.js', 'utf8');
