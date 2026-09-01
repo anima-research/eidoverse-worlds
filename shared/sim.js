@@ -11,13 +11,30 @@
 // ECMA-specified shortest-round-trip, so JSON of this state is itself a
 // deterministic serialization — digests may be taken over it directly.
 //
-// eidosim@0.1.0, scoped honestly:
+// This build CARRIES TWO sims (Covenant II — old logs replay under the law
+// they were written under, bit for bit):
+//
+// eidosim@0.1.0 — flat floor: ground = the body's own starting height
+//   (right on build pads, wrong on slopes — which a hilly-meadow playtest
+//   duly hit: flights landed on an invisible floor at launch altitude,
+//   §24t-3). Its advance law below is UNTOUCHED; 0.1.0 epochs in old logs
+//   replay to the same bits they always did (replaybench holds the proof).
+//
+// eidosim@0.2.0 — terrain-aware ground (the epoch bump 0.1.0's header
+//   scheduled): the sim folds the world's `terrain` entries and grounds
+//   every body on shared/terrainmath.js — the toolkit's own height law
+//   re-expressed in exact ops (Covenant I; ≥99.8% bit-identical to the
+//   mesh the client walks, worst divergence ~1e-15). Grounded bodies are
+//   GLUED to the terrain while sliding (they follow it down and up; no
+//   cliff launches in v0.2); a flight meeting rising ground splats to
+//   contact. A `terrain` entry under a live 0.2 epoch re-grounds the world
+//   wholesale: every body is released to the instant fold (the authored
+//   word re-seats). Worlds with no terrain keep the flat-floor fallback.
+//
+// Shared by both:
 //   - one intent: `punt` (dialect-3 form: dir REQUIRED — Covenant III, the
 //     entry carries everything; presence never enters the sim);
 //   - ballistic integration, semi-implicit Euler at the epoch's fixed tick;
-//   - ground = the body's own starting height (the flat-floor assumption:
-//     right on build pads, wrong on slopes — terrain-aware collision is
-//     sim@0.2, an epoch bump, once heightAt is shared and exact-ops-audited);
 //   - authored word wins: place/spawn/remove/mount/dismount/motion naming a
 //     live body releases it to the instant fold (§6 draft ruling);
 //   - a foreign epoch (a sim this build does not carry) is honored by
@@ -29,7 +46,13 @@
 // intent landed. Advancement is per-tick fixed-step, so any advance schedule
 // reaching tick T yields the same state: snapshots may cut anywhere.
 
-export const SIM_ID = 'eidosim@0.1.0';
+import { terrainParams, makeHeightField } from './terrainmath.js';
+
+// What the epoch verb MINTS (new epochs enter this sim)…
+export const SIM_ID = 'eidosim@0.2.0';
+// …and what this build can still REPLAY (a carried sim is never foreign).
+const CARRIED = new Set(['eidosim@0.1.0', SIM_ID]);
+const V1 = 'eidosim@0.1.0';
 
 // The physics constants ARE the sim version — editing any of them is an
 // epoch bump, never a patch (Covenant II: it rewrites what old logs mean).
@@ -46,10 +69,11 @@ const MAX_FLIGHT_TICKS = 20000; // runaway backstop: force rest (~22min @66ms)
  *              seq: number, born: number, resting: boolean }} SimBody */
 /** @typedef {{ epoch: { sim: string, tickMs: number, ts: number, seq: number,
  *                       foreign?: boolean } | null,
- *              tick: number, bodies: Record<string, SimBody> }} SimState */
+ *              tick: number, bodies: Record<string, SimBody>,
+ *              terrain?: ReturnType<typeof terrainParams> | null }} SimState */
 
 /** @returns {SimState} */
-export const emptySim = () => ({ epoch: null, tick: 0, bodies: {} });
+export const emptySim = () => ({ epoch: null, tick: 0, bodies: {}, terrain: null });
 
 /** The Covenant-IV quantization: the first tick boundary at or after ts.
  *  @param {SimState} sim @param {number} ts */
@@ -65,6 +89,8 @@ export function tickOf(sim, ts) {
 export function advanceSim(sim, toTick) {
   if (!sim.epoch || sim.epoch.foreign) { sim.tick = toTick > sim.tick ? toTick : sim.tick; return sim; }
   const dt = sim.epoch.tickMs / 1000;
+  const v2 = sim.epoch.sim !== V1;
+  const hf = v2 && sim.terrain ? heightFieldOf(sim) : null;
   while (sim.tick < toTick) {
     sim.tick++;
     for (const id in sim.bodies) {
@@ -74,8 +100,12 @@ export function advanceSim(sim, toTick) {
       b.p[0] = b.p[0] + b.v[0] * dt;
       b.p[1] = b.p[1] + b.v[1] * dt;
       b.p[2] = b.p[2] + b.v[2] * dt;
-      if (b.p[1] < b.ground && b.v[1] < 0) {
-        b.p[1] = b.ground;
+      // the floor under the body THIS tick: the terrain law (0.2 epochs with
+      // a terrain), else the flat launch-height floor (0.1 law, and 0.2's
+      // fallback for terrainless worlds)
+      const g = hf ? hf(b.p[0], b.p[2]) : b.ground;
+      if (b.p[1] < g && b.v[1] < 0) {
+        b.p[1] = g;
         // an impact slower than two gravity-ticks is not a bounce — it is
         // resting CONTACT (the terminal micro-bounce would otherwise feed
         // v[1] from gravity forever and rest could never be reached)
@@ -86,8 +116,16 @@ export function advanceSim(sim, toTick) {
         } else {
           b.v[1] = 0;
         }
+      } else if (v2 && b.p[1] <= g && b.v[1] >= 0) {
+        // 0.2 only: flying INTO rising ground (a hillside) splats to
+        // contact; a grounded slider (v[1] === 0) is GLUED to the terrain,
+        // following it down and up rather than launching off every bump
+        b.p[1] = g;
+        b.v[1] = 0;
+      } else if (v2 && b.v[1] === 0) {
+        b.p[1] = g;
       }
-      if (b.p[1] === b.ground && b.v[1] === 0) {
+      if (b.p[1] === g && b.v[1] === 0) {
         // grounded: slide out under friction, then rest
         b.v[0] = b.v[0] * GROUND_FRICTION;
         b.v[2] = b.v[2] * GROUND_FRICTION;
@@ -96,11 +134,25 @@ export function advanceSim(sim, toTick) {
         }
       }
       if (!b.resting && sim.tick - b.born > MAX_FLIGHT_TICKS) {
-        b.v[0] = 0; b.v[1] = 0; b.v[2] = 0; b.p[1] = b.ground; b.resting = true;
+        b.v[0] = 0; b.v[1] = 0; b.v[2] = 0;
+        b.p[1] = hf ? hf(b.p[0], b.p[2]) : b.ground;
+        b.resting = true;
       }
     }
   }
   return sim;
+}
+
+// The compiled height function for a sim's terrain params — cached by the
+// PARAMS OBJECT's identity (a new terrain entry installs a new object), and
+// deliberately outside the sim state: SimState stays plain JSON (snapshots
+// serialize it directly), and any consumer holding an equal state compiles
+// an identical field.
+const _fields = new WeakMap();
+function heightFieldOf(sim) {
+  let f = _fields.get(sim.terrain);
+  if (!f) { f = makeHeightField(sim.terrain); _fields.set(sim.terrain, f); }
+  return f;
 }
 
 const vec3ok = (a) => Array.isArray(a) && a.length === 3
@@ -123,17 +175,33 @@ export function simEntry(sim, entry, st) {
     const simName = typeof a?.sim === 'string' ? a.sim : null;
     const tickMs = a?.tickMs;
     if (!simName || !Number.isInteger(tickMs) || tickMs < MIN_TICK_MS || tickMs > MAX_TICK_MS) return;
-    // v0.1: a new epoch REPLACES — bodies of the old epoch are released to
-    // wherever the last snapshot barrier (or their rest) left them. The
-    // sequencer's upgrade path folds a barrier snapshot before appending
-    // the epoch entry, which is what makes this safe (PROTOCOL_v2 §3).
+    // A new epoch REPLACES — bodies of the old epoch are released to
+    // wherever the last snapshot barrier (or the sequencer's epoch-release
+    // places) left them; the barrier fold around the entry is what makes
+    // this safe (PROTOCOL_v2 §3).
     sim.epoch = { sim: simName, tickMs, ts: entry.ts, seq: entry.seq,
-      ...(simName === SIM_ID ? {} : { foreign: true }) };
+      ...(CARRIED.has(simName) ? {} : { foreign: true }) };
     sim.tick = 0;
     sim.bodies = {};
+    // 0.2 epochs adopt the world's standing terrain (the instant fold's
+    // word, already folded through this entry); 0.1 epochs keep their flat
+    // law — sim.terrain stays null so the old advance path cannot see it.
+    sim.terrain = simName !== V1 && CARRIED.has(simName) && /** @type {any} */(st)?.terrain
+      ? terrainParams(/** @type {any} */(st).terrain) : null;
     return;
   }
   if (!sim.epoch || sim.epoch.foreign) return;   // pre-epoch logs keep v1 semantics whole
+  if (entry.verb === 'terrain' && sim.epoch.sim !== V1) {
+    // the ground moved wholesale: adopt the new law and release EVERY body
+    // to the instant fold — the authored word re-seats entities on the new
+    // terrain (the client already re-seats ground-level things on a
+    // terrain landing; the sim must not keep flying over a floor that no
+    // longer exists)
+    advanceSim(sim, tickOf(sim, entry.ts));
+    sim.terrain = terrainParams(a ?? {});
+    sim.bodies = {};
+    return;
+  }
   if (entry.verb === 'punt') {
     if (!a?.id || !vec3ok(a.dir)) return;        // dialect-3 punt carries its vector or is inert
     const ent = st.entities[a.id];
@@ -169,5 +237,7 @@ export function simPose(sim, id) {
 
 /** Deterministic serialization for digests and wire — plain JSON is exact
  *  (ECMA number formatting is shortest-round-trip), keys in insertion
- *  order, which the fold makes deterministic. */
-export const simSnapshot = (sim) => ({ epoch: sim.epoch, tick: sim.tick, bodies: sim.bodies });
+ *  order, which the fold makes deterministic. `terrain` rides so a restored
+ *  snapshot grounds exactly as the live fold did. */
+export const simSnapshot = (sim) => ({ epoch: sim.epoch, tick: sim.tick, bodies: sim.bodies,
+  ...(sim.terrain ? { terrain: sim.terrain } : {}) });

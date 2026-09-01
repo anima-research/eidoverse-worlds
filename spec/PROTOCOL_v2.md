@@ -65,6 +65,21 @@ and decades. Therefore, inside the sim fold:
 The reference implementation SHOULD keep the sim kernel wasm-compiled so
 "same epoch, same bits" is a build artifact rather than a discipline.
 
+*Delivered (2026-08-31):* **eidosim@0.2.0 — terrain-aware ground** (the
+epoch bump 0.1.0's own header scheduled). `shared/terrainmath.js` is the
+toolkit terrain height law re-expressed in the blessed exact-op set (two
+substitutions: `pow(0.5, n)` → accumulated halving; `hypot` → `sqrt` —
+hypot is implementation-approximated and historically differs across
+engines). ≥99.8% bit-identical to the mesh clients walk, worst divergence
+~1e-15. The sim folds `terrain` entries: a 0.2 epoch adopts the world's
+standing terrain; a terrain entry under a live epoch re-grounds the world
+and releases every body to the instant fold. Grounded sliders are glued to
+the terrain; flights meeting rising ground splat to contact; terrainless
+worlds keep the flat-floor fallback. **eidosim@0.1.0 remains CARRIED**: old
+epochs replay under the exact law they were written under (replaybench
+digests unchanged across the bump), while new epochs mint 0.2.0 — the
+epoch-release places make the live upgrade clean.
+
 *Delivered (2026-08-30):* `shared/simmath.js` (`simmath@0.1.0`) is the
 owned-numerics kernel — `sinT/cosT/atan2T/expT` built exclusively from the
 blessed exact-op set (Cody–Waite two-word reduction, fixed-order

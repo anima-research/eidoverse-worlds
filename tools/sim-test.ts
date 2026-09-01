@@ -94,5 +94,56 @@ console.log("\nthe sim fold (shared/sim.js) — " + SIM_ID);
     f.sim.epoch!.foreign === true && Object.keys(f.sim.bodies).length === 0);
 }
 
+{ // eidosim@0.2.0: terrain-aware ground (§24t-3 — the epoch bump the 0.1
+  // header scheduled, unblocked by shared/terrainmath.js)
+  const { makeHeightField, terrainParams } = await import("../shared/terrainmath.js");
+  const TARGS = { seed: 7, size: 160, segments: 8, amplitude: 2.6, flatRadius: 16 };
+  const HILLS: LogEntry[] = [
+    mk(0, 0, "genesis", { v: 3, dialect: "eidoverse-log" }),
+    mk(1, 5, "terrain", TARGS),                             // authored BEFORE the epoch
+    mk(2, 10, "epoch", { sim: SIM_ID, tickMs: 66 }),
+    mk(3, 20, "spawn", { id: "barrel", lib: "x.glb", pos: [20, 1.2, 20] }),
+    mk(4, 500, "punt", { id: "barrel", dir: [1, 0.9, 0], power: 6 }),
+  ];
+  const { sim } = fold(HILLS);
+  check("a 0.2 epoch adopts the world's standing terrain", !!sim.terrain
+    && (sim.terrain as any).seed === 7 && (sim.terrain as any).amplitude === 2.6);
+  advanceSim(sim, 600);
+  const pose = simPose(sim, "barrel")!;
+  const hf = makeHeightField(terrainParams(TARGS));
+  check("the flight rests ON THE TERRAIN under it — not at launch altitude",
+    pose.resting === true && pose.p[1] === hf(pose.p[0], pose.p[2]),
+    `rest y ${pose.p[1]} vs terrain ${hf(pose.p[0], pose.p[2])} (launch was 1.2)`);
+  // schedule-independence holds under the terrain law too
+  const b2 = fold(HILLS);
+  advanceSim(b2.sim, 123); advanceSim(b2.sim, 600);
+  check("0.2 schedule-independence (terrain law)", digest(b2.sim) === digest(sim));
+  // a terrain entry mid-epoch re-grounds the world: every body released
+  const c2 = fold([...HILLS, mk(5, 900, "terrain", { ...TARGS, seed: 8 })]);
+  advanceSim(c2.sim, 600);
+  check("a terrain entry under a live 0.2 epoch releases every body (the authored word re-seats)",
+    Object.keys(c2.sim.bodies).length === 0 && (c2.sim.terrain as any).seed === 8);
+  // snapshots carry the terrain law
+  check("the sim snapshot carries the terrain params", !!(simSnapshot(sim) as any).terrain);
+}
+
+{ // THE 0.1.0 LAW IS CARRIED, PINNED: an old log's epoch replays flat-floor
+  // — same bits it always produced — even though this build MINTS 0.2.0.
+  const OLD: LogEntry[] = [
+    mk(0, 0, "genesis", { v: 3, dialect: "eidoverse-log" }),
+    mk(1, 5, "terrain", { seed: 7, size: 160, amplitude: 2.6 }),
+    mk(2, 10, "epoch", { sim: "eidosim@0.1.0", tickMs: 66 }),
+    mk(3, 20, "spawn", { id: "crate", lib: "x.glb", pos: [20, 1.2, 20] }),
+    mk(4, 500, "punt", { id: "crate", dir: [1, 0.6, 0], power: 8 }),
+  ];
+  const { sim } = fold(OLD);
+  check("a 0.1.0 epoch is CARRIED (not foreign)", !sim.epoch!.foreign);
+  check("...and ignores terrain (its law is the flat floor, preserved)", sim.terrain === null);
+  advanceSim(sim, 600);
+  const pose = simPose(sim, "crate")!;
+  check("...its flight rests at launch altitude, exactly as 0.1.0 always did",
+    pose.resting === true && pose.p[1] === 1.2, String(pose.p[1]));
+}
+
 console.log(`\n${fail ? "\x1b[31mRED\x1b[0m" : "\x1b[32mGREEN\x1b[0m"} — ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

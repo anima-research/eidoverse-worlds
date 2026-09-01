@@ -34,6 +34,7 @@ export type SimState = {
   tick: number;
   bodies: Record<string, { p: number[]; v: number[]; yaw: number; ground: number;
     seq: number; born: number; resting: boolean }>;
+  terrain?: Record<string, number> | null;   // eidosim@0.2.0 — the folded terrain params
 };
 import type { HnSession } from "./auth.ts";
 
