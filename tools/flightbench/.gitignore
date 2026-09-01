@@ -1,0 +1,7 @@
+# Clips and frames REGENERATE from `bun tools/flight-capture.mjs`, and the
+# receipt records the sha256 of each one -- so the evidence is reproducible and
+# checkable without carrying a megabyte of H.264 in the history. The receipt
+# and the telemetry ARE committed: they are the measurements, the mp4 is the
+# illustration.
+out/*.mp4
+out/frames-*/
