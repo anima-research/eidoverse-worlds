@@ -44,6 +44,7 @@ export const COMMANDS = [
   { name: 'reset', aliases: ['erase'], help: 'erase this world back to zero, archived not destroyed (owner)' },
   { name: 'goto', help: '/goto <name> — walk to someone' },
   { name: 'clear', help: 'clear your chat log' },
+  { name: 'flight', help: 'why flight is (or is not) doing that — rig, capability, phase' },
   { name: 'help', help: 'open the help sheet' },
 ];
 

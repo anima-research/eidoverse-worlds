@@ -15,7 +15,7 @@ import {
   net, sendVerb, sendMod, sendPuppet, sendWorldFork, sendWorldReset, requestDebug,
 } from '../net.js';
 import { remotes } from '../remotes.js';
-import { myState, setPosture } from '../controller.js';
+import { myState, setPosture, flightReport } from '../controller.js';
 import { kick } from '../physobj.js';
 import { logChat } from '../chat.js';
 import { toggleHelp, flashHint } from '../ui.js';
@@ -29,6 +29,10 @@ import { canonicalPoint, CONTACT_POINTS } from '../../../shared/contact.js';
 import { TOUCH_GAP } from '../../../shared/reachwire.js';
 
 register('help', () => toggleHelp());
+// Flight's own diagnostic, in the chat log where a person can read it and
+// paste it back. See controller.js flightReport() for why this is not just
+// the console probe.
+register('flight', () => { for (const line of flightReport().split('\n')) logChat('*', line); });
 
 // Eyelids are BONES on rigs that have them (L_/R_Eyelid_Upper) — most VRMs
 // blink with a blendshape instead and have none, so this says so plainly

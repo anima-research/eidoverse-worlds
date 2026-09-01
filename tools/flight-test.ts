@@ -711,6 +711,33 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   check('client flight and client walking resolve the SAME ground',
         !/groundY:\s*\(x, ?z\) => heightAt\(/.test(ctl) &&
         /resolveColliders\(_gp, heightAt\)/.test(ctl));
+
+  // 3. "it just makes me stuck standing or walking (unable to steer) depending
+  //    on which one i was doing at the time of pressing f; pressing f again
+  //    frees me."  The toggle published the GROUND state and then reassigned
+  //    the take-off on the next line, so a throw or a refusal in between left
+  //    `flight` holding a body it would never move: stepGround integrates
+  //    nothing, but the movement loop had already handed it the body and
+  //    returned. Two locks now -- the toggle publishes only PILOT, and the
+  //    loop refuses to be held by a GROUND state.
+  check('the flight toggle publishes only a state that is actually flying',
+        /if \(next\.phase !== 'PILOT'\)/.test(ctl) &&
+        /\bflight = next;/.test(ctl));
+  check('and a GROUNDED flight cannot hold the body',
+        /if \(flight\.phase === 'GROUND'\) \{[\s\S]{0,220}?flight = null;/.test(ctl));
+  // A take-off that throws must not leave a half-built flight behind.
+  check('a throw during take-off releases the body instead of freezing it',
+        /catch \(e\) \{\s*\n?\s*return `flight failed to start/.test(ctl));
+
+  // 4. And the whole reason this took three rounds: every report was a
+  //    description, because the state was only reachable from a devtools
+  //    probe. /flight puts it in the chat log, where the person is.
+  const reg = readFileSync('client/lib/commands/registry.js', 'utf8');
+  const cht = readFileSync('client/lib/chat.js', 'utf8');
+  check("/flight is discoverable, dispatched, and answered",
+        /name: 'flight'/.test(reg) &&
+        /case 'flight':/.test(cht) &&
+        /export function flightReport\(/.test(ctl));
 }
 
 // ------------------------------------------------------- flown, and found wrong

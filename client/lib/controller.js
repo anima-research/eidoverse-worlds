@@ -67,6 +67,38 @@ function flightGround(x, z) {
 }
 
 export const flying = () => !!flight;
+
+/** WHY FLIGHT IS DOING THAT, in words, for a person with no devtools open.
+ *
+ *  The __flightDebug probe below is the same information, and it was useless
+ *  twice running: a browser console is not where the person who hits the bug
+ *  is standing, and every report that reached me was a DESCRIPTION ("it jumps
+ *  and lands", "I'm stuck standing") that I then spent a session translating
+ *  back into state. /audio exists for the same reason and says so: "a
+ *  diagnostic nobody can find is one nobody uses". */
+export function flightReport() {
+  const v = flightProv
+    ? resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones } })
+    : { enabled: false, reason: 'flight not armed for this body' };
+  const L = [];
+  L.push(`rig: ${flightBones?.length ?? 0} bones, ` +
+         (v.enabled ? `granted (${v.profile.wingCount} wing bones)` : `DENIED — ${v.reason}`));
+  if (flight) {
+    L.push(`state: ${flight.phase} · t=${flight.t.toFixed(1)}s · ` +
+           `y=${flight.pos.y.toFixed(2)} (ground ${flightGround(flight.pos.x, flight.pos.z).toFixed(2)})`);
+    L.push(`speed: ${flight.airspeed.toFixed(1)} m/s air · vy=${flight.vel.y.toFixed(2)} · ` +
+           `wings ${flight.wings} · stamina ${Math.round(flight.stamina)}`);
+    // The freeze that started this: a phase that integrates nothing while
+    // still holding the body. If it is ever seen again, it names itself.
+    if (flight.phase === 'GROUND') L.push('!! GROUND while held — this is the freeze bug; press F');
+  } else {
+    L.push('state: not flying' + (lastFlightEnd
+      ? ` · last flight ended ${lastFlightEnd.phase} at t=${lastFlightEnd.t}s, ` +
+        `y=${lastFlightEnd.y} over ground ${lastFlightEnd.ground}`
+      : ' · no flight this session'));
+  }
+  return L.join('\n');
+}
 // A probe, because "F did nothing" has three possible causes and they need
 // telling apart: no provider, a rig the provider refuses, or a toggle that
 // ran and then the movement loop overwrote it.
@@ -91,20 +123,42 @@ function toggleFlight() {
   const r = resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones } });
   if (!r.enabled) return `no: ${r.reason}`;
   flightCfg ??= flightConfig();
-  flight = flightState({
-    phase: 'GROUND',
-    pos: { x: myState.pos.x, y: myState.pos.y, z: myState.pos.z },
-    // the world's yaw convention is atan2(dx,dz); the integrator's is
-    // atan2(dz,dx). Convert, both ways, at this boundary only.
-    yaw: Math.PI / 2 - myState.yaw,
-  }, flightCfg);
-  // THE GROUND UNDER HER FEET, resolved the way walking resolves it. The first
-  // cut passed `myState.pos.y` -- where she IS, which is the same number only
-  // while she is standing still on flat ground. Mid-jump, mid-mantle or on the
-  // frame after a step-up it is metres off, and takeOff builds its launch
-  // height from it (`groundY + clearance + 0.6`), so flight began below the
-  // floor and `groundContact` ended it on the next tick: a jump that lands.
-  flight = flightTakeOff(flightCfg, flight, { groundY: groundUnder(myState.pos) });
+  // ARM IT IN A LOCAL, PUBLISH IT ONCE. The first cut assigned the GROUND state
+  // to `flight` and then reassigned the result of takeOff on the next line --
+  // so anything that threw in between (or any refusal takeOff returned) left
+  // `flight` holding a body that had never left the ground. That state is
+  // TRUTHY, so the movement loop handed it the body, `stepGround` integrated
+  // nothing, and the person was frozen in whatever clip they were wearing until
+  // they pressed F again. "Stuck standing or walking depending on which one I
+  // was doing at the time."
+  //
+  // A toggle either flies or it does not. Nothing observes a partial one.
+  let next;
+  try {
+    next = flightState({
+      phase: 'GROUND',
+      pos: { x: myState.pos.x, y: myState.pos.y, z: myState.pos.z },
+      // the world's yaw convention is atan2(dx,dz); the integrator's is
+      // atan2(dz,dx). Convert, both ways, at this boundary only.
+      yaw: Math.PI / 2 - myState.yaw,
+    }, flightCfg);
+    // THE GROUND UNDER HER FEET, resolved the way walking resolves it. Passing
+    // `myState.pos.y` -- where she IS -- is the same number only while she is
+    // standing still on flat ground; mid-jump or a frame after a step-up it is
+    // metres off, and takeOff builds its launch height from it.
+    next = flightTakeOff(flightCfg, next, { groundY: groundUnder(myState.pos) });
+  } catch (e) {
+    return `flight failed to start: ${e?.message ?? e}`;
+  }
+  // A REFUSAL IS NOT A TAKE-OFF. takeOff returns a state with a `takeoff.refused`
+  // event rather than throwing, and the phase it returns is the phase it was
+  // given -- which is the other way the body ended up frozen on the ground
+  // holding the controls.
+  if (next.phase !== 'PILOT') {
+    const why = next.events?.find(ev => ev.kind === 'takeoff.refused')?.reason ?? next.phase;
+    return `cannot take off: ${why}`;
+  }
+  flight = next;
   return 'flying — W/S pitch, A/D bank, Shift spoil, Space flap, F to land';
 }
 
@@ -402,6 +456,19 @@ export function updateMe(dt, me) {
   const blockedTop = lastBlockedTop();
   // FLIGHT OWNS THE BODY while it lasts -- position, heading and clip -- the
   // same way a mantle or a ragdoll does. Walking resumes the moment she lands.
+  if (flight) {
+    // A GROUNDED FLIGHT DOES NOT OWN A BODY. `stepGround` integrates nothing,
+    // so a state that reaches here still in GROUND freezes the person in place
+    // and swallows their controls -- flight's grip on the body has to be
+    // conditional on flight actually happening. The toggle already refuses to
+    // publish a non-PILOT state; this is the second lock, because "the body is
+    // held by something that is not moving it" is the failure worth making
+    // structurally impossible rather than merely unlikely.
+    if (flight.phase === 'GROUND') {
+      flashHint?.('flight did not start — released');
+      flight = null; grounded = true; vy = 0;
+    }
+  }
   if (flight) {
     const input = pilotInput(keys, flight, dt);
     flight = flightStep(flightCfg, flight, dt, { groundY: flightGround, input });
