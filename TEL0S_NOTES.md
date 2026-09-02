@@ -390,6 +390,31 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-09-02 — §24t-11: CATCH-UP MERGE, THE FLIGHT ARC (d30d20a).**
+  anima/main was 33 commits ahead (a678f24: wings, the deterministic
+  flight integrator, effective rights, five MCP flight tools +
+  rehearsal, /flight; 41 files, +6.3k lines). Seven conflicts, all
+  where upstream extended a table or import block rimward had since
+  MOVED: chat.js (kept the registry dispatcher — /flight is a row +
+  handlers.js registration), mybody/state/world/main (their imports
+  onto the base.js/palette.js seams), agent.ts (their effective rights
+  + our fresh folds incl. the sim cut), and net-server.ts — nine flight
+  tools added to a TOOLS table we had unified into mcpl/tools.ts
+  (§24r): PORTED there, handlers in the (ag, a, ctx, name) form, the
+  rehearsal gate mirrored (default off; hidden AND refused); the
+  advertise⇔handle assertion holds. Their tests on our tree:
+  flight-test 231/0 after two layout retargets + a `commit` on its
+  bench world (our runVerb commits through the entry bus);
+  flight-headless-test reads a hard-coded path on its author's laptop
+  (environmental — UPSTREAM-FLAGS §1); typecheck:flight clean.
+  sim-smoke's second-exit check waits for its refusal now (with v1
+  physics resumed the driver's socket carries the lease stream; a
+  fixed 350ms flaked). Gates: smoke 85/85, sim-smoke 15/0, sim-test
+  37/0, replaybench 1/1, foldfix 24/0, state 31/0, parity PASS,
+  stdio-door 13/0, whisper-disable 5/5, typing-mcpl 2/0, bodysim 20/0,
+  sim-ground-smoke 8/0, lightbench 30/0. rimward: 0 behind, 96 ahead;
+  the fork is not diverged for the demo.
+
 - **2026-09-01 — §24t-10: THE PHYSICS FINISHERS (f4f95e3).** Polish for
   the 2026-09-02 demo, three items, one ruling. (1) LEAVING AN EPOCH —
   RULED: explicit, never a toggle (a world-changing command must not
