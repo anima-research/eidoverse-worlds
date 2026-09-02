@@ -5,6 +5,10 @@
 // here may import server.ts.
 
 import { ROLE_RANK, type WorldState } from "../shared/fold.js";
+// The precedence rule itself lives in shared/ so the browser and the mcpl
+// agent can compute the SAME answer instead of each hand-rolling a merge --
+// which is how one erased its own `fly` and the other never updated at all.
+import { rightsIn, worldHasOwnerIn } from "../shared/rightsfold.js";
 
 // ---------------------------------------------------------------- permissions
 //
@@ -26,10 +30,7 @@ import { ROLE_RANK, type WorldState } from "../shared/fold.js";
 export const ADMIN_IDS = new Set((process.env.WORLD_ADMIN ?? "").split(",").map((s) => s.trim()).filter(Boolean));
 
 export function worldHasOwner(st: WorldState): boolean {
-  for (const [id, r] of Object.entries(st.roles ?? {})) {
-    if (id !== "*" && r.role === "owner") return true;
-  }
-  return false;
+  return worldHasOwnerIn(st as any);
 }
 export function rightsOf(state: WorldState, id: string, sub?: string): { role: string; gen: boolean; fly: boolean } {
   // Grants are honored under either handle: the display id (what owners see
@@ -41,21 +42,17 @@ export function rightsOf(state: WorldState, id: string, sub?: string): { role: s
   // permission, it is a body permission, and "no owner has said otherwise" is
   // not a grant. Default-deny has to survive the absence of an owner or it is
   // only default-deny in worlds that already have one.
-  if (!worldHasOwner(state)) return { role: "builder", gen: true, fly: false };   // open world
   // In an OWNED world, unlisted ids take the wildcard default: builder
   // WITHOUT gen unless the owner says otherwise. Editing stays frictionless
   // for drop-in company; introducing new assets (spend) is what's restricted
   // by default. `/grant * visitor` closes the world; `/grant * +gen` opens
-  // generation to everyone.
-  let r = (sub ? state.roles?.[sub] : undefined) ?? state.roles?.[id] ?? state.roles?.["*"] ?? { role: "builder" as const };
-  // a name-keyed grant that KNOWS its subject's sub is worn only by that sub
-  if ((r as any).sub && (r as any).sub !== sub) {
-    r = state.roles?.["*"] ?? { role: "builder" as const };
-  }
-  // fly is NOT implied by owner. Owning a world is authority over the world,
-  // not a wing rig -- and an owner who wants to fly grants it to themselves,
-  // which leaves a log entry saying so.
-  return { role: r.role, gen: r.role === "owner" || Boolean(r.gen), fly: Boolean((r as any).fly) };
+  // generation to everyone. And fly is NOT implied by owner -- owning a world
+  // is authority over the world, not a wing rig.
+  //
+  // One implementation, in shared/rightsfold.js, so a client cannot drift from
+  // this. The admin override above stays here: WORLD_ADMIN is an environment
+  // fact, not a world fact, and reaches a client only as a computed answer.
+  return rightsIn(state as any, id, sub);
 }
 /** What each verb demands. `asset` is the spend gate; `grant` is owner-only. */
 export const VERB_NEEDS: Record<string, { rank: number; gen?: boolean }> = {

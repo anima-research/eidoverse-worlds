@@ -26,7 +26,7 @@ import {
 // grants this body a rig. A commons avatar with no wings gets nothing.
 import {
   makeConfig as flightConfig, initialState as flightState, step as flightStep,
-  takeOff as flightTakeOff, bestGlide,
+  takeOff as flightTakeOff, bestGlide, bodyDown as flightDown,
 } from '../../shared/flight.js';
 import { pilotInput } from '../../shared/flightpilot.js';
 import { worldFlightProvider, resolveFlight } from '../../shared/flightcap.js';
@@ -527,6 +527,23 @@ export function updateMe(dt, me) {
     if (flight.phase === 'GROUND') {
       flashHint?.('flight did not start — released');
       flight = null; grounded = true; vy = 0;
+    }
+  }
+  // A REVOKED GRANT GROUNDS A BODY THAT IS ALREADY UP. Checking only at the
+  // next ACTION satisfies the letter of "the next action refuses" and misses
+  // the point: a pilot whose permission was withdrawn mid-sortie kept flying
+  // indefinitely as long as they touched nothing. Re-resolved every frame --
+  // which is what "action-time, never cached" was always supposed to mean --
+  // and a withdrawal becomes a descent she can see, not a silent one.
+  //
+  // She is handed to the leaf rather than deleted: dropping `flight` at 15m
+  // would teleport her to the ground. Losing permission to fly is not the same
+  // as ceasing to exist.
+  if (flight && flight.phase !== 'RAGDOLL') {
+    const still = resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones } });
+    if (!still.enabled) {
+      flashHint?.(`flight withdrawn — ${still.reason}`, 6000);
+      flight = flightDown(flight, { eventId: 'capability-revoked' });
     }
   }
   if (flight) {

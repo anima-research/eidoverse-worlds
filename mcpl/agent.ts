@@ -1154,6 +1154,55 @@ export class WorldAgent {
         if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
         this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
       }
+    } else if (verb === "grant") {
+      // LIVE REVOCATION REACHES THE AGENT. This branch did not exist, so
+      // `myRights` was written once from snapshot.yourRights and never again:
+      // a `-fly` mid-session was invisible until reconnect, and the
+      // action-time provider -- the whole point of resolving per action --
+      // read a grant that had been withdrawn. mica found it in production:
+      // seq 15183 granted mythos fly:false, no later fly:true, and seq 15206
+      // was a completed sortie.
+      //
+      // The pure capability test passed the whole time because it called
+      // resolveFlight directly with a changed rights object. It never crossed
+      // THIS path, which is where the rights object stopped changing.
+      //
+      // ABSENT IS NOT FALSE, the same rule the browser learned the hard way
+      // (client/lib/world.js, and the auto-owner grant that erased its own
+      // fly): an entry carries only the fields it changed, so merge those and
+      // leave the rest standing.
+      //
+      // BY NAME ONLY, matching what the server would compute.
+      //
+      // Not the wildcard: rightsOf prefers a name-keyed record over `*`, so
+      // with `mythos: {fly:true}` on file a `/grant * -fly` leaves mythos
+      // flying -- verified against rights.ts directly. Honouring the wildcard
+      // here would refuse where the authority permits, and a client-side gate
+      // stricter than the server still misreports the server. Whoever has no
+      // record of their own is covered by the wildcard through the snapshot's
+      // yourRights at join.
+      //
+      // Not by durable sub either: the server binds grants to a sub when it
+      // knows one (server/verbs.ts vGrant) but never tells an agent its own,
+      // so there is nothing here to compare against. The residual gap is a
+      // grant written against a sub while the body wears a different name;
+      // closing it wants `you.sub` in the snapshot, which is out of scope for
+      // this repair and stated rather than papered over.
+      const mine = args?.id != null && args.id === this.name;
+      if (mine) {
+        const next = { ...(this.myRights ?? {}) };
+        if (args.role != null) next.role = String(args.role);
+        if (args.gen != null) next.gen = Boolean(args.gen);
+        if (args.fly != null) next.fly = Boolean(args.fly);
+        this.myRights = next;
+        // A revocation must be legible, not merely effective. If this body is
+        // in the air when flight is withdrawn, the next action refuses and the
+        // pilot should know why rather than discovering it as a failure.
+        if (args.fly === false && this.flight) {
+          this.inbox.push({ ts, kind: "act", who: actor,
+            text: "your flight capability was withdrawn — the next flight action will refuse" });
+        }
+      }
     } else if (verb === "ban" || verb === "unban" || verb === "kick") {
       // Moderation acts, narrated like any embodied transition — and, when
       // this body is the ACTOR, the confirmation its fire-and-forget verb

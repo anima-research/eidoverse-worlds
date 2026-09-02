@@ -1024,6 +1024,28 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
         /flight = null; releaseWings\(\); return 'landed'/.test(ctl));
   check('...and not-flying asserts the resting wings every frame',
         /if \(me\.wingEffort\) me\.wingEffort = 0;/.test(ctl));
+
+  // mica, CHANGES REQUESTED on d8ceee5: live revocation never reached the
+  // agent. The browser had the SAME hole and worse -- applyGrantState() merged
+  // grants by hand and was exported and called by nothing, so the "live grant"
+  // fix was dead code that read like a fix. Both sides now recompute from the
+  // folded roles with the one function the sequencer answers with.
+  const stt = readFileSync('client/lib/state.js', 'utf8');
+  check('the browser recomputes rights on a live grant entry',
+        /entry\?\.verb === 'grant'/.test(stt) && /rightsIn\(state\.st/.test(stt));
+  check('...with the SAME rule as the sequencer, not a second one',
+        /from '\.\.\/\.\.\/shared\/rightsfold\.js'/.test(stt) &&
+        /rightsIn/.test(readFileSync('server/rights.ts', 'utf8')));
+  check('...and the dead hand-merge is gone',
+        !/net\.myRights = \{ \.\.\.net\.myRights, \.\.\.worldRoles/.test(
+          readFileSync('client/lib/world.js', 'utf8')));
+  // An admin's grant comes from the environment, which the fold cannot see.
+  check('a recompute does not strip WORLD_ADMIN flight',
+        /admin \? cur\.fly : live\.fly/.test(stt));
+  // And a withdrawal reaches a body that is ALREADY up: checking only at the
+  // next action lets a revoked pilot soar indefinitely by touching nothing.
+  check('a revoked grant grounds a body already in the air',
+        /flight = flightDown\(flight, \{ eventId: 'capability-revoked' \}\)/.test(ctl));
   // Behavioural, not structural: the boost moved from a `??` fallback into
   // config, and the point of moving it was that retuning it retunes everything
   // that reads it. Same number as before -- nothing about flight changed.

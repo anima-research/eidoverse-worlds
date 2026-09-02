@@ -259,25 +259,11 @@ export function applyGrantState(id, rec) {
     fly: rec.fly != null ? Boolean(rec.fly) : cur.fly,
   });
   bus.emit('roles', { id, ...worldRoles.get(id) });
-  // A GRANT TO ME CHANGES WHAT I MAY DO, NOW. This mirror existed for the HUD,
-  // so `net.myRights` -- which is what the flight capability resolves against
-  // -- only ever changed at join: `/grant me +fly` did nothing until reload,
-  // and more importantly `-fly` did not ground me. Enforcement is still the
-  // server's; this keeps the client's own gate from lagging behind it.
-  if (id === CONFIG.name && net.myRights) {
-    // ABSENT IS NOT FALSE. A grant entry carries only the fields it changed --
-    // the server's auto-owner grant for a brand-new world is {role, gen} with
-    // no `fly` -- so spreading the mirror wholesale ERASED a fly the snapshot
-    // had correctly delivered, and WORLD_ADMIN=janus arrived as owner+gen with
-    // flight silently gone. Merge only what this record actually spoke to.
-    const merged = { ...net.myRights };
-    const m = worldRoles.get(id) ?? {};
-    if (m.role != null) merged.role = m.role;
-    if (rec.gen != null) merged.gen = Boolean(rec.gen);
-    if (rec.fly != null) merged.fly = Boolean(rec.fly);
-    net.myRights = merged;
-    bus.emit('your-rights', net.myRights);
-  }
+  // (What I MAY DO is recomputed from the fold in state.js refreshMyRights(),
+  // with the same rightsIn() the sequencer answers with. It was merged by hand
+  // here for two commits and never ran once: this function is exported and
+  // called by nothing, so the "live grant" fix was dead code that read like a
+  // fix. The mirror above is still the HUD's, which is all it ever was.)
 }
 
 /** Mirror one behavior binding (or its removal) into the roster mods.js
