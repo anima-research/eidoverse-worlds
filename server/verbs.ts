@@ -14,7 +14,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { VERB_RATE, OPT_DIR } from "./config.ts";
-import { isAdminId, rightsOf, VERB_NEEDS, lockRefusal } from "./rights.ts";
+import { isAdminId, rightsOf, worldHasOwner, VERB_NEEDS, lockRefusal } from "./rights.ts";
 import { lintMotion, lintParticles } from "./lint.ts";
 import { reactToUse } from "./reactions.ts";
 import { behaviorLimits } from "./behaviors.ts";
@@ -89,12 +89,17 @@ export type VerbRow = {
 
 function vGrant(ctx: VerbCtx, args: Record<string, unknown>) {
   const { w } = ctx;
-  // shape-check before it becomes history: {id, role?, gen?}
+  // shape-check before it becomes history: {id, role?, gen?, fly?}
   const id = String(args.id ?? "").slice(0, 64);
   const role = args.role != null ? String(args.role) : undefined;
   const gen = args.gen != null ? Boolean(args.gen) : undefined;
-  if (!id || (role == null && gen == null) || (role != null && ROLE_RANK[role] == null)) {
-    return { error: "grant wants {id, role: owner|builder|visitor} and/or {gen: true|false}" };
+  // The flight capability, orthogonal to the ladder exactly like gen, and
+  // whitelisted here for the same reason everything else is: this validator
+  // decides what may become history, so an arg it does not name is dropped
+  // before the fold ever sees it.
+  const fly = args.fly != null ? Boolean(args.fly) : undefined;
+  if (!id || (role == null && gen == null && fly == null) || (role != null && ROLE_RANK[role] == null)) {
+    return { error: "grant wants {id, role: owner|builder|visitor} and/or {gen: true|false} and/or {fly: true|false}" };
   }
   if (id === "*" && role === "owner") {
     return { error: "everyone cannot own a world" };
@@ -103,7 +108,25 @@ function vGrant(ctx: VerbCtx, args: Record<string, unknown>) {
   // bind the grant to it — authority follows the person, not the nick
   const subject = [...w.clients].find((o) => o.id === id && o.sub);
   return { args: { id, ...(role != null ? { role } : {}), ...(gen != null ? { gen } : {}),
+    ...(fly != null ? { fly } : {}),
     ...(subject?.sub ? { sub: subject.sub } : {}) } };
+}
+
+/** After a grant folds, send each present participant the server's effective
+ * rights for THEM. Clients consume an answer, not a second precedence model.
+ * This reaches wildcard and durable-sub changes that a name-only delta merge
+ * cannot represent. The log entry remains the durable cause; this is its
+ * personalized live projection. */
+function afterGrant(ctx: VerbCtx, entry: LogEntry) {
+  const { w } = ctx;
+  for (const other of w.clients) {
+    const rights = { ...rightsOf(w.state, other.id, other.sub), open: !worldHasOwner(w.state) };
+    try {
+      other.ws.send(JSON.stringify({ type: "your-rights", rights, causeSeq: entry.seq }));
+    } catch (err) {
+      w.debug("rights-delivery-error", { who: other.id, seq: entry.seq, error: String(err) });
+    }
+  }
 }
 
 function vForce(_ctx: VerbCtx, args: Record<string, unknown>) {
@@ -351,7 +374,7 @@ const extras: Record<string, Pick<VerbRow, "selfRankZero" | "validate" | "after"
   use: { after: (ctx, entry) => reactToUse(ctx.w, entry) },
   mount: { selfRankZero: true, validate: vMount },
   dismount: { selfRankZero: true },
-  grant: { validate: vGrant },
+  grant: { validate: vGrant, after: afterGrant },
   force: { validate: vForce },
   punt: { validate: vPunt },
   // Entering the deterministic-sim epoch (PROTOCOL_v2 §3). The sim named

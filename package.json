@@ -19,5 +19,10 @@
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.11.1",
     "playwright": "^1.62.1"
+  },
+  "scripts": {
+    "typecheck:flight": "bunx tsc -p tsconfig.flight.json",
+    "test:flight": "bun tools/flight-test.ts",
+    "test:flight:headless": "bun tools/flight-headless-test.ts"
   }
 }

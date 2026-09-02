@@ -43,6 +43,8 @@ import { fileURLToPath } from "node:url";
 import { isFiniteVec3 } from "./shape.ts";
 // pure shared geometry — no client import cone, safe to load eagerly
 import { CONTACT_POINTS } from "../shared/contact.js";
+// The aerodynamics of a limp fall -- forces, not a scripted path.
+import { leafForceFor, DEFAULT_LEAF_FORCE } from "../shared/leafforce.js";
 import { bodyFrame, fromBody } from "../shared/joints.js";
 
 const STUB = fileURLToPath(new URL("../tools/core-stub.mjs", import.meta.url));
@@ -243,8 +245,42 @@ async function skeletonFor(httpBase: string, avatarPath: string) {
       // a lock either continues another lock, or hangs off the head
       hairParent[name] = (pn && /^Hair_\d+_\d+$/.test(pn)) ? pn : "head";
     }
-    if (Object.keys(hairParent).length) {
-      Object.defineProperty(P, "__hairParent", { value: hairParent, enumerable: false });
+
+    // WINGS, by the same argument and for the same reason the hair needed it.
+    //
+    // The stand-in is built from HUMANOID bones, and [LR]_Wing_* are not
+    // humanoid -- VRM has no slot for them. So a headless body arrived with no
+    // wing nodes at all, exactly as it once arrived with no hair: ammodoll's
+    // wing block traverses looking for those names, finds nothing, and an
+    // agent's ragdoll falls with no wings while the browser's has twelve.
+    // Measured on the shipped mythos-wings.vrm: 327 hair bones grafted, 12
+    // wing bones present in the file, 0 reaching the stand-in.
+    //
+    // It matters more than a missing decoration. Those twelve bodies are 63%
+    // of the doll's broadside DRAG AREA against 10% of its mass -- so a
+    // wingless stand-in is not merely unadorned, it is aerodynamically a
+    // different object, and any leaf-force model applied to it is measuring
+    // the wrong body.
+    //
+    // Chains hang off the CLAVICLE in the rig, which has no ragdoll body in
+    // this cut (the arms hang off 'chest' for the same reason), so a root wing
+    // bone is reparented to chest and the rest continue their own chain.
+    const wingParent: Record<string, string> = {};
+    for (const [name, i] of byName) {
+      if (!/^[LR]_Wing_(Upper|Lower)(_\d+)?$/.test(name)) continue;
+      P[name] = wp(i);
+      const pi = parentOf.get(i);
+      const pn = pi != null ? g.nodes[pi]?.name : null;
+      wingParent[name] = (pn && /^[LR]_Wing_/.test(pn)) ? pn : "chest";
+    }
+
+    const extraParent = { ...hairParent, ...wingParent };
+    if (Object.keys(extraParent).length) {
+      // Named __hairParent still: ammodoll and HeadlessBody both read that key,
+      // and renaming it would be a rename in three files to say the same thing.
+      // It has always meant "bones the humanoid table does not know about".
+      Object.defineProperty(P, "__hairParent", { value: extraParent, enumerable: false });
+      Object.defineProperty(P, "__wingBones", { value: Object.keys(wingParent), enumerable: false });
     }
     // VRM 0.x bodies face -Z; the reach frame algebra needs to know (six of
     // the shipped rigs). The ragdoll never asked, so this rides as a
@@ -269,8 +305,9 @@ export class HeadlessBody {
 
   private constructor(m: NonNullable<typeof simMods>, P: Record<string, any>) {
     this.m = m;
-    // realParent carries the hair chains; without it makeAvatar drops any bone
-    // that is not in its humanoid PARENT table, hair included.
+    // realParent carries the NON-HUMANOID chains -- hair, and now wings.
+    // Without it makeAvatar drops any bone that is not in its humanoid PARENT
+    // table, which is every one of them.
     const hp = (P as any).__hairParent;
     this.av = hp ? m.rig.makeAvatar(P, { realParent: { ...(m.rig as any).PARENT, ...hp } })
       : m.rig.makeAvatar(P);
@@ -364,6 +401,70 @@ export class HeadlessBody {
     // Pins arriving here are NAILS (begin's opts.pins, and the bodydrag relay's
     // pin map) — a hand is simulated by whoever is holding it, not replicated.
     this.rd.setPin(joint, new this.m.THREE.Vector3(at[0], at[1], at[2]), firm);
+  }
+
+  /** Aerodynamic forces on every body this step, so a limp fall FLUTTERS.
+   *
+   *  Janus asked for this shape: "use the normal ragdoll physics for falling,
+   *  but add forces that cause it to fall like a leaf". The alternative --
+   *  scripting the path -- cannot be hit by a thrown prop, cannot catch a wing
+   *  on a rail, and cannot land badly. Bullet can do all three; it just needs
+   *  to be told what the air is doing.
+   *
+   *  Two terms, both real (shared/leafforce.js): drag along each plate's
+   *  NORMAL rather than along its motion, which makes a plate seek edge-on and
+   *  overshoot; and a centre of pressure forward of centre, which turns that
+   *  overshoot into a periodic tumble. The oscillation is emergent.
+   *
+   *  Silently a no-op on the Verlet fallback, which has no bodies to push.
+   */
+  applyLeaf(cfg: any, t: number) {
+    const rd: any = this.rd;
+    const bodies = rd?._bodies;
+    if (!Array.isArray(bodies) || !bodies.length) return 0;
+    const A = this.m.THREE ? null : null;
+    let pushed = 0;
+    for (const rb of bodies) {
+      try {
+        if (!rb || typeof rb.getLinearVelocity !== "function") continue;
+        if (typeof rb.getMotionState !== "function") continue;
+        const v = rb.getLinearVelocity();
+        const vel = { x: v.x(), y: v.y(), z: v.z() };
+        const sp = Math.hypot(vel.x, vel.y, vel.z);
+        if (sp < 0.05) continue;
+        const shape = rb.getCollisionShape?.();
+        const he = shape?.getHalfExtentsWithMargin?.();
+        const half = he ? [he.x(), he.y(), he.z()] : [0.05, 0.12, 0.05];
+        const mass = 1 / Math.max(1e-6, rb.getInvMass?.() ?? 1);
+        // The plate's normal in WORLD space: the thinnest local axis, rotated
+        // by the body. A box's smallest face IS its plate.
+        const thin = half.indexOf(Math.min(...half));
+        const basis = rb.getWorldTransform().getBasis();
+        const col = (i: number) => {
+          const c = basis.getColumn(i);
+          return { x: c.x(), y: c.y(), z: c.z() };
+        };
+        const normal = col(thin);
+        const right = col((thin + 1) % 3);
+        const { force, torque } = leafForceFor(cfg, { mass, halfExtents: half, vel, normal, right }, t);
+        const F = new this.m.THREE.Vector3(force.x, force.y, force.z);
+        const T = new this.m.THREE.Vector3(torque.x, torque.y, torque.z);
+        rb.applyCentralForce?.(this.btVec(F));
+        rb.applyTorque?.(this.btVec(T));
+        rb.activate?.();
+        pushed++;
+      } catch { /* one awkward body must not stop the fall */ }
+    }
+    return pushed;
+  }
+
+  private _bv: any = null;
+  private btVec(v: any) {
+    const AMMO = (this.m as any).AMMO ?? (globalThis as any).Ammo;
+    if (!AMMO) return v;
+    this._bv ??= new AMMO.btVector3(0, 0, 0);
+    this._bv.setValue(v.x, v.y, v.z);
+    return this._bv;
   }
 
   /** Advance; returns what to stream, or null once the sim has captured. */

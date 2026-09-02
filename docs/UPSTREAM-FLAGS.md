@@ -34,6 +34,17 @@ Each is red on anima/main as it stands:
    in 3a5d93d: hash the first existing of [patched, opt, library] + rel —
    the same order the store judges.
 
+- **`tools/flight-headless-test.ts` reads a hard-coded path on its author's
+  laptop** (`/Users/lariareynolds/Documents/mythos-models/ragdoll-web/rig.json`,
+  the LEAF FORCES section) — ENOENT everywhere else. Wants a fixture under
+  `tools/flightbench/` or an env override. (Found merging a678f24, 2026-09-02.)
+- **`tools/flight-test.ts` binds to file layout** — it greps `mcpl/net-server.ts`
+  for the rehearsal gate and `client/lib/chat.js` for a `case 'flight':`; on
+  rimward those live in `mcpl/tools.ts` (one table, one dispatcher, §24r) and
+  the command registry. Retargeted here; upstream will meet the same when it
+  takes the unification. Its bench world also needs `commit` (rimward's
+  `runVerb` commits through the entry bus; `append` alone throws) — added.
+
 ## 2. Features upstream shipped dormant, now live here (port candidates)
 
 - **The seat-profile write half (#101/#105) is wired** (3a5d93d):

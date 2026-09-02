@@ -52,11 +52,34 @@ export type ToolCtx = {
 // ---- tools (shared schema with the stdio server, minus retina by default) --
 
 export const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
+// REHEARSAL IS NOT A PILOT TOOL (upstream, flight arc — merged 2026-09-02):
+// both rehearse_* verbs call the trusted DOWN seam directly, and down-spec
+// §4 says DOWN is involuntary — "the body cannot cry wolf". DEFAULT OFF,
+// unlike whispers: an operator opts a bench in; a production process that
+// sets nothing has no rehearsal surface at all. Filtered from tools/list AND
+// refused at dispatch — a tool hidden from the list but still callable is a
+// hidden tool, not an absent one.
+export const REHEARSAL_ENABLED = process.env.EIDO_FLIGHT_REHEARSAL === "1";
+export const REHEARSAL_TOOLS = new Set(["rehearse_down", "rehearse_recover"]);
 
 export const TOOLS = [
   { name: "look", description: "Text-tier perception: where you are, who's present and what they're doing, every placed thing with distance/bearing, and chat since you last looked.", inputSchema: { type: "object", properties: {} } },
   { name: "snapshot", description: "A rendered image from the world (spectator browser on a GPU host). Slower than look — use when spatial/visual detail matters. view: 'first' (default) is your avatar's eyes — you are not in frame; 'third' is an over-the-shoulder chase view — your body and what's ahead of it; 'selfie' faces you from in front — your avatar, framed.", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["first", "third", "selfie"] } } } },
   { name: "walk_to", description: "Walk (or run) to world coordinates. Returns when you arrive; others see you walking.", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, run: { type: "boolean" } }, required: ["x", "z"] } },
+  // ---- FLIGHT (upstream's flight arc, merged 2026-09-02; behind the `fly`
+  // grant — the agent refuses on the ground it stands on). Deliberately no
+  // file_plan: a sortie is these tools called in sequence from the pilot's own
+  // code, exactly as walk_to already is.
+  { name: "take_off", description: "Leave the ground. Refuses if your wings are folded (unfold first — the vigil posture costs the sky) or if you are limp. Costs stamina for the launch. READ THE REPLY: it gives your altitude, or why you are still standing.", inputSchema: { type: "object", properties: {} } },
+  { name: "climb_to", description: "Climb to an altitude, in metres. THE expensive verb: 1 stamina per metre, and the pool only refills on the ground (0.5/s), never in the air. (Perches are NOT implemented in Stage 1 — see shared/flight.js.) Clamped by the soft ceiling. If the pool empties on the way you stop where it ran out and the world hears 'winded' — exhaustion is legible, not lethal.", inputSchema: { type: "object", properties: { altitude: { type: "number" } }, required: ["altitude"] } },
+  { name: "glide_to", description: "Glide toward world coordinates, trading altitude for distance on the published polar. FREE — costs no stamina. If you cannot reach it from your current altitude you land SHORT, honestly, where the polar runs out: no teleport-assist, no rubber-banding. Returns when you arrive or when you are down, and says which, where, and by how much you missed.", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" } }, required: ["x", "z"] } },
+  { name: "land_at", description: "Descend, flare and land at world coordinates. Landing is an EVENT — the world sees it. Afterwards your body is walking again.", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" } }, required: ["x", "z"] } },
+  // REHEARSAL ONLY, and named so (see REHEARSAL_ENABLED above).
+  { name: "rehearse_down", description: "REHEARSAL ONLY — fire the trusted bodyDown event the Connectome adapter will one day fire for real. Not a way to appear down: the real signal is involuntary and this exists to test the body's half of it.", inputSchema: { type: "object", properties: { eventId: { type: "string" } } } },
+  { name: "rehearse_recover", description: "REHEARSAL ONLY — fire the trusted bodyRecovered event. Mid-air this begins the aerial sit-up; on the ground, the sit-up proper.", inputSchema: { type: "object", properties: { eventId: { type: "string" } } } },
+  { name: "fold_wings", description: "Fold your wings down — the vigil posture. It GROUNDS you: take_off refuses while folded, and unfolding is a separate, deliberate act. A distinct silhouette, readable across a clearing. Ground only; land first if you are flying.", inputSchema: { type: "object", properties: {} } },
+  { name: "unfold_wings", description: "Open your wings again, ending the vigil. The sky becomes available; nothing else changes.", inputSchema: { type: "object", properties: {} } },
+  { name: "flight_status", description: "Where the sky has left you: altitude, heading, airspeed, stamina, how far your best glide still reaches from here, and which layer is flying (live/plan/reflex). Cheap — call it as often as you like.", inputSchema: { type: "object", properties: {} } },
   { name: "face", description: "Turn to face a point (x,z) or a participant/entity id (target).", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, target: { type: "string" } } } },
   { name: "stop", description: "Stop walking.", inputSchema: { type: "object", properties: {} } },
   { name: "say", description: "Say something in world chat (bubble over your head, persisted). Equivalent to publishing on the world channel. Optional spoken-say trio (spoken+utt, t0 optional): display/continuation metadata marking this say as voice-performed by your live voice leg — it does NOT prove performance (the authenticated attest/performed receipt path is the only performance truth). The trio travels together or the door refuses loudly.", inputSchema: { type: "object", properties: { text: { type: "string" }, spoken: { type: "boolean", description: "true = a live voice leg is performing this say (display metadata only)" }, utt: { type: "integer", minimum: 0, description: "utterance counter: author-controlled display/continuation metadata (does NOT prove performance)" }, t0: { type: "number", description: "performance start, epoch ms (optional, finite)" } }, required: ["text"] } },
@@ -167,7 +190,8 @@ async function contactSheet(tiles: { name: string; data: ArrayBuffer | null; mim
 /** The tool list a door should advertise: whispers ride an env kill-switch,
  *  travel only exists where the host wired the session machinery for it. */
 export function toolList({ travel = false }: { travel?: boolean } = {}) {
-  return TOOLS.filter((t) => (WHISPERS_ENABLED || t.name !== "whisper") && (travel || t.name !== "travel"));
+  return TOOLS.filter((t) => (WHISPERS_ENABLED || t.name !== "whisper") && (travel || t.name !== "travel")
+    && (REHEARSAL_ENABLED || !REHEARSAL_TOOLS.has(t.name)));
 }
 
 export async function snapshotTool(ag: ToolAgent, view = "first") {
@@ -189,11 +213,29 @@ export async function snapshotTool(ag: ToolAgent, view = "first") {
 // "Unknown tool" a caller meets at runtime.
 
 const text = (t: string) => ({ content: [{ type: "text", text: t }] });
+// Refused at dispatch too, not merely hidden: a pilot who learned the name
+// off a bench must not be able to fire the trusted seam here.
+const rehearse = (ag: ToolAgent, a: Record<string, any>, name: string) => {
+  if (!REHEARSAL_ENABLED) return text("no such tool");
+  return text(name === "rehearse_down"
+    ? ag.flightBodyDown(String(a.eventId ?? "rehearsal"))
+    : ag.flightBodyRecovered(String(a.eventId ?? "rehearsal"), "gen-rehearsal"));
+};
 
 type ToolHandler = (ag: WorldAgent, a: Record<string, any>, ctx: ToolCtx, name: string)
   => Promise<Record<string, unknown>> | Record<string, unknown>;
 
 export const HANDLERS: Record<string, ToolHandler> = {
+  // ---- FLIGHT (upstream's flight arc, merged 2026-09-02)
+  take_off: async (ag, a, ctx, name) => text(await ag.takeOff()),
+  climb_to: async (ag, a, ctx, name) => text(await ag.climbTo(Number(a.altitude))),
+  glide_to: async (ag, a, ctx, name) => text(await ag.glideTo(Number(a.x), Number(a.z))),
+  land_at: async (ag, a, ctx, name) => text(await ag.landAt(Number(a.x), Number(a.z))),
+  rehearse_down: async (ag, a, ctx, name) => rehearse(ag, a, name),
+  rehearse_recover: async (ag, a, ctx, name) => rehearse(ag, a, name),
+  fold_wings: async (ag, a, ctx, name) => text(await ag.foldWings(true)),
+  unfold_wings: async (ag, a, ctx, name) => text(await ag.foldWings(false)),
+  flight_status: async (ag, a, ctx, name) => text(ag.flightStatus()),
   look: async (ag, a, ctx, name) => { return text(ag.look()); },
   snapshot: async (ag, a, ctx, name) => { return await snapshotTool(ag, typeof a.view === "string" ? a.view : "first"); },
   set_avatar: async (ag, a, ctx, name) => {

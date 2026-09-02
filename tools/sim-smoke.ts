@@ -195,8 +195,11 @@ dws.send(JSON.stringify({ type: "pose", pose: { p: [serverSim.bodies.ball.p[0] +
 await sleep(250);
 await verb("punt", { id: "ball", power: 8 });   // the v1 form, no dir
 check("…a dir-less punt is accepted again (v1 semantics resumed)", errors.length === 0, errors.join(" | "));
-await verb("epoch", { sim: null });
-check("…leaving twice is refused (nothing to leave)", errors.some((e) => /nothing to leave/.test(e)), errors.join(" | "));
+dws.send(JSON.stringify({ type: "verb", verb: "epoch", args: { sim: null } }));
+// the refusal rides a socket that is also carrying the volunteer lane's lease
+// stream now (v1 physics resumed) — wait for the answer, don't assume 350ms
+for (let i = 0; i < 20 && !errors.some((e) => /nothing to leave/.test(e)); i++) await sleep(150);
+check("…leaving twice is refused (nothing to leave)", errors.some((e) => /nothing to leave/.test(e)), JSON.stringify(errors));
 
 console.log(`\n${bold(tally.failed ? "RED" : "GREEN")} — ${tally.passed} passed, ${tally.failed} failed\n`);
 await cleanup();

@@ -12,7 +12,10 @@
 // completion re-reads current state (TEL0S_NOTES §11).
 
 import { THREE, scene, camera, renderer } from './core.js';
-import { report, bus } from './base.js';
+import { report, bus, CONFIG } from './base.js';
+// net.js does NOT import this module (its own note: "live grants keep it fresh
+// via world.js"), so this direction closes no cycle.
+import { net } from './net.js';
 import { loadEidoModule, noiseTexture, loadTrack, loadDone, libLabels } from './assets.js';
 import { prepareObject } from './materials.js';
 import { beginWork } from './loadwork.js';
@@ -272,8 +275,14 @@ export function applyGrantState(id, rec) {
   worldRoles.set(id, {
     role: rec.role ?? cur.role,
     gen: rec.gen != null ? Boolean(rec.gen) : cur.gen,
+    fly: rec.fly != null ? Boolean(rec.fly) : cur.fly,
   });
   bus.emit('roles', { id, ...worldRoles.get(id) });
+  // (What I MAY DO is recomputed from the fold in state.js refreshMyRights(),
+  // with the same rightsIn() the sequencer answers with. It was merged by hand
+  // here for two commits and never ran once: this function is exported and
+  // called by nothing, so the "live grant" fix was dead code that read like a
+  // fix. The mirror above is still the HUD's, which is all it ever was.)
 }
 
 /** Mirror one behavior binding (or its removal) into the roster mods.js

@@ -16,7 +16,7 @@ import {
   net, sendVerb, sendMod, sendPuppet, sendWorldFork, sendWorldReset, requestDebug,
 } from '../net.js';
 import { remotes } from '../remotes.js';
-import { myState, setPosture } from '../controller.js';
+import { myState, setPosture, flightReport } from '../controller.js';
 import { kick } from '../physobj.js';
 import { logChat } from '../chat.js';
 import { toggleHelp, flashHint } from '../ui.js';
@@ -31,6 +31,10 @@ import { canonicalPoint, CONTACT_POINTS } from '../../../shared/contact.js';
 import { TOUCH_GAP } from '../../../shared/reachwire.js';
 
 register('help', () => toggleHelp());
+// Flight's own diagnostic, in the chat log where a person can read it and
+// paste it back. See controller.js flightReport() for why this is not just
+// the console probe.
+register('flight', () => { for (const line of flightReport().split('\n')) logChat('*', line); });
 
 // Eyelids are BONES on rigs that have them (L_/R_Eyelid_Upper) — most VRMs
 // blink with a blendshape instead and have none, so this says so plainly
@@ -58,15 +62,21 @@ register('role', (arg) => {
 });
 
 register('grant', (arg) => {
-  // /grant <name> owner|builder|visitor [+gen|-gen] — server enforces owner-only
+  // /grant <name> owner|builder|visitor [+gen|-gen] [+fly|-fly]
+  // server enforces owner-only. `fly` is orthogonal to the ladder like gen,
+  // and default-off everywhere -- including open worlds, and including for
+  // owners. Somebody says so, in the log, or nobody flies.
   const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
   const id = parts[0];
   const role = parts.find((p) => ['owner', 'builder', 'visitor'].includes(p.toLowerCase()))?.toLowerCase();
   const genFlag = parts.find((p) => p === '+gen' || p === '-gen');
-  if (!id || (!role && !genFlag)) {
-    return logChat('*', 'usage: /grant <name> owner|builder|visitor [+gen|-gen]');
+  const flyFlag = parts.find((p) => p === '+fly' || p === '-fly');
+  if (!id || (!role && !genFlag && !flyFlag)) {
+    return logChat('*', 'usage: /grant <name> owner|builder|visitor [+gen|-gen] [+fly|-fly]');
   }
-  sendVerb('grant', { id, ...(role ? { role } : {}), ...(genFlag ? { gen: genFlag === '+gen' } : {}) });
+  sendVerb('grant', { id, ...(role ? { role } : {}),
+                      ...(genFlag ? { gen: genFlag === '+gen' } : {}),
+                      ...(flyFlag ? { fly: flyFlag === '+fly' } : {}) });
 });
 
 // /kick /ban <name> [reason…] — owner-only, the server enforces (and

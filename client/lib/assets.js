@@ -647,12 +647,20 @@ export const protoStats = () => ({
 
 // ---- VRMA clips -------------------------------------------------------------
 
-export const CLIP_SLOTS = ['idle', 'walk', 'run', 'sit', 'lie', 'jump', 'climb'];
+// 'fly' and 'soar' are the airborne pair. Janus, watching a body climb on the
+// run cycle: "the running animation during flying is a bit goofy" -- and it is,
+// a stride is legs doing work against ground that is not there. fallIdle is the
+// library's free-fall pose: limbs trailing, no contact implied, which is what a
+// body hanging under its own wings actually looks like.
+export const CLIP_SLOTS = ['idle', 'walk', 'run', 'sit', 'lie', 'jump', 'climb', 'fly', 'soar'];
 // Slot names are the wire vocabulary (pose.clip); files are whatever the
 // library calls them.
-export const CLIP_FILES = { sit: 'sitting_on_ground', lie: 'sit_laying_on_ground', climb: 'climbLedge' };
+export const CLIP_FILES = { sit: 'sitting_on_ground', lie: 'sit_laying_on_ground', climb: 'climbLedge',
+  // Both airborne slots share one file today; they are separate SLOTS so a
+  // purpose-made flap and glide can replace either without touching a caller.
+  fly: 'fallIdle', soar: 'fallIdle' };
 // Approximate natural speeds of the library clips (m/s), for timeScale sync.
-export const CLIP_SPEED = { idle: 0, walk: 1.55, run: 4.0, sit: 0, lie: 0, jump: 0, climb: 0 };
+export const CLIP_SPEED = { fly: 0, soar: 0, idle: 0, walk: 1.55, run: 4.0, sit: 0, lie: 0, jump: 0, climb: 0 };
 
 const vrmaCache = new Map();
 // Digest of the clip bytes THIS PAGE actually loaded, hashed once at fetch

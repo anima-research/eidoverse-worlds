@@ -26,6 +26,7 @@ import './lib/emitters.js';
 import { tickMotion } from './lib/motion.js';
 import {
   myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
+  setRightsHook, setMeHook,
 } from './lib/controller.js';
 import { remotes, updateRemotes, updateGaze } from './lib/remotes.js';
 import {
@@ -33,6 +34,7 @@ import {
 } from './lib/net.js';
 import { updateBuild, toggleEditMode, isEditing } from './lib/build.js';
 import { initPalette } from './lib/palette.js';
+import { setRightsSink } from './lib/state.js';
 import { initConjure } from './lib/conjure.js';
 import './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
 import { initAudioPanel } from './lib/audiopanel.js';
@@ -281,6 +283,19 @@ bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 // The avatar swap + avatar-updated wiring rides mybody.js's import; the
 // physics of being a body here (ragdoll, seats, drag, pins, shoves) is
 // localbody.js, handed logChat instead of importing chat (§14.2).
+
+// FLIGHT READS THE WORLD'S GRANT, not a provider the client made for itself.
+// Wired here for the same reason initPhysObj and wireNet are: net.js must not
+// import the controller, so main.js is where the two meet. Live, not captured
+// -- `/grant <id> +fly` takes effect on the next resolve, and `-fly` grounds a
+// body that is already in the air the next time it acts.
+setRightsHook(() => net.myRights);
+setMeHook(() => getMe());        // the fold pose is written onto the avatar
+// LIVE RIGHTS: state.js folds every entry and recomputes what I may do with
+// the SAME function the sequencer answers with, but net.js already imports
+// state.js, so state reaches net through this sink rather than an import.
+// Read with no argument, written with one.
+setRightsSink((next) => { if (next !== undefined) net.myRights = next; return net.myRights; });
 
 initPhysObj({ myPos: () => myState.pos });
 // reach descriptors resolve against the same bodies everyone renders; my own

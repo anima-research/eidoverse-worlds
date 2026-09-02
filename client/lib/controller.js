@@ -16,6 +16,212 @@ import {
   resolveFirstPersonAnchor, FP_FORWARD, FP_EYE_LIFT, FP_GAZE_AHEAD, FP_GAZE_DROP,
 } from './fp_view.js';
 
+// ---------------------------------------------------------------- flight
+// Janus: "would it be possible to add the ability for me to also fly through
+// the client ... controls like the flightbench". Yes, and it is the SAME
+// integrator an agent flies -- shared/flight.js, one function, every runtime.
+// A human and an agent in the same sky must be flying the same physics or the
+// bench proves nothing about the world.
+//
+// Default OFF and gated: F toggles it, and only when the capability provider
+// grants this body a rig. A commons avatar with no wings gets nothing.
+import {
+  makeConfig as flightConfig, initialState as flightState, step as flightStep,
+  takeOff as flightTakeOff, bestGlide, bodyDown as flightDown,
+} from '../../shared/flight.js';
+import { pilotInput } from '../../shared/flightpilot.js';
+import { worldFlightProvider, resolveFlight } from '../../shared/flightcap.js';
+
+let flight = null, flightCfg = null, flightProv = null;
+let lastFlightEnd = null;   // why the last flight ended -- 'F did nothing' has causes
+let flightBones = null;
+
+/** Called once the body is known.
+ *
+ *  THE PROVIDER IS THE WORLD'S, NOT OURS. This used to construct
+ *  `devFlightProvider({allow:[identity]})` -- an allow-SELF grant, manufactured
+ *  in the shipped client, on every body load. Wearing a winged rig was
+ *  therefore both the evidence and the permission, which is default-ON dressed
+ *  as default-deny (mica, reviewing cea3c3c, Blocker 1). The grant now comes
+ *  from the server's `yourRights.fly`, which no query string can forge, and a
+ *  compatible body with no grant gets a refusal that names the fix. */
+export function armFlight(boneNames, identity = 'me') {
+  flightBones = boneNames ?? [];
+  flightProv = worldFlightProvider({ rights: myRights, label: 'world-grant' });
+  return resolveFlight(flightProv, { identity, avatar: { boneNames: flightBones } }).enabled;
+}
+
+// The world's grant, read through a hook rather than an import: net.js keeps
+// itself free of this module on purpose ("net can read/write body state
+// without importing the controller, which imports ui, which imports
+// assets..."), and the same reason runs in this direction. main.js wires it.
+//
+// The DEFAULT RETURNS NULL, and worldFlightProvider reads null as "nobody has
+// said you may". A forgotten wiring must ground the body, never free it.
+/** Hand the wings back to the idle. Every exit from flight goes through here
+ *  -- F, a landing, a ragdoll, a revoked capability -- because "clear it at
+ *  each exit" is a rule with as many holes as it has exits. */
+function releaseWings() {
+  const me = meRef();
+  if (me) me.wingEffort = 0;
+}
+
+let myRights = () => null;
+export function setRightsHook(fn) { myRights = typeof fn === 'function' ? fn : (() => null); }
+// ...and my body, for the same reason and by the same route (mybody imports
+// this module, so the arrow cannot point back).
+let meRef = () => null;
+export function setMeHook(fn) { meRef = typeof fn === 'function' ? fn : (() => null); }
+
+// THE SAME FLOOR WALKING STANDS ON. Flight was handed raw `heightAt` while
+// take-off measured `resolveColliders` -- two different answers for "where is
+// the ground", differing by the whole height of every deck, slab and structure
+// floor in the world. A flier launched from the resolved floor and then tested
+// against bare terrain is airborne by one measure and buried by the other.
+//
+// The scratch vector is load-bearing twice over: resolveColliders MUTATES the
+// x/z it is given (wall push-out) and resets the module's `blockedTop`, so
+// probing with the live body would shove the flier sideways and steal the
+// mantle probe the walk path reads on the same frame.
+const _gp = new THREE.Vector3();
+function groundUnder(pos) {
+  _gp.set(pos.x, pos.y, pos.z);
+  const g = resolveColliders(_gp, heightAt);
+  return g;
+}
+/** groundY(x, z) for the integrator: it has no y to offer, so probe from the
+ *  flier's own altitude -- which is what decides whether a box is floor or
+ *  wall, and the reason this is not a two-argument terrain lookup. */
+function flightGround(x, z) {
+  _gp.set(x, flight?.pos?.y ?? myState.pos.y, z);
+  return resolveColliders(_gp, heightAt);
+}
+
+export const flying = () => !!flight;
+
+// THE VIGIL POSTURE (spec section 1 fold_down, section 2 FOLDED, T6).
+//
+// Kept as controller state rather than inside `flight`, because folding is
+// something a body does STANDING and the flight state only exists once she is
+// flying. `takeOff` reads it as a precondition and refuses -- which is the
+// whole point of the posture: it costs the sky until you explicitly unfold.
+let wingsFolded = false;
+export const folded = () => wingsFolded;
+
+function toggleFold(me) {
+  if (flight) return 'you are flying — land first';
+  if (!flightProv) return null;             // no wings, no vigil, no message
+  wingsFolded = !wingsFolded;
+  if (me) me.wingsFolded = wingsFolded;     // avatar.js eases the pose in _flap
+  return wingsFolded ? 'wings folded — the vigil posture costs the sky (G to unfold)'
+                     : 'wings open';
+}
+
+/** WHY FLIGHT IS DOING THAT, in words, for a person with no devtools open.
+ *
+ *  The __flightDebug probe below is the same information, and it was useless
+ *  twice running: a browser console is not where the person who hits the bug
+ *  is standing, and every report that reached me was a DESCRIPTION ("it jumps
+ *  and lands", "I'm stuck standing") that I then spent a session translating
+ *  back into state. /audio exists for the same reason and says so: "a
+ *  diagnostic nobody can find is one nobody uses". */
+export function flightReport() {
+  const v = flightProv
+    ? resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones } })
+    : { enabled: false, reason: 'flight not armed for this body' };
+  const L = [];
+  L.push(`rig: ${flightBones?.length ?? 0} bones, ` +
+         (v.enabled ? `granted (${v.profile.wingCount} wing bones)` : `DENIED — ${v.reason}`));
+  if (flight) {
+    L.push(`state: ${flight.phase} · t=${flight.t.toFixed(1)}s · ` +
+           `y=${flight.pos.y.toFixed(2)} (ground ${flightGround(flight.pos.x, flight.pos.z).toFixed(2)})`);
+    L.push(`speed: ${flight.airspeed.toFixed(1)} m/s air · vy=${flight.vel.y.toFixed(2)} · ` +
+           `wings ${flight.wings} · stamina ${Math.round(flight.stamina)}`);
+    // The freeze that started this: a phase that integrates nothing while
+    // still holding the body. If it is ever seen again, it names itself.
+    if (flight.phase === 'GROUND') L.push('!! GROUND while held — this is the freeze bug; press F');
+  } else {
+    L.push('state: not flying' + (lastFlightEnd
+      ? ` · last flight ended ${lastFlightEnd.phase} at t=${lastFlightEnd.t}s, ` +
+        `y=${lastFlightEnd.y} over ground ${lastFlightEnd.ground}`
+      : ' · no flight this session'));
+  }
+  return L.join('\n');
+}
+// A probe, because "F did nothing" has three possible causes and they need
+// telling apart: no provider, a rig the provider refuses, or a toggle that
+// ran and then the movement loop overwrote it.
+if (typeof globalThis !== 'undefined') {
+  globalThis.__flightDebug = () => ({
+    armed: !!flightProv, bones: flightBones?.length ?? 0,
+    flying: !!flight, phase: flight?.phase ?? null,
+    y: flight?.pos?.y ?? myState.pos.y,
+    vy: flight?.vel?.y ?? null,
+    launchNow: flight?.launchNow ?? null,
+    groundHere: (() => { try { return heightAt(myState.pos.x, myState.pos.z); } catch { return null; } })(),
+    lastEnd: lastFlightEnd,
+    verdict: flightProv
+      ? resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones } })
+      : 'no provider',
+  });
+}
+
+function toggleFlight() {
+  // RELEASING THE WINGS IS PART OF LANDING. `wingEffort` was cleared on the
+  // natural landing path only, so pressing F mid-flap left the avatar holding
+  // the last value forever: wings beating at full power on a body standing
+  // still, and the idle sliders apparently dead because a stuck effort of 1
+  // means the mix is 100% WING_POWER and WING_IDLE is not being read at all.
+  // Janus: "the wings are stuck going very fast like they were when i was
+  // flying, and adjusting the sliders doesnt change it." One bug, two faces.
+  if (flight) { flight = null; releaseWings(); return 'landed'; }
+  if (!flightProv) return 'flight not armed for this body';
+  // The spec's precondition, enforced where the human meets it. takeOff would
+  // refuse anyway -- this says so before spending the resolve, and names the
+  // key that undoes it.
+  if (wingsFolded) return 'wings are folded — press G to unfold first';
+  const r = resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones } });
+  if (!r.enabled) return `no: ${r.reason}`;
+  flightCfg ??= flightConfig();
+  // ARM IT IN A LOCAL, PUBLISH IT ONCE. The first cut assigned the GROUND state
+  // to `flight` and then reassigned the result of takeOff on the next line --
+  // so anything that threw in between (or any refusal takeOff returned) left
+  // `flight` holding a body that had never left the ground. That state is
+  // TRUTHY, so the movement loop handed it the body, `stepGround` integrated
+  // nothing, and the person was frozen in whatever clip they were wearing until
+  // they pressed F again. "Stuck standing or walking depending on which one I
+  // was doing at the time."
+  //
+  // A toggle either flies or it does not. Nothing observes a partial one.
+  let next;
+  try {
+    next = flightState({
+      phase: 'GROUND',
+      pos: { x: myState.pos.x, y: myState.pos.y, z: myState.pos.z },
+      // the world's yaw convention is atan2(dx,dz); the integrator's is
+      // atan2(dz,dx). Convert, both ways, at this boundary only.
+      yaw: Math.PI / 2 - myState.yaw,
+    }, flightCfg);
+    // THE GROUND UNDER HER FEET, resolved the way walking resolves it. Passing
+    // `myState.pos.y` -- where she IS -- is the same number only while she is
+    // standing still on flat ground; mid-jump or a frame after a step-up it is
+    // metres off, and takeOff builds its launch height from it.
+    next = flightTakeOff(flightCfg, next, { groundY: groundUnder(myState.pos) });
+  } catch (e) {
+    return `flight failed to start: ${e?.message ?? e}`;
+  }
+  // A REFUSAL IS NOT A TAKE-OFF. takeOff returns a state with a `takeoff.refused`
+  // event rather than throwing, and the phase it returns is the phase it was
+  // given -- which is the other way the body ended up frozen on the ground
+  // holding the controls.
+  if (next.phase !== 'PILOT') {
+    const why = next.events?.find(ev => ev.kind === 'takeoff.refused')?.reason ?? next.phase;
+    return `cannot take off: ${why}`;
+  }
+  flight = next;
+  return 'flying — W/S pitch, A/D bank, Shift spoil, Space flap, F to land';
+}
+
 export const myState = {
   pos: new THREE.Vector3(0, 0, 0),
   yaw: 0,
@@ -66,8 +272,22 @@ addEventListener('keyup', (e) => keys.delete(e.code));
 addEventListener('blur', () => keys.clear());
 
 bus.on('key', (e) => {
+  // AUTOREPEAT IS NOT A SECOND PRESS. A held key re-fires keydown at the OS
+  // repeat rate (~30Hz after a ~500ms delay) and every binding here is a
+  // TOGGLE, so holding F for two thirds of a second took off and landed and
+  // took off and landed -- which is exactly what "switching into flying mode
+  // just makes my character jump and land immediately" looks like from the
+  // outside, and why it reproduced for a person and never for a scripted
+  // probe that synthesises one clean keydown.
+  //
+  // Guarded HERE and not on the emit, because the repeat is wanted elsewhere:
+  // build.js binds R/F and the arrows to nudge/raise/turn, where holding the
+  // key to keep moving a thing is the whole interaction.
+  if (e.repeat) return;
   if (e.code === 'KeyX') toggleSit();
+  if (e.code === 'KeyF') { const m = toggleFlight(); if (m) flashHint?.(m); }
   if (e.code === 'KeyZ') { posture = posture === 'lie' ? null : 'lie'; myState.seat = null; }
+  if (e.code === 'KeyG') { const m = toggleFold(meRef()); if (m) flashHint?.(m); }
 });
 
 // Declared seats (the `sockets` component — mount verb, rides motion) live in
@@ -295,6 +515,113 @@ export function updateMe(dt, me) {
   // ---- vertical
   const ground = resolveColliders(myState.pos, heightAt);
   const blockedTop = lastBlockedTop();
+  // FLIGHT OWNS THE BODY while it lasts -- position, heading and clip -- the
+  // same way a mantle or a ragdoll does. Walking resumes the moment she lands.
+  if (flight) {
+    // A GROUNDED FLIGHT DOES NOT OWN A BODY. `stepGround` integrates nothing,
+    // so a state that reaches here still in GROUND freezes the person in place
+    // and swallows their controls -- flight's grip on the body has to be
+    // conditional on flight actually happening. The toggle already refuses to
+    // publish a non-PILOT state; this is the second lock, because "the body is
+    // held by something that is not moving it" is the failure worth making
+    // structurally impossible rather than merely unlikely.
+    if (flight.phase === 'GROUND') {
+      flashHint?.('flight did not start — released');
+      flight = null; grounded = true; vy = 0;
+    }
+  }
+  // A REVOKED GRANT GROUNDS A BODY THAT IS ALREADY UP. Checking only at the
+  // next ACTION satisfies the letter of "the next action refuses" and misses
+  // the point: a pilot whose permission was withdrawn mid-sortie kept flying
+  // indefinitely as long as they touched nothing. Re-resolved every frame --
+  // which is what "action-time, never cached" was always supposed to mean --
+  // and a withdrawal becomes a descent she can see, not a silent one.
+  //
+  // She is handed to the leaf rather than deleted: dropping `flight` at 15m
+  // would teleport her to the ground. Losing permission to fly is not the same
+  // as ceasing to exist.
+  if (flight && flight.phase !== 'RAGDOLL') {
+    const still = resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones } });
+    if (!still.enabled) {
+      flashHint?.(`flight withdrawn — ${still.reason}`, 6000);
+      flight = flightDown(flight, { eventId: 'capability-revoked' });
+    }
+  }
+  if (flight) {
+    const input = pilotInput(keys, flight, dt);
+    flight = flightStep(flightCfg, flight, dt, { groundY: flightGround, input });
+    myState.pos.set(flight.pos.x, flight.pos.y, flight.pos.z);
+    myState.yaw = Math.PI / 2 - flight.yaw;          // back to world convention
+    myState.speed = Math.hypot(flight.vel.x, flight.vel.z);
+    myState.clip = flight.wings === 'LIMP' ? 'ragdoll'
+      : (input.flap ? 'fly' : 'soar');
+    // WINGS THAT WORK WHEN THE PHYSICS IS WORKING. Effort is read off the
+    // flight state rather than off a timer, so the animation cannot drift out
+    // of step with what is actually lifting her:
+    //
+    //   launchNow  the shaped take-off impulse, which SPOOLS UP over ~1.5s and
+    //              fades by ~3s. Janus asked for "several, while rising" and
+    //              this is exactly that curve -- the first beat as her feet
+    //              leave, the hardest ones as she is climbing through the
+    //              second, easing off as the glide takes over. Nothing here
+    //              counts beats; the launch envelope already has the shape.
+    //   flap       Space held. A sustained climb IS the wings, so they beat
+    //              full-power for as long as it lasts.
+    //
+    // Normalised against the config's own launch boost, so retuning the
+    // take-off retunes the animation with it instead of leaving a hardcoded
+    // divisor behind to disagree.
+    const boost = flightCfg.pilot?.launchBoost ?? 9.0;
+    const fromLaunch = Math.min(1, (flight.launchNow ?? 0) / (boost * 0.55));
+    me.wingEffort = input.flap ? 1 : fromLaunch;
+    if (flight.phase === 'LANDED' || flight.phase === 'GROUND' || flight.phase === 'RAGDOLL') {
+      const endedAt = +flight.t.toFixed(2);
+      lastFlightEnd = { phase: flight.phase, y: +flight.pos.y.toFixed(2),
+                        ground: +flightGround(flight.pos.x, flight.pos.z).toFixed(2),
+                        t: endedAt };
+      // A FLIGHT THAT ENDS IN ITS FIRST SECOND IS A BUG REPORTING ITSELF.
+      // "It jumps and lands immediately" arrived as a description because the
+      // client had no way to say WHY -- the receipt existed only in a devtools
+      // probe. A landing is normal; a landing before the launch has finished
+      // spooling is not, and it should arrive with its numbers attached.
+      if (endedAt < 1.5) {
+        flashHint?.(`flight ended after ${endedAt}s — landed at y=${lastFlightEnd.y}, ` +
+                    `ground ${lastFlightEnd.ground}`, 6000);
+      }
+      flight = null; grounded = true; vy = 0;
+      myState.clip = 'idle'; myState.speed = 0;
+      me.wingEffort = 0;              // back to the resting flap, eased in _flap
+      releaseWings();                 // ...and for any body the loop is not holding
+    }
+    // AND NOW PUT HER ON THE SCREEN. Everything above moves `myState`, which
+    // is the streamed, authoritative body -- but the four lines that make a
+    // body VISIBLE (clip, root position, root rotation, camera) live at the
+    // bottom of this function, past the `return` below. So flight ran for
+    // thirty-one seconds at 16m while `me.root` sat on the ground where she
+    // took off, the camera watched that empty spot, and pressing F to land
+    // handed the walk path a position 100m away that it applied in one frame.
+    // From inside: frozen, then a teleport. From /flight: a perfect sortie.
+    //
+    // Both other paths that skip updateMe's tail already learned this and left
+    // a note -- stepRagdoll ("the camera lives in updateMe, which we skip
+    // while limp -- so drive it here too, or it freezes on the frame you
+    // fell") and updateMountedMe (#75, the same fix for seats). This was the
+    // third and the only one that had not paid it.
+    me.setClip(myState.clip, myState.speed);
+    me.root.position.copy(myState.pos);
+    me.root.rotation.y = myState.yaw;
+    me.pitch = firstPerson ? 0 : THREE.MathUtils.clamp(camPitch - 0.32, -0.45, 0.55);
+    updateFollowCamera(dt, me);
+    return;                                           // nothing else drives her
+  }
+  // NOT FLYING MEANS NOT WORKING THE WINGS. Asserted every frame rather than
+  // cleared at each exit: releaseWings() covers the exits we know about, and
+  // this covers the ones we do not -- a capability revoked mid-air, a body
+  // swapped while flying, an exception between the flap and the landing. The
+  // cost is one assignment per frame on a value _flap already eases, and the
+  // benefit is that "wings stuck at full power" cannot survive a single frame
+  // of not flying, whatever route got us here.
+  if (me.wingEffort) me.wingEffort = 0;
   if (mantle) {
     mantle.t += dt / 0.55;
     const k = Math.min(1, mantle.t), e = k * k * (3 - 2 * k);
