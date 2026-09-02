@@ -31,12 +31,17 @@ export function worldHasOwner(st: WorldState): boolean {
   }
   return false;
 }
-export function rightsOf(state: WorldState, id: string, sub?: string): { role: string; gen: boolean } {
+export function rightsOf(state: WorldState, id: string, sub?: string): { role: string; gen: boolean; fly: boolean } {
   // Grants are honored under either handle: the display id (what owners see
   // and type) or the durable principal sub (what survives a rename —
   // home-node.md §5: key state by sub). WORLD_ADMIN accepts both too.
-  if (ADMIN_IDS.has(id) || (sub && ADMIN_IDS.has(sub))) return { role: "owner", gen: true };
-  if (!worldHasOwner(state)) return { role: "builder", gen: true };   // open world
+  if (ADMIN_IDS.has(id) || (sub && ADMIN_IDS.has(sub))) return { role: "owner", gen: true, fly: true };
+  // AN OPEN WORLD DOES NOT GRANT FLIGHT. `gen` opens here because a scratch
+  // world should stay frictionless to build in; flight is not a building
+  // permission, it is a body permission, and "no owner has said otherwise" is
+  // not a grant. Default-deny has to survive the absence of an owner or it is
+  // only default-deny in worlds that already have one.
+  if (!worldHasOwner(state)) return { role: "builder", gen: true, fly: false };   // open world
   // In an OWNED world, unlisted ids take the wildcard default: builder
   // WITHOUT gen unless the owner says otherwise. Editing stays frictionless
   // for drop-in company; introducing new assets (spend) is what's restricted
@@ -47,7 +52,10 @@ export function rightsOf(state: WorldState, id: string, sub?: string): { role: s
   if ((r as any).sub && (r as any).sub !== sub) {
     r = state.roles?.["*"] ?? { role: "builder" as const };
   }
-  return { role: r.role, gen: r.role === "owner" || Boolean(r.gen) };
+  // fly is NOT implied by owner. Owning a world is authority over the world,
+  // not a wing rig -- and an owner who wants to fly grants it to themselves,
+  // which leaves a log entry saying so.
+  return { role: r.role, gen: r.role === "owner" || Boolean(r.gen), fly: Boolean((r as any).fly) };
 }
 /** What each verb demands. `asset` is the spend gate; `grant` is owner-only. */
 export const VERB_NEEDS: Record<string, { rank: number; gen?: boolean }> = {

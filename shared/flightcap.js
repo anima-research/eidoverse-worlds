@@ -133,6 +133,51 @@ export function devFlightProvider({ allow = [], bones = null, label = 'local-dev
   };
 }
 
+/** THE PRODUCTION PROVIDER: a grant the SERVER made, for this identity, in
+ *  this world.
+ *
+ *  This exists because the previous cut shipped `devFlightProvider` in both
+ *  entry points, so any body whose bone names satisfied `rigProfile()` was
+ *  authorized by the mere fact of wearing it -- default-ON for every
+ *  compatible wing rig. mica, reviewing cea3c3c: "That collapses provenance
+ *  ('is this a flier?') into permission ('may this person fly here?')."
+ *
+ *  The two questions are answered in two places now, and BOTH must say yes:
+ *
+ *    rights.fly   may this identity fly in this world -- server-authoritative,
+ *                 per-world, event-sourced through the `grant` verb, keyed to
+ *                 a durable sub, default-off even in an open world and even
+ *                 for its owner. A URL cannot forge it; the client only
+ *                 reports what the server sent.
+ *    rigProfile   is this body physically a flier -- evidence, never consent.
+ *
+ *  `rights` is read through a THUNK, not captured: grants change live, and a
+ *  capability resolved at construction is the hot-swap bug in another costume.
+ *
+ * @param {{ rights?: (() => any) | any, label?: string }} [opts]
+ */
+export function worldFlightProvider({ rights = null, label = 'world-grant' } = {}) {
+  const read = typeof rights === 'function' ? rights : () => rights;
+  return {
+    name: label,
+    flightCapability(ctx = {}) {
+      const r = read() ?? null;
+      // A MISSING RIGHTS OBJECT IS A NO. Not yet joined, an older server that
+      // never heard of `fly`, a dropped snapshot -- every one of those is
+      // "nobody has said you may", which is the same answer as "no".
+      if (!r) return { enabled: false, reason: 'no world rights yet — not joined' };
+      if (r.fly !== true) {
+        return { enabled: false, reason: 'this world has not granted you flight (owner: /grant <you> +fly)' };
+      }
+      const names = ctx.avatar?.boneNames ?? null;
+      if (!names) return { enabled: false, reason: 'no bone list available for this avatar' };
+      const p = rigProfile(names);
+      if (!p.ok) return { enabled: false, reason: p.reason };
+      return { enabled: true, profile: p.profile, source: label };
+    },
+  };
+}
+
 /** Resolve a capability through a provider, defaulting to deny.
  *
  *  Every entry point -- verb, controller, UI, hook -- calls THIS, at the moment

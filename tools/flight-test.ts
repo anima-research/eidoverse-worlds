@@ -35,7 +35,7 @@ import {
 } from '../shared/flight.js';
 import { pilotInput, pilotHelp, DEFAULT_BINDS, DEFAULT_AUTHORITY } from '../shared/flightpilot.js';
 import { inspectBody, describeBody } from '../shared/flightbody.js';
-import { denyAllFlight, devFlightProvider, resolveFlight, rigProfile, revoked }
+import { denyAllFlight, devFlightProvider, worldFlightProvider, resolveFlight, rigProfile, revoked }
   from '../shared/flightcap.js';
 import { readFileSync } from 'node:fs';
 
@@ -227,7 +227,13 @@ console.log('\nT3 (partial) -- stamina rates; no climb_to or winded glide yet');
   const cfg = makeConfig();
   check('climb costs 1/m', cfg.stamina.climbPerMetre === 1);
   check('glide is stamina-neutral', cfg.stamina.refillAirPerSec === 0);
-  check('perch refills 4x the ground', cfg.stamina.refillPerchPerSec === 4 * cfg.stamina.refillGroundPerSec);
+  // The number matches the spec; nothing consumes it. Asserting a constant
+  // against another constant proved only that arithmetic works, while the
+  // surfaces around it told Mythos perches existed. The claim is gone from
+  // flight_status and climb_to; this check now states the gap instead of
+  // dressing it as coverage.
+  check('perch refill is the spec figure -- and NOT IMPLEMENTED (Stage 2)',
+        cfg.stamina.refillPerchPerSec === 4 * cfg.stamina.refillGroundPerSec);
   let s = initialState({ phase: 'GROUND', stamina: 50 });
   for (let i = 0; i < 120; i++) s = step(cfg, s, DT, { groundY: flat });
   check(`ground refill 0.5/s: 50 -> ${s.stamina.toFixed(2)} after 1s`,
@@ -638,6 +644,102 @@ console.log('\nCAPABILITY -- default deny, action-time, semantic rig binding');
   const denied = resolveFlight(denyAllFlight, { identity: 'mythos' });
   check('a denied caller gets no profile to build flight from',
         denied.enabled === false && !('profile' in denied));
+}
+
+// ------------------------------------------------- default-deny, for real
+console.log('\nDEFAULT-DENY -- a compatible rig is evidence, never permission');
+{
+  // mica, Blocker 1 at cea3c3c: both shipped entry points constructed
+  // `devFlightProvider({allow:[identity]})`, so wearing a rig whose bone names
+  // satisfied rigProfile() authorized itself. "That collapses provenance ('is
+  // this a flier?') into permission ('may this person fly here?')."
+  //
+  // These are the exact negative tests that review asked for: delete the
+  // injection and prove no compatible rig can self-authorize.
+  const WINGED = ['Hip', 'Spine02', 'Head',
+                  'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1',
+                  'L_Wing_Lower', 'R_Wing_Lower'];
+  const av = { boneNames: WINGED };
+
+  check('a perfect wing rig with NO provider is refused',
+        !resolveFlight(null, { identity: 'mythos', avatar: av }).enabled);
+  check('...and with the default provider is refused',
+        !resolveFlight(denyAllFlight, { identity: 'mythos', avatar: av }).enabled);
+
+  // The world provider, which is what production now runs.
+  const withRights = (r: any) => worldFlightProvider({ rights: () => r });
+  check('no rights yet (not joined) is a NO',
+        !resolveFlight(withRights(null), { identity: 'm', avatar: av }).enabled);
+  check('an old server that never heard of `fly` is a NO',
+        !resolveFlight(withRights({ role: 'builder', gen: true }), { identity: 'm', avatar: av }).enabled);
+  check('an OPEN world does not grant flight',
+        !resolveFlight(withRights({ role: 'builder', gen: true, fly: false, open: true }),
+                       { identity: 'm', avatar: av }).enabled);
+  check('being the world OWNER does not grant flight',
+        !resolveFlight(withRights({ role: 'owner', gen: true, fly: false }),
+                       { identity: 'm', avatar: av }).enabled);
+  check('an explicit world grant DOES -- and only then',
+        resolveFlight(withRights({ role: 'visitor', gen: false, fly: true }),
+                      { identity: 'm', avatar: av }).enabled);
+  // Permission is necessary, not sufficient: a granted identity in a body that
+  // cannot fly is still refused, and for the OTHER reason.
+  const wingless = { boneNames: ['hips', 'spine', 'head'] };
+  check('a grant does not make a wingless body fly',
+        !resolveFlight(withRights({ role: 'owner', fly: true }), { identity: 'm', avatar: wingless }).enabled);
+  // Live, not captured: revoking grounds a body that was already flying.
+  {
+    let rights: any = { role: 'builder', fly: true };
+    const prov = worldFlightProvider({ rights: () => rights });
+    const before = resolveFlight(prov, { identity: 'm', avatar: av }).enabled;
+    rights = { role: 'builder', fly: false };
+    const after = resolveFlight(prov, { identity: 'm', avatar: av }).enabled;
+    check('a revoked grant takes effect on the next resolve', before && !after);
+  }
+  // And the entry points must not manufacture one. This is source-level
+  // because it is a statement about what the SHIPPED FILES contain, which is
+  // precisely what the review found wrong -- a behavioural test of a module
+  // that constructs its own grant would have passed happily.
+  for (const f of ['client/lib/controller.js', 'mcpl/agent.ts']) {
+    const src = readFileSync(f, 'utf8');
+    const code = src.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+    check(`${f.split('/').pop()} does not construct a dev provider`,
+          !/devFlightProvider\s*\(/.test(code));
+    check(`${f.split('/').pop()} resolves against the world's grant`,
+          /worldFlightProvider\s*\(/.test(code));
+  }
+}
+
+// -------------------------------------------- rehearsal, and a climb that flies
+console.log('\nREVIEW cea3c3c -- blockers 4 and 6');
+{
+  const ns = readFileSync('mcpl/net-server.ts', 'utf8');
+  // B4: DOWN is involuntary; a pilot must not be able to cry wolf. Naming a
+  // tool "REHEARSAL ONLY" in its description did not stop it being callable.
+  check('rehearsal is env-gated and DEFAULT OFF',
+        /REHEARSAL_ENABLED = process\.env\.EIDO_FLIGHT_REHEARSAL === "1"/.test(ns));
+  check('...filtered out of tools/list when off',
+        /REHEARSAL_ENABLED \|\| !REHEARSAL_TOOLS\.has\(t\.name\)/.test(ns));
+  check('...AND refused at dispatch, not merely hidden',
+        /if \(!REHEARSAL_ENABLED\) return text\("no such tool"\)/.test(ns));
+
+  // B5: infrastructure must not speak in the resident's voice.
+  const ag = readFileSync('mcpl/agent.ts', 'utf8');
+  check('flight telemetry is not written as resident chat',
+        !/verb\("say", \{ text: "\[flight\]/.test(ag));
+
+  // B6: every metre a flying body gains is flown. The winded branch used to
+  // assign pos.y directly and return -- a teleport, in the same function whose
+  // comment forbids exactly that.
+  check('an unaffordable climb has no direct pos.y assignment',
+        !/f\.pos\.y = from \+ afford/.test(ag));
+  check('...and goes through the same ticked integrator',
+        /f\.climbTo = reach; f\.climbRate = climbRate/.test(ag));
+
+  // B7: the perch economy is not advertised by anything that cannot perform it.
+  check('flight_status does not advertise a perch refill',
+        !/on a perch\)/.test(ag));
+  check('climb_to does not promise perches either',
+        !/or on a perch \(2\/s\)/.test(ns) && /perches are NOT implemented/i.test(ns));
 }
 
 // ---------------------------------------------------------------- isolation

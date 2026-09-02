@@ -29,18 +29,36 @@ import {
   takeOff as flightTakeOff, bestGlide,
 } from '../../shared/flight.js';
 import { pilotInput } from '../../shared/flightpilot.js';
-import { devFlightProvider, resolveFlight } from '../../shared/flightcap.js';
+import { worldFlightProvider, resolveFlight } from '../../shared/flightcap.js';
 
 let flight = null, flightCfg = null, flightProv = null;
 let lastFlightEnd = null;   // why the last flight ended -- 'F did nothing' has causes
 let flightBones = null;
 
-/** Called once the body is known; without a compatible rig F does nothing. */
+/** Called once the body is known.
+ *
+ *  THE PROVIDER IS THE WORLD'S, NOT OURS. This used to construct
+ *  `devFlightProvider({allow:[identity]})` -- an allow-SELF grant, manufactured
+ *  in the shipped client, on every body load. Wearing a winged rig was
+ *  therefore both the evidence and the permission, which is default-ON dressed
+ *  as default-deny (mica, reviewing cea3c3c, Blocker 1). The grant now comes
+ *  from the server's `yourRights.fly`, which no query string can forge, and a
+ *  compatible body with no grant gets a refusal that names the fix. */
 export function armFlight(boneNames, identity = 'me') {
   flightBones = boneNames ?? [];
-  flightProv = devFlightProvider({ allow: [identity], label: 'client-dev' });
+  flightProv = worldFlightProvider({ rights: myRights, label: 'world-grant' });
   return resolveFlight(flightProv, { identity, avatar: { boneNames: flightBones } }).enabled;
 }
+
+// The world's grant, read through a hook rather than an import: net.js keeps
+// itself free of this module on purpose ("net can read/write body state
+// without importing the controller, which imports ui, which imports
+// assets..."), and the same reason runs in this direction. main.js wires it.
+//
+// The DEFAULT RETURNS NULL, and worldFlightProvider reads null as "nobody has
+// said you may". A forgotten wiring must ground the body, never free it.
+let myRights = () => null;
+export function setRightsHook(fn) { myRights = typeof fn === 'function' ? fn : (() => null); }
 
 // THE SAME FLOOR WALKING STANDS ON. Flight was handed raw `heightAt` while
 // take-off measured `resolveColliders` -- two different answers for "where is

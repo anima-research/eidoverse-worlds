@@ -33,7 +33,7 @@ export const COMMANDS = [
   // person with a silent mic is exactly who needs it.
   { name: 'audio', help: '/audio [stt|say] — why voice or captions are not working; `say` posts it to the room' },
   { name: 'role', help: 'what you may do here (or /role <name>)' },
-  { name: 'grant', help: '/grant <name> owner|builder|visitor [+gen|-gen] — owner only' },
+  { name: 'grant', help: '/grant <name> owner|builder|visitor [+gen|-gen] [+fly|-fly] — owner only' },
   { name: 'ban', help: '/ban <name> [reason] — ban someone from this world (owner)' },
   { name: 'unban', help: '/unban <name> — lift a ban here (owner)' },
   { name: 'bans', help: 'who is banned from this world' },

@@ -18,7 +18,7 @@ import {
   bodyDown as flightDown, bodyRecovered as flightRecovered, takeOff as flightTakeOff,
   bestGlide, glideRange,
 } from "../shared/flight.js";
-import { resolveFlight, devFlightProvider } from "../shared/flightcap.js";
+import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
 import { DEFAULT_LEAF_FORCE as LEAF_FORCE } from "../shared/leafforce.js";
 
 /** integrator yaw (atan2(dz,dx), forward = (cos,sin)) -> world yaw
@@ -595,6 +595,13 @@ export class WorldAgent {
             // Our surface generation, issued by the server on acceptance —
             // every attest must echo it or the receipt is refused (PR #103 B2).
             if (typeof msg.gen === "number") this.surfaceGen = msg.gen;
+            // WHAT THIS WORLD PERMITS THIS IDENTITY. Flight reads `fly` from
+            // here and nowhere else: the previous cut fell back to an
+            // allow-self dev provider whenever none was injected, and since
+            // nothing ever injected one, that fallback WAS the policy. A
+            // server that never sends this leaves myRights null, which the
+            // provider reads as no.
+            if (msg.yourRights) this.myRights = msg.yourRights;
             this.entities.clear(); this.people.clear();
             // wake where you fell asleep — fresh body only; a body that has
             // walked this process keeps its own truth on mid-life reconnects
@@ -1715,6 +1722,9 @@ export class WorldAgent {
   flight: any = null;
   flightCfg: any = null;
   flightCap: any = null;
+  /** The server's per-world grant for this identity ({role, gen, fly}).
+   *  Null until a snapshot arrives, and null means no. */
+  myRights: any = null;
   private flightWaiters: Array<{ done: (r: string) => void; test: (s: any) => string | null }> = [];
 
   /** Resolve the capability, freshly, every time -- never cached. An avatar
@@ -1725,7 +1735,11 @@ export class WorldAgent {
     // not to a hash, so a re-export with the same load-bearing names keeps
     // flying and a swap to a wingless commons avatar stops it.
     const bones = this.bodyBoneNames ?? [];
-    const prov = this.flightCap ?? devFlightProvider({ allow: [this.name], label: "mcpl-dev" });
+    // THE WORLD'S GRANT, or an explicitly injected one for a bench. What is
+    // gone is the third option -- a self-authorizing dev provider conjured
+    // when neither was present, which was every production path (mica,
+    // Blocker 1). A bench sets `agent.flightCap`; nothing else grants.
+    const prov = this.flightCap ?? worldFlightProvider({ rights: () => this.myRights, label: "world-grant" });
     const r = resolveFlight(prov, { identity: this.name, avatar: { boneNames: bones } });
     return { ok: r.enabled === true, why: r.enabled ? "" : (r.reason ?? "denied") };
   }
@@ -1907,9 +1921,29 @@ export class WorldAgent {
       { groundY: this.heightAt(this.pos.x, this.pos.z) });
     const ev = this.flight.events.find((e: any) => e.kind === "takeoff.refused");
     if (ev) { return `still standing — ${ev.reason}`; }
-    this.verb("say", { text: "[flight] took off" });
     return `took off — ${this.flight.pos.y.toFixed(1)}m, stamina ${this.flight.stamina.toFixed(0)}/100`;
   }
+
+  // WORLD-FACING FLIGHT TELEMETRY IS ABSENT ON PURPOSE, for now.
+  //
+  // takeoff/landing/down/winded were published as `say` with a "[flight]"
+  // prefix -- infrastructure observations written into the durable
+  // conversational log as though the resident had spoken them, and takeoff
+  // was published twice besides (here AND by the integrator's own event).
+  // mica, Blocker 5: this "places technical strings into the durable
+  // conversational world log" and "entangles the just-repaired AF
+  // world-publication boundary with body telemetry".
+  //
+  // The right shape is a dedicated structured world/presence event carrying
+  // explicit actor, cause and generation -- which is new log vocabulary, and
+  // therefore not something to invent inside a flight branch that is already
+  // under review. Removed rather than reshaped: a landing nobody announces is
+  // a missing feature, a landing announced in the resident's own voice is a
+  // falsified record, and of the two only the second is a lie. The verb
+  // return values still report everything to the caller.
+  //
+  // Proposed to mica in the stage-3 response; nothing here publishes until
+  // that channel is agreed.
 
   /** glide_to (spec §1). Free, and lands SHORT honestly if the polar runs out. */
   async glideTo(x: number, z: number): Promise<string> {
@@ -1979,29 +2013,41 @@ export class WorldAgent {
     const want = Math.min(alt, cfg.bounds.ceiling);
     const gain = Math.max(0, want - from);
     const cost = gain * cfg.stamina.climbPerMetre;
-    if (cost > f.stamina) {
-      const afford = f.stamina / cfg.stamina.climbPerMetre;
-      f.pos.y = from + afford; f.stamina = 0;
-      this.verb("say", { text: "[flight] winded" });
-      return `winded at ${f.pos.y.toFixed(1)}m — the pool only bought ${afford.toFixed(1)}m of the ${gain.toFixed(1)} you asked for`;
-    }
+    // A SHORT CLIMB IS STILL A CLIMB. This branch used to assign `f.pos.y =
+    // from + afford` and return -- the exact teleport class the comment below
+    // was written to forbid, exempted by being in the other half of an if
+    // (mica, Blocker 6). It also emitted no trajectory: a body that "climbed"
+    // 8m without passing through 4m has no flight path to inspect, and R3,
+    // ground contact and a mid-climb cut all had nothing to act on.
+    //
+    // So an unaffordable climb now flies the part it CAN afford, through the
+    // same ticked integrator, and ends honestly where the pool ran out.
+    const winded = cost > f.stamina;
+    const afford = f.stamina / cfg.stamina.climbPerMetre;
+    const reach = winded ? from + afford : want;
+    const spend = winded ? f.stamina : cost;
     // CLIMB THROUGH THE INTEGRATOR, not around it. The first cut set pos.y
     // directly and awaited a timer -- and the flight tick, which owns y while
     // airborne, overwrote it on the very next frame. She reported 12m, was
     // actually at 2.2m, and the glide that followed had no altitude to spend.
     // Anything that moves a flying body has to move it the way the body moves.
     f.phase = "PILOT"; f.mode = "live"; f.holdAt = null;
-    f.stamina -= cost;
+    f.stamina = Math.max(0, f.stamina - spend);
     const climbRate = 2.0;   // m/s of ascent while flying forward
-    f.climbTo = want; f.climbRate = climbRate; f.climbT = 0;  // consumed by flightTick
+    f.climbTo = reach; f.climbRate = climbRate; f.climbT = 0;  // consumed by flightTick
+    const climbed = Math.max(0, reach - from);
     const got = await this.flightAwait((st) => {
       if (st.phase === "RAGDOLL") return "cut";
       if (st.climbTo == null) return "there";
       return null;
-    }, Math.min(120_000, (gain / climbRate) * 1000 + 8000));
+    }, Math.min(120_000, (climbed / climbRate) * 1000 + 8000));
     if (got === "cut") return `cut mid-climb at ${this.flight.pos.y.toFixed(1)}m`;
-    const target = this.flight?.pos.y ?? want;
-    return `at ${target.toFixed(1)}m — ${cost.toFixed(0)} stamina spent, ${(this.flight?.stamina ?? 0).toFixed(0)} left`;
+    const target = this.flight?.pos.y ?? reach;
+    if (winded) {
+      return `winded at ${target.toFixed(1)}m — the pool only bought ${afford.toFixed(1)}m `
+        + `of the ${gain.toFixed(1)} you asked for, and it was flown, not granted`;
+    }
+    return `at ${target.toFixed(1)}m — ${spend.toFixed(0)} stamina spent, ${(this.flight?.stamina ?? 0).toFixed(0)} left`;
   }
 
   /** land_at (x,z). Descend, arrive, and hand the body back to walking. */
@@ -2091,7 +2137,7 @@ export class WorldAgent {
     const bg = bestGlide(cfg);
     return [
       `${f.phase.toLowerCase()} at ${f.pos.y.toFixed(1)}m, heading ${((f.yaw * 180 / Math.PI + 360) % 360).toFixed(0)}deg, ${f.airspeed.toFixed(1)} m/s`,
-      `stamina ${f.stamina.toFixed(0)}/100 (refills on the ground: ${cfg.stamina.refillGroundPerSec}/s, ${cfg.stamina.refillPerchPerSec}/s on a perch)`,
+      `stamina ${f.stamina.toFixed(0)}/100 (refills on the ground: ${cfg.stamina.refillGroundPerSec}/s; perches are not implemented)`,
       `from here best glide reaches ${glideRange(cfg, f.pos.y).toFixed(0)}m at ${bg.speed.toFixed(1)} m/s`,
       `wings ${f.wings} - mode ${f.mode}`,
     ].join("\n");

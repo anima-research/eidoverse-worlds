@@ -113,7 +113,14 @@ export const DEFAULT_CONFIG = {
     climbPerMetre: 1,         // -1/m
     flapSustainPerSec: 2,     // -2/s, deliberately expensive: I am a glider
     refillGroundPerSec: 0.5,
-    refillPerchPerSec: 2,     // perches are the social choice
+    // NOT IMPLEMENTED IN STAGE 1. There is no perch detection and no runtime
+    // consumer of this number: it was defined, reported through flight_status,
+    // and promised by climb_to's description, so the integration could claim a
+    // social perch economy it could not perform (mica, Blocker 7). Kept as the
+    // spec's figure (§5) for the Stage 2 that implements it, and kept OUT of
+    // every surface that would imply it works. Do not re-advertise it without
+    // a refill path and a test that measures one.
+    refillPerchPerSec: 2,     // perches are the social choice -- SPEC ONLY, no runtime
     refillAirPerSec: 0,       // never refills airborne
   },
 

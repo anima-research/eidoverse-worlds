@@ -26,6 +26,7 @@ import './lib/emitters.js';
 import { tickMotion } from './lib/motion.js';
 import {
   myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
+  setRightsHook,
 } from './lib/controller.js';
 import { remotes, updateRemotes, updateGaze } from './lib/remotes.js';
 import {
@@ -277,6 +278,13 @@ bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 // The avatar swap + avatar-updated wiring rides mybody.js's import; the
 // physics of being a body here (ragdoll, seats, drag, pins, shoves) is
 // localbody.js, handed logChat instead of importing chat (§14.2).
+
+// FLIGHT READS THE WORLD'S GRANT, not a provider the client made for itself.
+// Wired here for the same reason initPhysObj and wireNet are: net.js must not
+// import the controller, so main.js is where the two meet. Live, not captured
+// -- `/grant <id> +fly` takes effect on the next resolve, and `-fly` grounds a
+// body that is already in the air the next time it acts.
+setRightsHook(() => net.myRights);
 
 initPhysObj({ myPos: () => myState.pos });
 // reach descriptors resolve against the same bodies everyone renders; my own

@@ -11,7 +11,10 @@
 // gone: state is folded once, realizers read it, and every load
 // completion re-reads current state (TEL0S_NOTES §11).
 
-import { THREE, scene, camera, renderer, report, bus } from './core.js';
+import { THREE, scene, camera, renderer, report, bus, CONFIG } from './core.js';
+// net.js does NOT import this module (its own note: "live grants keep it fresh
+// via world.js"), so this direction closes no cycle.
+import { net } from './net.js';
 import { loadEidoModule, noiseTexture, loadTrack, loadDone, libLabels } from './assets.js';
 import { prepareObject } from './materials.js';
 import { beginWork } from './loadwork.js';
@@ -253,8 +256,18 @@ export function applyGrantState(id, rec) {
   worldRoles.set(id, {
     role: rec.role ?? cur.role,
     gen: rec.gen != null ? Boolean(rec.gen) : cur.gen,
+    fly: rec.fly != null ? Boolean(rec.fly) : cur.fly,
   });
   bus.emit('roles', { id, ...worldRoles.get(id) });
+  // A GRANT TO ME CHANGES WHAT I MAY DO, NOW. This mirror existed for the HUD,
+  // so `net.myRights` -- which is what the flight capability resolves against
+  // -- only ever changed at join: `/grant me +fly` did nothing until reload,
+  // and more importantly `-fly` did not ground me. Enforcement is still the
+  // server's; this keeps the client's own gate from lagging behind it.
+  if (id === CONFIG.name && net.myRights) {
+    net.myRights = { ...net.myRights, ...worldRoles.get(id) };
+    bus.emit('your-rights', net.myRights);
+  }
 }
 
 /** Mirror one behavior binding (or its removal) into the roster mods.js
