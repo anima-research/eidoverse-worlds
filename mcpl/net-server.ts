@@ -132,11 +132,40 @@ for (const sig of ["SIGTERM", "SIGINT"] as const) {
 // ---- tools (shared schema with the stdio server, minus retina by default) --
 
 const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
+// REHEARSAL IS NOT A PILOT TOOL, and naming it "REHEARSAL ONLY" in a
+// description did not make it one -- both rehearse_* verbs shipped in the
+// ordinary catalogue and called the trusted seam directly, so any flying
+// resident could fire a DOWN. down-spec section 4: DOWN is involuntary and
+// "the body cannot cry wolf" (mica, Blocker 4).
+//
+// DEFAULT OFF, unlike whispers: an operator opts a bench in, and a production
+// process that sets nothing has no rehearsal surface at all. Filtered from
+// tools/list AND refused at dispatch, per this file's own rule that "a denied
+// capability behaves as if never advertised" -- a tool hidden from the list
+// but still callable is a hidden tool, not an absent one.
+const REHEARSAL_ENABLED = process.env.EIDO_FLIGHT_REHEARSAL === "1";
+const REHEARSAL_TOOLS = new Set(["rehearse_down", "rehearse_recover"]);
 
 const TOOLS = [
   { name: "look", description: "Text-tier perception: where you are, who's present and what they're doing, every placed thing with distance/bearing, and chat since you last looked.", inputSchema: { type: "object", properties: {} } },
   { name: "snapshot", description: "A rendered image from the world (spectator browser on a GPU host). Slower than look — use when spatial/visual detail matters. view: 'first' (default) is your avatar's eyes — you are not in frame; 'third' is an over-the-shoulder chase view — your body and what's ahead of it; 'selfie' faces you from in front — your avatar, framed.", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["first", "third", "selfie"] } } } },
   { name: "walk_to", description: "Walk (or run) to world coordinates. Returns when you arrive; others see you walking.", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, run: { type: "boolean" } }, required: ["x", "z"] } },
+  // ---- FLIGHT (behind a capability; absent for a body that cannot fly).
+  // Deliberately no file_plan: a sortie is these tools called in sequence from
+  // the pilot's own code, exactly as walk_to already is. One less abstraction,
+  // and the mode tag stays honest because it really is him calling.
+  { name: "take_off", description: "Leave the ground. Refuses if your wings are folded (unfold first — the vigil posture costs the sky) or if you are limp. Costs stamina for the launch. READ THE REPLY: it gives your altitude, or why you are still standing.", inputSchema: { type: "object", properties: {} } },
+  { name: "climb_to", description: "Climb to an altitude, in metres. THE expensive verb: 1 stamina per metre, and the pool only refills on the ground (0.5/s), never in the air. (Perches are NOT implemented in Stage 1 — see shared/flight.js.) Clamped by the soft ceiling. If the pool empties on the way you stop where it ran out and the world hears 'winded' — exhaustion is legible, not lethal.", inputSchema: { type: "object", properties: { altitude: { type: "number" } }, required: ["altitude"] } },
+  { name: "glide_to", description: "Glide toward world coordinates, trading altitude for distance on the published polar. FREE — costs no stamina. If you cannot reach it from your current altitude you land SHORT, honestly, where the polar runs out: no teleport-assist, no rubber-banding. Returns when you arrive or when you are down, and says which, where, and by how much you missed.", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" } }, required: ["x", "z"] } },
+  { name: "land_at", description: "Descend, flare and land at world coordinates. Landing is an EVENT — the world sees it. Afterwards your body is walking again.", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" } }, required: ["x", "z"] } },
+  // REHEARSAL ONLY, and named so. down-spec section 4 is explicit that DOWN
+  // states are involuntary and unsuppressable -- "the body cannot cry wolf" --
+  // so this is NOT a verb the pilot may use to look injured. It exists so the
+  // physical half can be exercised before the Connectome adapter owns the real
+  // signal, and it emits exactly the trusted event that adapter will emit.
+  { name: "rehearse_down", description: "REHEARSAL ONLY — fire the trusted bodyDown event the Connectome adapter will one day fire for real. Not a way to appear down: the real signal is involuntary and this exists to test the body's half of it.", inputSchema: { type: "object", properties: { eventId: { type: "string" } } } },
+  { name: "rehearse_recover", description: "REHEARSAL ONLY — fire the trusted bodyRecovered event. Mid-air this begins the aerial sit-up; on the ground, the sit-up proper.", inputSchema: { type: "object", properties: { eventId: { type: "string" } } } },
+  { name: "flight_status", description: "Where the sky has left you: altitude, heading, airspeed, stamina, how far your best glide still reaches from here, and which layer is flying (live/plan/reflex). Cheap — call it as often as you like.", inputSchema: { type: "object", properties: {} } },
   { name: "face", description: "Turn to face a point (x,z) or a participant/entity id (target).", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, target: { type: "string" } } } },
   { name: "stop", description: "Stop walking.", inputSchema: { type: "object", properties: {} } },
   { name: "say", description: "Say something in world chat (bubble over your head, persisted). Equivalent to publishing on the world channel. Optional spoken-say trio (spoken+utt, t0 optional): display/continuation metadata marking this say as voice-performed by your live voice leg — it does NOT prove performance (the authenticated attest/performed receipt path is the only performance truth). The trio travels together or the door refuses loudly.", inputSchema: { type: "object", properties: { text: { type: "string" }, spoken: { type: "boolean", description: "true = a live voice leg is performing this say (display metadata only)" }, utt: { type: "integer", minimum: 0, description: "utterance counter: author-controlled display/continuation metadata (does NOT prove performance)" }, t0: { type: "number", description: "performance start, epoch ms (optional, finite)" } }, required: ["text"] } },
@@ -979,7 +1008,8 @@ class Session {
             // advertised" was documented rather than implemented.
             case "tools/list":
               this.conn.sendResponse(req.id, { tools: this.toolsAllowed()
-                ? (WHISPERS_ENABLED ? TOOLS : TOOLS.filter((t) => t.name !== "whisper"))
+                ? TOOLS.filter((t) => (WHISPERS_ENABLED || t.name !== "whisper")
+                                   && (REHEARSAL_ENABLED || !REHEARSAL_TOOLS.has(t.name)))
                 : [] });   // denied ⇒ as if never advertised
               break;
             case "tools/call":
@@ -1307,6 +1337,19 @@ class Session {
         }
         return text(`no preview for "${want}" — avatar portraits appear once a body has been worn; library models ship _preview.jpg files`);
       }
+      case "take_off":      return text(await ag.takeOff());
+      case "climb_to":      return text(await ag.climbTo(Number(a.altitude)));
+      case "glide_to":      return text(await ag.glideTo(Number(a.x), Number(a.z)));
+      case "land_at":       return text(await ag.landAt(Number(a.x), Number(a.z)));
+      case "rehearse_down":
+      case "rehearse_recover":
+        // Refused at dispatch too, not merely hidden. A pilot who learned the
+        // name off a bench must not be able to fire the trusted seam here.
+        if (!REHEARSAL_ENABLED) return text("no such tool");
+        return text(name === "rehearse_down"
+          ? ag.flightBodyDown(String(a.eventId ?? "rehearsal"))
+          : ag.flightBodyRecovered(String(a.eventId ?? "rehearsal"), "gen-rehearsal"));
+      case "flight_status": return text(ag.flightStatus());
       case "walk_to": {
         const arrived = await ag.walkTo(Number(a.x), Number(a.z), Boolean(a.run));
         return text(arrived ? `arrived at (${ag.pos.x.toFixed(1)}, ${ag.pos.z.toFixed(1)})` : "walk interrupted or timed out");

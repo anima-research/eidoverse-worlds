@@ -80,12 +80,17 @@ export type VerbRow = {
 
 function vGrant(ctx: VerbCtx, args: Record<string, unknown>) {
   const { w } = ctx;
-  // shape-check before it becomes history: {id, role?, gen?}
+  // shape-check before it becomes history: {id, role?, gen?, fly?}
   const id = String(args.id ?? "").slice(0, 64);
   const role = args.role != null ? String(args.role) : undefined;
   const gen = args.gen != null ? Boolean(args.gen) : undefined;
-  if (!id || (role == null && gen == null) || (role != null && ROLE_RANK[role] == null)) {
-    return { error: "grant wants {id, role: owner|builder|visitor} and/or {gen: true|false}" };
+  // The flight capability, orthogonal to the ladder exactly like gen, and
+  // whitelisted here for the same reason everything else is: this validator
+  // decides what may become history, so an arg it does not name is dropped
+  // before the fold ever sees it.
+  const fly = args.fly != null ? Boolean(args.fly) : undefined;
+  if (!id || (role == null && gen == null && fly == null) || (role != null && ROLE_RANK[role] == null)) {
+    return { error: "grant wants {id, role: owner|builder|visitor} and/or {gen: true|false} and/or {fly: true|false}" };
   }
   if (id === "*" && role === "owner") {
     return { error: "everyone cannot own a world" };
@@ -94,6 +99,7 @@ function vGrant(ctx: VerbCtx, args: Record<string, unknown>) {
   // bind the grant to it — authority follows the person, not the nick
   const subject = [...w.clients].find((o) => o.id === id && o.sub);
   return { args: { id, ...(role != null ? { role } : {}), ...(gen != null ? { gen } : {}),
+    ...(fly != null ? { fly } : {}),
     ...(subject?.sub ? { sub: subject.sub } : {}) } };
 }
 

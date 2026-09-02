@@ -1,0 +1,120 @@
+{
+  "generatedFor": "flight-spec-v0 Stage 1, takes A/B",
+  "fps": 60,
+  "fixedTimestep": 0.016666666666666666,
+  "body": {
+    "source": "assets/opt/eidoverse/assets/vrms/mythos-wings.vrm",
+    "bytes": 24755464,
+    "sha256": "556475d6311b58f922b23b00be06b31c41ce376df9b9baf3342b8a1d934c6e9d",
+    "boneCount": 432
+  },
+  "specs": {
+    "flight-spec-v0.md": "641da611754c7097142e16b355a6dd79b4d431646e0c1d890759884f86fbe805",
+    "down-spec-v0.1.md": "71e4fff28fbc6145f452df9a8b7a03b3fbbcd0bf9eba471f207edbd3435c0a91"
+  },
+  "takes": [
+    {
+      "name": "A",
+      "mp4": "/Users/lariareynolds/Documents/eidoverse-worlds/tools/flightbench/out/take-A.mp4",
+      "frames": 900,
+      "seconds": 15,
+      "landedAt": 12.83333333333355,
+      "sha256": "d2556ce79e27c95a8df4c0f40b41a1296caf86cfaf689dc3bcd92001c3a78017",
+      "events": [
+        {
+          "frame": 0,
+          "t": 0,
+          "kind": "down.airborne",
+          "eventId": "take-cut",
+          "altitude": 30,
+          "impactV": null
+        },
+        {
+          "frame": 769,
+          "t": 12.83333333333355,
+          "kind": "ground.ragdoll",
+          "eventId": "take-cut",
+          "altitude": null,
+          "impactV": 2.4999983959333987
+        }
+      ]
+    },
+    {
+      "name": "B",
+      "mp4": "/Users/lariareynolds/Documents/eidoverse-worlds/tools/flightbench/out/take-B.mp4",
+      "frames": 900,
+      "seconds": 15,
+      "landedAt": null,
+      "injectRecoverAt": 2.4,
+      "sha256": "0947a7e397ed17fa1b7ae1c2b1a297d5c0e4552f3a51da3e5f8b5f8658fd515b",
+      "events": [
+        {
+          "frame": 0,
+          "t": 0,
+          "kind": "down.airborne",
+          "eventId": "take-cut",
+          "altitude": 30,
+          "impactV": null
+        },
+        {
+          "frame": 145,
+          "t": 2.4333333333333296,
+          "kind": "recover.begin",
+          "eventId": null,
+          "altitude": 25.99663487329671,
+          "impactV": null
+        },
+        {
+          "frame": 270,
+          "t": 4.516666666666656,
+          "kind": "recover.airborne",
+          "eventId": null,
+          "altitude": 20.92281945654348,
+          "impactV": null
+        }
+      ]
+    }
+  ],
+  "config": {
+    "breath": 3.4,
+    "polar": {
+      "minSinkSpeed": 11,
+      "sinkAtMinSink": 0.9166666666666666,
+      "minSpeed": 6,
+      "maxSpeed": 30,
+      "curvature": 3
+    },
+    "stamina": {
+      "pool": 100,
+      "climbPerMetre": 1,
+      "flapSustainPerSec": 2,
+      "refillGroundPerSec": 0.5,
+      "refillPerchPerSec": 2,
+      "refillAirPerSec": 0
+    },
+    "leaf": {
+      "period": 3.4,
+      "bankAmplitudeDeg": 35,
+      "lateralAmplitudeM": 0.8,
+      "dampingPerCycle": 0.08,
+      "dampingFloor": 0.35,
+      "terminalV": 2.5,
+      "spinUpTime": 0.9,
+      "yawPerBank": 0.55,
+      "pitchCoupling": 0.35
+    },
+    "recover": {
+      "finishBeat": true,
+      "reopenTime": 1.1,
+      "maxTotal": 3.4,
+      "minTotal": 0.35
+    },
+    "bounds": {
+      "ceiling": 100000,
+      "softMargin": 8,
+      "radius": 100000,
+      "groundClearance": 0.15
+    },
+    "watchdogSec": 90
+  }
+}

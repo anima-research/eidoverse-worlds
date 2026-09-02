@@ -714,6 +714,9 @@ function runCommand(raw) {
       logEl.innerHTML = '';
       lastAuthor = null;
       return true;
+    case 'flight':
+      bus.emit('command', { cmd: 'flight', arg });
+      return true;
     case 'help':
       bus.emit('command', { cmd: 'help' });
       return true;

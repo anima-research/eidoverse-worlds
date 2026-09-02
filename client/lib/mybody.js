@@ -5,6 +5,7 @@
 // here may import main.js.
 
 import { CONFIG, bus, report } from './core.js';
+import { armFlight } from './controller.js';
 import { makeAvatar, contributeThumbnail } from './avatar.js';
 import { setMyAvatarPath, wireAvatarSwitch } from './build.js';
 import { toast } from './ui.js';
@@ -87,7 +88,23 @@ export function chooseAvatar(path, name, { remember = false } = {}) {
 
 let me = null;
 export function getMe() { return me; }
-export function setMe(av) { me = av; }
+export function setMe(av) { me = av; armFlightFor(av); }
+
+/** Arm (or disarm) human flight for whatever body this is now.
+ *
+ *  Re-run on every swap, never cached: the capability binds to the RIG, so
+ *  putting on a winged body grants it and putting on a commons one takes it
+ *  away. That is the same action-time rule the agent side follows, and the
+ *  reason it is a function rather than a flag set once at boot. */
+function armFlightFor(av) {
+  try {
+    if (!av?.vrm?.scene) return;
+    const bones = [];
+    av.vrm.scene.traverse((o) => { if (o.isBone && o.name) bones.push(o.name); });
+    const ok = armFlight(bones, 'me');
+    if (ok) toast?.('flight available on this body — press F');
+  } catch { /* a body that cannot be inspected simply cannot fly */ }
+}
 
 // ---------------------------------------------------------------- avatar swap
 
@@ -101,7 +118,7 @@ wireAvatarSwitch(async (path, name) => {
     // instance pool, so switching BACK is a 0ms pool-hit, not a re-parse.
     const next = await makeAvatar(CONFIG.name, path, { urgent: true }); // build before shedding the old
     me?.dispose();
-    me = next;
+    me = next; armFlightFor(next);
     myAvatarPath = path;
     myAvatarName = name;
     setMyAvatarPath(path);

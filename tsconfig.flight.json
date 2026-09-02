@@ -1,0 +1,35 @@
+{
+  "//": [
+    "A REAL typecheck for the flight modules, because the claimed one was not.",
+    "`bunx tsc --noEmit -p .` in a repo with no root tsconfig prints TS5081 and",
+    "EXITS 0 -- so a grep over its output found no flight errors and 'clean",
+    "typecheck' got reported for a command that never checked a file. mica",
+    "caught it; this file is what makes the claim checkable.",
+    "",
+    "Scoped to the flight modules on purpose. The repo is no-build plain JS +",
+    "JSDoc (shared/README.md) and is not globally clean under checkJs; a",
+    "whole-repo config would either drown these files in unrelated errors or",
+    "have to be loosened until it proved nothing.",
+    "",
+    "  bun run typecheck:flight"
+  ],
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "files": [
+    "shared/flight.js",
+    "shared/flightbody.js",
+    "shared/flightcap.js",
+    "shared/flightpilot.js",
+    "shared/leafforce.js"
+  ]
+}

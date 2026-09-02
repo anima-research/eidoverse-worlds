@@ -80,15 +80,18 @@ import { foldSkyEntry } from './forecast.js';
  *   Everything ever said here, so a joiner can be told that what it is
  *   looking at is a window and not the whole conversation.
  * @property {Record<string, { role: "owner" | "builder" | "visitor",
- *   gen?: boolean, sub?: string }>} roles
+ *   gen?: boolean, fly?: boolean, sub?: string }>} roles
  *   Per-world permissions, fed by owner-authored `grant` verbs in the log —
  *   event-sourced like everything else, so roles replay, fold, and audit.
  *   A world with NO owner in this map is OPEN (everyone builds — the
  *   pre-permissions behaviour, and what a scratch world should be). The
  *   moment an owner exists, unlisted ids are visitors. `gen` is the spend
  *   capability: bringing NEW assets into the world's vocabulary (the `asset`
- *   verb — where Orrery generations land). `sub` binds the grant to a
- *   durable subject: when present, only that sub wears it.
+ *   verb — where Orrery generations land). `fly` is the flight capability:
+ *   orthogonal to the ladder like `gen`, but default-off in EVERY world
+ *   including open ones — an owner grants it deliberately or nobody has it.
+ *   `sub` binds the grant to a durable subject: when present, only that sub
+ *   wears it.
  * @property {Record<string, { by: string, ts: number, reason?: string,
  *   sub?: string }>} [bans]
  *   Per-world bans, fed by owner-authored `ban`/`unban` verbs in the log —
@@ -272,13 +275,19 @@ export function foldEntry(st, e) {
       const cur = st.roles[a.id] ?? { role: "builder" };
       const role = ROLE_RANK[a.role] != null ? a.role : cur.role;
       const gen = a.gen != null ? Boolean(a.gen) : cur.gen;
+      // FLY is orthogonal like gen, and DEFAULT-OFF harder than gen is: an
+      // open world grants gen to everyone, and must not grant flight. A body
+      // being shaped like a flier is evidence that it COULD fly, never that
+      // its wearer MAY -- the collapse of those two questions is what made
+      // the previous cut default-on for any compatible wing rig.
+      const fly = a.fly != null ? Boolean(a.fly) : cur.fly;
       // Durable ink (Hesperus finding #1): when the grant was written while
       // its subject's durable sub was KNOWN, the grant carries it — and only
       // that sub can wear it. A display name is a nameplate, not a deed;
       // before this, anyone reusing an offline owner's nick inherited the
       // world. Grants without a sub (unauthenticated ids, pre-fix history)
       // keep their old name-keyed meaning.
-      st.roles[a.id] = { role, ...(gen ? { gen: true } : {}),
+      st.roles[a.id] = { role, ...(gen ? { gen: true } : {}), ...(fly ? { fly: true } : {}),
         ...(a.sub ? { sub: String(a.sub) } : cur.sub ? { sub: cur.sub } : {}) };
       return;
     }
@@ -440,7 +449,7 @@ export function stateToEntries(state, {
 
   if (roles) {
     for (const [id, r] of Object.entries(state.roles ?? {})) {
-      add('grant', { id, role: r.role, ...(r.gen ? { gen: true } : {}) });
+      add('grant', { id, role: r.role, ...(r.gen ? { gen: true } : {}), ...(r.fly ? { fly: true } : {}) });
     }
   }
   if (state.terrain) add('terrain', state.terrain);
