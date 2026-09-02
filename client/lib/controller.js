@@ -59,6 +59,10 @@ export function armFlight(boneNames, identity = 'me') {
 // said you may". A forgotten wiring must ground the body, never free it.
 let myRights = () => null;
 export function setRightsHook(fn) { myRights = typeof fn === 'function' ? fn : (() => null); }
+// ...and my body, for the same reason and by the same route (mybody imports
+// this module, so the arrow cannot point back).
+let meRef = () => null;
+export function setMeHook(fn) { meRef = typeof fn === 'function' ? fn : (() => null); }
 
 // THE SAME FLOOR WALKING STANDS ON. Flight was handed raw `heightAt` while
 // take-off measured `resolveColliders` -- two different answers for "where is
@@ -85,6 +89,24 @@ function flightGround(x, z) {
 }
 
 export const flying = () => !!flight;
+
+// THE VIGIL POSTURE (spec section 1 fold_down, section 2 FOLDED, T6).
+//
+// Kept as controller state rather than inside `flight`, because folding is
+// something a body does STANDING and the flight state only exists once she is
+// flying. `takeOff` reads it as a precondition and refuses -- which is the
+// whole point of the posture: it costs the sky until you explicitly unfold.
+let wingsFolded = false;
+export const folded = () => wingsFolded;
+
+function toggleFold(me) {
+  if (flight) return 'you are flying — land first';
+  if (!flightProv) return null;             // no wings, no vigil, no message
+  wingsFolded = !wingsFolded;
+  if (me) me.wingsFolded = wingsFolded;     // avatar.js eases the pose in _flap
+  return wingsFolded ? 'wings folded — the vigil posture costs the sky (G to unfold)'
+                     : 'wings open';
+}
 
 /** WHY FLIGHT IS DOING THAT, in words, for a person with no devtools open.
  *
@@ -138,6 +160,10 @@ if (typeof globalThis !== 'undefined') {
 function toggleFlight() {
   if (flight) { flight = null; return 'landed'; }
   if (!flightProv) return 'flight not armed for this body';
+  // The spec's precondition, enforced where the human meets it. takeOff would
+  // refuse anyway -- this says so before spending the resolve, and names the
+  // key that undoes it.
+  if (wingsFolded) return 'wings are folded — press G to unfold first';
   const r = resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones } });
   if (!r.enabled) return `no: ${r.reason}`;
   flightCfg ??= flightConfig();
@@ -245,6 +271,7 @@ bus.on('key', (e) => {
   if (e.code === 'KeyX') toggleSit();
   if (e.code === 'KeyF') { const m = toggleFlight(); if (m) flashHint?.(m); }
   if (e.code === 'KeyZ') { posture = posture === 'lie' ? null : 'lie'; myState.seat = null; }
+  if (e.code === 'KeyG') { const m = toggleFold(meRef()); if (m) flashHint?.(m); }
 });
 
 // Declared seats (the `sockets` component — mount verb, rides motion) live in

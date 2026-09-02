@@ -16,6 +16,7 @@ import { HeadlessBody, ReachBody, setHeightField, registerSupport, registerSuppo
 import {
   makeConfig as flightConfig, initialState as flightState, step as flightStep,
   bodyDown as flightDown, bodyRecovered as flightRecovered, takeOff as flightTakeOff,
+  foldDown as flightFold, unfold as flightUnfold,
   bestGlide, glideRange,
 } from "../shared/flight.js";
 import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
@@ -1725,6 +1726,8 @@ export class WorldAgent {
   /** The server's per-world grant for this identity ({role, gen, fly}).
    *  Null until a snapshot arrives, and null means no. */
   myRights: any = null;
+  /** The vigil posture, mirrored for anything that renders this body. */
+  wingsFolded = false;
   private flightWaiters: Array<{ done: (r: string) => void; test: (s: any) => string | null }> = [];
 
   /** Resolve the capability, freshly, every time -- never cached. An avatar
@@ -1944,6 +1947,32 @@ export class WorldAgent {
   //
   // Proposed to mica in the stage-3 response; nothing here publishes until
   // that channel is agreed.
+
+  /** fold_down / unfold (spec §1). The vigil posture, and the explicit act
+   *  that ends it.
+   *
+   *  Folding is a GROUND posture and needs no flight state to exist, so it
+   *  lazily makes one rather than demanding take_off first -- a body standing
+   *  in the world has wings whether or not it has flown today. */
+  async foldWings(fold: boolean): Promise<string> {
+    await this.loadBodyBones();
+    const cap = this.flightAllowed();
+    if (!cap.ok) return `these wings are not yours to fold here — ${cap.why}`;
+    this.flight ??= flightState({
+      phase: "GROUND",
+      pos: { x: this.pos.x, y: this.pos.y, z: this.pos.z },
+      yaw: intYaw(this.yaw),
+    }, this.flightCfg);
+    const before = this.flight.wings;
+    this.flight = fold ? flightFold(this.flightCfg, this.flight)
+                       : flightUnfold(this.flightCfg, this.flight);
+    const ref = this.flight.events.find((e: any) => /refused$/.test(e.kind));
+    if (ref) return `wings stay ${before.toLowerCase()} — ${ref.reason}`;
+    this.wingsFolded = fold;
+    return fold
+      ? "wings folded — the vigil posture; take_off refuses until you unfold"
+      : "wings open — the sky is available again";
+  }
 
   /** glide_to (spec §1). Free, and lands SHORT honestly if the polar runs out. */
   async glideTo(x: number, z: number): Promise<string> {

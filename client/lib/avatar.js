@@ -139,6 +139,36 @@ export const WING_POWER = {
   sweepPhase: 0.25,
 };
 
+// THE VIGIL POSTURE. flight-spec-v0 section 1: "fold_down() -- wings fold;
+// GROUNDS the flier. The vigil posture costs the sky." Section 2 asks for a
+// "distinct silhouette; readable at 50m", and T6 tests exactly that.
+//
+// A POSE, NOT A CLIP, for the same two reasons the flap is procedural: a VRMA
+// clip can only address humanoid bones and these are not humanoid, and the
+// wings must be able to stop being driven the instant the body goes limp.
+// It composes through the same path _flap already uses, so folding inherits
+// the ragdoll handover and the standing-up slerp for free.
+//
+// Authored by Janus in Blender (wings-folded_1.asset.blend, 2026-09-01) and
+// read out of the action rather than eyeballed: these are the exact
+// quaternions, LOCAL to each bone's rest, in three.js [x,y,z,w] order --
+// Blender stores them [w,x,y,z], which is a transposition waiting to happen.
+// The shoulders carry ~85 degrees and each segment outward tucks less, which
+// is why the folded shape reads as folded and not as a wing pointing down.
+const WING_FOLDED = {
+  L_Wing_Lower: [-0.27286, +0.02694, +0.11336, +0.95497],
+  L_Wing_Lower_1: [+0.00000, +0.00000, -0.14119, +0.98998],
+  L_Wing_Lower_2: [+0.00000, -0.00000, -0.07015, +0.99754],
+  L_Wing_Upper: [-0.63333, +0.11154, -0.23881, +0.72761],
+  L_Wing_Upper_1: [+0.02722, +0.15488, -0.05078, +0.98625],
+  L_Wing_Upper_2: [+0.07325, +0.01376, -0.08462, +0.99362],
+  R_Wing_Lower: [-0.26774, -0.05566, -0.07964, +0.95858],
+  R_Wing_Lower_1: [-0.00000, +0.00000, +0.15163, +0.98844],
+  R_Wing_Lower_2: [-0.00000, +0.00000, +0.09890, +0.99510],
+  R_Wing_Upper: [-0.59633, -0.14239, +0.24798, +0.75008],
+  R_Wing_Upper_1: [+0.00000, -0.00000, +0.17326, +0.98488],
+};
+
 /** Blend two wing dial sets. Numbers interpolate; everything else takes the
  *  idle's value, since `sync` is a mode rather than a magnitude and `recover`
  *  belongs to the ragdoll handover, which is not a thing you can be halfway
@@ -334,6 +364,8 @@ const _v2 = new THREE.Vector3();
 const _wq = new THREE.Quaternion();        // wing scratch
 const _wpq = new THREE.Quaternion();
 const _wacc = new THREE.Quaternion();
+const _wfold = new THREE.Quaternion();
+const _wtgt = new THREE.Quaternion();
 const _wr = new THREE.Quaternion();
 const _wax = new THREE.Vector3();
 const _wup = new THREE.Vector3();
@@ -656,6 +688,21 @@ export class Avatar {
     const tau = want > have ? 0.18 : 0.55;
     this._wingEffort = have + (want - have) * (1 - Math.exp(-dt / tau));
     const e = this._wingEffort;
+
+    // FOLDING, eased over about half a second. `wingsFolded` is set from
+    // outside (the fold_down verb) and integrated here, so a caller flips a
+    // boolean and the wings close rather than snap -- and so the pose survives
+    // being interrupted halfway by a ragdoll, which is the case that decides
+    // whether this is a pose system or a cutscene.
+    const fWant = this.wingsFolded ? 1 : 0;
+    const fHave = this._wingFold ?? 0;
+    this._wingFold = fHave + (fWant - fHave) * (1 - Math.exp(-dt / 0.45));
+    const fold = this._wingFold;
+    // A FOLDED WING DOES NOT BEAT. The flap keeps running underneath at
+    // whatever amplitude the dials say, and the fold blends over the top, so a
+    // body that folds mid-idle settles instead of freezing mid-stroke. Below
+    // the threshold nothing has changed and the fast path is the old one.
+    const folding = fold > 0.001;
     const W = e < 0.001 ? WING_IDLE : mixWings(WING_IDLE, WING_POWER, e);
     this._wingBlend = Math.min(1, (this._wingBlend ?? 1) + dt / Math.max(0.01, W.recover));
     this._wingT = (this._wingT ?? 0) + dt * Math.max(0, W.hz);
@@ -699,6 +746,18 @@ export class Avatar {
       // right plane, symmetrically — and was 2x every commanded angle.
       w.node.parent.getWorldQuaternion(_wpq);
       _wacc.copy(_wpq).invert().multiply(_wr).multiply(_wpq).multiply(w.rest);
+      // ...and then toward the vigil. The authored pose is LOCAL TO REST (a
+      // Blender pose-bone quaternion always is), which is the same frame
+      // `w.rest` is in -- so the target is rest * folded, and slerping between
+      // them is a wing closing rather than a wing teleporting.
+      if (folding) {
+        const q = WING_FOLDED[w.node.name];
+        if (q) {
+          _wfold.set(q[0], q[1], q[2], q[3]);
+          _wtgt.copy(w.rest).multiply(_wfold);
+          _wacc.slerp(_wtgt, fold);
+        }
+      }
       if (this._wingBlend < 1 && w.from) {
         // Standing up, the bones are wherever the ragdoll left them — folded,
         // or under her. Cutting straight to mid-flap is a one-frame teleport of

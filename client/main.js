@@ -26,7 +26,7 @@ import './lib/emitters.js';
 import { tickMotion } from './lib/motion.js';
 import {
   myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
-  setRightsHook,
+  setRightsHook, setMeHook,
 } from './lib/controller.js';
 import { remotes, updateRemotes, updateGaze } from './lib/remotes.js';
 import {
@@ -285,6 +285,7 @@ bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 // -- `/grant <id> +fly` takes effect on the next resolve, and `-fly` grounds a
 // body that is already in the air the next time it acts.
 setRightsHook(() => net.myRights);
+setMeHook(() => getMe());        // the fold pose is written onto the avatar
 
 initPhysObj({ myPos: () => myState.pos });
 // reach descriptors resolve against the same bodies everyone renders; my own

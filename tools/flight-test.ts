@@ -31,7 +31,7 @@ import {
   makeConfig, initialState, step, bodyDown, bodyRecovered,
   leafAt, beatRemaining, sinkRate, glideRatio, glideRange,
   denyAllConsent, fakeConsent, BREATH, airspeedAfter, leafLateralSwing, bestGlide,
-  takeOff, LEAF_PRESETS,
+  takeOff, LEAF_PRESETS, foldDown, unfold,
 } from '../shared/flight.js';
 import { pilotInput, pilotHelp, DEFAULT_BINDS, DEFAULT_AUTHORITY } from '../shared/flightpilot.js';
 import { inspectBody, describeBody } from '../shared/flightbody.js';
@@ -740,6 +740,74 @@ console.log('\nREVIEW cea3c3c -- blockers 4 and 6');
         !/on a perch\)/.test(ag));
   check('climb_to does not promise perches either',
         !/or on a perch \(2\/s\)/.test(ns) && /perches are NOT implemented/i.test(ns));
+}
+
+// ------------------------------------------------------- T6: the vigil posture
+console.log('\nT6 -- fold_down grounds the flier, and unfolding is deliberate');
+{
+  // spec section 1: "fold_down() -- wings fold; GROUNDS the flier. The vigil
+  // posture costs the sky. take_off() refuses while folded; unfold is an
+  // explicit act." Section 2: "FOLDED -- grounded by choice. Distinct
+  // silhouette; readable at 50m."
+  //
+  // FOLDED has been a declared state since the first cut and takeOff has
+  // refused on it the whole time -- but no verb could SET it, so the refusal
+  // was unreachable code and T6 was an acceptance test with nothing behind it.
+  const cfg = makeConfig();
+  const ground = () => initialState({ phase: 'GROUND' }, cfg);
+
+  let s: any = foldDown(cfg, ground());
+  check('fold_down folds the wings', s.wings === 'FOLDED');
+  check('...and says so', s.events.some((e: any) => e.kind === 'wings.folded'));
+
+  const refused = takeOff(cfg, s, { groundY: 0 });
+  check('T6: take_off REFUSES while folded', refused.phase === 'GROUND');
+  check('...for the stated reason',
+        refused.events.some((e: any) => e.kind === 'takeoff.refused' && e.reason === 'wings folded'));
+  check('...and take_off does not quietly unfold for you', refused.wings === 'FOLDED');
+
+  const open = unfold(cfg, s);
+  check('unfold is the explicit act that ends the vigil', open.wings === 'OPEN');
+  check('...and then she can fly', takeOff(cfg, open, { groundY: 0 }).phase === 'PILOT');
+
+  // Folding is a GROUND posture. Not an air brake, not a way to fall.
+  let air: any = takeOff(cfg, ground(), { groundY: 0 });
+  const midair = foldDown(cfg, air);
+  check('folding refuses in the air', midair.wings === 'OPEN' &&
+        midair.events.some((e: any) => e.kind === 'fold.refused'));
+  // A limp body's wings belong to the ragdoll, not to a posture.
+  const limp = foldDown(cfg, { ...ground(), wings: 'LIMP' });
+  check('a limp body cannot strike a posture', limp.wings === 'LIMP');
+  // Idempotence, both ways, with an event that says nothing happened.
+  check('folding twice is refused, not doubled',
+        foldDown(cfg, s).events.some((e: any) => e.reason === 'already folded'));
+  check('unfolding open wings is refused',
+        unfold(cfg, ground()).events.some((e: any) => e.kind === 'unfold.refused'));
+
+  // The pose the silhouette is made of: authored in Blender, read from the
+  // action rather than typed, and checked here for the transposition that
+  // would otherwise be invisible -- Blender stores [w,x,y,z], three.js wants
+  // [x,y,z,w], and a swapped pair still normalises to a unit quaternion.
+  const av = readFileSync('client/lib/avatar.js', 'utf8');
+  const table = /const WING_FOLDED = \{([\s\S]*?)\n\};/.exec(av)?.[1] ?? '';
+  const rows = [...table.matchAll(/([LR]_Wing_\w+):\s*\[([^\]]+)\]/g)]
+    .map(m => ({ bone: m[1], q: m[2].split(',').map(Number) }));
+  check(`the folded pose covers the wing chains (${rows.length} bones)`, rows.length >= 10);
+  check('every folded quaternion is unit-length',
+        rows.every(r => Math.abs(Math.hypot(...r.q) - 1) < 1e-3));
+  // w LAST. If the columns were transposed, w (~0.73-0.99 here) would sit in
+  // slot 0 and the x term would land in slot 3.
+  check('...and stored [x,y,z,w], not Blender order',
+        rows.every(r => r.q[3] > 0.5) && rows.some(r => Math.abs(r.q[0]) > 0.3));
+  // A pose that is all identity is a pose that does nothing.
+  check('the shoulders actually carry the fold',
+        rows.filter(r => /_(Upper|Lower)$/.test(r.bone))
+            .every(r => 2 * Math.acos(Math.min(1, r.q[3])) * 180 / Math.PI > 20));
+  check('and it is mirrored L/R',
+        rows.filter(r => r.bone.startsWith('L_')).length ===
+        rows.filter(r => r.bone.startsWith('R_')).length + 1 ||
+        rows.filter(r => r.bone.startsWith('L_')).length ===
+        rows.filter(r => r.bone.startsWith('R_')).length);
 }
 
 // ---------------------------------------------------------------- isolation
