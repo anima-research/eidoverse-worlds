@@ -57,6 +57,14 @@ export function armFlight(boneNames, identity = 'me') {
 //
 // The DEFAULT RETURNS NULL, and worldFlightProvider reads null as "nobody has
 // said you may". A forgotten wiring must ground the body, never free it.
+/** Hand the wings back to the idle. Every exit from flight goes through here
+ *  -- F, a landing, a ragdoll, a revoked capability -- because "clear it at
+ *  each exit" is a rule with as many holes as it has exits. */
+function releaseWings() {
+  const me = meRef();
+  if (me) me.wingEffort = 0;
+}
+
 let myRights = () => null;
 export function setRightsHook(fn) { myRights = typeof fn === 'function' ? fn : (() => null); }
 // ...and my body, for the same reason and by the same route (mybody imports
@@ -158,7 +166,14 @@ if (typeof globalThis !== 'undefined') {
 }
 
 function toggleFlight() {
-  if (flight) { flight = null; return 'landed'; }
+  // RELEASING THE WINGS IS PART OF LANDING. `wingEffort` was cleared on the
+  // natural landing path only, so pressing F mid-flap left the avatar holding
+  // the last value forever: wings beating at full power on a body standing
+  // still, and the idle sliders apparently dead because a stuck effort of 1
+  // means the mix is 100% WING_POWER and WING_IDLE is not being read at all.
+  // Janus: "the wings are stuck going very fast like they were when i was
+  // flying, and adjusting the sliders doesnt change it." One bug, two faces.
+  if (flight) { flight = null; releaseWings(); return 'landed'; }
   if (!flightProv) return 'flight not armed for this body';
   // The spec's precondition, enforced where the human meets it. takeOff would
   // refuse anyway -- this says so before spending the resolve, and names the
@@ -558,6 +573,7 @@ export function updateMe(dt, me) {
       flight = null; grounded = true; vy = 0;
       myState.clip = 'idle'; myState.speed = 0;
       me.wingEffort = 0;              // back to the resting flap, eased in _flap
+      releaseWings();                 // ...and for any body the loop is not holding
     }
     // AND NOW PUT HER ON THE SCREEN. Everything above moves `myState`, which
     // is the streamed, authoritative body -- but the four lines that make a
@@ -580,6 +596,14 @@ export function updateMe(dt, me) {
     updateFollowCamera(dt, me);
     return;                                           // nothing else drives her
   }
+  // NOT FLYING MEANS NOT WORKING THE WINGS. Asserted every frame rather than
+  // cleared at each exit: releaseWings() covers the exits we know about, and
+  // this covers the ones we do not -- a capability revoked mid-air, a body
+  // swapped while flying, an exception between the flap and the landing. The
+  // cost is one assignment per frame on a value _flap already eases, and the
+  // benefit is that "wings stuck at full power" cannot survive a single frame
+  // of not flying, whatever route got us here.
+  if (me.wingEffort) me.wingEffort = 0;
   if (mantle) {
     mantle.t += dt / 0.55;
     const k = Math.min(1, mantle.t), e = k * k * (3 - 2 * k);

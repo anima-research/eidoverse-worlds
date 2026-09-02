@@ -265,7 +265,17 @@ export function applyGrantState(id, rec) {
   // and more importantly `-fly` did not ground me. Enforcement is still the
   // server's; this keeps the client's own gate from lagging behind it.
   if (id === CONFIG.name && net.myRights) {
-    net.myRights = { ...net.myRights, ...worldRoles.get(id) };
+    // ABSENT IS NOT FALSE. A grant entry carries only the fields it changed --
+    // the server's auto-owner grant for a brand-new world is {role, gen} with
+    // no `fly` -- so spreading the mirror wholesale ERASED a fly the snapshot
+    // had correctly delivered, and WORLD_ADMIN=janus arrived as owner+gen with
+    // flight silently gone. Merge only what this record actually spoke to.
+    const merged = { ...net.myRights };
+    const m = worldRoles.get(id) ?? {};
+    if (m.role != null) merged.role = m.role;
+    if (rec.gen != null) merged.gen = Boolean(rec.gen);
+    if (rec.fly != null) merged.fly = Boolean(rec.fly);
+    net.myRights = merged;
     bus.emit('your-rights', net.myRights);
   }
 }

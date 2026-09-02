@@ -128,19 +128,28 @@ export const WING_IDLE = {
 // to the idle whenever she is only gliding. The animation follows the physics
 // instead of running beside it.
 export const WING_POWER = {
-  deg: 46,       // a real downstroke. 15 is a bird sitting on a branch; this is
-                 // the same wing doing work, and at the tip the taper and the
-                 // root's own rotation compound it well past 46.
-  hz: 2.1,       // five times the idle. Fast enough to read as effort, slow
+  // Janus, after flying it: "during wing flaps during flying, i think deg and
+  // lag should be lower - maybe 8 degrees and 0.09 lag. i mean in particular
+  // for when taking off and pumping wings". 46 was my guess at what a
+  // downstroke looks like and it was a guess made without ever having watched
+  // one from behind the body -- at 2.1Hz it read as thrashing rather than
+  // driving. Eight degrees at that rate is a blur of small fast strokes, which
+  // is what a bird leaving the ground actually looks like.
+  deg: 8,        // half-amplitude at the shoulder. Small and FAST is the power
+                 // stroke; the amplitude at the tip is still larger, because
+                 // tip carry and the root's own rotation compound it.
+  hz: 2.1,       // seven times the idle's 1/3.4. Fast enough to read as effort,
                  // enough that the lag below still separates tip from shoulder
                  // -- past ~3Hz the whole chain blurs into one shape.
   bias: -8,      // the stroke sits LOW: a power flap drives down from above,
                  // so the arc is centred below the rest pose rather than on it.
-  tip: 0.78,     // the tip carries more of the stroke than at idle (0.65) --
+  tip: 0.78,     // the tip carries LESS of the stroke than at idle (0.9) --
                  // under load a wing straightens out along its span instead of
                  // curling, and the extra carry is what sells the push.
-  lag: 0.22,     // and trails further behind the shoulder, because the membrane
-                 // is being dragged through air that is pushing back.
+  lag: 0.09,     // and trails the shoulder LESS than at idle (0.25), not more:
+                 // a loaded wing stiffens along its span and drives as more of
+                 // one surface, where the idle's long lag is a slack membrane
+                 // rippling. My 0.22 had it doing both at once.
   sync: true,
   recover: 0.55, // unchanged: this is the ragdoll handover, not the flap.
   sweep: 17,     // nearly double. The ellipse is what makes a flap look like it
@@ -169,7 +178,10 @@ export const WING_POWER = {
 // ONE EDIT to the authored pose, at Janus's eye: "compared to in blender, the
 // lower wings are a bit more drastically folded - maybe reduce the amount they
 // fold down by about 10 degrees?" So L/R_Wing_Lower are rotated back 10
-// degrees ABOUT THEIR OWN AXIS (34.5 -> 24.5, 33.1 -> 23.1) rather than having
+// degrees ABOUT THEIR OWN AXIS (34.5 -> 24.5, 33.1 -> 23.1), and a second
+// pass took 3 more off the UPPER pair the same way (86.6 -> 83.6, 82.8 ->
+// 79.8) -- "move the upper wings *out* also ... by a quite small amount" --
+// rather than having
 // their components hand-tweaked -- easing an axis-angle keeps the direction of
 // the fold exactly as authored and changes only how far it goes. The uppers
 // and every outer segment are untouched.
@@ -177,13 +189,13 @@ const WING_FOLDED = {
   L_Wing_Lower: [-0.19528, +0.01928, +0.08113, +0.97720],
   L_Wing_Lower_1: [+0.00000, +0.00000, -0.14119, +0.98998],
   L_Wing_Lower_2: [+0.00000, -0.00000, -0.07015, +0.99754],
-  L_Wing_Upper: [-0.63333, +0.11154, -0.23881, +0.72761],
+  L_Wing_Upper: [-0.61553, +0.10840, -0.23210, +0.74532],
   L_Wing_Upper_1: [+0.02722, +0.15488, -0.05078, +0.98625],
   L_Wing_Upper_2: [+0.07325, +0.01376, -0.08462, +0.99362],
   R_Wing_Lower: [-0.18819, -0.03912, -0.05598, +0.97976],
   R_Wing_Lower_1: [-0.00000, +0.00000, +0.15163, +0.98844],
   R_Wing_Lower_2: [-0.00000, +0.00000, +0.09890, +0.99510],
-  R_Wing_Upper: [-0.59633, -0.14239, +0.24798, +0.75008],
+  R_Wing_Upper: [-0.57842, -0.13811, +0.24053, +0.76714],
   R_Wing_Upper_1: [+0.00000, -0.00000, +0.17326, +0.98488],
 };
 

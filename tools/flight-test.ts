@@ -959,9 +959,41 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   //    for the first second and decayed 0.91 -> 0.58 -> 0.33 -> 0.18 over the
   //    next five, which is a burst of hard beats easing into a glide.
   const av = readFileSync('client/lib/avatar.js', 'utf8');
-  check('there is a power stroke distinct from the idle flap',
-        /export const WING_POWER = \{/.test(av) &&
-        /deg: 4[0-9]/.test(av.slice(av.indexOf('WING_POWER'))));
+  // DISTINCT, not "equal to the number I first guessed". This asserted
+  // /deg: 4[0-9]/ and broke the moment Janus tuned the stroke to 8 -- a test
+  // pinning my own guess rather than the property, which is that the two dial
+  // sets differ enough to read as different behaviour. They now differ mostly
+  // in RATE (2.1Hz against 1/3.4) rather than amplitude, which is what a bird
+  // leaving the ground actually does, and a test written against amplitude
+  // could not see that at all.
+  {
+    const grab = (name: string) => {
+      const body = new RegExp(`export const ${name} = \\{([\\s\\S]*?)\\n\\};`).exec(av)?.[1] ?? '';
+      // `hz: 1 / BREATH` is an expression, not a literal -- deliberately, so
+      // the period cannot drift from spec T8. Resolve the one symbol these
+      // tables are allowed to name rather than demanding they be dumb numbers.
+      const num = (k: string) => {
+        const m = new RegExp(`\\b${k}:\\s*([^,\\n]+?)\\s*(?:,\\s*)?(?://.*)?$`, 'm').exec(body);
+        if (!m) return NaN;
+        const t = m[1].trim().replace(/\bBREATH\b/g, '3.4');
+        if (!/^[-\d.\s/*+()]+$/.test(t)) return NaN;
+        try { return Function(`"use strict";return (${t})`)(); } catch { return NaN; }
+      };
+      return { deg: num('deg'), hz: num('hz'), lag: num('lag'), tip: num('tip'), sweep: num('sweep') };
+    };
+    const idle = grab('WING_IDLE'), power = grab('WING_POWER');
+    check('both wing dial sets parse',
+          Number.isFinite(idle.deg) && Number.isFinite(idle.hz) &&
+          Number.isFinite(power.deg) && Number.isFinite(power.hz),
+          `idle ${JSON.stringify(idle)} power ${JSON.stringify(power)}`);
+    check('the power stroke is distinct from the idle -- and mostly in RATE',
+          power.hz >= idle.hz * 3,
+          `idle ${idle.hz.toFixed(3)}Hz vs power ${power.hz}Hz`);
+    check('a loaded wing lags LESS than a slack one',
+          power.lag < idle.lag, `idle ${idle.lag} vs power ${power.lag}`);
+    check('the idle beats on BREATH (spec T8)',
+          Math.abs(idle.hz - 1 / 3.4) < 1e-6, `${idle.hz}`);
+  }
   check('and _flap crossfades the two rather than branching',
         /mixWings\(WING_IDLE, WING_POWER, e\)/.test(av));
   check('effort eases, so 46 degrees never appears in one frame',
@@ -976,6 +1008,22 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
         /flightCfg\.pilot\?\.launchBoost/.test(ctl));
   check('landing hands the wings back to the idle',
         /me\.wingEffort = 0;/.test(ctl));
+  // "after i fly ... the wings are stuck going very fast like they were when i
+  // was flying, and adjusting the sliders doesnt change it." One bug wearing
+  // two faces: wingEffort was cleared on the NATURAL landing path only, so
+  // pressing F mid-flap left it pinned at 1 forever -- and a pinned 1 means
+  // the dial mix is 100% WING_POWER, so WING_IDLE is never read and its
+  // sliders are genuinely inert. Measured on d49baf0: effort 1.00 still 1.00
+  // two and a half seconds after landing.
+  //
+  // Fixed in two places on purpose. releaseWings() covers the exits we know
+  // about; the per-frame assertion covers the ones we do not (a revoked
+  // capability, a body swapped mid-air), so "stuck at full power" cannot
+  // survive one frame of not flying whatever route got us there.
+  check('F-to-land releases the wings, not just a natural landing',
+        /flight = null; releaseWings\(\); return 'landed'/.test(ctl));
+  check('...and not-flying asserts the resting wings every frame',
+        /if \(me\.wingEffort\) me\.wingEffort = 0;/.test(ctl));
   // Behavioural, not structural: the boost moved from a `??` fallback into
   // config, and the point of moving it was that retuning it retunes everything
   // that reads it. Same number as before -- nothing about flight changed.
