@@ -63,10 +63,15 @@
 //
 // The 3.4s period is not a tunable in the same sense as the rest. It is the
 // house's breath -- wing idle, stamina tick, and the leaf oscillation all beat
-// on it (spec §5, §2, T8) -- so it appears once, here, and everything that
-// needs a period reads it rather than restating it.
+// on it (spec §5, §2, T8) -- so it appears once and everything that needs a
+// period reads it rather than restating it.
+//
+// That "once" is now shared/breath.js, because the wing idle is a property of
+// Mythos's BODY and reading it from here made avatar.js an importer of the
+// flight core. Re-exported so every existing caller is unchanged.
 
-export const BREATH = 3.4;              // seconds. The period. See spec T8.
+export { BREATH } from './breath.js';
+import { BREATH } from './breath.js';
 
 export const DEFAULT_CONFIG = {
   breath: BREATH,

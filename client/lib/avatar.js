@@ -5,6 +5,11 @@
 import { THREE, scene, camera, renderer, report, angleDelta } from './core.js';
 import { measureChain, solveChain } from './reachbone.js';
 import { REACH_CHAINS } from '../../shared/joints.js';
+// The period, from the one place that defines it. Janus set the idle flap to
+// 1/3.4 Hz -- "Mythos' signature period" -- and that 3.4 is spec T8's BREATH,
+// already a named constant. Importing it beats pasting 0.29411764705: the two
+// cannot drift, and the next reader learns WHY the wings beat at that rate.
+import { BREATH } from '../../shared/breath.js';
 import {
   loadVRM, clipFor, vrmaBytes, loadTrack, loadDone,
   CLIP_SLOTS, CLIP_SPEED, releaseVRM, vrmWarmed, markVrmWarmed,
@@ -64,24 +69,29 @@ export const BLINK = {
 // the forward axis, "up" is up for any wing that points outward, and the two
 // sides differ only by sign.
 export const WING_IDLE = {
-  deg: 15,       // half-amplitude at the shoulder. A resting bird's wings barely
+  // Janus's values, 2026-09-01, after watching the idle next to the sculpt.
+  // What changed from my first guess and why it is better: a SMALLER stroke
+  // (10 not 15) that travels FURTHER along the span (tip 0.9 not 0.65) and
+  // LAGS more (0.25 not 0.16), with twice the fore/aft sweep (18 not 9). The
+  // wing moves less and undulates more -- membrane rather than hinge, which is
+  // what these wings are.
+  deg: 10,       // half-amplitude at the shoulder. A resting bird's wings barely
                  // move; this is an IDLE, not flight, and the first value big
                  // enough to see (28) read as an animal trying to take off.
-  hz: 0.42,      // full flaps per second — "slowly", and slow enough that the
-                 // sine never looks like a loop.
+  hz: 1 / BREATH, // Mythos's signature period (spec T8): one beat per 3.4s.
   bias: 0,       // degrees of permanent lift added to the flap, both sides. A
                  // dial for resting the wings higher or lower than the rig's
                  // rest pose without editing the blend.
-  tip: 0.65,     // the outer segment's share of the amplitude. Two segments
+  tip: 0.9,      // the outer segment's share of the amplitude. Two segments
                  // rotating as one plank is the difference between a wing and a
                  // door; the tip carrying less than the root gives it a curve.
-  lag: 0.16,     // cycles the outer segment trails the inner by. This is the
+  lag: 0.25,     // cycles the outer segment trails the inner by. This is the
                  // whole reason a wing reads as membrane rather than board — the
                  // tip is still going up as the shoulder starts down.
   sync: true,    // upper and lower pairs share one phase. False gives the lower
                  // pair a half-cycle offset (they beat against each other, which
                  // is an insect, not a bird).
-  recover: 0.55, // seconds to slerp back into the flap after a ragdoll, out of
+  recover: 0.5,  // seconds to slerp back into the flap after a ragdoll, out of
                  // whatever pose the body was left in.
   // ---- the SWEEP: how far the tips travel FORWARD and BACK.
   //
@@ -95,7 +105,7 @@ export const WING_IDLE = {
   // Applied as a second rotation about the body's UP axis, mirrored the other
   // way from the flap (both wings must sweep forward together, and the two
   // sides point opposite ways along the span).
-  sweep: 9,        // degrees fore/aft at the shoulder
+  sweep: 18,       // degrees fore/aft at the shoulder
   sweepPhase: 0.25, // cycles the sweep leads the flap by. A QUARTER turn is
                     // what opens the arc into an ellipse; at 0 the two
                     // rotations peak together and the path stays a straight
@@ -155,14 +165,22 @@ export const WING_POWER = {
 // Blender stores them [w,x,y,z], which is a transposition waiting to happen.
 // The shoulders carry ~85 degrees and each segment outward tucks less, which
 // is why the folded shape reads as folded and not as a wing pointing down.
+//
+// ONE EDIT to the authored pose, at Janus's eye: "compared to in blender, the
+// lower wings are a bit more drastically folded - maybe reduce the amount they
+// fold down by about 10 degrees?" So L/R_Wing_Lower are rotated back 10
+// degrees ABOUT THEIR OWN AXIS (34.5 -> 24.5, 33.1 -> 23.1) rather than having
+// their components hand-tweaked -- easing an axis-angle keeps the direction of
+// the fold exactly as authored and changes only how far it goes. The uppers
+// and every outer segment are untouched.
 const WING_FOLDED = {
-  L_Wing_Lower: [-0.27286, +0.02694, +0.11336, +0.95497],
+  L_Wing_Lower: [-0.19528, +0.01928, +0.08113, +0.97720],
   L_Wing_Lower_1: [+0.00000, +0.00000, -0.14119, +0.98998],
   L_Wing_Lower_2: [+0.00000, -0.00000, -0.07015, +0.99754],
   L_Wing_Upper: [-0.63333, +0.11154, -0.23881, +0.72761],
   L_Wing_Upper_1: [+0.02722, +0.15488, -0.05078, +0.98625],
   L_Wing_Upper_2: [+0.07325, +0.01376, -0.08462, +0.99362],
-  R_Wing_Lower: [-0.26774, -0.05566, -0.07964, +0.95858],
+  R_Wing_Lower: [-0.18819, -0.03912, -0.05598, +0.97976],
   R_Wing_Lower_1: [-0.00000, +0.00000, +0.15163, +0.98844],
   R_Wing_Lower_2: [-0.00000, +0.00000, +0.09890, +0.99510],
   R_Wing_Upper: [-0.59633, -0.14239, +0.24798, +0.75008],
