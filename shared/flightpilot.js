@@ -58,8 +58,12 @@ export const DEFAULT_AUTHORITY = {
   pitchRate: 1.5,       // rad/s
   maxPitch: 0.7,        // ~40deg
   turnPerBank: 1.5,     // rad/s of yaw per radian of bank -- a banked wing turns
-  spoilSink: 2.5,       // extra m/s of sink while spoiling
   levelReturn: 1.1,     // rad/s back to level -- ONLY with the stick centred
+  // spoilSink LIVED HERE and was dead: this module reports whether the spoiler
+  // is HELD, and how much sink that costs is physics, which stepPilot reads
+  // from cfg.pilot.spoilSink. Two 2.5s with nothing making them agree is the
+  // drift the cfg.pilot block was introduced to end, so the copy that nothing
+  // read is gone rather than left looking authoritative.
 };
 
 const held = (keys, list) => list.some((k) => keys.has(k));

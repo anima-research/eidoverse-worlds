@@ -661,7 +661,23 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
     return out;
   };
   const runtime = [...walk('client'), ...walk('server'), ...walk('mcpl')];
-  const importers = runtime.filter(f => /from ['"][^'"]*shared\/flight/.test(readFileSync(f, 'utf8')));
+  // THE MODULE LIST COMES FROM DISK, not from a prefix. Matching the literal
+  // string `shared/flight` looked like it covered the family and did not:
+  // leafforce.js is flight code by every measure that matters -- it is in the
+  // typecheck, it is the R2 leaf, mcpl/physics.ts imports it -- and its name
+  // simply does not contain "flight", so the scan reported two importers when
+  // there were three. A gate that decides who may reach flight must not be
+  // able to miss a member of the thing it is gating; enumerating the directory
+  // means adding a sixth module cannot quietly widen the boundary.
+  const FLIGHT_MODULES = readdirSync('shared')
+    .filter(f => /^(flight|leafforce)/.test(f) && f.endsWith('.js'))
+    .map(f => f.replace(/\.js$/, ''));
+  check(`the flight module family is enumerated, not guessed (${FLIGHT_MODULES.length})`,
+        FLIGHT_MODULES.length >= 5 && FLIGHT_MODULES.includes('leafforce'),
+        FLIGHT_MODULES.join(', '));
+  const importsFlight = (src: string) =>
+    FLIGHT_MODULES.some(m => new RegExp(`from ['"][^'"]*shared/${m}\\.js['"]`).test(src));
+  const importers = runtime.filter(f => importsFlight(readFileSync(f, 'utf8')));
   // Flight is wired in TWO places now, and both are deliberate: the agent
   // (Mythos flies through mcpl) and the client controller (Janus asked to fly
   // it himself, on the same integrator, because a human and an agent in one
@@ -669,11 +685,18 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   //
   // So the property is no longer 'who imports it' but what every importer
   // must DO: resolve a capability that defaults to deny, and refuse audibly.
-  const ALLOWED = [/mcpl\/agent\.ts$/, /client\/lib\/controller\.js$/];
+  // THREE deliberate importers. mcpl/physics.ts was always one -- it applies
+  // the leaf forces to the headless Bullet stand-in -- and was invisible to
+  // the old scan rather than absent from it. It is listed here rather than
+  // exempted: it takes no capability decision, it is handed forces by a caller
+  // that already resolved one, so the per-importer checks below skip it.
+  const ALLOWED = [/mcpl\/agent\.ts$/, /client\/lib\/controller\.js$/, /mcpl\/physics\.ts$/];
+  // Only the two ENTRY POINTS must gate; physics.ts is downstream of a gate.
+  const GATEKEEPERS = [/mcpl\/agent\.ts$/, /client\/lib\/controller\.js$/];
   check(`only expected modules import flight (${importers.length})`,
         importers.length > 0 && importers.every(f => ALLOWED.some(re => re.test(f))),
         importers.join(', '));
-  for (const f of importers) {
+  for (const f of importers.filter(f => GATEKEEPERS.some(re => re.test(f)))) {
     const src = readFileSync(f, 'utf8');
     check(`${f.split('/').pop()} resolves a capability before it flies`,
           /resolveFlight\(/.test(src));
@@ -798,6 +821,53 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
     let threw = false;
     try { makeConfig({ pilot: { nope: 1 } }); } catch { threw = true; }
     check('and the new block still rejects dead keys', threw);
+
+    // The other two values in the block, which had no behavioural test at all
+    // -- only launchBoost did. A config value nothing measures is a comment.
+    const spoiled = (sink: number) => {
+      const c = makeConfig({ pilot: { spoilSink: sink, flapClimb: 2.2, launchBoost: 9 } });
+      let st: any = takeOff(c, initialState({ phase: 'GROUND' }, c), { groundY: 0 });
+      // past the launch, where the impulse no longer dominates vertical speed
+      for (let i = 0; i < 400; i++) st = step(c, st, DT, { groundY: () => -500,
+        input: { bank: 0, pitch: 0, yawRate: 0, flap: false, spoil: true } });
+      return st.vel.y;
+    };
+    const vLow = spoiled(1.0), vHigh = spoiled(6.0);
+    check('spoilSink is read from config: more spoiler, more sink',
+          vHigh < vLow - 4.0, `1.0 -> ${vLow.toFixed(2)} m/s, 6.0 -> ${vHigh.toFixed(2)} m/s`);
+    const climbed = (rate: number) => {
+      const c = makeConfig({ pilot: { spoilSink: 2.5, flapClimb: rate, launchBoost: 9 } });
+      let st: any = takeOff(c, initialState({ phase: 'GROUND' }, c), { groundY: 0 });
+      for (let i = 0; i < 400; i++) st = step(c, st, DT, { groundY: () => -500,
+        input: { bank: 0, pitch: 0, yawRate: 0, flap: true, spoil: false } });
+      return st.vel.y;
+    };
+    const cLow = climbed(1.0), cHigh = climbed(8.0);
+    check('flapClimb is read from config: harder flap, more climb',
+          cHigh > cLow + 5.0, `1.0 -> ${cLow.toFixed(2)} m/s, 8.0 -> ${cHigh.toFixed(2)} m/s`);
+  }
+
+  // WING NAMES ARE STILL EXACT-CASE while the CORE bones went
+  // case-insensitive (dba4882 onward), and this pins that asymmetry so the
+  // decision is explicit rather than accidental.
+  //
+  // The gate is NOT weakened -- a commons body and a fake-wing rig are both
+  // refused, probed below. The risk runs the other way: an all-lowercase wing
+  // rig is DENIED, which is precisely the failure the core widening was
+  // written to fix ("Hip absent" on a body with 48 good bones), still live one
+  // line above it. Whether to widen WING_RE is a loosening of an authorization
+  // boundary, so it is Mica's call and not a thing to fix quietly. Until then,
+  // this test says out loud what the boundary currently does.
+  {
+    const core = ['Hip', 'Spine02', 'Head'];
+    const proper = [...core, 'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper',
+                    'R_Wing_Upper_1', 'L_Wing_Lower', 'R_Wing_Lower'];
+    check('a properly-cased wing rig is granted',
+          rigProfile(proper).ok);
+    check('a commons body is refused (the gate still holds)',
+          !rigProfile(['hips', 'spine', 'head', 'leftHand']).ok);
+    check('KNOWN ASYMMETRY: an all-lowercase wing rig is refused -- Mica to rule',
+          !rigProfile(proper.map(b => b.toLowerCase())).ok);
   }
 
   // 6. And the whole reason this took three rounds: every report was a
