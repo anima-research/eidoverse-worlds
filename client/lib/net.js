@@ -441,6 +441,17 @@ async function handle(msg) {
   switch (msg.type) {
     case 'snapshot': return onSnapshot(msg);
 
+    case 'your-rights': {
+      // Personalized effective rights, folded by the authority after every
+      // grant. This is the live answer for wildcard/sub/name precedence; the
+      // browser never has to approximate it from one partial delta.
+      if (msg.rights) {
+        net.myRights = msg.rights;
+        bus.emit('your-rights', net.myRights);
+      }
+      break;
+    }
+
     case 'arrive':
       // `authority: true` — an arrive is the world SAYING this person exists.
       // On a takeover (same id re-arriving; the server suppresses the old

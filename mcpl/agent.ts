@@ -592,6 +592,12 @@ export class WorldAgent {
           case "voice-moderated":
             this.onMedia?.(msg);
             break;
+          case "your-rights":
+            // The sequencer recomputes this participant's effective rights
+            // after every grant. Consume the answer rather than trying to
+            // reproduce name/wildcard/sub/admin precedence from one delta.
+            if (msg.rights) this.acceptEffectiveRights(msg.rights, "world");
+            break;
           case "snapshot":
             // Our surface generation, issued by the server on acceptance —
             // every attest must echo it or the receipt is refused (PR #103 B2).
@@ -602,7 +608,7 @@ export class WorldAgent {
             // nothing ever injected one, that fallback WAS the policy. A
             // server that never sends this leaves myRights null, which the
             // provider reads as no.
-            if (msg.yourRights) this.myRights = msg.yourRights;
+            if (msg.yourRights) this.acceptEffectiveRights(msg.yourRights, "snapshot");
             this.entities.clear(); this.people.clear();
             // wake where you fell asleep — fresh body only; a body that has
             // walked this process keeps its own truth on mid-life reconnects
@@ -1779,6 +1785,21 @@ export class WorldAgent {
   wingsFolded = false;
   private flightWaiters: Array<{ done: (r: string) => void; test: (s: any) => string | null }> = [];
 
+  /** Install one server-folded effective-rights answer. If flight was
+   * withdrawn while aloft, ownership passes to the visible falling-leaf
+   * reflex rather than silently continuing or teleporting to ground. */
+  private acceptEffectiveRights(rights: any, actor = "world") {
+    const hadFly = this.myRights?.fly === true;
+    this.myRights = { ...(rights ?? {}) };
+    if (hadFly && this.myRights.fly !== true && this.flight &&
+        this.flight.phase !== "GROUND" && this.flight.phase !== "LANDED" &&
+        this.flight.phase !== "RAGDOLL" && this.flight.phase !== "LEAF") {
+      this.flight = flightDown(this.flight, { eventId: "capability-revoked" });
+      this.inbox.push({ ts: Date.now(), kind: "act", who: actor,
+        text: "your flight capability was withdrawn — descending under the falling-leaf reflex" });
+    }
+  }
+
   /** Resolve the capability, freshly, every time -- never cached. An avatar
    *  can hot-swap and a grant must not ride across it. */
   private flightAllowed(): { ok: boolean; why: string } {
@@ -1925,11 +1946,10 @@ export class WorldAgent {
     if (before !== f.phase) { /* phase transitions already covered above */ }
   }
 
-  private flightEvent(e: any) {
-    // Airborne events are world facts -- a landing is an EVENT, logged (§1).
-    if (e.kind === "ground.ragdoll" || e.kind === "ground.landed" || e.kind === "took off") {
-      this.verb("say", { text: `[flight] ${e.kind}` + (e.impactV != null ? ` at ${e.impactV.toFixed(1)} m/s` : "") });
-    }
+  private flightEvent(_e: any) {
+    // Flight events are infrastructure facts, never resident-authored speech.
+    // A typed event channel may carry them later; until it exists, silence is
+    // more truthful than forging a `say` under the pilot's identity.
   }
 
   /** Wake anything awaiting a phase change (a blocking verb). */

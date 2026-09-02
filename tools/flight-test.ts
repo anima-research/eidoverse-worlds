@@ -1201,5 +1201,59 @@ console.log('\nFLOWN -- four faults a human found that no assertion had');
   check('and it still LANDS as a ragdoll, no autoland', h.phase === 'RAGDOLL');
 }
 
+
+// LIVE RIGHTS: the sequencer sends personalized folded answers after grants.
+// This is the general path that makes wildcard and durable-sub precedence live.
+{
+  const { emptyState, foldEntry } = await import('../shared/fold.js');
+  const { runVerb } = await import('../server/verbs.ts');
+  const st: any = emptyState();
+  st.roles.owner = { role: 'owner' };
+  st.roles['*'] = { role: 'builder', fly: true };
+  let seq = 0;
+  const ownerMsgs: any[] = [], pilotMsgs: any[] = [];
+  const w: any = {
+    name: 'rights-bench', state: st, clients: new Set(), leases: new Map(),
+    bhv: { sync() {}, onEntry() {} },
+    append(actor: string, verb: string, args: any) {
+      const e = { seq: ++seq, ts: Date.now(), actor, verb, args };
+      foldEntry(st, e); return e;
+    },
+    broadcast() {}, debug() {},
+  };
+  const client = (id: string, out: any[]) => ({ id, spectator: false, world: w, lastPose: null,
+    ws: { send(x: string) { out.push(JSON.parse(x)); } }, verbWin: 0, verbCount: 0 });
+  const owner: any = client('owner', ownerMsgs);
+  const pilot: any = client('pilot', pilotMsgs);
+  w.clients.add(owner); w.clients.add(pilot);
+  runVerb({ w, c: owner, now: Date.now(), expel() {} }, 'grant', { id: '*', fly: false });
+  const live = pilotMsgs.find(m => m.type === 'your-rights');
+  check('wildcard revocation emits personalized effective rights', live?.rights?.fly === false, JSON.stringify(live));
+  check('effective-rights message is bound to the grant cause', live?.causeSeq === 1, JSON.stringify(live));
+  const { WorldAgent } = await import('../mcpl/agent.ts');
+  const ag: any = new WorldAgent({ name: 'pilot', world: 'rights-bench' });
+  ag.bodyBoneNames = ['Hip', 'Spine02', 'Head',
+    'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1',
+    'L_Wing_Lower', 'R_Wing_Lower'];
+  ag.myRights = { role: 'builder', gen: false, fly: true };
+  ag.flight = initialState({ phase: 'PILOT', pos: { x: 0, y: 11.3, z: 0 }, wings: 'OPEN' }, makeConfig());
+  if (live?.rights && typeof ag.acceptEffectiveRights === 'function') ag.acceptEffectiveRights(live.rights, 'world');
+  check('headless consumes effective rights and refuses the next action', Boolean(live?.rights) && !ag.flightAllowed().ok);
+  check('midair revocation hands the agent to the leaf', Boolean(live?.rights) && ag.flight.phase === 'LEAF', ag.flight.phase);
+  const netSrc = readFileSync('client/lib/net.js', 'utf8');
+  check('browser consumes the server-folded effective-rights message',
+        /case 'your-rights'/.test(netSrc) && /net\.myRights = msg\.rights/.test(netSrc));
+}
+
+// RED-FIRST REGRESSION: infrastructure flight events must never author resident chat.
+// On ccb065c this deliberately fails: flightEvent() calls verb("say", ...).
+{
+  const { WorldAgent } = await import('../mcpl/agent.ts');
+  const ag: any = new WorldAgent({ name: 'pilot', world: 'bench' });
+  let authored = 0;
+  ag.verb = () => { authored++; };
+  ag.flightEvent({ kind: 'ground.landed', impactV: 0.5 });
+  check('flight telemetry never authors resident say', authored === 0, `authored=${authored}`);
+}
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

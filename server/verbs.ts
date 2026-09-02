@@ -14,7 +14,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { VERB_RATE, OPT_DIR } from "./config.ts";
-import { isAdminId, rightsOf, VERB_NEEDS, lockRefusal } from "./rights.ts";
+import { isAdminId, rightsOf, worldHasOwner, VERB_NEEDS, lockRefusal } from "./rights.ts";
 import { lintMotion, lintParticles } from "./lint.ts";
 import { reactToUse } from "./reactions.ts";
 import { behaviorLimits } from "./behaviors.ts";
@@ -101,6 +101,23 @@ function vGrant(ctx: VerbCtx, args: Record<string, unknown>) {
   return { args: { id, ...(role != null ? { role } : {}), ...(gen != null ? { gen } : {}),
     ...(fly != null ? { fly } : {}),
     ...(subject?.sub ? { sub: subject.sub } : {}) } };
+}
+
+/** After a grant folds, send each present participant the server's effective
+ * rights for THEM. Clients consume an answer, not a second precedence model.
+ * This reaches wildcard and durable-sub changes that a name-only delta merge
+ * cannot represent. The log entry remains the durable cause; this is its
+ * personalized live projection. */
+function afterGrant(ctx: VerbCtx, entry: LogEntry) {
+  const { w } = ctx;
+  for (const other of w.clients) {
+    const rights = { ...rightsOf(w.state, other.id, other.sub), open: !worldHasOwner(w.state) };
+    try {
+      other.ws.send(JSON.stringify({ type: "your-rights", rights, causeSeq: entry.seq }));
+    } catch (err) {
+      w.debug("rights-delivery-error", { who: other.id, seq: entry.seq, error: String(err) });
+    }
+  }
 }
 
 function vForce(_ctx: VerbCtx, args: Record<string, unknown>) {
@@ -322,7 +339,7 @@ const extras: Record<string, Pick<VerbRow, "selfRankZero" | "validate" | "after"
   use: { after: (ctx, entry) => reactToUse(ctx.w, entry) },
   mount: { selfRankZero: true, validate: vMount },
   dismount: { selfRankZero: true },
-  grant: { validate: vGrant },
+  grant: { validate: vGrant, after: afterGrant },
   force: { validate: vForce },
   punt: { validate: vPunt },
   comp: { validate: vComp, after: afterComp },
