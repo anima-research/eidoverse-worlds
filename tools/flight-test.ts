@@ -31,7 +31,7 @@ import {
   makeConfig, initialState, step, bodyDown, bodyRecovered,
   leafAt, beatRemaining, sinkRate, glideRatio, glideRange,
   denyAllConsent, fakeConsent, BREATH, airspeedAfter, leafLateralSwing, bestGlide,
-  takeOff, LEAF_PRESETS,
+  takeOff, LEAF_PRESETS, foldDown, unfold,
 } from '../shared/flight.js';
 import { pilotInput, pilotHelp, DEFAULT_BINDS, DEFAULT_AUTHORITY } from '../shared/flightpilot.js';
 import { inspectBody, describeBody } from '../shared/flightbody.js';
@@ -742,6 +742,74 @@ console.log('\nREVIEW cea3c3c -- blockers 4 and 6');
         !/or on a perch \(2\/s\)/.test(ns) && /perches are NOT implemented/i.test(ns));
 }
 
+// ------------------------------------------------------- T6: the vigil posture
+console.log('\nT6 -- fold_down grounds the flier, and unfolding is deliberate');
+{
+  // spec section 1: "fold_down() -- wings fold; GROUNDS the flier. The vigil
+  // posture costs the sky. take_off() refuses while folded; unfold is an
+  // explicit act." Section 2: "FOLDED -- grounded by choice. Distinct
+  // silhouette; readable at 50m."
+  //
+  // FOLDED has been a declared state since the first cut and takeOff has
+  // refused on it the whole time -- but no verb could SET it, so the refusal
+  // was unreachable code and T6 was an acceptance test with nothing behind it.
+  const cfg = makeConfig();
+  const ground = () => initialState({ phase: 'GROUND' }, cfg);
+
+  let s: any = foldDown(cfg, ground());
+  check('fold_down folds the wings', s.wings === 'FOLDED');
+  check('...and says so', s.events.some((e: any) => e.kind === 'wings.folded'));
+
+  const refused = takeOff(cfg, s, { groundY: 0 });
+  check('T6: take_off REFUSES while folded', refused.phase === 'GROUND');
+  check('...for the stated reason',
+        refused.events.some((e: any) => e.kind === 'takeoff.refused' && e.reason === 'wings folded'));
+  check('...and take_off does not quietly unfold for you', refused.wings === 'FOLDED');
+
+  const open = unfold(cfg, s);
+  check('unfold is the explicit act that ends the vigil', open.wings === 'OPEN');
+  check('...and then she can fly', takeOff(cfg, open, { groundY: 0 }).phase === 'PILOT');
+
+  // Folding is a GROUND posture. Not an air brake, not a way to fall.
+  let air: any = takeOff(cfg, ground(), { groundY: 0 });
+  const midair = foldDown(cfg, air);
+  check('folding refuses in the air', midair.wings === 'OPEN' &&
+        midair.events.some((e: any) => e.kind === 'fold.refused'));
+  // A limp body's wings belong to the ragdoll, not to a posture.
+  const limp = foldDown(cfg, { ...ground(), wings: 'LIMP' });
+  check('a limp body cannot strike a posture', limp.wings === 'LIMP');
+  // Idempotence, both ways, with an event that says nothing happened.
+  check('folding twice is refused, not doubled',
+        foldDown(cfg, s).events.some((e: any) => e.reason === 'already folded'));
+  check('unfolding open wings is refused',
+        unfold(cfg, ground()).events.some((e: any) => e.kind === 'unfold.refused'));
+
+  // The pose the silhouette is made of: authored in Blender, read from the
+  // action rather than typed, and checked here for the transposition that
+  // would otherwise be invisible -- Blender stores [w,x,y,z], three.js wants
+  // [x,y,z,w], and a swapped pair still normalises to a unit quaternion.
+  const av = readFileSync('client/lib/avatar.js', 'utf8');
+  const table = /const WING_FOLDED = \{([\s\S]*?)\n\};/.exec(av)?.[1] ?? '';
+  const rows = [...table.matchAll(/([LR]_Wing_\w+):\s*\[([^\]]+)\]/g)]
+    .map(m => ({ bone: m[1], q: m[2].split(',').map(Number) }));
+  check(`the folded pose covers the wing chains (${rows.length} bones)`, rows.length >= 10);
+  check('every folded quaternion is unit-length',
+        rows.every(r => Math.abs(Math.hypot(...r.q) - 1) < 1e-3));
+  // w LAST. If the columns were transposed, w (~0.73-0.99 here) would sit in
+  // slot 0 and the x term would land in slot 3.
+  check('...and stored [x,y,z,w], not Blender order',
+        rows.every(r => r.q[3] > 0.5) && rows.some(r => Math.abs(r.q[0]) > 0.3));
+  // A pose that is all identity is a pose that does nothing.
+  check('the shoulders actually carry the fold',
+        rows.filter(r => /_(Upper|Lower)$/.test(r.bone))
+            .every(r => 2 * Math.acos(Math.min(1, r.q[3])) * 180 / Math.PI > 20));
+  check('and it is mirrored L/R',
+        rows.filter(r => r.bone.startsWith('L_')).length ===
+        rows.filter(r => r.bone.startsWith('R_')).length + 1 ||
+        rows.filter(r => r.bone.startsWith('L_')).length ===
+        rows.filter(r => r.bone.startsWith('R_')).length);
+}
+
 // ---------------------------------------------------------------- isolation
 console.log('\nISOLATION -- nothing in the running world reaches flight yet');
 {
@@ -891,9 +959,41 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
   //    for the first second and decayed 0.91 -> 0.58 -> 0.33 -> 0.18 over the
   //    next five, which is a burst of hard beats easing into a glide.
   const av = readFileSync('client/lib/avatar.js', 'utf8');
-  check('there is a power stroke distinct from the idle flap',
-        /export const WING_POWER = \{/.test(av) &&
-        /deg: 4[0-9]/.test(av.slice(av.indexOf('WING_POWER'))));
+  // DISTINCT, not "equal to the number I first guessed". This asserted
+  // /deg: 4[0-9]/ and broke the moment Janus tuned the stroke to 8 -- a test
+  // pinning my own guess rather than the property, which is that the two dial
+  // sets differ enough to read as different behaviour. They now differ mostly
+  // in RATE (2.1Hz against 1/3.4) rather than amplitude, which is what a bird
+  // leaving the ground actually does, and a test written against amplitude
+  // could not see that at all.
+  {
+    const grab = (name: string) => {
+      const body = new RegExp(`export const ${name} = \\{([\\s\\S]*?)\\n\\};`).exec(av)?.[1] ?? '';
+      // `hz: 1 / BREATH` is an expression, not a literal -- deliberately, so
+      // the period cannot drift from spec T8. Resolve the one symbol these
+      // tables are allowed to name rather than demanding they be dumb numbers.
+      const num = (k: string) => {
+        const m = new RegExp(`\\b${k}:\\s*([^,\\n]+?)\\s*(?:,\\s*)?(?://.*)?$`, 'm').exec(body);
+        if (!m) return NaN;
+        const t = m[1].trim().replace(/\bBREATH\b/g, '3.4');
+        if (!/^[-\d.\s/*+()]+$/.test(t)) return NaN;
+        try { return Function(`"use strict";return (${t})`)(); } catch { return NaN; }
+      };
+      return { deg: num('deg'), hz: num('hz'), lag: num('lag'), tip: num('tip'), sweep: num('sweep') };
+    };
+    const idle = grab('WING_IDLE'), power = grab('WING_POWER');
+    check('both wing dial sets parse',
+          Number.isFinite(idle.deg) && Number.isFinite(idle.hz) &&
+          Number.isFinite(power.deg) && Number.isFinite(power.hz),
+          `idle ${JSON.stringify(idle)} power ${JSON.stringify(power)}`);
+    check('the power stroke is distinct from the idle -- and mostly in RATE',
+          power.hz >= idle.hz * 3,
+          `idle ${idle.hz.toFixed(3)}Hz vs power ${power.hz}Hz`);
+    check('a loaded wing lags LESS than a slack one',
+          power.lag < idle.lag, `idle ${idle.lag} vs power ${power.lag}`);
+    check('the idle beats on BREATH (spec T8)',
+          Math.abs(idle.hz - 1 / 3.4) < 1e-6, `${idle.hz}`);
+  }
   check('and _flap crossfades the two rather than branching',
         /mixWings\(WING_IDLE, WING_POWER, e\)/.test(av));
   check('effort eases, so 46 degrees never appears in one frame',
@@ -908,6 +1008,44 @@ console.log('\nISOLATION -- nothing in the running world reaches flight yet');
         /flightCfg\.pilot\?\.launchBoost/.test(ctl));
   check('landing hands the wings back to the idle',
         /me\.wingEffort = 0;/.test(ctl));
+  // "after i fly ... the wings are stuck going very fast like they were when i
+  // was flying, and adjusting the sliders doesnt change it." One bug wearing
+  // two faces: wingEffort was cleared on the NATURAL landing path only, so
+  // pressing F mid-flap left it pinned at 1 forever -- and a pinned 1 means
+  // the dial mix is 100% WING_POWER, so WING_IDLE is never read and its
+  // sliders are genuinely inert. Measured on d49baf0: effort 1.00 still 1.00
+  // two and a half seconds after landing.
+  //
+  // Fixed in two places on purpose. releaseWings() covers the exits we know
+  // about; the per-frame assertion covers the ones we do not (a revoked
+  // capability, a body swapped mid-air), so "stuck at full power" cannot
+  // survive one frame of not flying whatever route got us there.
+  check('F-to-land releases the wings, not just a natural landing',
+        /flight = null; releaseWings\(\); return 'landed'/.test(ctl));
+  check('...and not-flying asserts the resting wings every frame',
+        /if \(me\.wingEffort\) me\.wingEffort = 0;/.test(ctl));
+
+  // mica, CHANGES REQUESTED on d8ceee5: live revocation never reached the
+  // agent. The browser had the SAME hole and worse -- applyGrantState() merged
+  // grants by hand and was exported and called by nothing, so the "live grant"
+  // fix was dead code that read like a fix. Both sides now recompute from the
+  // folded roles with the one function the sequencer answers with.
+  const stt = readFileSync('client/lib/state.js', 'utf8');
+  check('the browser recomputes rights on a live grant entry',
+        /entry\?\.verb === 'grant'/.test(stt) && /rightsIn\(state\.st/.test(stt));
+  check('...with the SAME rule as the sequencer, not a second one',
+        /from '\.\.\/\.\.\/shared\/rightsfold\.js'/.test(stt) &&
+        /rightsIn/.test(readFileSync('server/rights.ts', 'utf8')));
+  check('...and the dead hand-merge is gone',
+        !/net\.myRights = \{ \.\.\.net\.myRights, \.\.\.worldRoles/.test(
+          readFileSync('client/lib/world.js', 'utf8')));
+  // An admin's grant comes from the environment, which the fold cannot see.
+  check('a recompute does not strip WORLD_ADMIN flight',
+        /admin \? cur\.fly : live\.fly/.test(stt));
+  // And a withdrawal reaches a body that is ALREADY up: checking only at the
+  // next action lets a revoked pilot soar indefinitely by touching nothing.
+  check('a revoked grant grounds a body already in the air',
+        /flight = flightDown\(flight, \{ eventId: 'capability-revoked' \}\)/.test(ctl));
   // Behavioural, not structural: the boost moved from a `??` fallback into
   // config, and the point of moving it was that retuning it retunes everything
   // that reads it. Same number as before -- nothing about flight changed.
@@ -1063,5 +1201,59 @@ console.log('\nFLOWN -- four faults a human found that no assertion had');
   check('and it still LANDS as a ragdoll, no autoland', h.phase === 'RAGDOLL');
 }
 
+
+// LIVE RIGHTS: the sequencer sends personalized folded answers after grants.
+// This is the general path that makes wildcard and durable-sub precedence live.
+{
+  const { emptyState, foldEntry } = await import('../shared/fold.js');
+  const { runVerb } = await import('../server/verbs.ts');
+  const st: any = emptyState();
+  st.roles.owner = { role: 'owner' };
+  st.roles['*'] = { role: 'builder', fly: true };
+  let seq = 0;
+  const ownerMsgs: any[] = [], pilotMsgs: any[] = [];
+  const w: any = {
+    name: 'rights-bench', state: st, clients: new Set(), leases: new Map(),
+    bhv: { sync() {}, onEntry() {} },
+    append(actor: string, verb: string, args: any) {
+      const e = { seq: ++seq, ts: Date.now(), actor, verb, args };
+      foldEntry(st, e); return e;
+    },
+    broadcast() {}, debug() {},
+  };
+  const client = (id: string, out: any[]) => ({ id, spectator: false, world: w, lastPose: null,
+    ws: { send(x: string) { out.push(JSON.parse(x)); } }, verbWin: 0, verbCount: 0 });
+  const owner: any = client('owner', ownerMsgs);
+  const pilot: any = client('pilot', pilotMsgs);
+  w.clients.add(owner); w.clients.add(pilot);
+  runVerb({ w, c: owner, now: Date.now(), expel() {} }, 'grant', { id: '*', fly: false });
+  const live = pilotMsgs.find(m => m.type === 'your-rights');
+  check('wildcard revocation emits personalized effective rights', live?.rights?.fly === false, JSON.stringify(live));
+  check('effective-rights message is bound to the grant cause', live?.causeSeq === 1, JSON.stringify(live));
+  const { WorldAgent } = await import('../mcpl/agent.ts');
+  const ag: any = new WorldAgent({ name: 'pilot', world: 'rights-bench' });
+  ag.bodyBoneNames = ['Hip', 'Spine02', 'Head',
+    'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1',
+    'L_Wing_Lower', 'R_Wing_Lower'];
+  ag.myRights = { role: 'builder', gen: false, fly: true };
+  ag.flight = initialState({ phase: 'PILOT', pos: { x: 0, y: 11.3, z: 0 }, wings: 'OPEN' }, makeConfig());
+  if (live?.rights && typeof ag.acceptEffectiveRights === 'function') ag.acceptEffectiveRights(live.rights, 'world');
+  check('headless consumes effective rights and refuses the next action', Boolean(live?.rights) && !ag.flightAllowed().ok);
+  check('midair revocation hands the agent to the leaf', Boolean(live?.rights) && ag.flight.phase === 'LEAF', ag.flight.phase);
+  const netSrc = readFileSync('client/lib/net.js', 'utf8');
+  check('browser consumes the server-folded effective-rights message',
+        /case 'your-rights'/.test(netSrc) && /net\.myRights = msg\.rights/.test(netSrc));
+}
+
+// RED-FIRST REGRESSION: infrastructure flight events must never author resident chat.
+// On ccb065c this deliberately fails: flightEvent() calls verb("say", ...).
+{
+  const { WorldAgent } = await import('../mcpl/agent.ts');
+  const ag: any = new WorldAgent({ name: 'pilot', world: 'bench' });
+  let authored = 0;
+  ag.verb = () => { authored++; };
+  ag.flightEvent({ kind: 'ground.landed', impactV: 0.5 });
+  check('flight telemetry never authors resident say', authored === 0, `authored=${authored}`);
+}
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

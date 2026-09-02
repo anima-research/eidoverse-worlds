@@ -26,12 +26,13 @@ import './lib/emitters.js';
 import { tickMotion } from './lib/motion.js';
 import {
   myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
-  setRightsHook,
+  setRightsHook, setMeHook,
 } from './lib/controller.js';
 import { remotes, updateRemotes, updateGaze } from './lib/remotes.js';
 import {
   net, connect, initIdentity, loginUrl, wireNet, sendVerb, sendPose, sendWhisper, sendTyping,
 } from './lib/net.js';
+import { setRightsSink } from './lib/state.js';
 import { initPalette, updateBuild, toggleEditMode, isEditing } from './lib/build.js';
 import { initConjure } from './lib/conjure.js';
 import './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
@@ -285,6 +286,12 @@ bus.on('sky-degraded', ({ msg }) => toast(msg, 'warn', 12000));
 // -- `/grant <id> +fly` takes effect on the next resolve, and `-fly` grounds a
 // body that is already in the air the next time it acts.
 setRightsHook(() => net.myRights);
+setMeHook(() => getMe());        // the fold pose is written onto the avatar
+// LIVE RIGHTS: state.js folds every entry and recomputes what I may do with
+// the SAME function the sequencer answers with, but net.js already imports
+// state.js, so state reaches net through this sink rather than an import.
+// Read with no argument, written with one.
+setRightsSink((next) => { if (next !== undefined) net.myRights = next; return net.myRights; });
 
 initPhysObj({ myPos: () => myState.pos });
 // reach descriptors resolve against the same bodies everyone renders; my own

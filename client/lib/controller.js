@@ -26,7 +26,7 @@ import {
 // grants this body a rig. A commons avatar with no wings gets nothing.
 import {
   makeConfig as flightConfig, initialState as flightState, step as flightStep,
-  takeOff as flightTakeOff, bestGlide,
+  takeOff as flightTakeOff, bestGlide, bodyDown as flightDown,
 } from '../../shared/flight.js';
 import { pilotInput } from '../../shared/flightpilot.js';
 import { worldFlightProvider, resolveFlight } from '../../shared/flightcap.js';
@@ -57,8 +57,20 @@ export function armFlight(boneNames, identity = 'me') {
 //
 // The DEFAULT RETURNS NULL, and worldFlightProvider reads null as "nobody has
 // said you may". A forgotten wiring must ground the body, never free it.
+/** Hand the wings back to the idle. Every exit from flight goes through here
+ *  -- F, a landing, a ragdoll, a revoked capability -- because "clear it at
+ *  each exit" is a rule with as many holes as it has exits. */
+function releaseWings() {
+  const me = meRef();
+  if (me) me.wingEffort = 0;
+}
+
 let myRights = () => null;
 export function setRightsHook(fn) { myRights = typeof fn === 'function' ? fn : (() => null); }
+// ...and my body, for the same reason and by the same route (mybody imports
+// this module, so the arrow cannot point back).
+let meRef = () => null;
+export function setMeHook(fn) { meRef = typeof fn === 'function' ? fn : (() => null); }
 
 // THE SAME FLOOR WALKING STANDS ON. Flight was handed raw `heightAt` while
 // take-off measured `resolveColliders` -- two different answers for "where is
@@ -85,6 +97,24 @@ function flightGround(x, z) {
 }
 
 export const flying = () => !!flight;
+
+// THE VIGIL POSTURE (spec section 1 fold_down, section 2 FOLDED, T6).
+//
+// Kept as controller state rather than inside `flight`, because folding is
+// something a body does STANDING and the flight state only exists once she is
+// flying. `takeOff` reads it as a precondition and refuses -- which is the
+// whole point of the posture: it costs the sky until you explicitly unfold.
+let wingsFolded = false;
+export const folded = () => wingsFolded;
+
+function toggleFold(me) {
+  if (flight) return 'you are flying — land first';
+  if (!flightProv) return null;             // no wings, no vigil, no message
+  wingsFolded = !wingsFolded;
+  if (me) me.wingsFolded = wingsFolded;     // avatar.js eases the pose in _flap
+  return wingsFolded ? 'wings folded — the vigil posture costs the sky (G to unfold)'
+                     : 'wings open';
+}
 
 /** WHY FLIGHT IS DOING THAT, in words, for a person with no devtools open.
  *
@@ -136,8 +166,19 @@ if (typeof globalThis !== 'undefined') {
 }
 
 function toggleFlight() {
-  if (flight) { flight = null; return 'landed'; }
+  // RELEASING THE WINGS IS PART OF LANDING. `wingEffort` was cleared on the
+  // natural landing path only, so pressing F mid-flap left the avatar holding
+  // the last value forever: wings beating at full power on a body standing
+  // still, and the idle sliders apparently dead because a stuck effort of 1
+  // means the mix is 100% WING_POWER and WING_IDLE is not being read at all.
+  // Janus: "the wings are stuck going very fast like they were when i was
+  // flying, and adjusting the sliders doesnt change it." One bug, two faces.
+  if (flight) { flight = null; releaseWings(); return 'landed'; }
   if (!flightProv) return 'flight not armed for this body';
+  // The spec's precondition, enforced where the human meets it. takeOff would
+  // refuse anyway -- this says so before spending the resolve, and names the
+  // key that undoes it.
+  if (wingsFolded) return 'wings are folded — press G to unfold first';
   const r = resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones } });
   if (!r.enabled) return `no: ${r.reason}`;
   flightCfg ??= flightConfig();
@@ -245,6 +286,7 @@ bus.on('key', (e) => {
   if (e.code === 'KeyX') toggleSit();
   if (e.code === 'KeyF') { const m = toggleFlight(); if (m) flashHint?.(m); }
   if (e.code === 'KeyZ') { posture = posture === 'lie' ? null : 'lie'; myState.seat = null; }
+  if (e.code === 'KeyG') { const m = toggleFold(meRef()); if (m) flashHint?.(m); }
 });
 
 // Declared seats (the `sockets` component — mount verb, rides motion) live in
@@ -487,6 +529,23 @@ export function updateMe(dt, me) {
       flight = null; grounded = true; vy = 0;
     }
   }
+  // A REVOKED GRANT GROUNDS A BODY THAT IS ALREADY UP. Checking only at the
+  // next ACTION satisfies the letter of "the next action refuses" and misses
+  // the point: a pilot whose permission was withdrawn mid-sortie kept flying
+  // indefinitely as long as they touched nothing. Re-resolved every frame --
+  // which is what "action-time, never cached" was always supposed to mean --
+  // and a withdrawal becomes a descent she can see, not a silent one.
+  //
+  // She is handed to the leaf rather than deleted: dropping `flight` at 15m
+  // would teleport her to the ground. Losing permission to fly is not the same
+  // as ceasing to exist.
+  if (flight && flight.phase !== 'RAGDOLL') {
+    const still = resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones } });
+    if (!still.enabled) {
+      flashHint?.(`flight withdrawn — ${still.reason}`, 6000);
+      flight = flightDown(flight, { eventId: 'capability-revoked' });
+    }
+  }
   if (flight) {
     const input = pilotInput(keys, flight, dt);
     flight = flightStep(flightCfg, flight, dt, { groundY: flightGround, input });
@@ -531,6 +590,7 @@ export function updateMe(dt, me) {
       flight = null; grounded = true; vy = 0;
       myState.clip = 'idle'; myState.speed = 0;
       me.wingEffort = 0;              // back to the resting flap, eased in _flap
+      releaseWings();                 // ...and for any body the loop is not holding
     }
     // AND NOW PUT HER ON THE SCREEN. Everything above moves `myState`, which
     // is the streamed, authoritative body -- but the four lines that make a
@@ -553,6 +613,14 @@ export function updateMe(dt, me) {
     updateFollowCamera(dt, me);
     return;                                           // nothing else drives her
   }
+  // NOT FLYING MEANS NOT WORKING THE WINGS. Asserted every frame rather than
+  // cleared at each exit: releaseWings() covers the exits we know about, and
+  // this covers the ones we do not -- a capability revoked mid-air, a body
+  // swapped while flying, an exception between the flap and the landing. The
+  // cost is one assignment per frame on a value _flap already eases, and the
+  // benefit is that "wings stuck at full power" cannot survive a single frame
+  // of not flying, whatever route got us here.
+  if (me.wingEffort) me.wingEffort = 0;
   if (mantle) {
     mantle.t += dt / 0.55;
     const k = Math.min(1, mantle.t), e = k * k * (3 - 2 * k);

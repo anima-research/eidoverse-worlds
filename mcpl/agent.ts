@@ -16,6 +16,7 @@ import { HeadlessBody, ReachBody, setHeightField, registerSupport, registerSuppo
 import {
   makeConfig as flightConfig, initialState as flightState, step as flightStep,
   bodyDown as flightDown, bodyRecovered as flightRecovered, takeOff as flightTakeOff,
+  foldDown as flightFold, unfold as flightUnfold,
   bestGlide, glideRange,
 } from "../shared/flight.js";
 import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
@@ -591,6 +592,12 @@ export class WorldAgent {
           case "voice-moderated":
             this.onMedia?.(msg);
             break;
+          case "your-rights":
+            // The sequencer recomputes this participant's effective rights
+            // after every grant. Consume the answer rather than trying to
+            // reproduce name/wildcard/sub/admin precedence from one delta.
+            if (msg.rights) this.acceptEffectiveRights(msg.rights, "world");
+            break;
           case "snapshot":
             // Our surface generation, issued by the server on acceptance —
             // every attest must echo it or the receipt is refused (PR #103 B2).
@@ -601,7 +608,7 @@ export class WorldAgent {
             // nothing ever injected one, that fallback WAS the policy. A
             // server that never sends this leaves myRights null, which the
             // provider reads as no.
-            if (msg.yourRights) this.myRights = msg.yourRights;
+            if (msg.yourRights) this.acceptEffectiveRights(msg.yourRights, "snapshot");
             this.entities.clear(); this.people.clear();
             // wake where you fell asleep — fresh body only; a body that has
             // walked this process keeps its own truth on mid-life reconnects
@@ -1152,6 +1159,55 @@ export class WorldAgent {
         const mention = rx ? rx.test(String(args.text)) : false;
         if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
         this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
+      }
+    } else if (verb === "grant") {
+      // LIVE REVOCATION REACHES THE AGENT. This branch did not exist, so
+      // `myRights` was written once from snapshot.yourRights and never again:
+      // a `-fly` mid-session was invisible until reconnect, and the
+      // action-time provider -- the whole point of resolving per action --
+      // read a grant that had been withdrawn. mica found it in production:
+      // seq 15183 granted mythos fly:false, no later fly:true, and seq 15206
+      // was a completed sortie.
+      //
+      // The pure capability test passed the whole time because it called
+      // resolveFlight directly with a changed rights object. It never crossed
+      // THIS path, which is where the rights object stopped changing.
+      //
+      // ABSENT IS NOT FALSE, the same rule the browser learned the hard way
+      // (client/lib/world.js, and the auto-owner grant that erased its own
+      // fly): an entry carries only the fields it changed, so merge those and
+      // leave the rest standing.
+      //
+      // BY NAME ONLY, matching what the server would compute.
+      //
+      // Not the wildcard: rightsOf prefers a name-keyed record over `*`, so
+      // with `mythos: {fly:true}` on file a `/grant * -fly` leaves mythos
+      // flying -- verified against rights.ts directly. Honouring the wildcard
+      // here would refuse where the authority permits, and a client-side gate
+      // stricter than the server still misreports the server. Whoever has no
+      // record of their own is covered by the wildcard through the snapshot's
+      // yourRights at join.
+      //
+      // Not by durable sub either: the server binds grants to a sub when it
+      // knows one (server/verbs.ts vGrant) but never tells an agent its own,
+      // so there is nothing here to compare against. The residual gap is a
+      // grant written against a sub while the body wears a different name;
+      // closing it wants `you.sub` in the snapshot, which is out of scope for
+      // this repair and stated rather than papered over.
+      const mine = args?.id != null && args.id === this.name;
+      if (mine) {
+        const next = { ...(this.myRights ?? {}) };
+        if (args.role != null) next.role = String(args.role);
+        if (args.gen != null) next.gen = Boolean(args.gen);
+        if (args.fly != null) next.fly = Boolean(args.fly);
+        this.myRights = next;
+        // A revocation must be legible, not merely effective. If this body is
+        // in the air when flight is withdrawn, the next action refuses and the
+        // pilot should know why rather than discovering it as a failure.
+        if (args.fly === false && this.flight) {
+          this.inbox.push({ ts, kind: "act", who: actor,
+            text: "your flight capability was withdrawn — the next flight action will refuse" });
+        }
       }
     } else if (verb === "ban" || verb === "unban" || verb === "kick") {
       // Moderation acts, narrated like any embodied transition — and, when
@@ -1725,7 +1781,24 @@ export class WorldAgent {
   /** The server's per-world grant for this identity ({role, gen, fly}).
    *  Null until a snapshot arrives, and null means no. */
   myRights: any = null;
+  /** The vigil posture, mirrored for anything that renders this body. */
+  wingsFolded = false;
   private flightWaiters: Array<{ done: (r: string) => void; test: (s: any) => string | null }> = [];
+
+  /** Install one server-folded effective-rights answer. If flight was
+   * withdrawn while aloft, ownership passes to the visible falling-leaf
+   * reflex rather than silently continuing or teleporting to ground. */
+  private acceptEffectiveRights(rights: any, actor = "world") {
+    const hadFly = this.myRights?.fly === true;
+    this.myRights = { ...(rights ?? {}) };
+    if (hadFly && this.myRights.fly !== true && this.flight &&
+        this.flight.phase !== "GROUND" && this.flight.phase !== "LANDED" &&
+        this.flight.phase !== "RAGDOLL" && this.flight.phase !== "LEAF") {
+      this.flight = flightDown(this.flight, { eventId: "capability-revoked" });
+      this.inbox.push({ ts: Date.now(), kind: "act", who: actor,
+        text: "your flight capability was withdrawn — descending under the falling-leaf reflex" });
+    }
+  }
 
   /** Resolve the capability, freshly, every time -- never cached. An avatar
    *  can hot-swap and a grant must not ride across it. */
@@ -1873,11 +1946,10 @@ export class WorldAgent {
     if (before !== f.phase) { /* phase transitions already covered above */ }
   }
 
-  private flightEvent(e: any) {
-    // Airborne events are world facts -- a landing is an EVENT, logged (§1).
-    if (e.kind === "ground.ragdoll" || e.kind === "ground.landed" || e.kind === "took off") {
-      this.verb("say", { text: `[flight] ${e.kind}` + (e.impactV != null ? ` at ${e.impactV.toFixed(1)} m/s` : "") });
-    }
+  private flightEvent(_e: any) {
+    // Flight events are infrastructure facts, never resident-authored speech.
+    // A typed event channel may carry them later; until it exists, silence is
+    // more truthful than forging a `say` under the pilot's identity.
   }
 
   /** Wake anything awaiting a phase change (a blocking verb). */
@@ -1944,6 +2016,32 @@ export class WorldAgent {
   //
   // Proposed to mica in the stage-3 response; nothing here publishes until
   // that channel is agreed.
+
+  /** fold_down / unfold (spec §1). The vigil posture, and the explicit act
+   *  that ends it.
+   *
+   *  Folding is a GROUND posture and needs no flight state to exist, so it
+   *  lazily makes one rather than demanding take_off first -- a body standing
+   *  in the world has wings whether or not it has flown today. */
+  async foldWings(fold: boolean): Promise<string> {
+    await this.loadBodyBones();
+    const cap = this.flightAllowed();
+    if (!cap.ok) return `these wings are not yours to fold here — ${cap.why}`;
+    this.flight ??= flightState({
+      phase: "GROUND",
+      pos: { x: this.pos.x, y: this.pos.y, z: this.pos.z },
+      yaw: intYaw(this.yaw),
+    }, this.flightCfg);
+    const before = this.flight.wings;
+    this.flight = fold ? flightFold(this.flightCfg, this.flight)
+                       : flightUnfold(this.flightCfg, this.flight);
+    const ref = this.flight.events.find((e: any) => /refused$/.test(e.kind));
+    if (ref) return `wings stay ${before.toLowerCase()} — ${ref.reason}`;
+    this.wingsFolded = fold;
+    return fold
+      ? "wings folded — the vigil posture; take_off refuses until you unfold"
+      : "wings open — the sky is available again";
+  }
 
   /** glide_to (spec §1). Free, and lands SHORT honestly if the polar runs out. */
   async glideTo(x: number, z: number): Promise<string> {

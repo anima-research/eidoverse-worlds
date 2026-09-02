@@ -165,6 +165,8 @@ const TOOLS = [
   // signal, and it emits exactly the trusted event that adapter will emit.
   { name: "rehearse_down", description: "REHEARSAL ONLY — fire the trusted bodyDown event the Connectome adapter will one day fire for real. Not a way to appear down: the real signal is involuntary and this exists to test the body's half of it.", inputSchema: { type: "object", properties: { eventId: { type: "string" } } } },
   { name: "rehearse_recover", description: "REHEARSAL ONLY — fire the trusted bodyRecovered event. Mid-air this begins the aerial sit-up; on the ground, the sit-up proper.", inputSchema: { type: "object", properties: { eventId: { type: "string" } } } },
+  { name: "fold_wings", description: "Fold your wings down — the vigil posture. It GROUNDS you: take_off refuses while folded, and unfolding is a separate, deliberate act. A distinct silhouette, readable across a clearing. Ground only; land first if you are flying.", inputSchema: { type: "object", properties: {} } },
+  { name: "unfold_wings", description: "Open your wings again, ending the vigil. The sky becomes available; nothing else changes.", inputSchema: { type: "object", properties: {} } },
   { name: "flight_status", description: "Where the sky has left you: altitude, heading, airspeed, stamina, how far your best glide still reaches from here, and which layer is flying (live/plan/reflex). Cheap — call it as often as you like.", inputSchema: { type: "object", properties: {} } },
   { name: "face", description: "Turn to face a point (x,z) or a participant/entity id (target).", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, target: { type: "string" } } } },
   { name: "stop", description: "Stop walking.", inputSchema: { type: "object", properties: {} } },
@@ -1349,6 +1351,8 @@ class Session {
         return text(name === "rehearse_down"
           ? ag.flightBodyDown(String(a.eventId ?? "rehearsal"))
           : ag.flightBodyRecovered(String(a.eventId ?? "rehearsal"), "gen-rehearsal"));
+      case "fold_wings":    return text(await ag.foldWings(true));
+      case "unfold_wings":  return text(await ag.foldWings(false));
       case "flight_status": return text(ag.flightStatus());
       case "walk_to": {
         const arrived = await ag.walkTo(Number(a.x), Number(a.z), Boolean(a.run));

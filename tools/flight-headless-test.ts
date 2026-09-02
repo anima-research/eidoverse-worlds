@@ -142,5 +142,86 @@ const f = leafForceFor(L, { mass: 0.11, halfExtents: [0.017, 0.136, 0.096],
 check('a broadside wing feels lift-ward drag', f.force.y > 0);
 check('and a flutter torque, not just drag', Math.abs(f.torque.y) > 1e-6);
 
+// ---------------------------------------------- live revocation, the real path
+//
+// mica, CHANGES REQUESTED on d8ceee5: "live grant revocation is still not
+// applied to headless/MCPL agents", with production evidence -- seq 15183
+// granted mythos fly:false, no later fly:true, and seq 15206 was a completed
+// sortie. `myRights` was written once from snapshot.yourRights and applyEntry
+// had no grant branch, so the action-time provider read a withdrawn grant
+// forever.
+//
+// The pure capability test passed throughout, and that is the lesson worth
+// keeping: it called resolveFlight with a rights object it changed by hand.
+// It never crossed the path where the rights object stopped changing. So this
+// one drives the REAL applyEntry with real log entries and asks the REAL
+// flightAllowed() -- the function every flight verb actually calls.
+console.log('\nLIVE REVOCATION -- through applyEntry, not around it');
+{
+  const { WorldAgent } = await import('../mcpl/agent.ts');
+  const ag: any = new WorldAgent({ name: 'mythos', world: 'commons' });
+  // A winged body, so the RIG half of the capability is satisfied and the only
+  // variable under test is the GRANT half.
+  ag.bodyBoneNames = ['Hip', 'Spine02', 'Head',
+    'L_Wing_Upper', 'L_Wing_Upper_1', 'R_Wing_Upper', 'R_Wing_Upper_1',
+    'L_Wing_Lower', 'R_Wing_Lower'];
+  ag.loadBodyBones = async () => {};          // no HTTP in a unit test
+  const entry = (args: any) => ({ verb: 'grant', args, actor: 'owner', ts: Date.now() });
+
+  ag.myRights = null;
+  check('no rights at all: flight refuses', !ag.flightAllowed().ok);
+
+  await ag.applyEntry(entry({ id: 'mythos', role: 'builder', gen: true }), true);
+  check('a grant that never mentions fly does not confer it',
+        !ag.flightAllowed().ok, JSON.stringify(ag.myRights));
+
+  await ag.applyEntry(entry({ id: 'mythos', fly: true }), true);
+  check('+fly permits, through the live entry path', ag.flightAllowed().ok);
+
+  // ABSENT IS NOT FALSE, on this side too: a later role-only grant must not
+  // silently erase the flight capability (the browser bug, in the agent).
+  await ag.applyEntry(entry({ id: 'mythos', role: 'owner' }), true);
+  check('a later role-only grant does not erase fly',
+        ag.flightAllowed().ok && ag.myRights.role === 'owner');
+
+  // THE BLOCKER ITSELF.
+  await ag.applyEntry(entry({ id: 'mythos', fly: false }), true);
+  check('-fly makes the very next action refuse', !ag.flightAllowed().ok,
+        JSON.stringify(ag.myRights));
+  const why = ag.flightAllowed().why ?? '';
+  check('...and says why, in words a pilot can act on', /grant|flight/i.test(why), why);
+
+  // Somebody else's grant is not mine.
+  await ag.applyEntry(entry({ id: 'mythos', fly: true }), true);
+  await ag.applyEntry(entry({ id: 'someone-else', fly: false }), true);
+  check('another body\'s revocation leaves mine standing', ag.flightAllowed().ok);
+  // ...and neither is the WILDCARD, which is the counter-intuitive one. I had
+  // this matching '*' until I checked rightsOf: the server prefers a
+  // name-keyed record over the wildcard, so with `mythos: {fly:true}` on file
+  // a `/grant * -fly` leaves mythos flying. Honouring it here would refuse
+  // where the authority permits. Whoever has no record of their own is reached
+  // by the wildcard through the snapshot at join, not through this path.
+  await ag.applyEntry(entry({ id: '*', fly: false }), true);
+  check('a wildcard does not override this body\'s own grant (server precedence)',
+        ag.flightAllowed().ok);
+  // The claim above, asserted against the server's actual ladder rather than
+  // against my memory of it.
+  {
+    const { rightsOf } = await import('../server/rights.ts');
+    const st: any = { roles: { owner: { role: 'owner' }, mythos: { role: 'builder', fly: true },
+                               '*': { role: 'builder' } }, entities: {} };
+    check('...which is what rightsOf itself says', rightsOf(st, 'mythos').fly === true);
+    delete st.roles.mythos;
+    check('...and a body with no record of its own does take the wildcard',
+          rightsOf(st, 'mythos').fly === false);
+  }
+
+  // MUTATION CONTROL, as required: delete the branch and this must go red.
+  const src = readFileSync('mcpl/agent.ts', 'utf8');
+  check('the grant branch exists in applyEntry (mutation control)',
+        /\} else if \(verb === "grant"\) \{/.test(src) &&
+        /if \(args\.fly != null\) next\.fly = Boolean\(args\.fly\);/.test(src));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

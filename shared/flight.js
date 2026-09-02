@@ -63,10 +63,15 @@
 //
 // The 3.4s period is not a tunable in the same sense as the rest. It is the
 // house's breath -- wing idle, stamina tick, and the leaf oscillation all beat
-// on it (spec §5, §2, T8) -- so it appears once, here, and everything that
-// needs a period reads it rather than restating it.
+// on it (spec §5, §2, T8) -- so it appears once and everything that needs a
+// period reads it rather than restating it.
+//
+// That "once" is now shared/breath.js, because the wing idle is a property of
+// Mythos's BODY and reading it from here made avatar.js an importer of the
+// flight core. Re-exported so every existing caller is unchanged.
 
-export const BREATH = 3.4;              // seconds. The period. See spec T8.
+export { BREATH } from './breath.js';
+import { BREATH } from './breath.js';
 
 export const DEFAULT_CONFIG = {
   breath: BREATH,
@@ -844,6 +849,52 @@ function groundContact(cfg, s, groundY, ragdoll) {
  *  four seconds and 4 m of altitude, which is enough to find out whether you
  *  are flying.
  */
+/** fold_down (spec §1): "wings fold; GROUNDS the flier. The vigil posture
+ *  costs the sky." §2: "FOLDED -- grounded by choice (vigil posture). Distinct
+ *  silhouette; readable at 50m."
+ *
+ *  FOLDED was a declared state that nothing could reach: `takeOff` has refused
+ *  on it since the first cut, but no verb ever set it, so the refusal was
+ *  unreachable and T6 was untested. This is the missing half.
+ *
+ *  ON THE GROUND ONLY, and that is the whole meaning of the posture. Folding
+ *  is not an air brake and not a way to fall stylishly -- it is choosing to
+ *  stand watch, and choosing costs something only if you must first come down.
+ *  A body in the air is told to land first rather than quietly folded.
+ *
+ *  UNFOLDING IS EXPLICIT (§1: "unfold is an explicit act"). take_off does not
+ *  do it for you; a vigil you can leave by accident is not a vigil. */
+export function foldDown(cfg, state) {
+  const s = { ...state, pos: { ...state.pos }, vel: { ...state.vel }, events: [] };
+  if (s.phase !== 'GROUND' && s.phase !== 'LANDED') {
+    s.events.push({ t: s.t, kind: 'fold.refused', reason: `airborne (${s.phase})` });
+    return s;
+  }
+  if (s.wings === 'LIMP') {
+    s.events.push({ t: s.t, kind: 'fold.refused', reason: 'wings limp' });
+    return s;
+  }
+  if (s.wings === 'FOLDED') {
+    s.events.push({ t: s.t, kind: 'fold.refused', reason: 'already folded' });
+    return s;
+  }
+  s.wings = 'FOLDED';
+  s.events.push({ t: s.t, kind: 'wings.folded' });
+  return s;
+}
+
+/** The explicit act that ends the vigil. */
+export function unfold(cfg, state) {
+  const s = { ...state, pos: { ...state.pos }, vel: { ...state.vel }, events: [] };
+  if (s.wings !== 'FOLDED') {
+    s.events.push({ t: s.t, kind: 'unfold.refused', reason: `wings are ${s.wings}` });
+    return s;
+  }
+  s.wings = 'OPEN';
+  s.events.push({ t: s.t, kind: 'wings.open' });
+  return s;
+}
+
 export function takeOff(cfg, state, { launchSpeed = null, boost = null, groundY = null } = {}) {
   const s = { ...state, pos: { ...state.pos }, vel: { ...state.vel }, events: [] };
   // The config's boost unless a caller overrides it, so `cfg.pilot.launchBoost`
