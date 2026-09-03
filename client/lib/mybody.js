@@ -5,7 +5,7 @@
 // here may import main.js.
 
 import { CONFIG, bus, report } from './core.js';
-import { armFlight } from './controller.js';
+import { armFlight, folded } from './controller.js';
 import { makeAvatar, contributeThumbnail } from './avatar.js';
 import { setMyAvatarPath, wireAvatarSwitch } from './build.js';
 import { toast } from './ui.js';
@@ -88,7 +88,11 @@ export function chooseAvatar(path, name, { remember = false } = {}) {
 
 let me = null;
 export function getMe() { return me; }
-export function setMe(av) { me = av; armFlightFor(av); }
+export function setMe(av) {
+  me = av;
+  if (me) me.wingsFolded = folded();
+  armFlightFor(av);
+}
 
 /** Arm (or disarm) human flight for whatever body this is now.
  *
@@ -118,7 +122,7 @@ wireAvatarSwitch(async (path, name) => {
     // instance pool, so switching BACK is a 0ms pool-hit, not a re-parse.
     const next = await makeAvatar(CONFIG.name, path, { urgent: true }); // build before shedding the old
     me?.dispose();
-    me = next; armFlightFor(next);
+    setMe(next);
     myAvatarPath = path;
     myAvatarName = name;
     setMyAvatarPath(path);
@@ -139,6 +143,6 @@ bus.on('avatar-updated', ({ path, name, fresh }) => {
   if (myAvatarPath?.split('?')[0] === path) {
     toast(`your body "${name}" was updated — refreshing`, 'info');
     myAvatarPath = fresh;
-    makeAvatar(CONFIG.name, fresh, { urgent: true }).then((av) => { me?.dispose(); me = av; }).catch((e) => report('reload avatar', e));
+    makeAvatar(CONFIG.name, fresh, { urgent: true }).then((av) => { me?.dispose(); setMe(av); }).catch((e) => report('reload avatar', e));
   }
 });

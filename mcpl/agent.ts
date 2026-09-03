@@ -20,6 +20,8 @@ import {
   bestGlide, glideRange,
 } from "../shared/flight.js";
 import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
+import { inspectBody } from "../shared/flightbody.js";
+import { wingFoldPresence } from "../shared/wingpresence.js";
 import { DEFAULT_LEAF_FORCE as LEAF_FORCE } from "../shared/leafforce.js";
 
 /** integrator yaw (atan2(dz,dx), forward = (cos,sin)) -> world yaw
@@ -57,7 +59,7 @@ const WALK = 1.55, RUN = 4.0, TICK_MS = 100, ARRIVE = 0.4;
 const EMITTER_COALESCE_MS = Number(process.env.EW_EMITTER_COALESCE_SEC ?? 4) * 1000;
 
 type Vec2 = { x: number; z: number };
-type Pose = { p: number[]; yaw: number; speed: number; clip: string };
+type Pose = { p: number[]; yaw: number; speed: number; clip: string; wingsFolded?: boolean };
 type Entity = { id: string; lib: string; pos: number[]; yaw: number; actor: string; scale?: number;
   /** component bag (sockets, reactions, motion, …) — what a thing can DO;
    *  this is how affordances reach text-tier perception */
@@ -622,6 +624,7 @@ export class WorldAgent {
               // what survives the server's settled memory is an enacted pose —
               // authored by definition (settledPose strips physics frames)
               if (msg.restore.pose && msg.restore.clip !== "ragdoll") { this.heldPose = msg.restore.pose; this.heldPoseAuthored = true; }
+              this.wingsFolded = msg.restore.wingsFolded === true;
             }
             this.restoredPose = true;
             for (const p of msg.present) this.people.set(p.id, { id: p.id, avatar: p.avatar, pose: p.pose, agent: !!p.agent });
@@ -1002,6 +1005,16 @@ export class WorldAgent {
     const nowHeld = Boolean(pose.pose);
     if (nowHeld && !prevHeld) acts.push({ key: "pose", text: `strikes a pose (${Object.keys(pose.pose!).length} bones held)` });
     if (!nowHeld && prevHeld) acts.push({ key: "pose-release", text: "releases their pose" });
+    const hadFold = typeof prev?.wingsFolded === "boolean";
+    const hasFold = typeof pose.wingsFolded === "boolean";
+    const prevFold = prev?.wingsFolded === true, nowFold = pose.wingsFolded === true;
+    // A first sighting is a state, not an act. Announce only an edge observed
+    // between two explicit semantic samples; legacy absence proves neither
+    // folding nor opening.
+    if (hadFold && hasFold && nowFold !== prevFold) acts.push({
+      key: nowFold ? "wings-fold" : "wings-unfold",
+      text: nowFold ? "folds their wings" : "opens their wings",
+    });
     const LOCO = new Set(["idle", "walk", "run"]);
     const pc = prev?.clip ?? "idle", nc = pose.clip ?? "idle";
     if (nc !== pc) {
@@ -1605,6 +1618,7 @@ export class WorldAgent {
       type: "pose",
       pose: {
         p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, speed: this.speed, clip: this.clip,
+        ...wingFoldPresence(this.wingsFolded),
         // a physics bag only ever leaves this process labelled as what it is —
         // "ragdoll" — so every clip-keyed sanitizer downstream can see it.
         // Shipping one under "idle" is how princess's tumble frame became
@@ -1980,6 +1994,10 @@ export class WorldAgent {
     await this.loadBodyBones();
     const cap = this.flightAllowed();
     if (!cap.ok) return `you cannot fly here — ${cap.why}`;
+    // Wing posture is carried independently of an active flight state. A body
+    // can fold without a propulsion grant, so the sky door checks the public
+    // posture before it constructs a fresh integrator.
+    if (this.wingsFolded) return `still standing — wings folded`;
     // START FROM THE BODY, ALWAYS. A stale flight state -- LANDED after a
     // glide, or RAGDOLL after a cut -- carried the old position and phase into
     // the new launch, so take_off "worked" and the next verb found her back on
@@ -2025,22 +2043,35 @@ export class WorldAgent {
    *  in the world has wings whether or not it has flown today. */
   async foldWings(fold: boolean): Promise<string> {
     await this.loadBodyBones();
-    const cap = this.flightAllowed();
-    if (!cap.ok) return `these wings are not yours to fold here — ${cap.why}`;
-    this.flight ??= flightState({
-      phase: "GROUND",
-      pos: { x: this.pos.x, y: this.pos.y, z: this.pos.z },
-      yaw: intYaw(this.yaw),
-    }, this.flightCfg);
-    const before = this.flight.wings;
-    this.flight = fold ? flightFold(this.flightCfg, this.flight)
-                       : flightUnfold(this.flightCfg, this.flight);
-    const ref = this.flight.events.find((e: any) => /refused$/.test(e.kind));
-    if (ref) return `wings stay ${before.toLowerCase()} — ${ref.reason}`;
+    // Folding is body autonomy, not propulsion authority. A world may deny
+    // `fly` while the person still closes or opens wings they visibly wear.
+    // The rig check prevents a wingless body from claiming a silhouette it
+    // cannot render; take_off remains separately grant-gated.
+    const body = inspectBody(this.bodyBoneNames ?? []);
+    if (fold && !body.canAnimateWings) return `this body has no animatable wings to fold`;
+    if (!fold && !body.canAnimateWings && !this.wingsFolded)
+      return `this body has no folded-wing posture to release`;
+
+    // Do not create a flight integrator merely to strike a ground posture. A
+    // dormant GROUND flight object owns position on the 10Hz tick and would
+    // fight ordinary walking. When a real flight state exists, keep its wing
+    // state in step; otherwise the semantic presence field is the whole act.
+    if (this.flight) {
+      this.flightCfg ??= flightConfig();
+      const before = this.flight.wings;
+      this.flight = fold ? flightFold(this.flightCfg, this.flight)
+                         : flightUnfold(this.flightCfg, this.flight);
+      const ref = this.flight.events.find((e: any) => /refused$/.test(e.kind));
+      if (ref) return `wings stay ${before.toLowerCase()} — ${ref.reason}`;
+    } else if (this.wingsFolded === fold) {
+      return fold ? `wings are already folded` : `wings are already open`;
+    }
     this.wingsFolded = fold;
-    return fold
-      ? "wings folded — the vigil posture; take_off refuses until you unfold"
-      : "wings open — the sky is available again";
+    if (fold) return "wings folded — the vigil posture; take_off refuses until you unfold";
+    if (!body.canAnimateWings) return "folded-wing posture released — this body has no wings";
+    const cap = this.flightAllowed();
+    return cap.ok ? "wings open — the sky is available again"
+                  : "wings open — propulsion is still not granted here";
   }
 
   /** glide_to (spec §1). Free, and lands SHORT honestly if the polar runs out. */
@@ -2852,9 +2883,10 @@ export class WorldAgent {
       const doing = { idle: "standing", walk: "walking", run: "running", sit: "sitting", sitchair: "sitting on a chair", lie: "lying down" }[p.pose.clip] ?? p.pose.clip;
       const held = (p.pose as { pose?: Record<string, unknown> | null }).pose;
       const posed = held ? `, holding a pose (${Object.keys(held).length} bones)` : "";
+      const winged = p.pose.wingsFolded === true ? ", wings folded" : "";
       const ride = this.mounts.get(p.id);
       const riding = ride ? ` — on ${ride.to}${ride.slot ? ` (${ride.slot})` : ""}${this.seatSuffix(p.id, ride)}` : "";
-      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${riding}`);
+      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${winged}${riding}`);
     }
 
     const ents = [...this.entities.values()];
