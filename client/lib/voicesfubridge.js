@@ -8,7 +8,7 @@
 // 🔴 It exposes window.relayDiag / window.relayMic — the shape every browser
 // smoke asserts against. The names date from when two transports competed and
 // one smoke drove both; the shape survives because the instruments do.
-import { bus, CONFIG } from './core.js';
+import { bus, CONFIG } from './base.js';
 import { net, sendRelayCredRequest, sendVoiceConsent } from './net.js';
 import { sfuConnect, sfuOnOffer, sfuOnIce, sfuMic, sfuPeerLevels, sfuMyLevel,
   sfuDiagClient, sfuClose, sfuActive, sfuSpeakerEntries, sfuInboundStats, sfuMicOn,

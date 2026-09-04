@@ -390,6 +390,821 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-09-04 — §24t-12: CATCH-UP MERGE, folded wings on presence
+  (ae30eef).** anima/main +1 (b234928: wingsFolded rides the pose packet;
+  fold/unfold as body autonomy, not flight permission). Two conflicts of
+  the known shape: mybody.js (their `folded` import onto the base.js
+  seam) and net-server.ts (revised fold/unfold descriptions in the
+  TOOLS table we keep in mcpl/tools.ts — ported). Their tests here:
+  wing-fold-presence 28/0, settled-pose 21/0, wing-owner-wire 6/0
+  after retargeting its core.js mock to base.js (the controller
+  listened on a bus the bench never emitted on — flagged §1). Gates:
+  smoke 85/85, flight-test 231/0, sim-smoke 15/0, sim-ground-smoke
+  8/0, parity PASS, lightbench 30/0, mcpl door suites green. rimward 0
+  behind anima/main.
+
+- **2026-09-02 — §24t-11: CATCH-UP MERGE, THE FLIGHT ARC (d30d20a).**
+  anima/main was 33 commits ahead (a678f24: wings, the deterministic
+  flight integrator, effective rights, five MCP flight tools +
+  rehearsal, /flight; 41 files, +6.3k lines). Seven conflicts, all
+  where upstream extended a table or import block rimward had since
+  MOVED: chat.js (kept the registry dispatcher — /flight is a row +
+  handlers.js registration), mybody/state/world/main (their imports
+  onto the base.js/palette.js seams), agent.ts (their effective rights
+  + our fresh folds incl. the sim cut), and net-server.ts — nine flight
+  tools added to a TOOLS table we had unified into mcpl/tools.ts
+  (§24r): PORTED there, handlers in the (ag, a, ctx, name) form, the
+  rehearsal gate mirrored (default off; hidden AND refused); the
+  advertise⇔handle assertion holds. Their tests on our tree:
+  flight-test 231/0 after two layout retargets + a `commit` on its
+  bench world (our runVerb commits through the entry bus);
+  flight-headless-test reads a hard-coded path on its author's laptop
+  (environmental — UPSTREAM-FLAGS §1); typecheck:flight clean.
+  sim-smoke's second-exit check waits for its refusal now (with v1
+  physics resumed the driver's socket carries the lease stream; a
+  fixed 350ms flaked). Gates: smoke 85/85, sim-smoke 15/0, sim-test
+  37/0, replaybench 1/1, foldfix 24/0, state 31/0, parity PASS,
+  stdio-door 13/0, whisper-disable 5/5, typing-mcpl 2/0, bodysim 20/0,
+  sim-ground-smoke 8/0, lightbench 30/0. rimward: 0 behind, 96 ahead;
+  the fork is not diverged for the demo.
+
+- **2026-09-01 — §24t-10: THE PHYSICS FINISHERS (f4f95e3).** Polish for
+  the 2026-09-02 demo, three items, one ruling. (1) LEAVING AN EPOCH —
+  RULED: explicit, never a toggle (a world-changing command must not
+  depend on hidden state). `/epoch off` → `epoch {sim: null}`: the
+  sequencer releases every live body into the fold at its sim word
+  (the same epoch-release places a re-epoch commits), folds the
+  barrier, v1 semantics resume (volunteer physics, dir optional);
+  nothing-to-leave is refused pre-log; a MISSING/malformed sim is not
+  an exit (totality). sim.js ends the sim epoch; fold.js clears the
+  instant fold's `epoch` record — additive (no existing log carries
+  such an entry; commons digest unchanged). PROTOCOL_v2 §3 states the
+  rule; the help overlay names /epoch and /epoch off. (2) SLOPE TILT —
+  a grounded body leans onto the terrain normal under its VISUAL
+  CENTER (finite differences at 0.5m, the footprint's scale), composed
+  ABOUT the center (center stays on its ground; the origin goes where
+  the rotated offset leaves it); airborne stays upright; things ON
+  things stay flat. The ±15cm footprint residual of §24t-6 is gone;
+  sim-ground-smoke locates the cluster through the quaternion now and
+  checks the lean (0.0° off the normal). (3) FORCE — DEFERRED to
+  eidosim@0.4.0 on purpose: a radial force claims every model in its
+  radius = the "sim-owned by default" ⚑ of §6, not an implementation's
+  call; and 0.3.0 is already minted in commons (tel0s ran /epoch;
+  punts at seq 120–123). Tests: sim-test 32→37, sim-smoke 10→15,
+  sim-ground-smoke 7→8; replaybench 1/1 (re-recorded for the log's
+  own growth), foldfix 24/0, state 31/0, tick 7/0, smoke 85/85,
+  parity PASS. DEMO STATE: commons is under eidosim@0.3.0 with boxes
+  stamped for its crates and barrels; restart the sequencer + hard
+  reload for the finishers (client + server changed), no re-epoch
+  needed.
+
+- **2026-09-01 — §24t-9: CATCH-UP MERGE (9072ffa).** anima/main was
+  one commit ahead (a468cba — geometry LOD for placeable objects,
+  #156: optimize.ts --lod, store-variants LOD recipe, upload.ts, a
+  600-line object-lod-test). One conflict, the upload.ts import
+  block: upstream's LOD names ride in, the door stays on R1's
+  aid1JoinIdentity (the HN_*/verifyToken form is what R1 replaced;
+  the merged body references neither). Gates on the merged tree:
+  object-lod-test 0 failed (upstream's own), smoke 85/85, sim-smoke
+  10/0, sim-test 32/0, replaybench 1/1, parity PASS. rimward is 0
+  behind anima/main; colleagues take 90 commits with
+  docs/UPSTREAM-FLAGS.md as the briefing. Local `main` untouched this
+  round (tel0s's call whether it follows).
+
+- **2026-09-01 — §24t-8: COLLIDERS FOR THE SIM, AND THE PROD FLEET
+  (a2c29dc, 5caa264).** tel0s's ruling: an asset's geometry reaches the
+  sim the one way Covenant III allows — the SEQUENCER stamps it into
+  history. EIDOSIM@0.3.0: server/boxes.ts is a warm cache of model
+  boxes (summarizeGlb, mm-rounded), filled on every join and awaited
+  on the wire before a spawn/epoch reaches its sync validator
+  (messages.ts; only a never-seen lib pays one file read);
+  `spawn.box` under a live epoch (client box discarded), `epoch.boxes`
+  for every standing lib at the barrier. The sim folds them into a
+  STATIC table (yaw-rotated scaled local box → world AABB; yaw via
+  simmath's sinT/cosT — the kernel's first shipped use); a punted body
+  carries its own. Per tick: a static whose top the body was above and
+  whose footprint it overlaps is GROUND (land on a crate, slide, rest
+  ON it — `b.on` names the support; the applier skips the terrain lift
+  then); one met from the side pushes out along the shallower
+  horizontal axis and reflects that velocity (wall bounce); a slider
+  losing its support by more than STEP_DOWN 0.3 FALLS instead of
+  gluing; a rested body is a static again. Collider changes (place/
+  remove/mount/dismount/motion) advance to their entry's tick first —
+  live fold ≡ replay, proven. 0.1.0 AND 0.2.0 carried untouched:
+  commons's 0.2.0 replay digest IDENTICAL under the new build (proved
+  against HEAD's sim.js on the real log). Scope stated: no body–body
+  collisions in flight, resting bodies not woken, structures not
+  stamped (⚑ §6). sim-test 21→32, sim-smoke 9→10 (the stamp, not the
+  client's), sim-ground-smoke 7/0, replaybench, parity. PROTOCOL_v2
+  §2 delivered note + §6 row. THE PROD FLEET (tel0s copied 44 rigs
+  into the overlay — one directory too deep; flattened): board before
+  ragdoll 56/3, ammodoll 68/1 → after ragdoll 59/1, ammodoll 69/0,
+  bodysim 20/0, reachrig, settled-pose 19/0, NO table touched. (1)
+  HANDOVER carried no hinge axes: the transported normals were rebuilt
+  from REST on a seeded doll → hands 12–22cm off after ONE step on
+  41/44 rigs (the one-rig check sat on a rig that barely moved its
+  arms — now fleet-wide); snapshots carry `h`. (2) snapshot ROUNDING
+  is chaos food: 0.1mm/1mm·s⁻¹ → 1–35cm at 80 steps on 20 rigs; exact
+  → 0.00cm; the packer is full precision. (3) tel0s's skeleton is
+  authored 0.233m forward of its root: _followRoot drew the corpse
+  23cm from its physics and the drive read bone positions 23cm off
+  the particles → spine antiparallel, stale frame, chest 42° roll —
+  drive directions from particles now, _measureHipsLocal in the base
+  (both engines). (4) ammodoll widened limits in the UNcentred Euler
+  frame while Bullet measures in the centred one (Euler angles are
+  not additive across axes): feline's stride still 8.6–10.7° over →
+  fixed-point iteration of the centering; a LOCKED axis born off locks
+  AT the born angle. OPEN, NAMED BY THE BOARD: post-landing CREEP —
+  the ground contact is a pure vertical clamp; mythos-2 after a shove
+  lands +37cm then creeps back 39cm over 5.5s while an arm fights its
+  limits (painthair 7cm). Every constraint family toggled changes the
+  outcome (chaos); a sleep-regime grip made feline flail → reverted.
+  Wants a tuned ground-friction law swept in rag-tune — colleague
+  territory; the shove check judges the shove (a second after), a new
+  check judges the creep. UPSTREAM-FLAGS §3a carries the whole run.
+  LESSONS: a per-rig check on FLEET[0] is a check on one rig's
+  temperament; a handover is the SAME body — carry every transported
+  state and carry it exactly; when an instrument-scoped fix moves the
+  board the wrong way, revert and name the item rather than tune.
+
+- **2026-09-01 — §24t-7: THE ARM FITTED TOO EARLY (8488283).** tel0s,
+  after §24t-6, on FLAT ground, reloaded, private window: "the barrel
+  really is dropping through the ground for a moment before resettling
+  on the surface" — and rightly suspicious of the interpolation, since
+  it began with that build. Two probes cleared the interpolation (a
+  convex blend of two on-or-above-ground poses cannot undercut them;
+  0/300 frames below the law; a position.y setter trap on the barrel
+  caught zero below-ground writes). The third probe — a copy of
+  commons, punting FROM the page, sampling the RENDERED mesh's lowest
+  world point per frame — showed the mesh climbing 1.37m while the
+  origin hopped 0.28m: the cosmetic tumble was running on the barrels
+  and sweeping the 1.3m (scaled) arm in an arc; for tel0s's −z/+x
+  punts the arc goes DOWN through the ground, and the righting slerp
+  brings it back — the report, verbatim. WHY the §24t-4 arm gate let
+  it through: the geometry was fitted from the collider box ONCE at
+  the applier's first sight of the body; a body already resting in
+  the join snapshot is seen on the first frame after hydrate, before
+  its model has loaded and its box exists → cached "origin-centred"
+  for the tab's life. Every earlier probe spawned then punted (model
+  loaded, arm right); tel0s's barrel has been a resting sim body since
+  punt 104, so EVERY RELOAD since — the first being for the
+  interpolation build — re-armed the tumble; the same stale fit
+  zeroed the §24t-6 lift ("still getting it to an extent"). FIX: the
+  fit re-runs whenever the collider box identity changes; unknown
+  geometry = no tumble, no lift. sim-ground-smoke flight 3 reloads the
+  page with the body in the join snapshot and asserts no tumble (max
+  tilt 0.0°) and the mesh never below its ground (0.000m) — on the
+  previous build the same flight went 1.37m up, then through the
+  floor. LESSON for the notes: a per-frame gate that reads a lazily
+  built index must re-read it, never memoize its absence. Gates:
+  sim-ground-smoke 7/0, sim-smoke 9/0, parity PASS; commons-copy probe
+  0 frames below ground.
+
+- **2026-09-01 — §24t-6: THE GHOST'S VERTICAL HALF (aaccf29).** tel0s:
+  "gravity overrides and the barrel clips down through the ground when
+  I punt it, before it pops back up to its new resting place on the
+  meadowgrass." The sim never does — every tick of all five commons
+  0.2.0 flights has y ≥ g — and neither does the applier (a frame-
+  sampled probe in a scratch hilly world: 0 frames below the terrain
+  law in 300). It is the barrels' two-metre ghost (§24t-4), vertical:
+  the sim grounds the entity ORIGIN (all it can know — the mesh is an
+  asset fact never in the log) and the visible cluster stands 1.95m
+  away on a slope where the ground is somewhere else. Measured along
+  tel0s's own punts (seq 107–108): the cluster sat up to 29cm inside
+  the hillside at every landing, surfacing briefly at the top of each
+  hop — exactly the report. FIX: the applier shows the visual center
+  standing on ITS ground (lift by the terrain difference between the
+  two footprints — collider-box center × scale rotated by the sim's
+  yaw). Presentation only, like the tumble; ~0 for origin-centred
+  models, 0 without terrain, never read back. NEW GATE
+  tools/sim-ground-smoke.ts (commons's terrain, the barrels at seq
+  108's launch, two flights sampled per frame): origin never undercuts
+  the law, cluster never sinks (worst −0.0001m), rests ON its ground
+  (0.0000m) — the same probe read 150/150 frames below, worst −0.29m,
+  before. UPSTREAM-FLAGS §3b gains the vertical consequence + the two
+  residues only the asset fix removes (a body RELEASED to the fold is
+  realized at the authored origin height; the static terrain re-seat
+  seats by origin) + why the re-export is a migration (every logged
+  pos names the current origin). Gates: sim-ground-smoke 5/0,
+  sim-smoke 9/0, sim-test 21/0, parity PASS.
+
+- **2026-09-01 — §24t-5: THE FLIGHT WITHOUT THE JUDDER (b629e50).**
+  tel0s confirms 0.2.0 fixes the physics (commons carries the
+  eidosim@0.2.0 epoch at seq 102) and asks for the thing PROTOCOL_v2
+  §5 always promised: "clients interpolate presentation between ticks
+  exactly as they interpolate presence" — the shadow sim advanced to
+  the ceil-quantized tick, so a 66ms tick painted four frames running
+  on a 60Hz display ("I can sort of see the individual physics
+  updates in the form of juddering"). The applier now remembers every
+  body's position at the tick BEFORE it steps the sim across a
+  boundary and shows the lerp of the two at now's fractional phase:
+  because tickOf rounds UP, the current state is the interval's END
+  and the previous tick its START — exact sim time, zero added
+  latency, never an extrapolation (nothing overshoots a bounce or the
+  ground). Remembered starts are dropped whenever anything else moved
+  the sim (an intent whose ts ran ahead of this clock, a new epoch):
+  those bodies show the word outright until the next boundary — v0.1
+  behaviour, the header's skew doctrine unchanged. Resting bodies
+  stand on the word exactly (the collider re-index reads it).
+  PRESENTATION ONLY — no sim number is read back; the parity legs
+  read state.sim. sim-smoke gains a ninth check: the realized ball
+  moves on (nearly) every animation frame while in flight — 47/47
+  live frame pairs (tick-stepped managed ~1 in 4). Also dropped the
+  round-3 PUNT-DEBUG probe line. PROTOCOL_v2 §5 records the delivery.
+  Gates: sim-smoke 9/0, sim-test 21/0, replaybench 1/1 (re-recorded —
+  the playtest grew commons), parity PASS.
+
+- **2026-08-31 — §24t-4: THE BARRELS' TWO-METRE GHOST (d6295cd).**
+  Round 4 closed the constant-direction mystery with a ruler:
+  scifi_barrels_group_of_four.glb ships its geometry 1.95m from the
+  model origin (bbox center [−0.001, 0.504, −1.953]). The entity
+  origin — what /punt aimed through, what reach measured, what every
+  rotation pivots on — hangs in EMPTY AIR 2m from the visible
+  cluster: standing "directly in its way" still put tel0s behind the
+  ghost, so all nine logged punts stamped +z (the log reconstruction
+  shows the barrel marching 24m north, puncher forever 1–3m behind
+  the origin). The same offset powered round one's "wide arc through
+  the ground" (any rotation sweeps the mesh on a 2m arm). FIXES:
+  colliders.entityWorldCenter(id) — where a thing VISIBLY is (box
+  center × scale × yaw + position); physobj kick() measures nearest/
+  reach/direction by the center (proven with the real model in a real
+  client: north-of-visible stamps [0,0.9,−1], south stamps
+  [0,0.9,+1]); the cosmetic tumble AND the legacy spin are arm-gated
+  (visual center >0.5m off origin ⇒ arc without spinning).
+  UPSTREAM-FLAGS §3b: the asset wants re-exporting origin-centred;
+  summarizeGlb makes a library-wide offender audit a one-liner.
+  MEANWHILE the righting-mid-air report persists because commons
+  NEVER ENTERED 0.2.0 — the log has no new epoch entry (old sequencer
+  build still running, or /epoch not re-run): restart the sequencer,
+  /epoch once, and the flat floor is history. Gates: sim-test 21/0,
+  sim-smoke 8/0, replaybench 1/1, parity, panelbench.
+
+- **2026-08-31 — §24t-3: EIDOSIM@0.2.0 — terrain-aware ground
+  (c5ba7ed).** Round 3 solved the whole mystery: tel0s plays on HILLY
+  terrain, and 0.1.0's flat floor grounds every flight at launch
+  altitude — a hilltop punt lands on an INVISIBLE floor over the
+  downhill meadow. That is BOTH remaining reports at once ("stopped
+  above the ground"; "rights before hitting the ground" — it truly
+  landed, on the flat floor; the tumble gate was innocent). The
+  "constant direction" was the chase dynamic + pre-fix orphaned fold
+  (the logged dirs seq 82–95 vary honestly). NEW shared/terrainmath.js:
+  the toolkit height law (already nearly covenant-clean: integer-hash
+  mulberry32 + value-noise fBm, NO transcendentals) in pure exact ops —
+  two stated substitutions (pow→halving, hypot→sqrt); ≥99.8%
+  bit-identical to the walked mesh, worst Δ ~1e-15. shared/sim.js:
+  SIM_ID=eidosim@0.2.0, BOTH laws carried — 0.2 folds terrain entries
+  (epoch adopts standing terrain; mid-epoch terrain releases every
+  body; grounded sliders GLUED to terrain; rising ground splats;
+  terrainless = flat fallback; snapshot carries params), 0.1 path
+  UNTOUCHED — replaybench digest for commons (0.1.0 flights) UNCHANGED
+  across the bump, the Covenant-II proof. Live upgrade is clean via
+  §24t-2's machinery: /epoch on a 0.1 world mints 0.2 (different sim ≠
+  idempotent-refusal) + epoch-release places carry bodies across.
+  End-to-end: hilly scratch world, punt launched at −0.338, rests at
+  terrain −0.453190 under it, bit-exact. Gates: sim-test 21/0 (8 new
+  incl. the 0.1.0 law pinned BY NAME), sim-smoke 8/0, replaybench 1/1,
+  smoke 85/85, parity. PROTOCOL_v2 §2 records it. tel0s's next step:
+  run /epoch once in commons — it upgrades the world in place.
+
+- **2026-08-31 — §24t-2: PLAYTEST ROUND 2 (82ae29a).** Three reports,
+  one root: the fold and the sim disagreeing about where a punted thing
+  IS. (1) /epoch IDEMPOTENT — same sim+tick refused pre-log (the entry
+  would clear every live body: a mid-flight barrel freezing in the air
+  IS the "stopped above the ground"). (2) A REAL re-epoch (different
+  tick) now RELEASES bodies into the fold: the after-hook commits each
+  live body's last sim word as place {via:"epoch-release"} (the lease
+  table's own release shape) — the stale-fold orphaning was also the
+  true "too far to kick while standing next to it" (vPunt composes
+  sim→lease→FOLD, and the fold held a spawn point punts ago). Verified
+  live: rest 3.78m → re-epoch → fold reads [3.7834,0,0] + release
+  entry in history. (3) /geom composes simPose like vPunt already did
+  (agents measured punted crates where they USED to be). (4) the
+  cosmetic tumble rights on the sim's own word (v[1]!==0), not a
+  height threshold — tick-quantized descent+bounce-tail righted
+  barrels visibly mid-air. replaybench baseline re-recorded (the local
+  commons log grew — the playtest itself). NO sim-law change. Gates:
+  sim-smoke 8/0, sim-test 13/0, replaybench 1/1, smoke 85/85, parity.
+
+- **2026-08-31 — §24t: THE PUNT PLAYTEST (f6c7eed).** tel0s booted
+  barrels: "spin through the ground in a wide arc, then slide far
+  away". Three findings, ZERO sim-law changes (no epoch bump): (1) the
+  world had NO EPOCH — entering one took a raw world_verb, so the
+  playtest of the new physics ran the LEGACY volunteer sim; /epoch
+  [tickMs] is a command now (owner-ranked server-side). (2) shapeOf
+  classified any round-ish bbox as a BALL — the 2×2 barrels group
+  rolled about its origin (mesh sweeping the ground) on ball friction;
+  the ball test now requires ball SIZE (<0.9m), furniture-scale things
+  tumble+settle like crates. (3) feel: default power 5→4, epoch lift
+  ratio 0.45→0.9 (the sim normalizes the stamped vector — at 0.45 a
+  default punt apexed at 6cm, a scoot; now a knee-high hop, apex
+  0.28m, rest 2.8m; all INPUTS, logged meaning unchanged), plus a
+  COSMETIC tumble in simworld (airborne bodies tumble ⊥ travel, right
+  themselves grounded — presentation-only, position untouched, parity
+  reads position). /KICK IS MODERATION, SOLIDLY (ruling): the
+  one-word-two-acts overload died; /punt owns physics and gained
+  people — /punt <person> = the consented ragdoll shove (shovePerson
+  shared with /push; the target's client decides). Help def +
+  registry updated. Gates: sim-smoke 8/0 (browser leg runs the tumble
+  applier), defs-smoke 31/0, smoke 85/85, paritybench, panelbench.
+
+- **2026-08-30 — §24s: THE OPEN ROAD — owned numerics + the renderer
+  seam (4235a38, fb85d8c, 8a739fa).** (1) docs/UPSTREAM-FLAGS.md: the
+  one-document merge briefing for colleagues (6 upstream reds w/ fixes,
+  the now-live dormant features, the physics instrument fixes prod may
+  want, process lessons, the structural map). (2) shared/simmath.js
+  (simmath@0.1.0): Covenant I's owned-numerics kernel, delivered in
+  no-build plain JS instead of the promised wasm — sinT/cosT/atan2T/
+  expT from ONLY the covenant-blessed exact-op set (Cody–Waite two-word
+  reduction, fixed-order Taylor with exact-op coefficient divisions,
+  atan argument-halving, exponent-bit 2^k with a load-time self-check).
+  Bit-identity is a property of the CONSTRUCTION; coefficients are the
+  version. Accuracy ≤1 ulp sin/cos to 1e7 rad. tools/simmath-test 14/0:
+  a 48,000-point sweep digests IDENTICALLY under Bun-JSC, node-V8 and
+  deno-V8, pinned to a committed golden. No shipped sim uses it yet —
+  it exists so §6's vocabulary can grow without reopening Covenant I
+  (PROTOCOL_v2 §2 records the delivery; wasm stays the named fallback).
+  (3) docs/RENDERER-SEAM.md: full 113-module inventory of the charter
+  thesis — ALREADY ~63% TRUE by line count (shared/ provably
+  three-free; 72 modules import no three; the 17k coupled lines
+  concentrate in ten files); two channels (core.js import chokepoint,
+  the globalThis host contract — the big unsealed one); four-move
+  program. MOVES 1+2 EXECUTED same day: client/lib/capture.js (the one
+  framebuffer-readback primitive — net.js snap + screenshots; avatar
+  portraits deliberately NOT unified, offscreen-subject ≠ frame
+  capture; survey correction: world.js compileAsync was already
+  warmqueue-conducted) and client/lib/base.js (bus/CONFIG/report/
+  colours/helpers split from core.js, 59 modules retargeted; core.js =
+  127 lines of pure presentation substrate; headless suites now run
+  the REAL bus/report). Move 3 counted: first-party code uses 76 THREE
+  symbols — a written-downable interface. Move 4 (replace the globals
+  contract) is upstream-shaped and waits on coordination. Gates all
+  green (parity/light/panel, both dolls, bodysim, defs-smoke, smoke,
+  sim suite + simmath). REMAINING OPEN ROAD: seam move 3 (mechanical,
+  large churn), move 4 (needs Skye/colleagues), §6 sim vocabulary
+  (⚑-open, colleague call), the doll run on prod's fleet, and the
+  engine decision itself (Phase 0/2 — reopened, colleague territory).
+
+- **2026-08-30 — §24r: THE TWO §C CALLS, delivered (3a5d93d, d44dc02).**
+  tel0s ruled: port the seats write-half, unify the stdio door. (1)
+  SEATS: the #101/#105 store was three-review-rounds-hardened with ~90%
+  unreachable — no HTTP proposal door, no verdicts served, judge()
+  never called. The spec already existed as tools/seat-lifecycle-test
+  (37 checks, authored to FAIL ON MAIN); it passes whole now. POST
+  /seat-profile: NAMED actor only (tokens.json bearer or aid1 — the
+  /upload legs; the anonymous door token is 401, a seat profile moves
+  every wearer), proposals ONLY (countersign keeps NO HTTP path — the
+  operator tool on the box), immediate announce (the store's mtime
+  bookkeeping keeps the 5s poll from repeating it). /avatars entries
+  carry the PRE-JUDGED `seat` verdict + x-profiles-rev. seats.ts owns
+  the one live store + announceProfileUpdate (one push, two writers,
+  no drift). Test fix: the clip sha now resolves the SAME serve ladder
+  the store judges (patched fork first) — hashing the library copy
+  read "stale" forever against bytes no client animates. (2) STDIO
+  DOOR: mcpl/tools.ts is the ONE table + ONE dispatcher — TOOLS moved
+  verbatim; the 26-case 460-line handleTool switch became HANDLERS
+  (verbs.ts treatment, §B3's deferred item, bodies verbatim) with a
+  LOAD-TIME advertise⇔handle assertion; host differences ride ToolCtx
+  (persistence hooks, push/hold activity truth, catch_up cursor,
+  travel as a session-only hook). net-server 1981→1445; the stdio
+  server 258→82 — a pure transport now, 16→34 tools (pose, reach,
+  animate, measure, world_history, sheets… free forever). NEW
+  tools/stdio-door-test.ts 13/0 — that door's first test EVER, real
+  JSON-RPC over stdin/stdout. Gates: seat-lifecycle 37/37,
+  seats-store, seatcore, smoke 85/85, typing-mcpl, whisper-disable
+  5/5 (regexes retargeted to the table), join-rfc005 59/0,
+  door-cap-gate-live 23/0, channel-cap-gate 19/0, approach-wire 27/0,
+  media-whitelist 27/0, defs-smoke 31/0, paritybench. Pre-existing
+  env reds verified unchanged at HEAD: spoken-say-door, keepalive,
+  incident-88-door (fixed-port class). EVERY SURVEY ITEM (§A–§D,
+  R0–R4, both §C calls) IS NOW CLOSED.
+
+- **2026-08-29 — §24q: R4 — panels and defs round two, delivered
+  (20e998c…b7254d9).** Four gated slices. (1) NEW client/lib/rows.js —
+  the house row builders (sliderTable/checkRow/selectRow/btn/btnRow/
+  sectionHead + the SELECT_CSS skin), dumb on purpose: layout and
+  wiring, never state, so reset stays write-then-repaint everywhere.
+  debug.js collapsed onto it 917→727 (the slider-table loop was
+  spelled SIX private times in that one file; three copy-buttons →
+  copyBtn+tableLiteral; five section heads → a [head, builder] loop).
+  (2) BUILD.JS FIVE-WAY SPLIT along its own banners: 1301→504 gesture
+  core (mode/selection/ghost/drag/undo + the ONE pointer/key router) +
+  seatedit.js (the seat-anchor grammar; the router hands gestures
+  across the seam — armed placement outranks the ghost, gizmo picks
+  lose to it, exactly the old ladder; hooks back = build.js exports,
+  cycle eval-safe by construction) + palette.js (models/avatars/
+  upload/STARTER) + groundpanel.js + skypanel.js. main.js/mybody.js
+  retargeted; toggleBuildMenu had ZERO consumers and died. (3) THE
+  GROUND VOCABULARY IS A DEF (defs/ground/_palette.json +
+  shared/grounddefs.js): tints (the hexes that sat beside _colors.json
+  references), shapes, grass dials, and the five planting bags — blade
+  plantings declare their tint column and take the height dial, the
+  mojave planting NAMES its flora preset as data. SINGLE-SOURCE: no
+  fallback vocabulary (the fallback would be the mirror reborn); a
+  defs push repaints in place carrying the author's dials. (4) SKY
+  CLOCKS + HELP AS DEFS: defs/sky/_clocks.json (the hardcoded LA tz;
+  validator checks every tz against host IANA — a typo would throw
+  inside hoursAt on every client at once; a committed tz the def
+  dropped shows as a raw-tz option, never as "authored") and
+  defs/ui/_help.json (ui.js's 120 lines of prose; a world can reword
+  its own welcome; the layout section stays code-side for its live
+  reset button; KEYMAP export dead). All on the presets law — commits
+  write concrete args, the log never stores a def name. NEW GATE:
+  tools/panelbench.ts (16 checks) — the panels lazy-build on open, so
+  construction errors were invisible to every boot gate and the
+  surfaces went their whole lives eyeball-only; now a scratch world +
+  headless Chrome opens all four sections, round-trips edit mode,
+  reads the help sheet, counts the debug panel's 45 sliders, and
+  demands zero console errors. NOT def-ized deliberately: sky slider
+  specs (code-shaped UI plumbing), Piper voice + STARTER (small; on
+  demand). Gates held per slice: panelbench 16/0, defs-smoke 31/0
+  (was 28 — +ground/clocks/help), paritybench, lightbench 30/30,
+  smoke 85/85. THE SURVEY'S PROGRAM (R0–R4) IS COMPLETE; outstanding:
+  the two §C colleague calls (seats write-half, stdio door) and the
+  handleTool table that rides them.
+
+- **2026-08-29 — §24p: R3 — the dolls share a spine (453aaf2).** The
+  survey planned R3 against three engines; rapierdoll's retirement and
+  upstream's shared/joints+humanoid shrank the honest remainder, and
+  this is it. NEW client/lib/rigmeasure.js: the truths the two
+  survivors must AGREE on, one copy each — the 12-pair body cut
+  (byte-identical as CHAINS/CORE_SEGMENTS until now; JOINTS +
+  DRIVEN_BONES derive, re-exported from ragdoll.js for avatar/bodydrag),
+  closestParams + segDistance (ammodoll had re-spelled the solve inline
+  as segd), rigFrameOf, and the {j,p,v,dy} HANDOVER FORMAT packed and
+  parsed once — that one is a wire surface (a verlet on one machine
+  seeds a bullet rig on another; four spellings before). NEW
+  client/lib/bodyengine.js: BodyEngineBase, the engine contract stated
+  where both engines stand on it — lifecycle fields, .pinned, the
+  impulse law (cap 8 + _topple + clock restart), the settle CLOCK law
+  (pinned resets, quiet accumulates, cancel clears; thresholds stay
+  engine-tuned — the verlet keeps its hysteresis band, the bullet its
+  linear+angular quiet), root-follows-hips. The verlet stops mirroring
+  shared/joints.js torsoRadius (calls it now — the comment there had
+  promised "the same derivation the ragdoll uses"). RAPIERDOLL
+  RECOVERY: ammodoll's static build asks nearColliders (the §14.2
+  service query) instead of scanning the whole colliders map. NEW
+  tools/bodysim-test.ts, 20 checks: the makeRagdoll seam had ZERO
+  coverage (how dropped-seedVel lived a month) — now asserted: verlet
+  floor while wasm warms, loaded engine answers, stored choice,
+  unknown-name fallback, interface parity, single ownership of the
+  shared spine, and a handover snapshot with hips 0.5m from the bones
+  reaching BOTH engines through the door. Harness dedupe SKIPPED: the
+  236 identical lines are down to 27 of generic scaffolding (rig-load
+  absorbed the truth); boilerplate is not a mirror. Boards unchanged
+  through the whole extraction: ragdoll 59/0, ammodoll 68/0. Gates:
+  bodysim 20/0, settled-pose 19/19, reach/reachrig/reachwire,
+  paritybench, lightbench 30/30, bootjank clean. KNOWN-RED (pre-
+  existing at HEAD, upstream's): avatar-test — their reach integration
+  calls _reachOwned on the test stand-in avatar, which lacks it; add to
+  the flag-to-upstream list. R4 remains; §C colleague calls unchanged.
+
+- **2026-08-29 — §24o: THE DOLL BOARD GOES GREEN — the four reds were
+  two bugs and two lying instruments (253bf10).** Ruling from tel0s:
+  fix knee/fold in how the dolls APPLY limits, not in the tuned tables
+  — and the tables indeed needed nothing (shared/joints.js untouched).
+  (1) Knee "hyperextension" (claude_suit 117°, mythos-wings 126°) was
+  the tumble suite's POSITIONAL instrument misreading a legal fetal
+  fold: it compared shin deviation against torso-forward, valid only
+  below 90° of thigh flexion in the measuring frame — hips at their
+  stop plus legal spine curl put the thigh at ~119°, where a legal
+  backward fold reads a forward component of exactly −cos(thigh angle)
+  (predicted 0.49, measured 0.48). Every leg joint sat within 6° of
+  its table the whole time. The instrument now predicts the legal fold
+  direction from the thigh's own swing-from-rest; control with
+  inverted knees fires at 123°. (2) The hand-tuned hip row (flex 90 /
+  ext 8 / twist 0 / z ±13) RESTORED — parked for the wrap-point class,
+  whose fix (range centering) landed months ago with a "put the row
+  back" note nobody collected. (3) The wings 73°-vs-72° crumple was
+  foldOf normalizing mythos-wings' 7.2mm hips→spine bone (the rig
+  authors its real span in upperChest) — direction noise under a
+  millimeter of Bullet linear slack while both spine joints sat at
+  their 10°/20° stops; lower axis now hips→chest, same function for
+  both engines. (4) The wings shove Δx=−0.63 was not direction bias
+  but CHAOS: the verlet's hips-spine-chest FLEX cone read that same
+  7mm link's noise-direction and swung the real spine→chest link in
+  answer, every substep — 65 m/s peak at ground impact on a plain
+  topple (claude_suit 3.8), six seconds of thrash drowning a 2.5 m/s
+  shove. FLEX rows whose rest link is under 3cm are skipped at build.
+  Peak 65.6→3.3, settle 257→125 steps, shove lands +0.14 the way
+  pushed. BOARD: ragdoll 59/0, ammodoll 68/0 — first fully green doll
+  board this arc. Gates: settled-pose 19/19, reach/reachrig/reachwire,
+  paritybench, lightbench 30/30. THE PRE-UPSTREAM-MERGE DOLL BLOCKER
+  IS CLEARED (the fleet is still the local 2-rig overlay — worth one
+  run on prod's 14 before the colleagues' merge). LESSON, twice in one
+  day: a rig that authors a 7mm bone breaks any instrument or
+  constraint that treats segment direction as free — length-floor
+  every direction read. R3 extraction is now unblocked.
+
+- **2026-08-28 — §24n: THE CATCH-UP MERGE — 283 upstream commits, the
+  refactor holds.** anima/main (the live org line; the SkyeShark
+  `upstream` remote is stale — new fetch-only remote `anima`, push
+  DISABLED) merged into rimward (febba9e) and main (af200de, clean —
+  the §22 restore's 17 markers survive). Upstream's arc: the #104
+  relay-floor cutover (voice.js DELETED, in-process SFU via werift,
+  credentialed sfu-* wire, incarnation-stamped voice-service), the
+  reach/touch lane (declarative pose.reach re-solved per client,
+  shared/contact+joints+humanoid+reachwire — they did their own
+  joints-table extraction, superseding half of our R3 plan), KTX2
+  store shadows + negotiation keys, RFC-005 channels, mcpl-core-ts as
+  a sibling file: dependency (cloned + built at ../mcpl-core-ts; mcpl/
+  has its own bun install now). WHERE UPSTREAM MET THE REFACTOR:
+  micstate = our factories + their delegation removal (the cutover its
+  comments predicted); server.ts = our table/join-split + their seven
+  SFU cases inlined verbatim (gen-coupled, upstream-hot) + their
+  takeover→retireRelayLeg in installJoin + attest rung in messages.ts;
+  chat = our dispatcher + their /audio as chat-local + touch/letgo via
+  registry rows; agent = our shared-fold structure intact around their
+  reach subsystems. UPSTREAM BUGS FOUND (fixed here, FLAG TO THEM):
+  (1) their smoke asserts rtc delivery their server deleted; (2) their
+  mesh-fallback suite tests the deleted delegation (ours rewritten
+  post-cutover); (3) agent.ts imports three/webgpu with no three in
+  any root lockfile — the door can't boot clean (root gains three
+  ^0.184.0); (4) the hardened token registry rejects example keys and
+  dev-token IS an example key — their typing suite can never pass
+  (ours uses a scratch registry). MERGE MISHAP SURVIVED: a stash
+  during the merge dropped MERGE_HEAD; restored by hand (echo sha >
+  .git/MERGE_HEAD) — never stash mid-merge. GATES (all green):
+  smoke 85/85 (rtc check now asserts the CLOSED lane), paritybench,
+  lightbench 30/30, defs-smoke 28/28, sim-smoke 8/8 (the whole §24
+  arc survives), sim/tick/state/foldfix/flora/replaybench, leasetest
+  19/19, behaviortest 27/27, incident-88 18/2-known, typing-mcpl,
+  micstate suite, THEIR suites: sfu-test 70/70, sfu-adapter 42,
+  relay-decision 23, reach-test, mini-sfu. MYTHOS-WINGS landed
+  (tel0s, assets/opt — local only, ignored): ammodoll 66/2, ragdoll
+  56/3, IDENTICAL at pre-anima-merge = zero merge regressions; the
+  remaining doll reds are pre-existing tuning/fleet items
+  (ktx2-variant knees, wings knee+shove, 8.6cm handover, missing
+  no-upperChest rig) — STILL THE PRE-UPSTREAM-MERGE BLOCKER.
+  AMENDED same day: no-upperChest resolved WITHOUT staging —
+  claude_suit.vrm (library) is a no-upperChest rig; copied into the
+  local overlay (ignored). rig-load gained the roster's own
+  .ktx2.vrm exclusion (texture variants were being tumbled as
+  bodies), and the 8.6cm HANDOVER RED WAS AN ARTIFACT RIG — it
+  passes on the real fleet. The TRUE blocker list is now four
+  tuning items, all on real rigs: knee hyperextension (claude_suit
+  117°, mythos-wings 126°), the wings 73°-vs-72° fold bound, and
+  the wings shove direction (Δx=-0.63). ragdoll 58/1, ammodoll
+  66/2.
+
+- **2026-08-27 — §24m: R2 — the tables, delivered.** (1) The ws switch
+  is a handler table (90cc9fc): server/messages.ts, 20 entries, bodies
+  moved VERBATIM (the verbs.ts precedent — expel rides ctx, module
+  never imports server.ts); held-whisper machinery moved with its
+  writers; the two source-text suites retargeted; server.ts 1379→851.
+  (2) atomicWrite (server/fsutil.ts) replaced eight tmp+rename pairs —
+  seats untouched (pending call). (3) Every wire limit has a name
+  (a35f193): server/limits.ts, 27 sites, env-overridable, values
+  unchanged; LADDER named in config; generic resolveInLadder SKIPPED
+  (one consumer = theater). (4) JOIN SPLIT (11b924a): admitJoin (can
+  only answer and refuse — never touches the roster) / installJoin
+  (the only roster mutator) / buildSnapshot (pure read, finally
+  testable without a socket) — ADMISSION BEFORE TAKEOVER is structural
+  now, not a comment. (5) tools/harness.ts (4be976d): the scratch
+  bench, one copy; both §24 smokes converted (~180 lines gone);
+  lightbench/paritybench keep bespoke scaffolds until next touched
+  (their Windows/Edge lessons live there). Deferred with §C: handleTool
+  table. Gates held throughout: smoke 85/85 through the table,
+  behaviortest 27/27, leasetest 19/19, sim-smoke 8/8, defs-smoke
+  28/28, authtest 22/1-known, settled-pose 19/19, whisper-disable 5/5,
+  voice-wiring 35/35, paritybench, lightbench, replaybench.
+
+- **2026-08-27 — §24l: R1 — one truth, delivered.** Five mirrors dead:
+  (1) aid1Slug in server/aid1.ts + aid1JoinIdentity in auth.ts — the
+  three doors share one identity derivation (0eb5fe3); (2)
+  shared/force.js owns the radial-cause falloff — bodies keep only
+  consent + ground-zero direction; (3) the command registry is the
+  WHOLE alias truth (29aee4f): chat.js's 26-case switch → five
+  chat-owned handlers + resolveCommand; use/mount/dismount/debug join
+  as listed:false rows; /use's alias-is-the-action is declared data;
+  (4) the emote vocabulary is a def (bdb1580,
+  defs/animations/_emotes.json): key order = bar/number-key order,
+  clip/icon/listed; avatar.js hydrates in place, the bar rebuilds on
+  the push, Digit[1-9] follows the order — four drifted copies gone;
+  (5) ONE onset machine (93eac2e): makeOnsetGate/makeLevelMeter in
+  micgate.js, both transports instantiate, twins deleted (voice
+  1388→1207, micstate 429→255, net −316). Full voice suite green incl.
+  micstate-exec (executes, not reads). Deferred with the §C calls:
+  stdio-door tool table (rides the retire-or-unify decision). Lesson
+  paid twice now: backticks inside double-quoted commit -m get
+  command-substituted by zsh — single-quote or drop them.
+
+- **2026-08-27 — §24k: two retirements + R0, the bleeding stopped.**
+  RAPIERDOLL RETIRED (41422ba, −1,589 lines): panel-only reachability,
+  no feature parity, permanent divergence tax; tone motors recoverable
+  from history. UPSTREAM-PATCHED RETIRED (69a598a): the grass engine
+  came home — client/lib/vegetation/ (vegetation.js + three generators
+  vendored @62365e9, provenance-stamped, cherry-pick-by-hand forever);
+  the ASSET overlay survives as top-level patched/ (same top /library
+  precedence, delete-to-fall-back; carries the fixed sit clip); the
+  vendor-base merge-file recipe is obsolete. R0 (survey §A, all
+  eight + hygiene): gate fixes ported into the mesh copy that runs
+  (speaking latch, analyser leak); ttsrow's mic check gains its
+  fallback; main.js mic-open goes through micstate; nails are firm on
+  the owner's machine (localbody passes firm; verlet accepts it for
+  parity); physobj per-axis scale; net-server loses the shipped \$HOME;
+  THE AGENT FOLDS WITH shared/fold.js (applyEntry's diverged mirror
+  deleted — entity/mount maps are derived views + a side-effect pass;
+  #88 strictness UPSTREAMED into the reference fold: place/dismount
+  take finite-vec3 or nothing); THE AGENT SEES THE SIM (adopts the
+  join cut, folds punts, stamps flight/rest into perception; supports
+  drop at launch, rebuild at rest); build.js escapes server names.
+  Pre-existing environmental failures noted, verified at HEAD:
+  ragdoll-test 2 (VRM fleet composition), incident-88 2 (support
+  scene), knockdown/compfold (need external servers), emitter-percept
+  passes-then-hangs. Seats + stdio-door calls still await colleagues.
+
+- **2026-08-26 — §24h: THE SIM IS REAL — eidosim@0.1.0, proven
+  cross-engine.** PROTOCOL_v2 implementation, four slices, one day:
+  (1) shared/sim.js (75328cf) — exact-ops ballistics (no
+  transcendentals/clock/randomness), ceil quantization, dialect-3 punt
+  (dir required), resting-contact + slide-friction (the terminal
+  micro-bounce taught the contact branch), authored-word-wins release,
+  foreign-epoch refusal, schedule-independent advancement; sim-test
+  13/13. (2) sequencer (580e7a0) — epoch verb rank 2 (validated
+  against the carried sim, after-hook folds the barrier), fold.js
+  epoch case + stateToEntries preserving the tick-0 anchor ts,
+  WorldLog folds sim beside instant (normative order), snapshots +
+  join payload carry the cut, 'sim' tick system, debug {sim:true},
+  punt-requires-dir + sim-aware reach. (3+4) client + proof (cc5201e)
+  — shadow sim in state.js, simworld.js applier on the engine frame
+  hook, physobj punt-volunteering stands down under epoch (drags/
+  hand-offs untouched), kick UI stamps full launch vector. THE PROOF
+  (sim-smoke 8/8): one punt computed by JSC (sequencer), JSC
+  (independent refold from fetched entries), and V8 (browser shadow) —
+  rest p=[8.143363781124814, 0, 3.1430091343374413] BIT FOR BIT in all
+  three. Covenant I holds across engines. replaybench grew sim legs
+  (self-agreement + sim-snapshot parity, adversarially verified).
+  v0.1 scope honest: punt only, own-ground-plane collision (terrain =
+  sim@0.2 epoch bump), force + §6 ⚑s open. Worlds OPT IN via /epoch —
+  nothing changes for any world until its owner speaks it.
+
+- **2026-08-25 — §24g: three more domains — clips, skies, building style.**
+  ANIMATIONS (9b4a44b): defs/animations/ overlays the clip roster,
+  same declared-beats-discovered contract as avatars; vrma resolves on
+  the clip ladder (PATCH>OPT>LIBRARY — resolveLibFile deliberately
+  doesn't know .vrma); tags/doc ride /defs, /animations stays the
+  prefetcher's byte-budget shape. SKY (9b4a44b): build.js's five named
+  skies → defs/sky/_presets.json — authoring conveniences ONLY (commit
+  writes concrete args; foldSkyEntry computes at fold time, so a
+  def-referenced preset would let a mutable file rewrite logged
+  meaning — presets live strictly on the authoring side). New
+  client/lib/defs.js = shared client registry view (one fetch,
+  invalidated by defs-updated; the preset row repopulates live).
+  STRUCTURE (3338803): investigated — the grid engine is pure
+  algorithm, NOT def material; the def-able surface was the realizer's
+  PALETTE, the "style catalog seam" its own comment anticipated.
+  defs/structure/_palette.json restyles the five slots by MUTATING the
+  live shared materials (colorNode rebuilt through the named finish) —
+  standing buildings restyle on the push. Overlay doctrine (style is
+  never a gate; missing def = built-in style), vs single-source for
+  species. Gates: defs-smoke 27/27, structure-field 159/159,
+  flora.test 70/70, smoke 85/85, paritybench PASS, lightbench 30/30,
+  replaybench green. Def domains now: flora (species+colors+presets),
+  avatars, animations, sky presets, structure palette.
+
+- **2026-08-25 — §24f: the determinism ruling + biome presets as data.**
+  RULING RATIFIED by tel0s: the log stores INTENTS, outcomes recomputed
+  by a deterministic sim — drafted as spec/PROTOCOL_v2.md (f8e81fa,
+  dialect 3, CC0 like v1). The four covenants: owned numerics (no host
+  transcendentals; wasm kernel makes bit-exactness a build artifact),
+  sim epochs + snapshot barriers ("every log is always replayable"
+  beats "one sim replays everything forever"), the planes stand
+  (presence never a sim input; influence crosses as stamped intents;
+  leases stay presence choreography), tick-indexed time (ceil
+  quantization from the epoch entry). Instant fold untouched in every
+  dialect; v1/v2 logs valid forever; intent vocabulary + sim-ownership
+  ⚑-open for ratification. PRESETS (0d0c8fb): the mojave recipe left
+  flora_args.js for defs/flora/_presets.json — declarative template
+  vocabulary (inset/offset-fractions/seedAdd/density×k), interpreted
+  by presetStrokes(args, presets); unknown preset now fails LOUDLY
+  (was silent fallthrough — logged meaning must not drift). The
+  corn/sunflower variety recipes stay in code (generator-coupled).
+  Proven: 7-stroke mojave composed from the def in a live client
+  (defs-smoke 22/22, flora.test 70/70 feeding the shipped file).
+
+- **2026-08-22 — §24e: phase-1 slice 6 — the palette def + LIVE defs.**
+  (0cecb57) GRASS_COLORS left vegetation.js for defs/flora/_colors.json
+  (underscore = domain sidecar convention), hydrated before species so
+  leafRecolor names resolve. And the Rimworld-y payoff: DEFS ARE LIVE —
+  a defs-watch tick system fingerprints defs/ (1s, mtime+size) and
+  pushes `defs-updated` (wire addition); clients re-fetch /defs,
+  re-hydrate REPLACING, and regrow the meadow from the same authored
+  args. Proven under a live headless client: grass.json density edited
+  22→5 on disk → planted 24352→5556, no reboot, no log entry. RULING
+  recorded in defs/README.md: seats are NOT defs — they're a judged
+  store (proposals, countersigns, provenance, locks; #101/#105); the
+  line is "if writing it requires authority/judgment/provenance it's a
+  store; if editing it is authorship it's a def". Gates: defs-smoke
+  20/20, flora.test 67/67, smoke 85/85, paritybench PASS, lightbench
+  30/30, replaybench green.
+
+- **2026-08-22 — §24d: phase-1 slices 4+5 — the entry bus, avatar defs.**
+  BUS (6ad41f8): birth IS publication. Seven append sites hand-rolled
+  append + broadcast({type:'log'}) and only runVerb told the behavior
+  host; now World.commit() appends + publishes on server/events.ts and
+  boot-registered subscribers (client-fanout, behaviors) hear every
+  committed entry uniformly, error-isolated per listener. Rulings in
+  events.ts: genesis stays silent; fanout precedes behaviors (effect
+  entries publish after their cause, seq order dense on the wire); the
+  one reordering (bhv.onEntry before after-hooks) ruled acceptable —
+  only `use` overlaps, and a script hearing it a beat before the
+  reaction's effect sees a legal moment of the world. Bus gauges ride
+  GET /tick. Future systems (seats, recorders, the sim core) subscribe
+  in server.ts instead of teaching another append site to fan out.
+  Per tel0s's ruling on the braid: with defs + (eventually) our own
+  renderer, the upstream-patched override mechanism is on the road to
+  retirement — overrides become defs, not forked engine files.
+  AVATAR DEFS (a0dd10a): defs/avatars/<name>.json OVERLAYS the
+  discovered roster — drop-a-vrm stays live defless; a matching def
+  overrides height (beats the thumbs sidecar); `vrm` declares or
+  repoints a name at any /library path; unresolvable paths refused
+  loudly, roster stands. Gates: defs-smoke 17/17, behaviortest 27/27,
+  smoke 85/85, leasetest 19/19, paritybench PASS, replaybench green.
+
+- **2026-08-22 — §24c: THE CLOBBER — §22 grass was reverted on main
+  since Aug 18.** defs-smoke's engagement check (mode cards-sss where
+  opaque belonged) exposed it: upstream's 95303a7 (Mica, "bring prod's
+  hand-patched vegetation.js into the repo — NOT MY WORK") rode the
+  7fed06e anima-research merge and CLOBBERED our override — and that
+  "hand-patched" file is byte-identical to stock engine 62365e9, so
+  the hand patch contained nothing and the merge silently reverted the
+  whole §22 arc + §23 sunflower rebase. Every stack on main since
+  Aug 18 served the pre-§22 cards-SSS meadow (~26fps class). RESTORED
+  on main (2abcd3a, from 65ea7aa's file — 17 markers, species data
+  verified identical) and pushed. LESSON for the braid: any merge
+  touching upstream-patched/ must re-run the marker count
+  (grep -c 'lodGrow|fastShade|opaqueBlades|baseKeep|sampleBladePalette'
+  = 17) — or just run defs-smoke, which now checks engagement.
+
+- **2026-08-22 — §24b: phase-1 slices 2+3 — defs and the heartbeat.**
+  DEFS (1c9104c): flora species left vegetation.js for
+  defs/flora/<name>.json — shared/floradefs.js validates (type-level,
+  unknown keys preserved, doc field for lore), server/defs.ts serves
+  GET /defs (1s TTL, broken defs refused loudly + individually),
+  FLORA_SPECIES hydrates once before first build (createFlora +
+  loadFloraModule both await; object identity preserved for
+  globalThis). Adding a species = adding a JSON file — proven by
+  tools/defs-smoke.ts: a def-only burgundy species rendered opaque
+  (drawn 6133) existing in no .js file; unknown species fails loudly,
+  world stands. GRASS_COLORS stays engine-side for now (calibrated to
+  Sol's atlas); candidate for defs later. NOTE: future upstream
+  species-table edits now conflict with a deletion — port them to
+  defs JSON (the §23 merge-file recipe still covers the rest of the
+  file). TICK (dc6dffc): the sequencer's four naked setIntervals
+  became named systems on server/tick.ts — one scheduler (§3's client
+  principle, server-side), per-beat error isolation, gauges at
+  GET /tick. Verbatim bodies, cadences unchanged; the seam for the
+  future fixed-step sim core. Wire additions /defs + /tick recorded
+  in WIRE.md. Gates across both: defs-smoke 12/12, flora.test 67/67,
+  tick-test 7/7, smoke 85/85, leasetest 19/19, paritybench PASS,
+  lightbench 30/30, bootjank clean at 153k planted, replaybench green.
+
+- **2026-08-22 — §24a: phase-1 slice 1 — the gate before the surgery.**
+  Engine choice reopened by colleague deliberation (Godot's own-engine
+  detour ended "not just right now"; the godotwebgpu fork measured
+  stuttery by a colleague, matching its 3-months-dormant beta state) —
+  so work moved to the lane no colleague decision blocks: sim
+  extraction. Landed: `tools/replaybench.ts` (36bd3c8) — the log-replay
+  parity gate. Four pure-read checks per world: fold determinism
+  (two independent parses+folds), snapshot-path ≡ genesis-path (the two
+  WorldLog boot paths), stateToEntries roundtrip (documented
+  exclusions: sky, chat window, bans, roles.sub), and a per-machine
+  baseline digest in worlds/.replaybench.json. Adversarially verified
+  (doctored snapshot, malformed line, baseline mismatch each RED as
+  intended); commons green, baseline recorded. And `docs/WIRE.md`
+  (8e7afe6) — the live-wire protocol inventory freeze v0: WS session
+  model (legs/gen/takeover/close codes/rate caps), both planes, every
+  message both directions, the rank-gated verb table, HTTP surface,
+  five as-built quirks flagged for a phase-1 ruling. Wire changes now
+  must be flagged as wire changes in review. Also: three.js-vs-wasm
+  renderer estimate delivered to colleagues (GPU: identical; browser
+  vs native ~10-25% paid by both; JS-vs-wasm ≈ 1-3ms/frame CPU encode
+  at our draw counts — we are fill-bound, so ≈ nothing today).
+
+- **2026-08-21 — §24: the rimward pivot (opened).** Team consensus: the
+  engine has outgrown a three.js webpage — port to another engine and
+  rework the systems to be "more Rimworld-y" (modular, data-driven,
+  extensible). Grass optimization paused. Branch `overhaul/rimward`
+  opened; `docs/overhaul-charter.md` drafted (11fa681) — nothing locked.
+  Thesis on the table: split an engine-agnostic sim core (fixed tick,
+  defs, the append-only log promoted to event spine) from a swappable
+  presentation layer, so the port becomes a *client* port and the
+  log-replay invariant lives where no engine can break it. Draft engine
+  lean: Godot 4, Bevy runner-up; the deciding ⚑ is whether browser
+  delivery is still a requirement. Other ⚑s: braid policy with Skye
+  (a people question first), sim-core language (draft: stays TS/Deno
+  through phase 2), strangler migration with the old client alive to
+  parity. RATIFIED same day (be7d784): worlds is our own thing,
+  eidoverse-video an upstream *asset library*; web delivery required
+  (native ok for on-branch dev); engine = Godot 4.6, Bevy fallback
+  only if the web gate fails; sim stays TS (tel0s holds ideas for a
+  later sim redo behind the same protocol). Godot web reality,
+  verified: Compatibility/WebGL2 only (no WebGPU — a renderer
+  downgrade from our three.js client, hence the gate), no C# on web
+  (GDScript it is), COOP/COEP for threads (we own the server),
+  ~5MB brotli engine wasm. Phase 0: one Godot spike against the
+  existing Deno server, exit gate runs in the web export.
+
 - **2026-08-15 — §23: the lines braid — upstream merge + sunflower.**
   Skye merged tel0s/main d9925d9 into the upstream line (462efec, with
   her own merge fixups) — the §22 grass arc now ships upstream via the

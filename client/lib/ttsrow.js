@@ -17,7 +17,8 @@ import { renderVoiceList } from './ttslist.js';
 import { why } from './debuglog.js';
 import { ttsAvailable, ttsVoiceName, isTtsEnabled, setTtsEnabled, setTtsSource } from './tts.js';
 import { setEndpointVoice } from './browservoice.js';
-import { report, bus } from './core.js';
+import { report, bus } from './base.js';
+import { micOn } from './micstate.js';
 // The id of whatever is currently installed, so the list can show a filled dot
 // against it. Null when nothing is loaded — which is a real state, not an error.
 let _selected = null;
@@ -561,10 +562,15 @@ export function ttsSection(host, onPaint = () => {}) {
  *  619) and the first was already missing the loading branch. A status line
  *  computed in three places is three chances to disagree with itself. */
 function micIsPublishing() {
+  // §24k R0: this was the one ladder with NO fallback — a hard false unless
+  // an SFU hook existed, which nothing on this branch installs. So the row
+  // never greyed and never explained itself while the mesh mic was live —
+  // the exact regression micstate.js:357 documents as already-found. The
+  // one answer to "is my mic on" is micstate's; ask it.
   try {
     if (typeof window.__sfuMicOn === 'function') return !!window.__sfuMicOn();
   } catch { /* no window */ }
-  return false;
+  return micOn();
 }
 
 function headNote() {

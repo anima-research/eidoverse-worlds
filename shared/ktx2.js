@@ -54,6 +54,27 @@ export function negotiate(url, key) {
   return url + (url.includes('?') ? '&' : '?') + `ktx2=${key}`;
 }
 
+/** The LOD recipe the running sequencer published on /version, or null when
+ *  it published none — an older sequencer, and the client must not ask for a
+ *  tier it never heard of (the same split-brain that poisoned ?ktx2=2: an
+ *  unknown param falls through to the original, served immutable under the
+ *  flagged URL). Same doctrine as keyFromVersion: never a default. */
+export function lodFromVersion(json) {
+  const l = json && typeof json === 'object' ? json.lodRecipe : undefined;
+  return typeof l === 'string' && l.length > 0 && l.length <= 64 ? l : null;
+}
+
+/** Append the LOD tier request — the RECIPE the running sequencer published,
+ *  never a bare boolean (review of #156, point 1: `lod=1` under two recipes
+ *  is one immutable URL for two different byte-streams — the ?ktx2=2
+ *  split-brain, one level down). No recipe → the URL untouched. Only
+ *  meaningful alongside the ktx2 negotiation (a LOD variant carries KTX2
+ *  textures). */
+export function withLod(url, recipe) {
+  if (!recipe) return url;
+  return url + (url.includes('?') ? '&' : '?') + `lod=${encodeURIComponent(recipe)}`;
+}
+
 /** The sequencer's own spelling (tests, tools): negotiate with the key this
  *  file defines. A BROWSER must not call this — it would be reading the key
  *  off disk again, which is the collision. */

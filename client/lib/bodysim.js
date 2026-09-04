@@ -1,14 +1,19 @@
 // bodysim — the body-physics engine is a CHOICE, not a fact of the client.
 //
-// Engines, one interface (see rapierdoll.js's contract): the pure-JS Verlet
-// that shipped first, the Rapier articulated solver the spike validated, and
-// the Bullet (ammo.js) rig ported from socketteer/ragdoll-physics. Everything
+// Engines, one interface (the contract prose lives in ammodoll.js's header;
+// it descends from the retired rapierdoll's — §24j retirement, survey B2):
+// the pure-JS Verlet that shipped first, and the Bullet (ammo.js) rig ported
+// from socketteer/ragdoll-physics. The Rapier articulated solver is RETIRED
+// (2026-08-27): panel-only reachability, no hair/finger/wing parity, flat
+// ground, and a permanent two-way divergence tax on every physics fix — its
+// one unshipped capability (decaying tone motors) is recoverable from git
+// history and tools/rapier-spike.ts if ever wanted. Everything
 // downstream — goLimp, drag, nails, the presence stream — asks this factory
 // and cannot tell which engine answered. A world mod can swap engines through
 // EW.bodysim: the lease thesis applied to our own house physics.
 
 import { Ragdoll } from './ragdoll.js';
-import { report } from './core.js';
+import { report } from './base.js';
 
 const KEY = 'ew-bodysim';
 
@@ -17,12 +22,6 @@ const KEY = 'ew-bodysim';
 // order the 🧩 panel cycles through.
 const ENGINES = new Map([
   ['verlet', { load: null, cls: Ragdoll, failed: false }],
-  ['rapier', {
-    load: async () => {
-      const mod = await import('./rapierdoll.js');
-      return (await mod.ensureRapier()) ? mod.RapierRagdoll : null;
-    }, cls: null, failed: false,
-  }],
   ['ammo', {
     load: async () => {
       const mod = await import('./ammodoll.js');

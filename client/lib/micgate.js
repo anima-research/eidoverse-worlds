@@ -29,7 +29,7 @@
 // the same reason a human is, with no second code path to maintain.
 
 import { audioContext } from './audioctx.js';
-import { report } from './core.js';
+import { report } from './base.js';
 
 // 🔴 THE ENVELOPE IS setTargetAtTime, AND THE TICK IS A FLOOR UNDER IT.
 //
@@ -321,3 +321,134 @@ export function setMonitorDelay(sec) {
   return MONITOR_DELAY;
 }
 export const monitorDelay = () => MONITOR_DELAY;
+
+// ── the onset machine + level meter, ONE copy (§24l R1, survey A1) ──────────
+// This state machine lived twice — voice.js (the mesh) and micstate.js (the
+// transport seam) — as a ~200-line verbatim fork, and fixes landed in one
+// copy at a time (the speaking-latch and analyser-leak fixes sat in the copy
+// that never ran until R0 ported them back). One factory now; each transport
+// instantiates with its own stream/mute closures. Every comment below was
+// paid for in production — they travel with the machine.
+
+/** RMS level meter over whatever stream `getMeasured` currently names —
+ *  null means "muted or no stream": report 0 and learn nothing.
+ *
+ *  ONE CONTEXT, REUSED: this used to make a NEW AudioContext per stream
+ *  change and never close the old one — Chrome caps a document at ~6, after
+ *  which every further context is born unusable, SILENTLY. And the replaced
+ *  analyser pair is DISCONNECTED — the shared context lives forever, so
+ *  dropped-but-connected nodes accumulate in its graph otherwise. */
+export function makeLevelMeter(getMeasured) {
+  let _an = null, _anStream = null, _anBuf = null, _anSrc = null;
+  return function level() {
+    const measured = getMeasured();
+    if (!measured) return 0;
+    if (!_an || _anStream !== measured) {
+      try {
+        const ctx = audioContext();
+        try { _anSrc?.disconnect(); _an?.disconnect(); } catch { /* gone */ }
+        const src = ctx.createMediaStreamSource(measured);
+        _an = ctx.createAnalyser(); _an.fftSize = 512;
+        src.connect(_an);
+        _anSrc = src;
+        _anStream = measured;
+        _anBuf = new Float32Array(_an.fftSize);
+      } catch { return 0; }
+    }
+    _an.getFloatTimeDomainData(_anBuf);
+    let s = 0;
+    for (let i = 0; i < _anBuf.length; i++) s += _anBuf[i] * _anBuf[i];
+    return Math.sqrt(s / _anBuf.length);
+  };
+}
+
+/** The speech-onset gate: BasisVR's block-minima noise floor, a fixed
+ *  threshold with ~3dB hysteresis and 700ms hang-time, and the once-per-
+ *  utterance 🎙 announcement. `drive(open)` is the transport's gain hand
+ *  (it applies its own lane/mute authority first); `level()` returning 0
+ *  means muted — close, drop the speaking latch, learn nothing.
+ *
+ *  Laws kept from the twins' histories:
+ *  - DRIVE THE GATE BEFORE ANY EARLY RETURN (a control loop that skips its
+ *    output stage is not a control loop — the monitor played through);
+ *  - LEARN BEFORE JUDGING (~1s settle window, or a loud room fires the 🎙
+ *    at itself);
+ *  - the floor is min-of-block-minima (6 × 0.4s), so SPEECH CAN NEVER
+ *    RAISE IT — structurally, not by tuning;
+ *  - THE PILL AND THE AUDIO MUST AGREE: announce only after the gate has
+ *    been open one envelope's worth (60ms), max once per 1.5s;
+ *  - `speaking` reports threshold PLUS hang-time, or the bar flickers dark
+ *    through every pause while the room still hears you;
+ *  - 20ms tick: the interval is the worst-case clip on a word's attack. */
+export function makeOnsetGate({ level, threshold, drive, announce }) {
+  let _timer = null, _above = false, _lastOnset = 0, _openUntil = 0;
+  let _openedAt = 0, _announced = false;
+  let _noise = 0.01, _settle = 0;
+  let _blocks = new Array(6).fill(Infinity), _blockIdx = 0, _blocksFilled = 0,
+      _blockMin = Infinity, _blockStart = 0;
+
+  const apply = (now) => drive(_above || now <= _openUntil);
+
+  function tick() {
+    const lv = level();
+    if (lv <= 0) {
+      // muted: close, do not learn — and DROP THE SPEAKING LATCH, or
+      // info().speaking reports true forever while the gate is forced shut
+      _above = false; _openUntil = 0;
+      apply(Date.now()); return;
+    }
+    if (_settle < 8) {
+      _settle++;
+      const a0 = lv < _noise ? 0.3 : 0.5;
+      _noise += (lv - _noise) * a0;
+      apply(Date.now());               // measuring, but still CLOSED — not frozen
+      return;
+    }
+    const nowT = Date.now();
+    if (lv < _blockMin) _blockMin = lv;
+    if (nowT - _blockStart >= 400) {
+      _blockStart = nowT;
+      _blocks[_blockIdx] = _blockMin;
+      _blockIdx = (_blockIdx + 1) % 6;
+      if (_blocksFilled < 6) _blocksFilled++;
+      _blockMin = Infinity;
+    }
+    _noise = Math.max(1e-5, Math.min(_blockMin, ...(_blocks.slice(0, _blocksFilled))));
+    const on = threshold();
+    const off = on * 0.7;                    // ~3 dB of hysteresis
+    const now = Date.now();
+    if (lv >= on) {
+      _openUntil = now + 700;                // hang-time
+      if (!_above) { _above = true; _openedAt = now; _announced = false; }
+      if (!_announced && now - _openedAt >= 60 && now - _lastOnset > 1500) {
+        _announced = true; _lastOnset = now; announce();
+      }
+    } else if (_above && lv < off && now > _openUntil) _above = false;
+    apply(now);
+  }
+
+  return {
+    /** Re-measure the room on every start: a floor learned in a quiet
+     *  session would gate you out of a loud one. */
+    start() {
+      if (_timer) return;
+      _above = false;
+      _noise = 0.01; _settle = 0;
+      _blocks = new Array(6).fill(Infinity); _blockIdx = 0; _blocksFilled = 0;
+      _blockMin = Infinity; _blockStart = Date.now();
+      _timer = setInterval(tick, 20);
+    },
+    stop() {
+      if (_timer) { clearInterval(_timer); _timer = null; }
+      _above = false;
+    },
+    /** Apply the current latch through the transport's authority — the
+     *  external gateAudio (mute toggles call it directly). */
+    apply,
+    /** Drop the speaking latch without stopping the watch — unmute hands
+     *  control back to the gate rather than reopening mid-latch. */
+    dropLatch() { _above = false; _openUntil = 0; },
+    info: () => ({ level: level(), noise: _noise, on: threshold(),
+      speaking: _above || Date.now() <= _openUntil }),
+  };
+}

@@ -14,11 +14,17 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { VERB_RATE, OPT_DIR } from "./config.ts";
-import { isAdminId, rightsOf, VERB_NEEDS, lockRefusal } from "./rights.ts";
+import { isAdminId, rightsOf, worldHasOwner, VERB_NEEDS, lockRefusal } from "./rights.ts";
 import { lintMotion, lintParticles } from "./lint.ts";
 import { reactToUse } from "./reactions.ts";
 import { behaviorLimits } from "./behaviors.ts";
 import { ROLE_RANK, type LogEntry, type WorldState } from "../shared/fold.js";
+import { SIM_ID } from "../shared/sim.js";
+import { boxOf, worldLibs } from "./boxes.ts";
+
+// Bodies alive at the moment an epoch entry is validated — consumed by the
+// epoch after-hook to release them into the fold (see the verb below).
+const epochRelease = new WeakMap<object, { id: string; p: number[]; yaw: number }[]>();
 
 // ---- what runVerb needs from the session (structural) ----------------------
 
@@ -37,10 +43,13 @@ export type VerbWorld = {
   state: WorldState;
   clients: Set<VerbClient>;
   leases: Map<string, { lastState: { p: number[]; yaw?: number; q?: number[] } | null }>;
+  sim: { epoch: unknown; bodies: Record<string, { p: number[] }> };
   bhv: { sync(): void; onEntry(entry: LogEntry): void };
   append(actor: string, verb: string, args: Record<string, unknown>): LogEntry;
+  commit(actor: string, verb: string, args: Record<string, unknown>): LogEntry;
   broadcast(msg: unknown, except?: VerbClient): void;
   debug(kind: string, detail: Record<string, unknown>): void;
+  fold(reason?: string): void;
 };
 
 /** Built by server.ts per dispatch. `now` is the message handler's clock, so
@@ -80,12 +89,17 @@ export type VerbRow = {
 
 function vGrant(ctx: VerbCtx, args: Record<string, unknown>) {
   const { w } = ctx;
-  // shape-check before it becomes history: {id, role?, gen?}
+  // shape-check before it becomes history: {id, role?, gen?, fly?}
   const id = String(args.id ?? "").slice(0, 64);
   const role = args.role != null ? String(args.role) : undefined;
   const gen = args.gen != null ? Boolean(args.gen) : undefined;
-  if (!id || (role == null && gen == null) || (role != null && ROLE_RANK[role] == null)) {
-    return { error: "grant wants {id, role: owner|builder|visitor} and/or {gen: true|false}" };
+  // The flight capability, orthogonal to the ladder exactly like gen, and
+  // whitelisted here for the same reason everything else is: this validator
+  // decides what may become history, so an arg it does not name is dropped
+  // before the fold ever sees it.
+  const fly = args.fly != null ? Boolean(args.fly) : undefined;
+  if (!id || (role == null && gen == null && fly == null) || (role != null && ROLE_RANK[role] == null)) {
+    return { error: "grant wants {id, role: owner|builder|visitor} and/or {gen: true|false} and/or {fly: true|false}" };
   }
   if (id === "*" && role === "owner") {
     return { error: "everyone cannot own a world" };
@@ -94,7 +108,25 @@ function vGrant(ctx: VerbCtx, args: Record<string, unknown>) {
   // bind the grant to it — authority follows the person, not the nick
   const subject = [...w.clients].find((o) => o.id === id && o.sub);
   return { args: { id, ...(role != null ? { role } : {}), ...(gen != null ? { gen } : {}),
+    ...(fly != null ? { fly } : {}),
     ...(subject?.sub ? { sub: subject.sub } : {}) } };
+}
+
+/** After a grant folds, send each present participant the server's effective
+ * rights for THEM. Clients consume an answer, not a second precedence model.
+ * This reaches wildcard and durable-sub changes that a name-only delta merge
+ * cannot represent. The log entry remains the durable cause; this is its
+ * personalized live projection. */
+function afterGrant(ctx: VerbCtx, entry: LogEntry) {
+  const { w } = ctx;
+  for (const other of w.clients) {
+    const rights = { ...rightsOf(w.state, other.id, other.sub), open: !worldHasOwner(w.state) };
+    try {
+      other.ws.send(JSON.stringify({ type: "your-rights", rights, causeSeq: entry.seq }));
+    } catch (err) {
+      w.debug("rights-delivery-error", { who: other.id, seq: entry.seq, error: String(err) });
+    }
+  }
 }
 
 function vForce(_ctx: VerbCtx, args: Record<string, unknown>) {
@@ -124,7 +156,9 @@ function vPunt(ctx: VerbCtx, args: Record<string, unknown>) {
   if (!id || !w.state.entities[id]) {
     return { error: `nothing here called "${id}" to kick` };
   }
-  const at = w.leases.get(id)?.lastState?.p ?? w.state.entities[id].pos;
+  // live position, most-authoritative first: a sim-owned flight, then a
+  // leased volunteer's stream, then the log's word
+  const at = w.sim.bodies[id]?.p ?? w.leases.get(id)?.lastState?.p ?? w.state.entities[id].pos;
   const me = (c.lastPose as { p?: number[] } | null | undefined)?.p;
   if (!me || Math.hypot(me[0] - at[0], me[2] - at[2]) > 4) {
     w.debug("denied", { who: c.id, verb: "punt", why: `${id} is out of reach` });
@@ -132,7 +166,15 @@ function vPunt(ctx: VerbCtx, args: Record<string, unknown>) {
   }
   const power = Math.min(10, Math.max(0.5, Number(args.power ?? 5)));
   const dir = Array.isArray(args.dir) ? (args.dir as unknown[]).slice(0, 3).map(Number) : null;
-  return { args: { id, power, ...(dir && dir.length === 3 && dir.every(Number.isFinite) ? { dir } : {}) } };
+  const dirOk = dir && dir.length === 3 && dir.every(Number.isFinite) && dir.some((v) => v !== 0);
+  // Dialect 3 (PROTOCOL_v2, Covenant III): under an epoch the sim owns the
+  // flight, and the sim may read NOTHING off the presence plane — so the
+  // intent must carry its whole vector, or it is refused at the door
+  // rather than logged as an entry the sim will treat as inert.
+  if (w.state.epoch && !dirOk) {
+    return { error: "this world runs a deterministic sim — punt needs dir: [x, y, z] (the intent carries its whole vector)" };
+  }
+  return { args: { id, power, ...(dirOk ? { dir } : {}) } };
 }
 
 function vComp(ctx: VerbCtx, args: Record<string, unknown>) {
@@ -310,15 +352,96 @@ function afterModerate(ctx: VerbCtx, entry: LogEntry) {
 // rank/gen stay single-sourced in rights.ts's VERB_NEEDS (the behavior gate
 // reads the same numbers); each row here only adds what the shell dispatches.
 
+/** Under a live epoch the sequencer stamps the model's box into the spawn
+ *  entry (eidosim@0.3.0 folds it — PROTOCOL_v2 Covenant III: the sim reads
+ *  geometry from history, never from an asset). The client's word on a box
+ *  is discarded: asset facts are the sequencer's to write. Outside an epoch
+ *  the log is unchanged — an epoch entered later stamps `boxes` for every
+ *  standing lib itself. The cache is warmed on the wire before this runs
+ *  (messages.ts); a lib it cannot summarize simply spawns boxless. */
+function vSpawn(ctx: VerbCtx, args: Record<string, unknown>) {
+  const { box: _clientBox, ...rest } = args;
+  const live = ctx.w.sim.epoch as { foreign?: boolean } | null;
+  if (!live || live.foreign || typeof rest.lib !== "string") return { args: rest };
+  const box = boxOf(rest.lib);
+  return { args: box ? { ...rest, box } : rest };
+}
+
 const extras: Record<string, Pick<VerbRow, "selfRankZero" | "validate" | "after">> = {
   say: { validate: vSay },
+  spawn: { validate: vSpawn },
   // A `use` is a cause; reactions turn it into logged effects.
   use: { after: (ctx, entry) => reactToUse(ctx.w, entry) },
   mount: { selfRankZero: true, validate: vMount },
   dismount: { selfRankZero: true },
-  grant: { validate: vGrant },
+  grant: { validate: vGrant, after: afterGrant },
   force: { validate: vForce },
   punt: { validate: vPunt },
+  // Entering the deterministic-sim epoch (PROTOCOL_v2 §3). The sim named
+  // must be one THIS build carries — authoring an epoch nobody can compute
+  // would orphan the world's physics on its own sequencer. The after-hook
+  // folds the barrier snapshot the spec requires around epoch boundaries.
+  epoch: {
+    validate: (ctx, args) => {
+      const stashLive = () => {
+        // Stash the live bodies NOW — by the time the after-hook runs, the
+        // folded epoch entry has already cleared them.
+        const held = Object.entries(ctx.w.sim.bodies as Record<string, { p: number[]; yaw?: number }>)
+          .map(([id, b]) => ({ id, p: [...b.p], yaw: typeof b.yaw === "number" ? b.yaw : 0 }));
+        epochRelease.set(ctx.w, held);
+      };
+      if (args.sim === null) {
+        // LEAVING the epoch (ruling tel0s 2026-09-01: explicit, never a
+        // toggle). Every live body is released into the fold at its sim word
+        // (the after-hook's epoch-release places), the barrier folds, and the
+        // world is back on v1 semantics. Nothing to leave = refused pre-log.
+        const live = ctx.w.sim.epoch as { foreign?: boolean } | null;
+        if (!live) return { error: "this world is not under a sim epoch — nothing to leave" };
+        stashLive();
+        return { args: { sim: null } };
+      }
+      const sim = String(args.sim ?? "");
+      const tickMs = Number(args.tickMs ?? 66);
+      if (sim !== SIM_ID) return { error: `this sequencer carries ${SIM_ID} — epoch must name it exactly (or sim: null to leave)` };
+      if (!Number.isInteger(tickMs) || tickMs < 16 || tickMs > 1000) {
+        return { error: "epoch tickMs must be an integer in [16, 1000]" };
+      }
+      // IDEMPOTENT (tel0s, playtest 2026-08-31: ran /epoch twice): re-entering
+      // the SAME epoch is refused before anything is logged — the entry would
+      // clear every live body (a mid-flight barrel freezes in the air) and
+      // reset the tick for no semantic gain. A different tickMs is a real
+      // re-epoch and proceeds, with the release below.
+      const live = ctx.w.sim.epoch as { sim?: string; tickMs?: number; foreign?: boolean } | null;
+      if (live && !live.foreign && live.sim === sim && live.tickMs === tickMs) {
+        return { error: `already under ${sim} at a ${tickMs}ms tick — nothing to re-enter (flights and rest poses stand)` };
+      }
+      stashLive();
+      // eidosim@0.3.0: the epoch adopts the sequencer's word on the world's
+      // geometry — lib → box for every model standing here at the barrier
+      // (Covenant III; ruling tel0s 2026-09-01). Warmed on the wire before
+      // this runs; a lib without a summary is left out and is no collider.
+      const boxes: Record<string, unknown> = {};
+      for (const lib of worldLibs(ctx.w.state)) { const b = boxOf(lib); if (b) boxes[lib] = b; }
+      return { args: { sim, tickMs, boxes } };
+    },
+    after: (ctx) => {
+      // A real re-epoch RELEASED every live body when its entry folded — but
+      // the instant fold still holds their last AUTHORED positions, which by
+      // now can be a spawn point a dozen punts ago. Commit each body’s last
+      // sim word as a place (the same server-authored release the lease
+      // table performs), so the fold, every client and every late joiner
+      // agree where things actually stand instead of orphaning the meshes
+      // where each client’s applier last drew them.
+      for (const b of epochRelease.get(ctx.w) ?? []) {
+        ctx.w.commit("world", "place", {
+          id: b.id, pos: [+b.p[0].toFixed(4), +b.p[1].toFixed(4), +b.p[2].toFixed(4)],
+          yaw: b.yaw, via: "epoch-release",
+        });
+      }
+      epochRelease.delete(ctx.w);
+      ctx.w.fold("epoch-barrier");
+    },
+  },
   comp: { validate: vComp, after: afterComp },
   motion: { after: (ctx, entry) => lintMotion(ctx.w, entry) },
   // ...and a (re)bind reconciles sandboxes before scripts hear anything else.
@@ -404,9 +527,10 @@ export function runVerb(ctx: VerbCtx, verb: string, rawArgs: unknown): void {
     }
     args = r.args;
   }
-  const entry = w.append(c.id, verb, args);
-  w.broadcast({ type: "log", entry }); // everyone, including author (authoritative echo)
+  // §24 entry bus: commit = append + publish (client fanout with the
+  // authoritative echo, then behaviors — see events.ts's ordering ruling).
+  // After-hooks run once the CAUSE is on the wire, so the effect entries
+  // they commit publish in seq order.
+  const entry = w.commit(c.id, verb, args);
   if (isVerbStr) row.after?.(ctx, entry);
-  // Runtime scripts hear causes too.
-  w.bhv.onEntry(entry);
 }

@@ -21,7 +21,7 @@
 // MediaStreamTrack — how the samples are made (generator, pacer, TTS engine,
 // test stub) is entirely the provider's business, and lives in its own module.
 
-import { report } from './core.js';
+import { report } from './base.js';
 
 // ── the synth-provider contract ──────────────────────────────────────────────
 // {

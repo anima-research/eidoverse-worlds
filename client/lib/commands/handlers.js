@@ -8,14 +8,15 @@
 // semantic (things win the name lookup because they were here first), and
 // it is preserved inside the handler bodies rather than across them.
 
-import { scene, camera, renderer, CONFIG, bus, report } from '../core.js';
+import { CONFIG, bus, report } from '../base.js';
+import { captureFrame } from '../capture.js';
 import { register, dispatch } from './registry.js';
 import { entities, roleOf, worldHasOwner } from '../world.js';
 import {
   net, sendVerb, sendMod, sendPuppet, sendWorldFork, sendWorldReset, requestDebug,
 } from '../net.js';
 import { remotes } from '../remotes.js';
-import { myState, setPosture } from '../controller.js';
+import { myState, setPosture, flightReport } from '../controller.js';
 import { kick } from '../physobj.js';
 import { logChat } from '../chat.js';
 import { toggleHelp, flashHint } from '../ui.js';
@@ -25,10 +26,15 @@ import { setPushable, pushable } from '../consent.js';
 import { trySitOn } from '../localbody.js';
 import { getMe } from '../mybody.js';
 import { setMyReach, clearMyReach } from '../reachnet.js';
+import { SIM_ID } from '../../../shared/sim.js';
 import { canonicalPoint, CONTACT_POINTS } from '../../../shared/contact.js';
 import { TOUCH_GAP } from '../../../shared/reachwire.js';
 
 register('help', () => toggleHelp());
+// Flight's own diagnostic, in the chat log where a person can read it and
+// paste it back. See controller.js flightReport() for why this is not just
+// the console probe.
+register('flight', () => { for (const line of flightReport().split('\n')) logChat('*', line); });
 
 // Eyelids are BONES on rigs that have them (L_/R_Eyelid_Upper) — most VRMs
 // blink with a blendshape instead and have none, so this says so plainly
@@ -56,15 +62,21 @@ register('role', (arg) => {
 });
 
 register('grant', (arg) => {
-  // /grant <name> owner|builder|visitor [+gen|-gen] — server enforces owner-only
+  // /grant <name> owner|builder|visitor [+gen|-gen] [+fly|-fly]
+  // server enforces owner-only. `fly` is orthogonal to the ladder like gen,
+  // and default-off everywhere -- including open worlds, and including for
+  // owners. Somebody says so, in the log, or nobody flies.
   const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
   const id = parts[0];
   const role = parts.find((p) => ['owner', 'builder', 'visitor'].includes(p.toLowerCase()))?.toLowerCase();
   const genFlag = parts.find((p) => p === '+gen' || p === '-gen');
-  if (!id || (!role && !genFlag)) {
-    return logChat('*', 'usage: /grant <name> owner|builder|visitor [+gen|-gen]');
+  const flyFlag = parts.find((p) => p === '+fly' || p === '-fly');
+  if (!id || (!role && !genFlag && !flyFlag)) {
+    return logChat('*', 'usage: /grant <name> owner|builder|visitor [+gen|-gen] [+fly|-fly]');
   }
-  sendVerb('grant', { id, ...(role ? { role } : {}), ...(genFlag ? { gen: genFlag === '+gen' } : {}) });
+  sendVerb('grant', { id, ...(role ? { role } : {}),
+                      ...(genFlag ? { gen: genFlag === '+gen' } : {}),
+                      ...(flyFlag ? { fly: flyFlag === '+fly' } : {}) });
 });
 
 // /kick /ban <name> [reason…] — owner-only, the server enforces (and
@@ -75,16 +87,46 @@ function moderate(cmd, arg) {
   sendVerb(cmd, { id, ...(rest.length ? { reason: rest.join(' ') } : {}) });
 }
 
-register('kick', (arg) => {
-  // one word, two acts (the /push pattern): a THING within the world gets
-  // the physics kick; a PERSON gets moderation. Things win the lookup —
-  // and /punt is always the physics verb, /ban always the moderation one.
-  const first = (arg || '').trim().split(/\s+/)[0];
-  if (!first || entities.has(first) || !remotes.has(first)) { kick(arg); return; }
-  moderate('kick', arg);   // a person's name — the old chain's fallthrough
+// /kick is MODERATION, solidly (tel0s ruling, playtest 2026-08-31). The old
+// one-word-two-acts overload sent a typo'd object name into the moderation
+// path and made "kick the barrel" and "kick the visitor" the same word for
+// two very different acts. /punt owns the physics wholly now — and gained
+// the fun half: punting a PERSON is the consented ragdoll shove (their
+// client owns their body and decides, exactly as /push).
+register('kick', (arg) => moderate('kick', arg));
+register('punt', (arg) => {
+  const parts = (arg || '').trim().split(/\s+/).filter(Boolean);
+  const named = parts.find((x) => !/^[\d.]+$/.test(x));
+  // things win the name lookup (they were here first); a person's name is
+  // the shove. No name at all = the object kick's nearest-thing search.
+  if (named && !entities.has(named) && remotes.has(named)) {
+    const pow = Math.min(4, Math.max(0.5, parseFloat(parts.find((x) => /^[\d.]+$/.test(x))) || 2.6));
+    shovePerson(named, pow, 'punt');
+    return;
+  }
+  kick(arg);
 });
-register('punt', (arg) => { kick(arg); });
 register('ban', (arg) => moderate('ban', arg));
+
+// /epoch [tickMs] — enter the deterministic-sim epoch (PROTOCOL_v2 §3).
+// Owner-ranked: the server refuses below rank 2 and refuses any sim name
+// this sequencer does not carry; the client only makes the door REACHABLE
+// (before this, entering an epoch took a raw world_verb — which is how a
+// playtest "of the new physics" ran the legacy volunteer sim instead).
+register('epoch', (arg) => {
+  const a = (arg || '').trim();
+  // /epoch off — LEAVE the sim epoch (ruling 2026-09-01: explicit, never a
+  // toggle): every flight is released to the fold where it stands, and punts
+  // go back to the volunteer physics. Owners only; the world refuses or announces.
+  if (/^(off|leave|exit|none)$/i.test(a)) {
+    sendVerb('epoch', { sim: null });
+    logChat('*', 'asked the world to LEAVE its sim epoch — every flight comes to rest where it is and punts return to volunteer physics (owners only; the world will refuse or announce)');
+    return;
+  }
+  const tickMs = Math.round(Number(a)) || 66;
+  sendVerb('epoch', { sim: SIM_ID, tickMs });
+  logChat('*', `asked the world to enter ${SIM_ID} at a ${tickMs}ms tick — flights become log-replayable physics (owners only; the world will refuse or announce)`);
+});
 
 register('unban', (arg) => {
   const id = (arg || '').trim();
@@ -127,18 +169,26 @@ register('push', (arg) => {
     }
     if (!target) return logChat('*', 'nobody within reach to push');
   }
+  shovePerson(target, pow, 'push');
+});
+
+/** The person-shove, shared by /push and /punt: a REQUEST to the target's
+ *  client, which owns the body and decides (pushable). Range-gated here out
+ *  of honesty, not security — the receiver caps magnitude anyway. */
+function shovePerson(target, pow, word) {
+  const REACH = 2.5;
   const r = remotes.get(target);
-  if (!r?.avatar) return logChat('*', `${target} isn't here to push`);
+  if (!r?.avatar) return logChat('*', `${target} isn't here to ${word}`);
   const tp = r.avatar.root.position;
   const d = Math.hypot(tp.x - myState.pos.x, tp.z - myState.pos.z);
-  if (d > REACH) return logChat('*', `${target} is too far away to push (${d.toFixed(1)}m)`);
+  if (d > REACH) return logChat('*', `${target} is too far away to ${word} (${d.toFixed(1)}m)`);
   // straight through the target from where I stand; face-to-face at zero
   // distance falls back to the way I'm facing
   const nx = d > 0.05 ? (tp.x - myState.pos.x) / d : Math.sin(myState.yaw);
   const nz = d > 0.05 ? (tp.z - myState.pos.z) / d : Math.cos(myState.yaw);
   sendPuppet(target, { ragdoll: { lean: [nx * pow, 0, nz * pow] } });
-  logChat('*', `you push ${target}`);
-});
+  logChat('*', word === 'punt' ? `you punt ${target} — they go flying (their client willing)` : `you push ${target}`);
+}
 
 // ---- /touch — the human hand on the reach surface (shared/reachwire.js).
 // The same descriptor an agent's `reach` tool streams: every client
@@ -334,8 +384,7 @@ function bearingTo(p) {
 
 export async function saveScreenshot() {
   try {
-    renderer.render(scene, camera);
-    const url = renderer.domElement.toDataURL('image/png');
+    const url = captureFrame();
     const a = document.createElement('a');
     a.href = url;
     a.download = `eidoverse-${CONFIG.world}-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;

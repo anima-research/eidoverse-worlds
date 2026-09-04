@@ -2,7 +2,7 @@
 // here, the editing flag, the basic-sky note. Painted at 1Hz by the pulse
 // system; fps comes from perf.js so this module never touches the loop.
 
-import { CONFIG } from './core.js';
+import { CONFIG } from './base.js';
 import { setHud } from './ui.js';
 import { net } from './net.js';
 import { remotes } from './remotes.js';

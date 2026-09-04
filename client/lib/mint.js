@@ -6,7 +6,7 @@
 // Dynamically imported by main.js — the normal boot never pays for this file,
 // and this file never starts the normal boot.
 
-import { CONFIG } from './core.js';
+import { CONFIG } from './base.js';
 import { contributeThumbnail } from './avatar.js';
 
 export async function mintThumbnails() {

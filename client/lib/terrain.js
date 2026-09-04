@@ -4,7 +4,8 @@
 // the controller needs ground height every frame, and world.js needs the
 // controller's position to place things. Both depend on this instead.
 
-import { scene, ground, grid, bus } from './core.js';
+import { scene, ground, grid } from './core.js';
+import { bus } from './base.js';
 import { retireField } from './flora_field.js';
 import { makeGrassQuality, GRASS_QUALITY } from './grass_quality.js';
 

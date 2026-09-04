@@ -49,7 +49,8 @@
 // with no loading work in flight — the restore ladder's own 1Hz fps read,
 // not a second meter.
 
-import { renderer, sun, BASE_PIXEL_RATIO, CONFIG } from './core.js';
+import { renderer, sun, BASE_PIXEL_RATIO } from './core.js';
+import { CONFIG } from './base.js';
 import { warmStats } from './warmqueue.js';
 import { laneBusy } from './loadwork.js';
 import { promoteTailPending } from './realize/models.js';

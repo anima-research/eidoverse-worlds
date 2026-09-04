@@ -1,76 +1,65 @@
-// DISCRIMINATOR for #131 item 1: current-main + this PR, with NO SFU globals,
-// must still drive the existing mesh mic — ON→OFF→ON — and the visible state
-// (micstate.micOn, the ladder's last rung) must follow it. On the pre-fix head
-// this fails: toggleMic checked only window.__sfuMic, which nothing on current
-// main installs, so V/click flashed "still connecting" forever and the mesh
-// mic was unreachable.
+// micstate transport selection — post-cutover (anima merge, §24n).
 //
-// The mesh module is MOCKED here (a stateful stand-in with the same exported
-// surface: toggleMic(name) flips, micOn() answers), which proves the
-// delegation seam — micstate routes the mutation to the mesh and defers the
-// answer to it. The full-stack proof against the real voice.js is the
-// reviewer's own current-main + #131 run; this vector is what makes the seam
-// unable to silently regress.
+//   bun tools/micstate-mesh-fallback-test.mjs
+//
+// TOMBSTONE: this suite's original purpose — proving micstate DELEGATES to
+// the mesh (voice.js) when no SFU hook is installed — died with the mesh
+// (#104 phase-1 cutover deleted voice.js). Upstream's copy still tests the
+// deleted delegation and is red on their tree (flagged for them). What
+// SURVIVES the cutover, tested here: the SFU hook is the transport when
+// installed, micstate stands alone when it is not (the honest hint instead
+// of a dead-mesh call), and the answer API defaults closed. The module's
+// own behavior (gate, release, mute) is micstate-exec-test and
+// micstate-release-test's job.
+
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import { mock } from "bun:test";
-GlobalRegistrator.register({ url: "http://localhost/?world=t&name=p" });
-
-let meshOn = false;
-const meshCalls = [];
-mock.module(new URL("../client/lib/voice.js", import.meta.url).pathname, () => ({
-  toggleMic: async (name) => { meshCalls.push(name); meshOn = !meshOn; return meshOn; },
-  micOn: () => meshOn,
-  micAnalyserLevel: () => (meshOn ? 0.42 : 0),
-  micGateInfo: () => ({ gated: true, openness: 0.9, mesh: true }),
-}));
-mock.module(new URL("../client/lib/core.js", import.meta.url).pathname, () => ({
-  report: () => {}, bus: { on() {}, emit() {} },
-}));
-mock.module(new URL("../client/lib/net.js", import.meta.url).pathname, () => ({ sendTyping: () => {} }));
-mock.module(new URL("../client/lib/audioctx.js", import.meta.url).pathname, () => ({
-  audioContext: () => null,
-}));
-
-const m = await import("../client/lib/micstate.js");
-await new Promise((r) => setTimeout(r, 20));   // let micstate's mesh import settle
+GlobalRegistrator.register();
 
 let pass = 0, fail = 0;
-const check = (n, ok, extra = "") => {
-  console.log(`  ${ok ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m"} ${n}${ok ? "" : "  " + extra}`);
+const check = (name, ok, extra = "") => {
+  console.log(`  ${ok ? "\x1b[32m✓\x1b[0m" : "\x1b[31m✗\x1b[0m"} ${name}${ok ? "" : "  " + extra}`);
   ok ? pass++ : fail++;
 };
 
-// ── no SFU globals: the mesh is the transport ──────────────────────────────
-check("precondition: no SFU hook installed", typeof window.__sfuMic !== "function");
-check("micOn() starts false, answered by the mesh", m.micOn() === false);
+const hints = [];
+mock.module(new URL("../client/lib/core.js", import.meta.url).pathname, () => ({
+  bus: { emit: () => {}, on: () => {} },
+  report: () => {},
+  CONFIG: { params: new URLSearchParams() },
+}));
+mock.module(new URL("../client/lib/ui.js", import.meta.url).pathname, () => ({
+  flashHint: (m) => hints.push(m),
+}));
+mock.module(new URL("../client/lib/net.js", import.meta.url).pathname, () => ({ sendTyping: () => {} }));
+mock.module(new URL("../client/lib/voiceconsent.js", import.meta.url).pathname, () => ({
+  gateThreshold: () => 0.02,
+}));
+mock.module(new URL("../client/lib/audioctx.js", import.meta.url).pathname, () => ({
+  audioContext: () => { throw new Error("no audio in a test"); },
+}));
 
-const on1 = await m.toggleMic("prosper");
-check("toggleMic ON reaches the MESH (not a 'still connecting' hint)", meshCalls.length === 1);
-check("…passes the caller's name through", meshCalls[0] === "prosper");
-check("…returns the mesh's resulting state", on1 === true);
-check("…and the visible state follows: micOn() is true", m.micOn() === true);
+const m = await import("../client/lib/micstate.js");
 
-const on2 = await m.toggleMic("prosper");
-check("toggleMic OFF reaches the mesh and returns false", meshCalls.length === 2 && on2 === false);
-check("…visible state follows down: micOn() is false", m.micOn() === false);
+console.log("\nmicstate transport selection (post-cutover)");
 
-const on3 = await m.toggleMic("prosper");
-check("toggleMic ON again completes the ON→OFF→ON discriminator", on3 === true && m.micOn() === true);
+check("micOn() defaults false (no lane, no device)", m.micOn() === false);
 
-// The LEVEL readout must follow the same seam (second-agent review: without
-// this, the hot glow and the sensitivity meter read 0 forever on the mesh —
-// blocker 1's disease, one symptom over).
-check("micAnalyserLevel defers to the mesh while it is the transport", m.micAnalyserLevel() === 0.42);
-check("micGateInfo defers to the mesh's gate", m.micGateInfo().mesh === true);
+// no transport installed: toggling must NOT pretend — the honest hint
+const before = hints.length;
+await m.toggleMic("tester");
+await new Promise((r) => setTimeout(r, 30));
+check("with no transport, toggleMic answers the honest hint, not success",
+  hints.length > before && m.micOn() === false, hints.join(" | "));
 
-// ── SFU hook installed: it outranks the mesh (no regression) ───────────────
-let sfuCalls = 0, sfuOn = false;
-window.__sfuMic = async () => { sfuCalls++; sfuOn = !sfuOn; return sfuOn; };
-const meshCallsBefore = meshCalls.length;
-const s1 = await m.toggleMic("prosper");
-check("with __sfuMic installed, the SFU hook is called instead of the mesh",
-  sfuCalls === 1 && meshCalls.length === meshCallsBefore);
-check("…and its state is returned", s1 === true);
+// SFU hook installed: it IS the transport
+let sfuCalls = 0, sfuState = false;
+window.__sfuMic = async () => { sfuCalls++; sfuState = !sfuState; return sfuState; };
+const on = await m.toggleMic("tester");
+check("with __sfuMic installed, the SFU hook is called", sfuCalls === 1);
+check("…and its state is returned", on === true);
+const off = await m.toggleMic("tester");
+check("…and toggles back through the same hook", sfuCalls === 2 && off === false);
 
-console.log(`\n${fail === 0 ? "\x1b[32m" : "\x1b[31m"}${pass} passed, ${fail} failed\x1b[0m`);
+console.log(`\n${fail ? "\x1b[31m" : "\x1b[32m"}${pass} passed, ${fail} failed\x1b[0m`);
 process.exit(fail ? 1 : 0);

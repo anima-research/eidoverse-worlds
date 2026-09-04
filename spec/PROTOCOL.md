@@ -143,7 +143,9 @@ Everything else in a bag is somebody's annotation. Preserve it.
   non-conforming. A reach travels as a *declarative relation*
   (`pose.reach`, shared/reachwire.js) — a target, not solved bones — and
   every client re-solves it locally with the same closed-form IK; the
-  server relays the bag opaquely.
+  server relays the bag opaquely. Semantic rig state travels the same way:
+  `pose.wingsFolded` is a boolean intent, never implementation-specific wing
+  quaternions; each renderer applies it through the worn rig's own fold path.
 - **The plane-transition invariant**: anything returning from live motion to
   rest MUST stamp its absolute pose into the verb that ends the ride
   (`dismount {pos, yaw}`; `motion {type: null}` + `place`). The log never

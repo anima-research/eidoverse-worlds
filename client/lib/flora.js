@@ -10,7 +10,8 @@
 //   flora_field.js — field composition + retirement lifecycle
 //   flora_lod.js   — blade-LOD index subsets for tiled strokes (§17b)
 // All are covered by tools/flora.test.ts.
-import { THREE, TSL, bus, camera, renderer, CONFIG } from './core.js';
+import { THREE, TSL, camera, renderer } from './core.js';
+import { bus, CONFIG } from './base.js';
 import { primeFiles } from './assets.js';
 import { colliders } from './colliders.js';
 import { myState } from './controller.js';
@@ -26,17 +27,21 @@ export { retireField } from './flora_field.js';
 
 // ---- module ----------------------------------------------------------------
 
-const FLORA_URL = '/library/eidoverse/vegetation.js';
 let floraMod = null;
-/** Import the vegetation module off the library route. Native ESM — relative
- *  imports inside it (shrub/corn generators) resolve against the same route.
- *  The specifier goes through an indirect import so a BUNDLER treats it as
- *  runtime data: `/library/` exists only on the sequencer at run time, and a
- *  literal dynamic import made the bundle fail trying to resolve it. */
-const runtimeImport = new Function('s', 'return import(s)');
+/** Import the vegetation engine. §24j: it is a FIRST-CLASS CLIENT MODULE now
+ *  (client/lib/vegetation/) — the upstream-patched /library override retired
+ *  with the braid (eidoverse-video is an asset library, not an engine peer).
+ *  Still a lazy dynamic import: the module reads globalThis.THREE and the
+ *  Deno asset shim, both of which exist by the time flora work starts, and
+ *  its weight stays off the boot path. */
 export async function loadFloraModule() {
   if (!floraMod) {
-    floraMod = runtimeImport(FLORA_URL).then((m) => {
+    floraMod = import('./vegetation/vegetation.js').then(async (m) => {
+      // §24 defs: species are data now — hydrate the registry from /defs
+      // BEFORE anyone resolves the module, so every FLORA_SPECIES read
+      // below and in the build path sees a populated table. Optional-chained
+      // so a cached pre-defs engine build still loads (its table is baked in).
+      await m.ensureFloraDefs?.();
       // engine parity: the loader shim registers these globally
       globalThis.createFlora = m.createFlora;
       globalThis.FLORA_SPECIES = m.FLORA_SPECIES;
@@ -612,7 +617,9 @@ function wirePushers(field) {
 export async function buildFloraField(rawArgs, { scene, heightFn }) {
   const mod = await loadFloraModule();
   const args = mapGrassArgs(rawArgs);
-  const strokes = presetStrokes(args);
+  // named presets come from the hydrated def registry (§24) — the module
+  // resolved AFTER ensureFloraDefs, so the table is populated here
+  const strokes = presetStrokes(args, mod.FLORA_PRESETS);
   const species = [...new Set(strokes.map((st) => st.species ?? 'grass'))];
   for (const sp of species) await ensureFloraAssets(mod, sp);
   // the grass verb is a world singleton: each build starts a fresh occupancy

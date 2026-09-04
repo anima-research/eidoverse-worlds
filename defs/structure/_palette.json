@@ -1,0 +1,8 @@
+{
+  "doc": "The instance's building style — an OVERLAY on the structure realizer's built-in palette (client/lib/realize/structure.js), the 'style catalog seam' its comment anticipates. Slots are engine (wall/floor/trim/roof/glass), finishes are engine shader nodes named here (plaster/boards/painted; glass takes none); VALUES are style: color (decimal int; hex in each slot's doc), roughness, and glass's opacity. Applied by mutating the live shared materials, so a def edit restyles standing buildings on the defs-updated push. Absent slots keep the built-in default.",
+  "wall":  { "doc": "warm plaster, 0xe4ded1", "color": 14999249, "roughness": 0.94, "finish": "plaster" },
+  "floor": { "doc": "boards, 0xa8814f", "color": 11043151, "roughness": 0.8, "finish": "boards" },
+  "trim":  { "doc": "painted woodwork, lighter than the wall, 0xf2efe8", "color": 15921128, "roughness": 0.62, "finish": "painted" },
+  "roof":  { "doc": "0x6d6257", "color": 7168599, "roughness": 0.9, "finish": "plaster" },
+  "glass": { "doc": "0xcfe2e8", "color": 13624040, "roughness": 0.06, "opacity": 0.22 }
+}

@@ -22,7 +22,8 @@
 // dayness); the deliberate noon-burning porch light gets its opt-out verb
 // arg with the 5f spec work.
 
-import { THREE, bus } from './core.js';
+import { THREE } from './core.js';
+import { bus } from './base.js';
 import { requestLight, updateRequest, releaseLight, isCasting } from './lightrig.js';
 import { registerEditor } from './inspect.js';
 

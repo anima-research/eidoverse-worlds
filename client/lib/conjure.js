@@ -19,7 +19,7 @@
 // ?orrery=<url> (or localStorage ew-orrery-url) overrides the service for
 // dev — a MOCK_APIS Orrery instance makes the whole flow testable offline.
 
-import { CONFIG, bus, report } from './core.js';
+import { CONFIG, bus, report } from './base.js';
 import { makeSection, toast, flashHint } from './ui.js';
 import { sendVerb, net } from './net.js';
 import { holdGhost } from './build.js';

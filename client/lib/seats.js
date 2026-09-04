@@ -14,7 +14,7 @@
 // and the digest of the clip bytes this page really loaded (assets.js
 // hashes them once at fetch — a filename is not an identity).
 
-import { bus } from './core.js';
+import { bus } from './base.js';
 import { vrmaShaLoaded } from './assets.js';
 import { makeVerdictCache, seatGate, riderScalar, nameFromAvatarPath, SEAT_CLIP_FILE } from './seatcore.js';
 

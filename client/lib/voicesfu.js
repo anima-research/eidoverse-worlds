@@ -17,7 +17,7 @@
 // server that answers silently forwards into a track nobody receives
 // (measured: forwarded=20, heard=0). Every renegotiation here is
 // server-initiated: we only ever setRemoteDescription(offer) → answer.
-import { bus } from './core.js';
+import { bus } from './base.js';
 import { audioContext } from './audioctx.js';
 // A dead media path must be visible to the PERSON, not only in the console —
 // they are holding a phone and watching a gold mic meter that is telling them

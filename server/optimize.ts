@@ -25,9 +25,10 @@
 
 import { NodeIO, type Document } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, KHRTextureBasisu } from "@gltf-transform/extensions";
-import { dedup, prune, resample, textureCompress, draco, listTextureSlots } from "@gltf-transform/functions";
+import { dedup, prune, resample, textureCompress, draco, listTextureSlots, weld, simplify } from "@gltf-transform/functions";
+import { MeshoptSimplifier } from "meshoptimizer";
 import draco3d from "draco3dgltf";
-import { capTexels, recipeStamp } from "./store-variants.ts";
+import { capTexels, recipeStamp, LOD_RECIPE, LOD_MIN_VERTS } from "./store-variants.ts";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename, dirname } from "node:path";
@@ -325,6 +326,136 @@ export async function optimizeGlbKtx2(bytes: Uint8Array, encoder: string): Promi
   if (tally.eligible === 0 || tally.converted < tally.eligible) return { out: null, ...tally };
   await doc.transform(draco());
   return { out: await io.writeBinary(doc), ...tally };
+}
+
+// ---- geometry LOD (objects only, fail closed on bodies) ---------------------
+// The v1 contract (PR #142 thread): a decimated variant for PLACEABLE
+// OBJECTS. Bodies are excluded by POSITIVE STRUCTURAL DETECTION on the raw
+// container — before any Document is constructed — and the answer is a typed
+// verdict, never a silent attempt. For accepted objects the reduce must
+// PROVE it preserved what the world depends on: named nodes (parts, socket
+// frames), materials, bounds (seat pans, collider fits) — or refuse.
+
+/** Why this GLB is not an object the reducer may touch — or null. Reads the
+ *  raw JSON chunk: gltf-transform must not be the thing deciding whether a
+ *  body is a body (it drops extensions it does not know). */
+export function lodExclusion(json: any): string | null {
+  if (json?.skins?.length) return "unsupported: skinned/avatar asset (skins)";
+  // fail-closed means NOT trusting well-formedness (review of #156, point 5):
+  // a VRM that forgot extensionsUsed still carries the extension OBJECT, and
+  // multi-set skinning may skip set 0 — look everywhere the structure can be
+  const extNames = [...(json?.extensionsUsed ?? []), ...(json?.extensionsRequired ?? []),
+    ...Object.keys(json?.extensions ?? {})];
+  if (extNames.some((e) => /^VRM/i.test(e) || /^VRMC_/i.test(e))) return "unsupported: skinned/avatar asset (VRM metadata)";
+  for (const m of json?.meshes ?? []) for (const p of m.primitives ?? []) {
+    if (p.targets?.length) return "unsupported: morph targets the reducer cannot prove preserved";
+    for (const k of Object.keys(p.attributes ?? {}))
+      if (/^(JOINTS|WEIGHTS)_\d+$/.test(k)) return "unsupported: skinned/avatar asset (joint weights)";
+  }
+  // v1 reduces STATIC geometry only. An animated object could survive the
+  // reduce structurally, but "could" is not the contract — preservation of
+  // channels/samplers through the diet is unproven here, and fail-closed is
+  // the reviewer-offered v1 answer. A later recipe can earn animation back
+  // with end-to-end evidence.
+  if (json?.animations?.length) return "unsupported: animated object (v1 reduces static geometry only)";
+  return null;
+}
+
+const totalVerts = (doc: Document) => {
+  let n = 0;
+  for (const m of doc.getRoot().listMeshes()) for (const p of m.listPrimitives()) n += p.getAttribute("POSITION")?.getCount() ?? 0;
+  return n;
+};
+const sceneBounds = (doc: Document): [number[], number[]] => {
+  const min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
+  for (const m of doc.getRoot().listMeshes()) for (const p of m.listPrimitives()) {
+    const pos = p.getAttribute("POSITION"); if (!pos) continue;
+    const lo = pos.getMin([0, 0, 0]), hi = pos.getMax([0, 0, 0]);
+    for (let i = 0; i < 3; i++) { min[i] = Math.min(min[i], lo[i]); max[i] = Math.max(max[i], hi[i]); }
+  }
+  return [min, max];
+};
+
+export type LodResult = { out: Uint8Array | null; verdict: string | null; before: number; after: number };
+
+/** The node contract, as a signature: names, transforms, mesh-bearing, and
+ *  hierarchy (child order), per scene. Exported so its DETECTION power is a
+ *  unit test of its own, separate from the pipeline that consumes it. */
+export const lodNodesSig = (d: Document): string => {
+  const walk = (n: any): any => [n.getName(), n.getTranslation(), n.getRotation(), n.getScale(),
+    n.getMesh()?.getName() ?? null, n.listChildren().map(walk)];
+  return JSON.stringify(d.getRoot().listScenes().map((sc) => sc.listChildren().map(walk)));
+};
+/** Which material each primitive of each mesh wears, by index. */
+export const lodMatsSig = (d: Document): string => JSON.stringify(d.getRoot().listMeshes().map((m) =>
+  [m.getName(), m.listPrimitives().map((p) => { const mt = p.getMaterial(); return mt ? d.getRoot().listMaterials().indexOf(mt) : -1; })]));
+
+/** The lod1 diet: the ktx2 diet (dedup/prune/resample + texel-budget KTX2 +
+ *  draco) with weld + meshopt-simplify between — and the preservation
+ *  asserts around the reduce. `verdict` non-null = a typed content refusal
+ *  (marker's business); textures follow --ktx2's all-or-nothing. */
+/** `mutate` is the MUTATION-CONTROL SEAM demanded by the #156 re-review:
+ *  the test suite injects a post-reduce corruption (a renamed node, a
+ *  swapped material assignment) and asserts the guard REFUSES it — so
+ *  deleting either guard turns a named test red instead of leaving the
+ *  suite green. Production callers (the CLI) never pass it. */
+export async function optimizeGlbLod(bytes: Uint8Array, encoder: string | null, mutate?: (doc: Document) => void): Promise<LodResult & Ktx2Tally> {
+  const none = { eligible: 0, converted: 0, failed: [] as string[] };
+  const rawJson = parseGlb(bytes).json;
+  const excluded = lodExclusion(rawJson);
+  if (excluded) return { out: null, verdict: excluded, before: 0, after: 0, ...none };
+  // a textured object on an encoder-less box is environmental — and known
+  // from the raw container, BEFORE any expensive transform runs (the pump
+  // retries this every boot; it must cost a JSON parse, not a simplify)
+  if (!encoder && (rawJson?.images?.length ?? 0) > 0) return { out: null, verdict: "__no_encoder__", before: 0, after: 0, ...none };
+  const io = await getIO();
+  const doc = await io.readBinary(bytes);
+  // The node contract is captured BEFORE any destructive transform (re-review
+  // of #156, blocker 1: a plain prune() deleted an empty named socket helper
+  // before the old post-head signature existed — the loss was invisible).
+  // prune() runs with keepLeaves so named empty helpers — socket frames,
+  // attachment points — survive the head at all; the whole-diet signature
+  // then PROVES nothing was lost, or the variant is refused.
+  const preNodes = lodNodesSig(doc);
+  await doc.transform(dedup(), prune({ keepLeaves: true }), resample());
+  const before = totalVerts(doc);
+  if (before < LOD_MIN_VERTS) return { out: null, verdict: `already light (${before} verts < ${LOD_MIN_VERTS})`, before, after: before, ...none };
+  // material assignments are captured after the head — dedup may merge
+  // byte-identical materials, which is the ktx2 variant's existing behavior;
+  // what may not change from HERE on is which material each primitive wears
+  const preMats = lodMatsSig(doc);
+  const [preMin, preMax] = sceneBounds(doc);
+  await doc.transform(weld(), simplify({ simplifier: MeshoptSimplifier, ratio: 0.25, error: 0.01 }));
+  mutate?.(doc);   // the mutation-control seam (tests only) — see the param doc
+  const after = totalVerts(doc);
+  if (lodNodesSig(doc) !== preNodes) return { out: null, verdict: "preservation failed: node hierarchy/transforms changed", before, after, ...none };
+  if (lodMatsSig(doc) !== preMats) return { out: null, verdict: "preservation failed: material assignments changed", before, after, ...none };
+  const [postMin, postMax] = sceneBounds(doc);
+  for (let i = 0; i < 3; i++) {
+    const tol = Math.max((preMax[i] - preMin[i]) * 0.02, 0.01);
+    if (Math.abs(postMin[i] - preMin[i]) > tol || Math.abs(postMax[i] - preMax[i]) > tol)
+      return { out: null, verdict: `preservation failed: bounds moved on axis ${i}`, before, after, ...none };
+  }
+  if (after > before * 0.6) return { out: null, verdict: `reduction ineffective (${before} -> ${after} verts)`, before, after, ...none };
+  // textures: the ktx2 arm's rules verbatim — all eligible convert or nothing ships
+  let tally: Ktx2Tally = none;
+  if (encoder) {
+    tally = await ktx2CompressTextures(doc, encoder);
+    if (tally.eligible > 0 && tally.converted < tally.eligible) return { out: null, verdict: null, before, after, ...tally };
+  } else if (doc.getRoot().listTextures().some((t) => t.getImage())) {
+    return { out: null, verdict: "__no_encoder__", before, after, ...none };   // env, the CLI exit-3s
+  }
+  // identity: the variant SAYS what it is a variant of, and how it was made
+  const srcHash = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
+  let meshoptVer = "unknown";
+  try { meshoptVer = JSON.parse(await Bun.file(Bun.resolveSync("meshoptimizer/package.json", import.meta.dir)).text()).version; } catch { /* stays unknown */ }
+  // the SOURCE's extras survive; ours ride alongside (never clobber a
+  // producer's own annotations — review of #156, point 6)
+  const asset = doc.getRoot().getAsset();
+  asset.extras = { ...(asset.extras ?? {}), lodOf: srcHash, recipe: LOD_RECIPE,
+    tools: { meshoptimizer: meshoptVer, encoder: encoder ? basename(encoder) : "none" } };
+  await doc.transform(draco());
+  return { out: await io.writeBinary(doc), verdict: null, before, after, ...tally };
 }
 
 // ---- KTX2 for VRMs (§20c): the surgical container rewrite -------------------
@@ -850,6 +981,10 @@ export async function transcodeImageKtx2(src: Uint8Array, srcPath: string, encod
 // failure, reason on stderr.
 // Exit 3 (any --ktx2* mode) = no KTX2 encoder on this box — environmental,
 // the caller must env-skip (never a .failed marker).
+// --lod shares the whole ladder: exit 2 for typed content verdicts (a body,
+// fail closed; nothing to reduce; a preservation assert), exit 3 when a
+// textured object meets a box with no encoder, exit 5 for a partial texture
+// conversion — REFUSED, retryable.
 // Exit 5 (--ktx2) = an encoder answered but not every eligible texture
 // converted — the variant is REFUSED, nothing written. Environmental too (a
 // flaky or misconfigured encoder, not a bad model): no marker, retried next
@@ -859,6 +994,7 @@ if (import.meta.main) {
   const argv = process.argv.slice(2);
   const mode = argv.includes("--ktx2-img") ? "--ktx2-img"
     : argv.includes("--ktx2-vrm") ? "--ktx2-vrm"
+    : argv.includes("--lod") ? "--lod"
     : argv.includes("--ktx2") ? "--ktx2" : null;
   const ktx2Mode = mode !== null;
   const [inPath, outPath] = argv.filter((a) => !a.startsWith("--"));
@@ -867,7 +1003,8 @@ if (import.meta.main) {
     process.exit(1);
   }
   let encoder: string | null = null;
-  if (ktx2Mode && !(encoder = findKtx2Encoder())) {
+  if (mode === "--lod") encoder = findKtx2Encoder();   // optional here: an untextured object reduces fine without one
+  else if (ktx2Mode && !(encoder = findKtx2Encoder())) {
     console.error("[optimize] ktx2: no encoder — set KTX2_TOKTX or put toktx/ktx on PATH (docs/ktx2-encoder.md)");
     process.exit(3);
   }
@@ -890,6 +1027,22 @@ if (import.meta.main) {
         process.exit(2);
       }
       console.log(`[optimize] ktx2-vrm: ${r.converted} image(s) → ${r.etc1s} etc1s + ${r.uastc} uastc`);
+      out = r.out;
+    } else if (mode === "--lod") {
+      const r = await optimizeGlbLod(src, encoder);
+      if (r.verdict === "__no_encoder__") {
+        console.error("[optimize] lod: textured object and no KTX2 encoder — set KTX2_TOKTX or put toktx/ktx on PATH (docs/ktx2-encoder.md)");
+        process.exit(3);
+      }
+      if (r.verdict) {   // a typed content refusal — fail closed, marker's business
+        console.error(`[optimize] lod: ${r.verdict} (${Math.round(performance.now() - t0)}ms) — original stays the only representation`);
+        process.exit(2);
+      }
+      if (!r.out) {
+        console.error(`[optimize] lod: ${r.converted}/${r.eligible} texture(s) converted — REFUSING a partial variant (${r.failed.join(", ")}); retry when the encoder is sane`);
+        process.exit(5);
+      }
+      console.log(`[optimize] lod: ${r.before} -> ${r.after} verts, ${r.converted}/${r.eligible} texture(s) at the texel budget`);
       out = r.out;
     } else if (mode === "--ktx2") {
       const r = await optimizeGlbKtx2(src, encoder!);
@@ -916,7 +1069,7 @@ if (import.meta.main) {
     if (out.length >= src.length * (ktx2Mode ? 1.25 : 0.95)) {
       // the KTX2 verdict carries its recipe: a later recipe re-measures it
       // (store-variants.ts verdictStands) instead of inheriting the refusal
-      console.error(`[optimize] not smaller (${src.length} -> ${out.length}, ${ms}ms)${ktx2Mode ? ` ${recipeStamp()}` : ""} — keeping original`);
+      console.error(`[optimize] not smaller (${src.length} -> ${out.length}, ${ms}ms)${ktx2Mode ? ` ${recipeStamp(mode === "--lod" ? LOD_RECIPE : undefined)}` : ""} — keeping original`);
       process.exit(2);
     }
     // …and the same care about CONTENT: a GLB whose images are not images is
@@ -936,10 +1089,10 @@ if (import.meta.main) {
       }
     }
     // tmp+rename: a killed pass must never leave a truncated GLB where the
-    // server will trustingly serve it
-    await Bun.write(`${outPath}.tmp`, out);
-    const { renameSync } = await import("node:fs");
-    renameSync(`${outPath}.tmp`, outPath);
+    // server will trustingly serve it (atomicWrite, the house idiom — this
+    // site used to be the odd one out with a lazy fs import)
+    const { atomicWrite } = await import("./fsutil.ts");
+    atomicWrite(outPath, out);
     console.log(`[optimize] ${src.length} -> ${out.length} bytes (${(src.length / out.length).toFixed(1)}x, ${ms}ms)`);
     process.exit(0);
   } catch (e) {

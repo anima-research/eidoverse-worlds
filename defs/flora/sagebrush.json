@@ -1,0 +1,10 @@
+{
+  "doc": "Mojave shrub (shrub_gen.js preset 'sagebrush'). No own bark set yet — borrows blackbrush's stem maps. stemColor 0x8b8378. stemTint lifts toward the sheet's pale shredded-silver stem (painted 189/180/162 vs tile 86/78/72) — the full measured ×6 washed the fissures to chalk; this keeps the grain readable while staying silver.",
+  "archetype": "shrub", "gen": "sagebrush", "maps": "sagebrush",
+  "stem": "blackbrush_stem", "stemColor": 9143160,
+  "stemTint": [3.2, 3.5, 3.3],
+  "footRadius": 0.65,
+  "baseScale": [0.75, 1.3], "density": 0.05, "clump": 0.45,
+  "wind": { "base": 0.08, "gust": 0.18, "gustFreq": 0.3, "flutter": 1.0 },
+  "sss": 0.4, "rough": 0.9, "pushScale": 0.45
+}

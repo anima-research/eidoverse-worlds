@@ -13,15 +13,22 @@ import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdir
 import { sfuDiag } from "./sfuadapter.ts";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
-import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, JOIN_TOKEN } from "./config.ts";
+import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, LADDER, JOIN_TOKEN } from "./config.ts";
 import { isStoreOriginal, isServingArtifact } from "./store-variants.ts";
 import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
+import { LOD_RECIPE, lodVariantPath } from "./store-variants.ts";
 import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
 import { resolveLibFile } from "./lint.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { worlds, getWorld, type World } from "./world.ts";
 import { handleUpload } from "./upload.ts";
+import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
+import { tickStats } from "./tick.ts";
+import { entryBusStats } from "./events.ts";
+import { atomicWrite } from "./fsutil.ts";
+import { seatStore, announceProfileUpdate, MAX_PROPOSAL_BYTES } from "./seats.ts";
+import { agentTokens, aid1JoinIdentity } from "./auth.ts";
 
 /** What the routes need from Bun's server object, structurally: the WS
  *  upgrade and the socket address (X-Real-IP's fallback). */
@@ -64,24 +71,48 @@ function requestSnap(world: World, follow: string, view = "first"): Promise<{ ok
  *  the join snapshot, so a joiner needs no separate round-trip before it
  *  can resolve a body name (the /avatars top-level await used to gate the
  *  client's entire module graph). */
-export function avatarRoster(): { name: string; path: string; height: number | null }[] {
-  const seen = new Map<string, string>();
+export function avatarRoster(): { name: string; path: string; height: number | null; seat?: unknown }[] {
+  const seen = new Map<string, { url: string; file: string }>();
   for (const base of [LIBRARY_DIR, OPT_DIR]) {
     const dir = join(base, "eidoverse/assets/vrms");
     if (!existsSync(dir)) continue;
     for (const f of readdirSync(dir)) {
       // .ktx2.vrm files are §20c texture variants living beside overlay
       // originals — negotiated serving artifacts, not bodies of their own
-      if (f.endsWith(".vrm") && !f.endsWith(".ktx2.vrm")) seen.set(f.replace(".vrm", ""), `eidoverse/assets/vrms/${f}?v=${Math.round(Bun.file(join(dir, f)).lastModified)}`);
+      if (f.endsWith(".vrm") && !f.endsWith(".ktx2.vrm")) {
+        seen.set(f.replace(".vrm", ""), {
+          url: `eidoverse/assets/vrms/${f}?v=${Math.round(Bun.file(join(dir, f)).lastModified)}`,
+          file: join(dir, f),
+        });
+      }
     }
   }
-  // stature metadata, contributed alongside portraits (see POST /thumb)
+  // The def overlay (§24, defs/avatars/): declared beats discovered. A def
+  // with `vrm` adds — or repoints — a named avatar at any /library path the
+  // scan wouldn't find; a path that doesn't resolve is refused loudly and
+  // the discovered roster stands (a typo'd def must not vanish a body).
+  const defs = avatarDefs();
+  for (const [name, d] of Object.entries(defs)) {
+    if (!d.vrm) continue;
+    const file = resolveLibFile(d.vrm);
+    if (!file) { console.error(`[defs] avatar "${name}": vrm not found in library — ${d.vrm}`); continue; }
+    seen.set(name, { url: `${d.vrm}?v=${Math.round(Bun.file(file).lastModified)}`, file });
+  }
+  // stature metadata, contributed alongside portraits (see POST /thumb);
+  // a def's declared height wins over the measured sidecar
   let hmeta: Record<string, { h: number }> = {};
   try {
     const mp = join(OPT_DIR, "thumbs", "meta.json");
     if (existsSync(mp)) hmeta = JSON.parse(readFileSync(mp, "utf8"));
   } catch { /* roster works without heights */ }
-  return [...seen].map(([name, path]) => ({ name, path, height: hmeta[name.replace(/[^a-zA-Z0-9_-]/g, "_")]?.h ?? null }));
+  // The seat verdict rides every roster entry, PRE-JUDGED against the bytes
+  // that will actually serve (#101: one judge, three readers — consumers
+  // never rehash a VRM and can never read a stale value as fresh). The sha
+  // work behind judge() is mtime-cached, so a roster read costs hashing only
+  // when a body's bytes actually changed.
+  return [...seen].map(([name, { url, file }]) => ({ name, path: url,
+    height: defs[name]?.height ?? hmeta[name.replace(/[^a-zA-Z0-9_-]/g, "_")]?.h ?? null,
+    seat: seatStore.judge(name, file) }));
 }
 
 /** The animation clips, each at a path stamped with its mtime — the same
@@ -103,7 +134,7 @@ export function avatarRoster(): { name: string; path: string; height: number | n
 export function animationRoster(): { name: string; path: string; size: number }[] {
   const seen = new Map<string, { path: string; size: number }>();
   // later base wins, so this list runs lowest-precedence first
-  for (const base of [LIBRARY_DIR, OPT_DIR, PATCH_DIR]) {
+  for (const base of [...LADDER].reverse()) {   // lowest-precedence first: later wins the map
     const dir = join(base, "eidoverse/assets/animations");
     if (!existsSync(dir)) continue;
     for (const f of readdirSync(dir)) {
@@ -114,6 +145,30 @@ export function animationRoster(): { name: string; path: string; size: number }[
       seen.set(f.replace(".vrma", ""),
         { path: `eidoverse/assets/animations/${f}?v=${Math.round(file.lastModified)}`, size: file.size });
     }
+  }
+  // The def overlay (§24, defs/animations/): declared beats discovered —
+  // same contract as the avatar roster. A def's `vrma` adds or repoints a
+  // named clip; an unresolvable path is refused loudly and the discovered
+  // roster stands. Non-path metadata (tags, doc) rides /defs, not here —
+  // this roster stays the prefetcher's byte-budget shape. Resolution walks
+  // the clip ladder above (resolveLibFile is the glb/vrm resolver and
+  // deliberately doesn't know .vrma or PATCH_DIR).
+  const resolveClip = (lib: string): string | null => {
+    const rel = normalize(lib).replace(/^\/+/, "");
+    if (rel.includes("..") || !/\.vrma$/i.test(rel)) return null;
+    for (const base of LADDER) {
+      const p = normalize(join(base, rel));
+      if (p.startsWith(base) && existsSync(p)) return p;
+    }
+    return null;
+  };
+  const defs = animationDefs();
+  for (const [name, d] of Object.entries(defs)) {
+    if (!d.vrma) continue;
+    const file = resolveClip(d.vrma);
+    if (!file) { console.error(`[defs] animation "${name}": vrma not found in library — ${d.vrma}`); continue; }
+    const bf = Bun.file(file);
+    seen.set(name, { path: `${d.vrma}?v=${Math.round(bf.lastModified)}`, size: bf.size });
   }
   return [...seen].map(([name, e]) => ({ name, ...e }));
 }
@@ -375,13 +430,24 @@ const ROUTES: Route[] = [
         return j({ error: "no such world" }, 404);
       }
       const w = getWorld(wname);
+      // COMPOSE with the sim (PROTOCOL_v2 §5): a punted body's fold position
+      // is its last AUTHORED word, which under an epoch can be a spawn point
+      // a dozen flights ago — the sim's answer outranks it, exactly as the
+      // punt verb's own reach math already composes (verbs.ts). Without this
+      // an agent measuring a punted crate was told where it USED to be.
+      const simAt = (eid: string, e: { pos: number[]; yaw?: number }) => {
+        const b = (w as any).sim?.bodies?.[eid];
+        return b ? { pos: b.p as number[], yaw: (typeof b.yaw === "number" ? b.yaw : e.yaw ?? 0) }
+          : { pos: e.pos, yaw: e.yaw ?? 0 };
+      };
       const id = url.searchParams.get("id");
       if (id) {
         const e = w.state.entities[id];
         if (!e) return j({ error: `no entity "${id}" in ${wname}` }, 404);
         const file = e.lib ? resolveLibFile(e.lib) : null;
         const sum = file ? await summarizeGlb(file) : null;
-        return j({ id, lib: e.lib ?? null, pos: e.pos, yaw: e.yaw ?? 0, scale: e.scale ?? 1,
+        const at = simAt(id, e);
+        return j({ id, lib: e.lib ?? null, pos: at.pos, yaw: at.yaw, scale: e.scale ?? 1,
           parent: e.parent ?? null, comp: e.comp ?? {},
           geometry: sum,   // local frame — compose with pos/yaw/scale for world space
           note: "geometry coords are the MODEL's local frame; sockets use the same frame, so a topSurface center is a socket pos verbatim" });
@@ -391,8 +457,9 @@ const ROUTES: Route[] = [
       for (const [eid, e] of Object.entries(w.state.entities)) {
         const file = withBoxes && e.lib ? resolveLibFile(e.lib) : null;
         const sum = file ? await summarizeGlb(file) : null;
+        const at = simAt(eid, e);
         out.push({ id: eid, lib: e.lib ?? null, kind: e.kind ?? "thing",
-          pos: e.pos, yaw: e.yaw ?? 0, scale: e.scale ?? 1,
+          pos: at.pos, yaw: at.yaw, scale: e.scale ?? 1,
           parent: e.parent ?? null, comp: e.comp ?? {},
           ...(sum ? { bbox: sum.bbox, tris: sum.tris } : {}) });
       }
@@ -402,6 +469,41 @@ const ROUTES: Route[] = [
   {
     match: (u, req) => u.pathname === "/upload" && req.method === "POST",
     handler: ({ req, url, srv }) => handleUpload(req, url, srv),
+  },
+  {
+    // POST /seat-profile — the live proposal door (#101 B4, ported §24r).
+    //
+    // Write authority: a NAMED actor only — a tokens.json bearer or a
+    // home-node-verified aid1 identity, the same two legs /upload trusts.
+    // The anonymous door token may NOT write here: a seat profile moves
+    // every wearer of an avatar, and "?by=" is self-asserted. This door
+    // writes PROPOSALS only (the store refuses accepted-shaped records with
+    // a 403 by construction); the countersign that makes a profile
+    // load-bearing has no HTTP path at all — tools/seat-accept.ts is an
+    // operator act on the box, and the 5s poll announces it. A proposal
+    // through THIS door is announced immediately (the store's own mtime
+    // bookkeeping keeps the poll from repeating it).
+    match: (u, req) => u.pathname === "/seat-profile" && req.method === "POST",
+    handler: async ({ req, url }) => {
+      const j = (o: unknown, status = 200) => new Response(JSON.stringify(o),
+        { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
+      const tok = url.searchParams.get("token") ?? "";
+      const actor = agentTokens().byToken.get(tok) ?? aid1JoinIdentity(tok)?.slug;
+      if (!actor) {
+        return j({ error: "a named actor is required — a tokens.json bearer or an aid1 credential; the door token may not write seat profiles" }, 401);
+      }
+      const text = await req.text();
+      if (new TextEncoder().encode(text).length > MAX_PROPOSAL_BYTES) {
+        return j({ error: `proposal exceeds ${MAX_PROPOSAL_BYTES} bytes` }, 413);
+      }
+      let record: unknown;
+      try { record = JSON.parse(text); } catch { return j({ error: "body must be JSON" }, 400); }
+      const r = seatStore.propose(record as Record<string, unknown>, actor);
+      if (!r.ok) return j({ error: r.why }, r.status);
+      const notified = announceProfileUpdate(r.name, r.pose, r.rev);
+      console.log(`[seats] proposal ${r.name}/${r.pose} by ${actor} → rev ${r.rev}, ${notified} client(s) notified`);
+      return j({ ok: true, status: "proposed", rev: r.rev, name: r.name, pose: r.pose });
+    },
   },
   {
     match: (u) => u.pathname === "/snap",
@@ -417,6 +519,27 @@ const ROUTES: Route[] = [
   {
     match: (u) => u.pathname === "/avatars",
     handler: () => new Response(JSON.stringify(avatarRoster()),
+      { headers: { "content-type": "application/json", "cache-control": "no-store",
+        // the store revision the verdicts were judged at — the client cache's
+        // generation guard compares this against update events, so a slow
+        // response from before an acceptance can never roll it back
+        "x-profiles-rev": String(seatStore.rev) } }),
+  },
+  {
+    // The heartbeat's gauges (charter §4): per-system runs / worst ms /
+    // errors. Public and cheap like /version — "is the tick healthy" must
+    // be a lookup, not an inference from symptoms.
+    match: (u) => u.pathname === "/tick",
+    handler: () => new Response(JSON.stringify({ ...tickStats(), entryBus: entryBusStats() }),
+      { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
+  },
+  {
+    // The def registry (charter §3): instance content as data, one fetch per
+    // client boot. no-store for the same reason the rosters are — an edited
+    // def must reach the next boot, and the registry's own TTL already
+    // bounds the read cost.
+    match: (u) => u.pathname === "/defs",
+    handler: () => new Response(defsPayload(),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
   },
   {
@@ -454,6 +577,7 @@ const ROUTES: Route[] = [
       JSON.stringify({
         ...BUILD,
         ktx2Key: KTX2_KEY,
+        lodRecipe: LOD_RECIPE,
         ...(process.env.WORLD_INSTANCE_NONCE ? { instance: process.env.WORLD_INSTANCE_NONCE } : {}),
       }),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
@@ -515,8 +639,7 @@ const ROUTES: Route[] = [
         let meta: Record<string, { h: number }> = {};
         try { if (existsSync(metaPath)) meta = JSON.parse(readFileSync(metaPath, "utf8")); } catch { /* fresh */ }
         meta[safe] = { h: Math.round(height * 100) / 100 };
-        writeFileSync(`${metaPath}.tmp`, JSON.stringify(meta));
-        renameSync(`${metaPath}.tmp`, metaPath);
+        atomicWrite(metaPath, JSON.stringify(meta));
       }
       // First contributor wins (re-posting on every join would be pointless
       // write traffic) — unless a re-mint pass explicitly forces the refresh.
@@ -674,6 +797,29 @@ const ROUTES: Route[] = [
       // The key is a generation (shared/ktx2.js): a retired one is an
       // unflagged fetch — whatever that client pinned under it, it keeps.
       const wantKtx2 = wantsKtx2(url.searchParams) && negotiable;
+      // The LOD tier rides the ktx2 negotiation (a LOD variant carries KTX2
+      // textures) and the same split-brain rule twice over: a client only
+      // asks with the RECIPE /version published — the URL carries the
+      // generation, so a recipe change is a fresh URL and a fresh file, and
+      // yesterday's reduction can never sit pinned under today's address.
+      const lodAsked = url.searchParams.get("lod");
+      const wantLod = lodAsked === LOD_RECIPE && wantKtx2 && rel.endsWith(".glb");
+      if (wantLod) {
+        const lRel = lodVariantPath(rel);
+        const l = normalize(join(OPT_DIR, lRel));
+        if (l.startsWith(OPT_DIR) && existsSync(l)) {
+          // library sources are MUTABLE: an updated model with a not-yet-
+          // rebuilt variant must fall through provisional, never serve the
+          // old body under the new ?v= (the §20c vrm freshness discipline)
+          let fresh = true;
+          if (!rel.startsWith("store/")) {
+            const src = [[PATCH_DIR, normalize(join(PATCH_DIR, rel))], [OPT_DIR, normalize(join(OPT_DIR, rel))], [LIBRARY_DIR, normalize(join(LIBRARY_DIR, rel))]]
+              .find(([b, p]) => p.startsWith(b) && existsSync(p))?.[1];
+            fresh = !!src && Bun.file(l).lastModified > Bun.file(src).lastModified;
+          }
+          if (fresh) return serveFrom(OPT_DIR, lRel, true, req, versioned);
+        }
+      }
       if (wantKtx2) {
         const kRel = rel.endsWith(".glb") ? `${rel}.ktx2.glb`
           : rel.endsWith(".vrm") ? `${rel}.ktx2.vrm` : `${rel}.ktx2`;
@@ -685,7 +831,9 @@ const ROUTES: Route[] = [
               .find(([base, p]) => p.startsWith(base) && existsSync(p))?.[1];
             fresh = !!orig && Bun.file(k).lastModified > Bun.file(orig).lastModified;
           }
-          if (fresh) return serveFrom(OPT_DIR, kRel, true, req, versioned);
+          // a lod-requesting fetch answered by the plain ktx2 variant is
+          // still PROVISIONAL — the lod may land later under this same URL
+          if (fresh) return serveFrom(OPT_DIR, kRel, true, req, versioned, wantLod || (lodAsked != null && !wantLod));
         }
       }
       // A flagged fetch that falls through is PROVISIONAL for that URL, not
@@ -698,7 +846,10 @@ const ROUTES: Route[] = [
       // ?ktx2=1 answer immutable, every one webp). no-cache rides the ETag —
       // a 304 while nothing changed, the variant's bytes the moment it exists;
       // nginx honors it (nginx-show.conf) and simply does not cache these.
-      const provisional = wantKtx2;
+      // an unrecognized lod value is a generation this process does not run
+      // (a pull mid-window, a buggy client): whatever answers must not be
+      // pinned under that URL — the NEXT process may negotiate it
+      const provisional = wantKtx2 || (lodAsked != null && !wantLod);
       // store uploads: prefer the store-min shadow — same address, the
       // original stays as provenance and as the fallback while (or if) the
       // optimize pass hasn't landed for this hash

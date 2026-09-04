@@ -15,7 +15,7 @@
 // it would be strange for a synthetic speaker to be unmutable when a human
 // one is not.
 
-import { bus } from './core.js';
+import { bus } from './base.js';
 
 const KEY = 'eido.audio.prefs';
 // sttConsent is TRI-STATE and must stay so: null = never asked, true =

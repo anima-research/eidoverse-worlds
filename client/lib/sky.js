@@ -13,7 +13,8 @@
 // The VERB is stable across both: {hours, rate, weather, clouds, …}. Which
 // renderer answers it is an implementation detail the world log never sees.
 
-import { THREE, scene, sun, hemi, renderer, camera, report, bus } from './core.js';
+import { THREE, scene, sun, hemi, renderer, camera } from './core.js';
+import { report, bus } from './base.js';
 import { loadEidoModule, primeFiles, listLibrary, fetchBytes } from './assets.js';
 import { markPhase } from './boot.js';
 import { attachBakedDome, detachBakedDome, updateBakedDome, bakedActive, requestBake,

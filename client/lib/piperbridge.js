@@ -11,7 +11,7 @@
 // participant.
 
 import { setTtsSource, setTtsEnabled } from './tts.js';
-import { report } from './core.js';
+import { report } from './base.js';
 
 let ws = null, nextId = 1;
 const pending = new Map();

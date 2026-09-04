@@ -1,0 +1,10 @@
+{
+  "doc": "Mojave shrub from the vendored SeedThree dichotomous math (shrub_gen.js): multi-stem crown skeleton, welded tube wood with bark maps, spray cards on the terminal twigs. stemColor 0x6d5a46. stemTint halfway between the dark namesake tile and the sheet's pale spiny twigs (painted stem 122/113/99 vs tile 86/78/72) — old wood dark, young growth pale.",
+  "archetype": "shrub", "gen": "blackbrush", "maps": "blackbrush",
+  "stem": "blackbrush_stem", "stemColor": 7166534,
+  "stemTint": [1.7, 1.75, 1.6],
+  "footRadius": 0.75,
+  "baseScale": [0.7, 1.25], "density": 0.06, "clump": 0.5,
+  "wind": { "base": 0.06, "gust": 0.14, "gustFreq": 0.3, "flutter": 1.1 },
+  "sss": 0.35, "rough": 0.9, "pushScale": 0.4
+}

@@ -54,7 +54,7 @@
 // that as "a chime every 6-8 seconds": it is the workaround being audible, not
 // a bug of ours and not a notification.
 
-import { report, bus } from './core.js';
+import { report, bus } from './base.js';
 import { sttConsented } from './voiceconsent.js';
 import { sendVerb } from './net.js';
 import { flashHint } from './ui.js';

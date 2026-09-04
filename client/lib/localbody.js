@@ -8,7 +8,9 @@
 // in the world→flora→controller→chat→net→world knot, and this module must
 // not add another edge into it (§14.2).
 
-import { THREE, CONFIG, bus } from './core.js';
+import { THREE } from './core.js';
+import { CONFIG, bus } from './base.js';
+import { radialForce, FORCE_MIN } from '../../shared/force.js';
 import {
   myState, updateFollowCamera, setPosture, keys, setSeatHook,
 } from './controller.js';
@@ -261,7 +263,12 @@ function syncPins() {
 }
 function applyMyPins() {
   if (!ragdoll) return;
-  for (const [j, at] of myPins) ragdoll.setPin(j, _pinV.set(at[0], at[1], at[2]));
+  // §24k R0: everything in myPins is a NAIL (placed on release / pulled on
+  // request), so it takes the nail's firm tuning — the dragger's takeover
+  // sim already passed firm=true (bodydrag.js), while the owner's own
+  // re-apply here didn't: the same nail held with different physics
+  // depending on whose machine was simulating.
+  for (const [j, at] of myPins) ragdoll.setPin(j, _pinV.set(at[0], at[1], at[2]), true);
 }
 function addPin(j, at) {
   if (!Array.isArray(at) || at.length !== 3 || !at.every(Number.isFinite)) return;
@@ -378,17 +385,16 @@ export function initLocalBody({ logChat: logChatFn }) {
   // only effect on my body happens here, gated by the same consent as a push.
   // Linear falloff to the rim; at ground zero direction is meaningless, so you
   // topple the way you were already leaning.
-  bus.on('force', ({ actor, at, radius = 4, power = 3 }) => {
+  bus.on('force', ({ actor, at, radius, power }) => {
     if (!getMe() || !pushable()) return;
-    if (!Array.isArray(at) || at.length !== 3) return;
-    const dx = myState.pos.x - at[0], dz = myState.pos.z - at[2];
-    const d = Math.hypot(dx, dz);
-    if (d > radius) return;
-    const mag = Math.min(MAX_PUSH, power * (1 - d / Math.max(radius, 0.001)));
-    if (mag < 0.3 && !ragdoll) return;             // a breeze, not a blow
-    const lean = d > 0.05
-      ? _shove.set((dx / d) * mag, 0, (dz / d) * mag)
-      : toppleVelocity().setLength(Math.max(mag, 0.5));
+    // §24l R1: the falloff arithmetic is shared/force.js — one truth with
+    // the agent's copy. Consent and the ground-zero direction stay here.
+    const f = radialForce(at, myState.pos.x, myState.pos.z, radius, power);
+    if (!f) return;
+    if (f.mag < FORCE_MIN && !ragdoll) return;     // a breeze, not a blow
+    const lean = f.nx != null
+      ? _shove.set(f.nx * f.mag, 0, f.nz * f.mag)
+      : toppleVelocity().setLength(Math.max(f.mag, 0.5));
     applyShove(lean, actor);
   });
 }

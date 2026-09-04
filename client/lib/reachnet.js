@@ -20,7 +20,7 @@
 // — the same edges an agent hears through its door. UI can listen; nothing
 // here renders anything.
 
-import { bus } from './core.js';
+import { bus } from './base.js';
 import { deriveLandmarks, landmarkWorld } from './landmarks.js';
 import {
   REACH_LIMBS, TOUCH_GAP, normalizeReachBag, normalizeReachTarget, sameReach,

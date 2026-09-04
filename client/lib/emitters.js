@@ -27,7 +27,8 @@
 // engine grows a `seed` option and a `dispose()` (as `createFlora` already
 // did) this file loses code rather than gaining a second path.
 
-import { THREE, scene, bus } from './core.js';
+import { THREE, scene } from './core.js';
+import { bus } from './base.js';
 import { loadEidoModule, primeFiles } from './assets.js';
 import { entities } from './world.js';
 import { normalizeParticles, resolvedCount, withSeededRandom, QUALITY_TIERS } from '../../shared/particles.js';

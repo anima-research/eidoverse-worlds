@@ -35,6 +35,7 @@ export interface WorldLike {
   };
   clients: Set<{ id: string; spectator: boolean; lastPose?: any }>;
   append(actor: string, verb: string, args: Record<string, unknown>): LogEntry;
+  commit(actor: string, verb: string, args: Record<string, unknown>): LogEntry;
   broadcast(msg: unknown, except?: unknown): void;
   debug(kind: string, detail: Record<string, unknown>): void;
 }
@@ -236,8 +237,9 @@ class Instance {
       return `selfOnly: this behavior only touches its own entity ("${this.rec.attach}")`;
     }
     try {
-      const entry = this.w.append(`bhv:${this.id}`, verb, { ...args, by: this.rec.author });
-      this.w.broadcast({ type: "log", entry });
+      // §24 entry bus: commit publishes (fanout + bhv.onEntry, whose bhv:
+      // actor guard is what keeps script-to-script loops out, as before)
+      this.w.commit(`bhv:${this.id}`, verb, { ...args, by: this.rec.author });
       return "";
     } catch (err) {
       return `append failed: ${String(err).slice(0, 200)}`;
@@ -287,8 +289,7 @@ class Instance {
       return;
     }
     try {
-      const entry = this.w.append(`bhv:${this.id}`, "bstate", { id: this.id, data });
-      this.w.broadcast({ type: "log", entry });
+      this.w.commit(`bhv:${this.id}`, "bstate", { id: this.id, data });
     } catch { /* persistence is best-effort; the ring already has the story */ }
   }
 

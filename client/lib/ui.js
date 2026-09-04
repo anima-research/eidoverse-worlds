@@ -2,9 +2,10 @@
 // Toasts, the loading tray, the HUD, the hint bar, the panel frames, the dock,
 // and the two overlays (help, front door).
 
-import { bus, CONFIG, setName, setToken, setErrorSink, report, colorFor } from './core.js';
+import { bus, CONFIG, setName, setToken, setErrorSink, report, colorFor } from './base.js';
 import { loadingItems } from './assets.js';
 import { makeFrame, getFrame, isLocked, setLocked, resetLayout } from './frames.js';
+import { defsRegistry } from './defs.js';
 
 const $ = (id) => document.getElementById(id);
 export const el = {
@@ -169,7 +170,7 @@ export function toggleRoster() {
   whoFrame?.toggle();
   paintRoster();
 }
-const escapeHtml = (v) => String(v).replace(/[&<>"]/g, (c) => (
+export const escapeHtml = (v) => String(v).replace(/[&<>"]/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 // ============================================================ dock
@@ -229,86 +230,37 @@ for (const s of [el.door, el.help]) {
 }
 
 // ---- help ------------------------------------------------------------------
-
-export const KEYMAP = [
-  ['Move',        '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows'],
-  ['Run',         '<kbd>Shift</kbd>'],
-  ['Walk slowly', '<kbd>Alt</kbd> — for precise positioning'],
-  ['Jump / climb','<kbd>Space</kbd> — against a low ledge, mantles onto it'],
-  ['Sit / lie',   '<kbd>X</kbd> / <kbd>Z</kbd> — near a seat, sits ON it'],
-  ['Emotes',      '<kbd>1</kbd>–<kbd>6</kbd> — wave, cheer, dance, point, salute, clap'],
-  ['Chat',        '<kbd>Enter</kbd> to open · <kbd>@</kbd> mentions · <kbd>/</kbd> commands · <kbd>↑</kbd> recalls'],
-  ['Look',        'drag the scene · <kbd>wheel</kbd> zooms (through to first person)'],
-  ['Mouselook',   '<kbd>M</kbd> toggles · <kbd>Esc</kbd> frees the cursor (browsers only let Esc release it)'],
-  ['Edit mode',   '<kbd>B</kbd> — off by default, so looking around never moves anything'],
-  ['Select',      'in edit mode: click a thing, drag to move, <kbd>Q</kbd>/<kbd>E</kbd> turn, <kbd>Del</kbd> remove'],
-  ['Seat anchors', 'select a thing → <b>+ seat</b> → click the spot · gold gizmos: drag / <kbd>Q</kbd><kbd>E</kbd> face / <kbd>Del</kbd>'],
-  ['Raise / lower', '<kbd>Shift</kbd>+drag, or <kbd>R</kbd>/<kbd>F</kbd> — move a selected thing up and down'],
-  ['Undo',        '<kbd>Ctrl</kbd>+<kbd>Z</kbd> — your own edits, newest first'],
-  ['Panels',      '<kbd>Tab</kbd> who\'s here · drag titles to move, corners to resize'],
-  ['Photo mode',  '<kbd>P</kbd> — free camera · <kbd>F1</kbd> hides the UI · <kbd>F2</kbd> saves a shot'],
-  ['Debug view',  '<kbd>F3</kbd> — collider volumes and the ragdoll skeleton, as the solver reads them'],
-  ['This help',   '<kbd>?</kbd> or <kbd>H</kbd>'],
-];
+// The overlay's CONTENT is a def (defs/ui/_help.json, §R4 defs round two) —
+// title, subtitle, the key table, the prose sections. A world can reword its
+// own welcome without forking the client. Defs are server-owned, the same
+// trust domain as this file itself, so the fragments are trusted markup. The
+// "Your layout" section stays code-side: it carries a live button wired to
+// resetLayout. SINGLE-SOURCE — no baked-in fallback prose (the fallback would
+// be the 120-line mirror this move kills); a world serving no help def gets a
+// sheet that says so.
 
 export function buildHelp() {
-  const s = sheet(el.help);
-  s.innerHTML = `
-    <button class="close-x" aria-label="close">✕</button>
-    <h1>eidoverse-worlds</h1>
-    <p class="sub">A shared place for people and AIs. You have a body; everything
-      you do is a verb the world remembers.</p>
-    <h2>Keys</h2>
-    <dl class="keys">${KEYMAP.map(([label, k]) => `<dt>${label}</dt><dd>${k}</dd>`).join('')}</dl>
-    <h2>Talking</h2>
-    <p class="sub">Type <b>@</b> to mention someone — agents are pinged by name,
-      and a mention reaches them even if they were away when you said it. Names
-      in chat are clickable. <b>/me</b>, <b>/who</b>, <b>/goto</b> and friends
-      autocomplete from the <b>/</b>.</p>
-    <h2>Worlds & roles</h2>
-    <p class="sub">A brand-new world belongs to whoever steps in first. Owners
-      shape the sky and terrain and can <b>/grant</b> roles; everyone else can
-      still build unless the owner closes it (<b>/grant * visitor</b>).
-      Bringing <i>new</i> models into a world's vocabulary needs the <b>gen</b>
-      capability (<b>/grant name +gen</b>). <b>/role</b> tells you what you are
-      here. Owners can also <b>/fork</b> a world into a copy, or <b>/reset</b>
-      it back to zero (its history is archived, never destroyed).
-      Owners moderate their world: <b>/kick name</b> removes someone (they may
-      return), <b>/ban name reason</b> keeps them out until <b>/unban</b>;
-      <b>/bans</b> lists who is barred here.</p>
-    <h2>Building</h2>
-    <p class="sub">Open <b>build</b> to search the model library, or drag a
-      <b>.glb</b> into the window to upload one. Drag a <b>.vrm</b> to add a body
-      to the roster. Anything you place you can select and move again — or undo.</p>
-    <h2>Using things</h2>
-    <p class="sub">Some things react: <b>/push swing1</b> (or <b>/use</b>
-      <i>thing action</i>) works for everyone, even visitors — using the world
-      is not building it. Builders can give things motion (a swing, a windmill,
-      a ferry on a route) and reactions; what a push does was decided by
-      whoever built the thing. People react too: <b>/touch name</b> rests a
-      hand on their shoulder (<b>/touch name head</b> for a headpat,
-      <b>/letgo</b> to lower it) — the hand really reaches, follows them,
-      and they see it land. <b>/push name</b> shoves; their client always
-      decides what actually happens to their body.</p>
-    <h2>If it runs slowly</h2>
-    <p class="sub">Cloud quality below <b>high</b> shows a baked sky — the
-      full volumetric clouds rendered once to a texture, refreshed when the
-      sky changes, nearly free per frame. <b>high</b> raymarches them live
-      every frame (they drift and breathe, and cost most of your GPU). Open
-      <b>sky</b> and set <b>clouds⚙</b> — that setting is yours alone and is
-      never shared with the world. <b>grass⚙</b> in the same panel caps how
-      much of the meadow your machine draws (<b>off</b> hides it entirely,
-      for you only) — the shared field itself is untouched. If a field can't
-      be thinned (older vegetation), the row says so with ⚠ instead of
-      pretending the cap took. The client will
-      also turn both down by itself if the frame rate drops.</p>
-    <h2>Your layout</h2>
-    <p class="sub">Every panel moves and resizes, and where you put it is
-      remembered. <kbd>Alt</kbd>+drag moves a panel from anywhere on it. The
-      🔓 in the corner locks the layout once you like it.
-      <button id="help-reset" style="margin-left:6px">reset layout</button></p>`;
-  s.querySelector('.close-x').onclick = () => closeOverlay(el.help);
-  s.querySelector('#help-reset').onclick = () => { resetLayout(); closeOverlay(el.help); };
+  const paint = () => defsRegistry().then((reg) => {
+    const h = reg.uiHelp;
+    const s = sheet(el.help);
+    s.innerHTML = `
+      <button class="close-x" aria-label="close">✕</button>
+      ${!h?.keys ? '<p class="sub">this world serves no help def (defs/ui/_help.json)</p>' : `
+      <h1>${h.title}</h1>
+      <p class="sub">${h.sub}</p>
+      <h2>Keys</h2>
+      <dl class="keys">${h.keys.map(([label, k]) => `<dt>${label}</dt><dd>${k}</dd>`).join('')}</dl>
+      ${(h.sections ?? []).map((x) => `<h2>${x.h}</h2><p class="sub">${x.html}</p>`).join('')}`}
+      <h2>Your layout</h2>
+      <p class="sub">Every panel moves and resizes, and where you put it is
+        remembered. <kbd>Alt</kbd>+drag moves a panel from anywhere on it. The
+        🔓 in the corner locks the layout once you like it.
+        <button id="help-reset" style="margin-left:6px">reset layout</button></p>`;
+    s.querySelector('.close-x').onclick = () => closeOverlay(el.help);
+    s.querySelector('#help-reset').onclick = () => { resetLayout(); closeOverlay(el.help); };
+  }).catch((e) => report('help def', e));
+  paint();
+  bus.on('defs-updated', paint);   // edited prose reaches an open client too
 }
 export function toggleHelp() {
   el.help.classList.contains('open') ? closeOverlay(el.help) : openOverlay(el.help);

@@ -4,19 +4,22 @@
 // (§14.2). Handlers live in handlers.js and register themselves here at boot;
 // this file only holds the names, the help lines, and the dispatch map.
 //
-// The metadata below is the user-facing command surface (what autocomplete
-// shows), in display order. It replaced a hand-kept copy in chat.js that had
-// drifted — a duplicate /kick row (chat.js:406/411) died in the move. Not
-// every dispatchable command is listed (/use, /mount, /dismount, /debug,
-// /rename ride their chat aliases or the help sheet), exactly as before:
-// listing is presentation, registration is behavior.
+// The table below is the WHOLE command surface now (§24l R1, survey §1):
+// names, aliases, help — the one source chat.js resolves dispatch through
+// AND derives autocomplete from. The first extraction moved only
+// autocomplete, which left chat.js's switch as a second, drifting alias
+// table (each copy carried aliases the other lacked). `listed: false`
+// keeps a command dispatchable but out of autocomplete (listing is
+// presentation, registration is behavior — unchanged doctrine);
+// `aliasAsAction` is /use's trick: typing the alias IS the action
+// (/pull lever1 → use "lever1 pull").
 
 export const COMMANDS = [
   { name: 'w', aliases: ['whisper'], help: '/w <name> <message> — whisper, privately' },
   { name: 'r', aliases: ['reply'], help: 'reply to the last whisper you got' },
   { name: 'name', aliases: ['rename'], help: '/name <new name> — change what the world calls you' },
   { name: 'me', help: 'describe an action — "/me waves"' },
-  { name: 'emote', help: '/emote dance · wave cheer dance point salute clap' },
+  { name: 'emote', help: '/emote <name> — the emote bar\'s gestures (🎭, or number keys)' },
   { name: 'sit', help: 'sit down, on a seat if one is near' },
   { name: 'push', aliases: ['shove'], help: '/push [name] [power] — shove someone within reach (their client decides); /push <thing> works the thing' },
   { name: 'touch', help: '/touch [name] [point] [left|right] — reach out and rest a hand on someone (nearest person, their shoulder, your right hand by default); the hand tracks them until /letgo' },
@@ -24,8 +27,9 @@ export const COMMANDS = [
   { name: 'eyes', help: '/eyes close|open — hold your eyes shut, if your rig has eyelid bones' },
   { name: 'pushable', help: '/pushable on|off — whether shoves and blasts can knock you over (on by default)' },
   { name: 'boom', aliases: ['blast'], help: '/boom [power] [radius] — a blast where you stand, you included (builder)' },
-  { name: 'kick', help: '/kick [thing] [power] — send an object flying (a person\'s name = moderation)' },
-  { name: 'punt', aliases: ['boot'], help: '/punt [thing] [power] — the unambiguous physics kick' },
+  { name: 'kick', help: '/kick <name> [reason] — moderation: remove someone from this world (owner). Objects fly with /punt' },
+  { name: 'punt', aliases: ['boot'], help: '/punt [thing|person] [power] — boot an object into flight; a person\'s name is the ragdoll shove (their client decides)' },
+  { name: 'epoch', help: '/epoch [tickMs] — owner: hand this world\'s punt flights to the deterministic sim (replayed bit-identically everywhere)' },
   { name: 'who', help: 'list everyone present' },
   // Registered so it is DISCOVERABLE. It was added on 2026-08-16 to debug voice
   // on a phone with no console, and stayed unregistered for the rest of that
@@ -33,7 +37,7 @@ export const COMMANDS = [
   // person with a silent mic is exactly who needs it.
   { name: 'audio', help: '/audio [stt|say] — why voice or captions are not working; `say` posts it to the room' },
   { name: 'role', help: 'what you may do here (or /role <name>)' },
-  { name: 'grant', help: '/grant <name> owner|builder|visitor [+gen|-gen] — owner only' },
+  { name: 'grant', help: '/grant <name> owner|builder|visitor [+gen|-gen] [+fly|-fly] — owner only' },
   { name: 'ban', help: '/ban <name> [reason] — ban someone from this world (owner)' },
   { name: 'unban', help: '/unban <name> — lift a ban here (owner)' },
   { name: 'bans', help: 'who is banned from this world' },
@@ -44,8 +48,24 @@ export const COMMANDS = [
   { name: 'reset', aliases: ['erase'], help: 'erase this world back to zero, archived not destroyed (owner)' },
   { name: 'goto', help: '/goto <name> — walk to someone' },
   { name: 'clear', help: 'clear your chat log' },
+  { name: 'flight', help: 'why flight is (or is not) doing that — rig, capability, phase' },
   { name: 'help', help: 'open the help sheet' },
+  // dispatchable but unlisted — reachable, just not autocomplete noise
+  { name: 'use', aliases: ['pull', 'ring', 'open'], aliasAsAction: true, listed: false,
+    help: '/use <thing> [action] — the universal interact' },
+  { name: 'mount', aliases: ['attach'], listed: false, help: '/mount <thing> <onto> [slot]' },
+  { name: 'dismount', aliases: ['detach'], listed: false, help: '/dismount <thing>' },
+  { name: 'debug', listed: false, help: '/debug [n] — the world\'s flight recorder' },
 ];
+
+/** Resolve a typed word (name or alias) to its row — the ONE alias truth.
+ *  Lazy map, rebuilt never: the table is a module-load constant. */
+const byWord = new Map();
+for (const row of COMMANDS) {
+  byWord.set(row.name, row);
+  for (const a of row.aliases ?? []) byWord.set(a, row);
+}
+export const resolveCommand = (word) => byWord.get(word) ?? null;
 
 const handlers = new Map();
 

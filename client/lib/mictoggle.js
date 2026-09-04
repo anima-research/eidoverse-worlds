@@ -11,10 +11,10 @@
 
 import { micOn, toggleMic } from './micstate.js';
 import { setSTT, sttAvailable } from './stt.js';
-import { CONFIG } from './core.js';
+import { CONFIG } from './base.js';
 import { receivingVoice, setReceiveVoice, ensureSttConsent, sttConsented,
   isHushed, setHush } from './voiceconsent.js';
-import { bus } from './core.js';
+import { bus } from './base.js';
 
 // three states (R, 17:09): off = grey + slash · live = clean bright white ·
 // hot (picking up your voice for STT) = warm yellow glow. No rings.

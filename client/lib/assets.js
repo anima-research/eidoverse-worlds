@@ -9,7 +9,8 @@
 //              for a bound rig, so released bodies are reworn intact)
 
 import { keyFromVersion, negotiate } from '../../shared/ktx2.js';
-import { THREE, renderer, camera, scene, report, bus } from './core.js';
+import { THREE, renderer, camera, scene } from './core.js';
+import { report, bus } from './base.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
@@ -21,6 +22,7 @@ import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
 import { beginWork, enqueue, nextFrame, loadNote } from './loadwork.js';
 import { warm } from './warmqueue.js';
 import { prepareObject } from './materials.js';
+import { markDrawBatchSource } from './draw_batches.js';
 
 // ---- loading tray -----------------------------------------------------------
 // Every in-flight asset (downloads with byte progress, builds as spinners) is
@@ -507,6 +509,7 @@ export async function loadGLB(libPath) {
           // the PROTOTYPE goes through the factory once; every skeletonClone
           // shares its wrapped materials and copies its mesh markers
           prepareObject(gltf.scene, { kind: 'model' });
+          markDrawBatchSource(gltf.scene);
           await work.yield();
           work.phase('textures');
           await primeTextures(gltf.scene, work);
@@ -646,12 +649,20 @@ export const protoStats = () => ({
 
 // ---- VRMA clips -------------------------------------------------------------
 
-export const CLIP_SLOTS = ['idle', 'walk', 'run', 'sit', 'lie', 'jump', 'climb'];
+// 'fly' and 'soar' are the airborne pair. Janus, watching a body climb on the
+// run cycle: "the running animation during flying is a bit goofy" -- and it is,
+// a stride is legs doing work against ground that is not there. fallIdle is the
+// library's free-fall pose: limbs trailing, no contact implied, which is what a
+// body hanging under its own wings actually looks like.
+export const CLIP_SLOTS = ['idle', 'walk', 'run', 'sit', 'lie', 'jump', 'climb', 'fly', 'soar'];
 // Slot names are the wire vocabulary (pose.clip); files are whatever the
 // library calls them.
-export const CLIP_FILES = { sit: 'sitting_on_ground', lie: 'sit_laying_on_ground', climb: 'climbLedge' };
+export const CLIP_FILES = { sit: 'sitting_on_ground', lie: 'sit_laying_on_ground', climb: 'climbLedge',
+  // Both airborne slots share one file today; they are separate SLOTS so a
+  // purpose-made flap and glide can replace either without touching a caller.
+  fly: 'fallIdle', soar: 'fallIdle' };
 // Approximate natural speeds of the library clips (m/s), for timeScale sync.
-export const CLIP_SPEED = { idle: 0, walk: 1.55, run: 4.0, sit: 0, lie: 0, jump: 0, climb: 0 };
+export const CLIP_SPEED = { fly: 0, soar: 0, idle: 0, walk: 1.55, run: 4.0, sit: 0, lie: 0, jump: 0, climb: 0 };
 
 const vrmaCache = new Map();
 // Digest of the clip bytes THIS PAGE actually loaded, hashed once at fetch

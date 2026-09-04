@@ -30,13 +30,15 @@
 // every time somebody painted a wall. Style is an INDEX and a uniform, never a
 // new graph.
 
-import { THREE, TSL, scene, bus, report } from '../core.js';
+import { THREE, TSL, scene } from '../core.js';
+import { bus, report } from '../base.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { state, onWorldChange } from '../state.js';
 import { prepareObject } from '../materials.js';
 import { fitStructureBoxes, removeStructureBoxes, removeCollider, fitCollider } from '../colliders.js';
 import { entities } from '../world.js';
 import { planStructure, makeShader } from '../../shared/structure.js';
+import { defsRegistry } from '../defs.js';
 
 // PROCEDURAL, NOT TEXTURED. Surface detail is computed in the shader from
 // grid-local position, which buys three things this stack specifically needs:
@@ -98,6 +100,12 @@ const lit = (hex, roughness, node) => {
   return m;
 };
 
+// §24 defs: the palette VALUES are style, and style is data — the def at
+// defs/structure/_palette.json overlays these built-in defaults (the
+// "style catalog seam" slotFor's comment anticipated). Slots and finish
+// nodes stay engine; applyPaletteStyle mutates the LIVE shared materials,
+// so a def edit restyles standing buildings on the defs-updated push.
+const FINISHES = { plaster, boards, painted };
 const PALETTE = {
   wall: lit(0xe4ded1, 0.94, plaster),    // warm plaster
   floor: lit(0xa8814f, 0.80, boards),    // boards
@@ -108,6 +116,25 @@ const PALETTE = {
     transparent: true, opacity: 0.22, side: THREE.DoubleSide,
   }),
 };
+
+function applyPaletteStyle(style) {
+  for (const [slot, s] of Object.entries(style ?? {})) {
+    const m = PALETTE[slot];
+    if (!m || !s || typeof s !== 'object') continue;   // unknown slots: future members, skipped
+    if (s.color != null) m.color.set(s.color);
+    if (s.roughness != null) m.roughness = s.roughness;
+    if (s.opacity != null && m.transparent) m.opacity = s.opacity;
+    if (slot !== 'glass') {
+      // the visible colour rides colorNode (it REPLACES the default path —
+      // see baked()); rebuild it through the chosen finish and recompile
+      const c = new THREE.Color(s.color ?? m.color);
+      const finish = FINISHES[s.finish]
+        ?? (slot === 'floor' ? boards : slot === 'trim' ? painted : plaster);
+      m.colorNode = finish(vec3(c.r, c.g, c.b));
+      m.needsUpdate = true;
+    }
+  }
+}
 
 /** Which palette slot a part wears. The plan names a structural `kind` and an
  *  author `mat`; author intent wins where it names a real slot, role decides
@@ -377,6 +404,15 @@ const PORTED = new Set(['spawn', 'place', 'remove', 'comp']);
 
 /** Wire the realizer to state. Called once from main.js, beside the others. */
 export function initStructureRealizer() {
+  // The style overlay (§24 defs): applied whenever the registry lands or a
+  // defs-updated push invalidates it. The materials are shared by reference
+  // with every standing building, so a restyle reaches them live. A failed
+  // fetch keeps the built-in style — the overlay is style, never a gate.
+  const restyle = () => defsRegistry()
+    .then((reg) => applyPaletteStyle(reg.structurePalette))
+    .catch((e) => report('structure palette', e));
+  restyle();
+  bus.on('defs-updated', restyle);
   // The anchor can arrive at any time after we realize — the models realizer
   // announces every object it creates or moves on this bus, which is the only
   // moment we can be sure there is something to hide.

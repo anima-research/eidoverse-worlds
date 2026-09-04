@@ -12,7 +12,8 @@
 // will silently lose an edit rather than corrupt it. Worth knowing before
 // anyone builds together.
 
-import { THREE, canvas, camera, scene, bus, report } from './core.js';
+import { THREE, canvas, camera, scene } from './core.js';
+import { bus, report } from './base.js';
 import { sendVerb } from './net.js';
 import { state } from './state.js';
 import { planStructure, localizePoint, GRID_DEFAULTS } from '../../shared/structure.js';

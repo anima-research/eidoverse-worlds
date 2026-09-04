@@ -43,7 +43,7 @@ import { why } from './debuglog.js';
 const micLive = () => {
   try { return window.relayDiag?.().micPublished ?? micOn(); } catch { return micOn(); }
 };
-import { bus } from './core.js';
+import { bus } from './base.js';
 import { ttsSection } from './ttsrow.js';
 import { micOn, toggleMic } from './micstate.js';
 // 🔴 CONFIG is needed by the mic row (toggleMic wants the actor NAME) and was
@@ -52,7 +52,7 @@ import { micOn, toggleMic } from './micstate.js';
 // bug: main.js:522 passed an undefined `me`, and this passed an undefined
 // CONFIG. A handler that throws leaves the CHECKBOX checked, because the DOM
 // already applied the click — display and reality separating one last time.
-import { CONFIG } from './core.js';
+import { CONFIG } from './base.js';
 
 // The panel's row layout, carried BY THE MODULE. Found live 2026-08-06 (R,
 // in-headset): the sp-row/sp-label classes came from the lab's panel

@@ -1,0 +1,15 @@
+{
+  "doc": "Named biome presets — a `grass` verb with {preset: <name>} composes these strokes. Template vocabulary (interpreted by presetStrokes, flora_args.js): `species` literal; `density` is multiplied by the caller's density factor (the sparse/lush dial must reach composed biomes); `inset` shrinks width/depth by metres; `offset` is a [fx, fz] pair of min(W,D) FRACTIONS added to the caller's center (de-centred organic stands); `seedAdd` offsets the caller's seed (each stroke its own stream); anything else (variant, footprint, …) passes through verbatim. A logged bag naming a preset this instance lacks fails LOUDLY — logged meaning must never silently drift.",
+  "mojave": {
+    "doc": "Big-galleta carpet + three shrub species in de-centred organic stands + yucca.",
+    "strokes": [
+      { "species": "galleta_dry", "density": 1.3 },
+      { "species": "blackbrush", "inset": 2, "offset": [0.08, -0.05], "seedAdd": 2, "density": 0.85, "footprint": "organic" },
+      { "species": "blackbrush", "inset": 2, "offset": [-0.09, 0.08], "seedAdd": 52, "variant": 1, "density": 0.85, "footprint": "organic" },
+      { "species": "creosote", "offset": [-0.06, -0.08], "seedAdd": 5, "density": 0.85, "footprint": "organic" },
+      { "species": "creosote", "offset": [0.1, 0.06], "seedAdd": 85, "variant": 1, "density": 0.85, "footprint": "organic" },
+      { "species": "sagebrush", "inset": 2, "offset": [0.05, 0.1], "seedAdd": 9, "density": 0.85, "footprint": "organic" },
+      { "species": "yucca", "seedAdd": 18, "density": 0.7 }
+    ]
+  }
+}

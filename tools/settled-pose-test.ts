@@ -52,6 +52,14 @@ const ck = (n: string, got: unknown, want: unknown) => {
   ck("  ...and its bones are kept", out.pose, { spine: [0.1, 0, 0, 0.99] });
 }
 
+// ── semantic body posture survives reconnect and late join ─────────────────
+{
+  const vigil = { clip: "idle", wingsFolded: true, p: [4, 0, 2] };
+  const out = settledPose(vigil)!;
+  ck("folded wings survive settled presence", out.wingsFolded, true);
+  ck("  ...without becoming a bone override", out.pose, undefined);
+}
+
 // ── a one-shot emote is a MOMENT, not a place ──────────────────────────────
 {
   const waving = { clip: "idle", emote: "wave", p: [0, 0, 0] };

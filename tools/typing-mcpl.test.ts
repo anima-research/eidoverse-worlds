@@ -24,8 +24,18 @@ const world = Bun.spawn([process.execPath, "server/server.ts"], {
   env: { ...process.env, PORT: String(WPORT), WORLDS_DIR: worldsDir },
   stdout: "ignore", stderr: "ignore",
 });
+// 🔴 post-hardening (anima merge): the token registry REJECTS any key that
+// appears in the tracked example — and "dev-token" is in the example, so it
+// can never authorize on any machine. Upstream's copy of this suite still
+// uses it and is structurally red (flagged for them). A scratch registry
+// with a test-only token is the honest fixture.
+const tokensPath = join(worldsDir, "tokens.json");
+await Bun.write(tokensPath, JSON.stringify({
+  "typing-test-token": { id: "claude", name: "Claude", world: "commons" },
+}));
 const mcpl = Bun.spawn([process.execPath, "mcpl/net-server.ts"], {
-  env: { ...process.env, MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws` },
+  env: { ...process.env, MCPL_PORT: String(MPORT), WORLD_URL: `ws://127.0.0.1:${WPORT}/ws`,
+         MCPL_TOKENS: tokensPath },
   stdout: "ignore", stderr: "ignore",
 });
 
@@ -43,7 +53,7 @@ try {
   });
 
   // A raw MCP host connecting to the MCPL door as the "claude" agent (dev-token).
-  const host = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=dev-token`);
+  const host = new WebSocket(`ws://127.0.0.1:${MPORT}/?token=typing-test-token`);
   const rpc = (obj: any) => host.send(JSON.stringify(obj));
   await new Promise<void>((res, rej) => {
     const t = setTimeout(() => rej(new Error("mcpl init timeout")), 6000);

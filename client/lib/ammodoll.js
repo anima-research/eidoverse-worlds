@@ -1,8 +1,8 @@
 // ammodoll — the Bullet body engine, ported from socketteer/ragdoll-physics.
-// Same interface as Ragdoll/RapierRagdoll (see rapierdoll.js's contract):
-// constructor(avatar, lean, rest, seedVel), step(dt) → sparse local-quat pose
-// (and it drives the avatar directly), impulse(v), setPin(joint, target)/
-// setPin(null), .pins/.pinned/.done/.finalPose/.p/.maxV, snapshot(), dispose().
+// Same interface as Ragdoll — THE engine contract is stated on
+// BodyEngineBase (bodyengine.js), which both engines extend; the shared
+// measurement/format truths live in rigmeasure.js. The rapierdoll laws this
+// file credits throughout are the retired third engine's.
 //
 // What this engine IS: Janus's measured rig, retargeted. ragdoll-physics
 // derived its joint-limit tables, finger springs, tendon coupling and grab
@@ -67,7 +67,9 @@
 
 import { THREE } from './core.js';
 import { heightAt } from './terrain.js';
-import { colliders } from './colliders.js';
+import { nearColliders } from './colliders.js';
+import { SEGMENTS, segDistance, rigFrameOf, snapshotPacker, seedJoints } from './rigmeasure.js';
+import { BodyEngineBase } from './bodyengine.js';
 
 let AMMO = null;
 let ammoLoading = null;
@@ -373,24 +375,23 @@ export const JOINT_SPECS = {
   upperArm: { ref: 'fwd', x: [-85, 85], twist: 56, z: [-85, 85] },
   lowerArm: { ref: 'fwd', flex: 145, ext: 2, want: 'fwd', twist: 5, z: [-5, 5] },
   hand: { ref: 'palm', flex: 45, ext: 45, want: 'palm', twist: 8, z: [-15, 15] },
-  // THE ONE ROW NOT AS TUNED. The hand-tuned hip was flex 90 / ext 8 /
-  // twist 0 / z ±13, and it looks better in the world — but narrowing the hip
-  // that far makes the KNEE fold backwards: 125 degrees of "hyperextension" on
-  // all three rigs, which tools/ammodoll-test.ts catches and which is the same
-  // thing as "a joint gets twisted and then is stuck like that".
-  //
-  // It is not the knee bending too far. The magnitude tracks the knee's own
-  // flexion limit exactly (flex 123 -> 125 deg, flex 145 -> 146 deg): the knee
-  // is sitting AT its legal limit, measured on the wrong side of Bullet's
-  // angular wrap, and it stays there. A hip that cannot rotate about the leg's
-  // axis has to send that rotation somewhere and the knee is next in the chain.
-  // Measured: restoring ext alone leaves 48-83 deg, twist alone 77 deg on two
-  // rigs; only all three together come back clean.
-  //
-  // The real fix is upstream of any of these numbers — build the constraint
-  // frames at the pose like the source rig does, so joints operate near zero
-  // where no wrap point is reachable. Put the tuned row back once that lands.
-  upperLeg: { ref: 'fwd', flex: 90, ext: 45, want: 'fwd', twist: 30, z: [-45, 45] },
+  // THE HAND-TUNED ROW, RESTORED (2026-08-29). This row was parked at
+  // flex 90 / ext 45 / twist 30 / z ±45 for months because narrowing it made
+  // the knees read 125° of "hyperextension" — the wrap-point class: a wide
+  // one-sided range put Bullet's wrap midpoint inside reach, and the limit
+  // then HELD the knee on the wrong side. The range-centering below (rotate
+  // the parent frame by the range midpoint, wrap at 180°) killed that class,
+  // and the parking comment said to put this row back once it landed; it
+  // landed and the row was forgotten. Measured on restore: every leg joint
+  // stays within limits through a full topple on both fleet rigs (worst
+  // constraint-frame excursion 6°, the ERP slack), and the 125°-signature
+  // reads that remained were the tumble suite's POSITIONAL instrument
+  // misreading a legal fetal fold — hips at their 90° stop plus legal spine
+  // curl put the thigh past 90° in the torso frame, where a legal backward
+  // knee fold has a forward deviation component of exactly -cos(thigh angle).
+  // The instrument now predicts the legal fold direction from the thigh's own
+  // swing (tools/ammodoll-test.ts).
+  upperLeg: { ref: 'fwd', flex: 90, ext: 8, want: 'fwd', twist: 0, z: [-13, 13] },
   lowerLeg: { ref: 'fwd', flex: 123, ext: 0, want: 'back', twist: 3, z: [0, 0] },
   foot: { ref: 'up', x: [-35, 35], twist: 12, z: [-12, 12] },
   fingerProx: { ref: 'palm', flex: 90, ext: 6, want: 'palm', twist: 8, z: [-12, 12] },
@@ -398,18 +399,12 @@ export const JOINT_SPECS = {
   thumb: { ref: 'pinky', flex: 55, ext: 10, want: 'pinky', twist: 12, z: [-25, 25] },
 };
 
-// The body cut. Core mirrors rapierdoll's SEGMENTS (the torso rows share one
-// rigid body); hands and feet are the source's additions, and the fingers ride
-// on the hands. `tip` marks endpoints that may need extrapolating on rigs
-// whose VRM lacks the child bone.
+// The body cut is rigmeasure.js's SEGMENTS — one table for both engines (it
+// was byte-identical here and in ragdoll.js). This engine's additions ride
+// beside it: the torso rows share rigid bodies (TORSO_KEYS), hands and feet
+// are the source's extra segments, and the fingers ride on the hands.
 const TORSO_KEYS = new Set(['hips|spine', 'spine|chest', 'chest|neck']);
-const CORE_SEGMENTS = [
-  ['hips', 'spine'], ['spine', 'chest'], ['chest', 'neck'], ['neck', 'head'],
-  ['leftUpperArm', 'leftLowerArm'], ['leftLowerArm', 'leftHand'],
-  ['rightUpperArm', 'rightLowerArm'], ['rightLowerArm', 'rightHand'],
-  ['leftUpperLeg', 'leftLowerLeg'], ['leftLowerLeg', 'leftFoot'],
-  ['rightUpperLeg', 'rightLowerLeg'], ['rightLowerLeg', 'rightFoot'],
-];
+const CORE_SEGMENTS = SEGMENTS;
 const EXTRA_SEGMENTS = [
   { a: 'leftHand', b: 'leftMiddleProximal', part: 'hand' },
   { a: 'rightHand', b: 'rightMiddleProximal', part: 'hand' },
@@ -614,20 +609,13 @@ function shortestArc(from, to, out = new THREE.Quaternion()) {
   return out.normalize();
 }
 
-export class AmmoRagdoll {
+export class AmmoRagdoll extends BodyEngineBase {
   constructor(avatar, lean = null, rest = null, seedVel = null) {
+    super(avatar);                  // lifecycle fields — see bodyengine.js
     if (!AMMO) throw new Error('ammodoll: wasm not ready — ensureAmmo() first');
-    this.avatar = avatar;
-    this.done = false;
-    this.pose = null;
-    this.finalPose = null;
     this.pins = new Map();          // joint -> THREE.Vector3 (world) — bodydrag reads this
     this._pinCons = new Map();      // joint -> { con, body }
-    this.settledFor = 0;
-    this.elapsed = 0;
-    this.maxV = Infinity;
     this.maxW = Infinity;
-    this.p = {};                    // joint -> world pos (debug + parity surface)
     this._refs = [];                // every wasm object we own, freed in dispose()
     const keep = (o) => { this._refs.push(o); return o; };
 
@@ -659,11 +647,9 @@ export class AmmoRagdoll {
     }
     const seedV = {};
     if (seedVel?.j) {
-      const { j: names, p: pos, v: vel, dy = 0 } = seedVel;
-      for (let i = 0; i < names.length; i++) {
-        const n = names[i], k = i * 3;
-        if (live[n]) live[n].set(pos[k], pos[k + 1] + dy, pos[k + 2]);
-        seedV[n] = new THREE.Vector3(vel[k], vel[k + 1], vel[k + 2]);
+      for (const s of seedJoints(seedVel)) {
+        if (live[s.name]) live[s.name].set(s.px, s.py, s.pz);
+        seedV[s.name] = new THREE.Vector3(s.vx, s.vy, s.vz);
       }
     } else if (seedVel) {
       for (const j of Object.keys(live)) {
@@ -694,18 +680,8 @@ export class AmmoRagdoll {
     this.restP = restP;
 
     // ---- rig frame + scale --------------------------------------------------
-    const rigUp = (restP.neck ?? restP.chest ?? restP.spine ?? restP.head)
-      ?.clone().sub(restP.hips ?? new THREE.Vector3()).normalize() ?? new THREE.Vector3(0, 1, 0);
-    let rigLat = restP.leftUpperArm && restP.rightUpperArm
-      ? restP.leftUpperArm.clone().sub(restP.rightUpperArm)
-      : (restP.leftUpperLeg && restP.rightUpperLeg
-        ? restP.leftUpperLeg.clone().sub(restP.rightUpperLeg)
-        : new THREE.Vector3(1, 0, 0));
-    rigLat.addScaledVector(rigUp, -rigLat.dot(rigUp));
-    if (rigLat.lengthSq() < 1e-9) rigLat.set(1, 0, 0);
-    rigLat.normalize();
-    const rigFwd = new THREE.Vector3().crossVectors(rigLat, rigUp).normalize();
-    this.rig = { up: rigUp, lateral: rigLat, forward: rigFwd };
+    this.rig = rigFrameOf(restP);   // measured, one derivation — rigmeasure.js
+    const rigUp = this.rig.up, rigLat = this.rig.lateral, rigFwd = this.rig.forward;
     // VRM binds a T-pose with the palms DOWN, and rest here IS the bind pose
     // (restBonePositions zeroes every humanoid rotation) — so the palm normal
     // is the rig's down, and finger flexion curls toward it
@@ -820,7 +796,11 @@ export class AmmoRagdoll {
         }
       }
     }
-    for (const [, c] of colliders) {
+    // The spatial hash answers "what is near the fall", never the whole map —
+    // rapierdoll carried a grid-bounded query for exactly this and the port
+    // originally regressed it to a full scan of `colliders` with a distance
+    // filter; nearColliders is that service query, promoted (§14.2 6a).
+    for (const [, c] of nearColliders(hips.x, hips.z, 8)) {
       const obj = c.obj;
       if (!obj || c.interior || !c.box) continue;
       if (Math.hypot(obj.position.x - hips.x, obj.position.z - hips.z) > 8) continue;
@@ -1087,26 +1067,8 @@ export class AmmoRagdoll {
     // the only per-pair lever, and it freezes at addRigidBody — everything is
     // computed before the bodies enter the world.
     {
-      const segd = (p1, q1, p2, q2) => {
-        const d1 = q1.clone().sub(p1), d2 = q2.clone().sub(p2), rr = p1.clone().sub(p2);
-        const A = d1.dot(d1), E = d2.dot(d2), F = d2.dot(rr);
-        let s3 = 0, t3 = 0;
-        if (A > 1e-9 || E > 1e-9) {
-          if (A < 1e-9) { t3 = Math.min(1, Math.max(0, F / E)); }
-          else {
-            const C = d1.dot(rr);
-            if (E < 1e-9) s3 = Math.min(1, Math.max(0, -C / A));
-            else {
-              const B = d1.dot(d2), den = A * E - B * B;
-              s3 = den > 1e-9 ? Math.min(1, Math.max(0, (B * F - C * E) / den)) : 0;
-              t3 = (B * s3 + F) / E;
-              if (t3 < 0) { t3 = 0; s3 = Math.min(1, Math.max(0, -C / A)); }
-              else if (t3 > 1) { t3 = 1; s3 = Math.min(1, Math.max(0, (B - C) / A)); }
-            }
-          }
-        }
-        return p1.clone().addScaledVector(d1, s3).sub(p2.clone().addScaledVector(d2, t3)).length();
-      };
+      // segment-vs-segment distance is rigmeasure.js's (it was this file's
+      // second, differently-spelled copy of the verlet's closestParams)
       const segList = [...this.segs.values()];
       const adjacent = (x, y) => x.body === y.body
         || x.a === y.a || x.a === y.b || x.b === y.a || x.b === y.b;
@@ -1123,7 +1085,7 @@ export class AmmoRagdoll {
           if (adjacent(A2, B2)) { exclude(A2.body, B2.body); continue; }
           // deep at rest = buried, pumps contact energy every frame; grazing
           // is fine (rapierdoll's threshold)
-          if (segd(A2.restA, A2.restB, B2.restA, B2.restB) < (A2.r + B2.r) * 1.05) {
+          if (segDistance(A2.restA, A2.restB, B2.restA, B2.restB) < (A2.r + B2.r) * 1.05) {
             exclude(A2.body, B2.body);
           }
         }
@@ -1285,7 +1247,16 @@ export class AmmoRagdoll {
         // contain the born pose would quietly hand back +/-BUILD_WIDEN of the
         // very freedom the zero was there to remove — 6.9 degrees per joint,
         // which up a three-body trunk is most of a spine's worth of corkscrew.
-        if (anatHi[i] - anatLo[i] === 0) continue;
+        if (anatHi[i] - anatLo[i] === 0) {
+          // …but a locked axis the rig is BORN off (feline's stride pose
+          // twists the upper leg 10.7° on its locked axis, §24t-8) would be
+          // annihilated on frame one all the same — so the lock MOVES to the
+          // born angle: still zero freedom, no fight. On a handover the lock
+          // may sit no further than BUILD_WIDEN from the table's zero (the
+          // same ratchet guard as below); a fresh build locks where it stands.
+          lo[i] = hi[i] = Math.max(anatLo[i] - cap, Math.min(anatHi[i] + cap, born[i]));
+          continue;
+        }
         lo[i] = Math.max(anatLo[i] - cap, Math.min(lo[i], born[i] - BUILD_WIDEN));
         hi[i] = Math.min(anatHi[i] + cap, Math.max(hi[i], born[i] + BUILD_WIDEN));
       }
@@ -1300,8 +1271,34 @@ export class AmmoRagdoll {
       // PARENT frame by the range midpoint makes every range symmetric and
       // pushes the wrap point to 180°: the same forbidden-way shove that ran
       // to 145° then stops at 7°, and a 10× kick still does.
-      const mid = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
-      const midQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(mid[0], mid[1], mid[2], 'XYZ'));
+      let mid = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+      let midQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(mid[0], mid[1], mid[2], 'XYZ'));
+      // …AND CONTAIN THE BORN POSE AS BULLET WILL MEASURE IT. The widening
+      // above read the born excursion as Euler angles in the UNcentred frame;
+      // the constraint measures them in the centred one and the instrument
+      // adds `mid` back — and Euler angles are not additive across axes, so a
+      // pose bent on two axes at once (feline's stride: a hind leg both
+      // flexed and splayed) still reads up to ~10° over after the widening
+      // (§24t-8). Re-measure in the centred frame and widen again until the
+      // range is a fixed point of its own centering (converges in 1–2 rounds).
+      for (let round = 0; round < 4; round++) {
+        const eulC = new THREE.Euler().setFromQuaternion(midQ.clone().invert().multiply(relF), 'XYZ');
+        const bornC = [eulC.x + mid[0], eulC.y + mid[1], eulC.z + mid[2]];
+        let moved = false;
+        for (let i = 0; i < 3; i++) {
+          if (anatHi[i] - anatLo[i] === 0) {
+            const v = Math.max(anatLo[i] - cap, Math.min(anatHi[i] + cap, bornC[i]));
+            if (v !== lo[i]) { lo[i] = hi[i] = v; moved = true; }
+            continue;
+          }
+          const nlo = Math.max(anatLo[i] - cap, Math.min(lo[i], bornC[i] - BUILD_WIDEN));
+          const nhi = Math.min(anatHi[i] + cap, Math.max(hi[i], bornC[i] + BUILD_WIDEN));
+          if (nlo !== lo[i] || nhi !== hi[i]) { lo[i] = nlo; hi[i] = nhi; moved = true; }
+        }
+        if (!moved) break;
+        mid = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2];
+        midQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(mid[0], mid[1], mid[2], 'XYZ'));
+      }
       const basisA = basis.clone().multiply(midQ);
 
       // frames: basis from rest anatomy (parent's carries the centering),
@@ -1940,6 +1937,7 @@ export class AmmoRagdoll {
     const measured = (this.p.hips?.y ?? live.hips?.y ?? 0) - avatar.root.position.y;
     const constant = restHipsY != null ? restHipsY - avatar.root.position.y : measured;
     this.hipsOffset = Math.abs(measured - constant) > 0.05 ? constant : measured;
+    this._measureHipsLocal(this.restP?.hips ?? null);   // sideways too (bodyengine.js)
   }
 
   // ---------------------------------------------------------------- instruments
@@ -2139,12 +2137,9 @@ export class AmmoRagdoll {
     }
   }
 
-  impulse(v) {
-    if (this.done) return;
-    this._topple(v);
-    this.settledFor = 0;
-    this.elapsed = 0;
-  }
+  // impulse lives on BodyEngineBase — the cap (also applied in _topple above,
+  // which the constructor's lean rides through), the topple application and
+  // the clock restarts are the shared law.
 
   /** `firm` distinguishes a NAIL from a HAND. The source has two settings and
    *  ammodoll shipped only the nail's: a drag calls setPin on every mousemove,
@@ -2197,15 +2192,15 @@ export class AmmoRagdoll {
     for (const body of this._bodies) body.activate();
   }
 
-  get pinned() { return this.pins.size > 0; }
-
-  /** Drag-release handover, the house packed format: joint names + positions
-   *  + endpoint velocities (v + ω × r from the centre of mass). */
+  /** Drag-release handover, the house packed format (rigmeasure.js's
+   *  snapshotPacker — the parse on the far side may be the verlet's): joint
+   *  names + positions + endpoint velocities (v + ω × r from the centre of
+   *  mass). */
   snapshot() {
     // {j:[],p:[],v:[]} would be TRUTHY on `seedVel?.j` — say nothing instead
     if (this._freed) return null;
     this._syncP();
-    const j = [], p = [], v = [];
+    const pack = snapshotPacker();
     const seen = new Set();
     for (const s of this.segs.values()) {
       if (s.finger) continue;          // the wire carries the core skeleton
@@ -2215,14 +2210,12 @@ export class AmmoRagdoll {
         if (seen.has(name) || !this.p[name]) continue;
         seen.add(name);
         const q2 = this.p[name];
-        j.push(name);
-        p.push(+q2.x.toFixed(4), +q2.y.toFixed(4), +q2.z.toFixed(4));
         _a.set(q2.x - t.x(), q2.y - t.y(), q2.z - t.z());
         _b.set(av.x(), av.y(), av.z()).cross(_a).add(_v.set(lv.x(), lv.y(), lv.z()));
-        v.push(+_b.x.toFixed(3), +_b.y.toFixed(3), +_b.z.toFixed(3));
+        pack.add(name, q2, _b);
       }
     }
-    return { j, p, v };
+    return pack.pack();
   }
 
   _syncP() {
@@ -2286,22 +2279,14 @@ export class AmmoRagdoll {
     this.maxV = maxSpeed;
     this.maxW = maxSpin;
 
-    this.elapsed += dt;
-    if (this.pinned) { this.settledFor = 0; this.elapsed = 0; }
-    if (this.maxV < SETTLE_V && this.maxW < SETTLE_W) this.settledFor += dt;
-    else this.settledFor = 0;
+    // the clock law is the base's; this engine's quiet test is linear AND
+    // angular, and any noise cancels (no hysteresis band — Bullet's velocities
+    // are the solver's own, not a positional estimate that flickers)
+    this._settleTick(dt, this.maxV < SETTLE_V && this.maxW < SETTLE_W);
 
     this._syncP();
 
-    // root follows the hips; the falling-only ceiling lifts while pinned
-    const hips = this.p.hips;
-    if (hips) {
-      this.avatar.root.position.x = hips.x;
-      this.avatar.root.position.z = hips.z;
-      const y = hips.y - this.hipsOffset;
-      if (this.pinned && y > this.rootStartY) this.rootStartY = y;
-      this.avatar.root.position.y = Math.min(this.rootStartY, y);
-    }
+    this._followRoot();   // the body lies where it fell — see bodyengine.js
 
     // bones: rest direction → live direction, world-reference, parents first
     // (drive is in construction order: torso out to fingertips). The node's

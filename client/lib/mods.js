@@ -26,7 +26,7 @@
 // panels — but a module, once imported, cannot be UNLOADED; a mod that
 // grabbed globals keeps them until reload. Trusted means trusted.
 
-import { bus, CONFIG, report } from './core.js';
+import { bus, CONFIG, report } from './base.js';
 import { behaviors } from './world.js';
 import { sendVerb } from './net.js';
 import { makeSection, toast, flashHint } from './ui.js';
@@ -235,7 +235,7 @@ export function initMods() {
         <div><b>built-in</b> — the house plugins, dogfooding the same tier</div>
         <div>⚙ object physics <span style="color:var(--dim)">(balls, boxes, punts — the SIM half; you always SEE others' physics)</span>
           <button data-corephys="1">${physicsEnabled() ? 'on ✓' : 'off'}</button></div>
-        <div>⚙ body engine <span style="color:var(--dim)">(how YOUR falls simulate — verlet: particles · rapier: rigid bones, muscle tone · ammo: Bullet, the janus rig — click to cycle)</span>
+        <div>⚙ body engine <span style="color:var(--dim)">(how YOUR falls simulate — verlet: particles · ammo: Bullet, the janus rig — click to cycle)</span>
           <button data-bodyeng="1">${bodyEngine()}</button></div>
         <hr>
         <div style="color:var(--dim)">local mods run with FULL access, as you — load only code you trust</div>

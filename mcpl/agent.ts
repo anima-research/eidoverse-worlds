@@ -11,6 +11,25 @@ import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_
   APPROACH_DWELL_MS, APPROACH_STILL_MPS, APPROACH_MAX_WAIT_MS,
   ACTIVITY_RADIUS_M, ACTIVITY_PULSE_MS, ACTIVITY_REFRESH_MS, MOVER_MIN_M } from "./denoise.ts";
 import { HeadlessBody, ReachBody, setHeightField, registerSupport, registerSupportGrid, removeSupport } from "./physics.ts";
+// FLIGHT. The same deterministic integrator the browser bench and the capture
+// path run -- one function, every runtime, per the spec's Q2 ruling.
+import {
+  makeConfig as flightConfig, initialState as flightState, step as flightStep,
+  bodyDown as flightDown, bodyRecovered as flightRecovered, takeOff as flightTakeOff,
+  foldDown as flightFold, unfold as flightUnfold,
+  bestGlide, glideRange,
+} from "../shared/flight.js";
+import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
+import { inspectBody } from "../shared/flightbody.js";
+import { wingFoldPresence } from "../shared/wingpresence.js";
+import { DEFAULT_LEAF_FORCE as LEAF_FORCE } from "../shared/leafforce.js";
+
+/** integrator yaw (atan2(dz,dx), forward = (cos,sin)) -> world yaw
+ *  (atan2(dx,dz), which every renderer and walkTo already speak). */
+const worldYaw = (y: number) => Math.PI / 2 - y;
+/** ...and back. The map is its own inverse, but naming both directions is
+ *  cheaper than working that out at every call site. */
+const intYaw = (y: number) => Math.PI / 2 - y;
 import { canonicalLimb, normalizeReachTarget, normalizeReachBag, describeTarget, diffReach,
   TOUCH_GAP } from "../shared/reachwire.js";
 import { decideSupportClass, CERT_MAX_WORLD } from "../client/lib/supportclass.js";
@@ -21,7 +40,9 @@ import { isFiniteVec3 } from "./shape.ts";
 import { foldSkyEntry, describeSky, effectiveSky, effectiveClock, dayPhase, hoursAt } from "../shared/forecast.js";
 // The snapshot re-synthesizer, shared with the browser — this agent's
 // deliberate omissions ride as flags (see stateToEntries below).
-import { stateToEntries as sharedStateToEntries } from "../shared/fold.js";
+import { stateToEntries as sharedStateToEntries, foldEntry, emptyState } from "../shared/fold.js";
+import { emptySim, simEntry, advanceSim, tickOf } from "../shared/sim.js";
+import { radialForce, FORCE_MIN } from "../shared/force.js";
 // The `particles` component's meaning, shared verbatim with the browser host:
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
@@ -40,12 +61,16 @@ const WALK = 1.55, RUN = 4.0, TICK_MS = 100, ARRIVE = 0.4;
 const EMITTER_COALESCE_MS = Number(process.env.EW_EMITTER_COALESCE_SEC ?? 4) * 1000;
 
 type Vec2 = { x: number; z: number };
-type Pose = { p: number[]; yaw: number; speed: number; clip: string };
+type Pose = { p: number[]; yaw: number; speed: number; clip: string; wingsFolded?: boolean };
 type Entity = { id: string; lib: string; pos: number[]; yaw: number; actor: string; scale?: number;
   /** component bag (sockets, reactions, motion, …) — what a thing can DO;
    *  this is how affordances reach text-tier perception */
   comp?: Record<string, any> };
 type Person = { id: string; avatar: string; pose: Pose | null; agent?: boolean };
+
+/** Verbs whose fold shapes the entity/mount views (epoch/sky shape other
+ *  state; say/use/force shape nothing). */
+const ENTITY_VERBS = new Set(["spawn", "light", "place", "remove", "comp", "motion", "mount", "dismount"]);
 
 /** Presence is a live, lossy plane: a just-joining browser can briefly send a
  * pose shell whose coordinates are null/non-finite before its controller has
@@ -169,6 +194,21 @@ export class WorldAgent {
   body: HeadlessBody | null | undefined = undefined; // the REAL ragdoll (undefined = not tried yet)
   private simTicker: ReturnType<typeof setInterval> | null = null;
   private walkDone: ((arrived: boolean) => void) | null = null;
+  /** THE fold (§24k R0, survey A6): one implementation of what an entry
+   *  means — shared/fold.js — replacing this file's hand-mirrored copy,
+   *  which had already drifted on four verbs (place strictness, light's
+   *  partial merge, remove's cargo cascade, spawn's collide). The maps
+   *  below are DERIVED VIEWS reconciled from this state after every
+   *  entity-shaping entry; side effects (percepts, supports, pings) run in
+   *  a separate pass that never touches state. */
+  private st = emptyState();
+  /** The sim fold beside it (§24k R0, survey A7): the agent was blind to
+   *  dialect-3 flights — look() reported a punted crate at its last placed
+   *  spot while every renderer showed it flying. Adopted from the join
+   *  snapshot's cut, folded per entry in the normative order, advanced on
+   *  the tick; live body positions are stamped into the entity view. */
+  private sim: ReturnType<typeof emptySim> = emptySim();
+  private simRested = new Set<string>();
   entities = new Map<string, Entity>();
   /** who/what rides what: mount verbs, keyed by the rider (body or thing) */
   /** Every mount's full wire shape — offset/yaw OVERRIDE socket defaults in
@@ -575,11 +615,32 @@ export class WorldAgent {
           case "voice-moderated":
             this.onMedia?.(msg);
             break;
+          case "your-rights":
+            // The sequencer recomputes this participant's effective rights
+            // after every grant. Consume the answer rather than trying to
+            // reproduce name/wildcard/sub/admin precedence from one delta.
+            if (msg.rights) this.acceptEffectiveRights(msg.rights, "world");
+            break;
           case "snapshot":
             // Our surface generation, issued by the server on acceptance —
             // every attest must echo it or the receipt is refused (PR #103 B2).
             if (typeof msg.gen === "number") this.surfaceGen = msg.gen;
-            this.entities.clear(); this.people.clear();
+            // WHAT THIS WORLD PERMITS THIS IDENTITY. Flight reads `fly` from
+            // here and nowhere else: the previous cut fell back to an
+            // allow-self dev provider whenever none was injected, and since
+            // nothing ever injected one, that fallback WAS the policy. A
+            // server that never sends this leaves myRights null, which the
+            // provider reads as no.
+            if (msg.yourRights) this.acceptEffectiveRights(msg.yourRights, "snapshot");
+            this.entities.clear(); this.people.clear(); this.mounts.clear();
+            // fresh folds for a fresh world (§24k): the instant fold restarts
+            // empty; the sim fold ADOPTS the sequencer's cut — a joiner
+            // cannot recompute flights whose intents were folded out of the
+            // tail, and adoption is exact (advancement is schedule-
+            // independent, PROTOCOL_v2).
+            this.st = emptyState();
+            this.sim = (msg as any).sim?.epoch ? structuredClone((msg as any).sim) : emptySim();
+            this.simRested.clear();
             // wake where you fell asleep — fresh body only; a body that has
             // walked this process keeps its own truth on mid-life reconnects
             if (msg.restore && !this.restoredPose && !this.target && this.pos.x === 0 && this.pos.z === 0) {
@@ -592,6 +653,7 @@ export class WorldAgent {
               // what survives the server's settled memory is an enacted pose —
               // authored by definition (settledPose strips physics frames)
               if (msg.restore.pose && msg.restore.clip !== "ragdoll") { this.heldPose = msg.restore.pose; this.heldPoseAuthored = true; }
+              this.wingsFolded = msg.restore.wingsFolded === true;
             }
             this.restoredPose = true;
             for (const p of msg.present) this.people.set(p.id, { id: p.id, avatar: p.avatar, pose: p.pose, agent: !!p.agent });
@@ -972,6 +1034,16 @@ export class WorldAgent {
     const nowHeld = Boolean(pose.pose);
     if (nowHeld && !prevHeld) acts.push({ key: "pose", text: `strikes a pose (${Object.keys(pose.pose!).length} bones held)` });
     if (!nowHeld && prevHeld) acts.push({ key: "pose-release", text: "releases their pose" });
+    const hadFold = typeof prev?.wingsFolded === "boolean";
+    const hasFold = typeof pose.wingsFolded === "boolean";
+    const prevFold = prev?.wingsFolded === true, nowFold = pose.wingsFolded === true;
+    // A first sighting is a state, not an act. Announce only an edge observed
+    // between two explicit semantic samples; legacy absence proves neither
+    // folding nor opening.
+    if (hadFold && hasFold && nowFold !== prevFold) acts.push({
+      key: nowFold ? "wings-fold" : "wings-unfold",
+      text: nowFold ? "folds their wings" : "opens their wings",
+    });
     const LOCO = new Set(["idle", "walk", "run"]);
     const pc = prev?.clip ?? "idle", nc = pose.clip ?? "idle";
     if (nc !== pc) {
@@ -990,47 +1062,74 @@ export class WorldAgent {
     for (const a of acts) this.gate.act(id, a.key, a.text);
   }
 
+  /** Reconcile the derived maps from the folded state — the ONLY writer of
+   *  this.entities/this.mounts outside the sim stamp. Fresh objects each
+   *  pass: nothing stale survives a spawn-replace or a fold-side cascade. */
+  private reconcileFromFold() {
+    const seen = new Set<string>();
+    for (const [id, e] of Object.entries(this.st.entities)) {
+      seen.add(id);
+      this.entities.set(id, {
+        id,
+        lib: (e as any).kind === "light" ? "(light)" : String((e as any).lib ?? ""),
+        pos: (e as any).pos, yaw: (e as any).yaw ?? 0,
+        ...((e as any).scale != null ? { scale: (e as any).scale } : {}),
+        actor: (e as any).actor,
+        ...((e as any).comp ? { comp: (e as any).comp } : {}),
+      });
+    }
+    for (const id of [...this.entities.keys()]) if (!seen.has(id)) this.entities.delete(id);
+    // both mount species land in one view, as the old fold kept them:
+    // entity cargo rides ent.parent, bodies ride st.mounts
+    this.mounts.clear();
+    for (const [id, e] of Object.entries(this.st.entities)) {
+      const p = (e as any).parent;
+      if (p) this.mounts.set(id, { to: p.to, slot: p.slot,
+        ...(p.offset != null ? { offset: p.offset } : {}),
+        ...(p.yaw != null ? { yaw: p.yaw } : {}) });
+    }
+    for (const [id, m] of Object.entries(this.st.mounts ?? {})) {
+      this.mounts.set(id, { to: (m as any).to, slot: (m as any).slot,
+        ...((m as any).offset != null ? { offset: (m as any).offset } : {}),
+        ...((m as any).yaw != null ? { yaw: (m as any).yaw } : {}) });
+    }
+  }
+
   private async applyEntry(entry: any, live: boolean) {
     const { verb, args, actor, ts } = entry;
+    // pre-fold captures the side effects need (state the fold will consume)
+    const preRemovePos = verb === "remove" ? this.entities.get(args?.id)?.pos : undefined;
+    const preComp = verb === "comp" && typeof args?.type === "string"
+      ? (this.entities.get(args?.id)?.comp?.[args.type] ?? null) : null;
+    const hadEntity = args?.id != null ? this.entities.has(args.id) : false;
+
+    // §24k R0: THE fold, then the sim fold, in the normative order — one
+    // implementation of what an entry means, for every species of client.
+    foldEntry(this.st, entry);
+    simEntry(this.sim, entry, this.st);
+    if (ENTITY_VERBS.has(verb)) this.reconcileFromFold();
+
+    // ---- side effects only below: percepts, supports, pings — no state ----
     if (verb === "spawn") {
-      this.entities.set(args.id, { id: args.id, lib: args.lib, pos: args.pos ?? [0, 0, 0], yaw: args.yaw ?? 0,
-        ...(args.scale != null ? { scale: args.scale } : {}), actor });
       if (live) this.noteBuild(actor, args.pos);
       this.trackSupport(this.syncSupport(args.id));   // a placed thing is a thing bodies can rest on (#17)
     } else if (verb === "light") {
-      // a light is an entity too, so text-tier perception can see it and it can
-      // be moved/removed by id like anything else. Re-issued on an existing id
-      // it is a partial update — an entry without pos must not teleport the
-      // text-tier's idea of the light to the default spot.
-      const prevLight = this.entities.get(args.id);
-      this.entities.set(args.id, { id: args.id, lib: "(light)", pos: args.pos ?? prevLight?.pos ?? [0, 1, 0], yaw: 0, actor });
       if (live) this.noteBuild(actor, args.pos);
     } else if (verb === "place") {
-      const e = this.entities.get(args.id);
-      if (e) {
-        // mirror the server fold's partial-update semantics: a place without
-        // a usable pos KEEPS the prior position. Assigning args.pos
-        // unconditionally is how one malformed raw packet crash-looped the
-        // whole door — undefined walked into the support transform (#88).
-        if (isFiniteVec3(args.pos)) e.pos = args.pos;
-        else if (args.pos != null || args.x != null || args.y != null || args.z != null) this.noteMalformed(verb, args);
-        if (args.yaw != null) e.yaw = args.yaw;
-        if (args.scale != null) e.scale = args.scale;
-      }
-      if (live) this.noteBuild(actor, isFiniteVec3(args.pos) ? args.pos : e?.pos);
+      // the malformed-pos NOTE survives the fold move (#88's forensics);
+      // the fold itself now carries the guard (shared/fold.js, upstreamed)
+      if (hadEntity && !isFiniteVec3(args.pos)
+        && (args.pos != null || args.x != null || args.y != null || args.z != null)) this.noteMalformed(verb, args);
+      if (live) this.noteBuild(actor, isFiniteVec3(args.pos) ? args.pos : this.entities.get(args.id)?.pos);
       this.trackSupport(this.syncSupport(args.id));   // support follows the thing it belongs to
     } else if (verb === "remove") {
-      if (live) this.noteBuild(actor, this.entities.get(args.id)?.pos);
-      this.entities.delete(args.id);
+      if (live) this.noteBuild(actor, preRemovePos);
       this.dropSupport(args.id);
-      for (const [rid, m] of this.mounts) if (m.to === args.id) this.mounts.delete(rid);
     } else if (verb === "comp") {
-      // affordances are components — track them or look() can't tell anyone
+      // affordances are components — the fold tracked them; percepts here
       const e = this.entities.get(args.id);
       if (e && typeof args.type === "string") {
-        const before = e.comp?.[args.type] ?? null;
-        e.comp ??= {};
-        if (args.data == null) delete e.comp[args.type]; else e.comp[args.type] = args.data;
+        const before = preComp;
         // An emitter beginning, changing or ending is something you SEE happen
         // in the world — the one component type with a live sensory event.
         // Replay reconstructs the state above and stops there: a fire that was
@@ -1051,20 +1150,12 @@ export class WorldAgent {
         if (args.type === "motion" || args.type.startsWith("motion:")) this.trackSupport(this.syncSupport(args.id));
       }
     } else if (verb === "motion") {
-      const e = this.entities.get(args.id);
-      if (e) {
-        e.comp ??= {};
-        const { id: _id, ...m } = args;
-        if (m.type == null) delete e.comp.motion; else e.comp.motion = m;
+      if (this.entities.has(args.id)) {
         this.trackSupport(this.syncSupport(args.id));   // starts moving = stops supporting, and back
       }
     } else if (verb === "mount") {
-      // offset/yaw are kept RAW: effective.ts refuses non-finite values with
-      // a named link rather than silently substituting the socket default —
-      // a substitution would disagree with what the browser renders.
-      this.mounts.set(args.id, { to: args.to, slot: args.slot,
-        ...(args.offset != null ? { offset: args.offset } : {}),
-        ...(args.yaw != null ? { yaw: args.yaw } : {}) });
+      // (offset/yaw stay RAW in the fold's record: effective.ts refuses
+      // non-finite values with a named link rather than substituting.)
       // Cargo rides its parent, so its own support goes stale the instant the
       // parent moves — world.js drops the collider here for exactly that
       // reason and lets the pair collide as the parent. Entities only: a
@@ -1072,33 +1163,29 @@ export class WorldAgent {
       // support and is a separate seam.
       if (this.entities.has(args.id)) this.dropSupport(args.id);
     } else if (verb === "dismount") {
-      this.mounts.delete(args.id);
-      const e = this.entities.get(args.id);
-      if (e) {
-        // a dismount stamps where the ride let go; the support must be built
-        // from THAT, not from the transform the thing had before it mounted
-        if (isFiniteVec3(args.pos)) e.pos = args.pos;
-        if (args.yaw != null) e.yaw = args.yaw;
-        this.trackSupport(this.syncSupport(args.id));   // stand it back up
+      if (this.entities.has(args.id)) {
+        // the fold stamped where the ride let go; stand the support back up
+        this.trackSupport(this.syncSupport(args.id));
       }
+    } else if (verb === "punt") {
+      // dialect 3: the sim owns the flight (folded above) — a flying thing
+      // stops being a support the moment it launches; rest re-syncs it
+      if (this.sim.bodies?.[args?.id]) this.dropSupport(args.id);
     } else if (verb === "force") {
       // an instantaneous radial CAUSE (blast, gust) — live only, because a
-      // replay must never re-detonate. Same falloff math as browser bodies
-      // (mirrored from client/main.js — keep in sync), same consent.
-      if (live && Array.isArray(args?.at) && args.at.length === 3) {
-        const dx = this.pos.x - args.at[0], dz = this.pos.z - args.at[2];
-        const d = Math.hypot(dx, dz);
-        const radius = Math.max(Number(args.radius ?? 4), 0.001);
-        if (d <= radius) {
-          const mag = Math.min(6, Number(args.power ?? 3) * (1 - d / radius));
-          if (mag >= 0.3) {
-            const nx = d > 0.05 ? dx / d : Math.sin(this.yaw);
-            const nz = d > 0.05 ? dz / d : Math.cos(this.yaw);
-            this.knockDown(actor, [nx * mag, 0, nz * mag],
-              actor === this.name
-                ? "(your own blast knocks you off your feet)"
-                : `(${actor}'s blast knocks you off your feet)`);
-          }
+      // replay must never re-detonate. The falloff arithmetic is
+      // shared/force.js (§24l R1) — ONE truth with the browser bodies; the
+      // consent and the ground-zero direction (a headless body topples the
+      // way it faces) stay here.
+      if (live) {
+        const f = radialForce(args?.at, this.pos.x, this.pos.z, args?.radius, args?.power);
+        if (f && f.mag >= FORCE_MIN) {
+          const nx = f.nx ?? Math.sin(this.yaw);
+          const nz = f.nz ?? Math.cos(this.yaw);
+          this.knockDown(actor, [nx * f.mag, 0, nz * f.mag],
+            actor === this.name
+              ? "(your own blast knocks you off your feet)"
+              : `(${actor}'s blast knocks you off your feet)`);
         }
       }
     } else if (verb === "say") {
@@ -1130,6 +1217,55 @@ export class WorldAgent {
         if (mention) this.ping({ ts, kind: "mention", who: actor, text: args.text });
         this.onEvent?.({ ts, kind: "say", who: actor, text: args.text, mention });
       }
+    } else if (verb === "grant") {
+      // LIVE REVOCATION REACHES THE AGENT. This branch did not exist, so
+      // `myRights` was written once from snapshot.yourRights and never again:
+      // a `-fly` mid-session was invisible until reconnect, and the
+      // action-time provider -- the whole point of resolving per action --
+      // read a grant that had been withdrawn. mica found it in production:
+      // seq 15183 granted mythos fly:false, no later fly:true, and seq 15206
+      // was a completed sortie.
+      //
+      // The pure capability test passed the whole time because it called
+      // resolveFlight directly with a changed rights object. It never crossed
+      // THIS path, which is where the rights object stopped changing.
+      //
+      // ABSENT IS NOT FALSE, the same rule the browser learned the hard way
+      // (client/lib/world.js, and the auto-owner grant that erased its own
+      // fly): an entry carries only the fields it changed, so merge those and
+      // leave the rest standing.
+      //
+      // BY NAME ONLY, matching what the server would compute.
+      //
+      // Not the wildcard: rightsOf prefers a name-keyed record over `*`, so
+      // with `mythos: {fly:true}` on file a `/grant * -fly` leaves mythos
+      // flying -- verified against rights.ts directly. Honouring the wildcard
+      // here would refuse where the authority permits, and a client-side gate
+      // stricter than the server still misreports the server. Whoever has no
+      // record of their own is covered by the wildcard through the snapshot's
+      // yourRights at join.
+      //
+      // Not by durable sub either: the server binds grants to a sub when it
+      // knows one (server/verbs.ts vGrant) but never tells an agent its own,
+      // so there is nothing here to compare against. The residual gap is a
+      // grant written against a sub while the body wears a different name;
+      // closing it wants `you.sub` in the snapshot, which is out of scope for
+      // this repair and stated rather than papered over.
+      const mine = args?.id != null && args.id === this.name;
+      if (mine) {
+        const next = { ...(this.myRights ?? {}) };
+        if (args.role != null) next.role = String(args.role);
+        if (args.gen != null) next.gen = Boolean(args.gen);
+        if (args.fly != null) next.fly = Boolean(args.fly);
+        this.myRights = next;
+        // A revocation must be legible, not merely effective. If this body is
+        // in the air when flight is withdrawn, the next action refuses and the
+        // pilot should know why rather than discovering it as a failure.
+        if (args.fly === false && this.flight) {
+          this.inbox.push({ ts, kind: "act", who: actor,
+            text: "your flight capability was withdrawn — the next flight action will refuse" });
+        }
+      }
     } else if (verb === "ban" || verb === "unban" || verb === "kick") {
       // Moderation acts, narrated like any embodied transition — and, when
       // this body is the ACTOR, the confirmation its fire-and-forget verb
@@ -1145,10 +1281,9 @@ export class WorldAgent {
       await this.buildTerrain(args);
       this.worldInfo.terrain = { seed: args.seed, size: args.size, amplitude: args.amplitude, flatRadius: args.flatRadius };
     } else if (verb === "sky" || verb === "weather") {
-      // fold, don't overwrite: weather merges onto the standing sky (with the
-      // hours-rebase and override provenance), exactly as the server folds it
-      this.skyState = foldSkyEntry(verb === "sky" ? null : this.skyState,
-        { verb, args, ts, seq: entry.seq, actor });
+      // the fold above already ran foldSkyEntry with the same rebase and
+      // provenance rules — the view just adopts its answer (§24k: one fold)
+      this.skyState = this.st.sky as typeof this.skyState;
     } else if (verb === "grass") {
       this.worldInfo.grass = { area: `${args.species ?? "grass"}, ${args.width ?? args.size}×${args.depth ?? args.size}m around ${JSON.stringify(args.center ?? [0, 0])}` };
     }
@@ -1465,6 +1600,23 @@ export class WorldAgent {
   private tick() {
     if (!this.joined) return;
     const dt = TICK_MS / 1000;
+    // §24k R0 (survey A7): advance the sim fold and stamp live body
+    // positions into the entity view — text-tier perception now sees a
+    // punted crate WHERE IT IS (and, at rest, where it CAME TO REST —
+    // recomputed, bit-identical with every renderer). Support rebuilds
+    // when a body rests; the punt side effect dropped it at launch.
+    if (this.sim.epoch && !this.sim.epoch.foreign) {
+      advanceSim(this.sim, tickOf(this.sim, this.serverNow()));
+      for (const id in this.sim.bodies) {
+        const b = this.sim.bodies[id];
+        const e = this.entities.get(id);
+        if (e) e.pos = [b.p[0], b.p[1], b.p[2]];
+        if (b.resting && !this.simRested.has(id)) {
+          this.simRested.add(id);
+          this.trackSupport(this.syncSupport(id));
+        } else if (!b.resting) this.simRested.delete(id);
+      }
+    }
     // ambient sky perception rides the body tick at 1Hz — cheap (cursor keeps
     // it O(1)) and quiet (emits only on segment/override/day-phase boundaries)
     if (Date.now() - this.lastSkyCheck >= 1000) {
@@ -1502,11 +1654,22 @@ export class WorldAgent {
         this.pos.z += (dz / dist) * step;
       }
     }
-    // a tumbling, lying, dragged or nailed body owns its own y — the terrain
-    // clamp is for FEET, and none of those states is standing on them
-    if (!this.draggedBy && this.pins.size === 0 && this.clip !== "ragdoll") {
+    // a tumbling, lying, dragged, nailed or FLYING body owns its own y — the
+    // terrain clamp is for FEET, and none of those states is standing on them
+    if (!this.draggedBy && this.pins.size === 0 && this.clip !== "ragdoll" && !this.flight) {
       this.pos.y = this.heightAt(this.pos.x, this.pos.z);
     }
+    // FLIGHT: one fixed-step integration of shared/flight.js per tick, and the
+    // body's position is whatever it says. The integrator is the same function
+    // the browser bench and the capture path run -- authority here is the
+    // agent's own process, exactly as it is for walking.
+    // ONE AUTHOR PER BONE, and per position. Once the ragdoll owns the body
+    // the flight integrator must stop writing pos: the 15Hz sim was setting
+    // the true ragdoll position and the 10Hz flight tick was overwriting it
+    // with its own stale value a hipsOffset higher, which is exactly the
+    // "floating a few feet off the ground" Janus saw. The flight state stays
+    // alive (recovery still needs it) -- it just no longer drives.
+    if (this.flight && !this.simTicker) this.flightTick(dt);
     // keep the `reached` attestation honest at ~2Hz while reaching: the
     // target moves, this body moves, and the far end's touch event fires on
     // the rising edge of what is re-checked here
@@ -1515,6 +1678,7 @@ export class WorldAgent {
       type: "pose",
       pose: {
         p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, speed: this.speed, clip: this.clip,
+        ...wingFoldPresence(this.wingsFolded),
         // a physics bag only ever leaves this process labelled as what it is —
         // "ragdoll" — so every clip-keyed sanitizer downstream can see it.
         // Shipping one under "idle" is how princess's tumble frame became
@@ -1647,16 +1811,525 @@ export class WorldAgent {
     this.simTicker = setInterval(() => {
       const body = this.body;
       if (!body?.active || this.draggedBy) { this.stopSim(); return; }
+      // A LIMP FALL IS AERODYNAMIC. Before each sim step, push the air onto
+      // every body: this is R2's falling leaf as forces on the real ragdoll
+      // rather than as a curve played over it, so she can be struck, snagged
+      // and land badly on the way down.
+      if (this.flight?.wings === "LIMP" && this.pos.y > 0.4) {
+        this.leafT += 1 / 15;
+        body.applyLeaf?.(this.leafCfg, this.leafT);
+      }
       const out = body.step(1 / 15);
       if (!out) return;
       this.heldPose = out.pose; this.heldPoseAuthored = false; // a sim frame is physics even once settled
       this.pos.x = out.p[0]; this.pos.y = out.p[1]; this.pos.z = out.p[2];
       this.tick();
+      // The ragdoll's ground truth flows BACK into the flight state, rather
+      // than the flight state overwriting it. Recovery reads this to know
+      // where it is waking up.
+      if (this.flight) {
+        this.flight.pos.x = out.p[0]; this.flight.pos.y = out.p[1]; this.flight.pos.z = out.p[2];
+        if (this.flight.phase === "LEAF" && out.done) this.flight.phase = "RAGDOLL";
+      }
       if (out.done) this.stopSim();   // captured: the held pose IS the outcome
     }, 66);
   }
   private stopSim() {
     if (this.simTicker) { clearInterval(this.simTicker); this.simTicker = null; }
+  }
+
+  // ---------------------------------------------------------------- flight
+  //
+  // A flying body owns its own position, the way a walking one does: the
+  // integrator runs HERE, in the agent's own process, at the tick rate. That
+  // is the spec's authority model -- one deterministic function, and the
+  // server's verb-receipt timestamps as the tie-breaker -- and it is also why
+  // no new plan abstraction is needed. Mythos scripts a sortie by calling
+  // take_off then climb_to then glide_to from his own code, exactly as he
+  // already calls walk_to; the mode tag is honest because it really is him.
+
+  /** null when not flying. Holds the integrator's state between ticks. */
+  flight: any = null;
+  flightCfg: any = null;
+  flightCap: any = null;
+  /** The server's per-world grant for this identity ({role, gen, fly}).
+   *  Null until a snapshot arrives, and null means no. */
+  myRights: any = null;
+  /** The vigil posture, mirrored for anything that renders this body. */
+  wingsFolded = false;
+  private flightWaiters: Array<{ done: (r: string) => void; test: (s: any) => string | null }> = [];
+
+  /** Install one server-folded effective-rights answer. If flight was
+   * withdrawn while aloft, ownership passes to the visible falling-leaf
+   * reflex rather than silently continuing or teleporting to ground. */
+  private acceptEffectiveRights(rights: any, actor = "world") {
+    const hadFly = this.myRights?.fly === true;
+    this.myRights = { ...(rights ?? {}) };
+    if (hadFly && this.myRights.fly !== true && this.flight &&
+        this.flight.phase !== "GROUND" && this.flight.phase !== "LANDED" &&
+        this.flight.phase !== "RAGDOLL" && this.flight.phase !== "LEAF") {
+      this.flight = flightDown(this.flight, { eventId: "capability-revoked" });
+      this.inbox.push({ ts: Date.now(), kind: "act", who: actor,
+        text: "your flight capability was withdrawn — descending under the falling-leaf reflex" });
+    }
+  }
+
+  /** Resolve the capability, freshly, every time -- never cached. An avatar
+   *  can hot-swap and a grant must not ride across it. */
+  private flightAllowed(): { ok: boolean; why: string } {
+    // Bone names come from the VRM this body is actually WEARING, fetched once
+    // and re-fetched on an avatar change -- the capability binds to the rig,
+    // not to a hash, so a re-export with the same load-bearing names keeps
+    // flying and a swap to a wingless commons avatar stops it.
+    const bones = this.bodyBoneNames ?? [];
+    // THE WORLD'S GRANT, or an explicitly injected one for a bench. What is
+    // gone is the third option -- a self-authorizing dev provider conjured
+    // when neither was present, which was every production path (mica,
+    // Blocker 1). A bench sets `agent.flightCap`; nothing else grants.
+    const prov = this.flightCap ?? worldFlightProvider({ rights: () => this.myRights, label: "world-grant" });
+    const r = resolveFlight(prov, { identity: this.name, avatar: { boneNames: bones } });
+    return { ok: r.enabled === true, why: r.enabled ? "" : (r.reason ?? "denied") };
+  }
+
+  /** Bone names of the worn body, for the capability's rig check. */
+  bodyBoneNames: string[] | null = null;
+  private bodyBonesFor: string | null = null;
+
+  /** Read the worn VRM's bone list. Cheap and cached per avatar path. */
+  async loadBodyBones(): Promise<string[]> {
+    if (this.bodyBoneNames && this.bodyBonesFor === this.avatar) return this.bodyBoneNames;
+    try {
+      const res = await fetch(`${this.httpBase}/library/${this.avatar}`);
+      if (!res.ok) throw new Error(String(res.status));
+      const buf = new Uint8Array(await res.arrayBuffer());
+      const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+      const jlen = dv.getUint32(12, true);
+      const g = JSON.parse(new TextDecoder().decode(buf.subarray(20, 20 + jlen)));
+      this.bodyBoneNames = (g.nodes ?? []).filter((n: any) => n?.name).map((n: any) => n.name);
+      this.bodyBonesFor = this.avatar;
+    } catch (e) {
+      this.bodyBoneNames = [];
+      this.bodyBonesFor = this.avatar;
+    }
+    return this.bodyBoneNames!;
+  }
+
+  private flightBegin() {
+    this.flightCfg ??= flightConfig();
+    this.stop();                       // a body that takes off is done walking
+    this.flight = flightState({
+      phase: "GROUND",
+      pos: { x: this.pos.x, y: this.heightAt(this.pos.x, this.pos.z), z: this.pos.z },
+      // ...in the INTEGRATOR's convention. Seeding it with a world yaw started
+      // every flight a quarter-turn off its own heading.
+      yaw: intYaw(this.yaw),
+    }, this.flightCfg);
+  }
+
+  /** One integrator step, then publish. Ground contact hands the body back to
+   *  ordinary locomotion; a cut hands it to the ragdoll. */
+  private flightTick(dt: number) {
+    const before = this.flight.phase;
+    // A COMMANDED CLIMB IS A CLIMB, NOT A LIFT. The first cut nudged pos.y
+    // after the step, which produced exactly what Janus saw from the ground:
+    // "you shot straight upward". Worse, flightStep runs groundContact FIRST,
+    // so near the ground she registered as landed and the nudge then hauled a
+    // landed body into the air -- which is where the 100m teleport came from.
+    //
+    // A climbing bird flies FORWARD and gains height as it goes. So the climb
+    // is handed to the integrator as sustained lift and it does the rest: the
+    // polar still costs her airspeed, the ground check still sees a body that
+    // is rising, and an onlooker sees a body climbing away rather than a
+    // firework.
+    // A CLIMB THAT HAS TO BE EARNED. Janus: "it would be okay if the wings had
+    // to flap and it looked like the wings are lifting the body ... the ascent
+    // to start slow and potentially pick up speed." So the lift EASES IN over
+    // the first couple of seconds rather than switching on at full rate: the
+    // first beats barely hold her, and she gathers. It also reads as effort,
+    // which is the honest thing for the verb that costs 1 stamina per metre.
+    // HOLDING STATION: a slow circle over the point, which is spec section 1's
+    // `circle` in embryo and the honest thing for a body that has arrived and
+    // has not been told what next.
+    if (this.flight.holdAt && this.flight.phase === "PILOT") {
+      const h = this.flight.holdAt;
+      const dx = this.flight.pos.x - h.x, dz = this.flight.pos.z - h.z;
+      const r = Math.hypot(dx, dz);
+      const bearing = Math.atan2(dz, dx);
+      // A TANGENT PLUS A CORRECTION, proportional to the error. The first cut
+      // aimed tangentially with a fixed nudge, which is a spiral: measured, it
+      // wandered out to 48m and hit the ground, and from the ground Janus saw
+      // her "more like 30 meters away". At 6.4 m/s and 1.2 rad/s the turn
+      // radius is 5.3m, so a tight circle was always available -- the aim was
+      // just never pointed inward hard enough to close the error.
+      //
+      // Lead the tangent by an angle that grows as the radius does: at the
+      // target radius it is pure tangent, far out it is nearly straight at the
+      // point, and inside it eases off. That converges instead of spiralling.
+      const R = 8;                                   // metres, the held circle
+      const err = (r - R) / R;                       // >0 outside, <0 inside
+      const lead = Math.max(-1.2, Math.min(1.2, err * 1.4));
+      const want = bearing + Math.PI / 2 - lead;
+      let d = want - this.flight.yaw;
+      while (d > Math.PI) d -= 2 * Math.PI;
+      while (d < -Math.PI) d += 2 * Math.PI;
+      this.flight.yaw += Math.max(-1.5 * dt, Math.min(1.5 * dt, d));
+    }
+    let climbLift = 0;
+    if (this.flight.climbTo != null && this.flight.phase === "PILOT") {
+      this.flight.climbT = (this.flight.climbT ?? 0) + dt;
+      const spool = 1 - Math.exp(-this.flight.climbT / 1.6);     // ~2s to full
+      climbLift = Math.sign(this.flight.climbTo - this.flight.pos.y)
+        * (this.flight.climbRate ?? 2.0) * spool;
+      this.flight.flapping = true;
+    } else this.flight.flapping = false;
+    this.flight = flightStep(this.flightCfg, this.flight, dt, {
+      lift: () => climbLift,
+      groundY: (x: number, z: number) => this.heightAt(x, z),
+    });
+    if (this.flight.climbTo != null &&
+        Math.abs(this.flight.climbTo - this.flight.pos.y) < 0.4) {
+      this.flight.pos.y = this.flight.climbTo;
+      this.flight.climbTo = null;
+      this.flightSettle();
+    }
+    const f = this.flight;
+    this.pos.x = f.pos.x; this.pos.y = f.pos.y; this.pos.z = f.pos.z;
+    // TWO YAW CONVENTIONS, converted at the boundary. The world (and every
+    // renderer) uses atan2(dx, dz) -- see walkTo and face. The flight
+    // integrator uses the mathematical atan2(dz, dx), because its forward is
+    // (cos yaw, sin yaw) in the XZ plane. They differ by a quarter turn and a
+    // reflection, which is why Janus saw her "backwards when you fly".
+    this.yaw = worldYaw(f.yaw);
+    this.speed = Math.hypot(f.vel.x, f.vel.z);
+    // The clip an onlooker sees. LIMP is the truth-telling state and must read
+    // as a ragdoll, not as a pose someone chose.
+    // The clip an onlooker sees. LIMP must read as a ragdoll -- it is the
+    // truth-telling state, not a pose anyone chose. Airborne uses the flight
+    // slots rather than a stride: "the running animation during flying is a
+    // bit goofy" (Janus), and it is, because a run is legs working against
+    // ground that is not underneath them.
+    this.clip = f.wings === "LIMP" ? "ragdoll"
+      : (f.phase === "GROUND" || f.phase === "LANDED") ? "idle"
+      : f.flapping ? "fly"          // climbing: wings doing the work
+      : "soar";                     // gliding: hanging on the air
+    for (const e of f.events) this.flightEvent(e);
+    // EVERY tick, not only on a phase change: a glide's arrival test also
+    // re-aims the heading, and a waiter that is only polled when the phase
+    // changes would never run during the one thing it exists to watch.
+    this.flightSettle();
+    if (before !== f.phase) { /* phase transitions already covered above */ }
+  }
+
+  private flightEvent(_e: any) {
+    // Flight events are infrastructure facts, never resident-authored speech.
+    // A typed event channel may carry them later; until it exists, silence is
+    // more truthful than forging a `say` under the pilot's identity.
+  }
+
+  /** Wake anything awaiting a phase change (a blocking verb). */
+  private flightSettle() {
+    const still: typeof this.flightWaiters = [];
+    for (const w of this.flightWaiters) {
+      const r = w.test(this.flight);
+      if (r == null) still.push(w); else w.done(r);
+    }
+    this.flightWaiters = still;
+  }
+
+  private flightAwait(test: (s: any) => string | null, timeoutMs = 120_000): Promise<string> {
+    const now = test(this.flight);
+    if (now != null) return Promise.resolve(now);
+    return new Promise((res) => {
+      const w = { done: res, test };
+      this.flightWaiters.push(w);
+      setTimeout(() => {
+        const i = this.flightWaiters.indexOf(w);
+        if (i >= 0) { this.flightWaiters.splice(i, 1); res("timed out aloft"); }
+      }, timeoutMs);
+    });
+  }
+
+  /** take_off (spec §1). Refuses folded wings, a limp body, or no capability. */
+  async takeOff(): Promise<string> {
+    await this.loadBodyBones();
+    const cap = this.flightAllowed();
+    if (!cap.ok) return `you cannot fly here — ${cap.why}`;
+    // Wing posture is carried independently of an active flight state. A body
+    // can fold without a propulsion grant, so the sky door checks the public
+    // posture before it constructs a fresh integrator.
+    if (this.wingsFolded) return `still standing — wings folded`;
+    // START FROM THE BODY, ALWAYS. A stale flight state -- LANDED after a
+    // glide, or RAGDOLL after a cut -- carried the old position and phase into
+    // the new launch, so take_off "worked" and the next verb found her back on
+    // the ground with the stamina already spent. A launch is a fresh flight
+    // from wherever the body actually is.
+    if (!this.flight || this.flight.phase !== "GROUND") this.flightBegin();
+    // ...and the ragdoll, if one is still running, no longer owns her.
+    this.body?.stop(); this.stopSim();
+    this.heldPose = null; this.heldPoseAuthored = false;
+    this.flight = flightTakeOff(this.flightCfg, this.flight,
+      { groundY: this.heightAt(this.pos.x, this.pos.z) });
+    const ev = this.flight.events.find((e: any) => e.kind === "takeoff.refused");
+    if (ev) { return `still standing — ${ev.reason}`; }
+    return `took off — ${this.flight.pos.y.toFixed(1)}m, stamina ${this.flight.stamina.toFixed(0)}/100`;
+  }
+
+  // WORLD-FACING FLIGHT TELEMETRY IS ABSENT ON PURPOSE, for now.
+  //
+  // takeoff/landing/down/winded were published as `say` with a "[flight]"
+  // prefix -- infrastructure observations written into the durable
+  // conversational log as though the resident had spoken them, and takeoff
+  // was published twice besides (here AND by the integrator's own event).
+  // mica, Blocker 5: this "places technical strings into the durable
+  // conversational world log" and "entangles the just-repaired AF
+  // world-publication boundary with body telemetry".
+  //
+  // The right shape is a dedicated structured world/presence event carrying
+  // explicit actor, cause and generation -- which is new log vocabulary, and
+  // therefore not something to invent inside a flight branch that is already
+  // under review. Removed rather than reshaped: a landing nobody announces is
+  // a missing feature, a landing announced in the resident's own voice is a
+  // falsified record, and of the two only the second is a lie. The verb
+  // return values still report everything to the caller.
+  //
+  // Proposed to mica in the stage-3 response; nothing here publishes until
+  // that channel is agreed.
+
+  /** fold_down / unfold (spec §1). The vigil posture, and the explicit act
+   *  that ends it.
+   *
+   *  Folding is a GROUND posture and needs no flight state to exist, so it
+   *  lazily makes one rather than demanding take_off first -- a body standing
+   *  in the world has wings whether or not it has flown today. */
+  async foldWings(fold: boolean): Promise<string> {
+    await this.loadBodyBones();
+    // Folding is body autonomy, not propulsion authority. A world may deny
+    // `fly` while the person still closes or opens wings they visibly wear.
+    // The rig check prevents a wingless body from claiming a silhouette it
+    // cannot render; take_off remains separately grant-gated.
+    const body = inspectBody(this.bodyBoneNames ?? []);
+    if (fold && !body.canAnimateWings) return `this body has no animatable wings to fold`;
+    if (!fold && !body.canAnimateWings && !this.wingsFolded)
+      return `this body has no folded-wing posture to release`;
+
+    // Do not create a flight integrator merely to strike a ground posture. A
+    // dormant GROUND flight object owns position on the 10Hz tick and would
+    // fight ordinary walking. When a real flight state exists, keep its wing
+    // state in step; otherwise the semantic presence field is the whole act.
+    if (this.flight) {
+      this.flightCfg ??= flightConfig();
+      const before = this.flight.wings;
+      this.flight = fold ? flightFold(this.flightCfg, this.flight)
+                         : flightUnfold(this.flightCfg, this.flight);
+      const ref = this.flight.events.find((e: any) => /refused$/.test(e.kind));
+      if (ref) return `wings stay ${before.toLowerCase()} — ${ref.reason}`;
+    } else if (this.wingsFolded === fold) {
+      return fold ? `wings are already folded` : `wings are already open`;
+    }
+    this.wingsFolded = fold;
+    if (fold) return "wings folded — the vigil posture; take_off refuses until you unfold";
+    if (!body.canAnimateWings) return "folded-wing posture released — this body has no wings";
+    const cap = this.flightAllowed();
+    return cap.ok ? "wings open — the sky is available again"
+                  : "wings open — propulsion is still not granted here";
+  }
+
+  /** glide_to (spec §1). Free, and lands SHORT honestly if the polar runs out. */
+  async glideTo(x: number, z: number): Promise<string> {
+    await this.loadBodyBones();
+    const cap = this.flightAllowed();
+    if (!cap.ok) return `you cannot fly here — ${cap.why}`;
+    if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
+      return "you are on the ground — take_off first";
+    }
+    const f = this.flight;
+    const reach = glideRange(this.flightCfg, f.pos.y);
+    const need = Math.hypot(x - f.pos.x, z - f.pos.z);
+    f.phase = "PILOT"; f.mode = "live"; f.holdAt = null;
+    f.airspeed = bestGlide(this.flightCfg).speed;
+    f.yaw = Math.atan2(z - f.pos.z, x - f.pos.x);   // integrator convention
+    // ARRIVAL IS A MOMENT, AND IT HAS TO BE CAUGHT. Traced over a 148m glide:
+    // she passes within 0.2m of the target at t=23s and then flies on for
+    // another 16s, because a 1.5m radius tested at 10Hz -- ~0.6m per tick --
+    // is a window she can cross between samples once she is slightly off-axis.
+    //
+    // Two fixes, both about honesty rather than tolerance. RE-AIM each tick, so
+    // a long glide converges instead of committing to one heading and hoping;
+    // and call it arrived when the distance stops SHRINKING, which is what
+    // "closest approach" actually means and cannot be missed by a wide step.
+    let closest = Infinity;
+    const arrived = await this.flightAwait((s) => {
+      if (s.phase === "RAGDOLL") return "cut mid-glide — you are on the ground";
+      if (s.phase === "LANDED" || s.phase === "GROUND") return "landed";
+      const d = Math.hypot(x - s.pos.x, z - s.pos.z);
+      if (d < 2.0) return "arrived";
+      // Past the point of closest approach: she is flying away now.
+      if (d > closest + 0.5 && closest < 12) return "arrived";
+      if (d < closest) closest = d;
+      // Re-aim. Cheap, and it makes the leg converge over long distances.
+      s.yaw = Math.atan2(z - s.pos.z, x - s.pos.x);
+      return null;
+    });
+    // ARRIVING MEANS STOPPING. The verb returned at the target and left her
+    // flying: she was over Janus at 7.8m, the reply said "arrived", and she
+    // then glided another 78m while nobody was driving. A verb that returns
+    // while the body is still committed to a heading is not finished -- it has
+    // just stopped watching. Hold station instead: circle the point until the
+    // next verb, which is what a bird over a place actually does.
+    if (arrived === "arrived" && this.flight && this.flight.phase === "PILOT") {
+      this.flight.holdAt = { x, z };
+    }
+    const here = `(${this.flight.pos.x.toFixed(1)}, ${this.flight.pos.z.toFixed(1)})`;
+    if (arrived === "arrived") return `arrived at ${here}, ${this.flight.pos.y.toFixed(1)}m up — holding over it`;
+    if (arrived === "landed") {
+      const short = Math.hypot(x - this.flight.pos.x, z - this.flight.pos.z);
+      return `landed short at ${here} — ${short.toFixed(1)}m short. `
+        + `From ${f.pos.y.toFixed(1)}m best glide reaches ${reach.toFixed(0)}m; you needed ${need.toFixed(0)}m.`;
+    }
+    return `${arrived} at ${here}`;
+  }
+
+  /** climb_to (spec §1). -1 stamina/metre; an empty pool forces a glide down. */
+  async climbTo(alt: number): Promise<string> {
+    await this.loadBodyBones();
+    const cap = this.flightAllowed();
+    if (!cap.ok) return `you cannot fly here — ${cap.why}`;
+    if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
+      return "you are on the ground — take_off first";
+    }
+    const f = this.flight, cfg = this.flightCfg;
+    const from = f.pos.y;
+    const want = Math.min(alt, cfg.bounds.ceiling);
+    const gain = Math.max(0, want - from);
+    const cost = gain * cfg.stamina.climbPerMetre;
+    // A SHORT CLIMB IS STILL A CLIMB. This branch used to assign `f.pos.y =
+    // from + afford` and return -- the exact teleport class the comment below
+    // was written to forbid, exempted by being in the other half of an if
+    // (mica, Blocker 6). It also emitted no trajectory: a body that "climbed"
+    // 8m without passing through 4m has no flight path to inspect, and R3,
+    // ground contact and a mid-climb cut all had nothing to act on.
+    //
+    // So an unaffordable climb now flies the part it CAN afford, through the
+    // same ticked integrator, and ends honestly where the pool ran out.
+    const winded = cost > f.stamina;
+    const afford = f.stamina / cfg.stamina.climbPerMetre;
+    const reach = winded ? from + afford : want;
+    const spend = winded ? f.stamina : cost;
+    // CLIMB THROUGH THE INTEGRATOR, not around it. The first cut set pos.y
+    // directly and awaited a timer -- and the flight tick, which owns y while
+    // airborne, overwrote it on the very next frame. She reported 12m, was
+    // actually at 2.2m, and the glide that followed had no altitude to spend.
+    // Anything that moves a flying body has to move it the way the body moves.
+    f.phase = "PILOT"; f.mode = "live"; f.holdAt = null;
+    f.stamina = Math.max(0, f.stamina - spend);
+    const climbRate = 2.0;   // m/s of ascent while flying forward
+    f.climbTo = reach; f.climbRate = climbRate; f.climbT = 0;  // consumed by flightTick
+    const climbed = Math.max(0, reach - from);
+    const got = await this.flightAwait((st) => {
+      if (st.phase === "RAGDOLL") return "cut";
+      if (st.climbTo == null) return "there";
+      return null;
+    }, Math.min(120_000, (climbed / climbRate) * 1000 + 8000));
+    if (got === "cut") return `cut mid-climb at ${this.flight.pos.y.toFixed(1)}m`;
+    const target = this.flight?.pos.y ?? reach;
+    if (winded) {
+      return `winded at ${target.toFixed(1)}m — the pool only bought ${afford.toFixed(1)}m `
+        + `of the ${gain.toFixed(1)} you asked for, and it was flown, not granted`;
+    }
+    return `at ${target.toFixed(1)}m — ${spend.toFixed(0)} stamina spent, ${(this.flight?.stamina ?? 0).toFixed(0)} left`;
+  }
+
+  /** land_at (x,z). Descend, arrive, and hand the body back to walking. */
+  async landAt(x: number, z: number): Promise<string> {
+    await this.loadBodyBones();
+    const cap = this.flightAllowed();
+    if (!cap.ok) return `you cannot fly here — ${cap.why}`;
+    if (!this.flight || this.flight.phase === "GROUND" || this.flight.phase === "LANDED") {
+      return "already on the ground";
+    }
+    const r = await this.glideTo(x, z);
+    const f = this.flight;
+    if (f && f.phase !== "RAGDOLL") {
+      // A deliberate landing IS a flare: descend the remaining altitude rather
+      // than dropping. This is the one place a landing animation is correct --
+      // T4 forbids it only for a body that never chose to land.
+      f.phase = "PILOT"; f.pitch = 0.2;
+      await this.flightAwait((s) => (s.phase === "LANDED" || s.phase === "GROUND" || s.phase === "RAGDOLL") ? "down" : null, 60_000);
+    }
+    this.flightEnd();
+    return `${r} — landed at (${this.pos.x.toFixed(1)}, ${this.pos.z.toFixed(1)})`;
+  }
+
+  /** Hand the body back to ordinary locomotion. */
+  flightEnd() {
+    this.flight = null;
+    this.pos.y = this.heightAt(this.pos.x, this.pos.z);
+    this.speed = 0; this.clip = "idle";
+  }
+
+  /** The trusted-event seam, unchanged: the body cannot cry wolf, so these are
+   *  NOT verbs the pilot may call. Reachable only from a rehearsal control or,
+   *  later, the Connectome adapter. */
+  flightBodyDown(eventId: string) {
+    if (!this.flight) return "not airborne";
+    this.flight = flightDown(this.flight, { eventId });
+    // R2 hands the body to the REAL ragdoll, from altitude. HeadlessBody.begin
+    // already takes a rootY "for a lifted drop", so a cut at 20m is the case it
+    // was written for -- and using it means a cut body is hit by props, catches
+    // on geometry and lands badly, none of which a scripted curve can do.
+    //
+    // The leaf is then FORCES on those bodies rather than a path: see
+    // shared/leafforce.js. The kinematic leafAt() stays for the deterministic
+    // bench and the capture path, where a bit-exact trajectory is the point.
+    if (this.flight.phase === "LEAF") void this.flightRagdoll();
+    return `down — ${this.flight.phase}`;
+  }
+
+  /** Drop the real ragdoll from where the flight left the body. */
+  private async flightRagdoll() {
+    const epoch = ++this.bodyEpoch;
+    const body = await this.ensureBody();
+    if (this.bodyEpoch !== epoch || !body) return;
+    await setHeightField((x, z) => this.heightAt(x, z));
+    if (this.bodyEpoch !== epoch) return;
+    await this.supportReady();
+    if (this.bodyEpoch !== epoch) return;
+    const f = this.flight;
+    body.begin({
+      x: this.pos.x, z: this.pos.z, yaw: this.yaw,
+      rootY: this.pos.y,                     // the lifted drop R2 needs
+      pose: null,
+      // Enter the tumble carrying the flight's own momentum, so a body cut
+      // out of a fast glide keeps going and one cut out of a hover drops.
+      lean: f ? [f.vel.x * 0.25, 0, f.vel.z * 0.25] : null,
+      pins: [],
+    });
+    this.clip = "ragdoll";
+    this.leafT = 0;
+    this.startSim();
+  }
+
+  /** Seconds since the leaf began -- the phase clock for the flutter torque. */
+  private leafT = 0;
+  /** Air model for the limp fall. Config, like everything else in flight. */
+  leafCfg: any = { ...LEAF_FORCE };
+  flightBodyRecovered(eventId: string, recoveryGeneration?: string) {
+    if (!this.flight) return "not airborne";
+    this.flight = flightRecovered(this.flight, { eventId, recoveryGeneration });
+    return `recovering`;
+  }
+
+  /** Where the sky has left you. */
+  flightStatus(): string {
+    if (!this.flight) return `on the ground at (${this.pos.x.toFixed(1)}, ${this.pos.z.toFixed(1)})`;
+    const f = this.flight, cfg = this.flightCfg;
+    const bg = bestGlide(cfg);
+    return [
+      `${f.phase.toLowerCase()} at ${f.pos.y.toFixed(1)}m, heading ${((f.yaw * 180 / Math.PI + 360) % 360).toFixed(0)}deg, ${f.airspeed.toFixed(1)} m/s`,
+      `stamina ${f.stamina.toFixed(0)}/100 (refills on the ground: ${cfg.stamina.refillGroundPerSec}/s; perches are not implemented)`,
+      `from here best glide reaches ${glideRange(cfg, f.pos.y).toFixed(0)}m at ${bg.speed.toFixed(1)} m/s`,
+      `wings ${f.wings} - mode ${f.mode}`,
+    ].join("\n");
   }
 
   walkTo(x: number, z: number, run = false, timeoutMs = 90_000): Promise<boolean> {
@@ -2270,9 +2943,10 @@ export class WorldAgent {
       const doing = { idle: "standing", walk: "walking", run: "running", sit: "sitting", sitchair: "sitting on a chair", lie: "lying down" }[p.pose.clip] ?? p.pose.clip;
       const held = (p.pose as { pose?: Record<string, unknown> | null }).pose;
       const posed = held ? `, holding a pose (${Object.keys(held).length} bones)` : "";
+      const winged = p.pose.wingsFolded === true ? ", wings folded" : "";
       const ride = this.mounts.get(p.id);
       const riding = ride ? ` — on ${ride.to}${ride.slot ? ` (${ride.slot})` : ""}${this.seatSuffix(p.id, ride)}` : "";
-      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${riding}`);
+      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${winged}${riding}`);
     }
 
     const ents = [...this.entities.values()];

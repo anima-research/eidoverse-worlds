@@ -75,10 +75,18 @@ function run(av: any, lean: any = null, { maxSteps = 900, seedVel = null as any 
     if (tw < -Math.PI) tw += 2 * Math.PI;
     return Math.abs(tw);
   };
+  // Crumple: angle between the pelvis→chest axis and the chest→neck axis.
+  // The lower axis is hips→CHEST, not hips→spine, because the direction of a
+  // bone is only as trustworthy as its length: mythos-wings authors its spine
+  // 7.2mm above its hips (the real span is in upperChest), and a 7mm segment's
+  // direction swings tens of degrees on the millimeter of linear slack a
+  // Bullet constraint carries — the suite read 78° of "crumple" while both
+  // spine joints sat exactly at their 10°/20° stops. Same function measures
+  // both engines, so the parity comparison stays fair.
   const foldOf = (p: any) => {
-    const a = p.spine?.clone().sub(p.hips ?? p.spine)?.normalize();
-    const b = p.neck?.clone().sub(p.chest ?? p.neck)?.normalize();
-    return a && b ? Math.acos(Math.min(1, Math.max(-1, a.dot(b)))) : 0;
+    const lo = (p.chest ?? p.spine)?.clone().sub(p.hips ?? p.spine)?.normalize();
+    const b = p.neck?.clone().sub(p.chest ?? p.spine)?.normalize();
+    return lo && b ? Math.acos(Math.min(1, Math.max(-1, lo.dot(b)))) : 0;
   };
   for (const rig of FLEET) {
     // the Verlet is the quality BASELINE: same rig, same lean, same metric
@@ -92,6 +100,12 @@ function run(av: any, lean: any = null, { maxSteps = 900, seedVel = null as any 
     const rd: any = new AmmoRagdoll(av, toppleLean(), av.restBonePositions());
     const UP = new THREE.Vector3(0, 1, 0);
     const fwd0 = rd.rig.forward.clone();
+    // rest thigh directions, rig frame (= torso frame at build): the anchor
+    // the knee instrument measures each thigh's swing against
+    const restThigh: Record<string, any> = {};
+    for (const side of ['left', 'right']) {
+      restThigh[side] = rig.P[side + 'LowerLeg'].clone().sub(rig.P[side + 'UpperLeg']).normalize();
+    }
     const tq = new THREE.Quaternion();
     let steps = 0, worstNeckTwist = 0, lastFold = 0, worstWrongKnee = 0;
     const spinRing: number[] = [];              // the last second before capture:
@@ -113,10 +127,22 @@ function run(av: any, lean: any = null, { maxSteps = 900, seedVel = null as any 
         // constraint held aletheia's knees at +140° hyperextension while the
         // (aliased-temp) angle reader printed 0°, and antra's eyes were the
         // only working instrument ("aletheia knees bend only backwards",
-        // live). Positions cannot alias: shin deviation from the thigh line,
-        // against the torso's CURRENT forward. Impacts may buckle a knee
-        // transiently; it must never FOLD wrong (the wrap-point bug held
-        // 135-140° for the whole fall).
+        // live). Positions cannot alias: shin deviation from the thigh line.
+        //
+        // The reference DIRECTION must ride the thigh, not the torso. The
+        // first version compared the deviation against the torso's current
+        // forward, which is only valid while the thigh stays under 90° of
+        // flexion in the torso frame: in a fetal collapse (hips at their 90°
+        // stop plus legal spine curl) a LEGAL backward fold reads a forward
+        // component of exactly -cos(thigh angle) — measured 117°/126° of
+        // phantom "hyperextension" on both fleet rigs while every leg joint
+        // sat within 6° of its table. So: predict where a legal fold's
+        // deviation would point by carrying rest-backward through the thigh's
+        // own swing-from-rest (shortest arc, torso frame — twist-free, and
+        // the hip's twist axis is locked at zero), and flag only a deviation
+        // OPPOSITE that prediction. A genuinely wrong-way knee reads ≈ -1
+        // (the wrap-point bug held one there for the whole fall); the legal
+        // fetal fold reads +0.97.
         bodyQuat(rd.torsoBody, tq);
         for (const side of ['left', 'right']) {
           const hip = rd.p[side + 'UpperLeg'], knee = rd.p[side + 'LowerLeg'], foot = rd.p[side + 'Foot'];
@@ -125,9 +151,13 @@ function run(av: any, lean: any = null, { maxSteps = 900, seedVel = null as any 
           const shin = foot.clone().sub(knee).normalize();
           const bend = Math.acos(Math.min(1, Math.max(-1, thigh.dot(shin))));
           if (bend < 0.15) continue;             // straight: no direction to read
-          const fwdNow = fwd0.clone().applyQuaternion(tq);
-          const dev = shin.clone().addScaledVector(thigh, -shin.dot(thigh)).normalize();
-          if (dev.dot(fwdNow) > 0.3) worstWrongKnee = Math.max(worstWrongKnee, bend);
+          const inv = tq.clone().invert();
+          const thighT = thigh.clone().applyQuaternion(inv);
+          const devT = shin.clone().addScaledVector(thigh, -shin.dot(thigh)).normalize()
+            .applyQuaternion(inv);
+          const swing = new THREE.Quaternion().setFromUnitVectors(restThigh[side], thighT);
+          const devPred = fwd0.clone().negate().applyQuaternion(swing);
+          if (devT.dot(devPred) < -0.3) worstWrongKnee = Math.max(worstWrongKnee, bend);
         }
       }
     }

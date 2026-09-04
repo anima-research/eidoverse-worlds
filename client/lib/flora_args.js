@@ -52,7 +52,7 @@ export function mapGrassArgs(a) {
 // (the engine's field-approved Mojave recipe is galleta + three shrubs at
 // de-centred organic stands + yucca). `preset` bags compose those strokes
 // client-side under ONE field object, so the verb model stays untouched.
-export function presetStrokes(args) {
+export function presetStrokes(args, presets = null) {
   const W = args.width ?? args.size ?? 80, D = args.depth ?? args.size ?? 70;
   const [cx, cz] = args.center ?? [0, 0];
   const seed = args.seed ?? 7;
@@ -61,16 +61,27 @@ export function presetStrokes(args) {
   // a preset that ignored it left the sparse/lush dial doing nothing at all
   // on the composed biomes, since every stroke carried a hardcoded density
   const k = args.density ?? 1;
-  if (args.preset === 'mojave') {
-    return [
-      { species: 'galleta_dry', width: W, depth: D, center: [cx, cz], seed, density: 1.3 * k },
-      { species: 'blackbrush', width: W - 2, depth: D - 2, center: [cx + sc(0.08), cz - sc(0.05)], seed: seed + 2, density: 0.85 * k, footprint: 'organic' },
-      { species: 'blackbrush', width: W - 2, depth: D - 2, center: [cx - sc(0.09), cz + sc(0.08)], seed: seed + 52, variant: 1, density: 0.85 * k, footprint: 'organic' },
-      { species: 'creosote', width: W, depth: D, center: [cx - sc(0.06), cz - sc(0.08)], seed: seed + 5, density: 0.85 * k, footprint: 'organic' },
-      { species: 'creosote', width: W, depth: D, center: [cx + sc(0.1), cz + sc(0.06)], seed: seed + 85, variant: 1, density: 0.85 * k, footprint: 'organic' },
-      { species: 'sagebrush', width: W - 2, depth: D - 2, center: [cx + sc(0.05), cz + sc(0.1)], seed: seed + 9, density: 0.85 * k, footprint: 'organic' },
-      { species: 'yucca', width: W, depth: D, center: [cx, cz], seed: seed + 18, density: 0.7 * k },
-    ];
+  if (args.preset != null) {
+    // §24 defs: named presets are DATA (defs/flora/_presets.json), composed
+    // here from a small template vocabulary — species/variant/… literal,
+    // density × the caller's factor, inset in metres off both extents,
+    // offset in min(W,D) fractions from the caller's center, seedAdd off
+    // the caller's seed. A preset this instance lacks fails LOUDLY: a
+    // logged bag's meaning must never silently drift into a default lawn.
+    const p = presets?.[args.preset];
+    if (!p?.strokes?.length) {
+      throw new Error(`[flora] unknown preset '${args.preset}' — have: ${Object.keys(presets ?? {}).join(', ') || '(no presets hydrated)'}`);
+    }
+    return p.strokes.map((t) => {
+      const { inset = 0, offset = [0, 0], seedAdd = 0, density = 1, ...rest } = t;
+      return {
+        ...rest,
+        width: W - inset, depth: D - inset,
+        center: [cx + sc(offset[0]), cz + sc(offset[1])],
+        seed: seed + seedAdd,
+        density: density * k,
+      };
+    });
   }
   if (args.species === 'corn' && !args.rows?.stride) {
     // Honest agriculture, and VARIETY: one stroke = one plant variant cloned

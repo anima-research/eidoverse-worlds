@@ -102,7 +102,7 @@ export function libraryRigs(dir = process.env.EIDOVERSE_DIR
   ? `${process.env.EIDOVERSE_DIR}/eidoverse/assets/vrms/`
   : fileURLToPath(new URL('../../eidoverse-video/eidoverse/assets/vrms/', import.meta.url))) {
   let names = [];
-  try { names = readdirSync(dir).filter((n) => n.endsWith('.vrm')).sort(); }
+  try { names = readdirSync(dir).filter((n) => n.endsWith('.vrm') && !n.endsWith('.ktx2.vrm')).sort(); }
   catch { return []; }
   const out = [];
   for (const f of names) {
@@ -130,7 +130,7 @@ export function libraryRigs(dir = process.env.EIDOVERSE_DIR
 
 export function rigs() {
   const out = [];
-  for (const f of readdirSync(VRM_DIR).filter((n) => n.endsWith('.vrm')).sort()) {
+  for (const f of readdirSync(VRM_DIR).filter((n) => n.endsWith('.vrm') && !n.endsWith('.ktx2.vrm')).sort()) {
     const name = f.replace('.vrm', '');
     let g, bones, wp;
     try { g = glbJson(readFileSync(VRM_DIR + f)); bones = humanBones(g); wp = worldPositions(g); }

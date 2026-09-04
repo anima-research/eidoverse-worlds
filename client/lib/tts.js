@@ -10,7 +10,7 @@
 // LOCAL, always. Synthesis on the client costs the server nothing and scales
 // with clients rather than with the room (R, 2026-08-08).
 
-import { report, bus } from './core.js';
+import { report, bus } from './base.js';
 import { setSynthProvider, notifySynthTrackChanged } from './voicesource.js';
 import { volumeFor } from './voiceconsent.js';
 import { audioContext } from './audioctx.js';
