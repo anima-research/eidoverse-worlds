@@ -23,6 +23,7 @@
   "scripts": {
     "typecheck:flight": "bunx tsc -p tsconfig.flight.json",
     "test:flight": "bun tools/flight-test.ts",
-    "test:flight:headless": "bun tools/flight-headless-test.ts"
+    "test:flight:headless": "bun tools/flight-headless-test.ts",
+    "test:wingfold": "bun tools/wing-fold-presence-test.ts && bun tools/wing-owner-wire-test.ts"
   }
 }

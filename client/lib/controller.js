@@ -31,6 +31,8 @@ import {
 } from '../../shared/flight.js';
 import { pilotInput } from '../../shared/flightpilot.js';
 import { worldFlightProvider, resolveFlight } from '../../shared/flightcap.js';
+import { inspectBody } from '../../shared/flightbody.js';
+import { applyOwnedWingFold } from '../../shared/wingpresence.js';
 
 let flight = null, flightCfg = null, flightProv = null;
 let lastFlightEnd = null;   // why the last flight ended -- 'F did nothing' has causes
@@ -107,14 +109,22 @@ export const flying = () => !!flight;
 // whole point of the posture: it costs the sky until you explicitly unfold.
 let wingsFolded = false;
 export const folded = () => wingsFolded;
+export function setFolded(fold, me = meRef()) {
+  wingsFolded = applyOwnedWingFold(myState, me, fold);
+}
 
 function toggleFold(me) {
   if (flight) return 'you are flying — land first';
-  if (!flightProv) return null;             // no wings, no vigil, no message
-  wingsFolded = !wingsFolded;
-  if (me) me.wingsFolded = wingsFolded;     // avatar.js eases the pose in _flap
-  return wingsFolded ? 'wings folded — the vigil posture costs the sky (G to unfold)'
-                     : 'wings open';
+  // Folding is body autonomy, not a flight grant. Starting the posture needs
+  // authored wing chains; releasing a carried posture is always possible,
+  // including after a swap into a body that has no wings to draw.
+  const winged = inspectBody(flightBones ?? []).canAnimateWings;
+  if (!wingsFolded && !winged) return null;
+  setFolded(!wingsFolded, me);
+  if (wingsFolded) return 'wings folded — the vigil posture costs the sky (G to unfold)';
+  if (!winged) return 'folded-wing posture released — this body has no wings';
+  const cap = flightProv && resolveFlight(flightProv, { identity: 'me', avatar: { boneNames: flightBones ?? [] } });
+  return cap?.enabled ? 'wings open' : 'wings open — propulsion is still not granted here';
 }
 
 /** WHY FLIGHT IS DOING THAT, in words, for a person with no devtools open.
@@ -230,6 +240,7 @@ export const myState = {
   clip: 'idle',
   emote: null,       // one-shot, cleared after it's been sent once
   pose: undefined,   // held custom bone override (null clears); presence only
+  wingsFolded: false, // semantic body posture; each rig renders its own fold
   seat: null,        // { id, chair } while seated on something
 };
 

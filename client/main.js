@@ -26,7 +26,7 @@ import './lib/emitters.js';
 import { tickMotion } from './lib/motion.js';
 import {
   myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
-  setRightsHook, setMeHook,
+  setRightsHook, setMeHook, setFolded,
 } from './lib/controller.js';
 import { remotes, updateRemotes, updateGaze } from './lib/remotes.js';
 import {
@@ -273,6 +273,7 @@ wireNet({
     // wreckage, not authorship — wake standing instead of hung mid-tumble.
     if (r.clip === 'ragdoll') { myState.pos.y = 0; return; }
     if (r.pose) myState.pose = r.pose;
+    setFolded(r.wingsFolded === true);
   },
   onSnapshotDone: () => {},
 });

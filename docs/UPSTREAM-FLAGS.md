@@ -44,6 +44,12 @@ Each is red on anima/main as it stands:
   the command registry. Retargeted here; upstream will meet the same when it
   takes the unification. Its bench world also needs `commit` (rimward's
   `runVerb` commits through the entry bus; `append` alone throws) — added.
+- **`tools/wing-owner-wire-test.ts` mocks `core.js` for `bus`/`CONFIG`/`report`**
+  — on rimward those live in `client/lib/base.js` (the renderer-free
+  substrate, seam move 2), so the controller listened on a bus the bench
+  never emitted on and a pressed G reached nobody (4/6 red). The bench now
+  mocks `base.js` too, spreading the real module under the bench's bus.
+  (b234928, merged 2026-09-04.)
 
 ## 2. Features upstream shipped dormant, now live here (port candidates)
 
