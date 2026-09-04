@@ -14,12 +14,13 @@
 // ones (the R2 ladder lesson).
 
 import { THREE, renderer, scene, camera } from './core.js';
+import { renderWorld } from './render.js';
 
 /** Render the live scene through the live camera and read the frame back
  *  as a PNG data URL. Throws on an empty readback (a context that has not
  *  produced a frame yet answers with a blank canvas, silently). */
 export function captureFrame() {
-  renderer.render(scene, camera);   // completed frame, then read it
+  renderWorld();   // completed frame, then read it
   const url = renderer.domElement.toDataURL('image/png');
   if (url.length < 2000) throw new Error('empty frame readback');
   return url;

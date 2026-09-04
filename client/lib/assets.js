@@ -22,6 +22,7 @@ import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
 import { beginWork, enqueue, nextFrame, loadNote } from './loadwork.js';
 import { warm } from './warmqueue.js';
 import { prepareObject } from './materials.js';
+import { markDrawBatchSource } from './draw_batches.js';
 
 // ---- loading tray -----------------------------------------------------------
 // Every in-flight asset (downloads with byte progress, builds as spinners) is
@@ -508,6 +509,7 @@ export async function loadGLB(libPath) {
           // the PROTOTYPE goes through the factory once; every skeletonClone
           // shares its wrapped materials and copies its mesh markers
           prepareObject(gltf.scene, { kind: 'model' });
+          markDrawBatchSource(gltf.scene);
           await work.yield();
           work.phase('textures');
           await primeTextures(gltf.scene, work);

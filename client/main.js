@@ -68,6 +68,7 @@ import { colliderCacheStats } from './lib/colliders.js';
 import { governPerformance, governorDebug, whenCalm } from './lib/governor.js';
 import { registerSystem, startFrame, frameDebug } from './lib/frame.js';
 import { perf } from './lib/perf.js';
+import { renderWorld, drawStats, setDrawBatching } from './lib/render.js';
 import { paintHud } from './lib/hud.js';
 import { updateMaterials, materialsDebug } from './lib/materials.js';
 import { updateRig, rigDebug } from './lib/lightrig.js';
@@ -440,7 +441,7 @@ registerSystem('promote-tail', () => drainPromoteTail());        // §16.2.C: pr
                                  // before 'debug' so F3 sees same-frame colliders
 registerSystem('debug', (dt, t, now) => updateDebug(now));       // F3 wireframes
 registerSystem('send-pose', (dt, t, now) => sendPose(now));
-registerSystem('render', () => renderer.render(scene, camera));
+registerSystem('render', renderWorld);
 let _pulseAt = 0;
 registerSystem('pulse', (dt, t, now) => {
   if (now - _pulseAt < 1000) return;
@@ -818,6 +819,8 @@ const EW = globalThis.EW = {
   governor: governorDebug,     // the two-way lever ladder (§12.6)
   residency: residencyDebug,   // real/stand-in/loading counts + sweep stats (§13.3)
   gpu: () => ({ ...renderer.info.memory, ...protoStats() }),   // bytes + proto/byte tiers
+  draws: drawStats,
+  setDrawBatching,
   frame: frameDebug,           // per-system rolling ms + strides (§14.2 6b)
   grass: grassTiles,           // tile-level draw truth (§13.2, landed 8e)
   simFold: simState,           // the deterministic sim's shadow cut (PROTOCOL_v2)
