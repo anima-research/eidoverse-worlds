@@ -390,6 +390,19 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-09-04 — §24t-12: CATCH-UP MERGE, folded wings on presence
+  (ae30eef).** anima/main +1 (b234928: wingsFolded rides the pose packet;
+  fold/unfold as body autonomy, not flight permission). Two conflicts of
+  the known shape: mybody.js (their `folded` import onto the base.js
+  seam) and net-server.ts (revised fold/unfold descriptions in the
+  TOOLS table we keep in mcpl/tools.ts — ported). Their tests here:
+  wing-fold-presence 28/0, settled-pose 21/0, wing-owner-wire 6/0
+  after retargeting its core.js mock to base.js (the controller
+  listened on a bus the bench never emitted on — flagged §1). Gates:
+  smoke 85/85, flight-test 231/0, sim-smoke 15/0, sim-ground-smoke
+  8/0, parity PASS, lightbench 30/0, mcpl door suites green. rimward 0
+  behind anima/main.
+
 - **2026-09-02 — §24t-11: CATCH-UP MERGE, THE FLIGHT ARC (d30d20a).**
   anima/main was 33 commits ahead (a678f24: wings, the deterministic
   flight integrator, effective rights, five MCP flight tools +
