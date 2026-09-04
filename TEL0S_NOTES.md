@@ -390,6 +390,25 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-09-04 — §24t-13: DRAW BATCHING REVIEWED, MAIN MERGED, PR #160
+  OPENED.** GPT-6-Astra's c1efe3d (committed under tel0s's identity):
+  rendering-only instancing for repeated library meshes —
+  client/lib/draw_batches.js + render.js, hooked at scene.onBeforeRender
+  (reads matrices AFTER the sim applier's writes: no lag), originals
+  authoritative for picking/collision/parts, conservative exclusions
+  (transparent, skinned, sheared, overlapping, tangents), `?batching=0`
+  escape hatch, docs/draw-calls.md with numbers (194→6 on the fixture,
+  53→33 on 32 real crates, worst pixel delta 18/480k). Its own gates
+  pass (drawbench 13 GPU cases, draw-batches-test); ours pass on top:
+  parity, lightbench 30/0, smoke 85/85, sim-smoke 15/0,
+  sim-ground-smoke 8/0; bootjank ran clean. Reviewed, kept. MAIN:
+  rimward merged into main (04e6da0, clean; trees identical) and
+  pushed — main's only own commit was its old anima merge. PR:
+  https://github.com/anima-research/eidoverse-worlds/pull/160
+  (tel-0s:main → anima-research:main) — the body is the briefing;
+  docs/UPSTREAM-FLAGS.md is the reviewer's document. anima remains
+  fetch-only; nothing was pushed there.
+
 - **2026-09-04 — §24t-12: CATCH-UP MERGE, folded wings on presence
   (ae30eef).** anima/main +1 (b234928: wingsFolded rides the pose packet;
   fold/unfold as body autonomy, not flight permission). Two conflicts of
