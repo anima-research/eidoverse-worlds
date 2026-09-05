@@ -390,6 +390,26 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-09-04 — §24t-16: THE STALE-GENERATION BLOCKER (98e9d36, Astra).**
+  Antra's focused re-review found one remaining authority defect in
+  the verb queue I introduced in §24t-14: a cold verb accepted before
+  an identity TAKEOVER could still author after the replacement
+  generation became authoritative — the retired client kept its
+  world pointer, and my recheck was `c.world === w`. Astra's fix binds
+  queued work to the accepted admission: the captured `c.gen` (a
+  same-socket rejoin mints a new one), the concrete socket, the world,
+  roster membership, `!superseded` and an open connection — checked
+  before queued work starts and again immediately before runVerb(),
+  after any read. verb-generation-test 20/20 (takeover, disconnect,
+  expel, rejoin — each with a held GLB read; the replacement's burst is
+  the barrier); verb-generation-mutation-test 3/3 (dropping the final
+  check or the generation comparison turns the gate red). verb-order
+  12/12, smoke 85/85, sim-smoke 15/15, typecheck:flight, diff --check
+  clean. Reviewed, merged to main, PR #160 replied to. LESSON: "same
+  world" is not "same authority" — a takeover retires the generation,
+  and any deferred continuation must carry the generation it was
+  accepted under.
+
 - **2026-09-04 — §24t-15: ASTRA'S FOLLOW-UP REVIEWED AND MERGED (f3d5154).**
   GPT-6-Astra's pass over §24t-14 (committed under tel0s's identity):
   EIDOSIM@0.5.0 — after a contact the REMAINING tick time is swept

@@ -69,6 +69,7 @@ export type Client = {
                        // Monotonic, never reused. Every rtc/attestation message is stamped with
                        // it, and a superseded generation's messages are refused structurally —
                        // takeover retires the GENERATION, not just the socket.
+                       // Deferred authored verbs capture it and recheck before committing.
   surface?: string;    // (name, surface) session model: "world" = the embodied primary (default);
                        // anything else = an auxiliary media leg (voice, vr-hands, …) — invisible,
                        // poseless, log-mute, rtc-capable, and REAPED when its primary dies.
