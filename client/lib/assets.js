@@ -533,7 +533,10 @@ export async function loadGLB(libPath, { tier = 'full' } = {}) {
   loadsInFlight.set(glbKey, (loadsInFlight.get(glbKey) ?? 0) + 1);
   try {
   if (!glbCache.has(glbKey)) {
-    const key = `glb:${short}`;
+    // the tray key is the CACHE key, not the truncated label: two libs whose
+    // names collide in 28 chars — or one lib at two tiers — are distinct loads
+    // and must track separately
+    const key = `glb:${glbKey}`;
     loadTrack(key, short);
     const p = (async () => {
       const work = beginWork(`glb ${short}`);

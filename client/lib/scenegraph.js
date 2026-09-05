@@ -31,6 +31,8 @@
 import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
+import { state } from './state.js';
+import { materializationStatus, retryMaterialization } from './realize/models.js';
 import { editorsFor } from './inspect.js';
 import './lights.js';   // for its registered light editor (world.js pulls it in anyway)
 import { sendVerb, requestDebug } from './net.js';
@@ -105,10 +107,11 @@ function paintScene(force = false) {
   const { roots, kids, riders } = treeData();
   const rows = [];
   const row = (id, depth) => {
-    const meta = entityMeta.get(id);
+    const meta = entityMeta.get(id) ?? state.st.entities[id];
     const short = (meta?.lib ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '')
       .split('_').slice(0, 3).join(' ');
-    const badges = badgesFor(id);
+    const status = materializationStatus(id);
+    const badges = [...badgesFor(id), status?.label ?? ''];
     const scripts = behaviorRows.filter((b) => b.attach === id).map((b) => `📜${b.id}`);
     rows.push(`<div class="who-row sg-row" data-id="${esc(id)}" style="cursor:pointer;padding-left:${depth * 14}px;${id === selected ? 'background:rgba(255,255,255,.06)' : ''}">
       <span class="n">${depth ? '└ ' : ''}<b>${esc(id)}</b> <span style="color:var(--dim)">${esc(short)}</span></span>
@@ -126,6 +129,7 @@ function paintScene(force = false) {
     const obj = entities.get(selected);
     const meta = entityMeta.get(selected);
     const bag = comps.get(selected);
+    const status = materializationStatus(selected);
     const pos = obj ? obj.getWorldPosition(_wp) : null;
     const isLight = !!obj?.userData?.isLight;
 
@@ -176,6 +180,8 @@ function paintScene(force = false) {
     inspector = `<div style="border-top:1px solid var(--edge);margin-top:6px;padding-top:6px">
       <div><b>${esc(selected)}</b> <span style="color:var(--dim)">${esc(meta?.lib ?? '')}</span></div>
       <div style="color:var(--dim)">placed by ${esc(meta?.actor ?? '?')} · ${pos ? `at (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})` : 'loading'}${obj?.userData?.mountedTo ? ` · mounted on ${esc(obj.userData.mountedTo)}` : ''}</div>
+      <div role="status" style="overflow-wrap:anywhere;margin:6px 0">${esc(status?.label ?? '')}${status?.error ? ` — ${esc(status.error)}` : ''}</div>
+      ${status?.retryAvailable ? '<button data-act="retry" style="min-height:44px">Retry loading</button>' : ''}
       ${transform}
       ${eds.map((e) => e.html).join('')}
       ${compRows.join('')}${newComp}
@@ -198,6 +204,11 @@ function paintScene(force = false) {
       paintScene(true);
     };
   }
+  const retryButton = sceneBody.querySelector('[data-act="retry"]');
+  retryButton?.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') e.stopPropagation();
+  });
+  retryButton?.addEventListener('click', () => { retryMaterialization(selected); paintScene(true); });
   sceneBody.querySelector('[data-act="find"]')?.addEventListener('click', () => {
     const obj = entities.get(selected);
     if (!obj) return;
@@ -398,6 +409,7 @@ export function initSceneGraph() {
     setTimeout(() => { repaintQueued = false; if (sceneApi?.isOpen) paintScene(); }, 300);
   };
   bus.on('entity', repaint);
+  bus.on('materialization', repaint);
   bus.on('comp', repaint);
   bus.on('mount', repaint);
 }

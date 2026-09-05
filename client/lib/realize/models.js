@@ -32,7 +32,7 @@ import { makeLight, updateLight, disposeLight } from '../lights.js';
 import { entities, entityMeta, comps, avatarMounts, findPart, editHolds } from '../world.js';
 import { state, onWorldChange } from '../state.js';
 import { schedule, cancelOwner } from '../scheduler.js';
-import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere } from './models_field.js';
+import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, loadStatus } from './models_field.js';
 
 /** The verbs this realizer owns — the whole flat entity-id namespace. */
 export const PORTED = new Set(['spawn', 'place', 'remove', 'light', 'comp', 'motion', 'mount', 'dismount']);
@@ -210,7 +210,9 @@ function createModel(id, ent) {
 
 function scheduleLoad(id, ent, gen, tier = null) {
   const t0 = tracked.get(id);
-  if (t0) t0.loading = true;   // the sweep must not re-promote a load in flight
+  if (!t0 || t0.gen !== gen || t0.loading) return;
+  t0.phase = 'queued';
+  t0.loading = true;   // the sweep must not re-promote a load in flight
   schedule({
     key: `entity:${id}`, owner: `entity:${id}`, lane: 'net',
     // live distance from the camera to the entity's CURRENT folded position —
@@ -218,6 +220,9 @@ function scheduleLoad(id, ent, gen, tier = null) {
     priority: () => bandForDistance(camera.position.distanceTo(
       _v.set(...(state.st.entities[id]?.pos ?? [0, 0, 0])))),
     run: async (signal) => {
+      if (signal.aborted || tracked.get(id)?.gen !== gen) return;
+      t0.phase = 'loading';
+      bus.emit('materialization', { id });
       // a first load chooses its tier at DEQUEUE, once /version has answered
       // (key and recipe are what make a lod ask real — assets.js
       // lodNegotiable) and from the live distance; a re-tier brings the tier
@@ -238,6 +243,10 @@ function scheduleLoad(id, ent, gen, tier = null) {
         if (tracked.get(id)?.gen === gen) tracked.delete(id);
         return;
       }
+      // the bytes arrived: this id is no longer failing, no longer queued
+      delete t.failedAt;
+      delete t.error;
+      delete t.phase;
       // a TIER SWAP replaces a REAL object, and authority is re-checked at
       // the moment of application, not only when the sweep scheduled it
       // (review of #170, point 3): while the bytes flew a body may have sat
@@ -256,9 +265,13 @@ function scheduleLoad(id, ent, gen, tier = null) {
     },
   }).done.catch((e) => {
     const t = tracked.get(id);
-    if (t?.gen === gen) t.loading = false;
+    if (t?.gen !== gen) return;
+    t.loading = false;
+    delete t.phase;
     if (e?.name === 'AbortError') return;
-    if (t) t.failedAt = Date.now();   // the sweep backs off, not machine-guns (review S3)
+    t.failedAt = Date.now();
+    t.error = 'Could not load this object. Check your connection or try again.';
+    bus.emit('materialization', { id });   // the sweep backs off, not machine-guns (review S3)
     // a failed load keeps its reservation, exactly like legacy: the id stays
     // addressable (a later remove folds cleanly), it just never renders
     report(`realize spawn ${id}`, e);
@@ -806,6 +819,25 @@ export function residencySweep() {
       scheduleLoad(id, ent, t.gen);
     }
   }
+}
+
+/** One bounded client-local snapshot; no loader or folded state is duplicated. */
+export function materializationStatus(id) {
+  const ent = state.st.entities[id];
+  const t = tracked.get(id);
+  if (!ent || !t) return null;
+  const obj = entities.get(id);
+  return loadStatus(t, Boolean(obj && !isPlaceholder(obj)), entDist(ent) <= residencyRadius(ent));
+}
+
+/** Explicit recovery uses the same owned queue, residency gate and backoff. */
+export function retryMaterialization(id) {
+  if (!materializationStatus(id)?.retryAvailable) return false;
+  const t = tracked.get(id);
+  t.gen = nextGen++;
+  scheduleLoad(id, state.st.entities[id], t.gen);
+  bus.emit('materialization', { id });
+  return true;
 }
 
 export const residencyDebug = () => {
