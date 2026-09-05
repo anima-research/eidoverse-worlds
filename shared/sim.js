@@ -49,6 +49,16 @@
 //   collide with each other; a resting body is not woken by being hit; a
 //   thing that mounts, rides a motion, or has no box is not a collider.
 //
+// eidosim@0.4.0 — the same world, SWEPT. 0.3 tested collisions at the end of
+//   each tick only, so a fast body crossed a thin wall between two endpoints
+//   and never met it (PR #160 review, B4: 0.2m body, 0.1m wall, power 20 →
+//   rests 30m past the wall). 0.4 sweeps the body's AABB along the tick's
+//   displacement against every static (a slab test, exact ops) and resolves
+//   the EARLIEST contact: a top met from above is a landing (the same contact
+//   law), a side is a wall bounce, at the contact point; the rest of that
+//   tick's motion is spent there. Already-overlapping states keep 0.3's
+//   endpoint resolution. Nothing else moved: same constants, same order.
+//
 // Shared by all:
 //   - one intent: `punt` (dialect-3 form: dir REQUIRED — Covenant III, the
 //     entry carries everything; presence never enters the sim);
@@ -70,11 +80,15 @@ import { terrainParams, makeHeightField } from './terrainmath.js';
 import { sinT, cosT } from './simmath.js';
 
 // What the epoch verb MINTS (new epochs enter this sim)…
-export const SIM_ID = 'eidosim@0.3.0';
+export const SIM_ID = 'eidosim@0.4.0';
 // …and what this build can still REPLAY (a carried sim is never foreign).
 const V1 = 'eidosim@0.1.0';
 const V2 = 'eidosim@0.2.0';
-const CARRIED = new Set([V1, V2, SIM_ID]);
+const V3 = 'eidosim@0.3.0';
+const CARRIED = new Set([V1, V2, V3, SIM_ID]);
+/** The law a carried name means, as a rung: 1 flat floor · 2 terrain ·
+ *  3 colliders (endpoint) · 4 colliders (swept). 0 = not carried. */
+const lawOf = (name) => name === V1 ? 1 : name === V2 ? 2 : name === V3 ? 3 : name === SIM_ID ? 4 : 0;
 
 // The physics constants ARE the sim version — editing any of them is an
 // epoch bump, never a patch (Covenant II: it rewrites what old logs mean).
@@ -156,15 +170,25 @@ function restStatic(sim, id, b) {
 export function advanceSim(sim, toTick) {
   if (!sim.epoch || sim.epoch.foreign) { sim.tick = toTick > sim.tick ? toTick : sim.tick; return sim; }
   const dt = sim.epoch.tickMs / 1000;
-  const v2 = sim.epoch.sim !== V1;
-  const v3 = sim.epoch.sim === SIM_ID;
+  const law = lawOf(sim.epoch.sim);
+  const v2 = law >= 2, v3 = law >= 3, v4 = law >= 4;
   const hf = v2 && sim.terrain ? heightFieldOf(sim) : null;
+  // No live body: nothing a tick could change but the counter — jump. Every
+  // tick used to be walked even with every body at rest (a 30-day gap over
+  // 69 resting bodies: ~4.7s, synchronously, on the heartbeat and on every
+  // returning browser — PR #160 review). Bodies cannot wake inside advance,
+  // so one check holds for the whole span, and the state is bit-identical to
+  // having stepped it.
+  let live = false;
+  for (const id in sim.bodies) if (!sim.bodies[id].resting) { live = true; break; }
+  if (!live) { if (toTick > sim.tick) sim.tick = toTick; return sim; }
   while (sim.tick < toTick) {
     sim.tick++;
     for (const id in sim.bodies) {
       const b = sim.bodies[id];
       if (b.resting) continue;
       const prevBottom = b.ext ? b.p[1] + b.ext.y0 : b.p[1];
+      const p0x = b.p[0], p0y = b.p[1], p0z = b.p[2];
       b.v[1] = b.v[1] - G * dt;
       b.p[0] = b.p[0] + b.v[0] * dt;
       b.p[1] = b.p[1] + b.v[1] * dt;
@@ -173,7 +197,62 @@ export function advanceSim(sim, toTick) {
       // a terrain), else the flat launch-height floor (0.1 law, and the
       // fallback for terrainless worlds)
       let g = hf ? hf(b.p[0], b.p[2]) : b.ground;
-      if (v3 && b.ext && sim.statics) {
+      let sweptLanding = false;
+      if (v4 && b.ext && sim.statics) {
+        // 0.4: SWEEP the body's box along this tick's displacement and take
+        // the earliest contact — a slab test per static, exact ops only.
+        const dx = b.p[0] - p0x, dy = b.p[1] - p0y, dz = b.p[2] - p0z;
+        const e = b.ext;
+        const lo = [p0x + e.cx - e.hx, p0y + e.y0, p0z + e.cz - e.hz];
+        const hi = [p0x + e.cx + e.hx, p0y + e.y1, p0z + e.cz + e.hz];
+        const d = [dx, dy, dz];
+        let hitT = Infinity, hitAxis = -1, hitId = null;
+        for (const sid in sim.statics) {
+          if (sid === id) continue;
+          const s = sim.statics[sid].aabb;
+          let tEnter = -Infinity, tExit = Infinity, axis = -1;
+          for (let k = 0; k < 3; k++) {
+            if (d[k] === 0) {
+              if (hi[k] <= s[0][k] || lo[k] >= s[1][k]) { tEnter = Infinity; break; }
+              continue;
+            }
+            const inv = 1 / d[k];
+            const tA = (d[k] > 0 ? s[0][k] - hi[k] : s[1][k] - lo[k]) * inv;
+            const tB = (d[k] > 0 ? s[1][k] - lo[k] : s[0][k] - hi[k]) * inv;
+            if (tA > tEnter) { tEnter = tA; axis = k; }
+            if (tB < tExit) tExit = tB;
+          }
+          // a contact WITHIN this tick, not already overlapping (0.3's endpoint
+          // code below owns that) and not merely grazing
+          if (tEnter >= 0 && tEnter <= 1 && tEnter < tExit && tEnter < hitT) { hitT = tEnter; hitAxis = axis; hitId = sid; }
+        }
+        if (hitId !== null) {
+          const s = sim.statics[hitId].aabb;
+          // to the contact, exactly: the touching face is placed by the
+          // static's own coordinate, the free axes by the fraction
+          b.p[0] = hitAxis === 0 ? (dx > 0 ? s[0][0] - e.hx - e.cx : s[1][0] + e.hx - e.cx) : p0x + dx * hitT;
+          b.p[2] = hitAxis === 2 ? (dz > 0 ? s[0][2] - e.hz - e.cz : s[1][2] + e.hz - e.cz) : p0z + dz * hitT;
+          b.p[1] = hitAxis === 1 ? (dy > 0 ? s[0][1] - e.y1 : s[1][1] - e.y0) : p0y + dy * hitT;
+          if (hitAxis === 1 && dy < 0) {
+            // a top met from above: a LANDING under the contact law
+            g = s[1][1] - e.y0; b.on = hitId; sweptLanding = true;
+            if (-b.v[1] > 2 * G * dt) {
+              b.v[1] = -b.v[1] * RESTITUTION;
+              b.v[0] = b.v[0] * BOUNCE_FRICTION;
+              b.v[2] = b.v[2] * BOUNCE_FRICTION;
+            } else {
+              b.v[1] = 0;
+            }
+          } else {
+            // a side (or an underside): the wall bounce, at the wall
+            b.v[hitAxis] = -b.v[hitAxis] * RESTITUTION;
+            for (let k = 0; k < 3; k++) if (k !== hitAxis && k !== 1) b.v[k] = b.v[k] * BOUNCE_FRICTION;
+            if (hitAxis !== 1) b.v[1] = b.v[1] * BOUNCE_FRICTION;
+          }
+          g = hf ? Math.max(g, hf(b.p[0], b.p[2])) : g;   // the terrain under the contact point
+        }
+      }
+      if (v3 && b.ext && sim.statics && !sweptLanding) {
         // 0.3: the world's things. Statics in insertion order (the log's).
         let on = null;
         let bb = aabbAt(b.p, b.ext);
@@ -206,7 +285,10 @@ export function advanceSim(sim, toTick) {
         }
         b.on = on;
       }
-      if (b.p[1] < g && b.v[1] < 0) {
+      if (sweptLanding) {
+        // already resolved at the contact above; only the grounded slide/rest
+        // logic below may still apply (v[1] === 0 ⇒ it does)
+      } else if (b.p[1] < g && b.v[1] < 0) {
         b.p[1] = g;
         // an impact slower than two gravity-ticks is not a bounce — it is
         // resting CONTACT (the terminal micro-bounce would otherwise feed
@@ -263,10 +345,10 @@ function heightFieldOf(sim) {
 
 /** The verbs whose authoring RELEASES a body — the instant fold's word wins
  *  over recomputation from the moment someone re-authors the entity. */
-const RELEASERS = new Set(['place', 'spawn', 'remove', 'mount', 'dismount', 'motion']);
+const RELEASERS = new Set(['place', 'spawn', 'remove', 'mount', 'dismount', 'motion', 'light']);   // light: a lamp may reuse an entity id wholesale
 /** (0.3) …and of those, the ones after which the entity stands still where
  *  the fold says (a collider again) vs. moves in ways the sim cannot follow. */
-const RESEATERS = new Set(['place', 'spawn', 'dismount']);
+const RESEATERS = new Set(['place', 'spawn', 'dismount', 'light']);   // (a light has no box: setStatic drops it)
 
 /** Fold one entry into the sim. Total, like the instant fold: nothing here
  *  may throw, and a malformed intent shapes nothing. Call AFTER foldEntry.
@@ -310,7 +392,7 @@ export function simEntry(sim, entry, st) {
     // 0.3 epochs adopt the sequencer's word on the world's geometry: the
     // stamped lib → box table, and every standing entity it covers becomes
     // a static. Older laws never see these fields (their JSON is unchanged).
-    if (simName === SIM_ID) {
+    if (lawOf(simName) >= 3) {
       sim.boxes = {};
       const bx = a.boxes;
       if (bx && typeof bx === 'object' && !Array.isArray(bx)) {
@@ -325,7 +407,7 @@ export function simEntry(sim, entry, st) {
     return;
   }
   if (!sim.epoch || sim.epoch.foreign) return;   // pre-epoch logs keep v1 semantics whole
-  const v3 = sim.epoch.sim === SIM_ID;
+  const v3 = lawOf(sim.epoch.sim) >= 3;
   if (entry.verb === 'terrain' && sim.epoch.sim !== V1) {
     // the ground moved wholesale: adopt the new law and release EVERY body
     // to the instant fold — the authored word re-seats entities on the new
@@ -335,6 +417,16 @@ export function simEntry(sim, entry, st) {
     advanceSim(sim, tickOf(sim, entry.ts));
     sim.terrain = terrainParams(a ?? {});
     sim.bodies = {};
+    if (sim.statics) {
+      // …and the statics are rebuilt from the instant fold, as the epoch
+      // branch does: a rested body had become a static at its SIM-rest pose,
+      // which the fold does not know — left standing it is an invisible box
+      // metres from the rendered thing, persisted by every snapshot (PR #160
+      // review, B2)
+      sim.statics = {};
+      const ents = st?.entities ?? {};
+      for (const id in ents) setStatic(sim, id, ents[id]);
+    }
     return;
   }
   if (entry.verb === 'punt') {

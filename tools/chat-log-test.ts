@@ -17,6 +17,9 @@ plugin({
   name: "chat-stubs",
   setup(b) {
     b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: here("./chat-core-stub.mjs") }));
+    // rimward: CONFIG/bus/report live in base.js (the renderer-free substrate) — same stub, or the
+    // test's CONFIG.name never reaches chat.js and every mention assertion passes vacuously (PR #160 B6)
+    b.onResolve({ filter: /^\.\/base\.js$/ }, () => ({ path: here("./chat-base-stub.mjs") }));
     b.onResolve({ filter: /^\.\/frames\.js$/ }, () => ({ path: here("./chat-frames-stub.mjs") }));
     b.onResolve({ filter: /^\.\/net\.js$/ }, () => ({ path: here("./chat-net-stub.mjs") }));
   },

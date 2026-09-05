@@ -27,15 +27,32 @@
 // spot where tel0s watched it happen. Presentation-only checks — the sim's
 // numbers are sim-smoke's business.
 
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { SIM_ID } from "../shared/sim.js";
 import { terrainParams, makeHeightField } from "../shared/terrainmath.js";
-import { scratchBench, mkCheck, bold, dim, sleep } from "./harness.ts";
+import { scratchBench, mkCheck, bold, dim, sleep, ROOT } from "./harness.ts";
 
 const HEADED = process.argv.includes("--headed");
 const TERRAIN = { seed: 7, size: 160, segments: 200, amplitude: 6, flatRadius: 16, layers: [{ color: "#4a5d33", repeat: 16 }] };
 const hf = makeHeightField(terrainParams(TERRAIN));
 const MODEL = "eidoverse/assets/models/scifi_barrels_group_of_four.glb";
 const OFF = [-0.001, -1.953];                    // the visible cluster, model-local (yaw 0)
+// THE ASSET THIS GATE WAS MEASURED AGAINST. OFF and the corner allowances are
+// facts about one GLB's geometry; a different file under the same name would
+// pass or fail for the wrong reasons (PR #160 review, B6). Bound by hash.
+const MODEL_SHA256 = "26a0f4ccf4b225a493087552c8459e1078cb7056e421c542e1b6c87009f898ae";
+{
+  const dir = process.env.EIDOVERSE_DIR ?? join(ROOT, "..", "eidoverse-video");
+  const file = join(dir, MODEL);
+  if (!existsSync(file)) { console.error(`✗ ${file} missing — this gate needs the asset library`); process.exit(2); }
+  const sha = createHash("sha256").update(new Uint8Array(await Bun.file(file).arrayBuffer())).digest("hex");
+  if (sha !== MODEL_SHA256) {
+    console.error(`✗ ${MODEL} is ${sha.slice(0, 16)}…, not the ${MODEL_SHA256.slice(0, 16)}… this gate's offsets were measured on — re-measure OFF/SPAWN (summarizeGlb) before trusting a verdict`);
+    process.exit(2);
+  }
+}
 const SPAWN = [-10.4749, -0.5047, 30.7654];      // commons seq 108's launch: cluster buried 0.28 there
 const DIR = [-0.5934150204746177, 0.9, -0.8048966476977706];
 
@@ -76,13 +93,20 @@ const serverBody = async () => {
   return msgs.filter((x) => x.type === "debug" && x.sim).pop()?.sim?.bodies?.bar ?? null;
 };
 
-// per frame: [shown x, y, z, sim resting?]
-const sample = (frames: number) => evalJson(`new Promise((done) => { try {
-  const out = []; let n = 0;
+// per frame: [shown x, y, z, sim resting?, q]. Samples UNTIL the sim has the
+// body resting again (plus a beat), bounded at 8s — a frame count is a
+// function of the machine's frame rate, and a slow headless Chrome sampled
+// too few frames of a one-second flight to satisfy any fixed minimum
+// (PR #160 review, B6: false negatives with zero undercuts).
+const sample = (_frames: number) => evalJson(`new Promise((done) => { try {
+  const out = []; const t0 = performance.now(); let flew = false, restedAt = 0;
   const step = () => {
     const o = EW.entities.get('bar'); const b = EW.simFold().bodies.bar;
     if (o) out.push([o.position.x, o.position.y, o.position.z, b ? (b.resting ? 1 : 0) : -1, o.quaternion.toArray()]);
-    if (++n < ${frames}) requestAnimationFrame(step); else done(out);
+    if (b && !b.resting) flew = true;
+    if (flew && b && b.resting && !restedAt) restedAt = performance.now();
+    const t = performance.now() - t0;
+    if ((restedAt && t - (restedAt - t0) > 400) || t > 8000) done(out); else requestAnimationFrame(step);
   };
   requestAnimationFrame(step);
 } catch (e) { done({ err: String(e) }) } })`);
@@ -111,10 +135,10 @@ function judge(label: string, rows: any) {
     worstO = Math.min(worstO, dO); worstC = Math.min(worstC, dC);
   }
   check(`${label}: the rendered origin never undercuts the terrain law`,
-    inFlight >= 20 && originBelow === 0,
+    inFlight >= 8 && originBelow === 0,
     rows?.err ?? `${inFlight} in-flight frames, ${originBelow} below, worst ${worstO.toFixed(4)}m`);
   check(`${label}: the visible cluster never sinks into ITS ground`,
-    inFlight >= 20 && clusterBelow === 0,
+    inFlight >= 8 && clusterBelow === 0,
     rows?.err ?? `${clusterBelow} below, worst ${worstC.toFixed(4)}m`);
 }
 
@@ -136,9 +160,23 @@ await verb("punt", { id: "bar", power: 4, dir: DIR });
 judge("flight 2", await fp);
 sb = null;
 for (let i = 0; i < 30 && !sb?.resting; i++) { await sleep(400); sb = await serverBody(); }
-await sleep(600);   // the client's applier reaches rest too
+// the client's applier reaches rest too — and its slerp toward the settled
+// orientation converges at 6/s in FRAME time: wait for the quaternion to
+// stop moving (≤0.05° over 200ms) rather than assume a fixed delay
+const settledShown = async () => {
+  let last: any = null;
+  for (let i = 0; i < 25; i++) {
+    const cur = await evalJson(`(() => { const o = EW.entities.get('bar'); return o ? [o.position.x, o.position.y, o.position.z, 1, o.quaternion.toArray()] : null })()`);
+    if (last && cur) {
+      const [a, b] = [last[4], cur[4]]; const dot = Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]);
+      if (2 * Math.acos(Math.min(1, dot)) * 180 / Math.PI < 0.05 && Math.abs(cur[1] - last[1]) < 1e-4) return cur;
+    }
+    last = cur; await sleep(200);
+  }
+  return last;
+};
 {
-  const shown = await evalJson(`(() => { const o = EW.entities.get('bar'); return o ? [o.position.x, o.position.y, o.position.z, 1, o.quaternion.toArray()] : null })()`);
+  const shown = await settledShown();
   const cc = shown ? clusterOf(shown) : null;
   const dC = cc ? cc[1] - hf(cc[0], cc[2]) : NaN;
   check("at rest the cluster stands ON its ground (±5mm)", Number.isFinite(dC) && Math.abs(dC) < 0.005,
@@ -156,13 +194,16 @@ await sleep(4000);   // model + collider land; the applier has been running sinc
 // matrixWorld) and the object's tilt from upright, per frame
 const sampleMesh = (frames: number) => evalJson(`new Promise((done) => { try {
   const o = EW.entities.get('bar'); const T = EW.THREE; const v = new T.Vector3(); const up = new T.Vector3(0, 1, 0); const u = new T.Vector3();
-  const out = []; let n = 0;
+  const out = []; const t0 = performance.now(); let flew = false, restedAt = 0;
   const step = () => { const b = EW.simFold().bodies.bar; let m = Infinity;
     o.traverse((nd) => { if (!nd.isMesh || !nd.geometry) return; if (!nd.geometry.boundingBox) nd.geometry.computeBoundingBox(); const bb = nd.geometry.boundingBox;
       for (let i = 0; i < 8; i++) { v.set(i & 1 ? bb.max.x : bb.min.x, i & 2 ? bb.max.y : bb.min.y, i & 4 ? bb.max.z : bb.min.z).applyMatrix4(nd.matrixWorld); if (v.y < m) m = v.y; } });
     const tilt = Math.acos(Math.min(1, Math.max(-1, u.copy(up).applyQuaternion(o.quaternion).dot(up)))) * 180 / Math.PI;
     out.push([o.position.x, o.position.z, m, tilt, b ? (b.resting ? 1 : 0) : -1, b ? b.v[1] : null, o.quaternion.toArray()]);
-    if (++n < ${frames}) requestAnimationFrame(step); else done(out); };
+    if (b && !b.resting) flew = true;
+    if (flew && b && b.resting && !restedAt) restedAt = performance.now();
+    const t = performance.now() - t0;
+    if ((restedAt && t - (restedAt - t0) > 400) || t > 8000) done(out); else requestAnimationFrame(step); };
   requestAnimationFrame(step);
 } catch (e) { done({ err: String(e) }) } })`);
 pose([sb.p[0] + 1, 0, sb.p[2] + 1]);
@@ -185,14 +226,17 @@ await verb("punt", { id: "bar", power: 4, dir: DIR });
     worstMesh = Math.min(worstMesh, r[2] - gc);
   }
   check("flight 3: a far-offset model does NOT tumble after a reload (arm fitted once the box exists)",
-    inFlight >= 20 && airborne >= 10 && maxTilt < 20,   // a tumble on a 1.3m arm is 90° in a blink; the un-tilt off a slope is a few degrees
+    inFlight >= 8 && airborne >= 4 && maxTilt < 20,   // a tumble on a 1.3m arm is 90° in a blink; the un-tilt off a slope is a few degrees
     rows?.err ?? `${airborne} airborne frames, max tilt from upright ${maxTilt.toFixed(1)}°`);
   check("flight 3: the rendered mesh never swings below its ground",
-    inFlight >= 20 && worstMesh > -0.15,
+    inFlight >= 8 && worstMesh > -0.15,
     rows?.err ?? `lowest mesh point vs ground under the cluster: ${worstMesh.toFixed(3)}m (footprint slope allowance 0.15)`);
   // SLOPE TILT at rest (§24t-10): the thing lies on the hill it rests on —
   // its up vector within 3° of the terrain normal under its visual center
-  const last = frames.length ? frames[frames.length - 1] : null;
+  // judge the lean once the applier's slerp has converged, not at the last
+  // sampled frame (a slow machine sampled it mid-lean: 3.3° — PR #160 B6)
+  const settled = await settledShown();
+  const last = settled ? [settled[0], settled[2], 0, 0, 1, 0, settled[4]] : (frames.length ? frames[frames.length - 1] : null);
   if (last) {
     const [qx, qy, qz, qw] = last[6] as unknown as number[];
     const upv = [2 * (qx * qy - qw * qz), 1 - 2 * (qx * qx + qz * qz), 2 * (qw * qx + qy * qz)];   // (0,1,0) rotated by q

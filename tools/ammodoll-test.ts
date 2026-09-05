@@ -890,7 +890,12 @@ console.log('\nlifecycle (one rig, every downstream contract):');
   const { AmmoRagdoll } = await import('../client/lib/ammodoll.js');
   const BONE_LEN = 0.15, MESH_LEN = 0.60, MESH_SPAN = 0.40;
 
-  const rigW: any = FLEET.find((r: any) => r.name === 'mythos-wings');
+  // The contract is about the MESH, not the rig: any humanoid skeleton serves
+  // to hang the synthetic chain on. Prefer the winged overlay rig when it is
+  // installed; otherwise the first fleet rig — and say so, rather than
+  // dereferencing a rig that is not committed (PR #160 review, B6).
+  const rigW: any = FLEET.find((r: any) => r.name === 'mythos-wings') ?? FLEET[0];
+  if (rigW.name !== 'mythos-wings') console.log(`  · mythos-wings not installed — the wing-box contract runs on ${rigW.name}`);
   const P: any = { ...rigW.P };
   // one chain, two segments, both short bones — the second a leaf
   const shoulder = P.leftShoulder ?? P.leftUpperArm;

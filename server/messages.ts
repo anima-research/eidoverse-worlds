@@ -49,18 +49,23 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // eidosim@0.3.0: a spawn (its lib) or an epoch (every standing lib)
     // needs the sequencer's box stamp, and summarizing a GLB is async
     // while validators are not — so the cache is warmed HERE, on the
-    // wire, and the verb runs the moment it can answer. Only a lib never
-    // seen by this process pays the wait (one file read); everything
-    // else runs synchronously, in order, as before.
-    if (c.world && (msg.verb === "spawn" || msg.verb === "epoch")) {
-      const w = c.world!;
-      const libs = coldLibs(msg.verb === "spawn" ? [String(msg.args?.lib ?? "")] : worldLibs(w.state));
-      if (libs.length) {
-        void warmBoxes(libs).then(() => { if (c.world === w) runVerb({ w, c, now, expel }, msg.verb, msg.args); });
-        return;
-      }
-    }
-    runVerb({ w: c.world!, c, now, expel }, msg.verb, msg.args);
+    // wire. AUTHORED ORDER IS KEPT: a client whose verb is waiting on an
+    // asset read has every later verb of its own queued behind it (PR
+    // #160 review, B1 — a cold spawn followed by a place used to land as
+    // place-then-spawn, wrong forever in the log). A client with nothing
+    // in flight runs synchronously, in order, as before; only a lib this
+    // process has never seen pays the wait, once.
+    const w = c.world;
+    if (!w) return;
+    const libs = msg.verb === "spawn" ? coldLibs([String(msg.args?.lib ?? "")])
+      : msg.verb === "epoch" ? coldLibs(worldLibs(w.state)) : [];
+    const run = () => { if (c.world === w) runVerb({ w, c, now, expel }, msg.verb, msg.args); };
+    if (!libs.length && !c.verbQueue) { run(); return; }
+    const tail: Promise<void> = (c.verbQueue ?? Promise.resolve())
+      .then(() => (libs.length ? warmBoxes(libs) : undefined))
+      .then(run, run);
+    c.verbQueue = tail;
+    void tail.finally(() => { if (c.verbQueue === tail) c.verbQueue = undefined; });
   },
   "history": ({ c, ws, now, expel }, msg) => {
     // Deliberately available to spectators too: watching a show and

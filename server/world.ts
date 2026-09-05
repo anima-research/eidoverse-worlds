@@ -79,6 +79,8 @@ export type Client = {
   // rate windows: a griefer or a stuck client gets silence, not fanout
   msgWin: number; msgCount: number;   // all messages, per second
   verbWin: number; verbCount: number; // authored verbs, per 4s
+  /** authored verbs queued behind an in-flight asset read (messages.ts, PR #160 B1) */
+  verbQueue?: Promise<void>;
 };
 
 // ---------------------------------------------------------------- world logs
@@ -142,7 +144,10 @@ export class WorldLog {
       // If the offset is not credible (log truncated, forked, or snapshot from
       // another timeline) fall back to reading everything. The log is truth.
       const usable = this.snapSeq >= 0 && this.snapBytes > 0 && this.snapBytes <= buf.length;
-      if (!usable) { this.state = emptyState(); this.snapSeq = -1; this.snapBytes = 0; }
+      // …and the SIM resets at the same boundary: a stale snapshot's epoch and
+      // bodies would otherwise ride under a full replay of the log (PR #160
+      // review, B3). The log is truth for both folds.
+      if (!usable) { this.state = emptyState(); this.sim = emptySim(); this.snapSeq = -1; this.snapBytes = 0; }
       const text = buf.toString("utf8", usable ? this.snapBytes : 0);
       for (const line of text.split("\n")) {
         if (!line.trim()) continue;

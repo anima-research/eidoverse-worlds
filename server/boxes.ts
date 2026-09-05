@@ -44,8 +44,10 @@ export function coldLibs(libs: Iterable<string>): string[] {
 
 /** Summarize every not-yet-known lib once. Resolves when `boxOf` can answer
  *  for all of them; never throws (a failure is remembered as boxless). */
+const WARM_CONCURRENCY = 4;   // GLB parses in flight at once — a world of 200 models is not 200 parallel reads
 export async function warmBoxes(libs: Iterable<string>): Promise<void> {
-  await Promise.all(coldLibs(libs).map(async (lib) => {
+  const queue = coldLibs(libs);
+  const one = async (lib: string) => {
     let box: Box | null = null;
     try {
       const file = resolveLibFile(lib);
@@ -57,7 +59,11 @@ export async function warmBoxes(libs: Iterable<string>): Promise<void> {
       }
     } catch { /* boxless */ }
     if (!boxes.has(lib)) boxes.set(lib, box);
-  }));
+  };
+  const workers = Array.from({ length: Math.min(WARM_CONCURRENCY, queue.length) }, async () => {
+    while (queue.length) await one(queue.shift()!);
+  });
+  await Promise.all(workers);
 }
 
 /** Every lib the world's entities stand on — the epoch's `boxes` domain. */

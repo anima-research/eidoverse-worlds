@@ -876,6 +876,14 @@ const ROUTES: Route[] = [
     handler: ({ req, url }) => serveFrom(join(ROOT, "shared"), url.pathname.slice("/shared/".length), false, req),
   },
   {
+    // Liveness for benches: answers with the BENCH_NONCE this process was
+    // started with, so a scratch harness can prove the port it is about to
+    // drive is ITS child and not a stranger's sequencer (PR #160 review, B6).
+    match: (u) => u.pathname === "/health",
+    handler: () => new Response(JSON.stringify({ ok: true, nonce: process.env.BENCH_NONCE ?? null, pid: process.pid }),
+      { headers: { "content-type": "application/json" } }),
+  },
+  {
     match: (u) => u.pathname === "/client-version",
     handler: () => {
       // A marker the renderer watchdog polls: the newest mtime across the

@@ -47,7 +47,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { WORLDS_DIR } from "../server/config.ts";
 import { foldEntry, emptyState, stateToEntries, type LogEntry, type WorldState } from "../shared/fold.js";
-import { emptySim, simEntry, advanceSim } from "../shared/sim.js";
+import { emptySim, simEntry, advanceSim, simSnapshot } from "../shared/sim.js";
 
 const args = process.argv.slice(2);
 const WRITE = args.includes("--write");
@@ -99,9 +99,17 @@ function foldSimAll(entries: LogEntry[], settleTicks = 100_000) {
   if (sim.epoch && !sim.epoch.foreign) advanceSim(sim, sim.tick + settleTicks);
   return sim;
 }
-const simDigest = (sim: ReturnType<typeof emptySim>) =>
-  createHash("sha256").update(canonical({ epoch: sim.epoch, bodies: sim.bodies }))
-    .digest("hex").slice(0, 16);
+// The COMPLETE normative sim state, in its NORMATIVE order: bodies and
+// statics are plain objects whose insertion order is physically load-bearing
+// (0.3 resolves collisions in it), so this is JSON.stringify — never a
+// key-sorting canonical form, which would hide exactly that divergence class
+// (PR #160 review, B6). `tick` stays out: it is query-time trivia the settle
+// below makes constant anyway.
+const simDigest = (sim: ReturnType<typeof emptySim>) => {
+  const snap = simSnapshot(sim) as Record<string, unknown>;
+  const { tick: _tick, ...normative } = snap;
+  return createHash("sha256").update(JSON.stringify(normative)).digest("hex").slice(0, 16);
+};
 
 /** The world-shaping subset the stateToEntries roundtrip contract covers —
  *  see the header for what each exclusion means and why it is deliberate. */
@@ -125,29 +133,48 @@ if (!existsSync(WORLDS_DIR)) {
   console.error(`[replaybench] no worlds dir at ${WORLDS_DIR}`);
   process.exit(2);
 }
-const names = readdirSync(WORLDS_DIR).filter((n) => {
-  if (only.length && !only.includes(n)) return false;
-  try { return statSync(join(WORLDS_DIR, n)).isDirectory()
-    && existsSync(join(WORLDS_DIR, n, "log.jsonl")); } catch { return false; }
-}).sort();
-if (!names.length) {
-  console.error(`[replaybench] no worlds with a log.jsonl under ${WORLDS_DIR}`
+// Two roots: the operator's worlds (local, baseline gitignored) and the
+// COMMITTED fixtures under spec/fixtures/replay (baseline committed) — so a
+// clean checkout has something to replay and a digest to hold it to (PR #160
+// review, B6). Each root keeps its own .replaybench.json.
+const FIXTURE_ROOT = join(import.meta.dir, "..", "spec", "fixtures", "replay");
+const roots = [FIXTURE_ROOT, WORLDS_DIR].filter((r, i, a) => existsSync(r) && a.indexOf(r) === i);
+const targets: { root: string; name: string }[] = [];
+for (const root of roots) {
+  for (const n of readdirSync(root).sort()) {
+    if (only.length && !only.includes(n)) continue;
+    try {
+      if (statSync(join(root, n)).isDirectory() && existsSync(join(root, n, "log.jsonl"))) targets.push({ root, name: n });
+    } catch { /* not a world */ }
+  }
+}
+if (!targets.length) {
+  console.error(`[replaybench] no worlds with a log.jsonl under ${roots.join(" or ")}`
     + (only.length ? ` matching: ${only.join(", ")}` : ""));
   process.exit(2);
 }
 
-const baselinePath = join(WORLDS_DIR, ".replaybench.json");
-let baseline: Record<string, { digest: string; seq: number }> = {};
-if (existsSync(baselinePath)) {
-  try { baseline = JSON.parse(readFileSync(baselinePath, "utf8")); }
-  catch { console.warn(`[replaybench] baseline unreadable — treating as absent`); }
-}
+const baselines = new Map<string, Record<string, { digest: string; seq: number }>>();
+const baselineOf = (root: string) => {
+  if (!baselines.has(root)) {
+    let b: Record<string, { digest: string; seq: number }> = {};
+    const bp = join(root, ".replaybench.json");
+    if (existsSync(bp)) {
+      try { b = JSON.parse(readFileSync(bp, "utf8")); }
+      catch { console.warn(`[replaybench] baseline ${bp} unreadable — treating as absent`); }
+    }
+    baselines.set(root, b);
+  }
+  return baselines.get(root)!;
+};
+const nextBaselines = new Map<string, Record<string, { digest: string; seq: number }>>();
 
 let red = 0;
-const nextBaseline: typeof baseline = {};
 
-for (const name of names) {
-  const dir = join(WORLDS_DIR, name);
+for (const { root, name } of targets) {
+  const baseline = baselineOf(root);
+  const nextBaseline = nextBaselines.get(root) ?? (nextBaselines.set(root, {}), nextBaselines.get(root)!);
+  const dir = join(root, name);
   const raw = readFileSync(join(dir, "log.jsonl"));
   const { entries, malformed } = parseLog(raw.toString("utf8"));
   const lastSeq = entries.length ? entries[entries.length - 1].seq : -1;
@@ -227,8 +254,12 @@ for (const name of names) {
 }
 
 if (WRITE) {
-  writeFileSync(baselinePath, JSON.stringify(nextBaseline, null, 2) + "\n");
-  console.log(`[replaybench] baseline recorded for ${names.length} world${names.length === 1 ? "" : "s"} → ${baselinePath}`);
+  for (const [root, nb] of nextBaselines) {
+    const bp = join(root, ".replaybench.json");
+    writeFileSync(bp, JSON.stringify(nb, null, 2) + "\n");
+    const n = Object.keys(nb).length;
+    console.log(`[replaybench] baseline recorded for ${n} world${n === 1 ? "" : "s"} → ${bp}`);
+  }
 }
-console.log(`[replaybench] ${names.length - red}/${names.length} worlds green`);
+console.log(`[replaybench] ${targets.length - red}/${targets.length} worlds green`);
 process.exit(red ? 1 : 0);
