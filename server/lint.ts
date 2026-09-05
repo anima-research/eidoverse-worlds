@@ -97,17 +97,32 @@ export function lintMotion(w: LintHost, entry: LogEntry): void {
  *  the component has already folded, and an unrenderable emitter still
  *  persists and still reads as an emitter in text-tier perception. */
 export function lintParticles(w: LintHost, entry: LogEntry): void {
-  try {
-    const a = entry.args as Record<string, unknown>;
-    const id = String(a.id ?? "");
-    if (a.data == null) return;                      // put out — nothing to lint
-    const r = normalizeParticles(a.data, { entityId: id });
-    if (!r.ok) {
-      w.debug("particles-lint", { entity: id, by: entry.actor, why: r.why });
-      return;
-    }
-    if (r.notes.length) {
-      w.debug("particles-lint", { entity: id, by: entry.actor, why: r.notes.join(" · ") });
-    }
-  } catch { /* lint must never hurt anything */ }
+  void (async () => {
+    try {
+      const a = entry.args as Record<string, unknown>;
+      const id = String(a.id ?? "");
+      if (a.data == null) return;                      // put out — nothing to lint
+      const r = normalizeParticles(a.data, { entityId: id });
+      if (!r.ok) {
+        w.debug("particles-lint", { entity: id, by: entry.actor, why: r.why });
+        return;
+      }
+      if (r.notes.length) {
+        w.debug("particles-lint", { entity: id, by: entry.actor, why: r.notes.join(" · ") });
+      }
+      if (r.emitter.part) {
+        const part = r.emitter.part;
+        const ent = w.state.entities[id];
+        const file = ent?.lib ? resolveLibFile(ent.lib) : null;
+        const sum = file ? await summarizeGlb(file) : null;
+        const names = sum?.nodeNames;
+        if (!names || !names.includes(part)) {
+          w.debug("particles-lint", { entity: id, by: entry.actor,
+            why: names
+              ? `part "${part}" is not among ${id}'s rendered parts [${names.join(", ")}] — using the entity frame`
+              : `part "${part}" could not be checked because ${id}'s geometry is unavailable — clients use the entity frame if the part is missing` });
+        }
+      }
+    } catch { /* lint must never hurt anything */ }
+  })();
 }
