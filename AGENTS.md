@@ -274,7 +274,11 @@ comp {id: "hearth", type: "particles", data: null}      # put it out
 ```
 
 `preset` is one of `fire · sparks · embers · smoke · dust · snow · magic ·
-stars · muzzle`. `origin` is ENTITY-RELATIVE metres (bounded to ±8): the
+stars · muzzle`. `part: "wax"` optionally attaches the emitter to a rendered GLB node by name.
+With `part`, `origin` is in that node's LOCAL frame, so it rides nested part
+motion. Missing parts fall back to the entity frame and report a
+`particles-lint` advisory; the component still folds. Without `part`,
+`origin` is ENTITY-RELATIVE metres (bounded to ±8): the
 emitter hangs off the thing that owns it and rides every `place`, `mount` and
 `motion` that thing does. `seed` makes the spawn deterministic — omit it and
 one is derived from the entity id, which is just as persistent and just as

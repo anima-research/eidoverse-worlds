@@ -30,7 +30,7 @@
 import { THREE, scene } from './core.js';
 import { bus } from './base.js';
 import { loadEidoModule, primeFiles } from './assets.js';
-import { entities } from './world.js';
+import { entities, findPart } from './world.js';
 import { normalizeParticles, resolvedCount, withSeededRandom, QUALITY_TIERS } from '../../shared/particles.js';
 import { makeEmitterRegistry, retireEmitter, adoptSystem } from './emitter_field.js';
 import { autoHooks as autos, ownHook } from './autohooks.js';
@@ -120,11 +120,14 @@ async function build(emitter, { id }) {
   ownHook(sys.update);           // ours, so no diffing subsystem may claim it
 
   return adoptSystem(sys, autos(), () => {
-    // Entity-relative, not world-origin: the emitter is a CHILD of the thing
-    // that owns it, so it rides every place/mount/motion that thing does. The
-    // authored origin is a local offset in the entity's own frame.
+    // A part-relative origin is in the named node's local frame. Parenting
+    // composes the entire animated hierarchy, including entity mounts/motion.
+    // Missing parts keep the emitter visible in the entity frame; the server
+    // records the advisory and this client reports its own realization.
+    const part = emitter.part ? findPart(parent, emitter.part) : null;
+    if (emitter.part && !part) console.warn(`[emitters] ${id}: part "${emitter.part}" unavailable — using the entity frame`);
     sys.mesh.position.set(emitter.origin[0], emitter.origin[1], emitter.origin[2]);
-    parent.add(sys.mesh);
+    (part ?? parent).add(sys.mesh);
     sys.mesh.userData.emitterOf = id;
     // The world owns this, not the sky: an async sky build that happens to
     // snapshot scene.children mid-flight must never claim (and then dispose)

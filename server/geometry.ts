@@ -80,6 +80,9 @@ export type GeomSummary = {
    *  [0,0,0] is the node origin (where a hinge usually lives). */
   nodes: { name: string; center: number[]; size: number[]; origin: number[];
            local: { center: number[]; size: number[] }; tris: number }[];
+  /** All named nodes in active scenes, including transform-only groups.
+   *  Unlike the bounded mesh summaries, suitable for attachment lookup. */
+  nodeNames: string[];
   /** true when the mesh was too big to walk exhaustively */
   sampled: boolean;
   /** the box-top lie (m, model frame): bbox top minus the median 24×24
@@ -404,6 +407,7 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
     } : { min: [0, 0, 0], max: [0, 0, 0], size: [0, 0, 0], center: [0, 0, 0] },
     topSurfaces,
     nodes,
+    nodeNames: [...new Set(doc.getRoot().listNodes().filter(n => inScene.has(n)).map(n => n.getName()).filter(Boolean))],
     sampled: stride > 1,
     ...(lie !== undefined ? { lie } : {}),
     ...(topGrid ? { topGrid } : {}),
