@@ -47,6 +47,9 @@ import { radialForce, FORCE_MIN } from "../shared/force.js";
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
 import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
+// The `residency` component's meaning — who LIVES here, as opposed to who is
+// standing here right now (shared/residency.js; residency/README.md).
+import { describeResidency, residencyTransition, residencyLine } from "../shared/residency.js";
 import { describeStructure, describeHere, localizePoint, planStructure, routeLocal } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
@@ -1145,6 +1148,16 @@ export class WorldAgent {
           if (fx.ok) this.noteEmitter(actor, String(args.id), before, args.data ?? null, fx.pos, ts);
           else this.noteEffGap(String(args.id), fx.why);
         }
+        // A residency being recorded, revised or withdrawn is news of the same
+        // kind, and rarer by nature: an instance declaring where it lives
+        // happens once and then almost never. No coalescing window, then —
+        // there is no slider to drag here, and folding the one event that
+        // matters into a later summary would be the wrong trade.
+        if (args.type === "residency" && live) {
+          const fx = this.eff(String(args.id), this.serverNow());
+          if (fx.ok) this.noteResidency(actor, String(args.id), before, args.data ?? null, fx.pos, ts);
+          else this.noteEffGap(String(args.id), fx.why);
+        }
         // a motion arriving or leaving changes whether this thing may hold a
         // body up (see hasActiveMotion)
         if (args.type === "motion" || args.type.startsWith("motion:")) this.trackSupport(this.syncSupport(args.id));
@@ -1321,6 +1334,19 @@ export class WorldAgent {
       this.onEvent?.({ ts, kind: "world-change", who: actor, text: line });
     }
     this.openEmitterWindow(id, actor, after);
+  }
+
+  /** A live `residency` attach / revise / withdraw near this body — one
+   *  ambient world-change percept. Same gates as noteEmitter (self-echo,
+   *  radius, effective position), no coalescing: see the call site. */
+  private noteResidency(actor: string | undefined, id: string, before: unknown, after: unknown,
+                        pos: number[] | undefined, ts: number) {
+    if (!actor || actor === this.name || actor === "world") return;
+    if (pos && Math.hypot(pos[0] - this.pos.x, pos[2] - this.pos.z) > this.activityRadiusM) return;
+    const line = residencyLine(actor, id, residencyTransition(before, after));
+    if (!line) return;
+    this.act30.builds++;              // it feeds the activity digest like any build
+    this.onEvent?.({ ts, kind: "world-change", who: actor, text: line });
   }
 
   private openEmitterWindow(id: string, actor: string, announced: unknown) {
@@ -2979,6 +3005,12 @@ export class WorldAgent {
       // or contact: separate authored components would provide those, and a
       // resident who reads "warm" acts on it.
       if (c.particles) aff.push(describeParticles(c.particles));
+      // A residency marker says which hosting system considers this world
+      // somewhere it LIVES, and which agents it fields — the one thing an
+      // actor id alone can never tell you. Read as a declaration, never as a
+      // presence: the log, not the record, says who has actually acted here
+      // (GET /residency, or traceResidents over world_history).
+      if (c.residency) aff.push(describeResidency(c.residency));
       // locked = nailed down: the server refuses every move/replace/remove on
       // it. Saying so here saves an agent a refused verb round-trip.
       if (c.lock) aff.push(`🔒 locked (immovable until comp {id, type: "lock", data: null})`);
@@ -2987,7 +3019,7 @@ export class WorldAgent {
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
-      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "lock", "structure"].includes(k));
+      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "residency", "lock", "structure"].includes(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);
       if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);

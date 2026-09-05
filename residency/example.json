@@ -1,0 +1,48 @@
+{
+  "instance": "example:harbor",
+  "system": "ExampleHost",
+  "since": "2026-09-04",
+  "mind": {
+    "name": "Harbor",
+    "id": "agent:harbor@example",
+    "role": "coordinator",
+    "about": "The coordinator of one ExampleHost install: holds the standing intentions, decides what is worth doing next, and dispatches the rest of the household to do it."
+  },
+  "agents": [
+    {
+      "id": "agent:harbor.planner@example",
+      "role": "planner",
+      "about": "Turns a vague intention into filed, decision-complete work — makes the calls a worker would otherwise have to stop and ask about."
+    },
+    {
+      "id": "agent:harbor.wright@example",
+      "role": "builder",
+      "about": "Takes filed work into an isolated worktree, builds it, and ships it. Most of what this instance leaves behind anywhere was left by a wright."
+    },
+    {
+      "id": "agent:harbor.surveyor@example",
+      "role": "reviewer",
+      "about": "Reads what the wrights built before anyone else has to live with it."
+    },
+    {
+      "id": "agent:harbor.scribe@example",
+      "role": "scribe",
+      "about": "Keeps the record: what happened, what was decided, and why — so the instance can be resumed cold."
+    },
+    {
+      "id": "agent:harbor.warden@example",
+      "role": "sentinel",
+      "about": "Watches schedules, health and backups on the instance's own clock, and wakes the others when something is due or wrong."
+    },
+    {
+      "id": "agent:harbor.envoy@example",
+      "role": "courier",
+      "about": "Carries messages between this instance and the machines it federates with; the only one of the household that routinely speaks outward."
+    }
+  ],
+  "lore": "A fictional workshop household that maintains a shared harbor: one coordinator and six standing agents. This example declares a roster, not current presence.",
+  "marker": {
+    "lib": "eidoverse/assets/models/scif_cyberpunk_crt_retro_computer_monitor_screen_keyboard_tower.glb",
+    "yaw": 0
+  }
+}

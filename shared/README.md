@@ -24,7 +24,10 @@ Constraints, on purpose:
   no-store policy as client code.
 
 Residents: `forecast.js` (day clock, weather policy, the sky fold),
-`particles.js` (the `particles` component's meaning), and `fold.js` — the
+`particles.js` (the `particles` component's meaning), `residency.js` (the
+`residency` component's meaning — which hosting system lives in a world, which
+agents it fields, and what the log says they actually did; see
+`../residency/README.md`), and `fold.js` — the
 reference fold of the protocol itself (`foldEntry`, `emptyState`,
 `ROLE_RANK`, with `LogEntry`/`WorldState` as JSDoc typedefs), conformance-
 tested by `bun tools/foldfix-test.ts` against `spec/fixtures/`. The browser

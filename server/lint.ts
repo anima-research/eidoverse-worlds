@@ -12,6 +12,10 @@ import { summarizeGlb } from "./geometry.ts";
 // Likewise for the `particles` component: one validator, so the flight
 // recorder's opinion about an emitter is the renderer's own opinion.
 import { normalizeParticles } from "../shared/particles.js";
+// ...and for `residency`: the same validator the projection route, the mcpl
+// agent and the planting tool read, so "why does nobody see who lives here"
+// has one answer rather than four.
+import { normalizeResidency } from "../shared/residency.js";
 import type { LogEntry, WorldState } from "../shared/fold.js";
 
 /** What the linters need from a world: folded state to read, the flight
@@ -108,6 +112,26 @@ export function lintParticles(w: LintHost, entry: LogEntry): void {
     }
     if (r.notes.length) {
       w.debug("particles-lint", { entity: id, by: entry.actor, why: r.notes.join(" · ") });
+    }
+  } catch { /* lint must never hurt anything */ }
+}
+
+/** And for `residency` — a marker whose record names no instance or no mind
+ *  is a thing standing in a field claiming nothing, and its author has no
+ *  other way to find that out: the component folded, persisted, and reads as
+ *  *someone's* marker in look(). Advisory, like every linter here. */
+export function lintResidency(w: LintHost, entry: LogEntry): void {
+  try {
+    const a = entry.args as Record<string, unknown>;
+    const id = String(a.id ?? "");
+    if (a.data == null) return;                      // withdrawn — nothing to lint
+    const r = normalizeResidency(a.data, { entityId: id });
+    if (!r.ok) {
+      w.debug("residency-lint", { entity: id, by: entry.actor, why: r.why });
+      return;
+    }
+    if (r.notes.length) {
+      w.debug("residency-lint", { entity: id, by: entry.actor, why: r.notes.join(" · ") });
     }
   } catch { /* lint must never hurt anything */ }
 }

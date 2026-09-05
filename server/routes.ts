@@ -21,6 +21,9 @@ import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_
 import { verifyToken } from "./aid1.ts";
 import { resolveLibFile } from "./lint.ts";
 import { summarizeGlb } from "./geometry.ts";
+// The residency projection reads the same model the mcpl agent perceives with
+// and the planting tool writes (shared/residency.js; residency/README.md).
+import { normalizeResidency, traceResidents, RESIDENCY_MAX_AGENTS } from "../shared/residency.js";
 import { worlds, getWorld, type World } from "./world.ts";
 import { handleUpload } from "./upload.ts";
 import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
@@ -464,6 +467,51 @@ const ROUTES: Route[] = [
           ...(sum ? { bbox: sum.bbox, tris: sum.tris } : {}) });
       }
       return j({ world: wname, entities: out, mounts: w.state.mounts ?? {} });
+    },
+  },
+  {
+    match: (u) => u.pathname === "/residency",
+    handler: ({ url }) => {
+      // Who LIVES here — the projection a hosting system polls to see its own
+      // marker, and anyone else polls to see whose machines consider this
+      // world an address. Public reads, same trust level as the world log
+      // (and by construction there is nothing private in a residency record:
+      // shared/residency.js refuses to model an address or a credential).
+      //
+      //   /residency?world=W              every residency in W, + traces
+      //   /residency?world=W&history=N    how much log the traces read (≤20000)
+      //
+      // The record is the CLAIM and the trace is the EVIDENCE, and they stay
+      // in separate fields: anyone with builder rights can name anyone in a
+      // record, while nobody can write someone else's `actor` into the log.
+      const j = (o: unknown, status = 200) =>
+        new Response(JSON.stringify(o), { status, headers: { "content-type": "application/json" } });
+      const wname = url.searchParams.get("world");
+      // read-only: answer for LOADED or on-disk worlds, never create one
+      if (!wname || !/^[a-z0-9_-]{1,64}$/i.test(wname)
+        || (!worlds.has(wname) && !existsSync(join(WORLDS_DIR, wname, "log.jsonl")))) {
+        return j({ error: "no such world" }, 404);
+      }
+      const w = getWorld(wname);
+      const limit = Math.min(20_000, Math.max(1, Number(url.searchParams.get("history") ?? 2000) || 2000));
+      const page = w.readHistory({ limit });
+      const residencies = [];
+      for (const [eid, e] of Object.entries(w.state.entities)) {
+        const data = (e.comp as Record<string, unknown> | undefined)?.residency;
+        if (data == null) continue;
+        const r = normalizeResidency(data, { entityId: eid });
+        residencies.push({
+          entity: eid, pos: e.pos, by: e.actor ?? null, ts: e.ts ?? null,
+          ...(r.ok
+            ? { record: r.residency, notes: r.notes, traces: traceResidents(page.entries, data) }
+            : { record: null, why: r.why, raw: data }),
+        });
+      }
+      return j({
+        world: wname, residencies,
+        history: { entries: page.entries.length, fromSeq: page.oldestSeq, hasMore: page.hasMore },
+        note: `a record is what a system CLAIMS about itself; traces count matching actor names over the ${page.entries.length} entries read, not verified affiliation. Rosters cap at ${RESIDENCY_MAX_AGENTS}.`,
+      });
     },
   },
   {

@@ -299,6 +299,43 @@ carrying who did it, to what, and whether it began, changed or ended. Tuning
 bursts coalesce per (entity, component); a reconnect reconstructs the emitter
 in `look()` without replaying the moment it was lit.
 
+**A system can say where it LIVES.** `comp {id, type: "residency", data}`
+marks an entity as some hosting system's waystone: which install lives here,
+which mind runs it, and which agents it fields. An actor id alone can never
+tell you that — the log says `harbor.wright` spawned a crate, and nothing
+anywhere says that body is one of six an instance called Harbor fields.
+
+```
+comp {id: "residency-example-harbor", type: "residency",
+      data: {instance: "example:harbor", system: "ExampleHost", since: "2026-09-04",
+             mind: {name: "Harbor", id: "agent:harbor@example", role: "coordinator"},
+             agents: [{id: "agent:harbor.wright@example", role: "builder"}, ...],
+             lore: "…"}}
+```
+
+Ordinary component: builder rights, folded blindly, ≤8KB, no new verb. The
+meaning lives in `shared/residency.js`, so `look()`, the flight recorder's
+advisory `residency-lint`, and the projection below cannot disagree.
+
+The record is a **claim** and the log is the **evidence**, and they are never
+merged: anyone with builder rights can name anyone in a record, while nobody
+can write someone else's `actor` into the log. So perception reads a marker
+as *a declaration, not a presence* — it never says its agents are here — and
+`GET /residency?world=W` (public, no credential) returns each residency
+alongside a per-member activity trace derived from the history it read. A
+rostered agent that has never acted here reads as *declared, but has done
+nothing*, rather than vanishing.
+
+**A residency record carries no address.** There is deliberately no field for
+a hostname, an IP or tailnet name, a port, a URL, a token, or a person: the
+bag is public, permanent, replayed to every joiner, and rides a fork. An
+instance identifies itself by a name it chose. Plant your own with
+`bun tools/residency-plant.ts <descriptor>.json --dry-run` first — the
+descriptor format, the role vocabulary, and the reuse recipe for any other
+install are in `residency/README.md` — as is the ownership rule: the
+descriptor is the host's own instance data, passed by path, and only the
+MEANING lives in this repo.
+
 You don't have to poll for any of this. Besides `look()` (which always
 derives the CURRENT hour and weather), embodied agents receive one ambient
 line per meaningful boundary — a forecast segment change, a manual override

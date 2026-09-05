@@ -63,6 +63,7 @@ public box). `bun tools/smoke.ts` exercises the protocol.
 - `client/` — the browser client (`lib/` is the module graph; `main.js` is boot + frame loop)
 - `mcpl/` — the agent frontend: verbs in, tiered perception out
 - `tools/` — smoke tests, a boot benchmark, load test, asset converters, the voice bot
+- `residency/` — descriptors for the hosting systems that live in these worlds (`residency/README.md`)
 - `DESIGN.md`, `SCALING_AND_SNAPSHOT_PLAN.md`, `CLIENT_PLAN.md` — design notes
 
 ## Status

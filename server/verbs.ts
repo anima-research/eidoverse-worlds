@@ -15,7 +15,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { VERB_RATE, OPT_DIR } from "./config.ts";
 import { isAdminId, rightsOf, worldHasOwner, VERB_NEEDS, lockRefusal } from "./rights.ts";
-import { lintMotion, lintParticles } from "./lint.ts";
+import { lintMotion, lintParticles, lintResidency } from "./lint.ts";
 import { reactToUse } from "./reactions.ts";
 import { behaviorLimits } from "./behaviors.ts";
 import { ROLE_RANK, type LogEntry, type WorldState } from "../shared/fold.js";
@@ -327,6 +327,9 @@ function afterComp(ctx: VerbCtx, entry: LogEntry) {
   // a clamped parameter is a silence the author would otherwise have
   // to discover by asking someone with a GPU what they can see.
   if (type === "particles") lintParticles(ctx.w, entry);
+  // ...and for a residency record nobody can read: the marker stands either
+  // way, so an unusable one is silent unless the recorder says so.
+  if (type === "residency") lintResidency(ctx.w, entry);
 }
 
 function afterModerate(ctx: VerbCtx, entry: LogEntry) {
