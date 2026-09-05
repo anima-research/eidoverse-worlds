@@ -67,8 +67,15 @@ try {
   await page.waitForFunction(() => window.loadingModels.materializationStatus('collision-b')?.state === 'ready');
   await page.evaluate(async () => {
     if (window.loadingModels.materializationStatus('collision-a') !== null || window.loadingModels.materializationStatus('collision-b').error) throw new Error('stale failure resurrected');
-    (await import('/lib/state.js')).reset();
-    if (window.loadingModels.materializationStatus('recovery') !== null) throw new Error('reset retained status');
+    window.probeFold('spawn', {id:'collision-reset',lib:'collision-reset.glb',pos:[0,0,0]});
+  });
+  for (let n = 0; held.length < 3 && n < 1500; n++) await new Promise(r => setTimeout(r, 20));
+  if (held.length !== 3) throw new Error('reset download timed out');
+  await page.evaluate(async () => (await import('/lib/state.js')).reset());
+  await held[2].fulfill({status:503, body:'old world failure'});
+  await page.evaluate(() => new Promise(r => setTimeout(r, 100)));
+  await page.evaluate(() => {
+    for (const id of ['recovery', 'collision-reset']) if (window.loadingModels.materializationStatus(id) !== null) throw new Error('reset retained status');
   });
   console.log('PASS: rendered keyboard retry recovered existing object once; failure cleared; progress identity, replacement, removal, reset and residency passed');
 } finally {
