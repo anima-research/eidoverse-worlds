@@ -134,10 +134,10 @@ if (!existsSync(WORLDS_DIR)) {
   process.exit(2);
 }
 // Two roots: the operator's worlds (local, baseline gitignored) and the
-// COMMITTED fixtures under spec/fixtures/worlds (baseline committed) — so a
+// COMMITTED fixtures under spec/fixtures/replay (baseline committed) — so a
 // clean checkout has something to replay and a digest to hold it to (PR #160
 // review, B6). Each root keeps its own .replaybench.json.
-const FIXTURE_ROOT = join(import.meta.dir, "..", "spec", "fixtures", "worlds");
+const FIXTURE_ROOT = join(import.meta.dir, "..", "spec", "fixtures", "replay");
 const roots = [FIXTURE_ROOT, WORLDS_DIR].filter((r, i, a) => existsSync(r) && a.indexOf(r) === i);
 const targets: { root: string; name: string }[] = [];
 for (const root of roots) {

@@ -74,7 +74,7 @@ test in exact ops — and resolves the earliest contact at the contact point: a
 top met from above is a landing under the same contact law, a side is a wall
 bounce; the remainder of that tick's motion is spent there. Already-
 overlapping states keep 0.3's endpoint resolution. Same constants, same
-order; **0.1.0, 0.2.0 and 0.3.0 remain CARRIED** — `spec/fixtures/worlds/`
+order; **0.1.0, 0.2.0 and 0.3.0 remain CARRIED** — `spec/fixtures/replay/`
 holds one authored story replayed under 0.3.0 (tunnelling and all: that is
 its law, pinned) and under 0.4.0, with committed baseline digests over the
 complete normative sim state in its normative order.
