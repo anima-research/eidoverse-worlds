@@ -107,7 +107,7 @@ export const roleReads = (role) => (typeof role === 'string' && Object.hasOwn(RE
  *  function of its argument — this module still never asks what time it is. */
 function sinceMs(v, notes) {
   if (v == null) return null;
-  if (typeof v === 'number' && Number.isFinite(v)) return Math.floor(v);
+  if (typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= 8.64e15) return Math.floor(v);
   if (typeof v === 'string') {
     const t = Date.parse(v);
     if (Number.isFinite(t)) return t;
@@ -157,7 +157,7 @@ export function normalizeResidency(data, { entityId = '' } = {}) {
     }
     const id = text(typeof raw === 'string' ? raw : raw?.id, LIMITS.id);
     if (!id) { notes.push('an agent entry with no id was dropped'); continue; }
-    const wears = text(raw?.as, LIMITS.id).toLowerCase() || wornName(id);
+    const wears = text(raw?.as, LIMITS.id).toLowerCase() || text(raw?.wears, LIMITS.id).toLowerCase() || wornName(id);
     if (seen.has(wears)) { notes.push(`two agents wear "${wears}" here — the later one was dropped`); continue; }
     seen.add(wears);
     const role = noteRole(text(raw?.role, 32), id, notes);
@@ -180,7 +180,7 @@ export function normalizeResidency(data, { entityId = '' } = {}) {
       name: mindName,
       ...some('role', mindRole),
       ...some('about', text(d.mind?.about, LIMITS.about)),
-      wears: text(d.mind?.as, LIMITS.id).toLowerCase() || wornName(mindId || mindName),
+      wears: text(d.mind?.as, LIMITS.id).toLowerCase() || text(d.mind?.wears, LIMITS.id).toLowerCase() || wornName(mindId || mindName),
       ...some('id', mindId),
     },
     agents,
@@ -310,7 +310,7 @@ export function traceResidents(entries, data) {
     const verb = String(e?.verb ?? 'unknown');
     t.acts++;
     t.verbs[verb] = (t.verbs[verb] ?? 0) + 1;
-    const ts = typeof e?.ts === 'number' ? e.ts : null;
+    const ts = typeof e?.ts === 'number' && Number.isFinite(e.ts) && Math.abs(e.ts) <= 8.64e15 ? e.ts : null;
     if (ts != null) {
       if (t.first == null || ts < t.first) t.first = ts;
       if (t.last == null || ts > t.last) t.last = ts;
@@ -325,7 +325,7 @@ export function traceResidents(entries, data) {
  *  one the lines carry dates, which is what a replay wants anyway. */
 export function describeTraces(traces, { now = null } = {}) {
   const ago = (ts) => {
-    if (ts == null) return '';
+    if (ts == null || !Number.isFinite(ts) || Math.abs(ts) > 8.64e15) return '';
     if (now == null) return ` (last ${new Date(ts).toISOString().replace('T', ' ').slice(0, 16)}Z)`;
     const s = Math.max(0, Math.round((now - ts) / 1000));
     const rel = s < 90 ? `${s}s` : s < 5400 ? `${Math.round(s / 60)}m` : s < 172800 ? `${Math.round(s / 3600)}h` : `${Math.round(s / 86400)}d`;

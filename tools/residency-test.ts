@@ -180,6 +180,23 @@ console.log("\nperception — what a reader is told, and what is never claimed\n
   check("an identical re-author narrates nothing", residencyTransition(HARBOR, { ...HARBOR }) === null);
 }
 
+// Normalized records are inputs to planting and projection too: aliases
+// must survive that second normalization and remain bound to actor evidence.
+{
+  const raw = { ...HARBOR, mind: {...HARBOR.mind, as: "Captain"}, agents: [{id:"agent:worker@example", as:"Dockhand"}] };
+  const once = normalizeResidency(raw).residency;
+  const twice = normalizeResidency(once).residency;
+  check("normalized aliases survive another normalization", twice.mind.wears === "captain" && twice.agents[0].wears === "dockhand");
+  const plan = residencyEntries(raw);
+  const planted = plan.entries.find(e => e.verb === "comp" && e.args.type === "residency").args.data;
+  check("planting preserves aliases in actor traces", traceResidents([{actor:"dockhand",verb:"use",ts:1,seq:1}], planted)[1].acts === 1);
+  for (const since of [1e100, -1e100, Infinity, NaN]) {
+    const r = normalizeResidency({...raw, since});
+    check("out-of-range residency dates are dropped with a note", r.ok && r.residency.since == null && r.notes.some(n=>n.includes("since")));
+    check("invalid authored dates remain perceivable", typeof describeResidency({...raw,since}) === "string");
+  }
+}
+
 // ---- 4. in the world -------------------------------------------------------
 console.log("\nin the world — a real sequencer, its lint, and the projection\n");
 
