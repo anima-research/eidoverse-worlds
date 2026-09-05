@@ -74,3 +74,39 @@ the last live body settles during catch-up; the regression gate allows 100ms.
 Browser gates require the declared client dependencies, Chrome/WebGPU and the
 model library. A different served barrels asset is an explicit prerequisite
 failure until its geometry is measured and its hash added to the fixture.
+
+## Transport generation follow-up
+
+The focused re-review found that a cold verb accepted before takeover could
+still commit afterward: the retired client retained the same world pointer.
+Deferred verbs now capture the existing server-issued admission generation
+and check it, the concrete socket, active world-roster membership, the
+superseded flag and open connection status. The check runs before starting
+queued work and immediately before the synchronous `runVerb()` path, after
+any asset read. A same-socket rejoin also issues a new generation, so returning
+to the same world cannot revive old intents.
+
+`verb-generation-test` owns its sequencer, model fixtures and WebSockets. For
+each of takeover, ordinary disconnect, moderation expulsion and same-socket
+rejoin, it holds an observed cold GLB read, retires the original admission,
+then releases the read. It checks that the old spawn/place/comp/say burst
+authors nothing and that the replacement's burst commits in order with the
+correct folded state. The replacement's completion is the observation barrier;
+there is no sleep-based assumption that the old queue has drained.
+
+Focused validation after this correction:
+
+| Gate | Result |
+| --- | --- |
+| `bun tools/verb-generation-test.ts` | 20/20 across all four lifecycle cases |
+| `bun tools/verb-generation-mutation-test.ts` | 3/3: clean control; removing the final authority check or the captured generation comparison turns the product-door gate red |
+| `bun tools/verb-order-test.ts` | 12/12 |
+| `bun tools/verb-order-mutation-test.ts` | Restoring the epoch race still turns the ordering gate red |
+| `bun tools/boxes-test.ts` | 6/6 |
+| `bun tools/sim-test.ts` | 59/59 |
+| `bun tools/replaybench-test.ts` | 9/9 including ordered state mutations and cross-engine identity |
+| `bun tools/sim-smoke.ts` | 15/15 through the real sequencer and browser |
+| `bun run typecheck:flight` / `git diff --check` | Pass |
+
+Server and both MCPL entry points bundle successfully; the combined Bun bundle
+reports the existing client renderer-export warnings.

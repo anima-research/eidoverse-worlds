@@ -57,16 +57,23 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // process has never seen pays the wait, once.
     const w = c.world;
     if (!w) return;
+    const gen = c.gen;
+    // Admission issues a new generation even when this socket rejoins the
+    // same world. Bind pending work to that acceptance, not just its name or
+    // world pointer (takeover and ordinary close can leave the latter set).
+    const current = () => gen != null && c.gen === gen && c.ws === ws
+      && c.world === w && !c.superseded && w.clients.has(c) && c.ws.readyState === 1;
     const libs = () => msg.verb === "spawn" ? coldLibs([String(msg.args?.lib ?? "")])
       : msg.verb === "epoch" ? coldLibs(worldLibs(w.state)) : [];
-    const run = () => { if (c.world === w) runVerb({ w, c, now, expel }, msg.verb, msg.args); };
+    // Recheck immediately before the synchronous commit path, after any read.
+    const run = () => { if (current()) runVerb({ w, c, now, expel }, msg.verb, msg.args); };
     if (!libs().length && !c.verbQueue) { run(); return; }
     // The callback's try/catch cannot catch a continuation. Contain both
     // validation and after-hook failures here, and leave a resolved queue so
     // the next authored request still runs. Never discard a rejecting finally.
     const tail: Promise<void> = (c.verbQueue ?? Promise.resolve())
       .then(async () => {
-        if (c.world !== w) return;
+        if (!current()) return;
         // A preceding queued spawn may have changed the epoch's box domain.
         await warmBoxes(libs());
         run();
