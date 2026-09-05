@@ -1,3 +1,4 @@
+import { objectIdentity } from '../shared/label.js';
 // WorldAgent — a headless world participant: the MCPL's body.
 // Owns its avatar exactly like the browser client owns a human's: simulated
 // position/yaw/speed ticked at 10Hz, pose intent streamed to the sequencer,
@@ -2963,13 +2964,15 @@ export class WorldAgent {
     const ordered = meKnown ? [...ents].sort((a, b) => sortKey(a) - sortKey(b)) : ents;
     for (const e of ordered) {
       const f = fx.get(e.id)!;
-      const short = (e.lib ?? "(light)").split("/").pop()!.replace(".glb", "").split("_").slice(0, 5).join(" ");
+      const identity = objectIdentity(e, this.st.assets);
+      const short = identity.name;
       // Affordances read out loud: a thing that can be sat on, used, or is
       // moving SAYS SO in text-tier perception — this is how the capability
       // a builder declared (sockets/reactions components) reaches everyone
       // who perceives by reading.
       const c = e.comp ?? {};
       const aff: string[] = [];
+      if (identity.description) aff.push(identity.description);
       if (c.sockets) aff.push(`sit/mount: ${Object.keys(c.sockets).join(", ")}`);
       if (c.reactions) aff.push(`reacts to: ${Object.keys(c.reactions).join(", ")}`);
       if (c.motion?.type) aff.push(`in motion (${c.motion.type})`);

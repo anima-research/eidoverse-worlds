@@ -588,7 +588,7 @@ function slabT(o, d, box, far) {
 
 /** Nearest blocking distance along origin+dir, within `far`; null = clear.
  *  camGhost entries (gizmos, placeholders) never block. */
-export function raySegment(origin, dir, far) {
+export function raySegment(origin, dir, far, excludeId = null) {
   let bestT = Infinity;
   const ex = origin.x + dir.x * far, ez = origin.z + dir.z * far;
   const x0 = Math.floor(Math.min(origin.x, ex) / CELL) - 1;
@@ -601,10 +601,10 @@ export function raySegment(origin, dir, far) {
       const set = buckets.get(`${cx},${cz}`);
       if (!set) continue;
       for (const id of set) {
-        if (_rsSeen.has(id)) continue;
+        if (id === excludeId || _rsSeen.has(id)) continue;
         _rsSeen.add(id);
         const e = colliders.get(id);
-        if (!e || e.camGhost || e.mask || !e.box) continue;
+        if (!e || (excludeId != null && e.structOwner === excludeId) || e.camGhost || e.mask || !e.box) continue;
         const o = e.obj;
         const s = o.scale?.x || 1;
         const yaw = o.rotation?.y ?? 0;

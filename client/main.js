@@ -1,3 +1,4 @@
+import { initObjectLabels, tickObjectLabels } from './lib/objectlabels.js';
 // eidoverse-worlds browser client.
 //
 // Two planes: the world log (verbs, ordered, replayed on join) and presence
@@ -237,6 +238,7 @@ function start() {
     // the join completes.
     .then((vs) => vs.speakOwnSays(bus, () => net.myId || CONFIG.name))
     .catch((e) => console.warn('[voice] own-say hook not installed:', e));
+  initObjectLabels();
   initSceneGraph();   // 🌳 the world as a tree + 📜 the scripts that animate it
   setHint('<kbd>WASD</kbd> move · <kbd>Enter</kbd> chat · <kbd>B</kbd> build · <kbd>?</kbd> help');
 
@@ -403,6 +405,7 @@ const readyPoll = setInterval(() => {
 // ones. The governor + HUD ride the 1Hz pulse, registered last.
 
 registerSystem('autos', (dt, t) => updateAutoSystems(t));       // grass wind, particles
+registerSystem('object-labels', () => tickObjectLabels());
 registerSystem('motion', () => tickMotion());                   // the world's moving parts
 registerSystem('sky', (dt, t, now) => updateSky(now, t));
 registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather → uniforms
