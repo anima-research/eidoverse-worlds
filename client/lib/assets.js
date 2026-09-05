@@ -489,7 +489,7 @@ export async function loadGLB(libPath) {
   loadsInFlight.set(libPath, (loadsInFlight.get(libPath) ?? 0) + 1);
   try {
   if (!glbCache.has(libPath)) {
-    const key = `glb:${short}`;
+    const key = `glb:${libPath}`;
     loadTrack(key, short);
     const p = (async () => {
       const work = beginWork(`glb ${short}`);
