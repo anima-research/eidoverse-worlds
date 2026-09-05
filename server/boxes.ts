@@ -42,28 +42,50 @@ export function coldLibs(libs: Iterable<string>): string[] {
   return out;
 }
 
-/** Summarize every not-yet-known lib once. Resolves when `boxOf` can answer
- *  for all of them; never throws (a failure is remembered as boxless). */
-const WARM_CONCURRENCY = 4;   // GLB parses in flight at once — a world of 200 models is not 200 parallel reads
+// One pool for the process: concurrent joins and authored requests share
+// both its slots and each library's pending result.
+const WARM_CONCURRENCY = 4;
+const pending = new Map<string, Promise<void>>();
+const queue: { lib: string; done: () => void }[] = [];
+let active = 0;
+function pump() {
+  while (active < WARM_CONCURRENCY && queue.length) {
+    const { lib, done } = queue.shift()!;
+    active++;
+    void summarize(lib).then(() => {
+      active--;
+      pending.delete(lib);
+      done();
+      pump();
+    });
+  }
+}
+async function summarize(lib: string): Promise<void> {
+  let box: Box | null = null;
+  try {
+    const file = resolveLibFile(lib);
+    const sum = file ? await summarizeGlb(file) : null;
+    const bb = sum?.bbox;
+    if (bb && bb.min?.length === 3 && bb.max?.length === 3
+      && [...bb.min, ...bb.max].every((n) => Number.isFinite(n))) {
+      box = [bb.min.map(r3), bb.max.map(r3)];
+    }
+  } catch { /* boxless */ }
+  if (!boxes.has(lib)) boxes.set(lib, box);
+}
+
+/** Resolves when every library can be answered; failed reads are boxless. */
 export async function warmBoxes(libs: Iterable<string>): Promise<void> {
-  const queue = coldLibs(libs);
-  const one = async (lib: string) => {
-    let box: Box | null = null;
-    try {
-      const file = resolveLibFile(lib);
-      const sum = file ? await summarizeGlb(file) : null;
-      const bb = sum?.bbox;
-      if (bb && bb.min?.length === 3 && bb.max?.length === 3
-        && [...bb.min, ...bb.max].every((n) => Number.isFinite(n))) {
-        box = [bb.min.map(r3), bb.max.map(r3)];
-      }
-    } catch { /* boxless */ }
-    if (!boxes.has(lib)) boxes.set(lib, box);
-  };
-  const workers = Array.from({ length: Math.min(WARM_CONCURRENCY, queue.length) }, async () => {
-    while (queue.length) await one(queue.shift()!);
+  const jobs = coldLibs(libs).map((lib) => {
+    let job = pending.get(lib);
+    if (!job) {
+      job = new Promise<void>((done) => queue.push({ lib, done }));
+      pending.set(lib, job);
+    }
+    return job;
   });
-  await Promise.all(workers);
+  pump();
+  await Promise.all(jobs);
 }
 
 /** Every lib the world's entities stand on — the epoch's `boxes` domain. */

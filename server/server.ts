@@ -61,7 +61,8 @@ import { mintSfuCredential, setSfuConsent, setSfuModeratorMute, revokeSfuLeg, sf
 // 🔴 The incarnation is DURABLE: an atomic tmp+rename file, so a restart
 // strands every old credential structurally instead of resetting the counter
 // to i1- (which sfuadapter.ts once did by passing a hardcoded null prev).
-bootIncarnation(OPT_DIR);
+// Scratch sequencers keep their durable relay counter beside their own logs.
+bootIncarnation(process.env.RELAY_STATE_DIR ?? OPT_DIR);
 
 // 🔴 THE TRANSPORT GUARD IS INSTALLED HERE, ONCE, not as a side effect of
 // constructing an Sfu (independent review 2026-08-16: a voice subsystem must

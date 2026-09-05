@@ -32,10 +32,11 @@
 //     (a window, not the archive), bans (never emitted — enforcement is the
 //     sequencer's, not a joiner's), and roles' `sub` (durable ink stays
 //     server-side; the grant emitted to joiners is nameplate-only).
-//  4. BASELINE — the full-replay digest against worlds/.replaybench.json
+//  4. BASELINE — instant and ordered sim digests against .replaybench.json
 //     (per-machine, inside the gitignored worlds dir: digests of local data
 //     belong beside the local data). Absent baseline is a hint, not a
-//     failure; --write records. A changed digest with an unchanged log is
+//     failure for operator data; committed fixtures require sim goldens.
+//     --write records. A changed digest with an unchanged log is
 //     the alarm this bench exists to ring: the refactor changed what a log
 //     means.
 //
@@ -91,7 +92,7 @@ function foldAll(entries: LogEntry[]): WorldState {
 
 /** The sim fold beside the instant one (dialect 3): fold, then settle far
  *  past the last entry so rest states are reached — the digest below is of
- *  epoch + bodies, never the tick counter (which is query-time trivia). */
+ *  the complete ordered sim state at rest, excluding its idle tick counter. */
 function foldSimAll(entries: LogEntry[], settleTicks = 100_000) {
   const st = emptyState();
   const sim = emptySim();
@@ -154,10 +155,11 @@ if (!targets.length) {
   process.exit(2);
 }
 
-const baselines = new Map<string, Record<string, { digest: string; seq: number }>>();
+type Baseline = { digest: string; simDigest?: string; seq: number };
+const baselines = new Map<string, Record<string, Baseline>>();
 const baselineOf = (root: string) => {
   if (!baselines.has(root)) {
-    let b: Record<string, { digest: string; seq: number }> = {};
+    let b: Record<string, Baseline> = {};
     const bp = join(root, ".replaybench.json");
     if (existsSync(bp)) {
       try { b = JSON.parse(readFileSync(bp, "utf8")); }
@@ -167,7 +169,7 @@ const baselineOf = (root: string) => {
   }
   return baselines.get(root)!;
 };
-const nextBaselines = new Map<string, Record<string, { digest: string; seq: number }>>();
+const nextBaselines = new Map<string, Record<string, Baseline>>();
 
 let red = 0;
 
@@ -191,8 +193,8 @@ for (const { root, name } of targets) {
   // 1b. the sim fold (dialect 3), where an epoch exists: same double-fold
   // self-agreement, settled far past the last entry so rest is reached
   const fullSim = foldSimAll(entries);
+  const s1 = simDigest(fullSim);
   if (fullSim.epoch) {
-    const s1 = simDigest(fullSim);
     const s2 = simDigest(foldSimAll(parseLog(raw.toString("utf8")).entries));
     if (s1 !== s2) fails.push(`NONDETERMINISTIC sim fold (${s1} vs ${s2}) — impurity in shared/sim.js`);
     notes.push(`sim ${fullSim.epoch.sim}${fullSim.epoch.foreign ? " (FOREIGN — refused, barrier truth)" : ` digest ${s1}, ${Object.keys(fullSim.bodies).length} body/ies`}`);
@@ -243,7 +245,16 @@ for (const { root, name } of targets) {
       + (base.seq === lastSeq ? " with an UNCHANGED log — the refactor changed what a log means"
                               : " — log grew; re-record with --write if the growth is yours"));
   } else if (!base && !WRITE) notes.push("no baseline yet — record one with --write");
-  nextBaseline[name] = { digest: d1, seq: lastSeq };
+  if (!WRITE) {
+    if (base?.simDigest && base.simDigest !== s1) {
+      fails.push(`SIM BASELINE mismatch (${base.simDigest} → ${s1}) — physical state or its normative order changed`);
+    } else if (!base?.simDigest) {
+      const missing = "no sim baseline — record the complete ordered sim state with --write";
+      if (root === FIXTURE_ROOT) fails.push(missing);
+      else notes.push(missing);   // older operator baselines migrate explicitly
+    }
+  }
+  nextBaseline[name] = { digest: d1, simDigest: s1, seq: lastSeq };
 
   const ok = fails.length === 0;
   if (!ok) red++;
@@ -256,7 +267,7 @@ for (const { root, name } of targets) {
 if (WRITE) {
   for (const [root, nb] of nextBaselines) {
     const bp = join(root, ".replaybench.json");
-    writeFileSync(bp, JSON.stringify(nb, null, 2) + "\n");
+    writeFileSync(bp, JSON.stringify({ ...baselineOf(root), ...nb }, null, 2) + "\n");
     const n = Object.keys(nb).length;
     console.log(`[replaybench] baseline recorded for ${n} world${n === 1 ? "" : "s"} → ${bp}`);
   }

@@ -291,13 +291,17 @@ console.log("\nthe sim fold (shared/sim.js) — " + SIM_ID);
     mk(3, 30, "spawn", { id: "b", lib: "b.glb", pos: [0, 0, 0] }),
     mk(4, 500, "punt", { id: "b", dir: [1, 0.1, 0], power: 20 }),
   ];
-  const v4 = fold(story(SIM_ID, 66)); advanceSim(v4.sim, 2000);
+  const v4 = fold(story("eidosim@0.4.0", 66)); advanceSim(v4.sim, 2000);
   check("0.4: a 0.2m body at 20 m/s meets a 0.1m wall (66ms tick) and rests on the near side",
     v4.sim.bodies.b.resting === true && v4.sim.bodies.b.p[0] + 0.1 <= 4.55 + 1e-9,
     `rest x ${v4.sim.bodies.b.p[0]}`);
-  const coarse = fold(story(SIM_ID, 250, [[-0.5, 0, -0.5], [0.5, 1, 0.5]], [[-0.25, 0, -2], [0.25, 2, 2]])); advanceSim(coarse.sim, 2000);
+  const coarse = fold(story("eidosim@0.4.0", 250, [[-0.5, 0, -0.5], [0.5, 1, 0.5]], [[-0.25, 0, -2], [0.25, 2, 2]])); advanceSim(coarse.sim, 2000);
   check("0.4: a 1m body at 20 m/s on a 250ms tick still meets a 0.5m wall",
     coarse.sim.bodies.b.resting === true && coarse.sim.bodies.b.p[0] + 0.5 <= 4.35 + 1e-9, `rest x ${coarse.sim.bodies.b.p[0]}`);
+  for (const tickMs of [66, 250, 1000]) {
+    const current = fold(story(SIM_ID, tickMs)); advanceSim(current.sim, 2000);
+    check(`0.5: thin body meets a thin wall at ${tickMs}ms`, current.sim.bodies.b.resting && current.sim.bodies.b.p[0] + 0.1 <= 4.55 + 1e-9);
+  }
   const v3 = fold(story("eidosim@0.3.0", 66)); advanceSim(v3.sim, 2000);
   check("0.3.0 is CARRIED (not foreign) and still tunnels that wall — its law, pinned",
     !v3.sim.epoch!.foreign && v3.sim.bodies.b.resting === true && v3.sim.bodies.b.p[0] > 5, `rest x ${v3.sim.bodies.b.p[0]}`);
@@ -305,7 +309,7 @@ console.log("\nthe sim fold (shared/sim.js) — " + SIM_ID);
   const DECK = [[-3, 0, -1], [3, 1, 1]];
   const land: LogEntry[] = [
     mk(0, 0, "genesis", { v: 3, dialect: "eidoverse-log" }),
-    mk(1, 10, "epoch", { sim: SIM_ID, tickMs: 66, boxes: { "c.glb": [[-0.5, 0, -0.5], [0.5, 1, 0.5]], "d.glb": DECK } }),
+    mk(1, 10, "epoch", { sim: "eidosim@0.4.0", tickMs: 66, boxes: { "c.glb": [[-0.5, 0, -0.5], [0.5, 1, 0.5]], "d.glb": DECK } }),
     mk(2, 20, "spawn", { id: "deck", lib: "d.glb", pos: [5, 0, 0] }),
     mk(3, 30, "spawn", { id: "c", lib: "c.glb", pos: [0, 0, 0] }),
     mk(4, 500, "punt", { id: "c", dir: [1, 1, 0], power: 8 }),
@@ -315,6 +319,42 @@ console.log("\nthe sim fold (shared/sim.js) — " + SIM_ID);
   check("0.4: a flight landing on a deck rests ON it and names it",
     l1.sim.bodies.c.resting === true && l1.sim.bodies.c.p[1] === 1 && l1.sim.bodies.c.on === "deck", `y ${l1.sim.bodies.c.p[1]} on ${l1.sim.bodies.c.on}`);
   check("0.4 schedule-independence (swept law)", digest(l1.sim) === digest(l2.sim));
+}
+
+// Continuing contacts must move tangentially and still sweep later obstacles.
+{
+  const body = { p: [0, 1, 0], v: [6, 0, 0], yaw: 0, ground: 0, seq: 1,
+    born: 0, resting: false, ext: { cx: 0, cz: 0, hx: 0.1, hz: 0.1, y0: 0, y1: 0.2 } };
+  const setup = (law = SIM_ID, tickMs = 66) => ({
+    epoch: { sim: law, tickMs, ts: 0, seq: 0 }, tick: 0,
+    terrain: null, boxes: {}, bodies: { b: structuredClone(body) },
+    statics: { deck: { aabb: [[-1, 0, -1], [1, 1, 1]] } },
+  });
+  const slide: any = setup(); advanceSim(slide, 1);
+  check("0.5: a zero-time deck contact preserves horizontal movement", slide.bodies.b.p[0] > 0.3 && slide.bodies.b.p[1] === 1);
+  advanceSim(slide, 12);
+  check("0.5: a slider crosses the deck edge and falls", slide.bodies.b.p[0] > 1.1 && slide.bodies.b.p[1] < 1 && slide.bodies.b.on === null);
+  const wall: any = setup(SIM_ID, 1000);
+  wall.statics.wall = { aabb: [[0.5, 1, -1], [0.6, 3, 1]] };
+  advanceSim(wall, 1);
+  check("0.5: the remaining slide still collides with a thin wall on a coarse tick", wall.bodies.b.p[0] <= 0.4 && wall.bodies.b.v[0] < 0);
+  const old: any = setup("eidosim@0.4.0"); advanceSim(old, 1);
+  check("0.4 remains carried with its original contact semantics", old.bodies.b.p[0] === 0 && !old.epoch.foreign);
+  const many: any = setup(), once: any = setup();
+  for (let t = 1; t <= 500; t++) advanceSim(many, t);
+  advanceSim(once, 500);
+  check("0.5: multi-contact motion is schedule-independent", JSON.stringify(many) === JSON.stringify(once));
+
+  // A restart snapshot can cut one tick BEFORE rest, as well as after it.
+  const resume: any = setup(); resume.statics = {};
+  for (let i = 0; i < 69; i++) resume.bodies['r' + i] = { ...structuredClone(body), resting: true };
+  resume.bodies.b.p = [0, 0, 0]; resume.bodies.b.v = [0, 0, 0];
+  const staged = structuredClone(resume), target = Math.floor(30 * 86400000 / 66);
+  advanceSim(staged, 1); advanceSim(staged, target);
+  const start = performance.now(); advanceSim(resume, target);
+  const elapsed = performance.now() - start;
+  check("a long-gap resume jumps as soon as its last body rests", elapsed < 100, `${elapsed.toFixed(2)}ms`);
+  check("active-to-rest catch-up preserves the complete snapshot", JSON.stringify(staged) === JSON.stringify(resume));
 }
 
 console.log(`\n${fail ? "\x1b[31mRED\x1b[0m" : "\x1b[32mGREEN\x1b[0m"} — ${pass} passed, ${fail} failed`);

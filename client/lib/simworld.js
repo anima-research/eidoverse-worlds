@@ -71,145 +71,150 @@ export const simState = () => state.sim;
 const prev = new Map();    // id -> [x, y, z]
 let tickSeen = -1;         // the tick the applier itself last left the sim at
 
-/** Wire the applier. Called once from main.js, beside the realizers. */
+/** Apply one presentation frame. Explicit clocks let benches sample the real
+ *  applier at fixed times without depending on display refresh rate. */
 let lastAt = 0;
-export function initSimWorld() {
-  pushHostHook(() => {
-    const sim = state.sim;
-    if (!sim?.epoch || sim.epoch.foreign) return;
-    const wall = Date.now();
-    const target = tickOf(sim, wall);
-    if (sim.tick !== tickSeen) prev.clear();
-    if (sim.tick < target) {
-      // crossing a boundary this frame: stand at the tick before, remember
-      // every body there, then step to the interval's end
-      if (sim.tick < target - 1) advanceSim(sim, target - 1);
-      for (const id in sim.bodies) {
-        const b = sim.bodies[id];
-        let pv = prev.get(id);
-        if (!pv) { pv = [0, 0, 0]; prev.set(id, pv); }
-        pv[0] = b.p[0]; pv[1] = b.p[1]; pv[2] = b.p[2];
-      }
-      advanceSim(sim, target);
-    }
-    tickSeen = sim.tick;
-    // the phase of now inside the sim's current tick, (0, 1]: 1 is the
-    // boundary itself, i.e. the sim's word verbatim
-    const k = Math.min(1, Math.max(0, (wall - sim.epoch.ts) / sim.epoch.tickMs - (sim.tick - 1)));
-    const now = performance.now();
-    const dt = Math.min(0.1, (now - (lastAt || now)) / 1000);
-    lastAt = now;
+export function updateSimWorld(wall, frameTime) {
+  const sim = state.sim;
+  if (!sim?.epoch || sim.epoch.foreign) return;
+  wall ??= Date.now();
+  const target = tickOf(sim, wall);
+  if (sim.tick !== tickSeen) prev.clear();
+  if (sim.tick < target) {
+    // crossing a boundary this frame: stand at the tick before, remember
+    // every body there, then step to the interval's end
+    if (sim.tick < target - 1) advanceSim(sim, target - 1);
     for (const id in sim.bodies) {
       const b = sim.bodies[id];
-      const obj = entities.get(id);
-      if (!obj) continue;
-      let sp = spins.get(id);
-      if (!sp) {
-        sp = { q: obj.quaternion.clone(), arm: Infinity, cx: 0, cz: 0, box: null };
-        spins.set(id, sp);
-      }
-      // ARM: how far the mesh's visual center sits from the entity origin
-      // (local, horizontal). Rotating a quaternion rotates about the ORIGIN,
-      // so a far-offset model (the barrels group ships its cluster 1.95m off
-      // origin, §24t-4) would sweep its mesh in a metres-wide arc — those
-      // models arc without tumbling instead. Fitted from the collider box
-      // WHENEVER THE BOX CHANGES, never cached at first sight: a body that is
-      // already resting in the join snapshot is seen by this applier on the
-      // first frame after hydrate, frames before its model has loaded and
-      // its box exists — and a geometry cached then said "origin-centred",
-      // so the barrels tumbled on a 1.3m arm straight through the ground on
-      // every punt after a reload (tel0s, playtest 2026-09-01, §24t-7).
-      // Unknown geometry (no box yet) = no tumble, no grounding lift.
-      const cb = colliders.get(id)?.box ?? null;
-      if (cb !== sp.box) {
-        sp.box = cb;
-        const scl = obj.scale ?? { x: 1, z: 1 };
-        sp.cx = cb ? (cb.min.x + cb.max.x) / 2 * (scl.x || 1) : 0;
-        sp.cz = cb ? (cb.min.z + cb.max.z) / 2 * (scl.z || 1) : 0;
-        sp.arm = cb ? Math.hypot(sp.cx, sp.cz) : Infinity;
-      }
-      // a resting body stands on the sim's word exactly (the collider index
-      // below reads it); a moving one shows the lerp of its two tick poses
-      const pv = b.resting ? undefined : prev.get(id);
-      if (pv) {
-        obj.position.set(pv[0] + (b.p[0] - pv[0]) * k, pv[1] + (b.p[1] - pv[1]) * k,
-          pv[2] + (b.p[2] - pv[2]) * k);
-      } else {
-        obj.position.set(b.p[0], b.p[1], b.p[2]);
-      }
-      // THE VISUAL CENTER IS WHAT STANDS ON THE GROUND. The sim grounds the
-      // entity ORIGIN on the terrain — all it can know: the mesh is an asset
-      // fact, never in the log. A far-offset model stands somewhere else, and
-      // on a slope the ground there is not the ground here (the barrels'
-      // cluster sank 29cm into a hillside at every landing, §24t-6). So the
-      // applier works in terms of the visual center: where the sim's word +
-      // yaw puts it (cx, cz), the terrain under IT (gC), and a lift by the
-      // difference. Presentation only, like the tumble: exactly 0 for an
-      // origin-centred model, exactly 0 without terrain. A body the sim has
-      // standing ON another thing (0.3.0's `on`) takes that top as its
-      // ground — no terrain lift, no tilt.
-      const p = obj.position;
-      const cY = Math.cos(b.yaw), sY = Math.sin(b.yaw);
-      const cx = sp.box ? sp.cx * cY + sp.cz * sY : 0;
-      const cz = sp.box ? -sp.cx * sY + sp.cz * cY : 0;
-      const onTerrain = !b.on;
-      const lift = onTerrain && sp.box ? heightAt(p.x + cx, p.z + cz) - heightAt(p.x, p.z) : 0;
-      // cosmetic tumble/settle (see the header block above)
-      const q = sp.q;
-      const flat = Math.hypot(b.v[0], b.v[2]);
-      // Airborne = the sim's OWN word (v[1] ≠ 0), never a height threshold:
-      // tick-quantized positions hover under any threshold late in a fall
-      // and through the tiny bounce tail, so a threshold righted the barrel
-      // in mid-air (tel0s, playtest 2026-08-31 — "return to normal
-      // orientation before they hit the ground"). The sim zeroes v[1]
-      // exactly when grounded contact begins, which is exactly when a
-      // tumbling thing should start righting itself.
-      if (!b.resting && b.v[1] !== 0 && flat > 0.05 && sp.arm < 0.5) {
-        _axis.set(b.v[2], 0, -b.v[0]).normalize();
-        _dq.setFromAxisAngle(_axis, TUMBLE * dt);
-        q.premultiply(_dq);
-      } else {
-        _upq.setFromAxisAngle(UP, b.yaw);
-        // SLOPE TILT (§24t-10): a grounded thing lies on the hill it rests
-        // on — upright-in-world, an 18% slope put one edge of the barrels'
-        // 1.2m footprint 15cm into the ground and the other 15cm in the air.
-        // The target is "upright at the sim's yaw, then leaned onto the
-        // terrain normal under the visual center" (finite differences at half
-        // a metre — the footprint's own scale, so bumps don't rock it);
-        // airborne bodies stay upright, things standing ON things stay flat.
-        if (onTerrain && (b.resting || b.v[1] === 0)) {
-          const x = p.x + cx, z = p.z + cz, e = 0.5;
-          _n.set(-(heightAt(x + e, z) - heightAt(x - e, z)) / (2 * e), 1,
-            -(heightAt(x, z + e) - heightAt(x, z - e)) / (2 * e)).normalize();
-          _tq.setFromUnitVectors(UP, _n);
-          _upq.premultiply(_tq);
-        }
-        q.slerp(_upq, Math.min(1, 6 * dt));
-      }
-      obj.quaternion.copy(q);
-      // COMPOSE ABOUT THE CENTER: the visual center goes to its place (the
-      // sim's word for it, lifted onto its ground); the origin is wherever
-      // the rotated local center offset leaves it. For an origin-centred
-      // model this is exactly "position = word + lift".
-      _cv.set(sp.cx, 0, sp.cz).applyQuaternion(q);
-      p.set(p.x + cx - _cv.x, p.y + lift - _cv.y, p.z + cz - _cv.z);
-      if (obj.userData.base?.pos) {
-        // the realizer's rest-pose record follows the sim's word, so
-        // re-seat logic and inspectors read where the thing IS
-        obj.userData.base.pos[0] = b.p[0];
-        obj.userData.base.pos[1] = b.p[1];
-        obj.userData.base.pos[2] = b.p[2];
-      }
-      if (b.resting && !restIndexed.has(id)) {
-        restIndexed.add(id);
-        try { reindexCollider(id); } catch { /* colliders may not know it */ }
-      } else if (!b.resting) {
-        restIndexed.delete(id);
-      }
+      let pv = prev.get(id);
+      if (!pv) { pv = [0, 0, 0]; prev.set(id, pv); }
+      pv[0] = b.p[0]; pv[1] = b.p[1]; pv[2] = b.p[2];
     }
-    // released bodies drop their presentation state — the realizers
-    // re-assert the authored transform the moment the fold owns them again
-    for (const id of spins.keys()) if (!(id in sim.bodies)) spins.delete(id);
-    for (const id of prev.keys()) if (!(id in sim.bodies)) prev.delete(id);
-  });
+    advanceSim(sim, target);
+  }
+  tickSeen = sim.tick;
+  // the phase of now inside the sim's current tick, (0, 1]: 1 is the
+  // boundary itself, i.e. the sim's word verbatim
+  const k = Math.min(1, Math.max(0, (wall - sim.epoch.ts) / sim.epoch.tickMs - (sim.tick - 1)));
+  const now = frameTime ?? performance.now();
+  const dt = Math.min(0.1, (now - (lastAt || now)) / 1000);
+  lastAt = now;
+  for (const id in sim.bodies) {
+    const b = sim.bodies[id];
+    const obj = entities.get(id);
+    if (!obj) continue;
+    let sp = spins.get(id);
+    if (!sp) {
+      sp = { q: obj.quaternion.clone(), arm: Infinity, cx: 0, cz: 0, box: null };
+      spins.set(id, sp);
+    }
+    // ARM: how far the mesh's visual center sits from the entity origin
+    // (local, horizontal). Rotating a quaternion rotates about the ORIGIN,
+    // so a far-offset model (the barrels group ships its cluster 1.95m off
+    // origin, §24t-4) would sweep its mesh in a metres-wide arc — those
+    // models arc without tumbling instead. Fitted from the collider box
+    // WHENEVER THE BOX CHANGES, never cached at first sight: a body that is
+    // already resting in the join snapshot is seen by this applier on the
+    // first frame after hydrate, frames before its model has loaded and
+    // its box exists — and a geometry cached then said "origin-centred",
+    // so the barrels tumbled on a 1.3m arm straight through the ground on
+    // every punt after a reload (tel0s, playtest 2026-09-01, §24t-7).
+    // Unknown geometry (no box yet) = no tumble, no grounding lift.
+    const cb = colliders.get(id)?.box ?? null;
+    if (cb !== sp.box) {
+      sp.box = cb;
+      const scl = obj.scale ?? { x: 1, z: 1 };
+      sp.cx = cb ? (cb.min.x + cb.max.x) / 2 * (scl.x || 1) : 0;
+      sp.cz = cb ? (cb.min.z + cb.max.z) / 2 * (scl.z || 1) : 0;
+      sp.arm = cb ? Math.hypot(sp.cx, sp.cz) : Infinity;
+    }
+    // a resting body stands on the sim's word exactly (the collider index
+    // below reads it); a moving one shows the lerp of its two tick poses
+    const pv = b.resting ? undefined : prev.get(id);
+    if (pv) {
+      obj.position.set(pv[0] + (b.p[0] - pv[0]) * k, pv[1] + (b.p[1] - pv[1]) * k,
+        pv[2] + (b.p[2] - pv[2]) * k);
+    } else {
+      obj.position.set(b.p[0], b.p[1], b.p[2]);
+    }
+    // THE VISUAL CENTER IS WHAT STANDS ON THE GROUND. The sim grounds the
+    // entity ORIGIN on the terrain — all it can know: the mesh is an asset
+    // fact, never in the log. A far-offset model stands somewhere else, and
+    // on a slope the ground there is not the ground here (the barrels'
+    // cluster sank 29cm into a hillside at every landing, §24t-6). So the
+    // applier works in terms of the visual center: where the sim's word +
+    // yaw puts it (cx, cz), the terrain under IT (gC), and a lift by the
+    // difference. Presentation only, like the tumble: exactly 0 for an
+    // origin-centred model, exactly 0 without terrain. A body the sim has
+    // standing ON another thing (0.3.0's `on`) takes that top as its
+    // ground — no terrain lift, no tilt.
+    const p = obj.position;
+    const cY = Math.cos(b.yaw), sY = Math.sin(b.yaw);
+    const cx = sp.box ? sp.cx * cY + sp.cz * sY : 0;
+    const cz = sp.box ? -sp.cx * sY + sp.cz * cY : 0;
+    const onTerrain = !b.on;
+    const lift = onTerrain && sp.box ? heightAt(p.x + cx, p.z + cz) - heightAt(p.x, p.z) : 0;
+    // cosmetic tumble/settle (see the header block above)
+    const q = sp.q;
+    const flat = Math.hypot(b.v[0], b.v[2]);
+    // Airborne = the sim's OWN word (v[1] ≠ 0), never a height threshold:
+    // tick-quantized positions hover under any threshold late in a fall
+    // and through the tiny bounce tail, so a threshold righted the barrel
+    // in mid-air (tel0s, playtest 2026-08-31 — "return to normal
+    // orientation before they hit the ground"). The sim zeroes v[1]
+    // exactly when grounded contact begins, which is exactly when a
+    // tumbling thing should start righting itself.
+    if (!b.resting && b.v[1] !== 0 && flat > 0.05 && sp.arm < 0.5) {
+      _axis.set(b.v[2], 0, -b.v[0]).normalize();
+      _dq.setFromAxisAngle(_axis, TUMBLE * dt);
+      q.premultiply(_dq);
+    } else {
+      _upq.setFromAxisAngle(UP, b.yaw);
+      // SLOPE TILT (§24t-10): a grounded thing lies on the hill it rests
+      // on — upright-in-world, an 18% slope put one edge of the barrels'
+      // 1.2m footprint 15cm into the ground and the other 15cm in the air.
+      // The target is "upright at the sim's yaw, then leaned onto the
+      // terrain normal under the visual center" (finite differences at half
+      // a metre — the footprint's own scale, so bumps don't rock it);
+      // airborne bodies stay upright, things standing ON things stay flat.
+      if (onTerrain && (b.resting || b.v[1] === 0)) {
+        const x = p.x + cx, z = p.z + cz, e = 0.5;
+        _n.set(-(heightAt(x + e, z) - heightAt(x - e, z)) / (2 * e), 1,
+          -(heightAt(x, z + e) - heightAt(x, z - e)) / (2 * e)).normalize();
+        _tq.setFromUnitVectors(UP, _n);
+        _upq.premultiply(_tq);
+      }
+      q.slerp(_upq, Math.min(1, 6 * dt));
+    }
+    obj.quaternion.copy(q);
+    // COMPOSE ABOUT THE CENTER: the visual center goes to its place (the
+    // sim's word for it, lifted onto its ground); the origin is wherever
+    // the rotated local center offset leaves it. For an origin-centred
+    // model this is exactly "position = word + lift".
+    _cv.set(sp.cx, 0, sp.cz).applyQuaternion(q);
+    p.set(p.x + cx - _cv.x, p.y + lift - _cv.y, p.z + cz - _cv.z);
+    if (obj.userData.base?.pos) {
+      // the realizer's rest-pose record follows the sim's word, so
+      // re-seat logic and inspectors read where the thing IS
+      obj.userData.base.pos[0] = b.p[0];
+      obj.userData.base.pos[1] = b.p[1];
+      obj.userData.base.pos[2] = b.p[2];
+    }
+    if (b.resting && !restIndexed.has(id)) {
+      restIndexed.add(id);
+      try { reindexCollider(id); } catch { /* colliders may not know it */ }
+    } else if (!b.resting) {
+      restIndexed.delete(id);
+    }
+  }
+  // released bodies drop their presentation state — the realizers
+  // re-assert the authored transform the moment the fold owns them again
+  for (const id of spins.keys()) if (!(id in sim.bodies)) spins.delete(id);
+  for (const id of prev.keys()) if (!(id in sim.bodies)) prev.delete(id);
+}
+
+export const simWorldFrame = () => updateSimWorld();
+/** Wire the applier once, beside the realizers. */
+export function initSimWorld() {
+  pushHostHook(simWorldFrame);
 }

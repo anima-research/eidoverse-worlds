@@ -44,3 +44,23 @@ which folds each fixture with `shared/fold.js` (the reference fold) and
 applies exactly the comparison rule above.
 
 License: CC0 1.0, same as ../PROTOCOL.md.
+
+Additional gates use separate fixture shapes:
+
+- `replay/` holds nested sim stories and golden digests; it is not itself an
+  instant-fold fixture directory.
+- `ammodoll-rig.json` contains node transforms, parentage and humanoid bone
+  mapping extracted from the source VRM named and SHA-256-bound inside it.
+  Meshes and textures are omitted. Reproduce the extraction with
+  `bun tools/extract-doll-fixture.ts path/to/mythos-wings.vrm`.
+  `bun tools/ammodoll-test.ts` uses this committed skeleton and a copy with
+  digit bones removed, including every wing/hair matrix assertion. Add
+  `--fleet` to also test installed local avatars; that optional extension
+  reports a missing library before running it.
+- `sim-ground-assets.json` binds the ground-smoke offsets and bounds to
+  measured source and KTX2 response hashes. The smoke hashes the response
+  consumed by the browser, including negotiated/overlay variants. Before
+  adding another hash, run `bun tools/ground-asset-check.ts path/to/file.glb`
+  and verify its measured geometry fits this fixture. Its source and KTX2
+  variants both have 6,040 triangles and the same millimetre-rounded bounds
+  and visual-center offset.

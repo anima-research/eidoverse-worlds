@@ -1,10 +1,22 @@
 {
   "eidosim-0.3": {
     "digest": "02ac09d44fb42723",
+    "simDigest": "326cb342caa9ad7a",
     "seq": 12
   },
   "eidosim-0.4": {
     "digest": "f5fa87aefb0f22c8",
+    "simDigest": "bddbd1ec6d571bc4",
     "seq": 12
+  },
+  "eidosim-0.5": {
+    "digest": "ac58ce393a227477",
+    "simDigest": "20d5a9edc3316bc8",
+    "seq": 12
+  },
+  "eidosim-order": {
+    "digest": "ac58ce393a227477",
+    "simDigest": "d99d9a1154b15ad6",
+    "seq": 13
   }
 }
