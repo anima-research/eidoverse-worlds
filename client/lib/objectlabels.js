@@ -1,143 +1,240 @@
-// Read-only DOM plaques: no textures, leases or world writes in the viewer.
+// Optional, local presentation of authored labels. The fold and world stay untouched.
 import { THREE, camera, renderer } from './core.js';
-import { bus } from './base.js';
+import { CONFIG, bus } from './base.js';
 import { raySegment } from './colliders.js';
 import { entities } from './world.js';
 import { state, onWorldChange } from './state.js';
-import { isEditing, hasGhost } from './build.js';
 import { objectIdentity, readLabel, visibleLabels } from '../../shared/label.js';
-import * as models from './realize/models.js';
 import { registerEditor } from './inspect.js';
 
-let selected = null, preference = 'nearby', panel, list, details, overlay;
-const anchors = new WeakMap();
-const ray = new THREE.Raycaster(), pointer = new THREE.Vector2();
-let picking = false;
-const plaques = [], point = new THREE.Vector3(), projected = new THREE.Vector3();
-let records = [], authoredRecords = [];
+let mode = CONFIG.objectLabels ?? 'off', overlay, panel, content, selected = null;
+let records = [], authoredRecords = [], candidates = [], lastCandidates = -Infinity, lastSight = 0, cursor = 0;
+const anchors = new WeakMap(), plaques = [];
+const point = new THREE.Vector3(), projected = new THREE.Vector3(), direction = new THREE.Vector3();
 const positioned = [];
-let occlusionCursor=0;
-const sightDirection=new THREE.Vector3();
+
 function refresh() {
-  records = Object.values(state.st.entities).map(e => ({entity:e, ...objectIdentity(e,state.st.assets)}));
-  authoredRecords = records.filter(r=>r.authored);
-  if (list) {
-    list.replaceChildren(new Option('Choose an object', ''));
-    for (const r of records) list.add(new Option(`${r.name} [${r.id}]`, r.id));
-    list.value = selected ?? '';
-  }
-  if (selected) inspect(selected,false);
+  // Folded entities are keyed by ID; values deliberately contain no `id`.
+  records = Object.entries(state.st.entities).map(([id, entity]) => ({
+    entity, ...objectIdentity({ ...entity, id }, state.st.assets),
+  }));
+  authoredRecords = records.filter(record => record.authored);
+  lastCandidates = -Infinity;
+  if (selected) showDetails(selected);
 }
-function inspect(id, reveal=true) {
+
+function closeDetails() {
+  selected = null;
+  if (panel) panel.hidden = true;
+}
+
+function showDetails(id) {
+  const record = records.find(record => record.id === id);
+  if (!record) { closeDetails(); return; }
   selected = id;
-  const r = records.find(r => r.id === id);
-  if (!r) { selected = null; details?.replaceChildren(); return; }
-  list.value = id;
-  details.replaceChildren();
-  for (const value of [r.name, r.description, `Entity: ${id}`, `Asset: ${r.assetName || r.entity.lib || 'none'}`,
-    `Sockets: ${Object.keys(r.entity.comp?.sockets ?? {}).join(', ') || 'none'}`,
-    `Actions: ${Object.keys(r.entity.comp?.reactions ?? {}).join(', ') || 'none'}`]) {
-    const p = document.createElement('p'); p.textContent = value; details.append(p);
+  lastCandidates = -Infinity;
+  content.replaceChildren();
+  const heading = document.createElement('h2');
+  heading.id = 'ew-object-title';
+  heading.textContent = record.name;
+  content.append(heading);
+  if (record.description) {
+    const description = document.createElement('p');
+    description.textContent = record.description;
+    content.append(description);
   }
-  const status=models.materializationStatus?.(id);
-  if(status){const p=document.createElement('p');p.textContent=`Model: ${status.label}${status.error ? ' — '+status.error : ''}`;details.append(p);
-    if(status.retryAvailable && models.retryMaterialization){const retry=document.createElement('button');retry.textContent='Retry loading';retry.onclick=()=>{models.retryMaterialization(id);inspect(id);};details.append(retry);}}
-  if(reveal) panel.open = true;
+  // Details describe the object. Technical identity stays in the scene tree.
+  for (const [title, values] of [
+    ['Seats', record.entity.comp?.sockets], ['Actions', record.entity.comp?.reactions],
+  ]) {
+    if (!values || typeof values !== 'object' || !Object.keys(values).length) continue;
+    const text = document.createElement('p');
+    text.textContent = `${title}: ${Object.keys(values).join(', ')}`;
+    content.append(text);
+  }
+  panel.hidden = false;
 }
+
+/** Host-local rendering config. Unset/invalid mode disables the whole overlay.
+ * No localStorage: enabling labels in one embed must not enable other worlds. */
+export function configureObjectLabels({ mode: value = 'off' } = {}) {
+  mode = ['nearby', 'all', 'off'].includes(value) ? value : 'off';
+  lastCandidates = -Infinity;
+  if (mode !== 'off') initObjectLabels();
+  else {
+    for (const plaque of plaques) plaque.hidden = true;
+  }
+}
+
 export function initObjectLabels() {
-  if (panel) return;
-  try { preference = localStorage.getItem('ew-object-labels') || 'nearby'; } catch {}
+  if (overlay || mode === 'off') return;
+  const style = document.createElement('style');
+  style.textContent = `
+    .ew-object-labels { position:fixed; inset:0; pointer-events:none; z-index:5; overflow:hidden }
+    .ew-object-labels button { position:absolute; pointer-events:auto; max-width:min(220px,calc(100vw - 24px));
+      min-height:32px; padding:5px 9px; border:1px solid #9cd6c599; border-radius:6px;
+      color:#e8fff7; background:#102425e8; font:600 13px/20px monospace;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer;
+      transform:translate(-50%,-100%); box-shadow:0 2px 6px #0008 }
+    .ew-object-labels button:hover, .ew-object-labels button:focus-visible { outline:2px solid #b7ffe6; background:#254845 }
+    .ew-object-detail { position:fixed; right:12px; top:70px; z-index:25;
+      box-sizing:border-box; width:min(300px,calc(100vw - 24px)); max-height:60vh;
+      overflow:auto; padding:14px; border:1px solid #9cd6c599; border-radius:8px;
+      color:#e8fff7; background:#102425f5; font:14px/1.5 sans-serif; overflow-wrap:anywhere }
+    .ew-object-detail h2 { margin:0 0 8px; font:600 16px/1.4 sans-serif }
+    .ew-object-detail p { margin:8px 0 }
+    .ew-object-detail button { min-height:36px; margin-top:8px; padding:4px 10px;
+      border:1px solid #9cd6c599; border-radius:5px; color:inherit; background:#254845; cursor:pointer }
+    .ew-object-labels [hidden], .ew-object-detail[hidden] { display:none !important }
+  `;
   overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:5;overflow:hidden';
-  for(let i=0;i<32;i++) {
-    const el = document.createElement('span');
-    el.style.cssText='position:absolute;display:none;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 7px;border-radius:4px;background:#171d25dd;color:white;font:13px sans-serif;transform:translate(-50%,-100%)';
-    overlay.append(el); plaques.push(el);
+  overlay.className = 'ew-object-labels';
+  overlay.setAttribute('role', 'group');
+  overlay.setAttribute('aria-label', 'World object labels');
+  for (let i = 0; i < 32; i++) {
+    const plaque = document.createElement('button');
+    plaque.type = 'button';
+    plaque.hidden = true;
+    plaque.onclick = () => showDetails(plaque.dataset.entityId);
+    overlay.append(plaque);
+    plaques.push(plaque);
   }
-  panel = document.createElement('details');
-  panel.style.cssText='position:fixed;left:12px;top:70px;z-index:25;width:min(320px,calc(100vw - 24px));max-height:65vh;overflow:auto;background:#171d25ee;color:white;padding:10px;border-radius:8px;font:14px sans-serif';
-  const summary = document.createElement('summary');summary.textContent='Inspect objects';panel.append(summary);
-  const pref = document.createElement('select');pref.setAttribute('aria-label','Object labels');
-  for (const [v,t] of [['nearby','Nearby'],['all','All nearby'],['off','Off']]) pref.add(new Option(t,v));
-  pref.value=preference;pref.onchange=()=>{preference=pref.value;try{localStorage.setItem('ew-object-labels',preference);}catch{}};
-  list=document.createElement('select');list.setAttribute('aria-label','Choose object to inspect');list.style.width='100%';list.onchange=()=>inspect(list.value);
-  const centered=document.createElement('button');centered.textContent='Inspect centered object';centered.onclick=()=>pick(innerWidth/2,innerHeight/2);
-  details=document.createElement('div');details.setAttribute('aria-live','polite');details.style.overflowWrap='anywhere';
-  const pickButton=document.createElement('button');pickButton.textContent='Pick an object';pickButton.setAttribute('aria-pressed','false');pickButton.onclick=()=>{picking=!picking;pickButton.setAttribute('aria-pressed',String(picking));};
-  panel.append(pref,list,centered,pickButton,details);
-  panel.addEventListener('keydown',e=>e.stopPropagation());
-  document.body.append(overlay,panel);
-  // A tap selects a nearby projected anchor. No geometry/world raycast, and
-  // capture listeners observe without preventing camera/avatar handlers.
-  let down=null;
-  const canvas=renderer.domElement;
-  // Explicit inspection owns mouse activation before avatar grabbing, seat
-  // editing or physics handlers can claim it. Ordinary looking is unchanged.
-  window.addEventListener('mousedown',e=>{if(e.target===canvas && picking && !isEditing() && !hasGhost() && !document.pointerLockElement)e.stopImmediatePropagation();},true);
-  canvas.addEventListener('pointerdown',e=>{down={x:e.clientX,y:e.clientY,t:performance.now(),id:e.pointerId};});
-  canvas.addEventListener('pointercancel',()=>{down=null;});
-  canvas.addEventListener('pointerup',e=>{
-    const d=down;down=null;
-    if(picking && d && d.id===e.pointerId && Math.hypot(d.x-e.clientX,d.y-e.clientY)<5 && performance.now()-d.t<400 && !document.pointerLockElement && !isEditing() && !hasGhost()) pick(e.clientX,e.clientY);
+  panel = document.createElement('section');
+  panel.className = 'ew-object-detail';
+  panel.id = 'ew-object-detail';
+  panel.setAttribute('aria-labelledby', 'ew-object-title');
+  panel.hidden = true;
+  content = document.createElement('div');
+  content.setAttribute('aria-live', 'polite');
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.textContent = 'Close details';
+  close.onclick = () => {
+    const previous = selected;
+    closeDetails();
+    plaques.find(plaque => !plaque.hidden && plaque.dataset.entityId === previous)?.focus();
+  };
+  panel.append(content, close);
+  for (const element of [panel, overlay]) {
+    // Label activation never becomes a movement hotkey or an avatar grab.
+    element.addEventListener('keydown', event => {
+      event.stopPropagation();
+      if (event.key === 'Escape') close.click();
+    });
+    for (const type of ['pointerdown', 'mousedown', 'click']) element.addEventListener(type, event => event.stopPropagation());
+  }
+  document.head.append(style);
+  document.body.append(overlay, panel);
+  onWorldChange(event => {
+    if (event.type !== 'entry' || ['spawn', 'light', 'remove', 'comp', 'asset'].includes(event.entry.verb)) refresh();
   });
-  bus.on('materialization',()=>{if(selected)inspect(selected,false);});
-  bus.on('entity',({id})=>{if(id===selected)inspect(selected,false);});
-  onWorldChange(refresh);refresh();
+  bus.on('entity', ({ id }) => { if (selected === id) showDetails(id); });
+  refresh();
 }
-function positions() {
-  const rect=renderer.domElement.getBoundingClientRect();
-  positioned.length=0;
-  for(const r of authoredRecords){
-    const obj=entities.get(r.id);
-    if(!obj) continue;
-    obj.getWorldPosition(point);
-    // Coarse root range rejects distant objects before first bounds walk.
-    // Authored offsets may extend 100m on each axis.
-    if(point.distanceTo(camera.position)>234) continue;
-    let anchor=anchors.get(obj);
-    if(!anchor){const box=new THREE.Box3().setFromObject(obj);anchor=new THREE.Vector3();
-      if(box.isEmpty())anchor.set(0,1,0);else{box.getCenter(anchor);anchor.y=box.max.y;obj.worldToLocal(anchor);}anchors.set(obj,anchor);}
-    if(r.offset)point.fromArray(r.offset);else point.copy(anchor);obj.localToWorld(point);
-    const distance=point.distanceTo(camera.position);
+
+function positions(source = authoredRecords) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  positioned.length = 0;
+  camera.updateMatrixWorld();
+  for (const record of source) {
+    const object = entities.get(record.id);
+    if (!object || !object.visible || object.userData.placeholder) continue;
+    object.updateWorldMatrix(true, false);
+    object.getWorldPosition(point);
+    const distance = point.distanceTo(camera.position);
+    if (distance > 60) continue;
+    let anchor = anchors.get(object);
+    if (!anchor) {
+      const box = new THREE.Box3().setFromObject(object);
+      anchor = new THREE.Vector3();
+      if (box.isEmpty()) continue; // Loading placeholders have no meaningful bounds.
+      box.getCenter(anchor);
+      anchor.y = box.max.y;
+      object.worldToLocal(anchor);
+      anchors.set(object, anchor);
+    }
+    if (record.offset) point.fromArray(record.offset);
+    else point.copy(anchor);
+    object.localToWorld(point);
+    point.y += 0.2;
     projected.copy(point).project(camera);
-    r.wx=point.x;r.wy=point.y;r.wz=point.z;
-    r.distance=distance;r.inView=projected.z>=-1 && projected.z<=1 && Math.abs(projected.x)<=1 && Math.abs(projected.y)<=1;
-    r.x=rect.left+(projected.x+1)*rect.width/2;r.y=rect.top+(1-projected.y)*rect.height/2;positioned.push(r);
+    Object.assign(record, {
+      wx: point.x, wy: point.y, wz: point.z, distance,
+      inView: projected.z >= -1 && projected.z <= 1 && Math.abs(projected.x) <= 1 && Math.abs(projected.y) <= 1,
+      x: rect.left + (projected.x + 1) * rect.width / 2,
+      y: rect.top + (1 - projected.y) * rect.height / 2,
+    });
+    positioned.push(record);
   }
   return positioned;
 }
-function pick(x,y) {
-  if(isEditing() || hasGhost()) return;
-  const rect=renderer.domElement.getBoundingClientRect();
-  pointer.set((x-rect.left)/rect.width*2-1,1-(y-rect.top)/rect.height*2);
-  ray.setFromCamera(pointer,camera);ray.far=60;
-  // Geometry picking happens only on an explicit inspection gesture. It
-  // never runs in the frame loop, and no build/physics API is called.
-  const roots=[...entities.values()].filter(Boolean);
-  const hits=ray.intersectObjects(roots,true);
-  for(const hit of hits){
-    let node=hit.object;
-    while(node){const found=[...entities].find(([,obj])=>obj===node);if(found){inspect(found[0]);return;}node=node.parent;}
+
+export function tickObjectLabels(now = performance.now()) {
+  if (!overlay || mode === 'off') return;
+  if (now - lastCandidates >= 100) {
+    candidates = visibleLabels(positions(), mode, selected);
+    lastCandidates = now;
   }
-}
-let last=0;
-export function tickObjectLabels(now=performance.now()) {
-  if(!panel || now-last<100) return; last=now;
-  const visible=preference==='off' ? [] : visibleLabels(positions(),preference,selected);
-  for(let n=0;n<Math.min(4,visible.length);n++){const r=visible[occlusionCursor++%visible.length];
-    sightDirection.set(r.wx,r.wy,r.wz).sub(camera.position);const distance=sightDirection.length();
-    r.occluded=distance>0 && raySegment(camera.position,sightDirection.normalize(),distance,r.id)!==null;
+  // The full authored set is scanned at 10Hz; only the bounded shortlist
+  // follows camera/motion every frame.
+  const visible = visibleLabels(positions(candidates), mode, selected);
+  // Bounds and projection follow live transforms every frame. Collider queries
+  // are sampled at 10Hz with a fixed four-ray budget.
+  if (now - lastSight >= 100) {
+    lastSight = now;
+    for (let n = 0; n < Math.min(4, visible.length); n++) {
+      const record = visible[cursor++ % visible.length];
+      direction.set(record.wx, record.wy, record.wz).sub(camera.position);
+      const distance = direction.length();
+      record.occluded = distance > 0 && raySegment(camera.position, direction.normalize(), distance, record.id) !== null;
+    }
   }
-  const clear=visible.filter(r=>!r.occluded);
-  plaques.forEach((el,i)=>{const r=clear[i];el.style.display=r?'block':'none';if(!r)return;
-    if(el.textContent!==r.name)el.textContent=r.name;
-    el.style.left=`${r.x}px`;el.style.top=`${r.y}px`;
+  const occupied = [];
+  const clear = visible.filter(record => {
+    if (record.occluded) return false;
+    const width = Math.min(220, [...record.name].length * 13 + 20);
+    const box = { left: record.x - width / 2, right: record.x + width / 2, top: record.y - 32, bottom: record.y };
+    if (box.left < 4 || box.right > innerWidth - 4 || box.top < 4) return false;
+    if (occupied.some(other => box.left < other.right + 4 && box.right > other.left - 4 && box.top < other.bottom + 4 && box.bottom > other.top - 4)) return false;
+    occupied.push(box);
+    return true;
   });
+  const byId = new Map(clear.map(record => [record.id, record]));
+  const assigned = new Set();
+  for (const plaque of plaques) {
+    const id = plaque.dataset.entityId;
+    plaque.hidden = !byId.has(id);
+    if (!plaque.hidden) assigned.add(id);
+    else if (document.activeElement === plaque) plaque.blur();
+  }
+  for (const record of clear) {
+    if (assigned.has(record.id)) continue;
+    const plaque = plaques.find(plaque => plaque.hidden);
+    if (!plaque) break;
+    plaque.dataset.entityId = record.id;
+    plaque.hidden = false;
+  }
+  for (const plaque of plaques) {
+    if (plaque.hidden) continue;
+    const record = byId.get(plaque.dataset.entityId);
+    if (plaque.textContent !== record.name) plaque.textContent = record.name;
+    plaque.setAttribute('aria-label', `About ${record.name}`);
+    plaque.setAttribute('aria-controls', 'ew-object-detail');
+    plaque.setAttribute('aria-expanded', String(record.id === selected));
+    plaque.style.left = `${record.x}px`;
+    plaque.style.top = `${record.y}px`;
+  }
 }
-registerEditor(({id,bag,commit,esc})=>{
-  const r=readLabel(bag.label);
-  return {html:`<fieldset><legend>Object label</legend><label>Name <input data-label-name maxlength="120" value="${esc(r.name)}"></label><label>Description <textarea data-label-description maxlength="2000">${esc(r.description)}</textarea></label><label>Visibility <select data-label-visibility>${['nearby','always','inspect'].map(v=>`<option ${v===r.visibility?'selected':''}>${v}</option>`).join('')}</select></label><button data-label-save>Save label</button><button data-label-remove>Remove label</button></fieldset>`,wire(root){
-    root.querySelector('[data-label-save]').onclick=()=>{commit('comp',{id,type:'label',data:{name:root.querySelector('[data-label-name]').value,description:root.querySelector('[data-label-description]').value,visibility:root.querySelector('[data-label-visibility]').value,...(r.offset?{offset:r.offset}:{})}});};
-    root.querySelector('[data-label-remove]').onclick=()=>commit('comp',{id,type:'label',data:null});
-  }};
+
+registerEditor(({ id, bag, commit, esc }) => {
+  const label = readLabel(bag.label);
+  return { html: `<fieldset><legend>Object label</legend><label>Name <input data-label-name maxlength="120" value="${esc(label.name)}"></label><label>Description <textarea data-label-description maxlength="2000">${esc(label.description)}</textarea></label><label>Visibility <select data-label-visibility>${['nearby', 'always', 'inspect'].map(value => `<option ${value === label.visibility ? 'selected' : ''}>${value}</option>`).join('')}</select></label><button data-label-save>Save label</button><button data-label-remove>Remove label</button></fieldset>`, wire(root) {
+    root.querySelector('[data-label-save]').onclick = () => commit('comp', { id, type: 'label', data: {
+      name: root.querySelector('[data-label-name]').value,
+      description: root.querySelector('[data-label-description]').value,
+      visibility: root.querySelector('[data-label-visibility]').value,
+      ...(label.offset ? { offset: label.offset } : {}),
+    } });
+    root.querySelector('[data-label-remove]').onclick = () => commit('comp', { id, type: 'label', data: null });
+  } };
 });

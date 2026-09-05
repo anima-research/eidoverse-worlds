@@ -405,7 +405,6 @@ const readyPoll = setInterval(() => {
 // ones. The governor + HUD ride the 1Hz pulse, registered last.
 
 registerSystem('autos', (dt, t) => updateAutoSystems(t));       // grass wind, particles
-registerSystem('object-labels', () => tickObjectLabels());
 registerSystem('motion', () => tickMotion());                   // the world's moving parts
 registerSystem('sky', (dt, t, now) => updateSky(now, t));
 registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather → uniforms
@@ -444,6 +443,7 @@ registerSystem('promote-tail', () => drainPromoteTail());        // §16.2.C: pr
                                  // before 'debug' so F3 sees same-frame colliders
 registerSystem('debug', (dt, t, now) => updateDebug(now));       // F3 wireframes
 registerSystem('send-pose', (dt, t, now) => sendPose(now));
+registerSystem('object-labels', () => tickObjectLabels()); // after motion and camera
 registerSystem('render', renderWorld);
 let _pulseAt = 0;
 registerSystem('pulse', (dt, t, now) => {

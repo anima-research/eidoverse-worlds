@@ -15,7 +15,7 @@ export function objectIdentity(entity, assets = []) {
 // Shared bounded presentation policy, also exercised without a renderer.
 export function visibleLabels(candidates, preference, selected) {
   if (preference === 'off') return [];
-  return candidates.filter(c => c.authored && c.inView && c.distance <= (c.visibility === 'always' ? 60 : 12) &&
+  return candidates.filter(c => c.authored && c.inView && c.distance <= (preference === 'all' || c.visibility === 'always' ? 60 : 12) &&
     (c.visibility !== 'inspect' || preference === 'all' || c.id === selected))
     .sort((a,b) => (b.id === selected) - (a.id === selected) || a.distance-b.distance).slice(0,32);
 }
