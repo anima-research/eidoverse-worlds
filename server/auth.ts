@@ -60,8 +60,11 @@ export const SESSIONS_FILE = join(ROOT, ".sessions.json");
 export function saveSessions() {
   try {
     const live = [...hnSessions].filter(([, s]) => s.exp > Date.now());
+    // atomicWrite IS the write-then-rename: a crash mid-write never truncates
+    // the live file. A second rename of the already-consumed .tmp threw on
+    // every successful save and logged "session save failed" each time,
+    // burying the signal for a real failure (PR #160 review).
     atomicWrite(SESSIONS_FILE, JSON.stringify(Object.fromEntries(live)), { mode: 0o600 });
-    renameSync(`${SESSIONS_FILE}.tmp`, SESSIONS_FILE); // atomic — a crash mid-write never truncates the live file
   } catch (e) { console.log(`[auth] session save failed: ${e}`); }
 }
 try {

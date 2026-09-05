@@ -374,10 +374,6 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
       return null;
     }
     const w = getWorld(wname);
-    // eidosim@0.3.0: know the world's standing geometry before anyone
-    // spawns or epochs into it (boxes.ts — the sync validators read a
-    // warm cache; a join is the earliest honest moment to fill it)
-    void warmBoxes(worldLibs(w.state));
     // Identity: a verified session OWNS the id — the client's msg.id is
     // ignored (the name came from Discord via the home node, and the
     // sub underneath it survives renames).
@@ -576,6 +572,11 @@ function installJoin(c: Client, w: World) {
     }
     c.gen = ++GEN;   // B2: this leg's surfaceSession, issued on acceptance
     w.clients.add(c);
+    // eidosim@0.3.0: know the world's standing geometry before anyone spawns
+    // or epochs into it (boxes.ts — the sync validators read a warm cache).
+    // AFTER admission, never before: a rejected or invalid join must not
+    // trigger a whole-world GLB parse (PR #160 review, B1); bounded inside.
+    void warmBoxes(worldLibs(w.state));
     // B4 (#57): a same-surface takeover must be VISIBLE to subscribers —
     // the lab found a listener bound to a dead voice leg until page
     // reload. This event is the no-reload path: "retire the old peer,
@@ -1025,7 +1026,10 @@ const server = Bun.serve({
           // Every other message type lives in the handler table
           // (server/messages.ts, R2 — the verbs.ts precedent). Unknown
           // types fall through to silence, exactly as the switch did.
-          const h = MESSAGES[msg.type];
+          // OWN keys only: a type such as "__proto__" or "constructor" must
+          // fall through to silence like any unknown type, never reach
+          // Object.prototype and fail server-side (PR #160 review, B5).
+          const h = typeof msg.type === "string" && Object.hasOwn(MESSAGES, msg.type) ? MESSAGES[msg.type] : undefined;
           if (h) h({ c, ws, now, expel }, msg);
         }
       }

@@ -159,7 +159,7 @@ console.log("\nthe sim fold (shared/sim.js) — " + SIM_ID);
     mk(5, 500, "punt", { id: "crate", dir: [1, 0.3, 0], power: 8 }),
   ];
   const { sim } = fold(WALL);
-  check("a 0.3 epoch adopts the stamped boxes and makes every covered standing entity a static",
+  check("a colliding epoch (0.3+) adopts the stamped boxes and makes every covered standing entity a static",
     !!sim.boxes && Object.keys(sim.boxes).length === 2
       && !!sim.statics && "wall" in sim.statics && !("ghost" in sim.statics) && !("crate" in sim.statics),
     JSON.stringify(Object.keys(sim.statics ?? {})));
@@ -171,7 +171,7 @@ console.log("\nthe sim fold (shared/sim.js) — " + SIM_ID);
   check("…and the resting crate is a static again", "crate" in sim.statics!);
   const b2 = fold(WALL);
   advanceSim(b2.sim, 123); advanceSim(b2.sim, 600);
-  check("0.3 schedule-independence (collision law)", digest(b2.sim) === digest(sim));
+  check("schedule-independence (collision law)", digest(b2.sim) === digest(sim));
   // a collider change mid-flight takes effect at ITS tick, whatever the
   // advance schedule: live (advance, fold, advance) ≡ replay (fold all, advance)
   const MOVE = [...WALL, mk(6, 560, "place", { id: "wall", pos: [2.2, 0, 0] })];
@@ -232,6 +232,89 @@ console.log("\nthe sim fold (shared/sim.js) — " + SIM_ID);
   const missing = fold([...SCRIPT, mk(4, 700, "epoch", {})]);
   check("an epoch entry with no `sim` at all is NOT an exit — inert, as ever", missing.sim.epoch?.sim === SIM_ID
     && Object.keys(missing.sim.bodies).length === 1);
+}
+
+{ // PR #160 review — B2: a terrain change rebuilds the statics from the fold
+  const CRATE = [[-0.5, 0, -0.5], [0.5, 1, 0.5]];
+  const S: LogEntry[] = [
+    mk(0, 0, "genesis", { v: 3, dialect: "eidoverse-log" }),
+    mk(1, 10, "epoch", { sim: SIM_ID, tickMs: 66, boxes: { "crate.glb": CRATE } }),
+    mk(2, 20, "spawn", { id: "crate", lib: "crate.glb", pos: [10, 0, 0] }),
+    mk(3, 500, "punt", { id: "crate", dir: [1, 0.3, 0], power: 8 }),
+  ];
+  const a = fold(S); advanceSim(a.sim, 600);
+  const restX = a.sim.bodies.crate.p[0];
+  check("setup: the punted crate rested away from its authored spot and became a static there",
+    a.sim.bodies.crate.resting === true && restX > 12 && a.sim.statics!.crate.aabb[0][0] > 11.5, String(restX));
+  const t = fold([...S, mk(4, 9000, "terrain", { seed: 3, size: 160, amplitude: 1 })]);
+  check("a terrain change under a live epoch releases the body AND rebuilds its static at the FOLD's word",
+    Object.keys(t.sim.bodies).length === 0 && !!t.sim.statics!.crate
+      && t.sim.statics!.crate.aabb[0][0] === 9.5 && t.sim.statics!.crate.aabb[1][0] === 10.5,
+    JSON.stringify(t.sim.statics!.crate));
+  check("…and no ghost static survives into the snapshot",
+    JSON.stringify(simSnapshot(t.sim)).indexOf(String(restX).slice(0, 6)) === -1);
+  // a light reusing the id replaces the thing wholesale: no body, no static
+  const l = fold([...S, mk(4, 9000, "light", { id: "crate", pos: [1, 2, 1], color: 0xffffff, intensity: 1 })]);
+  check("a light reusing an entity id releases the body and drops its static",
+    !l.sim.bodies.crate && !l.sim.statics!.crate);
+}
+
+{ // PR #160 review — the resting fast-path: a long gap is a jump, and bit-identical to stepping
+  const CRATE = [[-0.5, 0, -0.5], [0.5, 1, 0.5]];
+  const S: LogEntry[] = [mk(0, 0, "genesis", { v: 3, dialect: "eidoverse-log" }),
+    mk(1, 10, "epoch", { sim: SIM_ID, tickMs: 66, boxes: { "c.glb": CRATE } })];
+  let seq = 2;
+  for (let i = 0; i < 200; i++) S.push(mk(seq++, 20 + i, "spawn", { id: `c${i}`, lib: "c.glb", pos: [i * 2, 0, 0] }));
+  for (let i = 0; i < 200; i++) S.push(mk(seq++, 500 + i, "punt", { id: `c${i}`, dir: [0, 1, 0.2], power: 3 }));
+  const a = fold(S); advanceSim(a.sim, 400);          // everything rests inside 400 ticks
+  check("setup: 200 bodies at rest", Object.values(a.sim.bodies).every((b: any) => b.resting));
+  const b = fold(S); advanceSim(b.sim, 400);
+  const t0 = performance.now();
+  advanceSim(a.sim, 400 + 30 * 24 * 3600 * 1000 / 66);   // thirty days of ticks
+  const ms = performance.now() - t0;
+  check(`a 30-day gap over 200 resting bodies is a jump (${ms.toFixed(1)}ms, was seconds)`, ms < 100);
+  for (let t = 401; t <= 700; t++) advanceSim(b.sim, t);
+  check("…and the jump is bit-identical to stepping (bodies unchanged, tick advanced)",
+    JSON.stringify(a.sim.bodies) === JSON.stringify(b.sim.bodies) && a.sim.tick > b.sim.tick);
+}
+
+{ // PR #160 review — B4: eidosim@0.4.0 sweeps; eidosim@0.3.0 is carried, tunnelling and all
+  const THIN = [[-0.1, 0, -0.1], [0.1, 0.2, 0.1]];
+  const WALL = [[-0.05, 0, -2], [0.05, 2, 2]];
+  const story = (sim: string, tickMs: number, body = THIN, wall = WALL): LogEntry[] => [
+    mk(0, 0, "genesis", { v: 3, dialect: "eidoverse-log" }),
+    mk(1, 10, "epoch", { sim, tickMs, boxes: { "b.glb": body, "w.glb": wall } }),
+    // the wall stands BETWEEN two of 0.3's endpoints (1.31m apart at this
+    // speed and tick): 3.94 → 5.25 straddles 4.55…4.65 with no overlap at
+    // either end — the reviewer's discriminator, not a lucky straddle
+    mk(2, 20, "spawn", { id: "wall", lib: "w.glb", pos: [4.6, 0, 0] }),
+    mk(3, 30, "spawn", { id: "b", lib: "b.glb", pos: [0, 0, 0] }),
+    mk(4, 500, "punt", { id: "b", dir: [1, 0.1, 0], power: 20 }),
+  ];
+  const v4 = fold(story(SIM_ID, 66)); advanceSim(v4.sim, 2000);
+  check("0.4: a 0.2m body at 20 m/s meets a 0.1m wall (66ms tick) and rests on the near side",
+    v4.sim.bodies.b.resting === true && v4.sim.bodies.b.p[0] + 0.1 <= 4.55 + 1e-9,
+    `rest x ${v4.sim.bodies.b.p[0]}`);
+  const coarse = fold(story(SIM_ID, 250, [[-0.5, 0, -0.5], [0.5, 1, 0.5]], [[-0.25, 0, -2], [0.25, 2, 2]])); advanceSim(coarse.sim, 2000);
+  check("0.4: a 1m body at 20 m/s on a 250ms tick still meets a 0.5m wall",
+    coarse.sim.bodies.b.resting === true && coarse.sim.bodies.b.p[0] + 0.5 <= 4.35 + 1e-9, `rest x ${coarse.sim.bodies.b.p[0]}`);
+  const v3 = fold(story("eidosim@0.3.0", 66)); advanceSim(v3.sim, 2000);
+  check("0.3.0 is CARRIED (not foreign) and still tunnels that wall — its law, pinned",
+    !v3.sim.epoch!.foreign && v3.sim.bodies.b.resting === true && v3.sim.bodies.b.p[0] > 5, `rest x ${v3.sim.bodies.b.p[0]}`);
+  // the sweep lands on tops too, and schedule-independence holds
+  const DECK = [[-3, 0, -1], [3, 1, 1]];
+  const land: LogEntry[] = [
+    mk(0, 0, "genesis", { v: 3, dialect: "eidoverse-log" }),
+    mk(1, 10, "epoch", { sim: SIM_ID, tickMs: 66, boxes: { "c.glb": [[-0.5, 0, -0.5], [0.5, 1, 0.5]], "d.glb": DECK } }),
+    mk(2, 20, "spawn", { id: "deck", lib: "d.glb", pos: [5, 0, 0] }),
+    mk(3, 30, "spawn", { id: "c", lib: "c.glb", pos: [0, 0, 0] }),
+    mk(4, 500, "punt", { id: "c", dir: [1, 1, 0], power: 8 }),
+  ];
+  const l1 = fold(land); advanceSim(l1.sim, 900);
+  const l2 = fold(land); for (let t = 1; t <= 900; t++) advanceSim(l2.sim, t);
+  check("0.4: a flight landing on a deck rests ON it and names it",
+    l1.sim.bodies.c.resting === true && l1.sim.bodies.c.p[1] === 1 && l1.sim.bodies.c.on === "deck", `y ${l1.sim.bodies.c.p[1]} on ${l1.sim.bodies.c.on}`);
+  check("0.4 schedule-independence (swept law)", digest(l1.sim) === digest(l2.sim));
 }
 
 console.log(`\n${fail ? "\x1b[31mRED\x1b[0m" : "\x1b[32mGREEN\x1b[0m"} — ${pass} passed, ${fail} failed`);

@@ -100,12 +100,23 @@ export async function scratchBench(name: string, opts: {
   for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => { void cleanup().then(() => process.exit(130)); });
   async function die(code: number, ...lines: string[]) {
     for (const l of lines) console.error(l);
+    // keep the child's diagnostics on failure — the bench is about product-
+    // door behaviour, and a silent exit is the one thing it must not do
+    try {
+      const log = await Bun.file(join(SCRATCH, "sequencer.log")).text();
+      const tail = log.trim().split("\n").slice(-40);
+      if (tail.length) console.error(`--- sequencer.log (last ${tail.length} lines) ---\n${tail.join("\n")}`);
+    } catch { /* no log yet */ }
     await cleanup(); process.exit(code);
   }
+  // Nonce-bound child identity: the readiness probe accepts only a sequencer
+  // that answers with the nonce THIS process handed it — a free-port
+  // preflight plus an unauthenticated 200 could be anyone's server.
+  const NONCE = `${process.pid}-${Math.random().toString(36).slice(2)}`;
 
   const seq = Bun.spawn([process.execPath, join(ROOT, "server", "server.ts")], {
     cwd: ROOT,
-    env: { ...process.env, PORT: String(PORT), JOIN_TOKEN: "", EIDOVERSE_DIR,
+    env: { ...process.env, PORT: String(PORT), JOIN_TOKEN: "", EIDOVERSE_DIR, BENCH_NONCE: NONCE,
            WORLDS_DIR: join(SCRATCH, "worlds"), ...(opts.serverEnv ?? {}) },
     stdout: Bun.file(join(SCRATCH, "sequencer.log")),
     stderr: Bun.file(join(SCRATCH, "sequencer.log")),
@@ -114,7 +125,13 @@ export async function scratchBench(name: string, opts: {
   {
     let up = false;
     for (let i = 0; i < 80 && !up; i++) {
-      try { up = (await fetch(`${BASE}/avatars`)).ok; } catch { await sleep(250); }
+      try {
+        const r = await fetch(`${BASE}/health`);
+        const j = r.ok ? await r.json() as { nonce?: string | null } : null;
+        if (j?.nonce === NONCE) up = true;
+        else if (r.ok) await die(2, `✗ :${PORT} answered /health with nonce ${JSON.stringify(j?.nonce)} — not our sequencer`);
+        else await sleep(250);
+      } catch { await sleep(250); }
     }
     if (!up) await die(2, `✗ sequencer never came up on :${PORT}`);
   }

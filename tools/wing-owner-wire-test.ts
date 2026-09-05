@@ -7,6 +7,7 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator';
 GlobalRegistrator.register();
 const { mock } = await import('bun:test');
 const THREE = await import('../client/node_modules/three/build/three.module.js');
+const TSL = await import('../client/node_modules/three/build/three.tsl.js');   // materials/warmqueue import TSL from core.js
 const base = import.meta.dir + '/../client/lib/';
 const hints: string[] = [];
 const handlers = new Map<string, Function[]>();
@@ -15,16 +16,22 @@ const bus = {
   emit(t:string,p:any){ for(const f of handlers.get(t)??[]) f(p); },
 };
 const canvas = Object.assign(document.createElement('canvas'), { requestPointerLock() {} });
+// the real CONFIG carries `params` (a URLSearchParams render.js reads for
+// ?batching=); the bench only renames the wearer and the world
+const realBase: any = await import(base+'base.js');
+const BENCH_CONFIG = { ...realBase.CONFIG, name:'owner', world:'bench' };
 mock.module(base+'core.js', () => ({
-  THREE, camera: new THREE.PerspectiveCamera(), canvas, CONFIG: { name:'owner', world:'bench' },
-  angleDelta:(a:number,b:number)=>b-a, bus, scene:{}, renderer:{}, report() {},
+  THREE, TSL, camera: new THREE.PerspectiveCamera(), canvas, CONFIG: BENCH_CONFIG,
+  angleDelta:(a:number,b:number)=>b-a, bus, scene: new THREE.Scene(), renderer:{}, report() {},
+  // the rest of core.js's surface — materials.js (in the controller's cone) imports sun/ground
+  sun: new THREE.DirectionalLight(), ground: new THREE.Mesh(), hemi: new THREE.HemisphereLight(), grid: new THREE.Group(),
+  BASE_PIXEL_RATIO: 1,
 }));
 // rimward: bus/CONFIG/report live in base.js (the renderer-free substrate,
 // TEL0S_NOTES §24s seam move 2) and the controller listens on THAT bus — so
 // the bench's bus must be the one base.js hands out, or a pressed G reaches
 // nobody. The real module's other exports ride along untouched.
-const realBase: any = await import(base+'base.js');
-mock.module(base+'base.js', () => ({ ...realBase, CONFIG: { name:'owner', world:'bench' }, bus, report() {} }));
+mock.module(base+'base.js', () => ({ ...realBase, CONFIG: BENCH_CONFIG, bus, report() {} }));
 mock.module(base+'terrain.js', () => ({ heightAt:()=>0 }));
 mock.module(base+'colliders.js', () => ({ resolveColliders:()=>{}, lastBlockedTop:0, findSeat:()=>null, raySegment:()=>null }));
 mock.module(base+'assets.js', () => ({ forgetBytes() {} }));
