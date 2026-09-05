@@ -390,6 +390,45 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-09-04 — §24t-14: PR #160 REVIEW ANSWERED (7d5069b, 319b7b5).**
+  A colleague's review (CHANGES_REQUESTED, six blockers) — every one
+  real. B1 the cold box-warm reordered authored verbs (my deferral let a
+  later `place` run before a cold `spawn`; wrong forever in the log):
+  a per-client verb queue keeps authored order across any asset read,
+  the join-time warm runs AFTER admission, warmBoxes is bounded to 4;
+  tools/verb-order-test.ts drives the real door cold-first (spawn→
+  place→comp, epoch→punt) with a warm control. B2 a terrain entry left
+  rested bodies' statics as ghosts: rebuilt from the fold like the epoch
+  branch; `light` releases. B3 an incredible snapshot offset kept the
+  stale SIM: reset at the same boundary; tools/world-open-test.ts. B4
+  0.3 tested collisions at tick endpoints only → thin walls tunnelled
+  within the legal domain: EIDOSIM@0.4.0 sweeps the body's AABB along
+  the displacement (slab test, exact ops) and resolves the earliest
+  contact — landing or wall bounce — at the contact point; 0.1–0.3
+  CARRIED (lawOf rungs), 0.3.0's tunnelling pinned by test. B5 the
+  message table dispatched inherited names (`__proto__`): own-key only.
+  B6 replaybench digests the complete normative sim state in insertion
+  order (no key sorting — order is load-bearing) and replays COMMITTED
+  fixtures (spec/fixtures/replay — not …/worlds: .gitignore ignores any
+  worlds/ dir, found the hard way) beside the operator's; the wing bench
+  mocks the whole core surface + base.js with the real CONFIG (Astra's
+  render.js reads CONFIG.params); chat-log stubs base.js; the hills gate
+  is sha256-bound to the barrels asset, samples until the sim rests and
+  judges a converged lean; ammodoll's wing-box contract runs on any rig
+  when the overlay is absent; the harness admits only a child answering
+  /health with ITS nonce and dumps the sequencer log on failure.
+  Secondaries: auth's double rename ("session save failed" on every
+  save) gone; advanceSim jumps the tick with no live body (30 days ×
+  200 resting: <100ms, bit-identical). Board: sim-test 49/0, world-open
+  4/0, verb-order 9/0, replaybench 3/3, fold suites, sim-smoke 15/0,
+  sim-ground-smoke 8/0, smoke 85/85, parity, flight 231/0, wing-owner
+  6/0, wing-fold 28/0, chat-log 15/0, doors, bodysim 20/0, ammodoll
+  69/0, settled-pose 21/0. LESSON: an async hop inside an ordered door
+  is a reorder unless the door itself is made a queue; a "carried law"
+  claim needs a committed fixture under that law's name, or it is a
+  sentence. Commons is on 0.3.0 — /epoch upgrades it to 0.4.0 when
+  tel0s wants the swept law there.
+
 - **2026-09-04 — §24t-13: DRAW BATCHING REVIEWED, MAIN MERGED, PR #160
   OPENED.** GPT-6-Astra's c1efe3d (committed under tel0s's identity):
   rendering-only instancing for repeated library meshes —
