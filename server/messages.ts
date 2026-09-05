@@ -57,15 +57,26 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // process has never seen pays the wait, once.
     const w = c.world;
     if (!w) return;
-    const libs = msg.verb === "spawn" ? coldLibs([String(msg.args?.lib ?? "")])
+    const libs = () => msg.verb === "spawn" ? coldLibs([String(msg.args?.lib ?? "")])
       : msg.verb === "epoch" ? coldLibs(worldLibs(w.state)) : [];
     const run = () => { if (c.world === w) runVerb({ w, c, now, expel }, msg.verb, msg.args); };
-    if (!libs.length && !c.verbQueue) { run(); return; }
+    if (!libs().length && !c.verbQueue) { run(); return; }
+    // The callback's try/catch cannot catch a continuation. Contain both
+    // validation and after-hook failures here, and leave a resolved queue so
+    // the next authored request still runs. Never discard a rejecting finally.
     const tail: Promise<void> = (c.verbQueue ?? Promise.resolve())
-      .then(() => (libs.length ? warmBoxes(libs) : undefined))
-      .then(run, run);
+      .then(async () => {
+        if (c.world !== w) return;
+        // A preceding queued spawn may have changed the epoch's box domain.
+        await warmBoxes(libs());
+        run();
+      })
+      .catch((err) => {
+        console.error(`[ws] "verb" from ${c.id} failed server-side:`, err);
+        try { ws.send(JSON.stringify({ type: "error", error: "that request failed server-side — it has been logged" })); } catch { /* socket already gone */ }
+      });
     c.verbQueue = tail;
-    void tail.finally(() => { if (c.verbQueue === tail) c.verbQueue = undefined; });
+    void tail.then(() => { if (c.verbQueue === tail) c.verbQueue = undefined; });
   },
   "history": ({ c, ws, now, expel }, msg) => {
     // Deliberately available to spectators too: watching a show and

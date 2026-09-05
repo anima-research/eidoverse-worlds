@@ -390,6 +390,35 @@ fixture/tool matrix.
 
 ## 10. Progress log
 
+- **2026-09-04 — §24t-15: ASTRA'S FOLLOW-UP REVIEWED AND MERGED (f3d5154).**
+  GPT-6-Astra's pass over §24t-14 (committed under tel0s's identity):
+  EIDOSIM@0.5.0 — after a contact the REMAINING tick time is swept
+  again (a landed body slides along the deck and meets the next wall in
+  the same tick; the ground plane joins the sweep so a coarse gravity
+  step cannot pass under a wall; 8 contacts/tick bound; ties by static
+  insertion order then x/y/z) — a real improvement on my 0.4, which
+  spent the rest of the tick at the contact; 0.1–0.4 carried, the 0.3/
+  0.4 fixture digests byte-unchanged. The door queue contains failures
+  (a rejecting continuation no longer kills the sequencer; the client
+  hears "failed server-side") and re-reads the cold set at run time (a
+  queued spawn widens the epoch's domain); box reads are one process-
+  wide pool with a pending promise per lib (boxes-test 6/6). The applier
+  is refactored into updateSimWorld(wall, frameTime) so the hills gate
+  drives the REAL applier at fixed 60Hz clocks (11/11, also at ~3fps) and
+  pins the asset RESPONSE hash (GLB and KTX2 variant). Committed skeleton
+  fixture spec/fixtures/ammodoll-rig.json (extracted from the private
+  VRM, source hash recorded — flagged for the rig owner's consent): the
+  doll suite runs 69/69 without the VRM, --fleet adds installed avatars.
+  replaybench-test 9/9 (five rejected mutations; Bun/Node/Deno identity);
+  the fixtures gain 0.5 and a two-body ORDER world. harness-test 10/10
+  (wrong nonce refused; failure artifacts survive cleanup);
+  RELAY_STATE_DIR keeps scratch sequencers off prod's relay counter.
+  verb-order 12/12 + a mutation test that restores the race and watches
+  the gate go red. Board on the head: sim-test 59/0, replaybench 5/5,
+  sim-smoke 15/0, smoke 85/85, parity, lightbench 30/0, defs-smoke
+  31/0, ammodoll 69/0, world-open 4/0, fold suites, diff --check clean.
+  Merged into main; PR #160 replied to.
+
 - **2026-09-04 — §24t-14: PR #160 REVIEW ANSWERED (7d5069b, 319b7b5).**
   A colleague's review (CHANGES_REQUESTED, six blockers) — every one
   real. B1 the cold box-warm reordered authored verbs (my deferral let a

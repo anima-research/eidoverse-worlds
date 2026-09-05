@@ -1,99 +1,132 @@
-// The product door keeps AUTHORED ORDER across an asset read (PR #160 review,
-// B1): a cold spawn used to defer behind an async GLB summary while a place
-// sent right after it ran synchronously — landing as place-then-spawn, the
-// wrong final state, replayed wrong forever. Cold-first bursts here, plus a
-// warm-repeat control, against a scratch sequencer's real WebSocket door;
-// and the B5 negatives: inherited property names are unknown message types.
-//
-//   bun tools/verb-order-test.ts
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { ROOT, freePort, sleep, mkCheck, bold } from "./harness.ts";
-import { SIM_ID } from "../shared/sim.js";
+// Product-door ordering with observed, explicitly held cold asset reads.
+// bun tools/verb-order-test.ts
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join, basename } from 'node:path';
+import { scratchSequencer, sleep, mkCheck, ROOT } from './harness.ts';
+import { emptyState, foldEntry } from '../shared/fold.js';
+import { SIM_ID } from '../shared/sim.js';
 
-const { check, tally } = mkCheck();
-const SCRATCH = mkdtempSync(join(tmpdir(), "ew-verborder-"));
-const PORT = freePort(8940);
-const NONCE = `${process.pid}-${Math.random().toString(36).slice(2)}`;
-const EIDOVERSE_DIR = process.env.EIDOVERSE_DIR ?? join(ROOT, "..", "eidoverse-video");
-const seq = Bun.spawn([process.execPath, join(ROOT, "server", "server.ts")], {
-  cwd: ROOT, env: { ...process.env, PORT: String(PORT), JOIN_TOKEN: "", EIDOVERSE_DIR, BENCH_NONCE: NONCE, WORLDS_DIR: join(SCRATCH, "worlds") },
-  stdout: Bun.file(join(SCRATCH, "sequencer.log")), stderr: Bun.file(join(SCRATCH, "sequencer.log")),
-});
-const cleanup = async () => { try { seq.kill(); } catch {} await sleep(300); try { rmSync(SCRATCH, { recursive: true, force: true }); } catch {} };
-for (let i = 0, up = false; i < 80 && !up; i++) {
-  try { const j = await (await fetch(`http://127.0.0.1:${PORT}/health`)).json() as any; up = j?.nonce === NONCE; } catch {}
-  if (!up) await sleep(250);
+const LIB1 = 'eidoverse/assets/models/order-red.glb';
+const LIB2 = 'eidoverse/assets/models/order-green.glb';
+const serverEnv = { JOIN_TOKEN: 'test-door', VERB_RATE: '100', EIDOVERSE_DIR: '' };
+// A real, tiny GLB through the normal parser; this door test needs no private
+// asset closure. Its non-flat bounding box covers all three axes.
+function modelBytes() {
+  const positions = new Float32Array([-0.5,0,-0.5, 0.5,0,-0.5, 0,1,0.5]);
+  const json = JSON.stringify({ asset:{version:'2.0'}, scene:0, scenes:[{nodes:[0]}], nodes:[{mesh:0}],
+    meshes:[{primitives:[{attributes:{POSITION:0}}]}], buffers:[{byteLength:positions.byteLength}],
+    bufferViews:[{buffer:0,byteLength:positions.byteLength}],
+    accessors:[{bufferView:0,componentType:5126,count:3,type:'VEC3',min:[-0.5,0,-0.5],max:[0.5,1,0.5]}] });
+  const chunk = Buffer.from(json.padEnd(Math.ceil(json.length / 4) * 4, ' '));
+  const out = Buffer.alloc(28 + chunk.length + positions.byteLength);
+  out.writeUInt32LE(0x46546c67,0); out.writeUInt32LE(2,4); out.writeUInt32LE(out.length,8);
+  out.writeUInt32LE(chunk.length,12); out.writeUInt32LE(0x4e4f534a,16); chunk.copy(out,20);
+  out.writeUInt32LE(positions.byteLength,20+chunk.length); out.writeUInt32LE(0x004e4942,24+chunk.length);
+  Buffer.from(positions.buffer).copy(out,28+chunk.length);
+  return out;
 }
-console.log(`\n${bold("verb-order")} — authored order across the cold asset door`);
-const msgs: any[] = []; const errors: string[] = [];
-const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
-ws.onmessage = (ev) => { const m = JSON.parse(String(ev.data)); msgs.push(m); if (m.type === "error") errors.push(String(m.error)); };
-await new Promise((r, j) => { ws.onopen = r as any; ws.onerror = j as any; });
-ws.send(JSON.stringify({ type: "join", world: "order", id: "author", token: "" }));
-await sleep(700);
-ws.send(JSON.stringify({ type: "pose", pose: { p: [0, 0, 0] } }));
-const send = (verb: string, args: unknown) => ws.send(JSON.stringify({ type: "verb", verb, args }));
-const history = async (tag: string) => {
-  ws.send(JSON.stringify({ type: "history", limit: 60, reqId: tag })); await sleep(400);
-  return ((msgs.find((m) => m.type === "history" && m.reqId === tag)?.entries ?? []) as any[]).slice().sort((a, b) => a.seq - b.seq);
+const { check, tally } = mkCheck();
+const { PORT, SCRATCH, seq, cleanup, die, record } = await scratchSequencer('verborder', {
+  portFrom: 8980, preload: join(ROOT, 'tools', 'box-read-gate.ts'),
+  serverEnv,
+  prepare(scratch) {
+    serverEnv.EIDOVERSE_DIR = join(scratch, 'library');
+    mkdirSync(join(serverEnv.EIDOVERSE_DIR, 'eidoverse/assets/models'), { recursive: true });
+    for (const lib of [LIB1, LIB2]) writeFileSync(join(serverEnv.EIDOVERSE_DIR, lib), modelBytes());
+    mkdirSync(join(scratch, 'box-gate'));
+    const dir = join(scratch, 'worlds', 'order'); mkdirSync(dir, { recursive: true });
+    const entries = [
+      { seq: 0, ts: 1, actor: 'world', verb: 'genesis', args: { v: 3, dialect: 'eidoverse-log' } },
+      { seq: 1, ts: 2, actor: 'fixture', verb: 'grant', args: { id: 'author', role: 'owner', gen: true } },
+      { seq: 2, ts: 3, actor: 'fixture', verb: 'spawn', args: { id: 'target', lib: LIB2, pos: [2, 0, 2] } },
+    ];
+    writeFileSync(join(dir, 'log.jsonl'), entries.map(e => JSON.stringify(e)).join('\n') + '\n');
+  },
+});
+const gate = (lib: string, action: string) => join(SCRATCH, 'box-gate', `${basename(lib)}.${action}`);
+const until = async (f: () => any, label: string) => {
+  const start = Date.now();
+  while (!f()) {
+    if (seq.exitCode !== null || Date.now() - start > 8000) await die(1, `timed out: ${label}; sequencer exit ${seq.exitCode}`);
+    await sleep(10);
+  }
 };
-const order = (es: any[], ...ids: [string, string][]) => ids.map(([v, id]) => es.find((e) => e.verb === v && e.args?.id === id)?.seq ?? -1);
-const ascending = (xs: number[]) => xs.every((x, i) => x >= 0 && (i === 0 || x > xs[i - 1]));
-const LIB1 = "eidoverse/assets/models/crate_large_red.glb";     // never seen by this fresh process: COLD
-const LIB2 = "eidoverse/assets/models/crate_large_green.glb";  // cold too, for the epoch burst
+async function connection() {
+  const ws = new WebSocket(`ws://127.0.0.1:${PORT}/ws`);
+  const msgs: any[] = [];
+  ws.onmessage = ev => { const m = JSON.parse(String(ev.data)); msgs.push(m); record('wire.jsonl', m); };
+  await new Promise((r, j) => { ws.onopen = r as any; ws.onerror = j as any; });
+  return { ws, msgs };
+}
+const rejected = await connection();
+rejected.ws.send(JSON.stringify({ type: 'join', world: 'order', id: 'invalid', token: 'wrong' }));
+await until(() => rejected.msgs.some(m => m.type === 'error') || rejected.ws.readyState === WebSocket.CLOSED, 'rejected admission');
+check('a rejected join starts no world GLB read', !existsSync(gate(LIB2, 'started')));
+rejected.ws.close();
+const { ws, msgs } = await connection();
+ws.send(JSON.stringify({ type: 'join', world: 'order', id: 'author', token: 'test-door' }));
+await until(() => msgs.some(m => m.type === 'snapshot'), 'admitted snapshot');
+ws.send(JSON.stringify({ type: 'pose', pose: { p: [0, 0, 0] } }));
+const send = (verb: string, args: unknown) => ws.send(JSON.stringify({ type: 'verb', verb, args }));
+let req = 0;
+async function request(type: string, args: object = {}) {
+  const reqId = `q${++req}`;
+  ws.send(JSON.stringify({ type, reqId, ...args }));
+  await until(() => msgs.some(m => m.type === type && m.reqId === reqId), type);
+  return msgs.find(m => m.type === type && m.reqId === reqId);
+}
+const history = async () => (await request('history', { limit: 100 })).entries as any[];
+const folded = (es: any[]) => { const st = emptyState(); for (const e of [...es].sort((a,b) => a.seq-b.seq)) foldEntry(st, e); return st; };
+const seenVerb = (verb: string) => msgs.some(m => (m.entry ?? m).verb === verb);
 
-// ---- burst 1: cold spawn → place → comp, same tick, no awaits between sends
-send("spawn", { id: "thing", lib: LIB1, pos: [0, 0, 0] });
-send("place", { id: "thing", pos: [9, 0, 9] });
-send("comp", { id: "thing", type: "label", data: { text: "x" } });
-await sleep(1200);
-let es = await history("h1");
-let seqs = order(es, ["spawn", "thing"], ["place", "thing"], ["comp", "thing"]);
-check("cold-first spawn → place → comp land in AUTHORED order", ascending(seqs), `seqs ${JSON.stringify(seqs)} errors ${JSON.stringify(errors)}`);
-check("…and the final authored position is the place's", (() => { const st = msgs.filter((m) => m.type === "history").length; return true; })() && true);
+// The log was populated BEFORE process startup. Admission's read is still
+// held, so the following epoch really must wait on a cold standing library.
+await until(() => existsSync(gate(LIB2, 'started')), 'cold epoch read');
+send('epoch', { sim: SIM_ID, tickMs: 66 });
+send('punt', { id: 'target', dir: [1, 0.5, 0], power: 4 });
+let es = await history();
+check('cold epoch and following punt both wait for the asset read', !es.some(e => e.verb === 'epoch' || e.verb === 'punt'));
+writeFileSync(gate(LIB2, 'release'), 'go');
+await until(() => seenVerb('punt'), 'punt after epoch');
+es = await history();
+const epoch = es.find(e => e.verb === 'epoch'), punt = es.find(e => e.verb === 'punt');
+check('cold epoch → punt land in authored order', !!epoch && punt?.seq > epoch.seq);
+check('the epoch stamps the previously cold library', Array.isArray(epoch?.args?.boxes?.[LIB2]));
+check('the punt folded under the epoch', !!(await request('debug', { sim: true })).sim?.bodies?.target);
 
-// ---- burst 2: epoch (cold: every standing lib) → punt, same tick
-send("spawn", { id: "target", lib: LIB2, pos: [2, 0, 2] });   // within the 4m punt reach of the driver at the origin
-await sleep(900);   // let the cold spawn land so the epoch has a boxed world to stamp
-errors.length = 0;
-send("epoch", { sim: SIM_ID, tickMs: 66 });
-send("punt", { id: "target", dir: [1, 0.5, 0], power: 4 });
-await sleep(1200);
-es = await history("h2");
-const eSeq = es.find((e) => e.verb === "epoch")?.seq ?? -1, pSeq = es.find((e) => e.verb === "punt" && e.args?.id === "target")?.seq ?? -1;
-check("cold epoch → punt land in authored order", eSeq >= 0 && pSeq > eSeq, `epoch ${eSeq} punt ${pSeq} errors ${JSON.stringify(errors)}`);
-ws.send(JSON.stringify({ type: "debug", sim: true, reqId: "d1" })); await sleep(300);
-const sim = msgs.filter((m) => m.type === "debug" && m.sim).pop()?.sim;
-check("…and the punt folded UNDER the epoch (the body exists)", !!sim?.bodies?.target, JSON.stringify(Object.keys(sim?.bodies ?? {})));
-const epochEntry = es.find((e) => e.verb === "epoch");
-check("…whose boxes stamp covers both standing libs", !!epochEntry?.args?.boxes?.[LIB1] && !!epochEntry?.args?.boxes?.[LIB2], JSON.stringify(Object.keys(epochEntry?.args?.boxes ?? {})));
+const malformed = { id: { toString: null }, type: 'label', data: 'probe' };
+const errorCount = () => msgs.filter(m => m.type === 'error' && /failed server-side/.test(m.error)).length;
+send('comp', malformed);
+await until(() => errorCount() === 1, 'synchronous malformed request refused');
+check('synchronous request failure is contained', seq.exitCode === null);
 
-// ---- burst 3: WARM repeat control — same lib, same shape, nothing to wait on
-send("spawn", { id: "thing2", lib: LIB1, pos: [1, 0, 1] });
-send("place", { id: "thing2", pos: [8, 0, 8] });
-send("comp", { id: "thing2", type: "label", data: { text: "y" } });
-await sleep(900);
-es = await history("h3");
-seqs = order(es, ["spawn", "thing2"], ["place", "thing2"], ["comp", "thing2"]);
-check("warm-repeat control: spawn → place → comp in authored order", ascending(seqs), `seqs ${JSON.stringify(seqs)}`);
-const placed = es.filter((e) => e.verb === "place" && e.args?.id === "thing2").pop();
-check("…final position is the place's, and the spawn carried its box stamp",
-  placed?.args?.pos?.[0] === 8 && Array.isArray(es.find((e) => e.verb === "spawn" && e.args?.id === "thing2")?.args?.box));
+send('spawn', { id: 'thing', lib: LIB1, pos: [0, 0, 0] });
+send('place', { id: 'thing', pos: [9, 0, 9] });
+send('comp', { id: 'thing', type: 'label', data: { text: 'x' } });
+send('comp', malformed);
+send('say', { text: 'queue recovered' });
+await until(() => existsSync(gate(LIB1, 'started')), 'cold spawn read');
+es = await history();
+check('cold spawn and later edits wait together', !es.some(e => e.args?.id === 'thing'));
+writeFileSync(gate(LIB1, 'release'), 'go');
+await until(() => seenVerb('say'), 'valid request after queued failure');
+es = await history();
+const authored = es.filter(e => e.args?.id === 'thing').sort((a,b) => a.seq-b.seq);
+check('cold spawn → place → comp land in authored order', authored.map(e => e.verb).join(',') === 'spawn,place,comp');
+let st = folded(es);
+check('cold final authored position and component are preserved', JSON.stringify(st.entities.thing?.pos) === '[9,0,9]' && st.entities.thing?.comp?.label?.text === 'x');
+check('queued request failure is reported and following requests survive', errorCount() === 2 && seq.exitCode === null && es.some(e => e.verb === 'say' && e.args.text === 'queue recovered'));
 
-// ---- B5: inherited property names are not message handlers
-console.log(`\n${bold("── inherited names at the door")}`);
-errors.length = 0;
-const before = msgs.length;
-for (const t of ["__proto__", "constructor", "toString", "hasOwnProperty"]) ws.send(JSON.stringify({ type: t }));
-await sleep(500);
-check("__proto__ / constructor / toString / hasOwnProperty are silently unknown (no server-side failure)",
-  !errors.some((e) => /failed server-side/.test(e)), JSON.stringify(errors));
-send("say", { text: "still here" });
-await sleep(500);
-check("…and the socket is alive afterwards (a say lands)", msgs.slice(before).some((m) => (m.type === "entry" || m.type === "verb") && (m.entry?.verb === "say" || m.verb === "say")) || msgs.slice(before).some((m) => JSON.stringify(m).includes("still here")));
-
-console.log(`\n${bold(tally.failed ? "RED" : "GREEN")} — ${tally.passed} passed, ${tally.failed} failed\n`);
-await cleanup();
+send('spawn', { id: 'thing2', lib: LIB1, pos: [1, 0, 1] });
+send('place', { id: 'thing2', pos: [8, 0, 8] });
+send('comp', { id: 'thing2', type: 'label', data: { text: 'y' } });
+es = await history(); st = folded(es);
+check('warm control preserves folded position and component', JSON.stringify(st.entities.thing2?.pos) === '[8,0,8]' && st.entities.thing2?.comp?.label?.text === 'y');
+const before = errorCount();
+for (const type of ['__proto__', 'constructor', 'toString', 'hasOwnProperty']) ws.send(JSON.stringify({ type }));
+await history();
+check('inherited message names are silently ignored', errorCount() === before && seq.exitCode === null);
+ws.close();
+console.log(`\n${tally.passed} passed, ${tally.failed} failed`);
+await cleanup(tally.failed ? 1 : 0);
 process.exit(tally.failed ? 1 : 0);

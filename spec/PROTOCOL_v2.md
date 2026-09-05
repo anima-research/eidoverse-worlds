@@ -65,6 +65,22 @@ and decades. Therefore, inside the sim fold:
 The reference implementation SHOULD keep the sim kernel wasm-compiled so
 "same epoch, same bits" is a build artifact rather than a discipline.
 
+*Implemented (2026-09-04):* **eidosim@0.5.0 — continuing contacts.** After
+each contact the remaining tick time is swept again, so a body touching a
+deck slides horizontally and can fall from its edge. The remaining movement
+still meets walls. The ground support plane participates too, preventing a
+coarse gravity step from sweeping underneath a wall before being grounded.
+Terrain height is sampled at the sweep start, at ground contact, and by the
+final terrain resolver. At most eight contacts are resolved per body per
+tick; exhausting that budget leaves the body at its last safe contact.
+Static ties use insertion order, axis ties use x/y/z, and gravity is applied
+once per tick. **0.1–0.4 remain carried with their recorded laws.** New
+epochs mint 0.5; upgrading a running world still requires its owner's epoch
+verb. When the last body rests, all carried laws skip remaining idle ticks
+without changing physical state. Committed replay baselines now compare
+the complete ordered sim state as well as the instant fold; mutations of
+boxes, statics, and body/static insertion order must fail the gate.
+
 *Delivered (2026-09-04):* **eidosim@0.4.0 — swept collisions.** 0.3 tested
 collisions at each tick's endpoint only, so within the legal parameter domain
 (`tickMs` up to 1000, launch power up to 20 m/s) a fast body crossed a thin
@@ -206,7 +222,7 @@ grow. ⚑ marks what ratification must settle:
 | verb | dialect ≤2 (unchanged there) | dialect 3 |
 |---|---|---|
 | `punt` | folds nothing; volunteer flight; landing is a `place` | **sim-scoped**: the sim owns the flight; no result entry — the resting pose is recomputed |
-| `force` | folds nothing; live clients apply to consenting bodies | **sim-scoped** for sim-owned entities; bodies keep consent semantics (presence). *Deferred (2026-09-01) pending the "sim-owned by default" ⚑ below: a radial force claims every model in its radius, which is a ruling, not an implementation's call. Under 0.1–0.4 epochs `force` stays presence-only.* |
+| `force` | folds nothing; live clients apply to consenting bodies | **sim-scoped** for sim-owned entities; bodies keep consent semantics (presence). *Deferred (2026-09-01) pending the "sim-owned by default" ⚑ below: a radial force claims every model in its radius, which is a ruling, not an implementation's call. Under 0.1–0.5 epochs `force` stays presence-only.* |
 | ⚑ `impulse`? `throw`? `grab`/`release`? | — | candidate new intents; each must carry its full physical argument (vector, magnitude, point of application) per Covenant III |
 
 | `spawn` / `epoch` | unchanged | **sequencer-stamped geometry**: `spawn.box`, `epoch.boxes` — the only door through which an asset's shape reaches the sim (Covenant III; eidosim@0.3.0) |

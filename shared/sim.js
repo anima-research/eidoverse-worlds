@@ -12,7 +12,7 @@
 // ECMA-specified shortest-round-trip, so JSON of this state is itself a
 // deterministic serialization — digests may be taken over it directly.
 //
-// This build CARRIES THREE sims (Covenant II — old logs replay under the law
+// This build carries each retired sim (Covenant II — old logs replay under the law
 // they were written under, bit for bit):
 //
 // eidosim@0.1.0 — flat floor: ground = the body's own starting height
@@ -59,6 +59,11 @@
 //   tick's motion is spent there. Already-overlapping states keep 0.3's
 //   endpoint resolution. Nothing else moved: same constants, same order.
 //
+// eidosim@0.5.0 — contacts consume time, then the remaining movement is swept
+//   again. In particular a zero-time contact with a deck cancels downward
+//   gravity without cancelling horizontal sliding. Eight contacts per tick
+//   bound work; if exhausted, the body stays at the last safe contact.
+//
 // Shared by all:
 //   - one intent: `punt` (dialect-3 form: dir REQUIRED — Covenant III, the
 //     entry carries everything; presence never enters the sim);
@@ -80,15 +85,16 @@ import { terrainParams, makeHeightField } from './terrainmath.js';
 import { sinT, cosT } from './simmath.js';
 
 // What the epoch verb MINTS (new epochs enter this sim)…
-export const SIM_ID = 'eidosim@0.4.0';
+export const SIM_ID = 'eidosim@0.5.0';
 // …and what this build can still REPLAY (a carried sim is never foreign).
 const V1 = 'eidosim@0.1.0';
 const V2 = 'eidosim@0.2.0';
 const V3 = 'eidosim@0.3.0';
-const CARRIED = new Set([V1, V2, V3, SIM_ID]);
+const V4 = 'eidosim@0.4.0';
+const CARRIED = new Set([V1, V2, V3, V4, SIM_ID]);
 /** The law a carried name means, as a rung: 1 flat floor · 2 terrain ·
- *  3 colliders (endpoint) · 4 colliders (swept). 0 = not carried. */
-const lawOf = (name) => name === V1 ? 1 : name === V2 ? 2 : name === V3 ? 3 : name === SIM_ID ? 4 : 0;
+ *  3 endpoint · 4 first contact · 5 remaining-motion sweeps. 0 = not carried. */
+const lawOf = (name) => name === V1 ? 1 : name === V2 ? 2 : name === V3 ? 3 : name === V4 ? 4 : name === SIM_ID ? 5 : 0;
 
 // The physics constants ARE the sim version — editing any of them is an
 // epoch bump, never a patch (Covenant II: it rewrites what old logs mean).
@@ -165,22 +171,80 @@ function restStatic(sim, id, b) {
   sim.statics[id] = { aabb: aabbAt(b.p, b.ext) };
 }
 
+/** 0.5 only: consume the remaining time after each contact, including a
+ *  time-zero landing. Contact ties follow static insertion order, then x/y/z.
+ *  Existing overlaps still belong to the endpoint resolver below. */
+function sweepMotion(sim, id, b, dt, hf) {
+  const e = b.ext;
+  let remaining = dt;
+  for (let contacts = 0; contacts < 8 && remaining > 0; contacts++) {
+    const d = [b.v[0] * remaining, b.v[1] * remaining, b.v[2] * remaining];
+    const [lo, hi] = aabbAt(b.p, e);
+    let hitT = Infinity, hitAxis = -1, hit = null;
+    // The support plane must participate too: on a coarse tick, sweeping a
+    // gravity-displaced endpoint below ground can otherwise miss a wall above
+    // it. Terrain is sampled again at contact and by the final ground resolver.
+    const floor = hf ? hf(b.p[0], b.p[2]) : b.ground;
+    const floorT = d[1] < 0 ? Math.max(0, (floor - b.p[1]) / d[1]) : Infinity;
+    if (floorT <= 1) { hitT = floorT; hitAxis = 1; }
+    for (const sid in sim.statics) {
+      if (sid === id) continue;
+      const s = sim.statics[sid].aabb;
+      let enter = -Infinity, exit = Infinity, axis = -1;
+      for (let k = 0; k < 3; k++) {
+        if (d[k] === 0) {
+          if (hi[k] <= s[0][k] || lo[k] >= s[1][k]) { enter = Infinity; break; }
+          continue;
+        }
+        const inv = 1 / d[k];
+        const a = (d[k] > 0 ? s[0][k] - hi[k] : s[1][k] - lo[k]) * inv;
+        const z = (d[k] > 0 ? s[1][k] - lo[k] : s[0][k] - hi[k]) * inv;
+        if (a > enter) { enter = a; axis = k; }
+        if (z < exit) exit = z;
+      }
+      if (enter >= 0 && enter <= 1 && enter < exit && enter < hitT) {
+        hitT = enter; hitAxis = axis; hit = s;
+      }
+    }
+    if (hitT === Infinity) {
+      for (let k = 0; k < 3; k++) b.p[k] = b.p[k] + d[k];
+      return;
+    }
+    for (let k = 0; k < 3; k++) b.p[k] = b.p[k] + d[k] * hitT;
+    // Exact face placement avoids sinking into the support on the next sweep.
+    if (!hit) b.p[1] = hf ? hf(b.p[0], b.p[2]) : b.ground;
+    else if (hitAxis === 0) b.p[0] = d[0] > 0 ? hit[0][0] - e.hx - e.cx : hit[1][0] + e.hx - e.cx;
+    else if (hitAxis === 2) b.p[2] = d[2] > 0 ? hit[0][2] - e.hz - e.cz : hit[1][2] + e.hz - e.cz;
+    else b.p[1] = d[1] > 0 ? hit[0][1] - e.y1 : hit[1][1] - e.y0;
+    if (hitAxis === 1 && d[1] < 0) {
+      if (-b.v[1] > 2 * G * dt) {
+        b.v[1] = -b.v[1] * RESTITUTION;
+        b.v[0] = b.v[0] * BOUNCE_FRICTION;
+        b.v[2] = b.v[2] * BOUNCE_FRICTION;
+      } else b.v[1] = 0;
+    } else {
+      b.v[hitAxis] = -b.v[hitAxis] * RESTITUTION;
+      for (let k = 0; k < 3; k++) if (k !== hitAxis) b.v[k] = b.v[k] * BOUNCE_FRICTION;
+    }
+    remaining = remaining * (1 - hitT);
+  }
+}
+
 /** Advance every live body to `toTick` by fixed steps. Pure of wall time.
  *  @param {SimState} sim @param {number} toTick */
 export function advanceSim(sim, toTick) {
   if (!sim.epoch || sim.epoch.foreign) { sim.tick = toTick > sim.tick ? toTick : sim.tick; return sim; }
   const dt = sim.epoch.tickMs / 1000;
   const law = lawOf(sim.epoch.sim);
-  const v2 = law >= 2, v3 = law >= 3, v4 = law >= 4;
+  const v2 = law >= 2, v3 = law >= 3, v4 = law >= 4, v5 = law >= 5;
   const hf = v2 && sim.terrain ? heightFieldOf(sim) : null;
   // No live body: nothing a tick could change but the counter — jump. Every
   // tick used to be walked even with every body at rest (a 30-day gap over
   // 69 resting bodies: ~4.7s, synchronously, on the heartbeat and on every
-  // returning browser — PR #160 review). Bodies cannot wake inside advance,
-  // so one check holds for the whole span, and the state is bit-identical to
-  // having stepped it.
-  let live = false;
-  for (const id in sim.bodies) if (!sim.bodies[id].resting) { live = true; break; }
+  // returning browser — PR #160 review). Keep a live count so settling the
+  // last body during a restart catch-up also jumps over the remaining gap.
+  let live = 0;
+  for (const id in sim.bodies) if (!sim.bodies[id].resting) live++;
   if (!live) { if (toTick > sim.tick) sim.tick = toTick; return sim; }
   while (sim.tick < toTick) {
     sim.tick++;
@@ -198,7 +262,11 @@ export function advanceSim(sim, toTick) {
       // fallback for terrainless worlds)
       let g = hf ? hf(b.p[0], b.p[2]) : b.ground;
       let sweptLanding = false;
-      if (v4 && b.ext && sim.statics) {
+      if (v5 && b.ext && sim.statics) {
+        b.p[0] = p0x; b.p[1] = p0y; b.p[2] = p0z;
+        sweepMotion(sim, id, b, dt, hf);
+        g = hf ? hf(b.p[0], b.p[2]) : b.ground;
+      } else if (v4 && b.ext && sim.statics) {
         // 0.4: SWEEP the body's box along this tick's displacement and take
         // the earliest contact — a slab test per static, exact ops only.
         const dx = b.p[0] - p0x, dy = b.p[1] - p0y, dz = b.p[2] - p0z;
@@ -326,7 +394,9 @@ export function advanceSim(sim, toTick) {
         b.resting = true;
         if (v3) restStatic(sim, id, b);
       }
+      if (b.resting) live--;
     }
+    if (!live) { if (toTick > sim.tick) sim.tick = toTick; break; }
   }
   return sim;
 }

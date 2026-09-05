@@ -1,7 +1,8 @@
 // AmmoRagdoll parity suite — the same lifecycle promises the Verlet earns,
-// demanded of the Bullet engine, on the SHIPPED fleet rigs.
+// demanded of the Bullet engine, on committed skeleton fixtures.
 //
-//   bun tools/ammodoll-test.ts
+//   bun tools/ammodoll-test.ts           # committed fixtures, no private VRM
+//   bun tools/ammodoll-test.ts --fleet   # additionally exercise installed fleet
 //
 // Interface parity is the contract (bodysim.js): everything downstream must
 // be unable to tell which engine produced the pose. So: falls come to rest,
@@ -26,6 +27,7 @@ plugin({
 const { THREE } = await import('./core-stub.mjs');
 const { AmmoRagdoll, ensureAmmo } = await import('../client/lib/ammodoll.js');
 const { rigs, makeAvatar, toppleLean } = await import('./rig-load.mjs');
+const { dollGltf, wingRig, bareRig } = await import('./doll-fixture.mjs');
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => {
@@ -35,7 +37,15 @@ const check = (name: string, ok: boolean, detail = '') => {
 
 check('wasm door opens', await ensureAmmo());
 
-const FLEET = rigs().filter((r: any) => !r.err);
+const FLEET = [wingRig, bareRig];
+if (process.argv.includes('--fleet')) {
+  try {
+    const installed = rigs().filter((r: any) => !r.err);
+    if (!installed.length) throw new Error('no readable installed rigs');
+    FLEET.push(...installed);
+  } catch (err) { console.error(`--fleet needs the local VRM library: ${err}`); process.exit(2); }
+}
+console.log(`committed skeleton source: ${dollGltf.source.file} sha256 ${dollGltf.source.sha256}`);
 console.log(`\nthe fleet (${FLEET.length} rigs):`);
 
 const bodyQuat = (body: any, out: any) => {
@@ -460,7 +470,7 @@ console.log('\nfingers (spring phalanges, additive by absence):');
   const fingered = FLEET.filter((r: any) => r.P.leftIndexProximal && r.P.leftIndexIntermediate);
   const bare = FLEET.filter((r: any) => !r.P.leftIndexProximal);
   check(`the fleet exercises both cases (${fingered.length} with digits, ${bare.length} without)`,
-    fingered.length > 0, 'no rig with finger bones — section is vacuous');
+    fingered.length > 0 && bare.length > 0, 'need both fingered and bare rigs');
 
   let built = 0, driven = 0, finite = true, stretched: string[] = [];
   for (const rig of fingered) {
@@ -698,14 +708,9 @@ console.log('\nlifecycle (one rig, every downstream contract):');
 // hair: read out of the VRM's node tree, parented to their real humanoid
 // ancestor.
 {
-  const { glbJson, humanBones, worldPositions, VRM_DIR } =
-    await import('./rig-load.mjs');
-  const { readFileSync, existsSync } = await import('node:fs');
-  const file = `${VRM_DIR}mythos-wings.vrm`;
+  const { humanBones, worldPositions } = await import('./rig-load.mjs');
   console.log('\nwings (the ragdoll takes them over):');
-  if (!existsSync(file)) {
-    check('a winged rig is installed to test against', false, `no ${file}`);
-  } else {
+  {
     // The CONTROL is the same rig as the fleet sees it — humanoid bones and the
     // rig's real parent chain. Building the control with makeAvatar(P) instead
     // would silently compare two different skeletons: with `realParent` passed,
@@ -713,9 +718,8 @@ console.log('\nlifecycle (one rig, every downstream contract):');
     // fingers) and without it walks PARENT's (16). The first version of this
     // test did exactly that and reported 308mm of "wing shove" that was really
     // 38 extra bones.
-    const rigW: any = FLEET.find((r: any) => r.name === 'mythos-wings');
-    if (!rigW) throw new Error('mythos-wings not in the fleet');
-    const g = glbJson(readFileSync(file));
+    const rigW: any = wingRig;
+    const g = dollGltf;
     const bones = humanBones(g);
     const wp = worldPositions(g);
     const P: any = { ...rigW.P };
@@ -890,12 +894,7 @@ console.log('\nlifecycle (one rig, every downstream contract):');
   const { AmmoRagdoll } = await import('../client/lib/ammodoll.js');
   const BONE_LEN = 0.15, MESH_LEN = 0.60, MESH_SPAN = 0.40;
 
-  // The contract is about the MESH, not the rig: any humanoid skeleton serves
-  // to hang the synthetic chain on. Prefer the winged overlay rig when it is
-  // installed; otherwise the first fleet rig — and say so, rather than
-  // dereferencing a rig that is not committed (PR #160 review, B6).
-  const rigW: any = FLEET.find((r: any) => r.name === 'mythos-wings') ?? FLEET[0];
-  if (rigW.name !== 'mythos-wings') console.log(`  · mythos-wings not installed — the wing-box contract runs on ${rigW.name}`);
+  const rigW: any = wingRig;
   const P: any = { ...rigW.P };
   // one chain, two segments, both short bones — the second a leaf
   const shoulder = P.leftShoulder ?? P.leftUpperArm;
@@ -986,10 +985,9 @@ console.log('\nlifecycle (one rig, every downstream contract):');
 // does, on bones configured the way three-vrm configures them.
 {
   console.log('\nhair writes reach the renderer (matrixAutoUpdate = false):');
-  const rigW: any = FLEET.find((r: any) => r.name === 'mythos-wings');
-  const { glbJson, humanBones, worldPositions, VRM_DIR } = await import('./rig-load.mjs');
-  const { readFileSync } = await import('node:fs');
-  const g = glbJson(readFileSync(`${VRM_DIR}mythos-wings.vrm`));
+  const rigW: any = wingRig;
+  const { worldPositions } = await import('./rig-load.mjs');
+  const g = dollGltf;
   const wp = worldPositions(g);
   const P: any = { ...rigW.P };
   const byName = new Map<string, number>();
@@ -1054,7 +1052,7 @@ console.log('\nlifecycle (one rig, every downstream contract):');
 // The failure is completely silent, so it is asserted rather than remembered.
 {
   console.log('\ncollision groups fit the short the binding declares:');
-  const rig: any = FLEET.find((r: any) => r.name === 'mythos-wings') ?? FLEET[0];
+  const rig: any = wingRig;
   const av = makeAvatar(rig.P, { realParent: rig.realParent });
   const rd: any = new AmmoRagdoll(av, toppleLean(), av.restBonePositions());
   const groups = [...rd._groupOf.values()] as number[];

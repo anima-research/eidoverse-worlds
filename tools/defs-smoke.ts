@@ -15,7 +15,7 @@
 import { mkdtempSync, readFileSync, readdirSync, copyFileSync, mkdirSync, writeFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { scratchBench, mkCheck, bold, dim, sleep, ROOT } from "./harness.ts";
+import { scratchBench, readSequencerLog, mkCheck, bold, dim, sleep, ROOT } from "./harness.ts";
 
 const HEADED = process.argv.includes("--headed");
 const ECHO = process.argv.includes("--console");
@@ -65,7 +65,7 @@ check("broken def is NOT served", !names.includes("broken"));
 {
   const disk = JSON.parse(readFileSync(join(ROOT, "defs", "flora", "grass.json"), "utf8"));
   check("grass def round-trips exactly", JSON.stringify(reg.flora.grass) === JSON.stringify(disk));
-  const log = readFileSync(join(SCRATCH, "sequencer.log"), "utf8");
+  const log = readSequencerLog(SCRATCH);
   check("broken def refused LOUDLY", log.includes("REFUSED") && log.includes("broken.json"));
   check("sky presets ride the registry", ["dawn", "noon", "golden", "dusk", "night"]
     .every((n) => reg.skyPresets?.[n]?.hours != null), Object.keys(reg.skyPresets ?? {}).join(", "));
@@ -157,7 +157,7 @@ console.log(`\n${bold("── avatars")}`);
     const reg2 = await (await fetch(`${BASE}/defs`)).json();
     check("/defs serves the avatars domain", Object.keys(reg2.avatars ?? {}).length === 3,
       Object.keys(reg2.avatars ?? {}).join(", "));
-    const log2 = readFileSync(join(SCRATCH, "sequencer.log"), "utf8");
+    const log2 = readSequencerLog(SCRATCH);
     check("unresolvable vrm refused LOUDLY", log2.includes(`avatar "defsmoke_broken"`));
   }
 }

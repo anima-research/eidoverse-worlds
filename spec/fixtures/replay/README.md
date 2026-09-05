@@ -1,19 +1,27 @@
-# Fixture worlds (under `spec/fixtures/replay/` — `.gitignore` ignores any `worlds/`) for `tools/replaybench.ts`
+# Replay fixtures
 
-Committed logs a clean checkout can replay, with a committed baseline
-(`.replaybench.json` beside them). One authored story under each carried
-sim law, so a change that moves an old law's bits is caught by name:
+These committed logs and `.replaybench.json` let a clean checkout check
+both the instant fold and the complete ordered sim state without assets
+or a running sequencer. Idle tick counters are excluded after settling.
 
-- `eidosim-0.3/` — the collision law without a swept test (thin bodies at
-  high power tunnel; that IS 0.3.0, pinned).
-- `eidosim-0.4/` — the same story under the swept law.
+- `eidosim-0.3/`: endpoint collisions, including that law's tunnelling.
+- `eidosim-0.4/`: first-contact sweeps, including that law's deck sticking.
+- `eidosim-0.5/`: remaining-motion sweeps and ground support contacts.
+- `eidosim-order/`: two bodies at rest, so body insertion order is observable
+  in the normative digest as well as static insertion order.
 
-The story: a terrain, a wall and a deck standing before the epoch (boxed by
-the epoch's stamp), a crate and a ball spawned after it (boxed by the spawn
-stamp), a punt into the wall, the wall moved mid-flight, a punt onto the
-deck, a hard punt at the moved wall, a terrain change under a live epoch
-(bodies released, statics rebuilt from the fold), and a punt after it.
+The first three tell the same story: terrain, a wall and deck before the
+boxed epoch, two boxed spawns, punts, a wall moved during flight, and a
+terrain change releasing bodies and rebuilding statics. The order fixture
+adds a final punt so two bodies survive into the settled snapshot.
 
-`bun tools/replaybench.ts` replays both alongside the operator's worlds;
-`--write` refreshes baselines — a changed fixture digest with an unchanged
-log is a sim-law change and wants an epoch bump, never a re-record.
+`bun tools/replaybench.ts` checks these alongside operator worlds.
+`bun tools/replaybench-test.ts` proves the gate rejects changed colliders,
+boxes and insertion order, and compares the 0.5 digest across installed JS
+engines. Operator baselines lacking a sim digest report that gap; committed
+fixtures fail if their sim golden is missing.
+
+`--write` records explicitly selected baselines and preserves unselected
+ones. A changed digest for an unchanged old-law log requires investigation,
+not a silent baseline refresh. Physics corrections belong to a new epoch
+version; the 0.3 and 0.4 sim goldens were captured before the 0.5 correction.

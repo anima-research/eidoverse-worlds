@@ -9,7 +9,7 @@
 // Conformance of the fold ITSELF is foldfix-test.ts's job — here we test
 // the feeding, using the same fixtures so the answers are known-good.
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { foldEntry, emptyState } from "../shared/fold.js";
 import { state, hydrate, foldLive, reset, onWorldChange } from "../client/lib/state.js";
@@ -27,7 +27,7 @@ const pick = (st: any) => JSON.parse(JSON.stringify(Object.fromEntries(FIELDS.ma
 
 console.log(`\nstate.js — folded world as data\n`);
 
-const fixtures = readdirSync(FIX).sort().filter((d) => statSync(join(FIX, d)).isDirectory());
+const fixtures = readdirSync(FIX).sort().filter((d) => statSync(join(FIX, d)).isDirectory() && existsSync(join(FIX, d, "folded.json")));
 
 for (const dir of fixtures) {
   const entries = readFileSync(join(FIX, dir, "log.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
