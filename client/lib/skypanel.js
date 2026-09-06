@@ -19,6 +19,7 @@ import { GRASS_QUALITY, getGrassQuality, setGrassQuality,
   getGrassDensity, getGrassShed, getGrassApplied } from './terrain.js';
 import { RENDER_SCALES, getRenderScale, setRenderScale } from './governor.js';
 import { MODEL_QUALITY } from './lod_policy.js';
+import { lodNegotiable } from './assets.js';
 import { modelQuality } from './realize/models.js';
 
 const SLIDERS = [
@@ -200,7 +201,13 @@ export function paintSky(body) {
     modelQuality.quality,
     (v) => {
       modelQuality.setQuality(v);
-      flashHint(`models: ${v} (yours only)`);
+      // the dial persists regardless; the hint says whether a reduced tier
+      // can be ASKED from this browser at all (the variant's textures are
+      // KTX2 — no transcoder, or a sequencer that published no recipe, and
+      // every placement stays full detail; assets.js lodNegotiable)
+      flashHint(lodNegotiable('eidoverse/assets/models/any.glb')
+        ? `models: ${v} (yours only)`
+        : `models: ${v} (yours only) — reduced tiers cannot be asked from this browser; everything stays full detail`);
     });
   mq.setAttribute('aria-label', 'model detail tier — local only, never shared with the world');
   mqRow.title = 'local performance setting — not shared with the world';

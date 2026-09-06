@@ -10,12 +10,15 @@
 // governor's shed and GPU pressure pull the reduce-at edge inward; the dial
 // pins full; 'eco' is the pressured band, always — near stays full on every
 // dial (the first field run's arm's-length slabs). The served tier is read
-// off the reducer's identity stamp, never assumed from the request.
+// off the reducer's identity stamp — lodOf plus the RUNNING recipe, never a
+// bare `recipe` extra an author may have written — and the tier a load IS
+// is what crossed the wire (askFor), never what the policy wished: no KTX2
+// transcoder, no key, no recipe, no .glb → no lod ask, reported as none.
 //
 // Negative control: on main this file dies at import (no lod_policy.js).
 
 import { MODEL_QUALITY, LOD_FRACTION, LOD_HYST, PRESSURE_EDGE, PRESSURE_AT,
-  makeModelQuality, chooseTier, tierOf } from "../client/lib/lod_policy.js";
+  makeModelQuality, chooseTier, tierOf, askFor } from "../client/lib/lod_policy.js";
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
@@ -84,9 +87,34 @@ check("but neither overrides the resident's 'full'", chooseTier({ dist: 1e6, rad
   check("no store at all → session-only, still works", makeModelQuality(undefined).setQuality("full") === "full");
 }
 
-// ---- the served tier is the server's word
-check("a parsed GLB with the reducer's stamp is 'lod'", tierOf({ asset: { extras: { recipe: REC } } }) === "lod");
-check("without the stamp — the original chain answered — it is 'full', honestly", tierOf({ asset: { extras: {} } }) === "full" && tierOf({}) === "full" && tierOf(null) === "full");
+// ---- the served tier is the REDUCER's stamp, bound to the running recipe (review of #170, point 1)
+const stamped = (recipe: string) => ({ asset: { extras: { lodOf: "9f2c…", recipe, tools: { meshoptimizer: "0.2x", encoder: "toktx" } } } });
+check("the reducer's stamp under the running recipe is 'lod'", tierOf(stamped(REC), REC) === "lod");
+check("an authored model's own `recipe` extra is NOT a lod — source extras survive the reducer, and a full model must keep its collider",
+  tierOf({ asset: { extras: { recipe: "chef-special" } } }, REC) === "full"
+  && tierOf({ asset: { extras: { recipe: REC } } }, REC) === "full");
+check("a WRONG-GENERATION stamp is 'full' — a stale variant is not this recipe's tier", tierOf(stamped("lod0-r50e05-texel2048"), REC) === "full");
+check("without the stamp — the original chain answered — 'full', honestly", tierOf({ asset: { extras: {} } }, REC) === "full" && tierOf({}, REC) === "full" && tierOf(null, REC) === "full");
+check("no running recipe → nothing is ever 'lod', stamp or not", tierOf(stamped(REC), null) === "full");
+
+// ---- the WIRE truth (review of #170, point 2): the tier a load IS is what the URL asks, never what the policy wished
+{
+  const lib = "eidoverse/assets/models/thing.glb";
+  const yes = askFor({ libPath: lib, key: "3", capable: true, recipe: REC, tier: "lod" });
+  check("transcoder + key + recipe: a lod ask crosses the wire, on top of the ktx2 negotiation",
+    yes.tier === "lod" && yes.url === `${lib}?ktx2=3&lod=${encodeURIComponent(REC)}`, yes.url);
+  const noTranscoder = askFor({ libPath: lib, key: "3", capable: true && false, recipe: REC, tier: "lod" });
+  check("no KTX2 transcoder: NO lod on the wire — the ask is honestly 'full', and not even ktx2 negotiates",
+    noTranscoder.tier === "full" && noTranscoder.url === lib, noTranscoder.url);
+  const noKey = askFor({ libPath: lib, key: null, capable: true, recipe: REC, tier: "lod" });
+  check("no key published: the same — an older sequencer is exactly today's behaviour", noKey.tier === "full" && noKey.url === lib);
+  const noRecipe = askFor({ libPath: lib, key: "3", capable: true, recipe: null, tier: "lod" });
+  check("no recipe published: ktx2 negotiates, lod does not", noRecipe.tier === "full" && noRecipe.url === `${lib}?ktx2=3`, noRecipe.url);
+  const body = askFor({ libPath: "eidoverse/assets/vrms/body.vrm", key: "3", capable: true, recipe: REC, tier: "lod" });
+  check("a non-.glb path never negotiates a tier (bodies are the server's refusal AND the client's silence)", body.tier === "full" && !body.url.includes("lod="));
+  const full = askFor({ libPath: lib, key: "3", capable: true, recipe: REC, tier: "full" });
+  check("a 'full' choice is a plain ktx2 fetch", full.tier === "full" && full.url === `${lib}?ktx2=3`);
+}
 
 console.log(failures ? `\n\x1b[31m${failures} failed\x1b[0m` : "\n\x1b[32m0 failed\x1b[0m");
 process.exit(failures ? 1 : 0);

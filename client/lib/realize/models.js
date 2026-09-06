@@ -23,7 +23,8 @@
 
 import { THREE, scene, camera } from '../core.js';
 import { report, bus } from '../base.js';
-import { loadGLB, retainGLB, releaseGLB, evictIdleProtos, lodRecipeReady, gpuPressure } from '../assets.js';
+import { loadGLB, retainGLB, releaseGLB, evictIdleProtos, lodRecipeReady, gpuPressure,
+  lodNegotiable, negotiationReady } from '../assets.js';
 import { makeModelQuality, chooseTier } from '../lod_policy.js';
 import { colliders, fitCollider, removeCollider, reindexCollider, refitCollider } from '../colliders.js';
 import { attachLamps, releaseOwner, registerCaster, releaseCaster } from '../lightrig.js';
@@ -207,7 +208,7 @@ function createModel(id, ent) {
   scheduleLoad(id, ent, gen);
 }
 
-function scheduleLoad(id, ent, gen, tier = tierFor(ent, null)) {
+function scheduleLoad(id, ent, gen, tier = null) {
   const t0 = tracked.get(id);
   if (t0) t0.loading = true;   // the sweep must not re-promote a load in flight
   schedule({
@@ -217,7 +218,14 @@ function scheduleLoad(id, ent, gen, tier = tierFor(ent, null)) {
     priority: () => bandForDistance(camera.position.distanceTo(
       _v.set(...(state.st.entities[id]?.pos ?? [0, 0, 0])))),
     run: async (signal) => {
-      const obj = await loadGLB(ent.lib, { tier });
+      // a first load chooses its tier at DEQUEUE, once /version has answered
+      // (key and recipe are what make a lod ask real — assets.js
+      // lodNegotiable) and from the live distance; a re-tier brings the tier
+      // the sweep chose
+      await negotiationReady;
+      if (signal.aborted) return;
+      const want = tier ?? tierFor(ent, null);
+      const obj = await loadGLB(ent.lib, { tier: want });
       const cur = state.st.entities[id];
       const t = tracked.get(id);
       if (t?.gen === gen) t.loading = false;
@@ -228,6 +236,20 @@ function scheduleLoad(id, ent, gen, tier = tierFor(ent, null)) {
       if (!cur || cur.kind === 'light' || cur.lib !== ent.lib) {
         clearReservation(id);
         if (tracked.get(id)?.gen === gen) tracked.delete(id);
+        return;
+      }
+      // a TIER SWAP replaces a REAL object, and authority is re-checked at
+      // the moment of application, not only when the sweep scheduled it
+      // (review of #170, point 3): while the bytes flew a body may have sat
+      // down, cargo mounted, a part motion or socket arrived, an edit hold
+      // begun — each makes the swap illegal now. The loaded clone is simply
+      // not worn (nothing was retained for it; the proto stays pooled) and
+      // the standing object keeps its collider, lamps, riders and mounts.
+      // The sweep may try again after its cooldown, through the same gate.
+      const standing = entities.get(id);
+      if (standing && !isPlaceholder(standing) && standing.userData?.lib && !canRetier(id, cur)) {
+        resStats.retiersRefused++;
+        if (t) t.retierAt = Date.now();
         return;
       }
       realizeModel(id, cur, obj);
@@ -643,8 +665,11 @@ let lodRecipe = null;
 lodRecipeReady.then((r) => { lodRecipe = r; }).catch(() => {});
 export const modelQuality = makeModelQuality(globalThis.localStorage);
 function tierFor(ent, current = null) {
+  // the recipe counts only where a lod ask can cross the wire (assets.js
+  // lodNegotiable: transcoder + key + recipe + a .glb) — elsewhere the
+  // policy sees no recipe, and nothing is asked or reported as asked
   return chooseTier({ dist: entDist(ent), radius: residencyRadius(ent), quality: modelQuality.quality,
-    recipe: lodRecipe, pressure: gpuPressure(), shed: modelQuality.shed, current });
+    recipe: lodNegotiable(ent?.lib) ? lodRecipe : null, pressure: gpuPressure(), shed: modelQuality.shed, current });
 }
 /** Only a placement nothing depends on may change tier in place — the same
  *  predicate as demotion (no riders, no seats, no part motion): a tier swap
@@ -657,7 +682,7 @@ const DIAG_K = 4;      // big things stay: radius grows with bbox diagonal
 const DIAG_DEFAULT = 12; // assumed bbox diagonal (m) before the geom
                          // side-channel lands — err LARGE, so a big thing
                          // near the edge still loads at join (§16.2.C)
-const resStats = { demotes: 0, promotes: 0, retiers: 0 };
+const resStats = { demotes: 0, promotes: 0, retiers: 0, retiersRefused: 0 };
 
 function residencyRadius(ent) {
   const s = ent?.lib ? libGeom.get(ent.lib)?.bbox?.size : null;
@@ -723,7 +748,9 @@ function demote(id) {
 }
 
 let lastEvict = 0;
-function residencySweep() {
+/** One residency beat (initModelsRealizer runs it at 2Hz; exported so a
+ *  headless harness can beat it deterministically — tools/lod-client-test). */
+export function residencySweep() {
   // the VRAM tier (R2): every ~5s, if GPU memory is over budget, zero-ref
   // protos dispose. Self-gating and usually a no-op single number read.
   const now = Date.now();

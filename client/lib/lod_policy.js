@@ -28,6 +28,8 @@
 //
 // DOM-free and side-effect-free: unit-tested in tools/lod-policy-test.ts.
 
+import { negotiate, withLod } from '../../shared/ktx2.js';
+
 export const MODEL_QUALITY = ['auto', 'full', 'eco'];
 /** Fraction of the residency radius beyond which 'auto' fetches the reduced
  *  tier. R = 80m + diag×4 (models.js), so a 2m prop goes reduced past ~40m,
@@ -81,8 +83,32 @@ export function chooseTier({ dist, radius, quality = 'auto', recipe = null, pres
 }
 
 /** Which tier a parsed GLB actually is — the server's word, read off the
- *  identity stamp the reducer writes (#156: asset.extras.recipe). A lod
- *  request answered by the original chain is 'full', honestly. */
-export function tierOf(gltfJson) {
-  return gltfJson?.asset?.extras?.recipe ? 'lod' : 'full';
+ *  identity stamp the reducer writes (#156: asset.extras {lodOf, recipe,
+ *  tools}) and bound to the RUNNING recipe. Not "any recipe extra": the
+ *  reducer preserves source extras, and an authored model may carry an
+ *  unrelated `recipe` of its own (review of #170, point 1) — reading that as
+ *  a lod would strip a full source model of its collider. lodOf must be
+ *  present and recipe must equal what /version published; anything else —
+ *  a wrong-generation stamp, a bare recipe, the original chain answering a
+ *  lod ask — is 'full', honestly. */
+export function tierOf(gltfJson, recipe) {
+  const x = gltfJson?.asset?.extras;
+  if (!recipe || !x || typeof x !== 'object') return 'full';
+  return typeof x.lodOf === 'string' && x.lodOf.length > 0 && x.recipe === recipe ? 'lod' : 'full';
+}
+
+/** The WIRE truth of a tier choice (review of #170, point 2): the URL a load
+ *  actually fetches and which tier that URL asks for. A lod ask rides the
+ *  KTX2 negotiation because the reduced variant's textures ARE KTX2 — a
+ *  browser without the transcoder (`capable` false), a sequencer that
+ *  published no key or no recipe, or a non-.glb path cannot ask, and the
+ *  answer says so: tier 'full', no `lod=` on the wire. The realizer keys
+ *  its hysteresis and its reporting on THIS, never on what the policy
+ *  wished. */
+export function askFor({ libPath, key = null, capable = false, recipe = null, tier = 'full' }) {
+  const glb = typeof libPath === 'string' && libPath.endsWith('.glb');
+  const k = glb && capable && key ? key : null;
+  const url = negotiate(libPath, k);
+  if (tier === 'lod' && k && recipe) return { url: withLod(url, recipe), tier: 'lod' };
+  return { url, tier: 'full' };
 }

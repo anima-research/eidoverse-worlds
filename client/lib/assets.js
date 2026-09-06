@@ -8,8 +8,8 @@
 //   vrmPool    whole parsed VRM instances at rest (§19b — no clone exists
 //              for a bound rig, so released bodies are reworn intact)
 
-import { keyFromVersion, negotiate, lodFromVersion, withLod } from '../../shared/ktx2.js';
-import { tierOf } from './lod_policy.js';
+import { keyFromVersion, negotiate, lodFromVersion } from '../../shared/ktx2.js';
+import { tierOf, askFor } from './lod_policy.js';
 import { THREE, renderer, camera, scene } from './core.js';
 import { report, bus } from './base.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -174,6 +174,23 @@ export const ktx2KeyReady = versionReady.then(keyFromVersion);
  *  — or null: no tier is ever asked for that the running process did not
  *  declare, the same split-brain gate as the key. */
 export const lodRecipeReady = versionReady.then(lodFromVersion);
+// the resolved answers, for SYNCHRONOUS policy reads (the residency sweep
+// runs at 2Hz and cannot await): null until /version answers, null forever
+// when it published nothing
+let ktx2Key = null, lodRecipe = null;
+ktx2KeyReady.then((k) => { ktx2Key = k; }).catch(() => {});
+lodRecipeReady.then((r) => { lodRecipe = r; }).catch(() => {});
+/** Settles once /version has answered (or failed) — a tier choice made
+ *  after this knows whether a lod ask can cross the wire. Never rejects. */
+export const negotiationReady = Promise.all([ktx2KeyReady, lodRecipeReady]).then(() => {}, () => {});
+/** Can a lod ask for this lib CROSS THE WIRE from this browser, right now
+ *  (review of #170, point 2)? The reduced variant's textures are KTX2, so
+ *  the ask rides the ktx2 negotiation: the transcoder must have detected
+ *  support, the running sequencer must have published a key AND a recipe,
+ *  and only bare .glb paths negotiate. The policy treats "no" as no recipe
+ *  — nothing is asked that could not be, and nothing is reported as asked. */
+export const lodNegotiable = (libPath) =>
+  askFor({ libPath, key: ktx2Key, capable: !!ktx2.workerConfig, recipe: lodRecipe, tier: 'lod' }).tier === 'lod';
 /** GPU memory against the proto budget — the policy's "device pressure". */
 export const gpuPressure = () => (renderer.info?.memory?.total ?? 0) / GPU_BUDGET;
 /** Tiered loading, one seam (#156 client contract): `loadGLB(lib, { tier })`
@@ -495,6 +512,12 @@ export const libLabels = new Map();
 
 const glbCache = new Map();
 export async function loadGLB(libPath, { tier = 'full' } = {}) {
+  // the WIRE decides which tier this load IS (review of #170, point 2): a
+  // lod wish that cannot negotiate — no transcoder, no key, no recipe, not
+  // a .glb — is a full load, keyed, fetched, and reported as one
+  await negotiationReady;
+  const ask = askFor({ libPath, key: ktx2Key, capable: !!ktx2.workerConfig, recipe: lodRecipe, tier });
+  tier = ask.tier;
   const glbKey = tier === 'lod' ? `${libPath}#lod` : libPath;
   const short = (libLabels.get(libPath) ?? libPath.split('/').pop()).slice(0, 28) + (tier === 'lod' ? '·lod' : '');
   loadsInFlight.set(glbKey, (loadsInFlight.get(glbKey) ?? 0) + 1);
@@ -506,18 +529,13 @@ export async function loadGLB(libPath, { tier = 'full' } = {}) {
       const work = beginWork(`glb ${short}`);
       try {
         work.phase('download');
-        // §20: ask for the KTX2 variant only when the transcoder detected
-        // support (detectSupport stamps workerConfig) and only for bare .glb
-        // paths — the server answers with the variant when one exists, the
-        // original otherwise. The full URL keys byteCache, so variant and
-        // original are distinct entries, which is correct.
-        let url = await negotiated(libPath, libPath.endsWith('.glb'));
-        // The geometry tier (#156) rides the ktx2 negotiation, with the RECIPE
-        // the running sequencer published — none published, none asked. The
-        // server answers the variant when one exists, the original chain
-        // otherwise (provisional): a lod request is never a worse model.
-        if (tier === 'lod' && url !== libPath) url = withLod(url, await lodRecipeReady);
-        const buf = await fetchBytes(`/library/${url}`);
+        // §20 + #156: the URL was decided above (askFor) — the running
+        // server's key when this GPU decodes KTX2 and the path negotiates,
+        // the lod recipe on top only when the ask is real. The server answers
+        // the variant when one exists, the original chain otherwise
+        // (provisional): a lod request is never a worse model. The full URL
+        // keys byteCache, so variant and original are distinct entries.
+        const buf = await fetchBytes(`/library/${ask.url}`);
         work.phase('queued');
         return await enqueue(async () => {
           work.phase('parse');
@@ -529,8 +547,8 @@ export async function loadGLB(libPath, { tier = 'full' } = {}) {
           // identity the realizer reads: which cache entry this proto is (for
           // retain/release/eviction) and which tier the SERVER actually sent
           gltf.scene.userData.glbKey = glbKey;
-          gltf.scene.userData.tierServed = tierOf(gltf.parser?.json);
-          gltf.scene.userData.tierAsked = tier;   // what the policy asked — the sweep compares against THIS
+          gltf.scene.userData.tierServed = tierOf(gltf.parser?.json, lodRecipe);   // the reducer's stamp, this recipe
+          gltf.scene.userData.tierAsked = tier;   // what crossed the wire — the sweep compares against THIS
           await work.yield();
           work.phase('textures');
           await primeTextures(gltf.scene, work);
