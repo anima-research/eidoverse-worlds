@@ -704,9 +704,11 @@ const ROUTES: Route[] = [
       for (const d of dirs) {
         if (!existsSync(d)) continue;
         for (const f of readdirSync(d)) {
-          // ktx2 variants live beside originals in OPT_DIR — they are the
-          // same model, not a catalog entry (the ghost-listing fix, §20c)
-          if (!f.endsWith(".glb") || f.endsWith(".ktx2.glb")) continue;
+          // variants live beside originals in OPT_DIR — ktx2 (§20c's ghost
+          // listing) and, since #156, .lod.<recipe>.glb — the same model, not
+          // a catalog entry; markers and .tmp likewise. One predicate, the one
+          // /library-list already walks with (store-variants.ts).
+          if (!f.endsWith(".glb") || isServingArtifact(f)) continue;
           const low = f.toLowerCase();
           const score = q.length ? q.filter((t) => low.includes(t)).length : 1;
           if (score > 0) files.set(f, Math.max(files.get(f) ?? 0, score));
