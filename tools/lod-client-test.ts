@@ -7,26 +7,37 @@
 // answer, the in-place replacement and the collider all AGREE. Review of
 // #170, point 4 — "the committed receipt stops at the pure chooser".
 //
-// Two halves. The REALIZER half runs the real client/lib/realize/models.js
-// (with the real policy, fold, scheduler and bus) over a stub of its
-// dependency cone — tools/lod-client-stub.mjs: no renderer; a loader whose
-// tier is the WIRE truth (askFor), whose "sequencer" answers a stamped
-// variant for libs it baked and the original otherwise, and which the test
-// can hold open and release by hand, so a tier swap is caught mid-flight;
-// colliders recorded, never built. The WIRE half spawns a sequencer child
-// PROCESS-OWNED (WORLD_INSTANCE_NONCE, as object-lod-test does) over a
-// fixture library and pushes the exact URLs the loader would send through
-// it — capable, incapable, wrong generation, an authored `recipe` extra —
-// reading the served tier with the same tierOf the loader uses.
+// Three parts. The REALIZER part runs the real client/lib/realize/models.js
+// and the real governor.js (with the real policy, fold, scheduler and bus)
+// over a stub of their dependency cone — tools/lod-client-stub.mjs: no
+// renderer; a loader whose tier is the WIRE truth (askFor), whose
+// "sequencer" answers a stamped variant for libs it baked and the original
+// otherwise, and which the test can hold open and release by hand, so a
+// tier swap is caught mid-flight; colliders recorded, never built; every
+// governor lever below 'lod' answering "nothing to shed". The WIRE part
+// spawns a sequencer child PROCESS-OWNED (WORLD_INSTANCE_NONCE, as
+// object-lod-test does) over a fixture library and pushes the exact URLs the
+// loader would send through it — capable, incapable, wrong generation, an
+// authored `recipe` extra — reading the served tier with the same tierOf the
+// loader uses. The PRODUCTION-LOADER part (round three of the review) then
+// runs the real, unmodified client/lib/assets.js against that same child
+// (tools/lod-loader-probe.ts: only a renderer that never draws and the frame
+// conductors injected below it, its relative fetches resolved to the child),
+// once per /version shape — the real one, one with no recipe, one with no
+// key — and asserts the URL it fetched, the cache key it chose and the
+// tierAsked / tierServed it stamped. A mutation at that seam (`tier =
+// req.tier`, the url, the stamps) fails here; a stubbed loader could not
+// say so, and the review caught exactly that.
 //
 // Negative controls, each named in its check: the churn of the first field
 // run (an "already light" answer re-asked every cooldown), a held tier swap
 // landing over a rider / cargo / a part motion / an edit hold, a lod ask a
 // non-KTX2 browser reports without ever sending, an authored `recipe`
-// extra read as a served lod. Dies at import on main (no lod_policy.js).
+// extra read as a served lod, a governor lever overriding the resident's
+// "full detail". Dies at import on main (no lod_policy.js).
 import { plugin } from 'bun';
 import { fileURLToPath } from 'node:url';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { spawn as spawnProc, type ChildProcess } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -35,8 +46,13 @@ const STUB = fileURLToPath(new URL('./lod-client-stub.mjs', import.meta.url));
 plugin({
   name: 'lod-client-stub',
   setup(b) {
+    // the realizer's cone (imported from realize/ as ../x.js) and the
+    // governor's cone (imported from lib/ as ./x.js) — state, scheduler,
+    // policy, fold and the bus stay REAL, and so do models.js and governor.js
     for (const f of ['^\\.\\./core\\.js$', '^\\.\\./assets\\.js$', '^\\.\\./colliders\\.js$',
-      '^\\.\\./lightrig\\.js$', '^\\.\\./lights\\.js$', '^\\.\\./world\\.js$']) {
+      '^\\.\\./lightrig\\.js$', '^\\.\\./lights\\.js$', '^\\.\\./world\\.js$',
+      '^\\./core\\.js$', '^\\./warmqueue\\.js$', '^\\./loadwork\\.js$', '^\\./lightrig\\.js$',
+      '^\\./emitters\\.js$', '^\\./terrain\\.js$', '^\\./remotes\\.js$', '^\\./frame\\.js$', '^\\./ui\\.js$']) {
       b.onResolve({ filter: new RegExp(f) }, () => ({ path: STUB }));
     }
   },
@@ -226,6 +242,49 @@ for (const [what, dep] of deps) {
 check('no realizer error was reported through the whole realizer half', stub.reports.length === 0,
   stub.reports.map((r: any) => `${r.where}: ${r.e?.message ?? r.e}`).join(' | '));
 
+// ---- 5. the other entry points (round three): the REAL governor's lever crosses into the sweep; the dial's callback is gated
+console.log('\n  entry points — the governor lever and the dial callback\n');
+{
+  const G: any = await import('../client/lib/governor.js');   // real, over the same stub cone: every lever below "lod" answers "nothing to shed"
+  M.modelQuality.setQuality('auto');
+  spawnAt('gov', 25); await settle();                          // inside the auto edge (39m) — full
+  drain();
+  check('gov (25m) joined full under "auto"', obj('gov')?.userData.tierAsked === 'full');
+  const toastsBefore = stub.toasts.length;
+  const hist = () => G.governorDebug().history as string[];
+  let windows = 0;
+  while (!hist().some((h) => h.startsWith('− lod')) && windows++ < 4) for (let i = 0; i < 4; i++) G.governPerformance(12);
+  check('slow seconds with nothing else to shed: the ladder reaches "lod" — the session dial sheds, the resident is told once',
+    M.modelQuality.shed === true && hist().some((h) => h.startsWith('− lod')) && stub.toasts.length === toastsBefore + 1,
+    JSON.stringify({ shed: M.modelQuality.shed, hist: hist().slice(-3), toasts: stub.toasts.slice(-1) }));
+  M.residencySweep(); await settle(); drain();   // drained: the governor's grace holds while a promote tail is pending
+  check('…and it CROSSES into the realizer: gov (25m > the halved 19.5m edge) re-tiers to lod on the next beat',
+    obj('gov')?.userData.tierAsked === 'lod' && obj('gov')?.userData.tier === 'lod', JSON.stringify(obj('gov')?.userData));
+  windows = 0;
+  while (M.modelQuality.shed && windows++ < 4) for (let i = 0; i < 6; i++) G.governPerformance(60);
+  check('smooth seconds: "lod" restores SILENTLY — the dial is off, no toast',
+    !M.modelQuality.shed && hist().some((h) => h.startsWith('+ lod')) && stub.toasts.length === toastsBefore + 1,
+    JSON.stringify({ shed: M.modelQuality.shed, hist: hist().slice(-3) }));
+  M.modelQuality.setQuality('full');
+  drain();
+  const histLen = hist().length;
+  for (let i = 0; i < 4; i++) G.governPerformance(12);
+  check('the resident\'s "full detail" is never overridden: under load the lever declines and the ladder passes it by',
+    M.modelQuality.shed === false && !hist().slice(histLen).some((h) => h.startsWith('− lod')), JSON.stringify(hist().slice(histLen)));
+  M.modelQuality.setQuality('auto');
+
+  // the dial's callback — skypanel.js binds it to the models⚙ row and shows what it returns
+  const hintEco = M.dialModelQuality('eco');
+  check('the row\'s callback sets and persists the dial and says it is yours only',
+    M.modelQuality.quality === 'eco' && store.get('ew-model-quality') === 'eco' && hintEco === 'models: eco (yours only)', hintEco);
+  stub.server.recipe = null;
+  const hintNone = M.dialModelQuality('auto');
+  check('…and where no reduced tier can be asked from this browser, the hint says so', /cannot be asked/.test(hintNone) && M.modelQuality.quality === 'auto', hintNone);
+  stub.server.recipe = REC;
+  const hintUnknown = M.dialModelQuality('ultra');
+  check('an unknown level is refused; the dial stands', M.modelQuality.quality === 'auto' && hintUnknown.startsWith('models: auto'), hintUnknown);
+}
+
 // ============================================================================
 console.log('\nlod-client — the wire half (an OWNED sequencer answers the loader\'s exact URLs)\n');
 
@@ -244,6 +303,12 @@ const cleanup = () => {
   for (const d of [LIB, NOWHERE]) try { rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ }
 };
 process.on('exit', cleanup);
+for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => { cleanup(); process.exit(1); });
+// a run killed mid-way may have left last time's variants in OPT_DIR: a STALE
+// variant (older than the fixture written below) is exactly what the server
+// refuses to serve (#156 freshness), so clear before writing, and wait for a
+// variant NEWER than its source, never for a file that merely exists
+for (const rel of mine) try { rmSync(join(OPT, rel), { force: true }); } catch { /* best effort */ }
 
 async function gridGlb(tag: string, cells: number, extras: object | null): Promise<Uint8Array> {
   const { Document, NodeIO } = await import('@gltf-transform/core');
@@ -312,7 +377,9 @@ try {
   if (C.up) {
     const key = C.key as string, recipe = C.lod as string;
     check('it published a key and the recipe this client was built against', !!key && recipe === LOD_RECIPE, `${key} / ${recipe}`);
-    const landed = await until(() => existsSync(join(OPT, `${HEAVY}.lod.${recipe}.glb`)), 60_000);
+    const variant = join(OPT, `${HEAVY}.lod.${recipe}.glb`);
+    const fresh = () => existsSync(variant) && statSync(variant).mtimeMs > statSync(join(LIB, HEAVY)).mtimeMs;
+    const landed = await until(fresh, 60_000);
     check('the boot sweep baked the heavy fixture\'s LOD (untextured: no encoder needed)', landed,
       C.log().split('\n').filter((l) => l.includes('lod')).slice(-3).join(' | '));
     const served = async (url: string) => {
@@ -339,6 +406,50 @@ try {
     check('an authored `recipe` extra EQUAL to the running recipe, through the lod door: the sweep refused it typed (already light), the original answers, the loader reads FULL',
       refused && d.status === 200 && d.json.asset?.extras?.recipe === recipe && !d.json.asset?.extras?.lodOf && d.tier === 'full',
       JSON.stringify({ refused, extras: d.json.asset?.extras, cc: d.cc }));
+
+    // ---- the PRODUCTION loader (round three): real client/lib/assets.js, only a renderer and
+    // the frame conductors injected below it, its /version and /library fetches going to the
+    // owned child. A mutation at the decision seam (tier / url / glbKey / the stamps) fails here.
+    console.log('\n  the production loader — real assets.js against the owned child\n');
+    const probe = async (strip: string) => {
+      const p = Bun.spawn([process.execPath, join(ROOT, 'tools', 'lod-loader-probe.ts')], {
+        env: { ...process.env, LODC_BASE: C.base, LODC_STRIP: strip, LODC_HEAVY: HEAVY, LODC_AUTHORED: AUTHORED },
+        stdout: 'pipe', stderr: 'pipe',
+      });
+      const killer = setTimeout(() => { try { p.kill(); } catch { /* gone */ } }, 90_000);   // a wedged probe is a failure, not a hang
+      const [out, err] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text()]);
+      await p.exited;
+      clearTimeout(killer);
+      const line = out.split('\n').find((l) => l.startsWith('PROBE '));
+      const r = line ? JSON.parse(line.slice(6)) : {};
+      if (!line || r.error) r.error = (r.error ?? '') + (err + out).split('\n').filter(Boolean).slice(-8).join(' | ');
+      return r;
+    };
+    const P = await probe('');
+    check('the real loader came up against the child: its /version handshake read the real key and recipe, the transcoder is detected',
+      !P.error && P.negotiable === true && P.capable === true, P.error ?? JSON.stringify(P));
+    if (!P.error) {
+      check('resolveLoadRequest(HEAVY, lod): the URL carries the child\'s key and recipe, the tier is lod, the cache key is <lib>#lod',
+        P.resolve.url === `${HEAVY}?ktx2=${key}&lod=${encodeURIComponent(recipe)}` && P.resolve.tier === 'lod' && P.resolve.glbKey === `${HEAVY}#lod`,
+        JSON.stringify(P.resolve));
+      check('loadGLB(HEAVY, {tier: lod}) FETCHED that URL, keyed #lod, stamped asked lod, and read the REAL variant\'s stamp as served lod',
+        P.fetched.includes(`/library/${P.resolve.url}`) && P.lod.glbKey === `${HEAVY}#lod` && P.lod.asked === 'lod' && P.lod.served === 'lod',
+        JSON.stringify({ lod: P.lod, fetched: P.fetched }));
+      check('loadGLB(HEAVY, {tier: full}) fetched the plain ktx2 URL, keyed on the lib, asked and served full',
+        P.fetched.includes(`/library/${HEAVY}?ktx2=${key}`) && P.full.glbKey === HEAVY && P.full.asked === 'full' && P.full.served === 'full',
+        JSON.stringify(P.full));
+      check('loadGLB(AUTHORED, {tier: lod}) asked lod and, parsing the ORIGINAL the child fell through to, served full — the authored extra fooled the real loader no more than the pure one',
+        P.authored.asked === 'lod' && P.authored.served === 'full' && P.authored.glbKey === `${AUTHORED}#lod`, JSON.stringify(P.authored));
+    }
+    const older = await probe('lodRecipe');
+    check('an OLDER sequencer (no lodRecipe on /version): the real loader never asks — plain ktx2 URL, keyed on the lib, asked full, no lod= anywhere',
+      !older.error && older.negotiable === false && older.lod?.asked === 'full' && older.lod?.glbKey === HEAVY
+      && older.fetched?.includes(`/library/${HEAVY}?ktx2=${key}`) && !older.fetched?.some((u: string) => u.includes('lod=')),
+      older.error ?? JSON.stringify(older));
+    const keyless = await probe('ktx2Key');
+    check('no key on /version: nothing negotiates — the bare path, asked full',
+      !keyless.error && keyless.negotiable === false && keyless.lod?.asked === 'full' && keyless.fetched?.includes(`/library/${HEAVY}`)
+      && !keyless.fetched?.some((u: string) => u.includes('=')), keyless.error ?? JSON.stringify(keyless));
   }
 } finally { await C.stop(); }
 

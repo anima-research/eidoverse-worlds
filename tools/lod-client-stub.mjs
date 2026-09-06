@@ -90,6 +90,41 @@ export const makeLight = () => new THREE_.Group();
 export const updateLight = () => {};
 export const disposeLight = () => {};
 
+// ---- the governor's cone (governor.js is REAL in the harness) ---------------
+// core.js extras: the sun and the pixel-ratio base the 'detail' / 'pixels'
+// levers touch
+export const sun = { shadow: { mapSize: { width: 2048, set() {} }, map: null } };
+export const BASE_PIXEL_RATIO = 1;
+renderer.setPixelRatio = () => {};
+renderer.getPixelRatio = () => 1;
+// warmqueue.js / loadwork.js: never loading — the governor's grace never holds
+export const warmStats = () => ({ pending: 0, running: false });
+export const warm = (label, fn) => Promise.resolve().then(fn);
+export const laneBusy = () => false;
+// lightrig.js / emitters.js / terrain.js / frame.js / remotes.js: every lever
+// BELOW 'lod' in the ladder answers "nothing to shed", so a slow window
+// reaches the lod lever deterministically
+export const setSlotCap = () => {};
+export const getSlotCap = () => 0;
+export const maxSlots = () => 0;
+export const litCount = () => 0;
+export const setCasterBudget = () => {};
+export const getCasterBudget = () => 2;
+export const casterCount = () => 0;
+export const setEmitterQuality = () => false;
+export const emitterQuality = () => 'auto';
+export const emitterCount = () => 0;
+export const setGrassDensity = () => {};
+export const getGrassDensity = () => 1;
+export const hasGrass = () => false;
+export const setLodBias = () => {};
+const every = { autos: 2 };
+export const setSystemEvery = (k, v) => { every[k] = v; };
+export const getSystemEvery = (k) => every[k] ?? 1;
+// ui.js: toasts recorded
+export const toasts = [];
+export const toast = (msg, kind, ms) => { toasts.push({ msg, kind, ms }); };
+
 // ---- world.js (its maps) ----------------------------------------------------
 export const entities = new Map();
 export const entityMeta = new Map();

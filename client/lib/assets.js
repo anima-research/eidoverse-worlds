@@ -189,8 +189,18 @@ export const negotiationReady = Promise.all([ktx2KeyReady, lodRecipeReady]).then
  *  support, the running sequencer must have published a key AND a recipe,
  *  and only bare .glb paths negotiate. The policy treats "no" as no recipe
  *  — nothing is asked that could not be, and nothing is reported as asked. */
-export const lodNegotiable = (libPath) =>
-  askFor({ libPath, key: ktx2Key, capable: !!ktx2.workerConfig, recipe: lodRecipe, tier: 'lod' }).tier === 'lod';
+export const lodNegotiable = (libPath) => resolveLoadRequest(libPath, 'lod').tier === 'lod';
+/** THE decision seam of a tiered load (review of #170, round three): from a
+ *  tier wish to everything loadGLB derives from it — the URL it fetches, the
+ *  tier that URL asks (askFor over this module's LIVE state: the running key
+ *  and recipe, this GPU's transcoder) and the cache identity it keys. One
+ *  function, exported, so the product-door gate executes the real seam and
+ *  never a restatement of it: tools/lod-loader-probe.ts runs THIS module
+ *  against an owned sequencer, and a mutation here fails it. */
+export function resolveLoadRequest(libPath, tier = 'full') {
+  const ask = askFor({ libPath, key: ktx2Key, capable: !!ktx2.workerConfig, recipe: lodRecipe, tier });
+  return { url: ask.url, tier: ask.tier, glbKey: ask.tier === 'lod' ? `${libPath}#lod` : libPath };
+}
 /** GPU memory against the proto budget — the policy's "device pressure". */
 export const gpuPressure = () => (renderer.info?.memory?.total ?? 0) / GPU_BUDGET;
 /** Tiered loading, one seam (#156 client contract): `loadGLB(lib, { tier })`
@@ -516,9 +526,9 @@ export async function loadGLB(libPath, { tier = 'full' } = {}) {
   // lod wish that cannot negotiate — no transcoder, no key, no recipe, not
   // a .glb — is a full load, keyed, fetched, and reported as one
   await negotiationReady;
-  const ask = askFor({ libPath, key: ktx2Key, capable: !!ktx2.workerConfig, recipe: lodRecipe, tier });
-  tier = ask.tier;
-  const glbKey = tier === 'lod' ? `${libPath}#lod` : libPath;
+  const req = resolveLoadRequest(libPath, tier);
+  tier = req.tier;
+  const glbKey = req.glbKey;
   const short = (libLabels.get(libPath) ?? libPath.split('/').pop()).slice(0, 28) + (tier === 'lod' ? '·lod' : '');
   loadsInFlight.set(glbKey, (loadsInFlight.get(glbKey) ?? 0) + 1);
   try {
@@ -529,13 +539,13 @@ export async function loadGLB(libPath, { tier = 'full' } = {}) {
       const work = beginWork(`glb ${short}`);
       try {
         work.phase('download');
-        // §20 + #156: the URL was decided above (askFor) — the running
+        // §20 + #156: the URL was decided above (resolveLoadRequest) — the running
         // server's key when this GPU decodes KTX2 and the path negotiates,
         // the lod recipe on top only when the ask is real. The server answers
         // the variant when one exists, the original chain otherwise
         // (provisional): a lod request is never a worse model. The full URL
         // keys byteCache, so variant and original are distinct entries.
-        const buf = await fetchBytes(`/library/${ask.url}`);
+        const buf = await fetchBytes(`/library/${req.url}`);
         work.phase('queued');
         return await enqueue(async () => {
           work.phase('parse');

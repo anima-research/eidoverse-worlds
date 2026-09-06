@@ -671,6 +671,18 @@ function tierFor(ent, current = null) {
   return chooseTier({ dist: entDist(ent), radius: residencyRadius(ent), quality: modelQuality.quality,
     recipe: lodNegotiable(ent?.lib) ? lodRecipe : null, pressure: gpuPressure(), shed: modelQuality.shed, current });
 }
+/** The models⚙ row's whole behaviour — skypanel.js binds it to the row and
+ *  shows what it returns: set the resident's dial, and say honestly whether
+ *  a reduced tier can be asked from this browser at all (the variant's
+ *  textures are KTX2: no transcoder, or a sequencer that published no
+ *  recipe, and every placement stays full detail). Out of the DOM so the
+ *  product-door harness gates it (tools/lod-client-test). */
+export function dialModelQuality(v) {
+  const q = modelQuality.setQuality(v);
+  return lodNegotiable('eidoverse/assets/models/any.glb')
+    ? `models: ${q} (yours only)`
+    : `models: ${q} (yours only) — reduced tiers cannot be asked from this browser; everything stays full detail`;
+}
 /** Only a placement nothing depends on may change tier in place — the same
  *  predicate as demotion (no riders, no seats, no part motion): a tier swap
  *  is a demote-and-promote with the placeholder frame skipped. */
