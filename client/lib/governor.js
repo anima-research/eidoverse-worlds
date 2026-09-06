@@ -27,6 +27,8 @@
 //   slots     the light-slot cap drops (idle slots are uniform zeros)
 //   emitters  per-emitter instance counts thin (auto → med → low)
 //   grass     the meadow thins (instanced count — no rebuild)
+//   lod       far placed objects fetch their reduced tier sooner (#156: the
+//             policy's edge halves; swaps happen on the residency sweep)
 //   pixels    render scale, −0.25 steps to 0.7
 //   detail    LOD bias 2 (far bodies at half rate) + shadow map 1024
 //
@@ -53,7 +55,7 @@ import { renderer, sun, BASE_PIXEL_RATIO } from './core.js';
 import { CONFIG } from './base.js';
 import { warmStats } from './warmqueue.js';
 import { laneBusy } from './loadwork.js';
-import { promoteTailPending } from './realize/models.js';
+import { promoteTailPending, modelQuality } from './realize/models.js';
 import { setSlotCap, getSlotCap, maxSlots, litCount,
   setCasterBudget, getCasterBudget, casterCount } from './lightrig.js';
 import { setEmitterQuality, emitterQuality, emitterCount } from './emitters.js';
@@ -190,6 +192,24 @@ const LEVERS = [
       if (!hasGrass() || grassDial >= 1) return false;
       grassDial = grassDial < 0.5 ? 0.6 : 1;
       setGrassDensity(grassDial);
+      return true;
+    },
+  },
+  {
+    name: 'lod',
+    // The tier policy's session dial (lod_policy.js shed): under load the
+    // reduce-at edge halves, so placed objects at middling distance fetch the
+    // reduced variant on their next sweep; restore widens it again. Nothing
+    // rebuilds — the swap rides the residency sweep's own retier path.
+    shed() {
+      if (modelQuality.shed || modelQuality.quality !== 'auto') return false;
+      modelQuality.setShed(true);
+      toast('distant objects reduced to keep the frame rate', 'warn', 8000);
+      return true;
+    },
+    restore() {
+      if (!modelQuality.shed) return false;
+      modelQuality.setShed(false);
       return true;
     },
   },

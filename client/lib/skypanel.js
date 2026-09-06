@@ -18,6 +18,8 @@ import { previewSky, skyArgs, skyImpl, WEATHERS, CLOUDS, SKY_WORLDS,
 import { GRASS_QUALITY, getGrassQuality, setGrassQuality,
   getGrassDensity, getGrassShed, getGrassApplied } from './terrain.js';
 import { RENDER_SCALES, getRenderScale, setRenderScale } from './governor.js';
+import { MODEL_QUALITY } from './lod_policy.js';
+import { modelQuality } from './realize/models.js';
 
 const SLIDERS = [
   ['hours', 'time', 0, 24, 0.1, 12],
@@ -187,6 +189,22 @@ export function paintSky(body) {
   rs.setAttribute('aria-label', 'render scale — local only, never shared with the world');
   rsRow.title = 'local performance setting — not shared with the world';
   body.appendChild(rsRow);
+
+  // The geometry tier is YOURS too (#156): which version of each placed
+  // object THIS machine fetches. 'auto' reduces far objects, sooner under
+  // GPU pressure; 'full' never reduces; 'eco' reduces sooner always (the
+  // pressured band) — no dial reduces what you stand beside. Bodies are
+  // never reduced (server contract). Persisted; never a verb.
+  const { row: mqRow, select: mq } = selectRow('models⚙',
+    MODEL_QUALITY.map((v) => [v, v === 'auto' ? 'auto' : v === 'full' ? 'full detail' : 'eco (reduce sooner)']),
+    modelQuality.quality,
+    (v) => {
+      modelQuality.setQuality(v);
+      flashHint(`models: ${v} (yours only)`);
+    });
+  mq.setAttribute('aria-label', 'model detail tier — local only, never shared with the world');
+  mqRow.title = 'local performance setting — not shared with the world';
+  body.appendChild(mqRow);
 
   // Sliders that only the BASIC sky answers. On the real sky the engine owns
   // sun direction and supplies its own bounce fill (sky.js documents the
