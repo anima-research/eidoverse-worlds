@@ -360,6 +360,8 @@ function realize(id, ent) {
  *  the reason look() can answer "which room" without touching the scene. */
 export const structurePlan = (id) => tracked.get(id)?.plan ?? null;
 export const structureIds = () => [...tracked.keys()];
+/** Visible native geometry for contextual interaction when its anchor is hidden. */
+export const structureObject = (id) => tracked.get(id)?.group ?? null;
 
 /** Full idempotent pass: hydration, world switch, late enable. */
 export function reconcileStructures() {

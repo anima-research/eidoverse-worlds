@@ -8,6 +8,8 @@
 // consent.js, voice mouths in voicemouths.js, /commands in lib/commands/.
 
 import { THREE, scene, camera, renderer } from './lib/core.js';
+import { tickInteraction } from './lib/interaction.js';
+import { movementInput } from './lib/input.js';
 import { CONFIG, bus, report } from './lib/base.js';
 import { contributeThumbnail, makeAvatar, EMOTE_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
@@ -25,7 +27,7 @@ import { initCauses } from './lib/realize/causes.js';
 import './lib/emitters.js';
 import { tickMotion } from './lib/motion.js';
 import {
-  myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
+  myState, updateMe, updateInput, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
   setRightsHook, setMeHook, setFolded,
 } from './lib/controller.js';
 import { remotes, updateRemotes, updateGaze } from './lib/remotes.js';
@@ -408,6 +410,9 @@ registerSystem('sky', (dt, t, now) => updateSky(now, t));
 registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather → uniforms
 registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots follow requests
 registerSystem('me-drive', (dt) => {
+  updateInput(dt);
+  const input = movementInput();
+  if (isDowned() && (input.moveX || input.moveZ || input.jump)) getUp();
   if (CONFIG.renderer) { /* camera is driven per snap request */ }
   else if (CONFIG.spectate) updateSpectator(dt, CONFIG.follow ? remotes.get(CONFIG.follow) : null);
   else if (isDowned()) stepRagdoll(dt);     // the controller yields while limp
@@ -441,6 +446,7 @@ registerSystem('promote-tail', () => drainPromoteTail());        // §16.2.C: pr
                                  // before 'debug' so F3 sees same-frame colliders
 registerSystem('debug', (dt, t, now) => updateDebug(now));       // F3 wireframes
 registerSystem('send-pose', (dt, t, now) => sendPose(now));
+registerSystem('object-interaction', () => tickInteraction());
 registerSystem('render', renderWorld);
 let _pulseAt = 0;
 registerSystem('pulse', (dt, t, now) => {

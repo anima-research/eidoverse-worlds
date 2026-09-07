@@ -12,6 +12,8 @@ import { heightAt } from './terrain.js';
 import { resolveColliders, lastBlockedTop, findSeat, raySegment } from './colliders.js';
 import { chat } from './chat.js';
 import { isOverlayOpen, flashHint } from './ui.js';
+import { keys, touchState, inputBlocked, movementInput, pollInput, noteInput, requestAction } from './input.js';
+export { keys } from './input.js';
 import {
   resolveFirstPersonAnchor, FP_FORWARD, FP_EYE_LIFT, FP_GAZE_AHEAD, FP_GAZE_DROP,
 } from './fp_view.js';
@@ -244,7 +246,6 @@ export const myState = {
   seat: null,        // { id, chair } while seated on something
 };
 
-export const keys = new Set();
 let posture = null;              // 'sit' | 'lie' | null
 let vy = 0, grounded = true, mantle = null, airborneFor = 0;
 
@@ -268,19 +269,41 @@ export function setPointerClaim(fn) { pointerClaimed = fn; }
 
 // ---------------------------------------------------------------- keyboard
 
-const typing = () => document.activeElement?.tagName === 'INPUT'
-  || document.activeElement?.tagName === 'TEXTAREA';
-
 addEventListener('keydown', (e) => {
-  if (typing() || isOverlayOpen()) return;
+  if (inputBlocked()) return;
+  noteInput('keyboard');
   if (e.key === 'Enter') { chat.open(); e.preventDefault(); return; }
   if (e.code === 'Space') e.preventDefault();      // space scrolls the page otherwise
   keys.add(e.code);
+  if (!e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    if (e.code === 'KeyE' && !document.activeElement?.closest('button, a')) requestAction('use');
+    if (e.code === 'Escape') requestAction('cancel');
+  }
   bus.emit('key', e);
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 // A held key with the window unfocused stays "down" forever — clear on blur.
-addEventListener('blur', () => keys.clear());
+bus.on('input-clear', () => { dragging = false; });
+bus.on('input-device', kind => {
+  if (kind === 'gamepad') flashHint('controller — left stick move · right stick look · A / × jump · X / □ use · B / ○ cancel · left stick click run', 6000);
+});
+bus.on('input-action', action => {
+  if (action !== 'cancel') return;
+  if (document.pointerLockElement === canvas) document.exitPointerLock();
+  if (photoMode) togglePhotoMode();
+  posture = null; myState.seat = null;
+});
+
+// Polled before every embodiment path, including mounted and downed bodies.
+export function updateInput(dt) {
+  const pad = pollInput();
+  look(pad.lookX * Math.min(dt, 0.1) * 2.4, pad.lookY * Math.min(dt, 0.1) * 1.9);
+}
+function look(yaw, pitch) {
+  if (inputBlocked()) return;
+  camYaw -= yaw;
+  camPitch = THREE.MathUtils.clamp(camPitch + pitch, -0.9, 1.2);
+}
 
 bus.on('key', (e) => {
   // AUTOREPEAT IS NOT A SECOND PRESS. A held key re-fires keydown at the OS
@@ -334,7 +357,8 @@ function toggleSit() {
 // spun the camera and scrolling the palette dollied it.
 
 canvas.addEventListener('mousedown', (e) => {
-  if (pointerClaimed()) return;
+  if (pointerClaimed() || inputBlocked()) return;
+  noteInput('keyboard');
   // In edit mode a left-drag belongs to the object under it; look with the
   // right button (or leave edit mode). Outside it, either button looks.
   if (e.button === 2 || (e.button === 0 && !editingNow())) { dragging = true; dragBtn = e.button; }
@@ -388,7 +412,7 @@ addEventListener('keydown', (e) => {
   if (e.code !== 'KeyM' || e.repeat) return;
   // bare M only: modified presses belong to the browser and the OS
   if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
-  if (editingNow() || isOverlayOpen() || chat.isOpen) return;
+  if (editingNow() || inputBlocked()) return;
   if (locked) document.exitPointerLock();
   else relock();
 });
@@ -407,13 +431,14 @@ function relock() {
 
 addEventListener('mousemove', (e) => {
   if (locked || dragging) {
-    camYaw -= e.movementX * 0.005;
-    camPitch = THREE.MathUtils.clamp(camPitch + e.movementY * 0.004, -0.9, 1.2);
+    if (e.movementX || e.movementY) noteInput('keyboard');
+    look(e.movementX * 0.005, e.movementY * 0.004);
   }
   if (!locked) mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
 });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // right-drag orbit
 canvas.addEventListener('wheel', (e) => {
+  if (inputBlocked()) return;
   e.preventDefault();
   camDist = THREE.MathUtils.clamp(camDist + e.deltaY * 0.004, 0.0, 16);
   const wasFP = firstPerson;
@@ -429,7 +454,6 @@ canvas.addEventListener('wheel', (e) => {
 // thumbstick plus look-drag on the rest of the screen is the minimum that
 // makes a body usable.
 
-const touchState = { moveX: 0, moveZ: 0, lookId: null, lastX: 0, lastY: 0 };
 export function enableTouch() {
   document.body.classList.add('touch');
   const stick = document.getElementById('stick');
@@ -437,12 +461,15 @@ export function enableTouch() {
   let stickId = null, cx = 0, cy = 0;
   const R = 46;
   stick.addEventListener('pointerdown', (e) => {
+    if (inputBlocked()) return;
+    noteInput('touch');
     stickId = e.pointerId;
     const r = stick.getBoundingClientRect();
     cx = r.left + r.width / 2; cy = r.top + r.height / 2;
     stick.setPointerCapture(e.pointerId);
   });
   stick.addEventListener('pointermove', (e) => {
+    if (inputBlocked()) return;
     if (e.pointerId !== stickId) return;
     let dx = e.clientX - cx, dy = e.clientY - cy;
     const d = Math.hypot(dx, dy);
@@ -457,16 +484,19 @@ export function enableTouch() {
   };
   stick.addEventListener('pointerup', end);
   stick.addEventListener('pointercancel', end);
+  stick.addEventListener('lostpointercapture', end);
+  bus.on('input-clear', () => { stickId = null; nub.style.transform = ''; });
 
   canvas.addEventListener('pointerdown', (e) => {
+    if (inputBlocked()) return;
     if (e.pointerType !== 'touch' || touchState.lookId !== null) return;
+    noteInput('touch');
     touchState.lookId = e.pointerId;
     touchState.lastX = e.clientX; touchState.lastY = e.clientY;
   });
   canvas.addEventListener('pointermove', (e) => {
     if (e.pointerId !== touchState.lookId) return;
-    camYaw -= (e.clientX - touchState.lastX) * 0.006;
-    camPitch = THREE.MathUtils.clamp(camPitch + (e.clientY - touchState.lastY) * 0.005, -0.9, 1.2);
+    look((e.clientX - touchState.lastX) * 0.006, (e.clientY - touchState.lastY) * 0.005);
     touchState.lastX = e.clientX; touchState.lastY = e.clientY;
   });
   const lookEnd = (e) => { if (e.pointerId === touchState.lookId) touchState.lookId = null; };
@@ -480,8 +510,13 @@ export function enableTouch() {
     b.textContent = label;
     if (code === 'chat') b.onclick = () => chat.open();
     else {
-      b.addEventListener('pointerdown', () => keys.add(code));
+      b.addEventListener('pointerdown', e => {
+        if (inputBlocked()) return;
+        noteInput('touch'); b.setPointerCapture(e.pointerId); keys.add(code);
+      });
       b.addEventListener('pointerup', () => keys.delete(code));
+      b.addEventListener('pointercancel', () => keys.delete(code));
+      b.addEventListener('lostpointercapture', () => keys.delete(code));
     }
     btns.appendChild(b);
   }
@@ -499,15 +534,14 @@ export function updateMe(dt, me) {
   if (!me) return;
   if (photoMode) { updatePhotoCamera(dt); return; }
 
-  let fwd = Number(held(MOVE_KEYS.fwd)) - Number(held(MOVE_KEYS.back));
-  let strafe = Number(held(MOVE_KEYS.right)) - Number(held(MOVE_KEYS.left));
-  if (touchState.moveX || touchState.moveZ) { strafe = touchState.moveX; fwd = -touchState.moveZ; }
+  const input = movementInput();
+  const fwd = -input.moveZ, strafe = input.moveX;
 
   const moving = Math.abs(fwd) > 0.08 || Math.abs(strafe) > 0.08;
-  const running = keys.has('ShiftLeft') || keys.has('ShiftRight');
+  const running = input.run;
   // A slow walk for precise positioning — placing a chair exactly where you
   // want it at 1.55 m/s is a fight.
-  const creeping = keys.has('AltLeft') || keys.has('AltRight');
+  const creeping = input.creep;
   const mag = Math.min(1, Math.hypot(fwd, strafe));
   const target = moving ? (creeping ? 0.55 : running ? 4.0 : 1.55) * mag : 0;
   myState.speed = THREE.MathUtils.lerp(myState.speed, target, 1 - Math.exp(-10 * dt));
@@ -639,7 +673,7 @@ export function updateMe(dt, me) {
     myState.pos.lerpVectors(mantle.from, mantle.to, e);
     if (k >= 1) { mantle = null; grounded = true; vy = 0; }
   } else {
-    if (grounded && keys.has('Space')) {
+    if (grounded && input.jump) {
       posture = null; myState.seat = null;
       const reach = blockedTop !== null ? blockedTop - myState.pos.y : 0;
       if (blockedTop !== null && reach > 0.3 && reach <= 1.7) {
