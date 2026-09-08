@@ -73,7 +73,11 @@ interface WorldAPI {
    *  bstate does not carry across. So iterating on a live script loses its
    *  kv on every upload+rebind cycle; if the state matters across versions,
    *  read it out before rebinding, or design keys the next version can
-   *  rebuild without. */
+   *  rebuild without.
+   *
+   *  A set() with an EQUAL value still counts as a change: a timer that
+   *  re-sets unchanged state writes a bstate entry into the replay log every
+   *  tick, forever — compare before you set. */
   kv: {
     get(key: string): unknown;
     set(key: string, value: unknown): void;   // undefined/null deletes
