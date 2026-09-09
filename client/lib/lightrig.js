@@ -59,8 +59,11 @@ import { warmDepth } from './warmqueue.js';
 // then throw in updateRig's Array(NaN) every frame — with no try/catch around
 // the frame loop, that silently stops rAF and freezes the whole client. The
 // measurement knob must not be a foot-gun (review note 4).
-const _slotsParam = Number(CONFIG.params.get('slots') ?? 8);
-const N_SLOTS = Number.isFinite(_slotsParam) ? Math.max(0, Math.min(16, Math.round(_slotsParam))) : 8;
+const _slotsParam = Number(CONFIG.params.get('slots') ?? 32);
+// TEMPORARY GLOBAL CANARY (Antra, 2026-09-09): compile enough fixed topology
+// to serve every currently observed request. Revert to the reviewed default
+// after the field test; this is measurement, not a new standing policy.
+const N_SLOTS = Number.isFinite(_slotsParam) ? Math.max(0, Math.min(32, Math.round(_slotsParam))) : 32;
 
 const rigGroup = new THREE.Group();
 rigGroup.name = 'lightrig';
