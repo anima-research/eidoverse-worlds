@@ -8,7 +8,6 @@
 // consent.js, voice mouths in voicemouths.js, /commands in lib/commands/.
 
 import { THREE, scene, camera, renderer } from './lib/core.js';
-import { tickInteraction } from './lib/interaction.js';
 import { CONFIG, bus, report } from './lib/base.js';
 import { contributeThumbnail, makeAvatar, EMOTE_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
@@ -34,6 +33,13 @@ import {
   net, connect, initIdentity, loginUrl, wireNet, sendVerb, sendPose, sendWhisper, sendTyping,
 } from './lib/net.js';
 import { updateBuild, toggleEditMode, isEditing } from './lib/build.js';
+// AFTER build/controller/net, not before them. Import position is evaluation
+// order, and listed first this pulled controller and the world/flora/chat/net
+// knot in ahead of everything above it (PR #171 review, item 9). From here
+// every client module it wants — controller, build, world, net, ui, state,
+// colliders, realize/structure — is already evaluated, so it adds only its own
+// pure shared/interaction.js and the boot order is the one that shipped.
+import { tickInteraction } from './lib/interaction.js';
 import { initPalette } from './lib/palette.js';
 import { setRightsSink } from './lib/state.js';
 import { initConjure } from './lib/conjure.js';
