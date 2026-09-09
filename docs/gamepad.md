@@ -11,7 +11,7 @@ until it disconnects.
 | Look | Right stick | Drag / mouselook |
 | Jump | A / Cross | Space |
 | Use nearby object | X / Square | E / click the prompt |
-| Cancel posture, photo mode, or pointer lock | B / Circle | Escape |
+| Cancel posture, photo mode, or pointer lock | B / Circle | Escape (after the editor declines it — see below) |
 | Run | Left stick click | Shift |
 
 Movement is analog and camera-relative. Both sticks have a 0.18 radial dead
@@ -31,6 +31,25 @@ reconnecting, release buttons and center sticks before playing again.
 
 The controller legend flashes once, the first time a pad takes over in a
 session, not on every switch back from the mouse.
+
+## Escape is a chain; B / Circle is not
+
+Escape is shared with the editor, so one press does one thing. The build layer
+gets it first and dismisses the most transient state it has — an armed seat
+placement, then a ghost, then a seat selection, then a selection, then edit
+mode itself. Only a press with none of those left reaches `cancel`, which
+stands you up, leaves photo mode, and drops pointer lock. Deselecting an
+object while you are sitting no longer also stands you up.
+
+B / Circle has no such chain: it reaches `cancel` directly from the pad poll
+and never enters the keyboard path, so it stands you up even mid-edit. That is
+deliberate — the editor is a mouse surface, and a pad is not holding it.
+
+Escape under pointer lock is the browser's, not ours. Chromium consumes it to
+exit the lock and never delivers the key to the page, so mouselook + Escape
+frees the cursor and does not cancel a posture; press it again once unlocked,
+or use B / Circle. This is browser behavior with no supported override, and
+the client does not try to work around it.
 
 ## Contextual objects
 
@@ -58,13 +77,15 @@ API access leaves keyboard and touch operational.
 - [Gamepad Permissions Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Permissions-Policy/gamepad)
 
 Run `bun tools/input-test.ts`, `bun tools/input-dom-test.ts`,
-`bun tools/interaction-test.ts`, `bun tools/limp-input-test.ts`, and
-`bun tools/collider-test.ts` as separate processes. They cover normalization,
-edge triggering, discovery/reconnection neutral guards, focus suppression,
-disconnect clearing, denied API fallback, contextual use routing, the prompt
-never taking the keyboard, the movement threshold and neutral latch that guard
-knock-downs and seats, and excluding the target's own collider while respecting
-other obstacles.
+`bun tools/interaction-test.ts`, `bun tools/limp-input-test.ts`,
+`bun tools/escape-priority-test.ts`, and `bun tools/collider-test.ts` as
+separate processes. They cover normalization, edge triggering,
+discovery/reconnection neutral guards, focus suppression, disconnect clearing,
+denied API fallback, contextual use routing, the prompt never taking the
+keyboard, the movement threshold and neutral latch that guard knock-downs and
+seats, the Escape chain and the once-per-session pad legend (real controller.js
+and build.js, on the real bus), and excluding the target's own collider while
+respecting other obstacles.
 
 Physical Windows/Edge acceptance on 2026-09-07 exposed an
 `Xbox 360 Controller (XInput STANDARD GAMEPAD)`. The operator verified movement,

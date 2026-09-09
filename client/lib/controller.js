@@ -278,9 +278,17 @@ addEventListener('keydown', (e) => {
   keys.add(e.code);
   if (!e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey) {
     if (e.code === 'KeyE' && !document.activeElement?.closest('button, a')) requestAction('use');
-    if (e.code === 'Escape') requestAction('cancel');
   }
   bus.emit('key', e);
+  // Escape LAST, and only for a press nobody else wanted. build.js runs its
+  // own Escape chain on this same event (armed placement → ghost → seat →
+  // selection → edit mode) and declines the default for the one it consumes;
+  // dispatched before the emit, a single press both deselected AND stood you
+  // up. The pad's B/○ is untouched by any of this — it emits `input-action`
+  // straight out of pollInput and never visits the keyboard surface — so
+  // cancel-while-editing still works on a controller.
+  if (e.code === 'Escape' && !e.repeat && !e.ctrlKey && !e.altKey && !e.metaKey
+      && !e.defaultPrevented) requestAction('cancel');
 });
 addEventListener('keyup', (e) => keys.delete(e.code));
 // A held key with the window unfocused stays "down" forever — clear on blur.
