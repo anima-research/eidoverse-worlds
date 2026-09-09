@@ -10,17 +10,23 @@ import { registerEditor } from './inspect.js';
 let mode = CONFIG.objectLabels ?? 'off', overlay, panel, content, selected = null;
 let records = [], authoredRecords = [], candidates = [], lastCandidates = -Infinity, lastSight = 0, cursor = 0;
 const anchors = new WeakMap(), plaques = [];
+const point = new THREE.Vector3(), projected = new THREE.Vector3(), direction = new THREE.Vector3();
+// Reused every frame: tickObjectLabels runs at frame rate and is not reentrant.
+const positioned = [], occupied = [], cleared = [], byId = new Map(), assigned = new Set();
 // The keys the overlay itself consumes. Everything else -- movement above all --
 // must keep bubbling to window even while a plaque holds focus.
 const CONSUMED_KEYS = new Set(['Enter', ' ', 'Spacebar', 'Escape', 'Esc']);
-const point = new THREE.Vector3(), projected = new THREE.Vector3(), direction = new THREE.Vector3();
-const positioned = [];
 
 function refresh() {
   // Folded entities are keyed by ID; values deliberately contain no `id`.
-  records = Object.entries(state.st.entities).map(([id, entity]) => ({
-    entity, ...objectIdentity({ ...entity, id }, state.st.assets),
-  }));
+  records = Object.entries(state.st.entities).map(([id, entity]) => {
+    const record = { entity, ...objectIdentity({ ...entity, id }, state.st.assets) };
+    // Code-point count for the plaque width, measured once here rather than by
+    // spreading the name into a throwaway array per visible label per frame.
+    // Names only ever change by rebuilding this array, so it cannot go stale.
+    record.nameLength = [...record.name].length;
+    return record;
+  });
   authoredRecords = records.filter(record => record.authored);
   lastCandidates = -Infinity;
   if (selected) showDetails(selected);
@@ -197,12 +203,13 @@ function positions(source = authoredRecords) {
       point.y += 0.2;
     }
     projected.copy(point).project(camera);
-    Object.assign(record, {
-      wx: point.x, wy: point.y, wz: point.z, distance,
-      inView: projected.z >= -1 && projected.z <= 1 && Math.abs(projected.x) <= 1 && Math.abs(projected.y) <= 1,
-      x: rect.left + (projected.x + 1) * rect.width / 2,
-      y: rect.top + (1 - projected.y) * rect.height / 2,
-    });
+    // Written field by field, not through an Object.assign literal: this runs
+    // per visible label per frame and the literal was pure garbage.
+    record.wx = point.x; record.wy = point.y; record.wz = point.z;
+    record.distance = distance;
+    record.inView = projected.z >= -1 && projected.z <= 1 && Math.abs(projected.x) <= 1 && Math.abs(projected.y) <= 1;
+    record.x = rect.left + (projected.x + 1) * rect.width / 2;
+    record.y = rect.top + (1 - projected.y) * rect.height / 2;
     positioned.push(record);
   }
   return positioned;
@@ -228,27 +235,29 @@ export function tickObjectLabels(now = performance.now()) {
       record.occluded = distance > 0 && raySegment(camera.position, direction.normalize(), distance, record.id) !== null;
     }
   }
-  const occupied = [];
-  const clear = visible.filter(record => {
-    if (record.occluded) return false;
-    const width = Math.min(220, [...record.name].length * 13 + 20);
-    const box = { left: record.x - width / 2, right: record.x + width / 2, top: record.y - 32, bottom: record.y };
+  occupied.length = 0;
+  cleared.length = 0;
+  for (const record of visible) {
+    if (record.occluded) continue;
+    const width = Math.min(220, record.nameLength * 13 + 20);
     // `bottom` is clamped too: without it a label near the bottom edge rendered
     // half off-screen instead of being suppressed like every other edge case.
-    if (box.left < 4 || box.right > innerWidth - 4 || box.top < 4 || box.bottom > innerHeight - 4) return false;
-    if (occupied.some(other => box.left < other.right + 4 && box.right > other.left - 4 && box.top < other.bottom + 4 && box.bottom > other.top - 4)) return false;
+    const box = { left: record.x - width / 2, right: record.x + width / 2, top: record.y - 32, bottom: record.y };
+    if (box.left < 4 || box.right > innerWidth - 4 || box.top < 4 || box.bottom > innerHeight - 4) continue;
+    if (occupied.some(other => box.left < other.right + 4 && box.right > other.left - 4 && box.top < other.bottom + 4 && box.bottom > other.top - 4)) continue;
     occupied.push(box);
-    return true;
-  });
-  const byId = new Map(clear.map(record => [record.id, record]));
-  const assigned = new Set();
+    cleared.push(record);
+  }
+  byId.clear();
+  assigned.clear();
+  for (const record of cleared) byId.set(record.id, record);
   for (const plaque of plaques) {
     const id = plaque.dataset.entityId;
     plaque.hidden = !byId.has(id);
     if (!plaque.hidden) assigned.add(id);
     else if (document.activeElement === plaque) plaque.blur();
   }
-  for (const record of clear) {
+  for (const record of cleared) {
     if (assigned.has(record.id)) continue;
     const plaque = plaques.find(plaque => plaque.hidden);
     if (!plaque) break;
