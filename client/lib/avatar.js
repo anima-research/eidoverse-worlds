@@ -189,6 +189,16 @@ export const WING_POWER = {
 // their components hand-tweaked -- easing an axis-angle keeps the direction of
 // the fold exactly as authored and changes only how far it goes. The uppers
 // and every outer segment are untouched.
+// THE LAMP'S BREATH, as dials rather than as three numbers buried in a
+// trig expression -- this took three passes to feel right and will take more.
+//   FLOOR  an ember, not darkness: the chest keeps burning between breaths
+//   PEAK   below 1 on purpose; a lower ceiling reads as breath, not as a pulse
+//   SHAPE  >1 dwells near the floor and softens the flare (inhale slower than
+//          the rekindling); 1.0 is a plain sine, 2.0 is the sharp version
+const LAMP_FLOOR = 0.08;
+const LAMP_PEAK = 0.70;
+const LAMP_SHAPE = 1.6;
+
 const WING_FOLDED = {
   L_Wing_Lower: [-0.19528, +0.01928, +0.08113, +0.97720],
   L_Wing_Lower_1: [+0.00000, +0.00000, -0.14119, +0.98998],
@@ -1682,18 +1692,22 @@ export class Avatar {
     // other -- which is the difference between a body with a rhythm and a body
     // with two.
     //
-    // ALL THE WAY DOWN, at Janus's ask: "make it go dark entirely at the
-    // darkest point of the cycle". My first cut floored at 0.72 on the theory
-    // that a lamp going out reads as a fault -- which is true of a FAULT
-    // light, and wrong here: a chest that darkens and rekindles on a 3.4s
-    // period is not a warning, it is a body breathing, and the whole point is
-    // that it be noticeable.
+    // NEARLY OUT, NOT OUT, and dimmer at the top -- Janus, watching the full
+    // swing: "somewhat less bright at the peak, and have it fade to almost
+    // out, but not quite."
     //
-    // The curve is a raised sine SQUARED, not a bare sine. Squaring holds the
-    // dark part of the cycle longer and sharpens the peak, so it reads as
-    // rekindling rather than as a dimmer being turned evenly up and down --
-    // and because it never goes negative, it reaches exactly 0 once per cycle
-    // instead of clipping there.
+    // Three passes to get here, and the middle one was worth making: 0.72
+    // floor (too subtle, a dimmer twitching), then a true zero (noticeable,
+    // and reading as a lamp cutting out), and now an EMBER -- 0.08 at the
+    // bottom, so the chest is never actually dark and the eye reads a body
+    // that keeps burning rather than one that switches. The peak drops to 0.70
+    // because a lower ceiling makes the same swing feel like breath instead of
+    // a pulse; brightness and drama are not the same dial.
+    //
+    // The exponent shapes the dwell. sin^1.6 over |sin| holds near the floor a
+    // little longer than a bare sine and softens the peak -- the inhale is
+    // slower than the flare. At half the angular rate, so the period is BREATH
+    // and not half of it.
     //
     // Both the emissive SURFACE and the CAST light move together -- the
     // surface so it is visible up close through the glass, the light so the
@@ -1710,8 +1724,9 @@ export class Avatar {
       });
     }
     if (this._lampMats.length) {
-      const phase = (now / 1000) * (Math.PI / BREATH);   // half-rate: sin^2 has
-      const k = Math.sin(phase) ** 2;                    // twice the period
+      const phase = (now / 1000) * (Math.PI / BREATH);   // half-rate: the shaped
+      const k = LAMP_FLOOR                               // sine has 2x the period
+        + (LAMP_PEAK - LAMP_FLOOR) * Math.abs(Math.sin(phase)) ** LAMP_SHAPE;
       for (const { m, base } of this._lampMats) m.emissiveIntensity = base * k;
       // the cast follows the glow, at whatever intensity the inference chose
       for (const { key, intensity } of this._lamps) {
