@@ -1682,11 +1682,22 @@ export class Avatar {
     // other -- which is the difference between a body with a rhythm and a body
     // with two.
     //
-    // A SINE FLOOR, not a full swing to zero: a lamp that goes out every 1.7
-    // seconds is a fault light. 0.72..1.0 of the authored intensity reads as
-    // breathing. Both the emissive SURFACE and the CAST light move together --
-    // the surface so it is visible up close through the glass, the light so
-    // the pulse reaches whatever he is standing near.
+    // ALL THE WAY DOWN, at Janus's ask: "make it go dark entirely at the
+    // darkest point of the cycle". My first cut floored at 0.72 on the theory
+    // that a lamp going out reads as a fault -- which is true of a FAULT
+    // light, and wrong here: a chest that darkens and rekindles on a 3.4s
+    // period is not a warning, it is a body breathing, and the whole point is
+    // that it be noticeable.
+    //
+    // The curve is a raised sine SQUARED, not a bare sine. Squaring holds the
+    // dark part of the cycle longer and sharpens the peak, so it reads as
+    // rekindling rather than as a dimmer being turned evenly up and down --
+    // and because it never goes negative, it reaches exactly 0 once per cycle
+    // instead of clipping there.
+    //
+    // Both the emissive SURFACE and the CAST light move together -- the
+    // surface so it is visible up close through the glass, the light so the
+    // pulse reaches whatever he is standing near.
     if (this._lampMats === undefined) {
       this._lampMats = [];
       this.vrm.scene.traverse((o) => {
@@ -1699,7 +1710,8 @@ export class Avatar {
       });
     }
     if (this._lampMats.length) {
-      const k = 0.86 + 0.14 * Math.sin((now / 1000) * (2 * Math.PI / BREATH));
+      const phase = (now / 1000) * (Math.PI / BREATH);   // half-rate: sin^2 has
+      const k = Math.sin(phase) ** 2;                    // twice the period
       for (const { m, base } of this._lampMats) m.emissiveIntensity = base * k;
       // the cast follows the glow, at whatever intensity the inference chose
       for (const { key, intensity } of this._lamps) {
