@@ -174,15 +174,24 @@ function positions(source = authoredRecords) {
       object.localToWorld(point);
     } else {
       let anchor = anchors.get(object);
-      if (!anchor) {
+      if (anchor === undefined) {
         const box = new THREE.Box3().setFromObject(object);
-        if (box.isEmpty()) continue; // Loading placeholders have no meaningful bounds.
-        anchor = new THREE.Vector3();
-        box.getCenter(anchor);
-        anchor.y = box.max.y;
-        object.worldToLocal(anchor);
+        // Cache the MISS as well (null, hence the `=== undefined` test above):
+        // setFromObject walks the entire subtree, and bailing before the write
+        // re-walked every geometry-less object EVERY FRAME. Caching forever is
+        // safe because nothing grows geometry in place -- realizeModel(),
+        // demote() and createLight() each `entities.set()` a brand-new
+        // Object3D, which re-keys this WeakMap on its own.
+        anchor = null;
+        if (!box.isEmpty()) {
+          anchor = new THREE.Vector3();
+          box.getCenter(anchor);
+          anchor.y = box.max.y;
+          object.worldToLocal(anchor);
+        }
         anchors.set(object, anchor);
       }
+      if (!anchor) continue;   // no meaningful bounds, and never will have
       point.copy(anchor);
       object.localToWorld(point);
       point.y += 0.2;
@@ -224,7 +233,9 @@ export function tickObjectLabels(now = performance.now()) {
     if (record.occluded) return false;
     const width = Math.min(220, [...record.name].length * 13 + 20);
     const box = { left: record.x - width / 2, right: record.x + width / 2, top: record.y - 32, bottom: record.y };
-    if (box.left < 4 || box.right > innerWidth - 4 || box.top < 4) return false;
+    // `bottom` is clamped too: without it a label near the bottom edge rendered
+    // half off-screen instead of being suppressed like every other edge case.
+    if (box.left < 4 || box.right > innerWidth - 4 || box.top < 4 || box.bottom > innerHeight - 4) return false;
     if (occupied.some(other => box.left < other.right + 4 && box.right > other.left - 4 && box.top < other.bottom + 4 && box.bottom > other.top - 4)) return false;
     occupied.push(box);
     return true;

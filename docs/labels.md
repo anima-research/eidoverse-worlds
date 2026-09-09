@@ -27,7 +27,10 @@ usable until dismissed. Existing scene-tree inspection remains available.
 An optional `offset: [x, y, z]` is entity-local, finite and bounded to ±100m,
 and is used exactly as given — it needs no geometry, so it is how a marker with
 no mesh of its own gets a label. Otherwise the model's cached upper bound
-anchors the label, with 0.2m of clearance above it.
+anchors the label, with 0.2m of clearance above it. That bound is measured once
+per rendered object and cached, including the "no bounds at all" answer: an
+object never grows geometry in place — the realizer swaps in a new object — so a
+geometry-less object with no authored offset is measured once, not every frame.
 Labels follow live transforms and wait for actual geometry, including replacement
 and promotion after loading. Range is measured from the entity root so a tall
 object's own height does not make it disappear from the nearby set.
@@ -46,8 +49,9 @@ click activates a plaque without leaving focus on it; Tab still focuses it and
 Enter or Space still opens its details. Pointer events over a plaque never
 start a look-drag.
 
-At most 32 labels appear. Selected and nearer objects take priority; overlapping
-labels are suppressed instead of stacked into unreadable text. DOM buttons are
+At most 32 labels appear. Selected and nearer objects take priority; labels that
+overlap another label, or that would run past a viewport edge, are suppressed
+instead of stacked into unreadable text or drawn half off-screen. DOM buttons are
 reused without changing their entity identity when distance ordering changes.
 Positions follow camera and object transforms. Occlusion uses existing spatial
 colliders, with at most four sight-line samples every 100ms, excluding the object

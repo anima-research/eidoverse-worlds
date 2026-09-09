@@ -155,6 +155,20 @@ twinB.position.x = 1.2; twinB.updateMatrixWorld();   // clear of twinA's box
 tickObjectLabels(2100);
 assert.equal(visible().length, 2, 'separated labels both render, so the suppression is about the boxes');
 
+// A point on the ray through the very bottom of the frame, 5m out: projecting
+// along a camera ray preserves NDC x/y, so this lands the anchor at y≈843 of
+// an 844px viewport -- off-screen once the plaque's own height is counted.
+const onBottomRay = (ndcY: number) => new THREE.Vector3(0, ndcY, 0.5).unproject(camera)
+  .sub(camera.position).normalize().multiplyScalar(5).add(camera.position);
+const low = onBottomRay(-0.998);
+twinB.position.set(low.x, low.y - 0.7, low.z); twinB.updateMatrixWorld();
+tickObjectLabels(2200);
+assert.equal(visible().length, 1, 'a label whose box runs past the bottom edge is suppressed, not half-drawn');
+const higher = onBottomRay(-0.9);
+twinB.position.set(higher.x, higher.y - 0.7, higher.z); twinB.updateMatrixWorld();
+tickObjectLabels(2300);
+assert.equal(visible().length, 2, 'the same label inside the viewport still renders');
+
 // ---- plaque identity survives a distance reorder ----------------------------
 const trio = emptyState();
 const seats: Record<string, [number, number, number]> = { A: [0, 0.5, 4], B: [0, 1.5, 0], C: [0, 2.5, -4] };
@@ -192,5 +206,30 @@ blocked.clear();
 tickObjectLabels(2700);
 assert.equal(visible().length, 3, 'clearing the obstruction brings it back');
 
-console.log('label DOM: real fold identity, default off, click details, motion, rename, removal, replay, authored offsets, keyboard passthrough, overlap suppression, plaque identity, occlusion and no world writes passed');
+// ---- an empty-bounds object is measured once, not once per frame -----------
+// Box3.setFromObject walks the whole subtree; bailing before the cache write
+// re-walked every geometry-less object on every full scan, forever.
+const ghost = emptyState();
+foldEntry(ghost, entry('spawn', { id: 'ghost', lib: 'ghost.glb', pos: [0, 1, 0] }));
+foldEntry(ghost, entry('comp', { id: 'ghost', type: 'label', data: { name: 'Ghost' } }));
+hydrate(ghost);
+entities.clear();
+entities.set('ghost', new THREE.Group());   // no geometry, and no authored offset
+configureObjectLabels({ mode: 'all' });
+const setFromObject = THREE.Box3.prototype.setFromObject;
+let measures = 0;
+THREE.Box3.prototype.setFromObject = function (this: unknown, ...args: unknown[]) {
+  measures++;
+  return setFromObject.apply(this as never, args as never);
+};
+tickObjectLabels(2800);
+assert.equal(visible().length, 0, 'no bounds and no authored offset means no plaque');
+const measured = measures;
+assert.ok(measured > 0, 'the empty object really was measured once');
+tickObjectLabels(2900);
+tickObjectLabels(3000);
+assert.equal(measures, measured, 'the empty result is cached: no subtree walk per frame');
+THREE.Box3.prototype.setFromObject = setFromObject;
+
+console.log('label DOM: real fold identity, default off, click details, motion, rename, removal, replay, authored offsets, cached empty bounds, keyboard passthrough, overlap/edge suppression, plaque identity, occlusion and no world writes passed');
 GlobalRegistrator.unregister();
