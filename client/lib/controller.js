@@ -285,8 +285,16 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => keys.delete(e.code));
 // A held key with the window unfocused stays "down" forever — clear on blur.
 bus.on('input-clear', () => { dragging = false; });
+// The pad legend is a teaching aid, and you only learn it once. `input-device`
+// fires on every SWITCH, so anyone driving the UI with a mouse and the world
+// with a stick re-read the same six-second banner on every swap. Show it the
+// first time a pad takes over this session; a pad that leaves and comes back
+// is the same pad, held by someone who already knows what B does.
+let padHintShown = false;
 bus.on('input-device', kind => {
-  if (kind === 'gamepad') flashHint('controller — left stick move · right stick look · A / × jump · X / □ use · B / ○ cancel · left stick click run', 6000);
+  if (kind !== 'gamepad' || padHintShown) return;
+  padHintShown = true;
+  flashHint('controller — left stick move · right stick look · A / × jump · X / □ use · B / ○ cancel · left stick click run', 6000);
 });
 bus.on('input-action', action => {
   if (action !== 'cancel') return;

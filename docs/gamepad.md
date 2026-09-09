@@ -29,6 +29,9 @@ Blur, hidden pages, disconnection, and leaving the page clear input. Chat,
 editable controls, and modal focus suppress gameplay. After returning or
 reconnecting, release buttons and center sticks before playing again.
 
+The controller legend flashes once, the first time a pad takes over in a
+session, not on every switch back from the mouse.
+
 ## Contextual objects
 
 An ordinary `interaction` component selects a primary use action:
