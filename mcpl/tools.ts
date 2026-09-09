@@ -413,17 +413,36 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // REFUSED from posing a winged one. mica produced both wrong-body
       // receipts. The gate has to ask about the skeleton that will wear it.
       //
-      // Null means "could not find out" -- an unknown target, or a glTF that
-      // would not parse -- and then the gate is SKIPPED rather than closed:
-      // refusing every wing pose because a lookup failed would break the tool
-      // for a network hiccup, and the client drops an unresolvable bone anyway.
-      let rawKnown: Set<string> | null = null;
-      try {
-        const bones = await ag.loadBonesForTarget(a.target ? String(a.target) : null);
-        rawKnown = bones ? new Set(bones) : null;
-      } catch { rawKnown = null; }
+      // UNKNOWN ANATOMY REFUSES, LOUDLY. The first cut skipped the gate when
+      // the lookup failed, on the theory that a network hiccup should not break
+      // the tool -- but that turns "I could not find out" into a successful
+      // silent no-op, which is the one outcome this whole path exists to
+      // prevent (mica; and the resident's requirement that the doorman stay
+      // loud: he localised a fault in one hop off SEVEN verbatim rejections).
+      //
+      // Only RAW names need the gate, so a humanoid-only pose still works when
+      // the skeleton cannot be read -- VRM guarantees that vocabulary. A pose
+      // naming a wing gets told why, and can retry.
       const whose = a.target ? String(a.target) : null;
-      const v = validatePose(a.bones, rawKnown ? { rawKnown, ...(whose ? { whose } : {}) } : {});
+      let rawKnown: Set<string> | null = null;
+      let rawAmbiguous: string[] = [];
+      let anatomyWhy: string | null = null;
+      try {
+        const r = await ag.loadBonesForTarget(whose);
+        rawKnown = r.bones ? new Set(r.bones) : null;
+        rawAmbiguous = r.ambiguous;
+        anatomyWhy = r.why;
+      } catch (e: any) {
+        anatomyWhy = `the skeleton lookup failed (${e?.message ?? e})`;
+      }
+      const namesRaw = Object.keys(a.bones ?? {}).filter((n) => /^[LR]_Wing_/.test(n));
+      if (!rawKnown && namesRaw.length) {
+        return text(`no pose set — ${anatomyWhy ?? "that body's skeleton is unknown"}, `
+          + `so ${namesRaw.join(", ")} cannot be checked and will not be guessed at. `
+          + `Humanoid bone names still work; retry the wing names once the body is known.`);
+      }
+      const v = validatePose(a.bones,
+        rawKnown ? { rawKnown, rawAmbiguous, ...(whose ? { whose } : {}) } : {});
       const note = poseReport(v);
       if (!v.accepted.length) {
         return text(`no pose set — nothing usable in \`bones\`.${note ? ` ${note}.` : ""}`
@@ -436,7 +455,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         ag.puppet(String(a.target), { pose: v.pose });
         return text(`asked ${a.target} to hold a pose over ${v.accepted.length} bone(s)`
           + `${note ? ` — ${note}` : ""}`
-          + (rawKnown ? "" : ` (could not read ${a.target}'s skeleton, so bone names went unchecked)`)
+          + (rawKnown ? "" : ` (humanoid names only — ${anatomyWhy})`)
           + ". They decide whether to take it.");
       }
       const hold = !!a.hold;
@@ -505,13 +524,26 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // gained it -- with no body gate at all, which is worse than pose's bug
       // was: mica got `wingless self -> animate wing: "playing ... L_Wing_Upper"`.
       // An animation is a pose over time; the same skeleton has to be asked.
-      let rawKnown: Set<string> | null = null;
-      try {
-        const bones = await ag.loadBonesForTarget(a.target ? String(a.target) : null);
-        rawKnown = bones ? new Set(bones) : null;
-      } catch { rawKnown = null; }
+      // Unknown anatomy refuses here too, for the same reason.
       const whoseT = a.target ? String(a.target) : null;
-      const v = validateTracks(a.tracks, rawKnown ? { rawKnown, ...(whoseT ? { whose: whoseT } : {}) } : {});
+      let rawKnown: Set<string> | null = null;
+      let rawAmbiguous: string[] = [];
+      let anatomyWhy: string | null = null;
+      try {
+        const r = await ag.loadBonesForTarget(whoseT);
+        rawKnown = r.bones ? new Set(r.bones) : null;
+        rawAmbiguous = r.ambiguous;
+        anatomyWhy = r.why;
+      } catch (e: any) {
+        anatomyWhy = `the skeleton lookup failed (${e?.message ?? e})`;
+      }
+      const animRaw = Object.keys(a.tracks ?? {}).filter((n) => /^[LR]_Wing_/.test(n));
+      if (!rawKnown && animRaw.length) {
+        return text(`nothing played — ${anatomyWhy ?? "that body's skeleton is unknown"}, `
+          + `so ${animRaw.join(", ")} cannot be checked and will not be guessed at.`);
+      }
+      const v = validateTracks(a.tracks,
+        rawKnown ? { rawKnown, rawAmbiguous, ...(whoseT ? { whose: whoseT } : {}) } : {});
       const note = poseReport(v);
       if (!v.accepted.length) {
         return text(`nothing played — no usable tracks.${note ? ` ${note}.` : ""}`

@@ -208,6 +208,17 @@ export function validatePose(bones, opts = {}) {
     // are a vocabulary VRM guarantees; a wing is a fact about one skeleton,
     // so accepting `L_Wing_Upper` on a wingless body would report success and
     // move nothing -- the silent failure this module exists to prevent.
+    if (opts.rawAmbiguous?.includes?.(name)) {
+      // Two joints, one name: the browser resolves by name and takes the last
+      // one it walks past, so there is no honest answer to "which did you
+      // mean". Refused rather than guessed.
+      out.rejected.push({
+        name: raw,
+        why: `${opts.whose ?? 'that body'} has more than one bone called that, `
+           + 'so naming it is ambiguous -- the rig needs unique joint names',
+      });
+      continue;
+    }
     if (opts.rawKnown && isRawBone(name) && !opts.rawKnown.has(name)) {
       out.rejected.push({
         name: raw,
@@ -293,6 +304,17 @@ export function validateTracks(tracks, opts = {}) {
     // are a vocabulary VRM guarantees; a wing is a fact about one skeleton,
     // so accepting `L_Wing_Upper` on a wingless body would report success and
     // move nothing -- the silent failure this module exists to prevent.
+    if (opts.rawAmbiguous?.includes?.(name)) {
+      // Two joints, one name: the browser resolves by name and takes the last
+      // one it walks past, so there is no honest answer to "which did you
+      // mean". Refused rather than guessed.
+      out.rejected.push({
+        name: raw,
+        why: `${opts.whose ?? 'that body'} has more than one bone called that, `
+           + 'so naming it is ambiguous -- the rig needs unique joint names',
+      });
+      continue;
+    }
     if (opts.rawKnown && isRawBone(name) && !opts.rawKnown.has(name)) {
       out.rejected.push({
         name: raw,

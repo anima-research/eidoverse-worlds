@@ -1909,6 +1909,24 @@ export class WorldAgent {
    *  someone else needs their skeleton and two residents often wear one body.
    */
   private bonesByAvatar = new Map<string, string[]>();
+  /** Avatars whose skeleton could not be READ, as distinct from ones that have
+   *  no joints. A pose gate must refuse loudly on the first and may proceed on
+   *  the second; one set makes that distinction available instead of guessed. */
+  private bonesUnreadable = new Set<string>();
+  /** Names carried by MORE THAN ONE skin joint on a body. Withheld from the
+   *  known set rather than deduplicated, because the browser's name-based
+   *  resolution is last-write-wins and there is no honest way to say which
+   *  bone was meant. */
+  private bonesAmbiguous = new Map<string, string[]>();
+  /** The ambiguous names on this avatar, so a refusal can name them. */
+  ambiguousBonesOf(avatarPath: string): string[] {
+    return this.bonesAmbiguous.get(avatarPath || WorldAgent.DEFAULT_BODY) ?? [];
+  }
+  /** True when this avatar's anatomy is unknown because the fetch or parse
+   *  failed -- not because the body is bare. */
+  bonesUnknownFor(avatarPath: string): boolean {
+    return this.bonesUnreadable.has(avatarPath || WorldAgent.DEFAULT_BODY);
+  }
   async loadBonesOf(avatarPath: string): Promise<string[]> {
     const key = avatarPath || WorldAgent.DEFAULT_BODY;
     const hit = this.bonesByAvatar.get(key);
@@ -1922,18 +1940,33 @@ export class WorldAgent {
       const jlen = dv.getUint32(12, true);
       const g = JSON.parse(new TextDecoder().decode(buf.subarray(20, 20 + jlen)));
       const nodes = g.nodes ?? [];
-      const seen = new Set<string>();
+      // AMBIGUOUS IS NOT THE SAME AS DUPLICATE. Two distinct skin joints can
+      // carry one name, and the browser resolves a raw bone by NAME with a
+      // traverse -- last write wins. So a pose naming it would move whichever
+      // bone happened to be visited last, which is a coin flip dressed as a
+      // success. Deduplicating hid that; the name is now WITHHELD from the
+      // known set, so the gate refuses it and says why (mica, PR #174).
+      const count = new Map<string, number>();
       for (const sk of g.skins ?? []) {
         for (const ji of sk.joints ?? []) {
           const nm = nodes[ji]?.name;
-          if (typeof nm === "string" && nm && !seen.has(nm)) { seen.add(nm); names.push(nm); }
+          if (typeof nm === "string" && nm) count.set(nm, (count.get(nm) ?? 0) + 1);
         }
       }
+      const dupes: string[] = [];
+      for (const [nm, n] of count) { if (n === 1) names.push(nm); else dupes.push(nm); }
+      if (dupes.length) this.bonesAmbiguous.set(key, dupes);
+      else this.bonesAmbiguous.delete(key);
     } catch { names = []; }
-    // An empty list is cached too: a body whose glTF cannot be read must not be
-    // re-fetched on every pose, and "unknown" is handled by the CALLER (which
-    // skips the gate rather than refusing everything).
+    // An empty list is cached too, so a body whose glTF cannot be read is not
+    // re-fetched on every pose. But EMPTY AND UNREADABLE ARE DIFFERENT
+    // ANSWERS, and collapsing them is what let an unavailable anatomy become a
+    // silent successful no-op (mica; and the resident's own requirement that
+    // the doorman stay loud). The caller needs to tell "this body has no wings"
+    // from "I could not find out", so the failure is recorded alongside.
     this.bonesByAvatar.set(key, names);
+    if (!names.length) this.bonesUnreadable.add(key);
+    else this.bonesUnreadable.delete(key);
     return names;
   }
 
@@ -1948,15 +1981,25 @@ export class WorldAgent {
   /** The joints of whoever this pose is AIMED at -- me, or a target. Null when
    *  the target is unknown or its glTF could not be read, which the caller
    *  reads as "do not gate" rather than "refuse". */
-  async loadBonesForTarget(target?: string | null): Promise<string[] | null> {
+  async loadBonesForTarget(target?: string | null):
+    Promise<{ bones: string[] | null; ambiguous: string[]; why: string | null }> {
     if (!target || target === this.name) {
       const mine = await this.loadBodyBones();
-      return mine.length ? mine : null;
+      const amb = this.ambiguousBonesOf(this.avatar);
+      if (mine.length) return { bones: mine, ambiguous: amb, why: null };
+      return { bones: null, ambiguous: amb,
+               why: `your body's skeleton could not be read (${this.avatar})` };
     }
     const path = this.people.get(target)?.avatar;
-    if (!path) return null;                 // not present, or no avatar known
+    if (!path) {
+      return { bones: null, ambiguous: [],
+               why: `${target} is not present here, or their body is unknown` };
+    }
     const bones = await this.loadBonesOf(path);
-    return bones.length ? bones : null;
+    const amb = this.ambiguousBonesOf(path);
+    if (bones.length) return { bones, ambiguous: amb, why: null };
+    return { bones: null, ambiguous: amb,
+             why: `${target}'s skeleton could not be read (${path})` };
   }
 
   private flightBegin() {

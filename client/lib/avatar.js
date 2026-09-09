@@ -1277,17 +1277,39 @@ export class Avatar {
    *
    *  Weight-gated like `_reachOwned`: a pose fading out hands its wings back
    *  to the flap rather than releasing them the instant it is cleared. */
-  _poseOwnedWings() {
+  _poseOwnedWings(now = performance.now()) {
     const o = this._override;
     const w = o?.weight ?? 0;
     // Below the epsilon there is no pose to speak of; the flap owns the wing.
     if (!o || w <= 0.02) return null;
     const m = new Map();
+    // ANIMATION OWNS WINGS TOO. This read `targets`, which only a held pose
+    // has -- so `kind: 'anim'` returned null, an animated wing was accepted,
+    // written by _applyOverride, and then overwritten by _flap after
+    // vrm.update. mica measured it reaching the target before the flap and
+    // ending 1.590003 rad away after: accepted, and unable to work.
+    //
+    // The sample is taken at the SAME time _applyOverride uses, so the two
+    // agree frame by frame rather than drifting by a tick.
+    let animT = 0;
+    if (o.kind === 'anim') {
+      animT = (now - o.start) / 1000;
+      if (animT >= o.dur) animT = o.loop ? animT % o.dur : o.dur;
+    }
     for (const [name, node] of o.nodes ?? []) {
       if (!isRawBone(name)) continue;
-      // `targets` holds already-normalised THREE.Quaternions (setPose builds
-      // them), so this is the value itself and not an array to convert.
-      const q = o.targets?.get?.(name) ?? null;
+      let q = null;
+      if (o.kind === 'anim') {
+        const track = o.tracks?.get?.(name);
+        // A fresh quaternion per bone: _scratch is _applyOverride's, and
+        // handing the same instance to several wings would give them all
+        // whichever bone sampled last.
+        if (track) { q = new THREE.Quaternion(); this._sampleTrack(track, animT, q); }
+      } else {
+        // `targets` holds already-normalised THREE.Quaternions (setPose builds
+        // them), so this is the value itself and not an array to convert.
+        q = o.targets?.get?.(name) ?? null;
+      }
       if (q) m.set(node, q);
     }
     // The WEIGHT rides along. Returning only the target made the pose binary:

@@ -205,7 +205,34 @@ console.log('\nTHE BODY -- three writers, and the pose must win');
   check('a half-weighted pose sits BETWEEN flap and target, not snapped',
         off > 1e-4, `${off.toFixed(5)} rad from the target`);
 
-  // 5. RELEASE.
+  // 4b. ANIMATION owns wings too. mica's probe: an animated wing reached the
+  //     target before _flap and ended 1.590003 rad away after -- accepted and
+  //     unable to work, because _poseOwnedWings read `targets`, which only a
+  //     held pose has. Accepting something that cannot work is worse than
+  //     refusing it.
+  av.clearPose?.();
+  av._override = null;
+  av.playAnimation?.({ dur: 1, loop: true,
+    tracks: { L_Wing_Upper: [{ t: 0, q: target.toArray() }, { t: 1, q: target.toArray() }] } });
+  if (av._override) { av._override.weight = 1; av._override.start = performance.now(); }
+  const animOwned = av._poseOwnedWings?.(performance.now());
+  check('an ANIM override owns its wing bones',
+        !!animOwned?.q?.has(node), animOwned ? 'no wing in the map' : 'returned null');
+  if (av._override) {
+    let animDrift = 0;
+    for (let i = 0; i < 20; i++) {
+      av._flap(1 / 60);
+      animDrift = Math.max(animDrift, Math.abs(node.quaternion.angleTo(want)));
+    }
+    check('...so an animated wing is not flapped over',
+          animDrift < 1e-3, `drift ${animDrift.toFixed(6)} rad`);
+  }
+  av._override = null;
+
+  // 5. RELEASE. Re-pose first: the anim section above cleared the override.
+  av.setPose({ L_Wing_Upper: target.toArray() }, true);
+  if (av._override) av._override.weight = 1;
+  for (let i = 0; i < 5; i++) av._flap(1 / 60);
   av._override.weight = 0;
   const before = node.quaternion.clone();
   for (let i = 0; i < 20; i++) av._flap(1 / 60);
@@ -217,7 +244,9 @@ console.log('\nTHE TOOL SURFACE -- the right body, and a findable capability');
 {
   const tools = readFileSync(`${import.meta.dir}/../mcpl/tools.ts`, 'utf8');
   check('pose gates on the TARGET body, not the sender',
-        /loadBonesForTarget\(a\.target/.test(tools));
+        /loadBonesForTarget\(whose\)/.test(tools) && /const whose = a\.target/.test(tools));
+  check('...and REFUSES when that skeleton is unknown, rather than skipping',
+        /cannot be checked and will not be guessed at/.test(tools));
   check('animate gates on the target body too',
         (tools.match(/loadBonesForTarget/g) ?? []).length >= 2);
   check('the schema ADVERTISES wings (a capability nobody can find is none)',
@@ -225,7 +254,9 @@ console.log('\nTHE TOOL SURFACE -- the right body, and a findable capability');
   const agent = readFileSync(`${import.meta.dir}/../mcpl/agent.ts`, 'utf8');
   check('bones come from skins[].joints, not every named node',
         /for \(const sk of g\.skins/.test(agent) && /sk\.joints/.test(agent));
-  check('...deduplicated', /seen\.has\(nm\)/.test(agent));
+  check('...and an AMBIGUOUS name is withheld, not deduplicated',
+        /bonesAmbiguous/.test(agent) && /n === 1/.test(agent),
+        'two joints with one name resolve last-write-wins in the browser');
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
