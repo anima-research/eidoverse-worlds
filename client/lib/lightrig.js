@@ -177,9 +177,21 @@ export function attachLamps(root, owner) {
 // placed light dimming at noon is the §5 design — the opt-out verb arg
 // (`day: false`, the deliberate noon porch light) rides 5f with its fixture.
 
-let dayness = 1;
+// UNSET, not noon. This was `1`, which means full daylight -- and dayGlow is
+// (1-dayness)^2, so an unset clock scaled every day-aware light to exactly
+// ZERO. setDayness is called from ONE place (sky.js applyTuning), which runs
+// when a sky is applied, so before any sky condition loads a lamp emitted
+// light and cast none. Janus: "the lighting from the lamp doesn't happen until
+// I load a sky condition like night or noon."
+//
+// A default of 1 is the worst of the range: it makes "we do not know the time
+// yet" indistinguishable from "the brightest moment of the day", and the
+// failure is total rather than partial. Null says unknown, and unknown lights
+// the lamp -- a light that works before the sky loads and then dims is a much
+// better wrong answer than one that is missing until you touch a menu.
+let dayness = null;
 export function setDayness(d) { dayness = d; }
-const dayGlow = () => Math.pow(1 - dayness, 2);
+const dayGlow = () => (dayness == null ? 1 : Math.pow(1 - dayness, 2));
 /** The same curve the cast lights use, for anything that GLOWS rather than
  *  casts. An emissive surface has no slot and never passed through here, so a
  *  lamp's bulb burned at full strength at midnight and at noon alike -- which
@@ -418,7 +430,7 @@ export function restoreALight() {
 }
 
 export const rigDebug = () => ({
-  slots: N_SLOTS, cap: slotCap, dayness: +dayness.toFixed(3),
+  slots: N_SLOTS, cap: slotCap, dayness: dayness == null ? null : +dayness.toFixed(3),
   casters: casters.size, casterBudget,
   casting: [...casters.values()].filter((c) => c.casting).length,
   requests: [...requests.values()].map((r) => ({
