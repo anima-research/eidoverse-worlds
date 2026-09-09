@@ -13,7 +13,7 @@ import { BREATH } from '../../shared/breath.js';
 // The light-slot rig: a body that GLOWS should also CAST. Requests, never
 // lights -- lightrig owns the topology because adding a PointLight at runtime
 // recompiles every material in the scene.
-import { attachLamps, releaseOwner, updateRequest } from './lightrig.js';
+import { attachLamps, releaseOwner, updateRequest, glowScale } from './lightrig.js';
 import {
   loadVRM, clipFor, vrmaBytes, loadTrack, loadDone,
   CLIP_SLOTS, CLIP_SPEED, releaseVRM, vrmWarmed, markVrmWarmed,
@@ -195,9 +195,14 @@ export const WING_POWER = {
 //   PEAK   below 1 on purpose; a lower ceiling reads as breath, not as a pulse
 //   SHAPE  >1 dwells near the floor and softens the flare (inhale slower than
 //          the rekindling); 1.0 is a plain sine, 2.0 is the sharp version
-const LAMP_FLOOR = 0.08;
-const LAMP_PEAK = 0.70;
+const LAMP_FLOOR = 0.0;    // fully out at the bottom of the breath
+const LAMP_PEAK = 0.45;    // dimmer again: it was glaring at anything but noon
 const LAMP_SHAPE = 1.6;
+// ...and the sky's share. The surface dims toward noon on lightrig's own
+// (1-dayness)^2 curve, so the lamp is BRIGHT AT NIGHT and subtle at midday --
+// which is what a lamp does. The floor keeps it visible in full sun rather
+// than switching off, because a lamp that is off at noon looks broken.
+const LAMP_DAY_FLOOR = 0.18;
 
 const WING_FOLDED = {
   L_Wing_Lower: [-0.19528, +0.01928, +0.08113, +0.97720],
@@ -1725,12 +1730,28 @@ export class Avatar {
     }
     if (this._lampMats.length) {
       const phase = (now / 1000) * (Math.PI / BREATH);   // half-rate: the shaped
-      const k = LAMP_FLOOR                               // sine has 2x the period
-        + (LAMP_PEAK - LAMP_FLOOR) * Math.abs(Math.sin(phase)) ** LAMP_SHAPE;
+      const breath = Math.abs(Math.sin(phase)) ** LAMP_SHAPE;   // sine has 2x
+      // THE SKY SETS THE CEILING. Janus: "very bright at night, subtle at
+      // noon, and in between in the in between hours." The CAST light was
+      // already day-aware -- lightrig scales every dayAware request by
+      // (1-dayness)^2 -- but the emissive SURFACE has no slot and never went
+      // through that, so the bulb burned identically at midnight and midday.
+      // Read against a bright noon sky it looked washed out; against night it
+      // glared. One curve for both halves fixes the relationship rather than
+      // splitting the difference with a constant.
+      //
+      // A FLOOR under the daylight term, not zero: a lamp that is *off* at
+      // noon is a lamp with a bug, and Mythos's chest is lit because he is
+      // lit, not because it is dark. 0.18 keeps it present in full sun.
+      const day = LAMP_DAY_FLOOR + (1 - LAMP_DAY_FLOOR) * glowScale();
+      const k = (LAMP_FLOOR + (LAMP_PEAK - LAMP_FLOOR) * breath) * day;
       for (const { m, base } of this._lampMats) m.emissiveIntensity = base * k;
       // the cast follows the glow, at whatever intensity the inference chose
+      // The rig applies its own dayGlow to a dayAware request, so the cast
+      // gets the BREATH only -- multiplying by `day` here would square it.
       for (const { key, intensity } of this._lamps) {
-        updateRequest(key, { intensity: intensity * k });
+        updateRequest(key, { intensity: intensity * (LAMP_FLOOR
+          + (LAMP_PEAK - LAMP_FLOOR) * breath) });
       }
     }
 

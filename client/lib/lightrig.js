@@ -180,6 +180,12 @@ export function attachLamps(root, owner) {
 let dayness = 1;
 export function setDayness(d) { dayness = d; }
 const dayGlow = () => Math.pow(1 - dayness, 2);
+/** The same curve the cast lights use, for anything that GLOWS rather than
+ *  casts. An emissive surface has no slot and never passed through here, so a
+ *  lamp's bulb burned at full strength at midnight and at noon alike -- which
+ *  reads as glaring after dark and washed out at midday, the exact inverse of
+ *  a lamp. Exported so the surface and its light dim on ONE curve. */
+export const glowScale = () => dayGlow();
 
 // ---- assignment -------------------------------------------------------------
 // Deterministic in (requests, camera): tier (keep/adopted → authored →
