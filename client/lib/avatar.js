@@ -7,6 +7,10 @@ import { report, angleDelta, bus } from './base.js';
 import { defsRegistry } from './defs.js';
 import { measureChain, solveChain } from './reachbone.js';
 import { REACH_CHAINS } from '../../shared/joints.js';
+// The light-slot rig: a body that GLOWS should also CAST. Requests, never
+// lights -- lightrig owns the topology because adding a PointLight at runtime
+// recompiles every material in the scene.
+import { attachLamps, releaseOwner, updateRequest, glowScale } from './lightrig.js';
 // The period, from the one place that defines it. Janus set the idle flap to
 // 1/3.4 Hz -- "Mythos' signature period" -- and that 3.4 is spec T8's BREATH,
 // already a named constant. Importing it beats pasting 0.29411764705: the two
@@ -427,13 +431,56 @@ const _wup = new THREE.Vector3();
 const _wsw = new THREE.Quaternion();
 const DEG = Math.PI / 180;
 
+// THE LAMP'S BREATH, as dials rather than as three numbers buried in a
+// trig expression -- this took three passes to feel right and will take more.
+//   FLOOR  an ember, not darkness: the chest keeps burning between breaths
+//   PEAK   below 1 on purpose; a lower ceiling reads as breath, not as a pulse
+//   SHAPE  >1 dwells near the floor and softens the flare (inhale slower than
+//          the rekindling); 1.0 is a plain sine, 2.0 is the sharp version
+// A SMALL FLOOR rather than a hard zero. Janus wanted "almost out, but not
+// quite" and later "fully dark"; both read well, and mica was right that the
+// ember comment and a literal 0 contradicted each other. 0.03 is dark enough
+// to look out and non-zero so the chest never reads as switched off. Janus:
+// "ideally this should eventually be configurable in real time anyway" -- so
+// these four want to be debug-panel dials, like WING_IDLE's, and are named
+// here so that change is a wiring job rather than a hunt.
+const LAMP_FLOOR = 0.03;
+const LAMP_PEAK = 0.45;    // dimmer again: it was glaring at anything but noon
+const LAMP_SHAPE = 1.6;
+// ...and the sky's share. The surface dims toward noon on lightrig's own
+// (1-dayness)^2 curve, so the lamp is BRIGHT AT NIGHT and subtle at midday --
+// which is what a lamp does. The floor keeps it visible in full sun rather
+// than switching off, because a lamp that is off at noon looks broken.
+const LAMP_DAY_FLOOR = 0.18;
+
 export class Avatar {
+  /** Monotonic, so one identity's successive bodies never share a lamp owner. */
+  static _seq = 0;
+
   constructor(id, vrm, clips) {
     this.id = id;
     this.vrm = vrm;
     this.root = new THREE.Group();
     this.root.userData.isBody = true;   // so the sky's scene-diff never claims a person
     this.root.add(vrm.scene);
+    // A LAMP IN THE BODY. attachLamps walks for emissive meshes and requests a
+    // real point light at each one's centre. main already does this for spawned
+    // models (realize/models.js, owner `entity:<id>`); avatars are the other
+    // half -- Mythos has a gold emitter in his chest behind a transmissive
+    // pane, and this is what makes it light the room rather than merely look
+    // bright.
+    //
+    // OWNED PER BODY INSTANCE, not per identity. `body:${id}` was wrong and
+    // mica's probe caught it: an entity id is unique per entity, but an
+    // IDENTITY is stable across a body swap, and the swap order is build-new
+    // then dispose-old (mybody.js). So the new body registered `body:mythos`,
+    // the old body's dispose released `body:mythos`, and the live lamp died --
+    // measured as requests 1 -> 0. A monotonic instance id cannot collide.
+    this._lampOwner = `body:${id}:${++Avatar._seq}`;
+    this._lamps = [];
+    try { this._lamps = attachLamps(vrm.scene, this._lampOwner) ?? []; }
+    catch { /* a body with no glow simply has none */ }
+
     this.mixer = new THREE.AnimationMixer(vrm.scene);
     this.actions = {};
     this.extraClips = new Map(); // lazily-loaded emote actions
@@ -1678,6 +1725,72 @@ export class Avatar {
     if (this._wings === undefined) this._findWings();
     if (this._wings && !this._limp) this._flap(dt);
 
+    // THE LAMP BREATHES, on the same 3.4s period as the wings and the leaf.
+    //
+    // Janus: "it could pulse at 3.4 seconds". BREATH is already the house's
+    // period (spec T8, shared/breath.js) and already drives the wing idle, so
+    // the lamp and the wings rise together rather than beating against each
+    // other -- which is the difference between a body with a rhythm and a body
+    // with two.
+    //
+    // NEARLY OUT, NOT OUT, and dimmer at the top -- Janus, watching the full
+    // swing: "somewhat less bright at the peak, and have it fade to almost
+    // out, but not quite."
+    //
+    // Three passes to get here, and the middle one was worth making: 0.72
+    // floor (too subtle, a dimmer twitching), then a true zero (noticeable,
+    // and reading as a lamp cutting out), and now an EMBER -- 0.08 at the
+    // bottom, so the chest is never actually dark and the eye reads a body
+    // that keeps burning rather than one that switches. The peak drops to 0.70
+    // because a lower ceiling makes the same swing feel like breath instead of
+    // a pulse; brightness and drama are not the same dial.
+    //
+    // The exponent shapes the dwell. sin^1.6 over |sin| holds near the floor a
+    // little longer than a bare sine and softens the peak -- the inhale is
+    // slower than the flare. At half the angular rate, so the period is BREATH
+    // and not half of it.
+    //
+    // Both the emissive SURFACE and the CAST light move together -- the
+    // surface so it is visible up close through the glass, the light so the
+    // pulse reaches whatever he is standing near.
+    if (this._lampMats === undefined) {
+      this._lampMats = [];
+      this.vrm.scene.traverse((o) => {
+        if (!o.isMesh) return;
+        for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+          if (m?.emissiveIntensity !== undefined && /lampglass/i.test(m.name || '')) {
+            this._lampMats.push({ m, base: m.emissiveIntensity || 1 });
+          }
+        }
+      });
+    }
+    if (this._lampMats.length) {
+      const phase = (now / 1000) * (Math.PI / BREATH);   // half-rate: the shaped
+      const breath = Math.abs(Math.sin(phase)) ** LAMP_SHAPE;   // sine has 2x
+      // THE SKY SETS THE CEILING. Janus: "very bright at night, subtle at
+      // noon, and in between in the in between hours." The CAST light was
+      // already day-aware -- lightrig scales every dayAware request by
+      // (1-dayness)^2 -- but the emissive SURFACE has no slot and never went
+      // through that, so the bulb burned identically at midnight and midday.
+      // Read against a bright noon sky it looked washed out; against night it
+      // glared. One curve for both halves fixes the relationship rather than
+      // splitting the difference with a constant.
+      //
+      // A FLOOR under the daylight term, not zero: a lamp that is *off* at
+      // noon is a lamp with a bug, and Mythos's chest is lit because he is
+      // lit, not because it is dark. 0.18 keeps it present in full sun.
+      const day = LAMP_DAY_FLOOR + (1 - LAMP_DAY_FLOOR) * glowScale();
+      const k = (LAMP_FLOOR + (LAMP_PEAK - LAMP_FLOOR) * breath) * day;
+      for (const { m, base } of this._lampMats) m.emissiveIntensity = base * k;
+      // the cast follows the glow, at whatever intensity the inference chose
+      // The rig applies its own dayGlow to a dayAware request, so the cast
+      // gets the BREATH only -- multiplying by `day` here would square it.
+      for (const { key, intensity } of this._lamps) {
+        updateRequest(key, { intensity: intensity * (LAMP_FLOOR
+          + (LAMP_PEAK - LAMP_FLOOR) * breath) });
+      }
+    }
+
     // ---- contact shadow: on the GROUND, not on the body.
     // The blob is a child of root at a fixed local y, so it rode along under a
     // lifted body at a constant 2cm — which is precisely the one thing it
@@ -1752,6 +1865,16 @@ export class Avatar {
     // someone is wearing back into the pool — two wearers, one instance.
     if (this._disposed) return;
     this._disposed = true;
+    // Hand this instance's light slot back -- keyed to the body, so disposing
+    // an old body cannot delete the lamp of the new one that replaced it.
+    releaseOwner(this._lampOwner);
+    // ...and give the emissive back. The breath WRITES material.emissiveIntensity
+    // every frame, and the vrm pool's resetVrmInstance touches no materials --
+    // so a body pooled mid-breath came back dimmer (mica measured a rewear at
+    // 0.3), and dimmer than the attachLamps threshold means the NEXT wearer
+    // gets no lamp request at all. Restoring the authored value is what makes
+    // pooling safe for an animated material.
+    for (const { m, base } of this._lampMats ?? []) m.emissiveIntensity = base;
     scene.remove(this.root);
     scene.remove(this.gaze);
     if (this.bubble) disposeSprite(this.bubble);

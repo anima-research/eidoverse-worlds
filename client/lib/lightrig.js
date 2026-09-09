@@ -113,11 +113,23 @@ export function requestLight(key, spec) {
   });
   assignDirty = true;
 }
+/** Patch a live request.
+ *
+ *  INTENSITY DOES NOT DIRTY ASSIGNMENT. Slot assignment is by TIER and CAMERA
+ *  DISTANCE -- intensity is not an input to it, and the rig deliberately
+ *  recomputes at most every 600ms while writing slot values every frame. A
+ *  breathing lamp calls this 60 times a second, so dirtying on every patch
+ *  defeated that cadence entirely, for a value the sorter does not read.
+ *  (mica caught it in review of PR #173.)
+ *
+ *  Anything that CAN change the ordering still dirties: tier, the object being
+ *  followed, or the owner. */
+const ORDERING_KEYS = ['keep', 'authored', 'obj', 'offset', 'pos', 'mirror', 'owner'];
 export function updateRequest(key, patch) {
   const r = requests.get(key);
   if (!r) return;
   Object.assign(r, patch);
-  assignDirty = true;
+  if (ORDERING_KEYS.some((k) => k in patch)) assignDirty = true;
 }
 export function releaseLight(key) {
   if (requests.delete(key)) assignDirty = true;
@@ -136,7 +148,11 @@ export const isCasting = (key) => (requests.get(key)?.slot ?? -1) >= 0;
 // (This was sky.js attachLocalLights, which owned a hard MAX_LAMPS=2 ceiling
 // and a boot deferral that both existed to ration recompiles.)
 
+/** @returns {{key:string, intensity:number}[]} the requests it made -- a caller
+ *  that wants to ANIMATE a lamp needs the key and the intensity the inference
+ *  chose, and reading either back out of the private map was the alternative. */
 export function attachLamps(root, owner) {
+  const made = [];
   const emissive = [];
   root.traverse((o) => {
     if (!o.isMesh) return;
@@ -152,15 +168,19 @@ export function attachLamps(root, owner) {
     // saturated emissive keeps its colour; whitish reads as a warm bulb
     const ec = mesh.material.emissive;
     const sat = Math.max(ec.r, ec.g, ec.b) - Math.min(ec.r, ec.g, ec.b);
-    requestLight(`lamp:${owner}:${i}`, {
+    const intensity = Math.min(40, 6 + 2.6 * glow);
+    const key = `lamp:${owner}:${i}`;
+    requestLight(key, {
       obj: mesh,
       offset: mesh.geometry.boundingSphere.center.clone(),
       color: sat > 0.25 ? ec.clone() : 0xffd9a0,
-      intensity: Math.min(40, 6 + 2.6 * glow),
+      intensity,
       range: 12,                 // tight radius: grass fragments cost
       dayAware: true, owner,
     });
+    made.push({ key, intensity });
   });
+  return made;
 }
 
 // ---- time of day ------------------------------------------------------------
@@ -169,9 +189,26 @@ export function attachLamps(root, owner) {
 // placed light dimming at noon is the §5 design — the opt-out verb arg
 // (`day: false`, the deliberate noon porch light) rides 5f with its fixture.
 
-let dayness = 1;
+// UNSET, not noon. This was `1`, and dayGlow is (1-dayness)^2 -- so an unset
+// clock scaled every day-aware light to exactly ZERO. setDayness has one caller
+// (sky.js applyTuning), which runs when a sky is applied, so before any sky
+// condition loaded a lamp emitted light and cast none. Janus found it: "the
+// lighting from the lamp doesn't happen until I load a sky condition."
+//
+// A default of 1 is the worst of the range: it makes "we do not know the time
+// yet" indistinguishable from "the brightest moment of the day", and it fails
+// TOTALLY rather than partially. Null says unknown, and unknown lights the
+// lamp -- a light that works before the sky loads and then dims is a much
+// better wrong answer than one that is missing until you touch a menu.
+let dayness = null;
 export function setDayness(d) { dayness = d; }
-const dayGlow = () => Math.pow(1 - dayness, 2);
+const dayGlow = () => (dayness == null ? 1 : Math.pow(1 - dayness, 2));
+/** The same curve the cast lights use, for anything that GLOWS rather than
+ *  casts. An emissive surface has no slot and never passed through here, so a
+ *  lamp's bulb burned at full strength at midnight and at noon alike -- glaring
+ *  after dark, washed out at midday. Exported so the surface and its light dim
+ *  on ONE curve. */
+export const glowScale = () => dayGlow();
 
 // ---- assignment -------------------------------------------------------------
 // Deterministic in (requests, camera): tier (keep/adopted → authored →
@@ -404,7 +441,11 @@ export function restoreALight() {
 }
 
 export const rigDebug = () => ({
-  slots: N_SLOTS, cap: slotCap, dayness: +dayness.toFixed(3),
+  slots: N_SLOTS, cap: slotCap, dayness: dayness == null ? null : +dayness.toFixed(3),
+  // Whether the next pass will recompute slot assignment. Exposed because the
+  // 600ms cadence is a PROPERTY worth testing -- a per-frame patch that dirties
+  // it defeats the cadence silently.
+  assignDirty,
   casters: casters.size, casterBudget,
   casting: [...casters.values()].filter((c) => c.casting).length,
   requests: [...requests.values()].map((r) => ({
