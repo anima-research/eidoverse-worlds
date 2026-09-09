@@ -17,10 +17,20 @@ const camera = new THREE.PerspectiveCamera(60, 390 / 844, 0.1, 100);
 camera.position.set(0, 2, 8); camera.lookAt(0, 1, 0); camera.updateMatrixWorld();
 const entities = new Map();
 let rayCount = 0;
+// Occlusion is steered from the test: `blocked` names the ids whose sight line
+// reports a hit, and `rayExcludes` records the excludeId every call was given.
+const blocked = new Set<string>();
+const rayExcludes: (string | null)[] = [];
 const base = `${import.meta.dir}/../client/lib/`;
 mock.module(`${base}core.js`, () => ({ THREE, camera, renderer: { domElement: canvas } }));
 mock.module(`${base}world.js`, () => ({ entities }));
-mock.module(`${base}colliders.js`, () => ({ raySegment: () => { rayCount++; return null; } }));
+mock.module(`${base}colliders.js`, () => ({
+  raySegment: (_origin: unknown, _dir: unknown, _far: number, excludeId: string | null = null) => {
+    rayCount++;
+    rayExcludes.push(excludeId);
+    return blocked.has(excludeId!) ? { id: 'wall', t: 1 } : null;
+  },
+}));
 mock.module(`${base}inspect.js`, () => ({ registerEditor: () => {} }));
 const { CONFIG } = await import('../client/lib/base.js');
 const { state, hydrate, foldLive } = await import('../client/lib/state.js');
@@ -121,5 +131,66 @@ focused.focus();
 focused.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }));
 assert.notEqual(document.activeElement, focused, 'a mouse-driven activation leaves no focus behind');
 
-console.log('label DOM: real fold identity, default off, click details, motion, rename, removal, replay, authored offsets, keyboard passthrough and no world writes passed');
+// ---- overlap suppression and the viewport clamp -----------------------------
+const mesh = (x: number, y: number, z: number) => {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+  m.position.set(x, y, z);
+  m.updateMatrixWorld();
+  return m;                      // anchor lands 0.7m above position: top + 0.2
+};
+const twins = emptyState();
+for (const id of ['twinA', 'twinB']) {
+  foldEntry(twins, entry('spawn', { id, lib: 'fixture.glb', pos: [0, 1, 0] }));
+  foldEntry(twins, entry('comp', { id, type: 'label', data: { name: `Twin ${id.slice(-1)}` } }));
+}
+hydrate(twins);
+entities.clear();
+entities.set('twinA', mesh(0, 1, 0));
+entities.set('twinB', mesh(0.05, 1, 0));   // same screen box as twinA
+configureObjectLabels({ mode: 'nearby' });
+tickObjectLabels(2000);
+assert.equal(visible().length, 1, 'two labels in one screen box render as one plaque, not stacked text');
+const twinB = entities.get('twinB');
+twinB.position.x = 1.2; twinB.updateMatrixWorld();   // clear of twinA's box
+tickObjectLabels(2100);
+assert.equal(visible().length, 2, 'separated labels both render, so the suppression is about the boxes');
+
+// ---- plaque identity survives a distance reorder ----------------------------
+const trio = emptyState();
+const seats: Record<string, [number, number, number]> = { A: [0, 0.5, 4], B: [0, 1.5, 0], C: [0, 2.5, -4] };
+for (const [id, pos] of Object.entries(seats)) {
+  foldEntry(trio, entry('spawn', { id, lib: 'fixture.glb', pos }));
+  foldEntry(trio, entry('comp', { id, type: 'label', data: { name: id } }));
+}
+hydrate(trio);
+entities.clear();
+for (const [id, [x, y, z]] of Object.entries(seats)) entities.set(id, mesh(x, y, z));
+configureObjectLabels({ mode: 'all' });   // C sits a hair past the 12m nearby ring
+tickObjectLabels(2400);
+const buttonById = () => new Map(visible().map(button => [button.dataset.entityId!, button]));
+const distOf = (id: string) => entities.get(id).getWorldPosition(new THREE.Vector3()).distanceTo(camera.position);
+const seated = buttonById();
+assert.equal(seated.size, 3, 'three separated labels each get a plaque');
+assert.ok(distOf('A') < distOf('C'), 'A starts nearest');
+camera.position.set(0, 2, -8); camera.lookAt(0, 1, 0); camera.updateMatrixWorld();
+tickObjectLabels(2500);
+const reseated = buttonById();
+assert.ok(distOf('C') < distOf('A'), 'the camera move really did reverse the distance order');
+assert.equal(reseated.size, 3, 'all three still render after the reorder');
+for (const [id, button] of seated) {
+  assert.equal(reseated.get(id), button, `the plaque for ${id} is reused without changing its entity identity`);
+}
+
+// ---- occlusion hides exactly the blocked label ------------------------------
+blocked.add('B');
+rayExcludes.length = 0;
+tickObjectLabels(2600);   // 100ms on from the last sample: sight lines re-cast
+assert.ok(rayExcludes.includes('B'), 'the sight-line query passes the labelled object as its own excludeId');
+assert.deepEqual(visible().map(button => button.dataset.entityId).sort(), ['A', 'C'],
+  'a blocked sight line hides that plaque and only that plaque');
+blocked.clear();
+tickObjectLabels(2700);
+assert.equal(visible().length, 3, 'clearing the obstruction brings it back');
+
+console.log('label DOM: real fold identity, default off, click details, motion, rename, removal, replay, authored offsets, keyboard passthrough, overlap suppression, plaque identity, occlusion and no world writes passed');
 GlobalRegistrator.unregister();
