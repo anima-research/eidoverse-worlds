@@ -39,7 +39,7 @@
 // cloud field, so two people standing together watch the same shadow cross
 // the same meadow.
 
-import { THREE, TSL, sun, ground, renderer } from './core.js';
+import { THREE, TSL, sun, ground, renderer, report } from './core.js';
 import { state } from './state.js';
 import { effectiveSky } from '../../shared/forecast.js';
 
@@ -218,6 +218,83 @@ function wrapMaterial(mat, receiver, pbr) {
 const preparedMats = new WeakSet();
 const stats = { meshes: 0, wrapped: 0, unlit: 0 };
 
+/** Upgrade a transmissive material to the NODE class, or it draws nothing.
+ *
+ *  three's WebGPU renderer does support transmission -- it allocates a backdrop
+ *  buffer per render object whose `material.transmission > 0` -- but only
+ *  MeshPhysicalNodeMaterial builds the graph that reads it. GLTFLoader's
+ *  standard path produces a plain MeshPhysicalMaterial, so a glTF carrying
+ *  KHR_materials_transmission arrives with transmission set, `visible: true`,
+ *  its mesh present and its triangles counted, and renders as nothing at all:
+ *  "all light passes through this surface" with no code to say what comes
+ *  through. A correct file the renderer cannot honour.
+ *
+ *  Measured on mythos-alpha's Glass: transmission 1, ior 1.5, 581 triangles,
+ *  MeshPhysicalMaterial, invisible. The same values on a node material render.
+ *
+ *  Copies by property name rather than field-by-field, because the interesting
+ *  list is long (transmission, thickness, attenuation, ior, sheen, clearcoat,
+ *  specular, iridescence, every map) and a hand-written subset is a slow leak
+ *  of whichever property someone forgot. Textures are shared, not cloned.
+ *
+ *  Non-transmissive materials are LEFT ALONE. MeshPhysicalNodeMaterial is more
+ *  expensive to compile than the standard path and the overwhelming majority of
+ *  materials in this world want nothing from it; upgrading everything "for
+ *  consistency" would spend that on every body in the room. */
+const TRANSMISSIVE_UPGRADED = new WeakSet();
+function upgradeTransmissive(mesh, m) {
+  if (!m || m.isNodeMaterial || TRANSMISSIVE_UPGRADED.has(m)) return m;
+  if (!(m.transmission > 0)) return m;
+  const Node = THREE.MeshPhysicalNodeMaterial;
+  if (!Node) return m;                       // non-WebGPU build: nothing to do
+  let nm;
+  try {
+    nm = new Node();
+    // every own enumerable property the source defines, minus the identity
+    // and internals that must not be carried across
+    const SKIP = new Set(['uuid', 'id', 'type', 'version', 'isMeshPhysicalMaterial',
+                          'isMeshStandardMaterial', 'isMaterial', '_listeners']);
+    // OWN properties AND prototype ACCESSORS. Object.keys() alone missed
+    // `transmission` itself: MeshPhysicalMaterial defines it as a getter/setter
+    // on the prototype (backed by _transmission), so the upgraded material came
+    // out with node=true, ior 1.5, thickness 0.04 -- and transmission 0, which
+    // is a node material rendering nothing for a different reason than before.
+    // `ior` and `thickness` are plain fields, which is exactly why they made it
+    // and the one value that mattered did not.
+    const keys = new Set(Object.keys(m));
+    for (let proto = Object.getPrototypeOf(m); proto && proto !== Object.prototype;
+         proto = Object.getPrototypeOf(proto)) {
+      for (const [k, d] of Object.entries(Object.getOwnPropertyDescriptors(proto))) {
+        if (typeof d.get === 'function' && typeof d.set === 'function') keys.add(k);
+      }
+    }
+    for (const k of keys) {
+      if (SKIP.has(k) || k.startsWith('is') || k.startsWith('_')) continue;
+      const v = m[k];
+      if (v === undefined) continue;
+      // three's Color/Vector types need copying into the target's instance,
+      // not assigning over it -- assigning shares the object with the old
+      // material, so a later tweak to one silently moves the other.
+      if (nm[k]?.isColor && v?.isColor) nm[k].copy(v);
+      else if (nm[k]?.isVector2 && v?.isVector2) nm[k].copy(v);
+      else if (nm[k]?.isVector3 && v?.isVector3) nm[k].copy(v);
+      else nm[k] = v;
+    }
+    nm.name = m.name;
+    // Transmission composites against the backdrop, so the material must be in
+    // the transparent pass. warmqueue.js already treats transmission > 0 as
+    // transparent when pre-warming; this makes the real material agree.
+    nm.transparent = true;
+    nm.needsUpdate = true;
+  } catch (e) {
+    report?.('transmission upgrade', e);
+    return m;
+  }
+  TRANSMISSIVE_UPGRADED.add(nm);
+  stats.transmissive = (stats.transmissive ?? 0) + 1;
+  return nm;
+}
+
 /** Wrap one material, once. Basic (unlit) materials are skipped — a stand-in
  *  box and a light gizmo have no business getting wet. Returns whether the
  *  material was wrapped. */
@@ -258,6 +335,19 @@ export function prepareObject(root, { kind = 'model' } = {}) {
     // (§16.2.B); castShadow sits in NO pipeline cache key (§12.1), and this
     // runs before the field's warm (world.js), so clearing it here is free.
     if (grass) o.castShadow = false;
+    // TRANSMISSION FIRST, because it replaces the material object: a plain
+    // MeshPhysicalMaterial with transmission renders as nothing here, and the
+    // wrap below early-returns on non-node materials anyway, so upgrading
+    // first is also what gets a transmissive surface properly dressed.
+    if (Array.isArray(o.material)) {
+      for (let i = 0; i < o.material.length; i++) {
+        const up = upgradeTransmissive(o, o.material[i]);
+        if (up !== o.material[i]) o.material[i] = up;
+      }
+    } else if (o.material) {
+      const up = upgradeTransmissive(o, o.material);
+      if (up !== o.material) o.material = up;
+    }
     const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
     for (const m of mats) {
       // grass never puddles: blade normals are deliberately forced straight
