@@ -16,6 +16,7 @@
 import { runVerb } from "./verbs.ts";
 import { coldLibs, warmBoxes, worldLibs } from "./boxes.ts";
 import { LIMITS } from "./limits.ts";
+import { sanePose } from "./posecheck.ts";
 import { currentIncarnation } from "./transport.ts";
 import { rightsOf, isAdminId } from "./rights.ts";
 import { ROLE_RANK } from "../shared/fold.js";
@@ -454,9 +455,17 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
   },
   "pose": ({ c, ws, now, expel }, msg) => {
     if (!c.world || c.spectator) return;
-    c.lastPose = msg.pose;
+    const pose = sanePose(msg.pose);
+    if (!pose) {                                  // non-finite / malformed: never relayed (posecheck.ts)
+      const cc = c as Client & { badPose?: number };
+      cc.badPose = (cc.badPose ?? 0) + 1;
+      if (cc.badPose === 1 || cc.badPose % 600 === 0)
+        console.log(`[world:${c.world.name}] dropped non-finite pose from ${c.id} (×${cc.badPose})`);
+      return;
+    }
+    c.lastPose = pose;
     // presence: batched into stage frames by the tick loop, never persisted
-    c.world.dirty.set(c.id, msg.pose);
+    c.world.dirty.set(c.id, pose);
   },
   "snap-result": ({ c, ws, now, expel }, msg) => {
     const pending = pendingSnaps.get(msg.id);

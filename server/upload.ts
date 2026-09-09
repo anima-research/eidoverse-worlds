@@ -8,7 +8,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync, rmSync } from "node:fs";
 import { join, basename, dirname, relative } from "node:path";
-import { JOIN_TOKEN, UPLOAD_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DIR } from "./config.ts";
+import { JOIN_TOKEN, UPLOAD_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DIR, SKIP_OPT_SWEEP, OPT_MEM_BUDGET_MB, OPT_COST_FACTOR } from "./config.ts";
 // merge 2026-09-01 (anima a468cba, geometry LOD): upstream's LOD names ride
 // in; the door stays on R1's aid1JoinIdentity (the HN_*/verifyToken form is
 // what it replaced — the merged body references neither)
@@ -35,7 +35,26 @@ const optQueue: OptItem[] = [];
 let optRunning = false;
 let ktx2Skip = false; // set when a --ktx2 run exits 3 (no encoder) — stop queuing variants this boot
 let lodEncoderWarned = false; // the --lod arm's own once-per-boot note; it never sets ktx2Skip
-function queueOptimize(absPath: string) {
+// Items this host could not afford (estimate over budget, or the child died
+// under the cap). Informational: the marker never blocks a retry — the next
+// boot re-estimates against whatever budget it has — it exists so /version
+// can say how much is waiting on a bigger box. The count is this boot's;
+// the markers persist (and are never listing entries — store-variants.ts).
+const optDeferred = new Set<string>();
+if (process.env.OPT_CMD) console.warn(`[optimize] OPT_CMD=${process.env.OPT_CMD} — a stand-in optimizer is in charge of every variant this boot`);
+export function optStatus() {
+  return { budgetMB: OPT_MEM_BUDGET_MB, queued: optQueue.length, running: optRunning, deferred: optDeferred.size };
+}
+function undefer(dest: string) {
+  optDeferred.delete(dest);
+  if (existsSync(`${dest}.deferred`)) try { rmSync(`${dest}.deferred`); } catch { /* best effort */ }
+}
+function defer(dest: string, why: string) {
+  optDeferred.add(dest);
+  try { mkdirSync(dirname(dest), { recursive: true }); writeFileSync(`${dest}.deferred`, why); } catch { /* best effort */ }
+  console.log(`[optimize] deferred ${basename(dest)} — ${why}`);
+}
+export function queueOptimize(absPath: string) {
   let pushed = false;
   if (!optQueue.some((q) => q.src === absPath && !q.mode)) {
     optQueue.push({ src: absPath, dest: join(STORE_MIN, basename(absPath)) });
@@ -63,9 +82,13 @@ function queueOptimize(absPath: string) {
   }
   if (pushed) pumpOptimize();
 }
+let optPump: Promise<void> = Promise.resolve();
+/** Resolves when the pump has drained (a harness awaits this; the server never does). */
+export const optIdle = () => optPump;
 async function pumpOptimize() {
   if (optRunning) return;
   optRunning = true;
+  let done!: () => void; optPump = new Promise<void>((r) => { done = r; });
   try {
     while (optQueue.length) {
       const { src, dest, mode } = optQueue.shift()!;
@@ -79,14 +102,52 @@ async function pumpOptimize() {
       // KTX2 variants shadow MUTABLE library files, so a variant older than
       // its source rebuilds (the sweep filters too, but a file can change
       // while its item waits behind slow encodes).
-      if (existsSync(dest) && (!mode || statSync(dest).mtimeMs > statSync(src).mtimeMs)) continue;
+      if (existsSync(dest) && (!mode || statSync(dest).mtimeMs > statSync(src).mtimeMs)) { undefer(dest); continue; }   // done elsewhere: a stale .deferred must not outlive the variant
+      // Budget gate: an item this host cannot afford is deferred, not failed,
+      // and the rest of the queue keeps going (config.ts OPT_MEM_BUDGET_MB).
+      const estMB = Math.ceil(Bun.file(src).size * OPT_COST_FACTOR / 1_000_000);
+      if (OPT_MEM_BUDGET_MB && estMB > OPT_MEM_BUDGET_MB) { defer(dest, `estimated ${estMB}MB > budget ${OPT_MEM_BUDGET_MB}MB`); continue; }
       mkdirSync(dirname(dest), { recursive: true });
-      // process.execPath = the running bun binary — PATH under systemd has no bun
-      const proc = Bun.spawn([process.execPath, "run", join(ROOT, "server", "optimize.ts"), ...(mode ? [mode] : []), src, dest],
-        { stdout: "pipe", stderr: "pipe" });
+      // process.execPath = the running bun binary — PATH under systemd has no bun.
+      // Under a budget (Linux: the only kernel that enforces RLIMIT_DATA) the
+      // child runs beneath sh's `ulimit -d` (KB): an encode that outgrows it
+      // dies AS THE CHILD — a signal, SIGTRAP or SIGSEGV, exit ≥128, nothing
+      // on stderr (measured) — and the server serving worlds is never the
+      // casualty. RLIMIT_AS would be wrong here: bun reserves address space
+      // far beyond what it touches. The wrapper's OWN failures are made
+      // unmistakable (126: the limit could not be set — a hard limit below
+      // the budget; 127: exec failed) so they never read as a content verdict.
+      const capped = OPT_MEM_BUDGET_MB > 0 && process.platform === "linux";
+      // OPT_CMD: a harness may own the child (tools/optimize-pump-test.ts) — the real optimizer otherwise (logged at boot)
+      const cmd = [...(process.env.OPT_CMD ? [process.env.OPT_CMD] : [process.execPath, "run", join(ROOT, "server", "optimize.ts")]), ...(mode ? [mode] : []), src, dest];
+      let proc: ReturnType<typeof Bun.spawn>;
+      try {
+        // /bin/sh by absolute path: the pump may run under a PATH that has no
+        // shell at all (a harness pointing PATH at its fake encoder), and a
+        // spawn that cannot start throws HERE, synchronously — which would
+        // reject the un-awaited pump and drop the rest of the queue.
+        proc = Bun.spawn(capped
+          ? ["/bin/sh", "-c", 'ulimit -d "$0" || exit 126; exec "$@"', String(OPT_MEM_BUDGET_MB * 1024), ...cmd]
+          : cmd, { stdout: "pipe", stderr: "pipe" });
+      } catch (e) {
+        console.error(`[optimize] cannot spawn the optimizer (${String(e).split("\n")[0]}) — nothing marked; set OPT_MEM_BUDGET_MB=0 if /bin/sh is the problem`);
+        optQueue.length = 0; break;
+      }
       const code = await proc.exited;
       const err = (await new Response(proc.stderr).text()).trim();
+      if (capped && (code === 126 || code === 127)) {
+        // environmental, like a missing dep: no marker, and no point grinding on
+        console.error(`[optimize] cap wrapper failed (exit ${code}: ${err.split("\n").pop() || "sh"}) — set OPT_MEM_BUDGET_MB within this process's hard RLIMIT_DATA, or 0`);
+        optQueue.length = 0; break;
+      }
+      if (capped && (proc.signalCode || code >= 128)) {
+        // OOM under the cap and a crash on a corrupt file look the same from
+        // here; both are retried next boot (a signal is never a stuck verdict).
+        defer(dest, `child died (${proc.signalCode ?? `exit ${code}`}) under the ${OPT_MEM_BUDGET_MB}MB cap`);
+        continue;
+      }
       if (code === 0) {
+        undefer(dest);
         // a verdict that was re-measured and answered differently is history
         if (existsSync(failed)) try { rmSync(failed); } catch { /* best effort */ }
         // …and so is an older recipe generation's file: its URL is never
@@ -104,7 +165,7 @@ async function pumpOptimize() {
         // not suitable — bigger than source, or (--ktx2-img) non-POT dims /
         // conflicted consumers. Mark with the CLI's reason so the boot sweep
         // stops re-measuring it; the marker's CONTENT is diagnostic only.
-        writeFileSync(failed, err.slice(0, 2000) || "not-smaller");
+        writeFileSync(failed, err.slice(0, 2000) || "not-smaller"); undefer(dest);
         console.log(mode ? `[ktx2] ${base} — no variant (${err.split("\n").pop()?.replace(/^\[optimize\]\s*/, "") || "not smaller"})`
           : `[store] ${base} already lean — serving original`);
       } else if (code === 4) {
@@ -140,16 +201,20 @@ async function pumpOptimize() {
         // file — that would permanently skip every upload made before the
         // first successful `bun install`. Only content failures stick.
         const envFail = /cannot find module|cannot resolve|error: script not found/i.test(err);
-        if (!envFail) writeFileSync(failed, err.slice(0, 2000) || `exit ${code}`);
+        if (!envFail) { writeFileSync(failed, err.slice(0, 2000) || `exit ${code}`); undefer(dest); }
         console.error(`[${mode ? "ktx2" : "store"}] optimize ${envFail ? "unavailable (deps?)" : `FAILED ${base}`}: ${err.split("\n")[0] || `exit ${code}`}`);
         if (envFail) { optQueue.length = 0; break; } // no point grinding the rest
       }
     }
-  } finally { optRunning = false; }
+  } finally { optRunning = false; done(); }
 }
 // Boot sweep: whatever accumulated before this shipped (or failed mid-queue
 // last run) gets its shadow now. Deferred so boot stays about serving worlds.
-setTimeout(() => {
+// SKIP_OPT_SWEEP: see config.ts — a memory-tight host must be able to serve
+// worlds without shouldering the optimizer.
+/** The store sweep (named so a harness can drive it; the boot timer below calls it). */
+export function sweepStore() {
+  if (SKIP_OPT_SWEEP) return;
   const dir = join(OPT_DIR, "store");
   if (!existsSync(dir)) return;
   // isStoreOriginal, not endsWith(".glb"): the KTX2 variants live in this
@@ -164,7 +229,8 @@ setTimeout(() => {
   if (!pending.length) return;
   console.log(`[store] boot sweep: ${pending.length} upload(s) missing a shadow queued`);
   for (const f of pending) queueOptimize(join(dir, f));
-}, 5000);
+}
+setTimeout(sweepStore, 5000).unref?.();   // a harness that imports this must not be held open by the timer
 // Library KTX2 sweep (§20a, VRMs §20c, loose images §20d): every library
 // model gets a GPU-native-texture variant at OPT_DIR/<rel>.ktx2.glb, every
 // avatar a surgical-rewrite variant at OPT_DIR/<rel>.ktx2.vrm, and every
@@ -177,7 +243,9 @@ setTimeout(() => {
 // byte-preserved). Avatars live in TWO bases — Skye's library and the upload
 // overlay (assets/opt/...) — and serving prefers the overlay, so the sweep
 // sources each rel from the base that actually wins.
-setTimeout(() => {
+/** The library KTX2/LOD sweep — same seam. */
+export function sweepLibrary() {
+  if (SKIP_OPT_SWEEP) return;
   if (ktx2Skip) return;
   const items: OptItem[] = [];
   const seen = new Set<string>();
@@ -231,7 +299,8 @@ setTimeout(() => {
   console.log(`[ktx2] boot sweep: ${items.length} library asset(s) queued for variants`);
   optQueue.push(...items);
   pumpOptimize();
-}, 15_000);
+}
+setTimeout(sweepLibrary, 15_000).unref?.();
 
 // ---- the endpoint -----------------------------------------------------------
 

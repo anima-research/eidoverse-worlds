@@ -4,8 +4,9 @@
 // server.ts's FIRST import, so everything here runs before any other
 // module's boot work — the same order the constants had inline.
 
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { totalmem } from "node:os";
 
 export const PORT = Number(process.env.PORT ?? 8940);
 // Show-night door policy. Empty = open (dev on a tailnet). On a public box you
@@ -17,6 +18,37 @@ export const UPLOAD_CAP = Number(process.env.UPLOAD_CAP_MB ?? 20) * 1_000_000;
 // enough to re-render the whole performance offline, at production quality,
 // forever. Clients are told at join — recording is never invisible.
 export const RECORD = process.env.RECORD_FRAMES === "1";
+// SKIP_OPT_SWEEP=1 skips both boot optimize sweeps (encode pump + ktx2/lod);
+// serving worlds must be startable without shouldering the optimizer.
+export const SKIP_OPT_SWEEP = process.env.SKIP_OPT_SWEEP === "1";
+// OPT_MEM_BUDGET_MB bounds the optimizer so serving a world never competes
+// with encoding one: each optimize child runs under RLIMIT_DATA of this
+// many MB (Linux only — XNU accepts the limit and ignores it), and an item
+// whose ESTIMATED cost exceeds it is deferred (a `.deferred` marker beside
+// the would-be variant, a count in /version for this boot) rather than
+// attempted — a bigger host does it later; the small one still optimizes
+// everything that fits. Default: half of the memory this process can
+// actually use — the cgroup limit when there is one (a 1GB container on a
+// 64GB box must not budget 32GB), else physical memory. 0 = no cap, no gate.
+function usableMemory(): number {
+  try { const m = Number(readFileSync("/sys/fs/cgroup/memory.max", "utf8").trim()); if (m > 0) return Math.min(m, totalmem()); } catch { /* no cgroup v2 */ }
+  return totalmem();
+}
+// Env values are VALIDATED: a budget that is not a finite number >= 0 ("banana", -1) falls back to the default
+// with a warning — NaN used to disable the cap silently and serialise as null; a negative one deferred everything.
+function envNumber(name: string, fallback: number, ok: (n: number) => boolean): number {
+  const raw = process.env[name]?.trim();   // " " is not a number either — Number(" ") is 0
+  if (raw === undefined || raw === "") return fallback;
+  const n = Number(raw);
+  if (Number.isFinite(n) && ok(n)) return n;
+  console.warn(`[config] ${name}=${JSON.stringify(raw)} is not valid — using ${fallback}`);
+  return fallback;
+}
+export const OPT_MEM_BUDGET_MB = envNumber("OPT_MEM_BUDGET_MB", Math.floor(usableMemory() / 2_000_000), (n) => n >= 0);
+// Peak RSS of an optimize pass as a multiple of the source bytes, for the
+// estimate above: measured 259MB for a 5.4MB store GLB (x48). The KTX2/LOD
+// arms were not measured separately and are assumed the same order.
+export const OPT_COST_FACTOR = envNumber("OPT_COST_FACTOR", 48, (n) => n > 0);
 export const ROOT = resolve(import.meta.dir, "..");
 // Dev instances point this elsewhere so a scratch sequencer can't append to the
 // live worlds' logs (they are append-only and forever — a stray dev spawn is
@@ -24,7 +56,10 @@ export const ROOT = resolve(import.meta.dir, "..");
 export const WORLDS_DIR = resolve(process.env.WORLDS_DIR ?? join(ROOT, "worlds"));
 // The eidoverse-video checkout = the asset library (models, VRMs, animations).
 export const LIBRARY_DIR = resolve(process.env.EIDOVERSE_DIR ?? join(ROOT, "..", "eidoverse-video"));
-export const OPT_DIR = join(ROOT, "assets", "opt");
+// Same doctrine as WORLDS_DIR: a dev or test instance points this elsewhere so it can never write derived
+// variants or markers into the live store (a harness once did — review of #172).
+export const OPT_DIR = resolve(process.env.OPT_DIR ?? join(ROOT, "assets", "opt"));
+try { mkdirSync(OPT_DIR, { recursive: true }); } catch { /* the first write will say why */ }   // an overridden OPT_DIR may not exist yet; the incarnation file lives here
 // Deliberate ASSET fixes over the library (versioned IN this repo —
 // patched/README.md carries the doctrine): /library serves these with TOP
 // precedence, so every machine gets the fix via ordinary git pull while

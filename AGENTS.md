@@ -395,6 +395,7 @@ House rules, learned the hard way (each one is a past incident):
 ```bash
 # scratch sequencer — NEVER develop against a port someone lives on
 WORLDS_DIR=$(mktemp -d) JOIN_TOKEN=test-door PORT=8993 bun run server/server.ts &
+# SKIP_OPT_SWEEP=1 — skip both boot optimize sweeps (encode pump + ktx2/lod) on a memory-tight host
 
 # the three matrices (each file's header has its exact recipe)
 WORLD_URL=ws://localhost:8993/ws JOIN_TOKEN=test-door bun run tools/comptest.ts    # components/mounts/motion/use
