@@ -5,7 +5,11 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import * as THREE from 'three';
+// three by explicit client path, not a bare specifier: tools/ sits outside
+// client/, where the install lives, so this resolves to the SAME module
+// instance the client modules under test get (tools/core-stub.mjs) and the
+// test no longer depends on a root install being present.
+import * as THREE from '../client/node_modules/three/build/three.module.js';
 import { normalizeParticles, describeParticles } from '../shared/particles.js';
 
 const handlers = new Map<string, Function[]>();
