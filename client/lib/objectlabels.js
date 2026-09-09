@@ -143,20 +143,30 @@ function positions(source = authoredRecords) {
     object.getWorldPosition(point);
     const distance = point.distanceTo(camera.position);
     if (distance > 60) continue;
-    let anchor = anchors.get(object);
-    if (!anchor) {
-      const box = new THREE.Box3().setFromObject(object);
-      anchor = new THREE.Vector3();
-      if (box.isEmpty()) continue; // Loading placeholders have no meaningful bounds.
-      box.getCenter(anchor);
-      anchor.y = box.max.y;
-      object.worldToLocal(anchor);
-      anchors.set(object, anchor);
+    // An authored offset is complete on its own. It needs no bounds -- labelling
+    // a geometry-less marker Group is the case it exists for, and measuring that
+    // Group first sent it down the isEmpty() path, so it never rendered at all --
+    // and it takes no clearance bump, because the builder placed it exactly where
+    // they meant it. The measured anchor is the one docs/labels.md gives the 0.2m
+    // of air above the model's top.
+    if (record.offset) {
+      point.fromArray(record.offset);
+      object.localToWorld(point);
+    } else {
+      let anchor = anchors.get(object);
+      if (!anchor) {
+        const box = new THREE.Box3().setFromObject(object);
+        if (box.isEmpty()) continue; // Loading placeholders have no meaningful bounds.
+        anchor = new THREE.Vector3();
+        box.getCenter(anchor);
+        anchor.y = box.max.y;
+        object.worldToLocal(anchor);
+        anchors.set(object, anchor);
+      }
+      point.copy(anchor);
+      object.localToWorld(point);
+      point.y += 0.2;
     }
-    if (record.offset) point.fromArray(record.offset);
-    else point.copy(anchor);
-    object.localToWorld(point);
-    point.y += 0.2;
     projected.copy(point).project(camera);
     Object.assign(record, {
       wx: point.x, wy: point.y, wz: point.z, distance,
@@ -228,7 +238,7 @@ export function tickObjectLabels(now = performance.now()) {
 
 registerEditor(({ id, bag, commit, esc }) => {
   const label = readLabel(bag.label);
-  return { html: `<fieldset><legend>Object label</legend><label>Name <input data-label-name maxlength="120" value="${esc(label.name)}"></label><label>Description <textarea data-label-description maxlength="2000">${esc(label.description)}</textarea></label><label>Visibility <select data-label-visibility>${['nearby', 'always', 'inspect'].map(value => `<option ${value === label.visibility ? 'selected' : ''}>${value}</option>`).join('')}</select></label><button data-label-save>Save label</button><button data-label-remove>Remove label</button></fieldset>`, wire(root) {
+  return { html: `<fieldset><legend>Object label</legend><label>Name <input data-label-name maxlength="120" value="${esc(label.name)}"></label><label>Description <textarea data-label-description maxlength="2000">${esc(label.description)}</textarea></label><label>Visibility <select data-label-visibility>${[['nearby', 'nearby'], ['always', 'always'], ['inspect', 'inspect (all-nearby mode only)']].map(([value, caption]) => `<option value="${value}" ${value === label.visibility ? 'selected' : ''}>${caption}</option>`).join('')}</select></label><button data-label-save>Save label</button><button data-label-remove>Remove label</button></fieldset>`, wire(root) {
     root.querySelector('[data-label-save]').onclick = () => commit('comp', { id, type: 'label', data: {
       name: root.querySelector('[data-label-name]').value,
       description: root.querySelector('[data-label-description]').value,

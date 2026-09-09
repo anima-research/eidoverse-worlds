@@ -73,5 +73,27 @@ assert.equal(document.querySelectorAll('.ew-object-labels button').length, 32);
 foldLive(entry('remove', { id: 'landmark' })); tickObjectLabels(1700);
 assert.equal(visible().length, 0); assert.equal(panel.hidden, true);
 assert.equal(document.querySelector('select'), null, 'no detached object list or pick mode');
-console.log('label DOM: real fold identity, default off, click details, motion, rename, removal, replay and no world writes passed');
+
+// An authored offset is the ONLY anchor a geometry-less marker has: a bare
+// Group measures empty, and measuring it first skipped the entity entirely,
+// so the one case offset exists for was the one case that never rendered.
+foldEntry(snapshot, entry('spawn', { id: 'marker', lib: 'marker.glb', pos: [0, 0, 0] }));
+foldEntry(snapshot, entry('comp', { id: 'marker', type: 'label', data: {
+  name: 'Meeting point', visibility: 'always', offset: [0, 3, 0] } }));
+hydrate(snapshot);
+entities.set('marker', new THREE.Group());        // no geometry: bounds are empty
+configureObjectLabels({ mode: 'nearby' });
+tickObjectLabels(1800);
+// (re-hydrating the snapshot restores landmark too, so address the marker by id)
+const marker = () => visible().find(button => button.dataset.entityId === 'marker');
+assert.ok(marker(), 'an authored offset needs no bounds of its own');
+assert.equal(marker()!.textContent, 'Meeting point');
+
+// ...and it is used exactly as authored: no clearance bump on top of it.
+const marked = new THREE.Vector3(0, 3, 0).project(camera);
+const expected = (1 - marked.y) * 844 / 2;
+assert.ok(Math.abs(parseFloat(marker()!.style.top) - expected) < 0.5,
+  `offset is the anchor, unbumped: ${marker()!.style.top} vs ${expected}`);
+
+console.log('label DOM: real fold identity, default off, click details, motion, rename, removal, replay, authored offsets and no world writes passed');
 GlobalRegistrator.unregister();

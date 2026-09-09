@@ -17,13 +17,17 @@ comp {id: 'library', type: 'label', data: {
 
 Names are trimmed plain text up to 120 Unicode code points; descriptions up to
 2,000. `visibility` is `nearby` (default, 12m), `always` (60m maximum), or
-`inspect` (selected only). The renderer's `all` mode shows any authored label
-within 60m, including inspect-only labels. Objects without an authored name
+`inspect`. An `inspect` label never floats in `nearby` mode — it has no plaque
+there, and the editor labels the option accordingly; the renderer's `all` mode
+shows any authored label within 60m, inspect-only ones included, and its name
+reaches the scene tree and an agent's `look` either way. Objects without an authored name
 never acquire a floating label. `off` hides labels; already-open details remain
 usable until dismissed. Existing scene-tree inspection remains available.
 
-An optional `offset: [x, y, z]` is entity-local, finite and bounded to ±100m.
-Otherwise the model's cached upper bound anchors the label, with 0.2m clearance.
+An optional `offset: [x, y, z]` is entity-local, finite and bounded to ±100m,
+and is used exactly as given — it needs no geometry, so it is how a marker with
+no mesh of its own gets a label. Otherwise the model's cached upper bound
+anchors the label, with 0.2m of clearance above it.
 Labels follow live transforms and wait for actual geometry, including replacement
 and promotion after loading. Range is measured from the entity root so a tall
 object's own height does not make it disappear from the nearby set.

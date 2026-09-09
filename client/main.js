@@ -1,4 +1,3 @@
-import { initObjectLabels, tickObjectLabels } from './lib/objectlabels.js';
 // eidoverse-worlds browser client.
 //
 // Two planes: the world log (verbs, ordered, replayed on join) and presence
@@ -10,6 +9,7 @@ import { initObjectLabels, tickObjectLabels } from './lib/objectlabels.js';
 
 import { THREE, scene, camera, renderer } from './lib/core.js';
 import { CONFIG, bus, report } from './lib/base.js';
+import { initObjectLabels, tickObjectLabels } from './lib/objectlabels.js';
 import { contributeThumbnail, makeAvatar, EMOTE_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
 import { setSkyArgsSource, entities, buildsPending, avatarMounts } from './lib/world.js';
