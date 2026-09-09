@@ -135,7 +135,12 @@ export const isCasting = (key) => (requests.get(key)?.slot ?? -1) >= 0;
 // (This was sky.js attachLocalLights, which owned a hard MAX_LAMPS=2 ceiling
 // and a boot deferral that both existed to ration recompiles.)
 
+/** @returns {{key:string, intensity:number}[]} the requests it made -- a
+ *  caller that wants to animate a lamp needs the key AND the intensity the
+ *  inference chose, and reading either back out of the private map was the
+ *  alternative. */
 export function attachLamps(root, owner) {
+  const made = [];
   const emissive = [];
   root.traverse((o) => {
     if (!o.isMesh) return;
@@ -151,15 +156,19 @@ export function attachLamps(root, owner) {
     // saturated emissive keeps its colour; whitish reads as a warm bulb
     const ec = mesh.material.emissive;
     const sat = Math.max(ec.r, ec.g, ec.b) - Math.min(ec.r, ec.g, ec.b);
-    requestLight(`lamp:${owner}:${i}`, {
+    const intensity = Math.min(40, 6 + 2.6 * glow);
+    const key = `lamp:${owner}:${i}`;
+    requestLight(key, {
       obj: mesh,
       offset: mesh.geometry.boundingSphere.center.clone(),
       color: sat > 0.25 ? ec.clone() : 0xffd9a0,
-      intensity: Math.min(40, 6 + 2.6 * glow),
+      intensity,
       range: 12,                 // tight radius: grass fragments cost
       dayAware: true, owner,
     });
+    made.push({ key, intensity });
   });
+  return made;
 }
 
 // ---- time of day ------------------------------------------------------------

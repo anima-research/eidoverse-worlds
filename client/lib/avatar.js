@@ -10,6 +10,10 @@ import { REACH_CHAINS } from '../../shared/joints.js';
 // already a named constant. Importing it beats pasting 0.29411764705: the two
 // cannot drift, and the next reader learns WHY the wings beat at that rate.
 import { BREATH } from '../../shared/breath.js';
+// The light-slot rig: a body that GLOWS should also CAST. Requests, never
+// lights -- lightrig owns the topology because adding a PointLight at runtime
+// recompiles every material in the scene.
+import { attachLamps, releaseOwner, updateRequest } from './lightrig.js';
 import {
   loadVRM, clipFor, vrmaBytes, loadTrack, loadDone,
   CLIP_SLOTS, CLIP_SPEED, releaseVRM, vrmWarmed, markVrmWarmed,
@@ -409,6 +413,23 @@ export class Avatar {
     this.root = new THREE.Group();
     this.root.userData.isBody = true;   // so the sky's scene-diff never claims a person
     this.root.add(vrm.scene);
+    // A LAMP IN THE BODY. attachLamps walks for emissive meshes and requests a
+    // real point light at each one's centre -- it existed, exported, and was
+    // CALLED BY NOTHING, so nothing in this world has ever cast light from its
+    // own surface. Mythos has a gold emitter in his chest behind a
+    // transmissive pane; this is what makes it light the room rather than
+    // merely look bright.
+    //
+    // A request costs nothing until it wins one of the eight slots, and the
+    // rig arbitrates by priority and camera distance -- so a room full of
+    // lamps degrades by lighting the nearest, not by recompiling. Owner-scoped
+    // because bodies are POOLED: a request left behind by a recycled body
+    // would hold a slot for a lamp that is no longer anywhere.
+    // Keep what it made: the pulse below needs the key and the intensity the
+    // inference chose, and re-deriving either would be two sources of truth.
+    this._lamps = [];
+    try { this._lamps = attachLamps(vrm.scene, `body:${id}`) ?? []; }
+    catch { /* a body with no glow simply has none */ }
     this.mixer = new THREE.AnimationMixer(vrm.scene);
     this.actions = {};
     this.extraClips = new Map(); // lazily-loaded emote actions
@@ -1653,6 +1674,39 @@ export class Avatar {
     if (this._wings === undefined) this._findWings();
     if (this._wings && !this._limp) this._flap(dt);
 
+    // THE LAMP BREATHES, on the same 3.4s period as the wings and the leaf.
+    //
+    // Janus: "it could pulse at 3.4 seconds". BREATH is already the house's
+    // period (spec T8, shared/breath.js) and already drives the wing idle, so
+    // the lamp and the wings rise together rather than beating against each
+    // other -- which is the difference between a body with a rhythm and a body
+    // with two.
+    //
+    // A SINE FLOOR, not a full swing to zero: a lamp that goes out every 1.7
+    // seconds is a fault light. 0.72..1.0 of the authored intensity reads as
+    // breathing. Both the emissive SURFACE and the CAST light move together --
+    // the surface so it is visible up close through the glass, the light so
+    // the pulse reaches whatever he is standing near.
+    if (this._lampMats === undefined) {
+      this._lampMats = [];
+      this.vrm.scene.traverse((o) => {
+        if (!o.isMesh) return;
+        for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+          if (m?.emissiveIntensity !== undefined && /lampglass/i.test(m.name || '')) {
+            this._lampMats.push({ m, base: m.emissiveIntensity || 1 });
+          }
+        }
+      });
+    }
+    if (this._lampMats.length) {
+      const k = 0.86 + 0.14 * Math.sin((now / 1000) * (2 * Math.PI / BREATH));
+      for (const { m, base } of this._lampMats) m.emissiveIntensity = base * k;
+      // the cast follows the glow, at whatever intensity the inference chose
+      for (const { key, intensity } of this._lamps) {
+        updateRequest(key, { intensity: intensity * k });
+      }
+    }
+
     // ---- contact shadow: on the GROUND, not on the body.
     // The blob is a child of root at a fixed local y, so it rode along under a
     // lifted body at a constant 2cm — which is precisely the one thing it
@@ -1727,6 +1781,11 @@ export class Avatar {
     // someone is wearing back into the pool — two wearers, one instance.
     if (this._disposed) return;
     this._disposed = true;
+    // Hand the light slot back. Bodies are pooled, so a lamp request that
+    // outlives its body holds one of eight slots for a chest that is no longer
+    // in the scene -- and the rig would keep mirroring a mesh that has been
+    // reset to rest and shelved.
+    releaseOwner(`body:${this.id}`);
     scene.remove(this.root);
     scene.remove(this.gaze);
     if (this.bubble) disposeSprite(this.bubble);
