@@ -1759,7 +1759,11 @@ export class Avatar {
         if (!o.isMesh) return;
         for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
           if (m?.emissiveIntensity !== undefined && /lampglass/i.test(m.name || '')) {
-            this._lampMats.push({ m, base: m.emissiveIntensity || 1 });
+            // ?? not ||: an authored emissiveIntensity of ZERO is a
+            // deliberate value (a lamp that starts dark), and `|| 1` turned it
+            // into full brightness -- then dispose() "restored" it to 1 and
+            // the material came out of the pool brighter than authored.
+            this._lampMats.push({ m, base: m.emissiveIntensity ?? 1 });
           }
         }
       });

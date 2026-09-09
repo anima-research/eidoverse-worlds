@@ -242,9 +242,22 @@ const stats = { meshes: 0, wrapped: 0, unlit: 0 };
  *  expensive to compile than the standard path and the overwhelming majority of
  *  materials in this world want nothing from it; upgrading everything "for
  *  consistency" would spend that on every body in the room. */
+// SOURCE -> REPLACEMENT, memoised. A WeakSet could only remember THAT a
+// material had been upgraded, not what to. Two meshes sharing one source
+// material therefore got two independent node materials: twice the material
+// and shader objects for one look, and shared-edit semantics quietly broken --
+// an author tweaking the shared material would move one mesh and not the
+// other. mica caught it (replacementShared:false).
+//
+// A WeakMap keyed on the source keeps sharing intact: the second mesh gets the
+// SAME replacement the first one did. Weak on both sides, so neither the
+// source nor the replacement is pinned once the meshes are gone.
+const TRANSMISSIVE_REPLACEMENT = new WeakMap();
 const TRANSMISSIVE_UPGRADED = new WeakSet();
 function upgradeTransmissive(mesh, m) {
   if (!m || m.isNodeMaterial || TRANSMISSIVE_UPGRADED.has(m)) return m;
+  const shared = TRANSMISSIVE_REPLACEMENT.get(m);
+  if (shared) return shared;
   if (!(m.transmission > 0)) return m;
   const Node = THREE.MeshPhysicalNodeMaterial;
   if (!Node) return m;                       // non-WebGPU build: nothing to do
@@ -292,6 +305,7 @@ function upgradeTransmissive(mesh, m) {
     return m;
   }
   TRANSMISSIVE_UPGRADED.add(nm);
+  TRANSMISSIVE_REPLACEMENT.set(m, nm);   // the next mesh sharing `m` reuses it
   stats.transmissive = (stats.transmissive ?? 0) + 1;
   return nm;
 }
