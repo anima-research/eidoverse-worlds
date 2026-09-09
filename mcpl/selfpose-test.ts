@@ -135,5 +135,58 @@ console.log("\nwalking and the held pose");
   check("a held pose survives a SECOND walk too", e.heldPose !== null);
 }
 
+// ---------------------------------------------------------------- wings
+//
+// Janus: "can you make it so that wing bones are allowed in the pose tool's
+// surface for agents, if they have wings? right now it gives a 'not a VRM
+// humanoid bone' error."
+//
+// Wings are RAW bones -- VRM's humanoid vocabulary has no word for them -- so
+// canonicalBone returned null and the verb refused. They are addressable
+// because the RIG NAMES them, the same contract by which hair and wings reach
+// the springbone and ragdoll systems.
+{
+  const WINGED = ['Hip', 'Spine02', 'Head',
+    'L_Wing_Upper', 'L_Wing_Upper_1', 'L_Wing_Upper_2',
+    'R_Wing_Upper', 'L_Wing_Lower', 'R_Wing_Lower'];
+
+  const v = validatePose({ L_Wing_Upper: [0, 0, 0.26, 0.97] });
+  check("a wing bone is accepted", v.accepted.includes('L_Wing_Upper'),
+        JSON.stringify(v.rejected));
+  check("...and keeps its exact name (no humanoid renaming)",
+        v.pose.L_Wing_Upper !== undefined && !v.renamed.length);
+
+  const deep = validatePose({ R_Wing_Lower_2: [0, 0, 0, 1] });
+  check("outer segments too", deep.accepted.includes('R_Wing_Lower_2'));
+
+  // CASE-SENSITIVE, unlike the humanoid names. Those are a vocabulary the
+  // module owns and can spell forgivingly; a raw bone name is a fact about a
+  // skeleton, and `l_wing_upper` is not a bone that exists -- accepting a
+  // near-miss would resolve to nothing at the client and report success.
+  const low = validatePose({ l_wing_upper: [0, 0, 0, 1] });
+  check("a lowercase wing name is refused", !low.accepted.length);
+  check("...and the refusal names the real spelling",
+        /case-sensitive/.test(low.rejected[0]?.why ?? ''), low.rejected[0]?.why);
+
+  // GATED ON THE BODY when the caller knows its bones.
+  const rawKnown = new Set(WINGED);
+  const ok = validatePose({ L_Wing_Upper: [0, 0, 0, 1] }, { rawKnown });
+  check("a wing this body HAS is accepted", ok.accepted.length === 1);
+  const no = validatePose({ L_Wing_Upper: [0, 0, 0, 1] },
+                          { rawKnown: new Set(['Hip', 'Head']) });
+  check("a wing this body LACKS is refused, not silently ignored",
+        !no.accepted.length && /no bone by that name/.test(no.rejected[0]?.why ?? ''),
+        JSON.stringify(no.rejected));
+
+  // Humanoid names must not be gated by rawKnown -- the guarantee is VRM's.
+  const hum = validatePose({ head: [0, 0, 0, 1] }, { rawKnown: new Set() });
+  check("humanoid bones stay ungated", hum.accepted.includes('head'));
+
+  // Mixed pose: a wing and an arm in one call.
+  const mix = validatePose({ leftUpperArm: [0, 0, -0.9, 0.44],
+                             L_Wing_Upper: [0, 0, 0.26, 0.97] }, { rawKnown });
+  check("a pose can name a wing and an arm together", mix.accepted.length === 2);
+}
+
 console.log(failures ? `\n\x1b[31m${failures} failed\x1b[0m\n` : "\n\x1b[32mall passed\x1b[0m\n");
 process.exit(failures ? 1 : 0);

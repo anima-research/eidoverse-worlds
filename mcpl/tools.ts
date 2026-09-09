@@ -402,12 +402,22 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // does not exist, a three-component quaternion, or two names folding
       // onto one bone must come back as words, not as a body that silently
       // did not move. (See shared/humanoid.js.)
-      const v = validatePose(a.bones);
+      // RAW BONES ARE GATED ON THIS BODY, humanoid ones are not. A VRM
+      // guarantees its humanoid vocabulary; wings are a fact about one
+      // skeleton, so `L_Wing_Upper` on a wingless body must come back as
+      // "your body has no such bone" rather than be accepted and quietly do
+      // nothing. Humanoid names stay ungated so the pose tool keeps working
+      // when the bone list cannot be fetched.
+      let rawKnown: Set<string> | null = null;
+      try { rawKnown = new Set(await ag.loadBodyBones()); } catch { rawKnown = null; }
+      const v = validatePose(a.bones, rawKnown ? { rawKnown } : {});
       const note = poseReport(v);
       if (!v.accepted.length) {
         return text(`no pose set — nothing usable in \`bones\`.${note ? ` ${note}.` : ""}`
           + " Want a sparse map of VRM humanoid bone name to [x,y,z,w], e.g."
-          + ' {"leftUpperArm": [0, 0, -0.9, 0.44]}.');
+          + ' {"leftUpperArm": [0, 0, -0.9, 0.44]}.'
+          + " Winged bodies can also name their wing bones exactly as the rig"
+          + ' spells them, e.g. {"L_Wing_Upper": [0, 0, 0.26, 0.97]}.');
       }
       if (a.target) {
         ag.puppet(String(a.target), { pose: v.pose });

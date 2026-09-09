@@ -7,6 +7,7 @@ import { report, angleDelta, bus } from './base.js';
 import { defsRegistry } from './defs.js';
 import { measureChain, solveChain } from './reachbone.js';
 import { REACH_CHAINS } from '../../shared/joints.js';
+import { isRawBone } from '../../shared/humanoid.js';
 // The light-slot rig: a body that GLOWS should also CAST. Requests, never
 // lights -- lightrig owns the topology because adding a PointLight at runtime
 // recompiles every material in the scene.
@@ -820,7 +821,28 @@ export class Avatar {
     ref.getWorldQuaternion(_wq);
     _wax.set(0, 0, 1).applyQuaternion(_wq).normalize();   // forward: the flap
     _wup.set(0, 1, 0).applyQuaternion(_wq).normalize();   // up: the sweep
+    // A POSED WING BELONGS TO THE POSE -- and must be WRITTEN here, not merely
+    // skipped. Skipping hands the bone back to the springbone simulation, which
+    // claims all twelve wing joints on this rig and re-solves them every frame:
+    // measured as a small periodic wobble around the posed value rather than a
+    // hold. `_flap` beats the springs only because it runs AFTER vrm.update and
+    // calls updateMatrix() itself, so the pose has to ride that same slot.
+    //
+    // Per bone, not per body, so an agent can hold ONE wing and let the other
+    // keep beating.
+    const posed = this._poseOwnedWings();
     for (const w of this._wings) {
+      if (posed?.has(w.node)) {
+        const q = posed.get(w.node);
+        if (q) {
+          // Local to REST, exactly like WING_FOLDED and like a Blender pose
+          // bone: an agent naming L_Wing_Upper means "rotate it from where it
+          // sits", not "replace its world orientation".
+          w.node.quaternion.copy(w.rest).multiply(q);
+          w.node.updateMatrix();     // springbone joints have matrixAutoUpdate false
+        }
+        continue;
+      }
       // the outer segments trail their root, and (optionally) the lower pair
       // trails the upper by half a beat
       const ph = this._wingT - W.lag * w.depth - (W.sync || !w.lower ? 0 : 0.5);
@@ -1060,10 +1082,35 @@ export class Avatar {
   _resolveBones(names) {
     const out = [];
     for (const n of names) {
+      // Humanoid first: three-vrm's NORMALIZED node is the one a humanoid pose
+      // must write, because vrm.update copies normalized -> raw every frame and
+      // a rotation put on the raw bone is discarded.
       const node = this.vrm.humanoid?.getNormalizedBoneNode?.(n);
-      if (node) out.push([n, node]);
+      if (node) { out.push([n, node]); continue; }
+      // RAW BONES, by name. Wings have no humanoid word, so this used to drop
+      // them silently -- and combined with the validator's refusal upstream,
+      // an agent with wings could not move them at all. They resolve out of the
+      // scene graph by the same NAME contract the springbones and the ragdoll
+      // use, and they are written directly because nothing normalizes them.
+      if (isRawBone(n)) {
+        const raw = this._rawBone(n);
+        if (raw) out.push([n, raw]);
+      }
     }
     return out;
+  }
+
+  /** A raw (non-humanoid) bone by name, memoised. The traverse is O(bones) and
+   *  a pose can name a dozen; without the cache that is a dozen walks of a
+   *  400-node skeleton every time a pose lands. */
+  _rawBone(name) {
+    if (this._rawBones === undefined) {
+      this._rawBones = new Map();
+      this.vrm.scene.traverse((o) => {
+        if (o.isBone && o.name && isRawBone(o.name)) this._rawBones.set(o.name, o);
+      });
+    }
+    return this._rawBones.get(name) ?? null;
   }
 
   /** Hold a pose. `bones` is a sparse map name -> [x,y,z,w]. */
@@ -1214,6 +1261,32 @@ export class Avatar {
 
   /** Bones a live reach owns this frame — a held pose must not also write
    *  them, or two authors compose onto each other and both drift. */
+  /** Wing bones an active pose is holding. `_flap` skips these.
+   *
+   *  ONE AUTHOR PER BONE, the rule this file keeps hitting: `_flap` rebuilds
+   *  every wing from its captured rest each frame with an unconditional
+   *  `copy`, AFTER vrm.update -- so a pose that named a wing was overwritten
+   *  the same frame it landed. That was the third blocker on agent wing
+   *  posing, after the validator's refusal and `_resolveBones` dropping the
+   *  name; fixing the first two without this would have produced a pose verb
+   *  that reported success and moved nothing.
+   *
+   *  Weight-gated like `_reachOwned`: a pose fading out hands its wings back
+   *  to the flap rather than releasing them the instant it is cleared. */
+  _poseOwnedWings() {
+    const o = this._override;
+    if (!o || (o.weight ?? 0) <= 0.02) return null;
+    const m = new Map();
+    for (const [name, node] of o.nodes ?? []) {
+      if (!isRawBone(name)) continue;
+      // `targets` holds already-normalised THREE.Quaternions (setPose builds
+      // them), so this is the value itself and not an array to convert.
+      const q = o.targets?.get?.(name) ?? null;
+      m.set(node, q ?? null);
+    }
+    return m.size ? m : null;
+  }
+
   _reachOwned() {
     if (!this._reach?.size) return null;
     const s = new Set();
