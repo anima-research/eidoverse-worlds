@@ -1896,22 +1896,67 @@ export class WorldAgent {
   private bodyBonesFor: string | null = null;
 
   /** Read the worn VRM's bone list. Cheap and cached per avatar path. */
-  async loadBodyBones(): Promise<string[]> {
-    if (this.bodyBoneNames && this.bodyBonesFor === this.avatar) return this.bodyBoneNames;
+  /** The SKIN JOINTS of an avatar, by name.
+   *
+   *  `skins[].joints`, not every named node. The first cut took
+   *  `nodes.filter(n => n.name)`, which on Mythos returns 452 names including
+   *  `Armature` (the rig root), `GOLD` (a material-named node) and every mesh
+   *  -- so a gate built on it would let a named NON-JOINT false-pass, and a
+   *  duplicate name count twice. mica caught it in review of PR #174. A bone
+   *  is a thing the skin is weighted to; that is exactly what `joints` lists.
+   *
+   *  Caches per avatar PATH rather than per body, because a pose aimed at
+   *  someone else needs their skeleton and two residents often wear one body.
+   */
+  private bonesByAvatar = new Map<string, string[]>();
+  async loadBonesOf(avatarPath: string): Promise<string[]> {
+    const key = avatarPath || WorldAgent.DEFAULT_BODY;
+    const hit = this.bonesByAvatar.get(key);
+    if (hit) return hit;
+    let names: string[] = [];
     try {
-      const res = await fetch(`${this.httpBase}/library/${this.avatar}`);
+      const res = await fetch(`${this.httpBase}/library/${key}`);
       if (!res.ok) throw new Error(String(res.status));
       const buf = new Uint8Array(await res.arrayBuffer());
       const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
       const jlen = dv.getUint32(12, true);
       const g = JSON.parse(new TextDecoder().decode(buf.subarray(20, 20 + jlen)));
-      this.bodyBoneNames = (g.nodes ?? []).filter((n: any) => n?.name).map((n: any) => n.name);
-      this.bodyBonesFor = this.avatar;
-    } catch (e) {
-      this.bodyBoneNames = [];
-      this.bodyBonesFor = this.avatar;
+      const nodes = g.nodes ?? [];
+      const seen = new Set<string>();
+      for (const sk of g.skins ?? []) {
+        for (const ji of sk.joints ?? []) {
+          const nm = nodes[ji]?.name;
+          if (typeof nm === "string" && nm && !seen.has(nm)) { seen.add(nm); names.push(nm); }
+        }
+      }
+    } catch { names = []; }
+    // An empty list is cached too: a body whose glTF cannot be read must not be
+    // re-fetched on every pose, and "unknown" is handled by the CALLER (which
+    // skips the gate rather than refusing everything).
+    this.bonesByAvatar.set(key, names);
+    return names;
+  }
+
+  /** My own body's joints. */
+  async loadBodyBones(): Promise<string[]> {
+    if (this.bodyBoneNames && this.bodyBonesFor === this.avatar) return this.bodyBoneNames;
+    this.bodyBoneNames = await this.loadBonesOf(this.avatar);
+    this.bodyBonesFor = this.avatar;
+    return this.bodyBoneNames;
+  }
+
+  /** The joints of whoever this pose is AIMED at -- me, or a target. Null when
+   *  the target is unknown or its glTF could not be read, which the caller
+   *  reads as "do not gate" rather than "refuse". */
+  async loadBonesForTarget(target?: string | null): Promise<string[] | null> {
+    if (!target || target === this.name) {
+      const mine = await this.loadBodyBones();
+      return mine.length ? mine : null;
     }
-    return this.bodyBoneNames!;
+    const path = this.people.get(target)?.avatar;
+    if (!path) return null;                 // not present, or no avatar known
+    const bones = await this.loadBonesOf(path);
+    return bones.length ? bones : null;
   }
 
   private flightBegin() {

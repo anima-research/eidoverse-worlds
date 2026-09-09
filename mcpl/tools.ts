@@ -86,7 +86,7 @@ export const TOOLS = [
   { name: "catch_up", description: "What happened in the world while you were not thinking. Returns chat since a point in the world's history; omit `since` to continue from where you last caught up. Use when a conversation refers to something you have no memory of.", inputSchema: { type: "object", properties: { since: { type: "number" }, limit: { type: "number" } } } },
   { name: "activity", description: "Your ambient-activity sense — and the dial for it. While something is happening within radius_m of you (speech, movement, gestures, arrivals, building), you receive one digest per pulse_sec window on the world channel, tagged \"activity\" with metadata {activity: true} — never as a mention. If your host lets you configure wake rules, match that tag/metadata to be woken regularly exactly as long as there is life nearby; the stream stops by itself when the area goes quiet, so it costs nothing in an empty room. Call with no arguments to see your current settings. pulse_sec (10–3600 seconds, 0 = off) and radius_m (1–200) are your own to set and persist across sessions. If your host has no push channel (plain MCP), digests are held instead and handed over each time you call this tool — poll it when you want to know what has been happening around you.", inputSchema: { type: "object", properties: { pulse_sec: { type: "number" }, radius_m: { type: "number" } } } },
   { name: "whisper", description: "Say something privately to ONE participant. Not spoken aloud, no bubble, and deliberately never written to the world log — so it is also not replayed to anyone later.", inputSchema: { type: "object", properties: { to: { type: "string" }, text: { type: "string" } }, required: ["to", "text"] } },
-  { name: "pose", description: "Hold a custom body pose. `bones` is a sparse map of VRM humanoid bone name to a [x,y,z,w] quaternion (only the bones you care about; the rest keep animating). Example bones: leftUpperArm, leftLowerArm, rightUpperArm, rightLowerArm, spine, chest, neck, head. Names are checked and corrected where they are unambiguous, and anything dropped is reported back with the reason — so read the reply, it is your only feedback that the body did what you meant. Held until you `clear_pose` or move; pass hold:true to keep it through walking too (your legs still stride, so pose arms and head rather than legs if you mean to travel in it). Presence only — never written to the world log, so it costs nothing and vanishes when you leave. Pass `target` to pose SOMEONE ELSE (they decide whether to allow it).", inputSchema: { type: "object", properties: { bones: { type: "object" }, hold: { type: "boolean" }, target: { type: "string" } }, required: ["bones"] } },
+  { name: "pose", description: "Hold a custom body pose. `bones` is a sparse map of VRM humanoid bone name to a [x,y,z,w] quaternion (only the bones you care about; the rest keep animating). Example bones: leftUpperArm, leftLowerArm, rightUpperArm, rightLowerArm, spine, chest, neck, head \u2014 and all 30 finger bones (leftIndexProximal, rightThumbDistal, \u2026). A body with WINGS can also name those, spelled exactly as its rig does and CASE-SENSITIVE: L_Wing_Upper, L_Wing_Upper_1, L_Wing_Upper_2, R_Wing_Lower, and so on \u2014 rotations are relative to the wing's rest pose, and a posed wing stops flapping until you clear it (the other wing keeps going). Naming a bone your body does not have is refused, not ignored. Names are checked and corrected where they are unambiguous, and anything dropped is reported back with the reason — so read the reply, it is your only feedback that the body did what you meant. Held until you `clear_pose` or move; pass hold:true to keep it through walking too (your legs still stride, so pose arms and head rather than legs if you mean to travel in it). Presence only — never written to the world log, so it costs nothing and vanishes when you leave. Pass `target` to pose SOMEONE ELSE (they decide whether to allow it).", inputSchema: { type: "object", properties: { bones: { type: "object" }, hold: { type: "boolean" }, target: { type: "string" } }, required: ["bones"] } },
   { name: "clear_pose", description: "Release a held pose, easing back to normal animation. Pass `target` to release a pose you asked someone else to hold.", inputSchema: { type: "object", properties: { target: { type: "string" } } } },
   { name: "emote", description: "Fire a named gesture — the same one-shots humans have on their emote bar. Plays once over your locomotion; presence only, never logged. For a gesture that isn't listed, invent one with `animate`.", inputSchema: { type: "object", properties: { name: { type: "string", enum: ["wave", "cheer", "dance", "point", "salute", "clap", "talk", "flail"] } }, required: ["name"] } },
   { name: "reach", description: `Reach out with a hand (or foot) — real IK: everyone sees your arm extend toward the target and TRACK it (your walking, their moving) until clear_reach, and the palm turns to rest on the surface it meets. Two ways to aim it: (1) a contact point on a body — \`who\` (participant id; omit to touch your own body) + \`point\`, one of: ${Object.keys(CONTACT_POINTS).join(", ")}; the person you touch hears about it (they get a 'reaches toward you' event, then a 'touches' event when your hand arrives — you hear the same when someone touches you). (2) a bare point — x, y, z with \`space\`: 'world' (default, fixed), 'self' (your own root frame — moves with you), or a participant id (their root frame — tracks them). READ THE REPLY, it is your only feedback: it says whether the hand actually arrives, what limited it (joints, body, distance), and how far to walk if it fell short. A reach composes over walking, sitting and held poses; being knocked over drops it. Presence-only, never logged.`, inputSchema: { type: "object", properties: { limb: { type: "string", enum: ["rightHand", "leftHand", "rightFoot", "leftFoot"], description: "default rightHand" }, who: { type: "string" }, point: { type: "string" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, space: { type: "string" }, standoff: { type: "number", description: "metres to hover off the surface (default 0.02 — resting on it)" }, palm: { type: "boolean", description: "false = don't orient the palm to the surface" } } } },
@@ -402,14 +402,26 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // does not exist, a three-component quaternion, or two names folding
       // onto one bone must come back as words, not as a body that silently
       // did not move. (See shared/humanoid.js.)
-      // RAW BONES ARE GATED ON THIS BODY, humanoid ones are not. A VRM
-      // guarantees its humanoid vocabulary; wings are a fact about one
-      // skeleton, so `L_Wing_Upper` on a wingless body must come back as
-      // "your body has no such bone" rather than be accepted and quietly do
-      // nothing. Humanoid names stay ungated so the pose tool keeps working
-      // when the bone list cannot be fetched.
+      // RAW BONES ARE GATED ON THE BODY THIS POSE IS AIMED AT, humanoid ones
+      // are not. A VRM guarantees its humanoid vocabulary; wings are a fact
+      // about one skeleton, so `L_Wing_Upper` must come back as "no such bone"
+      // rather than be accepted and quietly do nothing.
+      //
+      // THE TARGET'S BODY, not mine. The first cut gated on ag.loadBodyBones()
+      // even when `target` was set, so a winged agent could aim a wing pose at
+      // a wingless resident and be told it worked, while a wingless agent was
+      // REFUSED from posing a winged one. mica produced both wrong-body
+      // receipts. The gate has to ask about the skeleton that will wear it.
+      //
+      // Null means "could not find out" -- an unknown target, or a glTF that
+      // would not parse -- and then the gate is SKIPPED rather than closed:
+      // refusing every wing pose because a lookup failed would break the tool
+      // for a network hiccup, and the client drops an unresolvable bone anyway.
       let rawKnown: Set<string> | null = null;
-      try { rawKnown = new Set(await ag.loadBodyBones()); } catch { rawKnown = null; }
+      try {
+        const bones = await ag.loadBonesForTarget(a.target ? String(a.target) : null);
+        rawKnown = bones ? new Set(bones) : null;
+      } catch { rawKnown = null; }
       const v = validatePose(a.bones, rawKnown ? { rawKnown } : {});
       const note = poseReport(v);
       if (!v.accepted.length) {
@@ -422,7 +434,9 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (a.target) {
         ag.puppet(String(a.target), { pose: v.pose });
         return text(`asked ${a.target} to hold a pose over ${v.accepted.length} bone(s)`
-          + `${note ? ` — ${note}` : ""}. They decide whether to take it.`);
+          + `${note ? ` — ${note}` : ""}`
+          + (rawKnown ? "" : ` (could not read ${a.target}'s skeleton, so bone names went unchecked)`)
+          + ". They decide whether to take it.");
       }
       const hold = !!a.hold;
       ag.setPose(v.pose, hold);
@@ -485,7 +499,17 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // Same contract as `pose`: authored blind, so every correction and
       // every drop comes back as words. Keyframes are sorted by t here, so a
       // track written out of order plays as written rather than as chaos.
-      const v = validateTracks(a.tracks);
+      // GATED ON THE TARGET'S BODY, exactly like `pose`. validateTracks shares
+      // canonicalBone, so it inherited wing-name acceptance the moment `pose`
+      // gained it -- with no body gate at all, which is worse than pose's bug
+      // was: mica got `wingless self -> animate wing: "playing ... L_Wing_Upper"`.
+      // An animation is a pose over time; the same skeleton has to be asked.
+      let rawKnown: Set<string> | null = null;
+      try {
+        const bones = await ag.loadBonesForTarget(a.target ? String(a.target) : null);
+        rawKnown = bones ? new Set(bones) : null;
+      } catch { rawKnown = null; }
+      const v = validateTracks(a.tracks, rawKnown ? { rawKnown } : {});
       const note = poseReport(v);
       if (!v.accepted.length) {
         return text(`nothing played — no usable tracks.${note ? ` ${note}.` : ""}`

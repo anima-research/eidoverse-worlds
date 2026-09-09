@@ -832,17 +832,11 @@ export class Avatar {
     // keep beating.
     const posed = this._poseOwnedWings();
     for (const w of this._wings) {
-      if (posed?.has(w.node)) {
-        const q = posed.get(w.node);
-        if (q) {
-          // Local to REST, exactly like WING_FOLDED and like a Blender pose
-          // bone: an agent naming L_Wing_Upper means "rotate it from where it
-          // sits", not "replace its world orientation".
-          w.node.quaternion.copy(w.rest).multiply(q);
-          w.node.updateMatrix();     // springbone joints have matrixAutoUpdate false
-        }
-        continue;
-      }
+      // A POSED WING is handled at the WRITE below, not skipped here: the flap
+      // is computed either way so a partially-weighted pose can blend FROM it
+      // (see the slerp at the end of this loop). Skipping would hand the bone
+      // to the springbone sim instead -- measured as a wobble, not a hold.
+      const pq = posed?.q.get(w.node);
       // the outer segments trail their root, and (optionally) the lower pair
       // trails the upper by half a beat
       const ph = this._wingT - W.lag * w.depth - (W.sync || !w.lower ? 0 : 0.5);
@@ -882,6 +876,16 @@ export class Avatar {
           _wacc.slerp(_wtgt, fold);
         }
       }
+      // AN AGENT'S POSE, blended by the override's own weight and applied to
+      // the FLAP rather than to rest. Returning only the target rotation made
+      // this binary -- full above weight 0.02, gone below it -- so a wing
+      // snapped in and snapped back out while every humanoid bone in the same
+      // pose eased. At half weight a wing should sit halfway between where it
+      // would have been beating and where the pose wants it (mica, PR #174).
+      //
+      // Local to REST, like WING_FOLDED and like a Blender pose bone: naming
+      // L_Wing_Upper means "rotate it from where it sits".
+      if (pq) _wacc.slerp(_wtgt.copy(w.rest).multiply(pq), posed.weight);
       if (this._wingBlend < 1 && w.from) {
         // Standing up, the bones are wherever the ragdoll left them — folded,
         // or under her. Cutting straight to mid-flap is a one-frame teleport of
@@ -1275,16 +1279,23 @@ export class Avatar {
    *  to the flap rather than releasing them the instant it is cleared. */
   _poseOwnedWings() {
     const o = this._override;
-    if (!o || (o.weight ?? 0) <= 0.02) return null;
+    const w = o?.weight ?? 0;
+    // Below the epsilon there is no pose to speak of; the flap owns the wing.
+    if (!o || w <= 0.02) return null;
     const m = new Map();
     for (const [name, node] of o.nodes ?? []) {
       if (!isRawBone(name)) continue;
       // `targets` holds already-normalised THREE.Quaternions (setPose builds
       // them), so this is the value itself and not an array to convert.
       const q = o.targets?.get?.(name) ?? null;
-      m.set(node, q ?? null);
+      if (q) m.set(node, q);
     }
-    return m.size ? m : null;
+    // The WEIGHT rides along. Returning only the target made the pose binary:
+    // full above 0.02 and gone below it, so a wing SNAPPED into the pose and
+    // snapped back out, while every humanoid bone in the same pose eased. The
+    // ramp exists for a reason (a tumble starts at full weight, a held pose
+    // fades in), and a raw bone has no excuse to ignore it. mica, PR #174.
+    return m.size ? { weight: w, q: m } : null;
   }
 
   _reachOwned() {
