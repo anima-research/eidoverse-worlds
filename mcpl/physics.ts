@@ -523,11 +523,12 @@ export class ReachBody {
   av: any;
   private chains = new Map<string, any>();
 
-  private constructor(m: NonNullable<typeof simMods>, P: Record<string, any>) {
+  private constructor(m: NonNullable<typeof simMods>, P: Record<string, any>, realParent: Record<string, string | null> | null = null) {
     this.m = m;
-    // humanoid chain only (no hair): measureChain wants the simplified
-    // hierarchy, and refuses chains whose lower bone is not the upper's child.
-    this.av = m.rig.makeAvatar(P, { vrm0: !!(P as any).__vrm0 });
+    // Existing reaches use the collapsed body. Readback can retain the full
+    // humanoid ancestry (shoulders, upperChest, fingers); chain measurement
+    // still refuses a lower limb that is not its upper limb's direct child.
+    this.av = m.rig.makeAvatar(P, { vrm0: !!(P as any).__vrm0, realParent });
   }
 
   static async create(httpBase: string, avatarPath: string): Promise<ReachBody | null> {
@@ -538,12 +539,12 @@ export class ReachBody {
     return new ReachBody(m, P);
   }
 
-  /** Test seam: build from an already-parsed skeleton (tools/rig-load's P
-   *  map), so suites run against shipped rigs without a sequencer to fetch
-   *  from. Same constructor the live path uses. */
-  static async fromSkeleton(P: Record<string, any>): Promise<ReachBody | null> {
+  /** Build from an already-parsed skeleton. Readback supplies real humanoid
+   *  ancestry; existing reach tests can retain the collapsed-chain default.
+   *  Every call creates private nodes, even when the parsed rig is cached. */
+  static async fromSkeleton(P: Record<string, any>, realParent: Record<string, string | null> | null = null): Promise<ReachBody | null> {
     const m = await loadSim();
-    return m ? new ReachBody(m, P) : null;
+    return m ? new ReachBody(m, P, realParent) : null;
   }
 
   /** Put the stand-in where the streamed presence says the body is. `pose` is
@@ -574,7 +575,7 @@ export class ReachBody {
 
   /** Solve one limb toward a world target at the CURRENT pose. Returns plain
    *  data — the same verdict fields the browser's reachStatus reports. */
-  solve(limb: string, target: number[] | { pos: number[]; normal?: number[] }, opts: { palm?: boolean } = {}) {
+  solve(limb: string, target: number[] | { pos: number[]; normal?: number[] }, opts: { palm?: boolean; apply?: boolean } = {}) {
     const ch = this.chain(limb);
     if (!ch) return { ok: false as const, why: `no measurable ${limb} chain on this rig` };
     const tw = Array.isArray(target) ? target : target.pos;
@@ -582,6 +583,14 @@ export class ReachBody {
     const palm = Array.isArray(n) && n.length === 3 ? { dir: [-n[0], -n[1], -n[2]] } : null;
     const out = this.m.reachbone.solveChain(ch, this.av, tw, null, { palm });
     if (!out.ok) return { ok: false as const, why: String(out.why) };
+    // Opt-in only for a perception query's private scratch nodes. The live
+    // reach attester's existing solve remains a measurement without mutation.
+    if (opts.apply) {
+      ch.nodes.upper.quaternion.fromArray(out.upper);
+      ch.nodes.lower.quaternion.fromArray(out.lower);
+      if (out.hand) ch.nodes.end.quaternion.fromArray(out.hand);
+      this.av.root.updateMatrixWorld(true);
+    }
     return {
       ok: true as const,
       gap: Number(out.res.gap ?? NaN),
