@@ -1,7 +1,9 @@
 // Isolated visual fixture: real sequencer, real GLBs, real fold. No browser automation.
 // Run with Bun, open the printed URL, then Ctrl-C to remove the scratch world.
 import { Document, NodeIO } from '@gltf-transform/core';
-import { BoxGeometry } from 'three';
+// three by explicit client path — tools/ sits outside client/, where the
+// install lives (tools/core-stub.mjs).
+import { BoxGeometry } from '../client/node_modules/three/build/three.module.js';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

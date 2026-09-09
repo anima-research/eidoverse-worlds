@@ -3,7 +3,12 @@
 import { mock } from 'bun:test';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 import { strict as assert } from 'node:assert';
-import * as THREE from 'three';
+// three by explicit client path, not a bare specifier: tools/ sits outside
+// client/, where the install lives, so this is the SAME module instance the
+// client modules under test receive through the core.js mock below — a second
+// copy would fail every instanceof against the first — and the test stops
+// depending on a root install being present (tools/core-stub.mjs).
+import * as THREE from '../client/node_modules/three/build/three.module.js';
 GlobalRegistrator.register({ url: 'http://example.test/' });
 const canvas = document.createElement('canvas');
 canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 390, height: 844 } as DOMRect);
