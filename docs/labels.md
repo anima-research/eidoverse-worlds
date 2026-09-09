@@ -39,6 +39,13 @@ center-screen picker, or armed mouse mode. Selecting a label cannot move an
 object, claim a physics lease, or write a world verb. Host-specific navigation
 and meaning belong in the embedding application or its fork.
 
+The overlay consumes only the keys it acts on — Enter, Space and Escape — and
+lets every other key through to the world, so movement keeps working while a
+plaque holds focus. Tab is not trapped: focus can always leave a label. A mouse
+click activates a plaque without leaving focus on it; Tab still focuses it and
+Enter or Space still opens its details. Pointer events over a plaque never
+start a look-drag.
+
 At most 32 labels appear. Selected and nearer objects take priority; overlapping
 labels are suppressed instead of stacked into unreadable text. DOM buttons are
 reused without changing their entity identity when distance ordering changes.

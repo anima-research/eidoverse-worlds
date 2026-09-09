@@ -10,6 +10,9 @@ import { registerEditor } from './inspect.js';
 let mode = CONFIG.objectLabels ?? 'off', overlay, panel, content, selected = null;
 let records = [], authoredRecords = [], candidates = [], lastCandidates = -Infinity, lastSight = 0, cursor = 0;
 const anchors = new WeakMap(), plaques = [];
+// The keys the overlay itself consumes. Everything else -- movement above all --
+// must keep bubbling to window even while a plaque holds focus.
+const CONSUMED_KEYS = new Set(['Enter', ' ', 'Spacebar', 'Escape', 'Esc']);
 const point = new THREE.Vector3(), projected = new THREE.Vector3(), direction = new THREE.Vector3();
 const positioned = [];
 
@@ -95,7 +98,14 @@ export function initObjectLabels() {
     const plaque = document.createElement('button');
     plaque.type = 'button';
     plaque.hidden = true;
-    plaque.onclick = () => showDetails(plaque.dataset.entityId);
+    // A mouse activation must not leave the plaque holding focus (the mousedown
+    // preventDefault below already suppresses it in Chromium; this is the belt).
+    // A keyboard activation reports detail 0 and KEEPS focus, or Tab-to-activate
+    // would dump the user back at the top of the document on every press.
+    plaque.onclick = event => {
+      if (event.detail > 0) plaque.blur();
+      showDetails(plaque.dataset.entityId);
+    };
     overlay.append(plaque);
     plaques.push(plaque);
   }
@@ -116,12 +126,22 @@ export function initObjectLabels() {
   };
   panel.append(content, close);
   for (const element of [panel, overlay]) {
-    // Label activation never becomes a movement hotkey or an avatar grab.
+    // Label activation never becomes a movement hotkey or an avatar grab --
+    // but ONLY for the keys this overlay actually consumes. Stopping every
+    // keydown killed keyboard play outright: these plaques are <button>s, a
+    // click focused one, and from then on W/A/S/D died at the overlay instead
+    // of reaching the movement listener in controller.js. Tab is deliberately
+    // NOT consumed -- focus must be able to leave a floating world label.
     element.addEventListener('keydown', event => {
+      if (!CONSUMED_KEYS.has(event.key)) return;
       event.stopPropagation();
-      if (event.key === 'Escape') close.click();
+      if (event.key === 'Escape' || event.key === 'Esc') close.click();
     });
-    for (const type of ['pointerdown', 'mousedown', 'click']) element.addEventListener(type, event => event.stopPropagation());
+    for (const type of ['pointerdown', 'mousedown', 'click']) element.addEventListener(type, event => {
+      event.stopPropagation();   // a look-drag must never start under a plaque
+      // Keep the mouse from parking focus on a button; Tab still reaches it.
+      if (type === 'mousedown' && event.target?.closest?.('button')) event.preventDefault();
+    });
   }
   document.head.append(style);
   document.body.append(overlay, panel);

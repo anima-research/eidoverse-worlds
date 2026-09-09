@@ -95,5 +95,31 @@ const expected = (1 - marked.y) * 844 / 2;
 assert.ok(Math.abs(parseFloat(marker()!.style.top) - expected) < 0.5,
   `offset is the anchor, unbumped: ${marker()!.style.top} vs ${expected}`);
 
-console.log('label DOM: real fold identity, default off, click details, motion, rename, removal, replay, authored offsets and no world writes passed');
+// A focused plaque must not eat the world's keys. These are <button>s, the
+// mouse used to focus them, and the overlay stopped EVERY keydown -- so one
+// click on a label killed W/A/S/D until the user clicked the canvas again.
+const heard: string[] = [];
+const onKey = (event: KeyboardEvent) => heard.push(event.key);
+globalThis.addEventListener('keydown', onKey);
+const focused = marker()!;
+focused.focus();
+assert.equal(document.activeElement, focused, 'plaques stay keyboard-focusable');
+const press = (key: string, code: string) => focused.dispatchEvent(
+  new KeyboardEvent('keydown', { key, code, bubbles: true, cancelable: true }));
+press('w', 'KeyW'); press('a', 'KeyA'); press('Shift', 'ShiftLeft');
+assert.deepEqual(heard, ['w', 'a', 'Shift'], 'movement keys reach window through a focused plaque');
+heard.length = 0;
+press('Enter', 'Enter'); press(' ', 'Space'); press('Escape', 'Escape');
+assert.deepEqual(heard, [], 'the keys the overlay consumes stop at the overlay');
+globalThis.removeEventListener('keydown', onKey);
+// ...and the mouse never parks focus on a plaque in the first place.
+focused.blur();
+const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+focused.dispatchEvent(down);
+assert.equal(down.defaultPrevented, true, 'a mouse press on a plaque is not allowed to focus it');
+focused.focus();
+focused.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }));
+assert.notEqual(document.activeElement, focused, 'a mouse-driven activation leaves no focus behind');
+
+console.log('label DOM: real fold identity, default off, click details, motion, rename, removal, replay, authored offsets, keyboard passthrough and no world writes passed');
 GlobalRegistrator.unregister();
