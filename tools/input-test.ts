@@ -1,5 +1,7 @@
 import { strict as assert } from 'node:assert';
-import { createPadInput, stick, standardPad, movement } from '../shared/input.js';
+import {
+  createPadInput, stick, standardPad, movement, moving, neutralLatch, MOVE_MIN,
+} from '../shared/input.js';
 
 const pad = { index: 0, id: 'Xbox', connected: true, mapping: 'standard',
   axes: [0, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false })) };
@@ -39,4 +41,24 @@ assert.equal(input.sample([second, pad]).moveX, 0, 'retain selected pad despite 
 assert.equal(input.sample([second]).moveX, 0, 'replacement must return to neutral');
 second.axes[0] = 0; input.sample([second]);
 second.axes[0] = 1; assert.equal(input.sample([second]).moveX, 1);
+
+// The movement threshold is one number, and it is the one updateMe walks on.
+// A worn stick resting just outside the dead zone rescales to ~0.01: real
+// enough for `if (moveX)`, which is why dismount and getUp used to fire on it.
+assert.equal(MOVE_MIN, 0.08);
+const drift = stick(0.19, 0)[0];
+assert(drift > 0 && drift < MOVE_MIN);
+assert.equal(moving({ moveX: drift, moveZ: 0 }), false, 'stick drift is not walking');
+assert.equal(moving({ moveX: 0, moveZ: -0.5 }), true);
+assert.equal(moving(undefined as any), false);
+
+// The neutral latch: whatever was already held when it disarmed never counts.
+const latch = neutralLatch();
+for (let i = 0; i < 5; i++) assert.equal(latch.edge(true), false, 'input held through a disarm is not a press');
+assert.equal(latch.edge(false), false, 'the neutral frame only re-arms');
+assert.equal(latch.edge(true), true);
+assert.equal(latch.edge(true), true, 'once armed it stays level-true — the caller acts once');
+latch.disarm();
+assert.equal(latch.edge(true), false, 'a second disarm needs another neutral frame');
+
 console.log('Input normalization and edge checks passed');

@@ -15,6 +15,7 @@ import {
   myState, updateFollowCamera, setPosture, setSeatHook,
 } from './controller.js';
 import { movementInput } from './input.js';
+import { moving, neutralLatch } from '../../shared/input.js';
 import { avatarMounts, mountTransform, comps, socketWorldPos } from './world.js';
 import { sendVerb, sendAnim } from './net.js';
 import { makeRagdoll } from './bodysim.js';
@@ -54,6 +55,7 @@ export function goLimp(lean = null) {
   const me = getMe();
   if (!me || downed) return;
   downed = true;
+  getUpLatch.disarm();      // the key you were already holding is not a decision to stand
   // Park the undriven bones and stop the clip BEFORE constructing the sim.
   // Both of the sim's reference skeletons are read in here — the neutral rest
   // it measures its limits against, and the live pose the tumble starts from —
@@ -113,8 +115,19 @@ export function updateMountedMe(dt) {
   // the frame you sat down and never rides the seat (#75). First person keeps
   // its own-mesh exclusion; both modes follow the socket, moving or not.
   if (me) updateFollowCamera(dt, me);
+  if (moving(movementInput())) dismountMe();
+}
+
+// Movement stands a limp body up — but only movement that BEGAN after you
+// went down. Read level, "W is held" is true on the very next frame after a
+// shove, so the ragdoll lasted one frame for anyone who was walking and a
+// grab was revoked before the hand closed. The latch (shared/input.js) wants
+// a neutral frame first, exactly as the pad sampler does on discovery.
+const getUpLatch = neutralLatch();
+export function updateGetUp() {
+  if (!downed) return;
   const input = movementInput();
-  if (input.moveX || input.moveZ) dismountMe();
+  if (getUpLatch.edge(moving(input) || input.jump)) getUp();
 }
 
 /** Nearest declared seat: distance to the SOCKET's world point, not the
@@ -194,6 +207,7 @@ function beginDraggedMode(by) {
   if (!me) return;
   ragdoll?.dispose?.(); ragdoll = null;   // the dragger's sim owns the tumble now
   downed = true;
+  getUpLatch.disarm();                    // "move to break free" means a NEW press
   me.setLimp(true);
   myState.clip = 'ragdoll';
   flashHint(`${by} grabs you — move to break free`);

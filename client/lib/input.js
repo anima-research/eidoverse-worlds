@@ -18,7 +18,16 @@ export function noteInput(kind) {
   activeInput = kind;
   bus.emit('input-device', kind);
 }
+// Nothing held, nothing armed — a clear would be a no-op. pollInput clears on
+// EVERY blocked frame, and re-emitting `input-clear` sixty times a second (it
+// cancels a look-drag and rewrites the touch nub's style) is work the frame
+// budget can see. `held` is recomputed rather than tracked because `keys` is
+// an exported Set that the controller adds to directly.
+let dirty = false;
+const held = () => keys.size || touchState.moveX || touchState.moveZ || touchState.lookId !== null;
 export function clearInput() {
+  if (!dirty && !held()) return;
+  dirty = false;
   keys.clear();
   touchState.moveX = touchState.moveZ = 0; touchState.lookId = null;
   padInput.clear(); pad = padInput.sample([]);
@@ -39,6 +48,7 @@ export function pollInput() {
   // keyboard/touch operation. Never let SecurityError escape the frame loop.
   try { pads = navigator.getGamepads?.() ?? []; } catch { /* unavailable */ }
   pad = padInput.sample(pads, !blocked);
+  if (!blocked) dirty = true;          // a pad may have armed itself this frame
   if (pad.active) noteInput('gamepad');
   if (!pad.connected && activeInput === 'gamepad') noteInput('keyboard');
   if (pad.edges.cancel) bus.emit('input-action', 'cancel');

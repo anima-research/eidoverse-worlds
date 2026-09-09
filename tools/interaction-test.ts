@@ -2,7 +2,9 @@
 import { strict as assert } from 'node:assert';
 import { mock } from 'bun:test';
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
-import * as THREE from 'three';
+// three by explicit path: tools/ sits outside client/, where the install is
+// (see tools/core-stub.mjs) — a bare specifier only resolves with a root copy.
+import * as THREE from '../client/node_modules/three/build/three.module.js';
 GlobalRegistrator.register({ url: 'https://renderer.example/' });
 const base = `${import.meta.dir}/../client/lib/`;
 const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
@@ -17,7 +19,10 @@ mock.module(base+'realize/structure.js', () => ({ structureObject: () => buildin
 mock.module(base+'core.js', () => ({ THREE, camera }));
 mock.module(base+'base.js', () => ({ CONFIG: {}, bus: { on: (_: string, fn: Function) => { action = fn; } } }));
 mock.module(base+'input.js', () => ({ requestAction: (value: string) => action(value),
-  usePrompt: () => 'X / □', setInputAvailable() {}, noteInput() {} }));
+  usePrompt: () => 'X / □', setInputAvailable() {}, noteInput() {},
+  // stands in for input.js's typing() — its real selector is covered by
+  // tools/input-dom-test.ts, which is the point of sharing one definition
+  typing: () => Boolean(document.activeElement?.closest('input, textarea, [contenteditable]')) }));
 mock.module(base+'controller.js', () => ({ myState, photoMode: false }));
 mock.module(base+'build.js', () => ({ isEditing: () => false }));
 mock.module(base+'ui.js', () => ({ isOverlayOpen: () => overlay }));
@@ -53,4 +58,25 @@ state.st.entities.lamp = { comp: { reactions: { push: { impulse: 0.3 } } } } as 
 press(); assert.deepEqual(uses[2], ['use', { id: 'lamp', action: 'push' }]);
 state.st.entities.lamp = { comp: { reactions: { push: {}, pull: {} } } } as any;
 tickInteraction(600); assert(button.hidden, 'multiple actions need an authored primary interaction');
+
+// The prompt is a button you can click, and it must still never own the
+// keyboard: a focused one swallowed every keydown before the window listener
+// in controller.js saw it (all keyboard play dead until you clicked the
+// canvas) and turned Enter into a `use` verb instead of chat.
+assert.equal(button.tabIndex, -1, 'the prompt stays out of the tab order');
+const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+button.dispatchEvent(down);
+assert.equal(down.defaultPrevented, true, "mousedown's default IS the focus — declining it keeps the keyboard");
+let keysSeen = 0;
+const onKey = () => { keysSeen++; };
+addEventListener('keydown', onKey);
+button.focus();
+button.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, code: 'KeyW' }));
+assert.equal(keysSeen, 1, 'a keydown over the prompt still reaches the window');
+removeEventListener('keydown', onKey);
+const before = uses.length;
+button.click();
+assert.notEqual(document.activeElement, button, 'clicking the prompt never leaves it focused');
+assert.equal(uses.length, before, 'a blocked prompt still sends nothing');
+
 console.log('Interaction control checks passed');

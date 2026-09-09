@@ -9,7 +9,6 @@
 
 import { THREE, scene, camera, renderer } from './lib/core.js';
 import { tickInteraction } from './lib/interaction.js';
-import { movementInput } from './lib/input.js';
 import { CONFIG, bus, report } from './lib/base.js';
 import { contributeThumbnail, makeAvatar, EMOTE_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
@@ -80,7 +79,7 @@ import {
   rosterLazy, chooseAvatar,
 } from './lib/mybody.js';
 import {
-  initLocalBody, isDowned, activeRagdoll, goLimp, getUp,
+  initLocalBody, isDowned, activeRagdoll, goLimp, getUp, updateGetUp,
   stepRagdoll, updateMountedMe, updateSeatHint,
 } from './lib/localbody.js';
 import { posable, pushable, setPosable, setPushable } from './lib/consent.js';
@@ -325,8 +324,9 @@ bus.on('key', (e) => {
   if (e.code === 'F2') { e.preventDefault(); saveScreenshot(); return; }
   if (e.code === 'F3') { e.preventDefault(); toggleDebug(); return; }
   if (e.code === 'KeyR' && !isEditing()) { isDowned() ? getUp() : goLimp(); return; }
-  // any movement stands you back up
-  if (isDowned() && ['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) getUp();
+  // (getting up on movement lives in updateGetUp: it sees keys, stick and
+  //  touch alike, and unlike an autorepeating keydown it can require a
+  //  neutral frame first — a shove must outlive the key you were holding)
   // emotes on the number row — the world is a performance space and there was
   // no way to wave at anyone
   // the range follows the def-hydrated bar order (§24l) — a ninth listed
@@ -411,8 +411,7 @@ registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather �
 registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots follow requests
 registerSystem('me-drive', (dt) => {
   updateInput(dt);
-  const input = movementInput();
-  if (isDowned() && (input.moveX || input.moveZ || input.jump)) getUp();
+  updateGetUp();                            // movement stands a limp body up, once it starts fresh
   if (CONFIG.renderer) { /* camera is driven per snap request */ }
   else if (CONFIG.spectate) updateSpectator(dt, CONFIG.follow ? remotes.get(CONFIG.follow) : null);
   else if (isDowned()) stepRagdoll(dt);     // the controller yields while limp

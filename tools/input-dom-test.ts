@@ -34,6 +34,19 @@ document.body.append(editor); editor.focus();
 pad.axes[0] = 1; input.pollInput(); assert.equal(input.movementInput().moveX, 0);
 editor.blur(); pad.axes[0] = 0; input.pollInput();
 pad.axes[0] = 1; input.pollInput(); assert.equal(input.movementInput().moveX, 1);
+// A bare `contenteditable` (no value) is editable too. interaction.js used to
+// keep its own copy of this selector and missed exactly this case; there is
+// one definition now, so this is where it is pinned.
+editor.setAttribute('contenteditable', '');
+let clears = 0; bus.on('input-clear', () => { clears++; });
+editor.focus();
+assert.equal(input.typing(), true, 'bare contenteditable is someone typing');
+for (let i = 0; i < 5; i++) input.pollInput();
+assert.equal(input.movementInput().moveX, 0);
+assert.equal(clears, 1, 'a blocked frame clears once, not every frame');
+editor.blur(); editor.remove();
+pad.axes[0] = 0; input.pollInput(); pad.axes[0] = 1; input.pollInput();
+assert.equal(input.movementInput().moveX, 1);
 pad.connected = false; window.dispatchEvent(new Event('gamepaddisconnected'));
 input.pollInput(); assert.equal(input.movementInput().moveX, 0);
 denied = true; input.keys.add('KeyW'); input.pollInput();

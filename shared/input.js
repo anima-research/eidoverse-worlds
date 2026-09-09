@@ -11,6 +11,28 @@ export function stick(x = 0, y = 0, deadZone = 0.18) {
 const empty = () => ({ moveX: 0, moveZ: 0, lookX: 0, lookY: 0,
   jump: false, use: false, cancel: false, run: false });
 
+// What counts as "I meant to move". A stick resting just outside the dead
+// zone rescales to ~0.01, and raw truthiness reads that as walking — with it
+// you can neither stay seated on a socket nor stay knocked down while a worn
+// pad sits on the table. updateMe has always used this number; everything
+// that asks "is this body being driven?" has to ask with the same one.
+export const MOVE_MIN = 0.08;
+export const moving = (input) =>
+  Math.abs(input?.moveX ?? 0) > MOVE_MIN || Math.abs(input?.moveZ ?? 0) > MOVE_MIN;
+
+/** Level input read as an edge, the way the pad sampler arms itself above:
+ *  after a disarm nothing counts until the input passes through neutral once.
+ *  A key that was already held when you were knocked over is not a decision
+ *  to stand up — without this the ragdoll lasted a single frame for anyone
+ *  walking, and a grabbed body broke free before the hand had closed. */
+export function neutralLatch() {
+  let armed = false;
+  return {
+    disarm() { armed = false; },
+    edge(active) { if (!armed) { armed = !active; return false; } return !!active; },
+  };
+}
+
 export function standardPad(pad) {
   const result = empty();
   if (!pad?.connected || pad.mapping !== 'standard') return result;

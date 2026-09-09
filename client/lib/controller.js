@@ -13,6 +13,7 @@ import { resolveColliders, lastBlockedTop, findSeat, raySegment } from './collid
 import { chat } from './chat.js';
 import { isOverlayOpen, flashHint } from './ui.js';
 import { keys, touchState, inputBlocked, movementInput, pollInput, noteInput, requestAction } from './input.js';
+import { moving as isMoving } from '../../shared/input.js';
 export { keys } from './input.js';
 import {
   resolveFirstPersonAnchor, FP_FORWARD, FP_EYE_LIFT, FP_GAZE_AHEAD, FP_GAZE_DROP,
@@ -297,7 +298,9 @@ bus.on('input-action', action => {
 // Polled before every embodiment path, including mounted and downed bodies.
 export function updateInput(dt) {
   const pad = pollInput();
-  look(pad.lookX * Math.min(dt, 0.1) * 2.4, pad.lookY * Math.min(dt, 0.1) * 1.9);
+  // A blocked frame already zeroes the stick, so an idle pad costs no second
+  // inputBlocked() (two DOM queries) on top of the one pollInput just paid.
+  if (pad.lookX || pad.lookY) look(pad.lookX * Math.min(dt, 0.1) * 2.4, pad.lookY * Math.min(dt, 0.1) * 1.9);
 }
 function look(yaw, pitch) {
   if (inputBlocked()) return;
@@ -537,7 +540,7 @@ export function updateMe(dt, me) {
   const input = movementInput();
   const fwd = -input.moveZ, strafe = input.moveX;
 
-  const moving = Math.abs(fwd) > 0.08 || Math.abs(strafe) > 0.08;
+  const moving = isMoving(input);   // the one threshold, shared with seats and getUp
   const running = input.run;
   // A slow walk for precise positioning — placing a chair exactly where you
   // want it at 1.55 m/s is a fight.

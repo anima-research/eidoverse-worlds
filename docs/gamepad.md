@@ -18,7 +18,11 @@ Movement is analog and camera-relative. Both sticks have a 0.18 radial dead
 zone with the remaining range rescaled to full travel. Right-stick look uses
 2.4 radians/second horizontally and 1.9 vertically, independent of frame rate.
 Use and cancel fire on press edges. Prompts follow the active input device.
-Walking gets up from a ragdoll or dismounts a seat through the existing flow.
+Walking gets up from a ragdoll or dismounts a seat, at the same 0.08 threshold
+the walk controller uses, so a stick resting outside the dead zone does not tip
+you off a swing. Getting up is an edge, not a level: after a knock-down or a
+grab the input must pass through neutral before it counts, so being shoved
+while holding a key leaves you on the ground until you press again.
 Keyboard flight and photo-camera translation retain their existing controls.
 
 Blur, hidden pages, disconnection, and leaving the page clear input. Chat,
@@ -50,12 +54,14 @@ API access leaves keyboard and touch operational.
 - [Gamepad API](https://developer.mozilla.org/en-US/docs/Web/API/Gamepad_API/Using_the_Gamepad_API)
 - [Gamepad Permissions Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Permissions-Policy/gamepad)
 
-Run `bun tools/input-test.ts`, `bun tools/input-dom-test.ts`, and
-`bun tools/interaction-test.ts`, and `bun tools/collider-test.ts` as separate
-processes. They cover normalization,
+Run `bun tools/input-test.ts`, `bun tools/input-dom-test.ts`,
+`bun tools/interaction-test.ts`, `bun tools/limp-input-test.ts`, and
+`bun tools/collider-test.ts` as separate processes. They cover normalization,
 edge triggering, discovery/reconnection neutral guards, focus suppression,
-disconnect clearing, denied API fallback, contextual use routing, and excluding
-the target's own collider while respecting other obstacles.
+disconnect clearing, denied API fallback, contextual use routing, the prompt
+never taking the keyboard, the movement threshold and neutral latch that guard
+knock-downs and seats, and excluding the target's own collider while respecting
+other obstacles.
 
 Physical Windows/Edge acceptance on 2026-09-07 exposed an
 `Xbox 360 Controller (XInput STANDARD GAMEPAD)`. The operator verified movement,
