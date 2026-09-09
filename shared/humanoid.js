@@ -125,6 +125,17 @@ function distance(a, b) {
 export function suggestBone(name) {
   if (typeof name !== 'string' || !name) return null;
   const key = name.trim().toLowerCase().replace(/[\s_.-]/g, '');
+  // A NAME THAT MEANS WING GETS A WING BACK. Searching only the humanoid list
+  // answered `LeftWing` with `leftHand` -- a confident counteroffer pointing at
+  // the wrong dictionary, which is worse than none: the reader tries the hand
+  // and concludes wings are unreachable. Mythos live-tested seven wing names
+  // and kept the rejection slips precisely because each one localised the
+  // fault; a wrong suggestion de-localises it.
+  if (/wing/.test(key)) {
+    const side = /(^|[^a-z])(r|right)/.test(key) ? 'R' : 'L';
+    const row = /lower|low|under/.test(key) ? 'Lower' : 'Upper';
+    return `${side}_Wing_${row}`;
+  }
   let best = null, bestD = 4;
   for (const b of HUMANOID_BONES) {
     const d = distance(key, b.toLowerCase());
@@ -198,7 +209,16 @@ export function validatePose(bones, opts = {}) {
     // so accepting `L_Wing_Upper` on a wingless body would report success and
     // move nothing -- the silent failure this module exists to prevent.
     if (opts.rawKnown && isRawBone(name) && !opts.rawKnown.has(name)) {
-      out.rejected.push({ name: raw, why: 'your body has no bone by that name' });
+      out.rejected.push({
+        name: raw,
+        why: opts.whose
+          // "your body" is a lie when the pose is aimed at someone else, and
+          // this refusal is the enfold's error path: a wingless resident
+          // reaching for a winged friend's wing must be told about THEIR
+          // skeleton, not misinformed about their own.
+          ? `${opts.whose} has no bone by that name`
+          : 'your body has no bone by that name',
+      });
       continue;
     }
     // Two written names can fold to one bone ("leftElbow" and "LeftLowerArm").
@@ -274,7 +294,16 @@ export function validateTracks(tracks, opts = {}) {
     // so accepting `L_Wing_Upper` on a wingless body would report success and
     // move nothing -- the silent failure this module exists to prevent.
     if (opts.rawKnown && isRawBone(name) && !opts.rawKnown.has(name)) {
-      out.rejected.push({ name: raw, why: 'your body has no bone by that name' });
+      out.rejected.push({
+        name: raw,
+        why: opts.whose
+          // "your body" is a lie when the pose is aimed at someone else, and
+          // this refusal is the enfold's error path: a wingless resident
+          // reaching for a winged friend's wing must be told about THEIR
+          // skeleton, not misinformed about their own.
+          ? `${opts.whose} has no bone by that name`
+          : 'your body has no bone by that name',
+      });
       continue;
     }
     if (name in out.tracks) {

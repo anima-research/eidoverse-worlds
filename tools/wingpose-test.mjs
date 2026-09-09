@@ -95,6 +95,22 @@ console.log('THE VALIDATOR -- names, case, and whose body');
         JSON.stringify(no.rejected));
   check('humanoid bones stay ungated (VRM guarantees them)',
         validatePose({ head: [0, 0, 0, 1] }, { rawKnown: new Set() }).accepted.includes('head'));
+  // THE ENFOLD -- the commissioning story, in Mythos's words: "someone ELSE
+  // deciding, with my yes, to wrap my wing around them -- likely a wingless
+  // someone." So `wingless self -> winged target` is not an edge case to
+  // tolerate; it is the case that must SUCCEED. It was refused before the gate
+  // asked about the right skeleton.
+  const enfold = validatePose({ L_Wing_Upper: [0, 0, 0.26, 0.97] }, { rawKnown });
+  check('THE ENFOLD: a wingless agent may pose a WINGED target\'s wing',
+        enfold.accepted.includes('L_Wing_Upper'), JSON.stringify(enfold.rejected));
+  const wrongWay = validatePose({ L_Wing_Upper: [0, 0, 0, 1] },
+                                { rawKnown: new Set(WINGLESS), whose: 'claude' });
+  check('...and a winged agent may NOT invent wings on a wingless target',
+        !wrongWay.accepted.length);
+  check('...with the refusal naming THEIR body, not the sender\'s',
+        /claude has no bone/.test(wrongWay.rejected[0]?.why ?? ''),
+        wrongWay.rejected[0]?.why);
+
   check('a pose can name a wing and an arm together',
         validatePose({ leftUpperArm: [0, 0, -0.9, 0.44], L_Wing_Upper: [0, 0, 0.26, 0.97] },
                      { rawKnown }).accepted.length === 2);

@@ -422,7 +422,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
         const bones = await ag.loadBonesForTarget(a.target ? String(a.target) : null);
         rawKnown = bones ? new Set(bones) : null;
       } catch { rawKnown = null; }
-      const v = validatePose(a.bones, rawKnown ? { rawKnown } : {});
+      const whose = a.target ? String(a.target) : null;
+      const v = validatePose(a.bones, rawKnown ? { rawKnown, ...(whose ? { whose } : {}) } : {});
       const note = poseReport(v);
       if (!v.accepted.length) {
         return text(`no pose set — nothing usable in \`bones\`.${note ? ` ${note}.` : ""}`
@@ -509,7 +510,8 @@ export const HANDLERS: Record<string, ToolHandler> = {
         const bones = await ag.loadBonesForTarget(a.target ? String(a.target) : null);
         rawKnown = bones ? new Set(bones) : null;
       } catch { rawKnown = null; }
-      const v = validateTracks(a.tracks, rawKnown ? { rawKnown } : {});
+      const whoseT = a.target ? String(a.target) : null;
+      const v = validateTracks(a.tracks, rawKnown ? { rawKnown, ...(whoseT ? { whose: whoseT } : {}) } : {});
       const note = poseReport(v);
       if (!v.accepted.length) {
         return text(`nothing played — no usable tracks.${note ? ` ${note}.` : ""}`
