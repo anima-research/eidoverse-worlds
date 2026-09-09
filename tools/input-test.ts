@@ -35,6 +35,22 @@ const keyboard = movement(new Set(['KeyW', 'KeyD', 'Space']), { moveX: 0, moveZ:
 assert(Math.abs(Math.hypot(keyboard.moveX, keyboard.moveZ) - 1) < 1e-9);
 assert(keyboard.jump && keyboard.moveZ < 0);
 assert.equal(movement(new Set(), { moveX: 0.5, moveZ: 0 }, neutral).moveX, 0.5);
+
+// The frame loop hands in a scratch instead of allocating a fresh answer it
+// throws away sixty times a second (PR #171 review, item 5). Every OTHER
+// caller — and every test — still gets its own object, so nothing can end up
+// holding a buffer somebody else is about to rewrite.
+const scratch: any = { moveX: 9, moveZ: 9, jump: true, run: true, creep: true };
+assert.equal(movement(new Set(['KeyW']), { moveX: 0, moveZ: 0 }, neutral, scratch), scratch,
+  'the out-parameter IS the answer');
+assert.equal(scratch.moveZ, -1);
+assert.equal(scratch.jump, false, 'every field is written, so nothing survives from last frame');
+assert.equal(scratch.run, false); assert.equal(scratch.creep, false);
+movement(new Set(['KeyS']), { moveX: 0, moveZ: 0 }, neutral, scratch);
+assert.equal(scratch.moveZ, 1, 'the scratch is overwritten, not merged');
+const a = movement(new Set(), { moveX: 0, moveZ: 0 }, neutral);
+const b = movement(new Set(), { moveX: 0, moveZ: 0 }, neutral);
+assert.notEqual(a, b, 'omit the scratch and movement() is still pure');
 input.clear(); input.sample([pad]);
 const second = { ...pad, index: 1, id: 'PlayStation', axes: [1, 0, 0, 0] };
 assert.equal(input.sample([second, pad]).moveX, 0, 'retain selected pad despite list order');

@@ -86,6 +86,7 @@ export function getUp() {
 // dismount with my landing spot stamped (the plane-transition invariant),
 // and control returns to the normal ground controller.
 const _seatP = new THREE.Vector3();
+const _seatMove = {}, _getUpMove = {};   // per-reader movement scratches
 function dismountMe() {
   const sw = mountTransform(CONFIG.name, _seatP);
   const yaw = sw?.yaw ?? myState.yaw;
@@ -115,7 +116,7 @@ export function updateMountedMe(dt) {
   // the frame you sat down and never rides the seat (#75). First person keeps
   // its own-mesh exclusion; both modes follow the socket, moving or not.
   if (me) updateFollowCamera(dt, me);
-  if (moving(movementInput())) dismountMe();
+  if (moving(movementInput(_seatMove))) dismountMe();
 }
 
 // Movement stands a limp body up — but only movement that BEGAN after you
@@ -123,10 +124,13 @@ export function updateMountedMe(dt) {
 // shove, so the ragdoll lasted one frame for anyone who was walking and a
 // grab was revoked before the hand closed. The latch (shared/input.js) wants
 // a neutral frame first, exactly as the pad sampler does on discovery.
+// One scratch per frame-loop reader, never shared between them: both of these
+// run in the same frame when you are shoved off a seat, and a buffer handed to
+// two live readers is the bug the out-parameter exists to avoid.
 const getUpLatch = neutralLatch();
 export function updateGetUp() {
   if (!downed) return;
-  const input = movementInput();
+  const input = movementInput(_getUpMove);
   if (getUpLatch.edge(moving(input) || input.jump)) getUp();
 }
 

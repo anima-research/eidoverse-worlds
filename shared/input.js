@@ -69,15 +69,23 @@ export function createPadInput() {
   };
 }
 
-export function movement(keys, touch, pad) {
+/** `out` is the frame loop's scratch, in the house style of the Vector3
+ *  scratches all over the client: this runs once per frame forever, and the
+ *  answer is read and discarded inside the calling statement. Pure by default
+ *  — omit it and you get a fresh object, which is what every caller that
+ *  KEEPS the answer (and every test) does. Never hand the same `out` to two
+ *  live readers: it is one buffer, not a value. */
+export function movement(keys, touch, pad, out = {}) {
   const held = (...codes) => codes.some(code => keys.has(code));
   let moveX = Number(held('KeyD', 'ArrowRight')) - Number(held('KeyA', 'ArrowLeft'));
   let moveZ = Number(held('KeyS', 'ArrowDown')) - Number(held('KeyW', 'ArrowUp'));
   if (touch.moveX || touch.moveZ) { moveX = touch.moveX; moveZ = touch.moveZ; }
   if (pad.moveX || pad.moveZ) { moveX = pad.moveX; moveZ = pad.moveZ; }
   const length = Math.max(1, Math.hypot(moveX, moveZ));
-  return { moveX: moveX / length, moveZ: moveZ / length,
-    jump: keys.has('Space') || pad.jump,
-    run: held('ShiftLeft', 'ShiftRight') || pad.run,
-    creep: held('AltLeft', 'AltRight') };
+  out.moveX = moveX / length;
+  out.moveZ = moveZ / length;
+  out.jump = keys.has('Space') || pad.jump;
+  out.run = held('ShiftLeft', 'ShiftRight') || pad.run;
+  out.creep = held('AltLeft', 'AltRight');
+  return out;
 }

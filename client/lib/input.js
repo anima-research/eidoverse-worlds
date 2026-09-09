@@ -12,6 +12,15 @@ let pad = padInput.sample([]);
 export function setInputAvailable(fn) { available = fn; }
 export const typing = () => Boolean(document.activeElement?.closest(
   'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="dialog"], dialog'));
+// NOT memoised, deliberately (PR #171 review, item 5). On the frame loop this
+// is called ONCE — pollInput — plus once more from look() only while a stick
+// is actually deflected; every other caller here is an event handler, where a
+// cached answer is a stale one (focus moves into the chat line, then the very
+// next keydown must already be blocked). A frame-scoped memo would have to be
+// invalidated at a boundary the other per-frame reader of these same two DOM
+// queries — interaction.js's blocked() — does not sit behind: tickInteraction
+// is called directly, without pollInput, by its own test. One closest() and
+// one class-selector querySelector per frame is not worth owning that hazard.
 export const inputBlocked = () => !available() || document.hidden || !document.hasFocus() || typing() || isOverlayOpen();
 export function noteInput(kind) {
   if (kind === activeInput) return;
@@ -55,7 +64,9 @@ export function pollInput() {
   else if (pad.edges.use) bus.emit('input-action', 'use');
   return pad;
 }
-export function movementInput() { return movement(keys, touchState, pad); }
+// Pass a scratch object to fill if you are on the frame loop and drop the
+// answer inside the same statement (see movement()); omit it for a fresh one.
+export function movementInput(out) { return movement(keys, touchState, pad, out); }
 export function requestAction(action) {
   if (!inputBlocked()) bus.emit('input-action', action);
 }

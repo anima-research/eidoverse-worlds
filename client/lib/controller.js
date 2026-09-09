@@ -545,6 +545,9 @@ if (matchMedia('(pointer: coarse)').matches) enableTouch();
 // ---------------------------------------------------------------- movement
 
 const _dir = new THREE.Vector3();
+// The frame's movement read, in the same scratch idiom as the vectors beside
+// it — updateMe runs every frame and never keeps the object past this call.
+const _moveScratch = {};
 const _eye = new THREE.Vector3();
 const _facing = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
@@ -553,7 +556,7 @@ export function updateMe(dt, me) {
   if (!me) return;
   if (photoMode) { updatePhotoCamera(dt); return; }
 
-  const input = movementInput();
+  const input = movementInput(_moveScratch);
   const fwd = -input.moveZ, strafe = input.moveX;
 
   const moving = isMoving(input);   // the one threshold, shared with seats and getUp
