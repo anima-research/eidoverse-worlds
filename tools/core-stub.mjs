@@ -41,6 +41,15 @@ export const renderer = {
   domElement: null,
   shadowMap: { enabled: false, type: 0 },
   _getShadowNodes: () => ({}),
+  // assets.js builds a KTX2Loader at module scope, and detectSupport() reads
+  // renderer.extensions/capabilities to pick a transcode target. Stubbing them
+  // here means a test that imports avatar.js needs no assets.js substitution
+  // at all -- which matters because Bun 1.3's onResolve mishandles that
+  // particular stub path (the ENOENT that makes tools/avatar-test.ts fail on
+  // clean main).
+  extensions: { has: () => false, get: () => null },
+  capabilities: { isWebGL2: true, maxTextureSize: 4096 },
+  getContext: () => null,
 };
 export const report = () => {};
 export const angleDelta = (a, b) => {
