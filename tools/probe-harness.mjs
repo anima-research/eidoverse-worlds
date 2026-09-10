@@ -41,6 +41,17 @@ export async function launchBrowser({ mic = false } = {}) {
 /** Spawn a world server this run OWNS, prove it is ours, hand back origin +
  *  teardown. Pass `live: "http://host:port"` to probe a deployment instead
  *  (explicit, identity unchecked — it is not our child). */
+const LIVE_CHILDREN = new Set(), scratchOf = new Map();
+let signalsArmed = false;
+function armSignals() {
+  if (signalsArmed) return; signalsArmed = true;
+  const onSignal = (sig) => {
+    for (const c of LIVE_CHILDREN) { try { c.kill('SIGKILL'); } catch { /* gone */ } try { rmSync(scratchOf.get(c), { recursive: true, force: true }); } catch {} }
+    process.exit(sig === 'SIGINT' ? 130 : 143);
+  };
+  process.once('SIGINT', onSignal); process.once('SIGTERM', onSignal);
+}
+
 export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'dev', env: extraEnv = {} } = {}) {
   if (live) return { origin: live, key, owned: false, close: async () => {} };
   // Wide range: with a narrow one, two concurrent runs collide ~1/15 and the
@@ -62,17 +73,21 @@ export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'd
   });
   const origin = `http://127.0.0.1:${PORT}`;
   // Identity: the nonce echo, and ONLY the nonce echo (#131 re-review, item 4).
-  // This branch's /version echoes EIDO_BOOT_NONCE, so an owned exact-head
+  // The server's /version echoes EIDO_BOOT_NONCE (routes.ts, since #131), so an owned exact-head
   // child always answers with our nonce; a startedAt-freshness fallback would
   // reopen the just-started-impostor race for no one's benefit. A responder
   // WITHOUT a nonce field is by definition not our child — some stale
   // pre-nonce build squatting the port — and fails immediately. Probing a
   // live deployment (not our child) is the explicit `live:` mode above.
+  // a SIGINT/SIGTERM that lands before the caller's finally exists (inside this poll, or before its browser is up)
+  // used to orphan the child on its port; every live child dies with us, whoever sends the signal — one handler
+  // over a module-level set, so two worlds open at once both go (eighth/ninth reviews 2026-09-10)
+  LIVE_CHILDREN.add(srv); scratchOf.set(srv, scratch); armSignals();
   let ours = false, reason = 'never answered';
   for (let i = 0; i < 60 && !ours; i++) {
     if (srv.exitCode !== null) { reason = `exited ${srv.exitCode}`; break; }
     try {
-      const v = await (await fetch(`${origin}/version`)).json();
+      const v = await (await fetch(`${origin}/version`, { signal: AbortSignal.timeout(1000) })).json();
       if (v.nonce === undefined) { reason = 'responder has no nonce field (stale pre-nonce listener)'; break; }
       ours = v.nonce === NONCE;
       if (!ours) { reason = 'wrong nonce (not our child)'; break; }
@@ -80,6 +95,7 @@ export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'd
     if (!ours) await new Promise((r) => setTimeout(r, 250));
   }
   const close = async () => {
+    LIVE_CHILDREN.delete(srv); scratchOf.delete(srv);
     try { srv.kill('SIGTERM'); } catch { /* gone */ }
     await new Promise((r) => { const t = setTimeout(() => { try { srv.kill('SIGKILL'); } catch {} r(); }, 3000);
       srv.once('exit', () => { clearTimeout(t); r(); }); });

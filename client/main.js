@@ -159,8 +159,13 @@ initDebug({
 // server (correctly) calls this person by their Discord name.
 await initIdentity();
 
+// The splash waits for the body to SETTLE — on screen, or failed — never for a body to exist: a failed
+// avatar load marked the phase done and then checkReady waited on getMe() until the 45 s ceiling
+// (review 2026-09-10 #2: 'stepping in' with no [boot] ready on an owned empty world).
+let bodySettled = false;
 if (isViewer) {
   panelFrame().hide();
+  bodySettled = true;
   markPhase('body', 1);
   start();
 } else {
@@ -245,6 +250,7 @@ function start() {
       .then((path) => makeAvatar(CONFIG.name, path, { urgent: true })) // your body skips the load queue
       .then((av) => {
         setMe(av);
+        bodySettled = true;
         markPhase('body', 1);
         // Contribute a portrait of this body so the next person picks from
         // faces instead of filenames. Deferred behind the governor's calm
@@ -253,7 +259,7 @@ function start() {
         // (§16.1g). Calm = 5 smooth seconds with no load work in flight.
         whenCalm().then(() => contributeThumbnail(getMyAvatarName(), av.vrm, CONFIG.token));
       })
-      .catch((e) => { markPhase('body', 1); report('avatar', e); });
+      .catch((e) => { bodySettled = true; markPhase('body', 1); report('avatar', e); checkReady(); });
   }
 }
 
@@ -380,8 +386,7 @@ bus.on('build-queue', checkReady);
 
 function checkReady() {
   if (bootDone()) return;
-  const bodyReady = isViewer || !!getMe();
-  if (!bodyReady || !hydrated || buildsPending() > 0) return;
+  if (!bodySettled || !hydrated || buildsPending() > 0) return;
   // one frame with everything in place before the curtain lifts
   requestAnimationFrame(() => requestAnimationFrame(() => finishBoot('ready')));
 }

@@ -27,3 +27,11 @@ export function releaseBodyGate(why = 'body') {
   release?.();
 }
 export const bodyGateOpen = () => released;
+// The wait at the load boundary (assets.js): armed and not yet open → wait, but never past maxMs — a hung body
+// must not hold the world hostage. Not armed, or already open → resolves at once. Returns how it resolved.
+export function awaitBodyGate(maxMs = 12000) {
+  if (!armed || released) return Promise.resolve(released ? 'open' : 'unarmed');
+  let timer;
+  return Promise.race([gate.then(() => 'open'), new Promise((r) => { timer = setTimeout(() => r('timeout'), maxMs); })])
+    .finally(() => clearTimeout(timer));
+}

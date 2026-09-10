@@ -1,5 +1,8 @@
 // Test stand-in for client/lib/loadwork.js — the scheduler is irrelevant here.
-export const beginWork = () => ({ done() {} });
+// beginWork records the phases a load passes through, so a test can see WHERE a load waited
+// (tools/loadgate-boundary-test.mjs); the scheduler itself is still irrelevant here.
+export const works = [];
+export const beginWork = (label) => { const w = { label, phases: [], phase(p) { w.phases.push(p); }, yield: async () => {}, done() {}, end() {} }; works.push(w); return w; };
 export const enqueue = (fn) => Promise.resolve(fn?.());
 export const idleYield = () => Promise.resolve();
 // A stub that is MISSING an export is not a stub, it is a broken suite: avatar.js
