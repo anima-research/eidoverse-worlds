@@ -1,4 +1,4 @@
-// VR quads = the REAL desktop frames (R, 2026-09-05 20:37: "use the ACTUAL menus so
+// VR quads = the REAL desktop frames (live, 2026-09-05 20:37: "use the ACTUAL menus so
 // there is only one set of panels to maintain"). Each XR-registered frame's live DOM is
 // rasterised onto a quad by the vendored HTMLMesh (vendor/htmlmesh.js: DPR, inline SVG,
 // throttle, no window dispatch) and a trigger on the quad fires the SAME click/input
@@ -11,7 +11,7 @@ import { tee, bus } from './base.js';
 import { allFrames, getFrame } from './frames.js';
 import { HTMLMesh } from './vendor/htmlmesh.js';
 
-const PX_PER_M = 900;      // xrpanels' density — the number R's eyes accepted
+const PX_PER_M = 900;      // xrpanels' density — the number the tester's eyes accepted
 const W = 0.58;            // metres across, like the canvas quads
 const XR_FRAMES = ['world', 'emotes', 'settings', 'chat', 'debug', 'profile'];   // the frames that had canvas quads
 const LIVE_MIN_MS = { debug: 250, chat: 250 };   // live panels re-rasterise at most 4 Hz; others at 16 ms
@@ -80,7 +80,7 @@ function unmount(q) {
   q.mesh.material.map?.dispose?.(); q.mesh.geometry.dispose(); q.mesh.material.dispose();
   const r = q.restore;
   // the desktop DOM may have re-ordered while we were presenting: the saved sibling is only usable if it is
-  // still that parent's child (R, 09-05 22:20: 'error when I try to leave VR' — insertBefore NotFoundError)
+  // still that parent's child (live, 09-05 22:20: 'error when I try to leave VR' — insertBefore NotFoundError)
   const parent = r.parent ?? document.body;
   if (r.next && r.next.parentNode === parent) parent.insertBefore(q.el, r.next); else parent.appendChild(q.el);
   q.el.style.display = r.display; q.el.style.left = r.left; q.el.style.top = r.top; q.el.style.width = r.width; q.el.style.height = r.height; q.el.style.position = r.position; if (r.collapsed) q.el.classList.add('collapsed');
@@ -94,7 +94,7 @@ export function domQuadsEnter(rig) {
   const list = [...apis, ...extra];
   quads = list.map((api, i) => mount(api, i, list.length));
   for (const q of quads) rig.add(q.mesh);
-  // OFF by default while the quads are still being worked on (R 09-06 12:49): mounted, paused, hidden;
+  // OFF by default while the quads are still being worked on (live 09-06 12:49): mounted, paused, hidden;
   // the ring's 'panels' slot (or a text-focus for the keyboard) shows them. ?quads=1 restores the old default.
   shown = new URLSearchParams(location.search).get('quads') === '1';
   for (const q of quads) { q.mesh.visible = shown; const t = q.mesh.material.map; if (shown) t.resume?.(); else t.pause?.(); }
@@ -125,7 +125,7 @@ export function domQuadsPick(handRay, click = false) {
   if (!hit) return null;
   if (click && hit.uv) {
     const data = { x: hit.uv.x, y: 1 - hit.uv.y };
-    // witness (R 09-07 22:57: 'trigger-to-click … working'): which element the click lands on, teed
+    // witness (live 09-07 22:57: 'trigger-to-click … working'): which element the click lands on, teed
     try { const el = hit.object.material.map.elementAt?.(data.x, data.y); tee(`[xr] quad click ${quads.find((q) => q.mesh === hit.object)?.id ?? '?'} → ${el ? `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${el.className && typeof el.className === 'string' ? '.' + el.className.split(' ')[0] : ''} "${(el.textContent || '').trim().slice(0, 24)}"` : 'nothing'}`); } catch {}
     for (const type of ['mousedown', 'mouseup', 'click']) hit.object.dispatchEvent({ type, data });
   }

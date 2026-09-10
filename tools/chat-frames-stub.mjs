@@ -16,3 +16,6 @@ export function makeFrame() {
   document.body.append(frameStub.el);
   return frameStub;
 }
+// domquad.js walks the frame registry; nothing to walk in the chat cone
+export const allFrames = () => [];
+export const getFrame = () => null;

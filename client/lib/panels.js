@@ -1,4 +1,4 @@
-// panels — schema-driven edit surfaces (R's design, 2026-08-04 21:52).
+// panels — schema-driven edit surfaces (design of 2026-08-04 21:52).
 //
 // A panel is a FRAME on desktop and a laser-clickable QUAD in VR, and the way
 // that stays true is that a panel never owns bespoke DOM: it declares FIELDS —
@@ -9,7 +9,7 @@
 //   renderCanvas(canvas, fields) → hit regions → quad texture (VR); a laser
 //     UV-hit resolves to a region and dispatches the SAME edit(action, payload)
 //
-// Field design rule (R, 21:58): every field must be operable with no keyboard —
+// Field design rule (live, 21:58): every field must be operable with no keyboard —
 // numbers are steppers, actions are buttons, lists are rows. Free-text exists
 // on desktop (rename, comp JSON) and degrades to display-only in VR rather
 // than summoning a keyboard nobody wants to float-type on.

@@ -70,7 +70,7 @@ import { CONFIG } from './base.js';
 //
 // minmax(0,1fr) on the control column, not 1fr: the mic meter is flex:1 inside
 // it and a bare 1fr lets it push the grid wider than the panel.
-// 🔴 USE THE HOUSE TOKENS (R, 2026-08-16: "can you grab the slider/checkbox
+// 🔴 USE THE HOUSE TOKENS (live, 2026-08-16: "can you grab the slider/checkbox
 // color and styling and the text color/look from the 'sky' panel as
 // reference?").
 //
@@ -92,7 +92,7 @@ import { CONFIG } from './base.js';
 // sp-* class family that re-implemented index.html's .row — which is exactly
 // how its spacing drifted to gap:10px while the house row is 7px, invisibly,
 // until R measured the two panels against each other by eye.
-// (R, 2026-08-16: "If there is an existing UI class we should 100% be using
+// (live, 2026-08-16: "If there is an existing UI class we should 100% be using
 // it.")
 // The one thing .row genuinely lacked is a label column wide enough for a
 // sentence; that now lives in the house sheet as `.row.wide`, so both panels
@@ -101,7 +101,7 @@ import { CONFIG } from './base.js';
 // document's own sheet, like every other panel's.
 function ensureCss() { /* house sheet — index.html owns .row and .row.wide */ }
 
-// Labels say what they CONTROL, not what they are about (R, 2026-08-16:
+// Labels say what they CONTROL, not what they are about (live, 2026-08-16:
 // "you should probably change all the volume sliders to be voice volume, world
 // volume, etc."). "voices" beside a slider is a category; "voice volume" is a
 // control. It also disambiguates the row from the text-to-speech MODEL row
@@ -109,7 +109,7 @@ function ensureCss() { /* house sheet — index.html owns .row and .row.wide */ 
 const ROWS = [
   ['voices', 'voice volume', 'other people speaking, and agent speech'],
   ['world', 'world volume', 'ambience and place-sound — the 🎧 toggle never touches this'],
-  // 🔴 "self-TTS volume", NOT "text-to-speech volume" (R, 2026-08-16: "is it a
+  // 🔴 "self-TTS volume", NOT "text-to-speech volume" (live, 2026-08-16: "is it a
   // bit of a misnomer? Voice volume covers EVERYTHING in the voice lane,
   // including TTS"). She is right — voicesource.js hands synthesized speech to
   // the same lane as a microphone, so 'voices' already governs every TTS you
@@ -157,7 +157,7 @@ function checkRow(label, hint, checked, onChange) {
 }
 
 // mic sensitivity: a slider over a LIVE level bar, so you can see where your
-// voice lands versus your keyboard before choosing the floor (R, 17:19 —
+// voice lands versus your keyboard before choosing the floor (live, 17:19 —
 // typing sounds were pinging agents' ears). The bar animates only while the
 // section is open and stops the moment its row leaves the DOM.
 // The meter tracks the mic BADGE's palette (client/lib/mictoggle.js), because
@@ -188,7 +188,7 @@ function micFloorRow() {
     `<span data-meter title="${hint}" style="flex:1;min-width:60px;position:relative;height:14px;` +
     `background:var(--well);border-radius:2px;overflow:hidden;cursor:ew-resize">` +
     `<span data-lvl style="position:absolute;left:0;top:0;height:100%;width:0;background:${LVL_DARK}"></span>` +
-    // The marker is a RULER, not a signal (R, 2026-08-16: "the percentage
+    // The marker is a RULER, not a signal (live, 2026-08-16: "the percentage
     // slider being green is kinda ugly with a gold waveform bar… maybe just
     // white?"). Green read as a second status light competing with the level;
     // white states a POSITION and never argues with whatever colour the bar is.
@@ -200,7 +200,7 @@ function micFloorRow() {
   const out = row.querySelector('[data-out]');
   const lvl = row.querySelector('[data-lvl]');
   const thr = row.querySelector('[data-thr]');
-  // 🔴 THREE STATES, NOT TWO (R, 2026-08-16: "when the mic sensitivity waveform
+  // 🔴 THREE STATES, NOT TWO (live, 2026-08-16: "when the mic sensitivity waveform
   // is over the sensitivity threshold and goes live, can you turn it bright
   // gold (same color as the HUD mic when it's live) and leave it gold until it
   // goes off again").
@@ -263,7 +263,7 @@ function micFloorRow() {
 }
 
 let _body = null;
-// 🔴 THE ROWS ARE BUILT ONCE AND THEN UPDATED IN PLACE (R, 2026-08-16: "I can
+// 🔴 THE ROWS ARE BUILT ONCE AND THEN UPDATED IN PLACE (live, 2026-08-16: "I can
 // see elements in the panel jumping around on the tick after a click… make
 // that tear-down per element and not the whole panel").
 //
@@ -319,7 +319,7 @@ function paint(body) {
     // so the box would render unticked no matter what. Ask whichever transport
     // is live. (window.relayDiag is installed by the SFU bridge.)
     micLive(), async () => {
-      // 🔴 COPY THE BADGE EXACTLY (R, 00:05: "make sure you copy how 'hear
+      // 🔴 COPY THE BADGE EXACTLY (live, 00:05: "make sure you copy how 'hear
       // voice' is doing its thing" — the toggle would not turn on). Two bugs
       // in my first version, both the same shape as the `me is not defined`
       // one I fixed in main.js an hour earlier:
@@ -344,7 +344,7 @@ function paint(body) {
     });
   _sync.hear = hearRow.querySelector('input');
   body_.append(hearRow);
-  // 🔴 TOGGLE, THEN ITS VOLUME (R, 2026-08-16: "you should probably move this
+  // 🔴 TOGGLE, THEN ITS VOLUME (live, 2026-08-16: "you should probably move this
   // between world volume and TTS volume to be consistent in this panel —
   // usually it's toggle on/off then volume for a lot of these features").
   //

@@ -90,6 +90,7 @@ let me = null;
 export function getMe() { return me; }
 export function setMe(av) {
   me = av;
+  if (av) bus.emit('avatar-worn', { name: av.name ?? av.userData?.name ?? null, path: av.path ?? av.userData?.path ?? null });   // the bodies panel (bodies.js) repaints on it
   if (me) me.wingsFolded = folded();
   armFlightFor(av);
 }

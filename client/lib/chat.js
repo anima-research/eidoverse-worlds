@@ -635,7 +635,7 @@ const CHAT_LOCAL = {
     lastAuthor = null;
   },
   audio(rest, arg) {
-    // /audio — the phone's own console (R: no on-device console on Android
+    // /audio — the phone's own console (live: no on-device console on Android
     // Chrome). Answers LOCALLY by default — a diagnostic is a self-report;
     // `say` opts the short form into the room. Three forms because the full
     // report is unreadable on the device that needs it most.
@@ -684,7 +684,7 @@ const open = chat.open;
 // precious, so the collapse must cost one click and the collapsed cost is a
 // 14px strip). Toggler rides the pane's left edge: › closes, ‹ opens.
 const SIDE_LS = 'ew-chat-side';
-let sideSt = { w: 150, open: false, pos: 'left' };   // people pane on the LEFT by default (R 09-07 10:55 reference HUD)
+let sideSt = { w: 150, open: false, pos: 'left' };   // people pane on the LEFT by default (live 09-07 10:55 reference HUD)
 function initSidePane() {
   try { sideSt = { ...sideSt, ...JSON.parse(localStorage.getItem(SIDE_LS) || '{}') } } catch {}
   const tog = frame.body.querySelector('.chat-side-tog');
@@ -693,7 +693,7 @@ function initSidePane() {
   grip.addEventListener('pointerdown', (e) => {
     if (!sideSt.open) return;
     e.preventDefault();
-    e.stopPropagation();   // the frame's root drags on body pointerdown; the grip owns this one (R, 09-04: it moved the whole window)
+    e.stopPropagation();   // the frame's root drags on body pointerdown; the grip owns this one (live, 09-04: it moved the whole window)
     const x0 = e.clientX, w0 = sideSt.w;
     const move = (ev) => {
       const d = sideSt.pos === 'left' ? ev.clientX - x0 : x0 - ev.clientX;   // grip side flips with the pane
@@ -713,7 +713,7 @@ function applySide() {
   if (!side) return;
   side.classList.toggle('closed', !sideSt.open);
   // the line between log and pane is the pane's grab edge; closed, there is
-  // nothing to grab, so the line goes too (R, 09-05: a confusing affordance)
+  // nothing to grab, so the line goes too (live, 09-05: a confusing affordance)
   frame.body.querySelector('.chat-cols')?.classList.toggle('side-closed', !sideSt.open);
   side.style.width = sideSt.open ? `${sideSt.w}px` : '';
   // the chevron points the way the pane will move: on the right › closes / ‹ opens; mirrored on the left
@@ -749,7 +749,7 @@ function applyChatPrefs() {
 let gearToggle = null, gearAnchor = null, gearOpen = () => false;
 let chatFs = 14;
 const CMD_LS = 'ew-chat-md';
-let chatMd = true;   // *italic* **bold** `code` in the log — on by default (R, 09-05)
+let chatMd = true;   // *italic* **bold** `code` in the log — on by default (live, 09-05)
 try { chatMd = localStorage.getItem(CMD_LS) !== '0' } catch {}
 export const chatMarkdownOn = () => chatMd;
 try { chatFs = Math.min(20, Math.max(11, parseFloat(localStorage.getItem(CFS_LS)) || 14)) } catch {}
@@ -777,7 +777,7 @@ function initChatGear() {
     } else if (sd) {
       sideSt.pos = sd; saveSide();
     } else return;
-    applyChatPrefs(); applySide(); paintPop();   // applySide repaints the chevron for the new side (R 09-07 23:25: it pointed the old way after a left↔right move)
+    applyChatPrefs(); applySide(); paintPop();   // applySide repaints the chevron for the new side (live 09-07 23:25: it pointed the old way after a left↔right move)
   };
   gearOpen = () => !pop.hidden;
   gearToggle = (anchor) => {

@@ -41,7 +41,7 @@ import { initAudioPanel } from './lib/audiopanel.js';
 import { initSceneGraph } from './lib/scenegraph.js';
 import {
   toast, setHint, flashHint, buildHelp, toggleHelp,
-  openDoor, toggleRoster, initRoster, initDock, panelFrame,
+  openDoor, togglePeople, initDock, panelFrame,
 } from './lib/ui.js';
 import { initDebug, updateDebug, toggleDebug } from './lib/debug.js';
 
@@ -134,7 +134,6 @@ initChat({
   typing: (to) => { sendTyping(to); getMe()?.setTyping(); },
   people,
 });
-initRoster(people);
 initEmoteBar();
 initDock([
   { id: 'chat', label: '💬' },
@@ -322,7 +321,7 @@ initCommands();   // the /command surface (lib/commands/) + its bus subscription
 bus.on('key', (e) => {
   if (e.code === 'Slash' && e.shiftKey) { toggleHelp(); return; }
   if (e.code === 'KeyH' && !isEditing()) { toggleHelp(); return; }
-  if (e.code === 'Tab') { e.preventDefault(); toggleRoster(); return; }
+  if (e.code === 'Tab') { e.preventDefault(); togglePeople(); return; }
   if (e.code === 'KeyB') { toggleEditMode(); return; }
   if (e.code === 'KeyP') { togglePhotoMode(); return; }
   if (e.code === 'F1') { e.preventDefault(); document.body.classList.toggle('photo'); return; }

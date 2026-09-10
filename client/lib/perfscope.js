@@ -446,7 +446,7 @@ function loupeHtml(rec) {
     const u = key === 'texMB' ? ' MB' : '';
     const parts = TIER_SHORT.map((name, i) =>
       i < th.length ? `${name} ≤${th[i].toLocaleString()}${u}` : `${name} >${th[th.length - 1].toLocaleString()}${u}`);
-    // one tier per line: #tipchip renders titles pre-line (R, 09-04: easier to read)
+    // one tier per line: #tipchip renders titles pre-line (live, 09-04: easier to read)
     return `${label}\n${parts.join('\n')}`;
   };
   // what each metric IMPACTS (data labels should describe which part of
@@ -494,7 +494,7 @@ function loupeHtml(rec) {
   // <wbr> after separators / camelCase humps lets long identifiers wrap.
   const paren = rec.label.indexOf('  (');
   const nameOnly = paren > 0 ? rec.label.slice(0, paren) : rec.label;
-  // keep the .glb/.gltf/.vrm: the second line is the FILE, and the extension is what says so (R, 09-04)
+  // keep the .glb/.gltf/.vrm: the second line is the FILE, and the extension is what says so (live, 09-04)
   const libOnly = paren > 0 ? rec.label.slice(paren + 3).replace(/\)$/, '') : '';
   const wbr = (t) => esc(t)
     .replace(/([_./:\-])/g, '$1<wbr>')          // break after separators
@@ -724,7 +724,7 @@ async function copyReceipt() {
 
 /** Mounts the perf section into the debug panel's stack. */
 export function buildPerfPanel(stack, { toast = console.log } = {}) {
-  // house rows only (R, 09-04: "stop making people guess"): .row.wide = label
+  // house rows only (live, 09-04: "stop making people guess"): .row.wide = label
   // column + control, the same grid Video uses; no private layout rules here.
   const modeRow = document.createElement('div');
   modeRow.className = 'row wide';
@@ -792,7 +792,7 @@ export function buildPerfPanel(stack, { toast = console.log } = {}) {
   btns.append(rescan, rcpt);
 
   // the loupe is the tool; it sits under the overlay lens, not among the
-  // housekeeping buttons (R, 09-04)
+  // housekeeping buttons (live, 09-04)
   const loupeRow = document.createElement('div'); loupeRow.className = 'row btn-row'; loupeRow.appendChild(lb);
   stack.append(modeRow, loupeRow, olRow, solRow, legend, tableEl, btns);
 }

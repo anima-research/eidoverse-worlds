@@ -545,7 +545,8 @@ const viewRow = (label, key, onChange) => checkRow(label,
 export function initDebug(p = {}) {
   providers = p;
   frame = makeFrame('debug', {
-    title: 'debug', x: -270, y: -165, w: 250, h: 460   // second right column, bottom-anchored ABOVE the emote row: emotes own the corner, world/settings the top, minW: 210, hidden: true,
+    // second right column, bottom-anchored ABOVE the emote row: emotes own the corner, world/settings the top
+    title: 'debug', x: -270, y: -165, w: 250, h: 460, minW: 210, hidden: true,
   });
   const stack = document.createElement('div');
   stack.className = 'stack';
@@ -619,7 +620,7 @@ export function initDebug(p = {}) {
 
   // the live bone readout gets its own collapsible section: loose in the stack
   // it sat between 'joint limits' and 'performance' as a scrollable sliver
-  // that no section's open/close could account for (R, 09-04)
+  // that no section's open/close could account for (live, 09-04)
   statsEl = document.createElement('pre');
   statsEl.className = 'dbg-stats';
   dbgSection(stack, 'ragdoll readout', (body) => body.appendChild(statsEl));
@@ -763,7 +764,7 @@ export function updateDebug(now = performance.now()) {
 
 // ---- the debug frame as a VR quad: YOUR numbers, in-headset -----------------
 // The recorder tees them to the operator; this shows them to the person
-// wearing the headset (R, 09-04: "extremely janky" — a number beats an
+// wearing the headset (live, 09-04: "extremely janky" — a number beats an
 // adjective). Same sources as the desk (perf.js, render.js, perfscope);
 // the perfscope modes are the same setMode the desk's rows call.
 function debugFields() {

@@ -18,7 +18,7 @@ const W = 0.58;                    // quad width, metres — an arm's-length rea
 
 const registry = [];               // [{id, title, fields, dispatch}]
 let panels = null;                 // live: [{mesh, canvas, tex, regions, def}]
-let shown = false;   // off by default in VR (R 09-06 12:49) — the ring's 'panels' slot shows them
+let shown = false;   // off by default in VR (live 09-06 12:49) — the ring's 'panels' slot shows them
 const _rc = new THREE.Raycaster();
 const _m = new THREE.Matrix4();
 
@@ -87,13 +87,13 @@ export function xrPanelsExit(rig) {
 
 function togglePanels() {
   // derive from what is actually on screen: a flag of our own drifted from the quads' real state
-  // (a phantom press flipped it while the quads didn't exist yet — R 09-06 11:35, 'can't close the menus')
+  // (a phantom press flipped it while the quads didn't exist yet — live 09-06 11:35, 'can't close the menus')
   if (domQuadsEnabled()) { shown = !domQuadsShown(); return domQuadsSetShown(shown); }
   shown = !(panels ?? []).some((p) => p.mesh.visible);
   for (const p of panels ?? []) p.mesh.visible = shown;
 }
 
-/** One quad by id — what a ring slot does (R: each slot opens that frame's
+/** One quad by id — what a ring slot does (live: each slot opens that frame's
  *  quad). `on` null toggles. */
 export function showXRPanel(id, on = null) {
   if (domQuadsEnabled()) return domQuadShow(id, on);

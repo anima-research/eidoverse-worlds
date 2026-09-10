@@ -1,6 +1,6 @@
 // profile — the PERSON noun's home (four-noun taxonomy, 08-29): who you are,
 // where you are, what you're wearing, what you carry, who you know.
-// DELIBERATELY A SKETCH (R, 22:01): real satchel/worlds/friends need server
+// DELIBERATELY A SKETCH (live, 22:01): real satchel/worlds/friends need server
 // surfaces that don't exist yet; this stakes out the shape, VRChat-ish —
 // a bigger panel, identity up top, destination tiles below.
 

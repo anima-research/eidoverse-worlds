@@ -1,4 +1,4 @@
-// style — live token editing (R, 16:58: "There will be a test. 😉").
+// style — live token editing (live, 16:58: "There will be a test. 😉").
 // Three swatches drive the token sheet directly: if any hex is hiding
 // outside :root, the picker exposes it by NOT restyling that element.
 // Persisted per-browser; "reset" returns to the sheet's own values.

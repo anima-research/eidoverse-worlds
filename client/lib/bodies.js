@@ -10,7 +10,7 @@ import { renderDOM } from './panels.js';
 import { switchAvatar } from './palette.js';
 import { getMyAvatarName } from './mybody.js';
 
-// MY avatars = the bodies you have actually worn (R, 09-05: the world offers a
+// MY avatars = the bodies you have actually worn (live, 09-05: the world offers a
 // wardrobe to try on — World›avatar — and only what you've worn is yours).
 // Kept per browser (ew-worn) until the server grows a per-person field; the
 // roster is consulted only to resolve a name to its path.
@@ -45,7 +45,7 @@ function dispatch(k, id) {
   if (a) switchAvatar(a.path, a.name);
 }
 
-// The bodies list lives INSIDE the profile (R, 09-05: reachable from
+// The bodies list lives INSIDE the profile (live, 09-05: reachable from
 // profile, not its own menu). profile.js mounts it under the avatars tile
 // and folds its fields into the profile quad.
 export const bodiesFields = fields;

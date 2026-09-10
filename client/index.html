@@ -45,7 +45,7 @@
   /* in-world affordance PILLS (nameplate, speaking mic, typing dots, bubbles):
      light-on-dark, derived from the accent by default so a restyle carries
      them — but their own names, so a light menu mode could leave them dark
-     (R, 09-05 16:41). Read by the sprite painters (tokv) and repainted on
+     (live, 09-05 16:41). Read by the sprite painters (tokv) and repainted on
      'style' events. */
   --pill-bg:   rgb(8 20 28 / .86);
   --pill-edge: color-mix(in srgb, var(--brand) 25%, transparent);
@@ -68,7 +68,7 @@
   --font-code: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
   --fs:        14px;
   --fs-sm:     12px;
-  --fs-xs:     11px;   /* the ONE small size for chrome captions — tiles, chips, readouts (R, 09-05: unify the scales) */
+  --fs-xs:     11px;   /* the ONE small size for chrome captions — tiles, chips, readouts (live, 09-05: unify the scales) */
   --speed:     .16s;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -138,14 +138,14 @@ button:active { transform: translateY(1px); }
    the label with the base button's own padding and shares the row
    (no per-menu handrolling; one fallback). Use `<div class="row btn-row">`. */
 .btn-row { display: flex; gap: 6px; }
-.btn-row > button { flex: 1; max-width: 12rem; text-align: center; padding: 5px 8px; }   /* capped: a wide frame must not stretch buttons out of proportion (R, 09-04) */
+.btn-row > button { flex: 1; max-width: 12rem; text-align: center; padding: 5px 8px; }   /* capped: a wide frame must not stretch buttons out of proportion (live, 09-04) */
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 @keyframes hud-blink { 0%, 100% { opacity: 1; } 25%, 75% { opacity: .25; } }
 #xrbtn.hud-blink { animation: hud-blink .9s ease-in-out 2; }
 #xrbtn.hud-absent { filter: drop-shadow(0 0 3px var(--attn)); }   /* the attention ring around an absent headset's visor */
 input:focus-visible, textarea:focus-visible { outline: 1px solid var(--edge-hi); }
 button.on { background: var(--hov); border-color: var(--edge-hi); color: var(--fg); }
-/* persistent MODES read as armed (R 09-07 23:25): the loupe's `on`, and a skinned dropdown whose choice isn't the default */
+/* persistent MODES read as armed (live 09-07 23:25): the loupe's `on`, and a skinned dropdown whose choice isn't the default */
 .frame button.mode.on, .frame button.mode.on:hover, button.mode.on, button.mode.on:hover { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .frame .dd.set, .dd.set, .dd.set:hover { border-color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
 /* unshared local changes are pending until committed */
@@ -167,11 +167,11 @@ select {
   /* the popup list is the OS's: color-scheme dark makes Chrome/Edge draw it dark
      instead of white-with-a-blue-bar; option colors follow the panel. The hover
      bar inside a native popup stays the OS's — a house dropdown would need a
-     custom control (R, 09-04) */
+     custom control (live, 09-04) */
   color-scheme: dark;
 }
 select option { background: rgb(var(--panel-rgb)); color: var(--fg); }
-select option:checked { background: var(--well); color: var(--brand); font-weight: 600; }   /* the chosen row: dark well + brand ink — the brand FILL read as a gross green against the browser's blue hover (R, 09-05) */   /* pale highlight → DARK text (R, 09-04) */
+select option:checked { background: var(--well); color: var(--brand); font-weight: 600; }   /* the chosen row: dark well + brand ink — the brand FILL read as a gross green against the browser's blue hover (live, 09-05) */   /* pale highlight → DARK text (live, 09-04) */
 /* house dropdowns (dropdown.js): the native select stays as the value store, hidden */
 select.dd-native { position: absolute !important; opacity: 0; pointer-events: none; width: 1px; height: 1px; margin: 0; }
 .dd { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 88px; max-width: 100%;
@@ -194,7 +194,7 @@ input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
 input[type=color]::-webkit-color-swatch { border: none; border-radius: 3px; }
 input[type=color]::-moz-color-swatch { border: none; border-radius: 3px; }
 /* links: brand ink, quiet underline — the browser's blue was the one thing on
-   screen outside the scheme (R, 09-04: "open orrery" in Conjure) */
+   screen outside the scheme (live, 09-04: "open orrery" in Conjure) */
 a { color: var(--brand); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--brand) 40%, transparent); text-underline-offset: 2px; }
 a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 
@@ -205,7 +205,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
    waits for JavaScript here is showing a black page during the slowest part
    of the boot, which is exactly the problem. */
 #splash {
-  --sp-w: min(430px, 60vw);   /* bar + status share one width (R, 09-05: the 08-29 bar) */
+  --sp-w: min(430px, 60vw);   /* bar + status share one width (live, 09-05: the 08-29 bar) */
   position: fixed; inset: 0; z-index: 100;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 22px; padding: 28px; box-sizing: border-box;
@@ -220,14 +220,14 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 #splash.gone { opacity: 0; visibility: hidden; pointer-events: none; }
 .sp-rays { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; display: block; z-index: 0; }
 #splash > :not(.sp-rays) { position: relative; z-index: 1; }
-/* THE MARK IS STILL, BY DESIGN (R, 09-05 17:41: "I keep feeling unsure about
+/* THE MARK IS STILL, BY DESIGN (live, 09-05 17:41: "I keep feeling unsure about
    it and that's usually a sign I'm trying too hard"). Two motions were
    removed here — the ∃'s three strokes assembling with load progress, and a
    compositor-side opacity breath — plus the finish glow. The splash's one
    moving thing is the ground light (.sp-rays, worker-driven): it means
    "alive"; the mark means "us", and holds. */
 .sp-logo {
-  width: 200px; height: 210px; transform: translateY(10px) scale(.4); transform-origin: center;   /* drawn 2x, shown at 0.8x (R 09-07 23:05: 'a bit too big'), nudged down onto the mark */
+  width: 200px; height: 210px; transform: translateY(10px) scale(.4); transform-origin: center;   /* drawn 2x, shown at 0.8x (live 09-07 23:05: 'a bit too big'), nudged down onto the mark */
   margin: -52px 0 -64px; color: var(--brand); overflow: visible;
 }
 .sp-logo-wrap { position: relative; display: grid; place-items: center; }
@@ -245,7 +245,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
    a bar affordance gives an unambiguous DONE */
 #splash .sp-bar { flex: none; width: var(--sp-w); height: 3px; border-radius: 2px; overflow: hidden; background: color-mix(in srgb, var(--brand) 12%, transparent); }
 #splash .sp-bar-fill { width: 0%; height: 100%; border-radius: 2px; background: color-mix(in srgb, var(--brand) 65%, transparent); transition: width .3s ease; }
-.sp-sub { color: var(--dim); font-size: var(--fs); margin: -5px 0; text-align: center; }   /* HUD body size, not a bespoke 15px (R, 09-05) */  /* equal air above + below */
+.sp-sub { color: var(--dim); font-size: var(--fs); margin: -5px 0; text-align: center; }   /* HUD body size, not a bespoke 15px (live, 09-05) */  /* equal air above + below */
 .sp-sub b { color: var(--fg); font-weight: 600; }
 /* one centered breath under the bar — phase and bytes are a single quiet
    line, not furniture at opposite walls */
@@ -255,11 +255,11 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 }
 .sp-phase { color: var(--brand); }
 /* what's LOADING, by name — surfaces only when something has been in flight
-   for a while (R, 09-05 17:47: VRMs take a looooong time on weak hardware and
+   for a while (live, 09-05 17:47: VRMs take a looooong time on weak hardware and
    a bar alone says nothing). Up to two items, most-remaining first. */
 .sp-items { width: var(--sp-w); min-height: 1.4em; display: flex; flex-direction: column; gap: 4px; margin-top: -8px; font-size: var(--fs-sm); color: var(--dim); font-variant-numeric: tabular-nums; }   /* two rows reserved always, so the column never jumps when names appear */
 /* .sp-load, not .sp-item — that name is the schema panel's list row (padding 3px 7px), and the collision
-   indented these 7 px off the status row's edge (R, 09-05 17:58: "weird having those left-justified?") */
+   indented these 7 px off the status row's edge (live, 09-05 17:58: "weird having those left-justified?") */
 .sp-load { display: flex; justify-content: space-between; gap: 12px; }
 .sp-load .sp-load-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-load .sp-load-bytes { flex: none; }
@@ -326,7 +326,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 /* scrollbars sit a couple px in from the frame edge so the scroll thumb and
    the edge-resize band don't fight over the same column */
 .frame .fr-body { padding-right: 6px; }
-.frame .fr-body:has(> .tiles.fixed) { padding: 7px; }   /* tile bodies pad EVENLY — the right-only scrollbar room read as a lopsided gutter (R, 09-04) */
+.frame .fr-body:has(> .tiles.fixed) { padding: 7px; }   /* tile bodies pad EVENLY — the right-only scrollbar room read as a lopsided gutter (live, 09-04) */
 .frame.flash { animation: flash 1.4s ease-out; }
 @keyframes flash {
   0%, 100% { border-color: var(--edge); }
@@ -343,11 +343,11 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
   border-radius: 0; color: var(--dim); font-size: 12px;
 }
 .chat-side-tog:hover { color: var(--fg); background: rgb(255 255 255 / .05); }
-.chat-cols.side-closed .chat-side-tog { border-left-color: transparent; border-right-color: transparent; }   /* no pane, no grab edge, no line — on EITHER side (R 09-07: left leaked a line) */
+.chat-cols.side-closed .chat-side-tog { border-left-color: transparent; border-right-color: transparent; }   /* no pane, no grab edge, no line — on EITHER side (live 09-07: left leaked a line) */
 .chat-side { flex: none; display: flex; flex-direction: column; position: relative; min-height: 0; }
 .chat-side.closed { display: none; }
 /* the grip straddles the LINE you can see (the toggler's border, between the log
-   and the 14px strip) — it used to sit on the strip's far side, invisible (R, 09-04) */
+   and the 14px strip) — it used to sit on the strip's far side, invisible (live, 09-04) */
 .chat-side-grip { position: absolute; left: calc(-14px - 4px); top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 3; }
 /* the affordance is the LINE itself, not a band: a 1px stroke that turns brand under the pointer */
 .chat-side-grip::before { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 1px; background: transparent; }
@@ -361,8 +361,8 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .chat-side-head { flex: none; padding: 6px 6px 2px; font-size: var(--fs-xs); color: var(--dim); text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
 .chat-cols.side-left { flex-direction: row-reverse; }
 .chat-cols.side-left .chat-side-tog { border-left: none; border-right: 1px solid var(--edge); }
-.chat-cols.side-left.side-closed .chat-side-tog { border-right-color: transparent; }   /* closed = no line, same as the right (R 09-07 10:55) */
-.chat-cols.side-left .chat-side-grip { left: auto; right: calc(-14px - 4px); }   /* mirror of the right: over the toggler's border line, not the pane's own edge (R, 09-06 23:34: 'the right behaviour is preferred') */
+.chat-cols.side-left.side-closed .chat-side-tog { border-right-color: transparent; }   /* closed = no line, same as the right (live 09-07 10:55) */
+.chat-cols.side-left .chat-side-grip { left: auto; right: calc(-14px - 4px); }   /* mirror of the right: over the toggler's border line, not the pane's own edge (live, 09-06 23:34: 'the right behaviour is preferred') */
 .chat-tabs .chat-gear {
   flex: none; margin-left: 2px; padding: 3px 6px;
   background: none; border: none; color: var(--dim); border-radius: 5px;
@@ -379,7 +379,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .chat-gearpop .gp-row span { color: var(--dim); margin-right: 6px; }
 .chat-gearpop .gp-row b { min-width: 20px; text-align: center; }
 /* on/off pairs in the gear pop: on = a brand chip with dark ink, off = the well — the same
-   live/idle grammar as the dock's lit icon and .sp-btn (R, 09-05: more contrast) */
+   live/idle grammar as the dock's lit icon and .sp-btn (live, 09-05: more contrast) */
 .chat-gearpop .gp-row button { background: var(--well); color: var(--dim); border: 1px solid transparent; }
 .chat-gearpop .gp-row button:hover { color: var(--fg); border-color: var(--edge); }
 .chat-gearpop .gp-row button.on { background: var(--brand); color: var(--ink-on-brand); font-weight: 600; }
@@ -489,7 +489,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .dbg-sec { margin-top: 4px; }
 .dbg-sec > .head { display: flex; align-items: center; gap: 7px; padding: 5px 8px; color: var(--dim); }
 .dbg-sec.open > .head { color: color-mix(in srgb, var(--brand) 35%, var(--fg)); }
-.dbg-sec .dbg-arrow { font-size: 13px; width: 13px;   /* was 9: "teensy, very hard to see" (R, 09-04) */ color: var(--icon); flex: none; }
+.dbg-sec .dbg-arrow { font-size: 13px; width: 13px;   /* was 9: "teensy, very hard to see" (live, 09-04) */ color: var(--icon); flex: none; }
 /* panel content hierarchy: heads = fg with brand-whisper glyphs,
    body copy = dim; outlined buttons hug their text, never stretch the column */
 .sec > .body { color: var(--dim); }
@@ -525,7 +525,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .card.on span { color: var(--brand); }
 
 .row { display: flex; align-items: center; gap: 7px; font-size: var(--fs-sm); color: var(--dim); }
-/* min-widths, not fixed: 'sweepPhase' overran a 42px label and '0.29411' a 34px readout (R, 09-04) */
+/* min-widths, not fixed: 'sweepPhase' overran a 42px label and '0.29411' a 34px readout (live, 09-04) */
 .row .nm { min-width: 42px; max-width: 40%; flex: none; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 input[type=range] { flex: 1; accent-color: var(--control); min-width: 0;
   appearance: none; -webkit-appearance: none; height: 14px; background: none; }
@@ -535,7 +535,7 @@ input[type=range] { flex: 1; accent-color: var(--control); min-width: 0;
    Un-scoped from .row on 09-04: Scene's sliders live outside a .row and were browser-default (R). */
 input[type=range] { --p: 50%; }
 /* no transition on the track: its --p gradient stop would ANIMATE on release,
-   fading the dark half up and back for a beat (R, 09-04). Chunkier + round ends. */
+   fading the dark half up and back for a beat (live, 09-04). Chunkier + round ends. */
 input[type=range], input[type=range]::-webkit-slider-runnable-track, input[type=range]::-webkit-slider-thumb { transition: none; }
 input[type=range]::-webkit-slider-runnable-track {
   height: 6px; border-radius: 999px;
@@ -543,7 +543,7 @@ input[type=range]::-webkit-slider-runnable-track {
     var(--control) 0 var(--p),
     color-mix(in srgb, var(--control) 14%, rgb(255 255 255 / .07)) var(--p) 100%);
   /* no border: the 'legibility' ring read as a gray outline on our dark panels
-     (R, 09-04); the well after the thumb is the contrast */
+     (live, 09-04); the well after the thumb is the contrast */
   border: none; box-shadow: none;
 }
 input[type=range]::-webkit-slider-thumb {
@@ -598,7 +598,7 @@ input[type=range]:disabled { accent-color: color-mix(in srgb, var(--control) 40%
    a sentence — and inherits gap, font-size and colour from .row itself, so it
    CANNOT drift again. Everything else (range accent, .v readout, .nm colour)
    already comes from the rules above and needs no duplicate. */
-/* 🔴 THE ROW RULE (R, 09-04: "stop making people guess"). Labels are LEFT-aligned
+/* 🔴 THE ROW RULE (live, 09-04: "stop making people guess"). Labels are LEFT-aligned
    everywhere in a FIXED, not-very-wide column (7rem) and WRAP if they must; the
    control sits right beside the label (start of its cell), never pushed to the
    far edge of a wide frame. .row = short label (42px) + slider + readout;
@@ -639,10 +639,10 @@ input[type=range]:disabled { accent-color: color-mix(in srgb, var(--control) 40%
 }
 #dock #hud.emark { color: var(--dim); }                             /* local only */
 #dock #hud.emark.net-live { color: var(--brand); }   /* connected — the accent itself, same as an open panel's icon and the live mic/ear (ONE ink; R, 09-04 23:59: line-weight off-icons solved readability, so on can be pure brand) */
-#dock #hud.emark:hover, #dock #hud.emark.net-live:hover { color: var(--fg); }   /* hover = white, like the rail's buttons (R, 09-04) */
+#dock #hud.emark:hover, #dock #hud.emark.net-live:hover { color: var(--fg); }   /* hover = white, like the rail's buttons (live, 09-04) */
 #dock #hud.emark.net-wait { color: var(--dim); animation: netpulse 2.6s ease-in-out infinite; }  /* trying */
 /* arranging (menu-edit) mode: hovering the E or a button still goes white —
-   the affordance must survive the mode (R, 09-04) */
+   the affordance must survive the mode (live, 09-04) */
 body.arranging #dock #hud.emark:hover, body.arranging #dock button:not(.dock-grip):hover { color: var(--fg) !important; }
 body.arranging #dock #hud.emark {
   color: var(--ink-on-brand); background: var(--brand-deep); border-radius: 8px; animation: none;  /* inverted: you're holding the chrome */
@@ -653,9 +653,9 @@ body.arranging #dock #hud.emark {
 #dock button[data-toggles="profile"] { position: relative; }
 #dock button[data-toggles="profile"]::after {
   content: ''; position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px; border-radius: 50%;
-  background: #3ddc84; box-shadow: 0 0 0 2px rgb(var(--panel-rgb));   /* FIXED green (R 09-05 16:47 + 21:38: presence is never the accent) */
+  background: #3ddc84; box-shadow: 0 0 0 2px rgb(var(--panel-rgb));   /* FIXED green (live 09-05 16:47 + 21:38: presence is never the accent) */
 }
-#dock button[data-toggles="profile"][data-presence="away"]::after { background: #f5b83d; border-radius: 2px; transform: rotate(45deg) scale(.85); }   /* fixed colours + shapes, as on the profile (R, 09-05) */
+#dock button[data-toggles="profile"][data-presence="away"]::after { background: #f5b83d; border-radius: 2px; transform: rotate(45deg) scale(.85); }   /* fixed colours + shapes, as on the profile (live, 09-05) */
 #dock button[data-toggles="profile"][data-presence="busy"]::after { background: linear-gradient(rgb(var(--panel-rgb)), rgb(var(--panel-rgb))) center / 60% 20% no-repeat, #ef5b5b; border-radius: 2px; }   /* square-with-bar, like the profile's (the pseudo IS the dot, so the bar is a gradient) */
 /* profile (09-05 redesign): portrait = presence control; top tabs; one pane */
 .pf-portrait { position: relative; width: 40px; height: 40px; border-radius: 50%; flex: none; display: grid; place-items: center; padding: 0;
@@ -685,7 +685,7 @@ body.arranging #dock #hud.emark {
 .pf-pop-row.on { background: var(--well); color: var(--brand); font-weight: 600; }
 .pf-tabs { display: flex; gap: 2px; margin: 10px 0 8px; border-bottom: 1px solid var(--edge); }
 .pf-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px 7px; border: none; border-bottom: 1px solid transparent; margin-bottom: -1px; background: none; color: var(--dim); font-size: var(--fs-sm); cursor: pointer; border-radius: 6px 6px 0 0; }
-.pf-tab svg { opacity: .8; color: var(--icon); }          /* the section-head recipe: desaturated brand at .8 when idle (R, 09-05) */
+.pf-tab svg { opacity: .8; color: var(--icon); }          /* the section-head recipe: desaturated brand at .8 when idle (live, 09-05) */
 .pf-tab:hover { color: var(--fg); background: rgb(255 255 255 / .04); }
 .pf-tab.on { color: var(--brand); border-bottom-color: var(--brand); }
 .pf-tab.on svg { opacity: 1; color: var(--brand); }
@@ -803,10 +803,10 @@ body.edit-mode::after {
 #loading.on { display: block; }
 #toasts { display: flex; flex-direction: column; gap: 5px; align-items: flex-end; }
 /* floating chrome carries a thin outline so it separates from whatever the
-   world is drawing behind it (R, 09-04): toasts, hint bar, chat gear pop, hud pops */
+   world is drawing behind it (live, 09-04): toasts, hint bar, chat gear pop, hud pops */
 .toast, #hintbar, .chat-gearpop, .hud-pop, #tipchip {
   outline: 1px solid var(--edge-hi); outline-offset: -1px;
-  /* and fully OPAQUE — readable over anything the world draws (R, 09-04) */
+  /* and fully OPAQUE — readable over anything the world draws (live, 09-04) */
   background: rgb(var(--panel-rgb)); backdrop-filter: none; -webkit-backdrop-filter: none;
 }
 .toast {
@@ -848,7 +848,7 @@ body.arranging #dock .dock-grip { display: grid; }
   display: grid; place-items: center; width: 34px; height: 34px; padding: 0;
   font-size: var(--fs-xs);   /* label-fallback buttons (entries with no fill icon) */
   /* OFF wears exactly what a collapsed World-menu row wears: --icon (the
-     desaturated brand) at .8 — same recipe as `.sec > .head svg` (R, 09-04) */
+     desaturated brand) at .8 — same recipe as `.sec > .head svg` (live, 09-04) */
   color: var(--icon); background: none; border: none; box-shadow: none; border-radius: 7px;
 }
 #dock button:not(.dock-grip):not(.on) svg { opacity: .8; }
@@ -868,14 +868,14 @@ body.arranging #dock .dock-grip { display: grid; }
      ON+HOVER  a whisper of well so about-to-close still differs from about-to-open */
 #dock button.on {
   position: relative;
-  color: var(--brand);   /* the accent itself — one ink with the ∃ and the live mic/ear (R, 09-04 23:59) */
+  color: var(--brand);   /* the accent itself — one ink with the ∃ and the live mic/ear (live, 09-04 23:59) */
   background: none;
 }
 #dock button.on::before {
   content: ''; position: absolute; border-radius: 2px;
   background: var(--brand); opacity: .9;
   /* default (rail welded left / floating top-left): bar on the RIGHT edge */
-  top: 7px; bottom: 7px; right: -3px; width: 1.5px;   /* a smidge thinner than 2 (R, 09-04) */
+  top: 7px; bottom: 7px; right: -3px; width: 1.5px;   /* a smidge thinner than 2 (live, 09-04) */
 }
 #dock[data-edge="right"]  button.on::before { right: auto; left: -3px; }
 #dock[data-edge="top"]    button.on::before { top: auto; right: 7px; left: 7px; bottom: -3px; width: auto; height: 1.5px; }
@@ -884,7 +884,7 @@ body.arranging #dock .dock-grip { display: grid; }
   color: color-mix(in srgb, var(--brand) 45%, white);
   background: color-mix(in srgb, var(--brand) 10%, var(--hov));
 }
-/* two weights per button: line at rest, fill when on (R, 09-04) */
+/* two weights per button: line at rest, fill when on (live, 09-04) */
 #dock button:not(.dock-grip) svg.ico-line + svg { display: none; }
 #dock button:not(.dock-grip).on svg.ico-line { display: none; }
 #dock button:not(.dock-grip).on svg.ico-line + svg { display: inline; }
@@ -914,8 +914,8 @@ button.keybtn:active { box-shadow: inset 0 1px 3px rgb(0 0 0 / .6); }
 .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 1; min-height: 0; }
 /* emote tiles are FIXED width and flow: widen the frame and they go to one
    line; the frame snaps to whole tiles on release (emotebar.js). Even gutters. */
-.tiles.fixed { grid-template-columns: repeat(auto-fill, 32px); grid-auto-rows: 32px; gap: 6px; justify-content: center; align-content: start; flex: none; padding: 0; }   /* 30 px buttons, 6 px gutters: 'bring back the buffers and put the buttons on a diet' (R 09-05 22:00) */
-.tiles.fixed .tile { padding: 0; align-items: center; justify-content: center; gap: 0; line-height: 1; overflow: visible; }   /* 32: the glyph's own size plus 4 px; gutters stay 6 (R 22:25) */   /* centred: any remainder splits evenly left/right; rows never stretch */
+.tiles.fixed { grid-template-columns: repeat(auto-fill, 32px); grid-auto-rows: 32px; gap: 6px; justify-content: center; align-content: start; flex: none; padding: 0; }   /* 30 px buttons, 6 px gutters: 'bring back the buffers and put the buttons on a diet' (live 09-05 22:00) */
+.tiles.fixed .tile { padding: 0; align-items: center; justify-content: center; gap: 0; line-height: 1; overflow: visible; }   /* 32: the glyph's own size plus 4 px; gutters stay 6 (live 22:25) */   /* centred: any remainder splits evenly left/right; rows never stretch */
 .tile {
   position: relative; display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
   gap: 3px; padding: 12px 14px; border-radius: 9px;
@@ -923,7 +923,7 @@ button.keybtn:active { box-shadow: inset 0 1px 3px rgb(0 0 0 / .6); }
 }
 .tile:hover { background: rgb(255 255 255 / .09); }
 .tile.on { background: color-mix(in srgb, var(--brand) 16%, rgb(255 255 255 / .04)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 45%, transparent); }
-.tile svg { opacity: .9; margin-bottom: 3px; color: var(--icon); }   /* icons carry the brand whisper everywhere, stubs included (R, 09-04) */
+.tile svg { opacity: .9; margin-bottom: 3px; color: var(--icon); }   /* icons carry the brand whisper everywhere, stubs included (live, 09-04) */
 .tile b { font-size: var(--fs); font-weight: 600; }
 .tile span { color: var(--dim); font-size: var(--fs-xs); }
 .tile .tile-glyph { font-size: 22px; line-height: 1; color: inherit; }   /* the gesture is content, drawn large */
@@ -946,7 +946,7 @@ body.altgrab .frame:active { cursor: grabbing; }
   align-items: center; justify-content: center;
   /* a NEUTRAL veil — mid gray at half strength desaturates whatever world is
      behind it and clashes with none of them; the old blue-black fought warm
-     skies (R, 09-05) */
+     skies (live, 09-05) */
   background: rgb(128 128 128 / .5); backdrop-filter: blur(4px);
   padding: 20px; box-sizing: border-box;
 }
@@ -954,17 +954,17 @@ body.altgrab .frame:active { cursor: grabbing; }
 /* The front door sits ON the splash — arriving is one continuous moment, not a
    dialog that appears after a loading screen. Above #splash's z-index. */
 /* the door's veil is near-black, not mid-grey: the sheet is translucent and a grey veil
-   under it read as dingy (R, 09-06 22:37) */
+   under it read as dingy (live, 09-06 22:37) */
 #door { z-index: 120; background: rgb(8 12 14 / .62); }
 .sheet {
   width: min(560px, 100%); max-height: 100%; overflow-y: auto;
   padding: 20px 22px; box-sizing: border-box; position: relative;
 }
-/* the door is a frame like the others: its title follows .fr-title (R, 09-04: the card read as the old menu styling) */
+/* the door is a frame like the others: its title follows .fr-title (live, 09-04: the card read as the old menu styling) */
 .sheet h1 { font-size: var(--fs-sm); margin: 0 0 6px; color: var(--dim); font-weight: 600; text-transform: uppercase; letter-spacing: .085em; }
 /* the door wears the frames' own header: a title chip on the top edge (the
    fr-head/fr-title grammar), then the panel body — not a headline in a box */
-#door .sheet { padding: 0; overflow: visible; background: rgb(var(--panel-rgb) / .94); border: 1px solid rgb(255 255 255 / .14); box-shadow: 0 0 0 1px rgb(0 0 0 / .5), 0 24px 60px rgb(0 0 0 / .5); }   /* the one surface at arrival — solid, with a modest rim so it holds against a dark world (R, 09-06 23:08) */
+#door .sheet { padding: 0; overflow: visible; background: rgb(var(--panel-rgb) / .94); border: 1px solid rgb(255 255 255 / .14); box-shadow: 0 0 0 1px rgb(0 0 0 / .5), 0 24px 60px rgb(0 0 0 / .5); }   /* the one surface at arrival — solid, with a modest rim so it holds against a dark world (live, 09-06 23:08) */
 #door .sheet .fr-head { position: static; display: flex; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--edge); border-radius: var(--r) var(--r) 0 0; background: rgb(var(--panel-rgb) / .35); cursor: default; }
 #door .sheet .fr-title { flex: 1; font-size: var(--fs-sm); color: var(--dim); text-transform: none; letter-spacing: .02em; font-weight: 500; }
 #door .sheet .fr-title b { color: var(--fg); font-weight: 600; }
@@ -977,7 +977,7 @@ body.altgrab .frame:active { cursor: grabbing; }
 #door .sheet label input:focus { outline: none; border-color: color-mix(in srgb, var(--brand) 60%, var(--edge)); }
 #door .sheet p.sub a { color: var(--brand); }
 #door .grid.dense { gap: 6px; }
-/* cards sit a step LIGHTER than the sheet, not sunk into it; the name is body-size, not caption-size (R, 09-06 23:08) */
+/* cards sit a step LIGHTER than the sheet, not sunk into it; the name is body-size, not caption-size (live, 09-06 23:08) */
 #door .card { background: color-mix(in srgb, rgb(var(--panel-rgb)) 78%, white 6%); border: 1px solid rgb(255 255 255 / .09); border-radius: 7px; padding: 5px 5px 6px; color: var(--fg); font-size: 13px; line-height: 1.25; }
 #door .card span { opacity: .85; }
 #door .card.on span { opacity: 1; color: var(--brand); }
@@ -1003,7 +1003,7 @@ body.altgrab .frame:active { cursor: grabbing; }
 .sheet .go {
   width: 100%; text-align: center; font-size: var(--fs); padding: 12px 16px; margin-top: 22px;
   /* the one action on the sheet: outlined in the brand, a light brand wash, the text free to wrap —
-     an outline says 'important' without a slab of colour (R, 09-06 22:37; supersedes the 09-05 solid fill) */
+     an outline says 'important' without a slab of colour (live, 09-06 22:37; supersedes the 09-05 solid fill) */
   background: color-mix(in srgb, var(--brand) 12%, transparent); border: 1.5px solid var(--brand);
   color: var(--fg); font-weight: 600; border-radius: 8px; white-space: normal; line-height: 1.35;
   box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand) 30%, transparent); transition: background .15s, box-shadow .15s;
@@ -1029,7 +1029,7 @@ kbd {
 /* capability notice: a persistent card, bottom-centre, until dismissed */
 .capnotice {
   /* a one-line STRIP along the bottom edge — off the body, which stands
-     centre-stage (R, 09-05); the long explanation is the title tooltip */
+     centre-stage (live, 09-05); the long explanation is the title tooltip */
   position: fixed; left: 50%; top: 8px; transform: translateX(-50%); z-index: 60;   /* the top-centre gap: nothing lives there by default */
   max-width: min(720px, 92vw); padding: 5px 10px; font-size: var(--fs-sm); line-height: 1.4;
   display: flex; flex-direction: row; align-items: center; gap: 10px; border-radius: 8px;
@@ -1247,8 +1247,6 @@ body.touch #touch { display: block; }
 .sp-item-sub { color: var(--dim); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sp-mini { background: var(--well); border: none; color: var(--fg); border-radius: 4px; padding: 2px 7px; cursor: pointer; }
 .sp-empty { color: var(--dim); font-style: italic; padding: 4px 7px; }
-/* the VR chip beside the dock rail (xr.js seats it; only appears when the
-   browser answers isSessionSupported('immersive-vr')) */
 </style>
 <script>
 /* pre-paint token restore (the default accent flashed for a beat before

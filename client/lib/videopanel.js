@@ -92,7 +92,7 @@ export function initVideoPanel() {
     if (body.dataset.init) return;
     body.dataset.init = '1';
 
-    // renderer: ONE control (R 09-07). auto matches the backend to what VR will use so entry never reloads;
+    // renderer: ONE control (live 09-07). auto matches the backend to what VR will use so entry never reloads;
     // force WebGPU / force WebGL are the overrides. A headset present + WebGPU-XR flags absent is the case that
     // makes force-WebGPU cost a reload-into-VR, so that combination is warned; force-WebGPU is disabled outright
     // when the machine has no WebGPU at all.

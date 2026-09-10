@@ -1,8 +1,8 @@
 // The emote menu. Emotes were number keys and a slash command — invisible
 // unless you read the help. On a performance platform the gestures should be
 // somewhere you can see them: six tiles, the gesture as content, its name, and
-// the key that fires it. The playing emote is lit. House .tile/.tiles rules
-// only — no private layout here (R, 09-04: this file had been hand-rolled).
+// the key that fires it. The tile this bar fired stays lit ~1.5 s (long enough to read). House .tile/.tiles rules
+// only — no private layout here (live, 09-04: this file had been hand-rolled).
 
 import { makeFrame } from './frames.js';
 import { EMOTE_ORDER, EMOTE_ICONS } from './avatar.js';
@@ -14,10 +14,13 @@ import { setPosture } from './controller.js';
 const POSTURES = ['sit', 'stand', 'lie'];
 // through the same flows the ring used: a nearby seat wins for sit, stand dismounts
 function posture(k) {
+  // the desktop body takes the posture directly; the xr:* events are for the VR entry (part 4) to
+  // pick a seat / dismount — no listener at this rung, harmless
+  setPosture(k === 'stand' ? null : k);
   if (k === 'sit') bus.emit('xr:sit');
   else if (k === 'stand') bus.emit('xr:stand');
-  else setPosture('lie');
 }
+let litEmote = null, litUntil = 0;   // net.js clears myState.emote on the first pose send, so the bar remembers its own
 import { bus } from './base.js';
 
 // emoji here are CONTENT (the gesture itself), not chrome — the fill-icon set
@@ -27,20 +30,20 @@ const GLYPH = { wave: '👋', cheer: '🙌', dance: '💃', point: '👉', salut
 
 export function initEmoteBar() {
   // geometry the CSS owns too: .tiles.fixed → 68px tiles, 6px gap, 8px body pad
-  const TILE = 32, GAP = 6, PAD = 7, ROW_H = 32;   // 09-05 22:00: slim buttons, real gutters — must match .tiles.fixed in index.html   // glyph-only tiles; name + key are the tooltip (R, 09-04)
+  const TILE = 32, GAP = 6, PAD = 7, ROW_H = 32;   // 09-05 22:00: slim buttons, real gutters — must match .tiles.fixed in index.html   // glyph-only tiles; name + key are the tooltip (live, 09-04)
   const widthFor = (cols) => cols * TILE + (cols - 1) * GAP + PAD * 2 + 2;   // +2: frame edges
-  const POSTURE_TILES = 3;   // sit / stand / lie lead the grid (R, 09-05) — they count toward the rows
+  const POSTURE_TILES = 3;   // sit / stand / lie lead the grid (live, 09-05) — they count toward the rows
   const rowsFor = (cols) => Math.ceil((POSTURE_TILES + EMOTE_ORDER.length) / cols);
   // state.h is the body's CONTENT height (frames.js paints body.style.height; the body
   // pads 7px top+bottom on top of it) — so rows + gaps only, no pad term
   const heightFor = (cols) => rowsFor(cols) * ROW_H + (rowsFor(cols) - 1) * GAP;
   let snapT = null;
-  const ALL = 9;   // 3 postures + 6 emotes: ONE bar (R 09-06 23:34: '9×1')
+  const ALL = 9;   // 3 postures + 6 emotes: ONE bar (live 09-06 23:34: '9×1')
   const f = makeFrame('emotes', {
     title: 'emotes', x: 'center', y: -10, w: widthFor(ALL), h: ROW_H,   // one row of nine across the bottom by default
     minW: widthFor(3), minH: ROW_H, hidden: true,   // 3..9 across
     // SNAP TO WHOLE TILES on release: drag the frame to any width, and when the
-    // drag settles it fits itself to the tiles that row holds (R, 09-04). The
+    // drag settles it fits itself to the tiles that row holds (live, 09-04). The
     // frame owns its size, so we write its state and repaint through the refs it
     // exposes for exactly this kind of rider.
     onResize: (w) => { clearTimeout(snapT); snapT = setTimeout(() => snapTo(w), 180); },
@@ -49,7 +52,7 @@ export function initEmoteBar() {
     // the emote list arrives async; snapping against an empty list clamped cols to the 3 postures and
     // SHRANK a saved 9×1 bar to 3×3 on every reload (two exported layouts: 352×32 → 124×108)
     if (!EMOTE_ORDER.length) return;
-    const cols = Math.max(3, Math.min(POSTURE_TILES + EMOTE_ORDER.length, Math.floor((w - PAD * 2 - 2 + GAP) / (TILE + GAP))));   // ONE BAR is reachable: the postures count as tiles too (R 09-05 21:40: "surely more than 6")
+    const cols = Math.max(3, Math.min(POSTURE_TILES + EMOTE_ORDER.length, Math.floor((w - PAD * 2 - 2 + GAP) / (TILE + GAP))));   // ONE BAR is reachable: the postures count as tiles too (live 09-05 21:40: "surely more than 6")
     f._state.w = widthFor(cols); f._state.h = heightFor(cols); f._paint();
   };
   // a saved size from an older layout (or any drift) refits the moment the menu opens
@@ -63,7 +66,7 @@ export function initEmoteBar() {
   const fill = () => {
     grid.innerHTML = ''; tiles.clear();
     // postures lead the row as tiles like the rest — EMOJI, same as the emotes
-    // (R, 09-05 16:41: "STILL have phosphor icons instead of emojis"); the same
+    // (live, 09-05 16:41: "STILL have phosphor icons instead of emojis"); the same
     // measured fallback: a platform without the glyph gets the word
     for (const [k, em] of [['sit', '🪑'], ['stand', '🧍'], ['lie', '🛏️']]) {
       const b = document.createElement('button');
@@ -82,16 +85,16 @@ export function initEmoteBar() {
       b.title = `${name} — key ${i + 1}`;
       // emoji are content here (the gesture itself) — but a platform missing the
       // glyph paints a tofu box or nothing, so the tile falls back to the word
-      // when the emoji measurably does not render (R, 09-05)
+      // when the emoji measurably does not render (live, 09-05)
       const em = EMOTE_ICONS[name] ?? GLYPH[name] ?? '✨';
       b.innerHTML = emojiRenders(em) ? `<span class="tile-glyph">${em}</span>` : `<span class="tile-word">${name}</span>`;
-      b.onclick = () => { getMe()?.playEmote(name); myState.emote = name; paint(); };
+      b.onclick = () => { getMe()?.playEmote(name); myState.emote = name; litEmote = name; litUntil = performance.now() + 1500; paint(); };
       grid.appendChild(b);
       tiles.set(name, b);
     });
     if (f._state) snapTo(f._state.w);
   };
-  const paint = () => { for (const [n, b] of tiles) b.classList.toggle('on', n.startsWith('posture:') ? myState.clip === n.slice(8) : myState.emote === n); };
+  const paint = () => { const lit = myState.emote ?? (performance.now() < litUntil ? litEmote : null); for (const [n, b] of tiles) b.classList.toggle('on', n.startsWith('posture:') ? myState.clip === n.slice(8) : lit === n); };
   fill();
   bus.on('emotes-updated', fill);
   // (postures are tiles in the grid above — one row, one grammar)
@@ -100,7 +103,7 @@ export function initEmoteBar() {
   // the same six gestures as a VR quad — one button per emote, the same call
   registerXRPanel({
     id: 'emotes', title: 'emotes',
-    // postures lead (R, 09-04 22:02: sit/lie belong to the emote menu, not the
+    // postures lead (live, 09-04 22:02: sit/lie belong to the emote menu, not the
     // ring); then the emotes — names, not emoji: a canvas fillText of a
     // missing glyph paints nothing
     fields: () => [...POSTURES.map((k) => ({ t: 'btn', k, label: k })), ...EMOTE_ORDER.map((name) => ({ t: 'btn', k: name, label: name }))],
@@ -135,7 +138,7 @@ function emojiRenders(s) {
   return ok;
 }
 
-// ---- the ring's emote sub-wheel (R 09-07 22:08: 'emotes should be a sub menu, same as VRC') ----
+// ---- the ring's emote sub-wheel (live 09-07 22:08: 'emotes should be a sub menu, same as VRC') ----
 // Names, not emoji: the ring paints drawn glyphs only (canvas fillText of an emoji is the trap), so each
 // slot carries its name as SVG text. Postures lead, then the emotes in bar order; every entry closes the
 // ring on activation (you chose it — the ring's job is done).

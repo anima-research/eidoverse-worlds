@@ -15,7 +15,7 @@ const LS = (id) => `ew-frame-${id}`;
 
 // Layout-version guard. DEFAULT_LAYOUT is a hand-arranged default (R's, edge-anchored). A frame's own
 // saved moves win over it — but that means when the DEFAULT changes, anyone with older per-frame saves
-// stays stuck on stale positions (R 09-07: maximized and found world/settings NOT right-docked because an
+// stays stuck on stale positions (live 09-07: maximized and found world/settings NOT right-docked because an
 // old save overrode the re-baked default). Bump this whenever DEFAULT_LAYOUT changes materially: on load,
 // a mismatch discards every ew-frame-* save ONCE, so the new default actually takes, then stamps the new
 // version. A user's deliberate arrangement after the bump is saved and kept as normal.
@@ -141,7 +141,7 @@ document.addEventListener('pointerdown', (e) => {
     // grows are clamped so no edge ever leaves the viewport
     // (windows stay inside the active area, full stop)
     if (z.includes('e')) f.state.w = clamp(s0.w + dx, f.minW, innerWidth - s0.x - 8);
-    if (z.includes('s')) f.state.h = clamp(s0.h + dy, f.minH, innerHeight - s0.y - 4);   // same floor as a drag (ui.js: innerHeight − 4); the old −40 stopped a resize 36 px short of where a drag could go (R 09-07 23:25)
+    if (z.includes('s')) f.state.h = clamp(s0.h + dy, f.minH, innerHeight - s0.y - 4);   // same floor as a drag (ui.js: innerHeight − 4); the old −40 stopped a resize 36 px short of where a drag could go (live 09-07 23:25)
     if (z.includes('w')) {
       const maxW = s0.x + s0.w - 8;                // west edge stops at x=8
       f.state.w = clamp(s0.w - dx, f.minW, maxW);
@@ -218,7 +218,7 @@ document.body.classList.toggle('ui-locked', locked);
  *                   closable, hidden, onResize }
  *                 x/y accept negatives to anchor from the right/bottom edge.
  */
-// The newcomer's layout is a hand-arranged one, not the panels' individual guesses: R's desktop
+// The newcomer's layout is a hand-arranged one, not the panels' individual guesses: the tester's desktop
 // (a 1904×844 window, 09-06) exported from a live session and anchored to edges so it holds on
 // other screens. Only world + chat are open; everything else is closed but pinned to the dock.
 // A frame's own saved state (its owner's moves) still wins; resetLayout returns HERE.
@@ -228,7 +228,7 @@ const DEFAULT_LAYOUT = {
   settings: { x: -8,  y: 381, w: 407, h: 443, hidden: true },
   profile:  { x: 48,  y: 46,  w: 505, h: 452, hidden: true },
   debug:    { x: -414, y: 8,  w: 342, h: 453, hidden: true },
-  emotes:   { x: 'center', y: -10, hidden: false },  // one bar across the bottom, OPEN by default (R 09-07 10:55 reference HUD); the bar sizes itself
+  emotes:   { x: 'center', y: -10, hidden: false },  // one bar across the bottom, OPEN by default (live 09-07 10:55 reference HUD); the bar sizes itself
 };
 export function makeFrame(id, opts = {}) {
   if (frames.has(id)) return frames.get(id);
@@ -426,7 +426,7 @@ export function makeFrame(id, opts = {}) {
     state.y = clamp(state.y, 8, Math.max(8, innerHeight - hh - 8));
     // A frame created hidden gets its x from resolveAnchor at CREATION width. If it's first shown after a
     // resize/maximize, a negative-x (right-edge) anchor must re-resolve to the CURRENT width, or it strands
-    // at its old absolute x (R 09-07: debug, x:-414, opened after maximizing and sat far left instead of
+    // at its old absolute x (live 09-07: debug, x:-414, opened after maximizing and sat far left instead of
     // flush-left of the right-docked panels). Only when there's no saved override.
     if (!saved && typeof opts.x === 'number' && opts.x < 0) state.x = Math.max(8, innerWidth + opts.x - state.w);
     if (opts.x === 'center' && !saved) state.x = Math.round((innerWidth - state.w) / 2);
@@ -454,7 +454,7 @@ function snapPosition(id, state, height) {
   for (const o of frames.values()) {
     if (o.id === id || !o.visible) continue;
     const r = o.el.getBoundingClientRect();
-    // neighbours snap EDGE TO EDGE — no 6 px gutter between panels (R 09-06 23:42: "directly stick edges together")
+    // neighbours snap EDGE TO EDGE — no 6 px gutter between panels (live 09-06 23:42: "directly stick edges together")
     edges.push({ x: r.left }, { x: r.right - state.w }, { x: r.right }, { x: r.left - state.w });
     edges.push({ y: r.top }, { y: r.bottom - height }, { y: r.bottom }, { y: r.top - height });
   }
@@ -503,7 +503,7 @@ addEventListener('resize', () => {
 
 export function getFrame(id) { return frames.get(id); }
 export function allFrames() { return [...frames.values()]; }
-// Esc toggles the whole set of open frames closed ⇄ back (R, 09-05 16:08),
+// Esc toggles the whole set of open frames closed ⇄ back (live, 09-05 16:08),
 // but only when nothing more specific wants the key: an open pop, a focused
 // field, a scrim, edit mode (build.js owns Esc there), a locked pointer, or
 // chat's own Esc. The remembered set lives only for the session.

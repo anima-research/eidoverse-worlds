@@ -11,6 +11,9 @@ import { registerXRPanel } from './xrpanels.js';
 // section-head emoji → Phosphor fill glyph (menu chrome never rides emoji —
 // the canvas-emoji trap generalizes: platform glyph gaps are silent)
 const EMOJI_ICON = {
+  '💬': 'chat-circle',
+  '👋': 'hand-waving',
+  '🐞': 'bug',
   '🧱': 'hammer', '🧍': 'person-arms-spread', '🌿': 'plant', '☀': 'sun',
   '✨': 'sparkle', '🌳': 'tree', '📜': 'scroll', '🧩': 'puzzle-piece', '🔊': 'speaker-high', '🎨': 'palette', '🖥': 'monitor', '🥽': 'virtual-reality',
 };
@@ -64,7 +67,7 @@ setErrorSink((context, message) => toast(`${context}: ${message}`, 'err'));
 
 bus.on('loading', () => {
   const items = loadingItems();
-  // the raw load list is debug's, not the HUD's (R, 09-05): shown only while debug is open
+  // the raw load list is debug's, not the HUD's (live, 09-05): shown only while debug is open
   el.loading.classList.toggle('on', items.length > 0 && !!getFrame('debug')?.visible);
   el.loading.textContent = items.map((l) =>
     l.total ? `⏳ ${l.label} ${Math.min(99, Math.round((l.done / l.total) * 100))}%` : `⏳ ${l.label}…`,
@@ -104,7 +107,7 @@ export function flashHint(html, ms = 2600) {
 }
 
 // ============================================================ cursors
-// The loupe cursor is inked with --fg (white — R 09-04: 'non-accent for now'). CSS url() cursors can't read
+// The loupe cursor is inked with --fg (white — live 09-04: 'non-accent for now'). CSS url() cursors can't read
 // custom properties, so the tint is baked here and published as --cur-loupe
 // (index.html holds the rule and the native fallback). Rebuilt when the style
 // panel writes a new accent.
@@ -145,7 +148,7 @@ document.addEventListener('input', (e) => {
 }, true);
 /** Repaint every slider fill under `root` NOW — call after setting .value from
  *  code (a reset, a sync). The sweep below also catches it, but a code-driven
- *  reset showed stale fills for up to a second (R, 09-04: 'half the sliders
+ *  reset showed stale fills for up to a second (live, 09-04: 'half the sliders
  *  highlight oddly' after Reset Hair). */
 export function paintRangesIn(root = document) {
   for (const i of root.querySelectorAll('input[type=range]')) paintRange(i);
@@ -295,8 +298,8 @@ export const escapeHtml = (v) => String(v).replace(/[&<>"]/g, (c) => (
 // ∃ menu. Layout lock also lives there — the rail carries only windows.
 const PINS_LS = 'ew-dock-pins';
 let pins = new Set();
-// every panel starts pinned to the dock; unpinning is the personal choice, not pinning (R, 09-06 23:34)
-const DEFAULT_PINS = ['profile', 'world', 'chat', 'emotes', 'debug', 'settings', 'edit'];   // 'edit' too (R 09-07 10:55) — its ownership gate still decides visibility
+// every panel starts pinned to the dock; unpinning is the personal choice, not pinning (live, 09-06 23:34)
+const DEFAULT_PINS = ['profile', 'world', 'chat', 'emotes', 'debug', 'settings', 'edit'];   // 'edit' too (live 09-07 10:55) — its ownership gate still decides visibility
 try { pins = new Set(JSON.parse(localStorage.getItem(PINS_LS) ?? JSON.stringify(DEFAULT_PINS))) } catch { pins = new Set(DEFAULT_PINS); }
 const savePins = () => { try { localStorage.setItem(PINS_LS, JSON.stringify([...pins])) } catch {} };
 let dockEntries = [];
@@ -322,10 +325,11 @@ if (typeof window !== 'undefined') {
   window.eido = Object.assign(window.eido ?? {}, { ui: { registerPanel } });
 }
 
-/** The rail as DATA, for the VR ring (R, 09-04 22:02: the radial IS the dock
+/** The rail as DATA, for the VR ring (live, 09-04 22:02: the radial IS the dock
  *  rendered radially — same pins). Open ∪ pinned, in dock order; action
  *  entries (the wrench) are not frames and stay out. */
 /** The profile button wears a presence dot in its bottom-right corner. */
+bus.on('presence:me', (v) => paintPresence(v));
 export function paintPresence(state) {
   const b = el.dock.querySelector('button[data-toggles="profile"]');
   if (!b) return;
@@ -382,7 +386,7 @@ export function initDock(entries) {
   dockEntries = [...lead, ...entries, ...dockEntries].filter((e) => !seen.has(e.id) && seen.add(e.id));
   // `last: true` entries (the edit wrench) ALWAYS close the list: edit is a
   // MODE, not a window, and it reads as one only when it sits apart at the end
-  // (R, 09-05). Mods registering later insert ahead of them (addDockButton).
+  // (live, 09-05). Mods registering later insert ahead of them (addDockButton).
   dockEntries.sort((a, b) => (a.last ? 1 : 0) - (b.last ? 1 : 0));
   el.dock.innerHTML = '';
   // ∃ leads the rail — one unit. (Mic/ear are separate fixed elements that
@@ -435,7 +439,7 @@ function applyDockEdge({ edge, along }) {
   const r = d.getBoundingClientRect();
   const max = horiz ? innerWidth - r.width - 4 : innerHeight - r.height - 4;
   // whole pixels: the rail sits on a blur layer, and a fractional offset (drag
-  // coords on a 125% display) rasterizes every glyph on it soft (R, 09-04)
+  // coords on a 125% display) rasterizes every glyph on it soft (live, 09-04)
   const a = Math.round(Math.max(4, Math.min(max, along)));
   if (edge === 'left') { d.style.left = '0'; d.style.top = `${a}px`; }
   if (edge === 'right') { d.style.right = '0'; d.style.top = `${a}px`; }
@@ -569,7 +573,7 @@ export function toggleEMenu(force) {
     dodgeEMenu(m);
   }
 }
-// The menu opens onto the nearest EMPTY spot (R 09-07 11:07: it opened over the profile panel). Its remembered
+// The menu opens onto the nearest EMPTY spot (live 09-07 11:07: it opened over the profile panel). Its remembered
 // or default position is kept when clear; otherwise candidate positions spiral outward from it on a 40 px grid
 // and the closest one that overlaps no visible frame wins. Never persisted — a dodge is not a choice.
 function dodgeEMenu(m) {
@@ -638,7 +642,7 @@ function buildEMenu(m) {
   for (const [nm, key, glyph, flip] of voiceRows) {
     // VR: the row is always LISTED, but greyed with an explainer when no headset
     // can present — and its pin is dead, so an absent glyph cannot be pinned to
-    // the rail (R, 09-05 18:22). The HUD itself never shows the visor unsensed.
+    // the rail (live, 09-05 18:22). The HUD itself never shows the visor unsensed.
     const dead = key === 'xr' && !xrGlyphAvailable();
     const row = document.createElement('button');
     row.className = `mrow${dead ? ' dead' : ''}`; row.dataset.row = `glyph:${key}`;
@@ -662,7 +666,7 @@ function buildEMenu(m) {
       row.className = 'mrow'; row.dataset.row = id;
       row.innerHTML = `${fsvg(icon, 15) || fsvg('puzzle-piece', 15)}<span class="mname">${id}</span>`;
       row.onclick = () => { action(); paintDock(); paintEMenu(); };
-      // a pin, like any window: pinned = the wrench stays on the rail (R, 09-05)
+      // a pin, like any window: pinned = the wrench stays on the rail (live, 09-05)
       const pin = document.createElement('button');
       pin.className = 'mpin'; pin.dataset.pin = id;
       pin.innerHTML = fsvg('push-pin', 13);
@@ -803,7 +807,7 @@ export function openDoor({ roster = [], needsKey = false, login = null, onEnter 
       c.innerHTML = `<img alt="" loading="lazy" src="/thumb/${encodeURIComponent(a.name)}.png">
          <div class="ph">🧍</div><span>${escapeHtml(a.name)}</span>`;
       // a JS listener, not an inline onerror= — inline handlers never ran here,
-      // so a body with no portrait showed the browser's broken-image glyph (R, 09-04)
+      // so a body with no portrait showed the browser's broken-image glyph (live, 09-04)
       const img = c.querySelector('img');
       img.addEventListener('error', () => { img.style.display = 'none'; c.querySelector('.ph').style.display = 'grid'; });
       c.onclick = () => { chosen = a.name; paint(); };
@@ -840,7 +844,5 @@ export function openDoor({ roster = [], needsKey = false, login = null, onEnter 
   setTimeout(() => (s.querySelector('#d-name') ?? s.querySelector('#d-go'))?.focus(), 30);
 }
 
-// COMPAT for the stacked review only (part 3 of 4): the entry file main.js still comes from upstream at this rung and
-// calls the roster that the people pane replaced. Part 4 brings the new entry and removes these two lines.
-export function initRoster() {}
-export function toggleRoster() { const f = getFrame('chat'); if (f && !f.visible) f.show(); document.querySelector('.chat-side-tog')?.click(); }
+// Tab: the people pane (the chat frame's side pane replaced the old roster)
+export function togglePeople() { const f = getFrame('chat'); if (f && !f.visible) f.show(); document.querySelector('.chat-side-tog')?.click(); }

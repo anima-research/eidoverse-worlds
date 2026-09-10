@@ -35,7 +35,7 @@ const INK = {
   get hot()   { return tok('--attn', '#ffd66b'); },
   // the slash is the OFF state's own ink, not an alarm: a silent body is the
   // rest state here ("a body should wake up silent"), and --err read as the one
-  // thing on screen outside the scheme (R, 09-03)
+  // thing on screen outside the scheme (live, 09-03)
   get slash() { return tok('--dim', '#7d8f8a'); },
 };
 
@@ -327,7 +327,7 @@ bus.on('audio:receive', paint);
 // its own 125ms poll, which read mesh state — so under SFU it never moved.
 bus.on('audio:mic', paint);
 bus.on('style', paint);
-bus.on('xr:state', paint);   // session start/end (R 09-05 22:04)       // the badge is baked from tokens (INK) — a Style change repaints it (R, 09-05)
+bus.on('xr:state', paint);   // session start/end (live 09-05 22:04)       // the badge is baked from tokens (INK) — a Style change repaints it (live, 09-05)
 setInterval(ensure, 1000);
 ensure();
 
