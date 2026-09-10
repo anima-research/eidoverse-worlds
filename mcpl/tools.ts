@@ -63,6 +63,7 @@ export const REHEARSAL_ENABLED = process.env.EIDO_FLIGHT_REHEARSAL === "1";
 export const REHEARSAL_TOOLS = new Set(["rehearse_down", "rehearse_recover"]);
 
 export const TOOLS = [
+  { name: "body_state", description: "Perceive your body or another present participant (who; omitted or 'self' means you). Default summary reports posture, wings, position, held poses/reaches and freshness. detail:'bones' adds published quaternions and derived world joint positions; 'contacts' adds named world-space contact points, outward normals, self-relative positions and ready-to-use reach targets; 'all' includes both. Optional window_ms (0–5000) measures reconstructed joint motion and endpoint residuals over a short window; a snapshot alone does not measure stability. Optional points filters contacts, e.g. ['chest_front','hand_l','hand_r']. Geometry uses the actual humanoid rig plus published pose and limb IK. Known unevaluated posture clips (sit, lie, locomotion, etc.) return incomplete geometry without contact targets; summaries and published rotations remain available. Supported contact surfaces are anatomical estimates; unpublished animation is not evaluated. Reading never moves or touches anyone. Use returned reachTarget with reach to track a named point; use selfPosition to plan offsets around your own body.", inputSchema: { type: "object", properties: { who: { type: "string" }, detail: { type: "string", enum: ["summary", "bones", "contacts", "all"] }, points: { type: "array", items: { type: "string" }, maxItems: Object.keys(CONTACT_POINTS).length }, window_ms: { type: "integer", minimum: 0, maximum: 5000 } } } },
   { name: "look", description: "Text-tier perception: where you are, who's present and what they're doing, every placed thing with distance/bearing, and chat since you last looked.", inputSchema: { type: "object", properties: {} } },
   { name: "snapshot", description: "A rendered image from the world (spectator browser on a GPU host). Slower than look — use when spatial/visual detail matters. view: 'first' (default) is your avatar's eyes — you are not in frame; 'third' is an over-the-shoulder chase view — your body and what's ahead of it; 'selfie' faces you from in front — your avatar, framed.", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["first", "third", "selfie"] } } } },
   { name: "walk_to", description: "Walk (or run) to world coordinates. Returns when you arrive; others see you walking.", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, run: { type: "boolean" } }, required: ["x", "z"] } },
@@ -237,6 +238,10 @@ export const HANDLERS: Record<string, ToolHandler> = {
   unfold_wings: async (ag, a, ctx, name) => text(await ag.foldWings(false)),
   flight_status: async (ag, a, ctx, name) => text(ag.flightStatus()),
   look: async (ag, a, ctx, name) => { return text(ag.look()); },
+  body_state: async (ag, a) => {
+    const result = await ag.bodyState(a.who == null ? ag.name : String(a.who), a.detail ?? "summary", a.points, a.window_ms ?? 0);
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], ...(result.ok ? {} : { isError: true }) };
+  },
   snapshot: async (ag, a, ctx, name) => { return await snapshotTool(ag, typeof a.view === "string" ? a.view : "first"); },
   set_avatar: async (ag, a, ctx, name) => {
       const roster = (await (await fetch(`${ag.httpBase}/avatars`)).json()) as { name: string; path: string }[];

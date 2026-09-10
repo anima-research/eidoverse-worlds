@@ -4,6 +4,7 @@
 // terrain replicated (Skye's terrain.js eval'd in Bun) so feet agree with
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
+import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
 import { mentionRegex } from "./mention.ts";
 import * as THREE_W from "three/webgpu";
 import * as TSL from "three/tsl";
@@ -61,12 +62,12 @@ const WALK = 1.55, RUN = 4.0, TICK_MS = 100, ARRIVE = 0.4;
 const EMITTER_COALESCE_MS = Number(process.env.EW_EMITTER_COALESCE_SEC ?? 4) * 1000;
 
 type Vec2 = { x: number; z: number };
-type Pose = { p: number[]; yaw: number; speed: number; clip: string; wingsFolded?: boolean };
+type Pose = PublicPose;
 type Entity = { id: string; lib: string; pos: number[]; yaw: number; actor: string; scale?: number;
   /** component bag (sockets, reactions, motion, …) — what a thing can DO;
    *  this is how affordances reach text-tier perception */
   comp?: Record<string, any> };
-type Person = { id: string; avatar: string; pose: Pose | null; agent?: boolean };
+type Person = { id: string; avatar: string; pose: Pose | null; agent?: boolean; observedAt?: number | null; bodyGeneration?: number };
 
 /** Verbs whose fold shapes the entity/mount views (epoch/sky shape other
  *  state; say/use/force shape nothing). */
@@ -300,6 +301,11 @@ export class WorldAgent {
   private reachBodies = new Map<string, ReachBody | null>();               // avatar path -> solver body
   private reachBodyLoads = new Map<string, Promise<ReachBody | null>>();
   private reachTicks = 0;
+  private bodyReader: BodyStateReader | null = null;
+  private bodyGenerationCounter = 0;
+  private selfBodyGeneration = 0;
+  private selfObservedAt: number | null = null;
+
   /** reach/touch ping refractory, keyed "kind:who:limb" — a hand trembling
    *  across the touch threshold must not knock twice. */
   private lastReachPing = new Map<string, number>();
@@ -633,6 +639,9 @@ export class WorldAgent {
             // provider reads as no.
             if (msg.yourRights) this.acceptEffectiveRights(msg.yourRights, "snapshot");
             this.entities.clear(); this.people.clear(); this.mounts.clear();
+            this.bodyReader?.forget();
+            this.selfBodyGeneration = ++this.bodyGenerationCounter;
+            this.selfObservedAt = Date.now();
             // fresh folds for a fresh world (§24k): the instant fold restarts
             // empty; the sim fold ADOPTS the sequencer's cut — a joiner
             // cannot recompute flights whose intents were folded out of the
@@ -656,7 +665,7 @@ export class WorldAgent {
               this.wingsFolded = msg.restore.wingsFolded === true;
             }
             this.restoredPose = true;
-            for (const p of msg.present) this.people.set(p.id, { id: p.id, avatar: p.avatar, pose: p.pose, agent: !!p.agent });
+            for (const p of msg.present) this.rememberBody(p.id, p.avatar, p.pose, !!p.agent);
             // A join is now the folded world plus a tail, not the whole log.
             // An agent that only read `entries` would arrive in an empty room.
             const oldestTail = msg.entries.length
@@ -798,13 +807,14 @@ export class WorldAgent {
           case "arrive":
             // the people map is truth and updates NOW; the narration goes
             // through the gate, where a reconnect flap collapses to nothing
-            this.people.set(msg.id, { id: msg.id, avatar: msg.avatar, pose: null, agent: !!msg.agent });
+            this.rememberBody(msg.id, msg.avatar, null, !!msg.agent);
             this.gate.presence(msg.id, "arrive");
             break;
           case "leave":
             this.noteLeave(msg.id);
             break;
           case "avatar-updated":
+            this.invalidateBodyAsset(msg.name);
             // avatar bytes changed: the held verdict demotes to pending NOW
             // and the refetch departs after the bump — a response already in
             // flight can never install the pre-change value (#105 B1)
@@ -831,6 +841,51 @@ export class WorldAgent {
         }
       };
     });
+  }
+
+  private rememberBody(id: string, avatar: string, pose: Pose | null, agent: boolean) {
+    this.bodyReader?.forget(id);
+    this.people.set(id, { id, avatar, pose, agent, observedAt: pose ? Date.now() : null,
+      bodyGeneration: ++this.bodyGenerationCounter });
+  }
+
+  private invalidateBodyAsset(name: string) {
+    if (nameFromAvatarPath(this.avatar) === name) {
+      this.selfBodyGeneration = ++this.bodyGenerationCounter;
+      this.bodyReader?.forget(this.name);
+    }
+    for (const p of this.people.values()) if (nameFromAvatarPath(p.avatar) === name) {
+      p.bodyGeneration = ++this.bodyGenerationCounter;
+      this.bodyReader?.forget(p.id);
+    }
+  }
+
+  private bodyObservation(who: string): BodyObservation | null {
+    if (who === this.name) {
+      // Same publishing predicate as tick(): a retired physics bag under an
+      // idle clip is internal debris, not the pose anyone else can see.
+      const bones = this.heldPose && (this.heldPoseAuthored || this.clip === "ragdoll") ? this.heldPose : null;
+      return { who, avatar: this.avatar, generation: this.selfBodyGeneration, self: true,
+        connected: this.joined && !this.closed, receivedAt: this.joined ? Date.now() : this.selfObservedAt,
+        source: bones ? this.heldPoseAuthored ? "authored" : "physics" : "unknown",
+        pose: this.selfObservedAt != null || this.joined ? structuredClone({
+          p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, speed: this.speed, clip: this.clip,
+          ...wingFoldPresence(this.wingsFolded), ...(bones ? { pose: bones } : {}),
+          ...(this.reaches.size ? { reach: Object.fromEntries(this.reaches) } : {}),
+        }) : null };
+    }
+    const p = this.people.get(who);
+    if (!p) return null;
+    return { who, avatar: p.avatar, generation: p.bodyGeneration ?? 0, self: false,
+      connected: this.joined && !this.closed, receivedAt: p.observedAt ?? null,
+      pose: p.pose ? structuredClone(p.pose) : null,
+      source: p.pose?.clip === "ragdoll" ? "physics" : "unknown" };
+  }
+
+  /** Rich public body perception. No action/consent lane is entered by reads. */
+  bodyState(who = this.name, detail = "summary", points?: unknown, windowMs: unknown = 0) {
+    this.bodyReader ??= new BodyStateReader(this.httpBase);
+    return this.bodyReader.readWindow(who === "self" ? this.name : who, detail, points, windowMs, id => this.bodyObservation(id));
   }
 
   /** Is this participant an agent? The server flags agent sessions in both
@@ -861,9 +916,15 @@ export class WorldAgent {
    *  cannot control the clock either sleeps (slow, flaky) or asserts nothing.
    *  Same reason and same shape as NoiseGate.presence/act's `ts`. */
   private notePose(id: string, pose: Pose, now = Date.now()) {
-    const p = this.people.get(id) ?? { id, avatar: "", pose: null };
+    // A dirty stage frame can flush after the participant's leave event.
+    // Once joined, only the snapshot/arrive roster introduces a body; a late
+    // pose must not resurrect someone who is no longer present.
+    if (this.joined && !this.people.has(id)) return;
+    const p: Person = this.people.get(id) ?? { id, avatar: "", pose: null };
     const prev = p.pose;
-    p.pose = pose; this.people.set(id, p);
+    p.pose = pose; p.observedAt = now;
+    p.bodyGeneration ??= ++this.bodyGenerationCounter;
+    this.people.set(id, p);
     // hands aimed at this body — before the spatial gate below, because a
     // reach descriptor is legible even from a sample with no usable position
     if (id !== this.name) this.noteReachEvents(id, prev, pose);
@@ -1005,6 +1066,7 @@ export class WorldAgent {
    *  as having walked away — one exit, one line. */
   private noteLeave(id: string) {
     this.people.delete(id);
+    this.bodyReader?.forget(id);
     this.lastNear.delete(id);
     this.nearArmed.delete(id);
     this.nonLocoSince.delete(id);
@@ -1674,6 +1736,7 @@ export class WorldAgent {
     // target moves, this body moves, and the far end's touch event fires on
     // the rising edge of what is re-checked here
     if (this.reaches.size && ++this.reachTicks % 5 === 0) this.reachTick();
+    this.selfObservedAt = Date.now();
     this.ws?.send(JSON.stringify({
       type: "pose",
       pose: {
@@ -2739,6 +2802,8 @@ export class WorldAgent {
    *  pose, and identity all carry over; only the body changes. */
   setAvatar(path: string) {
     this.avatar = path;
+    this.selfBodyGeneration = ++this.bodyGenerationCounter;
+    this.bodyReader?.forget(this.name);
     if (this.joined && this.ws?.readyState === 1) {
       this.ws.send(JSON.stringify({ type: "join", world: this.world, id: this.name, avatar: this.avatar,
         agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken }));

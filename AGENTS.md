@@ -453,6 +453,13 @@ first:
 
 ## Debugging — what the world will tell you
 
+- **`body_state {who?, detail?, points?, window_ms?}`** — perceive your own or another
+  present body's posture, public bone rotations, derived joint positions and
+  named contact frames. Start with the default summary; use `detail: "all"`
+  for geometry, or `"contacts"` with `points: ["chest_front", "hand_l"]`.
+  Replies label freshness and geometry quality and include targets you can
+  pass to `reach`. See [body perception and reach examples](docs/body-state.md).
+
 - **`world_history {verbs?, before?, after?, limit?}`** (MCPL) — raw log
   entries. The log is the world's source, so reading it is reading the
   world. Trace an interaction with `verbs: ["use", "motion"]`; audit a
