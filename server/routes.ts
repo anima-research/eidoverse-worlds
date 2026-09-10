@@ -19,6 +19,12 @@ import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
 import { LOD_RECIPE, lodVariantPath } from "./store-variants.ts";
 import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
+import { createNativeLogin } from "./native-login.ts";
+const nativeLogin = createNativeLogin({
+  origin: process.env.HN_NATIVE_ORIGIN ?? "https://eidoverse.animalabs.ai",
+  login: HN_LOGIN_URL, enabled: Boolean(HN_ISSUER_KEY), session: sessionFromCookie,
+  issue: session => { const sid = randomBytes(32).toString("hex"); hnSessions.set(sid, session); saveSessions(); return sid; },
+});
 import { resolveLibFile } from "./lint.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { worlds, getWorld, type World } from "./world.ts";
@@ -314,6 +320,7 @@ type Route = {
 };
 
 const ROUTES: Route[] = [
+  { match: u => u.pathname === "/native" || u.pathname.startsWith("/native/"), handler: ({ req }) => nativeLogin(req) },
   {
     match: (u) => u.pathname === "/ws",
     handler: ({ req, srv }) => {
@@ -358,7 +365,11 @@ const ROUTES: Route[] = [
   history.replaceState(null, '', '/auth');
   const r = await fetch('/auth', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: tok }) });
   const j = await r.json().catch(() => ({}));
-  if (r.ok) { m.textContent = 'welcome, ' + j.name; location.replace('/'); }
+  if (r.ok) {
+    m.textContent = 'welcome, ' + j.name;
+    let code = ''; try { code = sessionStorage.getItem('ew-native-pair-code') || ''; } catch {}
+    location.replace(/^[A-F0-9]{5}-[A-F0-9]{5}$/.test(code) ? '/native#code=' + code : '/');
+  }
   else m.textContent = 'login failed: ' + (j.error ?? r.status) + ' — start again from the login page';
 })();
 </script>`, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } }),

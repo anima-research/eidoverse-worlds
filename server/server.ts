@@ -369,6 +369,11 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // with an explanation and a close code the client knows not to retry
     // (retrying a name that can never exist is just a polite DoS).
     const wname = String(msg.world ?? "commons");
+    if (auth?.nativeWorld && wname !== auth.nativeWorld) {
+      ws.send(JSON.stringify({ type: "error", error: "this native session is limited to water" }));
+      ws.close(4003, "native session world restriction");
+      return null;
+    }
     if (!/^[a-z0-9_-]{1,64}$/i.test(wname)) {
       ws.send(JSON.stringify({ type: "error", error: `"${wname}" is not a world name — check the link that brought you here` }));
       c.ws.close?.(4005, "bad world name");
@@ -655,7 +660,7 @@ function buildSnapshot(w: World, c: Client) {
 
 const server = Bun.serve({
   port: PORT,
-  hostname: "0.0.0.0",
+  hostname: process.env.HOST ?? "0.0.0.0",
   async fetch(req, srv) {
     // The whole HTTP surface is routes.ts's table (§15, 7c) — one row per
     // endpoint, first match wins, in exactly the order the if-chain had.
@@ -1120,7 +1125,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-console.log(`eidoverse-worlds sequencer on http://0.0.0.0:${PORT}`);
+console.log(`eidoverse-worlds sequencer on http://${process.env.HOST ?? "0.0.0.0"}:${PORT}`);
 console.log(`  library: ${LIBRARY_DIR}`);
 console.log(`  worlds:  ${WORLDS_DIR}`);
 if (!JOIN_TOKEN) console.log("  ⚠ NO JOIN_TOKEN — the door is OPEN. Fine on a tailnet, wrong on a public box.");
