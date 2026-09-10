@@ -18,7 +18,8 @@ const WORN_LS = 'ew-worn';
 let worn = [];
 try { worn = JSON.parse(localStorage.getItem(WORN_LS) || '[]'); } catch { worn = []; }
 if (!Array.isArray(worn)) worn = [];
-function noteWorn(name) {
+function noteWorn(v) {
+  const name = typeof v === 'string' ? v : v?.name;   // mybody.setMe emits { name, path }
   if (!name) return;
   worn = [name, ...worn.filter((n) => n !== name)].slice(0, 24);   // newest first
   try { localStorage.setItem(WORN_LS, JSON.stringify(worn)); } catch { /* private mode */ }

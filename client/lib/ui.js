@@ -344,7 +344,8 @@ export function dockPins() {
 }
 
 function addDockButton(entry) {
-  const { id, label, icon, action } = entry;
+  const { id, label, action } = entry;
+  const icon = entry.icon ?? EMOJI_ICON[(label ?? '').replace(/\uFE0F/g, '')];   // upstream main.js still labels the rail with emoji; chrome never rides emoji
   const b = document.createElement('button');
   // both weights ride the button; CSS shows the LINE glyph at rest and the
   // FILL glyph while the window is open (the .on class) — a glyph swap, not
@@ -659,7 +660,8 @@ function buildEMenu(m) {
   }
   { const s = document.createElement('div'); s.className = 'msep'; m.appendChild(s); }
   for (const entry of dockEntries) {
-    const { id, icon, action, gate } = entry;
+    const { id, action, gate } = entry;
+    const icon = entry.icon ?? EMOJI_ICON[(entry.label ?? '').replace(/\uFE0F/g, '')];
     if (action) {
       if (gate && !gate()) continue;
       const row = document.createElement('button');
