@@ -5,7 +5,7 @@
 //   · setPanelAlpha not persisted (stylepanel.js)          → "survives a re-apply from storage"
 //   · renderer select without needsReload (videopanel.js) → "grows the reload button"
 //   · presence dispatch not reaching setPresence (profile.js) → "presence() is busy" / "dock dot"
-//   · setMe not emitting avatar-worn (mybody.js)          → "setMe emits avatar-worn with the name"
+//   · announceWorn not emitting avatar-worn (mybody.js)          → "announceWorn emits avatar-worn with the name (the switch site and the initial body call it)"
 //
 // RED AT HEAD 1fd6af8 (a product finding, kept honest rather than skipped): mybody.setMe emits
 // avatar-worn with a `{ name, path }` payload, but bodies.js's `noteWorn(name)` — its only consumer —
@@ -195,12 +195,12 @@ console.log('BODIES — the list populates on avatar-worn, which setMe emits');
   check('wearing shows the current name', pane().querySelector('.sp-f-info .sp-info')?.textContent === 'claude', pane().querySelector('.sp-f-info .sp-info')?.textContent ?? '');
   check('nothing worn yet', pane().querySelector('.sp-empty')?.textContent?.startsWith('nothing worn yet') === true, pane().querySelector('.sp-list')?.textContent ?? '');
   const e0 = emitted.length;
-  mybody.setMe({ name: 'fox', path: 'library/fox.vrm', dispose() {} });
-  check('setMe emits avatar-worn with the name', emitted.slice(e0).some((e) => e[0] === 'avatar-worn' && e[1]?.name === 'fox'), JSON.stringify(emitted.slice(e0)));
+  mybody.announceWorn('fox', 'library/fox.vrm');
+  check('announceWorn emits avatar-worn with the name (the switch site and the initial body call it)', emitted.slice(e0).some((e) => e[0] === 'avatar-worn' && e[1]?.name === 'fox'), JSON.stringify(emitted.slice(e0)));
   check('the list shows the worn body', !pane().querySelector('.sp-empty') && pane().querySelector('.sp-list')?.textContent?.includes('fox') === true, pane().querySelector('.sp-list')?.textContent ?? '');
   check('…with its height', pane().querySelector('.sp-list')?.textContent?.includes('1.52 m') === true);
   check('worn is remembered per browser (ew-worn)', JSON.parse(localStorage.getItem('ew-worn') || '[]')[0] === 'fox', String(localStorage.getItem('ew-worn')));
-  mybody.setMe({ name: 'owl', path: 'library/owl.vrm', dispose() {} });
+  mybody.announceWorn('owl', 'library/owl.vrm');
   const txt = pane().querySelector('.sp-list')?.textContent ?? '';
   check('a second body lists newest first', txt.indexOf('owl') < txt.indexOf('fox') && txt.indexOf('owl') >= 0, txt);
   const c0 = calls.length;

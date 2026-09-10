@@ -12,7 +12,6 @@ import { presence, setPresence, STATES } from './presence.js';
 import { renderDOM } from './panels.js';
 import { makeFrame } from './frames.js';
 import { fsvg } from './icons.js';
-import { toast } from './ui.js';
 
 let frame = null;
 
@@ -44,7 +43,7 @@ export function initProfile() {
 }
 
 // ---- the body: portrait (= presence control) · header · tabs · one pane
-// R, 09-05 16:06 — "try for the redesign, it was a stub anyway":
+// live — "try for the redesign, it was a stub anyway":
 //   • the portrait circle carries the profile glyph as its placeholder and IS
 //     the presence control: click → a Discord-style pop with present/away/busy
 //   • tabs across the top under the header (side tabs fight 420 px; bottom

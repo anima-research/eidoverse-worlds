@@ -73,8 +73,8 @@ const EAR_SVG = (on) => {
 </svg>`;
 };
 
-// Phosphor 'visor' (MIT; R, 09-04 23:25: "the visor reads better"): the
-// REGULAR weight in every state — its neighbours are line drawings (R,
+// Phosphor 'visor' (MIT; live: "the visor reads better"): the
+// REGULAR weight in every state — its neighbours are line drawings (live,
 // 09-04 23:48: "keep it just the outline"). Ink follows the pair: --dim
 // off, --brand live.
 const VISOR = { regular: 'M183.05,56H72A72,72,0,0,0,.08,131.4c1.69,36.69,31.76,66.79,68.45,68.52,15.85.74,32-5.9,49.38-20.3a15.88,15.88,0,0,1,20.24,0C148.72,188.39,165,200,184,200a72,72,0,0,0,72-72.95C255.49,87.87,222.76,56,183.05,56Zm40.81,111.34A55.63,55.63,0,0,1,184,184c-13.88,0-27-9.51-35.65-16.67a31.91,31.91,0,0,0-40.65,0C93.52,179,80.94,184.49,69.28,183.94a56.36,56.36,0,0,1-53.22-53.28A56,56,0,0,1,72,72H183.05c31,0,56.55,24.79,56.95,55.25A55.66,55.66,0,0,1,223.86,167.34ZM184,96a8,8,0,0,1-8,8H80a8,8,0,0,1,0-16h96A8,8,0,0,1,184,96Z', fill: 'M183.05,56H72A72,72,0,0,0,.08,131.4c1.69,36.69,31.76,66.79,68.45,68.52,15.84.72,32-5.9,49.38-20.3a15.87,15.87,0,0,1,20.24,0C148.72,188.39,165,200,184,200a72,72,0,0,0,72-72.95C255.49,87.87,222.76,56,183.05,56ZM176,104H80a8,8,0,0,1,0-16h96a8,8,0,0,1,0,16Z' };
@@ -88,7 +88,7 @@ let micBtn = null, earBtn = null, xrBtn = null;
 // the third glyph is OPTIONAL: xr.js registers it only where the browser
 // answers isSessionSupported('immersive-vr'); until then it does not exist
 let xrHook = null;   // { onclick, live: () => bool }
-// R 09-08 01:12: a headset switched off after the page loaded still showed a live-looking visor (isSessionSupported is
+// live: a headset switched off after the page loaded still showed a live-looking visor (isSessionSupported is
 // answered once at boot) and the click failed silently. When a session request is refused for want of a device, the
 // visor goes lighter grey, blinks twice, and carries an attention-coloured tooltip until the next successful entry.
 let xrAbsent = false;

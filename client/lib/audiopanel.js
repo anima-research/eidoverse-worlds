@@ -54,7 +54,7 @@ import { micOn, toggleMic } from './micstate.js';
 // already applied the click — display and reality separating one last time.
 import { CONFIG } from './base.js';
 
-// The panel's row layout, carried BY THE MODULE. Found live 2026-08-06 (R,
+// The panel's row layout, carried BY THE MODULE. Found live 2026-08-06 (live,
 // in-headset): the sp-row/sp-label classes came from the lab's panel
 // framework and were never extracted with this file, so nothing upstream
 // defined them — the mic meter (an inline span with flex:1) collapsed to a

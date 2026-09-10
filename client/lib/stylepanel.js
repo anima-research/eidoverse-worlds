@@ -63,7 +63,7 @@ export function initStylePanel() {
       sw.type = 'color';
       sw.value = currentHex(f);
       // no inline styling: input[type=color] is the house swatch (outlined — the
-      // 'panel' swatch vanished on the panel without it; R, 09-04)
+      // 'panel' swatch vanished on the panel without it)
       sw.oninput = () => {
         const v = f.kind === 'rgbTriplet' ? hexToTriplet(sw.value) : sw.value;
         rootStyle().setProperty(f.key, v);
@@ -76,7 +76,7 @@ export function initStylePanel() {
       body.appendChild(row);
     }
     // panel visibility — the --panel-a opacity dial (the visionOS "Tinted"
-    // lesson already lived behind /panels; R asked for it here, 09-01 23:31)
+    // lesson already lived behind /panels; asked for here, 09-01 23:31)
     const vrow = document.createElement('label');
     vrow.className = 'row';
     const vnm = document.createElement('span');

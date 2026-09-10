@@ -9,16 +9,15 @@ import { EMOTE_ORDER, EMOTE_ICONS } from './avatar.js';
 import { myState } from './controller.js';
 import { getMe } from './mybody.js';
 import { registerXRPanel } from './xrpanels.js';
-import { fsvg, svg } from './icons.js';
-import { setPosture } from './controller.js';
+import { setPosture, sitHere, standUp, getPosture } from './controller.js';
 const POSTURES = ['sit', 'stand', 'lie'];
 // through the same flows the ring used: a nearby seat wins for sit, stand dismounts
 function posture(k) {
-  // the desktop body takes the posture directly; the xr:* events are for the VR entry (part 4) to
-  // pick a seat / dismount — no listener at this rung, harmless
-  setPosture(k === 'stand' ? null : k);
-  if (k === 'sit') bus.emit('xr:sit');
-  else if (k === 'stand') bus.emit('xr:stand');
+  // the desktop body: sit runs the controller's seat search (a nearby seat wins, else sit where you stand),
+  // stand leaves seat and posture. The xr:* events are for the VR entry (part 4) — no listener at this rung.
+  if (k === 'sit') { sitHere(); bus.emit('xr:sit'); }
+  else if (k === 'stand') { standUp(); bus.emit('xr:stand'); }
+  else setPosture('lie');
 }
 let litEmote = null, litUntil = 0;   // net.js clears myState.emote on the first pose send, so the bar remembers its own
 import { bus } from './base.js';
@@ -145,7 +144,7 @@ function emojiRenders(s) {
 const nameSvg = (t) => `<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 26 26"><text x="13" y="16" font-family="system-ui, sans-serif" font-size="${t.length > 6 ? 5.5 : 7}" font-weight="600" text-anchor="middle" fill="#f2f7f5">${t}</text></svg>`;
 export function ringEmoteEntries() {
   return [
-    ...POSTURES.map((k) => ({ svg: nameSvg(k), label: k, on: () => (k === 'lie' ? myState.posture === 'lie' : k === 'sit' ? !!myState.seat : false), close: true, act: () => posture(k) })),
+    ...POSTURES.map((k) => ({ svg: nameSvg(k), label: k, on: () => (k === 'lie' ? getPosture() === 'lie' : k === 'sit' ? getPosture() === 'sit' : false), close: true, act: () => posture(k) })),
     ...EMOTE_ORDER.map((name) => ({ svg: nameSvg(name), label: name, close: true, act: () => { getMe()?.playEmote(name); myState.emote = name; } })),
   ];
 }

@@ -5,7 +5,7 @@
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/emotebar-test.ts
 //
 // Each block names the product line that would silence it:
-//   posture('sit') no longer calling setPosture      → "sit tile sets the desktop posture" goes red
+//   posture('sit') no longer calling sitHere          → "sit tile runs the controller seat search" goes red
 //   lit tile following only myState.emote (old code)  → "fired tile stays lit after net.js clears" goes red
 import { plugin } from 'bun';
 const here = (f: string) => new URL(f, import.meta.url).pathname;
@@ -79,21 +79,21 @@ check('show() refits the saved size (still 9×1)', f.visible && f._state.w === 3
 console.log('EMOTEBAR — posture tiles act on the body AND announce to VR');
 postureCalls.length = 0; busLog.length = 0;
 tile('[data-posture=sit]').onclick!(new Event('click'));
-check('sit tile sets the desktop posture: setPosture("sit")', postureCalls.length === 1 && postureCalls[0] === 'sit', JSON.stringify(postureCalls));
+check('sit tile runs the controller seat search: sitHere()', postureCalls.length === 1 && postureCalls[0] === 'sitHere', JSON.stringify(postureCalls));
 check('sit tile emits xr:sit', busLog.includes('xr:sit'), JSON.stringify(busLog));
 postureCalls.length = 0; busLog.length = 0;
 tile('[data-posture=stand]').onclick!(new Event('click'));
-check('stand tile dismounts: setPosture(null)', postureCalls.length === 1 && postureCalls[0] === null, JSON.stringify(postureCalls));
+check('stand tile leaves seat and posture: standUp()', postureCalls.length === 1 && postureCalls[0] === 'standUp', JSON.stringify(postureCalls));
 check('stand tile emits xr:stand', busLog.includes('xr:stand'), JSON.stringify(busLog));
 postureCalls.length = 0; busLog.length = 0;
 tile('[data-posture=lie]').onclick!(new Event('click'));
 check('lie tile: setPosture("lie"), no xr event', postureCalls[0] === 'lie' && !busLog.some((t: string) => t.startsWith('xr:')), JSON.stringify({ postureCalls, busLog }));
 postureCalls.length = 0;
 xrPanels[0].dispatch('sit');
-check('the XR quad\'s sit button takes the same path', postureCalls[0] === 'sit');
+check('the XR quad\'s sit button takes the same path', postureCalls[0] === 'sitHere');
 postureCalls.length = 0;
 ringEmoteEntries().find((e: any) => e.label === 'stand')!.act();
-check('the ring\'s stand entry takes the same path', postureCalls[0] === null);
+check('the ring\'s stand entry takes the same path', postureCalls[0] === 'standUp');
 myState.clip = 'sit'; paint();
 check('the sit tile is lit while the body\'s clip is sit', tile('[data-posture=sit]').classList.contains('on') && !tile('[data-posture=stand]').classList.contains('on'));
 myState.clip = null; paint();

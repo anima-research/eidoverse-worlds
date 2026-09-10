@@ -883,4 +883,7 @@ export function updateSpectator(dt, remote) {
 
 export function setCamYaw(v) { camYaw = v; }
 export function setPosture(p) { posture = p; }
+// the emote bar's posture tiles (emotebar.js): sit runs the same seat search as X, stand leaves seat and posture
+export function sitHere() { if (posture !== 'sit') toggleSit(); }
+export function standUp() { if (posture === 'sit' || posture === 'lie') { posture = null; myState.seat = null; } }
 export const getPosture = () => posture;

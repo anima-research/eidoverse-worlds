@@ -75,8 +75,7 @@ import { updateRig, rigDebug } from './lib/lightrig.js';
 import { startPrefetch } from './lib/prefetch.js';
 import {
   getMe, setMe, getMyAvatarPath, getMyAvatarName, resolveMyAvatarPath,
-  rosterLazy, chooseAvatar,
-} from './lib/mybody.js';
+  rosterLazy, chooseAvatar, announceWorn } from './lib/mybody.js';
 import {
   initLocalBody, isDowned, activeRagdoll, goLimp, getUp,
   stepRagdoll, updateMountedMe, updateSeatHint,
@@ -223,7 +222,7 @@ function start() {
   // selected voice — used to be installed ONLY inside the `?tts=PORT` block, so
   // it existed exclusively for bodies launched with a URL parameter. A human who
   // picked a voice in the panel loaded a 63 MB model, saw "ready", typed, and
-  // heard nothing, because nothing was listening for their says (R, 2026-08-09:
+  // heard nothing, because nothing was listening for their says (live, 2026-08-09:
   // "I don't hear anything when I type into the chat box. Hearing yourself as a
   // human using TTS is half the fun").
   //
@@ -246,9 +245,10 @@ function start() {
 
   if (!isViewer) {
     resolveMyAvatarPath()
-      .then((path) => makeAvatar(CONFIG.name, path, { urgent: true })) // your body skips the load queue
-      .then((av) => {
+      .then((path) => makeAvatar(CONFIG.name, path, { urgent: true }).then((av) => ({ av, path }))) // your body skips the load queue
+      .then(({ av, path }) => {
         setMe(av);
+        announceWorn(getMyAvatarName(), path);
         bodySettled = true;
         markPhase('body', 1);
         // Contribute a portrait of this body so the next person picks from

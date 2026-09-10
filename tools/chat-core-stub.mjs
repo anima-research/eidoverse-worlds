@@ -7,5 +7,5 @@ export const bus = {
 };
 export const assignColors = () => {};
 export const colorFor = () => '#8fb572';
-// chat.js → xrpanels.js → domquad.js (VR alpha, part 3) construct THREE objects at import; every class is inert here
+// chat.js → xrpanels.js → domquad.js (VR alpha; the quads themselves are part 4) construct THREE objects at import; every class is inert here
 export const THREE = new Proxy({}, { get: () => class { constructor() {} set() { return this; } add() {} remove() {} setFromCamera() {} intersectObjects() { return []; } } });

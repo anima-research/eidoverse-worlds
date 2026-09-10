@@ -13,7 +13,7 @@ import { bus } from './base.js';
 
 const LS = (id) => `ew-frame-${id}`;
 
-// Layout-version guard. DEFAULT_LAYOUT is a hand-arranged default (R's, edge-anchored). A frame's own
+// Layout-version guard. DEFAULT_LAYOUT is a hand-arranged default (edge-anchored). A frame's own
 // saved moves win over it — but that means when the DEFAULT changes, anyone with older per-frame saves
 // stays stuck on stale positions (live 09-07: maximized and found world/settings NOT right-docked because an
 // old save overrode the re-baked default). Bump this whenever DEFAULT_LAYOUT changes materially: on load,
@@ -105,7 +105,7 @@ function _grabbableAt(e) {
   for (let t = e.target; t instanceof HTMLElement; t = t.parentElement) {
     if (t.tagName === 'LABEL') return false;
     const cs = getComputedStyle(t);
-    if (cs.cursor === 'pointer' || cs.cursor.endsWith('resize')) return false;   // a resize-cursor element is a HANDLE, not a grab surface (chat's pane grip moved the whole frame; R 09-04)
+    if (cs.cursor === 'pointer' || cs.cursor.endsWith('resize')) return false;   // a resize-cursor element is a HANDLE, not a grab surface (chat's pane grip moved the whole frame;)
     if ((cs.userSelect || cs.webkitUserSelect) === 'text') return false;
     if (t.classList?.contains('frame')) return true;   // reached bare chrome
   }
@@ -141,7 +141,7 @@ document.addEventListener('pointerdown', (e) => {
     // grows are clamped so no edge ever leaves the viewport
     // (windows stay inside the active area, full stop)
     if (z.includes('e')) f.state.w = clamp(s0.w + dx, f.minW, innerWidth - s0.x - 8);
-    if (z.includes('s')) f.state.h = clamp(s0.h + dy, f.minH, innerHeight - s0.y - 4);   // same floor as a drag (ui.js: innerHeight − 4); the old −40 stopped a resize 36 px short of where a drag could go (live 09-07 23:25)
+    if (z.includes('s')) f.state.h = clamp(s0.h + dy, f.minH, innerHeight - s0.y - 4);   // 4 px above the bottom edge; a drag clamps at 8 (below) — a resize may end 4 px lower; the old −40 stopped a resize 36 px short of where a drag could go (live 09-07 23:25)
     if (z.includes('w')) {
       const maxW = s0.x + s0.w - 8;                // west edge stops at x=8
       f.state.w = clamp(s0.w - dx, f.minW, maxW);
@@ -343,7 +343,7 @@ export function makeFrame(id, opts = {}) {
   }
 
   // ---- buttons: name + ✕ only. (Collapse/minimize is GONE — chip, verb, state and the dblclick that
-  // still fired it; R 09-06 12:47: frames 'disappearing forever' were minimized to a title bar.)
+  // still fired it; live: frames 'disappearing forever' were minimized to a title bar.)
   if (closable) {
     const b = document.createElement('button');
     b.className = 'fr-btn';

@@ -163,7 +163,7 @@ input::placeholder { color: var(--dim); }
 select {
   font: var(--fs-xs) var(--font); background: var(--well); color: var(--fg);
   border: 1px solid var(--edge); border-radius: 5px; padding: 5px;
-  max-width: 100%; min-width: 0;   /* never wider than its row (video panel clipped at the frame edge, R 09-04) */
+  max-width: 100%; min-width: 0;   /* never wider than its row (video panel clipped at the frame edge) */
   /* the popup list is the OS's: color-scheme dark makes Chrome/Edge draw it dark
      instead of white-with-a-blue-bar; option colors follow the panel. The hover
      bar inside a native popup stays the OS's — a house dropdown would need a
@@ -352,7 +352,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 /* the affordance is the LINE itself, not a band: a 1px stroke that turns brand under the pointer */
 .chat-side-grip::before { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 1px; background: transparent; }
 .chat-side-grip:hover::before, .chat-side-grip:active::before { background: var(--brand); }
-.chat-side-list { flex: 1; overflow-y: auto; padding: 6px 4px 6px 6px; }   /* R 09-07: more horizontal room for names */
+.chat-side-list { flex: 1; overflow-y: auto; padding: 6px 4px 6px 6px; }   /* live: more horizontal room for names */
 .chat-side-list .who-row { display: flex; justify-content: flex-start; gap: 4px; padding: 1px 0; font-size: var(--fs-sm); }
 .chat-side-list .who-row .who-mark { margin-right: 2px; }   /* + the row gap 4 → 6 px dot→name (was 15) */
 .chat-side-list .who-row .d:empty { display: none; }
@@ -532,7 +532,7 @@ input[type=range] { flex: 1; accent-color: var(--control); min-width: 0;
 /* the track joins the theme: bright-filled to the thumb, accent-flavored
    dark well after it (the value must read at a glance). WebKit has no
    native progress fill on custom tracks, so ui.js paints --p per input.
-   Un-scoped from .row on 09-04: Scene's sliders live outside a .row and were browser-default (R). */
+   Un-scoped from .row on 09-04: Scene's sliders live outside a .row and were browser-default. */
 input[type=range] { --p: 50%; }
 /* no transition on the track: its --p gradient stop would ANIMATE on release,
    fading the dark half up and back for a beat (live, 09-04). Chunkier + round ends. */
@@ -608,7 +608,7 @@ input[type=range]:disabled { accent-color: color-mix(in srgb, var(--control) 40%
 .row.wide > .nm { width: auto; max-width: none; overflow: visible; text-align: left; line-height: 1.25; white-space: normal; }
 /* selects stay compact and start-aligned; the CONTROL CELL stretches so a slider
    or meter inside fills the row (Audio's did not — .ctl had been swept into the
-   12rem cap by a bad edit; R 09-04) */
+   12rem cap by a bad edit;) */
 .row.wide > select, .row.wide .ctl > select { max-width: 12rem; justify-self: start; }
 .row.wide > .ctl { justify-self: stretch; display: flex; align-items: center; gap: 6px; min-width: 0; }
 /* a label + a bare control still lines up: the control owns the whole second
@@ -638,7 +638,7 @@ input[type=range]:disabled { accent-color: color-mix(in srgb, var(--control) 40%
   color: var(--brand); border: none; cursor: pointer; background: none; box-shadow: none;
 }
 #dock #hud.emark { color: var(--dim); }                             /* local only */
-#dock #hud.emark.net-live { color: var(--brand); }   /* connected — the accent itself, same as an open panel's icon and the live mic/ear (ONE ink; R, 09-04 23:59: line-weight off-icons solved readability, so on can be pure brand) */
+#dock #hud.emark.net-live { color: var(--brand); }   /* connected — the accent itself, same as an open panel's icon and the live mic/ear (ONE ink; live: line-weight off-icons solved readability, so on can be pure brand) */
 #dock #hud.emark:hover, #dock #hud.emark.net-live:hover { color: var(--fg); }   /* hover = white, like the rail's buttons (live, 09-04) */
 #dock #hud.emark.net-wait { color: var(--dim); animation: netpulse 2.6s ease-in-out infinite; }  /* trying */
 /* arranging (menu-edit) mode: hovering the E or a button still goes white —
@@ -662,7 +662,7 @@ body.arranging #dock #hud.emark {
   background: color-mix(in srgb, var(--who) 55%, rgb(var(--panel-rgb))); color: var(--fg); border: 1px solid transparent; cursor: pointer; }
 .pf-portrait:hover, .pf-portrait[aria-expanded="true"] { border-color: var(--brand); }
 .pf-portrait svg { opacity: .85; }
-/* presence marks are FIXED colours and distinct SHAPES, never the accent (R,
+/* presence marks are FIXED colours and distinct SHAPES, never the accent (live,
    09-05 16:47: standard green/amber/red, shapes for colourblind readers):
    present = green circle · away = amber diamond · busy = red square-with-bar */
 .pf-portrait-dot { position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgb(var(--panel-rgb)); background: #3ddc84; }
@@ -985,7 +985,7 @@ body.altgrab .frame:active { cursor: grabbing; }
    so a second row lines up under the first */
 #door .grid.dense { display: grid; grid-template-columns: repeat(5, 1fr); }
 #door .card img, #door .card .ph { aspect-ratio: 3 / 4; }
-.sec > .body .av-grid .card { align-self: stretch; width: auto; align-items: stretch; }   /* fill the grid cell. The house rule `.sec > .body button { align-self:flex-start; width:fit-content }` hit these <button> cards, so each took the width of its NAME — as many sizes as names (R's shot, 09-05) */
+.sec > .body .av-grid .card { align-self: stretch; width: auto; align-items: stretch; }   /* fill the grid cell. The house rule `.sec > .body button { align-self:flex-start; width:fit-content }` hit these <button> cards, so each took the width of its NAME — as many sizes as names (screenshot, 09-05) */
 .av-shot { position: relative; width: 100%; aspect-ratio: 3 / 4; border-radius: 4px; overflow: hidden; background: rgba(0,0,0,.35); }   /* World › avatar: the box sizes the card; the image only fills it */
 .av-shot .ph { display: grid; position: absolute; inset: 0; width: auto; aspect-ratio: auto; }
 .av-shot img { position: absolute; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; object-fit: cover; }

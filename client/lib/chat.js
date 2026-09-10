@@ -1052,7 +1052,7 @@ bus.on('pinged', () => {
 
 // ---- the chat frame as a VR quad: READ + canned replies --------------------
 // Typing in a headset needs a keyboard grid the renderer does not have yet
-// (a design item for R); until then the quad shows the log's tail and offers
+// (a design item); until then the quad shows the log's tail and offers
 // a few whole replies that go through the SAME onSend typing goes through.
 // Honest about the gap in its title.
 const CANNED = ['hello', 'yes', 'no', 'one moment', 'come here', 'thank you'];

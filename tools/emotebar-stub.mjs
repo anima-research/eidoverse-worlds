@@ -40,6 +40,9 @@ export const EMOTE_ICONS = {};
 export const myState = { emote: null, clip: null, posture: null, seat: null };
 export const postureCalls = [];
 export function setPosture(p) { postureCalls.push(p); }
+export function sitHere() { postureCalls.push('sitHere'); }
+export function standUp() { postureCalls.push('standUp'); }
+export const getPosture = () => null;
 
 // ---- mybody.js
 export const played = [];

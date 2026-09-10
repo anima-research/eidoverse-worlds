@@ -30,7 +30,7 @@ function ensureStage() {
   // strip gets a solid token blend; desktop-only furniture (✕, resize, collapse) is hidden on the quad
   const css = document.createElement('style'); css.id = 'xr-stage-css';
   // The desktop panel is a dark translucency over a bright viewport; on a quad it composites over
-  // nothing and then sits unlit in a lit world, so the same colour reads near-black (R in the Frame,
+  // nothing and then sits unlit in a lit world, so the same colour reads near-black (the frame test,
   // 09-05 23:17: "the panel colour might not have come through"). Lift toward the text tone, opaque.
   // ?quadlift=N is the mix percent (default 18; 0 = the desktop colour as-is).
   const lift = Math.max(0, Math.min(60, Number(new URLSearchParams(location.search).get('quadlift') ?? 18)));
@@ -158,7 +158,7 @@ export const domQuadIds = () => (quads ?? []).map((q) => q.id);
 // grip+trigger chord on a quad takes the QUAD (xr.js asks here before it asks the world, the same
 // order a click uses): the mesh rides the hand; on release it goes back to the rig where it
 // visually is, roll stripped so text stays upright, pitch clamped so it never lies flat. Where you
-// put a panel is remembered for the session (rig-local), not across sessions — yet.
+// put a panel is remembered per browser (ew-xr-quads in localStorage, above).
 const _e = new THREE.Euler(0, 0, 0, 'YXZ');
 export function domQuadsGrab(handRay) {
   if (!quads || !shown) return null;

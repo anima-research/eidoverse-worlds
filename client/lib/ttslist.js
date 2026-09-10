@@ -93,7 +93,7 @@ const ROW = `
    forever. */
 .vl-add { padding: 3px 6px; }
 .vl-row:not(.vl-add) { padding-left: 2px; }
-/* 🔴 THE SEPARATOR'S SPACE IS ABOVE IT, NOT INSIDE THE FIRST VERB (R,
+/* 🔴 THE SEPARATOR'S SPACE IS ABOVE IT, NOT INSIDE THE FIRST VERB (live,
    2026-08-16: "can you scootch the + add a speech server button closer to the
    + add a text-to-speech model button? That spacing looks odd").
    padding-top on this row put 6px INSIDE the first button, between its border
@@ -349,7 +349,7 @@ export function renderVoiceList(host, { items, selected, on, busy, loading }) {
   const add = document.createElement('div');
   add.className = 'vl-row vl-add vl-verbs-start';
   add.tabIndex = 0;
-  // SAY WHAT THE CONTROL WANTS, in the words of the thing it wants (R,
+  // SAY WHAT THE CONTROL WANTS, in the words of the thing it wants (live,
   // 2026-08-09: "I might label it text-to-speech model or something like that
   // just to make what this option is looking for most explicit"). "voice file"
   // could be a .wav; "text-to-speech model" can only be the thing it is. The two

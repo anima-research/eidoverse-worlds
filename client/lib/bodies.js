@@ -1,6 +1,6 @@
 // bodies — choose what you wear, declared ONCE as fields and rendered twice:
 // a section of the profile frame (renderDOM) and part of the profile quad, both dispatching
-// into the same switchAvatar the palette's cards call. R, 09-04 23:59: "the
+// into the same switchAvatar the palette's cards call. live: "the
 // exact same panels in Desktop mode — hopefully we only need to maintain
 // ONE set of menus"; and 22:57: a body is never optional — this is the
 // in-headset way to pick one when the default is not what you want.

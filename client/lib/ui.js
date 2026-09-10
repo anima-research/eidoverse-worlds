@@ -6,7 +6,6 @@ import { bus, CONFIG, setName, setToken, setErrorSink, report, colorFor } from '
 import { resizeZoneAt } from './frames.js';
 import { flipMic, flipEar, micLive, earOn, glyphPinned, setGlyphPinned, micGlyph, earGlyph, xrGlyph, xrGlyphAvailable, xrLive, flipXr } from './mictoggle.js';
 import { svg, fsvg, hasFill, rsvg, hasLine } from './icons.js';
-import { registerXRPanel } from './xrpanels.js';
 
 // section-head emoji → Phosphor fill glyph (menu chrome never rides emoji —
 // the canvas-emoji trap generalizes: platform glyph gaps are silent)
@@ -284,7 +283,7 @@ export function collapseAll() {
 
 // ============================================================ who's here
 
-// (the roster frame is gone — 'present' lives in Chat's side pane, R 09-05)
+// (the roster frame is gone — 'present' lives in Chat's side pane)
 export const escapeHtml = (v) => String(v).replace(/[&<>"]/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
