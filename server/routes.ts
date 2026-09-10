@@ -586,6 +586,35 @@ const ROUTES: Route[] = [
     },
   },
   {
+    // Discovery for travel: which worlds this sequencer fronts, and who is
+    // embodied where. Union of LOADED worlds and on-disk worlds with a log —
+    // never creates one (getWorld is not called). Same trust level as the
+    // world log: public reads. Presence names are the same ids every join
+    // snapshot already hands out; spectators and renderers appear as nothing
+    // here exactly as they do in-world.
+    match: (u) => u.pathname === "/worlds",
+    handler: () => {
+      const names = new Set<string>(worlds.keys());
+      try {
+        for (const n of readdirSync(WORLDS_DIR)) {
+          if (/^[a-z0-9_-]{1,64}$/i.test(n) && existsSync(join(WORLDS_DIR, n, "log.jsonl"))) names.add(n);
+        }
+      } catch { /* no worlds dir yet: only loaded worlds */ }
+      const out = [...names].sort().map((name) => {
+        const w = worlds.get(name);
+        const present = w ? [...w.clients].filter((c) => !c.spectator && !c.superseded) : [];
+        return {
+          name,
+          loaded: !!w,
+          people: present.filter((c) => !c.agent).map((c) => c.id),
+          agents: present.filter((c) => c.agent).map((c) => c.id),
+        };
+      });
+      return new Response(JSON.stringify({ worlds: out }),
+        { headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    },
+  },
+  {
     match: (u) => u.pathname === "/avatars",
     handler: () => new Response(JSON.stringify(avatarRoster()),
       { headers: { "content-type": "application/json", "cache-control": "no-store",
