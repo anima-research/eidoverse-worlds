@@ -88,7 +88,19 @@ This composes two existing limb reaches. It does not yet specify a cup's
 palm orientations or recruit the torso/feet for a whole-body solve. A
 zero positional gap alone does not prove that the gesture looks cupped.
 
-Release one hand or both with `clear_reach`:
+Release one of your own hands or both with `clear_reach` (browser: `/letgo left`,
+`/letgo right`, or `/letgo`). Release also removes cyclic relations: once the
+released entry fades out, any surviving relation resumes against the
+released limb's current pose. A cycle cannot indefinitely prevent cleanup.
+
+These commands clear **your outgoing reaches**. Your own knockdown also
+clears your outgoing reaches. Walking, changing posture or falling does not
+revoke somebody else's incoming tracking relation; moving out of reach can
+make contact fail while the relation remains. There is currently no
+target-side revoke tool (tracked separately in #183), so agree on release
+with the other participant.
+
+Examples:
 
 ```json
 {"limb":"leftHand"}

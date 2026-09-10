@@ -1112,7 +1112,7 @@ export class Avatar {
   // a point that may be moving — someone else's shoulder, a thrown ball, a
   // door handle on a swinging door. So it is stored as a target FUNCTION and
   // re-solved every frame, which is what makes it track. The cost is one
-  // closed-form solve per reaching arm per frame: no iteration, no history.
+  // closed-form solve per reaching arm per frame, with continuity history.
   //
   // It gets its own override slot rather than sharing `_override`, because a
   // held pose and a reach have to coexist — an agent holding a posture and
@@ -1147,6 +1147,9 @@ export class Avatar {
       lastWrist: prev?.lastWrist ?? null,
       relation: opts.relation ?? null,
       palm: opts.palm !== false,
+      // Retargeting still has to restore the previous writes when the new
+      // relation cannot solve (including a cycle over a paused base clip).
+      _nu: prev?._nu, _nl: prev?._nl, _nh: prev?._nh,
     });
     return true;
   }
@@ -1173,19 +1176,22 @@ export class Avatar {
       const c = node && this._composed.get(node);
       if (c?.live && node.quaternion.equals(c.out)) { node.quaternion.copy(c.base); c.live = false; }
     }
+    // Release is a lifecycle operation, including when a cycle prevents a
+    // solve. Retire fading entries BEFORE planning so their dependants can
+    // resume against the released limb's clip pose in this same frame.
+    for (const [key, r] of this._reach) {
+      if (r.wantWeight !== 0) continue;
+      r.weight += (r.wantWeight - r.weight) * Math.min(1, 12 * dt);
+      if (r.wantWeight === 0 && r.weight < 0.02) {
+        this._reach.delete(key);
+      }
+    }
     const owner = this._reachOwner ?? 'self';
     const plan = planReaches([...this._reach].map(([limb, r]) => ({ owner, limb, target: r.relation, reach: r })));
     for (const e of plan.blocked) { e.reach.bound = ['cyclic-reach']; e.reach.gap = null; }
     for (const { limb: key, reach: r } of plan.order) {
-      r.weight += (r.wantWeight - r.weight) * Math.min(1, 12 * dt);
-      if (r.wantWeight === 0 && r.weight < 0.02) {
-        for (const node of [r._nu, r._nl, r._nh]) {
-          const c = node && this._composed.get(node);
-          if (c?.live && node.quaternion.equals(c.out)) { node.quaternion.copy(c.base); c.live = false; }
-        }
-        this._reach.delete(key);
-        continue;
-      }
+      // Only solvable reaches fade IN; all releases already faded above.
+      if (r.wantWeight !== 0) r.weight += (r.wantWeight - r.weight) * Math.min(1, 12 * dt);
       const ch = this._measureChain(key);
       if (!ch) { this._reach.delete(key); continue; }
 
