@@ -93,7 +93,7 @@ function stand({ constant = false } = {}) {
   // behaviour a rig without lids or wings needs anyway — but they have to be
   // real methods, or setLimp throws and the whole suite stops at test two.
   for (const m of ['setLimp', '_park', '_resolveBones', '_humanoidBones', 'setPose',
-                   'clearPose', '_applyOverride', '_composeBegin', '_composeEnd',
+                   'clearPose', '_applyOverride', '_reachOwned', '_composeBegin', '_composeEnd',
                    'setEyes', '_findLids', '_findWings', '_releaseHair', '_combHair']) {
     self[m] = (Avatar.prototype as any)[m];
   }

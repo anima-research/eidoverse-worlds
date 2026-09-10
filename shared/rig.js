@@ -27,7 +27,13 @@ export function humanBones(g) {
   const v1 = g.extensions?.VRMC_vrm?.humanoid?.humanBones;
   if (v1) return Object.fromEntries(Object.entries(v1).map(([b, v]) => [b, v.node]));
   const v0 = g.extensions?.VRM?.humanoid?.humanBones;
-  if (v0) return Object.fromEntries(v0.map((h) => [h.bone, h.node]));
+  if (v0) {
+    // Match three-vrm's VRM0 -> normalized VRM1 humanoid vocabulary. Keeping
+    // the old thumb names shifts every thumb rotation onto the wrong joint.
+    const rename = { leftThumbProximal: 'leftThumbMetacarpal', leftThumbIntermediate: 'leftThumbProximal',
+      rightThumbProximal: 'rightThumbMetacarpal', rightThumbIntermediate: 'rightThumbProximal' };
+    return Object.fromEntries(v0.map((h) => [rename[h.bone] ?? h.bone, h.node]));
+  }
   return null;
 }
 
@@ -109,7 +115,8 @@ export function rigMath(THREE) {
 
     const av = {
       root, nodes, poses: 0, limp: false,
-      vrm: { humanoid: {
+      vrm: { meta: { metaVersion: vrm0 ? "0" : "1" }, humanoid: {
+        normalizedRestPose: Object.fromEntries(Object.entries(nodes).map(([k, n]) => [k, { position: n.position.toArray(), rotation: [0, 0, 0, 1] } ])),
         humanBones: Object.fromEntries(Object.keys(nodes).map((k) => [k, {}])),
         getNormalizedBoneNode: (j) => nodes[j] ?? null,
       } },

@@ -27,6 +27,7 @@ import { surfaceUnder } from './colliders.js';
 import { DRIVEN_BONES } from './ragdoll.js';
 import { stroke as strokeIcon } from './icons.js';
 import { SEAT_CLIP_FILE } from './seatcore.js';
+import { planReaches } from '../../shared/reachorder.js';
 
 // The clip library is ~1.9MB PER SLOT. Waiting for all seven before a body
 // could exist put 13MB between a person and their own legs — the single
@@ -1141,6 +1142,11 @@ export class Avatar {
     this._reach.set(key, {
       key, target, weight: prev?.weight ?? 0, wantWeight: opts.weight ?? 1,
       pole: opts.pole ?? null, lastElbow: prev?.lastElbow ?? null, bound: [],
+      lastPick: prev?.lastPick ?? null, lastSwivel: prev?.lastSwivel ?? null, lastTwist: prev?.lastTwist ?? null,
+      lastGap: prev?.gap ?? prev?.lastGap ?? null,
+      lastWrist: prev?.lastWrist ?? null,
+      relation: opts.relation ?? null,
+      palm: opts.palm !== false,
     });
     return true;
   }
@@ -1162,7 +1168,15 @@ export class Avatar {
 
   _applyReach(dt, now) {
     if (!this._reach?.size) return;
-    for (const [key, r] of [...this._reach]) {
+    // Establish this frame's clip base before any relation reads a target.
+    for (const r of this._reach.values()) for (const node of [r._nu, r._nl, r._nh]) {
+      const c = node && this._composed.get(node);
+      if (c?.live && node.quaternion.equals(c.out)) { node.quaternion.copy(c.base); c.live = false; }
+    }
+    const owner = this._reachOwner ?? 'self';
+    const plan = planReaches([...this._reach].map(([limb, r]) => ({ owner, limb, target: r.relation, reach: r })));
+    for (const e of plan.blocked) { e.reach.bound = ['cyclic-reach']; e.reach.gap = null; }
+    for (const { limb: key, reach: r } of plan.order) {
       r.weight += (r.wantWeight - r.weight) * Math.min(1, 12 * dt);
       if (r.wantWeight === 0 && r.weight < 0.02) {
         for (const node of [r._nu, r._nl, r._nh]) {
@@ -1187,7 +1201,7 @@ export class Avatar {
       // outward normal
       const palm = (r.palm !== false && normal && normal.length === 3 && normal.every(Number.isFinite))
         ? { dir: [-normal[0], -normal[1], -normal[2]] } : null;
-      const out = solveChain(ch, this, tw, r.lastElbow, { palm, lastPick: r.lastPick, lastSwivel: r.lastSwivel });
+      const out = solveChain(ch, this, tw, r.lastElbow, { palm, lastPick: r.lastPick, lastSwivel: r.lastSwivel, lastTwist: r.lastTwist, lastWrist: r.lastWrist, lastGap: r.lastGap, dt });
       if (!out.ok) { r.bound = [out.why]; continue; }
       r.bound = out.res.bound; r.gap = out.res.gap; r.lastPick = out.pick ?? null; r.lastSwivel = out.swivelUsed ?? null; r.penetration = out.penetration ?? 0; r.lastElbow = out.elbowOffset;
       // what the solver BELIEVES it placed, in world space, so a probe can
@@ -1200,6 +1214,9 @@ export class Avatar {
       this._writeBone(ch.nodes.lower, q.lower, r.weight);
       if (out.hand) { r._nh = ch.nodes.end; this._writeBone(ch.nodes.end, out.hand, r.weight); }
       r.palmResidual = out.palmResidual ?? null;
+      r.lastTwist = out.palmTwist ?? null;
+      r.lastGap = out.res.gap;
+      r.lastWrist = out.hand ?? null;
     }
   }
 

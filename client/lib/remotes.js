@@ -12,6 +12,7 @@ import { makeAvatar } from './avatar.js';
 import { avatarMounts, mountTransform } from './world.js';
 import { declareSeatState, clearSeatState } from './seats.js';
 import { applyRemoteReach, noteReachEvents } from './reachnet.js';
+import { syncClipPhase } from './poseclips.js';
 import { applyWingFoldPresence } from '../../shared/wingpresence.js';
 
 export const remotes = new Map(); // id -> RemoteBody
@@ -225,7 +226,12 @@ function applyPresenceExtras(r, s) {
     // remote tumble, animating the shoulders, hands and head of a body that
     // was supposed to be limp. The streamed pose owns the bones while down.
     if (clip === 'ragdoll') r.avatar.setLimp(true);
-    else { r.avatar.setLimp(false); r.avatar.setClip(clip, s.speed ?? 0); }
+    else {
+      r.avatar.setLimp(false); r.avatar.setClip(clip, s.speed ?? 0);
+      // Apply each new owner's phase sample once; interpolation frames between
+      // packets must keep advancing rather than repeatedly freezing the clip.
+      syncClipPhase(r.avatar, s, r.clipPhaseStamp ??= {});
+    }
   }
   // reach descriptors ride the same newest sample; the diff inside is
   // edge-triggered, so per-frame reapplication costs nothing when idle
@@ -294,6 +300,7 @@ export function updateRemotes(dt, now = performance.now()) {
         r.avatar.setLimp(false);
         if (r.lastClip !== sw.pose) { r.lastClip = sw.pose; }
         r.avatar.setClip(sw.pose, 0);   // emote-aware: no-ops while a gesture owns the body
+        if ((s?.clipTimeSlot ?? s?.clip) === sw.pose) syncClipPhase(r.avatar, s, r.clipPhaseStamp ??= {});
         const d = r.avatar.root.position.distanceTo(camera.position);
         const every = Math.round((d < LOD_NEAR ? 1 : d < LOD_MID ? 2 : 4) * lodBias);
         r.lodAcc += dt;

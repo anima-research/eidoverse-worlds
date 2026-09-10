@@ -1,6 +1,6 @@
 {
   "measuredAt": "2026-09-10",
-  "note": "Exact bytes served by the optional real-avatar gate; these local external fixtures are not bundled or included as production assets.",
+  "note": "Exact byte inputs for body readback and posture parity in the contact-repair revision; external assets are not bundled into production.",
   "corpora": {
     "library": {
       "passed": 4,
@@ -25,7 +25,12 @@
           "bytes": 10594744,
           "sha256": "9ca085c1b0fb77507c4f157fd65075baa473aa478bfb936f296a4b9eaca3f9f6"
         }
-      ]
+      ],
+      "animation": {
+        "name": "idle.vrma",
+        "bytes": 2042700,
+        "sha256": "84f6aa93def3c0531ed95a25fefe5b8aaaf72f38db816d85f42f019784306d9d"
+      }
     },
     "optimized": {
       "passed": 14,
@@ -100,7 +105,52 @@
           "bytes": 1243168,
           "sha256": "0079a8f1850b79580298a3ea190c6d861874d6af15f2077d1fb57de767abad9b"
         }
-      ]
+      ],
+      "animation": {
+        "name": "idle.vrma",
+        "bytes": 2042700,
+        "sha256": "84f6aa93def3c0531ed95a25fefe5b8aaaf72f38db816d85f42f019784306d9d"
+      }
     }
+  },
+  "postureComparisons": {
+    "checks": 12,
+    "inputs": [
+      {
+        "path": "eidoverse/assets/vrms/claude.vrm",
+        "bytes": 848636,
+        "sha256": "883eb1d6c63c7409e1cbebb335509af346e92d046c4c9916ebc7695da4c64073"
+      },
+      {
+        "path": "eidoverse/assets/animations/idle.vrma",
+        "bytes": 2042700,
+        "sha256": "84f6aa93def3c0531ed95a25fefe5b8aaaf72f38db816d85f42f019784306d9d"
+      },
+      {
+        "path": "eidoverse/assets/animations/sitting_on_ground.vrma",
+        "bytes": 1594308,
+        "sha256": "6a671334b2b12a3149aa4ce81dbb170b5b5f951226a3067ac0525ab8b702224e"
+      },
+      {
+        "path": "eidoverse/assets/animations/sitting_normal_chair.vrma",
+        "bytes": 1516244,
+        "sha256": "ea31ca53057f3302b6103f323dbcf47c0220d2a9742039ae150c45674ca47456"
+      },
+      {
+        "path": "eidoverse/assets/animations/sit_laying_on_ground.vrma",
+        "bytes": 1582408,
+        "sha256": "6a6b375e20e83ee97111d9c51cbea03bf3a27ca7ca9683688034746ef1331d3a"
+      },
+      {
+        "path": "eidoverse/assets/vrms/orion.vrm",
+        "bytes": 6148340,
+        "sha256": "efa262d131a6bd919c1a776f0707c2d358bfb3bf0b82e6886b43d873969574f5"
+      },
+      {
+        "path": "eidoverse/assets/vrms/claude_suit.vrm",
+        "bytes": 10594744,
+        "sha256": "9ca085c1b0fb77507c4f157fd65075baa473aa478bfb936f296a4b9eaca3f9f6"
+      }
+    ]
   }
 }
