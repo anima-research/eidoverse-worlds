@@ -74,8 +74,8 @@ const seenErrors = new Map(); // key -> { n, nextAt }
 // ---- console tee: what a visitor's page says, where the operator can read it.
 // Every report() plus window errors post to /clientlog (key-gated, bounded
 // server-side). Off the hot path (queued, one flush per second), never throws,
-// and never carries the key in the payload — the key rides the query like the
-// door's own requests. `tee(line)` is for lines worth keeping ([xr] etc).
+// and never carries the key in the payload or the URL — it rides the Authorization header
+// (Bearer), below. `tee(line)` is for lines worth keeping ([xr] etc).
 let teeQ = [], teeTimer = 0, teeMuted = false;
 function teeFlush() {
   teeTimer = 0;

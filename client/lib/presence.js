@@ -1,8 +1,9 @@
 // presence — present / away / busy, for the profile icon's corner dot
 // (bottom-right, the Discord/Slack convention; R, 09-05). Automatic between
 // present and away (tab hidden, or no input for AWAY_S); busy is a choice made
-// in the profile and held until you change it. Local only for now — nothing
-// is sent over the wire until the server grows a field for it.
+// in the profile and held until you change it. Rides every pose packet as
+// `presence` (net.js; shared/presencewire.js is the validator) — no receiver reads it at this rung;
+// applyPresenceWire has no caller yet.
 import { bus } from './base.js';
 
 export const STATES = ['present', 'away', 'busy'];
