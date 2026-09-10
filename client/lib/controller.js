@@ -883,7 +883,14 @@ export function updateSpectator(dt, remote) {
 
 export function setCamYaw(v) { camYaw = v; }
 export function setPosture(p) { posture = p; }
-// the emote bar's posture tiles (emotebar.js): sit runs the same seat search as X, stand leaves seat and posture
-export function sitHere() { if (posture !== 'sit') toggleSit(); }
-export function standUp() { if (posture === 'sit' || posture === 'lie') { posture = null; myState.seat = null; } }
+// the emote bar's posture tiles (emotebar.js): sit runs the same seat search as X, stand leaves seat and posture.
+// A declared-seat MOUNT (sockets, localbody.js) is neither posture nor myState.seat — the seat hook dismounts on X —
+// so the tiles ask first: sitting on a swing, 'sit' is a no-op and 'stand' is the dismount (third review 2026-09-10)
+let mountedHook = () => false;
+export function setMountedHook(fn) { mountedHook = fn; }
+export function sitHere() { if (mountedHook()) return; if (posture !== 'sit') toggleSit(); }
+export function standUp() {
+  if (mountedHook()) { seatHook(); return; }
+  if (posture === 'sit' || posture === 'lie') { posture = null; myState.seat = null; }
+}
 export const getPosture = () => posture;

@@ -93,7 +93,7 @@ export function initEmoteBar() {
     });
     if (f._state) snapTo(f._state.w);
   };
-  const paint = () => { const lit = myState.emote ?? (performance.now() < litUntil ? litEmote : null); for (const [n, b] of tiles) b.classList.toggle('on', n.startsWith('posture:') ? myState.clip === n.slice(8) : lit === n); };
+  const paint = () => { const lit = myState.emote ?? (performance.now() < litUntil ? litEmote : null); for (const [n, b] of tiles) b.classList.toggle('on', n.startsWith('posture:') ? (myState.clip === n.slice(8) || (n === 'posture:sit' && myState.clip === 'sitchair')) : lit === n); };
   fill();
   bus.on('emotes-updated', fill);
   // (postures are tiles in the grid above — one row, one grammar)

@@ -47,17 +47,15 @@ export function initProfile() {
 //   • the portrait circle carries the profile glyph as its placeholder and IS
 //     the presence control: click → a Discord-style pop with present/away/busy
 //   • tabs across the top under the header (side tabs fight 420 px; bottom
-//     tabs read as a dock): avatars · satchel · worlds · friends
+//     tabs read as a dock): avatars today; satchel · worlds · friends when they have content
 //   • the last tab is remembered per browser (ew-profile-tab)
 //   • the bodies list is the avatars tab's content — no more folding
 const TABS = [
   ['avatars', 'person-arms-spread', 'bodies you have worn'],
-  ['satchel', 'push-pin', 'personal inventory'],
-  ['worlds', 'planet', 'places you know'],
-  ['friends', 'users', 'people you keep'],
+  // satchel · worlds · friends land with their content — a tab that says "not built yet" is a promise
 ];
 const TAB_KEY = 'ew-profile-tab';
-let tab = (() => { try { return localStorage.getItem(TAB_KEY) || 'avatars'; } catch { return 'avatars'; } })();
+let tab = (() => { try { const t = localStorage.getItem(TAB_KEY); return TABS.some(([k]) => k === t) ? t : 'avatars'; } catch { return 'avatars'; } })();
 const PRESENCE_WORD = { present: 'present · here and active', away: 'away · idle or elsewhere', busy: 'busy · here, not to be disturbed' };
 
 function paint() {

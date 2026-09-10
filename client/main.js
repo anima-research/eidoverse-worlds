@@ -248,7 +248,7 @@ function start() {
       .then((path) => makeAvatar(CONFIG.name, path, { urgent: true }).then((av) => ({ av, path }))) // your body skips the load queue
       .then(({ av, path }) => {
         setMe(av);
-        announceWorn(getMyAvatarName(), path);
+        announceWorn(path.split('/').pop().replace(/\.vrm.*$/, ''), path);   // the roster's name for this file, not a stale ew-avatar-name
         bodySettled = true;
         markPhase('body', 1);
         // Contribute a portrait of this body so the next person picks from
