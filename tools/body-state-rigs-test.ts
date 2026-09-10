@@ -1,18 +1,23 @@
 // Optional local corpus gate. The owned-server test has self-contained rigs;
 // this exercises the real installed avatars without touching a running world.
 // EIDOVERSE_DIR=/path/to/eidoverse-video bun tools/body-state-rigs-test.ts
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { BodyStateReader } from "../mcpl/body-state.ts";
 const library = process.env.EIDOVERSE_DIR;
 if (!library) throw new Error("set EIDOVERSE_DIR to the avatar library");
 const dir = join(library, "eidoverse/assets/vrms");
-const paths = readdirSync(dir).filter(n => n.endsWith(".vrm") && !n.endsWith(".ktx2.vrm"));
+const paths = readdirSync(dir).filter(n => n.endsWith(".vrm") && !n.endsWith(".ktx2.vrm")).sort();
 if (!paths.length) throw new Error("no real avatar fixtures found");
-const files = new Map(paths.map(n => ["/library/" + n, join(dir, n)]));
+const files = new Map(paths.map(n => ["/library/" + n, readFileSync(join(dir, n))]));
+const manifest = paths.map(name => {
+  const bytes = files.get("/library/" + name)!;
+  return { name, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+});
 const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch(req) {
   const path = files.get(decodeURIComponent(new URL(req.url).pathname));
-  return path ? new Response(Bun.file(path)) : new Response("missing", { status: 404 });
+  return path ? new Response(path) : new Response("missing", { status: 404 });
 } });
 let passed = 0;
 try {
@@ -32,3 +37,4 @@ try {
   }
 } finally { server.stop(true); }
 console.log(`${passed}/${paths.length} real avatars passed`);
+if (process.env.BODY_STATE_MANIFEST_OUT) writeFileSync(process.env.BODY_STATE_MANIFEST_OUT, JSON.stringify({ passed, fixtures: manifest }, null, 2) + "\n");

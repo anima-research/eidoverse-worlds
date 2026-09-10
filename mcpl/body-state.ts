@@ -1,7 +1,7 @@
 // Body perception: observations first, optional CPU geometry second. Reads
 // never publish a pose, touch a body, or mutate the live reach solver.
 import * as THREE from "three";
-import { glbJson, humanBones, worldPositions, isVrm0 } from "../tools/rig-load.mjs";
+import { glbJson, humanBones, worldPositions, isVrm0 } from "./rig.ts";
 import { CONTACT_POINTS, canonicalPoint } from "../shared/contact.js";
 import { normalizeReachBag, TOUCH_GAP } from "../shared/reachwire.js";
 import { ReachBody } from "./physics.ts";
@@ -63,6 +63,21 @@ function freshness(o: BodyObservation, now = Date.now()) {
     : !o.connected || ageMs > BODY_STALE_MS ? "stale" : "current";
   return { status, observedAt: o.receivedAt, ageMs, producedAt: null,
     clock: "local observation; producer timestamp unavailable", connected: o.connected };
+}
+
+/** Without evaluating the clip, a rest rig is not the current seated, lying,
+ * walking, etc. body. An idle estimate and an explicitly supplied ragdoll
+ * pose remain supported. The actual posture evaluator is tracked by #179. */
+function postureUnavailable(o: BodyObservation) {
+  const p = o.pose;
+  return p?.clip !== "idle" && !(p?.clip === "ragdoll" && Object.keys(p.pose ?? {}).length > 0);
+}
+
+function missingPosture(out: any, o: BodyObservation) {
+  return { ...out, ok: false, publishedRotations: structuredClone(o.pose?.pose ?? {}),
+    error: `current-body geometry unavailable: posture '${o.pose?.clip ?? "unknown"}' is not evaluated`,
+    geometry: { status: "incomplete", basis: "rest_pose_estimate", clip: o.pose?.clip ?? null,
+      reason: "posture_not_evaluated", currentBodyTargets: false } };
 }
 
 function rootPoint(p: number[], pose: PublicPose) {
@@ -174,6 +189,7 @@ export class BodyStateReader {
     };
     let out = base(initial);
     if (detail === "summary" || !out.ok) return out;
+    if (postureUnavailable(initial)) return missingPosture(out, initial);
 
     // Load the requested body and any body its public reach descriptors target.
     // Each query gets private nodes, so solving for readback cannot move the
@@ -201,9 +217,10 @@ export class BodyStateReader {
       }
       out = base(latest);
       if (!out.ok) return out;
+      if (postureUnavailable(latest)) return missingPosture(out, latest);
       for (const [id, item] of loaded) {
         const o = observe(id);
-        if (!o || o.generation !== item.observation.generation || o.avatar !== item.observation.avatar || freshness(o).status !== "current") {
+        if (!o || o.generation !== item.observation.generation || o.avatar !== item.observation.avatar || freshness(o).status !== "current" || postureUnavailable(o)) {
           loaded.delete(id); continue;
         }
         item.observation = o;
@@ -224,7 +241,10 @@ export class BodyStateReader {
         if (e.t.who) target = loaded.get(e.t.who)?.body.contact(e.t.point, e.t.standoff ?? 0.02);
         else if (!e.t.space) target = e.t.p;
         else {
-          const frame = e.t.space === "self" ? pose : loaded.get(e.t.space)?.observation.pose;
+          // A root-relative point does not depend on the target's posture
+          // clip or on loading its skeleton. Only named body contacts do.
+          const other = e.t.space === "self" ? null : observe(e.t.space);
+          const frame = e.t.space === "self" ? pose : other && freshness(other).status === "current" ? other.pose : null;
           if (frame) target = rootPoint(e.t.p, frame);
         }
         targets.push([limb, e, target]);
@@ -251,7 +271,7 @@ export class BodyStateReader {
         out.contacts = Object.fromEntries(points.map(point => {
           const c = own.body.contact(point, 0); // report the surface, not reach's default 2cm standoff
           return [point, c ? { position: c.pos, normal: c.normal, selfPosition: selfPoint(c.pos, pose), quality: "anatomical_estimate",
-            reachTarget: { who, point }, bone: (CONTACT_POINTS as any)[point].bone }
+            ...(!incomplete ? { reachTarget: { who, point } } : {}), bone: (CONTACT_POINTS as any)[point].bone }
             : { position: null, normal: null, quality: "unavailable", reason: "required bones are missing" }];
         }));
       }

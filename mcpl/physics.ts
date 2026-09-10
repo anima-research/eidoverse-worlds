@@ -9,13 +9,13 @@
 // being semantically informed that it fell.
 //
 // What the agent needs in-process is only its skeleton: joint rest positions
-// parsed straight from its VRM's GLB JSON chunk (tools/rig-load.mjs — no
+// parsed straight from its VRM's GLB JSON chunk (shared/rig.js — no
 // meshes, no textures, no fs), wrapped in a stand-in Avatar whose normalized
 // bone nodes are exactly what Ragdoll drives.
 //
 // The one piece of ceremony: client/lib/ragdoll.js imports './core.js', which
-// builds a WebGPURenderer at import time. Headless callers swap in the test
-// stub via a Bun loader plugin — which must be registered BEFORE the dynamic
+// builds a WebGPURenderer at import time. Headless callers use the CPU
+// runtime adapter via a Bun loader plugin, registered before the dynamic
 // import, which is why everything here loads lazily and the module exports
 // only async doors. Sim unavailable (plugin failure, unparseable VRM) is a
 // soft state: the agent falls back to the slump.
@@ -47,7 +47,7 @@ import { CONTACT_POINTS, contactSeed } from "../shared/contact.js";
 import { leafForceFor, DEFAULT_LEAF_FORCE } from "../shared/leafforce.js";
 import { bodyFrame, fromBody } from "../shared/joints.js";
 
-const STUB = fileURLToPath(new URL("../tools/core-stub.mjs", import.meta.url));
+const HEADLESS_CORE = fileURLToPath(new URL("./headless-core.mjs", import.meta.url));
 
 let simMods: {
   Ragdoll: any;
@@ -73,17 +73,17 @@ function loadSim(): Promise<typeof simMods> {
   simLoading ??= (async () => {
     try {
       plugin({
-        name: "ragdoll-core-stub",
+        name: "headless-body-core",
         setup(build) {
-          build.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: STUB }));
+          build.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: HEADLESS_CORE }));
         },
       });
-      const stub = await import("../tools/core-stub.mjs");
+      const core = await import("./headless-core.mjs");
       const rag = await import("../client/lib/ragdoll.js");
-      const rig = await import("../tools/rig-load.mjs");
+      const rig = await import("./rig.ts");
       const terrain = await import("../client/lib/terrain.js");
       const colliders = await import("../client/lib/colliders.js");
-      // the reach solver's frame algebra — same door, same stub (its own
+      // the reach solver's frame algebra — same door, same runtime adapter (its own
       // import cone is core.js + pure shared modules; tools/reachlive-test.ts
       // is the standing proof it runs headless)
       const reachbone = await import("../client/lib/reachbone.js");
@@ -111,7 +111,7 @@ function loadSim(): Promise<typeof simMods> {
       // from a toggle that does not work -- the same ambiguity bodysim.js's
       // status string was added to kill.
       console.log(`[physics] headless body engine: ${engine}`);
-      simMods = { Ragdoll: rag.Ragdoll, Body, engine, rig, THREE: stub.THREE, terrain, colliders, reachbone };
+      simMods = { Ragdoll: rag.Ragdoll, Body, engine, rig, THREE: core.THREE, terrain, colliders, reachbone };
       return simMods;
     } catch (e) {
       simFailed = true;
@@ -507,7 +507,7 @@ export class HeadlessBody {
 // ragdoll. A headless body reaching for something needs two answers a browser
 // gets from its scene: "where is the target" (for a landmark, on the OTHER
 // body) and "does my arm get there" (measureChain/solveChain on its own).
-// Both run on rig-load stand-ins here — no mesh, no renderer.
+// Both run on normalized runtime rigs here — no mesh, no renderer.
 //
 // One honest limitation, stated rather than hidden: a browser derives
 // landmarks by raycasting the actual mesh (client/lib/landmarks.js); a

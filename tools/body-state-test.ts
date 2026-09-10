@@ -84,6 +84,28 @@ try {
   owner.setPose(null); owner.tick();
   await until(() => !peer.people.get(owner.name)?.pose?.pose);
   check("clear removes overrides, not the skeleton", (await read(peer, { who: owner.name })).overrides.state === "none");
+  for (const clip of ["sit", "sitchair", "lie", "walk", "run", "unrecognized-clip"]) {
+    owner.clip = clip; owner.setPose(bones); owner.tick();
+    await until(() => peer.people.get(owner.name)?.pose?.clip === clip);
+    const seated = await read(owner, { detail: "all", points: ["knee_r"] });
+    const seen = await read(peer, { who: owner.name, detail: "contacts", points: ["knee_r"] });
+    check(`${clip}: current-body geometry is withheld on the real self/peer tool path`,
+      seated.wire.isError === true && seen.wire.isError === true && seen.geometry?.basis === "rest_pose_estimate"
+      && !seated.joints && !seated.contacts && !seen.contacts && seen.posture === clip && eq(seated.publishedRotations, bones));
+  }
+  owner.clip = "idle"; owner.setPose(null); owner.tick();
+  await until(() => peer.people.get(owner.name)?.pose?.clip === "idle");
+  check("standing again restores contact estimates", (await read(peer, { who: owner.name, detail: "contacts", points: ["knee_r"] })).contacts?.knee_r?.quality === "anatomical_estimate");
+  peer.clip = "sit"; peer.tick();
+  await until(() => owner.people.get(peer.name)?.pose?.clip === "sit");
+  owner.reaches.set("rightHand", { t: { who: peer.name, point: "knee_r" } });
+  const targetSeated = await read(owner, { detail: "all", points: ["hand_r"] });
+  check("a reach toward an unevaluated seated body does not claim arrival or return usable targets",
+    !targetSeated.ok && targetSeated.reachEvaluation?.rightHand?.ok === false && !targetSeated.contacts?.hand_r?.reachTarget);
+  owner.reaches.set("rightHand", { t: { p: [0, 1.2, .1], space: peer.name }, palm: false });
+  check("a point in a seated body's known root frame remains usable without posture geometry",
+    (await read(owner, { detail: "all" })).reachEvaluation?.rightHand?.ok === true);
+  owner.releaseReach(); peer.clip = "idle"; peer.tick();
   owner.heldPose = bones; owner.heldPoseAuthored = false; owner.clip = "idle";
   check("internal retired physics does not leak into self readback", (await read(owner)).overrides.state === "none");
   owner.clip = "ragdoll"; owner.tick();
@@ -159,6 +181,18 @@ try {
     o = { ...o, generation: 2 }; release();
     check("in-flight old skeleton cannot answer for a replacement", (await pending).error?.includes("body changed"));
   } finally { slow.stop(true); }
+  let resume!: () => void;
+  const waiting = new Promise<void>(r => { resume = r; });
+  const postureServer = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch() { await waiting; return new Response(fixture()); } });
+  try {
+    const reader = new BodyStateReader(`http://127.0.0.1:${postureServer.port}`);
+    let o: any = { who: "sitting", avatar: "test.vrm", generation: 1, self: false, connected: true, receivedAt: Date.now(),
+      source: "unknown", pose: { p: [0, 0, 0], yaw: 0, speed: 0, clip: "idle" } };
+    const pending = reader.read(o.who, "all", undefined, () => o);
+    o = { ...o, pose: { ...o.pose, clip: "sit" } }; resume();
+    const result = await pending;
+    check("posture is rechecked after an asynchronous skeleton load", !result.ok && result.geometry?.reason === "posture_not_evaluated" && !result.contacts);
+  } finally { postureServer.stop(true); }
 } catch (e) {
   process.exitCode = 1;
   throw e;

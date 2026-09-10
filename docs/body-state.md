@@ -19,6 +19,15 @@ named body points, outward normals and ready-to-use reach targets. `all`
 includes both. `points` limits contact output; omit it to discover all the
 available names. Missing bones/contacts are reported explicitly.
 
+For known `sit`, `sitchair`, `lie`, locomotion or unrecognized clips, the
+current evaluator cannot reconstruct the visible posture. Geometry detail
+therefore returns an error with `geometry.status:"incomplete"` and
+`basis:"rest_pose_estimate"`, preserving the public root, clip and exact
+published rotations but withholding joint/contact coordinates and reach
+targets. The summary remains available. This prevents a standing/rest knee
+from being offered as the current seated knee. Idle estimates and supplied
+ragdoll poses remain supported; full posture evaluation is tracked in #179.
+
 World positions are metres. `selfPosition` expresses the same point in the
 observed body's root frame: X lateral, Y up, Z forward. It is suitable for
 `reach` with `space:"self"` when reading yourself, or `space:<who>` when
@@ -57,6 +66,7 @@ Root-relative points keep tracking while the corresponding body moves.
 2. Take `contacts.chest_front.selfPosition` as a body-specific starting
    point. It estimates your chest surface; it does not locate a decorative
    lamp or infer its shape.
+   If geometry is incomplete, stop here; do not substitute rest coordinates.
 3. Choose two points to either side of that centre and slightly forward.
    Send one `reach` per hand with `space:"self"` and `palm:false`. Both
    reaches coexist and follow your root while you walk.
@@ -86,6 +96,8 @@ Release one hand or both with `clear_reach`:
   clip, springbone, wing and interpolation motion is not evaluated; bones
   with no supplied rotation start at their rig rest transforms. These are
   useful reconstructions, not a claim of final browser-frame identity.
+  Known unevaluated posture clips withhold this geometry rather than merely
+  putting the same rest coordinates under a cautionary label.
 - Contact positions/normals are labeled `anatomical_estimate`. They use
   the existing reach contact derivation without mesh raycasting. Other
   bodies' recursively interacting reaches are not solved as a global
@@ -113,3 +125,9 @@ Release one hand or both with `clear_reach`:
 Both MCP doors expose the same tool. Geometry loads lazily, so the default
 summary does not wait for an avatar download. An unavailable avatar keeps
 published rotations available and reports the geometry failure explicitly.
+
+The optional real-avatar gate can write exact input names, byte counts and
+SHA-256 hashes via `BODY_STATE_MANIFEST_OUT`. The
+[2026-09-10 corpus manifest](body-state-corpus-20260910.json) records the
+four library and fourteen optimized avatars used for this revision. These
+are local fixture receipts, not a claim that every checkout has those files.

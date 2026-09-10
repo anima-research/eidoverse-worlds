@@ -15,6 +15,7 @@ const cases = [
   { name: "tool discards requested detail", file: "tools.ts", from: 'a.detail ?? "summary", a.points', to: '"summary", a.points', witness: "eight exact quaternions round-trip" },
   { name: "FK ignores root yaw", file: "body-state.ts", from: "item.body.poseAt(o.pose!.p, o.pose!.yaw, mapped)", to: "item.body.poseAt(o.pose!.p, 0, mapped)", witness: "world joints include root translation and yaw" },
   { name: "self leaks unpublished physics", file: "agent.ts", from: 'const bones = this.heldPose && (this.heldPoseAuthored || this.clip === "ragdoll") ? this.heldPose : null;', to: 'const bones = this.heldPose;', witness: "internal retired physics does not leak into self readback" },
+  { name: "posture gate ignores known sitting", file: "body-state.ts", from: 'return p?.clip !== "idle" && !(p?.clip === "ragdoll" && Object.keys(p.pose ?? {}).length > 0);', to: 'return false;', witness: "sit: current-body geometry is withheld" },
 ];
 for (const c of cases) {
   const r = await run(c);
@@ -25,4 +26,4 @@ for (const c of cases) {
   }
   console.log(`PASS: ${c.name} makes the product test fail`);
 }
-console.log("4/4 mutations detected; baseline passed");
+console.log(`${cases.length}/${cases.length} mutations detected; baseline passed`);

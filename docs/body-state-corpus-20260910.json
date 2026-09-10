@@ -1,0 +1,106 @@
+{
+  "measuredAt": "2026-09-10",
+  "note": "Exact bytes served by the optional real-avatar gate; these local external fixtures are not bundled or included as production assets.",
+  "corpora": {
+    "library": {
+      "passed": 4,
+      "fixtures": [
+        {
+          "name": "aletheia.vrm",
+          "bytes": 30976184,
+          "sha256": "c0f4c8bb0b5a0ea1f79171f83b2c1ab9c21121fe9a5f1feb1cf84fe83ce6672c"
+        },
+        {
+          "name": "aporia.vrm",
+          "bytes": 29971076,
+          "sha256": "0b0c5dee6485a5a7017abdff6ea8b32cc3ef472f648ea1655ff23cb4740d7b19"
+        },
+        {
+          "name": "claude.vrm",
+          "bytes": 848636,
+          "sha256": "883eb1d6c63c7409e1cbebb335509af346e92d046c4c9916ebc7695da4c64073"
+        },
+        {
+          "name": "claude_suit.vrm",
+          "bytes": 10594744,
+          "sha256": "9ca085c1b0fb77507c4f157fd65075baa473aa478bfb936f296a4b9eaca3f9f6"
+        }
+      ]
+    },
+    "optimized": {
+      "passed": 14,
+      "fixtures": [
+        {
+          "name": "fox_adventurer.vrm",
+          "bytes": 56088340,
+          "sha256": "1eaf5aea6b43c24b7277708f9e13ad910533ef38af2282566ec67d65ce7c8923"
+        },
+        {
+          "name": "meebit.vrm",
+          "bytes": 725512,
+          "sha256": "a1352daa10a33d21cc73de1464ab8bcf31047302e8d33504e04dc0fc9a65efa4"
+        },
+        {
+          "name": "msaligned.vrm",
+          "bytes": 3841652,
+          "sha256": "3e8f1cba8f3892420536001ea23d20b94a6a582e39e74e3f84c9e1ff000f44ab"
+        },
+        {
+          "name": "mythos.vrm",
+          "bytes": 7539088,
+          "sha256": "48bd66b425fc0634d9e1d4f13f059fc7762dca923ef32c0f2ed8160a5221ee3d"
+        },
+        {
+          "name": "orion.vrm",
+          "bytes": 6148340,
+          "sha256": "efa262d131a6bd919c1a776f0707c2d358bfb3bf0b82e6886b43d873969574f5"
+        },
+        {
+          "name": "princess0.vrm",
+          "bytes": 2832988,
+          "sha256": "b5eaf474f629eb06e27337b1ce76e78651b9b3c6205d13d7a4082cc585aaa52e"
+        },
+        {
+          "name": "seedsan.vrm",
+          "bytes": 10745680,
+          "sha256": "d24a5473a53f5ab76228da7c49a3f6fc2e1a0561566123859311df1e40b26490"
+        },
+        {
+          "name": "shino.vrm",
+          "bytes": 15074328,
+          "sha256": "1e177c1a7b14f783a9c48395831db8616260d3bddd4154cb2784b779adca49b5"
+        },
+        {
+          "name": "sonnet36.vrm",
+          "bytes": 7563400,
+          "sha256": "44c8033ed34c93fe2f999306a9832ec52b8913e14a45fccdd54cb1c714813dd7"
+        },
+        {
+          "name": "sydney.vrm",
+          "bytes": 7358600,
+          "sha256": "9d390ac6f5119d8248795489b8a7bb3fd287f58c2a878422fcc8118229d20c0c"
+        },
+        {
+          "name": "victoria.vrm",
+          "bytes": 15479480,
+          "sha256": "b1372131bdbf233f46320146d565f342a7e4f6f4b8f2aefb301f1a283ec07e1e"
+        },
+        {
+          "name": "vroid_fem.vrm",
+          "bytes": 12041088,
+          "sha256": "983631034570b7a70e2f158e48f12fe7f0fe3ebcba763363efd6e85a2fbbacb8"
+        },
+        {
+          "name": "vroid_masc.vrm",
+          "bytes": 11844156,
+          "sha256": "ac5e30b9f875b54b13cddbe86d6351b4a8d2d418c2f885d89199281ad5c937cb"
+        },
+        {
+          "name": "youngopus.vrm",
+          "bytes": 1243168,
+          "sha256": "0079a8f1850b79580298a3ea190c6d861874d6af15f2077d1fb57de767abad9b"
+        }
+      ]
+    }
+  }
+}
