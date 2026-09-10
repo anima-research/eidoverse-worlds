@@ -64,3 +64,5 @@ mcpl/node_modules
 
 # macOS Finder droppings -- two got committed in eae165b
 .DS_Store
+
+# scratch world output from smoke runs

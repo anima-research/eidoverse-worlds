@@ -83,7 +83,7 @@ export function getUp() {
 // dismount with my landing spot stamped (the plane-transition invariant),
 // and control returns to the normal ground controller.
 const _seatP = new THREE.Vector3();
-function dismountMe() {
+export function dismountMe() {
   const sw = mountTransform(CONFIG.name, _seatP);
   const yaw = sw?.yaw ?? myState.yaw;
   const off = sw ? _seatP.clone() : myState.pos.clone();
@@ -99,7 +99,7 @@ export function updateMountedMe(dt) {
   if (!sw) return;                       // parent still downloading
   const me = getMe();
   myState.pos.copy(_seatP);
-  myState.yaw = sw.yaw;
+  myState.yaw = Math.atan2(Math.sin(sw.yaw), Math.cos(sw.yaw));   // saved yaw may be unwrapped (R: 7.62 restored on every reload, 09-05)
   myState.speed = 0;
   myState.clip = sw.pose;
   if (me) {
@@ -204,7 +204,7 @@ function applyDraggedSample({ pose, p, yaw }) {
     me.root.position.set(p[0], p[1], p[2]);
     myState.pos.set(p[0], p[1], p[2]);
   }
-  if (Number.isFinite(yaw)) { me.root.rotation.y = yaw; myState.yaw = yaw; }
+  if (Number.isFinite(yaw)) { yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw)); me.root.rotation.y = yaw; myState.yaw = yaw; }
   if (pose && typeof pose === 'object') { me.setPose(pose); myState.pose = pose; }
   me.root.updateMatrixWorld(true);
   noteDraggedMotion();

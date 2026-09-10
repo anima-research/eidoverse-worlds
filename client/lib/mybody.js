@@ -4,7 +4,8 @@
 // sites; now there is one owner and everyone else holds the getter. Nothing
 // here may import main.js.
 
-import { CONFIG, bus, report } from './base.js';
+import { CONFIG, bus, report, tee } from './base.js';
+import { releaseBodyGate } from './bodygate.js';
 import { armFlight, folded } from './controller.js';
 import { makeAvatar, contributeThumbnail } from './avatar.js';
 import { setMyAvatarPath, wireAvatarSwitch } from './palette.js';
@@ -90,9 +91,19 @@ export function chooseAvatar(path, name, { remember = false } = {}) {
 // ---------------------------------------------------------------- the handle
 
 let me = null;
+let seenFirstBody = false;
 export function getMe() { return me; }
 export function setMe(av) {
   me = av;
+  if (me) {
+    releaseBodyGate('body on screen');
+    // ONE '[body] on screen' per page — it is the load metric. Later setMe calls
+    // are body CHANGES (09-05: three swaps in the avatars tab read as +291 s
+    // 'loads' on the tee and corrupted the series).
+    if (!seenFirstBody) { seenFirstBody = true; tee(`[body] on screen +${(performance.now() / 1000).toFixed(1)}s`); }
+    else tee(`[body] changed → ${getMyAvatarName()}`);
+  }
+  bus.emit('avatar-worn', me ? getMyAvatarName() : null);
   if (me) me.wingsFolded = folded();
   armFlightFor(av);
 }
@@ -130,11 +141,13 @@ wireAvatarSwitch(async (path, name) => {
     // instance pool, so switching BACK is a 0ms pool-hit, not a re-parse.
     const next = await makeAvatar(CONFIG.name, path, { urgent: true }); // build before shedding the old
     me?.dispose();
-    setMe(next);
+    // name and path FIRST: setMe announces 'avatar-worn' with the current name,
+    // and My Avatars / the profile read it — set after, they heard the old body
     myAvatarPath = path;
     myAvatarName = name;
     announceWorn(name, path);
     setMyAvatarPath(path);
+    setMe(next);
     localStorage.setItem('ew-avatar-name', name);
     contributeThumbnail(name, next.vrm, CONFIG.token);
     if (net.joined) {
