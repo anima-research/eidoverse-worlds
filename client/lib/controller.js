@@ -887,7 +887,7 @@ export function setPosture(p) { posture = p; }
 // A declared-seat MOUNT (sockets, localbody.js) is neither posture nor myState.seat — the seat hook dismounts on X —
 // so the tiles ask first: sitting on a swing, 'sit' is a no-op and 'stand' is the dismount (third review 2026-09-10)
 let mountedHook = () => false;
-export function setMountedHook(fn) { mountedHook = fn; }
+export function setMountedHook(fn) { if (typeof fn === 'function') mountedHook = fn; }
 export function sitHere() { if (mountedHook()) return; if (posture !== 'sit') toggleSit(); }
 export function standUp() {
   if (mountedHook()) { seatHook(); return; }

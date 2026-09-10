@@ -1,8 +1,7 @@
 // profile — the PERSON noun's home (four-noun taxonomy, 08-29): who you are,
 // where you are, what you're wearing, what you carry, who you know.
-// DELIBERATELY A SKETCH (live, 22:01): real satchel/worlds/friends need server
-// surfaces that don't exist yet; this stakes out the shape, VRChat-ish —
-// a bigger panel, identity up top, destination tiles below.
+// Today: identity up top (portrait = presence control, header), one tab — the bodies you have worn.
+// satchel / worlds / friends need server surfaces that don't exist yet; their tabs land with their content.
 
 import { CONFIG, bus, colorFor } from './base.js';
 import { registerXRPanel } from './xrpanels.js';
@@ -38,6 +37,7 @@ export function initProfile() {
   frame.body.classList.add('profile-body');
   paint();
   bus.on('roster', paint);      // world/avatar facts can drift; repaint is cheap
+  bus.on('avatar-worn', () => { if (frame?.body) delete frame.body.dataset.painted; paint(); });   // a palette switch changes the header
   bus.on('presence:me', () => { if (frame.visible) paint(); bus.emit('xr:repaint'); });
   return frame;
 }
@@ -61,7 +61,7 @@ const PRESENCE_WORD = { present: 'present · here and active', away: 'away · id
 function paint() {
   if (!frame?.visible && frame?.body.dataset.painted) return;
   frame.body.dataset.painted = '1';
-  const avatar = (CONFIG.avatar || 'default').split('/').pop().replace(/\.vrm$/i, '');
+  const avatar = getMyAvatarName() || 'default';   // the body's roster name (mybody.js); CONFIG carries no avatar
   const st = presence();
   frame.body.innerHTML = `
     <div class="pf-id">
@@ -115,8 +115,6 @@ function paintPane(pane) {
     pane.append(bodiesHost);
     return;
   }
-  const [, icon, note] = TABS.find(([id]) => id === tab);
-  pane.innerHTML = `<div class="pf-stub">${fsvg(icon, 28)}<b>${tab}</b><span>${note}</span><em>not built yet — this tab reserves the spot; shapes first, plumbing next</em></div>`;
 }
 
 const escape = (v) => String(v).replace(/[&<>"]/g, (c) => (
