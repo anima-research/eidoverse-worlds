@@ -131,6 +131,11 @@ const mt = readFileSync(new URL('../client/lib/mictoggle.js', import.meta.url), 
 t('mictoggle: keyup releases the hold', /keyup[\s\S]{0,200}setPttHeld\(false\)/.test(mt));
 t('mictoggle: window blur releases the hold', /'blur'[\s\S]{0,200}setPttHeld\(false\)/.test(mt));
 t('mictoggle: badge gold is gated on the key under PTT', /!pttMode\(\) \|\| pttHeld\(\)/.test(mt));
+// A focused CHECKBOX is not typing. The panel's push-to-talk box keeps focus
+// after the click, so a guard that skips V for any INPUT eats the first press
+// of the mode you just enabled (found by ear 2026-09-10). The guard must be
+// type-aware: text-like inputs and editable regions only.
+t('mictoggle: V guard is typing-aware, not any-INPUT', !/\['INPUT', 'TEXTAREA'\]\.includes\(document\.activeElement/.test(mt) && /typingTarget\(\)/.test(mt) && /checkbox|TEXT_INPUT/.test(mt));
 const ap = readFileSync(new URL('../client/lib/audiopanel.js', import.meta.url), 'utf8');
 t('audiopanel: sensitivity row dims under PTT (no control that lies)', /audio:ptt.*dimFloor|dimFloor[\s\S]{0,400}audio:ptt/.test(ap.replace(/\n/g, ' ')) || (/dimFloor/.test(ap) && /bus\.on\('audio:ptt', dimFloor\)/.test(ap)));
 

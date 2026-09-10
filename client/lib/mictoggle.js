@@ -238,8 +238,23 @@ bus.on('audio:mic', paint);
 setInterval(ensure, 1000);
 ensure();
 
+// 🔴 "TYPING" MEANS A TEXT FIELD, NOT ANY INPUT. The old guard skipped V
+// whenever an INPUT had focus — which includes the checkbox you just
+// clicked to turn push-to-talk on. Focus stays on a checkbox after the
+// click, so the very first V after enabling PTT was silently eaten: the
+// mode looked broken while the gate was fine (R, 2026-09-10, found by ear;
+// the two-tab probe reproduced it with a focused checkbox → held=false).
+// Only a place where V would insert a character is a reason to ignore it.
+const TEXT_INPUT = /^(text|search|url|email|password|number|tel|)$/i;   // '' = default type
+const typingTarget = () => {
+  const el = document.activeElement;
+  if (!el) return false;
+  if (el.isContentEditable) return true;
+  if (el.tagName === 'TEXTAREA') return true;
+  return el.tagName === 'INPUT' && TEXT_INPUT.test(el.type ?? '');
+};
 window.addEventListener('keydown', (e) => {
-  if (e.repeat || ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+  if (e.repeat || typingTarget()) return;
   if (e.code !== 'KeyV' || e.shiftKey) return;
   // V speaks. Hushing is a CLICK on the 🎧, and revoking consent entirely
   // lives only in the Audio panel — deliberately not on a key next to the
