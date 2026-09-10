@@ -16,7 +16,7 @@ export const bus = {
   emit(t, p) { emitted.push([t, p]); for (const f of [...(handlers.get(t) ?? [])]) f(p); },
 };
 export const emitted = [];   // every bus.emit, in order — the suite counts xr:repaint / avatar-worn here
-export const CONFIG = { params: new URLSearchParams(), name: 'tester', world: 'testworld', avatar: 'claude', token: 't' };
+export const CONFIG = { params: new URLSearchParams(), name: 'tester', world: 'testworld', token: 't' };   // the real CONFIG (base.js) carries no avatar field — a stub that invents one hid a wrong header
 
 // ---- the recorder: every setter the panels are supposed to reach lands here
 export const calls = [];
