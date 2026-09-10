@@ -14,6 +14,11 @@
 // have shown nothing wrong on the day it mattered most.
 
 import { THREE, scene } from './core.js';
+import { bus } from './base.js';
+import { registerXRPanel, xrPanelOpen } from './xrpanels.js';
+import { perf } from './perf.js';
+import { drawStats } from './render.js';
+import { MODES, setMode, activeMode, setSolid, isSolid } from './perfscope.js';
 import { MeshBVHHelper } from 'three-mesh-bvh';
 import { colliders } from './colliders.js';
 import { closestParams, TUNING } from './ragdoll.js';
@@ -21,6 +26,7 @@ import { JOINT_SPECS, HAIR_TUNING, WING_TUNING } from './ammodoll.js';
 import { BLINK, WING_IDLE, LIMP_SPRINGS } from './avatar.js';
 import { makeFrame } from './frames.js';
 import { sliderTable, checkRow, selectRow, btn, sectionHead } from './rows.js';
+import { toast, paintRangesIn } from './ui.js';
 
 // box = an OBB, walkable on top, solid on the sides between min.y and max.y
 // pillar = anything over 2.4m tall, collapsed to a slim centre column so you
@@ -366,11 +372,11 @@ function buildJointPanel(stack) {
   });
 
   const btns = document.createElement('div');
-  btns.className = 'row';
+  btns.className = 'row btn-row';
   btns.append(
     btn('reset joint', () => {
       Object.assign(JOINT_SPECS[pick.value], JSON.parse(JSON.stringify(jointDefaults[pick.value])));
-      table.repaint(); apply();
+      table.repaint(); apply(); paintRangesIn(stack);
     }),
     copyBtn('copy table', () => {
       const txt = Object.entries(JOINT_SPECS).map(([k, S]) => {
@@ -455,9 +461,9 @@ function buildHairPanel(stack) {
     onSet: apply,
   });
   const btns = document.createElement('div');
-  btns.className = 'row';
+  btns.className = 'row btn-row';
   btns.append(
-    btn('reset hair', () => { Object.assign(HAIR_TUNING, defaults); table.repaint(); apply(); }),
+    btn('reset hair', () => { Object.assign(HAIR_TUNING, defaults); table.repaint(); apply(); paintRangesIn(stack); }),
     copyBtn('copy hair', () => tableLiteral('HAIR_TUNING', HAIR_TUNING)),
   );
   stack.append(table.el, btns);
@@ -514,12 +520,12 @@ function buildWingPanel(stack) {
     return h;
   };
   const btns = document.createElement('div');
-  btns.className = 'row';
+  btns.className = 'row btn-row';
   btns.append(
     btn('reset wings', () => {
       Object.assign(WING_IDLE, idleDefaults);
       Object.assign(WING_TUNING, simDefaults);
-      idle.repaint(); sim.repaint(); apply();
+      idle.repaint(); sim.repaint(); apply(); paintRangesIn(stack);
     }),
     copyBtn('copy wings', () =>
       `${tableLiteral('WING_IDLE', WING_IDLE)}\n\n${tableLiteral('WING_TUNING', WING_TUNING)}`),
@@ -527,8 +533,7 @@ function buildWingPanel(stack) {
   stack.append(sub('flap (live)'), idle.el, sub('limp (needs a ragdoll)'), sim.el, btns);
 }
 
-// the panel has no toast of its own; keep the dependency to one line
-function toastLike(msg) { console.log(`[debug] ${msg}`); }
+const toastLike = (msg) => toast(msg);
 
 // ---- panel -----------------------------------------------------------------
 
@@ -540,12 +545,12 @@ const viewRow = (label, key, onChange) => checkRow(label,
 export function initDebug(p = {}) {
   providers = p;
   frame = makeFrame('debug', {
-    title: 'debug', x: -10, y: 300, w: 250, h: 460, minW: 210, hidden: true,
+    title: 'debug', x: -270, y: -165, w: 250, h: 460   // second right column, bottom-anchored ABOVE the emote row: emotes own the corner, world/settings the top, minW: 210, hidden: true,
   });
   const stack = document.createElement('div');
   stack.className = 'stack';
-  // The frame block is PINNED above everything (tel0s: the stats pre at the
-  // bottom rendered past the scroller's end) — its own element, flex:none,
+  // The frame block is PINNED above everything (the stats pre at the bottom
+  // used to render past the scroller's end) — its own element, flex:none,
   // so scrolling the settings never hides the one number the panel is
   // usually opened for.
   framePre = document.createElement('pre');
@@ -560,19 +565,23 @@ export function initDebug(p = {}) {
   for (const [k] of SWITCHES) DEFAULTS[k] = TUNING[k];
 
   const btns = document.createElement('div');
-  btns.className = 'row';
-  const BTN_CSS = 'flex:1;font-size:var(--fs-sm);padding:3px 0';
-  const pause = btn('pause', () => {
+  btns.className = 'row btn-row';   // unified equal-width action-button row
+  const mk = (label, fn) => {
+    const b = document.createElement('button');
+    b.textContent = label; b.onclick = fn;
+    return b;
+  };
+  const pause = mk('pause', () => {
     TUNING.PAUSED = TUNING.PAUSED ? 0 : 1;
     pause.textContent = TUNING.PAUSED ? '▶ resume' : 'pause';
-  }, BTN_CSS);
+  });
   btns.append(
-    btn('re-drop', () => providers.reLimp?.(), BTN_CSS),
+    btn('re-drop', () => providers.reLimp?.()),
     pause,
     btn('reset', () => {
       for (const [k] of [...DIALS, ...SWITCHES]) TUNING[k] = DEFAULTS[k];
       dials.repaint(); repaintSwitches();
-    }, BTN_CSS),
+    }),
   );
   stack.appendChild(btns);
 
@@ -595,23 +604,49 @@ export function initDebug(p = {}) {
   });
   stack.appendChild(dials.el);
 
-  // the tuning families, one head + one builder each
-  for (const [head, build] of [
-    ['blink (live)', buildBlinkPanel],
-    ['hair (live, while ragdolled)', buildHairPanel],
-    ['limp hair, no local sim', buildLimpPanel],
-    ['wings', buildWingPanel],
-    ['joint limits (live)', buildJointPanel],
-  ]) {
-    stack.appendChild(sectionHead(head));
-    build(stack);
-  }
 
+  // The live-tuning groups become COLLAPSIBLE subsections (the debug menu
+  // splits into subareas with a dropdown arrow, matching World/Settings).
+  // These are looser than the panel sections, so an arrow (not an icon) marks
+  // each; they reuse the .sec grammar so open/hover styling matches the house.
+  dbgSection(stack, 'blink', (body) => buildBlinkPanel(body));
+  dbgSection(stack, 'hair (while ragdolled)', (body) => buildHairPanel(body));
+  dbgSection(stack, 'limp hair (no local sim)', (body) => buildLimpPanel(body));
+  dbgSection(stack, 'wings', (body) => buildWingPanel(body));
+  dbgSection(stack, 'joint limits', (body) => buildJointPanel(body));
+  // perfscope mounts itself when its module is present; without it this is a silent no-op
+  import('./perfscope.js').then((m) => m.mountPerfPanel(stack, { toast: toastLike, section: dbgSection })).catch(() => {});
+
+  // the live bone readout gets its own collapsible section: loose in the stack
+  // it sat between 'joint limits' and 'performance' as a scrollable sliver
+  // that no section's open/close could account for (R, 09-04)
   statsEl = document.createElement('pre');
   statsEl.className = 'dbg-stats';
-  stack.appendChild(statsEl);
+  dbgSection(stack, 'ragdoll readout', (body) => body.appendChild(statsEl));
   frame.body.appendChild(stack);
   return frame;
+}
+
+// A collapsible debug subsection: reuses the .sec CSS (open/hover/body) with a
+// ▸/▾ dropdown arrow. `build(body)` populates it once, lazily, on first open —
+// so a closed section costs nothing and the panel opens light.
+function dbgSection(parent, title, build) {
+  const box = document.createElement('div');
+  box.className = 'sec dbg-sec';
+  const head = document.createElement('button');
+  head.className = 'head';
+  head.innerHTML = `<span class="dbg-arrow">▸</span><span>${title}</span>`;
+  const body = document.createElement('div');
+  body.className = 'body';
+  let built = false;
+  head.onclick = () => {
+    const open = box.classList.toggle('open');
+    head.querySelector('.dbg-arrow').textContent = open ? '▾' : '▸';
+    if (open && !built) { built = true; build(body); }
+  };
+  box.append(head, body);
+  parent.appendChild(box);
+  return box;
 }
 
 export function toggleDebug() { frame?.toggle(); }
@@ -725,3 +760,29 @@ export function updateDebug(now = performance.now()) {
   }
   statsEl.textContent = lines.join('\n');
 }
+
+// ---- the debug frame as a VR quad: YOUR numbers, in-headset -----------------
+// The recorder tees them to the operator; this shows them to the person
+// wearing the headset (R, 09-04: "extremely janky" — a number beats an
+// adjective). Same sources as the desk (perf.js, render.js, perfscope);
+// the perfscope modes are the same setMode the desk's rows call.
+function debugFields() {
+  const r = drawStats().render ?? {};
+  const cur = activeMode();
+  return [
+    { t: 'info', label: 'fps', value: `${perf.fps}` },
+    { t: 'info', label: 'frame', value: `${(+perf.ms).toFixed(1)} ms · worst ${(+perf.worst).toFixed(0)} · spikes ${perf.spikes}` },
+    { t: 'info', label: 'draws', value: `${r.drawCalls ?? '—'} calls · ${((r.triangles ?? 0) / 1000).toFixed(0)}k tris` },
+    { t: 'list', label: 'perfscope', rows: Object.entries(MODES).map(([k, m]) => ({ id: k, label: m.label, active: k === cur, actions: k === cur ? [] : [{ k: 'mode', label: 'use' }] })) },
+    { t: 'check', k: 'solid', label: 'solid tint', value: isSolid() },
+  ];
+}
+function debugDispatch(k, v) {
+  if (k === 'mode') setMode(v);
+  else if (k === 'solid') setSolid(!!v);
+  else return;
+  bus.emit('xr:repaint');
+}
+registerXRPanel({ id: 'debug', title: 'debug', fields: debugFields, dispatch: debugDispatch });
+// live numbers: one repaint a second while the quad is open
+setInterval(() => { try { if (xrPanelOpen('debug')) bus.emit('xr:repaint'); } catch { /* not presenting */ } }, 1000);

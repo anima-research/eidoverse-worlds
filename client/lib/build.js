@@ -27,6 +27,7 @@ import { sendVerb, sendDrag } from './net.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
 import { flashHint, collapseAll, panelFrame } from './ui.js';
 import { sceneSelect } from './scenegraph.js';
+import { claimEscape } from './frames.js';
 import { refreshSeatGizmos, resetSeats, armSeatPlacement, seatArmed, seatSelected,
   cancelSeatArm, deselectSeat, seatMouseDown, seatKeyDown, updateSeatDrag } from './seatedit.js';
 
@@ -51,6 +52,7 @@ const undoStack = [];     // inverse entries, newest last
 // are doing.
 let editMode = false;
 export const isEditing = () => editMode;
+claimEscape(() => (editMode ? 'edit' : null));   // edit mode owns Esc (its own ladder) — the frames' close-all yields
 
 export function setEditMode(on, { quiet = false } = {}) {
   if (editMode === on) return editMode;

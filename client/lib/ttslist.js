@@ -57,7 +57,7 @@ const ROW = `
    invisible to anyone navigating by keyboard, and this one is destructive, so
    it must be reachable without a mouse. */
 .vl-row:hover .vl-x, .vl-row .vl-x:focus { opacity: .75; }
-.vl-row .vl-x:hover { opacity: 1; color: #f88; }
+.vl-row .vl-x:hover { opacity: 1; color: var(--err); }
 .vl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vl-note { margin-left: auto; font-size: 11px; font-variant-numeric: tabular-nums; }
 .vl-loading { opacity: .85; }

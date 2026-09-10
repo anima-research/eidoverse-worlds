@@ -11,8 +11,10 @@
 // species are reading different rooms.
 
 import { CONFIG, bus, colorFor, assignColors } from './base.js';
+import { registerXRPanel } from './xrpanels.js';
 import { lastWhy } from './debuglog.js';
 import { makeFrame } from './frames.js';
+import { fsvg } from './icons.js';
 import { requestHistory } from './net.js';
 // ONLY the registry — never handlers.js, or the cycle chat→handlers→net→chat
 // closes (§14.2). The registry is a pure table with no imports of its own.
@@ -25,6 +27,8 @@ let frame = null;
 let logEl = null;
 let inputEl = null;
 let onSend = null;
+const recent = [];   // the log's tail, for the VR quad
+export const recentChat = () => recent.slice();
 let onWhisper = () => {};
 let onTyping = () => {};
 let getPeople = () => [];
@@ -50,6 +54,23 @@ export function mentionsMe(text) {
 
 /** Render text with mentions marked and links made clickable, without ever
  *  putting untrusted text through innerHTML. */
+// Standard inline markdown, nothing more: **bold**, *italic* / _italic_, `code`.
+// Text nodes only — no HTML is ever parsed from a message. Off = plain text.
+const MD_RX = /(\*\*([^*\n]+)\*\*)|(`([^`\n]+)`)|((?<![\w*])\*([^*\n]+)\*(?![\w*]))|((?<!\w)_([^_\n]+)_(?!\w))/g;
+function inline(run) {
+  if (!chatMd) return document.createTextNode(run);
+  const frag = document.createDocumentFragment();
+  let i = 0;
+  for (const m of run.matchAll(MD_RX)) {
+    if (m.index > i) frag.append(document.createTextNode(run.slice(i, m.index)));
+    const el = document.createElement(m[1] ? 'b' : m[3] ? 'code' : 'i');
+    el.textContent = m[2] ?? m[4] ?? m[6] ?? m[8];
+    frag.append(el);
+    i = m.index + m[0].length;
+  }
+  if (i < run.length) frag.append(document.createTextNode(run.slice(i)));
+  return frag;
+}
 function renderBody(text, names) {
   const frag = document.createDocumentFragment();
   const pattern = new RegExp(
@@ -58,7 +79,7 @@ function renderBody(text, names) {
   );
   let i = 0;
   for (const m of String(text).matchAll(pattern)) {
-    if (m.index > i) frag.append(document.createTextNode(text.slice(i, m.index)));
+    if (m.index > i) frag.append(inline(text.slice(i, m.index)));
     if (m[1]) {
       // Trailing punctuation is prose, not address: "…?world=garden)" from a
       // parenthesized link once sent a clicker to a world named "garden)" —
@@ -86,7 +107,7 @@ function renderBody(text, names) {
     }
     i = m.index + m[0].length;
   }
-  if (i < text.length) frag.append(document.createTextNode(text.slice(i)));
+  if (i < String(text).length) frag.append(inline(String(text).slice(i)));
   return frag;
 }
 const escapeRx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -185,6 +206,11 @@ export function logChat(who, text, kind = '', meta = {}) {
     renderedSeqs.add(meta.seq);
   }
   noteSeq(meta.seq);
+  // the VR quad reads the tail of the log from here — every line, merged
+  // continuations included, twelve deep
+  recent.push({ who, text: String(text).slice(0, 140), kind });
+  if (recent.length > 12) recent.shift();
+  bus.emit('xr:repaint');
   // Spoken-utterance merge: merges ONLY the continuation of one spoken
   // utterance — spoken:true + same author + same utt (Sol review, PR#7).
   // A voicebox interrupted mid-utterance flushes the aired sentences as one
@@ -212,7 +238,7 @@ export function logChat(who, text, kind = '', meta = {}) {
   lastLineEl = line;
 
   const wasAtBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
-  // Causal placement (R, 16:30, verified against the world log — seq #1052/53
+  // Causal placement (verified against a world log where two records
   // landed same-second, interrupter first): a spoken utterance is an INTERVAL.
   // Its record arrives when the voice stops, but it BEGAN before the interrupt
   // that cut it. When a spoken say carries t0 (air-start), it slots in front
@@ -237,8 +263,8 @@ export function logChat(who, text, kind = '', meta = {}) {
     // visual predecessor. buildLine computed it against chronological arrival
     // (lastAuthor), and the two disagree exactly when this branch runs — a
     // 'cont' line landing under another speaker renders their nameplate over
-    // these words. (2026-08-05, "your line was credited to me"; repro:
-    // exultation/tools/repro-stale-t0.mjs. Sys lines pass through a group,
+    // these words — a line credited to the wrong speaker. (repro:
+    // (reproduced with a stale-t0 harness). Sys lines pass through a group,
     // same as the chronological rule.)
     let prev = line.previousElementSibling;
     while (prev && prev.dataset.kind === 'system') prev = prev.previousElementSibling;
@@ -257,9 +283,9 @@ export function logChat(who, text, kind = '', meta = {}) {
 // exactly like a mention arriving as its own line, and nothing counts twice
 // (the old split paths could double-increment when the frame was hidden AND
 // the log was scrolled up). `seen` means the reader is actually looking:
-// frame visible, not collapsed, pinned to the bottom. (Sol review, PR#7.)
+// frame visible, pinned to the bottom. (Sol review, PR#7.)
 function account(line, { who, text, merged, newlyPinged, wasAtBottom }) {
-  const seen = frame.visible && !frame.state.collapsed && wasAtBottom;
+  const seen = frame.visible && wasAtBottom;
   if (seen) scrollToEnd();
   else {
     if (!merged && line.dataset.kind !== 'system') unread++;
@@ -292,7 +318,7 @@ function buildLine(who, text, { kind = '', ts = Date.now(), historical = false }
   // sys lines pass THROUGH a group without erasing it: an act narration mid-
   // paragraph (an agent's tool use between spoken sentences) shouldn't force
   // the name to reprint on the next sentence. Only a real change of speaker
-  // or the window ends a group. (Live observation, Rabscuttle 14:53.)
+  // or the window ends a group. (Live observation.)
   if (!historical && !sys) { lastAuthor = who; lastAt = now; }
   if (grouped) line.classList.add('cont');
   if (historical) line.classList.add('old');
@@ -523,7 +549,7 @@ function audioReport() {
     // 🔴 DO NOT querySelectorAll('audio') — voicesfu builds `new Audio()`
     // elements that are NEVER appended to the DOM, so the document cannot see
     // them and this printed "no <audio> elements yet" on a phone that was
-    // audibly playing two speakers (R, 2026-08-16). A probe that reads the
+    // audibly playing two speakers. A probe that reads the
     // wrong source reports a failure that is not happening, which is worse
     // than reporting nothing. Ask the transport for its own elements.
     const entries = typeof window.__voiceSpeakerEls === 'function' ? window.__voiceSpeakerEls() : null;
@@ -541,8 +567,8 @@ function audioReport() {
     const has = !!(window.SpeechRecognition ?? window.webkitSpeechRecognition);
     if (!has) return 'no SpeechRecognition in this browser';
     // The TALLY is the load-bearing part: a last-event slot cannot prove that
-    // something never happened, and on 2026-08-16 I read exactly that absence
-    // out of it and was wrong twice.
+    // something never happened, and reading that absence
+    // out of it was wrong twice.
     return `${window.__sttOn?.() ? 'ON' : 'off'}`
       + (window.__sttTally ? ` [${window.__sttTally()}]` : '')
       + (window.__sttLast ? ` — last: ${window.__sttLast}` : ' — no events yet');
@@ -554,10 +580,10 @@ function audioReport() {
   probe('source', () => lastWhy('publish'));
   probe('secure', () => `${window.isSecureContext} · isolated=${window.crossOriginIsolated}`);
 
-  // 🔴 STAMP THE BUILD (2026-08-16). Three times this morning I diagnosed a
-  // "bug" that was really the phone running an older copy of a module — most
-  // recently for a full round trip, because her output said "last event:" while
-  // the server had been serving "last:" for ten minutes. Without a version in
+  // 🔴 STAMP THE BUILD. Repeatedly a "bug" was really the phone running an
+  // older copy of a module — once for a full round trip, because the report
+  // said "last event:" while the server had been serving "last:" for ten
+  // minutes. Without a version in
   // the report, a stale page and a broken probe are indistinguishable, and I
   // will chase the wrong one every time.
   L.push(`build: ${_build}`);
@@ -568,7 +594,7 @@ function audioReport() {
 function sttReport() {
   const parts = [`build ${_build}`];
   // The recognizer's language — a wrong one returns confident nothing (nomatch)
-  // rather than an error, which is exactly what R's Galaxy reported.
+  // rather than an error, which is exactly what one Android phone reported.
   try { if (window.__sttLang) parts.push(`lang ${window.__sttLang}`); } catch { /* ignore */ }
   try { parts.push(window.__sttOn?.() ? 'stt ON' : 'stt off'); } catch { parts.push('stt ?'); }
   try { parts.push(window.__sttTally ? window.__sttTally() : 'NO TALLY (stale page)'); }
@@ -641,7 +667,6 @@ function runCommand(raw) {
 export const chat = {
   open() {
     frame.show();
-    if (frame.state.collapsed) frame.collapse(false);
     inputEl.focus();
     scrollToEnd();
   },
@@ -654,6 +679,125 @@ export const chat = {
   markRead: () => { unread = 0; unreadMentions = 0; paintUnread(); },
 };
 const open = chat.open;
+
+// ---- who's-here side pane (wanted by some, disliked by others as
+// precious, so the collapse must cost one click and the collapsed cost is a
+// 14px strip). Toggler rides the pane's left edge: › closes, ‹ opens.
+const SIDE_LS = 'ew-chat-side';
+let sideSt = { w: 150, open: false, pos: 'left' };   // people pane on the LEFT by default (R 09-07 10:55 reference HUD)
+function initSidePane() {
+  try { sideSt = { ...sideSt, ...JSON.parse(localStorage.getItem(SIDE_LS) || '{}') } } catch {}
+  const tog = frame.body.querySelector('.chat-side-tog');
+  tog.onclick = () => { sideSt.open = !sideSt.open; applySide(); saveSide(); };
+  const grip = frame.body.querySelector('.chat-side-grip');
+  grip.addEventListener('pointerdown', (e) => {
+    if (!sideSt.open) return;
+    e.preventDefault();
+    e.stopPropagation();   // the frame's root drags on body pointerdown; the grip owns this one (R, 09-04: it moved the whole window)
+    const x0 = e.clientX, w0 = sideSt.w;
+    const move = (ev) => {
+      const d = sideSt.pos === 'left' ? ev.clientX - x0 : x0 - ev.clientX;   // grip side flips with the pane
+      sideSt.w = Math.max(72, Math.min(260, w0 + d)); applySide();
+    };
+    const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); saveSide(); };
+    addEventListener('pointermove', move); addEventListener('pointerup', up);
+  });
+  bus.on('roster', paintSide);
+  bus.on('presence:me', paintSide);                                   // my own mark flips at once
+  setInterval(() => { if (frame?.visible && sideSt.open) paintSide(); }, 2000);   // remote presence rides pose packets; a 2 s repaint is plenty. (`side` was out of scope here — the first tick threw and the interval died: marks froze on their first value)
+  applySide();
+}
+const saveSide = () => { try { localStorage.setItem(SIDE_LS, JSON.stringify(sideSt)) } catch {} };
+function applySide() {
+  const side = frame?.body.querySelector('.chat-side');
+  if (!side) return;
+  side.classList.toggle('closed', !sideSt.open);
+  // the line between log and pane is the pane's grab edge; closed, there is
+  // nothing to grab, so the line goes too (R, 09-05: a confusing affordance)
+  frame.body.querySelector('.chat-cols')?.classList.toggle('side-closed', !sideSt.open);
+  side.style.width = sideSt.open ? `${sideSt.w}px` : '';
+  // the chevron points the way the pane will move: on the right › closes / ‹ opens; mirrored on the left
+  const left = sideSt.pos === 'left';
+  frame.body.querySelector('.chat-side-tog').textContent = (sideSt.open !== left) ? '›' : '‹';
+  paintSide();
+}
+function paintSide() {
+  const side = frame?.body.querySelector('.chat-side');
+  if (!side || !sideSt.open) return;
+  const people = getPeople();
+  const others = people.filter((p) => !p.me).length;
+  side.querySelector('.chat-side-head').textContent =
+    others === 0 ? 'just you' : `${others} other${others === 1 ? '' : 's'} here`;
+  side.querySelector('.chat-side-list').innerHTML = people.length
+    ? people.map((p) => `<div class="who-row ${p.me ? 'self' : ''}">
+        <span class="who-mark" data-presence="${esc(p.presence ?? 'present')}" title="${esc(p.presence ?? 'present')}"></span>
+        <span class="n" style="color:${colorFor(p.id)}">${esc(p.id)}${p.me ? ' (you)' : ''}</span>
+        <span class="d">${p.dist == null ? '' : p.dist.toFixed(0) + 'm'}</span></div>`).join('')
+    : '<div class="who-empty">nobody yet</div>';
+}
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ---- chat gear: text size (the sheet's -a/+A) + which side the people pane
+// sits on. Small popover; both persisted.
+const CFS_LS = 'ew-chat-fs';
+function applyChatPrefs() {
+  const log = frame?.body.querySelector('.chat-log');
+  if (log) log.style.fontSize = `${chatFs}px`;
+  frame?.body.querySelector('.chat-cols')?.classList.toggle('side-left', sideSt.pos === 'left');
+}
+let gearToggle = null, gearAnchor = null, gearOpen = () => false;
+let chatFs = 14;
+const CMD_LS = 'ew-chat-md';
+let chatMd = true;   // *italic* **bold** `code` in the log — on by default (R, 09-05)
+try { chatMd = localStorage.getItem(CMD_LS) !== '0' } catch {}
+export const chatMarkdownOn = () => chatMd;
+try { chatFs = Math.min(20, Math.max(11, parseFloat(localStorage.getItem(CFS_LS)) || 14)) } catch {}
+function initChatGear() {
+  const pop = frame.body.querySelector('.chat-gearpop');
+  const paintPop = () => {
+    pop.innerHTML = `
+      <div class="gp-row"><span>text size</span>
+        <button data-fs="-1">−a</button><b>${chatFs}</b><button data-fs="1">+A</button></div>
+      <div class="gp-row"><span>markdown</span>
+        <button data-md="1" class="${chatMd ? 'on' : ''}">on</button>
+        <button data-md="0" class="${!chatMd ? 'on' : ''}">off</button></div>
+      <div class="gp-row"><span>people pane</span>
+        <button data-side="left" class="${sideSt.pos === 'left' ? 'on' : ''}">left</button>
+        <button data-side="right" class="${sideSt.pos !== 'left' ? 'on' : ''}">right</button></div>`;
+  };
+  pop.onclick = (e) => {
+    const fs = e.target?.dataset?.fs, sd = e.target?.dataset?.side, md = e.target?.dataset?.md;
+    if (md != null) {
+      chatMd = md === '1';
+      try { localStorage.setItem(CMD_LS, md) } catch {}
+    } else if (fs) {
+      chatFs = Math.min(20, Math.max(11, chatFs + Number(fs)));
+      try { localStorage.setItem(CFS_LS, String(chatFs)) } catch {}
+    } else if (sd) {
+      sideSt.pos = sd; saveSide();
+    } else return;
+    applyChatPrefs(); applySide(); paintPop();   // applySide repaints the chevron for the new side (R 09-07 23:25: it pointed the old way after a left↔right move)
+  };
+  gearOpen = () => !pop.hidden;
+  gearToggle = (anchor) => {
+    pop.hidden = !pop.hidden;
+    anchor.setAttribute('aria-expanded', String(!pop.hidden));
+    gearAnchor = anchor;
+    if (!pop.hidden) {
+      paintPop();
+      const a = anchor.getBoundingClientRect(), f = frame.el.getBoundingClientRect();
+      pop.style.right = `${Math.max(4, f.right - a.right)}px`;
+      pop.style.top = `${a.bottom - f.top + 6}px`;
+    }
+  };
+  const closePop = () => { if (!pop.hidden && gearAnchor) gearToggle(gearAnchor); };
+  document.addEventListener('pointerdown', (e) => {
+    if (!pop.hidden && !pop.contains(e.target) && !gearAnchor?.contains(e.target)) closePop();
+  }, true);
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
+  applyChatPrefs();
+}
 
 export function initChat({ send, whisper, typing, people }) {
   onSend = send;
@@ -668,14 +812,27 @@ export function initChat({ send, whisper, typing, people }) {
   });
 
   frame.body.innerHTML = `
-    <div class="chat-tabs"></div>
-    <div id="chatlog" class="chat-log"></div>
-    <button id="chat-jump" class="chat-jump"></button>
-    <div class="chat-typing"></div>
-    <div class="chat-compose">
-      <div id="chat-ac" class="ac panel"></div>
-      <input id="chatline" placeholder="say something…  @ to mention · / for commands">
-    </div>`;
+    <div class="chat-cols">
+      <div class="chat-main">
+        <div class="chat-tabs"></div>
+        <div id="chatlog" class="chat-log"></div>
+        <button id="chat-jump" class="chat-jump"></button>
+        <div class="chat-typing"></div>
+        <div class="chat-compose">
+          <div id="chat-ac" class="ac panel"></div>
+          <input id="chatline" placeholder="say something…  @ to mention · / for commands">
+        </div>
+      </div>
+      <button class="chat-side-tog" title="who's here"></button>
+      <div class="chat-side closed">
+        <div class="chat-side-grip"></div>
+        <div class="chat-side-head"></div>
+        <div class="chat-side-list"></div>
+      </div>
+    </div>
+    <div class="chat-gearpop panel" hidden></div>`;
+  initSidePane();
+  initChatGear();
 
   logEl = frame.body.querySelector('#chatlog');
   inputEl = frame.body.querySelector('#chatline');
@@ -831,7 +988,11 @@ function paintTabs() {
   const mk = (key, label, unread = 0, closable = false) => {
     const b = document.createElement('button');
     b.className = filter === key ? 'on' : '';
-    b.textContent = label + (unread ? ` ${unread}` : '');
+    const t1 = document.createElement('span'); t1.className = 'tick';
+    const t2 = document.createElement('span'); t2.className = 'tick';
+    const lbl = document.createElement('span');
+    lbl.textContent = label + (unread ? ` ${unread}` : '');
+    b.append(t1, lbl, t2);
     if (unread) b.classList.add('has-unread');
     b.onclick = () => setFilter(key);
     if (closable) {
@@ -848,6 +1009,16 @@ function paintTabs() {
   mk('mentions', 'mentions');
   mk('system', 'system');
   for (const [name, c] of convos) mk(`w:${name}`, `@${name}`, c.unread, true);
+  const gear = document.createElement('button');
+  gear.className = 'chat-gear';
+  gear.title = 'chat options';
+  gear.innerHTML = fsvg('gear-six', 13);
+  // tabs repaint while the popover may be open: the new gear inherits it
+  const open = gearOpen();
+  gear.setAttribute('aria-expanded', String(open));
+  if (open) gearAnchor = gear;
+  gear.onclick = (e) => { e.stopPropagation(); gearToggle?.(gear); };
+  bar.appendChild(gear);
 }
 
 // ---------------------------------------------------------------- typing
@@ -877,4 +1048,20 @@ setInterval(paintTypers, 1200);
 bus.on('pinged', () => {
   frame?.el.classList.add('flash');
   setTimeout(() => frame?.el.classList.remove('flash'), 1400);
+});
+
+// ---- the chat frame as a VR quad: READ + canned replies --------------------
+// Typing in a headset needs a keyboard grid the renderer does not have yet
+// (a design item for R); until then the quad shows the log's tail and offers
+// a few whole replies that go through the SAME onSend typing goes through.
+// Honest about the gap in its title.
+const CANNED = ['hello', 'yes', 'no', 'one moment', 'come here', 'thank you'];
+registerXRPanel({
+  id: 'chat', title: 'chat',
+  fields: () => [
+    ...(recent.length ? recent.slice(-8).map((l, i) => ({ t: 'info', label: l.who === '*' ? '·' : String(l.who).slice(0, 12), value: l.text }))
+                      : [{ t: 'info', label: '·', value: 'nothing said yet' }]),
+    ...CANNED.map((c) => ({ t: 'btn', k: `say:${c}`, label: c })),
+  ],
+  dispatch: (k) => { if (k?.startsWith('say:')) onSend?.(k.slice(4)); },
 });

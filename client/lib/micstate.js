@@ -135,7 +135,15 @@ export function gateRelease() {
  *  one transport there is no routing left to do, only the call. */
 export async function toggleMic() {
   const fn = typeof window !== 'undefined' ? window.__sfuMic : null;
-  if (!fn) { flashHint('voice is still connecting — try again in a moment'); return micOn(); }
+  if (!fn) {
+    // no bridge yet. Two very different reasons look identical from here: the
+    // relay is still connecting, or this world has none (staging, 09-04 — the
+    // glyph stayed off with no prompt and no word). net.js flags the second.
+    flashHint(window.__voiceRelayAbsent
+      ? 'this world has no voice relay — the mic can\'t go live here'
+      : 'voice is still connecting — try again in a moment');
+    return micOn();
+  }
   const on = await fn();
   bus.emit('audio:mic', on);
   return on;

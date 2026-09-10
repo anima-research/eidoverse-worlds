@@ -6,12 +6,32 @@
 // wants almost nothing. A fixed rail can't serve all three.
 //
 // The model is the one MMO players already have in their hands: drag a frame
-// by its title, drag its corner to resize, collapse it to a title bar, lock
+// by its title, drag its corner to resize, lock
 // the whole layout when you're happy, and have it still be there tomorrow.
 
 import { bus } from './base.js';
 
 const LS = (id) => `ew-frame-${id}`;
+
+// Layout-version guard. DEFAULT_LAYOUT is a hand-arranged default (R's, edge-anchored). A frame's own
+// saved moves win over it — but that means when the DEFAULT changes, anyone with older per-frame saves
+// stays stuck on stale positions (R 09-07: maximized and found world/settings NOT right-docked because an
+// old save overrode the re-baked default). Bump this whenever DEFAULT_LAYOUT changes materially: on load,
+// a mismatch discards every ew-frame-* save ONCE, so the new default actually takes, then stamps the new
+// version. A user's deliberate arrangement after the bump is saved and kept as normal.
+const LAYOUT_VERSION = '2026-09-07-rightdock';
+const LAYOUT_VER_KEY = 'ew-frame-layout-ver';
+(() => {
+  try {
+    if (localStorage.getItem(LAYOUT_VER_KEY) === LAYOUT_VERSION) return;
+    for (let i = localStorage.length - 1; i >= 0; i--) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith('ew-frame-') && k !== LAYOUT_VER_KEY) localStorage.removeItem(k);
+    }
+    localStorage.setItem(LAYOUT_VER_KEY, LAYOUT_VERSION);
+  } catch { /* private mode / no storage — frames just use defaults, which is correct */ }
+})();
+
 const frames = new Map();
 
 // ---- edge-resize: one document-level hit-tester for all frames -------------
@@ -19,13 +39,23 @@ const frames = new Map();
 // pixels belong to content — scrollbars and buttons always win (we test the
 // real element under the pointer, not geometry alone).
 const _resizables = [];
-const _BAND = 4, _REACH = 6;   // band R-tuned 17:23 at 2, widened to 4 after
-                               // antra's live receipt (edge target was ~8px
-                               // total and half of that hung in the air)
+const _BAND = 4, _REACH = 6;   // band was 2, widened to 4 after a live
+                               // report (edge target was ~8px total and
+                               // half of that hung in the air)
 const _CORNER = 15;            // the corner is the hardest 2D target on the
                                // frame and USED to be the intersection of two
                                // 2px bands — invisible in practice. It gets
                                // its own square, sized like the old SE grip.
+/** Would the edge-resize hit-tester claim this point? (for ui.js's
+ *  arrange-exit guard — the grab band extends _REACH px OUTSIDE frames) */
+export function resizeZoneAt(x, y) {
+  const fake = { clientX: x, clientY: y };
+  for (const f of _resizables) {
+    if (f.root.style.display === 'none' || !f.active()) continue;
+    if (_zoneFor(f, fake)) return true;
+  }
+  return false;
+}
 const _CURSORS = { n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
   ne: 'nesw-resize', sw: 'nesw-resize', nw: 'nwse-resize', se: 'nwse-resize' };
 function _zoneFor(f, e) {
@@ -64,6 +94,23 @@ function _contentClaims(e) {
   }
   return false;
 }
+/** Is this pointer over DRAGGABLE frame chrome — i.e. none of: interactive
+ *  content (_contentClaims), a click-styled row (computed cursor:pointer —
+ *  the house convention for every clickable), a label (clicks toggle its
+ *  input), or selectable text (the chat log — a grab there would eat copy)?
+ *  The SL Build-window/WoW convention: empty pane pixels move the
+ *  pane; everything that DOES something keeps doing it. */
+function _grabbableAt(e) {
+  if (_contentClaims(e)) return false;
+  for (let t = e.target; t instanceof HTMLElement; t = t.parentElement) {
+    if (t.tagName === 'LABEL') return false;
+    const cs = getComputedStyle(t);
+    if (cs.cursor === 'pointer' || cs.cursor.endsWith('resize')) return false;   // a resize-cursor element is a HANDLE, not a grab surface (chat's pane grip moved the whole frame; R 09-04)
+    if ((cs.userSelect || cs.webkitUserSelect) === 'text') return false;
+    if (t.classList?.contains('frame')) return true;   // reached bare chrome
+  }
+  return false;
+}
 function _hit(e) {
   const cands = _resizables.filter((f) => f.active());
   cands.sort((a, b) => (+b.root.style.zIndex || 0) - (+a.root.style.zIndex || 0));
@@ -91,14 +138,18 @@ document.addEventListener('pointerdown', (e) => {
   const s0 = { x: f.state.x, y: f.state.y, w: f.state.w, h: f.state.h };
   const move = (ev) => {
     const dx = ev.clientX - sx, dy = ev.clientY - sy;
-    if (z.includes('e')) f.state.w = clamp(s0.w + dx, f.minW, innerWidth - 20);
-    if (z.includes('s')) f.state.h = clamp(s0.h + dy, f.minH, innerHeight - 60);
+    // grows are clamped so no edge ever leaves the viewport
+    // (windows stay inside the active area, full stop)
+    if (z.includes('e')) f.state.w = clamp(s0.w + dx, f.minW, innerWidth - s0.x - 8);
+    if (z.includes('s')) f.state.h = clamp(s0.h + dy, f.minH, innerHeight - s0.y - 4);   // same floor as a drag (ui.js: innerHeight − 4); the old −40 stopped a resize 36 px short of where a drag could go (R 09-07 23:25)
     if (z.includes('w')) {
-      f.state.w = clamp(s0.w - dx, f.minW, innerWidth - 20);
+      const maxW = s0.x + s0.w - 8;                // west edge stops at x=8
+      f.state.w = clamp(s0.w - dx, f.minW, maxW);
       f.state.x = s0.x + (s0.w - f.state.w);       // east side stays planted
     }
     if (z.includes('n')) {
-      f.state.h = clamp(s0.h - dy, f.minH, innerHeight - 60);
+      const maxH = s0.y + s0.h - 8;                // north edge stops at y=8
+      f.state.h = clamp(s0.h - dy, f.minH, maxH);
       f.state.y = s0.y + (s0.h - f.state.h);       // south side stays planted
     }
     f.paint();
@@ -143,7 +194,10 @@ document.addEventListener('pointerdown', (e) => {
   document.addEventListener('pointercancel', finish, true);
   addEventListener('blur', finish);
 }, true);
-let zTop = 30;
+// frames live in [Z_LO..Z_HI]; chrome starts at 27 (#dock) and must stay above
+const Z_LO = 10, Z_HI = 25;
+let zTop = Z_LO;
+let warnedZ = false;
 let locked = localStorage.getItem('ew-ui-locked') === '1';
 
 const SNAP = 11;            // px — edge and frame-to-frame snapping distance
@@ -164,8 +218,21 @@ document.body.classList.toggle('ui-locked', locked);
  *                   closable, hidden, onResize }
  *                 x/y accept negatives to anchor from the right/bottom edge.
  */
+// The newcomer's layout is a hand-arranged one, not the panels' individual guesses: R's desktop
+// (a 1904×844 window, 09-06) exported from a live session and anchored to edges so it holds on
+// other screens. Only world + chat are open; everything else is closed but pinned to the dock.
+// A frame's own saved state (its owner's moves) still wins; resetLayout returns HERE.
+const DEFAULT_LAYOUT = {
+  world:    { x: -8,  y: 8,   w: 407, h: 363, hidden: false },
+  chat:     { x: 10,  y: -10, w: 545, h: 307, hidden: false },
+  settings: { x: -8,  y: 381, w: 407, h: 443, hidden: true },
+  profile:  { x: 48,  y: 46,  w: 505, h: 452, hidden: true },
+  debug:    { x: -414, y: 8,  w: 342, h: 453, hidden: true },
+  emotes:   { x: 'center', y: -10, hidden: false },  // one bar across the bottom, OPEN by default (R 09-07 10:55 reference HUD); the bar sizes itself
+};
 export function makeFrame(id, opts = {}) {
   if (frames.has(id)) return frames.get(id);
+  opts = { ...opts, ...(DEFAULT_LAYOUT[id] ?? {}) };
   const {
     title = id, w = 300, h = 220, minW = 170, minH = 90,
     resizable = true, collapsible = true, closable = true,
@@ -198,12 +265,12 @@ export function makeFrame(id, opts = {}) {
     y: saved?.y ?? resolveAnchor(opts.y, h, innerHeight),
     w: saved?.w ?? w,
     h: saved?.h ?? h,
-    collapsed: saved?.collapsed ?? false,
     hidden: saved?.hidden ?? hidden,
   };
 
   const api = {
     id, el: root, body, head,
+    _state: state, _paint: () => paint(),      // live refs for the edge-rider
     get state() { return { ...state }; },
     show() {
       state.hidden = false;
@@ -217,7 +284,6 @@ export function makeFrame(id, opts = {}) {
     hide() { state.hidden = true; paint(); save(); return api; },
     toggle() { state.hidden ? api.show() : api.hide(); return api; },
     get visible() { return !state.hidden; },
-    collapse(v = !state.collapsed) { state.collapsed = v; paint(); save(); return api; },
     setTitle(t) { ttl.textContent = t; return api; },
     /** decorate the title bar (unread counts, status pips, …) */
     badge(html) {
@@ -233,14 +299,30 @@ export function makeFrame(id, opts = {}) {
       Object.assign(state, {
         x: resolveAnchor(opts.x, w, innerWidth),
         y: resolveAnchor(opts.y, h, innerHeight),
-        w, h, collapsed: false, hidden,
+        w, h, hidden,
       });
       paint();
+      if (!state.hidden) raise();
       return api;
     },
   };
 
-  function raise() { root.style.zIndex = String(++zTop); }
+  function raise() {
+    if (zTop >= Z_HI) {
+      const order = [...frames.values()].filter((f) => f.el !== root)
+        .sort((a, b) => (+a.el.style.zIndex || 0) - (+b.el.style.zIndex || 0));
+      zTop = Z_LO - 1;
+      for (const f of order) f.el.style.zIndex = String(++zTop);
+      // more frames than the band holds: the overflow ties at Z_HI rather
+      // than climbing under the dock
+      if (zTop > Z_HI) {
+        if (!warnedZ) { warnedZ = true; console.warn(`frames: ${order.length} frames exceed the z band [${Z_LO}..${Z_HI}]; clamping`); }
+        for (const f of order) f.el.style.zIndex = String(Math.min(+f.el.style.zIndex, Z_HI));
+        zTop = Z_HI;
+      }
+    }
+    root.style.zIndex = String(Math.min(++zTop, Z_HI));
+  }
   function save() {
     localStorage.setItem(LS(id), JSON.stringify(state));
   }
@@ -249,20 +331,19 @@ export function makeFrame(id, opts = {}) {
     root.style.left = `${state.x}px`;
     root.style.top = `${state.y}px`;
     root.style.width = `${state.w}px`;
-    root.classList.toggle('collapsed', state.collapsed);
-    body.style.height = state.collapsed ? '0' : `${state.h}px`;
-    if (!state.collapsed) onResize?.(state.w, state.h);
+    body.style.height = `${state.h}px`;
+    // arrange-mode affordances: which viewport edges hold this frame (glow),
+    // and whether the floating label must sit below (frame hugs the top)
+    const hgt = root.offsetHeight || state.h;
+    const st = stickyEdges(state, hgt);
+    root.classList.toggle('st-l', st.l); root.classList.toggle('st-r', st.r);
+    root.classList.toggle('st-t', st.t); root.classList.toggle('st-b', st.b);
+    root.classList.toggle('label-below', state.y < 46);
+    onResize?.(state.w, state.h);
   }
 
-  // ---- buttons
-  if (collapsible) {
-    const b = document.createElement('button');
-    b.className = 'fr-btn';
-    b.title = 'collapse';
-    b.textContent = '–';
-    b.onclick = (e) => { e.stopPropagation(); api.collapse(); };
-    btns.appendChild(b);
-  }
+  // ---- buttons: name + ✕ only. (Collapse/minimize is GONE — chip, verb, state and the dblclick that
+  // still fired it; R 09-06 12:47: frames 'disappearing forever' were minimized to a title bar.)
   if (closable) {
     const b = document.createElement('button');
     b.className = 'fr-btn';
@@ -277,6 +358,7 @@ export function makeFrame(id, opts = {}) {
     if (locked || e.target.closest('.fr-btn')) return;
     e.preventDefault();
     raise();
+    root.classList.add('lifting');   // depth returns only while held
     const ox = e.clientX - state.x, oy = e.clientY - state.y;
     // capture can throw for a pointer id the browser doesn't know (synthetic
     // events, some touch stacks) — losing capture is survivable, aborting the
@@ -291,15 +373,27 @@ export function makeFrame(id, opts = {}) {
     const up = () => {
       head.removeEventListener('pointermove', move);
       head.removeEventListener('pointerup', up);
+      root.classList.remove('lifting');
       save();
     };
     head.addEventListener('pointermove', move);
     head.addEventListener('pointerup', up);
   });
   // Alt+drag anywhere on the frame — the MMO habit, and it rescues a frame
-  // whose title bar has been dragged off-screen.
+  // whose title bar has been dragged off-screen. Without Alt, EMPTY frame
+  // pixels drag too when the layout is unlocked (grab-by-empty-space)
+  // — interactive content, pointer-cursor rows, labels,
+  // selectable text and the edge-resize band all still win.
+  root.addEventListener('pointermove', (e) => {
+    if (locked || _resizing) { root.style.cursor = ''; return; }
+    root.style.cursor = (!_hit(e) && _grabbableAt(e)) ? 'grab' : '';
+  });
   root.addEventListener('pointerdown', (e) => {
-    if (locked || !e.altKey) return;
+    if (locked || !e.isTrusted) return;                // isTrusted: our own
+    if (!e.altKey && (_hit(e) || !_grabbableAt(e))) return;
+    // re-dispatch below bubbles back through this capture handler — without
+    // the guard it recurses to stack overflow (exposed when heads went
+    // display:none and alt-drag became the only rest-state move).
     e.preventDefault(); e.stopPropagation();
     head.dispatchEvent(new PointerEvent('pointerdown', e));
   }, true);
@@ -307,15 +401,17 @@ export function makeFrame(id, opts = {}) {
   // ---- resizing: registered with the module-level edge hit-tester (below) —
   // one document listener serves every frame, which is the only way to grab
   // OUTSIDE a frame's border without an overlay stealing its content's events
-  // (the ::before halo painted over scrollbars and buttons — R, 17:20).
+  // (the ::before halo painted over scrollbars and buttons).
   if (resizable) _resizables.push({ root, state, minW, minH, paint, save, raise,
-    active: () => !locked && !state.collapsed && !state.hidden });
+    active: () => !locked && !state.hidden });
 
   root.addEventListener('pointerdown', raise);
-  head.addEventListener('dblclick', () => api.collapse());
 
   frames.set(id, api);
   paint();
+  // restored frames enter through raise() too, so boot order becomes z order
+  // and the first click on any of them lands above the rest
+  if (!state.hidden) raise();
   // The anchor was computed from the BODY height, but a frame is also a title
   // bar and whatever padding its content carries — so a bottom-anchored frame
   // hung its composer off the screen. Measure once it exists and pull it back.
@@ -328,6 +424,12 @@ export function makeFrame(id, opts = {}) {
     if (!hh) return;
     if (opts.y != null && opts.y < 0) state.y = Math.max(8, innerHeight + opts.y - hh);
     state.y = clamp(state.y, 8, Math.max(8, innerHeight - hh - 8));
+    // A frame created hidden gets its x from resolveAnchor at CREATION width. If it's first shown after a
+    // resize/maximize, a negative-x (right-edge) anchor must re-resolve to the CURRENT width, or it strands
+    // at its old absolute x (R 09-07: debug, x:-414, opened after maximizing and sat far left instead of
+    // flush-left of the right-docked panels). Only when there's no saved override.
+    if (!saved && typeof opts.x === 'number' && opts.x < 0) state.x = Math.max(8, innerWidth + opts.x - state.w);
+    if (opts.x === 'center' && !saved) state.x = Math.round((innerWidth - state.w) / 2);
     state.x = clamp(state.x, 8, Math.max(8, innerWidth - state.w - 8));
     paint();
   }
@@ -337,6 +439,7 @@ export function makeFrame(id, opts = {}) {
 
 function resolveAnchor(v, size, extent) {
   if (v == null) return 40;
+  if (v === 'center') return Math.max(8, Math.round((extent - size) / 2));
   return v < 0 ? Math.max(8, extent + v - size) : v;
 }
 
@@ -351,30 +454,88 @@ function snapPosition(id, state, height) {
   for (const o of frames.values()) {
     if (o.id === id || !o.visible) continue;
     const r = o.el.getBoundingClientRect();
-    edges.push({ x: r.left }, { x: r.right - state.w }, { x: r.right + 6 }, { x: r.left - state.w - 6 });
-    edges.push({ y: r.top }, { y: r.bottom - height }, { y: r.bottom + 6 }, { y: r.top - height - 6 });
+    // neighbours snap EDGE TO EDGE — no 6 px gutter between panels (R 09-06 23:42: "directly stick edges together")
+    edges.push({ x: r.left }, { x: r.right - state.w }, { x: r.right }, { x: r.left - state.w });
+    edges.push({ y: r.top }, { y: r.bottom - height }, { y: r.bottom }, { y: r.top - height });
   }
   for (const e of edges) {
     if (e.x != null && Math.abs(state.x - e.x) < SNAP) state.x = e.x;
     if (e.y != null && Math.abs(state.y - e.y) < SNAP) state.y = e.y;
   }
-  state.x = clamp(state.x, -state.w + 60, innerWidth - 60);
-  state.y = clamp(state.y, 0, innerHeight - 32);
+  // fully inside the viewport, always (no more parking a window half off-screen)
+  state.x = clamp(state.x, 8, Math.max(8, innerWidth - state.w - 8));
+  state.y = clamp(state.y, 8, Math.max(8, innerHeight - height - 8));
 }
 
-// Keep frames reachable when the window shrinks.
+// ---- viewport-edge stickiness ----------------------------------------------
+// A frame resting against a pane edge belongs to that edge: when the window
+// resizes, it rides the edge instead of being stranded mid-air. Sticky edges
+// glow in arrangement mode so the behavior is legible before it fires.
+const STICKY = 16;
+function stickyEdges(state, height) {
+  return {
+    l: state.x <= 8 + STICKY,
+    r: innerWidth - (state.x + state.w) <= 8 + STICKY,
+    t: state.y <= 8 + STICKY,
+    b: innerHeight - (state.y + height) <= 8 + STICKY,
+  };
+}
+let _lastVW = innerWidth, _lastVH = innerHeight;
+
+// Ride the edges: frames sticky to right/bottom keep their edge gap when the
+// window resizes; everything is then clamped back inside regardless.
 addEventListener('resize', () => {
+  const dw = innerWidth - _lastVW, dh = innerHeight - _lastVH;
   for (const f of frames.values()) {
-    const s = f.state;
-    if (s.x > innerWidth - 60 || s.y > innerHeight - 32) {
-      f.el.style.left = `${clamp(s.x, 8, innerWidth - 80)}px`;
-      f.el.style.top = `${clamp(s.y, 8, innerHeight - 60)}px`;
-    }
+    const st = f._state; if (!st) continue;
+    const hgt = f.el.offsetHeight || st.h;
+    // stickiness judged against the OLD viewport (pre-resize geometry)
+    const wasR = _lastVW - (st.x + st.w) <= 8 + STICKY;
+    const wasB = _lastVH - (st.y + hgt) <= 8 + STICKY;
+    if (wasR && !(st.x <= 8 + STICKY)) st.x += dw;
+    if (wasB && !(st.y <= 8 + STICKY)) st.y += dh;
+    st.x = clamp(st.x, 8, Math.max(8, innerWidth - st.w - 8));
+    st.y = clamp(st.y, 8, Math.max(8, innerHeight - hgt - 8));
+    f._paint?.();
   }
+  _lastVW = innerWidth; _lastVH = innerHeight;
 });
 
 export function getFrame(id) { return frames.get(id); }
 export function allFrames() { return [...frames.values()]; }
+// Esc toggles the whole set of open frames closed ⇄ back (R, 09-05 16:08),
+// but only when nothing more specific wants the key: an open pop, a focused
+// field, a scrim, edit mode (build.js owns Esc there), a locked pointer, or
+// chat's own Esc. The remembered set lives only for the session.
+let escStash = null;
+// anything that owns Esc registers a claim here (build.js registers edit mode) — frames imports nobody for it,
+// so the module graph stays a tree (frames → build → controller → ui → frames was a cycle, review 2026-09-08)
+const escClaims = [];
+export function claimEscape(fn) { escClaims.push(fn); }
+// Esc: close every open panel, Esc again brings the same set back. Installed here, with the frames, so the
+// binding and the help text that promises it ship together. Yields to anything that owns Esc already
+// (escapeIsClaimed — edit mode registers its claim from build.js).
+addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || e.defaultPrevented) return;
+  if (escapeIsClaimed()) return;
+  escapeToggle();
+});
+export function escapeToggle() {
+  const open = [...frames.values()].filter((f) => f.visible);
+  if (open.length) { escStash = open.map((f) => f.id); for (const f of open) f.hide(); return 'closed'; }
+  if (escStash?.length) { for (const id of escStash) frames.get(id)?.show(); escStash = null; return 'restored'; }
+  return 'nothing';
+}
+export function escapeIsClaimed() {
+  for (const fn of escClaims) { const c = fn(); if (c) return c; }
+  const a = document.activeElement;
+  if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return 'field';
+  if (document.querySelector('.pf-pop, .dd-pop, .chat-gearpop:not([hidden]), #emenu:not([hidden])')) return 'pop';   // the gear pop lives in the DOM hidden; only a SHOWN one claims Esc
+  if (document.querySelector('.scrim.open')) return 'overlay';
+  if (document.pointerLockElement) return 'pointer-lock';
+  return null;
+}
+
 export function resetLayout() {
   for (const f of frames.values()) f.resetLayout();
   setLocked(false);
