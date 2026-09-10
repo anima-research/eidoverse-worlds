@@ -96,8 +96,10 @@ function paint() {
 // it's the one time the user is looking at the UI and not at the world.
 const TIPS = [
   // audited against the live bindings 09-05 (R: "see if anything needs updating")
-  ['@', 'Type <b>@</b> in chat to mention someone. Agents are pinged by name — and get it even if they were away.'],
-  ['/', '<b>/w name message</b> whispers privately. It is never written to the world log.'],
+  // Whispers and away-delivery are SERVER policy (EIDO_WHISPERS_ENABLED; each agent's own wake rules), not
+  // promises this client can make — the wording stays descriptive, never a guarantee (review 2026-09-10 #4).
+  ['@', 'Type <b>@</b> in chat to mention someone by name. An agent listening for its name may be pinged.'],
+  ['/', '<b>/w name message</b> whispers privately where this world allows it. Whispers are never written to the world log.'],
   ['B', '<b>B</b> toggles edit mode. Off by default, so looking around never moves anything.'],
   ['↕', 'In edit mode, click anything placed to select it — drag to move, <b>Q</b>/<b>E</b> to turn, <b>Ctrl+Z</b> to undo.'],
   ['∃', 'The <b>∃</b> menu is the drawer: the model library, save and recover, and every panel you have unpinned.'],
@@ -169,7 +171,7 @@ export function initBoot({ world, name }) {
 // though the world is ready — R, 09-05: "fake a longer load so I can see what
 // it might look like on a big world". Everything else (tips, breath) runs as
 // on a real long load; only the dismissal waits.
-const HOLD_S = Number(new URLSearchParams(location.search).get('holdsplash')) || 0;
+const HOLD_S = Number(new URLSearchParams(globalThis.location?.search ?? '').get('holdsplash')) || 0;   // module scope: node-side suites import this without a window
 export function finishBoot(reason = 'ready') {
   if (done || !el) return;
   if (HOLD_S > 0) {
@@ -214,11 +216,15 @@ bus.on('booted', () => releaseBoot?.());
 // loading does to the main thread, and stops only if the tab is hard-frozen
 // (R, 09-05). Dithered in the shader — Canvas2D banded. Falls back to the
 // static gradient (already under it) when OffscreenCanvas/WebGL2 is missing.
-let raysWorker = null;
-function startRays(el) {
+// The worker, its resize listener and the harness handle are ONE resource with one owner: stopRays releases
+// all three, idempotently, on every exit (finish, nogl, a throw mid-start) — a closed worker must never stay
+// advertised as the instrument and a no-op listener must not outlive the splash (review 2026-09-10 #3).
+let raysWorker = null, raysResize = null;
+export function startRays(el) {
   const cv = el.querySelector('.sp-rays');
   if (!cv || typeof OffscreenCanvas === 'undefined' || !cv.transferControlToOffscreen) return;
   if (new URLSearchParams(location.search).get('rays') === '0') return;   // A/B: does the splash shader slow the load?
+  stopRays();   // a second start releases the first worker + listener instead of stacking them
   try {
     const calm = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.3 : 1;
     cv.width = cv.clientWidth; cv.height = cv.clientHeight;
@@ -226,9 +232,16 @@ function startRays(el) {
     raysWorker = new Worker(new URL('./splashrays.worker.js', import.meta.url), { type: 'module' });
     raysWorker.onmessage = (e) => { if (e.data?.type === 'nogl') { cv.style.display = 'none'; stopRays(); } };
     raysWorker.postMessage({ type: 'init', canvas: off, calm }, [off]);
-    const onResize = () => raysWorker?.postMessage({ type: 'size', w: cv.clientWidth, h: cv.clientHeight });
-    addEventListener('resize', onResize);
+    raysResize = () => raysWorker?.postMessage({ type: 'size', w: cv.clientWidth, h: cv.clientHeight });
+    addEventListener('resize', raysResize);
     globalThis.__raysWorker = raysWorker;   // harness: postMessage({type:'frames'}) answers with the frame count
-  } catch { cv.style.display = 'none'; }
+  } catch { cv.style.display = 'none'; stopRays(); }
 }
-function stopRays() { raysWorker?.postMessage({ type: 'stop' }); raysWorker = null; }
+export function stopRays() {
+  const w = raysWorker;
+  raysWorker = null;
+  if (raysResize) { removeEventListener('resize', raysResize); raysResize = null; }
+  if (globalThis.__raysWorker) globalThis.__raysWorker = null;
+  if (w) { try { w.postMessage({ type: 'stop' }); } catch { /* already closed */ } }
+}
+export const raysActive = () => raysWorker !== null;
