@@ -14,6 +14,9 @@
 // renderer answers it is an implementation detail the world log never sees.
 
 import { THREE, scene, sun, hemi, renderer, camera } from './core.js';
+// ?shadowdebug=1 — R 09-07 19:17: 'crank it way up to see if it's there at all'. Sun shadows measured ~10 % darker than lit
+// ground (fill light drowns the sun's share); this dims the fill to a fifth so the shadow map's coverage is legible.
+const SHADOW_DEBUG_FILL = new URLSearchParams(location.search).has('shadowdebug') ? 0.2 : 1;
 import { report, bus } from './base.js';
 import { loadEidoModule, primeFiles, listLibrary, fetchBytes } from './assets.js';
 import { markPhase } from './boot.js';
@@ -773,7 +776,8 @@ function applyTuning(a, day, warmth = Math.pow(1 - day, 1.5), sunPos = null, sky
   if (!skyOwnsLights) {
     sun.intensity = (0.4 + 2.2 * day) * (a.sun ?? 1);
     // Low sun ≠ dark subjects: golden hour is FULL of scattered warm light.
-    hemi.intensity = (0.6 + 0.4 * day) * (a.ambient ?? 1);
+    hemi.intensity = (0.6 + 0.4 * day) * (a.ambient ?? 1) * SHADOW_DEBUG_FILL;
+    if (SHADOW_DEBUG_FILL !== 1 && scene.environment) scene.environmentIntensity = SHADOW_DEBUG_FILL;
 
     fillLight.color.copy(hemi.color);
     if (sunPos) {

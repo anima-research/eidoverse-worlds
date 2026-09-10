@@ -110,7 +110,7 @@ function paintScene(force = false) {
       .split('_').slice(0, 3).join(' ');
     const badges = badgesFor(id);
     const scripts = behaviorRows.filter((b) => b.attach === id).map((b) => `📜${b.id}`);
-    rows.push(`<div class="who-row sg-row" data-id="${esc(id)}" style="cursor:pointer;padding-left:${depth * 14}px;${id === selected ? 'background:rgba(255,255,255,.06)' : ''}">
+    rows.push(`<div class="who-row sg-row${id === selected ? ' sel' : ''}" data-id="${esc(id)}" style="cursor:pointer;padding-left:${depth * 14}px">
       <span class="n">${depth ? '└ ' : ''}<b>${esc(id)}</b> <span style="color:var(--dim)">${esc(short)}</span></span>
       <span class="d">${esc([...badges, ...scripts].join(' · '))}</span></div>`);
     for (const r of riders.get(id) ?? []) {

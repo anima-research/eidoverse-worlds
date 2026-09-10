@@ -18,6 +18,8 @@ import { pending, P } from './scheduler.js';
 import { remotes, ensureRemote, dropRemote, pushPose, noteServerTime, noteSpeaking } from './remotes.js';
 import { myReachBag } from './reachnet.js';
 import { wingFoldPresence } from '../../shared/wingpresence.js';
+import { presenceWire } from '../../shared/presencewire.js';
+import { presence } from './presence.js';
 import { logChat, logWhisper, noteTyping, noteHistoryContext } from './chat.js';
 import { composeFirstPerson } from './fp_view.js';
 import { captureFrame, captureFrom } from './capture.js';
@@ -182,15 +184,21 @@ export function sendLease(op, id, payload = {}) {
   }
 }
 
+// XR: the wire carries the AVATAR's actual yaw (root + its own chase of the head) and the look
+// pitch while presenting — porch-old sent head yaw (index.html:11066–11072); remotes turn with the head.
+let poseOverride = null;
+export const setPoseOverride = (fn) => { poseOverride = fn; };
 export function sendPose(now) {
   const s = hooks.myState;
   if (!net.joined || !hooks.me() || !s || now - lastPoseSent < 66) return;
   lastPoseSent = now;
+  const ov = poseOverride?.();
   const pose = {
     p: [s.pos.x, s.pos.y, s.pos.z],
-    yaw: s.yaw, speed: s.speed, clip: s.clip,
-    pitch: Math.round((s.pitch ?? 0) * 100) / 100,
+    yaw: ov?.yaw ?? s.yaw, speed: s.speed, clip: s.clip,
+    pitch: Math.round((ov?.pitch ?? s.pitch ?? 0) * 100) / 100,
     ...wingFoldPresence(s.wingsFolded),
+    ...presenceWire(presence()),        // present / away / busy — for the Who panel (R, 09-05)
   };
   const avatar = hooks.me();
   if (!avatar.emote && !avatar._limp && Number.isFinite(avatar.current?.time)) {
@@ -198,6 +206,7 @@ export function sendPose(now) {
     pose.clipTimeSlot = avatar.currentSlot;
     pose.clipRate = avatar.current.paused ? 0 : avatar.current.timeScale ?? 1;
   }
+  if (ov?.xr) pose.xr = ov.xr;   // C18: tracked head/hands, facing-relative (xrbody.js) — presence, never the log
   if (s.emote) { pose.emote = s.emote; s.emote = null; } // one-shot: send once
   // A held custom pose rides the presence packet (and therefore lastPose, so
   // late joiners see it) — but never the log. `null` explicitly clears it.
@@ -669,6 +678,9 @@ async function handle(msg) {
       break;
 
     case 'error':
+      // the world tells us it has no voice relay only when we try to use one —
+      // remember it, so the mic glyph can say WHY it stays off (R, 09-04)
+      if (/no voice relay/i.test(String(msg.error ?? ''))) window.__voiceRelayAbsent = true;
       // Server-side refusals are the user's problem to see, not the console's.
       toast(msg.error, 'warn');
       // ...and any module holding an optimistic preview needs to hear it: a

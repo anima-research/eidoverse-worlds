@@ -13,7 +13,7 @@
 //      spent learning them instead of watching a bar.
 
 import { bus } from './base.js';
-import { bootBytes } from './assets.js';
+import { loadingItems, bootBytes } from './assets.js';
 
 // Phase weights are rough shares of a cold boot, measured rather than guessed
 // (see the timings in the commit that added this). They only need to be
@@ -56,30 +56,62 @@ function currentLabel() {
   return 'stepping in';
 }
 
+// ---- what's loading: named items, once they have been in flight > 2 s
+const firstSeen = new Map();   // key → performance.now() when first seen in flight
+const SHOW_AFTER_MS = 2000, MAX_ITEMS = 1;   // ONE line of load detail (R 09-06 13:24: two left a fat empty gap between the MB line and the tips)
+function paintItems() {
+  if (!itemsEl || done) return;
+  const now = performance.now();
+  const items = loadingItems();
+  const seen = new Set();
+  for (const it of items) { const k = it.label; seen.add(k); if (!firstSeen.has(k)) firstSeen.set(k, now); }
+  for (const k of firstSeen.keys()) if (!seen.has(k)) firstSeen.delete(k);
+  const shown = items
+    .filter((it) => now - (firstSeen.get(it.label) ?? now) > SHOW_AFTER_MS)
+    .sort((a, b) => ((b.total || 0) - b.done) - ((a.total || 0) - a.done))
+    .slice(0, MAX_ITEMS);
+  itemsEl.innerHTML = shown.map((it) => `<div class="sp-load"><span class="sp-load-name">${escapeHtml(prettyLabel(it.label))}</span><span class="sp-load-bytes">${it.total > 0 ? `${(it.done / 1048576).toFixed(1)} / ${(it.total / 1048576).toFixed(1)} MB` : it.done > 0 ? `${(it.done / 1048576).toFixed(1)} MB…` : ''}</span></div>`).join('');
+}
+const prettyLabel = (l) => String(l).split('/').pop().replace(/\.(vrm|glb|gltf|png|jpg|ktx2|json|g|gl)(\?.*)?$/i, '').replace(/[_-]+/g, ' ');   // some labels arrive pre-truncated ('desk.g')
+const escapeHtml = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
 function paint() {
   if (!el || done) return;
+  paintItems();
   const pct = Math.round(progress() * 100);
   bar.style.width = `${pct}%`;
   phaseEl.textContent = currentLabel();
   const b = bootBytes();
+  // ALWAYS show the expected total (R, 16:01 — people deserve to know how
+  // much they're in for, in case they want to bail). done can overrun the
+  // manifest total when late discoveries join; display total grows with it
+  // so the fraction stays honest instead of reading 117%.
+  const shownTotal = Math.max(b.total, b.done);
   detailEl.textContent = b.total > 0
-    ? `${(b.done / 1048576).toFixed(1)} / ${(b.total / 1048576).toFixed(1)} MB`
+    ? `${(b.done / 1048576).toFixed(1)} / ${(shownTotal / 1048576).toFixed(1)} MB`
     : '';
 }
 
 // Rotating tips — the wait is the best teaching moment the client gets, since
 // it's the one time the user is looking at the UI and not at the world.
 const TIPS = [
+  // audited against the live bindings 09-05 (R: "see if anything needs updating")
   ['@', 'Type <b>@</b> in chat to mention someone. Agents are pinged by name — and get it even if they were away.'],
   ['/', '<b>/w name message</b> whispers privately. It is never written to the world log.'],
-  ['B', 'Press <b>B</b> to search the model library, or drag a <b>.glb</b> straight into the window.'],
-  ['↕', 'Click anything placed to select it — drag to move, <b>Q</b>/<b>E</b> to turn, <b>Ctrl+Z</b> to undo.'],
-  ['X', 'Press <b>X</b> next to a chair and you will sit <i>on</i> it. Nobody had to make it a chair.'],
+  ['B', '<b>B</b> toggles edit mode. Off by default, so looking around never moves anything.'],
+  ['↕', 'In edit mode, click anything placed to select it — drag to move, <b>Q</b>/<b>E</b> to turn, <b>Ctrl+Z</b> to undo.'],
+  ['∃', 'The <b>∃</b> menu is the drawer: the model library, save and recover, and every panel you have unpinned.'],
+  ['X', 'Press <b>X</b> next to a chair and you will sit <i>on</i> it. Nobody had to make it a chair. <b>Z</b> lies down.'],
+  ['V', 'Hold <b>V</b> to talk. Your body should wake up silent — the mic is off until you say so.'],
+  ['1', 'Number keys play the emote bar\'s gestures, in its order. The bar shows which is which.'],
+  ['Esc', '<b>Esc</b> closes every open panel. <b>Esc</b> again brings back exactly the set you had.'],
+  ['●', 'Click your portrait in the profile to set present, away or busy. Everyone here sees it beside your name.'],
   ['P', '<b>P</b> is photo mode: free camera, <b>F1</b> hides the UI, <b>F2</b> saves the shot.'],
   ['▦', 'Every panel moves and resizes. Where you put them is remembered.'],
 ];
 let tipIdx = Math.floor(Math.random() * TIPS.length);
 let tipTimer = null;
+let itemsEl = null, itemsTimer = null;
 function rotateTip() {
   if (!tipEl) return;
   tipIdx = (tipIdx + 1) % TIPS.length;
@@ -91,8 +123,17 @@ export function initBoot({ world, name }) {
   el = document.getElementById('splash');
   if (!el) return;
   bar = el.querySelector('.sp-bar-fill');
+  startRays(el);
   phaseEl = el.querySelector('.sp-phase');
   detailEl = el.querySelector('.sp-detail');
+  itemsEl = el.querySelector('.sp-items');
+  const WHY = {
+    'vr-webgl': 'restarted on WebGL 2 for VR — this browser can\'t present VR from WebGPU yet (Video settings › VR renderer)',
+    'vr': 'restarted in VR mode',
+  }[new URLSearchParams(location.search).get('why')];
+  if (WHY) { const w = document.createElement('div'); w.className = 'sp-why'; w.textContent = WHY; el.querySelector('.sp-status')?.after(w); }
+  bus.on('loading', paintItems);
+  itemsTimer = setInterval(paintItems, 500);   // the > 2 s gate needs a clock, not just events
   tipEl = el.querySelector('.sp-tip');
   el.querySelector('.sp-world').textContent = world;
   el.querySelector('.sp-name').textContent = name;
@@ -124,13 +165,25 @@ export function initBoot({ world, name }) {
   paint();
 }
 
+// ?holdsplash=N keeps the splash up until N seconds after boot began, even
+// though the world is ready — R, 09-05: "fake a longer load so I can see what
+// it might look like on a big world". Everything else (tips, breath) runs as
+// on a real long load; only the dismissal waits.
+const HOLD_S = Number(new URLSearchParams(location.search).get('holdsplash')) || 0;
 export function finishBoot(reason = 'ready') {
   if (done || !el) return;
+  if (HOLD_S > 0) {
+    const left = HOLD_S * 1000 - (performance.now() - startedAt);
+    if (left > 0) { if (phaseEl) phaseEl.textContent = `holding the splash for a look · ${Math.ceil(left / 1000)}s`; setTimeout(() => finishBoot(reason), Math.min(left, 1000)); return; }
+  }
   done = true;
   clearInterval(tipTimer);
+  clearInterval(itemsTimer);
+  if (itemsEl) itemsEl.innerHTML = '';
   bar.style.width = '100%';
   phaseEl.textContent = 'welcome';
   el.classList.add('gone');
+  stopRays();
   setTimeout(() => { el.style.display = 'none'; }, 620);
   const total = Math.round(performance.now() - startedAt);
   console.log(`[boot] ready in ${total}ms (${reason})`, marks);
@@ -155,3 +208,27 @@ export const whenBooted = () => (done
   ? Promise.resolve()
   : Promise.race([bootGate, new Promise((r) => setTimeout(r, BOOT_GATE_MAX))]));
 bus.on('booted', () => releaseBoot?.());
+
+// ---- the rays live in a WORKER (splashrays.worker.js): a WebGL2 shader on an
+// OffscreenCanvas, so the splash animates every frame regardless of what
+// loading does to the main thread, and stops only if the tab is hard-frozen
+// (R, 09-05). Dithered in the shader — Canvas2D banded. Falls back to the
+// static gradient (already under it) when OffscreenCanvas/WebGL2 is missing.
+let raysWorker = null;
+function startRays(el) {
+  const cv = el.querySelector('.sp-rays');
+  if (!cv || typeof OffscreenCanvas === 'undefined' || !cv.transferControlToOffscreen) return;
+  if (new URLSearchParams(location.search).get('rays') === '0') return;   // A/B: does the splash shader slow the load?
+  try {
+    const calm = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0.3 : 1;
+    cv.width = cv.clientWidth; cv.height = cv.clientHeight;
+    const off = cv.transferControlToOffscreen();
+    raysWorker = new Worker(new URL('./splashrays.worker.js', import.meta.url), { type: 'module' });
+    raysWorker.onmessage = (e) => { if (e.data?.type === 'nogl') { cv.style.display = 'none'; stopRays(); } };
+    raysWorker.postMessage({ type: 'init', canvas: off, calm }, [off]);
+    const onResize = () => raysWorker?.postMessage({ type: 'size', w: cv.clientWidth, h: cv.clientHeight });
+    addEventListener('resize', onResize);
+    globalThis.__raysWorker = raysWorker;   // harness: postMessage({type:'frames'}) answers with the frame count
+  } catch { cv.style.display = 'none'; }
+}
+function stopRays() { raysWorker?.postMessage({ type: 'stop' }); raysWorker = null; }

@@ -347,11 +347,97 @@ export function requestBake() {
 /** Per frame from updateSky(): follow the camera, advance the bake/fade
  *  cycle. The camera-follow matches the live domes (x/z only — sky_system
  *  keeps dome centres at ground level). */
+// ── XR: bakes move OFF the presented frame ──────────────────────────────
+// A secondary renderer.render() inside an XR animation frame corrupts
+// the in-flight per-eye render list ("Cannot destructure 'object' of
+// renderList[i]" @ _renderObjects, per frame = the world strobing in the
+// headset). But BETWEEN XR frames the renderer is not mid-flight — so while
+// a session presents, band renders and env blits run from a macrotask pump
+// instead of the frame callback. setTimeout (not rAF, which Chrome parks
+// during immersive sessions; not the warm conductor, which yields on rAF)
+// paced to one band per XR_BAKE_SPACING_MS so the session's frame budget is
+// never contended two ticks in a row. Fades stay per-frame — they are pure
+// uniform math. If the quarantined crash signature ever appears from the
+// pump path, baking re-freezes for the rest of the session and says so once
+// — the old frozen-sky behavior as fallback, never as default.
+const XR_BAKE_SPACING_MS = 40;
+let xrPumpId = 0;
+let xrBakeBroken = false;
+
+function xrPumpDue() {
+  return state === 'baking'
+    || (state === 'idle' && (pendingForce || performance.now() >= nextAt));
+}
+
+function scheduleXrPump() {
+  if (xrPumpId || xrBakeBroken || !xrPumpDue()) return;
+  xrPumpId = setTimeout(xrPumpTick, XR_BAKE_SPACING_MS);
+}
+
+function xrPumpTick() {
+  xrPumpId = 0;
+  if (!dome || xrBakeBroken) return;
+  if (!renderer.xr?.isPresenting) return;   // session ended: frame path resumes
+  const now = performance.now();
+  // Between frames the renderer must not route through XR state (which only
+  // exists inside a session rAF) — three keys internals off the live frame's
+  // views and a between-frames render lands "Invalid value used as weak map
+  // key". Classic secondary-view discipline: xr.enabled off around the bake.
+  const xrWas = renderer.xr.enabled;
+  renderer.xr.enabled = false;
+  // PINNED-VERSION SURGERY, written against r184, re-checked at the 0.186 bump (revisit at every three bump): between XR
+  // frames the backend's _currentContext still points at the LAST XR frame's
+  // context. Our render captures it as previousContext and finishRender then
+  // restores a framebuffer that does not exist outside the session frame —
+  // WebGLState.drawBuffers WeakMap.set(undefined) (stack captured 2026-08-20).
+  // finishRender's own `if (previousContext !== null)` skips the restore, so
+  // null the pointers for the off-frame render; the next XR frame rebinds
+  // everything from its own beginRender. The catch's freeze-latch remains the
+  // backstop if a future three moves these fields.
+  // Deliberately NOT saved/restored: between frames, null IS the truthful
+  // state — restoring the stale pointer after our render re-poisons the NEXT
+  // XR frame (beginRender captures it as previousContext → finishRender
+  // restores a dead framebuffer → the same WeakMap throw, now per-frame; run
+  // 13's 167 errors were exactly this). Each XR frame's beginRender sets its
+  // own context; it never needs the old one back.
+  const bk = renderer.backend;
+  if (bk) bk._currentContext = null;
+  renderer._currentRenderContext = null;
+  try {
+    if (state === 'idle' && (pendingForce || now >= nextAt)) {
+      if (!maybeRefreshGraph()) {
+        cycleForced = pendingForce;
+        pendingForce = false;
+        cycleStart = now;
+        nextAt = now + cfg.intervalMs;
+        bandIdx = 0;
+        state = 'baking';
+      }
+    } else if (state === 'baking') {
+      renderBand(bandIdx);                  // one band per tick, off-frame
+      bandIdx += 1;
+      if (bandIdx >= bandMeshes.length) finishBake(now);
+    }
+  } catch (e) {
+    xrBakeBroken = true;
+    console.error('[sky] XR off-frame bake failed — sky frozen for this '
+      + 'session (please report):', e?.message ?? e,
+      '\nSTACK:', String(e?.stack ?? '').slice(0, 600));
+    return;
+  } finally {
+    renderer.xr.enabled = xrWas;
+  }
+  scheduleXrPump();
+}
+
 export function updateBakedDome(now = performance.now()) {
   if (!dome) return;
   dome.position.set(camera.position.x, 0, camera.position.z);
 
+  const presenting = Boolean(renderer.xr?.isPresenting);
+  if (presenting) scheduleXrPump();        // renders happen between XR frames
   if (state === 'baking') {
+    if (presenting) return;                // the pump owns this state in XR
     renderBand(bandIdx);
     bandIdx += 1;
     if (bandIdx >= bandMeshes.length) finishBake(now);
@@ -369,6 +455,7 @@ export function updateBakedDome(now = performance.now()) {
     return;
   }
   if (state !== 'idle') return;        // 'refreshing': a graph rebuild is in flight
+  if (presenting) return;              // idle→baking is the pump's too
   if (pendingForce || now >= nextAt) {
     if (maybeRefreshGraph()) return;   // clear↔cloudy flip: rebuild first
     cycleForced = pendingForce;

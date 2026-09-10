@@ -33,7 +33,7 @@ export const bus = { on() {}, emit() {} };
 // avatar.js pulls a wider slice of core than ragdoll's cone does. None of it
 // is exercised by the limp/clip lifecycle under test — the point is only to
 // let the module import without a renderer.
-export const camera = { position: new THREE_RAW.Vector3(), quaternion: new THREE_RAW.Quaternion() };
+export const camera = new THREE_RAW.PerspectiveCamera();   // a real Object3D: the VR-alpha lightrig reads getWorldPosition/matrixWorld
 // lightrig configures the shadow map at module scope (enabled/type are in the
 // pipeline cache key, so they are set once before the first compile). A bare
 // {} is a TypeError there; these are inert stand-ins, not a simulated renderer.
@@ -41,6 +41,11 @@ export const renderer = {
   domElement: null,
   shadowMap: { enabled: false, type: 0 },
   _getShadowNodes: () => ({}),
+  // the VR-alpha client's render.js wraps these at module scope (render census, curtain); inert here
+  render() {}, compileAsync: async () => {}, setRenderTarget() {}, getRenderTarget: () => null,
+  setAnimationLoop() {}, getSize: () => ({ width: 1, height: 1 }), setSize() {},
+  xr: { enabled: false, isPresenting: false, getCamera: () => null, addEventListener() {}, removeEventListener() {} },
+  info: { render: { calls: 0, triangles: 0 }, reset() {} }, backend: { isWebGLBackend: true },
 };
 export const report = () => {};
 export const angleDelta = (a, b) => {
@@ -78,3 +83,23 @@ const tslNode = new Proxy(function () {}, {
   construct: () => tslNode,
 });
 export const TSL = new Proxy({}, { get: () => tslNode });
+
+// --- exports the VR-alpha stack's client adds to core.js / base.js (inert here; the test never renders) ---
+export const backendName = () => 'webgl';
+export const canvas = { width: 1, height: 1, getBoundingClientRect: () => ({ width: 1, height: 1 }) };
+export const hemi = null;
+export const axisLines = null;
+export const XR_BOOT = false;
+export const WEBGPU_XR = false;
+export const WEBGPU_POSSIBLE = false;
+export const BASE_PIXEL_RATIO = 1;
+export const PREF_BACKEND = 'ew-backend';
+export const PREF_MSAA = 'ew-msaa';
+export const PREF_HEADSET_SEEN = 'ew-headset-seen';
+export const installRenderListTolerance = () => {};
+export const tee = () => {};
+export const colorFor = () => '#888888';
+export const assignColors = () => {};
+export const setToken = () => {};
+export const setName = () => {};
+export const setErrorSink = () => {};

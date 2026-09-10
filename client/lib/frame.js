@@ -21,7 +21,8 @@
 // the identity RTT resolves — a module that self-started on import would
 // change boot ordering silently (§14.1).
 
-import { report } from './base.js';
+import { report, bus } from './base.js';
+import { renderer, XR_BOOT } from './core.js';
 import { BC } from './bc.js';
 import { perf } from './perf.js';
 
@@ -59,7 +60,18 @@ let windowWorst = 0;
 let windowDoubled = 0;
 let windowSpikes = 0;
 function frame(now) {
-  const dtMs = now - last;
+  // The first tick after an XR session ends arrives with a non-finite `now` (three re-arms the loop; 09-07 00:20,
+  // emulated headset): dtMs went NaN straight through the guard below, the follow camera lerped by NaN once and
+  // stayed NaN forever — R's BLACK DESKTOP AFTER LEAVING VR (09-06 12:46 → 23:43). A frame with no clock is a resume.
+  if (!Number.isFinite(now)) now = performance.now();
+  let dtMs = now - last;
+  if (!Number.isFinite(dtMs)) dtMs = 0;
+  // A RESUME is not a frame. Under an XR session the loop ticks on the
+  // session's clock and stops while the session is blurred (SteamVR
+  // dashboard, headset off); the first tick back arrived with dtMs = -72464
+  // (R's recorder, 09-04 23:41) and a negative dt went straight into the
+  // body physics. Negative or absurd deltas advance nothing.
+  if (dtMs < 0 || dtMs > 2000) dtMs = 0;
   const dt = Math.min(0.1, dtMs / 1000);
   last = now;
   // A hidden tab suspends rAF; the resume gap is a suspension, not a frame —
@@ -87,6 +99,7 @@ function frame(now) {
     s.ms += (performance.now() - t0 - s.ms) * 0.05;   // rolling average
   }
   frameNo++;
+  perf.frameNo = frameNo;   // lifetime tick count — the after-exit probe reads it (perf.frames never existed; that field teed 0 since 09-06)
 
   frames++;
   if (now - fpsAt > 1000) {
@@ -100,12 +113,30 @@ function frame(now) {
     frames = 0;
     fpsAt = now;
   }
-  requestAnimationFrame(frame);
+  if (!onXRLoop) requestAnimationFrame(frame);
 }
+
+// Who drives the loop. An ?xr=1 boot hands frame to three's Animation at boot and it stays there: three's
+// XRManager.setSession SAVES the current app loop, wraps it in _onAnimationFrame (the ONLY place the eye
+// framebuffer is bound — backend.setXRTarget(glBaseLayer.framebuffer) — before the app loop runs), moves it
+// to the session clock, and restores it to window.rAF on exit. The visor enters in place since 09-07, so the
+// hand-over must happen the same way: BEFORE setSession (xr:loop fires just ahead of it). Handing over AFTER
+// setSession (684c716, one afternoon) overwrote three's wrapper with bare frame — session clock at 90 fps,
+// the XR cameras rendered into the CANVAS, setXRTarget never called (loop-identity probe: liveLoop='frame',
+// savedAppLoop=null, 0 binds/s) — and R saw the WebXR construct all day. Once handed over the loop stays on
+// three's Animation; re-arming window.rAF ourselves on exit would run it twice.
+let onXRLoop = XR_BOOT;
+bus.on('xr:loop', () => { if (onXRLoop) return; onXRLoop = true; renderer.setAnimationLoop(frame); });
+bus.on('xr:rearm', () => renderer.setAnimationLoop(frame));   // after-exit recovery: the loop three restarted never ticked (xr.js probe)
 
 /** Start the loop. Called once from boot, AFTER identity resolves. */
 export function startFrame() {
   last = performance.now();
   fpsAt = last;
-  requestAnimationFrame(frame);
+  // Inside an XR session the window's rAF stops (or detaches from the
+  // headset's cadence) and only session.requestAnimationFrame ticks —
+  // renderer.setAnimationLoop routes to whichever is live. Desktop boot
+  // keeps the plain rAF loop byte-for-byte.
+  if (XR_BOOT) renderer.setAnimationLoop(frame);
+  else requestAnimationFrame(frame);
 }

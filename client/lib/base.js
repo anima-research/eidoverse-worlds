@@ -71,6 +71,49 @@ export function setErrorSink(fn) { errorSink = fn; }
 // console and the toast stack — the first one is the useful one, and the
 // hundredth actively hides everything else.
 const seenErrors = new Map(); // key -> { n, nextAt }
+// ---- console tee: what a visitor's page says, where the operator can read it.
+// Every report() plus window errors post to /clientlog (key-gated, bounded
+// server-side). Off the hot path (queued, one flush per second), never throws,
+// and never carries the key in the payload — the key rides the query like the
+// door's own requests. `tee(line)` is for lines worth keeping ([xr] etc).
+let teeQ = [], teeTimer = 0, teeMuted = false;
+function teeFlush() {
+  teeTimer = 0;
+  if (!teeQ.length || teeMuted) return;
+  const batch = teeQ.splice(0, 20);
+  const url = `/clientlog?world=${encodeURIComponent(CONFIG.world ?? '')}`;
+  const headers = { authorization: `Bearer ${CONFIG.token ?? ''}` };   // the door key never rides in a URL
+  for (const line of batch) {
+    try { fetch(url, { method: 'POST', body: line, headers, keepalive: true }).then((r) => { if (r.status === 401 || r.status === 404) teeMuted = true; }).catch(() => {}); }
+    catch { /* the tee must never break the page */ }
+  }
+  if (teeQ.length) teeTimer = setTimeout(teeFlush, 1000);
+}
+const teeSeen = new Map();   // repeats cost one line, then one per 20
+export function tee(line) {
+  try {
+    const who = CONFIG.name ?? '?';
+    const key = String(line).slice(0, 160);
+    if (!key.startsWith('[xr:rec]')) {
+      const n = (teeSeen.get(key) ?? 0) + 1; teeSeen.set(key, n);
+      if (n > 1 && n % 20 !== 0) return;
+      if (n > 1) line = `${line} ×${n}`;
+    }
+    teeQ.push(`${who} ${String(line).slice(0, 3000)}`);
+    if (teeQ.length > 200) teeQ.splice(0, teeQ.length - 200);
+    if (!teeTimer) teeTimer = setTimeout(teeFlush, 1000);
+  } catch { /* never */ }
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('error', (e) => tee(`[window.error] ${e.message} @ ${(e.filename ?? '').split('/').pop()}:${e.lineno}`));
+  window.addEventListener('unhandledrejection', (e) => tee(`[unhandled] ${e.reason?.message ?? e.reason}`));
+  // wake CAUSE, not just the URL (cribbed from agent-framework #141's turn
+  // provenance: who woke you ≠ whose words are in view): reload vs navigate
+  // vs back_forward separates "R reloaded" from "the tunnel reconnected"
+  let cause = '?'; try { cause = performance.getEntriesByType('navigation')[0]?.type ?? '?'; } catch { /* old UA */ }
+  tee(`[boot] cause=${cause} host=${location.host} ${location.pathname}${location.search.replace(/key=[^&]+/, 'key=…')} ua=${navigator.userAgent.slice(0, 120)}`);
+}
+
 export function report(context, err) {
   const message = err?.message ?? String(err ?? 'unknown error');
   const key = `${context}:${message}`;
@@ -78,6 +121,7 @@ export function report(context, err) {
   const rec = seenErrors.get(key) ?? { n: 0, nextAt: 0 };
   rec.n++;
   const suppressed = now < rec.nextAt;
+  if (rec.n === 1 || rec.n % 20 === 0) tee(`[report] ${context}: ${message} ×${rec.n} :: ${String(err?.stack ?? '').split('\n').slice(1, 4).join(' | ').slice(0, 600)}`);
   if (!suppressed) {
     // 1st, then 2s, 10s, 60s… — enough to show a fault is ongoing, not enough to drown
     rec.nextAt = now + Math.min(60000, 2000 * rec.n);

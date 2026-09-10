@@ -138,7 +138,7 @@ const SHADOW_SIDE = {
 let warmMat = null;       // our shadow-pass material — value-identical to three's
 let baseColorNode = null; // vec4(0,0,0,1), inlined by value in WGSL
 let scratchRT = null;     // format-matched fallback target (never drawn into)
-let depthWarmBroken = false;
+let depthWarmBroken = new URLSearchParams(location.search).has('nodepthwarm');   // ?nodepthwarm=1 — R 09-07 19:22: casters compile in-frame, the pre-warm bypassed, to tell a wrong warmed pipeline from a driver compare issue
 
 function ensureDepthWarm() {
   if (warmMat) return true;

@@ -13,7 +13,7 @@
     "pngjs": "^7.0.0",
     "quickjs-emscripten": "^0.32.0",
     "sharp": "^0.33.5",
-    "three": "^0.184.0",
+    "three": "^0.186.0",
     "werift": "^0.24.4"
   },
   "devDependencies": {
