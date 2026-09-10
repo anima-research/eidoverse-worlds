@@ -24,6 +24,19 @@ import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
 import { inspectBody } from "../shared/flightbody.js";
 import { wingFoldPresence } from "../shared/wingpresence.js";
 import { DEFAULT_LEAF_FORCE as LEAF_FORCE } from "../shared/leafforce.js";
+import { objectIdentity } from '../shared/label.js';
+
+/** One authored description as one perception line. The cap is per OBJECT and
+ *  a look renders every labelled object in view, so the ceiling that matters is
+ *  the product, not the single string. Cut on a word where there is one. */
+const AFFORDANCE_MAX = 160;
+function affordanceText(value: string): string {
+  const flat = value.replace(/\s+/g, " ").trim();
+  if ([...flat].length <= AFFORDANCE_MAX) return flat;
+  const cut = [...flat].slice(0, AFFORDANCE_MAX).join("");
+  const space = cut.lastIndexOf(" ");
+  return `${space > AFFORDANCE_MAX / 2 ? cut.slice(0, space) : cut}…`;
+}
 
 /** integrator yaw (atan2(dz,dx), forward = (cos,sin)) -> world yaw
  *  (atan2(dx,dz), which every renderer and walkTo already speak). */
@@ -3028,13 +3041,20 @@ export class WorldAgent {
     const ordered = meKnown ? [...ents].sort((a, b) => sortKey(a) - sortKey(b)) : ents;
     for (const e of ordered) {
       const f = fx.get(e.id)!;
-      const short = (e.lib ?? "(light)").split("/").pop()!.replace(".glb", "").split("_").slice(0, 5).join(" ");
+      const identity = objectIdentity(e, this.st.assets);
+      const short = identity.name;
       // Affordances read out loud: a thing that can be sat on, used, or is
       // moving SAYS SO in text-tier perception — this is how the capability
       // a builder declared (sockets/reactions components) reaches everyone
       // who perceives by reading.
       const c = e.comp ?? {};
       const aff: string[] = [];
+      // A description is capped at 2,000 code points per object, but nothing caps
+      // how many labelled objects are in view: a well-labelled commons would spend
+      // an agent's whole context on building copy, and unlike a browser an agent
+      // has no objectLabels=off. One line each here -- the full text is still one
+      // look at the object itself away.
+      if (identity.description) aff.push(affordanceText(identity.description));
       if (c.sockets) aff.push(`sit/mount: ${Object.keys(c.sockets).join(", ")}`);
       if (c.reactions) aff.push(`reacts to: ${Object.keys(c.reactions).join(", ")}`);
       if (c.motion?.type) aff.push(`in motion (${c.motion.type})`);

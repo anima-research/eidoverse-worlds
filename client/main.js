@@ -9,6 +9,7 @@
 
 import { THREE, scene, camera, renderer } from './lib/core.js';
 import { CONFIG, bus, report } from './lib/base.js';
+import { initObjectLabels, tickObjectLabels } from './lib/objectlabels.js';
 import { contributeThumbnail, makeAvatar, EMOTE_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
 import { setSkyArgsSource, entities, buildsPending, avatarMounts } from './lib/world.js';
@@ -237,6 +238,7 @@ function start() {
     // the join completes.
     .then((vs) => vs.speakOwnSays(bus, () => net.myId || CONFIG.name))
     .catch((e) => console.warn('[voice] own-say hook not installed:', e));
+  initObjectLabels();
   initSceneGraph();   // 🌳 the world as a tree + 📜 the scripts that animate it
   setHint('<kbd>WASD</kbd> move · <kbd>Enter</kbd> chat · <kbd>B</kbd> build · <kbd>?</kbd> help');
 
@@ -441,6 +443,7 @@ registerSystem('promote-tail', () => drainPromoteTail());        // §16.2.C: pr
                                  // before 'debug' so F3 sees same-frame colliders
 registerSystem('debug', (dt, t, now) => updateDebug(now));       // F3 wireframes
 registerSystem('send-pose', (dt, t, now) => sendPose(now));
+registerSystem('object-labels', () => tickObjectLabels()); // after motion and camera
 registerSystem('render', renderWorld);
 let _pulseAt = 0;
 registerSystem('pulse', (dt, t, now) => {

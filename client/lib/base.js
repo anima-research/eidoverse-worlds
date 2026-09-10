@@ -38,6 +38,8 @@ const params = new URLSearchParams(globalThis.location?.search ?? '');
 const store = globalThis.localStorage ?? null;
 export const CONFIG = {
   params,
+  // Local rendering only; worlds do not opt visitors into overlays.
+  objectLabels: ['nearby', 'all'].includes(params.get('objectLabels')) ? params.get('objectLabels') : 'off',
   world: params.get('world') || 'commons',
   spectate: params.has('spectate'),
   renderer: params.has('renderer'),
