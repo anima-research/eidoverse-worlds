@@ -71,8 +71,32 @@ const ALIASES = {
 
 /** Fold a written name to its canonical form: case, separators and a few
  *  cross-rig synonyms. Returns null if it is not a humanoid bone at all. */
+/** The wing chains, by the same naming contract flight and the ragdoll use:
+ *  `<side>_Wing_<row>` then `_1`, `_2` outward. Identical to
+ *  shared/flightbody.js's WING_RE, deliberately not imported -- this module is
+ *  the vocabulary and must not depend on flight to describe a bone. */
+export const WING_RE = /^([LR])_Wing_(Upper|Lower)(?:_(\d+))?$/;
+
+/** True for a bone this module accepts but does NOT own a humanoid name for.
+ *
+ *  Wings are RAW bones: VRM's humanoid vocabulary has no word for them, so
+ *  `canonicalBone` returned null and the pose verb answered "not a VRM
+ *  humanoid bone" -- correct, and useless to an agent with wings who wants to
+ *  move them. They are addressable because the rig NAMES them, which is the
+ *  same contract by which hair and wings reach the springbone and ragdoll
+ *  systems (rigtest/EIDOVERSE-DEPLOY.md: "the pipeline recognises bones by
+ *  NAME and nothing else").
+ *
+ *  Case-SENSITIVE, unlike the humanoid names. Those are a vocabulary this
+ *  module owns and can spell forgivingly; a raw bone name is a fact about one
+ *  body's skeleton, and `l_wing_upper` is not a bone that exists. Accepting a
+ *  near-miss would resolve to nothing at the client and report success. */
+export const isRawBone = (name) => typeof name === 'string' && WING_RE.test(name);
+
 export function canonicalBone(name) {
   if (typeof name !== 'string') return null;
+  // A raw bone is already canonical: it names itself, exactly.
+  if (isRawBone(name)) return name;
   const key = name.trim().toLowerCase().replace(/[\s_.-]/g, '');
   return BY_KEY.get(key) ?? ALIASES[key] ?? null;
 }
@@ -101,6 +125,17 @@ function distance(a, b) {
 export function suggestBone(name) {
   if (typeof name !== 'string' || !name) return null;
   const key = name.trim().toLowerCase().replace(/[\s_.-]/g, '');
+  // A NAME THAT MEANS WING GETS A WING BACK. Searching only the humanoid list
+  // answered `LeftWing` with `leftHand` -- a confident counteroffer pointing at
+  // the wrong dictionary, which is worse than none: the reader tries the hand
+  // and concludes wings are unreachable. Mythos live-tested seven wing names
+  // and kept the rejection slips precisely because each one localised the
+  // fault; a wrong suggestion de-localises it.
+  if (/wing/.test(key)) {
+    const side = /(^|[^a-z])(r|right)/.test(key) ? 'R' : 'L';
+    const row = /lower|low|under/.test(key) ? 'Lower' : 'Upper';
+    return `${side}_Wing_${row}`;
+  }
   let best = null, bestD = 4;
   for (const b of HUMANOID_BONES) {
     const d = distance(key, b.toLowerCase());
@@ -153,12 +188,50 @@ export function validatePose(bones, opts = {}) {
     const name = canonicalBone(raw);
     if (!name) {
       const suggest = suggestBone(raw);
-      out.rejected.push({ name: raw, why: 'not a VRM humanoid bone', ...(suggest ? { suggest } : {}) });
+      out.rejected.push({
+        name: raw,
+        why: /wing/i.test(raw)
+          // A wing name that failed the regex is almost always a spelling or a
+          // case slip, and "not a VRM humanoid bone" sends the reader looking
+          // in the wrong dictionary entirely.
+          ? 'wing bones are addressable but case-sensitive: L_Wing_Upper, '
+            + 'R_Wing_Lower_2 and so on (exactly as the rig spells them)'
+          : 'not a VRM humanoid bone',
+        ...(suggest ? { suggest } : {}),
+      });
       continue;
     }
     const q = normalizeQuat(v);
     if (q.why) { out.rejected.push({ name: raw, why: q.why }); continue; }
     if (known && !known.has(name)) { out.absent.push(name); continue; }
+    // A raw bone is only real if THIS body has it. The humanoid names above
+    // are a vocabulary VRM guarantees; a wing is a fact about one skeleton,
+    // so accepting `L_Wing_Upper` on a wingless body would report success and
+    // move nothing -- the silent failure this module exists to prevent.
+    if (opts.rawAmbiguous?.includes?.(name)) {
+      // Two joints, one name: the browser resolves by name and takes the last
+      // one it walks past, so there is no honest answer to "which did you
+      // mean". Refused rather than guessed.
+      out.rejected.push({
+        name: raw,
+        why: `${opts.whose ?? 'that body'} has more than one bone called that, `
+           + 'so naming it is ambiguous -- the rig needs unique joint names',
+      });
+      continue;
+    }
+    if (opts.rawKnown && isRawBone(name) && !opts.rawKnown.has(name)) {
+      out.rejected.push({
+        name: raw,
+        why: opts.whose
+          // "your body" is a lie when the pose is aimed at someone else, and
+          // this refusal is the enfold's error path: a wingless resident
+          // reaching for a winged friend's wing must be told about THEIR
+          // skeleton, not misinformed about their own.
+          ? `${opts.whose} has no bone by that name`
+          : 'your body has no bone by that name',
+      });
+      continue;
+    }
     // Two written names can fold to one bone ("leftElbow" and "LeftLowerArm").
     // Last-write-wins would drop one of them without a word — the exact silent
     // overwrite this module exists to stop. Keep the first, name the clash.
@@ -213,10 +286,48 @@ export function validateTracks(tracks, opts = {}) {
     const name = canonicalBone(raw);
     if (!name) {
       const suggest = suggestBone(raw);
-      out.rejected.push({ name: raw, why: 'not a VRM humanoid bone', ...(suggest ? { suggest } : {}) });
+      out.rejected.push({
+        name: raw,
+        why: /wing/i.test(raw)
+          // A wing name that failed the regex is almost always a spelling or a
+          // case slip, and "not a VRM humanoid bone" sends the reader looking
+          // in the wrong dictionary entirely.
+          ? 'wing bones are addressable but case-sensitive: L_Wing_Upper, '
+            + 'R_Wing_Lower_2 and so on (exactly as the rig spells them)'
+          : 'not a VRM humanoid bone',
+        ...(suggest ? { suggest } : {}),
+      });
       continue;
     }
     if (known && !known.has(name)) { out.absent.push(name); continue; }
+    // A raw bone is only real if THIS body has it. The humanoid names above
+    // are a vocabulary VRM guarantees; a wing is a fact about one skeleton,
+    // so accepting `L_Wing_Upper` on a wingless body would report success and
+    // move nothing -- the silent failure this module exists to prevent.
+    if (opts.rawAmbiguous?.includes?.(name)) {
+      // Two joints, one name: the browser resolves by name and takes the last
+      // one it walks past, so there is no honest answer to "which did you
+      // mean". Refused rather than guessed.
+      out.rejected.push({
+        name: raw,
+        why: `${opts.whose ?? 'that body'} has more than one bone called that, `
+           + 'so naming it is ambiguous -- the rig needs unique joint names',
+      });
+      continue;
+    }
+    if (opts.rawKnown && isRawBone(name) && !opts.rawKnown.has(name)) {
+      out.rejected.push({
+        name: raw,
+        why: opts.whose
+          // "your body" is a lie when the pose is aimed at someone else, and
+          // this refusal is the enfold's error path: a wingless resident
+          // reaching for a winged friend's wing must be told about THEIR
+          // skeleton, not misinformed about their own.
+          ? `${opts.whose} has no bone by that name`
+          : 'your body has no bone by that name',
+      });
+      continue;
+    }
     if (name in out.tracks) {
       out.rejected.push({ name: raw, why: `also names ${name}, already tracked here — one bone, one track` });
       continue;
