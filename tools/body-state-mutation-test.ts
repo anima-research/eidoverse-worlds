@@ -13,9 +13,9 @@ if (baseline.code !== 0) throw new Error("baseline is not green:\n" + baseline.o
 const cases = [
   { name: "drop incoming bone map", file: "agent.ts", from: "p.pose = pose; p.observedAt = now;", to: "p.pose = { ...pose, pose: null }; p.observedAt = now;", witness: "presence condition timed out" },
   { name: "tool discards requested detail", file: "tools.ts", from: 'a.detail ?? "summary", a.points', to: '"summary", a.points', witness: "eight exact quaternions round-trip" },
-  { name: "FK ignores root yaw", file: "body-state.ts", from: "item.body.poseAt(o.pose!.p, o.pose!.yaw, mapped)", to: "item.body.poseAt(o.pose!.p, 0, mapped)", witness: "world joints include root translation and yaw" },
+  { name: "FK ignores root yaw", file: "body-state.ts", from: "item.body.poseAt(o.pose!.p, o.pose!.yaw, null)", to: "item.body.poseAt(o.pose!.p, 0, null)", witness: "world joints include root translation and yaw" },
   { name: "self leaks unpublished physics", file: "agent.ts", from: 'const bones = this.heldPose && (this.heldPoseAuthored || this.clip === "ragdoll") ? this.heldPose : null;', to: 'const bones = this.heldPose;', witness: "internal retired physics does not leak into self readback" },
-  { name: "posture gate ignores known sitting", file: "body-state.ts", from: 'return p?.clip !== "idle" && !(p?.clip === "ragdoll" && Object.keys(p.pose ?? {}).length > 0);', to: 'return false;', witness: "sit: current-body geometry is withheld" },
+  { name: "missing clip is silently replaced by rest geometry", file: "body-state.ts", from: 'animation = await this.clips.load(o.pose?.clip ?? "idle");', to: 'animation = null;', witness: "a reach toward an unevaluated seated body" },
 ];
 for (const c of cases) {
   const r = await run(c);

@@ -11,43 +11,20 @@ const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs"
 const { tmpdir } = await import("node:os");
 const { join } = await import("node:path");
 const { check, tally } = mkCheck();
+const { fixture, postureFixture } = await import("./body-fixture.ts");
 
 // Includes bones the old reach stand-in collapses: upperChest, shoulders,
 // fingers. Non-unit ancestor scale and a second VRM0 fixture exercise frames.
-function fixture(scale = 1, vrm0 = false) {
-  const nodes: any[] = [{ name: "root", scale: [scale, scale, scale], children: [1] }];
-  const bones: any = {};
-  const add = (name: string, parent: string | null, p: number[]) => {
-    const i = nodes.length; bones[name] = { node: i }; nodes.push({ name, translation: p, children: [] });
-    if (parent) nodes[bones[parent].node].children.push(i);
-  };
-  add("hips", null, [0, 1, 0]); add("spine", "hips", [0, .2, 0]);
-  add("chest", "spine", [0, .2, 0]); add("upperChest", "chest", [0, .1, 0]);
-  add("neck", "upperChest", [0, .1, 0]); add("head", "neck", [0, .2, 0]);
-  for (const [side, sign] of [["left", 1], ["right", -1]] as const) {
-    add(side + "Shoulder", "upperChest", [sign * .1, 0, 0]);
-    add(side + "UpperArm", side + "Shoulder", [sign * .1, 0, 0]);
-    add(side + "LowerArm", side + "UpperArm", [sign * .3, 0, 0]);
-    add(side + "Hand", side + "LowerArm", [sign * .3, 0, 0]);
-    add(side + "MiddleProximal", side + "Hand", [sign * .08, 0, 0]);
-    add(side + "UpperLeg", "hips", [sign * .1, -.1, 0]);
-    add(side + "LowerLeg", side + "UpperLeg", [0, -.4, 0]);
-    add(side + "Foot", side + "LowerLeg", [0, -.4, .1]);
-  }
-  const extensions = vrm0 ? { VRM: { humanoid: { humanBones: Object.entries(bones).map(([bone, v]: any) => ({ bone, node: v.node })) } } } : { VRMC_vrm: { humanoid: { humanBones: bones } } };
-  let json = JSON.stringify({ asset: { version: "2.0" }, nodes, extensions });
-  json += " ".repeat((4 - Buffer.byteLength(json) % 4) % 4);
-  const b = Buffer.alloc(20 + Buffer.byteLength(json));
-  b.writeUInt32LE(0x46546c67, 0); b.writeUInt32LE(2, 4); b.writeUInt32LE(b.length, 8);
-  b.writeUInt32LE(b.length - 20, 12); b.writeUInt32LE(0x4e4f534a, 16); b.write(json, 20);
-  return b;
-}
+
 const lib = mkdtempSync(join(tmpdir(), "body-state-library-"));
 mkdirSync(join(lib, "fixtures"));
+mkdirSync(join(lib, "defs/animations"), { recursive: true });
+writeFileSync(join(lib, "fixtures/idle.vrma"), postureFixture("idle"));
+writeFileSync(join(lib, "defs/animations/idle.json"), JSON.stringify({ vrma: "fixtures/idle.vrma" }));
 writeFileSync(join(lib, "fixtures/test-body.vrm"), fixture());
 writeFileSync(join(lib, "fixtures/large-body.vrm"), fixture(2));
 writeFileSync(join(lib, "fixtures/old-body.vrm"), fixture(1, true));
-const h = await scratchSequencer("body-state", { serverEnv: { EIDOVERSE_DIR: lib }, portFrom: 9300 });
+const h = await scratchSequencer("body-state", { serverEnv: { EIDOVERSE_DIR: lib, DEFS_DIR: join(lib, "defs"), SKIP_OPT_SWEEP: "1" }, portFrom: 9300 });
 const agents: any[] = [];
 async function agent(name: string, avatar = "fixtures/test-body.vrm") {
   const a = new WorldAgent({ name, avatar, world: "body-test", url: h.BASE.replace("http", "ws") + "/ws" });
@@ -84,7 +61,7 @@ try {
   owner.setPose(null); owner.tick();
   await until(() => !peer.people.get(owner.name)?.pose?.pose);
   check("clear removes overrides, not the skeleton", (await read(peer, { who: owner.name })).overrides.state === "none");
-  for (const clip of ["sit", "sitchair", "lie", "walk", "run", "unrecognized-clip"]) {
+  for (const clip of ["unrecognized-clip"]) {
     owner.clip = clip; owner.setPose(bones); owner.tick();
     await until(() => peer.people.get(owner.name)?.pose?.clip === clip);
     const seated = await read(owner, { detail: "all", points: ["knee_r"] });
@@ -172,7 +149,10 @@ try {
   // geometry when the old request completes later.
   let release!: () => void;
   const held = new Promise<void>(r => { release = r; });
-  const slow = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch() { await held; return new Response(fixture()); } });
+  const serveFixture = (req: Request) => new URL(req.url).pathname === "/animations"
+    ? Response.json([{ name: "idle", path: "idle.vrma" }])
+    : new Response(req.url.endsWith(".vrma") ? postureFixture("idle") : fixture());
+  const slow = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) { await held; return serveFixture(req); } });
   try {
     const reader = new BodyStateReader(`http://127.0.0.1:${slow.port}`);
     let o: any = { who: "changing", avatar: "test.vrm", generation: 1, self: false, connected: true, receivedAt: Date.now(),
@@ -183,7 +163,7 @@ try {
   } finally { slow.stop(true); }
   let resume!: () => void;
   const waiting = new Promise<void>(r => { resume = r; });
-  const postureServer = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch() { await waiting; return new Response(fixture()); } });
+  const postureServer = Bun.serve({ hostname: "127.0.0.1", port: 0, async fetch(req) { await waiting; return serveFixture(req); } });
   try {
     const reader = new BodyStateReader(`http://127.0.0.1:${postureServer.port}`);
     let o: any = { who: "sitting", avatar: "test.vrm", generation: 1, self: false, connected: true, receivedAt: Date.now(),

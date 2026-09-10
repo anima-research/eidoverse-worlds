@@ -252,12 +252,12 @@ register('touch', (arg) => {
   if (err) return logChat('*', err);
   const whose = who === CONFIG.name ? 'your own' : `${who}'s`;
   logChat('*', `you reach for ${whose} ${point} (${LIMB_WORD[limb]})…`);
-  // the solve runs in the frame loop; read the verdict once the arm settles
+  // The solve runs in the frame loop; read after the initial weight blend.
   setTimeout(() => {
     const s = getMe()?.reachStatus?.()?.[limb];
     if (!s || !Number.isFinite(s.gap)) return;
     if (s.gap <= TOUCH_GAP) {
-      logChat('*', `…your ${LIMB_WORD[limb]} rests on ${whose} ${point} — it follows them until /letgo`);
+      logChat('*', `…your ${LIMB_WORD[limb]} reaches ${whose} ${point} (endpoint gap ${Math.round(s.gap * 1000)}mm) — tracking continues until /letgo`);
     } else {
       logChat('*', `…${s.gap.toFixed(2)}m short${s.bound?.length ? ` (${s.bound.join(', ')})` : ''} — the arm stays reaching; step closer and it will land`);
     }
@@ -420,7 +420,7 @@ export function initCommands() {
       recentReach.set(key, now);
     }
     if (type === 'reach') logChat('*', `${who} reaches toward your ${point ?? 'position'} (${lw})`);
-    else if (type === 'touch') logChat('*', `${who}'s ${lw} rests on your ${point ?? 'position'}`);
+    else if (type === 'touch') logChat('*', `${who}'s ${lw} touches your ${point ?? 'position'}`);
     else logChat('*', `${who} withdraws their ${lw}`);
   };
   bus.on('reach', (e) => narrate('reach', e));

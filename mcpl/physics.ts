@@ -522,6 +522,8 @@ export class ReachBody {
   private m: NonNullable<typeof simMods>;
   av: any;
   private chains = new Map<string, any>();
+  private restPositions = new Map<string, any>();
+  private landmarks = new Map<string, { node: any; offset: any; normal: any }>();
 
   private constructor(m: NonNullable<typeof simMods>, P: Record<string, any>, realParent: Record<string, string | null> | null = null) {
     this.m = m;
@@ -529,6 +531,16 @@ export class ReachBody {
     // humanoid ancestry (shoulders, upperChest, fingers); chain measurement
     // still refuses a lower limb that is not its upper limb's direct child.
     this.av = m.rig.makeAvatar(P, { vrm0: !!(P as any).__vrm0, realParent });
+    for (const [name, n] of Object.entries(this.av.nodes) as [string, any][]) this.restPositions.set(name, n.position.clone());
+    for (const point of Object.keys(CONTACT_POINTS)) {
+      const frame = this.estimateContact(point);
+      const node = this.av.nodes[(CONTACT_POINTS as any)[point].bone];
+      if (!frame || !node) continue;
+      const inv = node.matrixWorld.clone().invert();
+      this.landmarks.set(point, { node,
+        offset: new m.THREE.Vector3(...frame.pos).applyMatrix4(inv),
+        normal: new m.THREE.Vector3(...frame.normal).transformDirection(inv) });
+    }
   }
 
   static async create(httpBase: string, avatarPath: string): Promise<ReachBody | null> {
@@ -552,7 +564,7 @@ export class ReachBody {
   poseAt(p: number[], yaw: number, pose: Record<string, number[]> | null) {
     this.av.root.position.set(p[0], p[1] ?? 0, p[2]);
     this.av.root.rotation.y = yaw ?? 0;
-    for (const n of Object.values(this.av.nodes) as any[]) n.quaternion.identity();
+    for (const [name, n] of Object.entries(this.av.nodes) as [string, any][]) { n.quaternion.identity(); n.position.copy(this.restPositions.get(name)); }
     if (pose) {
       for (const [j, q] of Object.entries(pose)) {
         const n = this.av.nodes[j];
@@ -575,13 +587,14 @@ export class ReachBody {
 
   /** Solve one limb toward a world target at the CURRENT pose. Returns plain
    *  data — the same verdict fields the browser's reachStatus reports. */
-  solve(limb: string, target: number[] | { pos: number[]; normal?: number[] }, opts: { palm?: boolean; apply?: boolean } = {}) {
+  solve(limb: string, target: number[] | { pos: number[]; normal?: number[] }, opts: { palm?: boolean; apply?: boolean; history?: any; dt?: number } = {}) {
     const ch = this.chain(limb);
     if (!ch) return { ok: false as const, why: `no measurable ${limb} chain on this rig` };
     const tw = Array.isArray(target) ? target : target.pos;
     const n = !Array.isArray(target) && opts.palm !== false ? target.normal : null;
     const palm = Array.isArray(n) && n.length === 3 ? { dir: [-n[0], -n[1], -n[2]] } : null;
-    const out = this.m.reachbone.solveChain(ch, this.av, tw, null, { palm });
+    const out = this.m.reachbone.solveChain(ch, this.av, tw, opts.history?.elbowOffset ?? null,
+      { palm, ...opts.history, dt: opts.dt });
     if (!out.ok) return { ok: false as const, why: String(out.why) };
     // Opt-in only for a perception query's private scratch nodes. The live
     // reach attester's existing solve remains a measurement without mutation.
@@ -598,6 +611,8 @@ export class ReachBody {
       penetration: Number(out.penetration ?? 0),
       palmResidual: out.palmResidual == null ? null : Number(out.palmResidual),
       shoulder: ch.nodes.upper.getWorldPosition(new this.m.THREE.Vector3()).toArray() as number[],
+      history: { elbowOffset: out.elbowOffset, lastGap: Number(out.res.gap), lastPick: out.pick ?? null,
+        lastSwivel: out.swivelUsed ?? null, lastTwist: out.palmTwist ?? null, lastWrist: out.hand ?? null },
     };
   }
 
@@ -605,6 +620,14 @@ export class ReachBody {
    *  derivation (landmarks.js), sans mesh: proportionally off the bone along
    *  the body-frame approach direction, normal facing out the same way. */
   contact(point: string, standoff = 0.02): { pos: number[]; normal: number[] } | null {
+    const mark = this.landmarks.get(point);
+    if (!mark) return null;
+    const p = mark.node.localToWorld(mark.offset.clone());
+    const n = mark.normal.clone().transformDirection(mark.node.matrixWorld);
+    return { pos: p.addScaledVector(n, standoff).toArray(), normal: n.toArray() };
+  }
+
+  private estimateContact(point: string): { pos: number[]; normal: number[] } | null {
     const spec = (CONTACT_POINTS as any)[point];
     if (!spec) return null;
     const node = this.av.nodes[spec.bone];
@@ -626,7 +649,7 @@ export class ReachBody {
     const seed = contactSeed(P, spec, F, scale);
     if (!seed) return null;
     const at = seed.at;
-    const r = Math.min(scale * 0.18, scale * (spec.radius ?? 0.45) * 0.5) + standoff;
+    const r = Math.min(scale * 0.18, scale * (spec.radius ?? 0.45) * 0.5);
     return {
       pos: [at[0] + dir[0] * r, at[1] + dir[1] * r, at[2] + dir[2] * r],
       normal: dir,

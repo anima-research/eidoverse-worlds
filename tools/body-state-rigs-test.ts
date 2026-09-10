@@ -11,11 +11,14 @@ const dir = join(library, "eidoverse/assets/vrms");
 const paths = readdirSync(dir).filter(n => n.endsWith(".vrm") && !n.endsWith(".ktx2.vrm")).sort();
 if (!paths.length) throw new Error("no real avatar fixtures found");
 const files = new Map(paths.map(n => ["/library/" + n, readFileSync(join(dir, n))]));
+const clipBytes = readFileSync(join(process.env.EIDOVERSE_ANIMATION_DIR ?? join(library, "eidoverse/assets/animations"), "idle.vrma"));
+files.set("/library/__corpus/idle.vrma", clipBytes);
 const manifest = paths.map(name => {
   const bytes = files.get("/library/" + name)!;
   return { name, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
 });
 const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch(req) {
+  if (new URL(req.url).pathname === "/animations") return Response.json([{ name: "idle", path: "__corpus/idle.vrma" }]);
   const path = files.get(decodeURIComponent(new URL(req.url).pathname));
   return path ? new Response(path) : new Response("missing", { status: 404 });
 } });
@@ -37,4 +40,5 @@ try {
   }
 } finally { server.stop(true); }
 console.log(`${passed}/${paths.length} real avatars passed`);
-if (process.env.BODY_STATE_MANIFEST_OUT) writeFileSync(process.env.BODY_STATE_MANIFEST_OUT, JSON.stringify({ passed, fixtures: manifest }, null, 2) + "\n");
+if (process.env.BODY_STATE_MANIFEST_OUT) writeFileSync(process.env.BODY_STATE_MANIFEST_OUT, JSON.stringify({ passed, fixtures: manifest,
+  animation: { name: "idle.vrma", bytes: clipBytes.length, sha256: createHash("sha256").update(clipBytes).digest("hex") } }, null, 2) + "\n");

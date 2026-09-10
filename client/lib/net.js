@@ -192,6 +192,12 @@ export function sendPose(now) {
     pitch: Math.round((s.pitch ?? 0) * 100) / 100,
     ...wingFoldPresence(s.wingsFolded),
   };
+  const avatar = hooks.me();
+  if (!avatar.emote && !avatar._limp && Number.isFinite(avatar.current?.time)) {
+    pose.clipTime = avatar.current.time;
+    pose.clipTimeSlot = avatar.currentSlot;
+    pose.clipRate = avatar.current.paused ? 0 : avatar.current.timeScale ?? 1;
+  }
   if (s.emote) { pose.emote = s.emote; s.emote = null; } // one-shot: send once
   // A held custom pose rides the presence packet (and therefore lastPose, so
   // late joiners see it) — but never the log. `null` explicitly clears it.

@@ -19,14 +19,24 @@ named body points, outward normals and ready-to-use reach targets. `all`
 includes both. `points` limits contact output; omit it to discover all the
 available names. Missing bones/contacts are reported explicitly.
 
-For known `sit`, `sitchair`, `lie`, locomotion or unrecognized clips, the
-current evaluator cannot reconstruct the visible posture. Geometry detail
-therefore returns an error with `geometry.status:"incomplete"` and
-`basis:"rest_pose_estimate"`, preserving the public root, clip and exact
-published rotations but withholding joint/contact coordinates and reach
-targets. The summary remains available. This prevents a standing/rest knee
-from being offered as the current seated knee. Idle estimates and supplied
-ragdoll poses remain supported; full posture evaluation is tracked in #179.
+The evaluator uses the same VRMA parser, retargeting and clip files as the
+browser. It evaluates the base posture (`idle`, `sit`, `sitchair`, `lie`,
+locomotion), then applies published overrides and held reach relations.
+`poseEvaluation` identifies the clip and phase: an owner's `clipTime` is used
+when present; `clipTimeSlot` associates that phase with the right slot, including
+a mount-owned chair clip, and `clipRate` preserves pause/rate. Legacy samples
+without a matching phase are labeled `initial_frame_estimate`.
+Missing clips, missing rigs and unknown postures return incomplete geometry
+and preserve the public root, posture and rotations; rest coordinates are
+not silently offered as current contact targets.
+
+`reach` uses this same evaluated body scene. A named target on another
+reaching hand follows that hand's solved transform, including its bone-bound
+contact offset and normal. Dependencies are evaluated producer-first, so
+self-hand tracking does not depend on command insertion order. Mounted roots
+and socket postures use the existing fold/motion/seat-profile composition.
+Cycles across
+reaching limbs return `cyclic-reach` and cannot attest successful contact.
 
 World positions are metres. `selfPosition` expresses the same point in the
 observed body's root frame: X lateral, Y up, Z forward. It is suitable for
@@ -78,7 +88,19 @@ This composes two existing limb reaches. It does not yet specify a cup's
 palm orientations or recruit the torso/feet for a whole-body solve. A
 zero positional gap alone does not prove that the gesture looks cupped.
 
-Release one hand or both with `clear_reach`:
+Release one of your own hands or both with `clear_reach` (browser: `/letgo left`,
+`/letgo right`, or `/letgo`). Release also removes cyclic relations: once the
+released entry fades out, any surviving relation resumes against the
+released limb's current pose. A cycle cannot indefinitely prevent cleanup.
+
+These commands clear **your outgoing reaches**. Your own knockdown also
+clears your outgoing reaches. Walking, changing posture or falling does not
+revoke somebody else's incoming tracking relation; moving out of reach can
+make contact fail while the relation remains. There is currently no
+target-side revoke tool (tracked separately in #183), so agree on release
+with the other participant.
+
+Examples:
 
 ```json
 {"limb":"leftHand"}
@@ -92,16 +114,15 @@ Release one hand or both with `clear_reach`:
   no published overrides; it does not mean the body is motionless.
 - Joint coordinates are CPU forward-kinematics results on the avatar's
   full humanoid hierarchy, including upperChest, shoulders and fingers.
-  Active limb reaches are solved on private scratch nodes. Unpublished
-  clip, springbone, wing and interpolation motion is not evaluated; bones
-  with no supplied rotation start at their rig rest transforms. These are
-  useful reconstructions, not a claim of final browser-frame identity.
-  Known unevaluated posture clips withhold this geometry rather than merely
-  putting the same rest coordinates under a cautionary label.
-- Contact positions/normals are labeled `anatomical_estimate`. They use
-  the existing reach contact derivation without mesh raycasting. Other
-  bodies' recursively interacting reaches are not solved as a global
-  constraint system. An unresolved target makes geometry incomplete.
+  Base clip tracks and active limb reaches are evaluated on private nodes.
+  Published head pitch and bone overrides are composed over the clip. Clip
+  crossfades, one-shot emotes, gaze, wing/springbone motion and rendering
+  interpolation are not reproduced, so this is not final-frame pixel parity.
+- Contact positions/normals are labeled `anatomical_estimate`. The anatomical
+  estimate is bound in bone-local space at rest and transformed with the live
+  bone; it is not recomputed from a canonical slot each frame. Mesh raycasting
+  remains browser-specific. Reach dependencies across the observed scene are
+  ordered explicitly; unresolved or cyclic dependencies make geometry incomplete.
 - `reaches` carries the owner's held relations and arrival attestations;
   `reachEvaluation` is this read's local calculation, with gap (metres),
   binding limits and palm residual (degrees, when applicable).
@@ -131,3 +152,25 @@ SHA-256 hashes via `BODY_STATE_MANIFEST_OUT`. The
 [2026-09-10 corpus manifest](body-state-corpus-20260910.json) records the
 four library and fourteen optimized avatars used for this revision. These
 are local fixture receipts, not a claim that every checkout has those files.
+
+## Moving close enough
+
+`walk_to` now defaults to 1cm destination accuracy. It previously stopped up
+to 40cm short of the requested point, which could compound an intended
+interpersonal stand-off. `tolerance` (0–0.4 metres) is optional; it controls
+distance from the requested destination, not avatar collider radius. Results
+ report coordinates and remaining distance in metres to three decimals.
+
+```json
+{"x":2.15,"z":-1.2,"tolerance":0.01}
+```
+
+Face the other participant before reaching if your current heading points
+away. A successful endpoint receipt means the estimated target is within the
+existing 5cm touch allowance; it no longer says the arm is at rest.
+
+Elbow continuity retains a previously reached physical bend after checking
+current constraints, rather than relying only on a swivel angle whose basis
+can flip near lateral targets. A constrained miss is not fed back as a new
+pole. Palm/forearm orientation uses a deadband at the backward-facing boundary
+and bounded angular changes, with the wrist kept inside its rotation limit.

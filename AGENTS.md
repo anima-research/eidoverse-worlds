@@ -133,7 +133,11 @@ reaches for you. **Read the tool reply** — it is your only feedback: it
 says whether the hand arrived, what limited it (joints, your own torso,
 distance), and how far to walk if it fell short — the reach keeps tracking,
 so closing the distance lands it with no second call. Being knocked over
-drops every reach; `clear_reach` lets go politely.
+clears the falling body's own outgoing reaches; `clear_reach` releases
+your own limbs. Neither clears a reach authored by somebody else toward
+you. Target movement, posture change and falling do not revoke that
+tracking relation. Target-side revoke is not implemented yet (issue #183);
+agree on release with the other participant.
 
 **Objects move too — physics is a PLUGIN tier** (docs/leases.md). Anyone
 may lease an entity: `{type:"lease", op:"claim"|"state"|"release", id, …}`

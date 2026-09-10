@@ -18,7 +18,9 @@ import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { MToonMaterialLoaderPlugin } from '@pixiv/three-vrm-materials-mtoon';
 import { MToonNodeMaterial } from '@pixiv/three-vrm-materials-mtoon/nodes';
-import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from '@pixiv/three-vrm-animation';
+import { parsePoseAnimation, retargetPoseAnimation } from './poseclips.js';
+import { CLIP_SLOTS, CLIP_FILES, CLIP_SPEED } from '../../shared/clipdefs.js';
+export { CLIP_SLOTS, CLIP_FILES, CLIP_SPEED } from '../../shared/clipdefs.js';
 import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
 import { beginWork, enqueue, nextFrame, loadNote } from './loadwork.js';
 import { warm } from './warmqueue.js';
@@ -703,15 +705,6 @@ export const protoStats = () => ({
 // a stride is legs doing work against ground that is not there. fallIdle is the
 // library's free-fall pose: limbs trailing, no contact implied, which is what a
 // body hanging under its own wings actually looks like.
-export const CLIP_SLOTS = ['idle', 'walk', 'run', 'sit', 'lie', 'jump', 'climb', 'fly', 'soar'];
-// Slot names are the wire vocabulary (pose.clip); files are whatever the
-// library calls them.
-export const CLIP_FILES = { sit: 'sitting_on_ground', lie: 'sit_laying_on_ground', climb: 'climbLedge',
-  // Both airborne slots share one file today; they are separate SLOTS so a
-  // purpose-made flap and glide can replace either without touching a caller.
-  fly: 'fallIdle', soar: 'fallIdle' };
-// Approximate natural speeds of the library clips (m/s), for timeScale sync.
-export const CLIP_SPEED = { fly: 0, soar: 0, idle: 0, walk: 1.55, run: 4.0, sit: 0, lie: 0, jump: 0, climb: 0 };
 
 const vrmaCache = new Map();
 // Digest of the clip bytes THIS PAGE actually loaded, hashed once at fetch
@@ -777,12 +770,7 @@ function vrmaAnimation(slot, priority = 1) {
         work.phase('queued');
         return await enqueue(async () => {
           work.phase('parse');
-          const l = new GLTFLoader();
-          l.register((pl) => new VRMAnimationLoaderPlugin(pl));
-          const gltf = await new Promise((res, rej) => l.parse(buf.slice(0), '', res, rej));
-          const anim = gltf.userData.vrmAnimations?.[0];
-          if (!anim) throw new Error(`no animation in ${slot}.vrma`);
-          return anim;
+          return parsePoseAnimation(buf);
         }, { lane: 'cpu', priority });
       } finally { work.end(); }
     })();
@@ -793,7 +781,7 @@ function vrmaAnimation(slot, priority = 1) {
 }
 
 export async function clipFor(vrm, slot, { priority = 1 } = {}) {
-  return createVRMAnimationClip(await vrmaAnimation(slot, priority), vrm);
+  return retargetPoseAnimation(await vrmaAnimation(slot, priority), vrm);
 }
 
 // ---- procedural textures ----------------------------------------------------
