@@ -42,7 +42,7 @@ export function renderAside(sc, cam, target = null) {
 // into the eye framebuffer with a non-XR camera is exactly a wide frame stamped across both eyes.
 export const renderCensus = { perFrame: 0, maxPerFrame: 0, foreign: null, frames: 0 };
 let mainPassCam = null;
-{ const orig = renderer.render.bind(renderer);
+if (typeof renderer.render === 'function') { const orig = renderer.render.bind(renderer);   // node-side suites mock core.js with a renderer that has no render (wing-owner-wire-test)
   renderer.render = (sc, cam) => {
     renderCensus.perFrame++;
     if (renderer.xr?.isPresenting && cam !== mainPassCam) {

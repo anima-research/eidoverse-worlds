@@ -24,7 +24,10 @@ class MeshPhysicalNodeMaterial extends THREE_RAW.MeshPhysicalMaterial {
     this.isMeshPhysicalNodeMaterial = true;
   }
 }
-export const THREE = Object.freeze({ ...THREE_RAW, MeshPhysicalNodeMaterial });
+// warmqueue's depth pre-warm builds a NodeMaterial (WebGPU build only); a plain Material stand-in lets the
+// caster budget be driven headless (tools/shadow-follow-test.mjs) — nothing here compiles a shader.
+class NodeMaterial extends THREE_RAW.Material { constructor(p) { super(); this.isNodeMaterial = true; if (p) this.setValues(p); } }
+export const THREE = Object.freeze({ ...THREE_RAW, MeshPhysicalNodeMaterial, NodeMaterial });
 export const scene = { add() {}, remove() {} };
 export const ground = null;
 export const grid = null;
@@ -46,6 +49,8 @@ export const renderer = {
   setAnimationLoop() {}, getSize: () => ({ width: 1, height: 1 }), setSize() {},
   xr: { enabled: false, isPresenting: false, getCamera: () => null, addEventListener() {}, removeEventListener() {} },
   info: { render: { calls: 0, triangles: 0 }, reset() {} }, backend: { isWebGLBackend: true },
+  // KTX2Loader.detectSupport (assets.js module scope) asks a WebGL renderer for its extensions
+  extensions: { has: () => false }, capabilities: { isWebGL2: true },
 };
 export const report = () => {};
 export const angleDelta = (a, b) => {

@@ -113,7 +113,7 @@ export let csm = null;
 if (CSM_N >= 2) {
   csm = new CSMShadowNode(sun, { cascades: CSM_N, maxFar: +CONFIG.params.get('csmfar') || 150, mode: CONFIG.params.get('csmmode') || 'practical', lightMargin: 100 });
   sun.shadow.shadowNode = csm;
-  addEventListener('resize', () => csm.updateFrustums());
+  addEventListener('resize', () => { if (csm.camera) csm.updateFrustums(); });   // no camera until the first compiled frame (CSMShadowNode._init) — a resize before that threw in a window listener (third review 2026-09-10). Diagnostic path: boot receipt only (&csm=2), no headless binding.
 }
 if (CONFIG.params.has('shadowfloat')) sun.shadow.mapType = THREE.FloatType;   // ?shadowfloat=1 (boot) — R 09-07 19:30: 32-bit float depth map; a D3D11/ANGLE comparison-sampling variant to test on her GPU
 sun.shadow.bias = -0.0006;

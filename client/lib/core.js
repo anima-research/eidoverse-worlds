@@ -12,13 +12,10 @@
 import * as THREE from 'three';
 import * as TSL from 'three/tsl';
 import { CONFIG } from './base.js';
+import { decideBackend } from './backend_choice.js';
+import { patchShadowNodeForXR } from './xrshadow.js';
 
 export { THREE, TSL };
-// THE EYE, as a plain uniform. TSL's camera accessors (`cameraPosition`, …) are built from the per-render
-// camera and have NO camera under per-view (stereo) rendering — a material that reads one never builds its
-// program in VR and draws nothing (09-06 black body; 09-07 black construct floor; grass, perfscope hulls).
-// Materials that need the eye read THIS instead; renderWorld writes it once per frame from the active camera.
-export const eyePos = TSL.uniform(new THREE.Vector3(3.5, 2.6, 5.5));
 
 // ------------------------------------------------------------ wgsl debug
 // ?wgsldebug — surface Tint's REAL compilation diagnostics (Chrome only logs
@@ -77,23 +74,14 @@ const pref = (k) => { try { return localStorage.getItem(k); } catch { return nul
 // back on its own. An XR boot therefore takes WebGL unless the page opts into
 // ?webgpu=1 AND the browser exposes XRGPUBinding; when Chrome ships WebGPU-XR
 // unflagged, flip the default here and nowhere else.
-export const XR_BOOT = CONFIG.params.has('xr');
-// ONE renderer control (R 09-07). PREF_BACKEND: unset/'auto' | 'webgpu' | 'webgl'.
-//   auto  — pick the backend that needs NO VR-entry reload. Headset seen here + WebGPU-XR flags (XRGPUBinding)
-//           → WebGPU (VR enters on WebGPU-XR). Headset seen + no flags → WebGL (VR enters in place). No headset
-//           → WebGPU if the machine can, else WebGL (best desktop). three falls back to WebGL on its own if WebGPU init fails.
-//   webgpu — force WebGPU (VR uses WebGPU-XR if flags, else reloads to WebGL to enter — the panel warns).
-//   webgl  — force WebGL always (guaranteed WebGL; A/B, or a machine where WebGPU misbehaves).
+// The decision itself (which backend, whether this is an XR boot, whether the tolerant render list installs)
+// is a pure function in backend_choice.js — importable headless, so the matrix is TESTED rather than trusted
+// (tools/backend-choice-test.mjs). ?xr is value-parsed: `?xr=1` boots XR, `?xr=0` and absence do not.
 export const WEBGPU_XR = 'XRGPUBinding' in globalThis;               // WebGPU can present VR here (Chrome flags)
 export const WEBGPU_POSSIBLE = typeof navigator !== 'undefined' && !!navigator.gpu;   // WebGPU API exists at all
-const _backendPref = CONFIG.params.get('webgl') === '1' ? 'webgl' : CONFIG.params.get('webgpu') === '1' ? 'webgpu' : (pref(PREF_BACKEND) || 'auto');
-const _headsetSeen = pref(PREF_HEADSET_SEEN) === '1';
-// forceWebGL is true when: explicit webgl; OR auto with a headset seen but no WebGPU-XR flags (so VR enters
-// without a reload); OR an XR boot that isn't going to use WebGPU-XR.
-const xrOnWebGPU = _backendPref !== 'webgl' && WEBGPU_XR;            // will a VR session ride WebGPU-XR?
-const _forceWebGL = _backendPref === 'webgl'
-  || (_backendPref === 'auto' && _headsetSeen && !WEBGPU_XR)
-  || (XR_BOOT && !xrOnWebGPU);
+const _choice = decideBackend({ params: CONFIG.params, backendPref: pref(PREF_BACKEND), headsetSeen: pref(PREF_HEADSET_SEEN) === '1', webgpuXR: WEBGPU_XR });
+export const XR_BOOT = _choice.xrBoot;
+const _forceWebGL = _choice.forceWebGL;
 // TOLERANT RENDER LIST (XR strobe, 08-05): something leaves holes in the
 // per-eye render list mid-session ("Cannot destructure 'object' of
 // renderList[i]"), and the stock loop throws — one hole kills the whole
@@ -108,6 +96,7 @@ const _forceWebGL = _backendPref === 'webgl'
 let renderListToleranceInstalled = false;
 export function installRenderListTolerance() {
   if (renderListToleranceInstalled) return; renderListToleranceInstalled = true;
+  globalThis.__renderListTolerance = true;   // harness: boot-check asserts this only under ?xr=1
   const proto = THREE.WebGPURenderer?.prototype;
   const orig = proto?._renderObjects;
   let logged = 0;
@@ -130,7 +119,7 @@ export function installRenderListTolerance() {
     };
   }
 }
-if (XR_BOOT) installRenderListTolerance();
+if (_choice.installTolerance) installRenderListTolerance();
 
 export const renderer = new THREE.WebGPURenderer({ canvas,
   antialias: (CONFIG.params.get('msaa') ?? pref(PREF_MSAA)) !== '0',
@@ -146,12 +135,7 @@ renderer.setSize(innerWidth, innerHeight);
 // produced no usable shadow (the old fix was to disable shadows in XR and eat a whole-scene recompile both
 // ways). Same cure as render.js renderAside: xr off around the pass, so the sun camera is honoured. Unity
 // (Basis: 8192 map, 4 cascades, 150 m) renders its map once per frame from the light — this is that.
-{ const proto = THREE.ShadowNode?.prototype; const orig = proto?.updateShadow;
-  if (orig) proto.updateShadow = function (frame) {
-    const xr = frame.renderer?.xr; if (!xr?.isPresenting) return orig.call(this, frame);
-    const was = xr.enabled; xr.enabled = false;
-    try { return orig.call(this, frame); } finally { xr.enabled = was; }
-  }; }
+globalThis.__xrShadowPatched = patchShadowNodeForXR(THREE.ShadowNode?.prototype);   // xrshadow.js — importable, so the patch is TESTED (tools/xrshadow-test.mjs); the global lets boot-check assert it was APPLIED
 // Spectators start a notch lower — an audience laptop's job is 30fps for an
 // hour, not maximum sharpness. Adaptive scaling adjusts from here.
 export const BASE_PIXEL_RATIO = Math.min(devicePixelRatio, CONFIG.spectate ? 1.5 : 2);
