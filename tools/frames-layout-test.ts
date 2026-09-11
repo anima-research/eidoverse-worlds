@@ -229,6 +229,28 @@ console.log("FRAMES — a viewport too small for the default arrangement opens o
   window.dispatchEvent(new Event("resize"));
 }
 
+console.log("FRAMES — reset obeys the viewport rule");
+{
+  // Round 2: one tap of "reset layout" on a phone reopened world+emotes stacked
+  // over chat, and restored authoring-viewport widths uncapped (chat right=555
+  // in a 390px viewport). Reset removes the save first, so there is no
+  // arrangement to protect — the viewport rule and fit() both apply.
+  const vw0 = innerWidth, vh0 = innerHeight;
+  (window as any).innerWidth = 390; (window as any).innerHeight = 844;
+  for (const id of ["chat", "world"]) localStorage.removeItem(`ew-frame-${id}`);
+  const c = measurable(makeFrame("chat", { title: "chat" }));
+  const w2 = measurable(makeFrame("world", { title: "world" }));
+  c.resetLayout(); w2.resetLayout();
+  check("reset keeps a non-chat frame hidden where the arrangement cannot fit",
+    w2.state.hidden === true, JSON.stringify(w2.state));
+  check("reset keeps chat open — the pane that carries the composer",
+    c.state.hidden === false, JSON.stringify(c.state));
+  check("reset clamps to the viewport: every reset frame is reachable",
+    c.state.x + c.state.w <= innerWidth - 8, `chat right=${c.state.x + c.state.w} limit=${innerWidth - 8}`);
+  (window as any).innerWidth = vw0; (window as any).innerHeight = vh0;
+  window.dispatchEvent(new Event("resize"));
+}
+
 console.log("FRAMES — a hand-placed frame is never re-anchored");
 {
   // R, 2026-09-11: the emote bar "will always pop sideways to the right
@@ -246,15 +268,40 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
   check("an x:'center' frame opens centred", centred > 100, JSON.stringify(bar.state));
 
   // a REAL drag: the pointer handler writes state and saves on pointerup
+  // Drag to a MIDDLE x, not the left edge: `state.x = clamp(state.x, 8, …)` pins a
+  // left-dragged frame to 8 whether or not the latch ran, so the left edge cannot
+  // distinguish latched from unlatched — deleting markMoved() from the drag left
+  // this block green. A middle x makes re-centring observable. (round 2)
+  const target = 120;
   (bar.head as HTMLElement).dispatchEvent(new PointerEvent("pointerdown", { clientX: centred + 10, clientY: bar.state.y + 5, bubbles: true }));
-  (bar.head as HTMLElement).dispatchEvent(new PointerEvent("pointermove", { clientX: 18, clientY: bar.state.y + 5, bubbles: true }));
+  (bar.head as HTMLElement).dispatchEvent(new PointerEvent("pointermove", { clientX: target + 10, clientY: bar.state.y + 5, bubbles: true }));
   (bar.head as HTMLElement).dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
   const placed = bar.state.x;
-  check("...and a drag to the left edge lands it there", placed <= 20, String(placed));
+  check("...and a drag lands it at the pointer, away from centre",
+    placed > 20 && placed < centred - 40, `${placed} (centred ${centred})`);
 
   bar._fit();
-  check("...and fit() does NOT re-centre it — the hand beats the anchor",
-    bar.state.x <= 20, `${placed} -> ${bar.state.x}`);
+  // Compare against the centre fit() WOULD compute at the current width — fit()
+  // widens the bar first, so the pre-drag `centred` is not the value the
+  // unlatched path would produce, and asserting against it passed either way
+  // (round 2: deleting markMoved left this green).
+  const wouldCentre = Math.round((innerWidth - bar.state.w) / 2);
+  // BINDS THE PAIR, not one line: the resize finish is a DOCUMENT-level
+  // pointerup listener, so it fires on a title-bar drag too and its
+  // f.markMoved?.() latches as well. Deleting either call alone leaves this
+  // green; deleting both turns it red (58/1, placed 120 -> 222). Disclosed
+  // rather than claimed as per-line coverage. (round 2)
+  check("...and fit() does NOT re-centre it — the hand beats the anchor (binds both latch sites)",
+    bar.state.x === placed && bar.state.x !== wouldCentre,
+    `placed ${placed} -> ${bar.state.x}; anchor would give ${wouldCentre}`);
+
+  // (4) reset must put the frame back UNDER the anchors — `moved = false`.
+  bar.resetLayout();
+  bar._fit();
+  const centreNow = Math.round((innerWidth - bar.state.w) / 2);
+  check("...and resetLayout un-latches it, so the anchor governs again",
+    bar.state.x === centreNow && bar.state.x !== placed,
+    `x=${bar.state.x} centre=${centreNow} (was placed at ${placed})`);
 
   // The RELOAD half — `moved = !!saved` — which is the half the commit is named
   // for and which the drag above never exercises (the drag arms the latch

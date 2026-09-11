@@ -339,8 +339,21 @@ export function makeFrame(id, opts = {}) {
       Object.assign(state, {
         x: resolveAnchor(opts.x, w, innerWidth),
         y: resolveAnchor(opts.y, h, innerHeight),
-        w, h, hidden,
+        w, h,
+        // The SAME rule the construction path applies (see the hidden: line
+        // above). Reset removes the save first, so there is no arrangement to
+        // protect — and without this, one tap of "reset layout" on a phone
+        // reopened world and emotes stacked over chat: the precise state
+        // auto-minimize exists to prevent, reached through this PR's own
+        // reset button. (agent review round 2)
+        hidden: hidden || (id !== 'chat' && !fitsDefaults()),
       });
+      // ...and through fit(), not paint() alone: paint skips every viewport
+      // clamp, so reset restored the authoring-viewport widths uncapped —
+      // chat right=555 in a 390px viewport, 173px unreachable under
+      // overflow:hidden. That is antra's original #185 finding, re-entered
+      // by the reset path.
+      fitted = true; fit();
       paint();
       if (!state.hidden) raise();
       return api;
@@ -491,6 +504,12 @@ export function makeFrame(id, opts = {}) {
     const chrome = hh - state.h;                       // title bar + padding: state.h is the BODY's height
     const maxH = Math.max(40, innerHeight - 16 - chrome);
     state.h = Math.max(Math.min(state.h, maxH), Math.min(minH, maxH));
+    // NOT gated on `moved`, though the x guards below are. Tried it (round 2,
+    // for the lifted emote bar) and it strands every ORDINARY bottom-anchored
+    // frame: rotate 700->500 and an untouched bar sat at y=370 instead of 428,
+    // because the clamp below pulls it up and nothing re-anchors it. The
+    // lifted-bar case needs a narrower fix than a blanket gate; disclosed
+    // unbound rather than papered over.
     if (opts.y != null && opts.y < 0) state.y = Math.max(8, innerHeight + opts.y - hh);
     state.y = clamp(state.y, 8, Math.max(8, innerHeight - hh - 8));
     // A frame created hidden gets its x from resolveAnchor at CREATION width. If it's first shown after a
