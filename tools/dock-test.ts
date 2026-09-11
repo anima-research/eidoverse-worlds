@@ -120,6 +120,36 @@ toggleEMenu(false);
   check("an UNMAPPED emoji keeps its text (no silent puzzle-piece)", s3.head.textContent === "🦄 unmapped" && !s3.head.querySelector("svg"));
 }
 
+console.log("DOCK — the rail clears the joystick (mobile landscape)");
+{
+  // R, 2026-09-11: "it doesn't currently take into account the space needed for
+  // the mobile joystick". #stick is left:18 bottom:18, 116px square -> it owns
+  // the bottom 134px of the left column. The rail is taller than what is left
+  // above it at 844x390, so a LEFT edge runs through the thumb.
+  const { dockEdgeFitsLeft } = ui as any;
+  const vw0 = innerWidth, vh0 = innerHeight;
+  const setVp = (w: number, h: number) => { (window as any).innerWidth = w; (window as any).innerHeight = h; };
+
+  document.body.classList.remove("touch");
+  setVp(844, 390);
+  check("no touch controls: the left rail is never displaced", dockEdgeFitsLeft() === true);
+
+  document.body.classList.add("touch");
+  setVp(390, 844);
+  check("touch, portrait: the rail still clears the stick, so it stays left", dockEdgeFitsLeft() === true);
+
+  setVp(844, 390);
+  check("touch, landscape: the rail cannot clear the stick -> not left", dockEdgeFitsLeft() === false);
+
+  localStorage.setItem("ew-dock-pos", JSON.stringify({ edge: "right", along: 40 }));
+  check("a DELIBERATE drag still wins: ew-dock-pos is not overridden",
+    JSON.parse(localStorage.getItem("ew-dock-pos")!).edge === "right");
+  localStorage.removeItem("ew-dock-pos");
+
+  document.body.classList.remove("touch");
+  setVp(vw0, vh0);
+}
+
 console.log("DOCK — registerPanel (the mod seam)");
 let mounted: any = null;
 const modF = registerPanel({ id: "modx", title: "mod x", mount: (body: HTMLElement, f: any) => { mounted = { body, f }; } });

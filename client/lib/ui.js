@@ -432,9 +432,34 @@ export function initDock(entries) {
 
 // ---- the rail lives flat on an edge. {edge, along} persisted;
 // left/right = vertical (∃ on top), top/bottom = horizontal (∃ leftmost).
+
+// The touch controls own the bottom corners: #stick is left:18 bottom:18 at
+// 116px square (so it reserves the bottom 134px on the left), and #touchbtns
+// sits bottom-right. A LEFT rail runs straight down into the stick — and the
+// clamp in applyDockEdge cannot save it: at 844x390 the rail is taller than
+// the column above the stick, so `along` pins to its minimum and the rail
+// spans the joystick regardless. That is the whole reason to move: not
+// "landscape" as such, but that the rail no longer clears the thumb.
+//
+// Derived from what the rail actually carries rather than a breakpoint, the
+// fitsDefaults() idiom: it stays true if pins are added or removed.
+const STICK_RESERVE = 134 + 8;          // #stick (bottom:18 + 116) + breathing room
+const DOCK_SLOT = 34 + 2;               // button + gap (index.html #dock)
+function railHeight() {
+  const slots = 1 + [...new Set([...pins, ...dockEntries.map((e) => e.id)])].length;   // ∃ + every rail icon
+  return slots * DOCK_SLOT + 8;         // + the rail's own padding
+}
+/** A vertical rail needs the column ABOVE the joystick; when it cannot have it,
+ *  the top edge is the only one clear of both thumbs. */
+export function dockEdgeFitsLeft() {
+  if (!document.body.classList.contains('touch')) return true;   // no thumbs, no conflict
+  return railHeight() <= innerHeight - STICK_RESERVE;
+}
 function loadDockEdge() {
+  // A deliberate drag always wins — ew-dock-pos is NOT cleared by the layout
+  // purge, and it should not be: where you put the rail is your decision.
   try { const p = JSON.parse(localStorage.getItem(DOCKPOS_LS) || 'null'); if (p?.edge) return p; } catch {}
-  return { edge: 'left', along: 10 };
+  return dockEdgeFitsLeft() ? { edge: 'left', along: 10 } : { edge: 'top', along: 10 };
 }
 function applyDockEdge({ edge, along }) {
   el.dock.dataset.edge = edge;   // CSS welds the rail to this side; mic/ear read it too
