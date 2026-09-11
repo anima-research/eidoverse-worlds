@@ -9,6 +9,12 @@ import { svg, fsvg, hasFill, rsvg, hasLine } from './icons.js';
 
 // section-head emoji → Phosphor fill glyph (menu chrome never rides emoji —
 // the canvas-emoji trap generalizes: platform glyph gaps are silent)
+// Upstream labels its dock entries with emoji (main.js: world is '🧱'), and the
+// same emoji means different things in different places — '🧱' is genuinely a
+// hammer in palette.js's BUILD section, but the world panel is a planet. So the
+// entry id wins over the emoji: remapping '🧱' globally would fix the dock and
+// break build. (#185 live report: the hammer opened and closed 'world'.)
+const ID_ICON = { world: 'planet' };
 const EMOJI_ICON = {
   '💬': 'chat-circle',
   '👋': 'hand-waving',
@@ -344,7 +350,7 @@ export function dockPins() {
 
 function addDockButton(entry) {
   const { id, label, action } = entry;
-  const icon = entry.icon ?? EMOJI_ICON[(label ?? '').replace(/\uFE0F/g, '')];   // upstream main.js still labels the rail with emoji; chrome never rides emoji
+  const icon = entry.icon ?? ID_ICON[id] ?? EMOJI_ICON[(label ?? '').replace(/\uFE0F/g, '')];   // upstream main.js still labels the rail with emoji; chrome never rides emoji
   const b = document.createElement('button');
   // both weights ride the button; CSS shows the LINE glyph at rest and the
   // FILL glyph while the window is open (the .on class) — a glyph swap, not
@@ -660,7 +666,7 @@ function buildEMenu(m) {
   { const s = document.createElement('div'); s.className = 'msep'; m.appendChild(s); }
   for (const entry of dockEntries) {
     const { id, action, gate } = entry;
-    const icon = entry.icon ?? EMOJI_ICON[(entry.label ?? '').replace(/\uFE0F/g, '')];
+    const icon = entry.icon ?? ID_ICON[id] ?? EMOJI_ICON[(entry.label ?? '').replace(/\uFE0F/g, '')];
     if (action) {
       if (gate && !gate()) continue;
       const row = document.createElement('button');

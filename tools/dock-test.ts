@@ -91,7 +91,10 @@ check("...and again to unlight", editFired === 2 && !btn("edit")!.classList.cont
 check("window.eido.ui.registerPanel is the exported seam", (window as any).eido?.ui?.registerPanel === registerPanel);
 
 console.log("DOCK — EMOJI_ICON: rail chrome never rides emoji");
-const RAIL: [string, string, string][] = [["chat", "💬", "chat-circle"], ["world", "🧱", "hammer"], ["emotes", "👋", "hand-waving"], ["debug", "🐞", "bug"]];
+// world is upstream-labelled '🧱' (main.js), but 🧱 means BUILD — palette.js's
+// build section wears the hammer correctly. The world PANEL is a planet, so the
+// entry id overrides the emoji (ui.js ID_ICON). Live report, #185.
+const RAIL: [string, string, string][] = [["chat", "💬", "chat-circle"], ["world", "🧱", "planet"], ["emotes", "👋", "hand-waving"], ["debug", "🐞", "bug"]];
 for (const [id, emoji, icon] of RAIL) {
   const b = btn(id)!;
   check(`rail button '${id}' (${emoji}) wears the ${icon} FILL glyph — not the emoji, not puzzle-piece`,
