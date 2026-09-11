@@ -216,6 +216,37 @@ console.log("FRAMES — a viewport too small for the default arrangement opens o
   window.dispatchEvent(new Event("resize"));
 }
 
+console.log("FRAMES — a hand-placed frame is never re-anchored");
+{
+  // R, 2026-09-11: the emote bar "will always pop sideways to the right
+  // regardless if there's room for it". x:'center' re-resolved on EVERY fit()
+  // because the `!saved` guard reads a closure captured at construction, and a
+  // drag writes localStorage without ever refreshing it. The emote bar calls
+  // _fit() 180ms after each drag settles (snapTo), so the placement was undone
+  // every time. Only `emotes` uses x:'center', which is why it was the one.
+  const vw0 = innerWidth, vh0 = innerHeight;
+  (window as any).innerWidth = 1000; (window as any).innerHeight = 700;
+  localStorage.removeItem("ew-frame-awcx");
+  const bar = measurable(makeFrame("awcx", { title: "awcx", x: "center", y: -10, w: 352, h: 32 }));
+  bar.show();
+  const centred = bar.state.x;
+  check("an x:'center' frame opens centred", centred > 100, JSON.stringify(bar.state));
+
+  // a REAL drag: the pointer handler writes state and saves on pointerup
+  (bar.head as HTMLElement).dispatchEvent(new PointerEvent("pointerdown", { clientX: centred + 10, clientY: bar.state.y + 5, bubbles: true }));
+  (bar.head as HTMLElement).dispatchEvent(new PointerEvent("pointermove", { clientX: 18, clientY: bar.state.y + 5, bubbles: true }));
+  (bar.head as HTMLElement).dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+  const placed = bar.state.x;
+  check("...and a drag to the left edge lands it there", placed <= 20, String(placed));
+
+  bar._fit();
+  check("...and fit() does NOT re-centre it — the hand beats the anchor",
+    bar.state.x <= 20, `${placed} -> ${bar.state.x}`);
+
+  (window as any).innerWidth = vw0; (window as any).innerHeight = vh0;
+  window.dispatchEvent(new Event("resize"));
+}
+
 console.log("FRAMES — z band");
 const zs = () => allFrames().map((x: any) => +x.el.style.zIndex);
 for (let i = 0; i < 20; i++) measurable(makeFrame(`z${i}`, { title: `z${i}`, x: 20 + i, y: 20 + i, w: 120, h: 60 })).show();

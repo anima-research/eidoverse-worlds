@@ -352,7 +352,16 @@ export function makeFrame(id, opts = {}) {
     }
     root.style.zIndex = String(Math.min(++zTop, Z_HI));
   }
+  // `saved` is read ONCE at construction, so the anchor guards below cannot use
+  // it to mean "the user has never placed this frame" — a drag writes storage
+  // but leaves the closure null forever. Latch it here instead: after any save,
+  // this frame's position is the user's, not the anchor's. (R, 2026-09-11: the
+  // emote bar "will always pop sideways to the right regardless if there's room
+  // for it" — snapTo calls _fit() 180ms after every drag settles, and fit()
+  // re-centred an x:'center' frame each time.)
+  let moved = !!saved;
   function save() {
+    moved = true;
     localStorage.setItem(LS(id), JSON.stringify(state));
   }
   function paint() {
@@ -479,8 +488,8 @@ export function makeFrame(id, opts = {}) {
     // resize/maximize, a negative-x (right-edge) anchor must re-resolve to the CURRENT width, or it strands
     // at its old absolute x (live 09-07: debug, x:-414, opened after maximizing and sat far left instead of
     // flush-left of the right-docked panels). Only when there's no saved override.
-    if (!saved && typeof opts.x === 'number' && opts.x < 0) state.x = Math.max(8, innerWidth + opts.x - state.w);
-    if (opts.x === 'center' && !saved) state.x = Math.round((innerWidth - state.w) / 2);
+    if (!moved && typeof opts.x === 'number' && opts.x < 0) state.x = Math.max(8, innerWidth + opts.x - state.w);
+    if (opts.x === 'center' && !moved) state.x = Math.round((innerWidth - state.w) / 2);
     state.x = clamp(state.x, 8, Math.max(8, innerWidth - state.w - 8));
     paint();
   }
