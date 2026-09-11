@@ -9,11 +9,11 @@
 // A small headphone glyph beside it mutes INCOMING voice separately.
 // V toggles the mic from the keyboard, exactly like the porch.
 
-import { micOn, toggleMic } from './micstate.js';
+import { micOn, toggleMic, setPttHeld, pttHeld } from './micstate.js';
 import { setSTT, sttAvailable } from './stt.js';
 import { CONFIG } from './base.js';
 import { receivingVoice, setReceiveVoice, ensureSttConsent, sttConsented,
-  isHushed, setHush } from './voiceconsent.js';
+  isHushed, setHush, pttMode } from './voiceconsent.js';
 import { bus } from './base.js';
 
 // three states (R, 17:09): off = grey + slash · live = clean bright white ·
@@ -98,7 +98,13 @@ function paint() {
   const deaf = on && !receivingVoice();
   micBtn.innerHTML = MIC_SVG(on, on && micHot);
   micBtn.style.opacity = deaf ? '0.55' : '1';
-  micBtn.title = !on ? 'mic off (V to talk)'
+  // Under PTT an armed mic is NOT "the world hears you" — the gate is shut
+  // until the key is down, and the tooltip must not claim otherwise. Same
+  // doctrine as micIsOn() below, mirrored: never say LIVE while private,
+  // never say private while live.
+  micBtn.title = !on ? (pttMode() ? 'mic off (click to arm push-to-talk)' : 'mic off (V to talk)')
+    : pttMode() ? (pttHeld() ? 'transmitting — release V to stop'
+                             : 'push-to-talk armed — hold V to speak')
     : deaf ? 'mic LIVE — but you are not hearing the room (Shift+V to listen)'
     : 'mic LIVE — the world hears you (V)';
   if (earBtn) {
@@ -137,7 +143,11 @@ function micLevelNow() {
 setInterval(() => {
   if (!micIsOn()) { if (micHot) { micHot = false; paint(); } return; }
   const lvl = micLevelNow();
-  const hot = lvl > 0.02;
+  // The analyser reads the RAW side of the gate (micgate.js — it must, or the
+  // gate self-latches), so under PTT the level runs hot while nothing leaves
+  // the machine. Gold means "the room is getting this"; gate the glow on the
+  // key, or the badge claims transmission the release just ended.
+  const hot = lvl > 0.02 && (!pttMode() || pttHeld());
   if (hot !== micHot) { micHot = hot; paint(); }
 }, 125);
 
@@ -228,13 +238,45 @@ bus.on('audio:mic', paint);
 setInterval(ensure, 1000);
 ensure();
 
+// 🔴 "TYPING" MEANS A TEXT FIELD, NOT ANY INPUT. The old guard skipped V
+// whenever an INPUT had focus — which includes the checkbox you just
+// clicked to turn push-to-talk on. Focus stays on a checkbox after the
+// click, so the very first V after enabling PTT was silently eaten: the
+// mode looked broken while the gate was fine (R, 2026-09-10, found by ear;
+// the two-tab probe reproduced it with a focused checkbox → held=false).
+// Only a place where V would insert a character is a reason to ignore it.
+const TEXT_INPUT = /^(text|search|url|email|password|number|tel|)$/i;   // '' = default type
+const typingTarget = () => {
+  const el = document.activeElement;
+  if (!el) return false;
+  if (el.isContentEditable) return true;
+  if (el.tagName === 'TEXTAREA') return true;
+  return el.tagName === 'INPUT' && TEXT_INPUT.test(el.type ?? '');
+};
 window.addEventListener('keydown', (e) => {
-  if (e.repeat || ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+  if (e.repeat || typingTarget()) return;
   if (e.code !== 'KeyV' || e.shiftKey) return;
   // V speaks. Hushing is a CLICK on the 🎧, and revoking consent entirely
   // lives only in the Audio panel — deliberately not on a key next to the
   // hush, because two near-identical gestures with different guarantees is
   // how someone ends up believing they are private when they are not. The
   // frequent act gets the fast path; the structural one you go looking for.
+  //
+  // In PTT mode V is HOLD-to-speak (VRChat's binding, same key both modes so
+  // there is one thing to learn). Turning the mic on/off entirely moves to
+  // the glyph and the panel — a deliberate act for a deliberate state.
+  if (pttMode()) {
+    if (micIsOn()) { setPttHeld(true); paint(); }
+    return;
+  }
   flipMic();
 });
+window.addEventListener('keyup', (e) => {
+  if (e.code !== 'KeyV') return;
+  setPttHeld(false);   // harmless in voice-activation mode; vital in PTT
+  if (pttMode()) paint();
+});
+// 🔴 THE STUCK-KEY CLASS. keyup never arrives if focus left with the key down
+// (alt-tab mid-sentence, a click into another window) — every PTT
+// implementation that skips this ships an open mic that says it is closed.
+window.addEventListener('blur', () => { setPttHeld(false); if (pttMode()) paint(); });
