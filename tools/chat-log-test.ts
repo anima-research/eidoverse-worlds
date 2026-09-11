@@ -209,6 +209,27 @@ check("...and `all` shows the room again",
 // CLOSING A TAB. R, 2026-09-11: "there should be a way of getting rid of extra
 // tabs you don't want." Right-click already worked and announced itself only in
 // a title attribute, so a DM tab now carries a visible x as well.
+// THE ACTIVE TAB IS SCROLLED INTO VIEW. R's screenshot showed `system| @H` —
+// the open whisper clipped to two characters while `all` and `mentions` held the
+// full left. R, 2026-09-11: "should probably always preferentially display the
+// tab that it's on".
+//
+// The PIXELS are unbindable here and I checked that BEFORE writing this:
+// happy-dom performs no layout, so a deliberately overflowing row reports
+// scrollWidth=0 clientWidth=0 and scrollIntoView leaves scrollLeft at 0. What IS
+// bindable is the mechanism — that setFilter finds the active tab and asks for
+// it. Verified separately in real Chromium (clipped by 44px before, fully
+// visible after).
+{ const calls: string[] = [];
+  const proto = (globalThis as any).HTMLElement?.prototype;
+  const orig = proto?.scrollIntoView;
+  if (proto) proto.scrollIntoView = function () { calls.push((this as HTMLElement).textContent?.trim() ?? "?"); };
+  const sysTab = [...tabs().querySelectorAll(".tabscroll button")].find((b: any) => b.textContent.includes("system")) as HTMLElement;
+  sysTab?.click();
+  check("switching tabs asks the ACTIVE one to scroll into view",
+    calls.some((t) => t.includes("system")), JSON.stringify(calls));
+  if (proto) proto.scrollIntoView = orig; }
+
 { const keirTab = [...tabs().querySelectorAll(".tabscroll button")].find((b: any) => b.textContent.includes("@keir")) as HTMLElement;
   const x = keirTab?.querySelector(".tabx") as HTMLElement;
   check("a DM tab carries a visible close", !!x, keirTab?.innerHTML.slice(0, 80) ?? "(no tab)");

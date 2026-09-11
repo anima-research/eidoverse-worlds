@@ -1089,7 +1089,11 @@ function paintTabs() {
     const t2 = document.createElement('span'); t2.className = 'tick';
     const lbl = document.createElement('span');
     lbl.textContent = label + (unread ? ` ${unread}` : '');
-    b.append(t1, lbl, t2);
+      b.append(t1, lbl, t2);
+      // the close glyph is appended AFTER t2 below; R asked for it nearer its
+      // label ("so it feels more strongly associated with it") and the trailing
+      // tick was sitting between them — measured 16px of gap. The x now goes
+      // before t2, so only the flex gap separates it from the name.
     if (unread) b.classList.add('has-unread');
     b.onclick = () => setFilter(key);
     if (closable) {
@@ -1105,7 +1109,7 @@ function paintTabs() {
           convos.delete(key.slice(2));
           if (filter === key) setFilter('all'); else paintTabs();
         };
-        b.append(x);
+        b.insertBefore(x, b.lastElementChild);   // before the trailing tick, not after it
       b.oncontextmenu = (e) => {
         e.preventDefault();
         convos.delete(key.slice(2));
@@ -1130,6 +1134,18 @@ function paintTabs() {
   gear.onclick = (e) => { e.stopPropagation(); gearToggle?.(gear); };
     bar.appendChild(gear);                     // the gear stays OUTSIDE the scroller — always reachable
     paintArrows();
+    // KEEP THE ACTIVE TAB IN VIEW. Overflow was sacrificing the tab you are
+    // actually reading: R's screenshot shows `system| @H` — the open whisper
+    // clipped to two characters while `all` and `mentions` held the full left.
+    // R, 2026-09-11: "should probably always preferentially display the tab that
+    // it's on ... probably 'mentions' and 'all' fully off-screen."
+    const active = scroll.querySelector('button.on');
+    if (active) {
+      // after layout, or scrollWidth is still 0 and this is a no-op
+      const bring = () => active.scrollIntoView?.({ inline: 'end', block: 'nearest' });
+      bring();
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { bring(); paintArrows(); });
+    }
     // the scroller has no measurable width until layout runs
     if (typeof requestAnimationFrame === 'function') requestAnimationFrame(paintArrows);
 }

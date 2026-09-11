@@ -364,7 +364,10 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .chat-cols.side-left.side-closed .chat-side-tog { border-right-color: transparent; }   /* closed = no line, same as the right (live 09-07 10:55) */
 .chat-cols.side-left .chat-side-grip { left: auto; right: calc(-14px - 4px); }   /* mirror of the right: over the toggler's border line, not the pane's own edge (live, 09-06 23:34: 'the right behaviour is preferred') */
 .chat-tabs .chat-gear {
-  flex: none; margin-left: 2px; padding: 3px 6px;
+  /* min-width:0 for the same reason .tabarrow needs it: `.chat-tabs button
+     { min-width: 62px }` matches the gear too, and a 62px gear ate strip space
+     that the tabs needed. Measured, not reasoned. */
+  flex: none; min-width: 0; margin-left: 2px; padding: 3px 6px;
   background: none; border: none; color: var(--dim); border-radius: 5px;
   display: grid; place-items: center;
 }
@@ -391,17 +394,28 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
    R, 2026-09-11: "squash the words together at the top to make room for more
    tabs but still leave some buffer so they don't get too close, left/right
    arrow keys at either side of the menu if you need to side-scroll". */
-.chat-tabs { display: flex; gap: 2px; padding: 7px 6px 0; flex: none; align-items: center; }
+.chat-tabs { display: flex; gap: 4px; padding: 7px 8px 0; flex: none; align-items: center; }   /* gap 2->4 and side padding 6->8: R's screenshot had 'system' jammed against the open whisper tab */
 .chat-tabs .tabscroll {
   display: flex; gap: 4px; flex: 1; overflow-x: auto; scrollbar-width: none;
   scroll-behavior: smooth;
 }
 .chat-tabs .tabscroll::-webkit-scrollbar { display: none; }
 .chat-tabs .tabarrow {
-  flex: none; width: 14px; padding: 3px 0; background: none; border: none;
-  color: var(--dim); font-size: var(--fs-xs); cursor: pointer; border-radius: 0;
+  /* BIGGER, and with room around them. At --fs-xs in a 14px box these were
+     nearly invisible next to the labels — R, 2026-09-11: "Arrow buttons should
+     maybe be bigger if anything exists like that (maybe small phosphor icons,
+     if there's no unicode to support something like that?)". icons.js carries
+     NO caret/chevron/arrow glyph (checked, not assumed), so this stays unicode
+     and gets the size instead. */
+  /* min-width:0 is LOAD-BEARING: `.chat-tabs button { min-width: 62px }` matches
+     these too, and .tabarrow never set min-width, so there was nothing to
+     override and the arrows rendered 62px wide. Measured in Chromium against the
+     real sheet (arrowW=62, flexGrow=0) — my specificity arithmetic said the
+     arrows were safe and it was wrong. */
+  flex: none; width: 18px; min-width: 0; padding: 2px 0; background: none; border: none;
+  color: var(--dim); font-size: 15px; line-height: 1; cursor: pointer; border-radius: 4px;
 }
-.chat-tabs .tabarrow:hover { color: var(--fg); }
+.chat-tabs .tabarrow:hover { color: var(--fg); background: var(--hov); }
 .chat-tabs .tabarrow[hidden] { display: none; }
 .chat-tabs button {
   /* EVEN SPACING DOWN TO A FLOOR, then the scroller takes over. `flex: none`
@@ -419,7 +433,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 }
 /* a DM tab carries a visible close — right-click worked and told nobody */
 .chat-tabs button .tabx {
-  flex: none; margin-left: 2px; padding: 0 2px; border-radius: 4px;
+  flex: none; margin-left: 5px; margin-right: -3px; padding: 0 3px; border-radius: 4px;
   color: var(--dim); opacity: .55; font-size: var(--fs-xs); line-height: 1;
 }
 .chat-tabs button .tabx:hover { opacity: 1; color: var(--fg); background: var(--hov); }
