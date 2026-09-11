@@ -1092,6 +1092,18 @@ function paintTabs() {
       right.hidden = !over || scroll.scrollLeft + scroll.clientWidth >= scroll.scrollWidth - 1;
     };
     scroll.addEventListener('scroll', paintArrows);
+      // WATCH THE SCROLLER ITSELF. paintArrows only ever ran from paintTabs (a
+      // filter change) and from the onResize hook — and both compute BEFORE the
+      // browser applies the new width, so a narrowing panel left scrollWidth
+      // frozen against a collapsing clientWidth. Measured with People Here open,
+      // which is R's real layout: at 330px and below scrollWidth stayed 175
+      // while clientWidth fell to 31 — genuinely overflowing, both arrows still
+      // hidden, her tabs unreachable (R, 2026-09-11: "I shrunk it to get rid of
+      // the 'system' tab and there's no arrows visible to reach it"). A
+      // ResizeObserver fires AFTER layout on the element that actually changed.
+      if (typeof ResizeObserver === 'function') {
+        try { new ResizeObserver(() => paintArrows()).observe(scroll); } catch { /* older engine */ }
+      }
     bar.append(left, scroll, right);
   const mk = (key, label, unread = 0, closable = false) => {
     const b = document.createElement('button');
@@ -1155,7 +1167,12 @@ function paintTabs() {
     const active = scroll.querySelector('button.on');
     if (active) {
       // after layout, or scrollWidth is still 0 and this is a no-op
-      const bring = () => active.scrollIntoView?.({ inline: 'end', block: 'nearest' });
+      // `inline: 'end'` only scrolls when the element is out of view on that side —
+        // a tab CLIPPED at the edge is partially visible, so it stayed clipped.
+        // R, 2026-09-11: "When I clicked on the 'system' tab just now when it was
+        // already slightly off screen, it didn't recenter to it being fully on
+        // screen". 'nearest' moves the minimum needed to make it whole.
+        const bring = () => active.scrollIntoView?.({ inline: 'nearest', block: 'nearest' });
       bring();
       if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { bring(); paintArrows(); });
     }

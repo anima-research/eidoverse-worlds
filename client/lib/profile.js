@@ -52,7 +52,7 @@ export function initProfile() {
 //   • the bodies list is the avatars tab's content — no more folding
 const TABS = [
   ['avatars', 'person-arms-spread', 'bodies you have worn'],
-  ['satchel', 'push-pin', 'personal inventory'],
+  ['satchel', 'backpack', 'personal inventory'],
   ['worlds', 'planet', 'places you know'],
   ['friends', 'users', 'people you keep'],
 ];
@@ -126,6 +126,23 @@ function paintPane(pane) {
     if (!bodiesHost) { bodiesHost = document.createElement('div'); bodiesHost.className = 'pf-bodies'; mountBodies(bodiesHost); }
     pane.append(bodiesHost);
     return;
+  }
+
+  // SAY SO WHEN IT IS EMPTY BY DESIGN. R, 2026-09-11: the old sketch carried
+  // "this is a stub - yet to be built" on these panes "just so you'd know it
+  // hadn't rendered nothing on accident" — an empty box is indistinguishable
+  // from a broken one. satchel/worlds/friends have no server surface yet; the
+  // tabs are aspirational, so the panes say which.
+  const STUB = {
+    satchel: 'a stub — what you carry, once there is somewhere to carry it from.',
+    worlds: 'a stub — places you know, once the server keeps a list.',
+    friends: 'a stub — people you keep, once there is a way to keep them.',
+  };
+  if (STUB[tab]) {
+    const d = document.createElement('div');
+    d.className = 'pf-stub';
+    d.textContent = STUB[tab];
+    pane.append(d);
   }
 }
 

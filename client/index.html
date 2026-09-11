@@ -352,7 +352,16 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 /* the affordance is the LINE itself, not a band: a 1px stroke that turns brand under the pointer */
 .chat-side-grip::before { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 1px; background: transparent; }
 .chat-side-grip:hover::before, .chat-side-grip:active::before { background: var(--brand); }
-.chat-side-list { flex: 1; overflow-y: auto; padding: 6px 4px 6px 6px; }   /* live: more horizontal room for names */
+.chat-side-list {
+  /* A VISIBLE TRACK WHEN IT FILLS. `overflow-y: auto` was already here, but the
+     platform draws an OVERLAY scrollbar — measured: 40 rows overflow 812px into
+     236px and the gutter is 0px wide, so the list simply clips a row mid-height
+     with nothing to say there is more (R, 2026-09-11: "make sure there's a
+     scroll bar in the People Here panel when it gets enough people in it").
+     scrollbar-gutter reserves the lane so the rows never reflow when it appears,
+     and the thin thumb is the global one from line 91. */
+  flex: 1; overflow-y: auto; scrollbar-gutter: stable; padding: 6px 4px 6px 6px;
+}
 .chat-side-list .who-row { display: flex; justify-content: flex-start; gap: 4px; padding: 1px 0; font-size: var(--fs-sm); }
 .chat-side-list .who-row .who-mark { margin-right: 2px; }   /* + the row gap 4 → 6 px dot→name (was 15) */
 .chat-side-list .who-row .d:empty { display: none; }
@@ -441,7 +450,16 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
      Centring is right for the fixed tabs; a closable one needs the glyph to
      occupy real space, so .has-x switches to space-between and pays for it with
      a wider floor and room on the right. */
-  flex: 1 1 0; min-width: 58px; padding: 5px 9px 6px; font-size: var(--fs-xs);
+  /* A TAB DOES NOT SHRINK BELOW ITS OWN LABEL. `flex: 1 1 0` let all three fixed
+     tabs squeeze into 181px, so the row NEVER overflowed — measured on the live
+     client at 545/400/330/280/240px: scrollWidth == clientWidth every time, so
+     paintArrows correctly found nothing to scroll and hid the arrows. R saw her
+     `system` tab vanish with no way to reach it (2026-09-11: "I shrunk it to get
+     rid of the 'system' tab and there's no arrows visible to reach it") — it was
+     never off-screen, it was being crushed. `flex: 0 0 auto` makes each tab its
+     natural width (all 58 · mentions 69 · system 58 = 185px), so a narrower
+     panel overflows the scroller and the arrows have somewhere to go. */
+  flex: 0 0 auto; padding: 5px 9px 6px; font-size: var(--fs-xs);
   display: flex; align-items: center; justify-content: center; gap: 4px;
   /* THE UNDERLINE LIVES INSIDE THE BOX. `margin-bottom: -1px` hangs the border
      1px past the tab, and .tabscroll is `overflow-x: auto` — an overflow box
@@ -818,6 +836,7 @@ body.arranging #dock #hud.emark {
 .pf-tabs .pf-tab.on:hover { background: color-mix(in srgb, rgb(143 232 200 / .13) 45%, var(--well)); }
 .pf-tab.on svg { opacity: 1; color: var(--brand); }
 .pf-pane { flex: 1; min-height: 0; overflow: auto; }
+.pf-stub { color: var(--dim); font-size: var(--fs-sm); padding: 10px 2px; line-height: 1.5; }   /* empty BY DESIGN, and says so — the .who-empty idiom (R, 2026-09-11) */
 #emenu {
   position: fixed; top: 54px; left: 10px; z-index: 40;
   display: flex; flex-direction: column; min-width: 168px; padding: 6px;
