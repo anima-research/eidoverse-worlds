@@ -136,12 +136,20 @@ document.addEventListener('pointerdown', (e) => {
   _resizing = true;
   const sx = e.clientX, sy = e.clientY;
   const s0 = { x: f.state.x, y: f.state.y, w: f.state.w, h: f.state.h };
+  // state.h is the BODY's height; the frame renders taller by the title bar and
+  // .fr-body's padding. fit() already knows this (`const chrome = hh - state.h`)
+  // and clamps against root.offsetHeight — the south clamp below did not, so it
+  // budgeted in body space while subtracting a viewport margin and let a resize
+  // end past the bottom edge, unreachable under html,body{overflow:hidden}.
+  // Measured before the fix: budget 729, rendered bottom 794, viewport 768.
+  // fit() would correct it, but finish() never calls fit. (round 6)
+  const s0chrome = Math.max(0, (f.root.offsetHeight || 0) - s0.h);
   const move = (ev) => {
     const dx = ev.clientX - sx, dy = ev.clientY - sy;
     // grows are clamped so no edge ever leaves the viewport
     // (windows stay inside the active area, full stop)
     if (z.includes('e')) f.state.w = clamp(s0.w + dx, f.minW, innerWidth - s0.x - 8);
-    if (z.includes('s')) f.state.h = clamp(s0.h + dy, f.minH, innerHeight - s0.y - 4);   // 4 px above the bottom edge; a drag clamps at 8 (below) — a resize may end 4 px lower; the old −40 stopped a resize 36 px short of where a drag could go (live 09-07 23:25)
+    if (z.includes('s')) f.state.h = clamp(s0.h + dy, f.minH, innerHeight - s0.y - 4 - s0chrome);   // 4 px above the bottom edge, CHROME-AWARE; a drag clamps at 8 (below) — a resize may end 4 px lower; the old −40 stopped a resize 36 px short of where a drag could go (live 09-07 23:25)
     if (z.includes('w')) {
       const maxW = s0.x + s0.w - 8;                // west edge stops at x=8
       f.state.w = clamp(s0.w - dx, f.minW, maxW);
