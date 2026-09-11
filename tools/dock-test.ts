@@ -206,5 +206,49 @@ check("paintPresence stamps the profile button", btn("profile")!.dataset.presenc
 bus.emit("presence:me", "here");
 check("...and presence:me on the bus drives it", btn("profile")!.dataset.presence === "here");
 
+
+console.log("DOCK — the badge the dock button carries (the title bar is hidden at rest)");
+{ const f = getFrame("chat")!;
+  f.badge("3");
+  const db = document.querySelector('#dock button[data-toggles="chat"] .dk-badge');
+  check("badge() mirrors onto the DOCK button, not only the title bar", !!db && db!.innerHTML === "3", db?.innerHTML ?? "(no .dk-badge)");
+  check("...and the title bar carries it too", f.el.querySelector(".fr-badge")?.innerHTML === "3");
+  f.badge("7");
+  check("a re-badge updates in place (one node, new text)", document.querySelectorAll('#dock button[data-toggles="chat"] .dk-badge').length === 1 && document.querySelector('#dock button[data-toggles="chat"] .dk-badge')!.innerHTML === "7");
+  f.badge("");
+  check("clearing the badge removes BOTH", !document.querySelector('#dock button[data-toggles="chat"] .dk-badge') && !f.el.querySelector(".fr-badge")); }
+
+console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePeople)");
+{ // togglePeople reads the chat frame's side-pane markup (chat.js:815: a
+  // .chat-cols that carries side-closed, and the .chat-side-tog that flips it).
+  // initChat builds that; here we mirror just those two nodes onto the frame
+  // this suite already made, so the REAL togglePeople runs against the real
+  // class contract instead of a recorder.
+  const f = getFrame("chat")!;
+  f.body.innerHTML = `<div class="chat-cols side-closed"><button class="chat-side-tog"></button></div>`;
+  const cols = () => f.body.querySelector(".chat-cols")!;
+  const tog = f.body.querySelector(".chat-side-tog") as HTMLElement;
+  let clicks = 0;
+  tog.onclick = () => { clicks++; cols().classList.toggle("side-closed"); };
+
+  f.show(); clicks = 0;
+  ui.togglePeople();
+  check("pane closed, chat open: Tab opens the pane", !cols().classList.contains("side-closed") && clicks === 1, `${cols().className} clicks=${clicks}`);
+
+  clicks = 0;
+  ui.togglePeople();
+  check("pane already open: Tab leaves it open and does NOT toggle", !cols().classList.contains("side-closed") && clicks === 0, `${cols().className} clicks=${clicks}`);
+
+  // review #5's case: pane saved OPEN while the chat frame is hidden —
+  // showing the chat IS the open, so the toggler must not fire.
+  f.hide(); clicks = 0;
+  ui.togglePeople();
+  check("chat hidden + pane saved open: Tab shows chat, pane stays open", f.visible && !cols().classList.contains("side-closed") && clicks === 0, `${cols().className} clicks=${clicks}`);
+
+  // and the inverse still works from hidden+closed
+  cols().classList.add("side-closed"); f.hide(); clicks = 0;
+  ui.togglePeople();
+  check("chat hidden + pane closed: Tab shows chat AND opens the pane", f.visible && !cols().classList.contains("side-closed"), `${cols().className} clicks=${clicks}`); }
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

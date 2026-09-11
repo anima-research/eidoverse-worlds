@@ -146,5 +146,14 @@ check('right edge (in the 6px inset) → hi', hitRegion(regions, cv, (slider.x +
   check('a wide range with a coarse step: frac 0.6 → 36 snaps to 30, never 36', hitRegion(r2, cv, (s.x + 6 + 0.6 * (s.w - 12)) / cv.width, (s.y + s.h / 2) / cv.height)?.payload === 30, String(hitRegion(r2, cv, (s.x + 6 + 0.6 * (s.w - 12)) / cv.width, (s.y + s.h / 2) / cv.height)?.payload));
   check('value clamps into [min,max] before painting (no region past the track)', s.x + s.w <= cv.width); }
 
+
+console.log('PANELS — a region OWNS its outer boundary (the laser lands on those pixels)');
+{ const b = byAction('del')[0];
+  const at = (x: number, y: number) => hitRegion(regions, cv, x / cv.width, y / cv.height);
+  check('the left/top edge pixel is INSIDE the region', at(b.x, b.y)?.action === 'del', String(at(b.x, b.y)?.action));
+  check('the right/bottom edge pixel is INSIDE the region', at(b.x + b.w, b.y + b.h)?.action === 'del', String(at(b.x + b.w, b.y + b.h)?.action));
+  check('one pixel past the right edge is NOT', at(b.x + b.w + 1, b.y + b.h / 2)?.action !== 'del');
+  check('one pixel above the top edge is NOT', at(b.x + b.w / 2, b.y - 1)?.action !== 'del'); }
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

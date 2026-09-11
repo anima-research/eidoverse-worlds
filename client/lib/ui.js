@@ -849,5 +849,8 @@ export function openDoor({ roster = [], needsKey = false, login = null, onEnter 
 export function togglePeople() {
   const f = getFrame('chat'); const wasVisible = !!f?.visible; if (f && !wasVisible) f.show();
   const closed = document.querySelector('.chat-cols')?.classList.contains('side-closed');
-  if (closed || wasVisible) document.querySelector('.chat-side-tog')?.click();   // hidden+open: showing the chat is the open
+  // Tab OPENS (defs/ui/_help.json): only a closed pane needs the toggler.
+  // A hidden frame whose pane is already open needs nothing but the show()
+  // above — clicking there would close the pane Tab was asked to open.
+  if (closed) document.querySelector('.chat-side-tog')?.click();
 }

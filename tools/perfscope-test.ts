@@ -219,5 +219,18 @@ console.log('DRAWSTATS — render.js measures the main pass through renderer.inf
   check('sources survey lists the instanced crowd and the library basenames', src.types.some((t: any) => t.type === 'instanced' && t.visibleObjects === 1) && src.types.some((t: any) => t.type === 'other'), JSON.stringify(src.types));
 }
 
+console.log('PERFSCOPE — a tier threshold is CROSSED, not reached (tierOf: v > th)');
+{ // T.tris[0] is 5000: a subject at exactly 5000 tris is still tier 0; past it is tier 1.
+  // PlaneGeometry(w,h,sx,sy) = sx*sy*2 tris → 50x50 = 5000 exactly; 50x51 = 5100.
+  const atMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 50, 50), new THREE.MeshStandardMaterial());
+  entity('atthreshold', 'library/at.glb', atMesh);
+  const overMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1, 50, 51), new THREE.MeshStandardMaterial());
+  entity('overthreshold', 'library/over.glb', overMesh);
+  scene.updateMatrixWorld(true);
+  ps.setMode('tris');
+  check('exactly 5000 tris is still tier 0 (a threshold is crossed, not reached)', hex(veilOf(atMesh)!.material) === T[0], hex(veilOf(atMesh)!.material));
+  check('5100 tris is tier 1', hex(veilOf(overMesh)!.material) === T[1], hex(veilOf(overMesh)!.material));
+  ps.setMode('off'); }
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
