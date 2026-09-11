@@ -59,7 +59,7 @@ export function initEmoteBar() {
       const hits = me.left < r.right && r.left < me.right && top < r.bottom && r.top < top + me.height;
       if (hits) top = Math.min(top, r.top - me.height - 8);
     }
-    if (top !== me.top && f._state) { f._state.y = Math.max(8, top); if (f._fit) f._fit(); else f._paint?.(); }
+    if (top !== me.top && f._state) { f._state.y = Math.max(8, top); f._paint?.(); }   // _paint, NOT _fit — _fit would re-anchor to the bottom and erase the lift
   };
 
   const snapTo = (w) => {
@@ -71,7 +71,7 @@ export function initEmoteBar() {
     // through _fit, not _paint: a reflow to more rows can push the bar past the
     // bottom edge, and _paint alone skips every viewport clamp (#185 review).
     if (f._fit) f._fit(); else f._paint();
-    liftClear();
+    liftClear();   // AFTER the fit: fit() re-anchors a bottom-anchored frame (opts.y<0) and would undo it
   };
   // a saved size from an older layout (or any drift) refits the moment the menu opens
   const show = f.show.bind(f);

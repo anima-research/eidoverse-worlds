@@ -75,7 +75,7 @@ try {
       rects: [...document.querySelectorAll('.frame')]
         .filter((f) => getComputedStyle(f).display !== 'none')
         .map((f) => { const r = f.getBoundingClientRect();
-          return { id: f.id || f.className, x: Math.round(r.x), y: Math.round(r.y),
+          return { id: f.id || f.dataset?.frame || f.className, x: Math.round(r.x), y: Math.round(r.y),
                    right: Math.round(r.right), bottom: Math.round(r.bottom) }; }) };
   });
   const t0 = Date.now(); let s = await state(), ready = null, raysSeen = false;
@@ -113,7 +113,7 @@ try {
   const rs = s.rects ?? [];
   for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
     const a = rs[i], b = rs[j];
-    if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) pairs.push(`${a.id} × ${b.id}`);
+    if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) pairs.push(`${a.id} [${a.x},${a.y},${a.right},${a.bottom}] × ${b.id} [${b.x},${b.y},${b.right},${b.bottom}]`);
   }
   if (pairs.length) { fail(`frames overlap at ${s.vw}x${s.vh} (a covered control cannot be clicked):\n  ` + pairs.join('\n  ')); }
   const off = (s.rects ?? []).filter((r) => r.right > s.vw + 1 || r.bottom > s.vh + 1);
