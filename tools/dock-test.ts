@@ -225,20 +225,26 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
   // this suite already made, so the REAL togglePeople runs against the real
   // class contract instead of a recorder.
   const f = getFrame("chat")!;
-  // A DECOY first: .chat-cols / .chat-side-tog are public classes (docs/MODDING-UI.md)
-  // and registerPanel hands any mod a body to fill, so a mod panel can carry them.
-  // Placed EARLIER in the document than the chat frame, it wins a document-wide
-  // querySelector — which is how a frame-scoped lookup and a document-wide one
-  // tell each other apart. Without this the two are indistinguishable.
-  const decoy = document.createElement("div");
-  decoy.innerHTML = `<div class="chat-cols side-closed"><button class="chat-side-tog"></button></div>`;
-  document.body.prepend(decoy);
+  // TWO decoys, because there are two ways to get this wrong and a decoy only
+  // binds the scope it sits outside of:
+  //   outer — elsewhere in the document (catches a document-wide lookup)
+  //   inner — INSIDE this frame's body, BEFORE the real cols (catches any
+  //           unbounded-depth lookup from the body, which is what registerPanel
+  //           actually enables: mount(body, frame) puts a mod's markup in here).
+  // chat.js writes .chat-cols as a DIRECT child of the body and the toggler as
+  // its child, so only a `:scope >` pair addresses the real pane.
+  const outer = document.createElement("div");
+  outer.innerHTML = `<div class="chat-cols side-closed"><button class="chat-side-tog"></button></div>`;
+  document.body.prepend(outer);
   let decoyClicks = 0;
-  (decoy.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
+  (outer.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
 
-  f.body.innerHTML = `<div class="chat-cols side-closed"><button class="chat-side-tog"></button></div>`;
-  const cols = () => f.body.querySelector(".chat-cols")!;
-  const tog = f.body.querySelector(".chat-side-tog") as HTMLElement;
+  f.body.innerHTML = `<div class="mod-panel"><div class="chat-cols side-closed"><button class="chat-side-tog"></button></div></div>`
+    + `<div class="chat-cols side-closed"><button class="chat-side-tog"></button></div>`;
+  const inner = f.body.querySelector(".mod-panel")!;
+  (inner.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
+  const cols = () => f.body.querySelector(":scope > .chat-cols")!;
+  const tog = cols().querySelector(":scope > .chat-side-tog") as HTMLElement;
   let clicks = 0;
   tog.onclick = () => { clicks++; cols().classList.toggle("side-closed"); };
 
@@ -262,8 +268,10 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
   check("chat hidden + pane closed: Tab shows chat AND opens the pane", f.visible && !cols().classList.contains("side-closed"), `${cols().className} clicks=${clicks}`);
 
   // the decoy must never have been touched: Tab addresses the CHAT frame's pane
-  check("Tab never reaches a mod panel carrying the same public classes", decoyClicks === 0 && decoy.querySelector(".chat-cols")!.classList.contains("side-closed"), `decoyClicks=${decoyClicks}`);
-  decoy.remove(); }
+  check("Tab never reaches a mod panel carrying the same public classes — outside the body OR nested inside it", decoyClicks === 0
+    && outer.querySelector(".chat-cols")!.classList.contains("side-closed")
+    && inner.querySelector(".chat-cols")!.classList.contains("side-closed"), `decoyClicks=${decoyClicks}`);
+  outer.remove(); }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

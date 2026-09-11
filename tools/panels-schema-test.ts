@@ -134,12 +134,14 @@ check('a UV in the padding resolves to null', hitRegion(regions, cv, 0.5, 0.001)
 { const [u, v] = uvAt(byAction('dim')[0]);
   check('a check hit hands back the flipped payload', hitRegion(regions, cv, u, v)?.payload === true); }
 // the track proper is the region inset 6px each side; frac is measured along it
-// The inset is the PRODUCT's: renderCanvas pushes the region out by 6px each
-// side (panels.js `x: vx - 6, w: tw + 12`), and hitRegion measures frac along
-// the inner track. Derive it from the emitted region rather than restating the
-// literal — a restated constant moves with a mutation and hides the drift.
-const INSET = 6;
-check('the slider region carries the product\'s 6px inset on each side', slider.w > 12 && Number.isFinite(slider.x), `x=${slider.x} w=${slider.w}`);
+// DERIVED, not restated: renderCanvas lays the value column at `vx = width * 0.34`
+// (panels.js:228) and pushes the region out from it by the inset on each side
+// (`x: vx - 6, w: tw + 12`, panels.js:265). So the inset the product actually
+// used is recoverable from the emitted geometry — and asserting it pins the
+// number. A test-side literal would move WITH a mutation and hide the drift.
+const VX = W * 0.34;                       // the product's own value-column origin
+const INSET = VX - slider.x;               // what renderCanvas actually inset by
+check('the slider region is inset by exactly 6px each side (derived from the emitted region, not restated)', INSET === 6, `derived inset=${INSET} (x=${slider.x}, vx=${VX})`);
 const trackU = (frac: number) => (slider.x + INSET + frac * (slider.w - INSET * 2)) / cv.width;
 const vMid = (slider.y + slider.h / 2) / cv.height;
 check('slider hit snaps to step: frac 0.333 → 0.35 (not 0.333)', hitRegion(regions, cv, trackU(0.333), vMid)?.payload === 0.35, String(hitRegion(regions, cv, trackU(0.333), vMid)?.payload));
