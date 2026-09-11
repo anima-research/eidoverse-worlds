@@ -152,7 +152,7 @@ document.addEventListener('input', (e) => {
 export function paintRangesIn(root = document) {
   for (const i of root.querySelectorAll('input[type=range]')) paintRange(i);
 }
-setInterval(() => paintRangesIn(document), 200);
+setInterval(() => paintRangesIn(document), 200);   // module-scope timer: a node-side importer of ui.js needs an explicit process.exit
 
 // ============================================================ tooltips
 // Every hover hint in the client is a native title= attribute, which browsers
@@ -417,7 +417,7 @@ export function initDock(entries) {
   addEventListener('resize', () => applyDockEdge(loadDockEdge()));
   paintDock();
   bus.on('frames', () => paintDock());
-  setInterval(paintDock, 2000);   // role grants land async; the wrench follows
+  setInterval(paintDock, 2000);   // role grants land async; the wrench follows (module-scope timer, as above)
   initEMenu();
 
 }
@@ -848,9 +848,13 @@ export function openDoor({ roster = [], needsKey = false, login = null, onEnter 
 // Tab: the people pane (the chat frame's side pane replaced the old roster)
 export function togglePeople() {
   const f = getFrame('chat'); const wasVisible = !!f?.visible; if (f && !wasVisible) f.show();
-  const closed = document.querySelector('.chat-cols')?.classList.contains('side-closed');
+  // Scoped to the chat frame's own body, exactly as chat.js writes these
+  // classes (applySide). .chat-cols / .chat-side-tog are PUBLIC classes in
+  // docs/MODDING-UI.md and registerPanel hands a mod a body to fill, so a
+  // document-wide lookup can land on a mod's panel instead of the chat.
+  const closed = f?.body?.querySelector('.chat-cols')?.classList.contains('side-closed');
   // Tab OPENS (defs/ui/_help.json): only a closed pane needs the toggler.
   // A hidden frame whose pane is already open needs nothing but the show()
   // above — clicking there would close the pane Tab was asked to open.
-  if (closed) document.querySelector('.chat-side-tog')?.click();
+  if (closed) f?.body?.querySelector('.chat-side-tog')?.click();
 }

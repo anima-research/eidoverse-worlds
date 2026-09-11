@@ -180,6 +180,22 @@ console.log('PROFILE — presence dispatch reaches setPresence; the dock dot rep
   check('choosing away sets presence()', presence.presence() === 'away', presence.presence());
   check('the pop closes and the header repaints', !b.querySelector('.pf-pop') && b.querySelector('.pf-state')?.textContent === 'away', b.querySelector('.pf-state')?.textContent ?? '');
   check('the dock dot follows', dockBtn.dataset.presence === 'away');
+  // Esc closes the pop and GOES NO FURTHER: profile.js's onKey calls
+  // stopPropagation so the global Esc (frames.js close-all) yields to an open
+  // pop, and dismiss() takes the capture listeners down with it.
+  portrait.click();
+  check('the pop reopens', !!b.querySelector('.pf-pop'));
+  let globalEsc = 0;
+  const spy = (ev: any) => { if (ev.key === 'Escape') globalEsc++; };
+  addEventListener('keydown', spy);            // bubble phase: profile's capture listener runs first
+  dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  check('Escape closes the presence pop', !b.querySelector('.pf-pop'));
+  check('...and the global Esc never sees it (stopPropagation)', globalEsc === 0, `globalEsc=${globalEsc}`);
+  globalEsc = 0;
+  dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  check('a second Escape is NOT swallowed — the pop took its listeners down with it', globalEsc === 1, `globalEsc=${globalEsc}`);
+  removeEventListener('keydown', spy);
+
   quad.dispatch('presence', 'present');
   check('present hands control back', presence.presence() === 'present' && dockBtn.dataset.presence === 'present');
 }
@@ -213,6 +229,14 @@ console.log('BODIES — the list populates on avatar-worn, which setMe emits');
   wear?.click(); await tick();
   check('wear dispatches into switchAvatar(path, name)', since(c0, 'switchAvatar').length === 1 && since(c0, 'switchAvatar')[0][1].startsWith('library/'), JSON.stringify(since(c0, 'switchAvatar')));
 }
+  // re-wearing a body already in the list MOVES it to the front — it never
+  // duplicates (bodies.js noteWorn filters the name out before unshifting).
+  { const e2 = emitted.length;
+    mybody.announceWorn('fox', 'library/fox.vrm');
+    const stored = JSON.parse(localStorage.getItem('ew-worn') || '[]');
+    check('re-wearing an existing body does not duplicate it', stored.filter((n: string) => n === 'fox').length === 1, JSON.stringify(stored));
+    check('...and moves it to the front (newest first)', stored[0] === 'fox', JSON.stringify(stored));
+    void e2; }
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
