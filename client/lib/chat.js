@@ -692,7 +692,12 @@ const SIDE_LS = 'ew-chat-side';
 // different node than ui.js togglePeople flips. Capturing once is stronger
 // than `:scope >` at each call site: nothing mounted later can be captured.
 let sideEls = null;
-const sideEl = (k) => sideEls?.[k] ?? null;
+// FAIL LOUD, never stale: a captured node can be REMOVED from the document by
+// a mod, and a handle to a detached node stays valid — writes land on an orphan
+// and nothing happens, with no error. Re-deriving by class on detach would
+// reintroduce the very lookup this capture exists to avoid, so a detached node
+// reads as absent instead. (Same idiom the spoken-line path uses: ?.isConnected)
+const sideEl = (k) => { const n = sideEls?.[k] ?? null; return n?.isConnected ? n : null; };
 let sideSt = { w: 150, open: false, pos: 'left' };   // people pane on the LEFT by default (live 09-07 10:55 reference HUD)
 function initSidePane() {
   try { sideSt = { ...sideSt, ...JSON.parse(localStorage.getItem(SIDE_LS) || '{}') } } catch {}
@@ -849,6 +854,15 @@ export function initChat({ send, whisper, typing, people }) {
       head: cols.querySelector(':scope > .chat-side > .chat-side-head'),
       list: cols.querySelector(':scope > .chat-side > .chat-side-list'),
     } : null; }
+  // Hand the captures to whoever holds this frame. ui.js's Tab handler needs
+  // these exact nodes and must not re-derive them: `:scope >` bounds DEPTH but
+  // not ORDER, so a mod PREPENDING a .chat-cols into this body wins a class
+  // lookup — and that door is real (mods.js:88 hands out makeFrame, frames.js
+  // returns the LIVE chat frame for a bare id, and a local mod is an in-page
+  // ES module with the whole document). The frame object is the seam: both
+  // sides already hold it via getFrame('chat'), so neither file imports the
+  // other.
+  frame.sidePane = (k) => sideEl(k);
   initSidePane();
   initChatGear();
 

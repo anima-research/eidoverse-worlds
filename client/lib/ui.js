@@ -848,17 +848,17 @@ export function openDoor({ roster = [], needsKey = false, login = null, onEnter 
 // Tab: the people pane (the chat frame's side pane replaced the old roster)
 export function togglePeople() {
   const f = getFrame('chat'); const wasVisible = !!f?.visible; if (f && !wasVisible) f.show();
-  // `:scope >` — the chat's OWN cols, not any descendant's. .chat-cols and
-  // .chat-side-tog are PUBLIC classes (docs/MODDING-UI.md) and registerPanel
-  // mounts a mod INTO a frame body, so an unbounded-depth lookup — at document
-  // scope OR at body scope — can match a mod's panel instead of the chat's.
-  // chat.js:815 writes .chat-cols as the body's direct child and the toggler
-  // as ITS child, so the pair below is the one the pane actually uses: reading
-  // one .chat-cols and clicking a different pane's toggler is the same bug.
-  const cols = f?.body?.querySelector(':scope > .chat-cols');
+  // ASK the frame for the nodes chat.js built; do NOT re-derive them by class.
+  // .chat-cols and .chat-side-tog are PUBLIC classes (docs/MODDING-UI.md) and
+  // a mod can mount markup into this body, so a class lookup picks by depth AND
+  // order — `:scope >` bounds the first but not the second, and a PREPENDED
+  // .chat-cols is a direct child that wins. chat.js captured these nodes as it
+  // wrote them and hangs the accessor on the frame, which both files already
+  // hold via getFrame('chat'): no import edge, and nothing to steal.
+  const cols = f?.sidePane?.('cols');
   const closed = cols?.classList.contains('side-closed');
   // Tab OPENS (defs/ui/_help.json): only a closed pane needs the toggler.
   // A hidden frame whose pane is already open needs nothing but the show()
   // above — clicking there would close the pane Tab was asked to open.
-  if (closed) cols.querySelector(':scope > .chat-side-tog')?.click();
+  if (closed) f.sidePane('tog')?.click();
 }

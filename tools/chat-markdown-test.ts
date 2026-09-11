@@ -24,13 +24,15 @@ GlobalRegistrator.register();
 
 const { logChat, initChat, chat, recentChat, chatMarkdownOn } = await import('../client/lib/chat.js');
 const { frameStub } = await import('./chat-frames-stub.mjs');
+const { bus } = await import('../client/lib/base.js');
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => {
   if (ok) { pass++; console.log(`  \x1b[32m✓\x1b[0m ${name}`); }
   else { fail++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ` — ${detail}` : ''}`); }
 };
-initChat({ send: () => {}, people: () => [{ id: 'keir', agent: true }, { id: 'rab' }] });
+let roster: any[] = [{ id: 'keir', agent: true }, { id: 'rab' }];
+initChat({ send: () => {}, people: () => roster });
 const log = () => document.getElementById('chatlog')!;
 const rows = () => [...log().children].filter((c) => !c.classList.contains('sys')) as HTMLElement[];
 const lastBody = () => rows().at(-1)!.querySelector('.body')!;
@@ -127,7 +129,44 @@ console.log('CHAT — the people pane swaps sides');
   check('opening the pane on the right: › (it will close rightward), width applied', tog.textContent === '›' && (cols.querySelector(':scope > .chat-side') as HTMLElement).style.width === '150px' && !cols.classList.contains('side-closed'), tog.textContent!);
   pop.onclick!({ target: pop.querySelector('[data-side="left"]') } as any);
   check('back to the left while open: side-left, chevron ‹', cols.classList.contains('side-left') && tog.textContent === '‹' && JSON.parse(localStorage.getItem('ew-chat-side')!).pos === 'left', tog.textContent!);
-  check('the pane lists who is here', /2 others here/.test(cols.querySelector('.chat-side-head')!.textContent!) && cols.querySelectorAll('.who-row').length === 2);
+  const realSide = cols.querySelector(':scope > .chat-side')! as HTMLElement;
+  check('the pane lists who is here', /2 others here/.test(realSide.querySelector(':scope > .chat-side-head')!.textContent!) && realSide.querySelectorAll('.who-row').length === 2);
+
+  // S1/F4: a mod's markup INSIDE the real .chat-side. My earlier claim that a
+  // mod cannot reach here was FALSE — mods.js:88 hands a mod makeFrame and
+  // frames.js returns the LIVE chat frame for a bare id, so a local mod (an
+  // in-page ES module, mods.js:5-8) can mount into this very body. Planted
+  // FIRST so an unbounded lookup finds it before the real head: the captures
+  // must address the nodes initChat wrote, not the first match by class.
+  const nestedMod = document.createElement('div');
+  nestedMod.className = 'mod-inside';
+  nestedMod.innerHTML = `<div class="chat-side"><div class="chat-side-head">MOD-HEAD</div></div>`;
+  realSide.prepend(nestedMod);
+  const modHead = nestedMod.querySelector('.chat-side-head')!;
+  roster = [{ id: 'keir', agent: true }, { id: 'rab' }, { id: 'zzz' }];
+  chat.open(); bus.emit('roster');                       // an OPEN pane really repaints
+  check('a mod .chat-side-head nested inside the real pane is never written to (S1)',
+    modHead.textContent === 'MOD-HEAD', modHead.textContent!);
+  check('...and the REAL head is the one that got the update (F4)',
+    /3 others here|2 others here/.test(realSide.querySelector(':scope > .chat-side-head')!.textContent!),
+    realSide.querySelector(':scope > .chat-side-head')!.textContent!);
+  nestedMod.remove();
+  // M-D: paintSide's `!sideSt.open` guard. bus.on('roster'|'presence:me')
+  // (chat.js:714-715) call paintSide with NO open-check of their own, so
+  // dropping it repaints a CLOSED pane on every roster event. (The 2s tick at
+  // :716 gates itself on sideSt.open — it is not the path.)
+  // paintSide returns early when closed — it does NOT clear. So the binding is
+  // "the text does not CHANGE", not "the text is empty". (An earlier draft
+  // asserted === '' and failed: my assertion presumed a clean slate that never
+  // existed. The product was right; the test was wrong.)
+  (tog as HTMLElement).onclick!(new Event('click'));          // close it
+  const frozen = realSide.querySelector(':scope > .chat-side-head')!.textContent;
+  roster = [{ id: 'keir', agent: true }, { id: 'rab' }, { id: 'zzz' }];   // a roster CHANGE while closed
+  bus.emit('roster');                                   // the REAL trigger (chat.js:714)
+  check('a CLOSED pane is not repainted (roster events must respect the open guard)',
+    realSide.classList.contains('closed') && realSide.querySelector(':scope > .chat-side-head')!.textContent === frozen,
+    `${realSide.className} / "${realSide.querySelector(':scope > .chat-side-head')!.textContent}" (was "${frozen}")`);
+  (tog as HTMLElement).onclick!(new Event('click'));          // reopen for the decoy check
   // applySide/paintSide/applyChatPrefs must never have touched the decoy
   check('applySide writes onto the nodes initChat built, never a mod panel carrying the same classes', dCols.className === dBefore.cls && dTog.textContent === dBefore.txt, `${dCols.className} / ${dTog.textContent}`);
   decoy.remove(); }

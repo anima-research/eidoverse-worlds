@@ -244,11 +244,14 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
   // cols — and then an unbounded `cols.querySelector('.chat-side-tog')` finds
   // the mod's before the chat's. Only `:scope >` on BOTH hops addresses the
   // real pane; a decoy that is merely a sibling cannot see that mistake.
-  // Decoy ORDER mirrors reality: initChat wipes the body and writes the chat's
-  // own .chat-cols FIRST, so a mod mounting later can only be a LATER sibling
-  // or a descendant. (An earlier draft put a decoy first — that inverts the
-  // real DOM and would have bent the fixture to kill a mutant instead of
-  // describing the product.)
+  // Decoy ORDER — corrected by the ELEVENTH review, which falsified what this
+  // comment used to claim. I had written that a mod can only mount as a LATER
+  // sibling because initChat writes the chat's cols first. FALSE: mods.js:88
+  // hands a mod `makeFrame`, and frames.js:234 returns an EXISTING frame by
+  // bare id — so `makeFrame('chat')` returns the LIVE chat frame, and a local
+  // mod is an in-page ES module with the whole document (mods.js:5-8). It can
+  // PREPEND. So a decoy before the real cols is not a bent fixture; it is the
+  // product's reachable DOM, and it is what binds the first hop.
   f.body.innerHTML = `<div class="chat-cols side-closed">`
     +   `<div class="mod-inside"><button class="chat-side-tog"></button></div>`
     +   `<button class="chat-side-tog"></button>`
@@ -258,6 +261,30 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
   late.innerHTML = `<button class="chat-side-tog"></button>`;
   f.body.append(late);
   (late.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
+  // Capture the node initChat built BEFORE any decoy exists. Anchoring on a
+  // re-query would find the prepended decoy (also a direct child, and first) —
+  // the fixture would then measure the same wrong node the mutant picks, and
+  // the mutation survives. This is what let M-A through until round 11.
+  const real = f.body.querySelector(":scope > .chat-cols") as HTMLElement;
+  // Mirror initChat's MECHANISM, not just its markup: chat.js captures the
+  // nodes as it writes them and hangs the accessor on the frame it built
+  // (chat.js, right after sideEls). togglePeople reads that. Handing it `real`
+  // is legitimate here precisely because `real` was captured before any decoy
+  // exists — the same discipline this block already uses above.
+  // Mirror the READ path too, not just the capture: chat.js's sideEl returns a
+  // captured node only while it is still in the document (?.isConnected), so a
+  // stand-in that skips that guard would bind the ownership axis and silently
+  // miss the lifetime one.
+  (f as any).sidePane = (k: string) => {
+    const n = k === "cols" ? real
+      : k === "tog" ? real.querySelector(":scope > .chat-side-tog") as HTMLElement | null : null;
+    return n?.isConnected ? n : null;
+  };
+  const pre = document.createElement("div");   // a mod PREPENDING via makeFrame('chat')
+  pre.className = "chat-cols side-closed";
+  pre.innerHTML = `<button class="chat-side-tog"></button>`;
+  f.body.prepend(pre);
+  (pre.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
   const modWrap = document.createElement("div"); modWrap.className = "mod-panel";
   modWrap.innerHTML = `<div class="chat-cols side-closed"><button class="chat-side-tog"></button></div>`;
   f.body.append(modWrap);
@@ -265,8 +292,8 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
   (inner.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
   const nested = f.body.querySelector(".mod-inside")!;
   (nested.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
-  const cols = () => f.body.querySelector(":scope > .chat-cols")!;
-  const tog = cols().querySelector(":scope > .chat-side-tog") as HTMLElement;
+  const cols = () => real;                     // the node initChat built, not a re-query
+  const tog = real.querySelector(":scope > .chat-side-tog") as HTMLElement;
   let clicks = 0;
   tog.onclick = () => { clicks++; cols().classList.toggle("side-closed"); };
 
@@ -294,6 +321,21 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
     && outer.querySelector(".chat-cols")!.classList.contains("side-closed")
     && inner.querySelector(".chat-cols")!.classList.contains("side-closed"), `decoyClicks=${decoyClicks}`);
   check("...including a mod toggler nested INSIDE the real cols (chat.js nests it there)", decoyClicks === 0, `decoyClicks=${decoyClicks}`);
+
+  // LIFETIME. A capture fixes WHICH node, not that the node still exists: a mod
+  // can remove it, and a handle to a detached node stays perfectly valid —
+  // classList flips, writes land, nothing renders, no error is raised. That is
+  // a QUIETER failure than the node-theft the capture was introduced to stop,
+  // so chat.js reads its captures through ?.isConnected and a detached one
+  // reads as absent. Tab must then do NOTHING rather than toggle an orphan.
+  cols().classList.add("side-closed");
+  real.remove();
+  clicks = 0; decoyClicks = 0;
+  ui.togglePeople();
+  check("a DETACHED capture is not used: Tab clicks nothing rather than writing into an orphan",
+    clicks === 0 && decoyClicks === 0, `clicks=${clicks} decoyClicks=${decoyClicks} connected=${real.isConnected}`);
+  check("...and it does not silently fall back to a class lookup (which is how the order bug got in)",
+    decoyClicks === 0 && !!document.querySelector(".mod-panel .chat-cols")!.classList.contains("side-closed"), `decoyClicks=${decoyClicks}`);
   outer.remove(); }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
