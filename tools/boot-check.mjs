@@ -122,8 +122,15 @@ try {
   // passes — so this could never catch the most likely way that invariant
   // breaks: someone dropping the -8. Bind the promise, keeping the +1 sub-pixel
   // allowance. (agent review round 3)
-  const MARGIN = 8;
-  const off = (s.rects ?? []).filter((r) => r.right > s.vw - MARGIN + 1 || r.bottom > s.vh - MARGIN + 1);
+  // x and y do NOT share a margin, and that is deliberate in the product:
+  // fit()/snapPosition clamp x to 8, but the SOUTH resize clamps to
+  // `innerHeight - s0.y - 4` (frames.js:144) so a resize can reach as low as a
+  // drag — the comment there records the choice. Asserting 8 on both axes made
+  // this probe stricter than the code it guards: a legal resize to the bottom
+  // edge produced bottom=840 against a limit of 837 and failed. Match each
+  // axis to its own promise. (agent review round 4, my own over-tightening)
+  const MARGIN_X = 8, MARGIN_Y = 4;
+  const off = (s.rects ?? []).filter((r) => r.right > s.vw - MARGIN_X + 1 || r.bottom > s.vh - MARGIN_Y + 1);
   if (off.length) {
     fail(`frames unreachable at ${s.vw}x${s.vh} (overflow:hidden — no scrolling to them):\n  `
       + off.map((r) => `${r.id} x=${r.x} y=${r.y} right=${r.right} bottom=${r.bottom}`).join('\n  '));

@@ -287,6 +287,11 @@ export function makeFrame(id, opts = {}) {
   // temporal dead zone throws at construction — node --check cannot see it.
   let moved = !!saved;
   const markMoved = () => { moved = true; };
+  // R, 2026-09-11, on the bug this exists for: the emote bar "will always pop
+  // sideways to the right regardless if there's room for it" — snapTo calls
+  // _fit() 180ms after every drag settles, and fit() re-centred an x:'center'
+  // frame each time because the guard tested `saved`, captured once at
+  // construction and never refreshed by a drag.
   const state = {
     x: saved?.x ?? resolveAnchor(opts.x, w, innerWidth),
     y: saved?.y ?? resolveAnchor(opts.y, h, innerHeight),
@@ -376,13 +381,10 @@ export function makeFrame(id, opts = {}) {
     }
     root.style.zIndex = String(Math.min(++zTop, Z_HI));
   }
-  // `saved` is read ONCE at construction, so the anchor guards below cannot use
-  // it to mean "the user has never placed this frame" — a drag writes storage
-  // but leaves the closure null forever. Latch it here instead: after any save,
-  // this frame's position is the user's, not the anchor's. (R, 2026-09-11: the
-  // emote bar "will always pop sideways to the right regardless if there's room
-  // for it" — snapTo calls _fit() 180ms after every drag settles, and fit()
-  // re-centred an x:'center' frame each time.)
+  // Plain persistence. It does NOT latch `moved` — that was the first design and
+  // it was wrong (show()/hide() call save() too, so it came to mean "was
+  // persisted"; see the note at the `moved` declaration). This comment used to
+  // describe that rejected version and survived the fix. (round 4: comment rot)
   function save() {
     localStorage.setItem(LS(id), JSON.stringify(state));
   }
