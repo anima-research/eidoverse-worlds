@@ -296,6 +296,15 @@ select {
   width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px;
   background: rgba(0,0,0,.35);
 }
+/* avatar cards: the 3:4 portrait BOX sizes the card; the placeholder shows through until an image covers it
+   (palette.js av-shot — CSS carried here so this rung's markup is not styled by a later part) */
+.av-grid .card .av-shot { position: relative; width: 100%; aspect-ratio: 3 / 4; border-radius: 4px; overflow: hidden; background: rgba(0,0,0,.3); }
+.av-grid .card .av-shot .ph { display: grid; position: absolute; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; }
+.av-grid .card .av-shot img { position: absolute; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; }
+/* splash: the one-line reason for a restart (boot.js ?why=, set by the VR entry in a later part) */
+.sp-why { font-size: 11px; color: var(--dim); margin-top: 4px; }
+/* scene graph: the selected row (scenegraph.js .sel) */
+.sg-row.sel { background: rgba(255,255,255,.06); }
 /* library filenames are SEO soup — clamp so a card stays a card */
 .card span {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;

@@ -195,3 +195,33 @@ assert.equal(batches.debug().instanced, 0);
 assert.equal(assetDisposed, 1);
 batches.dispose();
 console.log('draw batches: lifecycle, fallback, transforms, shadows, layers, warm retirement passed');
+
+// XR MAIN PASS (VR alpha, 2026-09-05 'I pop to the origin'): while presenting, three hands the main pass an
+// ArrayCamera that is NOT the camera batches.render() was called with; ShadowNode then re-renders the same
+// scene from a light camera. Prepare against the array camera (xr.getCamera()), never the light camera —
+// excluding every ArrayCamera made the light camera the first 'main' caller and the batches were culled to
+// the sun's box around the origin. Own scene: the sections above leave the shared one with nothing eligible.
+{
+  const xrScene = new T.Scene();
+  const xrMeshes = Array.from({ length: 130 }, (_, i) => { const m = new T.Mesh(geometry, material); m.position.set(1 + (i % 10), 1, 1 + Math.floor(i / 10)); xrScene.add(m); return m; });
+  markDrawBatchSource(xrScene); xrScene.updateMatrixWorld(true);
+  const rigCam = new T.PerspectiveCamera(); rigCam.position.set(7, 12, 28); rigCam.lookAt(7, 0, 7); rigCam.updateMatrixWorld(true);
+  const eye = new T.PerspectiveCamera(); eye.position.copy(rigCam.position); eye.lookAt(7, 0, 7); eye.updateMatrixWorld(true);
+  const arrayCam = new T.ArrayCamera([eye]); arrayCam.position.copy(rigCam.position); arrayCam.lookAt(7, 0, 7); arrayCam.updateMatrixWorld(true);
+  const lightCam = new T.OrthographicCamera(-1, 1, 1, -1, 0, 1); lightCam.position.set(500, 500, 500); lightCam.lookAt(0, 0, 0); lightCam.updateMatrixWorld(true);
+  const xrBatches = new DrawBatches();
+  xrBatches.render({ xr: { isPresenting: true, getCamera: () => arrayCam }, render(s, c) {
+    s.updateMatrixWorld(true);
+    s.onBeforeRender(this, s, lightCam);                                   // a shadow pass arrives FIRST
+    assert.equal(xrBatches.debug().instanced ?? 0, 0, 'a light camera must not prepare the batches');
+    s.onBeforeRender(this, s, arrayCam);                                   // the XR main pass, as three hands it over
+    assert.equal(xrBatches.debug().instanced, 130, 'the presenting ArrayCamera IS the main pass: ' + JSON.stringify(xrBatches.debug()));
+  } }, xrScene, rigCam);                                                   // called with the RIG camera, as render.js does
+  assert(xrMeshes.every((m) => m.layers.mask === 1));
+  xrBatches.dispose();
+  // not presenting: a stray ArrayCamera is not the main pass
+  const desk = new DrawBatches();
+  desk.render({ xr: { isPresenting: false, getCamera: () => arrayCam }, render(s, c) { s.updateMatrixWorld(true); s.onBeforeRender(this, s, arrayCam); assert.equal(desk.debug().instanced ?? 0, 0, 'off-XR an ArrayCamera is not the main pass'); } }, xrScene, rigCam);
+  desk.dispose();
+}
+console.log('xr main-pass rule ok');

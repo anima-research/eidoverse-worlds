@@ -2,8 +2,9 @@
 // the small autonomic behaviours that make a puppet read as present (gaze,
 // blink, head pitch, mouth movement while speaking).
 
-import { THREE, scene, camera, renderer } from './core.js';
-import { report, angleDelta, bus } from './base.js';
+import { renderAside } from './render.js';
+import { THREE, scene, camera, renderer, backendName } from './core.js';
+import { report, angleDelta, bus, tee } from './base.js';
 import { defsRegistry } from './defs.js';
 import { measureChain, solveChain } from './reachbone.js';
 import { REACH_CHAINS } from '../../shared/joints.js';
@@ -21,7 +22,7 @@ import {
   CLIP_SLOTS, CLIP_SPEED, releaseVRM, vrmWarmed, markVrmWarmed,
 } from './assets.js';
 import { beginWork, enqueue, idleYield, nextFrame, loadNote } from './loadwork.js';
-import { warm } from './warmqueue.js';
+import { warm, P_GATE } from './warmqueue.js';
 import { heightAt } from './terrain.js';
 import { surfaceUnder } from './colliders.js';
 import { DRIVEN_BONES } from './ragdoll.js';
@@ -290,14 +291,24 @@ function textSprite(draw, w, h, scaleW) {
   return s;
 }
 const disposeSprite = (s) => { s.material.map?.dispose(); s.material.dispose(); };
+// a token read at paint time — canvas sprites cannot use var(); a 'style' event repaints them
+const tokv = (n, fb) => (getComputedStyle(document.documentElement).getPropertyValue(n) || fb).trim();
+// every live Avatar, so a Style change can repaint the sprites it baked from
+// tokens (R, 09-05 16:41: pink accent, nameplates still teal)
+const liveAvatars = new Set();
+bus.on('style', () => { for (const a of liveAvatars) a.repaintLabel?.(); });
 
 const makeLabel = (name) => textSprite((ctx) => {
-  ctx.font = 'bold 40px ui-monospace, monospace';
+  // humanist, not terminal (R, 08-30: "Matrix vibes, can we do better").
+  // system-ui = Segoe on Windows: warm, rounded, no webfont race on a
+  // canvas that draws the moment someone arrives.
+  ctx.font = '600 40px system-ui, "Segoe UI", sans-serif';
+  try { ctx.letterSpacing = '1.5px'; } catch {}
   ctx.textAlign = 'center';
   const w = Math.min(500, ctx.measureText(name.slice(0, 24)).width + 40);
-  ctx.fillStyle = 'rgba(6,16,22,0.62)';
-  ctx.beginPath(); ctx.roundRect((512 - w) / 2, 6, w, 52, 12); ctx.fill();
-  ctx.fillStyle = '#8fe8c8';
+  ctx.fillStyle = tokv('--pill-bg', 'rgba(6,16,22,0.62)');
+  ctx.beginPath(); ctx.roundRect((512 - w) / 2, 6, w, 52, 26); ctx.fill();   // pill (R, 15:12)
+  ctx.fillStyle = tokv('--pill-name', '#8fe8c8');
   ctx.fillText(name.slice(0, 24), 256, 46);
 }, 512, 64, 0.9);
 
@@ -321,18 +332,18 @@ function makeBubble(text) {
   if (clipped) lines.push('▾ more in chat');
   const h = 30 + lines.length * 34;
   return textSprite((ctx) => {
-    ctx.font = '27px ui-monospace, monospace';
+    ctx.font = '27px system-ui, "Segoe UI", sans-serif';
     // conform to the actual text (R, in-world 13:27): box hugs the widest
     // wrapped line; the old fixed 700 stays as the ceiling
     const wMax = Math.max(...lines.map((l) => ctx.measureText(l).width));
     const w = Math.min(700, Math.ceil(wMax) + 44);
-    ctx.fillStyle = 'rgba(8,20,28,0.86)';
-    ctx.strokeStyle = 'rgba(143,232,200,0.25)';
+    ctx.fillStyle = tokv('--pill-bg', 'rgba(8,20,28,0.86)');
+    ctx.strokeStyle = tokv('--pill-edge', 'rgba(143,232,200,0.25)');
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.roundRect((704 - w) / 2, 2, w, h - 4, 16); ctx.fill(); ctx.stroke();
     ctx.textAlign = 'center';
     lines.forEach((l, i) => {
-      ctx.fillStyle = clipped && i === lines.length - 1 ? '#8ba39c' : '#e8f4ef';
+      ctx.fillStyle = clipped && i === lines.length - 1 ? tokv('--pill-dim', '#8ba39c') : tokv('--pill-fg', '#e8f4ef');
       ctx.fillText(l, 352, 38 + i * 34);
     });
   }, 704, Math.max(64, h), 2.4);
@@ -392,8 +403,8 @@ function drawTypingDots(sprite, t, state) {
   } else {
     for (let i = 0; i < 3; i++) {
       const b = 0.32 + 0.68 * Math.max(0, Math.sin(t * 5 - i * 0.85));
-      ctx.fillStyle = `rgba(180,240,216,${b})`;
-      ctx.beginPath(); ctx.arc(48 + i * 16, 28, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = b; ctx.fillStyle = tokv('--pill-dot', 'rgb(180,240,216)');
+      ctx.beginPath(); ctx.arc(48 + i * 16, 28, 5, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
     }
   }
   sprite.material.map.needsUpdate = true;
@@ -463,6 +474,7 @@ export class Avatar {
     this.vrm = vrm;
     this.root = new THREE.Group();
     this.root.userData.isBody = true;   // so the sky's scene-diff never claims a person
+    this.root.userData.who = id;        // perf attribution: this subtree is a PERSON (perfscope)
     this.root.add(vrm.scene);
     // A LAMP IN THE BODY. attachLamps walks for emissive meshes and requests a
     // real point light at each one's centre. main already does this for spawned
@@ -506,6 +518,7 @@ export class Avatar {
     this.label = makeLabel(id);
     this.label.position.y = 1.95;
     this.root.add(this.label);
+    liveAvatars.add(this);
 
     // ---- gaze: VRM ships a lookAt rig and nothing was ever pointing it, so
     // every body in the world had dead eyes. A target object per avatar,
@@ -1469,6 +1482,12 @@ export class Avatar {
    *  whole avatar to change a label would drop you through the floor mid-step. */
   setName(name) {
     this.id = name;
+    this._labelName = name;
+    this.repaintLabel();
+  }
+  /** rebuild the nameplate sprite from the current tokens (rename, or a Style change) */
+  repaintLabel() {
+    const name = this._labelName ?? this.id ?? '';
     this.root.remove(this.label);
     disposeSprite(this.label);
     this.label = makeLabel(this._seatApprox ? `${name} ≈` : name);
@@ -1729,6 +1748,11 @@ export class Avatar {
     this._springsLimp(this._limp && !this.__simHair);
     const sbm = this.__simHair ? this.vrm.springBoneManager : null;
     if (sbm) this.vrm.springBoneManager = null;
+    // THE SEAM for tracked-body writes (xrbody: look-at, eye anchor, arm IK): after
+    // the mixer has posed this frame, before vrm.update copies normalized → raw.
+    // A system before update() is overwritten by the mixer; one after never
+    // reaches the skeleton — the same ordering trap the head pitch met (above).
+    this.onBeforeVrmUpdate?.(dt);
     this.vrm.update(dt);
     if (sbm) this.vrm.springBoneManager = sbm;
 
@@ -1845,7 +1869,7 @@ export class Avatar {
     const d = this.root.position.distanceTo(camera.position);
     const vis = THREE.MathUtils.clamp(1 - (d - 18) / 14, 0, 1);
     this.label.material.opacity = vis;
-    this.label.visible = vis > 0.02;
+    this.label.visible = vis > 0.02 && !this.hideLabel;   // hideLabel: your own name is for OTHER eyes (set while presenting, xr.js selfFirstPerson)
     this.label.scale.setScalar(0); // reset then set (scale carries aspect)
     const lw = 0.9 * (1 + Math.max(0, d - 8) * 0.012); // gentle size hold at range
     this.label.scale.set(lw, lw * 64 / 512, 1);
@@ -1887,6 +1911,7 @@ export class Avatar {
   // deepDispose happens only at pool eviction). Deep-disposing a body that
   // then pools is the recorded black-avatar landmine (§13.3).
   dispose() {
+    liveAvatars.delete(this);
     // Idempotent, and that is load-bearing now: a second dispose() of THIS
     // avatar after its VRM was re-worn by a newer one would release a body
     // someone is wearing back into the pool — two wearers, one instance.
@@ -1971,6 +1996,11 @@ export async function makeAvatar(id, libPath, { full = false, urgent = false } =
       // compile-stall frames to exactly that. Spread, shared materials
       // cache-hit after their first mesh. frustumCulled defeats the compile
       // walk's culling while the body is still detached (stale matrices).
+      // YOUR body compiles at P_GATE — arrival priority, ahead of every
+      // world model's compile. Measured 09-04 (bodytime probe): at P_MODEL
+      // the body queued behind 19 things' compiles, each 'real frame' 300–
+      // 450 ms under parse jank — 24 s from clips-ready to a visible body,
+      // 33 s from load. R reloaded faster than that and never saw it.
       await warm(`avatar ${id}`, async () => {
         const meshes = [];
         vrm.scene.traverse((o) => { if (o.isMesh) meshes.push(o); });
@@ -1981,7 +2011,7 @@ export async function makeAvatar(id, libPath, { full = false, urgent = false } =
           finally { mesh.frustumCulled = culled; }
           await nextFrame();
         }
-      });
+      }, { p: urgent ? P_GATE : undefined });
       markVrmWarmed(vrm);
     }
     const av = new Avatar(id, vrm, clips);
@@ -2001,20 +2031,44 @@ export async function makeAvatar(id, libPath, { full = false, urgent = false } =
 export async function contributeThumbnail(name, vrm, token = '', { force = false } = {}) {
   try {
     if (!name) return;
-    if (!force && localStorage.getItem(`ew-thumb-${name}`)) return;   // we already tried
+    if (!force && localStorage.getItem(`ew-thumb2-${name}`)) return;   // we already tried
     if (!force) {
       const head = await fetch(`/thumb/${encodeURIComponent(name)}.png`, { method: 'HEAD' });
-      if (head.ok) { localStorage.setItem(`ew-thumb-${name}`, '1'); return; }
+      if (head.ok) { localStorage.setItem(`ew-thumb2-${name}`, '1'); return; }
     }
 
     const size = 256;
     const rt = new THREE.RenderTarget(size, size);
     const cam = new THREE.PerspectiveCamera(28, 1, 0.05, 12);
     const sub = new THREE.Scene();
-    sub.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.2));
-    const key = new THREE.DirectionalLight(0xffffff, 2.6);
+    // A render target gets no tone mapping — the canvas's ACES curve never
+    // touches these pixels — so lights tuned for the world burned every
+    // portrait to white (R, 09-05: 'burned'). Linear-safe levels instead.
+    sub.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.9));
+    const key = new THREE.DirectionalLight(0xffffff, 1.1);
     key.position.set(1.4, 2.2, 2.4);
     sub.add(key);
+
+    // Pose it FIRST — before the precompile below. The compile uploads the skeleton's bone
+    // matrices for the frame; if the pose and the render then land in that same frame, the
+    // skinning node skips its per-frame skeleton update and draws the compile-time pose. That
+    // was a coin flip per body (09-06: claude/tigerbee T-posed, claude-toon/aporia fine, order
+    // and timing dependent). Posing before the compile makes whatever it caches the idle pose.
+    // A VRM at rest is in a T-pose, which reads as a mannequin on a shelf rather than a person
+    // you might be; one frame of the idle clip is a single cached download.
+    let poseMixer = null;
+    try {
+      const clip = await clipFor(vrm, 'idle');
+      poseMixer = new THREE.AnimationMixer(vrm.scene);
+      const act = poseMixer.clipAction(clip);
+      act.play();
+      poseMixer.update(0.6);        // a little way in, past the settling frames
+      vrm.update(0.6);
+      // say what the pose did — 09-06: four portraits came out T-posed while this block 'succeeded'
+      const arm = vrm.humanoid.getRawBoneNode('leftUpperArm');
+      const deg = arm ? Math.round(arm.quaternion.angleTo(new THREE.Quaternion()) * 180 / Math.PI) : -1;
+      tee(`[thumb] ${name}: posed (${clip.tracks.length} tracks, raw arm ${deg}°, autoUpdate ${vrm.humanoid.autoUpdateHumanBones})`);
+    } catch (e) { tee(`[thumb] ${name}: pose failed — ${e?.message ?? e}`); /* T-pose is survivable; a missing portrait is worse */ }
 
     // Precompile the portrait's pipelines BEFORE borrowing the body. This
     // render target + these lights are a brand-new pipeline context (different
@@ -2052,19 +2106,6 @@ export async function contributeThumbnail(name, vrm, token = '', { force = false
     const keptPos = vrm.scene.position.clone();
     const keptRot = vrm.scene.rotation.clone();
 
-    // Pose it first. A VRM at rest is in a T-pose, which reads as a mannequin
-    // on a shelf rather than a person you might be. One frame of the idle clip
-    // costs a single already-cached download and makes the roster look alive.
-    let poseMixer = null;
-    try {
-      const clip = await clipFor(vrm, 'idle');
-      poseMixer = new THREE.AnimationMixer(vrm.scene);
-      const act = poseMixer.clipAction(clip);
-      act.play();
-      poseMixer.update(0.6);        // a little way in, past the settling frames
-      vrm.update(0.6);
-    } catch { /* T-pose is survivable; a missing portrait is worse */ }
-
     // Frame the WHOLE figure, identically for every body. Framing on the head
     // sounds better and isn't: these avatars range from a human silhouette to
     // something that is mostly mane, so a head-relative crop gave each one a
@@ -2083,7 +2124,10 @@ export async function contributeThumbnail(name, vrm, token = '', { force = false
       const rootY = vrm.scene.getWorldPosition(new THREE.Vector3()).y;
       const headY = vrm.humanoid.getNormalizedBoneNode('head').getWorldPosition(new THREE.Vector3()).y;
       const stature = headY - rootY + 0.13; // crown ≈ head joint + a forehead
-      if (stature > 0.2) height = stature;
+      // ...unless the mesh really does go higher: claude's head joint sits at 1.37 m under a
+      // 2.21 m crown of tentacles, and a stature frame cut it off (R, 09-06 22:37). Let the
+      // bbox raise the top by up to 60 % of stature — enough for any head, not for a particle shell.
+      if (stature > 0.2) height = Math.min(Math.max(stature, dims.y), stature * 1.6);
     } catch { /* bbox fallback */ }
     const fov = 30;
     // fit the taller of (height, width) into a square frame, with headroom
@@ -2101,8 +2145,7 @@ export async function contributeThumbnail(name, vrm, token = '', { force = false
       // Keep the loader's VRM0 normalization (rotateVRM0 sets rotation.y=π on
       // the scene root) — zeroing it photographed every VRM0 body from behind.
       vrm.scene.rotation.set(0, vrm.meta?.metaVersion === '0' ? Math.PI : 0, 0);
-      renderer.setRenderTarget(rt);
-      renderer.render(sub, cam);
+      renderAside(sub, cam, rt);   // never through renderer.render while presenting: a parentless camera rewrites the stereo eyes (render.js)
     } finally {
       renderer.setRenderTarget(prevTarget);
       poseMixer?.stopAllAction();
@@ -2121,13 +2164,34 @@ export async function contributeThumbnail(name, vrm, token = '', { force = false
     // readRenderTargetPixelsAsync RETURNS the pixels; its 6th parameter is a
     // texture index, not an output buffer.
     const buf = await renderer.readRenderTargetPixelsAsync(rt, 0, 0, size, size);
+    // A blank readback must never become a portrait: every WebGPU mint on
+    // 09-05 came back all-zero alpha (claude/aletheia/tigerbee.png 0 % opaque)
+    // and overwrote real art. Count opaque pixels; below 2 % skip the POST and
+    // say so on the tee, so the next wear tells us whether the readback works.
+    { let opaque = 0; for (let i = 3; i < size * size * 4; i += 16) if (buf[i] > 10) opaque++;
+      const frac = opaque / (size * size / 4);
+      if (frac < 0.02) { tee(`[thumb] blank readback (${backendName()}) for ${name} — not posted`); rt.dispose(); return; } }
     const c = document.createElement('canvas');
     c.width = c.height = size;
     const ctx = c.getContext('2d');
     const img = ctx.createImageData(size, size);
-    // WebGPU hands back rows already in top-down order — flipping here (the
-    // WebGL habit) produced upside-down portraits.
-    img.data.set(buf.subarray(0, size * size * 4));
+    // Row order depends on the BACKEND: WebGPU hands rows back top-down; WebGL
+    // bottom-up. Flipping unconditionally made WebGPU portraits upside down
+    // (fixed 09-04); flipping never made WebGL ones upside down (R's shot,
+    // 09-05: claude_suit on its head — minted by a WebGL client). So: flip iff
+    // WebGL.
+    if (backendName() === 'webgl') {
+      const row = size * 4;
+      for (let y = 0; y < size; y++) img.data.set(buf.subarray((size - 1 - y) * row, (size - y) * row), y * row);
+    } else {
+      img.data.set(buf.subarray(0, size * size * 4));
+    }
+    // The target holds LINEAR light and a PNG is shown as sRGB — without this
+    // encode the portraits read dark (claude_suit.png: opaque region averaging
+    // ~49/255 under lights that look right in the world). Alpha untouched.
+    { const d = img.data; const lut = new Uint8Array(256);
+      for (let i = 0; i < 256; i++) { const l = i / 255; lut[i] = Math.round(255 * (l <= 0.0031308 ? 12.92 * l : 1.055 * Math.pow(l, 1 / 2.4) - 0.055)); }
+      for (let i = 0; i < d.length; i += 4) { d[i] = lut[d[i]]; d[i + 1] = lut[d[i + 1]]; d[i + 2] = lut[d[i + 2]]; } }
     ctx.putImageData(img, 0, 0);
     rt.dispose();
 
@@ -2137,7 +2201,7 @@ export async function contributeThumbnail(name, vrm, token = '', { force = false
     if (force) q.set('force', '1'); // a re-mint pass really does replace
     if (token) q.set('token', token);
     await fetch(`/thumb?${q}`, { method: 'POST', body: blob });
-    localStorage.setItem(`ew-thumb-${name}`, '1');
+    localStorage.setItem(`ew-thumb2-${name}`, '1');
   } catch (e) {
     console.warn('thumbnail contribution skipped', e);
   }

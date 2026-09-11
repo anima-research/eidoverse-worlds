@@ -17,8 +17,8 @@ import { previewSky, skyArgs, skyImpl, WEATHERS, CLOUDS, SKY_WORLDS,
   CLOUD_QUALITY, getCloudQuality, setCloudQuality } from './sky.js';
 import { GRASS_QUALITY, getGrassQuality, setGrassQuality,
   getGrassDensity, getGrassShed, getGrassApplied } from './terrain.js';
-import { RENDER_SCALES, getRenderScale, setRenderScale } from './governor.js';
 import { MODEL_QUALITY } from './lod_policy.js';
+import { RENDER_SCALES, getRenderScale, setRenderScale } from './governor.js';
 import { modelQuality, dialModelQuality } from './realize/models.js';
 
 const SLIDERS = [
@@ -175,6 +175,7 @@ export function paintSky(body) {
   bus.on('grass-budget', syncGrassRow);   // governor sheds repaint immediately
   body.appendChild(gqRow);
 
+  // (moves to Settings › Video when videopanel.js lands in part 3 — kept here so this rung loses no control)
   // Render scale is YOURS too (§22k) — the whole frame's pixel budget, the
   // one lever a pixel-bound machine actually answers to (§22j's tables).
   // 'auto' lets the governor's cruise drive; a pinned % is the resident's
