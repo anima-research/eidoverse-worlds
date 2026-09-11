@@ -186,6 +186,31 @@ console.log("FRAMES — a narrow viewport (the header's 'can never leave the vie
   window.dispatchEvent(new Event("resize"));
 }
 
+console.log("FRAMES — a viewport too small for the default arrangement opens only chat");
+{
+  // R's phone, 2026-09-10 23:53: world + emotes + the palette stacked on top of
+  // chat, all legally inside the viewport and none overlapping by the pairwise
+  // check — the palette is makeSection mounting into world's stack, not a frame
+  // of its own, so no rect test can see it. The fix is not to pack them better
+  // but to not open them: on a FIRST load (no saved layout) at a viewport that
+  // cannot hold the default arrangement, only chat comes up.
+  const vw0 = innerWidth, vh0 = innerHeight;
+  for (const id of ["awee", "aweb"]) localStorage.removeItem(`ew-frame-${id}`);
+  (window as any).innerWidth = 390; (window as any).innerHeight = 844;
+  const small = measurable(makeFrame("awee", { title: "awee", w: 407, h: 363, hidden: false }));
+  check("a hidden:false default comes up HIDDEN when the viewport cannot hold the arrangement",
+    small.state.hidden === true, JSON.stringify(small.state));
+
+  // a DELIBERATE arrangement always wins — this is not a viewport override
+  localStorage.setItem("ew-frame-aweb", JSON.stringify({ x: 8, y: 8, w: 200, h: 100, hidden: false }));
+  const saved = measurable(makeFrame("aweb", { title: "aweb", w: 407, h: 363, hidden: false }));
+  check("...but a SAVED hidden:false stays visible: the user's own layout is never overridden",
+    saved.state.hidden === false, JSON.stringify(saved.state));
+
+  (window as any).innerWidth = vw0; (window as any).innerHeight = vh0;
+  window.dispatchEvent(new Event("resize"));
+}
+
 console.log("FRAMES — z band");
 const zs = () => allFrames().map((x: any) => +x.el.style.zIndex);
 for (let i = 0; i < 20; i++) measurable(makeFrame(`z${i}`, { title: `z${i}`, x: 20 + i, y: 20 + i, w: 120, h: 60 })).show();

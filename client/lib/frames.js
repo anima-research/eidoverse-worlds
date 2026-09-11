@@ -230,6 +230,23 @@ const DEFAULT_LAYOUT = {
   debug:    { x: -414, y: 8,  w: 342, h: 453, hidden: true },
   emotes:   { x: 'center', y: -10, hidden: false },  // one bar across the bottom, OPEN by default (live 09-07 10:55 reference HUD); the bar sizes itself
 };
+// Can this viewport hold the hand-arranged default at all? Derived from
+// DEFAULT_LAYOUT rather than a hardcoded breakpoint, so it stays true if the
+// defaults change: the arrangement needs room for its widest frame, and for its
+// open frames stacked. A phone fails on width, a 1280x720 desktop on height —
+// this is NOT a mobile special case (live 09-10 23:53: world, emotes and the
+// world palette stacked on top of chat on a phone, every rect legally inside the
+// viewport and none overlapping, because the palette is makeSection mounting
+// into world's stack and no rect test can see it). CHROME is the title bar a
+// body height does not include.
+const CHROME = 26;
+function fitsDefaults() {
+  const open = Object.values(DEFAULT_LAYOUT).filter((d) => d.hidden === false);
+  const widest = Math.max(...open.map((d) => d.w ?? 0));
+  const stacked = open.reduce((t, d) => t + (d.h ?? 0) + CHROME, 0);
+  return innerWidth - 16 >= widest && innerHeight - 16 >= stacked;
+}
+
 export function makeFrame(id, opts = {}) {
   if (frames.has(id)) return frames.get(id);
   opts = { ...opts, ...(DEFAULT_LAYOUT[id] ?? {}) };
@@ -265,7 +282,11 @@ export function makeFrame(id, opts = {}) {
     y: saved?.y ?? resolveAnchor(opts.y, h, innerHeight),
     w: saved?.w ?? w,
     h: saved?.h ?? h,
-    hidden: saved?.hidden ?? hidden,
+    // A saved layout always wins — this must never override an arrangement the
+    // user made. Only a FIRST load on a viewport that cannot hold the default
+    // opens less: chat alone, because it is the one pane useful by itself and it
+    // carries the composer. Everything else stays one dock tap away.
+    hidden: saved?.hidden ?? (hidden || (id !== 'chat' && !fitsDefaults())),
   };
 
   const api = {
