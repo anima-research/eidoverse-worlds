@@ -347,7 +347,7 @@ register('use', (arg) => {
 });
 
 register('sit', (arg) => {
-  // /sit [thing] — a declared seat nearby wins; otherwise sit on the ground
+  // /sit ground|here explicitly bypasses seats; /sit [thing] keeps seat discovery.
   if (!trySitOn((arg || '').trim() || null)) setPosture('sit');
 });
 

@@ -20,7 +20,7 @@ export const COMMANDS = [
   { name: 'name', aliases: ['rename'], help: '/name <new name> — change what the world calls you' },
   { name: 'me', help: 'describe an action — "/me waves"' },
   { name: 'emote', help: '/emote <name> — the emote bar\'s gestures (🎭, or number keys)' },
-  { name: 'sit', help: 'sit down, on a seat if one is near' },
+  { name: 'sit', help: '/sit [thing] — use a nearby seat; /sit ground (or /sit here) sits where you are' },
   { name: 'push', aliases: ['shove'], help: '/push [name] [power] — shove someone within reach (their client decides); /push <thing> works the thing' },
   { name: 'touch', help: '/touch [name] [point] [left|right] — reach out and rest a hand on someone (nearest person, their shoulder, your right hand by default); the hand tracks them until /letgo' },
   { name: 'letgo', aliases: ['release'], help: 'let go — lower your reaching hand (or just one: /letgo left|right)' },
