@@ -24,7 +24,11 @@ GlobalRegistrator.register();
 
 const { logChat, initChat, chat, recentChat, chatMarkdownOn } = await import('../client/lib/chat.js');
 const { frameStub } = await import('./chat-frames-stub.mjs');
-const { bus } = await import('../client/lib/base.js');
+// MUST come from the stub graph: chat.js resolves './base.js' to
+// chat-base-stub.mjs (which re-exports the core stub), so importing
+// ../client/lib/base.js by path yields a DIFFERENT bus object and every
+// emit lands where paintSide is not listening — assertions that cannot fail.
+const { bus } = await import('./chat-base-stub.mjs');
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => {
@@ -144,13 +148,34 @@ console.log('CHAT — the people pane swaps sides');
   realSide.prepend(nestedMod);
   const modHead = nestedMod.querySelector('.chat-side-head')!;
   roster = [{ id: 'keir', agent: true }, { id: 'rab' }, { id: 'zzz' }];
-  chat.open(); bus.emit('roster');                       // an OPEN pane really repaints
+  // The pane is OPEN here (the check above read a painted head). paintSide bails
+  // at `if (!side || !sideSt.open) return`, so a closed pane would skip the very
+  // lines S1/F4 mutate and both mutants would survive — which is exactly what
+  // happened when this drove chat.open() (that opens the FRAME, not the pane).
+  bus.emit('roster');                                    // the real trigger, chat.js:714
   check('a mod .chat-side-head nested inside the real pane is never written to (S1)',
     modHead.textContent === 'MOD-HEAD', modHead.textContent!);
+  // Exactly 3 — an alternation that also accepts the pre-repaint text cannot fail.
   check('...and the REAL head is the one that got the update (F4)',
-    /3 others here|2 others here/.test(realSide.querySelector(':scope > .chat-side-head')!.textContent!),
+    realSide.querySelector(':scope > .chat-side-head')!.textContent === '3 others here',
     realSide.querySelector(':scope > .chat-side-head')!.textContent!);
   nestedMod.remove();
+
+  // LIFETIME (M-L): a capture fixes WHICH node, not that it still EXISTS. A mod
+  // can remove it; the handle stays valid, writes land on an orphan, nothing
+  // renders, no error. Quieter than the node-theft the capture was added to
+  // stop. sideEl reads through ?.isConnected, so a detached pane reads as
+  // absent and paintSide bails at its first line instead of painting a ghost.
+  const detached = realSide;
+  const headBefore = detached.querySelector(':scope > .chat-side-head')!.textContent;
+  detached.remove();
+  roster = [{ id: 'keir', agent: true }, { id: 'rab' }, { id: 'zzz' }, { id: 'qqq' }];
+  let threw = '';
+  try { bus.emit('roster'); } catch (e) { threw = String(e); }
+  check('a DETACHED side pane is not painted: the orphan keeps its last text, and no throw',
+    threw === '' && detached.querySelector(':scope > .chat-side-head')!.textContent === headBefore,
+    `threw=${threw} head=${detached.querySelector(':scope > .chat-side-head')!.textContent}`);
+  cols.append(detached);                                  // put it back for later blocks
   // M-D: paintSide's `!sideSt.open` guard. bus.on('roster'|'presence:me')
   // (chat.js:714-715) call paintSide with NO open-check of their own, so
   // dropping it repaints a CLOSED pane on every roster event. (The 2s tick at

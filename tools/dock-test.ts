@@ -271,15 +271,14 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
   // (chat.js, right after sideEls). togglePeople reads that. Handing it `real`
   // is legitimate here precisely because `real` was captured before any decoy
   // exists — the same discipline this block already uses above.
-  // Mirror the READ path too, not just the capture: chat.js's sideEl returns a
-  // captured node only while it is still in the document (?.isConnected), so a
-  // stand-in that skips that guard would bind the ownership axis and silently
-  // miss the lifetime one.
-  (f as any).sidePane = (k: string) => {
-    const n = k === "cols" ? real
-      : k === "tog" ? real.querySelector(":scope > .chat-side-tog") as HTMLElement | null : null;
-    return n?.isConnected ? n : null;
-  };
+  // This suite never imports chat.js — makeFrame/getFrame come from frames.js
+  // and the markup above is hand-mirrored — so this stand-in can bind WHICH
+  // node togglePeople addresses (ownership/order) but NOT the lifetime guard
+  // on chat.js's own read path: a ?.isConnected here would only test this
+  // closure against itself. Lifetime is bound in chat-markdown, which drives
+  // real initChat / sideEl / paintSide.
+  (f as any).sidePane = (k: string) => (k === "cols" ? real
+    : k === "tog" ? real.querySelector(":scope > .chat-side-tog") : null);
   const pre = document.createElement("div");   // a mod PREPENDING via makeFrame('chat')
   pre.className = "chat-cols side-closed";
   pre.innerHTML = `<button class="chat-side-tog"></button>`;
@@ -322,20 +321,6 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
     && inner.querySelector(".chat-cols")!.classList.contains("side-closed"), `decoyClicks=${decoyClicks}`);
   check("...including a mod toggler nested INSIDE the real cols (chat.js nests it there)", decoyClicks === 0, `decoyClicks=${decoyClicks}`);
 
-  // LIFETIME. A capture fixes WHICH node, not that the node still exists: a mod
-  // can remove it, and a handle to a detached node stays perfectly valid —
-  // classList flips, writes land, nothing renders, no error is raised. That is
-  // a QUIETER failure than the node-theft the capture was introduced to stop,
-  // so chat.js reads its captures through ?.isConnected and a detached one
-  // reads as absent. Tab must then do NOTHING rather than toggle an orphan.
-  cols().classList.add("side-closed");
-  real.remove();
-  clicks = 0; decoyClicks = 0;
-  ui.togglePeople();
-  check("a DETACHED capture is not used: Tab clicks nothing rather than writing into an orphan",
-    clicks === 0 && decoyClicks === 0, `clicks=${clicks} decoyClicks=${decoyClicks} connected=${real.isConnected}`);
-  check("...and it does not silently fall back to a class lookup (which is how the order bug got in)",
-    decoyClicks === 0 && !!document.querySelector(".mod-panel .chat-cols")!.classList.contains("side-closed"), `decoyClicks=${decoyClicks}`);
   outer.remove(); }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
