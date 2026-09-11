@@ -87,3 +87,15 @@ export function readTokenRegistry(tokensPath: string, examplePath: string, log: 
 export function lookupToken(registry: Record<string, TokenAuth>, token: string): TokenAuth | undefined {
   return Object.hasOwn(registry, token) ? registry[token] : undefined;
 }
+
+/** id -> display name for every accepted credential, so a remote participant's
+ *  token name can ride the wire as `author.name`. Ids
+ *  without a distinct name are absent; callers fall back to the id. Never
+ *  keyed by the secret. */
+export function displayNameIndex(registry: Record<string, TokenAuth>): Map<string, string> {
+  const index = new Map<string, string>();
+  for (const auth of Object.values(registry)) {
+    if (auth.name && auth.name !== auth.id) index.set(auth.id, auth.name);
+  }
+  return index;
+}

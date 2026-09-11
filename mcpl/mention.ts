@@ -26,7 +26,25 @@
  *  different door. Returns null so callers can decide; a thrown regex was never
  *  a useful answer to "was I named?". */
 export function mentionRegex(id: unknown): RegExp | null {
-  if (typeof id !== "string" || !id) return null;
-  const safe = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?<![\\w@])@?${safe}(?![\\w])`, "i");
+  return mentionRegexFor([id]);
+}
+
+/** The same pattern over every name a body answers to: its id (the mention
+ *  handle) and its token display name (tokens.json `name`, e.g. "Artie (kube)"
+ *  for id `artie-kube`), so "@Artie" reaches the body whose handle is longer
+ *  than the name people actually use. Malformed or
+ *  empty entries are skipped, duplicates collapse case-insensitively, and a
+ *  list with no usable name returns null exactly like `mentionRegex`. */
+export function mentionRegexFor(names: readonly unknown[]): RegExp | null {
+  const seen = new Set<string>();
+  const parts: string[] = [];
+  for (const candidate of names) {
+    if (typeof candidate !== "string" || !candidate) continue;
+    const key = candidate.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    parts.push(candidate.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  }
+  if (parts.length === 0) return null;
+  return new RegExp(`(?<![\\w@])@?(?:${parts.join("|")})(?![\\w])`, "i");
 }

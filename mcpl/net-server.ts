@@ -15,7 +15,7 @@
 // Tokens: mcpl/tokens.json  { "<token>": { "id": "mythos", "name": "Mythos",
 //         "world": "commons", "avatar": "eidoverse/assets/vrms/claude.vrm" } }
 
-import { mentionRegex } from "./mention.ts";
+import { mentionRegexFor } from "./mention.ts";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { readFileSync, existsSync, writeFileSync, renameSync, rmSync } from "node:fs";
@@ -42,7 +42,7 @@ import { pingDelivery, type WirePing } from "./ping-wire.ts";
 import { MANIFEST_WITH_REVISION, ManifestAnnouncer } from "./manifest.ts";
 import { verifyToken, aid1Slug } from "../server/aid1.ts";
 import { atomicWrite } from "../server/fsutil.ts";
-import { lookupToken, readTokenRegistry, type TokenAuth } from "./token-registry.ts";
+import { displayNameIndex, lookupToken, readTokenRegistry, type TokenAuth } from "./token-registry.ts";
 
 const PORT = Number(process.env.MCPL_PORT ?? 8941);
 // archipelago-home door (home-node.md §7): a `?token=aid1.…` credential is an
@@ -183,6 +183,7 @@ class Session {
     this.conn = McplConnection.fromWebSocket(ws as never);
     this.agent = new WorldAgent({
       name: auth.id,
+      displayName: auth.name,
       world: auth.world ?? "commons",
       avatar: chosenAvatar[auth.id] ?? auth.avatar,
       url: process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws",
@@ -600,8 +601,11 @@ class Session {
     if (!this.granted(CAP.channelsIncoming)) return;
     // Platform-adapter convention (same as discord-mcpl): author is rendered
     // INTO the text — the host carries author metadata but does not label
-    // the context message with it.
-    const rendered = author.id === "world" ? text : `${author.name}: ${text}`;
+    // the context message with it. The rendered prefix is the ID, the
+    // addressing handle, even when `author.name` carries a display name: a
+    // host that matches its own name against the text must not be woken by
+    // another body whose display name merely contains it.
+    const rendered = author.id === "world" ? text : `${author.id}: ${text}`;
     const params: ChannelsIncomingParams = {
       messages: [{
         channelId: this.channelId,
@@ -667,7 +671,7 @@ class Session {
       const from = this.agent.isAgent(ev.who) ? CHAT.fromAgent : null;
       if (ev.kind === "say") {
         if (!this.channelOpen && !ev.mention) return; // door closed: chatter stops, knocks get through
-        this.deliver(ev.text!, { id: ev.who, name: ev.who }, ev.mention
+        this.deliver(ev.text!, authorOf(ev.who), ev.mention
           ? { tags: tags(CHAT.mention, CHAT.addressed, from), mentioned: true }
           : { tags: tags(CHAT.ambient, from) });
       } else if (ev.kind === "whisper") {
@@ -785,7 +789,7 @@ class Session {
       // mentionRegex returns null for an id with no matchable form — its
       // documented contract, honoured by agent.ts and violated here: a null
       // threw inside the prelude and killed the session at connect.
-      const rxSeq = mentionRegex(this.auth.id);
+      const rxSeq = mentionRegexFor([this.auth.id, this.auth.name]);
       const said = await this.agent.missedSince(sinceSeq);
       const missedSeq = said.filter((m) => m.who !== this.auth.id && !!rxSeq?.test(m.text));
       if (missedSeq.length) {
@@ -796,19 +800,19 @@ class Session {
           // ontology declares (issue #39: these shipped as bare legacy
           // ["mention"], which no declared rule could match). deliver()
           // renders the author itself — passing "who: text" here doubled it.
-          this.deliver(m.text, { id: m.who, name: m.who },
+          this.deliver(m.text, authorOf(m.who),
             { tags: tags(CHAT.mention, EIDO.catchup), mentioned: true });
         }
       }
     }
     const since = sinceSeq != null ? null : lastSeen[this.auth.id];
     if (since != null) {
-      const rx = mentionRegex(this.auth.id);   // null-safe: see rxSeq above
+      const rx = mentionRegexFor([this.auth.id, this.auth.name]);   // null-safe: see rxSeq above
       const missed = this.agent.inbox.filter((m) => m.kind === "say" && m.ts > since && m.who !== this.auth.id && !!rx?.test(m.text ?? ""));
       if (missed.length) {
         this.deliver(`While you were away, ${missed.length} message${missed.length === 1 ? "" : "s"} mentioned you:`,
           { id: "world", name: this.agent.world }, { tags: tags(CHAT.ambient, EIDO.catchup) });
-        for (const m of missed.slice(-10)) this.deliver(m.text ?? "", { id: m.who, name: m.who },
+        for (const m of missed.slice(-10)) this.deliver(m.text ?? "", authorOf(m.who),
           { tags: tags(CHAT.mention, EIDO.catchup), mentioned: true });
       }
     }
@@ -1000,7 +1004,7 @@ class Session {
                   history: says.map((m, i) => ({
                     channelId: this.channelId,
                     messageId: `hist-${m.ts}-${i}`,
-                    author: { id: m.who, name: m.who },
+                    author: authorOf(m.who),
                     timestamp: new Date(m.ts).toISOString(),
                     content: [{ type: "text", text: `${m.who}: ${m.text}` }],
                   })),
@@ -1276,10 +1280,15 @@ function joinAllowed(auth: Auth, world: string): boolean {
  *  Legacy bare-id entries are read as a fallback so existing residents don't
  *  get a full replay on the first post-upgrade connect. */
 const seqKey = (id: string, world: string) => `${id}@${world}`;
+// Refreshed on every connection attempt from the same registry read that
+// authorizes it; a remote id the registry does not name renders as itself.
+let knownDisplayNames: Map<string, string> = new Map();
+const authorOf = (id: string): { id: string; name: string } => ({ id, name: knownDisplayNames.get(id) ?? id });
 const sessions = new Map<string, Session>(); // identity → live session (newest wins)
 wss.on("connection", (ws, req) => {
   const token = new URL(req.url ?? "/", "http://localhost").searchParams.get("token");
   const registry = readTokens();
+  knownDisplayNames = displayNameIndex(registry);
   let auth = token ? lookupToken(registry, token) : undefined;
   let aidReason: string | null = null;
   if (!auth && token?.startsWith("aid1.") && HN_ISSUER_KEY) {

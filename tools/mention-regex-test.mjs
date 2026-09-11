@@ -2,7 +2,7 @@
 // tokens.json. Before this was escaped, an id with regex metacharacters threw
 // inside a catch-all — so the agent silently never heard its own name again,
 // for the life of the process, with a single log line and no other symptom.
-import { mentionRegex } from '../mcpl/mention.ts';
+import { mentionRegex, mentionRegexFor } from '../mcpl/mention.ts';
 let pass = 0, fail = 0;
 const check = (n, c) => { c ? (pass++, console.log(`ok   ${n}`)) : (fail++, console.log(`FAIL ${n}`)); };
 
@@ -28,6 +28,19 @@ check('a dot does not match any character', !mentionRegex('c.d').test('cxd here'
 let oldThrew = false;
 try { new RegExp(`(@a(\\b|\\ba(\\b)`, 'i'); } catch { oldThrew = true; }
 check('control: the unescaped form does throw', oldThrew);
+
+// ── a body answers to its id AND its token display name ────────────
+{
+  const rx = mentionRegexFor(['artie-kube', 'Artie (kube)']);
+  check('display-name alternation matches the id handle', rx.test('hey @artie-kube come here'));
+  check('display-name alternation matches the display name', rx.test('@Artie (kube), over here'));
+  check('display-name alternation matches the bare display name', rx.test('artie (KUBE) are you there'));
+  check('display-name alternation does not match a prefix of the id', !rx.test('artie-kubernetes is a different body'));
+  check('display-name alternation does not match a bare prefix word', !rx.test('artie is over there'));
+  check('duplicate names collapse', mentionRegexFor(['nova', 'Nova']).source.split('|').length === 1);
+  check('malformed entries are skipped, not fatal', mentionRegexFor([undefined, 42, 'zed']).test('@zed'));
+  check('no usable name yields null', mentionRegexFor([undefined, '']) === null);
+}
 
 // ── malformed ids must DEGRADE, never throw ────────────────────────────────
 // The id comes from JSON.parse of an operator-edited tokens.json, and
