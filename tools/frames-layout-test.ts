@@ -31,7 +31,12 @@ const check = (name: string, ok: boolean, detail = "") => {
 };
 
 // ---- seed a STALE persisted layout from an older LAYOUT_VERSION, plus one non-frame key that must survive
-localStorage.setItem("ew-frame-layout-ver", "1999-01-01-stale");
+// The version seeded here is the REAL previous literal, not a synthetic one: R's phone carried
+// ew-frame-world {hidden:false} stamped '2026-09-07-rightdock' and therefore kept the world panel
+// OPEN at 390x844 even though auto-minimize was correct (live 2026-09-11 10:15, reproduced headless).
+// saved?.hidden wins over the viewport rule by design, so changing what the DEFAULT means on a small
+// viewport is exactly the "DEFAULT_LAYOUT changed materially" case this guard exists for.
+localStorage.setItem("ew-frame-layout-ver", "2026-09-07-rightdock");
 localStorage.setItem("ew-frame-world", JSON.stringify({ x: 1, y: 1, w: 50, h: 50, hidden: false }));
 localStorage.setItem("ew-frame-zzz", JSON.stringify({ x: 2, y: 2, w: 60, h: 60, hidden: true }));
 localStorage.setItem("ew-ui-locked", "0");

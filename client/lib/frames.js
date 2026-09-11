@@ -19,7 +19,7 @@ const LS = (id) => `ew-frame-${id}`;
 // old save overrode the re-baked default). Bump this whenever DEFAULT_LAYOUT changes materially: on load,
 // a mismatch discards every ew-frame-* save ONCE, so the new default actually takes, then stamps the new
 // version. A user's deliberate arrangement after the bump is saved and kept as normal.
-const LAYOUT_VERSION = '2026-09-07-rightdock';
+const LAYOUT_VERSION = '2026-09-11-autominimize';
 const LAYOUT_VER_KEY = 'ew-frame-layout-ver';
 (() => {
   try {
