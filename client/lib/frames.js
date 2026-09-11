@@ -237,7 +237,7 @@ const DEFAULT_LAYOUT = {
   settings: { x: -8,  y: 381, w: 407, h: 443, hidden: true },
   profile:  { x: 48,  y: 46,  w: 505, h: 452, hidden: true },
   debug:    { x: -414, y: 8,  w: 342, h: 453, hidden: true },
-  emotes:   { x: 'center', y: 10, h: 32, hidden: false },  // one bar across the bottom, OPEN by default (live 09-07 10:55 reference HUD); the bar sizes its WIDTH itself (emotebar.js snapTo) but ROW_H is fixed — carried here so fitsDefaults stops counting the bar as zero-height (round 4)
+  emotes:   { x: 'center', y: 10, h: 32, hidden: false },  // one bar across the TOP, OPEN by default — moved from y:-10 on 2026-09-11 because the hint bar and toasts live at the bottom (R: "all the helper notifications display at the bottom where it currently is"); the bar sizes its WIDTH itself (emotebar.js snapTo) and its ROWS from a dragged height, but ROW_H is fixed — carried here so fitsDefaults stops counting the bar as zero-height (round 4)
 };
 // Can this viewport hold the hand-arranged default at all? Derived from
 // DEFAULT_LAYOUT rather than a hardcoded breakpoint, so it stays true if the
