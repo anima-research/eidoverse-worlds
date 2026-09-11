@@ -67,7 +67,16 @@ try {
       phase: sp?.querySelector('.sp-phase')?.textContent ?? null, raysHandle: !!globalThis.__raysWorker,
       backend: globalThis._r?.backend ? (globalThis._r.backend.isWebGLBackend ? 'webgl' : 'webgpu') : null, xrEnabled: !!globalThis._r?.xr?.enabled,
       tolerance: !!globalThis.__renderListTolerance, xrShadow: globalThis.__xrShadowPatched === true, raysCanvas: !!document.querySelector('#splash .sp-rays'),
-      hasBody: !!globalThis.EW?.me?.() };
+      hasBody: !!globalThis.EW?.me?.(),
+      // REACHABILITY, not scrollWidth: html,body use overflow:hidden, so a frame
+      // that runs past the viewport edge is simply unreachable and the document
+      // never reports overflow (#185 review).
+      vw: innerWidth, vh: innerHeight,
+      rects: [...document.querySelectorAll('.frame')]
+        .filter((f) => getComputedStyle(f).display !== 'none')
+        .map((f) => { const r = f.getBoundingClientRect();
+          return { id: f.id || f.className, x: Math.round(r.x), y: Math.round(r.y),
+                   right: Math.round(r.right), bottom: Math.round(r.bottom) }; }) };
   });
   const t0 = Date.now(); let s = await state(), ready = null, raysSeen = false;
   while (Date.now() - t0 < BOOT_MAX_MS) {
@@ -92,6 +101,15 @@ try {
   if (s.xrEnabled !== wantXR) { fail(`xr.enabled=${s.xrEnabled} but query "${QUERY}" ${wantXR ? 'is' : 'is not'} an XR boot`); }
   if (s.tolerance !== wantXR) { fail(`tolerant render list ${s.tolerance ? 'installed' : 'not installed'} at boot; it must install only for an XR boot (query "${QUERY}")`); }
   if (!s.xrShadow) { fail('the ShadowNode XR-off patch was not applied at boot (core.js → xrshadow.js)'); }
+  // REACHABILITY (#185 review). Every visible frame must lie inside the viewport.
+  // Not scrollWidth: html,body use overflow:hidden, so a frame past the edge is
+  // simply unreachable and the document reports no overflow at all. Run this at a
+  // narrow viewport with BOOT_CHECK_VIEWPORT=390x844 (and 800x700 for split-window).
+  const off = (s.rects ?? []).filter((r) => r.right > s.vw + 1 || r.bottom > s.vh + 1);
+  if (off.length) {
+    fail(`frames unreachable at ${s.vw}x${s.vh} (overflow:hidden — no scrolling to them):\n  `
+      + off.map((r) => `${r.id} x=${r.x} y=${r.y} right=${r.right} bottom=${r.bottom}`).join('\n  '));
+  }
   if (/(^|&)webgl=1(&|$)/.test(QUERY) && s.backend !== 'webgl') { fail(`?webgl=1 but backend=${s.backend}`); }
   if (wantXR && s.backend !== 'webgl') { fail(`XR boot without WebGPU-XR must ride WebGL, got backend=${s.backend}`); }
   // arrival means the BODY settled too (unless spectating): a checkReady that stops waiting for it lifts the splash

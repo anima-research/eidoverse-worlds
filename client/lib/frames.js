@@ -420,12 +420,34 @@ export function makeFrame(id, opts = {}) {
   // bar and whatever padding its content carries — so a bottom-anchored frame
   // hung its composer off the screen. Measure once it exists and pull it back.
   let fitted = false;
-  if (!saved && !state.hidden) { fitted = true; fit(); }
+  // A SAVED layout must be fitted too. It used to be skipped — the reasoning was
+  // that a save is the user's own arrangement and should be honoured verbatim — but
+  // a layout saved on a wide screen is not an arrangement for THIS viewport: it came
+  // back at full width on a narrow one and ran off the edge, unreachable under
+  // html,body{overflow:hidden} (#185 review). fit() only ever pulls a frame inside
+  // the viewport, so honouring a save and fitting it are not in conflict.
+  if (!state.hidden) { fitted = true; fit(); }
   addEventListener('resize', fit);
 
   function fit() {
+    // WIDTH FIRST, and BEFORE the measurement guard below: a frame's width does not
+    // depend on its measured height, and at construction the element is not yet in a
+    // measurable state (offsetHeight 0), so anything behind that guard never runs on
+    // the creation path — which is exactly where a restored oversized layout lands.
+    const maxW = Math.max(80, innerWidth - 16);
+    state.w = Math.max(Math.min(state.w, maxW), Math.min(minW, maxW));
     const hh = root.offsetHeight;
-    if (!hh) return;
+    if (!hh) return;                       // the constructor paints right after this call
+    // SIZE BEFORE POSITION. DEFAULT_LAYOUT is hand-arranged at a wide authoring
+    // viewport, and a saved layout can be wider still; clamping only x/y pins the
+    // frame at the left margin and lets the rest run off the right edge — which
+    // html,body{overflow:hidden} makes unreachable rather than merely ugly
+    // (#185 review: chat w:545 at a 390px viewport = 163px lost). minW/minH are
+    // authoring floors, not guarantees: inside a viewport narrower than minW the
+    // floor has to yield or the frame can never fit at all.
+    const chrome = hh - state.h;                       // title bar + padding: state.h is the BODY's height
+    const maxH = Math.max(40, innerHeight - 16 - chrome);
+    state.h = Math.max(Math.min(state.h, maxH), Math.min(minH, maxH));
     if (opts.y != null && opts.y < 0) state.y = Math.max(8, innerHeight + opts.y - hh);
     state.y = clamp(state.y, 8, Math.max(8, innerHeight - hh - 8));
     // A frame created hidden gets its x from resolveAnchor at CREATION width. If it's first shown after a

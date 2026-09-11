@@ -142,6 +142,50 @@ check("a mid-air frame holds no sticky edge", !["st-l", "st-r", "st-t", "st-b"].
     rt.state.x + rt.state.w <= innerWidth - 8, JSON.stringify(rt.state));
 }
 
+console.log("FRAMES — a narrow viewport (the header's 'can never leave the viewport', at phone width)");
+{
+  // #185 review: DEFAULT_LAYOUT bakes widths from a 1904px authoring session
+  // (chat w:545) and fit() clamped only x/y — so at phone width a frame kept its
+  // width, pinned x to 8, and ran off the right edge. html,body use
+  // overflow:hidden, so the clipped region is NOT reachable by scrolling.
+  const wide = measurable(makeFrame("narrowme", { title: "narrowme", x: 10, y: 10, w: 545, h: 200 }));
+  wide.show();
+  const vw0 = innerWidth;
+  (window as any).innerWidth = 390;
+  window.dispatchEvent(new Event("resize"));
+  check("a frame WIDER than the viewport is narrowed to fit, not just pinned",
+    wide.state.x + wide.state.w <= innerWidth - 8, JSON.stringify(wide.state));
+  check("...and it keeps its 8px left margin (not pushed to a negative x)",
+    wide.state.x >= 8, JSON.stringify(wide.state));
+  // minW must yield: a 170px floor cannot be honoured inside a 160px viewport
+  const tiny = measurable(makeFrame("tinyvp", { title: "tinyvp", x: 10, y: 10, w: 300, h: 100, minW: 170 }));
+  tiny.show();
+  (window as any).innerWidth = 160;
+  window.dispatchEvent(new Event("resize"));
+  check("minW yields when the viewport is narrower than minW",
+    tiny.state.x + tiny.state.w <= innerWidth - 8, JSON.stringify(tiny.state));
+  (window as any).innerWidth = vw0;
+  window.dispatchEvent(new Event("resize"));
+
+  // A PERSISTED oversized layout is the other half of requirement 1: fit() was
+  // skipped entirely when a save existed (`if (!saved && ...)`), so a layout saved
+  // on a wide screen came back at full width on a narrow one and never clamped.
+  (window as any).innerWidth = 390;
+  localStorage.setItem("ew-frame-savedwide", JSON.stringify({ x: 8, y: 10, w: 545, h: 200, hidden: false }));
+  const restored = measurable(makeFrame("savedwide", { title: "savedwide", x: 10, y: 10, w: 300, h: 200 }));
+  // Assert BEFORE show(). show() runs the second fit() call site (a frame created
+  // hidden is fitted when first shown), which would clamp this for an unrelated
+  // reason and make the check pass whatever the creation path does — an assertion
+  // that cannot fail is not a binding.
+  check("a SAVED layout wider than the viewport is clamped AT CREATION, not restored oversized",
+    restored.state.x + restored.state.w <= innerWidth - 8, JSON.stringify(restored.state));
+  restored.show();
+  check("...and it is still inside the viewport after being shown",
+    restored.state.x + restored.state.w <= innerWidth - 8, JSON.stringify(restored.state));
+  (window as any).innerWidth = vw0;
+  window.dispatchEvent(new Event("resize"));
+}
+
 console.log("FRAMES — z band");
 const zs = () => allFrames().map((x: any) => +x.el.style.zIndex);
 for (let i = 0; i < 20; i++) measurable(makeFrame(`z${i}`, { title: `z${i}`, x: 20 + i, y: 20 + i, w: 120, h: 60 })).show();

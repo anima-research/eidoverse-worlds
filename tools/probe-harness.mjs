@@ -31,8 +31,16 @@ export async function launchBrowser({ mic = false } = {}) {
   const args = mic ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
     '--autoplay-policy=no-user-gesture-required'] : [];
   const b = await chromium.launch({ ...(exe ? { executablePath: exe } : {}), args });
+  // BOOT_CHECK_VIEWPORT=390x844 drives a probe at a phone-width (or any) viewport.
+  // Without it the context takes Playwright's default — which is why a layout that
+  // only fits the authoring viewport passed every owned-browser run (#185 review).
+  const vp = (process.env.BOOT_CHECK_VIEWPORT || '').match(/^(\d+)x(\d+)$/);
+  const viewport = vp ? { width: +vp[1], height: +vp[2] } : null;
   const page = async () => {
-    const ctx = await b.newContext(mic ? { permissions: ['microphone'] } : {});
+    const ctx = await b.newContext({
+      ...(mic ? { permissions: ['microphone'] } : {}),
+      ...(viewport ? { viewport } : {}),
+    });
     return ctx.newPage();
   };
   return { browser: b, page, close: () => b.close() };
