@@ -447,8 +447,15 @@ export function initDock(entries) {
       // (ew-dock-pins), not per-world, so a single grant anywhere welded a
       // dead wrench to the rail in every world after it.
       if (was === now) continue;                       // level, not edge
-      if (now) { if (!pins.has(e.id)) { pins.add(e.id); savePins(); } }
-      else if (pins.has(e.id)) { pins.delete(e.id); savePins(); }
+      // SAVE ON THE EDGE, not only when the set changes. `pins` hydrates from
+      // DEFAULT_PINS when the key is absent (:313), and 'edit' is in that list
+      // — so on a FIRST grant `pins.has('edit')` was already true, savePins()
+      // was skipped, and nothing was written. The rail looked right but the pin
+      // only became durable after a revoke->regrant happened to stamp the key.
+      // The edge is exactly the moment this becomes the user's state; persist
+      // it. (round 6, measured: LS stayed null across boot and first grant.)
+      if (now) pins.add(e.id); else pins.delete(e.id);
+      savePins();
     }
     paintDock();
   });
