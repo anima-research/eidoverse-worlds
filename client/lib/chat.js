@@ -686,10 +686,10 @@ const open = chat.open;
 const SIDE_LS = 'ew-chat-side';
 // The side-pane nodes, captured from the markup initChat ITSELF wrote (below).
 // A lookup by class would match at any depth, and registerPanel/mods.js mount
-// mod markup into frame bodies AFTER initChat's innerHTML wipe. A local mod is
-// a TRUSTED mod — an in-page ES module with the whole surface (mods.js:5) —
-// and mods.js:88 hands it makeFrame, so a mod carrying these classes could be
-// found instead, and this file would then write side-closed/side-left and the
+// mod markup into frame bodies AFTER initChat's innerHTML wipe. These are
+// PUBLIC classes (docs/MODDING-UI.md §3) and a local mod is a TRUSTED mod
+// handed makeFrame (mods.js:5,88), so a mod carrying them could be found
+// instead, and this file would then write side-closed/side-left and the
 // chevron onto a different node than ui.js togglePeople flips. Capturing once
 // is stronger than `:scope >` at each call site: nothing mounted later can be
 // captured.

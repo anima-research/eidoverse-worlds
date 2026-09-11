@@ -857,9 +857,10 @@ export function openDoor({ roster = [], needsKey = false, login = null, onEnter 
 export function togglePeople() {
   const f = getFrame('chat'); const wasVisible = !!f?.visible; if (f && !wasVisible) f.show();
   // ASK the frame for the nodes chat.js built; do NOT re-derive them by class.
-  // A local mod is a TRUSTED mod — an in-page ES module with the whole surface
-  // (mods.js:5) — and mods.js:88 hands it makeFrame, so it can mount markup
-  // carrying .chat-cols / .chat-side-tog into this very body. A class lookup
+  // .chat-cols and .chat-side-tog are part of the PUBLIC class contract
+  // (docs/MODDING-UI.md §3) and a local mod is a TRUSTED mod — an in-page ES
+  // module handed makeFrame (mods.js:5,88) — so it can legitimately mount
+  // markup carrying them into this very body. A class lookup
   // then picks by depth AND order: `:scope >` bounds the first but not the
   // second, and a PREPENDED .chat-cols is a direct child that wins. chat.js
   // captured these nodes as it wrote them and hangs the accessor on the frame,

@@ -45,3 +45,30 @@ Rules of the road:
 - the world state you can touch is the same lawful surface everyone has
   (verbs over the socket, behaviors server-side — see AGENTS.md). The UI
   registry grants no extra authority, only a place to stand.
+
+## 3. The class contract — read and restyle the built-in chrome
+
+A local mod is a **trusted** mod (mods.js): an in-page ES module with the whole
+surface, handed `makeFrame` like any built-in. It can therefore read, restyle
+and mount alongside the shipped chrome. These class names are part of the
+contract — they are what a mod matches on, so they will not change without a
+note here:
+
+    frame panel              every frame's root (frames.js)
+    chat-cols                the chat frame's column pair
+    chat-side                the people pane
+    chat-side-tog            its collapse toggle
+    chat-side-grip           its drag edge
+    chat-side-head           its heading row
+    chat-side-list           the list of who is present
+
+Two consequences, stated so neither surprises you:
+
+- **Restyle freely.** Match these in CSS, read them in JS, mount next to them.
+  Colors come from the token sheet (§1); never hex.
+- **The client does not trust them for its OWN lookups.** Because a mod can
+  legitimately carry any of these classes into any frame body, the client
+  addresses its own nodes by the handles it captured when it wrote them, not by
+  re-querying the class. That is what keeps your mod's `.chat-side` from being
+  mistaken for ours — your markup is never *disabled*, it is simply never
+  confused with the built-in's. Carry these classes as much as you like.
