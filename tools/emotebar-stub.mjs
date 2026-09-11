@@ -22,6 +22,8 @@ export function makeFrame(key, opts = {}) {
     key, opts, el, body, visible: !opts.hidden, paints: 0,
     _state: { w: opts.w, h: opts.h },
     _paint() { this.paints++; },
+    _fit() { this.paints++; },          // real frames clamp to the viewport here; the stub just records
+    getBoundingClientRect() { return { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 }; },
     show() { this.visible = true; },
     toggle() { this.visible = !this.visible; },
     badge() {},

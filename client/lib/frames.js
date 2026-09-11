@@ -270,7 +270,11 @@ export function makeFrame(id, opts = {}) {
 
   const api = {
     id, el: root, body, head,
-    _state: state, _paint: () => paint(),      // live refs for the edge-rider
+    // live refs for riders that own their own sizing (the emote bar snaps itself
+    // to whole tiles). _fit is here because writing _state and calling _paint
+    // alone BYPASSES the viewport clamp: the bar reflowed to three rows and
+    // painted itself past the bottom edge (#185 review, 800x700).
+    _state: state, _paint: () => paint(), _fit: () => fit(),
     get state() { return { ...state }; },
     show() {
       state.hidden = false;

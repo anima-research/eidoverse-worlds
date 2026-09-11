@@ -4,7 +4,7 @@
 // the key that fires it. The tile this bar fired stays lit ~1.5 s (long enough to read). House .tile/.tiles rules
 // only — no private layout here (live, 09-04: this file had been hand-rolled).
 
-import { makeFrame } from './frames.js';
+import { makeFrame, allFrames } from './frames.js';
 import { EMOTE_ORDER, EMOTE_ICONS } from './avatar.js';
 import { getMe } from './mybody.js';
 import { registerXRPanel } from './xrpanels.js';
@@ -46,12 +46,32 @@ export function initEmoteBar() {
     // exposes for exactly this kind of rider.
     onResize: (w) => { clearTimeout(snapT); snapT = setTimeout(() => snapTo(w), 180); },
   });
+  // The bar is bottom-CENTRED and chat is bottom-LEFT: at a wide viewport they
+  // miss each other entirely, but as the viewport narrows the centred bar slides
+  // onto chat and lands on its composer. Two rects collide only when they overlap
+  // on BOTH axes, so lift only when they actually do.
+  const liftClear = () => {
+    const me = f.el?.getBoundingClientRect?.(); if (!me) return;
+    let top = me.top;
+    for (const o of allFrames()) {
+      if (o === f || o.visible === false || o.el === f.el) continue;
+      const r = o.el?.getBoundingClientRect?.(); if (!r || !r.width) continue;
+      const hits = me.left < r.right && r.left < me.right && top < r.bottom && r.top < top + me.height;
+      if (hits) top = Math.min(top, r.top - me.height - 8);
+    }
+    if (top !== me.top && f._state) { f._state.y = Math.max(8, top); if (f._fit) f._fit(); else f._paint?.(); }
+  };
+
   const snapTo = (w) => {
     // the emote list arrives async; snapping against an empty list clamped cols to the 3 postures and
     // SHRANK a saved 9×1 bar to 3×3 on every reload (two exported layouts: 352×32 → 124×108)
     if (!EMOTE_ORDER.length) return;
     const cols = Math.max(3, Math.min(POSTURE_TILES + EMOTE_ORDER.length, Math.floor((w - PAD * 2 - 2 + GAP) / (TILE + GAP))));   // ONE BAR is reachable: the postures count as tiles too (live 09-05 21:40: "surely more than 6")
-    f._state.w = widthFor(cols); f._state.h = heightFor(cols); f._paint();
+    f._state.w = widthFor(cols); f._state.h = heightFor(cols);
+    // through _fit, not _paint: a reflow to more rows can push the bar past the
+    // bottom edge, and _paint alone skips every viewport clamp (#185 review).
+    if (f._fit) f._fit(); else f._paint();
+    liftClear();
   };
   // a saved size from an older layout (or any drift) refits the moment the menu opens
   const show = f.show.bind(f);

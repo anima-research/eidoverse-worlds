@@ -105,6 +105,17 @@ try {
   // Not scrollWidth: html,body use overflow:hidden, so a frame past the edge is
   // simply unreachable and the document reports no overflow at all. Run this at a
   // narrow viewport with BOOT_CHECK_VIEWPORT=390x844 (and 800x700 for split-window).
+  // OVERLAP (#185 review req 2): two frames collide only when they overlap on
+  // BOTH axes. chat is bottom-LEFT and the emote bar bottom-CENTRE, so at a wide
+  // viewport they miss entirely and at a narrow one the centred bar slides onto
+  // chat's composer. Checking one axis alone answers "always" or "never" — both wrong.
+  const pairs = [];
+  const rs = s.rects ?? [];
+  for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
+    const a = rs[i], b = rs[j];
+    if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) pairs.push(`${a.id} × ${b.id}`);
+  }
+  if (pairs.length) { fail(`frames overlap at ${s.vw}x${s.vh} (a covered control cannot be clicked):\n  ` + pairs.join('\n  ')); }
   const off = (s.rects ?? []).filter((r) => r.right > s.vw + 1 || r.bottom > s.vh + 1);
   if (off.length) {
     fail(`frames unreachable at ${s.vw}x${s.vh} (overflow:hidden — no scrolling to them):\n  `
