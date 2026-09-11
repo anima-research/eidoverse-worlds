@@ -259,7 +259,7 @@ console.log("DOCK — the badge the dock button carries (the title bar is hidden
   check("clearing the badge removes BOTH", !document.querySelector('#dock button[data-toggles="chat"] .dk-badge') && !f.el.querySelector(".fr-badge")); }
 
 console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePeopleHere)");
-{ // togglePeopleHere reads the chat frame's side-pane markup (chat.js:815: a
+{ // togglePeopleHere reads the chat frame's side-pane markup (chat.js:696: a
   // .chat-cols that carries side-closed, and the .chat-side-tog that flips it).
   // initChat builds that; here we mirror just those two nodes onto the frame
   // this suite already made, so the REAL togglePeopleHere runs against the real
