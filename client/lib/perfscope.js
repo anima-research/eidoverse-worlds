@@ -710,7 +710,7 @@ async function copyReceipt() {
         tris: r.tris, draws: r.draws, mats: r.mats.size, texMB: +(r.texBytes / 1e6).toFixed(1),
         bones: r.bones, meshes: r.meshes, instances: r.instances,
         topTex: [...r.texs].map((t) => ({ b: texBytes(t), w: t.image?.width, h: t.image?.height, raw: !t.isCompressedTexture }))
-          .sort((a, b) => b.b - a.b).slice(0, 3)
+          .sort((a, b) => b.b - a.b).slice(0, 5)   // R, 2026-09-11: five, not three — three rarely reached the texture that was actually hurting
           .map((x) => `${x.w}x${x.h}${x.raw ? ' raw' : ''} ${(x.b / 1e6).toFixed(1)}MB`) })),
   };
   const text = JSON.stringify(receipt, null, 1);

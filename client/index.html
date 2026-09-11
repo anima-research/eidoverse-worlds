@@ -447,7 +447,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
   margin-bottom: -1px; border-radius: 6px 6px 0 0;
   color: var(--dim); white-space: nowrap; cursor: pointer;
 }
-.chat-tabs button:hover { color: var(--fg); background: rgb(255 255 255 / .04); }
+.chat-tabs button:hover { color: var(--fg); background: rgb(143 232 200 / .13); }   /* the LIVELIER of the pair: hover reaches for you, selection just sits there (R, 2026-09-11: "reverse the current tab colors when hovering vs selected") */
 /* a DM tab carries a visible close — right-click worked and told nobody */
 .chat-tabs button .tabx {
   flex: none; margin-left: 2px; margin-right: 0; padding: 0 2px; border-radius: 4px;
@@ -462,8 +462,13 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
      active" (2026-09-11). With the rail now on .tabscroll the tab's own border
      has somewhere to sit, and a .tile.on-style wash makes the tab itself read
      as selected rather than just its text. */
+  /* CHILL. A 14% brand wash won the eye away from the conversation; R,
+     2026-09-11: "I prefer a more chill highlight color so it's not stealing a
+     lot of attention." The pressed-in --well is this client's own idiom for a
+     settled choice (.dd-opt.on, .pf-pop-row.on) — the brand stays in the text
+     and the underline, which is where it carries meaning. */
   color: var(--brand); border-bottom-color: var(--brand);
-  background: color-mix(in srgb, var(--brand) 14%, rgb(255 255 255 / .04));
+  background: var(--well);
 }
 
 .chat-log {
@@ -791,8 +796,17 @@ body.arranging #dock #hud.emark {
 .pf-tabs { display: flex; gap: 2px; margin: 10px 0 8px; border-bottom: 1px solid var(--edge); }
 .pf-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px 7px; border: none; border-bottom: 1px solid transparent; margin-bottom: -1px; background: none; color: var(--dim); font-size: var(--fs-sm); cursor: pointer; border-radius: 6px 6px 0 0; }
 .pf-tab svg { opacity: .8; color: var(--icon); }          /* the section-head recipe: desaturated brand at .8 when idle (live, 09-05) */
-.pf-tab:hover { color: var(--fg); background: rgb(255 255 255 / .04); }
-.pf-tab.on { color: var(--brand); border-bottom-color: var(--brand); }
+/* THE PROFILE TABS NEVER OPTED OUT OF THE GLOBAL BUTTON CHAIN, and it showed:
+   measured with a real mouse hover, `.pf-tab:hover` painted NOTHING while
+   `.pf-tab.on` inherited `button.on { background: var(--hov) }` = 6% white. So
+   the selected tab was the brightest thing in the strip and hovering its
+   neighbour changed only the text — which reads exactly as R described it
+   (2026-09-11): "they actually get *darker* when highlighted, which is really
+   strange!" Both states are now stated here, matching the chat strip: hover is
+   the livelier one, selection is the calm one. */
+.pf-tabs .pf-tab:hover { color: var(--fg); background: rgb(143 232 200 / .13); }
+.pf-tabs .pf-tab.on { color: var(--brand); border-bottom-color: var(--brand); background: var(--well); }
+.pf-tabs .pf-tab.on:hover { background: color-mix(in srgb, rgb(143 232 200 / .13) 45%, var(--well)); }
 .pf-tab.on svg { opacity: 1; color: var(--brand); }
 .pf-pane { flex: 1; min-height: 0; overflow: auto; }
 #emenu {
