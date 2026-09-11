@@ -195,5 +195,22 @@ check("width clamps at minW", f.state.w >= 100, `w=${f.state.w} (delta ${tiny})`
     `rendered bottom=${bottom} viewport=${innerHeight} state.h=${f.state.h} chrome=${CHROME}`);
 }
 
+// THE FRAME PUBLISHES ITS OWN FLOOR. index.html carries `.frame { min-width:
+// 170px }`, a CSS floor sitting BENEATH the JS one — it silently won for any
+// frame declaring a smaller minW. Measured in Chromium before the fix: the emote
+// bar asking for w=48/86/124/162 ALL rendered at frameW=170, cols=4, rows=3.
+// That is R's report in one line ("won't go thinner than 4x, but will forcibly
+// go 9x down and not wrap"): the body was painted 336px tall while the clipped
+// width could only lay out three rows. Three rounds of fixing snapTo changed
+// nothing visible, because the arithmetic was right and the RENDER was floored.
+{ const narrow = makeFrame("floor", { title: "floor", x: 10, y: 10, w: 48, h: 32, minW: 48, minH: 32 });
+  narrow.show();
+  check("a frame publishes its OWN minW to the DOM, not the sheet's blanket 170",
+    (narrow.el as HTMLElement).style.minWidth === "48px", `minWidth=${(narrow.el as HTMLElement).style.minWidth}`);
+  const wide = makeFrame("floor2", { title: "floor2", x: 10, y: 10, w: 400, h: 200, minW: 320 });
+  wide.show();
+  check("...and a frame with a LARGER floor keeps it", (wide.el as HTMLElement).style.minWidth === "320px",
+    `minWidth=${(wide.el as HTMLElement).style.minWidth}`); }
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

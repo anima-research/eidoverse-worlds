@@ -763,10 +763,16 @@ function paintSide() {
   sideEl('head').textContent =
     others === 0 ? 'just you' : `${others} other${others === 1 ? '' : 's'} here`;
   sideEl('list').innerHTML = people.length
-    ? people.map((p) => `<div class="who-row ${p.me ? 'self' : ''}">
-        <span class="who-mark" data-presence="${esc(p.presence ?? 'present')}" title="${esc(p.presence ?? 'present')}"></span>
-        <span class="n" style="color:${colorFor(p.id)}">${esc(p.id)}${p.me ? ' (you)' : ''}</span>
-        <span class="d">${p.dist == null ? '' : p.dist.toFixed(0) + 'm'}</span></div>`).join('')
+      // A BUTTON, not a div. _contentClaims (frames.js:80) exempts only
+      // BUTTON/INPUT/TEXTAREA/SELECT/A from the frame's drag surface — so a
+      // <div> row was swallowed by root's pointerdown and the dblclick never
+      // fired. R, 2026-09-11: "the Chat panel treats names in the roster as a
+      // grab-and-move-the-pane surface". The ∃ menu's .mrow is a <button> for
+      // exactly this reason; this now matches that vocabulary.
+      ? people.map((p) => `<button type="button" class="who-row ${p.me ? 'self' : ''}">
+          <span class="who-mark" data-presence="${esc(p.presence ?? 'present')}" title="${esc(p.presence ?? 'present')}"></span>
+          <span class="n" style="color:${colorFor(p.id)}">${esc(p.id)}${p.me ? ' (you)' : ''}</span>
+          <span class="d">${p.dist == null ? '' : p.dist.toFixed(0) + 'm'}</span></button>`).join('')
     : '<div class="who-empty">nobody yet</div>';
 }
 const esc = (v) => String(v).replace(/[&<>"]/g, (c) => (

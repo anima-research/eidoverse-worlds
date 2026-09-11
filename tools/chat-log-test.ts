@@ -174,6 +174,14 @@ check("...and it renders as a whisper", !!wline?.classList.contains("whisper"));
 openPane();
 const rows2 = () => [...frameStub.body!.querySelectorAll(".chat-side-list .who-row")];
 check("the People Here pane lists everyone", rows2().length === 3, `${rows2().length} rows`);
+// A BUTTON, not a div — this IS the fix. frames.js:_contentClaims exempts only
+// BUTTON/INPUT/TEXTAREA/SELECT/A from the frame's drag surface, so a div row was
+// claimed by the frame's pointerdown and the dblclick never arrived. R,
+// 2026-09-11: "the Chat panel treats names in the roster as a
+// grab-and-move-the-pane surface". The previous dblclick assertion passed
+// against a div, so it could not see this at all.
+check("each roster row is a BUTTON, so the frame cannot claim it as a drag surface",
+  rows2().every((r: any) => r.tagName === "BUTTON"), rows2().map((r: any) => r.tagName).join(","));
 const mica = rows2().find((r: any) => r.querySelector(".n")?.textContent?.trim() === "mica") as HTMLElement;
 mica?.dispatchEvent(new Event("dblclick", { bubbles: true }));
 check("double-clicking a name opens ITS DM tab", tabLabels().includes("@mica"), tabLabels().join("|"));

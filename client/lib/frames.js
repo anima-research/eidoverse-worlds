@@ -416,6 +416,16 @@ export function makeFrame(id, opts = {}) {
     root.style.left = `${state.x}px`;
     root.style.top = `${state.y}px`;
     root.style.width = `${state.w}px`;
+    // PUBLISH THE FRAME'S OWN FLOOR. index.html's `.frame { min-width: 170px }`
+    // is a CSS floor sitting BENEATH this JS one, and it silently won whenever a
+    // frame declared a smaller minW. Measured in Chromium: the emote bar asking
+    // for w=48/86/124/162 all rendered at frameW=170 with 4 columns and 3 rows —
+    // which is R's report in one line, "won't go thinner than 4x, but will
+    // forcibly go 9x down and not wrap to the buttons at all": the body was
+    // painted 336px tall while the clipped width could only ever lay out three
+    // rows of tiles. Three rounds of fixing snapTo changed nothing she could see
+    // because the arithmetic was right and the render was floored.
+    root.style.minWidth = `${minW}px`;
     body.style.height = `${state.h}px`;
     // arrange-mode affordances: which viewport edges hold this frame (glow),
     // and whether the floating label must sit below (frame hugs the top)

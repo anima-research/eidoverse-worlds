@@ -291,7 +291,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
    content, so the chrome has to get out of the way on the user's terms. */
 .frame {
   position: fixed; display: flex; flex-direction: column;
-  z-index: 10; /* must equal Z_LO in frames.js */ min-width: 170px; overflow: hidden;
+  z-index: 10; /* must equal Z_LO in frames.js */ min-width: 170px;   /* PRE-PAINT DEFAULT ONLY: frames.js paint() overwrites this with the frame's own minW (an inline style, so it wins). This line was a floor BENEATH the JS one and silently clipped any frame declaring less — measured: the emote bar asking for 48px rendered at 170 with 4 columns. (R, 2026-09-11) */ overflow: hidden;
 }
 .fr-head {
   display: flex; align-items: center; gap: 6px;
@@ -655,7 +655,18 @@ input[type=range]:disabled { accent-color: color-mix(in srgb, var(--control) 40%
 .row .note { color: var(--dim); }
 
 /* who's-here list */
-.who-row { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+/* .who-row is a <button> (chat.js): _contentClaims exempts only BUTTON/INPUT/
+   TEXTAREA/SELECT/A from the frame's drag surface, so a <div> row was swallowed
+   by the frame's pointerdown and its dblclick never fired. These resets keep it
+   looking exactly like the row it was. (R, 2026-09-11) */
+.who-row {
+  display: flex; justify-content: space-between; gap: 12px; padding: 2px 0;
+  width: 100%; text-align: left; background: none; border: none; border-radius: 4px;
+  font: inherit; color: inherit; cursor: pointer;
+}
+.who-row:hover { background: var(--hov); }
+.who-row.self { cursor: default; }
+.who-row.self:hover { background: none; }
 .who-row .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .who-row .d { color: var(--dim); flex: none; }
 .who-row.self .n { color: var(--fg); }
