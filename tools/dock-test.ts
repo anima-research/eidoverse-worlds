@@ -221,11 +221,11 @@ console.log("DOCK — the badge the dock button carries (the title bar is hidden
   f.badge("");
   check("clearing the badge removes BOTH", !document.querySelector('#dock button[data-toggles="chat"] .dk-badge') && !f.el.querySelector(".fr-badge")); }
 
-console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePeople)");
-{ // togglePeople reads the chat frame's side-pane markup (chat.js:815: a
+console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePeopleHere)");
+{ // togglePeopleHere reads the chat frame's side-pane markup (chat.js:815: a
   // .chat-cols that carries side-closed, and the .chat-side-tog that flips it).
   // initChat builds that; here we mirror just those two nodes onto the frame
-  // this suite already made, so the REAL togglePeople runs against the real
+  // this suite already made, so the REAL togglePeopleHere runs against the real
   // class contract instead of a recorder.
   const f = getFrame("chat")!;
   // TWO decoys, because there are two ways to get this wrong and a decoy only
@@ -271,12 +271,12 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
   const real = f.body.querySelector(":scope > .chat-cols") as HTMLElement;
   // Mirror initChat's MECHANISM, not just its markup: chat.js captures the
   // nodes as it writes them and hangs the accessor on the frame it built
-  // (chat.js, right after sideEls). togglePeople reads that. Handing it `real`
+  // (chat.js, right after sideEls). togglePeopleHere reads that. Handing it `real`
   // is legitimate here precisely because `real` was captured before any decoy
   // exists — the same discipline this block already uses above.
   // This suite never imports chat.js — makeFrame/getFrame come from frames.js
   // and the markup above is hand-mirrored — so this stand-in can bind WHICH
-  // node togglePeople addresses (ownership/order) but NOT the lifetime guard
+  // node togglePeopleHere addresses (ownership/order) but NOT the lifetime guard
   // on chat.js's own read path: a ?.isConnected here would only test this
   // closure against itself. Lifetime is bound in chat-markdown, which drives
   // real initChat / sideEl / paintSide.
@@ -300,22 +300,22 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
   tog.onclick = () => { clicks++; cols().classList.toggle("side-closed"); };
 
   f.show(); clicks = 0;
-  ui.togglePeople();
+  ui.togglePeopleHere();
   check("pane closed, chat open: Tab opens the pane", !cols().classList.contains("side-closed") && clicks === 1, `${cols().className} clicks=${clicks}`);
 
   clicks = 0;
-  ui.togglePeople();
+  ui.togglePeopleHere();
   check("pane already open: Tab leaves it open and does NOT toggle", !cols().classList.contains("side-closed") && clicks === 0, `${cols().className} clicks=${clicks}`);
 
   // review #5's case: pane saved OPEN while the chat frame is hidden —
   // showing the chat IS the open, so the toggler must not fire.
   f.hide(); clicks = 0;
-  ui.togglePeople();
+  ui.togglePeopleHere();
   check("chat hidden + pane saved open: Tab shows chat, pane stays open", f.visible && !cols().classList.contains("side-closed") && clicks === 0, `${cols().className} clicks=${clicks}`);
 
   // and the inverse still works from hidden+closed
   cols().classList.add("side-closed"); f.hide(); clicks = 0;
-  ui.togglePeople();
+  ui.togglePeopleHere();
   check("chat hidden + pane closed: Tab shows chat AND opens the pane", f.visible && !cols().classList.contains("side-closed"), `${cols().className} clicks=${clicks}`);
 
   // the decoy must never have been touched: Tab addresses the CHAT frame's pane

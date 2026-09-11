@@ -854,7 +854,7 @@ export function openDoor({ roster = [], needsKey = false, login = null, onEnter 
 }
 
 // Tab: the people pane (the chat frame's side pane replaced the old roster)
-export function togglePeople() {
+export function togglePeopleHere() {
   const f = getFrame('chat'); const wasVisible = !!f?.visible; if (f && !wasVisible) f.show();
   // ASK the frame for the nodes chat.js built; do NOT re-derive them by class.
   // .chat-cols and .chat-side-tog are part of the PUBLIC class contract

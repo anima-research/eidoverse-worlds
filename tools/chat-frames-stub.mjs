@@ -17,6 +17,6 @@ export function makeFrame() {
 // domquad.js walks the frame registry; nothing to walk in the chat cone
 export const allFrames = () => [];
 // the real getFrame('chat') returns the chat frame once makeFrame has run
-// (frames.js:266) — ui.js togglePeople goes through it, so returning null
+// (frames.js:266) — ui.js togglePeopleHere goes through it, so returning null
 // here would make any test of that path pass without reaching the DOM.
 export const getFrame = (id) => (id === 'chat' && frameStub.body ? frameStub : null);

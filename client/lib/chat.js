@@ -690,7 +690,7 @@ const SIDE_LS = 'ew-chat-side';
 // PUBLIC classes (docs/MODDING-UI.md §3) and a local mod is a TRUSTED mod
 // handed makeFrame (mods.js:5,88), so a mod carrying them could be found
 // instead, and this file would then write side-closed/side-left and the
-// chevron onto a different node than ui.js togglePeople flips. Capturing once
+// chevron onto a different node than ui.js togglePeopleHere flips. Capturing once
 // is stronger than `:scope >` at each call site: nothing mounted later can be
 // captured.
 let sideEls = null;
