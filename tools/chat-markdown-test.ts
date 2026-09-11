@@ -22,6 +22,12 @@ plugin({
 import { GlobalRegistrator } from '@happy-dom/global-registrator';
 GlobalRegistrator.register();
 
+// Seeded BEFORE the import: chat.js reads ew-chat-fs at module load (chat.js:782),
+// not inside initChat, so a later write cannot reach it. This is what makes the
+// boot-moment assertion below possible — the saved size must be on the log the
+// instant initChat returns.
+localStorage.setItem('ew-chat-fs', '17');
+
 const { logChat, initChat, chat, recentChat, chatMarkdownOn } = await import('../client/lib/chat.js');
 const { frameStub } = await import('./chat-frames-stub.mjs');
 // MUST come from the stub graph: chat.js resolves './base.js' to
@@ -38,6 +44,13 @@ const check = (name: string, ok: boolean, detail = '') => {
 let roster: any[] = [{ id: 'keir', agent: true }, { id: 'rab' }];
 initChat({ send: () => {}, people: () => roster });
 const log = () => document.getElementById('chatlog')!;
+// THE BOOT MOMENT. applyChatPrefs runs as initChatGear's last statement; if the
+// log handle is captured after that, the saved size silently never applies on
+// first load — which is exactly how the mod-hijack fix broke on its first
+// attempt, and the +A assertion further down CANNOT see it (by then logEl is
+// set either way). This is the one instant where the two differ.
+check('the saved text size is on the log the moment initChat returns',
+  log().style.fontSize === '17px', `"${log().style.fontSize}" (seeded 17)`);
 const rows = () => [...log().children].filter((c) => !c.classList.contains('sys')) as HTMLElement[];
 const lastBody = () => rows().at(-1)!.querySelector('.body')!;
 let seq = 1;
@@ -225,6 +238,30 @@ console.log('CHAT — People Here swaps sides');
   (tog as HTMLElement).onclick!(new Event('click'));          // reopen for the decoy check
   // applySide/paintSide/applyChatPrefs must never have touched the decoy
   check('applySide writes onto the nodes initChat built, never a mod panel carrying the same classes', dCols.className === dBefore.cls && dTog.textContent === dBefore.txt, `${dCols.className} / ${dTog.textContent}`);
+
+  // applyChatPrefs was the ONE reader addressing a node by class at call time
+  // (`frame.body.querySelector('.chat-log')`), so a mod prepending .chat-log
+  // won the query: the size landed on the decoy, persisted, and the real log
+  // never changed — silently, no error. It now writes through the captured
+  // logEl. This binds the HIJACK only: the decoy must not get the size and the
+  // real log must. It does NOT bind the ordering bug the fix first shipped with
+  // (logEl captured after initChatGear, so the boot-time applyChatPrefs was a
+  // no-op) — by the time this block clicks +A, initChat has long returned and
+  // logEl is set either way. Instrumented to confirm: under that mutation the
+  // FIRST applyChatPrefs logs logEl=NULL and every later one logs logEl=set.
+  // The boot moment needs its own assertion; claiming this one covered both
+  // was wrong.
+  const dLog = document.createElement('div'); dLog.className = 'chat-log';
+  frameStub.body.prepend(dLog);                            // a mod's log, earlier sibling
+  const realLog = frameStub.body.querySelector('#chatlog') as HTMLElement;
+  const gear2 = frameStub.body.querySelector('.chat-gear') as HTMLButtonElement;
+  gear2.onclick!(Object.assign(new Event('click'), { stopPropagation() {} }));
+  const pop2 = frameStub.body.querySelector('.chat-gearpop') as HTMLElement;
+  (pop2.querySelector('[data-fs="1"]') as HTMLButtonElement).click();   // +A
+  check('the text size lands on the log initChat captured, and never on a mod .chat-log',
+    realLog.style.fontSize !== '' && dLog.style.fontSize === '',
+    `real="${realLog.style.fontSize}" decoy="${dLog.style.fontSize}"`);
+  dLog.remove();
   decoy.remove(); }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

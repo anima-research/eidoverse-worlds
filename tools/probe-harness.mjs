@@ -58,6 +58,21 @@ function armSignals() {
     process.exit(sig === 'SIGINT' ? 130 : 143);
   };
   process.once('SIGINT', onSignal); process.once('SIGTERM', onSignal);
+  // An UNCAUGHT THROW is neither signal: node prints the stack and exits
+  // without running the signal handlers, so a probe whose assertion arithmetic
+  // TypeErrors (or whose selector rejects) leaves its owned server child
+  // squatting on its port with its mkdtemp scratch dir. Same sweep, two more
+  // doors. boot-check and mic-hud-probe already reach cleanup via try/finally;
+  // panel-teardown-probe, tts-blocking-probe and mic-meter-states do not, and
+  // they come from 3ee7480 rather than this PR — fixed HERE so every probe is
+  // covered without editing three files this rung does not own.
+  // (agent review round 3)
+  const onThrow = (err) => {
+    for (const c of LIVE_CHILDREN) { try { c.kill('SIGKILL'); } catch { /* gone */ } try { rmSync(scratchOf.get(c), { recursive: true, force: true }); } catch {} }
+    console.error(err?.stack ?? String(err));
+    process.exit(1);
+  };
+  process.once('uncaughtException', onThrow); process.once('unhandledRejection', onThrow);
 }
 
 export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'dev', env: extraEnv = {} } = {}) {

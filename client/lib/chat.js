@@ -703,10 +703,15 @@ const sideEl = (k) => { const n = sideEls?.[k] ?? null; return n?.isConnected ? 
 let sideSt = { w: 150, open: false, pos: 'left' };   // people pane on the LEFT by default (live 09-07 10:55 reference HUD)
 function initSidePane() {
   try { sideSt = { ...sideSt, ...JSON.parse(localStorage.getItem(SIDE_LS) || '{}') } } catch {}
+  // Guarded like every other reader in this file: sideEl() is DESIGNED to return
+  // null ("a detached node reads as absent instead"), and these two were the
+  // only bare derefs — a null cols would have thrown inside initChat and killed
+  // chat init mid-boot. Unreachable today; inconsistent with the file's own
+  // thesis, which is the point. (agent review round 3)
   const tog = sideEl('tog');
-  tog.onclick = () => { sideSt.open = !sideSt.open; applySide(); saveSide(); };
+  if (tog) tog.onclick = () => { sideSt.open = !sideSt.open; applySide(); saveSide(); };
   const grip = sideEl('grip');
-  grip.addEventListener('pointerdown', (e) => {
+  grip?.addEventListener('pointerdown', (e) => {
     if (!sideSt.open) return;
     e.preventDefault();
     e.stopPropagation();   // the frame's root drags on body pointerdown; the grip owns this one (live, 09-04: it moved the whole window)
@@ -758,8 +763,14 @@ const esc = (v) => String(v).replace(/[&<>"]/g, (c) => (
 // sits on. Small popover; both persisted.
 const CFS_LS = 'ew-chat-fs';
 function applyChatPrefs() {
-  const log = frame?.body.querySelector('.chat-log');
-  if (log) log.style.fontSize = `${chatFs}px`;
+  // logEl, NOT a .chat-log class lookup: this is the one reader in the file that
+  // addressed a node by class at call time, and a mod prepending .chat-log into
+  // the chat body (which MODDING-UI §3 invites) won the query — the size landed
+  // on the decoy, persisted to localStorage, and the real log never changed,
+  // with no error. §3 promises "the client addresses its own nodes by the
+  // handles it captured when it wrote them"; this line was the counterexample.
+  // (agent review round 3)
+  if (logEl) logEl.style.fontSize = `${chatFs}px`;
   sideEl('cols')?.classList.toggle('side-left', sideSt.pos === 'left');
 }
 let gearToggle = null, gearAnchor = null, gearOpen = () => false;
@@ -865,10 +876,16 @@ export function initChat({ send, whisper, typing, people }) {
   // sides already hold it via getFrame('chat'), so neither file imports the
   // other.
   frame.sidePane = (k) => sideEl(k);
+  // BEFORE initChatGear: its last statement calls applyChatPrefs(), which now
+  // writes through the captured logEl. Assigned after, the saved text size
+  // silently did nothing on first load — I traded a mod-hijack bug for a
+  // no-op, and no suite noticed because nothing bound the font size. The
+  // markup is written at frame.body.innerHTML above, so #chatlog is queryable
+  // here. (self-caught, agent review round 3)
+  logEl = frame.body.querySelector('#chatlog');
   initSidePane();
   initChatGear();
 
-  logEl = frame.body.querySelector('#chatlog');
   inputEl = frame.body.querySelector('#chatline');
   acBox = frame.body.querySelector('#chat-ac');
   closeAC();

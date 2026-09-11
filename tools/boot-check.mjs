@@ -116,7 +116,14 @@ try {
     if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) pairs.push(`${a.id} [${a.x},${a.y},${a.right},${a.bottom}] × ${b.id} [${b.x},${b.y},${b.right},${b.bottom}]`);
   }
   if (pairs.length) { fail(`frames overlap at ${s.vw}x${s.vh} (a covered control cannot be clicked):\n  ` + pairs.join('\n  ')); }
-  const off = (s.rects ?? []).filter((r) => r.right > s.vw + 1 || r.bottom > s.vh + 1);
+  // The PRODUCT promises right <= innerWidth - 8 (frames.js clamp, snapPosition,
+  // and the resize rider all use the same 8px margin). Checking only
+  // `right > vw + 1` left a 9px band where a frame violates the clamp and still
+  // passes — so this could never catch the most likely way that invariant
+  // breaks: someone dropping the -8. Bind the promise, keeping the +1 sub-pixel
+  // allowance. (agent review round 3)
+  const MARGIN = 8;
+  const off = (s.rects ?? []).filter((r) => r.right > s.vw - MARGIN + 1 || r.bottom > s.vh - MARGIN + 1);
   if (off.length) {
     fail(`frames unreachable at ${s.vw}x${s.vh} (overflow:hidden — no scrolling to them):\n  `
       + off.map((r) => `${r.id} x=${r.x} y=${r.y} right=${r.right} bottom=${r.bottom}`).join('\n  '));
