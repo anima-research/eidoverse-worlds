@@ -459,7 +459,14 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
      never off-screen, it was being crushed. `flex: 0 0 auto` makes each tab its
      natural width (all 58 · mentions 69 · system 58 = 185px), so a narrower
      panel overflows the scroller and the arrows have somewhere to go. */
-  flex: 0 0 auto; padding: 5px 9px 6px; font-size: var(--fs-xs);
+  /* GROW to share the strip, but never SHRINK below the label. `flex: 1 1 0`
+     crushed three tabs into 181px so the row never overflowed and the arrows had
+     nothing to scroll; my first fix, `flex: 0 0 auto`, cured the crushing and
+     took the growing with it — R, 2026-09-11: "They're not being centered in the
+     Chat window anymore and remain small no matter how much space there is."
+     `min-width: max-content` is the floor that flex-basis 0 never gave us: the
+     tab may stretch into spare room and stops exactly at its own text. */
+  flex: 1 1 auto; min-width: max-content; padding: 5px 9px 6px; font-size: var(--fs-xs);
   display: flex; align-items: center; justify-content: center; gap: 4px;
   /* THE UNDERLINE LIVES INSIDE THE BOX. `margin-bottom: -1px` hangs the border
      1px past the tab, and .tabscroll is `overflow-x: auto` — an overflow box
@@ -470,7 +477,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
      R, 2026-09-11: "the tabs in the Profile panel have the highlight underneath,
      but the tabs in the Chat pane do not ... in which direction?" — hers, the
      Profile direction. */
-  background: none; border: none; border-bottom: 2px solid transparent;
+  background: none; border: none; border-bottom: 1px solid transparent;
   border-radius: 6px 6px 0 0;
   color: var(--dim); white-space: nowrap; cursor: pointer;
 }
@@ -821,7 +828,7 @@ body.arranging #dock #hud.emark {
 .pf-pop-row:hover { background: rgb(255 255 255 / .06); }
 .pf-pop-row.on { background: var(--well); color: var(--brand); font-weight: 600; }
 .pf-tabs { display: flex; gap: 2px; margin: 10px 0 8px; border-bottom: 1px solid var(--edge); }
-.pf-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px 7px; border: none; border-bottom: 2px solid transparent; background: none; color: var(--dim); font-size: var(--fs-sm); cursor: pointer; border-radius: 6px 6px 0 0; }   /* 2px INSIDE the box, same as the chat strip: one tab mechanism, not two (R, 2026-09-11: "Should we consolidate style here") */
+.pf-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px 7px; border: none; border-bottom: 1px solid transparent; background: none; color: var(--dim); font-size: var(--fs-sm); cursor: pointer; border-radius: 6px 6px 0 0; }   /* 2px INSIDE the box, same as the chat strip: one tab mechanism, not two (R, 2026-09-11: "Should we consolidate style here") */
 .pf-tab svg { opacity: .8; color: var(--icon); }          /* the section-head recipe: desaturated brand at .8 when idle (live, 09-05) */
 /* THE PROFILE TABS NEVER OPTED OUT OF THE GLOBAL BUTTON CHAIN, and it showed:
    measured with a real mouse hover, `.pf-tab:hover` painted NOTHING while
