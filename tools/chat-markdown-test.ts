@@ -176,11 +176,15 @@ console.log('CHAT — the people pane swaps sides');
   check('...and the REAL head is the one that got the update (F4)',
     realSide.querySelector(':scope > .chat-side-head')!.textContent === '3 others here',
     realSide.querySelector(':scope > .chat-side-head')!.textContent!);
-  // F4's observable lives in applySide, which WRITES through the captured pane
-  // (classList 'closed' + style.width). paintSide only truthiness-checks it, so
-  // a stolen `side:` capture is silent there but loud here.
+  // applySide is what WRITES through the captured pane (classList 'closed' +
+  // style.width); paintSide only truthiness-checks it. Worth pinning on its own
+  // merits — but note what it does NOT cover: unbounding the `side:` capture is
+  // an EQUIVALENT mutation, because `cols` is created by the innerHTML write one
+  // statement above the capture block, so nothing can be inside it at that
+  // instant. That equivalence holds only while capture stays in the block that
+  // writes the markup; move it later and this needs a real binding.
   (tog as HTMLElement).onclick!(new Event('click'));          // close
-  check('closing writes to the REAL pane, not a mod\'s (F4)',
+  check('applySide writes through the CAPTURED pane, never a mod\'s .chat-side',
     realSide.classList.contains('closed') && !(nestedMod.querySelector('.chat-side') as HTMLElement).classList.contains('closed'),
     `real=${realSide.className} decoy=${(nestedMod.querySelector('.chat-side') as HTMLElement).className}`);
   (tog as HTMLElement).onclick!(new Event('click'));          // re-open for later blocks
