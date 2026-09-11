@@ -229,7 +229,7 @@ const DEFAULT_LAYOUT = {
   settings: { x: -8,  y: 381, w: 407, h: 443, hidden: true },
   profile:  { x: 48,  y: 46,  w: 505, h: 452, hidden: true },
   debug:    { x: -414, y: 8,  w: 342, h: 453, hidden: true },
-  emotes:   { x: 'center', y: -10, hidden: false },  // one bar across the bottom, OPEN by default (live 09-07 10:55 reference HUD); the bar sizes itself
+  emotes:   { x: 'center', y: -10, h: 32, hidden: false },  // one bar across the bottom, OPEN by default (live 09-07 10:55 reference HUD); the bar sizes its WIDTH itself (emotebar.js snapTo) but ROW_H is fixed — carried here so fitsDefaults stops counting the bar as zero-height (round 4)
 };
 // Can this viewport hold the hand-arranged default at all? Derived from
 // DEFAULT_LAYOUT rather than a hardcoded breakpoint, so it stays true if the
@@ -241,11 +241,26 @@ const DEFAULT_LAYOUT = {
 // into world's stack and no rect test can see it). CHROME is the title bar a
 // body height does not include.
 const CHROME = 26;
+// The open defaults are EDGE-ANCHORED ON OPPOSITE CORNERS — world x:-8 y:8
+// (top-right), chat x:10 y:-10 (bottom-left) — so they never share a column
+// and summing their heights modelled an arrangement that does not exist. That
+// over-reach made 1280x720 and 800x700 report "cannot fit", closing the world
+// panel and the emote bar on ordinary laptops and split windows; and because
+// the LAYOUT_VERSION bump in this same PR purges saved layouts once, the
+// "a saved layout always wins" escape hatch could not protect anyone on the
+// upgrade. (agent review round 4; R handed me the call, 2026-09-11.)
+//
+// What actually has to fit: the widest open panel across, and the TALLEST open
+// panel plus the bottom bar down — the bar is the one thing every panel shares
+// a column with. Width alone was the other candidate and is wrong: it opens
+// 844x390 (phone landscape), where a 363px world plus the bar cannot coexist.
 function fitsDefaults() {
   const open = Object.values(DEFAULT_LAYOUT).filter((d) => d.hidden === false);
+  const box = (d) => (d.h ?? 0) + CHROME;
+  const bar = DEFAULT_LAYOUT.emotes.hidden === false ? box(DEFAULT_LAYOUT.emotes) : 0;
   const widest = Math.max(...open.map((d) => d.w ?? 0));
-  const stacked = open.reduce((t, d) => t + (d.h ?? 0) + CHROME, 0);
-  return innerWidth - 16 >= widest && innerHeight - 16 >= stacked;
+  const tallest = Math.max(...open.filter((d) => d !== DEFAULT_LAYOUT.emotes).map(box), 0);
+  return innerWidth - 16 >= widest && innerHeight - 16 >= tallest + bar;
 }
 
 export function makeFrame(id, opts = {}) {

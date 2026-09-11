@@ -225,6 +225,25 @@ console.log("FRAMES — a viewport too small for the default arrangement opens o
   check("...and CHAT is exempt: the one pane that carries the composer still opens",
     chat.state.hidden === false, JSON.stringify(chat.state));
 
+  // The case the round-4 rewrite exists for: an ORDINARY laptop must NOT be
+  // auto-minimized. The old predicate summed every open default's height as if
+  // they stacked (world 363 + chat 307 + bar), which needed 764px and so closed
+  // the world panel on 1280x720 and on any split window. world is anchored
+  // top-right and chat bottom-left — they never share a column.
+  (window as any).innerWidth = 1280; (window as any).innerHeight = 720;
+  for (const id of ["awld", "awlc"]) localStorage.removeItem(`ew-frame-${id}`);
+  const laptopWorld = measurable(makeFrame("awld", { title: "awld", w: 407, h: 363, hidden: false }));
+  check("1280x720 is a viewport the arrangement FITS: a hidden:false default opens",
+    laptopWorld.state.hidden === false, JSON.stringify(laptopWorld.state));
+
+  // ...and phone LANDSCAPE must still minimize: 390px of height cannot hold a
+  // 363px panel plus the bar. Width alone would have opened this.
+  (window as any).innerWidth = 844; (window as any).innerHeight = 390;
+  localStorage.removeItem("ew-frame-awll");
+  const landscape = measurable(makeFrame("awll", { title: "awll", w: 407, h: 363, hidden: false }));
+  check("844x390 (phone landscape) still minimizes — height, not width, is what fails there",
+    landscape.state.hidden === true, JSON.stringify(landscape.state));
+
   (window as any).innerWidth = vw0; (window as any).innerHeight = vh0;
   window.dispatchEvent(new Event("resize"));
 }
