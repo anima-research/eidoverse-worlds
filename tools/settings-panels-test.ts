@@ -208,8 +208,13 @@ console.log('BODIES — the list populates on avatar-worn, which setMe emits');
   bus.emit('avatars', net.avatars);
   const pane = () => b.querySelector('.pf-pane[data-tab=avatars] .pf-bodies') as HTMLElement;
   check('the avatars tab hosts the bodies list', !!pane());
-  check('the profile HEADER names the worn body (getMyAvatarName, not a CONFIG field)', /wearing <b>claude<\/b>/.test(document.body.innerHTML), (document.body.innerHTML.match(/wearing <b>[^<]*<\/b>/) ?? ['(no header)'])[0]);
-  check('wearing shows the current name', pane().querySelector('.sp-f-info .sp-info')?.textContent === 'claude', pane().querySelector('.sp-f-info .sp-info')?.textContent ?? '');
+  // NO BODY IS IN THE SCENE in this block — the suite never calls setMe. That
+  // is exactly the state R photographed: the header said "wearing claude"
+  // while the list below said "nothing worn yet". getMyAvatarName() is INTENT
+  // (module-load default, never cleared on a failed load); getMe() is fact.
+  // These two assertions used to encode the bug. (2026-09-11)
+  check('with no body in the scene the HEADER says None, not the intended name', /wearing <b>None<\/b>/.test(document.body.innerHTML), (document.body.innerHTML.match(/wearing <b>[^<]*<\/b>/) ?? ['(no header)'])[0]);
+  check("...and the bodies panel agrees — no 'claude' beside 'nothing worn yet'", pane().querySelector('.sp-f-info .sp-info')?.textContent === 'None', pane().querySelector('.sp-f-info .sp-info')?.textContent ?? '');
   check('nothing worn yet', pane().querySelector('.sp-empty')?.textContent?.startsWith('nothing worn yet') === true, pane().querySelector('.sp-list')?.textContent ?? '');
   const e0 = emitted.length;
   mybody.announceWorn('fox', 'library/fox.vrm');

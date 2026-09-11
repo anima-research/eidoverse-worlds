@@ -305,12 +305,17 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
   // unlatched path would produce, and asserting against it passed either way
   // (round 2: deleting markMoved left this green).
   const wouldCentre = Math.round((innerWidth - bar.state.w) / 2);
-  // BINDS THE PAIR, not one line: the resize finish is a DOCUMENT-level
-  // pointerup listener, so it fires on a title-bar drag too and its
-  // f.markMoved?.() latches as well. Deleting either call alone leaves this
-  // green; deleting both turns it red (58/1, placed 120 -> 222). Disclosed
-  // rather than claimed as per-line coverage. (round 2)
-  check("...and fit() does NOT re-centre it — the hand beats the anchor (binds both latch sites)",
+  // BINDS frames.js:181 ONLY — the RESIZE-finish latch, not the drag's own.
+  // Measured (round 5, correcting the round-2 note that stood here): deleting
+  // the drag-end markMoved() alone leaves this GREEN at 61/0; deleting the
+  // resize-finish one alone turns it RED at 60/1. The reason is the capture
+  // phase — the resize handler registers
+  // `document.addEventListener('pointerup', finish, true)`, so a title-bar
+  // drag's pointerup reaches finish() (and its f.markMoved?.()) BEFORE the
+  // drag's own up() runs. So the drag-end call at frames.js:454 is the line
+  // nothing binds. Left in place: it is correct, and removing a guard because
+  // no test reaches it is the wrong direction.
+  check("...and fit() does NOT re-centre it — the hand beats the anchor (binds the RESIZE latch, frames.js:181)",
     bar.state.x === placed && bar.state.x !== wouldCentre,
     `placed ${placed} -> ${bar.state.x}; anchor would give ${wouldCentre}`);
 

@@ -217,19 +217,58 @@ check("the wrench has a row while gated open", !!row("edit"));
   // itself when build rights arrive, with a manual unpin still winning — so it
   // must fire on closed->open, never on every repaint.
   const wasGate = editGate;
-  const isPinned = () => (savedPins() ?? []).includes("edit");
-  editGate = false; bus.emit("your-rights");          // settle the remembered state
-  pin("edit")!.click();                                // start from UNPINNED
+  // OBSERVE WHAT THE PRODUCT OBSERVES. savedPins() reads localStorage, which is
+  // null until something calls savePins() — but `pins` already contains 'edit'
+  // from DEFAULT_PINS at block start. So a storage-based probe reports
+  // "unpinned" while the product considers it pinned, the opening unpin is
+  // skipped, and the grant finds nothing to do. The rail is the honest seam:
+  // paintDock hides an action button iff `!active && !pins.has(id)`
+  // (ui.js:553), so with the gate open and the mode off, visible == pinned.
+  // (Three instrumented runs to find this; the storage probe was mine.)
+  const isPinned = () => { editGate = true; bus.emit("frames"); return btn("edit")!.hidden === false; };
+  // Re-QUERY the pin button every time: emenuKey() omits a gated-closed action
+  // entry, so flipping editGate changes the key and buildEMenu rebuilds every
+  // row — a captured element goes stale across exactly the emits driven here.
+  const pinNow = () => menu().querySelector(`.mpin[data-pin="edit"]`) as HTMLButtonElement | null;
+
+  editGate = true; bus.emit("your-rights");            // settle: granted, remembered
+  if (isPinned()) { pinNow()!.click(); }               // start from UNPINNED, whatever the default was
   check("...starting unpinned", !isPinned(), JSON.stringify(savedPins()));
+
+  editGate = false; bus.emit("your-rights");           // REVOKE
   editGate = true; bus.emit("your-rights");            // THE GRANT
   check("a rights grant auto-pins the wrench", isPinned(), JSON.stringify(savedPins()));
 
-  // the override: unpin by hand, then repaint at the SAME level — it must stay off
-  pin("edit")!.click();
+  // R asked for BOTH verbs: "gray out AND UNPIN ... and it activates and pins
+  // automatically when you do get it". Shipping only the pin left a demoted
+  // user with a dead wrench welded to a GLOBAL pin list. (round 5)
+  editGate = false; bus.emit("your-rights");
+  check("...and losing the rights unpins it again", !isPinned(), JSON.stringify(savedPins()));
+
+  // the override: re-grant, unpin by hand, repaint at the SAME level
+  editGate = true; bus.emit("your-rights");
+  pinNow()!.click();
   check("...and a manual unpin actually unpins it", !isPinned(), JSON.stringify(savedPins()));
   bus.emit("your-rights");
   check("...and the next repaint does NOT undo the manual unpin (edge, not level)",
     !isPinned(), JSON.stringify(savedPins()));
+
+  // and a dead row's pin must be dead too — the VR row's own treatment
+  editGate = false; bus.emit("your-rights");
+  check("a gated-closed row's pin is disabled, not merely un-hoverable",
+    pinNow()?.disabled === true, `disabled=${pinNow()?.disabled}`);
+
+  // NEVER `on` AND `dead`. .on's brand ink and 2px edge-bar come later in the
+  // sheet at equal specificity, so a dead+on button rendered as "active but
+  // broken": 42% opacity in full brand colour. Reachable in the product —
+  // setEditMode has no rights check and KeyB is ungated, so a builder can
+  // enter edit mode and then lose rights mid-session. (round 5)
+  editOn = true; bus.emit("frames");
+  check("a dead action button never also paints as active",
+    btn("edit")!.classList.contains("dead") && !btn("edit")!.classList.contains("on"),
+    `dead=${btn("edit")!.classList.contains("dead")} on=${btn("edit")!.classList.contains("on")}`);
+  editOn = false; bus.emit("frames");
+
   editGate = wasGate; bus.emit("frames");
 }
 

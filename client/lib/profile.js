@@ -5,7 +5,7 @@
 
 import { CONFIG, bus, colorFor } from './base.js';
 import { registerXRPanel } from './xrpanels.js';
-import { getMyAvatarName } from './mybody.js';
+import { getMyAvatarName, getMe } from './mybody.js';
 import { bodiesFields, bodiesDispatch, mountBodies } from './bodies.js';
 import { presence, setPresence, STATES } from './presence.js';
 import { renderDOM } from './panels.js';
@@ -61,7 +61,15 @@ const PRESENCE_WORD = { present: 'present · here and active', away: 'away · id
 function paint() {
   if (!frame?.visible && frame?.body.dataset.painted) return;
   frame.body.dataset.painted = '1';
-  const avatar = getMyAvatarName() || 'default';   // the body's roster name (mybody.js); CONFIG carries no avatar
+  // getMyAvatarName() is INTENT, not fact: it is set at module load from
+  // ?avatar= / localStorage / the literal 'claude', and it never clears when a
+  // body fails to load. So the header said "wearing claude" while the bodies
+  // list two tiles down said "nothing worn yet" and the scene held no avatar —
+  // R, 2026-09-11, with the screenshot. getMe() is the real signal (mybody.js:
+  // set only after makeAvatar resolves). Name it when there IS a body; say
+  // None when there isn't. Both panels repaint on `avatar-worn`, which fires
+  // right after setMe on the success path, so a late body is not left stale.
+  const avatar = getMe() ? (getMyAvatarName() || 'default') : 'None';
   const st = presence();
   frame.body.innerHTML = `
     <div class="pf-id">

@@ -8,7 +8,7 @@ import { bus } from './base.js';
 import { net } from './net.js';
 import { renderDOM } from './panels.js';
 import { switchAvatar } from './palette.js';
-import { getMyAvatarName } from './mybody.js';
+import { getMyAvatarName, getMe } from './mybody.js';
 
 // MY avatars = the bodies you have actually worn (live, 09-05: the world offers a
 // wardrobe to try on — World›avatar — and only what you've worn is yours).
@@ -31,7 +31,10 @@ function fields() {
   const roster = net.avatars ?? [];
   const mine = worn.filter((n) => roster.some((a) => a.name === n) || n === cur);
   return [
-    { t: 'info', label: 'wearing', value: cur ?? '—' },
+    // None, not '—', and only when a body is actually in the scene: `cur` is
+    // the name we INTEND to wear and survives a failed load, which is how this
+    // row and the list below it came to contradict each other. (R, 2026-09-11)
+    { t: 'info', label: 'wearing', value: getMe() ? (cur ?? 'None') : 'None' },
     { t: 'list', label: 'my avatars', empty: 'nothing worn yet — try one from World › avatar',
       rows: mine.map((n) => {
         const a = roster.find((x) => x.name === n);

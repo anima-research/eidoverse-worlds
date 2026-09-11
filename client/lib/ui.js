@@ -440,7 +440,15 @@ export function initDock(entries) {
       if (!e.action || !e.gate) continue;
       const now = !!e.gate(), was = gateWas.get(e.id);
       gateWas.set(e.id, now);
-      if (now && was === false && !pins.has(e.id)) { pins.add(e.id); savePins(); }
+      // BOTH VERBS. R asked to "gray out AND UNPIN ... when you don't have
+      // builder status, and it activates and pins to the dock automatically
+      // when you do get it" — I quoted that sentence in the comment above and
+      // shipped only the pin half (round 5). Pins are ONE GLOBAL key
+      // (ew-dock-pins), not per-world, so a single grant anywhere welded a
+      // dead wrench to the rail in every world after it.
+      if (was === now) continue;                       // level, not edge
+      if (now) { if (!pins.has(e.id)) { pins.add(e.id); savePins(); } }
+      else if (pins.has(e.id)) { pins.delete(e.id); savePins(); }
     }
     paintDock();
   });
@@ -543,7 +551,10 @@ function paintDock() {
       b.disabled = !open;
       b.title = open ? id : `${id} — needs build rights in this world`;
       b.hidden = !entry.active?.() && !pins.has(id);
-      b.classList.toggle('on', !!entry.active?.());
+      // never `on` AND `dead`: .on's brand ink and edge-bar come later in the
+      // sheet at equal specificity, so the pair rendered as "active but
+      // broken" — 42% opacity in full brand colour. (round 5)
+      b.classList.toggle('on', open && !!entry.active?.());
       continue;
     }
     const open = !!getFrame(id)?.visible;
@@ -737,7 +748,12 @@ function buildEMenu(m) {
       const pin = document.createElement('button');
       pin.className = 'mpin'; pin.dataset.pin = id;
       pin.innerHTML = fsvg('push-pin', 13);
-      pin.onclick = (e) => { e.stopPropagation(); pins.has(id) ? pins.delete(id) : pins.add(id); savePins(); paintDock(); paintEMenu(); };
+      // Dead row, dead pin — the same two lines the VR row above uses. The
+      // CSS `pointer-events: none` only stops a hover; a programmatic or
+      // assistive activation still fired the handler and pinned a rail icon
+      // that is dead on arrival. (round 5)
+      if (!open) { pin.disabled = true; pin.title = `nothing to pin until you have build rights`; }
+      else pin.onclick = (e) => { e.stopPropagation(); pins.has(id) ? pins.delete(id) : pins.add(id); savePins(); paintDock(); paintEMenu(); };
       row.appendChild(pin);
       m.appendChild(row);
       continue;
