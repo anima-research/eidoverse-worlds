@@ -65,7 +65,7 @@ console.log("DOCK — initDock");
 initDock([
   { id: "chat", label: "💬" },
   { id: "world", label: "🧱" },
-  { id: "who", label: "👥" },          // upstream lists it; no frame stands behind it here
+  { id: "nofrx", label: "👥" },        // synthetic: a declared entry with NO frame and NO pin
   { id: "emotes", label: "👋" },
   { id: "debug", label: "🐞" },
   { id: "edit", label: "🔧", icon: "wrench", last: true, action: () => { editFired++; editOn = !editOn; }, active: () => editOn, gate: () => editGate },
@@ -77,10 +77,10 @@ bus.emit("frames");
 check("∃ leads the rail", dock().firstElementChild?.id === "hud");
 check("profile leads the buttons; the wrench closes the list; the grip is last",
   order()[0] === "profile" && order()[order().length - 1] === "edit" && dock().lastElementChild?.classList.contains("dock-grip"), order().join());
-check("dock order follows the entry list", order().join() === "profile,chat,world,who,emotes,debug,edit", order().join());
+check("dock order follows the entry list", order().join() === "profile,chat,world,nofrx,emotes,debug,edit", order().join());
 check("built-ins are pinned by default: chat's button shows while its frame is closed",
   !getFrame("chat")!.visible && btn("chat")!.hidden === false);
-check("an entry with no frame and no pin ('who') is hidden", btn("who")!.hidden === true);
+check("an entry with no frame and no pin is hidden", btn("nofrx")!.hidden === true);
 check("a gated action entry is hidden while its gate is closed", btn("edit")!.hidden === true);
 editGate = true; bus.emit("frames");
 check("...and shows once the gate opens (pinned by default)", btn("edit")!.hidden === false);
@@ -155,7 +155,7 @@ document.getElementById("hud")!.click();
 check("∃ click opens it and marks the body arranging", menu().hidden === false && document.body.classList.contains("arranging"));
 check("voice rows lead: mic, ears, VR", ["glyph:mic", "glyph:ear", "glyph:xr"].every((k) => !!row(k)));
 check("VR row is dead when no headset is sensed (disabled row + disabled pin)", row("glyph:xr")!.disabled && pin("glyph:xr")!.disabled);
-check("every window with a frame has a row; 'who' (no frame) has none", ["chat", "world", "emotes", "debug", "modx"].every((id) => !!row(id)) && !row("who"));
+check("every window with a frame has a row; a frameless entry has none", ["chat", "world", "emotes", "debug", "modx"].every((id) => !!row(id)) && !row("nofrx"));
 check("the wrench has a row while gated open", !!row("edit"));
 check("the lock row and reset row close the menu", !!menu().querySelector(".mrow[data-lock]") && /reset layout/.test(menu().textContent!));
 row("chat")!.click();

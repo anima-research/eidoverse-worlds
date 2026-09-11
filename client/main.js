@@ -137,7 +137,6 @@ initEmoteBar();
 initDock([
   { id: 'chat', label: '💬' },
   { id: 'world', label: '🧱' },
-  { id: 'who', label: '👥' },
   { id: 'emotes', label: '👋' },
   { id: 'debug', label: '🐞' },
 ]);
