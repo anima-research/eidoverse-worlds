@@ -66,7 +66,11 @@ check("stale ew-frame-* saves are gone after the import",
   localStorage.getItem("ew-frame-world") === null && localStorage.getItem("ew-frame-zzz") === null,
   `world=${localStorage.getItem("ew-frame-world")} zzz=${localStorage.getItem("ew-frame-zzz")}`);
 const stamped = localStorage.getItem("ew-frame-layout-ver");
-check("the current version is stamped", !!stamped && stamped !== "1999-01-01-stale", String(stamped));
+// Vacuous until 2026-09-11: it compared against "1999-01-01-stale" after the
+// fixture had switched to seeding the REAL previous literal, so no code path
+// could ever produce the value it excluded. Assert the seeded one is gone.
+check("the current version is stamped, replacing the seeded previous one",
+  !!stamped && stamped !== "2026-09-07-rightdock", String(stamped));
 check("a non-frame key (ew-ui-locked) survives the purge", localStorage.getItem("ew-ui-locked") === "0");
 {
   const world = makeFrame("world", { title: "world", x: -10, y: 52, w: 232, h: 300 });
@@ -212,6 +216,15 @@ console.log("FRAMES — a viewport too small for the default arrangement opens o
   check("...but a SAVED hidden:false stays visible: the user's own layout is never overridden",
     saved.state.hidden === false, JSON.stringify(saved.state));
 
+  // The suite headline is "opens only chat" and nothing asserted CHAT (agent
+  // review, 2026-09-11): both frames above are synthetic ids, so deleting the
+  // `id !== 'chat'` exemption — shipping a world with NOTHING open on a phone —
+  // left this block green. Assert the promise itself, on the real id.
+  localStorage.removeItem("ew-frame-chat");
+  const chat = measurable(makeFrame("chat", { title: "chat" }));
+  check("...and CHAT is exempt: the one pane that carries the composer still opens",
+    chat.state.hidden === false, JSON.stringify(chat.state));
+
   (window as any).innerWidth = vw0; (window as any).innerHeight = vh0;
   window.dispatchEvent(new Event("resize"));
 }
@@ -242,6 +255,17 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
   bar._fit();
   check("...and fit() does NOT re-centre it — the hand beats the anchor",
     bar.state.x <= 20, `${placed} -> ${bar.state.x}`);
+
+  // The RELOAD half — `moved = !!saved` — which is the half the commit is named
+  // for and which the drag above never exercises (the drag arms the latch
+  // itself). A frame built from a PREVIOUS session's save must already count as
+  // hand-placed, before anything touches it. (agent review, 2026-09-11)
+  localStorage.setItem("ew-frame-awcy", JSON.stringify({ x: 18, y: 600, w: 352, h: 32, hidden: false }));
+  const reloaded = measurable(makeFrame("awcy", { title: "awcy", x: "center", y: -10, w: 352, h: 32 }));
+  reloaded.show();
+  reloaded._fit();
+  check("a frame restored from a previous session is hand-placed from the start",
+    reloaded.state.x === 18, JSON.stringify(reloaded.state));
 
   (window as any).innerWidth = vw0; (window as any).innerHeight = vh0;
   window.dispatchEvent(new Event("resize"));

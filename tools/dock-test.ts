@@ -141,10 +141,17 @@ console.log("DOCK — the rail clears the joystick (mobile landscape)");
   setVp(844, 390);
   check("touch, landscape: the rail cannot clear the stick -> not left", dockEdgeFitsLeft() === false);
 
+  // This assertion used to read back its own localStorage.setItem and would have
+  // passed with ui.js deleted (agent review, 2026-09-11). Drive the real path:
+  // initDock -> loadDockEdge -> applyDockEdge, and read the edge off the DOM.
   localStorage.setItem("ew-dock-pos", JSON.stringify({ edge: "right", along: 40 }));
-  check("a DELIBERATE drag still wins: ew-dock-pos is not overridden",
-    JSON.parse(localStorage.getItem("ew-dock-pos")!).edge === "right");
+  window.dispatchEvent(new Event("resize"));          // initDock's own listener re-applies the edge
+  check("a DELIBERATE drag still wins: a stored ew-dock-pos beats the joystick rule",
+    dock().dataset.edge === "right", `dataset.edge=${dock().dataset.edge}`);
   localStorage.removeItem("ew-dock-pos");
+  window.dispatchEvent(new Event("resize"));
+  check("...and with no stored edge, the rule applies again: landscape -> top",
+    dock().dataset.edge === "top", `dataset.edge=${dock().dataset.edge}`);
 
   document.body.classList.remove("touch");
   setVp(vw0, vh0);

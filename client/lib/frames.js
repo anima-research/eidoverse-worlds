@@ -178,7 +178,8 @@ document.addEventListener('pointerdown', (e) => {
     captureEl?.removeEventListener('lostpointercapture', finish);
     document.body.style.cursor = '';
     _resizing = false;
-    f.save();
+    f.markMoved?.(); f.save();             // a resize is deliberate too
+
   };
   // capture keeps the stream coming while the pointer is outside the window;
   // lostpointercapture is then one more road to the same finish
@@ -277,6 +278,15 @@ export function makeFrame(id, opts = {}) {
 
   // ---- state
   const saved = readSaved(id);
+  // TRUE once the USER has placed this frame — set at the two deliberate acts
+  // (drag end, resize end), never by save() itself. save() is also called by
+  // show()/hide(), and latching there made `moved` mean "was persisted": opening
+  // the right-docked debug panel once was enough to strand it at its old x on
+  // the next maximize — verbatim the 09-07 bug these guards exist to prevent.
+  // Declared HERE, above the api object and fit(), because a const in the
+  // temporal dead zone throws at construction — node --check cannot see it.
+  let moved = !!saved;
+  const markMoved = () => { moved = true; };
   const state = {
     x: saved?.x ?? resolveAnchor(opts.x, w, innerWidth),
     y: saved?.y ?? resolveAnchor(opts.y, h, innerHeight),
@@ -295,7 +305,7 @@ export function makeFrame(id, opts = {}) {
     // to whole tiles). _fit is here because writing _state and calling _paint
     // alone BYPASSES the viewport clamp: the bar reflowed to three rows and
     // painted itself past the bottom edge (#185 review, 800x700).
-    _state: state, _paint: () => paint(), _fit: () => fit(),
+    _state: state, _paint: () => paint(), _fit: () => fit(), _markMoved: markMoved,
     get state() { return { ...state }; },
     show() {
       state.hidden = false;
@@ -324,6 +334,7 @@ export function makeFrame(id, opts = {}) {
     },
     raise,
     resetLayout() {
+      moved = false;                       // back under the anchors, or reset only half-works
       localStorage.removeItem(LS(id));
       Object.assign(state, {
         x: resolveAnchor(opts.x, w, innerWidth),
@@ -359,9 +370,7 @@ export function makeFrame(id, opts = {}) {
   // emote bar "will always pop sideways to the right regardless if there's room
   // for it" — snapTo calls _fit() 180ms after every drag settles, and fit()
   // re-centred an x:'center' frame each time.)
-  let moved = !!saved;
   function save() {
-    moved = true;
     localStorage.setItem(LS(id), JSON.stringify(state));
   }
   function paint() {
@@ -412,7 +421,7 @@ export function makeFrame(id, opts = {}) {
       head.removeEventListener('pointermove', move);
       head.removeEventListener('pointerup', up);
       root.classList.remove('lifting');
-      save();
+      markMoved(); save();                 // a drag IS the deliberate act
     };
     head.addEventListener('pointermove', move);
     head.addEventListener('pointerup', up);
@@ -440,7 +449,7 @@ export function makeFrame(id, opts = {}) {
   // one document listener serves every frame, which is the only way to grab
   // OUTSIDE a frame's border without an overlay stealing its content's events
   // (the ::before halo painted over scrollbars and buttons).
-  if (resizable) _resizables.push({ root, state, minW, minH, paint, save, raise,
+  if (resizable) _resizables.push({ root, state, minW, minH, paint, save, raise, markMoved,
     active: () => !locked && !state.hidden });
 
   root.addEventListener('pointerdown', raise);
