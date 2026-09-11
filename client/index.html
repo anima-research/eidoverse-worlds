@@ -868,6 +868,11 @@ body.arranging #dock .dock-grip { display: grid; }
      ON    full-brightness brand-tinted icon + a 2px brand bar on the edge that
            faces the viewport (it points at the window it opened); no well, no ring
      ON+HOVER  a whisper of well so about-to-close still differs from about-to-open */
+/* a gated action (the edit wrench without build rights): listed, not offered —
+   the same vocabulary #emenu .mrow.dead uses for an unsensed headset */
+#dock button:not(.dock-grip).dead { opacity: .42; cursor: not-allowed; }
+#dock button:not(.dock-grip).dead:hover { color: inherit; background: none; }
+
 #dock button.on {
   position: relative;
   color: var(--brand);   /* the accent itself — one ink with the ∃ and the live mic/ear (live, 09-04 23:59) */

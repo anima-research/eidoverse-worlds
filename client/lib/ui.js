@@ -304,6 +304,9 @@ export const escapeHtml = (v) => String(v).replace(/[&<>"]/g, (c) => (
 // is OPEN or while it is PINNED; otherwise it hides. Pinning lives in the
 // ∃ menu. Layout lock also lives there — the rail carries only windows.
 const PINS_LS = 'ew-dock-pins';
+// last seen gate state per action entry — the auto-pin fires on the EDGE, not
+// the level, so a manual unpin is not undone by the next repaint
+const gateWas = new Map();
 let pins = new Set();
 // every panel starts pinned to the dock; unpinning is the personal choice, not pinning (live, 09-06 23:34)
 const DEFAULT_PINS = ['profile', 'world', 'chat', 'emotes', 'debug', 'settings', 'edit'];   // 'edit' too (live 09-07 10:55) — its ownership gate still decides visibility
@@ -425,6 +428,22 @@ export function initDock(entries) {
   addEventListener('resize', () => applyDockEdge(loadDockEdge()));
   paintDock();
   bus.on('frames', () => paintDock());
+  // AUTO-PIN ON THE GRANT, and only on the transition. R asked for the wrench
+  // to "activate and pin to the dock automatically when you do get it", with a
+  // manual unpin still winning — so this fires on closed->open, never on every
+  // repaint, or the next paint would undo her unpin. `gateWas` starts at the
+  // gate's value so a builder who was ALREADY a builder at boot is not pinned
+  // over their own earlier choice; only an actual grant counts.
+  for (const e of dockEntries) if (e.action && e.gate) gateWas.set(e.id, !!e.gate());
+  bus.on('your-rights', () => {
+    for (const e of dockEntries) {
+      if (!e.action || !e.gate) continue;
+      const now = !!e.gate(), was = gateWas.get(e.id);
+      gateWas.set(e.id, now);
+      if (now && was === false && !pins.has(e.id)) { pins.add(e.id); savePins(); }
+    }
+    paintDock();
+  });
   setInterval(paintDock, 2000);   // role grants land async; the wrench follows (module-scope timer, as above)
   initEMenu();
 
@@ -514,7 +533,16 @@ function paintDock() {
     const id = b.dataset.toggles;
     const entry = dockEntries.find((x) => x.id === id);
     if (entry?.action) {                          // action buttons (edit wrench)
-      b.hidden = (entry.gate ? !entry.gate() : false) || (!entry.active?.() && !pins.has(id));
+      // GREY, NOT GONE. Hiding a gated action teaches nobody the affordance
+      // exists — which is exactly how the wrench went missing for days without
+      // either of us noticing. R, 2026-09-11: "gray out and unpin the Edit
+      // dock button when you don't have builder status, and it activates and
+      // pins to the dock automatically when you do get it."
+      const open = entry.gate ? !!entry.gate() : true;
+      b.classList.toggle('dead', !open);
+      b.disabled = !open;
+      b.title = open ? id : `${id} — needs build rights in this world`;
+      b.hidden = !entry.active?.() && !pins.has(id);
       b.classList.toggle('on', !!entry.active?.());
       continue;
     }
@@ -695,11 +723,16 @@ function buildEMenu(m) {
     const { id, action, gate } = entry;
     const icon = entry.icon ?? ID_ICON[id] ?? EMOJI_ICON[(entry.label ?? '').replace(/\uFE0F/g, '')];
     if (action) {
-      if (gate && !gate()) continue;
+      // ALWAYS a row, gated or not. R, 2026-09-11: "It SHOULD be in the
+      // reverse-E menu regardless." A dead row is the menu's existing
+      // vocabulary for "listed, not offered" — the same treatment the VR row
+      // gets when no headset is sensed.
+      const open = gate ? !!gate() : true;
       const row = document.createElement('button');
-      row.className = 'mrow'; row.dataset.row = id;
+      row.className = `mrow${open ? '' : ' dead'}`; row.dataset.row = id;
       row.innerHTML = `${fsvg(icon, 15) || fsvg('puzzle-piece', 15)}<span class="mname">${id}</span>`;
-      row.onclick = () => { action(); paintDock(); paintEMenu(); };
+      if (!open) { row.disabled = true; row.title = `${id} — needs build rights in this world`; }
+      else row.onclick = () => { action(); paintDock(); paintEMenu(); };
       // a pin, like any window: pinned = the wrench stays on the rail (live, 09-05)
       const pin = document.createElement('button');
       pin.className = 'mpin'; pin.dataset.pin = id;

@@ -81,9 +81,16 @@ check("dock order follows the entry list", order().join() === "profile,chat,worl
 check("built-ins are pinned by default: chat's button shows while its frame is closed",
   !getFrame("chat")!.visible && btn("chat")!.hidden === false);
 check("an entry with no frame and no pin is hidden", btn("nofrx")!.hidden === true);
-check("a gated action entry is hidden while its gate is closed", btn("edit")!.hidden === true);
+// GREY, NOT GONE (R, 2026-09-11). A hidden affordance teaches nobody it
+// exists — which is how the wrench went missing from the rail for days.
+check("a gated action entry is PRESENT but dead while its gate is closed",
+  btn("edit")!.hidden === false && btn("edit")!.classList.contains("dead") && btn("edit")!.disabled === true,
+  `hidden=${btn("edit")!.hidden} dead=${btn("edit")!.classList.contains("dead")} disabled=${btn("edit")!.disabled}`);
+check("...and its title says why it is dead",
+  /build rights/.test(btn("edit")!.title), btn("edit")!.title);
 editGate = true; bus.emit("frames");
-check("...and shows once the gate opens (pinned by default)", btn("edit")!.hidden === false);
+check("...and comes alive once the gate opens (pinned by default)",
+  btn("edit")!.hidden === false && !btn("edit")!.classList.contains("dead") && btn("edit")!.disabled === false);
 btn("edit")!.click();
 check("clicking the wrench fires its action and lights it", editFired === 1 && btn("edit")!.classList.contains("on"));
 btn("edit")!.click();
@@ -194,6 +201,38 @@ check("voice rows lead: mic, ears, VR", ["glyph:mic", "glyph:ear", "glyph:xr"].e
 check("VR row is dead when no headset is sensed (disabled row + disabled pin)", row("glyph:xr")!.disabled && pin("glyph:xr")!.disabled);
 check("every window with a frame has a row; a frameless entry has none", ["chat", "world", "emotes", "debug", "modx"].every((id) => !!row(id)) && !row("nofrx"));
 check("the wrench has a row while gated open", !!row("edit"));
+{ // ...and a row while gated CLOSED too — dead, not absent (R: "It SHOULD be
+  // in the reverse-E menu regardless"). paintEMenu used to `continue` past a
+  // closed gate, so the only way to learn edit mode existed was to already
+  // have build rights.
+  const was = editGate;
+  editGate = false; bus.emit("frames");
+  const r = row("edit");
+  check("the wrench keeps its ∃ row while gated CLOSED, rendered dead",
+    !!r && r.classList.contains("dead") && r.disabled === true,
+    r ? `dead=${r.classList.contains("dead")} disabled=${r.disabled}` : "NO ROW");
+  editGate = was; bus.emit("frames");
+}
+{ // AUTO-PIN ON THE GRANT, edge-triggered. R asked for the wrench to pin
+  // itself when build rights arrive, with a manual unpin still winning — so it
+  // must fire on closed->open, never on every repaint.
+  const wasGate = editGate;
+  const isPinned = () => (savedPins() ?? []).includes("edit");
+  editGate = false; bus.emit("your-rights");          // settle the remembered state
+  pin("edit")!.click();                                // start from UNPINNED
+  check("...starting unpinned", !isPinned(), JSON.stringify(savedPins()));
+  editGate = true; bus.emit("your-rights");            // THE GRANT
+  check("a rights grant auto-pins the wrench", isPinned(), JSON.stringify(savedPins()));
+
+  // the override: unpin by hand, then repaint at the SAME level — it must stay off
+  pin("edit")!.click();
+  check("...and a manual unpin actually unpins it", !isPinned(), JSON.stringify(savedPins()));
+  bus.emit("your-rights");
+  check("...and the next repaint does NOT undo the manual unpin (edge, not level)",
+    !isPinned(), JSON.stringify(savedPins()));
+  editGate = wasGate; bus.emit("frames");
+}
+
 check("the lock row and reset row close the menu", !!menu().querySelector(".mrow[data-lock]") && /reset layout/.test(menu().textContent!));
 row("chat")!.click();
 check("a row click opens that window and lights the row", getFrame("chat")!.visible && row("chat")!.classList.contains("open"));

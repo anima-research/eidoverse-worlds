@@ -139,6 +139,28 @@ initDock([
   { id: 'world', label: '🧱' },
   { id: 'emotes', label: '👋' },
   { id: 'debug', label: '🐞' },
+  // The wrench. It was declared here through the lab (edb63df, 27eae14) and
+  // did NOT survive the recut: DEFAULT_PINS still pinned 'edit', but nothing
+  // in the client declared an entry with that id, so it could never appear —
+  // and dock-test could not notice, because it supplies its own 'edit' entry.
+  // R, 2026-09-11: "when did Edit get dropped from the dock?? That's a
+  // regression for sure."
+  //
+  // `last: true` keeps it at the end of the rail: edit is a MODE, not a
+  // window, and it reads as one only when it sits apart (live, 09-05).
+  //
+  // The gate reads the SERVER's answer. c18ee3f moved it there because an
+  // operator is owner everywhere but never appears in the fold's roles map,
+  // so a local role lookup hid the wrench from R while every build verb was
+  // already being accepted (09-04). roleOf/worldHasOwner live further up the
+  // stack than this rung; net.myRights is what rung 3 has, and it is the
+  // authoritative half anyway.
+  {
+    id: 'edit', label: '🔧', icon: 'wrench', last: true,
+    action: toggleEditMode,
+    active: () => isEditing(),
+    gate: () => ['builder', 'owner'].includes(net.myRights?.role),
+  },
 ]);
 initDebug({
   // the body in your HAND wins over your own — that is the one being worked on
