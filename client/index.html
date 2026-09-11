@@ -443,8 +443,17 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
      a wider floor and room on the right. */
   flex: 1 1 0; min-width: 58px; padding: 5px 9px 6px; font-size: var(--fs-xs);
   display: flex; align-items: center; justify-content: center; gap: 4px;
-  background: none; border: none; border-bottom: 1px solid transparent;
-  margin-bottom: -1px; border-radius: 6px 6px 0 0;
+  /* THE UNDERLINE LIVES INSIDE THE BOX. `margin-bottom: -1px` hangs the border
+     1px past the tab, and .tabscroll is `overflow-x: auto` — an overflow box
+     CLIPS its children at the padding box, so the brand underline was cut off
+     every time while the grey rail underneath showed through. Isolated it: same
+     markup, same -1px, `overflow: auto` -> no underline, `overflow: visible` ->
+     underline. A 2px border with no overhang has nothing to clip.
+     R, 2026-09-11: "the tabs in the Profile panel have the highlight underneath,
+     but the tabs in the Chat pane do not ... in which direction?" — hers, the
+     Profile direction. */
+  background: none; border: none; border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
   color: var(--dim); white-space: nowrap; cursor: pointer;
 }
 .chat-tabs button:hover { color: var(--fg); background: rgb(143 232 200 / .13); }   /* the LIVELIER of the pair: hover reaches for you, selection just sits there (R, 2026-09-11: "reverse the current tab colors when hovering vs selected") */
@@ -794,7 +803,7 @@ body.arranging #dock #hud.emark {
 .pf-pop-row:hover { background: rgb(255 255 255 / .06); }
 .pf-pop-row.on { background: var(--well); color: var(--brand); font-weight: 600; }
 .pf-tabs { display: flex; gap: 2px; margin: 10px 0 8px; border-bottom: 1px solid var(--edge); }
-.pf-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px 7px; border: none; border-bottom: 1px solid transparent; margin-bottom: -1px; background: none; color: var(--dim); font-size: var(--fs-sm); cursor: pointer; border-radius: 6px 6px 0 0; }
+.pf-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px 7px; border: none; border-bottom: 2px solid transparent; background: none; color: var(--dim); font-size: var(--fs-sm); cursor: pointer; border-radius: 6px 6px 0 0; }   /* 2px INSIDE the box, same as the chat strip: one tab mechanism, not two (R, 2026-09-11: "Should we consolidate style here") */
 .pf-tab svg { opacity: .8; color: var(--icon); }          /* the section-head recipe: desaturated brand at .8 when idle (live, 09-05) */
 /* THE PROFILE TABS NEVER OPTED OUT OF THE GLOBAL BUTTON CHAIN, and it showed:
    measured with a real mouse hover, `.pf-tab:hover` painted NOTHING while

@@ -1,7 +1,7 @@
 // profile — the PERSON noun's home (four-noun taxonomy, 08-29): who you are,
 // where you are, what you're wearing, what you carry, who you know.
-// Today: identity up top (portrait = presence control, header), one tab — the bodies you have worn.
-// satchel / worlds / friends need server surfaces that don't exist yet; their tabs land with their content.
+// Today: identity up top (portrait = presence control, header), and four tabs.
+// satchel / worlds / friends have no server surface yet — R, 2026-09-11: "I would make them fully clickable panels ... aspirational so someone (maybe us!) can build it some day".
 
 import { CONFIG, bus, colorFor } from './base.js';
 import { registerXRPanel } from './xrpanels.js';
@@ -47,12 +47,14 @@ export function initProfile() {
 //   • the portrait circle carries the profile glyph as its placeholder and IS
 //     the presence control: click → a Discord-style pop with present/away/busy
 //   • tabs across the top under the header (side tabs fight 420 px; bottom
-//     tabs read as a dock): avatars today; satchel · worlds · friends when they have content
+//     tabs read as a dock): avatars · satchel · worlds · friends
 //   • the last tab is remembered per browser (ew-profile-tab)
 //   • the bodies list is the avatars tab's content — no more folding
 const TABS = [
   ['avatars', 'person-arms-spread', 'bodies you have worn'],
-  // satchel · worlds · friends land with their content — a tab that says "not built yet" is a promise
+  ['satchel', 'push-pin', 'personal inventory'],
+  ['worlds', 'planet', 'places you know'],
+  ['friends', 'users', 'people you keep'],
 ];
 const TAB_KEY = 'ew-profile-tab';
 let tab = (() => { try { const t = localStorage.getItem(TAB_KEY); return TABS.some(([k]) => k === t) ? t : 'avatars'; } catch { return 'avatars'; } })();

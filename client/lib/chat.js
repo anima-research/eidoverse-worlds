@@ -854,7 +854,16 @@ export function initChat({ send, whisper, typing, people }) {
   frame = makeFrame('chat', {
     title: 'chat',
     x: 10, y: -10, w: 390, h: 200, minW: 240, minH: 100,
-    className: 'chat-frame',
+      className: 'chat-frame',
+      // THE ARROWS NEVER RE-EVALUATED ON A RESIZE. paintArrows compares
+      // scrollWidth to clientWidth, and narrowing the panel changes clientWidth
+      // with nothing repainting the strip — so a panel dragged narrow kept the
+      // arrows hidden and its overflowing tabs unreachable (R, 2026-09-11: "the
+      // side-scroll buttons in the chat panel are missing, so you can't go to a
+      // tab that's off-screen because the panel is too narrow"). frames.js has
+      // called onResize(w, h) all along (frames.js:437); chat simply never
+      // passed one. Debounced like emotebar's (emotebar.js:53).
+      onResize: () => { clearTimeout(_arrowT); _arrowT = setTimeout(() => paintTabs(), 120); },
   });
 
   frame.body.innerHTML = `
@@ -1050,6 +1059,8 @@ function setFilter(f) {
     ? `whisper to ${f.slice(2)}…`
     : 'say something…  @ to mention · / for commands';
 }
+
+let _arrowT = null;   // debounce for the resize-driven tab repaint
 
 function paintTabs() {
   const bar = frame.body.querySelector('.chat-tabs');
