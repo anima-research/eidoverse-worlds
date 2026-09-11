@@ -173,6 +173,14 @@ export function gateFor(rawStream) {
   _lane = _gated;
   _deviceLive = true;
   startOnsetWatch();
+  // Apply the CURRENT authority before the lane leaves this function. The
+  // watcher's first tick is 20 ms away, and on an ungated lane the raw track
+  // arrives enabled: with push-to-talk already armed (a persisted pref, or
+  // a mode set before the device was acquired), that tick was the only thing
+  // closing the wire — a frame could leave while the UI promised silence and
+  // `speaking` said false over an open track (Mica, #148 re-review). Mute
+  // and the held-key decision are both applied here, synchronously.
+  gateAudio(Date.now());
   return _gated;
 }
 

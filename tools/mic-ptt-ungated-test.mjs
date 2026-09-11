@@ -29,8 +29,27 @@ const t = (n, cond) => { cond ? ok++ : bad++; console.log(`${cond ? 'ok  ' : 'FA
 const track = { kind: 'audio', enabled: true, stop() {} };
 const stream = { getTracks: () => [track], getAudioTracks: () => [track] };
 
-// The explicit escape hatch the panel offers, then the lane.
+// ── acquisition order: PTT ARMED BEFORE the raw lane exists ─────────────
+// A persisted pttMode, or a mode set before the device is acquired, must
+// govern the lane the moment gateFor returns — not one watcher tick later.
+// No timers in this leg: every assertion is synchronous with the call.
 mg.allowUngated(true);
+vc.setPttMode(true);
+const early = ms.gateFor(stream);
+t('armed-first: gateFor returns the raw stream as the lane', ms.gateIsUnavailable() && early === stream);
+t('armed-first: the raw track is DISABLED synchronously, before any tick', track.enabled === false);
+t('armed-first: gateOpenness() is 0 synchronously', mg.gateOpenness() === 0);
+t('armed-first: speaking is false synchronously', ms.micGateInfo().speaking === false);
+ms.setPttHeld(true);
+t('armed-first: a press opens the raw track', track.enabled === true);
+ms.setPttHeld(false);
+t('armed-first: a release closes it', track.enabled === false);
+ms.gateRelease();
+ms.releaseMicrophone();
+vc.setPttMode(false);
+track.enabled = true;   // a fresh device stream arrives enabled, as a real one would
+
+// ── the ordinary order: lane first, then the mode ───────────────────────
 const lane = ms.gateFor(stream);
 t('precondition: the gate is unavailable and the raw stream IS the lane', ms.gateIsUnavailable() && lane === stream);
 t('voice activation on a consented raw lane: track transmits (that is what was consented to)', track.enabled === true);
