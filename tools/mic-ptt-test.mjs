@@ -77,9 +77,12 @@ ms.setPttHeld(false);
 ms.toggleMute(true);
 ms.setPttHeld(true);
 t('PTT: mute is authoritative over a held key', mg.gateOpenness() === 0);
+// The pill must not lie: held + muted is NOT speaking, whatever the key says.
+t('PTT: held+muted reports speaking:false (agrees with the gate at 0)', ms.micGateInfo().speaking === false);
 ms.toggleMute(false);
 ms.setPttHeld(false); ms.setPttHeld(true);   // re-press now that mute is off
 t('PTT: unmuted re-press opens again', mg.gateOpenness() === 1);
+t('PTT: unmuted+held reports speaking:true', ms.micGateInfo().speaking === true);
 
 // ── leaving the mode must not leave a phantom finger on the gate ───────────
 vc.setPttMode(false);

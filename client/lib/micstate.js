@@ -30,7 +30,7 @@ import { bus } from './base.js';
 const flashHint = (msg) => import('./ui.js').then((u) => u.flashHint(msg)).catch(() => {});
 import { sendTyping } from './net.js';
 import { gateThreshold, pttMode } from './voiceconsent.js';
-import { gateStream, attachSource, detachSource, driveGate, setMonitor, monitoring,
+import { gateStream, attachSource, detachSource, driveGate, driveRawTracks, setMonitor, monitoring,
          gateUnavailable, ungatedConsent, isGated,
          makeOnsetGate, makeLevelMeter } from './micgate.js';
 // 🔴 The analyser hangs off the shared context; omitting this import made
@@ -83,7 +83,23 @@ export function setPttHeld(on) {
   if (next && pttMode() && micOn()) _onset.press(now);
   gateAudio(now);   // apply immediately — a 20ms tick is an audible latency here
 }
-bus.on('audio:ptt', (on) => { if (!on && _pttHeld) { _pttHeld = false; gateAudio(Date.now()); } });
+bus.on('audio:ptt', (on) => {
+  const now = Date.now();
+  if (on) {
+    // Arming closes the gate NOW, not on the next 20ms tick: on an ungated
+    // lane that tick is a window of raw transmission the mode just promised
+    // away (see the drive closure below).
+    gateAudio(now);
+    return;
+  }
+  // Leaving PTT with the key down must not leave a phantom finger on the gate:
+  // the next regime starts from closed and earns its own open.
+  if (_pttHeld) _pttHeld = false;
+  gateAudio(now);
+  // An ungated lane goes back to what its consent row said — raw and open —
+  // unless the mic is muted, which outranks every regime.
+  if (gateUnavailable()) driveRawTracks(!!_lane && !_muted);
+});
 
 // 🔴 THE ONSET WATCHER'S STATE. Extracted from voice.js:680-682 — the slice
 // that moved the FUNCTIONS started below these declarations, so every one of
@@ -102,7 +118,15 @@ const _meter = makeLevelMeter(() => (!_lane || _muted) ? null : (_raw || _lane))
 const _onset = makeOnsetGate({
   level: _meter,
   threshold: gateThreshold,
-  drive: (open) => driveGate((!_lane || _muted) ? false : open),
+  drive: (open) => {
+    const want = (!_lane || _muted) ? false : open;
+    driveGate(want);
+    // No graph to drive (gate unavailable, raw transmission consented): under
+    // push-to-talk the key still has to close the WIRE, so the decision goes
+    // to the raw tracks themselves — micgate.js driveRawTracks. Voice
+    // activation on that lane stays raw; that is what the consent row said.
+    if (pttMode() && gateUnavailable()) driveRawTracks(want);
+  },
   announce: () => sendTyping(null, 'mic'),
   // Push-to-talk hands the machine a HELD answer instead of a level to judge;
   // null means "no override, decide by level" — see setPttHeld above.
@@ -115,7 +139,15 @@ const stopOnsetWatch = () => _onset.stop();
 /** What the gate is actually doing right now — for the meter and for
  *  tuning. Post-cutover (anima merge, §24n): the mesh is GONE — this
  *  module's own factory instance is the only gate there is. */
-export const micGateInfo = () => _onset.info();
+// `speaking` is what the room is getting. The machine's own answer is the
+// gate decision (level, or the held key); the lane's authority — no lane, or
+// muted — is applied in the drive closure and must be applied HERE too, or a
+// held key while muted reports speaking:true over a gate that is at 0 (Mica,
+// #148 review). The pill and the audio must agree in every regime.
+export const micGateInfo = () => {
+  const info = _onset.info();
+  return (!_lane || _muted) ? { ...info, speaking: false } : info;
+};
 
 /** Live mic level 0..1 for UI — the factory meter over this module's own
  *  _raw/_lane (the mesh delegation retired with voice.js). */
