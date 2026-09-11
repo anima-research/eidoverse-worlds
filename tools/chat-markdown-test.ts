@@ -145,7 +145,11 @@ console.log('CHAT — the people pane swaps sides');
   const nestedMod = document.createElement('div');
   nestedMod.className = 'mod-inside';
   nestedMod.innerHTML = `<div class="chat-side"><div class="chat-side-head">MOD-HEAD</div></div>`;
-  realSide.prepend(nestedMod);
+  // PREPENDED INTO cols, ahead of the real .chat-side — not nested inside it.
+  // A descendant of the real pane can never win an unbounded lookup (its own
+  // ancestor comes first in document order), so nesting it would leave the
+  // capture's `:scope >` bound untested.
+  cols.prepend(nestedMod);
   const modHead = nestedMod.querySelector('.chat-side-head')!;
   roster = [{ id: 'keir', agent: true }, { id: 'rab' }, { id: 'zzz' }];
   // The pane is OPEN here (the check above read a painted head). paintSide bails
