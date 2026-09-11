@@ -239,10 +239,32 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
   let decoyClicks = 0;
   (outer.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
 
-  f.body.innerHTML = `<div class="mod-panel"><div class="chat-cols side-closed"><button class="chat-side-tog"></button></div></div>`
-    + `<div class="chat-cols side-closed"><button class="chat-side-tog"></button></div>`;
-  const inner = f.body.querySelector(".mod-panel")!;
+  // THREE decoys. The third is the one rounds 7-9 kept missing: chat.js nests
+  // the toggler INSIDE .chat-cols, so a mod's toggler can sit inside the REAL
+  // cols — and then an unbounded `cols.querySelector('.chat-side-tog')` finds
+  // the mod's before the chat's. Only `:scope >` on BOTH hops addresses the
+  // real pane; a decoy that is merely a sibling cannot see that mistake.
+  // Decoy ORDER mirrors reality: initChat wipes the body and writes the chat's
+  // own .chat-cols FIRST, so a mod mounting later can only be a LATER sibling
+  // or a descendant. (An earlier draft put a decoy first — that inverts the
+  // real DOM and would have bent the fixture to kill a mutant instead of
+  // describing the product.)
+  f.body.innerHTML = `<div class="chat-cols side-closed">`
+    +   `<div class="mod-inside"><button class="chat-side-tog"></button></div>`
+    +   `<button class="chat-side-tog"></button>`
+    + `</div>`;
+  const late = document.createElement("div");   // a LATER direct-child sibling, as a mod would mount
+  late.className = "chat-cols side-closed";
+  late.innerHTML = `<button class="chat-side-tog"></button>`;
+  f.body.append(late);
+  (late.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
+  const modWrap = document.createElement("div"); modWrap.className = "mod-panel";
+  modWrap.innerHTML = `<div class="chat-cols side-closed"><button class="chat-side-tog"></button></div>`;
+  f.body.append(modWrap);
+  const inner = modWrap;
   (inner.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
+  const nested = f.body.querySelector(".mod-inside")!;
+  (nested.querySelector(".chat-side-tog") as HTMLElement).onclick = () => { decoyClicks++; };
   const cols = () => f.body.querySelector(":scope > .chat-cols")!;
   const tog = cols().querySelector(":scope > .chat-side-tog") as HTMLElement;
   let clicks = 0;
@@ -271,6 +293,7 @@ console.log("DOCK — Tab OPENS the people pane, never closes it (ui.js togglePe
   check("Tab never reaches a mod panel carrying the same public classes — outside the body OR nested inside it", decoyClicks === 0
     && outer.querySelector(".chat-cols")!.classList.contains("side-closed")
     && inner.querySelector(".chat-cols")!.classList.contains("side-closed"), `decoyClicks=${decoyClicks}`);
+  check("...including a mod toggler nested INSIDE the real cols (chat.js nests it there)", decoyClicks === 0, `decoyClicks=${decoyClicks}`);
   outer.remove(); }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

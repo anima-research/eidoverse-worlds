@@ -106,18 +106,31 @@ say('rab', 'back');
 check('visible again: nothing counts', chat.unreadCounts().unread === 0);
 
 console.log('CHAT — the people pane swaps sides');
-{ const cols = frameStub.body.querySelector('.chat-cols')!, tog = frameStub.body.querySelector('.chat-side-tog')!;
-  check('default: pane on the LEFT, closed, chevron points right (›)', cols.classList.contains('side-left') && frameStub.body.querySelector('.chat-side')!.classList.contains('closed') && tog.textContent === '›', tog.textContent!);
+{ // A DECOY mod panel first, carrying the same PUBLIC classes, placed BEFORE
+  // the real markup in the same body — mods.js/registerPanel mount into frame
+  // bodies after initChat's innerHTML, so this is reachable. applySide must
+  // still write onto the nodes initChat built, not onto these.
+  const decoy = document.createElement('div');
+  decoy.innerHTML = `<div class="chat-cols side-left"><button class="chat-side-tog">X</button><div class="chat-side"></div></div>`;
+  frameStub.body.prepend(decoy);
+  const dCols = decoy.querySelector('.chat-cols')!, dTog = decoy.querySelector('.chat-side-tog')!;
+  const dBefore = { cls: dCols.className, txt: dTog.textContent };
+
+  const cols = frameStub.body.querySelector(':scope > .chat-cols')!, tog = cols.querySelector(':scope > .chat-side-tog')!;
+  check('default: pane on the LEFT, closed, chevron points right (›)', cols.classList.contains('side-left') && cols.querySelector(':scope > .chat-side')!.classList.contains('closed') && tog.textContent === '›', tog.textContent!);
   const pop = frameStub.body.querySelector('.chat-gearpop') as HTMLElement;
   pop.onclick!({ target: pop.querySelector('[data-side="right"]') } as any);
   check('right: side-left dropped, chevron mirrored (‹)', !cols.classList.contains('side-left') && tog.textContent === '‹', tog.textContent!);
   check('the choice persists', JSON.parse(localStorage.getItem('ew-chat-side')!).pos === 'right');
   check('the popover marks the live side', pop.querySelector('[data-side="right"]')!.classList.contains('on') && !pop.querySelector('[data-side="left"]')!.classList.contains('on'));
   (tog as HTMLElement).onclick!(new Event('click'));
-  check('opening the pane on the right: › (it will close rightward), width applied', tog.textContent === '›' && (frameStub.body.querySelector('.chat-side') as HTMLElement).style.width === '150px' && !cols.classList.contains('side-closed'), tog.textContent!);
+  check('opening the pane on the right: › (it will close rightward), width applied', tog.textContent === '›' && (cols.querySelector(':scope > .chat-side') as HTMLElement).style.width === '150px' && !cols.classList.contains('side-closed'), tog.textContent!);
   pop.onclick!({ target: pop.querySelector('[data-side="left"]') } as any);
   check('back to the left while open: side-left, chevron ‹', cols.classList.contains('side-left') && tog.textContent === '‹' && JSON.parse(localStorage.getItem('ew-chat-side')!).pos === 'left', tog.textContent!);
-  check('the pane lists who is here', /2 others here/.test(frameStub.body.querySelector('.chat-side-head')!.textContent!) && frameStub.body.querySelectorAll('.who-row').length === 2); }
+  check('the pane lists who is here', /2 others here/.test(cols.querySelector('.chat-side-head')!.textContent!) && cols.querySelectorAll('.who-row').length === 2);
+  // applySide/paintSide/applyChatPrefs must never have touched the decoy
+  check('applySide writes onto the nodes initChat built, never a mod panel carrying the same classes', dCols.className === dBefore.cls && dTog.textContent === dBefore.txt, `${dCols.className} / ${dTog.textContent}`);
+  decoy.remove(); }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

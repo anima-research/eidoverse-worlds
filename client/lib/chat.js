@@ -684,12 +684,21 @@ const open = chat.open;
 // precious, so the collapse must cost one click and the collapsed cost is a
 // 14px strip). Toggler rides the pane's left edge: › closes, ‹ opens.
 const SIDE_LS = 'ew-chat-side';
+// The side-pane nodes, captured from the markup initChat ITSELF wrote (below).
+// A lookup by class would match at any depth, and registerPanel/mods.js mount
+// mod markup into frame bodies AFTER initChat's innerHTML wipe — so a mod
+// carrying these PUBLIC classes (docs/MODDING-UI.md) could be found instead,
+// and this file would then write side-closed/side-left and the chevron onto a
+// different node than ui.js togglePeople flips. Capturing once is stronger
+// than `:scope >` at each call site: nothing mounted later can be captured.
+let sideEls = null;
+const sideEl = (k) => sideEls?.[k] ?? null;
 let sideSt = { w: 150, open: false, pos: 'left' };   // people pane on the LEFT by default (live 09-07 10:55 reference HUD)
 function initSidePane() {
   try { sideSt = { ...sideSt, ...JSON.parse(localStorage.getItem(SIDE_LS) || '{}') } } catch {}
-  const tog = frame.body.querySelector('.chat-side-tog');
+  const tog = sideEl('tog');
   tog.onclick = () => { sideSt.open = !sideSt.open; applySide(); saveSide(); };
-  const grip = frame.body.querySelector('.chat-side-grip');
+  const grip = sideEl('grip');
   grip.addEventListener('pointerdown', (e) => {
     if (!sideSt.open) return;
     e.preventDefault();
@@ -709,20 +718,20 @@ function initSidePane() {
 }
 const saveSide = () => { try { localStorage.setItem(SIDE_LS, JSON.stringify(sideSt)) } catch {} };
 function applySide() {
-  const side = frame?.body.querySelector('.chat-side');
+  const side = sideEl('side');
   if (!side) return;
   side.classList.toggle('closed', !sideSt.open);
   // the line between log and pane is the pane's grab edge; closed, there is
   // nothing to grab, so the line goes too (live, 09-05: a confusing affordance)
-  frame.body.querySelector('.chat-cols')?.classList.toggle('side-closed', !sideSt.open);
+  sideEl('cols')?.classList.toggle('side-closed', !sideSt.open);
   side.style.width = sideSt.open ? `${sideSt.w}px` : '';
   // the chevron points the way the pane will move: on the right › closes / ‹ opens; mirrored on the left
   const left = sideSt.pos === 'left';
-  frame.body.querySelector('.chat-side-tog').textContent = (sideSt.open !== left) ? '›' : '‹';
+  const t = sideEl('tog'); if (t) t.textContent = (sideSt.open !== left) ? '›' : '‹';
   paintSide();
 }
 function paintSide() {
-  const side = frame?.body.querySelector('.chat-side');
+  const side = sideEl('side');
   if (!side || !sideSt.open) return;
   const people = getPeople();
   const others = people.filter((p) => !p.me).length;
@@ -744,7 +753,7 @@ const CFS_LS = 'ew-chat-fs';
 function applyChatPrefs() {
   const log = frame?.body.querySelector('.chat-log');
   if (log) log.style.fontSize = `${chatFs}px`;
-  frame?.body.querySelector('.chat-cols')?.classList.toggle('side-left', sideSt.pos === 'left');
+  sideEl('cols')?.classList.toggle('side-left', sideSt.pos === 'left');
 }
 let gearToggle = null, gearAnchor = null, gearOpen = () => false;
 let chatFs = 14;
@@ -831,6 +840,15 @@ export function initChat({ send, whisper, typing, people }) {
       </div>
     </div>
     <div class="chat-gearpop panel" hidden></div>`;
+  { const cols = frame.body.querySelector(':scope > .chat-cols');
+    sideEls = cols ? {
+      cols,
+      tog: cols.querySelector(':scope > .chat-side-tog'),
+      side: cols.querySelector(':scope > .chat-side'),
+      grip: cols.querySelector(':scope > .chat-side > .chat-side-grip'),
+      head: cols.querySelector(':scope > .chat-side > .chat-side-head'),
+      list: cols.querySelector(':scope > .chat-side > .chat-side-list'),
+    } : null; }
   initSidePane();
   initChatGear();
 
