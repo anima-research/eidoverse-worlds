@@ -35,9 +35,6 @@ export function initEmoteBar() {
   // state.h is the body's CONTENT height (frames.js paints body.style.height; the body
   // pads 7px top+bottom on top of it) — so rows + gaps only, no pad term
   const heightFor = (cols) => rowsFor(cols) * ROW_H + (rowsFor(cols) - 1) * GAP;
-  // by ROWS rather than by columns — snapTo has to honour a height the user
-  // dragged, not one implied by the width
-  const heightForRows = (rows) => rows * ROW_H + (rows - 1) * GAP;
   let snapT = null;
   const ALL = 9;   // 3 postures + 6 emotes: ONE bar (live 09-06 23:34: '9×1')
   const f = makeFrame('emotes', {
@@ -53,7 +50,7 @@ export function initEmoteBar() {
     // drag settles it fits itself to the tiles that row holds (live, 09-04). The
     // frame owns its size, so we write its state and repaint through the refs it
     // exposes for exactly this kind of rider.
-    onResize: (w, h) => { clearTimeout(snapT); snapT = setTimeout(() => snapTo(w, h), 180); },
+    onResize: (w) => { clearTimeout(snapT); snapT = setTimeout(() => snapTo(w), 180); },
   });
   // The bar is bottom-CENTRED and chat is bottom-LEFT: at a wide viewport they
   // miss each other entirely, but as the viewport narrows the centred bar slides
@@ -83,30 +80,27 @@ export function initEmoteBar() {
     if (top !== me.top && clearAt(top) && f._state) { f._state.y = Math.max(8, top); f._paint?.(); }   // _paint, NOT _fit — _fit re-anchors a bottom-anchored frame and would erase the lift
   };
 
-  const snapTo = (w, h) => {
+  const snapTo = (w) => {
     // the emote list arrives async; snapping against an empty list clamped cols to the 3 postures and
     // SHRANK a saved 9×1 bar to 3×3 on every reload (two exported layouts: 352×32 → 124×108)
     if (!EMOTE_ORDER.length) return;
-    // COLUMNS FROM THE DRAGGED WIDTH, ROWS FROM THE DRAGGED HEIGHT.
-    // Shipped behaviour derived BOTH from the column count, so the bar could only
-    // ever be as tall as that width implied and 1-wide x 9-tall was unreachable
-    // however you dragged it. R, 2026-09-11: "can you also make it arrange
-    // vertically? I can't make it stack 1 wide 9 tall, for example."
+    // COLUMNS FROM WIDTH; ROWS FOLLOW BY WRAPPING. The tiles wrap like text —
+    // narrow the frame and they flow into more rows — so HEIGHT is a
+    // consequence, never an input.
     //
-    // `h` comes from frames.js:427 (`onResize?.(state.w, state.h)`), which this
-    // rider had been discarding. When it is ABSENT the old width-only path runs
-    // unchanged — that is the path the suite drives, and the 3-column floor and
-    // 9x1 ceiling still hold there.
+    // The previous version took rows from a dragged height and was wrong in the
+    // PRODUCT even though the suite passed: frames.js:427 calls
+    // `onResize(state.w, state.h)` ALWAYS, so the `h == null` branch I wrote
+    // only ever ran in my own test. Live, every resize carried a height, so a
+    // tall drag pinned the bar at nine rows and refused to wrap, and a short one
+    // could not go below `need` rows for its column count. R, 2026-09-11:
+    // "won't go thinner than 4x, but will forcibly go 9x down and not wrap to
+    // the buttons at all."
     //
-    // Do NOT read f._state.h instead: snapTo writes that field, so each resize
-    // would feed its own output back in and ratchet the bar to nine rows. (Tried
-    // it; emotebar went 23/4 with h=336 everywhere.)
-    const floorCols = h == null ? 3 : 1;   // a single column is a legal shape only when a height was asked for
-    const cols = Math.max(floorCols, Math.min(POSTURE_TILES + EMOTE_ORDER.length, Math.floor((w - PAD * 2 - 2 + GAP) / (TILE + GAP))));
-    const need = rowsFor(cols);            // every tile has to fit
-    const rows = h == null ? need
-      : Math.max(need, Math.min(POSTURE_TILES + EMOTE_ORDER.length, Math.max(1, Math.round((h + GAP) / (ROW_H + GAP)))));
-    f._state.w = widthFor(cols); f._state.h = heightForRows(rows);
+    // I designed against my own harness instead of the real caller — the same
+    // mistake as the minW clamp one commit earlier.
+    const cols = Math.max(1, Math.min(POSTURE_TILES + EMOTE_ORDER.length, Math.floor((w - PAD * 2 - 2 + GAP) / (TILE + GAP))));
+    f._state.w = widthFor(cols); f._state.h = heightFor(cols);
     // through _fit, not _paint: a reflow to more rows can push the bar past the
     // bottom edge, and _paint alone skips every viewport clamp (#185 review).
     if (f._fit) f._fit(); else f._paint();

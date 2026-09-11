@@ -1087,6 +1087,19 @@ function paintTabs() {
     if (unread) b.classList.add('has-unread');
     b.onclick = () => setFilter(key);
     if (closable) {
+        // A VISIBLE CLOSE. Right-click already worked and announced itself
+        // only in a title attribute — R, 2026-09-11: "there should be a way of
+        // getting rid of extra tabs you don't want." Both routes now; the x
+        // stops propagation so closing never also selects the tab.
+        const x = document.createElement('span');
+        x.className = 'tabx'; x.textContent = '\u00d7';
+        x.title = `close ${key.slice(2)}`;
+        x.onclick = (e) => {
+          e.stopPropagation(); e.preventDefault();
+          convos.delete(key.slice(2));
+          if (filter === key) setFilter('all'); else paintTabs();
+        };
+        b.append(x);
       b.oncontextmenu = (e) => {
         e.preventDefault();
         convos.delete(key.slice(2));

@@ -154,7 +154,8 @@ check("displaced anchor reprints its name when a different speaker wedges in",
 // drove it. This is that coverage.
 console.log("\nCHAT — DMs, the People Here pane, and the tab strip");
 const tabs = () => frameStub.body!.querySelector(".chat-tabs") as HTMLElement;
-const tabLabels = () => [...tabs().querySelectorAll(".tabscroll button")].map((b: any) => b.textContent.trim());
+// strip the close glyph: a DM tab now carries a visible × inside the button
+const tabLabels = () => [...tabs().querySelectorAll(".tabscroll button")].map((b: any) => b.textContent.replace(/\u00d7/g, "").trim());
 const openPane = () => (frameStub.body!.querySelector(".chat-side-tog") as HTMLElement)?.click();
 
 check("the tab strip starts with the three fixed tabs", tabLabels().join("|") === "all|mentions|system", tabLabels().join("|"));
@@ -196,6 +197,17 @@ const allTab = tabs().querySelector(".tabscroll button") as HTMLElement;
 allTab?.click();
 check("...and `all` shows the room again",
   visible().some((l: any) => !l.dataset.convo), visible().map((l: any) => l.dataset.convo ?? "(room)").join(","));
+
+// CLOSING A TAB. R, 2026-09-11: "there should be a way of getting rid of extra
+// tabs you don't want." Right-click already worked and announced itself only in
+// a title attribute, so a DM tab now carries a visible x as well.
+{ const keirTab = [...tabs().querySelectorAll(".tabscroll button")].find((b: any) => b.textContent.includes("@keir")) as HTMLElement;
+  const x = keirTab?.querySelector(".tabx") as HTMLElement;
+  check("a DM tab carries a visible close", !!x, keirTab?.innerHTML.slice(0, 80) ?? "(no tab)");
+  x?.click();
+  check("...and clicking it removes that tab", !tabLabels().some((t: string) => t.includes("@keir")), tabLabels().join("|"));
+  check("...and the fixed tabs are untouched",
+    tabLabels().slice(0, 3).join("|") === "all|mentions|system", tabLabels().join("|")); }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
