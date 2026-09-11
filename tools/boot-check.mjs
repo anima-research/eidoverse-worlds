@@ -129,7 +129,7 @@ try {
   if (s.raysCanvas) { if (!raysSeen) { fail('.sp-rays canvas present but the rays worker handle was never advertised'); }
     if (s.raysHandle) { fail('the rays worker handle is still advertised after boot (stopRays did not release it)'); } rays = 'rays seen+released'; }
   else rays = 'rays DORMANT (no .sp-rays canvas at this rung)';
-  console.log(`ok — client boots AND arrives: ${ready} after ${elapsed}ms, ${s.panels} panels, splash gone, ${rays}, backend=${s.backend} xr.enabled=${s.xrEnabled} tolerance=${s.tolerance} xrShadowPatch=${s.xrShadow}${QUERY ? ` query=${QUERY}` : ''} — decisions asserted, no page errors, ${body}${ABORT_VRM ? ' [body requests ABORTED]' : ''}${LIVE ? ' (live deployment)' : ' (owned child)'}`);
+  console.log(`ok — client boots AND arrives [viewport ${s.vw}x${s.vh}]: ${ready} after ${elapsed}ms, ${s.panels} panels, splash gone, ${rays}, backend=${s.backend} xr.enabled=${s.xrEnabled} tolerance=${s.tolerance} xrShadowPatch=${s.xrShadow}${QUERY ? ` query=${QUERY}` : ''} — decisions asserted, no page errors, ${body}${ABORT_VRM ? ' [body requests ABORTED]' : ''}${LIVE ? ' (live deployment)' : ' (owned child)'}`);
 } catch (e) {
   console.log(`FAIL — ${e instanceof Fail ? e.message : (e?.stack ?? e)}`);
   process.exitCode = 1;
