@@ -11,9 +11,11 @@ import { svg, fsvg, hasFill, rsvg, hasLine } from './icons.js';
 // the canvas-emoji trap generalizes: platform glyph gaps are silent)
 // Upstream labels its dock entries with emoji (main.js: world is '🧱'), and the
 // same emoji means different things in different places — '🧱' is genuinely a
-// hammer in palette.js's BUILD section, but the world panel is a planet. So the
-// entry id wins over the emoji: remapping '🧱' globally would fix the dock and
-// break build. (#185 live report: the hammer opened and closed 'world'.)
+// hammer in palette.js's BUILD section. The world panel is NOT a build panel:
+// it holds world inventories, public avatars and other non-builder things, and
+// the editing affordances fork off elsewhere. A brick was wrong semantically,
+// not just visually. So the entry id wins over the emoji: remapping '🧱'
+// globally would fix the dock and break build.
 const ID_ICON = { world: 'planet' };
 const EMOJI_ICON = {
   '💬': 'chat-circle',
