@@ -85,11 +85,12 @@ function paint() {
     if (open) { open.remove(); portrait.setAttribute('aria-expanded', 'false'); return; }
     const pop = document.createElement('div');
     pop.className = 'pf-pop panel'; pop.setAttribute('role', 'menu');
+    let dismissRef = () => pop.remove();   // rebound to dismiss() below, once the listeners exist
     for (const s of STATES) {
       const b = document.createElement('button');
       b.type = 'button'; b.className = `pf-pop-row${s === presence() ? ' on' : ''}`; b.dataset.presence = s; b.setAttribute('role', 'menuitemradio'); b.setAttribute('aria-checked', String(s === presence()));
       b.innerHTML = `<span class="pf-pop-dot" data-presence="${s}"></span><span>${PRESENCE_WORD[s]}</span>`;
-      b.onclick = (ev) => { ev.stopPropagation(); setPresence(s); pop.remove(); paint(); };
+      b.onclick = (ev) => { ev.stopPropagation(); setPresence(s); dismissRef(); paint(); };
       pop.append(b);
     }
     frame.body.querySelector('.pf-id').append(pop);
@@ -99,6 +100,7 @@ function paint() {
     const onKey = (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); ev.preventDefault(); dismiss(); } };   // Esc closes the pop and goes no further (the global Esc toggle yields to an open pop)
     addEventListener('pointerdown', close, true);
     addEventListener('keydown', onKey, true);
+    dismissRef = dismiss;
   };
 
   // tabs

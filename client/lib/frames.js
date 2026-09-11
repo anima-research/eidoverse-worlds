@@ -220,7 +220,7 @@ document.body.classList.toggle('ui-locked', locked);
  */
 // The newcomer's layout is a hand-arranged one, not the panels' individual guesses: the tester's desktop
 // (a 1904×844 window, 09-06) exported from a live session and anchored to edges so it holds on
-// other screens. Only world + chat are open; everything else is closed but pinned to the dock.
+// other screens. World, chat and the emote bar are open; everything else is closed but pinned to the dock.
 // A frame's own saved state (its owner's moves) still wins; resetLayout returns HERE.
 const DEFAULT_LAYOUT = {
   world:    { x: -8,  y: 8,   w: 407, h: 363, hidden: false },
@@ -288,9 +288,13 @@ export function makeFrame(id, opts = {}) {
     /** decorate the title bar (unread counts, status pips, …) */
     badge(html) {
       let b = head.querySelector('.fr-badge');
-      if (!html) { b?.remove(); return api; }
+      // the title bar shows only while arranging; at rest the dock button carries the same badge
+      const dk = document.querySelector(`#dock button[data-toggles="${id}"]`);
+      let db = dk?.querySelector('.dk-badge');
+      if (!html) { b?.remove(); db?.remove(); return api; }
       if (!b) { b = document.createElement('span'); b.className = 'fr-badge'; ttl.after(b); }
       b.innerHTML = html;
+      if (dk) { if (!db) { db = document.createElement('span'); db.className = 'dk-badge'; dk.append(db); } db.innerHTML = html; }
       return api;
     },
     raise,
@@ -509,7 +513,7 @@ export function allFrames() { return [...frames.values()]; }
 // chat's own Esc. The remembered set lives only for the session.
 let escStash = null;
 // anything that owns Esc registers a claim here (build.js registers edit mode) — frames imports nobody for it,
-// so the module graph stays a tree (frames → build → controller → ui → frames was a cycle, review 2026-09-08)
+// so the module graph stays a tree (frames → build → controller → ui → frames was a cycle)
 const escClaims = [];
 export function claimEscape(fn) { escClaims.push(fn); }
 // Esc: close every open panel, Esc again brings the same set back. Installed here, with the frames, so the

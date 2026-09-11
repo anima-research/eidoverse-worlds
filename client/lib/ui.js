@@ -2,7 +2,7 @@
 // Toasts, the loading tray, the HUD, the hint bar, the panel frames, the dock,
 // and the two overlays (help, front door).
 
-import { bus, CONFIG, setName, setToken, setErrorSink, report, colorFor } from './base.js';
+import { bus, CONFIG, setName, setToken, setErrorSink, report } from './base.js';
 import { resizeZoneAt } from './frames.js';
 import { flipMic, flipEar, micLive, earOn, glyphPinned, setGlyphPinned, micGlyph, earGlyph, xrGlyph, xrGlyphAvailable, xrLive, flipXr } from './mictoggle.js';
 import { svg, fsvg, hasFill, rsvg, hasLine } from './icons.js';
@@ -846,4 +846,8 @@ export function openDoor({ roster = [], needsKey = false, login = null, onEnter 
 }
 
 // Tab: the people pane (the chat frame's side pane replaced the old roster)
-export function togglePeople() { const f = getFrame('chat'); if (f && !f.visible) f.show(); document.querySelector('.chat-side-tog')?.click(); }
+export function togglePeople() {
+  const f = getFrame('chat'); const wasVisible = !!f?.visible; if (f && !wasVisible) f.show();
+  const closed = document.querySelector('.chat-cols')?.classList.contains('side-closed');
+  if (closed || wasVisible) document.querySelector('.chat-side-tog')?.click();   // hidden+open: showing the chat is the open
+}

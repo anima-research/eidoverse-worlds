@@ -6,10 +6,9 @@
 
 import { makeFrame } from './frames.js';
 import { EMOTE_ORDER, EMOTE_ICONS } from './avatar.js';
-import { myState } from './controller.js';
 import { getMe } from './mybody.js';
 import { registerXRPanel } from './xrpanels.js';
-import { setPosture, sitHere, standUp, getPosture } from './controller.js';
+import { myState, setPosture, sitHere, standUp, getPosture } from './controller.js';
 const POSTURES = ['sit', 'stand', 'lie'];
 // through the same flows the ring used: a nearby seat wins for sit, stand dismounts
 function posture(k) {

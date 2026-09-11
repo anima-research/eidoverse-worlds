@@ -163,7 +163,7 @@ function fieldDOM(f, edit) {
 // canvas pixels so xr.js can turn a laser UV-hit into the same edit() call.
 // Text fields render display-only here on purpose (no floating keyboards).
 
-// The quad wears the PANELS' skin, not its own (R in-headset 09-04: "looks
+// The quad wears the PANELS' skin, not its own (in-headset, 09-04: "looks
 // hand-rolled — go with the panels"): colors come from the same tokens the
 // desktop frames use, read at paint time; a quad has no alpha, so the panel
 // ground is the solid --panel-rgb. Fallbacks keep a headless/tokenless page

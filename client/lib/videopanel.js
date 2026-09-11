@@ -15,10 +15,13 @@ import { shadowsOn, setShadows, shadowRes, setShadowRes, SHADOW_RES } from './li
 import { backendName, PREF_MSAA, PREF_BACKEND, PREF_HEADSET_SEEN, WEBGPU_XR, WEBGPU_POSSIBLE } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { registerXRPanel } from './xrpanels.js';
-import { WEBGL } from './capnotice.js';
 
 // same markup contract as the audio section (label right of centre, control
 // left of it — index.html owns .row.wide / .nm / .ctl)
+// storage can throw (private mode, quota) — never let a preference read kill the panel
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
+const lsDel = (k) => { try { localStorage.removeItem(k); } catch { /* private mode */ } };
 function selectRow(label, hint, options, value, onChange) {
   const row = document.createElement('div');
   row.className = 'row wide';
@@ -65,7 +68,7 @@ function videoFields() {
   const pick = (k, values, cur, label) => ({ t: 'list', label,
     rows: values.map((v) => ({ id: String(v), label: String(v), active: String(v) === String(cur),
       actions: String(v) === String(cur) ? [] : [{ k, label: 'use' }] })) });
-  const msaaOn = (CONFIG.params.get('msaa') ?? localStorage.getItem(PREF_MSAA)) !== '0';
+  const msaaOn = (CONFIG.params.get('msaa') ?? lsGet(PREF_MSAA)) !== '0';
   return [
     pick('scale', RENDER_SCALES, getRenderScale(), 'render scale'),
     { t: 'check', k: 'shadows', label: 'shadows', value: shadowsOn() },
@@ -81,7 +84,7 @@ function videoDispatch(k, v) {
   else if (k === 'shadowres') setShadowRes(+v);
   else if (k === 'particles') setParticleTier(v);
   else if (k === 'detail') setAvatarDetail(v);
-  else if (k === 'msaa') localStorage.setItem(PREF_MSAA, v ? '1' : '0');
+  else if (k === 'msaa') lsSet(PREF_MSAA, v ? '1' : '0');
   else return;
   bus.emit('xr:repaint');
 }
@@ -98,8 +101,8 @@ export function initVideoPanel() {
     // when the machine has no WebGPU at all.
     const backend = backendName();
     const forced = CONFIG.params.has('webgl') || CONFIG.params.has('webgpu');
-    const rpref = localStorage.getItem(PREF_BACKEND) || 'auto';
-    const headsetSeen = localStorage.getItem(PREF_HEADSET_SEEN) === '1';
+    const rpref = lsGet(PREF_BACKEND) || 'auto';
+    const headsetSeen = lsGet(PREF_HEADSET_SEEN) === '1';
     // auto = WebGPU, the standard renderer; the one exception is a headset on a browser that can't present VR from WebGPU
     const autoTail = headsetSeen
       ? (WEBGPU_XR ? 'Right now: a headset is present and this browser can present VR from WebGPU, so auto is WebGPU and VR enters without a reload.'
@@ -113,7 +116,7 @@ export function initVideoPanel() {
       [['auto', 'auto'], ['webgpu', 'force WebGPU'], ['webgl', 'force WebGL']],
       rpref,
       (val, row) => {
-        if (val === 'auto') localStorage.removeItem(PREF_BACKEND); else localStorage.setItem(PREF_BACKEND, val);
+        if (val === 'auto') lsDel(PREF_BACKEND); else lsSet(PREF_BACKEND, val);
         needsReload(row);
         const w = row.querySelector('.rwarn'); if (w) w.remove();
         if (val === 'webgpu' && headsetSeen && !WEBGPU_XR) {
@@ -152,9 +155,9 @@ export function initVideoPanel() {
       Object.keys(AVATAR_DETAILS).map((v) => [v, v]), getAvatarDetail(),
       (v) => { setAvatarDetail(v); flashHint(`avatar detail: ${v} (yours only)`); }));
 
-    const msaaOn = (CONFIG.params.get('msaa') ?? localStorage.getItem(PREF_MSAA)) !== '0';
+    const msaaOn = (CONFIG.params.get('msaa') ?? lsGet(PREF_MSAA)) !== '0';
     body.appendChild(checkRow('antialiasing',
       '4× MSAA smooths edges; off measured about +10 fps on a 2× screen (core.js §22n). Set when the renderer is built, so it applies on reload.',
-      msaaOn, (on, row) => { localStorage.setItem(PREF_MSAA, on ? '1' : '0'); needsReload(row); }));
+      msaaOn, (on, row) => { lsSet(PREF_MSAA, on ? '1' : '0'); needsReload(row); }));
   }, { id: 'video', host: 'settings' });
 }

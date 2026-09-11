@@ -201,7 +201,10 @@ console.log('BODIES — the list populates on avatar-worn, which setMe emits');
   check('the list shows the worn body', !pane().querySelector('.sp-empty') && pane().querySelector('.sp-list')?.textContent?.includes('fox') === true, pane().querySelector('.sp-list')?.textContent ?? '');
   check('…with its height', pane().querySelector('.sp-list')?.textContent?.includes('1.52 m') === true);
   check('worn is remembered per browser (ew-worn)', JSON.parse(localStorage.getItem('ew-worn') || '[]')[0] === 'fox', String(localStorage.getItem('ew-worn')));
-  mybody.announceWorn('owl', 'library/owl.vrm');
+  // a REAL switch: palette.switchAvatar → mybody's wireAvatarSwitch handler → makeAvatar (an Avatar with no name/path) → announceWorn
+  { const e1 = emitted.length; await stub.switchAvatar('library/owl.vrm', 'owl'); await tick();
+    const w = emitted.slice(e1).find((e) => e[0] === 'avatar-worn');
+    check('a real switch announces the SWITCH\'s name, not a field on the Avatar (it has none)', w?.[1]?.name === 'owl' && w?.[1]?.path === 'library/owl.vrm', JSON.stringify(w ?? null)); }
   const txt = pane().querySelector('.sp-list')?.textContent ?? '';
   check('a second body lists newest first', txt.indexOf('owl') < txt.indexOf('fox') && txt.indexOf('owl') >= 0, txt);
   const c0 = calls.length;

@@ -136,7 +136,7 @@ function syncSelection(host, { items, selected, busy, loading }) {
   // saved there are no data-id rows, only the two add-verbs. Refusing here sent
   // every repaint down the rebuild path and reported "no rendered rows carry
   // data-id", which reads like a bug in the markup and is really "you have no
-  // voices yet" (live, 2026-08-16 — her list was empty and I nearly went looking
+  // voices yet" (live, 2026-08-16 — the list was empty and I nearly went looking
   // for a missing attribute).
   if (!rows.length && !items.length) {
     // Nothing to select; only the status text can have changed.

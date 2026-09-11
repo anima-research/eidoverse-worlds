@@ -49,7 +49,7 @@ export const xrPanels = new Map();
 export const registerXRPanel = (p) => { xrPanels.set(p.id, p); calls.push(['registerXRPanel', p.id]); };
 
 // ---- net.js
-export const net = { avatars: [], joined: false };
+export const net = { joined: false };   // `avatars` arrives on the join snapshot (net.js) — the suite sets it when it simulates one
 export const sendVerb = rec('sendVerb');
 export const sendJoin = rec('sendJoin');
 export const requestHistory = async () => ({ entries: [], hasMore: false });
@@ -61,7 +61,8 @@ export const switchAvatar = (path, name) => { calls.push(['switchAvatar', path, 
 export const setMyAvatarPath = rec('setMyAvatarPath');
 
 // ---- avatar.js
-export const makeAvatar = async (who, path) => ({ name: path.split('/').pop().replace(/\.vrm.*$/, ''), path, dispose() {} });
+// the real Avatar (avatar.js) carries id/vrm/root — NO name, NO path; a stub that invented them hid a dead emit (review 2/5)
+export const makeAvatar = async (who, path) => ({ id: who, vrm: { scene: { traverse() {} } }, root: {}, dispose() {} });
 export const contributeThumbnail = rec('contributeThumbnail');
 
 // ---- controller.js
@@ -69,7 +70,6 @@ export const armFlight = () => false;
 export const folded = () => false;
 
 // ---- capnotice.js
-export const WEBGL = { active: false };
 
 // ---- assets.js (ui.js reads the byte ledger for the splash)
 export const loadingItems = () => [];

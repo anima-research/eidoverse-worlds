@@ -1,13 +1,11 @@
 // chat-log-test substitutes this for frames.js. The stub is stateful so tests
-// can hide the frame and watch the unread counters move.
+// can hide the frame and watch the unread counters move. Only what the real frame api has (frames.js:273).
 export const frameStub = {
   visible: true,
-  state: { collapsed: false },
   body: null,
   badge() {},
   toggle() {},
   show() { this.visible = true; },
-  collapse(v) { this.state.collapsed = !!v; },
 };
 export function makeFrame() {
   frameStub.el = document.createElement('div');

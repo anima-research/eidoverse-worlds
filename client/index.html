@@ -251,7 +251,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
    line, not furniture at opposite walls */
 .sp-status {
   width: var(--sp-w); display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
-  font-size: var(--fs); margin-top: -10px;   /* the 08-29 layout R preferred: phase under the bar's left end, bytes under its right */
+  font-size: var(--fs); margin-top: -10px;   /* the 08-29 layout: phase under the bar's left end, bytes under its right */
 }
 .sp-phase { color: var(--brand); }
 /* what's LOADING, by name — surfaces only when something has been in flight
@@ -476,7 +476,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
   color: color-mix(in srgb, var(--brand) 35%, var(--fg));
 }
 .sec.open > .head svg { opacity: 1; color: var(--brand); }
-/* no left bar on an extended section: R saw it first on Debug and it is not the panels' convention (09-04) — the brand icon + lifted body edge carry 'extended' */
+/* no left bar on an extended section: first seen on Debug; not the panels' convention — the brand icon + lifted body edge carry 'extended' */
 .sec.open > .body { border-color: var(--edge-hi); }
 .sec > .body {
   display: none; flex-direction: column; gap: 4px;
@@ -651,6 +651,10 @@ body.arranging #dock #hud.emark {
 /* presence on the profile icon: a dot in the bottom-right corner (the
    Discord/Slack convention) — brand = present, attention = away, err = busy */
 #dock button[data-toggles="profile"] { position: relative; }
+/* a frame's badge (chat unread) rides its dock button at rest — the title bar is hidden until arranging */
+#dock button { position: relative; }
+#dock .dk-badge { position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px; background: var(--brand); color: var(--bg); font-size: 9px; line-height: 14px; text-align: center; pointer-events: none; }
+#dock .dk-badge b { font-weight: 600; } #dock .dk-badge b.ping { text-decoration: underline; }
 #dock button[data-toggles="profile"]::after {
   content: ''; position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px; border-radius: 50%;
   background: #3ddc84; box-shadow: 0 0 0 2px rgb(var(--panel-rgb));   /* FIXED green (live 09-05 16:47 + 21:38: presence is never the accent) */
