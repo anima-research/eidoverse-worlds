@@ -99,3 +99,19 @@ export function displayNameIndex(registry: Record<string, TokenAuth>): Map<strin
   }
   return index;
 }
+
+export type WireAuthor = { id: string; name: string };
+
+/** The wire contract for "who said this", built over one display-name index:
+ *  `authorOf(id)` carries the token display name in `author.name` (the id when
+ *  the registry has no distinct name), and `renderLine` writes the ID, the
+ *  addressing handle, into the text (world lines render bare). The prefix is
+ *  never the display name: a host that matches its own name against the text
+ *  must not be woken by another body whose display name merely contains it.
+ *  Every line a host receives, live or replayed, goes through these two. */
+export function wireAuthors(index: ReadonlyMap<string, string>) {
+  return {
+    authorOf: (id: string): WireAuthor => ({ id, name: index.get(id) ?? id }),
+    renderLine: (author: WireAuthor, text: string): string => (author.id === "world" ? text : `${author.id}: ${text}`),
+  };
+}

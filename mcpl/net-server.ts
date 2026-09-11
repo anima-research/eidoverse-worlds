@@ -42,7 +42,7 @@ import { pingDelivery, type WirePing } from "./ping-wire.ts";
 import { MANIFEST_WITH_REVISION, ManifestAnnouncer } from "./manifest.ts";
 import { verifyToken, aid1Slug } from "../server/aid1.ts";
 import { atomicWrite } from "../server/fsutil.ts";
-import { displayNameIndex, lookupToken, readTokenRegistry, type TokenAuth } from "./token-registry.ts";
+import { displayNameIndex, lookupToken, readTokenRegistry, wireAuthors, type TokenAuth } from "./token-registry.ts";
 
 const PORT = Number(process.env.MCPL_PORT ?? 8941);
 // archipelago-home door (home-node.md §7): a `?token=aid1.…` credential is an
@@ -605,7 +605,7 @@ class Session {
     // addressing handle, even when `author.name` carries a display name: a
     // host that matches its own name against the text must not be woken by
     // another body whose display name merely contains it.
-    const rendered = author.id === "world" ? text : `${author.id}: ${text}`;
+    const rendered = wire.renderLine(author, text);
     const params: ChannelsIncomingParams = {
       messages: [{
         channelId: this.channelId,
@@ -1006,7 +1006,7 @@ class Session {
                     messageId: `hist-${m.ts}-${i}`,
                     author: authorOf(m.who),
                     timestamp: new Date(m.ts).toISOString(),
-                    content: [{ type: "text", text: `${m.who}: ${m.text}` }],
+                    content: [{ type: "text", text: wire.renderLine(authorOf(m.who), m.text ?? "") }],
                   })),
                   historyTruncated: this.agent.inbox.filter((m) => m.kind === "say").length > limit,
                 } : {}),
@@ -1282,13 +1282,13 @@ function joinAllowed(auth: Auth, world: string): boolean {
 const seqKey = (id: string, world: string) => `${id}@${world}`;
 // Refreshed on every connection attempt from the same registry read that
 // authorizes it; a remote id the registry does not name renders as itself.
-let knownDisplayNames: Map<string, string> = new Map();
-const authorOf = (id: string): { id: string; name: string } => ({ id, name: knownDisplayNames.get(id) ?? id });
+let wire = wireAuthors(new Map<string, string>());
+const authorOf = (id: string) => wire.authorOf(id);
 const sessions = new Map<string, Session>(); // identity → live session (newest wins)
 wss.on("connection", (ws, req) => {
   const token = new URL(req.url ?? "/", "http://localhost").searchParams.get("token");
   const registry = readTokens();
-  knownDisplayNames = displayNameIndex(registry);
+  wire = wireAuthors(displayNameIndex(registry));
   let auth = token ? lookupToken(registry, token) : undefined;
   let aidReason: string | null = null;
   if (!auth && token?.startsWith("aid1.") && HN_ISSUER_KEY) {

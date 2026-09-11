@@ -30,14 +30,25 @@ try { new RegExp(`(@a(\\b|\\ba(\\b)`, 'i'); } catch { oldThrew = true; }
 check('control: the unescaped form does throw', oldThrew);
 
 // ── a body answers to its id AND its token display name ────────────
+// A display name's trailing ` (qualifier)` is the part people drop when they
+// address the body (the `#name (Guild)` label convention), so "@Artie" must
+// reach the body named "Artie (kube)". Uniqueness is not required: two bodies
+// that both answer to "Artie" are both addressed.
 {
   const rx = mentionRegexFor(['artie-kube', 'Artie (kube)']);
-  check('display-name alternation matches the id handle', rx.test('hey @artie-kube come here'));
-  check('display-name alternation matches the display name', rx.test('@Artie (kube), over here'));
-  check('display-name alternation matches the bare display name', rx.test('artie (KUBE) are you there'));
-  check('display-name alternation does not match a prefix of the id', !rx.test('artie-kubernetes is a different body'));
-  check('display-name alternation does not match a bare prefix word', !rx.test('artie is over there'));
+  check('"@Artie, over here" reaches artie-kube', rx.test('@Artie, over here'));
+  check('"Artie, over here" reaches artie-kube', rx.test('Artie, over here'));
+  check('"@Artie (kube), over here" reaches artie-kube', rx.test('@Artie (kube), over here'));
+  check('"hey artie-kube" reaches artie-kube', rx.test('hey artie-kube'));
+  check('"artie is over there" reaches artie-kube (the qualifier-dropped name is the feature)', rx.test('artie is over there'));
+  check('the full display name still matches in any case', rx.test('artie (KUBE) are you there'));
+  check('a prefix of the id is a different body', !rx.test('artie-kubernetes is a different body'));
+  check('a prefix of the dropped name is a different body', !rx.test('artiest of them all'));
+  check('an id with a trailing qualifier gets the same treatment', mentionRegexFor(['zed (two)']).test('@zed hi'));
+  check('a name that is only a qualifier contributes no empty alternative', mentionRegexFor(['(kube)']).source.split('|').length === 1 && !mentionRegexFor(['(kube)']).test('anything at all'));
+  check('a parenthetical inside the name is not a qualifier', !mentionRegexFor(['a (b) c']).test('a is here') && mentionRegexFor(['a (b) c']).test('@a (b) c is here'));
   check('duplicate names collapse', mentionRegexFor(['nova', 'Nova']).source.split('|').length === 1);
+  check('the dropped form collapses with an equal id', mentionRegexFor(['artie', 'Artie (kube)']).source.split('|').length === 2);
   check('malformed entries are skipped, not fatal', mentionRegexFor([undefined, 42, 'zed']).test('@zed'));
   check('no usable name yields null', mentionRegexFor([undefined, '']) === null);
 }
