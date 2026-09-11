@@ -839,7 +839,7 @@ export function initChat({ send, whisper, typing, people }) {
           <input id="chatline" placeholder="say something…  @ to mention · / for commands">
         </div>
       </div>
-      <button class="chat-side-tog" title="who's here"></button>
+      <button class="chat-side-tog" title="People Here"></button>
       <div class="chat-side closed">
         <div class="chat-side-grip"></div>
         <div class="chat-side-head"></div>
