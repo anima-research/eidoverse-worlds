@@ -871,7 +871,12 @@ body.arranging #dock .dock-grip { display: grid; }
 /* a gated action (the edit wrench without build rights): listed, not offered —
    the same vocabulary #emenu .mrow.dead uses for an unsensed headset */
 #dock button:not(.dock-grip).dead { opacity: .42; cursor: not-allowed; }
-#dock button:not(.dock-grip).dead:hover { color: inherit; background: none; }
+/* `inherit` here resolved to #dock's computed color — which inherits --fg from
+   body — i.e. exactly the ink this reset means to suppress, so a gated wrench
+   brightened to full white on hover like a live one. Name the rest-state token
+   instead. (round 6, measured: dead hover was rgb(235,235,233), identical to
+   a live button's.) */
+#dock button:not(.dock-grip).dead:hover { color: var(--icon); background: none; }
 
 #dock button.on {
   position: relative;
@@ -907,7 +912,13 @@ button.keybtn:active { box-shadow: inset 0 1px 3px rgb(0 0 0 / .6); }
 #dock[data-edge="top"]    { border-top-left-radius: 0; border-top-right-radius: 0; border-top: none; }
 #dock[data-edge="bottom"] { border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom: none; }
 #dock.horizontal { flex-direction: row; }
-#dock.horizontal .dock-grip { width: 14px; height: 100%; }
+/* height:100% cannot resolve here — #dock sets `align-items: center`, so the
+   grip never stretches and there is no definite height to percentage against.
+   It collapsed to its SVG's intrinsic 6px: a 14x6 drag target, on the landscape
+   phone edge that loadDockEdge() picks BY DEFAULT when the rail cannot clear
+   the joystick. align-self overrides the centring. (round 6, measured 14x6 vs
+   the vertical rail's 34x14.) */
+#dock.horizontal .dock-grip { width: 14px; height: auto; align-self: stretch; }
 /* ------------------------------------------------------------- profile */
 .frame .profile-body { padding: 14px; gap: 12px; }
 .pf-id { display: flex; align-items: center; gap: 12px; }
