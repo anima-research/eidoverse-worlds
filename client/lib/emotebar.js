@@ -52,14 +52,26 @@ export function initEmoteBar() {
   // on BOTH axes, so lift only when they actually do.
   const liftClear = () => {
     const me = f.el?.getBoundingClientRect?.(); if (!me) return;
+    const others = allFrames()
+      .filter((o) => o !== f && o.el !== f.el && o.visible !== false)
+      .map((o) => o.el?.getBoundingClientRect?.())
+      .filter((r) => r && r.width);
+    const clearAt = (top) => !others.some((r) => me.left < r.right && r.left < me.right
+      && top < r.bottom && r.top < top + me.height);
+    // Walk UP past each blocker in turn. A single pass hops out of one collision
+    // straight into the next (the bar cleared chat and landed on the world panel
+    // at y=8). Bounded by the number of frames; if nothing is clear, STAY PUT —
+    // a bar the user can see and drag beats one parked somewhere arbitrary.
     let top = me.top;
-    for (const o of allFrames()) {
-      if (o === f || o.visible === false || o.el === f.el) continue;
-      const r = o.el?.getBoundingClientRect?.(); if (!r || !r.width) continue;
-      const hits = me.left < r.right && r.left < me.right && top < r.bottom && r.top < top + me.height;
-      if (hits) top = Math.min(top, r.top - me.height - 8);
+    for (let i = 0; i <= others.length && !clearAt(top); i++) {
+      const blocker = others
+        .filter((r) => me.left < r.right && r.left < me.right && top < r.bottom && r.top < top + me.height)
+        .reduce((lo, r) => (lo == null || r.top < lo.top ? r : lo), null);
+      if (!blocker) break;
+      top = blocker.top - me.height - 8;
+      if (top < 8) { top = me.top; break; }        // no room above: leave it where it was
     }
-    if (top !== me.top && f._state) { f._state.y = Math.max(8, top); f._paint?.(); }   // _paint, NOT _fit — _fit would re-anchor to the bottom and erase the lift
+    if (top !== me.top && clearAt(top) && f._state) { f._state.y = Math.max(8, top); f._paint?.(); }   // _paint, NOT _fit — _fit re-anchors a bottom-anchored frame and would erase the lift
   };
 
   const snapTo = (w) => {
