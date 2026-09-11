@@ -284,6 +284,18 @@ check("the wrench has a row while gated open", !!row("edit"));
   editGate = wasGate; bus.emit("frames");
 }
 
+// ORDER AT PAINT TIME. initDock sorts `last` to the end once; registerPanel
+// PUSHES later mods on after that sort has run, so the menu drifted while the
+// rail stayed right (addDockButton inserts before the first [data-last]).
+// Measured before the fix: dock [..., modx, mody, edit], menu [..., edit, modx,
+// mody]. R: "it should always be at the bottom of both until further notice."
+{ const rows = [...menu().querySelectorAll(".mrow[data-row]")].map((r: any) => r.dataset.row);
+  const btns = [...dock().querySelectorAll("button[data-toggles]")].map((b: any) => b.dataset.toggles);
+  const named = rows.filter((r: string) => !r.startsWith("glyph:"));
+  check("the wrench is LAST in the ∃ menu, even after a late registerPanel",
+    named[named.length - 1] === "edit", JSON.stringify(named));
+  check("...and last on the rail too", btns[btns.length - 1] === "edit", JSON.stringify(btns)); }
+
 check("the lock row and reset row close the menu", !!menu().querySelector(".mrow[data-lock]") && /reset layout/.test(menu().textContent!));
 row("chat")!.click();
 check("a row click opens that window and lights the row", getFrame("chat")!.visible && row("chat")!.classList.contains("open"));

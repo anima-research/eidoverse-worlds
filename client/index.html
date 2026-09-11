@@ -803,7 +803,7 @@ body.edit-mode::after {
 }
 #loading { padding: 7px 10px; font-size: var(--fs-sm); color: var(--warn); white-space: pre; display: none; }
 #loading.on { display: block; }
-#toasts { display: flex; flex-direction: column; gap: 5px; align-items: flex-end; }
+#toasts { display: flex; flex-direction: column; gap: 5px; align-items: flex-end; z-index: 60; }   /* same tier as #hintbar: temporary, possibly urgent, outranks the chrome */
 /* floating chrome carries a thin outline so it separates from whatever the
    world is drawing behind it (live, 09-04): toasts, hint bar, chat gear pop, hud pops */
 .toast, #hintbar, .chat-gearpop, .hud-pop, #tipchip {
@@ -824,8 +824,13 @@ body.edit-mode::after {
 @keyframes toastin { from { opacity: 0; transform: translateX(12px); } }
 
 #hintbar {
+  /* OVER the chrome, not under it. Hints are temporary and may carry urgent
+     information, so they outrank the rail (27/28), the frame rim (30) and the ∃
+     menu (40) — the same reasoning .toast follows. R, 2026-09-11: "those should
+     probably paint OVER the HUD because they're temporary and may contain
+     urgent info". Kept below .dd-pop (200) so an open dropdown still wins. */
   position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
-  z-index: 4; padding: 5px 12px; font-size: var(--fs-sm); color: var(--dim);
+  z-index: 60; padding: 5px 12px; font-size: var(--fs-sm); color: var(--dim);
   pointer-events: none; white-space: nowrap; max-width: 92vw; overflow: hidden;
   text-overflow: ellipsis; transition: opacity .5s;
 }

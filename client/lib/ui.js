@@ -737,7 +737,14 @@ function buildEMenu(m) {
     m.appendChild(row);
   }
   { const s = document.createElement('div'); s.className = 'msep'; m.appendChild(s); }
-  for (const entry of dockEntries) {
+  // ORDER AT PAINT TIME, not at registration. initDock sorts `last` to the end
+  // once, but registerPanel (ui.js:329) PUSHES later mods onto dockEntries after
+  // that sort has already run — so the rail stayed correct (addDockButton
+  // inserts before the first [data-last] button) while this menu drifted.
+  // Measured: dock [..., modx, mody, edit] vs menu [..., edit, modx, mody].
+  // R, 2026-09-11: "it should always be at the bottom of both until further notice."
+  const ordered = [...dockEntries].sort((a, b) => (a.last ? 1 : 0) - (b.last ? 1 : 0));
+  for (const entry of ordered) {
     const { id, action, gate } = entry;
     const icon = entry.icon ?? ID_ICON[id] ?? EMOJI_ICON[(entry.label ?? '').replace(/\uFE0F/g, '')];
     if (action) {

@@ -74,6 +74,15 @@ check("the current version is stamped, replacing the seeded previous one",
 check("a non-frame key (ew-ui-locked) survives the purge", localStorage.getItem("ew-ui-locked") === "0");
 {
   const world = makeFrame("world", { title: "world", x: -10, y: 52, w: 232, h: 300 });
+    // THE BAR DOCKS AT THE TOP. R, 2026-09-11: "let's dock it at the top by
+    // default since all the helper notifications display at the bottom where it
+    // currently is". DEFAULT_LAYOUT.emotes went y:-10 (a BOTTOM anchor — a
+    // negative y re-resolves against innerHeight) to y:10, an absolute offset
+    // from the top. A material DEFAULT_LAYOUT change, riding the LAYOUT_VERSION
+    // bump this block already exercises.
+    { const tbar = makeFrame("emotes", { title: "emotes", x: "center", y: -10, w: 352, h: 32 });
+      check("the emote bar's DEFAULT is the TOP edge, not the bottom",
+        tbar.state.y < 100, `y=${tbar.state.y} vh=${innerHeight}`); }
   check("a frame with a purged save takes the DEFAULT, not the stale x:1",
     world.state.x !== 1 && world.state.x + world.state.w <= innerWidth - 8, JSON.stringify(world.state));
 }
@@ -320,6 +329,61 @@ console.log("FRAMES — a hand-placed frame is never re-anchored");
     `placed ${placed} -> ${bar.state.x}; anchor would give ${wouldCentre}`);
 
   // (4) reset must put the frame back UNDER the anchors — `moved = false`.
+  // THE Y ANCHOR, not just x. R, 2026-09-11: the emote bar "can't be arbitrarily
+  // placed anywhere". fit()'s `opts.y < 0` re-anchor was deliberately ungated —
+  // round 2 gated the CLAMP as well and stranded every untouched bottom frame
+  // (rotate 700->500 left a bar at y=370 where 428 was wanted), so it was
+  // reverted with a note that the lifted-bar case "needs a narrower fix than a
+  // blanket gate". Gating only the ANCHOR is that fix.
+    // A FRESH bottom-anchored frame. Reusing `bar` made this VACUOUS: by this
+    // point its closure's opts.y is undefined (instrumented: "before fit:
+    // opts.y=undefined"), so fit()'s `opts.y < 0` branch never ran at all and
+    // the assertion passed whether or not the anchor was gated — ungating it
+    // left the suite 64/0. A binding that cannot fail is decoration.
+    { localStorage.removeItem("ew-frame-ybar");
+      // Assert the DIRECTION, not an exact y. fit() reads `root.offsetHeight`,
+      // which in this harness is much larger than measurable()'s faked 62 — so
+      // the clamp ceiling and the y:-10 anchor land about two pixels apart and
+      // an equality check cannot tell which one moved the frame (that is why
+      // four earlier versions of this block passed ungated). What the gate
+      // actually guarantees is one-directional: the clamp may pull a hand-placed
+      // frame UP to keep it on screen, but nothing may push it back DOWN toward
+      // the edge it was dragged away from.
+      const ybar = measurable(makeFrame("ybar", { title: "ybar", x: "center", y: -10, w: 352, h: 32 }));
+      ybar.show();
+      const yBefore = ybar.state.y;
+      (ybar.head as HTMLElement).dispatchEvent(new PointerEvent("pointerdown", { clientX: ybar.state.x + 10, clientY: yBefore + 5, bubbles: true }));
+      (ybar.head as HTMLElement).dispatchEvent(new PointerEvent("pointermove", { clientX: ybar.state.x + 10, clientY: 240, bubbles: true }));
+      (ybar.head as HTMLElement).dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+      const placedY = ybar.state.y;
+      check("a bottom-anchored frame can be dragged UP off its edge", placedY < yBefore - 100, `y ${yBefore} -> ${placedY}`);
+      ybar._fit();
+      // The CLAMP may still move it (the viewport ceiling is real); what must NOT
+      // happen is the y:-10 ANCHOR re-applying, which would park it at the bottom
+      // edge again. Assert distance from THAT value, not equality with placedY.
+      // NOT ASSERTED, and the reason is measured rather than guessed. Five
+      // versions of this check were written and every one passed with the gate
+      // REMOVED (65/0). MEASURED, not theorised: after a drag to y=235 the frame
+      // sat at 207, and the y:-10 anchor for the same geometry computes to ~205
+      // — two pixels apart, so no assertion here can tell which line moved it.
+      // An equality check fails even WITH the fix (the clamp legitimately moves
+      // the frame); a direction-only check passes even WITHOUT it (the clamp
+      // only ever moves it up anyway). Why the two collapse together in this
+      // harness is NOT established — measurable()'s getter reports 62 as an own
+      // property, which does not reconcile with the ceiling observed, and I did
+      // not chase it further.
+      // To bind it later: a fixture whose root.offsetHeight really is state.h +
+      // chrome, so the anchor and the ceiling are far apart. The product change
+      // itself (frames.js: `!moved &&` on the y anchor) is one token and is
+      // disclosed in the commit.
+      check("a hand-placed frame is still on screen after a fit", ybar.state.y >= 8, `y=${ybar.state.y}`);
+      // the CLAMP is NOT gated: shrink the viewport under it and it must come inside
+      const vhKeep = innerHeight;
+      (window as any).innerHeight = 240; ybar._fit();
+      check("...but the CLAMP still runs — a hand-placed frame is never left off-screen",
+        ybar.state.y + ybar.el.offsetHeight <= 240, `y=${ybar.state.y} h=${ybar.el.offsetHeight} vh=240`);
+      (window as any).innerHeight = vhKeep; }
+
   bar.resetLayout();
   bar._fit();
   const centreNow = Math.round((innerWidth - bar.state.w) / 2);

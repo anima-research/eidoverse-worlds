@@ -64,6 +64,21 @@ f.opts.onResize(200); await sleep(230);
 check('a 200px drag snaps to 5 columns: w=200, h=2 rows', f._state.w === widthFor(5) && f._state.h === heightFor(5) && f.paints > 0, `w=${f._state.w} h=${f._state.h}`);
 f.opts.onResize(10); await sleep(230);
 check('never fewer than 3 columns: w=124, h=3 rows', f._state.w === widthFor(3) && f._state.w === 124 && f._state.h === heightFor(3), `w=${f._state.w} h=${f._state.h}`);
+// VERTICAL. R, 2026-09-11: "can you also make it arrange vertically? I can't
+// make it stack 1 wide 9 tall, for example." snapTo derived BOTH w and h from
+// the column count, so the bar could only ever be as tall as its width implied.
+// frames.js:427 already passes (state.w, state.h); this rider was discarding the
+// second argument. The 1-column floor applies only when a height was asked for,
+// so the width-only path below still clamps at 3.
+f.opts.onResize(48, 336); await sleep(230);
+check('a narrow, tall drag gives 1 column x 9 rows (R: "1 wide 9 tall")',
+  f._state.w === widthFor(1) && f._state.h === heightFor(1), `w=${f._state.w} h=${f._state.h}`);
+// asked > need: at 9 columns every tile fits in ONE row, so `need` is 1 and a
+// 3-row height is reachable ONLY if the dragged height is honoured. Without that
+// term this case collapses back to a single row.
+f.opts.onResize(2000, 110); await sleep(230);
+check('a WIDE frame dragged taller keeps the rows the drag asked for',
+  f._state.w === widthFor(9) && f._state.h === heightFor(3, 9) && f._state.h > ROW_H, `w=${f._state.w} h=${f._state.h}`);
 f.opts.onResize(2000); await sleep(230);
 check('never more columns than tiles: back to 9×1', f._state.w === 352 && f._state.h === 32, `w=${f._state.w} h=${f._state.h}`);
 f.show();

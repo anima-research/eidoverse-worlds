@@ -19,7 +19,7 @@ const LS = (id) => `ew-frame-${id}`;
 // old save overrode the re-baked default). Bump this whenever DEFAULT_LAYOUT changes materially: on load,
 // a mismatch discards every ew-frame-* save ONCE, so the new default actually takes, then stamps the new
 // version. A user's deliberate arrangement after the bump is saved and kept as normal.
-const LAYOUT_VERSION = '2026-09-11-autominimize';
+const LAYOUT_VERSION = '2026-09-11-emotes-top';
 const LAYOUT_VER_KEY = 'ew-frame-layout-ver';
 (() => {
   try {
@@ -237,7 +237,7 @@ const DEFAULT_LAYOUT = {
   settings: { x: -8,  y: 381, w: 407, h: 443, hidden: true },
   profile:  { x: 48,  y: 46,  w: 505, h: 452, hidden: true },
   debug:    { x: -414, y: 8,  w: 342, h: 453, hidden: true },
-  emotes:   { x: 'center', y: -10, h: 32, hidden: false },  // one bar across the bottom, OPEN by default (live 09-07 10:55 reference HUD); the bar sizes its WIDTH itself (emotebar.js snapTo) but ROW_H is fixed — carried here so fitsDefaults stops counting the bar as zero-height (round 4)
+  emotes:   { x: 'center', y: 10, h: 32, hidden: false },  // one bar across the bottom, OPEN by default (live 09-07 10:55 reference HUD); the bar sizes its WIDTH itself (emotebar.js snapTo) but ROW_H is fixed — carried here so fitsDefaults stops counting the bar as zero-height (round 4)
 };
 // Can this viewport hold the hand-arranged default at all? Derived from
 // DEFAULT_LAYOUT rather than a hardcoded breakpoint, so it stays true if the
@@ -535,7 +535,16 @@ export function makeFrame(id, opts = {}) {
     // because the clamp below pulls it up and nothing re-anchors it. The
     // lifted-bar case needs a narrower fix than a blanket gate; disclosed
     // unbound rather than papered over.
-    if (opts.y != null && opts.y < 0) state.y = Math.max(8, innerHeight + opts.y - hh);
+    // THE ANCHOR is gated on `moved`; the CLAMP on the next line is NOT. That
+    // distinction is the whole fix. Round 2 gated the clamp too and stranded
+    // every ordinary bottom-anchored frame (rotate 700->500 left an untouched
+    // bar at y=370 where 428 was wanted), so it was reverted with a note saying
+    // the lifted-bar case "needs a narrower fix than a blanket gate". This is
+    // that fix: a frame PLACED BY HAND keeps its y, while an untouched one still
+    // follows its edge through a resize.
+    // R, 2026-09-11: "the emote bar is a little broken now, it can't be
+    // arbitrarily placed anywhere."
+    if (!moved && opts.y != null && opts.y < 0) state.y = Math.max(8, innerHeight + opts.y - hh);
     state.y = clamp(state.y, 8, Math.max(8, innerHeight - hh - 8));
     // A frame created hidden gets its x from resolveAnchor at CREATION width. If it's first shown after a
     // resize/maximize, a negative-x (right-edge) anchor must re-resolve to the CURRENT width, or it strands
