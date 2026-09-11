@@ -735,9 +735,9 @@ function paintSide() {
   if (!side || !sideSt.open) return;
   const people = getPeople();
   const others = people.filter((p) => !p.me).length;
-  side.querySelector('.chat-side-head').textContent =
+  sideEl('head').textContent =
     others === 0 ? 'just you' : `${others} other${others === 1 ? '' : 's'} here`;
-  side.querySelector('.chat-side-list').innerHTML = people.length
+  sideEl('list').innerHTML = people.length
     ? people.map((p) => `<div class="who-row ${p.me ? 'self' : ''}">
         <span class="who-mark" data-presence="${esc(p.presence ?? 'present')}" title="${esc(p.presence ?? 'present')}"></span>
         <span class="n" style="color:${colorFor(p.id)}">${esc(p.id)}${p.me ? ' (you)' : ''}</span>
