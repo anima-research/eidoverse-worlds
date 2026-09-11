@@ -582,6 +582,16 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   check("travel tool emitted channels/changed to the host",
     tv.inbound.some((m) => m.method === "channels/changed"), "host never told");
 
+  // the map: `worlds` lists where you are and what your policy allows —
+  // the same joinAllowed travel applies, answered before a move is attempted
+  check("worlds is advertised as a tool", listed.result?.tools?.some((t: any) => t.name === "worlds"), "no worlds tool");
+  const map = await tv.request("tools/call", { name: "worlds", arguments: {} });
+  const mapText = txt(map);
+  check("worlds marks the current world", /^- annex ←: .*you are here/m.test(mapText), mapText);
+  check("worlds lists the world you came from as travelable (worlds:[\"*\"])", /^- commons: .*may travel/m.test(mapText), mapText);
+  check("worlds shows the body in its row", /^- annex ←: .*roamer \(agent\)/m.test(mapText), mapText);
+  check("worlds states create authority", /hold create authority/.test(mapText), mapText);
+
   const noop = await tv.request("tools/call", { name: "travel", arguments: { world: "annex" } });
   check("travel to where you already are is a no-op, not an error",
     !noop.result?.isError && /Already in/.test(noop.result?.content?.[0]?.text ?? ""), JSON.stringify(noop.result));
@@ -596,6 +606,8 @@ const txt = (r:any) => r.result?.content?.[0]?.text ?? "";
   await sleep(1200);
   const toolRefusal = await bound2.request("tools/call", { name: "travel", arguments: { world: "annex" } });
   check("travel tool honours join policy", toolRefusal.result?.isError === true, JSON.stringify(toolRefusal.result));
+  const boundMap = txt(await bound2.request("tools/call", { name: "worlds", arguments: {} }));
+  check("worlds tells a policy-bound credential it may not travel", /^- annex: .*not in your join policy/m.test(boundMap) && /needs create authority you do not hold/.test(boundMap), boundMap);
   // channels/open cannot travel AT ALL any more, so the "one policy" property
   // is now stronger than matching codes: there is no second lane to disagree
   // with the first. Prove the door is shut rather than merely equally guarded.
