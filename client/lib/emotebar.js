@@ -42,7 +42,13 @@ export function initEmoteBar() {
   const ALL = 9;   // 3 postures + 6 emotes: ONE bar (live 09-06 23:34: '9×1')
   const f = makeFrame('emotes', {
     title: 'emotes', x: 'center', y: -10, w: widthFor(ALL), h: ROW_H,   // one row of nine across the bottom by default
-    minW: widthFor(3), minH: ROW_H, hidden: true,   // 3..9 across
+      // minW was widthFor(3)=124px and a REAL resize clamps at f.minW
+      // (frames.js:141), so 124px admitted exactly three columns — ONE column was
+      // unreachable by drag no matter what snapTo computed. R hit it at once:
+      // "Emote bar still can't go 1x wide, 9x tall." My own test had called
+      // onResize(48, 336) directly and sailed past the clamp: a fixture that
+      // skipped the very constraint it claimed to verify.
+      minW: widthFor(1), minH: ROW_H, hidden: true,   // 1..9 across — a single column is a legal shape
     // SNAP TO WHOLE TILES on release: drag the frame to any width, and when the
     // drag settles it fits itself to the tiles that row holds (live, 09-04). The
     // frame owns its size, so we write its state and repaint through the refs it

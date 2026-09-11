@@ -710,6 +710,19 @@ function initSidePane() {
   // thesis, which is the point. (agent review round 3)
   const tog = sideEl('tog');
   if (tog) tog.onclick = () => { sideSt.open = !sideSt.open; applySide(); saveSide(); };
+
+    // DOUBLE-CLICK A NAME -> ITS DM TAB. R, 2026-09-11: "can you double-click on
+    // a name in the People Here pane and have a DM tab show up correctly".
+    // DELEGATED, because paintSide rebuilds this list's innerHTML on every
+    // roster event — per-row handlers would be discarded seconds later. Skips
+    // your own row: there is no whispering yourself.
+    const list = sideEl('list');
+    list?.addEventListener('dblclick', (e) => {
+      const row = e.target?.closest?.('.who-row');
+      if (!row || row.classList.contains('self')) return;
+      const name = row.querySelector('.n')?.textContent?.trim();
+      if (name) openConvo(name);
+    });
   const grip = sideEl('grip');
   grip?.addEventListener('pointerdown', (e) => {
     if (!sideSt.open) return;
@@ -1035,7 +1048,34 @@ function setFilter(f) {
 function paintTabs() {
   const bar = frame.body.querySelector('.chat-tabs');
   if (!bar) return;
-  bar.innerHTML = '';
+    bar.innerHTML = '';
+    // The strip carries `all · mentions · system` PLUS one tab per open DM, so
+    // tabs now size to their labels and the row SCROLLS instead of every tab
+    // getting thinner as conversations open (they shared the width via flex:1).
+    // R, 2026-09-11: "squash the words together at the top to make room for more
+    // tabs but still leave some buffer so they don't get too close, left/right
+    // arrow keys at either side of the menu if you need to side-scroll and see
+    // more due to overflow."
+    const left = document.createElement('button');
+    left.className = 'tabarrow'; left.type = 'button'; left.textContent = '\u2039';
+    left.title = 'scroll tabs left'; left.setAttribute('aria-label', 'scroll tabs left');
+    const scroll = document.createElement('div');
+    scroll.className = 'tabscroll';
+    const right = document.createElement('button');
+    right.className = 'tabarrow'; right.type = 'button'; right.textContent = '\u203a';
+    right.title = 'scroll tabs right'; right.setAttribute('aria-label', 'scroll tabs right');
+    const STEP = 90;
+    left.onclick = (e) => { e.stopPropagation(); scroll.scrollLeft -= STEP; };
+    right.onclick = (e) => { e.stopPropagation(); scroll.scrollLeft += STEP; };
+    // An arrow with nowhere to go is a lie about the interface: hidden unless the
+    // row really overflows, re-checked on scroll and on every repaint.
+    const paintArrows = () => {
+      const over = scroll.scrollWidth > scroll.clientWidth + 1;
+      left.hidden = !over || scroll.scrollLeft <= 0;
+      right.hidden = !over || scroll.scrollLeft + scroll.clientWidth >= scroll.scrollWidth - 1;
+    };
+    scroll.addEventListener('scroll', paintArrows);
+    bar.append(left, scroll, right);
   const mk = (key, label, unread = 0, closable = false) => {
     const b = document.createElement('button');
     b.className = filter === key ? 'on' : '';
@@ -1054,7 +1094,7 @@ function paintTabs() {
       };
       b.title = 'right-click to close this conversation';
     }
-    bar.appendChild(b);
+      scroll.appendChild(b);
   };
   mk('all', 'all');
   mk('mentions', 'mentions');
@@ -1069,7 +1109,10 @@ function paintTabs() {
   gear.setAttribute('aria-expanded', String(open));
   if (open) gearAnchor = gear;
   gear.onclick = (e) => { e.stopPropagation(); gearToggle?.(gear); };
-  bar.appendChild(gear);
+    bar.appendChild(gear);                     // the gear stays OUTSIDE the scroller — always reachable
+    paintArrows();
+    // the scroller has no measurable width until layout runs
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(paintArrows);
 }
 
 // ---------------------------------------------------------------- typing

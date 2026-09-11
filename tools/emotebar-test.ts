@@ -56,7 +56,12 @@ console.log('EMOTEBAR — nine tiles, one row');
 check('3 posture tiles + 6 emote tiles = 9', tiles().length === 9, `${tiles().length}`);
 check('postures lead, in sit/stand/lie order', tiles().slice(0, 3).map((t) => t.dataset.posture).join() === 'sit,stand,lie');
 check('emotes follow in EMOTE_ORDER with their number key', tiles().slice(3).every((t, i) => t.dataset.emote === EMOTE_ORDER[i] && t.title === `${EMOTE_ORDER[i]} — key ${i + 1}`));
-check('default frame is 9×1: w=widthFor(9)=352, h=ROW_H, minW=widthFor(3)', f.opts.w === 352 && f.opts.w === widthFor(9) && f.opts.h === ROW_H && f.opts.minW === widthFor(3), JSON.stringify(f.opts));
+// minW is widthFor(1), NOT widthFor(3). A real resize clamps at f.minW
+// (frames.js:141), so a 124px floor made ONE column unreachable by drag however
+// snapTo computed — R: "Emote bar still can't go 1x wide, 9x tall." The 3-column
+// floor still applies on the WIDTH-ONLY path inside snapTo (see below); it just
+// no longer blocks the frame itself.
+check('default frame is 9×1: w=widthFor(9)=352, h=ROW_H, minW=widthFor(1) so 1 column is draggable', f.opts.w === 352 && f.opts.w === widthFor(9) && f.opts.h === ROW_H && f.opts.minW === widthFor(1), JSON.stringify(f.opts));
 check('an XR panel registers with 3 postures + 6 emotes', xrPanels.length === 1 && xrPanels[0].fields().map((x: any) => x.k).join() === 'sit,stand,lie,' + EMOTE_ORDER.join());
 
 console.log('EMOTEBAR — snapTo / widthFor / heightFor');

@@ -384,11 +384,30 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .chat-gearpop .gp-row button:hover { color: var(--fg); border-color: var(--edge); }
 .chat-gearpop .gp-row button.on { background: var(--brand); color: var(--ink-on-brand); font-weight: 600; }
 .chat-gearpop button { padding: 2px 8px; }
-.chat-tabs { display: flex; gap: 2px; padding: 7px 6px 0; flex: none; }
+/* The strip has to hold `all · mentions · system` PLUS one tab per open DM, so
+   the tabs can no longer share the width equally — flex:1 squeezed every tab
+   thinner as conversations opened. They size to their label now and the strip
+   scrolls, with arrows appearing only on overflow.
+   R, 2026-09-11: "squash the words together at the top to make room for more
+   tabs but still leave some buffer so they don't get too close, left/right
+   arrow keys at either side of the menu if you need to side-scroll". */
+.chat-tabs { display: flex; gap: 2px; padding: 7px 6px 0; flex: none; align-items: center; }
+.chat-tabs .tabscroll {
+  display: flex; gap: 4px; flex: 1; overflow-x: auto; scrollbar-width: none;
+  scroll-behavior: smooth;
+}
+.chat-tabs .tabscroll::-webkit-scrollbar { display: none; }
+.chat-tabs .tabarrow {
+  flex: none; width: 14px; padding: 3px 0; background: none; border: none;
+  color: var(--dim); font-size: var(--fs-xs); cursor: pointer; border-radius: 0;
+}
+.chat-tabs .tabarrow:hover { color: var(--fg); }
+.chat-tabs .tabarrow[hidden] { display: none; }
 .chat-tabs button {
-  flex: 1; padding: 3px 4px; font-size: var(--fs-xs);
-  display: flex; align-items: center; justify-content: center; gap: 7px;
+  flex: none; padding: 3px 7px; font-size: var(--fs-xs);
+  display: flex; align-items: center; justify-content: center; gap: 5px;
   background: none; border: none; color: var(--dim); border-radius: 0;
+  white-space: nowrap;
 }
 .chat-tabs .tick { width: 1px; height: 10px; flex: none; background: var(--brand); opacity: 0; transition: opacity var(--speed); }
 .chat-tabs button.on { color: color-mix(in srgb, var(--brand) 35%, var(--fg)); background: none; }

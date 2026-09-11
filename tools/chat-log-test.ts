@@ -28,7 +28,7 @@ plugin({
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 GlobalRegistrator.register();
 
-const { logChat, initChat, chat } = await import("../client/lib/chat.js");
+const { logChat, logWhisper, initChat, chat } = await import("../client/lib/chat.js");
 const { frameStub } = await import("./chat-frames-stub.mjs");
 
 let pass = 0, fail = 0;
@@ -37,7 +37,14 @@ const check = (name: string, ok: boolean, detail = "") => {
   else { fail++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ` — ${detail}` : ""}`); }
 };
 
-initChat({ send: () => {}, people: () => [{ id: "keir", agent: true }] });
+// A self row + two others: the self row exercises the "no whispering yourself"
+// skip, and two others let a DM tab open for each.
+const whispers: any[] = [];
+initChat({
+  send: () => {},
+  whisper: (to: string, text: string) => whispers.push({ to, text }),
+  people: () => [{ id: "me", me: true }, { id: "keir", agent: true }, { id: "mica" }],
+});
 const log = () => document.getElementById("chatlog")!;
 const rows = () => [...log().children].filter((c) => !c.classList.contains("sys"));
 const texts = () => rows().map((r) => r.querySelector(".body")?.textContent);
@@ -137,6 +144,58 @@ logChat("rab", "spoken wedge", "", { seq: 32, ts, spoken: true, utt: 22, t0: ts 
 check("displaced anchor reprints its name when a different speaker wedges in",
   texts()[1] === "spoken wedge" && !rows()[2].classList.contains("cont"),
   JSON.stringify({ order: texts(), anchorCont: rows()[2].classList.contains("cont") }));
+
+
+// ============================================================ DMs and the tab strip
+// R, 2026-09-11: "Did we ever verify that DMs work and sort correctly in the
+// chat bar? Or can you double-click on a name in the People Here pane and have a
+// DM tab show up correctly". The machinery existed — convos, openConvo,
+// setFilter('w:<name>'), per-convo unread, dataset.convo filtering — and NOTHING
+// drove it. This is that coverage.
+console.log("\nCHAT — DMs, the People Here pane, and the tab strip");
+const tabs = () => frameStub.body!.querySelector(".chat-tabs") as HTMLElement;
+const tabLabels = () => [...tabs().querySelectorAll(".tabscroll button")].map((b: any) => b.textContent.trim());
+const openPane = () => (frameStub.body!.querySelector(".chat-side-tog") as HTMLElement)?.click();
+
+check("the tab strip starts with the three fixed tabs", tabLabels().join("|") === "all|mentions|system", tabLabels().join("|"));
+check("tabs live INSIDE the scroller, the gear outside it",
+  !!tabs().querySelector(".tabscroll") && !!tabs().querySelector(":scope > .chat-gear") && !tabs().querySelector(".tabscroll .chat-gear"));
+check("both scroll arrows exist", tabs().querySelectorAll(".tabarrow").length === 2);
+
+// an inbound whisper opens a conversation, files the line, and bumps unread
+logWhisper({ from: "keir", to: "me", text: "psst" });
+check("an inbound whisper opens its tab", tabLabels().includes("@keir 1"), tabLabels().join("|"));
+const wline = [...log().children].find((l: any) => l.dataset.convo === "keir");
+check("...and files the line under that conversation", !!wline, "no line with dataset.convo=keir");
+check("...and it renders as a whisper", !!wline?.classList.contains("whisper"));
+
+// the People Here pane: double-click a name -> that DM tab
+openPane();
+const rows2 = () => [...frameStub.body!.querySelectorAll(".chat-side-list .who-row")];
+check("the People Here pane lists everyone", rows2().length === 3, `${rows2().length} rows`);
+const mica = rows2().find((r: any) => r.querySelector(".n")?.textContent?.trim() === "mica") as HTMLElement;
+mica?.dispatchEvent(new Event("dblclick", { bubbles: true }));
+check("double-clicking a name opens ITS DM tab", tabLabels().includes("@mica"), tabLabels().join("|"));
+
+// ...but not your own row
+const selfRow = rows2().find((r: any) => r.classList.contains("self")) as HTMLElement;
+const tabsBefore = tabLabels().length;
+selfRow?.dispatchEvent(new Event("dblclick", { bubbles: true }));
+check("double-clicking YOURSELF opens nothing", tabLabels().length === tabsBefore, tabLabels().join("|"));
+
+// SORTING: a DM tab shows only that conversation
+(tabs().querySelector(".tabscroll button:last-child") as HTMLElement)?.click();
+const visible = () => [...log().children].filter((l: any) => !l.classList.contains("filtered"));
+logWhisper({ from: "keir", to: "me", text: "second" });
+logChat("keir", "a room line", "agent", { seq: 99, ts: Date.now() });
+const micaTab = [...tabs().querySelectorAll(".tabscroll button")].find((b: any) => b.textContent.includes("@keir")) as HTMLElement;
+micaTab?.click();
+check("a DM tab shows only that conversation",
+  visible().every((l: any) => l.dataset.convo === "keir"), visible().map((l: any) => l.dataset.convo ?? "(room)").join(","));
+const allTab = tabs().querySelector(".tabscroll button") as HTMLElement;
+allTab?.click();
+check("...and `all` shows the room again",
+  visible().some((l: any) => !l.dataset.convo), visible().map((l: any) => l.dataset.convo ?? "(room)").join(","));
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
