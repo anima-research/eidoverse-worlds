@@ -23,7 +23,7 @@ import { makeLightGizmo } from './lights.js';
 import { entities, entityMeta, comps, editHolds } from './world.js';
 import { reindexCollider } from './colliders.js';
 import { heightAt } from './terrain.js';
-import { sendVerb, sendDrag } from './net.js';
+import { net, sendVerb, sendDrag } from './net.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
 import { flashHint, collapseAll, panelFrame } from './ui.js';
 import { sceneSelect } from './scenegraph.js';
@@ -54,7 +54,40 @@ let editMode = false;
 export const isEditing = () => editMode;
 claimEscape(() => (editMode ? 'edit' : null));   // edit mode owns Esc (its own ladder) — the frames' close-all yields
 
+/** May this client enter edit mode at all?
+ *
+ * PERMISSIVE WHEN UNKNOWN, denying only on a known-insufficient role —
+ * conjure.js:144 (`net.myRights?.gen !== false`) is the house idiom and this
+ * follows it. net.myRights has no declaration in net's object literal; it is
+ * assigned at the snapshot (net.js:697) or a live grant (:468), so it is
+ * `undefined` for the whole pre-snapshot window. Treating that as denial would
+ * make holdGhost() silently do nothing on a slow join — a build click that
+ * vanishes is worse than one that is refused out loud.
+ */
+export const mayEdit = () => {
+  const role = net.myRights?.role;
+  return role === undefined || ['builder', 'owner'].includes(role);
+};
+
 export function setEditMode(on, { quiet = false } = {}) {
+  // The gate the wrench advertises, applied at the one chokepoint every entry
+  // point funnels through: toggleEditMode, the dock action, KeyB, and the two
+  // quiet callers (holdGhost, armSeatPlacement — "I picked a thing to place",
+  // which is exactly the build intent the server refuses). Gating only the
+  // keybind would have been half a fix, which is the shape of mistake this
+  // review round already caught once.
+  //
+  // ONLY the `on` direction. Leaving always works, or a client demoted
+  // mid-session is trapped in edit mode with no way out.
+  //
+  // R, 2026-09-11, on why this is not merely cosmetic: "Builder is true by
+  // default, but if it's a server where builder/not builder is delineated,
+  // Edit is unpinned and gray." The rail says you cannot; the keyboard should
+  // not disagree with the rail.
+  if (on && !mayEdit()) {
+    if (!quiet) flashHint('edit mode needs build rights in this world');
+    return editMode;
+  }
   if (editMode === on) return editMode;
   editMode = on;
   document.body.classList.toggle('edit-mode', on);
