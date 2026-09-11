@@ -27,8 +27,9 @@ import { World, type Client, worlds, getWorld, wireSettledPose } from "./world.t
 import { warmBoxes, worldLibs } from "./boxes.ts";
 // The HTTP surface — one route table, /upload behind it in upload.ts (§15,
 // 7c). fetch() below delegates; avatarRoster rides back for the join
-// snapshot, pendingSnaps for the renderer's snap-result replies.
+// snapshot; the separate ephemeral broker owns renderer capture requests.
 import { route, avatarRoster } from "./routes.ts";
+import { snapshots } from "./snapshots.ts";
 import { registerSystem, startTick } from "./tick.ts";
 import { MESSAGES, pendingWhispers, whisperKey } from "./messages.ts";
 import { LIMITS } from "./limits.ts";
@@ -193,6 +194,7 @@ function reapAuxLegs(w: World, primary: Client, closeReason: string) {
   for (const t of [...w.clients]) {
     if (t !== primary && t.id === primary.id && (t.surface ?? "world") !== "world") {
       retireAuxLeg(w, t, primary);
+      snapshots.retire(t);
       w.clients.delete(t); clients.delete(t.ws);
       t.ws.close?.(4007, closeReason);
       console.log(`[world:${w.name}] ${primary.id}/${t.surface} reaped — ${closeReason}`);
@@ -203,6 +205,7 @@ function reapAuxLegs(w: World, primary: Client, closeReason: string) {
 function expel(w: World, target: Client, why: string) {
   try { target.ws.send(JSON.stringify({ type: "error", error: why })); } catch { /* going anyway */ }
   const wasEmbodied = !target.spectator;
+  snapshots.retire(target);
   // an expelled AUX leg announces its own death; an expelled PRIMARY takes
   // its aux legs with it (kick/ban target the identity, not one socket) —
   // review finding 5: expel unmapped + superseded the target, so the close
@@ -426,6 +429,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     c.spectator = Boolean(msg.spectate) || c.surface !== "world";
     c.agent = Boolean(msg.agent);
     c.renderer = Boolean(msg.renderer);
+    snapshots.configure(c, msg.capture);
     if (c.renderer) c.spectator = true; // renderers are invisible by definition
     // Same display name, different PERSON (two guild members can share a
     // nick): suffix the newcomer rather than letting takeover fight.
@@ -563,6 +567,7 @@ function installJoin(c: Client, w: World) {
             && (other.surface ?? "world") === c.surface
             && !(other.spectator && (other.surface ?? "world") === "world")) {
           other.superseded = true;
+          snapshots.retire(other);
           retiredGen = other.gen;
           w.clients.delete(other);
           clients.delete(other.ws);
@@ -689,6 +694,7 @@ const server = Bun.serve({
       try {
         const c = clients.get(ws);
         if (!c) return;
+        snapshots.retire(c);
         clients.delete(ws);
         // dev crash forensics (?bc=1 clients): the last thing a dying renderer
         // was doing, printed at the only moment we learn it died
@@ -787,6 +793,7 @@ const server = Bun.serve({
           // still rtc- and attest-capable with no living primary, the exact
           // state the 4008 orphan refusal exists to prevent.
           if (c.world) {
+            snapshots.retire(c);
             c.world.clients.delete(c);
             retireAuxLeg(c.world, c);
             if (!c.spectator) {

@@ -64,7 +64,7 @@ export const REHEARSAL_TOOLS = new Set(["rehearse_down", "rehearse_recover"]);
 
 export const TOOLS = [
   { name: "look", description: "Text-tier perception: where you are, who's present and what they're doing, every placed thing with distance/bearing, and chat since you last looked.", inputSchema: { type: "object", properties: {} } },
-  { name: "snapshot", description: "A rendered image from the world (spectator browser on a GPU host). Slower than look — use when spatial/visual detail matters. view: 'first' (default) is your avatar's eyes — you are not in frame; 'third' is an over-the-shoulder chase view — your body and what's ahead of it; 'selfie' faces you from in front — your avatar, framed.", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["first", "third", "selfie"] } } } },
+  { name: "snapshot", description: "An image from a connected rendering client (browser or opt-in Unreal). Unreal shows the local underwater prototype with networked avatars, not the persistent world buildings. Slower than look. view: first = your eyes, third = chase, selfie = facing you. renderer defaults to auto (prefers Unreal when available).", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["first", "third", "selfie"] }, renderer: { type: "string", enum: ["auto", "unreal", "browser"] } } } },
   { name: "walk_to", description: "Walk (or run) to world coordinates. Returns when you arrive; others see you walking.", inputSchema: { type: "object", properties: { x: { type: "number" }, z: { type: "number" }, run: { type: "boolean" } }, required: ["x", "z"] } },
   // ---- FLIGHT (upstream's flight arc, merged 2026-09-02; behind the `fly`
   // grant — the agent refuses on the ground it stands on). Deliberately no
@@ -194,12 +194,12 @@ export function toolList({ travel = false }: { travel?: boolean } = {}) {
     && (REHEARSAL_ENABLED || !REHEARSAL_TOOLS.has(t.name)));
 }
 
-export async function snapshotTool(ag: ToolAgent, view = "first") {
+export async function snapshotTool(ag: ToolAgent, view = "first", renderer = "auto") {
   try {
-    const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}`);
+    const r = await fetch(`${ag.httpBase}/snap?world=${encodeURIComponent(ag.world)}&follow=${encodeURIComponent(ag.name)}&view=${encodeURIComponent(view)}&renderer=${encodeURIComponent(renderer)}`);
     if (!r.ok) return { content: [{ type: "text", text: `no view available: ${(await r.text()).slice(0, 200)}` }] };
     const b64 = Buffer.from(await r.arrayBuffer()).toString("base64");
-    return { content: [{ type: "image", data: b64, mimeType: "image/png" }] };
+    return { content: [...(r.headers.get("x-eidoverse-renderer") === "unreal" ? [{ type: "text", text: "Unreal underwater prototype view: local terrain/habitats and networked avatars; persistent world buildings are not mirrored." }] : []), { type: "image", data: b64, mimeType: "image/png" }] };
   } catch (e) {
     return { content: [{ type: "text", text: `snapshot failed: ${(e as Error).message}` }] };
   }
@@ -237,7 +237,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
   unfold_wings: async (ag, a, ctx, name) => text(await ag.foldWings(false)),
   flight_status: async (ag, a, ctx, name) => text(ag.flightStatus()),
   look: async (ag, a, ctx, name) => { return text(ag.look()); },
-  snapshot: async (ag, a, ctx, name) => { return await snapshotTool(ag, typeof a.view === "string" ? a.view : "first"); },
+  snapshot: async (ag, a, ctx, name) => { return await snapshotTool(ag, typeof a.view === "string" ? a.view : "first", typeof a.renderer === "string" ? a.renderer : "auto"); },
   set_avatar: async (ag, a, ctx, name) => {
       const roster = (await (await fetch(`${ag.httpBase}/avatars`)).json()) as { name: string; path: string }[];
       const want = String(a.avatar ?? "").trim();

@@ -21,12 +21,12 @@ import { rightsOf, isAdminId } from "./rights.ts";
 import { ROLE_RANK } from "../shared/fold.js";
 import { simSnapshot } from "../shared/sim.js";
 import { worlds, forkWorld, type World, type Client } from "./world.ts";
-import { pendingSnaps } from "./routes.ts";
+import { snapshots } from "./snapshots.ts";
 import { globalBans, saveGlobalBans } from "./moderation.ts";
 
 // ---- whispers: held-in-memory machinery (moved with its only writers) ------
 // join's held-whisper delivery imports these back — one-way, like
-// routes.ts's pendingSnaps.
+// the screenshot broker's pending requests.
 export const pendingWhispers = new Map<string, unknown[]>();
 export const whisperKey = (world: string, recipient: string) => `${world}\u0000${recipient}`;
 export const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
@@ -458,16 +458,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // presence: batched into stage frames by the tick loop, never persisted
     c.world.dirty.set(c.id, msg.pose);
   },
-  "snap-result": ({ c, ws, now, expel }, msg) => {
-    const pending = pendingSnaps.get(msg.id);
-    if (!pending || !c.renderer) return;
-    pendingSnaps.delete(msg.id);
-    if (typeof msg.dataUrl === "string" && msg.dataUrl.startsWith("data:image/png;base64,")) {
-      pending.resolve({ ok: true, png: Buffer.from(msg.dataUrl.slice("data:image/png;base64,".length), "base64") });
-    } else {
-      pending.resolve({ ok: false, err: String(msg.error ?? "renderer returned no image"), status: 502 });
-    }
-  },
+  "capture-capabilities": ({ c }, msg) => { if (c.world) snapshots.configure(c, msg.capture); },
+  "snap-result": ({ c }, msg) => { snapshots.receive(c, msg); },
   "world-fork": ({ c, ws, now, expel }, msg) => {
     // Copy the world you are standing in to a new name. Owner-only
     // (rank 2, like shaping terrain): the fork carries ALL history —

@@ -6,7 +6,7 @@
 // Handler bodies moved verbatim; server.ts's fetch() is a one-line delegate.
 // The static-file machinery (serveFrom/contentType/gzCache) and the avatar
 // roster live here with their only HTTP callers — the join snapshot imports
-// avatarRoster back, and the ws `snap-result` case imports pendingSnaps,
+// avatarRoster back; the separate screenshot broker handles snap-result,
 // both one-way: this module never imports server.ts.
 
 import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, appendFileSync } from "node:fs";
@@ -28,6 +28,7 @@ const nativeLogin = createNativeLogin({
 import { resolveLibFile } from "./lint.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { worlds, getWorld, type World } from "./world.ts";
+import { snapshots } from "./snapshots.ts";
 import { handleUpload } from "./upload.ts";
 import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
 import { tickStats } from "./tick.ts";
@@ -45,28 +46,9 @@ export type Srv = {
 
 // ---- snapshots: the world serves views of itself ---------------------------
 // GET /snap?world=W&follow=ID → the sequencer asks a renderer client (an
-// invisible hub-spectator on some GPU box, dialed OUT to us like any client)
+// opt-in Unreal player or legacy browser spectator, dialed OUT like any client)
 // to jump its camera to ID's head and return one frame. Clients never know
 // rendering exists as a separate thing — it's just the world's API.
-type PendingSnap = { resolve: (r: { ok: true; png: Uint8Array } | { ok: false; err: string; status: number }) => void };
-export const pendingSnaps = new Map<string, PendingSnap>();
-let nextSnapId = 1;
-
-function requestSnap(world: World, follow: string, view = "first"): Promise<{ ok: true; png: Uint8Array } | { ok: false; err: string; status: number }> {
-  const renderer = [...world.clients].find((c) => c.renderer);
-  if (!renderer) return Promise.resolve({ ok: false, err: `no renderer is currently serving world "${world.name}"`, status: 503 });
-  const target = [...world.clients].find((c) => c.id === follow && !c.spectator);
-  if (!target) return Promise.resolve({ ok: false, err: `"${follow}" is not present in "${world.name}"`, status: 404 });
-  if (!["first", "third", "selfie"].includes(view)) view = "first";
-  const id = `snap-${nextSnapId++}`;
-  return new Promise((resolve) => {
-    pendingSnaps.set(id, { resolve });
-    renderer.ws.send(JSON.stringify({ type: "snap", id, follow, view }));
-    setTimeout(() => {
-      if (pendingSnaps.delete(id)) resolve({ ok: false, err: "renderer timed out", status: 504 });
-    }, 12_000);
-  });
-}
 
 // ---- static serving ---------------------------------------------------------
 
@@ -522,9 +504,10 @@ const ROUTES: Route[] = [
       const w = worlds.get(url.searchParams.get("world") ?? "commons");
       const follow = url.searchParams.get("follow") ?? "";
       if (!w) return new Response("unknown world", { status: 404 });
-      const r = await requestSnap(w, follow, url.searchParams.get("view") ?? "first");
-      if (!r.ok) return new Response(r.err, { status: r.status });
-      return new Response(r.png, { headers: { "content-type": "image/png", "cache-control": "no-store" } });
+      const r = await snapshots.request(w, follow, url.searchParams.get("view") ?? "first", url.searchParams.get("renderer") ?? "auto");
+      if (!r.ok) return new Response(r.err, { status: r.status, headers: { "cache-control": "no-store", ...(r.status === 429 ? { "retry-after": "2" } : {}) } });
+      return new Response(r.png, { headers: { "content-type": "image/png", "cache-control": "no-store",
+        "x-content-type-options": "nosniff", "x-eidoverse-renderer": r.engine, "x-eidoverse-scene": r.scene } });
     },
   },
   {
