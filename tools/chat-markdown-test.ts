@@ -1,7 +1,7 @@
 // chat (client/lib/chat.js) — the log's text discipline and its small state machines, run headless against
 // the REAL module (same stubs as chat-log-test): inline markdown builds ELEMENTS from **bold** / *i* / `code`
 // but never parses HTML out of a message; the VR quad's `recent` tail is capped at 12; account() counts
-// unread rows and mentions only while the reader is away; the people pane swaps sides from the gear.
+// unread rows and mentions only while the reader is away; People Here swaps sides from the gear.
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/chat-markdown-test.ts
 //
@@ -111,7 +111,7 @@ frameStub.visible = true;
 say('rab', 'back');
 check('visible again: nothing counts', chat.unreadCounts().unread === 0);
 
-console.log('CHAT — the people pane swaps sides');
+console.log('CHAT — People Here swaps sides');
 { // A DECOY mod panel first, carrying the same PUBLIC classes, placed BEFORE
   // the real markup in the same body — mods.js/registerPanel mount into frame
   // bodies after initChat's innerHTML, so this is reachable. applySide must

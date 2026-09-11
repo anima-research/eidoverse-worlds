@@ -778,7 +778,7 @@ function initChatGear() {
       <div class="gp-row"><span>markdown</span>
         <button data-md="1" class="${chatMd ? 'on' : ''}">on</button>
         <button data-md="0" class="${!chatMd ? 'on' : ''}">off</button></div>
-      <div class="gp-row"><span>people pane</span>
+      <div class="gp-row"><span>People Here</span>
         <button data-side="left" class="${sideSt.pos === 'left' ? 'on' : ''}">left</button>
         <button data-side="right" class="${sideSt.pos !== 'left' ? 'on' : ''}">right</button></div>`;
   };
