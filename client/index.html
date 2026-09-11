@@ -394,7 +394,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
    R, 2026-09-11: "squash the words together at the top to make room for more
    tabs but still leave some buffer so they don't get too close, left/right
    arrow keys at either side of the menu if you need to side-scroll". */
-.chat-tabs { display: flex; gap: 4px; padding: 7px 8px 0; flex: none; align-items: center; }   /* gap 2->4 and side padding 6->8: R's screenshot had 'system' jammed against the open whisper tab */
+.chat-tabs { display: flex; gap: 2px; padding: 7px 8px 0; flex: none; align-items: flex-end; border-bottom: 1px solid var(--edge); }   /* the rail a real tab attaches to — .pf-tabs' recipe (R: "use the tabs in the Profile menu as an example") */
 .chat-tabs .tabscroll {
   display: flex; gap: 4px; flex: 1; overflow-x: auto; scrollbar-width: none;
   scroll-behavior: smooth;
@@ -418,28 +418,26 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .chat-tabs .tabarrow:hover { color: var(--fg); background: var(--hov); }
 .chat-tabs .tabarrow[hidden] { display: none; }
 .chat-tabs button {
-  /* EVEN SPACING DOWN TO A FLOOR, then the scroller takes over. `flex: none`
-     sized every tab to its label, so with no DMs open the three fixed tabs
-     stopped sharing the width — R, 2026-09-11: "aren't evenly spaced anymore
-     when there's no DMs to share that space with ... They should always remain
-     evenly spaced, down to a minimum buffer, and then there's the < > arrow
-     buttons for overflow." flex-basis 0 makes them share equally; min-width is
-     the buffer they never shrink past, and once the row cannot hold them at
-     that floor the scroller overflows and the arrows appear. */
-  flex: 1 1 0; min-width: 62px; padding: 3px 7px; font-size: var(--fs-xs);
-  display: flex; align-items: center; justify-content: center; gap: 5px;
-  background: none; border: none; color: var(--dim); border-radius: 0;
-  white-space: nowrap;
+  /* .pf-tab's recipe, kept flex so the strip still shares width evenly and
+     still scrolls when it cannot. The 1px brand TICKS this replaces were never
+     a tab affordance: they crowded whatever sat to their left (R's screenshot:
+     `system|@Hesperus`) and the trailing one became a stray mark once the close
+     glyph moved beside it. An underline says "this pane belongs to this tab"
+     without needing any space of its own. */
+  flex: 1 1 0; min-width: 58px; padding: 5px 9px 6px; font-size: var(--fs-xs);
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  background: none; border: none; border-bottom: 1px solid transparent;
+  margin-bottom: -1px; border-radius: 6px 6px 0 0;
+  color: var(--dim); white-space: nowrap; cursor: pointer;
 }
+.chat-tabs button:hover { color: var(--fg); background: rgb(255 255 255 / .04); }
 /* a DM tab carries a visible close — right-click worked and told nobody */
 .chat-tabs button .tabx {
-  flex: none; margin-left: 5px; margin-right: -3px; padding: 0 3px; border-radius: 4px;
+  flex: none; margin-left: 1px; margin-right: -4px; padding: 0 3px; border-radius: 4px;
   color: var(--dim); opacity: .55; font-size: var(--fs-xs); line-height: 1;
 }
 .chat-tabs button .tabx:hover { opacity: 1; color: var(--fg); background: var(--hov); }
-.chat-tabs .tick { width: 1px; height: 10px; flex: none; background: var(--brand); opacity: 0; transition: opacity var(--speed); }
-.chat-tabs button.on { color: color-mix(in srgb, var(--brand) 35%, var(--fg)); background: none; }
-.chat-tabs button.on .tick { opacity: 1; }
+.chat-tabs button.on { color: var(--brand); border-bottom-color: var(--brand); background: none; }
 
 .chat-log {
   flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;

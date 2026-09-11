@@ -1085,15 +1085,16 @@ function paintTabs() {
   const mk = (key, label, unread = 0, closable = false) => {
     const b = document.createElement('button');
     b.className = filter === key ? 'on' : '';
-    const t1 = document.createElement('span'); t1.className = 'tick';
-    const t2 = document.createElement('span'); t2.className = 'tick';
-    const lbl = document.createElement('span');
-    lbl.textContent = label + (unread ? ` ${unread}` : '');
-      b.append(t1, lbl, t2);
-      // the close glyph is appended AFTER t2 below; R asked for it nearer its
-      // label ("so it feels more strongly associated with it") and the trailing
-      // tick was sitting between them — measured 16px of gap. The x now goes
-      // before t2, so only the flex gap separates it from the name.
+      // REAL TABS, not a centred label between two 1px brand ticks. The ticks
+      // were never a tab affordance: they crowded whatever sat to their left
+      // (R's screenshot: `system|@Hesperus`) and the trailing one became a stray
+      // mark once the close glyph moved beside it. R, 2026-09-11: "Do we want to
+      // design proper 'tabs' now that we have the option to make tabs? ... You
+      // can use the tabs in the Profile menu as an example." This borrows
+      // .pf-tab's recipe: an underline that attaches the tab to its pane.
+      const lbl = document.createElement('span');
+      lbl.textContent = label + (unread ? ` ${unread}` : '');
+      b.append(lbl);
     if (unread) b.classList.add('has-unread');
     b.onclick = () => setFilter(key);
     if (closable) {
@@ -1109,7 +1110,7 @@ function paintTabs() {
           convos.delete(key.slice(2));
           if (filter === key) setFilter('all'); else paintTabs();
         };
-        b.insertBefore(x, b.lastElementChild);   // before the trailing tick, not after it
+        b.append(x);   // no trailing tick to sit inside any more
       b.oncontextmenu = (e) => {
         e.preventDefault();
         convos.delete(key.slice(2));
