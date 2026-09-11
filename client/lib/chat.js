@@ -1110,7 +1110,8 @@ function paintTabs() {
           convos.delete(key.slice(2));
           if (filter === key) setFilter('all'); else paintTabs();
         };
-        b.append(x);   // no trailing tick to sit inside any more
+        b.classList.add('has-x');   // the tab must MAKE ROOM for the glyph (see .has-x)
+        b.append(x);
       b.oncontextmenu = (e) => {
         e.preventDefault();
         convos.delete(key.slice(2));

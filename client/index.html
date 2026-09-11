@@ -367,7 +367,11 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
   /* min-width:0 for the same reason .tabarrow needs it: `.chat-tabs button
      { min-width: 62px }` matches the gear too, and a 62px gear ate strip space
      that the tabs needed. Measured, not reasoned. */
-  flex: none; min-width: 0; margin-left: 2px; padding: 3px 6px;
+  /* LIFTED off the rail. With the strip bottom-aligned the gear sat level with
+     the separator and crowded it — R, 2026-09-11 item 4: "Move the
+     'Chat>Settings' icon up to be in line with the other tab icons so it
+     doesn't get so close to the separator line". */
+  flex: none; min-width: 0; margin-left: 2px; padding: 3px 6px; align-self: center;
   background: none; border: none; color: var(--dim); border-radius: 5px;
   display: grid; place-items: center;
 }
@@ -394,9 +398,10 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
    R, 2026-09-11: "squash the words together at the top to make room for more
    tabs but still leave some buffer so they don't get too close, left/right
    arrow keys at either side of the menu if you need to side-scroll". */
-.chat-tabs { display: flex; gap: 2px; padding: 7px 8px 0; flex: none; align-items: flex-end; border-bottom: 1px solid var(--edge); }   /* the rail a real tab attaches to — .pf-tabs' recipe (R: "use the tabs in the Profile menu as an example") */
+.chat-tabs { display: flex; gap: 2px; padding: 7px 8px 0; flex: none; align-items: stretch; }   /* NO rail here: it ran under the arrows and gear and died at the People-Here expander. R, 2026-09-11 item 5: "crop the separator line to only be under the tabs ... look more balanced" */
 .chat-tabs .tabscroll {
   display: flex; gap: 4px; flex: 1; overflow-x: auto; scrollbar-width: none;
+  border-bottom: 1px solid var(--edge);   /* the rail, cropped to exactly the tabs */
   scroll-behavior: smooth;
 }
 .chat-tabs .tabscroll::-webkit-scrollbar { display: none; }
@@ -412,8 +417,13 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
      override and the arrows rendered 62px wide. Measured in Chromium against the
      real sheet (arrowW=62, flexGrow=0) — my specificity arithmetic said the
      arrows were safe and it was wrong. */
-  flex: none; width: 18px; min-width: 0; padding: 2px 0; background: none; border: none;
-  color: var(--dim); font-size: 15px; line-height: 1; cursor: pointer; border-radius: 4px;
+  /* IN LINE with the tab text, not shouting over it. 15px next to 11px labels
+     read as a different kind of control — R, 2026-09-11 item 3: "Make the
+     side-scroll arrows bigger if it's too small (in-line with the rest of the
+     tab-text". So: the tab's own size, with the box big enough to hit. */
+  flex: none; width: 16px; min-width: 0; padding: 2px 0; background: none; border: none;
+  color: var(--dim); font-size: var(--fs-sm); line-height: 1; cursor: pointer; border-radius: 4px;
+  align-self: center;
 }
 .chat-tabs .tabarrow:hover { color: var(--fg); background: var(--hov); }
 .chat-tabs .tabarrow[hidden] { display: none; }
@@ -424,6 +434,13 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
      `system|@Hesperus`) and the trailing one became a stray mark once the close
      glyph moved beside it. An underline says "this pane belongs to this tab"
      without needing any space of its own. */
+  /* `justify-content: center` centres the label+x pair AS A UNIT, so on a
+     closable tab the glyph rode out past the padding box and vanished — R,
+     2026-09-11 item 2: "Make sure the 'x' is also fully visible." Measured: the
+     x sat 5px beyond its own tab's right edge and did not render at all.
+     Centring is right for the fixed tabs; a closable one needs the glyph to
+     occupy real space, so .has-x switches to space-between and pays for it with
+     a wider floor and room on the right. */
   flex: 1 1 0; min-width: 58px; padding: 5px 9px 6px; font-size: var(--fs-xs);
   display: flex; align-items: center; justify-content: center; gap: 4px;
   background: none; border: none; border-bottom: 1px solid transparent;
@@ -433,11 +450,21 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .chat-tabs button:hover { color: var(--fg); background: rgb(255 255 255 / .04); }
 /* a DM tab carries a visible close — right-click worked and told nobody */
 .chat-tabs button .tabx {
-  flex: none; margin-left: 1px; margin-right: -4px; padding: 0 3px; border-radius: 4px;
+  flex: none; margin-left: 2px; margin-right: 0; padding: 0 2px; border-radius: 4px;
   color: var(--dim); opacity: .55; font-size: var(--fs-xs); line-height: 1;
 }
 .chat-tabs button .tabx:hover { opacity: 1; color: var(--fg); background: var(--hov); }
-.chat-tabs button.on { color: var(--brand); border-bottom-color: var(--brand); background: none; }
+.chat-tabs button.on {
+  /* HIGHLIGHTED, not merely tinted. The underline alone was computed correctly
+     and painted over: the tab's bottom border and the strip's rail landed on the
+     SAME line (measured overlap 0px), so the parent's border won and R saw a
+     brand-coloured word with no underline — "Leave the tab highlighted when
+     active" (2026-09-11). With the rail now on .tabscroll the tab's own border
+     has somewhere to sit, and a .tile.on-style wash makes the tab itself read
+     as selected rather than just its text. */
+  color: var(--brand); border-bottom-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 14%, rgb(255 255 255 / .04));
+}
 
 .chat-log {
   flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
@@ -502,6 +529,24 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .chat-log .line.whisper .who::before { content: '⤷ '; }
 .chat-log .line.whisper.me .who::before { content: '⤶ '; }
 .chat-tabs button.has-unread { color: var(--fg); font-weight: 600; }
+.chat-tabs button.has-x {
+  /* A DM TAB IS SIZED BY ITS NAME, not by an equal share. `flex: 1 1 0` gave
+     every tab the same width, so @Hesperus (62.8px of text) was squeezed into a
+     ~56px content box and ellipsised to "@He…" — the truncation meant to be a
+     last resort fired at four tabs. Content-sized with a ceiling: it takes the
+     room the name needs, gives way before the fixed tabs do, and only truncates
+     past 168px, where the scroller has already taken over. */
+  flex: 0 1 auto; justify-content: space-between; min-width: 74px; max-width: 168px; padding-right: 5px;
+}
+.chat-tabs button.has-x > span:not(.tabx) {
+  /* THE LABEL WAS EVICTING THE GLYPH. Measured: a 62.8px name inside a 74px tab
+     whose padding leaves a ~56px content box — and `white-space: nowrap` means
+     the label never yields, so the x was pushed 17px past the tab's own right
+     edge and did not render. Three rounds I spent adjusting the x's margin, the
+     tab's padding and justify-content: none of those were the term. A long DM
+     name must TRUNCATE so the glyph keeps its place. */
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
 .chat-typing {
   display: none; padding: 0 10px 3px; font-size: var(--fs-xs); color: var(--dim);
   font-style: italic; flex: none;
