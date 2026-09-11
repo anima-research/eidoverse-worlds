@@ -445,11 +445,20 @@ canvas.addEventListener('click', (e) => {
 
 bus.on('key', (e) => {
   if (e.code === 'Escape') {
+    // ONE PRESS, ONE ACTION. This chain runs first — the most transient state
+    // wins the press — and the controller's `cancel` (stand up, leave photo
+    // mode, drop pointer lock) sits BELOW it as the last resort. Escape used
+    // to fire both, so deselecting while sitting also stood you up. Declining
+    // the default is how this layer says "consumed": controller.js dispatches
+    // `cancel` after this bus hop and skips a press that was. With nothing
+    // here to dismiss nothing is declined, and the press falls through.
     if (cancelSeatArm()) { /* an armed placement is the most transient state */ }
     else if (ghost) cancelGhost();
     else if (seatSelected()) deselectSeat();
     else if (selected) deselect();
     else if (editMode) setEditMode(false);
+    else return;
+    e.preventDefault();
     return;
   }
   // Undo stays available outside edit mode — you may only notice the mistake
