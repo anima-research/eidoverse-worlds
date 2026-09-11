@@ -150,6 +150,18 @@ console.log('CHAT — the people pane swaps sides');
   // ancestor comes first in document order), so nesting it would leave the
   // capture's `:scope >` bound untested.
   cols.prepend(nestedMod);
+  // TWO decoys, because S1 and F4 mutate DIFFERENT hops and each is only
+  // visible from its own position:
+  //   F4 mutates the `side:` capture (cols.querySelector -> unbounded), so its
+  //     decoy must be an earlier SIBLING inside cols — above.
+  //   S1 mutates sideEl('head') -> side.querySelector('.chat-side-head'), which
+  //     resolves from the captured pane, so its decoy must sit INSIDE the real
+  //     .chat-side. A sibling is invisible to it.
+  const insideMod = document.createElement('div');
+  insideMod.className = 'mod-inside';
+  insideMod.innerHTML = `<div class="chat-side-head">MOD-INNER-HEAD</div>`;
+  realSide.prepend(insideMod);
+  const innerHead = insideMod.querySelector('.chat-side-head')!;
   const modHead = nestedMod.querySelector('.chat-side-head')!;
   roster = [{ id: 'keir', agent: true }, { id: 'rab' }, { id: 'zzz' }];
   // The pane is OPEN here (the check above read a painted head). paintSide bails
@@ -158,11 +170,22 @@ console.log('CHAT — the people pane swaps sides');
   // happened when this drove chat.open() (that opens the FRAME, not the pane).
   bus.emit('roster');                                    // the real trigger, chat.js:714
   check('a mod .chat-side-head nested inside the real pane is never written to (S1)',
-    modHead.textContent === 'MOD-HEAD', modHead.textContent!);
+    innerHead.textContent === 'MOD-INNER-HEAD', innerHead.textContent!);
+  check('...nor the one a mod mounts as an earlier sibling', modHead.textContent === 'MOD-HEAD', modHead.textContent!);
   // Exactly 3 — an alternation that also accepts the pre-repaint text cannot fail.
   check('...and the REAL head is the one that got the update (F4)',
     realSide.querySelector(':scope > .chat-side-head')!.textContent === '3 others here',
     realSide.querySelector(':scope > .chat-side-head')!.textContent!);
+  // F4's observable lives in applySide, which WRITES through the captured pane
+  // (classList 'closed' + style.width). paintSide only truthiness-checks it, so
+  // a stolen `side:` capture is silent there but loud here.
+  (tog as HTMLElement).onclick!(new Event('click'));          // close
+  check('closing writes to the REAL pane, not a mod\'s (F4)',
+    realSide.classList.contains('closed') && !(nestedMod.querySelector('.chat-side') as HTMLElement).classList.contains('closed'),
+    `real=${realSide.className} decoy=${(nestedMod.querySelector('.chat-side') as HTMLElement).className}`);
+  (tog as HTMLElement).onclick!(new Event('click'));          // re-open for later blocks
+  check('...and re-opening restores the real pane width', realSide.style.width === '150px' && !realSide.classList.contains('closed'), realSide.style.width);
+  insideMod.remove();
   nestedMod.remove();
 
   // LIFETIME (M-L): a capture fixes WHICH node, not that it still EXISTS. A mod
