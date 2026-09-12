@@ -528,5 +528,31 @@ console.log("CHROME COST — the declared anchor");
     rail.left === 304 && rail.right === 0, JSON.stringify(rail));
 }
 
+console.log("AUTO-HIDDEN — survives a reload");
+{
+  // A field that save() WRITES but the initialiser never READS is write-only across
+  // a reload, and nothing here caught it: `autoHidden` reached storage (save()
+  // serialises the whole state object) while construction rebuilt state field by
+  // field and silently omitted it. Measured consequence: auto-hide at 900 persists
+  // {hidden:true, autoHidden:true}; a reload restores `hidden` and drops
+  // `autoHidden`; widening then finds the restore guard falsy and the frame is
+  // stranded hidden FOREVER.
+  localStorage.setItem("ew-frame-autotest", JSON.stringify({
+    x: 100, y: 100, w: 200, h: 150, hidden: true, autoHidden: true,
+  }));
+  const f: any = makeFrame("autotest", { title: "autotest", x: 100, y: 100, w: 200, h: 150, hidden: true });
+  check("autoHidden is read back from a saved layout, not just written to it",
+    f._state.autoHidden === true, JSON.stringify(f._state));
+
+  // ...and a frame the owner deliberately closed must NOT carry the flag, or the
+  // viewport rule would reopen it. hide() clears it; that is the whole distinction.
+  localStorage.setItem("ew-frame-autotest2", JSON.stringify({
+    x: 100, y: 100, w: 200, h: 150, hidden: true,
+  }));
+  const g: any = makeFrame("autotest2", { title: "autotest2", x: 100, y: 100, w: 200, h: 150, hidden: true });
+  check("a saved hide with no autoHidden flag stays user-hidden",
+    g._state.autoHidden === false, JSON.stringify(g._state));
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

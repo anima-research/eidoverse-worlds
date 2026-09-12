@@ -369,6 +369,14 @@ export function makeFrame(id, opts = {}) {
     // opens less: chat alone, because it is the one pane useful by itself and it
     // carries the composer. Everything else stays one dock tap away.
     hidden: saved?.hidden ?? (hidden || (id !== 'chat' && !fitsDefaults())),
+    // MUST be read back, not just written. save() serialises the whole state object,
+    // so `autoHidden` reached storage — but this initialiser never restored it, making
+    // it write-only across a reload. Consequence, measured: auto-hide at 900 persists
+    // {hidden:true, autoHidden:true}; a reload brings back `hidden` and drops
+    // `autoHidden`; widening to 1920 then finds the restore guard falsy and the frame
+    // is stranded hidden FOREVER. B1 traded "reopens a deliberately closed panel" for
+    // "never reopens an auto-hidden one".
+    autoHidden: saved?.autoHidden ?? false,
   };
 
   const api = {
