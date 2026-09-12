@@ -643,7 +643,10 @@ export function makeFrame(id, opts = {}) {
       const chromeSettled = (document.querySelector('#dock')?.querySelectorAll('button[data-toggles]').length ?? 0) > 0;
       if (!placed && chromeSettled) {
         let clearRight = 0;
-        for (const sel of ['#dock', '#micbtn', '#earbtn']) {
+        // .capnotice is fixed chrome too (position:fixed, z-index 60) and it steals
+        // controls at narrow widths — the same bug class this rule exists for, one
+        // component over. Named by the agent review; measured stealing a tile at 280px.
+        for (const sel of ['#dock', '#micbtn', '#earbtn', '.capnotice']) {
           const g = document.querySelector(sel)?.getBoundingClientRect();
           if (g && g.width && g.left < state.x + state.w && state.x < g.right
               && g.top < state.y + hh && state.y < g.bottom) {

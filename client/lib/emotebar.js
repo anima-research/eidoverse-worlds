@@ -93,7 +93,7 @@ export function initEmoteBar() {
   const roomFor = () => {
     // the chrome that shares the bar's y-band: the rail plus the mic/ear pair
     let clearRight = 0;
-    for (const sel of ['#dock', '#micbtn', '#earbtn']) {
+    for (const sel of ['#dock', '#micbtn', '#earbtn', '.capnotice']) {
       const g = document.querySelector(sel)?.getBoundingClientRect();
       if (g && g.width && g.top < 60 && g.bottom > 8) clearRight = Math.max(clearRight, g.right);
     }
