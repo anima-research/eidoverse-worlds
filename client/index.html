@@ -6,26 +6,69 @@
 <title>eidoverse-worlds</title>
 <style>
 /* ===========================================================================
-   Design tokens. One place to change the client's whole look.
+   DESIGN TOKENS — the one block that owns the client's whole look.
+   Modding the UI's colors = editing (or live-overriding) THIS BLOCK ONLY;
+   every rule below and every JS-drawn glyph reads these, never raw hex.
+
+   ROLES:
+   · brand    = identity & liveness ONLY: the ∃, connection state, "this is
+                on/present". Never decoration.
+   · attn     = "needs YOUR attention": mentions, edit-mode, unsaved, mic-hot.
+                One warm amber — complements brand, colorblind-separable.
+   · ink ladder (fg/dim/icon) = content: primary text, labels/hints, glyphs.
+   · surfaces (panel/chip/well) = material. hover/active whites = interaction
+                feedback only.
+   · err      = failures only, never attention.
    =========================================================================== */
 :root {
-  --bg:        #0a1018;
-  --panel:     rgba(9, 20, 28, 0.84);
-  --edge:      rgba(120, 190, 170, 0.22);
-  --edge-hi:   rgba(143, 232, 200, 0.55);
-  --fg:        #e6f0ec;
-  --dim:       #8ba39c;
-  --accent:    #8fe8c8;
-  --accent-dk: #1d3a34;
-  --warn:      #e8c96a;
+  --bg:        #0c0c0d;
+  /* --panel-a is the opacity fallback dial (visionOS "Tinted" lesson):
+     glass legibility collapses over bright scenes, so the floor is one
+     user-ownable number away. /panels <0.3-1> sets it, persisted. */
+  --panel-a:   0.7;
+  --panel-rgb: 5 20 20;    /* deep-ocean teal — saturated dark that the brand seafoam sits IN, not ON */
+  --panel:     rgb(var(--panel-rgb) / var(--panel-a));
+  --chip:      rgb(0 0 0 / .62);       /* tabs & floating chips */
+  --well:      rgb(0 0 0 / .4);        /* inputs, pressed-in states */
+  --edge:      rgb(255 255 255 / 0.10);
+  --edge-hi:   rgb(255 255 255 / 0.32);
+  --rim:       inset 0 1px 0 rgb(255 255 255 / .09);  /* the top gleam */
+  --hov:       rgb(255 255 255 / .06);
+  --act:       rgb(255 255 255 / .10);
+  --fg:        #ebebe9;
+  --dim:       #97979b;
+  --icon:      color-mix(in srgb, var(--brand) 55%, #c2c2c6);  /* icons carry a whisper of the brand (derived: follows the picker); base kept light so idle dock icons don't read muddy next to the lit state */
+  --brand:     #8fe8c8;   /* THE seafoam — the only one; everything below derives */
+  --brand-deep: color-mix(in srgb, var(--brand) 84%, #1a2a28);  /* the ∃ at rest when live */
+  --attn:      #ffc46b;   /* THE attention amber — the only one */
   --err:       #ff8f8f;
-  --ping:      #ffd479;
+  /* in-world affordance PILLS (nameplate, speaking mic, typing dots, bubbles):
+     light-on-dark, derived from the accent by default so a restyle carries
+     them — but their own names, so a light menu mode could leave them dark
+     (live, 09-05 16:41). Read by the sprite painters (tokv) and repainted on
+     'style' events. */
+  --pill-bg:   rgb(8 20 28 / .86);
+  --pill-edge: color-mix(in srgb, var(--brand) 25%, transparent);
+  --pill-fg:   #e8f4ef;
+  --pill-dim:  #8ba39c;
+  --pill-dot:  color-mix(in srgb, var(--brand) 85%, white);
+  --pill-name: var(--brand);
+  --ok:        var(--brand);            /* 'running / fine' — the brand, never a third green */
+  --ink-on-brand: #0f2024;               /* dark ink for text/edges drawn ON a brand-filled chip */
+  /* legacy aliases — keep working, point at roles */
+  --accent:    var(--attn);
+  --accent-dk: #382a1a;
+  --control:   var(--brand);
+  --warn:      var(--attn);
+  --ping:      var(--attn);
 
-  --r:         7px;
-  --shadow:    0 6px 22px rgba(0, 0, 0, 0.45);
-  --font:      ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
-  --fs:        13px;
-  --fs-sm:     11.5px;
+  --r:         10px;
+  --shadow:    0 8px 28px var(--well);
+  --font:      ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --font-code: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --fs:        14px;
+  --fs-sm:     12px;
+  --fs-xs:     11px;   /* the ONE small size for chrome captions — tiles, chips, readouts (live, 09-05: unify the scales) */
   --speed:     .16s;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -34,22 +77,52 @@
 }
 
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); }
+/* Cursors stay native except the loupe: ui.js generates an SVG loupe tinted
+   by the LIVE --brand (CSS url() can't read vars) and publishes it as
+   --cur-loupe; the rule falls back to the native cursor until then. */
+button, .btn, select, a, label, .mrow, .mpin, .dbg-row, .ps-row, .card,
+.ac-row, .chat-gear, .fr-btn, .sec > .head, .chat-tabs button,
+.chat-side-tog, .sp-skip { cursor: pointer; }
+body.loupe-on canvas { cursor: var(--cur-loupe, crosshair); }
+/* ONE house scrollbar — the standard properties, nothing else. On Chromium,
+   scrollbar-width:thin DISABLES the ::-webkit-scrollbar pseudos, so what
+   renders is the NATIVE thin overlay bar reading scrollbar-color; pseudo
+   rules here would be dead code. */
+* { scrollbar-width: thin; scrollbar-color: var(--edge) transparent; }
 body { font: var(--fs)/1.5 var(--font); color: var(--fg); -webkit-font-smoothing: antialiased; }
 canvas { display: block; touch-action: none; }
 
 .panel {
   background: var(--panel);
-  border: 1px solid var(--edge);
+  border: none;
   border-radius: var(--r);
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(9px);
-  -webkit-backdrop-filter: blur(9px);
+  /* rim-light: glass catching light on its top edge — surfaces separate by
+     elevation + gleam, never by outline (border study C) */
+  /* shadow is a STATE, not decoration: near-flat at rest — games
+     separate surfaces by fill + gleam, not by OS paper-stack shadows — and
+     the .lifting rule below restores real depth only while a frame is HELD */
+  box-shadow: 0 1px 5px rgb(0 0 0 / .28);
+  transition: box-shadow .25s ease;
+  backdrop-filter: blur(16px) saturate(1.15);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
 }
+.frame.lifting { box-shadow: 0 12px 32px rgb(0 0 0 / .5); }
+/* the rim rides an overlay so it gleams OVER header chips too —
+   inset box-shadow paints under children, so light "behind" the title read
+   wrong; glass catches light on its whole top edge, contents included */
+/* no browser-default 13.33px anywhere in a frame: buttons inherit the house size */
+.frame button:not(.tile), .frame input { font-size: var(--fs-sm); font-family: var(--font); }
+.frame::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  box-shadow: var(--rim); pointer-events: none; z-index: 30;
+}
+/* code stays mono; prose is prose */
+textarea, code, pre { font-family: var(--font-code); }
 
 button, .btn {
   font: var(--fs-sm)/1.4 var(--font);
   color: var(--fg);
-  background: rgba(20, 40, 46, 0.7);
+  background: rgb(255 255 255 / 0.05);
   border: 1px solid var(--edge);
   border-radius: 5px;
   padding: 6px 9px;
@@ -57,26 +130,73 @@ button, .btn {
   text-align: left;
   transition: background var(--speed), border-color var(--speed);
 }
-button:hover, .btn:hover { background: rgba(32, 68, 62, 0.9); border-color: var(--edge-hi); }
+button:hover, .btn:hover { background: var(--act); border-color: var(--edge-hi); }
 button:active { transform: translateY(1px); }
-button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-button.on { background: var(--accent-dk); border-color: var(--edge-hi); color: var(--accent); }
+/* ONE unified pattern for a row of equal-width action buttons (reset/pause/copy
+   etc). Menus used to hand-roll `flex:1;padding:3px 0` inline per-panel, which
+   drifted (0 horizontal padding jammed the text to the edges) — this centers
+   the label with the base button's own padding and shares the row
+   (no per-menu handrolling; one fallback). Use `<div class="row btn-row">`. */
+.btn-row { display: flex; gap: 6px; }
+.btn-row > button { flex: 1; max-width: 12rem; text-align: center; padding: 5px 8px; }   /* capped: a wide frame must not stretch buttons out of proportion (live, 09-04) */
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@keyframes hud-blink { 0%, 100% { opacity: 1; } 25%, 75% { opacity: .25; } }
+#xrbtn.hud-blink { animation: hud-blink .9s ease-in-out 2; }
+#xrbtn.hud-absent { filter: drop-shadow(0 0 3px var(--attn)); }   /* the attention ring around an absent headset's visor */
+input:focus-visible, textarea:focus-visible { outline: 1px solid var(--edge-hi); }
+button.on { background: var(--hov); border-color: var(--edge-hi); color: var(--fg); }
+/* persistent MODES read as armed (live 09-07 23:25): the loupe's `on`, and a skinned dropdown whose choice isn't the default */
+.frame button.mode.on, .frame button.mode.on:hover, button.mode.on, button.mode.on:hover { border-color: var(--accent); color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.frame .dd.set, .dd.set, .dd.set:hover { border-color: var(--accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
 /* unshared local changes are pending until committed */
 button.dirty { border-color: var(--warn); color: var(--warn); }
 
-input[type=text], input[type=search], input:not([type]) {
+input[type=text], input[type=search], input[type=number], input:not([type]) {
   font: var(--fs-sm) var(--font);
   color: var(--fg);
-  background: rgba(4, 14, 20, 0.9);
+  background: var(--well);
   border: 1px solid var(--edge);
   border-radius: 5px;
   padding: 6px 8px;
 }
 input::placeholder { color: var(--dim); }
 select {
-  font: 11px var(--font); background: rgba(4,14,20,.9); color: var(--fg);
+  font: var(--fs-xs) var(--font); background: var(--well); color: var(--fg);
   border: 1px solid var(--edge); border-radius: 5px; padding: 5px;
+  max-width: 100%; min-width: 0;   /* never wider than its row (video panel clipped at the frame edge) */
+  /* the popup list is the OS's: color-scheme dark makes Chrome/Edge draw it dark
+     instead of white-with-a-blue-bar; option colors follow the panel. The hover
+     bar inside a native popup stays the OS's — a house dropdown would need a
+     custom control (live, 09-04) */
+  color-scheme: dark;
 }
+select option { background: rgb(var(--panel-rgb)); color: var(--fg); }
+select option:checked { background: var(--well); color: var(--brand); font-weight: 600; }   /* the chosen row: dark well + brand ink — the brand FILL read as a gross green against the browser's blue hover (live, 09-05) */   /* pale highlight → DARK text (live, 09-04) */
+/* house dropdowns (dropdown.js): the native select stays as the value store, hidden */
+select.dd-native { position: absolute !important; opacity: 0; pointer-events: none; width: 1px; height: 1px; margin: 0; }
+.dd { display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 88px; max-width: 100%;
+  padding: 3px 8px 3px 9px; background: var(--well); border: 1px solid var(--edge); border-radius: 6px; color: var(--fg); font-size: var(--fs-sm); cursor: pointer; text-align: left; }
+.dd:hover { border-color: color-mix(in srgb, var(--brand) 45%, var(--edge)); }
+.dd[aria-expanded="true"] { border-color: var(--brand); }
+.dd svg, .dd-caret { flex: none; color: var(--dim); }
+.dd-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dd-pop { position: fixed; z-index: 200; display: flex; flex-direction: column; padding: 4px; gap: 1px; max-height: 260px; overflow-y: auto;
+  background: rgb(var(--panel-rgb) / .96); border: 1px solid var(--edge); border-radius: 8px; box-shadow: var(--shadow); }
+.dd-opt { text-align: left; padding: 5px 10px; border: none; border-radius: 5px; background: none; color: var(--fg); font-size: var(--fs-sm); cursor: pointer; }
+.dd-opt:hover, .dd-opt:focus-visible { background: var(--hov, rgb(255 255 255 / .06)); outline: none; }
+.dd-opt.on { background: var(--well); color: var(--brand); font-weight: 600; }
+input[type=checkbox] { accent-color: var(--control); }
+input[type=color] {
+  width: 26px; height: 20px; padding: 0; cursor: pointer; background: none;
+  border: 1px solid var(--edge-hi); border-radius: 4px;
+}
+input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+input[type=color]::-webkit-color-swatch { border: none; border-radius: 3px; }
+input[type=color]::-moz-color-swatch { border: none; border-radius: 3px; }
+/* links: brand ink, quiet underline — the browser's blue was the one thing on
+   screen outside the scheme (live, 09-04: "open orrery" in Conjure) */
+a { color: var(--brand); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--brand) 40%, transparent); text-underline-offset: 2px; }
+a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 
 
 /* ============================================================ splash
@@ -85,47 +205,78 @@ select {
    waits for JavaScript here is showing a black page during the slowest part
    of the boot, which is exactly the problem. */
 #splash {
+  --sp-w: min(430px, 60vw);   /* bar + status share one width (live, 09-05: the 08-29 bar) */
   position: fixed; inset: 0; z-index: 100;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 22px; padding: 28px; box-sizing: border-box;
-  background:
-    radial-gradient(1100px 620px at 50% 34%, #16303a 0%, #0c1720 46%, var(--bg) 100%);
+  /* the ground light is .sp-rays (boot.js): soft vertical rays in the SteamVR
+     key-art manner — drawn small and upscaled so nothing has an edge, the whole
+     layer ramping from 0 alpha over 1.5 s so it never pops in, rAF-driven so a
+     frozen page freezes it. The static gradient stays UNDER it as the floor. */
+  background: var(--bg);   /* the ground light is the worker's breathing gradient (.sp-rays); no CSS copy underneath or it doubles */
   transition: opacity .6s ease, visibility .6s;
   font: var(--fs)/1.6 var(--font); color: var(--fg);
 }
 #splash.gone { opacity: 0; visibility: hidden; pointer-events: none; }
+.sp-rays { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; display: block; z-index: 0; }
+#splash > :not(.sp-rays) { position: relative; z-index: 1; }
+/* THE MARK IS STILL, BY DESIGN (live, 09-05 17:41: "I keep feeling unsure about
+   it and that's usually a sign I'm trying too hard"). Two motions were
+   removed here — the ∃'s three strokes assembling with load progress, and a
+   compositor-side opacity breath — plus the finish glow. The splash's one
+   moving thing is the ground light (.sp-rays, worker-driven): it means
+   "alive"; the mark means "us", and holds. */
+.sp-logo {
+  width: 200px; height: 210px; transform: translateY(10px) scale(.4); transform-origin: center;   /* drawn 2x, shown at 0.8x (live 09-07 23:05: 'a bit too big'), nudged down onto the mark */
+  margin: -52px 0 -64px; color: var(--brand); overflow: visible;
+}
+.sp-logo-wrap { position: relative; display: grid; place-items: center; }
 .sp-mark {
-  font-size: 26px; letter-spacing: .18em; color: var(--accent);
-  text-transform: lowercase; font-weight: 600;
+  font-size: 26px; letter-spacing: .34em; color: var(--brand); opacity: .9;
+  text-transform: lowercase; font-weight: 500; margin-left: .34em; /* recenter over tracking */
 }
-.sp-sub { color: var(--dim); font-size: var(--fs-sm); margin-top: -14px; text-align: center; }
+.sp-mark-sub {
+  /* small, beneath, no fanfare: Technically Distinct while everyone gets
+     used to the idea */
+  font-size: 12px; letter-spacing: .58em; margin: -30px 0 0 .58em;
+  color: color-mix(in srgb, var(--brand) 45%, transparent); font-weight: 400; text-transform: lowercase;
+}
+/* hairline: the assembly carries the feel, the line carries the certainty —
+   a bar affordance gives an unambiguous DONE */
+#splash .sp-bar { flex: none; width: var(--sp-w); height: 3px; border-radius: 2px; overflow: hidden; background: color-mix(in srgb, var(--brand) 12%, transparent); }
+#splash .sp-bar-fill { width: 0%; height: 100%; border-radius: 2px; background: color-mix(in srgb, var(--brand) 65%, transparent); transition: width .3s ease; }
+.sp-sub { color: var(--dim); font-size: var(--fs); margin: -5px 0; text-align: center; }   /* HUD body size, not a bespoke 15px (live, 09-05) */  /* equal air above + below */
 .sp-sub b { color: var(--fg); font-weight: 600; }
-.sp-bar {
-  width: min(430px, 84vw); height: 3px; border-radius: 2px;
-  background: rgba(255,255,255,.09); overflow: hidden;
-}
-.sp-bar-fill {
-  width: 0%; height: 100%; border-radius: 2px;
-  background: linear-gradient(90deg, #4fb79a, var(--accent));
-  transition: width .45s cubic-bezier(.22,.9,.3,1);
-}
+/* one centered breath under the bar — phase and bytes are a single quiet
+   line, not furniture at opposite walls */
 .sp-status {
-  display: flex; justify-content: space-between; gap: 16px;
-  width: min(430px, 84vw); font-size: var(--fs-sm); margin-top: -14px;
+  width: var(--sp-w); display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  font-size: var(--fs); margin-top: -10px;   /* the 08-29 layout: phase under the bar's left end, bytes under its right */
 }
-.sp-phase { color: var(--accent); }
+.sp-phase { color: var(--brand); }
+/* what's LOADING, by name — surfaces only when something has been in flight
+   for a while (live, 09-05 17:47: VRMs take a looooong time on weak hardware and
+   a bar alone says nothing). Up to two items, most-remaining first. */
+.sp-items { width: var(--sp-w); min-height: 1.4em; display: flex; flex-direction: column; gap: 4px; margin-top: -8px; font-size: var(--fs-sm); color: var(--dim); font-variant-numeric: tabular-nums; }   /* two rows reserved always, so the column never jumps when names appear */
+/* .sp-load, not .sp-item — that name is the schema panel's list row (padding 3px 7px), and the collision
+   indented these 7 px off the status row's edge (live, 09-05 17:58: "weird having those left-justified?") */
+.sp-load { display: flex; justify-content: space-between; gap: 12px; }
+.sp-load .sp-load-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-load .sp-load-bytes { flex: none; }
 .sp-phase::after { content: '…'; }
 .sp-detail { color: var(--dim); font-variant-numeric: tabular-nums; }
+.sp-why { width: var(--sp-w); font-size: var(--fs-sm); color: var(--brand); margin-top: -6px; }   /* why this load is happening (a VR reload, a backend swap) */
+
 .sp-tip {
-  display: flex; align-items: flex-start; gap: 11px;
+  display: flex; align-items: center; gap: 11px;   /* keycap centers on the tip line */
   max-width: min(500px, 88vw); font-size: var(--fs-sm); color: var(--dim);
   min-height: 44px; text-align: left;
 }
 .sp-tip b { color: var(--fg); font-weight: 600; }
 .sp-tip .tipk {
   flex: none; width: 26px; height: 26px; border-radius: 6px;
-  display: grid; place-items: center; color: var(--accent);
-  background: rgba(143,232,200,.1); border: 1px solid var(--edge);
+  display: grid; place-items: center; color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 10%, transparent); border: 1px solid var(--edge);
 }
 .sp-skip {
   opacity: 0; pointer-events: none; transition: opacity .4s;
@@ -140,13 +291,13 @@ select {
    content, so the chrome has to get out of the way on the user's terms. */
 .frame {
   position: fixed; display: flex; flex-direction: column;
-  z-index: 20; min-width: 170px; overflow: hidden;
+  z-index: 10; /* must equal Z_LO in frames.js */ min-width: 170px;   /* PRE-PAINT DEFAULT ONLY: frames.js paint() overwrites this with the frame's own minW (an inline style, so it wins). This line was a floor BENEATH the JS one and silently clipped any frame declaring less — measured: the emote bar asking for 48px rendered at 170 with 4 columns. (R, 2026-09-11) */ overflow: hidden;
 }
 .fr-head {
   display: flex; align-items: center; gap: 6px;
   padding: 5px 6px 5px 10px; cursor: grab;
   border-bottom: 1px solid var(--edge);
-  background: rgba(12, 28, 34, 0.6); flex: none;
+  background: rgb(0 0 0 / 0.30); flex: none;
   user-select: none; -webkit-user-select: none;
 }
 .fr-head:active { cursor: grabbing; }
@@ -157,24 +308,25 @@ select {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .fr-badge {
-  font-size: 10px; color: var(--dim); background: rgba(0,0,0,.3);
+  font-size: var(--fs-xs); color: var(--dim); background: rgba(0,0,0,.3);
   border-radius: 9px; padding: 0 6px; flex: none;
 }
 .fr-badge b { color: var(--fg); font-weight: 600; }
 .fr-badge b.ping { color: var(--ping); }
 .fr-btns { display: flex; gap: 2px; flex: none; }
 .fr-btn {
-  padding: 1px 6px; font-size: 11px; line-height: 1.4;
+  padding: 1px 6px; font-size: var(--fs-xs); line-height: 1.4;
   background: none; border: none; color: var(--dim);
 }
-.fr-btn:hover { background: rgba(255,255,255,.07); color: var(--fg); }
+.fr-btn:hover { background: var(--hov); color: var(--fg); }
 .ui-locked .fr-btn { display: none; }
-.fr-body { display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
-.frame.collapsed .fr-body { display: none; }
-.frame.collapsed { height: auto !important; }
+.fr-body { display: flex; flex-direction: column; overflow: hidden; min-height: 0;
+  /* text never touches the pane's top or bottom edge */
+  padding-top: 5px; padding-bottom: 5px; }
 /* scrollbars sit a couple px in from the frame edge so the scroll thumb and
    the edge-resize band don't fight over the same column */
-.frame .fr-body { padding-right: 3px; }
+.frame .fr-body { padding-right: 6px; }
+.frame .fr-body:has(> .tiles.fixed) { padding: 7px; }   /* tile bodies pad EVENLY — the right-only scrollbar room read as a lopsided gutter (live, 09-04) */
 .frame.flash { animation: flash 1.4s ease-out; }
 @keyframes flash {
   0%, 100% { border-color: var(--edge); }
@@ -183,33 +335,176 @@ select {
 
 /* ------------------------------------------------------------------- chat */
 .chat-frame .fr-body { padding: 0; }
-.chat-tabs { display: flex; gap: 2px; padding: 5px 6px 0; flex: none; }
-.chat-tabs button {
-  flex: 1; text-align: center; padding: 3px 4px; font-size: 10.5px;
-  background: none; border: none; border-bottom: 2px solid transparent; color: var(--dim);
-  border-radius: 0;
+.chat-cols { display: flex; flex: 1; min-height: 0; }
+.chat-main { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; position: relative; }
+.chat-side-tog {
+  flex: none; width: 14px; padding: 0; display: grid; place-items: center;
+  background: none; border: none; border-left: 1px solid var(--edge);
+  border-radius: 0; color: var(--dim); font-size: 12px;
 }
-.chat-tabs button.on { color: var(--accent); border-bottom-color: var(--accent); background: none; }
+.chat-side-tog:hover { color: var(--fg); background: rgb(255 255 255 / .05); }
+.chat-cols.side-closed .chat-side-tog { border-left-color: transparent; border-right-color: transparent; }   /* no pane, no grab edge, no line — on EITHER side (live 09-07: left leaked a line) */
+.chat-side { flex: none; display: flex; flex-direction: column; position: relative; min-height: 0; }
+.chat-side.closed { display: none; }
+/* the grip straddles the LINE you can see (the toggler's border, between the log
+   and the 14px strip) — it used to sit on the strip's far side, invisible (live, 09-04) */
+.chat-side-grip { position: absolute; left: calc(-14px - 4px); top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 3; }
+/* the affordance is the LINE itself, not a band: a 1px stroke that turns brand under the pointer */
+.chat-side-grip::before { content: ''; position: absolute; left: 4px; top: 0; bottom: 0; width: 1px; background: transparent; }
+.chat-side-grip:hover::before, .chat-side-grip:active::before { background: var(--brand); }
+.chat-side-list {
+  /* A VISIBLE TRACK WHEN IT FILLS. `overflow-y: auto` was already here, but the
+     platform draws an OVERLAY scrollbar — measured: 40 rows overflow 812px into
+     236px and the gutter is 0px wide, so the list simply clips a row mid-height
+     with nothing to say there is more (R, 2026-09-11: "make sure there's a
+     scroll bar in the People Here panel when it gets enough people in it").
+     scrollbar-gutter reserves the lane so the rows never reflow when it appears,
+     and the thin thumb is the global one from line 91. */
+  flex: 1; overflow-y: auto; scrollbar-gutter: stable; padding: 6px 4px 6px 6px;
+}
+.chat-side-list .who-row { display: flex; justify-content: flex-start; gap: 4px; padding: 1px 0; font-size: var(--fs-sm); }
+.chat-side-list .who-row .who-mark { margin-right: 2px; }   /* + the row gap 4 → 6 px dot→name (was 15) */
+.chat-side-list .who-row .d:empty { display: none; }
+.chat-side-list .who-row .d { color: var(--dim); font-size: var(--fs-xs); margin-left: auto; }
+.chat-side-list .who-empty { color: var(--dim); font-size: var(--fs-sm); }
+.chat-side-head { flex: none; padding: 6px 6px 2px; font-size: var(--fs-xs); color: var(--dim); text-transform: uppercase; letter-spacing: .06em; white-space: nowrap; }
+.chat-cols.side-left { flex-direction: row-reverse; }
+.chat-cols.side-left .chat-side-tog { border-left: none; border-right: 1px solid var(--edge); }
+.chat-cols.side-left.side-closed .chat-side-tog { border-right-color: transparent; }   /* closed = no line, same as the right (live 09-07 10:55) */
+.chat-cols.side-left .chat-side-grip { left: auto; right: calc(-14px - 4px); }   /* mirror of the right: over the toggler's border line, not the pane's own edge (live, 09-06 23:34: 'the right behaviour is preferred') */
+.chat-tabs .chat-gear {
+  /* min-width:0 because `.chat-tabs button`'s min-width matches the gear too,
+     and inheriting the tabs' floor made the gear eat strip space they needed. */
+  /* LIFTED off the rail. With the strip bottom-aligned the gear sat level with
+     the separator and crowded it — R, 2026-09-11 item 4: "Move the
+     'Chat>Settings' icon up to be in line with the other tab icons so it
+     doesn't get so close to the separator line". */
+  flex: none; min-width: 0; margin-left: 2px; padding: 3px 6px; align-self: center;
+  background: none; border: none; color: var(--dim); border-radius: 5px;
+  display: grid; place-items: center;
+}
+.chat-gear { opacity: .4; }   /* quieter than the tabs — it's furniture, not content */
+.chat-gear:hover { opacity: 1; color: var(--fg); background: var(--hov); }
+.chat-gearpop { position: absolute; z-index: 8; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; font-size: var(--fs-sm);
+  /* popovers float OVER content (the chat log), so glass at --panel-a made
+     them a legibility lottery — near-opaque, still following the panel hue */
+  background: rgb(var(--panel-rgb) / .94); }
+.chat-gearpop[hidden] { display: none; }
+.chat-gearpop .gp-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
+.chat-gearpop .gp-row span { color: var(--dim); margin-right: 6px; }
+.chat-gearpop .gp-row b { min-width: 20px; text-align: center; }
+/* on/off pairs in the gear pop: on = a brand chip with dark ink, off = the well — the same
+   live/idle grammar as the dock's lit icon and .sp-btn (live, 09-05: more contrast) */
+.chat-gearpop .gp-row button { background: var(--well); color: var(--dim); border: 1px solid transparent; }
+.chat-gearpop .gp-row button:hover { color: var(--fg); border-color: var(--edge); }
+.chat-gearpop .gp-row button.on { background: var(--brand); color: var(--ink-on-brand); font-weight: 600; }
+.chat-gearpop button { padding: 2px 8px; }
+/* The strip has to hold `all · mentions · system` PLUS one tab per open DM, so
+   the tabs can no longer share the width equally — flex:1 squeezed every tab
+   thinner as conversations opened. They size to their label now and the strip
+   scrolls, with arrows appearing only on overflow.
+   R, 2026-09-11: "squash the words together at the top to make room for more
+   tabs but still leave some buffer so they don't get too close, left/right
+   arrow keys at either side of the menu if you need to side-scroll". */
+.chat-tabs { display: flex; gap: 2px; padding: 7px 8px 0; flex: none; align-items: stretch; }   /* NO rail here: it ran under the arrows and gear and died at the People-Here expander. R, 2026-09-11 item 5: "crop the separator line to only be under the tabs ... look more balanced" */
+.chat-tabs .tabscroll {
+  display: flex; gap: 4px; flex: 1; overflow-x: auto; scrollbar-width: none;
+  border-bottom: 1px solid var(--edge);   /* the rail, cropped to exactly the tabs */
+  scroll-behavior: smooth;
+}
+.chat-tabs .tabscroll::-webkit-scrollbar { display: none; }
+.chat-tabs .tabarrow {
+  /* BIGGER, and with room around them. At --fs-xs in a 14px box these were
+     nearly invisible next to the labels — R, 2026-09-11: "Arrow buttons should
+     maybe be bigger if anything exists like that (maybe small phosphor icons,
+     if there's no unicode to support something like that?)". icons.js carries
+     NO caret/chevron/arrow glyph (checked, not assumed), so this stays unicode
+     and gets the size instead. */
+  /* min-width:0 is LOAD-BEARING: `.chat-tabs button`'s min-width matches these
+     too, and .tabarrow never sets one — so without this the arrows inherit the
+     tabs' floor and blow past their 16px width. Specificity does not save you
+     here: the two rules never compete for the same property. */
+  /* IN LINE with the tab text, not shouting over it. 15px next to 11px labels
+     read as a different kind of control — R, 2026-09-11 item 3: "Make the
+     side-scroll arrows bigger if it's too small (in-line with the rest of the
+     tab-text". So: the tab's own size, with the box big enough to hit. */
+  flex: none; width: 16px; min-width: 0; padding: 2px 0; background: none; border: none;
+  color: var(--dim); font-size: var(--fs-sm); line-height: 1; cursor: pointer; border-radius: 4px;
+  align-self: center;
+}
+.chat-tabs .tabarrow:hover { color: var(--fg); background: var(--hov); }
+.chat-tabs .tabarrow[hidden] { display: none; }
+.chat-tabs button {
+  /* .pf-tab's recipe, kept flex so the strip still shares width evenly and still
+     scrolls when it cannot. An underline says "this pane belongs to this tab"
+     without needing any horizontal space of its own. */
+  /* `justify-content: center` centres the label+x pair AS A UNIT, so on a
+     closable tab the glyph rode out past the padding box and vanished — R,
+     2026-09-11 item 2: "Make sure the 'x' is also fully visible." Measured: the
+     x sat 5px beyond its own tab's right edge and did not render at all.
+     Centring is right for the fixed tabs; a closable one needs the glyph to
+     occupy real space, so .has-x switches to space-between and pays for it with
+     a wider floor and room on the right. */
+  /* GROW to share the strip, but never SHRINK below the label — both halves at
+     once. A flex-basis of 0 crushes the tabs until the row cannot overflow and
+     the arrows have nothing to scroll; `flex: none` stops the crushing but also
+     stops them filling a wide strip. `min-width: max-content` is the floor that
+     flex-basis 0 never gave us: stretch into spare room, stop at the text. */
+  flex: 1 1 auto; min-width: max-content; padding: 5px 9px 6px; font-size: var(--fs-xs);
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  /* THE UNDERLINE LIVES INSIDE THE BOX. `margin-bottom: -1px` hangs the border
+     1px past the tab, and .tabscroll is `overflow-x: auto` — an overflow box
+     CLIPS its children at the padding box, so the brand underline was cut off
+     every time while the grey rail underneath showed through. Isolated it: same
+     markup, same -1px, `overflow: auto` -> no underline, `overflow: visible` ->
+     underline. A border with no overhang has nothing to clip.
+     R, 2026-09-11: "the tabs in the Profile panel have the highlight underneath,
+     but the tabs in the Chat pane do not ... in which direction?" — hers, the
+     Profile direction. */
+  background: none; border: none; border-bottom: 1px solid transparent;
+  border-radius: 6px 6px 0 0;
+  color: var(--dim); white-space: nowrap; cursor: pointer;
+}
+.chat-tabs button:hover { color: var(--fg); background: rgb(143 232 200 / .13); }   /* the LIVELIER of the pair: hover reaches for you, selection just sits there (R, 2026-09-11: "reverse the current tab colors when hovering vs selected") */
+/* a DM tab carries a visible close — right-click worked and told nobody */
+.chat-tabs button .tabx {
+  flex: none; margin-left: 2px; margin-right: 0; padding: 0 2px; border-radius: 4px;
+  color: var(--dim); opacity: .55; font-size: var(--fs-xs); line-height: 1;
+}
+.chat-tabs button .tabx:hover { opacity: 1; color: var(--fg); background: var(--hov); }
+.chat-tabs button.on {
+  /* HIGHLIGHTED, not merely tinted. The underline alone was computed correctly
+     and painted over: the tab's bottom border and the strip's rail landed on the
+     SAME line (measured overlap 0px), so the parent's border won and R saw a
+     brand-coloured word with no underline — "Leave the tab highlighted when
+     active" (2026-09-11). With the rail now on .tabscroll the tab's own border
+     has somewhere to sit, and a .tile.on-style wash makes the tab itself read
+     as selected rather than just its text. */
+  /* CHILL. A 14% brand wash won the eye away from the conversation; R,
+     2026-09-11: "I prefer a more chill highlight color so it's not stealing a
+     lot of attention." The pressed-in --well is this client's own idiom for a
+     settled choice (.dd-opt.on, .pf-pop-row.on) — the brand stays in the text
+     and the underline, which is where it carries meaning. */
+  color: var(--brand); border-bottom-color: var(--brand);
+  background: var(--well);
+}
 
 .chat-log {
   flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-  padding: 6px 10px; display: flex; flex-direction: column;
-  scrollbar-width: thin; scrollbar-color: var(--edge) transparent;
+  padding: 9px 10px; display: flex; flex-direction: column;
   user-select: text; -webkit-user-select: text;
 }
-.chat-log::-webkit-scrollbar { width: 7px; }
-.chat-log::-webkit-scrollbar-thumb { background: var(--edge); border-radius: 4px; }
 .chat-log .line { padding: 1px 0; word-wrap: break-word; overflow-wrap: anywhere; }
 .chat-log .line.filtered { display: none; }
-.chat-log .line .t { color: var(--dim); font-size: 10px; margin-right: 6px; opacity: .6; }
-.chat-log .line .who { color: var(--accent); font-weight: 600; }
+.chat-log .line .t { color: var(--dim); font-size: var(--fs-xs); margin-right: 6px; opacity: .6; }
+.chat-log .line .who { color: var(--fg); font-weight: 600; }
 .chat-log .line .who::after { content: ':'; color: var(--dim); font-weight: 400; }
 .chat-log .line .body { margin-left: 5px; }
 /* Your own name now takes its participant colour like everyone else's (it must
    look the same to you as it does to them), so "this one is mine" is carried by
    a faint wash instead. .ping's background is declared later and still wins. */
 .chat-log .line.me { background: rgba(255,255,255,.04); border-radius: 3px; }
-.chat-log .line.agent .who::before { content: '◈ '; color: var(--warn); font-size: 10px; }
+.chat-log .line.agent .who::before { content: '◈ '; color: var(--warn); font-size: var(--fs-xs); }
 .chat-log .line.sys { color: var(--dim); font-style: italic; }
 .chat-log .line.hist-note {
   border-bottom: 1px dashed var(--edge); padding-bottom: 4px; margin-bottom: 4px;
@@ -218,22 +513,22 @@ select {
 .chat-log .line.sys .who { display: none; }
 .chat-log .line.sys .body { margin-left: 0; }
 /* grouped continuation lines: hide the repeated name, keep the text aligned */
-.chat-log .line.cont .t { visibility: hidden; font-size: 10px; }
+.chat-log .line.cont .t { visibility: hidden; font-size: var(--fs-xs); }
 .chat-log .line.cont .who { display: none; }
 .chat-log .line.ping {
-  background: rgba(255, 212, 121, .09);
+  background: color-mix(in srgb, var(--attn) 9%, transparent);
   border-left: 2px solid var(--ping); margin-left: -10px; padding-left: 8px;
 }
-.chat-log .mention { color: var(--accent); background: rgba(143,232,200,.12); border-radius: 3px; padding: 0 2px; }
-.chat-log .mention.me { color: var(--ping); background: rgba(255,212,121,.18); font-weight: 600; }
+.chat-log .mention { color: var(--accent); background: color-mix(in srgb, var(--attn) 13%, transparent); border-radius: 3px; padding: 0 2px; }
+.chat-log .mention.me { color: var(--ping); background: color-mix(in srgb, var(--attn) 18%, transparent); font-weight: 600; }
 .chat-log .lnk { color: var(--accent); }
 
 .chat-jump {
   display: none; position: absolute; left: 50%; bottom: 46px; transform: translateX(-50%);
-  z-index: 3; font-size: 10.5px; padding: 3px 10px; border-radius: 11px;
+  z-index: 3; font-size: var(--fs-xs); padding: 3px 10px; border-radius: 11px;
   background: var(--accent-dk); border-color: var(--edge-hi); color: var(--accent);
 }
-.chat-jump.ping { background: #4a3a18; border-color: var(--ping); color: var(--ping); }
+.chat-jump.ping { background: var(--accent-dk); border-color: var(--ping); color: var(--ping); }
 
 .chat-compose { position: relative; padding: 6px; flex: none; }
 .chat-compose input { width: 100%; box-sizing: border-box; font-size: var(--fs); }
@@ -241,7 +536,6 @@ select {
 .ac {
   position: absolute; left: 6px; right: 6px; bottom: calc(100% - 4px);
   max-height: 168px; overflow-y: auto; z-index: 5; padding: 3px;
-  scrollbar-width: thin;
 }
 .ac-row {
   display: flex; justify-content: space-between; gap: 10px; align-items: baseline;
@@ -250,38 +544,76 @@ select {
 .ac-row.on { background: var(--accent-dk); }
 .ac-row .ac-l { color: var(--fg); white-space: nowrap; }
 .ac-row.on .ac-l { color: var(--accent); }
-.ac-row .ac-h { color: var(--dim); font-size: 10px; text-align: right; overflow: hidden; }
+.ac-row .ac-h { color: var(--dim); font-size: var(--fs-xs); text-align: right; overflow: hidden; }
 
 .chat-log .line.whisper { background: rgba(160, 140, 220, .10); border-left: 2px solid #a08cdc;
   margin-left: -10px; padding-left: 8px; }
 .chat-log .line.whisper .who { color: #c4b5f0; }
 .chat-log .line.whisper .who::before { content: '⤷ '; }
 .chat-log .line.whisper.me .who::before { content: '⤶ '; }
-.chat-tabs button.has-unread { color: var(--ping); }
+.chat-tabs button.has-unread { color: var(--fg); font-weight: 600; }
+.chat-tabs button.has-x {
+  /* A DM TAB IS SIZED BY ITS NAME, not by an equal share. `flex: 1 1 0` gave
+     every tab the same width, so @Hesperus (62.8px of text) was squeezed into a
+     ~56px content box and ellipsised to "@He…" — the truncation meant to be a
+     last resort fired at four tabs. Content-sized with a ceiling: it takes the
+     room the name needs, gives way before the fixed tabs do, and only truncates
+     past 168px, where the scroller has already taken over. */
+  flex: 0 1 auto; justify-content: space-between; min-width: 74px; max-width: 168px; padding-right: 5px;
+}
+.chat-tabs button.has-x > span:not(.tabx) {
+  /* THE LABEL WAS EVICTING THE GLYPH. Measured: a 62.8px name inside a 74px tab
+     whose padding leaves a ~56px content box — and `white-space: nowrap` means
+     the label never yields, so the x was pushed 17px past the tab's own right
+     edge and did not render. Three rounds I spent adjusting the x's margin, the
+     tab's padding and justify-content: none of those were the term. A long DM
+     name must TRUNCATE so the glyph keeps its place. */
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
 .chat-typing {
-  display: none; padding: 0 10px 3px; font-size: 10.5px; color: var(--dim);
+  display: none; padding: 0 10px 3px; font-size: var(--fs-xs); color: var(--dim);
   font-style: italic; flex: none;
 }
 
 /* ------------------------------------------------------------ panel frames */
 .sec { display: flex; flex-direction: column; gap: 5px; }
-.sec > .head { font-weight: 600; }
+.sec > .head {
+  display: flex; align-items: center; gap: 9px;
+  font-weight: 500; background: none; border: none; text-align: left;
+  padding: 6px 10px; border-radius: 6px; color: var(--dim);
+}
+.sec > .head svg { flex: none; opacity: .8; color: var(--icon); }
+.sec > .head:hover { background: var(--hov); }
+.sec.open > .head {
+  position: relative; background: rgb(255 255 255 / 0.05); font-weight: 600;
+  color: color-mix(in srgb, var(--brand) 35%, var(--fg));
+}
+.sec.open > .head svg { opacity: 1; color: var(--brand); }
+/* no left bar on an extended section: first seen on Debug; not the panels' convention — the brand icon + lifted body edge carry 'extended' */
+.sec.open > .body { border-color: var(--edge-hi); }
 .sec > .body {
   display: none; flex-direction: column; gap: 4px;
   padding: 6px; max-height: 44vh; overflow-y: auto;
-  scrollbar-width: thin; scrollbar-color: var(--edge) transparent;
   border: 1px solid var(--edge); border-radius: 5px;
 }
 .sec.open > .body { display: flex; }
+/* debug subsections: collapsible with a ▸/▾ arrow (Debug is split into
+   subareas). Looser than panel sections, so arrow not icon; tighter spacing. */
+.dbg-sec { margin-top: 4px; }
+.dbg-sec > .head { display: flex; align-items: center; gap: 7px; padding: 5px 8px; color: var(--dim); }
+.dbg-sec.open > .head { color: color-mix(in srgb, var(--brand) 35%, var(--fg)); }
+.dbg-sec .dbg-arrow { font-size: 13px; width: 13px;   /* was 9: "teensy, very hard to see" (live, 09-04) */ color: var(--icon); flex: none; }
+/* panel content hierarchy: heads = fg with brand-whisper glyphs,
+   body copy = dim; outlined buttons hug their text, never stretch the column */
+.sec > .body { color: var(--dim); }
+.sec > .body button { align-self: flex-start; width: fit-content; }
 .stack { padding: 7px; gap: 6px; display: flex; flex-direction: column; overflow-y: auto; flex: 1; min-height: 0; }
-.stack::-webkit-scrollbar, .sec > .body::-webkit-scrollbar { width: 6px; }
-.stack::-webkit-scrollbar-thumb, .sec > .body::-webkit-scrollbar-thumb { background: var(--edge); border-radius: 3px; }
 
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
 /* The body picker holds ~18 faces. Two columns made each card ~250px, so
    choosing meant scrolling past a wall of portraits. */
 .grid.dense { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
-.grid.dense .card span { font-size: 9.5px; }
+.grid.dense .card span { font-size: var(--fs-xs); }
 .card .ph {
   width: 100%; aspect-ratio: 1; border-radius: 4px;
   background: rgba(0,0,0,.3); display: none;
@@ -289,44 +621,88 @@ select {
 }
 .card {
   display: flex; flex-direction: column; align-items: center; gap: 3px;
-  padding: 4px; font-size: 10px; line-height: 1.25; text-align: center;
+  padding: 4px; font-size: var(--fs-xs); line-height: 1.25; text-align: center;
   word-break: break-word; position: relative;
 }
 .card canvas, .card img {
   width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 4px;
   background: rgba(0,0,0,.35);
 }
-/* avatar cards: the 3:4 portrait BOX sizes the card; the placeholder shows through until an image covers it
-   (palette.js av-shot — CSS carried here so this rung's markup is not styled by a later part) */
-.av-grid .card .av-shot { position: relative; width: 100%; aspect-ratio: 3 / 4; border-radius: 4px; overflow: hidden; background: rgba(0,0,0,.3); }
-.av-grid .card .av-shot .ph { display: grid; position: absolute; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; }
-.av-grid .card .av-shot img { position: absolute; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; }
-/* splash: the one-line reason for a restart (boot.js ?why=, set by the VR entry in a later part) */
-.sp-why { font-size: 11px; color: var(--dim); margin-top: 4px; }
-/* scene graph: the selected row (scenegraph.js .sel) */
-.sg-row.sel { background: rgba(255,255,255,.06); }
 /* library filenames are SEO soup — clamp so a card stays a card */
 .card span {
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
   overflow: hidden; width: 100%;
 }
 .card:hover span { -webkit-line-clamp: 4; }
-.card.on { background: var(--accent-dk); border-color: var(--edge-hi); }
+.card.on { background: color-mix(in srgb, var(--brand) 18%, transparent); border-color: var(--brand); }
+.card.on span { color: var(--brand); }
 
 .row { display: flex; align-items: center; gap: 7px; font-size: var(--fs-sm); color: var(--dim); }
-.row .nm { width: 42px; flex: none; color: var(--fg); }
-.row input[type=range] { flex: 1; accent-color: var(--accent); min-width: 0; }
+/* min-widths, not fixed: 'sweepPhase' overran a 42px label and '0.29411' a 34px readout (live, 09-04) */
+.row .nm { min-width: 42px; max-width: 40%; flex: none; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+input[type=range] { flex: 1; accent-color: var(--control); min-width: 0;
+  appearance: none; -webkit-appearance: none; height: 14px; background: none; }
+/* the track joins the theme: bright-filled to the thumb, accent-flavored
+   dark well after it (the value must read at a glance). WebKit has no
+   native progress fill on custom tracks, so ui.js paints --p per input.
+   Un-scoped from .row on 09-04: Scene's sliders live outside a .row and were browser-default. */
+input[type=range] { --p: 50%; }
+/* no transition on the track: its --p gradient stop would ANIMATE on release,
+   fading the dark half up and back for a beat (live, 09-04). Chunkier + round ends. */
+input[type=range], input[type=range]::-webkit-slider-runnable-track, input[type=range]::-webkit-slider-thumb { transition: none; }
+input[type=range]::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 999px;
+  background: linear-gradient(to right,
+    var(--control) 0 var(--p),
+    color-mix(in srgb, var(--control) 14%, rgb(255 255 255 / .07)) var(--p) 100%);
+  /* no border: the 'legibility' ring read as a gray outline on our dark panels
+     (live, 09-04); the well after the thumb is the contrast */
+  border: none; box-shadow: none;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--control); margin-top: -4px;
+  border: none;
+  box-shadow: 0 1px 3px rgb(0 0 0 / .45);
+}
+input[type=range]:hover::-webkit-slider-thumb { background: color-mix(in srgb, var(--control) 78%, white); }
+input[type=range]:disabled::-webkit-slider-thumb { background: color-mix(in srgb, var(--control) 40%, #555); }
+input[type=range]::-moz-range-track {
+  height: 6px; border-radius: 999px;
+  background: color-mix(in srgb, var(--control) 14%, rgb(255 255 255 / .07));
+}
+input[type=range]::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--control); }
+input[type=range]::-moz-range-thumb {
+  width: 12px; height: 12px; border: 1px solid rgb(0 0 0 / .55); border-radius: 50%; background: var(--control);
+}
+/* a YIELDED slider (sky time under real-clock, basic-only knobs under the
+   detailed sky) keeps the house hue, dimmed — the UA's disabled range
+   painted stark white against every teal sibling */
+input[type=range]:disabled { accent-color: color-mix(in srgb, var(--control) 40%, #555); opacity: .5; }
 /* Checkboxes take the same accent as the sliders — seafoam fill, UA-contrast
    (black) tick when checked. This existed via accent-color when the audio
    panel first spent the house palette, and fell out of the selector when the
-   checkbox rows moved to .row.wide markup (R, 2026-08-16: "I could have sworn
-   we did a styling for the checkboxes… seems to be gone now"). */
-.row input[type=checkbox] { accent-color: var(--accent); }
-.row .v { width: 34px; flex: none; text-align: right; color: var(--accent); }
+   checkbox rows moved to .row.wide markup. */
+.row input[type=checkbox] {
+  /* custom box: accent-color only paints the CHECKED state in
+     Chromium — unchecked fell back to UA white. */
+  appearance: none; -webkit-appearance: none;
+  width: 15px; height: 15px; margin: 0; border-radius: 4px;
+  background: var(--well);
+  border: 1px solid color-mix(in srgb, var(--brand) 45%, transparent);
+  display: inline-grid; place-items: center; cursor: pointer;
+}
+.row input[type=checkbox]:hover { border-color: color-mix(in srgb, var(--brand) 75%, transparent); }
+.row input[type=checkbox]:checked { background: var(--brand); border-color: var(--brand); }
+.row input[type=checkbox]:checked::before {
+  content: ''; width: 8px; height: 5px; margin-top: -2px;
+  border-left: 2px solid var(--ink-on-brand); border-bottom: 2px solid var(--ink-on-brand);
+  transform: rotate(-45deg);
+}
+.row .v { min-width: 34px; flex: none; text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
 
 /* 🔴 .row.wide — the SAME row, for panels whose labels are sentences.
-   (R, 2026-08-16: "If there is an existing UI class we should 100% be using
-   it." She is right, and the audio panel was not: it carried 40 lines of
+   (Reuse the existing class: the audio panel once carried 40 lines of
    private CSS re-implementing .row under sp-* names, which is how its spacing
    drifted to gap:10px while the house row is 7px and nobody could see it
    without measuring.)
@@ -335,8 +711,19 @@ select {
    a sentence — and inherits gap, font-size and colour from .row itself, so it
    CANNOT drift again. Everything else (range accent, .v readout, .nm colour)
    already comes from the rules above and needs no duplicate. */
-.row.wide { display: grid; grid-template-columns: var(--row-label-col, 8.5rem) minmax(0, 1fr); }
-.row.wide > .nm { width: auto; text-align: right; line-height: 1.25; }
+/* 🔴 THE ROW RULE (live, 09-04: "stop making people guess"). Labels are LEFT-aligned
+   everywhere in a FIXED, not-very-wide column (7rem) and WRAP if they must; the
+   control sits right beside the label (start of its cell), never pushed to the
+   far edge of a wide frame. .row = short label (42px) + slider + readout;
+   .row.wide = label + one control; .btn-row = buttons, each capped at 12rem.
+   No private layout rules anywhere. */
+.row.wide { display: grid; grid-template-columns: var(--row-label-col, 7rem) minmax(0, 1fr); align-items: center; }
+.row.wide > .nm { width: auto; max-width: none; overflow: visible; text-align: left; line-height: 1.25; white-space: normal; }
+/* selects stay compact and start-aligned; the CONTROL CELL stretches so a slider
+   or meter inside fills the row (Audio's did not — .ctl had been swept into the
+   12rem cap by a bad edit;) */
+.row.wide > select, .row.wide .ctl > select { max-width: 12rem; justify-self: start; }
+.row.wide > .ctl { justify-self: stretch; display: flex; align-items: center; gap: 6px; min-width: 0; }
 /* a label + a bare control still lines up: the control owns the whole second
    column, left-justified against the centre line */
 .row.wide > input[type=checkbox] { justify-self: start; }
@@ -348,28 +735,200 @@ select {
 .row .note { color: var(--dim); }
 
 /* who's-here list */
-.who-row { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+/* .who-row is a <button> (chat.js): _contentClaims exempts only BUTTON/INPUT/
+   TEXTAREA/SELECT/A from the frame's drag surface, so a <div> row was swallowed
+   by the frame's pointerdown and its dblclick never fired. These resets keep it
+   looking exactly like the row it was. (R, 2026-09-11) */
+.who-row {
+  display: flex; justify-content: space-between; gap: 12px; padding: 2px 0;
+  width: 100%; text-align: left; background: none; border: none; border-radius: 4px;
+  font: inherit; color: inherit; cursor: pointer;
+}
+.who-row:hover { background: var(--hov); }
+.who-row.self { cursor: default; }
+.who-row.self:hover { background: none; }
 .who-row .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .who-row .d { color: var(--dim); flex: none; }
-.who-row.self .n { color: var(--accent); }
+.who-row.self .n { color: var(--fg); }
 
 /* --------------------------------------------------------------- fixed hud */
-#hud {
-  position: fixed; top: 10px; left: 10px; z-index: 5;
-  padding: 8px 11px; white-space: pre; pointer-events: none;
-  font-size: var(--fs-sm); color: var(--dim);
+/* the ∃ mark — anchor of the whole chrome. Carries connection truth: full
+   when live, dimmed + pulsing when the socket is down. (status without
+   a status bar.) The mic/ear glyphs auto-ride its right edge. */
+#hud.emark {
+  /* lives INSIDE the rail now — one movable unit. Mic/ear ride its box. */
+  position: relative;
+  display: grid; place-items: center;
+  color: var(--brand); border: none; cursor: pointer; background: none; box-shadow: none;
 }
-#hud b { color: var(--fg); font-weight: 600; }
-#hud .ok  { color: var(--accent); }
-#hud .bad { color: var(--err); }
-#hud .edit { color: var(--warn); }
+#dock #hud.emark { color: var(--dim); }                             /* local only */
+#dock #hud.emark.net-live { color: var(--brand); }   /* connected — the accent itself, same as an open panel's icon and the live mic/ear (ONE ink; live: line-weight off-icons solved readability, so on can be pure brand) */
+#dock #hud.emark:hover, #dock #hud.emark.net-live:hover { color: var(--fg); }   /* hover = white, like the rail's buttons (live, 09-04) */
+#dock #hud.emark.net-wait { color: var(--dim); animation: netpulse 2.6s ease-in-out infinite; }  /* trying */
+/* arranging (menu-edit) mode: hovering the E or a button still goes white —
+   the affordance must survive the mode (live, 09-04) */
+body.arranging #dock #hud.emark:hover, body.arranging #dock button:not(.dock-grip):hover { color: var(--fg) !important; }
+body.arranging #dock #hud.emark {
+  color: var(--ink-on-brand); background: var(--brand-deep); border-radius: 8px; animation: none;  /* inverted: you're holding the chrome */
+}
+@keyframes netpulse { 50% { opacity: .35; } }
+/* presence on the profile icon: a dot in the bottom-right corner (the
+   Discord/Slack convention) — brand = present, attention = away, err = busy */
+#dock button[data-toggles="profile"] { position: relative; }
+/* a frame's badge (chat unread) rides its dock button at rest — the title bar is hidden until arranging */
+#dock button { position: relative; }
+#dock .dk-badge { position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px; background: var(--brand); color: var(--bg); font-size: 9px; line-height: 14px; text-align: center; pointer-events: none; }
+#dock .dk-badge b { font-weight: 600; } #dock .dk-badge b.ping { text-decoration: underline; }
+#dock button[data-toggles="profile"]::after {
+  content: ''; position: absolute; right: 4px; bottom: 4px; width: 8px; height: 8px; border-radius: 50%;
+  background: #3ddc84; box-shadow: 0 0 0 2px rgb(var(--panel-rgb));   /* FIXED green (live 09-05 16:47 + 21:38: presence is never the accent) */
+}
+#dock button[data-toggles="profile"][data-presence="away"]::after { background: #f5b83d; border-radius: 2px; transform: rotate(45deg) scale(.85); }   /* fixed colours + shapes, as on the profile (live, 09-05) */
+#dock button[data-toggles="profile"][data-presence="busy"]::after { background: linear-gradient(rgb(var(--panel-rgb)), rgb(var(--panel-rgb))) center / 60% 20% no-repeat, #ef5b5b; border-radius: 2px; }   /* square-with-bar, like the profile's (the pseudo IS the dot, so the bar is a gradient) */
+/* profile (09-05 redesign): portrait = presence control; top tabs; one pane */
+.pf-portrait { position: relative; width: 40px; height: 40px; border-radius: 50%; flex: none; display: grid; place-items: center; padding: 0;
+  background: color-mix(in srgb, var(--who) 55%, rgb(var(--panel-rgb))); color: var(--fg); border: 1px solid transparent; cursor: pointer; }
+.pf-portrait:hover, .pf-portrait[aria-expanded="true"] { border-color: var(--brand); }
+.pf-portrait svg { opacity: .85; }
+/* presence marks are FIXED colours and distinct SHAPES, never the accent (live,
+   09-05 16:47: standard green/amber/red, shapes for colourblind readers):
+   present = green circle · away = amber diamond · busy = red square-with-bar */
+.pf-portrait-dot { position: absolute; right: -1px; bottom: -1px; width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgb(var(--panel-rgb)); background: #3ddc84; }
+.pf-pop-dot { width: 10px; height: 10px; border-radius: 50%; background: #3ddc84; flex: none; }
+[data-presence="away"] > .pf-portrait-dot, .pf-pop-dot[data-presence="away"] { background: #f5b83d; border-radius: 2px; transform: rotate(45deg) scale(.85); }
+[data-presence="busy"] > .pf-portrait-dot, .pf-pop-dot[data-presence="busy"] { background: #ef5b5b; border-radius: 2px; }
+[data-presence="busy"] > .pf-portrait-dot::after, .pf-pop-dot[data-presence="busy"]::after { content: ''; position: absolute; left: 20%; right: 20%; top: 40%; bottom: 40%; background: rgb(var(--panel-rgb)); border-radius: 1px; }
+.pf-pop-dot { position: relative; }
+/* the Who panel's mark: the same fixed colours + shapes as the profile */
+.who-mark { position: relative; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #3ddc84; margin-right: 7px; flex: none; align-self: center; }   /* align-self, NOT vertical-align: the row is a flex container and vertical-align is inert there — measured 4.5px of lift, which is what R saw (2026-09-11: "they're a bit offset above in kind of an odd way") */
+.who-mark[data-presence="away"] { background: #f5b83d; border-radius: 2px; transform: rotate(45deg) scale(.85); }
+.who-mark[data-presence="busy"] { background: #ef5b5b; border-radius: 2px; }
+.who-mark[data-presence="busy"]::after { content: ''; position: absolute; left: 20%; right: 20%; top: 40%; bottom: 40%; background: rgb(var(--panel-rgb)); border-radius: 1px; }
+.pf-who .pf-state { font-style: normal; color: var(--brand); }
+.pf-id { position: relative; }
+.pf-pop { position: absolute; left: 0; top: 46px; z-index: 5; display: flex; flex-direction: column; gap: 2px; padding: 5px; min-width: 240px;
+  background: rgb(var(--panel-rgb) / .97); border: 1px solid var(--edge); border-radius: 8px; box-shadow: var(--shadow); }
+.pf-pop-row { display: flex; align-items: center; gap: 10px; text-align: left; padding: 6px 10px; border: none; border-radius: 6px; background: none; color: var(--fg); font-size: var(--fs-sm); cursor: pointer; }
+.pf-pop-row:hover { background: rgb(255 255 255 / .06); }
+.pf-pop-row.on { background: var(--well); color: var(--brand); font-weight: 600; }
+.pf-tabs { display: flex; gap: 2px; margin: 10px 0 8px; border-bottom: 1px solid var(--edge); }
+.pf-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px 7px; border: none; border-bottom: 1px solid transparent; background: none; color: var(--dim); font-size: var(--fs-sm); cursor: pointer; border-radius: 6px 6px 0 0; }   /* INSIDE the box, same as the chat strip: one tab mechanism, not two (R, 2026-09-11: "Should we consolidate style here") */
+.pf-tab svg { opacity: .8; color: var(--icon); }          /* the section-head recipe: desaturated brand at .8 when idle (live, 09-05) */
+/* THE PROFILE TABS NEVER OPTED OUT OF THE GLOBAL BUTTON CHAIN, and it showed:
+   measured with a real mouse hover, `.pf-tab:hover` painted NOTHING while
+   `.pf-tab.on` inherited `button.on { background: var(--hov) }` = 6% white. So
+   the selected tab was the brightest thing in the strip and hovering its
+   neighbour changed only the text — which reads exactly as R described it
+   (2026-09-11): "they actually get *darker* when highlighted, which is really
+   strange!" Both states are now stated here, matching the chat strip: hover is
+   the livelier one, selection is the calm one. */
+.pf-tabs .pf-tab:hover { color: var(--fg); background: rgb(143 232 200 / .13); }
+.pf-tabs .pf-tab.on { color: var(--brand); border-bottom-color: var(--brand); background: var(--well); }
+.pf-tabs .pf-tab.on:hover { background: color-mix(in srgb, rgb(143 232 200 / .13) 45%, var(--well)); }
+.chat-tabs button.on:hover { background: color-mix(in srgb, rgb(143 232 200 / .13) 45%, var(--well)); }   /* the active tab BLENDS its hover with --well, same as .pf-tab.on:hover — without this the plain :hover replaced the pressed-in fill and the two strips diverged on hover alone */
+.pf-tab.on svg { opacity: 1; color: var(--brand); }
+.pf-pane { flex: 1; min-height: 0; overflow: auto; }
+.pf-stub { color: var(--dim); font-size: var(--fs-sm); padding: 10px 2px; line-height: 1.5; }   /* empty BY DESIGN, and says so — the .who-empty idiom (R, 2026-09-11) */
+#emenu {
+  position: fixed; top: 54px; left: 10px; z-index: 40;
+  display: flex; flex-direction: column; min-width: 168px; padding: 6px;
+  cursor: grab;   /* the menu itself is a panel: drag its empty parts */
+}
+#emenu:active { cursor: grabbing; }
+#emenu .mrow, #emenu .mpin { cursor: pointer; }
+#emenu[hidden] { display: none; }
+/* the menu wears the frames' own arrange chrome — one grammar to maintain */
+#emenu { overflow: visible; }
+#emenu .fr-head {
+  display: flex; position: absolute; bottom: 100%; left: calc(var(--r) + 2px); right: calc(var(--r) + 2px);
+  justify-content: space-between; align-items: flex-end; pointer-events: none;
+  padding: 0; background: none; border: none;   /* the base .fr-head strip bleeds in otherwise */
+}
+#emenu .fr-head .fr-title { flex: 0 1 auto; }
+#emenu .fr-head .fr-title, #emenu .fr-head .fr-btns {
+  pointer-events: auto;
+  background: var(--chip); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border-radius: 7px 7px 0 0; padding: 3px 10px; font-size: var(--fs-sm); color: var(--dim);
+  margin-bottom: -1px;
+}
+#emenu .fr-head .fr-title { cursor: grab; }
+#emenu .fr-head .fr-btns { padding: 3px 5px; }
+#emenu .mrow.dead { opacity: .42; cursor: not-allowed; }   /* listed, not offered: no headset sensed */
+#emenu .mrow.dead .mpin { pointer-events: none; }
+#emenu .mrow {
+  display: flex; align-items: center; gap: 9px; padding: 7px 9px;
+  background: none; border: none; border-radius: 6px; color: var(--dim);
+  font-size: var(--fs-sm); text-align: left;
+}
+#emenu .mrow:hover { background: var(--hov); }
+#emenu .mrow > svg:first-child { flex: none; opacity: .8; color: var(--icon); }
+#emenu .mrow .mname { flex: 1; }
+#emenu .mrow.open { color: color-mix(in srgb, var(--brand) 35%, var(--fg)); }
+#emenu .mrow.open svg:first-child { opacity: 1; }
+#emenu .mpin {
+  flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; line-height: 0;
+  background: none; border: none; border-radius: 5px; color: var(--dim); opacity: .35;
+}
+#emenu .mpin:hover { opacity: 1; background: var(--hov); }
+#emenu .mpin.on { opacity: 1; color: var(--brand); }
+#emenu .msep { height: 1px; background: var(--edge); margin: 5px 4px; }
+/* headers exist only while arranging (the ∃ menu is open) — and they FLOAT
+   above the frame (below, when the frame hugs the top edge) so opening the
+   menu never shifts a single window's geometry. */
+.frame .fr-head { display: none; }
+body.arranging .frame { overflow: visible; }
+/* the dashed arrange border rides the ::after overlay (z-30): it paints OVER
+   the seated header chips — which used to darken the segment beneath them —
+   and follows the corner radius, which outline never did */
+body.arranging .frame::after { border: 1px dashed rgb(255 255 255 / .25); }
+body.arranging .frame > .fr-body { overflow: hidden; }
+/* the arrange chrome reads as TABS: name docked to the frame's top-left,
+   close/collapse docked top-right — corners, where hands expect them */
+body.arranging .frame .fr-head {
+  /* tabs start AFTER the corner radius (browser-tab convention): the curve
+     stays pristine, the rim-light unbroken, and no corner needs filling.
+     The simple one wins. */
+  display: flex; position: absolute; bottom: 100%; left: calc(var(--r) + 2px); right: calc(var(--r) + 2px);
+  justify-content: space-between; align-items: flex-end;
+  padding: 0; background: none; border: none; pointer-events: none;
+}
+body.arranging .frame .fr-head .fr-title,
+body.arranging .frame .fr-head .fr-btns {
+  pointer-events: auto;
+  background: var(--chip); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border-radius: 7px 7px 0 0; padding: 3px 10px;
+  margin-bottom: -1px;   /* seat onto the rim-light so the tab reads attached */
+}
+body.arranging .frame .fr-head .fr-title { flex: 0 1 auto; cursor: grab; }
+body.arranging .frame .fr-head .fr-btns { padding: 3px 5px; }
+body.arranging .frame.label-below .fr-head { bottom: auto; top: 100%; align-items: flex-start; }
+body.arranging .frame.label-below .fr-head .fr-title,
+body.arranging .frame.label-below .fr-head .fr-btns {
+  border-radius: 0 0 7px 7px;
+  margin-bottom: 0; margin-top: -1px;
+}
+/* sticky-edge glow: this frame is riding that edge and will follow it.
+   Composed from one custom property per edge so a CORNER frame shows BOTH
+   glows (the old per-class box-shadow rules overwrote each other — a frame
+   stuck to two sides only ever lit the last one). */
+body.arranging .frame {
+  --sg: color-mix(in srgb, var(--brand) 60%, transparent);
+  --nosh: 0 0 rgb(0 0 0 / 0);
+  box-shadow: var(--st-l-s, var(--nosh)), var(--st-r-s, var(--nosh)),
+              var(--st-t-s, var(--nosh)), var(--st-b-s, var(--nosh)),
+              0 1px 5px rgb(0 0 0 / .28);
+}
+body.arranging .frame.st-l { --st-l-s: inset 2px 0 0 var(--sg); }
+body.arranging .frame.st-r { --st-r-s: inset -2px 0 0 var(--sg); }
+body.arranging .frame.st-t { --st-t-s: inset 0 2px 0 var(--sg); }
+body.arranging .frame.st-b { --st-b-s: inset 0 -2px 0 var(--sg); }
 /* Edit mode has to be legible without reading the HUD: the cursor changes and
    the viewport gets a thin warm frame, so it is obvious why a drag just moved
    a crate instead of the camera. */
 body.edit-mode canvas { cursor: crosshair; }
 body.edit-mode::after {
   content: ''; position: fixed; inset: 0; z-index: 2; pointer-events: none;
-  border: 2px solid rgba(232, 201, 106, .5); border-radius: 3px;
+  border: 2px solid color-mix(in srgb, var(--attn) 50%, transparent); border-radius: 3px;
 }
 
 #trayzone {
@@ -379,7 +938,14 @@ body.edit-mode::after {
 }
 #loading { padding: 7px 10px; font-size: var(--fs-sm); color: var(--warn); white-space: pre; display: none; }
 #loading.on { display: block; }
-#toasts { display: flex; flex-direction: column; gap: 5px; align-items: flex-end; }
+#toasts { display: flex; flex-direction: column; gap: 5px; align-items: flex-end; z-index: 60; }   /* same tier as #hintbar: temporary, possibly urgent, outranks the chrome */
+/* floating chrome carries a thin outline so it separates from whatever the
+   world is drawing behind it (live, 09-04): toasts, hint bar, chat gear pop, hud pops */
+.toast, #hintbar, .chat-gearpop, .hud-pop, #tipchip {
+  outline: 1px solid var(--edge-hi); outline-offset: -1px;
+  /* and fully OPAQUE — readable over anything the world draws (live, 09-04) */
+  background: rgb(var(--panel-rgb)); backdrop-filter: none; -webkit-backdrop-filter: none;
+}
 .toast {
   padding: 7px 10px; font-size: var(--fs-sm); max-width: 100%;
   border-left: 3px solid var(--dim); white-space: pre-wrap; word-break: break-word;
@@ -393,37 +959,196 @@ body.edit-mode::after {
 @keyframes toastin { from { opacity: 0; transform: translateX(12px); } }
 
 #hintbar {
+  /* OVER the chrome, not under it. Hints are temporary and may carry urgent
+     information, so they outrank the rail (27/28), the frame rim (30) and the ∃
+     menu (40) — the same reasoning .toast follows. R, 2026-09-11: "those should
+     probably paint OVER the HUD because they're temporary and may contain
+     urgent info". Kept below .dd-pop (200) so an open dropdown still wins. */
   position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
-  z-index: 4; padding: 5px 12px; font-size: var(--fs-sm); color: var(--dim);
+  z-index: 60; padding: 5px 12px; font-size: var(--fs-sm); color: var(--dim);
   pointer-events: none; white-space: nowrap; max-width: 92vw; overflow: hidden;
   text-overflow: ellipsis; transition: opacity .5s;
 }
-#hintbar kbd { font-size: 10px; }
+#hintbar kbd { font-size: var(--fs-xs); }
 #hintbar.gone { opacity: 0; }
 
 /* dock: one row of toggles so a closed frame is never lost */
 #dock {
-  position: fixed; top: 10px; right: 10px; z-index: 27;
-  display: flex; gap: 4px; padding: 4px;
+  /* hotbar: ∃ + window glyphs, ONE movable unit. Grip appears only while
+     arranging, at the bottom. */
+  position: fixed; top: 10px; left: 10px; z-index: 27;
+  display: flex; flex-direction: column; gap: 2px; padding: 4px; align-items: center;
 }
-#dock button { padding: 4px 8px; font-size: 11px; }
+#dock .dock-grip {
+  height: 14px; width: 100%; cursor: grab; display: none; place-items: center;
+  color: var(--dim); opacity: .6; border: none; background: none; padding: 0;
+}
+body.arranging #dock .dock-grip { display: grid; }
+#dock .dock-grip:hover { opacity: 1; color: var(--fg); }
+#dock .dock-grip:active { cursor: grabbing; }
+#dock button:not(.dock-grip) {
+  display: grid; place-items: center; width: 34px; height: 34px; padding: 0;
+  font-size: var(--fs-xs);   /* label-fallback buttons (entries with no fill icon) */
+  /* OFF wears exactly what a collapsed World-menu row wears: --icon (the
+     desaturated brand) at .8 — same recipe as `.sec > .head svg` (live, 09-04) */
+  color: var(--icon); background: none; border: none; box-shadow: none; border-radius: 7px;
+}
+#dock button:not(.dock-grip):not(.on) svg { opacity: .8; }
+#dock button:not(.dock-grip):hover svg, #dock button.on svg { opacity: 1; }
+#dock #hud.emark.net-live svg { opacity: 1; }   /* the live ∃ is never dimmed: the :not(.on) .8 above was reaching it (measured 09-04 23:52 — 'dingy') */
+#dock button:not(.dock-grip):hover { color: var(--fg); background: var(--hov); }
+/* The ON look must not be loud or distracting, and quieting it moves OFF
+   too, so both are drawn together; the ∃ mark is untouched.
+   The dock is an ACTIVITY BAR, not a tool palette: each button opens a window,
+   and the rail knows which screen edge it is welded to. The reference for that
+   shape is VS Code's activity bar — a thin accent border on the content-facing
+   edge + the icon going dim→full; a filled background is explicitly optional
+   there and Figma/Blender's lit wells are for mode toggles. So:
+     OFF   dim icon, no fill (unchanged)            HOVER  faint --hov well (unchanged)
+     ON    full-brightness brand-tinted icon + a 2px brand bar on the edge that
+           faces the viewport (it points at the window it opened); no well, no ring
+     ON+HOVER  a whisper of well so about-to-close still differs from about-to-open */
+/* a gated action (the edit wrench without build rights): listed, not offered —
+   the same vocabulary #emenu .mrow.dead uses for an unsensed headset */
+#dock button:not(.dock-grip).dead { opacity: .42; cursor: not-allowed; }
+/* `inherit` here resolved to #dock's computed color — which inherits --fg from
+   body — i.e. exactly the ink this reset means to suppress, so a gated wrench
+   brightened to full white on hover like a live one. Name the rest-state token
+   instead. (round 6, measured: dead hover was rgb(235,235,233), identical to
+   a live button's.) */
+#dock button:not(.dock-grip).dead:hover { color: var(--icon); background: none; }
+
+#dock button.on {
+  position: relative;
+  color: var(--brand);   /* the accent itself — one ink with the ∃ and the live mic/ear (live, 09-04 23:59) */
+  background: none;
+}
+#dock button.on::before {
+  content: ''; position: absolute; border-radius: 2px;
+  background: var(--brand); opacity: .9;
+  /* default (rail welded left / floating top-left): bar on the RIGHT edge */
+  top: 7px; bottom: 7px; right: -3px; width: 1.5px;   /* a smidge thinner than 2 (live, 09-04) */
+}
+#dock[data-edge="right"]  button.on::before { right: auto; left: -3px; }
+#dock[data-edge="top"]    button.on::before { top: auto; right: 7px; left: 7px; bottom: -3px; width: auto; height: 1.5px; }
+#dock[data-edge="bottom"] button.on::before { bottom: auto; right: 7px; left: 7px; top: -3px; width: auto; height: 1.5px; }
+#dock button.on:hover {
+  color: color-mix(in srgb, var(--brand) 45%, white);
+  background: color-mix(in srgb, var(--brand) 10%, var(--hov));
+}
+/* two weights per button: line at rest, fill when on (live, 09-04) */
+#dock button:not(.dock-grip) svg.ico-line + svg { display: none; }
+#dock button:not(.dock-grip).on svg.ico-line { display: none; }
+#dock button:not(.dock-grip).on svg.ico-line + svg { display: inline; }
+#dock button[hidden] { display: none; }
+/* keybtn: buttons that mirror physical KEYS read as key-caps — a darker well,
+   no outline (the doctrine: visible boxes only for key-mirrors and committal actions) */
+button.keybtn { background: var(--well); border: none; box-shadow: none; border-radius: 7px; }
+button.keybtn:hover { background: color-mix(in srgb, var(--well) 60%, var(--hov)); }
+button.keybtn:active { box-shadow: inset 0 1px 3px rgb(0 0 0 / .6); }
+/* the rail WELDS to its edge — it is part of the window frame, not a floating card */
+#dock[data-edge="left"]   { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: none; }
+#dock[data-edge="right"]  { border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: none; }
+#dock[data-edge="top"]    { border-top-left-radius: 0; border-top-right-radius: 0; border-top: none; }
+#dock[data-edge="bottom"] { border-bottom-left-radius: 0; border-bottom-right-radius: 0; border-bottom: none; }
+#dock.horizontal { flex-direction: row; }
+/* height:100% cannot resolve here — #dock sets `align-items: center`, so the
+   grip never stretches and there is no definite height to percentage against.
+   It collapsed to its SVG's intrinsic 6px: a 14x6 drag target, on the landscape
+   phone edge that loadDockEdge() picks BY DEFAULT when the rail cannot clear
+   the joystick. align-self overrides the centring. (round 6, measured 14x6 vs
+   the vertical rail's 34x14.) */
+#dock.horizontal .dock-grip { width: 14px; height: auto; align-self: stretch; }
+/* ------------------------------------------------------------- profile */
+.frame .profile-body { padding: 14px; gap: 12px; }
+.pf-id { display: flex; align-items: center; gap: 12px; }
+.pf-who { display: flex; flex-direction: column; min-width: 0; }
+.pf-who > b { font-size: 17px; font-weight: 650; }
+.pf-who > span { color: var(--dim); font-size: var(--fs-sm); }
+.pf-who > span b { color: var(--fg); font-weight: 550; }
+ /* 🔴 TILES — the one tile, shared: profile's stubs and the emote menu both use it.
+   A tile is a quiet well with an icon/glyph, a name, and an optional note or key.
+   .on = lit (the playing emote, the chosen thing). No private tile rules. */
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 1; min-height: 0; }
+/* emote tiles are FIXED width and flow: widen the frame and they go to one
+   line; the frame snaps to whole tiles on release (emotebar.js). Even gutters. */
+.tiles.fixed { grid-template-columns: repeat(auto-fill, 32px); grid-auto-rows: 32px; gap: 6px; justify-content: center; align-content: start; flex: none; padding: 0; }   /* 30 px buttons, 6 px gutters: 'bring back the buffers and put the buttons on a diet' (live 09-05 22:00) */
+.tile {
+  position: relative; display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+  gap: 3px; padding: 12px 14px; border-radius: 9px;
+  background: rgb(255 255 255 / .04); border: none; color: var(--fg);
+}
+.tile:hover { background: rgb(255 255 255 / .09); }
+.tile.on { background: color-mix(in srgb, var(--brand) 16%, rgb(255 255 255 / .04)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 45%, transparent); }
+.tile svg { opacity: .9; margin-bottom: 3px; color: var(--icon); }   /* icons carry the brand whisper everywhere, stubs included (live, 09-04) */
+.tile b { font-size: var(--fs); font-weight: 600; }
+.tile span { color: var(--dim); font-size: var(--fs-xs); }
+.tile .tile-glyph { font-size: 22px; line-height: 1; color: inherit; }   /* the gesture is content, drawn large */
+.tile kbd { position: absolute; top: 6px; right: 7px; font-size: var(--fs-xs); opacity: .6; }
+.tiles.fixed .tile { width: 32px; height: 32px; box-sizing: border-box; padding: 0; align-items: center; justify-content: center; gap: 0; line-height: 1; overflow: visible; border-radius: 7px; }   /* 32: the glyph's own size plus 4 px; gutters stay 6 (live 22:25). Centred: any remainder splits evenly left/right; rows never stretch. */
+.tiles.fixed .tile .tile-glyph { font-size: 20px; }
+.tile .tile-word { font-size: var(--fs-xs); line-height: 1.1; padding: 0 3px; word-break: break-word; text-align: center; }   /* the fallback when the emoji does not render here */
+/* alt held = every frame is grabbable, and says so */
+body.altgrab .frame { cursor: grab; }
+body.altgrab .frame:active { cursor: grabbing; }
+/* scene-tree selection: text brightens toward the accent, same selected-
+   speaks-accent grammar as tabs/heads/dock */
+.sg-row.sel { background: rgb(255 255 255 / .06); }
+.sg-row.sel .n b { color: color-mix(in srgb, var(--brand) 45%, var(--fg)); }
+.sg-row.sel .d { color: color-mix(in srgb, var(--brand) 25%, var(--dim)); }
 
 /* --------------------------------------------------------------- overlays */
 .scrim {
   position: fixed; inset: 0; z-index: 40; display: none;
   align-items: center; justify-content: center;
-  background: rgba(4, 10, 16, 0.72); backdrop-filter: blur(4px);
+  /* a NEUTRAL veil — mid gray at half strength desaturates whatever world is
+     behind it and clashes with none of them; the old blue-black fought warm
+     skies (live, 09-05) */
+  background: rgb(128 128 128 / .5); backdrop-filter: blur(4px);
   padding: 20px; box-sizing: border-box;
 }
 .scrim.open { display: flex; }
 /* The front door sits ON the splash — arriving is one continuous moment, not a
    dialog that appears after a loading screen. Above #splash's z-index. */
-#door { z-index: 120; background: rgba(4, 10, 16, 0.55); }
+/* the door's veil is near-black, not mid-grey: the sheet is translucent and a grey veil
+   under it read as dingy (live, 09-06 22:37) */
+#door { z-index: 120; background: rgb(8 12 14 / .62); }
 .sheet {
   width: min(560px, 100%); max-height: 100%; overflow-y: auto;
   padding: 20px 22px; box-sizing: border-box; position: relative;
 }
-.sheet h1 { font-size: 17px; margin: 0 0 3px; color: var(--accent); font-weight: 600; }
+/* the door is a frame like the others: its title follows .fr-title (live, 09-04: the card read as the old menu styling) */
+.sheet h1 { font-size: var(--fs-sm); margin: 0 0 6px; color: var(--dim); font-weight: 600; text-transform: uppercase; letter-spacing: .085em; }
+/* the door wears the frames' own header: a title chip on the top edge (the
+   fr-head/fr-title grammar), then the panel body — not a headline in a box */
+#door .sheet { padding: 0; overflow: visible; background: rgb(var(--panel-rgb) / .94); border: 1px solid rgb(255 255 255 / .14); box-shadow: 0 0 0 1px rgb(0 0 0 / .5), 0 24px 60px rgb(0 0 0 / .5); }   /* the one surface at arrival — solid, with a modest rim so it holds against a dark world (live, 09-06 23:08) */
+#door .sheet .fr-head { position: static; display: flex; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--edge); border-radius: var(--r) var(--r) 0 0; background: rgb(var(--panel-rgb) / .35); cursor: default; }
+#door .sheet .fr-title { flex: 1; font-size: var(--fs-sm); color: var(--dim); text-transform: none; letter-spacing: .02em; font-weight: 500; }
+#door .sheet .fr-title b { color: var(--fg); font-weight: 600; }
+#door .sheet .door-body { padding: 16px 18px 18px; max-height: calc(100vh - 120px); overflow-y: auto; }
+#door .sheet h2 { margin: 16px 0 8px; }
+#door .sheet h2:first-child { margin-top: 0; }
+#door .sheet label { margin-bottom: 4px; }
+#door .sheet label input::placeholder { color: color-mix(in srgb, var(--dim) 70%, transparent); }
+#door .sheet label input { background: var(--well); border: 1px solid var(--edge); border-radius: 7px; color: var(--fg); }
+#door .sheet label input:focus { outline: none; border-color: color-mix(in srgb, var(--brand) 60%, var(--edge)); }
+#door .sheet p.sub a { color: var(--brand); }
+#door .grid.dense { gap: 6px; }
+/* cards sit a step LIGHTER than the sheet, not sunk into it; the name is body-size, not caption-size (live, 09-06 23:08) */
+#door .card { background: color-mix(in srgb, rgb(var(--panel-rgb)) 78%, white 6%); border: 1px solid rgb(255 255 255 / .09); border-radius: 7px; padding: 5px 5px 6px; color: var(--fg); font-size: 13px; line-height: 1.25; }
+#door .card span { opacity: .85; }
+#door .card.on span { opacity: 1; color: var(--brand); }
+/* portraits are people: 3:4, not squares — and the grid is always five across
+   so a second row lines up under the first */
+#door .grid.dense { display: grid; grid-template-columns: repeat(5, 1fr); }
+#door .card img, #door .card .ph { aspect-ratio: 3 / 4; }
+.sec > .body .av-grid .card { align-self: stretch; width: auto; align-items: stretch; }   /* fill the grid cell. The house rule `.sec > .body button { align-self:flex-start; width:fit-content }` hit these <button> cards, so each took the width of its NAME — as many sizes as names (screenshot, 09-05) */
+.av-shot { position: relative; width: 100%; aspect-ratio: 3 / 4; border-radius: 4px; overflow: hidden; background: rgba(0,0,0,.35); }   /* World › avatar: the box sizes the card; the image only fills it */
+.av-shot .ph { display: grid; position: absolute; inset: 0; width: auto; aspect-ratio: auto; }
+.av-shot img { position: absolute; inset: 0; width: 100%; height: 100%; aspect-ratio: auto; object-fit: cover; }
+#door .sheet .go b { font-weight: 700; }
+#door .card:hover { border-color: var(--edge); color: var(--fg); }
+#door .card.on { border-color: var(--brand); }
 .sheet h2 {
   font-size: var(--fs-sm); margin: 16px 0 7px; color: var(--dim);
   text-transform: uppercase; letter-spacing: .09em; font-weight: 600;
@@ -433,10 +1158,15 @@ body.edit-mode::after {
 .sheet label .lbl { display: block; font-size: var(--fs-sm); color: var(--dim); margin-bottom: 4px; }
 .sheet label input { width: 100%; box-sizing: border-box; font-size: var(--fs); padding: 8px 10px; }
 .sheet .go {
-  width: 100%; text-align: center; font-size: var(--fs); padding: 10px;
-  background: var(--accent-dk); border-color: var(--edge-hi); color: var(--accent); font-weight: 600;
+  width: 100%; text-align: center; font-size: var(--fs); padding: 12px 16px; margin-top: 22px;
+  /* the one action on the sheet: outlined in the brand, a light brand wash, the text free to wrap —
+     an outline says 'important' without a slab of colour (live, 09-06 22:37; supersedes the 09-05 solid fill) */
+  background: color-mix(in srgb, var(--brand) 12%, transparent); border: 1.5px solid var(--brand);
+  color: var(--fg); font-weight: 600; border-radius: 8px; white-space: normal; line-height: 1.35;
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--brand) 30%, transparent); transition: background .15s, box-shadow .15s;
 }
-.sheet .go:hover { background: #2a5349; }
+.sheet .go:hover, .sheet .go:focus-visible { background: color-mix(in srgb, var(--brand) 22%, transparent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--brand) 18%, transparent); outline: none; }
+#door .sheet .go b { color: var(--brand); }
 .keys {
   display: grid; grid-template-columns: max-content 1fr;
   gap: 7px 14px; align-items: baseline;
@@ -445,14 +1175,85 @@ body.edit-mode::after {
 .keys dd { margin: 0; color: var(--fg); }
 kbd {
   display: inline-block; padding: 1px 6px; border-radius: 4px;
-  background: rgba(30, 60, 55, .8); border: 1px solid var(--edge);
-  font: 11px var(--font); color: var(--accent); white-space: nowrap;
+  background: rgb(0 0 0 / .35); border: 1px solid var(--edge);
+  font: var(--fs-xs) var(--font-code); color: var(--fg); white-space: nowrap;
 }
 .close-x {
   position: absolute; top: 12px; right: 14px; padding: 3px 8px;
   font-size: var(--fs); background: none; border: none; color: var(--dim);
 }
 
+/* capability notice: a persistent card, bottom-centre, until dismissed */
+.capnotice {
+  /* a one-line STRIP along the bottom edge — off the body, which stands
+     centre-stage (live, 09-05); the long explanation is the title tooltip */
+  /* TOP-RIGHT, because the top-CENTRE stopped being empty. This card sat at
+     left:50%/top:8 with the note 'the top-centre gap: nothing lives there by
+     default' (09-09) — true until 288a5da put the emote bar at x:'center', y:10
+     this morning. The card is z-index 60 and frames cap at Z_HI=25, so the bar
+     can never paint above it: measured 9 of 9 tiles unclickable at 1280x720 AND
+     1904x844 on any browser without WebGPU, and reachable again the moment the
+     card was dismissed. The bar is a primary control the owner placed
+     deliberately; this is transient chrome on a reduced path, so the chrome
+     moves.
+     2026-09-12, CORRECTING MY OWN CLAIM ABOVE: I wrote that "top-right is the one
+     region no fixed element claims (#dock/#emenu top-left, #hintbar bottom-centre,
+     #trayzone/#toasts bottom-right, #stick bottom-left)". That enumerated FIXED
+     CHROME and was true of it — and false of the screen. DEFAULT_LAYOUT (frames.js)
+     opens `world` at x:-8 y:8 w:407 h:363, i.e. top-right, and has since 06f4a0f.
+     I checked one list and never checked the layout the product actually ships.
+     Measured at 1280x720: card [930..1270]x[8..43] over world [865..1272]x[8..381];
+     of world's 8 interactive elements, BUTTON.head [872,20,387,29] is ~85% covered
+     (only x 872..930 stays clickable). The body and the other 7 are reachable, so
+     this is one blocked control, not a dead panel — narrower than the rereview's
+     wording and still a real defect.
+     The card moves BELOW world instead. NOTE THE TRAP I fell into first: world's
+     DECLARED h is 363 (bottom 371), but the live frame measures bottom 381 — the
+     chrome is not in the declared height — so top:379 still left a 2px kiss. The
+     value below is derived from the MEASURED bottom, not the declaration. It lands
+     in the `settings` slot, which DEFAULT_LAYOUT ships CLOSED
+     ([381..824] at every width). The top strip between `emotes` and `world` cannot
+     host it — that gap is -57px at 1068, 49 at 1280, 129 at 1440, 249 at 1680, and
+     the card needs min(320px,46vw). antra-tess #185 rereview B2. */
+  position: fixed; right: 10px; top: 389px; z-index: 60;   /* world's MEASURED bottom 381 + 8 */
+  max-width: min(320px, 46vw);   /* NARROW, not merely right-anchored: at 720px the card still reached back across the centred emote bar and blocked 7 of 9 tiles even from top-right. The long text is the title tooltip anyway (09-05 note above). #185 B2. */ padding: 5px 10px; font-size: var(--fs-sm); line-height: 1.4;
+  display: flex; flex-direction: row; align-items: center; gap: 10px; border-radius: 8px;
+}
+
+/* A PHONE HAS NO ROOM IN THE TOP STRIP (antra-tess #185 B2, measured 2026-09-12).
+   The emote bar is widthFor(9)=352px and never narrower at its default, so at
+   390px wide there are 38px beside it. Three separate occluders were measured in
+   that strip: this card (5 of 9 tiles), #dock once body.touch reorients the rail
+   along the top edge in landscape (1 tile), and #earbtn at z45 (1 tile). Moving
+   the card to the right corner cleared it at 1280x720 and 1904x844 and still left
+   five tiles covered on a phone; dropping it to full width at top:62 cleared the
+   tiles and covered a DOCK BUTTON instead. The band below the bar and right of
+   the rail is the one rectangle measured clear of #dock, #micbtn, #earbtn,
+   #emenu, #stick and #hintbar in BOTH orientations. The card is transient chrome
+   on a reduced-capability browser and it yields; the bar is a primary control. */
+@media (max-width: 900px) {
+  /* 102px, not 64: the bar CLAMPS to the room available now (emotebar.js
+     show()), so on a phone it opens 6 wide and TWO ROWS tall — bottom 94,
+     measured — and the 64 I picked when it was one row lands on row two.
+     A constant chosen against one layout does not survive the next. */
+  .capnotice { top: 102px; left: 50px; right: 8px; max-width: none; }
+}
+
+/* THE MID BAND, 901-1067px (measured 2026-09-12). The card is right-anchored at
+   vw-10 with width 340, and the centred bar's right edge is (vw+352)/2, so they
+   clear only from vw >= 352 + 2*(340+10+8) = 1068. Measured: the card steals one
+   tile at 950 and 1000, none from 1100 up — the arithmetic agrees with all seven
+   sampled widths. The phone branch above is the WRONG shape here (left:50 +
+   right:8 would stretch a ~940px card across a laptop), so the card keeps its
+   size and right anchor and simply drops below the bar's band. */
+@media (min-width: 901px) and (max-width: 1067px) {
+  .capnotice { top: 64px; }
+}
+.capnotice > * { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }   /* each notice is one row */
+.capnotice b { display: inline; margin: 0; white-space: nowrap; }
+.capnotice p { margin: 0; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.capnotice .cn-btns { display: flex; gap: 6px; flex: none; }
+.capnotice .cn-btns button { padding: 4px 10px; font-size: var(--fs-xs); }
 /* photo mode hides every chrome layer but keeps the canvas */
 body.photo .frame, body.photo #hud, body.photo #trayzone,
 body.photo #hintbar, body.photo #dock { display: none !important; }
@@ -466,18 +1267,210 @@ body.touch #touch { display: block; }
 }
 #stick .nub {
   position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px;
-  border-radius: 50%; background: rgba(143,232,200,.28); border: 1px solid var(--edge-hi);
+  border-radius: 50%; background: color-mix(in srgb, var(--brand) 28%, transparent); border: 1px solid var(--edge-hi);
 }
 #touchbtns { position: absolute; right: 18px; bottom: 18px; display: flex; gap: 8px; pointer-events: auto; }
 #touchbtns button { padding: 13px 15px; font-size: var(--fs); border-radius: 50%; }
+/* ------------------------------------------------------- perfscope (debug) */
+.perf-loupe {
+  position: fixed; z-index: 55; pointer-events: none;
+  /* shrink to content (no left gutter). The old
+     min-width floor + the grid's 1fr stretch column dumped all slack as empty
+     space on the left; width:max-content lets the card hug its rows, still
+     bounded by max-width for pathological long names. */
+  width: max-content; max-width: 320px; padding: 9px 8px 7px; border-radius: 8px;
+  font: var(--fs-xs)/1.5 var(--font-code); color: var(--fg);
+  background: rgb(var(--panel-rgb) / .94);   /* floats over content: near-opaque */
+  box-shadow: 0 6px 20px rgb(0 0 0 / .45), var(--rim);
+  opacity: 0; transition: opacity .1s;
+}
+.perf-loupe.show { opacity: 1; }
+/* pinned → hoverable, so every `title` tooltip on the rows actually fires
+   (unpinned the card is pointer-events:none to follow the cursor & let the
+   raycast through). */
+.perf-loupe.pinned { pointer-events: auto; }
+/* Maya channel-box grid: label right-justified against the center
+   seam · value right-justified against the pill column (buffer via column-gap)
+   · tier pill. Two clean vertical rules; nothing floats apart, nothing bumps
+   the panel wide. auto-sized columns so the panel fits its content. */
+.perf-loupe .pl-grid {
+  display: grid;
+  /* all three columns size to content — nothing stretches, so the card is only
+     as wide as label+value+pill actually need (no left gutter). */
+  grid-template-columns: auto auto auto;
+  align-items: center;
+  column-gap: 8px; row-gap: 3px;
+}
+.perf-loupe .pll { color: var(--dim); text-align: right; }
+.perf-loupe .plv { color: var(--fg); text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.perf-loupe .plp { display: flex; justify-content: flex-start; }
+/* stacked texture sub-rows span all three columns; each is dims … bytes */
+/* textures as their own inner table with a center break: dims
+   right-justified against the seam, size left-justified after it — the main
+   grid's channel-box grammar, nested and indented under "textures". */
+.perf-loupe .pl-texwrap {
+  grid-column: 1 / -1;
+  display: grid; grid-template-columns: 1fr 1fr;
+  column-gap: 10px; row-gap: 1px;
+  padding: 1px 0 2px; margin-left: 14px;
+  font-size: var(--fs-xs); color: var(--dim); opacity: .85;
+}
+.perf-loupe .pl-texd { text-align: right; }
+.perf-loupe .pl-texb { text-align: left; color: var(--fg); opacity: .8; font-variant-numeric: tabular-nums; }
+.perf-loupe .pl-texwrap em { font-style: normal; color: var(--attn); opacity: .85; }
+/* header: name (left) + a right-aligned VERDICT STACK (pill · lens ·
+   rank) — the three tightly-coupled perf facts grouped under the pill. 'placed
+   by' dropped (provenance, not perf). Header is now just name | verdict.
+   To fill the blank between the label and the pill, the verdict
+   pieces are RIGHT-FLOATS — pill first, lens+rank cleared beneath it — and the
+   name is a plain block whose LINES flow around them. Floats are the one CSS
+   mechanism that gives each text line its own width: title line 1 wraps at the
+   pill's left edge (filling the old blank), line 2 wraps at the wider lens
+   label's edge (keeping its distance from 'texture memory'), and both widths
+   come from the real rendered pill/label — nothing hardcoded. flow-root
+   contains the floats; width:0 + min-width:100% keeps the header from
+   contributing to the pane's max-content width, so the data table still sets
+   pane width exactly as before. */
+.perf-loupe .pl-head {
+  display: flow-root; width: 0; min-width: 100%; color: var(--fg);
+  padding-bottom: 4px; margin-bottom: 4px; border-bottom: 1px solid var(--edge);
+}
+.perf-loupe .pl-verdict { display: contents; }
+.perf-loupe .pl-rank { float: right; margin: 0 0 4px 8px; }
+.perf-loupe .pl-verdictsub {
+  float: right; clear: right; margin-left: 8px;
+  display: flex; flex-direction: column; align-items: flex-end; text-align: right;
+}
+/* name: plain block so its line boxes shorten beside the floats (any BFC-maker
+   — overflow, -webkit-box, flex — would dodge the floats as a whole rectangle
+   and give every line the same narrow width again). Clamped to 2 lines by
+   standard line-clamp where it exists; the fallback clips at 2 lines via
+   max-height + clip-path (clip-path clips at paint time without creating a
+   BFC — overflow:hidden would). */
+.perf-loupe .pl-name {
+  display: block; position: relative;
+  font-size: 12px; font-weight: 700; line-height: 1.3;
+  overflow-wrap: anywhere; hyphens: auto;
+  /* three lines when the verdict stack leaves the room — the
+     stack is already three rows tall, so a third name line costs no height. */
+  max-height: calc(3 * 1.3em); clip-path: inset(0);
+}
+/* provenance under the name: the GLB basename, dim and small, flowing around the
+   same floats (the name no longer carries the filename) */
+.perf-loupe .pl-lib {
+  display: block; font-size: var(--fs-xs); font-weight: 400; line-height: 1.3;
+  color: var(--dim); opacity: .85; overflow-wrap: anywhere; margin-top: 1px;
+  max-height: calc(2 * 1.3em); clip-path: inset(0);   /* two dim lines have said everything a filename will */
+}
+/* hand-drawn truncation cue: perfscope.js measures the last visible line and
+   pins this at its end (standard line-clamp is off the table here — see above —
+   and its support varies, so ONE deterministic path for every browser). */
+.perf-loupe .pl-ell { position: absolute; font-style: normal; }
+.perf-loupe .pl-verdict .pl-mode,
+.perf-loupe .pl-verdict .pl-rankrow { color: var(--dim); font-size: var(--fs-xs); line-height: 1.3; }
+.perf-loupe .pl-verdict .pl-rankrow { font-variant-numeric: tabular-nums; }
+/* action hint right-justified — echoes the panel's right edge and reads as
+   chrome/affordance, not data */
+.perf-loupe .pl-foot { color: var(--dim); font-size: var(--fs-xs); margin-top: 4px; opacity: .75; border-top: 1px solid var(--edge); padding-top: 4px; text-align: right; }
+.ps-badge {
+  display: inline-block; min-width: 8px; height: 8px; border-radius: 4px;
+  color: var(--ink-on-brand); font-size: var(--fs-xs); font-weight: 700; line-height: 1;
+  padding: 1px 4px; vertical-align: 1px;
+}
+/* chunky labeled pills (readable performance pills):
+   the tier WORD in a solid rounded chip, dark ink on the tier color. Same chip
+   for row pills and the header rank pill, header just a hair larger + uppercase. */
+/* chunky labeled pill — inline-FLEX centering fixes the old off-center text
+   (the text sat off-center): the base .ps-badge's height:8px +
+   line-height:1 + vertical-align shoved the label up, and trailing letter-
+   spacing pushed it left. Flex-center owns both axes; a text-indent equal to
+   the letter-spacing cancels the trailing-gap lean. */
+.ps-badge-lg {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 34px; height: 17px; border-radius: 5px; padding: 0 8px;
+  font-size: var(--fs-xs); font-weight: 700; vertical-align: middle;
+  letter-spacing: .04em; text-indent: .04em;
+  /* dark outline so a bright pill stays legible over a light pane */
+  border: 1px solid rgb(0 0 0 / .5);
+  /* OPTICAL cap centering (measured): "POOR" ink is 8px ascent + 1px
+     descent around the baseline. Flex-centering the LINE box leaves the caps
+     high. Setting line-height to the content box + a measured padding-top puts
+     the INK, not the line box, at true center. Tuned by re-measuring ink gaps. */
+  line-height: 14px; padding-top: 1px; padding-bottom: 0;
+}
+.perf-loupe .pl-head .ps-badge-lg { height: 18px; font-size: var(--fs-xs); line-height: 15px; padding-top: 1px; text-transform: uppercase; letter-spacing: .06em; text-indent: .06em; }
+.perf-loupe .pl-rank { cursor: help; }
+.ps-legend { display: flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--dim); padding: 2px 2px 0; }
+.ps-legend i { width: 16px; height: 7px; border-radius: 2px; }
+.ps-legend span { margin-left: 7px; letter-spacing: .02em; }
+.ps-table { display: flex; flex-direction: column; gap: 1px; margin-top: 2px; }
+.ps-row {
+  display: flex; align-items: center; gap: 6px; padding: 2px 4px;
+  font-size: var(--fs-xs); border-radius: 4px; cursor: pointer;
+}
+.ps-row:hover { background: var(--hov); }
+.ps-row i { flex: none; width: 8px; height: 8px; border-radius: 50%; }
+.ps-row span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+.ps-row em { flex: none; font-style: normal; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+/* the house tooltip (ui.js owns the behavior) — native title= chrome can't be
+   styled, so it's borrowed on hover and repainted as one of our chips */
+#tipchip {
+  position: fixed; z-index: 60; pointer-events: none;
+  max-width: 320px; padding: 4px 10px; border-radius: 6px;
+  font-size: var(--fs-sm); line-height: 1.45; color: var(--fg);
+  background: var(--chip); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 14px rgb(0 0 0 / .4), var(--rim);
+  white-space: pre-line; overflow-wrap: break-word;
+  opacity: 0; transition: opacity .12s ease;
+}
+#tipchip.show { opacity: 1; }
+
 .dbg-row { cursor: pointer; user-select: none; }
-.dbg-row input { accent-color: var(--accent); margin: 0; }
+.dbg-row input { accent-color: var(--control); margin: 0; }
 .dbg-stats {
-  margin: 2px 0 0; padding: 6px 7px; font: 11px/1.45 ui-monospace, monospace;
+  /* bottom margin clears the frame's edge-resize band, which was sitting on
+     the last line (the last line could not be scrolled into view) */
+  margin: 2px 0 8px; padding: 6px 7px; font: var(--fs-xs)/1.45 ui-monospace, monospace;
   color: var(--dim); background: rgba(0,0,0,0.25); border-radius: 5px;
   white-space: pre; overflow-x: auto;
 }
+
+/* schema panels — a frame body declared as FIELDS (panels.js); the same
+   fields paint a VR quad (xrpanels.js). Desktop renderer styles: */
+.schema-panel { padding: 0; overflow: hidden; font-size: var(--fs-sm, 12px); }
+.schema-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 10px; }
+.sp-row { display: flex; align-items: center; gap: 8px; margin: 5px 0; }
+.sp-row.sp-f-list { flex-direction: column; align-items: stretch; }
+.sp-label { color: var(--dim); min-width: 64px; flex-shrink: 0; }
+.sp-info { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-step { display: inline-flex; align-items: center; gap: 2px; }
+.sp-bump { width: 22px; padding: 2px 0; background: var(--well); border: none; color: var(--fg); border-radius: 4px; cursor: pointer; }
+.sp-bump:hover { background: var(--act); }
+.sp-num { width: 54px; background: var(--panel); border: 1px solid var(--edge); color: var(--fg); border-radius: 4px; padding: 2px 4px; }
+.sp-vec { display: flex; gap: 6px; flex-wrap: wrap; }
+.sp-text { flex: 1; min-width: 0; background: var(--panel); border: 1px solid var(--edge); color: var(--fg); border-radius: 4px; padding: 3px 6px; }
+.sp-btn { background: var(--brand); border: none; color: #14100c; font-weight: 600; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+.sp-btn.danger, .sp-mini.danger { background: #6e2a2a; color: var(--fg); }
+.sp-list { display: flex; flex-direction: column; gap: 2px; max-height: 190px; overflow-y: auto; }
+.sp-item { display: flex; align-items: center; gap: 6px; padding: 3px 7px; border-radius: 5px; }
+.sp-item:hover { background: rgba(255,255,255,.04); }
+.sp-item.active { background: var(--well); }
+.sp-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; cursor: pointer; }
+.sp-item-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-item-sub { color: var(--dim); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-mini { background: var(--well); border: none; color: var(--fg); border-radius: 4px; padding: 2px 7px; cursor: pointer; }
+.sp-empty { color: var(--dim); font-style: italic; padding: 4px 7px; }
 </style>
+<script>
+/* pre-paint token restore (the default accent flashed for a beat before
+   snapping) — same key stylepanel.js persists to; runs before any module so
+   first paint already wears the chosen tokens. Kept inline: modules are
+   deferred, and a FOUC fix that loads late isn't one. */
+try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
+  for (const k in o) document.documentElement.style.setProperty(k, o[k]);
+} catch {}
+</script>
 <script type="importmap">
 {
   "imports": {
@@ -556,16 +1549,38 @@ body.touch #touch { display: block; }
 <body>
 <!-- Static so it paints before any module loads. boot.js only fills it in. -->
 <div id="splash">
+  <canvas class="sp-rays" aria-hidden="true"></canvas>
+  <div class="sp-logo-wrap"><svg class="sp-logo" viewBox="-70 -40 1372 1372" aria-hidden="true" fill="currentColor">
+    <path class="pc-top" d="M 92 82 Q 616 140 1072 78 Q 1024 290 1012 511 L 852 511 L 852 228 Q 440 218 68 232 Q 88 155 92 82 Z"/>
+    <path class="pc-arm" d="M 420 522 C 490 562 565 585 700 588 L 1140 586 Q 1168 583 1178 576 Q 1186 572 1185 582 Q 1180 653 1185 724 Q 1186 734 1178 730 Q 1168 723 1140 720 L 700 718 C 565 721 490 744 420 784 Q 436 653 420 522 Z"/>
+    <path class="pc-bot" d="M 120 1212 Q 616 1152 1080 1216 Q 1024 1002 1012 796 L 852 796 L 852 1064 Q 440 1074 62 1062 Q 88 1137 120 1212 Z"/>
+  </svg></div>
   <div class="sp-mark">eidoverse</div>
+  <div class="sp-mark-sub">worlds</div>
   <div class="sp-sub">stepping into <b class="sp-world">a world</b> as <b class="sp-name">…</b></div>
   <div class="sp-bar"><div class="sp-bar-fill"></div></div>
   <div class="sp-status"><span class="sp-phase">waking the engine</span><span class="sp-detail"></span></div>
+  <div class="sp-items" aria-live="polite"></div>
   <div class="sp-tip"></div>
   <button class="sp-skip">go in anyway →</button>
 </div>
 
-<div id="hud" class="panel">connecting…</div>
+<!-- no .panel here: the mark lives INSIDE the dock's glass now, and a nested
+     panel's backdrop-filter (blur + saturate) re-processes the rail beneath
+     it — a subtly brighter square that read as a mistake -->
+<button id="hud" class="emark" title="eidoverse — menu">
+  <!-- ∃ drawn as geometry, not typed as a glyph: no font can vary it, and it
+       scales like a mark, not like text. Rounded caps, mid-arm a hair short. -->
+  <!-- the serifed mark (art/eido-logo/emark.svg): three cut pieces, the arm
+       passing through the parted spine. Filled geometry, still no font. -->
+  <svg viewBox="-60 -30 1352 1352" width="24" height="24" aria-hidden="true" fill="currentColor">
+    <path d="M 92 82 Q 616 140 1072 78 Q 1024 290 1012 511 L 852 511 L 852 228 Q 440 218 68 232 Q 88 155 92 82 Z"/>
+    <path d="M 420 522 C 490 562 565 585 700 588 L 1140 586 Q 1168 583 1178 576 Q 1186 572 1185 582 Q 1180 653 1185 724 Q 1186 734 1178 730 Q 1168 723 1140 720 L 700 718 C 565 721 490 744 420 784 Q 436 653 420 522 Z"/>
+    <path d="M 120 1212 Q 616 1152 1080 1216 Q 1024 1002 1012 796 L 852 796 L 852 1064 Q 440 1074 62 1062 Q 88 1137 120 1212 Z"/>
+  </svg>
+</button>
 <div id="dock" class="panel"></div>
+<div id="emenu" class="panel" hidden></div>
 
 <div id="trayzone">
   <div id="loading" class="panel"></div>
@@ -603,9 +1618,19 @@ body.touch #touch { display: block; }
       `the engine failed to load — ${e.message || (e.target && e.target.src) || 'see the console'}`));
     addEventListener('unhandledrejection', (e) => fail(
       `the engine failed to start — ${(e.reason && e.reason.message) || e.reason || 'see the console'}`));
+    // An XR boot (?xr=1) asks for an XR-compatible GL context inside renderer.init(), and that call
+    // blocks on the OpenXR runtime: SteamVR started after Chrome, or a runtime mid-handshake, hangs the
+    // engine before ANY module can report (09-06 11:12–11:22, three loads, no console line). Name it early.
+    const xrBoot = new URLSearchParams(location.search).has('xr');
+    if (xrBoot) setTimeout(() => {
+      if (globalThis.__ewEngineUp) return;
+      fail('VR boot: waiting on the headset runtime for an XR-compatible GPU context (8 s). If SteamVR started after Chrome: chrome://restart, then this link again. To get in without VR, drop xr=1 from the URL.');
+    }, 8000);
     setTimeout(() => {
       if (globalThis.__ewEngineUp) return;
-      fail('still waking after 20s — open the console. Fresh checkout? run: cd client && bun install. And the client needs WebGPU (current Chrome).');
+      fail(xrBoot
+        ? 'still no XR-compatible context after 20 s — chrome://restart with SteamVR already running, or drop xr=1 from the URL. F12 → Console shows what init is waiting on.'
+        : 'still waking after 20s — open the console. Fresh checkout? run: cd client && bun install. The client needs WebGPU or WebGL 2 (current Chrome or Firefox).');
     }, 20000);
   })();
 </script>

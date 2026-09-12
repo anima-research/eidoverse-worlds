@@ -31,6 +31,7 @@ export const COMMANDS = [
   { name: 'punt', aliases: ['boot'], help: '/punt [thing|person] [power] — boot an object into flight; a person\'s name is the ragdoll shove (their client decides)' },
   { name: 'epoch', help: '/epoch [tickMs] — owner: hand this world\'s punt flights to the deterministic sim (replayed bit-identically everywhere)' },
   { name: 'who', help: 'list everyone present' },
+  { name: 'panels', help: '/panels <0.3–1> — panel opacity, for when glass fails over a bright scene' },
   // Registered so it is DISCOVERABLE. It was added on 2026-08-16 to debug voice
   // on a phone with no console, and stayed unregistered for the rest of that
   // session — a diagnostic nobody can find is one nobody uses, and the next

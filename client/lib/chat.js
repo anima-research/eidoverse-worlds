@@ -11,8 +11,10 @@
 // species are reading different rooms.
 
 import { CONFIG, bus, colorFor, assignColors } from './base.js';
+import { registerXRPanel } from './xrpanels.js';
 import { lastWhy } from './debuglog.js';
 import { makeFrame } from './frames.js';
+import { fsvg } from './icons.js';
 import { requestHistory } from './net.js';
 // ONLY the registry — never handlers.js, or the cycle chat→handlers→net→chat
 // closes (§14.2). The registry is a pure table with no imports of its own.
@@ -25,6 +27,8 @@ let frame = null;
 let logEl = null;
 let inputEl = null;
 let onSend = null;
+const recent = [];   // the log's tail, for the VR quad
+export const recentChat = () => recent.slice();
 let onWhisper = () => {};
 let onTyping = () => {};
 let getPeople = () => [];
@@ -50,6 +54,23 @@ export function mentionsMe(text) {
 
 /** Render text with mentions marked and links made clickable, without ever
  *  putting untrusted text through innerHTML. */
+// Standard inline markdown, nothing more: **bold**, *italic* / _italic_, `code`.
+// Text nodes only — no HTML is ever parsed from a message. Off = plain text.
+const MD_RX = /(\*\*([^*\n]+)\*\*)|(`([^`\n]+)`)|((?<![\w*])\*([^*\n]+)\*(?![\w*]))|((?<!\w)_([^_\n]+)_(?!\w))/g;
+function inline(run) {
+  if (!chatMd) return document.createTextNode(run);
+  const frag = document.createDocumentFragment();
+  let i = 0;
+  for (const m of run.matchAll(MD_RX)) {
+    if (m.index > i) frag.append(document.createTextNode(run.slice(i, m.index)));
+    const el = document.createElement(m[1] ? 'b' : m[3] ? 'code' : 'i');
+    el.textContent = m[2] ?? m[4] ?? m[6] ?? m[8];
+    frag.append(el);
+    i = m.index + m[0].length;
+  }
+  if (i < run.length) frag.append(document.createTextNode(run.slice(i)));
+  return frag;
+}
 function renderBody(text, names) {
   const frag = document.createDocumentFragment();
   const pattern = new RegExp(
@@ -58,7 +79,7 @@ function renderBody(text, names) {
   );
   let i = 0;
   for (const m of String(text).matchAll(pattern)) {
-    if (m.index > i) frag.append(document.createTextNode(text.slice(i, m.index)));
+    if (m.index > i) frag.append(inline(text.slice(i, m.index)));
     if (m[1]) {
       // Trailing punctuation is prose, not address: "…?world=garden)" from a
       // parenthesized link once sent a clicker to a world named "garden)" —
@@ -86,7 +107,7 @@ function renderBody(text, names) {
     }
     i = m.index + m[0].length;
   }
-  if (i < text.length) frag.append(document.createTextNode(text.slice(i)));
+  if (i < String(text).length) frag.append(inline(String(text).slice(i)));
   return frag;
 }
 const escapeRx = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -185,6 +206,11 @@ export function logChat(who, text, kind = '', meta = {}) {
     renderedSeqs.add(meta.seq);
   }
   noteSeq(meta.seq);
+  // the VR quad reads the tail of the log from here — every line, merged
+  // continuations included, twelve deep
+  recent.push({ who, text: String(text).slice(0, 140), kind });
+  if (recent.length > 12) recent.shift();
+  bus.emit('xr:repaint');
   // Spoken-utterance merge: merges ONLY the continuation of one spoken
   // utterance — spoken:true + same author + same utt (Sol review, PR#7).
   // A voicebox interrupted mid-utterance flushes the aired sentences as one
@@ -212,7 +238,7 @@ export function logChat(who, text, kind = '', meta = {}) {
   lastLineEl = line;
 
   const wasAtBottom = logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 48;
-  // Causal placement (R, 16:30, verified against the world log — seq #1052/53
+  // Causal placement (verified against a world log where two records
   // landed same-second, interrupter first): a spoken utterance is an INTERVAL.
   // Its record arrives when the voice stops, but it BEGAN before the interrupt
   // that cut it. When a spoken say carries t0 (air-start), it slots in front
@@ -237,8 +263,8 @@ export function logChat(who, text, kind = '', meta = {}) {
     // visual predecessor. buildLine computed it against chronological arrival
     // (lastAuthor), and the two disagree exactly when this branch runs — a
     // 'cont' line landing under another speaker renders their nameplate over
-    // these words. (2026-08-05, "your line was credited to me"; repro:
-    // exultation/tools/repro-stale-t0.mjs. Sys lines pass through a group,
+    // these words — a line credited to the wrong speaker. (repro:
+    // (reproduced with a stale-t0 harness). Sys lines pass through a group,
     // same as the chronological rule.)
     let prev = line.previousElementSibling;
     while (prev && prev.dataset.kind === 'system') prev = prev.previousElementSibling;
@@ -257,9 +283,9 @@ export function logChat(who, text, kind = '', meta = {}) {
 // exactly like a mention arriving as its own line, and nothing counts twice
 // (the old split paths could double-increment when the frame was hidden AND
 // the log was scrolled up). `seen` means the reader is actually looking:
-// frame visible, not collapsed, pinned to the bottom. (Sol review, PR#7.)
+// frame visible, pinned to the bottom. (review of PR #7.)
 function account(line, { who, text, merged, newlyPinged, wasAtBottom }) {
-  const seen = frame.visible && !frame.state.collapsed && wasAtBottom;
+  const seen = frame.visible && wasAtBottom;
   if (seen) scrollToEnd();
   else {
     if (!merged && line.dataset.kind !== 'system') unread++;
@@ -292,7 +318,7 @@ function buildLine(who, text, { kind = '', ts = Date.now(), historical = false }
   // sys lines pass THROUGH a group without erasing it: an act narration mid-
   // paragraph (an agent's tool use between spoken sentences) shouldn't force
   // the name to reprint on the next sentence. Only a real change of speaker
-  // or the window ends a group. (Live observation, Rabscuttle 14:53.)
+  // or the window ends a group. (Live observation.)
   if (!historical && !sys) { lastAuthor = who; lastAt = now; }
   if (grouped) line.classList.add('cont');
   if (historical) line.classList.add('old');
@@ -523,7 +549,7 @@ function audioReport() {
     // 🔴 DO NOT querySelectorAll('audio') — voicesfu builds `new Audio()`
     // elements that are NEVER appended to the DOM, so the document cannot see
     // them and this printed "no <audio> elements yet" on a phone that was
-    // audibly playing two speakers (R, 2026-08-16). A probe that reads the
+    // audibly playing two speakers. A probe that reads the
     // wrong source reports a failure that is not happening, which is worse
     // than reporting nothing. Ask the transport for its own elements.
     const entries = typeof window.__voiceSpeakerEls === 'function' ? window.__voiceSpeakerEls() : null;
@@ -541,8 +567,8 @@ function audioReport() {
     const has = !!(window.SpeechRecognition ?? window.webkitSpeechRecognition);
     if (!has) return 'no SpeechRecognition in this browser';
     // The TALLY is the load-bearing part: a last-event slot cannot prove that
-    // something never happened, and on 2026-08-16 I read exactly that absence
-    // out of it and was wrong twice.
+    // something never happened, and reading that absence
+    // out of it was wrong twice.
     return `${window.__sttOn?.() ? 'ON' : 'off'}`
       + (window.__sttTally ? ` [${window.__sttTally()}]` : '')
       + (window.__sttLast ? ` — last: ${window.__sttLast}` : ' — no events yet');
@@ -554,10 +580,10 @@ function audioReport() {
   probe('source', () => lastWhy('publish'));
   probe('secure', () => `${window.isSecureContext} · isolated=${window.crossOriginIsolated}`);
 
-  // 🔴 STAMP THE BUILD (2026-08-16). Three times this morning I diagnosed a
-  // "bug" that was really the phone running an older copy of a module — most
-  // recently for a full round trip, because her output said "last event:" while
-  // the server had been serving "last:" for ten minutes. Without a version in
+  // 🔴 STAMP THE BUILD. Repeatedly a "bug" was really the phone running an
+  // older copy of a module — once for a full round trip, because the report
+  // said "last event:" while the server had been serving "last:" for ten
+  // minutes. Without a version in
   // the report, a stale page and a broken probe are indistinguishable, and I
   // will chase the wrong one every time.
   L.push(`build: ${_build}`);
@@ -568,7 +594,7 @@ function audioReport() {
 function sttReport() {
   const parts = [`build ${_build}`];
   // The recognizer's language — a wrong one returns confident nothing (nomatch)
-  // rather than an error, which is exactly what R's Galaxy reported.
+  // rather than an error, which is exactly what one Android phone reported.
   try { if (window.__sttLang) parts.push(`lang ${window.__sttLang}`); } catch { /* ignore */ }
   try { parts.push(window.__sttOn?.() ? 'stt ON' : 'stt off'); } catch { parts.push('stt ?'); }
   try { parts.push(window.__sttTally ? window.__sttTally() : 'NO TALLY (stale page)'); }
@@ -609,7 +635,7 @@ const CHAT_LOCAL = {
     lastAuthor = null;
   },
   audio(rest, arg) {
-    // /audio — the phone's own console (R: no on-device console on Android
+    // /audio — the phone's own console (live: no on-device console on Android
     // Chrome). Answers LOCALLY by default — a diagnostic is a self-report;
     // `say` opts the short form into the room. Three forms because the full
     // report is unreadable on the device that needs it most.
@@ -641,7 +667,6 @@ function runCommand(raw) {
 export const chat = {
   open() {
     frame.show();
-    if (frame.state.collapsed) frame.collapse(false);
     inputEl.focus();
     scrollToEnd();
   },
@@ -655,6 +680,171 @@ export const chat = {
 };
 const open = chat.open;
 
+// ---- who's-here side pane (wanted by some, disliked by others as
+// precious, so the collapse must cost one click and the collapsed cost is a
+// 14px strip). Toggler rides the pane's left edge: › closes, ‹ opens.
+const SIDE_LS = 'ew-chat-side';
+// The side-pane nodes, captured from the markup initChat ITSELF wrote (below).
+// A lookup by class would match at any depth, and registerPanel/mods.js mount
+// mod markup into frame bodies AFTER initChat's innerHTML wipe. These are
+// PUBLIC classes (docs/MODDING-UI.md §3) and a local mod is a TRUSTED mod
+// handed makeFrame (mods.js:5,88), so a mod carrying them could be found
+// instead, and this file would then write side-closed/side-left and the
+// chevron onto a different node than ui.js togglePeopleHere flips. Capturing once
+// is stronger than `:scope >` at each call site: nothing mounted later can be
+// captured.
+let sideEls = null;
+// FAIL LOUD, never stale: a captured node can be REMOVED from the document by
+// a mod, and a handle to a detached node stays valid — writes land on an orphan
+// and nothing happens, with no error. Re-deriving by class on detach would
+// reintroduce the very lookup this capture exists to avoid, so a detached node
+// reads as absent instead. (Same idiom the spoken-line path uses: ?.isConnected)
+const sideEl = (k) => { const n = sideEls?.[k] ?? null; return n?.isConnected ? n : null; };
+let sideSt = { w: 150, open: false, pos: 'left' };   // people pane on the LEFT by default (live 09-07 10:55 reference HUD)
+function initSidePane() {
+  try { sideSt = { ...sideSt, ...JSON.parse(localStorage.getItem(SIDE_LS) || '{}') } } catch {}
+  // Guarded like every other reader in this file: sideEl() is DESIGNED to return
+  // null ("a detached node reads as absent instead"), and these two were the
+  // only bare derefs — a null cols would have thrown inside initChat and killed
+  // chat init mid-boot. Unreachable today; inconsistent with the file's own
+  // thesis, which is the point. (agent review round 3)
+  const tog = sideEl('tog');
+  if (tog) tog.onclick = () => { sideSt.open = !sideSt.open; applySide(); saveSide(); };
+
+    // DOUBLE-CLICK A NAME -> ITS DM TAB. R, 2026-09-11: "can you double-click on
+    // a name in the People Here pane and have a DM tab show up correctly".
+    // DELEGATED, because paintSide rebuilds this list's innerHTML on every
+    // roster event — per-row handlers would be discarded seconds later. Skips
+    // your own row: there is no whispering yourself.
+    const list = sideEl('list');
+    list?.addEventListener('dblclick', (e) => {
+      const row = e.target?.closest?.('.who-row');
+      if (!row || row.classList.contains('self')) return;
+      const name = row.querySelector('.n')?.textContent?.trim();
+      if (name) openConvo(name);
+    });
+  const grip = sideEl('grip');
+  grip?.addEventListener('pointerdown', (e) => {
+    if (!sideSt.open) return;
+    e.preventDefault();
+    e.stopPropagation();   // the frame's root drags on body pointerdown; the grip owns this one (live, 09-04: it moved the whole window)
+    const x0 = e.clientX, w0 = sideSt.w;
+    const move = (ev) => {
+      const d = sideSt.pos === 'left' ? ev.clientX - x0 : x0 - ev.clientX;   // grip side flips with the pane
+      sideSt.w = Math.max(72, Math.min(260, w0 + d)); applySide();
+    };
+    const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); saveSide(); };
+    addEventListener('pointermove', move); addEventListener('pointerup', up);
+  });
+  bus.on('roster', paintSide);
+  bus.on('presence:me', paintSide);                                   // my own mark flips at once
+  setInterval(() => { if (frame?.visible && sideSt.open) paintSide(); }, 2000);   // remote presence rides pose packets; a 2 s repaint is plenty. (`side` was out of scope here — the first tick threw and the interval died: marks froze on their first value)
+  applySide();
+}
+const saveSide = () => { try { localStorage.setItem(SIDE_LS, JSON.stringify(sideSt)) } catch {} };
+function applySide() {
+  const side = sideEl('side');
+  if (!side) return;
+  side.classList.toggle('closed', !sideSt.open);
+  // the line between log and pane is the pane's grab edge; closed, there is
+  // nothing to grab, so the line goes too (live, 09-05: a confusing affordance)
+  sideEl('cols')?.classList.toggle('side-closed', !sideSt.open);
+  side.style.width = sideSt.open ? `${sideSt.w}px` : '';
+  // the chevron points the way the pane will move: on the right › closes / ‹ opens; mirrored on the left
+  const left = sideSt.pos === 'left';
+  const t = sideEl('tog'); if (t) t.textContent = (sideSt.open !== left) ? '›' : '‹';
+  paintSide();
+}
+function paintSide() {
+  const side = sideEl('side');
+  if (!side || !sideSt.open) return;
+  const people = getPeople();
+  const others = people.filter((p) => !p.me).length;
+  sideEl('head').textContent =
+    others === 0 ? 'just you' : `${others} other${others === 1 ? '' : 's'} here`;
+  sideEl('list').innerHTML = people.length
+      // A BUTTON, not a div. _contentClaims (frames.js:80) exempts only
+      // BUTTON/INPUT/TEXTAREA/SELECT/A from the frame's drag surface — so a
+      // <div> row was swallowed by root's pointerdown and the dblclick never
+      // fired. R, 2026-09-11: "the Chat panel treats names in the roster as a
+      // grab-and-move-the-pane surface". The ∃ menu's .mrow is a <button> for
+      // exactly this reason; this now matches that vocabulary.
+      ? people.map((p) => `<button type="button" class="who-row ${p.me ? 'self' : ''}">
+          <span class="who-mark" data-presence="${esc(p.presence ?? 'present')}" title="${esc(p.presence ?? 'present')}"></span>
+          <span class="n" style="color:${colorFor(p.id)}">${esc(p.id)}${p.me ? ' (you)' : ''}</span>
+          <span class="d">${p.dist == null ? '' : p.dist.toFixed(0) + 'm'}</span></button>`).join('')
+    : '<div class="who-empty">nobody yet</div>';
+}
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ---- chat gear: text size (the sheet's -a/+A) + which side the people pane
+// sits on. Small popover; both persisted.
+const CFS_LS = 'ew-chat-fs';
+function applyChatPrefs() {
+  // logEl, NOT a .chat-log class lookup: this is the one reader in the file that
+  // addressed a node by class at call time, and a mod prepending .chat-log into
+  // the chat body (which MODDING-UI §3 invites) won the query — the size landed
+  // on the decoy, persisted to localStorage, and the real log never changed,
+  // with no error. §3 promises "the client addresses its own nodes by the
+  // handles it captured when it wrote them"; this line was the counterexample.
+  // (agent review round 3)
+  if (logEl) logEl.style.fontSize = `${chatFs}px`;
+  sideEl('cols')?.classList.toggle('side-left', sideSt.pos === 'left');
+}
+let gearToggle = null, gearAnchor = null, gearOpen = () => false;
+let chatFs = 14;
+const CMD_LS = 'ew-chat-md';
+let chatMd = true;   // *italic* **bold** `code` in the log — on by default (live, 09-05)
+try { chatMd = localStorage.getItem(CMD_LS) !== '0' } catch {}
+export const chatMarkdownOn = () => chatMd;
+try { chatFs = Math.min(20, Math.max(11, parseFloat(localStorage.getItem(CFS_LS)) || 14)) } catch {}
+function initChatGear() {
+  const pop = frame.body.querySelector('.chat-gearpop');
+  const paintPop = () => {
+    pop.innerHTML = `
+      <div class="gp-row"><span>text size</span>
+        <button data-fs="-1">−a</button><b>${chatFs}</b><button data-fs="1">+A</button></div>
+      <div class="gp-row"><span>markdown</span>
+        <button data-md="1" class="${chatMd ? 'on' : ''}">on</button>
+        <button data-md="0" class="${!chatMd ? 'on' : ''}">off</button></div>
+      <div class="gp-row"><span>People Here</span>
+        <button data-side="left" class="${sideSt.pos === 'left' ? 'on' : ''}">left</button>
+        <button data-side="right" class="${sideSt.pos !== 'left' ? 'on' : ''}">right</button></div>`;
+  };
+  pop.onclick = (e) => {
+    const fs = e.target?.dataset?.fs, sd = e.target?.dataset?.side, md = e.target?.dataset?.md;
+    if (md != null) {
+      chatMd = md === '1';
+      try { localStorage.setItem(CMD_LS, md) } catch {}
+    } else if (fs) {
+      chatFs = Math.min(20, Math.max(11, chatFs + Number(fs)));
+      try { localStorage.setItem(CFS_LS, String(chatFs)) } catch {}
+    } else if (sd) {
+      sideSt.pos = sd; saveSide();
+    } else return;
+    applyChatPrefs(); applySide(); paintPop();   // applySide repaints the chevron for the new side (live 09-07 23:25: it pointed the old way after a left↔right move)
+  };
+  gearOpen = () => !pop.hidden;
+  gearToggle = (anchor) => {
+    pop.hidden = !pop.hidden;
+    anchor.setAttribute('aria-expanded', String(!pop.hidden));
+    gearAnchor = anchor;
+    if (!pop.hidden) {
+      paintPop();
+      const a = anchor.getBoundingClientRect(), f = frame.el.getBoundingClientRect();
+      pop.style.right = `${Math.max(4, f.right - a.right)}px`;
+      pop.style.top = `${a.bottom - f.top + 6}px`;
+    }
+  };
+  const closePop = () => { if (!pop.hidden && gearAnchor) gearToggle(gearAnchor); };
+  document.addEventListener('pointerdown', (e) => {
+    if (!pop.hidden && !pop.contains(e.target) && !gearAnchor?.contains(e.target)) closePop();
+  }, true);
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
+  applyChatPrefs();
+}
+
 export function initChat({ send, whisper, typing, people }) {
   onSend = send;
   onWhisper = whisper ?? (() => {});
@@ -664,20 +854,66 @@ export function initChat({ send, whisper, typing, people }) {
   frame = makeFrame('chat', {
     title: 'chat',
     x: 10, y: -10, w: 390, h: 200, minW: 240, minH: 100,
-    className: 'chat-frame',
+      className: 'chat-frame',
+      // THE ARROWS NEVER RE-EVALUATED ON A RESIZE. paintArrows compares
+      // scrollWidth to clientWidth, and narrowing the panel changes clientWidth
+      // with nothing repainting the strip — so a panel dragged narrow kept the
+      // arrows hidden and its overflowing tabs unreachable (R, 2026-09-11: "the
+      // side-scroll buttons in the chat panel are missing, so you can't go to a
+      // tab that's off-screen because the panel is too narrow"). frames.js has
+      // called onResize(w, h) all along (frames.js:437); chat simply never
+      // passed one. Debounced like emotebar's (emotebar.js:53).
+      onResize: () => { clearTimeout(_arrowT); _arrowT = setTimeout(() => paintTabs(), 120); },
   });
 
   frame.body.innerHTML = `
-    <div class="chat-tabs"></div>
-    <div id="chatlog" class="chat-log"></div>
-    <button id="chat-jump" class="chat-jump"></button>
-    <div class="chat-typing"></div>
-    <div class="chat-compose">
-      <div id="chat-ac" class="ac panel"></div>
-      <input id="chatline" placeholder="say something…  @ to mention · / for commands">
-    </div>`;
-
+    <div class="chat-cols">
+      <div class="chat-main">
+        <div class="chat-tabs"></div>
+        <div id="chatlog" class="chat-log"></div>
+        <button id="chat-jump" class="chat-jump"></button>
+        <div class="chat-typing"></div>
+        <div class="chat-compose">
+          <div id="chat-ac" class="ac panel"></div>
+          <input id="chatline" placeholder="say something…  @ to mention · / for commands">
+        </div>
+      </div>
+      <button class="chat-side-tog" title="People Here"></button>
+      <div class="chat-side closed">
+        <div class="chat-side-grip"></div>
+        <div class="chat-side-head"></div>
+        <div class="chat-side-list"></div>
+      </div>
+    </div>
+    <div class="chat-gearpop panel" hidden></div>`;
+  { const cols = frame.body.querySelector(':scope > .chat-cols');
+    sideEls = cols ? {
+      cols,
+      tog: cols.querySelector(':scope > .chat-side-tog'),
+      side: cols.querySelector(':scope > .chat-side'),
+      grip: cols.querySelector(':scope > .chat-side > .chat-side-grip'),
+      head: cols.querySelector(':scope > .chat-side > .chat-side-head'),
+      list: cols.querySelector(':scope > .chat-side > .chat-side-list'),
+    } : null; }
+  // Hand the captures to whoever holds this frame. ui.js's Tab handler needs
+  // these exact nodes and must not re-derive them: `:scope >` bounds DEPTH but
+  // not ORDER, so a mod PREPENDING a .chat-cols into this body wins a class
+  // lookup — and that door is real (mods.js:88 hands out makeFrame, frames.js
+  // returns the LIVE chat frame for a bare id, and a local mod is an in-page
+  // ES module with the whole document). The frame object is the seam: both
+  // sides already hold it via getFrame('chat'), so neither file imports the
+  // other.
+  frame.sidePane = (k) => sideEl(k);
+  // BEFORE initChatGear: its last statement calls applyChatPrefs(), which now
+  // writes through the captured logEl. Assigned after, the saved text size
+  // silently did nothing on first load — I traded a mod-hijack bug for a
+  // no-op, and no suite noticed because nothing bound the font size. The
+  // markup is written at frame.body.innerHTML above, so #chatlog is queryable
+  // here. (self-caught, agent review round 3)
   logEl = frame.body.querySelector('#chatlog');
+  initSidePane();
+  initChatGear();
+
   inputEl = frame.body.querySelector('#chatline');
   acBox = frame.body.querySelector('#chat-ac');
   closeAC();
@@ -814,7 +1050,22 @@ export function openConvo(name) {
   inputEl.focus();
 }
 
+// A DRAFT BELONGS TO ITS DESTINATION (antra-tess, #185 rereview B3, 2026-09-12).
+// Closing or leaving a conversation tab changed `filter` and the placeholder but
+// left inputEl.value untouched, so a half-typed private line stayed in the box
+// while the destination silently became PUBLIC — reproduced end to end: the
+// canary went out as {"verb":"say","args":{"text":"CANARY_PRIVATE_DRAFT_0912"}}.
+// The send path at Enter already picks whisper-vs-say from `filter`; the draft
+// simply had no owner. Park each destination's draft on the way out and restore
+// the incoming one, so closing a tab is non-destructive and switching tabs never
+// re-points words at someone they were not written for.
+const drafts = new Map();
+
 function setFilter(f) {
+  if (inputEl) {
+    if (inputEl.value) drafts.set(filter, inputEl.value); else drafts.delete(filter);
+    inputEl.value = drafts.get(f) ?? '';
+  }
   filter = f;
   if (f.startsWith('w:')) { const c = convos.get(f.slice(2)); if (c) c.unread = 0; }
   paintTabs();
@@ -824,30 +1075,135 @@ function setFilter(f) {
     : 'say something…  @ to mention · / for commands';
 }
 
+let _arrowT = null;   // debounce for the resize-driven tab repaint
+
 function paintTabs() {
   const bar = frame.body.querySelector('.chat-tabs');
   if (!bar) return;
   bar.innerHTML = '';
-  const mk = (key, label, unread = 0, closable = false) => {
-    const b = document.createElement('button');
-    b.className = filter === key ? 'on' : '';
-    b.textContent = label + (unread ? ` ${unread}` : '');
-    if (unread) b.classList.add('has-unread');
-    b.onclick = () => setFilter(key);
-    if (closable) {
-      b.oncontextmenu = (e) => {
-        e.preventDefault();
-        convos.delete(key.slice(2));
-        if (filter === key) setFilter('all'); else { paintTabs(); }
-      };
-      b.title = 'right-click to close this conversation';
+  // The strip carries `all · mentions · system` PLUS one tab per open DM, so
+  // tabs now size to their labels and the row SCROLLS instead of every tab
+  // getting thinner as conversations open (they shared the width via flex:1).
+  // R, 2026-09-11: "squash the words together at the top to make room for more
+  // tabs but still leave some buffer so they don't get too close, left/right
+  // arrow keys at either side of the menu if you need to side-scroll and see
+  // more due to overflow."
+  const left = document.createElement('button');
+  left.className = 'tabarrow'; left.type = 'button'; left.textContent = '\u2039';
+  left.title = 'scroll tabs left'; left.setAttribute('aria-label', 'scroll tabs left');
+  const scroll = document.createElement('div');
+  scroll.className = 'tabscroll';
+  const right = document.createElement('button');
+  right.className = 'tabarrow'; right.type = 'button'; right.textContent = '\u203a';
+  right.title = 'scroll tabs right'; right.setAttribute('aria-label', 'scroll tabs right');
+  const STEP = 90;
+  left.onclick = (e) => { e.stopPropagation(); scroll.scrollLeft -= STEP; };
+  right.onclick = (e) => { e.stopPropagation(); scroll.scrollLeft += STEP; };
+  // An arrow with nowhere to go is a lie about the interface: hidden unless the
+  // row really overflows, re-checked on scroll and on every repaint.
+  const paintArrows = () => {
+    const over = scroll.scrollWidth > scroll.clientWidth + 1;
+    left.hidden = !over || scroll.scrollLeft <= 0;
+    right.hidden = !over || scroll.scrollLeft + scroll.clientWidth >= scroll.scrollWidth - 1;
+  };
+  scroll.addEventListener('scroll', paintArrows);
+    // WATCH THE SCROLLER ITSELF. paintArrows only ever ran from paintTabs (a
+    // filter change) and from the onResize hook — and both compute BEFORE the
+    // browser applies the new width, so a narrowing panel left scrollWidth
+    // frozen against a collapsing clientWidth. Measured with People Here open,
+    // which is R's real layout: at 330px and below scrollWidth stayed 175
+    // while clientWidth fell to 31 — genuinely overflowing, both arrows still
+    // hidden, her tabs unreachable (R, 2026-09-11: "I shrunk it to get rid of
+    // the 'system' tab and there's no arrows visible to reach it"). A
+    // ResizeObserver fires AFTER layout on the element that actually changed.
+    if (typeof ResizeObserver === 'function') {
+      try { new ResizeObserver(() => paintArrows()).observe(scroll); } catch { /* older engine */ }
     }
-    bar.appendChild(b);
+  bar.append(left, scroll, right);
+  const mk = (key, label, unread = 0, closable = false) => {
+  const b = document.createElement('button');
+  b.className = filter === key ? 'on' : '';
+    // A tab is a label plus (for DMs) a close glyph; the underline that marks
+    // the active one is CSS, on .chat-tabs button.on.
+    const lbl = document.createElement('span');
+    lbl.textContent = label + (unread ? ` ${unread}` : '');
+    b.append(lbl);
+  if (unread) b.classList.add('has-unread');
+  b.onclick = () => setFilter(key);
+  if (closable) {
+      // A VISIBLE CLOSE. Right-click already worked and announced itself
+      // only in a title attribute — R, 2026-09-11: "there should be a way of
+      // getting rid of extra tabs you don't want." Both routes now; the x
+      // stops propagation so closing never also selects the tab.
+      const x = document.createElement('span');
+      x.className = 'tabx'; x.textContent = '\u00d7';
+      x.title = `close ${key.slice(2)}`;
+      x.onclick = (e) => {
+        e.stopPropagation(); e.preventDefault();
+        // CLOSING A DESTINATION DISPOSES ITS DRAFT, on BOTH branches. My first fix
+        // lived in setFilter, which the line below only reaches when the tab being
+        // closed is the ACTIVE one; closing a BACKGROUND tab calls paintTabs() and
+        // skipped it entirely. chat-log-test caught that fifteen minutes after I
+        // called B3 verified — the hand-probe closed the tab it was looking at, so it
+        // structurally could not reach this branch. (antra-tess #185 B3)
+        drafts.delete(key);
+        if (filter === key && inputEl) inputEl.value = '';
+        convos.delete(key.slice(2));
+        if (filter === key) setFilter('all'); else paintTabs();
+      };
+      b.classList.add('has-x');   // the tab must MAKE ROOM for the glyph (see .has-x)
+      b.append(x);
+    b.oncontextmenu = (e) => {
+      e.preventDefault();
+      // CLOSING A DESTINATION DISPOSES ITS DRAFT, on BOTH branches. My first fix
+      // lived in setFilter, which the line below only reaches when the tab being
+      // closed is the ACTIVE one; closing a BACKGROUND tab calls paintTabs() and
+      // skipped it entirely. chat-log-test caught that fifteen minutes after I
+      // called B3 verified — the hand-probe closed the tab it was looking at, so it
+      // structurally could not reach this branch. (antra-tess #185 B3)
+      drafts.delete(key);
+      if (filter === key && inputEl) inputEl.value = '';
+      convos.delete(key.slice(2));
+      if (filter === key) setFilter('all'); else { paintTabs(); }
+    };
+    b.title = 'right-click to close this conversation';
+  }
+    scroll.appendChild(b);
   };
   mk('all', 'all');
   mk('mentions', 'mentions');
   mk('system', 'system');
   for (const [name, c] of convos) mk(`w:${name}`, `@${name}`, c.unread, true);
+  const gear = document.createElement('button');
+  gear.className = 'chat-gear';
+  gear.title = 'chat options';
+  gear.innerHTML = fsvg('gear-six', 13);
+  // tabs repaint while the popover may be open: the new gear inherits it
+  const open = gearOpen();
+  gear.setAttribute('aria-expanded', String(open));
+  if (open) gearAnchor = gear;
+  gear.onclick = (e) => { e.stopPropagation(); gearToggle?.(gear); };
+  bar.appendChild(gear);                     // the gear stays OUTSIDE the scroller — always reachable
+  paintArrows();
+  // KEEP THE ACTIVE TAB IN VIEW. Overflow was sacrificing the tab you are
+  // actually reading: R's screenshot shows `system| @H` — the open whisper
+  // clipped to two characters while `all` and `mentions` held the full left.
+  // R, 2026-09-11: "should probably always preferentially display the tab that
+  // it's on ... probably 'mentions' and 'all' fully off-screen."
+  const active = scroll.querySelector('button.on');
+  if (active) {
+    // after layout, or scrollWidth is still 0 and this is a no-op
+    // `inline: 'end'` only scrolls when the element is out of view on that side —
+      // a tab CLIPPED at the edge is partially visible, so it stayed clipped.
+      // R, 2026-09-11: "When I clicked on the 'system' tab just now when it was
+      // already slightly off screen, it didn't recenter to it being fully on
+      // screen". 'nearest' moves the minimum needed to make it whole.
+      const bring = () => active.scrollIntoView?.({ inline: 'nearest', block: 'nearest' });
+    bring();
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { bring(); paintArrows(); });
+  }
+  // the scroller has no measurable width until layout runs
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(paintArrows);
 }
 
 // ---------------------------------------------------------------- typing
@@ -877,4 +1233,20 @@ setInterval(paintTypers, 1200);
 bus.on('pinged', () => {
   frame?.el.classList.add('flash');
   setTimeout(() => frame?.el.classList.remove('flash'), 1400);
+});
+
+// ---- the chat frame as a VR quad: READ + canned replies --------------------
+// Typing in a headset needs a keyboard grid the renderer does not have yet
+// (a design item); until then the quad shows the log's tail and offers
+// a few whole replies that go through the SAME onSend typing goes through.
+// Honest about the gap in its title.
+const CANNED = ['hello', 'yes', 'no', 'one moment', 'come here', 'thank you'];
+registerXRPanel({
+  id: 'chat', title: 'chat',
+  fields: () => [
+    ...(recent.length ? recent.slice(-8).map((l, i) => ({ t: 'info', label: l.who === '*' ? '·' : String(l.who).slice(0, 12), value: l.text }))
+                      : [{ t: 'info', label: '·', value: 'nothing said yet' }]),
+    ...CANNED.map((c) => ({ t: 'btn', k: `say:${c}`, label: c })),
+  ],
+  dispatch: (k) => { if (k?.startsWith('say:')) onSend?.(k.slice(4)); },
 });

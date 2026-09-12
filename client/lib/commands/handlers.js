@@ -29,12 +29,23 @@ import { setMyReach, clearMyReach } from '../reachnet.js';
 import { SIM_ID } from '../../../shared/sim.js';
 import { canonicalPoint, CONTACT_POINTS } from '../../../shared/contact.js';
 import { TOUCH_GAP } from '../../../shared/reachwire.js';
+import { panelAlpha, setPanelAlpha } from '../stylepanel.js';
 
 register('help', () => toggleHelp());
 // Flight's own diagnostic, in the chat log where a person can read it and
 // paste it back. See controller.js flightReport() for why this is not just
 // the console probe.
 register('flight', () => { for (const line of flightReport().split('\n')) logChat('*', line); });
+
+// Panel opacity — the glass escape hatch. Adaptive translucency fails over
+// bright scenes (Apple shipped "Tinted" after the Liquid Glass backlash);
+// this is our version of that lesson, one number, user-owned, persisted.
+register('panels', (arg) => {
+  const v = parseFloat(arg);
+  if (!(v >= 0.3 && v <= 1)) return logChat('*', `usage: /panels <0.3–1> — panel opacity (current ${panelAlpha().toFixed(2)})`);
+  setPanelAlpha(v);
+  logChat('*', `panels at ${Math.round(v * 100)}% opacity`);
+});
 
 // Eyelids are BONES on rigs that have them (L_/R_Eyelid_Upper) — most VRMs
 // blink with a blendshape instead and have none, so this says so plainly

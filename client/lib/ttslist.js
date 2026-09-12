@@ -1,6 +1,6 @@
 // ttslist — THE VOICES YOU HAVE, AS A LIST.
 //
-// 🔴 NAMED ttslist, NOT voicelist (R, 2026-08-16: "shouldn't it be called
+// 🔴 NAMED ttslist, NOT voicelist (live, 2026-08-16: "shouldn't it be called
 // tts-model-list or something instead of voicelist so it's more understandable
 // what it does at a glance?"). There are ten voice*.js files in this directory
 // and every OTHER one is about the WebRTC voice TRANSPORT — voice, voiceconsent,
@@ -39,7 +39,7 @@ import { why } from './debuglog.js';
 
 const ROW = `
 .vl { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
-/* The voices SCROLL, the add-rows do not (R, 2026-08-09: "should the model list
+/* The voices SCROLL, the add-rows do not (live, 2026-08-09: "should the model list
    get its own little scrolling window pane, just in case people add a lot?").
    max-height rather than a fixed one, so one voice does not sit in an empty box
    — it grows to about four rows and only then scrolls. */
@@ -57,14 +57,14 @@ const ROW = `
    invisible to anyone navigating by keyboard, and this one is destructive, so
    it must be reachable without a mouse. */
 .vl-row:hover .vl-x, .vl-row .vl-x:focus { opacity: .75; }
-.vl-row .vl-x:hover { opacity: 1; color: #f88; }
+.vl-row .vl-x:hover { opacity: 1; color: var(--err); }
 .vl-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vl-note { margin-left: auto; font-size: 11px; font-variant-numeric: tabular-nums; }
 .vl-loading { opacity: .85; }
 .vl-add { opacity: .6; }
 .vl-add:hover { opacity: 1; }
 /* 🔴 VOICES ARE NOUNS, ADD-ROWS ARE VERBS — do not sit them at one indent
-   (R, 2026-08-09: "can you indent or un-indent the model selections vs the add
+   (live, 2026-08-09: "can you indent or un-indent the model selections vs the add
    buttons to distinguish them more?"). The voice rows carry a ●/○ marker and the
    add rows do not, so they were ALREADY ragged by a glyph width — this makes
    that deliberate instead of accidental. Voices hang under the marker column;
@@ -75,7 +75,7 @@ const ROW = `
   transition: opacity .12s, box-shadow .12s; }
 .vl-radio.on { opacity: 1; box-shadow: inset 0 0 0 2.5px currentColor; }
 .vl-row:hover .vl-radio { opacity: .85; }
-/* 🔴 THE GAP UNDER THE HAIRLINE WAS DOUBLE-COUNTED (R, 2026-08-16: "the row
+/* 🔴 THE GAP UNDER THE HAIRLINE WAS DOUBLE-COUNTED (live, 2026-08-16: "the row
    spacing between the graphic line above and the button below being a bit
    odd"). .vl-verbs-start contributes padding-top:6px AND .vl-add contributed
    margin-top:4px, so the first verb sat 10px below the rule while every other
@@ -93,7 +93,7 @@ const ROW = `
    forever. */
 .vl-add { padding: 3px 6px; }
 .vl-row:not(.vl-add) { padding-left: 2px; }
-/* 🔴 THE SEPARATOR'S SPACE IS ABOVE IT, NOT INSIDE THE FIRST VERB (R,
+/* 🔴 THE SEPARATOR'S SPACE IS ABOVE IT, NOT INSIDE THE FIRST VERB (live,
    2026-08-16: "can you scootch the + add a speech server button closer to the
    + add a text-to-speech model button? That spacing looks odd").
    padding-top on this row put 6px INSIDE the first button, between its border
@@ -125,7 +125,7 @@ function ensureCss() {
 function syncSelection(host, { items, selected, busy, loading }) {
   const rows = host.querySelectorAll?.('.vl-row[data-id]');
   // 🔴 SAY WHY IT REFUSED. This returned a bare false on five different
-  // conditions, so when the panel kept tearing down (R, 2026-08-16, third
+  // conditions, so when the panel kept tearing down (live, 2026-08-16, third
   // report) there was no way to tell WHICH guard was rejecting — I read the
   // code three times and guessed wrong twice. A predicate that can decline for
   // five reasons must name the one it used; the debuglog 'tts-list' topic is
@@ -136,7 +136,7 @@ function syncSelection(host, { items, selected, busy, loading }) {
   // saved there are no data-id rows, only the two add-verbs. Refusing here sent
   // every repaint down the rebuild path and reported "no rendered rows carry
   // data-id", which reads like a bug in the markup and is really "you have no
-  // voices yet" (R, 2026-08-16 — her list was empty and I nearly went looking
+  // voices yet" (live, 2026-08-16 — the list was empty and I nearly went looking
   // for a missing attribute).
   if (!rows.length && !items.length) {
     // Nothing to select; only the status text can have changed.
@@ -183,7 +183,7 @@ function syncSelection(host, { items, selected, busy, loading }) {
  */
 export function renderVoiceList(host, { items, selected, on, busy, loading }) {
   ensureCss();
-  // 🔴 ADD, DO NOT OVERWRITE (R, 2026-08-16 — the panel teardown, report five).
+  // 🔴 ADD, DO NOT OVERWRITE (live, 2026-08-16 — the panel teardown, report five).
   // This was `host.className = 'vl'`, which ERASES whatever the caller put
   // there. ttsrow marks this element `.tts-list` so its in-place updater can
   // find it again; the first render silently replaced that with `vl`, so from
@@ -194,7 +194,7 @@ export function renderVoiceList(host, { items, selected, on, busy, loading }) {
   // A component that styles a host it does not own must contribute a class, not
   // seize the attribute. classList.add is the whole fix.
   host.classList.add('vl');
-  // 🔴 A SELECTION CHANGE MUST NOT REBUILD THE LIST (R, 2026-08-16, asking for
+  // 🔴 A SELECTION CHANGE MUST NOT REBUILD THE LIST (live, 2026-08-16, asking for
   // the third time and rightly annoyed: "the whole panel is *still* tearing
   // down when you select one radio button or the other… fix this issue for
   // EVERY element").
@@ -229,7 +229,7 @@ export function renderVoiceList(host, { items, selected, on, busy, loading }) {
   //
   // A COUNTER, not a spinner: a spinner says "something is happening", a clock
   // says HOW LONG, which is the number that tells you whether to keep waiting.
-  // 🔴 ONLY A GHOST IF THERE IS NO REAL ROW (R, 2026-08-09: "I'm seeing
+  // 🔴 ONLY A GHOST IF THERE IS NO REAL ROW (live, 2026-08-09: "I'm seeing
   // en_US-glados-high listed twice when I try to load it"). A voice already in
   // the library HAS a row — adding a second one for its loading state shows the
   // same voice twice and the ghost reads as an error. Show the status ON the
@@ -285,7 +285,7 @@ export function renderVoiceList(host, { items, selected, on, busy, loading }) {
     const mark = document.createElement('span');
     // ● / ○ rather than a checkmark: it reads as "this one is live" at a glance
     // and needs no colour, which matters on a panel that must survive VR.
-    // 🔴 A REAL RADIO, NOT A BULLET (R, 2026-08-09: "make the radio button more of
+    // 🔴 A REAL RADIO, NOT A BULLET (live, 2026-08-09: "make the radio button more of
     // a radio button and not a bare dot, because it looks more like a list bullet
     // and not something that can be clicked"). ● and ○ are TYPOGRAPHY — they read
     // as list marks because that is what they are used for. A drawn ring with a
@@ -305,7 +305,7 @@ export function renderVoiceList(host, { items, selected, on, busy, loading }) {
     // must never be mistaken for.
     x.title = `forget ${it.name} — the file stays on your computer`;
     x.setAttribute('aria-label', `forget ${it.name}`);
-    // NO CONFIRM, NO UNDO, deliberately (R, 2026-08-09). Removing forgets an
+    // NO CONFIRM, NO UNDO, deliberately (live, 2026-08-09). Removing forgets an
     // IndexedDB handle — your .onnx on disk is never touched — so the worst case
     // is re-picking a file, with the "+" row sitting directly below. A dialog
     // guarding a one-click mistake costs everyone friction to save one person a
@@ -349,16 +349,16 @@ export function renderVoiceList(host, { items, selected, on, busy, loading }) {
   const add = document.createElement('div');
   add.className = 'vl-row vl-add vl-verbs-start';
   add.tabIndex = 0;
-  // SAY WHAT THE CONTROL WANTS, in the words of the thing it wants (R,
+  // SAY WHAT THE CONTROL WANTS, in the words of the thing it wants (live,
   // 2026-08-09: "I might label it text-to-speech model or something like that
   // just to make what this option is looking for most explicit"). "voice file"
   // could be a .wav; "text-to-speech model" can only be the thing it is. The two
   // rows deliberately do NOT share a noun — a .onnx is a model, an endpoint is a
   // running service, and calling both "voice" is what made the old field ask for
-  // a file and get an address (R, 2026-08-08: "it looks like some kind of ip
+  // a file and get an address (live, 2026-08-08: "it looks like some kind of ip
   // string instead of a file path...?").
   // 🔴 STATUS LIVES IN EXACTLY ONE PLACE — the header note. This row used to echo
-  // `busy` too, so "preparing voice…" appeared twice at once (R: "the 'preparing
+  // `busy` too, so "preparing voice…" appeared twice at once (live: "the 'preparing
   // voice' message repeats twice, once in the add line and once in the checkmark
   // bool line"). A verb row should always read as the verb; it goes quiet while
   // busy rather than becoming a second status display.

@@ -12,7 +12,7 @@ import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { radialForce, FORCE_MIN } from '../../shared/force.js';
 import {
-  myState, updateFollowCamera, setPosture, keys, setSeatHook,
+  myState, updateFollowCamera, setPosture, keys, setSeatHook, setMountedHook,
 } from './controller.js';
 import { avatarMounts, mountTransform, comps, socketWorldPos } from './world.js';
 import { sendVerb, sendAnim } from './net.js';
@@ -340,6 +340,7 @@ export function initLocalBody({ logChat: logChatFn }) {
   // X reaches the socket system through the controller's hook: mounted → get
   // up; a declared seat in reach → mount it; anything else falls through to
   // the controller's own layers (geometry seat pans, then the ground sit).
+  setMountedHook(() => avatarMounts.has(CONFIG.name));
   setSeatHook(() => {
     if (avatarMounts.has(CONFIG.name)) { dismountMe(); return true; }
     if (downed) return false;

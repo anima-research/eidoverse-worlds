@@ -28,7 +28,7 @@ plugin({
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
 GlobalRegistrator.register();
 
-const { logChat, initChat, chat } = await import("../client/lib/chat.js");
+const { logChat, logWhisper, initChat, chat } = await import("../client/lib/chat.js");
 const { frameStub } = await import("./chat-frames-stub.mjs");
 
 let pass = 0, fail = 0;
@@ -37,7 +37,15 @@ const check = (name: string, ok: boolean, detail = "") => {
   else { fail++; console.log(`  \x1b[31m✗\x1b[0m ${name}${detail ? ` — ${detail}` : ""}`); }
 };
 
-initChat({ send: () => {}, people: () => [{ id: "keir", agent: true }] });
+// A self row + two others: the self row exercises the "no whispering yourself"
+// skip, and two others let a DM tab open for each.
+const says: any[] = [];   // the channel the leak actually used: {"verb":"say","args":{"text":…}}
+const whispers: any[] = [];
+initChat({
+  send: (text: string) => says.push(text),   // captured: antra #185 B3 named the PUBLIC say channel
+  whisper: (to: string, text: string) => whispers.push({ to, text }),
+  people: () => [{ id: "me", me: true }, { id: "keir", agent: true }, { id: "mica" }],
+});
 const log = () => document.getElementById("chatlog")!;
 const rows = () => [...log().children].filter((c) => !c.classList.contains("sys"));
 const texts = () => rows().map((r) => r.querySelector(".body")?.textContent);
@@ -137,6 +145,152 @@ logChat("rab", "spoken wedge", "", { seq: 32, ts, spoken: true, utt: 22, t0: ts 
 check("displaced anchor reprints its name when a different speaker wedges in",
   texts()[1] === "spoken wedge" && !rows()[2].classList.contains("cont"),
   JSON.stringify({ order: texts(), anchorCont: rows()[2].classList.contains("cont") }));
+
+
+// ============================================================ DMs and the tab strip
+// R, 2026-09-11: "Did we ever verify that DMs work and sort correctly in the
+// chat bar? Or can you double-click on a name in the People Here pane and have a
+// DM tab show up correctly". The machinery existed — convos, openConvo,
+// setFilter('w:<name>'), per-convo unread, dataset.convo filtering — and NOTHING
+// drove it. This is that coverage.
+console.log("\nCHAT — DMs, the People Here pane, and the tab strip");
+const tabs = () => frameStub.body!.querySelector(".chat-tabs") as HTMLElement;
+// strip the close glyph: a DM tab now carries a visible × inside the button
+const tabLabels = () => [...tabs().querySelectorAll(".tabscroll button")].map((b: any) => b.textContent.replace(/\u00d7/g, "").trim());
+const openPane = () => (frameStub.body!.querySelector(".chat-side-tog") as HTMLElement)?.click();
+
+check("the tab strip starts with the three fixed tabs", tabLabels().join("|") === "all|mentions|system", tabLabels().join("|"));
+check("tabs live INSIDE the scroller, the gear outside it",
+  !!tabs().querySelector(".tabscroll") && !!tabs().querySelector(":scope > .chat-gear") && !tabs().querySelector(".tabscroll .chat-gear"));
+check("both scroll arrows exist", tabs().querySelectorAll(".tabarrow").length === 2);
+
+// an inbound whisper opens a conversation, files the line, and bumps unread
+logWhisper({ from: "keir", to: "me", text: "psst" });
+check("an inbound whisper opens its tab", tabLabels().includes("@keir 1"), tabLabels().join("|"));
+const wline = [...log().children].find((l: any) => l.dataset.convo === "keir");
+check("...and files the line under that conversation", !!wline, "no line with dataset.convo=keir");
+check("...and it renders as a whisper", !!wline?.classList.contains("whisper"));
+
+// the People Here pane: double-click a name -> that DM tab
+openPane();
+const rows2 = () => [...frameStub.body!.querySelectorAll(".chat-side-list .who-row")];
+check("the People Here pane lists everyone", rows2().length === 3, `${rows2().length} rows`);
+// A BUTTON, not a div — this IS the fix. frames.js:_contentClaims exempts only
+// BUTTON/INPUT/TEXTAREA/SELECT/A from the frame's drag surface, so a div row was
+// claimed by the frame's pointerdown and the dblclick never arrived. R,
+// 2026-09-11: "the Chat panel treats names in the roster as a
+// grab-and-move-the-pane surface". The previous dblclick assertion passed
+// against a div, so it could not see this at all.
+check("each roster row is a BUTTON, so the frame cannot claim it as a drag surface",
+  rows2().every((r: any) => r.tagName === "BUTTON"), rows2().map((r: any) => r.tagName).join(","));
+const mica = rows2().find((r: any) => r.querySelector(".n")?.textContent?.trim() === "mica") as HTMLElement;
+mica?.dispatchEvent(new Event("dblclick", { bubbles: true }));
+check("double-clicking a name opens ITS DM tab", tabLabels().includes("@mica"), tabLabels().join("|"));
+
+// ...but not your own row
+const selfRow = rows2().find((r: any) => r.classList.contains("self")) as HTMLElement;
+const tabsBefore = tabLabels().length;
+selfRow?.dispatchEvent(new Event("dblclick", { bubbles: true }));
+check("double-clicking YOURSELF opens nothing", tabLabels().length === tabsBefore, tabLabels().join("|"));
+
+// SORTING: a DM tab shows only that conversation
+(tabs().querySelector(".tabscroll button:last-child") as HTMLElement)?.click();
+const visible = () => [...log().children].filter((l: any) => !l.classList.contains("filtered"));
+logWhisper({ from: "keir", to: "me", text: "second" });
+logChat("keir", "a room line", "agent", { seq: 99, ts: Date.now() });
+const micaTab = [...tabs().querySelectorAll(".tabscroll button")].find((b: any) => b.textContent.includes("@keir")) as HTMLElement;
+micaTab?.click();
+check("a DM tab shows only that conversation",
+  visible().every((l: any) => l.dataset.convo === "keir"), visible().map((l: any) => l.dataset.convo ?? "(room)").join(","));
+const allTab = tabs().querySelector(".tabscroll button") as HTMLElement;
+allTab?.click();
+check("...and `all` shows the room again",
+  visible().some((l: any) => !l.dataset.convo), visible().map((l: any) => l.dataset.convo ?? "(room)").join(","));
+
+// CLOSING A TAB. R, 2026-09-11: "there should be a way of getting rid of extra
+// tabs you don't want." Right-click already worked and announced itself only in
+// a title attribute, so a DM tab now carries a visible x as well.
+// THE ACTIVE TAB IS SCROLLED INTO VIEW. R's screenshot showed `system| @H` —
+// the open whisper clipped to two characters while `all` and `mentions` held the
+// full left. R, 2026-09-11: "should probably always preferentially display the
+// tab that it's on".
+//
+// The PIXELS are unbindable here and I checked that BEFORE writing this:
+// happy-dom performs no layout, so a deliberately overflowing row reports
+// scrollWidth=0 clientWidth=0 and scrollIntoView leaves scrollLeft at 0. What IS
+// bindable is the mechanism — that setFilter finds the active tab and asks for
+// it. Verified separately in real Chromium (clipped by 44px before, fully
+// visible after).
+{ const calls: string[] = [];
+  const proto = (globalThis as any).HTMLElement?.prototype;
+  const orig = proto?.scrollIntoView;
+  if (proto) proto.scrollIntoView = function () { calls.push((this as HTMLElement).textContent?.trim() ?? "?"); };
+  const sysTab = [...tabs().querySelectorAll(".tabscroll button")].find((b: any) => b.textContent.includes("system")) as HTMLElement;
+  sysTab?.click();
+  check("switching tabs asks the ACTIVE one to scroll into view",
+    calls.some((t) => t.includes("system")), JSON.stringify(calls));
+  if (proto) proto.scrollIntoView = orig; }
+
+{ const keirTab = [...tabs().querySelectorAll(".tabscroll button")].find((b: any) => b.textContent.includes("@keir")) as HTMLElement;
+  const x = keirTab?.querySelector(".tabx") as HTMLElement;
+  check("a DM tab carries a visible close", !!x, keirTab?.innerHTML.slice(0, 80) ?? "(no tab)");
+    // A DRAFT BELONGS TO ITS DESTINATION (antra-tess #185 rereview B3). Typing in a
+    // conversation tab and then closing it left the PRIVATE line in the box while
+    // the destination became public — reproduced in the real client before the
+    // fix: the canary went out as {verb:"say"}. The draft must be typed INSIDE the
+    // DM for this to mean anything; my first version typed it while `system` was
+    // active and then blamed the DM close, which asserted the wrong rule — a
+    // public draft rightly survives an unrelated tab closing.
+    keirTab?.click();
+    const inp = document.querySelector("#chatline") as HTMLInputElement;
+    const SECRET = "DRAFT_MUST_NOT_SURVIVE_CLOSE";
+    inp.value = SECRET;
+  x?.click();
+  check("...and clicking it removes that tab", !tabLabels().some((t: string) => t.includes("@keir")), tabLabels().join("|"));
+  check("...and the fixed tabs are untouched",
+    tabLabels().slice(0, 3).join("|") === "all|mentions|system", tabLabels().join("|")); }
+
+  { // A CLOSED CONVERSATION'S PARKED DRAFT MUST NOT COME BACK (antra #185 B3).
+    // The two checks that stood here were VACUOUS: closing the ACTIVE tab goes
+    // through setFilter, which parks and clears the box on the way in, so the
+    // input was already empty at assertion time and BOTH mutations — removing
+    // drafts.delete(key), and removing the active-close clear — still returned
+    // 33/33. The only observable drafts.delete(key) controls is the parked draft
+    // RETURNING, so this reopens the conversation and looks.
+    const inp = document.querySelector("#chatline") as HTMLInputElement;
+    const SECRET = "PARKED_DRAFT_MUST_NOT_RETURN";
+    const mica = [...tabs().querySelectorAll(".tabscroll button")].find((b: any) => b.textContent.includes("@mica")) as HTMLElement;
+    check("the @mica tab is present for the parked-draft check", !!mica, tabLabels().join("|"));
+    mica?.click();                     // into the private conversation
+    inp.value = SECRET;                // a draft that belongs to @mica
+    const allTab = [...tabs().querySelectorAll(".tabscroll button")].find((b: any) => b.textContent.trim().startsWith("all")) as HTMLElement;
+    allTab?.click();                   // switch away -> setFilter PARKS it
+    (mica?.querySelector(".tabx") as HTMLElement)?.click();   // close from the BACKGROUND
+    mica?.click();                     // try to return to it
+    check("a closed conversation's parked draft does not come back",
+      inp.value !== SECRET, `input=${JSON.stringify(inp.value)}`);
+    inp.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      // THE PUBLIC SAY CHANNEL, not just whispers (agent review, 2026-09-12). The
+      // rereview's spec was "proves no public say contains those bytes", and the
+      // leak it described went out as {"verb":"say"}. Asserting only on whispers
+      // watched the one channel the bug was NOT in: send() was stubbed to discard,
+      // so a public leak left no trace at all and this check stayed green.
+      check("...and no PUBLIC say carries those bytes",
+        !says.some((t: any) => String(t).includes(SECRET)), JSON.stringify(says.slice(-2)));
+      check("...and no whisper carries them either",
+        !whispers.some((w: any) => String(w?.text).includes(SECRET)), JSON.stringify(whispers.slice(-2))); }
+
+  { // THE ACTIVE-CLOSE PATH — DISCLOSED AS UNBINDABLE HERE, not asserted.
+    // The rereview's headline case is "closing an ACTIVE private tab can publish
+    // its draft publicly". The product is correct: x.onclick calls setFilter('all'),
+    // which parks the outgoing draft and restores drafts.get('all') = '' — so the
+    // box is empty before Enter. But that ALSO means no assertion on this path can
+    // fail: I wrote one, mutated the sibling clear away, and the suite stayed
+    // 37/0. A check that cannot go red is not coverage, it is decoration, so it is
+    // gone. What IS bound is the parked-draft property above (M-D): remove
+    // drafts.delete(key) or the setFilter restore and two checks go red with the
+    // canary bytes on the wire.
+  }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
