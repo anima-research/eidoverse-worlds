@@ -1202,6 +1202,21 @@ kbd {
   max-width: min(320px, 46vw);   /* NARROW, not merely right-anchored: at 720px the card still reached back across the centred emote bar and blocked 7 of 9 tiles even from top-right. The long text is the title tooltip anyway (09-05 note above). #185 B2. */ padding: 5px 10px; font-size: var(--fs-sm); line-height: 1.4;
   display: flex; flex-direction: row; align-items: center; gap: 10px; border-radius: 8px;
 }
+
+/* A PHONE HAS NO ROOM IN THE TOP STRIP (antra-tess #185 B2, measured 2026-09-12).
+   The emote bar is widthFor(9)=352px and never narrower at its default, so at
+   390px wide there are 38px beside it. Three separate occluders were measured in
+   that strip: this card (5 of 9 tiles), #dock once body.touch reorients the rail
+   along the top edge in landscape (1 tile), and #earbtn at z45 (1 tile). Moving
+   the card to the right corner cleared it at 1280x720 and 1904x844 and still left
+   five tiles covered on a phone; dropping it to full width at top:62 cleared the
+   tiles and covered a DOCK BUTTON instead. The band below the bar and right of
+   the rail is the one rectangle measured clear of #dock, #micbtn, #earbtn,
+   #emenu, #stick and #hintbar in BOTH orientations. The card is transient chrome
+   on a reduced-capability browser and it yields; the bar is a primary control. */
+@media (max-width: 900px) {
+  .capnotice { top: 64px; left: 50px; right: 8px; max-width: none; }
+}
 .capnotice > * { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }   /* each notice is one row */
 .capnotice b { display: inline; margin: 0; white-space: nowrap; }
 .capnotice p { margin: 0; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }

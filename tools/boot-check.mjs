@@ -46,6 +46,7 @@ class Fail extends Error {}
 const fail = (msg) => { throw new Fail(msg); };
 const RESIZE_TO = process.env.BOOT_CHECK_RESIZE_TO ?? '';   // B1: WxH to shrink to mid-run
 let resized = '';
+let barOpened = '';
 let close = async () => {};
 try {
   ({ page, close } = await launchBrowser());
@@ -74,6 +75,35 @@ try {
       // that runs past the viewport edge is simply unreachable and the document
       // never reports overflow (#185 review).
       vw: innerWidth, vh: innerHeight,
+      // CHROME, not just frames (antra-tess #185 B2). boot-check collected only
+      // .frame rects, so #dock, .capnotice, #micbtn/#earbtn and the joystick were
+      // structurally invisible — "boot-check checks only .frame pairs, so it
+      // cannot observe dock/touch-control occlusion" was exactly right. A control
+      // is REACHABLE only if the pixel at its centre belongs to it.
+      chrome: ['#dock', '.capnotice', '#micbtn', '#earbtn', '#emenu', '#stick', '#hintbar', '#trayzone']
+        .map((sel) => { const e = document.querySelector(sel); if (!e) return null;
+          const r = e.getBoundingClientRect(); if (!r.width || !r.height) return null;
+          return { id: sel, x: Math.round(r.x), y: Math.round(r.y), right: Math.round(r.right), bottom: Math.round(r.bottom),
+                   pe: getComputedStyle(e).pointerEvents }; })
+        .filter(Boolean),
+      // every visible control's centre, and who actually owns that pixel
+      controls: [...document.querySelectorAll('.frame .tile, #dock button')]
+        .filter((t) => { const r = t.getBoundingClientRect(); return r.width && r.height; })
+        .map((t) => { const r = t.getBoundingClientRect();
+          const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);
+          const hit = document.elementFromPoint(cx, cy);
+          const owner = hit && !(t === hit || t.contains(hit))
+            ? (['#dock', '.capnotice', '#micbtn', '#earbtn', '#emenu', '#stick'].find((s) => hit.closest(s)) ?? 'other')
+            : null;
+          return { id: (t.title || t.getAttribute('aria-label') || t.textContent || '?').trim().slice(0, 18), owner }; })
+        .filter((c) => c.owner),
+      // how many control surfaces were MEASURABLE at all. A check that reports
+      // green from an empty collection is worse than no check: at 390x844 the
+      // emote bar is hidden by fitsDefaults, so `.frame .tile` yields nine
+      // zero-size nodes, every one filtered out, and the run passed while my
+      // standalone probe measured a stolen tile at the same instant.
+      tilesSized: [...document.querySelectorAll('.frame .tile')].filter((t) => { const r = t.getBoundingClientRect(); return r.width && r.height; }).length,
+      tilesInDom: document.querySelectorAll('.frame .tile').length,
       rects: [...document.querySelectorAll('.frame')]
         .filter((f) => getComputedStyle(f).display !== 'none')
         .map((f) => { const r = f.getBoundingClientRect();
@@ -125,6 +155,17 @@ try {
       if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) pairs.push(`${a.id} [${a.x},${a.y},${a.right},${a.bottom}] × ${b.id} [${b.x},${b.y},${b.right},${b.bottom}]`);
     }
     if (pairs.length) { fail(`frames overlap at ${g.vw}x${g.vh} (a covered control cannot be clicked):\n  ` + pairs.join('\n  ')); }
+    // A CONTROL WHOSE CENTRE BELONGS TO SOMETHING ELSE CANNOT BE TAPPED (#185 B2).
+    // Rect overlap alone is not the test: chrome may legitimately sit beside a
+    // frame. Hit-testing is, and it is the only thing that catches a z-60 card
+    // over a z-25 bar, or the rail once it reorients along the top edge.
+    // EVERY thief counts, including ones outside my selector list — dropping
+    // 'other' is how #earbtn's inner <rect> made a real occluder invisible.
+    const stolen = g.controls ?? [];
+    if (stolen.length) {
+      fail(`controls unreachable at ${g.vw}x${g.vh} — the pixel at their centre belongs to other chrome (${where}):\n  `
+        + stolen.map((c) => `"${c.id}" covered by ${c.owner}`).join('\n  '));
+    }
     // The PRODUCT promises right <= innerWidth - 8 (frames.js clamp, snapPosition,
     // and the resize rider all use the same 8px margin). Checking only
     // `right > vw + 1` left a 9px band where a frame violates the clamp and still
@@ -146,6 +187,35 @@ try {
     }
   };
   checkGeometry(s, `boot ${s.vw}x${s.vh}`);
+
+  // OPEN THE CONTROLS THE REVIEW IS ABOUT, then look again (antra-tess #185 B2).
+  // At phone widths fitsDefaults() hides the emote bar, so `.frame .tile` yields
+  // nine ZERO-SIZE nodes and the hit-test above has nothing to measure: the run
+  // goes green because the collection is empty, not because the tiles are
+  // reachable. Her repro is a user tapping the dock to open the bar — so do that,
+  // and assert what is on screen afterwards. tilesSized is printed on the ok line
+  // so an empty measurement can never again read as a pass.
+  const opened = await pg.evaluate(async () => {
+    // TOGGLE, not open: at a wide viewport the bar is ALREADY open, so clicking
+    // the dock button closed it and the guard below then fired on my own action
+    // (FAIL at 1280x720, tilesInDom=9 tilesSized=0). Only click when it is hidden.
+    const isOpen = () => [...document.querySelectorAll('.frame')]
+      .some((f) => /emote/i.test(f.querySelector('.fr-title')?.textContent || '')
+                && getComputedStyle(f).display !== 'none');
+    if (isOpen()) return 'already open';
+    const btn = [...document.querySelectorAll('#dock button')]
+      .find((b) => /emote/i.test(b.title || b.getAttribute('aria-label') || ''));
+    if (!btn) return 'no emote dock button';
+    btn.click();
+    await new Promise((r) => setTimeout(r, 900));
+    return isOpen() ? 'opened' : 'click did not open it';
+  });
+  if (opened === 'opened' || opened === 'already open') {
+    const s3 = await state();
+    if (!s3.tilesSized) { fail(`the emote bar was opened from the dock but no tile has a size (tilesInDom=${s3.tilesInDom}) — the B2 hit-test would measure nothing`); }
+    checkGeometry(s3, `emote bar open at ${s3.vw}x${s3.vh}`);
+    barOpened = ` · emote bar ${opened}: ${s3.tilesSized} tiles measured, none covered`;
+  }
   if (/(^|&)webgl=1(&|$)/.test(QUERY) && s.backend !== 'webgl') { fail(`?webgl=1 but backend=${s.backend}`); }
   if (wantXR && s.backend !== 'webgl') { fail(`XR boot without WebGPU-XR must ride WebGL, got backend=${s.backend}`); }
   // arrival means the BODY settled too (unless spectating): a checkReady that stops waiting for it lifts the splash
@@ -192,7 +262,7 @@ try {
     checkGeometry(s2, `after live resize ${s.vw}x${s.vh} -> ${s2.vw}x${s2.vh}`);
     resized = ` · live resize -> ${s2.vw}x${s2.vh}: ${(s2.rects ?? []).length} frame(s) open, geometry clean`;
   }
-  console.log(`ok — client boots AND arrives [viewport ${s.vw}x${s.vh}]: ${ready} after ${elapsed}ms, ${s.panels} panels, splash gone, ${rays}, backend=${s.backend} xr.enabled=${s.xrEnabled} tolerance=${s.tolerance} xrShadowPatch=${s.xrShadow}${QUERY ? ` query=${QUERY}` : ''} — decisions asserted, no page errors, ${body}${ABORT_VRM ? ' [body requests ABORTED]' : ''}${LIVE ? ' (live deployment)' : ' (owned child)'}${resized}`);
+  console.log(`ok — client boots AND arrives [viewport ${s.vw}x${s.vh}]: ${ready} after ${elapsed}ms, ${s.panels} panels, splash gone, ${rays}, backend=${s.backend} xr.enabled=${s.xrEnabled} tolerance=${s.tolerance} xrShadowPatch=${s.xrShadow}${QUERY ? ` query=${QUERY}` : ''} — decisions asserted, no page errors, ${body}${ABORT_VRM ? ' [body requests ABORTED]' : ''}${LIVE ? ' (live deployment)' : ' (owned child)'}${resized}${barOpened}`);
 } catch (e) {
   console.log(`FAIL — ${e instanceof Fail ? e.message : (e?.stack ?? e)}`);
   process.exitCode = 1;
