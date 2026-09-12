@@ -1050,7 +1050,22 @@ export function openConvo(name) {
   inputEl.focus();
 }
 
+// A DRAFT BELONGS TO ITS DESTINATION (antra-tess, #185 rereview B3, 2026-09-12).
+// Closing or leaving a conversation tab changed `filter` and the placeholder but
+// left inputEl.value untouched, so a half-typed private line stayed in the box
+// while the destination silently became PUBLIC — reproduced end to end: the
+// canary went out as {"verb":"say","args":{"text":"CANARY_PRIVATE_DRAFT_0912"}}.
+// The send path at Enter already picks whisper-vs-say from `filter`; the draft
+// simply had no owner. Park each destination's draft on the way out and restore
+// the incoming one, so closing a tab is non-destructive and switching tabs never
+// re-points words at someone they were not written for.
+const drafts = new Map();
+
 function setFilter(f) {
+  if (inputEl) {
+    if (inputEl.value) drafts.set(filter, inputEl.value); else drafts.delete(filter);
+    inputEl.value = drafts.get(f) ?? '';
+  }
   filter = f;
   if (f.startsWith('w:')) { const c = convos.get(f.slice(2)); if (c) c.unread = 0; }
   paintTabs();

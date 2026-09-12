@@ -64,7 +64,7 @@ try {
     const sp = document.getElementById('splash');
     return { panels: document.querySelectorAll('.sec').length, engine: !!globalThis.__ewEngineUp,
       splashGone: !sp || sp.classList.contains('gone'), splashDisplay: sp ? getComputedStyle(sp).display : 'none',
-      phase: sp?.querySelector('.sp-phase')?.textContent ?? null, raysHandle: !!globalThis.__raysWorker,
+      phase: sp?.querySelector('.sp-phase')?.textContent ?? null, raysHandle: !!globalThis.__raysWorker, raysStarted: globalThis.__raysStarted === true,
       backend: globalThis._r?.backend ? (globalThis._r.backend.isWebGLBackend ? 'webgl' : 'webgpu') : null, xrEnabled: !!globalThis._r?.xr?.enabled,
       tolerance: !!globalThis.__renderListTolerance, xrShadow: globalThis.__xrShadowPatched === true, raysCanvas: !!document.querySelector('#splash .sp-rays'),
       hasBody: !!globalThis.EW?.me?.(),
@@ -151,7 +151,10 @@ try {
   // the splash rays worker exists only where index.html carries a .sp-rays canvas (rung 4's markup); here it is
   // asserted when present and reported DORMANT when not — never claimed released when it never ran
   let rays;
-  if (s.raysCanvas) { if (!raysSeen) { fail('.sp-rays canvas present but the rays worker handle was never advertised'); }
+  // STARTED is cumulative (__raysStarted, never cleared); the HANDLE is transient.
+  // Polling only the handle raced the worker's own lifetime — 2 of 8 owned runs
+  // failed here with the worker perfectly healthy (antra-tess #185 B4).
+  if (s.raysCanvas) { if (!raysSeen && !s.raysStarted) { fail('.sp-rays canvas present but the rays worker never started'); }
     if (s.raysHandle) { fail('the rays worker handle is still advertised after boot (stopRays did not release it)'); } rays = 'rays seen+released'; }
   else rays = 'rays DORMANT (no .sp-rays canvas at this rung)';
   console.log(`ok — client boots AND arrives [viewport ${s.vw}x${s.vh}]: ${ready} after ${elapsed}ms, ${s.panels} panels, splash gone, ${rays}, backend=${s.backend} xr.enabled=${s.xrEnabled} tolerance=${s.tolerance} xrShadowPatch=${s.xrShadow}${QUERY ? ` query=${QUERY}` : ''} — decisions asserted, no page errors, ${body}${ABORT_VRM ? ' [body requests ABORTED]' : ''}${LIVE ? ' (live deployment)' : ' (owned child)'}`);

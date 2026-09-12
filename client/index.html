@@ -1187,8 +1187,19 @@ kbd {
 .capnotice {
   /* a one-line STRIP along the bottom edge — off the body, which stands
      centre-stage (live, 09-05); the long explanation is the title tooltip */
-  position: fixed; left: 50%; top: 8px; transform: translateX(-50%); z-index: 60;   /* the top-centre gap: nothing lives there by default */
-  max-width: min(720px, 92vw); padding: 5px 10px; font-size: var(--fs-sm); line-height: 1.4;
+  /* TOP-RIGHT, because the top-CENTRE stopped being empty. This card sat at
+     left:50%/top:8 with the note 'the top-centre gap: nothing lives there by
+     default' (09-09) — true until 288a5da put the emote bar at x:'center', y:10
+     this morning. The card is z-index 60 and frames cap at Z_HI=25, so the bar
+     can never paint above it: measured 9 of 9 tiles unclickable at 1280x720 AND
+     1904x844 on any browser without WebGPU, and reachable again the moment the
+     card was dismissed. The bar is a primary control the owner placed
+     deliberately; this is transient chrome on a reduced path, so the chrome
+     moves. Top-right is the one region no fixed element claims (#dock and
+     #emenu hug top-left, #hintbar bottom-centre, #trayzone and #toasts
+     bottom-right, #stick bottom-left). antra-tess #185 rereview B2. */
+  position: fixed; right: 10px; top: 8px; z-index: 60;
+  max-width: min(320px, 46vw);   /* NARROW, not merely right-anchored: at 720px the card still reached back across the centred emote bar and blocked 7 of 9 tiles even from top-right. The long text is the title tooltip anyway (09-05 note above). #185 B2. */ padding: 5px 10px; font-size: var(--fs-sm); line-height: 1.4;
   display: flex; flex-direction: row; align-items: center; gap: 10px; border-radius: 8px;
 }
 .capnotice > * { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }   /* each notice is one row */

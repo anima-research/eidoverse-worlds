@@ -235,6 +235,12 @@ export function startRays(el) {
     raysResize = () => raysWorker?.postMessage({ type: 'size', w: cv.clientWidth, h: cv.clientHeight });
     addEventListener('resize', raysResize);
     globalThis.__raysWorker = raysWorker;   // harness: postMessage({type:'frames'}) answers with the frame count
+    // CUMULATIVE, never cleared (antra-tess #185 rereview B4, 2026-09-12): the
+    // handle above is transient — stopRays nulls it — and boot-check sampled it
+    // on a 250ms poll, so a worker that started AND finished between two samples
+    // was invisible. 2 of 8 owned runs failed on that race. This flag is the
+    // durable receipt: started is started, whatever the sampler saw.
+    globalThis.__raysStarted = true;
   } catch { cv.style.display = 'none'; stopRays(); }
 }
 export function stopRays() {

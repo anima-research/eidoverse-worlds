@@ -345,6 +345,10 @@ export function makeFrame(id, opts = {}) {
     // alone BYPASSES the viewport clamp: the bar reflowed to three rows and
     // painted itself past the bottom edge (#185 review, 800x700).
     _state: state, _paint: () => paint(), _fit: () => fit(), _markMoved: markMoved,
+      // READER for the same flag (#185 B1): the api carried a SETTER only, so the
+      // viewport rule below had no way to ask whether the owner placed this frame.
+      // `moved` is !!saved at construction and latches on a real drag or resize.
+      get _moved() { return moved; },
     get state() { return { ...state }; },
     show() {
       state.hidden = false;
@@ -624,6 +628,7 @@ function stickyEdges(state, height) {
   };
 }
 let _lastVW = innerWidth, _lastVH = innerHeight;
+let _lastFits = null;   // B1: the fit verdict at the last viewport change
 
 // Ride the edges: frames sticky to right/bottom keep their edge gap when the
 // window resizes; everything is then clamped back inside regardless.
@@ -640,6 +645,26 @@ addEventListener('resize', () => {
     st.x = clamp(st.x, 8, Math.max(8, innerWidth - st.w - 8));
     st.y = clamp(st.y, 8, Math.max(8, innerHeight - hgt - 8));
     f._paint?.();
+  }
+  // RE-ASK WHETHER THE ARRANGEMENT STILL FITS (antra-tess #185 rereview B1).
+  // fitsDefaults() was consulted only at construction (:338) and resetLayout
+  // (:388) — both one-shot — while this listener clamped each frame's rect
+  // INDEPENDENTLY and never re-checked the arrangement. A session opened wide and
+  // then narrowed kept all three defaults open: measured emotes x world
+  // overlapping 352x46px at 390x844 and 136x46px at 844x390 after a live resize.
+  // Only frames the owner has NOT moved are minimized: a deliberately arranged
+  // layout is theirs, and yanking it around on a window drag would be worse than
+  // the overlap. Crossing back out re-opens them, so it is reversible.
+  const fits = fitsDefaults();
+  if (fits !== _lastFits) {
+    for (const [id, f] of frames) {
+      if (id === 'chat' || !f._state || f._moved) continue;
+      if (!fits && !f._state.hidden) { f._state.hidden = true; f.el.style.display = 'none'; f._paint?.(); }
+      else if (fits && f._state.hidden && DEFAULT_LAYOUT[id]?.hidden === false) {
+        f._state.hidden = false; f.el.style.display = ''; f._paint?.();
+      }
+    }
+    _lastFits = fits;
   }
   _lastVW = innerWidth; _lastVH = innerHeight;
 });
