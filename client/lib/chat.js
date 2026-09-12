@@ -1065,84 +1065,79 @@ let _arrowT = null;   // debounce for the resize-driven tab repaint
 function paintTabs() {
   const bar = frame.body.querySelector('.chat-tabs');
   if (!bar) return;
-    bar.innerHTML = '';
-    // The strip carries `all · mentions · system` PLUS one tab per open DM, so
-    // tabs now size to their labels and the row SCROLLS instead of every tab
-    // getting thinner as conversations open (they shared the width via flex:1).
-    // R, 2026-09-11: "squash the words together at the top to make room for more
-    // tabs but still leave some buffer so they don't get too close, left/right
-    // arrow keys at either side of the menu if you need to side-scroll and see
-    // more due to overflow."
-    const left = document.createElement('button');
-    left.className = 'tabarrow'; left.type = 'button'; left.textContent = '\u2039';
-    left.title = 'scroll tabs left'; left.setAttribute('aria-label', 'scroll tabs left');
-    const scroll = document.createElement('div');
-    scroll.className = 'tabscroll';
-    const right = document.createElement('button');
-    right.className = 'tabarrow'; right.type = 'button'; right.textContent = '\u203a';
-    right.title = 'scroll tabs right'; right.setAttribute('aria-label', 'scroll tabs right');
-    const STEP = 90;
-    left.onclick = (e) => { e.stopPropagation(); scroll.scrollLeft -= STEP; };
-    right.onclick = (e) => { e.stopPropagation(); scroll.scrollLeft += STEP; };
-    // An arrow with nowhere to go is a lie about the interface: hidden unless the
-    // row really overflows, re-checked on scroll and on every repaint.
-    const paintArrows = () => {
-      const over = scroll.scrollWidth > scroll.clientWidth + 1;
-      left.hidden = !over || scroll.scrollLeft <= 0;
-      right.hidden = !over || scroll.scrollLeft + scroll.clientWidth >= scroll.scrollWidth - 1;
-    };
-    scroll.addEventListener('scroll', paintArrows);
-      // WATCH THE SCROLLER ITSELF. paintArrows only ever ran from paintTabs (a
-      // filter change) and from the onResize hook — and both compute BEFORE the
-      // browser applies the new width, so a narrowing panel left scrollWidth
-      // frozen against a collapsing clientWidth. Measured with People Here open,
-      // which is R's real layout: at 330px and below scrollWidth stayed 175
-      // while clientWidth fell to 31 — genuinely overflowing, both arrows still
-      // hidden, her tabs unreachable (R, 2026-09-11: "I shrunk it to get rid of
-      // the 'system' tab and there's no arrows visible to reach it"). A
-      // ResizeObserver fires AFTER layout on the element that actually changed.
-      if (typeof ResizeObserver === 'function') {
-        try { new ResizeObserver(() => paintArrows()).observe(scroll); } catch { /* older engine */ }
-      }
-    bar.append(left, scroll, right);
-  const mk = (key, label, unread = 0, closable = false) => {
-    const b = document.createElement('button');
-    b.className = filter === key ? 'on' : '';
-      // REAL TABS, not a centred label between two 1px brand ticks. The ticks
-      // were never a tab affordance: they crowded whatever sat to their left
-      // (R's screenshot: `system|@Hesperus`) and the trailing one became a stray
-      // mark once the close glyph moved beside it. R, 2026-09-11: "Do we want to
-      // design proper 'tabs' now that we have the option to make tabs? ... You
-      // can use the tabs in the Profile menu as an example." This borrows
-      // .pf-tab's recipe: an underline that attaches the tab to its pane.
-      const lbl = document.createElement('span');
-      lbl.textContent = label + (unread ? ` ${unread}` : '');
-      b.append(lbl);
-    if (unread) b.classList.add('has-unread');
-    b.onclick = () => setFilter(key);
-    if (closable) {
-        // A VISIBLE CLOSE. Right-click already worked and announced itself
-        // only in a title attribute — R, 2026-09-11: "there should be a way of
-        // getting rid of extra tabs you don't want." Both routes now; the x
-        // stops propagation so closing never also selects the tab.
-        const x = document.createElement('span');
-        x.className = 'tabx'; x.textContent = '\u00d7';
-        x.title = `close ${key.slice(2)}`;
-        x.onclick = (e) => {
-          e.stopPropagation(); e.preventDefault();
-          convos.delete(key.slice(2));
-          if (filter === key) setFilter('all'); else paintTabs();
-        };
-        b.classList.add('has-x');   // the tab must MAKE ROOM for the glyph (see .has-x)
-        b.append(x);
-      b.oncontextmenu = (e) => {
-        e.preventDefault();
-        convos.delete(key.slice(2));
-        if (filter === key) setFilter('all'); else { paintTabs(); }
-      };
-      b.title = 'right-click to close this conversation';
+  bar.innerHTML = '';
+  // The strip carries `all · mentions · system` PLUS one tab per open DM, so
+  // tabs now size to their labels and the row SCROLLS instead of every tab
+  // getting thinner as conversations open (they shared the width via flex:1).
+  // R, 2026-09-11: "squash the words together at the top to make room for more
+  // tabs but still leave some buffer so they don't get too close, left/right
+  // arrow keys at either side of the menu if you need to side-scroll and see
+  // more due to overflow."
+  const left = document.createElement('button');
+  left.className = 'tabarrow'; left.type = 'button'; left.textContent = '\u2039';
+  left.title = 'scroll tabs left'; left.setAttribute('aria-label', 'scroll tabs left');
+  const scroll = document.createElement('div');
+  scroll.className = 'tabscroll';
+  const right = document.createElement('button');
+  right.className = 'tabarrow'; right.type = 'button'; right.textContent = '\u203a';
+  right.title = 'scroll tabs right'; right.setAttribute('aria-label', 'scroll tabs right');
+  const STEP = 90;
+  left.onclick = (e) => { e.stopPropagation(); scroll.scrollLeft -= STEP; };
+  right.onclick = (e) => { e.stopPropagation(); scroll.scrollLeft += STEP; };
+  // An arrow with nowhere to go is a lie about the interface: hidden unless the
+  // row really overflows, re-checked on scroll and on every repaint.
+  const paintArrows = () => {
+    const over = scroll.scrollWidth > scroll.clientWidth + 1;
+    left.hidden = !over || scroll.scrollLeft <= 0;
+    right.hidden = !over || scroll.scrollLeft + scroll.clientWidth >= scroll.scrollWidth - 1;
+  };
+  scroll.addEventListener('scroll', paintArrows);
+    // WATCH THE SCROLLER ITSELF. paintArrows only ever ran from paintTabs (a
+    // filter change) and from the onResize hook — and both compute BEFORE the
+    // browser applies the new width, so a narrowing panel left scrollWidth
+    // frozen against a collapsing clientWidth. Measured with People Here open,
+    // which is R's real layout: at 330px and below scrollWidth stayed 175
+    // while clientWidth fell to 31 — genuinely overflowing, both arrows still
+    // hidden, her tabs unreachable (R, 2026-09-11: "I shrunk it to get rid of
+    // the 'system' tab and there's no arrows visible to reach it"). A
+    // ResizeObserver fires AFTER layout on the element that actually changed.
+    if (typeof ResizeObserver === 'function') {
+      try { new ResizeObserver(() => paintArrows()).observe(scroll); } catch { /* older engine */ }
     }
-      scroll.appendChild(b);
+  bar.append(left, scroll, right);
+  const mk = (key, label, unread = 0, closable = false) => {
+  const b = document.createElement('button');
+  b.className = filter === key ? 'on' : '';
+    // A tab is a label plus (for DMs) a close glyph; the underline that marks
+    // the active one is CSS, on .chat-tabs button.on.
+    const lbl = document.createElement('span');
+    lbl.textContent = label + (unread ? ` ${unread}` : '');
+    b.append(lbl);
+  if (unread) b.classList.add('has-unread');
+  b.onclick = () => setFilter(key);
+  if (closable) {
+      // A VISIBLE CLOSE. Right-click already worked and announced itself
+      // only in a title attribute — R, 2026-09-11: "there should be a way of
+      // getting rid of extra tabs you don't want." Both routes now; the x
+      // stops propagation so closing never also selects the tab.
+      const x = document.createElement('span');
+      x.className = 'tabx'; x.textContent = '\u00d7';
+      x.title = `close ${key.slice(2)}`;
+      x.onclick = (e) => {
+        e.stopPropagation(); e.preventDefault();
+        convos.delete(key.slice(2));
+        if (filter === key) setFilter('all'); else paintTabs();
+      };
+      b.classList.add('has-x');   // the tab must MAKE ROOM for the glyph (see .has-x)
+      b.append(x);
+    b.oncontextmenu = (e) => {
+      e.preventDefault();
+      convos.delete(key.slice(2));
+      if (filter === key) setFilter('all'); else { paintTabs(); }
+    };
+    b.title = 'right-click to close this conversation';
+  }
+    scroll.appendChild(b);
   };
   mk('all', 'all');
   mk('mentions', 'mentions');
@@ -1157,27 +1152,27 @@ function paintTabs() {
   gear.setAttribute('aria-expanded', String(open));
   if (open) gearAnchor = gear;
   gear.onclick = (e) => { e.stopPropagation(); gearToggle?.(gear); };
-    bar.appendChild(gear);                     // the gear stays OUTSIDE the scroller — always reachable
-    paintArrows();
-    // KEEP THE ACTIVE TAB IN VIEW. Overflow was sacrificing the tab you are
-    // actually reading: R's screenshot shows `system| @H` — the open whisper
-    // clipped to two characters while `all` and `mentions` held the full left.
-    // R, 2026-09-11: "should probably always preferentially display the tab that
-    // it's on ... probably 'mentions' and 'all' fully off-screen."
-    const active = scroll.querySelector('button.on');
-    if (active) {
-      // after layout, or scrollWidth is still 0 and this is a no-op
-      // `inline: 'end'` only scrolls when the element is out of view on that side —
-        // a tab CLIPPED at the edge is partially visible, so it stayed clipped.
-        // R, 2026-09-11: "When I clicked on the 'system' tab just now when it was
-        // already slightly off screen, it didn't recenter to it being fully on
-        // screen". 'nearest' moves the minimum needed to make it whole.
-        const bring = () => active.scrollIntoView?.({ inline: 'nearest', block: 'nearest' });
-      bring();
-      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { bring(); paintArrows(); });
-    }
-    // the scroller has no measurable width until layout runs
-    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(paintArrows);
+  bar.appendChild(gear);                     // the gear stays OUTSIDE the scroller — always reachable
+  paintArrows();
+  // KEEP THE ACTIVE TAB IN VIEW. Overflow was sacrificing the tab you are
+  // actually reading: R's screenshot shows `system| @H` — the open whisper
+  // clipped to two characters while `all` and `mentions` held the full left.
+  // R, 2026-09-11: "should probably always preferentially display the tab that
+  // it's on ... probably 'mentions' and 'all' fully off-screen."
+  const active = scroll.querySelector('button.on');
+  if (active) {
+    // after layout, or scrollWidth is still 0 and this is a no-op
+    // `inline: 'end'` only scrolls when the element is out of view on that side —
+      // a tab CLIPPED at the edge is partially visible, so it stayed clipped.
+      // R, 2026-09-11: "When I clicked on the 'system' tab just now when it was
+      // already slightly off screen, it didn't recenter to it being fully on
+      // screen". 'nearest' moves the minimum needed to make it whole.
+      const bring = () => active.scrollIntoView?.({ inline: 'nearest', block: 'nearest' });
+    bring();
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { bring(); paintArrows(); });
+  }
+  // the scroller has no measurable width until layout runs
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(paintArrows);
 }
 
 // ---------------------------------------------------------------- typing

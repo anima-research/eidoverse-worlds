@@ -4,7 +4,8 @@
 // the key that fires it. The tile this bar fired stays lit ~1.5 s (long enough to read). House .tile/.tiles rules
 // only — no private layout here (live, 09-04: this file had been hand-rolled).
 
-import { makeFrame, allFrames } from './frames.js';
+import { makeFrame } from './frames.js';
+import { bus } from './base.js';
 import { EMOTE_ORDER, EMOTE_ICONS } from './avatar.js';
 import { getMe } from './mybody.js';
 import { registerXRPanel } from './xrpanels.js';
@@ -19,7 +20,6 @@ function posture(k) {
   else setPosture('lie');
 }
 let litEmote = null, litUntil = 0;   // net.js clears myState.emote on the first pose send, so the bar remembers its own
-import { bus } from './base.js';
 
 // emoji here are CONTENT (the gesture itself), not chrome — the fill-icon set
 // has no gesture glyphs beyond a wave; the def-hydrated EMOTE_ICONS table wins,
@@ -52,33 +52,6 @@ export function initEmoteBar() {
     // exposes for exactly this kind of rider.
     onResize: (w) => { clearTimeout(snapT); snapT = setTimeout(() => snapTo(w), 180); },
   });
-  // The bar is bottom-CENTRED and chat is bottom-LEFT: at a wide viewport they
-  // miss each other entirely, but as the viewport narrows the centred bar slides
-  // onto chat and lands on its composer. Two rects collide only when they overlap
-  // on BOTH axes, so lift only when they actually do.
-  const liftClear = () => {
-    const me = f.el?.getBoundingClientRect?.(); if (!me) return;
-    const others = allFrames()
-      .filter((o) => o !== f && o.el !== f.el && o.visible !== false)
-      .map((o) => o.el?.getBoundingClientRect?.())
-      .filter((r) => r && r.width);
-    const clearAt = (top) => !others.some((r) => me.left < r.right && r.left < me.right
-      && top < r.bottom && r.top < top + me.height);
-    // Walk UP past each blocker in turn. A single pass hops out of one collision
-    // straight into the next (the bar cleared chat and landed on the world panel
-    // at y=8). Bounded by the number of frames; if nothing is clear, STAY PUT —
-    // a bar the user can see and drag beats one parked somewhere arbitrary.
-    let top = me.top;
-    for (let i = 0; i <= others.length && !clearAt(top); i++) {
-      const blocker = others
-        .filter((r) => me.left < r.right && r.left < me.right && top < r.bottom && r.top < top + me.height)
-        .reduce((lo, r) => (lo == null || r.top < lo.top ? r : lo), null);
-      if (!blocker) break;
-      top = blocker.top - me.height - 8;
-      if (top < 8) { top = me.top; break; }        // no room above: leave it where it was
-    }
-    if (top !== me.top && clearAt(top) && f._state) { f._state.y = Math.max(8, top); f._paint?.(); }   // _paint, NOT _fit — _fit re-anchors a bottom-anchored frame and would erase the lift
-  };
 
   const snapTo = (w) => {
     // the emote list arrives async; snapping against an empty list clamped cols to the 3 postures and
@@ -104,7 +77,6 @@ export function initEmoteBar() {
     // through _fit, not _paint: a reflow to more rows can push the bar past the
     // bottom edge, and _paint alone skips every viewport clamp (#185 review).
     if (f._fit) f._fit(); else f._paint();
-    liftClear();   // AFTER the fit: fit() re-anchors a bottom-anchored frame (opts.y<0) and would undo it
   };
   // a saved size from an older layout (or any drift) refits the moment the menu opens
   const show = f.show.bind(f);

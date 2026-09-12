@@ -373,9 +373,8 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .chat-cols.side-left.side-closed .chat-side-tog { border-right-color: transparent; }   /* closed = no line, same as the right (live 09-07 10:55) */
 .chat-cols.side-left .chat-side-grip { left: auto; right: calc(-14px - 4px); }   /* mirror of the right: over the toggler's border line, not the pane's own edge (live, 09-06 23:34: 'the right behaviour is preferred') */
 .chat-tabs .chat-gear {
-  /* min-width:0 for the same reason .tabarrow needs it: `.chat-tabs button
-     { min-width: 62px }` matches the gear too, and a 62px gear ate strip space
-     that the tabs needed. Measured, not reasoned. */
+  /* min-width:0 because `.chat-tabs button`'s min-width matches the gear too,
+     and inheriting the tabs' floor made the gear eat strip space they needed. */
   /* LIFTED off the rail. With the strip bottom-aligned the gear sat level with
      the separator and crowded it — R, 2026-09-11 item 4: "Move the
      'Chat>Settings' icon up to be in line with the other tab icons so it
@@ -421,11 +420,10 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
      if there's no unicode to support something like that?)". icons.js carries
      NO caret/chevron/arrow glyph (checked, not assumed), so this stays unicode
      and gets the size instead. */
-  /* min-width:0 is LOAD-BEARING: `.chat-tabs button { min-width: 62px }` matches
-     these too, and .tabarrow never set min-width, so there was nothing to
-     override and the arrows rendered 62px wide. Measured in Chromium against the
-     real sheet (arrowW=62, flexGrow=0) — my specificity arithmetic said the
-     arrows were safe and it was wrong. */
+  /* min-width:0 is LOAD-BEARING: `.chat-tabs button`'s min-width matches these
+     too, and .tabarrow never sets one — so without this the arrows inherit the
+     tabs' floor and blow past their 16px width. Specificity does not save you
+     here: the two rules never compete for the same property. */
   /* IN LINE with the tab text, not shouting over it. 15px next to 11px labels
      read as a different kind of control — R, 2026-09-11 item 3: "Make the
      side-scroll arrows bigger if it's too small (in-line with the rest of the
@@ -437,12 +435,9 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .chat-tabs .tabarrow:hover { color: var(--fg); background: var(--hov); }
 .chat-tabs .tabarrow[hidden] { display: none; }
 .chat-tabs button {
-  /* .pf-tab's recipe, kept flex so the strip still shares width evenly and
-     still scrolls when it cannot. The 1px brand TICKS this replaces were never
-     a tab affordance: they crowded whatever sat to their left (R's screenshot:
-     `system|@Hesperus`) and the trailing one became a stray mark once the close
-     glyph moved beside it. An underline says "this pane belongs to this tab"
-     without needing any space of its own. */
+  /* .pf-tab's recipe, kept flex so the strip still shares width evenly and still
+     scrolls when it cannot. An underline says "this pane belongs to this tab"
+     without needing any horizontal space of its own. */
   /* `justify-content: center` centres the label+x pair AS A UNIT, so on a
      closable tab the glyph rode out past the padding box and vanished — R,
      2026-09-11 item 2: "Make sure the 'x' is also fully visible." Measured: the
@@ -450,22 +445,11 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
      Centring is right for the fixed tabs; a closable one needs the glyph to
      occupy real space, so .has-x switches to space-between and pays for it with
      a wider floor and room on the right. */
-  /* A TAB DOES NOT SHRINK BELOW ITS OWN LABEL. `flex: 1 1 0` let all three fixed
-     tabs squeeze into 181px, so the row NEVER overflowed — measured on the live
-     client at 545/400/330/280/240px: scrollWidth == clientWidth every time, so
-     paintArrows correctly found nothing to scroll and hid the arrows. R saw her
-     `system` tab vanish with no way to reach it (2026-09-11: "I shrunk it to get
-     rid of the 'system' tab and there's no arrows visible to reach it") — it was
-     never off-screen, it was being crushed. `flex: 0 0 auto` makes each tab its
-     natural width (all 58 · mentions 69 · system 58 = 185px), so a narrower
-     panel overflows the scroller and the arrows have somewhere to go. */
-  /* GROW to share the strip, but never SHRINK below the label. `flex: 1 1 0`
-     crushed three tabs into 181px so the row never overflowed and the arrows had
-     nothing to scroll; my first fix, `flex: 0 0 auto`, cured the crushing and
-     took the growing with it — R, 2026-09-11: "They're not being centered in the
-     Chat window anymore and remain small no matter how much space there is."
-     `min-width: max-content` is the floor that flex-basis 0 never gave us: the
-     tab may stretch into spare room and stops exactly at its own text. */
+  /* GROW to share the strip, but never SHRINK below the label — both halves at
+     once. A flex-basis of 0 crushes the tabs until the row cannot overflow and
+     the arrows have nothing to scroll; `flex: none` stops the crushing but also
+     stops them filling a wide strip. `min-width: max-content` is the floor that
+     flex-basis 0 never gave us: stretch into spare room, stop at the text. */
   flex: 1 1 auto; min-width: max-content; padding: 5px 9px 6px; font-size: var(--fs-xs);
   display: flex; align-items: center; justify-content: center; gap: 4px;
   /* THE UNDERLINE LIVES INSIDE THE BOX. `margin-bottom: -1px` hangs the border
@@ -473,7 +457,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
      CLIPS its children at the padding box, so the brand underline was cut off
      every time while the grey rail underneath showed through. Isolated it: same
      markup, same -1px, `overflow: auto` -> no underline, `overflow: visible` ->
-     underline. A 2px border with no overhang has nothing to clip.
+     underline. A border with no overhang has nothing to clip.
      R, 2026-09-11: "the tabs in the Profile panel have the highlight underneath,
      but the tabs in the Chat pane do not ... in which direction?" — hers, the
      Profile direction. */
@@ -816,7 +800,7 @@ body.arranging #dock #hud.emark {
 [data-presence="busy"] > .pf-portrait-dot::after, .pf-pop-dot[data-presence="busy"]::after { content: ''; position: absolute; left: 20%; right: 20%; top: 40%; bottom: 40%; background: rgb(var(--panel-rgb)); border-radius: 1px; }
 .pf-pop-dot { position: relative; }
 /* the Who panel's mark: the same fixed colours + shapes as the profile */
-.who-mark { position: relative; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #3ddc84; margin-right: 7px; flex: none; vertical-align: -1px; }
+.who-mark { position: relative; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #3ddc84; margin-right: 7px; flex: none; align-self: center; }   /* align-self, NOT vertical-align: the row is a flex container and vertical-align is inert there — measured 4.5px of lift, which is what R saw (2026-09-11: "they're a bit offset above in kind of an odd way") */
 .who-mark[data-presence="away"] { background: #f5b83d; border-radius: 2px; transform: rotate(45deg) scale(.85); }
 .who-mark[data-presence="busy"] { background: #ef5b5b; border-radius: 2px; }
 .who-mark[data-presence="busy"]::after { content: ''; position: absolute; left: 20%; right: 20%; top: 40%; bottom: 40%; background: rgb(var(--panel-rgb)); border-radius: 1px; }
@@ -828,7 +812,7 @@ body.arranging #dock #hud.emark {
 .pf-pop-row:hover { background: rgb(255 255 255 / .06); }
 .pf-pop-row.on { background: var(--well); color: var(--brand); font-weight: 600; }
 .pf-tabs { display: flex; gap: 2px; margin: 10px 0 8px; border-bottom: 1px solid var(--edge); }
-.pf-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px 7px; border: none; border-bottom: 1px solid transparent; background: none; color: var(--dim); font-size: var(--fs-sm); cursor: pointer; border-radius: 6px 6px 0 0; }   /* 2px INSIDE the box, same as the chat strip: one tab mechanism, not two (R, 2026-09-11: "Should we consolidate style here") */
+.pf-tab { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px 7px; border: none; border-bottom: 1px solid transparent; background: none; color: var(--dim); font-size: var(--fs-sm); cursor: pointer; border-radius: 6px 6px 0 0; }   /* INSIDE the box, same as the chat strip: one tab mechanism, not two (R, 2026-09-11: "Should we consolidate style here") */
 .pf-tab svg { opacity: .8; color: var(--icon); }          /* the section-head recipe: desaturated brand at .8 when idle (live, 09-05) */
 /* THE PROFILE TABS NEVER OPTED OUT OF THE GLOBAL BUTTON CHAIN, and it showed:
    measured with a real mouse hover, `.pf-tab:hover` painted NOTHING while
@@ -841,6 +825,7 @@ body.arranging #dock #hud.emark {
 .pf-tabs .pf-tab:hover { color: var(--fg); background: rgb(143 232 200 / .13); }
 .pf-tabs .pf-tab.on { color: var(--brand); border-bottom-color: var(--brand); background: var(--well); }
 .pf-tabs .pf-tab.on:hover { background: color-mix(in srgb, rgb(143 232 200 / .13) 45%, var(--well)); }
+.chat-tabs button.on:hover { background: color-mix(in srgb, rgb(143 232 200 / .13) 45%, var(--well)); }   /* the active tab BLENDS its hover with --well, same as .pf-tab.on:hover — without this the plain :hover replaced the pressed-in fill and the two strips diverged on hover alone */
 .pf-tab.on svg { opacity: 1; color: var(--brand); }
 .pf-pane { flex: 1; min-height: 0; overflow: auto; }
 .pf-stub { color: var(--dim); font-size: var(--fs-sm); padding: 10px 2px; line-height: 1.5; }   /* empty BY DESIGN, and says so — the .who-empty idiom (R, 2026-09-11) */
@@ -1088,7 +1073,6 @@ button.keybtn:active { box-shadow: inset 0 1px 3px rgb(0 0 0 / .6); }
 /* emote tiles are FIXED width and flow: widen the frame and they go to one
    line; the frame snaps to whole tiles on release (emotebar.js). Even gutters. */
 .tiles.fixed { grid-template-columns: repeat(auto-fill, 32px); grid-auto-rows: 32px; gap: 6px; justify-content: center; align-content: start; flex: none; padding: 0; }   /* 30 px buttons, 6 px gutters: 'bring back the buffers and put the buttons on a diet' (live 09-05 22:00) */
-.tiles.fixed .tile { padding: 0; align-items: center; justify-content: center; gap: 0; line-height: 1; overflow: visible; }   /* 32: the glyph's own size plus 4 px; gutters stay 6 (live 22:25) */   /* centred: any remainder splits evenly left/right; rows never stretch */
 .tile {
   position: relative; display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
   gap: 3px; padding: 12px 14px; border-radius: 9px;
@@ -1101,7 +1085,7 @@ button.keybtn:active { box-shadow: inset 0 1px 3px rgb(0 0 0 / .6); }
 .tile span { color: var(--dim); font-size: var(--fs-xs); }
 .tile .tile-glyph { font-size: 22px; line-height: 1; color: inherit; }   /* the gesture is content, drawn large */
 .tile kbd { position: absolute; top: 6px; right: 7px; font-size: var(--fs-xs); opacity: .6; }
-.tiles.fixed .tile { width: 32px; height: 32px; box-sizing: border-box; padding: 0; align-items: center; justify-content: center; border-radius: 7px; }
+.tiles.fixed .tile { width: 32px; height: 32px; box-sizing: border-box; padding: 0; align-items: center; justify-content: center; gap: 0; line-height: 1; overflow: visible; border-radius: 7px; }   /* 32: the glyph's own size plus 4 px; gutters stay 6 (live 22:25). Centred: any remainder splits evenly left/right; rows never stretch. */
 .tiles.fixed .tile .tile-glyph { font-size: 20px; }
 .tile .tile-word { font-size: var(--fs-xs); line-height: 1.1; padding: 0 3px; word-break: break-word; text-align: center; }   /* the fallback when the emoji does not render here */
 /* alt held = every frame is grabbable, and says so */
@@ -1211,8 +1195,7 @@ kbd {
 .capnotice b { display: inline; margin: 0; white-space: nowrap; }
 .capnotice p { margin: 0; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
 .capnotice .cn-btns { display: flex; gap: 6px; flex: none; }
-.capnotice .cn-btns button { padding: 2px 8px; font-size: var(--fs-xs); }
-.capnotice .cn-btns button { padding: 4px 10px; }
+.capnotice .cn-btns button { padding: 4px 10px; font-size: var(--fs-xs); }
 /* photo mode hides every chrome layer but keeps the canvas */
 body.photo .frame, body.photo #hud, body.photo #trayzone,
 body.photo #hintbar, body.photo #dock { display: none !important; }
