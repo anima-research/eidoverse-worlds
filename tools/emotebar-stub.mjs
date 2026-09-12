@@ -53,3 +53,12 @@ export const getMe = () => ({ playEmote: (n) => played.push(n) });
 // ---- xrpanels.js
 export const xrPanels = [];
 export function registerXRPanel(p) { xrPanels.push(p); }
+
+// ---- frames.js: chromeCost is RE-EXPORTED FROM THE REAL MODULE, not stubbed.
+// This suite drives the real emotebar.js against recorders, and roomFor()'s whole
+// job is the anchor arithmetic chromeCost() performs. A stubbed copy would make
+// every assertion a statement about THIS FILE rather than about the product.
+// The specifier is deliberately '../client/lib/...': emotebar-test's resolver
+// filter is `^\./frames\.js$`, anchored to a leading './', so this is not
+// rewritten back to the stub.
+export { chromeCost } from '../client/lib/frames.js';

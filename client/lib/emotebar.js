@@ -4,7 +4,7 @@
 // the key that fires it. The tile this bar fired stays lit ~1.5 s (long enough to read). House .tile/.tiles rules
 // only — no private layout here (live, 09-04: this file had been hand-rolled).
 
-import { makeFrame } from './frames.js';
+import { makeFrame, chromeCost } from './frames.js';
 import { bus } from './base.js';
 import { EMOTE_ORDER, EMOTE_ICONS } from './avatar.js';
 import { getMe } from './mybody.js';
@@ -109,12 +109,19 @@ export function initEmoteBar() {
   // both an `!== 'auto'` test and an edge-identity test. Re-raising the card requires
   // an anchor the obstacle DECLARES, not a test against its rendered geometry.
   const roomFor = () => {
-    // the chrome that shares the bar's y-band: the rail plus the mic/ear pair
-    let clearRight = 0;
+    // the chrome that shares the bar's y-band: the rail plus the mic/ear pair.
+    // ANCHOR-AWARE: chromeCost() (frames.js) reads each obstacle's DECLARED side and
+    // charges it to the correct accumulator. Taking g.right from everything was true
+    // only of left-anchored chrome.
+    let costL = 0, costR = 0;
     for (const sel of ['#dock', '#micbtn', '#earbtn', '.capnotice']) {
       const g = document.querySelector(sel)?.getBoundingClientRect();
-      if (g && g.width && g.top < 60 && g.bottom > 8) clearRight = Math.max(clearRight, g.right);
+      if (g && g.width && g.top < 60 && g.bottom > 8) {
+        const c = chromeCost(sel, g, innerWidth);
+        costL = Math.max(costL, c.left); costR = Math.max(costR, c.right);
+      }
     }
+    const clearRight = costL;
     // FLOOR AT ONE COLUMN — not a stand-down, and not a raw negative.
     //
     // WHY A FLOOR AT ALL: standing down is strictly worse, measured. At room=123 the
@@ -138,7 +145,7 @@ export function initEmoteBar() {
     // Math.max(48, Infinity) is Infinity and !Number.isFinite catches that too. That
     // is derived, not measured: no fixture sets innerWidth non-finite and removing
     // the guard leaves the suite green, so nothing in-repo exercises the path.
-    const room = innerWidth - 8 - Math.max(clearRight + 8, 8);
+    const room = innerWidth - 8 - Math.max(clearRight + 8, 8) - costR;   // right-anchored chrome eats from the RIGHT
     if (!Number.isFinite(room)) return null;   // keep the width rather than paint NaN
     return Math.max(widthFor(1), room);
   };

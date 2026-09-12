@@ -635,20 +635,34 @@ export function makeFrame(id, opts = {}) {
       // buttons until it has laid out.
       const chromeSettled = (document.querySelector('#dock')?.querySelectorAll('button[data-toggles]').length ?? 0) > 0;
       if (!placed && chromeSettled) {
-        let clearRight = 0;
-        // .capnotice is fixed chrome too (position:fixed, z-index 60) and it steals
-        // controls at narrow widths — the same bug class this rule exists for, one
-        // component over. Named by the agent review; measured stealing a tile at 280px.
+        // ANCHOR-AWARE (antra-tess #185 B2). Each obstacle is charged to the side it
+        // is welded to, via its DECLARED anchor — the one thing computed style cannot
+        // supply. `.capnotice` is right-anchored and was being read as left-consuming,
+        // which is what drove `avail` to -6 and floored a 407px frame to its 210 minW.
+        let clearRight = 0, clearFromRight = 0;
         for (const sel of ['#dock', '#micbtn', '#earbtn', '.capnotice']) {
           const g = document.querySelector(sel)?.getBoundingClientRect();
           if (g && g.width && g.left < state.x + state.w && state.x < g.right
               && g.top < state.y + hh && state.y < g.bottom) {
-            clearRight = Math.max(clearRight, g.right);
+            const c = chromeCost(sel, g, innerWidth);
+            clearRight = Math.max(clearRight, c.left);
+            clearFromRight = Math.max(clearFromRight, c.right);
           }
         }
-        if (clearRight) {
+        if (clearRight || clearFromRight) {
           const shifted = Math.round(clearRight + 8);
-          if (shifted + state.w <= innerWidth - 8) {
+          if (!clearRight) {
+            // Right-side chrome only: do NOT shift left (that slams a right-anchored
+            // frame to x=8). Shrink from the frame's own right edge and re-seat it
+            // against its declared side.
+            // The span available to this frame is the viewport less both margins
+            // less the right-side chrome. NOT `- state.x` as well: that subtracts the
+            // frame's own left offset on top of the chrome, double-counting the same
+            // span (at 1280 with x=865 it gave 77, flooring a 407px frame to minW).
+            const avail = innerWidth - 16 - clearFromRight;
+            if (avail < state.w) state.w = Math.max(Math.min(avail, maxW), Math.min(minW, maxW));
+            state.x = Math.max(8, innerWidth - 8 - clearFromRight - state.w);
+          } else if (shifted + state.w <= innerWidth - 8) {
             state.x = shifted;
           } else {
             // OPEN, NOT FIXED — right-anchored chrome is mis-costed here.
@@ -674,7 +688,7 @@ export function makeFrame(id, opts = {}) {
             // values — measured — but .capnotice is over-constrained only below
             // 900px, so detection would work in one of three states. Useless.)
             // Changing the layout contract is the owner's call, not a patch.
-            const avail = innerWidth - 8 - shifted;
+            const avail = innerWidth - 8 - shifted - clearFromRight;
             state.w = Math.max(Math.min(avail, maxW), Math.min(minW, maxW));
             state.x = shifted;
           }
@@ -685,6 +699,50 @@ export function makeFrame(id, opts = {}) {
   }
 
   return api;
+}
+
+// ── DECLARED ANCHORS ──────────────────────────────────────────────────────────
+// Which side of the viewport a piece of fixed chrome is welded to. DATA, not an
+// inference, because the platform will not tell us: CSSOM §9 resolves BOTH `left`
+// and `right` to used pixel values for a positioned element, so the authored side
+// is gone by the time getComputedStyle can be asked. Measured at 1280x800 — an
+// element declaring only `right:10px` reports `left:"950px"`; `inset-inline-end`
+// behaves identically. (One exemption: an OVER-constrained element, declaring both
+// sides, does report the authored values. `.capnotice` is over-constrained only
+// below 900px, so detection would work in one of its three states — useless.)
+//
+// This is what every layout system worth copying does: RectTransform.anchorMin/Max,
+// Auto Layout's leadingAnchor, Qt/WPF alignment. Geometry is layout's output, never
+// its input.
+//
+// LTR only, stated as a real limit: under `dir=rtl` a logical `inset-inline-end`
+// resolves to physical `left`, so these sides would need to flip.
+const CHROME_ANCHOR = {
+  '#dock':      (el) => el?.dataset.edge || 'left',    // dynamic: ui.js applyDockEdge
+  '#micbtn':    (el) => el?.dataset.edge || 'left',    // hangs off the rail, follows its edge
+  '#earbtn':    (el) => el?.dataset.edge || 'left',
+  '.capnotice': (el) => el?.dataset.anchor || 'right', // capnotice.js, from the CSS breakpoint
+};
+
+// What a piece of chrome costs a frame, per side of the horizontal axis.
+//
+// A LEFT-anchored obstacle consumes from the left edge inward  -> its right edge.
+// A RIGHT-anchored one consumes from the right edge inward     -> width + its gap.
+//   NOT `extent - g.left`: that carries `extent` into the result, so
+//   room = extent - 16 - (extent - left) cancels the viewport and yields a constant.
+// STRETCH declares both sides and is charged to both.
+// TOP/BOTTOM is welded to a horizontal edge, which says nothing about the
+//   horizontal axis — a rail at [10..304] along the top is genuinely LEFT-positioned
+//   there. So it falls through to the positional test rather than costing zero.
+//   Returning {0,0} for it was the bug that put an emote tile under a top-docked
+//   rail at 844x390 ("sit" covered by #dock, the corpus row-33 witness).
+export function chromeCost(sel, g, extent) {
+  const el = document.querySelector(sel);
+  let a = CHROME_ANCHOR[sel]?.(el) ?? 'left';
+  if (a === 'top' || a === 'bottom') a = (g.left + g.right) / 2 < extent / 2 ? 'left' : 'right';
+  if (a === 'stretch') return { left: g.right, right: g.width + Math.max(0, extent - g.right) };
+  if (a === 'right')   return { left: 0,       right: g.width + Math.max(0, extent - g.right) };
+  return { left: g.right, right: 0 };
 }
 
 function resolveAnchor(v, size, extent) {

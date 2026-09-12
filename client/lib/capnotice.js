@@ -17,7 +17,18 @@ function dismissed() { try { return new Set(JSON.parse(localStorage.getItem(LS) 
 function show(key, title, body) {
   const seen = dismissed();
   if (seen.has(key)) return;
-  if (!card) { card = document.createElement('div'); card.className = 'panel capnotice'; document.body.appendChild(card); }
+  if (!card) {
+    card = document.createElement('div'); card.className = 'panel capnotice';
+    // DECLARE THE ANCHOR, driven by the SAME breakpoint the stylesheet uses. The card
+    // is right-anchored (`right:10px`) above 900px and STRETCHED below it (`left:50px;
+    // right:8px`), and computed style cannot tell those apart — both report used
+    // pixels. matchMedia keeps ONE condition rather than a second copy of the number,
+    // so index.html stays the source of truth for where the breakpoint is.
+    const mq = matchMedia('(max-width: 900px)');
+    const setAnchor = () => { card.dataset.anchor = mq.matches ? 'stretch' : 'right'; };
+    setAnchor(); mq.addEventListener('change', setAnchor);
+    document.body.appendChild(card);
+  }
   if (card.querySelector(`[data-key="${CSS.escape(key)}"]`)) return;
   const item = document.createElement('div');
   item.className = 'cn-item'; item.dataset.key = key;
