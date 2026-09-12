@@ -12,6 +12,8 @@ export const WEBGL = {
 };
 
 let card = null;
+let setAnchor = null;   // the matchMedia handler, live only while a card exists
+let unwatch = null;     // its teardown, run when the last item is dismissed
 function dismissed() { try { return new Set(JSON.parse(localStorage.getItem(LS) || '[]')); } catch { return new Set(); } }
 
 function show(key, title, body) {
@@ -25,8 +27,15 @@ function show(key, title, body) {
     // pixels. matchMedia keeps ONE condition rather than a second copy of the number,
     // so index.html stays the source of truth for where the breakpoint is.
     const mq = matchMedia('(max-width: 900px)');
-    const setAnchor = () => { card.dataset.anchor = mq.matches ? 'stretch' : 'right'; };
+    // GUARD, AND A TEARDOWN. `setAnchor` closes over the module-level `card`, which
+    // close() sets to null when the last item goes — so a viewport crossing after a
+    // dismissal threw `Cannot read properties of null (reading 'dataset')` in the live
+    // page (agent review round 1; reproduced in Chromium: show at 1280, dismiss, 700).
+    // The subscription also outlived its card — every show() built a fresh one and
+    // subscribed again, leaking one listener per show/dismiss cycle.
+    setAnchor = () => { if (card) card.dataset.anchor = mq.matches ? 'stretch' : 'right'; };
     setAnchor(); mq.addEventListener('change', setAnchor);
+    unwatch = () => { mq.removeEventListener('change', setAnchor); setAnchor = null; unwatch = null; };
     document.body.appendChild(card);
   }
   if (card.querySelector(`[data-key="${CSS.escape(key)}"]`)) return;
@@ -35,7 +44,7 @@ function show(key, title, body) {
   item.innerHTML = '<b></b><p></p><div class="cn-btns"><button class="cn-ok">got it</button><button class="cn-never">don’t show again</button></div>';
   item.querySelector('b').textContent = title;
   item.querySelector('p').textContent = body;
-  const close = () => { item.remove(); if (card && !card.childElementCount) { card.remove(); card = null; } };
+  const close = () => { item.remove(); if (card && !card.childElementCount) { card.remove(); card = null; unwatch?.(); } };
   item.querySelector('.cn-ok').onclick = close;
   item.querySelector('.cn-never').onclick = () => { try { seen.add(key); localStorage.setItem(LS, JSON.stringify([...seen])); } catch {} close(); };
   card.appendChild(item);

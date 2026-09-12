@@ -593,6 +593,24 @@ export function makeFrame(id, opts = {}) {
     // measurable state (offsetHeight 0), so anything behind that guard never runs on
     // the creation path — which is exactly where a restored oversized layout lands.
     const maxW = Math.max(80, innerWidth - 16);
+    // RE-DERIVE BEFORE CLAMPING, for a frame the owner has not placed. The clamp
+    // below is a RATCHET — `Math.min(state.w, maxW)` can only ever shrink — so a
+    // width narrowed by one viewport's chrome was carried into every later one.
+    // Measured on a phone, rotating portrait -> landscape -> portrait: chat went
+    // 344 -> 240 -> 240, landing at x=112 instead of 8, with `saved: null` the
+    // whole time. Nothing was persisted; the live value simply never grew back.
+    // The owner's rule: "if a user saves a layout on a bigger screen, shrinks it,
+    // then expands it again without touching any panel, it should be identical."
+    // Store intent, derive presentation — the declared size IS the intent, and a
+    // frame that has never been dragged or resized has no other claim on a width.
+    // WIDTH ONLY, deliberately. `emotes` is the one frame that declares a height
+    // without a width ({x:'center', y:10, h:32}) — and its height is DERIVED, not
+    // declared: heightFor(cols) = rowsFor(cols)*ROW_H + gaps (emotebar.js:37). The
+    // 32 is a one-row seed, so re-asserting it every pass fought the bar's own row
+    // computation, reflowed it wider, and slid keys 4-6 under the right-hand chrome
+    // — boot-check@390x844 went red on "point/salute/clap covered". Width is a
+    // standing intent; the bar's height is a computed consequence.
+    if (!placed && opts.w != null) state.w = opts.w;
     state.w = Math.max(Math.min(state.w, maxW), Math.min(minW, maxW));
     const hh = root.offsetHeight;
     if (!hh) return;                       // the constructor paints right after this call

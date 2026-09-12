@@ -278,6 +278,16 @@ function placeMic() {
   // hang off the ∃ ALONG its own edge (the rail's line continues through
   // them); fold perpendicular only when a corner leaves no room
   const edge = document.getElementById('dock')?.dataset.edge || 'left';
+  // PUBLISH IT. frames.js CHROME_ANCHOR reads `dataset.edge` off these buttons to
+  // charge them to the correct side, and nothing ever wrote it — the map entry, the
+  // consumer and a comment claiming the behaviour all existed, with no producer, so
+  // `|| 'left'` won unconditionally. Invisible at the default left dock; measured at
+  // 1280x720 with the rail dragged RIGHT, a 26px glyph welded 44px off the right edge
+  // was charged 1236px of LEFT consumption and floored world from its declared 407 to
+  // 200 (agent review round 1). Correct in BOTH placement branches below: stacked
+  // along the rail the glyph sits on the rail's edge, and folded round the corner it
+  // sits inboard of the rail — still consuming from that same side.
+  for (const b of [micBtn, earBtn, xrBtn]) if (b) b.dataset.edge = edge;
   const cx = Math.round(r.left + (r.width - 26) / 2);
   const cy = Math.round(r.top + (r.height - 26) / 2);
   const pos = (b, x, y) => { b.style.left = x + 'px'; b.style.top = y + 'px'; b.style.right = b.style.bottom = ''; };
