@@ -68,6 +68,7 @@ try {
     return { panels: document.querySelectorAll('.sec').length, engine: !!globalThis.__ewEngineUp,
       splashGone: !sp || sp.classList.contains('gone'), splashDisplay: sp ? getComputedStyle(sp).display : 'none',
       phase: sp?.querySelector('.sp-phase')?.textContent ?? null, raysHandle: !!globalThis.__raysWorker, raysStarted: globalThis.__raysStarted === true,
+      raysAck: globalThis.__raysAck === true, raysNoGl: globalThis.__raysNoGl === true,
       backend: globalThis._r?.backend ? (globalThis._r.backend.isWebGLBackend ? 'webgl' : 'webgpu') : null, xrEnabled: !!globalThis._r?.xr?.enabled,
       tolerance: !!globalThis.__renderListTolerance, xrShadow: globalThis.__xrShadowPatched === true, raysCanvas: !!document.querySelector('#splash .sp-rays'),
       hasBody: !!globalThis.EW?.me?.(),
@@ -240,9 +241,18 @@ try {
   // the 250ms handle poll and is true on a normal run, so `!raysSeen && !started`
   // never consulted __raysStarted — the very flag added for B4 carried nothing
   // and could have been deleted with CI green until the sampling race recurred.
-  if (s.raysCanvas) { if (!s.raysStarted) { fail('.sp-rays canvas present but __raysStarted was never set (the cumulative receipt B4 added)'); }
-    if (!raysSeen && !s.raysStarted) { fail('.sp-rays canvas present but the rays worker never started'); }
-    if (s.raysHandle) { fail('the rays worker handle is still advertised after boot (stopRays did not release it)'); } rays = 'rays seen+released'; }
+  // 2026-09-12, antra-tess #185 exact-head rereview B4: __raysStarted is set by the MAIN thread on the
+  // line after new Worker(), and constructing a Worker whose module fails to parse does NOT throw
+  // synchronously — so appending invalid JS to the real worker left this green. The receipt is now
+  // WORKER-ORIGINATED: splashrays.worker.js posts {type:'ready'} after its first real drawArrays.
+  // Three outcomes are kept apart: ACK (it drew and said so) / NOGL (it reached us and declined —
+  // a legitimate fallback, not a failure) / SILENCE (neither: broken module, or a suppressed ack) = RED.
+  // __raysStarted is KEPT and still asserted: it fixed a real sampling race (the transient handle was
+  // polled at 250 ms and missed workers that started and finished between samples — 2 of 8 owned runs).
+  if (s.raysCanvas) { if (!s.raysStarted) { fail('.sp-rays canvas present but __raysStarted was never set (main never reached the start block)'); }
+    if (!s.raysAck && !s.raysNoGl) { fail('.sp-rays canvas present but the worker never acknowledged: no first-frame ready and no nogl — a broken worker or a suppressed ack looks exactly like this'); }
+    if (s.raysHandle) { fail('the rays worker handle is still advertised after boot (stopRays did not release it)'); }
+    rays = s.raysAck ? 'rays acked+released (worker-originated)' : 'rays nogl fallback (worker declined, canvas hidden)'; }
   else rays = 'rays DORMANT (no .sp-rays canvas at this rung)';
   // THE LIVE RESIZE PHASE (antra-tess #185 rereview B1, required by name).
   // "boot-check.mjs starts at one fixed viewport and never changes it" — so the

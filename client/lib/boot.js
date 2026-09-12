@@ -230,7 +230,13 @@ export function startRays(el) {
     cv.width = cv.clientWidth; cv.height = cv.clientHeight;
     const off = cv.transferControlToOffscreen();
     raysWorker = new Worker(new URL('./splashrays.worker.js', import.meta.url), { type: 'module' });
-    raysWorker.onmessage = (e) => { if (e.data?.type === 'nogl') { cv.style.display = 'none'; stopRays(); } };
+    // Three outcomes, kept distinct (antra-tess #185 B4 rereview): ACK = the worker drew a frame
+    // and said so; NOGL = it reached us and declined (legitimate fallback); silence = neither.
+    raysWorker.onmessage = (e) => {
+      const t = e.data?.type;
+      if (t === 'ready') { globalThis.__raysAck = true; return; }
+      if (t === 'nogl') { globalThis.__raysNoGl = true; cv.style.display = 'none'; stopRays(); }
+    };
     raysWorker.postMessage({ type: 'init', canvas: off, calm }, [off]);
     raysResize = () => raysWorker?.postMessage({ type: 'size', w: cv.clientWidth, h: cv.clientHeight });
     addEventListener('resize', raysResize);
