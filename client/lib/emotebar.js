@@ -136,8 +136,12 @@ export function initEmoteBar() {
     // [616,10,48,350]; standing down instead looked like inertness. Measured, the
     // stand-down is strictly worse: at room=123 the bar keeps 352 and paints 229px
     // UNDER #micbtn/#earbtn, at room=48 it is 304px under, at room=-6 it is 358px
-    // under. Frames cap at Z_HI=25 and BOTH glyphs sit at z-index 45 (mictoggle.js
-    // :250 and :254 — 27 is #dock, a different element), so those tiles
+    // under. Frames cap at Z_HI=25 and every element this loop measures outranks
+    // them: #dock 27 (index.html), #micbtn/#earbtn 45 (mictoggle.js:250/:254),
+    // .capnotice 60 (index.html, and frames.js:655 says so too). An earlier version
+    // of this comment said "27/45", which was wrong about the glyphs; the version
+    // after it named three of the four and still omitted .capnotice — the one
+    // element this whole finding was about. So those tiles
     // are unpressable — the exact report this clamp exists for ("Make sure the
     // emote bar isn't under the mic or headphones"). A bar that looks wrong is
     // reachable; a bar under the glyphs is not.
@@ -151,14 +155,26 @@ export function initEmoteBar() {
     // wider than its room, just less visibly. Flooring turns "much too wide" into
     // "slightly too wide"; it is not a reachability guarantee. Saying "the only
     // value that must never reach snapTo is a NEGATIVE one" was wrong: (0,48) is
-    // equally unsafe. What rescues the ordinary case is frames.js fit(), which
-    // shifts a default-placed frame to `shifted` when it fits; the residue is the
-    // viewport where it does not fit, and that is disclosed, not solved.
+    // equally unsafe. frames.js fit() shifts a default-placed frame to `shifted`
+    // while that fits, and otherwise runs its OWN floor on the same arithmetic --
+    // not a second mechanism. Two boundaries, computed here rather than guessed
+    // (clearRight 102 -> shifted 110, bar 352):
+    //   iw 1280 -> SHIFT, x=110              iw 400 -> FLOOR, avail 282, w=282  (fits)
+    //   iw 200  -> FLOOR, avail  82, w= 82   iw 150 -> FLOOR, avail  32, w= 48  (over)
+    // So the floor branch engages at about 400px -- a real phone width, not an
+    // exotic one -- but it still produces a bar that FITS down to about 156px,
+    // where avail drops under widthFor(1). Only below that is the bar wider than
+    // its room. A review put both boundaries at "~180px, below any real phone";
+    // that conflates them and is wrong in both directions. frames.js:690 marks
+    // that branch OPEN.
     //
-    // NaN is handled explicitly because the previous policy handled it by accident
-    // and this one does not: `NaN >= n` is false, so returning null kept the width,
-    // whereas Math.max(48, NaN) is NaN and snapTo(NaN) writes NaN into _state.w/h
-    // and paints it. A lost guard, restored deliberately.
+    // NON-FINITE is handled explicitly because the previous policy handled it by
+    // accident and this one does not: `NaN >= n` is false, so returning null kept
+    // the width, whereas Math.max(48, NaN) is NaN and snapTo(NaN) writes NaN into
+    // _state.w/h and paints it. A lost guard, restored deliberately.
+    // It is a FINITENESS guard, not a NaN guard — measured, it also catches
+    // +/-Infinity (innerWidth=Infinity keeps w=352 with it, and the hazard is the
+    // same shape). Earlier comments here called it NaN-only; that undersold it.
     const room = innerWidth - 8 - Math.max(clearRight + 8, 8);
     if (!Number.isFinite(room)) return null;   // keep the width rather than paint NaN
     return Math.max(widthFor(1), room);
@@ -170,8 +186,9 @@ export function initEmoteBar() {
   // were reachable: "Make sure the emote bar isn't under the mic or headphones."
   // Both hold if the clamp keeps its hands off a saved WIDTH and still refuses to
   // paint the bar beneath #micbtn/#earbtn/#dock. Frames cap at Z_HI=25 and that
-  // chrome sits at 27 (#dock) and 45 (#micbtn/#earbtn, mictoggle.js:250/:254), so
-  // a bar left there can never win by stacking.
+  // chrome sits at 27 (#dock), 45 (#micbtn/#earbtn, mictoggle.js:250/:254) and 60
+  // (.capnotice) — the loop measures all four — so a bar left there can never win
+  // by stacking. (#emenu 40 and #trayzone 28 are not in the list at all.)
   f.show = () => {
     show();
     const room = f._placed ? null : roomFor();

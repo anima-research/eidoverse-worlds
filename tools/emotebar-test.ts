@@ -126,11 +126,21 @@ console.log('EMOTEBAR — B2: a clamp that cannot help stands down (antra-tess #
   // getBoundingClientRect edges, and no path I can construct makes either NaN, so
   // the guard is unreachable today and asserting it would be writing a test for a
   // state the product cannot enter.
+  //
+  // TWO MORE UNBOUND LINES, named rather than left looking tested (round 4):
+  //   `g && g.width &&` in the obstacle loop — dropping the width guard leaves 35/0,
+  //     because no fixture supplies a zero-width rect.
+  //   any change to `clearRight` that only INCREASES consumption — e.g. +400 leaves
+  //     35/0, because the narrow-room assertion is a `<=` bound and over-clamping
+  //     satisfies it. Only under-clamping is caught.
+  // Both measured at this head. They are cheap to bind and are not bound; a reader
+  // should not infer coverage from this block's green.
 
   // THE WINDOW THE STAND-DOWN ABANDONED. Room 123 is too small for the 352px
   // default but large enough for a real bar; standing down left 352 and painted
-  // 229px under #micbtn/#earbtn, whose z-index (27/45) beats any frame (Z_HI=25),
-  // so those tiles were unpressable. Clamping puts every tile in clear space.
+  // 229px under #micbtn/#earbtn, whose z-index (45 both; #dock is 27, .capnotice
+  // 60) beats any frame (Z_HI=25), so those tiles were unpressable. Clamping puts
+  // every tile in clear space.
   document.body.innerHTML = '';
   const narrow = mk('#dock', 0, 1141, 10, 304);
   f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
@@ -155,10 +165,29 @@ console.log('EMOTEBAR — B2: a clamp that cannot help stands down (antra-tess #
   check('...and the same card raised into the row DOES consume it — the list entry is live',
     f._state.w < 352, `w=${f._state.w} — if .capnotice were dropped from the list this stays 352`);
   below.remove();
-  // NOT innerHTML='' — that orphans the stub frame element too (emotebar-stub
-  // appends it to body) and the loop below only restores the chrome, leaving any
-  // later assertion measuring a detached tree. Remove what this block added.
+  // Remove only what this block added. NOTE, corrected after round 4 measured it:
+  // an earlier version of this comment claimed the `el !== f.el` guard prevents
+  // orphaning the stub's frame element. It does not — `f.el` is ALREADY detached
+  // here, orphaned by the `document.body.innerHTML = ''` calls earlier in this
+  // block (instrumented: connected=true at init, false after the first one). The
+  // guard is inert and the suite only passes because the stub holds `f.body` by
+  // reference rather than reading the live document. Left in place as a cheap
+  // correctness floor if the stub ever grows real geometry, but it is not the
+  // protection the old comment advertised.
   for (const el of [...document.body.children]) if (!made.includes(el as any) && el !== f.el) el.remove();
+  for (const el of made) if (!el.isConnected) document.body.append(el);
+
+  // THE NEVER-WIDEN HALF, bound. Round-4 review: replacing `Math.min(f._state.w,
+  // room)` at the show() call site with bare `room` left this suite 35/0, because
+  // no fixture presented a room WIDER than the saved width. The clamp must only
+  // ever narrow: a bar saved at 86px must not be inflated to fill 1162px of clear
+  // space just because the chrome moved.
+  document.body.innerHTML = '';
+  mk('#dock', 0, 42, 10, 304);
+  f._state.w = widthFor(2); f._state.h = heightFor(2); (f as any)._placed = false; f.show();
+  check('a saved narrow bar is never WIDENED to fill the room available',
+    f._state.w === widthFor(2), `w=${f._state.w} — bare room would give widthFor(9)=352`);
+  for (const el of [...document.body.children]) if (el !== f.el) el.remove();
   for (const el of made) if (!el.isConnected) document.body.append(el);
 
   // a hand-placed bar is never measured against chrome at all

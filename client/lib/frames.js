@@ -635,7 +635,8 @@ export function makeFrame(id, opts = {}) {
       // the emote bar. Measured at 360x780: world [8,8,352,381], debug
       // [8,8,350,471] and profile [8,46,352,526] all sat across the rail, and
       // world/debug across the mic/ear pair too. Four frames; I had "fixed" one.
-      // Frames cap at Z_HI=25 while that chrome is 27/45, so a frame left
+      // Frames cap at Z_HI=25 while that chrome is 27 (#dock), 45 (#micbtn and
+      // #earbtn both) and 60 (.capnotice, per :655), so a frame left
       // underneath cannot win by stacking - it has to be placed or sized clear.
       //
       // Gated on `placed`: true once the owner has dragged or resized this frame,
