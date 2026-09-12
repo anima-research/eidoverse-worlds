@@ -307,6 +307,38 @@ function fitsDefaults() {
   return innerWidth - 16 >= Math.max(widest, sideBySide, centredRow) && innerHeight - 16 >= tallest + bar;
 }
 
+// ?layoutdebug=1 — report what THIS device sees once frames have fitted. Three
+// rounds of the chat-indent bug were diagnosed by counting pixels in a JPEG of a
+// phone screenshot, because nothing reported from that side. One readout ends it.
+if (typeof location !== 'undefined' && /(^|[?&])layoutdebug=1(&|$)/.test(location.search)) {
+  addEventListener('load', () => {
+    setTimeout(() => {
+      const R = (sel) => {
+        const e = document.querySelector(sel);
+        if (!e) return sel + ': absent';
+        const q = e.getBoundingClientRect();
+        return sel + ': [' + [q.x, q.y, q.right, q.bottom].map(Math.round).join(',') + ']'
+          + ' styleLeft=' + (e.style && e.style.left ? e.style.left : '(unset)');
+      };
+      const fr = [...document.querySelectorAll('.frame')]
+        .filter((f) => getComputedStyle(f).display !== 'none')
+        .map((f) => {
+          const q = f.getBoundingClientRect();
+          const t = (f.querySelector('.fr-title') || {}).textContent || f.id || '?';
+          return t.trim() + ' [' + [q.x, q.y, q.right, q.bottom].map(Math.round).join(',') + ']';
+        });
+      const msg = ['viewport ' + innerWidth + 'x' + innerHeight + ' @dpr' + devicePixelRatio,
+        R('#dock'), R('#micbtn'), R('#earbtn')].concat(fr).join('\n');
+      const box = document.createElement('pre');
+      box.style.cssText = 'position:fixed;left:4px;top:4px;z-index:9999;background:rgba(0,0,0,.85);color:#0f0;font:11px monospace;padding:6px;white-space:pre;max-width:96vw;overflow:auto';
+      box.textContent = msg;
+      box.onclick = () => box.remove();
+      document.body.appendChild(box);
+      console.log('[layoutdebug]\n' + msg);
+    }, 2500);
+  });
+}
+
 export function makeFrame(id, opts = {}) {
   if (frames.has(id)) return frames.get(id);
   opts = { ...opts, ...(DEFAULT_LAYOUT[id] ?? {}) };
