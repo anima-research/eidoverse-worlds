@@ -55,6 +55,15 @@ run boot-check.mjs
 BOOT_CHECK_VIEWPORT=800x700 run boot-check.mjs
 BOOT_CHECK_VIEWPORT=1280x720 BOOT_CHECK_RESIZE_TO=390x844 run boot-check.mjs
 BOOT_CHECK_VIEWPORT=844x390 BOOT_CHECK_TOUCH=1 run boot-check.mjs
+# 1024x800 is NOT here for the same reason as 390x844: it fails today, and the
+# defect PREDATES this branch — bef5311 (the head of the 05:32Z review) fails
+# identically with `emotes [336,10,688,56] x world [609,8,1016,381]`. Cause:
+# fitsDefaults sums chat(545)+world(407)=952 for the side-by-side test but
+# EXCLUDES emotes, whose x is 'center' rather than a number — so a 352px centred
+# strip is never counted. Below ~968 the predicate hides the bar and saves us;
+# above ~1192 the geometry separates on its own; 1000-1100 is unprotected and no
+# receipt or corpus row sat between 900 and 1200. Enable this line with the fix.
+#BOOT_CHECK_VIEWPORT=1024x800 run boot-check.mjs
 run mic-hud-probe.mjs
 run mic-meter-states.mjs
 run panel-teardown-probe.mjs
