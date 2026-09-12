@@ -44,6 +44,17 @@ echo "── owned live-door ──"
 run door-cap-gate-live-test.mjs
 echo "── owned real-browser ──"
 run boot-check.mjs
+# THE VIEWPORT MATRIX, actually run (antra-tess #185). The knobs existed and no
+# command exercised them, so the resize phase and the chrome/occlusion check were
+# capabilities rather than receipts — the same gap as a corpus row nothing applies.
+# 390x844 is deliberately NOT here: it fails today on a disclosed defect —
+# "stand" covered by #earbtn — that needs an owner layout call (wrap the bar
+# narrower, or move the mic/ear pair). Wiring a known-red command into the
+# shared receipts script would block unrelated cutovers; the defect is carried
+# by the PR body and by a corpus row instead. Restore this line when it passes.
+BOOT_CHECK_VIEWPORT=800x700 run boot-check.mjs
+BOOT_CHECK_VIEWPORT=1280x720 BOOT_CHECK_RESIZE_TO=390x844 run boot-check.mjs
+BOOT_CHECK_VIEWPORT=844x390 BOOT_CHECK_TOUCH=1 run boot-check.mjs
 run mic-hud-probe.mjs
 run mic-meter-states.mjs
 run panel-teardown-probe.mjs
