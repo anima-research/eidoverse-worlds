@@ -28,6 +28,7 @@ const GLYPH = { wave: '👋', cheer: '🙌', dance: '💃', point: '👉', salut
 
 export function initEmoteBar() {
   // geometry the CSS owns too: .tiles.fixed → 68px tiles, 6px gap, 8px body pad
+  const MIN_USABLE_COLS = 3;   // below this the bar is a column, not a bar — the clamp stands down
   const TILE = 32, GAP = 6, PAD = 7, ROW_H = 32;   // 09-05 22:00: slim buttons, real gutters — must match .tiles.fixed in index.html   // glyph-only tiles; name + key are the tooltip (live, 09-04)
   const widthFor = (cols) => cols * TILE + (cols - 1) * GAP + PAD * 2 + 2;   // +2: frame edges
   const POSTURE_TILES = 3;   // sit / stand / lie lead the grid (live, 09-05) — they count toward the rows
@@ -90,38 +91,50 @@ export function initEmoteBar() {
   // should honor that." _placed is true once the owner has dragged or resized the
   // frame (frames.js:386, persisted in state), so a hand-sized bar keeps its size
   // and this clamp does nothing.
-  // DIRECTION MATTERS (antra-tess #185 rereview B2, 2026-09-12). The loop below used
-  // to take g.right of every obstacle and treat it as "space consumed from the left".
-  // That is only true of LEFT-anchored chrome. `.capnotice` is right-anchored
-  // (`right: 10px`, measured live as cssRight "10px"), so its g.right is ~innerWidth
-  // and the old arithmetic returned innerWidth - 8 - (innerWidth - 10 + 8) = -6.
-  // Math.min(352, -6) then fed snapTo a negative width and the 9-across bar reflowed
-  // into a 48x350 column on re-show — measured [464,10,352,46] -> [616,10,48,350],
-  // which is exactly the flip in the rereview. First paint escaped only because
-  // line ~149 takes the unclamped path.
+  // B2 (antra-tess #185 rereview, 2026-09-12), RE-FIXED after the first attempt
+  // failed to bind. The original defect: the loop took g.right of every obstacle as
+  // "space consumed from the left", which is only true of LEFT-anchored chrome.
+  // `.capnotice` was right-anchored at top:8, so its g.right was ~innerWidth and the
+  // arithmetic returned innerWidth - 8 - (innerWidth - 10 + 8) = -6. Math.min(352, -6)
+  // fed snapTo a negative width and the 9-across bar reflowed to a 48x350 column on
+  // re-show: measured [464,10,352,46] -> [616,10,48,350], the rereview's exact flip.
   //
-  // Bounded: the card is only in this y-band above 1067px. At <=900 it moves to
-  // top:102 and at 901-1067 to top:64, both outside `g.top < 60`, so roomFor was
-  // already healthy there (measured 762 at 880, 882 at 1000) and must stay so.
+  // MY FIRST FIX WAS INERT AND I SHIPPED IT. It classified anchoring by
+  // `getComputedStyle(el).right !== 'auto'`. Chromium resolves BOTH left and right to
+  // used pixel values on any positioned element, so every obstacle scored
+  // pinnedLeft && pinnedRight, no branch matched, and roomFor stopped measuring
+  // anything at all. Measured at 1280: #dock/#micbtn/#earbtn each "BOTH -> NO BRANCH",
+  // room = innerWidth - 16. The bar stopped collapsing only because the clamp went
+  // inert, which looks identical to the clamp working. It also silently dropped the
+  // #dock clearance the old code got right (room 1162 -> 1264, 102px).
+  // An identity test (does g.right track innerWidth - parseFloat(cs.right)?) fails the
+  // same way: .capnotice measures cssL=930px cssR=10px and satisfies BOTH. The authored
+  // rule is not recoverable from computed style; do not try a third time.
+  //
+  // WHAT ACTUALLY HOLDS. The card no longer enters this y-band at any width: the same
+  // commit moved it to top:389 (>=1068), top:64 (901-1067), top:102 (<=900) — measured
+  // inBand=false at 1280, 1440 and 1904. Every obstacle that IS in the band is
+  // left-anchored, measured: #dock cssL=0px at left 0, #micbtn cssL=44px at left 44,
+  // #earbtn cssL=76px at left 76. So the left-consuming arithmetic is correct for all
+  // of them, and `.capnotice` stays in the list only so the rule still holds if the
+  // card is ever moved back up — its g.right cannot mislead a band it cannot enter.
+  // The one part of the failed fix worth keeping is the floor: a clamp that cannot
+  // help must be inert, never destructive.
   const roomFor = () => {
     // the chrome that shares the bar's y-band: the rail plus the mic/ear pair
-    let leftEdge = 0;                 // left-anchored chrome eats from the left
-    let rightEdge = innerWidth;       // right-anchored chrome eats from the right
+    let clearRight = 0;
     for (const sel of ['#dock', '#micbtn', '#earbtn', '.capnotice']) {
-      const el = document.querySelector(sel);
-      const g = el?.getBoundingClientRect();
-      if (!g || !g.width || !(g.top < 60 && g.bottom > 8)) continue;
-      // Which edge is it pinned to? Read the rule, not the resulting coordinates:
-      // a stretched element (both edges set, e.g. the card at <=900px) is neither,
-      // and gets no say in lateral room — there is none to give.
-      const cs = getComputedStyle(el);
-      const pinnedRight = cs.right !== 'auto', pinnedLeft = cs.left !== 'auto';
-      if (pinnedLeft && !pinnedRight) leftEdge = Math.max(leftEdge, g.right);
-      else if (pinnedRight && !pinnedLeft) rightEdge = Math.min(rightEdge, g.left);
-      else if (!pinnedLeft && !pinnedRight) leftEdge = Math.max(leftEdge, g.right);
+      const g = document.querySelector(sel)?.getBoundingClientRect();
+      if (g && g.width && g.top < 60 && g.bottom > 8) clearRight = Math.max(clearRight, g.right);
     }
-    // never hand snapTo a destructive width: a clamp that cannot help must be inert
-    return Math.max(widthFor(1), rightEdge - 8 - Math.max(leftEdge + 8, 8));
+    // A CLAMP THAT CANNOT HELP MUST BE INERT — and flooring is not inertness.
+    // Measured 2026-09-12 with the card forced back into the band: the floor
+    // returned widthFor(1)=48, snapTo(48) derives ONE column, and the nine tiles
+    // restack to h=336. That IS the rereview's [616,10,48,350] flip, not a repair
+    // of it. So when the room left is too small for a usable bar, return null and
+    // let the caller keep the width it has.
+    const room = innerWidth - 8 - Math.max(clearRight + 8, 8);
+    return room >= widthFor(MIN_USABLE_COLS) ? room : null;
   };
   // SIZE is honoured for a hand-placed bar; POSITION is not allowed to leave it
   // underneath fixed chrome. R, 2026-09-12: "Only resize the menu if it's at
@@ -133,7 +146,8 @@ export function initEmoteBar() {
   // chrome sits at 27/45, so a bar left there can never win by stacking.
   f.show = () => {
     show();
-    snapTo(f._placed ? f._state.w : Math.min(f._state.w, roomFor()));
+    const room = f._placed ? null : roomFor();
+    snapTo(room == null ? f._state.w : Math.min(f._state.w, room));
     return f;
   };
   const grid = document.createElement('div');

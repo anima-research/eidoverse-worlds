@@ -64,6 +64,51 @@ check('emotes follow in EMOTE_ORDER with their number key', tiles().slice(3).eve
 check('default frame is 9×1: w=widthFor(9)=352, h=ROW_H, minW=widthFor(1) so 1 column is draggable', f.opts.w === 352 && f.opts.w === widthFor(9) && f.opts.h === ROW_H && f.opts.minW === widthFor(1), JSON.stringify(f.opts));
 check('an XR panel registers with 3 postures + 6 emotes', xrPanels.length === 1 && xrPanels[0].fields().map((x: any) => x.k).join() === 'sit,stand,lie,' + EMOTE_ORDER.join());
 
+console.log('EMOTEBAR — B2: a clamp that cannot help stands down (antra-tess #185)');
+{
+  // The rereview's symptom is a HEIGHT flip: [464,10,352,46] -> [616,10,48,350].
+  // snapTo derives columns from width and rows follow, so the discriminator is the
+  // row count, not the width — a width assertion passes either way because snapTo
+  // has its own >=1-column floor downstream.
+  //
+  // roomFor() is a closure; its only consumer is f.show() ->
+  //   snapTo(_placed ? w : Math.min(w, room)), room = roomFor()
+  // so this drives that path. The stub's getBoundingClientRect returns zeros, so the
+  // geometry is SUPPLIED — measured live in Chromium at 1280x720 on 2026-09-12:
+  //   #dock [0..42]  #micbtn [44..70]  #earbtn [76..102]  .capnotice [930..1270] top 8
+  const mk = (sel: string, l: number, r: number, t: number, b: number) => {
+    const el = document.createElement('div');
+    if (sel.startsWith('#')) el.id = sel.slice(1); else el.className = sel.slice(1);
+    (el as any).getBoundingClientRect = () => ({ left: l, right: r, top: t, bottom: b, width: r - l, height: b - t, x: l, y: t });
+    document.body.append(el); return el;
+  };
+  const vw0 = innerWidth;
+  (window as any).innerWidth = 1280;
+  const made = [mk('#dock', 0, 42, 10, 304), mk('#micbtn', 44, 70, 18, 44), mk('#earbtn', 76, 102, 18, 44)];
+
+  f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
+  check('left-anchored chrome alone leaves the bar 9-across in ONE row',
+    f._state.w === 352 && f._state.h === ROW_H, `w=${f._state.w} h=${f._state.h}`);
+
+  // force the defect: a right-anchored element back inside the bar's y-band.
+  // Raw room here is innerWidth - 8 - (1270 + 8) = -6. Flooring that to widthFor(1)
+  // yields ONE column and h=336 — which IS the flip, not a repair of it.
+  made.push(mk('.capnotice', 930, 1270, 8, 43));
+  f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
+  check('an unusable room stands the clamp down entirely — the bar stays one row',
+    f._state.h === ROW_H, `h=${f._state.h} (flooring gives 336: nine tiles in one column)`);
+  check('...and keeps its nine-across width rather than collapsing to a column',
+    f._state.w === 352, `w=${f._state.w} (flooring gives 48)`);
+
+  // a hand-placed bar is never measured against chrome at all
+  f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = true; f.show();
+  check('a hand-placed bar is exempt from the clamp with the obstacle present',
+    f._state.w === 352 && f._state.h === ROW_H, `w=${f._state.w} h=${f._state.h}`);
+
+  for (const el of made) el.remove();
+  (window as any).innerWidth = vw0;
+}
+
 console.log('EMOTEBAR — snapTo / widthFor / heightFor');
 f.opts.onResize(200); await sleep(230);
 check('a 200px drag snaps to 5 columns: w=200, h=2 rows', f._state.w === widthFor(5) && f._state.h === heightFor(5) && f.paints > 0, `w=${f._state.w} h=${f._state.h}`);
