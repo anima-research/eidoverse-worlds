@@ -44,6 +44,8 @@ let page;
 // server squatting on its port for the NEXT run (seventh review 2026-09-10) — every failure throws instead
 class Fail extends Error {}
 const fail = (msg) => { throw new Fail(msg); };
+const RESIZE_TO = process.env.BOOT_CHECK_RESIZE_TO ?? '';   // B1: WxH to shrink to mid-run
+let resized = '';
 let close = async () => {};
 try {
   ({ page, close } = await launchBrowser());
@@ -105,36 +107,45 @@ try {
   // Not scrollWidth: html,body use overflow:hidden, so a frame past the edge is
   // simply unreachable and the document reports no overflow at all. Run this at a
   // narrow viewport with BOOT_CHECK_VIEWPORT=390x844 (and 800x700 for split-window).
-  // OVERLAP (#185 review req 2): two frames collide only when they overlap on
-  // BOTH axes. chat is bottom-LEFT and the emote bar bottom-CENTRE, so at a wide
-  // viewport they miss entirely and at a narrow one the centred bar slides onto
-  // chat's composer. Checking one axis alone answers "always" or "never" — both wrong.
-  const pairs = [];
-  const rs = s.rects ?? [];
-  for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
-    const a = rs[i], b = rs[j];
-    if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) pairs.push(`${a.id} [${a.x},${a.y},${a.right},${a.bottom}] × ${b.id} [${b.x},${b.y},${b.right},${b.bottom}]`);
-  }
-  if (pairs.length) { fail(`frames overlap at ${s.vw}x${s.vh} (a covered control cannot be clicked):\n  ` + pairs.join('\n  ')); }
-  // The PRODUCT promises right <= innerWidth - 8 (frames.js clamp, snapPosition,
-  // and the resize rider all use the same 8px margin). Checking only
-  // `right > vw + 1` left a 9px band where a frame violates the clamp and still
-  // passes — so this could never catch the most likely way that invariant
-  // breaks: someone dropping the -8. Bind the promise, keeping the +1 sub-pixel
-  // allowance. (agent review round 3)
-  // x and y do NOT share a margin, and that is deliberate in the product:
-  // fit()/snapPosition clamp x to 8, but the SOUTH resize clamps to
-  // `innerHeight - s0.y - 4` (frames.js:144) so a resize can reach as low as a
-  // drag — the comment there records the choice. Asserting 8 on both axes made
-  // this probe stricter than the code it guards: a legal resize to the bottom
-  // edge produced bottom=840 against a limit of 837 and failed. Match each
-  // axis to its own promise. (agent review round 4, my own over-tightening)
-  const MARGIN_X = 8, MARGIN_Y = 4;
-  const off = (s.rects ?? []).filter((r) => r.right > s.vw - MARGIN_X + 1 || r.bottom > s.vh - MARGIN_Y + 1);
-  if (off.length) {
-    fail(`frames unreachable at ${s.vw}x${s.vh} (overflow:hidden — no scrolling to them):\n  `
-      + off.map((r) => `${r.id} x=${r.x} y=${r.y} right=${r.right} bottom=${r.bottom}`).join('\n  '));
-  }
+  // GEOMETRY, factored so a SECOND phase can re-run it (antra-tess #185 rereview B1).
+  // These two checks used to be inline and therefore ran exactly once, at the boot
+  // viewport. The review asked for a real setViewportSize() product test: a page
+  // that boots wide and is then narrowed keeps all three defaults open and they
+  // overlap (emotes x world 352x46px at 390x844) — a state no fixed-viewport boot
+  // can reach. Same assertions, same failure text, plus the phase that produced it.
+  const checkGeometry = (g, where) => {
+    // OVERLAP (#185 review req 2): two frames collide only when they overlap on
+    // BOTH axes. chat is bottom-LEFT and the emote bar bottom-CENTRE, so at a wide
+    // viewport they miss entirely and at a narrow one the centred bar slides onto
+    // chat's composer. Checking one axis alone answers "always" or "never" — both wrong.
+    const pairs = [];
+    const rs = g.rects ?? [];
+    for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) {
+      const a = rs[i], b = rs[j];
+      if (a.x < b.right && b.x < a.right && a.y < b.bottom && b.y < a.bottom) pairs.push(`${a.id} [${a.x},${a.y},${a.right},${a.bottom}] × ${b.id} [${b.x},${b.y},${b.right},${b.bottom}]`);
+    }
+    if (pairs.length) { fail(`frames overlap at ${g.vw}x${g.vh} (a covered control cannot be clicked):\n  ` + pairs.join('\n  ')); }
+    // The PRODUCT promises right <= innerWidth - 8 (frames.js clamp, snapPosition,
+    // and the resize rider all use the same 8px margin). Checking only
+    // `right > vw + 1` left a 9px band where a frame violates the clamp and still
+    // passes — so this could never catch the most likely way that invariant
+    // breaks: someone dropping the -8. Bind the promise, keeping the +1 sub-pixel
+    // allowance. (agent review round 3)
+    // x and y do NOT share a margin, and that is deliberate in the product:
+    // fit()/snapPosition clamp x to 8, but the SOUTH resize clamps to
+    // `innerHeight - s0.y - 4` (frames.js:144) so a resize can reach as low as a
+    // drag — the comment there records the choice. Asserting 8 on both axes made
+    // this probe stricter than the code it guards: a legal resize to the bottom
+    // edge produced bottom=840 against a limit of 837 and failed. Match each
+    // axis to its own promise. (agent review round 4, my own over-tightening)
+    const MARGIN_X = 8, MARGIN_Y = 4;
+    const off = (g.rects ?? []).filter((r) => r.right > g.vw - MARGIN_X + 1 || r.bottom > g.vh - MARGIN_Y + 1);
+    if (off.length) {
+      fail(`frames unreachable at ${g.vw}x${g.vh} (overflow:hidden — no scrolling to them):\n  `
+        + off.map((r) => `${r.id} x=${r.x} y=${r.y} right=${r.right} bottom=${r.bottom}`).join('\n  '));
+    }
+  };
+  checkGeometry(s, `boot ${s.vw}x${s.vh}`);
   if (/(^|&)webgl=1(&|$)/.test(QUERY) && s.backend !== 'webgl') { fail(`?webgl=1 but backend=${s.backend}`); }
   if (wantXR && s.backend !== 'webgl') { fail(`XR boot without WebGPU-XR must ride WebGL, got backend=${s.backend}`); }
   // arrival means the BODY settled too (unless spectating): a checkReady that stops waiting for it lifts the splash
@@ -157,7 +168,25 @@ try {
   if (s.raysCanvas) { if (!raysSeen && !s.raysStarted) { fail('.sp-rays canvas present but the rays worker never started'); }
     if (s.raysHandle) { fail('the rays worker handle is still advertised after boot (stopRays did not release it)'); } rays = 'rays seen+released'; }
   else rays = 'rays DORMANT (no .sp-rays canvas at this rung)';
-  console.log(`ok — client boots AND arrives [viewport ${s.vw}x${s.vh}]: ${ready} after ${elapsed}ms, ${s.panels} panels, splash gone, ${rays}, backend=${s.backend} xr.enabled=${s.xrEnabled} tolerance=${s.tolerance} xrShadowPatch=${s.xrShadow}${QUERY ? ` query=${QUERY}` : ''} — decisions asserted, no page errors, ${body}${ABORT_VRM ? ' [body requests ABORTED]' : ''}${LIVE ? ' (live deployment)' : ' (owned child)'}`);
+  // THE LIVE RESIZE PHASE (antra-tess #185 rereview B1, required by name).
+  // "boot-check.mjs starts at one fixed viewport and never changes it" — so the
+  // claim that a wide->narrow shrink keeps every frame inside was asserted and
+  // never executed. It was also false: containment is per-frame, arrangement is
+  // global, and each frame clamping itself legally still let emotes x world
+  // overlap 352x46px at 390x844. fitsDefaults() now re-fires on viewport change;
+  // this is the product path that proves it, at the only moment it can be seen.
+  if (RESIZE_TO) {
+    const m = /^(\d+)x(\d+)$/.exec(RESIZE_TO);
+    if (!m) fail(`BOOT_CHECK_RESIZE_TO="${RESIZE_TO}" is not WxH`);
+    await pg.setViewportSize({ width: +m[1], height: +m[2] });
+    // the rule runs on the resize event and repaints; settle before measuring
+    await new Promise(r => setTimeout(r, 1200));
+    const s2 = await state();
+    if (s2.vw !== +m[1] || s2.vh !== +m[2]) fail(`asked for ${RESIZE_TO} but the page reports ${s2.vw}x${s2.vh}`);
+    checkGeometry(s2, `after live resize ${s.vw}x${s.vh} -> ${s2.vw}x${s2.vh}`);
+    resized = ` · live resize -> ${s2.vw}x${s2.vh}: ${(s2.rects ?? []).length} frame(s) open, geometry clean`;
+  }
+  console.log(`ok — client boots AND arrives [viewport ${s.vw}x${s.vh}]: ${ready} after ${elapsed}ms, ${s.panels} panels, splash gone, ${rays}, backend=${s.backend} xr.enabled=${s.xrEnabled} tolerance=${s.tolerance} xrShadowPatch=${s.xrShadow}${QUERY ? ` query=${QUERY}` : ''} — decisions asserted, no page errors, ${body}${ABORT_VRM ? ' [body requests ABORTED]' : ''}${LIVE ? ' (live deployment)' : ' (owned child)'}${resized}`);
 } catch (e) {
   console.log(`FAIL — ${e instanceof Fail ? e.message : (e?.stack ?? e)}`);
   process.exitCode = 1;
