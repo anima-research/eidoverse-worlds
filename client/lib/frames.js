@@ -19,7 +19,11 @@ const LS = (id) => `ew-frame-${id}`;
 // old save overrode the re-baked default). Bump this whenever DEFAULT_LAYOUT changes materially: on load,
 // a mismatch discards every ew-frame-* save ONCE, so the new default actually takes, then stamps the new
 // version. A user's deliberate arrangement after the bump is saved and kept as normal.
-const LAYOUT_VERSION = '2026-09-11-emotes-top';
+const LAYOUT_VERSION = '2026-09-12-chrome-clearance';   // bumped: tonight's intermediate builds
+// wrote poisoned saves. A frame nudged aside by the buggy chrome-clearance pass was persisted with
+// placed:true, so every later fix correctly HONOURED a position a bug had invented. Reproduced exactly:
+// seeding ew-frame-chat {x:42, placed:true} at 360x643 gives chat [42,326,352,633], R's rect digit for
+// digit; a fresh profile gives [8,326,352,633]. This is what the version key is for.
 const LAYOUT_VER_KEY = 'ew-frame-layout-ver';
 (() => {
   try {
@@ -320,6 +324,16 @@ if (typeof location !== 'undefined' && /(^|[?&])layoutdebug=1(&|$)/.test(locatio
         return sel + ': [' + [q.x, q.y, q.right, q.bottom].map(Math.round).join(',') + ']'
           + ' styleLeft=' + (e.style && e.style.left ? e.style.left : '(unset)');
       };
+      const SAVED = () => {
+        const out = [];
+        try {
+          for (let k = 0; k < localStorage.length; k++) {
+            const key = localStorage.key(k);
+            if (key && key.startsWith('ew-frame-')) out.push('saved ' + key + ' = ' + localStorage.getItem(key));
+          }
+        } catch (e) { out.push('saved: unreadable (' + e.name + ')'); }
+        return out.length ? out : ['saved: none'];
+      };
       const fr = [...document.querySelectorAll('.frame')]
         .filter((f) => getComputedStyle(f).display !== 'none')
         .map((f) => {
@@ -328,7 +342,7 @@ if (typeof location !== 'undefined' && /(^|[?&])layoutdebug=1(&|$)/.test(locatio
           return t.trim() + ' [' + [q.x, q.y, q.right, q.bottom].map(Math.round).join(',') + ']';
         });
       const msg = ['viewport ' + innerWidth + 'x' + innerHeight + ' @dpr' + devicePixelRatio,
-        R('#dock'), R('#micbtn'), R('#earbtn')].concat(fr).join('\n');
+        R('#dock'), R('#micbtn'), R('#earbtn')].concat(fr).concat(SAVED()).join('\n');
       const box = document.createElement('pre');
       box.style.cssText = 'position:fixed;left:4px;top:4px;z-index:9999;background:rgba(0,0,0,.85);color:#0f0;font:11px monospace;padding:6px;white-space:pre;max-width:96vw;overflow:auto';
       box.textContent = msg;
