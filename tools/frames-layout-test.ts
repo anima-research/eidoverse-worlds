@@ -46,7 +46,7 @@ localStorage.setItem("ew-ui-locked", "0");
 (Element.prototype as any).hasPointerCapture = function () { return false; };
 (document as any).elementFromPoint = () => null;
 
-const { makeFrame, resizeZoneAt, setLocked, isLocked, escapeToggle, escapeIsClaimed, claimEscape, allFrames } =
+const { makeFrame, resizeZoneAt, setLocked, isLocked, escapeToggle, escapeIsClaimed, claimEscape, allFrames, chromeCost } =
   await import("../client/lib/frames.js");
 
 // happy-dom measures nothing; report each frame's real state so the zone math and the drag clamp can see it
@@ -485,6 +485,47 @@ check("Esc again restores exactly that set", open().sort().join() === "mid,t", o
   esc();
   check("releasing the claim hands Esc back to the frames", open().length === 0, open().join());
   check("escapeToggle() reports what it did", escapeToggle() === "restored" && escapeToggle() === "closed" && escapeToggle() === "restored");
+}
+
+console.log("CHROME COST — the declared anchor");
+{
+  // BOOT-CHECK CANNOT SEE THIS. Mis-declaring `.capnotice` as left-anchored returns
+  // `ok` at 1280 and 1024, because boot-check hit-tests control REACHABILITY and a
+  // floored-but-reachable settings panel passes. The defect is geometric (settings
+  // opens at 210 instead of its declared 407), so the binding belongs here.
+  //
+  // These two assertions are exactly the two arithmetic bugs written while building
+  // this, and each one fails on its own mistake.
+  const mk = (cls: string, ds: Record<string, string>) => {
+    const d = document.createElement("div");
+    if (cls.startsWith(".")) d.className = cls.slice(1); else d.id = cls.slice(1);
+    Object.assign(d.dataset, ds); document.body.append(d); return d;
+  };
+  mk(".capnotice", { anchor: "right" });
+  mk("#dock", { edge: "top" });
+
+  // (1) AN OFF-SCREEN OBSTACLE IS CLAMPED, NOT CREDITED WITH NEGATIVE GAP.
+  // RETRACTED AND RE-AIMED: this assertion first claimed `extent - g.left` was a
+  // distinct bug that "carries the viewport into the result". It is not — for any
+  // rect wholly on screen, `extent - left` IS `width + (extent - right)`, the same
+  // expression rearranged, and the suite stayed green when the supposed bug was
+  // restored. They differ in exactly one place: `Math.max(0, ...)`, when the
+  // obstacle's right edge is past the viewport. That is the real contract, so that
+  // is what is asserted.
+  const onScreen = (chromeCost as any)(".capnotice", { left: 950, right: 1270, width: 320 }, 1280).right;
+  const offScreen = (chromeCost as any)(".capnotice", { left: 930, right: 1270, width: 340 }, 1024).right;
+  check("a right-anchored obstacle on screen costs width + gap",
+    onScreen === 330, String(onScreen));
+  check("an obstacle overflowing the right edge costs its width, never width minus overflow",
+    offScreen === 340, `${offScreen} — unclamped arithmetic gives 94`);
+
+  // (2) A TOP-DOCKED RAIL CHARGES POSITIONALLY, NOT ZERO. Welded to the top edge
+  // says nothing about the horizontal axis: a rail at [10..304] in an 844 viewport
+  // is genuinely LEFT-positioned there. Returning {0,0} put an emote tile under the
+  // rail at 844x390 ("sit" covered by #dock) — the corpus row-33 witness.
+  const rail = (chromeCost as any)("#dock", { left: 10, right: 304, width: 294 }, 844);
+  check("a top-docked rail charges the side it actually occupies, not zero",
+    rail.left === 304 && rail.right === 0, JSON.stringify(rail));
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
