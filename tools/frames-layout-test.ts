@@ -272,7 +272,14 @@ console.log("FRAMES — reset UNPLACES: the viewport rule reads `placed`, not `m
   f.resetLayout();
   check("reset clears the latch, not just `moved`", f._placed === false,
     `placed=${f._placed}`);
-  check("...and clears it in the persisted state too, or the next construction re-reads it",
+  // NOT a persistence claim: resetLayout() calls localStorage.removeItem(LS(id))
+  // and never save() (the save() callers are :193/:398/:401/:535, none on this
+  // path), so there is no stored record to re-read — the next construction reads
+  // `saved?.placed` off a null save and gets false. This asserts the in-memory
+  // state object is cleared too, so a later save() from show()/hide() cannot
+  // resurrect the latch. (agent review round 2 caught the earlier wording, which
+  // described a mechanism the code does not have.)
+  check("...and clears it in the state object, so a later save() cannot resurrect it",
     f.state.placed === false, `state.placed=${f.state.placed}`);
 }
 

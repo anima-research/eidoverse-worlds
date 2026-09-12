@@ -95,10 +95,25 @@ console.log('EMOTEBAR — B2: a clamp that cannot help stands down (antra-tess #
   // yields ONE column and h=336 — which IS the flip, not a repair of it.
   made.push(mk('.capnotice', 930, 1270, 8, 43));
   f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
-  check('an unusable room stands the clamp down entirely — the bar stays one row',
-    f._state.h === ROW_H, `h=${f._state.h} (flooring gives 336: nine tiles in one column)`);
-  check('...and keeps its nine-across width rather than collapsing to a column',
-    f._state.w === 352, `w=${f._state.w} (flooring gives 48)`);
+  // NOT asserted here: that roomFor's Math.max(widthFor(1), room) floor is what
+  // produces 48x336 at a negative room. It is not separately observable — snapTo
+  // clamps cols at Math.max(1, ...) regardless, so removing the floor leaves this
+  // suite 35/0. Verified by mutation, not assumed. The floor stays as defence in
+  // depth (a negative must never reach snapTo) but earns no assertion, because an
+  // assertion nothing can falsify is decoration. What IS bound is the narrow
+  // window below, which no downstream clamp rescues.
+
+  // THE WINDOW THE STAND-DOWN ABANDONED. Room 123 is too small for the 352px
+  // default but large enough for a real bar; standing down left 352 and painted
+  // 229px under #micbtn/#earbtn, whose z-index (27/45) beats any frame (Z_HI=25),
+  // so those tiles were unpressable. Clamping puts every tile in clear space.
+  document.body.innerHTML = '';
+  const narrow = mk('#dock', 0, 1141, 10, 304);
+  f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
+  check('a narrow-but-usable room clamps the bar INTO it, never leaves it under chrome',
+    f._state.w <= 123, `w=${f._state.w} vs room=123 — a wider bar paints under the chrome`);
+  narrow.remove();
+  for (const el of made) document.body.append(el);
 
   // a hand-placed bar is never measured against chrome at all
   f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = true; f.show();

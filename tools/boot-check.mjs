@@ -88,7 +88,13 @@ try {
                    pe: getComputedStyle(e).pointerEvents }; })
         .filter(Boolean),
       // every visible control's centre, and who actually owns that pixel
-      controls: [...document.querySelectorAll('.frame .tile, #dock button')]
+      // '.frame button' reaches the section headers (ui.js makeSection builds a
+      // BUTTON.head per collapsible section) as well as the tiles. The narrower
+      // '.frame .tile, #dock button' could not see BUTTON.head at all — the very
+      // element measured ~85% covered by .capnotice when the card sat top-right
+      // (index.html:1206). A hit-test that cannot sample the covered control is a
+      // check whose subject is absent. (agent review round 2, 2026-09-12)
+      controls: [...document.querySelectorAll('.frame .tile, .frame button, #dock button')]
         .filter((t) => { const r = t.getBoundingClientRect(); return r.width && r.height; })
         .map((t) => { const r = t.getBoundingClientRect();
           const cx = Math.round(r.left + r.width / 2), cy = Math.round(r.top + r.height / 2);

@@ -28,7 +28,6 @@ const GLYPH = { wave: '👋', cheer: '🙌', dance: '💃', point: '👉', salut
 
 export function initEmoteBar() {
   // geometry the CSS owns too: .tiles.fixed → 68px tiles, 6px gap, 8px body pad
-  const MIN_USABLE_COLS = 3;   // below this the bar is a column, not a bar — the clamp stands down
   const TILE = 32, GAP = 6, PAD = 7, ROW_H = 32;   // 09-05 22:00: slim buttons, real gutters — must match .tiles.fixed in index.html   // glyph-only tiles; name + key are the tooltip (live, 09-04)
   const widthFor = (cols) => cols * TILE + (cols - 1) * GAP + PAD * 2 + 2;   // +2: frame edges
   const POSTURE_TILES = 3;   // sit / stand / lie lead the grid (live, 09-05) — they count toward the rows
@@ -116,8 +115,12 @@ export function initEmoteBar() {
   // inBand=false at 1280, 1440 and 1904. Every obstacle that IS in the band is
   // left-anchored, measured: #dock cssL=0px at left 0, #micbtn cssL=44px at left 44,
   // #earbtn cssL=76px at left 76. So the left-consuming arithmetic is correct for all
-  // of them, and `.capnotice` stays in the list only so the rule still holds if the
-  // card is ever moved back up — its g.right cannot mislead a band it cannot enter.
+  // of them. `.capnotice` is KEPT in the list but is inert at every shipped width
+  // (top:389 >=1068, top:64 at 901-1067, top:102 <=900 — all fail `g.top < 60`).
+  // Note what that entry is NOT: it is not future-proofing. If the card is ever
+  // returned to the band, this bare-g.right arithmetic is precisely what breaks —
+  // clearRight becomes ~innerWidth and room goes negative. Re-raising the card
+  // requires restoring an anchor-aware branch, not relying on this line.
   // The one part of the failed fix worth keeping is the floor: a clamp that cannot
   // help must be inert, never destructive.
   const roomFor = () => {
@@ -127,14 +130,22 @@ export function initEmoteBar() {
       const g = document.querySelector(sel)?.getBoundingClientRect();
       if (g && g.width && g.top < 60 && g.bottom > 8) clearRight = Math.max(clearRight, g.right);
     }
-    // A CLAMP THAT CANNOT HELP MUST BE INERT — and flooring is not inertness.
-    // Measured 2026-09-12 with the card forced back into the band: the floor
-    // returned widthFor(1)=48, snapTo(48) derives ONE column, and the nine tiles
-    // restack to h=336. That IS the rereview's [616,10,48,350] flip, not a repair
-    // of it. So when the room left is too small for a usable bar, return null and
-    // let the caller keep the width it has.
+    // FLOOR AT ONE COLUMN — not a stand-down, and not a raw negative.
+    // I shipped both wrong answers before this one. Flooring at widthFor(1) looked
+    // like "the collapse" because 48x336 is the same shape as the rereview's
+    // [616,10,48,350]; standing down instead looked like inertness. Measured, the
+    // stand-down is strictly worse: at room=123 the bar keeps 352 and paints 229px
+    // UNDER #micbtn/#earbtn, at room=48 it is 304px under, at room=-6 it is 358px
+    // under. Frames cap at Z_HI=25 and that chrome sits at 27/45, so those tiles
+    // are unpressable — the exact report this clamp exists for ("Make sure the
+    // emote bar isn't under the mic or headphones"). A bar that looks wrong is
+    // reachable; a bar under the glyphs is not.
+    // ONE column is a legal shape here by prior decision, not a degenerate one:
+    // minW is widthFor(1) (line ~49) and snapTo floors cols at 1, both landed
+    // after "Emote bar still can't go 1x wide, 9x tall". So the only value that
+    // must never reach snapTo is a NEGATIVE one, which Math.max already stops.
     const room = innerWidth - 8 - Math.max(clearRight + 8, 8);
-    return room >= widthFor(MIN_USABLE_COLS) ? room : null;
+    return Math.max(widthFor(1), room);
   };
   // SIZE is honoured for a hand-placed bar; POSITION is not allowed to leave it
   // underneath fixed chrome. R, 2026-09-12: "Only resize the menu if it's at

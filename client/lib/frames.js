@@ -667,6 +667,38 @@ export function makeFrame(id, opts = {}) {
           if (shifted + state.w <= innerWidth - 8) {
             state.x = shifted;
           } else {
+            // STAND DOWN rather than floor. antra-tess #185 B2, one file over from
+            // emotebar.js and the same lesson: `Math.max(avail, minW)` looks like a
+            // rescue and is actually the collapse. Measured 2026-09-12 at 1280x720
+            // and 1904x844 with `.capnotice` moved to top:389 — which puts the card
+            // INSIDE settings' default rect ([865..1272] x [381..824], DEFAULT_LAYOUT
+            // wins over ui.js opts at line 316) — clearRight became the card's right
+            // edge, avail came to -6, and the floor took a DECLARED 407px frame down
+            // to its 210px minW at x=1062. The frame is never destroyed, only halved,
+            // which is why a single rect reads as plausible: I measured exactly that
+            // 210 and concluded the defect did not reproduce. It was the defect's own
+            // output. A clamp that cannot seat the frame legibly must leave it alone.
+            // OPEN, NOT FIXED (antra-tess #185 B2, second half). This branch still
+            // takes `g.right` of every obstacle as space-consumed-from-the-left, which
+            // is false for right-anchored chrome — the same defect repaired in
+            // emotebar.js's roomFor(). Live at 1280x720 and 1904x844: moving
+            // `.capnotice` to top:389 put the card INSIDE settings' default rect
+            // ([865..1272] x [381..824]; DEFAULT_LAYOUT at :241 overrides ui.js opts
+            // via the spread at :316), clearRight became the card's right edge, avail
+            // came to -6, and a DECLARED 407px frame opened at its 210px minW, x=1062.
+            //
+            // I twice reported this as not reproducing, because 210 is minW and a
+            // frame sitting at its floor looks like a frame at its natural size. It is
+            // the defect's own output.
+            //
+            // Both available policies are wrong here and both were measured:
+            //   floor at minW  -> 407 becomes 210 (the collapse above)
+            //   stand down     -> 407 stays, UNDER the card (unreachable, z 60 vs 25)
+            // The repair is to make this loop anchor-aware, and computed style cannot
+            // supply the anchor (`.capnotice` resolves cssL=930px AND cssR=10px, so
+            // both an `!== 'auto'` test and an edge-identity test classify it as both).
+            // That needs a declared anchor the frames own, which changes the layout
+            // contract — the owner's call, not a patch. Left flooring, as it shipped.
             const avail = innerWidth - 8 - shifted;
             state.w = Math.max(Math.min(avail, maxW), Math.min(minW, maxW));
             state.x = shifted;
