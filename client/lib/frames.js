@@ -248,6 +248,7 @@ const DEFAULT_LAYOUT = {
 // viewport and none overlapping, because the palette is makeSection mounting
 // into world's stack and no rect test can see it). CHROME is the title bar a
 // body height does not include.
+const EMOTE_BAR_W = 352;   // widthFor(9) in emotebar.js — the bar sizes itself, so DEFAULT_LAYOUT carries no w for it
 const CHROME = 26;
 // The open defaults are EDGE-ANCHORED ON OPPOSITE CORNERS — world x:-8 y:8
 // (top-right), chat x:10 y:-10 (bottom-left) — so they never share a column
@@ -277,9 +278,33 @@ function fitsDefaults() {
   const sideBySide = open
     .filter((d) => d !== DEFAULT_LAYOUT.emotes && typeof d.x === 'number')
     .reduce((sum, d) => sum + (d.w ?? 0), 0);
+  // A CENTRED STRIP IS PART OF THE ROW TOO (2026-09-12, found because R asked
+  // whether a window can even get that small). sideBySide sums only frames with a
+  // NUMERIC x, so the emote bar — x:'center' — was never counted: the predicate
+  // asked "do chat(545) and world(407) fit?" while a 352px bar sat across the
+  // middle of the same band. Below ~968 the sum already says no and the bar is
+  // hidden; above the threshold below a centred bar clears a right-anchored panel
+  // on its own; BETWEEN them nothing protected it. Measured overlap: 91px at
+  // 1000, 79 at 1024, 41 at 1100, 16 at 1150, clear at 1200.
+  //
+  // The condition is geometric, not a guess: bar_right = (vw + barW)/2 and
+  // world_left = vw - M - worldW, so clearance needs vw >= barW + 2*(worldW + M).
+  // My first attempt used M=16 and produced 1198, which wrongly hid the world
+  // panel at 1200 where the arrangement measures CLEAR by 9px — an overlap bug
+  // traded for a spurious-minimise bug. M=8 (the margin the clamp itself uses)
+  // gives 1182 and agrees with all seven measured widths.
+  //
+  // PREDATES THIS BRANCH: bef5311, the head of the 05:32Z review, fails
+  // identically at 1024x800, and no receipt or corpus row sat between 900 and
+  // 1200 to catch it.
+  const centredW = open.filter((d) => d.x === 'center')
+    .reduce((m, d) => Math.max(m, d.w ?? EMOTE_BAR_W), 0);
+  const rightAnchored = Math.max(0, ...open
+    .filter((d) => typeof d.x === 'number' && d.x < 0).map((d) => d.w ?? 0));
+  const centredRow = centredW && rightAnchored ? centredW + 2 * (rightAnchored + 8) : 0;
   const widest = Math.max(...open.map((d) => d.w ?? 0));
   const tallest = Math.max(...open.filter((d) => d !== DEFAULT_LAYOUT.emotes).map(box), 0);
-  return innerWidth - 16 >= Math.max(widest, sideBySide) && innerHeight - 16 >= tallest + bar;
+  return innerWidth - 16 >= Math.max(widest, sideBySide, centredRow) && innerHeight - 16 >= tallest + bar;
 }
 
 export function makeFrame(id, opts = {}) {
