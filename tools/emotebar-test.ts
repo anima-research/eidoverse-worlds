@@ -85,9 +85,13 @@ console.log('EMOTEBAR — B2: a clamp that cannot help stands down (antra-tess #
   // defect. The x-extent is real (right:10px at 1280); the y is not.
   // Likewise `mk('#dock', 0, 1141, ...)` further down is synthetic — no 1141px dock
   // exists; it is the cheapest way to manufacture room=123.
-  const mk = (sel: string, l: number, r: number, t: number, b: number) => {
+  const mk = (sel: string, l: number, r: number, t: number, b: number, ds?: Record<string, string>) => {
     const el = document.createElement('div');
     if (sel.startsWith('#')) el.id = sel.slice(1); else el.className = sel.slice(1);
+    // chromeCost() reads the DECLARED anchor off the element; a fixture that omits it
+    // falls back to 'right'. A card standing in for its STRETCHED state has to say so,
+    // via the same attribute capnotice.js sets from the CSS breakpoint.
+    if (ds) Object.assign(el.dataset, ds);
     (el as any).getBoundingClientRect = () => ({ left: l, right: r, top: t, bottom: b, width: r - l, height: b - t, x: l, y: t });
     document.body.append(el); return el;
   };
@@ -149,22 +153,63 @@ console.log('EMOTEBAR — B2: a clamp that cannot help stands down (antra-tess #
   narrow.remove();
   for (const el of made) document.body.append(el);
 
-  // THE BAND FILTER, bound. Round-3 review: deleting `g.top < 60 && g.bottom > 8`
-  // left this suite green, because every fixture rect happened to satisfy it. An
-  // obstacle BELOW the bar's row must not consume its width — that is the whole
-  // reason .capnotice is inert at every shipped width today (top:389).
+  // THE BAND FILTER: only chrome that shares the bar's row may constrain it.
+  //
+  // `g.top < 60 && g.bottom > 8` asks whether an obstacle's vertical span overlaps the
+  // bar's. A rail at top:389 cannot cover a bar at y:10, so it must not shrink it.
+  //
+  // Two things this fixture gets right that the previous one did not. It uses #dock,
+  // which is LEFT-anchored and so genuinely consumes from the left — a right-anchored
+  // obstacle contributes costL = 0 whether the filter keeps it or drops it, which is
+  // why the old version passed with the filter deleted. And it runs at a viewport where
+  // a REAL rail actually constrains a 352px bar: the clamp needs
+  // vw - 16 - rail.right < 352, so a [0..304] rail binds only below vw = 672. At the
+  // 1280 the previous block used, no realistic rail can bind, and the assertion would
+  // have been asserting something false.
   document.body.innerHTML = '';
-  mk('#dock', 0, 42, 10, 304);
-  const below = mk('.capnotice', 930, 1270, 389, 424);   // the REAL shipped position
+  (window as any).innerWidth = 640;
+  const rail = mk('#dock', 0, 304, 389, 424, { edge: 'left' });
   f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
-  check('an obstacle below the bar row is ignored — the card at its shipped top:389 takes no width',
-    f._state.w === 352, `w=${f._state.w} — a band filter that does not filter would clamp to ~922`);
-  // ...and the SAME element inside the row does consume it: the entry is live, not dead code
-  (below as any).getBoundingClientRect = () => ({ left: 930, right: 1270, top: 8, bottom: 43, width: 340, height: 35, x: 930, y: 8 });
+  check('chrome BELOW the bar row is ignored — a rail at top:389 takes no width',
+    f._state.w === 352, `w=${f._state.w} — a band filter that does not filter would clamp to 320`);
+  (rail as any).getBoundingClientRect = () => ({ left: 0, right: 304, top: 10, bottom: 42, width: 304, height: 32, x: 0, y: 10 });
   f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
-  check('...and the same card raised into the row DOES consume it — the list entry is live',
+  // Asserted as a CONTRACT, not a pinned pixel: the clamp yields room 640-16-304=320,
+  // and snapTo then quantises to whole tiles, so the bar lands on widthFor(8)=314 rather
+  // than 320. Pinning 314 would couple this check to TILE/GAP/PAD — the same brittleness
+  // that made the old fixture wrong. The exact width rides in the failure message.
+  check('...and the same rail INSIDE the row does consume it',
+    f._state.w < 352 && f._state.w >= 48, `w=${f._state.w} — expected a snapped width under 352 (room here is 320)`);
+  rail.remove();
+
+  // THE .capnotice ENTRY IS LIVE, tested in the state where the card actually
+  // constrains the bar: STRETCHED, which is what it declares below 900px
+  // (`left:50px; right:8px`, index.html's max-width:900 block). Right-anchored it never
+  // can — capped at min(320px,46vw) it would need to be ~646px wide to squeeze a 352px
+  // bar at 1024, so a right-anchored fixture is indistinguishable from the entry being
+  // absent. That, not a fault in the clamp, is what made the previous check
+  // unsatisfiable once the costing became anchor-aware.
+  document.body.innerHTML = '';
+  (window as any).innerWidth = 390;
+  const card = mk('.capnotice', 50, 382, 10, 45, { anchor: 'stretch' });
+  f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
+  check('a stretched .capnotice in the bar row DOES constrain it — the list entry is live',
     f._state.w < 352, `w=${f._state.w} — if .capnotice were dropped from the list this stays 352`);
-  below.remove();
+  card.remove();
+  (window as any).innerWidth = 1280;
+
+  // ANCHOR-AWARENESS ITSELF, bound. The two fixtures above cannot see it: a LEFT-anchored
+  // rail and a STRETCHED card both charge `g.right` to the left under either the old
+  // arithmetic or the new one, so they agree by coincidence. Only a RIGHT-anchored
+  // obstacle IN the bar's row separates them — and that is exactly antra-tess #185 B2:
+  //   old (g.right as left-consumption): clearRight=1270, room=-6  -> bar floors to 48
+  //   new (anchor-aware):                costL=0, costR=330, room=934 -> bar keeps 352
+  document.body.innerHTML = '';
+  const rightCard = mk('.capnotice', 950, 1270, 10, 45, { anchor: 'right' });
+  f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
+  check('a RIGHT-anchored card in the row does not eat the bar from the left',
+    f._state.w === 352, `w=${f._state.w} — charging its g.right to the left gives room -6 and floors the bar to 48`);
+  rightCard.remove();
   // Remove only what this block added. NOTE, corrected after round 4 measured it:
   // an earlier version of this comment claimed the `el !== f.el` guard prevents
   // orphaning the stub's frame element. It does not — `f.el` is ALREADY detached
