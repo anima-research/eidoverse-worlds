@@ -62,8 +62,9 @@ BOOT_CHECK_VIEWPORT=844x390 BOOT_CHECK_TOUCH=1 run boot-check.mjs
 # EXCLUDES emotes, whose x is 'center' rather than a number — so a 352px centred
 # strip is never counted. Below ~968 the predicate hides the bar and saves us;
 # above ~1192 the geometry separates on its own; 1000-1100 is unprotected and no
-# receipt or corpus row sat between 900 and 1200. Enable this line with the fix.
-#BOOT_CHECK_VIEWPORT=1024x800 run boot-check.mjs
+# receipt or corpus row sat between 900 and 1200. ENABLED 2026-09-12 with the
+# fitsDefaults centred-strip term (e6d9252): 1024x800 prints ok.
+BOOT_CHECK_VIEWPORT=1024x800 run boot-check.mjs
 run mic-hud-probe.mjs
 run mic-meter-states.mjs
 run panel-teardown-probe.mjs
