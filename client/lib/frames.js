@@ -383,9 +383,10 @@ export function makeFrame(id, opts = {}) {
       // `moved` is !!saved at construction and latches on a real drag or resize.
       get _moved() { return moved; },
       get _placed() { return placed; },   // B1 exemption reads THIS, not _moved
+      _save: save,
     get state() { return { ...state }; },
     show() {
-      state.hidden = false;
+      state.hidden = false; state.autoHidden = false;
       paint();
       // A hidden element measures zero, so a frame created hidden never got a
       // real position — it has to be fitted the first time it becomes visible.
@@ -393,7 +394,7 @@ export function makeFrame(id, opts = {}) {
       save(); raise();
       return api;
     },
-    hide() { state.hidden = true; paint(); save(); return api; },
+    hide() { state.hidden = true; state.autoHidden = false; paint(); save(); return api; },   // deliberate: never auto-restored
     toggle() { state.hidden ? api.show() : api.hide(); return api; },
     get visible() { return !state.hidden; },
     setTitle(t) { ttl.textContent = t; return api; },
@@ -761,9 +762,19 @@ addEventListener('resize', () => {
   if (fits !== _lastFits) {
     for (const [id, f] of frames) {
       if (id === 'chat' || !f._state || f._placed) continue;
-      if (!fits && !f._state.hidden) { f._state.hidden = true; f.el.style.display = 'none'; f._paint?.(); }
-      else if (fits && f._state.hidden && DEFAULT_LAYOUT[id]?.hidden === false) {
-        f._state.hidden = false; f.el.style.display = ''; f._paint?.();
+      // WHO hid it decides whether it comes back (antra-tess #185 B1, addendum).
+      // `hidden` alone cannot answer that: the owner closing World and the viewport
+      // auto-hiding it produce the identical flag, so crossing the fits boundary
+      // reopened a deliberately closed panel. Reproduced at 1280x720: hide World,
+      // resize by 1px, it returns. `autoHidden` is the third state she asked for —
+      // set only here, cleared by a deliberate hide(), and read as the sole licence
+      // to auto-restore.
+      if (!fits && !f._state.hidden) {
+        f._state.hidden = true; f._state.autoHidden = true;
+        f.el.style.display = 'none'; f._paint?.(); f._save?.();
+      } else if (fits && f._state.hidden && f._state.autoHidden) {
+        f._state.hidden = false; f._state.autoHidden = false;
+        f.el.style.display = ''; f._paint?.(); f._save?.();
       }
     }
     _lastFits = fits;
