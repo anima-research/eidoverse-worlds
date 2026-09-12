@@ -319,8 +319,17 @@ export function makeFrame(id, opts = {}) {
   // the next maximize — verbatim the 09-07 bug these guards exist to prevent.
   // Declared HERE, above the api object and fit(), because a const in the
   // temporal dead zone throws at construction — node --check cannot see it.
-  let moved = !!saved;
-  const markMoved = () => { moved = true; };
+    let moved = !!saved;
+    // TWO QUESTIONS, ONE FLAG (agent review 2026-09-12, and my own regression).
+    // `moved` answers "do not re-anchor this frame" — and !!saved is RIGHT there:
+    // a frame rebuilt from a previous session must not snap back to its anchor
+    // (the 09-07 bug; frames-layout-test.ts:402 binds it deliberately). But the
+    // viewport-change rule asks a different question — "did the OWNER place this"
+    // — and !!saved answers that wrongly, because save() is called by show()/hide()
+    // so toggling any panel once exempted the frame forever. That needs its own
+    // signal, persisted with state and written only at the deliberate acts.
+    let placed = saved?.placed === true;
+    const markMoved = () => { moved = true; placed = true; state.placed = true; };
   // R, 2026-09-11, on the bug this exists for: the emote bar "will always pop
   // sideways to the right regardless if there's room for it" — snapTo calls
   // _fit() 180ms after every drag settles, and fit() re-centred an x:'center'
@@ -349,6 +358,7 @@ export function makeFrame(id, opts = {}) {
       // viewport rule below had no way to ask whether the owner placed this frame.
       // `moved` is !!saved at construction and latches on a real drag or resize.
       get _moved() { return moved; },
+      get _placed() { return placed; },   // B1 exemption reads THIS, not _moved
     get state() { return { ...state }; },
     show() {
       state.hidden = false;
@@ -658,7 +668,7 @@ addEventListener('resize', () => {
   const fits = fitsDefaults();
   if (fits !== _lastFits) {
     for (const [id, f] of frames) {
-      if (id === 'chat' || !f._state || f._moved) continue;
+      if (id === 'chat' || !f._state || f._placed) continue;
       if (!fits && !f._state.hidden) { f._state.hidden = true; f.el.style.display = 'none'; f._paint?.(); }
       else if (fits && f._state.hidden && DEFAULT_LAYOUT[id]?.hidden === false) {
         f._state.hidden = false; f.el.style.display = ''; f._paint?.();

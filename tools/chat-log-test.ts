@@ -39,9 +39,10 @@ const check = (name: string, ok: boolean, detail = "") => {
 
 // A self row + two others: the self row exercises the "no whispering yourself"
 // skip, and two others let a DM tab open for each.
+const says: any[] = [];   // the channel the leak actually used: {"verb":"say","args":{"text":…}}
 const whispers: any[] = [];
 initChat({
-  send: () => {},
+  send: (text: string) => says.push(text),   // captured: antra #185 B3 named the PUBLIC say channel
   whisper: (to: string, text: string) => whispers.push({ to, text }),
   people: () => [{ id: "me", me: true }, { id: "keir", agent: true }, { id: "mica" }],
 });
@@ -269,8 +270,27 @@ check("...and `all` shows the room again",
     check("a closed conversation's parked draft does not come back",
       inp.value !== SECRET, `input=${JSON.stringify(inp.value)}`);
     inp.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
-    check("...and nothing carrying those bytes is sent afterwards",
-      !whispers.some((w: any) => String(w?.text).includes(SECRET)), JSON.stringify(whispers.slice(-2))); }
+      // THE PUBLIC SAY CHANNEL, not just whispers (agent review, 2026-09-12). The
+      // rereview's spec was "proves no public say contains those bytes", and the
+      // leak it described went out as {"verb":"say"}. Asserting only on whispers
+      // watched the one channel the bug was NOT in: send() was stubbed to discard,
+      // so a public leak left no trace at all and this check stayed green.
+      check("...and no PUBLIC say carries those bytes",
+        !says.some((t: any) => String(t).includes(SECRET)), JSON.stringify(says.slice(-2)));
+      check("...and no whisper carries them either",
+        !whispers.some((w: any) => String(w?.text).includes(SECRET)), JSON.stringify(whispers.slice(-2))); }
+
+  { // THE ACTIVE-CLOSE PATH — DISCLOSED AS UNBINDABLE HERE, not asserted.
+    // The rereview's headline case is "closing an ACTIVE private tab can publish
+    // its draft publicly". The product is correct: x.onclick calls setFilter('all'),
+    // which parks the outgoing draft and restores drafts.get('all') = '' — so the
+    // box is empty before Enter. But that ALSO means no assertion on this path can
+    // fail: I wrote one, mutated the sibling clear away, and the suite stayed
+    // 37/0. A check that cannot go red is not coverage, it is decoration, so it is
+    // gone. What IS bound is the parked-draft property above (M-D): remove
+    // drafts.delete(key) or the setFilter restore and two checks go red with the
+    // canary bytes on the wire.
+  }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

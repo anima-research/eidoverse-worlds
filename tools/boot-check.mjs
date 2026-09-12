@@ -165,7 +165,13 @@ try {
   // STARTED is cumulative (__raysStarted, never cleared); the HANDLE is transient.
   // Polling only the handle raced the worker's own lifetime — 2 of 8 owned runs
   // failed here with the worker perfectly healthy (antra-tess #185 B4).
-  if (s.raysCanvas) { if (!raysSeen && !s.raysStarted) { fail('.sp-rays canvas present but the rays worker never started'); }
+  // The cumulative flag is asserted ON ITS OWN, not as the second half of an &&
+  // that raysSeen short-circuits (agent review 2026-09-12). raysSeen comes from
+  // the 250ms handle poll and is true on a normal run, so `!raysSeen && !started`
+  // never consulted __raysStarted — the very flag added for B4 carried nothing
+  // and could have been deleted with CI green until the sampling race recurred.
+  if (s.raysCanvas) { if (!s.raysStarted) { fail('.sp-rays canvas present but __raysStarted was never set (the cumulative receipt B4 added)'); }
+    if (!raysSeen && !s.raysStarted) { fail('.sp-rays canvas present but the rays worker never started'); }
     if (s.raysHandle) { fail('the rays worker handle is still advertised after boot (stopRays did not release it)'); } rays = 'rays seen+released'; }
   else rays = 'rays DORMANT (no .sp-rays canvas at this rung)';
   // THE LIVE RESIZE PHASE (antra-tess #185 rereview B1, required by name).
