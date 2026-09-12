@@ -37,9 +37,16 @@ export async function launchBrowser({ mic = false } = {}) {
   const vp = (process.env.BOOT_CHECK_VIEWPORT || '').match(/^(\d+)x(\d+)$/);
   const viewport = vp ? { width: +vp[1], height: +vp[2] } : null;
   const page = async () => {
+    // TOUCH IS A PRECONDITION, not a nicety (antra-tess #185 B2): the dock only
+    // leaves the left edge when document.body has class 'touch' (controller.js:434,
+    // ui.js:489), so without it the rail never goes horizontal along the top and
+    // the landscape dock/emote-bar overlap she reported is invisible to any probe
+    // by construction. BOOT_CHECK_TOUCH=1 turns it on.
+    const touch = process.env.BOOT_CHECK_TOUCH === '1';
     const ctx = await b.newContext({
       ...(mic ? { permissions: ['microphone'] } : {}),
       ...(viewport ? { viewport } : {}),
+      ...(touch ? { hasTouch: true, isMobile: true } : {}),
     });
     return ctx.newPage();
   };
