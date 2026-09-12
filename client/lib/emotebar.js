@@ -40,7 +40,7 @@ export function initEmoteBar() {
   const f = makeFrame('emotes', {
     title: 'emotes', x: 'center', y: -10, w: widthFor(ALL), h: ROW_H,   // one row of nine across the bottom by default
       // minW was widthFor(3)=124px and a REAL resize clamps at f.minW
-      // (frames.js:141), so 124px admitted exactly three columns — ONE column was
+      // (frames.js:155), so 124px admitted exactly three columns — ONE column was
       // unreachable by drag no matter what snapTo computed. R hit it at once:
       // "Emote bar still can't go 1x wide, 9x tall." My own test had called
       // onResize(48, 336) directly and sailed past the clamp: a fixture that
@@ -138,7 +138,7 @@ export function initEmoteBar() {
     // UNDER #micbtn/#earbtn, at room=48 it is 304px under, at room=-6 it is 358px
     // under. Frames cap at Z_HI=25 and every element this loop measures outranks
     // them: #dock 27 (index.html), #micbtn/#earbtn 45 (mictoggle.js:250/:254),
-    // .capnotice 60 (index.html, and frames.js:655 says so too). An earlier version
+    // .capnotice 60 (index.html, and frames.js:656 says so too). An earlier version
     // of this comment said "27/45", which was wrong about the glyphs; the version
     // after it named three of the four and still omitted .capnotice — the one
     // element this whole finding was about. So those tiles
@@ -161,20 +161,28 @@ export function initEmoteBar() {
     // (clearRight 102 -> shifted 110, bar 352):
     //   iw 1280 -> SHIFT, x=110              iw 400 -> FLOOR, avail 282, w=282  (fits)
     //   iw 200  -> FLOOR, avail  82, w= 82   iw 150 -> FLOOR, avail  32, w= 48  (over)
-    // So the floor branch engages at about 400px -- a real phone width, not an
-    // exotic one -- but it still produces a bar that FITS down to about 156px,
-    // where avail drops under widthFor(1). Only below that is the bar wider than
-    // its room. A review put both boundaries at "~180px, below any real phone";
-    // that conflates them and is wrong in both directions. frames.js:690 marks
-    // that branch OPEN.
+    // COUNTERFACTUAL GEOMETRY, stated plainly: this table holds clearRight at 102,
+    // which is a 1280x720 measurement. At a 400px viewport the dock and glyph rects
+    // are not at those coordinates, so this is arithmetic about WHEN THE BRANCH
+    // ENGAGES (shifted + w exceeds the viewport), not a forecast about a real 400px
+    // page. Read it that way.
+    // The bar still FITS down to iw=166, where avail is exactly widthFor(1)=48;
+    // at iw=156 avail is 38 and the bar is wider than its room. An earlier version
+    // of this comment said "about 156px", which overstated the safe range by ten
+    // pixels in the unsafe direction. A review put both boundaries at "~180px,
+    // below any real phone"; that conflates them. frames.js:682 marks the branch
+    // OPEN.
     //
     // NON-FINITE is handled explicitly because the previous policy handled it by
     // accident and this one does not: `NaN >= n` is false, so returning null kept
     // the width, whereas Math.max(48, NaN) is NaN and snapTo(NaN) writes NaN into
     // _state.w/h and paints it. A lost guard, restored deliberately.
-    // It is a FINITENESS guard, not a NaN guard — measured, it also catches
-    // +/-Infinity (innerWidth=Infinity keeps w=352 with it, and the hazard is the
-    // same shape). Earlier comments here called it NaN-only; that undersold it.
+    // It is a FINITENESS guard, not a NaN guard: it also catches +/-Infinity, since
+    // Math.max(48, Infinity) is Infinity and !Number.isFinite catches it. DERIVED,
+    // NOT MEASURED — an earlier version of this line said "measured", which was the
+    // wrong verb: no fixture sets innerWidth non-finite and the guard is unbound
+    // (removing it leaves the suite 36/0), so nothing in-repo exercises the path.
+    // Earlier comments here called it NaN-only; that undersold it.
     const room = innerWidth - 8 - Math.max(clearRight + 8, 8);
     if (!Number.isFinite(room)) return null;   // keep the width rather than paint NaN
     return Math.max(widthFor(1), room);

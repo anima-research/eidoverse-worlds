@@ -57,7 +57,7 @@ check('3 posture tiles + 6 emote tiles = 9', tiles().length === 9, `${tiles().le
 check('postures lead, in sit/stand/lie order', tiles().slice(0, 3).map((t) => t.dataset.posture).join() === 'sit,stand,lie');
 check('emotes follow in EMOTE_ORDER with their number key', tiles().slice(3).every((t, i) => t.dataset.emote === EMOTE_ORDER[i] && t.title === `${EMOTE_ORDER[i]} — key ${i + 1}`));
 // minW is widthFor(1), NOT widthFor(3). A real resize clamps at f.minW
-// (frames.js:141), so a 124px floor made ONE column unreachable by drag however
+// (frames.js:155), so a 124px floor made ONE column unreachable by drag however
 // snapTo computed — R: "Emote bar still can't go 1x wide, 9x tall." The 3-column
 // floor still applies on the WIDTH-ONLY path inside snapTo (see below); it just
 // no longer blocks the frame itself.
@@ -112,14 +112,14 @@ console.log('EMOTEBAR — B2: a clamp that cannot help stands down (antra-tess #
   // the suite had 33 assertions and the run returned 33/0; 35 was the count it
   // reached two commits later. The figure was written ahead of the run that would
   // have justified it and is now accidentally true, which is why it survived a
-  // re-check. Measured at this head: floor removed -> 35/0, baseline -> 35/0.
+  // re-check. Measured at this head: floor removed -> 36/0, baseline -> 36/0.
   // The floor stays as defence in depth but earns no assertion, because an
   // assertion nothing can falsify is decoration. What IS bound is the narrow
   // window below, which no downstream clamp rescues.
   //
   // SAME STATUS, stated so it does not look tested: roomFor's
   // `if (!Number.isFinite(room)) return null` guard is also unbound. Removing it
-  // leaves this suite 35/0 — measured, not assumed. It exists because the earlier
+  // leaves this suite 36/0 — measured, not assumed. It exists because the earlier
   // stand-down policy handled NaN by accident (`NaN >= n` is false) and flooring
   // does not (`Math.max(48, NaN)` is NaN, and snapTo would write NaN into
   // _state.w/h and paint it). `room` derives from innerWidth and
@@ -128,10 +128,10 @@ console.log('EMOTEBAR — B2: a clamp that cannot help stands down (antra-tess #
   // state the product cannot enter.
   //
   // TWO MORE UNBOUND LINES, named rather than left looking tested (round 4):
-  //   `g && g.width &&` in the obstacle loop — dropping the width guard leaves 35/0,
+  //   `g && g.width &&` in the obstacle loop — dropping the width guard leaves 36/0,
   //     because no fixture supplies a zero-width rect.
   //   any change to `clearRight` that only INCREASES consumption — e.g. +400 leaves
-  //     35/0, because the narrow-room assertion is a `<=` bound and over-clamping
+  //     36/0, because the narrow-room assertion is a `<=` bound and over-clamping
   //     satisfies it. Only under-clamping is caught.
   // Both measured at this head. They are cheap to bind and are not bound; a reader
   // should not infer coverage from this block's green.
