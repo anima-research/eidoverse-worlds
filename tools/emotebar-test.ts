@@ -74,8 +74,17 @@ console.log('EMOTEBAR — B2: a clamp that cannot help stands down (antra-tess #
   // roomFor() is a closure; its only consumer is f.show() ->
   //   snapTo(_placed ? w : Math.min(w, room)), room = roomFor()
   // so this drives that path. The stub's getBoundingClientRect returns zeros, so the
-  // geometry is SUPPLIED — measured live in Chromium at 1280x720 on 2026-09-12:
-  //   #dock [0..42]  #micbtn [44..70]  #earbtn [76..102]  .capnotice [930..1270] top 8
+  // geometry is SUPPLIED. THREE rects are measured live in Chromium at 1280x720
+  // on 2026-09-12:  #dock [0..42]  #micbtn [44..70]  #earbtn [76..102]
+  //
+  // The fourth is a DELIBERATE COUNTERFACTUAL, not a measurement, and calling all
+  // four "measured" was wrong (agent review round 3). `.capnotice [930..1270] top 8`
+  // is the card's PRE-B2 position: the same commit moved it to top:389 (>=1068),
+  // top:64 (901-1067), top:102 (<=900), so at no shipped width does it satisfy this
+  // band filter. It is put back in the row on purpose, to construct the historical
+  // defect. The x-extent is real (right:10px at 1280); the y is not.
+  // Likewise `mk('#dock', 0, 1141, ...)` further down is synthetic — no 1141px dock
+  // exists; it is the cheapest way to manufacture room=123.
   const mk = (sel: string, l: number, r: number, t: number, b: number) => {
     const el = document.createElement('div');
     if (sel.startsWith('#')) el.id = sel.slice(1); else el.className = sel.slice(1);
@@ -113,6 +122,25 @@ console.log('EMOTEBAR — B2: a clamp that cannot help stands down (antra-tess #
   check('a narrow-but-usable room clamps the bar INTO it, never leaves it under chrome',
     f._state.w <= 123, `w=${f._state.w} vs room=123 — a wider bar paints under the chrome`);
   narrow.remove();
+  for (const el of made) document.body.append(el);
+
+  // THE BAND FILTER, bound. Round-3 review: deleting `g.top < 60 && g.bottom > 8`
+  // left this suite green, because every fixture rect happened to satisfy it. An
+  // obstacle BELOW the bar's row must not consume its width — that is the whole
+  // reason .capnotice is inert at every shipped width today (top:389).
+  document.body.innerHTML = '';
+  mk('#dock', 0, 42, 10, 304);
+  const below = mk('.capnotice', 930, 1270, 389, 424);   // the REAL shipped position
+  f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
+  check('an obstacle below the bar row is ignored — the card at its shipped top:389 takes no width',
+    f._state.w === 352, `w=${f._state.w} — a band filter that does not filter would clamp to ~922`);
+  // ...and the SAME element inside the row does consume it: the entry is live, not dead code
+  (below as any).getBoundingClientRect = () => ({ left: 930, right: 1270, top: 8, bottom: 43, width: 340, height: 35, x: 930, y: 8 });
+  f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
+  check('...and the same card raised into the row DOES consume it — the list entry is live',
+    f._state.w < 352, `w=${f._state.w} — if .capnotice were dropped from the list this stays 352`);
+  below.remove();
+  document.body.innerHTML = '';
   for (const el of made) document.body.append(el);
 
   // a hand-placed bar is never measured against chrome at all
