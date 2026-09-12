@@ -136,15 +136,31 @@ export function initEmoteBar() {
     // [616,10,48,350]; standing down instead looked like inertness. Measured, the
     // stand-down is strictly worse: at room=123 the bar keeps 352 and paints 229px
     // UNDER #micbtn/#earbtn, at room=48 it is 304px under, at room=-6 it is 358px
-    // under. Frames cap at Z_HI=25 and that chrome sits at 27/45, so those tiles
+    // under. Frames cap at Z_HI=25 and BOTH glyphs sit at z-index 45 (mictoggle.js
+    // :250 and :254 — 27 is #dock, a different element), so those tiles
     // are unpressable — the exact report this clamp exists for ("Make sure the
     // emote bar isn't under the mic or headphones"). A bar that looks wrong is
     // reachable; a bar under the glyphs is not.
     // ONE column is a legal shape here by prior decision, not a degenerate one:
     // minW is widthFor(1) (line ~49) and snapTo floors cols at 1, both landed
-    // after "Emote bar still can't go 1x wide, 9x tall". So the only value that
-    // must never reach snapTo is a NEGATIVE one, which Math.max already stops.
+    // after "Emote bar still can't go 1x wide, 9x tall".
+    //
+    // WHAT THIS FLOOR DOES NOT DO, stated because an earlier version of this
+    // comment claimed it did: it does not make the bar reachable at every room.
+    // For 0 < room < 48 the result is a 48px bar in <=47px of clear space — still
+    // wider than its room, just less visibly. Flooring turns "much too wide" into
+    // "slightly too wide"; it is not a reachability guarantee. Saying "the only
+    // value that must never reach snapTo is a NEGATIVE one" was wrong: (0,48) is
+    // equally unsafe. What rescues the ordinary case is frames.js fit(), which
+    // shifts a default-placed frame to `shifted` when it fits; the residue is the
+    // viewport where it does not fit, and that is disclosed, not solved.
+    //
+    // NaN is handled explicitly because the previous policy handled it by accident
+    // and this one does not: `NaN >= n` is false, so returning null kept the width,
+    // whereas Math.max(48, NaN) is NaN and snapTo(NaN) writes NaN into _state.w/h
+    // and paints it. A lost guard, restored deliberately.
     const room = innerWidth - 8 - Math.max(clearRight + 8, 8);
+    if (!Number.isFinite(room)) return null;   // keep the width rather than paint NaN
     return Math.max(widthFor(1), room);
   };
   // SIZE is honoured for a hand-placed bar; POSITION is not allowed to leave it
@@ -154,7 +170,8 @@ export function initEmoteBar() {
   // were reachable: "Make sure the emote bar isn't under the mic or headphones."
   // Both hold if the clamp keeps its hands off a saved WIDTH and still refuses to
   // paint the bar beneath #micbtn/#earbtn/#dock. Frames cap at Z_HI=25 and that
-  // chrome sits at 27/45, so a bar left there can never win by stacking.
+  // chrome sits at 27 (#dock) and 45 (#micbtn/#earbtn, mictoggle.js:250/:254), so
+  // a bar left there can never win by stacking.
   f.show = () => {
     show();
     const room = f._placed ? null : roomFor();

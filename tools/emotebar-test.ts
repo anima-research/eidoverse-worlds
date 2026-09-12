@@ -104,13 +104,28 @@ console.log('EMOTEBAR — B2: a clamp that cannot help stands down (antra-tess #
   // yields ONE column and h=336 — which IS the flip, not a repair of it.
   made.push(mk('.capnotice', 930, 1270, 8, 43));
   f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = false; f.show();
-  // NOT asserted here: that roomFor's Math.max(widthFor(1), room) floor is what
-  // produces 48x336 at a negative room. It is not separately observable — snapTo
-  // clamps cols at Math.max(1, ...) regardless, so removing the floor leaves this
-  // suite 35/0. Verified by mutation, not assumed. The floor stays as defence in
-  // depth (a negative must never reach snapTo) but earns no assertion, because an
+  // NOT asserted here: that roomFor's Math.max(widthFor(1), room) floor produces
+  // 48x336 at a destructive room. It is not separately observable — snapTo clamps
+  // cols at Math.max(1, ...) regardless, so removing the floor leaves the suite
+  // green. RECEIPT RETRACTED AND RE-RUN: this note previously said "leaves this
+  // suite 35/0. Verified by mutation, not assumed." When that sentence was written
+  // the suite had 33 assertions and the run returned 33/0; 35 was the count it
+  // reached two commits later. The figure was written ahead of the run that would
+  // have justified it and is now accidentally true, which is why it survived a
+  // re-check. Measured at this head: floor removed -> 35/0, baseline -> 35/0.
+  // The floor stays as defence in depth but earns no assertion, because an
   // assertion nothing can falsify is decoration. What IS bound is the narrow
   // window below, which no downstream clamp rescues.
+  //
+  // SAME STATUS, stated so it does not look tested: roomFor's
+  // `if (!Number.isFinite(room)) return null` guard is also unbound. Removing it
+  // leaves this suite 35/0 — measured, not assumed. It exists because the earlier
+  // stand-down policy handled NaN by accident (`NaN >= n` is false) and flooring
+  // does not (`Math.max(48, NaN)` is NaN, and snapTo would write NaN into
+  // _state.w/h and paint it). `room` derives from innerWidth and
+  // getBoundingClientRect edges, and no path I can construct makes either NaN, so
+  // the guard is unreachable today and asserting it would be writing a test for a
+  // state the product cannot enter.
 
   // THE WINDOW THE STAND-DOWN ABANDONED. Room 123 is too small for the 352px
   // default but large enough for a real bar; standing down left 352 and painted
@@ -140,8 +155,11 @@ console.log('EMOTEBAR — B2: a clamp that cannot help stands down (antra-tess #
   check('...and the same card raised into the row DOES consume it — the list entry is live',
     f._state.w < 352, `w=${f._state.w} — if .capnotice were dropped from the list this stays 352`);
   below.remove();
-  document.body.innerHTML = '';
-  for (const el of made) document.body.append(el);
+  // NOT innerHTML='' — that orphans the stub frame element too (emotebar-stub
+  // appends it to body) and the loop below only restores the chrome, leaving any
+  // later assertion measuring a detached tree. Remove what this block added.
+  for (const el of [...document.body.children]) if (!made.includes(el as any) && el !== f.el) el.remove();
+  for (const el of made) if (!el.isConnected) document.body.append(el);
 
   // a hand-placed bar is never measured against chrome at all
   f._state.w = 352; f._state.h = ROW_H; (f as any)._placed = true; f.show();
