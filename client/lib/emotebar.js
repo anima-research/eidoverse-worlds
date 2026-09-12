@@ -107,28 +107,9 @@ export function initEmoteBar() {
   // Both hold if the clamp keeps its hands off a saved WIDTH and still refuses to
   // paint the bar beneath #micbtn/#earbtn/#dock. Frames cap at Z_HI=25 and that
   // chrome sits at 27/45, so a bar left there can never win by stacking.
-  const clearOfChrome = () => {
-    const q = f.el?.getBoundingClientRect();
-    if (!q || !q.width) return;
-    let clearRight = 0;
-    for (const sel of ['#dock', '#micbtn', '#earbtn']) {
-      const g = document.querySelector(sel)?.getBoundingClientRect();
-      if (!g || !g.width) continue;
-      // overlap on BOTH axes, not just the y-band guess the first version used
-      if (g.left < q.right && q.left < g.right && g.top < q.bottom && q.top < g.bottom) {
-        clearRight = Math.max(clearRight, g.right);
-      }
-    }
-    if (!clearRight) return;
-    const x = Math.round(clearRight + 8);
-    if (x + q.width <= innerWidth - 8) { f._state.x = x; f._paint?.(); }
-    else { f._state.y = Math.round(Math.max(...['#micbtn', '#earbtn', '#dock']
-      .map((s) => document.querySelector(s)?.getBoundingClientRect().bottom || 0)) + 8); f._paint?.(); }
-  };
   f.show = () => {
     show();
     snapTo(f._placed ? f._state.w : Math.min(f._state.w, roomFor()));
-    clearOfChrome();
     return f;
   };
   const grid = document.createElement('div');

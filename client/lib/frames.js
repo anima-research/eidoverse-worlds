@@ -611,31 +611,52 @@ export function makeFrame(id, opts = {}) {
     // at its old absolute x (live 09-07: debug, x:-414, opened after maximizing and sat far left instead of
     // flush-left of the right-docked panels). Only when there's no saved override.
     if (!moved && typeof opts.x === 'number' && opts.x < 0) state.x = Math.max(8, innerWidth + opts.x - state.w);
-    if (opts.x === 'center' && !moved) {
-      state.x = Math.round((innerWidth - state.w) / 2);
-      // CLEAR THE FIXED CHROME THAT SHARES THIS BAND (antra-tess #185 B2).
-      // A centred strip at y:10 lands under the dock the moment body.touch makes
-      // the rail go horizontal along the top edge (ui.js:496), and under the
-      // mic/ear pair (mictoggle.js:254, z-index 45) at any width. Measured: the
-      // 'sit' tile at x=270 sat inside a dock spanning x=10..304 in landscape —
-      // her exact finding — and 'stand' was taken by #earbtn in portrait.
-      // ui.js:636-640 already does precisely this for the ∃ menu; the emote bar
-      // had no such term, so it was centred into whatever was there. Frames cap
-      // at Z_HI=25 and this chrome sits at 27/45, so the bar can never win by
-      // painting over it — it has to be placed clear.
-      const band = { top: state.y, bottom: state.y + hh };
-      let clearRight = 0;
-      for (const sel of ['#dock', '#micbtn', '#earbtn']) {
-        const g = document.querySelector(sel)?.getBoundingClientRect();
-        if (g && g.width && g.top < band.bottom && g.bottom > band.top) clearRight = Math.max(clearRight, g.right);
-      }
-      if (clearRight && state.x < clearRight + 8) {
-        const shifted = Math.round(clearRight + 8);
-        // only if it still fits; otherwise leave it centred and let the clamp win
-        if (shifted + state.w <= innerWidth - 8) state.x = shifted;
-      }
-    }
+      if (opts.x === 'center' && !moved) state.x = Math.round((innerWidth - state.w) / 2);
     state.x = clamp(state.x, 8, Math.max(8, innerWidth - state.w - 8));
+      // EVERY DEFAULT-PLACED FRAME CLEARS THE FIXED CHROME, not just the centred
+      // bar. R, 2026-09-12: "make sure the other menus stay clear of the mic,
+      // headphones, and dock... If they're at default, just run a check to resize.
+      // If they're moved, then honor where they're moved to."
+      //
+      // This lived inside the `opts.x === 'center'` branch, so it only ever ran for
+      // the emote bar. Measured at 360x780: world [8,8,352,381], debug
+      // [8,8,350,471] and profile [8,46,352,526] all sat across the rail, and
+      // world/debug across the mic/ear pair too. Four frames; I had "fixed" one.
+      // Frames cap at Z_HI=25 while that chrome is 27/45, so a frame left
+      // underneath cannot win by stacking - it has to be placed or sized clear.
+      //
+      // Gated on `placed`: true once the owner has dragged or resized this frame,
+      // persisted in state. A hand-arranged layout is theirs to keep.
+      if (!placed) {
+        let clearRight = 0;
+        for (const sel of ['#dock', '#micbtn', '#earbtn']) {
+          const g = document.querySelector(sel)?.getBoundingClientRect();
+          if (g && g.width && g.left < state.x + state.w && state.x < g.right
+              && g.top < state.y + hh && state.y < g.bottom) {
+            clearRight = Math.max(clearRight, g.right);
+          }
+        }
+        if (clearRight) {
+          const shifted = Math.round(clearRight + 8);
+          if (shifted + state.w <= innerWidth - 8) {
+            state.x = shifted;
+          } else {
+            // SHRINK, honouring the same floor the width clamp above honours.
+            // My first version set state.w = avail and ignored minW - but
+            // root.style.minWidth is a CSS floor (line 478, and the comment there
+            // records it silently beating the JS arithmetic once already). profile
+            // declares minW 320, asked for 302, painted 320, and ran 10px off a
+            // 360px viewport: unreachable under html,body{overflow:hidden}.
+            const avail = innerWidth - 8 - shifted;
+            state.w = Math.max(Math.min(avail, maxW), Math.min(minW, maxW));
+            state.x = shifted;
+          }
+          // CLEARING LOSES TO FITTING. If the frame cannot both clear the chrome
+          // and stay on screen, put it back on screen: an overlapped control is
+          // reachable, an off-screen one is not.
+          state.x = Math.max(8, Math.min(state.x, innerWidth - state.w - 8));
+        }
+      }
     paint();
   }
 
