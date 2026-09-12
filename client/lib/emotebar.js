@@ -90,14 +90,38 @@ export function initEmoteBar() {
   // should honor that." _placed is true once the owner has dragged or resized the
   // frame (frames.js:386, persisted in state), so a hand-sized bar keeps its size
   // and this clamp does nothing.
+  // DIRECTION MATTERS (antra-tess #185 rereview B2, 2026-09-12). The loop below used
+  // to take g.right of every obstacle and treat it as "space consumed from the left".
+  // That is only true of LEFT-anchored chrome. `.capnotice` is right-anchored
+  // (`right: 10px`, measured live as cssRight "10px"), so its g.right is ~innerWidth
+  // and the old arithmetic returned innerWidth - 8 - (innerWidth - 10 + 8) = -6.
+  // Math.min(352, -6) then fed snapTo a negative width and the 9-across bar reflowed
+  // into a 48x350 column on re-show — measured [464,10,352,46] -> [616,10,48,350],
+  // which is exactly the flip in the rereview. First paint escaped only because
+  // line ~149 takes the unclamped path.
+  //
+  // Bounded: the card is only in this y-band above 1067px. At <=900 it moves to
+  // top:102 and at 901-1067 to top:64, both outside `g.top < 60`, so roomFor was
+  // already healthy there (measured 762 at 880, 882 at 1000) and must stay so.
   const roomFor = () => {
     // the chrome that shares the bar's y-band: the rail plus the mic/ear pair
-    let clearRight = 0;
+    let leftEdge = 0;                 // left-anchored chrome eats from the left
+    let rightEdge = innerWidth;       // right-anchored chrome eats from the right
     for (const sel of ['#dock', '#micbtn', '#earbtn', '.capnotice']) {
-      const g = document.querySelector(sel)?.getBoundingClientRect();
-      if (g && g.width && g.top < 60 && g.bottom > 8) clearRight = Math.max(clearRight, g.right);
+      const el = document.querySelector(sel);
+      const g = el?.getBoundingClientRect();
+      if (!g || !g.width || !(g.top < 60 && g.bottom > 8)) continue;
+      // Which edge is it pinned to? Read the rule, not the resulting coordinates:
+      // a stretched element (both edges set, e.g. the card at <=900px) is neither,
+      // and gets no say in lateral room — there is none to give.
+      const cs = getComputedStyle(el);
+      const pinnedRight = cs.right !== 'auto', pinnedLeft = cs.left !== 'auto';
+      if (pinnedLeft && !pinnedRight) leftEdge = Math.max(leftEdge, g.right);
+      else if (pinnedRight && !pinnedLeft) rightEdge = Math.min(rightEdge, g.left);
+      else if (!pinnedLeft && !pinnedRight) leftEdge = Math.max(leftEdge, g.right);
     }
-    return innerWidth - 8 - Math.max(clearRight + 8, 8);
+    // never hand snapTo a destructive width: a clamp that cannot help must be inert
+    return Math.max(widthFor(1), rightEdge - 8 - Math.max(leftEdge + 8, 8));
   };
   // SIZE is honoured for a hand-placed bar; POSITION is not allowed to leave it
   // underneath fixed chrome. R, 2026-09-12: "Only resize the menu if it's at

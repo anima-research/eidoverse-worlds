@@ -1195,10 +1195,27 @@ kbd {
      1904x844 on any browser without WebGPU, and reachable again the moment the
      card was dismissed. The bar is a primary control the owner placed
      deliberately; this is transient chrome on a reduced path, so the chrome
-     moves. Top-right is the one region no fixed element claims (#dock and
-     #emenu hug top-left, #hintbar bottom-centre, #trayzone and #toasts
-     bottom-right, #stick bottom-left). antra-tess #185 rereview B2. */
-  position: fixed; right: 10px; top: 8px; z-index: 60;
+     moves.
+     2026-09-12, CORRECTING MY OWN CLAIM ABOVE: I wrote that "top-right is the one
+     region no fixed element claims (#dock/#emenu top-left, #hintbar bottom-centre,
+     #trayzone/#toasts bottom-right, #stick bottom-left)". That enumerated FIXED
+     CHROME and was true of it — and false of the screen. DEFAULT_LAYOUT (frames.js)
+     opens `world` at x:-8 y:8 w:407 h:363, i.e. top-right, and has since 06f4a0f.
+     I checked one list and never checked the layout the product actually ships.
+     Measured at 1280x720: card [930..1270]x[8..43] over world [865..1272]x[8..381];
+     of world's 8 interactive elements, BUTTON.head [872,20,387,29] is ~85% covered
+     (only x 872..930 stays clickable). The body and the other 7 are reachable, so
+     this is one blocked control, not a dead panel — narrower than the rereview's
+     wording and still a real defect.
+     The card moves BELOW world instead. NOTE THE TRAP I fell into first: world's
+     DECLARED h is 363 (bottom 371), but the live frame measures bottom 381 — the
+     chrome is not in the declared height — so top:379 still left a 2px kiss. The
+     value below is derived from the MEASURED bottom, not the declaration. It lands
+     in the `settings` slot, which DEFAULT_LAYOUT ships CLOSED
+     ([381..824] at every width). The top strip between `emotes` and `world` cannot
+     host it — that gap is -57px at 1068, 49 at 1280, 129 at 1440, 249 at 1680, and
+     the card needs min(320px,46vw). antra-tess #185 rereview B2. */
+  position: fixed; right: 10px; top: 389px; z-index: 60;   /* world's MEASURED bottom 381 + 8 */
   max-width: min(320px, 46vw);   /* NARROW, not merely right-anchored: at 720px the card still reached back across the centred emote bar and blocked 7 of 9 tiles even from top-right. The long text is the title tooltip anyway (09-05 note above). #185 B2. */ padding: 5px 10px; font-size: var(--fs-sm); line-height: 1.4;
   display: flex; flex-direction: row; align-items: center; gap: 10px; border-radius: 8px;
 }
