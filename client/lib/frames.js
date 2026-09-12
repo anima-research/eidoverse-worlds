@@ -627,7 +627,17 @@ export function makeFrame(id, opts = {}) {
       //
       // Gated on `placed`: true once the owner has dragged or resized this frame,
       // persisted in state. A hand-arranged layout is theirs to keep.
-      if (!placed) {
+      // Only consult chrome that has actually been PLACED. At boot fit() can run
+      // while #dock is still an 8x8 stub and the mic/ear pair sits unplaced at
+      // its origin: measured t=836ms, #micbtn [8,714,34,740] and #earbtn
+      // [8,746,34,772] - both inside chat's band - while #dock was [10,10,18,18].
+      // chat dodged two glyphs that were about to move to [44,70] and [76,102],
+      // and the one-shot `fitted` latch froze the result. R saw it immediately:
+      // "the Chat panel is scooched over to avoid where the dock *would* be".
+      // The dock carries its buttons once laid out (0 at 97ms, 6+ by 922ms);
+      // before that, nothing here is a real obstacle.
+      const chromeSettled = (document.querySelector('#dock')?.querySelectorAll('button[data-toggles]').length ?? 0) > 0;
+      if (!placed && chromeSettled) {
         let clearRight = 0;
         for (const sel of ['#dock', '#micbtn', '#earbtn']) {
           const g = document.querySelector(sel)?.getBoundingClientRect();
@@ -641,19 +651,10 @@ export function makeFrame(id, opts = {}) {
           if (shifted + state.w <= innerWidth - 8) {
             state.x = shifted;
           } else {
-            // SHRINK, honouring the same floor the width clamp above honours.
-            // My first version set state.w = avail and ignored minW - but
-            // root.style.minWidth is a CSS floor (line 478, and the comment there
-            // records it silently beating the JS arithmetic once already). profile
-            // declares minW 320, asked for 302, painted 320, and ran 10px off a
-            // 360px viewport: unreachable under html,body{overflow:hidden}.
             const avail = innerWidth - 8 - shifted;
             state.w = Math.max(Math.min(avail, maxW), Math.min(minW, maxW));
             state.x = shifted;
           }
-          // CLEARING LOSES TO FITTING. If the frame cannot both clear the chrome
-          // and stay on screen, put it back on screen: an overlapped control is
-          // reachable, an off-screen one is not.
           state.x = Math.max(8, Math.min(state.x, innerWidth - state.w - 8));
         }
       }
