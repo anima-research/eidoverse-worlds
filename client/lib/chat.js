@@ -1140,6 +1140,14 @@ function paintTabs() {
       x.title = `close ${key.slice(2)}`;
       x.onclick = (e) => {
         e.stopPropagation(); e.preventDefault();
+        // CLOSING A DESTINATION DISPOSES ITS DRAFT, on BOTH branches. My first fix
+        // lived in setFilter, which the line below only reaches when the tab being
+        // closed is the ACTIVE one; closing a BACKGROUND tab calls paintTabs() and
+        // skipped it entirely. chat-log-test caught that fifteen minutes after I
+        // called B3 verified — the hand-probe closed the tab it was looking at, so it
+        // structurally could not reach this branch. (antra-tess #185 B3)
+        drafts.delete(key);
+        if (filter === key && inputEl) inputEl.value = '';
         convos.delete(key.slice(2));
         if (filter === key) setFilter('all'); else paintTabs();
       };
@@ -1147,6 +1155,14 @@ function paintTabs() {
       b.append(x);
     b.oncontextmenu = (e) => {
       e.preventDefault();
+      // CLOSING A DESTINATION DISPOSES ITS DRAFT, on BOTH branches. My first fix
+      // lived in setFilter, which the line below only reaches when the tab being
+      // closed is the ACTIVE one; closing a BACKGROUND tab calls paintTabs() and
+      // skipped it entirely. chat-log-test caught that fifteen minutes after I
+      // called B3 verified — the hand-probe closed the tab it was looking at, so it
+      // structurally could not reach this branch. (antra-tess #185 B3)
+      drafts.delete(key);
+      if (filter === key && inputEl) inputEl.value = '';
       convos.delete(key.slice(2));
       if (filter === key) setFilter('all'); else { paintTabs(); }
     };

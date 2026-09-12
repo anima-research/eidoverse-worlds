@@ -233,10 +233,44 @@ check("...and `all` shows the room again",
 { const keirTab = [...tabs().querySelectorAll(".tabscroll button")].find((b: any) => b.textContent.includes("@keir")) as HTMLElement;
   const x = keirTab?.querySelector(".tabx") as HTMLElement;
   check("a DM tab carries a visible close", !!x, keirTab?.innerHTML.slice(0, 80) ?? "(no tab)");
+    // A DRAFT BELONGS TO ITS DESTINATION (antra-tess #185 rereview B3). Typing in a
+    // conversation tab and then closing it left the PRIVATE line in the box while
+    // the destination became public — reproduced in the real client before the
+    // fix: the canary went out as {verb:"say"}. The draft must be typed INSIDE the
+    // DM for this to mean anything; my first version typed it while `system` was
+    // active and then blamed the DM close, which asserted the wrong rule — a
+    // public draft rightly survives an unrelated tab closing.
+    keirTab?.click();
+    const inp = document.querySelector("#chatline") as HTMLInputElement;
+    const SECRET = "DRAFT_MUST_NOT_SURVIVE_CLOSE";
+    inp.value = SECRET;
   x?.click();
   check("...and clicking it removes that tab", !tabLabels().some((t: string) => t.includes("@keir")), tabLabels().join("|"));
   check("...and the fixed tabs are untouched",
     tabLabels().slice(0, 3).join("|") === "all|mentions|system", tabLabels().join("|")); }
+
+  { // A CLOSED CONVERSATION'S PARKED DRAFT MUST NOT COME BACK (antra #185 B3).
+    // The two checks that stood here were VACUOUS: closing the ACTIVE tab goes
+    // through setFilter, which parks and clears the box on the way in, so the
+    // input was already empty at assertion time and BOTH mutations — removing
+    // drafts.delete(key), and removing the active-close clear — still returned
+    // 33/33. The only observable drafts.delete(key) controls is the parked draft
+    // RETURNING, so this reopens the conversation and looks.
+    const inp = document.querySelector("#chatline") as HTMLInputElement;
+    const SECRET = "PARKED_DRAFT_MUST_NOT_RETURN";
+    const mica = [...tabs().querySelectorAll(".tabscroll button")].find((b: any) => b.textContent.includes("@mica")) as HTMLElement;
+    check("the @mica tab is present for the parked-draft check", !!mica, tabLabels().join("|"));
+    mica?.click();                     // into the private conversation
+    inp.value = SECRET;                // a draft that belongs to @mica
+    const allTab = [...tabs().querySelectorAll(".tabscroll button")].find((b: any) => b.textContent.trim().startsWith("all")) as HTMLElement;
+    allTab?.click();                   // switch away -> setFilter PARKS it
+    (mica?.querySelector(".tabx") as HTMLElement)?.click();   // close from the BACKGROUND
+    mica?.click();                     // try to return to it
+    check("a closed conversation's parked draft does not come back",
+      inp.value !== SECRET, `input=${JSON.stringify(inp.value)}`);
+    inp.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    check("...and nothing carrying those bytes is sent afterwards",
+      !whispers.some((w: any) => String(w?.text).includes(SECRET)), JSON.stringify(whispers.slice(-2))); }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
