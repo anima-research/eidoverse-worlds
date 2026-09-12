@@ -266,9 +266,20 @@ function fitsDefaults() {
   const open = Object.values(DEFAULT_LAYOUT).filter((d) => d.hidden === false);
   const box = (d) => (d.h ?? 0) + CHROME;
   const bar = DEFAULT_LAYOUT.emotes.hidden === false ? box(DEFAULT_LAYOUT.emotes) : 0;
+  // WIDTH IS A ROW, NOT A FRAME. `Math.max(...widths)` asked whether the single
+  // widest panel fits — but chat is anchored LEFT (x:10) and world RIGHT (x:-8),
+  // so they must sit side by side and the arrangement needs the SUM. At 800px
+  // the widest frame (545) fits comfortably while 545+407=952 does not, so
+  // auto-minimize left both open and the top-docked bar landed on world:
+  // `emotes [224,10,576,56] x world [385,8,792,381]`, 191x46px, both axes.
+  // Boot-check has been red at 800x700 since the bar moved to the top (288a5da)
+  // and I did not see it because I ran only 1280x720 and 390x844 all day.
+  const sideBySide = open
+    .filter((d) => d !== DEFAULT_LAYOUT.emotes && typeof d.x === 'number')
+    .reduce((sum, d) => sum + (d.w ?? 0), 0);
   const widest = Math.max(...open.map((d) => d.w ?? 0));
   const tallest = Math.max(...open.filter((d) => d !== DEFAULT_LAYOUT.emotes).map(box), 0);
-  return innerWidth - 16 >= widest && innerHeight - 16 >= tallest + bar;
+  return innerWidth - 16 >= Math.max(widest, sideBySide) && innerHeight - 16 >= tallest + bar;
 }
 
 export function makeFrame(id, opts = {}) {
