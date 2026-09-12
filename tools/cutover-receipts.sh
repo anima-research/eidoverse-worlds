@@ -47,11 +47,14 @@ run boot-check.mjs
 # THE VIEWPORT MATRIX, actually run (antra-tess #185). The knobs existed and no
 # command exercised them, so the resize phase and the chrome/occlusion check were
 # capabilities rather than receipts — the same gap as a corpus row nothing applies.
-# 390x844 is deliberately NOT here: it fails today on a disclosed defect —
-# "stand" covered by #earbtn — that needs an owner layout call (wrap the bar
-# narrower, or move the mic/ear pair). Wiring a known-red command into the
-# shared receipts script would block unrelated cutovers; the defect is carried
-# by the PR body and by a corpus row instead. Restore this line when it passes.
+# 390x844 was held out while "stand" was covered by #earbtn — a known-red command
+# in the shared receipts script blocks unrelated cutovers. ENABLED 2026-09-12: the
+# default-size clamp (emotebar.js show()) opens the bar at the width that FITS, so
+# on a phone it comes up 6 wide and two rows at x=110, clear of the mic/ear pair.
+# Measured ok with AND without touch emulation; the occlusion cleared as a side
+# effect of sizing rather than by moving anything.
+BOOT_CHECK_VIEWPORT=390x844 run boot-check.mjs
+BOOT_CHECK_VIEWPORT=390x844 BOOT_CHECK_TOUCH=1 run boot-check.mjs
 BOOT_CHECK_VIEWPORT=800x700 run boot-check.mjs
 BOOT_CHECK_VIEWPORT=1280x720 BOOT_CHECK_RESIZE_TO=390x844 run boot-check.mjs
 BOOT_CHECK_VIEWPORT=844x390 BOOT_CHECK_TOUCH=1 run boot-check.mjs
