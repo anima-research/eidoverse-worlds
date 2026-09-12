@@ -417,6 +417,15 @@ export function makeFrame(id, opts = {}) {
     raise,
     resetLayout() {
       moved = false;                       // back under the anchors, or reset only half-works
+      // ...and UNPLACE it. antra-tess #185 rereview addendum, B1(b): `placed` is a
+      // separate latch (line ~360) set only by markMoved(), and the viewport rule
+      // reads THAT — `if (id === 'chat' || !f._state || f._placed) continue`. Reset
+      // cleared `moved` and left `placed` latched from whatever drag preceded it, so
+      // a reset frame stayed permanently exempt from viewport management: the one
+      // act that means "I am not arranging this any more" left the I-arranged-this
+      // flag standing. The comment at 358 asks for a signal "written only at the
+      // deliberate acts" — a reset is the deliberate act of un-placing.
+      placed = false; state.placed = false;
       localStorage.removeItem(LS(id));
       Object.assign(state, {
         x: resolveAnchor(opts.x, w, innerWidth),

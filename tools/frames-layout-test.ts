@@ -257,6 +257,25 @@ console.log("FRAMES — a viewport too small for the default arrangement opens o
   window.dispatchEvent(new Event("resize"));
 }
 
+console.log("FRAMES — reset UNPLACES: the viewport rule reads `placed`, not `moved`");
+{
+  // antra-tess #185 rereview addendum B1(b): resetLayout cleared `moved` and left
+  // `placed` latched, so a frame that had ever been dragged stayed exempt from
+  // viewport management FOREVER after a reset — `if (... || f._placed) continue`.
+  // The deliberate act of resetting is precisely the act of un-placing.
+  localStorage.removeItem("ew-frame-world");
+  const f = measurable(makeFrame("world", { title: "world" }));
+  check("a fresh frame is not placed", f._placed === false, `placed=${f._placed}`);
+  f._markMoved();
+  check("a drag places it", f._placed === true && f.state.placed === true,
+    `placed=${f._placed} state.placed=${f.state.placed}`);
+  f.resetLayout();
+  check("reset clears the latch, not just `moved`", f._placed === false,
+    `placed=${f._placed}`);
+  check("...and clears it in the persisted state too, or the next construction re-reads it",
+    f.state.placed === false, `state.placed=${f.state.placed}`);
+}
+
 console.log("FRAMES — reset obeys the viewport rule");
 {
   // Round 2: one tap of "reset layout" on a phone reopened world+emotes stacked
