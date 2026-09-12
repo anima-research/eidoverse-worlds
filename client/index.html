@@ -1217,6 +1217,17 @@ kbd {
 @media (max-width: 900px) {
   .capnotice { top: 64px; left: 50px; right: 8px; max-width: none; }
 }
+
+/* THE MID BAND, 901-1067px (measured 2026-09-12). The card is right-anchored at
+   vw-10 with width 340, and the centred bar's right edge is (vw+352)/2, so they
+   clear only from vw >= 352 + 2*(340+10+8) = 1068. Measured: the card steals one
+   tile at 950 and 1000, none from 1100 up — the arithmetic agrees with all seven
+   sampled widths. The phone branch above is the WRONG shape here (left:50 +
+   right:8 would stretch a ~940px card across a laptop), so the card keeps its
+   size and right anchor and simply drops below the bar's band. */
+@media (min-width: 901px) and (max-width: 1067px) {
+  .capnotice { top: 64px; }
+}
 .capnotice > * { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }   /* each notice is one row */
 .capnotice b { display: inline; margin: 0; white-space: nowrap; }
 .capnotice p { margin: 0; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
