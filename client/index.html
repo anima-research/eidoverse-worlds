@@ -1215,7 +1215,11 @@ kbd {
    #emenu, #stick and #hintbar in BOTH orientations. The card is transient chrome
    on a reduced-capability browser and it yields; the bar is a primary control. */
 @media (max-width: 900px) {
-  .capnotice { top: 64px; left: 50px; right: 8px; max-width: none; }
+  /* 102px, not 64: the bar CLAMPS to the room available now (emotebar.js
+     show()), so on a phone it opens 6 wide and TWO ROWS tall — bottom 94,
+     measured — and the 64 I picked when it was one row lands on row two.
+     A constant chosen against one layout does not survive the next. */
+  .capnotice { top: 102px; left: 50px; right: 8px; max-width: none; }
 }
 
 /* THE MID BAND, 901-1067px (measured 2026-09-12). The card is right-anchored at

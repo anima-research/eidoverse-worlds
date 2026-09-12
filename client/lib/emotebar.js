@@ -80,7 +80,30 @@ export function initEmoteBar() {
   };
   // a saved size from an older layout (or any drift) refits the moment the menu opens
   const show = f.show.bind(f);
-  f.show = () => { show(); snapTo(f._state.w); return f; };
+  // OPEN AT A SIZE YOU CAN ACTUALLY SEE (R, 2026-09-12: "at least be at a size
+  // they can be completely viewed at when open"). show() snapped to _state.w —
+  // the DEFAULT 352px — so tapping the bar open on a phone put a 352px bar in a
+  // 390px viewport, under the mic/ear pair. snapTo already derives columns from
+  // width; it was just never handed the width that fits.
+  //
+  // ONLY AT DEFAULT. R was explicit: "if it's saved in another configuration, we
+  // should honor that." _placed is true once the owner has dragged or resized the
+  // frame (frames.js:386, persisted in state), so a hand-sized bar keeps its size
+  // and this clamp does nothing.
+  const roomFor = () => {
+    // the chrome that shares the bar's y-band: the rail plus the mic/ear pair
+    let clearRight = 0;
+    for (const sel of ['#dock', '#micbtn', '#earbtn']) {
+      const g = document.querySelector(sel)?.getBoundingClientRect();
+      if (g && g.width && g.top < 60 && g.bottom > 8) clearRight = Math.max(clearRight, g.right);
+    }
+    return innerWidth - 8 - Math.max(clearRight + 8, 8);
+  };
+  f.show = () => {
+    show();
+    snapTo(f._placed ? f._state.w : Math.min(f._state.w, roomFor()));
+    return f;
+  };
   const grid = document.createElement('div');
   grid.className = 'tiles fixed';
   const tiles = new Map();
