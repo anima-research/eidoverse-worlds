@@ -40,7 +40,7 @@ export function initEmoteBar() {
   const f = makeFrame('emotes', {
     title: 'emotes', x: 'center', y: -10, w: widthFor(ALL), h: ROW_H,   // one row of nine across the bottom by default
       // minW was widthFor(3)=124px and a REAL resize clamps at f.minW
-      // (frames.js:155), so 124px admitted exactly three columns — ONE column was
+      // (the east/west resize clamp in frames.js), so 124px admitted exactly three columns — ONE column was
       // unreachable by drag no matter what snapTo computed. R hit it at once:
       // "Emote bar still can't go 1x wide, 9x tall." My own test had called
       // onResize(48, 336) directly and sailed past the clamp: a fixture that
@@ -86,43 +86,28 @@ export function initEmoteBar() {
   // 390px viewport, under the mic/ear pair. snapTo already derives columns from
   // width; it was just never handed the width that fits.
   //
-  // ONLY AT DEFAULT. R was explicit: "if it's saved in another configuration, we
-  // should honor that." _placed is true once the owner has dragged or resized the
-  // frame (frames.js:386, persisted in state), so a hand-sized bar keeps its size
-  // and this clamp does nothing.
-  // B2 (antra-tess #185 rereview, 2026-09-12), RE-FIXED after the first attempt
-  // failed to bind. The original defect: the loop took g.right of every obstacle as
-  // "space consumed from the left", which is only true of LEFT-anchored chrome.
-  // `.capnotice` was right-anchored at top:8, so its g.right was ~innerWidth and the
-  // arithmetic returned innerWidth - 8 - (innerWidth - 10 + 8) = -6. Math.min(352, -6)
-  // fed snapTo a negative width and the 9-across bar reflowed to a 48x350 column on
-  // re-show: measured [464,10,352,46] -> [616,10,48,350], the rereview's exact flip.
+  // ONLY AT DEFAULT: _placed is true once the owner has dragged or resized the bar
+  // (persisted in state), so a hand-sized bar keeps its size and this clamp does
+  // nothing. A saved configuration is honoured.
+  // CHROME CLEARANCE, and the trap in it (antra-tess #185 B2).
   //
-  // MY FIRST FIX WAS INERT AND I SHIPPED IT. It classified anchoring by
-  // `getComputedStyle(el).right !== 'auto'`. Chromium resolves BOTH left and right to
-  // used pixel values on any positioned element, so every obstacle scored
-  // pinnedLeft && pinnedRight, no branch matched, and roomFor stopped measuring
-  // anything at all. Measured at 1280: #dock/#micbtn/#earbtn each "BOTH -> NO BRANCH",
-  // room = innerWidth - 16. The bar stopped collapsing only because the clamp went
-  // inert, which looks identical to the clamp working. It also silently dropped the
-  // #dock clearance the old code got right (room 1162 -> 1264, 102px).
-  // An identity test (does g.right track innerWidth - parseFloat(cs.right)?) fails the
-  // same way: .capnotice measures cssL=930px cssR=10px and satisfies BOTH. The authored
-  // rule is not recoverable from computed style; do not try a third time.
+  // This loop takes g.right of every obstacle as "space consumed from the left",
+  // which is only true of LEFT-anchored chrome. Every obstacle currently in the band
+  // is left-anchored — measured #dock cssL=0 at left 0, #micbtn cssL=44, #earbtn
+  // cssL=76 — so the arithmetic is correct for all of them today.
   //
-  // WHAT ACTUALLY HOLDS. The card no longer enters this y-band at any width: the same
-  // commit moved it to top:389 (>=1068), top:64 (901-1067), top:102 (<=900) — measured
-  // inBand=false at 1280, 1440 and 1904. Every obstacle that IS in the band is
-  // left-anchored, measured: #dock cssL=0px at left 0, #micbtn cssL=44px at left 44,
-  // #earbtn cssL=76px at left 76. So the left-consuming arithmetic is correct for all
-  // of them. `.capnotice` is KEPT in the list but is inert at every shipped width
-  // (top:389 >=1068, top:64 at 901-1067, top:102 <=900 — all fail `g.top < 60`).
-  // Note what that entry is NOT: it is not future-proofing. If the card is ever
-  // returned to the band, this bare-g.right arithmetic is precisely what breaks —
-  // clearRight becomes ~innerWidth and room goes negative. Re-raising the card
-  // requires restoring an anchor-aware branch, not relying on this line.
-  // The one part of the failed fix worth keeping is the floor: a clamp that cannot
-  // help must be inert, never destructive.
+  // `.capnotice` is KEPT in the list but is inert at every shipped width: the card
+  // sits at top:389 (>=1068), top:64 (901-1067), top:102 (<=900), all of which fail
+  // `g.top < 60`. That entry is NOT future-proofing. If the card ever returns to the
+  // band this bare-g.right arithmetic is precisely what breaks — clearRight becomes
+  // ~innerWidth and room goes negative (measured -6, which fed snapTo a negative
+  // width and reflowed the 9-across bar to a 48x350 column).
+  //
+  // THE ANCHOR IS NOT RECOVERABLE from computed style, so do not try to detect it
+  // here: CSSOM 9 resolves left AND right to used values for a positioned element,
+  // so `.capnotice` reports cssL=930px and cssR=10px simultaneously and satisfies
+  // both an `!== 'auto'` test and an edge-identity test. Re-raising the card requires
+  // an anchor the obstacle DECLARES, not a test against its rendered geometry.
   const roomFor = () => {
     // the chrome that shares the bar's y-band: the rail plus the mic/ear pair
     let clearRight = 0;
@@ -131,58 +116,28 @@ export function initEmoteBar() {
       if (g && g.width && g.top < 60 && g.bottom > 8) clearRight = Math.max(clearRight, g.right);
     }
     // FLOOR AT ONE COLUMN — not a stand-down, and not a raw negative.
-    // I shipped both wrong answers before this one. Flooring at widthFor(1) looked
-    // like "the collapse" because 48x336 is the same shape as the rereview's
-    // [616,10,48,350]; standing down instead looked like inertness. Measured, the
-    // stand-down is strictly worse: at room=123 the bar keeps 352 and paints 229px
-    // UNDER #micbtn/#earbtn, at room=48 it is 304px under, at room=-6 it is 358px
-    // under. Frames cap at Z_HI=25 and every element this loop measures outranks
-    // them: #dock 27 (index.html), #micbtn/#earbtn 45 (mictoggle.js:250/:254),
-    // .capnotice 60 (index.html, and frames.js:656 says so too). An earlier version
-    // of this comment said "27/45", which was wrong about the glyphs; the version
-    // after it named three of the four and still omitted .capnotice — the one
-    // element this whole finding was about. So those tiles
-    // are unpressable — the exact report this clamp exists for ("Make sure the
-    // emote bar isn't under the mic or headphones"). A bar that looks wrong is
-    // reachable; a bar under the glyphs is not.
-    // ONE column is a legal shape here by prior decision, not a degenerate one:
-    // minW is widthFor(1) (line ~49) and snapTo floors cols at 1, both landed
-    // after "Emote bar still can't go 1x wide, 9x tall".
     //
-    // WHAT THIS FLOOR DOES NOT DO, stated because an earlier version of this
-    // comment claimed it did: it does not make the bar reachable at every room.
-    // For 0 < room < 48 the result is a 48px bar in <=47px of clear space — still
-    // wider than its room, just less visibly. Flooring turns "much too wide" into
-    // "slightly too wide"; it is not a reachability guarantee. Saying "the only
-    // value that must never reach snapTo is a NEGATIVE one" was wrong: (0,48) is
-    // equally unsafe. frames.js fit() shifts a default-placed frame to `shifted`
-    // while that fits, and otherwise runs its OWN floor on the same arithmetic --
-    // not a second mechanism. Two boundaries, computed here rather than guessed
-    // (clearRight 102 -> shifted 110, bar 352):
-    //   iw 1280 -> SHIFT, x=110              iw 400 -> FLOOR, avail 282, w=282  (fits)
-    //   iw 200  -> FLOOR, avail  82, w= 82   iw 150 -> FLOOR, avail  32, w= 48  (over)
-    // COUNTERFACTUAL GEOMETRY, stated plainly: this table holds clearRight at 102,
-    // which is a 1280x720 measurement. At a 400px viewport the dock and glyph rects
-    // are not at those coordinates, so this is arithmetic about WHEN THE BRANCH
-    // ENGAGES (shifted + w exceeds the viewport), not a forecast about a real 400px
-    // page. Read it that way.
-    // The bar still FITS down to iw=166, where avail is exactly widthFor(1)=48;
-    // at iw=156 avail is 38 and the bar is wider than its room. An earlier version
-    // of this comment said "about 156px", which overstated the safe range by ten
-    // pixels in the unsafe direction. A review put both boundaries at "~180px,
-    // below any real phone"; that conflates them. frames.js:682 marks the branch
-    // OPEN.
+    // WHY A FLOOR AT ALL: standing down is strictly worse, measured. At room=123 the
+    // bar keeps 352 and paints 229px under #micbtn/#earbtn; at room=48, 304px under;
+    // at room=-6, 358px under. Frames cap at Z_HI=25 and every element this loop
+    // measures outranks them (#dock 27, #micbtn/#earbtn 45, .capnotice 60), so those
+    // tiles are unpressable — the exact report this clamp exists for. A bar that
+    // looks wrong is reachable; a bar under the glyphs is not.
     //
-    // NON-FINITE is handled explicitly because the previous policy handled it by
-    // accident and this one does not: `NaN >= n` is false, so returning null kept
-    // the width, whereas Math.max(48, NaN) is NaN and snapTo(NaN) writes NaN into
-    // _state.w/h and paints it. A lost guard, restored deliberately.
-    // It is a FINITENESS guard, not a NaN guard: it also catches +/-Infinity, since
-    // Math.max(48, Infinity) is Infinity and !Number.isFinite catches it. DERIVED,
-    // NOT MEASURED — an earlier version of this line said "measured", which was the
-    // wrong verb: no fixture sets innerWidth non-finite and the guard is unbound
-    // (removing it leaves the suite 36/0), so nothing in-repo exercises the path.
-    // Earlier comments here called it NaN-only; that undersold it.
+    // ONE COLUMN IS LEGAL here by prior decision: minW is widthFor(1) and snapTo
+    // floors cols at 1.
+    //
+    // WHAT THE FLOOR DOES NOT DO: it is not a reachability guarantee. For
+    // 0 < room < 48 the result is a 48px bar in <=47px of clear space — still wider
+    // than its room, just less visibly. The bar fits down to iw=166 (avail exactly
+    // widthFor(1)=48); at iw=156 avail is 38 and it is over.
+    //
+    // NON-FINITE is guarded explicitly. The previous policy handled it by accident:
+    // `NaN >= n` is false, so returning null kept the width, whereas Math.max(48, NaN)
+    // is NaN and snapTo(NaN) paints it. It is a FINITENESS guard, not a NaN guard —
+    // Math.max(48, Infinity) is Infinity and !Number.isFinite catches that too. That
+    // is derived, not measured: no fixture sets innerWidth non-finite and removing
+    // the guard leaves the suite green, so nothing in-repo exercises the path.
     const room = innerWidth - 8 - Math.max(clearRight + 8, 8);
     if (!Number.isFinite(room)) return null;   // keep the width rather than paint NaN
     return Math.max(widthFor(1), room);
@@ -194,7 +149,7 @@ export function initEmoteBar() {
   // were reachable: "Make sure the emote bar isn't under the mic or headphones."
   // Both hold if the clamp keeps its hands off a saved WIDTH and still refuses to
   // paint the bar beneath #micbtn/#earbtn/#dock. Frames cap at Z_HI=25 and that
-  // chrome sits at 27 (#dock), 45 (#micbtn/#earbtn, mictoggle.js:250/:254) and 60
+  // chrome sits at 27 (#dock), 45 (#micbtn/#earbtn, mictoggle.js) and 60
   // (.capnotice) — the loop measures all four — so a bar left there can never win
   // by stacking. (#emenu 40 and #trayzone 28 are not in the list at all.)
   f.show = () => {

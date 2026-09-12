@@ -287,20 +287,15 @@ function fitsDefaults() {
   // NUMERIC x, so the emote bar — x:'center' — was never counted: the predicate
   // asked "do chat(545) and world(407) fit?" while a 352px bar sat across the
   // middle of the same band. Below ~968 the sum already says no and the bar is
-  // hidden; above the threshold below a centred bar clears a right-anchored panel
-  // on its own; BETWEEN them nothing protected it. Measured overlap: 91px at
-  // 1000, 79 at 1024, 41 at 1100, 16 at 1150, clear at 1200.
+  // hidden; above the threshold a centred bar clears a right-anchored panel on its
+  // own; BETWEEN them nothing protected it.
   //
-  // The condition is geometric, not a guess: bar_right = (vw + barW)/2 and
-  // world_left = vw - M - worldW, so clearance needs vw >= barW + 2*(worldW + M).
-  // My first attempt used M=16 and produced 1198, which wrongly hid the world
-  // panel at 1200 where the arrangement measures CLEAR by 9px — an overlap bug
-  // traded for a spurious-minimise bug. M=8 (the margin the clamp itself uses)
-  // gives 1182 and agrees with all seven measured widths.
-  //
-  // PREDATES THIS BRANCH: bef5311, the head of the 05:32Z review, fails
-  // identically at 1024x800, and no receipt or corpus row sat between 900 and
-  // 1200 to catch it.
+  // Geometric, not a guess: bar_right = (vw + barW)/2, world_left = vw - M - worldW,
+  // so clearance needs vw >= barW + 2*(worldW + M). M=8 — the margin the clamp
+  // itself uses — gives 1182 and agrees with all seven measured widths. M=16 was
+  // tried and rejected: it hid world at 1200 where the arrangement measures clear
+  // by 9px, trading an overlap bug for a spurious-minimise one.
+
   const centredW = open.filter((d) => d.x === 'center')
     .reduce((m, d) => Math.max(m, d.w ?? EMOTE_BAR_W), 0);
   const rightAnchored = Math.max(0, ...open
@@ -602,19 +597,11 @@ export function makeFrame(id, opts = {}) {
     const chrome = hh - state.h;                       // title bar + padding: state.h is the BODY's height
     const maxH = Math.max(40, innerHeight - 16 - chrome);
     state.h = Math.max(Math.min(state.h, maxH), Math.min(minH, maxH));
-    // NOT gated on `moved`, though the x guards below are. Tried it (round 2,
-    // for the lifted emote bar) and it strands every ORDINARY bottom-anchored
-    // frame: rotate 700->500 and an untouched bar sat at y=370 instead of 428,
-    // because the clamp below pulls it up and nothing re-anchors it. The
-    // lifted-bar case needs a narrower fix than a blanket gate; disclosed
-    // unbound rather than papered over.
-    // THE ANCHOR is gated on `moved`; the CLAMP on the next line is NOT. That
-    // distinction is the whole fix. Round 2 gated the clamp too and stranded
-    // every ordinary bottom-anchored frame (rotate 700->500 left an untouched
-    // bar at y=370 where 428 was wanted), so it was reverted with a note saying
-    // the lifted-bar case "needs a narrower fix than a blanket gate". This is
-    // that fix: a frame PLACED BY HAND keeps its y, while an untouched one still
-    // follows its edge through a resize.
+    // THE ANCHOR is gated on `moved`; the CLAMP below is NOT — that distinction is
+    // the whole fix. A frame placed by hand keeps its y; an untouched one still
+    // follows its edge through a resize. Gating the clamp too was tried and
+    // reverted: it stranded every ordinary bottom-anchored frame (rotate 700->500
+    // left an untouched bar at y=370 where 428 was wanted).
     // R, 2026-09-11: "the emote bar is a little broken now, it can't be
     // arbitrarily placed anywhere."
     if (!moved && opts.y != null && opts.y < 0) state.y = Math.max(8, innerHeight + opts.y - hh);
@@ -631,25 +618,20 @@ export function makeFrame(id, opts = {}) {
       // headphones, and dock... If they're at default, just run a check to resize.
       // If they're moved, then honor where they're moved to."
       //
-      // This lived inside the `opts.x === 'center'` branch, so it only ever ran for
-      // the emote bar. Measured at 360x780: world [8,8,352,381], debug
-      // [8,8,350,471] and profile [8,46,352,526] all sat across the rail, and
-      // world/debug across the mic/ear pair too. Four frames; I had "fixed" one.
-      // Frames cap at Z_HI=25 while that chrome is 27 (#dock), 45 (#micbtn and
-      // #earbtn both) and 60 (.capnotice, per :655), so a frame left
-      // underneath cannot win by stacking - it has to be placed or sized clear.
+      // Frames cap at Z_HI=25 while the chrome above them is 27 (#dock), 45
+      // (#micbtn/#earbtn) and 60 (.capnotice): a frame left underneath CANNOT win
+      // by stacking, so it must be placed or sized clear. Measured at 360x780 with
+      // the rule applied to the centred bar only: world, debug and profile all sat
+      // across the rail.
       //
       // Gated on `placed`: true once the owner has dragged or resized this frame,
       // persisted in state. A hand-arranged layout is theirs to keep.
-      // Only consult chrome that has actually been PLACED. At boot fit() can run
-      // while #dock is still an 8x8 stub and the mic/ear pair sits unplaced at
-      // its origin: measured t=836ms, #micbtn [8,714,34,740] and #earbtn
-      // [8,746,34,772] - both inside chat's band - while #dock was [10,10,18,18].
-      // chat dodged two glyphs that were about to move to [44,70] and [76,102],
-      // and the one-shot `fitted` latch froze the result. R saw it immediately:
-      // "the Chat panel is scooched over to avoid where the dock *would* be".
-      // The dock carries its buttons once laid out (0 at 97ms, 6+ by 922ms);
-      // before that, nothing here is a real obstacle.
+      //
+      // AND ONLY CONSULT CHROME THAT IS ITSELF PLACED. At boot fit() can run while
+      // #dock is still a stub and the mic/ear pair sits unplaced at its origin, so a
+      // frame dodges glyphs that are about to move — and the one-shot latch freezes
+      // that wrong result. chromeSettled below is the gate: the dock carries no
+      // buttons until it has laid out.
       const chromeSettled = (document.querySelector('#dock')?.querySelectorAll('button[data-toggles]').length ?? 0) > 0;
       if (!placed && chromeSettled) {
         let clearRight = 0;
@@ -668,38 +650,29 @@ export function makeFrame(id, opts = {}) {
           if (shifted + state.w <= innerWidth - 8) {
             state.x = shifted;
           } else {
-            // STAND DOWN rather than floor. antra-tess #185 B2, one file over from
-            // emotebar.js and the same lesson: `Math.max(avail, minW)` looks like a
-            // rescue and is actually the collapse. Measured 2026-09-12 at 1280x720
-            // and 1904x844 with `.capnotice` moved to top:389 — which puts the card
-            // INSIDE settings' default rect ([865..1272] x [381..824], DEFAULT_LAYOUT
-            // wins over ui.js opts at line 316) — clearRight became the card's right
-            // edge, avail came to -6, and the floor took a DECLARED 407px frame down
-            // to its 210px minW at x=1062. The frame is never destroyed, only halved,
-            // which is why a single rect reads as plausible: I measured exactly that
-            // 210 and concluded the defect did not reproduce. It was the defect's own
-            // output. A clamp that cannot seat the frame legibly must leave it alone.
-            // OPEN, NOT FIXED (antra-tess #185 B2, second half). This branch still
-            // takes `g.right` of every obstacle as space-consumed-from-the-left, which
-            // is false for right-anchored chrome — the same defect repaired in
-            // emotebar.js's roomFor(). Live at 1280x720 and 1904x844: moving
-            // `.capnotice` to top:389 put the card INSIDE settings' default rect
-            // ([865..1272] x [381..824]; DEFAULT_LAYOUT at :241 overrides ui.js opts
-            // via the spread at :316), clearRight became the card's right edge, avail
-            // came to -6, and a DECLARED 407px frame opened at its 210px minW, x=1062.
+            // OPEN, NOT FIXED — right-anchored chrome is mis-costed here.
             //
-            // I twice reported this as not reproducing, because 210 is minW and a
-            // frame sitting at its floor looks like a frame at its natural size. It is
-            // the defect's own output.
+            // This branch takes `g.right` of every obstacle as space consumed FROM
+            // THE LEFT. That is true for left-anchored chrome (#dock) and false for
+            // anything welded to the right edge. Consequence, measured at 1280x720
+            // and 1904x844: `.capnotice` (top:389) lands inside settings' default
+            // rect, clearRight becomes the card's right edge, avail comes to -6, and
+            // a declared 407px frame opens at its 210px minW, x=1062.
             //
-            // Both available policies are wrong here and both were measured:
-            //   floor at minW  -> 407 becomes 210 (the collapse above)
-            //   stand down     -> 407 stays, UNDER the card (unreachable, z 60 vs 25)
-            // The repair is to make this loop anchor-aware, and computed style cannot
-            // supply the anchor (`.capnotice` resolves cssL=930px AND cssR=10px, so
-            // both an `!== 'auto'` test and an edge-identity test classify it as both).
-            // That needs a declared anchor the frames own, which changes the layout
-            // contract — the owner's call, not a patch. Left flooring, as it shipped.
+            // 210 IS minW, so a frame sitting at its floor looks like a frame at its
+            // natural size — which is why a single rect reads as healthy. Measure the
+            // declared width, not the rendered one.
+            //
+            // Both available policies are wrong, both measured:
+            //   floor at minW -> 407 becomes 210
+            //   stand down    -> 407 stays, UNDER the card (z 60 vs Z_HI 25)
+            // The repair is a DECLARED anchor the obstacle publishes. Computed style
+            // cannot supply it for a normally-constrained element: CSSOM 9 resolves
+            // left AND right to used values, so `.capnotice` reports cssL=930px and
+            // cssR=10px at once. (An OVER-constrained element does report authored
+            // values — measured — but .capnotice is over-constrained only below
+            // 900px, so detection would work in one of three states. Useless.)
+            // Changing the layout contract is the owner's call, not a patch.
             const avail = innerWidth - 8 - shifted;
             state.w = Math.max(Math.min(avail, maxW), Math.min(minW, maxW));
             state.x = shifted;
@@ -776,8 +749,8 @@ addEventListener('resize', () => {
     f._paint?.();
   }
   // RE-ASK WHETHER THE ARRANGEMENT STILL FITS (antra-tess #185 rereview B1).
-  // fitsDefaults() was consulted only at construction (:338) and resetLayout
-  // (:388) — both one-shot — while this listener clamped each frame's rect
+  // fitsDefaults() was consulted only at construction and in resetLayout() —
+  // both one-shot — while this listener clamped each frame's rect
   // INDEPENDENTLY and never re-checked the arrangement. A session opened wide and
   // then narrowed kept all three defaults open: measured emotes x world
   // overlapping 352x46px at 390x844 and 136x46px at 844x390 after a live resize.
