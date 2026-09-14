@@ -66,8 +66,14 @@ function takeDown(id) {
 }
 
 async function hang(id, picture, rev) {
+  // The bag is pending from the moment it is current until a hang INSTALLS
+  // it — including while a load is in flight with the entity present. A
+  // demote/promote during that load bumps the load stale, and the promote's
+  // spawn must still find the bag to rehang (Mica, #186 round 2): a picture
+  // that is still authored never silently stops being shown.
+  pending.set(id, picture);
   const root = entities.get(id);
-  if (!root) { pending.set(id, picture); return; }
+  if (!root) return;
   const part = findPart(root, picture.part);
   if (!part || !part.material) {
     // Legible, once: the comp folds and reads correctly in text tier; there is
@@ -126,12 +132,15 @@ bus.on('comp', ({ id, type, data }) => {
 bus.on('entity', ({ id, kind }) => {
   if (kind === 'remove' || kind === 'demote') {
     // the subtree left the scene with our clone on it; forget the handle
-    // (restoring a material on a detached mesh is harmless but pointless),
-    // and keep the bag pending so a promote re-hangs it. A load in flight
-    // for the departed subtree must not install: bump.
+    // (restoring a material on a detached mesh is harmless but pointless).
+    // A load in flight for the departed subtree must not install: bump.
+    // DEMOTE keeps the bag pending so the promote re-hangs it (the entity
+    // and its comp still exist in the fold); REMOVE clears it — the entity
+    // is gone, and a later spawn of the same id starts from its own comps.
     bump(id);
     const h = hung.get(id);
     if (h) { hung.delete(id); h.material.dispose(); if (kind === 'demote') pending.set(id, h.picture); }
+    if (kind === 'remove') pending.delete(id);
   } else if (kind === 'spawn') {
     // a promote replaces the subtree: whatever we hung is on the old one,
     // and whatever was loading for the old one is stale — the re-hang below
@@ -139,9 +148,9 @@ bus.on('entity', ({ id, kind }) => {
     const rev = bump(id);
     const h = hung.get(id);
     if (h) { hung.delete(id); h.material.dispose(); pending.set(id, h.picture); }
-    // The bag stays pending until a hang INSTALLS it (hang clears it on
-    // success): a subtree re-realized while a load is in flight bumps that
-    // load stale, and the next spawn must still find something to hang.
+    // Whatever is pending — a bag that never had a part to land on, or one
+    // whose load was bumped stale by this very re-realization — is hung
+    // again under the fresh revision.
     if (pending.has(id)) void hang(id, pending.get(id), rev);
   }
 });

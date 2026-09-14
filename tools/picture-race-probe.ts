@@ -13,14 +13,34 @@
 //   D. entity re-realized (remove + spawn) under a held load — the stale
 //      load does not land on the new subtree;
 //   E. world reset under a held load — nothing installs;
-//   F. the unheld happy path still hangs (the gate refuses only STALE loads).
+//   F. the unheld happy path still hangs (the gate refuses only STALE loads);
+//   G. LOD demote + promote under a held load with the entity PRESENT — the
+//      stale load is refused and the still-authored picture rehangs from
+//      pending (Mica, round 2: {part:true, hung:false, mapSrc:null}).
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 import { join } from 'node:path';
 
 const LIB = 'eidoverse/assets/models/scif_cyberpunk_crt_retro_computer_monitor_screen_keyboard_tower.glb';
-const IMG_A = 'eidoverse/assets/models/scif_cyberpunk_crt_retro_computer_monitor_screen_keyboard_tower_preview.jpg';
-// A second real image off the library: any other model preview will do.
-const IMG_B = process.env.PICTURE_SRC_B ?? 'eidoverse/assets/models/apocalyptic_destroyed_rubble_debris_concrete_rebar_chunk_preview.jpg';
+// ONE UNPRIMED IMAGE PER HELD LEG. The host caches library bytes for the
+// session (assets.js primeFiles → denoFiles), so a second load of the same
+// path never fetches — and a hold on a fetch that never happens holds
+// nothing: the load completes before the intent changes and the leg proves
+// nothing (found 2026-09-14 when a mutation stayed green). Every held leg
+// takes a fresh preview from this pool and asserts the hold engaged.
+const M = 'eidoverse/assets/models/';
+const POOL = [
+  'scif_cyberpunk_crt_retro_computer_monitor_screen_keyboard_tower_preview.jpg',
+  'apocalyptic_destroyed_rubble_debris_concrete_rebar_chunk_preview.jpg',
+  'apocalyptic_destroyed_rubble_debris_pile_building_collapse_preview.jpg',
+  'apocalyptic_destroyed_rubble_debris_pile_ruins_preview.jpg',
+  'apocalyptic_destroyed_rubble_debris_streetlight_lamp_light_street_preview.jpg',
+  'apocalyptic_scifi_cyberpunk_destroyed_rubble_debris_pile_preview.jpg',
+  'bagger_288_bucketwheel_excavator_mining_extraction_preview.jpg',
+  'cactus_wren_bird_animated_desert_songbird_calling_hopping_walking_preview.jpg',
+  'computer_servers_rack_with_fans_on_back_row_of_four_4_columns_preview.jpg',
+].map((f) => M + f);
+let poolIdx = 0;
+const fresh = () => { if (poolIdx >= POOL.length) throw new Error('image pool exhausted'); return POOL[poolIdx++]; };
 const { check, done } = checker();
 const world = await ownedWorld({ env: { EIDOVERSE_DIR: process.env.EIDOVERSE_DIR ?? join(process.env.HOME!, 'origin/eidoverse-video') } });
 const { page, close } = await launchBrowser();
@@ -67,9 +87,11 @@ try {
 
   // A. Mica's sequence: hold the fetch, author, remove, release.
   {
-    const h = await hold(pg, IMG_A);
-    await comp(pg, IMG_A);
+    const img = fresh();
+    const h = await hold(pg, img);
+    await comp(pg, img);
     await until(pg, () => h.heldCount() > 0, 10000);
+    check('A. the hold engaged (a real fetch is in flight)', h.heldCount() > 0);
     await comp(pg, null);
     await settle(300);
     await h.release();
@@ -79,24 +101,28 @@ try {
   }
   // B. older A held, newer B lands first, A released after: B stays.
   {
-    const h = await hold(pg, IMG_A);
-    await comp(pg, IMG_A);
+    const imgA = fresh(), imgB = fresh();
+    const h = await hold(pg, imgA);
+    await comp(pg, imgA);
     await until(pg, () => h.heldCount() > 0, 10000);
-    await comp(pg, IMG_B);
-    s = await until(pg, (x) => x.hung && x.mapSrc === IMG_B);
-    check('B. the newer bag hangs while the older load is still held', s.hung && s.mapSrc === IMG_B, JSON.stringify(s));
+    check('B. the hold engaged', h.heldCount() > 0);
+    await comp(pg, imgB);
+    s = await until(pg, (x) => x.hung && x.mapSrc === imgB);
+    check('B. the newer bag hangs while the older load is still held', s.hung && s.mapSrc === imgB, JSON.stringify(s));
     await h.release();
     await settle();
     s = await state(pg);
-    check('B. the older load, released late, does not overwrite the newer picture', s.hung && s.mapSrc === IMG_B && s.count === 1, JSON.stringify(s));
+    check('B. the older load, released late, does not overwrite the newer picture', s.hung && s.mapSrc === imgB && s.count === 1, JSON.stringify(s));
     await comp(pg, null);
     await until(pg, (x) => !x.hung);
   }
   // C. entity removed under a held load.
   {
-    const h = await hold(pg, IMG_A);
-    await comp(pg, IMG_A);
+    const img = fresh();
+    const h = await hold(pg, img);
+    await comp(pg, img);
     await until(pg, () => h.heldCount() > 0, 10000);
+    check('C. the hold engaged', h.heldCount() > 0);
     await verb(pg, 'remove', { id: 'console' });
     await until(pg, (x) => !x.entity);
     await h.release();
@@ -108,9 +134,11 @@ try {
   {
     await verb(pg, 'spawn', { id: 'console', lib: LIB, pos: [1.3, 0.5, -2.2], yaw: 0.6 });
     await until(pg, (x) => x.part);
-    const h = await hold(pg, IMG_A);
-    await comp(pg, IMG_A);
+    const img = fresh();
+    const h = await hold(pg, img);
+    await comp(pg, img);
     await until(pg, () => h.heldCount() > 0, 10000);
+    check('D. the hold engaged', h.heldCount() > 0);
     await verb(pg, 'remove', { id: 'console' });
     await until(pg, (x) => !x.entity);
     await verb(pg, 'spawn', { id: 'console', lib: LIB, pos: [1.3, 0.5, -2.2], yaw: 0.6 });
@@ -122,9 +150,11 @@ try {
   }
   // E. world reset under a held load.
   {
-    const h = await hold(pg, IMG_A);
-    await comp(pg, IMG_A);
+    const img = fresh();
+    const h = await hold(pg, img);
+    await comp(pg, img);
     await until(pg, () => h.heldCount() > 0, 10000);
+    check('E. the hold engaged', h.heldCount() > 0);
     await pg.evaluate(() => import('/lib/base.js').then((b: any) => b.bus.emit('world-reset', {})));
     await settle(300);
     await h.release();
@@ -136,9 +166,26 @@ try {
   {
     await verb(pg, 'spawn', { id: 'console', lib: LIB, pos: [1.3, 0.5, -2.2], yaw: 0.6 });
     await until(pg, (x) => x.part);
-    await comp(pg, IMG_A);
+    const img = fresh();
+    await comp(pg, img);
     s = await until(pg, (x) => x.hung && x.hasMap);
-    check('F. an unheld load still hangs (the happy path is untouched)', s.hung && s.hasMap && s.mapSrc === IMG_A, JSON.stringify(s));
+    check('F. an unheld load still hangs (the happy path is untouched)', s.hung && s.hasMap && s.mapSrc === img, JSON.stringify(s));
+  }
+  // G. the entity is present when the load starts; a demote/promote cycle
+  //    happens while the fetch is held.
+  {
+    await comp(pg, null);
+    await until(pg, (x) => !x.hung);
+    const img = fresh();
+    const h = await hold(pg, img);
+    await comp(pg, img);
+    await until(pg, () => h.heldCount() > 0, 10000);
+    check('G. the hold engaged', h.heldCount() > 0);
+    await pg.evaluate(() => import('/lib/base.js').then((b: any) => { b.bus.emit('entity', { id: 'console', kind: 'demote' }); b.bus.emit('entity', { id: 'console', kind: 'spawn' }); }));
+    await settle(300);
+    await h.release();
+    s = await until(pg, (x) => x.hung && x.hasMap);
+    check('G. demote+promote during a held load: the still-authored picture rehangs', s.hung && s.hasMap && s.mapSrc === img && s.count === 1, JSON.stringify(s));
   }
   check('no page errors across the cycle', errs.length === 0, errs.join(' | '));
 } finally {
