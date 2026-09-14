@@ -25,7 +25,7 @@ import { audioContext } from './audioctx.js';
 import { logChat } from './chat.js';
 import { playWhenAllowed } from './audiounlock.js';
 import { why } from './debuglog.js';
-import { rawMicStream } from './micstate.js';
+import { rawMicStream, setMicLive } from './micstate.js';
 
 let pc = null, cred = null, micStream = null, wantMic = false;
 // My own outbound analyser (sfuMyLevel). Declared HERE, with the rest of the
@@ -383,8 +383,16 @@ export async function sfuMic(on = true) {
   //
   // I introduced that an hour ago by making mic-off swap rather than mute.
   // Re-acquire whenever the current stream is not a real device.
+  // 🔴 TELL micstate THE DEVICE IS BACK, in the same synchronous breath as
+  // the re-enable. This path set track.enabled and returned; the only
+  // setMicLive(true) lived in sfuPublish, so after OFF→ON here micstate still
+  // believed the device was off — and since device liveness now gates the
+  // lane's authority (micstate.js drive closure), the gate would have stayed
+  // shut for good. Static import, no await between the enable and the
+  // report: that gap is a window the mode already promised away.
   if (micStream && !micStream.synthetic) {
     micStream.getTracks().forEach((t) => (t.enabled = true));
+    setMicLive(true);
     return;
   }
   if (micStream?.synthetic) {
@@ -393,7 +401,10 @@ export async function sfuMic(on = true) {
   }
   if (micPending && micPendingPc === pc) {
     await micPending;
-    if (micStream && !micStream.synthetic) micStream.getTracks().forEach((t) => (t.enabled = true));
+    if (micStream && !micStream.synthetic) {
+      micStream.getTracks().forEach((t) => (t.enabled = true));
+      setMicLive(true);
+    }
     return;
   }
   // A stale pending is sfuPublish's problem now — its entry loop re-checks

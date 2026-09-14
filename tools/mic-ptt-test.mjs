@@ -84,6 +84,21 @@ ms.setPttHeld(false); ms.setPttHeld(true);   // re-press now that mute is off
 t('PTT: unmuted re-press opens again', mg.gateOpenness() === 1);
 t('PTT: unmuted+held reports speaking:true', ms.micGateInfo().speaking === true);
 
+// ── the transport's mic OFF outranks the key, exactly as mute does ─────────
+// setMicLive is how a transport reports device liveness (voicesfu.js sfuMic).
+// The lane is retained across OFF, so `_lane && !_muted` alone kept saying
+// "on": a held key drove the gain open over a device the transport had
+// disabled, and the pill said speaking:true (Mica, #148 round 3). Liveness is
+// the third leg of micOn() and the gate's authority must be the same answer.
+ms.setMicLive(false);
+t('PTT: held → mic OFF closes the gate', mg.gateOpenness() === 0);
+t('PTT: held → mic OFF reports speaking:false', ms.micGateInfo().speaking === false);
+ms.setPttHeld(false); ms.setPttHeld(true);
+t('PTT: a fresh press while the mic is OFF does not open', mg.gateOpenness() === 0);
+ms.setMicLive(true);
+t('PTT: mic ON while held reopens — the regime is restored on the report, not on the next tick', mg.gateOpenness() === 1);
+t('PTT: …and reports speaking:true again', ms.micGateInfo().speaking === true);
+
 // ── leaving the mode must not leave a phantom finger on the gate ───────────
 vc.setPttMode(false);
 t('mode exit drops the held key', ms.pttHeld() === false);

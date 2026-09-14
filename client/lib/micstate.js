@@ -95,10 +95,11 @@ bus.on('audio:ptt', (on) => {
   // Leaving PTT with the key down must not leave a phantom finger on the gate:
   // the next regime starts from closed and earns its own open.
   if (_pttHeld) _pttHeld = false;
+  // gateAudio's drive closure puts an ungated lane back to what its consent
+  // row said — raw and open — unless the mic is muted or the transport turned
+  // the device OFF, which outrank every regime. ONE writer for the raw
+  // tracks, so there is one authority expression to get right (round 3).
   gateAudio(now);
-  // An ungated lane goes back to what its consent row said — raw and open —
-  // unless the mic is muted, which outranks every regime.
-  if (gateUnavailable()) driveRawTracks(!!_lane && !_muted);
 });
 
 // 🔴 THE ONSET WATCHER'S STATE. Extracted from voice.js:680-682 — the slice
@@ -119,13 +120,25 @@ const _onset = makeOnsetGate({
   level: _meter,
   threshold: gateThreshold,
   drive: (open) => {
-    const want = (!_lane || _muted) ? false : open;
+    // The machine's decision (level, or the held key) is one input; the
+    // lane's authority is the other, and it is the SAME three-state answer
+    // micOn() gives everyone else: a lane exists, a device is capturing, and
+    // the person has not muted. `_lane && !_muted` alone was wrong on an
+    // ungated lane: the sender lane is retained across mic OFF, so a later
+    // onset tick (or a mode exit, above) re-enabled a raw track the
+    // transport had authoritatively disabled — transmitting while the
+    // microphone control said OFF (Mica, #148 review, round 3).
+    const want = micOn() ? open : false;
     driveGate(want);
-    // No graph to drive (gate unavailable, raw transmission consented): under
-    // push-to-talk the key still has to close the WIRE, so the decision goes
-    // to the raw tracks themselves — micgate.js driveRawTracks. Voice
-    // activation on that lane stays raw; that is what the consent row said.
-    if (pttMode() && gateUnavailable()) driveRawTracks(want);
+    // No graph to drive (gate unavailable, raw transmission consented): the
+    // decision goes to the raw tracks themselves — micgate.js driveRawTracks.
+    // Under push-to-talk the key closes the WIRE; under voice activation the
+    // lane stays raw, as the consent row said, but still only while the mic
+    // is actually on. This is the ONLY writer of the raw tracks' enabled flag
+    // outside the transport, and the transport writes the same answer
+    // (sfuMic OFF disables + setMicLive(false); ON enables + setMicLive(true)),
+    // so a tick can never re-open what the microphone control closed.
+    if (gateUnavailable()) driveRawTracks(pttMode() ? want : micOn());
   },
   announce: () => sendTyping(null, 'mic'),
   // Push-to-talk hands the machine a HELD answer instead of a level to judge;
@@ -146,7 +159,7 @@ const stopOnsetWatch = () => _onset.stop();
 // #148 review). The pill and the audio must agree in every regime.
 export const micGateInfo = () => {
   const info = _onset.info();
-  return (!_lane || _muted) ? { ...info, speaking: false } : info;
+  return micOn() ? info : { ...info, speaking: false };
 };
 
 /** Live mic level 0..1 for UI — the factory meter over this module's own
@@ -226,7 +239,17 @@ export async function toggleMic() {
  *  Transports report device liveness through setMicLive(); everything else in
  *  the client asks HERE. */
 let _deviceLive = false;
-export function setMicLive(on) { _deviceLive = !!on; }
+export function setMicLive(on) {
+  const next = !!on;
+  if (next === _deviceLive) return;
+  _deviceLive = next;
+  // Liveness is part of the gate's authority (drive closure above), so a
+  // change re-applies the current decision at once rather than on the next
+  // 20 ms tick — and for mic ON that re-application is what puts an ungated
+  // lane back under its regime: the transport re-enables the raw track and
+  // PTT with the key up has to close it again before any frame leaves.
+  gateAudio(Date.now());
+}
 export const micOn = () => !!_lane && _deviceLive && !_muted;
 
 /** Release the DEVICE while keeping the lane. Ported verbatim from voice.js:909

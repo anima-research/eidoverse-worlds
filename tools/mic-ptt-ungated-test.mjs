@@ -81,5 +81,65 @@ vc.setPttMode(true); vc.setPttMode(false);
 t('mode exit while muted does NOT reopen the raw lane', track.enabled === false);
 ms.toggleMute(false);
 
+// ── the transport's mic OFF outranks the key too (Mica, round 3) ──────────
+// voicesfu.js sfuMic(false) with no synth provider is: disable the tracks,
+// then setMicLive(false). sfuMic(true) on a retained device is: enable the
+// tracks, then setMicLive(true). Reproduced here verbatim, in that order —
+// the ungated lane keeps its sender lane across mic OFF, so `_lane` alone
+// said "on" and a later onset tick (or a mode exit) re-enabled a raw track
+// the microphone control had turned off. The onset watcher is running on a
+// real 20 ms interval throughout; "ticks" below are real ticks.
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const transportMicOff = () => { track.enabled = false; ms.setMicLive(false); };
+const transportMicOn  = () => { track.enabled = true;  ms.setMicLive(true);  };
+
+// 1. PTT held → mic OFF → several ticks: still off, and says so.
+vc.setPttMode(true);
+ms.setPttHeld(true);
+t('precondition: held on the ungated lane transmits', track.enabled === true && ms.micOn() === true);
+transportMicOff();
+t('held → mic OFF: raw track is disabled at once', track.enabled === false);
+await sleep(90);   // four-plus onset ticks with the key still down
+t('held → mic OFF → ticks: raw track STAYS disabled', track.enabled === false);
+t('…micOn() is false', ms.micOn() === false);
+t('…speaking is false', ms.micGateInfo().speaking === false);
+t('…gateOpenness() is 0', mg.gateOpenness() === 0);
+ms.setPttHeld(false); ms.setPttHeld(true);
+t('a fresh press while the mic is OFF does not reopen the raw track', track.enabled === false);
+ms.setPttHeld(false);
+
+// 3a. explicit mic ON restores the PTT regime: key up means closed.
+transportMicOn();
+t('mic ON under PTT, key up: the transport enabled the track and the regime closed it again, synchronously', track.enabled === false && mg.gateOpenness() === 0);
+ms.setPttHeld(true);
+t('mic ON under PTT: a press opens', track.enabled === true && ms.micOn() === true && ms.micGateInfo().speaking === true);
+ms.setPttHeld(false);
+
+// 2. PTT armed, key up → mic OFF → leave PTT: the exit must not reopen.
+t('precondition: armed, key up, track closed', track.enabled === false);
+transportMicOff();
+vc.setPttMode(false);
+t('armed → mic OFF → leave PTT: raw track stays disabled', track.enabled === false);
+t('…gateOpenness() stays 0', mg.gateOpenness() === 0);
+await sleep(90);
+t('…and stays so across ticks in voice activation', track.enabled === false && mg.gateOpenness() === 0);
+
+// 3b. explicit mic ON restores the voice-activation regime: consented raw, open.
+transportMicOn();
+t('mic ON under voice activation: the consented raw lane is open again', track.enabled === true && mg.gateOpenness() === 1 && ms.micOn() === true);
+
+// ── the transport's fast path must report liveness, not just flip tracks ──
+// Source-level, deliberately: sfuMic needs a live RTCPeerConnection to run.
+// Both re-enable sites in sfuMic(true) (retained device; awaited pending
+// acquisition) set track.enabled and returned; the only setMicLive(true) was
+// in sfuPublish. With liveness now part of the lane's authority, OFF→ON
+// through that path would have left the gate shut for good.
+import { readFileSync } from 'fs';
+const sfu = readFileSync(new URL('../client/lib/voicesfu.js', import.meta.url), 'utf8');
+const relive = sfu.match(/\(t\.enabled = true\)\);[^;]{0,80}setMicLive\(true\);/g) ?? [];
+t('voicesfu: BOTH mic-ON re-enable sites are followed by setMicLive(true)', relive.length === 2);
+t('voicesfu: no re-enable site returns without reporting liveness', !/\(t\.enabled = true\)\);\s*return;/.test(sfu));
+t('negative control — the pre-fix shape is detected', /\(t\.enabled = true\)\);\s*return;/.test('micStream.getTracks().forEach((t) => (t.enabled = true));\n    return;'));
+
 console.log(`\n${ok} ok, ${bad} failed`);
 process.exit(bad ? 1 : 0);
