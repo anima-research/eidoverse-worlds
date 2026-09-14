@@ -73,6 +73,9 @@ export async function resolveMyAvatarPath() {
  *  the server resolves names for everyone else's view either way. */
 export function getMyAvatarPath() { return myAvatarPath ?? want; }
 export function getMyAvatarName() { return myAvatarName; }
+// the bodies panel (bodies.js) lists what you have worn; the Avatar object itself carries neither name nor path,
+// so the two sites that know both announce it: the initial body (main.js) and a switch (wireAvatarSwitch below)
+export function announceWorn(name, path) { if (name) bus.emit('avatar-worn', { name, path: path ?? null }); }
 
 /** The door (and the bad-key re-door) hands a choice here. `remember` is the
  *  first-run door's cache write; the bad-key path never persisted, and still
@@ -125,6 +128,7 @@ wireAvatarSwitch(async (path, name) => {
     setMe(next);
     myAvatarPath = path;
     myAvatarName = name;
+    announceWorn(name, path);
     setMyAvatarPath(path);
     localStorage.setItem('ew-avatar-name', name);
     contributeThumbnail(name, next.vrm, CONFIG.token);

@@ -31,8 +31,23 @@ export async function launchBrowser({ mic = false } = {}) {
   const args = mic ? ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
     '--autoplay-policy=no-user-gesture-required'] : [];
   const b = await chromium.launch({ ...(exe ? { executablePath: exe } : {}), args });
+  // BOOT_CHECK_VIEWPORT=390x844 drives a probe at a phone-width (or any) viewport.
+  // Without it the context takes Playwright's default — which is why a layout that
+  // only fits the authoring viewport passed every owned-browser run (#185 review).
+  const vp = (process.env.BOOT_CHECK_VIEWPORT || '').match(/^(\d+)x(\d+)$/);
+  const viewport = vp ? { width: +vp[1], height: +vp[2] } : null;
   const page = async () => {
-    const ctx = await b.newContext(mic ? { permissions: ['microphone'] } : {});
+    // TOUCH IS A PRECONDITION, not a nicety (antra-tess #185 B2): the dock only
+    // leaves the left edge when document.body has class 'touch' (controller.js:434,
+    // ui.js:489), so without it the rail never goes horizontal along the top and
+    // the landscape dock/emote-bar overlap she reported is invisible to any probe
+    // by construction. BOOT_CHECK_TOUCH=1 turns it on.
+    const touch = process.env.BOOT_CHECK_TOUCH === '1';
+    const ctx = await b.newContext({
+      ...(mic ? { permissions: ['microphone'] } : {}),
+      ...(viewport ? { viewport } : {}),
+      ...(touch ? { hasTouch: true, isMobile: true } : {}),
+    });
     return ctx.newPage();
   };
   return { browser: b, page, close: () => b.close() };
@@ -50,6 +65,21 @@ function armSignals() {
     process.exit(sig === 'SIGINT' ? 130 : 143);
   };
   process.once('SIGINT', onSignal); process.once('SIGTERM', onSignal);
+  // An UNCAUGHT THROW is neither signal: node prints the stack and exits
+  // without running the signal handlers, so a probe whose assertion arithmetic
+  // TypeErrors (or whose selector rejects) leaves its owned server child
+  // squatting on its port with its mkdtemp scratch dir. Same sweep, two more
+  // doors. boot-check and mic-hud-probe already reach cleanup via try/finally;
+  // panel-teardown-probe, tts-blocking-probe and mic-meter-states do not, and
+  // they come from 3ee7480 rather than this PR — fixed HERE so every probe is
+  // covered without editing three files this rung does not own.
+  // (agent review round 3)
+  const onThrow = (err) => {
+    for (const c of LIVE_CHILDREN) { try { c.kill('SIGKILL'); } catch { /* gone */ } try { rmSync(scratchOf.get(c), { recursive: true, force: true }); } catch {} }
+    console.error(err?.stack ?? String(err));
+    process.exit(1);
+  };
+  process.once('uncaughtException', onThrow); process.once('unhandledRejection', onThrow);
 }
 
 export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'dev', env: extraEnv = {} } = {}) {

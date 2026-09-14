@@ -93,6 +93,38 @@ console.log('SPLASH — startRays twice');
   stopRays();
   check('one stop each, nothing left', stops(a) === 1 && stops(b) === 1 && resizeListeners.size === 0 && !globalThis.__raysWorker); }
 
+// antra-tess #185 B4 (exact-head rereview): the boot receipt used to be main-thread-only —
+// __raysStarted is set on the line after new Worker(), and constructing a Worker whose module
+// fails to parse does NOT throw synchronously, so a dead worker read as healthy. The worker now
+// posts {type:'ready'} after its first real drawArrays, and the three outcomes must stay APART.
+const rays = () => ({ ack: globalThis.__raysAck === true, nogl: globalThis.__raysNoGl === true });
+const clearRays = () => { globalThis.__raysAck = false; globalThis.__raysNoGl = false; };
+
+console.log('SPLASH — the worker acknowledges (first-frame ready)');
+{ cv.style.display = ''; clearRays(); const before = workers.length; startRays(splash);
+  const w = workers[before];
+  check('before any message: neither ack nor nogl', !rays().ack && !rays().nogl);
+  w.onmessage({ data: { type: 'ready' } });
+  check('ready sets the ack', rays().ack === true, JSON.stringify(rays()));
+  check('ready does NOT set the nogl fallback', rays().nogl === false);
+  check('ready does not tear the worker down', globalThis.__raysWorker === w && raysActive() === true && cv.style.display !== 'none');
+  stopRays(); }
+
+console.log('SPLASH — nogl is a DISTINCT outcome, not an ack');
+{ cv.style.display = ''; clearRays(); const before = workers.length; startRays(splash);
+  const w = workers[before];
+  w.onmessage({ data: { type: 'nogl' } });
+  check('nogl sets its own flag', rays().nogl === true);
+  check('nogl does NOT count as an acknowledgment', rays().ack === false, JSON.stringify(rays()));
+  check('nogl still tears down and hides the canvas', cv.style.display === 'none' && !globalThis.__raysWorker); }
+
+console.log('SPLASH — SILENCE: what a broken module or a suppressed ack looks like');
+{ cv.style.display = ''; clearRays(); const before = workers.length; startRays(splash);
+  const w = workers[before];
+  check('a worker that never speaks leaves BOTH flags false', !rays().ack && !rays().nogl, JSON.stringify(rays()));
+  check('...while the main-thread start flag is unaffected — which is exactly why it could not catch this', globalThis.__raysStarted === true);
+  stopRays(); }
+
 console.log('SPLASH — ?rays=0');
 { const r = Bun.spawnSync(['bun', import.meta.path], { env: { ...process.env, SPLASH_RAYS0: '1' }, stdout: 'pipe', stderr: 'pipe' });
   const out = new TextDecoder().decode(r.stdout);

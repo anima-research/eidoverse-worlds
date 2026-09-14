@@ -73,6 +73,10 @@ function frame() {
   gl.uniform1f(uT, t); gl.uniform2f(uRes, canvas.width, canvas.height); gl.uniform1f(uRamp, ease); gl.uniform1f(uCalm, calm);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
   frames++;
+  // antra-tess #185 B4: the receipt must come FROM the worker, after a real draw.
+  // main-thread `__raysStarted` is set right after new Worker(), which a module that
+  // fails to parse does not disturb — so it could never go red on a dead worker.
+  if (frames === 1) postMessage({ type: 'ready' });
   raf = requestAnimationFrame(frame);
 }
 onmessage = (e) => {

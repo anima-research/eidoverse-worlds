@@ -41,7 +41,7 @@ import { initAudioPanel } from './lib/audiopanel.js';
 import { initSceneGraph } from './lib/scenegraph.js';
 import {
   toast, setHint, flashHint, buildHelp, toggleHelp,
-  openDoor, toggleRoster, initRoster, initDock, panelFrame,
+  openDoor, togglePeopleHere, initDock, panelFrame,
 } from './lib/ui.js';
 import { initDebug, updateDebug, toggleDebug } from './lib/debug.js';
 
@@ -75,8 +75,7 @@ import { updateRig, rigDebug } from './lib/lightrig.js';
 import { startPrefetch } from './lib/prefetch.js';
 import {
   getMe, setMe, getMyAvatarPath, getMyAvatarName, resolveMyAvatarPath,
-  rosterLazy, chooseAvatar,
-} from './lib/mybody.js';
+  rosterLazy, chooseAvatar, announceWorn } from './lib/mybody.js';
 import {
   initLocalBody, isDowned, activeRagdoll, goLimp, getUp,
   stepRagdoll, updateMountedMe, updateSeatHint,
@@ -134,14 +133,34 @@ initChat({
   typing: (to) => { sendTyping(to); getMe()?.setTyping(); },
   people,
 });
-initRoster(people);
 initEmoteBar();
 initDock([
   { id: 'chat', label: '💬' },
   { id: 'world', label: '🧱' },
-  { id: 'who', label: '👥' },
   { id: 'emotes', label: '👋' },
   { id: 'debug', label: '🐞' },
+  // The wrench. It was declared here through the lab (edb63df, 27eae14) and
+  // did NOT survive the recut: DEFAULT_PINS still pinned 'edit', but nothing
+  // in the client declared an entry with that id, so it could never appear —
+  // and dock-test could not notice, because it supplies its own 'edit' entry.
+  // R, 2026-09-11: "when did Edit get dropped from the dock?? That's a
+  // regression for sure."
+  //
+  // `last: true` keeps it at the end of the rail: edit is a MODE, not a
+  // window, and it reads as one only when it sits apart (live, 09-05).
+  //
+  // The gate reads the SERVER's answer. c18ee3f moved it there because an
+  // operator is owner everywhere but never appears in the fold's roles map,
+  // so a local role lookup hid the wrench from R while every build verb was
+  // already being accepted (09-04). roleOf/worldHasOwner live further up the
+  // stack than this rung; net.myRights is what rung 3 has, and it is the
+  // authoritative half anyway.
+  {
+    id: 'edit', label: '🔧', icon: 'wrench', last: true,
+    action: toggleEditMode,
+    active: () => isEditing(),
+    gate: () => ['builder', 'owner'].includes(net.myRights?.role),
+  },
 ]);
 initDebug({
   // the body in your HAND wins over your own — that is the one being worked on
@@ -224,7 +243,7 @@ function start() {
   // selected voice — used to be installed ONLY inside the `?tts=PORT` block, so
   // it existed exclusively for bodies launched with a URL parameter. A human who
   // picked a voice in the panel loaded a 63 MB model, saw "ready", typed, and
-  // heard nothing, because nothing was listening for their says (R, 2026-08-09:
+  // heard nothing, because nothing was listening for their says (live, 2026-08-09:
   // "I don't hear anything when I type into the chat box. Hearing yourself as a
   // human using TTS is half the fun").
   //
@@ -247,9 +266,10 @@ function start() {
 
   if (!isViewer) {
     resolveMyAvatarPath()
-      .then((path) => makeAvatar(CONFIG.name, path, { urgent: true })) // your body skips the load queue
-      .then((av) => {
+      .then((path) => makeAvatar(CONFIG.name, path, { urgent: true }).then((av) => ({ av, path }))) // your body skips the load queue
+      .then(({ av, path }) => {
         setMe(av);
+        announceWorn(path.split('/').pop().replace(/\.vrm.*$/, ''), path);   // the roster's name for this file, not a stale ew-avatar-name
         bodySettled = true;
         markPhase('body', 1);
         // Contribute a portrait of this body so the next person picks from
@@ -322,7 +342,7 @@ initCommands();   // the /command surface (lib/commands/) + its bus subscription
 bus.on('key', (e) => {
   if (e.code === 'Slash' && e.shiftKey) { toggleHelp(); return; }
   if (e.code === 'KeyH' && !isEditing()) { toggleHelp(); return; }
-  if (e.code === 'Tab') { e.preventDefault(); toggleRoster(); return; }
+  if (e.code === 'Tab') { e.preventDefault(); togglePeopleHere(); return; }
   if (e.code === 'KeyB') { toggleEditMode(); return; }
   if (e.code === 'KeyP') { togglePhotoMode(); return; }
   if (e.code === 'F1') { e.preventDefault(); document.body.classList.toggle('photo'); return; }

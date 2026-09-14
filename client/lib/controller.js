@@ -473,16 +473,18 @@ export function enableTouch() {
   canvas.addEventListener('pointerup', lookEnd);
   canvas.addEventListener('pointercancel', lookEnd);
 
+  // Jump only. The 💬 button predates the dock carrying chat; now that the rail
+  // has a chat icon on every viewport, a second door to the same panel just
+  // spends bottom-right space the thumb wants. Chat is still one tap (rail) or
+  // one key (Enter) away. NOTE: the chat import stays — Enter opens chat and
+  // chat.isOpen gates movement.
   const btns = document.getElementById('touchbtns');
-  for (const [label, code] of [['⤒', 'Space'], ['💬', 'chat']]) {
+  for (const [label, code] of [['⤒', 'Space']]) {
     const b = document.createElement('button');
     b.className = 'panel';
     b.textContent = label;
-    if (code === 'chat') b.onclick = () => chat.open();
-    else {
-      b.addEventListener('pointerdown', () => keys.add(code));
-      b.addEventListener('pointerup', () => keys.delete(code));
-    }
+    b.addEventListener('pointerdown', () => keys.add(code));
+    b.addEventListener('pointerup', () => keys.delete(code));
     btns.appendChild(b);
   }
 }
@@ -883,4 +885,14 @@ export function updateSpectator(dt, remote) {
 
 export function setCamYaw(v) { camYaw = v; }
 export function setPosture(p) { posture = p; }
+// the emote bar's posture tiles (emotebar.js): sit runs the same seat search as X, stand leaves seat and posture.
+// A declared-seat MOUNT (sockets, localbody.js) is neither posture nor myState.seat — the seat hook dismounts on X —
+// so the tiles ask first: sitting on a swing, 'sit' is a no-op and 'stand' is the dismount
+let mountedHook = () => false;
+export function setMountedHook(fn) { if (typeof fn === 'function') mountedHook = fn; }
+export function sitHere() { if (mountedHook()) return; if (posture !== 'sit') toggleSit(); }
+export function standUp() {
+  if (mountedHook()) { seatHook(); return; }
+  if (posture === 'sit' || posture === 'lie') { posture = null; myState.seat = null; }
+}
 export const getPosture = () => posture;
