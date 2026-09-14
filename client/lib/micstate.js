@@ -251,6 +251,10 @@ export function setMicLive(on) {
   gateAudio(Date.now());
 }
 export const micOn = () => !!_lane && _deviceLive && !_muted;
+/** The device leg of micOn() on its own — what the transport last reported.
+ *  Readable so a harness can tell "no lane" from "lane, device off"; the UI
+ *  keeps asking micOn(). */
+export const micDeviceLive = () => _deviceLive;
 
 /** Release the DEVICE while keeping the lane. Ported verbatim from voice.js:909
  *  — the reasoning is R's and was paid for in production:

@@ -128,18 +128,9 @@ t('…and stays so across ticks in voice activation', track.enabled === false &&
 transportMicOn();
 t('mic ON under voice activation: the consented raw lane is open again', track.enabled === true && mg.gateOpenness() === 1 && ms.micOn() === true);
 
-// ── the transport's fast path must report liveness, not just flip tracks ──
-// Source-level, deliberately: sfuMic needs a live RTCPeerConnection to run.
-// Both re-enable sites in sfuMic(true) (retained device; awaited pending
-// acquisition) set track.enabled and returned; the only setMicLive(true) was
-// in sfuPublish. With liveness now part of the lane's authority, OFF→ON
-// through that path would have left the gate shut for good.
-import { readFileSync } from 'fs';
-const sfu = readFileSync(new URL('../client/lib/voicesfu.js', import.meta.url), 'utf8');
-const relive = sfu.match(/\(t\.enabled = true\)\);[^;]{0,80}setMicLive\(true\);/g) ?? [];
-t('voicesfu: BOTH mic-ON re-enable sites are followed by setMicLive(true)', relive.length === 2);
-t('voicesfu: no re-enable site returns without reporting liveness', !/\(t\.enabled = true\)\);\s*return;/.test(sfu));
-t('negative control — the pre-fix shape is detected', /\(t\.enabled = true\)\);\s*return;/.test('micStream.getTracks().forEach((t) => (t.enabled = true));\n    return;'));
+// The transport side of these sequences — sfuMic OFF/ON, and the OFF that
+// lands while the permission prompt is still up — runs for real in
+// tools/sfu-mic-intent-race-test.mjs.
 
 console.log(`\n${ok} ok, ${bad} failed`);
 process.exit(bad ? 1 : 0);
