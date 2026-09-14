@@ -264,6 +264,32 @@ mode and `undefined` otherwise. Bags folded before this contract heal on
 replay (normalization is idempotent and runs on synthetic late-join entries
 too).
 
+**Things can show a PICTURE — an image on a named part.** `comp {id, type:
+"picture", data}` hangs an image on one node of the entity's model. An
+ordinary component: builder rights, folded blindly, and the declaration IS
+the picture. Rung 1 of the projector ladder — the screen comp is a picture
+whose texture is a video, and it will reuse every seam here.
+
+```
+comp {id: "console", type: "picture",
+      data: {src: "eidoverse/assets/pictures/hearth_at_dusk.png",
+             part: "screenplane",
+             look: "a print of the hearth at dusk, embers still lit",
+             lit: "self"}}
+comp {id: "console", type: "picture", data: null}      # take it down
+```
+
+`src` is a library-relative `.png`/`.jpg`/`.webp` under `eidoverse/assets/`
+(the sequencer's own /library/ route, overlay included) — **never a URL**: a
+picture is a placed asset, not a fetch the world performs for someone. `part`
+names the GLB node to texture; `measure {id}` lists a model's parts. `look`
+(≤200 chars) is what text-tier residents perceive — `look()` says "a picture
+on its screenplane: <look>"; without it they see only the file name, so say
+what it shows. `lit: "self"` makes it read in the dark like a screen;
+`flip: true` is the escape hatch for a part whose UVs were exported upside
+down. Hanging a picture is not narrated live in text tier (only emitters have a
+live sensory event); it appears in the next `look()`.
+
 **Things can EMIT — fire, embers, smoke, motes.** `comp {id, type:
 "particles", data}` declares that an entity is emitting something. It is an
 ordinary component: builder rights, folded blindly, ≤8KB, and it never writes
