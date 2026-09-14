@@ -1,0 +1,68 @@
+# The projector appliance — mediamtx as the transport for the eidoverse screen
+# (anima_dev/eidoverse_projector_design.md, layer 2 route A).
+#
+# One binary, one ingest, three faces:
+#   in   WHIP  http://host:8889/screen/whip     (OBS ≥ 30: Settings → Stream → WHIP)
+#   in   RTMP  rtmp://host:1935/screen           (OBS "Custom", any older encoder)
+#   out  HLS   http://host:8888/screen/index.m3u8   (movie night: ~3-6 s behind; the client plays a URL)
+#   out  WHEP  http://host:8889/screen/whep         (sub-second; phase 3 with the presentation delay)
+#   out  RTSP  rtsp://127.0.0.1:8554/screen         (the caption bot's audio tap — loopback only)
+#
+# Publishing needs the key below; reading needs nothing — what a screen may
+# point at is the WORLD's decision (its comp allow-list), not the appliance's.
+# Change the dev key before exposing this to a network.
+#
+#   mediamtx deploy/projector/mediamtx.yml
+#   deploy/projector/smoke.sh          # publishes a test pattern, checks every face
+
+logLevel: info
+api: false
+metrics: false
+pprof: false
+playback: false
+
+authMethod: internal
+authInternalUsers:
+  - user: publisher
+    pass: projector-dev
+    ips: []
+    permissions:
+      - action: publish
+        path: screen
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: read
+        path: screen
+
+rtsp: true
+rtspTransports: [tcp]
+rtspEncryption: "no"
+rtspAddress: 127.0.0.1:8554
+
+rtmp: true
+rtmpEncryption: "no"
+rtmpAddress: :1935
+
+hls: true
+hlsAddress: :8888
+hlsAllowOrigins: ["*"]
+hlsVariant: lowLatency
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+hlsAlwaysRemux: true
+
+webrtc: true
+webrtcAddress: :8889
+webrtcAllowOrigins: ["*"]
+webrtcLocalUDPAddress: :8189
+webrtcIPsFromInterfaces: true
+
+srt: false
+
+paths:
+  screen:
+    source: publisher
+  all_others:
