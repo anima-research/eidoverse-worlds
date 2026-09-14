@@ -27,6 +27,17 @@ for (const [src, expect] of [
   ["eidoverse/assets//x.png", false], ["other/x.png", false], ["eidoverse/assets/x.gif", false], ["eidoverse/assets/x.glb", false],
   ["eidoverse\\assets\\x.png", false], ["", false], [null, false],
 ] as [unknown, boolean][]) check(`allowedPictureSrc(${JSON.stringify(src)}) === ${expect}`, allowedPictureSrc(src) === expect);
+// Encoded traversal (Mica, #186 review, blocker 2): the rule is over the path
+// the FETCH canonicalizes to. A URL parser reads %2e%2e as a dot segment; a
+// server may decode %41 after the check ran. Library paths are plain: any %
+// is a refusal, and the parsed pathname must equal the declared one.
+for (const src of [
+  "eidoverse/assets/%2e%2e/%2e%2e/store/x.png", "eidoverse/assets/%2E%2E/secret.jpg", "eidoverse/assets/.%2e/x.png",
+  "eidoverse/assets/%2e./x.png", "eidoverse/assets/%2e/x.png", "eidoverse/assets/a%2fb/x.png", "eidoverse/assets/%41.png",
+  "eidoverse/assets/x%25.png", "eidoverse/assets/x.png?x=1", "eidoverse/assets/x.png#f", "eidoverse/assets/x y.png",
+  "eidoverse/assets/x\u0000.png", "eidoverse/assets/x\t.png",
+]) check(`encoded/odd source refused: ${JSON.stringify(src)}`, allowedPictureSrc(src) === false);
+check("the canonical library path of an allowed source is itself", new URL(`/library/${GOOD}`, "http://library.invalid").pathname === `/library/${GOOD}`);
 
 const n0 = normalizePicture({ src: GOOD, part: "screenplane", look: "a print of the hearth at dusk", lit: "self" });
 check("a well-formed bag normalizes", n0.ok && n0.picture.src === GOOD && n0.picture.part === "screenplane" && n0.picture.lit === "self" && n0.picture.flip === false, JSON.stringify(n0));

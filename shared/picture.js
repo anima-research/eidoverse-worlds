@@ -32,12 +32,26 @@ export const PICTURE_LIT = Object.freeze({ scene: 'lit by the scene', self: 'sel
 const KNOWN_KEYS = new Set(['src', 'part', 'look', 'lit', 'flip']);
 
 /** Is `src` an allowed picture source? Library-relative, under PICTURE_DIR,
- *  image extension, no scheme, no leading slash, no dot segments. */
+ *  image extension, no scheme, no leading slash, no dot segments — and no
+ *  percent-encoding at all. The rule is over the path the FETCH will
+ *  canonicalize to, not the string as written: a URL parser reads `%2e%2e`
+ *  as `..` (a dot segment by spec), and a server may decode `%41` to `A`
+ *  after the check ran (Mica, #186 review). Library paths are plain; a `%`
+ *  has no honest use in one, so its presence is a refusal, and the parsed
+ *  pathname must come back byte-identical to the declared one. */
 export function allowedPictureSrc(src) {
   if (typeof src !== 'string' || !src) return false;
   if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('/') || src.includes('\\')) return false;
+  if (/[%?#\s\u0000-\u001f\u007f]/.test(src)) return false;
   if (src.split('/').some((seg) => seg === '' || seg === '.' || seg === '..')) return false;
-  return src.startsWith(PICTURE_DIR) && IMAGE_EXT.test(src);
+  if (!src.startsWith(PICTURE_DIR) || !IMAGE_EXT.test(src)) return false;
+  try {
+    // What the browser will actually ask the library route for. Any
+    // difference — a collapsed segment, a decoded byte — means the string
+    // and the fetch disagree, and the fetch is the one that matters.
+    if (new URL(`/library/${src}`, 'http://library.invalid').pathname !== `/library/${src}`) return false;
+  } catch { return false; }
+  return true;
 }
 
 /** Validate an authored bag. `ok:false` carries WHY (legible, once per authoring);

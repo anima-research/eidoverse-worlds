@@ -63,7 +63,10 @@ try {
   if (process.env.PICTURE_SHOT) await pg.screenshot({ path: process.env.PICTURE_SHOT });
   // E. late join: a second client gets the comp on join, before the GLB lands
   const pg2 = await joinAs('latecomer');
-  const s2 = await until(pg2, (x) => x.hung && x.mapW > 0);
+  // The late joiner fetches the 40 MB model and the image together; on a
+  // loaded host that takes longer than the 20 s default (the original
+  // realizer missed it too, 2026-09-14). The property is order, not speed.
+  const s2 = await until(pg2, (x) => x.hung && x.mapW > 0, 90_000);
   check('E. a late joiner hangs the picture once the part exists (pending path)', s2.hung && s2.cloned && s2.mapW > 0, JSON.stringify(s2));
   await pg2.close();
   // C. take it down
