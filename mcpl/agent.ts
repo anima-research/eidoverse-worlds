@@ -49,6 +49,7 @@ import { radialForce, FORCE_MIN } from "../shared/force.js";
 // what is burning (#25's shared-facts boundary).
 import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
 import { describePicture } from "../shared/picture.js";
+import { describeCaptions } from "../shared/captions.js";
 import { describeStructure, describeHere, localizePoint, planStructure, routeLocal } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
@@ -3103,9 +3104,13 @@ export class WorldAgent {
       // resident who reads "warm" acts on it.
       if (c.particles) aff.push(describeParticles(c.particles));
       // A picture is named by what its author SAID it shows, on the part that
-      // carries it — never by its pixels. Rung 1 of the projector ladder; the
-      // screen comp will read the same way with a rolling caption instead.
+      // carries it — never by its pixels. Rung 1 of the projector ladder.
       if (c.picture) aff.push(describePicture(c.picture));
+      // A screen with captions is named by what the captioner wrote down:
+      // what it is showing, where in it, and the last line — never a claim
+      // about pixels or sound. Rung 2 of the projector ladder; the rolling
+      // window is the `captions` detail level, opt-in like `body_state`.
+      if (c.captions) aff.push(describeCaptions(c.captions));
       // locked = nailed down: the server refuses every move/replace/remove on
       // it. Saying so here saves an agent a refused verb round-trip.
       if (c.lock) aff.push(`🔒 locked (immovable until comp {id, type: "lock", data: null})`);
@@ -3125,7 +3130,7 @@ export class WorldAgent {
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
-      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "lock", "guard", "structure"].includes(k));
+      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "captions", "lock", "guard", "structure"].includes(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);
       if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);

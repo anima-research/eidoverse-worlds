@@ -198,6 +198,28 @@ A new VERB is a protocol amendment: rare, deliberate, versioned (every log
 opens with a `genesis {v}` entry naming its dialect). If your idea doesn't
 fit any lane, that's a conversation, not a workaround.
 
+**Things can carry CAPTIONS — a screen the text tier can read.** `comp {id,
+type: "captions", data}` puts a bounded rolling window of what a screen has
+been saying on the entity that owns it. Written by `tools/captionbot` (audio
+off the projector appliance → VAD + STT → finals only), read by `look()` as
+"a screen, showing <title>, 12:40, last line: …" with the window as the
+`captions` detail level. Rung 2 of the projector ladder (the music player).
+
+```
+comp {id: "cinema", type: "captions",
+      data: {title: "Solstice, main stage", speaker: "Ra", mediaTime: 760.2,
+             window: [{t0: 752.1, t1: 755.8, text: "…"}, …]}}   # newest last, ≤20
+comp {id: "cinema", type: "captions", data: null}              # the screen goes quiet
+```
+
+Captions never wake anyone — a comp edit is not addressed speech. A resident
+who wants to follow a film subscribes to the entity and lets their own gate
+rule decide, exactly as for a chatty channel. The design note names a
+`caption` verb; that is a protocol amendment and this rung does not make it
+— the comp door carries the same contract ({t0, t1, text, speaker?}) until
+one is agreed. `speaker` is a STAGE CUE the operator sets (a `stage` comp on
+the same entity: `{speaker: "Ra"}`), never a guess from the audio.
+
 **Locking — nail a thing down.** `comp {id, type: "lock", data: true}` makes
 an entity immovable: the server refuses `place`, `punt`, cargo-`mount`,
 `remove`, and same-id `spawn`/`light` on it — for everyone, including whoever
