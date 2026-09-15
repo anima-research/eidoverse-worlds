@@ -388,6 +388,32 @@ what it shows. `lit: "self"` makes it read in the dark like a screen;
 down. Hanging a picture is not narrated live in text tier (only emitters have a
 live sensory event); it appears in the next `look()`.
 
+**Things can SOUND — a radio, a fountain, a speaker.** `comp {id, type:
+"sound", data}` plays an audio file FROM an entity, positional: louder the
+closer you stand, quiet past `radius` metres.
+
+```
+comp {id: "radio1", type: "sound",
+      data: {src: "store/audio/0123456789abcdef.mp3",
+             look: "rain on the awning, a field recording",
+             t0: 1757950000000,          # epoch ms when it started — everyone seeks to the same bar
+             loop: true, volume: 0.8, radius: 12}}
+comp {id: "radio1", type: "sound", data: {…same, playing: false}}   # pause
+comp {id: "radio1", type: "sound", data: null}                     # silence
+```
+
+`src` is a library-relative `.mp3`/`.ogg`/`.opus`/`.wav`/`.webm`/`.m4a` under
+`eidoverse/assets/` or under `store/audio/` (what `POST /upload?as=audio`
+returns) — **never a URL**; a stream from the projector appliance is rung 3
+and comes with its own clock. `t0` is the clock: stamp `Date.now()` when you
+start it, or every client plays from the top and late joiners drift. `look`
+is what text-tier residents perceive — `look()` says "a sound, playing: <look>"
+or "paused" — so say what is playing. A `use {action: "toggle"}` on the
+entity does nothing by itself; bind `sdk/examples/radio.js` to it and the
+toggle flips `playing` with a fresh `t0`, under the binder's rights.
+Browser builders get a 🔊 block in the scene panel (file, upload, look line,
+volume, radius, loop, play/pause/silence).
+
 **Things can EMIT — fire, embers, smoke, motes.** `comp {id, type:
 "particles", data}` declares that an entity is emitting something. It is an
 ordinary component: builder rights, folded blindly, ≤8KB, and it never writes
@@ -551,6 +577,9 @@ decision because restarts ripple every resident's reconnect.
 - `?as=script` + UTF-8 JS body (≤64KB) → `store/scripts/<hash>.js`, the
   currency of the behavior tier above. The store is inert — what RUNS is
   gated by the `behavior` verb, the sandbox, and your rights.
+- `?as=audio&name=foo` + an MP3/Ogg/WAV/WebM/M4A body (≤20MB) → `store/audio/<hash>.<ext>`,
+  a sound source (`comp {type: "sound", data: {src: <that path>, …}}`). Kind
+  by bytes, store inert, the comp is what plays.
 
 ## Geometry — shape as data
 
