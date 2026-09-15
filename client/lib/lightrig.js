@@ -85,6 +85,44 @@ const slots = [];
 // for a lamp you can cover with a hand. Janus measured 256 as sufficient by
 // hand; 512 buys a cleaner wing edge for 4x of very little.
 const SHADOW_SLOT = 0;
+// THE LAMP'S SHADOW MAP, and the bias DERIVED from it.
+//
+// 280, because Janus measured it: "the illumination is much more visible when
+// the mapsize is set to 256... i tried a few different map sizes and i think
+// what i get for 280 is just about perfect." A smaller map showing MORE light
+// is the signature of a bias problem, not a resolution one, and the arithmetic
+// says the same thing. A point light's shadow is a cube map whose faces are
+// 90-degree perspectives, so a texel covers 2*d/N in world space:
+//
+//     N=280, d=0.40m  ->  2.86mm per texel
+//     N=512, d=0.40m  ->  1.56mm per texel
+//
+// normalBias was a hand-picked 0.02 -- TWENTY MILLIMETRES, which is 7 texels
+// at 280 and 12.8 at 512. normalBias offsets the shadow lookup along the
+// surface normal, so at that size the shadow detaches from the thing casting
+// it and light leaks in under the join (peter-panning). The coarser texel at
+// 256/280 blurs the artifact; the finer texel at 512 resolves it crisply,
+// which is why the higher-resolution map looked WORSE. Not acne -- the bias
+// was larger than the texel at every size, so acne was never the mechanism.
+//
+// So the bias is now stated in TEXELS and converted, which makes the look
+// invariant to the map size: change SHADOW_MAP and the appearance holds,
+// instead of needing a retune by eye every time. 1.5 texels is the standard
+// starting point for normalBias and lands at ~4.3mm here, a believable
+// contact offset on a body whose features are centimetres across.
+//
+// SHADOW_WORK_DIST is the distance the bias is tuned FOR: the lamp sits in the
+// chest and the surfaces it lights (the inside of the torso, the skin, the
+// wings) are 0.1-0.7m away. A cube-map texel grows with distance, so a single
+// world-space bias can only be right at one depth; 0.4m is the middle of the
+// range that matters.
+const SHADOW_MAP = 280;
+const SHADOW_WORK_DIST = 0.40;
+const SHADOW_BIAS_TEXELS = 1.5;
+const shadowTexel = (n = SHADOW_MAP) => (2 * SHADOW_WORK_DIST) / n;
+// live-tunable copies (setLampShadow); the consts above are the defaults
+let _biasTexels = SHADOW_BIAS_TEXELS;
+let _workDist = SHADOW_WORK_DIST;
 // The resident's shadow preference, read once here because the slot loop below
 // needs it and the SH_KEY/shadowsOn block lives further down (this file builds
 // the rig top-to-bottom at import). shadowsOn() closes over this, so there is
@@ -110,7 +148,7 @@ for (let i = 0; i < N_SLOTS; i++) {
   // casting right now, so a later setShadows(true) flips one boolean onto an
   // already-configured light rather than an unconfigured one.
   if (i === SHADOW_SLOT) {
-    pl.shadow.mapSize.set(512, 512);
+    pl.shadow.mapSize.set(SHADOW_MAP, SHADOW_MAP);
     // NEAR AND FAR TOGETHER, or neither. A perspective shadow map's depth
     // precision is set by the near/far RATIO, not by either end alone, and a
     // PointLight defaults to 0.5/500 -- so setting near=0.03 and leaving far
@@ -126,8 +164,10 @@ for (let i = 0; i < N_SLOTS; i++) {
     pl.shadow.camera.near = 0.03;
     pl.shadow.camera.far = Math.max(2, pl.distance || 10);
     pl.shadow.camera.updateProjectionMatrix();
-    pl.shadow.bias = -0.0015;
-    pl.shadow.normalBias = 0.02;
+    // bias (depth units, away from the light) stays small and negative; the
+    // heavy lifting is normalBias, derived above rather than guessed.
+    pl.shadow.bias = -0.0005;
+    pl.shadow.normalBias = SHADOW_BIAS_TEXELS * shadowTexel();
   }
   slots.push(pl);
   rigGroup.add(pl);
@@ -146,6 +186,46 @@ scene.add(rigGroup);
 // SH_KEY/stored/_prefShadows are declared above the slot loop, which consumes
 // the preference before this point in the file.
 export const shadowsOn = () => _prefShadows;
+// THE LAMP'S SHADOW DIALS, live. mapSize is a realloc and normalBias is a
+// uniform, so both are safe to move mid-session -- neither is in a pipeline
+// cache key (SS12.1). Exposed because this is exactly the kind of thing that
+// has to be tuned against a moving body in real light: Janus found 280 by
+// trying sizes by hand, and the next person should not have to edit a const
+// and reload to do the same.
+//
+// setLampShadow({map, texels, dist}) -- any subset. The bias is always
+// RE-DERIVED from whatever the map size ends up being, so changing the size
+// alone keeps the look rather than silently retuning it.
+export function setLampShadow({ map, texels, dist } = {}) {
+  const pl = slots[SHADOW_SLOT];
+  if (!pl) return null;
+  if (Number.isFinite(map)) {
+    const n = Math.max(16, Math.min(2048, Math.round(map)));
+    pl.shadow.mapSize.set(n, n);
+    // three reallocates on the next shadow render only if the old target is
+    // disposed; do it explicitly or the new size is ignored until something
+    // else forces it.
+    pl.shadow.map?.dispose?.();
+    pl.shadow.map = null;
+  }
+  if (Number.isFinite(texels)) _biasTexels = Math.max(0, texels);
+  if (Number.isFinite(dist)) _workDist = Math.max(0.01, dist);
+  pl.shadow.normalBias = _biasTexels * ((2 * _workDist) / (pl.shadow.mapSize.x || SHADOW_MAP));
+  return lampShadowState();
+}
+export const lampShadowState = () => {
+  const pl = slots[SHADOW_SLOT];
+  if (!pl) return null;
+  const n = pl.shadow.mapSize.x || SHADOW_MAP;
+  return {
+    map: n, texels: _biasTexels, workDist: _workDist,
+    texelMM: +((2 * _workDist / n) * 1000).toFixed(2),
+    normalBias: +pl.shadow.normalBias.toFixed(5),
+    bias: pl.shadow.bias,
+    near: pl.shadow.camera.near, far: pl.shadow.camera.far,
+  };
+};
+
 export function setShadows(on) {
   localStorage.setItem(SH_KEY, on ? 'on' : 'off');
   _prefShadows = on;
@@ -654,6 +734,9 @@ export const rigDebug = () => ({
       })),
       // the headline: is SOMETHING that wants to cast actually casting?
       anyCasting: held.some((r) => Boolean(slots[r.slot]?.castShadow)),
+      // map size, the derived bias, and the texel it came from -- the numbers
+      // you need to retune by eye (setLampShadow)
+      lamp: lampShadowState(),
     };
   })(),
   slotState: slots.map((pl, i) => ({

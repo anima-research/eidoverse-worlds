@@ -55,10 +55,15 @@ if (CASE) {
   const lamp = () => rig.rigDebug()._slots[0];
   let setShadows = rig.setShadows;
   let updateRig = rig.updateRig;
+  let setLampShadow = rig.setLampShadow;
   if (MUTATE === '1') lamp().castShadow = true;               // born casting regardless of the preference
   if (MUTATE === '2') setShadows = (on) => {                  // setShadows forgets the lamp slot
     const before = lamp().castShadow; rig.setShadows(on); lamp().castShadow = before;
   };
+  if (MUTATE === '5') {                                      // bias pinned to a constant, as before
+    const real = rig.setLampShadow;
+    setLampShadow = (o) => { const r = real(o); lamp().shadow.normalBias = 0.02; return r; };
+  }
   if (MUTATE === '4') {                                      // the old claim: FREE slot + unassigned request only
     // The old guard was `!used.has(SHADOW_SLOT) && r.slot < 0`, whose end
     // state from assign #2 onward is: the casting slot is NOT the one that
@@ -87,6 +92,23 @@ if (CASE) {
   const snap = () => { const d = rig.rigDebug(); return { pref: d.shadows.pref, map: renderer.shadowMap.enabled, sun: sun.castShadow, lamp: d.shadows.slotIsCaster }; };
 
   if (CASE === 'boot-on' || CASE === 'boot-off') { out({ boot: snap() }); }
+  if (CASE === 'bias') {
+    // A SMALLER MAP SHOWING MORE LIGHT is a bias symptom, not a resolution
+    // one: normalBias offsets the lookup along the surface normal, so a bias
+    // measured in millimetres is measured in TEXELS by the shader, and the
+    // same 0.02 m was 7 texels at 280 and 12.8 at 512. The look must not
+    // depend on the map size, so the bias is derived from it.
+    const born = rig.lampShadowState();
+    const at = {};
+    for (const n of [256, 280, 512, 1024]) {
+      setLampShadow({ map: n });
+      const st = rig.lampShadowState();
+      at[n] = { map: st.map, normalBias: st.normalBias, texelMM: st.texelMM };
+    }
+    setLampShadow({ map: 280 });
+    const retuned = setLampShadow({ texels: 3 });
+    out({ born, at, retuned });
+  }
   if (CASE === 'contend') {
     // THE WORLD LOADS BEFORE YOUR BODY DOES. A placed orb / emissive model
     // realizes first and takes slot 0; then the avatar's lamp arrives wanting
@@ -219,6 +241,31 @@ const contendChecks = (r, c = check) => {
     `${r.assignedCount} assigned across ${r.distinct} distinct slots`);
 };
 
+const biasChecks = (r, c = check) => {
+  c('the lamp is born at Janus\'s measured 280', r.born.map === 280, `map=${r.born.map}`);
+  // 0.02 m was the hand-picked value; anything near it is the old bug back
+  c('born normalBias is a few mm, not 20mm', r.born.normalBias > 0 && r.born.normalBias < 0.008,
+    `normalBias=${r.born.normalBias} (was 0.02 = 20mm, i.e. 7 texels)`);
+  // THE INVARIANT: bias scales with the map so the LOOK is size-independent
+  c('normalBias HALVES when the map doubles (256->512)',
+    Math.abs(r.at[256].normalBias / r.at[512].normalBias - 2) < 0.02,
+    `256:${r.at[256].normalBias} 512:${r.at[512].normalBias}`);
+  c('...and again (512->1024)',
+    Math.abs(r.at[512].normalBias / r.at[1024].normalBias - 2) < 0.02,
+    `512:${r.at[512].normalBias} 1024:${r.at[1024].normalBias}`);
+  // tolerance, not equality: texelMM is reported rounded to 2 decimals, so
+  // dividing by it reconstructs the texel count to about 1 part in 500. The
+  // claim under test is "constant across sizes", not "bit-identical".
+  {
+    const counts = [256, 280, 512, 1024].map((n) => r.at[n].normalBias / (r.at[n].texelMM / 1000));
+    const spread = Math.max(...counts) - Math.min(...counts);
+    c('bias stays a constant number of TEXELS across sizes', spread < 0.01,
+      `texel counts ${counts.map((x) => x.toFixed(3)).join(' / ')} (spread ${spread.toFixed(4)})`);
+  }
+  c('the texel dial retunes without touching the map', r.retuned.map === 280 && r.retuned.texels === 3,
+    JSON.stringify(r.retuned));
+};
+
 if (ARGV.includes('--mutants')) {
   // Each control reverts one half of the fix; the case that covers that half
   // must go red. A control that leaves the suite green means the test is not
@@ -229,6 +276,7 @@ if (ARGV.includes('--mutants')) {
     [2, 'flip', flipChecks, 'setShadows forgets the lamp slot'],
     [3, 'far', farChecks, "shadow far left at three's default 500"],
     [4, 'contend', contendChecks, 'lamp parked on a non-casting slot'],
+    [5, 'bias', biasChecks, 'normalBias pinned to the old 0.02 constant'],
   ]) {
     const r = await runCase(name, n);
     let died = 0;
@@ -246,6 +294,8 @@ if (ARGV.includes('--mutants')) {
   farChecks(await runCase('far'));
   console.log('CONTENDED CASTING SLOT — the world light loaded first');
   contendChecks(await runCase('contend'));
+  console.log('LAMP SHADOW BIAS — derived from the map, not guessed');
+  biasChecks(await runCase('bias'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
