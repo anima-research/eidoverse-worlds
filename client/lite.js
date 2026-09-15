@@ -15,7 +15,7 @@
 // It runs the REAL net.js. The wire protocol is not forked — net.js takes its
 // participant registry, asset ledger and snapshot renderer by injection now, so this
 // file supplies renderer-free ones and the protocol has exactly one implementation.
-import { CONFIG, bus, report } from './lib/base.js';
+import { CONFIG, bus, report, setToken } from './lib/base.js';
 // NOT ui.js. That module is the DESKTOP shell: since #185 it imports videopanel.js and
 // profile.js, which reach the engine through core.js, mybody.js and colliders.js, and it
 // owns the settings sections and world panels besides. None of that belongs on a phone
@@ -25,7 +25,8 @@ import { CONFIG, bus, report } from './lib/base.js';
 import { makeFrame } from './lib/frames.js';
 import { initChat, logChat } from './lib/chat.js';
 import {
-  net, connect, initIdentity, wireNet, sendVerb, sendWhisper, sendTyping, sendPose,
+  net, connect, initIdentity, wireNet, sendVerb, sendWhisper, sendTyping, sendPoseExact,
+  loginUrl,
 } from './lib/net.js';
 import { initBoot, markPhase, finishBoot } from './lib/boot.js';
 import * as participants from './lib/participants_lite.js';
@@ -74,29 +75,29 @@ export function stayLite() {
 
 // A lite client still ARRIVES: the server announces it and everyone else builds a body
 // for it, whether or not we ever say where that body is. So the choice was never "appear
-// or not" - it is "appear somewhere deliberate, or wherever a body happens to default".
+// or not" - it is "appear as the resident the world remembers, or as a default".
 //
-// This is the smallest myState sendPose() accepts. Nothing ticks it - there is no frame
-// loop here and nothing to move - so the position is wherever the server restored us to,
-// held still. It exists for exactly one reason: an emote is a ONE-SHOT FIELD ON THE
-// PRESENCE POSE (net.js: `if (s.emote) { pose.emote = s.emote; s.emote = null; }`), and
-// the server's sanePose() rejects any packet without a finite `p`. There is no emote
-// VERB - the verb set is closed by design, and asking for one earns precisely the
-// "verb not allowed: emote" the server sent back when this first tried it that way.
-const myState = {
-  pos: { x: 0, y: 0, z: 0 },
-  yaw: 0,
-  speed: 0,
-  clip: 'idle',
-  pitch: 0,
-  emote: null,
-};
+// THE RESTORE IS HELD VERBATIM AND SENT BACK VERBATIM. It is the server's own settled
+// pose for this body - position, facing, clip, pitch, wings, held bones, pins, and
+// anything added to that vocabulary later. A pose is the resident's WHOLE public body,
+// not a delta, so re-composing one from what this client happens to know is how a wave
+// stood someone up out of a sit, unfolded their wings and dropped their held pose
+// (#188 B2). We add the one-shot and change nothing else.
+//
+// An emote is not a verb, either: the verb set is closed by design, and asking for one
+// earns "verb not allowed: emote". It rides the presence pose, which is why a client
+// with no body still has to have something to say about where that body is.
+let restored = null;
 
-/** One emote: set the one-shot, push a single presence packet. Everyone with a renderer
- *  plays it on our standing body; we see it in chat, like everything else here. */
+/** The body the world remembers. Before any restore lands - a first-ever visit - the
+ *  origin is all we can honestly claim, and sanePose() requires a finite `p`. */
+const rememberedBody = () => restored ?? { p: [0, 0, 0], yaw: 0 };
+
+/** One emote: the remembered body, unchanged, carrying a one-shot. */
 function emote(name) {
-  myState.emote = name;
-  sendPose(performance.now());
+  if (!sendPoseExact({ ...rememberedBody(), emote: name })) {
+    toast('not connected - emote not sent', 'warn');
+  }
 }
 
 /** The roster in the shape chat.js wants for @-completion and its people pane.
@@ -136,6 +137,59 @@ function liteDock(entries) {
   return dock;
 }
 
+/** The key door, renderer-free.
+ *
+ *  A key-gated world refuses an unknown visitor with close code 4003, and net.js turns
+ *  that into `bad-key`. The full client answers it by reopening openDoor - which lives in
+ *  ui.js, needs a roster of avatars to show, and arrives with the engine attached. None
+ *  of that is available here, and "try the full world" is not a door for someone whose
+ *  phone the full world kills (#188 B3). So: an input, on the page that is already up.
+ *
+ *  Idempotent - a refused key re-emits `bad-key`, and that should refill the same door
+ *  rather than stack another. */
+function keyDoor() {
+  let host = document.getElementById('lite-door');
+  if (host) { host.querySelector('.lite-door-msg').textContent = 'that key was refused'; return; }
+
+  host = document.createElement('div');
+  host.id = 'lite-door';
+  host.innerHTML = `
+    <div class="lite-door-card">
+      <div class="lite-door-title">this world needs a key</div>
+      <div class="lite-door-msg">enter the door key to come in</div>
+      <input class="lite-door-key" type="password" autocomplete="off" spellcheck="false"
+             placeholder="door key" aria-label="door key">
+      <button class="lite-door-go" type="button">enter</button>
+    </div>`;
+  document.body.appendChild(host);
+
+  const input = host.querySelector('.lite-door-key');
+  const msg = host.querySelector('.lite-door-msg');
+  const submit = () => {
+    const key = input.value.trim();
+    if (!key) { msg.textContent = 'a key is needed to come in'; return; }
+    setToken(key);          // CONFIG.token + the 'ew-key' the early socket reads next time
+    msg.textContent = 'trying that key\u2026';
+    host.remove();
+    connect();
+  };
+  host.querySelector('.lite-door-go').addEventListener('click', submit);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+
+  // A deployment that wants a login rather than a key already redirects through authcfg;
+  // where one is offered, show it too, because a key box is no use to someone who has an
+  // account instead.
+  const url = loginUrl?.();
+  if (url) {
+    const a = document.createElement('a');
+    a.className = 'lite-door-login';
+    a.href = url;
+    a.textContent = 'or sign in';
+    host.querySelector('.lite-door-card').appendChild(a);
+  }
+  input.focus();
+}
+
 async function main() {
   document.documentElement.classList.add('lite');
   // The splash is static markup that only boot.js takes down, and nothing here would
@@ -143,6 +197,9 @@ async function main() {
   // while a perfectly good chat window waited behind it. The engine and body phases are
   // marked done because in this client they are: there is no engine to wake and no body
   // to assemble, and a progress bar must never wait on something that will not happen.
+  // Wired before connect(), because the refusal it answers arrives during connect().
+  bus.on('bad-key', keyDoor);
+
   initBoot({ world: CONFIG.world, name: CONFIG.name });
   markPhase('engine', 1);
   markPhase('body', 1);
@@ -151,21 +208,21 @@ async function main() {
   wireNet({
     participants,
     toast,                       // net.js takes a notifier rather than importing ui.js
-    myAvatarPath: () => '',      // we wear nothing we can draw; the server still resolves a name
-    // A stub, not a body. sendPose() reads only `.emote`, `._limp` and `.current?.time`
-    // off this, to decide whether to attach clip timing. All absent, so it attaches none
-    // - correct, since we have no clip playing to report.
-    me: () => ({}),
-    myState,
-    onRestore: (r) => {
-      // Wake where the world last had us, so our standing body is somewhere deliberate
-      // rather than at the origin. We cannot move from it, which is the honest shape of
-      // a client with no controls.
-      myState.pos.x = r.p?.[0] ?? 0;
-      myState.pos.y = r.p?.[1] ?? 0;
-      myState.pos.z = r.p?.[2] ?? 0;
-      myState.yaw = r.yaw ?? 0;
-    },              // no local body, so nothing to pose
+    // The SAME avatar the inline early socket joined with, published by index.html before
+    // any of its guards. net.js adopts that socket only when the join it would send
+    // matches byte for byte; asking for '' here missed, so the early socket was dropped
+    // and a second one opened - the server saw arrive -> leave -> arrive, and a held
+    // whisper delivered to the first socket could be marked delivered and then thrown
+    // away with it (#188 B1). We cannot DRAW the avatar; that was never what this
+    // answers. Everyone else draws our body, and it should be the right one.
+    myAvatarPath: () => globalThis.__ewWantAvatar ?? 'claude',
+    // null, both of them, and deliberately: sendPose() SAMPLES a live body and returns
+    // immediately without these. There is no body here to sample. The one pose this
+    // client ever emits goes through sendPoseExact, which re-asserts what the server
+    // already remembers instead of composing something new.
+    me: () => null,
+    myState: null,
+    onRestore: (r) => { restored = r; },   // held whole; see rememberedBody()
   });
 
   await initIdentity();

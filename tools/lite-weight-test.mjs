@@ -98,41 +98,163 @@ check('a lite boot is dramatically lighter overall',
   await page.close();
 }
 
-// Reported from a real phone, 2026-09-15: tapping an emote answered "verb not allowed:
-// emote - the verb set is closed by design". There is no emote verb and never was; an
-// emote is a one-shot field on the PRESENCE POSE, which lite was not sending because it
-// had no myState. This reads the actual socket frames: the emote must leave as a pose,
-// and the server must not answer with a refusal.
+// The socket, observed from INSIDE the page.
+//
+// Playwright's `framesent` was the instrument here and it is not reliable: this suite
+// reported 19/19 locally while an independent reviewer got 18/19 on the same commit,
+// the emote frame missing from the observer while an in-page receipt proved the product
+// had sent it (#188 B4). A gate that flakes is worse than no gate - it taught us the
+// wrong thing about our own code. So we patch WebSocket.prototype.send before any app
+// script runs and keep the frames ourselves: same object the client actually calls,
+// nothing between us and it.
+const SOCKET_SPY = `
+  globalThis.__frames = { sent: [], opened: 0 };
+  const _send = WebSocket.prototype.send;
+  WebSocket.prototype.send = function (data) {
+    try { globalThis.__frames.sent.push(String(data)); } catch (e) {}
+    return _send.call(this, data);
+  };
+  const _WS = WebSocket;
+  globalThis.WebSocket = new Proxy(_WS, {
+    construct(t, a) { globalThis.__frames.opened++; return new t(...a); },
+  });
+`;
+const framesOf = (page) => page.evaluate(() => globalThis.__frames ?? { sent: [], opened: 0 });
+
+// B1: one arrival, one socket generation. The inline early socket joins before the lite
+// decision exists, and net.js adopts it ONLY when the join it would send matches byte for
+// byte. lite asking for avatar:'' missed, so the early socket was discarded and a second
+// opened - the server saw arrive -> leave -> arrive, and a held whisper delivered to the
+// first socket could be marked delivered server-side and then thrown away with it.
 {
   const page = await mkPage();
-  const sent = [], got = [];
-  page.on('websocket', (ws) => {
-    ws.on('framesent', (f) => sent.push(String(f.payload)));
-    ws.on('framereceived', (f) => got.push(String(f.payload)));
-  });
-  await page.goto(`${world.origin}/?world=staging&name=emoteprobe&key=${world.key}&lite=1`, { waitUntil: 'load' });
+  await page.addInitScript(SOCKET_SPY);
+  await page.goto(`${world.origin}/?world=staging&name=litejoin&key=${world.key}&lite=1`, { waitUntil: 'load' });
   await page.waitForFunction(
     () => { const el = document.getElementById('splash'); return !el || el.classList.contains('gone'); },
     { timeout: 25000 },
   ).catch(() => {});
-  await page.waitForFunction(() => document.querySelectorAll('.lite-emote').length > 0, { timeout: 15000 })
-    .then(() => true).catch(() => false);
+  await page.waitForTimeout(2500);
+  const f = await framesOf(page);
+  const joins = f.sent.filter((x) => x.includes('"type":"join"'));
+  const avatars = joins.map((j) => { try { return JSON.parse(j).avatar; } catch { return '?'; } });
+  console.log(`\n  join lifecycle: sockets=${f.opened} joins=${joins.length} avatars=${JSON.stringify(avatars)}`);
+  check('a lite client opens ONE socket generation', f.opened <= 1,
+    `opened ${f.opened}; the early socket must be adopted, not replaced`);
+  check('a lite client sends exactly ONE join', joins.length === 1,
+    `sent ${joins.length}: ${JSON.stringify(avatars)}`);
+  check('lite joins with the avatar the early socket used, not an empty one',
+    avatars.length > 0 && avatars.every((a) => a && a !== ''),
+    'avatar:"" is what made net.js reject the early socket');
+  await page.close();
+}
+
+// B2: an emote must carry the remembered body UNCHANGED and add only the one-shot.
+// Specimen shape borrowed from the review: a seated, pitched, wing-folded resident
+// holding a custom pose. Before the fix a wave emitted idle/0/false and no held pose.
+{
+  const page = await mkPage();
+  await page.addInitScript(SOCKET_SPY);
+  const STORED = { p: [2, 0, 3], yaw: 1.2, clip: 'sit', pitch: 0.1, wingsFolded: true, pose: { head: [0, 0, 0, 1] } };
+
+  // Establish the body as the FULL client would leave it, so the server remembers it.
+  await page.goto(`${world.origin}/?world=staging&name=bodykeep&key=${world.key}&lite=1`, { waitUntil: 'load' });
+  await page.waitForFunction(() => globalThis.__ewLite === true, { timeout: 15000 }).catch(() => {});
+  await page.waitForTimeout(2000);
+  // Route to a remembered pose: join as this identity on a plain socket, send the pose,
+  // disconnect. The server calls rememberPose on disconnect (server.ts:212), so the next
+  // join under the same id gets it back as `restore`.
+  await page.evaluate(async (pose) => {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const sock = new WebSocket(`${proto}://${location.host}/ws`);
+    await new Promise((res) => { sock.onopen = res; });
+    const q = new URLSearchParams(location.search);
+    sock.send(JSON.stringify({ type: 'join', world: q.get('world'), id: q.get('name'),
+      avatar: globalThis.__ewWantAvatar ?? 'claude', spectate: false, renderer: false, token: q.get('key') }));
+    await new Promise((res) => setTimeout(res, 1200));
+    sock.send(JSON.stringify({ type: 'pose', pose }));
+    await new Promise((res) => setTimeout(res, 800));
+    sock.close();
+  }, STORED);
+  await page.waitForTimeout(1200);
+
+  // Now arrive in lite under that identity and tap one emote.
+  await page.goto(`${world.origin}/?world=staging&name=bodykeep&key=${world.key}&lite=1`, { waitUntil: 'load' });
+  await page.waitForFunction(() => document.querySelectorAll('.lite-emote').length > 0, { timeout: 20000 })
+    .catch(() => {});
+  await page.waitForTimeout(1500);
   const tapped = await page.evaluate(() => {
     const b = document.querySelector('.lite-emote');
     if (!b) return null;
     b.click();
     return b.dataset.emote;
   });
-  await page.waitForTimeout(2500);
-  const poseWithEmote = sent.filter((f) => f.includes('"type":"pose"') && f.includes('"emote"'));
-  const refusals = got.filter((f) => /verb not allowed|not allowed: emote/i.test(f));
-  console.log(`\n  emote: tapped=${tapped} pose-frames-carrying-emote=${poseWithEmote.length} refusals=${refusals.length}`);
-  if (poseWithEmote[0]) console.log(`      ${poseWithEmote[0].slice(0, 140)}`);
-  for (const r of refusals.slice(0, 1)) console.log(`      ! ${r.slice(0, 160)}`);
+  await page.waitForTimeout(1500);
+  const f2 = await framesOf(page);
+  const poses = f2.sent.filter((x) => x.includes('"type":"pose"') && x.includes('"emote"'));
+  let sentPose = null;
+  try { sentPose = JSON.parse(poses[poses.length - 1]).pose; } catch { /* none */ }
+  console.log(`\n  emote: tapped=${tapped} pose-frames=${poses.length}`);
+  if (sentPose) console.log(`      ${JSON.stringify(sentPose).slice(0, 190)}`);
+
   check('an emote button exists to tap', !!tapped);
-  check('an emote leaves as a presence pose, not a verb', poseWithEmote.length > 0,
+  check('an emote leaves as a presence pose, not a verb', !!sentPose,
     'there is no emote verb; it rides pose.emote and needs a finite p');
-  check('the server does not refuse it', refusals.length === 0, refusals[0]?.slice(0, 120));
+  if (sentPose) {
+    check('the emote itself rides along', sentPose.emote === tapped);
+    check('a seated resident stays seated', sentPose.clip === STORED.clip,
+      `clip=${sentPose.clip} (stored ${STORED.clip})`);
+    check('pitch survives the emote', sentPose.pitch === STORED.pitch,
+      `pitch=${sentPose.pitch} (stored ${STORED.pitch})`);
+    check('folded wings stay folded', sentPose.wingsFolded === true,
+      `wingsFolded=${sentPose.wingsFolded}`);
+    check('a held pose is not dropped', JSON.stringify(sentPose.pose) === JSON.stringify(STORED.pose),
+      `pose=${JSON.stringify(sentPose.pose)}`);
+    check('position and facing survive', JSON.stringify(sentPose.p) === JSON.stringify(STORED.p)
+      && sentPose.yaw === STORED.yaw, `p=${JSON.stringify(sentPose.p)} yaw=${sentPose.yaw}`);
+  }
+  await page.close();
+}
+
+// B3: a first-time visitor to a key-gated world must be able to GET IN from lite.
+// The owned world sets JOIN_TOKEN, so arriving without ?key= earns close code 4003, which
+// net.js turns into `bad-key`. The full client answers that by reopening openDoor - which
+// lives in ui.js and arrives with the engine attached. "Try the full world" is not a door
+// for someone whose phone the full world kills, so lite needs its own, and it has to work
+// without fetching a single engine byte.
+{
+  const page = await mkPage();
+  const asked = [];
+  page.on('request', (r) => asked.push(r.url()));
+  const errs = [];
+  page.on('pageerror', (e) => errs.push(e.message));
+  // A first-time visitor remembers nothing.
+  await page.addInitScript(() => { try { localStorage.removeItem('ew-key'); } catch (e) {} });
+
+  await page.goto(`${world.origin}/?world=staging&name=doorprobe&lite=1`, { waitUntil: 'load' });
+  const doorShown = await page.waitForSelector('#lite-door', { timeout: 20000 })
+    .then(() => true).catch(() => false);
+  const engineBeforeKey = asked.filter((u) => ENGINE.test(u)).length;
+  console.log(`\n  key door: shown=${doorShown} engine-requests-so-far=${engineBeforeKey}`);
+  check('a key-gated lite visitor gets a key door', doorShown,
+    'without it the only escape is the full client, which is what kills the device');
+  check('the key door costs no engine bytes', engineBeforeKey === 0);
+
+  if (doorShown) {
+    await page.fill('#lite-door .lite-door-key', world.key);
+    await page.click('#lite-door .lite-door-go');
+    const joined = await page.waitForFunction(
+      () => !document.getElementById('lite-door') && !!document.getElementById('chatline'),
+      { timeout: 20000 },
+    ).then(() => true).catch(() => false);
+    const engineAfter = asked.filter((u) => ENGINE.test(u)).length;
+    console.log(`  key door: entered key -> joined=${joined} engine-requests-total=${engineAfter} errors=${errs.length}`);
+    for (const e of errs.slice(0, 2)) console.log(`      ! ${e}`);
+    check('a correct key lets a lite visitor in', joined,
+      'setToken + connect() should close the door and leave a usable chat');
+    check('recovering through the key door still loads no engine', engineAfter === 0);
+    check('the key door raises no page errors', errs.length === 0, errs.slice(0, 1).join(''));
+  }
   await page.close();
 }
 
@@ -166,13 +288,31 @@ check('a lite boot is dramatically lighter overall',
   // 3. A full boot that survives disarms its own world, and only after the load tail goes
   //    quiet - not at arrival, which is when the phone was still alive and about to die.
   const armedDuring = await page.evaluate(() => localStorage.getItem('ew-boot-attempt:beta') !== null);
-  const disarmed = await page.waitForFunction(
-    () => localStorage.getItem('ew-boot-attempt:beta') === null, { timeout: 100000, polling: 1000 },
+  // The disarm has two paths, and this gates the one that carries the meaning: PAGEHIDE.
+  // Leaving deliberately fires it; an out-of-memory kill does not, and that asymmetry is
+  // the whole discrimination. Navigating away is exactly the event a real clean exit
+  // raises, so this is the product path, not a simulation of it.
+  //
+  // The 60s dwell is the other path and is deliberately NOT gated here: waiting it out
+  // costs the suite a minute and a half and turns a green run into a race against
+  // whatever else is loading the server - which is precisely how the previous version of
+  // this check passed on a 5s boot and failed on a 12s one, teaching us about the
+  // harness instead of the code.
+  // ARRIVE first. The pagehide listener is registered by finishBoot, so leaving before
+  // the client ever got in is correctly no evidence of anything - which is what the first
+  // version of this check accidentally measured.
+  const betaArrived = await page.waitForFunction(
+    () => { const el = document.getElementById('splash'); return !el || el.classList.contains('gone'); },
+    { timeout: 60000 },
   ).then(() => true).catch(() => false);
-  console.log(`  tripwire: beta armed during boot=${armedDuring}, disarmed after settling=${disarmed}`);
+  check('the full client arrives on a fresh world', betaArrived);
+
+  await page.goto(`${world.origin}/?world=gamma&name=trip&key=${world.key}&lite=1`, { waitUntil: 'load' });
+  const disarmed = await page.evaluate(() => localStorage.getItem('ew-boot-attempt:beta') === null);
+  console.log(`  tripwire: beta armed during boot=${armedDuring}, cleared on clean exit=${disarmed}`);
   check('a full boot arms the flag before fetching the engine', armedDuring);
-  check('a full boot that SURVIVES disarms its own world', disarmed,
-    'boot.js waits for the load list to go quiet; if this hangs the disarm never fires');
+  check('leaving a surviving world cleanly disarms it', disarmed,
+    'pagehide is the signal an OOM kill cannot fake');
 
   // 4. alpha is still tripped: surviving beta says nothing about alpha.
   const alphaStill = await page.evaluate(() => localStorage.getItem('ew-boot-attempt:alpha') !== null);

@@ -1502,6 +1502,20 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
 (() => {
   try {
     const params = new URLSearchParams(location.search);
+    // Resolve the avatar FIRST and publish it, before any guard can return. net.js only
+    // adopts this socket when the join it would send is byte-identical to the one sent
+    // here, and lite.js is a second entry point that has to produce that same join
+    // without loading an avatar it cannot draw. It asking for '' is what made the
+    // adoption miss and produced arrive -> leave -> arrive (#188 B1). One resolution,
+    // one reader, agreement by construction rather than by two copies staying in step.
+    const wantName = params.get('avatar') || localStorage.getItem('ew-avatar-name') || 'claude';
+    let wantAvatar = wantName;   // a bare name: the server resolves it against the roster
+    try {
+      const cached = JSON.parse(localStorage.getItem('ew-avatar-path') ?? 'null');
+      if (cached && cached.name === wantName && typeof cached.path === 'string') wantAvatar = cached.path;
+    } catch (e) { /* a bare name is fine */ }
+    globalThis.__ewWantAvatar = wantAvatar;
+
     if (params.get('earlysock') === '0') return;
     if (params.has('spectate') || params.has('renderer') || params.has('mintthumbs')) return;
     const name = params.get('name')
@@ -1509,12 +1523,7 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     if (!name) return;   // the first-run door decides identity — never preempt it
     const world = params.get('world') || 'commons';
     const token = params.get('key') || localStorage.getItem('ew-key') || '';
-    const want = params.get('avatar') || localStorage.getItem('ew-avatar-name') || 'claude';
-    let avatar = want;   // a bare name: the server resolves it against the roster
-    try {
-      const c = JSON.parse(localStorage.getItem('ew-avatar-path') ?? 'null');
-      if (c && c.name === want && typeof c.path === 'string') avatar = c.path;
-    } catch (e) { /* a bare name is fine */ }
+    const avatar = wantAvatar;   // resolved above, and published for lite.js to match
     const sent = { world, id: name, avatar, token };
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
     const stash = { ws, sent, buffered: [], failed: false, closeInfo: null };
@@ -1656,6 +1665,73 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     }
   })();
 </script>
+<style>
+/* ---------------------------------------------------------------- lite client
+   The renderer-free surface (client/lite.js). It shares the token sheet above and
+   hexes nothing, per docs/MODDING-UI.md: a restyle reaches this the same as it
+   reaches the desktop chrome. Phone-first, because that is the only place it runs -
+   tap targets at 44px, and nothing that assumes a pointer or a wide viewport. */
+html.lite, html.lite body { height: 100%; overflow: hidden; }
+
+#lite-emote-host {
+  position: fixed; left: 0; right: 0; top: 0; z-index: 30;
+  padding: 6px 8px calc(6px + env(safe-area-inset-top, 0px));
+  background: var(--panel); border-bottom: 1px solid var(--edge); box-shadow: var(--rim);
+}
+.lite-emotes { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.lite-emote {
+  min-width: 44px; min-height: 44px; font-size: 22px; line-height: 1;
+  background: var(--chip); color: var(--fg);
+  border: 1px solid var(--edge); border-radius: 8px; cursor: pointer;
+  transition: transform .12s ease, border-color .12s ease;
+}
+.lite-emote:active { transform: scale(.94); }
+.lite-emote.fired { border-color: var(--brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 35%, transparent); }
+.lite-emotes-wait { color: var(--dim); font-size: var(--fs-sm, 12px); padding: 12px; }
+
+#lite-dock {
+  position: fixed; right: 8px; z-index: 30;
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  display: flex; gap: 6px;
+}
+#lite-dock button {
+  min-width: 44px; min-height: 44px; font-size: 20px;
+  background: var(--panel); color: var(--fg);
+  border: 1px solid var(--edge); border-radius: 10px; cursor: pointer;
+}
+#lite-dock button:active { background: var(--act); }
+
+/* The key door. A first-time key-gated visitor has no other way in, and the full
+   client is not an option for the device this exists for. */
+#lite-door {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px; background: rgb(0 0 0 / .72);
+}
+.lite-door-card {
+  display: flex; flex-direction: column; gap: 10px;
+  width: 100%; max-width: 320px; padding: 18px;
+  background: var(--panel); border: 1px solid var(--edge-hi);
+  border-radius: 12px; box-shadow: var(--rim);
+}
+.lite-door-title { color: var(--fg); font-size: 16px; font-weight: 600; }
+.lite-door-msg { color: var(--dim); font-size: var(--fs-sm, 12px); line-height: 1.4; }
+.lite-door-key {
+  min-height: 44px; padding: 8px 10px; font-size: 16px;   /* 16px: iOS zooms a smaller field */
+  background: var(--well); color: var(--fg);
+  border: 1px solid var(--edge); border-radius: 8px;
+}
+.lite-door-key:focus { outline: none; border-color: var(--brand); }
+.lite-door-go {
+  min-height: 44px; font-size: 15px; cursor: pointer;
+  background: var(--brand-deep); color: var(--bg);
+  border: 1px solid var(--brand); border-radius: 8px; font-weight: 600;
+}
+.lite-door-login { color: var(--brand); font-size: var(--fs-sm, 12px); text-align: center; }
+
+/* The chat frame is the whole view here: no world behind it to leave room for. */
+html.lite .frame.panel { max-width: 100%; }
+</style>
 </head>
 <body>
 <!-- Static so it paints before any module loads. boot.js only fills it in. -->

@@ -205,26 +205,46 @@ export function finishBoot(reason = 'ready') {
 
 /** Disarm the lite-mode tripwire index.html armed before the first engine byte.
  *
- *  NOT at finishBoot, which is the wrong moment: arrival means "there is somewhere to
- *  stand", and the world's assets keep streaming after it. A phone that dies on a busy
- *  world dies in that tail, so clearing here would wipe the flag seconds before the
- *  crash it exists to record, and the next visit would try the same thing again.
+ *  NOT at finishBoot: arrival means "there is somewhere to stand", and the world's assets
+ *  keep streaming after it. A phone that dies on a busy world dies in that tail, so
+ *  clearing on arrival wipes the flag seconds before the crash it exists to record.
  *
- *  So: wait for the load list to go quiet and STAY quiet, with a hard ceiling for a
- *  world whose tail never truly ends. Surviving that is the real evidence. */
+ *  The first version of this waited for loadingItems() to go quiet, which does not work
+ *  and hid that it did not: prefetch.js streams the library during idle time and keeps
+ *  entries in that list indefinitely, so the list never empties, the quiet branch was
+ *  dead code, and a ceiling meant for pathological worlds was quietly deciding every
+ *  case. Two signals that actually discriminate:
+ *
+ *  1. PAGEHIDE. Leaving on purpose - navigating away, closing the tab - fires this. An
+ *     out-of-memory kill does not: the renderer is terminated without notice. That
+ *     asymmetry is the whole signal, and it is the honest one, because it says "this
+ *     session ended deliberately" rather than "this session lasted a while".
+ *  2. A DWELL. Surviving the heavy early tail is evidence in its own right, and it
+ *     bounds the false positive from a pagehide that never fires - a backgrounded tab
+ *     discarded by Android, say, which is common and is not the user's doing.
+ *
+ *  Known and accepted: a crash LATER than the dwell, with no pagehide, is not
+ *  remembered. Asset streaming front-loads the risk, so most of the danger is inside it;
+ *  and the cheap direction to be wrong is toward forgetting, because the cost of a false
+ *  demotion is a lite session the person did not ask for, while the cost of a missed
+ *  crash is one more crash and then the flag catches it. */
+const DWELL_MS = 60000;
 function disarmTripwire() {
+  // A LITE session proves nothing about the full client, and it is the full client the
+  // flag is about. lite.js calls finishBoot too (its splash has to come down like any
+  // other), so without this a phone demoted to lite would clear its own evidence by
+  // surviving in lite and walk back into the crash on the next visit.
+  if (globalThis.__ewLite) return;
   const key = globalThis.__ewTripKey?.(new URLSearchParams(location.search)) ?? 'ew-boot-attempt';
-  const clear = () => { try { localStorage.removeItem(key); } catch { /* storage blocked; never armed either */ } };
-  const QUIET_MS = 6000, CEILING_MS = 90000;
-  const since = performance.now();
-  let quietFrom = null;
-  const t = setInterval(() => {
-    const busy = loadingItems().length > 0;
-    if (busy) quietFrom = null;
-    else if (quietFrom === null) quietFrom = performance.now();
-    const quietLongEnough = quietFrom !== null && performance.now() - quietFrom >= QUIET_MS;
-    if (quietLongEnough || performance.now() - since >= CEILING_MS) { clearInterval(t); clear(); }
-  }, 1000);
+  let cleared = false;
+  const clear = () => {
+    if (cleared) return;
+    cleared = true;
+    removeEventListener('pagehide', clear);
+    try { localStorage.removeItem(key); } catch { /* storage blocked; never armed either */ }
+  };
+  addEventListener('pagehide', clear);
+  setTimeout(clear, DWELL_MS);
 }
 
 export const bootDone = () => done;

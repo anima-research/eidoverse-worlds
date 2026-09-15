@@ -268,6 +268,27 @@ export function sendPose(now) {
  *  body they were talking to. What does NOT follow you is anything the world
  *  filed under the old name: your remembered sleeping place, and any whisper
  *  held for you while you were away. */
+/** Re-assert a KNOWN body verbatim, plus whatever one-shot rides along.
+ *
+ *  sendPose() above SAMPLES a live body: it reads position, clip, pitch, wings, held
+ *  pose and pins off myState and composes a packet. A client with no body has nothing
+ *  to sample, and composing one from defaults is how #188 B2 happened - a lite user
+ *  tapping `wave` stood up out of a sit, unfolded their wings and dropped their held
+ *  pose, because the composer emitted its own defaults for every field it did not know
+ *  to carry.
+ *
+ *  A pose is the resident's WHOLE public body, not a delta. So the renderer-free path
+ *  sends back the server's own settled pose (the join snapshot's `restore`) unchanged,
+ *  adding only the one-shot. Fields this client has never heard of survive by
+ *  construction, which is the property a field-by-field rebuild cannot have.
+ *
+ *  @returns {boolean} whether it went out. */
+export function sendPoseExact(pose) {
+  if (!net.joined || net.ws?.readyState !== 1) return false;
+  net.ws.send(JSON.stringify({ type: 'pose', pose }));
+  return true;
+}
+
 export function rejoin() {
   intentionalClose = true;
   try { net.ws?.close(); } catch { /* already gone */ }
@@ -769,7 +790,13 @@ async function onSnapshot(msg) {
   // wake where you fell asleep — but never teleport a body that has already
   // moved this session (mid-session reconnects keep local truth)
   const s = hooks.myState;
-  if (msg.restore && !restoredPose && s && s.speed === 0) {
+  // `s &&` used to be part of this test, which quietly made the restore undeliverable to
+  // any client without a live body - and a renderer-free one has none by construction
+  // (#188 B2: its emote went out carrying defaults because the remembered body never
+  // arrived to carry instead). What the guard actually protects is a body that has
+  // ALREADY MOVED this session; no body cannot have moved, so it has nothing to protect
+  // and the restore should land.
+  if (msg.restore && !restoredPose && (!s || s.speed === 0)) {
     restoredPose = true;
     hooks.onRestore(msg.restore);
   }
@@ -853,4 +880,3 @@ async function onSnapshot(msg) {
   bus.emit('roster');
   hooks.onSnapshotDone();
 }
-
