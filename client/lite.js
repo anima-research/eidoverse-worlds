@@ -36,6 +36,7 @@ import { initLiteEmotes } from './lib/emotebar_lite.js';
 // only appeared on reload, when history replayed through social.js instead. It is the
 // same narrator the full client uses, which is why it also reports builds and grants.
 import { initCauses } from './lib/realize/causes.js';
+import { initRecentChat } from './lib/realize/recentchat.js';
 
 // The boot watchdog in index.html fails the splash after 20s unless __ewEngineUp is
 // set, and core.js only sets it after renderer.init(). There is no renderer here and
@@ -227,43 +228,50 @@ async function main() {
 
   await initIdentity();
 
+  // EVERY CONSUMER OF SOCKET TRAFFIC IS BUILT BEFORE connect().
+  //
+  // This used to run the other way round and it lost messages. The early socket is
+  // adopted inside connect(), which then drains what raced ahead of us - the join
+  // snapshot, and any whisper the server held for us while we were away. The server
+  // deletes its pending copy the moment it sends one. So a chat window that did not
+  // exist yet meant logWhisper() threw inside the drain, connect() reported it and
+  // carried on, and a private message that was successfully delivered was gone for
+  // good (#188 round two). main.js has always had this order - initChat at module
+  // scope, connect() later - and the reason is exactly this.
+  //
+  // The rule, stated so it is not re-learned: anything that can receive buffered
+  // arrival traffic is installed here, above the connect, with no await between.
+  initChat({
+    send: (text) => sendVerb('say', { text }),
+    whisper: sendWhisper,
+    typing: (to) => sendTyping(to),   // no local avatar to show typing on
+    people,
+  });
+  initCauses();        // live entries -> chat lines (says, builds, grants)
+  initRecentChat();    // the room's history, replayed out of the join snapshot
+
+  // Chrome. None of it consumes socket traffic, but it costs nothing to have it
+  // standing before the first message lands either.
+  const emoteHost = document.createElement('div');
+  emoteHost.id = 'lite-emote-host';
+  document.body.appendChild(emoteHost);
+  initLiteEmotes(emoteHost, emote);
+  liteDock([
+    { id: 'full', label: '\u{1F30D}', title: 'try the full world', act: tryFullWorld },
+  ]);
+  globalThis.__ewTryFullWorld = tryFullWorld;   // also reachable from the console
+
+  logChat('', WHY_TEXT[WHY] ?? WHY_TEXT.default, 'sys');
+
   // No door screen: openDoor lives in ui.js, and the door's job (pick a body, see who is
-  // here before you commit) is mostly about a world this client does not render. A lite
-  // arrival steps straight in. TODO: the key/login path still needs a home here for a
-  // world that requires one (net.js exports loginUrl/bounceToLogin).
-  {
-    {
-      markPhase('connect', 1);
-      await connect();
-      markPhase('world', 1);
-      finishBoot('lite');
-
-      initChat({
-        send: (text) => sendVerb('say', { text }),
-        whisper: sendWhisper,
-        typing: (to) => sendTyping(to),   // no local avatar to show typing on
-        people,
-      });
-
-      const emoteHost = document.createElement('div');
-      emoteHost.id = 'lite-emote-host';
-      document.body.appendChild(emoteHost);
-      initLiteEmotes(emoteHost, emote);
-
-      initCauses();   // live says become chat lines; see the import note
-
-      logChat('', WHY_TEXT[WHY] ?? WHY_TEXT.default, 'sys');
-      bus.emit('roster');
-
-      // TODO: tryFullWorld() still needs a real control in the dock. A person demoted
-      // by a crash must be able to SEE the door, not just be told there is one.
-      globalThis.__ewTryFullWorld = tryFullWorld;
-
-      liteDock([
-        { id: 'full', label: '\u{1F30D}', title: 'try the full world', act: tryFullWorld },
-      ]);
-    }
-  }
+  // here before you commit) is mostly about a world this client does not render, so a
+  // lite arrival steps straight in. A world that wants a KEY is handled - keyDoor() above
+  // answers `bad-key` - and a deployment that wants a login redirects through authcfg.
+  markPhase('connect', 1);
+  await connect();
+  markPhase('world', 1);
+  finishBoot('lite');
+  bus.emit('roster');
 }
 
 main().catch((e) => {

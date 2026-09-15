@@ -216,6 +216,94 @@ const framesOf = (page) => page.evaluate(() => globalThis.__frames ?? { sent: []
   await page.close();
 }
 
+// ARRIVAL DELIVERY. The window between adopting the early socket and having somewhere
+// to put what it carries.
+//
+// Round two of the review found real message loss here: connect() adopts the early
+// socket and drains what raced ahead of us - the join snapshot, and any whisper the
+// server held while we were away. The server deletes its pending copy the moment it
+// sends one, so a chat window that did not exist yet meant logWhisper() threw inside the
+// drain, connect() reported it and carried on, and a successfully delivered private
+// message was gone for good. These gates hold the ordering that fixes it.
+//
+// `raw` drives a plain socket from inside the page: a second participant, no client.
+const RAW = `
+  globalThis.__raw = async (msgs, { id, wait = 900 }) => {
+    const q = new URLSearchParams(location.search);
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const sock = new WebSocket(proto + '://' + location.host + '/ws');
+    await new Promise((res, rej) => { sock.onopen = res; sock.onerror = rej; });
+    sock.send(JSON.stringify({ type: 'join', world: q.get('world'), id,
+      avatar: 'claude', spectate: false, renderer: false, token: q.get('key') }));
+    await new Promise((res) => setTimeout(res, wait));
+    for (const m of msgs) { sock.send(JSON.stringify(m)); await new Promise((res) => setTimeout(res, 250)); }
+    await new Promise((res) => setTimeout(res, wait));
+    sock.close();
+    await new Promise((res) => setTimeout(res, 400));
+    return true;
+  };
+`;
+
+{
+  const WORLD = `arrival${Date.now().toString(36)}`;
+  const READER = 'reader';
+  const SECRET = `held-whisper-${Date.now()}`;
+  const PRIOR = `prior-say-${Date.now()}`;
+
+  // A page that is NOT the reader, used only to drive the other participant.
+  const driver = await mkPage();
+  await driver.addInitScript(RAW);
+  await driver.goto(`${world.origin}/?world=${WORLD}&name=driver&key=${world.key}&lite=1&earlysock=0`,
+    { waitUntil: 'load' });
+  await driver.waitForTimeout(1500);
+
+  // One ordinary say (becomes the room's pre-existing context), then a whisper to
+  // someone who is not here - which the server holds for delivery on arrival.
+  await driver.evaluate(async ({ secret, prior, reader }) => {
+    await globalThis.__raw([
+      { type: 'verb', verb: 'say', args: { text: prior } },
+      { type: 'whisper', to: reader, text: secret },
+    ], { id: 'sender' });
+  }, { secret: SECRET, prior: PRIOR, reader: READER });
+  await driver.close();
+
+  // Now the reader arrives, in lite, for the first time.
+  const page = await mkPage();
+  const asked = [];
+  page.on('request', (r) => asked.push(r.url()));
+  const errs = [];
+  page.on('pageerror', (e) => errs.push(e.message));
+  const consoleErrs = [];
+  page.on('console', (m) => { if (/TypeError|Cannot read prop|net whisper/i.test(m.text())) consoleErrs.push(m.text()); });
+
+  await page.goto(`${world.origin}/?world=${WORLD}&name=${READER}&key=${world.key}&lite=1`, { waitUntil: 'load' });
+  await page.waitForFunction(
+    () => { const el = document.getElementById('splash'); return !el || el.classList.contains('gone'); },
+    { timeout: 25000 },
+  ).catch(() => {});
+  await page.waitForTimeout(3000);
+
+  const body = await page.evaluate(() => document.body.innerText);
+  const countOf = (hay, needle) => hay.split(needle).length - 1;
+  const whisperHits = countOf(body, SECRET);
+  const priorHits = countOf(body, PRIOR);
+  const engine = asked.filter((u) => ENGINE.test(u)).length;
+
+  console.log(`\n  arrival delivery: held-whisper x${whisperHits}  prior-say x${priorHits}  engine=${engine}  pageErrors=${errs.length}  drainErrors=${consoleErrs.length}`);
+  for (const e of consoleErrs.slice(0, 2)) console.log(`      ! ${e.slice(0, 140)}`);
+
+  check('a held whisper survives a lite arrival', whisperHits > 0,
+    'the server deletes its pending copy on send; a consumer built after the drain never sees it');
+  check('the held whisper arrives exactly once', whisperHits === 1, `seen ${whisperHits}x`);
+  check('pre-existing room chat is there on first arrival', priorHits > 0,
+    'state.st.recentChat is hydrated from the join snapshot; someone has to replay it');
+  check('pre-existing chat is not duplicated', priorHits === 1, `seen ${priorHits}x`);
+  check('nothing throws inside the drain', consoleErrs.length === 0, consoleErrs[0]?.slice(0, 120));
+  check('arrival delivery raises no page errors', errs.length === 0, errs[0]?.slice(0, 120));
+  check('none of this costs engine bytes', engine === 0);
+  await page.close();
+}
+
 // B3: a first-time visitor to a key-gated world must be able to GET IN from lite.
 // The owned world sets JOIN_TOKEN, so arriving without ?key= earns close code 4003, which
 // net.js turns into `bad-key`. The full client answers that by reopening openDoor - which

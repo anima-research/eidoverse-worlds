@@ -12,14 +12,13 @@
 import { state, onWorldChange } from '../state.js';
 import { applyGrantState, applyBehaviorState } from '../world.js';
 import { logChat } from '../chat.js';
+import { replayRecentChat } from './recentchat.js';   // shared with the renderer-free client
 
 function reconcileSocial() {
   const st = state.st;
   for (const [id, rec] of Object.entries(st.roles ?? {})) applyGrantState(id, rec);
   for (const [id, rec] of Object.entries(st.behaviors ?? {})) applyBehaviorState(id, rec, false);
-  for (const m of st.recentChat ?? []) {
-    logChat(m.actor, m.text, '', { seq: m.seq, ts: m.ts });
-  }
+  replayRecentChat();
 }
 
 function onEntry(entry) {
