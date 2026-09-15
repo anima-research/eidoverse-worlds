@@ -457,8 +457,19 @@ const DEG = Math.PI / 180;
 // these four want to be debug-panel dials, like WING_IDLE's, and are named
 // here so that change is a wiring job rather than a hunt.
 const LAMP_FLOOR = 0.03;
-const LAMP_PEAK = 0.45;    // dimmer again: it was glaring at anything but noon
+const LAMP_PEAK = 0.62;    // brighter WITH shadows on -- see below
 const LAMP_SHAPE = 1.6;
+// PEAK went 0.45 -> 0.62 when the lamp started casting shadows, and the reason
+// is worth keeping: 0.45 was tuned against a body with NO dark side, where the
+// only thing the glow competed with was the sky. Once the lamp throws its own
+// shadows the lit surfaces have shadowed neighbours to be read against, and the
+// same number looks weaker -- the contrast that makes a shadow legible also
+// makes the light that cast it look dimmer. Janus, seeing it with shadows on:
+// "it looks great with shadows on, but I think now the light should be a bit
+// brighter."
+//
+// Still under 1.0. The ceiling is what keeps this reading as breath rather
+// than as a pulse, and the day curve below still dims it toward noon.
 // ...and the sky's share. The surface dims toward noon on lightrig's own
 // (1-dayness)^2 curve, so the lamp is BRIGHT AT NIGHT and subtle at midday --
 // which is what a lamp does. The floor keeps it visible in full sun rather

@@ -66,11 +66,35 @@ const N_SLOTS = Number.isFinite(_slotsParam) ? Math.max(0, Math.min(16, Math.rou
 const rigGroup = new THREE.Group();
 rigGroup.name = 'lightrig';
 const slots = [];
+// ONE SLOT CASTS, and it is born that way.
+//
+// The header's rule holds: the pipeline caches lights by (id, castShadow), so
+// FLIPPING this on a live slot is a recompile -- which is why every slot used
+// to be born false and stay false. But Janus enabled it by hand in the console
+// on Mythos's chest lamp and it "looks great with shadows on", which retires
+// the assumption that the cliff is not worth paying ANYWHERE. A body lit from
+// inside, throwing its own shadows, is the whole point of the lamp.
+//
+// So slot 0 is a caster from construction and the rest are not. The topology
+// is still born once and never changes; the only cost is one extra depth
+// pipeline at boot, and a request that wants shadows is assigned here rather
+// than toggling a light's shape mid-session.
+//
+// 512, not 2048: this is a 12cm sphere inside a chest lighting a body at arm's
+// length, and a point light needs SIX faces. 2048 would be 24MB of cube map
+// for a lamp you can cover with a hand. Janus measured 256 as sufficient by
+// hand; 512 buys a cleaner wing edge for 4x of very little.
+const SHADOW_SLOT = 0;
 for (let i = 0; i < N_SLOTS; i++) {
   const pl = new THREE.PointLight(0xffffff, 0, 10, 1.7);
   pl.name = `slot${i}`;
-  pl.castShadow = false;    // point-light shadows are a cost cliff the rig
-                            // never pays — the sun is the one shadow caster
+  pl.castShadow = i === SHADOW_SLOT;
+  if (pl.castShadow) {
+    pl.shadow.mapSize.set(512, 512);
+    pl.shadow.camera.near = 0.03;   // the bulb is INSIDE the body it lights
+    pl.shadow.bias = -0.0015;
+    pl.shadow.normalBias = 0.02;
+  }
   slots.push(pl);
   rigGroup.add(pl);
 }
@@ -147,6 +171,7 @@ export function requestLight(key, spec) {
     obj: null, offset: null, pos: null, mirror: null,
     color: 0xffd9a0, intensity: 16, range: 10, decay: 1.7,
     keep: false, authored: false, dayAware: false, owner: null,
+    shadows: false,   // wants the casting slot (see SHADOW_SLOT)
     ...spec, key, slot: -1,
   });
   assignDirty = true;
@@ -214,6 +239,9 @@ export function attachLamps(root, owner) {
       color: sat > 0.25 ? ec.clone() : 0xffd9a0,
       intensity,
       range: 12,                 // tight radius: grass fragments cost
+      // A lamp INSIDE a body should throw that body's shadow -- it is the one
+      // light in this world whose whole reason is to be seen from within.
+      shadows: true,
       dayAware: true, owner,
     });
     made.push({ key, intensity });
@@ -315,6 +343,15 @@ function assign(now) {
     if (r.slot >= 0 && !winnerSet.has(r)) r.slot = -1;
   }
   const used = new Set(winners.map((r) => r.slot).filter((i) => i >= 0));
+  // A REQUEST THAT WANTS SHADOWS PREFERS THE ONE SLOT THAT CASTS THEM, and
+  // takes it before the general pass hands it to whoever is merely nearest.
+  // `shadows: true` is a wish, not a guarantee: if another shadow-wanting
+  // request already holds it, the second one lights without casting rather
+  // than forcing a recompile to grow a second caster.
+  if (!used.has(SHADOW_SLOT)) {
+    const wants = winners.find((r) => r.shadows && r.slot < 0);
+    if (wants) { wants.slot = SHADOW_SLOT; used.add(SHADOW_SLOT); }
+  }
   let free = 0;
   for (const r of winners) {
     if (r.slot >= 0) continue;

@@ -354,7 +354,17 @@ export function prepareObject(root, { kind = 'model' } = {}) {
   // stubs core.js) -- and an exception at import time takes the whole client
   // down for a thing that had nothing to prepare.
   if (!root?.traverse) return;
-  const receive = kind === 'model' || kind === 'terrain';
+  const receive = kind === 'model' || kind === 'terrain' || kind === 'body';
+  // BODIES RECEIVE AND CAST NOW, which is a reversal worth stating. The rule
+  // was "bodies stay on their blob shadows until measured" -- and Janus
+  // measured it, by hand, in the console: he made Mythos's chest lamp a caster
+  // and turned on cast+receive across the avatar's meshes. "It looks great with
+  // shadows on." A lamp inside a ribcage that does not throw the ribcage is a
+  // lamp pretending.
+  //
+  // The blob stays: it is the contact cue under the feet and reads at a
+  // distance where a real shadow has gone soft and faint.
+  const body = kind === 'body';
   const grass = kind === 'grass';
   root.traverse((o) => {
     if (!o.isMesh) return;
@@ -373,6 +383,13 @@ export function prepareObject(root, { kind = 'model' } = {}) {
     // (§16.2.B); castShadow sits in NO pipeline cache key (§12.1), and this
     // runs before the field's warm (world.js), so clearing it here is free.
     if (grass) o.castShadow = false;
+    // GOLD IS EXCLUDED FROM CASTING, following Janus's hand-tuned version. It
+    // is the kintsugi seams -- thin metal ribbons threaded THROUGH the skin
+    // they decorate -- so at any shadow-map resolution their depth fights the
+    // body's own and the seams self-shadow into dark scratches. They still
+    // RECEIVE, so a hand passing over the chest darkens the gold with
+    // everything else.
+    if (body) o.castShadow = (o.name !== 'GOLD');
     // TRANSMISSION FIRST, because it replaces the material object: a plain
     // MeshPhysicalMaterial with transmission renders as nothing here, and the
     // wrap below early-returns on non-node materials anyway, so upgrading
