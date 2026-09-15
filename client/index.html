@@ -1541,10 +1541,23 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
 
      INJECTED rather than static, because lite mode (phones: chat, emotes and
      who's here, no world) must not download an engine it will never run, and a
-     static tag cannot be recalled once the parser has seen it. The script sits
-     at the exact position the tags did, so it runs during parse and discovery
-     stays at depth 1 — the head start this block exists for is unchanged for
-     the full client. -->
+     static tag cannot be recalled once the parser has seen it.
+
+     This is NOT free, and the earlier version of this comment claimed it was.
+     The script sits exactly where the tags did, so discovery stays at depth 1
+     rather than falling back to depth 3 — but injected links are invisible to
+     the PRELOAD SCANNER, which runs ahead of the parser and was starting these
+     seven before any script executed. Measured on the owned-server boot-check,
+     warm, 1280x720, localhost: engine phase 277/283ms static vs 334/381/400ms
+     injected, so about +90ms. Time-to-arrival is unchanged (6688/6965 vs
+     6566/6756/6874) because the body's ~4.5s dominates and swallows it. Expect
+     the gap to be WIDER over a real network, where the scanner's head start is
+     worth more than it is over loopback.
+     Judged worth it: ~90ms off a 6.7s arrival, against being the only way a
+     weak device gets in at all. If that trade ever stops being worth it, the
+     fix is server-side — serve the full client's HTML with these seven static
+     and the lite client's without, which restores the scanner for everyone and
+     costs routes.ts a template it does not currently have. -->
 <script>
   // decideLite — the lite/full decision as ONE pure function, hung on globalThis so
   // tools/lite-choice-test.ts can run it against fabricated signals rather than
