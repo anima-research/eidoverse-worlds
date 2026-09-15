@@ -317,6 +317,9 @@ export function updateRequest(key, patch) {
   const r = requests.get(key);
   if (!r) return;
   Object.assign(r, patch);
+  // a new obj/offset means a different bulb in a different skin: drop the
+  // cached dominant joint so skinnedPosOf re-derives it
+  if ('obj' in patch || 'offset' in patch) delete r._joint;
   if (ORDERING_KEYS.some((k) => k in patch)) assignDirty = true;
 }
 export function releaseLight(key) {
@@ -419,14 +422,77 @@ const _wp = new THREE.Vector3();
 const _lastCam = new THREE.Vector3(Infinity, Infinity, Infinity);
 let lastAssign = 0;
 
+// WHERE A LAMP ACTUALLY IS, which for a skinned body is not where its node is.
+//
+// The old form was `worldPos(obj) + offset.applyQuaternion(worldQuat(obj))`.
+// That is correct for a rigid object whose offset is a small local vector. It
+// is wrong for a SkinnedMesh, and Mythos's chest lamp is one: a skinned mesh's
+// NODE sits at the body root while its vertices live in BIND-POSE coordinates,
+// so the bounding-sphere centre attachLamps stores is an absolute (0, 1.47,
+// 0.0155) -- the full height off the floor, not an offset from anything. Rotate
+// that 1.47m vector by the body's quaternion and the light rides an arc.
+//
+// Measured on the live body, turning in place: the light swept 0.34m in x and
+// 0.36m in z, orbiting its own mean by ~0.17m. Janus saw it as the symptom
+// "there seems to be a directional bias to the light -- if i face in a
+// different direction, it hits mostly my left wing, and in another, mostly
+// right wing." Yaw hid the worst of it, since the offset is nearly vertical;
+// a pitched or rolled body (limp, ragdolling, flying) would throw the light
+// clear of the chest.
+//
+// A skinned lamp is therefore located through the SKELETON. The bind-space
+// centre is transformed by the bone matrix that actually drives those vertices,
+// which is what "where is the bulb now" means on a posed body. skinnedPosOf
+// caches the joint index per request; a lamp's geometry does not change which
+// bone owns it.
 function worldPosOf(r, out) {
   if (r.mirror) return out.copy(r.mirror.position);
   if (r.obj) {
+    if (r.offset && r.obj.isSkinnedMesh) return skinnedPosOf(r, out);
     r.obj.getWorldPosition(out);
     if (r.offset) out.add(_wp.copy(r.offset).applyQuaternion(r.obj.getWorldQuaternion(_q)).multiplyScalar(r.obj.getWorldScale(_s).x || 1));
     return out;
   }
   return out.set(...(r.pos ?? [0, 1, 0]));
+}
+
+// The dominant joint for a skinned lamp: the bone with the largest weight on
+// the vertex nearest the bind-space centre. One bone, not a blend -- a lamp is
+// a rigid fixture riding one bone (lamp_prep.py skins it to Spine02 at weight
+// 1.0), and a full four-bone blend would cost a per-frame walk for a result
+// that differs in the third decimal.
+const _bindM = new THREE.Matrix4();
+function lampJointOf(mesh, centre) {
+  const geo = mesh.geometry, skel = mesh.skeleton;
+  const pos = geo.getAttribute('position'), sk = geo.getAttribute('skinIndex'), sw = geo.getAttribute('skinWeight');
+  if (!pos || !sk || !sw || !skel) return -1;
+  let best = -1, bestD = Infinity;
+  for (let i = 0; i < pos.count; i++) {
+    const d = (pos.getX(i) - centre.x) ** 2 + (pos.getY(i) - centre.y) ** 2 + (pos.getZ(i) - centre.z) ** 2;
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  if (best < 0) return -1;
+  let j = sk.getX(best), w = sw.getX(best);
+  for (const [gi, gw] of [[sk.getY(best), sw.getY(best)], [sk.getZ(best), sw.getZ(best)], [sk.getW(best), sw.getW(best)]]) {
+    if (gw > w) { w = gw; j = gi; }
+  }
+  return w > 0 ? j : -1;
+}
+
+function skinnedPosOf(r, out) {
+  const mesh = r.obj;
+  if (r._joint === undefined) r._joint = lampJointOf(mesh, r.offset);
+  const skel = mesh.skeleton, j = r._joint;
+  // No skeleton, no weights, or a degenerate skin: fall back to the node's own
+  // matrix applied to the bind position. Still far better than rotating a
+  // 1.47m vector -- it is exactly right for an unposed body.
+  if (j < 0 || !skel?.bones?.[j]) {
+    return out.copy(r.offset).applyMatrix4(mesh.matrixWorld);
+  }
+  // bone * inverse-bind takes a BIND-space point to its posed world position,
+  // which is the skinning transform itself for a single fully-weighted bone.
+  _bindM.multiplyMatrices(skel.bones[j].matrixWorld, skel.boneInverses[j]);
+  return out.copy(r.offset).applyMatrix4(_bindM);
 }
 const _q = new THREE.Quaternion();
 const _s = new THREE.Vector3();
