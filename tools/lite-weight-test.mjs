@@ -136,6 +136,51 @@ check('a lite boot is dramatically lighter overall',
   await page.close();
 }
 
+// THE TRIPWIRE, which cannot be tested against the world that motivated it: the commons
+// is a different deployment serving its own client, and a world log only arrives over the
+// socket on join, so there is no way to mirror that load locally. What CAN be tested is
+// the mechanism, and the mechanism is cause-agnostic by design - it asks only "did a full
+// boot arm the flag and never come back to clear it". A tab the OS reaped for memory and
+// a tab killed by hand leave identical evidence, so the arming and the per-world keying
+// are the whole of what needs proving here.
+{
+  const page = await mkPage();
+
+  // 1. A world whose last full boot never finished: lite, and SAYS why.
+  await page.goto(`${world.origin}/?world=alpha&name=trip&key=${world.key}&lite=0`, { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => localStorage.setItem('ew-boot-attempt:alpha', String(Date.now())));
+  await page.goto(`${world.origin}/?world=alpha&name=trip&key=${world.key}`, { waitUntil: 'load' });
+  const alpha = await page.evaluate(() => ({ lite: globalThis.__ewLite, why: globalThis.__ewLiteWhy }));
+  console.log(`\n  tripwire: world alpha (died) -> lite=${alpha.lite} why=${alpha.why}`);
+  check('a world whose last boot died opens lite', alpha.lite === true && alpha.why === 'crash');
+
+  // 2. A DIFFERENT world on the same device is untouched. This is the one the phone
+  //    report forced: an empty instance runs the full client fine on hardware the
+  //    commons kills, so a device-wide flag would strand it in lite on worlds it holds.
+  await page.goto(`${world.origin}/?world=beta&name=trip&key=${world.key}`, { waitUntil: 'load' });
+  const beta = await page.evaluate(() => ({ lite: globalThis.__ewLite, why: globalThis.__ewLiteWhy }));
+  console.log(`  tripwire: world beta (fine)  -> lite=${beta.lite} why=${beta.why}`);
+  check('a different world on the same device is NOT demoted', beta.lite === false,
+    'the key is per world: capability is a property of the (device, world) pair');
+
+  // 3. A full boot that survives disarms its own world, and only after the load tail goes
+  //    quiet - not at arrival, which is when the phone was still alive and about to die.
+  const armedDuring = await page.evaluate(() => localStorage.getItem('ew-boot-attempt:beta') !== null);
+  const disarmed = await page.waitForFunction(
+    () => localStorage.getItem('ew-boot-attempt:beta') === null, { timeout: 100000, polling: 1000 },
+  ).then(() => true).catch(() => false);
+  console.log(`  tripwire: beta armed during boot=${armedDuring}, disarmed after settling=${disarmed}`);
+  check('a full boot arms the flag before fetching the engine', armedDuring);
+  check('a full boot that SURVIVES disarms its own world', disarmed,
+    'boot.js waits for the load list to go quiet; if this hangs the disarm never fires');
+
+  // 4. alpha is still tripped: surviving beta says nothing about alpha.
+  const alphaStill = await page.evaluate(() => localStorage.getItem('ew-boot-attempt:alpha') !== null);
+  check('surviving one world does not clear another', alphaStill);
+
+  await page.close();
+}
+
 const back = await weigh('&lite=0', 'escape hatch (?lite=0)');
 check('?lite=0 forces the full client back', back.lite === false && back.why === 'url');
 check('?lite=0 fetches the engine again', back.engine.length > 0);
