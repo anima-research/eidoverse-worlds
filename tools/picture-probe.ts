@@ -31,7 +31,7 @@ async function joinAs(name: string) {
   await pg.goto(`${world.origin}/?world=picprobe&key=${world.key}&name=${name}`, { waitUntil: 'domcontentloaded' });
   await pg.fill('#d-name', name).catch(() => {});
   await pg.click('#d-go').catch(() => {});
-  await pg.waitForSelector('#mictoggle', { timeout: 30000 });
+  await pg.waitForSelector('#micbtn, #mictoggle', { timeout: 30000 });   // the mic badge: #micbtn since the desktop UI (#185); #mictoggle before it
   return pg;
 }
 const state = (pg: any) => pg.evaluate(async () => {

@@ -13,6 +13,9 @@ export const PORT = Number(process.env.PORT ?? 8940);
 // MUST set this — the boot log shouts if you forgot. Checked at join and upload.
 export const JOIN_TOKEN = process.env.JOIN_TOKEN ?? "";
 export const UPLOAD_CAP = Number(process.env.UPLOAD_CAP_MB ?? 20) * 1_000_000;
+// Pictures are textures, not models: a hung image is decoded into GPU memory
+// on every client that sees it, so the door is narrower than the model door.
+export const IMAGE_CAP = Number(process.env.IMAGE_CAP_MB ?? 8) * 1_000_000;
 // RECORD_FRAMES=1 appends every broadcast stage frame (plus roster deltas) to
 // worlds/<name>/frames-<bootTs>.jsonl. World log + frames file + asset store =
 // enough to re-render the whole performance offline, at production quality,
