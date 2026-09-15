@@ -24,7 +24,12 @@ const EMOJI_ICON = {
   '🧱': 'hammer', '🧍': 'person-arms-spread', '🌿': 'plant', '☀': 'sun',
   '✨': 'sparkle', '🌳': 'tree', '📜': 'scroll', '🧩': 'puzzle-piece', '🔊': 'speaker-high', '🎨': 'palette', '🖥': 'monitor', '🥽': 'virtual-reality',
 };
-import { loadingItems } from './assets.js';
+// The load list is INJECTED, not imported: assets.js reaches the engine (GLTFLoader),
+// and ui.js is shared with a client that has no renderer and therefore never loads an
+// asset to list. Default is empty, which is the truth for such a client. main.js wires
+// the real one.
+let loadingItems = () => [];
+export function setLoadingItems(fn) { loadingItems = fn; }
 import { makeFrame, getFrame, isLocked, setLocked, resetLayout } from './frames.js';
 import { defsRegistry } from './defs.js';
 

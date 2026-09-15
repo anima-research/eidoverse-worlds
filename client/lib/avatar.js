@@ -245,33 +245,11 @@ const CLIP_FALLBACK = {
 // Emote slots are loaded lazily — a body needs locomotion to exist, but it
 // doesn't need to know how to dance until someone dances.
 //
-// §24l R1: the vocabulary itself is DATA now — defs/animations/_emotes.json,
-// hydrated below (object identity preserved, the FLORA_SPECIES trick) and
-// re-hydrated on the defs-updated push. It used to live in four places
-// (this table, emotebar's ICON map, the /emote help string, the help
-// sheet's prose), each drifted from the others.
-export const EMOTES = {};      // name → clip
-export const EMOTE_ORDER = []; // listed names, def key order = bar/number-key order
-export const EMOTE_ICONS = {}; // name → bar glyph
-export function hydrateEmotes(table) {
-  for (const k of Object.keys(EMOTES)) delete EMOTES[k];
-  for (const k of Object.keys(EMOTE_ICONS)) delete EMOTE_ICONS[k];
-  EMOTE_ORDER.length = 0;
-  for (const [name, e] of Object.entries(table ?? {})) {
-    if (!e?.clip) continue;
-    EMOTES[name] = e.clip;
-    if (e.icon) EMOTE_ICONS[name] = e.icon;
-    if (e.listed !== false) EMOTE_ORDER.push(name);
-  }
-  bus.emit('emotes-updated');
-}
-{
-  const refresh = () => defsRegistry()
-    .then((reg) => hydrateEmotes(reg.emotes))
-    .catch((e) => console.warn('[emotes] def hydration failed — no emotes until it lands:', e));
-  refresh();
-  bus.on('defs-updated', refresh);
-}
+// The emote vocabulary now lives in emotedefs.js (the bar needs it without the
+// engine). Re-exported here because these names were part of avatar.js's surface
+// before the split and several callers still read them from it — same objects, one
+// module instance, so the hydration trick is unaffected.
+export { EMOTES, EMOTE_ORDER, EMOTE_ICONS, hydrateEmotes } from './emotedefs.js';
 // Seated postures differ by what you're sitting ON — the ground clip on a
 // chair leaves you cross-legged in mid-air.
 export const SEAT_CLIPS = { ground: 'sitting_on_ground', chair: SEAT_CLIP_FILE };

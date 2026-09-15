@@ -12,7 +12,7 @@ const here = (f: string) => new URL(f, import.meta.url).pathname;
 plugin({
   name: 'emotebar-stubs',
   setup(b) {
-    for (const m of ['frames', 'avatar', 'controller', 'mybody', 'xrpanels', 'base']) {
+    for (const m of ['frames', 'avatar', 'emotedefs', 'controller', 'mybody', 'xrpanels', 'base']) {
       b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./emotebar-stub.mjs') }));
     }
   },

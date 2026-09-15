@@ -13,7 +13,16 @@
 //      spent learning them instead of watching a bar.
 
 import { bus } from './base.js';
-import { loadingItems, bootBytes } from './assets.js';
+// Injected, not imported: assets.js reaches the engine (GLTFLoader), and this splash
+// is shared with a client that loads no assets and therefore has no bytes to count.
+// The empty defaults are the truth for such a client — its phases finish on their own
+// evidence. main.js wires the real counters.
+let loadingItems = () => [];
+let bootBytes = () => ({ done: 0, total: 0 });
+export function setBootAssets({ items, bytes }) {
+  if (items) loadingItems = items;
+  if (bytes) bootBytes = bytes;
+}
 
 // Phase weights are rough shares of a cold boot, measured rather than guessed
 // (see the timings in the commit that added this). They only need to be
@@ -179,6 +188,7 @@ export function finishBoot(reason = 'ready') {
     if (left > 0) { if (phaseEl) phaseEl.textContent = `holding the splash for a look · ${Math.ceil(left / 1000)}s`; setTimeout(() => finishBoot(reason), Math.min(left, 1000)); return; }
   }
   done = true;
+  disarmTripwire();
   clearInterval(tipTimer);
   clearInterval(itemsTimer);
   if (itemsEl) itemsEl.innerHTML = '';
@@ -191,6 +201,30 @@ export function finishBoot(reason = 'ready') {
   console.log(`[boot] ready in ${total}ms (${reason})`, marks);
   bus.emit('booted', { ms: total, reason, marks });
   releaseBoot?.();
+}
+
+/** Disarm the lite-mode tripwire index.html armed before the first engine byte.
+ *
+ *  NOT at finishBoot, which is the wrong moment: arrival means "there is somewhere to
+ *  stand", and the world's assets keep streaming after it. A phone that dies on a busy
+ *  world dies in that tail, so clearing here would wipe the flag seconds before the
+ *  crash it exists to record, and the next visit would try the same thing again.
+ *
+ *  So: wait for the load list to go quiet and STAY quiet, with a hard ceiling for a
+ *  world whose tail never truly ends. Surviving that is the real evidence. */
+function disarmTripwire() {
+  const key = globalThis.__ewTripKey?.(new URLSearchParams(location.search)) ?? 'ew-boot-attempt';
+  const clear = () => { try { localStorage.removeItem(key); } catch { /* storage blocked; never armed either */ } };
+  const QUIET_MS = 6000, CEILING_MS = 90000;
+  const since = performance.now();
+  let quietFrom = null;
+  const t = setInterval(() => {
+    const busy = loadingItems().length > 0;
+    if (busy) quietFrom = null;
+    else if (quietFrom === null) quietFrom = performance.now();
+    const quietLongEnough = quietFrom !== null && performance.now() - quietFrom >= QUIET_MS;
+    if (quietLongEnough || performance.now() - since >= CEILING_MS) { clearInterval(t); clear(); }
+  }, 1000);
 }
 
 export const bootDone = () => done;

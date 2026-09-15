@@ -6,7 +6,7 @@
 
 import { makeFrame, chromeCost } from './frames.js';
 import { bus } from './base.js';
-import { EMOTE_ORDER, EMOTE_ICONS } from './avatar.js';
+import { EMOTE_ORDER, EMOTE_ICONS } from './emotedefs.js';   // names + glyphs, no engine
 import { getMe } from './mybody.js';
 import { registerXRPanel } from './xrpanels.js';
 import { myState, setPosture, sitHere, standUp, getPosture } from './controller.js';
