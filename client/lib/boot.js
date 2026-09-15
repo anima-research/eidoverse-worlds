@@ -179,6 +179,11 @@ export function finishBoot(reason = 'ready') {
     if (left > 0) { if (phaseEl) phaseEl.textContent = `holding the splash for a look · ${Math.ceil(left / 1000)}s`; setTimeout(() => finishBoot(reason), Math.min(left, 1000)); return; }
   }
   done = true;
+  // Disarm the lite-mode tripwire (index.html sets it before the first engine byte).
+  // Cleared on ANY reason, the 45 s ceiling and 'skip' included: the question it asks
+  // is "did this device survive the full client", not "was the boot quick". Reaching
+  // here at all is a yes — a device that cannot will never run this line.
+  try { localStorage.removeItem('ew-boot-attempt'); } catch { /* storage blocked; the tripwire was never armed either */ }
   clearInterval(tipTimer);
   clearInterval(itemsTimer);
   if (itemsEl) itemsEl.innerHTML = '';
