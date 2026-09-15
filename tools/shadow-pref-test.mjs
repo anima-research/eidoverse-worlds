@@ -54,10 +54,25 @@ if (CASE) {
   // local alias rather than patching `rig.setShadows` in place.
   const lamp = () => rig.rigDebug()._slots[0];
   let setShadows = rig.setShadows;
+  let updateRig = rig.updateRig;
   if (MUTATE === '1') lamp().castShadow = true;               // born casting regardless of the preference
   if (MUTATE === '2') setShadows = (on) => {                  // setShadows forgets the lamp slot
     const before = lamp().castShadow; rig.setShadows(on); lamp().castShadow = before;
   };
+  if (MUTATE === '4') {                                      // the old claim: FREE slot + unassigned request only
+    // The old guard was `!used.has(SHADOW_SLOT) && r.slot < 0`, whose end
+    // state from assign #2 onward is: the casting slot is NOT the one that
+    // casts for the lamp. Reproduced at the cheapest honest seam -- take the
+    // caster flag off slot 0 and put it on a slot the lamp does not hold, so
+    // the lamp's own slot does not cast. No test-only export in production.
+    const realUpdate = rig.updateRig;
+    updateRig = (t) => {
+      realUpdate(t);
+      const sl = rig.rigDebug()._slots;
+      const lampSlot = (rig.rigDebug().requests.find((r) => r.key === 'lamp:body:janus:1') || {}).slot;
+      if (lampSlot >= 0) for (let i = 0; i < sl.length; i++) sl[i].castShadow = i !== lampSlot && i === 1;
+    };
+  }
   if (MUTATE === '3') {                                      // far left at three's default
     lamp().shadow.camera.far = 500;
     const cam = lamp().shadow.camera;
@@ -65,9 +80,39 @@ if (CASE) {
   }
 
   const out = (o) => console.log(`__RESULT__${JSON.stringify(o)}`);
-  const snap = () => { const d = rig.rigDebug(); return { pref: d.shadows.pref, map: renderer.shadowMap.enabled, sun: sun.castShadow, lamp: d.shadows.lampCasting }; };
+  // `slotIsCaster`, not a per-request row: the boot/flip cases make no lamp
+  // request, so what is under test is the casting SLOT's own wiring following
+  // the resident's switch. (The contend case below is the one that asks the
+  // other question -- whether the lamp actually HOLDS that slot.)
+  const snap = () => { const d = rig.rigDebug(); return { pref: d.shadows.pref, map: renderer.shadowMap.enabled, sun: sun.castShadow, lamp: d.shadows.slotIsCaster }; };
 
   if (CASE === 'boot-on' || CASE === 'boot-off') { out({ boot: snap() }); }
+  if (CASE === 'contend') {
+    // THE WORLD LOADS BEFORE YOUR BODY DOES. A placed orb / emissive model
+    // realizes first and takes slot 0; then the avatar's lamp arrives wanting
+    // shadows. The lamp must END UP on the casting slot, and the incumbent
+    // must keep its light.
+    rig.requestLight('orb:world:1', { authored: true, intensity: 10, range: 8, pos: [0, 1, 0] });
+    updateRig(1000);
+    const before = rig.rigDebug();
+    rig.requestLight('lamp:body:janus:1', { keep: true, intensity: 8, range: 10, shadows: true, pos: [0, 1, 0] });
+    // several passes: the original bug was invisible on the FIRST assign and
+    // permanent from the second, so a one-pass test would have missed it
+    for (const t of [2000, 3000, 4000, 9000, 20000]) updateRig(t);
+    const d = rig.rigDebug();
+    const slotOf = (k) => (d.requests.find((r) => r.key === k) || {}).slot;
+    out({
+      orbFirstSlot: (before.requests.find((r) => r.key === 'orb:world:1') || {}).slot,
+      lampSlot: slotOf('lamp:body:janus:1'),
+      orbSlot: slotOf('orb:world:1'),
+      castingSlot: d.shadows.castingSlot,
+      anyCasting: d.shadows.anyCasting,
+      lampRow: d.shadows.wantsShadows.find((w) => w.key === 'lamp:body:janus:1') || null,
+      slotState: d.slotState,
+      distinct: new Set(d.requests.filter((r) => r.slot >= 0).map((r) => r.slot)).size,
+      assignedCount: d.requests.filter((r) => r.slot >= 0).length,
+    });
+  }
   if (CASE === 'far') {
     // The lamp's shadow camera must be BOUNDED at body scale. A PointLight
     // defaults to 0.5/500; near alone was set to 0.03, which made the ratio
@@ -152,6 +197,28 @@ const farChecks = (r, c = check) => {
     `range 9 -> far ${r.wide.far} (distance ${r.wide.distance})`);
 };
 
+const contendChecks = (r, c = check) => {
+  c('the world light takes the casting slot first (the setup)', r.orbFirstSlot === r.castingSlot,
+    `orb landed on slot ${r.orbFirstSlot}, casting slot is ${r.castingSlot}`);
+  // THE DEFECT: the lamp is assigned by the general pass on its first assign,
+  // so `r.slot < 0` was false from the second pass onward and it never claimed
+  // the casting slot. Janus had to set castShadow on the lamp's own slot by
+  // hand, every session.
+  c('the lamp ends up on the CASTING slot', r.lampSlot === r.castingSlot,
+    `lamp on slot ${r.lampSlot}, casting slot is ${r.castingSlot}`);
+  c('...and is actually casting', r.lampRow?.casting === true,
+    `wantsShadows row: ${JSON.stringify(r.lampRow)}`);
+  c('anyCasting agrees', r.anyCasting === true);
+  // the swap must not cost the incumbent its light, or "shadows work now" is
+  // paid for with a world light going dark
+  c('the evicted world light keeps a slot', r.orbSlot >= 0, `orb slot ${r.orbSlot}`);
+  c('the evicted world light is still lit', (r.slotState[r.orbSlot] || {}).intensity > 0,
+    `slot ${r.orbSlot} intensity ${(r.slotState[r.orbSlot] || {}).intensity}`);
+  // and no two requests may share one slot (the first cut of the swap did)
+  c('no two requests share a slot', r.distinct === r.assignedCount,
+    `${r.assignedCount} assigned across ${r.distinct} distinct slots`);
+};
+
 if (ARGV.includes('--mutants')) {
   // Each control reverts one half of the fix; the case that covers that half
   // must go red. A control that leaves the suite green means the test is not
@@ -161,6 +228,7 @@ if (ARGV.includes('--mutants')) {
     [1, 'boot-off', bootOffChecks, 'slot born casting regardless of preference'],
     [2, 'flip', flipChecks, 'setShadows forgets the lamp slot'],
     [3, 'far', farChecks, "shadow far left at three's default 500"],
+    [4, 'contend', contendChecks, 'lamp parked on a non-casting slot'],
   ]) {
     const r = await runCase(name, n);
     let died = 0;
@@ -176,6 +244,8 @@ if (ARGV.includes('--mutants')) {
   flipChecks(await runCase('flip'));
   console.log('LAMP SHADOW CAMERA — near and far are bounded together');
   farChecks(await runCase('far'));
+  console.log('CONTENDED CASTING SLOT — the world light loaded first');
+  contendChecks(await runCase('contend'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

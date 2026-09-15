@@ -393,9 +393,38 @@ function assign(now) {
   // `shadows: true` is a wish, not a guarantee: if another shadow-wanting
   // request already holds it, the second one lights without casting rather
   // than forcing a recompile to grow a second caster.
-  if (!used.has(SHADOW_SLOT)) {
-    const wants = winners.find((r) => r.shadows && r.slot < 0);
-    if (wants) { wants.slot = SHADOW_SLOT; used.add(SHADOW_SLOT); }
+  const wants = winners.find((r) => r.shadows);
+  if (wants && wants.slot !== SHADOW_SLOT) {
+    // SWAP, rather than only taking a FREE slot. The old test was
+    // `!used.has(SHADOW_SLOT) && r.slot < 0`, which needed the casting slot
+    // idle AND the lamp unassigned in the same pass -- and a keep-tier lamp is
+    // assigned by the general pass on its very first assign, so from the
+    // second pass onward `r.slot < 0` was false forever. Any light that
+    // realized before the body (a placed orb, an emissive model: the ordinary
+    // case, since the world loads before your avatar) held slot 0 and the lamp
+    // sat on a non-casting slot for the whole session. Janus, three times:
+    // "i still need to run the script manually before the light properly casts
+    // shadows" -- his script set castShadow on whatever slot the lamp HAD,
+    // which is why it worked.
+    //
+    // A shadow-wanting request outranks a non-wanting one for this slot
+    // regardless of tier: slot 0 is the only thing that can cast, so wanting
+    // shadows IS the claim on it. The incumbent takes the challenger's old
+    // slot (or the free pass below picks one up if the challenger had none),
+    // so nothing is evicted from the pool -- they trade places, and both stay
+    // lit. Still a wish, not a guarantee: only the FIRST shadow-wanting
+    // request gets it, and a second lights without casting rather than forcing
+    // a recompile to grow a second caster.
+    const incumbent = winners.find((r) => r !== wants && r.slot === SHADOW_SLOT);
+    const vacated = wants.slot;          // -1 if it was never assigned
+    wants.slot = SHADOW_SLOT;
+    used.add(SHADOW_SLOT);
+    // The incumbent takes the slot the challenger just left. If the challenger
+    // had none, the incumbent is left unassigned (slot -1) and the free pass
+    // below gives it the next open one -- it must NOT keep SHADOW_SLOT, and it
+    // must not be dropped from the pool either.
+    if (incumbent) incumbent.slot = vacated;
+    else if (vacated >= 0) used.delete(vacated);
   }
   let free = 0;
   for (const r of winners) {
@@ -596,17 +625,37 @@ export const rigDebug = () => ({
   // 600ms cadence is a PROPERTY worth testing -- a per-frame patch that dirties
   // it defeats the cadence silently.
   assignDirty,
-  // THE SHADOW GATES, because "the body casts no shadows" has four possible
-  // causes and reading three of them took a source dive every time: the
-  // renderer's map can be off, the resident's preference can be off, the sun
-  // can be not-casting, and the lamp slot can be unassigned or dark. A
-  // point-light shadow needs BOTH shadowMap.enabled and the slot casting.
-  shadows: {
-    pref: shadowsOn(), map: renderer.shadowMap.enabled, sun: sun.castShadow,
-    lampSlot: SHADOW_SLOT,
-    lampCasting: Boolean(slots[SHADOW_SLOT]?.castShadow),
-    lampIntensity: +(slots[SHADOW_SLOT]?.intensity ?? 0).toFixed(3),
-  },
+  // THE SHADOW GATES, because "the body casts no shadows" has several possible
+  // causes and reading them took a source dive every time: the renderer's map
+  // can be off, the resident's preference can be off, the sun can be
+  // not-casting, and a shadow-wanting request can be sitting on a slot that
+  // does not cast. A point-light shadow needs BOTH shadowMap.enabled and the
+  // request's OWN slot casting.
+  //
+  // `wantsShadows` follows the REQUEST, not slots[SHADOW_SLOT]. The first cut
+  // reported lampCasting from the casting slot regardless of who held it, so
+  // it said `true` while the lamp sat on slot 1 in the dark -- it was
+  // describing the slot's wiring, which never changes, instead of answering
+  // the question asked. That is why the stuck-lamp bug survived a probe
+  // written specifically to catch it: a lying instrument is worse than none.
+  shadows: (() => {
+    const want = [...requests.values()].filter((r) => r.shadows);
+    const held = want.filter((r) => r.slot >= 0);
+    return {
+      pref: shadowsOn(), map: renderer.shadowMap.enabled, sun: sun.castShadow,
+      castingSlot: SHADOW_SLOT,
+      slotIsCaster: Boolean(slots[SHADOW_SLOT]?.castShadow),
+      // one row per request that WANTS shadows: which slot it got, and whether
+      // that slot is the one that casts. `casting` is the honest answer.
+      wantsShadows: want.map((r) => ({
+        key: r.key, slot: r.slot,
+        casting: r.slot >= 0 && Boolean(slots[r.slot]?.castShadow),
+        intensity: r.slot >= 0 ? +(slots[r.slot]?.intensity ?? 0).toFixed(3) : 0,
+      })),
+      // the headline: is SOMETHING that wants to cast actually casting?
+      anyCasting: held.some((r) => Boolean(slots[r.slot]?.castShadow)),
+    };
+  })(),
   slotState: slots.map((pl, i) => ({
     i, casting: pl.castShadow, intensity: +pl.intensity.toFixed(3),
   })),
