@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { PORT, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan } from "./moderation.ts";
-import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal } from "./rights.ts";
+import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal, guardRefusal } from "./rights.ts";
 import { resolveLibFile } from "./lint.ts";
 // The authored plane's dispatch — table + shell (§15, 7b). It pulls in lint's
 // linters, reactions, and the behavior cap itself; server.ts keeps only what
@@ -117,9 +117,11 @@ wireBehaviorGate((w, author, verb, args) => {
   if (ROLE_RANK[rights.role] < needs.rank || (needs.gen && !rights.gen)) {
     return `"${verb}" needs more than ${author}'s "${rights.role}" role here`;
   }
-  // a locked thing refuses scripts by the same rule as hands (a behavior
-  // nudging a nailed-down bench is still an accident vector)
-  return lockRefusal((w as unknown as World).state, verb, args);
+  // a guarded thing refuses scripts by their AUTHOR's standing, and a locked
+  // thing refuses them by the same rule as hands (a behavior nudging a
+  // nailed-down bench is still an accident vector)
+  const st = (w as unknown as World).state;
+  return guardRefusal(st, { id: author, role: rights.role }, verb, args) ?? lockRefusal(st, verb, args);
 });
 
 /** A pose as it should be handed to SOMEONE ELSE — the settled result rather

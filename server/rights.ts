@@ -117,3 +117,57 @@ export function lockRefusal(state: WorldState, verb: string, args: Record<string
   const act = verb === "remove" ? "remove" : verb === "spawn" || verb === "light" ? "replace" : "move";
   return `"${id}" is locked — unlock it first (comp {id: "${id}", type: "lock", data: null}) to ${act} it`;
 }
+
+/** Is this verb trying to AUTHOR a thing its placer has guarded?
+ *
+ *  `comp {id, type: "guard", data: true}` says: this is mine to author. While
+ *  the guard is on, only the entity's PLACER (the actor who spawned it), the
+ *  world's owner, or an operator may change it — its comps, its motion, the
+ *  behaviors bound to it, where it stands, or whether it exists. The lock
+ *  above is an accident guard among people who all may build; the guard is
+ *  the rights edge the lock deliberately isn't. An owned world defaults its
+ *  drop-in guests to builder so that editing stays frictionless, which also
+ *  means anyone can swap the picture someone hung: the guard is how the
+ *  person who hung it says who may. USING the thing stays open (`use`,
+ *  sitting on it): the guard is about authorship, not access.
+ *
+ *  The guard comp itself is placer-gated whether or not the guard is on.
+ *  Otherwise "guard" would be a way to fence someone ELSE's thing off from
+ *  the room, and clearing it would be the griefer's first move.
+ *
+ *  Placer = the fold's `actor` on the entity. A behavior-spawned entity
+ *  carries `bhv:<id>` there; its placer for this purpose is the behavior's
+ *  author — the person whose rights the script already emits under.
+ *  Matching is by id today (entities record the display id); the sub leg is
+ *  there for the day the fold keys actors by durable principal. */
+export const GUARD_AUTHORED = new Set(["comp", "motion", "behavior", "place", "remove", "punt", "mount", "dismount", "spawn", "light"]);
+export function placerOf(state: WorldState, ent: { actor?: string }): string | undefined {
+  const actor = ent.actor;
+  if (actor?.startsWith("bhv:")) return (state as any).behaviors?.[actor.slice(4)]?.author ?? actor;
+  return actor;
+}
+export function guardRefusal(
+  state: WorldState,
+  who: { id: string; sub?: string; role: string },
+  verb: string,
+  args: Record<string, unknown> | undefined,
+): string | null {
+  if (!GUARD_AUTHORED.has(verb)) return null;
+  // a behavior binds to `attach`; every other authoring verb names `id`
+  const id = String((verb === "behavior" ? args?.attach : args?.id) ?? "");
+  const ent = id ? state.entities[id] : undefined;   // people aren't entities — self-mount passes here
+  if (!ent) return null;
+  const guarded = !!ent.comp?.guard;
+  const touchingGuard = verb === "comp" && String(args?.type ?? "") === "guard";
+  if (!guarded && !touchingGuard) return null;
+  const placer = placerOf(state, ent);
+  if (who.id === placer || (who.sub != null && who.sub === placer)) return null;
+  if (ROLE_RANK[who.role as keyof typeof ROLE_RANK] >= ROLE_RANK.owner) return null;   // owner and WORLD_ADMIN (rightsOf makes admins owner)
+  const may = `only ${placer ?? "its placer"}, the world's owner, or an operator may`;
+  if (!guarded) return `"${id}" was placed by ${placer ?? "someone else"} — ${may} guard it`;
+  const act = verb === "remove" ? "remove"
+    : verb === "spawn" || verb === "light" ? "replace"
+      : verb === "place" || verb === "punt" || verb === "mount" || verb === "dismount" ? "move"
+        : "change";
+  return `"${id}" is guarded — ${may} ${act} it`;
+}
