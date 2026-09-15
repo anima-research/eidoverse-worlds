@@ -1043,6 +1043,41 @@ globalThis.loadGLBBytes = async (bytes) => {
 
 // ---- module loading ---------------------------------------------------------
 
+const EANPA_SOURCE = 'a197d3dc42577e9b870b471a39d6b1710c5b5633';
+const eanpaModules = new Map();
+let eanpaManifest = null;
+async function requireEanpaManifest() {
+  if (!eanpaManifest) eanpaManifest = fetch(`/vendor/eanpa/MANIFEST.json?source=${EANPA_SOURCE.slice(0, 12)}`)
+    .then(async (response) => {
+      if (!response.ok) throw new Error(`Eanpa manifest: ${response.status}`);
+      const manifest = await response.json();
+      if (manifest?.commit !== EANPA_SOURCE) {
+        throw new Error(`Eanpa donor mismatch: wanted ${EANPA_SOURCE.slice(0, 12)}, got ${String(manifest?.commit ?? 'none').slice(0, 12)}`);
+      }
+      return manifest;
+    }).catch((error) => { eanpaManifest = null; throw error; });
+  return eanpaManifest;
+}
+/** Import one source-preserving module from the pinned standalone Eanpa tree.
+ * Relative imports stay inside /vendor/eanpa/. A rejected load is evicted so
+ * a transient library failure does not poison the session forever. */
+export function importEanpaModule(path) {
+  const name = String(path);
+  if (!/^(engine|src)\/[a-z0-9_/-]+\.js$/.test(name) || name.includes('..')) {
+    return Promise.reject(new Error(`invalid Eanpa module path: ${name}`));
+  }
+  if (!eanpaModules.has(name)) {
+    const url = `/vendor/eanpa/${name}?source=${EANPA_SOURCE.slice(0, 12)}`;
+    const pending = requireEanpaManifest().then(() => import(url)).catch((error) => {
+      eanpaModules.delete(name);
+      throw error;
+    });
+    eanpaModules.set(name, pending);
+  }
+  return eanpaModules.get(name);
+}
+export const eanpaSource = () => EANPA_SOURCE;
+
 const eidoModules = new Map();
 /** Eval-load a toolkit module by name ("terrain.js"). Idempotent; concurrent
  *  callers share one fetch. */

@@ -11,6 +11,18 @@ terrain, placement helpers, and an agent-intent-shaped creative API. This repo
 is the one layer that toolkit lacks: **networking, persistence, and
 multi-participant authority.**
 
+## Eanpa Sky integration
+
+Eidoverse Worlds uses **[Eanpa Sky](https://github.com/SkyeShark/Eanpa-Sky)**
+by SkyeShark for its detailed sky, weather, cloud-shadow and celestial engine.
+A source-preserving, manifest-pinned Eanpa subtree lives directly under
+`client/vendor/eanpa/`; Worlds does not consume the older Eanpa copy in
+`eidoverse-video`. The latter remains the broader external asset/toolkit library
+for models, textures, audio and other systems. Worlds is the realtime host: it
+owns world clock/weather policy, renderer scheduling, stable environment
+identity, quality governance, material/light adaptation and teardown.
+
+
 ## Architecture
 
 Two planes with different consistency needs:
