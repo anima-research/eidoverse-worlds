@@ -85,11 +85,31 @@ const slots = [];
 // for a lamp you can cover with a hand. Janus measured 256 as sufficient by
 // hand; 512 buys a cleaner wing edge for 4x of very little.
 const SHADOW_SLOT = 0;
+// The resident's shadow preference, read once here because the slot loop below
+// needs it and the SH_KEY/shadowsOn block lives further down (this file builds
+// the rig top-to-bottom at import). shadowsOn() closes over this, so there is
+// one source of truth and no second localStorage read at a different time.
+const SH_KEY = 'ew-shadows';
+const stored = (k) => { try { return localStorage.getItem(k); } catch { return null; } };   // storage can throw (site data blocked)
+let _prefShadows = stored(SH_KEY) !== 'off';   // `let`: setShadows() flips it, and shadowsOn() must follow
 for (let i = 0; i < N_SLOTS; i++) {
   const pl = new THREE.PointLight(0xffffff, 0, 10, 1.7);
   pl.name = `slot${i}`;
-  pl.castShadow = i === SHADOW_SLOT;
-  if (pl.castShadow) {
+  // `&& _prefShadows`: born casting only if the resident wants shadows at all.
+  // Without it a preference-off session still had a casting lamp with the
+  // shadow map disabled -- harmless to look at, but it makes the boot state
+  // disagree with the switch, which is how "shadows aren't being cast by the
+  // body at all" survived a correct cast/receive pass on every body mesh.
+  //
+  // Reads the preference DIRECTLY rather than calling shadowsOn(): this loop
+  // runs above that declaration, and the const TDZ made it a boot-time
+  // ReferenceError that took the whole client down (caught by
+  // tools/shadow-follow-test.mjs).
+  pl.castShadow = i === SHADOW_SLOT && _prefShadows;
+  // The shadow CONFIG is written for the shadow slot whether or not it is
+  // casting right now, so a later setShadows(true) flips one boolean onto an
+  // already-configured light rather than an unconfigured one.
+  if (i === SHADOW_SLOT) {
     pl.shadow.mapSize.set(512, 512);
     pl.shadow.camera.near = 0.03;   // the bulb is INSIDE the body it lights
     pl.shadow.bias = -0.0015;
@@ -109,13 +129,24 @@ scene.add(rigGroup);
 // The resident's shadow switch (persisted; the video settings row). Read here
 // so the first compile already knows — shadowMap.enabled is pipeline-shape,
 // and a live flip recompiles once; castShadow alone is free (§12.1).
-const SH_KEY = 'ew-shadows';
-const stored = (k) => { try { return localStorage.getItem(k); } catch { return null; } };   // storage can throw (site data blocked)
-export const shadowsOn = () => stored(SH_KEY) !== 'off';
+// SH_KEY/stored/_prefShadows are declared above the slot loop, which consumes
+// the preference before this point in the file.
+export const shadowsOn = () => _prefShadows;
 export function setShadows(on) {
   localStorage.setItem(SH_KEY, on ? 'on' : 'off');
+  _prefShadows = on;
   renderer.shadowMap.enabled = on;
   sun.castShadow = on;
+  // THE LAMP FOLLOWS THE SWITCH TOO. This wrote only the sun, which read as
+  // "the body casts nothing on load" with the preference off: the resident's
+  // switch turned shadowMap.enabled off globally, so slot 0 -- born casting,
+  // unconditionally, below -- was a shadow-casting light whose shadows the
+  // renderer never drew. Nothing re-established it on the way back on either,
+  // because the slot is created once at boot and never revisited.
+  //
+  // Guarded on existence: setShadows can be called from the video panel before
+  // the slot loop has run in a harness that stubs core.js.
+  if (slots[SHADOW_SLOT]) slots[SHADOW_SLOT].castShadow = on;
 }
 renderer.shadowMap.enabled = shadowsOn();
 renderer.shadowMap.type = ({ basic: THREE.BasicShadowMap, pcf: THREE.PCFShadowMap, soft: THREE.PCFSoftShadowMap })[CONFIG.params.get('shadowtype')] ?? THREE.PCFSoftShadowMap;   // ?shadowtype=basic|pcf|soft (boot-time: pipeline-shape) — R 09-07 19:22 diagnostic
@@ -531,6 +562,25 @@ export const rigDebug = () => ({
   // 600ms cadence is a PROPERTY worth testing -- a per-frame patch that dirties
   // it defeats the cadence silently.
   assignDirty,
+  // THE SHADOW GATES, because "the body casts no shadows" has four possible
+  // causes and reading three of them took a source dive every time: the
+  // renderer's map can be off, the resident's preference can be off, the sun
+  // can be not-casting, and the lamp slot can be unassigned or dark. A
+  // point-light shadow needs BOTH shadowMap.enabled and the slot casting.
+  shadows: {
+    pref: shadowsOn(), map: renderer.shadowMap.enabled, sun: sun.castShadow,
+    lampSlot: SHADOW_SLOT,
+    lampCasting: Boolean(slots[SHADOW_SLOT]?.castShadow),
+    lampIntensity: +(slots[SHADOW_SLOT]?.intensity ?? 0).toFixed(3),
+  },
+  slotState: slots.map((pl, i) => ({
+    i, casting: pl.castShadow, intensity: +pl.intensity.toFixed(3),
+  })),
+  // The live lights, for probes and for the mutation controls in
+  // tools/shadow-pref-test.mjs (which has to reproduce "born casting with the
+  // preference off" on an already-constructed slot). Underscored: reading
+  // state through the fields above is the stable surface; this is the handle.
+  _slots: slots,
   casters: casters.size, casterBudget,
   casting: [...casters.values()].filter((c) => c.casting).length,
   casterList: [...casters.values()].map((c) => ({ id: String(c.id).slice(0, 24), casting: c.casting, warm: c.warm, meshes: c.meshes.length })),

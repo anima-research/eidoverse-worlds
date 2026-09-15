@@ -24,6 +24,7 @@
     "typecheck:flight": "bunx tsc -p tsconfig.flight.json",
     "test:flight": "bun tools/flight-test.ts",
     "test:flight:headless": "bun tools/flight-headless-test.ts",
-    "test:wingfold": "bun tools/wing-fold-presence-test.ts && bun tools/wing-owner-wire-test.ts"
+    "test:wingfold": "bun tools/wing-fold-presence-test.ts && bun tools/wing-owner-wire-test.ts",
+    "test:shadows": "bun tools/shadow-follow-test.mjs && bun tools/xrshadow-test.mjs && bun tools/shadow-pref-test.mjs && bun tools/shadow-pref-test.mjs --mutants"
   }
 }

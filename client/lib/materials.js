@@ -348,6 +348,11 @@ export function prepareMaterial(mat, receiver = null) {
 /** Pass a whole object through the factory: marks every mesh so upstream's
  *  sweeps skip it, applies the shadow-receiving policy for its kind, and
  *  wraps every material. Idempotent; call before the first compile. */
+// Body meshes that must NOT cast: the kintsugi seams (they self-shadow into
+// scratches) and the skin/clothing (they seal the gaps the chest lamp lights
+// the wings through). See the note at the assignment below.
+const BODY_NO_CAST = /^(GOLD|tripo_mesh_)/;
+
 export function prepareObject(root, { kind = 'model' } = {}) {
   // A missing root is a no-op, not a crash. The module-init call below passes
   // `ground`, which is null before the terrain exists (and in any harness that
@@ -383,13 +388,29 @@ export function prepareObject(root, { kind = 'model' } = {}) {
     // (§16.2.B); castShadow sits in NO pipeline cache key (§12.1), and this
     // runs before the field's warm (world.js), so clearing it here is free.
     if (grass) o.castShadow = false;
-    // GOLD IS EXCLUDED FROM CASTING, following Janus's hand-tuned version. It
-    // is the kintsugi seams -- thin metal ribbons threaded THROUGH the skin
-    // they decorate -- so at any shadow-map resolution their depth fights the
-    // body's own and the seams self-shadow into dark scratches. They still
-    // RECEIVE, so a hand passing over the chest darkens the gold with
-    // everything else.
-    if (body) o.castShadow = (o.name !== 'GOLD');
+    // WHAT A BODY CASTS is a smaller set than "everything", and both
+    // exclusions were found by looking rather than by reasoning.
+    //
+    // GOLD: the kintsugi seams are thin metal ribbons threaded THROUGH the
+    // skin they decorate, so at any map resolution their depth fights the
+    // body's own and they self-shadow into dark scratches. (Janus's
+    // hand-tuned console version excluded them too.)
+    //
+    // THE SKIN AND CLOTHING (tripo_mesh_*): they SEAL the body. Janus, on the
+    // first build with shadows: "i no longer see illumination on the wings...
+    // there are holes in the torso/shirt that were illuminating them before."
+    // The chest lamp reaches the wings THROUGH gaps in the torso, and a
+    // casting torso closes every one of them.
+    //
+    // Isolated by bisection rather than argued: with only the wings casting
+    // they are lit and throw two wing shadows; with everything EXCEPT the
+    // wings casting they go black. The body is the occluder.
+    //
+    // So the wings, hair and head still cast -- the silhouette that reads as a
+    // person-shaped shadow -- and the torso does not. The cost is some contact
+    // realism on the shirt; the gain is a body his own lamp shines through,
+    // which is the thing the lamp is for.
+    if (body) o.castShadow = !BODY_NO_CAST.test(o.name || '');
     // TRANSMISSION FIRST, because it replaces the material object: a plain
     // MeshPhysicalMaterial with transmission renders as nothing here, and the
     // wrap below early-returns on non-node materials anyway, so upgrading
