@@ -242,10 +242,21 @@ const contendChecks = (r, c = check) => {
 };
 
 const biasChecks = (r, c = check) => {
-  c('the lamp is born at Janus\'s measured 280', r.born.map === 280, `map=${r.born.map}`);
-  // 0.02 m was the hand-picked value; anything near it is the old bug back
-  c('born normalBias is a few mm, not 20mm', r.born.normalBias > 0 && r.born.normalBias < 0.008,
-    `normalBias=${r.born.normalBias} (was 0.02 = 20mm, i.e. 7 texels)`);
+  // The born values are Janus's, measured with the live dials. Asserted as a
+  // pair against the arithmetic rather than as remembered numbers: an earlier
+  // version of this check pinned map===280 and normalBias<0.008, which were my
+  // defaults, and it went red the moment he tuned them. A test that encodes
+  // the author's guess fails on the author being wrong, which is backwards.
+  c('the lamp is born at a small map size', r.born.map >= 128 && r.born.map <= 512,
+    `map=${r.born.map}`);
+  // THE INVARIANT: whatever the dials say, the bias IS texels x texel size.
+  // That is the property the fix established; the specific look is Janus's to
+  // choose.
+  c('born normalBias equals texels x texel size', 
+    Math.abs(r.born.normalBias - r.born.texels * (r.born.texelMM / 1000)) < 1e-4,
+    `normalBias=${r.born.normalBias} texels=${r.born.texels} texelMM=${r.born.texelMM}`);
+  c('born bias is not the old hand-picked 0.02 constant', Math.abs(r.born.normalBias - 0.02) > 1e-6,
+    `normalBias=${r.born.normalBias}`);
   // THE INVARIANT: bias scales with the map so the LOOK is size-independent
   c('normalBias HALVES when the map doubles (256->512)',
     Math.abs(r.at[256].normalBias / r.at[512].normalBias - 2) < 0.02,

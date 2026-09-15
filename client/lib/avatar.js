@@ -12,6 +12,7 @@ import { REACH_CHAINS } from '../../shared/joints.js';
 // lights -- lightrig owns the topology because adding a PointLight at runtime
 // recompiles every material in the scene.
 import { attachLamps, releaseOwner, updateRequest, glowScale } from './lightrig.js';
+import { setBodyShadows } from './materials.js';
 // The period, from the one place that defines it. Janus set the idle flap to
 // 1/3.4 Hz -- "Mythos' signature period" -- and that 3.4 is spec T8's BREATH,
 // already a named constant. Importing it beats pasting 0.29411764705: the two
@@ -504,6 +505,23 @@ export class Avatar {
     this._lamps = [];
     try { this._lamps = attachLamps(vrm.scene, this._lampOwner) ?? []; }
     catch { /* a body with no glow simply has none */ }
+    // A LAMPED BODY CASTS AND RECEIVES; every other body keeps its blob.
+    //
+    // The lamp is the whole reason bodies got real shadows -- "a lamp inside a
+    // ribcage that does not throw the ribcage is a lamp pretending" -- so the
+    // lamp is also the gate. Doing it for every avatar in the world is a global
+    // rendering default on shared client code whose cost nobody has measured:
+    // bodies never reach warmqueue's warmDepth, so their depth pipelines
+    // compile in-frame on the first shadow render, and they bypass the
+    // distance-ranked caster budget that exists to stop exactly that.
+    //
+    // Janus, deciding the scope: "set the change for now to only shadowed body
+    // by default if you have the lamp like mythos... we can test the
+    // performance of having more on the shared server later."
+    if (this._lamps.length) {
+      try { setBodyShadows(vrm.scene, true); }
+      catch { /* shadows are a nicety; a body that cannot take them still works */ }
+    }
 
     this.mixer = new THREE.AnimationMixer(vrm.scene);
     this.actions = {};

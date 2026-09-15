@@ -348,10 +348,45 @@ export function prepareMaterial(mat, receiver = null) {
 /** Pass a whole object through the factory: marks every mesh so upstream's
  *  sweeps skip it, applies the shadow-receiving policy for its kind, and
  *  wraps every material. Idempotent; call before the first compile. */
-// The one body mesh that must NOT cast: the kintsugi seams. See the note at
-// the assignment below for why the skin/clothing was briefly on this list and
-// is not any more.
-const BODY_NO_CAST = /^GOLD/;
+// The one body mesh that must NOT cast: the kintsugi seams -- thin metal
+// ribbons threaded THROUGH the skin they decorate, so at any map resolution
+// their depth fights the body's own and they self-shadow into dark scratches.
+// Janus's hand-tuned console version excluded exactly this mesh and no other.
+//
+// Exported because the BODY shadow decision is no longer made here; see
+// setBodyShadows below.
+export const BODY_NO_CAST = /^GOLD/;
+
+// TURN A BODY INTO A SHADOW CASTER, opt-in per body.
+//
+// Called by avatar.js for a body that has a lamp in it, and by nothing else --
+// so today it is Mythos and anyone else wearing an emissive chest. The rest of
+// the fleet keeps its blob shadow, which is what the world shipped with and
+// what the perf budget was written around.
+//
+// Why a separate pass rather than a flag on prepareObject: the lamps are found
+// in the Avatar constructor (attachLamps walks for emissive meshes), which runs
+// AFTER assets.js has already prepared the scene. At prepare time nobody knows
+// yet whether this body glows.
+//
+// castShadow/receiveShadow are in NO pipeline cache key (TEL0S_NOTES SS12.1),
+// so flipping them here costs nothing at the graph level. What it DOES cost is
+// a depth pipeline per material on the first shadow render, compiled in-frame,
+// because bodies never go through warmqueue's warmDepth -- that is the measured
+// risk when this widens past one body, and the reason it has not.
+//
+// GOLD is excluded: see BODY_NO_CAST.
+export function setBodyShadows(root, on = true) {
+  if (!root?.traverse) return 0;
+  let n = 0;
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    o.receiveShadow = on;
+    o.castShadow = on && !BODY_NO_CAST.test(o.name || '');
+    n++;
+  });
+  return n;
+}
 
 export function prepareObject(root, { kind = 'model' } = {}) {
   // A missing root is a no-op, not a crash. The module-init call below passes
@@ -359,17 +394,22 @@ export function prepareObject(root, { kind = 'model' } = {}) {
   // stubs core.js) -- and an exception at import time takes the whole client
   // down for a thing that had nothing to prepare.
   if (!root?.traverse) return;
-  const receive = kind === 'model' || kind === 'terrain' || kind === 'body';
-  // BODIES RECEIVE AND CAST NOW, which is a reversal worth stating. The rule
-  // was "bodies stay on their blob shadows until measured" -- and Janus
-  // measured it, by hand, in the console: he made Mythos's chest lamp a caster
-  // and turned on cast+receive across the avatar's meshes. "It looks great with
-  // shadows on." A lamp inside a ribcage that does not throw the ribcage is a
-  // lamp pretending.
+  const receive = kind === 'model' || kind === 'terrain';
+  // BODIES ARE NOT SHADOWED FROM HERE. They were, briefly, for every avatar in
+  // the world -- and that is a global rendering default flipped on shared
+  // client code, with costs nobody has measured: a body's depth pipelines are
+  // never passed to warmDepth (only registered MODELS are), so they compile
+  // in-frame on the first shadow render, and bodies bypass the distance-ranked
+  // caster budget entirely. In a crowded room that is N bodies compiling.
   //
-  // The blob stays: it is the contact cue under the feet and reads at a
-  // distance where a real shadow has gone soft and faint.
-  const body = kind === 'body';
+  // So the decision moved to setBodyShadows(), which avatar.js calls only for
+  // a body that actually has a lamp inside it -- the case that motivated any
+  // of this. Janus: "set the change for now to only shadowed body by default
+  // if you have the lamp like mythos... we can test the performance of having
+  // more on the shared server later."
+  //
+  // The blob stays either way: it is the contact cue under the feet and reads
+  // at a distance where a real shadow has gone soft and faint.
   const grass = kind === 'grass';
   root.traverse((o) => {
     if (!o.isMesh) return;
@@ -388,34 +428,6 @@ export function prepareObject(root, { kind = 'model' } = {}) {
     // (§16.2.B); castShadow sits in NO pipeline cache key (§12.1), and this
     // runs before the field's warm (world.js), so clearing it here is free.
     if (grass) o.castShadow = false;
-    // WHAT A BODY CASTS is everything except the kintsugi seams.
-    //
-    // GOLD: thin metal ribbons threaded THROUGH the skin they decorate, so at
-    // any map resolution their depth fights the body's own and they
-    // self-shadow into dark scratches. Janus's hand-tuned console version
-    // excluded exactly this one mesh and nothing else.
-    //
-    // `tripo_mesh_*` WAS ALSO EXCLUDED HERE, and that was wrong twice over.
-    //
-    // The reasoning was that a casting torso seals the gaps the chest lamp
-    // reaches the wings through, supported by a mesh bisection (only-wings-
-    // cast: lit, two wing shadows; all-but-wings-cast: black). But that
-    // bisection ran against a lamp whose shadow camera was near=0.03 /
-    // far=500 -- no usable depth precision at body scale (see the near/far
-    // note in lightrig.js). It measured the broken shadow map, not occlusion.
-    //
-    // And the pattern never matched anything anyway: `o.name` is the NODE
-    // name, and the nodes here are body_main / wings / eyelids / eyeballs /
-    // GOLD / lamp. `tripo_mesh_*` is the MESH name. So the torso cast
-    // throughout, and the exclusion was inert -- which is its own lesson
-    // about shipping a regex nothing was ever measured against.
-    //
-    // With near and far both bounded, Janus ran the honest version -- torso
-    // casting, GOLD excluded -- and got the wings illuminated AND shadowed:
-    // "I like how this looks, and am happy with this being the default."
-    // So the torso casts. A conclusion from a correct measurement of a broken
-    // system is still wrong.
-    if (body) o.castShadow = !BODY_NO_CAST.test(o.name || '');
     // TRANSMISSION FIRST, because it replaces the material object: a plain
     // MeshPhysicalMaterial with transmission renders as nothing here, and the
     // wrap below early-returns on non-node materials anyway, so upgrading

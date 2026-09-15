@@ -80,45 +80,52 @@ const slots = [];
 // pipeline at boot, and a request that wants shadows is assigned here rather
 // than toggling a light's shape mid-session.
 //
-// 512, not 2048: this is a 12cm sphere inside a chest lighting a body at arm's
-// length, and a point light needs SIX faces. 2048 would be 24MB of cube map
-// for a lamp you can cover with a hand. Janus measured 256 as sufficient by
-// hand; 512 buys a cleaner wing edge for 4x of very little.
+// The map is small on purpose: this is a 12cm sphere inside a chest lighting a
+// body at arm's length, and a point light needs SIX faces. 2048 would be 24MB
+// of cube map for a lamp you can cover with a hand. Size and bias are stated
+// together just below (SHADOW_MAP).
 const SHADOW_SLOT = 0;
 // THE LAMP'S SHADOW MAP, and the bias DERIVED from it.
 //
-// 280, because Janus measured it: "the illumination is much more visible when
-// the mapsize is set to 256... i tried a few different map sizes and i think
-// what i get for 280 is just about perfect." A smaller map showing MORE light
-// is the signature of a bias problem, not a resolution one, and the arithmetic
-// says the same thing. A point light's shadow is a cube map whose faces are
-// 90-degree perspectives, so a texel covers 2*d/N in world space:
+// These are Janus's measured values, arrived at with the live dials below:
 //
-//     N=280, d=0.40m  ->  2.86mm per texel
-//     N=512, d=0.40m  ->  1.56mm per texel
+//     {map: 256, texels: 1.3, workDist: 12}  ->  normalBias 0.122, texel 93.8mm
 //
-// normalBias was a hand-picked 0.02 -- TWENTY MILLIMETRES, which is 7 texels
-// at 280 and 12.8 at 512. normalBias offsets the shadow lookup along the
-// surface normal, so at that size the shadow detaches from the thing casting
-// it and light leaks in under the join (peter-panning). The coarser texel at
-// 256/280 blurs the artifact; the finer texel at 512 resolves it crisply,
-// which is why the higher-resolution map looked WORSE. Not acne -- the bias
-// was larger than the texel at every size, so acne was never the mechanism.
+// A point light's shadow is a cube map whose faces are 90-degree perspectives,
+// so one texel covers 2*d/N in world space. Stating the bias in TEXELS rather
+// than metres is what makes the look invariant to the map size: change
+// SHADOW_MAP and the appearance holds instead of needing a retune by eye.
 //
-// So the bias is now stated in TEXELS and converted, which makes the look
-// invariant to the map size: change SHADOW_MAP and the appearance holds,
-// instead of needing a retune by eye every time. 1.5 texels is the standard
-// starting point for normalBias and lands at ~4.3mm here, a believable
-// contact offset on a body whose features are centimetres across.
+// WHAT THE NUMBERS MEAN, stated honestly, because the first version of this
+// comment argued for values it did not ship. normalBias was a hand-picked 0.02
+// (twenty millimetres), which I removed as "enormous" -- it was ~7 texels at
+// the then-default 280/0.4m, enough to detach a shadow from its caster and let
+// light leak under the join. Janus's settings land on 0.122: SIX TIMES larger.
 //
-// SHADOW_WORK_DIST is the distance the bias is tuned FOR: the lamp sits in the
-// chest and the surfaces it lights (the inside of the torso, the skin, the
-// wings) are 0.1-0.7m away. A cube-map texel grows with distance, so a single
-// world-space bias can only be right at one depth; 0.4m is the middle of the
-// range that matters.
-const SHADOW_MAP = 280;
-const SHADOW_WORK_DIST = 0.40;
-const SHADOW_BIAS_TEXELS = 1.5;
+// That is not the old bug returning. It is a different look, chosen
+// deliberately: at 12cm of normal offset the shadows sit far enough off their
+// casters to read as soft ambient occlusion around a glowing chest rather than
+// as contact shadows, and Janus picked it against the moving body in real
+// light. "i think it is more symmetrical now -- it's still slightly rotation
+// or something dependent but it's okay, it's kind of cool."
+//
+// SHADOW_WORK_DIST is the distance the bias is tuned FOR. 12 is not the
+// bulb-to-skin distance (that is 0.1-0.7m); it is the lamp's RANGE, and it
+// matches `far` exactly because far is bounded by the same falloff (see the
+// near/far note in the slot loop). So the bias is scaled to the whole volume
+// the lamp can reach rather than to the chest cavity -- which is what produces
+// the soft wide-area reading. A cube-map texel grows with distance, so one
+// world-space bias can only be right at a single depth; this one is chosen for
+// the far end of the light's reach.
+//
+// The residual "slightly rotation dependent" behaviour Janus still sees is
+// consistent with an offset this size: at 12cm, which surface a shadow
+// attaches to can shift with viewing angle. Known, accepted, and cheap to
+// revisit -- setLampShadow({workDist: 0.4, texels: 1.5}) is the tight-contact
+// alternative if anyone wants to compare.
+const SHADOW_MAP = 256;
+const SHADOW_WORK_DIST = 12;
+const SHADOW_BIAS_TEXELS = 1.3;
 const shadowTexel = (n = SHADOW_MAP) => (2 * SHADOW_WORK_DIST) / n;
 // live-tunable copies (setLampShadow); the consts above are the defaults
 let _biasTexels = SHADOW_BIAS_TEXELS;

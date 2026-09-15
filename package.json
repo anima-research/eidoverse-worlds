@@ -25,6 +25,6 @@
     "test:flight": "bun tools/flight-test.ts",
     "test:flight:headless": "bun tools/flight-headless-test.ts",
     "test:wingfold": "bun tools/wing-fold-presence-test.ts && bun tools/wing-owner-wire-test.ts",
-    "test:shadows": "bun tools/shadow-follow-test.mjs && bun tools/xrshadow-test.mjs && bun tools/shadow-pref-test.mjs && bun tools/shadow-pref-test.mjs --mutants && bun tools/lamp-skin-test.mjs"
+    "test:shadows": "bun tools/shadow-follow-test.mjs && bun tools/xrshadow-test.mjs && bun tools/shadow-pref-test.mjs && bun tools/shadow-pref-test.mjs --mutants && bun tools/lamp-skin-test.mjs && bun tools/body-shadow-gate-test.mjs"
   }
 }
