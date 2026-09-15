@@ -35,7 +35,7 @@ import { schedule, cancelOwner } from '../scheduler.js';
 import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere } from './models_field.js';
 
 /** The verbs this realizer owns — the whole flat entity-id namespace. */
-export const PORTED = new Set(['spawn', 'place', 'remove', 'light', 'comp', 'motion', 'mount', 'dismount']);
+export { PORTED } from './ported.js';   // the taxonomy is data; causes.js needs it without the engine
 
 /** id → {kind:'model'|'light', lib?, gen} — the realizer's own view of what
  *  it has handled. gen guards a load completion against acting for a

@@ -1571,6 +1571,15 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
   // device has PROVEN above anything we infer about it, and puts what a person
   // asked for above both.
   (() => {
+    // PER WORLD, because capability is a property of the pair, not the device. Measured
+    // on a real phone (owner, Android/Chrome, 2026-09-15): an empty instance runs the
+    // FULL client fine; the commons, with everyone's assets in it, is what kills the
+    // browser. One global flag would answer "this device cannot" when the truth is
+    // "this device cannot hold THAT world", and would strand a phone in lite on worlds
+    // it handles comfortably.
+    const tripKey = (params) => `ew-boot-attempt:${params.get('world') || 'default'}`;
+    globalThis.__ewTripKey = tripKey;   // boot.js disarms the same key
+
     const decideLite = ({ params, stored, lastBootDied, deviceMemory, gpuApi }) => {
       // 1. An explicit ask wins, both directions, and is shareable — the reliable
       //    way back for someone whose device just died mid-boot.
@@ -1604,7 +1613,7 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     let stored = null, lastBootDied = false;
     try {
       stored = localStorage.getItem('ew-lite');
-      lastBootDied = localStorage.getItem('ew-boot-attempt') !== null;
+      lastBootDied = localStorage.getItem(tripKey(params)) !== null;
     } catch { /* storage blocked (private window) — every signal below still applies */ }
 
     const { lite, why } = decideLite({
@@ -1621,12 +1630,15 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
 
     if (lite) return;   // the whole point: these seven never enter the waterfall
 
-    // Arm the tripwire BEFORE a single engine byte is requested. boot.js clears it
-    // when the splash clears; still set on the next load means that boot never came
-    // back. A tab closed during a slow boot trips it too — a false positive that
-    // costs one lite session with a visible way out, which is the cheap direction to
-    // be wrong in when the alternative is a crash loop.
-    try { localStorage.setItem('ew-boot-attempt', String(Date.now())); } catch { /* as above */ }
+    // Arm the tripwire BEFORE a single engine byte is requested. boot.js disarms it once
+    // the client has not only ARRIVED but gone quiet — deliberately not at finishBoot,
+    // which fires when there is somewhere to stand and leaves the world's assets still
+    // streaming. The phone that prompted all this survives the arrival on the commons
+    // and dies during that tail, so a disarm at finishBoot would clear the flag moments
+    // before the very crash it exists to catch. A tab closed during a slow load trips it
+    // too — a false positive costing one lite session with a visible way out, which is
+    // the cheap direction to be wrong in when the alternative is a crash loop.
+    try { localStorage.setItem(tripKey(params), String(Date.now())); } catch { /* as above */ }
 
     for (const href of [
       './node_modules/three/build/three.webgpu.js',

@@ -65,6 +65,39 @@ check('a lite boot is dramatically lighter overall',
   await page.close();
 }
 
+// Reported from a real phone, 2026-09-15: "my messages were not appearing... but once I
+// reloaded the client the chat history appeared". A lite client could SEND and never
+// see. The live path is realize/causes.js turning a 'say' entry into a chat line, which
+// lite.js was not subscribing to; the reload path is social.js replaying history, which
+// it was — hence a chat that only worked in the past tense. This pins the live path.
+{
+  const page = await mkPage();
+  const errs = [];
+  page.on('pageerror', (e) => errs.push(e.message));
+  await page.goto(`${world.origin}/?world=staging&name=echoprobe&key=${world.key}&lite=1`, { waitUntil: 'load' });
+  await page.waitForFunction(
+    () => { const el = document.getElementById('splash'); return !el || el.classList.contains('gone'); },
+    { timeout: 25000 },
+  ).catch(() => {});
+  const MSG = `echo-probe-${Date.now()}`;
+  const typed = await page.evaluate(async (text) => {
+    const input = document.getElementById('chatline');
+    if (!input) return 'no #chatline';
+    input.focus();
+    input.value = text;
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return 'sent';
+  }, MSG);
+  const appeared = await page.waitForFunction(
+    (t) => document.body.innerText.includes(t), MSG, { timeout: 12000 },
+  ).then(() => true).catch(() => false);
+  console.log(`\n  chat echo: input=${typed} own message rendered live=${appeared} errors=${errs.length}`);
+  for (const e of errs.slice(0, 2)) console.log(`      ! ${e}`);
+  check('a lite client SEES ITS OWN message without reloading', appeared,
+    'initCauses() subscribes the live say->chat path; without it chat only works in the past tense');
+  await page.close();
+}
+
 const back = await weigh('&lite=0', 'escape hatch (?lite=0)');
 check('?lite=0 forces the full client back', back.lite === false && back.why === 'url');
 check('?lite=0 fetches the engine again', back.engine.length > 0);

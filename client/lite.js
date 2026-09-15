@@ -30,6 +30,11 @@ import {
 import { initBoot, markPhase, finishBoot } from './lib/boot.js';
 import * as participants from './lib/participants_lite.js';
 import { initLiteEmotes } from './lib/emotebar_lite.js';
+// Turns live world entries into chat lines — including your own 'say' coming back from
+// the server. Without it a lite client could SEND a message and never see it: the text
+// only appeared on reload, when history replayed through social.js instead. It is the
+// same narrator the full client uses, which is why it also reports builds and grants.
+import { initCauses } from './lib/realize/causes.js';
 
 // The boot watchdog in index.html fails the splash after 20s unless __ewEngineUp is
 // set, and core.js only sets it after renderer.init(). There is no renderer here and
@@ -148,6 +153,8 @@ async function main() {
       emoteHost.id = 'lite-emote-host';
       document.body.appendChild(emoteHost);
       initLiteEmotes(emoteHost, sendVerb);
+
+      initCauses();   // live says become chat lines; see the import note
 
       logChat('', WHY_TEXT[WHY] ?? WHY_TEXT.default, 'sys');
       bus.emit('roster');
