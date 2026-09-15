@@ -24,7 +24,11 @@ import { THREE } from './core.js';
 import { bus } from './base.js';
 import { primeFiles } from './assets.js';
 import { entities, findPart } from './world.js';
-import { normalizePicture } from '../../shared/picture.js';
+import { CONFIG } from './base.js';
+import { registerEditor } from './inspect.js';
+import { toast, flashHint } from './ui.js';
+import { net } from './net.js';
+import { normalizePicture, PICTURE_LIT, PICTURE_LOOK_MAX, PICTURE_STORE } from '../../shared/picture.js';
 
 // id → { picture, part, original, material } for every picture currently hung
 const hung = new Map();
@@ -168,3 +172,105 @@ export const _hung = hung;
 export const _revision = revision;
 export const pictureCount = () => hung.size;
 export { THREE as _THREE };
+
+// ---- the editor block: how a HUMAN hangs a picture -------------------------
+//
+// The scene panel's generic layer already edits the comp as raw JSON; this is
+// the semantic block (client/lib/inspect.js): the model's named parts as a
+// list instead of a guess, a file door that lands the image in the store and
+// fills `src`, the look line with its bound, lit and flip. One verb per
+// gesture — `hang` commits the whole bag, `take down` commits null — and the
+// bag goes through normalizePicture FIRST so a refusal is a hint here, not a
+// console warning after the round-trip.
+//
+// A thing guarded by someone else (comp {type: "guard"}, rights.ts) gets a
+// read-only line: the server would refuse the comp, so the block says who may.
+
+const PICTURE_ACCEPT = 'image/png,image/jpeg,image/webp';
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/** Named mesh parts under `root`, in traversal order — what `part` may name. */
+export function namedParts(root) {
+  const out = [];
+  root?.traverse?.((c) => { if (c !== root && c.isMesh && c.name && c.material && !out.includes(c.name)) out.push(c.name); });
+  return out;
+}
+
+/** POST an image file through the store door; resolves to the library-relative path. */
+export async function uploadPicture(file) {
+  const q = new URLSearchParams({ as: 'image', name: file.name });
+  if (CONFIG.token) q.set('token', CONFIG.token);
+  const r = await fetch(`/upload?${q}`, { method: 'POST', body: file });
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  const { path } = await r.json();
+  if (typeof path !== 'string' || !path.startsWith(PICTURE_STORE)) throw new Error(`upload answered with an unexpected path: ${path}`);
+  return path;
+}
+
+registerEditor(({ id, obj, meta, bag, commit }) => {
+  if (!obj || obj.userData?.isLight) return null;   // a bulb has no part to texture
+  const parts = namedParts(obj);
+  if (!parts.length) return null;                     // nothing to hang on — the generic JSON row still exists
+  const cur = bag?.picture && typeof bag.picture === 'object' ? bag.picture : null;
+  const heldBy = bag?.guard && meta?.actor !== net.myId && net.myRights?.role !== 'owner' ? (meta?.actor ?? 'its placer') : null;
+  if (heldBy) {
+    return { html: `<div style="margin:4px 0;color:var(--dim)">🖼 picture — guarded by ${esc(heldBy)}; only they or the world's owner can hang or change one here${cur ? ` (showing ${esc(cur.src?.split('/').pop() ?? '?')})` : ''}</div>`, wire() {} };
+  }
+  const part = cur?.part && parts.includes(cur.part) ? cur.part : parts[0];
+  const lit = cur?.lit === 'self' ? 'self' : 'scene';
+  return {
+    html: `<div data-pe-root style="display:flex;flex-direction:column;gap:4px;margin:4px 0">
+      <div><b>🖼 picture</b> <span style="color:var(--dim);font-size:11px">${cur ? 'hung on ' + esc(cur.part ?? '?') : 'none hung'}</span></div>
+      <label style="display:flex;gap:6px;align-items:center">part
+        <select data-pe="part" style="flex:1">${parts.map((p) => `<option value="${esc(p)}"${p === part ? ' selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
+      <label style="display:flex;gap:6px;align-items:center">image
+        <input data-pe="src" type="text" placeholder="eidoverse/assets/… or store/images/…" value="${esc(cur?.src ?? '')}" style="flex:1;font-size:11px">
+        <input data-pe="file" type="file" accept="${PICTURE_ACCEPT}" style="display:none">
+        <button data-pe="pick" title="upload a PNG, JPEG or WebP into the store and use it">upload…</button></label>
+      <label style="display:flex;flex-direction:column;gap:2px">what it shows <span style="color:var(--dim);font-size:11px">(what text-tier residents read; ≤${PICTURE_LOOK_MAX})</span>
+        <textarea data-pe="look" maxlength="${PICTURE_LOOK_MAX}" rows="2" style="font-size:11px;font-family:inherit">${esc(cur?.look ?? '')}</textarea></label>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <label style="display:flex;gap:4px;align-items:center">lit
+          <select data-pe="lit">${Object.entries(PICTURE_LIT).map(([k, v]) => `<option value="${k}"${k === lit ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
+        <label style="display:flex;gap:4px;align-items:center;cursor:pointer"><input data-pe="flip" type="checkbox"${cur?.flip ? ' checked' : ''}> flip (UVs upside down)</label>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button data-pe="hang">${cur ? 'update' : 'hang'}</button>
+        ${cur ? '<button data-pe="down" title="comp {type: \"picture\", data: null}">take down</button>' : ''}
+        <span data-pe="msg" style="color:var(--dim);font-size:11px"></span>
+      </div>
+    </div>`,
+    wire(root) {
+      const q = (k) => root.querySelector(`[data-pe="${k}"]`);
+      const msg = (t, warn = false) => { const m = q('msg'); if (m) { m.textContent = t; m.style.color = warn ? 'var(--warn, #e8a33d)' : 'var(--dim)'; } };
+      q('pick')?.addEventListener('click', () => q('file')?.click());
+      q('file')?.addEventListener('change', async (ev) => {
+        const file = ev.target.files?.[0];
+        if (!file) return;
+        msg(`uploading ${file.name}…`);
+        try {
+          const path = await uploadPicture(file);
+          q('src').value = path;
+          msg(`in the store as ${path.split('/').pop()} — now hang it`);
+        } catch (err) { msg(`upload failed: ${err.message}`, true); toast(`picture upload failed — ${err.message}`, 'warn', 8000); }
+        ev.target.value = '';
+      });
+      q('hang')?.addEventListener('click', (ev) => {
+        const data = { src: q('src').value.trim(), part: q('part').value, lit: q('lit').value, flip: !!q('flip').checked };
+        const look = q('look').value.trim();
+        if (look) data.look = look;
+        const norm = normalizePicture(data);
+        if (!norm.ok) { msg(norm.why, true); return; }   // the rule, here, before any round-trip
+        commit('comp', { id, type: 'picture', data: norm.picture });
+        msg(norm.notes.length ? norm.notes.join(' · ') : `hung on ${norm.picture.part}`);
+        if (norm.notes.length) flashHint(`🖼 ${esc(norm.notes[0])}`);
+        ev.target.blur();
+      });
+      q('down')?.addEventListener('click', (ev) => {
+        commit('comp', { id, type: 'picture', data: null });
+        msg('taken down');
+        ev.target.blur();
+      });
+    },
+  };
+});
