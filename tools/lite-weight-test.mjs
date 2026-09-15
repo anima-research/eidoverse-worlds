@@ -98,6 +98,44 @@ check('a lite boot is dramatically lighter overall',
   await page.close();
 }
 
+// Reported from a real phone, 2026-09-15: tapping an emote answered "verb not allowed:
+// emote - the verb set is closed by design". There is no emote verb and never was; an
+// emote is a one-shot field on the PRESENCE POSE, which lite was not sending because it
+// had no myState. This reads the actual socket frames: the emote must leave as a pose,
+// and the server must not answer with a refusal.
+{
+  const page = await mkPage();
+  const sent = [], got = [];
+  page.on('websocket', (ws) => {
+    ws.on('framesent', (f) => sent.push(String(f.payload)));
+    ws.on('framereceived', (f) => got.push(String(f.payload)));
+  });
+  await page.goto(`${world.origin}/?world=staging&name=emoteprobe&key=${world.key}&lite=1`, { waitUntil: 'load' });
+  await page.waitForFunction(
+    () => { const el = document.getElementById('splash'); return !el || el.classList.contains('gone'); },
+    { timeout: 25000 },
+  ).catch(() => {});
+  await page.waitForFunction(() => document.querySelectorAll('.lite-emote').length > 0, { timeout: 15000 })
+    .then(() => true).catch(() => false);
+  const tapped = await page.evaluate(() => {
+    const b = document.querySelector('.lite-emote');
+    if (!b) return null;
+    b.click();
+    return b.dataset.emote;
+  });
+  await page.waitForTimeout(2500);
+  const poseWithEmote = sent.filter((f) => f.includes('"type":"pose"') && f.includes('"emote"'));
+  const refusals = got.filter((f) => /verb not allowed|not allowed: emote/i.test(f));
+  console.log(`\n  emote: tapped=${tapped} pose-frames-carrying-emote=${poseWithEmote.length} refusals=${refusals.length}`);
+  if (poseWithEmote[0]) console.log(`      ${poseWithEmote[0].slice(0, 140)}`);
+  for (const r of refusals.slice(0, 1)) console.log(`      ! ${r.slice(0, 160)}`);
+  check('an emote button exists to tap', !!tapped);
+  check('an emote leaves as a presence pose, not a verb', poseWithEmote.length > 0,
+    'there is no emote verb; it rides pose.emote and needs a finite p');
+  check('the server does not refuse it', refusals.length === 0, refusals[0]?.slice(0, 120));
+  await page.close();
+}
+
 const back = await weigh('&lite=0', 'escape hatch (?lite=0)');
 check('?lite=0 forces the full client back', back.lite === false && back.why === 'url');
 check('?lite=0 fetches the engine again', back.engine.length > 0);

@@ -15,8 +15,10 @@ import { bus } from './base.js';
 
 const GLYPH_FALLBACK = '\u2728';
 
-/** @param {(verb: string, args: object) => void} send */
-export function initLiteEmotes(host, send) {
+/** @param {(name: string) => void} emote fires ONE emote. NOT a verb sender: there is no
+ *  emote verb (the set is closed by design; the server answers "verb not allowed: emote").
+ *  An emote is a one-shot field on the presence pose - see lite.js. */
+export function initLiteEmotes(host, emote) {
   const row = document.createElement('div');
   row.className = 'lite-emotes';
 
@@ -40,7 +42,7 @@ export function initLiteEmotes(host, send) {
       b.setAttribute('aria-label', name);
       b.textContent = EMOTE_ICONS[name] ?? GLYPH_FALLBACK;
       b.addEventListener('click', () => {
-        send('emote', { name });
+        emote(name);
         // Local echo: on a phone there is no avatar to watch, so the button itself has
         // to be the feedback that the tap registered.
         b.classList.add('fired');

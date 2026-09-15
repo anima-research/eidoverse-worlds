@@ -25,7 +25,7 @@ import { CONFIG, bus, report } from './lib/base.js';
 import { makeFrame } from './lib/frames.js';
 import { initChat, logChat } from './lib/chat.js';
 import {
-  net, connect, initIdentity, wireNet, sendVerb, sendWhisper, sendTyping,
+  net, connect, initIdentity, wireNet, sendVerb, sendWhisper, sendTyping, sendPose,
 } from './lib/net.js';
 import { initBoot, markPhase, finishBoot } from './lib/boot.js';
 import * as participants from './lib/participants_lite.js';
@@ -57,7 +57,7 @@ const WHY_TEXT = {
 
 /** The way out. A URL and not a saved preference on purpose: ?lite=0 is rule (1) in the
  *  decision script, so it wins for THIS load only. If the full client dies again, the
- *  tripwire it arms sends the next plain visit straight back here \u2014 one attempt, not a
+ *  tripwire it arms sends the next plain visit straight back here — one attempt, not a
  *  loop, and the escape stays a link the person can keep. */
 export function tryFullWorld() {
   try { localStorage.removeItem('ew-lite'); } catch { /* nothing to clear */ }
@@ -66,10 +66,37 @@ export function tryFullWorld() {
   location.assign(u);
 }
 
-/** Stay here and stop asking. Saved, because this one IS a preference \u2014 and a proven
+/** Stay here and stop asking. Saved, because this one IS a preference — and a proven
  *  crash still overrides it, which is what keeps a saved 'full' from being a trap. */
 export function stayLite() {
   try { localStorage.setItem('ew-lite', '1'); } catch { /* best effort */ }
+}
+
+// A lite client still ARRIVES: the server announces it and everyone else builds a body
+// for it, whether or not we ever say where that body is. So the choice was never "appear
+// or not" - it is "appear somewhere deliberate, or wherever a body happens to default".
+//
+// This is the smallest myState sendPose() accepts. Nothing ticks it - there is no frame
+// loop here and nothing to move - so the position is wherever the server restored us to,
+// held still. It exists for exactly one reason: an emote is a ONE-SHOT FIELD ON THE
+// PRESENCE POSE (net.js: `if (s.emote) { pose.emote = s.emote; s.emote = null; }`), and
+// the server's sanePose() rejects any packet without a finite `p`. There is no emote
+// VERB - the verb set is closed by design, and asking for one earns precisely the
+// "verb not allowed: emote" the server sent back when this first tried it that way.
+const myState = {
+  pos: { x: 0, y: 0, z: 0 },
+  yaw: 0,
+  speed: 0,
+  clip: 'idle',
+  pitch: 0,
+  emote: null,
+};
+
+/** One emote: set the one-shot, push a single presence packet. Everyone with a renderer
+ *  plays it on our standing body; we see it in chat, like everything else here. */
+function emote(name) {
+  myState.emote = name;
+  sendPose(performance.now());
 }
 
 /** The roster in the shape chat.js wants for @-completion and its people pane.
@@ -125,8 +152,20 @@ async function main() {
     participants,
     toast,                       // net.js takes a notifier rather than importing ui.js
     myAvatarPath: () => '',      // we wear nothing we can draw; the server still resolves a name
-    me: () => null,              // no local body, so nothing to pose
-    myState: null,               // sendPose() early-returns on this \u2014 we never send presence
+    // A stub, not a body. sendPose() reads only `.emote`, `._limp` and `.current?.time`
+    // off this, to decide whether to attach clip timing. All absent, so it attaches none
+    // - correct, since we have no clip playing to report.
+    me: () => ({}),
+    myState,
+    onRestore: (r) => {
+      // Wake where the world last had us, so our standing body is somewhere deliberate
+      // rather than at the origin. We cannot move from it, which is the honest shape of
+      // a client with no controls.
+      myState.pos.x = r.p?.[0] ?? 0;
+      myState.pos.y = r.p?.[1] ?? 0;
+      myState.pos.z = r.p?.[2] ?? 0;
+      myState.yaw = r.yaw ?? 0;
+    },              // no local body, so nothing to pose
   });
 
   await initIdentity();
@@ -152,7 +191,7 @@ async function main() {
       const emoteHost = document.createElement('div');
       emoteHost.id = 'lite-emote-host';
       document.body.appendChild(emoteHost);
-      initLiteEmotes(emoteHost, sendVerb);
+      initLiteEmotes(emoteHost, emote);
 
       initCauses();   // live says become chat lines; see the import note
 
