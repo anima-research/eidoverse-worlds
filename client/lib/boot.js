@@ -13,7 +13,16 @@
 //      spent learning them instead of watching a bar.
 
 import { bus } from './base.js';
-import { loadingItems, bootBytes } from './assets.js';
+// Injected, not imported: assets.js reaches the engine (GLTFLoader), and this splash
+// is shared with a client that loads no assets and therefore has no bytes to count.
+// The empty defaults are the truth for such a client — its phases finish on their own
+// evidence. main.js wires the real counters.
+let loadingItems = () => [];
+let bootBytes = () => ({ done: 0, total: 0 });
+export function setBootAssets({ items, bytes }) {
+  if (items) loadingItems = items;
+  if (bytes) bootBytes = bytes;
+}
 
 // Phase weights are rough shares of a cold boot, measured rather than guessed
 // (see the timings in the commit that added this). They only need to be
