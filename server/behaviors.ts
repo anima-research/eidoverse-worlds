@@ -231,7 +231,7 @@ class Instance {
     if (!caps.includes(verb)) return `capability mask: this behavior may not "${verb}" (has: ${caps.join(", ")})`;
     const why = emitAllowed(this.w, this.rec.author, verb,
       args && typeof args === "object" ? args as Record<string, unknown> : undefined);
-    if (why) return why.includes("locked") ? why : `author rights: ${why}`;
+    if (why) return /locked|guarded/.test(why) ? why : `author rights: ${why}`;
     if ((this.rec.caps?.selfOnly ?? true) && this.rec.attach
       && args && typeof args === "object" && "id" in args && args.id !== this.rec.attach) {
       return `selfOnly: this behavior only touches its own entity ("${this.rec.attach}")`;

@@ -14,7 +14,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { VERB_RATE, OPT_DIR } from "./config.ts";
-import { isAdminId, rightsOf, worldHasOwner, VERB_NEEDS, lockRefusal } from "./rights.ts";
+import { isAdminId, rightsOf, worldHasOwner, VERB_NEEDS, lockRefusal, guardRefusal } from "./rights.ts";
 import { lintMotion, lintParticles } from "./lint.ts";
 import { reactToUse } from "./reactions.ts";
 import { behaviorLimits } from "./behaviors.ts";
@@ -507,6 +507,15 @@ export function runVerb(ctx: VerbCtx, verb: string, rawArgs: unknown): void {
       : `"${verb}" needs ${row.rank >= 2 ? "the world's owner" : "builder rights"} here — you are a ${rights.role}`;
     w.debug("denied", { who: c.id, verb: String(verb), why });
     c.ws.send(JSON.stringify({ type: "error", error: why }));
+    return;
+  }
+  // the guard gate sits AFTER rank (same teaching order) and BEFORE the
+  // lock: a stranger's refusal should name who may author the thing, not
+  // tell them to unlock something they may not touch
+  const guardedWhy = guardRefusal(w.state, { id: c.id, sub: c.sub, role: rights.role }, verb, rawArgs as Record<string, unknown> | undefined);
+  if (guardedWhy) {
+    w.debug("denied", { who: c.id, verb: String(verb), why: "guarded" });
+    c.ws.send(JSON.stringify({ type: "error", error: guardedWhy }));
     return;
   }
   // the lock gate sits AFTER rank (a visitor's refusal should teach
