@@ -159,5 +159,64 @@ const after = lampPos().clone();
 check('raising the chest bone 30cm raises the light 30cm', Math.abs((after.y - before.y) - 0.30) < 1e-3,
   `moved ${(after.y - before.y).toFixed(4)} m`);
 
+console.log('THE POSITION NUDGE — forward/up/side, in the bone\'s frame');
+// Janus thought `dist` was moving the light up and down. It never did (it only
+// divides into normalBias), but normalBias offsets along each surface's NORMAL,
+// and on a torso those point mostly up -- so raising it pushes shadows up and
+// off exactly as though the bulb had risen. There was no position dial; this
+// is it.
+root.rotation.set(0, 0, 0);
+chest.rotation.set(0, 0, 0);
+chest.position.set(0.006, 0.23, -0.009);
+root.updateMatrixWorld(true);
+rig.setLampShadow({ forward: 0, up: 0, side: 0 });
+rig.updateRig(20000);
+const base = lampPos().clone();
+rig.setLampShadow({ forward: 0.10 });
+rig.updateRig(21000);
+const fwd = lampPos().clone();
+// WHAT THIS CAN AND CANNOT CHECK. `forward` maps to -z in the BONE frame,
+// measured off the real rig: L_Eye/R_Eye sit at z = -0.085 relative to Head, so
+// the face looks down -z in bind space (assets.js calls VRMUtils.rotateVRM0
+// afterwards, flipping the SCENE node so the body faces +z in the world -- but
+// the nudge is applied inside the bone's frame, upstream of that).
+//
+// This synthetic skeleton has no eye bones and its own axis convention, so
+// asserting a world-space SIGN here would be pinning the stub's geometry, not
+// the product's. (My first cut did exactly that, twice: once claiming +z and
+// once claiming -z, and the check flipped with the code instead of holding it
+// still.) What IS checkable here, and is what the dial promises: forward moves
+// the bulb along the bone's z by the requested MAGNITUDE, touches no other
+// axis, and reads back as the positive number that was asked for.
+check('forward moves the bulb along the bone z axis by the amount asked',
+  Math.abs(Math.abs(fwd.z - base.z) - 0.10) < 1e-3 && Math.abs(fwd.y - base.y) < 1e-3,
+  `moved dz=${(fwd.z - base.z).toFixed(4)} dy=${(fwd.y - base.y).toFixed(4)}`);
+check('...and reads back as +0.10 forward, whatever the internal sign',
+  Math.abs(rig.lampShadowState().forward - 0.10) < 1e-6,
+  `reported forward=${rig.lampShadowState().forward}`);
+rig.setLampShadow({ forward: 0, up: 0.07 });
+rig.updateRig(22000);
+const upp = lampPos().clone();
+check('up moves the bulb along +y only (up is unambiguous)',
+  Math.abs((upp.y - base.y) - 0.07) < 1e-3 && Math.abs(upp.z - base.z) < 1e-3,
+  `moved dy=${(upp.y - base.y).toFixed(4)} dz=${(upp.z - base.z).toFixed(4)}`);
+check('forward and up are independent dials', Math.abs(fwd.y - base.y) < 1e-3,
+  'forward changed the height too');
+// THE POINT of applying it in the bone's frame: a world-space offset would
+// swing relative to the chest as the body turns, which is the defect this
+// whole thread began with.
+rig.setLampShadow({ forward: 0.10, up: 0, side: 0 });
+const rel = [];
+for (const [i, deg] of [0, 90, 180, 270].entries()) {
+  root.rotation.set(0, deg * Math.PI / 180, 0);
+  root.updateMatrixWorld(true);
+  rig.updateRig(23000 + i * 500);
+  rel.push(lampPos().clone().sub(chest.getWorldPosition(new THREE.Vector3())).length());
+}
+const spread = Math.max(...rel) - Math.min(...rel);
+check('the nudge rides the bone through a full turn', spread < 1e-3,
+  `bulb-to-bone distance varied ${spread.toFixed(5)} m across 0/90/180/270`);
+rig.setLampShadow({ forward: 0, up: 0, side: 0 });
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

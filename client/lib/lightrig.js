@@ -130,6 +130,30 @@ const shadowTexel = (n = SHADOW_MAP) => (2 * SHADOW_WORK_DIST) / n;
 // live-tunable copies (setLampShadow); the consts above are the defaults
 let _biasTexels = SHADOW_BIAS_TEXELS;
 let _workDist = SHADOW_WORK_DIST;
+// WHERE THE BULB SITS, as a nudge in the lamp bone's OWN frame (metres).
+//
+// Separate from the bias dials because it is a different kind of thing: the
+// bias changes how a shadow attaches to a surface, this moves the light. Janus
+// suspected `dist` was moving the light up and down -- it never did (it only
+// divides into normalBias), but the confusion was well-earned: normalBias
+// offsets the shadow lookup along each surface's NORMAL, and on a torso and
+// the tops of wings those normals point mostly up, so raising it pushes
+// shadows up and off exactly as though the bulb had risen.
+//
+// So there was no position dial at all, and now there is. Applied in the BONE's
+// frame rather than the world's: a world-space offset would swing relative to
+// the chest as the body turns, which is the bug this whole thread started with.
+//   forward = out of the chest, up = toward the head, side = toward his left.
+//
+// FORWARD IS -Z IN THE BONE FRAME, which is worth stating because the world
+// frame disagrees. Measured off the rig rather than assumed: L_Eye/R_Eye sit at
+// z = -0.085 relative to Head, so the face looks down -Z in bind/bone space.
+// assets.js then calls VRMUtils.rotateVRM0, which flips the SCENE node so the
+// body faces +Z in the world -- but the nudge is applied inside the bone's own
+// frame, upstream of that flip. My first cut commented this as "+z = forward"
+// and the test caught it immediately: forward: 0.1 moved the bulb dz=-0.1000,
+// i.e. into his back.
+const _nudge = new THREE.Vector3(0, 0, 0);
 // The resident's shadow preference, read once here because the slot loop below
 // needs it and the SH_KEY/shadowsOn block lives further down (this file builds
 // the rig top-to-bottom at import). shadowsOn() closes over this, so there is
@@ -200,10 +224,15 @@ export const shadowsOn = () => _prefShadows;
 // trying sizes by hand, and the next person should not have to edit a const
 // and reload to do the same.
 //
-// setLampShadow({map, texels, dist}) -- any subset. The bias is always
-// RE-DERIVED from whatever the map size ends up being, so changing the size
-// alone keeps the look rather than silently retuning it.
-export function setLampShadow({ map, texels, dist } = {}) {
+// setLampShadow({map, texels, dist, forward, up, side}) -- any subset.
+//
+// The bias is always RE-DERIVED from whatever the map size ends up being, so
+// changing the size alone keeps the look rather than silently retuning it.
+//
+// forward/up/side move the BULB, in metres, in the lamp bone's own frame:
+// forward is out of the chest, up is toward the head, side is toward his left.
+// These are the dial Janus was reaching for when he tried `dist`.
+export function setLampShadow({ map, texels, dist, forward, up, side } = {}) {
   const pl = slots[SHADOW_SLOT];
   if (!pl) return null;
   if (Number.isFinite(map)) {
@@ -217,7 +246,14 @@ export function setLampShadow({ map, texels, dist } = {}) {
   }
   if (Number.isFinite(texels)) _biasTexels = Math.max(0, texels);
   if (Number.isFinite(dist)) _workDist = Math.max(0.01, dist);
+  // clamped to +/-0.5m: this is a bulb inside a ribcage, and a metre of nudge
+  // is a light that has left the body rather than a tuning
+  const clamp = (v) => Math.max(-0.5, Math.min(0.5, v));
+  if (Number.isFinite(forward)) _nudge.z = -clamp(forward);   // forward is -z: see the note at _nudge
+  if (Number.isFinite(up)) _nudge.y = clamp(up);
+  if (Number.isFinite(side)) _nudge.x = clamp(side);
   pl.shadow.normalBias = _biasTexels * ((2 * _workDist) / (pl.shadow.mapSize.x || SHADOW_MAP));
+  // the nudge is read in worldPosOf on the next frame; nothing to invalidate
   return lampShadowState();
 }
 export const lampShadowState = () => {
@@ -227,6 +263,8 @@ export const lampShadowState = () => {
   return {
     map: n, texels: _biasTexels, workDist: _workDist,
     texelMM: +((2 * _workDist / n) * 1000).toFixed(2),
+    // where the bulb sits relative to its bone (metres, bone frame)
+    forward: +(-_nudge.z).toFixed(4), up: +_nudge.y.toFixed(4), side: +_nudge.x.toFixed(4),
     normalBias: +pl.shadow.normalBias.toFixed(5),
     bias: pl.shadow.bias,
     near: pl.shadow.camera.near, far: pl.shadow.camera.far,
@@ -499,7 +537,13 @@ function skinnedPosOf(r, out) {
   // bone * inverse-bind takes a BIND-space point to its posed world position,
   // which is the skinning transform itself for a single fully-weighted bone.
   _bindM.multiplyMatrices(skel.bones[j].matrixWorld, skel.boneInverses[j]);
-  return out.copy(r.offset).applyMatrix4(_bindM);
+  out.copy(r.offset).applyMatrix4(_bindM);
+  // the nudge rides the BONE, so it stays put relative to the chest however
+  // the body is turned or posed (lamps only -- a mirror has no bind offset)
+  if (r.shadows && (_nudge.x || _nudge.y || _nudge.z)) {
+    out.add(_wp.copy(_nudge).applyQuaternion(skel.bones[j].getWorldQuaternion(_q)));
+  }
+  return out;
 }
 const _q = new THREE.Quaternion();
 const _s = new THREE.Vector3();
