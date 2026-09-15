@@ -49,6 +49,7 @@ import { radialForce, FORCE_MIN } from "../shared/force.js";
 // what is burning (#25's shared-facts boundary).
 import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
 import { describePicture } from "../shared/picture.js";
+import { describeSound } from "../shared/sound.js";
 import { describeStructure, describeHere, localizePoint, planStructure, routeLocal } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
@@ -3105,6 +3106,10 @@ export class WorldAgent {
       // carries it — never by its pixels. Rung 1 of the projector ladder; the
       // screen comp will read the same way with a rolling caption instead.
       if (c.picture) aff.push(describePicture(c.picture));
+      // A sound is named by what its author SAID is playing, and whether it
+      // is — never by the audio. The radio's music player; captions (#187)
+      // on the same entity say the words.
+      if (c.sound) aff.push(describeSound(c.sound));
       // locked = nailed down: the server refuses every move/replace/remove on
       // it. Saying so here saves an agent a refused verb round-trip.
       if (c.lock) aff.push(`🔒 locked (immovable until comp {id, type: "lock", data: null})`);
@@ -3113,7 +3118,7 @@ export class WorldAgent {
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
-      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "lock", "structure"].includes(k));
+      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "sound", "lock", "structure"].includes(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);
       if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);

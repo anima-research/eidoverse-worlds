@@ -10,7 +10,7 @@ import { join } from "node:path";
 // config FIRST — it carries the WORLDS_DIR mkdir, and auth.ts/moderation.ts
 // carry their restore-at-boot blocks, so this import order IS the unsplit
 // file's boot order: mkdir → session restore → ban restore (§15, step 7a).
-import { PORT, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
+import { PORT, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan } from "./moderation.ts";
 import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal } from "./rights.ts";
@@ -109,7 +109,12 @@ function retireRelayLeg(w: World, id: string) {
 // Behavior sandbox wiring: a script's emit is gated by its AUTHOR's live
 // rights (revoke the grant, the behavior loses its teeth) through the same
 // table as everyone else. The store path is where `?as=script` uploads land.
-wireBehaviorStore(join(ROOT, "assets", "opt"));
+// OPT_DIR, not ROOT/assets/opt: the two coincide by default, but a sequencer
+// launched with OPT_DIR elsewhere (the probe harness, a scratch box, a
+// production overlay) uploaded scripts into OPT_DIR/store/scripts and then
+// looked for them here — "script file missing" on every bind (found by the
+// radio behavior test, 2026-09-15).
+wireBehaviorStore(OPT_DIR);
 wireBehaviorGate((w, author, verb, args) => {
   const needs = VERB_NEEDS[verb];
   if (!needs) return `verb not allowed: ${verb}`;

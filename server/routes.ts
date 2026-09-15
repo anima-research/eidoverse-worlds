@@ -202,6 +202,11 @@ function contentType(path: string): string {
   if (path.endsWith(".md")) return "text/markdown; charset=utf-8";
   if (path.endsWith(".png")) return "image/png";
   if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg";
+  if (path.endsWith(".mp3")) return "audio/mpeg";
+  if (path.endsWith(".ogg") || path.endsWith(".opus")) return "audio/ogg";
+  if (path.endsWith(".wav")) return "audio/wav";
+  if (path.endsWith(".webm")) return "audio/webm";
+  if (path.endsWith(".m4a")) return "audio/mp4";
   if (path.endsWith(".ktx2")) return "image/ktx2";
   if (path.endsWith(".wasm")) return "application/wasm";
   if (path.endsWith(".hdr")) return "application/octet-stream";
