@@ -86,6 +86,13 @@ function makeBody() {
 
 const { root, chest, mesh, scene0 } = makeBody();
 rig.requestLight('lamp:test:0', { obj: mesh, offset: BULB.clone(), keep: true, intensity: 8, range: 10, shadows: true });
+// ZERO THE NUDGE for the geometry checks below. The shipped defaults place the
+// bulb 3.7cm forward and 1cm up of its bone (Janus's measured values), which is
+// a real offset that legitimately changes the sweep and the height -- three
+// checks here hardcoded the un-nudged numbers and failed honestly when the
+// defaults moved. The nudge has its own section at the end; what these checks
+// are about is the BIND-POSE bug, so they measure from a clean zero.
+rig.setLampShadow({ forward: 0, up: 0, side: 0 });
 const lampPos = () => rig.rigDebug()._slots[0].position;
 const at = (rx, ry, t) => { root.rotation.set(rx, ry, 0); root.updateMatrixWorld(true); rig.updateRig(t); return lampPos().clone(); };
 

@@ -99,6 +99,8 @@ if (CASE) {
     // same 0.02 m was 7 texels at 280 and 12.8 at 512. The look must not
     // depend on the map size, so the bias is derived from it.
     const born = rig.lampShadowState();
+    const shipped = { map: born.map, texels: born.texels, workDist: born.workDist,
+                      forward: born.forward, up: born.up, side: born.side };
     const at = {};
     for (const n of [256, 280, 512, 1024]) {
       setLampShadow({ map: n });
@@ -107,7 +109,7 @@ if (CASE) {
     }
     setLampShadow({ map: 280 });
     const retuned = setLampShadow({ texels: 3 });
-    out({ born, at, retuned });
+    out({ born, at, retuned, shipped });
   }
   if (CASE === 'contend') {
     // THE WORLD LOADS BEFORE YOUR BODY DOES. A placed orb / emissive model
@@ -242,6 +244,15 @@ const contendChecks = (r, c = check) => {
 };
 
 const biasChecks = (r, c = check) => {
+  // THE SHIPPED DEFAULTS ARE JANUS'S, verbatim. Pinned as a set so that
+  // editing one constant and forgetting the others is caught -- the values
+  // were chosen together against a moving body, and they only mean anything
+  // together. Change them here when he retunes, deliberately.
+  c('the shipped defaults are the measured set',
+    r.shipped.map === 256 && r.shipped.texels === 10 && r.shipped.workDist === 12
+    && Math.abs(r.shipped.forward - 0.037) < 1e-6 && Math.abs(r.shipped.up - 0.01) < 1e-6
+    && r.shipped.side === 0,
+    JSON.stringify(r.shipped));
   // The born values are Janus's, measured with the live dials. Asserted as a
   // pair against the arithmetic rather than as remembered numbers: an earlier
   // version of this check pinned map===280 and normalBias<0.008, which were my

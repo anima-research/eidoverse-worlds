@@ -85,47 +85,55 @@ const slots = [];
 // of cube map for a lamp you can cover with a hand. Size and bias are stated
 // together just below (SHADOW_MAP).
 const SHADOW_SLOT = 0;
-// THE LAMP'S SHADOW MAP, and the bias DERIVED from it.
+// THE LAMP'S SHADOW MAP, THE BIAS, AND WHERE THE BULB SITS.
 //
-// These are Janus's measured values, arrived at with the live dials below:
+// Janus's measured values, arrived at with the live dials below against the
+// moving body in real light:
 //
-//     {map: 256, texels: 1.3, workDist: 12}  ->  normalBias 0.122, texel 93.8mm
+//     {map: 256, texels: 10, workDist: 12, forward: 0.037, up: 0.01}
+//       -> normalBias 0.9375, texel 93.75mm
 //
-// A point light's shadow is a cube map whose faces are 90-degree perspectives,
-// so one texel covers 2*d/N in world space. Stating the bias in TEXELS rather
-// than metres is what makes the look invariant to the map size: change
-// SHADOW_MAP and the appearance holds instead of needing a retune by eye.
+// WHAT THIS ACTUALLY IS, said plainly, because the honest reading matters more
+// than the tidy story. normalBias of 0.9375 is NINETY-FOUR CENTIMETRES of
+// offset along each surface's normal -- taller than the torso it is lighting.
+// At that magnitude the shadow term has effectively been pushed out of the
+// scene: almost nothing occludes anything, and what reaches the wings is close
+// to unoccluded point-light falloff. That is why raising `texels` is what
+// finally lit them ("i actually got the illumination to show up somewhat on
+// the wings by making texels much higher").
 //
-// WHAT THE NUMBERS MEAN, stated honestly, because the first version of this
-// comment argued for values it did not ship. normalBias was a hand-picked 0.02
-// (twenty millimetres), which I removed as "enormous" -- it was ~7 texels at
-// the then-default 280/0.4m, enough to detach a shadow from its caster and let
-// light leak under the join. Janus's settings land on 0.122: SIX TIMES larger.
+// So the setting is not a bias tuning. It is a way of saying "light the body
+// from inside and mostly do not shadow it", reached by turning the only dial
+// that could express it. It looks right, which is the criterion that governs
+// here -- but the mechanism should be named, because the next person to read
+// `texels: 10` deserves to know it is not 10 texels of contact offset in any
+// meaningful sense.
 //
-// That is not the old bug returning. It is a different look, chosen
-// deliberately: at 12cm of normal offset the shadows sit far enough off their
-// casters to read as soft ambient occlusion around a glowing chest rather than
-// as contact shadows, and Janus picked it against the moving body in real
-// light. "i think it is more symmetrical now -- it's still slightly rotation
-// or something dependent but it's okay, it's kind of cool."
+// A CLEANER KNOB EXISTS and is worth trying if anyone revisits this:
+// PointLightShadow has `intensity` (0..1), which scales how dark the shadow
+// term gets without distorting geometry at all. `{texels: 1.5, shadowIntensity:
+// 0.25}` would likely land in the same place with the bias still meaning what
+// it says. Untried, so not shipped -- Janus's values are what has been looked
+// at, and a plausible improvement does not outrank a measured one.
 //
-// SHADOW_WORK_DIST is the distance the bias is tuned FOR. 12 is not the
-// bulb-to-skin distance (that is 0.1-0.7m); it is the lamp's RANGE, and it
-// matches `far` exactly because far is bounded by the same falloff (see the
-// near/far note in the slot loop). So the bias is scaled to the whole volume
-// the lamp can reach rather than to the chest cavity -- which is what produces
-// the soft wide-area reading. A cube-map texel grows with distance, so one
-// world-space bias can only be right at a single depth; this one is chosen for
-// the far end of the light's reach.
+// The geometry behind the wing problem: the wing mass sits ENTIRELY BEHIND the
+// bulb (wing z -0.734..-0.107 in bind space; bulb z +0.015), so light reaching
+// a wing travels backward out of the chest and through the torso first. That is
+// the structural reason wings are hard to light from a chest lamp and no dial
+// changes it.
 //
-// The residual "slightly rotation dependent" behaviour Janus still sees is
-// consistent with an offset this size: at 12cm, which surface a shadow
-// attaches to can shift with viewing angle. Known, accepted, and cheap to
-// revisit -- setLampShadow({workDist: 0.4, texels: 1.5}) is the tight-contact
-// alternative if anyone wants to compare.
+// map 256: a 12cm sphere inside a chest needs SIX cube faces, and 2048 would be
+// 24MB of cube map for a lamp you can cover with a hand.
+// workDist 12: the lamp's RANGE, matching `far` (bounded by the same falloff),
+// so the bias scales to the whole volume the lamp reaches.
 const SHADOW_MAP = 256;
 const SHADOW_WORK_DIST = 12;
-const SHADOW_BIAS_TEXELS = 1.3;
+const SHADOW_BIAS_TEXELS = 10;
+// where the bulb sits in its bone's frame (metres): out of the chest, and a
+// little toward the head
+const SHADOW_FORWARD = 0.037;
+const SHADOW_UP = 0.01;
+const SHADOW_SIDE = 0;
 const shadowTexel = (n = SHADOW_MAP) => (2 * SHADOW_WORK_DIST) / n;
 // live-tunable copies (setLampShadow); the consts above are the defaults
 let _biasTexels = SHADOW_BIAS_TEXELS;
@@ -153,7 +161,7 @@ let _workDist = SHADOW_WORK_DIST;
 // frame, upstream of that flip. My first cut commented this as "+z = forward"
 // and the test caught it immediately: forward: 0.1 moved the bulb dz=-0.1000,
 // i.e. into his back.
-const _nudge = new THREE.Vector3(0, 0, 0);
+const _nudge = new THREE.Vector3(SHADOW_SIDE, SHADOW_UP, -SHADOW_FORWARD);   // -z is forward: see above
 // The resident's shadow preference, read once here because the slot loop below
 // needs it and the SH_KEY/shadowsOn block lives further down (this file builds
 // the rig top-to-bottom at import). shadowsOn() closes over this, so there is
