@@ -30,6 +30,7 @@ export const net = {
   ws: null,
   joined: false,
   myId: null,
+  mySub: null,
   status: 'connecting',   // connecting | live | retrying | rejected
   latency: null,
 };
@@ -704,6 +705,7 @@ async function onSnapshot(msg) {
   net.joined = true;
   net.status = 'live';
   net.myId = msg.you;
+  net.mySub = msg.yourSub ?? null;   // the durable subject the door vouched for, if any — what guarded things match on
   // The server's `you` is authoritative (verified identity, or a suffixed name
   // when two people share a nick). If it differs from what this client thinks,
   // adopt it — and say so, a silently different nameplate is confusing.

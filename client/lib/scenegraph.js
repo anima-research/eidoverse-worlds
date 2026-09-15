@@ -33,18 +33,12 @@ import { CONFIG, bus } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
 import { editorsFor } from './inspect.js';
 import './lights.js';   // for its registered light editor (world.js pulls it in anyway)
-import { net, sendVerb, requestDebug } from './net.js';
+import { sendVerb, requestDebug } from './net.js';
+import { guardedByOther } from './placer.js';   // the server's who-may-author rule, mirrored
 import { makeSection, flashHint } from './ui.js';
 import { logChat } from './chat.js';
 import { myState } from './controller.js';
 
-/** Is this thing guarded by someone other than me? The server enforces the
- *  guard (rights.ts guardRefusal); the panel only mirrors the answer so a
- *  field doesn't invite an edit that will be refused. The placer and the
- *  world's owner keep everything live. */
-function guardedByOther(bag, meta) {
-  return !!bag?.guard && meta?.actor !== net.myId && net.myRights?.role !== 'owner';
-}
 
 const esc = (v) => String(v).replace(/[&<>"]/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -148,7 +142,7 @@ function paintScene(force = false) {
       const locked = !!bag?.lock;
       // guarded by someone else: every edit would be refused, so the fields
       // say so too (the placer and the world's owner keep them live)
-      const held = guardedByOther(bag, meta);
+      const held = guardedByOther(selected);
       const why = held ? `guarded by ${meta?.actor ?? 'its placer'} — only they or the world's owner can move it` : 'locked — remove the lock comp to move';
       const cell = (f, v, step) => `<input type="number" data-tf="${f}" value="${v}" step="${step}" style="width:4.5em"${locked || held ? ` disabled title="${esc(why)}"` : ''}>`;
       transform = `<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin:4px 0">

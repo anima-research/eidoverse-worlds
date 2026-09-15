@@ -536,6 +536,18 @@ export function runVerb(ctx: VerbCtx, verb: string, rawArgs: unknown): void {
     }
     args = r.args;
   }
+  // The placer PRINCIPAL is the server's to write, never the client's: a
+  // spawn or light carries the connection's display id and its durable
+  // subject (when the door vouched for one), stamped here after validation
+  // and stripped from whatever the client sent. A behavior bind records its
+  // author's subject the same way, so a script's creations can freeze it.
+  if (isVerbStr && (verb === "spawn" || verb === "light")) {
+    const { placer: _clientPlacer, ...rest } = args;
+    args = { ...rest, placer: { id: c.id, ...(c.sub ? { sub: c.sub } : {}) } };
+  } else if (isVerbStr && verb === "behavior") {
+    const { bySub: _clientSub, ...rest } = args;
+    args = c.sub && !rest.remove ? { ...rest, bySub: c.sub } : rest;
+  }
   // §24 entry bus: commit = append + publish (client fanout with the
   // authoritative echo, then behaviors — see events.ts's ordering ruling).
   // After-hooks run once the CAUSE is on the wire, so the effect entries

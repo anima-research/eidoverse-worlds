@@ -325,7 +325,7 @@ function realizeModel(id, cur, obj) {
   if (sc) obj.scale.setScalar(sc);
   obj.userData.base = { pos: obj.position.toArray(), yaw: obj.rotation.y };
   entities.set(id, obj);
-  entityMeta.set(id, { actor: cur.actor, lib: cur.lib, ts: cur.ts });
+  entityMeta.set(id, { actor: cur.actor, lib: cur.lib, ts: cur.ts, ...(cur.placer ? { placer: cur.placer } : {}) });
   scene.add(obj);
   bus.emit('entity', { id, kind: 'spawn' });
   // comps that folded while the GLB was in flight (or that rode the
@@ -430,7 +430,7 @@ function createLight(id, ent) {
   // fold refresh, so create and refresh agree on where "at rest" is
   g.userData.base = { pos: g.position.toArray(), yaw: g.rotation.y };
   entities.set(id, g);
-  entityMeta.set(id, { actor: ent.actor, kind: 'light', ts: ent.ts });
+  entityMeta.set(id, { actor: ent.actor, kind: 'light', ts: ent.ts, ...(ent.placer ? { placer: ent.placer } : {}) });
   scene.add(g);
   bus.emit('entity', { id, kind: 'light' });
   emitCompBag(id);
@@ -482,7 +482,7 @@ function refreshLight(id, ent) {
     if (ent.pos) g.position.set(...ent.pos);
     g.userData.base = { pos: g.position.toArray(), yaw: g.rotation.y };
   }
-  entityMeta.set(id, { actor: ent.actor, kind: 'light', ts: ent.ts });
+  entityMeta.set(id, { actor: ent.actor, kind: 'light', ts: ent.ts, ...(ent.placer ? { placer: ent.placer } : {}) });
   bus.emit('entity', { id, kind: 'light' });
   // comps that folded onto the light and its folded parent re-announce and
   // re-execute, exactly as a join create would (createLight + the tail)

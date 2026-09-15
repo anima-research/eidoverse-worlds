@@ -28,6 +28,7 @@ import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.j
 import { flashHint, collapseAll, panelFrame } from './ui.js';
 import { sceneSelect } from './scenegraph.js';
 import { claimEscape } from './frames.js';
+import { mayAuthor } from './placer.js';   // one rule for who may author, shared with the scene panel
 import { refreshSeatGizmos, resetSeats, armSeatPlacement, seatArmed, seatSelected,
   cancelSeatArm, deselectSeat, seatMouseDown, seatKeyDown, updateSeatDrag } from './seatedit.js';
 
@@ -369,10 +370,6 @@ function isLocked(id) { return !!comps.get(id)?.lock; }
 // but the placer, the world's owner, or an operator); here the same answer
 // keeps the gesture honest, and the hint names who may instead of a dead hand.
 function isGuarded(id) { return !!comps.get(id)?.guard; }
-function mayAuthor(id) {
-  const actor = entityMeta.get(id)?.actor;
-  return actor === net.myId || net.myRights?.role === 'owner';
-}
 function lockedHint(id) {
   if (isGuarded(id) && !mayAuthor(id)) {
     flashHint(`🛡 <b>guarded</b> by ${entityMeta.get(id)?.actor ?? 'its placer'} — only they or the world's owner can move or change it`);

@@ -210,21 +210,36 @@ as a 🔒 checkbox on the inspector.
 
 **Guarding — a thing that is yours to author.** `comp {id, type: "guard",
 data: true}` says only its placer may change it. While guarded, the server
-refuses every authoring verb on the entity — `comp`, `motion`, `behavior
-{attach}`, `place`, `punt`, cargo-`mount`/`dismount`, `remove`, same-id
-`spawn`/`light` — from anyone but the actor who spawned it, the world's
-owner, or an operator (`data: null` clears it; setting or clearing the guard
-is placer-gated even while it is off, so nobody can fence off someone else's
-thing). This is the rights edge the lock deliberately isn't: an owned world
-defaults its guests to builder so editing stays frictionless, which also
-means anyone could swap the picture you hung. Using the thing stays open —
-`use`, sitting on it — because the guard is about authorship, not access.
+refuses every authoring verb on the entity from anyone but the placer, the
+world's owner, or an operator (`data: null` clears it; setting or clearing
+the guard is placer-gated even while it is off, so nobody can fence off
+someone else's thing). This is the rights edge the lock deliberately isn't:
+an owned world defaults its guests to builder so editing stays frictionless,
+which also means anyone could swap the picture you hung.
+
+**Who the placer is.** Every `spawn`/`light` carries a server-stamped
+`placer: {id, sub?}` — the creator's display id and, when the door vouched
+for one, their durable Archipelago subject. It never changes: a re-light
+keeps the first placer, a rename keeps the subject (a display name is a
+nameplate, not a deed — a stranger wearing your old name gets nothing), and
+a thing a script created belongs to the script's AUTHOR at that moment,
+frozen, whatever happens to the script later. Entities that predate the
+stamp fall back to the display id. `look` says `🛡 guarded by <placer>`.
+
+**What the guard gates, verb by verb.**
+
+| verb | on a guarded thing, from a non-placer |
+|---|---|
+| `comp` (any type), `motion`, `behavior {attach}` | refused — content is authorship |
+| `place`, `punt`, cargo-`mount`/`dismount`, `remove`, same-id `spawn`/`light` | refused — moving, replacing, removing |
+| `mount {id: cargo, to: <guarded>}` | refused — loading cargo onto someone's thing changes it |
+| `use`, self-`mount` (sitting on it), `dismount` yourself | open — the guard is about authorship, not access |
+| `force` | accepted, and moves nothing: `force` displaces BODIES (people, who each consent client-side); entities are never displaced by it. The entity kick is `punt`, which is gated. |
+
 A behavior bound by the placer still writes to it (scripts emit under their
 author's standing), which is how a guarded picture gets a visitor-facing
-"next picture" `use` without opening the comp to visitors. An entity a
-script spawned belongs to the script's author. `look` says `🛡 guarded by
-<placer>` so you can skip the refused round-trip. Browser builders get it as
-a 🛡 checkbox beside the lock.
+"next picture" `use` without opening the comp to visitors. Browser builders
+get the guard as a 🛡 checkbox beside the lock.
 
 **Weather can be ambient — authored once, alive forever.** The `sky` verb
 (owner lane) takes a `forecast` policy alongside `hours`/`rate`:

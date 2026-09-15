@@ -141,10 +141,40 @@ export function lockRefusal(state: WorldState, verb: string, args: Record<string
  *  Matching is by id today (entities record the display id); the sub leg is
  *  there for the day the fold keys actors by durable principal. */
 export const GUARD_AUTHORED = new Set(["comp", "motion", "behavior", "place", "remove", "punt", "mount", "dismount", "spawn", "light"]);
-export function placerOf(state: WorldState, ent: { actor?: string }): string | undefined {
+
+/** Who placed a thing: the PRINCIPAL stamped at creation. `placer` is written
+ *  by the server on every spawn/light (verbs.ts: the connection's display id
+ *  plus its durable Archipelago subject when it has one; a script's emit
+ *  carries its author's, frozen at the moment of creation — behaviors.ts).
+ *  It never changes afterwards: a re-light keeps the first placer, a rename
+ *  keeps the subject, removing the script that made it changes nothing
+ *  (Mica, #190 review: authorship that tracked the behavior's CURRENT
+ *  binding orphaned or transferred things when the behavior went away).
+ *  Entities that predate the stamp keep the old legs as fallback — the
+ *  display id, or the behavior's author for a `bhv:` actor — so nothing
+ *  already placed goes orphan. */
+export type Placer = { id: string; sub?: string };
+export function placerOf(state: WorldState, ent: { actor?: string; placer?: unknown }): Placer | undefined {
+  const p = ent.placer as { id?: unknown; sub?: unknown } | undefined;
+  if (p && typeof p === "object" && typeof p.id === "string" && p.id) {
+    return { id: p.id, ...(typeof p.sub === "string" && p.sub ? { sub: p.sub } : {}) };
+  }
   const actor = ent.actor;
-  if (actor?.startsWith("bhv:")) return (state as any).behaviors?.[actor.slice(4)]?.author ?? actor;
-  return actor;
+  if (!actor) return undefined;
+  if (actor.startsWith("bhv:")) {
+    const b = (state as any).behaviors?.[actor.slice(4)] as { author?: string; authorSub?: string } | undefined;
+    return { id: b?.author ?? actor, ...(b?.authorSub ? { sub: b.authorSub } : {}) };
+  }
+  return { id: actor };
+}
+/** Is `who` the placer? A stamped SUBJECT is matched by subject only — a
+ *  display name is a nameplate, not a deed (the grant rule, rights.ts above),
+ *  so a stranger who takes the placer's old name after a rename gets nothing.
+ *  A placer with no subject (self-asserted human, legacy entity) is matched
+ *  by display id, which is all there ever was. */
+export function isPlacer(who: { id: string; sub?: string }, placer: Placer | undefined): boolean {
+  if (!placer) return false;
+  return placer.sub ? who.sub === placer.sub : who.id === placer.id;
 }
 export function guardRefusal(
   state: WorldState,
@@ -153,18 +183,30 @@ export function guardRefusal(
   args: Record<string, unknown> | undefined,
 ): string | null {
   if (!GUARD_AUTHORED.has(verb)) return null;
+  const override = ROLE_RANK[who.role as keyof typeof ROLE_RANK] >= ROLE_RANK.owner;   // owner and WORLD_ADMIN (rightsOf makes admins owner)
   // a behavior binds to `attach`; every other authoring verb names `id`
   const id = String((verb === "behavior" ? args?.attach : args?.id) ?? "");
   const ent = id ? state.entities[id] : undefined;   // people aren't entities — self-mount passes here
+  // Loading cargo ONTO someone else's guarded carrier is a deliberate
+  // relationship change on the carrier (Mica, #190 review), not a use of it:
+  // gated like a move. Sitting on it (self-mount: the cargo is a person, not
+  // an entity) stays open.
+  if (verb === "mount" && ent && !override) {
+    const to = String(args?.to ?? "");
+    const carrier = to ? state.entities[to] : undefined;
+    if (carrier?.comp?.guard) {
+      const cp = placerOf(state, carrier);
+      if (!isPlacer(who, cp)) return `"${to}" is guarded — only ${cp?.id ?? "its placer"}, the world's owner, or an operator may load cargo onto it`;
+    }
+  }
   if (!ent) return null;
   const guarded = !!ent.comp?.guard;
   const touchingGuard = verb === "comp" && String(args?.type ?? "") === "guard";
   if (!guarded && !touchingGuard) return null;
   const placer = placerOf(state, ent);
-  if (who.id === placer || (who.sub != null && who.sub === placer)) return null;
-  if (ROLE_RANK[who.role as keyof typeof ROLE_RANK] >= ROLE_RANK.owner) return null;   // owner and WORLD_ADMIN (rightsOf makes admins owner)
-  const may = `only ${placer ?? "its placer"}, the world's owner, or an operator may`;
-  if (!guarded) return `"${id}" was placed by ${placer ?? "someone else"} — ${may} guard it`;
+  if (isPlacer(who, placer) || override) return null;
+  const may = `only ${placer?.id ?? "its placer"}, the world's owner, or an operator may`;
+  if (!guarded) return `"${id}" was placed by ${placer?.id ?? "someone else"} — ${may} guard it`;
   const act = verb === "remove" ? "remove"
     : verb === "spawn" || verb === "light" ? "replace"
       : verb === "place" || verb === "punt" || verb === "mount" || verb === "dismount" ? "move"

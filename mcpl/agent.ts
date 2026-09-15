@@ -1170,6 +1170,7 @@ export class WorldAgent {
         pos: (e as any).pos, yaw: (e as any).yaw ?? 0,
         ...((e as any).scale != null ? { scale: (e as any).scale } : {}),
         actor: (e as any).actor,
+        ...((e as any).placer ? { placer: (e as any).placer } : {}),
         ...((e as any).comp ? { comp: (e as any).comp } : {}),
       });
     }
@@ -3112,9 +3113,12 @@ export class WorldAgent {
       // behaviors, moves and removal from anyone but them, the world's
       // owner, or an operator. Using it (use, sitting on it) stays open.
       if (c.guard) {
+        // the principal stamped at creation (rights.ts placerOf); the legacy
+        // legs cover entities that predate the stamp
         const actor = String(e.actor ?? "");
-        const placer = actor.startsWith("bhv:") ? ((this.st as any).behaviors?.[actor.slice(4)]?.author ?? actor) : actor;
-        aff.push(`🛡 guarded by ${placer || "its placer"} (only they, the world's owner, or an operator may change, move or remove it — use stays open)`);
+        const placer = (e as any).placer?.id
+          ?? (actor.startsWith("bhv:") ? ((this.st as any).behaviors?.[actor.slice(4)]?.author ?? actor) : actor);
+        aff.push(`🛡 guarded by ${placer || "its placer"} (only they, the world's owner, or an operator may change, move, remove it or load cargo onto it — use and sitting stay open)`);
       }
       // A griddled building says what it IS — rooms, walls, doors — because
       // unlike a conjured mesh it knows. This is the whole difference the
