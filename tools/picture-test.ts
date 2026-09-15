@@ -22,6 +22,10 @@ console.log("— 1. declaration —");
 const GOOD = "eidoverse/assets/pictures/hearth_at_dusk.png";
 for (const [src, expect] of [
   [GOOD, true], ["eidoverse/assets/models/thing_preview.jpg", true], ["eidoverse/assets/x/y.webp", true],
+  // the upload door's store — content-addressed pictures land here (POST /upload?as=image)
+  ["store/images/0123456789abcdef.png", true], ["store/images/0123456789abcdef.jpg", true], ["store/images/0123456789abcdef.webp", true],
+  ["store/0123456789abcdef.png", false], ["store/scripts/x.png", false], ["store/images/../secret.png", false], ["store/images/x.glb", false],
+  ["store/imagesx/y.png", false], ["/store/images/x.png", false],
   ["https://example.com/x.png", false], ["http://x/y.jpg", false], ["data:image/png;base64,AAAA", false],
   ["/eidoverse/assets/x.png", false], ["eidoverse/assets/../secret.png", false], ["eidoverse/assets/./x.png", false],
   ["eidoverse/assets//x.png", false], ["other/x.png", false], ["eidoverse/assets/x.gif", false], ["eidoverse/assets/x.glb", false],
