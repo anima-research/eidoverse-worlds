@@ -348,10 +348,10 @@ export function prepareMaterial(mat, receiver = null) {
 /** Pass a whole object through the factory: marks every mesh so upstream's
  *  sweeps skip it, applies the shadow-receiving policy for its kind, and
  *  wraps every material. Idempotent; call before the first compile. */
-// Body meshes that must NOT cast: the kintsugi seams (they self-shadow into
-// scratches) and the skin/clothing (they seal the gaps the chest lamp lights
-// the wings through). See the note at the assignment below.
-const BODY_NO_CAST = /^(GOLD|tripo_mesh_)/;
+// The one body mesh that must NOT cast: the kintsugi seams. See the note at
+// the assignment below for why the skin/clothing was briefly on this list and
+// is not any more.
+const BODY_NO_CAST = /^GOLD/;
 
 export function prepareObject(root, { kind = 'model' } = {}) {
   // A missing root is a no-op, not a crash. The module-init call below passes
@@ -388,28 +388,33 @@ export function prepareObject(root, { kind = 'model' } = {}) {
     // (§16.2.B); castShadow sits in NO pipeline cache key (§12.1), and this
     // runs before the field's warm (world.js), so clearing it here is free.
     if (grass) o.castShadow = false;
-    // WHAT A BODY CASTS is a smaller set than "everything", and both
-    // exclusions were found by looking rather than by reasoning.
+    // WHAT A BODY CASTS is everything except the kintsugi seams.
     //
-    // GOLD: the kintsugi seams are thin metal ribbons threaded THROUGH the
-    // skin they decorate, so at any map resolution their depth fights the
-    // body's own and they self-shadow into dark scratches. (Janus's
-    // hand-tuned console version excluded them too.)
+    // GOLD: thin metal ribbons threaded THROUGH the skin they decorate, so at
+    // any map resolution their depth fights the body's own and they
+    // self-shadow into dark scratches. Janus's hand-tuned console version
+    // excluded exactly this one mesh and nothing else.
     //
-    // THE SKIN AND CLOTHING (tripo_mesh_*): they SEAL the body. Janus, on the
-    // first build with shadows: "i no longer see illumination on the wings...
-    // there are holes in the torso/shirt that were illuminating them before."
-    // The chest lamp reaches the wings THROUGH gaps in the torso, and a
-    // casting torso closes every one of them.
+    // `tripo_mesh_*` WAS ALSO EXCLUDED HERE, and that was wrong twice over.
     //
-    // Isolated by bisection rather than argued: with only the wings casting
-    // they are lit and throw two wing shadows; with everything EXCEPT the
-    // wings casting they go black. The body is the occluder.
+    // The reasoning was that a casting torso seals the gaps the chest lamp
+    // reaches the wings through, supported by a mesh bisection (only-wings-
+    // cast: lit, two wing shadows; all-but-wings-cast: black). But that
+    // bisection ran against a lamp whose shadow camera was near=0.03 /
+    // far=500 -- no usable depth precision at body scale (see the near/far
+    // note in lightrig.js). It measured the broken shadow map, not occlusion.
     //
-    // So the wings, hair and head still cast -- the silhouette that reads as a
-    // person-shaped shadow -- and the torso does not. The cost is some contact
-    // realism on the shirt; the gain is a body his own lamp shines through,
-    // which is the thing the lamp is for.
+    // And the pattern never matched anything anyway: `o.name` is the NODE
+    // name, and the nodes here are body_main / wings / eyelids / eyeballs /
+    // GOLD / lamp. `tripo_mesh_*` is the MESH name. So the torso cast
+    // throughout, and the exclusion was inert -- which is its own lesson
+    // about shipping a regex nothing was ever measured against.
+    //
+    // With near and far both bounded, Janus ran the honest version -- torso
+    // casting, GOLD excluded -- and got the wings illuminated AND shadowed:
+    // "I like how this looks, and am happy with this being the default."
+    // So the torso casts. A conclusion from a correct measurement of a broken
+    // system is still wrong.
     if (body) o.castShadow = !BODY_NO_CAST.test(o.name || '');
     // TRANSMISSION FIRST, because it replaces the material object: a plain
     // MeshPhysicalMaterial with transmission renders as nothing here, and the

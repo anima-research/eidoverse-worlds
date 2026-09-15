@@ -111,7 +111,21 @@ for (let i = 0; i < N_SLOTS; i++) {
   // already-configured light rather than an unconfigured one.
   if (i === SHADOW_SLOT) {
     pl.shadow.mapSize.set(512, 512);
-    pl.shadow.camera.near = 0.03;   // the bulb is INSIDE the body it lights
+    // NEAR AND FAR TOGETHER, or neither. A perspective shadow map's depth
+    // precision is set by the near/far RATIO, not by either end alone, and a
+    // PointLight defaults to 0.5/500 -- so setting near=0.03 and leaving far
+    // at three's default took the ratio from 1000:1 to 16,667:1 and spent all
+    // of a 512 cube map's precision on 500 m of empty air. A body 0.6 m from
+    // the bulb then quantises to nothing: no self-shadow, no wing shadow, no
+    // illumination change to see. That was this bug, and it was MY near that
+    // caused it -- the default pair would have been better than half the fix.
+    //
+    // Janus's console script is where the numbers come from: near 0.03 (the
+    // bulb is INSIDE the body it lights) with far bounded by the light's own
+    // falloff distance, which is the farthest it can possibly matter.
+    pl.shadow.camera.near = 0.03;
+    pl.shadow.camera.far = Math.max(2, pl.distance || 10);
+    pl.shadow.camera.updateProjectionMatrix();
     pl.shadow.bias = -0.0015;
     pl.shadow.normalBias = 0.02;
   }
@@ -505,6 +519,24 @@ function casterPass() {
 
 // ---- the per-frame drive ----------------------------------------------------
 
+// The casting slot's shadow far plane must follow its LIGHT's range, because
+// `distance` is rewritten every frame from whichever request currently holds
+// the slot -- so the value written at construction is stale the moment a lamp
+// with a different range wins it. Only the shadow slot has a shadow camera
+// worth maintaining, and updateProjectionMatrix is skipped unless the number
+// actually moved (this runs per slot per frame).
+//
+// Why it matters at all: see the near/far note at the slot loop. The ratio is
+// the precision, and an unbounded far spends a 512 cube map on empty air.
+const _SHADOW_FAR_EPS = 1e-4;
+function trackShadowFar(pl) {
+  if (!pl.castShadow) return;
+  const want = Math.max(2, pl.distance || 10);
+  if (Math.abs(pl.shadow.camera.far - want) < _SHADOW_FAR_EPS) return;
+  pl.shadow.camera.far = want;
+  pl.shadow.camera.updateProjectionMatrix();
+}
+
 /** Call once per frame. Reassigns when needed; writes every slot's uniforms. */
 export function updateRig(now) {
   updateShadow();
@@ -525,6 +557,7 @@ export function updateRig(now) {
       pl.intensity = r.mirror.intensity;
       pl.distance = r.mirror.distance;
       pl.decay = r.mirror.decay;
+      trackShadowFar(pl);
       continue;
     }
     worldPosOf(r, pl.position);
@@ -532,6 +565,7 @@ export function updateRig(now) {
     pl.intensity = r.intensity * (r.dayAware ? dayGlow() : 1);
     pl.distance = r.range;
     pl.decay = r.decay;
+    trackShadowFar(pl);
   }
 }
 

@@ -58,11 +58,33 @@ if (CASE) {
   if (MUTATE === '2') setShadows = (on) => {                  // setShadows forgets the lamp slot
     const before = lamp().castShadow; rig.setShadows(on); lamp().castShadow = before;
   };
+  if (MUTATE === '3') {                                      // far left at three's default
+    lamp().shadow.camera.far = 500;
+    const cam = lamp().shadow.camera;
+    Object.defineProperty(cam, 'far', { get: () => 500, set: () => {}, configurable: true });
+  }
 
   const out = (o) => console.log(`__RESULT__${JSON.stringify(o)}`);
   const snap = () => { const d = rig.rigDebug(); return { pref: d.shadows.pref, map: renderer.shadowMap.enabled, sun: sun.castShadow, lamp: d.shadows.lampCasting }; };
 
   if (CASE === 'boot-on' || CASE === 'boot-off') { out({ boot: snap() }); }
+  if (CASE === 'far') {
+    // The lamp's shadow camera must be BOUNDED at body scale. A PointLight
+    // defaults to 0.5/500; near alone was set to 0.03, which made the ratio
+    // WORSE than the default pair (16,667:1 vs 1000:1) and quantised every
+    // shadow at 0.6 m to nothing.
+    const born = { near: lamp().shadow.camera.near, far: lamp().shadow.camera.far };
+    // a lamp request with a tight range must pull `far` down to match, since
+    // pl.distance is rewritten from the winning request every frame
+    rig.requestLight('lamp:test', { keep: true, intensity: 8, range: 3, shadows: true });
+    rig.updateRig(1000);
+    const tight = { far: lamp().shadow.camera.far, distance: lamp().distance };
+    // ...and a wide one must push it back up
+    rig.requestLight('lamp:test', { keep: true, intensity: 8, range: 9, shadows: true });
+    rig.updateRig(2000);
+    const wide = { far: lamp().shadow.camera.far, distance: lamp().distance };
+    out({ born, tight, wide });
+  }
   if (CASE === 'flip') {
     const boot = snap();
     setShadows(false); const off = snap();
@@ -115,6 +137,21 @@ const flipChecks = (r, c = check) => {
   c('setShadows(true) is reported by shadowsOn()', r.on.pref === true);
 };
 
+const farChecks = (r, c = check) => {
+  c('the lamp is born with a bounded near', r.born.near > 0 && r.born.near <= 0.05,
+    `near=${r.born.near}`);
+  // THE DEFECT: far=500 with near=0.03. The invariant is the RATIO, which is
+  // what actually sets a perspective shadow map's depth precision.
+  c('the lamp is born with a bounded far (NOT three\'s 500)', r.born.far <= 10,
+    `far=${r.born.far} — a 512 cube map spread over ${r.born.far} m has no precision at 0.6 m`);
+  c('born near/far ratio is usable at body scale', r.born.far / r.born.near <= 1000,
+    `ratio=${Math.round(r.born.far / r.born.near)}:1`);
+  c('far follows a TIGHT lamp range', r.tight.far <= 3 + 1e-6,
+    `range 3 -> far ${r.tight.far} (distance ${r.tight.distance})`);
+  c('far follows a WIDE lamp range', Math.abs(r.wide.far - 9) < 1e-6,
+    `range 9 -> far ${r.wide.far} (distance ${r.wide.distance})`);
+};
+
 if (ARGV.includes('--mutants')) {
   // Each control reverts one half of the fix; the case that covers that half
   // must go red. A control that leaves the suite green means the test is not
@@ -123,6 +160,7 @@ if (ARGV.includes('--mutants')) {
   for (const [n, name, checks, label] of [
     [1, 'boot-off', bootOffChecks, 'slot born casting regardless of preference'],
     [2, 'flip', flipChecks, 'setShadows forgets the lamp slot'],
+    [3, 'far', farChecks, "shadow far left at three's default 500"],
   ]) {
     const r = await runCase(name, n);
     let died = 0;
@@ -136,6 +174,8 @@ if (ARGV.includes('--mutants')) {
   bootOffChecks(await runCase('boot-off'));
   console.log('SHADOW PREFERENCE — the switch flips both casters');
   flipChecks(await runCase('flip'));
+  console.log('LAMP SHADOW CAMERA — near and far are bounded together');
+  farChecks(await runCase('far'));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
