@@ -413,6 +413,42 @@ const back = await weigh('&lite=0', 'escape hatch (?lite=0)');
 check('?lite=0 forces the full client back', back.lite === false && back.why === 'url');
 check('?lite=0 fetches the engine again', back.engine.length > 0);
 
+// THE FULL CLIENT MUST STILL BE ABLE TO PLAY AN EMOTE.
+//
+// Splitting the emote table out from behind avatar.js's engine imports left avatar.js
+// re-exporting EMOTES without a local binding, so playEmote threw ReferenceError - and
+// nothing noticed, because every gate here boots the client and none of them presses a
+// button a person presses. Reported from a phone as a red "EMOTES is not defined" toast.
+// tools/reexport-binding-test.mjs catches the class; this catches the behaviour.
+{
+  const page = await mkPage();
+  const errs = [];
+  page.on('pageerror', (e) => errs.push(e.message));
+  const toasts = [];
+  page.on('console', (m) => { if (/is not defined|ReferenceError/i.test(m.text())) toasts.push(m.text()); });
+  await page.goto(`${world.origin}/?world=staging&name=emoteplay&key=${world.key}&lite=0`, { waitUntil: 'load' });
+  await page.waitForFunction(
+    () => { const el = document.getElementById('splash'); return !el || el.classList.contains('gone'); },
+    { timeout: 60000 },
+  ).catch(() => {});
+  const tile = await page.waitForSelector('[data-emote]', { timeout: 20000 }).catch(() => null);
+  let played = null;
+  if (tile) {
+    played = await page.evaluate(() => {
+      const t = document.querySelector('[data-emote]');
+      t.click();
+      return t.dataset.emote;
+    });
+    await page.waitForTimeout(2000);
+  }
+  const refErrs = [...errs, ...toasts].filter((e) => /is not defined|ReferenceError/i.test(e));
+  console.log(`\n  full client emote: tile=${played} referenceErrors=${refErrs.length}`);
+  for (const e of refErrs.slice(0, 2)) console.log(`      ! ${e.slice(0, 140)}`);
+  check('the full client still has an emote tile to press', !!played);
+  check('pressing it raises no ReferenceError', refErrs.length === 0, refErrs[0]?.slice(0, 120));
+  await page.close();
+}
+
 await browser.close();
 await world.close();
 done();

@@ -35,7 +35,10 @@ import { schedule, cancelOwner } from '../scheduler.js';
 import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere } from './models_field.js';
 
 /** The verbs this realizer owns — the whole flat entity-id namespace. */
-export { PORTED } from './ported.js';   // the taxonomy is data; causes.js needs it without the engine
+// IMPORT then re-export: a bare `export ... from` creates no local binding, and this
+// module uses PORTED itself further down. Same defect as avatar.js/EMOTES, same branch.
+import { PORTED } from './ported.js';   // the taxonomy is data; causes.js needs it without the engine
+export { PORTED };
 
 /** id → {kind:'model'|'light', lib?, gen} — the realizer's own view of what
  *  it has handled. gen guards a load completion against acting for a

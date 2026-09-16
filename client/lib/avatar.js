@@ -249,7 +249,13 @@ const CLIP_FALLBACK = {
 // engine). Re-exported here because these names were part of avatar.js's surface
 // before the split and several callers still read them from it — same objects, one
 // module instance, so the hydration trick is unaffected.
-export { EMOTES, EMOTE_ORDER, EMOTE_ICONS, hydrateEmotes } from './emotedefs.js';
+// IMPORT then re-export, not `export ... from`. A bare re-export forwards the names to
+// importers without creating local bindings, so avatar.js's own `EMOTES[name]` (playEmote,
+// below) became a ReferenceError the moment the table moved out - and it only fires when
+// someone actually plays an emote, which no boot-level test does. Reported from a phone as
+// a red "EMOTES is not defined" toast.
+import { EMOTES, EMOTE_ORDER, EMOTE_ICONS, hydrateEmotes } from './emotedefs.js';
+export { EMOTES, EMOTE_ORDER, EMOTE_ICONS, hydrateEmotes };
 // Seated postures differ by what you're sitting ON — the ground clip on a
 // chair leaves you cross-legged in mid-air.
 export const SEAT_CLIPS = { ground: 'sitting_on_ground', chair: SEAT_CLIP_FILE };
