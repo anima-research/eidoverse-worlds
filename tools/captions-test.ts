@@ -13,8 +13,11 @@
 //   1d. THE DEED — `born` is a creation generation (kept across a partial
 //      re-light and a same-lib re-spawn, renewed when the id means a new
 //      thing); the grant folds {id, born}; rightsIn carries it; `caption:
-//      null` revokes; a grant that knows its sub follows a rename, and a
-//      regrant under the new name retires the old name-keyed record.
+//      null` revokes; a grant that knows its sub follows a rename; the grant
+//      fold is a subject-keyed migration (repeated renames → one record;
+//      historical duplicates fail closed in rightsIn until a grant folds
+//      them; a target name held by another sub fails closed; a sub-less
+//      legacy record is adopted).
 //   2. PERCEPTION — what look() carries for a resident who reads, folded from
 //      `caption` entries through the agent's own fold: the line appears on the
 //      owning entity, follows the newest caption, ignores a superseded leg,
@@ -146,6 +149,28 @@ const rig = () => { const ag = new WorldAgent({ name: "reader" }); const A = ag 
   check("…and the new deed is the one answered, under either name", rightsIn(A.st, "cap-renamed", "human:discord:77").caption?.id === "kiosk" && rightsIn(A.st, "cap", "human:discord:77").caption?.id === "kiosk" && rightsIn(A.st, "cap-renamed", "human:discord:77").role === "visitor", JSON.stringify(rightsIn(A.st, "cap", "human:discord:77")));
   e("grant", { id: "cap-renamed", caption: null, sub: "human:discord:77" });
   check("…and a revoke under the new name revokes for the subject", rightsIn(A.st, "cap-renamed", "human:discord:77").caption === undefined && Object.values(A.st.roles).filter((r: any) => r.sub === "human:discord:77").length === 1);
+  // repeated renames: every grant migrates, so the subject never holds more than one record
+  e("grant", { id: "cap-three", role: "visitor", caption: { id: "kiosk", born: A.st.entities.kiosk.born }, sub: "human:discord:77" });
+  e("grant", { id: "cap-four", fly: true, sub: "human:discord:77" });
+  check("repeated renames with grants leave exactly one record, under the latest name, carrying everything granted along the way", Object.keys(A.st.roles).filter((k) => A.st.roles[k].sub === "human:discord:77").join() === "cap-four" && rightsIn(A.st, "cap-four", "human:discord:77").caption?.id === "kiosk" && rightsIn(A.st, "cap-four", "human:discord:77").fly === true && rightsIn(A.st, "cap-four", "human:discord:77").role === "visitor", JSON.stringify(A.st.roles));
+  // HISTORICAL DUPLICATES: a world written before the migration can hold two
+  // name-keyed records for one sub — rightsIn fails closed until a grant folds them
+  A.st.roles["old-a"] = { role: "visitor", fly: true, sub: "human:discord:88" };
+  A.st.roles["old-b"] = { role: "builder", gen: true, sub: "human:discord:88" };
+  const amb = rightsIn(A.st, "old-b", "human:discord:88");
+  check("two historical records for one sub: rightsIn FAILS CLOSED to the wildcard default (no fly, no gen, no deed) rather than picking one", amb.role === "builder" && amb.fly === false && amb.gen === false && amb.caption === undefined, JSON.stringify(amb));
+  e("grant", { id: "old-c", role: "visitor", caption: { id: "kiosk", born: A.st.entities.kiosk.born }, sub: "human:discord:88" });
+  check("…the next grant migrates: ALL stale records removed, exactly one written, from the default (ambiguous history is not merged)", Object.keys(A.st.roles).filter((k) => A.st.roles[k].sub === "human:discord:88").join() === "old-c" && A.st.roles["old-c"].fly === undefined && A.st.roles["old-c"].gen === undefined && rightsIn(A.st, "old-c", "human:discord:88").caption?.id === "kiosk", JSON.stringify(A.st.roles["old-c"]));
+  // COLLISION: the target name already carries ANOTHER subject's record
+  e("grant", { id: "taken", role: "owner", gen: true, sub: "human:discord:99" });
+  const beforeT = JSON.stringify(A.st.roles["taken"]);
+  e("grant", { id: "taken", role: "visitor", caption: { id: "kiosk", born: A.st.entities.kiosk.born }, sub: "human:discord:88" });
+  check("a grant onto a name held by another subject FAILS CLOSED: the occupant's record is untouched…", JSON.stringify(A.st.roles["taken"]) === beforeT && rightsIn(A.st, "taken", "human:discord:99").role === "owner", JSON.stringify(A.st.roles["taken"]));
+  check("…and the subject's own record is exactly as it was — found under either name, with nothing of the occupant's (no owner, no gen)", Object.keys(A.st.roles).filter((k) => A.st.roles[k].sub === "human:discord:88").join() === "old-c" && JSON.stringify(rightsIn(A.st, "taken", "human:discord:88")) === JSON.stringify(rightsIn(A.st, "old-c", "human:discord:88")) && rightsIn(A.st, "taken", "human:discord:88").role === "visitor" && rightsIn(A.st, "taken", "human:discord:88").gen === false && rightsIn(A.st, "taken", "human:discord:88").caption?.id === "kiosk", JSON.stringify(rightsIn(A.st, "taken", "human:discord:88")));
+  // a legacy name record WITHOUT a sub is adopted by the subject's grant (it was theirs, self-asserted)
+  A.st.roles["legacy"] = { role: "builder", fly: true };
+  e("grant", { id: "legacy", caption: { id: "kiosk", born: A.st.entities.kiosk.born }, sub: "human:discord:66" });
+  check("a sub-less legacy record under the target name is adopted, not refused: it gains the sub and keeps what it had", A.st.roles["legacy"].sub === "human:discord:66" && A.st.roles["legacy"].fly === true && rightsIn(A.st, "legacy", "human:discord:66").caption?.id === "kiosk", JSON.stringify(A.st.roles["legacy"]));
 }
 
 console.log("— 2. perception —");

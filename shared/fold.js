@@ -347,17 +347,29 @@ export function foldEntry(st, e) {
       // everything else. (Snapshots from before this verb lack the map.)
       if (!a?.id) return;
       st.roles ??= {};
-      // A SUBJECT HAS ONE RECORD. A grant that knows its subject's sub is
-      // the continuation of whatever that subject already held — under the
-      // old display name if they renamed — and the old name-keyed record is
-      // retired when the new one is written, so a lookup by sub never meets
-      // two answers (Mica, #187 round 3: grant under A, rename, regrant
-      // under B left both, and the obsolete A could win).
-      const priorKey = a.sub ? Object.keys(st.roles).find((k) => k !== a.id && st.roles[k]?.sub === a.sub) : undefined;
+      // A SUBJECT HAS ONE RECORD — a subject-keyed migration (Mica, #187
+      // rounds 3–4). A grant that knows its subject's sub:
+      //   · FAILS CLOSED when the target name already carries ANOTHER sub's
+      //     record: relabeling would hand that principal's role/gen/fly to
+      //     this subject. The door refuses it (vGrant); a replayed or
+      //     hand-written entry folds to nothing here. The owner moves or
+      //     revokes the occupant first.
+      //   · collects EVERY record carrying this sub (historical worlds can
+      //     hold several, written under successive names), continues the one
+      //     under the target name if that is the subject's, else the single
+      //     same-sub record if there is exactly one — and starts from the
+      //     default when history is ambiguous, rather than merging authority
+      //     from records that disagree;
+      //   · removes all of them and writes exactly one, under the target.
+      // rightsIn (shared/rightsfold.js) fails closed on the ambiguity this
+      // leaves behind until the next grant migrates it.
+      const occupant = st.roles[a.id];
+      if (a.sub && occupant?.sub && occupant.sub !== a.sub) return;
+      const stale = a.sub ? Object.keys(st.roles).filter((k) => k !== a.id && st.roles[k]?.sub === a.sub) : [];
       // default matches the owned-world default (builder), so `/grant bob
       // +gen` on an unlisted id doesn't silently demote him to visitor
-      const cur = st.roles[a.id] ?? (priorKey ? st.roles[priorKey] : undefined) ?? { role: "builder" };
-      if (priorKey) delete st.roles[priorKey];
+      const cur = occupant ?? (stale.length === 1 ? st.roles[stale[0]] : undefined) ?? { role: "builder" };
+      for (const k of stale) delete st.roles[k];
       const role = ROLE_RANK[a.role] != null ? a.role : cur.role;
       const gen = a.gen != null ? Boolean(a.gen) : cur.gen;
       // FLY is orthogonal like gen, and DEFAULT-OFF harder than gen is: an

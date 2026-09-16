@@ -23,7 +23,9 @@
 //      (held, then flows after the grant).
 //   5. THE DEED FOLLOWS THE SUB — granted while the subject is present with
 //      a durable sub, it survives the subject's rename (same sub, new name)
-//      and is not worn by an impostor under the old name.
+//      and is not worn by an impostor under the old name; a regrant and a
+//      third rename leave one record; a grant onto a name that carries
+//      another subject's record is refused at the door, nothing inherited.
 //   6. THE LIVE LEG — the sequencer's generation decides who captions:
 //      a same-identity rejoin (a takeover) continues, its session under a
 //      rolled-back clock still takes over; a second deed-holder that joins
@@ -261,6 +263,43 @@ try {
   check("…the obsolete deed does not win: cinema refused, kiosk accepted", renamed.errors.length === before + 1 && /deed is for "kiosk", not "cinema"/.test(last(renamed)) && (await folded(WORLD, "kiosk"))?.comp?.captions?.window?.at(-1)?.text === "kiosk, under the new deed", renamed.errors.slice(before).join("; "));
   ra.verb("grant", { id: RENAMED, caption: "cinema" });
   await ra.settle();
+  // a THIRD name: still one record
+  renamed.close(); await sleep(300);
+  const third = await open({ id: "captioner-three", world: WORLD }, await cookieFor(SUB_CAP, "Captioner Three"));
+  await third.settle();
+  const THIRD = third.snap.you as string;
+  ra.verb("grant", { id: THIRD, fly: true });
+  await ra.settle();
+  const eyeT = await open({ id: "eye4", world: WORLD, spectate: true });
+  check("a third rename with a grant: still exactly one record for the subject, under the latest name, deed and fly both carried", Object.entries(eyeT.snap.state.roles ?? {}).filter(([, r]: any) => r.sub === SUB_CAP).map(([k]) => k).join() === THIRD && eyeT.snap.state.roles?.[THIRD]?.caption?.id === "cinema" && eyeT.snap.state.roles?.[THIRD]?.fly === true, JSON.stringify(Object.fromEntries(Object.entries(eyeT.snap.state.roles ?? {}).filter(([, r]: any) => r.sub === SUB_CAP))));
+  eyeT.close();
+  // COLLISION at the door: Bob's name carries Bob's sub-bound record; Bob
+  // leaves; the captioner (another subject) joins wearing Bob's name…
+  ra.verb("grant", { id: BOB, gen: true });   // Bob has a sub-bound record
+  await ra.settle();
+  third.close(); bob.close(); await sleep(400);
+  const asBob = await open({ id: BOB, world: WORLD }, await cookieFor(SUB_CAP, BOB));
+  await asBob.settle(500);
+  check("…another subject can wear the absent name (a nameplate, not a deed)", asBob.snap.you === BOB, `you=${asBob.snap.you}`);
+  before = ra.errors.length;
+  ra.verb("grant", { id: BOB, caption: "cinema" });
+  await ra.settle();
+  check("granting a name that carries another subject's record is refused at the door, and says whose", ra.errors.length === before + 1 && /already carries a grant bound to another subject/.test(last(ra)) && last(ra).includes(SUB_BOB), last(ra));
+  const eyeC = await open({ id: "eye5", world: WORLD, spectate: true });
+  check("…Bob's record is untouched (owner+gen not inherited, nothing relabeled) and the captioner's own record still stands under its own name", eyeC.snap.state.roles?.[BOB]?.sub === SUB_BOB && eyeC.snap.state.roles?.[BOB]?.gen === true && eyeC.snap.state.roles?.[BOB]?.caption === undefined && eyeC.snap.state.roles?.[THIRD]?.caption?.id === "cinema", JSON.stringify({ bob: eyeC.snap.state.roles?.[BOB], third: eyeC.snap.state.roles?.[THIRD] }));
+  eyeC.close();
+  check("…and the wearer of that name, being another subject, gets its OWN record's rights, not the occupant's", asBob.snap.yourRights?.caption?.id === "cinema" && asBob.snap.yourRights?.fly === true && asBob.snap.yourRights?.gen === false, JSON.stringify(asBob.snap.yourRights));
+  asBob.close(); await sleep(300);
+  const renamedBack = await open({ id: "captioner-two", world: WORLD }, await cookieFor(SUB_CAP, "Captioner Two"));
+  await renamedBack.settle();
+  check("…and renaming back finds the single record under the third name", renamedBack.snap.yourRights?.caption?.id === "cinema" && renamedBack.snap.yourRights?.fly === true, JSON.stringify(renamedBack.snap.yourRights));
+  renamedBack.close(); await sleep(300);
+  const bobBack = await open({ id: "bob", world: WORLD }, await cookieFor(SUB_BOB, "Bob"));
+  await bobBack.settle();
+  check("Bob, back under his own name, still has exactly his own", bobBack.snap.yourRights?.gen === true && bobBack.snap.yourRights?.caption === undefined, JSON.stringify(bobBack.snap.yourRights));
+  bobBack.close();
+  const renamed2 = await open({ id: "captioner-two", world: WORLD }, await cookieFor(SUB_CAP, "Captioner Two"));
+  await renamed2.settle();
 
   console.log("— 6. the live leg —");
   c = await folded(WORLD, "cinema");
@@ -269,7 +308,7 @@ try {
   // a same-identity rejoin is a TAKEOVER: the server retires the old leg
   const rejoin = await open({ id: "captioner-two", world: WORLD }, await cookieFor(SUB_CAP, "Captioner Two"));
   await rejoin.settle(500);
-  check("a same-identity rejoin retires the old leg (the server's takeover)", renamed.closed === true, `old closed=${renamed.closed}`);
+  check("a same-identity rejoin retires the old leg (the server's takeover)", renamed2.closed === true, `old closed=${renamed2.closed}`);
   before = rejoin.errors.length;
   rejoin.verb("caption", cap(S_BACK, 1, 0, "restarted under a rolled-back clock"));
   await rejoin.settle();
@@ -279,7 +318,6 @@ try {
   // a SECOND captioner (another identity) with its own deed joins later: it supersedes
   ra.verb("grant", { id: BOB, caption: "cinema" });
   await ra.settle();
-  bob.close(); await sleep(300);
   const bob2 = await open({ id: "bob", world: WORLD }, await cookieFor(SUB_BOB, "Bob"));   // a newer leg than the rejoined captioner
   await bob2.settle();
   before = bob2.errors.length;

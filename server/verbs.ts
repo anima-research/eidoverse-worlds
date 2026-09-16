@@ -127,6 +127,15 @@ function vGrant(ctx: VerbCtx, args: Record<string, unknown>) {
   // resolve-at-grant: if the subject is PRESENT with a durable sub,
   // bind the grant to it — authority follows the person, not the nick
   const subject = [...w.clients].find((o) => o.id === id && o.sub);
+  // …and never over another subject's record: the fold would relabel that
+  // principal's authority as this one's, so it fails closed there and the
+  // door says why here (shared/fold.js grant)
+  if (subject?.sub) {
+    const occupant = (w.state.roles as Record<string, { sub?: string } | undefined> | undefined)?.[id];
+    if (occupant?.sub && occupant.sub !== subject.sub) {
+      return { error: `"${id}" already carries a grant bound to another subject (${occupant.sub}) — revoke or move that record before granting ${id} anew` };
+    }
+  }
   return { args: { id, ...(role != null ? { role } : {}), ...(gen != null ? { gen } : {}),
     ...(fly != null ? { fly } : {}), ...(caption !== undefined ? { caption } : {}),
     ...(subject?.sub ? { sub: subject.sub } : {}) } };
