@@ -17,6 +17,8 @@
 //   - otherwise a name-keyed record wins over the wildcard `*`
 //   - a name-keyed grant bound to a sub is worn only by that sub
 //   - gen is implied by owner; fly is implied by nothing
+//   - the caption deed ({id, born}) is implied by nothing either: it is the
+//     one additional authoring act a visitor may hold, for one entity
 
 /** @param {{roles?: Record<string, any>}} st  a folded WorldState */
 export function worldHasOwnerIn(st) {
@@ -30,7 +32,7 @@ export function worldHasOwnerIn(st) {
  * @param {{roles?: Record<string, any>}} st
  * @param {string} id     display name
  * @param {string} [sub]  durable subject, when known
- * @returns {{role: string, gen: boolean, fly: boolean}}
+ * @returns {{role: string, gen: boolean, fly: boolean, caption?: {id: string, born?: number}}}
  */
 export function rightsIn(st, id, sub) {
   if (!worldHasOwnerIn(st)) return { role: 'builder', gen: true, fly: false };
@@ -42,5 +44,6 @@ export function rightsIn(st, id, sub) {
     role: r.role,
     gen: r.role === 'owner' || Boolean(r.gen),
     fly: Boolean(r.fly),
+    ...(r.caption && r.caption.id ? { caption: { id: String(r.caption.id), ...(r.caption.born != null ? { born: r.caption.born } : {}) } } : {}),
   };
 }

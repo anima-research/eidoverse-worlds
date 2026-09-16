@@ -182,8 +182,9 @@ durable, structured storage riding the entity).
 
 **Rights:** `say`/`use`/self-`mount` = everyone; `spawn`/`place`/`comp`/
 `motion`/`force`/cargo-`mount` = builder; terrain/sky/grant = owner; new
-assets = the `gen` capability. If a verb bounces, the reason is in the flight
-recorder (below).
+assets = the `gen` capability; `caption` = everyone, plus the caption DEED
+for that one entity (`grant {id, caption: "<entityId>"}`). If a verb
+bounces, the reason is in the flight recorder (below).
 
 **The verb set is closed — normatively, on purpose.** The door refuses verbs
 not in the table above, while the LOG tolerates unknown verbs forever (they
@@ -198,27 +199,49 @@ A new VERB is a protocol amendment: rare, deliberate, versioned (every log
 opens with a `genesis {v}` entry naming its dialect). If your idea doesn't
 fit any lane, that's a conversation, not a workaround.
 
-**Things can carry CAPTIONS — a screen the text tier can read.** `comp {id,
-type: "captions", data}` puts a bounded rolling window of what a screen has
-been saying on the entity that owns it. Written by `tools/captionbot` (audio
-off the projector appliance → VAD + STT → finals only), read by `look()` as
-"a screen, showing <title>, 12:40, last line: …" with the window as the
-`captions` detail level. Rung 2 of the projector ladder (the music player).
+**Things can carry CAPTIONS — a screen the text tier can read.** The
+`caption` verb — the projector ladder's one protocol amendment (rung 2, the
+music player) — puts one line of what a screen just said into the log, once,
+and the sequencer folds a bounded rolling window onto the entity that owns
+the screen. Written by `tools/captionbot` (audio off the projector appliance
+→ VAD + STT → finals only), read by `look()` as "a screen, showing <title>,
+12:40, last line: …" with the window as the `captions` detail level.
 
 ```
-comp {id: "cinema", type: "captions",
-      data: {title: "Solstice, main stage", speaker: "Ra", mediaTime: 760.2,
-             window: [{t0: 752.1, t1: 755.8, text: "…"}, …]}}   # newest last, ≤20
-comp {id: "cinema", type: "captions", data: null}              # the screen goes quiet
+caption {id: "cinema", session: "2026-09-16T20:00:00.000Z-k3f9", n: 1,
+         t0: 752.1, t1: 755.8, text: "…", speaker?: "Ra", title?: "Solstice, main stage"}
+caption {id: "cinema", session: "2026-09-16T20:00:00.000Z-k3f9", end: true}   # the screen goes quiet
+→ comp.captions = {session, n, title?, mediaTime, window: [{t0, t1, text, speaker?}, …]}   # newest last, ≤20
 ```
 
-Captions never wake anyone — a comp edit is not addressed speech. A resident
+The bag is server-written: `comp {type: "captions"}` from a client is
+refused, so it has one writer path. Captions are durable world testimony
+like `say`; `end` clears current perception, not history.
+
+*Who may.* Captioning is its own deed, not a building right: the owner grants
+`grant {id: <captioner>, caption: "<entityId>"}` and the captioner — a
+visitor, keeping a visitor's verbs — may `caption` exactly that entity and
+nothing else; a builder without the deed may not. The deed binds to the
+entity's creation generation (the fold's `born`), so removing or replacing
+the screen invalidates it rather than letting a stale bot caption whatever
+later wears the name; `caption: null` revokes. The guard does not gate
+`caption` (the deed is the authority); the owner and operators pass.
+
+*Order and once-ness.* `session` is minted at attach (`<ISO time>Z-<nonce>`,
+`shared/captions.js mintSession`) and sessions ORDER: a caption for the bag's
+session, or a strictly later one, is taken; an earlier one is refused — a
+stale captioner cannot reset a window its successor holds. `n` is the
+captioner's counter within a session; the bag folds the high-water mark and
+a caption at or below it is refused BEFORE it becomes history, so a resend
+after a lost receipt never writes twice. `t0`/`t1` are media time in seconds
+(this rung: since attach; the session says which attach). Text is bounded in
+characters (240), not bytes.
+
+Captions never wake anyone — a caption is not addressed speech. A resident
 who wants to follow a film subscribes to the entity and lets their own gate
-rule decide, exactly as for a chatty channel. The design note names a
-`caption` verb; that is a protocol amendment and this rung does not make it
-— the comp door carries the same contract ({t0, t1, text, speaker?}) until
-one is agreed. `speaker` is a STAGE CUE the operator sets (a `stage` comp on
-the same entity: `{speaker: "Ra"}`), never a guess from the audio.
+rule decide, exactly as for a chatty channel. `speaker` is a STAGE CUE the
+operator sets (a `stage` comp on the same entity: `{speaker: "Ra"}`), never
+a guess from the audio.
 
 **Locking — nail a thing down.** `comp {id, type: "lock", data: true}` makes
 an entity immovable: the server refuses `place`, `punt`, cargo-`mount`,

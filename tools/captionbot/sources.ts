@@ -30,16 +30,49 @@ export function framer(tap: AudioTap): { write(chunk: Buffer): void; end(): void
 }
 
 /** The appliance: ffmpeg decodes whatever mediamtx serves on RTSP into PCM16LE
- *  mono at the tap's rate. The exact command deploy/projector/smoke.sh checks. */
-export function ffmpegSource(url: string, tap: AudioTap, log: (m: string) => void): { close(): void } {
-  const f = framer(tap);
+ *  mono at the tap's rate. The exact command deploy/projector/smoke.sh checks.
+ *
+ *  Source loss is OWNED here, not a silent one-shot: when ffmpeg exits
+ *  without being asked (the stream ended, the appliance restarted, the
+ *  network blinked), the tap is flushed, `onReattach` is told — that is the
+ *  caller's cue to rotate the caption session, because "seconds since
+ *  attach" starts over — and ffmpeg is respawned after a backoff that
+ *  doubles from 2 s to 30 s and resets on a healthy minute. `close()` ends
+ *  it for good. */
+export function ffmpegSource(url: string, tap: AudioTap, log: (m: string) => void,
+  opts: { onReattach?: () => void; spawnFn?: typeof spawn; minBackoffMs?: number; maxBackoffMs?: number } = {}): { close(): void; attempts: number } {
   const args = ['-hide_banner', '-loglevel', 'error', '-rtsp_transport', 'tcp', '-i', url,
     '-vn', '-ac', '1', '-ar', String(tap.rateHz), '-f', 's16le', '-'];
-  const p = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
-  p.stdout.on('data', (d: Buffer) => f.write(d));
-  p.stderr.on('data', (d: Buffer) => log(`ffmpeg: ${String(d).trim()}`));
-  p.on('close', (code) => { log(`ffmpeg exited (${code})`); f.end(); });
-  return { close() { p.kill('SIGTERM'); } };
+  const sp = opts.spawnFn ?? spawn;
+  const minB = opts.minBackoffMs ?? 2000, maxB = opts.maxBackoffMs ?? 30_000;
+  let backoff = minB;
+  let closed = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let current: ReturnType<typeof spawn> | null = null;
+  const handle = { attempts: 0, close() { closed = true; if (timer) clearTimeout(timer); current?.kill('SIGTERM'); } };
+  const start = () => {
+    if (closed) return;
+    handle.attempts++;
+    const f = framer(tap);
+    const startedAt = Date.now();
+    const p = sp('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    current = p;
+    p.stdout!.on('data', (d: Buffer) => f.write(d));
+    p.stderr!.on('data', (d: Buffer) => log(`ffmpeg: ${String(d).trim()}`));
+    p.on('error', (e) => log(`ffmpeg failed to start: ${e.message}`));
+    p.on('close', (code) => {
+      f.end();
+      if (closed) { log(`ffmpeg exited (${code})`); return; }
+      if (Date.now() - startedAt > 60_000) backoff = minB;   // a healthy run earns a fresh backoff
+      log(`ffmpeg exited (${code}) — source lost; reattaching in ${backoff / 1000} s (attempt ${handle.attempts + 1})`);
+      tap.reset();
+      opts.onReattach?.();
+      timer = setTimeout(() => { timer = null; start(); }, backoff);
+      backoff = Math.min(maxB, backoff * 2);
+    });
+  };
+  start();
+  return handle;
 }
 
 /** A raw PCM16LE mono file at the tap's rate (a .wav is fine — the 44-byte

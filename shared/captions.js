@@ -1,40 +1,71 @@
-// captions — what a `captions` component MEANS. Shared verbatim between the
-// caption bot that writes it (tools/captionbot), the mcpl agent that reads it
-// (text-tier perception), and any client overlay, so no two of them can
-// describe a different screen.
+// captions — what the `caption` verb MEANS, and the bag it folds into. Shared
+// verbatim between the sequencer (validator + fold), the caption bot that
+// writes it (tools/captionbot), the mcpl agent that reads it (text-tier
+// perception), and any client overlay, so no two of them can describe a
+// different screen.
 //
-//   comp {id, type: "captions", data: {title?, speaker?, mediaTime, window: [
-//     {t0, t1, text, speaker?}, …   // oldest first, bounded
-//   ]}}
-//   comp {id, type: "captions", data: null}          # the screen goes quiet
+//   caption {id, session, n, t0, t1, text, speaker?, title?}   # one line, once
+//   caption {id, session, end: true}                            # the screen goes quiet
+//
+// folds into the entity's comp bag, SERVER-WRITTEN (a client's `comp {type:
+// "captions"}` is refused, so the bag has one writer path):
+//
+//   comp.captions = {session, n, title?, mediaTime, window: [
+//     {t0, t1, text, speaker?}, …      // oldest first, the newest MAX_LINES
+//   ]}
 //
 // Rung 2 of the projector ladder (anima_dev/eidoverse_projector_design.md):
 // the music player — audio in, captions the models can read, no video yet.
-// The design note names a `caption` VERB; the verb set is closed by design
-// (AGENTS.md: a new verb is a protocol amendment), so this rung uses the
-// door that exists — state-shaped extension by comp — and carries a bounded
-// ROLLING WINDOW on the entity that owns the screen. The window is the log's
-// record of what the screen said recently; the full transcript is the bot's
-// to keep, not the world's. Captions never wake anyone: a comp edit is not
-// addressed speech. A resident who wants them subscribes to the entity and
-// lets their own gate rule decide — the tune-in model.
+// This is the design note's `caption` verb, made as a protocol amendment
+// (AGENTS.md) after the comp door proved to carry the wrong contract: every
+// window write was a log entry, so the append-only log held each line up to
+// twenty times, and writing one screen's captions took builder standing
+// over the whole world (Mica, #187 review). One line per entry fixes the
+// first; the `caption` deed (a per-entity grant) fixes the second.
+//
+// RETENTION, stated truthfully: captions are durable world testimony like
+// `say`; `end` clears current perception, not history. The bot keeps no
+// transcript the world does not already hold.
+//
+// SESSION. Minted by the bot at attach — an ISO timestamp plus a nonce, so
+// sessions ORDER: the sequencer accepts a caption for the bag's session, or
+// a strictly later session (a restart, a replacement bot), never an earlier
+// one — a stale predecessor cannot present its old session and reset a
+// window a successor has taken over. `n` is the bot's monotonic counter
+// within a session; the bag folds the high-water mark, and a caption at or
+// below it is refused BEFORE it becomes history — a resend after a lost
+// receipt is safe by construction, and a future reader never meets the same
+// line twice under one clock.
 //
 // TIMES. t0/t1 are MEDIA TIME in seconds: the stream's own clock, as far as
 // the bot can know it. In this rung that is seconds since the bot attached
 // to the stream (the source clock plumbing is phase 3); the field's meaning
-// does not change when the source improves, only its accuracy.
+// does not change when the source improves, only its accuracy — and the
+// session says which attach a `00:30` belongs to.
+//
+// BOUNDS are in CHARACTERS (String.length), not bytes: a 240-character line
+// of CJK is ~720 UTF-8 bytes and that is fine — the bag is folded state, not
+// a verb payload under the 8 KB comp cap.
 
 export const CAPTIONS_MAX_LINES = 20;
 export const CAPTION_TEXT_MAX = 240;
 export const CAPTIONS_TITLE_MAX = 120;
 export const CAPTIONS_SPEAKER_MAX = 48;
-const KNOWN_KEYS = new Set(['title', 'speaker', 'mediaTime', 'window']);
+export const CAPTION_SESSION_MAX = 64;
+/** Sessions are `<ISO attach time>-<nonce>`: ordered by when the bot attached. */
+export const SESSION_RX = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z-[A-Za-z0-9]{2,16}$/;
+const KNOWN_KEYS = new Set(['session', 'n', 'title', 'mediaTime', 'window']);
 
 function cleanText(s, max) {
   return String(s ?? '').replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
-/** One caption, validated: finite non-negative times in order, non-empty text. */
+/** Mint a session id: attach time first so sessions sort by attach. */
+export function mintSession(now = new Date(), nonce = Math.random().toString(36).slice(2, 8)) {
+  return `${now.toISOString()}-${nonce}`;
+}
+
+/** One caption LINE, validated: finite non-negative times in order, non-empty text. */
 export function normalizeCaption(c) {
   if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
   const t0 = Number(c.t0), t1 = Number(c.t1);
@@ -47,11 +78,72 @@ export function normalizeCaption(c) {
   return out;
 }
 
-/** Validate an authored bag. `ok:false` carries WHY; `ok:true` carries the
- *  normalized captions plus notes for anything coerced or dropped. */
+/** The `caption` verb's args, shape-checked: `ok:false` carries WHY (the
+ *  refusal the door sends), `ok:true` the normalized args that become
+ *  history. Pure — the sequencer's validator and the bot's own pre-check
+ *  are the same function. */
+export function normalizeCaptionArgs(a) {
+  if (!a || typeof a !== 'object' || Array.isArray(a)) return { ok: false, why: 'caption wants {id, session, n, t0, t1, text, speaker?, title?} or {id, session, end: true}' };
+  const id = String(a.id ?? '').slice(0, 64);
+  const session = String(a.session ?? '');
+  if (!id) return { ok: false, why: 'caption wants an entity id' };
+  if (!session || session.length > CAPTION_SESSION_MAX || !SESSION_RX.test(session)) {
+    return { ok: false, why: 'caption wants a session of the form <ISO attach time>Z-<nonce> (shared/captions.js mintSession)' };
+  }
+  if (a.end === true) return { ok: true, args: { id, session, end: true } };
+  const n = Number(a.n);
+  if (!Number.isInteger(n) || n < 1) return { ok: false, why: 'caption wants an integer n ≥ 1, monotonic within the session' };
+  const line = normalizeCaption(a);
+  if (!line) return { ok: false, why: `caption wants finite t0 ≤ t1 ≥ 0 and non-empty text (≤${CAPTION_TEXT_MAX} chars)` };
+  const args = { id, session, n, ...line };
+  const title = cleanText(a.title, CAPTIONS_TITLE_MAX);
+  if (title) args.title = title;
+  return { ok: true, args };
+}
+
+/** Why the folded bag refuses these (already normalized) args, or null.
+ *  The dedupe and the session order live HERE, before append, so a refusal
+ *  never becomes history: a duplicate or old `n` in the bag's session, a
+ *  session earlier than the bag's, or an `end` for a session that is not
+ *  the current one. */
+export function captionRefusal(bag, args) {
+  const cur = bag && typeof bag === 'object' ? bag : null;
+  if (args.end) {
+    if (!cur) return `"${args.id}" has no captions to end`;
+    if (cur.session !== args.session) return `"${args.id}" is captioned under session ${cur.session}, not ${args.session}`;
+    return null;
+  }
+  if (!cur) return null;
+  if (args.session === cur.session) {
+    if (args.n <= (Number(cur.n) || 0)) return `caption n=${args.n} is not after the folded high-water n=${cur.n} for session ${cur.session} — duplicate or out of order`;
+    return null;
+  }
+  if (args.session < cur.session) return `session ${args.session} is earlier than the active session ${cur.session} — a stale captioner`;
+  return null;   // a strictly later session takes over
+}
+
+/** Fold normalized args into the bag (pure; returns the new bag, or null when
+ *  the screen went quiet). A new session starts a fresh window; the same
+ *  session appends and keeps the newest MAX_LINES. */
+export function foldCaption(bag, args) {
+  if (args.end) return null;
+  const cur = bag && typeof bag === 'object' && bag.session === args.session ? bag : null;
+  const line = { t0: args.t0, t1: args.t1, text: args.text, ...(args.speaker ? { speaker: args.speaker } : {}) };
+  const window = [...(Array.isArray(cur?.window) ? cur.window : []), line].slice(-CAPTIONS_MAX_LINES);
+  const title = args.title ?? cur?.title;
+  return {
+    session: args.session, n: args.n,
+    ...(title ? { title } : {}),
+    mediaTime: Math.max(args.t1, Number(cur?.mediaTime) || 0),
+    window,
+  };
+}
+
+/** Validate a folded bag as a reader (look(), an overlay). `ok:false` carries
+ *  WHY; `ok:true` the normalized captions plus notes for anything coerced. */
 export function normalizeCaptions(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
-    return { ok: false, why: 'captions data must be an object {window: [...], title?, speaker?, mediaTime?}' };
+    return { ok: false, why: 'captions must be an object {session, n, window: [...], title?, mediaTime?}' };
   }
   if (!Array.isArray(data.window)) return { ok: false, why: 'window must be an array of {t0, t1, text, speaker?}' };
   const notes = [];
@@ -64,17 +156,17 @@ export function normalizeCaptions(data) {
     if (n) window.push(n); else dropped++;
   }
   if (dropped) notes.push(`${dropped} malformed caption${dropped === 1 ? '' : 's'} dropped`);
-  // Oldest first, and the window is a window: the newest MAX lines survive.
-  window.sort((a, b) => a.t0 - b.t0 || a.t1 - b.t1);
   if (window.length > CAPTIONS_MAX_LINES) {
     notes.push(`window clipped to the newest ${CAPTIONS_MAX_LINES} of ${window.length}`);
     window = window.slice(-CAPTIONS_MAX_LINES);
   }
   const captions = { window };
+  const session = String(data.session ?? '');
+  if (session) captions.session = session.slice(0, CAPTION_SESSION_MAX);
+  const n = Number(data.n);
+  if (Number.isInteger(n) && n >= 0) captions.n = n;
   const title = cleanText(data.title, CAPTIONS_TITLE_MAX);
   if (title) captions.title = title;
-  const speaker = cleanText(data.speaker, CAPTIONS_SPEAKER_MAX);
-  if (speaker) captions.speaker = speaker;
   const mt = Number(data.mediaTime);
   if (Number.isFinite(mt) && mt >= 0) captions.mediaTime = Math.round(mt * 100) / 100;
   else if (window.length) captions.mediaTime = window[window.length - 1].t1;
@@ -99,8 +191,7 @@ export function describeCaptions(data) {
   const showing = captions.title ? `showing ${captions.title}` : 'showing something uncaptioned by title';
   const last = captions.window[captions.window.length - 1];
   if (!last) return `a screen, ${showing}, nothing captioned yet`;
-  const who = last.speaker ?? captions.speaker;
-  const line = who ? `${who}: ${last.text}` : last.text;
+  const line = last.speaker ? `${last.speaker}: ${last.text}` : last.text;
   return `a screen, ${showing}, ${clock(captions.mediaTime ?? last.t1)}, last line: ${line}`;
 }
 
@@ -110,5 +201,5 @@ export function captionsDetail(data, lines = CAPTIONS_MAX_LINES) {
   const n = normalizeCaptions(data);
   if (!n.ok) return [];
   const w = n.captions.window.slice(-Math.max(0, lines));
-  return w.map((c) => `[${clock(c.t0)}–${clock(c.t1)}] ${c.speaker ?? n.captions.speaker ? `${c.speaker ?? n.captions.speaker}: ` : ''}${c.text}`);
+  return w.map((c) => `[${clock(c.t0)}–${clock(c.t1)}] ${c.speaker ? `${c.speaker}: ` : ''}${c.text}`);
 }

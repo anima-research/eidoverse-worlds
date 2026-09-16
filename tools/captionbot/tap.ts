@@ -38,4 +38,9 @@ export class AudioTap {
     const t = this.mediaTime;
     for (const c of this.consumers) c.onEnd?.(t);
   }
+
+  /** A new time origin: the source reattached, so "seconds since attach"
+   *  starts over. Callers flush (end) first and rotate the caption session
+   *  after, so no line straddles two clocks. */
+  reset(): void { this.samples = 0; }
 }

@@ -14,6 +14,21 @@
 // off the entry, so a fold is a pure function of the log.
 
 import { foldSkyEntry } from './forecast.js';
+import { normalizeCaptionArgs, captionRefusal, foldCaption } from './captions.js';
+
+/** An entity's CREATION GENERATION: the seq of the entry that made this
+ *  object, kept across updates of the same object (a partial re-light, a
+ *  same-id re-spawn of the same lib) and renewed when the id comes to mean a
+ *  different thing (a different lib, a different kind, or a spawn after a
+ *  remove). A deed that names an entity binds to this, not to the reusable
+ *  id, so a grant written for one screen cannot be spent on whatever later
+ *  wears its name (Mica, #187 review). */
+function bornOf(prev, kind, a, e) {
+  const seq = e.seq ?? e.ts;
+  if (!prev) return seq;
+  const same = kind === "light" ? prev.kind === "light" : (prev.kind !== "light" && prev.lib === a.lib);
+  return same && prev.born != null ? prev.born : seq;
+}
 
 /**
  * One log entry: the unit of world history (PROTOCOL.md §1).
@@ -174,8 +189,9 @@ export function foldEntry(st, e) {
       // same doctrine: the punt is history, the flight is presence (a lease
       // some volunteer holds), the landing is the `place` that lease commits
       return;
-    case "spawn":
+    case "spawn": {
       if (!a?.id || !a?.lib) return;
+      const prev = st.entities[a.id];
       st.entities[a.id] = {
         lib: a.lib, pos: a.pos ?? [0, 0, 0], yaw: a.yaw ?? 0,
         ...(a.scale != null ? { scale: a.scale } : {}),
@@ -191,9 +207,10 @@ export function foldEntry(st, e) {
         // known) — immutable from here: the guard matches against this, not
         // against whoever wears the name later (rights.ts placerOf/isPlacer)
         ...(placerOf(a) ? { placer: placerOf(a) } : {}),
-        actor: e.actor, ts: e.ts,
+        actor: e.actor, ts: e.ts, born: bornOf(prev, "spawn", a, e),
       };
       return;
+    }
     case "place": {
       const ent = st.entities[a?.id];
       if (!ent) return;
@@ -243,8 +260,24 @@ export function foldEntry(st, e) {
         // placer stays (the #190 known edge — an owner brightening someone's
         // guarded lamp used to become its placer through `actor`)
         ...((base?.placer ?? placerOf(a)) ? { placer: base?.placer ?? placerOf(a) } : {}),
-        actor: e.actor, ts: e.ts,
+        actor: e.actor, ts: e.ts, born: bornOf(prev, "light", a, e),
       };
+      return;
+    }
+    case "caption": {
+      // One line of what a screen said, once. The bag it folds into is
+      // SERVER-WRITTEN (vComp refuses type "captions"); the dedupe and the
+      // session order are checked at the door before append, and checked
+      // again here so a hand-edited log stays total (a refused-shape entry
+      // folds to nothing, like every unknown verb).
+      const n = normalizeCaptionArgs(a);
+      if (!n.ok) return;
+      const ent = st.entities[n.args.id];
+      if (!ent || captionRefusal(ent.comp?.captions, n.args)) return;
+      const bag = foldCaption(ent.comp?.captions, n.args);
+      ent.comp ??= {};
+      if (bag) ent.comp.captions = bag; else delete ent.comp.captions;
+      if (!Object.keys(ent.comp).length) delete ent.comp;
       return;
     }
     case "remove": {
@@ -322,13 +355,20 @@ export function foldEntry(st, e) {
       // its wearer MAY -- the collapse of those two questions is what made
       // the previous cut default-on for any compatible wing rig.
       const fly = a.fly != null ? Boolean(a.fly) : cur.fly;
+      // The CAPTION DEED: authority to caption exactly one entity, bound to
+      // its creation generation (vGrant resolves `born` at grant time).
+      // `caption: null` revokes; absent keeps whatever was held.
+      const caption = a.caption === null ? undefined
+        : (a.caption && typeof a.caption === "object" && a.caption.id
+          ? { id: String(a.caption.id), ...(a.caption.born != null ? { born: a.caption.born } : {}) }
+          : cur.caption);
       // Durable ink (Hesperus finding #1): when the grant was written while
       // its subject's durable sub was KNOWN, the grant carries it — and only
       // that sub can wear it. A display name is a nameplate, not a deed;
       // before this, anyone reusing an offline owner's nick inherited the
       // world. Grants without a sub (unauthenticated ids, pre-fix history)
       // keep their old name-keyed meaning.
-      st.roles[a.id] = { role, ...(gen ? { gen: true } : {}), ...(fly ? { fly: true } : {}),
+      st.roles[a.id] = { role, ...(gen ? { gen: true } : {}), ...(fly ? { fly: true } : {}), ...(caption ? { caption } : {}),
         ...(a.sub ? { sub: String(a.sub) } : cur.sub ? { sub: cur.sub } : {}) };
       return;
     }
@@ -363,6 +403,10 @@ export function foldEntry(st, e) {
       // stays whatever shape its author gave it. `data: null` removes.
       const ent = st.entities[a?.id];
       if (!ent || typeof a?.type !== "string") return;
+      // `captions` has one writer path — the `caption` verb — and the door
+      // refuses a comp of that type (vComp); the fold refuses it too, so a
+      // hand-edited log cannot overwrite what the sequencer folded.
+      if (a.type === "captions") return;
       ent.comp ??= {};
       if (a.data == null) delete ent.comp[a.type]; else ent.comp[a.type] = a.data;
       if (!Object.keys(ent.comp).length) delete ent.comp;

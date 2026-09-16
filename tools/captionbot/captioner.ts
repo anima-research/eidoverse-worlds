@@ -32,10 +32,21 @@ export interface CaptionerOptions {
   log?: (m: string) => void;
 }
 
+/** One VAD segment and everything it still owes. `emitted` and `sealed`
+ *  live HERE, not in a bot-lifetime set: a segment is dropped whole once its
+ *  finals have settled, so a two-hour film costs no memory per line. */
+type Segment = {
+  t0: number; t1?: number; speaker?: string;
+  pending: Map<string, { t: SttTranscript; timer: ReturnType<typeof setTimeout> | null }>;
+  emitted: Set<string>;
+  /** Settled: every transcript that arrives now is a late revision. */
+  sealed: boolean;
+};
+
 export class Captioner implements PcmConsumer {
   private vad: EnergyVad;
   private session: SttSession | null = null;
-  private segment: { t0: number; t1?: number; speaker?: string; pending: Map<string, { t: SttTranscript; timer: ReturnType<typeof setTimeout> | null }> } | null = null;
+  private segment: Segment | null = null;
   private emitFns: Array<(c: Caption) => void> = [];
   /** Revisions that arrived after emission — counted, never applied. */
   lateRevisions = 0;
@@ -69,7 +80,7 @@ export class Captioner implements PcmConsumer {
    *  — the first syllable is inside the segment, not before it). */
   private open(): void {
     const t0 = Math.max(0, this.lastFrameTime - (this.opts.onsetMs ?? 60) / 1000);
-    this.segment = { t0, pending: new Map() };
+    this.segment = { t0, pending: new Map(), emitted: new Set(), sealed: false };
     const s = this.opts.provider.openSession({ sampleRateHz: this.opts.rateHz, language: this.opts.language });
     const seg = this.segment;
     s.onTranscript((t) => this.onTranscript(seg, t));
@@ -90,12 +101,18 @@ export class Captioner implements PcmConsumer {
     // The boundary is ours (the surface's own silence detector fired): commit,
     // then let finals settle; close once everything pending has emitted.
     s?.commit();
+    // finals settle within settleMs of arriving; the session closes at 4×,
+    // and after that the segment is SEALED — anything later is a revision
+    // of a line already in the log, counted and dropped, and the segment's
+    // own bookkeeping goes with it
     setTimeout(() => s?.close(), this.settleMs * 4);
+    setTimeout(() => { seg.sealed = true; for (const e of seg.pending.values()) if (e.timer) clearTimeout(e.timer); seg.pending.clear(); seg.emitted.clear(); }, this.settleMs * 8);
   }
 
-  private onTranscript(seg: NonNullable<typeof this.segment>, t: SttTranscript): void {
+  private onTranscript(seg: Segment, t: SttTranscript): void {
+    if (seg.sealed) { this.lateRevisions++; return; }
     const cur = seg.pending.get(t.utteranceId);
-    if (cur === undefined && seg.t1 !== undefined && this.emittedIds.has(`${seg.t0}#${t.utteranceId}`)) { this.lateRevisions++; return; }
+    if (cur === undefined && seg.t1 !== undefined && seg.emitted.has(t.utteranceId)) { this.lateRevisions++; return; }
     if (cur?.timer) clearTimeout(cur.timer);
     const entry = { t, timer: null as ReturnType<typeof setTimeout> | null };
     seg.pending.set(t.utteranceId, entry);
@@ -104,7 +121,7 @@ export class Captioner implements PcmConsumer {
       const latest = seg.pending.get(t.utteranceId);
       if (!latest || !latest.t.final) return;
       seg.pending.delete(t.utteranceId);
-      this.emittedIds.add(`${seg.t0}#${t.utteranceId}`);
+      seg.emitted.add(t.utteranceId);
       const text = latest.t.text.trim();
       if (!text) return;
       const c: Caption = { t0: seg.t0, t1: seg.t1 ?? this.lastFrameTime, text };
@@ -113,5 +130,4 @@ export class Captioner implements PcmConsumer {
       for (const fn of this.emitFns) fn(c);
     }, this.settleMs);
   }
-  private emittedIds = new Set<string>();
 }

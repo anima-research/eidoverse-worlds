@@ -73,7 +73,7 @@ type Person = { id: string; avatar: string; pose: Pose | null; agent?: boolean; 
 
 /** Verbs whose fold shapes the entity/mount views (epoch/sky shape other
  *  state; say/use/force shape nothing). */
-const ENTITY_VERBS = new Set(["spawn", "light", "place", "remove", "comp", "motion", "mount", "dismount"]);
+const ENTITY_VERBS = new Set(["spawn", "light", "place", "remove", "comp", "motion", "mount", "dismount", "caption"]);   // caption folds into the screen's comp bag (shared/captions.js)
 
 /** Presence is a live, lossy plane: a just-joining browser can briefly send a
  * pose shell whose coordinates are null/non-finite before its controller has

@@ -7,18 +7,28 @@
 //   B. revision doctrine — a partial never becomes a caption; a revision
 //      before settle replaces; one after emission is counted and dropped;
 //   C. the stage cue labels the NEXT caption, not the ones already written;
-//   D. the window is bounded by lines and by bytes, oldest first, and its
-//      payload always passes the shared meaning module;
+//   D. a segment is SEALED once its finals settle: a revision after that is
+//      counted and dropped, never a second caption, and the segment's own
+//      bookkeeping goes with it (no per-line memory for a two-hour film);
 //   E. the framer never drops a trailing partial frame;
-//   F. an empty final is not a caption.
+//   F. an empty final is not a caption;
+//   G. source loss is owned: ffmpeg exiting flushes the tap, resets its
+//      clock, tells the caller (who rotates the session), and respawns with
+//      a backoff — close() ends it for good;
+//   H. the world client, offline: the queue is BOUNDED and overflow is loud
+//      and spooled; a restart re-queues what the spool never saw confirmed.
 //
 //   bun tools/captionbot-test.ts   (run from a tree where tools/captionbot has its deps)
 import type { SttProvider, SttSession, SttTranscript, SttSessionOptions } from '@animalabs/voice-kit';
 import { AudioTap } from './captionbot/tap.ts';
 import { framer } from './captionbot/sources.ts';
 import { Captioner, type Caption } from './captionbot/captioner.ts';
-import { CaptionWindow, COMP_DATA_MAX_BYTES } from './captionbot/window.ts';
-import { normalizeCaptions, CAPTIONS_MAX_LINES } from '../shared/captions.js';
+import { ffmpegSource } from './captionbot/sources.ts';
+import { WorldClient } from './captionbot/world.ts';
+import { EventEmitter } from 'node:events';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { ok ? pass++ : fail++; console.log(`${ok ? '  ok' : 'FAIL'}  ${name}${ok || !detail ? '' : ` — ${detail}`}`); };
@@ -118,26 +128,18 @@ console.log('— C. the stage cue —');
   check('…and the label is fixed at segment end, not at STT settle time', out[0].speaker === undefined);
 }
 
-console.log('— D. the window —');
+console.log('— D. sealing —');
 {
-  const w = new CaptionWindow({ title: 'a film' });
-  for (let i = 0; i < CAPTIONS_MAX_LINES + 5; i++) w.push({ t0: i, t1: i + 0.5, text: `line ${i}` });
-  const p = w.payload();
-  check(`bounded by lines: ${CAPTIONS_MAX_LINES} kept, oldest dropped`, (p.window as unknown[]).length === CAPTIONS_MAX_LINES && (p.window as { text: string }[])[0].text === 'line 5');
-  check('mediaTime rides the newest line', p.mediaTime === CAPTIONS_MAX_LINES + 4.5);
-  // The meaning module's caps and the server's comp cap must agree: the
-  // largest window the module allows has to fit under 8 KB with headroom.
-  const big = new CaptionWindow({ title: 'x'.repeat(120) });
-  for (let i = 0; i < CAPTIONS_MAX_LINES; i++) big.push({ t0: 100000 + i, t1: 100000 + i + 1, text: 'w'.repeat(240), speaker: 's'.repeat(48) });
-  const bp = big.payload('t'.repeat(48));
-  check(`the largest window the caps allow fits under the ${COMP_DATA_MAX_BYTES} B comp cap with headroom`, JSON.stringify(bp).length <= COMP_DATA_MAX_BYTES - 512 && (bp.window as unknown[]).length === CAPTIONS_MAX_LINES, `${JSON.stringify(bp).length} bytes`);
-  // The byte bound itself, reached through a smaller budget: oldest lines go first.
-  const tight = new CaptionWindow({ maxBytes: 1500 });
-  for (let i = 0; i < CAPTIONS_MAX_LINES; i++) tight.push({ t0: i, t1: i + 1, text: 'w'.repeat(200) });
-  const tp = tight.payload();
-  check('bounded by bytes: trimmed from the oldest end until it fits', JSON.stringify(tp).length <= 1500 && (tp.window as unknown[]).length < CAPTIONS_MAX_LINES && (tp.window as { t0: number }[]).at(-1)!.t0 === CAPTIONS_MAX_LINES - 1, `${JSON.stringify(tp).length} bytes, ${(tp.window as unknown[]).length} lines`);
-  check('every payload passes the shared meaning module', normalizeCaptions(p).ok && normalizeCaptions(bp).ok && normalizeCaptions(tp).ok && normalizeCaptions(bp).notes.length === 0, JSON.stringify(normalizeCaptions(bp).notes));
-  check('speaker is carried at bag level for look()', bp.speaker === 't'.repeat(48));
+  // one burst; the fake emits a final at commit, then (after the segment has
+  // sealed) a revision of the same utterance and a brand-new final
+  let late: ((t: SttTranscript) => void) | null = null;
+  const { out, cap } = await run((n, emit) => { emit({ utteranceId: `u${n}`, text: 'first words', final: true }); late = emit; }, [tone(400), silence(600)], { settleMs: 30 });
+  await sleep(30 * 10);   // past 8× settle: sealed
+  late!({ utteranceId: 'u1', text: 'first words, revised', final: true });
+  late!({ utteranceId: 'u1-b', text: 'a brand new final', final: true });
+  await sleep(60);
+  check('one caption from the burst; a revision AND a new final after sealing are counted, never emitted', out.length === 1 && out[0].text === 'first words' && cap.lateRevisions === 2, `${out.length} captions, ${cap.lateRevisions} late`);
+  check('the sealed segment holds nothing (its pending map and emitted set are cleared)', (cap as any).segment === null);
 }
 
 console.log('— E. the framer —');
@@ -155,6 +157,48 @@ console.log('— F. empties —');
 {
   const { out } = await run((n, emit) => emit({ utteranceId: `u${n}`, text: '   ', final: true }), [tone(400), silence(600)]);
   check('an empty final is not a caption', out.length === 0, JSON.stringify(out));
+}
+
+console.log('— G. source loss is owned —');
+{
+  // a fake ffmpeg: emits some PCM, then exits on its own (code 1) — twice — then
+  // stays up until closed
+  const children: FakeChild[] = [];
+  class FakeChild extends EventEmitter { stdout = new EventEmitter(); stderr = new EventEmitter(); killed = false; kill() { this.killed = true; this.emit('close', 0); } }
+  const spawnFn = (() => { const c = new FakeChild(); children.push(c); setTimeout(() => { c.stdout.emit('data', Buffer.alloc(640 * 3)); if (children.length <= 2) c.emit('close', 1); }, 5); return c; }) as any;
+  const tap = new AudioTap(RATE);
+  let ends = 0, reattaches = 0;
+  tap.attach({ onPcm() {}, onEnd() { ends++; } });
+  const logs: string[] = [];
+  const src = ffmpegSource('rtsp://nowhere/screen', tap, (m) => logs.push(m), { spawnFn, onReattach: () => reattaches++, minBackoffMs: 20, maxBackoffMs: 40 });
+  await sleep(200);
+  check('two unasked exits → two reattaches, each flushing the tap and resetting its clock', reattaches === 2 && ends === 2 && children.length === 3 && tap.mediaTime > 0 && tap.mediaTime < 0.1, `reattaches=${reattaches} ends=${ends} spawns=${children.length} mediaTime=${tap.mediaTime}`);
+  check('…said out loud with the backoff', logs.filter((l) => /source lost; reattaching in/.test(l)).length === 2, JSON.stringify(logs));
+  const before = children.length;
+  src.close();
+  await sleep(80);
+  check('close() ends it for good: the child is killed and nothing respawns', children[before - 1].killed && children.length === before && src.attempts === 3, `spawns=${children.length} attempts=${src.attempts}`);
+}
+
+console.log('— H. the world client, offline —');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'captionbot-spool-'));
+  const spool = join(dir, 'spool.jsonl');
+  const logs: string[] = [];
+  const w = new WorldClient({ url: 'ws://127.0.0.1:1/ws', token: 't', world: 'w', actor: 'cap', screenId: 'cinema', spool, maxPending: 3, log: (m) => logs.push(m), agent: false });
+  for (let i = 1; i <= 5; i++) w.caption({ t0: i, t1: i + 0.5, text: `line ${i}` });
+  check('the queue is bounded: 5 queued into a bound of 3 keeps the newest 3', w.pendingCount === 3 && w.overflow === 2, `pending=${w.pendingCount} overflow=${w.overflow}`);
+  check('…out loud', logs.some((l) => /overflow: dropped the 1 oldest/.test(l)) && logs.filter((l) => /overflow/.test(l)).length === 2, JSON.stringify(logs));
+  const rows = readFileSync(spool, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  check('the spool holds every line tried and each overflow by key', rows.filter((r) => r.state === 'queued').length === 5 && rows.filter((r) => r.state === 'overflow').map((r) => r.key).join() === `${w.session}#1,${w.session}#2`, JSON.stringify(rows.map((r) => [r.state, r.key])));
+  check('n is monotonic within the session', rows.filter((r) => r.state === 'queued').map((r) => r.args.n).join() === '1,2,3,4,5');
+  // a restart: a new client over the same spool re-queues the three unconfirmed
+  // lines ahead of its own (later) session
+  writeFileSync(spool, readFileSync(spool, 'utf8') + JSON.stringify({ state: 'acked', key: `${w.session}#3`, at: 1 }) + '\n');
+  const w2 = new WorldClient({ url: 'ws://127.0.0.1:1/ws', token: 't', world: 'w', actor: 'cap', screenId: 'cinema', spool, log: (m) => logs.push(m), agent: false });
+  check('a restart re-queues exactly the unconfirmed lines (4 and 5; 3 was confirmed, 1–2 overflowed)', w2.pendingCount === 2 && (w2 as any).pending.map((p: any) => p.args.n).join() === '4,5', JSON.stringify((w2 as any).pending.map((p: any) => p.key)));
+  check('…under a session that follows the old one, so they drain first', w2.session > w.session && (w2 as any).pending[0].args.session === w.session);
+  check('rotateSession refuses to go backwards', (() => { try { w2.rotateSession(w.session); return false; } catch { return true; } })());
 }
 
 console.log(`\n${pass} ok, ${fail} failed`);
