@@ -71,7 +71,7 @@ import { perf } from './lib/perf.js';
 import { renderWorld, drawStats, setDrawBatching } from './lib/render.js';
 import { paintHud } from './lib/hud.js';
 import { updateMaterials, materialsDebug } from './lib/materials.js';
-import { updateRig, rigDebug } from './lib/lightrig.js';
+import { updateRig, rigDebug, setLampShadow, lampShadowState } from './lib/lightrig.js';
 import { startPrefetch } from './lib/prefetch.js';
 import {
   getMe, setMe, getMyAvatarPath, getMyAvatarName, resolveMyAvatarPath,
@@ -816,6 +816,9 @@ const EW = globalThis.EW = {
   reconcileModels,   // force a full realizer pass (idempotent — §11.4)
   materials: materialsDebug,   // factory counters + live weather uniforms (§12.3)
   lightrig: rigDebug,          // slot pool + request table (§12.4)
+  lampShadow: lampShadowState,   // the chest lamp's shadow map + derived bias
+  setLampShadow,                 // ({map, texels, dist}) — live, bias re-derived
+
   governor: governorDebug,     // the two-way lever ladder (§12.6)
   residency: residencyDebug,   // real/stand-in/loading counts + sweep stats (§13.3)
   gpu: () => ({ ...renderer.info.memory, ...protoStats() }),   // bytes + proto/byte tiers

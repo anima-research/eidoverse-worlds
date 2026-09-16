@@ -350,7 +350,12 @@ function runPromoteTail(id, obj) {
     if (colliders.get(id)?.interior) bus.emit('entity', { id, kind: 'collider' });
   }
   // emissive surfaces become lamp REQUESTS — a request costs nothing until
-  // the rig assigns it a slot, and that is uniform writes
+  // the rig assigns it a slot, and that is uniform writes.
+  //
+  // NO SHADOWS, by the seam's default and on purpose: a placed prop glows, it
+  // does not claim the one casting slot. That slot belongs to a body lit from
+  // inside (avatar.js passes shadows:true), and until this default existed a
+  // closer glowing prop could take it off the avatar standing next to it.
   attachLamps(obj, `entity:${id}`);
   // mounts that were waiting on this id — as child or carrier
   for (const mid of mountsTouching(state.st.entities, id, foldChildren)) execMount(mid);

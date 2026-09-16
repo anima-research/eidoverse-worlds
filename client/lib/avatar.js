@@ -11,6 +11,7 @@ import { REACH_CHAINS } from '../../shared/joints.js';
 // lights -- lightrig owns the topology because adding a PointLight at runtime
 // recompiles every material in the scene.
 import { attachLamps, releaseOwner, updateRequest, glowScale } from './lightrig.js';
+import { setBodyShadows } from './materials.js';
 // The period, from the one place that defines it. Janus set the idle flap to
 // 1/3.4 Hz -- "Mythos' signature period" -- and that 3.4 is spec T8's BREATH,
 // already a named constant. Importing it beats pasting 0.29411764705: the two
@@ -445,8 +446,19 @@ const DEG = Math.PI / 180;
 // these four want to be debug-panel dials, like WING_IDLE's, and are named
 // here so that change is a wiring job rather than a hunt.
 const LAMP_FLOOR = 0.03;
-const LAMP_PEAK = 0.45;    // dimmer again: it was glaring at anything but noon
+const LAMP_PEAK = 0.62;    // brighter WITH shadows on -- see below
 const LAMP_SHAPE = 1.6;
+// PEAK went 0.45 -> 0.62 when the lamp started casting shadows, and the reason
+// is worth keeping: 0.45 was tuned against a body with NO dark side, where the
+// only thing the glow competed with was the sky. Once the lamp throws its own
+// shadows the lit surfaces have shadowed neighbours to be read against, and the
+// same number looks weaker -- the contrast that makes a shadow legible also
+// makes the light that cast it look dimmer. Janus, seeing it with shadows on:
+// "it looks great with shadows on, but I think now the light should be a bit
+// brighter."
+//
+// Still under 1.0. The ceiling is what keeps this reading as breath rather
+// than as a pulse, and the day curve below still dims it toward noon.
 // ...and the sky's share. The surface dims toward noon on lightrig's own
 // (1-dayness)^2 curve, so the lamp is BRIGHT AT NIGHT and subtle at midday --
 // which is what a lamp does. The floor keeps it visible in full sun rather
@@ -478,8 +490,28 @@ export class Avatar {
     // measured as requests 1 -> 0. A monotonic instance id cannot collide.
     this._lampOwner = `body:${id}:${++Avatar._seq}`;
     this._lamps = [];
-    try { this._lamps = attachLamps(vrm.scene, this._lampOwner) ?? []; }
+    // `shadows: true` is the avatar's claim on the one casting slot. The
+    // default is false at the seam, so a placed glowing prop cannot take it
+    // from a body -- see the note in attachLamps.
+    try { this._lamps = attachLamps(vrm.scene, this._lampOwner, { shadows: true }) ?? []; }
     catch { /* a body with no glow simply has none */ }
+    // A LAMPED BODY CASTS AND RECEIVES; every other body keeps its blob.
+    //
+    // The lamp is the whole reason bodies got real shadows -- "a lamp inside a
+    // ribcage that does not throw the ribcage is a lamp pretending" -- so the
+    // lamp is also the gate. Doing it for every avatar in the world is a global
+    // rendering default on shared client code whose cost nobody has measured:
+    // bodies never reach warmqueue's warmDepth, so their depth pipelines
+    // compile in-frame on the first shadow render, and they bypass the
+    // distance-ranked caster budget that exists to stop exactly that.
+    //
+    // Janus, deciding the scope: "set the change for now to only shadowed body
+    // by default if you have the lamp like mythos... we can test the
+    // performance of having more on the shared server later."
+    if (this._lamps.length) {
+      try { setBodyShadows(vrm.scene, true); }
+      catch { /* shadows are a nicety; a body that cannot take them still works */ }
+    }
 
     this.mixer = new THREE.AnimationMixer(vrm.scene);
     this.actions = {};
