@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { PORT, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan } from "./moderation.ts";
-import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal } from "./rights.ts";
+import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal, guardRefusal } from "./rights.ts";
 import { resolveLibFile } from "./lint.ts";
 // The authored plane's dispatch — table + shell (§15, 7b). It pulls in lint's
 // linters, reactions, and the behavior cap itself; server.ts keeps only what
@@ -109,17 +109,24 @@ function retireRelayLeg(w: World, id: string) {
 // Behavior sandbox wiring: a script's emit is gated by its AUTHOR's live
 // rights (revoke the grant, the behavior loses its teeth) through the same
 // table as everyone else. The store path is where `?as=script` uploads land.
-wireBehaviorStore(join(ROOT, "assets", "opt"));
-wireBehaviorGate((w, author, verb, args) => {
+// OPT_DIR, not ROOT/assets/opt: the two coincide by default, but a sequencer
+// launched with OPT_DIR elsewhere (the probe harness, a scratch box, a
+// production overlay) uploaded scripts into OPT_DIR/store/scripts and then
+// looked for them here — "script file missing" on every bind. (Same line as
+// #192; whichever lands second merges clean.)
+wireBehaviorStore(OPT_DIR);
+wireBehaviorGate((w, author, verb, args, authorSub) => {
   const needs = VERB_NEEDS[verb];
   if (!needs) return `verb not allowed: ${verb}`;
-  const rights = rightsOf((w as unknown as World).state, author);
+  const rights = rightsOf((w as unknown as World).state, author, authorSub);
   if (ROLE_RANK[rights.role] < needs.rank || (needs.gen && !rights.gen)) {
     return `"${verb}" needs more than ${author}'s "${rights.role}" role here`;
   }
-  // a locked thing refuses scripts by the same rule as hands (a behavior
-  // nudging a nailed-down bench is still an accident vector)
-  return lockRefusal((w as unknown as World).state, verb, args);
+  // a guarded thing refuses scripts by their AUTHOR's standing, and a locked
+  // thing refuses them by the same rule as hands (a behavior nudging a
+  // nailed-down bench is still an accident vector)
+  const st = (w as unknown as World).state;
+  return guardRefusal(st, { id: author, ...(authorSub ? { sub: authorSub } : {}), role: rights.role }, verb, args) ?? lockRefusal(st, verb, args);
 });
 
 /** A pose as it should be handed to SOMEONE ELSE — the settled result rather
@@ -615,6 +622,10 @@ function buildSnapshot(w: World, c: Client) {
       type: "snapshot",
       world: w.name,
       you: c.id,
+      // your durable subject, when the door vouched for one — the principal
+      // guarded things are matched against (rights.ts isPlacer), so the browser
+      // can grey out what it may not author without re-deriving it from names
+      ...(c.sub ? { yourSub: c.sub } : {}),
       gen: c.gen,   // your surfaceSession — echo it in attestations
       // your OWN live aux legs — people[] excludes self, and a page that
       // reconnects while its voice leg lives must still hold-then-fallback

@@ -47,6 +47,7 @@ import { foldSkyEntry } from './forecast.js';
  * @typedef {object} WorldState
  * @property {Record<string, {
  *   kind?: "light", pos: number[], actor: string, ts: number,
+ *   placer?: { id: string, sub?: string },   // the creation's principal (server-stamped; immutable; guard matches on it)
  *   lib?: string, yaw?: number, scale?: number,
  *   collide?: string,
  *   color?: number, intensity?: number, range?: number,
@@ -110,6 +111,15 @@ import { foldSkyEntry } from './forecast.js';
 /** The rights ladder (PROTOCOL.md §7): visitor < builder < owner.
  *  @type {Record<string, number>} */
 export const ROLE_RANK = { visitor: 0, builder: 1, owner: 2 };
+
+/** The placer principal a creation carries: {id, sub?}, server-stamped
+ *  (verbs.ts / behaviors.ts). Folded as given, never derived here — the fold
+ *  is blind to identity policy; it only keeps what the entry said. */
+function placerOf(a) {
+  const p = a?.placer;
+  if (!p || typeof p !== "object" || typeof p.id !== "string" || !p.id) return undefined;
+  return { id: p.id, ...(typeof p.sub === "string" && p.sub ? { sub: p.sub } : {}) };
+}
 
 /** The recent-chat window a fold maintains for arrivals. Implementation
  *  policy, not conformance-scored (PROTOCOL.md §3 `say`). */
@@ -177,6 +187,10 @@ export function foldEntry(st, e) {
         // is precisely the drift house rule 1 forbids. The LOG always kept it,
         // so no world lost anything; it just never reached the snapshot.
         ...(a.collide != null ? { collide: a.collide } : {}),
+        // who placed it, as a PRINCIPAL (display id + durable subject when
+        // known) — immutable from here: the guard matches against this, not
+        // against whoever wears the name later (rights.ts placerOf/isPlacer)
+        ...(placerOf(a) ? { placer: placerOf(a) } : {}),
         actor: e.actor, ts: e.ts,
       };
       return;
@@ -225,6 +239,10 @@ export function foldEntry(st, e) {
         ...(base?.parent ? { parent: base.parent } : {}),
         ...(base?.yaw != null ? { yaw: base.yaw } : {}),
         ...(base?.scale != null ? { scale: base.scale } : {}),
+        // a re-light is a partial update, not a re-authoring: the FIRST
+        // placer stays (the #190 known edge — an owner brightening someone's
+        // guarded lamp used to become its placer through `actor`)
+        ...((base?.placer ?? placerOf(a)) ? { placer: base?.placer ?? placerOf(a) } : {}),
         actor: e.actor, ts: e.ts,
       };
       return;
@@ -415,6 +433,7 @@ export function foldEntry(st, e) {
         ...(a.caps ? { caps: a.caps } : {}),
         ...(a.knobs ? { knobs: a.knobs } : {}),
         author: String(a.by ?? e.actor),   // by = the human/agent behind a bhv:-authored rebind
+        ...(typeof a.bySub === "string" && a.bySub ? { authorSub: a.bySub } : {}),   // the author's durable subject, server-stamped — frozen onto the script's creations
         ts: e.ts,
         // a rebind keeps nothing: fresh code starts with fresh state unless
         // the same id folds a later bstate

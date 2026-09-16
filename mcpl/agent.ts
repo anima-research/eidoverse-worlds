@@ -1170,6 +1170,7 @@ export class WorldAgent {
         pos: (e as any).pos, yaw: (e as any).yaw ?? 0,
         ...((e as any).scale != null ? { scale: (e as any).scale } : {}),
         actor: (e as any).actor,
+        ...((e as any).placer ? { placer: (e as any).placer } : {}),
         ...((e as any).comp ? { comp: (e as any).comp } : {}),
       });
     }
@@ -3108,12 +3109,23 @@ export class WorldAgent {
       // locked = nailed down: the server refuses every move/replace/remove on
       // it. Saying so here saves an agent a refused verb round-trip.
       if (c.lock) aff.push(`🔒 locked (immovable until comp {id, type: "lock", data: null})`);
+      // guarded = its placer's to author: the server refuses comps, motion,
+      // behaviors, moves and removal from anyone but them, the world's
+      // owner, or an operator. Using it (use, sitting on it) stays open.
+      if (c.guard) {
+        // the principal stamped at creation (rights.ts placerOf); the legacy
+        // legs cover entities that predate the stamp
+        const actor = String(e.actor ?? "");
+        const placer = (e as any).placer?.id
+          ?? (actor.startsWith("bhv:") ? ((this.st as any).behaviors?.[actor.slice(4)]?.author ?? actor) : actor);
+        aff.push(`🛡 guarded by ${placer || "its placer"} (only they, the world's owner, or an operator may change, move, remove it or load cargo onto it — use and sitting stay open)`);
+      }
       // A griddled building says what it IS — rooms, walls, doors — because
       // unlike a conjured mesh it knows. This is the whole difference the
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
-      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "lock", "structure"].includes(k));
+      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "lock", "guard", "structure"].includes(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);
       if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);

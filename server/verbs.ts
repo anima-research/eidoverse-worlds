@@ -14,7 +14,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { VERB_RATE, OPT_DIR } from "./config.ts";
-import { isAdminId, rightsOf, worldHasOwner, VERB_NEEDS, lockRefusal } from "./rights.ts";
+import { isAdminId, rightsOf, worldHasOwner, VERB_NEEDS, lockRefusal, guardRefusal } from "./rights.ts";
 import { lintMotion, lintParticles } from "./lint.ts";
 import { reactToUse } from "./reactions.ts";
 import { behaviorLimits } from "./behaviors.ts";
@@ -509,6 +509,15 @@ export function runVerb(ctx: VerbCtx, verb: string, rawArgs: unknown): void {
     c.ws.send(JSON.stringify({ type: "error", error: why }));
     return;
   }
+  // the guard gate sits AFTER rank (same teaching order) and BEFORE the
+  // lock: a stranger's refusal should name who may author the thing, not
+  // tell them to unlock something they may not touch
+  const guardedWhy = guardRefusal(w.state, { id: c.id, sub: c.sub, role: rights.role }, verb, rawArgs as Record<string, unknown> | undefined);
+  if (guardedWhy) {
+    w.debug("denied", { who: c.id, verb: String(verb), why: "guarded" });
+    c.ws.send(JSON.stringify({ type: "error", error: guardedWhy }));
+    return;
+  }
   // the lock gate sits AFTER rank (a visitor's refusal should teach
   // rank, not locks) and BEFORE shape-checks/append: a locked thing
   // refuses everyone identically, locker included
@@ -526,6 +535,18 @@ export function runVerb(ctx: VerbCtx, verb: string, rawArgs: unknown): void {
       return;
     }
     args = r.args;
+  }
+  // The placer PRINCIPAL is the server's to write, never the client's: a
+  // spawn or light carries the connection's display id and its durable
+  // subject (when the door vouched for one), stamped here after validation
+  // and stripped from whatever the client sent. A behavior bind records its
+  // author's subject the same way, so a script's creations can freeze it.
+  if (isVerbStr && (verb === "spawn" || verb === "light")) {
+    const { placer: _clientPlacer, ...rest } = args;
+    args = { ...rest, placer: { id: c.id, ...(c.sub ? { sub: c.sub } : {}) } };
+  } else if (isVerbStr && verb === "behavior") {
+    const { bySub: _clientSub, ...rest } = args;
+    args = c.sub && !rest.remove ? { ...rest, bySub: c.sub } : rest;
   }
   // §24 entry bus: commit = append + publish (client fanout with the
   // authoritative echo, then behaviors — see events.ts's ordering ruling).
