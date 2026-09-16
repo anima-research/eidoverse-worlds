@@ -28,9 +28,11 @@
 // transcript the world does not already hold.
 //
 // WHO IS THE CAPTIONER: the LIVE LEG. The sequencer issues every accepted
-// join a generation (`c.gen`, server.ts: a same-identity join is a TAKEOVER
-// that retires the older leg), and vCaption stamps that generation onto
-// every caption entry — a client cannot supply it. The bag remembers the
+// join a generation (World.legGen: the log seq the world was opened at,
+// times a million, plus the admission count — so it survives a sequencer
+// restart and never goes backwards; a same-identity join is a TAKEOVER that
+// retires the older leg), and vCaption stamps that generation onto every
+// caption entry — a client cannot supply it. The bag remembers the
 // generation that wrote it; a caption from a lower generation is refused as
 // a superseded leg, a higher one takes over. So supersession is the door's
 // own fact, never a clock the bot claims: a restart under clock rollback

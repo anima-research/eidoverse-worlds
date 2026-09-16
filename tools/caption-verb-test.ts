@@ -29,6 +29,11 @@
 //      rolled-back clock still takes over; a second deed-holder that joins
 //      later supersedes the first, whose next line is refused and whose
 //      rejoin (a newer leg) wins it back; the owner recovers with `end`.
+//   7. A SEQUENCER RESTART — the bag's generation is in the log; the
+//      sequencer stops (SIGTERM folds + flushes) and reopens the same world;
+//      the reloaded fold carries the bag and the rights; the first captioner
+//      of the new opening is not stranded (its generation is bound to the
+//      opening's log seq, higher than anything a previous opening issued).
 import { generateKeyPairSync, createPublicKey, sign as cryptoSign } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -85,20 +90,24 @@ const cap = (session: string, n: number, t0: number, text: string, extra: Record
 
 const worldsDir = mkdtempSync(join(tmpdir(), "ew-caption-"));
 const optDir = mkdtempSync(join(tmpdir(), "ew-caption-opt-"));
-const proc = Bun.spawn([process.execPath, "run", join(import.meta.dir, "..", "server", "server.ts")], {
-  env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, OPT_DIR: optDir, JOIN_TOKEN: DOOR, SKIP_OPT_SWEEP: "1", VERB_RATE: "60", HN_ISSUER_KEY: ISSUER_ID, HN_ISS: ISS, HN_REQUIRE_LOGIN: "0" },
-  stdout: "ignore", stderr: "inherit",
-});
-for (let i = 0; i < 80; i++) { try { await fetch(`${HTTP}/authcfg`); break; } catch { await sleep(150); } }
+function boot() {
+  return Bun.spawn([process.execPath, "run", join(import.meta.dir, "..", "server", "server.ts")], {
+    env: { ...process.env, PORT: String(PORT), WORLDS_DIR: worldsDir, OPT_DIR: optDir, JOIN_TOKEN: DOOR, SKIP_OPT_SWEEP: "1", VERB_RATE: "60", HN_ISSUER_KEY: ISSUER_ID, HN_ISS: ISS, HN_REQUIRE_LOGIN: "0" },
+    stdout: "ignore", stderr: "inherit",
+  });
+}
+async function up() { for (let i = 0; i < 80; i++) { try { await fetch(`${HTTP}/authcfg`); return; } catch { await sleep(150); } } throw new Error("server never came up"); }
+let proc = boot();
+await up();
 
 const WORLD = `caption-${Math.random().toString(36).slice(2, 8)}`;
 console.log(`\ncaption verb — world "${WORLD}"\n`);
 try {
   const SUB_RA = "human:discord:9001", SUB_CAP = "human:discord:9002", SUB_BOB = "human:discord:9003", SUB_ZED = "human:discord:9004";
-  const ra = await open({ id: "ra", world: WORLD }, await cookieFor(SUB_RA, "Ra"));        // first joiner owns
+  let ra = await open({ id: "ra", world: WORLD }, await cookieFor(SUB_RA, "Ra"));        // first joiner owns
   await ra.settle();
   const bob = await open({ id: "bob", world: WORLD }, await cookieFor(SUB_BOB, "Bob"));   // builder by the owned-world default
-  const eye = await open({ id: "eye", world: WORLD, spectate: true });   // counts every caption entry the world broadcasts
+  let eye = await open({ id: "eye", world: WORLD, spectate: true });   // counts every caption entry the world broadcasts
   ra.verb("spawn", { id: "cinema", lib: "deco/screen.glb", pos: [0, 0, 0], yaw: 0 });
   ra.verb("spawn", { id: "kiosk", lib: "deco/kiosk.glb", pos: [3, 0, 0], yaw: 0 });
   await ra.settle();
@@ -239,6 +248,19 @@ try {
   await impostor.settle();
   check("…and is refused", impostor.errors.length === before + 1 && /caption deed/.test(last(impostor)), last(impostor));
   impostor.close();
+  // a regrant under the NEW name continues the subject's record and retires the old one
+  ra.verb("grant", { id: RENAMED, caption: "kiosk" });
+  await ra.settle();
+  const eyeR = await open({ id: "eye3", world: WORLD, spectate: true });
+  check("a regrant under the new name: one record for the subject, under the new name, with the new deed", eyeR.snap.state.roles?.[CAP] === undefined && eyeR.snap.state.roles?.[RENAMED]?.caption?.id === "kiosk" && eyeR.snap.state.roles?.[RENAMED]?.sub === SUB_CAP && Object.values(eyeR.snap.state.roles ?? {}).filter((r: any) => r.sub === SUB_CAP).length === 1, JSON.stringify(eyeR.snap.state.roles));
+  eyeR.close();
+  before = renamed.errors.length;
+  renamed.verb("caption", cap(S2, 5, 13, "cinema, under the old deed"));
+  renamed.verb("caption", { ...cap(S2, 1, 0, "kiosk, under the new deed"), id: "kiosk" });
+  await renamed.settle();
+  check("…the obsolete deed does not win: cinema refused, kiosk accepted", renamed.errors.length === before + 1 && /deed is for "kiosk", not "cinema"/.test(last(renamed)) && (await folded(WORLD, "kiosk"))?.comp?.captions?.window?.at(-1)?.text === "kiosk, under the new deed", renamed.errors.slice(before).join("; "));
+  ra.verb("grant", { id: RENAMED, caption: "cinema" });
+  await ra.settle();
 
   console.log("— 6. the live leg —");
   c = await folded(WORLD, "cinema");
@@ -296,6 +318,47 @@ try {
   ra.verb("caption", { id: "cinema", session: S2, end: true });
   await ra.settle();
   bob2.close(); rejoin2.close();
+
+  console.log("— 7. a sequencer restart —");
+  // the bag holds a generation from THIS opening; the sequencer stops
+  // (SIGTERM folds and flushes), reopens the same world dir, and the first
+  // captioner of the new opening must not be stranded behind it
+  ra.verb("grant", { id: RENAMED, caption: "cinema" });
+  await ra.settle();
+  const rejoin3 = await open({ id: "captioner-two", world: WORLD }, await cookieFor(SUB_CAP, "Captioner Two"));
+  await rejoin3.settle();
+  rejoin3.verb("caption", cap(S1, 1, 0, "before the restart"));
+  await rejoin3.settle();
+  c = await folded(WORLD, "cinema");
+  const GEN_PRE = c.comp.captions.gen as number;
+  check("before: the bag carries this opening's generation", Number.isInteger(GEN_PRE) && GEN_PRE > 0, String(GEN_PRE));
+  proc.kill("SIGTERM");
+  await proc.exited;
+  check("the sequencer stopped", rejoin3.closed === true || ra.closed === true, `closed rejoin3=${rejoin3.closed} ra=${ra.closed}`);
+  proc = boot();
+  await up();
+  const ra2 = await open({ id: "ra", world: WORLD }, await cookieFor(SUB_RA, "Ra"));
+  const eye2 = await open({ id: "eye", world: WORLD, spectate: true });
+  await ra2.settle();
+  check("after: the world reloaded with the bag and the rights intact", eye2.snap.state.entities?.cinema?.comp?.captions?.gen === GEN_PRE && eye2.snap.state.roles?.[RENAMED]?.caption?.id === "cinema", JSON.stringify({ bag: eye2.snap.state.entities?.cinema?.comp?.captions, deed: eye2.snap.state.roles?.[RENAMED]?.caption }));
+  const post = await open({ id: "captioner-two", world: WORLD }, await cookieFor(SUB_CAP, "Captioner Two"));
+  await post.settle();
+  check("the renamed captioner's deed survived the restart (rightsIn through the reloaded fold)", post.snap.yourRights?.caption?.id === "cinema", JSON.stringify(post.snap.yourRights));
+  before = post.errors.length;
+  post.verb("caption", cap(S1, 2, 1, "after the restart, continuing the session"));
+  await post.settle();
+  c = await folded(WORLD, "cinema");
+  check("the first captioner of the new opening is NOT stranded: its generation is higher than the bag's, the session continues", post.errors.length === before && c?.comp?.captions?.gen > GEN_PRE && c?.comp?.captions?.n === 2 && c?.comp?.captions?.window?.length === 2, post.errors.slice(before).join("; ") + " " + JSON.stringify({ pre: GEN_PRE, now: c?.comp?.captions?.gen, n: c?.comp?.captions?.n }));
+  check("…and the new generation is not a small process counter (it is bound to the opening's log seq)", c.comp.captions.gen >= 1_000_000, String(c.comp.captions.gen));
+  ra2.verb("caption", { id: "cinema", session: S1, end: true });
+  await ra2.settle();
+  ra2.verb("grant", { id: RENAMED, caption: null });
+  await ra2.settle();
+  post.close(); ra2.close();
+  // the receipts section runs against the reopened sequencer
+  ra = await open({ id: "ra", world: WORLD }, await cookieFor(SUB_RA, "Ra"));
+  eye = eye2;
+  await ra.settle();
 
   console.log("— 4. receipts (WorldClient) —");
   ra.verb("remove", { id: "cinema" });

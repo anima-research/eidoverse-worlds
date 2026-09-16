@@ -347,9 +347,17 @@ export function foldEntry(st, e) {
       // everything else. (Snapshots from before this verb lack the map.)
       if (!a?.id) return;
       st.roles ??= {};
+      // A SUBJECT HAS ONE RECORD. A grant that knows its subject's sub is
+      // the continuation of whatever that subject already held — under the
+      // old display name if they renamed — and the old name-keyed record is
+      // retired when the new one is written, so a lookup by sub never meets
+      // two answers (Mica, #187 round 3: grant under A, rename, regrant
+      // under B left both, and the obsolete A could win).
+      const priorKey = a.sub ? Object.keys(st.roles).find((k) => k !== a.id && st.roles[k]?.sub === a.sub) : undefined;
       // default matches the owned-world default (builder), so `/grant bob
       // +gen` on an unlisted id doesn't silently demote him to visitor
-      const cur = st.roles[a.id] ?? { role: "builder" };
+      const cur = st.roles[a.id] ?? (priorKey ? st.roles[priorKey] : undefined) ?? { role: "builder" };
+      if (priorKey) delete st.roles[priorKey];
       const role = ROLE_RANK[a.role] != null ? a.role : cur.role;
       const gen = a.gen != null ? Boolean(a.gen) : cur.gen;
       // FLY is orthogonal like gen, and DEFAULT-OFF harder than gen is: an

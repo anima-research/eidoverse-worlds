@@ -228,8 +228,10 @@ later wears the name; `caption: null` revokes. The guard does not gate
 `caption` (the deed is the authority); the owner and operators pass.
 
 *Who is captioning: the live leg.* Every accepted join carries a server
-generation (a same-identity join is a takeover that retires the older leg),
-and the sequencer stamps it onto every caption — a client cannot supply it.
+generation — the log seq the sequencer opened the world at, times a million,
+plus the admission count, so it survives a restart and never goes backwards
+(a same-identity join is a takeover that retires the older leg) — and the
+sequencer stamps it onto every caption; a client cannot supply it.
 The bag follows the live leg: a caption from a lower generation is refused
 as a superseded captioner, a higher one takes over. So a restart takes over
 whatever its clock says, a stale predecessor cannot win by claiming a later

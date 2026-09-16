@@ -39,6 +39,8 @@ export type VerbClient = {
   verbWin: number; verbCount: number;
   /** This leg's generation, issued on acceptance (server.ts: a same-identity join is a takeover). */
   gen?: number;
+  /** The world-scoped generation (World.legGen): what caption entries carry — survives a sequencer restart. */
+  legGen?: number;
 };
 
 export type VerbWorld = {
@@ -244,7 +246,8 @@ function vCaption(ctx: VerbCtx, args: Record<string, unknown>) {
   const bag = ent.comp?.captions as { gen?: number; session?: string } | undefined;
   const rights = rightsOf(w.state, c.id, c.sub);
   const override = ROLE_RANK[rights.role] >= ROLE_RANK.owner;
-  const stamped = { ...n.args, gen: override && bag ? Math.max(c.gen ?? 0, Number(bag.gen) || 0) : (c.gen ?? 0) } as Record<string, unknown>;
+  const legGen = c.legGen ?? c.gen ?? 0;
+  const stamped = { ...n.args, gen: override && bag ? Math.max(legGen, Number(bag.gen) || 0) : legGen } as Record<string, unknown>;
   if (override && bag && n.args.end && bag.session) stamped.session = bag.session;
   const why = captionRefusal(ent.comp?.captions, stamped);
   if (why) {

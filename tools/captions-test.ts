@@ -13,7 +13,8 @@
 //   1d. THE DEED — `born` is a creation generation (kept across a partial
 //      re-light and a same-lib re-spawn, renewed when the id means a new
 //      thing); the grant folds {id, born}; rightsIn carries it; `caption:
-//      null` revokes.
+//      null` revokes; a grant that knows its sub follows a rename, and a
+//      regrant under the new name retires the old name-keyed record.
 //   2. PERCEPTION — what look() carries for a resident who reads, folded from
 //      `caption` entries through the agent's own fold: the line appears on the
 //      owning entity, follows the newest caption, ignores a superseded leg,
@@ -137,6 +138,14 @@ const rig = () => { const ag = new WorldAgent({ name: "reader" }); const A = ag 
   check("the deed follows the durable sub across a rename (rightsIn finds the name-keyed grant by sub)", rightsIn(A.st, "cap-renamed", "human:discord:77").caption?.id === "cinema" && rightsIn(A.st, "cap-renamed", "human:discord:77").role === "visitor", JSON.stringify(rightsIn(A.st, "cap-renamed", "human:discord:77")));
   check("…and an impostor wearing the old name with another sub gets the wildcard, not the deed", rightsIn(A.st, "cap", "human:discord:78").caption === undefined && rightsIn(A.st, "cap", "human:discord:78").role === "builder", JSON.stringify(rightsIn(A.st, "cap", "human:discord:78")));
   check("…and gen/fly ride the same repair", (() => { e("grant", { id: "fly", role: "builder", fly: true, sub: "human:discord:79" }); return rightsIn(A.st, "fly-renamed", "human:discord:79").fly === true; })());
+  // a subject has ONE record: a grant under the new name continues the old
+  // record and retires it, so a lookup by sub never meets two answers
+  e("spawn", { id: "kiosk", lib: "kiosk.glb", pos: [3, 0, 0] });
+  e("grant", { id: "cap-renamed", caption: { id: "kiosk", born: A.st.entities.kiosk.born }, sub: "human:discord:77" });
+  check("a regrant under the new name moves the subject's record: the old name-keyed record is gone", A.st.roles["cap"] === undefined && A.st.roles["cap-renamed"]?.sub === "human:discord:77" && A.st.roles["cap-renamed"]?.role === "visitor", JSON.stringify(A.st.roles));
+  check("…and the new deed is the one answered, under either name", rightsIn(A.st, "cap-renamed", "human:discord:77").caption?.id === "kiosk" && rightsIn(A.st, "cap", "human:discord:77").caption?.id === "kiosk" && rightsIn(A.st, "cap-renamed", "human:discord:77").role === "visitor", JSON.stringify(rightsIn(A.st, "cap", "human:discord:77")));
+  e("grant", { id: "cap-renamed", caption: null, sub: "human:discord:77" });
+  check("…and a revoke under the new name revokes for the subject", rightsIn(A.st, "cap-renamed", "human:discord:77").caption === undefined && Object.values(A.st.roles).filter((r: any) => r.sub === "human:discord:77").length === 1);
 }
 
 console.log("— 2. perception —");
