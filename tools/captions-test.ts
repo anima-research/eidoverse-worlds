@@ -7,16 +7,17 @@
 //      lines dropped with a note, times rounded, the look line that says what
 //      the captioner wrote and nothing about pixels or sound, the detail level.
 //   1c. THE VERB — args shape; the refusals that happen BEFORE append (dup /
-//      old n, an earlier session, an end for the wrong session); the fold
-//      (append, the window bound, a later session starts fresh, end clears).
+//      old n, a superseded leg, an end for the wrong session); the fold
+//      (append, the window bound, a newer leg or a new session starts fresh,
+//      end clears). `gen` is the sequencer's stamp: the live leg.
 //   1d. THE DEED — `born` is a creation generation (kept across a partial
 //      re-light and a same-lib re-spawn, renewed when the id means a new
 //      thing); the grant folds {id, born}; rightsIn carries it; `caption:
 //      null` revokes.
 //   2. PERCEPTION — what look() carries for a resident who reads, folded from
 //      `caption` entries through the agent's own fold: the line appears on the
-//      owning entity, follows the newest caption, ignores a stale session, and
-//      is gone after `end`; other component types still read as they did.
+//      owning entity, follows the newest caption, ignores a superseded leg,
+//      and is gone after `end`; other component types still read as they did.
 import { normalizeCaptions, describeCaptions, captionsDetail, clock, normalizeCaptionArgs, captionRefusal, foldCaption, mintSession, CAPTIONS_MAX_LINES, CAPTION_TEXT_MAX } from "../shared/captions.js";
 import { rightsIn } from "../shared/rightsfold.js";
 process.env.EW_EMITTER_COALESCE_SEC = "0.25";
@@ -80,8 +81,10 @@ for (const [args, why] of [
   check(`refused shape: ${JSON.stringify(args)} → mentions ${why}`, !n.ok && new RegExp(why).test(n.why), n.ok ? "accepted" : n.why);
 }
 check("a minted session has the shape the door accepts and sorts by time", (() => { const a = mintSession(new Date("2026-01-01T00:00:00Z")), b = mintSession(new Date("2026-01-01T00:00:01Z")); return normalizeCaptionArgs({ id: "c", session: a, n: 1, t0: 0, t1: 1, text: "x" }).ok && a < b; })());
-const L = (n: number, t0: number, text: string, session = S1, extra: Record<string, unknown> = {}) => (normalizeCaptionArgs({ id: "cinema", session, n, t0, t1: t0 + 1, text, ...extra }) as any).args;
-const END = (session = S1) => (normalizeCaptionArgs({ id: "cinema", session, end: true }) as any).args;
+// the server stamps `gen` AFTER the shape (vCaption); a client-supplied one never survives it
+const L = (n: number, t0: number, text: string, session = S1, extra: Record<string, unknown> = {}, gen = 5) => ({ ...(normalizeCaptionArgs({ id: "cinema", session, n, t0, t1: t0 + 1, text, ...extra }) as any).args, gen });
+const END = (session = S1, gen = 5) => ({ ...(normalizeCaptionArgs({ id: "cinema", session, end: true }) as any).args, gen });
+check("a client-supplied gen never survives the shape", (normalizeCaptionArgs({ id: "cinema", session: S1, n: 1, t0: 0, t1: 1, text: "x", gen: 99 }) as any).args.gen === undefined);
 check("an empty screen refuses nothing but an end", captionRefusal(undefined, L(1, 0, "a")) === null && /no captions to end/.test(captionRefusal(undefined, END()) ?? ""));
 let bag = foldCaption(undefined, L(1, 0, "a", S1, { title: "a film" }));
 check("the first line folds a bag: session, n, title, mediaTime, one-line window", !!bag && bag.session === S1 && bag.n === 1 && bag.title === "a film" && bag.mediaTime === 1 && bag.window.length === 1, JSON.stringify(bag));
@@ -90,10 +93,13 @@ check("n after it is taken", captionRefusal(bag, L(2, 1, "b")) === null);
 bag = foldCaption(bag, L(2, 1, "b"));
 check("…and appends, keeping the title and advancing mediaTime and n", !!bag && bag.window.length === 2 && bag.title === "a film" && bag.mediaTime === 2 && bag.n === 2);
 check("n below the high-water is old: refused", /n=1 is not after the folded high-water n=2/.test(captionRefusal(bag, L(1, 5, "late")) ?? ""), captionRefusal(bag, L(1, 5, "late")) ?? "accepted");
-check("an EARLIER session is refused (a stale captioner)", /earlier than the active session/.test(captionRefusal({ ...bag!, session: S2 }, L(1, 0, "z", S1)) ?? ""));
-check("a LATER session is taken", captionRefusal(bag, L(1, 0, "z", S2)) === null);
+check("a LOWER generation is refused: a superseded leg, whatever its session says", /captioned by a newer leg \(generation 5; yours is 4\)/.test(captionRefusal(bag, L(9, 9, "z", S2, {}, 4)) ?? "") && /superseded/.test(captionRefusal(bag, L(9, 9, "z", S1, {}, 4)) ?? ""), captionRefusal(bag, L(9, 9, "z", S2, {}, 4)) ?? "accepted");
+check("…and so is its end", /superseded/.test(captionRefusal(bag, END(S1, 4)) ?? ""));
+check("the same leg under a DIFFERENT session is taken (a reattach: a new clock)", captionRefusal(bag, L(1, 0, "z", S2)) === null);
 const bag2 = foldCaption(bag, L(1, 0, "z", S2));
-check("…and starts a fresh window under the new session (title not carried: a new attach says its own)", !!bag2 && bag2.session === S2 && bag2.n === 1 && bag2.window.length === 1 && bag2.window[0].text === "z" && bag2.title === undefined, JSON.stringify(bag2));
+check("…and starts a fresh window under the new session (title not carried: a new attach says its own)", !!bag2 && bag2.session === S2 && bag2.n === 1 && bag2.gen === 5 && bag2.window.length === 1 && bag2.window[0].text === "z" && bag2.title === undefined, JSON.stringify(bag2));
+check("a HIGHER generation continuing the same session is taken and the bag follows it (a reconnect)", captionRefusal(bag2, L(2, 1, "y", S2, {}, 7)) === null && foldCaption(bag2, L(2, 1, "y", S2, {}, 7))!.gen === 7 && foldCaption(bag2, L(2, 1, "y", S2, {}, 7))!.window.length === 2);
+check("a higher generation with an EARLIER-looking session still takes over (clock rollback is not a claim the door reads)", captionRefusal(bag2, L(1, 0, "w", "2026-09-16T00:00:00.000Z-back", {}, 8)) === null && foldCaption(bag2, L(1, 0, "w", "2026-09-16T00:00:00.000Z-back", {}, 8))!.window.length === 1);
 check("an end for the wrong session is refused", /captioned under session/.test(captionRefusal(bag2, END(S1)) ?? ""));
 check("an end for the right session is taken and clears the bag", captionRefusal(bag2, END(S2)) === null && foldCaption(bag2, END(S2)) === null);
 let big = foldCaption(undefined, L(1, 0, "line 1"));
@@ -126,26 +132,31 @@ const rig = () => { const ag = new WorldAgent({ name: "reader" }); const A = ag 
   e("grant", { id: "cap", caption: null });
   check("caption: null revokes it", rightsIn(A.st, "cap").caption === undefined, JSON.stringify(rightsIn(A.st, "cap")));
   check("nobody else has one", rightsIn(A.st, "antra").caption === undefined && rightsIn(A.st, "stranger").caption === undefined);
+  // a grant written while the subject's sub was known follows the SUB, not the name
+  e("grant", { id: "cap", role: "visitor", caption: { id: "cinema", born: 3 }, sub: "human:discord:77" });
+  check("the deed follows the durable sub across a rename (rightsIn finds the name-keyed grant by sub)", rightsIn(A.st, "cap-renamed", "human:discord:77").caption?.id === "cinema" && rightsIn(A.st, "cap-renamed", "human:discord:77").role === "visitor", JSON.stringify(rightsIn(A.st, "cap-renamed", "human:discord:77")));
+  check("…and an impostor wearing the old name with another sub gets the wildcard, not the deed", rightsIn(A.st, "cap", "human:discord:78").caption === undefined && rightsIn(A.st, "cap", "human:discord:78").role === "builder", JSON.stringify(rightsIn(A.st, "cap", "human:discord:78")));
+  check("…and gen/fly ride the same repair", (() => { e("grant", { id: "fly", role: "builder", fly: true, sub: "human:discord:79" }); return rightsIn(A.st, "fly-renamed", "human:discord:79").fly === true; })());
 }
 
 console.log("— 2. perception —");
 {
   const { ag, A, e } = rig();
   e("spawn", { id: "cinema", lib: "screen.glb", pos: [0, 0, 0] });
-  e("caption", { id: "cinema", session: S1, n: 1, t0: 752.1, t1: 755.8, text: "we light the first candle", title: "Solstice, main stage" }, "captioner", true);
-  e("caption", { id: "cinema", session: S1, n: 2, t0: 756.0, t1: 759.9, text: "for the year that was", speaker: "Ra" }, "captioner", true);
+  e("caption", { id: "cinema", session: S1, n: 1, t0: 752.1, t1: 755.8, text: "we light the first candle", title: "Solstice, main stage", gen: 5 }, "captioner", true);
+  e("caption", { id: "cinema", session: S1, n: 2, t0: 756.0, t1: 759.9, text: "for the year that was", speaker: "Ra", gen: 5 }, "captioner", true);
   let out = ag.look();
   check("look() carries the captions line on the owning entity, folded from caption entries", /\[cinema\][^\n]*a screen, showing Solstice, main stage, 12:39, last line: Ra: for the year that was/.test(out), out.split("\n").find((l: string) => l.includes("cinema")) ?? out);
   check("…and does not fall through to `components: captions`", !/components: captions/.test(out));
-  e("caption", { id: "cinema", session: S1, n: 3, t0: 760, t1: 763, text: "and the year to come", speaker: "Ra" }, "captioner", true);
+  e("caption", { id: "cinema", session: S1, n: 3, t0: 760, t1: 763, text: "and the year to come", speaker: "Ra", gen: 5 }, "captioner", true);
   out = ag.look();
   check("the newest line reads as the last line, not the old", /last line: Ra: and the year to come/.test(out) && !/last line: Ra: for the year/.test(out), out.split("\n").find((l: string) => l.includes("cinema")) ?? out);
-  e("caption", { id: "cinema", session: S1, n: 3, t0: 770, t1: 771, text: "a replayed duplicate", speaker: "Ra" }, "captioner", true);
-  e("caption", { id: "cinema", session: "2026-09-16T19:00:00.000Z-old0", n: 1, t0: 0, t1: 1, text: "a stale captioner", speaker: "Ra" }, "captioner", true);
-  check("a duplicate n and an earlier session fold to nothing (the fold is total; the door never lets them in)", /last line: Ra: and the year to come/.test(ag.look()));
+  e("caption", { id: "cinema", session: S1, n: 3, t0: 770, t1: 771, text: "a replayed duplicate", speaker: "Ra", gen: 5 }, "captioner", true);
+  e("caption", { id: "cinema", session: "2026-09-16T19:00:00.000Z-old0", n: 1, t0: 0, t1: 1, text: "a superseded leg", speaker: "Ra", gen: 1 }, "captioner", true);
+  check("a duplicate n and a lower-generation leg fold to nothing (the fold is total; the door never lets them in)", /last line: Ra: and the year to come/.test(ag.look()));
   e("comp", { id: "cinema", type: "captions", data: "junk" }, "bob", true);
   check("a hand-written captions comp changes nothing here either", /last line: Ra: and the year to come/.test(ag.look()));
-  e("caption", { id: "cinema", session: S1, end: true }, "captioner", true);
+  e("caption", { id: "cinema", session: S1, end: true, gen: 5 }, "captioner", true);
   check("a quiet screen is gone from look()", !/a screen/.test(ag.look()));
   e("comp", { id: "cinema", type: "recipe", data: { x: 1 } }, "antra", true);
   check("other component types still read as they did", /components: recipe/.test(ag.look()));

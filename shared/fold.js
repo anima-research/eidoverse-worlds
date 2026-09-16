@@ -272,9 +272,12 @@ export function foldEntry(st, e) {
       // folds to nothing, like every unknown verb).
       const n = normalizeCaptionArgs(a);
       if (!n.ok) return;
-      const ent = st.entities[n.args.id];
-      if (!ent || captionRefusal(ent.comp?.captions, n.args)) return;
-      const bag = foldCaption(ent.comp?.captions, n.args);
+      // the shape drops any `gen` a client sent; the ENTRY's gen is the
+      // sequencer's stamp (vCaption), so the fold reads it back from the log
+      const args = { ...n.args, gen: Number(a.gen) || 0 };
+      const ent = st.entities[args.id];
+      if (!ent || captionRefusal(ent.comp?.captions, args)) return;
+      const bag = foldCaption(ent.comp?.captions, args);
       ent.comp ??= {};
       if (bag) ent.comp.captions = bag; else delete ent.comp.captions;
       if (!Object.keys(ent.comp).length) delete ent.comp;

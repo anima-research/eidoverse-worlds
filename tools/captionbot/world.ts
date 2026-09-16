@@ -14,9 +14,10 @@
 //
 // ORDER. One line in flight at a time, FIFO, paced under the door's verb
 // rate (12 per 4 s): a burst of finals queues rather than tripping the
-// limiter. Sessions order too — a restart mints a later session, and the
-// old session's unacked tail drains first, so the window switches exactly
-// once, after the last old line the sequencer will take.
+// limiter. WHO the captioner is, is the sequencer's fact, not ours: it
+// stamps its leg generation on every line and the bag follows the live leg
+// (a same-identity join is a takeover). A restart's old-session tail still
+// drains first, FIFO, so the window switches exactly once.
 //
 // BACKPRESSURE. The queue is BOUNDED (`maxPending`, default 600 lines ≈ five
 // minutes at the pace). Past it the OLDEST queued lines are dropped, each
@@ -222,7 +223,7 @@ export class WorldClient {
     }
     // a stale session, or an end for a session the screen has left behind:
     // this line is refused for good, the next may not be
-    if (/earlier than the active session|is captioned under session/.test(error)) {
+    if (/is captioned under session/.test(error)) {
       this.refused++;
       this.log(`refused ${p.key}: ${error}`);
       this.settle(p, { state: 'refused', key: p.key, why: error, at: Date.now() });
@@ -230,7 +231,9 @@ export class WorldClient {
     }
     // no deed / wrong deed / screen gone / rank: nothing will land until the
     // owner acts — hold everything, say so once, and try again later
-    if (/caption deed|not here|was replaced|needs .* rights|spectators/.test(error)) {
+    // …and a NEWER leg holding the screen (another captioner joined after
+    // us): ours is superseded until we rejoin; hold, do not drop
+    if (/caption deed|not here|was replaced|needs .* rights|spectators|superseded captioner/.test(error)) {
       if (this.ackTimer) { clearTimeout(this.ackTimer); this.ackTimer = null; }
       this.inflight = null; this.pending.unshift(p);
       if (this.halted !== error) { this.halted = error; this.log(`⛔ held (${this.pendingCount} pending): ${error}`); }

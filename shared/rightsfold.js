@@ -36,8 +36,13 @@ export function worldHasOwnerIn(st) {
  */
 export function rightsIn(st, id, sub) {
   if (!worldHasOwnerIn(st)) return { role: 'builder', gen: true, fly: false };
-  let r = (sub ? st?.roles?.[sub] : undefined) ?? st?.roles?.[id] ?? st?.roles?.['*']
-        ?? { role: 'builder' };
+  // A grant written while its subject's sub was known carries that sub, and
+  // is stored under the DISPLAY NAME of the moment (fold.js grant). So the
+  // lookup by sub has to find it under whatever name it was written for —
+  // otherwise a rename lost every grant (Mica, #187 round 2: the caption
+  // deed, but also gen and fly, went to the wildcard default after a rename).
+  const bySub = sub ? (st?.roles?.[sub] ?? Object.values(st?.roles ?? {}).find((x) => x && x.sub === sub)) : undefined;
+  let r = bySub ?? st?.roles?.[id] ?? st?.roles?.['*'] ?? { role: 'builder' };
   // a name-keyed grant that KNOWS its subject's sub is worn only by that sub
   if (r.sub && r.sub !== sub) r = st?.roles?.['*'] ?? { role: 'builder' };
   return {

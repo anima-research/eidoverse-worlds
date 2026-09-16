@@ -37,6 +37,8 @@ export type VerbClient = {
   lastPose: unknown;
   ws: { send(data: string): void };
   verbWin: number; verbCount: number;
+  /** This leg's generation, issued on acceptance (server.ts: a same-identity join is a takeover). */
+  gen?: number;
 };
 
 export type VerbWorld = {
@@ -233,12 +235,23 @@ function vCaption(ctx: VerbCtx, args: Record<string, unknown>) {
   }
   const ent = (w.state.entities as Record<string, { comp?: { captions?: unknown } } | undefined>)[n.args.id];
   if (!ent) return { error: `"${n.args.id}" is not here — nothing to caption` };
-  const why = captionRefusal(ent.comp?.captions, n.args);
+  // the leg's generation is the SERVER's word (a client-supplied one was
+  // already dropped by the shape): who the captioner is, is who holds the
+  // live leg, and the bag follows it. The OWNER (and operators) recover a
+  // screen regardless of which leg holds it: their entry is stamped with the
+  // bag's own generation, and their `end` ends whatever session is current —
+  // written into the entry, so the fold sees the same override the door did.
+  const bag = ent.comp?.captions as { gen?: number; session?: string } | undefined;
+  const rights = rightsOf(w.state, c.id, c.sub);
+  const override = ROLE_RANK[rights.role] >= ROLE_RANK.owner;
+  const stamped = { ...n.args, gen: override && bag ? Math.max(c.gen ?? 0, Number(bag.gen) || 0) : (c.gen ?? 0) } as Record<string, unknown>;
+  if (override && bag && n.args.end && bag.session) stamped.session = bag.session;
+  const why = captionRefusal(ent.comp?.captions, stamped);
   if (why) {
     w.debug("rejected", { who: c.id, verb: "caption", why });
     return { error: why };
   }
-  return { args: n.args as Record<string, unknown> };
+  return { args: stamped };
 }
 
 function vMount(ctx: VerbCtx, args: Record<string, unknown>) {

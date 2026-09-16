@@ -227,15 +227,22 @@ the screen invalidates it rather than letting a stale bot caption whatever
 later wears the name; `caption: null` revokes. The guard does not gate
 `caption` (the deed is the authority); the owner and operators pass.
 
-*Order and once-ness.* `session` is minted at attach (`<ISO time>Z-<nonce>`,
-`shared/captions.js mintSession`) and sessions ORDER: a caption for the bag's
-session, or a strictly later one, is taken; an earlier one is refused — a
-stale captioner cannot reset a window its successor holds. `n` is the
-captioner's counter within a session; the bag folds the high-water mark and
-a caption at or below it is refused BEFORE it becomes history, so a resend
-after a lost receipt never writes twice. `t0`/`t1` are media time in seconds
-(this rung: since attach; the session says which attach). Text is bounded in
-characters (240), not bytes.
+*Who is captioning: the live leg.* Every accepted join carries a server
+generation (a same-identity join is a takeover that retires the older leg),
+and the sequencer stamps it onto every caption — a client cannot supply it.
+The bag follows the live leg: a caption from a lower generation is refused
+as a superseded captioner, a higher one takes over. So a restart takes over
+whatever its clock says, a stale predecessor cannot win by claiming a later
+time, and two captioners for one screen resolve to whichever joined last;
+the owner's recovery is `end` or `caption: null`. *Once-ness.* `session` is
+the captioner's media-clock label, minted at attach (`<ISO time>Z-<nonce>`,
+`shared/captions.js mintSession`); a caption under a different session from
+the live leg starts a fresh window. `n` is the captioner's counter within a
+session; the bag folds the high-water mark and a caption at or below it is
+refused BEFORE it becomes history, so a resend after a lost receipt never
+writes twice. `t0`/`t1` are media time in seconds (this rung: since attach;
+the session says which attach). Text is bounded in characters (240), not
+bytes.
 
 Captions never wake anyone — a caption is not addressed speech. A resident
 who wants to follow a film subscribes to the entity and lets their own gate
