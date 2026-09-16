@@ -232,14 +232,25 @@ stamp fall back to the display id. `look` says `🛡 guarded by <placer>`.
 |---|---|
 | `comp` (any type), `motion`, `behavior {attach}` | refused — content is authorship |
 | `place`, `punt`, cargo-`mount`/`dismount`, `remove`, same-id `spawn`/`light` | refused — moving, replacing, removing |
-| `mount {id: cargo, to: <guarded>}` | refused — loading cargo onto someone's thing changes it |
+| `mount {id: cargo, to: <guarded>}`, `dismount {id: cargo}` while it rides a guarded carrier | refused — loading cargo onto someone's thing, or unloading it, changes the carrier; its placer, the owner, or an operator may |
 | `use`, self-`mount` (sitting on it), `dismount` yourself | open — the guard is about authorship, not access |
 | `force` | accepted, and moves nothing: `force` displaces BODIES (people, who each consent client-side); entities are never displaced by it. The entity kick is `punt`, which is gated. |
 
 A behavior bound by the placer still writes to it (scripts emit under their
 author's standing), which is how a guarded picture gets a visitor-facing
 "next picture" `use` without opening the comp to visitors. Browser builders
-get the guard as a 🛡 checkbox beside the lock.
+get the guard as a 🛡 checkbox beside the lock. Cargo carries two gates when
+both it and its carrier are guarded: its own placer for the cargo, the
+carrier's placer for the relationship — so cargo guarded by one person riding
+a carrier guarded by another moves only for the owner or an operator. That
+composition only arises when the carrier was guarded after the loading (a
+stranger could not have loaded it otherwise), and the override is the exit.
+
+Every surface names the same person: the inspector, the scene panel, the
+drag/Del hint and `look` all say `guarded by <placer>` from the stamp, never
+from the entity's latest `actor` — an owner's partial re-light moves `actor`
+and leaves the placer where it was, and the panels say "last change by" for
+that rather than letting "by" mean two things.
 
 **Weather can be ambient — authored once, alive forever.** The `sky` verb
 (owner lane) takes a `forecast` policy alongside `hours`/`rate`:

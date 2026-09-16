@@ -34,7 +34,7 @@ import { entities, entityMeta, comps, avatarMounts } from './world.js';
 import { editorsFor } from './inspect.js';
 import './lights.js';   // for its registered light editor (world.js pulls it in anyway)
 import { sendVerb, requestDebug } from './net.js';
-import { guardedByOther } from './placer.js';   // the server's who-may-author rule, mirrored
+import { guardedByOther, placerOf, placerName } from './placer.js';   // the server's who-may-author rule, mirrored — and its one name
 import { makeSection, flashHint } from './ui.js';
 import { logChat } from './chat.js';
 import { myState } from './controller.js';
@@ -143,7 +143,7 @@ function paintScene(force = false) {
       // guarded by someone else: every edit would be refused, so the fields
       // say so too (the placer and the world's owner keep them live)
       const held = guardedByOther(selected);
-      const why = held ? `guarded by ${meta?.actor ?? 'its placer'} — only they or the world's owner can move it` : 'locked — remove the lock comp to move';
+      const why = held ? `guarded by ${placerName(selected)} — only they or the world's owner can move it` : 'locked — remove the lock comp to move';
       const cell = (f, v, step) => `<input type="number" data-tf="${f}" value="${v}" step="${step}" style="width:4.5em"${locked || held ? ` disabled title="${esc(why)}"` : ''}>`;
       transform = `<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin:4px 0">
         <span style="color:var(--dim)">${held ? '🛡 ' : ''}${locked ? '🔒 ' : ''}${obj.userData.mountedTo ? 'local ' : ''}pos</span>
@@ -181,7 +181,7 @@ function paintScene(force = false) {
 
     inspector = `<div style="border-top:1px solid var(--edge);margin-top:6px;padding-top:6px">
       <div><b>${esc(selected)}</b> <span style="color:var(--dim)">${esc(meta?.lib ?? '')}</span></div>
-      <div style="color:var(--dim)">placed by ${esc(meta?.actor ?? '?')}${bag?.guard ? ' · 🛡 guarded' : ''} · ${pos ? `at (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})` : 'loading'}${obj?.userData?.mountedTo ? ` · mounted on ${esc(obj.userData.mountedTo)}` : ''}</div>
+      <div style="color:var(--dim)">placed by ${esc(placerOf(selected)?.id ?? meta?.actor ?? '?')}${meta?.actor && meta.actor !== (placerOf(selected)?.id ?? meta.actor) ? ` · last change by ${esc(meta.actor)}` : ''}${bag?.guard ? ' · 🛡 guarded' : ''} · ${pos ? `at (${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})` : 'loading'}${obj?.userData?.mountedTo ? ` · mounted on ${esc(obj.userData.mountedTo)}` : ''}</div>
       ${transform}
       ${eds.map((e) => e.html).join('')}
       ${compRows.join('')}${newComp}

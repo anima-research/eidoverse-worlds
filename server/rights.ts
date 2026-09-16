@@ -199,6 +199,20 @@ export function guardRefusal(
       if (!isPlacer(who, cp)) return `"${to}" is guarded — only ${cp?.id ?? "its placer"}, the world's owner, or an operator may load cargo onto it`;
     }
   }
+  // Unloading cargo FROM someone else's guarded carrier is the same
+  // relationship change in reverse. Round one gated the carrier on `mount`
+  // and looked only at the cargo on `dismount`, so once the placer had
+  // loaded their truck any builder could unload it (Mica, #190 round 2).
+  // The cargo's folded parent names the carrier. A body stepping off
+  // (self-dismount) is not an entity and never reaches this.
+  if (verb === "dismount" && ent && !override) {
+    const to = String((ent as { parent?: { to?: unknown } }).parent?.to ?? "");
+    const carrier = to ? state.entities[to] : undefined;
+    if (carrier?.comp?.guard) {
+      const cp = placerOf(state, carrier);
+      if (!isPlacer(who, cp)) return `"${to}" is guarded — only ${cp?.id ?? "its placer"}, the world's owner, or an operator may unload cargo from it`;
+    }
+  }
   if (!ent) return null;
   const guarded = !!ent.comp?.guard;
   const touchingGuard = verb === "comp" && String(args?.type ?? "") === "guard";

@@ -28,7 +28,7 @@ import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.j
 import { flashHint, collapseAll, panelFrame } from './ui.js';
 import { sceneSelect } from './scenegraph.js';
 import { claimEscape } from './frames.js';
-import { mayAuthor } from './placer.js';   // one rule for who may author, shared with the scene panel
+import { mayAuthor, placerOf, placerName } from './placer.js';   // one rule for who may author (and one name for them), shared with the scene panel
 import { refreshSeatGizmos, resetSeats, armSeatPlacement, seatArmed, seatSelected,
   cancelSeatArm, deselectSeat, seatMouseDown, seatKeyDown, updateSeatDrag } from './seatedit.js';
 
@@ -147,11 +147,16 @@ function showInspector(id) {
   // a thing guarded by someone else is read-only here: the server would
   // refuse every edit, so the controls say so before the round-trip
   const held = guarded && !mine;
+  // attribution names the PLACER (the stamped principal); `actor` is whoever
+  // last wrote the entity, which an owner's re-light moves — say so when
+  // they differ rather than letting "by" mean two things
+  const who = placerOf(id)?.id ?? meta.actor ?? '?';
+  const lastBy = meta.actor && meta.actor !== who ? ` · last change by ${meta.actor}` : '';
   inspector.innerHTML =
     `<span><b>${label.slice(0, 34)}</b></span>` +
-    `<span style="color:var(--dim)">by ${meta.actor ?? '?'}</span>` +
+    `<span style="color:var(--dim)">placed by ${who}${lastBy}</span>` +
     (held
-      ? `<span style="color:var(--dim)">🛡 guarded by ${meta.actor ?? 'its placer'} — only they or the world's owner can change, move or remove it</span>`
+      ? `<span style="color:var(--dim)">🛡 guarded by ${placerName(id)} — only they or the world's owner can change, move or remove it</span>`
       : locked
         ? `<span style="color:var(--dim)">🔒 locked — nothing moves or removes it until unchecked</span>`
         : `<span style="color:var(--dim)">drag move · <kbd>Shift</kbd>+drag or <kbd>R</kbd><kbd>F</kbd> up/down · ` +
@@ -160,7 +165,7 @@ function showInspector(id) {
     `<input type="checkbox" data-bact="lock"${locked ? ' checked' : ''}${held ? ' disabled' : ''}> 🔒 lock</label>` +
     `<label title="${mine
       ? 'make it yours to author: while guarded, only you, the world\'s owner, or an operator can change its components, move it, remove it, or bind scripts to it (server-enforced) — using it and sitting on it stay open for everyone'
-      : `only ${meta.actor ?? 'its placer'} or the world's owner can set or clear the guard on this`}" style="display:flex;gap:4px;align-items:center;cursor:${mine ? 'pointer' : 'not-allowed'}">` +
+      : `only ${placerName(id)} or the world's owner can set or clear the guard on this`}" style="display:flex;gap:4px;align-items:center;cursor:${mine ? 'pointer' : 'not-allowed'}">` +
     `<input type="checkbox" data-bact="guard"${guarded ? ' checked' : ''}${mine ? '' : ' disabled'}> 🛡 guard</label>` +
     `<button data-bact="seat" title="declare a sit anchor: click the spot where a sitter goes"${held ? ' disabled' : ''}>+ seat</button>`;
   inspector.querySelector('[data-bact="lock"]').onchange = (ev) => {
@@ -372,7 +377,7 @@ function isLocked(id) { return !!comps.get(id)?.lock; }
 function isGuarded(id) { return !!comps.get(id)?.guard; }
 function lockedHint(id) {
   if (isGuarded(id) && !mayAuthor(id)) {
-    flashHint(`🛡 <b>guarded</b> by ${entityMeta.get(id)?.actor ?? 'its placer'} — only they or the world's owner can move or change it`);
+    flashHint(`🛡 <b>guarded</b> by ${placerName(id)} — only they or the world's owner can move or change it`);
     return true;
   }
   if (!isLocked(id)) return false;

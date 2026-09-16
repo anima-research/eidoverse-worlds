@@ -17,6 +17,11 @@
 //      thing's folded pose is untouched.
 //   5. The stamp is the SERVER's: a client-supplied `placer` is stripped.
 //   6. A re-light by the owner keeps the first placer.
+//   7. CARGO OFF A GUARDED CARRIER (round 2, B1): a stranger may not unload
+//      what the placer loaded — dismount is gated on the CARRIER's placer,
+//      as mount is; the placer and the owner may; stepping off yourself is
+//      still use. Remove the carrier leg from guardRefusal's dismount branch
+//      and the stranger's leg goes red.
 import { generateKeyPairSync, createPublicKey, sign as cryptoSign } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -128,11 +133,32 @@ try {
   await carol.settle();
   check("3. …but may sit on it (self-mount is use, not authorship)", carol.errors.length === before, carol.errors.slice(before).join("; "));
   carol.verb("dismount", { id: "carol" }); await carol.settle();
+  check("3. …and steps off again (self-dismount is use too)", carol.errors.length === before, carol.errors.slice(before).join("; "));
   before = bob.errors.length;
   bob.verb("spawn", { id: "crate2", lib: "deco/crate.glb", pos: [6, 0, 7], yaw: 0 });
   bob.verb("mount", { id: "crate2", to: "truck1", slot: "bed" });
   await bob.settle();
   check("3. the placer loads cargo onto their own guarded carrier", bob.errors.length === before, bob.errors.slice(before).join("; "));
+
+  // ---- 7. cargo OFF a guarded carrier ----
+  before = carol.errors.length;
+  carol.verb("dismount", { id: "crate2", pos: [6, 0, 7], yaw: 0 });
+  await carol.settle();
+  let crate2 = await folded(WORLD, "crate2");
+  check("7. a stranger may not unload cargo from a guarded carrier (dismount is gated on the carrier's placer, like mount)", carol.errors.length === before + 1 && /guarded/.test(last(carol)) && /cargo/.test(last(carol)), last(carol));
+  check("7. …and the cargo still rides it", crate2?.parent?.to === "truck1", JSON.stringify(crate2?.parent));
+  before = bob.errors.length;
+  bob.verb("dismount", { id: "crate2", pos: [6, 0, 7], yaw: 0 });
+  await bob.settle();
+  crate2 = await folded(WORLD, "crate2");
+  check("7. the carrier's placer unloads it", bob.errors.length === before && crate2?.parent === undefined, bob.errors.slice(before).join("; ") + " " + JSON.stringify(crate2?.parent));
+  bob.verb("mount", { id: "crate2", to: "truck1", slot: "bed" });
+  await bob.settle();
+  before = ra.errors.length;
+  ra.verb("dismount", { id: "crate2", pos: [6, 0, 7], yaw: 0 });
+  await ra.settle();
+  crate2 = await folded(WORLD, "crate2");
+  check("7. the world's owner overrides and unloads it", ra.errors.length === before && crate2?.parent === undefined, ra.errors.slice(before).join("; ") + " " + JSON.stringify(crate2?.parent));
 
   // ---- 4. force moves nothing ----
   await carol.settle(WINDOW);

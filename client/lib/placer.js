@@ -27,6 +27,15 @@ export function mayAuthor(id) {
   return p.sub ? net.mySub === p.sub : net.myId === p.id;
 }
 
+/** The name to SHOW for who guards `id`: the stamped placer's display id,
+ *  never the entity's latest `actor`. The two drift on purpose — an owner's
+ *  partial re-light updates `actor` while the placer stays — and round one
+ *  labelled the guard with `actor`, so a panel could authorize Bob and tell
+ *  the room the owner guarded it (Mica, #190 round 2). Every guard label in
+ *  the browser reads through here; `actor` is creation/last-edit attribution
+ *  and nothing more. */
+export function placerName(id) { return placerOf(id)?.id ?? 'its placer'; }
+
 /** Guarded by someone I am not: the server would refuse every edit. */
 export function guardedByOther(id) {
   return !!comps.get(id)?.guard && !mayAuthor(id);
