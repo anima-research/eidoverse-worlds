@@ -392,10 +392,16 @@ export const isCasting = (key) => (requests.get(key)?.slot ?? -1) >= 0;
 // (This was sky.js attachLocalLights, which owned a hard MAX_LAMPS=2 ceiling
 // and a boot deferral that both existed to ration recompiles.)
 
-/** @returns {{key:string, intensity:number}[]} the requests it made -- a caller
+/** Request a light at each emissive mesh's centre (<=2 per object).
+ *
+ *  `opts.shadows` is the caller's claim on the ONE casting slot (SHADOW_SLOT)
+ *  and defaults to FALSE: a placed prop glows, a body lit from inside throws
+ *  itself. Only avatar.js passes true.
+ *
+ *  @returns {{key:string, intensity:number}[]} the requests it made -- a caller
  *  that wants to ANIMATE a lamp needs the key and the intensity the inference
  *  chose, and reading either back out of the private map was the alternative. */
-export function attachLamps(root, owner) {
+export function attachLamps(root, owner, { shadows = false } = {}) {
   const made = [];
   const emissive = [];
   root.traverse((o) => {
@@ -420,9 +426,21 @@ export function attachLamps(root, owner) {
       color: sat > 0.25 ? ec.clone() : 0xffd9a0,
       intensity,
       range: 12,                 // tight radius: grass fragments cost
-      // A lamp INSIDE a body should throw that body's shadow -- it is the one
-      // light in this world whose whole reason is to be seen from within.
-      shadows: true,
+      // SHADOW INTENT IS THE CALLER'S, and it defaults to NO.
+      //
+      // This was an unconditional `shadows: true` with a comment about a lamp
+      // inside a body -- but attachLamps is the generic emissive seam, and
+      // realize/models.js calls it for every placed glowing prop. So a lantern
+      // on the ground requested the one casting slot exactly as hard as a body
+      // did, and after the swap landed (4f55321) a closer prop could WIN it:
+      // wanting shadows outranks not wanting them, so a nearer emissive orb
+      // took slot 0 off the body it was standing next to.
+      //
+      // Mica drew the contract: emissive AVATARS may request slot 0 and get
+      // body cast/receive; emissive placed models stay ordinary inferred
+      // lights. Default false means a new caller has to say it means it, and
+      // the only caller that does is avatar.js.
+      shadows,
       dayAware: true, owner,
     });
     made.push({ key, intensity });

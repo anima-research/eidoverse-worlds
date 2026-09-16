@@ -503,7 +503,10 @@ export class Avatar {
     // measured as requests 1 -> 0. A monotonic instance id cannot collide.
     this._lampOwner = `body:${id}:${++Avatar._seq}`;
     this._lamps = [];
-    try { this._lamps = attachLamps(vrm.scene, this._lampOwner) ?? []; }
+    // `shadows: true` is the avatar's claim on the one casting slot. The
+    // default is false at the seam, so a placed glowing prop cannot take it
+    // from a body -- see the note in attachLamps.
+    try { this._lamps = attachLamps(vrm.scene, this._lampOwner, { shadows: true }) ?? []; }
     catch { /* a body with no glow simply has none */ }
     // A LAMPED BODY CASTS AND RECEIVES; every other body keeps its blob.
     //
