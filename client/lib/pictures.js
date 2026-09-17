@@ -27,7 +27,7 @@ import { entities, findPart } from './world.js';
 import { CONFIG } from './base.js';
 import { registerEditor } from './inspect.js';
 import { toast, flashHint } from './ui.js';
-import { net } from './net.js';
+import { guardedByOther, placerName } from './placer.js';   // the server's who-may-author rule, mirrored — and its one name (#190)
 import { normalizePicture, PICTURE_LIT, PICTURE_LOOK_MAX, PICTURE_STORE } from '../../shared/picture.js';
 
 // id → { picture, part, original, material } for every picture currently hung
@@ -212,7 +212,11 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
   const parts = namedParts(obj);
   if (!parts.length) return null;                     // nothing to hang on — the generic JSON row still exists
   const cur = bag?.picture && typeof bag.picture === 'object' ? bag.picture : null;
-  const heldBy = bag?.guard && meta?.actor !== net.myId && net.myRights?.role !== 'owner' ? (meta?.actor ?? 'its placer') : null;
+  // guarded by someone I am not: the server would refuse the comp, so the
+  // block says so instead of offering a form. Authorship is the PLACER's —
+  // by subject when the door vouched for one, never `meta.actor`, which an
+  // owner's partial re-light moves while the placer stays (#190 round 2).
+  const heldBy = guardedByOther(id) ? placerName(id) : null;
   if (heldBy) {
     return { html: `<div style="margin:4px 0;color:var(--dim)">🖼 picture — guarded by ${esc(heldBy)}; only they or the world's owner can hang or change one here${cur ? ` (showing ${esc(cur.src?.split('/').pop() ?? '?')})` : ''}</div>`, wire() {} };
   }
