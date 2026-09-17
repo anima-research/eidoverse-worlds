@@ -159,10 +159,19 @@ bus.on('entity', ({ id, kind }) => {
   }
 });
 
+// The block's status line, per entity, kept OUTSIDE the DOM. The scene panel
+// rebuilds every editor on the echo of a committed verb (scenegraph.js
+// repaint, ~300ms after the comp lands), and a refusal is exactly the case
+// with no echo to wait for: the user pressed hang, the block said why not,
+// and the previous hang's echo then wiped the line under them (Mica, #191
+// round 1). The render reads this back, so a repaint carries the last word.
+const notes = new Map();   // id → { text, warn }
+
 bus.on('world-reset', () => clearPictures());
 
 export function clearPictures() {
   pending.clear();
+  notes.clear();
   for (const id of revision.keys()) bump(id);   // every load in flight is stale
   for (const id of [...hung.keys()]) takeDown(id);
 }
@@ -241,12 +250,15 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
       <div style="display:flex;gap:6px">
         <button data-pe="hang">${cur ? 'update' : 'hang'}</button>
         ${cur ? '<button data-pe="down" title="comp {type: \"picture\", data: null}">take down</button>' : ''}
-        <span data-pe="msg" style="color:var(--dim);font-size:11px"></span>
+        <span data-pe="msg" style="color:${notes.get(id)?.warn ? 'var(--warn, #e8a33d)' : 'var(--dim)'};font-size:11px">${esc(notes.get(id)?.text ?? '')}</span>
       </div>
     </div>`,
     wire(root) {
       const q = (k) => root.querySelector(`[data-pe="${k}"]`);
-      const msg = (t, warn = false) => { const m = q('msg'); if (m) { m.textContent = t; m.style.color = warn ? 'var(--warn, #e8a33d)' : 'var(--dim)'; } };
+      const msg = (t, warn = false) => {
+        notes.set(id, { text: t, warn });   // survives the repaint; the DOM below does not
+        const m = q('msg'); if (m) { m.textContent = t; m.style.color = warn ? 'var(--warn, #e8a33d)' : 'var(--dim)'; }
+      };
       q('pick')?.addEventListener('click', () => q('file')?.click());
       q('file')?.addEventListener('change', async (ev) => {
         const file = ev.target.files?.[0];

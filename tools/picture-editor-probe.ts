@@ -11,8 +11,16 @@
 //      store path the door returned;
 //   C. `hang` commits ONE comp with the normalized bag: the picture hangs on
 //      the chosen part with the uploaded image as its map, look line kept;
-//   D. a bad source is refused HERE, before any round-trip (no comp sent);
+//   D. a bad source is refused HERE, before any round-trip (no comp sent) —
+//      and the refusal OUTLIVES a scene-panel repaint: the block is rebuilt on
+//      every echo, so the message and the `take down` control must both be
+//      there after one (Mica, round 1: 8/9 with the message blank, or the
+//      message kept and the control gone, depending on when the echo landed);
 //   E. `take down` commits null: the material is restored.
+//
+// Synchronization is on the AUTHORITATIVE repaint, never a sleep: after C the
+// probe waits for the block that only exists once the comp is in the bag (it
+// carries `take down`), and after D it polls for the refusal text.
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 import { join } from 'node:path';
 import { mkdtempSync, writeFileSync } from 'node:fs';
@@ -42,6 +50,7 @@ const state = (pg: any) => pg.evaluate(async () => {
     cloned: !!(h && part && mat === h.material && mat !== h.original),
     block: !!block, parts: opts, src: (block?.querySelector('[data-pe="src"]') as any)?.value ?? null,
     msg: block?.querySelector('[data-pe="msg"]')?.textContent ?? null,
+    down: !!block?.querySelector('[data-pe="down"]'),   // rendered only when the bag holds a picture: the repaint's receipt
     comp: comps.get('console')?.picture ?? null,
   };
 });
@@ -77,7 +86,10 @@ try {
   await pg.fill('[data-pe="look"]', 'a red square, hung by hand');
   await pg.selectOption('[data-pe="lit"]', 'self');
   await pg.click('[data-pe="hang"]');
-  s = await until(pg, (x) => x.hung && x.mapW > 0);
+  // the comp landing (hung) and the panel's repaint of it (down) are two
+  // events ~300ms apart; D must start after the second or it types into a
+  // block about to be replaced
+  s = await until(pg, (x) => x.hung && x.mapW > 0 && x.down);
   check('C. hang commits the comp — the picture hangs on screenplane with the uploaded image', s.hung && s.cloned && s.mapW === 2, JSON.stringify(s));
   check('C. …with the normalized bag in the fold (src, part, look, lit)', s.comp?.src === uploaded && s.comp?.part === 'screenplane' && s.comp?.look === 'a red square, hung by hand' && s.comp?.lit === 'self' && s.comp?.flip === false, JSON.stringify(s.comp));
 
@@ -85,10 +97,16 @@ try {
   const seqBefore = await pg.evaluate(() => import('/lib/world.js').then((m: any) => JSON.stringify(m.comps.get('console')?.picture)));
   await pg.fill('[data-pe="src"]', 'https://example.com/trollface.png');
   await pg.click('[data-pe="hang"]');
-  await new Promise((r) => setTimeout(r, 800));
-  s = await state(pg);
+  s = await until(pg, (x) => /not an allowed picture source/.test(x.msg ?? ''), 5000);
   const seqAfter = await pg.evaluate(() => import('/lib/world.js').then((m: any) => JSON.stringify(m.comps.get('console')?.picture)));
   check('D. a URL source is refused in the block, naming the rule, and nothing was sent', /not an allowed picture source/.test(s.msg ?? '') && seqBefore === seqAfter && s.hung, JSON.stringify({ msg: s.msg, same: seqBefore === seqAfter }));
+  // D2. force the repaint a late echo would cause (any comp event queues one)
+  // and require the refusal AND the control to survive it. Without the
+  // editor-local note this reads a blank message on a fresh block.
+  await pg.evaluate(() => import('/lib/base.js').then((m: any) => m.bus.emit('comp', { id: 'console', type: 'probe-repaint', data: true })));
+  await new Promise((r) => setTimeout(r, 600));   // the repaint is queued 300ms out; this is a deliberate over-wait, not a sync
+  s = await state(pg);
+  check('D. …and the refusal outlives a scene-panel repaint, with take down still offered', /not an allowed picture source/.test(s.msg ?? '') && s.down && s.hung, JSON.stringify({ msg: s.msg, down: s.down }));
 
   // E. take down restores the material
   await pg.click('[data-pe="down"]');

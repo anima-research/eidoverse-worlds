@@ -1,10 +1,16 @@
 // The image door — `POST /upload?as=image`: a PNG/JPEG/WebP lands in the
 // content-addressed store and comes back as a picture source.
 //
-// Boots nothing itself — point it at a SCRATCH sequencer with a scratch store:
+// Owns its sequencer: a scratch child on a random port, proved ours by the
+// nonce echo (probe-harness ownedWorld), with a scratch OPT_DIR so the
+// manifest leg always runs. A fixed default port used to be the recipe, and
+// a reviewer's first run measured whatever else was listening on it (Mica,
+// #191 round 1) — the verdict has to be about OUR door.
 //
-//   WORLDS_DIR=$(mktemp -d) OPT_DIR=$(mktemp -d) JOIN_TOKEN=test-door PORT=8994 bun run server/server.ts &
-//   WORLD_URL=ws://localhost:8994/ws JOIN_TOKEN=test-door bun run tools/image-upload-test.ts
+//   bun tools/image-upload-test.ts
+//
+// To point it at a door you run yourself instead (identity unchecked):
+//   WORLD_URL=ws://host:port/ws JOIN_TOKEN=… [OPT_DIR=…] bun tools/image-upload-test.ts
 //
 // What must hold: the kind is judged by BYTES (a GLB named .png is refused,
 // a PNG named .glb is a .png in the store), the path is content-addressed and
@@ -14,9 +20,17 @@
 // token-gated, capped and rate-limited like the model door.
 import { allowedPictureSrc } from "../shared/picture.js";
 
-const URL_ = process.env.WORLD_URL ?? "ws://localhost:8994/ws";
-const TOKEN = process.env.JOIN_TOKEN ?? "test-door";
-const HTTP = URL_.replace(/^ws/, "http").replace(/\/ws$/, "");
+import { ownedWorld } from "./probe-harness.mjs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const OPT = process.env.OPT_DIR ?? mkdtempSync(join(tmpdir(), "image-door-opt-"));
+const world = process.env.WORLD_URL
+  ? await ownedWorld({ live: process.env.WORLD_URL.replace(/^ws/, "http").replace(/\/ws$/, ""), key: process.env.JOIN_TOKEN ?? "test-door" })
+  : await ownedWorld({ key: "test-door", env: { OPT_DIR: OPT } });
+const TOKEN = world.key;
+const HTTP = world.origin;
 
 let passed = 0, failed = 0;
 function check(name: string, ok: boolean, detail = "") {
@@ -89,9 +103,11 @@ r = await post(PNG, {});
 check("a PNG at the MODEL door is refused as not-a-GLB (the doors are distinct)", r.status === 415 && /GLB/.test(r.text), `${r.status} ${r.text}`);
 
 // ---- the manifest remembers who ----------------------------------------------
-const OPT = process.env.OPT_DIR;
-if (OPT) {
-  const man = JSON.parse(await Bun.file(`${OPT}/store/images/manifest.json`).text());
+// owned child: the scratch OPT_DIR above; a live door: only if the caller
+// told us where its store is
+const MANIFEST_DIR = world.owned ? OPT : process.env.OPT_DIR;
+if (MANIFEST_DIR) {
+  const man = JSON.parse(await Bun.file(`${MANIFEST_DIR}/store/images/manifest.json`).text());
   const entry = man[pngPath.split("/").pop()!.replace(/\.png$/, "")];
   check("the manifest records the name and who (first upload wins the name)", entry && entry.name === "hearth at dusk" && typeof entry.by === "string", JSON.stringify(entry));
 } else console.log("  (OPT_DIR not set — manifest check skipped)");
@@ -103,5 +119,6 @@ const big = new Uint8Array(8 * 1_000_000 + 1); big.set(PNG.subarray(0, 8));
 r = await post(big, { as: "image" });
 check("over the image cap: 413, before any sniffing", r.status === 413 && /cap/.test(r.text), `${r.status} ${r.text.slice(0, 80)}`);
 
+await world.close();
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);
