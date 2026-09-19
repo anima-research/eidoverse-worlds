@@ -409,7 +409,10 @@ export function attachLamps(root, owner, { shadows = false } = {}) {
     const m = o.material;
     const glow = (m?.emissiveIntensity ?? 1) *
       Math.max(m?.emissive?.r ?? 0, m?.emissive?.g ?? 0, m?.emissive?.b ?? 0);
-    if (glow > 0.5 || (m?.emissiveMap && (m?.emissiveIntensity ?? 1) > 1)) {
+    // An EMITTER, not an unlit trick: MToon toon bodies paint emissiveFactor ≈ white + an emissive MAP at
+    // strength 1 for their flat look (tigerbee, aporia — measured 09-19), and lit the floor. A lamp needs a
+    // flat emissive colour with no map, or a map driven above strength 1 (R 09-19: 'clearly wrong for most avatars').
+    if ((!m?.emissiveMap && glow > 0.5) || (m?.emissiveMap && (m?.emissiveIntensity ?? 1) > 1)) {
       emissive.push({ mesh: o, glow: Math.max(glow, m?.emissiveIntensity ?? 1) });
     }
   });

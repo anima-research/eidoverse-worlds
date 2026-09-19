@@ -566,6 +566,10 @@ export function makeFrame(id, opts = {}) {
       head.removeEventListener('pointermove', move);
       head.removeEventListener('pointerup', up);
       root.classList.remove('lifting');
+      // a drop that ENDS under the dock is the one deliberate way to be there (R 09-19: 'unless a user
+      // deliberately stuck a window under the dock, there's never a situation we should allow this')
+      const d = document.querySelector('#dock')?.getBoundingClientRect(), hh = root.offsetHeight;
+      state.underDock = !!(d && d.width && d.left < state.x + state.w && state.x < d.right && d.top < state.y + hh && state.y < d.bottom);
       markMoved(); save();                 // a drag IS the deliberate act
     };
     head.addEventListener('pointermove', move);
@@ -690,13 +694,15 @@ export function makeFrame(id, opts = {}) {
       // that wrong result. chromeSettled below is the gate: the dock carries no
       // buttons until it has laid out.
       const chromeSettled = (document.querySelector('#dock')?.querySelectorAll('button[data-toggles]').length ?? 0) > 0;
-      if (!placed && chromeSettled) {
+      // THE DOCK IS CLEARED EVEN BY A PLACED FRAME — a saved position from an older dock geometry (or a moved
+      // dock) is not a decision to sit under it; only a drop that ended there is (state.underDock, set at drag end).
+      if (chromeSettled && (!placed || !state.underDock)) {
         // ANCHOR-AWARE (antra-tess #185 B2). Each obstacle is charged to the side it
         // is welded to, via its DECLARED anchor — the one thing computed style cannot
         // supply. `.capnotice` is right-anchored and was being read as left-consuming,
         // which is what drove `avail` to -6 and floored a 407px frame to its 210 minW.
         let clearRight = 0, clearFromRight = 0;
-        for (const sel of ['#dock', '#micbtn', '#earbtn', '.capnotice']) {
+        for (const sel of (placed ? ['#dock'] : ['#dock', '#micbtn', '#earbtn', '.capnotice'])) {   // a placed frame yields to the DOCK only
           const g = document.querySelector(sel)?.getBoundingClientRect();
           if (g && g.width && g.left < state.x + state.w && state.x < g.right
               && g.top < state.y + hh && state.y < g.bottom) {
