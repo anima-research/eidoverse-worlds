@@ -1249,9 +1249,9 @@ kbd {
 @media (min-width: 901px) and (max-width: 1067px) {
   .capnotice { top: 64px; }
 }
-.capnotice > * { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }   /* each notice is one row */
+.capnotice > * { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; flex: 1; }   /* title + text, buttons wrap under */
 .capnotice b { display: inline; margin: 0; white-space: nowrap; }
-.capnotice p { margin: 0; color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+.capnotice p { margin: 0; color: var(--dim); flex: 1; min-width: 0; font-size: var(--fs-sm); line-height: 1.35; }   /* wraps — the 09-12 ellipsis left 'T…' beside the title (R 09-19) */
 .capnotice .cn-btns { display: flex; gap: 6px; flex: none; }
 .capnotice .cn-btns button { padding: 4px 10px; font-size: var(--fs-xs); }
 /* photo mode hides every chrome layer but keeps the canvas */
