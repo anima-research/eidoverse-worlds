@@ -1028,27 +1028,36 @@ export class Avatar {
   }
 
   // ---- locomotion / clips
-  setClip(slot, speed = 0, { fade } = {}) {
+  setClip(slot, speed = 0, { fade, ease = false } = {}) {
     // Moving cancels an emote. Standing frozen mid-cheer while walking away
     // is worse than cutting the cheer short.
     if (this.emote && speed > 0.05) this.cancelEmote();
     if (this.emote) return;        // otherwise it owns the body until it finishes
     let use = slot;
     while (!this.actions[use] && CLIP_FALLBACK[use]) use = CLIP_FALLBACK[use];
-    this._setAction(this.actions[use], use, fade);
+    this._setAction(this.actions[use], use, fade, ease);
     const a = this.actions[use];
     if (!a) return;
     const nat = CLIP_SPEED[slot];
     a.timeScale = nat > 0 && speed > 0 ? THREE.MathUtils.clamp(speed / nat, 0.6, 1.6) : 1;
   }
-  _setAction(a, slot, fadeIn) {
+  _setAction(a, slot, fadeIn, ease = false) {
     if (!a || this.current === a) return;
-    // into a jump the caller says how fast: 0.1 s on a jump press (feet already off the floor), 0.3 s on a walk-off
+    // into a jump the caller says how fast: 0.1 s on a jump press (feet already off the floor), 0.5 s EASED on a
+    // walk-off (R 09-19: 'start immediately… a bezier… almost no transition right away, smoother overall')
     const fade = fadeIn ?? (slot === 'jump' ? 0.1 : 0.22);
-    if (this.current) this.current.fadeOut(fade);
-    a.enabled = true;
-    a.setEffectiveWeight(1);       // base weight — fadeIn ramps a MULTIPLIER on this
-    a.reset().fadeIn(fade);
+    if (ease) {
+      // three's fades are linear; this one is smoothstep on both sides so the weights always sum to 1
+      const prev = this.current; if (prev) prev.stopFading();
+      a.enabled = true; a.reset(); a.stopFading(); a.setEffectiveWeight(0); a.play();
+      this._xfade = { out: prev, in: a, dur: fade, t: 0 };
+    } else {
+      this._xfade = null;
+      if (this.current) this.current.fadeOut(fade);
+      a.enabled = true;
+      a.setEffectiveWeight(1);       // base weight — fadeIn ramps a MULTIPLIER on this
+      a.reset().fadeIn(fade);
+    }
     // The jump LEAVES THE GROUND INSTANTLY (gamey, on purpose) but the clip opens with its anticipation crouch,
     // so the body squatted in mid-air and then rose (R 09-19). Start the clip at take-off — the frame the hips
     // stop dipping — measured from the clip itself, so it holds for any body and any future jump clip.
@@ -1619,6 +1628,11 @@ export class Avatar {
   }
 
   update(dt, now = performance.now()) {
+    if (this._xfade) {   // the eased crossfade (see _setAction): smoothstep in, its complement out
+      const x = this._xfade; x.t += dt; const u = Math.min(1, x.t / x.dur), w = u * u * (3 - 2 * u);
+      x.in.setEffectiveWeight(w); if (x.out && x.out !== x.in) x.out.setEffectiveWeight(1 - w);
+      if (u >= 1) { if (x.out && x.out !== x.in) x.out.setEffectiveWeight(0); this._xfade = null; }
+    }
     const BC = globalThis.__ewBC ?? (() => {});
     // emote expiry
     if (this.emote && now > this.emote.until) this.cancelEmote();

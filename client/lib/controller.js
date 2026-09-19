@@ -673,13 +673,13 @@ export function updateMe(dt, me) {
 
   const seatedClip = myState.seat?.chair ? 'sitchair' : 'sit';
   myState.clip = mantle ? 'climb'
-    : (jumped || airborneFor > 0.2) ? 'jump'   // a jump press is immediate; a walk-off waits 0.2 s and blends slower (R 09-19: '~.5 s on a fall, pretty common in games')
+    : (jumped || airborneFor > 0.04) ? 'jump'   // a jump press is immediate; a walk-off starts at once too (2 frames against stair flicker) and EASES in over 0.5 s (R 09-19)
       : myState.speed >= 0.05 ? (myState.speed < 2.6 ? 'walk' : 'run')
         : posture === 'sit' ? seatedClip
           : posture === 'lie' ? 'lie'
             : 'idle';
 
-  me.setClip(myState.clip, myState.speed, { fade: myState.clip === 'jump' ? (jumped ? 0.1 : 0.3) : undefined });
+  me.setClip(myState.clip, myState.speed, myState.clip === 'jump' ? (jumped ? { fade: 0.1 } : { fade: 0.5, ease: true }) : undefined);
   me.root.position.copy(myState.pos);
   me.root.rotation.y = myState.yaw;
   // your head follows your camera — you could always look up, your body never
