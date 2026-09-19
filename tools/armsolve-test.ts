@@ -18,7 +18,8 @@ plugin({
 });
 globalThis.location ??= { search: "" } as any;   // xrbody reads ?torsoplay at import
 const { THREE } = await import("./core-stub.mjs");
-const { solveArm, relaxArm } = await import("../client/lib/xrbody.js");
+const { solveArm, relaxArm, solveLeg } = await import("../client/lib/xrbody.js");
+const { makeCapsuleVrm } = await import("../client/lib/capsulebody.js");
 
 let pass = 0, fail = 0;
 const ok = (c: boolean, m: string) => { if (c) pass++; else { fail++; console.log("  FAIL", m); } };
@@ -120,6 +121,23 @@ const ident = new THREE.Quaternion();
   ok(mid > 0.01 && toClip > 0.01, `relaxing between held and clip at 0.6 s (from held ${mid.toFixed(3)}, to clip ${toClip.toFixed(3)})`);
   let ours = true; for (let i = 0; i < 90; i++) ours = frame();
   ok(!ours && v.bones.rightUpperArm.quaternion.angleTo(clip) < 1e-6, 'released to the clip by 2 s');
+}
+
+// 6. the LEG solver runs on the same module (09-19: a scratch vector shared with the old arm solver was deleted with
+//    it; solveLeg threw '_pole is not defined' every frame inside feetTick and the whole XR tick died before the
+//    arms — one leg straight out, hands not IKing, in R's headset). The capsule puppet has legs; plant both feet.
+{
+  const v: any = makeCapsuleVrm(); v.scene.updateMatrixWorld(true);
+  let threw: any = null;
+  for (const side of ['left', 'right']) {
+    const foot = v.humanoid.getNormalizedBoneNode(side + 'Foot').getWorldPosition(new THREE.Vector3());
+    const t = foot.clone(); t.y = 0.08; t.z += 0.12;
+    try { solveLeg(v, side, t, 0); } catch (e) { threw = e; }
+    v.scene.updateMatrixWorld(true);
+    const f2 = v.humanoid.getNormalizedBoneNode(side + 'Foot').getWorldPosition(new THREE.Vector3());
+    ok(!threw, `solveLeg ${side} runs (${threw ? String(threw.message).slice(0, 60) : 'no throw'})`);
+    ok(!threw && f2.distanceTo(t) < 0.06, `${side} foot near its target (err ${(f2.distanceTo(t) * 100).toFixed(1)} cm)`);
+  }
 }
 
 console.log(`${pass} passed, ${fail} failed`);
