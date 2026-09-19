@@ -485,6 +485,10 @@ async function enterVR() {
   if (session && presenting) { tee(`[xr] enter refused: already presenting`); return; }
   entering = true;
   xrVeilShow(true, 'entering VR');   // from the click: requestSession + setSession is 1–3 s of nothing otherwise
+  toast('entering VR…', 'info', 6000);
+  // LET IT PAINT (R 09-19: 'it just looks unresponsive'): the veil and toast were set from the click but the
+  // session request + the compile storm stall the main thread before the browser ever draws them. Two frames.
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   try {
     // THE LADDER (R's first tee line, 09-04 23:20: Chrome 152 granted the
     // session WITHOUT the optional 'webgpu' feature and three refused it —
@@ -812,6 +816,7 @@ export function leaveVR(why = 'verb') {
   if (!session) { tee(`[xr] leave (${why}): no session`); return false; }
   tee(`[xr] leave (${why})`);
   lastLeaveAt = performance.now();
+  toast('leaving VR…', 'info', 6000);
   exitVeilShow(true);   // from the CLICK, not the 'end' event — session.end() takes a moment and that moment read as nothing happening (R 22:57)
   try { const p = session.end(); p?.catch?.((e) => tee(`[xr] leave (${why}) rejected: ${e?.message ?? e}`)); } catch (e) { tee(`[xr] leave (${why}) threw: ${e?.message ?? e}`); }
   return true;
