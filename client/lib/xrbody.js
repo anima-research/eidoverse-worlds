@@ -71,51 +71,176 @@ export const xrSimHead = (pos, quat) => { if (CONFIG.params.has('xrsim')) simHea
 const simGrip = { left: null, right: null };
 export const xrSimGrip = (side, pos, quat) => { if (CONFIG.params.has('xrsim')) simGrip[side] = pos ? { pos, quat } : null; };
 
-// ---- arm IK (Tier A3; porch-old index.html:5941 _solveArm + _aimBone) ------
-// Two-bone solve per side to the controller grip: elbow interior angle clamped
-// 23°–178° (Basis) so the wrist never snaps at full extension; the elbow pole
-// is CHEST-LOCAL (down-and-back relative to the torso) so elbows stay right at
-// any body yaw; the wrist takes the grip orientation through a per-hand
-// calibration (porch's measured right, left = mirror). Emotes trump IK.
+// ---- arm IK (Tier A3) — Basis's swivel solver, ported 2026-09-19 -----------
+// Was porch-old's two-bone + fixed chest-local pole (elbow flipped at the pole singularity — the
+// `_axis=(0,0,1)` fallback — and the wrist wrapped because the hand bone took the whole grip twist).
+// Now BasisArmSolveCore.cs (com.basis.eeriemovement, 6377b3eb): the elbow lives on the circle of
+// radius upper·sinα about the shoulder→hand axis; a STABLE frame (ex,ey) on that circle is built
+// from the torso so the swivel angle is continuous across reach directions; 36 samples + golden
+// refine pick the cheapest angle under (a) a prior — rest direction blended toward the head's line
+// of sight, (b) last frame's angle, (c) a torso-capsule penalty; a far-cheaper basin only wins after
+// a 0.2 s dwell (hysteresis: no flicker between two elbows); the chosen angle is smoothed 0.08 s at
+// ≤720°/s, reset outright on a teleport (>0.6·chain). Reach is SOFT at the end (exponential, s=0.02),
+// so full extension never pops. The wrist twist is SPLIT: the forearm rolls (keep ≤15°/15% on the
+// hand, fade 155–178°, cap 120°) and the hand takes the remainder — the grip orientation still
+// lands exactly. Joint-limit costs (humeral/pronation/wrist) are NOT ported: they need Basis's per-
+// joint limit tables; a later rung. Emotes trump IK. Lost tracking: hold 0.5 s, then relax to the
+// clip at 3 Hz (Basis's tracker-loss rule) instead of snapping in one frame.
 const WRIST_R = new THREE.Quaternion(0.5812875774993174, 0.7123369384133019, 0.08586779365740962, -0.38380664895827776);
 const WRIST_L = new THREE.Quaternion(-WRIST_R.x, WRIST_R.y, WRIST_R.z, -WRIST_R.w).normalize();   // mirror across YZ
-const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _d = new THREE.Vector3(), _pole = new THREE.Vector3(), _axis = new THREE.Vector3(), _u = new THREE.Vector3(), _elbow = new THREE.Vector3(), _rest = new THREE.Vector3();
+const ARM = { SAMPLES: 36, REFINE: 8, MIN_ELBOW: 22 * Math.PI / 180, MIN_REACH_FRAC: 0.05, SOFT: 0.02, PRIOR_W: 0.5, PREV_W: 0.25,
+  TORSO_W: 1.5, LOCAL_BASIN: 60 * Math.PI / 180, BASIN_JUMP: 100 * Math.PI / 180, SWITCH_MARGIN: 0.12, DWELL: 0.2, SMOOTH: 0.08, MAX_RATE: 720 * Math.PI / 180,
+  TELEPORT: 0.6, HEAD_FADE: [0.15, 0.45], REST_OUT: 0.35, REST_BACK: 0.25,
+  WRIST_KEEP_FRAC: 0.15, WRIST_KEEP_MAX: 15 * Math.PI / 180, ROLL_MAX: 120 * Math.PI / 180, WRAP_FADE: [155 * Math.PI / 180, 178 * Math.PI / 180],
+  HOLD: 0.5, RELAX_HZ: 3 };
+const _p = new THREE.Vector3(), _q = new THREE.Quaternion(), _d = new THREE.Vector3(), _u = new THREE.Vector3(), _elbow = new THREE.Vector3(), _rest = new THREE.Vector3();
 // solver scratch — these run per side, per body (remotes too since C18), per frame: nothing here may allocate
-const _uPos = new THREE.Vector3(), _toT = new THREE.Vector3(), _fwd = new THREE.Vector3(), _fq2 = new THREE.Quaternion(), _e2 = new THREE.Euler();
+const _uPos = new THREE.Vector3(), _toT = new THREE.Vector3(), _axis = new THREE.Vector3(), _up = new THREE.Vector3(), _fwd = new THREE.Vector3(), _out = new THREE.Vector3();
+const _et = new THREE.Vector3(), _er = new THREE.Vector3(), _ex = new THREE.Vector3(), _ey = new THREE.Vector3(), _ctr = new THREE.Vector3(), _dir = new THREE.Vector3();
+const _prior = new THREE.Vector3(), _hp = new THREE.Vector3(), _ta = new THREE.Vector3(), _tb = new THREE.Vector3(), _tq = new THREE.Vector3(), _fa = new THREE.Vector3();
+const _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _qU = new THREE.Quaternion(), _qL = new THREE.Quaternion(), _qH = new THREE.Quaternion();
+const smoothstep = (a, b, v) => { const t = THREE.MathUtils.clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const wrapA = (a) => a - 2 * Math.PI * Math.floor((a + Math.PI) / (2 * Math.PI));
 function aimBone(bone, targetWorld, childRestLocal) {
   bone.getWorldPosition(_p);
   bone.parent.getWorldQuaternion(_q).invert();
   _d.subVectors(targetWorld, _p).applyQuaternion(_q).normalize();
   bone.quaternion.setFromUnitVectors(_rest.copy(childRestLocal).normalize(), _d);
 }
-export function solveArm(vrm, side, targetPos, targetQuat) {
+// swing–twist split about a unit axis (local frame): returns the signed twist angle
+function twistAbout(q, axis) {
+  const d = q.x * axis.x + q.y * axis.y + q.z * axis.z;
+  const t = 2 * Math.atan2(d, q.w);   // twist quaternion = normalize(w, d·axis)
+  return wrapA(t);
+}
+function armState(vrm, side) {
+  const ud = vrm.userData = vrm.userData || {}; const a = ud._arm = ud._arm || {};
+  return a[side] = a[side] || { seeded: false, swivel: 0, switchT: 0, lastT: new THREE.Vector3(), lastAxis: new THREE.Vector3(), lost: 0, held: null };
+}
+// Basis Frame(): a circle basis that stays continuous as the reach axis swings around the body
+function swivelFrame(axis, up, fwd, out) {
+  _et.set(0, 0, 0).addScaledVector(out, -0.45).addScaledVector(up, -0.6).addScaledVector(fwd, -0.65).normalize();
+  _er.copy(up).negate().addScaledVector(_et, -_et.dot(_er));   // -up minus its projection on et
+  if (_er.lengthSq() > 1e-8) _er.normalize(); else _er.crossVectors(_et, fwd).normalize();
+  _ta.subVectors(axis, _et); _tb.crossVectors(_ta, _er); _ex.crossVectors(_tb, axis);
+  if (_ex.lengthSq() > 1e-8) _ex.normalize();
+  else { _ex.copy(_er).addScaledVector(axis, -_er.dot(axis)); if (_ex.lengthSq() < 1e-8) _ex.copy(fwd).addScaledVector(axis, -fwd.dot(axis)); _ex.normalize(); }
+  _ey.crossVectors(axis, _ex);
+}
+const dirToAng = (v) => Math.atan2(v.dot(_ey), v.dot(_ex));
+const angToDir = (a, o) => o.copy(_ex).multiplyScalar(Math.cos(a)).addScaledVector(_ey, Math.sin(a));
+function torsoCost(elbow, a, b, radius) {
+  _tq.subVectors(b, a); const abSq = _tq.lengthSq(); const t = abSq > 1e-8 ? THREE.MathUtils.clamp(_fa.subVectors(elbow, a).dot(_tq) / abSq, 0, 1) : 0;
+  _tq.multiplyScalar(t).add(a); const dist = elbow.distanceTo(_tq), margin = radius * 1.5;
+  if (dist >= margin) return 0;
+  const soft = (margin - dist) / Math.max(margin - radius, 1e-5); let c = ARM.TORSO_W * soft * soft;
+  if (dist < radius) { const pen = (radius - dist) / Math.max(radius, 1e-5); c += ARM.TORSO_W * 8 * pen * pen; }
+  return c;
+}
+/** Solve one arm to a world grip. `opts.dt` drives smoothing/hysteresis; `opts.head` (world) biases the
+ *  elbow prior toward the line of sight; `opts.torso` = {a, b, r} capsule (hips→neck). Returns true when posed. */
+export function solveArm(vrm, side, targetPos, targetQuat, opts = {}) {
   const h = vrm.humanoid;
   const U = h.getNormalizedBoneNode(side + 'UpperArm'), L = h.getNormalizedBoneNode(side + 'LowerArm'), H = h.getNormalizedBoneNode(side + 'Hand');
   if (!U || !L || !H) return false;
+  const st = armState(vrm, side), dt = opts.dt > 0 ? opts.dt : 1 / 60;
   U.quaternion.identity(); L.quaternion.identity(); H.quaternion.identity();
   vrm.scene.updateMatrixWorld(true);
   const uPos = U.getWorldPosition(_uPos);
-  const l1 = L.position.length(), l2 = H.position.length();
-  const toT = _toT.subVectors(targetPos, uPos);
-  let d = THREE.MathUtils.clamp(toT.length(), Math.abs(l1 - l2) + 0.02, l1 + l2 - 0.02);
-  const E = Math.acos(THREE.MathUtils.clamp((l1 * l1 + l2 * l2 - d * d) / (2 * l1 * l2), -1, 1));
-  const Ec = THREE.MathUtils.clamp(E, 23 * Math.PI / 180, 178 * Math.PI / 180);
-  if (Ec !== E) d = Math.sqrt(Math.max(1e-6, l1 * l1 + l2 * l2 - 2 * l1 * l2 * Math.cos(Ec)));
-  const dir = toT.normalize();   // aliases _toT; not read again after the pole
-  const a = Math.acos(THREE.MathUtils.clamp((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), -1, 1));
+  const upper = L.position.length(), lower = H.position.length(), chain = upper + lower;
+  if (upper < 1e-5 || lower < 1e-5) return false;
+  // torso frame (world): the model faces +Z at hips identity; its left arm is +X
   const chest = h.getNormalizedBoneNode('upperChest') || h.getNormalizedBoneNode('chest') || h.getNormalizedBoneNode('spine');
   chest ? chest.getWorldQuaternion(_q) : _q.identity();
-  _pole.set(side === 'left' ? 0.3 : -0.3, -1, -0.5).normalize().applyQuaternion(_q);
-  _axis.crossVectors(dir, _pole);
-  if (_axis.lengthSq() < 1e-6) _axis.set(0, 0, 1); else _axis.normalize();
-  _u.copy(dir).applyAxisAngle(_axis, a);
-  _elbow.copy(uPos).addScaledVector(_u, l1);
-  aimBone(U, _elbow, L.position); vrm.scene.updateMatrixWorld(true);
-  aimBone(L, targetPos, H.position); vrm.scene.updateMatrixWorld(true);
-  if (targetQuat) {
-    H.parent.getWorldQuaternion(_q).invert();
-    H.quaternion.copy(_q.multiply(targetQuat).multiply(side === 'left' ? WRIST_L : WRIST_R));
+  _up.set(0, 1, 0).applyQuaternion(_q); _fwd.set(0, 0, 1).applyQuaternion(_q); _out.set(side === 'left' ? 1 : -1, 0, 0).applyQuaternion(_q);
+  const toT = _toT.subVectors(targetPos, uPos), d = toT.length();
+  // MinReach: the 22° interior floor, never less than |upper−lower| or 5 % of the chain
+  const minReach = Math.max(Math.sqrt(Math.max(0, upper * upper + lower * lower - 2 * upper * lower * Math.cos(ARM.MIN_ELBOW))), Math.abs(upper - lower) + 1e-5, ARM.MIN_REACH_FRAC * chain);
+  if (d > minReach) _axis.copy(toT).divideScalar(d);
+  else if (st.seeded && st.lastAxis.lengthSq() > 1e-8) _axis.copy(st.lastAxis);
+  else _axis.copy(d > 1e-5 ? toT.divideScalar(d) : _out);
+  // SoftReach: exponential approach to full extension instead of a hard clamp
+  const sft = ARM.SOFT, startD = chain * (1 - sft);
+  let dEff = d <= startD ? d : chain * (1 - sft * Math.exp(-(d - startD) / (sft * chain)));
+  dEff = Math.max(dEff, minReach);
+  const cosA = THREE.MathUtils.clamp((upper * upper + dEff * dEff - lower * lower) / (2 * upper * dEff), -1, 1), sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+  _ctr.copy(uPos).addScaledVector(_axis, upper * cosA); const radius = upper * sinA;
+  swivelFrame(_axis, _up, _fwd, _out);
+  // prior: rest (out·.35 − fwd·.25 − up) blended toward the head→target line as it leaves the axis
+  _prior.set(0, 0, 0).addScaledVector(_out, ARM.REST_OUT).addScaledVector(_fwd, -ARM.REST_BACK).sub(_up);
+  _prior.addScaledVector(_axis, -_prior.dot(_axis));
+  if (_prior.lengthSq() < 1e-8) _prior.copy(_out).addScaledVector(_axis, -_out.dot(_axis));
+  _prior.normalize();
+  if (opts.head) {
+    _hp.subVectors(targetPos, opts.head); const fLen = _hp.length();
+    if (fLen > 1e-5) { _hp.addScaledVector(_axis, -_hp.dot(_axis)); const sin = _hp.length() / fLen, w = smoothstep(ARM.HEAD_FADE[0], ARM.HEAD_FADE[1], sin);
+      if (w > 0) { _hp.divideScalar(sin * fLen).multiplyScalar(w).addScaledVector(_prior, 1 - w); if (_hp.lengthSq() > 1e-8) _prior.copy(_hp).normalize(); } }
   }
+  const priorA = dirToAng(_prior), prevA = st.seeded ? st.swivel : priorA, prevW = st.seeded ? ARM.PREV_W : 0;
+  const torso = opts.torso;
+  const cost = (psi) => { angToDir(psi, _dir); _elbow.copy(_ctr).addScaledVector(_dir, radius);
+    let c = ARM.PRIOR_W * (1 - Math.cos(psi - priorA)) + prevW * (1 - Math.cos(psi - prevA));
+    if (torso) c += torsoCost(_elbow, torso.a, torso.b, torso.r);
+    return c; };
+  // 36 samples, then the cheapest within 60° of last frame's basin (hysteresis)
+  const step = 2 * Math.PI / ARM.SAMPLES; let best = 0, bestC = Infinity, local = -1, localC = Infinity;
+  for (let k = 0; k < ARM.SAMPLES; k++) { const psi = k * step - Math.PI, c = cost(psi);
+    if (c < bestC) { bestC = c; best = k; }
+    if (st.seeded && Math.abs(wrapA(psi - st.swivel)) <= ARM.LOCAL_BASIN && c < localC) { localC = c; local = k; } }
+  let chosen = best;
+  if (st.seeded && local >= 0 && Math.abs(wrapA(best * step - Math.PI - st.swivel)) > ARM.BASIN_JUMP) {
+    if (localC - bestC > ARM.SWITCH_MARGIN) { st.switchT += dt; if (st.switchT >= ARM.DWELL) st.switchT = 0; else chosen = local; }
+    else { st.switchT = 0; chosen = local; }
+  } else st.switchT = 0;
+  // golden-section refine around the chosen sample
+  let lo = chosen * step - Math.PI - step, hi = lo + 2 * step; const phi = 0.6180339887;
+  let x1 = hi - phi * (hi - lo), x2 = lo + phi * (hi - lo), f1 = cost(x1), f2 = cost(x2);
+  for (let it = 0; it < ARM.REFINE; it++) {
+    if (f1 < f2) { hi = x2; x2 = x1; f2 = f1; x1 = hi - phi * (hi - lo); f1 = cost(x1); }
+    else { lo = x1; x1 = x2; f1 = f2; x2 = lo + phi * (hi - lo); f2 = cost(x2); }
+  }
+  const target = wrapA(f1 < f2 ? x1 : x2);
+  const teleport = st.seeded && targetPos.distanceToSquared(st.lastT) > ARM.TELEPORT * ARM.TELEPORT * chain * chain;
+  if (!st.seeded || teleport) st.swivel = target;
+  else { const alpha = 1 - Math.exp(-dt / ARM.SMOOTH); let s = wrapA(target - st.swivel) * alpha; const m = ARM.MAX_RATE * dt; s = THREE.MathUtils.clamp(s, -m, m); st.swivel = wrapA(st.swivel + s); }
+  st.seeded = true; st.lastT.copy(targetPos); st.lastAxis.copy(_axis);
+  angToDir(st.swivel, _dir); _elbow.copy(_ctr).addScaledVector(_dir, radius);
+  _u.copy(uPos).addScaledVector(_axis, dEff);   // the hand lands at the SOFT reach, on the axis
+  aimBone(U, _elbow, L.position); vrm.scene.updateMatrixWorld(true);
+  aimBone(L, _u, H.position); vrm.scene.updateMatrixWorld(true);
+  if (targetQuat) {
+    // demanded hand-local orientation, then split its twist about the forearm: the forearm rolls the bulk
+    H.parent.getWorldQuaternion(_q).invert();
+    _qH.copy(_q).multiply(targetQuat).multiply(side === 'left' ? WRIST_L : WRIST_R);
+    _fa.copy(H.position).normalize();   // forearm axis in the lower arm's local frame
+    const demand = twistAbout(_qH, _fa), mag = Math.abs(demand);
+    let roll = (mag - Math.min(ARM.WRIST_KEEP_FRAC * mag, ARM.WRIST_KEEP_MAX)) * (1 - smoothstep(ARM.WRAP_FADE[0], ARM.WRAP_FADE[1], mag));
+    roll = Math.min(roll, ARM.ROLL_MAX); if (demand < 0) roll = -roll;
+    if (Math.abs(roll) > 1e-4) {
+      L.quaternion.multiply(_q2.setFromAxisAngle(_fa, roll)); L.updateWorldMatrix(false, false);
+      H.parent.getWorldQuaternion(_q).invert();
+      _qH.copy(_q).multiply(targetQuat).multiply(side === 'left' ? WRIST_L : WRIST_R);   // the hand takes what the roll left
+    }
+    H.quaternion.copy(_qH);
+  }
+  st.held = st.held || { U: new THREE.Quaternion(), L: new THREE.Quaternion(), H: new THREE.Quaternion(), pos: new THREE.Vector3(), quat: new THREE.Quaternion() };
+  st.held.U.copy(U.quaternion); st.held.L.copy(L.quaternion); st.held.H.copy(H.quaternion); st.held.pos.copy(targetPos); if (targetQuat) st.held.quat.copy(targetQuat);
+  st.lost = 0;
+  return true;
+}
+/** Tracking lost this frame: hold the last solve for 0.5 s, then relax toward the clip pose at 3 Hz.
+ *  Returns true while the arm is still (partly) ours. The bones hold the CLIP's pose on entry. */
+export function relaxArm(vrm, side, dt) {
+  const st = armState(vrm, side); if (!st.seeded || !st.held) return false;
+  const h = vrm.humanoid;
+  const U = h.getNormalizedBoneNode(side + 'UpperArm'), L = h.getNormalizedBoneNode(side + 'LowerArm'), H = h.getNormalizedBoneNode(side + 'Hand');
+  if (!U || !L || !H) return false;
+  st.lost += dt > 0 ? dt : 1 / 60;
+  if (st.lost <= ARM.HOLD) { U.quaternion.copy(st.held.U); L.quaternion.copy(st.held.L); H.quaternion.copy(st.held.H); return true; }
+  const w = Math.exp(-ARM.RELAX_HZ * (st.lost - ARM.HOLD));   // 1 → 0 after the hold
+  if (w < 0.01) { st.seeded = false; return false; }
+  _qU.copy(U.quaternion); _qL.copy(L.quaternion); _qH.copy(H.quaternion);   // the clip's pose
+  U.quaternion.copy(_qU).slerp(st.held.U, w); L.quaternion.copy(_qL).slerp(st.held.L, w); H.quaternion.copy(_qH).slerp(st.held.H, w);
   return true;
 }
 
@@ -181,12 +306,13 @@ export function applyRemoteXR(av, xr, st, dt) {
   applyLookChain(h, qRel, st.look, dt);
   if (!av.emote) {
     av.root.getWorldQuaternion(facingQ); av.root.getWorldPosition(rootP);
+    const torso = torsoCapsule(vrm, h);
     for (const side of ['left', 'right']) {
       const g = xr[side[0]];
-      if (!Array.isArray(g) || g.length !== 7) continue;
+      if (!Array.isArray(g) || g.length !== 7) { relaxArm(vrm, side, dt); continue; }   // a side absent from the wire = lost there too
       fp.set(g[0], g[1], g[2]).applyQuaternion(facingQ).add(rootP);
       fq.set(g[3], g[4], g[5], g[6]).premultiply(facingQ);
-      solveArm(vrm, side, fp, fq);
+      solveArm(vrm, side, fp, fq, { dt, torso });
     }
   }
   const c = Array.isArray(xr.c) && xr.c.length === 4 ? xr.c : [0, 0, 0, 0];
@@ -396,16 +522,37 @@ export function tickXRBody(dt) {
   if (av.emote) { dbg.arms.left = dbg.arms.right = false; fingerTick(vrm, curls); return; }
   const hands = xrHands();
   facingQ.setFromEuler(eul.set(0, facing, 0, 'YXZ')); facingInv.copy(facingQ).invert(); av.root.getWorldPosition(rootP);
+  // 3a. the chest follows the hands (Basis: 0.3× the hands' mean yaw off the facing, ±15°, split 60/40
+  //     chest/upperChest) — reaching across the body turns the torso a little, as a body does
+  let tracked = 0; handMean.set(0, 0, 0);
+  for (const side of ['left', 'right']) { const g = simGrip[side] ? gripP.fromArray(simGrip[side].pos) : (hands[side]?.grip ? hands[side].grip.getWorldPosition(gripP) : null);
+    if (g && g.distanceToSquared(rig.position) > 1e-4) { handMean.add(g); tracked++; } }
+  if (tracked) { handMean.divideScalar(tracked).sub(rootP).applyQuaternion(facingInv);
+    const off = THREE.MathUtils.clamp(0.3 * Math.atan2(handMean.x, handMean.z), -CHEST_FOLLOW_MAX, CHEST_FOLLOW_MAX);
+    const c = h.getNormalizedBoneNode('chest'), uc = h.getNormalizedBoneNode('upperChest');
+    if (c) c.quaternion.premultiply(_q2.setFromAxisAngle(Y_AXIS, off * (uc ? 0.6 : 1)));
+    if (uc) uc.quaternion.premultiply(_q2.setFromAxisAngle(Y_AXIS, off * (c ? 0.4 : 1))); }
+  torsoCapsule(vrm, h);
   for (const side of ['left', 'right']) {
     const grip = hands[side]?.grip;
     let ok = false;
-    if (simGrip[side]) { gripP.fromArray(simGrip[side].pos); gripQ.fromArray(simGrip[side].quat); ok = solveArm(vrm, side, gripP, gripQ); }
+    const opts = { dt, head: hmdPos, torso: torsoCap };
+    if (simGrip[side]) { gripP.fromArray(simGrip[side].pos); gripQ.fromArray(simGrip[side].quat); ok = solveArm(vrm, side, gripP, gripQ, opts); }
     else if (grip) {
       grip.matrixWorld.decompose(gripP, gripQ, tmpS);
-      if (gripP.distanceToSquared(rig.position) > 1e-4) ok = solveArm(vrm, side, gripP, gripQ);   // 1:1 — the puppet is scaled, not the target
+      if (gripP.distanceToSquared(rig.position) > 1e-4) ok = solveArm(vrm, side, gripP, gripQ, opts);   // 1:1 — the puppet is scaled, not the target
     }
     dbg.arms[side] = ok;
     if (ok) { fp.copy(gripP).sub(rootP).applyQuaternion(facingInv); fq.copy(facingInv).multiply(gripQ); wire[side[0]] = [...fp.toArray(), ...fq.toArray()].map(r4); }
+    else relaxArm(vrm, side, dt);   // hold, then ease back to the clip — never a one-frame snap
   }
   fingerTick(vrm, curls);   // after the arms: curls compose onto the solved pose
+}
+const handMean = new THREE.Vector3(), Y_AXIS = new THREE.Vector3(0, 1, 0), CHEST_FOLLOW_MAX = 15 * Math.PI / 180;
+const torsoCap = { a: new THREE.Vector3(), b: new THREE.Vector3(), r: 0.12 };
+function torsoCapsule(vrm, h) {
+  const a = h.getNormalizedBoneNode('hips') || h.getNormalizedBoneNode('spine'), b = h.getNormalizedBoneNode('neck') || h.getNormalizedBoneNode('head');
+  if (!a || !b) return null;
+  a.getWorldPosition(torsoCap.a); b.getWorldPosition(torsoCap.b); torsoCap.r = 0.12 * (vrm.scene.scale.x || 1);
+  return torsoCap;
 }

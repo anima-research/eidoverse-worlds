@@ -479,7 +479,11 @@ const buttonsTrusted = () => performance.now() > inputsSettledAt;
 
 // ---- session ---------------------------------------------------------------
 let sessionNo = 0;   // per page: tee() folds byte-identical lines (repeats 2–19 are DROPPED), so every entry line carries its number
+let entering = false;   // requestSession → setSession is a window of ~1–3 s; a second click (or a leave) inside it made two sessions fight (Basis: refuse enter/leave while in flight)
 async function enterVR() {
+  if (entering) { tee(`[xr] enter refused: a session request is already in flight`); return; }
+  if (session && presenting) { tee(`[xr] enter refused: already presenting`); return; }
+  entering = true;
   try {
     // THE LADDER (R's first tee line, 09-04 23:20: Chrome 152 granted the
     // session WITHOUT the optional 'webgpu' feature and three refused it —
@@ -677,7 +681,7 @@ async function enterVR() {
     // for very long") — a sticky toast with the actual message, 30 s
     toast(e?.userMessage ?? `VR failed to start: ${e?.message ?? e}`, e?.userMessage ? 'warn' : 'err', e?.userMessage ? 8000 : 30000);
     tee(`[xr] ENTER FAILED: ${e?.name ?? ''} ${e?.message ?? e}`);
-  }
+  } finally { entering = false; }
 }
 
 /** The rig goes where the body is: the BODY's root offset by the head's playspace position (recentreXR),
@@ -797,6 +801,7 @@ export const xrRecentre = () => ({ ...recentre });
 /** The one exit. Every path (visor glyph, ring, controller hold) ends here and says so. */
 let lastLeaveAt = -1e9;
 export function leaveVR(why = 'verb') {
+  if (entering) { tee(`[xr] leave (${why}) refused: enter still in flight`); return false; }
   if (!session) { tee(`[xr] leave (${why}): no session`); return false; }
   tee(`[xr] leave (${why})`);
   lastLeaveAt = performance.now();
