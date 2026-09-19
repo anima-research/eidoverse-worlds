@@ -18,7 +18,7 @@ plugin({
 });
 globalThis.location ??= { search: "" } as any;   // xrbody reads ?torsoplay at import
 const { THREE } = await import("./core-stub.mjs");
-const { solveArm, relaxArm, solveLeg } = await import("../client/lib/xrbody.js");
+const { solveArm, relaxArm, solveLeg, gaitInit, gaitTick } = await import("../client/lib/xrbody.js");
 const { makeCapsuleVrm } = await import("../client/lib/capsulebody.js");
 
 let pass = 0, fail = 0;
@@ -138,6 +138,20 @@ const ident = new THREE.Quaternion();
     ok(!threw, `solveLeg ${side} runs (${threw ? String(threw.message).slice(0, 60) : 'no throw'})`);
     ok(!threw && f2.distanceTo(t) < 0.06, `${side} foot near its target (err ${(f2.distanceTo(t) * 100).toFixed(1)} cm)`);
   }
+}
+
+// 7. the gait's planted foot follows the GROUND (09-19: a foot planted at a jump's apex kept its airborne y after
+//    landing, because the re-plant test was x/z only — 'stuck in the air until you move around a bit')
+{
+  const L = new THREE.Vector3(0.09, 0.08, 0), R = new THREE.Vector3(-0.09, 0.08, 0);
+  const g = gaitInit(L, R, 0); let t = 0; const step = (dl: any, dr: any) => { t += 1 / 60; return gaitTick(g, dl, dr, 0, t, 1 / 60); };
+  for (let i = 0; i < 10; i++) step(L, R);
+  const up = 0.9; const Lu = L.clone().setY(L.y + up), Ru = R.clone().setY(R.y + up);   // the root rises 0.9 m: targets rise with it, no x/z change
+  let o: any; for (let i = 0; i < 10; i++) o = step(Lu, Ru);
+  ok(Math.abs(o.L.pos.y - Lu.y) < 1e-6, `foot y follows the root up (${o.L.pos.y.toFixed(3)} vs ${Lu.y.toFixed(3)})`);
+  for (let i = 0; i < 10; i++) o = step(L, R);   // landing: targets back on the floor, still no x/z change
+  ok(Math.abs(o.L.pos.y - L.y) < 1e-6 && Math.abs(o.R.pos.y - R.y) < 1e-6, `both feet back on the floor after landing without an x/z step (L ${o.L.pos.y.toFixed(3)}, R ${o.R.pos.y.toFixed(3)})`);
+  ok(!g.L.step && !g.R.step, 'no step was needed to come down');
 }
 
 console.log(`${pass} passed, ${fail} failed`);

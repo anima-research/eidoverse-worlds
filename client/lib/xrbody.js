@@ -353,8 +353,8 @@ function footTargets(vrm, floorY) {
   return { left: new THREE.Vector3(hp.x + left.x * w, y, hp.z + left.z * w), right: new THREE.Vector3(hp.x - left.x * w, y, hp.z - left.z * w), yaw: Math.atan2(fwd.x, fwd.z) };
 }
 function gaitLead(des, vel) { const l = vel.clone().multiplyScalar(GAIT.LEAD); if (l.length() > GAIT.LEADMAX) l.setLength(GAIT.LEADMAX); l.y = 0; return des.clone().add(l); }
-function gaitInit(desL, desR, yaw) { return { L: { p: desL.clone(), yaw, step: null }, R: { p: desR.clone(), yaw, step: null }, vel: new THREE.Vector3(), lastMid: null }; }
-function gaitTick(g, desL, desR, bodyYaw, t, dt) {
+export function gaitInit(desL, desR, yaw) { return { L: { p: desL.clone(), yaw, step: null }, R: { p: desR.clone(), yaw, step: null }, vel: new THREE.Vector3(), lastMid: null }; }
+export function gaitTick(g, desL, desR, bodyYaw, t, dt) {
   const mid = desL.clone().add(desR).multiplyScalar(0.5);
   if (g.lastMid) g.vel.copy(mid).sub(g.lastMid).divideScalar(Math.max(dt, 1e-4)); else g.lastMid = new THREE.Vector3();
   g.lastMid.copy(mid);
@@ -366,6 +366,9 @@ function gaitTick(g, desL, desR, bodyYaw, t, dt) {
       if (p >= 1) { f.p.copy(f.step.to); f.yaw = f.step.toYaw; f.step = null; }
       else { if (p < 0.5) f.step.to.copy(gaitLead(des, g.vel)); continue; }
     }
+    f.p.y = des.y;   // a planted foot FOLLOWS THE GROUND: the plant is an x/z decision, never a height. Without this
+                     // a foot planted at a jump's apex kept its airborne y after landing until an x/z step re-planted
+                     // it (R in headset 09-19: 'stuck in the air after jumping until you move around a bit')
     const err = Math.hypot(f.p.x - des.x, f.p.z - des.z);
     if (err > GAIT.SNAP) { f.p.copy(des); f.yaw = bodyYaw; continue; }   // teleport: re-plant, no cross-room glide
     const yerr = Math.abs(wrap(bodyYaw - f.yaw));
@@ -410,6 +413,9 @@ export function solveLeg(vrm, side, targetPos, footYaw) {
 }
 function feetTick(vrm, av, dt) {
   if (NOFOOT || !measureLegs(vrm)) return;
+  // AIRBORNE: the jump clip owns the legs (feet tuck, knees bend); planting them under a body in the air is what
+  // made the leg IK fight the animation. The gait state is dropped so landing re-plants fresh, on the floor.
+  if (myState.clip === 'jump') { vrm.userData._gait = null; return; }
   const floorY = av.root.getWorldPosition(_fv).y;
   const ft = footTargets(vrm, floorY); if (!ft) return;
   const ud = vrm.userData;
