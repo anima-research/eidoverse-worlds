@@ -478,6 +478,28 @@ const LAMP_SHAPE = 1.6;
 // than switching off, because a lamp that is off at noon looks broken.
 const LAMP_DAY_FLOOR = 0.18;
 
+
+/** A jump clip's take-off: the hips dip (anticipation), then come back up through their rest height — that is the
+ *  frame the feet leave the floor. A clip with no hips track, or one that starts by rising, gives 0. */
+function clipTakeoff(clip) {
+  if (clip.userData.takeoff != null) return clip.userData.takeoff;
+  const tr = clip.tracks.find((t) => /hips\.position$/i.test(t.name) || /Hips\.position$/.test(t.name));
+  let out = 0;
+  if (tr && tr.values.length >= 6) {
+    const n = tr.times.length, half = Math.max(1, Math.floor(n / 2));
+    let minI = 0, minY = Infinity;
+    for (let i = 0; i < half; i++) { const y = tr.values[i * 3 + 1]; if (y < minY) { minY = y; minI = i; } }
+    if (minI > 0 && tr.values[1] - minY > 0.01) {   // a real dip (>1 cm), not noise
+      // the body actually leaves the ground when the hips come back UP through rest height (jump.vrma:
+      // rest .864, bottom .494 @0.33 s, back through rest @0.50 s, apex @0.75 s) — start there, not at the
+      // bottom of the squat, or an airborne body is still pushing off
+      let i = minI; while (i < n - 1 && tr.values[i * 3 + 1] < tr.values[1]) i++;
+      out = tr.times[i];
+    }
+  }
+  clip.userData.takeoff = out;
+  return out;
+}
 export class Avatar {
   /** Monotonic, so one identity's successive bodies never share a lamp owner. */
   static _seq = 0;
@@ -1025,6 +1047,10 @@ export class Avatar {
     a.enabled = true;
     a.setEffectiveWeight(1);       // base weight — fadeIn ramps a MULTIPLIER on this
     a.reset().fadeIn(0.22);
+    // The jump LEAVES THE GROUND INSTANTLY (gamey, on purpose) but the clip opens with its anticipation crouch,
+    // so the body squatted in mid-air and then rose (R 09-19). Start the clip at take-off — the frame the hips
+    // stop dipping — measured from the clip itself, so it holds for any body and any future jump clip.
+    if (slot === 'jump') a.time = clipTakeoff(a.getClip());
     this.current = a;
     this.currentSlot = slot;
   }
