@@ -484,6 +484,7 @@ async function enterVR() {
   if (entering) { tee(`[xr] enter refused: a session request is already in flight`); return; }
   if (session && presenting) { tee(`[xr] enter refused: already presenting`); return; }
   entering = true;
+  xrVeilShow(true, 'entering VR');   // from the click: requestSession + setSession is 1–3 s of nothing otherwise
   try {
     // THE LADDER (R's first tee line, 09-04 23:20: Chrome 152 granted the
     // session WITHOUT the optional 'webgpu' feature and three refused it —
@@ -566,7 +567,7 @@ async function enterVR() {
     rig.add(camera);
     slots[0] ??= makeHand(0); slots[1] ??= makeHand(1);
     hands.left ??= slots[0]; hands.right ??= slots[1];   // guess until 'connected' files them by handedness
-    presenting = true; bus.emit('xr:state', true);
+    presenting = true; bus.emit('xr:state', true); xrVeilShow(false);   // the session is live — the 2D page is behind the headset now
     // HEADSET OFF (R 09-08 01:12: she switched the headset off after load; the session was still GRANTED — SteamVR
     // presents to nothing — and the visor lit as if she were in). The tell is that no viewer pose ever arrives
     // (the stereo camera keeps zero eyes). 2.5 s of that → say so, mark the visor absent, and leave.
@@ -687,7 +688,7 @@ async function enterVR() {
     // for very long") — a sticky toast with the actual message, 30 s
     toast(e?.userMessage ?? `VR failed to start: ${e?.message ?? e}`, e?.userMessage ? 'warn' : 'err', e?.userMessage ? 8000 : 30000);
     tee(`[xr] ENTER FAILED: ${e?.name ?? ''} ${e?.message ?? e}`);
-  } finally { entering = false; }
+  } finally { entering = false; if (!presenting) xrVeilShow(false); }
 }
 
 /** The rig goes where the body is: the BODY's root offset by the head's playspace position (recentreXR),
@@ -1159,13 +1160,21 @@ export const xrDebug = () => {
 };
 
 
-// Desktop veil for the way OUT (R 09-07 18:20: 'loading in/out indicator, hard hangs'): a full-window
-// 'Leaving VR…' from the moment the session ends until the first after-exit probe (desktop frames flowing).
-function exitVeilShow(on) {
+// The veil, both ways (R 09-07 18:20: 'loading in/out indicator, hard hangs'; 09-19: 'style compliant'): the
+// splash's own furniture — its ∃ (cloned from #splash so there is ONE drawing of the mark), the eidoverse /
+// worlds marks, the brand phase line with a breathing ellipsis — over the world from the visor click until
+// the session's first frame, and from the leave click until desktop frames are flowing again (a timer-hide
+// left R a black world with a dead loop, 09-07). The rays worker stays the splash's; the veil is still.
+function xrVeilShow(on, phase = 'leaving VR') {
   if (!exitVeil) {
-    exitVeil = document.createElement('div'); exitVeil.textContent = 'Leaving VR…';
-    exitVeil.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:var(--bg,#0b0f12);color:var(--fg,#dfe7ea);font:600 22px system-ui,sans-serif;letter-spacing:.02em;pointer-events:none;opacity:0;transition:opacity .2s';
+    exitVeil = document.createElement('div'); exitVeil.className = 'xr-veil'; exitVeil.setAttribute('aria-live', 'polite');
+    const logo = document.querySelector('#splash .sp-logo-wrap');
+    if (logo) exitVeil.appendChild(logo.cloneNode(true));
+    for (const [cls, txt] of [['sp-mark', 'eidoverse'], ['sp-mark-sub', 'worlds'], ['sp-phase xr-veil-phase', phase]]) {
+      const d = document.createElement('div'); d.className = cls; d.textContent = txt; exitVeil.appendChild(d); }
     document.body.appendChild(exitVeil);
   }
-  exitVeil.style.opacity = on ? '1' : '0';
+  const ph = exitVeil.querySelector('.xr-veil-phase'); if (ph && ph.textContent !== phase) ph.textContent = phase;
+  exitVeil.classList.toggle('on', !!on);
 }
+function exitVeilShow(on) { xrVeilShow(on, 'leaving VR'); }
