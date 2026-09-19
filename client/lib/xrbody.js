@@ -411,17 +411,28 @@ export function solveLeg(vrm, side, targetPos, footYaw) {
     F.quaternion.copy(_fq.multiply(_fq2.setFromEuler(_e2.set(0, Math.atan2(fwd.x, fwd.z), 0)))); }   // flat foot, toes along the planted yaw
   return true;
 }
+// Basis's rule (R 09-19: 'anim takeover when explicitly locomoting with the stick'): the clip owns the legs while
+// locomoting or airborne; the foot sim takes them only after 0.15 s stationary (BasisEeriePlanner.cs:65–66,
+// BasisLocalCharacterDriver.cs:134), weight in at 20/s, out at 15/s (Planner:71–72), applied as slerp(animated,
+// solved, w) per bone (BasisEerieMovement.Legs.cs:112–118). Each 0→>0 re-seeds the plants from the animated feet.
+const LEGIK = { STATIONARY: 0.15, IN: 20, OUT: 15 };
+const ANIM_OWNS = new Set(['walk', 'run', 'jump', 'climb', 'fly', 'soar', 'ragdoll']);
+const _legQ = { left: [new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion()], right: [new THREE.Quaternion(), new THREE.Quaternion(), new THREE.Quaternion()] };
 function feetTick(vrm, av, dt) {
   if (NOFOOT || !measureLegs(vrm)) return;
-  // AIRBORNE: the jump clip owns the legs (feet tuck, knees bend); planting them under a body in the air is what
-  // made the leg IK fight the animation. The gait state is dropped so landing re-plants fresh, on the floor.
-  if (myState.clip === 'jump') { vrm.userData._gait = null; return; }
+  const ud = vrm.userData, step = dt > 0 ? dt : 1 / 30;
+  const locomoting = ANIM_OWNS.has(myState.clip);
+  ud._still = locomoting ? 0 : (ud._still ?? 0) + step;
+  const want = !locomoting && ud._still >= LEGIK.STATIONARY ? 1 : 0;
+  const w0 = ud._legW ?? 0, rate = want > w0 ? LEGIK.IN : LEGIK.OUT;
+  const w = ud._legW = THREE.MathUtils.clamp(w0 + Math.sign(want - w0) * rate * step, 0, 1);
+  dbg.legW = +w.toFixed(2);
+  if (w <= 0) { ud._gait = null; return; }   // the clip's legs, untouched; the next engage re-seeds from them
   const floorY = av.root.getWorldPosition(_fv).y;
   const ft = footTargets(vrm, floorY); if (!ft) return;
-  const ud = vrm.userData;
   ud._gaitT = (ud._gaitT || 0) + (dt > 0 ? dt : 1 / 30);
   if (!ud._gait) {
-    // RE-ENGAGE (landing, first frame): seed the plants from where the ANIMATED feet are, y forced to the floor,
+    // RE-ENGAGE (landing, or the 0.15 s stationary gate opening): seed the plants from where the ANIMATED feet are, y forced to the floor,
     // and let the ordinary step walk them to the ideal spots — Basis re-seeds its foot sim from the animated foot
     // on every 0→1 of the leg weight (BasisLocalFootDriver.cs:206–228). Seeding at the ideal spots instead put a
     // straight IK stance on the body in one frame, straight out of the jump clip's tucked legs.
@@ -431,7 +442,13 @@ function feetTick(vrm, av, dt) {
   }
   const gp = gaitTick(ud._gait, ft.left, ft.right, ft.yaw, ud._gaitT, dt > 0 ? dt : 1 / 30);
   gp.L.pos.y += gp.L.lift; gp.R.pos.y += gp.R.lift;
-  solveLeg(vrm, 'left', gp.L.pos, gp.L.yaw); solveLeg(vrm, 'right', gp.R.pos, gp.R.yaw);
+  const h = vrm.humanoid;
+  for (const [side, g] of [['left', gp.L], ['right', gp.R]]) {
+    const bones = ['UpperLeg', 'LowerLeg', 'Foot'].map((n) => h.getNormalizedBoneNode(side + n));
+    if (w < 1) bones.forEach((b, i) => b && _legQ[side][i].copy(b.quaternion));   // the clip's pose, before the solve
+    solveLeg(vrm, side, g.pos, g.yaw);
+    if (w < 1) bones.forEach((b, i) => { if (b) { _q3.copy(b.quaternion); b.quaternion.copy(_legQ[side][i]).slerp(_q3, w); } });   // slerp(animated, solved, w)
+  }
   dbg.feet = { L: gp.L.pos.toArray().map((v) => +v.toFixed(3)), R: gp.R.pos.toArray().map((v) => +v.toFixed(3)), stepping: !!(ud._gait.L.step || ud._gait.R.step) };
 }
 export const xrGaitDebug = () => dbg.feet ?? null;
