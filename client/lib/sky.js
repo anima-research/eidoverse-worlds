@@ -2,10 +2,9 @@
 //
 // Two implementations behind one verb:
 //
-//   1. Skye's world packages (`makeSky({world})` from sky_worlds.js) — a real
-//      raymarched atmosphere, volumetric clouds, weather states with rain and
-//      lightning, baked environment reflections, and whole alternate worlds
-//      (ringworld, red-giant shieldworld). This is the good one.
+//   1. Skye's pinned standalone Eanpa Sky — a real raymarched atmosphere,
+//      volumetric clouds, weather, cloud shadows and environment reflections.
+//      Worlds hosts the source directly and supplies scene/world policy.
 //   2. three's SkyMesh — the fallback, kept because the toolkit branch is not
 //      merged upstream yet and a client that hard-fails when the library moves
 //      is a client nobody can run.
@@ -18,10 +17,10 @@ import { THREE, scene, sun, hemi, renderer, camera } from './core.js';
 // ground (fill light drowns the sun's share); this dims the fill to a fifth so the shadow map's coverage is legible.
 const SHADOW_DEBUG_FILL = new URLSearchParams(globalThis.location?.search ?? '').has('shadowdebug') ? 0.2 : 1;
 import { report, bus } from './base.js';
-import { loadEidoModule, primeFiles, listLibrary, fetchBytes } from './assets.js';
+import { loadEidoModule, importEanpaModule, eanpaSource, primeFiles, listLibrary, fetchBytes } from './assets.js';
+import { makeEanpaEarth } from './eanpa-world.js';
 import { markPhase } from './boot.js';
-import { attachBakedDome, detachBakedDome, updateBakedDome, bakedActive, requestBake,
-  envTexture, adoptEnvironment, whenBakeReady } from './sky_baked.js';
+import { envTexture, adoptEnvironment } from './sky_baked.js';
 import { beginWork } from './loadwork.js';
 import { setDayness, releaseForeignLights } from './lightrig.js';
 import { warm, P_AMBIENT } from './warmqueue.js';
@@ -30,6 +29,7 @@ import { WEATHERS, effectiveSky, hoursAt } from '../../shared/forecast.js';
 // around its own async build; anything another subsystem marks as its own is
 // off limits, whenever it appeared.
 import { claimUnowned, releaseHook } from './autohooks.js';
+import { skyQualityPresets } from '../vendor/eanpa/engine/quality_presets.js';
 
 // The environment exists from the first frame — BLACK, contributing nothing —
 // so every material's lighting graph is born with its env branch in place.
@@ -46,6 +46,8 @@ let impl = null;           // 'eidoverse' | 'skymesh' | null
 let skyApi = null;         // Skye's sky object when impl === 'eidoverse'
 let skyInner = null;       // _internals.sky — upstream's declared escape hatch (§18b)
 let skyMesh = null;
+let spatialCloudPass = null; // standalone Performance display (medium tier)
+let spatialCloudFactory = null;
 // The skymesh-path fill light is born EAGERLY: light topology is frozen at
 // boot (TEL0S_NOTES §12.1 — a light appearing later recompiles every lit
 // material, and the old lazy creation fired exactly when the sky DEGRADED,
@@ -60,6 +62,16 @@ let currentWorld = null;
 
 export const skyArgs = () => clock?.args ?? {};
 export const skyImpl = () => impl;
+export const eanpaDebug = () => ({
+  requestedSource: globalThis.__EANPA_CURRENT_PRELOADED ? eanpaSource() : null,
+  activeSource: impl === 'eidoverse' && globalThis.__EANPA_CURRENT_PRELOADED && typeof skyInner?.createCloudCaptureMaterial === 'function'
+    ? eanpaSource() : null,
+  cachedCloudCapable: typeof skyInner?.createCloudCaptureMaterial === 'function'
+    && typeof skyInner?.setCachedCloudDisplay === 'function',
+  displayMode: spatialCloudPass?.mode ?? 'live-volume',
+  captureStats: spatialCloudPass?.captureStats ?? null,
+});
+export const eanpaActiveSource = () => eanpaDebug().activeSource;
 /** §22m diag: the sky-owned scene roots, for cost-attribution phases that
  *  hide the sky's DRAW without touching its state. Read-only. */
 export const skyOwnedObjects = () => skyOwned ?? [];
@@ -68,51 +80,20 @@ export let dayness = 1;
 
 // ---------------------------------------------------------------- quality
 //
-// The volumetric cloud march is the single most expensive thing this client
-// draws — measured on this hardware at roughly 120fps without it and 30 with.
-// Its cost is dominated by `cloudPasses`, which sky_system defaults to 8;
-// Skye's TIER=balanced drops that to 3, and even 3 is too much for a live
-// frame budget on some machines.
-//
-// So every tier below 'high' now shows a BAKED sky instead of marching live
-// (see sky_baked.js): the same march rendered once into the env-bake equirect
-// and displayed on a static dome, re-baked only when the sky actually changes.
-// The tier's cost moves from per-frame to per-bake, which is why 'medium'
-// can afford the FULL 8-pass march — it looks better than the old live
-// 3-pass tier and costs a texture lookup per pixel at runtime. The trade is
-// stillness: clouds hold their shapes between re-bakes. 'high' keeps the
-// real thing.
-//
-// This is a CLIENT preference, not world state. It is deliberately never a
-// verb: how many cloud passes your GPU can afford has nothing to do with what
-// the world looks like, and one person's laptop must not dictate everyone
-// else's sky. Stored locally, applied at build.
+// Standalone Eanpa is now the direct sky implementation. `medium` is its
+// cached Performance panorama (the standard path); `high` is the live volume;
+// `low` is the current engine's one-pass live volume; `off` keeps the current
+// atmosphere/celestials but asks for clear clouds. The former host-built baked
+// dome remains only as the stable environment-texture utility in sky_baked.js;
+// it is not compatible with current Eanpa's internal bake ownership and is no
+// longer a display provider.
 export const CLOUD_QUALITY = ['off', 'low', 'medium', 'high'];
+const EANPA_QUALITY = skyQualityPresets('all');
 const QUALITY_OPTS = {
-  off: { cloudPasses: 1 },                     // plus setClouds('clear') below
-  low: { cloudPasses: 1, stormSamples: 6 },
-  medium: { cloudPasses: 3 },
-  high: {},                                    // sky_system's own defaults (8)
-};
-// Baked-tier bake parameters. Anything listed here shows the baked dome;
-// 'high' is deliberately absent — it is the live march. One resolution/pass
-// choice PER SESSION per tier: bakeEnv keys its cached node graph on
-// (W, H, passes), so every bake call must repeat the same values or each
-// re-bake would rebuild and recompile the whole march pipeline.
-// intervalMs is the crossfade cadence — sky_baked re-bakes on that clock and
-// dissolves between bakes, which is what keeps the clouds' slow evolution
-// smooth instead of stepping. The bake itself is banded (~2ms/frame), so a
-// bigger equirect costs bake LATENCY, not frame rate — which is why 'medium'
-// can afford 4096x2048 (the 2048 bake was ~4x undersampled against the
-// screen and read as mush).
-const BAKED_TIERS = {
-  off: { width: 1024, height: 512, cloudPasses: 1, intervalMs: 12000 },   // clear sky anyway
-  low: { width: 2048, height: 1024, cloudPasses: 3, intervalMs: 12000 },
-  medium: { width: 4096, height: 2048, cloudPasses: 8, intervalMs: 9000 },
-};
-const bakeOpts = () => {
-  const { width, height, cloudPasses } = BAKED_TIERS[cloudQuality] ?? {};
-  return width ? { width, height, cloudPasses } : {};
+  off: { ...EANPA_QUALITY.performance, cloudPasses: 1, cloudDisplayCapture: null },
+  low: { ...EANPA_QUALITY.balanced, cloudPasses: 1, stormSamples: 6, cloudDisplayCapture: null },
+  medium: EANPA_QUALITY.performance,
+  high: EANPA_QUALITY.high,
 };
 let cloudQuality = localStorage.getItem('ew-cloud-quality') ?? 'medium';
 export const getCloudQuality = () => cloudQuality;
@@ -128,19 +109,28 @@ export async function setCloudQuality(level) {
   if (clock) await render();
 }
 
-// sky_system.js ASSIGNS globalThis.makeSkySystem when sky_worlds evals it, and
-// sky_worlds calls it in the same breath — so there is no moment in between to
-// wrap it. Intercepting the assignment itself is the only seam, and it keeps
-// Skye's files untouched.
+// Standalone sky_system assigns globalThis.makeSkySystem at module evaluation.
+// Intercepting that assignment keeps Skye's vendored source untouched while
+// the host applies the resident-selected quality ceiling.
 let _realMakeSkySystem = null;
 Object.defineProperty(globalThis, 'makeSkySystem', {
   configurable: true,
   get() {
     if (!_realMakeSkySystem) return undefined;
-    return (args = {}) => _realMakeSkySystem({
-      ...args,
-      opts: { ...(args.opts ?? {}), ...QUALITY_OPTS[cloudQuality] },
-    });
+    return (args = {}) => {
+      const quality = { ...QUALITY_OPTS[cloudQuality] };
+      // Standalone Performance owns a WebGPU queue. WebGL keeps current
+      // Eanpa directly, but uses its cheapest live march instead of attempting
+      // a cached path whose completion fence does not exist on that backend.
+      if (renderer.backend?.isWebGLBackend && quality.cloudDisplayCapture) {
+        delete quality.cloudDisplayCapture;
+        quality.cloudPasses = 1;
+      }
+      return _realMakeSkySystem({
+        ...args,
+        opts: { ...(args.opts ?? {}), ...quality },
+      });
+    };
   },
   set(fn) { _realMakeSkySystem = fn; },
 });
@@ -271,15 +261,14 @@ async function renderOnce() {
 
 // ============================================================ Skye's sky
 
-// Which extra bytes a world package needs. Discovered from the server's
+// Which external image/audio assets the Earth host adapter needs. Discovered from the server's
 // directory listing rather than hardcoded — but split by world so `earth`
 // doesn't drag 20MB of ringworld geometry through the door.
 async function primeFor(world, wantAudio) {
-  const MODULES = [
-    'eidoverse/sky_system.js', 'eidoverse/weather_system.js', 'eidoverse/cloud_spatial.js',
-    'eidoverse/ringworld.js', 'eidoverse/redgiant.js', 'eidoverse/asteroid_moon.js',
-    'eidoverse/weather_audio.js',
-  ];
+  // Standalone Eanpa is vendored directly under /vendor/eanpa/. Weather
+  // audio and sky image assets remain part of the broader eidoverse-video
+  // toolkit/library, so only that Eidoverse-authored eval module is primed.
+  const MODULES = ['eidoverse/weather_audio.js'];
   const [skyFiles, particles] = await Promise.all([
     listLibrary('eidoverse/assets/sky'),
     // the weather system's rain streaks and splash sprites live here
@@ -325,12 +314,9 @@ export const whenSkyWarm = () => _skyWarmDone;
 
 // What the last sky build put into the scene.
 //
-// makeSky returns an api with no dispose — so `skyApi?.dispose?.()` was a
-// no-op and every rebuild stacked another dome, weather system, particle hook
-// and set of wrapped materials on top of the last. That is the accumulation:
-// each world switch made the scene permanently heavier until it fell over.
-// Since upstream cannot tell us what it added, we diff the scene around the
-// build and own the difference.
+// The direct adapter now exposes dispose, but the scene-identity diff remains
+// a second ownership receipt: late async additions and older modules must not
+// outlive the sky generation that created them.
 let skyOwned = [];
 let autoSystemsOwned = [];
 
@@ -369,18 +355,14 @@ function teardownSky() {
   // fires — without this, a dead mirror holds a reserved slot forever,
   // frozen at whatever the last strike left it.
   releaseForeignLights();
-  // Put the parked live domes back first: the diff below claimed them at
-  // build time, so restoring them lets the disposal pass find and free them.
-  detachBakedDome();
-  // §22b: the engine's OWN dispose — the only path to the ~64MB _envTarget,
-  // the bake target, and the noise/weather textures. detachBakedDome above
-  // deliberately leaves target A alive (it blits from it), and the api never
-  // exposed dispose — so every cloud-quality rebuild leaked all of it
-  // (measured: textures 69→77, renderTargets 7→11 across two flips — the
-  // sticky-35fps ratchet on a unified-memory Mac). cloudShadowRoots is empty
-  // in this client (the factory marks every mesh noCloudShadow), so the
-  // unwrap loop inside is a no-op — no recompiles. Runs AFTER the blit,
-  // BEFORE the dome disposal walk (double-dispose is idempotent in three).
+  // Performance reparents the real domes into private scenes. Restore them
+  // before the engine and scene-diff owners dispose their resources.
+  try { spatialCloudPass?.dispose?.(); } catch (e) { console.warn('[sky] spatial display dispose', e?.message ?? e); }
+  spatialCloudPass = null;
+  spatialCloudFactory = null;
+  // Engine disposal owns environment/cache/weather resources. The scene-diff
+  // walk below remains a second receipt for anything older or asynchronous
+  // that was added outside the returned API. Double-dispose is idempotent.
   try { skyInner?.dispose?.(); } catch (e) { console.warn('[sky] engine dispose', e?.message ?? e); }
   skyInner = null;
   for (const o of skyOwned) {
@@ -418,11 +400,6 @@ async function renderEidoverse(a) {
   applyLive(a);
   const bake = beginWork('sky bake');    // names the env-bake + reflections gaps
   try { await ensureSkyBake(); } finally { bake.end(); }
-  // §19a: on baked tiers the curtain waits for the first bake's band
-  // pipeline too — the one big cloud-graph compile lands behind the splash
-  // (tel0s's call), not in the first visible minute. Non-baked tiers and
-  // degraded paths resolve through renderSkyMesh/dome-warm as before.
-  if (bakedActive()) await whenBakeReady();
   resolveSkyWarm();
 }
 
@@ -467,8 +444,19 @@ async function buildSky(a, world, wantAudio) {
     // itself provides what the wait was for — the sky is no longer
     // competing with boot-critical work, it IS boot work.)
     await primeFor(world, wantAudio);
-    await loadEidoModule('sky_worlds.js');
-    if (typeof globalThis.makeSky !== 'function') throw new Error('sky_worlds.js exposed no makeSky');
+    // Skye's exact standalone Eanpa source is vendored directly by Worlds.
+    // eidoverse-video remains the broader asset/toolkit library, but no longer
+    // supplies the sky implementation. A broken direct subtree falls through
+    // the host's existing SkyMesh failure ladder; it never revives stale v0.1.
+    const [, , spatial] = await Promise.all([
+      importEanpaModule('engine/sky_system.js'),
+      importEanpaModule('engine/weather_system.js'),
+      importEanpaModule('src/cloudspatial.js'),
+    ]);
+    spatialCloudFactory = spatial.makeSpatialCloudPass;
+    const currentEanpa = true;
+    globalThis.__EANPA_CURRENT_PRELOADED = true;
+    console.log(`[sky] Eanpa source ${eanpaSource().slice(0, 12)}`);
     if (skyMesh) { scene.remove(skyMesh); skyMesh = null; }
     // A fresh build asserts state rather than easing into it — reset the
     // applyLive guards so the first applyLive after this re-asserts
@@ -481,17 +469,18 @@ async function buildSky(a, world, wantAudio) {
     const eff0 = effectiveSky(a, Date.now());
     const w0 = (eff0.source === 'forecast' && eff0.inTransition && eff0.seg.prevState)
       ? eff0.seg.prevState : eff0.weather;
-    skyApi = await globalThis.makeSky({
-      scene, camera, renderer, world,
+    skyApi = await makeEanpaEarth({
+      scene, camera, renderer,
       hours: nowHours(),
       clouds: cloudQuality === 'off' ? 'clear' : (CLOUDS.includes(a.clouds) ? a.clouds : 'cumulus'),
       weather: WEATHERS.includes(w0) ? w0 : 'clear',
-      sun, hemi,
-      audio: wantAudio,
+      sun, hemi, audio: wantAudio,
+      weatherOptions: QUALITY_OPTS[cloudQuality].weather,
+      loadLegacyModule: loadEidoModule,
     });
     claimSkyAdditions(ownership);
     // ---- the clear↔cloudy fence (§18b, pre-paid §19a) ----------------------
-    // The baked tier's graph cache keys on preset !== 'clear' (sky_system
+    // The engine's environment-bake graph keys on preset !== 'clear' (sky_system
     // bakeKey …|c0/c1), and building the cloud-carrying graph costs a
     // ~1.5MB-WGSL compile that stalls the whole GPU process ~5-10s cold —
     // even async (Chrome serializes submits behind Tint). Nothing can hide
@@ -509,6 +498,15 @@ async function buildSky(a, world, wantAudio) {
     // per-bakeKey cache / authoritative includeClouds), this whole fence
     // shrinks to one option flag.
     skyInner = skyApi?._internals?.sky ?? null;
+    if (currentEanpa && cloudQuality === 'medium' && !renderer.backend?.isWebGLBackend && typeof spatialCloudFactory === 'function') {
+      const pass = spatialCloudFactory(globalThis.THREE ?? THREE, renderer, camera, { div: 2 });
+      if (!pass.attach(scene, skyInner)) {
+        pass.dispose();
+        throw new Error('current Eanpa Performance display could not claim the sky domes');
+      }
+      await pass.compileAsync();
+      spatialCloudPass = pass;
+    }
     if (skyInner?.setClouds && cloudQuality !== 'off') {
       const orig = skyInner.setClouds.bind(skyInner);
       skyInner.setClouds = (kind, over) => (kind === 'clear'
@@ -544,7 +542,7 @@ async function buildSky(a, world, wantAudio) {
     // The first bake + baked-dome attach happen AFTER applyLive (see
     // ensureSkyBake) — the verb's clouds/weather must be asserted first.
     // makeSky's own weather default is 'clear', which OVERRIDES the cloud
-    // preset (sky_worlds documents the trap), and bakeEnv caches its node
+    // preset (the Earth adapter preserves this rule), and bakeEnv caches its node
     // graph keyed on whether clouds exist at bake time: baking here pinned
     // a graph with NO cloud branch and the baked sky came out empty.
     bakePending = true;
@@ -555,7 +553,7 @@ async function buildSky(a, world, wantAudio) {
 }
 
 // Once per build, after the log's sky verb has been applied: bake the
-// environment and (on baked tiers) swap the live domes for the baked one.
+// environment after the authored sky state has landed.
 let bakePending = false;
 async function ensureSkyBake() {
   if (!bakePending || !skyApi) return;
@@ -563,12 +561,8 @@ async function ensureSkyBake() {
   // Environment reflections. `scene.environment` was never set, so every PBR
   // material in the world was lit by a hemisphere and a directional only —
   // metals and glossy surfaces read as dead plastic. The sky can bake itself.
-  // (sky_worlds' bakeEnv takes ONE options bag — the old `(renderer, {})`
-  // call was spreading the renderer into the options and working by luck.)
-  // On baked tiers this same bake IS the visible sky, so it renders at the
-  // tier's display resolution and full march quality.
   try {
-    await skyApi.bakeEnv?.(bakeOpts());
+    await skyApi.bakeEnv?.({});
     lastBakeHours = nowHours();
     lastBakeAt = performance.now();
     skyApi.enableReflections?.({});
@@ -576,14 +570,6 @@ async function ensureSkyBake() {
     // content into the persistent texture and put it back (see module top)
     adoptEnvironment();
   } catch (e) { console.warn('sky reflections unavailable', e); }
-  if (BAKED_TIERS[cloudQuality]) {
-    const { cloudPasses, intervalMs } = BAKED_TIERS[cloudQuality];
-    if (!attachBakedDome(skyApi, { cloudPasses, intervalMs })) {
-      // engine internals moved (or the bake failed) — the live march is
-      // still in the scene, so the sky stays correct, just expensive
-      console.warn('[sky] baked dome could not attach — staying on the live cloud march');
-    }
-  }
 }
 
 // Re-baking the environment map.
@@ -614,14 +600,11 @@ function scheduleEnvBake({ force = false } = {}) {
 
 async function runEnvBake() {
   if (!skyApi?.bakeEnv) return;
-  // On baked tiers the crossfade loop owns the re-bake clock — a stray
-  // timer must not blocking-render a full-quad bake on top of it.
-  if (bakedActive()) return requestBake();
   lastBakeAt = performance.now();
   lastBakeHours = nowHours();
   try {
     // Same opts every time — bakeEnv caches its node graph keyed on them.
-    await skyApi.bakeEnv(bakeOpts());
+    await skyApi.bakeEnv({});
     // live tier: the engine rebaked into its own target — re-point (engine
     // reassigns) then re-adopt, so the persistent env picks up the new light
     skyApi.enableReflections?.({});
@@ -644,9 +627,9 @@ function applyLive(a) {
   if (!skyApi) return;
   const h = nowHours();
   skyApi.setTime?.(h);
-  // Baked tiers re-bake on their own cadence (which covers TOD drift too);
-  // the debounced TOD bake only serves the live 'high' tier's env-IBL.
-  if (!bakedActive()) scheduleEnvBake();
+  // The host refreshes the stable environment identity independently of
+  // whether clouds are live or cached.
+  scheduleEnvBake();
   let changed = false;
   // A dusk/dawn VERB used to wait out the 9s bake cadence before the
   // visible dome moved (§18b) — a clock JUMP asks for a bake now. Circular
@@ -708,13 +691,6 @@ function applyLive(a) {
       changed = true;
     }
   }
-  // The baked dome only changes when a bake lands — a change to the sky's
-  // look asks for one now (the crossfade eases it in, and the rolling
-  // cadence carries any longer weather transition by itself).
-  if (bakedActive() && changed) {
-    requestBake();
-  }
-
   // NOTE the ownership boundary: makeSky was handed `sun` and `hemi` and it
   // drives them itself (colour, intensity, and the fog/haze that follow the
   // weathered sky). Re-deriving those here would fight it — a sunset would get
@@ -826,18 +802,21 @@ export function updateSky(nowMs, t) {
       const r = skyApi.update(t);
       if (r && typeof r.catch === 'function') r.catch(noteSkyFailure);
       else updateFailures = 0;
+      // Performance owns at most one asynchronous band update. Its own guard
+      // coalesces frames; the current completed panorama remains visible while
+      // the next band is prepared.
+      const p = spatialCloudPass?.render?.();
+      if (p && typeof p.catch === 'function') p.catch(noteSkyFailure);
     } catch (e) { noteSkyFailure(e); }
     // The sun/ambient sliders, rescued: the engine's applyToLights rewrites
     // sun/hemi intensity EVERY frame inside update(t), so a multiplier
     // applied after it neither fights nor compounds — the palette drives,
-    // the resident garnishes. (This is the layering sky_worlds' own
-    // comment invites: "update, then adjust, then render".)
+    // the resident garnishes: update, then adjust, then render.
     const a = clock?.args;
     if (a) {
       if (a.sun != null && a.sun !== 1) sun.intensity *= a.sun;
       if (a.ambient != null && a.ambient !== 1) hemi.intensity *= a.ambient;
     }
-    updateBakedDome(nowMs);   // camera-follow + the band-bake/crossfade cycle
   }
   // A rated sky advances everyone's sun in lockstep, and a forecast needs the
   // same heartbeat to notice its segment boundaries. ~1Hz is plenty — even at
