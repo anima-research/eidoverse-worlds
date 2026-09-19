@@ -1028,22 +1028,23 @@ export class Avatar {
   }
 
   // ---- locomotion / clips
-  setClip(slot, speed = 0) {
+  setClip(slot, speed = 0, { fade } = {}) {
     // Moving cancels an emote. Standing frozen mid-cheer while walking away
     // is worse than cutting the cheer short.
     if (this.emote && speed > 0.05) this.cancelEmote();
     if (this.emote) return;        // otherwise it owns the body until it finishes
     let use = slot;
     while (!this.actions[use] && CLIP_FALLBACK[use]) use = CLIP_FALLBACK[use];
-    this._setAction(this.actions[use], use);
+    this._setAction(this.actions[use], use, fade);
     const a = this.actions[use];
     if (!a) return;
     const nat = CLIP_SPEED[slot];
     a.timeScale = nat > 0 && speed > 0 ? THREE.MathUtils.clamp(speed / nat, 0.6, 1.6) : 1;
   }
-  _setAction(a, slot) {
+  _setAction(a, slot, fadeIn) {
     if (!a || this.current === a) return;
-    const fade = slot === 'jump' ? 0.1 : 0.22;   // into a jump, snappier: the feet are already off the floor (R 09-19)
+    // into a jump the caller says how fast: 0.1 s on a jump press (feet already off the floor), 0.3 s on a walk-off
+    const fade = fadeIn ?? (slot === 'jump' ? 0.1 : 0.22);
     if (this.current) this.current.fadeOut(fade);
     a.enabled = true;
     a.setEffectiveWeight(1);       // base weight — fadeIn ramps a MULTIPLIER on this
