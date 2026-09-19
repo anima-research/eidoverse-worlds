@@ -7,9 +7,8 @@ import { getFrame } from './frames.js';
 const LS = 'ew-capnotice-dismissed';
 export const WEBGL = {
   title: 'Running on WebGL 2',
-  body: 'This browser has no WebGPU (or it is switched off), so three.js is using its WebGL 2 backend. ' +
-        'The world works. Expect the sky’s cached lighting to be off, heavier scenes to run slower, and shadows to filter a little differently. ' +
-        'Chrome or Edge 113+, or Firefox with WebGPU enabled, get the full version.',
+  body: 'This browser is using its WebGL 2 backend instead of WebGPU — usually a phone, an older browser, or VR on a browser without WebGPU flags. ' +
+        'The world may render a little differently. Chrome or Edge 113+, or Firefox with WebGPU enabled, get the full version.',
 };
 
 let card = null;
