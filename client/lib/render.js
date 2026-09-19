@@ -65,11 +65,25 @@ export function setXRCurtain(on) {
     curtain = new THREE.Scene();
     const shell = new THREE.Mesh(new THREE.SphereGeometry(4, 24, 16), new THREE.MeshBasicNodeMaterial({ color: 0x0b0f12, side: THREE.BackSide }));
     shell.frustumCulled = false; curtain.add(shell); curtain.userData.shell = shell;
-    // one line of text, head-locked 1.6 m out — the feedback R asked for while the scene links (09-07 18:20)
-    const c = document.createElement('canvas'); c.width = 1024; c.height = 256; const g = c.getContext('2d');
-    g.fillStyle = '#dfe7ea'; g.font = '600 96px system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('Entering VR…', 512, 128);
+    // THE SPLASH, head-locked 1.6 m out (R 09-19: 'still just plain white Entering VR with no logo or name'):
+    // the ∃ (its three paths read from #splash so there is one drawing of the mark), eidoverse / worlds, and
+    // 'entering VR' with the dots breathing — repainted on the texture 3×/s while the curtain is up.
+    const c = document.createElement('canvas'); c.width = 1024; c.height = 1024; const g = c.getContext('2d');
     const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
-    const text = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.3), new THREE.MeshBasicNodeMaterial({ map: tex, transparent: true, depthTest: false }));
+    const paths = [...document.querySelectorAll('#splash .sp-logo path')].map((el) => new Path2D(el.getAttribute('d')));
+    const font = getComputedStyle(document.documentElement).getPropertyValue('--font').trim() || 'system-ui, sans-serif';
+    const paint = (dots) => {
+      g.clearRect(0, 0, 1024, 1024); g.fillStyle = '#8fe8c8';
+      g.save(); g.translate(512 - 0.2 * 1372 / 2 + 0.2 * 70, 150); g.scale(0.2, 0.2); for (const pth of paths) g.fill(pth); g.restore();   // viewBox -70 -40 1372 1372, at 0.2×
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = `500 64px ${font}`; g.letterSpacing = '0.34em'; g.fillText('eidoverse', 512 + 11, 520);
+      g.globalAlpha = 0.45; g.font = `400 30px ${font}`; g.letterSpacing = '0.58em'; g.fillText('worlds', 512 + 9, 575); g.globalAlpha = 1;
+      g.letterSpacing = '0.08em'; g.font = `400 40px ${font}`; g.textAlign = 'left';
+      const w = g.measureText('entering VR').width; g.fillText('entering VR' + '.'.repeat(dots), 512 - w / 2, 690);
+      tex.needsUpdate = true;
+    };
+    paint(0); curtain.userData.paint = paint; curtain.userData.lastDots = -1;
+    const text = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.2), new THREE.MeshBasicNodeMaterial({ map: tex, transparent: true, depthTest: false }));
     text.frustumCulled = false; text.renderOrder = 1; curtain.add(text); curtain.userData.text = text;
   }
 }
@@ -89,6 +103,7 @@ export function renderWorld() {
     renderer.xr.updateCamera(camera);
     const xc = renderer.xr.getCamera(); const e = xc.matrixWorld.elements; curtain.userData.shell.position.set(e[12], e[13], e[14]);
     { const t = curtain.userData.text; if (t) { t.quaternion.setFromRotationMatrix(xc.matrixWorld); t.position.set(e[12] - e[8] * 1.6, e[13] - e[9] * 1.6, e[14] - e[10] * 1.6); } }
+    { const d = Math.floor(performance.now() / 400) % 4; if (d !== curtain.userData.lastDots) { curtain.userData.lastDots = d; curtain.userData.paint?.(d); } }
     renderer.render(curtain, camera);
     return;
   }
