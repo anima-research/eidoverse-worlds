@@ -1218,6 +1218,7 @@ kbd {
   position: fixed; left: 50%; transform: translateX(-50%); top: 8px; z-index: 60;   /* top-centre; capnotice.js drops it below whatever actually occupies its span (R 09-19) */
   max-width: min(320px, 46vw);   /* NARROW, not merely right-anchored: at 720px the card still reached back across the centred emote bar and blocked 7 of 9 tiles even from top-right. The long text is the title tooltip anyway (09-05 note above). #185 B2. */ padding: 5px 10px; font-size: var(--fs-sm); line-height: 1.4;
   display: flex; flex-direction: row; align-items: center; gap: 10px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--attn) 70%, transparent); background: color-mix(in srgb, var(--attn) 10%, var(--bg));   /* THE attention amber: a message they must click through (R 09-19) */
 }
 
 /* A PHONE HAS NO ROOM IN THE TOP STRIP (antra-tess #185 B2, measured 2026-09-12).
@@ -1250,7 +1251,7 @@ kbd {
   .capnotice { top: 64px; }
 }
 .capnotice > * { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; flex: 1; }   /* title + text, buttons wrap under */
-.capnotice b { display: inline; margin: 0; white-space: nowrap; }
+.capnotice b { display: inline; margin: 0; white-space: nowrap; color: var(--attn); }
 .capnotice p { margin: 0; color: var(--dim); flex: 1 1 100%; font-size: var(--fs-sm); line-height: 1.35; }   /* its own full-width line under the title; `flex:1; min-width:0` in a wrapping row shrank it to one word per line (R 09-19: 'go home you're drunk') */   /* wraps — the 09-12 ellipsis left 'T…' beside the title (R 09-19) */
 .capnotice .cn-btns { display: flex; gap: 6px; flex: none; }
 .capnotice .cn-btns button { padding: 4px 10px; font-size: var(--fs-xs); }
