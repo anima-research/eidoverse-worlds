@@ -58,13 +58,13 @@ export function renderCensusTake() { const o = { max: renderCensus.maxPerFrame, 
 // ENTRY CURTAIN: while up, the eye pass draws a closed dark sphere around the head (the page's own
 // --bg) instead of the world — cheap, one material — so the headset gets frames (no runtime construct)
 // while the scene compiles behind it (xr.js). Not a splash: no text yet; the world simply arrives.
-let curtain = null, curtainOn = false;
+let curtain = null, curtainOn = false; const _yAxis = new THREE.Vector3(0, 1, 0);
 export function setXRCurtain(on) {
-  curtainOn = !!on;
+  curtainOn = !!on; if (on && curtain) curtain.userData.warmFrames = 0;
   if (curtainOn && !curtain) {
     curtain = new THREE.Scene();
-    const shell = new THREE.Mesh(new THREE.SphereGeometry(4, 24, 16), new THREE.MeshBasicNodeMaterial({ color: 0x0b0f12, side: THREE.BackSide }));
-    shell.frustumCulled = false; curtain.add(shell); curtain.userData.shell = shell;
+    const shell = new THREE.Mesh(new THREE.SphereGeometry(4, 24, 16), new THREE.MeshBasicNodeMaterial({ color: 0x0b0f12, side: THREE.BackSide, depthTest: false, depthWrite: false }));
+    shell.frustumCulled = false; shell.renderOrder = 0; curtain.add(shell); curtain.userData.shell = shell;
     // THE SPLASH, head-locked 1.6 m out (R 09-19: 'still just plain white Entering VR with no logo or name'):
     // the ∃ (its three paths read from #splash so there is one drawing of the mark), eidoverse / worlds, and
     // 'entering VR' with the dots breathing — repainted on the texture 3×/s while the curtain is up.
@@ -102,9 +102,15 @@ export function renderWorld() {
   if (curtainOn && renderer.xr?.isPresenting) {
     renderer.xr.updateCamera(camera);
     const xc = renderer.xr.getCamera(); const e = xc.matrixWorld.elements; curtain.userData.shell.position.set(e[12], e[13], e[14]);
-    { const t = curtain.userData.text; if (t) { t.quaternion.setFromRotationMatrix(xc.matrixWorld); t.position.set(e[12] - e[8] * 1.6, e[13] - e[9] * 1.6, e[14] - e[10] * 1.6); } }
+    { const t = curtain.userData.text; if (t) { const yaw = Math.atan2(e[8], e[10]); t.quaternion.setFromAxisAngle(_yAxis, yaw); t.position.set(e[12] - Math.sin(yaw) * 1.6, e[13], e[14] - Math.cos(yaw) * 1.6); } }   // LEVEL with the horizon (R 09-19): yaw follows the head, pitch/roll do not
     { const d = Math.floor(performance.now() / 400) % 4; if (d !== curtain.userData.lastDots) { curtain.userData.lastDots = d; curtain.userData.paint?.(d); } }
-    renderer.render(curtain, camera);
+    // THE WORLD RENDERS UNDER THE CURTAIN, hidden by it (R 09-19: 'chugging until the construct stops fading'): the
+    // sync pipeline builds compileAsync misses (shadow/depth variants, the first draw of each batch) fire on the
+    // world's first frames — better they fire while the curtain covers the world than after it drops. The curtain
+    // draws last with depth off, so nothing of the world shows.
+    if (curtain.userData.warmFrames == null) curtain.userData.warmFrames = 0;
+    if (curtain.userData.warmFrames++ < 6) { renderer.autoClear = true; batches.render(renderer, scene, camera); renderer.autoClear = false; renderer.render(curtain, camera); renderer.autoClear = true; }
+    else renderer.render(curtain, camera);
     return;
   }
   const before = { ...renderer.info.render };
