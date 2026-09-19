@@ -17,7 +17,7 @@
 // 'layers' dropped from optionalFeatures (MSAA via classic XRWebGLLayer),
 // foveation 1 standalone / 0 PC (Basis split; ?fov=), local-floor, and the settled law: NEVER navigate mid-session.
 
-import { installRenderListTolerance, THREE, renderer, camera, scene, XR_BOOT } from './core.js';
+import { installRenderListTolerance, THREE, renderer, camera, scene, XR_BOOT, PREF_HEADSET_SEEN } from './core.js';
 import { CONFIG, report, bus, tee } from './base.js';
 import { frameDebug } from './frame.js';
 import { resetFingers, xrBodyDebug } from './xrbody.js';
@@ -1083,9 +1083,9 @@ let recAt = 0;
 // On an XR boot, once my body is in, compile the whole scene ONCE into a render target shaped like the
 // eye buffers (RGBA8, depth, 4× MSAA) while the desktop is still idle-waiting on the visor. If the
 // pipeline cache keys match, entry loses the 5 s frame; the entry clock is the verdict either way.
-let xrWarmed = false;
+let xrWarmed = false, headsetHere = false;
 function warmXRPipelines() {
-  if (xrWarmed || !XR_BOOT || presenting || !getSelf()?.vrm) return;
+  if (xrWarmed || !(XR_BOOT || headsetHere) || presenting || !getSelf()?.vrm) return;   // any boot with a headset present warms (R 09-19), not only ?xr=1
   xrWarmed = true;
   warm('xr pipelines', async () => {
     // R's headset 09-07 19:00 settled it: three builds its WebGL-XR target at samples=0 (attributes.antialias
@@ -1095,7 +1095,10 @@ function warmXRPipelines() {
     const rt = new THREE.RenderTarget(64, 64, { samples: 0, depthBuffer: true, stencilBuffer: renderer.stencil, colorSpace: renderer.outputColorSpace });
     const prev = renderer.getRenderTarget(); const prevSamples = renderer._samples; renderer._samples = 0;   // the cache key reads renderer.currentSamples when no RT is bound; the XR session runs at 0, so warm at 0
     const t0 = performance.now();
-    try { renderer.setRenderTarget(rt); await renderer.compileAsync(scene, renderer.xr.getCamera?.() ?? camera, scene); }
+    try { renderer.setRenderTarget(rt); await renderer.compileAsync(scene, renderer.xr.getCamera?.() ?? camera, scene);
+      // and ONE real draw into the same target: compileAsync skips the shadow-depth variants and each batch's first-draw
+      // path — the 6–8 sync builds R's tee showed right after the curtain dropped (09-19)
+      renderer.setRenderTarget(rt); renderer.render(scene, camera); }
     catch (e) { report('xr pipeline warm', e); }
     finally { renderer.setRenderTarget(prev); renderer._samples = prevSamples; rt.dispose(); }
     tee(`[xr] pipelines pre-warmed for the eye buffers in ${(performance.now() - t0).toFixed(0)} ms — warm RT: samples=${rt.samples} fmt=${rt.texture?.format} type=${rt.texture?.type} cs=${rt.texture?.colorSpace} depth=${rt.depthBuffer} stencil=${rt.stencilBuffer} (matched to three XR target; entry should now show programs≈0)`);
@@ -1107,6 +1110,11 @@ export async function initXR() {
   try { supported = await navigator.xr.isSessionSupported('immersive-vr'); }
   catch (e) { report('xr support probe', e); }
   if (!supported) return;
+  // WRITE THE PREF core.js reads (its comment promised 'set once initXR confirms immersive-vr support' — nothing
+  // ever did, 09-19): the next boot on this machine picks WebGL up front, so the visor click enters in place
+  // instead of reloading the whole world onto WebGL.
+  try { localStorage.setItem(PREF_HEADSET_SEEN, '1'); } catch { /* private mode */ }
+  headsetHere = true;
 
   // the third glyph of the mic/ear trio — the same ink, the same slot
   // layout, the same pin row in the ∃ menu (R, 09-04). Exists only here,
@@ -1125,7 +1133,7 @@ export async function initXR() {
     for (const m of meshes) { m.frustumCulled = false; try { await renderer.compileAsync(m, camera, scene); } catch { /* fine */ } }
   }, { p: P_AMBIENT });
 
-  if (XR_BOOT) { const iv = setInterval(() => { warmXRPipelines(); if (xrWarmed) clearInterval(iv); }, 500); }   // body arrives seconds after boot; poll until it does
+  { const iv = setInterval(() => { warmXRPipelines(); if (xrWarmed) clearInterval(iv); }, 500); }   // headset present (we are past the support probe): warm once the body is in   // body arrives seconds after boot; poll until it does
   registerXrGlyph({
     // ?xr=1 alone is enough: core.js picks the backend that can present (WebGL until Chrome's
     // WebGPU-XR ships unflagged; ?webgpu=1 opts in early).
