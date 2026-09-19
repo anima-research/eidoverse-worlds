@@ -246,7 +246,7 @@ export const myState = {
 
 export const keys = new Set();
 let posture = null;              // 'sit' | 'lie' | null
-let vy = 0, grounded = true, mantle = null, airborneFor = 0;
+let vy = 0, grounded = true, mantle = null, airborneFor = 0, jumped = false;
 
 // camera
 export let camYaw = 0, camPitch = 0.32, camDist = 4.2;
@@ -650,7 +650,7 @@ export function updateMe(dt, me) {
         to.y = blockedTop;
         mantle = { from: myState.pos.clone(), to, t: 0 };
         grounded = false;
-      } else { vy = 5.6; grounded = false; }
+      } else { vy = 5.6; grounded = false; jumped = true; }   // a DELIBERATE jump: the clip may start this frame, no airborne grace
     }
     if (!mantle) {
       if (!grounded || myState.pos.y > ground + 0.02) {
@@ -662,6 +662,7 @@ export function updateMe(dt, me) {
     }
   }
   airborneFor = grounded || mantle ? 0 : airborneFor + dt;
+  if (grounded || mantle) jumped = false;
   if (myState.speed >= 0.05) {
     posture = null; myState.seat = null; // standing up is just walking away
     // ...and so is escaping a held pose (puppet, restored, or ragdoll-settled).
@@ -672,7 +673,7 @@ export function updateMe(dt, me) {
 
   const seatedClip = myState.seat?.chair ? 'sitchair' : 'sit';
   myState.clip = mantle ? 'climb'
-    : airborneFor > 0.09 ? 'jump'
+    : (jumped || airborneFor > 0.09) ? 'jump'   // the 0.09 s grace is for walking off a ledge; a jump press is immediate (R 09-19: 'stiff-legged as it leaves the ground')
       : myState.speed >= 0.05 ? (myState.speed < 2.6 ? 'walk' : 'run')
         : posture === 'sit' ? seatedClip
           : posture === 'lie' ? 'lie'

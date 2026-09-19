@@ -1043,10 +1043,11 @@ export class Avatar {
   }
   _setAction(a, slot) {
     if (!a || this.current === a) return;
-    if (this.current) this.current.fadeOut(0.22);
+    const fade = slot === 'jump' ? 0.1 : 0.22;   // into a jump, snappier: the feet are already off the floor (R 09-19)
+    if (this.current) this.current.fadeOut(fade);
     a.enabled = true;
     a.setEffectiveWeight(1);       // base weight — fadeIn ramps a MULTIPLIER on this
-    a.reset().fadeIn(0.22);
+    a.reset().fadeIn(fade);
     // The jump LEAVES THE GROUND INSTANTLY (gamey, on purpose) but the clip opens with its anticipation crouch,
     // so the body squatted in mid-air and then rose (R 09-19). Start the clip at take-off — the frame the hips
     // stop dipping — measured from the clip itself, so it holds for any body and any future jump clip.
