@@ -15,7 +15,7 @@
 // Knowledge ported from exultation input/xr.ts + porch-old, not the structure:
 // deadzone-with-rescale, snap cooldown, tracking-loss = keep-last-pose,
 // 'layers' dropped from optionalFeatures (MSAA via classic XRWebGLLayer),
-// foveation 0, local-floor, and the settled law: NEVER navigate mid-session.
+// foveation 1 standalone / 0 PC (Basis split; ?fov=), local-floor, and the settled law: NEVER navigate mid-session.
 
 import { installRenderListTolerance, THREE, renderer, camera, scene, XR_BOOT } from './core.js';
 import { CONFIG, report, bus, tee } from './base.js';
@@ -552,7 +552,13 @@ async function enterVR() {
     if (!floor) tee('[xr] NO floor reference space granted — using local (eye-level origin); floor height is a guess');
     const onLine = `[xr] session on ${renderer.backend?.isWebGPUBackend ? 'WebGPU' : 'WebGL'} refspace=${floor ?? 'local'} features=${JSON.stringify(session.enabledFeatures ?? [])}`;
     console.log(onLine); tee(onLine);
-    try { renderer.xr.setFoveation(0); } catch { /* not all runtimes */ }
+    // Fixed foveation, Basis's split (BasisSettingsDefaults.cs:933 FoveatedRendering: windows 0, android 1): a
+    // standalone headset renders its own eye buffers and max foveation is its single biggest GPU lever; a PC
+    // headset (Link/Steam) has the GPU to spare and the periphery blur shows. Was 0 everywhere — inherited from
+    // porch-old, never measured. ?fov=0..1 overrides for the A/B.
+    { const standalone = /OculusBrowser|Quest|Pico|Wolvic|Android/i.test(navigator.userAgent) && !/Windows|Macintosh|Linux x86/i.test(navigator.userAgent);
+      const fov = CONFIG.params.has('fov') ? THREE.MathUtils.clamp(+CONFIG.params.get('fov') || 0, 0, 1) : (standalone ? 1 : 0);
+      try { renderer.xr.setFoveation(fov); tee(`[xr] foveation ${fov} (${standalone ? 'standalone' : 'pc'}${CONFIG.params.has('fov') ? ', ?fov' : ''})`); } catch { /* not all runtimes */ } }
     rig.position.set(myState.pos.x, myState.pos.y, myState.pos.z);
     recentre.x = recentre.z = recentre.y = 0; recentre.pending = true;   // fold the head's playspace pose in on the first tracked frame (C15)
     rig.rotation.y = wrapPi(myState.yaw);   // headset-forward = body-forward at entry, WRAPPED (R's recorder: root/rig 7.88 vs cam −1.6 → the pop)
