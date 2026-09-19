@@ -267,7 +267,8 @@ function start() {
 
   if (!isViewer) {
     resolveMyAvatarPath()
-      .then((path) => makeAvatar(CONFIG.name, path, { urgent: true }).then((av) => ({ av, path })).catch((e) => {   // your body skips the load queue
+      // ?capsule=1: refuse the body load so the capsule floor runs end to end (R 09-19: 'leave other avatars offline')
+      .then((path) => (CONFIG.params.has('capsule') ? Promise.reject(new Error('?capsule=1: body loads refused')) : makeAvatar(CONFIG.name, path, { urgent: true })).then((av) => ({ av, path })).catch((e) => {   // your body skips the load queue
         report('avatar', e);
         // the capsule is the floor: a body that needs no network (09-19: a flapping tunnel took the VRM fetch and
         // R arrived as nothing; "I thought we fixed this")

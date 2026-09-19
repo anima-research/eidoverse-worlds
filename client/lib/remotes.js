@@ -7,7 +7,7 @@
 // freezes-then-teleports under loss.
 
 import { THREE, camera, scene } from './core.js';
-import { report, angleDelta } from './base.js';
+import { report, angleDelta, CONFIG } from './base.js';
 import { makeAvatar, makeCapsuleAvatar } from './avatar.js';
 import { avatarMounts, mountTransform } from './world.js';
 import { declareSeatState, clearSeatState } from './seats.js';
@@ -18,6 +18,8 @@ import { applyWingFoldPresence } from '../../shared/wingpresence.js';
 export const remotes = new Map(); // id -> RemoteBody
 
 const DEFAULT_AVATAR = 'eidoverse/assets/vrms/claude.vrm';
+// ?capsule=1: every remote arrives as the capsule too (R 09-19) — the flag is about seeing the floor, not one body
+const loadBody = (id, path) => CONFIG.params.has('capsule') ? Promise.reject(new Error('?capsule=1: body loads refused')) : makeAvatar(id, path);
 /** How far behind the newest sample we render. One frame of slack at 15Hz is
  *  66ms; 110 gives room for one dropped packet without a visible stall. */
 const INTERP_MS = 110;
@@ -82,7 +84,7 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
         if (!fresh.avatar) {
           fresh.loading = true;
           try {
-            const av = await makeAvatar(id, fresh.avatarPath || DEFAULT_AVATAR).catch((e) => { report(`avatar ${id}`, e); return makeCapsuleAvatar(id); });   // the capsule floor
+            const av = await loadBody(id, fresh.avatarPath || DEFAULT_AVATAR).catch((e) => { report(`avatar ${id}`, e); return makeCapsuleAvatar(id); });   // the capsule floor
             if (remotes.get(id) !== fresh) { av.dispose(); return fresh; }
             fresh.avatar = av;
             if (fresh.buf.length) applyImmediate(fresh);
@@ -105,7 +107,7 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
   gens.set(id, r.gen);
   remotes.set(id, r);
   try {
-    r.avatar = await makeAvatar(id, avatarPath || DEFAULT_AVATAR).catch((e) => { report(`avatar ${id}`, e); return makeCapsuleAvatar(id); });   // the capsule floor
+    r.avatar = await loadBody(id, avatarPath || DEFAULT_AVATAR).catch((e) => { report(`avatar ${id}`, e); return makeCapsuleAvatar(id); });   // the capsule floor
     // Stale-load guard: they left OR switched bodies while this one loaded.
     // Compare against OUR record, not mere key presence — a replacement body
     // re-occupies the key, and checking has(id) let the old avatar finish
