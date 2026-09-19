@@ -420,7 +420,15 @@ function feetTick(vrm, av, dt) {
   const ft = footTargets(vrm, floorY); if (!ft) return;
   const ud = vrm.userData;
   ud._gaitT = (ud._gaitT || 0) + (dt > 0 ? dt : 1 / 30);
-  if (!ud._gait) ud._gait = gaitInit(ft.left, ft.right, ft.yaw);
+  if (!ud._gait) {
+    // RE-ENGAGE (landing, first frame): seed the plants from where the ANIMATED feet are, y forced to the floor,
+    // and let the ordinary step walk them to the ideal spots — Basis re-seeds its foot sim from the animated foot
+    // on every 0→1 of the leg weight (BasisLocalFootDriver.cs:206–228). Seeding at the ideal spots instead put a
+    // straight IK stance on the body in one frame, straight out of the jump clip's tucked legs.
+    const fL = vrm.humanoid.getNormalizedBoneNode('leftFoot'), fR = vrm.humanoid.getNormalizedBoneNode('rightFoot');
+    const seedL = fL ? fL.getWorldPosition(new THREE.Vector3()).setY(ft.left.y) : ft.left, seedR = fR ? fR.getWorldPosition(new THREE.Vector3()).setY(ft.right.y) : ft.right;
+    ud._gait = gaitInit(seedL, seedR, ft.yaw);
+  }
   const gp = gaitTick(ud._gait, ft.left, ft.right, ft.yaw, ud._gaitT, dt > 0 ? dt : 1 / 30);
   gp.L.pos.y += gp.L.lift; gp.R.pos.y += gp.R.lift;
   solveLeg(vrm, 'left', gp.L.pos, gp.L.yaw); solveLeg(vrm, 'right', gp.R.pos, gp.R.yaw);
