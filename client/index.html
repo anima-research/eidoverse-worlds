@@ -139,7 +139,7 @@ button:active { transform: translateY(1px); }
    (no per-menu handrolling; one fallback). Use `<div class="row btn-row">`. */
 .btn-row { display: flex; gap: 6px; }
 .btn-row > button { flex: 1; max-width: 12rem; text-align: center; padding: 5px 8px; }   /* capped: a wide frame must not stretch buttons out of proportion (live, 09-04) */
-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button:focus-visible { outline: 2px solid var(--edge-hi); outline-offset: 1px; }   /* the KEYBOARD focus ring — was --accent (= --attn amber), so a dock tile you had clicked lit 'needs attention' the moment you pressed Shift (R 09-19). Focus is not attention. */
 @keyframes hud-blink { 0%, 100% { opacity: 1; } 25%, 75% { opacity: .25; } }
 #xrbtn.hud-blink { animation: hud-blink .9s ease-in-out 2; }
 #xrbtn.hud-absent { filter: drop-shadow(0 0 3px var(--attn)); }   /* the attention ring around an absent headset's visor */
