@@ -1215,7 +1215,7 @@ kbd {
      ([381..824] at every width). The top strip between `emotes` and `world` cannot
      host it — that gap is -57px at 1068, 49 at 1280, 129 at 1440, 249 at 1680, and
      the card needs min(320px,46vw). antra-tess #185 rereview B2. */
-  position: fixed; right: 10px; top: 389px; z-index: 60;   /* world's MEASURED bottom 381 + 8 */
+  position: fixed; left: 50%; transform: translateX(-50%); top: 8px; z-index: 60;   /* top-centre; capnotice.js drops it below whatever actually occupies its span (R 09-19) */
   max-width: min(320px, 46vw);   /* NARROW, not merely right-anchored: at 720px the card still reached back across the centred emote bar and blocked 7 of 9 tiles even from top-right. The long text is the title tooltip anyway (09-05 note above). #185 B2. */ padding: 5px 10px; font-size: var(--fs-sm); line-height: 1.4;
   display: flex; flex-direction: row; align-items: center; gap: 10px; border-radius: 8px;
 }
@@ -1236,7 +1236,7 @@ kbd {
      show()), so on a phone it opens 6 wide and TWO ROWS tall — bottom 94,
      measured — and the 64 I picked when it was one row lands on row two.
      A constant chosen against one layout does not survive the next. */
-  .capnotice { top: 102px; left: 50px; right: 8px; max-width: none; }
+  .capnotice { top: 102px; left: 50px; right: 8px; max-width: none; transform: none; }
 }
 
 /* THE MID BAND, 901-1067px (measured 2026-09-12). The card is right-anchored at
