@@ -8,8 +8,8 @@
 // consent.js, voice mouths in voicemouths.js, /commands in lib/commands/.
 
 import { THREE, scene, camera, renderer } from './lib/core.js';
-import { CONFIG, bus, report } from './lib/base.js';
-import { contributeThumbnail, makeAvatar, EMOTE_ORDER } from './lib/avatar.js';
+import { CONFIG, bus, report, tee } from './lib/base.js';
+import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, EMOTE_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
 import { setSkyArgsSource, entities, buildsPending, avatarMounts } from './lib/world.js';
 import { foldParity } from './lib/parity.js';
@@ -267,7 +267,14 @@ function start() {
 
   if (!isViewer) {
     resolveMyAvatarPath()
-      .then((path) => makeAvatar(CONFIG.name, path, { urgent: true }).then((av) => ({ av, path }))) // your body skips the load queue
+      .then((path) => makeAvatar(CONFIG.name, path, { urgent: true }).then((av) => ({ av, path })).catch((e) => {   // your body skips the load queue
+        report('avatar', e);
+        // the capsule is the floor: a body that needs no network (09-19: a flapping tunnel took the VRM fetch and
+        // R arrived as nothing; "I thought we fixed this")
+        toast('your body would not load — wearing the capsule until one does. Pick another in Profile.', 'warn', 12000);
+        tee('[body] capsule stand-in (load failed)');
+        return { av: makeCapsuleAvatar(CONFIG.name), path: 'capsule' };
+      }))
       .then(({ av, path }) => {
         setMe(av);
         announceWorn(path.split('/').pop().replace(/\.vrm.*$/, ''), path);   // the roster's name for this file, not a stale ew-avatar-name
@@ -278,7 +285,7 @@ function start() {
         // signal — it costs an offscreen render-target compile burst, and the
         // old t+4s wall clock dropped that into the middle of the boot storm
         // (§16.1g). Calm = 5 smooth seconds with no load work in flight.
-        whenCalm().then(() => contributeThumbnail(getMyAvatarName(), av.vrm, CONFIG.token));
+        if (!av.isCapsule) whenCalm().then(() => contributeThumbnail(getMyAvatarName(), av.vrm, CONFIG.token));
       })
       .catch((e) => { bodySettled = true; markPhase('body', 1); report('avatar', e); checkReady(); });
   }

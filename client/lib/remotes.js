@@ -8,7 +8,7 @@
 
 import { THREE, camera, scene } from './core.js';
 import { report, angleDelta } from './base.js';
-import { makeAvatar } from './avatar.js';
+import { makeAvatar, makeCapsuleAvatar } from './avatar.js';
 import { avatarMounts, mountTransform } from './world.js';
 import { declareSeatState, clearSeatState } from './seats.js';
 import { applyRemoteReach, noteReachEvents } from './reachnet.js';
@@ -82,7 +82,7 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
         if (!fresh.avatar) {
           fresh.loading = true;
           try {
-            const av = await makeAvatar(id, fresh.avatarPath || DEFAULT_AVATAR);
+            const av = await makeAvatar(id, fresh.avatarPath || DEFAULT_AVATAR).catch((e) => { report(`avatar ${id}`, e); return makeCapsuleAvatar(id); });   // the capsule floor
             if (remotes.get(id) !== fresh) { av.dispose(); return fresh; }
             fresh.avatar = av;
             if (fresh.buf.length) applyImmediate(fresh);
@@ -105,7 +105,7 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
   gens.set(id, r.gen);
   remotes.set(id, r);
   try {
-    r.avatar = await makeAvatar(id, avatarPath || DEFAULT_AVATAR);
+    r.avatar = await makeAvatar(id, avatarPath || DEFAULT_AVATAR).catch((e) => { report(`avatar ${id}`, e); return makeCapsuleAvatar(id); });   // the capsule floor
     // Stale-load guard: they left OR switched bodies while this one loaded.
     // Compare against OUR record, not mere key presence — a replacement body
     // re-occupies the key, and checking has(id) let the old avatar finish

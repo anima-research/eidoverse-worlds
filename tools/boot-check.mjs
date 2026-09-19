@@ -72,6 +72,7 @@ try {
       backend: globalThis._r?.backend ? (globalThis._r.backend.isWebGLBackend ? 'webgl' : 'webgpu') : null, xrEnabled: !!globalThis._r?.xr?.enabled,
       tolerance: !!globalThis.__renderListTolerance, xrShadow: globalThis.__xrShadowPatched === true, raysCanvas: !!document.querySelector('#splash .sp-rays'),
       hasBody: !!globalThis.EW?.me?.(),
+      capsule: !!globalThis.EW?.me?.()?.isCapsule,   // the body of last resort (capsulebody.js) — an avatar error BEFORE it is the expected story
       // REACHABILITY, not scrollWidth: html,body use overflow:hidden, so a frame
       // that runs past the viewport edge is simply unreachable and the document
       // never reports overflow (#185 review).
@@ -233,6 +234,7 @@ try {
   // report() that stops logging must not turn a failed body into "on screen" (eighth review 2026-09-10)
   let body;
   if (spectating) body = 'viewer (no body)';
+  else if (s.hasBody && s.capsule) { body = `CAPSULE on screen (${bodyErrs.length ? 'after ' + bodyErrs[0].replace(/\s+/g, ' ').slice(0, 60) : 'no avatar error reported — why the capsule?'})`; if (!bodyErrs.length) fail(`the capsule stand-in is on screen but no avatar error was reported — it must only ever follow a failed load`); }
   else if (s.hasBody) { if (bodyErrs.length) fail(`a body is on screen AND the client reported an avatar error: ${bodyErrs[0].slice(0, 120)}`); body = 'body on screen'; }
   else body = `body FAILED → failed-body path (${bodyErrs.length ? bodyErrs[0].replace(/\s+/g, ' ').slice(0, 90) : 'no avatar error reported'})`;
   if (process.env.BOOT_CHECK_REQUIRE_BODY === '1' && !spectating && !s.hasBody) fail(`BOOT_CHECK_REQUIRE_BODY=1 but ${body}`);

@@ -4,6 +4,7 @@
 
 import { renderAside } from './render.js';
 import { THREE, scene, camera, renderer, backendName } from './core.js';
+import { makeCapsuleVrm } from './capsulebody.js';
 import { report, angleDelta, bus, tee } from './base.js';
 import { defsRegistry } from './defs.js';
 import { measureChain, solveChain } from './reachbone.js';
@@ -1998,6 +1999,13 @@ function makeBlobShadow() {
 
 // ---------------------------------------------------------------- factory
 
+/** The body of last resort (capsulebody.js): a real Avatar over a capsule puppet — labels, emotes, the XR arm
+ *  solver and the wire all work on it. Never throws; never touches the network. */
+export function makeCapsuleAvatar(id) {
+  const av = new Avatar(id, makeCapsuleVrm(), {});
+  av.isCapsule = true;
+  return av;
+}
 export async function makeAvatar(id, libPath, { full = false, urgent = false } = {}) {
   loadTrack(`avatar:${id}`, `${id} materializing`);
   const work = beginWork(`avatar ${id}`);
