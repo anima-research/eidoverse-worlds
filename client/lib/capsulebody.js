@@ -62,6 +62,9 @@ export function makeCapsuleVrm() {
     getRawBoneNode: (n) => bones[n] ?? null,
     normalizedHumanBones: Object.fromEntries(Object.entries(bones).map(([k, node]) => [k, { node }])),
   };
-  return { scene, humanoid, meta: { name: 'capsule', metaVersion: 'capsule' }, lookAt: null, expressionManager: null, springBoneManager: null,
+  // what three-vrm-animation's clip builder reads (createVRMAnimationHumanoidTracks): uniquely named bones,
+  // the hips' rest height for the walk's root motion, and a VRM-1 meta so no 180° legacy flip is applied
+  humanoid.normalizedRestPose = { hips: { position: [0, bones.hips.position.y, 0] } };
+  return { scene, humanoid, meta: { name: 'capsule', metaVersion: '1' }, lookAt: null, expressionManager: null, springBoneManager: null,
     update() {}, isCapsuleBody: true, height: H };
 }

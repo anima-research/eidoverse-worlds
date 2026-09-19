@@ -2004,6 +2004,17 @@ function makeBlobShadow() {
 export function makeCapsuleAvatar(id) {
   const av = new Avatar(id, makeCapsuleVrm(), {});
   av.isCapsule = true;
+  // the standard clips, if they can be had (R 09-19: 'it has arms and legs'): idle + walk first, then the rest
+  // through the same idle-time hydration a real body uses. Each is best-effort — the capsule exists precisely
+  // because the network may be gone, and a still puppet is the floor, not a failure.
+  (async () => {
+    for (const slot of CORE_CLIPS) {
+      try { const clip = await clipFor(av.vrm, slot); const a = av.mixer.clipAction(clip); a.enabled = true; a.setEffectiveWeight(0); a.play(); av.actions[slot] = a; }
+      catch (e) { console.warn(`capsule clip ${slot} unavailable`, e); return; }
+    }
+    av.setClip(av.currentSlot ?? 'idle');
+    av.hydrateClips().catch(() => {});
+  })();
   return av;
 }
 export async function makeAvatar(id, libPath, { full = false, urgent = false } = {}) {
