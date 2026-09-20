@@ -41,6 +41,44 @@ export const serverNow = () => performance.timeOrigin + performance.now() + (clo
 const gens = new Map();
 export const remoteGen = (id) => gens.get(id) ?? 0;
 
+/** The capsule is a FLOOR, not a verdict (#196 review B1): a body that failed
+ *  to load once — a dropped packet, a cold CDN, a server restart mid-join —
+ *  must be retryable, or one transient failure becomes a session-long identity
+ *  substitution. A record wearing the capsule carries `capsuleFor` = the path
+ *  it still owes; this is the ONE owner that pays that debt.
+ *
+ *  Generation safety is by RECORD IDENTITY, the guard every other async
+ *  continuation in this file uses: the record we started on must still be the
+ *  one in the map when the load resolves, or the body we loaded belongs to
+ *  nobody and is disposed. Bounded: RETRY_MAX attempts with backoff, so a
+ *  genuinely dead asset costs a few requests, not a hot loop. */
+const RETRY_MAX = 3;
+const RETRY_BACKOFF_MS = [400, 1600, 5000];
+export function retryBody(r) {
+  if (!r?.capsuleFor || r.retrying) return;
+  const id = r.id, path = r.capsuleFor;
+  const n = r.retries ?? 0;
+  if (n >= RETRY_MAX) return;
+  r.retrying = true;
+  r.retries = n + 1;
+  setTimeout(async () => {
+    if (remotes.get(id) !== r) return;            // superseded while we waited: not ours to pay
+    try {
+      const av = await loadBody(id, path);
+      if (remotes.get(id) !== r) { av.dispose(); return; }   // superseded while loading
+      r.avatar?.dispose();                        // the capsule steps down
+      r.avatar = av;
+      r.capsuleFor = null;
+      r.retries = 0;
+      if (r.buf.length) applyImmediate(r);
+    } catch (e) {
+      report(`avatar ${id} retry`, e);            // still down; the capsule stays, the debt stands
+    } finally {
+      if (remotes.get(id) === r) r.retrying = false;
+    }
+  }, RETRY_BACKOFF_MS[Math.min(n, RETRY_BACKOFF_MS.length - 1)]);
+}
+
 export async function ensureRemote(id, avatarPath, meta = {}) {
   const existing = remotes.get(id);
   if (existing) {
@@ -75,8 +113,13 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
           gen: (gens.get(id) ?? 0) + 1,
           buf: [], lastClip: 'idle', lodAcc: 0, lodTick: 0, speakingUntil: 0,
         };
+        // a capsule transplants as the floor, but the debt transplants with it:
+        // the successor owes the same body, and takeover is a natural moment to
+        // try again (#196 B1 — takeover used to make the substitution permanent)
+        fresh.capsuleFor = existing.capsuleFor ?? null;
         gens.set(id, fresh.gen);
         remotes.set(id, fresh);
+        if (fresh.avatar && fresh.capsuleFor) retryBody(fresh);
         // predecessor still mid-load: its completion will see a record that
         // isn't its own and dispose (the stale-load guard below); the
         // successor starts its OWN load — bytes are cached, so this is
@@ -84,7 +127,7 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
         if (!fresh.avatar) {
           fresh.loading = true;
           try {
-            const av = await loadBody(id, fresh.avatarPath || DEFAULT_AVATAR).catch((e) => { report(`avatar ${id}`, e); return makeCapsuleAvatar(id); });   // the capsule floor
+            const av = await loadBody(id, fresh.avatarPath || DEFAULT_AVATAR).catch((e) => { report(`avatar ${id}`, e); fresh.capsuleFor = fresh.avatarPath || DEFAULT_AVATAR; return makeCapsuleAvatar(id); });   // the capsule floor
             if (remotes.get(id) !== fresh) { av.dispose(); return fresh; }
             fresh.avatar = av;
             if (fresh.buf.length) applyImmediate(fresh);
@@ -93,6 +136,11 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
         }
         return fresh;
       }
+      // Same body re-announced with no authority change: nothing to rebuild,
+      // but if this record is wearing the capsule it still owes a body. A
+      // reannounce is evidence the peer is live and the network is back —
+      // pay the debt rather than returning the substitution forever (#196 B1).
+      if (existing.capsuleFor) retryBody(existing);
       return existing;
     }
   }
@@ -107,7 +155,7 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
   gens.set(id, r.gen);
   remotes.set(id, r);
   try {
-    r.avatar = await loadBody(id, avatarPath || DEFAULT_AVATAR).catch((e) => { report(`avatar ${id}`, e); return makeCapsuleAvatar(id); });   // the capsule floor
+    r.avatar = await loadBody(id, avatarPath || DEFAULT_AVATAR).catch((e) => { report(`avatar ${id}`, e); r.capsuleFor = avatarPath || DEFAULT_AVATAR; return makeCapsuleAvatar(id); });   // the capsule floor
     // Stale-load guard: they left OR switched bodies while this one loaded.
     // Compare against OUR record, not mere key presence — a replacement body
     // re-occupies the key, and checking has(id) let the old avatar finish

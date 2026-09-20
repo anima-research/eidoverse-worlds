@@ -38,8 +38,13 @@ function fields() {
     { t: 'list', label: 'my avatars', empty: 'nothing worn yet — try one from World › avatar',
       rows: mine.map((n) => {
         const a = roster.find((x) => x.name === n);
-        return { id: n, label: n, sub: a?.height ? `${a.height.toFixed(2)} m` : undefined, active: n === cur,
-          actions: n === cur ? [] : [{ k: 'wear', label: 'wear' }] };
+        // `cur` is INTENT and survives a failed load, so gating the wear action
+        // on it left the body that just failed marked active with no way to
+        // retry — the one body a first-time user owns (#196 review B1). When
+        // the capsule is worn nothing is active and everything is wearable.
+        const onMe = n === cur && !!getMe() && !getMe()?.isCapsule;
+        return { id: n, label: n, sub: a?.height ? `${a.height.toFixed(2)} m` : undefined, active: onMe,
+          actions: onMe ? [] : [{ k: 'wear', label: 'wear' }] };
       }) },
   ];
 }

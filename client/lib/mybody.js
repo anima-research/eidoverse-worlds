@@ -116,7 +116,12 @@ function armFlightFor(av) {
 // ---------------------------------------------------------------- avatar swap
 
 wireAvatarSwitch(async (path, name) => {
-  if (path === myAvatarPath) return;
+  // Same path is normally a no-op — but not when the body on screen is the
+  // capsule: `myAvatarPath` records what we INTENDED to wear and survives a
+  // failed load, so this early return was the last link that made a transient
+  // failure permanent (#196 review B1). Wearing the body we already "have" is
+  // exactly the retry a user reaches for.
+  if (path === myAvatarPath && !me?.isCapsule) return;
   toast(`changing into ${name}…`, 'info', 3000);
   try {
     // The switch order is load-bearing (§19b): NEW body fully ready (pool-hit

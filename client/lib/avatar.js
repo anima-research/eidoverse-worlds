@@ -2060,7 +2060,10 @@ export function makeCapsuleAvatar(id) {
     for (const slot of CORE_CLIPS) {
       try { const clip = await clipFor(av.vrm, slot); if (av._disposed) return;   // a remote disposed on takeover: stop feeding a dead body (pre-review S8)
         const a = av.mixer.clipAction(clip); a.enabled = true; a.setEffectiveWeight(0); a.play(); av.actions[slot] = a; }
-      catch (e) { console.warn(`capsule clip ${slot} unavailable`, e); return; }
+      // One unavailable clip is not a verdict on the rest (#196 review B1): this
+      // loop used to `return`, so a single 404 on the first slot cost idle AND
+      // walk and left a still puppet. Each slot is independent — skip the miss.
+      catch (e) { console.warn(`capsule clip ${slot} unavailable`, e); }
     }
     if (av._disposed) return;
     av.setClip(av.currentSlot ?? 'idle');
