@@ -703,8 +703,16 @@ console.log('\neased crossfade, interrupted (pre-review B2):');
   };
   self.setClip('walk'); for (let i = 0; i < 30; i++) self.update(1 / 60);
   self.setClip('jump', 0, { fade: 0.5, ease: true }); for (let i = 0; i < 12; i++) self.update(1 / 60);   // 0.2 s into the ease
-  self.setClip('idle'); for (let i = 0; i < 60; i++) self.update(1 / 60);                             // landed; 1 s later
   const w = (a: any) => +a.getEffectiveWeight().toFixed(2);
+  const before = { walk: w(self.actions.walk), jump: w(self.actions.jump), idle: w(self.actions.idle) };
+  self.setClip('walk'); self.update(1 / 60);   // LANDED inside the ease, still holding forward — back into WALK, the clip mid-fade-out: one frame later nothing may jump by more than 0.1 and the weights still sum to ~1 (round 4 S1b)
+  const after = { walk: w(self.actions.walk), jump: w(self.actions.jump), idle: w(self.actions.idle) };
+  const maxMove = Math.max(...(['walk', 'jump', 'idle'] as const).map((k) => Math.abs(after[k] - before[k])));
+  const sum = after.walk + after.jump + after.idle;
+  check('a landing inside the ease moves no weight by more than 0.1 in one frame', maxMove <= 0.1, `before ${JSON.stringify(before)} after ${JSON.stringify(after)}`);
+  check('...and the weights still sum to ~1', sum > 0.95 && sum < 1.05, `sum ${sum.toFixed(2)}`);
+  for (let i = 0; i < 59; i++) self.update(1 / 60);                                                    // 1 s later
+  self.setClip('idle'); for (let i = 0; i < 60; i++) self.update(1 / 60);   // then stop: 1 s later
   check('walk faded out after the ease was cut short', w(self.actions.walk) < 0.05, `walk ${w(self.actions.walk)} jump ${w(self.actions.jump)} idle ${w(self.actions.idle)}`);
   check('idle owns the body', w(self.actions.idle) > 0.95, `idle ${w(self.actions.idle)}`);
 }
