@@ -111,14 +111,15 @@ console.log('\nthe pending retry belongs to the intent that armed it:');
 
 console.log('\nthe wiring (an extracted policy nobody calls is the regression extraction invites):');
 {
-  const xr = readFileSync(join(dir, '../client/lib/xr.js'), 'utf8');
+  const eff = readFileSync(new URL('../client/lib/xr_entry_effects.js', import.meta.url), 'utf8');
+const xr = readFileSync(join(dir, '../client/lib/xr.js'), 'utf8');
   check('xr.js imports the policy',
     /import \{ decideEntryFailure \} from '\.\/xr_entry_policy\.js'/.test(xr));
   check('xr.js CONSULTS it on a failed request', /decideEntryFailure\(/.test(xr));
   check('the retry is armed from the policy verdict, not a re-derived literal',
-    /verdict\.delayMs/.test(xr) && !/setTimeout\([^)]*,\s*1500\)/.test(xr));
+  /deps\.setTimer\(/.test(eff) && /verdict\.delayMs/.test(eff));   // the EFFECT OWNER holds this now
   check('the pending retry is generation-checked before it fires',
-    /busyRetryFor !== myEntry/.test(xr));
+  /if \(pendingFor !== intent\)/.test(eff));   // …and xr-entry-effects-test EXECUTES it
   // Assert the ORDER, not the spacing: a character-budgeted regex between the two lines fails on an
   // intervening comment, which is a false red on innocent code.
   const leave = xr.slice(xr.indexOf('export function leaveVR'));

@@ -53,3 +53,50 @@ export function makeCancelShim({ session, native }) {
 export function clockIsRestored(win, native) {
   return !!native && win.requestAnimationFrame === native.raf && win.cancelAnimationFrame === native.caf;
 }
+
+/** INSTALL AND TEAR DOWN, as one owned sequence — the thing that was never executed by a test.
+ *
+ *  #197 round-two review: the reviewer mutated the product's install site to
+ *      if (false && shouldShim({ emulated: !!globalThis.IWER })) {
+ *  and xr-frame-clock-test still passed 29/29, because the suite exercised the pure pieces
+ *  (captureNative, makeFrameShim, makeCancelShim) and then source-checked the wiring. The ORDER —
+ *  capture, then register the restore listener BEFORE setSession, then shim — lived only in xr.js.
+ *
+ *  It lives here now, and tools/xr-session-lifecycle-test.mjs drives THIS.
+ *
+ *  @param win     the window whose clock is being taken over
+ *  @param session the XRSession (or anything with addEventListener/requestAnimationFrame)
+ *  @param saved   the previously-saved native pair, or null on a first entry (save-once)
+ *  @param emulated true under IWER, where the emulator drives frames itself
+ *  @param onEnd   extra teardown to run after the clock is restored
+ *  @returns {{ native, installed, restore }} */
+export function installFrameClock({ win, session, saved, emulated = false, onEnd = null }) {
+  const native = captureNative(saved, win);   // save-once: a second capture would store the SHIM as native
+  let ended = false, restored = false;
+  // A GENERATION, so a STALE session's end cannot take the clock from a live one. Found by the
+  // lifecycle harness the review required: re-enter before the first session finished tearing down,
+  // then let the OLD session end, and it restored the desktop clock while the NEW session was
+  // presenting — every frame went to the window instead of the headset. The restore had no way to
+  // know it had been superseded. Now each install claims the window, and only the current claimant
+  // may hand it back.
+  const gen = (win.__xrClockGen = (win.__xrClockGen ?? 0) + 1);
+  const restore = () => {
+    ended = true;
+    if (restored) return false;
+    restored = true;
+    if (win.__xrClockGen !== gen) return false;   // superseded: a newer session owns the clock now
+    win.requestAnimationFrame = native.raf; win.cancelAnimationFrame = native.caf;
+    return true;
+  };
+  // BEFORE setSession, which is where three registers its own 'end' listener: listeners fire in
+  // registration order, so ours must be first or three restarts the desktop loop against a dead
+  // session and no frame ever ticks again.
+  session.addEventListener('end', () => { restore(); if (onEnd) onEnd(); }, { once: true });
+  let installed = false;
+  if (shouldShim({ emulated })) {
+    win.requestAnimationFrame = makeFrameShim({ session, native, hasEnded: () => ended });
+    win.cancelAnimationFrame = makeCancelShim({ session, native });
+    installed = true;
+  }
+  return { native, installed, restore };
+}

@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import * as TSL from 'three/tsl';
 import { CONFIG } from './base.js';
 import { decideBackend } from './backend_choice.js';
-import { headsetSeenRecently as _headsetSeenRecently } from './headset_seen.js';
+import { headsetSeenRecently as _headsetSeenRecently, migrateHeadsetSeen as _migrateHeadsetSeen } from './headset_seen.js';
 import { patchShadowNodeForXR } from './xrshadow.js';
 
 export { THREE, TSL };
@@ -66,7 +66,14 @@ export const PREF_MSAA = 'ew-msaa', PREF_BACKEND = 'ew-backend';
 // lives in headset_seen.js so it can be driven directly; core.js just supplies the stored value.
 export const PREF_HEADSET_SEEN = 'ew-headset-seen';   // ms timestamp of the last granted session (legacy: '1')
 const pref = (k) => { try { return localStorage.getItem(k); } catch { return null; } };   // a storage throw must not kill boot
-export const headsetSeenRecently = () => _headsetSeenRecently(Date.now(), pref(PREF_HEADSET_SEEN));
+export const headsetSeenRecently = () => {
+  // Migrate the legacy '1' marker on first observation and WRITE IT BACK, so it ages out like every
+  // real timestamp instead of being permanent (#197 round-two review B3).
+  const now = Date.now(); let raw = pref(PREF_HEADSET_SEEN);
+  const migrated = _migrateHeadsetSeen(now, raw);
+  if (migrated !== null) { try { localStorage.setItem(PREF_HEADSET_SEEN, migrated); } catch {} raw = migrated; }
+  return _headsetSeenRecently(now, raw);
+};
 
 // ?xr=1 is a BOOT flag, not a runtime toggle: three's XRManager (0.185–0.186) rides
 // WebGPU (XRGPUBinding — Chrome, flags today) but only if the adapter was

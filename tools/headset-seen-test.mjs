@@ -13,14 +13,15 @@
 //
 // Mutations that must turn a named check red:
 //   headset_seen.js: headsetSeenRecently ignores the TTL (always true once seen)
-//   headset_seen.js: legacy '1' stops being honoured
+//   headset_seen.js: an unmigrated legacy '1' reads as recent again (the permanence defect)
+//   core.js: the migration stops writing back, so the marker never ages
 //   core.js: the boot choice reads the raw bit again instead of the predicate
 //   videopanel.js: the copy returns to "Right now: a headset is present"
 //   xr.js: a granted session writes '1' instead of the time
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { headsetSeenAt, headsetSeenRecently, HEADSET_SEEN_TTL_MS } from '../client/lib/headset_seen.js';
+import { headsetSeenAt, migrateHeadsetSeen, headsetSeenRecently, HEADSET_SEEN_TTL_MS } from '../client/lib/headset_seen.js';
 
 const dir = dirname(fileURLToPath(import.meta.url));
 const read = (f) => readFileSync(join(dir, '..', f), 'utf8');
@@ -51,8 +52,23 @@ check('a session 31 days ago has EXPIRED — the machine stops claiming a headse
 check('the TTL is a month, not a lifetime and not a session',
   HEADSET_SEEN_TTL_MS > 7 * 864e5 && HEADSET_SEEN_TTL_MS <= 90 * 864e5, `${HEADSET_SEEN_TTL_MS / 864e5} days`);
 check('never seen → not recently', headsetSeenRecently(NOW, null) === false);
-check('the legacy marker is honoured until a session re-stamps it',
-  headsetSeenRecently(NOW, '1') === true);
+// THE LEGACY MARKER MUST NOT BE PERMANENT (#197 round-two review B3). This suite previously
+// asserted `headsetSeenRecently(NOW, '1') === true` — pinning the defect in place: '1' mapped to 0
+// and 0 returned true unconditionally, so exactly the users carrying the old marker stayed
+// "headset-capable" forever, with a gone headset or a new machine.
+check('an UNMIGRATED legacy marker is not "recent" — unknown time is not a licence',
+  headsetSeenRecently(NOW, '1') === false);
+check('migrating a legacy marker stamps it with the time it was first seen under this build',
+  migrateHeadsetSeen(NOW, '1') === String(NOW));
+check('…and a migrated marker then reads as recent', headsetSeenRecently(NOW, migrateHeadsetSeen(NOW, '1')) === true);
+check('…and ages out on the SAME clock as every real timestamp',
+  headsetSeenRecently(NOW + HEADSET_SEEN_TTL_MS + 1, migrateHeadsetSeen(NOW, '1')) === false);
+check('a real timestamp is not re-stamped (migration touches only the legacy marker)',
+  migrateHeadsetSeen(NOW, String(NOW - 5)) === null);
+check('nothing stored migrates to nothing', migrateHeadsetSeen(NOW, null) === null);
+{ const core = readFileSync(new URL('../client/lib/core.js', import.meta.url), 'utf8');
+  check('core.js MIGRATES on read and writes the stamp back, or the marker never ages',
+    /migrateHeadsetSeen/.test(core) && /setItem\(PREF_HEADSET_SEEN, migrated\)/.test(core)); }
 
 console.log('\nthe copy claims only what is known:');
 check('the Video panel no longer says a headset IS present',

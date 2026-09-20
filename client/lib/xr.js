@@ -19,7 +19,8 @@
 
 import { installRenderListTolerance, THREE, renderer, camera, scene, XR_BOOT, PREF_HEADSET_SEEN } from './core.js';
 import { decideEntryFailure } from './xr_entry_policy.js';   // what a failed session request MEANS (#197 B1)
-import { captureNative, shouldShim, makeFrameShim, makeCancelShim } from './xr_frame_clock.js';   // who owns window.rAF while presenting (#197 B2)
+import { makeEntryEffects } from './xr_entry_effects.js';
+import { installFrameClock } from './xr_frame_clock.js';   // who owns window.rAF while presenting (#197 B2)
 import { CONFIG, report, bus, tee, wornNameOf } from './base.js';
 import { frameDebug } from './frame.js';
 import { resetFingers, xrBodyDebug } from './xrbody.js';
@@ -172,7 +173,8 @@ function sampleFingerCurl() {
 rig.name = 'xr-rig';
 let presenting = false;
 let nativeRAF = null, nativeCAF = null;   // window.rAF/cAF saved while the in-session shim is installed
-let sessionEnded = false;                  // set on the FIRST 'end' listener; the shim falls back to native once it is
+let sessionEnded = false;
+let frameClock = null;   // the owned clock takeover for the live session                  // set on the FIRST 'end' listener; the shim falls back to native once it is
 let exitVeil = null;
 let floorSpace = null;              // 'local-floor' | 'bounded-floor' | null (fell back to 'local')
 export const xrFloorSpace = () => floorSpace;
@@ -552,13 +554,15 @@ let entering = false;   // requestSession → setSession is a window of ~1–3 s
 // retry: a retry belongs to the click that scheduled it, so a later click — or a leave — makes it
 // stale and it must not fire. `busyTimer` is its cancellation handle. Without both, a retry armed by
 // an old visor click could request immersive VR 1.5 s after the user changed their mind.
-let busyRetryFor = null;   // the entryNo whose retry is pending (null = none)
-let busyTimer = null;
+// Both live in the effect owner now, so the PRODUCT and its suite run the same scheduling code
+// (#197 round-two review: a mutation making every busy verdict retry kept the old suite green).
+const entryEffects = makeEntryEffects({
+  setTimer: (fn, ms) => setTimeout(fn, ms), clearTimer: (t) => clearTimeout(t),
+  tee: (m) => tee(m), toast: (m, kind, ms) => toast(m, kind, ms),
+  enter: (o) => enterVR(o), markAbsent: (v) => markXrAbsent(v),
+});
 let entryNo = 0;           // increments on every ENTRY INTENT, not every request: a retry inherits its parent's
-function cancelBusyRetry(why) {
-  if (busyTimer) { clearTimeout(busyTimer); busyTimer = null; tee(`[xr] pending busy-retry cancelled (${why})`); }
-  busyRetryFor = null;
-}
+const cancelBusyRetry = (why) => entryEffects.cancel(why);
 async function enterVR({ retryOf = null } = {}) {
   if (entering) { tee(`[xr] enter refused: a session request is already in flight`); return; }
   if (session && presenting) { tee(`[xr] enter refused: already presenting`); return; }
@@ -596,33 +600,14 @@ async function enterVR({ retryOf = null } = {}) {
       // WHAT the failure means is decided by xr_entry_policy.js (#197 review B1); the effects —
       // timer, toast, reload, absent mark — stay here. `isRetry` is what makes one retry one retry.
       const verdict = decideEntryFailure(e, { isRetry: retryOf !== null, gpu });
-      if (verdict.action === 'retry-once' || verdict.action === 'give-up') {
-        // EXACTLY ONE automatic retry per entry intent. The previous shape reset its own flag inside
-        // the timeout, immediately before the recursive call, so the next failure saw it false and
-        // scheduled again — the "giving up" branch below was unreachable and a busy session retried
-        // forever (#197 review B1). The retry now carries `myEntry`, so a second failure on the same
-        // intent falls through to the give-up branch, and the timer is cancellable and generation-
-        // checked: an intent that has been superseded (a later click, a leave) never fires.
-        if (verdict.action === 'retry-once') {
-          busyRetryFor = myEntry;
-          tee(`[xr] session busy (another page holds it) — retrying once in ${verdict.delayMs} ms`);
-          toast(verdict.toast, 'info', 3000);
-          busyTimer = setTimeout(() => {
-            busyTimer = null;
-            if (busyRetryFor !== myEntry) { tee('[xr] busy-retry dropped: a newer entry intent owns the visor'); return; }
-            busyRetryFor = null;
-            enterVR({ retryOf: myEntry });
-          }, verdict.delayMs);
-          return;
-        }
-        toast(verdict.toast, 'warn', 8000); tee('[xr] session busy after retry — giving up until the visor is clicked again'); return;
-      }
-      // ACT ON THE VERDICT, do not re-derive it (#197 review, 2026-09-20): this branch used to repeat
-      // isAbsent's two error names and its regex verbatim, and ranked !gpu above absent — so a WebGPU
-      // user with no headset was sent through a pointless reload before being told. The policy owns
-      // the ranking now; this owns only the effects.
-      if (verdict.action === 'absent') { markXrAbsent(true); if (e && typeof e === 'object') e.userMessage = verdict.toast; throw e; }   // the outer catch posts the one toast, preferring this text
-      if (verdict.action === 'surface') throw e;
+      // THE EFFECTS LIVE IN xr_entry_effects.js AND THE SUITE DRIVES THAT MODULE (#197 round-two
+      // review). This branch previously inlined the scheduling, and a mutation making EVERY busy
+      // verdict retry — including give-up — kept the suite green, because the suite source-checked
+      // the wiring instead of executing it. Now the product and the test run the same code.
+      const did = entryEffects.apply(verdict, { intent: myEntry, error: e });
+      if (did === 'retried' || did === 'gave-up') return;
+      if (did === 'absent') throw e;   // the outer catch posts the one toast, preferring userMessage
+      if (did === 'surface') throw e;
       tee(`[xr] webgpu session refused (${e?.name ?? ''} ${e?.message ?? e}) — reloading on the WebGL backend`);
       toast(verdict.toast, 'info', 6000);
       const u = new URL(location.href); u.searchParams.set('webgl', '1'); u.searchParams.set('xr', '1'); u.searchParams.set('why', 'vr-webgl');
@@ -646,8 +631,17 @@ async function enterVR({ retryOf = null } = {}) {
     // BEFORE setSession, so it runs BEFORE three's own 'end' listener (registered inside setSession), which restarts
     // the desktop loop through window.requestAnimationFrame: with the in-session shim still installed that restart
     // went to the dead session and no frame ever ticked again — owner 09-07 22:41, after-exit frames+0 at +0.5 s AND +3 s
+    // ONE OWNED SEQUENCE (#197 round-two review B2): capture (save-once), register the restore
+    // listener BEFORE setSession so it runs ahead of three's own 'end' listener, then shim. The order
+    // used to live only in this file and only as a source assertion, so mutating the install to
+    // `if (false && shouldShim(...))` left the suite green. installFrameClock owns it and
+    // tools/xr-session-lifecycle-test.mjs executes it.
     sessionEnded = false;
-    session.addEventListener('end', () => { sessionEnded = true; if (nativeRAF) { window.requestAnimationFrame = nativeRAF; window.cancelAnimationFrame = nativeCAF; } }, { once: true });
+    frameClock = installFrameClock({
+      win: window, session, saved: nativeRAF ? { raf: nativeRAF, caf: nativeCAF } : null,
+      emulated: !!globalThis.IWER, onEnd: () => { sessionEnded = true; },
+    });
+    nativeRAF = frameClock.native.raf; nativeCAF = frameClock.native.caf;
     await renderer.xr.setSession(session);
     tee(`[xr] enter #${sessionNo}: setSession resolved in ${(performance.now() - tReq).toFixed(0)} ms`);
     { const t = renderer.xr._xrRenderTarget; const fb = renderer._frameBufferTargets;
@@ -701,11 +695,7 @@ async function enterVR({ retryOf = null } = {}) {
     // The rules live in xr_frame_clock.js (#197 review B2); the swap happens here. `captureNative` is
     // save-ONCE across the page: capturing per entry would save the previous entry's SHIM as "native"
     // and the desktop clock would never come back on the second exit.
-    if (shouldShim({ emulated: !!globalThis.IWER })) { const s = session;
-      const nat = captureNative(nativeRAF ? { raf: nativeRAF, caf: nativeCAF } : null, window);
-      nativeRAF = nat.raf; nativeCAF = nat.caf;
-      window.requestAnimationFrame = makeFrameShim({ session: s, native: nat, hasEnded: () => sessionEnded });
-      window.cancelAnimationFrame = makeCancelShim({ session: s, native: nat }); }
+    // (installed above, with the restore listener, as one sequence — see installFrameClock)
     // SHADER ERROR TEE: a material that fails to compile/link in the eye buffers' context draws black
     // and the WebGL backend only console.error()s it — invisible from the operator's side. First 6 such lines tee.
     if (!consoleTapped) { consoleTapped = true; for (const k of ['error', 'warn']) { const orig = console[k].bind(console);
@@ -930,7 +920,7 @@ export function leaveVR(why = 'verb') {
   // A pending busy-retry means there is no session YET — so this must come before the `!session`
   // return, or a leave during that window would drop through and let the retry enter VR afterwards
   // (#197 review B1: "leave/cancel before the timer prevents delayed entry").
-  if (busyTimer) { cancelBusyRetry(`leave (${why})`); return true; }
+  if (entryEffects.hasPending) { cancelBusyRetry(`leave (${why})`); return true; }
   if (!session) { tee(`[xr] leave (${why}): no session`); return false; }
   tee(`[xr] leave (${why})`);
   lastLeaveAt = performance.now();

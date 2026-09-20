@@ -185,18 +185,16 @@ console.log('\nunder an emulator:');
 console.log('\nthe wiring:');
 {
   const xr = readFileSync(join(dir, '../client/lib/xr.js'), 'utf8');
-  check('xr.js imports the frame-clock rules',
-    /import \{ captureNative, shouldShim, makeFrameShim, makeCancelShim \} from '\.\/xr_frame_clock\.js'/.test(xr));
-  check('xr.js installs the shim through them', /makeFrameShim\(\{/.test(xr) && /makeCancelShim\(\{/.test(xr));
-  check('the emulator case asks the predicate, not an inline globalThis test',
-    /shouldShim\(\{ emulated: !!globalThis\.IWER \}\)/.test(xr));
+  check('xr.js imports the frame-clock rules', /import \{ installFrameClock \}/.test(xr));
+  check('xr.js installs the shim through them', /frameClock = installFrameClock\(\{/.test(xr));
+  check('the emulator case is passed to the owner, which asks the predicate',
+  /emulated: !!globalThis\.IWER/.test(xr) && /shouldShim\(\{ emulated \}\)/.test(readFileSync(new URL('../client/lib/xr_frame_clock.js', import.meta.url), 'utf8')));
   // ORDERING: the restore listener must be registered before setSession, so it runs before three's
   // own 'end' listener restarts the desktop loop through window.requestAnimationFrame.
   const restoreAt = xr.indexOf("session.addEventListener('end'");
   const setSessionAt = xr.indexOf('renderer.xr.setSession(session)');
-  check('the restore listener is registered BEFORE setSession',
-    restoreAt > 0 && setSessionAt > 0 && restoreAt < setSessionAt,
-    `restore@${restoreAt} vs setSession@${setSessionAt} — three's own end listener would restart the loop into a dead session`);
+  check('the install — which registers the restore listener — runs BEFORE setSession',
+  xr.indexOf('installFrameClock({') < xr.indexOf('await renderer.xr.setSession('));
   check('that listener restores both clocks',
     /if \(nativeRAF\) \{ window\.requestAnimationFrame = nativeRAF; window\.cancelAnimationFrame = nativeCAF; \}/.test(xr));
 }
