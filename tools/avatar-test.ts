@@ -709,5 +709,19 @@ console.log('\neased crossfade, interrupted (pre-review B2):');
   check('idle owns the body', w(self.actions.idle) > 0.95, `idle ${w(self.actions.idle)}`);
 }
 
+console.log('\nthe capsule stand-in can be measured and reached (round 2 N1):');
+{
+  const { makeCapsuleVrm } = await import('../client/lib/capsulebody.js');
+  const v: any = makeCapsuleVrm(); v.scene.updateMatrixWorld(true);
+  const self: any = { vrm: v, root: v.scene, _reach: new Map(), _limp: false };
+  for (const m of ['setReach', '_measureChain', 'clearReach', 'reachStatus', 'restBonePositions', '_humanoidBones', '_resolveBones']) self[m] = (Avatar.prototype as any)[m];
+  let threw: any = null, got: any = null;
+  try { got = self.setReach('rightHand', [0.3, 1.2, 0.4]); } catch (e) { threw = e; }
+  check('setReach on the capsule does not throw', !threw, threw ? String(threw?.message).slice(0, 80) : 'no throw');
+  check('...and the chain measured (setReach returned true)', got === true, `returned ${got}`);
+  const chain: any = threw ? null : self._measureChain('rightHand');
+  check('upper/lower arm lengths read off the puppet', !!chain && chain.L1 > 0.2 && chain.L2 > 0.2, chain ? `L1 ${chain.L1?.toFixed(2)} L2 ${chain.L2?.toFixed(2)}` : 'no chain');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

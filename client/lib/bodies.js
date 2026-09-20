@@ -34,7 +34,7 @@ function fields() {
     // None, not '—', and only when a body is actually in the scene: `cur` is
     // the name we INTEND to wear and survives a failed load, which is how this
     // row and the list below it came to contradict each other. (R, 2026-09-11)
-    { t: 'info', label: 'wearing', value: getMe() ? (cur ?? 'None') : 'None' },
+    { t: 'info', label: 'wearing', value: getMe()?.isCapsule ? 'the capsule (no body would load)' : getMe() ? (cur ?? 'None') : 'None' },
     { t: 'list', label: 'my avatars', empty: 'nothing worn yet — try one from World › avatar',
       rows: mine.map((n) => {
         const a = roster.find((x) => x.name === n);

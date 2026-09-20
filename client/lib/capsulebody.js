@@ -58,6 +58,7 @@ export function makeCapsuleVrm() {
   }
   scene.updateMatrixWorld(true);
   const humanoid = {
+    update() {},   // landmarks.js/reachbone.js call h.update() before measuring; a VRMHumanoid copies normalized→raw here, the puppet has one skeleton (round 2 N1)
     getNormalizedBoneNode: (n) => bones[n] ?? null,
     getRawBoneNode: (n) => bones[n] ?? null,
     normalizedHumanBones: Object.fromEntries(Object.entries(bones).map(([k, node]) => [k, { node }])),

@@ -240,7 +240,7 @@ try {
   if (process.env.BOOT_CHECK_REQUIRE_BODY === '1' && !spectating && !s.hasBody) fail(`BOOT_CHECK_REQUIRE_BODY=1 but ${body}`);
   // the capsule satisfies 'a body' only when the run MEANT to fail the real one (pre-review S5): a clone whose library body
   // silently fails must not pass green on the stand-in
-  const capsuleExpected = ABORT_VRM || /(^|&)capsule=1(&|$)/.test(QUERY);
+  const capsuleExpected = ABORT_VRM || /(^|&)capsule(=|&|$)/.test(QUERY);   // the client honours params.has('capsule'), any value
   if (process.env.BOOT_CHECK_REQUIRE_BODY === '1' && !spectating && s.capsule && !capsuleExpected) fail(`BOOT_CHECK_REQUIRE_BODY=1 but the body on screen is the capsule stand-in (${body})`);
   // the splash rays worker exists only where index.html carries a .sp-rays canvas (rung 4's markup); here it is
   // asserted when present and reported DORMANT when not — never claimed released when it never ran
