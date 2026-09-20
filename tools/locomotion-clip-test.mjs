@@ -89,8 +89,14 @@ check('controller.js CALLS selectClip in its tick',
   /\bselectClip\s*\(/.test(ctl));
 check('controller.js passes the selected opts to setClip (not a re-derived literal)',
   /setClip\([^)]*\.opts\s*\)/.test(ctl));
-check('controller.js no longer re-derives the jump fades inline',
-  !/fade:\s*0\.1\b/.test(ctl) && !/fade:\s*0\.5\b/.test(ctl));
+// Scoped to the setClip call, not the whole file: a file-wide grep for `fade: 0.5` would go red on
+// an unrelated future fade elsewhere in controller.js — an assertion that fails on innocent code is
+// as bad as one that passes on broken code.
+// The LOCOMOTION call specifically: controller.js also has the flight path's `me.setClip(clip, speed)`
+// at :625, which takes no options at all — matching the first `me.setClip(` would assert the wrong line.
+const setClipCall = ctl.split('\n').find((l) => /me\.setClip\([^)]*,[^)]*,/.test(l)) ?? '';
+check('the tick hands setClip the SELECTED opts, with no fade re-derived at the call site',
+  /\.opts\s*\)/.test(setClipCall) && !/fade:/.test(setClipCall), `call site: ${setClipCall.slice(0, 80)}`);
 
 console.log(`\n${n - fail}/${n} passed`);
 process.exit(fail ? 1 : 0);

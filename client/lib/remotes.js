@@ -115,8 +115,13 @@ export async function ensureRemote(id, avatarPath, meta = {}) {
         };
         // a capsule transplants as the floor, but the debt transplants with it:
         // the successor owes the same body, and takeover is a natural moment to
-        // try again (#196 B1 — takeover used to make the substitution permanent)
+        // try again (#196 B1 — takeover used to make the substitution permanent).
+        // The ATTEMPT COUNT transplants too: a fresh record would read `retries`
+        // as 0 and re-arm at the shortest backoff, so a flapping peer with a
+        // genuinely dead asset would refetch every reconnect and never reach the
+        // cap — the bound has to survive the takeover it is meant to bound.
         fresh.capsuleFor = existing.capsuleFor ?? null;
+        fresh.retries = existing.retries ?? 0;
         gens.set(id, fresh.gen);
         remotes.set(id, fresh);
         if (fresh.avatar && fresh.capsuleFor) retryBody(fresh);

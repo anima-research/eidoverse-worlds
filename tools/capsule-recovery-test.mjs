@@ -122,6 +122,26 @@ check('at the cap, further announces arm NOTHING (it gave up, it did not grind)'
 check('carol still has the capsule, and still knows what she owes',
   !!c.avatar?.isCapsule && c.capsuleFor === PATH);
 
+// ---------------------------------------------------------------- the bound must survive TAKEOVER
+// The hole between the two scenarios above: `carol` never takes over, and `bob` recovers before his
+// takeover, so neither covers a DEAD asset on a FLAPPING peer. A takeover builds a fresh record, and
+// if the attempt count does not transplant with the debt, every reconnect re-arms at the shortest
+// backoff and the cap is never reached — a bound that any reconnect resets is not a bound.
+probe.reset();                               // failing, and stays failing
+let fl = await R.ensureRemote('frank', PATH);
+check('frank falls back', !!fl.avatar?.isCapsule);
+const flStart = probe.attempts;
+for (let i = 0; i < 6; i++) {                // six reconnects, each an authority takeover
+  fl = await R.ensureRemote('frank', PATH, { authority: true });
+  await sleep(500);                          // past the SHORTEST backoff, so a reset cap would refetch
+}
+await sleep(600);
+const flSpent = probe.attempts - flStart;
+check('a dead asset on a flapping peer stays bounded across takeovers',
+  flSpent <= 4, `${flSpent} fetches across 6 takeovers — the cap resets on reconnect`);
+check('the attempt count transplants with the debt',
+  (fl.retries ?? 0) >= 3, `retries=${fl.retries}`);
+
 // ---------------------------------------------------------------- generation safety
 // A retry in flight must not land on a record that has since been replaced.
 probe.reset();
