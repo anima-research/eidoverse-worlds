@@ -52,6 +52,16 @@ check('a session 31 days ago has EXPIRED — the machine stops claiming a headse
 check('the TTL is a month, not a lifetime and not a session',
   HEADSET_SEEN_TTL_MS > 7 * 864e5 && HEADSET_SEEN_TTL_MS <= 90 * 864e5, `${HEADSET_SEEN_TTL_MS / 864e5} days`);
 check('never seen → not recently', headsetSeenRecently(NOW, null) === false);
+// THE BOUNDARY, not just a day either side (mutation sweep: `<` → `<=` survived, and so did moving
+// the TTL by a millisecond — the only other TTL check is a deliberately loose 7..90-day range).
+check('exactly at the TTL is NOT recent (the boundary, not a day either side)',
+  headsetSeenRecently(NOW, String(NOW - HEADSET_SEEN_TTL_MS)) === false);
+check('…and one millisecond inside it still is',
+  headsetSeenRecently(NOW, String(NOW - HEADSET_SEEN_TTL_MS + 1)) === true);
+// The legacy guard must be bound by the GUARD, not by arithmetic: `now - 0` exceeds any TTL, so a
+// check at a large epoch passes even with the guard deleted (the sweep caught this as a false green).
+check('the legacy 0 is rejected by the GUARD, not by TTL arithmetic',
+  headsetSeenAt('1') === 0 && headsetSeenRecently(HEADSET_SEEN_TTL_MS - 1, '1') === false);
 // THE LEGACY MARKER MUST NOT BE PERMANENT (#197 round-two review B3). This suite previously
 // asserted `headsetSeenRecently(NOW, '1') === true` — pinning the defect in place: '1' mapped to 0
 // and 0 returned true unconditionally, so exactly the users carrying the old marker stayed

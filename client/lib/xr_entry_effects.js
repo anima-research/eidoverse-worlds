@@ -65,5 +65,11 @@ export function makeEntryEffects(deps) {
     }
   }
 
+  // `hasPending` reads the TIMER because that is what leaveVR must not swallow. An adversarial sweep
+  // found that rewiring it to `pendingFor` survives every test — correctly, as it turns out: the two
+  // are set and cleared together in every reachable state, so they are equivalent and no test can
+  // distinguish them. Recorded rather than papered over with a test that only appears to bind:
+  // the redundancy is the finding. They stay separate because they MEAN different things (one is a
+  // handle, one is an identity) and a future edit could easily make them diverge.
   return { apply, cancel, get pendingFor() { return pendingFor; }, get hasPending() { return timer !== null; } };
 }

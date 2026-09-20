@@ -26,12 +26,17 @@ function fakeWindow() {
   w.cancelAnimationFrame = (id) => w.cancelled.push(id);
   return w;
 }
-function fakeSession() {
-  const s = { calls: [], cancelled: [], _n: 0, _end: [], ended: false };
-  s.requestAnimationFrame = (cb) => { s.calls.push(cb); return `ses-${++s._n}`; };
+// The fake has to be as UNCOOPERATIVE as the real thing, or the transition paths go untested: an
+// adversarial mutation sweep found the restore listener could be registered LAST — the catastrophic
+// case this module's header names — with every check still green, because nothing else ever
+// registered an 'end' listener to be ordered against. Same for a session that throws.
+function fakeSession({ throwOnRaf = false } = {}) {
+  const s = { calls: [], cancelled: [], _n: 0, _end: [], ended: false, endOrder: [] };
+  s.requestAnimationFrame = (cb) => { if (throwOnRaf) throw new Error('session is gone'); s.calls.push(cb); return `ses-${++s._n}`; };
   s.cancelAnimationFrame = (id) => s.cancelled.push(id);
-  s.addEventListener = (t, cb, o) => { if (t === 'end') s._end.push({ cb, once: o?.once }); };
-  s.end = () => { s.ended = true; s._end.splice(0).forEach(({ cb }) => cb()); };
+  s.addEventListener = (t, cb, o) => { if (t === 'end') s._end.push({ cb, once: o?.once, tag: s._tag }); };
+  s.tagNext = (tag) => { s._tag = tag; return s; };   // label a listener so ORDER is observable
+  s.end = () => { s.ended = true; s._end.splice(0).forEach(({ cb, tag }) => { s.endOrder.push(tag ?? '?'); cb(); }); };
   s.tick = (t) => s.calls.splice(0).forEach((cb) => cb(t));
   return s;
 }
@@ -54,6 +59,55 @@ check('…and not to the window', win.calls.length === 0);
 { let got; win.requestAnimationFrame((t) => { got = t; }); s1.tick(99.5);
   check('the session timestamp reaches the caller', got === 99.5, `got=${got}`); }
 check('a cancel goes to the session too', (win.cancelAnimationFrame('ses-1'), s1.cancelled.length === 1));
+
+console.log('\n— ORDERING: our restore must run before a listener registered after us —');
+{
+  // three registers its own 'end' listener inside setSession, i.e. AFTER ours. Listeners fire in
+  // registration order, so ours must be first: if three's restarts the desktop loop against a dead
+  // session first, no frame ever ticks again (the module header's 09-07 22:41 receipt).
+  const w = fakeWindow(); const s = fakeSession();
+  s.tagNext('decoy-before');
+  s.addEventListener('end', () => {}, {});           // something already listening
+  s._tag = 'ours';
+  const fc = installFrameClock({ win: w, session: s, saved: null });
+  s.tagNext('three-after');
+  let sawRestored = null;
+  s.addEventListener('end', () => { sawRestored = clockIsRestored(w, fc.native); }, {});
+  s.end();
+  check('a listener registered AFTER the install sees the clock already restored',
+    sawRestored === true, `saw ${sawRestored}; order ${s.endOrder.join(' → ')}`);
+  check('…and our restore ran before it', s.endOrder.indexOf('ours') < s.endOrder.indexOf('three-after'),
+    s.endOrder.join(' → '));
+}
+
+console.log('\n— the latch, in the window it exists for —');
+{
+  // Between 'end' firing and the restore completing, a caller can still hold the shim. The latch is
+  // the only thing that keeps that frame off a dead session — and it is invisible to any test that
+  // only looks after the restore.
+  const w = fakeWindow(); const s = fakeSession();
+  const fc = installFrameClock({ win: w, session: s, saved: null });
+  const shim = w.requestAnimationFrame;            // a caller that grabbed the shim earlier
+  s.end();                                          // ended; restore has run
+  w.calls.length = 0; s.calls.length = 0;
+  shim(() => {});                                   // the STALE shim is called
+  check('a frame through a stale shim after end falls back to the window, not the dead session',
+    w.calls.length === 1 && s.calls.length === 0, `win=${w.calls.length} ses=${s.calls.length}`);
+}
+{
+  const w = fakeWindow(); const s = fakeSession({ throwOnRaf: true });
+  installFrameClock({ win: w, session: s, saved: null });
+  check('a session that THROWS from requestAnimationFrame falls back to the window',
+    (w.calls.length = 0, w.requestAnimationFrame(() => {}), w.calls.length === 1));
+}
+{
+  const w = fakeWindow(); const s = fakeSession(); let onEndAt = null, restoredAt = null, n = 0;
+  const fc = installFrameClock({ win: w, session: s, saved: null,
+    onEnd: () => { onEndAt = ++n; restoredAt = clockIsRestored(w, fc.native) ? n : null; } });
+  s.end();
+  check('onEnd IS called on session end', onEndAt === 1);
+  check('…after the restore, so a handler reading the clock sees it back', restoredAt === 1);
+}
 
 console.log('\n— the end latch, and the restore —');
 check('before the end, the desktop clock is NOT restored', clockIsRestored(win, fc1.native) === false);
@@ -106,6 +160,15 @@ console.log('\n— the PRODUCT runs this sequence (the wiring the reviewer broke
   check('…passing the saved pair, so save-once holds across entries', /saved: nativeRAF \? \{ raf: nativeRAF, caf: nativeCAF \} : null/.test(xr));
   check('…before setSession', xr.indexOf('installFrameClock({') < xr.indexOf('await renderer.xr.setSession('));
   check('NO second shim install survives', !/window\.requestAnimationFrame = makeFrameShim/.test(xr));
+  // THE SEAM, which is where both round-two regressions lived (agent review). The suites drove the
+  // modules; the glue that calls them was still only prose. A second 'end' listener in xr.js used to
+  // restore the clock UNCONDITIONALLY from the module-global native pair — which the newer session's
+  // install overwrites — so a stale session's teardown reached straight around the generation guard
+  // and handed the desktop clock back mid-session. Reproduced against the real module before fixing.
+  check('ONLY the owner restores the clock — no unguarded restore survives in xr.js',
+    !/window\.requestAnimationFrame = nativeRAF/.test(xr), 'an end listener still restores directly');
+  check('…so nativeRAF/nativeCAF are save-once bookkeeping only, never a restore path',
+    (xr.match(/nativeRAF/g) ?? []).length <= 4, `${(xr.match(/nativeRAF/g) ?? []).length} references`);
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

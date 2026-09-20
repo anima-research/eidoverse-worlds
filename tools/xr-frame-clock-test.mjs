@@ -195,8 +195,11 @@ console.log('\nthe wiring:');
   const setSessionAt = xr.indexOf('renderer.xr.setSession(session)');
   check('the install — which registers the restore listener — runs BEFORE setSession',
   xr.indexOf('installFrameClock({') < xr.indexOf('await renderer.xr.setSession('));
-  check('that listener restores both clocks',
-    /if \(nativeRAF\) \{ window\.requestAnimationFrame = nativeRAF; window\.cancelAnimationFrame = nativeCAF; \}/.test(xr));
+  // The restore lives in installFrameClock, generation-guarded. xr.js must NOT restore on its own: a
+  // second unguarded listener there let a stale session hand the clock back mid-session (agent review).
+  check('the OWNER restores both clocks',
+    /win\.requestAnimationFrame = native\.raf; win\.cancelAnimationFrame = native\.caf;/.test(readFileSync(join(dir, '../client/lib/xr_frame_clock.js'), 'utf8')));
+  check('…and xr.js does not restore behind its back', !/window\.requestAnimationFrame = nativeRAF/.test(xr));
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

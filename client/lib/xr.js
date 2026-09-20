@@ -174,7 +174,7 @@ rig.name = 'xr-rig';
 let presenting = false;
 let nativeRAF = null, nativeCAF = null;   // window.rAF/cAF saved while the in-session shim is installed
 let sessionEnded = false;
-let frameClock = null;   // the owned clock takeover for the live session                  // set on the FIRST 'end' listener; the shim falls back to native once it is
+let frameClock = null;   // the owned clock takeover for the live session
 let exitVeil = null;
 let floorSpace = null;              // 'local-floor' | 'bounded-floor' | null (fell back to 'local')
 export const xrFloorSpace = () => floorSpace;
@@ -608,8 +608,8 @@ async function enterVR({ retryOf = null } = {}) {
       if (did === 'retried' || did === 'gave-up') return;
       if (did === 'absent') throw e;   // the outer catch posts the one toast, preferring userMessage
       if (did === 'surface') throw e;
-      tee(`[xr] webgpu session refused (${e?.name ?? ''} ${e?.message ?? e}) — reloading on the WebGL backend`);
-      toast(verdict.toast, 'info', 6000);
+      // 'reload': the owner already teed and toasted. Only the navigation lives here, because it
+      // needs `location` — emitting them again here double-toasted the user (agent review).
       const u = new URL(location.href); u.searchParams.set('webgl', '1'); u.searchParams.set('xr', '1'); u.searchParams.set('why', 'vr-webgl');
       setTimeout(() => { location.href = u; }, 1200);
       return;
@@ -716,7 +716,11 @@ async function enterVR({ retryOf = null } = {}) {
     selfFirstPerson(true);
     xrPanelsEnter(rig);            // every registered frame as a physical surface
     session.addEventListener('end', () => {
-      if (nativeRAF) { window.requestAnimationFrame = nativeRAF; window.cancelAnimationFrame = nativeCAF; }
+      // NO RESTORE HERE. installFrameClock's listener already did it, generation-checked, and it is
+      // registered BEFORE setSession so it runs first. This one used to restore unconditionally from
+      // the module-global pair — which the NEWER session's install overwrites — so a stale session's
+      // end handed the desktop clock back while the live session was presenting, reaching straight
+      // around the guard. Reproduced against the real module before removing (round-two agent review).
       exitVeilShow(true);   // desktop feedback while the session tears down and the first desktop frames come back
       tee('[xr] session end — teardown begins');   // 09-06 23:43: a leave with no after-exit lines at all → was this handler even reached?
       try {
