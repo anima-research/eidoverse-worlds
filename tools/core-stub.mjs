@@ -101,6 +101,9 @@ export const BASE_PIXEL_RATIO = 1;
 export const PREF_BACKEND = 'ew-backend';
 export const PREF_MSAA = 'ew-msaa';
 export const PREF_HEADSET_SEEN = 'ew-headset-seen';
+// core.js exports this predicate (#197 B3: the stored bit is history, not presence). Mirrors the real
+// signature — a no-arg call returning a boolean — so a consumer that asks gets an answer, not a throw.
+export const headsetSeenRecently = () => false;
 export const installRenderListTolerance = () => {};
 export const tee = () => {};
 export const colorFor = () => '#888888';

@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import * as TSL from 'three/tsl';
 import { CONFIG } from './base.js';
 import { decideBackend } from './backend_choice.js';
+import { headsetSeenRecently as _headsetSeenRecently } from './headset_seen.js';
 import { patchShadowNodeForXR } from './xrshadow.js';
 
 export { THREE, TSL };
@@ -61,8 +62,12 @@ document.body.prepend(canvas);
 // URL param wins for a session (the A/B lever), the persisted preference
 // (video settings) otherwise.
 export const PREF_MSAA = 'ew-msaa', PREF_BACKEND = 'ew-backend';
-export const PREF_HEADSET_SEEN = 'ew-headset-seen';   // set once initXR confirms immersive-vr support; lets the NEXT boot pick WebGL up front so the visor ENTERS instead of RELOADING (owner, 09-07: the reload tax is the porch-vs-us gap)
+// The stored headset bit is HISTORY, not presence, and it expires (#197 review B3) — the meaning
+// lives in headset_seen.js so it can be driven directly; core.js just supplies the stored value.
+export const PREF_HEADSET_SEEN = 'ew-headset-seen';   // ms timestamp of the last granted session (legacy: '1')
 const pref = (k) => { try { return localStorage.getItem(k); } catch { return null; } };   // a storage throw must not kill boot
+export const headsetSeenRecently = () => _headsetSeenRecently(Date.now(), pref(PREF_HEADSET_SEEN));
+
 // ?xr=1 is a BOOT flag, not a runtime toggle: three's XRManager (0.185–0.186) rides
 // WebGPU (XRGPUBinding — Chrome, flags today) but only if the adapter was
 // requested xrCompatible, which the backend reads off renderer.xr.enabled at
@@ -79,7 +84,7 @@ const pref = (k) => { try { return localStorage.getItem(k); } catch { return nul
 // (tools/backend-choice-test.mjs). ?xr is value-parsed: `?xr=1` boots XR, `?xr=0` and absence do not.
 export const WEBGPU_XR = 'XRGPUBinding' in globalThis;               // WebGPU can present VR here (Chrome flags)
 export const WEBGPU_POSSIBLE = typeof navigator !== 'undefined' && !!navigator.gpu;   // WebGPU API exists at all
-const _choice = decideBackend({ params: CONFIG.params, backendPref: pref(PREF_BACKEND), headsetSeen: pref(PREF_HEADSET_SEEN) === '1', webgpuXR: WEBGPU_XR });
+const _choice = decideBackend({ params: CONFIG.params, backendPref: pref(PREF_BACKEND), headsetSeen: headsetSeenRecently(), webgpuXR: WEBGPU_XR });
 export const XR_BOOT = _choice.xrBoot;
 const _forceWebGL = _choice.forceWebGL;
 // TOLERANT RENDER LIST (XR strobe, 08-05): something leaves holes in the

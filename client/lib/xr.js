@@ -559,7 +559,7 @@ async function enterVR({ retryOf = null } = {}) {
       setTimeout(() => { location.href = u; }, 1200);
       return;
     }
-    try { localStorage.setItem('ew-headset-seen', '1'); } catch {}   // a REAL session, not a capability answer (phones say yes to Cardboard): next boot picks WebGL up front
+    try { localStorage.setItem(PREF_HEADSET_SEEN, String(Date.now())); } catch {}   // a REAL session, not a capability answer (phones say yes to Cardboard): next boot picks WebGL up front. The TIME, not a flag: it expires (#197 B3)
     tee(`[xr] enter #${sessionNo}: session granted (${session.enabledFeatures?.length ?? '?'} features)`); markXrAbsent(false);
     renderer.xr.enabled = true;
     // Tier A6 (gap list 09-05): CHOOSE the floor reference space — before this it
@@ -611,7 +611,7 @@ async function enterVR({ retryOf = null } = {}) {
     slots[0] ??= makeHand(0); slots[1] ??= makeHand(1);
     hands.left ??= slots[0]; hands.right ??= slots[1];   // guess until 'connected' files them by handedness
     presenting = true; bus.emit('xr:state', true); xrVeilShow(false);
-    try { localStorage.setItem(PREF_HEADSET_SEEN, '1'); } catch { /* private mode */ }   // a headset was truly here: the next boot picks WebGL up front and the visor enters in place, no reload   // the session is live — the 2D page is behind the headset now
+    try { localStorage.setItem(PREF_HEADSET_SEEN, String(Date.now())); } catch { /* private mode */ }   // a headset was truly here: the next boot picks WebGL up front and the visor enters in place, no reload   // the session is live — the 2D page is behind the headset now
     // HEADSET OFF (owner, 09-08 01:12: she switched the headset off after load; the session was still GRANTED — SteamVR
     // presents to nothing — and the visor lit as if she were in). The tell is that no viewer pose ever arrives
     // (the stereo camera keeps zero eyes). 2.5 s of that → say so, mark the visor absent, and leave.
