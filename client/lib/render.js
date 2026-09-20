@@ -103,7 +103,7 @@ export function renderWorld() {
     renderer.xr.updateCamera(camera);
     const xc = renderer.xr.getCamera(); const e = xc.matrixWorld.elements; curtain.userData.shell.position.set(e[12], e[13], e[14]);
     { const t = curtain.userData.text; if (t) { const yaw = Math.atan2(e[8], e[10]); t.quaternion.setFromAxisAngle(_yAxis, yaw); t.position.set(e[12] - Math.sin(yaw) * 1.6, e[13], e[14] - Math.cos(yaw) * 1.6); } }   // LEVEL with the horizon (R 09-19): yaw follows the head, pitch/roll do not
-    { const d = Math.floor(performance.now() / 400) % 4; if (d !== curtain.userData.lastDots) { curtain.userData.lastDots = d; curtain.userData.paint?.(d); } }
+    { const d = Math.floor(performance.now() / 300) % 4; if (d !== curtain.userData.lastDots) { curtain.userData.lastDots = d; curtain.userData.paint?.(d); const t = curtain.userData.text; if (t?.material?.map) t.material.map.needsUpdate = true; } }
     renderer.render(curtain, camera);
     return;
   }
