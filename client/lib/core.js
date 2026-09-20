@@ -191,7 +191,7 @@ scene.add(ground);
 // its bright centre lines lose the depth test wherever a dark line crosses
 // them at the same y and come out dashed — so the grid is all dark, and the
 // two axis lines are their own object, a hair higher, drawn after it.
-export const grid = new THREE.GridHelper(160, 80, 0x1e2328, 0x1e2328);
+export const grid = new THREE.GridHelper(160, 80, 0x242c36, 0x242c36);   // a shade under the plane (0x2a3440), lighter than the 0x1e2328 it was (R 09-19)
 export const axisLines = new THREE.LineSegments(
   new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-80, 0, 0), new THREE.Vector3(80, 0, 0), new THREE.Vector3(0, 0, -80), new THREE.Vector3(0, 0, 80)]),
   new THREE.LineBasicMaterial({ color: 0x6a7078 }));
