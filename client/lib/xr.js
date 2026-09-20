@@ -18,6 +18,7 @@
 // foveation 1 standalone / 0 PC (Basis split; ?fov=), local-floor, and the settled law: NEVER navigate mid-session.
 
 import { installRenderListTolerance, THREE, renderer, camera, scene, XR_BOOT, PREF_HEADSET_SEEN } from './core.js';
+import { decideEntryFailure } from './xr_entry_policy.js';   // what a failed session request MEANS (#197 B1)
 import { CONFIG, report, bus, tee, wornNameOf } from './base.js';
 import { frameDebug } from './frame.js';
 import { resetFingers, xrBodyDebug } from './xrbody.js';
@@ -482,9 +483,24 @@ const buttonsTrusted = () => performance.now() > inputsSettledAt;
 // ---- session ---------------------------------------------------------------
 let sessionNo = 0;   // per page: tee() folds byte-identical lines (repeats 2–19 are DROPPED), so every entry line carries its number
 let entering = false;   // requestSession → setSession is a window of ~1–3 s; a second click (or a leave) inside it made two sessions fight (Basis: refuse enter/leave while in flight)
-async function enterVR() {
+// The busy-session retry (#197 review B1). `busyRetryFor` is the ENTRY INTENT that owns the pending
+// retry: a retry belongs to the click that scheduled it, so a later click — or a leave — makes it
+// stale and it must not fire. `busyTimer` is its cancellation handle. Without both, a retry armed by
+// an old visor click could request immersive VR 1.5 s after the user changed their mind.
+let busyRetryFor = null;   // the entryNo whose retry is pending (null = none)
+let busyTimer = null;
+let entryNo = 0;           // increments on every ENTRY INTENT, not every request: a retry inherits its parent's
+function cancelBusyRetry(why) {
+  if (busyTimer) { clearTimeout(busyTimer); busyTimer = null; tee(`[xr] pending busy-retry cancelled (${why})`); }
+  busyRetryFor = null;
+}
+async function enterVR({ retryOf = null } = {}) {
   if (entering) { tee(`[xr] enter refused: a session request is already in flight`); return; }
   if (session && presenting) { tee(`[xr] enter refused: already presenting`); return; }
+  // A fresh click is a new intent: it owns the retry budget, and any retry the previous intent left
+  // pending is stale. A retry re-entering carries its parent's number so one budget covers the pair.
+  const myEntry = retryOf ?? ++entryNo;
+  if (retryOf === null) cancelBusyRetry('a new entry intent');
   entering = true;
   xrVeilShow(true, 'entering VR');   // from the click: requestSession + setSession is 1–3 s of nothing otherwise
   toast('entering VR…', 'info', 6000);
@@ -512,9 +528,29 @@ async function enterVR() {
       // owner 09-07 10:46: a tab that reloaded into ?xr=1 while the previous page's session was still alive got
       // "already an active, immersive XRSession". The browser owns that session and offers no handle to it,
       // so the honest path is: say so, and retry once after a short wait for the old page to release it.
-      if (e?.name === 'InvalidStateError' && /already an active/i.test(e?.message ?? '')) {
-        if (!enterVR._retried) { enterVR._retried = true; tee('[xr] session busy (another page holds it) — retrying in 1500 ms'); toast('a previous VR session is still closing — retrying', 'info', 3000); setTimeout(() => { enterVR._retried = false; enterVR(); }, 1500); return; }
-        toast('VR is still held by another tab — close it, then click the visor again', 'warn', 8000); tee('[xr] session busy after retry — giving up until the visor is clicked again'); return;
+      // WHAT the failure means is decided by xr_entry_policy.js (#197 review B1); the effects —
+      // timer, toast, reload, absent mark — stay here. `isRetry` is what makes one retry one retry.
+      const verdict = decideEntryFailure(e, { isRetry: retryOf !== null, gpu });
+      if (verdict.action === 'retry-once' || verdict.action === 'give-up') {
+        // EXACTLY ONE automatic retry per entry intent. The previous shape reset its own flag inside
+        // the timeout, immediately before the recursive call, so the next failure saw it false and
+        // scheduled again — the "giving up" branch below was unreachable and a busy session retried
+        // forever (#197 review B1). The retry now carries `myEntry`, so a second failure on the same
+        // intent falls through to the give-up branch, and the timer is cancellable and generation-
+        // checked: an intent that has been superseded (a later click, a leave) never fires.
+        if (verdict.action === 'retry-once') {
+          busyRetryFor = myEntry;
+          tee(`[xr] session busy (another page holds it) — retrying once in ${verdict.delayMs} ms`);
+          toast(verdict.toast, 'info', 3000);
+          busyTimer = setTimeout(() => {
+            busyTimer = null;
+            if (busyRetryFor !== myEntry) { tee('[xr] busy-retry dropped: a newer entry intent owns the visor'); return; }
+            busyRetryFor = null;
+            enterVR({ retryOf: myEntry });
+          }, verdict.delayMs);
+          return;
+        }
+        toast(verdict.toast, 'warn', 8000); tee('[xr] session busy after retry — giving up until the visor is clicked again'); return;
       }
       if (!gpu) { if (e?.name === 'NotSupportedError' || e?.name === 'NotFoundError' || /no.*(device|headset|runtime)|not supported|unavailable/i.test(e?.message ?? '')) { markXrAbsent(true); if (e && typeof e === 'object') e.userMessage = 'no headset detected — put it on (or wake it) and click the visor again'; } throw e; }   // the outer catch posts the one toast, preferring this text
       tee(`[xr] webgpu session refused (${e?.name ?? ''} ${e?.message ?? e}) — reloading on the WebGL backend`);
@@ -817,6 +853,10 @@ export const xrRecentre = () => ({ ...recentre });
 let lastLeaveAt = -1e9;
 export function leaveVR(why = 'verb') {
   if (entering) { tee(`[xr] leave (${why}) refused: enter still in flight`); return false; }
+  // A pending busy-retry means there is no session YET — so this must come before the `!session`
+  // return, or a leave during that window would drop through and let the retry enter VR afterwards
+  // (#197 review B1: "leave/cancel before the timer prevents delayed entry").
+  if (busyTimer) { cancelBusyRetry(`leave (${why})`); return true; }
   if (!session) { tee(`[xr] leave (${why}): no session`); return false; }
   tee(`[xr] leave (${why})`);
   lastLeaveAt = performance.now();
