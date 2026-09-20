@@ -238,6 +238,10 @@ try {
   else if (s.hasBody) { if (bodyErrs.length) fail(`a body is on screen AND the client reported an avatar error: ${bodyErrs[0].slice(0, 120)}`); body = 'body on screen'; }
   else body = `body FAILED → failed-body path (${bodyErrs.length ? bodyErrs[0].replace(/\s+/g, ' ').slice(0, 90) : 'no avatar error reported'})`;
   if (process.env.BOOT_CHECK_REQUIRE_BODY === '1' && !spectating && !s.hasBody) fail(`BOOT_CHECK_REQUIRE_BODY=1 but ${body}`);
+  // the capsule satisfies 'a body' only when the run MEANT to fail the real one (pre-review S5): a clone whose library body
+  // silently fails must not pass green on the stand-in
+  const capsuleExpected = ABORT_VRM || /(^|&)capsule=1(&|$)/.test(QUERY);
+  if (process.env.BOOT_CHECK_REQUIRE_BODY === '1' && !spectating && s.capsule && !capsuleExpected) fail(`BOOT_CHECK_REQUIRE_BODY=1 but the body on screen is the capsule stand-in (${body})`);
   // the splash rays worker exists only where index.html carries a .sp-rays canvas (rung 4's markup); here it is
   // asserted when present and reported DORMANT when not — never claimed released when it never ran
   let rays;

@@ -101,6 +101,7 @@ function show(key, title, body) {
       card.style.top = Math.round(bottom + 8) + 'px';
     };
 
+    document.body.appendChild(card);   // IN THE DOM BEFORE THE FIRST MEASURE: a detached card's rect is all zeros, every occupant test misses, and the card is born over the emote bar (pre-review B1)
     const repaint = () => { setAnchor(); placeTop(); };
     repaint();
     mq.addEventListener('change', repaint);
@@ -115,7 +116,6 @@ function show(key, title, body) {
       barRO?.disconnect(); barRO = null; barSeen = null;
       setAnchor = null; placeTop = null; unwatch = null;
     };
-    document.body.appendChild(card);
   }
   if (card.querySelector(`[data-key="${CSS.escape(key)}"]`)) return;
   const item = document.createElement('div');
@@ -127,6 +127,7 @@ function show(key, title, body) {
   item.querySelector('.cn-ok').onclick = close;
   item.querySelector('.cn-never').onclick = () => { try { seen.add(key); localStorage.setItem(LS, JSON.stringify([...seen])); } catch {} close(); };
   card.appendChild(item);
+  placeTop?.();   // the card just grew
 }
 
 export function initCapNotice() {

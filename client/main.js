@@ -271,14 +271,14 @@ function start() {
       .then((path) => (CONFIG.params.has('capsule') ? Promise.reject(new Error('?capsule=1: body loads refused')) : makeAvatar(CONFIG.name, path, { urgent: true })).then((av) => ({ av, path })).catch((e) => {   // your body skips the load queue
         report('avatar', e);
         // the capsule is the floor: a body that needs no network (09-19: a flapping tunnel took the VRM fetch and
-        // R arrived as nothing; "I thought we fixed this")
+        // the owner arrived as nothing)
         toast('your body would not load — wearing the capsule until one does. Pick another in Profile.', 'warn', 12000);
         tee('[body] capsule stand-in (load failed)');
         return { av: makeCapsuleAvatar(CONFIG.name), path: 'capsule' };
       }))
       .then(({ av, path }) => {
         setMe(av);
-        announceWorn(path.split('/').pop().replace(/\.vrm.*$/, ''), path);   // the roster's name for this file, not a stale ew-avatar-name
+        if (!av.isCapsule) announceWorn(path.split('/').pop().replace(/\.vrm.*$/, ''), path);   // the roster's name for this file, not a stale ew-avatar-name
         bodySettled = true;
         markPhase('body', 1);
         // Contribute a portrait of this body so the next person picks from

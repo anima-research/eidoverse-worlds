@@ -688,5 +688,26 @@ console.log('\nwings:');
   check('a wingless rig finds nothing and says so', self._wings === null);
 }
 
+console.log('\neased crossfade, interrupted (pre-review B2):');
+{
+  // walk → (eased, 0.5 s) jump → (linear) idle inside the ease: walk must NOT stay parked at a half weight
+  const { self } = stand();
+  const mk = (name: string) => { const c = new THREE.AnimationClip(name, 1, [new THREE.QuaternionKeyframeTrack('hips.quaternion', [0, 1], [0, 0, 0, 1, 0, 0, 0, 1])]); const a = self.mixer.clipAction(c); a.enabled = true; a.setEffectiveWeight(0); a.play(); return a; };
+  self.actions.walk = mk('walk'); self.actions.jump = mk('jump'); self.actions.idle = self.actions.idle;
+  for (const m of ['setClip', '_setAction']) self[m] = (Avatar.prototype as any)[m];
+  self.update = function (dt: number) {   // the slice of update() that owns _xfade
+    if (this._xfade) { const x = this._xfade; x.t += dt; const u = Math.min(1, x.t / x.dur), w = u * u * (3 - 2 * u);
+      x.in.setEffectiveWeight(w); if (x.out && x.out !== x.in) x.out.setEffectiveWeight(1 - w);
+      if (u >= 1) { if (x.out && x.out !== x.in) x.out.setEffectiveWeight(0); this._xfade = null; } }
+    this.mixer.update(dt);
+  };
+  self.setClip('walk'); for (let i = 0; i < 30; i++) self.update(1 / 60);
+  self.setClip('jump', 0, { fade: 0.5, ease: true }); for (let i = 0; i < 12; i++) self.update(1 / 60);   // 0.2 s into the ease
+  self.setClip('idle'); for (let i = 0; i < 60; i++) self.update(1 / 60);                             // landed; 1 s later
+  const w = (a: any) => +a.getEffectiveWeight().toFixed(2);
+  check('walk faded out after the ease was cut short', w(self.actions.walk) < 0.05, `walk ${w(self.actions.walk)} jump ${w(self.actions.jump)} idle ${w(self.actions.idle)}`);
+  check('idle owns the body', w(self.actions.idle) > 0.95, `idle ${w(self.actions.idle)}`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

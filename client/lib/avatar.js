@@ -1046,13 +1046,15 @@ export class Avatar {
     // into a jump the caller says how fast: 0.1 s on a jump press (feet already off the floor), 0.5 s EASED on a
     // walk-off (owner, 09-19: 'start immediately… a bezier… almost no transition right away, smoother overall')
     const fade = fadeIn ?? (slot === 'jump' ? 0.1 : 0.22);
+    // an eased crossfade cut short (a landing inside the 0.5 s walk-off ease): its outgoing action was parked at
+    // weight 1-w with nothing ever fading it — walk stayed half-blended into idle (pre-review B2)
+    if (this._xfade) { const x = this._xfade; if (x.out && x.out !== a && x.out !== this.current) x.out.fadeOut(fade); this._xfade = null; }
     if (ease) {
       // three's fades are linear; this one is smoothstep on both sides so the weights always sum to 1
       const prev = this.current; if (prev) prev.stopFading();
       a.enabled = true; a.reset(); a.stopFading(); a.setEffectiveWeight(0); a.play();
       this._xfade = { out: prev, in: a, dur: fade, t: 0 };
     } else {
-      this._xfade = null;
       if (this.current) this.current.fadeOut(fade);
       a.enabled = true;
       a.setEffectiveWeight(1);       // base weight — fadeIn ramps a MULTIPLIER on this
@@ -2051,9 +2053,11 @@ export function makeCapsuleAvatar(id) {
   // because the network may be gone, and a still puppet is the floor, not a failure.
   (async () => {
     for (const slot of CORE_CLIPS) {
-      try { const clip = await clipFor(av.vrm, slot); const a = av.mixer.clipAction(clip); a.enabled = true; a.setEffectiveWeight(0); a.play(); av.actions[slot] = a; }
+      try { const clip = await clipFor(av.vrm, slot); if (av._disposed) return;   // a remote disposed on takeover: stop feeding a dead body (pre-review S8)
+        const a = av.mixer.clipAction(clip); a.enabled = true; a.setEffectiveWeight(0); a.play(); av.actions[slot] = a; }
       catch (e) { console.warn(`capsule clip ${slot} unavailable`, e); return; }
     }
+    if (av._disposed) return;
     av.setClip(av.currentSlot ?? 'idle');
     av.hydrateClips().catch(() => {});
   })();

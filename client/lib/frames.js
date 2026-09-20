@@ -391,6 +391,7 @@ export function makeFrame(id, opts = {}) {
     // is stranded hidden FOREVER. B1 traded "reopens a deliberately closed panel" for
     // "never reopens an auto-hidden one".
     autoHidden: saved?.autoHidden ?? false,
+    underDock: saved?.underDock ?? false,   // a deliberate drop under the dock survives a reload (pre-review S1)
     // AND `placed`, for the same reason and by the same mistake. markMoved() sets
     // `state.placed = true` ad-hoc and save() serialises the whole object, so the flag
     // reaches storage once — but this literal had no `placed` key, so the NEXT

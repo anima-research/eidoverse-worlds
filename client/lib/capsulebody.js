@@ -38,7 +38,7 @@ export function makeCapsuleVrm() {
   // torso: one tall capsule from hips to the base of the neck, drawn on the hips bone (the latch yaws it)
   alongY(bones.hips, 0.47, 0.15, BRAND, 0.85);
   // head: a sphere-ish capsule; the eyes are two dark dots so a viewer can tell which way it faces
-  const head = alongY(bones.head, 0.24, 0.11, BRAND, 0.95);
+  alongY(bones.head, 0.24, 0.11, BRAND, 0.95);
   for (const s of [-1, 1]) { const e = capsule(0.02, 0.014, 0x0f2024, 1); e.position.set(s * 0.04, 0.14, 0.095); bones.head.add(e); }
   for (const side of ['left', 'right']) {
     const s = side === 'left' ? 1 : -1;
@@ -61,6 +61,7 @@ export function makeCapsuleVrm() {
     getNormalizedBoneNode: (n) => bones[n] ?? null,
     getRawBoneNode: (n) => bones[n] ?? null,
     normalizedHumanBones: Object.fromEntries(Object.entries(bones).map(([k, node]) => [k, { node }])),
+    humanBones: Object.fromEntries(Object.entries(bones).map(([k, node]) => [k, { node }])),   // what avatar.js/reachbone.js/landmarks.js actually read (pre-review S3)
   };
   // what three-vrm-animation's clip builder reads (createVRMAnimationHumanoidTracks): uniquely named bones,
   // the hips' rest height for the walk's root motion, and a VRM-1 meta so no 180° legacy flip is applied
