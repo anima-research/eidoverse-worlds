@@ -19,6 +19,7 @@
 
 import { installRenderListTolerance, THREE, renderer, camera, scene, XR_BOOT, PREF_HEADSET_SEEN } from './core.js';
 import { decideEntryFailure } from './xr_entry_policy.js';   // what a failed session request MEANS (#197 B1)
+import { captureNative, shouldShim, makeFrameShim, makeCancelShim } from './xr_frame_clock.js';   // who owns window.rAF while presenting (#197 B2)
 import { CONFIG, report, bus, tee, wornNameOf } from './base.js';
 import { frameDebug } from './frame.js';
 import { resetFingers, xrBodyDebug } from './xrbody.js';
@@ -628,10 +629,14 @@ async function enterVR({ retryOf = null } = {}) {
     // takes 7 s to resolve), the warm conductor (so no scene caster ever finishes its depth warm in VR: only her
     // avatar cast a shadow), r186's buildAsync fallback. Route it onto the session clock for the session's
     // duration; restored at teardown. Our own frame loop is unaffected (three's Animation holds the session).
-    if (!globalThis.IWER) { const s = session;   // IWER emulates the session clock ON window.rAF — the shim would feed it to itself (bench crash 09-07 19:15); real runtimes have a native session clock
-      if (!nativeRAF) { nativeRAF = window.requestAnimationFrame.bind(window); nativeCAF = window.cancelAnimationFrame.bind(window); }
-      window.requestAnimationFrame = (cb) => { if (sessionEnded) return nativeRAF(cb); try { return s.requestAnimationFrame((t) => cb(t)); } catch { return nativeRAF(cb); } };
-      window.cancelAnimationFrame = (id) => { try { s.cancelAnimationFrame(id); } catch {} try { nativeCAF(id); } catch {} }; }
+    // The rules live in xr_frame_clock.js (#197 review B2); the swap happens here. `captureNative` is
+    // save-ONCE across the page: capturing per entry would save the previous entry's SHIM as "native"
+    // and the desktop clock would never come back on the second exit.
+    if (shouldShim({ emulated: !!globalThis.IWER })) { const s = session;
+      const nat = captureNative(nativeRAF ? { raf: nativeRAF, caf: nativeCAF } : null, window);
+      nativeRAF = nat.raf; nativeCAF = nat.caf;
+      window.requestAnimationFrame = makeFrameShim({ session: s, native: nat, hasEnded: () => sessionEnded });
+      window.cancelAnimationFrame = makeCancelShim({ session: s, native: nat }); }
     // SHADER ERROR TEE: a material that fails to compile/link in the eye buffers' context draws black
     // and the WebGL backend only console.error()s it — invisible from the operator's side. First 6 such lines tee.
     if (!consoleTapped) { consoleTapped = true; for (const k of ['error', 'warn']) { const orig = console[k].bind(console);
