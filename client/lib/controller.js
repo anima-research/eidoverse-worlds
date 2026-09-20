@@ -12,6 +12,7 @@ import { heightAt } from './terrain.js';
 import { resolveColliders, lastBlockedTop, findSeat, raySegment } from './colliders.js';
 import { chat } from './chat.js';
 import { isOverlayOpen, flashHint } from './ui.js';
+import { selectClip } from './locomotion_clip.js';
 import {
   resolveFirstPersonAnchor, FP_FORWARD, FP_EYE_LIFT, FP_GAZE_AHEAD, FP_GAZE_DROP,
 } from './fp_view.js';
@@ -672,18 +673,13 @@ export function updateMe(dt, me) {
     if (myState.pose) myState.pose = null;
   }
 
-  const seatedClip = myState.seat?.chair ? 'sitchair' : 'sit';
-  myState.clip = mantle ? 'climb'
-    : (jumped || airborneFor > 0.04) ? 'jump'   // a jump press is immediate; a walk-off starts at once too (2 frames against stair flicker) and EASES in over 0.5 s (owner, 09-19)
-      // walk/run while the KEY is down (or the stick deflected); on release the speed coasts down over ~0.3 s but the
-      // clip goes to idle NOW and the 0.22 s crossfade covers the coast (owner, 09-19: 'blends very late… start as soon as
-      // the key is released'). Flight picks its own clip and returns before this line.
-      : (wantMove && myState.speed >= 0.05) ? (myState.speed < 2.6 ? 'walk' : 'run')
-        : posture === 'sit' ? seatedClip
-          : posture === 'lie' ? 'lie'
-            : 'idle';
+  // The policy itself lives in locomotion_clip.js so it can be driven directly
+  // (#196 review B2: this path selects the clip AND its blend, and nothing bound
+  // it). Flight picks its own clip and returns before this line.
+  const sel = selectClip({ mantle, jumped, airborneFor, wantMove, speed: myState.speed, posture, seat: myState.seat });
+  myState.clip = sel.clip;
 
-  me.setClip(myState.clip, myState.speed, myState.clip === 'jump' ? (jumped ? { fade: 0.1 } : { fade: 0.5, ease: true }) : undefined);
+  me.setClip(myState.clip, myState.speed, sel.opts);
   me.root.position.copy(myState.pos);
   me.root.rotation.y = myState.yaw;
   // your head follows your camera — you could always look up, your body never
