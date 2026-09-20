@@ -65,6 +65,17 @@ console.log('\nthe other outcomes:');
   check('no device: absent, no retry', a.action === 'absent' && a.retry === false && a.markAbsent === true);
   const b = decideEntryFailure(notSupported(), { isRetry: false });
   check('not supported: absent, no retry', b.action === 'absent' && b.retry === false);
+  // EACH ARM OF isAbsent ON ITS OWN (#197 review, 2026-09-20). Both fixtures above carry a matching
+  // NAME *and* a matching MESSAGE, so the two arms masked each other: deleting the message regex
+  // entirely passed green. The message arm exists for runtimes that throw a generic name with a
+  // descriptive message — the case that was never constructed.
+  const genericRuntime = Object.assign(new Error('no XR runtime available'), { name: 'Error' });
+  check('an absent-shaped MESSAGE is absent even under a generic error name',
+    decideEntryFailure(genericRuntime, { isRetry: false }).action === 'absent');
+  const bareName = Object.assign(new Error('nope'), { name: 'NotSupportedError' });
+  check('an absent NAME is absent even when the message says nothing',
+    decideEntryFailure(bareName, { isRetry: false }).action === 'absent');
+
   const c = decideEntryFailure(weird(), { isRetry: false });
   check('an unknown error is surfaced, never retried', c.action === 'surface' && c.retry === false);
   check('…and carries no invented toast', c.toast === null);

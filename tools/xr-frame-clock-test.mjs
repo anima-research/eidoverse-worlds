@@ -41,6 +41,12 @@ function fakeSession({ throwOnRaf = false } = {}) {
   s.cancelAnimationFrame = (id) => { s.cancelled.push(id); };
   s.addEventListener = (type, cb) => { if (type === 'end') s._endCbs.push(cb); };
   s.end = () => { s.ended = true; s._endCbs.splice(0).forEach((cb) => cb()); };
+  // Actually DRIVE the queued callbacks (#197 review, 2026-09-20). Without this the suite only ever
+  // collected them, so makeFrameShim's `(t) => cb(t)` wrapper — the only reason the shim is not a
+  // bare pass-through — was never exercised: dropping the timestamp, or swapping time and XRFrame,
+  // both passed green. A render loop handed an XRFrame where it expects a DOMHighResTimeStamp is a
+  // real failure mode.
+  s.tick = (t, frame) => s.calls.splice(0).forEach((cb) => cb(t, frame));
   return s;
 }
 
@@ -57,6 +63,21 @@ console.log('one session, start to finish:');
   check('while presenting, a frame request goes to the SESSION clock',
     win.requestAnimationFrame(() => {}) === 'ses-1' && ses.calls.length === 1);
   check('…and not to the window', win.calls.length === 0);
+  // What the callback RECEIVES, not merely that it was queued (#197 review, 2026-09-20). The suite
+  // only ever collected callbacks and never invoked them, so the shim's `(t) => cb(t)` wrapper was
+  // untested: dropping the timestamp, or passing (frame, t), both passed green.
+  // The wrapper drops the XRFrame ON PURPOSE — the shim stands in for window.requestAnimationFrame,
+  // whose callback takes one argument, and no desktop consumer reads a second. Pinned both ways so
+  // neither half can drift.
+  { let gotT, gotF; const frame = { pose: 'x' };
+    win.requestAnimationFrame((t, f) => { gotT = t; gotF = f; });
+    ses.tick(1234.5, frame);
+    check('the session timestamp reaches the caller', gotT === 1234.5, `got=${gotT}`);
+    check('…as the FIRST argument, with the XRFrame deliberately dropped (window.rAF shape)',
+      gotF === undefined, `second arg=${gotF}`);
+    // tick() drained the queue and this probe added an id; later checks count queued callbacks and
+    // ids, so put both back exactly as they were before this block.
+    ses.calls.push(() => {}); ses._n = 1; }
 
   // the session ends; the latch flips BEFORE the restore runs
   ses.addEventListener('end', () => { ended = true; });
@@ -64,9 +85,15 @@ console.log('one session, start to finish:');
   check('between "end" and the restore, frames fall back to the native clock rather than a dead session',
     win.requestAnimationFrame(() => {}) === 'win-1' && ses.calls.length === 1);
 
-  // the restore itself
-  win.requestAnimationFrame = nat.raf; win.cancelAnimationFrame = nat.caf;
-  check('after teardown the desktop clock is the one we saved', clockIsRestored(win, nat));
+  // the restore itself. PIN THE NEGATIVE FIRST (#197 review, 2026-09-20): clockIsRestored was only
+  // ever called in the already-restored state, so every term in it was dead — gutting the whole
+  // predicate to `return true` passed green. Each clock is now checked on its own.
+  check('before the restore the clock is NOT the one we saved', clockIsRestored(win, nat) === false);
+  win.requestAnimationFrame = nat.raf;
+  check('restoring only rAF is not enough — cancel must come back too', clockIsRestored(win, nat) === false);
+  win.cancelAnimationFrame = nat.caf;
+  check('a null native is never "restored"', clockIsRestored(win, null) === false);
+  check('after teardown the desktop clock is the one we saved', clockIsRestored(win, nat) === true);
   check('…so a desktop frame ticks again, and reaches the WINDOW',
     win.requestAnimationFrame(() => {}) === 'win-2' && win.calls.length === 2);
 }
