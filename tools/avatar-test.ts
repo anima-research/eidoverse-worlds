@@ -750,6 +750,9 @@ console.log('\nmeasured jump take-off (#196 review B2):');
   // (An earlier header claimed the first-half restriction "would need a full landing clip to
   // exercise". That was wrong — a synthetic 7-key track with a deeper landing crouch separates the
   // two, and is the `withLanding` case below. Corrected rather than left standing.)
+  // ONE declared survivor: deleting the `clip.userData.takeoff` memo write. Without it the function
+  // recomputes and returns the same value, so it is a perf regression, not a behavioural one —
+  // genuinely equivalent. Poisoning the memo IS behavioural and is bound (the repeated-jump case).
   const hips = (times: number[], ys: number[]) =>
     new THREE.VectorKeyframeTrack('hips.position', times, ys.flatMap((y) => [0, y, 0]));
   const jumpClip = (times: number[], ys: number[], name = 'jump') =>
@@ -799,6 +802,34 @@ console.log('\nmeasured jump take-off (#196 review B2):');
     [0.864, 0.494, 0.870, 1.20, 0.700, 0.400, 0.870]));
   check('a deeper landing crouch later in the clip is not mistaken for the take-off',
     Math.abs(withLanding - 0.50) < 1e-6, `a.time = ${withLanding}`);
+
+  // THE CACHE, which is what actually ships. Every fixture above uses a fresh clip, so the memo at
+  // avatar.js:485 is written and never read back — but production calls setClip('jump') against the
+  // SAME loaded jump.vrma object on every jump, so from the second jump onward the cached value is
+  // the only thing that reaches the mixer. Deleting the memo, or poisoning it, was invisible here.
+  {
+    const shared = jumpClip([0, 0.33, 0.50, 0.75], [0.864, 0.494, 0.870, 1.20]);
+    const first = timeFor(shared);
+    const second = timeFor(shared);   // same clip object, as a second jump does
+    const third = timeFor(shared);
+    check('a second jump on the same clip starts at the same measured take-off',
+      Math.abs(second - 0.50) < 1e-6, `first ${first}, second ${second}`);
+    check('…and a third, so a poisoned memo cannot ship a wrong time after the first jump',
+      Math.abs(third - 0.50) < 1e-6, `third ${third}`);
+  }
+
+  // A SHALLOW but real dip must still be found: the 1 cm guard was bound from below (0.6 cm rejected)
+  // but not from above, so raising it to 10 cm stayed green while silently reclassifying a real jump
+  // on a small or lightly-animated character as noise — the mid-air-squat bug, for that character.
+  const shallow = timeFor(jumpClip([0, 0.1, 0.2, 0.33, 0.50, 0.75], [0.864, 0.836, 0.820, 0.870, 1.10, 1.30]));
+  check('a shallow (4 cm) but real anticipation dip is still a take-off, not noise',
+    Math.abs(shallow - 0.33) < 1e-6, `a.time = ${shallow}`);
+
+  // The rise-scan stops at the FIRST key at or above rest. A baked clip whose keyframe lands exactly
+  // on the rest value must not advance one key past it (`<` vs `<=`).
+  const exact = timeFor(jumpClip([0, 0.1, 0.2, 0.3, 0.4, 0.5], [0.864, 0.700, 0.494, 0.864, 1.10, 1.30]));
+  check('a keyframe sitting exactly at rest height IS the take-off (no off-by-one)',
+    Math.abs(exact - 0.3) < 1e-6, `a.time = ${exact}`);
 
   // only the jump slot is re-timed: idle/walk must still start at 0. The track needs enough keys for
   // the dip search to actually FIND a dip — with 3 keys `half` is 1 and this passed no matter what

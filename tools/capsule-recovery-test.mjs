@@ -104,23 +104,25 @@ check('a dead asset costs a bounded number of retries, not one per announce',
   spent > 0 && spent <= 4, `${spent} attempts for 8 announces`);
 check('carol keeps the capsule while the asset stays down', !!c.avatar?.isCapsule);
 
-// The CAP itself. Measured (probe, 09-19): against a permanently dead asset `retries` climbs
-// 1→2→3 and STOPS, and no further announce arms another attempt. Asserting on elapsed attempts
-// alone cannot distinguish the cap from the backoff inside any window a test should burn —
-// RETRY_MAX=9999 still only manages ~3 attempts in 5 s — so the binding is on the counter
-// reaching the cap and then refusing to move, which is the cap's actual observable.
-for (let i = 0; i < 6; i++) { await R.ensureRemote('carol', PATH); await sleep(400); }
-await sleep(1200);
-const cappedAt = c.retries;
-check('the retry counter climbs to the cap against a dead asset', cappedAt >= 3, `retries=${cappedAt}`);
-const attemptsAtCap = probe.attempts;
-for (let i = 0; i < 4; i++) { await R.ensureRemote('carol', PATH); await sleep(300); }
-await sleep(800);
-check('at the cap, further announces arm NOTHING (it gave up, it did not grind)',
-  c.retries === cappedAt && probe.attempts === attemptsAtCap,
-  `retries ${cappedAt}→${c.retries}, attempts ${attemptsAtCap}→${probe.attempts}`);
-check('carol still has the capsule, and still knows what she owes',
-  !!c.avatar?.isCapsule && c.capsuleFor === PATH);
+// The CAP itself. This needs a SHORT backoff: with the shipped delays the third attempt's 5 s timer
+// never fires inside a test window, so `retrying` stays true, every announce early-returns, and the
+// counters freeze because of the latch rather than the cap — deleting `if (n >= RETRY_MAX) return`
+// outright left this suite green (review round 2). Shrink the backoff so the latch clears between
+// announces and the cap is the only thing that can stop the climb.
+R.__setRetryBackoffForTest([5, 10, 15]);
+probe.reset();
+const cap = await R.ensureRemote('cap', PATH);
+check('the capped peer falls back', !!cap.avatar?.isCapsule);
+const capStart = probe.attempts;
+for (let i = 0; i < 10; i++) { await R.ensureRemote('cap', PATH); await sleep(40); }
+await sleep(120);
+const capSpent = probe.attempts - capStart;
+check('a dead asset stops at exactly RETRY_MAX fetches, however often it is announced',
+  capSpent === 3, `${capSpent} fetches across 10 announces (cap is 3)`);
+check('the counter rests at the cap', cap.retries === 3, `retries=${cap.retries}`);
+check('the capped peer keeps the capsule and still knows what it owes',
+  !!cap.avatar?.isCapsule && cap.capsuleFor === PATH);
+R.__setRetryBackoffForTest([400, 1600, 5000]);   // restore the shipped values for later scenarios
 
 // ---------------------------------------------------------------- the bound must survive TAKEOVER
 // The hole between the two scenarios above: `carol` never takes over, and `bob` recovers before his

@@ -53,7 +53,12 @@ export const remoteGen = (id) => gens.get(id) ?? 0;
  *  nobody and is disposed. Bounded: RETRY_MAX attempts with backoff, so a
  *  genuinely dead asset costs a few requests, not a hot loop. */
 const RETRY_MAX = 3;
-const RETRY_BACKOFF_MS = [400, 1600, 5000];
+// Mutable so a test can shrink it: with the shipped delays the third attempt's 5 s timer outlives any
+// sane test window, `retrying` never clears, and every announce early-returns — which made a suite
+// that deleted the cap outright still look green (review round 2). The cap is only observable once
+// the backoff is short enough for the latch to clear.
+let RETRY_BACKOFF_MS = [400, 1600, 5000];
+export function __setRetryBackoffForTest(ms) { RETRY_BACKOFF_MS = ms; }
 function retryBody(r) {
   if (!r?.capsuleFor || r.retrying) return;
   const id = r.id, path = r.capsuleFor;
