@@ -5,6 +5,7 @@
 import { renderAside } from './render.js';
 import { THREE, scene, camera, renderer, backendName } from './core.js';
 import { makeCapsuleVrm } from './capsulebody.js';
+import { FADE_PRESS } from './locomotion_clip.js';   // one owner for the jump-press fade (see _setAction)
 import { report, angleDelta, bus, tee } from './base.js';
 import { defsRegistry } from './defs.js';
 import { measureChain, solveChain } from './reachbone.js';
@@ -1044,9 +1045,11 @@ export class Avatar {
   _setAction(a, slot, fadeIn, ease = false) {
     if (!a || this.current === a) return;
     let linear = false;
-    // into a jump the caller says how fast: 0.1 s on a jump press (feet already off the floor), 0.5 s EASED on a
-    // walk-off (owner, 09-19: 'start immediately… a bezier… almost no transition right away, smoother overall')
-    const fade = fadeIn ?? (slot === 'jump' ? 0.1 : 0.22);
+    // into a jump the caller says how fast: a jump press is snappy (feet already off the floor), a walk-off is
+    // 0.5 s EASED (owner, 09-19: 'start immediately… a bezier… almost no transition right away, smoother overall').
+    // The press fade is FADE_PRESS, imported rather than repeated: this fallback and locomotion_clip.js held the
+    // same literal independently, so a change in one would have silently diverged from the other.
+    const fade = fadeIn ?? (slot === 'jump' ? FADE_PRESS : 0.22);
     // an eased crossfade cut short (a landing inside the 0.5 s walk-off ease): its outgoing action was parked at
     // weight 1-w with nothing ever fading it — walk stayed half-blended into idle (pre-review B2)
     // a cut that lands INSIDE an ease (a stair-step landing 0.2 s into the walk-off ease) continues from the current

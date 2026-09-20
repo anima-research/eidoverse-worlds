@@ -54,7 +54,7 @@ export const remoteGen = (id) => gens.get(id) ?? 0;
  *  genuinely dead asset costs a few requests, not a hot loop. */
 const RETRY_MAX = 3;
 const RETRY_BACKOFF_MS = [400, 1600, 5000];
-export function retryBody(r) {
+function retryBody(r) {
   if (!r?.capsuleFor || r.retrying) return;
   const id = r.id, path = r.capsuleFor;
   const n = r.retries ?? 0;
