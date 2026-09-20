@@ -703,7 +703,10 @@ export function makeFrame(id, opts = {}) {
         // supply. `.capnotice` is right-anchored and was being read as left-consuming,
         // which is what drove `avail` to -6 and floored a 407px frame to its 210 minW.
         let clearRight = 0, clearFromRight = 0;
-        for (const sel of (placed ? ['#dock'] : ['#dock', '#micbtn', '#earbtn', '.capnotice'])) {   // a placed frame yields to the DOCK only
+        // .capnotice is NOT in this list: the card steps aside for frames (capnotice.js placeTop measures its span and
+        // drops below them); a frame yielding to the card as well drove the 1000×700 emote bar to 313 px under the dock
+        // (round 3 B1 — its declared right anchor charged a centred card as 671 px of right chrome)
+        for (const sel of (placed ? ['#dock'] : ['#dock', '#micbtn', '#earbtn'])) {   // a placed frame yields to the DOCK only
           const g = document.querySelector(sel)?.getBoundingClientRect();
           if (g && g.width && g.left < state.x + state.w && state.x < g.right
               && g.top < state.y + hh && state.y < g.bottom) {

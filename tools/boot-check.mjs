@@ -21,6 +21,8 @@
 //
 // Recipe: `bun tools/boot-check.mjs` (owned child; needs `bun install` in root + client and a Playwright
 // Chromium). Knobs: BOOT_CHECK_QUERY='&xr=1' (appended to the boot URL; the decisions asserted follow from it),
+// BOOT_CHECK_VIEWPORT=1000x700 (below the hand-arranged default's width: the bar hidden at boot, the capability card
+//   top-centre — round 3 caught the bar slammed under the dock here while 1280x720 and 390x844 were green),
 // BOOT_CHECK_ABORT_VRM=1 (every body request fails at the network — the failed-body arrival path),
 // BOOT_CHECK_REQUIRE_BODY=1 (a body must be ON SCREEN, not merely settled — for a clone that serves the library),
 // BOOT_MAX_MS (poll budget, default 40000), JOIN_KEY (the owned child's join token). The child runs with

@@ -1051,9 +1051,10 @@ export class Avatar {
     if (this._xfade) { const x = this._xfade; if (x.out && x.out !== a && x.out !== this.current) x.out.fadeOut(fade); this._xfade = null; }
     if (ease) {
       // three's fades are linear; this one is smoothstep on both sides so the weights always sum to 1
-      const prev = this.current; if (prev) prev.stopFading();
-      a.enabled = true; a.reset(); a.stopFading(); a.setEffectiveWeight(0); a.play();
-      this._xfade = { out: prev, in: a, dur: fade, t: 0 };
+      const prev = this.current; const out0 = prev ? prev.getEffectiveWeight() : 0; if (prev) prev.stopFading();
+      const in0 = a.getEffectiveWeight();   // from wherever the previous linear fade left them, not 0/1 — a land-then-walk-off popped 0.26 (round 3 S1)
+      a.enabled = true; a.reset(); a.stopFading(); a.setEffectiveWeight(in0); a.play();
+      this._xfade = { out: prev, in: a, dur: fade, t: 0, in0, out0 };
     } else {
       if (this.current) this.current.fadeOut(fade);
       a.enabled = true;
@@ -1632,7 +1633,7 @@ export class Avatar {
   update(dt, now = performance.now()) {
     if (this._xfade) {   // the eased crossfade (see _setAction): smoothstep in, its complement out
       const x = this._xfade; x.t += dt; const u = Math.min(1, x.t / x.dur), w = u * u * (3 - 2 * u);
-      x.in.setEffectiveWeight(w); if (x.out && x.out !== x.in) x.out.setEffectiveWeight(1 - w);
+      x.in.setEffectiveWeight(x.in0 + (1 - x.in0) * w); if (x.out && x.out !== x.in) x.out.setEffectiveWeight(x.out0 * (1 - w));
       if (u >= 1) { if (x.out && x.out !== x.in) x.out.setEffectiveWeight(0); this._xfade = null; }
     }
     const BC = globalThis.__ewBC ?? (() => {});

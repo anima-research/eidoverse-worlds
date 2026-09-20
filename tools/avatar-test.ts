@@ -697,7 +697,7 @@ console.log('\neased crossfade, interrupted (pre-review B2):');
   for (const m of ['setClip', '_setAction']) self[m] = (Avatar.prototype as any)[m];
   self.update = function (dt: number) {   // the slice of update() that owns _xfade
     if (this._xfade) { const x = this._xfade; x.t += dt; const u = Math.min(1, x.t / x.dur), w = u * u * (3 - 2 * u);
-      x.in.setEffectiveWeight(w); if (x.out && x.out !== x.in) x.out.setEffectiveWeight(1 - w);
+      x.in.setEffectiveWeight(x.in0 + (1 - x.in0) * w); if (x.out && x.out !== x.in) x.out.setEffectiveWeight(x.out0 * (1 - w));
       if (u >= 1) { if (x.out && x.out !== x.in) x.out.setEffectiveWeight(0); this._xfade = null; } }
     this.mixer.update(dt);
   };
