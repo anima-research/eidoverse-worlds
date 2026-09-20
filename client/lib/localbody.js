@@ -99,7 +99,7 @@ export function updateMountedMe(dt) {
   if (!sw) return;                       // parent still downloading
   const me = getMe();
   myState.pos.copy(_seatP);
-  myState.yaw = Math.atan2(Math.sin(sw.yaw), Math.cos(sw.yaw));   // saved yaw may be unwrapped (R: 7.62 restored on every reload, 09-05)
+  myState.yaw = Math.atan2(Math.sin(sw.yaw), Math.cos(sw.yaw));   // saved yaw may be unwrapped (owner: 7.62 restored on every reload, 09-05)
   myState.speed = 0;
   myState.clip = sw.pose;
   if (me) {

@@ -36,7 +36,7 @@ export function renderAside(sc, cam, target = null) {
   finally { renderer.setRenderTarget(rt); xr.enabled = was; if (xr.isPresenting) xr.updateCamera(camera); }   // the eyes are rebuilt from the RIG before anything else renders
 }
 
-// RENDER CENSUS (R 09-06 12:22: per-eye fisheye + right eye bleeding into the left, spontaneous, mirror OFF):
+// RENDER CENSUS (owner, 09-06 12:22: per-eye fisheye + right eye bleeding into the left, spontaneous, mirror OFF):
 // count every renderer.render() per animation frame while presenting and remember the last one that was
 // NOT the main pass — camera type/fov/parent and whether it targeted a render target. A second render
 // into the eye framebuffer with a non-XR camera is exactly a wide frame stamped across both eyes.
@@ -65,7 +65,7 @@ export function setXRCurtain(on) {
     curtain = new THREE.Scene();
     const shell = new THREE.Mesh(new THREE.SphereGeometry(4, 24, 16), new THREE.MeshBasicNodeMaterial({ color: 0x0b0f12, side: THREE.BackSide, depthTest: false, depthWrite: false }));
     shell.frustumCulled = false; shell.renderOrder = 0; curtain.add(shell); curtain.userData.shell = shell;
-    // THE SPLASH, head-locked 1.6 m out (R 09-19: 'still just plain white Entering VR with no logo or name'):
+    // THE SPLASH, head-locked 1.6 m out (owner, 09-19: 'still just plain white Entering VR with no logo or name'):
     // the ∃ (its three paths read from #splash so there is one drawing of the mark), eidoverse / worlds, and
     // 'entering VR' with the dots breathing — repainted on the texture 3×/s while the curtain is up.
     const c = document.createElement('canvas'); c.width = 1024; c.height = 1024; const g = c.getContext('2d');
@@ -102,7 +102,7 @@ export function renderWorld() {
   if (curtainOn && renderer.xr?.isPresenting) {
     renderer.xr.updateCamera(camera);
     const xc = renderer.xr.getCamera(); const e = xc.matrixWorld.elements; curtain.userData.shell.position.set(e[12], e[13], e[14]);
-    { const t = curtain.userData.text; if (t) { const yaw = Math.atan2(e[8], e[10]); t.quaternion.setFromAxisAngle(_yAxis, yaw); t.position.set(e[12] - Math.sin(yaw) * 1.6, e[13], e[14] - Math.cos(yaw) * 1.6); } }   // LEVEL with the horizon (R 09-19): yaw follows the head, pitch/roll do not
+    { const t = curtain.userData.text; if (t) { const yaw = Math.atan2(e[8], e[10]); t.quaternion.setFromAxisAngle(_yAxis, yaw); t.position.set(e[12] - Math.sin(yaw) * 1.6, e[13], e[14] - Math.cos(yaw) * 1.6); } }   // LEVEL with the horizon (owner, 09-19): yaw follows the head, pitch/roll do not
     { const d = Math.floor(performance.now() / 300) % 4; if (d !== curtain.userData.lastDots) { curtain.userData.lastDots = d; curtain.userData.paint?.(d); const t = curtain.userData.text; if (t?.material?.map) t.material.map.needsUpdate = true; } }
     renderer.render(curtain, camera);
     return;

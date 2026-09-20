@@ -57,7 +57,7 @@ export const xrBodyDebug = () => ({ look: look.toArray().map((v) => +v.toFixed(3
 // feeding the pose directly — the one input this module consumes.
 let simHead = null;
 export const xrSimActive = () => !!simHead;
-// C18 (R 09-05 20:03: body root stays yaw-only; tracked head/hands ride the wire as full quaternions,
+// C18 (owner, 09-05 20:03: body root stays yaw-only; tracked head/hands ride the wire as full quaternions,
 // Basis's shape). Everything here is FACING-relative — the wire `yaw` IS the facing (xrAvatarYaw), and a
 // remote sets its root to it, so a receiver's root frame equals the sender's facing frame by construction:
 // h = qRel (the look-chain input), l/r = grip [px,py,pz,qx,qy,qz,qw] in that frame, c = curls [lI,lG,rI,rG].
@@ -99,7 +99,7 @@ const _uPos = new THREE.Vector3(), _toT = new THREE.Vector3(), _axis = new THREE
 const _et = new THREE.Vector3(), _er = new THREE.Vector3(), _ex = new THREE.Vector3(), _ey = new THREE.Vector3(), _ctr = new THREE.Vector3(), _dir = new THREE.Vector3();
 const _prior = new THREE.Vector3(), _hp = new THREE.Vector3(), _ta = new THREE.Vector3(), _tb = new THREE.Vector3(), _tq = new THREE.Vector3(), _fa = new THREE.Vector3();
 const _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion(), _qU = new THREE.Quaternion(), _qL = new THREE.Quaternion(), _qH = new THREE.Quaternion();
-const _pole = new THREE.Vector3(), _fq2 = new THREE.Quaternion(), _e2 = new THREE.Euler();   // solveLeg's scratch — dropped with the old arm solver's line on 09-19 and the whole XR tick died at feetTick (R: 'one leg stayed straight out… hands weren't IKing')
+const _pole = new THREE.Vector3(), _fq2 = new THREE.Quaternion(), _e2 = new THREE.Euler();   // solveLeg's scratch — dropped with the old arm solver's line on 09-19 and the whole XR tick died at feetTick (owner: 'one leg stayed straight out… hands weren't IKing')
 const smoothstep = (a, b, v) => { const t = THREE.MathUtils.clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const wrapA = (a) => a - 2 * Math.PI * Math.floor((a + Math.PI) / (2 * Math.PI));
 function aimBone(bone, targetWorld, childRestLocal) {
@@ -368,7 +368,7 @@ export function gaitTick(g, desL, desR, bodyYaw, t, dt) {
     }
     f.p.y = des.y;   // a planted foot FOLLOWS THE GROUND: the plant is an x/z decision, never a height. Without this
                      // a foot planted at a jump's apex kept its airborne y after landing until an x/z step re-planted
-                     // it (R in headset 09-19: 'stuck in the air after jumping until you move around a bit')
+                     // it (owner, in-headset 09-19: 'stuck in the air after jumping until you move around a bit')
     const err = Math.hypot(f.p.x - des.x, f.p.z - des.z);
     if (err > GAIT.SNAP) { f.p.copy(des); f.yaw = bodyYaw; continue; }   // teleport: re-plant, no cross-room glide
     const yerr = Math.abs(wrap(bodyYaw - f.yaw));
@@ -411,7 +411,7 @@ export function solveLeg(vrm, side, targetPos, footYaw) {
     F.quaternion.copy(_fq.multiply(_fq2.setFromEuler(_e2.set(0, Math.atan2(fwd.x, fwd.z), 0)))); }   // flat foot, toes along the planted yaw
   return true;
 }
-// Basis's rule (R 09-19: 'anim takeover when explicitly locomoting with the stick'): the clip owns the legs while
+// Basis's rule (owner, 09-19: 'anim takeover when explicitly locomoting with the stick'): the clip owns the legs while
 // locomoting or airborne; the foot sim takes them only after 0.15 s stationary (BasisEeriePlanner.cs:65–66,
 // BasisLocalCharacterDriver.cs:134), weight in at 20/s, out at 15/s (Planner:71–72), applied as slerp(animated,
 // solved, w) per bone (BasisEerieMovement.Legs.cs:112–118). Each 0→>0 re-seeds the plants from the animated feet.
@@ -477,12 +477,12 @@ export function tickXRBody(dt) {
   // 1. distributed look-at
   // facing = the body's TRUE world yaw. The controller already turns the body to
   // the HMD's yaw every frame (setCamYaw → myState.yaw → root.rotation.y), so the
-  // residual here is only what the head has turned beyond the body. R's first
+  // residual here is only what the head has turned beyond the body. the owner's first
   // headset read (09-05 19:55): computing this against rig.rotation.y (0 at
   // entry) while the body faced her heading gave a constant residual ≈ her
   // heading — the spine twisted toward it, the anchor pulled, the controller
   // re-asserted: 'snap back' and 'the back of my avatar'.
-  // 1a. THE HIPS CHASE THE HEAD — Basis's torso-yaw latch (BasisVirtualSpineCore.cs:246–284; R 09-05
+  // 1a. THE HIPS CHASE THE HEAD — Basis's torso-yaw latch (BasisVirtualSpineCore.cs:246–284; owner 09-05
   // 21:15: "do Basis's hip IK method — their methods are hard-won"). The controller owns the root
   // (stick); the HIPS bone — the humanoid root, legs come along — carries a yaw offset toward the
   // head's world yaw: the torso holds an ANCHOR; the head roams freely inside a deadband (VR default
@@ -513,7 +513,7 @@ export function tickXRBody(dt) {
     if (hips) {
       // The base is the MIXER's pose. If the bone still holds what WE wrote last frame (a clip that
       // doesn't own hips, an emote ending), reuse the stored base — else the latch compounds into a
-      // fast spin (R, 09-05 22:14: 'a strobing tumbleweed… spinning extremely fast' after a wave).
+      // fast spin (owner, 09-05 22:14: 'a strobing tumbleweed… spinning extremely fast' after a wave).
       if (hipsLast.equals(hips.quaternion)) hipsBase.copy(hipsStored); else { hipsBase.copy(hips.quaternion); hipsStored.copy(hipsBase); }
       qHip.setFromEuler(eul.set(0, L.yaw, 0, 'YXZ')); hips.quaternion.copy(qHip).multiply(hipsBase); hipsLast.copy(hips.quaternion); hips.updateWorldMatrix(true, true);
     }

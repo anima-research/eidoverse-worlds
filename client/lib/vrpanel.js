@@ -1,4 +1,4 @@
-// Settings › VR (R, 09-05 18:22: "add VR to the Settings — smooth turning,
+// Settings › VR (owner, 09-05 18:22: "add VR to the Settings — smooth turning,
 // vignette, mirror VR view to desktop, 3rd person"). One section on the
 // video panel's grammar; prefs live in xr.js (xrPrefs / setXrPref) so the
 // frame loop reads them without a round trip. Visible whether or not a

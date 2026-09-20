@@ -1,4 +1,4 @@
-// Comfort vignette (R, 09-05 18:22). A soft dark ring fixed to the headset's
+// Comfort vignette (owner, 09-05 18:22). A soft dark ring fixed to the headset's
 // view that closes in while you move or turn on the stick and opens when you
 // stop — the standard VR comfort tool. Off by default (R "raw dogs" it); on
 // via Settings › VR. Lives on the XR camera so it rides every eye.

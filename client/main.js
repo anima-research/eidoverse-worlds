@@ -211,7 +211,7 @@ if (isViewer) {
   // The front door: ask once for a name and a body, remember, never ask again.
   // A person handed a bare link used to become `guest-a1b2` in the default body
   // with no way to change either and no idea what the keys were.
-  // ?door=1 re-opens it on demand (R 09-06 23:14: 'revoke my entry so I hit the step-in panel again')
+  // ?door=1 re-opens it on demand (owner, 09-06 23:14: 'revoke my entry so I hit the step-in panel again')
   const firstRun = CONFIG.params.has('door') || (!CONFIG.params.has('name') && localStorage.getItem('ew-name-set') !== '1');
   if (firstRun) {
     // the door is already an interactive pause — its roster fetch is lazy,
@@ -231,7 +231,7 @@ if (isViewer) {
 
 // ?sendlayout=1 — post this browser's saved panel layout (every ew-frame-* key + the viewport it
 // was arranged in) to the host tee, so a hand-arranged layout can be read off the log and baked in
-// as the default (R 09-06 23:16: 'copy my menu layout so we can propagate it as the default').
+// as the default (owner, 09-06 23:16: 'copy my menu layout so we can propagate it as the default').
 if (CONFIG.params.has('sendlayout')) {
   bus.on('booted', () => setTimeout(() => {
     const frames = {};
@@ -308,7 +308,7 @@ function start() {
     // boot re-resolves instead of failing the same way forever. Only if the
     // default fails too is there nothing to wear — that one is reported.
     const DEFAULT_BODY = 'eidoverse/assets/vrms/claude.vrm';
-    // ?capsule=1: refuse every body load so the REAL fallback chain runs end to end (R 09-19: 'leave other avatars offline')
+    // ?capsule=1: refuse every body load so the REAL fallback chain runs end to end (owner, 09-19: 'leave other avatars offline')
     const wear = (path) => CONFIG.params.has('capsule') ? Promise.reject(new Error('?capsule=1: body loads refused')) : makeAvatar(CONFIG.name, path, { urgent: true });   // your body skips the load queue
     resolveMyAvatarPath()
       .then((path) => wear(path).then((av) => ({ av, path })).catch((e) => {
@@ -465,7 +465,7 @@ bus.on('build-queue', checkReady);
 function checkReady() {
   if (bootDone()) return;
   if (!bodySettled || !hydrated || buildsPending() > 0) return;
-  // …and every prop INSIDE residency radius has landed (R 09-07 23:18: 'it loads me in when most objects are
+  // …and every prop INSIDE residency radius has landed (owner, 09-07 23:18: 'it loads me in when most objects are
   // still boxes — getting in early is what the go-in-anyway button is for'). Far entities never schedule a
   // load (realize/models.js), so they cannot hold the door; the skip button (4 s) and the 45 s ceiling remain.
   if (pending(P.FAR) > 0) { if (!propsWait) { propsWait = true; onIdle(() => { propsWait = false; checkReady(); }, P.FAR); } return; }

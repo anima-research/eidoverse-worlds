@@ -532,7 +532,7 @@ export function updateMe(dt, me) {
   // want it at 1.55 m/s is a fight.
   const creeping = keys.has('AltLeft') || keys.has('AltRight');
   const mag = Math.min(1, Math.hypot(fwd, strafe));
-  // VR stick (R 09-06 12:53): half deflection = walking speed, full = sprint — the stick IS the shift key.
+  // VR stick (owner, 09-06 12:53): half deflection = walking speed, full = sprint — the stick IS the shift key.
   // Piecewise: 0→0.5 ramps to walk (1.55), 0.5→1 ramps walk→run (4.0). Desktop keeps shift/alt.
   const vrSpeed = mag <= 0.5 ? 1.55 * (mag / 0.5) : 1.55 + (4.0 - 1.55) * ((mag - 0.5) / 0.5);
   const target = moving ? (xrIntent.active ? vrSpeed : (creeping ? 0.55 : running ? 4.0 : 1.55) * mag) : 0;

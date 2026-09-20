@@ -1,4 +1,4 @@
-// Desktop view while presenting (R, 09-05 18:22: "mirror VR view to desktop,
+// Desktop view while presenting (owner, 09-05 18:22: "mirror VR view to desktop,
 // and 3rd person as an option"). By default the desktop canvas goes black in
 // VR — WebXR owns the framebuffer. This system draws one extra frame per tick
 // onto the canvas from a desktop camera: 'first' = the headset's own eyes,
@@ -25,7 +25,7 @@ let thirdRT = null, blitFailed = false, blitTeed = false;
 // canvas path — the path the scene pass used, which presents live.
 let quadScene = null, quadCam = null, quadMesh = null, quadMap = null;
 const MIRROR_FLIP = new URLSearchParams(location.search).has('mirrorflip') ? -1 : 1;
-// R 09-08 01:43: TWO freezes (fps → 17 → nothing; SteamVR alpha-ing), and by elimination the one thing both frozen
+// owner 09-08 01:43: TWO freezes (fps → 17 → nothing; SteamVR alpha-ing), and by elimination the one thing both frozen
 // builds did that no other version did was READ THE XR LAYER'S OPAQUE FRAMEBUFFER with blitFramebuffer. On
 // Windows that framebuffer is a shared D3D surface owned by the compositor; a read from it every frame is a GPU
 // sync against SteamVR. So the layer is never touched again. Three keeps its OWN intermediate target for the
@@ -69,7 +69,7 @@ let slowFrames = 0, lastTick = 0, passFrame = 0, mirrorKilled = false;
 bus.on('xr:state', (on) => { if (on) { mirrorKilled = false; slowFrames = 0; lastTick = 0; } });   // 'off for this session' means THIS session
 export function tickXRMirror() {
   if (!isPresenting() || xrPrefs.mirror === 'off' || mirrorKilled) return;
-  // THE MIRROR MUST NEVER COST THE HEADSET (R 09-08 01:19: fps 17 → frozen with the mirror on). 30 consecutive
+  // THE MIRROR MUST NEVER COST THE HEADSET (owner, 09-08 01:19: fps 17 → frozen with the mirror on). 30 consecutive
   // frames over 30 ms while it runs → off for the session, said out loud. The pref is untouched.
   { const now = performance.now(); if (lastTick && now - lastTick > 30) { if (++slowFrames >= 30) { mirrorKilled = true; tee(`[xr] mirror: OFF for this session — 30 frames over 30 ms (mode ${xrPrefs.mirror})`); toast('desktop mirror switched off — it was costing the headset frames', 'warn', 8000); return; } } else slowFrames = 0; lastTick = now; }
   if (xrPrefs.mirror === 'first') {
@@ -93,14 +93,14 @@ export function tickXRMirror() {
   deskCam.updateMatrixWorld(true);
   // the pass renders into a SMALL target (a quarter of the canvas on each side — fill, not draws, is what the
   // frame budget can't afford), with the output target held on the canvas so a null target never resolves to
-  // the eyes (three r185: XR sets outputRenderTarget = xrRenderTarget for the frame — R 09-08 00:38's double vision)
+  // the eyes (three r185: XR sets outputRenderTarget = xrRenderTarget for the frame — owner 09-08 00:38's double vision)
   const tw = Math.max(320, (renderer.domElement.width >> 1) || 640), th = Math.max(180, (renderer.domElement.height >> 1) || 360);
   if (!thirdRT || thirdRT.width !== tw || thirdRT.height !== th) { thirdRT?.dispose(); thirdRT = new THREE.RenderTarget(tw, th, { depthBuffer: true, samples: 0 }); }
   const was = renderer.xr.enabled; const oldRT = renderer.getRenderTarget(); const oldOut = renderer.getOutputRenderTarget?.() ?? null;
   renderer.xr.enabled = false;
   try {
     // the small target is the renderer's OUTPUT target for this pass, so three's own output pass (tone map + sRGB)
-    // lands in it — a plain render target skips that and came out dark (R 09-08 01:10)
+    // lands in it — a plain render target skips that and came out dark (owner, 09-08 01:10)
     renderer.setOutputRenderTarget?.(thirdRT);
     renderer.setRenderTarget(null);
     withHeadShown(() => renderer.render(scene, deskCam));   // the onlooker sees the whole head (the chop is for the eyes)

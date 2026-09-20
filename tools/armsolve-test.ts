@@ -125,7 +125,7 @@ const ident = new THREE.Quaternion();
 
 // 6. the LEG solver runs on the same module (09-19: a scratch vector shared with the old arm solver was deleted with
 //    it; solveLeg threw '_pole is not defined' every frame inside feetTick and the whole XR tick died before the
-//    arms — one leg straight out, hands not IKing, in R's headset). The capsule puppet has legs; plant both feet.
+//    arms — one leg straight out, hands not IKing, in the owner's headset). The capsule puppet has legs; plant both feet.
 {
   const v: any = makeCapsuleVrm(); v.scene.updateMatrixWorld(true);
   let threw: any = null;

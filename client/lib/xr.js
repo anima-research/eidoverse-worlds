@@ -37,7 +37,7 @@ import { renderCensusTake, renderCensusTick, renderCensusPeek, setXRCurtain } fr
 import { warm, P_AMBIENT } from './warmqueue.js';
 
 // ---- self-body in first person ---------------------------------------------
-// R's first headset session (23:22): own body invisible (she stood INSIDE it,
+// the owner's first headset session (23:22): own body invisible (she stood INSIDE it,
 // camera at head height), own nameplate photobombing from above her own head.
 // porch-old's settled answer: hide the HEAD, keep the body (looking down and
 // seeing your own torso is the embodiment), hide your own label. Generic form
@@ -116,7 +116,7 @@ export const xrFloorSpace = () => floorSpace;
 // 120 in-session HMD heights (> 0.5 m — a seated start or tracking garbage
 // must not scale), k = avatarEyeY / median, clamped .6–1.6. Provenance says why
 // you are this size; saved per avatar (Basis: Fallback/Measured/Saved).
-// HOW it is applied changed 09-06 12:10 (R: 'hands 8 inches from my controllers'): porch-old and
+// HOW it is applied changed 09-06 12:10 (owner: 'hands 8 inches from my controllers'): porch-old and
 // the first port scaled the TRACKED TARGETS toward the rig by k and left the puppet at its authored
 // size — so a controller 1.3 m from the rig landed 0.15 × 1.3 ≈ 20 cm short at k = 0.85, by
 // construction. Basis scales the PUPPET (BasisHeightDriver.ApplyAvatarScale: the avatar root, its
@@ -213,13 +213,13 @@ function makeHand(i) {
   const ray = renderer.xr.getController(i);
   grip.addEventListener('connected', (e) => { tee(`[xr] slot ${i} grip connected handedness=${e.data?.handedness} profiles=${JSON.stringify(e.data?.profiles ?? [])}`); fileHand(i, e.data?.handedness); });
   ray.addEventListener('connected', (e) => fileHand(i, e.data?.handedness));
-  // visible hand: a small warm knuckle-box — only until a body owns the hands (R 09-06 23:38:
+  // visible hand: a small warm knuckle-box — only until a body owns the hands (owner, 09-06 23:38:
   // 'we don't need the test-boxes if they're bound to an avatar'); the tick hides it once one does
   const box = new THREE.Mesh(
     new THREE.BoxGeometry(0.05, 0.035, 0.09),
     new THREE.MeshStandardMaterial({ color: 0xe8c9a0, roughness: 0.8 }));
   grip.add(box);
-  // the pointer: porch-old's fading beam (R 09-06 23:38: the cylinder was distracting)
+  // the pointer: porch-old's fading beam (owner, 09-06 23:38: the cylinder was distracting)
   const laser = makePointerLine();
   laser.visible = false;
   ray.add(laser);
@@ -260,7 +260,7 @@ function rayHitEntity(handRay, far = 24) {
 
 // ---- panel grab: grip+trigger chord takes a QUAD to reposition it -----------
 // World-object grabbing lived here too (near-grab, far-grab, the place verb + undo) and was removed
-// whole (R 09-07 22:26: 'take the code out — it needs to be a proper object component, otherwise it's
+// whole (owner, 09-07 22:26: 'take the code out — it needs to be a proper object component, otherwise it's
 // tech debt'). Panels are UI, not world entities: no verb, no undo, they just ride the hand and land
 // uprighted on the rig. See git history (a2e25e2 and before) for the entity path when the component exists.
 let held = null;   // {quad, hand}
@@ -281,7 +281,7 @@ function releaseGrab() {
 // Every slot is verb-backed — an agent can speak each of these; the ring is
 // just a hand-shaped way to say them. The dock has no body in VR: this ring
 // is the dock, and 'panels' toggles the schema quads xrpanels.js carries.
-/** The ring IS the dock rendered radially (R, 09-04 22:02): the same pins, in
+/** The ring IS the dock rendered radially (owner, 09-04 22:02): the same pins, in
  *  the same order, each slot opening that frame's quad. Rebuilt on every open
  *  so a pin toggled on the desk shows up here. The pinned trio glyphs lead,
  *  drawn from their own SVGs so the ring and the rail cannot drift; a frame
@@ -291,7 +291,7 @@ function releaseGrab() {
 let ringLevel = 'root';   // 'root' | 'emotes' — the sub-wheel in view
 const SPACER = { spacer: true, has: false, label: '', on: () => false, act: () => {} };
 const BACK_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 26 26" fill="none" stroke="#f2f7f5" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-7 7 7 7"/></svg>';
-// THE WHEEL IS THE DOCK, plus what VR needs (R 09-07 22:08): 12 o'clock = the panels menu (the rail's reverse-E),
+// THE WHEEL IS THE DOCK, plus what VR needs (owner, 09-07 22:08): 12 o'clock = the panels menu (the rail's reverse-E),
 // 6 o'clock = leave VR; the dock's pins fill the right half, mic / ears / recentre the left; a dim spacer keeps the
 // count even so the two fixed slots sit exactly on the vertical. 'emotes' is a sub-wheel (VRC's shape): the nine
 // plus a back slot at 6 o'clock. Toggles stay open and show state; everything else closes on activation.
@@ -309,7 +309,7 @@ export function radialEntries() {   // exported with makeRadial for the headless
   // emotes is its own strip on the desk, not a dock panel — a fixed slot, first on the right (1 o'clock)
   const right = [{ icon: 'hand-waving', label: 'emotes', sub: 'emotes', on: () => false, act: () => {} }];
   for (const e of dockPins()) {
-    if (e.id === 'emotes') continue;   // the sub-wheel slot above IS emotes (R 09-07 22:57: 'you have emotes twice')
+    if (e.id === 'emotes') continue;   // the sub-wheel slot above IS emotes (owner, 09-07 22:57: 'you have emotes twice')
     const has = xrPanelHas(e.id);
     right.push({ icon: e.icon, label: e.id, has, on: () => xrPanelOpen(e.id), close: true,
       act: () => { if (has) showXRPanel(e.id); else tee(`[xr] ring: ${e.id} has no VR surface yet`); } });
@@ -327,7 +327,7 @@ export function radialEntries() {   // exported with makeRadial for the headless
 }
 const RECENTRE_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 26 26" fill="none" stroke="#f2f7f5" stroke-width="1.6" stroke-linecap="round"><circle cx="13" cy="13" r="7"/><circle cx="13" cy="13" r="1.6" fill="#f2f7f5"/><path d="M13 2v4M13 20v4M2 13h4M20 13h4"/></svg>';
 // THE RING as a MENU — porch-old's NESTED RADIAL v2 rules (index.html:7592–7770, headset testing
-// 2026-07-12/14/15), eidoverse's tokens, the same slots as before (R 09-06 12:49–12:50):
+// 2026-07-12/14/15), eidoverse's tokens, the same slots as before (owner, 09-06 12:49–12:50):
 //   · rides the RIGHT GRIP, anchored over the THUMB (0, +5 cm, +1 cm) — the digit making the choice;
 //   · billboarded to the eyes every frame with HEADSET-up (wrist roll can't tilt it); de-rolled from the grip;
 //   · R = 7.5 cm, 5 cm icon planes (depthTest off, renderOrder 999) — it draws over the world;
@@ -353,7 +353,7 @@ function ringIconTexture(s, focused) {
     const img = new Image();
     img.onload = () => { g.save(); g.translate(64, 64); g.drawImage(img, -30, -30, 60, 60); g.restore(); tex.needsUpdate = true; };
     // an <svg> without xmlns renders INLINE but paints NOTHING as an <img> data-URI — mic/ears/VR came from the HUD's
-    // inline glyphs and were the exact icons missing on the ring (R 09-07 23:34); the ∃/recentre/emote SVGs carried it
+    // inline glyphs and were the exact icons missing on the ring (owner, 09-07 23:34); the ∃/recentre/emote SVGs carried it
     let svg = (typeof s.svg === 'function' ? s.svg() : s.svg).replace(/stroke="#f2f7f5"/g, `stroke="${ink}"`).replace(/fill="#f2f7f5"/g, `fill="${ink}"`);
     if (!/xmlns=/.test(svg)) svg = svg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
     img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
@@ -381,7 +381,7 @@ function setRingLabel(text) {
 export function makeRadial(entries) {   // exported for the headless ring screenshot (smoke) — the ring is plain meshes
   const group = new THREE.Group();
   const N = Math.max(1, entries.length);
-  // R 09-07 23:01: 'the little circles are z-fighting' — 5 cm discs on a 7.5 cm ring overlap past ~9 slots, and with
+  // owner 09-07 23:01: 'the little circles are z-fighting' — 5 cm discs on a 7.5 cm ring overlap past ~9 slots, and with
   // depthTest off and EQUAL renderOrder three re-sorts them by distance each frame as the billboard turns → the
   // overlaps flicker. The radius grows with the count so discs never overlap, and every slot has a STABLE order.
   const R = Math.max(RING_R, (N * RING_ICON * 1.15) / (2 * Math.PI));
@@ -472,7 +472,7 @@ function aimRadial(x, y) {
 let radialOpen = false, stickPressWas = false;
 const triggerWas = { left: false, right: false };
 // Buttons are NOT trusted for the first 700 ms after an input source appears: the gamepad's first
-// frames report pressed=true garbage (R 09-06 11:35: 'panels toggled' fired by itself, sandwiched
+// frames report pressed=true garbage (owner, 09-06 11:35: 'panels toggled' fired by itself, sandwiched
 // between the two connect lines; same family as the NaN axis). Edges inside the window are swallowed.
 let inputsSettledAt = 0;
 const buttonsTrusted = () => performance.now() > inputsSettledAt;
@@ -486,11 +486,11 @@ async function enterVR() {
   entering = true;
   xrVeilShow(true, 'entering VR');   // from the click: requestSession + setSession is 1–3 s of nothing otherwise
   toast('entering VR…', 'info', 6000);
-  // LET IT PAINT (R 09-19: 'it just looks unresponsive'): the veil and toast were set from the click but the
+  // LET IT PAINT (owner, 09-19: 'it just looks unresponsive'): the veil and toast were set from the click but the
   // session request + the compile storm stall the main thread before the browser ever draws them. Two frames.
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   try {
-    // THE LADDER (R's first tee line, 09-04 23:20: Chrome 152 granted the
+    // THE LADDER (the owner's first tee line, 09-04 23:20: Chrome 152 granted the
     // session WITHOUT the optional 'webgpu' feature and three refused it —
     // "WebGPU XR sessions require the webgpu session feature"). On a WebGPU
     // backend the feature is REQUIRED: a browser that can't grant it rejects
@@ -506,7 +506,7 @@ async function enterVR() {
       session = await navigator.xr.requestSession('immersive-vr',
         gpu ? { requiredFeatures: ['webgpu'], optionalFeatures } : { optionalFeatures });
     } catch (e) {
-      // R 09-07 10:46: a tab that reloaded into ?xr=1 while the previous page's session was still alive got
+      // owner 09-07 10:46: a tab that reloaded into ?xr=1 while the previous page's session was still alive got
       // "already an active, immersive XRSession". The browser owns that session and offers no handle to it,
       // so the honest path is: say so, and retry once after a short wait for the old page to release it.
       if (e?.name === 'InvalidStateError' && /already an active/i.test(e?.message ?? '')) {
@@ -536,7 +536,7 @@ async function enterVR() {
     const tReq = performance.now();
     // BEFORE setSession, so it runs BEFORE three's own 'end' listener (registered inside setSession), which restarts
     // the desktop loop through window.requestAnimationFrame: with the in-session shim still installed that restart
-    // went to the dead session and no frame ever ticked again — R 09-07 22:41, after-exit frames+0 at +0.5 s AND +3 s
+    // went to the dead session and no frame ever ticked again — owner 09-07 22:41, after-exit frames+0 at +0.5 s AND +3 s
     sessionEnded = false;
     session.addEventListener('end', () => { sessionEnded = true; if (nativeRAF) { window.requestAnimationFrame = nativeRAF; window.cancelAnimationFrame = nativeCAF; } }, { once: true });
     await renderer.xr.setSession(session);
@@ -544,12 +544,12 @@ async function enterVR() {
     { const t = renderer.xr._xrRenderTarget; const fb = renderer._frameBufferTargets;
       tee(`[xr] enter #${sessionNo}: xrTarget ${t ? `${t.width}x${t.height} samples=${t.samples} type=${t.texture?.type} fmt=${t.texture?.format} cs=${t.texture?.colorSpace} multiview=${!!t.multiview}` : 'none'} renderer.samples=${renderer.samples}/${renderer._samples} fbts=${fb?.constructor?.name}:${fb?.size ?? '?'} layers=${renderer.xr._layers?.length ?? '?'} usesLayers=${renderer.xr._sessionUsesLayers}`); }
     entryClock = { t0: performance.now(), setSessionMs: +(performance.now() - tReq).toFixed(0), frames: [], last: 0, programs: 0, programMs: 0, pipelines: 0 };
-    // ENTRY PROBE (R 09-06 13:35: 'might need a better probe'): count + time every program/pipeline the
+    // ENTRY PROBE (owner, 09-06 13:35: 'might need a better probe'): count + time every program/pipeline the
     // backend builds while the entry clock runs — the 3 s first frame becomes 'N programs in X ms'.
     { const be = renderer.backend; if (be && !be.__entryProbe) { be.__entryProbe = true;
         for (const [k, field] of [['createProgram', 'programs'], ['createRenderPipeline', 'pipelines']]) { const orig = be[k]?.bind(be); if (!orig) continue;
           be[k] = (...a) => { const t = performance.now(); try { return orig(...a); } finally { buildTotals[field]++; if (field === 'programs') buildTotals.programMs += performance.now() - t; if (field === 'pipelines' && a[1] == null) { buildTotals.syncPipelines++; const ms = performance.now() - t; buildTotals.syncMs += ms; if (ms > 30) { const ro = a[0]; const nm = ro?.material?.name || ro?.material?.type || '?', ob = ro?.object?.name || ro?.object?.type || '?'; tee(`[xr] sync pipeline ${ms.toFixed(0)} ms: ${nm} on ${ob}${ro?.context?.material?.isShadowMaterial || ro?.material?.isDepthMaterial ? ' [shadow/depth]' : ''}`); } } if (entryClock) { entryClock[field]++; if (field === 'programs') entryClock.programMs += performance.now() - t; } } }; } } }
-    // ENTRY CURTAIN (R 09-06 13:34: 'a bespoke loading screen to cover the WebXR construct'): the first
+    // ENTRY CURTAIN (owner, 09-06 13:34: 'a bespoke loading screen to cover the WebXR construct'): the first
     // presenting frames draw a cheap curtain to the eyes while the WHOLE scene compiles against the real
     // XR camera + target (compileAsync from inside an XR frame captures that context — the 13:20 pre-warm
     // into a plain RT missed the pipeline key). The world appears when the compile resolves; 6 s fallback.
@@ -572,7 +572,7 @@ async function enterVR() {
     slots[0] ??= makeHand(0); slots[1] ??= makeHand(1);
     hands.left ??= slots[0]; hands.right ??= slots[1];   // guess until 'connected' files them by handedness
     presenting = true; bus.emit('xr:state', true); xrVeilShow(false);   // the session is live — the 2D page is behind the headset now
-    // HEADSET OFF (R 09-08 01:12: she switched the headset off after load; the session was still GRANTED — SteamVR
+    // HEADSET OFF (owner, 09-08 01:12: she switched the headset off after load; the session was still GRANTED — SteamVR
     // presents to nothing — and the visor lit as if she were in). The tell is that no viewer pose ever arrives
     // (the stereo camera keeps zero eyes). 2.5 s of that → say so, mark the visor absent, and leave.
     hadPose = false;
@@ -583,7 +583,7 @@ async function enterVR() {
       markXrAbsent(true); toast('no headset detected — put it on (or wake it) and click the visor again', 'warn', 8000);
       leaveVR('no-headset');
     }, 2500);
-    // IN-SESSION CLOCK SHIM: window.requestAnimationFrame crawls at ~2 Hz during a WebXR session on R's rig
+    // IN-SESSION CLOCK SHIM: window.requestAnimationFrame crawls at ~2 Hz during a WebXR session on the owner's rig
     // (09-07: 7 ticks in 3 s). Everything that yields on it stalls — three's parallel-link poll (so compileAsync
     // takes 7 s to resolve), the warm conductor (so no scene caster ever finishes its depth warm in VR: only her
     // avatar cast a shadow), r186's buildAsync fallback. Route it onto the session clock for the session's
@@ -604,10 +604,10 @@ async function enterVR() {
     // three.webgpu also hands the shadow pass cameraXR instead of the light camera while presenting
     // (Renderer.js: camera = xr.getCamera() for any render) — shadow maps are wrong by construction
     // in XR, and cost a full scene pass per light per frame. Off while presenting.
-    // R 09-07 18:30: 'leave everything alone.' shadowMap.enabled is pipeline-shape (lightrig.js:85) — flipping it
+    // owner 09-07 18:30: 'leave everything alone.' shadowMap.enabled is pipeline-shape (lightrig.js:85) — flipping it
     // off here and back on at exit recompiled the whole scene at the first frame in BOTH directions: the hard
     // hangs in and out. Shadows now stay exactly as they are on the desktop. What that costs per frame in VR, and
-    // whether three's XR-camera shadow pass looks wrong, is R's read (fps tee + eyes), not a claim.
+    // whether three's XR-camera shadow pass looks wrong, is the owner's read (fps tee + eyes), not a claim.
     xrIntent.active = true;
     selfFirstPerson(true);
     xrPanelsEnter(rig);            // every registered frame as a physical surface
@@ -622,7 +622,7 @@ async function enterVR() {
       if (radialOpen) closeRadial(false);   // a session the browser ended leaves the ring open and the stick owned by it
       resetFingers(getSelf()?.vrm);
       selfFirstPerson(false);
-      { const v = getSelf()?.vrm; if (v) { v.scene.scale.setScalar(1); v.scene.position.set(0, 0, 0); v.scene.updateMatrixWorld(true); if (v.userData) { v.userData.ankleH = null; v.userData._gait = null; } } }   // the puppet scale AND the eye-anchor offset (xrbody writes vrm.scene.position every presenting frame; left in place it sank the feet on the desktop — R 09-08 00:38) are presenting things
+      { const v = getSelf()?.vrm; if (v) { v.scene.scale.setScalar(1); v.scene.position.set(0, 0, 0); v.scene.updateMatrixWorld(true); if (v.userData) { v.userData.ankleH = null; v.userData._gait = null; } } }   // the puppet scale AND the eye-anchor offset (xrbody writes vrm.scene.position every presenting frame; left in place it sank the feet on the desktop — owner 09-08 00:38) are presenting things
       releaseGrab();      // a gripped panel goes back to the rig BEFORE the quads are disposed, or a dead mesh stays in the rig
       xrPanelsExit(rig);
       rig.remove(camera);
@@ -635,7 +635,7 @@ async function enterVR() {
       camera.updateProjectionMatrix();
       // Defensive: the canvas back to the window's size and ratio (three restores its own record; ours is the truth)
       try { renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.setSize(innerWidth, innerHeight); } catch (e) { report('xr exit resize', e); }
-      // THE BLACK DESKTOP (R 09-06 12:46 → 23:43; reproduced 09-07 00:05 with an emulated headset, smoke/xr-exit-probe.mjs):
+      // THE BLACK DESKTOP (owner, 09-06 12:46 → 23:43; reproduced 09-07 00:05 with an emulated headset, smoke/xr-exit-probe.mjs):
       // three's WebGL backend (0.185–0.186) keeps `_currentContext` = the last XR frame's render context after the session
       // ends (that frame's finishRender never ran). Every desktop render then ends with finishRender → _setFramebuffer
       // (deadXRContext) → drawBuffers → `WeakMap.set(undefined)` THROWS — nothing reaches the canvas while the HUD (DOM)
@@ -644,11 +644,11 @@ async function enterVR() {
         renderer.setRenderTarget(null);
       } catch (e) { report('xr exit context', e); }
       camera.quaternion.identity(); camera.scale.setScalar(1); camera.updateMatrixWorld(true);   // 00:05 trap: pos+quat were NaN after exit (follow-camera lerp from XR-era numbers)
-      // AFTER-EXIT INSTRUMENT (R 09-06 12:46 + 13:20: 'black desktop after leaving VR, the world is inoperable'):
+      // AFTER-EXIT INSTRUMENT (owner, 09-06 12:46 + 13:20: 'black desktop after leaving VR, the world is inoperable'):
       // at +0.5 s and +3 s, tee what the desktop actually is — is the loop running, what did the last frame
       // draw, where is the camera, what size is the canvas, and a REAL pixel read of the canvas centre.
       const f0 = perf.frameNo ?? 0;
-      // EXIT COST (R 09-07 18:20 'hard hangs in/out'): programs/pipelines built since teardown began (the
+      // EXIT COST (owner, 09-07 18:20 'hard hangs in/out'): programs/pipelines built since teardown began (the
       // shadowMap.enabled restore is pipeline-shape — lightrig.js:85 — so a recompile lands on the first desktop
       // frame), and `held` = how late each timer fired versus its schedule — a client-side clock, so a frozen tab
       // shows as held time even when the block is in the GPU process (parallel shader link) and no longtask fires.
@@ -688,7 +688,7 @@ async function enterVR() {
     // a session that was GRANTED but whose setSession failed is alive and ours: end it, or the visor is dead
     // until reload (the browser answers every later request 'already an active immersive XRSession')
     if (session && !presenting) { try { session.end(); } catch { /* already ending */ } session = null; renderer.xr.enabled = false; }
-    // the failure must OUTLIVE the glance (R, 09-04: "didn't see the error
+    // the failure must OUTLIVE the glance (owner, 09-04: "didn't see the error
     // for very long") — a sticky toast with the actual message, 30 s
     toast(e?.userMessage ?? `VR failed to start: ${e?.message ?? e}`, e?.userMessage ? 'warn' : 'err', e?.userMessage ? 8000 : 30000);
     tee(`[xr] ENTER FAILED: ${e?.name ?? ''} ${e?.message ?? e}`);
@@ -699,7 +699,7 @@ async function enterVR() {
  *  so the head — not the playspace origin — stands on myState.pos and turns pivot about the head. Called
  *  from xrbody BEFORE the head/arm solve (main.js runs `xrbody` inside updateMe, ahead of `xr`): read
  *  after the root moved but before the rig followed, the grips and the XR camera were one frame behind
- *  the body — at 4 m/s that is a 4–5 cm fore/aft error flipping sign every frame (R 09-06 12:53: 'hands
+ *  the body — at 4 m/s that is a 4–5 cm fore/aft error flipping sign every frame (owner, 09-06 12:53: 'hands
  *  stutter backwards and forwards while running'). Basis and porch-old both move the playspace first.
  *  Rebuilds the stereo camera from the fresh rig so the eye pose xrbody reads is this frame's. */
 export function syncRigToBody() {
@@ -709,7 +709,7 @@ export function syncRigToBody() {
   rig.updateMatrixWorld(true);
   renderer.xr.updateCamera(camera);
 }
-/** THE SMOOTH TURN, BEFORE THE BODY SOLVE (R 09-08 01:10: hands and hips shimmy on turns; frames even).
+/** THE SMOOTH TURN, BEFORE THE BODY SOLVE (owner, 09-08 01:10: hands and hips shimmy on turns; frames even).
  *  xrbody solves the head anchor and the arms from the rig's pose, and it runs BEFORE updateXR — where the
  *  stick turn used to write the rig's yaw. So every frame the body was solved against LAST frame's yaw while
  *  the eyes rendered this frame's: the whole body one yaw-step behind the eyes, the hands (at arm's length)
@@ -732,7 +732,7 @@ export function applyTurnEarly(dtSec) {
     return;
   }
   // snap: the same bug at full size — a 30° step written after the body solve put the eyes 30° ahead of the
-  // hands for one frame (R 09-08 01:32: 'much more off on one frame'). Same cooldown as the input pass.
+  // hands for one frame (owner, 09-08 01:32: 'much more off on one frame'). Same cooldown as the input pass.
   if (Math.abs(rx) > 0.6 && !snapState.cooling) {
     rig.rotation.y = wrapPi(rig.rotation.y - Math.sign(rx) * (SNAP_DEG * Math.PI) / 180);
     snapState.cooling = true;
@@ -742,7 +742,7 @@ export function applyTurnEarly(dtSec) {
 }
 /** Per-frame while presenting. Order matters: read hands → fill intent →
  *  (controller.updateMe moves the body with THEIR loco) → rig follows body. */
-// TURN BURST TRACE (R 09-07 22:28: 'avatar shimmies back and forth on turns; fine on locomotion'): the 5 s recorder
+// TURN BURST TRACE (owner, 09-07 22:28: 'avatar shimmies back and forth on turns; fine on locomotion'): the 5 s recorder
 // cannot see a per-frame oscillation. Armed by a stick turn, 60 frames of rig yaw / hips yaw / root xz / head xz /
 // rig xz tee as ONE line (cm, centi-radians), then it retires for 10 s. Read: does root or rig alternate sign frame to frame?
 let turnTrace = null, turnTraceLast = 0;
@@ -754,7 +754,7 @@ function turnTraceTick() {
   const hy = hips ? Math.atan2(hips.getWorldDirection(_v).x, hips.getWorldDirection(_v).z) : 0;
   const rp = root ? root.getWorldPosition(_v2) : _v2.set(0, 0, 0);
   const hp = renderer.xr.getCamera().matrixWorld.elements;
-  // the HANDS (R 09-08 00:43: 'it's the hands I see shimmying'): VRM right hand bone vs the right grip, world, mm —
+  // the HANDS (owner, 09-08 00:43: 'it's the hands I see shimmying'): VRM right hand bone vs the right grip, world, mm —
   // sign-alternating frame to frame = an ordering bug (xrbody solves the arms BEFORE xr writes the turn); a steady
   // offset = the solver; a growing one = lag
   let hd = 'u';
@@ -793,7 +793,7 @@ export function recentreXR(why = 'verb') {
   if (![_hl.x, _hl.y, _hl.z].every(Number.isFinite)) return false;
   // A tracked head stands on a floor-referenced space at ~1–2 m and within a room of the origin. On the
   // first presenting frames the XR camera has NO pose yet — its matrix is still the desktop camera at the
-  // world origin, so 'rig-local head' comes out as minus the rig's own position (R, 09-06 11:24: 'head at
+  // world origin, so 'rig-local head' comes out as minus the rig's own position (owner, 09-06 11:24: 'head at
   // playspace 3.43,0.00,-43.50' — 43 m folded into the rig on entry). Not a head: refuse, and if this was
   // the entry pass, try again next frame.
   if (_hl.y < 0.3 || _hl.y > 3 || Math.hypot(_hl.x, _hl.z) > 10) {
@@ -817,11 +817,11 @@ export function leaveVR(why = 'verb') {
   tee(`[xr] leave (${why})`);
   lastLeaveAt = performance.now();
   toast('leaving VR…', 'info', 6000);
-  exitVeilShow(true);   // from the CLICK, not the 'end' event — session.end() takes a moment and that moment read as nothing happening (R 22:57)
+  exitVeilShow(true);   // from the CLICK, not the 'end' event — session.end() takes a moment and that moment read as nothing happening (owner, 22:57)
   try { const p = session.end(); p?.catch?.((e) => tee(`[xr] leave (${why}) rejected: ${e?.message ?? e}`)); } catch (e) { tee(`[xr] leave (${why}) threw: ${e?.message ?? e}`); }
   return true;
 }
-// ENTRY CLOCK (R 09-06 12:08: 'a LONG time to enter VR, 5–6 s of bare WebXR construct'): from setSession
+// ENTRY CLOCK (owner, 09-06 12:08: 'a LONG time to enter VR, 5–6 s of bare WebXR construct'): from setSession
 // resolving to our first presenting frame, then the first eight frame gaps — a compile stall shows as
 // one huge gap; a runtime stall shows as the t0→first gap. One tee line, then it retires.
 let entryClock = null;
@@ -834,7 +834,7 @@ export const turnMagnitude = () => turnMag;
 export function updateXR(dtSec = 1 / 72) {
   if (!presenting) { turnMag = 0; return; }
   renderCensusTick();
-  // EYE WATCH (R 09-06 12:22: 'spontaneously each eye becomes extremely fish-eyed; right eye visible in the
+  // EYE WATCH (owner, 09-06 12:22: 'spontaneously each eye becomes extremely fish-eyed; right eye visible in the
   // left'): per frame, not per 5 s — the first sample is the baseline; any eye whose vertical fov moves
   // more than 5° or whose viewport changes shape tees ONE line with both eyes' fov, viewport, and the last
   // foreign render, then re-arms when it returns to baseline.
@@ -854,7 +854,7 @@ export function updateXR(dtSec = 1 / 72) {
     // The curtain holds until the entry compileAsync RESOLVES (cap 15 s), then drops after ≥2 presenting
     // frames. It used to drop after 2 frames flat, because the promise could not resolve in-session: three's
     // parallel-link poll reschedules on window.requestAnimationFrame, which crawls at ~2 Hz in a WebXR session on
-    // R's rig (measured 09-07: 7 ticks in 3 s) — so the world's first frame found nothing linked and built 25
+    // the owner's rig (measured 09-07: 7 ticks in 3 s) — so the world's first frame found nothing linked and built 25
     // pipelines synchronously (6.9 s, measured: 'sync pipelines total 25 (6894 ms)'). Now window.rAF is routed
     // onto the session clock while presenting (see the shim after setSession), the poll runs at frame rate, the
     // promise resolves in-session, and the first world frame finds its pipelines linked.
@@ -910,7 +910,7 @@ export function updateXR(dtSec = 1 / 72) {
   if (L) {
     xrIntent.fwd = dead(-pickAxis(L.axes[3], L.axes[1]));
     xrIntent.strafe = dead(pickAxis(L.axes[2], L.axes[0]));
-    // jump = A or X (porch-old: 'A / X = jump'; VRChat: A). No invented bindings on the sticks (R 09-06 12:37:
+    // jump = A or X (porch-old: 'A / X = jump'; VRChat: A). No invented bindings on the sticks (owner, 09-06 12:37:
     // 'we shouldn't mess with the default VR affordances') — panels live on the ring.
     xrIntent.jump = !!L.buttons[4]?.pressed || !!R?.buttons[4]?.pressed;
   } else { xrIntent.fwd = 0; xrIntent.strafe = 0; xrIntent.jump = !!R?.buttons[4]?.pressed; }
@@ -918,7 +918,7 @@ export function updateXR(dtSec = 1 / 72) {
     const rx = dead(pickAxis(R.axes[2], R.axes[0]));
     const ry = dead(pickAxis(R.axes[3], R.axes[1]));
     const pressed = !!R.buttons[3]?.pressed;              // thumbstick click
-    // CLICK / LATCH / TRIGGER (R 09-07 21:56, replacing hold-aim-release: 'I hate the VRChat action menu').
+    // CLICK / LATCH / TRIGGER (owner, 09-07 21:56, replacing hold-aim-release: 'I hate the VRChat action menu').
     //   · stick CLICK opens; stick click again closes; grip cancels; 12 s without stick or trigger closes (the
     //     09-04 click-toggle stuck open — every close path here tees its cause so a stuck ring is diagnosable);
     //   · AIM latches: deflect > 0.5 picks the sector and the pick STAYS when the stick springs back — a choice is
@@ -996,9 +996,9 @@ export function updateXR(dtSec = 1 / 72) {
       }
       if (hand.laser.visible) {
         const panelDist = xrPanelsPick(hand.ray, false);
-        if (side === 'right' && panelDist != null && !radialOpen && Math.abs(ry) > 0.3) domQuadsScroll(hand.ray, ry * 900 * (dtSec ?? 1 / 72));   // R 09-07 22:57: stick Y scrolls the panel under the laser
+        if (side === 'right' && panelDist != null && !radialOpen && Math.abs(ry) > 0.3) domQuadsScroll(hand.ray, ry * 900 * (dtSec ?? 1 / 72));   // owner 09-07 22:57: stick Y scrolls the panel under the laser
         const hit = panelDist == null ? rayHitEntity(hand.ray, 40) : null;
-        // R 09-07 22:10: short and faint unless it points at something you can act on — porch-old's 1.8 m
+        // owner 09-07 22:10: short and faint unless it points at something you can act on — porch-old's 1.8 m
         // idle beam; a panel or an entity under the ray draws it out to the hit at full strength
         const target = panelDist ?? hit?.dist ?? null;
         hand.laser.scale.z = target ?? 1.8;
@@ -1027,7 +1027,7 @@ export function updateXR(dtSec = 1 / 72) {
 
   // three pushes camera.near/far into session.updateRenderState every frame
   // it changes; a non-finite value throws INSIDE render and the headset
-  // freezes (R's tee, 09-04 23:50: "depthFar … non-finite"). Nothing of ours
+  // freezes (the owner's tee, 09-04 23:50: "depthFar … non-finite"). Nothing of ours
   // writes camera.far directly, so restore sane planes and record what was
   // found — the writer is still being hunted.
   if (!Number.isFinite(camera.near) || !Number.isFinite(camera.far) || camera.far <= camera.near) {
@@ -1078,14 +1078,14 @@ export function updateXR(dtSec = 1 / 72) {
 }
 let recAt = 0;
 
-// XR PIPELINE PRE-WARM (entry clock, R 09-06 12:33: setSession 4 ms, first frame +45 ms, then ONE 5524 ms
+// XR PIPELINE PRE-WARM (entry clock, owner 09-06 12:33: setSession 4 ms, first frame +45 ms, then ONE 5524 ms
 // frame — every material compiling for the eye buffers' render context on the first presenting draw).
 // On an XR boot, once my body is in, compile the whole scene ONCE into a render target shaped like the
 // eye buffers (RGBA8, depth, 4× MSAA) while the desktop is still idle-waiting on the visor. If the
 // pipeline cache keys match, entry loses the 5 s frame; the entry clock is the verdict either way.
 
 // COMPILE THE WHOLE SCENE, NOT THE FRUSTUM: three's compile walk builds a render list with the camera, so a prop
-// behind you is skipped and compiled at its first in-session draw instead — R's probe 09-19 17:09: sixteen prop
+// behind you is skipped and compiled at its first in-session draw instead — the owner's probe 09-19 17:09: sixteen prop
 // materials at 340–490 ms each, every one AFTER the curtain, as she turned. The hands warm already did this trick.
 async function compileEverything(cam) {
   const culled = []; scene.traverse((o) => { if (o.isMesh && o.frustumCulled) { culled.push(o); o.frustumCulled = false; } });
@@ -1094,10 +1094,10 @@ async function compileEverything(cam) {
 }
 let xrWarmed = false, headsetHere = false;
 function warmXRPipelines() {
-  if (xrWarmed || !(XR_BOOT || headsetHere) || presenting || !getSelf()?.vrm) return;   // any boot with a headset present warms (R 09-19), not only ?xr=1
+  if (xrWarmed || !(XR_BOOT || headsetHere) || presenting || !getSelf()?.vrm) return;   // any boot with a headset present warms (owner, 09-19), not only ?xr=1
   xrWarmed = true;
   warm('xr pipelines', async () => {
-    // R's headset 09-07 19:00 settled it: three builds its WebGL-XR target at samples=0 (attributes.antialias
+    // the owner's headset 09-07 19:00 settled it: three builds its WebGL-XR target at samples=0 (attributes.antialias
     // came back false for the XR context) with colorSpace=renderer.outputColorSpace. Our warm RT was samples=4,
     // cs=(default) → every pipeline key missed → all ~44 programs rebuilt at ENTRY, on the session rAF, starving
     // three's parallel-compile poller (56–73 s to finish). Match three's target so the warm actually primes the cache.
@@ -1123,7 +1123,7 @@ export async function initXR() {
   headsetHere = true;
 
   // the third glyph of the mic/ear trio — the same ink, the same slot
-  // layout, the same pin row in the ∃ menu (R, 09-04). Exists only here,
+  // layout, the same pin row in the ∃ menu (owner, 09-04). Exists only here,
   // where the browser answered that a headset can present.
   // PRE-WARM the hand meshes: their first draw compiled two materials on the
   // frame the controllers arrived — a 0.5 s spike (R's recorder 09-04 23:50)
@@ -1145,12 +1145,12 @@ export async function initXR() {
     // WebGPU-XR ships unflagged; ?webgpu=1 opts in early).
     onclick: () => {
       if (presenting) { leaveVR('visor'); return; }
-      // R 09-07 22:29: a ring leave was followed by an 'enter #2' inside the same second — a live session with
+      // owner 09-07 22:29: a ring leave was followed by an 'enter #2' inside the same second — a live session with
       // nobody in the headset = dark desktop, working HUD. Once the session ends the page is a 2D panel again
       // and a controller trigger IS a click wherever the pointer sits. Nothing meant that; refuse for 1.5 s.
       if (performance.now() - lastLeaveAt < 1500) { tee('[xr] visor: enter ignored (left VR less than 1.5 s ago)'); return; }
       if (XR_BOOT) { enterVR(); return; }
-      // Already on WebGL? Nothing to swap — enter in place, no page reload (R 09-07: kill the reload tax).
+      // Already on WebGL? Nothing to swap — enter in place, no page reload (owner, 09-07: kill the reload tax).
       if (!renderer.backend?.isWebGPUBackend) { tee('[xr] visor: enter in place (WebGL, no reload)'); enterVR(); return; }
       const swap = !!renderer.backend?.isWebGPUBackend;
       const why = swap ? 'vr-webgl' : 'vr';
@@ -1179,7 +1179,7 @@ export const xrDebug = () => {
 };
 
 
-// The veil, both ways (R 09-07 18:20: 'loading in/out indicator, hard hangs'; 09-19: 'style compliant'): the
+// The veil, both ways (owner, 09-07 18:20: 'loading in/out indicator, hard hangs'; 09-19: 'style compliant'): the
 // splash's own furniture — its ∃ (cloned from #splash so there is ONE drawing of the mark), the eidoverse /
 // worlds marks, the brand phase line with a breathing ellipsis — over the world from the visor click until
 // the session's first frame, and from the leave click until desktop frames are flowing again (a timer-hide
