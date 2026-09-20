@@ -54,7 +54,7 @@ function show(key, title, body) {
     // right edge. The card is now removed from that list and placed SECOND instead.
     placeTop = () => {
       if (!card) return;
-      // TOP-CENTRE unless something is there (R 09-19: 'top-center if there is no menu currently there —
+      // TOP-CENTRE unless something is there (owner, 09-19: 'top-center if there is no menu currently there —
       // avoid menus if there is a reason to'). Every width: the same measurement, against the card's own span.
       const cr = card.getBoundingClientRect(); const x0 = cr.left, x1 = cr.right;
       const inSpan = (g) => g.right > x0 && g.left < x1;

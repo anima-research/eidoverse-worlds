@@ -61,7 +61,7 @@ document.body.prepend(canvas);
 // URL param wins for a session (the A/B lever), the persisted preference
 // (video settings) otherwise.
 export const PREF_MSAA = 'ew-msaa', PREF_BACKEND = 'ew-backend';
-export const PREF_HEADSET_SEEN = 'ew-headset-seen';   // set once initXR confirms immersive-vr support; lets the NEXT boot pick WebGL up front so the visor ENTERS instead of RELOADING (R 09-07: the reload tax is the porch-vs-us gap)
+export const PREF_HEADSET_SEEN = 'ew-headset-seen';   // set once initXR confirms immersive-vr support; lets the NEXT boot pick WebGL up front so the visor ENTERS instead of RELOADING (owner, 09-07: the reload tax is the porch-vs-us gap)
 const pref = (k) => { try { return localStorage.getItem(k); } catch { return null; } };   // a storage throw must not kill boot
 // ?xr=1 is a BOOT flag, not a runtime toggle: three's XRManager (0.185–0.186) rides
 // WebGPU (XRGPUBinding — Chrome, flags today) but only if the adapter was
@@ -128,7 +128,7 @@ export const renderer = new THREE.WebGPURenderer({ canvas,
 export const backendName = () => (renderer.backend?.isWebGLBackend ? 'webgl' : 'webgpu');
 if (XR_BOOT) renderer.xr.enabled = true;   // must precede init(): xrCompatible adapter
 renderer.setSize(innerWidth, innerHeight);
-// SHADOWS FROM THE SUN, NOT THE HEAD (R 09-07 18:48 'why do shadows tank the frame rate? nothing casts a shadow
+// SHADOWS FROM THE SUN, NOT THE HEAD (owner, 09-07 18:48 'why do shadows tank the frame rate? nothing casts a shadow
 // on the ground'): while presenting, Renderer.render() swaps in xr.getCamera() for EVERY render call
 // (three.webgpu.js r186 'use XR camera for rendering') — including the shadow pass's own render
 // from shadow.camera. So in VR the 2048² map was drawn from the eyes: a full extra scene pass per frame that
@@ -149,8 +149,8 @@ globalThis.__ewEngineUp = true;
 
 export const scene = new THREE.Scene();
 // the construct (no sky yet) wears the PANEL family — deep-ocean dark — not a
-// navy that fought the teal chrome (R, 09-05)
-scene.background = new THREE.Color(0x0b0f12);   // the page's own --bg: neutral, so the teal chrome is the only colour (R, 09-05: teal ground read odd)
+// navy that fought the teal chrome (owner, 09-05)
+scene.background = new THREE.Color(0x0b0f12);   // the page's own --bg: neutral, so the teal chrome is the only colour (owner, 09-05: teal ground read odd)
 scene.fog = new THREE.FogExp2(0x0b0f12, 0.018);
 
 // The far plane has to hold the SKY, not just the scene. Skye's world-space
@@ -187,11 +187,11 @@ export const ground = new THREE.Mesh(
 );
 ground.receiveShadow = true;
 scene.add(ground);
-// monochrome grid (R, 09-05). GridHelper draws every line in ONE buffer, so
+// monochrome grid (owner, 09-05). GridHelper draws every line in ONE buffer, so
 // its bright centre lines lose the depth test wherever a dark line crosses
 // them at the same y and come out dashed — so the grid is all dark, and the
 // two axis lines are their own object, a hair higher, drawn after it.
-export const grid = new THREE.GridHelper(160, 80, 0x242c36, 0x242c36);   // a shade under the plane (0x2a3440), lighter than the 0x1e2328 it was (R 09-19)
+export const grid = new THREE.GridHelper(160, 80, 0x242c36, 0x242c36);   // a shade under the plane (0x2a3440), lighter than the 0x1e2328 it was (owner, 09-19)
 export const axisLines = new THREE.LineSegments(
   new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-80, 0, 0), new THREE.Vector3(80, 0, 0), new THREE.Vector3(0, 0, -80), new THREE.Vector3(0, 0, 80)]),
   new THREE.LineBasicMaterial({ color: 0x6a7078 }));

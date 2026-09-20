@@ -18,7 +18,7 @@ import { applyWingFoldPresence } from '../../shared/wingpresence.js';
 export const remotes = new Map(); // id -> RemoteBody
 
 const DEFAULT_AVATAR = 'eidoverse/assets/vrms/claude.vrm';
-// ?capsule=1: every remote arrives as the capsule too (R 09-19) — the flag is about seeing the floor, not one body
+// ?capsule=1: every remote arrives as the capsule too (owner, 09-19) — the flag is about seeing the floor, not one body
 const loadBody = (id, path) => CONFIG.params.has('capsule') ? Promise.reject(new Error('?capsule=1: body loads refused')) : makeAvatar(id, path);
 /** How far behind the newest sample we render. One frame of slack at 15Hz is
  *  66ms; 110 gives room for one dropped packet without a visible stall. */

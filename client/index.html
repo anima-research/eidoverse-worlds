@@ -139,7 +139,7 @@ button:active { transform: translateY(1px); }
    (no per-menu handrolling; one fallback). Use `<div class="row btn-row">`. */
 .btn-row { display: flex; gap: 6px; }
 .btn-row > button { flex: 1; max-width: 12rem; text-align: center; padding: 5px 8px; }   /* capped: a wide frame must not stretch buttons out of proportion (live, 09-04) */
-button:focus-visible { outline: 2px solid var(--edge-hi); outline-offset: 1px; }   /* the KEYBOARD focus ring — was --accent (= --attn amber), so a dock tile you had clicked lit 'needs attention' the moment you pressed Shift (R 09-19). Focus is not attention. */
+button:focus-visible { outline: 2px solid var(--edge-hi); outline-offset: 1px; }   /* the KEYBOARD focus ring — was --accent (= --attn amber), so a dock tile you had clicked lit 'needs attention' the moment you pressed Shift (owner, 09-19). Focus is not attention. */
 @keyframes hud-blink { 0%, 100% { opacity: 1; } 25%, 75% { opacity: .25; } }
 #xrbtn.hud-blink { animation: hud-blink .9s ease-in-out 2; }
 #xrbtn.hud-absent { filter: drop-shadow(0 0 3px var(--attn)); }   /* the attention ring around an absent headset's visor */
@@ -1215,10 +1215,10 @@ kbd {
      ([381..824] at every width). The top strip between `emotes` and `world` cannot
      host it — that gap is -57px at 1068, 49 at 1280, 129 at 1440, 249 at 1680, and
      the card needs min(320px,46vw). antra-tess #185 rereview B2. */
-  position: fixed; left: 50%; transform: translateX(-50%); top: 8px; z-index: 60;   /* top-centre; capnotice.js drops it below whatever actually occupies its span (R 09-19) */
+  position: fixed; left: 50%; transform: translateX(-50%); top: 8px; z-index: 60;   /* top-centre; capnotice.js drops it below whatever actually occupies its span (owner, 09-19) */
   max-width: min(320px, 46vw);   /* NARROW, not merely right-anchored: at 720px the card still reached back across the centred emote bar and blocked 7 of 9 tiles even from top-right. The long text is the title tooltip anyway (09-05 note above). #185 B2. */ padding: 5px 10px; font-size: var(--fs-sm); line-height: 1.4;
   display: flex; flex-direction: row; align-items: center; gap: 10px; border-radius: 8px;
-  border: 1px solid color-mix(in srgb, var(--attn) 70%, transparent); background: color-mix(in srgb, var(--attn) 10%, var(--bg));   /* THE attention amber: a message they must click through (R 09-19) */
+  border: 1px solid color-mix(in srgb, var(--attn) 70%, transparent); background: color-mix(in srgb, var(--attn) 10%, var(--bg));   /* THE attention amber: a message they must click through (owner, 09-19) */
 }
 
 /* A PHONE HAS NO ROOM IN THE TOP STRIP (antra-tess #185 B2, measured 2026-09-12).
@@ -1252,7 +1252,7 @@ kbd {
 }
 .capnotice > * { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; min-width: 0; flex: 1; }   /* title + text, buttons wrap under */
 .capnotice b { display: inline; margin: 0; white-space: nowrap; color: var(--attn); }
-.capnotice p { margin: 0; color: var(--dim); flex: 1 1 100%; font-size: var(--fs-sm); line-height: 1.35; }   /* its own full-width line under the title; `flex:1; min-width:0` in a wrapping row shrank it to one word per line (R 09-19: 'go home you're drunk') */   /* wraps — the 09-12 ellipsis left 'T…' beside the title (R 09-19) */
+.capnotice p { margin: 0; color: var(--dim); flex: 1 1 100%; font-size: var(--fs-sm); line-height: 1.35; }   /* its own full-width line under the title; `flex:1; min-width:0` in a wrapping row shrank it to one word per line (owner, 09-19: 'go home you're drunk') */   /* wraps — the 09-12 ellipsis left 'T…' beside the title (owner, 09-19) */
 .capnotice .cn-btns { display: flex; gap: 6px; flex: none; }
 .capnotice .cn-btns button { padding: 4px 10px; font-size: var(--fs-xs); }
 /* photo mode hides every chrome layer but keeps the canvas */

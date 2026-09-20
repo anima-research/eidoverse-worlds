@@ -296,7 +296,7 @@ const disposeSprite = (s) => { s.material.map?.dispose(); s.material.dispose(); 
 // a token read at paint time — canvas sprites cannot use var(); a 'style' event repaints them
 const tokv = (n, fb) => (getComputedStyle(document.documentElement).getPropertyValue(n) || fb).trim();
 // every live Avatar, so a Style change can repaint the sprites it baked from
-// tokens (R, 09-05 16:41: pink accent, nameplates still teal)
+// tokens (owner, 09-05 16:41: pink accent, nameplates still teal)
 const liveAvatars = new Set();
 bus.on('style', () => { for (const a of liveAvatars) a.repaintLabel?.(); });
 
@@ -1044,7 +1044,7 @@ export class Avatar {
   _setAction(a, slot, fadeIn, ease = false) {
     if (!a || this.current === a) return;
     // into a jump the caller says how fast: 0.1 s on a jump press (feet already off the floor), 0.5 s EASED on a
-    // walk-off (R 09-19: 'start immediately… a bezier… almost no transition right away, smoother overall')
+    // walk-off (owner, 09-19: 'start immediately… a bezier… almost no transition right away, smoother overall')
     const fade = fadeIn ?? (slot === 'jump' ? 0.1 : 0.22);
     if (ease) {
       // three's fades are linear; this one is smoothstep on both sides so the weights always sum to 1
@@ -1059,7 +1059,7 @@ export class Avatar {
       a.reset().fadeIn(fade);
     }
     // The jump LEAVES THE GROUND INSTANTLY (gamey, on purpose) but the clip opens with its anticipation crouch,
-    // so the body squatted in mid-air and then rose (R 09-19). Start the clip at take-off — the frame the hips
+    // so the body squatted in mid-air and then rose (owner, 09-19). Start the clip at take-off — the frame the hips
     // stop dipping — measured from the clip itself, so it holds for any body and any future jump clip.
     if (slot === 'jump') a.time = clipTakeoff(a.getClip());
     this.current = a;
@@ -2046,7 +2046,7 @@ function makeBlobShadow() {
 export function makeCapsuleAvatar(id) {
   const av = new Avatar(id, makeCapsuleVrm(), {});
   av.isCapsule = true;
-  // the standard clips, if they can be had (R 09-19: 'it has arms and legs'): idle + walk first, then the rest
+  // the standard clips, if they can be had (owner, 09-19: 'it has arms and legs'): idle + walk first, then the rest
   // through the same idle-time hydration a real body uses. Each is best-effort — the capsule exists precisely
   // because the network may be gone, and a still puppet is the floor, not a failure.
   (async () => {
@@ -2136,7 +2136,7 @@ export async function contributeThumbnail(name, vrm, token = '', { force = false
     const sub = new THREE.Scene();
     // A render target gets no tone mapping — the canvas's ACES curve never
     // touches these pixels — so lights tuned for the world burned every
-    // portrait to white (R, 09-05: 'burned'). Linear-safe levels instead.
+    // portrait to white (owner, 09-05: 'burned'). Linear-safe levels instead.
     sub.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.9));
     const key = new THREE.DirectionalLight(0xffffff, 1.1);
     key.position.set(1.4, 2.2, 2.4);
@@ -2218,7 +2218,7 @@ export async function contributeThumbnail(name, vrm, token = '', { force = false
       const headY = vrm.humanoid.getNormalizedBoneNode('head').getWorldPosition(new THREE.Vector3()).y;
       const stature = headY - rootY + 0.13; // crown ≈ head joint + a forehead
       // ...unless the mesh really does go higher: claude's head joint sits at 1.37 m under a
-      // 2.21 m crown of tentacles, and a stature frame cut it off (R, 09-06 22:37). Let the
+      // 2.21 m crown of tentacles, and a stature frame cut it off (owner, 09-06 22:37). Let the
       // bbox raise the top by up to 60 % of stature — enough for any head, not for a particle shell.
       if (stature > 0.2) height = Math.min(Math.max(stature, dims.y), stature * 1.6);
     } catch { /* bbox fallback */ }

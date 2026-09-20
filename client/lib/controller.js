@@ -674,9 +674,9 @@ export function updateMe(dt, me) {
 
   const seatedClip = myState.seat?.chair ? 'sitchair' : 'sit';
   myState.clip = mantle ? 'climb'
-    : (jumped || airborneFor > 0.04) ? 'jump'   // a jump press is immediate; a walk-off starts at once too (2 frames against stair flicker) and EASES in over 0.5 s (R 09-19)
+    : (jumped || airborneFor > 0.04) ? 'jump'   // a jump press is immediate; a walk-off starts at once too (2 frames against stair flicker) and EASES in over 0.5 s (owner, 09-19)
       // walk/run while the KEY is down (or the stick deflected); on release the speed coasts down over ~0.3 s but the
-      // clip goes to idle NOW and the 0.22 s crossfade covers the coast (R 09-19: 'blends very late… start as soon as
+      // clip goes to idle NOW and the 0.22 s crossfade covers the coast (owner, 09-19: 'blends very late… start as soon as
       // the key is released'). Flight picks its own clip and returns before this line.
       : (wantMove && myState.speed >= 0.05) ? (myState.speed < 2.6 ? 'walk' : 'run')
         : posture === 'sit' ? seatedClip
