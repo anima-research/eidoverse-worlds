@@ -216,3 +216,7 @@ export function assignColors(names) {
   }
   return claimed;
 }
+
+/** The 'avatar-worn' payload's name: mybody.announceWorn emits { name, path }, setMe emits a string. Every listener
+ *  that keys anything by body name goes through here (bodies.js, xr.js). */
+export const wornNameOf = (v) => (typeof v === 'string' ? v : v?.name) ?? '';

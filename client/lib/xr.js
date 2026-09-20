@@ -18,7 +18,7 @@
 // foveation 1 standalone / 0 PC (Basis split; ?fov=), local-floor, and the settled law: NEVER navigate mid-session.
 
 import { installRenderListTolerance, THREE, renderer, camera, scene, XR_BOOT, PREF_HEADSET_SEEN } from './core.js';
-import { CONFIG, report, bus, tee } from './base.js';
+import { CONFIG, report, bus, tee, wornNameOf } from './base.js';
 import { frameDebug } from './frame.js';
 import { resetFingers, xrBodyDebug } from './xrbody.js';
 import { stroke, fillPath } from './icons.js';
@@ -127,7 +127,8 @@ const SCALE_LS = 'ew-xr-scale';
 let wornName = '';   // the avatar name from 'avatar-worn' — the per-body key for a saved scale (Avatar has no .name)
 const scaleState = { k: 1, source: 'fallback', samples: [], eyeY: null, locked: false, firstAt: 0 };
 // a body swap while presenting: the new body must not wear the old body's ratio (eyes off the HMD height)
-bus.on('avatar-worn', (name) => { wornName = name ?? ''; if (!presenting) return; scaleState.samples.length = 0; scaleState.locked = false; scaleState.firstAt = 0; scaleState.k = 1; scaleState.source = 'fallback'; loadSavedScale(); tee('[xr] body swapped while presenting — device scale re-measured'); });
+// mybody.announceWorn emits { name, path }; setMe emits a string — the same normaliser bodies.js uses (round 1 B2: a per-body scale keyed '[object Object]')
+bus.on('avatar-worn', (v) => { wornName = wornNameOf(v); if (!presenting) return; scaleState.samples.length = 0; scaleState.locked = false; scaleState.firstAt = 0; scaleState.k = 1; scaleState.source = 'fallback'; loadSavedScale(); tee('[xr] body swapped while presenting — device scale re-measured'); });
 export const xrScale = () => ({ ...scaleState, samples: scaleState.samples.length });
 /** The multiplier the self puppet wears while presenting (Basis: avatar scaled to the player). 1 when unmeasured. */
 export const puppetScale = () => (presenting && scaleState.k > 0 ? 1 / scaleState.k : 1);
@@ -486,10 +487,11 @@ async function enterVR() {
   entering = true;
   xrVeilShow(true, 'entering VR');   // from the click: requestSession + setSession is 1–3 s of nothing otherwise
   toast('entering VR…', 'info', 6000);
-  // LET IT PAINT (owner, 09-19: 'it just looks unresponsive'): the veil and toast were set from the click but the
-  // session request + the compile storm stall the main thread before the browser ever draws them. Two frames.
-  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   try {
+    // LET IT PAINT (owner, 09-19: 'it just looks unresponsive'): the veil and toast were set from the click but the
+    // session request + the compile storm stall the main thread before the browser ever draws them. Two frames —
+    // inside the try, so a tab hidden mid-yield still releases `entering` (round 1 S8). Capped: rAF stops in a hidden tab.
+    await Promise.race([new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))), new Promise((r) => setTimeout(r, 250))]);
     // THE LADDER (the owner's first tee line, 09-04 23:20: Chrome 152 granted the
     // session WITHOUT the optional 'webgpu' feature and three refused it —
     // "WebGPU XR sessions require the webgpu session feature"). On a WebGPU
@@ -571,7 +573,8 @@ async function enterVR() {
     rig.add(camera);
     slots[0] ??= makeHand(0); slots[1] ??= makeHand(1);
     hands.left ??= slots[0]; hands.right ??= slots[1];   // guess until 'connected' files them by handedness
-    presenting = true; bus.emit('xr:state', true); xrVeilShow(false);   // the session is live — the 2D page is behind the headset now
+    presenting = true; bus.emit('xr:state', true); xrVeilShow(false);
+    try { localStorage.setItem(PREF_HEADSET_SEEN, '1'); } catch { /* private mode */ }   // a headset was truly here: the next boot picks WebGL up front and the visor enters in place, no reload   // the session is live — the 2D page is behind the headset now
     // HEADSET OFF (owner, 09-08 01:12: she switched the headset off after load; the session was still GRANTED — SteamVR
     // presents to nothing — and the visor lit as if she were in). The tell is that no viewer pose ever arrives
     // (the stereo camera keeps zero eyes). 2.5 s of that → say so, mark the visor absent, and leave.
@@ -1104,9 +1107,9 @@ function warmXRPipelines() {
     const rt = new THREE.RenderTarget(64, 64, { samples: 0, depthBuffer: true, stencilBuffer: renderer.stencil, colorSpace: renderer.outputColorSpace });
     const prev = renderer.getRenderTarget(); const prevSamples = renderer._samples; renderer._samples = 0;   // the cache key reads renderer.currentSamples when no RT is bound; the XR session runs at 0, so warm at 0
     const t0 = performance.now();
-    try { renderer.setRenderTarget(rt); await compileEverything(renderer.xr.getCamera?.() ?? camera); }   // compile only: a real draw here took 4.2 s on the desktop and the entry still rebuilt 17 (09-19 17:00)
+    try { renderer.userData = renderer.userData || {}; renderer.userData.warmTargetHeld = true; renderer.setRenderTarget(rt); await compileEverything(renderer.xr.getCamera?.() ?? camera); }   // compile only: a real draw here took 4.2 s on the desktop and the entry still rebuilt 17 (09-19 17:00)
     catch (e) { report('xr pipeline warm', e); }
-    finally { renderer.setRenderTarget(prev); renderer._samples = prevSamples; rt.dispose(); }
+    finally { renderer.setRenderTarget(prev); renderer._samples = prevSamples; rt.dispose(); renderer.userData.warmTargetHeld = false; }
     tee(`[xr] pipelines pre-warmed for the eye buffers in ${(performance.now() - t0).toFixed(0)} ms — warm RT: samples=${rt.samples} fmt=${rt.texture?.format} type=${rt.texture?.type} cs=${rt.texture?.colorSpace} depth=${rt.depthBuffer} stencil=${rt.stencilBuffer} (matched to three XR target; entry should now show programs≈0)`);
   }, { p: P_AMBIENT });
 }
@@ -1116,10 +1119,8 @@ export async function initXR() {
   try { supported = await navigator.xr.isSessionSupported('immersive-vr'); }
   catch (e) { report('xr support probe', e); }
   if (!supported) return;
-  // WRITE THE PREF core.js reads (its comment promised 'set once initXR confirms immersive-vr support' — nothing
-  // ever did, 09-19): the next boot on this machine picks WebGL up front, so the visor click enters in place
-  // instead of reloading the whole world onto WebGL.
-  try { localStorage.setItem(PREF_HEADSET_SEEN, '1'); } catch { /* private mode */ }
+  // (the headset-seen pref is written when a session is actually GRANTED — see setSession — not here: isSessionSupported
+  // is true on any machine with an XR runtime, headset or not, and the pref pins the next boot to WebGL)
   headsetHere = true;
 
   // the third glyph of the mic/ear trio — the same ink, the same slot
@@ -1139,7 +1140,7 @@ export async function initXR() {
     for (const m of meshes) { m.frustumCulled = false; try { await renderer.compileAsync(m, camera, scene); } catch { /* fine */ } }
   }, { p: P_AMBIENT });
 
-  { const iv = setInterval(() => { warmXRPipelines(); if (xrWarmed) clearInterval(iv); }, 500); }   // headset present (we are past the support probe): warm once the body is in   // body arrives seconds after boot; poll until it does
+  { let tries = 0; const iv = setInterval(() => { warmXRPipelines(); if (xrWarmed || ++tries > 240) clearInterval(iv); }, 500); }   // headset present (we are past the support probe): warm once the body is in; gives up after 2 min (a viewer page has no body)   // body arrives seconds after boot; poll until it does
   registerXrGlyph({
     // ?xr=1 alone is enough: core.js picks the backend that can present (WebGL until Chrome's
     // WebGPU-XR ships unflagged; ?webgpu=1 opts in early).
@@ -1196,4 +1197,4 @@ function xrVeilShow(on, phase = 'leaving VR') {
   const ph = exitVeil.querySelector('.xr-veil-phase'); if (ph && ph.textContent !== phase) ph.textContent = phase;
   exitVeil.classList.toggle('on', !!on);
 }
-function exitVeilShow(on) { xrVeilShow(on, 'leaving VR'); }
+function exitVeilShow(on) { if (!on && entering) return; xrVeilShow(on, 'leaving VR'); }   // an after-exit probe never hides the veil of an enter #2 already in flight (round 1 S6)

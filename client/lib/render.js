@@ -95,7 +95,7 @@ export function renderWorld() {
   // at the top of every render. A frame that aborts between binding its frame-buffer target and restoring leaves
   // that target bound; every later frame then renders INTO it and blits it onto ITSELF — the canvas never sees a
   // pixel again, with no further errors. Off-XR, a bound target at the top of the main pass can only be that.
-  if (!renderer.xr?.isPresenting && renderer.getRenderTarget() !== null) {
+  if (!renderer.xr?.isPresenting && renderer.getRenderTarget() !== null && !renderer.userData?.warmTargetHeld) {   // warmXRPipelines holds an eye-shaped target across its await on purpose (round 1 S2)
     const rt = renderer.getRenderTarget(); renderer.setRenderTarget(null);
     if (healed++ < 3) tee(`[render] unbound a stale target at frame start (${rt.constructor.name} ${rt.width}x${rt.height}) — an earlier frame aborted mid-render`);
   }
