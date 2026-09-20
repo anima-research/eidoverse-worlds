@@ -10,7 +10,8 @@
 //   policy: `isRetry ? give-up : retry-once` → always retry-once   (the infinite retry, as shipped)
 //   policy: busy detection drops the message test                  (any InvalidStateError retries)
 //   policy: absent detection dropped                               (no headset reads as unknown)
-//   policy: the gpu branch moved after the absent branch           (a WebGPU refusal marks absent)
+//   policy: the gpu branch moved AFTER the absent branch           (a WebGPU refusal marks a present headset absent)
+//   xr.js: re-deriving absent/reload inline instead of reading verdict (the ranking drifts from the policy)
 //   retryIsCurrent: `===` → `!==`, or ignoring null                (a stale timer enters VR)
 //   xr.js: stop calling decideEntryFailure                         (the wiring check)
 //   xr.js: leaveVR stops cancelling a pending retry                (delayed entry after a leave)
@@ -74,6 +75,18 @@ console.log('\nthe other outcomes:');
   const gBusy = decideEntryFailure(busy(), { isRetry: false, gpu: true });
   check('a BUSY session on WebGPU still retries — busy outranks the backend',
     gBusy.action === 'retry-once', `action=${gBusy.action}`);
+  // THE GPU/ABSENT INTERSECTION — the ordering this suite's mutation list protects (#197 review,
+  // 2026-09-20). It is only observable for an error that is BOTH absent-shaped AND on a WebGPU
+  // backend, and no check drove that pair, so a swap of the two branches passed green.
+  // The order is NOT arbitrary: 'webgpu' is a REQUIRED feature (xr.js:527), and the spec rejects an
+  // ungrantable requiredFeature with NotSupportedError — which isAbsent matches. So absent-first
+  // would read every WebGPU refusal as "no headset" and permanently mark a PRESENT headset absent.
+  for (const [label, err] of [['NotFoundError', noDevice()], ['NotSupportedError', notSupported()]]) {
+    const ga = decideEntryFailure(err, { isRetry: false, gpu: true });
+    check(`a WebGPU refusal reloads even when the error is absent-shaped (${label})`,
+      ga.action === 'reload-webgl', `action=${ga.action}`);
+    check(`…and does NOT mark a present headset absent (${label})`, ga.markAbsent === false);
+  }
 }
 
 console.log('\nthe pending retry belongs to the intent that armed it:');

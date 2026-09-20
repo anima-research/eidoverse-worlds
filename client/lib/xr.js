@@ -553,9 +553,14 @@ async function enterVR({ retryOf = null } = {}) {
         }
         toast(verdict.toast, 'warn', 8000); tee('[xr] session busy after retry — giving up until the visor is clicked again'); return;
       }
-      if (!gpu) { if (e?.name === 'NotSupportedError' || e?.name === 'NotFoundError' || /no.*(device|headset|runtime)|not supported|unavailable/i.test(e?.message ?? '')) { markXrAbsent(true); if (e && typeof e === 'object') e.userMessage = 'no headset detected — put it on (or wake it) and click the visor again'; } throw e; }   // the outer catch posts the one toast, preferring this text
+      // ACT ON THE VERDICT, do not re-derive it (#197 review, 2026-09-20): this branch used to repeat
+      // isAbsent's two error names and its regex verbatim, and ranked !gpu above absent — so a WebGPU
+      // user with no headset was sent through a pointless reload before being told. The policy owns
+      // the ranking now; this owns only the effects.
+      if (verdict.action === 'absent') { markXrAbsent(true); if (e && typeof e === 'object') e.userMessage = verdict.toast; throw e; }   // the outer catch posts the one toast, preferring this text
+      if (verdict.action === 'surface') throw e;
       tee(`[xr] webgpu session refused (${e?.name ?? ''} ${e?.message ?? e}) — reloading on the WebGL backend`);
-      toast('no WebGPU VR here — reloading on WebGL', 'info', 6000);
+      toast(verdict.toast, 'info', 6000);
       const u = new URL(location.href); u.searchParams.set('webgl', '1'); u.searchParams.set('xr', '1'); u.searchParams.set('why', 'vr-webgl');
       setTimeout(() => { location.href = u; }, 1200);
       return;
