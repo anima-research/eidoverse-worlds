@@ -33,6 +33,37 @@ check('key released at a dead stop → idle',
 check('key down but below the move epsilon → idle',
   selectClip({ wantMove: true, speed: 0.01 }).clip === 'idle');
 
+// ---- the SEQUENCE, not just the states: press → hold → release → coast → stop.
+// The single-state checks above prove the mapping; this proves the TIMING, which is what the change
+// is actually about — the clip must leave for idle on the frame the key goes up, while the speed is
+// still coasting down over ~0.3 s, and it must not come back while it coasts.
+{
+  const frames = [];
+  const step = (wantMove, speed) => { const s = selectClip({ wantMove, speed }); frames.push(s.clip); return s; };
+  step(true, 0);        // key down, not moving yet
+  step(true, 0.8);      // accelerating
+  step(true, 1.6);      // at speed
+  const atRelease = step(false, 1.6);   // THE FRAME THE KEY GOES UP — speed unchanged
+  step(false, 1.1);     // coasting
+  step(false, 0.5);     // still coasting
+  step(false, 0.05);    // nearly stopped
+  step(false, 0);       // stopped
+  check('the clip leaves for idle on the very frame the key is released, mid-speed',
+    atRelease.clip === 'idle', `got ${atRelease.clip} at speed 1.6`);
+  check('…and never returns to walk while the speed coasts down',
+    !frames.slice(3).includes('walk'), frames.join(' → '));
+  check('the press half still reads as travelling', frames.slice(0, 3).join(',') === 'idle,walk,walk',
+    frames.slice(0, 3).join(','));
+}
+
+// ---- a walk-off, frame by frame: the grace window must hold for two frames, then give
+{
+  const air = [0, 0.016, 0.033, 0.05, 0.08].map((t) =>
+    selectClip({ jumped: false, airborneFor: t, wantMove: true, speed: 1.5 }).clip);
+  check('a walk-off holds the ground clip through the stair-step grace, then becomes jump',
+    air.join(',') === 'walk,walk,walk,jump,jump', air.join(','));
+}
+
 // ---- walk / run split
 check('a brisk 3.1 m/s is a run',
   selectClip({ wantMove: true, speed: 3.1 }).clip === 'run');   // literal: asserting against RUN_SPEED moves with the mutation
