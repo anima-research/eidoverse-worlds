@@ -742,12 +742,14 @@ console.log('\nmeasured jump take-off (#196 review B2):');
   // so driving the real setClip binds the measurement AND its wiring together.
   // Each case needs its OWN clip object: the result is cached on clip.userData.takeoff.
   //
-  // Red on: deleting the measurement (`a.time = 0`); clipTakeoff returning garbage; starting at the
-  // squat bottom instead of the rise; dropping the 1 cm noise guard.
-  // SURVIVES and is declared: restricting the dip search to the clip's first half (`half = n`) — in a
-  // jump the minimum IS in the first half, so these fixtures cannot separate the two; the restriction
-  // guards against a LATER dip (a landing crouch) being mistaken for the take-off, which would need a
-  // full landing clip to exercise.
+  // Red on: deleting the measurement (`a.time = 0`); clipTakeoff returning a constant — including
+  // 0.50, the CORRECT answer for the headline fixture, because the cases carry different shapes with
+  // different right answers; starting at the squat bottom instead of the rise; dropping the 1 cm
+  // noise guard; searching the whole clip instead of its first half; and removing the `slot ===
+  // 'jump'` gate so every clip gets re-timed.
+  // (An earlier header claimed the first-half restriction "would need a full landing clip to
+  // exercise". That was wrong — a synthetic 7-key track with a deeper landing crouch separates the
+  // two, and is the `withLanding` case below. Corrected rather than left standing.)
   const hips = (times: number[], ys: number[]) =>
     new THREE.VectorKeyframeTrack('hips.position', times, ys.flatMap((y) => [0, y, 0]));
   const jumpClip = (times: number[], ys: number[], name = 'jump') =>
@@ -789,13 +791,25 @@ console.log('\nmeasured jump take-off (#196 review B2):');
   })();
   check('a clip with no hips track starts at 0 rather than throwing', noHips === 0, `a.time = ${noHips}`);
 
-  // only the jump slot is re-timed: idle/walk must still start at 0
+  // A LATER, DEEPER dip (a landing crouch) must not be mistaken for the take-off: that is what
+  // restricting the search to the clip's first half buys. The crouch is deeper than the anticipation
+  // dip (.400 < .494), so a whole-clip search would return the landing instead of the launch.
+  const withLanding = timeFor(jumpClip(
+    [0, 0.33, 0.50, 0.75, 0.95, 1.10, 1.30],
+    [0.864, 0.494, 0.870, 1.20, 0.700, 0.400, 0.870]));
+  check('a deeper landing crouch later in the clip is not mistaken for the take-off',
+    Math.abs(withLanding - 0.50) < 1e-6, `a.time = ${withLanding}`);
+
+  // only the jump slot is re-timed: idle/walk must still start at 0. The track needs enough keys for
+  // the dip search to actually FIND a dip — with 3 keys `half` is 1 and this passed no matter what
+  // the gate did (the same vacuity fixed for the noise case above, one fixture too few times).
   const { self } = stand();
   for (const m of ['setClip', '_setAction']) self[m] = (Avatar.prototype as any)[m];
-  const wc = jumpClip([0, 0.33, 0.50], [0.864, 0.494, 0.870], 'walk');
+  const wc = jumpClip([0, 0.1, 0.2, 0.33, 0.50, 0.75], [0.864, 0.700, 0.494, 0.500, 0.870, 1.20], 'walk');
   const wa = self.mixer.clipAction(wc); wa.enabled = true; wa.setEffectiveWeight(0); wa.play();
   self.actions.walk = wa; self.setClip('walk');
-  check('a non-jump clip is not re-timed, even with a dipping hips track', wa.time === 0, `walk time = ${wa.time}`);
+  check('a non-jump clip is not re-timed, even with a findable dip in its hips track',
+    wa.time === 0, `walk time = ${wa.time}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
