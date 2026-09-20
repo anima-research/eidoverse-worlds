@@ -1107,9 +1107,15 @@ function warmXRPipelines() {
     const rt = new THREE.RenderTarget(64, 64, { samples: 0, depthBuffer: true, stencilBuffer: renderer.stencil, colorSpace: renderer.outputColorSpace });
     const prev = renderer.getRenderTarget(); const prevSamples = renderer._samples; renderer._samples = 0;   // the cache key reads renderer.currentSamples when no RT is bound; the XR session runs at 0, so warm at 0
     const t0 = performance.now();
-    try { renderer.userData = renderer.userData || {}; renderer.userData.warmTargetHeld = true; renderer.setRenderTarget(rt); await compileEverything(renderer.xr.getCamera?.() ?? camera); }   // compile only: a real draw here took 4.2 s on the desktop and the entry still rebuilt 17 (09-19 17:00)
+    try {
+      // the compile CONTEXT (render target, camera count) is captured in compileAsync's synchronous pass; restore the
+      // desktop target BEFORE awaiting the async link, or every desktop frame renders into the 64×64 warm target for
+      // the 6–10 s the link takes (round 2 N1 — the round-1 'gate the healer' shape did exactly that, measured)
+      renderer.setRenderTarget(rt); const pr = compileEverything(renderer.xr.getCamera?.() ?? camera);
+      renderer.setRenderTarget(prev); renderer._samples = prevSamples;
+      await pr; }   // compile only: a real draw here took 4.2 s on the desktop and the entry still rebuilt 17 (09-19 17:00)
     catch (e) { report('xr pipeline warm', e); }
-    finally { renderer.setRenderTarget(prev); renderer._samples = prevSamples; rt.dispose(); renderer.userData.warmTargetHeld = false; }
+    finally { renderer.setRenderTarget(prev); renderer._samples = prevSamples; rt.dispose(); }
     tee(`[xr] pipelines pre-warmed for the eye buffers in ${(performance.now() - t0).toFixed(0)} ms — warm RT: samples=${rt.samples} fmt=${rt.texture?.format} type=${rt.texture?.type} cs=${rt.texture?.colorSpace} depth=${rt.depthBuffer} stencil=${rt.stencilBuffer} (matched to three XR target; entry should now show programs≈0)`);
   }, { p: P_AMBIENT });
 }

@@ -87,3 +87,6 @@ export const xrGlyph = () => '';
 export const xrGlyphAvailable = () => false;
 export const xrLive = () => false;
 export const flipXr = rec('flipXr');
+
+// base.js's 'avatar-worn' normaliser — profile.js → bodies.js reads it through this stub (VR PR)
+export { wornNameOf } from '../client/lib/base.js';
