@@ -76,6 +76,14 @@ check('…and ages out on the SAME clock as every real timestamp',
 check('a real timestamp is not re-stamped (migration touches only the legacy marker)',
   migrateHeadsetSeen(NOW, String(NOW - 5)) === null);
 check('nothing stored migrates to nothing', migrateHeadsetSeen(NOW, null) === null);
+// STRICT equality on the legacy marker. Loose `==` widens the match to 1, '1.0', ' 1 ', true, [1] —
+// so a numeric 1 would be re-stamped on every boot and the 30-day expiry would never fire,
+// resurrecting the permanence defect this migration exists to kill. Pin the near-misses.
+for (const [raw, label] of [['01', "'01'"], [1, 'the NUMBER 1'], ['0', "'0'"], [undefined, 'undefined'], [' 1 ', "' 1 '"]]) {
+  check(`${label} is NOT the legacy marker`, migrateHeadsetSeen(NOW, raw) === null, `migrated to ${migrateHeadsetSeen(NOW, raw)}`);
+}
+check("'01' reads as the timestamp 1, not as the legacy marker", headsetSeenAt('01') === 1);
+check("'0' and undefined read as never-seen", headsetSeenAt('0') === null && headsetSeenAt(undefined) === null);
 { const core = readFileSync(new URL('../client/lib/core.js', import.meta.url), 'utf8');
   check('core.js MIGRATES on read and writes the stamp back, or the marker never ages',
     /migrateHeadsetSeen/.test(core) && /setItem\(PREF_HEADSET_SEEN, migrated\)/.test(core)); }

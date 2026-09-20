@@ -72,9 +72,20 @@ console.log('\nthe other outcomes:');
   const genericRuntime = Object.assign(new Error('no XR runtime available'), { name: 'Error' });
   check('an absent-shaped MESSAGE is absent even under a generic error name',
     decideEntryFailure(genericRuntime, { isRetry: false }).action === 'absent');
-  const bareName = Object.assign(new Error('nope'), { name: 'NotSupportedError' });
-  check('an absent NAME is absent even when the message says nothing',
-    decideEntryFailure(bareName, { isRetry: false }).action === 'absent');
+  // BOTH names, each with a message the regex does NOT match. The previous pass added this fixture
+  // for NotSupportedError only, so every NotFoundError fixture still carried 'no XR device found' —
+  // which the message arm matches — and dropping the NotFoundError arm entirely stayed green.
+  for (const name of ['NotSupportedError', 'NotFoundError']) {
+    const bare = Object.assign(new Error('nope'), { name });
+    check(`an absent NAME is absent even when the message says nothing (${name})`,
+      decideEntryFailure(bare, { isRetry: false }).action === 'absent');
+  }
+  // isBusy must test the SPECIFIC message, not merely 'already': an InvalidStateError about anything
+  // else already-ish would otherwise enter the retry path instead of surfacing.
+  const alreadyOther = Object.assign(new Error('the renderer is already reserved for something else'), { name: 'InvalidStateError' });
+  check('an InvalidStateError that says "already" but not "already an active" is NOT busy',
+    decideEntryFailure(alreadyOther, { isRetry: false }).action === 'surface',
+    decideEntryFailure(alreadyOther, { isRetry: false }).action);
 
   const c = decideEntryFailure(weird(), { isRetry: false });
   check('an unknown error is surfaced, never retried', c.action === 'surface' && c.retry === false);

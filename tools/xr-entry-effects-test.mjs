@@ -39,7 +39,7 @@ console.log('\n— 1. exactly one automatic retry per entry intent (the reviewer
 {
   const { eff, log, fire, timers } = rig();
   check('a first busy failure schedules exactly one delayed retry',
-    eff.apply(onBusy(false), { intent: 1 }) === 'retried' && eff.hasPending);
+    eff.apply(onBusy(false), { intent: 101 }) === 'retried' && eff.hasPending);
   // THE BACKOFF VALUE, not merely that a timer exists (mutation sweep: `}, 0)` survived green —
   // the rig recorded `ms` and nothing ever read it, so an immediate re-request loop, the exact thing
   // the backoff prevents, was invisible).
@@ -47,10 +47,10 @@ console.log('\n— 1. exactly one automatic retry per entry intent (the reviewer
     [...timers.values()][0].ms === BUSY_RETRY_MS, `ms=${[...timers.values()][0]?.ms}`);
   const fired = fire();
   check('…and the timer, when it fires, re-enters carrying its intent',
-    fired === 1 && log.enters.length === 1 && log.enters[0].retryOf === 1, JSON.stringify(log.enters));
+    fired === 1 && log.enters.length === 1 && log.enters[0].retryOf === 101, JSON.stringify(log.enters));
   check('…and clears its own pending bookkeeping', eff.pendingFor === null && !eff.hasPending);
   // the retry's own failure is the SECOND one on this intent
-  const second = eff.apply(onBusy(true), { intent: 1 });
+  const second = eff.apply(onBusy(true), { intent: 101 });
   check('the SECOND busy failure on the same intent gives up', second === 'gave-up', `got ${second}`);
   check('…and schedules NOTHING (the mutation that kept the old suite green)', !eff.hasPending);
   check('…and says so out loud, once', log.toast.filter(([, k]) => k === 'warn').length === 1);
@@ -59,19 +59,19 @@ console.log('\n— 1. exactly one automatic retry per entry intent (the reviewer
 console.log('\n— 2. a stale callback can never request a session —');
 {
   const { eff, log, fire, timers } = rig();
-  eff.apply(onBusy(false), { intent: 1 });
-  eff.apply(onBusy(false), { intent: 2 });          // a NEW click supersedes the first
-  check('a newer entry intent takes ownership of the pending retry', eff.pendingFor === 2);
+  eff.apply(onBusy(false), { intent: 101 });
+  eff.apply(onBusy(false), { intent: 102 });          // a NEW click supersedes the first
+  check('a newer entry intent takes ownership of the pending retry', eff.pendingFor === 102);
   // THE OLD TIMER MUST BE CLEARED, not merely out-voted by the intent guard (mutation sweep:
   // dropping cancel() survived, because the guard suppressed the stale entry while the timer leaked).
   check('…and the superseded timer is CLEARED, not left to fire and no-op', timers.size === 1, `${timers.size} timers live`);
   fire();
   check('only ONE re-entry happens, and it belongs to the newer intent',
-    log.enters.length === 1 && log.enters[0].retryOf === 2, JSON.stringify(log.enters));
+    log.enters.length === 1 && log.enters[0].retryOf === 102, JSON.stringify(log.enters));
 }
 {
   const { eff, log, fire } = rig();
-  eff.apply(onBusy(false), { intent: 1 });
+  eff.apply(onBusy(false), { intent: 101 });
   eff.cancel('leave');                                // leaveVR's path
   check('cancel clears the pending flag', !eff.hasPending && eff.pendingFor === null);
   check('…and a fired stale timer requests nothing', fire() === 0 && log.enters.length === 0);
@@ -84,8 +84,8 @@ console.log('\n— 2. a stale callback can never request a session —');
     setTimer: (fn) => { captured.push(fn); return captured.length; }, clearTimer: () => {},
     tee: (m) => log.tee.push(m), toast: () => {}, enter: (o) => log.enters.push(o), markAbsent: () => {},
   });
-  eff2.apply(onBusy(false), { intent: 1 });
-  eff2.apply(onBusy(false), { intent: 2 });   // intent 2 now owns it
+  eff2.apply(onBusy(false), { intent: 101 });
+  eff2.apply(onBusy(false), { intent: 102 });   // intent 2 now owns it
   captured[0]();                               // intent 1's timer fires late — it must NOT enter
   check('a late timer from a superseded intent drops instead of entering',
     log.enters.length === 0, JSON.stringify(log.enters));
@@ -95,11 +95,11 @@ console.log('\n— 2. a stale callback can never request a session —');
 console.log('\n— 3. an explicit click after give-up starts a fresh budget —');
 {
   const { eff, log, fire } = rig();
-  eff.apply(onBusy(false), { intent: 1 }); fire();
-  eff.apply(onBusy(true), { intent: 1 });                 // gave up
-  const again = eff.apply(onBusy(false), { intent: 2 });  // the user clicks the visor again
+  eff.apply(onBusy(false), { intent: 101 }); fire();
+  eff.apply(onBusy(true), { intent: 101 });                 // gave up
+  const again = eff.apply(onBusy(false), { intent: 102 });  // the user clicks the visor again
   check('a new click retries again (retryOf is null, so it is a first failure)', again === 'retried');
-  check('…and it is the new intent that owns it', eff.pendingFor === 2);
+  check('…and it is the new intent that owns it', eff.pendingFor === 102);
   fire();
   check('…and it re-enters once more', log.enters.length === 2);
 }
@@ -115,6 +115,10 @@ console.log('\n— 4. the other three verdicts are ACTED ON, not just decided �
   const e2 = weird();
   check('a WebGPU refusal reloads and does NOT mark absent',
     eff.apply(decideEntryFailure(e2, { gpu: true }), { intent: 1, error: e2 }) === 'reload' && log.absent.length === 1);
+  // …AND SAYS SO. The suite pinned that xr.js must not re-emit this toast, but never that it is
+  // emitted at all — so deleting it from the owner passed, and the page reloaded with NO explanation.
+  check('…and the user is TOLD why the page is about to reload',
+    log.toast.some(([m, k]) => k === 'info' && /webgl/i.test(m ?? '')), JSON.stringify(log.toast));
   const e3 = weird();
   check('an unknown error on WebGL surfaces', eff.apply(decideEntryFailure(e3, { gpu: false }), { intent: 1, error: e3 }) === 'surface');
   check('…and surfacing schedules nothing', !eff.hasPending);
@@ -125,17 +129,17 @@ console.log('\n— 4. the other three verdicts are ACTED ON, not just decided �
   // pendingFor still names the newer intent. leaveVR gates on this, so wiring it to pendingFor would
   // make a leave believe a retry is pending and swallow the leave.
   { const { eff: e2, fire: f2, timers } = rig();
-    e2.apply(onBusy(false), { intent: 1 });
+    e2.apply(onBusy(false), { intent: 101 });
     check('hasPending is true while a timer is armed', e2.hasPending === true);
-    e2.apply(onBusy(false), { intent: 2 });     // intent 2 supersedes; its timer is now the live one
+    e2.apply(onBusy(false), { intent: 102 });     // intent 2 supersedes; its timer is now the live one
     f2();                                        // it fires and re-enters, clearing the timer
     check('after the live retry fires, no timer is pending', e2.hasPending === false && timers.size === 0);
-    e2.apply(onBusy(false), { intent: 3 });
+    e2.apply(onBusy(false), { intent: 103 });
     e2.cancel('leave');                          // cancel clears the timer AND the intent
     check('…and a cancel leaves nothing pending', e2.hasPending === false && e2.pendingFor === null); }
   { // the distinguishing case: pendingFor set, timer already gone
     const { eff: e3, timers } = rig();
-    e3.apply(onBusy(false), { intent: 1 });
+    e3.apply(onBusy(false), { intent: 101 });
     [...timers.values()][0].fn();                // the timer fires by hand; it clears `timer` only
     check('hasPending tracks the TIMER, so a fired retry reports nothing pending',
       e3.hasPending === false, `hasPending=${e3.hasPending} pendingFor=${e3.pendingFor}`); }
