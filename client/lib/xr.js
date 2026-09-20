@@ -52,7 +52,7 @@ let fpVrm = null;   // which vrm the head-chop is applied to — re-applied afte
 // porch-old did the same). ONE mechanism for every avatar: the RAW head bone is scaled to ~0 while
 // presenting, so everything skinned to the head and its children collapses to a point behind the
 // eyes, and the rest of the body draws through the ordinary path. Replaces the three-vrm layer split
-// (09-04 → 09-06): that made a second skinned mesh per body part on layer 9 at enter-VR time, and R's
+// (09-04 → 09-06): that made a second skinned mesh per body part on layer 9 at enter-VR time, and the owner's
 // own body was invisible in the headset all morning with every layer number reading correct
 // (09-06 11:31–11:53) — a mechanism that can disagree with the camera is one mechanism too many.
 // three-vrm's normalized rig copies ROTATIONS raw←normalized in humanoid.update(); raw scale is ours.
@@ -173,12 +173,12 @@ let session = null;
 export const isPresenting = () => presenting;
 
 // ---- tuning (exultation XR_DEFAULTS, ported values) ------------------------
-// ---- VR preferences (Settings › VR; R, 09-05 18:22). Persisted per browser.
+// ---- VR preferences (Settings › VR; owner, 09-05 18:22). Persisted per browser.
 // turn: 'snap' | 'smooth' · vignette: comfort tunnel on move/turn · mirror:
 // what the desktop window shows while presenting — 'off' | 'first' | 'third'.
 const PREF_XR = 'ew-xr-prefs';
 export const xrPrefs = (() => { try { return { turn: 'smooth', vignette: false, mirror: 'off', seated: false, ...JSON.parse(localStorage.getItem(PREF_XR) || '{}') }; } catch { return { turn: 'smooth', vignette: false, mirror: 'off', seated: false }; } })();
-{ const m = new URLSearchParams(location.search).get('mirror'); if (m === 'off' || m === 'first' || m === 'third') xrPrefs.mirror = m; }   // URL override for A/B (R's 'pop to origin' hunt, 09-05 21:46)
+{ const m = new URLSearchParams(location.search).get('mirror'); if (m === 'off' || m === 'first' || m === 'third') xrPrefs.mirror = m; }   // URL override for A/B (the 'pop to origin' hunt, 09-05 21:46)
 export function setXrPref(k, v) { xrPrefs[k] = v; try { localStorage.setItem(PREF_XR, JSON.stringify(xrPrefs)); } catch {} bus.emit('xr:prefs', xrPrefs); }
 const DEADZONE = 0.18;
 const SNAP_DEG = 30;
@@ -194,7 +194,7 @@ const pickAxis = (a, b) => (typeof a === 'number' && a !== 0 ? a : (b ?? 0));
 // ---- controllers -----------------------------------------------------------
 const hands = { left: null, right: null };   // {grip, ray, laser} — resolved by HANDEDNESS
 // three's controller slots 0/1 are enumeration order, NOT left/right (porch-old
-// index.html:5395 learned this; R, 09-05 20:00: 'hands attached to the wrong
+// index.html:5395 learned this; owner, 09-05 20:00: 'hands attached to the wrong
 // controller'). Each slot listens to its own 'connected' event and files itself
 // under e.data.handedness; until then slot 0 = left, 1 = right as a guess.
 const slots = [null, null];
@@ -305,7 +305,7 @@ export function radialEntries() {   // exported with makeRadial for the headless
     return out;
   }
   const panels = { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="52" height="52" viewBox="0 0 26 26"><text x="13" y="19.5" font-family="system-ui, sans-serif" font-size="19" font-weight="700" text-anchor="middle" fill="#f2f7f5">∃</text></svg>', label: 'panels', on: () => xrPanelsShown(), act: () => { bus.emit('xr:panels'); tee('[xr] panels toggled (ring)'); } };
-  const leave = { svg: xrGlyph(52), label: 'leave VR', on: () => true, close: true, guard: true, act: () => leaveVR('ring') };   // guard: trigger only — a stick brush toward 6 o'clock threw R out (22:29)
+  const leave = { svg: xrGlyph(52), label: 'leave VR', on: () => true, close: true, guard: true, act: () => leaveVR('ring') };   // guard: trigger only — a stick brush toward 6 o'clock threw the owner out (22:29)
   // emotes is its own strip on the desk, not a dock panel — a fixed slot, first on the right (1 o'clock)
   const right = [{ icon: 'hand-waving', label: 'emotes', sub: 'emotes', on: () => false, act: () => {} }];
   for (const e of dockPins()) {
@@ -566,7 +566,7 @@ async function enterVR() {
       try { renderer.xr.setFoveation(fov); tee(`[xr] foveation ${fov} (${standalone ? 'standalone' : 'pc'}${CONFIG.params.has('fov') ? ', ?fov' : ''})`); } catch { /* not all runtimes */ } }
     rig.position.set(myState.pos.x, myState.pos.y, myState.pos.z);
     recentre.x = recentre.z = recentre.y = 0; recentre.pending = true;   // fold the head's playspace pose in on the first tracked frame (C15)
-    rig.rotation.y = wrapPi(myState.yaw);   // headset-forward = body-forward at entry, WRAPPED (R's recorder: root/rig 7.88 vs cam −1.6 → the pop)
+    rig.rotation.y = wrapPi(myState.yaw);   // headset-forward = body-forward at entry, WRAPPED (the owner's recorder: root/rig 7.88 vs cam −1.6 → the pop)
     scene.add(rig);
     rig.add(camera);
     slots[0] ??= makeHand(0); slots[1] ??= makeHand(1);
@@ -599,7 +599,7 @@ async function enterVR() {
     // WE own the stereo camera update (render.js renderWorld → xr.updateCamera(camera)). With
     // cameraAutoUpdate on, three rebuilt cameraXR inside EVERY renderer.render() while presenting —
     // including ShadowNode's nested render with the light camera (parent null) → the eyes at the
-    // playspace origin (R's Frame, 09-05 21:45–23:45: 'I pop to the origin', view-dependent).
+    // playspace origin (the owner's Frame, 09-05 21:45–23:45: 'I pop to the origin', view-dependent).
     renderer.xr.cameraAutoUpdate = false;
     // three.webgpu also hands the shadow pass cameraXR instead of the light camera while presenting
     // (Renderer.js: camera = xr.getCamera() for any render) — shadow maps are wrong by construction
@@ -654,7 +654,7 @@ async function enterVR() {
       // shows as held time even when the block is in the GPU process (parallel shader link) and no longtask fires.
       const tExit = performance.now(); const c0 = { ...buildTotals };
       const probe = (tag, due) => {
-        // the veil drops only when desktop frames are actually flowing (a timer-hide left R a black world with a
+        // the veil drops only when desktop frames are actually flowing (a timer-hide left the owner a black world with a
         // live HUD); a loop that is still dead at +3 s is re-armed and probed once more
         const flowing = ((perf.frameNo ?? 0) - f0) > 0;
         if (flowing) exitVeilShow(false);
@@ -764,7 +764,7 @@ function turnTraceTick() {
   if (turnTrace.rows.length >= 60) { try { const sys = (Array.isArray(frameDebug?.()) ? frameDebug() : (frameDebug?.()?.systems ?? [])).map((x) => [x.name, +(x.ms ?? 0).toFixed(2)]).sort((a, b) => b[1] - a[1]).slice(0, 6); tee(`[xr] turn-trace systems (rolling ms, top 6): ${sys.map(([n, m]) => `${n}=${m}`).join(' ')} draws=${renderer.info.render.calls}`); } catch {} tee(`[xr] turn-trace ${turnTrace.kind} (rigYaw,camYaw,stick×100,dtMs|u,hipsYaw,rootX,rootZ,headX,headZ,rigX,rigZ,handΔx:y:z mm; angles×100, m×100): ${turnTrace.rows.join(' ')}`); turnTrace = null; turnTraceLast = performance.now(); }
 }
 function camYawWorld() { const e = renderer.xr.getCamera().matrixWorld.elements; return Math.atan2(-e[8], -e[10]); }   // world yaw of the HMD's -Z
-const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));   // every yaw write wraps: an unwrapped body yaw (7.88 = 1.6 + 2π on R's recorder) met a wrapped camera yaw and 'popped' a full turn
+const wrapPi = (a) => Math.atan2(Math.sin(a), Math.cos(a));   // every yaw write wraps: an unwrapped body yaw (7.88 = 1.6 + 2π on the owner's recorder) met a wrapped camera yaw and 'popped' a full turn
 // ---- recentre / seated (gap list C15; Basis: seated suppresses height capture) ----------
 // The headset sits wherever the human is in the playspace; the rig is the body's root. Without
 // this the root stands on myState.pos while the visible body (eye-anchored under the head) stands
@@ -891,7 +891,7 @@ export function updateXR(dtSec = 1 / 72) {
   // XR camera matrix is momentarily NaN (tracking loss, the hand-mesh
   // compile spike) poisoned camYaw → updateMe rotated the move vector by NaN
   // → myState.pos = [NaN, 0, NaN] → camera.far NaN → three threw in render
-  // (R's recorder, 09-04 23:50). Keep the last good yaw on a bad frame.
+  // (the owner's recorder, 09-04 23:50). Keep the last good yaw on a bad frame.
   const yaw = Math.atan2(_v.x, _v.z) + Math.PI;
   if (Number.isFinite(yaw) && _v.lengthSq() > 1e-6) {
     setCamYaw(yaw);   // orbit yaw (= facing + π) for the walk direction ONLY; the body's yaw is not driven from here
@@ -956,7 +956,7 @@ export function updateXR(dtSec = 1 / 72) {
     turnMag = 0;
     if (radialOpen) { /* the ring owns the stick */ }
     else if (xrPrefs.turn === 'smooth') {
-      // smooth turn: the rig yaws continuously with the stick (R's own mode)
+      // smooth turn: the rig yaws continuously with the stick (the owner's own mode)
       const d = dead(rx);
       if (d && turnEarlyFrame !== (perf.frameNo ?? -2)) { rig.rotation.y = wrapPi(rig.rotation.y - d * SMOOTH_TURN_RAD_S * (dtSec ?? 1 / 72)); turnTraceArm('smooth'); turnTraceInput(d, dtSec); }   // applied early this frame (applyTurnEarly) → no second step
       turnMag = Math.abs(d);
@@ -1071,7 +1071,7 @@ export function updateXR(dtSec = 1 / 72) {
       pitch: +(() => { const e = renderer.xr.getCamera().matrixWorld.elements; return Math.asin(Math.max(-1, Math.min(1, -e[9]))); })().toFixed(2),   // HMD pitch (rad), + = looking up
       camWorld: (() => { const e = renderer.xr.getCamera().matrixWorld.elements; return [+e[12].toFixed(2), +e[13].toFixed(2), +e[14].toFixed(2)]; })(),   // the EYES in world space — a 'pop to origin' that the rig doesn't show
       rootPos: av ? [+av.root.position.x.toFixed(2), +av.root.position.y.toFixed(2), +av.root.position.z.toFixed(2)] : null,
-      vrmOff: av?.vrm ? [+av.vrm.scene.position.x.toFixed(2), +av.vrm.scene.position.y.toFixed(2), +av.vrm.scene.position.z.toFixed(2)] : null,   // the eye anchor's offset inside the root   // the facing triple (R's 'pop to origin' hunt, 09-05)
+      vrmOff: av?.vrm ? [+av.vrm.scene.position.x.toFixed(2), +av.vrm.scene.position.y.toFixed(2), +av.vrm.scene.position.z.toFixed(2)] : null,   // the eye anchor's offset inside the root   // the facing triple (the 'pop to origin' hunt, 09-05)
     });
     console.log('[xr:rec]', rec); tee(`[xr:rec] ${rec}`);
   }
@@ -1126,7 +1126,7 @@ export async function initXR() {
   // layout, the same pin row in the ∃ menu (owner, 09-04). Exists only here,
   // where the browser answered that a headset can present.
   // PRE-WARM the hand meshes: their first draw compiled two materials on the
-  // frame the controllers arrived — a 0.5 s spike (R's recorder 09-04 23:50)
+  // frame the controllers arrived — a 0.5 s spike (the owner's recorder 09-04 23:50)
   // that is exactly the kind of frame whose camera matrix comes back NaN.
   // Build the hands now (controller groups exist without a session), park
   // them under the rig, and let the conductor compile them off-screen.
@@ -1183,7 +1183,7 @@ export const xrDebug = () => {
 // splash's own furniture — its ∃ (cloned from #splash so there is ONE drawing of the mark), the eidoverse /
 // worlds marks, the brand phase line with a breathing ellipsis — over the world from the visor click until
 // the session's first frame, and from the leave click until desktop frames are flowing again (a timer-hide
-// left R a black world with a dead loop, 09-07). The rays worker stays the splash's; the veil is still.
+// left the owner a black world with a dead loop, 09-07). The rays worker stays the splash's; the veil is still.
 function xrVeilShow(on, phase = 'leaving VR') {
   if (!exitVeil) {
     exitVeil = document.createElement('div'); exitVeil.className = 'xr-veil'; exitVeil.setAttribute('aria-live', 'polite');

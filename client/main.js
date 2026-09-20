@@ -343,7 +343,7 @@ wireNet({
   me: () => getMe(),
   onRestore: (r) => {
     // a remembered pose can carry null (JSON has no NaN — tonight's NaN body
-    // was stored as [null,0,null] and every rejoin put R back on it): only
+    // was stored as [null,0,null] and every rejoin put the owner back on it): only
     // finite numbers are a place; anything else is the origin
     const fin = (v, fb = 0) => (Number.isFinite(v) ? v : fb);
     myState.pos.set(fin(r.p[0]), fin(r.p[1]), fin(r.p[2]));

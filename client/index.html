@@ -488,7 +488,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .chat-tabs button.on {
   /* HIGHLIGHTED, not merely tinted. The underline alone was computed correctly
      and painted over: the tab's bottom border and the strip's rail landed on the
-     SAME line (measured overlap 0px), so the parent's border won and R saw a
+     SAME line (measured overlap 0px), so the parent's border won and the owner saw a
      brand-coloured word with no underline — "Leave the tab highlighted when
      active" (2026-09-11). With the rail now on .tabscroll the tab's own border
      has somewhere to sit, and a .tile.on-style wash makes the tab itself read
@@ -813,7 +813,7 @@ body.arranging #dock #hud.emark {
 [data-presence="busy"] > .pf-portrait-dot::after, .pf-pop-dot[data-presence="busy"]::after { content: ''; position: absolute; left: 20%; right: 20%; top: 40%; bottom: 40%; background: rgb(var(--panel-rgb)); border-radius: 1px; }
 .pf-pop-dot { position: relative; }
 /* the Who panel's mark: the same fixed colours + shapes as the profile */
-.who-mark { position: relative; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #3ddc84; margin-right: 7px; flex: none; align-self: center; }   /* align-self, NOT vertical-align: the row is a flex container and vertical-align is inert there — measured 4.5px of lift, which is what R saw (2026-09-11: "they're a bit offset above in kind of an odd way") */
+.who-mark { position: relative; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #3ddc84; margin-right: 7px; flex: none; align-self: center; }   /* align-self, NOT vertical-align: the row is a flex container and vertical-align is inert there — measured 4.5px of lift, which is what the owner saw (2026-09-11: "they're a bit offset above in kind of an odd way") */
 .who-mark[data-presence="away"] { background: #f5b83d; border-radius: 2px; transform: rotate(45deg) scale(.85); }
 .who-mark[data-presence="busy"] { background: #ef5b5b; border-radius: 2px; }
 .who-mark[data-presence="busy"]::after { content: ''; position: absolute; left: 20%; right: 20%; top: 40%; bottom: 40%; background: rgb(var(--panel-rgb)); border-radius: 1px; }

@@ -545,7 +545,7 @@ export function tickXRBody(dt) {
   //     tracked through emotes like the head does (porch's rule)
   feetTick(vrm, av, dt);
 
-  // 3. arms to the grips (A3) — emotes trump IK (R's rule: an emote you chose
+  // 3. arms to the grips (A3) — emotes trump IK (the owner's rule: an emote you chose
   // always wins); an untracked grip (sitting at the rig origin) leaves the arm
   // to the clip. Targets are DeviceScaled about the rig like the head.
   const live = xrFingerCurl();
