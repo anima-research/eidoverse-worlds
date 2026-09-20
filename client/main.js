@@ -302,7 +302,7 @@ function start() {
   setHint('<kbd>WASD</kbd> move · <kbd>Enter</kbd> chat · <kbd>B</kbd> build · <kbd>?</kbd> help');
 
   if (!isViewer) {
-    // A body is never optional (R, in-headset 09-04: no avatar at all, on
+    // A body is never optional (owner, in-headset 09-04: no avatar at all, on
     // desktop too, and nothing said why). If the chosen body fails to load,
     // wear the default and SAY SO; the stale cache is cleared so the next
     // boot re-resolves instead of failing the same way forever. Only if the
