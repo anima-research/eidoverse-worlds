@@ -39,3 +39,13 @@ export async function makeAvatar(id, libPath) {
 }
 
 export function makeCapsuleAvatar() { return body('capsule'); }
+
+// The rest of avatar.js's export surface, enumerated from every `import … from './avatar.js'` across
+// client/lib rather than discovered one SyntaxError at a time. The recovery path touches none of
+// them; they exist so the composed import cone resolves.
+export const BLINK = Object.freeze({});
+export const EMOTE_ICONS = Object.freeze({});
+export const EMOTE_ORDER = Object.freeze([]);
+export const LIMP_SPRINGS = Object.freeze({});
+export const WING_IDLE = Object.freeze({});
+export function contributeThumbnail() {}

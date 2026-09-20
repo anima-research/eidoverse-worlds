@@ -41,6 +41,8 @@ plugin({
     b.onResolve({ filter: /^\.\/reachnet\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));
     b.onResolve({ filter: /^\.\/poseclips\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));
     b.onResolve({ filter: /wingpresence\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));
+    b.onResolve({ filter: /^\.\/xrbody\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));
+    b.onResolve({ filter: /presencewire\.js$/ }, () => ({ path: here('./recovery-empty-stub.mjs') }));
     b.onResolve({ filter: /^\.\/base\.js$/ }, () => ({ path: here('./core-stub.mjs') }));
   },
 });
