@@ -861,7 +861,7 @@ export function updateXR(dtSec = 1 / 72) {
     const t0 = performance.now(); const f0 = perf.frameNo ?? 0; const clock = entryClock;
     curtainState = { down: false, resolved: false, t0, f0, clock };
     { let ticks = 0; const tw = performance.now(); const tick = () => { ticks++; if (performance.now() - tw < 3000) requestAnimationFrame(tick); }; requestAnimationFrame(tick);
-      const tc = performance.now(); const pr = renderer.compileAsync(scene, renderer.xr.getCamera(), scene);
+      const tc = performance.now(); const pr = compileEverything(renderer.xr.getCamera());
       pr.then(() => { tee(`[xr] entry compile resolved ${(performance.now() - tc).toFixed(0)} ms after arm (presenting=${presenting})`); if (curtainState) curtainState.resolved = true; })
         .catch((e) => { report('xr entry compile', e); if (curtainState) curtainState.resolved = true; });
       setTimeout(() => tee(`[xr] window.rAF in-session: ${ticks} ticks in 3 s; sync pipelines ${buildTotals.syncPipelines} (${buildTotals.syncMs.toFixed(0)} ms)`), 3200); }
@@ -1083,6 +1083,15 @@ let recAt = 0;
 // On an XR boot, once my body is in, compile the whole scene ONCE into a render target shaped like the
 // eye buffers (RGBA8, depth, 4× MSAA) while the desktop is still idle-waiting on the visor. If the
 // pipeline cache keys match, entry loses the 5 s frame; the entry clock is the verdict either way.
+
+// COMPILE THE WHOLE SCENE, NOT THE FRUSTUM: three's compile walk builds a render list with the camera, so a prop
+// behind you is skipped and compiled at its first in-session draw instead — R's probe 09-19 17:09: sixteen prop
+// materials at 340–490 ms each, every one AFTER the curtain, as she turned. The hands warm already did this trick.
+async function compileEverything(cam) {
+  const culled = []; scene.traverse((o) => { if (o.isMesh && o.frustumCulled) { culled.push(o); o.frustumCulled = false; } });
+  try { await renderer.compileAsync(scene, cam, scene); }
+  finally { for (const o of culled) o.frustumCulled = true; }
+}
 let xrWarmed = false, headsetHere = false;
 function warmXRPipelines() {
   if (xrWarmed || !(XR_BOOT || headsetHere) || presenting || !getSelf()?.vrm) return;   // any boot with a headset present warms (R 09-19), not only ?xr=1
@@ -1095,7 +1104,7 @@ function warmXRPipelines() {
     const rt = new THREE.RenderTarget(64, 64, { samples: 0, depthBuffer: true, stencilBuffer: renderer.stencil, colorSpace: renderer.outputColorSpace });
     const prev = renderer.getRenderTarget(); const prevSamples = renderer._samples; renderer._samples = 0;   // the cache key reads renderer.currentSamples when no RT is bound; the XR session runs at 0, so warm at 0
     const t0 = performance.now();
-    try { renderer.setRenderTarget(rt); await renderer.compileAsync(scene, renderer.xr.getCamera?.() ?? camera, scene); }   // compile only: a real draw here took 4.2 s on the desktop and the entry still rebuilt 17 (09-19 17:00)
+    try { renderer.setRenderTarget(rt); await compileEverything(renderer.xr.getCamera?.() ?? camera); }   // compile only: a real draw here took 4.2 s on the desktop and the entry still rebuilt 17 (09-19 17:00)
     catch (e) { report('xr pipeline warm', e); }
     finally { renderer.setRenderTarget(prev); renderer._samples = prevSamples; rt.dispose(); }
     tee(`[xr] pipelines pre-warmed for the eye buffers in ${(performance.now() - t0).toFixed(0)} ms — warm RT: samples=${rt.samples} fmt=${rt.texture?.format} type=${rt.texture?.type} cs=${rt.texture?.colorSpace} depth=${rt.depthBuffer} stencil=${rt.stencilBuffer} (matched to three XR target; entry should now show programs≈0)`);
