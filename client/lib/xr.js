@@ -406,6 +406,7 @@ function openRadial() {
   ringLevel = 'root';
   disposeRadial();                       // rebuilt every open: the rail is the source of truth and it changes
   radial = makeRadial(radialEntries());
+  if (!hands.right?.grip) return;   // a right-stick click before the grip is filed (round 3 F3)
   hands.right.grip.add(radial.group);
   radial.group.position.set(RING_ANCHOR.x, RING_ANCHOR.y, RING_ANCHOR.z);
   radial.group.quaternion.identity();
@@ -424,7 +425,7 @@ function activateRing(cause) {
   haptic('right', 0.3, 20);
   try { e.act(); } catch (err) { tee(`[xr] ring act failed: ${err?.message ?? err}`); }
   if (!radialOpen || !radial) return;              // the act may have closed it (leave VR)
-  if (e.sub) { ringLevel = e.sub; const sel = radial.sel; disposeRadial(); radial = makeRadial(radialEntries()); hands.right.grip.add(radial.group); radial.group.position.set(RING_ANCHOR.x, RING_ANCHOR.y, RING_ANCHOR.z); tickRadial(); tee(`[xr] ring → ${e.sub}`); return; }
+  if (e.sub && hands.right?.grip) { ringLevel = e.sub; const sel = radial.sel; disposeRadial(); radial = makeRadial(radialEntries()); hands.right.grip.add(radial.group); radial.group.position.set(RING_ANCHOR.x, RING_ANCHOR.y, RING_ANCHOR.z); tickRadial(); tee(`[xr] ring → ${e.sub}`); return; }
   if (e.close) { closeRing('act'); return; }
   repaintRing();                                    // a toggle: show its new state, stay open
 }
@@ -864,9 +865,9 @@ export function updateXR(dtSec = 1 / 72) {
     const t0 = performance.now(); const f0 = perf.frameNo ?? 0; const clock = entryClock;
     curtainState = { down: false, resolved: false, t0, f0, clock };
     { let ticks = 0; const tw = performance.now(); const tick = () => { ticks++; if (performance.now() - tw < 3000) requestAnimationFrame(tick); }; requestAnimationFrame(tick);
-      const tc = performance.now(); const pr = compileEverything(renderer.xr.getCamera());
-      pr.then(() => { tee(`[xr] entry compile resolved ${(performance.now() - tc).toFixed(0)} ms after arm (presenting=${presenting})`); if (curtainState) curtainState.resolved = true; })
-        .catch((e) => { report('xr entry compile', e); if (curtainState) curtainState.resolved = true; });
+      const tc = performance.now(), mine = sessionNo; const pr = compileEverything(renderer.xr.getCamera());   // tagged: a leave/re-enter inside the window must not let session N drop session N+1's curtain (round 3 F1)
+      pr.then(() => { tee(`[xr] entry compile resolved ${(performance.now() - tc).toFixed(0)} ms after arm (presenting=${presenting})`); if (curtainState && sessionNo === mine) curtainState.resolved = true; })
+        .catch((e) => { report('xr entry compile', e); if (curtainState && sessionNo === mine) curtainState.resolved = true; });
       setTimeout(() => tee(`[xr] window.rAF in-session: ${ticks} ticks in 3 s; sync pipelines ${buildTotals.syncPipelines} (${buildTotals.syncMs.toFixed(0)} ms)`), 3200); }
   }
   if (curtainState && !curtainState.armed && !curtainState.down) {

@@ -35,7 +35,7 @@ const _qs = new URLSearchParams(location.search);
 const TORSO_DEADBAND = (+(_qs.get('torsoplay') ?? 0) || 0) * Math.PI / 180;   // Basis VR default 0° (rigid); 30° = VSpineTorsoYawPlayInVR; desktop 45°
 const TORSO_BLEND = 8;                                                          // BasisSettingsDefaults.cs:2111
 const TORSO_RELOCK = 6 * Math.PI / 180;                                         // TorsoYawRelockSpeedDeg (BasisVirtualSpineCore.cs:18)
-const latch = { anchor: null, broken: false, follow: 0, yaw: 0, lastHead: 0 };
+const latch = { anchor: null, broken: false, follow: 0, yaw: 0, lastHead: 0, vrm: null };
 const hipsBase = new THREE.Quaternion(), qHip = new THREE.Quaternion(), hipsLast = new THREE.Quaternion(0, 0, 0, 2), hipsStored = new THREE.Quaternion();   // hipsLast starts unequal to any unit quat
 const CHAIN = ['spine', 'chest', 'upperChest', 'neck', 'head'];
 const wY = [.12, .12, .16, .25, .35],   // porch-old's twist share: the body chases the head slowly (below), the uncaught part rides the spine
@@ -460,6 +460,7 @@ export function tickXRBody(dt) {
   // frame ordering are what this path tests (the session itself is proven apart)
   if (!isPresenting() && !simHead) { dbg.notPresenting++; wire.on = false; return; }
   const av = getSelf(); const vrm = av?.vrm; const h = vrm?.humanoid;
+  if (vrm && vrm !== latch.vrm) { latch.vrm = vrm; latch.anchor = null; latch.broken = false; latch.follow = 0; }   // a body swap while presenting: the new hips must not wear the old anchor (round 3 F2)
   if (!h || !av.root) { dbg.noSelf++; wire.on = false; return; }
   dbg.ran++; wire.on = true; wire.l = wire.r = null;
   const rig = xrRig();
