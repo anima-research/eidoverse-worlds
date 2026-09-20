@@ -9,7 +9,8 @@
 //   .attempts — how many real-body loads were requested
 import { THREE } from './core-stub.mjs';
 
-const probe = (globalThis.__avatarProbe ||= { failing: true, attempts: 0, made: [] });
+const probe = (globalThis.__avatarProbe ||= { failing: true, attempts: 0, made: [], bodies: [] });
+probe.bodies ||= [];   // every REAL body handed out, so a test can read its dispose flag
 
 function body(kind) {
   return {
@@ -32,7 +33,9 @@ export async function makeAvatar(id, libPath) {
   // AFTER the await — a supersede during the backoff is caught by the earlier guard instead.
   if (probe.loadMs) await new Promise((r) => setTimeout(r, probe.loadMs));
   if (probe.failing) throw new Error(`stub: body load refused (${libPath})`);
-  return body('real');
+  const b = body('real');
+  probe.bodies.push(b);   // the caller may dispose it; the test reads that
+  return b;
 }
 
 export function makeCapsuleAvatar() { return body('capsule'); }

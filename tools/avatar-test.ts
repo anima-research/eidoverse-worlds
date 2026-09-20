@@ -731,5 +731,72 @@ console.log('\nthe capsule stand-in can be measured and reached (round 2 N1):');
   check('upper/lower arm lengths read off the puppet', !!chain && chain.L1 > 0.2 && chain.L2 > 0.2, chain ? `L1 ${chain.L1?.toFixed(2)} L2 ${chain.L2?.toFixed(2)}` : 'no chain');
 }
 
+console.log('\nmeasured jump take-off (#196 review B2):');
+{
+  // The jump clip does not start at frame 0: it starts where the body actually LEAVES the ground —
+  // the hips coming back UP through rest height after the anticipation dip. Starting at 0 plays the
+  // squat while already airborne (the mid-air-squat bug). The measurement is read off the clip's own
+  // hips track, so it is bound here against synthetic tracks with known answers rather than constants.
+  //
+  // clipTakeoff is module-private; its consumer is setClip('jump') → `a.time = clipTakeoff(...)`,
+  // so driving the real setClip binds the measurement AND its wiring together.
+  // Each case needs its OWN clip object: the result is cached on clip.userData.takeoff.
+  //
+  // Red on: deleting the measurement (`a.time = 0`); clipTakeoff returning garbage; starting at the
+  // squat bottom instead of the rise; dropping the 1 cm noise guard.
+  // SURVIVES and is declared: restricting the dip search to the clip's first half (`half = n`) — in a
+  // jump the minimum IS in the first half, so these fixtures cannot separate the two; the restriction
+  // guards against a LATER dip (a landing crouch) being mistaken for the take-off, which would need a
+  // full landing clip to exercise.
+  const hips = (times: number[], ys: number[]) =>
+    new THREE.VectorKeyframeTrack('hips.position', times, ys.flatMap((y) => [0, y, 0]));
+  const jumpClip = (times: number[], ys: number[], name = 'jump') =>
+    new THREE.AnimationClip(name, 1, [hips(times, ys)]);
+
+  const timeFor = (clip: THREE.AnimationClip) => {
+    const { self } = stand();
+    for (const m of ['setClip', '_setAction']) self[m] = (Avatar.prototype as any)[m];
+    const a = self.mixer.clipAction(clip); a.enabled = true; a.setEffectiveWeight(0); a.play();
+    self.actions.jump = a;
+    self.setClip('jump');
+    return a.time;
+  };
+
+  // rest .864, dip to .494, back through rest at t=0.50 — the shape of the real jump.vrma
+  const real = timeFor(jumpClip([0, 0.33, 0.50, 0.75], [0.864, 0.494, 0.870, 1.20]));
+  check('the jump starts where the hips rise back through rest height, not at frame 0',
+    Math.abs(real - 0.50) < 1e-6, `a.time = ${real}`);
+  check('…and not at the bottom of the anticipation squat',
+    Math.abs(real - 0.33) > 1e-6);
+
+  const noDip = timeFor(jumpClip([0, 0.2, 0.4], [0.864, 0.9, 1.3]));
+  check('a clip that only rises has no take-off to find (starts at 0)', noDip === 0, `a.time = ${noDip}`);
+
+  // The dip is sought in the clip's FIRST HALF, so the track needs enough keys for the scan to
+  // reach the wobble at all: with 3 keys `half` is 1 and only index 0 is examined, which returned 0
+  // without ever consulting the 1 cm guard (a green from a measurement that never ran).
+  const noise = timeFor(jumpClip([0, 0.1, 0.2, 0.3, 0.4, 0.5], [0.864, 0.860, 0.858, 0.870, 1.10, 1.30]));
+  check('a sub-centimetre wobble is not a dip (the 1 cm guard, actually exercised)',
+    noise === 0, `a.time = ${noise}`);
+  // …and the same shape with a REAL dip is found, proving the case above fails on depth, not on shape
+  const realDip = timeFor(jumpClip([0, 0.1, 0.2, 0.3, 0.4, 0.5], [0.864, 0.700, 0.494, 0.870, 1.10, 1.30]));
+  check('…while the same track shape with a real dip does find the rise',
+    Math.abs(realDip - 0.3) < 1e-6, `a.time = ${realDip}`);
+
+  const noHips = (() => {
+    const c = new THREE.AnimationClip('jump', 1, [new THREE.QuaternionKeyframeTrack('hips.quaternion', [0, 1], [0, 0, 0, 1, 0, 0, 0, 1])]);
+    return timeFor(c);
+  })();
+  check('a clip with no hips track starts at 0 rather than throwing', noHips === 0, `a.time = ${noHips}`);
+
+  // only the jump slot is re-timed: idle/walk must still start at 0
+  const { self } = stand();
+  for (const m of ['setClip', '_setAction']) self[m] = (Avatar.prototype as any)[m];
+  const wc = jumpClip([0, 0.33, 0.50], [0.864, 0.494, 0.870], 'walk');
+  const wa = self.mixer.clipAction(wc); wa.enabled = true; wa.setEffectiveWeight(0); wa.play();
+  self.actions.walk = wa; self.setClip('walk');
+  check('a non-jump clip is not re-timed, even with a dipping hips track', wa.time === 0, `walk time = ${wa.time}`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

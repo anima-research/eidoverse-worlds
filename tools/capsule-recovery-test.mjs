@@ -28,8 +28,8 @@ const here = (f) => fileURLToPath(new URL(f, import.meta.url));
 
 // One shared control object with the avatar stub (see recovery-avatar-stub.mjs):
 //   .failing — whether a real-body load rejects;  .attempts — how many were requested.
-const probe = (globalThis.__avatarProbe ||= { failing: true, attempts: 0, made: [] });
-probe.reset = () => { probe.failing = true; probe.attempts = 0; probe.made = []; };
+const probe = (globalThis.__avatarProbe ||= { failing: true, attempts: 0, made: [], bodies: [] });
+probe.reset = () => { probe.failing = true; probe.attempts = 0; probe.made = []; probe.bodies = []; };
 
 plugin({
   name: 'recovery-stubs',
@@ -177,8 +177,19 @@ await sleep(600);                          // timer fired ~400ms; the slow load 
 const e1 = await R.ensureRemote('erin', 'other/body.vrm');   // supersede DURING that load
 check('a mid-load switch supersedes the record', e1 !== e0);
 await sleep(1600);                         // let the stale load finish and be rejected
-check('a body that finishes loading for a superseded record is disposed, not adopted',
+check('a mid-flight body is not adopted by the superseded record',
   e0.avatar === e0Body, 'the superseded record adopted a mid-flight body');
+// NOT adopted is only half of it: an orphaned body that is never disposed is the undisposable ghost
+// #95 exists to prevent — it stays in the scene with no record owning it. Read the flag, or removing
+// the `av.dispose()` leaves this suite green (found in review, 2026-09-19).
+// The STALE body is the one the retry loaded, not the newest: the successor loads its own right
+// after, so `.at(-1)` would read e1's live body and assert the opposite of the intent (measured).
+const staleBody = probe.bodies.find((b) => b !== e1.avatar);
+check('the retry did load a body for the superseded record', !!staleBody);
+check('…and that body is DISPOSED rather than left in the scene',
+  staleBody?.disposed === true, `stale body disposed=${staleBody?.disposed}`);
+check('…while the successor keeps its own body undisposed',
+  e1.avatar?.disposed === false);
 check('the successor is unharmed by the stale completion',
   R.remotes.get('erin') === e1);
 probe.loadMs = 0;
