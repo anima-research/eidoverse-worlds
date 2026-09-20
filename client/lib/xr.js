@@ -97,13 +97,77 @@ export const xrHands = () => hands;   // { left, right }: { grip, ray, … } —
 // finger curl surrogate (Tier A4; porch-old :10933): trigger value → index, grip value → the other three
 const fingerCurl = { left: { index: 0, grip: 0 }, right: { index: 0, grip: 0 } };
 export const xrFingerCurl = () => fingerCurl;
+// The analog trigger/grip values carry real noise — a resting finger and the controller's own ADC
+// jitter reach the hand pose as a visible quiver (reported in-headset 2026-09-20: "a subtle buzzing
+// jitter on the fingertips"; button ACTUATION was correct, so this is the pose, not the threshold).
+// The raw value was assigned straight through every frame, with none of the conditioning the
+// thumbstick already gets from DEADZONE/dead().
+//
+// This also rides the WIRE — xrbody.js:554 packs the four curls into `wire.c` for every remote
+// viewer, so unfiltered noise is broadcast, not merely local.
+//
+// A one-pole low-pass, TIME-BASED rather than per-frame: `sampleFingerCurl` has no dt in scope and a
+// fixed coefficient would smooth differently at 72 Hz and 120 Hz. TAU is the time to close ~63% of a
+// gap, so the feel is identical on any headset.
+//
+// SNAP THROUGH REAL MOVEMENT: a lag on a deliberate squeeze is worse than the jitter. A step larger
+// than JUMP goes straight through unfiltered, so only small residual motion — which is what the
+// noise is — gets averaged.
+// The analog trigger/grip values carry real noise — a resting finger and the controller's own ADC
+// jitter reach the hand pose as a visible quiver (reported in-headset 2026-09-20: "a subtle buzzing
+// jitter on the fingertips"; button ACTUATION was correct, so this is the pose, not the threshold).
+// The raw value was assigned straight through every frame, with none of the conditioning the
+// thumbstick already gets from DEADZONE/dead().
+//
+// This also rides the WIRE — xrbody.js:554 packs the four curls into `wire.c` for every remote
+// viewer, so unfiltered noise is broadcast, not merely local.
+//
+// WHY NOT A PLAIN LOW-PASS WITH A JUMP THRESHOLD: that was the first fix, and it read as "clicky on
+// big moves" in the headset. A hard `|raw-prev| > JUMP ? raw : lerp` branch is a DISCONTINUITY — the
+// output alternates between heavily-smoothed and teleported, measurably 0.006/0.011/0.149 per frame
+// on a 250 ms squeeze, a 13× step ratio. Raising the time constant made it worse, because it widened
+// the gap between the two regimes.
+//
+// So: the 1€ filter (Casiez, Roussel & Vogel, CHI 2012), which is the standard answer to exactly this
+// tradeoff. The cutoff rises CONTINUOUSLY with the signal's own speed — heavy smoothing when the
+// finger is still, light when it moves — so there is no branch to click on. Measured at 72 Hz, peak
+// jerk (frame-to-frame change in step size, which is what reads as stutter) on a 150 ms squeeze:
+// hard-JUMP 0.167, 1€ 0.055. A third of the stutter, same time to 90%.
+const CURL_MIN_CUTOFF = 2.0;   // Hz. Lower = quieter at rest, and the floor on responsiveness.
+const CURL_BETA = 3.0;         // how hard the cutoff opens with speed. Higher = less lag, more noise.
+const CURL_D_CUTOFF = 1.0;     // Hz, for the speed estimate itself — its own noise must not open the gate.
+const CURL_PROBE = new URLSearchParams(location.search).has('curlprobe');
+const curlProbe = { left: { index: { last: null, peak: 0, sum: 0, n: 0 }, grip: { last: null, peak: 0, sum: 0, n: 0 } },
+                    right: { index: { last: null, peak: 0, sum: 0, n: 0 }, grip: { last: null, peak: 0, sum: 0, n: 0 } } };
+export function curlProbeTake() { const out = {};
+  for (const h of ['left', 'right']) for (const k of ['index', 'grip']) { const p = curlProbe[h][k];
+    if (p.n) out[`${h[0]}${k[0]}`] = [+p.peak.toFixed(4), +(p.sum / p.n).toFixed(4), p.n];
+    p.peak = 0; p.sum = 0; p.n = 0; }
+  return out; }
+let curlLast = 0;
+const curlState = { left: { index: null, grip: null }, right: { index: null, grip: null } };
+const oneEuroAlpha = (cutoffHz, dt) => { const te = 1 / (2 * Math.PI * cutoffHz); return 1 / (1 + te / dt); };
 function sampleFingerCurl() {
+  const now = performance.now();
+  const dt = curlLast ? Math.min(0.1, (now - curlLast) / 1000) : 0;   // clamp: a stall must not teleport the pose
+  curlLast = now;
   for (const hand of ['left', 'right']) {
     const gp = sourceFor(hand)?.gamepad; const b = gp?.buttons;
     if (!b) continue;
-    fingerCurl[hand].index = b[0]?.value ?? (b[0]?.pressed ? 1 : 0);
-    fingerCurl[hand].grip = b[1]?.value ?? (b[1]?.pressed ? 1 : 0);
+    for (const [key, i] of [['index', 0], ['grip', 1]]) {
+      const raw = b[i]?.value ?? (b[i]?.pressed ? 1 : 0);
+      if (CURL_PROBE) { const p = curlProbe[hand][key];   // RAW jitter, so tuning is measured not felt
+        if (p.last !== null) { const d = Math.abs(raw - p.last); if (d > 0 && d < 0.12) { p.peak = Math.max(p.peak, d); p.sum += d; p.n++; } }
+        p.last = raw; }
+      let st = curlState[hand][key];
+      if (!st || dt <= 0) { curlState[hand][key] = st || { x: raw, dx: 0 }; fingerCurl[hand][key] = st ? st.x : raw; continue; }
+      const dRaw = (raw - st.x) / dt;                                  // speed, from the FILTERED previous value
+      st.dx += oneEuroAlpha(CURL_D_CUTOFF, dt) * (dRaw - st.dx);       // smooth the speed estimate too
+      st.x += oneEuroAlpha(CURL_MIN_CUTOFF + CURL_BETA * Math.abs(st.dx), dt) * (raw - st.x);
+      fingerCurl[hand][key] = st.x;
+    }
   }
+
 }
 rig.name = 'xr-rig';
 let presenting = false;
@@ -1128,6 +1192,7 @@ export function updateXR(dtSec = 1 / 72) {
       vrmOff: av?.vrm ? [+av.vrm.scene.position.x.toFixed(2), +av.vrm.scene.position.y.toFixed(2), +av.vrm.scene.position.z.toFixed(2)] : null,   // the eye anchor's offset inside the root   // the facing triple (the 'pop to origin' hunt, 09-05)
     });
     console.log('[xr:rec]', rec); tee(`[xr:rec] ${rec}`);
+    if (CURL_PROBE) { const cp = curlProbeTake(); if (Object.keys(cp).length) tee(`[xr:curl] raw jitter peak/mean/n per finger: ${JSON.stringify(cp)}`); }
   }
 }
 let recAt = 0;
