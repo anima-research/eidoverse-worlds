@@ -214,7 +214,10 @@ await ev(() => { window.__probe.shim = window.requestAnimationFrame; });
 const restoredState = async () => {
   await pg.waitForFunction(() => !window.__iwerDevice?.activeSession, null, { timeout: 10000 }).catch(() => {});
   const a = await ev(() => ({ f0: globalThis.__perf?.frameNo ?? -1, t: performance.now() }));
-  await pg.waitForTimeout(700);
+  // a condition, not a clock: a 700 ms window wanted ≥2 frames, which is a 3 Hz floor for SwiftShader —
+  // it read 1 under a real asset library (1 of 5 runs, 09-21). The dead-loop bug advances by exactly 0,
+  // so waiting for +2 with a bound keeps the mutation red and stops the speed of the host being the verdict.
+  await pg.waitForFunction((f0) => (globalThis.__perf?.frameNo ?? -1) - f0 >= 2, a.f0, { timeout: 10000 }).catch(() => {});
   return ev((a) => {
     const f = window.requestAnimationFrame;
     if (!window.__probe.restoredObj) window.__probe.restoredObj = f;   // exit 1 sets the reference
