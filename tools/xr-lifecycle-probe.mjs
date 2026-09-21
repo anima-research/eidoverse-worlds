@@ -12,9 +12,11 @@
 //
 // SwiftShader is fine for these claims. It proves ORCHESTRATION, not rendering quality, foveation,
 // controller ergonomics, or the desktop mirror. Those stay with the named real-headset receipt.
-// The 'reload' verdict (WebGPU refusal → ?webgl=1) is NOT bound here by design: the probe boots ?xr=1,
-// which takes WebGL on every host, so gpu is false. Binding it needs a WebGPU boot plus a navigation
-// intercept — a separate probe, not a premise about the host.
+// The 'reload' verdict (WebGPU refusal → ?webgl=1) is NOT bound here by design: the probe boots ?xr=1 on a
+// host with no XRGPUBinding, and decideBackend (backend_choice.js) gives such a boot WebGL, so gpu is false.
+// A host WITH the WebGPU-XR flags rides WebGPU-XR under the same boot — that is the product's intent (R
+// 09-07: ONE renderer control) and this probe does not exercise it. Binding 'reload' needs a WebGPU desktop
+// boot plus a navigation intercept — a separate probe, not a premise about the host.
 //
 // Usage: bun tools/xr-lifecycle-probe.mjs [origin]
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
@@ -120,10 +122,11 @@ pg.on('console', (m) => {
 });
 // ?xr=1 IS THE BOOT MODE, NOT A HOST ACCIDENT (Mica, review host, 2026-09-21). Without it the product
 // picks its backend from the host — Chrome on her Mac boots WebGPU — and the first click takes the
-// product's reload-to-WebGL branch, navigating away from the probe's state: 8/14 with requests=0. An XR
-// boot takes WebGL by the product's own rule (core.js: "an XR boot therefore takes WebGL unless the page
-// opts into ?webgpu=1"), so the receipt is the same on every host. The earlier disclosure "headless is
-// WebGL-only" was a fact about my Linux box, written down as a premise.
+// product's reload-to-WebGL branch, navigating away from the probe's state: 8/14 with requests=0. Under
+// ?xr=1, decideBackend gives a host WITHOUT XRGPUBinding WebGL (enter in place) and a host WITH it
+// WebGPU-XR — either way the click enters without a reload, which is what makes the receipt portable. The
+// earlier disclosure "headless is WebGL-only" was a fact about my Linux box, written down as a premise;
+// and my first correction misquoted a stale core.js comment as the rule. The rule is backend_choice.js.
 await pg.goto(`${world.origin}/?world=staging&name=xrprobe&key=${world.key}&xr=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
 // Wait for the glyph to be VISIBLE: mictoggle shows it only once the product's own isSessionSupported has
 // answered and the XR hook is registered (mictoggle.js:214). Forcing display and clicking early was

@@ -83,9 +83,11 @@ export const headsetSeenRecently = () => {
 // WebGL" has to be decided here, not at the visor button: on a WebGPU backend
 // the xrCompatible adapter request never resolved on Chrome 152 + RTX
 // (09-06 11:12, splash 'still waking after 20s', twice) — three did NOT fall
-// back on its own. An XR boot therefore takes WebGL unless the page opts into
-// ?webgpu=1 AND the browser exposes XRGPUBinding; when Chrome ships WebGPU-XR
-// unflagged, flip the default here and nowhere else.
+// back on its own. So an XR boot rides WebGPU-XR when the browser exposes
+// XRGPUBinding (the flags), and takes WebGL otherwise — `auto` decides, no
+// ?webgpu=1 needed (R 09-07, ONE renderer control; the rule is decideBackend in
+// backend_choice.js — this comment used to say the opposite and misled a probe
+// header on 09-21). When Chrome ships WebGPU-XR unflagged nothing here changes.
 // The decision itself (which backend, whether this is an XR boot, whether the tolerant render list installs)
 // is a pure function in backend_choice.js — importable headless, so the matrix is TESTED rather than trusted
 // (tools/backend-choice-test.mjs). ?xr is value-parsed: `?xr=1` boots XR, `?xr=0` and absence do not.
