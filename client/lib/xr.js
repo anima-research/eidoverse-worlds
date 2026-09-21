@@ -19,8 +19,8 @@
 
 import { installRenderListTolerance, THREE, renderer, camera, scene, XR_BOOT, PREF_HEADSET_SEEN } from './core.js';
 import { decideEntryFailure } from './xr_entry_policy.js';   // what a failed session request MEANS (#197 B1)
-import { makeEntryEffects } from './xr_entry_effects.js';
-import { installFrameClock } from './xr_frame_clock.js';   // who owns window.rAF while presenting (#197 B2)
+import { makeEntryEffects, handleEntryFailure } from './xr_entry_effects.js';
+import { installEntryClock } from './xr_frame_clock.js';   // who owns window.rAF while presenting (#197 B2)
 import { CONFIG, report, bus, tee, wornNameOf } from './base.js';
 import { frameDebug } from './frame.js';
 import { resetFingers, xrBodyDebug } from './xrbody.js';
@@ -599,15 +599,15 @@ async function enterVR({ retryOf = null } = {}) {
       // so the honest path is: say so, and retry once after a short wait for the old page to release it.
       // WHAT the failure means is decided by xr_entry_policy.js (#197 review B1); the effects —
       // timer, toast, reload, absent mark — stay here. `isRetry` is what makes one retry one retry.
-      const verdict = decideEntryFailure(e, { isRetry: retryOf !== null, gpu });
-      // THE EFFECTS LIVE IN xr_entry_effects.js AND THE SUITE DRIVES THAT MODULE (#197 round-two
-      // review). This branch previously inlined the scheduling, and a mutation making EVERY busy
-      // verdict retry — including give-up — kept the suite green, because the suite source-checked
-      // the wiring instead of executing it. Now the product and the test run the same code.
-      const did = entryEffects.apply(verdict, { intent: myEntry, error: e });
-      if (did === 'retried' || did === 'gave-up') return;
-      if (did === 'absent') throw e;   // the outer catch posts the one toast, preferring userMessage
-      if (did === 'surface') throw e;
+      // THE WHOLE SEAM IS ONE IMPORTABLE CALL (#197 round-three review). Extracting the effects moved
+      // the untested boundary out here instead of removing it: a mutation rewriting this as
+      // `false ? entryEffects.apply(...) : 'surface'` kept the text for every source regex, disabled
+      // retry/absence/reload, and left the suite at 35/35. There is nothing left here to bypass —
+      // the decision, the argument construction and the dispatch all live in the tested function.
+      const next = handleEntryFailure({ effects: entryEffects, decide: decideEntryFailure,
+                                        error: e, intent: myEntry, retryOf, gpu });
+      if (next === 'handled') return;
+      if (next === 'throw') throw e;   // the outer catch posts the one toast, preferring userMessage
       // 'reload': the owner already teed and toasted. Only the navigation lives here, because it
       // needs `location` — emitting them again here double-toasted the user (agent review).
       const u = new URL(location.href); u.searchParams.set('webgl', '1'); u.searchParams.set('xr', '1'); u.searchParams.set('why', 'vr-webgl');
@@ -637,10 +637,10 @@ async function enterVR({ retryOf = null } = {}) {
     // `if (false && shouldShim(...))` left the suite green. installFrameClock owns it and
     // tools/xr-session-lifecycle-test.mjs executes it.
     sessionEnded = false;
-    frameClock = installFrameClock({
+    frameClock = installEntryClock({
       win: window, session, saved: nativeRAF ? { raf: nativeRAF, caf: nativeCAF } : null,
-      emulated: !!globalThis.IWER, onEnd: () => { sessionEnded = true; },
-    });
+      onEnd: () => { sessionEnded = true; },
+    });   // what `emulated` MEANS lives in the module, where a test can prove a real runtime gets a shim
     nativeRAF = frameClock.native.raf; nativeCAF = frameClock.native.caf;
     await renderer.xr.setSession(session);
     tee(`[xr] enter #${sessionNo}: setSession resolved in ${(performance.now() - tReq).toFixed(0)} ms`);

@@ -8,7 +8,7 @@
 //
 // This suite imports client/lib/xr_entry_effects.js — the same module xr.js imports — and runs it
 // with fake timers. Breaking the scheduling breaks this.
-import { makeEntryEffects } from '../client/lib/xr_entry_effects.js';
+import { makeEntryEffects, handleEntryFailure } from '../client/lib/xr_entry_effects.js';
 import { decideEntryFailure, BUSY_RETRY_MS } from '../client/lib/xr_entry_policy.js';
 import { readFileSync } from 'node:fs';
 
@@ -145,13 +145,61 @@ console.log('\n— 4. the other three verdicts are ACTED ON, not just decided �
       e3.hasPending === false, `hasPending=${e3.hasPending} pendingFor=${e3.pendingFor}`); }
 }
 
+console.log('\n— 5. THE SEAM, executed: decide → act → what the caller must do —');
+{
+  // handleEntryFailure IS the catch body. The round-three mutation rewrote the shipping line as
+  //   const did = false ? entryEffects.apply(...) : 'surface';
+  // keeping the text for every regex while disabling retry, absence and reload. There is now nothing
+  // between the product and this function for such a rewrite to hide in.
+  const mk = () => { const r = rig(); return { ...r,
+    run: (error, { intent = 101, retryOf = null, gpu = false } = {}) =>
+      handleEntryFailure({ effects: r.eff, decide: decideEntryFailure, error, intent, retryOf, gpu }) }; };
+
+  { const r = mk(); const out = r.run(busy());
+    check('a first busy failure is HANDLED (the caller returns) and a retry is armed',
+      out === 'handled' && r.eff.hasPending, `returned ${out}`);
+    check('…with the policy’s backoff', [...r.timers.values()][0].ms === BUSY_RETRY_MS); }
+
+  { const r = mk(); r.run(busy(), { intent: 101 });
+    r.fire();   // the retry fires and re-enters; its own failure is the SECOND one on this intent
+    const armedBefore = r.timers.size;
+    const out = r.run(busy(), { intent: 101, retryOf: 101 });
+    check('the retry’s own failure gives up rather than scheduling again',
+      out === 'handled' && r.timers.size === armedBefore && !r.eff.hasPending,
+      `returned ${out}, timers ${armedBefore} → ${r.timers.size}`);
+    check('…and told the user once', r.log.toast.filter(([, k]) => k === 'warn').length === 1); }
+
+  { const r = mk(); const err = noDev(); const out = r.run(err);
+    check('a missing headset is THROWN to the outer catch', out === 'throw', `returned ${out}`);
+    check('…after being marked absent', r.log.absent[0] === true);
+    check('…and carries the policy’s wording', /no headset detected/.test(err.userMessage ?? '')); }
+
+  { const r = mk(); const out = r.run(weird(), { gpu: true });
+    check('a WebGPU refusal asks the caller to RELOAD (it owns `location`)', out === 'reload', `returned ${out}`);
+    check('…and the user was told why', r.log.toast.some(([m, k]) => k === 'info' && /webgl/i.test(m ?? ''))); }
+
+  { const r = mk(); const out = r.run(weird());
+    check('an unknown error on WebGL is thrown, not swallowed', out === 'throw', `returned ${out}`);
+    check('…and nothing was scheduled', !r.eff.hasPending); }
+
+  { // THE ARGUMENT CONSTRUCTION the reviewer's other mutation targeted: retryOf → isRetry
+    const r = mk(); const first = r.run(busy(), { intent: 101, retryOf: null });
+    const r2 = mk(); const asRetry = r2.run(busy(), { intent: 101, retryOf: 101 });
+    check('retryOf is what distinguishes a first failure from a retry’s failure',
+      first === 'handled' && r.eff.hasPending && asRetry === 'handled' && !r2.eff.hasPending,
+      `first pending=${r.eff.hasPending} retry pending=${r2.eff.hasPending}`); }
+}
+
 console.log('\n— 5. the PRODUCT uses this owner (the wiring the reviewer broke) —');
 {
   const xr = readFileSync(new URL('../client/lib/xr.js', import.meta.url), 'utf8');
-  check('xr.js imports the effect owner', /import \{ makeEntryEffects \} from '\.\/xr_entry_effects\.js'/.test(xr));
+  check('xr.js imports the effect owner and the seam',
+    /import \{ makeEntryEffects, handleEntryFailure \} from '\.\/xr_entry_effects\.js'/.test(xr));
   check('xr.js constructs it with real timers', /makeEntryEffects\(\{[\s\S]*?setTimeout/.test(xr));
-  check('the entry catch delegates to it rather than scheduling inline',
-    /entryEffects\.apply\(verdict, \{ intent: myEntry, error: e \}\)/.test(xr));
+  check('the entry catch delegates through the tested seam',
+    /handleEntryFailure\(\{ effects: entryEffects, decide: decideEntryFailure,/.test(xr));
+  check('…and obeys its instruction rather than re-deriving one',
+    /if \(next === 'handled'\) return;/.test(xr) && /if \(next === 'throw'\) throw e;/.test(xr));
   check('NO setTimeout survives in the entry catch path', !/busyTimer = setTimeout/.test(xr));
   // THE SEAM (agent review): apply() already tees and toasts for 'reload-webgl' and returns 'reload'.
   // xr.js had no 'reload' branch, so it fell through to an identical inline tee + toast and the user

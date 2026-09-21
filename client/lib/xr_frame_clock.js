@@ -100,3 +100,20 @@ export function installFrameClock({ win, session, saved, emulated = false, onEnd
   }
   return { native, installed, restore };
 }
+
+/** THE INSTALL SEAM ITSELF — including the runtime arguments the product passes.
+ *
+ *  #197 round-three review: installFrameClock() was importable and well tested, but its CALL SITE
+ *  was not. The reviewer changed the shipping argument to `emulated: true || !!globalThis.IWER`, so
+ *  the product never installs the shim on any real runtime — while every source check (imports it,
+ *  calls it, passes the saved pair, before setSession) still matched, and the suite stayed at 38/38.
+ *
+ *  The argument construction is therefore no longer at the call site. `enterVR` passes the objects it
+ *  has (window, session, the saved pair) and THIS decides what `emulated` means, so a test can prove
+ *  that a real runtime — one with no IWER — actually gets a shim.
+ *
+ *  @param globals where to look for an emulator; defaults to globalThis so the product need not say. */
+export function installEntryClock({ win, session, saved, globals = globalThis, onEnd = null }) {
+  const emulated = !!globals?.IWER;   // IWER drives the session clock ON window.rAF; shimming feeds it to itself
+  return installFrameClock({ win, session, saved, emulated, onEnd });
+}

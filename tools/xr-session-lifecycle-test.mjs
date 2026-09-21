@@ -13,7 +13,7 @@
 //
 // The session objects are IWER's where it can supply them and a minimal fake otherwise; what matters
 // is that the PRODUCT'S install sequence runs. Removing the install turns this red.
-import { installFrameClock, clockIsRestored } from '../client/lib/xr_frame_clock.js';
+import { installFrameClock, installEntryClock, clockIsRestored } from '../client/lib/xr_frame_clock.js';
 import { readFileSync } from 'node:fs';
 
 let pass = 0, fail = 0;
@@ -202,13 +202,44 @@ console.log('\n— the emulator drives its own frames —');
   check('…but the restore listener is still registered', s._end.length === 1);
 }
 
+console.log('\n— THE INSTALL SEAM, including what `emulated` MEANS —');
+{
+  // The round-three mutation changed the shipping argument to `emulated: true || !!globalThis.IWER`,
+  // so the product never shimmed on any real runtime — while every source check still matched and the
+  // suite stayed at 38/38. The argument construction now lives inside installEntryClock, so a test
+  // can prove that a runtime WITHOUT an emulator actually gets a shim.
+  { const w = fakeWindow(); const s = fakeSession();
+    const fc = installEntryClock({ win: w, session: s, saved: null, globals: {} });   // a real runtime
+    check('on a real runtime (no IWER) the session clock IS installed', fc.installed === true);
+    check('…and frames actually go to the session',
+      w.requestAnimationFrame(() => {}) === 'ses-1' && s.calls.length === 1, `win=${w.calls.length}`); }
+  { const w = fakeWindow(); const s = fakeSession();
+    const fc = installEntryClock({ win: w, session: s, saved: null, globals: { IWER: {} } });
+    check('under IWER it abstains, because the emulator drives window.rAF itself', fc.installed === false);
+    check('…so frames keep going to the window', w.requestAnimationFrame(() => {}) === 'win-1'); }
+  { const w = fakeWindow(); const s = fakeSession();
+    const fc = installEntryClock({ win: w, session: s, saved: null, globals: { IWER: undefined } });
+    check('a present-but-undefined IWER is not an emulator', fc.installed === true); }
+  { const w = fakeWindow(); const s1 = fakeSession(), s2 = fakeSession();
+    const a = installEntryClock({ win: w, session: s1, saved: null, globals: {} });
+    const b = installEntryClock({ win: w, session: s2, saved: a.native, globals: {} });
+    check('the seam carries save-once through to the second entry', b.native === a.native); }
+}
+
 console.log('\n— the PRODUCT runs this sequence (the wiring the reviewer broke) —');
 {
   const xr = readFileSync(new URL('../client/lib/xr.js', import.meta.url), 'utf8');
-  check('xr.js imports installFrameClock', /import \{ installFrameClock \}/.test(xr));
-  check('…and calls it', /frameClock = installFrameClock\(\{/.test(xr));
+  check('xr.js imports the install seam', /import \{ installEntryClock \}/.test(xr));
+  check('…and calls it', /frameClock = installEntryClock\(\{/.test(xr));
+  check('…without constructing `emulated` at the call site, where no test could reach it',
+    !/emulated:/.test(xr));
+  // `globals` is a TEST seam. If the product passed it, it could disable the shim exactly the way
+  // the round-three mutation did — a parameter added for testability becoming a new bypass. Found by
+  // trying it: passing `globals: { IWER: {} }` from xr.js left this suite green.
+  check('…and without passing `globals`, which would be the same bypass by another name',
+    !/globals:/.test(xr));
   check('…passing the saved pair, so save-once holds across entries', /saved: nativeRAF \? \{ raf: nativeRAF, caf: nativeCAF \} : null/.test(xr));
-  check('…before setSession', xr.indexOf('installFrameClock({') < xr.indexOf('await renderer.xr.setSession('));
+  check('…before setSession', xr.indexOf('installEntryClock({') < xr.indexOf('await renderer.xr.setSession('));
   check('NO second shim install survives', !/window\.requestAnimationFrame = makeFrameShim/.test(xr));
   // THE SEAM, which is where both round-two regressions lived (agent review). The suites drove the
   // modules; the glue that calls them was still only prose. A second 'end' listener in xr.js used to

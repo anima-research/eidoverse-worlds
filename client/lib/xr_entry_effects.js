@@ -73,3 +73,27 @@ export function makeEntryEffects(deps) {
   // handle, one is an identity) and a future edit could easily make them diverge.
   return { apply, cancel, get pendingFor() { return pendingFor; }, get hasPending() { return timer !== null; } };
 }
+
+/** THE FAILURE SEAM ITSELF — decide, act, and say what the caller must do next.
+ *
+ *  #197 round-three review: the effects were importable and well tested, but the CALL SITE was not.
+ *  The reviewer rewrote the shipping line as
+ *      const did = false ? entryEffects.apply(...) : 'surface';
+ *  which keeps the text `entryEffects.apply(...)` for every source regex while disabling retry,
+ *  absence and reload entirely — and the suite stayed at 35/35. Extracting the effects moved the
+ *  untested boundary one layer out; it did not remove it.
+ *
+ *  So the boundary itself is now a function. `enterVR`'s catch does nothing but call this and obey
+ *  the returned instruction, and the suite drives THIS — the same function the product runs,
+ *  including the argument construction (`isRetry` from retryOf, `gpu` from the backend) that the
+ *  reviewer's other mutation targeted.
+ *
+ *  @returns 'handled' (the effect owns what happens next — return) | 'throw' (surface to the outer
+ *           catch) | 'reload' (the caller performs the navigation, which needs `location`) */
+export function handleEntryFailure({ effects, decide, error, intent, retryOf, gpu }) {
+  const verdict = decide(error, { isRetry: retryOf !== null, gpu });
+  const did = effects.apply(verdict, { intent, error });
+  if (did === 'retried' || did === 'gave-up') return 'handled';
+  if (did === 'reload') return 'reload';
+  return 'throw';   // 'absent' (userMessage already set) and 'surface' both rethrow
+}

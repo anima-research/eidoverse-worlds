@@ -126,7 +126,7 @@ console.log('\nthe wiring (an extracted policy nobody calls is the regression ex
 const xr = readFileSync(join(dir, '../client/lib/xr.js'), 'utf8');
   check('xr.js imports the policy',
     /import \{ decideEntryFailure \} from '\.\/xr_entry_policy\.js'/.test(xr));
-  check('xr.js CONSULTS it on a failed request', /decideEntryFailure\(/.test(xr));
+  check('xr.js CONSULTS it on a failed request', /decide: decideEntryFailure/.test(xr));   // passed INTO the tested seam, which calls it
   check('the retry is armed from the policy verdict, not a re-derived literal',
   /deps\.setTimer\(/.test(eff) && /verdict\.delayMs/.test(eff));   // the EFFECT OWNER holds this now
   check('the pending retry is generation-checked before it fires',

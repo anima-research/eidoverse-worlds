@@ -185,10 +185,10 @@ console.log('\nunder an emulator:');
 console.log('\nthe wiring:');
 {
   const xr = readFileSync(join(dir, '../client/lib/xr.js'), 'utf8');
-  check('xr.js imports the frame-clock rules', /import \{ installFrameClock \}/.test(xr));
-  check('xr.js installs the shim through them', /frameClock = installFrameClock\(\{/.test(xr));
-  check('the emulator case is passed to the owner, which asks the predicate',
-  /emulated: !!globalThis\.IWER/.test(xr) && /shouldShim\(\{ emulated \}\)/.test(readFileSync(new URL('../client/lib/xr_frame_clock.js', import.meta.url), 'utf8')));
+  check('xr.js imports the install seam', /import \{ installEntryClock \}/.test(xr));
+  check('xr.js installs the shim through them', /frameClock = installEntryClock\(\{/.test(xr));
+  check('the emulator case is decided INSIDE the module, not at the call site',
+  !/emulated:/.test(xr) && /const emulated = !!globals\?\.IWER;/.test(readFileSync(join(dir, '../client/lib/xr_frame_clock.js'), 'utf8')));
   // ORDERING: the restore listener must be registered before setSession, so it runs before three's
   // own 'end' listener restarts the desktop loop through window.requestAnimationFrame.
   const restoreAt = xr.indexOf("session.addEventListener('end'");
