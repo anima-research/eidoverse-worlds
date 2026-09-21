@@ -12,7 +12,7 @@ import { RENDER_SCALES, getRenderScale, setRenderScale,
   PARTICLE_TIERS, getParticleTier, setParticleTier,
   AVATAR_DETAILS, getAvatarDetail, setAvatarDetail } from './governor.js';
 import { shadowsOn, setShadows, shadowRes, setShadowRes, SHADOW_RES } from './lightrig.js';
-import { backendName, PREF_MSAA, PREF_BACKEND, PREF_HEADSET_SEEN, WEBGPU_XR, WEBGPU_POSSIBLE } from './core.js';
+import { backendName, PREF_MSAA, PREF_BACKEND, PREF_HEADSET_SEEN, WEBGPU_XR, WEBGPU_POSSIBLE, headsetSeenRecently } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { registerXRPanel } from './xrpanels.js';
 
@@ -102,16 +102,18 @@ export function initVideoPanel() {
     const backend = backendName();
     const forced = CONFIG.params.has('webgl') || CONFIG.params.has('webgpu');
     const rpref = lsGet(PREF_BACKEND) || 'auto';
-    const headsetSeen = lsGet(PREF_HEADSET_SEEN) === '1';
-    // auto = WebGPU, the standard renderer; the one exception is a headset on a browser that can't present VR from WebGPU
+    // HISTORY, not presence (#197 review B3). Nothing clears this when a headset is unplugged, and a
+    // live re-probe is no better — isSessionSupported stays optimistic after one is switched off
+    // (mictoggle.js:91). So the copy says what is actually known: a headset has been USED here.
+    const headsetSeen = headsetSeenRecently();
     const autoTail = headsetSeen
-      ? (WEBGPU_XR ? 'Right now: a headset is present and this browser can present VR from WebGPU, so auto is WebGPU and VR enters without a reload.'
-                   : 'Right now: a headset is present but this browser can’t present VR from WebGPU (the WebGPU-XR flag is off), so auto falls back to WebGL 2 so VR can enter without a reload.')
-      : (WEBGPU_POSSIBLE ? 'Right now: no headset sensed, so auto is WebGPU.' : 'Right now: this machine has no WebGPU, so auto is WebGL 2.');
+      ? (WEBGPU_XR ? 'A headset has been used here before, and this browser can present VR from WebGPU, so auto is WebGPU and VR enters without a reload.'
+                   : 'A headset has been used here before, but this browser can’t present VR from WebGPU (the WebGPU-XR flag is off), so auto uses WebGL 2 so VR can enter without a reload.')
+      : (WEBGPU_POSSIBLE ? 'No headset has been used here recently, so auto is WebGPU.' : 'This machine has no WebGPU, so auto is WebGL 2.');
     const running = `Running on ${backend === 'webgl' ? 'WebGL 2' : 'WebGPU'}${forced ? ' (forced by the URL)' : ''}. `;
     const rrow = selectRow('renderer',
-      `${running}auto: WebGPU, the standard full renderer — with one exception: on a browser that can’t present VR from WebGPU, auto uses WebGL 2 whenever a headset is present, so VR enters with no reload. ${autoTail} `
-      + `force WebGPU: always WebGPU${WEBGPU_POSSIBLE ? '' : ' (unavailable on this machine)'} — if a headset is present but the browser can’t present VR from it, entering VR reloads onto WebGL 2 first (a few seconds). `
+      `${running}auto: WebGPU, the standard full renderer — with one exception: on a browser that can’t present VR from WebGPU, auto uses WebGL 2 whenever a headset has been used here, so VR enters with no reload. ${autoTail} `
+      + `force WebGPU: always WebGPU${WEBGPU_POSSIBLE ? '' : ' (unavailable on this machine)'} — if a headset is in use but the browser can’t present VR from it, entering VR reloads onto WebGL 2 first (a few seconds). `
       + `force WebGL: always WebGL 2 — for A/B tests or a machine where WebGPU misbehaves. Applies on reload.`,
       [['auto', 'auto'], ['webgpu', 'force WebGPU'], ['webgl', 'force WebGL']],
       rpref,
@@ -122,7 +124,7 @@ export function initVideoPanel() {
         if (val === 'webgpu' && headsetSeen && !WEBGPU_XR) {
           const warn = document.createElement('div'); warn.className = 'note rwarn';
           warn.style.cssText = 'margin-top:4px;opacity:.85';
-          warn.textContent = '⚠ A headset is present but WebGPU-XR flags aren’t enabled here — entering VR will reload the page onto WebGL, adding a few seconds. Use auto or force WebGL to avoid it.';
+          warn.textContent = '⚠ A headset has been used here but WebGPU-XR flags aren’t enabled — entering VR will reload the page onto WebGL, adding a few seconds. Use auto or force WebGL to avoid it.';
           row.appendChild(warn);
         }
       });

@@ -25,6 +25,7 @@ import { report, bus } from './base.js';
 import { renderer, XR_BOOT } from './core.js';
 import { BC } from './bc.js';
 import { perf } from './perf.js';
+globalThis.__perf = perf;   // harness: xr-lifecycle-probe reads frameNo to prove the desktop loop TICKS after a session ends (the 09-07 22:41 bug), same pattern as __ewEngineUp
 
 const systems = [];
 let frameNo = 0;

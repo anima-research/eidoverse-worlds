@@ -142,7 +142,7 @@ button:active { transform: translateY(1px); }
 button:focus-visible { outline: 2px solid var(--edge-hi); outline-offset: 1px; }   /* the KEYBOARD focus ring — was --accent (= --attn amber), so a dock tile you had clicked lit 'needs attention' the moment you pressed Shift (owner, 09-19). Focus is not attention. */
 @keyframes hud-blink { 0%, 100% { opacity: 1; } 25%, 75% { opacity: .25; } }
 #xrbtn.hud-blink { animation: hud-blink .9s ease-in-out 2; }
-#xrbtn.hud-absent { filter: drop-shadow(0 0 3px var(--attn)); }   /* the attention ring around an absent headset's visor */
+#xrbtn.hud-absent { opacity: .38; filter: none; }   /* an absent headset's visor is DIM, not ringed — the amber ring read as 'live' (owner, 09-19) */
 input:focus-visible, textarea:focus-visible { outline: 1px solid var(--edge-hi); }
 button.on { background: var(--hov); border-color: var(--edge-hi); color: var(--fg); }
 /* persistent MODES read as armed (live 09-07 23:25): the loupe's `on`, and a skinned dropdown whose choice isn't the default */
@@ -258,6 +258,19 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
    for a while (live, 09-05 17:47: VRMs take a looooong time on weak hardware and
    a bar alone says nothing). Up to two items, most-remaining first. */
 .sp-items { width: var(--sp-w); min-height: 1.4em; display: flex; flex-direction: column; gap: 4px; margin-top: -8px; font-size: var(--fs-sm); color: var(--dim); font-variant-numeric: tabular-nums; }   /* two rows reserved always, so the column never jumps when names appear */
+/* the VR veil (xr.js xrVeilShow): the splash's furniture over the world while a session starts or ends.
+   Class-based on purpose — .sp-logo/.sp-mark/.sp-phase are global, so the veil IS the splash's look. The
+   ellipsis breathes here (and only here): the splash's mark is still by design; a veil is a wait. */
+.xr-veil {
+  position: fixed; inset: 0; z-index: 99999; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 22px; padding: 28px; box-sizing: border-box; background: var(--bg); font: var(--fs)/1.6 var(--font); color: var(--fg);
+  opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .35s ease, visibility .35s;
+}
+.xr-veil.on { opacity: 1; visibility: visible; pointer-events: auto; }
+.xr-veil .sp-phase { font-size: var(--fs); letter-spacing: .08em; margin-top: 6px; position: relative; }
+.xr-veil .sp-phase::after { content: '...'; position: absolute; left: 100%; top: 0; overflow: hidden; white-space: nowrap; width: 0; letter-spacing: .04em; animation: xr-veil-dots 1.6s steps(4, end) infinite; }   /* out of flow: the words hold still, the dots grow to the right */
+@keyframes xr-veil-dots { from { width: 0; } to { width: 1.3em; } }
+@media (prefers-reduced-motion: reduce) { .xr-veil .sp-phase::after { animation: none; } }
 /* .sp-load, not .sp-item — that name is the schema panel's list row (padding 3px 7px), and the collision
    indented these 7 px off the status row's edge (live, 09-05 17:58: "weird having those left-justified?") */
 .sp-load { display: flex; justify-content: space-between; gap: 12px; }
@@ -475,7 +488,7 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
 .chat-tabs button.on {
   /* HIGHLIGHTED, not merely tinted. The underline alone was computed correctly
      and painted over: the tab's bottom border and the strip's rail landed on the
-     SAME line (measured overlap 0px), so the parent's border won and R saw a
+     SAME line (measured overlap 0px), so the parent's border won and the owner saw a
      brand-coloured word with no underline — "Leave the tab highlighted when
      active" (2026-09-11). With the rail now on .tabscroll the tab's own border
      has somewhere to sit, and a .tile.on-style wash makes the tab itself read
@@ -800,7 +813,7 @@ body.arranging #dock #hud.emark {
 [data-presence="busy"] > .pf-portrait-dot::after, .pf-pop-dot[data-presence="busy"]::after { content: ''; position: absolute; left: 20%; right: 20%; top: 40%; bottom: 40%; background: rgb(var(--panel-rgb)); border-radius: 1px; }
 .pf-pop-dot { position: relative; }
 /* the Who panel's mark: the same fixed colours + shapes as the profile */
-.who-mark { position: relative; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #3ddc84; margin-right: 7px; flex: none; align-self: center; }   /* align-self, NOT vertical-align: the row is a flex container and vertical-align is inert there — measured 4.5px of lift, which is what R saw (2026-09-11: "they're a bit offset above in kind of an odd way") */
+.who-mark { position: relative; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #3ddc84; margin-right: 7px; flex: none; align-self: center; }   /* align-self, NOT vertical-align: the row is a flex container and vertical-align is inert there — measured 4.5px of lift, which is what the owner saw (2026-09-11: "they're a bit offset above in kind of an odd way") */
 .who-mark[data-presence="away"] { background: #f5b83d; border-radius: 2px; transform: rotate(45deg) scale(.85); }
 .who-mark[data-presence="busy"] { background: #ef5b5b; border-radius: 2px; }
 .who-mark[data-presence="busy"]::after { content: ''; position: absolute; left: 20%; right: 20%; top: 40%; bottom: 40%; background: rgb(var(--panel-rgb)); border-radius: 1px; }

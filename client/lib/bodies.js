@@ -4,7 +4,7 @@
 // exact same panels in Desktop mode — hopefully we only need to maintain
 // ONE set of menus"; and 22:57: a body is never optional — this is the
 // in-headset way to pick one when the default is not what you want.
-import { bus } from './base.js';
+import { bus, wornNameOf } from './base.js';
 import { net } from './net.js';
 import { renderDOM } from './panels.js';
 import { switchAvatar } from './palette.js';
@@ -19,7 +19,7 @@ let worn = [];
 try { worn = JSON.parse(localStorage.getItem(WORN_LS) || '[]'); } catch { worn = []; }
 if (!Array.isArray(worn)) worn = [];
 function noteWorn(v) {
-  const name = typeof v === 'string' ? v : v?.name;   // mybody.announceWorn emits { name, path }
+  const name = wornNameOf(v);   // mybody.announceWorn emits { name, path }
   if (!name) return;
   worn = [name, ...worn.filter((n) => n !== name)].slice(0, 24);   // newest first
   try { localStorage.setItem(WORN_LS, JSON.stringify(worn)); } catch { /* private mode */ }
