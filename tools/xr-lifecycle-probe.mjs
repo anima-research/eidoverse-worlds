@@ -142,6 +142,10 @@ check('the client sees an immersive-vr capable device',
 // ── 1. the shipping entry path, driven by the real visor ──────────────────────
 const clickVisor = () => ev(() => { document.querySelector('#xrbtn').click(); });   // as shown, not forced
 
+// An ?xr=1 boot must not have entered on its own, or "the click drove enterVR" is true for the wrong
+// reason. enterVR has exactly two callers (the visor handler and the retry effect); this pins it.
+check('no session was requested before the first click (an XR boot warms, it does not enter)',
+  await ev(() => window.__probe.requests === 0), await ev(() => `requests=${window.__probe.requests} before any click`));
 await clickVisor();
 await pg.waitForFunction(() => window.__probe.grants > 0 || window.__probe.requests > 2, null, { timeout: 30000 }).catch(() => {});
 const afterEnter = await ev(() => ({
