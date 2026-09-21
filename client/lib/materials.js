@@ -335,9 +335,27 @@ export function prepareMaterial(mat, receiver = null) {
 // their depth fights the body's own and they self-shadow into dark scratches.
 // Janus's hand-tuned console version excluded exactly this mesh and no other.
 //
+// WINGS, added 2026-09-20 at Janus's ask: "i'd like to try having the wings not
+// cast shadows on themselves."
+//
+// Worth being exact about what this can and cannot do. castShadow is per
+// OBJECT, not per pair -- three has no "A does not shadow B" -- so there is no
+// way to stop the wings shadowing each other while they still shadow the
+// torso. What IS true here is that the wings are one mesh: both wings and the
+// membrane between them are the single `wings` node. So dropping it from the
+// caster set removes wing-on-wing shadowing entirely, which is the artifact,
+// and the cost is that the wings no longer throw onto the body or the ground.
+//
+// That trade is the right way round for this body. A chest lamp lights the
+// wings from in front and below, so wing-on-wing is self-occlusion at a
+// glancing angle -- exactly where a shadow map is worst and where the 94cm
+// normalBias (see lightrig SHADOW_BIAS_TEXELS) does the least good. The
+// silhouette a viewer reads as "winged person" comes from the body and hair,
+// which still cast.
+//
 // Exported because the BODY shadow decision is no longer made here; see
 // setBodyShadows below.
-export const BODY_NO_CAST = /^GOLD/;
+export const BODY_NO_CAST = /^(GOLD|wings)/;
 
 // TURN A BODY INTO A SHADOW CASTER, opt-in per body.
 //
@@ -357,7 +375,7 @@ export const BODY_NO_CAST = /^GOLD/;
 // because bodies never go through warmqueue's warmDepth -- that is the measured
 // risk when this widens past one body, and the reason it has not.
 //
-// GOLD is excluded: see BODY_NO_CAST.
+// GOLD and the wings are excluded: see BODY_NO_CAST.
 export function setBodyShadows(root, on = true) {
   if (!root?.traverse) return 0;
   let n = 0;

@@ -56,11 +56,21 @@ mats.prepareObject(lamped, { kind: 'body' });
 const n = mats.setBodyShadows(lamped, true);
 check('every mesh was visited', n === NAMES.length, `visited ${n} of ${NAMES.length}`);
 check('the body receives', meshes(lamped).every((m) => m.receiveShadow === true));
-check('the body casts', meshes(lamped).filter((m) => m.name !== 'GOLD').every((m) => m.castShadow === true),
-  meshes(lamped).filter((m) => m.name !== 'GOLD' && !m.castShadow).map((m) => m.name).join(','));
+const NO_CAST = ['GOLD', 'wings'];
+check('the body casts', meshes(lamped).filter((m) => !NO_CAST.includes(m.name)).every((m) => m.castShadow === true),
+  meshes(lamped).filter((m) => !NO_CAST.includes(m.name) && !m.castShadow).map((m) => m.name).join(','));
 // the kintsugi seams self-shadow into scratches at any map size
 check('GOLD does NOT cast', byName(lamped, 'GOLD').castShadow === false);
 check('...but GOLD still receives', byName(lamped, 'GOLD').receiveShadow === true);
+// THE WINGS, at Janus's ask. castShadow is per OBJECT and both wings are one
+// mesh, so dropping `wings` from the caster set is what "no wing-on-wing
+// shadowing" actually means -- there is no per-pair exclusion in three. They
+// keep receiving, so the chest lamp still lights them and the body still
+// shadows them.
+check('the wings do NOT cast', byName(lamped, 'wings').castShadow === false);
+check('...but the wings still receive', byName(lamped, 'wings').receiveShadow === true);
+// the silhouette that reads as a person is still thrown
+check('body_main still casts', byName(lamped, 'body_main').castShadow === true);
 
 console.log('setBodyShadows(root, false) — reversible');
 mats.setBodyShadows(lamped, false);
