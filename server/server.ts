@@ -579,6 +579,7 @@ function installJoin(c: Client, w: World) {
       }
     }
     c.gen = ++GEN;   // B2: this leg's surfaceSession, issued on acceptance
+    c.legGen = w.legGen();   // the world-scoped generation caption entries carry (survives restarts)
     w.clients.add(c);
     // eidosim@0.3.0: know the world's standing geometry before anyone spawns
     // or epochs into it (boxes.ts — the sync validators read a warm cache).

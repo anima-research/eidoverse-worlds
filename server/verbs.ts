@@ -14,7 +14,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { VERB_RATE, OPT_DIR } from "./config.ts";
-import { isAdminId, rightsOf, worldHasOwner, VERB_NEEDS, lockRefusal, guardRefusal } from "./rights.ts";
+import { isAdminId, rightsOf, worldHasOwner, VERB_NEEDS, lockRefusal, guardRefusal, captionDeedRefusal } from "./rights.ts";
+import { normalizeCaptionArgs, captionRefusal } from "../shared/captions.js";
 import { lintMotion, lintParticles } from "./lint.ts";
 import { reactToUse } from "./reactions.ts";
 import { behaviorLimits } from "./behaviors.ts";
@@ -36,6 +37,10 @@ export type VerbClient = {
   lastPose: unknown;
   ws: { send(data: string): void };
   verbWin: number; verbCount: number;
+  /** This leg's generation, issued on acceptance (server.ts: a same-identity join is a takeover). */
+  gen?: number;
+  /** The world-scoped generation (World.legGen): what caption entries carry — survives a sequencer restart. */
+  legGen?: number;
 };
 
 export type VerbWorld = {
@@ -68,6 +73,8 @@ export type VerbCtx = {
 export type VerbRow = {
   rank: number;
   gen?: boolean;
+  /** Needs the caption deed for args.id (rights.ts captionDeedRefusal). */
+  caption?: boolean;
   /** Mounting or dismounting YOURSELF (sit on the swing, step off the ferry)
    *  is a visitor act — using the world, not editing it. Moving OTHER things
    *  (cargo onto a truck) stays building. The shell drops rank to 0 when
@@ -98,17 +105,39 @@ function vGrant(ctx: VerbCtx, args: Record<string, unknown>) {
   // decides what may become history, so an arg it does not name is dropped
   // before the fold ever sees it.
   const fly = args.fly != null ? Boolean(args.fly) : undefined;
-  if (!id || (role == null && gen == null && fly == null) || (role != null && ROLE_RANK[role] == null)) {
-    return { error: "grant wants {id, role: owner|builder|visitor} and/or {gen: true|false} and/or {fly: true|false}" };
+  // The caption deed: `caption: "<entityId>"` binds authority to caption that
+  // one entity, resolved HERE to its creation generation so the deed dies
+  // with the object; `caption: null` revokes. Anything else is refused
+  // before it can become history.
+  let caption: { id: string; born?: number } | null | undefined;
+  if (args.caption === null) caption = null;
+  else if (args.caption !== undefined) {
+    const target = String(args.caption ?? "").slice(0, 64);
+    const ent = target ? (w.state.entities as Record<string, { born?: number } | undefined>)[target] : undefined;
+    if (!target || !ent) return { error: `grant caption wants the id of an entity that exists here (got ${JSON.stringify(args.caption)})` };
+    caption = { id: target, ...(ent.born != null ? { born: ent.born } : {}) };
   }
+  if (!id || (role == null && gen == null && fly == null && caption === undefined) || (role != null && ROLE_RANK[role] == null)) {
+    return { error: "grant wants {id, role: owner|builder|visitor} and/or {gen: true|false} and/or {fly: true|false} and/or {caption: \"<entityId>\"|null}" };
+  }
+  if (id === "*" && caption) return { error: "the caption deed is granted to one captioner, not to everyone" };
   if (id === "*" && role === "owner") {
     return { error: "everyone cannot own a world" };
   }
   // resolve-at-grant: if the subject is PRESENT with a durable sub,
   // bind the grant to it — authority follows the person, not the nick
   const subject = [...w.clients].find((o) => o.id === id && o.sub);
+  // …and never over another subject's record: the fold would relabel that
+  // principal's authority as this one's, so it fails closed there and the
+  // door says why here (shared/fold.js grant)
+  if (subject?.sub) {
+    const occupant = (w.state.roles as Record<string, { sub?: string } | undefined> | undefined)?.[id];
+    if (occupant?.sub && occupant.sub !== subject.sub) {
+      return { error: `"${id}" already carries a grant bound to another subject (${occupant.sub}) — revoke or move that record before granting ${id} anew` };
+    }
+  }
   return { args: { id, ...(role != null ? { role } : {}), ...(gen != null ? { gen } : {}),
-    ...(fly != null ? { fly } : {}),
+    ...(fly != null ? { fly } : {}), ...(caption !== undefined ? { caption } : {}),
     ...(subject?.sub ? { sub: subject.sub } : {}) } };
 }
 
@@ -188,12 +217,53 @@ function vComp(ctx: VerbCtx, args: Record<string, unknown>) {
     w.debug("rejected", { who: c.id, verb: "comp", why: "malformed — wants {id, type, data|null}" });
     return { error: "comp wants {id, type, data|null}" };
   }
+  // `captions` is server-written: it folds from the `caption` verb, whose
+  // deed and dedupe would mean nothing if any builder could overwrite the
+  // bag by hand. One writer path (shared/captions.js).
+  if (type === "captions") {
+    w.debug("rejected", { who: c.id, verb: "comp", why: `type captions is server-written on ${id}` });
+    return { error: `"captions" is written by the caption verb, not by comp — grant a captioner the deed (grant {id, caption: "${id}"}) and let it write` };
+  }
   if (args.data !== undefined && args.data !== null
     && JSON.stringify(args.data).length > 8192) {
     w.debug("rejected", { who: c.id, verb: "comp", why: `data too large (8KB max) on ${id}.${type}` });
     return { error: "component data too large (8KB max) — put big things in /upload and reference the path" };
   }
   return { args: { id, type, data: args.data ?? null } };
+}
+
+/** One caption line, or the screen going quiet. Shape by the shared meaning
+ *  module; then the dedupe and session order against the FOLDED bag, so a
+ *  duplicate/old n, a stale session, or an end for the wrong session is
+ *  refused before it can become history — a resend after a lost receipt
+ *  never writes twice. */
+function vCaption(ctx: VerbCtx, args: Record<string, unknown>) {
+  const { w, c } = ctx;
+  const n = normalizeCaptionArgs(args);
+  if (!n.ok) {
+    w.debug("rejected", { who: c.id, verb: "caption", why: n.why });
+    return { error: n.why };
+  }
+  const ent = (w.state.entities as Record<string, { comp?: { captions?: unknown } } | undefined>)[n.args.id];
+  if (!ent) return { error: `"${n.args.id}" is not here — nothing to caption` };
+  // the leg's generation is the SERVER's word (a client-supplied one was
+  // already dropped by the shape): who the captioner is, is who holds the
+  // live leg, and the bag follows it. The OWNER (and operators) recover a
+  // screen regardless of which leg holds it: their entry is stamped with the
+  // bag's own generation, and their `end` ends whatever session is current —
+  // written into the entry, so the fold sees the same override the door did.
+  const bag = ent.comp?.captions as { gen?: number; session?: string } | undefined;
+  const rights = rightsOf(w.state, c.id, c.sub);
+  const override = ROLE_RANK[rights.role] >= ROLE_RANK.owner;
+  const legGen = c.legGen ?? c.gen ?? 0;
+  const stamped = { ...n.args, gen: override && bag ? Math.max(legGen, Number(bag.gen) || 0) : legGen } as Record<string, unknown>;
+  if (override && bag && n.args.end && bag.session) stamped.session = bag.session;
+  const why = captionRefusal(ent.comp?.captions, stamped);
+  if (why) {
+    w.debug("rejected", { who: c.id, verb: "caption", why });
+    return { error: why };
+  }
+  return { args: stamped };
 }
 
 function vMount(ctx: VerbCtx, args: Record<string, unknown>) {
@@ -369,6 +439,7 @@ function vSpawn(ctx: VerbCtx, args: Record<string, unknown>) {
 
 const extras: Record<string, Pick<VerbRow, "selfRankZero" | "validate" | "after">> = {
   say: { validate: vSay },
+  caption: { validate: vCaption },
   spawn: { validate: vSpawn },
   // A `use` is a cause; reactions turn it into logged effects.
   use: { after: (ctx, entry) => reactToUse(ctx.w, entry) },
@@ -501,6 +572,15 @@ export function runVerb(ctx: VerbCtx, verb: string, rawArgs: unknown): void {
     && String((rawArgs as Record<string, unknown> | undefined)?.id ?? "") === c.id;
   const needRank = selfMount ? 0 : row.rank;
   const rights = rightsOf(w.state, c.id, c.sub);
+  // The caption deed sits with the rank gate: same teaching order (who may),
+  // before locks and shapes. A visitor holding the deed passes here for
+  // exactly one entity; a builder without it does not.
+  const deedWhy = row.caption ? captionDeedRefusal(w.state, rights, rawArgs as Record<string, unknown> | undefined) : null;
+  if (deedWhy) {
+    w.debug("denied", { who: c.id, verb: String(verb), why: "no caption deed" });
+    c.ws.send(JSON.stringify({ type: "error", error: deedWhy }));
+    return;
+  }
   if (ROLE_RANK[rights.role] < needRank || (row.gen && !rights.gen)) {
     const why = row.gen && ROLE_RANK[rights.role] >= row.rank
       ? "bringing new assets into this world needs the gen capability — ask its owner"

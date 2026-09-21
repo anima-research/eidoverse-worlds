@@ -32,7 +32,8 @@ export const ADMIN_IDS = new Set((process.env.WORLD_ADMIN ?? "").split(",").map(
 export function worldHasOwner(st: WorldState): boolean {
   return worldHasOwnerIn(st as any);
 }
-export function rightsOf(state: WorldState, id: string, sub?: string): { role: string; gen: boolean; fly: boolean } {
+export type CaptionDeed = { id: string; born?: number };
+export function rightsOf(state: WorldState, id: string, sub?: string): { role: string; gen: boolean; fly: boolean; caption?: CaptionDeed } {
   // Grants are honored under either handle: the display id (what owners see
   // and type) or the durable principal sub (what survives a rename —
   // home-node.md §5: key state by sub). WORLD_ADMIN accepts both too.
@@ -55,8 +56,14 @@ export function rightsOf(state: WorldState, id: string, sub?: string): { role: s
   return rightsIn(state as any, id, sub);
 }
 /** What each verb demands. `asset` is the spend gate; `grant` is owner-only. */
-export const VERB_NEEDS: Record<string, { rank: number; gen?: boolean }> = {
+export const VERB_NEEDS: Record<string, { rank: number; gen?: boolean; caption?: boolean }> = {
   say: { rank: 0 },
+  // One line of what a screen said (the projector's captioner). Visitor
+  // rank PLUS the caption deed for that one entity: the narrowest authoring
+  // act the world has, granted by the owner per screen, so a bot that
+  // captions holds exactly this and its ordinary visitor verbs — never
+  // builder standing over the world (Mica, #187 review).
+  caption: { rank: 0, caption: true },
   // Using the world is for everyone; only authoring it is gated.
   use: { rank: 0 },
   // mount/dismount are rank 1 for THINGS (loading cargo is building) but the
@@ -109,6 +116,24 @@ export function isAdminId(id: string, sub?: string): boolean {
  *  Applies to everyone including the locker: your own stray drag is the
  *  original accident (a build-mode fallthrough once relocated Fable's swing). */
 export const LOCK_GUARDED = new Set(["place", "remove", "punt", "mount", "spawn", "light"]);
+/** Why this caller may not `caption` this entity, or null. Owner and
+ *  operators pass. Everyone else needs the deed for exactly this id, and the
+ *  entity must still be the one the deed was granted for — its creation
+ *  generation (`born`, fold.js) must match — so a removed or replaced screen
+ *  invalidates the deed instead of letting a stale bot caption whatever
+ *  later wears the name. */
+export function captionDeedRefusal(state: WorldState, rights: { role: string; caption?: CaptionDeed }, args: Record<string, unknown> | undefined): string | null {
+  if (ROLE_RANK[rights.role as keyof typeof ROLE_RANK] >= ROLE_RANK.owner) return null;
+  const id = String(args?.id ?? "");
+  const deed = rights.caption;
+  if (!deed) return `"caption" needs the caption deed for "${id}" — the world's owner grants it: grant {id: <your id>, caption: "${id}"}`;
+  if (deed.id !== id) return `your caption deed is for "${deed.id}", not "${id}"`;
+  const ent = (state.entities as Record<string, { born?: number } | undefined>)[id];
+  if (!ent) return `"${id}" is not here — the caption deed names an entity that no longer exists`;
+  if (deed.born != null && ent.born !== deed.born) return `"${id}" was replaced since the caption deed was granted — ask the owner to grant it again`;
+  return null;
+}
+
 export function lockRefusal(state: WorldState, verb: string, args: Record<string, unknown> | undefined): string | null {
   if (!LOCK_GUARDED.has(verb)) return null;
   const id = String(args?.id ?? "");
