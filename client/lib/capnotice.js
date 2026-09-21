@@ -7,9 +7,8 @@ import { getFrame } from './frames.js';
 const LS = 'ew-capnotice-dismissed';
 export const WEBGL = {
   title: 'Running on WebGL 2',
-  body: 'This browser has no WebGPU (or it is switched off), so three.js is using its WebGL 2 backend. ' +
-        'The world works. Expect the sky’s cached lighting to be off, heavier scenes to run slower, and shadows to filter a little differently. ' +
-        'Chrome or Edge 113+, or Firefox with WebGPU enabled, get the full version.',
+  body: 'This browser is using its WebGL 2 backend instead of WebGPU — usually a phone, an older browser, or VR on a browser without WebGPU flags. ' +
+        'The world may render a little differently. Chrome or Edge 113+, or Firefox with WebGPU enabled, get the full version.',
 };
 
 let card = null;
@@ -55,7 +54,10 @@ function show(key, title, body) {
     // right edge. The card is now removed from that list and placed SECOND instead.
     placeTop = () => {
       if (!card) return;
-      if (!mq.matches) { card.style.top = ''; return; }   // above 900px index.html owns it
+      // TOP-CENTRE unless something is there (owner, 09-19: 'top-center if there is no menu currently there —
+      // avoid menus if there is a reason to'). Every width: the same measurement, against the card's own span.
+      const cr = card.getBoundingClientRect(); const x0 = cr.left, x1 = cr.right;
+      const inSpan = (g) => g.right > x0 && g.left < x1;
       const bar = getFrame('emotes')?.el;
       if (bar && bar !== barSeen && typeof ResizeObserver === 'function') {
         barSeen = bar; barRO?.disconnect(); barRO = new ResizeObserver(() => placeTop?.()); barRO.observe(bar);
@@ -66,7 +68,7 @@ function show(key, title, body) {
       let bottom = 0;
       for (const sel of ['#dock', '#micbtn', '#earbtn']) {
         const g = document.querySelector(sel)?.getBoundingClientRect();
-        if (g && g.width && g.right > 50 && g.top < 120) bottom = Math.max(bottom, g.bottom);
+        if (g && g.width && inSpan(g) && g.top < 120) bottom = Math.max(bottom, g.bottom);
       }
       // AND THE BAR, WHICH THE CARD MUST CLEAR — not because the bar constrains the
       // card's SIZE (it does not; the bar is out of roomFor()'s list and the card is out
@@ -78,7 +80,7 @@ function show(key, title, body) {
       // Dismissibility is not reachability.
       if (bar && getComputedStyle(bar).display !== 'none') {
         const g = bar.getBoundingClientRect();
-        if (g.width && g.right > 50) bottom = Math.max(bottom, g.bottom);
+        if (g.width && inSpan(g)) bottom = Math.max(bottom, g.bottom);
       }
       // ...AND EVERY OTHER CONTROL IN THE TOP HALF OF THE CARD'S SPAN. Four attempts
       // enumerated chrome by hand (#dock, #micbtn, #earbtn, the bar) and every one
@@ -92,13 +94,14 @@ function show(key, title, body) {
       // past the midline is not in the card's way; it is on the other side of the screen.
       for (const el of document.querySelectorAll('.frame .tile, .frame button, #dock button')) {
         const g = el.getBoundingClientRect();
-        if (!g.width || !g.height || g.right <= 50) continue;
+        if (!g.width || !g.height || !inSpan(g)) continue;
         if (g.top + g.height / 2 > innerHeight / 2) continue;
         bottom = Math.max(bottom, g.bottom);
       }
       card.style.top = Math.round(bottom + 8) + 'px';
     };
 
+    document.body.appendChild(card);   // IN THE DOM BEFORE THE FIRST MEASURE: a detached card's rect is all zeros, every occupant test misses, and the card is born over the emote bar (pre-review B1)
     const repaint = () => { setAnchor(); placeTop(); };
     repaint();
     mq.addEventListener('change', repaint);
@@ -113,7 +116,6 @@ function show(key, title, body) {
       barRO?.disconnect(); barRO = null; barSeen = null;
       setAnchor = null; placeTop = null; unwatch = null;
     };
-    document.body.appendChild(card);
   }
   if (card.querySelector(`[data-key="${CSS.escape(key)}"]`)) return;
   const item = document.createElement('div');
@@ -125,6 +127,7 @@ function show(key, title, body) {
   item.querySelector('.cn-ok').onclick = close;
   item.querySelector('.cn-never').onclick = () => { try { seen.add(key); localStorage.setItem(LS, JSON.stringify([...seen])); } catch {} close(); };
   card.appendChild(item);
+  placeTop?.();   // the card just grew
 }
 
 export function initCapNotice() {

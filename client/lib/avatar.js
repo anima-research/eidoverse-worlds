@@ -4,6 +4,8 @@
 
 import { renderAside } from './render.js';
 import { THREE, scene, camera, renderer, backendName } from './core.js';
+import { makeCapsuleVrm } from './capsulebody.js';
+import { FADE_PRESS } from './locomotion_clip.js';   // one owner for the jump-press fade (see _setAction)
 import { report, angleDelta, bus, tee } from './base.js';
 import { defsRegistry } from './defs.js';
 import { measureChain, solveChain } from './reachbone.js';
@@ -279,7 +281,7 @@ const disposeSprite = (s) => { s.material.map?.dispose(); s.material.dispose(); 
 // a token read at paint time — canvas sprites cannot use var(); a 'style' event repaints them
 const tokv = (n, fb) => (getComputedStyle(document.documentElement).getPropertyValue(n) || fb).trim();
 // every live Avatar, so a Style change can repaint the sprites it baked from
-// tokens (R, 09-05 16:41: pink accent, nameplates still teal)
+// tokens (owner, 09-05 16:41: pink accent, nameplates still teal)
 const liveAvatars = new Set();
 bus.on('style', () => { for (const a of liveAvatars) a.repaintLabel?.(); });
 
@@ -461,6 +463,28 @@ const LAMP_SHAPE = 1.6;
 // than switching off, because a lamp that is off at noon looks broken.
 const LAMP_DAY_FLOOR = 0.18;
 
+
+/** A jump clip's take-off: the hips dip (anticipation), then come back up through their rest height — that is the
+ *  frame the feet leave the floor. A clip with no hips track, or one that starts by rising, gives 0. */
+function clipTakeoff(clip) {
+  if (clip.userData.takeoff != null) return clip.userData.takeoff;
+  const tr = clip.tracks.find((t) => /hips\.position$/i.test(t.name) || /Hips\.position$/.test(t.name));
+  let out = 0;
+  if (tr && tr.values.length >= 6) {
+    const n = tr.times.length, half = Math.max(1, Math.floor(n / 2));
+    let minI = 0, minY = Infinity;
+    for (let i = 0; i < half; i++) { const y = tr.values[i * 3 + 1]; if (y < minY) { minY = y; minI = i; } }
+    if (minI > 0 && tr.values[1] - minY > 0.01) {   // a real dip (>1 cm), not noise
+      // the body actually leaves the ground when the hips come back UP through rest height (jump.vrma:
+      // rest .864, bottom .494 @0.33 s, back through rest @0.50 s, apex @0.75 s) — start there, not at the
+      // bottom of the squat, or an airborne body is still pushing off
+      let i = minI; while (i < n - 1 && tr.values[i * 3 + 1] < tr.values[1]) i++;
+      out = tr.times[i];
+    }
+  }
+  clip.userData.takeoff = out;
+  return out;
+}
 export class Avatar {
   /** Monotonic, so one identity's successive bodies never share a lamp owner. */
   static _seq = 0;
@@ -989,25 +1013,49 @@ export class Avatar {
   }
 
   // ---- locomotion / clips
-  setClip(slot, speed = 0) {
+  setClip(slot, speed = 0, { fade, ease = false } = {}) {
     // Moving cancels an emote. Standing frozen mid-cheer while walking away
     // is worse than cutting the cheer short.
     if (this.emote && speed > 0.05) this.cancelEmote();
     if (this.emote) return;        // otherwise it owns the body until it finishes
     let use = slot;
     while (!this.actions[use] && CLIP_FALLBACK[use]) use = CLIP_FALLBACK[use];
-    this._setAction(this.actions[use], use);
+    this._setAction(this.actions[use], use, fade, ease);
     const a = this.actions[use];
     if (!a) return;
     const nat = CLIP_SPEED[slot];
     a.timeScale = nat > 0 && speed > 0 ? THREE.MathUtils.clamp(speed / nat, 0.6, 1.6) : 1;
   }
-  _setAction(a, slot) {
+  _setAction(a, slot, fadeIn, ease = false) {
     if (!a || this.current === a) return;
-    if (this.current) this.current.fadeOut(0.22);
-    a.enabled = true;
-    a.setEffectiveWeight(1);       // base weight — fadeIn ramps a MULTIPLIER on this
-    a.reset().fadeIn(0.22);
+    let linear = false;
+    // into a jump the caller says how fast: a jump press is snappy (feet already off the floor), a walk-off is
+    // 0.5 s EASED (owner, 09-19: 'start immediately… a bezier… almost no transition right away, smoother overall').
+    // The press fade is FADE_PRESS, imported rather than repeated: this fallback and locomotion_clip.js held the
+    // same literal independently, so a change in one would have silently diverged from the other.
+    const fade = fadeIn ?? (slot === 'jump' ? FADE_PRESS : 0.22);
+    // an eased crossfade cut short (a landing inside the 0.5 s walk-off ease): its outgoing action was parked at
+    // weight 1-w with nothing ever fading it — walk stayed half-blended into idle (pre-review B2)
+    // a cut that lands INSIDE an ease (a stair-step landing 0.2 s into the walk-off ease) continues from the current
+    // weights with a linear profile — the plain branch's reset()+fadeIn restarted the incoming clip from 0 and let the
+    // weight sum fall to 0.76 for a frame (round 4 S1b). The finished-ease case takes the plain branch as before.
+    if (this._xfade) { const x = this._xfade; if (x.out && x.out !== a && x.out !== this.current) x.out.fadeOut(fade); this._xfade = null; ease = true; linear = true; }
+    if (ease) {
+      // three's fades are linear; this one is smoothstep on both sides so the weights always sum to 1
+      const prev = this.current; const out0 = prev ? prev.getEffectiveWeight() : 0; if (prev) prev.stopFading();
+      const in0 = a.getEffectiveWeight();   // from wherever the previous linear fade left them, not 0/1 — a land-then-walk-off popped 0.26 (round 3 S1)
+      a.enabled = true; a.reset(); a.stopFading(); a.setEffectiveWeight(in0); a.play();
+      this._xfade = { out: prev, in: a, dur: fade, t: 0, in0, out0, linear };
+    } else {
+      if (this.current) this.current.fadeOut(fade);
+      a.enabled = true;
+      a.setEffectiveWeight(1);       // base weight — fadeIn ramps a MULTIPLIER on this
+      a.reset().fadeIn(fade);
+    }
+    // The jump LEAVES THE GROUND INSTANTLY (gamey, on purpose) but the clip opens with its anticipation crouch,
+    // so the body squatted in mid-air and then rose (owner, 09-19). Start the clip at take-off — the frame the hips
+    // stop dipping — measured from the clip itself, so it holds for any body and any future jump clip.
+    if (slot === 'jump') a.time = clipTakeoff(a.getClip());
     this.current = a;
     this.currentSlot = slot;
   }
@@ -1574,6 +1622,11 @@ export class Avatar {
   }
 
   update(dt, now = performance.now()) {
+    if (this._xfade) {   // the eased crossfade (see _setAction): smoothstep in, its complement out
+      const x = this._xfade; x.t += dt; const u = Math.min(1, x.t / x.dur), w = x.linear ? u : u * u * (3 - 2 * u);
+      x.in.setEffectiveWeight(x.in0 + (1 - x.in0) * w); if (x.out && x.out !== x.in) x.out.setEffectiveWeight(x.out0 * (1 - w));
+      if (u >= 1) { if (x.out && x.out !== x.in) x.out.setEffectiveWeight(0); this._xfade = null; }
+    }
     const BC = globalThis.__ewBC ?? (() => {});
     // emote expiry
     if (this.emote && now > this.emote.until) this.cancelEmote();
@@ -1982,6 +2035,29 @@ function makeBlobShadow() {
 
 // ---------------------------------------------------------------- factory
 
+/** The body of last resort (capsulebody.js): a real Avatar over a capsule puppet — labels, emotes, the XR arm
+ *  solver and the wire all work on it. Never throws; never touches the network. */
+export function makeCapsuleAvatar(id) {
+  const av = new Avatar(id, makeCapsuleVrm(), {});
+  av.isCapsule = true;
+  // the standard clips, if they can be had (owner, 09-19: 'it has arms and legs'): idle + walk first, then the rest
+  // through the same idle-time hydration a real body uses. Each is best-effort — the capsule exists precisely
+  // because the network may be gone, and a still puppet is the floor, not a failure.
+  (async () => {
+    for (const slot of CORE_CLIPS) {
+      try { const clip = await clipFor(av.vrm, slot); if (av._disposed) return;   // a remote disposed on takeover: stop feeding a dead body (pre-review S8)
+        const a = av.mixer.clipAction(clip); a.enabled = true; a.setEffectiveWeight(0); a.play(); av.actions[slot] = a; }
+      // One unavailable clip is not a verdict on the rest (#196 review B1): this
+      // loop used to `return`, so a single 404 on the first slot cost idle AND
+      // walk and left a still puppet. Each slot is independent — skip the miss.
+      catch (e) { console.warn(`capsule clip ${slot} unavailable`, e); }
+    }
+    if (av._disposed) return;
+    av.setClip(av.currentSlot ?? 'idle');
+    av.hydrateClips().catch(() => {});
+  })();
+  return av;
+}
 export async function makeAvatar(id, libPath, { full = false, urgent = false } = {}) {
   loadTrack(`avatar:${id}`, `${id} materializing`);
   const work = beginWork(`avatar ${id}`);
@@ -2059,7 +2135,7 @@ export async function contributeThumbnail(name, vrm, token = '', { force = false
     const sub = new THREE.Scene();
     // A render target gets no tone mapping — the canvas's ACES curve never
     // touches these pixels — so lights tuned for the world burned every
-    // portrait to white (R, 09-05: 'burned'). Linear-safe levels instead.
+    // portrait to white (owner, 09-05: 'burned'). Linear-safe levels instead.
     sub.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.9));
     const key = new THREE.DirectionalLight(0xffffff, 1.1);
     key.position.set(1.4, 2.2, 2.4);
@@ -2141,7 +2217,7 @@ export async function contributeThumbnail(name, vrm, token = '', { force = false
       const headY = vrm.humanoid.getNormalizedBoneNode('head').getWorldPosition(new THREE.Vector3()).y;
       const stature = headY - rootY + 0.13; // crown ≈ head joint + a forehead
       // ...unless the mesh really does go higher: claude's head joint sits at 1.37 m under a
-      // 2.21 m crown of tentacles, and a stature frame cut it off (R, 09-06 22:37). Let the
+      // 2.21 m crown of tentacles, and a stature frame cut it off (owner, 09-06 22:37). Let the
       // bbox raise the top by up to 60 % of stature — enough for any head, not for a particle shell.
       if (stature > 0.2) height = Math.min(Math.max(stature, dims.y), stature * 1.6);
     } catch { /* bbox fallback */ }

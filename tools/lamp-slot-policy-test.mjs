@@ -108,5 +108,16 @@ check('...but it is still a working light',
   bareReq.slot >= 0 && (d2.slotState[bareReq.slot] || {}).intensity > 0,
   `slot ${bareReq.slot} intensity ${(d2.slotState[bareReq.slot] || {}).intensity}`);
 
+// THE EMITTER RULE (fixes PR): an MToon body's unlit trick — emissive ≈ white + an emissive MAP at strength 1 — is
+// not a lamp; a flat emissive colour with no map is; a map driven above strength 1 is.
+{
+  const toon = glowing('toon', [0, 1, -1.2], 1); toon.children[0].material.emissiveMap = new THREE.Texture(); toon.children[0].material.emissive.set(1, 1, 1);
+  check('an emissive-map body at strength 1 gets NO lamp', rig.attachLamps(toon, 'body:toon:1').length === 0, 'MToon unlit look');
+  const flat = glowing('flat', [0, 1, -1.3], 1);
+  check('a flat emissive colour (no map) gets a lamp', rig.attachLamps(flat, 'body:flat:1').length === 1, 'a real emitter');
+  const hot = glowing('hot', [0, 1, -1.4], 2); hot.children[0].material.emissiveMap = new THREE.Texture();
+  check('an emissive map driven above strength 1 gets a lamp', rig.attachLamps(hot, 'body:hot:1').length === 1, 'strength 2');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -255,7 +255,7 @@ const DEFAULT_LAYOUT = {
   settings: { x: -8,  y: 381, w: 407, h: 443, hidden: true },
   profile:  { x: 48,  y: 46,  w: 505, h: 452, hidden: true },
   debug:    { x: -414, y: 8,  w: 342, h: 453, hidden: true },
-  emotes:   { x: 'center', y: 10, h: 32, hidden: false },  // one bar across the TOP, OPEN by default — moved from y:-10 on 2026-09-11 because the hint bar and toasts live at the bottom (R: "all the helper notifications display at the bottom where it currently is"); the bar sizes its WIDTH itself (emotebar.js snapTo) and its ROWS from a dragged height, but ROW_H is fixed — carried here so fitsDefaults stops counting the bar as zero-height (round 4)
+  emotes:   { x: 'center', y: 10, h: 32, hidden: false },  // one bar across the TOP, OPEN by default — moved from y:-10 on 2026-09-11 because the hint bar and toasts live at the bottom (owner: "all the helper notifications display at the bottom where it currently is"); the bar sizes its WIDTH itself (emotebar.js snapTo) and its ROWS from a dragged height, but ROW_H is fixed — carried here so fitsDefaults stops counting the bar as zero-height (round 4)
 };
 // Can this viewport hold the hand-arranged default at all? Derived from
 // DEFAULT_LAYOUT rather than a hardcoded breakpoint, so it stays true if the
@@ -391,6 +391,7 @@ export function makeFrame(id, opts = {}) {
     // is stranded hidden FOREVER. B1 traded "reopens a deliberately closed panel" for
     // "never reopens an auto-hidden one".
     autoHidden: saved?.autoHidden ?? false,
+    underDock: saved?.underDock ?? false,   // a deliberate drop under the dock survives a reload (pre-review S1)
     // AND `placed`, for the same reason and by the same mistake. markMoved() sets
     // `state.placed = true` ad-hoc and save() serialises the whole object, so the flag
     // reaches storage once — but this literal had no `placed` key, so the NEXT
@@ -566,6 +567,10 @@ export function makeFrame(id, opts = {}) {
       head.removeEventListener('pointermove', move);
       head.removeEventListener('pointerup', up);
       root.classList.remove('lifting');
+      // a drop that ENDS under the dock is the one deliberate way to be there (owner, 09-19: 'unless a user
+      // deliberately stuck a window under the dock, there's never a situation we should allow this')
+      const d = document.querySelector('#dock')?.getBoundingClientRect(), hh = root.offsetHeight;
+      state.underDock = !!(d && d.width && d.left < state.x + state.w && state.x < d.right && d.top < state.y + hh && state.y < d.bottom);
       markMoved(); save();                 // a drag IS the deliberate act
     };
     head.addEventListener('pointermove', move);
@@ -690,13 +695,18 @@ export function makeFrame(id, opts = {}) {
       // that wrong result. chromeSettled below is the gate: the dock carries no
       // buttons until it has laid out.
       const chromeSettled = (document.querySelector('#dock')?.querySelectorAll('button[data-toggles]').length ?? 0) > 0;
-      if (!placed && chromeSettled) {
+      // THE DOCK IS CLEARED EVEN BY A PLACED FRAME — a saved position from an older dock geometry (or a moved
+      // dock) is not a decision to sit under it; only a drop that ended there is (state.underDock, set at drag end).
+      if (chromeSettled && (!placed || !state.underDock)) {
         // ANCHOR-AWARE (antra-tess #185 B2). Each obstacle is charged to the side it
         // is welded to, via its DECLARED anchor — the one thing computed style cannot
         // supply. `.capnotice` is right-anchored and was being read as left-consuming,
         // which is what drove `avail` to -6 and floored a 407px frame to its 210 minW.
         let clearRight = 0, clearFromRight = 0;
-        for (const sel of ['#dock', '#micbtn', '#earbtn', '.capnotice']) {
+        // .capnotice is NOT in this list: the card steps aside for frames (capnotice.js placeTop measures its span and
+        // drops below them); a frame yielding to the card as well drove the 1000×700 emote bar to 313 px under the dock
+        // (round 3 B1 — its declared right anchor charged a centred card as 671 px of right chrome)
+        for (const sel of (placed ? ['#dock'] : ['#dock', '#micbtn', '#earbtn'])) {   // a placed frame yields to the DOCK only
           const g = document.querySelector(sel)?.getBoundingClientRect();
           if (g && g.width && g.left < state.x + state.w && state.x < g.right
               && g.top < state.y + hh && state.y < g.bottom) {

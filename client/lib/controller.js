@@ -12,6 +12,7 @@ import { heightAt } from './terrain.js';
 import { resolveColliders, lastBlockedTop, findSeat, raySegment } from './colliders.js';
 import { chat } from './chat.js';
 import { isOverlayOpen, flashHint } from './ui.js';
+import { selectClip } from './locomotion_clip.js';
 import {
   resolveFirstPersonAnchor, FP_FORWARD, FP_EYE_LIFT, FP_GAZE_AHEAD, FP_GAZE_DROP,
 } from './fp_view.js';
@@ -246,7 +247,7 @@ export const myState = {
 
 export const keys = new Set();
 let posture = null;              // 'sit' | 'lie' | null
-let vy = 0, grounded = true, mantle = null, airborneFor = 0;
+let vy = 0, grounded = true, mantle = null, airborneFor = 0, jumped = false, wantMove = false;
 
 // camera
 export let camYaw = 0, camPitch = 0.32, camDist = 4.2;
@@ -506,6 +507,7 @@ export function updateMe(dt, me) {
   if (touchState.moveX || touchState.moveZ) { strafe = touchState.moveX; fwd = -touchState.moveZ; }
 
   const moving = Math.abs(fwd) > 0.08 || Math.abs(strafe) > 0.08;
+  wantMove = moving;   // INTENT, for the clip choice below: the walk→idle blend starts on key release, not 0.34 s later when the coast ends
   const running = keys.has('ShiftLeft') || keys.has('ShiftRight');
   // A slow walk for precise positioning — placing a chair exactly where you
   // want it at 1.55 m/s is a fight.
@@ -650,7 +652,7 @@ export function updateMe(dt, me) {
         to.y = blockedTop;
         mantle = { from: myState.pos.clone(), to, t: 0 };
         grounded = false;
-      } else { vy = 5.6; grounded = false; }
+      } else { vy = 5.6; grounded = false; jumped = true; }   // a DELIBERATE jump: the clip may start this frame, no airborne grace
     }
     if (!mantle) {
       if (!grounded || myState.pos.y > ground + 0.02) {
@@ -662,6 +664,7 @@ export function updateMe(dt, me) {
     }
   }
   airborneFor = grounded || mantle ? 0 : airborneFor + dt;
+  if (grounded || mantle) jumped = false;
   if (myState.speed >= 0.05) {
     posture = null; myState.seat = null; // standing up is just walking away
     // ...and so is escaping a held pose (puppet, restored, or ragdoll-settled).
@@ -670,15 +673,13 @@ export function updateMe(dt, me) {
     if (myState.pose) myState.pose = null;
   }
 
-  const seatedClip = myState.seat?.chair ? 'sitchair' : 'sit';
-  myState.clip = mantle ? 'climb'
-    : airborneFor > 0.09 ? 'jump'
-      : myState.speed >= 0.05 ? (myState.speed < 2.6 ? 'walk' : 'run')
-        : posture === 'sit' ? seatedClip
-          : posture === 'lie' ? 'lie'
-            : 'idle';
+  // The policy itself lives in locomotion_clip.js so it can be driven directly
+  // (#196 review B2: this path selects the clip AND its blend, and nothing bound
+  // it). Flight picks its own clip and returns before this line.
+  const sel = selectClip({ mantle, jumped, airborneFor, wantMove, speed: myState.speed, posture, seat: myState.seat });
+  myState.clip = sel.clip;
 
-  me.setClip(myState.clip, myState.speed);
+  me.setClip(myState.clip, myState.speed, sel.opts);
   me.root.position.copy(myState.pos);
   me.root.rotation.y = myState.yaw;
   // your head follows your camera — you could always look up, your body never
