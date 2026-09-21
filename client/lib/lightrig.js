@@ -92,12 +92,19 @@ const SHADOW_SLOT = 0;
 // Janus's measured values, arrived at with the live dials below against the
 // moving body in real light:
 //
-//     {map: 256, texels: 10, workDist: 12, forward: 0.037, up: 0.01}
-//       -> normalBias 0.9375, texel 93.75mm
+//     {map: 256, texels: 8, workDist: 12, forward: -0.02, up: 0.15}
+//       -> normalBias 0.75, texel 93.75mm
+//
+// forward is NEGATIVE, which is the interesting one: it pulls the bulb 2cm
+// back INTO the chest, toward the wings. That is the direction the geometry
+// wants -- the wing mass sits entirely behind the bulb (wing z -0.734..-0.107
+// in bind space, bulb z +0.015), so light reaching a wing travels backward out
+// of the chest. up 0.15 lifts it 15cm, to about collarbone height.
 //
 // WHAT THIS ACTUALLY IS, said plainly, because the honest reading matters more
-// than the tidy story. normalBias of 0.9375 is NINETY-FOUR CENTIMETRES of
-// offset along each surface's normal -- taller than the torso it is lighting.
+// than the tidy story. normalBias of 0.75 is SEVENTY-FIVE CENTIMETRES of
+// offset along each surface's normal -- most of the height of the torso it is
+// lighting.
 // At that magnitude the shadow term has effectively been pushed out of the
 // scene: almost nothing occludes anything, and what reaches the wings is close
 // to unoccluded point-light falloff. That is why raising `texels` is what
@@ -118,11 +125,9 @@ const SHADOW_SLOT = 0;
 // it says. Untried, so not shipped -- Janus's values are what has been looked
 // at, and a plausible improvement does not outrank a measured one.
 //
-// The geometry behind the wing problem: the wing mass sits ENTIRELY BEHIND the
-// bulb (wing z -0.734..-0.107 in bind space; bulb z +0.015), so light reaching
-// a wing travels backward out of the chest and through the torso first. That is
-// the structural reason wings are hard to light from a chest lamp and no dial
-// changes it.
+// The wing geometry is stated at the top of this block: no dial changes the
+// fact that a chest lamp lights a wing from behind itself, which is the
+// structural reason the wings were hard to light at all.
 //
 // map 256: a 12cm sphere inside a chest needs SIX cube faces, and 2048 would be
 // 24MB of cube map for a lamp you can cover with a hand.
@@ -130,11 +135,11 @@ const SHADOW_SLOT = 0;
 // so the bias scales to the whole volume the lamp reaches.
 const SHADOW_MAP = 256;
 const SHADOW_WORK_DIST = 12;
-const SHADOW_BIAS_TEXELS = 10;
-// where the bulb sits in its bone's frame (metres): out of the chest, and a
-// little toward the head
-const SHADOW_FORWARD = 0.037;
-const SHADOW_UP = 0.01;
+const SHADOW_BIAS_TEXELS = 8;
+// where the bulb sits in its bone's frame (metres): 2cm BACK (negative
+// forward, toward the wings) and 15cm up, near the collarbone
+const SHADOW_FORWARD = -0.02;
+const SHADOW_UP = 0.15;
 const SHADOW_SIDE = 0;
 const shadowTexel = (n = SHADOW_MAP) => (2 * SHADOW_WORK_DIST) / n;
 // live-tunable copies (setLampShadow); the consts above are the defaults
