@@ -47,6 +47,11 @@ export type ToolCtx = {
   rememberActivity?: (cfg: { pulseSec?: number; radiusM?: number }) => void;
   /** session-machinery travel; absent = the door does not offer it */
   travel?: (world: string) => Promise<{ content: { type: string; text: string }[]; isError?: boolean }>;
+  /** the door's RFC-005 join policy for THIS credential, so `worlds` can say
+   *  which of the listed worlds the agent may actually travel to — the same
+   *  gate travel itself applies, asked before the move instead of after.
+   *  Absent = the door has no policy vocabulary (stdio fronts one world). */
+  worldPolicy?: { canJoin: (world: string) => boolean; canFound: boolean };
 };
 
 // ---- tools (shared schema with the stdio server, minus retina by default) --
@@ -110,6 +115,7 @@ export const TOOLS = [
   // worlds is a product decision nobody has made, so the honest move is to
   // stop promising it rather than to implement it by inference. Identity,
   // avatar and the activity dial ARE carried, and are named because they are.
+  { name: "worlds", description: "Which worlds this door fronts, and who is embodied in each — the map for `travel`. Marks the world you are in now and, where the door knows your join policy, which others you may travel to. Founding a world that is not listed needs create authority. People and agents are listed by the same ids you see in `look`; spectators appear as nothing, as in-world.", inputSchema: { type: "object", properties: {} } },
   { name: "travel", description: "Walk to another world this door fronts, keeping your identity, avatar and attention settings — no reconnect. Subject to your credential's join policy; founding a world that does not exist yet needs separate create authority. Your held pose and posture do NOT survive the move (they are world-local, like a disconnect), and your chat cursor resets to the new world.", inputSchema: { type: "object", properties: { world: { type: "string", description: "world name, e.g. \"commons\"" } }, required: ["world"] } },
   { name: "world_verb", description: "Raw world-log verb. The verb set is CLOSED by design — say, use, punt, force, mount, dismount, spawn, place, remove, light, comp, motion, behavior, asset, terrain, grass, sky, weather, grant, kick, ban, unban — and the door refuses others; extend STATE with comp types you invent, EVENTS with use actions, SEMANTICS with behavior scripts, never by hoping a new verb exists. This is also the authoring surface for components: comp {id, type, data|null} attaches data to an entity (sockets, reactions, or anything you invent); motion {id, type: pendulum|spin|orbit|bob|path, …} sets it moving; see AGENTS.md in the eidoverse-worlds repo for the full vocabulary.", inputSchema: { type: "object", properties: { verb: { type: "string" }, args: { type: "object" } }, required: ["verb", "args"] } },
   { name: "measure", description: "Geometry as data: bounding box, up-facing flat zones (seat/table/deck candidates), and named parts of a placed thing (id) or a library model (lib). Flat-zone coords are the MODEL's local frame — the same frame sockets use, so a zone's center IS a socket pos: comp {id, type:'sockets', data:{seat:{pos:[cx,y,cz], yaw}}}. Use this to find where a body can sit before declaring the seat; verify by mounting it yourself and taking a selfie snapshot. Raw GLB bytes are at GET <sequencer>/library/<lib> if you want to process the mesh locally.", inputSchema: { type: "object", properties: { id: { type: "string" }, lib: { type: "string" } } } },
@@ -595,6 +601,32 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!ctx.travel) return { content: [{ type: "text", text: "travel is not available on this door — it fronts a single world; reconnect with a different WORLD_NAME instead" }], isError: true };
       return await ctx.travel(String(a.world ?? "").trim());
 
+  },
+  worlds: async (ag, a, ctx, name) => {
+      // Discovery only — this reads the sequencer's /worlds and never moves
+      // the body. The policy column is the door's own joinAllowed, asked
+      // here so an agent learns "may I?" from the map rather than from a
+      // refused travel.
+      let r: Response;
+      try { r = await fetch(`${ag.httpBase}/worlds`, { signal: AbortSignal.timeout(4_000) }); }
+      catch (e) { return { content: [{ type: "text", text: `worlds: the sequencer did not answer (${(e as Error).message})` }], isError: true }; }
+      if (!r.ok) return { content: [{ type: "text", text: `worlds: sequencer answered ${r.status}` }], isError: true };
+      const body = (await r.json()) as { worlds?: { name: string; loaded?: boolean; people?: string[]; agents?: string[] }[] };
+      const list = Array.isArray(body.worlds) ? body.worlds : [];
+      if (!list.some((w) => w.name === ag.world)) list.push({ name: ag.world, loaded: true, people: [], agents: [] });
+      list.sort((x, y) => (x.name === ag.world ? -1 : y.name === ag.world ? 1 : x.name.localeCompare(y.name)));
+      const pol = ctx.worldPolicy;
+      const lines = list.map((w) => {
+        const here = w.name === ag.world;
+        const who = [...(w.people ?? []), ...(w.agents ?? []).map((p) => `${p} (agent)`)];
+        const occupancy = who.length ? who.join(", ") : (w.loaded ? "empty" : "empty, not loaded");
+        const may = here ? "you are here" : pol ? (pol.canJoin(w.name) ? "may travel" : "not in your join policy") : "";
+        return `- ${w.name}${here ? " ←" : ""}: ${occupancy}${may ? ` — ${may}` : ""}`;
+      });
+      const foot = pol
+        ? (pol.canFound ? "You hold create authority: `travel` to an unlisted name founds it." : "Founding an unlisted world needs create authority you do not hold.")
+        : ctx.travel ? "" : "This door fronts a single world; there is no travel from here.";
+      return text(`Worlds on this door (${list.length}):\n${lines.join("\n")}${foot ? `\n${foot}` : ""}`);
   },
   world_verb: async (ag, a, ctx, name) => {
       // the raw door forwards verbatim, so shape is checked HERE — a
