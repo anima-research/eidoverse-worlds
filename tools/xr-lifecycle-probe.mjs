@@ -105,16 +105,26 @@ await pg.addInitScript(() => {
 
 const errs = [];
 pg.on('pageerror', (e) => errs.push(String(e)));
+// THE IMPORT GRAPH. Mica's red reads xrbtn:false — mictoggle.js never evaluated (its module-load ensure()
+// makes the button) — so the stall is a module fetch that never resolved or a top-level await upstream of
+// it, and the console is silent about that. Track every request; at an early stop, print what never
+// finished and what failed. That is the instrument for "boot stalled before initXR".
+const pending = new Map(), failed = [];
+pg.on('request', (r) => pending.set(r, Date.now()));
+pg.on('requestfinished', (r) => pending.delete(r));
+pg.on('requestfailed', (r) => { pending.delete(r); failed.push(`${r.failure()?.errorText ?? 'failed'} ${r.url()}`); });
+try {
 // pageerror never sees an exception thrown inside a frame callback: frame.js:99 catches per system and
 // hands it to report(), which console.error()s `context, err` (base.js:128) — tee() goes to the network,
 // NOT the console, so a '[report]' filter here measured nothing and read green. Capture console errors.
-const reports = [], artifacts = [];
+const reports = [], artifacts = [], consoleTail = [];
 // KNOWN EMULATOR ARTIFACT, disclosed not hidden: IWER's XRWebGLLayer.framebuffer returns null by design
 // (lib/layers/XRWebGLLayer.js:44-46 — it draws to the default framebuffer); a real runtime returns an opaque
 // WebGLFramebuffer. three's WebGL backend keys a WeakMap on that object (WebGLState.drawBuffers) and throws
 // on null. The product's per-system catch (frame.js:99) contains it. Counted and printed; never asserted.
 const ARTIFACT = /Invalid value used as weak map key.*WebGLState\.drawBuffers/;
 pg.on('console', (m) => {
+  consoleTail.push(`${m.type()}: ${m.text().replace(/\s+/g, ' ').slice(0, 200)}`); if (consoleTail.length > 40) consoleTail.shift();
   if (m.type() !== 'error') return;
   const t = `${m.text()} ${m.location()?.url ?? ''}`.replace(/\s+/g, ' ').slice(0, 300);
   if (/status of 401 .*\/whoami/.test(t)) return;   // net.js:254 treats a non-OK /whoami as "not signed in" by design; Chrome logs the fetch anyway
@@ -153,6 +163,19 @@ const glyphStage = () => ev(async () => {
 const gs = await glyphStage();
 console.log(`  · glyph stage: ${JSON.stringify(gs)}`);   // printed on green too, so a red has something to compare to
 check('the visor glyph became visible on its own (XR hook registered)', gs.xrbtn && gs.display !== 'none', JSON.stringify(gs));
+if (!(gs.xrbtn && gs.display !== 'none')) {
+  // STOP HERE. Every later check needs a booted product; running them would throw on a missing glyph and
+  // (before this) leak the browser and the world. Print what the boot said instead — that is the reason.
+  console.log(`  · boot did not reach the glyph. page errors (${errs.length}): ${errs.slice(0, 3).join(' | ') || '—'}`);
+  console.log(`  · console.error (${reports.length}): ${reports.slice(0, 3).join(' | ') || '—'}`);
+  console.log(`  · last console lines (${consoleTail.length}):\n      ${consoleTail.slice(-15).join('\n      ')}`);
+  const now = Date.now();
+  const stuck = [...pending.entries()].map(([r, t]) => `${((now - t) / 1000).toFixed(1)}s ${r.resourceType()} ${r.url().replace(/key=[^&]+/, 'key=…')}`);
+  console.log(`  · requests still PENDING at the stop (${stuck.length}):\n      ${stuck.slice(0, 12).join('\n      ') || '—'}`);
+  console.log(`  · requests FAILED (${failed.length}):\n      ${failed.slice(0, 12).join('\n      ') || '—'}`);
+  if (gs.xrbtn === false) console.log('  · xrbtn:false ⇒ mictoggle.js never evaluated: the stall is in the import graph BEFORE it (a fetch above, or an upstream top-level await), not in renderer.init()');
+  throw new Error('readiness gate failed — stopped before entry; see the stage line and the boot output above');
+}
 
 const probeOk = await ev(() => !!window.__probe && !window.__probe.fatal);
 check('IWER installed a synthetic XR runtime before the client booted', probeOk,
@@ -261,5 +284,9 @@ check('no page errors during the whole lifecycle', errs.length === 0, errs.slice
 check('no console.error during the whole lifecycle (report() speaks here)', reports.length === 0, `${reports.length}: ` + reports.slice(0, 4).join('\n      '));
 if (artifacts.length) console.log(`  · ${artifacts.length} known-emulator-artifact error(s) (IWER null framebuffer → three WeakMap) — disclosed, not counted`);
 
-await browser.close(); await world.close();
+} finally {
+  // ALWAYS: a throw anywhere above used to leak the owned Chrome and the world server (Mica had to kill them).
+  try { await browser.close(); } catch {}
+  try { await world.close(); } catch {}
+}
 done();
