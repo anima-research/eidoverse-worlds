@@ -249,8 +249,8 @@ const biasChecks = (r, c = check) => {
   // were chosen together against a moving body, and they only mean anything
   // together. Change them here when he retunes, deliberately.
   c('the shipped defaults are the measured set',
-    r.shipped.map === 256 && r.shipped.texels === 10 && r.shipped.workDist === 12
-    && Math.abs(r.shipped.forward - 0.037) < 1e-6 && Math.abs(r.shipped.up - 0.01) < 1e-6
+    r.shipped.map === 256 && r.shipped.texels === 8 && r.shipped.workDist === 12
+    && Math.abs(r.shipped.forward - -0.02) < 1e-6 && Math.abs(r.shipped.up - 0.15) < 1e-6
     && r.shipped.side === 0,
     JSON.stringify(r.shipped));
   // The born values are Janus's, measured with the live dials. Asserted as a
