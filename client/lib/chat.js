@@ -11,7 +11,10 @@
 // species are reading different rooms.
 
 import { CONFIG, bus, colorFor, assignColors } from './base.js';
-import { registerXRPanel } from './xrpanels.js';
+// NOT importing xrpanels.js: it reaches the engine through domquad -> htmlmesh, and
+// chat.js is shared with a client that has no scene to hang a VR panel in. The spec is
+// EXPORTED instead and main.js registers it — the dependency inverted rather than made
+// conditional, so there is no lite-mode flag buried in a chat file.
 import { lastWhy } from './debuglog.js';
 import { makeFrame } from './frames.js';
 import { fsvg } from './icons.js';
@@ -1241,7 +1244,7 @@ bus.on('pinged', () => {
 // a few whole replies that go through the SAME onSend typing goes through.
 // Honest about the gap in its title.
 const CANNED = ['hello', 'yes', 'no', 'one moment', 'come here', 'thank you'];
-registerXRPanel({
+export const chatXRPanel = {
   id: 'chat', title: 'chat',
   fields: () => [
     ...(recent.length ? recent.slice(-8).map((l, i) => ({ t: 'info', label: l.who === '*' ? '·' : String(l.who).slice(0, 12), value: l.text }))
@@ -1249,4 +1252,4 @@ registerXRPanel({
     ...CANNED.map((c) => ({ t: 'btn', k: `say:${c}`, label: c })),
   ],
   dispatch: (k) => { if (k?.startsWith('say:')) onSend?.(k.slice(4)); },
-});
+};

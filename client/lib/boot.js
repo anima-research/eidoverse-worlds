@@ -13,7 +13,16 @@
 //      spent learning them instead of watching a bar.
 
 import { bus } from './base.js';
-import { loadingItems, bootBytes } from './assets.js';
+// Injected, not imported: assets.js reaches the engine (GLTFLoader), and this splash
+// is shared with a client that loads no assets and therefore has no bytes to count.
+// The empty defaults are the truth for such a client — its phases finish on their own
+// evidence. main.js wires the real counters.
+let loadingItems = () => [];
+let bootBytes = () => ({ done: 0, total: 0 });
+export function setBootAssets({ items, bytes }) {
+  if (items) loadingItems = items;
+  if (bytes) bootBytes = bytes;
+}
 
 // Phase weights are rough shares of a cold boot, measured rather than guessed
 // (see the timings in the commit that added this). They only need to be
@@ -179,6 +188,7 @@ export function finishBoot(reason = 'ready') {
     if (left > 0) { if (phaseEl) phaseEl.textContent = `holding the splash for a look · ${Math.ceil(left / 1000)}s`; setTimeout(() => finishBoot(reason), Math.min(left, 1000)); return; }
   }
   done = true;
+  disarmTripwire();
   clearInterval(tipTimer);
   clearInterval(itemsTimer);
   if (itemsEl) itemsEl.innerHTML = '';
@@ -191,6 +201,50 @@ export function finishBoot(reason = 'ready') {
   console.log(`[boot] ready in ${total}ms (${reason})`, marks);
   bus.emit('booted', { ms: total, reason, marks });
   releaseBoot?.();
+}
+
+/** Disarm the lite-mode tripwire index.html armed before the first engine byte.
+ *
+ *  NOT at finishBoot: arrival means "there is somewhere to stand", and the world's assets
+ *  keep streaming after it. A phone that dies on a busy world dies in that tail, so
+ *  clearing on arrival wipes the flag seconds before the crash it exists to record.
+ *
+ *  The first version of this waited for loadingItems() to go quiet, which does not work
+ *  and hid that it did not: prefetch.js streams the library during idle time and keeps
+ *  entries in that list indefinitely, so the list never empties, the quiet branch was
+ *  dead code, and a ceiling meant for pathological worlds was quietly deciding every
+ *  case. Two signals that actually discriminate:
+ *
+ *  1. PAGEHIDE. Leaving on purpose - navigating away, closing the tab - fires this. An
+ *     out-of-memory kill does not: the renderer is terminated without notice. That
+ *     asymmetry is the whole signal, and it is the honest one, because it says "this
+ *     session ended deliberately" rather than "this session lasted a while".
+ *  2. A DWELL. Surviving the heavy early tail is evidence in its own right, and it
+ *     bounds the false positive from a pagehide that never fires - a backgrounded tab
+ *     discarded by Android, say, which is common and is not the user's doing.
+ *
+ *  Known and accepted: a crash LATER than the dwell, with no pagehide, is not
+ *  remembered. Asset streaming front-loads the risk, so most of the danger is inside it;
+ *  and the cheap direction to be wrong is toward forgetting, because the cost of a false
+ *  demotion is a lite session the person did not ask for, while the cost of a missed
+ *  crash is one more crash and then the flag catches it. */
+const DWELL_MS = 60000;
+function disarmTripwire() {
+  // A LITE session proves nothing about the full client, and it is the full client the
+  // flag is about. lite.js calls finishBoot too (its splash has to come down like any
+  // other), so without this a phone demoted to lite would clear its own evidence by
+  // surviving in lite and walk back into the crash on the next visit.
+  if (globalThis.__ewLite) return;
+  const key = globalThis.__ewTripKey?.(new URLSearchParams(location.search)) ?? 'ew-boot-attempt';
+  let cleared = false;
+  const clear = () => {
+    if (cleared) return;
+    cleared = true;
+    removeEventListener('pagehide', clear);
+    try { localStorage.removeItem(key); } catch { /* storage blocked; never armed either */ }
+  };
+  addEventListener('pagehide', clear);
+  setTimeout(clear, DWELL_MS);
 }
 
 export const bootDone = () => done;

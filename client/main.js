@@ -30,6 +30,12 @@ import {
   setRightsHook, setMeHook, setFolded,
 } from './lib/controller.js';
 import { remotes, updateRemotes, updateGaze } from './lib/remotes.js';
+// The whole module as one object: net.js takes the participant registry by injection
+// now (it must carry the protocol for lite.js, which has no bodies to register), and
+// this is the real, body-building implementation of that interface.
+import * as participants from './lib/remotes.js';
+import { snapshot } from './lib/net_snap.js';
+import { myReachBag } from './lib/reachnet.js';
 import {
   net, connect, initIdentity, loginUrl, wireNet, sendVerb, sendPose, sendWhisper, sendTyping,
 } from './lib/net.js';
@@ -42,8 +48,9 @@ import { initAudioPanel } from './lib/audiopanel.js';
 import { initSceneGraph } from './lib/scenegraph.js';
 import {
   toast, setHint, flashHint, buildHelp, toggleHelp,
-  openDoor, togglePeopleHere, initDock, panelFrame,
+  openDoor, togglePeopleHere, initDock, panelFrame, setLoadingItems,
 } from './lib/ui.js';
+import { registerXRPanel } from './lib/xrpanels.js';
 import { initDebug, updateDebug, toggleDebug } from './lib/debug.js';
 
 // Which build is this world running? One console line at boot, so "what's
@@ -54,12 +61,12 @@ fetch('/version').then((r) => r.json())
   .then(({ sha, commitTime, dirty, startedAt }) => console.log(`[eidoverse] server build ${sha}${dirty === true ? ' (DIRTY TREE)' : dirty === false ? '' : ' (dirty: unknown)'} (code from ${commitTime}), up since ${startedAt}`))
   .catch(() => console.log('[eidoverse] server build unknown (/version unavailable)'));
 import { dragSim, updateBodyDrag, dragState } from './lib/bodydrag.js';
-import { initChat, logChat } from './lib/chat.js';
+import { initChat, logChat, chatXRPanel } from './lib/chat.js';
 import { bodyEngine, setBodyEngine, listBodyEngines } from './lib/bodysim.js';
 import { initPhysObj, tickPhysObj, leaseApi } from './lib/physobj.js';
 import { initMods, tickMods, modsApi } from './lib/mods.js';
-import { initBoot, markPhase, finishBoot, bootDone } from './lib/boot.js';
-import { protoStats } from './lib/assets.js';
+import { initBoot, markPhase, finishBoot, bootDone, setBootAssets } from './lib/boot.js';
+import { protoStats, forgetBytes, loadingItems, bootBytes } from './lib/assets.js';
 import { grassTiles } from './lib/terrain.js';
 import { grassDiag } from './lib/grassdiag.js';
 import { warmStats } from './lib/warmqueue.js';
@@ -284,7 +291,18 @@ function start() {
   }
 }
 
+// The two things ui.js and chat.js stopped importing so they could be shared with a
+// renderer-less client: this is the client that HAS a renderer, so it supplies them.
+setLoadingItems(loadingItems);
+setBootAssets({ items: loadingItems, bytes: bootBytes });
+registerXRPanel(chatXRPanel);
+
 wireNet({
+  participants,
+  myReachBag,
+  toast,   // remotes.js — real bodies, real poses
+  forgetBytes,    // the asset ledger, which only a client that loads assets has
+  snapshot,       // net_snap.js — the one part of the protocol that needs a renderer
   myAvatarPath: () => getMyAvatarPath(),   // a bare name: the server resolves
   myState,
   me: () => getMe(),

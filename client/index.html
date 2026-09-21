@@ -1502,6 +1502,20 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
 (() => {
   try {
     const params = new URLSearchParams(location.search);
+    // Resolve the avatar FIRST and publish it, before any guard can return. net.js only
+    // adopts this socket when the join it would send is byte-identical to the one sent
+    // here, and lite.js is a second entry point that has to produce that same join
+    // without loading an avatar it cannot draw. It asking for '' is what made the
+    // adoption miss and produced arrive -> leave -> arrive (#188 B1). One resolution,
+    // one reader, agreement by construction rather than by two copies staying in step.
+    const wantName = params.get('avatar') || localStorage.getItem('ew-avatar-name') || 'claude';
+    let wantAvatar = wantName;   // a bare name: the server resolves it against the roster
+    try {
+      const cached = JSON.parse(localStorage.getItem('ew-avatar-path') ?? 'null');
+      if (cached && cached.name === wantName && typeof cached.path === 'string') wantAvatar = cached.path;
+    } catch (e) { /* a bare name is fine */ }
+    globalThis.__ewWantAvatar = wantAvatar;
+
     if (params.get('earlysock') === '0') return;
     if (params.has('spectate') || params.has('renderer') || params.has('mintthumbs')) return;
     const name = params.get('name')
@@ -1509,12 +1523,7 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     if (!name) return;   // the first-run door decides identity — never preempt it
     const world = params.get('world') || 'commons';
     const token = params.get('key') || localStorage.getItem('ew-key') || '';
-    const want = params.get('avatar') || localStorage.getItem('ew-avatar-name') || 'claude';
-    let avatar = want;   // a bare name: the server resolves it against the roster
-    try {
-      const c = JSON.parse(localStorage.getItem('ew-avatar-path') ?? 'null');
-      if (c && c.name === want && typeof c.path === 'string') avatar = c.path;
-    } catch (e) { /* a bare name is fine */ }
+    const avatar = wantAvatar;   // resolved above, and published for lite.js to match
     const sent = { world, id: name, avatar, token };
     const ws = new WebSocket(`${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`);
     const stash = { ws, sent, buffered: [], failed: false, closeInfo: null };
@@ -1537,14 +1546,192 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
      +parse the moment the HTML lands, in parallel with main.js and the GPU
      init. Only the STATIC graph belongs in this list — rapier is a dynamic
      import behind a user action and preloading it would tax the very
-     window this exists to shorten. -->
-<link rel="modulepreload" href="./node_modules/three/build/three.webgpu.js">
-<link rel="modulepreload" href="./node_modules/three/build/three.tsl.js">
-<link rel="modulepreload" href="./node_modules/three-mesh-bvh/build/index.module.js">
-<link rel="modulepreload" href="./node_modules/@pixiv/three-vrm/lib/three-vrm.module.js">
-<link rel="modulepreload" href="./node_modules/@pixiv/three-vrm-materials-mtoon/lib/three-vrm-materials-mtoon.module.js">
-<link rel="modulepreload" href="./node_modules/@pixiv/three-vrm-materials-mtoon/lib/nodes/index.module.js">
-<link rel="modulepreload" href="./node_modules/@pixiv/three-vrm-animation/lib/three-vrm-animation.module.js">
+     window this exists to shorten.
+
+     INJECTED rather than static, because lite mode (phones: chat, emotes and
+     who's here, no world) must not download an engine it will never run, and a
+     static tag cannot be recalled once the parser has seen it.
+
+     This is NOT free, and the earlier version of this comment claimed it was.
+     The script sits exactly where the tags did, so discovery stays at depth 1
+     rather than falling back to depth 3 — but injected links are invisible to
+     the PRELOAD SCANNER, which runs ahead of the parser and was starting these
+     seven before any script executed. Measured on the owned-server boot-check,
+     warm, 1280x720, localhost: engine phase 277/283ms static vs 334/381/400ms
+     injected, so about +90ms. Time-to-arrival is unchanged (6688/6965 vs
+     6566/6756/6874) because the body's ~4.5s dominates and swallows it. Expect
+     the gap to be WIDER over a real network, where the scanner's head start is
+     worth more than it is over loopback.
+     Judged worth it: ~90ms off a 6.7s arrival, against being the only way a
+     weak device gets in at all. If that trade ever stops being worth it, the
+     fix is server-side — serve the full client's HTML with these seven static
+     and the lite client's without, which restores the scanner for everyone and
+     costs routes.ts a template it does not currently have. -->
+<script>
+  // decideLite — the lite/full decision as ONE pure function, hung on globalThis so
+  // tools/lite-choice-test.ts can run it against fabricated signals rather than
+  // trying to fabricate a weak phone. Inline, and not a module, on purpose: it has
+  // to answer BEFORE the module graph or the preloads below exist, and a <script
+  // src> here would cost exactly the round trip those preloads exist to save.
+  //
+  // Lite is not a preference for people on slow connections — it is the only way in
+  // for a device that cannot hold the engine in RAM at all. Owner's phone (Android,
+  // Chrome) cannot boot the full client, full stop. So the order below puts what a
+  // device has PROVEN above anything we infer about it, and puts what a person
+  // asked for above both.
+  (() => {
+    // PER WORLD, because capability is a property of the pair, not the device. Measured
+    // on a real phone (owner, Android/Chrome, 2026-09-15): an empty instance runs the
+    // FULL client fine; the commons, with everyone's assets in it, is what kills the
+    // browser. One global flag would answer "this device cannot" when the truth is
+    // "this device cannot hold THAT world", and would strand a phone in lite on worlds
+    // it handles comfortably.
+    const tripKey = (params) => `ew-boot-attempt:${params.get('world') || 'default'}`;
+    globalThis.__ewTripKey = tripKey;   // boot.js disarms the same key
+
+    const decideLite = ({ params, stored, lastBootDied, deviceMemory, gpuApi }) => {
+      // 1. An explicit ask wins, both directions, and is shareable — the reliable
+      //    way back for someone whose device just died mid-boot.
+      if (params.has('lite')) return { lite: params.get('lite') !== '0', why: 'url' };
+      // 2. The last full boot armed the tripwire and never came back to clear it.
+      //    Whatever killed it — RAM, GPU, an OS that reaped the tab — this device has
+      //    DEMONSTRATED it cannot, which beats every guess below. It is also the only
+      //    signal that reaches iOS, where navigator.deviceMemory does not exist.
+      //
+      //    ABOVE the saved preference, deliberately: a saved 'full' plus a device that
+      //    dies on full is a crash loop with no way out from inside the page, because
+      //    the page never finishes loading to offer one. Evidence outranks a stale
+      //    preference; (1) is still the override, and it is a URL, so it survives a
+      //    browser that never got far enough to run any of our code.
+      if (lastBootDied) return { lite: true, why: 'crash' };
+      // 3. A deliberate past choice outranks anything we merely infer below.
+      if (stored === '1' || stored === '0') return { lite: stored === '1', why: 'saved' };
+      // 4. No rendering API at all. Not a heuristic — a fact.
+      if (!gpuApi) return { lite: true, why: 'no-gpu' };
+      // 5. The one hardware guess, kept deliberately timid. deviceMemory is capped at
+      //    8 and rounded, and plenty of phones that cannot run this still report 4, so
+      //    this catches only the obviously-incapable. Everything else is allowed to
+      //    TRY — which is affordable precisely because (3) means it only ever fails
+      //    once, and never silently.
+      if (deviceMemory > 0 && deviceMemory <= 2) return { lite: true, why: 'ram' };
+      return { lite: false, why: 'default' };
+    };
+    globalThis.__ewDecideLite = decideLite;   // test seam
+
+    const params = new URLSearchParams(location.search);
+    let stored = null, lastBootDied = false;
+    try {
+      stored = localStorage.getItem('ew-lite');
+      lastBootDied = localStorage.getItem(tripKey(params)) !== null;
+    } catch { /* storage blocked (private window) — every signal below still applies */ }
+
+    const { lite, why } = decideLite({
+      params,
+      stored,
+      lastBootDied,
+      deviceMemory: navigator.deviceMemory ?? 0,
+      gpuApi: ('gpu' in navigator) || !!globalThis.WebGL2RenderingContext,
+    });
+    globalThis.__ewLite = lite;
+    globalThis.__ewLiteWhy = why;
+    document.documentElement.classList.toggle('lite', lite);
+    console.log(`[lite] ${lite ? 'LITE' : 'full'} client (${why})`);
+
+    if (lite) return;   // the whole point: these seven never enter the waterfall
+
+    // Arm the tripwire BEFORE a single engine byte is requested. boot.js disarms it once
+    // the client has not only ARRIVED but gone quiet — deliberately not at finishBoot,
+    // which fires when there is somewhere to stand and leaves the world's assets still
+    // streaming. The phone that prompted all this survives the arrival on the commons
+    // and dies during that tail, so a disarm at finishBoot would clear the flag moments
+    // before the very crash it exists to catch. A tab closed during a slow load trips it
+    // too — a false positive costing one lite session with a visible way out, which is
+    // the cheap direction to be wrong in when the alternative is a crash loop.
+    try { localStorage.setItem(tripKey(params), String(Date.now())); } catch { /* as above */ }
+
+    for (const href of [
+      './node_modules/three/build/three.webgpu.js',
+      './node_modules/three/build/three.tsl.js',
+      './node_modules/three-mesh-bvh/build/index.module.js',
+      './node_modules/@pixiv/three-vrm/lib/three-vrm.module.js',
+      './node_modules/@pixiv/three-vrm-materials-mtoon/lib/three-vrm-materials-mtoon.module.js',
+      './node_modules/@pixiv/three-vrm-materials-mtoon/lib/nodes/index.module.js',
+      './node_modules/@pixiv/three-vrm-animation/lib/three-vrm-animation.module.js',
+    ]) {
+      const l = document.createElement('link');
+      l.rel = 'modulepreload';
+      l.href = href;
+      document.head.appendChild(l);
+    }
+  })();
+</script>
+<style>
+/* ---------------------------------------------------------------- lite client
+   The renderer-free surface (client/lite.js). It shares the token sheet above and
+   hexes nothing, per docs/MODDING-UI.md: a restyle reaches this the same as it
+   reaches the desktop chrome. Phone-first, because that is the only place it runs -
+   tap targets at 44px, and nothing that assumes a pointer or a wide viewport. */
+html.lite, html.lite body { height: 100%; overflow: hidden; }
+
+#lite-emote-host {
+  position: fixed; left: 0; right: 0; top: 0; z-index: 30;
+  padding: 6px 8px calc(6px + env(safe-area-inset-top, 0px));
+  background: var(--panel); border-bottom: 1px solid var(--edge); box-shadow: var(--rim);
+}
+.lite-emotes { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.lite-emote {
+  min-width: 44px; min-height: 44px; font-size: 22px; line-height: 1;
+  background: var(--chip); color: var(--fg);
+  border: 1px solid var(--edge); border-radius: 8px; cursor: pointer;
+  transition: transform .12s ease, border-color .12s ease;
+}
+.lite-emote:active { transform: scale(.94); }
+.lite-emote.fired { border-color: var(--brand); box-shadow: 0 0 0 2px color-mix(in srgb, var(--brand) 35%, transparent); }
+.lite-emotes-wait { color: var(--dim); font-size: var(--fs-sm, 12px); padding: 12px; }
+
+#lite-dock {
+  position: fixed; right: 8px; z-index: 30;
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  display: flex; gap: 6px;
+}
+#lite-dock button {
+  min-width: 44px; min-height: 44px; font-size: 20px;
+  background: var(--panel); color: var(--fg);
+  border: 1px solid var(--edge); border-radius: 10px; cursor: pointer;
+}
+#lite-dock button:active { background: var(--act); }
+
+/* The key door. A first-time key-gated visitor has no other way in, and the full
+   client is not an option for the device this exists for. */
+#lite-door {
+  position: fixed; inset: 0; z-index: 90;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px; background: rgb(0 0 0 / .72);
+}
+.lite-door-card {
+  display: flex; flex-direction: column; gap: 10px;
+  width: 100%; max-width: 320px; padding: 18px;
+  background: var(--panel); border: 1px solid var(--edge-hi);
+  border-radius: 12px; box-shadow: var(--rim);
+}
+.lite-door-title { color: var(--fg); font-size: 16px; font-weight: 600; }
+.lite-door-msg { color: var(--dim); font-size: var(--fs-sm, 12px); line-height: 1.4; }
+.lite-door-key {
+  min-height: 44px; padding: 8px 10px; font-size: 16px;   /* 16px: iOS zooms a smaller field */
+  background: var(--well); color: var(--fg);
+  border: 1px solid var(--edge); border-radius: 8px;
+}
+.lite-door-key:focus { outline: none; border-color: var(--brand); }
+.lite-door-go {
+  min-height: 44px; font-size: 15px; cursor: pointer;
+  background: var(--brand-deep); color: var(--bg);
+  border: 1px solid var(--brand); border-radius: 8px; font-weight: 600;
+}
+.lite-door-login { color: var(--brand); font-size: var(--fs-sm, 12px); text-align: center; }
+
+/* The chat frame is the whole view here: no world behind it to leave room for. */
+html.lite .frame.panel { max-width: 100%; }
+</style>
 </head>
 <body>
 <!-- Static so it paints before any module loads. boot.js only fills it in. -->
@@ -1634,6 +1821,17 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
     }, 20000);
   })();
 </script>
-<script type="module" src="./main.js"></script>
+<script>
+  // One entry point or the other, never both, chosen by the same flag the preloads
+  // above read. main.js statically imports { THREE, scene, camera, renderer } at its
+  // line 10, so lite CANNOT be a runtime branch inside it — the import is resolved
+  // before a flag could be consulted. Two graphs, one shared lib/.
+  (() => {
+    const s = document.createElement('script');
+    s.type = 'module';
+    s.src = globalThis.__ewLite ? './lite.js' : './main.js';
+    document.body.appendChild(s);
+  })();
+</script>
 </body>
 </html>
