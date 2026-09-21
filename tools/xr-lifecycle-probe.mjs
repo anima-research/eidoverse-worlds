@@ -12,6 +12,9 @@
 //
 // SwiftShader is fine for these claims. It proves ORCHESTRATION, not rendering quality, foveation,
 // controller ergonomics, or the desktop mirror. Those stay with the named real-headset receipt.
+// The 'reload' verdict (WebGPU refusal → ?webgl=1) is NOT bound here by design: the probe boots ?xr=1,
+// which takes WebGL on every host, so gpu is false. Binding it needs a WebGPU boot plus a navigation
+// intercept — a separate probe, not a premise about the host.
 //
 // Usage: bun tools/xr-lifecycle-probe.mjs [origin]
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
@@ -115,8 +118,19 @@ pg.on('console', (m) => {
   if (/status of 401 .*\/whoami/.test(t)) return;   // net.js:254 treats a non-OK /whoami as "not signed in" by design; Chrome logs the fetch anyway
   (ARTIFACT.test(t) ? artifacts : reports).push(t);
 });
-await pg.goto(`${world.origin}/?world=staging&name=xrprobe&key=${world.key}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
-await pg.waitForFunction(() => document.querySelector('#xrbtn'), null, { timeout: 60000 }).catch(() => {});
+// ?xr=1 IS THE BOOT MODE, NOT A HOST ACCIDENT (Mica, review host, 2026-09-21). Without it the product
+// picks its backend from the host — Chrome on her Mac boots WebGPU — and the first click takes the
+// product's reload-to-WebGL branch, navigating away from the probe's state: 8/14 with requests=0. An XR
+// boot takes WebGL by the product's own rule (core.js: "an XR boot therefore takes WebGL unless the page
+// opts into ?webgpu=1"), so the receipt is the same on every host. The earlier disclosure "headless is
+// WebGL-only" was a fact about my Linux box, written down as a premise.
+await pg.goto(`${world.origin}/?world=staging&name=xrprobe&key=${world.key}&xr=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+// Wait for the glyph to be VISIBLE: mictoggle shows it only once the product's own isSessionSupported has
+// answered and the XR hook is registered (mictoggle.js:214). Forcing display and clicking early was
+// clicking before the product said it was ready.
+await pg.waitForFunction(() => { const b = document.querySelector('#xrbtn'); return !!b && getComputedStyle(b).display !== 'none'; }, null, { timeout: 60000 }).catch(() => {});
+check('the visor glyph became visible on its own (XR hook registered)',
+  await ev(() => { const b = document.querySelector('#xrbtn'); return !!b && getComputedStyle(b).display !== 'none'; }));
 
 const probeOk = await ev(() => !!window.__probe && !window.__probe.fatal);
 check('IWER installed a synthetic XR runtime before the client booted', probeOk,
@@ -126,7 +140,7 @@ check('the client sees an immersive-vr capable device',
   await ev(() => `navigator.xr is ${window.__probe_installed}`));
 
 // ── 1. the shipping entry path, driven by the real visor ──────────────────────
-const clickVisor = () => ev(() => { const b = document.querySelector('#xrbtn'); b.style.display = 'block'; b.click(); });
+const clickVisor = () => ev(() => { document.querySelector('#xrbtn').click(); });   // as shown, not forced
 
 await clickVisor();
 await pg.waitForFunction(() => window.__probe.grants > 0 || window.__probe.requests > 2, null, { timeout: 30000 }).catch(() => {});
