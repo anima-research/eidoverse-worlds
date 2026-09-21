@@ -24,10 +24,13 @@ const { check, done } = checker();
 // (lib/session/XRSession.js:81). So once the product installs the shim, that lookup hits the shim,
 // routes to session.requestAnimationFrame, and the session dispatches it SYNCHRONOUSLY inside the
 // frame it is already in: onDeviceFrame re-enters itself, every level rendering stereo under
-// SwiftShader, and the main thread never yields again. That is why the first cut of this probe printed
-// two checks and hung for 420 s with no output (and it is the bench crash the xr_frame_clock header
-// dates 09-07 19:15). Pin the emulator's own loop to the NATIVE clock, captured before anything runs,
-// and it behaves like hardware: the product's shim only ever carries the app's callbacks.
+// SwiftShader, until V8's stack overflows — then no native frame was ever rescheduled at any level and
+// the emulated session goes silently dead. That is why the first cut of this probe printed two checks
+// and hung for 420 s with no output (and it is the bench crash the xr_frame_clock header dates 09-07
+// 19:15). Pin the emulator's own loop to the NATIVE clock, captured before anything runs, and it does
+// what a hardware runtime does: dispatch session callbacks from a clock that is not window.rAF. (Not a
+// full hardware model — here both clocks run at 60 Hz, so the probe proves the SWAP happens and is
+// undone, not that it helps against a throttled window clock. That claim stays with the headset.)
 const IWER_RAW = readFileSync(new URL('../node_modules/iwer/build/iwer.js', import.meta.url), 'utf8');
 const DEVICE_LOOP = 'globalThis.requestAnimationFrame(this[P_SESSION].onDeviceFrame)';
 if (IWER_RAW.split(DEVICE_LOOP).length !== 2) throw new Error(`iwer build changed: expected exactly one '${DEVICE_LOOP}'`);
@@ -47,10 +50,7 @@ const ev = (fn, arg) => Promise.race([
 // IWER before ANY client code: navigator.xr must exist when core.js decides the backend.
 await pg.addInitScript(IWER);
 await pg.addInitScript(() => {
-  // RUN ONCE. addInitScript fires on every navigation and every frame; the block below deletes
-  // window.IWER on purpose, so a second run would take the !XRDevice branch and overwrite __probe —
-  // wiping the counters the probe waits on, which hangs it. Guard first, delete later.
-  if (window.__probe) return;
+  if (window.__probe) return;   // idempotence only: each document gets a fresh window, so this never fires in practice
   const { XRDevice, metaQuest3 } = window.IWER ?? {};
   if (!XRDevice) { window.__probe = { fatal: 'IWER did not load' }; return; }
   const device = new XRDevice(metaQuest3);
@@ -88,12 +88,33 @@ await pg.addInitScript(() => {
     }
     const s = await realRequest(...a);
     window.__probe.grants++; window.__probe.sessions.push(s);
+    // PROVE FRAMES. Every check before this counted grants and clock identity; a session that granted and
+    // never ticked passed all of them (both reviewers). Count the session callbacks that actually FIRE —
+    // three's loop and the product's shim both arrive here — so "driven" is measured, not assumed.
+    window.__probe.sessionFrames = 0;
+    const sRaf = s.requestAnimationFrame.bind(s);
+    s.requestAnimationFrame = (cb) => sRaf((t, fr) => { window.__probe.sessionFrames++; return cb(t, fr); });
     return s;
   };
 });
 
 const errs = [];
 pg.on('pageerror', (e) => errs.push(String(e)));
+// pageerror never sees an exception thrown inside a frame callback: frame.js:99 catches per system and
+// hands it to report(), which console.error()s `context, err` (base.js:128) — tee() goes to the network,
+// NOT the console, so a '[report]' filter here measured nothing and read green. Capture console errors.
+const reports = [], artifacts = [];
+// KNOWN EMULATOR ARTIFACT, disclosed not hidden: IWER's XRWebGLLayer.framebuffer returns null by design
+// (lib/layers/XRWebGLLayer.js:44-46 — it draws to the default framebuffer); a real runtime returns an opaque
+// WebGLFramebuffer. three's WebGL backend keys a WeakMap on that object (WebGLState.drawBuffers) and throws
+// on null. The product's per-system catch (frame.js:99) contains it. Counted and printed; never asserted.
+const ARTIFACT = /Invalid value used as weak map key.*WebGLState\.drawBuffers/;
+pg.on('console', (m) => {
+  if (m.type() !== 'error') return;
+  const t = `${m.text()} ${m.location()?.url ?? ''}`.replace(/\s+/g, ' ').slice(0, 300);
+  if (/status of 401 .*\/whoami/.test(t)) return;   // net.js:254 treats a non-OK /whoami as "not signed in" by design; Chrome logs the fetch anyway
+  (ARTIFACT.test(t) ? artifacts : reports).push(t);
+});
 await pg.goto(`${world.origin}/?world=staging&name=xrprobe&key=${world.key}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
 await pg.waitForFunction(() => document.querySelector('#xrbtn'), null, { timeout: 60000 }).catch(() => {});
 
@@ -121,21 +142,35 @@ const afterEnter = await ev(() => ({
 // The discriminating test: the clock is no longer the shim we watched it become, and it is native code
 // (the shim prints as an arrow function; a bound native prints `function () { [native code] }`).
 await ev(() => { window.__probe.shim = window.requestAnimationFrame; });
-const restoredState = () => ev(() => {
-  const f = window.requestAnimationFrame;
-  return { isShim: f === window.__probe.shim, nativeCode: /\[native code\]/.test(String(f)), name: f.name,
-           presenting: !!window.__iwerDevice?.activeSession };
-});
-const isRestored = (st) => !st.isShim && st.nativeCode;
+// `bind()` of ANYTHING — including the shim — prints as [native code], so that regex alone would accept
+// the exact regression save-once guards against (a bound SHIM captured as "native"). Two sharper facts:
+// the product binds native exactly once per page, so the restored object must be IDENTICAL across exits
+// and named `bound requestAnimationFrame` (a re-capture yields `bound bound …`); and the desktop loop
+// must actually TICK afterwards — the 09-07 22:41 bug left window.rAF native AND the loop dead, because
+// three's 'end' listener restarted it through a shim that still pointed at the ended session.
+const restoredState = async () => {
+  await pg.waitForFunction(() => !window.__iwerDevice?.activeSession, null, { timeout: 10000 }).catch(() => {});
+  const a = await ev(() => ({ f0: globalThis.__perf?.frameNo ?? -1, t: performance.now() }));
+  await pg.waitForTimeout(700);
+  return ev((a) => {
+    const f = window.requestAnimationFrame;
+    if (!window.__probe.restoredObj) window.__probe.restoredObj = f;   // exit 1 sets the reference
+    return { isShim: f === window.__probe.shim, name: f.name, sameObjAsFirstExit: f === window.__probe.restoredObj,
+             desktopFramesAfterExit: (globalThis.__perf?.frameNo ?? -1) - a.f0, presenting: !!window.__iwerDevice?.activeSession };
+  }, a);
+};
+const isRestored = (st) => !st.isShim && st.name === 'bound requestAnimationFrame' && st.sameObjAsFirstExit && st.desktopFramesAfterExit >= 2;   // SwiftShader desktop renders at ~4 Hz; the dead-loop bug reads exactly 0
 check('clicking the visor drove the real enterVR to a granted session',
   afterEnter.grants === 1, JSON.stringify(afterEnter));
 check('installEntryClock SHIMMED window.requestAnimationFrame on the NON-EMULATED product path',
   afterEnter.rafIsNative === false,
   `window.rAF is still native — the install was bypassed (IWER visible to the product? ${await ev(() => !!globalThis.IWER)})`);
+await pg.waitForTimeout(600);
+const sf = await ev(() => window.__probe.sessionFrames);
+check('the XR frame loop is DRIVEN: session callbacks fired after the grant', sf > 5, `sessionFrames=${sf} in 600 ms`);
 
 // ── 2. exit restores the desktop clock ────────────────────────────────────────
 await ev(async () => { await window.__iwerDevice.activeSession?.end(); });
-await pg.waitForTimeout(400);
 const afterExit = await restoredState();
 check('session end restores the desktop clock', isRestored(afterExit), JSON.stringify(afterExit));
 
@@ -150,7 +185,6 @@ check('re-entry grants a second session', afterReenter.grants === 2, JSON.string
 check('…and the second session owns the clock', afterReenter.rafIsNative === false);
 await ev(() => { window.__probe.shim = window.requestAnimationFrame; });   // the SECOND session's shim
 await ev(async () => { await window.__iwerDevice.activeSession?.end(); });
-await pg.waitForTimeout(400);
 const afterExit2 = await restoredState();
 check('…and its exit restores the desktop clock again', isRestored(afterExit2), JSON.stringify(afterExit2));
 
@@ -162,7 +196,13 @@ const afterBusy = await ev(() => ({ requests: window.__probe.requests, grants: w
 check('a busy failure is retried EXACTLY once by the shipping path — handleEntryFailure ran',
   afterBusy.requests === 2 && afterBusy.grants === 1,
   `requests=${afterBusy.requests} grants=${afterBusy.grants} (want 2 requests, 1 grant)`);
+// THE VERDICT IS OBEYED, not just produced: `handleEntryFailure(...); throw e;` keeps the retry (the seam's
+// side effects schedule it) so the counts above stay green — but the rethrow lands in enterVR's outer
+// catch, which posts a 30 s 'err' toast the 'handled' path never does.
+const failToasts = await ev(() => [...document.querySelectorAll('.toast.err')].map((n) => n.textContent.trim().slice(0, 120)).filter((t) => /VR failed to start/.test(t)));
+check("…and the 'handled' verdict was OBEYED: no 'VR failed to start' toast for a handled busy failure", failToasts.length === 0, JSON.stringify(failToasts));
 await ev(async () => { await window.__iwerDevice.activeSession?.end(); });
+await pg.waitForFunction(() => !window.__iwerDevice?.activeSession, null, { timeout: 10000 }).catch(() => {});
 
 // ── 5. two busy failures: one retry, then give up — NO third request ──────────
 await ev(() => { window.__probe.failNext = 2; window.__probe.requests = 0; window.__probe.grants = 0; });
@@ -174,6 +214,8 @@ check('a SECOND busy failure gives up rather than retrying forever',
   `requests=${afterGiveUp.requests} grants=${afterGiveUp.grants} (want exactly 2 requests, 0 grants)`);
 
 check('no page errors during the whole lifecycle', errs.length === 0, errs.slice(0, 2).join(' | '));
+check('no console.error during the whole lifecycle (report() speaks here)', reports.length === 0, `${reports.length}: ` + reports.slice(0, 4).join('\n      '));
+if (artifacts.length) console.log(`  · ${artifacts.length} known-emulator-artifact error(s) (IWER null framebuffer → three WeakMap) — disclosed, not counted`);
 
 await browser.close(); await world.close();
 done();
