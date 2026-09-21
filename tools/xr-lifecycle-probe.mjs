@@ -132,8 +132,27 @@ await pg.goto(`${world.origin}/?world=staging&name=xrprobe&key=${world.key}&xr=1
 // answered and the XR hook is registered (mictoggle.js:214). Forcing display and clicking early was
 // clicking before the product said it was ready.
 await pg.waitForFunction(() => { const b = document.querySelector('#xrbtn'); return !!b && getComputedStyle(b).display !== 'none'; }, null, { timeout: 60000 }).catch(() => {});
-check('the visor glyph became visible on its own (XR hook registered)',
-  await ev(() => { const b = document.querySelector('#xrbtn'); return !!b && getComputedStyle(b).display !== 'none'; }));
+// WHEN THIS GATE FAILS, SAY WHICH LINK BROKE (Mica, round six: intermittent "glyph never visible" on her
+// host with no error anywhere). The chain is main.js: await initIdentity() → startFrame() → initXR() →
+// isSessionSupported → makeHand×2 → registerXrGlyph → ensure() (needs #hud) → display if pinned && hook.
+// Each stage leaves a mark the page can read; a red here names the last one that did.
+const glyphStage = () => ev(async () => {
+  const b = document.querySelector('#xrbtn');
+  let pin = null; try { pin = localStorage.getItem('ew-xr-pinned'); } catch {}
+  return {
+    href: location.href.replace(/key=[^&]+/, 'key=…'), visibility: document.visibilityState,
+    engineUp: !!globalThis.__ewEngineUp,                          // core.js past renderer.init()
+    frameNo: globalThis.__perf?.frameNo ?? null,                   // startFrame() ran → initXR() was CALLED
+    supported: await navigator.xr.isSessionSupported('immersive-vr'),
+    hud: !!document.querySelector('#hud'),                        // ensure() needs it
+    xrbtn: !!b, display: b ? getComputedStyle(b).display : null,  // exists ⇒ registerXrGlyph ran; visible ⇒ pinned && hook
+    pinned: pin === null ? 'default(true)' : pin,
+    hudAbsent: !!b && b.classList.contains('hud-absent'),
+  };
+});
+const gs = await glyphStage();
+console.log(`  · glyph stage: ${JSON.stringify(gs)}`);   // printed on green too, so a red has something to compare to
+check('the visor glyph became visible on its own (XR hook registered)', gs.xrbtn && gs.display !== 'none', JSON.stringify(gs));
 
 const probeOk = await ev(() => !!window.__probe && !window.__probe.fatal);
 check('IWER installed a synthetic XR runtime before the client booted', probeOk,
@@ -212,7 +231,9 @@ check('…and its exit restores the desktop clock again', isRestored(afterExit2)
 // ── 4. a CONTROLLED busy failure: exactly one retry, then give up ─────────────
 await ev(() => { window.__probe.failNext = 1; window.__probe.requests = 0; window.__probe.grants = 0; });
 await clickVisor();
-await pg.waitForTimeout(3500);   // BUSY_RETRY_MS is 1500; one retry lands inside this window
+// WAIT FOR THE CONDITION, NOT THE CLOCK. A fixed 3.5 s read `requests=1` in 1 of 5 runs here (the 1.5 s
+// retry timer ran late under a SwiftShader render storm) and would read it more often on a slower host.
+await pg.waitForFunction(() => window.__probe.grants >= 1 || window.__probe.requests >= 3, null, { timeout: 15000 }).catch(() => {});
 const afterBusy = await ev(() => ({ requests: window.__probe.requests, grants: window.__probe.grants }));
 check('a busy failure is retried EXACTLY once by the shipping path — handleEntryFailure ran',
   afterBusy.requests === 2 && afterBusy.grants === 1,
@@ -228,7 +249,9 @@ await pg.waitForFunction(() => !window.__iwerDevice?.activeSession, null, { time
 // ── 5. two busy failures: one retry, then give up — NO third request ──────────
 await ev(() => { window.__probe.failNext = 2; window.__probe.requests = 0; window.__probe.grants = 0; });
 await clickVisor();
-await pg.waitForTimeout(4000);
+// two requests must happen (click + one retry); then one more full retry window must pass with NO third
+await pg.waitForFunction(() => window.__probe.requests >= 2, null, { timeout: 15000 }).catch(() => {});
+await pg.waitForTimeout(2500);   // > BUSY_RETRY_MS (1500): a third request would have landed by now
 const afterGiveUp = await ev(() => ({ requests: window.__probe.requests, grants: window.__probe.grants }));
 check('a SECOND busy failure gives up rather than retrying forever',
   afterGiveUp.requests === 2 && afterGiveUp.grants === 0,
