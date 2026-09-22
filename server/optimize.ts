@@ -133,7 +133,14 @@ export async function optimizeGlb(bytes: Uint8Array): Promise<Uint8Array> {
 
   const transforms = [
     dedup(),      // shared textures/accessors stored once
-    prune(),      // unreferenced leftovers dropped
+    // prune with keepAttributes: by default prune also drops a primitive's
+    // vertex attributes its MATERIAL doesn't read — TEXCOORD_0 on anything
+    // with an untextured material. A named blank part is exactly the picture
+    // contract (shared/picture.js: the comp textures the part later), and the
+    // frame prop's `picture` quad came back from this pass with no UVs, so a
+    // hung picture sampled one texel and painted a flat colour. Attributes
+    // are the author's; the shadow only re-encodes what it was given.
+    prune({ keepAttributes: true }),      // unreferenced leftovers dropped
     resample(),   // animation keyframes deduplicated (lossless within tolerance)
   ];
 
@@ -321,7 +328,7 @@ async function ktx2CompressTextures(doc: Document, encoder: string): Promise<Ktx
 export async function optimizeGlbKtx2(bytes: Uint8Array, encoder: string): Promise<{ out: Uint8Array | null } & Ktx2Tally> {
   const io = await getIO();
   const doc = await io.readBinary(bytes);
-  await doc.transform(dedup(), prune(), resample());
+  await doc.transform(dedup(), prune({ keepAttributes: true }), resample());   // keepAttributes: see optimizeGlb
   const tally = await ktx2CompressTextures(doc, encoder);
   if (tally.eligible === 0 || tally.converted < tally.eligible) return { out: null, ...tally };
   await doc.transform(draco());
@@ -417,7 +424,7 @@ export async function optimizeGlbLod(bytes: Uint8Array, encoder: string | null, 
   // attachment points — survive the head at all; the whole-diet signature
   // then PROVES nothing was lost, or the variant is refused.
   const preNodes = lodNodesSig(doc);
-  await doc.transform(dedup(), prune({ keepLeaves: true }), resample());
+  await doc.transform(dedup(), prune({ keepLeaves: true, keepAttributes: true }), resample());   // keepAttributes: see optimizeGlb
   const before = totalVerts(doc);
   if (before < LOD_MIN_VERTS) return { out: null, verdict: `already light (${before} verts < ${LOD_MIN_VERTS})`, before, after: before, ...none };
   // material assignments are captured after the head — dedup may merge

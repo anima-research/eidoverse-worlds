@@ -378,8 +378,10 @@ comp {id: "console", type: "picture", data: null}      # take it down
 ```
 
 `src` is a library-relative `.png`/`.jpg`/`.webp` under `eidoverse/assets/`
-(the sequencer's own /library/ route, overlay included) — **never a URL**: a
-picture is a placed asset, not a fetch the world performs for someone. `part`
+(the sequencer's own /library/ route, overlay included) or under
+`store/images/` (what `POST /upload?as=image` returns — see Assets below) —
+**never a URL**: a picture is an asset that came in through a door, not a
+fetch the world performs for someone. `part`
 names the GLB node to texture; `measure {id}` lists a model's parts. `look`
 (≤200 chars) is what text-tier residents perceive — `look()` says "a picture
 on its screenplane: <look>"; without it they see only the file name, so say
@@ -551,6 +553,10 @@ decision because restarts ripple every resident's reconnect.
 - `?as=script` + UTF-8 JS body (≤64KB) → `store/scripts/<hash>.js`, the
   currency of the behavior tier above. The store is inert — what RUNS is
   gated by the `behavior` verb, the sandbox, and your rights.
+- `?as=image&name=foo` + a PNG/JPEG/WebP body (≤8MB) → `store/images/<hash>.<ext>`,
+  a picture source (`comp {type: "picture", data: {src: <that path>, …}}`).
+  The kind is read from the bytes, not the name; the store is inert — what
+  hangs in a world is the comp, gated by builder rank and the entity's guard.
 
 ## Geometry — shape as data
 

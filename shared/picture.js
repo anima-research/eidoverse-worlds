@@ -12,12 +12,15 @@
 // (allow-listed source, named part, the look line, restore-on-remove) is the
 // seam the screen will reuse.
 //
-// SOURCE ALLOW-LIST. `src` is a library-relative path under `eidoverse/assets/`
-// — served by the sequencer's own /library/ route (Skye's library plus the
-// assets/opt overlay). Never a URL: a picture is an authored asset the operator
-// placed, not a fetch the world performs on someone's behalf. That is the whole
-// content story for this rung, and it is what keeps a picture inside the world
-// log's trust boundary instead of reaching out of it.
+// SOURCE ALLOW-LIST. `src` is a library-relative path under one of two roots,
+// both served by the sequencer's own /library/ route: `eidoverse/assets/`
+// (Skye's library plus the assets/opt overlay — what the operator placed) and
+// `store/images/` (what someone uploaded through `POST /upload?as=image`:
+// content-addressed, sniffed by bytes, token-gated and rate-limited like every
+// store upload). Never a URL: a picture is an authored asset that entered
+// through a door, not a fetch the world performs on someone's behalf. That is
+// the whole content story for this rung, and it is what keeps a picture inside
+// the world log's trust boundary instead of reaching out of it.
 //
 // THE LOOK LINE. Text-tier residents perceive by reading. A picture with no
 // `look` reads as "a picture (<file>)", which is true and nearly useless; the
@@ -26,12 +29,14 @@
 // describes, and the two are the author's responsibility to keep honest.
 
 export const PICTURE_DIR = 'eidoverse/assets/';
+export const PICTURE_STORE = 'store/images/';
+export const PICTURE_DIRS = Object.freeze([PICTURE_DIR, PICTURE_STORE]);
 const IMAGE_EXT = /\.(png|jpe?g|webp)$/i;
 export const PICTURE_LOOK_MAX = 200;
 export const PICTURE_LIT = Object.freeze({ scene: 'lit by the scene', self: 'self-lit (a screen)' });
 const KNOWN_KEYS = new Set(['src', 'part', 'look', 'lit', 'flip']);
 
-/** Is `src` an allowed picture source? Library-relative, under PICTURE_DIR,
+/** Is `src` an allowed picture source? Library-relative, under one of PICTURE_DIRS,
  *  image extension, no scheme, no leading slash, no dot segments — and no
  *  percent-encoding at all. The rule is over the path the FETCH will
  *  canonicalize to, not the string as written: a URL parser reads `%2e%2e`
@@ -44,7 +49,7 @@ export function allowedPictureSrc(src) {
   if (/^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('/') || src.includes('\\')) return false;
   if (/[%?#\s\u0000-\u001f\u007f]/.test(src)) return false;
   if (src.split('/').some((seg) => seg === '' || seg === '.' || seg === '..')) return false;
-  if (!src.startsWith(PICTURE_DIR) || !IMAGE_EXT.test(src)) return false;
+  if (!PICTURE_DIRS.some((d) => src.startsWith(d)) || !IMAGE_EXT.test(src)) return false;
   try {
     // What the browser will actually ask the library route for. Any
     // difference — a collapsed segment, a decoded byte — means the string
@@ -64,7 +69,7 @@ export function normalizePicture(data) {
     return {
       ok: false,
       why: `src ${JSON.stringify(data.src ?? null)} is not an allowed picture source — a library-relative ` +
-        `.png/.jpg/.webp under ${PICTURE_DIR} (no URLs: pictures are placed assets, not fetches)`,
+        `.png/.jpg/.webp under ${PICTURE_DIR} or ${PICTURE_STORE} (no URLs: pictures are placed assets, not fetches)`,
     };
   }
   if (typeof data.part !== 'string' || !data.part.trim() || data.part.length > 64) {

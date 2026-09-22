@@ -12,6 +12,13 @@ export const avatarMounts = new Map();
 export const editHolds = new Set();
 // scenegraph.js: inspect.js — no evaluator registered any editor here
 export const editorsFor = () => [];
+// pictures.js: inspect.js — its editor block registers at import; leg E
+// renders it directly with the fixture instead of through the scene panel
+export const editors = [];
+export const registerEditor = (fn) => { editors.push(fn); };
+// pictures.js: assets.js / ui.js — hang() primes the image; upload failures toast
+export const primeFiles = async () => {};
+export const toast = () => {};
 // scenegraph.js: net.js — the roster fetch behind the 📜 badges
 export const requestDebug = async () => ({ events: [] });
 // scenegraph.js: base.js

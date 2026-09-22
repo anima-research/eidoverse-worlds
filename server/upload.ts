@@ -8,7 +8,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync, rmSync } from "node:fs";
 import { join, basename, dirname, relative } from "node:path";
-import { JOIN_TOKEN, UPLOAD_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DIR, SKIP_OPT_SWEEP, OPT_MEM_BUDGET_MB, OPT_COST_FACTOR } from "./config.ts";
+import { JOIN_TOKEN, UPLOAD_CAP, IMAGE_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DIR, SKIP_OPT_SWEEP, OPT_MEM_BUDGET_MB, OPT_COST_FACTOR } from "./config.ts";
 // merge 2026-09-01 (anima a468cba, geometry LOD): upstream's LOD names ride
 // in; the door stays on R1's aid1JoinIdentity (the HN_*/verifyToken form is
 // what it replaced — the merged body references neither)
@@ -319,6 +319,18 @@ setTimeout(sweepLibrary, 15_000).unref?.();
  *  the `asset`/`spawn` verbs, which per-world roles gate), plus per-IP
  *  rate limiting — live generation is the feature, an upload flood is
  *  not. `?by=` is attribution for the console trail. */
+/** Which image container these bytes are, by magic — the three the picture
+ *  allow-list admits. `null` for anything else (a GLB, a script, a renamed
+ *  GIF): the name someone typed is not evidence. */
+export function sniffImage(b: Uint8Array): "png" | "jpg" | "webp" | null {
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47
+    && b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) return "png";
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "jpg";
+  if (b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
+    && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return "webp";
+  return null;
+}
+
 export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Promise<Response> {
   const upTok = url.searchParams.get("token") ?? "";
   let upAgent = agentTokens().byToken.get(upTok);
@@ -360,6 +372,42 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     console.log(`[upload] script ${srel} (${body.length}B) by ${upBy}`);
     return new Response(JSON.stringify({ path: srel }),
       { headers: { "content-type": "application/json" } });
+  }
+  if (url.searchParams.get("as") === "image") {
+    // Picture ingestion: a PNG, JPEG or WebP, content-addressed into
+    // store/images/<hash>.<ext> and served by the /library route like any
+    // store upload (immutable address, no optimize pass — a picture is
+    // decoded by the client that hangs it, not re-encoded here). The kind is
+    // read from the BYTES, never the name: the store's extension is what the
+    // /library route and the picture allow-list key on, so it has to be true.
+    // What enters a WORLD is still the `picture` comp, gated by rank and by
+    // the entity's guard; the store itself stays inert.
+    if (body.length > IMAGE_CAP) return new Response(`image too large (${IMAGE_CAP / 1e6}MB cap)`, { status: 413 });
+    const kind = sniffImage(body);
+    if (!kind) return new Response("not a PNG, JPEG or WebP image (judged by content, not by name)", { status: 415 });
+    const ihash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);
+    const idir = join(OPT_DIR, "store", "images");
+    mkdirSync(idir, { recursive: true });
+    const irel = `store/images/${ihash}.${kind}`;
+    if (!existsSync(join(OPT_DIR, irel))) writeFileSync(join(OPT_DIR, irel), body);
+    // the human name lives only here, same as models: content-addressed
+    // means the catalog would otherwise know this picture as a hash
+    const iname = (url.searchParams.get("name") ?? "").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-zA-Z0-9 _-]/g, "").slice(0, 64).trim();
+    {
+      // Content-addressed means the same bytes may arrive many times under
+      // many names; the FIRST arrival is the provenance (who brought it, when,
+      // what they called it). A later upload fills a missing name, never
+      // renames or re-attributes.
+      const mp = join(idir, "manifest.json");
+      let man: Record<string, { name?: string; by: string; ts: number }> = {};
+      try { if (existsSync(mp)) man = JSON.parse(readFileSync(mp, "utf8")); } catch { /* fresh */ }
+      const prev = man[ihash];
+      if (!prev) man[ihash] = { ...(iname ? { name: iname } : {}), by: upBy, ts: Date.now() };
+      else if (!prev.name && iname) prev.name = iname;
+      atomicWrite(mp, JSON.stringify(man));
+    }
+    console.log(`[upload] image ${irel}${iname ? ` ("${iname}")` : ""} (${(body.length / 1e3).toFixed(0)}KB) by ${upBy}`);
+    return new Response(JSON.stringify({ path: irel }), { headers: { "content-type": "application/json" } });
   }
   if (body.length < 12 || new DataView(body.buffer).getUint32(0, true) !== 0x46546c67)
     return new Response("not a GLB container (glb/vrm)", { status: 415 });

@@ -9,7 +9,7 @@
 // panels authorized by the placer and LABELLED by `actor`, so a stranger was
 // correctly refused while every label told them the owner guarded it.
 //
-// Four surfaces, one fixture, three viewers (the placer, a stranger, the
+// Five surfaces, one fixture, three viewers (the placer, a stranger, the
 // owner). Each label must name bobbie and must not name ra as the guard.
 // Put `meta.actor` back into any of them and its leg goes red:
 //   A. the edit-mode inspector bar (build.js showInspector);
@@ -17,7 +17,10 @@
 //      both paths; the Del key is the one a test can press);
 //   C. the scene panel: the disabled pose fields' reason, and "placed by"
 //      (scenegraph.js paintScene);
-//   D. MCPL look() (mcpl/agent.ts), serverless through the shared fold.
+//   D. MCPL look() (mcpl/agent.ts), serverless through the shared fold;
+//   E. the picture block (pictures.js editor, #191): a guarded model shows a
+//      stranger the placer's name instead of the hang form. The fixture here
+//      is a model with a named part, because a bulb has no part to texture.
 import { plugin } from 'bun';
 const here = (f: string) => new URL(f, import.meta.url).pathname;
 
@@ -135,6 +138,40 @@ for (const v of VIEWERS) {
     check(`${v.who}: the pose fields are live`, posField !== '' && !/disabled/.test(posField), posField);
   }
   check(`${v.who}: nothing says the owner guards it`, !/guarded by ra\b/.test(html), html.slice(0, 400));
+}
+
+console.log('\nE. the picture block');
+{
+  // the picture editor registers itself at import (registerEditor → stub.editors)
+  const pics = await import('../client/lib/pictures.js');
+  const editor = (stub as any).editors[0];
+  check('pictures.js registered exactly one editor', (stub as any).editors.length === 1 && typeof editor === 'function');
+  // a placed model with one named mesh part: the same fold state as the lamp
+  // (bobbie placed and guarded it, the owner re-lit it), but hangable
+  const part = { isMesh: true, name: 'screenplane', material: {} };
+  const model = { userData: {}, traverse(f: (c: unknown) => void) { f(this); f(part); } };
+  stub.entities.set('console', model);
+  stub.entityMeta.set('console', { actor: 'ra', kind: 'model', ts: T0, placer: { ...PLACER } });
+  stub.comps.set('console', { guard: true });
+  check('fixture: namedParts sees the part', JSON.stringify(pics.namedParts(model)) === '["screenplane"]');
+  for (const v of VIEWERS) {
+    as(v.id, v.sub, v.role);
+    const html = editor({ id: 'console', obj: model, meta: stub.entityMeta.get('console'), bag: stub.comps.get('console'), commit() {}, esc: (t: string) => t })?.html ?? '';
+    if (!v.may) {
+      check(`${v.who}: the block says guarded by bobbie, and offers no form`, /🖼 picture — guarded by bobbie/.test(html) && !/data-pe-root/.test(html), html.slice(0, 300));
+    } else {
+      check(`${v.who}: the hang form is offered (authorized by ${v.role === 'owner' ? 'role' : 'subject'})`, /data-pe-root/.test(html) && !/guarded by/.test(html), html.slice(0, 300));
+    }
+    check(`${v.who}: nothing says the owner guards it`, !/guarded by ra\b/.test(html), html.slice(0, 300));
+  }
+  // the deed follows the SUBJECT: a stranger wearing bobbie's old display id
+  // is still refused, and bobbie under a new name still gets the form
+  as('bobbie', SUB_CAROL, 'builder');
+  let html = editor({ id: 'console', obj: model, meta: stub.entityMeta.get('console'), bag: stub.comps.get('console'), commit() {}, esc: (t: string) => t })?.html ?? '';
+  check('an impostor under the placer\'s display id is refused by subject', /guarded by bobbie/.test(html) && !/data-pe-root/.test(html), html.slice(0, 300));
+  as('bobbie-renamed', SUB_BOB, 'builder');
+  html = editor({ id: 'console', obj: model, meta: stub.entityMeta.get('console'), bag: stub.comps.get('console'), commit() {}, esc: (t: string) => t })?.html ?? '';
+  check('the placer under a new display id keeps the form', /data-pe-root/.test(html), html.slice(0, 300));
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

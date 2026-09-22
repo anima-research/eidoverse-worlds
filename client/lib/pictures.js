@@ -23,8 +23,12 @@
 import { THREE } from './core.js';
 import { bus } from './base.js';
 import { primeFiles } from './assets.js';
-import { entities, findPart } from './world.js';
-import { normalizePicture } from '../../shared/picture.js';
+import { entities, findPart, comps } from './world.js';
+import { CONFIG } from './base.js';
+import { registerEditor } from './inspect.js';
+import { toast, flashHint } from './ui.js';
+import { guardedByOther, placerName } from './placer.js';   // the server's who-may-author rule, mirrored — and its one name (#190)
+import { normalizePicture, PICTURE_LIT, PICTURE_LOOK_MAX, PICTURE_STORE } from '../../shared/picture.js';
 
 // id → { picture, part, original, material } for every picture currently hung
 const hung = new Map();
@@ -127,6 +131,7 @@ function applyFrom(id, data) {
 bus.on('comp', ({ id, type, data }) => {
   if (type !== 'picture') return;
   applyFrom(id, data);
+  reconcileNote(id, data);
 });
 
 bus.on('entity', ({ id, kind }) => {
@@ -140,7 +145,9 @@ bus.on('entity', ({ id, kind }) => {
     bump(id);
     const h = hung.get(id);
     if (h) { hung.delete(id); h.material.dispose(); if (kind === 'demote') pending.set(id, h.picture); }
-    if (kind === 'remove') pending.delete(id);
+    // the editor's status line is about THIS entity; a later spawn under the
+    // same id is another one and opens with no line (Mica, #191 round 2)
+    if (kind === 'remove') { pending.delete(id); notes.delete(id); }
   } else if (kind === 'spawn') {
     // a promote replaces the subtree: whatever we hung is on the old one,
     // and whatever was loading for the old one is stale — the re-hang below
@@ -155,10 +162,50 @@ bus.on('entity', ({ id, kind }) => {
   }
 });
 
+// The block's status line, per entity, kept OUTSIDE the DOM. The scene panel
+// rebuilds every editor on the echo of a committed verb (scenegraph.js
+// repaint, ~300ms after the comp lands), and a refusal is exactly the case
+// with no echo to wait for: the user pressed hang, the block said why not,
+// and the previous hang's echo then wiped the line under them (Mica, #191
+// round 1). The render reads this back, so a repaint carries the last word.
+//
+// A line is about ONE state of ONE entity, though, and both can move under
+// it (Mica, round 2):
+//   · the entity can be removed and a new one spawned under the same id — a
+//     different thing that must not open with its predecessor's "taken
+//     down". The client's entity lifecycle names that case (`kind: 'remove'`,
+//     below); a demote/promote is the SAME entity leaving and re-entering
+//     residency, and keeps its line.
+//   · the bag can change by someone else's hand. Every line is stamped with
+//     the picture it was said ABOUT — for `hang` the bag it committed, for
+//     `take down` none, for a refusal or an upload note the bag as it stood —
+//     and a picture echo that disagrees with the stamp retires the line: a
+//     local status must never read as newer than the world. An echo that
+//     AGREES (the hang's own, or a late repeat of it) keeps it, which is the
+//     round-1 case and why this is a comparison, not a clear-on-every-echo.
+const notes = new Map();   // id → { text, warn, about }   (about = pictureKey of the bag the line describes)
+
+/** The five fields a picture IS, normalized, as one comparable string; `none`
+ *  for no picture. Echo data and committed data both go through here so a
+ *  server-side default or key order can never read as a change. */
+function pictureKey(data) {
+  if (data == null) return 'none';
+  const n = normalizePicture(data);
+  const p = n.ok ? n.picture : data;
+  return JSON.stringify([p?.src ?? '', p?.part ?? '', p?.look ?? '', p?.lit ?? 'scene', !!p?.flip]);
+}
+
+/** A picture echo for `id`: the line stays only if it was about this very bag. */
+function reconcileNote(id, data) {
+  const n = notes.get(id);
+  if (n && n.about !== pictureKey(data)) notes.delete(id);
+}
+
 bus.on('world-reset', () => clearPictures());
 
 export function clearPictures() {
   pending.clear();
+  notes.clear();
   for (const id of revision.keys()) bump(id);   // every load in flight is stale
   for (const id of [...hung.keys()]) takeDown(id);
 }
@@ -168,3 +215,115 @@ export const _hung = hung;
 export const _revision = revision;
 export const pictureCount = () => hung.size;
 export { THREE as _THREE };
+
+// ---- the editor block: how a HUMAN hangs a picture -------------------------
+//
+// The scene panel's generic layer already edits the comp as raw JSON; this is
+// the semantic block (client/lib/inspect.js): the model's named parts as a
+// list instead of a guess, a file door that lands the image in the store and
+// fills `src`, the look line with its bound, lit and flip. One verb per
+// gesture — `hang` commits the whole bag, `take down` commits null — and the
+// bag goes through normalizePicture FIRST so a refusal is a hint here, not a
+// console warning after the round-trip.
+//
+// A thing guarded by someone else (comp {type: "guard"}, rights.ts) gets a
+// read-only line: the server would refuse the comp, so the block says who may.
+
+const PICTURE_ACCEPT = 'image/png,image/jpeg,image/webp';
+const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/** Named mesh parts under `root`, in traversal order — what `part` may name. */
+export function namedParts(root) {
+  const out = [];
+  root?.traverse?.((c) => { if (c !== root && c.isMesh && c.name && c.material && !out.includes(c.name)) out.push(c.name); });
+  return out;
+}
+
+/** POST an image file through the store door; resolves to the library-relative path. */
+export async function uploadPicture(file) {
+  const q = new URLSearchParams({ as: 'image', name: file.name });
+  if (CONFIG.token) q.set('token', CONFIG.token);
+  const r = await fetch(`/upload?${q}`, { method: 'POST', body: file });
+  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+  const { path } = await r.json();
+  if (typeof path !== 'string' || !path.startsWith(PICTURE_STORE)) throw new Error(`upload answered with an unexpected path: ${path}`);
+  return path;
+}
+
+registerEditor(({ id, obj, meta, bag, commit }) => {
+  if (!obj || obj.userData?.isLight) return null;   // a bulb has no part to texture
+  const parts = namedParts(obj);
+  if (!parts.length) return null;                     // nothing to hang on — the generic JSON row still exists
+  const cur = bag?.picture && typeof bag.picture === 'object' ? bag.picture : null;
+  // guarded by someone I am not: the server would refuse the comp, so the
+  // block says so instead of offering a form. Authorship is the PLACER's —
+  // by subject when the door vouched for one, never `meta.actor`, which an
+  // owner's partial re-light moves while the placer stays (#190 round 2).
+  const heldBy = guardedByOther(id) ? placerName(id) : null;
+  if (heldBy) {
+    return { html: `<div style="margin:4px 0;color:var(--dim)">🖼 picture — guarded by ${esc(heldBy)}; only they or the world's owner can hang or change one here${cur ? ` (showing ${esc(cur.src?.split('/').pop() ?? '?')})` : ''}</div>`, wire() {} };
+  }
+  const part = cur?.part && parts.includes(cur.part) ? cur.part : parts[0];
+  const lit = cur?.lit === 'self' ? 'self' : 'scene';
+  return {
+    html: `<div data-pe-root style="display:flex;flex-direction:column;gap:4px;margin:4px 0">
+      <div><b>🖼 picture</b> <span style="color:var(--dim);font-size:11px">${cur ? 'hung on ' + esc(cur.part ?? '?') : 'none hung'}</span></div>
+      <label style="display:flex;gap:6px;align-items:center">part
+        <select data-pe="part" style="flex:1">${parts.map((p) => `<option value="${esc(p)}"${p === part ? ' selected' : ''}>${esc(p)}</option>`).join('')}</select></label>
+      <label style="display:flex;gap:6px;align-items:center">image
+        <input data-pe="src" type="text" placeholder="eidoverse/assets/… or store/images/…" value="${esc(cur?.src ?? '')}" style="flex:1;font-size:11px">
+        <input data-pe="file" type="file" accept="${PICTURE_ACCEPT}" style="display:none">
+        <button data-pe="pick" title="upload a PNG, JPEG or WebP into the store and use it">upload…</button></label>
+      <label style="display:flex;flex-direction:column;gap:2px">what it shows <span style="color:var(--dim);font-size:11px">(what text-tier residents read; ≤${PICTURE_LOOK_MAX})</span>
+        <textarea data-pe="look" maxlength="${PICTURE_LOOK_MAX}" rows="2" style="font-size:11px;font-family:inherit">${esc(cur?.look ?? '')}</textarea></label>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <label style="display:flex;gap:4px;align-items:center">lit
+          <select data-pe="lit">${Object.entries(PICTURE_LIT).map(([k, v]) => `<option value="${k}"${k === lit ? ' selected' : ''}>${esc(v)}</option>`).join('')}</select></label>
+        <label style="display:flex;gap:4px;align-items:center;cursor:pointer"><input data-pe="flip" type="checkbox"${cur?.flip ? ' checked' : ''}> flip (UVs upside down)</label>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button data-pe="hang">${cur ? 'update' : 'hang'}</button>
+        ${cur ? '<button data-pe="down" title="comp {type: \"picture\", data: null}">take down</button>' : ''}
+        <span data-pe="msg" style="color:${notes.get(id)?.warn ? 'var(--warn, #e8a33d)' : 'var(--dim)'};font-size:11px">${esc(notes.get(id)?.text ?? '')}</span>
+      </div>
+    </div>`,
+    wire(root) {
+      const q = (k) => root.querySelector(`[data-pe="${k}"]`);
+      // `about` is the bag this line describes: what a gesture committed, or
+      // (omitted) the bag as it stands now. Survives the repaint; the DOM
+      // below does not — and is retired by any echo that disagrees with it.
+      const msg = (t, warn = false, about = comps.get(id)?.picture ?? null) => {
+        notes.set(id, { text: t, warn, about: pictureKey(about) });
+        const m = q('msg'); if (m) { m.textContent = t; m.style.color = warn ? 'var(--warn, #e8a33d)' : 'var(--dim)'; }
+      };
+      q('pick')?.addEventListener('click', () => q('file')?.click());
+      q('file')?.addEventListener('change', async (ev) => {
+        const file = ev.target.files?.[0];
+        if (!file) return;
+        msg(`uploading ${file.name}…`);
+        try {
+          const path = await uploadPicture(file);
+          q('src').value = path;
+          msg(`in the store as ${path.split('/').pop()} — now hang it`);
+        } catch (err) { msg(`upload failed: ${err.message}`, true); toast(`picture upload failed — ${err.message}`, 'warn', 8000); }
+        ev.target.value = '';
+      });
+      q('hang')?.addEventListener('click', (ev) => {
+        const data = { src: q('src').value.trim(), part: q('part').value, lit: q('lit').value, flip: !!q('flip').checked };
+        const look = q('look').value.trim();
+        if (look) data.look = look;
+        const norm = normalizePicture(data);
+        if (!norm.ok) { msg(norm.why, true); return; }   // the rule, here, before any round-trip
+        commit('comp', { id, type: 'picture', data: norm.picture });
+        msg(norm.notes.length ? norm.notes.join(' · ') : `hung on ${norm.picture.part}`, false, norm.picture);
+        if (norm.notes.length) flashHint(`🖼 ${esc(norm.notes[0])}`);
+        ev.target.blur();
+      });
+      q('down')?.addEventListener('click', (ev) => {
+        commit('comp', { id, type: 'picture', data: null });
+        msg('taken down', false, null);
+        ev.target.blur();
+      });
+    },
+  };
+});
