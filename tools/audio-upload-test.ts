@@ -1,8 +1,15 @@
 // The audio door — `POST /upload?as=audio`: an MP3/Ogg/WAV/WebM/M4A lands in
 // the content-addressed store and comes back as a sound source.
 //
-//   WORLDS_DIR=$(mktemp -d) OPT_DIR=$(mktemp -d) JOIN_TOKEN=test-door PORT=8994 bun run server/server.ts &
-//   WORLD_URL=ws://localhost:8994/ws JOIN_TOKEN=test-door bun run tools/audio-upload-test.ts
+// Owns its sequencer: a scratch child on a random port, proved ours by the
+// nonce echo (probe-harness ownedWorld), with a scratch OPT_DIR so the
+// manifest leg always runs — a fixed default port used to be the recipe, and
+// runs sharing one door shared its upload window too (Mica, #192 blocker 3).
+//
+//   bun tools/audio-upload-test.ts
+//
+// To point it at a door you run yourself instead (identity unchecked):
+//   WORLD_URL=ws://host:port/ws JOIN_TOKEN=… [OPT_DIR=…] bun tools/audio-upload-test.ts
 //
 // Kind by BYTES (a PNG named .mp3 is refused; a WAV named .glb is a .wav),
 // content-addressed and idempotent, served back byte-identical with the right
@@ -11,10 +18,17 @@
 // The upload window is 4/min per IP and every POST past the token check
 // spends it, so the door is exercised four at a time with a rest between.
 import { allowedSoundSrc } from "../shared/sound.js";
+import { ownedWorld, proveOwned } from "./probe-harness.mjs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-const URL_ = process.env.WORLD_URL ?? "ws://localhost:8994/ws";
-const TOKEN = process.env.JOIN_TOKEN ?? "test-door";
-const HTTP = URL_.replace(/^ws/, "http").replace(/\/ws$/, "");
+const OPT = process.env.OPT_DIR ?? mkdtempSync(join(tmpdir(), "audio-door-opt-"));
+const world = process.env.WORLD_URL
+  ? await ownedWorld({ live: process.env.WORLD_URL.replace(/^ws/, "http").replace(/\/ws$/, ""), key: process.env.JOIN_TOKEN ?? "test-door" })
+  : await ownedWorld({ key: "test-door", env: { OPT_DIR: OPT } });
+const HTTP = world.origin;
+const TOKEN = world.key;
 let passed = 0, failed = 0;
 function check(name: string, ok: boolean, detail = "") { if (ok) { passed++; console.log(`  ✓ ${name}`); } else { failed++; console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`); } }
 
@@ -35,6 +49,7 @@ async function post(body: Uint8Array, q: Record<string, string>, token: string |
 }
 const rest = async () => { console.log("  (resting out the 4/min upload window…)"); await new Promise((r) => setTimeout(r, 61_000)); };
 
+try {
 console.log(`\naudio door — ${HTTP}\n`);
 let r = await post(WAV, { as: "audio", name: "quiet tone.wav" });
 check("a WAV lands: 200 with a store path", r.status === 200 && typeof r.json?.path === "string", r.text);
@@ -73,11 +88,29 @@ r = await post(WAV, { as: "image" });
 check("a WAV at the IMAGE door is refused (415)", r.status === 415, `${r.status} ${r.text}`);
 const gm = await fetch(`${HTTP}/library/${(await post(MP3, { as: "audio" })).json?.path ?? "store/audio/none.mp3"}`);
 check("a served .mp3 says audio/mpeg", (gm.headers.get("content-type") ?? "").startsWith("audio/mpeg"), gm.headers.get("content-type") ?? "none");
-const OPT = process.env.OPT_DIR;
-if (OPT) {
-  const man = JSON.parse(await Bun.file(`${OPT}/store/audio/manifest.json`).text());
+// owned child: the scratch OPT_DIR above; a live door: only if the caller
+// told us where its store is
+const MANIFEST_DIR = world.owned ? OPT : process.env.OPT_DIR;
+if (MANIFEST_DIR) {
+  const man = JSON.parse(await Bun.file(`${MANIFEST_DIR}/store/audio/manifest.json`).text());
   const entry = man[wavPath.split("/").pop()!.replace(/\.wav$/, "")];
   check("the manifest records the first name and who", entry && entry.name === "quiet tone" && typeof entry.by === "string", JSON.stringify(entry));
 } else console.log("  (OPT_DIR not set — manifest check skipped)");
+
+  // the negative control: a responder that does not echo our nonce is refused
+  // before any verdict — the identity check the door above passed is the one
+  // thing an ambient or stale listener on the same port could not
+  {
+    const impostor = Bun.serve({ port: 0, fetch: (req) => new URL(req.url).pathname === "/version" ? Response.json({ version: "impostor", nonce: "not-ours" }) : new Response("Unsupported method ('POST')", { status: 501 }) });
+    const v = await proveOwned(`http://127.0.0.1:${impostor.port}`, "the-nonce-we-actually-gave", { attempts: 3 });
+    check("negative control: a responder with the wrong nonce is refused, not judged", v.ours === false && /wrong nonce/.test(v.reason), JSON.stringify(v));
+    const mute = Bun.serve({ port: 0, fetch: () => Response.json({ version: "stale" }) });
+    const v2 = await proveOwned(`http://127.0.0.1:${mute.port}`, "any", { attempts: 3 });
+    check("negative control: a responder with no nonce field is refused as a stale listener", v2.ours === false && /no nonce field/.test(v2.reason), JSON.stringify(v2));
+    impostor.stop(true); mute.stop(true);
+  }
+} finally {
+  await world.close();
+}
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

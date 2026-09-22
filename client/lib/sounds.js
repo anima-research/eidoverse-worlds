@@ -23,19 +23,44 @@
 //      playing, re-seek on a new t0); new src → tear down and rebuild. A
 //      sound whose entity left the scene keeps its graph but is silenced
 //      (gain 0) until the entity is back — the bag is still authored.
+//   5. The listener has the last word on loudness. Every graph ends in ONE
+//      world bus whose gain is the audio panel's `world volume`
+//      (voiceconsent.js volumeFor('world'), live on 'audio:volume'), so the
+//      slider that has promised "ambience and place-sound" since 2026-08-16
+//      controls the first placed sound the day it exists. The authored
+//      volume stays its own node: what the author said is preserved, what
+//      you hear is authored × yours (Mica, #192 review, blocker 1).
 import { THREE, camera } from './core.js';
 import { bus, CONFIG } from './base.js';
 import { entities } from './world.js';
 import { audioContext } from './audioctx.js';
 import { playWhenAllowed } from './audiounlock.js';
+import { volumeFor } from './voiceconsent.js';
 import { registerEditor } from './inspect.js';
 import { toast, flashHint } from './ui.js';
-import { net } from './net.js';
+import { guardedByOther, placerName } from './placer.js';   // the server's who-may-author rule, mirrored — by placer, never latest actor (#190)
 import { normalizeSound, SOUND_LOOK_MAX, SOUND_STORE } from '../../shared/sound.js';
 
 // id → { sound, el, srcNode, gain, panner }
 const playing = new Map();
 export const _playing = playing;   // probes
+
+// The world bus: one gain for everything placed, set from the listener's own
+// preference. Created with the first graph (the AudioContext is lazy too).
+let worldBus = null;
+function worldGain() {
+  if (!worldBus) {
+    const ctx = audioContext();
+    worldBus = ctx.createGain();
+    worldBus.gain.value = volumeFor('world');
+    worldBus.connect(ctx.destination);
+  }
+  return worldBus;
+}
+bus.on('audio:volume', ({ cat, value }) => { if (cat === 'world' && worldBus) worldBus.gain.value = value; });
+/** For probes: the listener-side gain, and what a sound is actually heard at. */
+export const _worldBus = () => worldBus;
+export const effectiveGain = (id) => { const h = playing.get(id); return h ? h.gain.gain.value * (worldBus?.gain.value ?? volumeFor('world')) : null; };
 const _pos = new THREE.Vector3();
 const _fwd = new THREE.Vector3();
 const _up = new THREE.Vector3();
@@ -54,7 +79,7 @@ function buildGraph(id, sound) {
   panner.refDistance = 1.5;
   panner.rolloffFactor = 1.5;
   panner.maxDistance = sound.radius;
-  srcNode.connect(gain); gain.connect(panner); panner.connect(ctx.destination);
+  srcNode.connect(gain); gain.connect(panner); panner.connect(worldGain());
   const h = { id, sound, el, srcNode, gain, panner, seeked: false };
   playing.set(id, h);
   return h;
@@ -148,7 +173,12 @@ export async function uploadSound(file) {
 registerEditor(({ id, obj, meta, bag, commit }) => {
   if (!obj || obj.userData?.isLight) return null;
   const cur = bag?.sound && typeof bag.sound === 'object' ? bag.sound : null;
-  const heldBy = bag?.guard && meta?.actor !== net.myId && net.myRights?.role !== 'owner' ? (meta?.actor ?? 'its placer') : null;
+  // guarded by someone I am not: the server would refuse the comp, so the
+  // block says so instead of offering a form. Authorship is the PLACER's —
+  // by subject when the door vouched for one, never `meta.actor`, which an
+  // owner's partial update moves while the placer stays (#190 round 2; the
+  // sound block had reintroduced the actor shortcut — Mica, #192 blocker 2).
+  const heldBy = guardedByOther(id) ? placerName(id) : null;
   if (heldBy) {
     return { html: `<div style="margin:4px 0;color:var(--dim)">🔊 sound — guarded by ${esc(heldBy)}; only they or the world's owner can change it${cur ? ` (${cur.playing === false ? 'paused' : 'playing'}: ${esc(cur.look ?? cur.src?.split('/').pop() ?? '?')})` : ''}</div>`, wire() {} };
   }

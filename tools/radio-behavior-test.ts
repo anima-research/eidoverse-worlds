@@ -4,11 +4,27 @@
 // a second use pauses; an unrelated action does nothing; a use on a thing with
 // no sound comp logs and does nothing.
 //
-//   WORLDS_DIR=$(mktemp -d) JOIN_TOKEN=test-door PORT=8994 bun run server/server.ts &
-//   WORLD_URL=ws://localhost:8994/ws JOIN_TOKEN=test-door bun run tools/radio-behavior-test.ts
-const URL_ = process.env.WORLD_URL ?? "ws://localhost:8994/ws";
-const TOKEN = process.env.JOIN_TOKEN ?? "test-door";
-const HTTP = URL_.replace(/^ws/, "http").replace(/\/ws$/, "");
+// Owns its sequencer: a scratch child on a random port, proved ours by the
+// nonce echo (probe-harness ownedWorld) — a fixed default port used to be the
+// recipe, and a reviewer's first run judged an unrelated listener on it (Mica,
+// #192 review, blocker 3). A scratch OPT_DIR rides along: the behavior store
+// is under it, so the script upload lands where the bind looks.
+//
+//   bun tools/radio-behavior-test.ts
+//
+// To point it at a door you run yourself instead (identity unchecked):
+//   WORLD_URL=ws://host:port/ws JOIN_TOKEN=… bun tools/radio-behavior-test.ts
+import { ownedWorld, proveOwned } from "./probe-harness.mjs";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const world = process.env.WORLD_URL
+  ? await ownedWorld({ live: process.env.WORLD_URL.replace(/^ws/, "http").replace(/\/ws$/, ""), key: process.env.JOIN_TOKEN ?? "test-door" })
+  : await ownedWorld({ key: "test-door", env: { OPT_DIR: mkdtempSync(join(tmpdir(), "radio-opt-")), BHV_TIMER_MIN: "1" } });
+const HTTP = world.origin;
+const URL_ = `${HTTP.replace(/^http/, "ws")}/ws`;
+const TOKEN = world.key;
 let passed = 0, failed = 0;
 function check(name: string, ok: boolean, detail = "") { if (ok) { passed++; console.log(`  ✓ ${name}`); } else { failed++; console.log(`  ✗ ${name}${detail ? ` — ${detail}` : ""}`); } }
 type Sock = { ws: WebSocket; msgs: any[]; errors: string[]; verb(v: string, a: any): void; settle(ms?: number): Promise<void>; close(): void };
@@ -25,6 +41,7 @@ async function foldedBag(world: string, id: string): Promise<any> {
   const eye = await open({ id: `eye-${Math.random().toString(36).slice(2, 6)}`, world, spectate: true });
   const bag = eye.msgs.find((m) => m.type === "snapshot").state.entities?.[id]?.comp; eye.close(); return bag;
 }
+try {
 const WORLD = `radiotest-${Math.random().toString(36).slice(2, 8)}`;
 console.log(`\nradio toggle — world "${WORLD}"\n`);
 const src = await Bun.file(new URL("../sdk/examples/radio.js", import.meta.url)).text();
@@ -77,5 +94,21 @@ await vis.settle(600);
 check("bound to a thing with no sound comp, the script logs and emits nothing (no error, no comp)", (await foldedBag(WORLD, "crate1"))?.sound === undefined && vis.errors.length === 0, vis.errors.join("; "));
 
 for (const s of [ra, vis]) s.close();
+
+  // the negative control: a responder that does not echo our nonce is refused
+  // before any verdict — the identity check the door above passed is the one
+  // thing an ambient or stale listener on the same port could not
+  {
+    const impostor = Bun.serve({ port: 0, fetch: (req) => new URL(req.url).pathname === "/version" ? Response.json({ version: "impostor", nonce: "not-ours" }) : new Response("Unsupported method ('POST')", { status: 501 }) });
+    const v = await proveOwned(`http://127.0.0.1:${impostor.port}`, "the-nonce-we-actually-gave", { attempts: 3 });
+    check("negative control: a responder with the wrong nonce is refused, not judged", v.ours === false && /wrong nonce/.test(v.reason), JSON.stringify(v));
+    const mute = Bun.serve({ port: 0, fetch: () => Response.json({ version: "stale" }) });
+    const v2 = await proveOwned(`http://127.0.0.1:${mute.port}`, "any", { attempts: 3 });
+    check("negative control: a responder with no nonce field is refused as a stale listener", v2.ours === false && /no nonce field/.test(v2.reason), JSON.stringify(v2));
+    impostor.stop(true); mute.stop(true);
+  }
+} finally {
+  await world.close();
+}
 console.log(`\n${passed} passed, ${failed} failed\n`);
 process.exit(failed ? 1 : 0);

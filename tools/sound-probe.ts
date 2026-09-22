@@ -11,7 +11,17 @@
 //      t0 in the past it seeks to the shared playhead, not the top;
 //   C. a replace with the same src adjusts in place (volume), no second graph;
 //   D. playing:false pauses; data:null tears the graph down;
-//   E. a URL source realizes nothing.
+//   E. a URL source realizes nothing;
+//   F. the LISTENER's world volume (the audio panel's slider, voiceconsent
+//      volumeFor('world')) is what a sound is heard at, composed with the
+//      authored volume and never replacing it: the page boots with the
+//      preference at 0 and the authored 0.5 is silent; the slider moving to
+//      1 is heard live; a partial 0.5 under an authored 0.9 is 0.45; a
+//      same-source update to 0.6 under it is 0.3; the sound gone and back
+//      (entity removed, respawned, re-authored) comes back under the same
+//      preference (Mica, #192 review, blocker 1: the slider had promised
+//      "ambience and place-sound" since 2026-08-16 and the first placed
+//      sound ignored it).
 import { launchBrowser, ownedWorld, checker } from './probe-harness.mjs';
 import { join } from 'node:path';
 import { mkdtempSync } from 'node:fs';
@@ -25,7 +35,7 @@ const world = await ownedWorld({ env: { EIDOVERSE_DIR: process.env.EIDOVERSE_DIR
 const { page, close } = await launchBrowser();
 const errs: string[] = [];
 const state = (pg: any) => pg.evaluate(async () => {
-  const { _playing } = await import('/lib/sounds.js');
+  const { _playing, _worldBus, effectiveGain } = await import('/lib/sounds.js');
   const { audioContextState } = await import('/lib/audioctx.js');
   const { entities } = await import('/lib/world.js');
   const h = _playing.get('box1');
@@ -34,7 +44,7 @@ const state = (pg: any) => pg.evaluate(async () => {
   return {
     entity: !!root, graphs: _playing.size, has: !!h,
     src: h?.el?.currentSrc ?? h?.el?.src ?? null, paused: h?.el?.paused ?? null, t: h?.el?.currentTime ?? null, dur: h?.el?.duration ?? null,
-    gain: h?.gain?.gain?.value ?? null, panner: h ? [h.panner.positionX?.value ?? null, h.panner.positionY?.value ?? null, h.panner.positionZ?.value ?? null] : null,
+    gain: h?.gain?.gain?.value ?? null, world: _worldBus()?.gain?.value ?? null, eff: effectiveGain('box1'), panner: h ? [h.panner.positionX?.value ?? null, h.panner.positionY?.value ?? null, h.panner.positionZ?.value ?? null] : null,
     ctx: audioContextState(), entityPos: pos,
   };
 });
@@ -48,6 +58,9 @@ try {
   pg.on('pageerror', (e) => errs.push(e.message));
   pg.on('console', (m) => { const t = m.text(); if (/\[sounds\]/.test(t)) console.log('   console:', t.slice(0, 200)); });
   pg.on('dialog', (d) => d.dismiss().catch(() => {}));
+  // F. the listener arrives with world volume at 0 — set before any page
+  // script runs, exactly as a saved preference would be
+  await pg.addInitScript(() => { try { localStorage.setItem('eido.audio.prefs', JSON.stringify({ volWorld: 0 })); } catch { /* private mode */ } });
   await pg.goto(`${world.origin}/?world=soundprobe&key=${world.key}&name=listener`, { waitUntil: 'domcontentloaded' });
   await pg.waitForSelector('#micbtn, #mictoggle', { timeout: 30000 });
   await pg.evaluate((lib) => import('/lib/net.js').then((n: any) => n.sendVerb('spawn', { id: 'box1', lib, pos: [2, 0, -3], yaw: 0 })), LIB);
@@ -58,6 +71,10 @@ try {
   s = await until(pg, (x) => x.has && x.dur > 0);
   check('A. one graph on the shared context, sourced from the store path', s.has && s.graphs === 1 && String(s.src).includes(src.split('/').pop()!) && s.ctx !== 'none', JSON.stringify(s));
   check('A. the gain carries the volume', s.gain === 0.5, JSON.stringify(s.gain));
+  check('F. …and with the listener\'s world volume at 0 it is heard at 0, the authored 0.5 preserved', s.world === 0 && s.eff === 0 && s.gain === 0.5, JSON.stringify({ gain: s.gain, world: s.world, eff: s.eff }));
+  await pg.evaluate(() => import('/lib/voiceconsent.js').then((v: any) => v.setVolume('world', 1)));
+  s = await until(pg, (x) => x.eff != null && Math.abs(x.eff - 0.5) < 1e-3, 3000);
+  check('F. the slider moving to 1 is heard live: 0.5', Math.abs((s.eff ?? 0) - 0.5) < 1e-3 && s.world === 1, JSON.stringify({ world: s.world, eff: s.eff }));
   s = await until(pg, (x) => x.panner && Math.abs(x.panner[0] - x.entityPos[0]) < 0.05 && Math.abs(x.panner[2] - x.entityPos[2]) < 0.05, 8000);
   check('A. the panner sits where the entity is', !!s.panner && Math.abs(s.panner[0] - 2) < 0.1 && Math.abs(s.panner[2] + 3) < 0.1, JSON.stringify({ panner: s.panner, entity: s.entityPos }));
   // B. a gesture unlocks playback
@@ -73,6 +90,23 @@ try {
   await pg.evaluate(({ src, t0 }) => import('/lib/net.js').then((n: any) => n.sendVerb('comp', { id: 'box1', type: 'sound', data: { src, t0, look: 'a probe tone', volume: 0.9, radius: 20 } })), { src, t0 });
   s = await until(pg, (x) => Math.abs((x.gain ?? 0) - 0.9) < 1e-3, 5000);   // AudioParam holds float32
   check('C. a same-src replace adjusts in place: volume 0.9, still one graph, still playing', Math.abs(s.gain - 0.9) < 1e-3 && s.graphs === 1 && s.paused === false, JSON.stringify(s));
+  // F. a partial preference composes with the authored volume, and follows a same-source update
+  await pg.evaluate(() => import('/lib/voiceconsent.js').then((v: any) => v.setVolume('world', 0.5)));
+  s = await until(pg, (x) => x.eff != null && Math.abs(x.eff - 0.45) < 1e-3, 3000);
+  check('F. world 0.5 under authored 0.9 is heard at 0.45, authored kept at 0.9', Math.abs((s.eff ?? 0) - 0.45) < 1e-3 && Math.abs(s.gain - 0.9) < 1e-3, JSON.stringify({ gain: s.gain, world: s.world, eff: s.eff }));
+  await pg.evaluate(({ src, t0 }) => import('/lib/net.js').then((n: any) => n.sendVerb('comp', { id: 'box1', type: 'sound', data: { src, t0, look: 'a probe tone', volume: 0.6, radius: 20 } })), { src, t0 });
+  s = await until(pg, (x) => x.eff != null && Math.abs(x.eff - 0.3) < 1e-3, 5000);
+  check('F. a same-src update to 0.6 under world 0.5 is heard at 0.3, one graph', Math.abs((s.eff ?? 0) - 0.3) < 1e-3 && s.graphs === 1, JSON.stringify({ gain: s.gain, world: s.world, eff: s.eff, graphs: s.graphs }));
+  // F. gone and back: the entity removed takes its graph; respawned and re-authored, it is heard under the same preference
+  await pg.evaluate(() => import('/lib/net.js').then((n: any) => n.sendVerb('remove', { id: 'box1' })));
+  s = await until(pg, (x) => !x.has && !x.entity, 8000);
+  check('F. the entity removed: no graph', !s.has && s.graphs === 0, JSON.stringify({ has: s.has, graphs: s.graphs, entity: s.entity }));
+  await pg.evaluate((lib) => import('/lib/net.js').then((n: any) => n.sendVerb('spawn', { id: 'box1', lib, pos: [2, 0, -3], yaw: 0 })), LIB);
+  s = await until(pg, (x) => x.entity, 90_000);
+  await pg.evaluate(({ src, t0 }) => import('/lib/net.js').then((n: any) => n.sendVerb('comp', { id: 'box1', type: 'sound', data: { src, t0, look: 'a probe tone', volume: 0.9, radius: 20 } })), { src, t0 });
+  s = await until(pg, (x) => x.has && x.eff != null && Math.abs(x.eff - 0.45) < 1e-3, 15000);
+  check('F. …respawned and re-authored at 0.9, heard at 0.45 under the listener\'s 0.5 that never changed', s.has && Math.abs((s.eff ?? 0) - 0.45) < 1e-3 && s.world === 0.5, JSON.stringify({ gain: s.gain, world: s.world, eff: s.eff }));
+  await pg.evaluate(() => import('/lib/voiceconsent.js').then((v: any) => v.setVolume('world', 1)));
   // D. pause, then silence
   await pg.evaluate(({ src }) => import('/lib/net.js').then((n: any) => n.sendVerb('comp', { id: 'box1', type: 'sound', data: { src, look: 'a probe tone', playing: false } })), { src });
   s = await until(pg, (x) => x.paused === true, 5000);
