@@ -557,6 +557,9 @@ decision because restarts ripple every resident's reconnect.
   a picture source (`comp {type: "picture", data: {src: <that path>, …}}`).
   The kind is read from the bytes, not the name; the store is inert — what
   hangs in a world is the comp, gated by builder rank and the entity's guard.
+- `?as=audio&name=foo` + an MP3/Ogg/WAV/WebM/M4A body (≤20MB) → `store/audio/<hash>.<ext>`,
+  a sound source (`comp {type: "sound", data: {src: <that path>, …}}`). Kind
+  by bytes, store inert, the comp is what plays.
 
 ## Geometry — shape as data
 

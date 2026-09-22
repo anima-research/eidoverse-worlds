@@ -113,17 +113,8 @@ export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'd
   // used to orphan the child on its port; every live child dies with us, whoever sends the signal — one handler
   // over a module-level set, so two worlds open at once both go (eighth/ninth reviews 2026-09-10)
   LIVE_CHILDREN.add(srv); scratchOf.set(srv, scratch); armSignals();
-  let ours = false, reason = 'never answered';
-  for (let i = 0; i < 60 && !ours; i++) {
-    if (srv.exitCode !== null) { reason = `exited ${srv.exitCode}`; break; }
-    try {
-      const v = await (await fetch(`${origin}/version`, { signal: AbortSignal.timeout(1000) })).json();
-      if (v.nonce === undefined) { reason = 'responder has no nonce field (stale pre-nonce listener)'; break; }
-      ours = v.nonce === NONCE;
-      if (!ours) { reason = 'wrong nonce (not our child)'; break; }
-    } catch { /* not up yet */ }
-    if (!ours) await new Promise((r) => setTimeout(r, 250));
-  }
+  const verdict = await proveOwned(origin, NONCE, { alive: () => (srv.exitCode === null ? true : `exited ${srv.exitCode}`) });
+  const ours = verdict.ours, reason = verdict.reason;
   const close = async () => {
     LIVE_CHILDREN.delete(srv); scratchOf.delete(srv);
     try { srv.kill('SIGTERM'); } catch { /* gone */ }
@@ -133,6 +124,28 @@ export async function ownedWorld({ live = null, key = process.env.JOIN_KEY || 'd
   };
   if (!ours) { await close(); throw new Error(`owned world never came up as OURS (${reason})`); }
   return { origin, key, owned: true, close };
+}
+
+/** The identity check itself, callable on its own so a test can show the
+ *  NEGATIVE: a responder that does not echo our nonce is refused, never
+ *  judged (Mica, #192 review, blocker 3 — "an impostor cannot buy green").
+ *  Polls `origin`/version up to `attempts` times, 250ms apart; `alive()`
+ *  returns true while the thing we are waiting for could still come up, or
+ *  a reason string once it cannot. Resolves { ours, reason }. */
+export async function proveOwned(origin, nonce, { attempts = 60, alive = () => true } = {}) {
+  let ours = false, reason = 'never answered';
+  for (let i = 0; i < attempts && !ours; i++) {
+    const a = alive();
+    if (a !== true) { reason = String(a); break; }
+    try {
+      const v = await (await fetch(`${origin}/version`, { signal: AbortSignal.timeout(1000) })).json();
+      if (v.nonce === undefined) { reason = 'responder has no nonce field (stale pre-nonce listener)'; break; }
+      ours = v.nonce === nonce;
+      if (!ours) { reason = 'wrong nonce (not our child)'; break; }
+    } catch { /* not up yet */ }
+    if (!ours) await new Promise((r) => setTimeout(r, 250));
+  }
+  return { ours, reason };
 }
 
 /** Uniform pass/fail counting with a nonzero exit — a probe that cannot fail

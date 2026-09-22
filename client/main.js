@@ -27,6 +27,7 @@ import { initCauses } from './lib/realize/causes.js';
 // and entity buses on import (it has no boot step of its own)
 import './lib/emitters.js';
 import './lib/pictures.js';
+import { tickSounds } from './lib/sounds.js';   // the sound comp: positional audio from an entity
 import { tickMotion } from './lib/motion.js';
 import {
   myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
@@ -512,6 +513,7 @@ registerSystem('motion', () => tickMotion());                   // the world's m
 registerSystem('sky', (dt, t, now) => updateSky(now, t));
 registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather → uniforms
 registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots follow requests
+registerSystem('sounds', () => tickSounds(), { every: 2 });      // panners follow entities, the listener the camera
 registerSystem('me-drive', (dt) => {
   if (CONFIG.renderer) { /* camera is driven per snap request */ }
   else if (CONFIG.spectate) updateSpectator(dt, CONFIG.follow ? remotes.get(CONFIG.follow) : null);
