@@ -16,7 +16,16 @@
 //      every echo, so the message and the `take down` control must both be
 //      there after one (Mica, round 1: 8/9 with the message blank, or the
 //      message kept and the control gone, depending on when the echo landed);
-//   E. `take down` commits null: the material is restored.
+//   E. `take down` commits null: the material is restored — and its line
+//      survives the echo's repaint too (the echo AGREES with what was said);
+//   F. the line is about ONE entity: remove the console, spawn another under
+//      the same id, reopen — the replacement has no line (Mica, round 2:
+//      the note map was keyed by id alone and the successor opened with its
+//      predecessor's "taken down");
+//   G. the line is about ONE bag: a refusal is left in the block, then
+//      someone ELSE hangs a picture through the verb — the echo disagrees
+//      with what the line was about, so the line retires rather than reading
+//      as newer than the world.
 //
 // Synchronization is on the AUTHORITATIVE repaint, never a sleep: after C the
 // probe waits for the block that only exists once the comp is in the bag (it
@@ -91,6 +100,9 @@ try {
   // block about to be replaced
   s = await until(pg, (x) => x.hung && x.mapW > 0 && x.down);
   check('C. hang commits the comp — the picture hangs on screenplane with the uploaded image', s.hung && s.cloned && s.mapW === 2, JSON.stringify(s));
+  // the hang's own echo agrees with what the line said, so the repaint it
+  // queued (the one that produced `down`) carried the line through
+  check('C. …and the block\'s line survives the echo that agrees with it', s.msg === 'hung on screenplane', JSON.stringify({ msg: s.msg }));
   check('C. …with the normalized bag in the fold (src, part, look, lit)', s.comp?.src === uploaded && s.comp?.part === 'screenplane' && s.comp?.look === 'a red square, hung by hand' && s.comp?.lit === 'self' && s.comp?.flip === false, JSON.stringify(s.comp));
 
   // D. a URL typed into src is refused in the block, and no comp goes out
@@ -112,6 +124,30 @@ try {
   await pg.click('[data-pe="down"]');
   s = await until(pg, (x) => !x.hung);
   check('E. take down commits null — nothing hung, comp gone', !s.hung && s.comp == null, JSON.stringify(s));
+  // the null echo's repaint removes the control; the line it agrees with stays
+  s = await until(pg, (x) => x.block && !x.down);
+  check('E. …and "taken down" outlives the echo\'s repaint', s.msg === 'taken down' && !s.down, JSON.stringify({ msg: s.msg, down: s.down }));
+
+  // F. another entity under the same id opens with NO line
+  await pg.evaluate(() => import('/lib/net.js').then((n: any) => n.sendVerb('remove', { id: 'console' })));
+  s = await until(pg, (x) => !x.entity);
+  check('F. the console is removed', !s.entity, JSON.stringify({ entity: s.entity }));
+  await pg.evaluate((lib) => import('/lib/net.js').then((n: any) => n.sendVerb('spawn', { id: 'console', lib, pos: [1.3, 0.5, -2.2], yaw: 0.6 })), LIB);
+  s = await until(pg, (x) => x.part, 90_000);
+  await pg.evaluate(() => import('/lib/scenegraph.js').then((m: any) => m.sceneSelect('console')));
+  s = await until(pg, (x) => x.block);
+  check('F. a new console under the same id opens with no inherited line', s.block && (s.msg ?? '') === '' && !s.down && !s.hung, JSON.stringify({ msg: s.msg, down: s.down, hung: s.hung }));
+
+  // G. a line about one bag retires when someone else changes the bag
+  await pg.fill('[data-pe="src"]', 'https://example.com/trollface.png');
+  await pg.click('[data-pe="hang"]');
+  s = await until(pg, (x) => /not an allowed picture source/.test(x.msg ?? ''), 5000);
+  check('G. a refusal is in the block again', /not an allowed picture source/.test(s.msg ?? ''), JSON.stringify({ msg: s.msg }));
+  // not through the block: the verb, as another actor's hand would be
+  await pg.evaluate((src) => import('/lib/net.js').then((n: any) => n.sendVerb('comp', { id: 'console', type: 'picture', data: { src, part: 'screenplane', look: 'hung by someone else' } })), uploaded);
+  s = await until(pg, (x) => x.hung && x.down);
+  check('G. …the outside hang lands and the block repaints with take down', s.hung && s.down && s.comp?.look === 'hung by someone else', JSON.stringify({ hung: s.hung, down: s.down, look: s.comp?.look }));
+  check('G. …and the refusal line is gone: it was about a bag the world moved past', (s.msg ?? '') === '', JSON.stringify({ msg: s.msg }));
   check('no page errors across the cycle', errs.length === 0, errs.join(' | '));
 } catch (e: any) {
   console.log('probe aborted:', e?.message ?? e);

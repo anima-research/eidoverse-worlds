@@ -23,7 +23,7 @@
 import { THREE } from './core.js';
 import { bus } from './base.js';
 import { primeFiles } from './assets.js';
-import { entities, findPart } from './world.js';
+import { entities, findPart, comps } from './world.js';
 import { CONFIG } from './base.js';
 import { registerEditor } from './inspect.js';
 import { toast, flashHint } from './ui.js';
@@ -131,6 +131,7 @@ function applyFrom(id, data) {
 bus.on('comp', ({ id, type, data }) => {
   if (type !== 'picture') return;
   applyFrom(id, data);
+  reconcileNote(id, data);
 });
 
 bus.on('entity', ({ id, kind }) => {
@@ -144,7 +145,9 @@ bus.on('entity', ({ id, kind }) => {
     bump(id);
     const h = hung.get(id);
     if (h) { hung.delete(id); h.material.dispose(); if (kind === 'demote') pending.set(id, h.picture); }
-    if (kind === 'remove') pending.delete(id);
+    // the editor's status line is about THIS entity; a later spawn under the
+    // same id is another one and opens with no line (Mica, #191 round 2)
+    if (kind === 'remove') { pending.delete(id); notes.delete(id); }
   } else if (kind === 'spawn') {
     // a promote replaces the subtree: whatever we hung is on the old one,
     // and whatever was loading for the old one is stale — the re-hang below
@@ -165,7 +168,38 @@ bus.on('entity', ({ id, kind }) => {
 // with no echo to wait for: the user pressed hang, the block said why not,
 // and the previous hang's echo then wiped the line under them (Mica, #191
 // round 1). The render reads this back, so a repaint carries the last word.
-const notes = new Map();   // id → { text, warn }
+//
+// A line is about ONE state of ONE entity, though, and both can move under
+// it (Mica, round 2):
+//   · the entity can be removed and a new one spawned under the same id — a
+//     different thing that must not open with its predecessor's "taken
+//     down". The client's entity lifecycle names that case (`kind: 'remove'`,
+//     below); a demote/promote is the SAME entity leaving and re-entering
+//     residency, and keeps its line.
+//   · the bag can change by someone else's hand. Every line is stamped with
+//     the picture it was said ABOUT — for `hang` the bag it committed, for
+//     `take down` none, for a refusal or an upload note the bag as it stood —
+//     and a picture echo that disagrees with the stamp retires the line: a
+//     local status must never read as newer than the world. An echo that
+//     AGREES (the hang's own, or a late repeat of it) keeps it, which is the
+//     round-1 case and why this is a comparison, not a clear-on-every-echo.
+const notes = new Map();   // id → { text, warn, about }   (about = pictureKey of the bag the line describes)
+
+/** The five fields a picture IS, normalized, as one comparable string; `none`
+ *  for no picture. Echo data and committed data both go through here so a
+ *  server-side default or key order can never read as a change. */
+function pictureKey(data) {
+  if (data == null) return 'none';
+  const n = normalizePicture(data);
+  const p = n.ok ? n.picture : data;
+  return JSON.stringify([p?.src ?? '', p?.part ?? '', p?.look ?? '', p?.lit ?? 'scene', !!p?.flip]);
+}
+
+/** A picture echo for `id`: the line stays only if it was about this very bag. */
+function reconcileNote(id, data) {
+  const n = notes.get(id);
+  if (n && n.about !== pictureKey(data)) notes.delete(id);
+}
 
 bus.on('world-reset', () => clearPictures());
 
@@ -255,8 +289,11 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
     </div>`,
     wire(root) {
       const q = (k) => root.querySelector(`[data-pe="${k}"]`);
-      const msg = (t, warn = false) => {
-        notes.set(id, { text: t, warn });   // survives the repaint; the DOM below does not
+      // `about` is the bag this line describes: what a gesture committed, or
+      // (omitted) the bag as it stands now. Survives the repaint; the DOM
+      // below does not — and is retired by any echo that disagrees with it.
+      const msg = (t, warn = false, about = comps.get(id)?.picture ?? null) => {
+        notes.set(id, { text: t, warn, about: pictureKey(about) });
         const m = q('msg'); if (m) { m.textContent = t; m.style.color = warn ? 'var(--warn, #e8a33d)' : 'var(--dim)'; }
       };
       q('pick')?.addEventListener('click', () => q('file')?.click());
@@ -278,13 +315,13 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
         const norm = normalizePicture(data);
         if (!norm.ok) { msg(norm.why, true); return; }   // the rule, here, before any round-trip
         commit('comp', { id, type: 'picture', data: norm.picture });
-        msg(norm.notes.length ? norm.notes.join(' · ') : `hung on ${norm.picture.part}`);
+        msg(norm.notes.length ? norm.notes.join(' · ') : `hung on ${norm.picture.part}`, false, norm.picture);
         if (norm.notes.length) flashHint(`🖼 ${esc(norm.notes[0])}`);
         ev.target.blur();
       });
       q('down')?.addEventListener('click', (ev) => {
         commit('comp', { id, type: 'picture', data: null });
-        msg('taken down');
+        msg('taken down', false, null);
         ev.target.blur();
       });
     },
