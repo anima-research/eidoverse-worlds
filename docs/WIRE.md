@@ -72,7 +72,7 @@ Every message belongs to exactly one plane:
 | `verb` | authored | embodied, rank-gated | `{verb, args}` | the ONLY door to the log. Closed verb set (§5); refusals teach the extension lanes (comp/use/behavior). |
 | `history` | read | anyone incl. spectators | `{before?, after?, limit?≤300, verbs?, reqId?}` | pages the log newest-first; answers `history`. |
 | `debug` | read | anyone incl. spectators | `{limit?, kinds?}` or `{behavior}` or `{behaviors:true}` | the flight recorder + behavior consoles; answers `debug`. |
-| `pose` | presence | embodied | `{pose}` | latest-wins into the world's dirty map; fanned out in stage `frame`s at ~15Hz. |
+| `pose` | presence | embodied | `{pose}` | latest-wins into the world's dirty map; fanned out in stage `frame`s at ~15Hz. Bag fields incl. the C18 `xr` tracked-body contract: **docs/pose-wire.md**. Non-finite / malformed samples are refused at the source (`server/posecheck.ts`, 09-06). |
 | `typing` | presence | embodied, or bound voice leg | `{to?, state?}` | state ∈ ear/think/tool/mic (whitelist). |
 | `caption` | presence | embodied, or bound voice leg | `{text≤500, utt?}` | live speech pacing; the finished utterance lands as one `say`. |
 | `drag` | presence | builder+ | `{id, pos, yaw}` | live build feedback; the release is a `place` verb. |

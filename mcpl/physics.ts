@@ -9,13 +9,13 @@
 // being semantically informed that it fell.
 //
 // What the agent needs in-process is only its skeleton: joint rest positions
-// parsed straight from its VRM's GLB JSON chunk (tools/rig-load.mjs — no
+// parsed straight from its VRM's GLB JSON chunk (shared/rig.js — no
 // meshes, no textures, no fs), wrapped in a stand-in Avatar whose normalized
 // bone nodes are exactly what Ragdoll drives.
 //
 // The one piece of ceremony: client/lib/ragdoll.js imports './core.js', which
-// builds a WebGPURenderer at import time. Headless callers swap in the test
-// stub via a Bun loader plugin — which must be registered BEFORE the dynamic
+// builds a WebGPURenderer at import time. Headless callers use the CPU
+// runtime adapter via a Bun loader plugin, registered before the dynamic
 // import, which is why everything here loads lazily and the module exports
 // only async doors. Sim unavailable (plugin failure, unparseable VRM) is a
 // soft state: the agent falls back to the slump.
@@ -47,7 +47,7 @@ import { CONTACT_POINTS, contactSeed } from "../shared/contact.js";
 import { leafForceFor, DEFAULT_LEAF_FORCE } from "../shared/leafforce.js";
 import { bodyFrame, fromBody } from "../shared/joints.js";
 
-const STUB = fileURLToPath(new URL("../tools/core-stub.mjs", import.meta.url));
+const HEADLESS_CORE = fileURLToPath(new URL("./headless-core.mjs", import.meta.url));
 
 let simMods: {
   Ragdoll: any;
@@ -73,17 +73,17 @@ function loadSim(): Promise<typeof simMods> {
   simLoading ??= (async () => {
     try {
       plugin({
-        name: "ragdoll-core-stub",
+        name: "headless-body-core",
         setup(build) {
-          build.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: STUB }));
+          build.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: HEADLESS_CORE }));
         },
       });
-      const stub = await import("../tools/core-stub.mjs");
+      const core = await import("./headless-core.mjs");
       const rag = await import("../client/lib/ragdoll.js");
-      const rig = await import("../tools/rig-load.mjs");
+      const rig = await import("./rig.ts");
       const terrain = await import("../client/lib/terrain.js");
       const colliders = await import("../client/lib/colliders.js");
-      // the reach solver's frame algebra — same door, same stub (its own
+      // the reach solver's frame algebra — same door, same runtime adapter (its own
       // import cone is core.js + pure shared modules; tools/reachlive-test.ts
       // is the standing proof it runs headless)
       const reachbone = await import("../client/lib/reachbone.js");
@@ -111,7 +111,7 @@ function loadSim(): Promise<typeof simMods> {
       // from a toggle that does not work -- the same ambiguity bodysim.js's
       // status string was added to kill.
       console.log(`[physics] headless body engine: ${engine}`);
-      simMods = { Ragdoll: rag.Ragdoll, Body, engine, rig, THREE: stub.THREE, terrain, colliders, reachbone };
+      simMods = { Ragdoll: rag.Ragdoll, Body, engine, rig, THREE: core.THREE, terrain, colliders, reachbone };
       return simMods;
     } catch (e) {
       simFailed = true;
@@ -507,7 +507,7 @@ export class HeadlessBody {
 // ragdoll. A headless body reaching for something needs two answers a browser
 // gets from its scene: "where is the target" (for a landmark, on the OTHER
 // body) and "does my arm get there" (measureChain/solveChain on its own).
-// Both run on rig-load stand-ins here — no mesh, no renderer.
+// Both run on normalized runtime rigs here — no mesh, no renderer.
 //
 // One honest limitation, stated rather than hidden: a browser derives
 // landmarks by raycasting the actual mesh (client/lib/landmarks.js); a
@@ -522,12 +522,25 @@ export class ReachBody {
   private m: NonNullable<typeof simMods>;
   av: any;
   private chains = new Map<string, any>();
+  private restPositions = new Map<string, any>();
+  private landmarks = new Map<string, { node: any; offset: any; normal: any }>();
 
-  private constructor(m: NonNullable<typeof simMods>, P: Record<string, any>) {
+  private constructor(m: NonNullable<typeof simMods>, P: Record<string, any>, realParent: Record<string, string | null> | null = null) {
     this.m = m;
-    // humanoid chain only (no hair): measureChain wants the simplified
-    // hierarchy, and refuses chains whose lower bone is not the upper's child.
-    this.av = m.rig.makeAvatar(P, { vrm0: !!(P as any).__vrm0 });
+    // Existing reaches use the collapsed body. Readback can retain the full
+    // humanoid ancestry (shoulders, upperChest, fingers); chain measurement
+    // still refuses a lower limb that is not its upper limb's direct child.
+    this.av = m.rig.makeAvatar(P, { vrm0: !!(P as any).__vrm0, realParent });
+    for (const [name, n] of Object.entries(this.av.nodes) as [string, any][]) this.restPositions.set(name, n.position.clone());
+    for (const point of Object.keys(CONTACT_POINTS)) {
+      const frame = this.estimateContact(point);
+      const node = this.av.nodes[(CONTACT_POINTS as any)[point].bone];
+      if (!frame || !node) continue;
+      const inv = node.matrixWorld.clone().invert();
+      this.landmarks.set(point, { node,
+        offset: new m.THREE.Vector3(...frame.pos).applyMatrix4(inv),
+        normal: new m.THREE.Vector3(...frame.normal).transformDirection(inv) });
+    }
   }
 
   static async create(httpBase: string, avatarPath: string): Promise<ReachBody | null> {
@@ -538,12 +551,12 @@ export class ReachBody {
     return new ReachBody(m, P);
   }
 
-  /** Test seam: build from an already-parsed skeleton (tools/rig-load's P
-   *  map), so suites run against shipped rigs without a sequencer to fetch
-   *  from. Same constructor the live path uses. */
-  static async fromSkeleton(P: Record<string, any>): Promise<ReachBody | null> {
+  /** Build from an already-parsed skeleton. Readback supplies real humanoid
+   *  ancestry; existing reach tests can retain the collapsed-chain default.
+   *  Every call creates private nodes, even when the parsed rig is cached. */
+  static async fromSkeleton(P: Record<string, any>, realParent: Record<string, string | null> | null = null): Promise<ReachBody | null> {
     const m = await loadSim();
-    return m ? new ReachBody(m, P) : null;
+    return m ? new ReachBody(m, P, realParent) : null;
   }
 
   /** Put the stand-in where the streamed presence says the body is. `pose` is
@@ -551,7 +564,7 @@ export class ReachBody {
   poseAt(p: number[], yaw: number, pose: Record<string, number[]> | null) {
     this.av.root.position.set(p[0], p[1] ?? 0, p[2]);
     this.av.root.rotation.y = yaw ?? 0;
-    for (const n of Object.values(this.av.nodes) as any[]) n.quaternion.identity();
+    for (const [name, n] of Object.entries(this.av.nodes) as [string, any][]) { n.quaternion.identity(); n.position.copy(this.restPositions.get(name)); }
     if (pose) {
       for (const [j, q] of Object.entries(pose)) {
         const n = this.av.nodes[j];
@@ -574,14 +587,23 @@ export class ReachBody {
 
   /** Solve one limb toward a world target at the CURRENT pose. Returns plain
    *  data — the same verdict fields the browser's reachStatus reports. */
-  solve(limb: string, target: number[] | { pos: number[]; normal?: number[] }, opts: { palm?: boolean } = {}) {
+  solve(limb: string, target: number[] | { pos: number[]; normal?: number[] }, opts: { palm?: boolean; apply?: boolean; history?: any; dt?: number } = {}) {
     const ch = this.chain(limb);
     if (!ch) return { ok: false as const, why: `no measurable ${limb} chain on this rig` };
     const tw = Array.isArray(target) ? target : target.pos;
     const n = !Array.isArray(target) && opts.palm !== false ? target.normal : null;
     const palm = Array.isArray(n) && n.length === 3 ? { dir: [-n[0], -n[1], -n[2]] } : null;
-    const out = this.m.reachbone.solveChain(ch, this.av, tw, null, { palm });
+    const out = this.m.reachbone.solveChain(ch, this.av, tw, opts.history?.elbowOffset ?? null,
+      { palm, ...opts.history, dt: opts.dt });
     if (!out.ok) return { ok: false as const, why: String(out.why) };
+    // Opt-in only for a perception query's private scratch nodes. The live
+    // reach attester's existing solve remains a measurement without mutation.
+    if (opts.apply) {
+      ch.nodes.upper.quaternion.fromArray(out.upper);
+      ch.nodes.lower.quaternion.fromArray(out.lower);
+      if (out.hand) ch.nodes.end.quaternion.fromArray(out.hand);
+      this.av.root.updateMatrixWorld(true);
+    }
     return {
       ok: true as const,
       gap: Number(out.res.gap ?? NaN),
@@ -589,6 +611,8 @@ export class ReachBody {
       penetration: Number(out.penetration ?? 0),
       palmResidual: out.palmResidual == null ? null : Number(out.palmResidual),
       shoulder: ch.nodes.upper.getWorldPosition(new this.m.THREE.Vector3()).toArray() as number[],
+      history: { elbowOffset: out.elbowOffset, lastGap: Number(out.res.gap), lastPick: out.pick ?? null,
+        lastSwivel: out.swivelUsed ?? null, lastTwist: out.palmTwist ?? null, lastWrist: out.hand ?? null },
     };
   }
 
@@ -596,6 +620,14 @@ export class ReachBody {
    *  derivation (landmarks.js), sans mesh: proportionally off the bone along
    *  the body-frame approach direction, normal facing out the same way. */
   contact(point: string, standoff = 0.02): { pos: number[]; normal: number[] } | null {
+    const mark = this.landmarks.get(point);
+    if (!mark) return null;
+    const p = mark.node.localToWorld(mark.offset.clone());
+    const n = mark.normal.clone().transformDirection(mark.node.matrixWorld);
+    return { pos: p.addScaledVector(n, standoff).toArray(), normal: n.toArray() };
+  }
+
+  private estimateContact(point: string): { pos: number[]; normal: number[] } | null {
     const spec = (CONTACT_POINTS as any)[point];
     if (!spec) return null;
     const node = this.av.nodes[spec.bone];
@@ -617,7 +649,7 @@ export class ReachBody {
     const seed = contactSeed(P, spec, F, scale);
     if (!seed) return null;
     const at = seed.at;
-    const r = Math.min(scale * 0.18, scale * (spec.radius ?? 0.45) * 0.5) + standoff;
+    const r = Math.min(scale * 0.18, scale * (spec.radius ?? 0.45) * 0.5);
     return {
       pos: [at[0] + dir[0] * r, at[1] + dir[1] * r, at[2] + dir[2] * r],
       normal: dir,

@@ -557,13 +557,11 @@ const SWIVELS = (() => {
  * does not. Falls back to the least-bad swivel rather than refusing, because
  * an arm that is 2cm inside a hip still reads better than an arm that gave up.
  *
- * This is a PURE FUNCTION of (pose, target) — it keeps no memory of what it
- * chose last frame, and that is deliberate. The first version threaded the
- * previous elbow back in as the pole hint, which closed a loop: the solve
- * depended on its own output, the discrete swivel steps gave the loop
- * something to bounce between, and self-touch went into a limit cycle that
- * flipped the elbow on up to 54 frames out of 54. Same input, same arm, every
- * frame, no history — an oscillator needs state, so it does not get any.
+ * Search uses a pose-derived pole. Callers may supply prior solution data for
+ * hysteresis. A previously reached physical elbow is tried as an incumbent,
+ * not reused as the basis for another swivel sweep: feeding that output back
+ * through the sweep can self-excite an oscillator on constrained self-touch.
+ * Unreached incumbents deliberately do not take this shortcut.
  *
  * @param {object} o the same options solveTwoBone takes
  * @param {Array<{a:number[],b:number[],r:number}>} guards live segments to avoid
@@ -634,6 +632,21 @@ export function solveTwoBoneClear(o, guards) {
     // the door.
     const okSide = (res) => !judgeSide || sideOf(res, target) >= 0;
     const okSideHeld = (res) => !judgeSide || sideOf(res, target) >= -0.08;
+
+    // A swivel angle is relative to the projected rest-direction pole. That
+    // basis flips when a lateral target crosses the pole axis, so retaining
+    // the same angle can still move the elbow half a metre. Try the previous
+    // physical bend directly, with current limits and guards, before any
+    // search, only when its previous endpoint was reached. A constrained miss
+    // is not an inverse of the original triangle; feeding it back can drift.
+    // It is NOT the base pole of the swivel sweep (which would rotate
+    // our own output again each frame and can create a feedback oscillator).
+    if (Number.isFinite(o.lastGap) && o.lastGap <= 1e-4 && Array.isArray(o.lastElbow) && o.lastElbow.length === 3 && o.lastElbow.every(Number.isFinite)) {
+      const held = solveTwoBone({ ...oo, pole: o.lastElbow });
+      if (held?.ok && penOf(held) <= CLEAR && okSideHeld(held) && held.gap <= base.gap + 0.005) {
+        return { res: held, pen: 0, swivel: o.lastSwivel ?? 0 };
+      }
+    }
 
     // ---- keep the swivel we had, while it still works.
     //
@@ -799,6 +812,16 @@ export function qClampAngle(q, maxAng) {
   return qAxisAngle(axis, maxAng);
 }
 
+function stepQuaternion(from, to, maxAngle) {
+  let d = from.reduce((s, v, i) => s + v * to[i], 0);
+  const target = d < 0 ? to.map(v => -v) : to;
+  d = clamp(Math.abs(d), -1, 1);
+  const half = Math.acos(d);
+  if (half < 1e-8 || 2 * half <= maxAngle) return target;
+  const t = maxAngle / (2 * half), sin = Math.sin(half);
+  return from.map((v, i) => (Math.sin((1-t)*half)*v + Math.sin(t*half)*target[i]) / sin);
+}
+
 /**
  * Turn the palm toward `want`, by twisting the forearm and then bending the
  * wrist for the remainder.
@@ -823,27 +846,42 @@ export function orientPalm(o) {
   let H = qMulq(lowerFrame, relH);
   let palm = qRot(H, aPalm);
   if (!axis) return { lowerFrame, handLocal: relH, residualDeg: 0 };
+  let twist = 0;
 
   // ---- pronation: the component of the correction the forearm can make
   const flat = (v) => norm(sub(v, mul(axis, dot(v, axis))));
   const p0 = flat(palm), p1 = flat(o.want);
   if (p0 && p1) {
     const c = clamp(dot(p0, p1), -1, 1);
-    const sgn = Math.sign(dot(cross(p0, p1), axis)) || 1;
-    const twist = clamp(sgn * Math.acos(c), -twistMax, twistMax);
-    lowerFrame = qMulq(qAxisAngle(axis, twist), lowerFrame);
-    H = qMulq(lowerFrame, relH);
-    palm = qRot(H, aPalm);
-  }
+    const angle = Math.atan2(dot(cross(p0, p1), axis), c);
+    twist = clamp(angle, -twistMax, twistMax);
+    if (Number.isFinite(o.lastTwist)) {
+      const previous = clamp(o.lastTwist, -twistMax, twistMax);
+      const error = (t) => Math.acos(clamp(dot(rotateAbout(p0, axis, t), p1), -1, 1));
+      // Across the +/-pi boundary both saturated choices are nearly tied.
+      // Keep the incumbent until the alternative is materially better.
+      if (previous * twist < 0 && error(previous) <= error(twist) + 5 * Math.PI / 180) twist = previous;
+      if (Number.isFinite(o.dt)) {
+        const step = Math.PI * clamp(o.dt, 0, 0.1); // <=180 degrees/sec
+        twist = clamp(twist, previous - step, previous + step);
+      }
+    }
+  } else if (Number.isFinite(o.lastTwist)) twist = clamp(o.lastTwist, -twistMax, twistMax);
+  lowerFrame = qMulq(qAxisAngle(axis, twist), lowerFrame);
+  H = qMulq(lowerFrame, relH);
+  palm = qRot(H, aPalm);
 
   // ---- the wrist takes what is left, within its range
   const delta = qClampAngle(qFromUnitVectors(palm, o.want), wristMax);
-  const H2 = qMulq(delta, H);
+  let handLocal = qMulq(qConj(lowerFrame), qMulq(delta, H));
+  if (o.lastWrist && Number.isFinite(o.dt)) handLocal = stepQuaternion(o.lastWrist, handLocal, Math.PI * clamp(o.dt, 0, .1));
+  const H2 = qMulq(lowerFrame, handLocal);
   const after = qRot(H2, aPalm);
   const residual = Math.acos(clamp(dot(after, o.want), -1, 1));
   return {
     lowerFrame,
-    handLocal: qMulq(qConj(lowerFrame), H2),
+    handLocal,
     residualDeg: residual * 180 / Math.PI,
+    twist,
   };
 }

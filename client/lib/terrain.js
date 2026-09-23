@@ -4,7 +4,7 @@
 // the controller needs ground height every frame, and world.js needs the
 // controller's position to place things. Both depend on this instead.
 
-import { scene, ground, grid } from './core.js';
+import { scene, ground, grid, axisLines } from './core.js';
 import { bus } from './base.js';
 import { retireField } from './flora_field.js';
 import { makeGrassQuality, GRASS_QUALITY } from './grass_quality.js';
@@ -50,9 +50,11 @@ export function setTerrain(t) {
     // terrain replaces the stage floor
     if (ground) ground.visible = false;
     if (grid) grid.visible = false;
+    if (axisLines) axisLines.visible = false;
   } else {
     if (ground) ground.visible = true;
     if (grid) grid.visible = true;
+    if (axisLines) axisLines.visible = true;
   }
 }
 

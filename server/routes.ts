@@ -6,7 +6,7 @@
 // Handler bodies moved verbatim; server.ts's fetch() is a one-line delegate.
 // The static-file machinery (serveFrom/contentType/gzCache) and the avatar
 // roster live here with their only HTTP callers — the join snapshot imports
-// avatarRoster back; the separate screenshot broker handles snap-result,
+// avatarRoster back, and the ws `snap-result` case imports pendingSnaps,
 // both one-way: this module never imports server.ts.
 
 import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdirSync, appendFileSync } from "node:fs";
@@ -29,11 +29,32 @@ import { resolveLibFile } from "./lint.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { worlds, getWorld, type World } from "./world.ts";
 import { snapshots } from "./snapshots.ts";
-import { handleUpload } from "./upload.ts";
+import { handleUpload, optStatus } from "./upload.ts";
 import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
 import { tickStats } from "./tick.ts";
 import { entryBusStats } from "./events.ts";
 import { atomicWrite } from "./fsutil.ts";
+// client console tee (see the /clientlog route): a per-world bucket for every world this server KNOWS (loaded in
+// memory, or with a data dir on disk) plus one shared bucket for any other label, plus one global bucket — so a
+// busy world cannot starve the rest, a made-up label cannot buy quota or a file of its own, and the map is
+// bounded by the worlds that exist (review of #172: 64 invented labels once denied a real new world until restart).
+const clientLogRate = new Map<string, { at: number; n: number }>();
+const clientLogGlobal = { at: 0, n: 0 };
+const CLIENTLOG_DIR = process.env.CLIENTLOG_DIR ?? join(WORLDS_DIR, ".clientlogs");   // beside the worlds, like .perflogs — never a shared temp dir
+const CLIENTLOG_MAX_BODY = 4096, CLIENTLOG_MAX_FILE = 5_000_000, CLIENTLOG_PER_WORLD_MIN = 600, CLIENTLOG_GLOBAL_MIN = 2000;
+// EXACT-case match against the world directory listing (existsSync would say yes to every case variant on a
+// case-insensitive filesystem — each a fresh bucket and file); listed once per few seconds, never per request.
+let worldDirs: Set<string> = new Set(), worldDirsAt = 0;
+const knownWorld = (name: string) => {
+  if (worlds.has(name)) return true;
+  const now = Date.now();
+  const relist = () => { try { worldDirs = new Set(readdirSync(WORLDS_DIR)); } catch { worldDirs = new Set(); } worldDirsAt = now; };
+  if (now - worldDirsAt > 5000) relist();
+  if (!worldDirs.has(name) && now - worldDirsAt > 1000) relist();   // a miss re-lists (at most once a second): a new world is known at once
+  return worldDirs.has(name) && existsSync(join(WORLDS_DIR, name, "log.jsonl"));
+};
+const CLIENTLOG_UNKNOWN = "~unknown";   // '~' is outside the world-name alphabet, so no real world can share this file
+try { mkdirSync(CLIENTLOG_DIR, { recursive: true }); } catch (e) { console.warn(`[clientlog] cannot create ${CLIENTLOG_DIR}: ${(e as Error)?.message ?? e}`); }
 import { seatStore, announceProfileUpdate, MAX_PROPOSAL_BYTES } from "./seats.ts";
 import { agentTokens, aid1JoinIdentity } from "./auth.ts";
 
@@ -46,9 +67,28 @@ export type Srv = {
 
 // ---- snapshots: the world serves views of itself ---------------------------
 // GET /snap?world=W&follow=ID → the sequencer asks a renderer client (an
-// opt-in Unreal player or legacy browser spectator, dialed OUT like any client)
+// invisible hub-spectator on some GPU box, dialed OUT to us like any client)
 // to jump its camera to ID's head and return one frame. Clients never know
 // rendering exists as a separate thing — it's just the world's API.
+type PendingSnap = { resolve: (r: { ok: true; png: Uint8Array } | { ok: false; err: string; status: number }) => void };
+export const pendingSnaps = new Map<string, PendingSnap>();
+let nextSnapId = 1;
+
+function requestSnap(world: World, follow: string, view = "first"): Promise<{ ok: true; png: Uint8Array } | { ok: false; err: string; status: number }> {
+  const renderer = [...world.clients].find((c) => c.renderer);
+  if (!renderer) return Promise.resolve({ ok: false, err: `no renderer is currently serving world "${world.name}"`, status: 503 });
+  const target = [...world.clients].find((c) => c.id === follow && !c.spectator);
+  if (!target) return Promise.resolve({ ok: false, err: `"${follow}" is not present in "${world.name}"`, status: 404 });
+  if (!["first", "third", "selfie"].includes(view)) view = "first";
+  const id = `snap-${nextSnapId++}`;
+  return new Promise((resolve) => {
+    pendingSnaps.set(id, { resolve });
+    renderer.ws.send(JSON.stringify({ type: "snap", id, follow, view }));
+    setTimeout(() => {
+      if (pendingSnaps.delete(id)) resolve({ ok: false, err: "renderer timed out", status: 504 });
+    }, 12_000);
+  });
+}
 
 // ---- static serving ---------------------------------------------------------
 
@@ -169,6 +209,12 @@ function contentType(path: string): string {
   if (path.endsWith(".md")) return "text/markdown; charset=utf-8";
   if (path.endsWith(".png")) return "image/png";
   if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg";
+  if (path.endsWith(".webp")) return "image/webp";
+  if (path.endsWith(".mp3")) return "audio/mpeg";
+  if (path.endsWith(".ogg") || path.endsWith(".opus")) return "audio/ogg";
+  if (path.endsWith(".wav")) return "audio/wav";
+  if (path.endsWith(".webm")) return "audio/webm";
+  if (path.endsWith(".m4a")) return "audio/mp4";
   if (path.endsWith(".ktx2")) return "image/ktx2";
   if (path.endsWith(".wasm")) return "application/wasm";
   if (path.endsWith(".hdr")) return "application/octet-stream";
@@ -322,6 +368,54 @@ const ROUTES: Route[] = [
       JSON.stringify({ login: HN_ISSUER_KEY ? HN_LOGIN_URL : null, required: HN_REQUIRE_LOGIN && Boolean(HN_ISSUER_KEY) }),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } },
     ),
+  },
+  {
+    // client console tee — a visitor's errors and [xr] lines land in a file
+    // the operator can tail, because a headset shows an error for three
+    // seconds and a desk shows nothing. Diagnosis data, not surveillance: the
+    // line carries a timestamp and the client's text, no address. Bounded: 4 KB
+    // per body (refused above that by content-length), 600 lines/min/world and
+    // 2000/min overall, one file per KNOWN world plus one shared '~unknown' file
+    // for any other label, 5 MB per file, door-keyed by `Authorization: Bearer` (never the URL) — which means
+    // an OPEN door (JOIN_TOKEN empty, the tailnet dev posture) accepts these
+    // writes from anyone who can reach the port: do not run it open on a public
+    // box. A failed append answers 500, never a false 'ok'. Lands in
+    // $CLIENTLOG_DIR (default: WORLDS_DIR/.clientlogs).
+    match: (u, req) => u.pathname === "/clientlog" && req.method === "POST",
+    handler: async ({ req, url }) => {
+      const label = (url.searchParams.get("world") ?? "").replace(/[^a-z0-9_-]/gi, "").slice(0, 64);   // 64: the world-name limit (world.ts)
+      // a label the server does not know shares one bucket and one file. A brand-new world has no dir until its first
+      // join, so its pre-join boot lines land there too — a window, not a hole: nothing is lost, only shared.
+      // The door key rides in an Authorization header, NEVER the URL: query-carried join tokens have shown up in
+      // proxy/access diagnostics before (review of #172), and this route is called from every browser console.
+      // A key in the query is refused outright so the old client shape cannot ship by accident.
+      if (url.searchParams.has("key")) return new Response("key belongs in the Authorization header", { status: 400 });
+      const auth = req.headers.get("authorization") ?? "";
+      const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      if (JOIN_TOKEN && key !== JOIN_TOKEN) return new Response("no", { status: 401 });   // the door is the first gate: no lookup for a stranger
+      const world = label && knownWorld(label) ? label : CLIENTLOG_UNKNOWN;
+      const cl = req.headers.get("content-length");
+      if (cl === null) return new Response("length required", { status: 411 });   // a chunked body would be buffered whole before the slice
+      const len = Number(cl);
+      if (!Number.isFinite(len) || len > CLIENTLOG_MAX_BODY) return new Response("too big", { status: 413 });
+      const now = Date.now();
+      if (now - clientLogGlobal.at > 60_000) { clientLogGlobal.at = now; clientLogGlobal.n = 0; }
+      if (++clientLogGlobal.n > CLIENTLOG_GLOBAL_MIN) return new Response("slow down", { status: 429 });
+      let bucket = clientLogRate.get(world);
+      if (!bucket) { bucket = { at: now, n: 0 }; clientLogRate.set(world, bucket); }   // bounded by the worlds that exist + 'unknown'
+      if (now - bucket.at > 60_000) { bucket.at = now; bucket.n = 0; }
+      if (++bucket.n > CLIENTLOG_PER_WORLD_MIN) return new Response("slow down", { status: 429 });
+      let body = "";
+      try { body = (await req.text()).slice(0, CLIENTLOG_MAX_BODY); } catch { return new Response("bad", { status: 400 }); }
+      const line = JSON.stringify({ t: new Date(now).toISOString(), line: body }) + "\n";
+      const dest = join(CLIENTLOG_DIR, `clientlog-${world}.log`);
+      try {
+        if (existsSync(dest) && Bun.file(dest).size > CLIENTLOG_MAX_FILE) return new Response("full", { status: 507 });
+        // appendFileSync, not Bun.write: Bun.write has no append and silently overwrote the file per line
+        appendFileSync(dest, line);
+      } catch (e) { console.warn(`[clientlog] append failed: ${(e as Error)?.message ?? e}`); return new Response("tee failed", { status: 500 }); }
+      return new Response("ok", { headers: { "cache-control": "no-store" } });
+    },
   },
   {
     match: (u) => u.pathname === "/whoami",
@@ -511,6 +605,35 @@ const ROUTES: Route[] = [
     },
   },
   {
+    // Discovery for travel: which worlds this sequencer fronts, and who is
+    // embodied where. Union of LOADED worlds and on-disk worlds with a log —
+    // never creates one (getWorld is not called). Same trust level as the
+    // world log: public reads. Presence names are the same ids every join
+    // snapshot already hands out; spectators and renderers appear as nothing
+    // here exactly as they do in-world.
+    match: (u) => u.pathname === "/worlds",
+    handler: () => {
+      const names = new Set<string>(worlds.keys());
+      try {
+        for (const n of readdirSync(WORLDS_DIR)) {
+          if (/^[a-z0-9_-]{1,64}$/i.test(n) && existsSync(join(WORLDS_DIR, n, "log.jsonl"))) names.add(n);
+        }
+      } catch { /* no worlds dir yet: only loaded worlds */ }
+      const out = [...names].sort().map((name) => {
+        const w = worlds.get(name);
+        const present = w ? [...w.clients].filter((c) => !c.spectator && !c.superseded) : [];
+        return {
+          name,
+          loaded: !!w,
+          people: present.filter((c) => !c.agent).map((c) => c.id),
+          agents: present.filter((c) => c.agent).map((c) => c.id),
+        };
+      });
+      return new Response(JSON.stringify({ worlds: out }),
+        { headers: { "content-type": "application/json", "cache-control": "no-store" } });
+    },
+  },
+  {
     match: (u) => u.pathname === "/avatars",
     handler: () => new Response(JSON.stringify(avatarRoster()),
       { headers: { "content-type": "application/json", "cache-control": "no-store",
@@ -572,6 +695,8 @@ const ROUTES: Route[] = [
         ...BUILD,
         ktx2Key: KTX2_KEY,
         lodRecipe: LOD_RECIPE,
+        // what the optimizer is doing / could not afford (config.ts OPT_MEM_BUDGET_MB)
+        opt: optStatus(),
         ...(process.env.WORLD_INSTANCE_NONCE ? { instance: process.env.WORLD_INSTANCE_NONCE } : {}),
       }),
       { headers: { "content-type": "application/json", "cache-control": "no-store" } }),
@@ -698,9 +823,11 @@ const ROUTES: Route[] = [
       for (const d of dirs) {
         if (!existsSync(d)) continue;
         for (const f of readdirSync(d)) {
-          // ktx2 variants live beside originals in OPT_DIR — they are the
-          // same model, not a catalog entry (the ghost-listing fix, §20c)
-          if (!f.endsWith(".glb") || f.endsWith(".ktx2.glb")) continue;
+          // variants live beside originals in OPT_DIR — ktx2 (§20c's ghost
+          // listing) and, since #156, .lod.<recipe>.glb — the same model, not
+          // a catalog entry; markers and .tmp likewise. One predicate, the one
+          // /library-list already walks with (store-variants.ts).
+          if (!f.endsWith(".glb") || isServingArtifact(f)) continue;
           const low = f.toLowerCase();
           const score = q.length ? q.filter((t) => low.includes(t)).length : 1;
           if (score > 0) files.set(f, Math.max(files.get(f) ?? 0, score));

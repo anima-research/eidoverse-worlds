@@ -274,7 +274,7 @@ export function initStructureUI() {
     const btn = document.createElement('button');
     btn.textContent = label; btn.title = title;
     btn.style.cssText = 'padding:4px 8px;border-radius:6px;border:1px solid #2c3a44;'
-      + 'background:#111a20;color:#cfe3ee;cursor:pointer';
+      + 'background:var(--well);color:var(--fg);cursor:pointer';
     btn.onclick = (e) => { e.stopPropagation(); fn(e, btn); paint(); };
     bar.appendChild(btn);
     return btn;
@@ -285,7 +285,7 @@ export function initStructureUI() {
   mk('↶ undo', 'undo the last edit', () => undo());
   const paint = () => {
     for (const [k, btn] of btns) {
-      btn.style.background = tool === k ? '#1d4a5c' : '#111a20';
+      btn.style.background = tool === k ? 'var(--act)' : 'var(--well)';
       btn.style.borderColor = tool === k ? '#4fb3d9' : '#2c3a44';
     }
   };

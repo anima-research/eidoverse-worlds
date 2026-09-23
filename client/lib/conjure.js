@@ -20,6 +20,7 @@
 // dev — a MOCK_APIS Orrery instance makes the whole flow testable offline.
 
 import { CONFIG, bus, report } from './base.js';
+import { fsvg } from './icons.js';
 import { makeSection, toast, flashHint } from './ui.js';
 import { sendVerb, net } from './net.js';
 import { holdGhost } from './build.js';
@@ -230,7 +231,7 @@ async function paint(body) {
         || '<span class="sub">candidates finished but none readable — open orrery</span>'}</div>`;
     } else if (j.status === 'completed') {
       inner = `<div class="cj-done">
-        <button data-place="${idx}">⚡ into the world</button>
+        <button data-place="${idx}">${fsvg('sparkle', 12)} into the world</button>
         <button data-avatar="${idx}" title="rigged results only">as avatar</button>
       </div>`;
     } else if (j.status === 'failed') {
@@ -251,7 +252,7 @@ async function paint(body) {
     <div class="cj-new">
       <input id="cj-prompt" type="text" maxlength="400" spellcheck="false"
         placeholder="describe a thing… e.g. a rusted brass lighthouse" ${genOk ? '' : 'disabled'}>
-      <button id="cj-go" ${genOk ? '' : 'disabled'}>✨ conjure</button>
+      <button id="cj-go" ${genOk ? '' : 'disabled'}>${fsvg('sparkle', 12)} conjure</button>
     </div>
     ${genOk ? '' : '<p class="sub">bringing new objects into this world needs the <b>gen</b> capability — ask its owner (<b>/grant you +gen</b>)</p>'}
     <div id="cj-jobs">${rows || '<p class="sub">nothing cooking — your conjures queue here with progress, and pause for your pick of the image candidates before any mesh is spent.</p>'}</div>

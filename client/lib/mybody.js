@@ -4,7 +4,8 @@
 // sites; now there is one owner and everyone else holds the getter. Nothing
 // here may import main.js.
 
-import { CONFIG, bus, report } from './base.js';
+import { CONFIG, bus, report, tee } from './base.js';
+import { releaseBodyGate } from './bodygate.js';
 import { armFlight, folded } from './controller.js';
 import { makeAvatar, contributeThumbnail } from './avatar.js';
 import { setMyAvatarPath, wireAvatarSwitch } from './palette.js';
@@ -73,6 +74,9 @@ export async function resolveMyAvatarPath() {
  *  the server resolves names for everyone else's view either way. */
 export function getMyAvatarPath() { return myAvatarPath ?? want; }
 export function getMyAvatarName() { return myAvatarName; }
+// the bodies panel (bodies.js) lists what you have worn; the Avatar object itself carries neither name nor path,
+// so the two sites that know both announce it: the initial body (main.js) and a switch (wireAvatarSwitch below)
+export function announceWorn(name, path) { if (name) bus.emit('avatar-worn', { name, path: path ?? null }); }
 
 /** The door (and the bad-key re-door) hands a choice here. `remember` is the
  *  first-run door's cache write; the bad-key path never persisted, and still
@@ -87,9 +91,19 @@ export function chooseAvatar(path, name, { remember = false } = {}) {
 // ---------------------------------------------------------------- the handle
 
 let me = null;
+let seenFirstBody = false;
 export function getMe() { return me; }
 export function setMe(av) {
   me = av;
+  if (me) {
+    releaseBodyGate('body on screen');
+    // ONE '[body] on screen' per page — it is the load metric. Later setMe calls
+    // are body CHANGES (09-05: three swaps in the avatars tab read as +291 s
+    // 'loads' on the tee and corrupted the series).
+    if (!seenFirstBody) { seenFirstBody = true; tee(`[body] on screen +${(performance.now() / 1000).toFixed(1)}s`); }
+    else tee(`[body] changed → ${getMyAvatarName()}`);
+  }
+  bus.emit('avatar-worn', me ? getMyAvatarName() : null);
   if (me) me.wingsFolded = folded();
   armFlightFor(av);
 }
@@ -113,7 +127,12 @@ function armFlightFor(av) {
 // ---------------------------------------------------------------- avatar swap
 
 wireAvatarSwitch(async (path, name) => {
-  if (path === myAvatarPath) return;
+  // Same path is normally a no-op — but not when the body on screen is the
+  // capsule: `myAvatarPath` records what we INTENDED to wear and survives a
+  // failed load, so this early return was the last link that made a transient
+  // failure permanent (#196 review B1). Wearing the body we already "have" is
+  // exactly the retry a user reaches for.
+  if (path === myAvatarPath && !me?.isCapsule) return;
   toast(`changing into ${name}…`, 'info', 3000);
   try {
     // The switch order is load-bearing (§19b): NEW body fully ready (pool-hit
@@ -122,10 +141,13 @@ wireAvatarSwitch(async (path, name) => {
     // instance pool, so switching BACK is a 0ms pool-hit, not a re-parse.
     const next = await makeAvatar(CONFIG.name, path, { urgent: true }); // build before shedding the old
     me?.dispose();
-    setMe(next);
+    // name and path FIRST: setMe announces 'avatar-worn' with the current name,
+    // and My Avatars / the profile read it — set after, they heard the old body
     myAvatarPath = path;
     myAvatarName = name;
+    announceWorn(name, path);
     setMyAvatarPath(path);
+    setMe(next);
     localStorage.setItem('ew-avatar-name', name);
     contributeThumbnail(name, next.vrm, CONFIG.token);
     if (net.joined) {

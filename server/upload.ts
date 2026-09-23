@@ -8,7 +8,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, readdirSync, statSync, rmSync } from "node:fs";
 import { join, basename, dirname, relative } from "node:path";
-import { JOIN_TOKEN, UPLOAD_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DIR } from "./config.ts";
+import { JOIN_TOKEN, UPLOAD_CAP, IMAGE_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DIR, SKIP_OPT_SWEEP, OPT_MEM_BUDGET_MB, OPT_COST_FACTOR } from "./config.ts";
 // merge 2026-09-01 (anima a468cba, geometry LOD): upstream's LOD names ride
 // in; the door stays on R1's aid1JoinIdentity (the HN_*/verifyToken form is
 // what it replaced — the merged body references neither)
@@ -35,7 +35,26 @@ const optQueue: OptItem[] = [];
 let optRunning = false;
 let ktx2Skip = false; // set when a --ktx2 run exits 3 (no encoder) — stop queuing variants this boot
 let lodEncoderWarned = false; // the --lod arm's own once-per-boot note; it never sets ktx2Skip
-function queueOptimize(absPath: string) {
+// Items this host could not afford (estimate over budget, or the child died
+// under the cap). Informational: the marker never blocks a retry — the next
+// boot re-estimates against whatever budget it has — it exists so /version
+// can say how much is waiting on a bigger box. The count is this boot's;
+// the markers persist (and are never listing entries — store-variants.ts).
+const optDeferred = new Set<string>();
+if (process.env.OPT_CMD) console.warn(`[optimize] OPT_CMD=${process.env.OPT_CMD} — a stand-in optimizer is in charge of every variant this boot`);
+export function optStatus() {
+  return { budgetMB: OPT_MEM_BUDGET_MB, queued: optQueue.length, running: optRunning, deferred: optDeferred.size };
+}
+function undefer(dest: string) {
+  optDeferred.delete(dest);
+  if (existsSync(`${dest}.deferred`)) try { rmSync(`${dest}.deferred`); } catch { /* best effort */ }
+}
+function defer(dest: string, why: string) {
+  optDeferred.add(dest);
+  try { mkdirSync(dirname(dest), { recursive: true }); writeFileSync(`${dest}.deferred`, why); } catch { /* best effort */ }
+  console.log(`[optimize] deferred ${basename(dest)} — ${why}`);
+}
+export function queueOptimize(absPath: string) {
   let pushed = false;
   if (!optQueue.some((q) => q.src === absPath && !q.mode)) {
     optQueue.push({ src: absPath, dest: join(STORE_MIN, basename(absPath)) });
@@ -63,9 +82,13 @@ function queueOptimize(absPath: string) {
   }
   if (pushed) pumpOptimize();
 }
+let optPump: Promise<void> = Promise.resolve();
+/** Resolves when the pump has drained (a harness awaits this; the server never does). */
+export const optIdle = () => optPump;
 async function pumpOptimize() {
   if (optRunning) return;
   optRunning = true;
+  let done!: () => void; optPump = new Promise<void>((r) => { done = r; });
   try {
     while (optQueue.length) {
       const { src, dest, mode } = optQueue.shift()!;
@@ -79,14 +102,52 @@ async function pumpOptimize() {
       // KTX2 variants shadow MUTABLE library files, so a variant older than
       // its source rebuilds (the sweep filters too, but a file can change
       // while its item waits behind slow encodes).
-      if (existsSync(dest) && (!mode || statSync(dest).mtimeMs > statSync(src).mtimeMs)) continue;
+      if (existsSync(dest) && (!mode || statSync(dest).mtimeMs > statSync(src).mtimeMs)) { undefer(dest); continue; }   // done elsewhere: a stale .deferred must not outlive the variant
+      // Budget gate: an item this host cannot afford is deferred, not failed,
+      // and the rest of the queue keeps going (config.ts OPT_MEM_BUDGET_MB).
+      const estMB = Math.ceil(Bun.file(src).size * OPT_COST_FACTOR / 1_000_000);
+      if (OPT_MEM_BUDGET_MB && estMB > OPT_MEM_BUDGET_MB) { defer(dest, `estimated ${estMB}MB > budget ${OPT_MEM_BUDGET_MB}MB`); continue; }
       mkdirSync(dirname(dest), { recursive: true });
-      // process.execPath = the running bun binary — PATH under systemd has no bun
-      const proc = Bun.spawn([process.execPath, "run", join(ROOT, "server", "optimize.ts"), ...(mode ? [mode] : []), src, dest],
-        { stdout: "pipe", stderr: "pipe" });
+      // process.execPath = the running bun binary — PATH under systemd has no bun.
+      // Under a budget (Linux: the only kernel that enforces RLIMIT_DATA) the
+      // child runs beneath sh's `ulimit -d` (KB): an encode that outgrows it
+      // dies AS THE CHILD — a signal, SIGTRAP or SIGSEGV, exit ≥128, nothing
+      // on stderr (measured) — and the server serving worlds is never the
+      // casualty. RLIMIT_AS would be wrong here: bun reserves address space
+      // far beyond what it touches. The wrapper's OWN failures are made
+      // unmistakable (126: the limit could not be set — a hard limit below
+      // the budget; 127: exec failed) so they never read as a content verdict.
+      const capped = OPT_MEM_BUDGET_MB > 0 && process.platform === "linux";
+      // OPT_CMD: a harness may own the child (tools/optimize-pump-test.ts) — the real optimizer otherwise (logged at boot)
+      const cmd = [...(process.env.OPT_CMD ? [process.env.OPT_CMD] : [process.execPath, "run", join(ROOT, "server", "optimize.ts")]), ...(mode ? [mode] : []), src, dest];
+      let proc: ReturnType<typeof Bun.spawn>;
+      try {
+        // /bin/sh by absolute path: the pump may run under a PATH that has no
+        // shell at all (a harness pointing PATH at its fake encoder), and a
+        // spawn that cannot start throws HERE, synchronously — which would
+        // reject the un-awaited pump and drop the rest of the queue.
+        proc = Bun.spawn(capped
+          ? ["/bin/sh", "-c", 'ulimit -d "$0" || exit 126; exec "$@"', String(OPT_MEM_BUDGET_MB * 1024), ...cmd]
+          : cmd, { stdout: "pipe", stderr: "pipe" });
+      } catch (e) {
+        console.error(`[optimize] cannot spawn the optimizer (${String(e).split("\n")[0]}) — nothing marked; set OPT_MEM_BUDGET_MB=0 if /bin/sh is the problem`);
+        optQueue.length = 0; break;
+      }
       const code = await proc.exited;
       const err = (await new Response(proc.stderr).text()).trim();
+      if (capped && (code === 126 || code === 127)) {
+        // environmental, like a missing dep: no marker, and no point grinding on
+        console.error(`[optimize] cap wrapper failed (exit ${code}: ${err.split("\n").pop() || "sh"}) — set OPT_MEM_BUDGET_MB within this process's hard RLIMIT_DATA, or 0`);
+        optQueue.length = 0; break;
+      }
+      if (capped && (proc.signalCode || code >= 128)) {
+        // OOM under the cap and a crash on a corrupt file look the same from
+        // here; both are retried next boot (a signal is never a stuck verdict).
+        defer(dest, `child died (${proc.signalCode ?? `exit ${code}`}) under the ${OPT_MEM_BUDGET_MB}MB cap`);
+        continue;
+      }
       if (code === 0) {
+        undefer(dest);
         // a verdict that was re-measured and answered differently is history
         if (existsSync(failed)) try { rmSync(failed); } catch { /* best effort */ }
         // …and so is an older recipe generation's file: its URL is never
@@ -104,7 +165,7 @@ async function pumpOptimize() {
         // not suitable — bigger than source, or (--ktx2-img) non-POT dims /
         // conflicted consumers. Mark with the CLI's reason so the boot sweep
         // stops re-measuring it; the marker's CONTENT is diagnostic only.
-        writeFileSync(failed, err.slice(0, 2000) || "not-smaller");
+        writeFileSync(failed, err.slice(0, 2000) || "not-smaller"); undefer(dest);
         console.log(mode ? `[ktx2] ${base} — no variant (${err.split("\n").pop()?.replace(/^\[optimize\]\s*/, "") || "not smaller"})`
           : `[store] ${base} already lean — serving original`);
       } else if (code === 4) {
@@ -140,16 +201,20 @@ async function pumpOptimize() {
         // file — that would permanently skip every upload made before the
         // first successful `bun install`. Only content failures stick.
         const envFail = /cannot find module|cannot resolve|error: script not found/i.test(err);
-        if (!envFail) writeFileSync(failed, err.slice(0, 2000) || `exit ${code}`);
+        if (!envFail) { writeFileSync(failed, err.slice(0, 2000) || `exit ${code}`); undefer(dest); }
         console.error(`[${mode ? "ktx2" : "store"}] optimize ${envFail ? "unavailable (deps?)" : `FAILED ${base}`}: ${err.split("\n")[0] || `exit ${code}`}`);
         if (envFail) { optQueue.length = 0; break; } // no point grinding the rest
       }
     }
-  } finally { optRunning = false; }
+  } finally { optRunning = false; done(); }
 }
 // Boot sweep: whatever accumulated before this shipped (or failed mid-queue
 // last run) gets its shadow now. Deferred so boot stays about serving worlds.
-setTimeout(() => {
+// SKIP_OPT_SWEEP: see config.ts — a memory-tight host must be able to serve
+// worlds without shouldering the optimizer.
+/** The store sweep (named so a harness can drive it; the boot timer below calls it). */
+export function sweepStore() {
+  if (SKIP_OPT_SWEEP) return;
   const dir = join(OPT_DIR, "store");
   if (!existsSync(dir)) return;
   // isStoreOriginal, not endsWith(".glb"): the KTX2 variants live in this
@@ -164,7 +229,8 @@ setTimeout(() => {
   if (!pending.length) return;
   console.log(`[store] boot sweep: ${pending.length} upload(s) missing a shadow queued`);
   for (const f of pending) queueOptimize(join(dir, f));
-}, 5000);
+}
+setTimeout(sweepStore, 5000).unref?.();   // a harness that imports this must not be held open by the timer
 // Library KTX2 sweep (§20a, VRMs §20c, loose images §20d): every library
 // model gets a GPU-native-texture variant at OPT_DIR/<rel>.ktx2.glb, every
 // avatar a surgical-rewrite variant at OPT_DIR/<rel>.ktx2.vrm, and every
@@ -177,7 +243,9 @@ setTimeout(() => {
 // byte-preserved). Avatars live in TWO bases — Skye's library and the upload
 // overlay (assets/opt/...) — and serving prefers the overlay, so the sweep
 // sources each rel from the base that actually wins.
-setTimeout(() => {
+/** The library KTX2/LOD sweep — same seam. */
+export function sweepLibrary() {
+  if (SKIP_OPT_SWEEP) return;
   if (ktx2Skip) return;
   const items: OptItem[] = [];
   const seen = new Set<string>();
@@ -231,7 +299,8 @@ setTimeout(() => {
   console.log(`[ktx2] boot sweep: ${items.length} library asset(s) queued for variants`);
   optQueue.push(...items);
   pumpOptimize();
-}, 15_000);
+}
+setTimeout(sweepLibrary, 15_000).unref?.();
 
 // ---- the endpoint -----------------------------------------------------------
 
@@ -250,6 +319,32 @@ setTimeout(() => {
  *  the `asset`/`spawn` verbs, which per-world roles gate), plus per-IP
  *  rate limiting — live generation is the feature, an upload flood is
  *  not. `?by=` is attribution for the console trail. */
+/** Which image container these bytes are, by magic — the three the picture
+ *  allow-list admits. `null` for anything else (a GLB, a script, a renamed
+ *  GIF): the name someone typed is not evidence. */
+export function sniffImage(b: Uint8Array): "png" | "jpg" | "webp" | null {
+  if (b.length >= 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47
+    && b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a) return "png";
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return "jpg";
+  if (b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46
+    && b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50) return "webp";
+  return null;
+}
+
+/** Which audio container these bytes are, by magic — the five the sound
+ *  allow-list admits. `null` for anything else: the name is not evidence. */
+export function sniffAudio(b: Uint8Array): "mp3" | "ogg" | "wav" | "webm" | "m4a" | null {
+  const tag = (off: number, s: string) => b.length >= off + s.length && [...s].every((ch, i) => b[off + i] === ch.charCodeAt(0));
+  if (tag(0, "ID3")) return "mp3";
+  if (b.length >= 3 && b[0] === 0xff && (b[1] & 0xe6) === 0xe2 && (b[2] & 0xf0) !== 0xf0) return "mp3";   // MPEG frame sync, layer bits set, valid bitrate
+  if (tag(0, "OggS")) return "ogg";
+  if (tag(0, "RIFF") && tag(8, "WAVE")) return "wav";
+  if (b.length >= 4 && b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) return "webm";
+  if (tag(4, "ftyp")) return "m4a";
+  return null;
+}
+
+
 export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Promise<Response> {
   const upTok = url.searchParams.get("token") ?? "";
   let upAgent = agentTokens().byToken.get(upTok);
@@ -291,6 +386,70 @@ export async function handleUpload(req: Request, url: URL, srv: UploadSrv): Prom
     console.log(`[upload] script ${srel} (${body.length}B) by ${upBy}`);
     return new Response(JSON.stringify({ path: srel }),
       { headers: { "content-type": "application/json" } });
+  }
+  if (url.searchParams.get("as") === "image") {
+    // Picture ingestion: a PNG, JPEG or WebP, content-addressed into
+    // store/images/<hash>.<ext> and served by the /library route like any
+    // store upload (immutable address, no optimize pass — a picture is
+    // decoded by the client that hangs it, not re-encoded here). The kind is
+    // read from the BYTES, never the name: the store's extension is what the
+    // /library route and the picture allow-list key on, so it has to be true.
+    // What enters a WORLD is still the `picture` comp, gated by rank and by
+    // the entity's guard; the store itself stays inert.
+    if (body.length > IMAGE_CAP) return new Response(`image too large (${IMAGE_CAP / 1e6}MB cap)`, { status: 413 });
+    const kind = sniffImage(body);
+    if (!kind) return new Response("not a PNG, JPEG or WebP image (judged by content, not by name)", { status: 415 });
+    const ihash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);
+    const idir = join(OPT_DIR, "store", "images");
+    mkdirSync(idir, { recursive: true });
+    const irel = `store/images/${ihash}.${kind}`;
+    if (!existsSync(join(OPT_DIR, irel))) writeFileSync(join(OPT_DIR, irel), body);
+    // the human name lives only here, same as models: content-addressed
+    // means the catalog would otherwise know this picture as a hash
+    const iname = (url.searchParams.get("name") ?? "").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-zA-Z0-9 _-]/g, "").slice(0, 64).trim();
+    {
+      // Content-addressed means the same bytes may arrive many times under
+      // many names; the FIRST arrival is the provenance (who brought it, when,
+      // what they called it). A later upload fills a missing name, never
+      // renames or re-attributes.
+      const mp = join(idir, "manifest.json");
+      let man: Record<string, { name?: string; by: string; ts: number }> = {};
+      try { if (existsSync(mp)) man = JSON.parse(readFileSync(mp, "utf8")); } catch { /* fresh */ }
+      const prev = man[ihash];
+      if (!prev) man[ihash] = { ...(iname ? { name: iname } : {}), by: upBy, ts: Date.now() };
+      else if (!prev.name && iname) prev.name = iname;
+      atomicWrite(mp, JSON.stringify(man));
+    }
+    console.log(`[upload] image ${irel}${iname ? ` ("${iname}")` : ""} (${(body.length / 1e3).toFixed(0)}KB) by ${upBy}`);
+    return new Response(JSON.stringify({ path: irel }), { headers: { "content-type": "application/json" } });
+  }
+  if (url.searchParams.get("as") === "audio") {
+    // Sound ingestion: an MP3, Ogg, WAV, WebM or M4A, content-addressed into
+    // store/audio/<hash>.<ext>, served by the /library route like any store
+    // upload (immutable address). No transcode: the client plays what was
+    // given. Kind from the BYTES, never the name — the store's extension is
+    // what the sound allow-list keys on. What plays in a WORLD is still the
+    // `sound` comp, gated by rank and the entity's guard; the store is inert.
+    const kind = sniffAudio(body);
+    if (!kind) return new Response("not an MP3, Ogg, WAV, WebM or M4A audio file (judged by content, not by name)", { status: 415 });
+    const ahash = new Bun.CryptoHasher("sha256").update(body).digest("hex").slice(0, 16);
+    const adir = join(OPT_DIR, "store", "audio");
+    mkdirSync(adir, { recursive: true });
+    const arel = `store/audio/${ahash}.${kind}`;
+    if (!existsSync(join(OPT_DIR, arel))) writeFileSync(join(OPT_DIR, arel), body);
+    const aname = (url.searchParams.get("name") ?? "").replace(/\.[a-z0-9]+$/i, "").replace(/[^a-zA-Z0-9 _-]/g, "").slice(0, 64).trim();
+    {
+      // first arrival is the provenance; a later upload only fills a missing name
+      const mp = join(adir, "manifest.json");
+      let man: Record<string, { name?: string; by: string; ts: number }> = {};
+      try { if (existsSync(mp)) man = JSON.parse(readFileSync(mp, "utf8")); } catch { /* fresh */ }
+      const prev = man[ahash];
+      if (!prev) man[ahash] = { ...(aname ? { name: aname } : {}), by: upBy, ts: Date.now() };
+      else if (!prev.name && aname) prev.name = aname;
+      atomicWrite(mp, JSON.stringify(man));
+    }
+    console.log(`[upload] audio ${arel}${aname ? ` ("${aname}")` : ""} (${(body.length / 1e6).toFixed(1)}MB) by ${upBy}`);
+    return new Response(JSON.stringify({ path: arel }), { headers: { "content-type": "application/json" } });
   }
   if (body.length < 12 || new DataView(body.buffer).getUint32(0, true) !== 0x46546c67)
     return new Response("not a GLB container (glb/vrm)", { status: 415 });

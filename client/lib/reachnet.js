@@ -81,20 +81,21 @@ export function resolveEntryFn(ownerId, entry) {
  * mounted branch, because a seated body still gestures.
  */
 export function applyRemoteReach(r, sample) {
+  if (r.avatar) r.avatar._reachOwner = r.id;
   const bag = normalizeReachBag(sample?.reach);
   const prev = r.lastReach ?? null;
   if (bag === prev) return;                       // both absent, the common case
   for (const limb of REACH_LIMBS) {
     const d = bag?.[limb] ?? null, p = prev?.[limb] ?? null;
     if (d && (!p || !sameReach(p, d))) {
-      r.avatar?.setReach(limb, resolveEntryFn(r.id, d));
+      r.avatar?.setReach(limb, resolveEntryFn(r.id, d), { relation: d.t, palm: d.palm });
     } else if (!d && p) {
       r.avatar?.clearReach(limb);
     } else if (d && r.avatar && !r.avatar._limp && !r.avatar._reach?.has(limb)) {
       // self-heal: going limp clears the avatar's reach map (a corpse does
       // not keep reaching) without touching the DESCRIPTOR, which is the
       // reacher's to clear. Once the body is back up, re-assert.
-      r.avatar.setReach(limb, resolveEntryFn(r.id, d));
+      r.avatar.setReach(limb, resolveEntryFn(r.id, d), { relation: d.t, palm: d.palm });
     }
   }
   r.lastReach = bag;
@@ -154,7 +155,8 @@ export function setMyReach(limb, spec, opts = {}) {
   const target = normalizeReachTarget(t);
   if (!target) return 'unusable target — a contact point name, [who, point], [x,y,z], or {p, space}';
   const entry = { t: target, ...(opts.palm === false ? { palm: false } : {}) };
-  if (!me.setReach(limb, resolveEntryFn(hooks.myId(), entry), opts)) return `no reachable chain "${limb}"`;
+  me._reachOwner = hooks.myId();
+  if (!me.setReach(limb, resolveEntryFn(hooks.myId(), entry), { ...opts, relation: target })) return `no reachable chain "${limb}"`;
   myBag = { ...(myBag ?? {}), [limb]: entry };
   return null;
 }

@@ -512,6 +512,18 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
     if (landed) {
       const res = await S.get(withLod(negotiate(REL, S.key), S.lod));
       check("the library LOD serves under the recipe URL", isLodGlb(res.bytes));
+      // the catalog humans pick from must not show the variant as a model. The
+      // store section asserts this for a store hash — where OPT_DIR is never
+      // walked as a models dir. THIS is the library side, where /library-models
+      // walks OPT_DIR/eidoverse/assets/models beside the originals (routes.ts):
+      // the walk's filter was written for the ktx2 arm alone, and every baked
+      // library LOD listed as a model of its own. Fails on main; the fix is one
+      // predicate, the one /library-list already used (isServingArtifact).
+      const catalog: { path: string }[] = await fetch(`${S.base}/library-models`).then((r) => r.json());
+      const leaked = catalog.filter((h) => isLodVariant(h.path)).map((h) => h.path);
+      check("/library-models lists the library original once and NEVER its lod variant (the OPT_DIR walk)",
+        catalog.filter((h) => h.path === REL).length === 1 && leaked.length === 0,
+        `original×${catalog.filter((h) => h.path === REL).length}, leaked: ${leaked.slice(0, 2).join(" | ") || "none"}`);
       // the source mutates (a library file is MUTABLE): the old variant must
       // never serve under the new source — provisional until rebuilt
       await sleep(1100);   // a strictly newer mtime, beyond timestamp granularity

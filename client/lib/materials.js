@@ -45,8 +45,8 @@ import { state } from './state.js';
 import { effectiveSky } from '../../shared/forecast.js';
 
 const {
-  uniform, texture, float, vec2, vec3, vec4, mix, clamp, smoothstep,
-  fract, floor, dot, length, positionWorld, normalWorld, cameraPosition,
+  Fn, uniform, texture, float, vec2, vec3, vec4, mix, clamp, smoothstep,
+  fract, floor, dot, length, positionWorld, positionView, normalWorld,
   materialColor, materialRoughness, materialMetalness,
 } = TSL;
 
@@ -139,19 +139,24 @@ const CLOUD_H = 300;   // nominal cloud-base height the sun projection assumes
 // Structure kept 1:1 with upstream's wrapMaterial (hash2/vnoise2 included)
 // so the LOOK is the look worlds already have — only the uniforms are ours.
 
-const hash2 = (p) => {
+// hash2 / vnoise2 were plain JS closures — in TSL a layout-less function is INLINED and re-parsed at
+// every call site, every compile. vnoise2 calls hash2 ×4 and the puddle graph calls vnoise2 ~5×, so
+// each wrapped material re-emitted the hash2 arithmetic ~20× — seconds of NodeBuilder source-gen PER
+// material, the entry/exit-VR stall (R 09-07; three forum #86524, PavelBoytchev 0.2s→10s for 5 mats).
+// Declaring an Fn() LAYOUT makes TSL emit each as ONE called function, compiled once. Types: vec2→float.
+const hash2 = Fn(([p]) => {
   const a = fract(vec3(p.x, p.y, p.x).mul(0.1031));
   const d = dot(a, vec3(a.y, a.z, a.x).add(33.33));
   const b = a.add(d);
   return fract(b.x.add(b.y).mul(b.z));
-};
-const vnoise2 = (p) => {
+}, { name: 'ewHash2', type: 'float', inputs: [{ name: 'p', type: 'vec2' }] });
+const vnoise2 = Fn(([p]) => {
   const i = floor(p), f = fract(p);
   const sm = f.mul(f).mul(f).mul(f.mul(f.mul(6).sub(15)).add(10)); // quintic: C2, no lattice creases
   const a = hash2(i), b = hash2(i.add(vec2(1, 0)));
   const c = hash2(i.add(vec2(0, 1))), d = hash2(i.add(vec2(1, 1)));
   return mix(mix(a, b, sm.x), mix(c, d, sm.x), sm.y);
-};
+}, { name: 'ewVnoise2', type: 'float', inputs: [{ name: 'p', type: 'vec2' }] });
 
 /** The cloud-shade factor for one material: 1.0 where the sky is open,
  *  dipping toward (1 - strength) under a cloud. Fresh subtree per material
@@ -181,12 +186,25 @@ function wrapMaterial(mat, receiver, pbr) {
     .add(vnoise2(positionWorld.xz.mul(0.09)).mul(0.6));
   // distance-faded: procedural noise has no mips — far wet ground should
   // read as uniform sheen, not aggregated swamp
-  const pDist = length(positionWorld.sub(cameraPosition));
+  // NON-PBR (MToon bodies) NEVER BUILD THE PUDDLE TERM. Its distance fade reads `cameraPosition`, a
+  // camera accessor three builds as Fn(({ camera }) => …) from the active builder; MToon compiles our
+  // colorNode inside its own sub-context, and under per-view rendering (WebXR's ArrayCamera, WebGL
+  // backend) that context carries no camera → "THREE.TSL: Cannot destructure property 'camera' of
+  // 'undefined'" → the material's program never builds → the body renders BLACK in the headset (R,
+  // 09-06 12:08–13:20, four entries; tigerbee — no MToon — was fine). Reproduced and bisected headless
+  // (stereo probe: with the node the whole stereo pass drew nothing; without it both eyes lit). Puddles
+  // on a body were nonsense anyway; darkening and tint (no camera terms) stay.
+  // Eye distance as view-space length, NOT positionWorld − cameraPosition: `cameraPosition` is a camera accessor
+  // (Fn(({camera}) => …)) that has no camera under per-view (stereo) rendering, so the whole program failed to
+  // build and the object drew NOTHING in VR — the body on 09-06 (MToon, fixed by never building the term), and the
+  // construct floor on 09-07 02:40 (PBR; stereo readback 0 vs 31 mono). positionView is per sub-camera by design.
+  const pDist = pbr ? length(positionView) : null;
   // shape × gate, always: sharpening after the wetness multiply would zero
   // all puddles in any state below full wet
-  const pShape = smoothstep(0.97, 1.13, pn).mul(flat).mul(U.puddleK).mul(puddleGate)
-    .mul(float(1).sub(smoothstep(160, 450, pDist)));
-  const puddle = smoothstep(0.25, 0.6, pShape).mul(smoothstep(0.35, 0.9, U.wet));
+  const pShape = pbr
+    ? smoothstep(0.97, 1.13, pn).mul(flat).mul(U.puddleK).mul(puddleGate).mul(float(1).sub(smoothstep(160, 450, pDist)))
+    : float(0);
+  const puddle = pbr ? smoothstep(0.25, 0.6, pShape).mul(smoothstep(0.35, 0.9, U.wet)) : float(0);
   // normalize color roots to RGBA once — alpha must survive for cutout
   // silhouettes (foliage cards)
   const baseColor4 = vec4(mat.colorNode ?? materialColor);

@@ -50,7 +50,8 @@
 // (docs/upstream-wrap-once.md addendum).
 
 import { THREE, scene, camera, renderer, sun } from './core.js';
-import { CONFIG } from './base.js';
+import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
+import { CONFIG, tee } from './base.js';
 import { warmDepth } from './warmqueue.js';
 
 // ---- the fixed inventory ----------------------------------------------------
@@ -59,10 +60,8 @@ import { warmDepth } from './warmqueue.js';
 // then throw in updateRig's Array(NaN) every frame — with no try/catch around
 // the frame loop, that silently stops rAF and freezes the whole client. The
 // measurement knob must not be a foot-gun (review note 4).
-const _slotsParam = Number(CONFIG.params.get('slots') ?? 32);
-// TEMPORARY GLOBAL CANARY (Antra, 2026-09-09): compile enough fixed topology
-// to serve every currently observed request. Revert to the reviewed default
-// after the field test; this is measurement, not a new standing policy.
+const _slotsParam = Number(CONFIG.params.get('slots') ?? 8);
+// Production canary retained through the composed deployment: 32 fixed slots.
 const N_SLOTS = Number.isFinite(_slotsParam) ? Math.max(0, Math.min(32, Math.round(_slotsParam))) : 32;
 
 const rigGroup = new THREE.Group();
@@ -303,11 +302,37 @@ export function setShadows(on) {
   if (slots[SHADOW_SLOT]) slots[SHADOW_SLOT].castShadow = on;
 }
 renderer.shadowMap.enabled = shadowsOn();
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = ({ basic: THREE.BasicShadowMap, pcf: THREE.PCFShadowMap, soft: THREE.PCFSoftShadowMap })[CONFIG.params.get('shadowtype')] ?? THREE.PCFSoftShadowMap;   // ?shadowtype=basic|pcf|soft (boot-time: pipeline-shape) — owner 09-07 19:22 diagnostic
 sun.castShadow = shadowsOn();
-sun.shadow.mapSize.set(2048, 2048);
+// shadow map resolution (persisted; the video settings row, owner 09-07 21:32). Uniform-level:
+// three's ShadowNode setSize()s the target every update, so a live change is a realloc, no recompile.
+const RES_KEY = 'ew-shadow-res';
+export const SHADOW_RES = [1024, 2048, 4096];
+export const shadowRes = () => { const v = +stored(RES_KEY); return SHADOW_RES.includes(v) ? v : 2048; };
+export function setShadowRes(n) { localStorage.setItem(RES_KEY, String(n)); sun.shadow.mapSize.set(n, n); }
+sun.shadow.mapSize.set(shadowRes(), shadowRes());
+// ?csm=2|3|4 — cascaded shadow maps (bench probe, owner 09-07 21:32: 'better performance in VR'; Basis ships 4
+// cascades over 150 m, first split at 12%). three's CSMShadowNode fits one ortho camera per cascade around the
+// VIEW frustum every frame, with lightMargin m of room behind the light — the follow-box below is replaced by
+// it wholesale (the near-plane trap of a2e25e2 cannot occur by construction). Each cascade is its own map at
+// mapSize, so N cascades = N depth passes; the trade is sharper near shadows + horizon coverage against fill.
+const CSM_N = Math.min(4, Math.max(0, +CONFIG.params.get('csm') || 0));
+export let csm = null;
+if (CSM_N >= 2) {
+  csm = new CSMShadowNode(sun, { cascades: CSM_N, maxFar: +CONFIG.params.get('csmfar') || 150, mode: CONFIG.params.get('csmmode') || 'practical', lightMargin: 100 });
+  sun.shadow.shadowNode = csm;
+  addEventListener('resize', () => { if (csm.camera) csm.updateFrustums(); });   // no camera until the first compiled frame (CSMShadowNode._init) — a resize before that threw in a window listener (third review 2026-09-10). Diagnostic path: boot receipt only (&csm=2), no headless binding.
+}
+if (CONFIG.params.has('shadowfloat')) sun.shadow.mapType = THREE.FloatType;   // ?shadowfloat=1 (boot) — owner 09-07 19:30: 32-bit float depth map; a D3D11/ANGLE comparison-sampling variant to test on her GPU
 sun.shadow.bias = -0.0006;
 sun.shadow.normalBias = 0.02;
+// Boot line for the shadow state (owner, 09-07 19:10: 'nothing casts a shadow except right under my avatar' on desktop
+// too, while a headless probe measured the yucca casting) — the persisted switch, the map, and where the sun is.
+if (CONFIG.params.has('shadowdebug')) setTimeout(() => { try { const d = sun.position.clone().normalize(); tee(`[shadows] csm=${csm ? csm.cascades : 0} pref=${shadowsOn() ? 'on' : 'off'} map=${renderer.shadowMap.enabled} type=${renderer.shadowMap.type} size=${sun.shadow.mapSize.x} sun=(${d.x.toFixed(2)},${d.y.toFixed(2)},${d.z.toFixed(2)}) intensity=${sun.intensity.toFixed(2)} casters=${casters.size} casting=${[...casters.values()].filter((c) => c.casting).length}`);
+  // real-hardware facts (owner, 09-07 19:28: no ground shadow on her GPU, SwiftShader shows one): the map's depth texture, GL error state, the extensions that shape the shadow path
+  const m = sun.shadow.map; const dt = m?.depthTexture; const gl = renderer.backend?.gl; const ext = (n) => gl ? (gl.getExtension(n) ? 1 : 0) : '?';
+  tee(`[shadows] map=${m ? `${m.width}x${m.height}` : 'none'} depthTex=${dt ? `type:${dt.type} fmt:${dt.format} cmp:${dt.compareFunction} ver:${dt.version}` : 'none'} glError=${gl ? gl.getError() : '?'} parallelCompile=${ext('KHR_parallel_shader_compile')} clipControl=${ext('EXT_clip_control')} depthClamp=${ext('EXT_depth_clamp')} renderer=${(() => { try { const d = gl.getExtension('WEBGL_debug_renderer_info'); return d ? gl.getParameter(d.UNMASKED_RENDERER_WEBGL).slice(0, 60) : gl.getParameter(gl.RENDERER).slice(0, 60); } catch { return '?'; } })()}`);
+  } catch (e) { tee(`[shadows] probe threw: ${e?.message ?? e}`); } }, 20000);
 
 // ---- requests ---------------------------------------------------------------
 
@@ -390,7 +415,10 @@ export function attachLamps(root, owner, { shadows = false } = {}) {
     const m = o.material;
     const glow = (m?.emissiveIntensity ?? 1) *
       Math.max(m?.emissive?.r ?? 0, m?.emissive?.g ?? 0, m?.emissive?.b ?? 0);
-    if (glow > 0.5 || (m?.emissiveMap && (m?.emissiveIntensity ?? 1) > 1)) {
+    // An EMITTER, not an unlit trick: MToon toon bodies paint emissiveFactor ≈ white + an emissive MAP at
+    // strength 1 for their flat look (tigerbee, aporia — measured 09-19), and lit the floor. A lamp needs a
+    // flat emissive colour with no map, or a map driven above strength 1 (owner, 09-19: 'clearly wrong for most avatars').
+    if ((!m?.emissiveMap && glow > 0.5) || (m?.emissiveMap && (m?.emissiveIntensity ?? 1) > 1)) {
       emissive.push({ mesh: o, glow: Math.max(glow, m?.emissiveIntensity ?? 1) });
     }
   });
@@ -655,12 +683,16 @@ const SHADOW_HALF = 46;    // the measured box, unchanged — CSM later
 const SHADOW_DEPTH = 90;   // covers relief + trees around the focus plane
 const _sm = new THREE.Matrix4();
 const _sx = new THREE.Vector3(), _sy = new THREE.Vector3(), _sz = new THREE.Vector3();
-const _rel = new THREE.Vector3();
+const _rel = new THREE.Vector3(), _cw = new THREE.Vector3();
 const _ZERO = new THREE.Vector3();
 
 function updateShadow() {
+  if (csm) return;   // the cascades fit themselves around the view (updateBefore)
   const cam = sun.shadow.camera;
-  _rel.copy(camera.position).sub(sun.position);
+  // WORLD position: in VR the camera is a child of the rig (xr.js: rig.position = where you stand, rig.add(camera)),
+  // so camera.position is the head's offset inside the rig — the box sat at the world origin while R stood 50 m
+  // away, and every desktop test passed because desktop never parents the camera (owner, in-headset 09-07 22:28)
+  _rel.copy(camera.getWorldPosition(_cw)).sub(sun.position);
   _sm.lookAt(sun.position, _ZERO, THREE.Object3D.DEFAULT_UP);
   _sm.extractBasis(_sx, _sy, _sz);
   const texel = (2 * SHADOW_HALF) / (sun.shadow.mapSize.x || 2048);
@@ -670,11 +702,17 @@ function updateShadow() {
   cam.right = fx + SHADOW_HALF;
   cam.top = fy + SHADOW_HALF;
   cam.bottom = fy - SHADOW_HALF;
-  // the light camera looks down -z, so the focus sits -fz in front of it;
-  // a below-horizon sun makes that negative — clamp to a sane window
+  // the light camera looks down -z, so the focus sits -fz in front of it.
+  // dist goes NEGATIVE whenever the camera stands up-sun of the light's
+  // fixed point (sun.position is ~27-60 m from the origin; every prop in
+  // staging is at x 40-60, z 42-69 — 15-25 m BEHIND that point). The old
+  // `Math.max(0.1, …)` clamp assumed only a below-horizon sun could do that
+  // and threw the whole quarter out of the map: 12 casters "casting", no
+  // shadow on any GPU (owner, 09-07). An orthographic camera takes a negative
+  // near; three reads shadow.camera.near/far only for VSM and log depth.
   const dist = -_rel.dot(_sz);
-  cam.near = Math.max(0.1, dist - SHADOW_DEPTH);
-  cam.far = Math.max(cam.near + 20, dist + SHADOW_DEPTH);
+  cam.near = dist - SHADOW_DEPTH;
+  cam.far = dist + SHADOW_DEPTH;
   cam.updateProjectionMatrix();
 }
 
@@ -711,7 +749,7 @@ export const getCasterBudget = () => casterBudget;
 
 function casterPass() {
   const ranked = [...casters.values()]
-    .map((c) => ({ c, d: c.obj.getWorldPosition(_p).distanceToSquared(camera.position) }))
+    .map((c) => ({ c, d: c.obj.getWorldPosition(_p).distanceToSquared(camera.getWorldPosition(_cw)) }))
     .sort((a, b) => a.d - b.d);
   let enables = 0;
   for (let i = 0; i < ranked.length; i++) {
@@ -863,6 +901,7 @@ export const rigDebug = () => ({
   _slots: slots,
   casters: casters.size, casterBudget,
   casting: [...casters.values()].filter((c) => c.casting).length,
+  casterList: [...casters.values()].map((c) => ({ id: String(c.id).slice(0, 24), casting: c.casting, warm: c.warm, meshes: c.meshes.length })),
   requests: [...requests.values()].map((r) => ({
     key: r.key, slot: r.slot, keep: r.keep, authored: r.authored,
     mirror: Boolean(r.mirror), dayAware: r.dayAware,

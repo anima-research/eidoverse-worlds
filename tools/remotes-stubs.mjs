@@ -68,8 +68,13 @@ const fakeAvatar = () => ({
   setLimp() {}, playEmote() {}, setGazeTarget() {}, update() {},
 });
 
+export const makeCapsuleAvatar = (id) => ({ id, isCapsule: true, root: { position: { set() {}, copy() {} } }, vrm: { scene: {}, humanoid: null }, actions: {}, setClip() {}, setPose() {}, playEmote() {}, update() {}, dispose() {}, hydrateClips() { return Promise.resolve(); } });   // the floor makeAvatar falls to (fixes PR); shaped like the real one's surface
 export const makeAvatar = (id, path) => {
   avatarCalls.push({ id, path });
   if (!holdLoads) return Promise.resolve(fakeAvatar());
   return new Promise((resolve) => pendingLoads.push({ id, path, resolve: () => resolve(fakeAvatar()) }));
 };
+
+// xrbody.js (VR PR): remotes.js drives a remote's VR pose through these; no-ops here — the lifecycle under test is bodies, not arms
+export const applyRemoteXR = () => {};
+export const resetFingers = () => {};

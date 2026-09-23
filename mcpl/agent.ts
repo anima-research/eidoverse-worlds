@@ -4,6 +4,7 @@
 // terrain replicated (Skye's terrain.js eval'd in Bun) so feet agree with
 // every renderer. No GPU here — rendering is the retina's job (see server.ts).
 
+import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
 import { mentionRegex } from "./mention.ts";
 import * as THREE_W from "three/webgpu";
 import * as TSL from "three/tsl";
@@ -31,7 +32,7 @@ const worldYaw = (y: number) => Math.PI / 2 - y;
  *  cheaper than working that out at every call site. */
 const intYaw = (y: number) => Math.PI / 2 - y;
 import { canonicalLimb, normalizeReachTarget, normalizeReachBag, describeTarget, diffReach,
-  TOUCH_GAP } from "../shared/reachwire.js";
+  TOUCH_GAP, sameReach } from "../shared/reachwire.js";
 import { decideSupportClass, CERT_MAX_WORLD } from "../client/lib/supportclass.js";
 import { isFiniteVec3 } from "./shape.ts";
 // The same pure sky fold + weather derivation the browser client and the
@@ -47,13 +48,16 @@ import { radialForce, FORCE_MIN } from "../shared/force.js";
 // a renderer client and a resident who perceives by reading must agree about
 // what is burning (#25's shared-facts boundary).
 import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
+import { describePicture } from "../shared/picture.js";
+import { describeCaptions } from "../shared/captions.js";
+import { describeSound } from "../shared/sound.js";
 import { describeStructure, describeHere, localizePoint, planStructure, routeLocal } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
 
 (globalThis as any).THREE = Object.assign({}, THREE_W, TSL);
 
-const WALK = 1.55, RUN = 4.0, TICK_MS = 100, ARRIVE = 0.4;
+const WALK = 1.55, RUN = 4.0, TICK_MS = 100, ARRIVE = 0.01;
 /** Quiet window for world-change narration, per (entity, component). Tuning a
  *  live emitter is a burst of `comp` entries; this is how long they fold into
  *  one line. Long enough to swallow a slider drag, short enough that "puts the
@@ -61,16 +65,16 @@ const WALK = 1.55, RUN = 4.0, TICK_MS = 100, ARRIVE = 0.4;
 const EMITTER_COALESCE_MS = Number(process.env.EW_EMITTER_COALESCE_SEC ?? 4) * 1000;
 
 type Vec2 = { x: number; z: number };
-type Pose = { p: number[]; yaw: number; speed: number; clip: string; wingsFolded?: boolean };
+type Pose = PublicPose;
 type Entity = { id: string; lib: string; pos: number[]; yaw: number; actor: string; scale?: number;
   /** component bag (sockets, reactions, motion, …) — what a thing can DO;
    *  this is how affordances reach text-tier perception */
   comp?: Record<string, any> };
-type Person = { id: string; avatar: string; pose: Pose | null; agent?: boolean };
+type Person = { id: string; avatar: string; pose: Pose | null; agent?: boolean; observedAt?: number | null; bodyGeneration?: number };
 
 /** Verbs whose fold shapes the entity/mount views (epoch/sky shape other
  *  state; say/use/force shape nothing). */
-const ENTITY_VERBS = new Set(["spawn", "light", "place", "remove", "comp", "motion", "mount", "dismount"]);
+const ENTITY_VERBS = new Set(["spawn", "light", "place", "remove", "comp", "motion", "mount", "dismount", "caption"]);   // caption folds into the screen's comp bag (shared/captions.js)
 
 /** Presence is a live, lossy plane: a just-joining browser can briefly send a
  * pose shell whose coordinates are null/non-finite before its controller has
@@ -159,7 +163,7 @@ export class WorldAgent {
   joined = false;
   pos = { x: 0, y: 0, z: 0 };
   yaw = 0; speed = 0; clip = "idle";
-  private target: (Vec2 & { run: boolean }) | null = null;
+  private target: (Vec2 & { run: boolean; tolerance?: number }) | null = null;
   /** Remaining waypoints of a routed walk — see walkTo. Empty means the target
    *  is reachable in a straight line, which is every case outside a building. */
   private legs: Vec2[] = [];
@@ -300,6 +304,31 @@ export class WorldAgent {
   private reachBodies = new Map<string, ReachBody | null>();               // avatar path -> solver body
   private reachBodyLoads = new Map<string, Promise<ReachBody | null>>();
   private reachTicks = 0;
+  private reachReading: any = null;
+  private reachReadingEpoch = 0;
+  private reachReadingBusy = false;
+  private clipClockName = "";
+  private clipClockStarted = 0;
+  private bodyClip() {
+    const mount = this.mounts.get(this.name);
+    return mount ? this.entities.get(mount.to)?.comp?.sockets?.[mount.slot ?? ""]?.pose ?? "sitchair" : this.clip;
+  }
+  private noteClipClock() {
+    const slot = this.bodyClip();
+    if (this.clipClockName !== slot) { this.clipClockName = slot; this.clipClockStarted = Date.now(); }
+  }
+  private clipPhase() { return this.clipClockName === this.bodyClip() ? Math.max(0, (Date.now() - this.clipClockStarted) / 1000) : 0; }
+  private async refreshReachReading() {
+    const epoch = ++this.reachReadingEpoch;
+    const reading = await this.bodyState(this.name, "all");
+    if (epoch === this.reachReadingEpoch) this.reachReading = reading;
+  }
+
+  private bodyReader: BodyStateReader | null = null;
+  private bodyGenerationCounter = 0;
+  private selfBodyGeneration = 0;
+  private selfObservedAt: number | null = null;
+
   /** reach/touch ping refractory, keyed "kind:who:limb" — a hand trembling
    *  across the touch threshold must not knock twice. */
   private lastReachPing = new Map<string, number>();
@@ -633,6 +662,9 @@ export class WorldAgent {
             // provider reads as no.
             if (msg.yourRights) this.acceptEffectiveRights(msg.yourRights, "snapshot");
             this.entities.clear(); this.people.clear(); this.mounts.clear();
+            this.bodyReader?.forget();
+            this.selfBodyGeneration = ++this.bodyGenerationCounter;
+            this.selfObservedAt = Date.now();
             // fresh folds for a fresh world (§24k): the instant fold restarts
             // empty; the sim fold ADOPTS the sequencer's cut — a joiner
             // cannot recompute flights whose intents were folded out of the
@@ -656,7 +688,7 @@ export class WorldAgent {
               this.wingsFolded = msg.restore.wingsFolded === true;
             }
             this.restoredPose = true;
-            for (const p of msg.present) this.people.set(p.id, { id: p.id, avatar: p.avatar, pose: p.pose, agent: !!p.agent });
+            for (const p of msg.present) this.rememberBody(p.id, p.avatar, p.pose, !!p.agent);
             // A join is now the folded world plus a tail, not the whole log.
             // An agent that only read `entries` would arrive in an empty room.
             const oldestTail = msg.entries.length
@@ -798,13 +830,14 @@ export class WorldAgent {
           case "arrive":
             // the people map is truth and updates NOW; the narration goes
             // through the gate, where a reconnect flap collapses to nothing
-            this.people.set(msg.id, { id: msg.id, avatar: msg.avatar, pose: null, agent: !!msg.agent });
+            this.rememberBody(msg.id, msg.avatar, null, !!msg.agent);
             this.gate.presence(msg.id, "arrive");
             break;
           case "leave":
             this.noteLeave(msg.id);
             break;
           case "avatar-updated":
+            this.invalidateBodyAsset(msg.name);
             // avatar bytes changed: the held verdict demotes to pending NOW
             // and the refetch departs after the bump — a response already in
             // flight can never install the pre-change value (#105 B1)
@@ -831,6 +864,63 @@ export class WorldAgent {
         }
       };
     });
+  }
+
+  private rememberBody(id: string, avatar: string, pose: Pose | null, agent: boolean) {
+    this.bodyReader?.forget(id);
+    this.people.set(id, { id, avatar, pose, agent, observedAt: pose ? Date.now() : null,
+      bodyGeneration: ++this.bodyGenerationCounter });
+  }
+
+  private invalidateBodyAsset(name: string) {
+    if (nameFromAvatarPath(this.avatar) === name) {
+      this.selfBodyGeneration = ++this.bodyGenerationCounter;
+      this.bodyReader?.forget(this.name);
+    }
+    for (const p of this.people.values()) if (nameFromAvatarPath(p.avatar) === name) {
+      p.bodyGeneration = ++this.bodyGenerationCounter;
+      this.bodyReader?.forget(p.id);
+    }
+  }
+
+  private bodyObservation(who: string): BodyObservation | null {
+    if (who === this.name) {
+      // Same publishing predicate as tick(): a retired physics bag under an
+      // idle clip is internal debris, not the pose anyone else can see.
+      const bones = this.heldPose && (this.heldPoseAuthored || this.clip === "ragdoll") ? this.heldPose : null;
+      return this.withBodyFrame({ who, avatar: this.avatar, generation: this.selfBodyGeneration, self: true,
+        connected: this.joined && !this.closed, receivedAt: this.joined ? Date.now() : this.selfObservedAt,
+        source: bones ? this.heldPoseAuthored ? "authored" : "physics" : "unknown",
+        pose: this.selfObservedAt != null || this.joined ? structuredClone({
+          p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, speed: this.speed, clip: this.clip, clipTime: this.clipPhase(), clipTimeSlot: this.bodyClip(), clipRate: 1,
+          ...wingFoldPresence(this.wingsFolded), ...(bones ? { pose: bones } : {}),
+          ...(this.reaches.size ? { reach: Object.fromEntries(this.reaches) } : {}),
+        }) : null });
+    }
+    const p = this.people.get(who);
+    if (!p) return null;
+    return this.withBodyFrame({ who, avatar: p.avatar, generation: p.bodyGeneration ?? 0, self: false,
+      connected: this.joined && !this.closed, receivedAt: p.observedAt ?? null,
+      pose: p.pose ? structuredClone(p.pose) : null,
+      source: p.pose?.clip === "ragdoll" ? "physics" : "unknown" });
+  }
+
+  private withBodyFrame(observation: BodyObservation): BodyObservation {
+    const mount = this.mounts.get(observation.who);
+    if (!mount || !observation.pose) return observation;
+    const effective = this.eff(observation.who, this.serverNow());
+    if (!effective.ok) return { ...observation, error: `body mount cannot be composed: ${effective.why}` };
+    const socket = mount.slot ? this.entities.get(mount.to)?.comp?.sockets?.[mount.slot] : null;
+    const clip = socket?.pose ?? "sitchair";
+    return { ...observation, frame: { source: "mount", to: mount.to, seat: effective.seat ?? null },
+      pose: { ...observation.pose, p: effective.pos, yaw: effective.yaw, clip,
+        ...(clip === (observation.pose.clipTimeSlot ?? observation.pose.clip) ? {} : { clipTime: undefined }) } };
+  }
+
+  /** Rich public body perception. No action/consent lane is entered by reads. */
+  bodyState(who = this.name, detail = "summary", points?: unknown, windowMs: unknown = 0) {
+    this.bodyReader ??= new BodyStateReader(this.httpBase);
+    return this.bodyReader.readWindow(who === "self" ? this.name : who, detail, points, windowMs, id => this.bodyObservation(id));
   }
 
   /** Is this participant an agent? The server flags agent sessions in both
@@ -861,9 +951,15 @@ export class WorldAgent {
    *  cannot control the clock either sleeps (slow, flaky) or asserts nothing.
    *  Same reason and same shape as NoiseGate.presence/act's `ts`. */
   private notePose(id: string, pose: Pose, now = Date.now()) {
-    const p = this.people.get(id) ?? { id, avatar: "", pose: null };
+    // A dirty stage frame can flush after the participant's leave event.
+    // Once joined, only the snapshot/arrive roster introduces a body; a late
+    // pose must not resurrect someone who is no longer present.
+    if (this.joined && !this.people.has(id)) return;
+    const p: Person = this.people.get(id) ?? { id, avatar: "", pose: null };
     const prev = p.pose;
-    p.pose = pose; this.people.set(id, p);
+    p.pose = pose; p.observedAt = now;
+    p.bodyGeneration ??= ++this.bodyGenerationCounter;
+    this.people.set(id, p);
     // hands aimed at this body — before the spatial gate below, because a
     // reach descriptor is legible even from a sample with no usable position
     if (id !== this.name) this.noteReachEvents(id, prev, pose);
@@ -1005,6 +1101,7 @@ export class WorldAgent {
    *  as having walked away — one exit, one line. */
   private noteLeave(id: string) {
     this.people.delete(id);
+    this.bodyReader?.forget(id);
     this.lastNear.delete(id);
     this.nearArmed.delete(id);
     this.nonLocoSince.delete(id);
@@ -1075,6 +1172,7 @@ export class WorldAgent {
         pos: (e as any).pos, yaw: (e as any).yaw ?? 0,
         ...((e as any).scale != null ? { scale: (e as any).scale } : {}),
         actor: (e as any).actor,
+        ...((e as any).placer ? { placer: (e as any).placer } : {}),
         ...((e as any).comp ? { comp: (e as any).comp } : {}),
       });
     }
@@ -1634,13 +1732,13 @@ export class WorldAgent {
     if (!this.draggedBy && this.target) {
       const dx = this.target.x - this.pos.x, dz = this.target.z - this.pos.z;
       const dist = Math.hypot(dx, dz);
-      if (dist < ARRIVE) {
+      if (dist <= (this.target.tolerance ?? ARRIVE)) {
         // A route through a building arrives in legs. Only the LAST one
         // finishes the walk; the rest hand off to the next waypoint, so a body
         // rounds a doorway instead of driving at the wall behind it.
         const next = this.legs.shift();
         if (next) {
-          this.target = { x: next.x, z: next.z, run: this.target.run };
+          this.target = { x: next.x, z: next.z, run: this.target.run, tolerance: this.target.tolerance };
         } else {
           this.target = null; this.speed = 0; this.clip = "idle";
           this.walkDone?.(true); this.walkDone = null;
@@ -1674,10 +1772,12 @@ export class WorldAgent {
     // target moves, this body moves, and the far end's touch event fires on
     // the rising edge of what is re-checked here
     if (this.reaches.size && ++this.reachTicks % 5 === 0) this.reachTick();
+    this.selfObservedAt = Date.now();
+    this.noteClipClock();
     this.ws?.send(JSON.stringify({
       type: "pose",
       pose: {
-        p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, speed: this.speed, clip: this.clip,
+        p: [this.pos.x, this.pos.y, this.pos.z], yaw: this.yaw, speed: this.speed, clip: this.clip, clipTime: this.clipPhase(), clipTimeSlot: this.bodyClip(), clipRate: 1,
         ...wingFoldPresence(this.wingsFolded),
         // a physics bag only ever leaves this process labelled as what it is —
         // "ragdoll" — so every clip-keyed sanitizer downstream can see it.
@@ -2332,7 +2432,8 @@ export class WorldAgent {
     ].join("\n");
   }
 
-  walkTo(x: number, z: number, run = false, timeoutMs = 90_000): Promise<boolean> {
+  walkTo(x: number, z: number, run = false, timeoutMs = 90_000, tolerance = ARRIVE): Promise<boolean> {
+    if (![x, z, tolerance].every(Number.isFinite) || tolerance < 0 || tolerance > 0.4) return Promise.resolve(false);
     this.walkDone?.(false); // cancel a previous walk
     if (this.draggedBy) {   // deciding to walk IS breaking the dragger's hold
       this.ws?.send(JSON.stringify({ type: "bodydrag", target: this.draggedBy, end: true }));
@@ -2390,7 +2491,7 @@ export class WorldAgent {
       }
     } catch { this.legs = []; }
     const first = this.legs.shift();
-    this.target = first ? { x: first.x, z: first.z, run } : { x, z, run };
+    this.target = first ? { x: first.x, z: first.z, run, tolerance } : { x, z, run, tolerance };
     return new Promise((resolve) => {
       this.walkDone = resolve;
       setTimeout(() => { if (this.walkDone === resolve) { this.target = null; this.walkDone = null; resolve(false); } }, timeoutMs);
@@ -2588,6 +2689,15 @@ export class WorldAgent {
   private solveReachEntry(limb: string, entry: { t: any; palm?: false }):
     | { state: "pending" } | { state: "err"; err: string }
     | { state: "ok"; reached: boolean; gap: number; bound: string[]; dist: number | null; arm: number | null; palmResidual: number | null } {
+    if (this.joined) {
+      const reading = this.reachReading;
+      if (!reading || !sameReach(reading.reaches?.[limb], entry)) return { state: "pending" };
+      const solved = reading.reachEvaluation?.[limb];
+      if (!solved?.ok) return { state: "err", err: solved?.why ?? reading.error ?? "body pose could not be evaluated" };
+      const dist = solved.target && solved.shoulder ? Math.hypot(...solved.target.map((v: number, i: number) => v - solved.shoulder[i])) : null;
+      return { state: "ok", reached: solved.reached, gap: solved.gap, bound: solved.bound,
+        dist, arm: reading.body?.armLength(limb) ?? null, palmResidual: solved.palmResidual };
+    }
     const tp = this.reachTargetPoint(entry.t);
     if (tp === undefined) return { state: "pending" };
     if ("err" in tp) return { state: "err", err: tp.err };
@@ -2615,19 +2725,20 @@ export class WorldAgent {
     }
     // load the skeletons this reach needs BEFORE solving, so the reply is a
     // real verdict rather than a shrug
-    await this.reachBodyFor(this.avatar);
+    if (!this.joined) await this.reachBodyFor(this.avatar);
     if (t.who !== undefined && t.who !== this.name) {
       const person = this.people.get(t.who);
       if (!person) {
         const names = [...this.people.keys()].filter((n) => n !== this.name).slice(0, 12);
         return { ok: false, text: `nobody called "${t.who}" is here${names.length ? ` (present: ${names.join(", ")})` : ""}` };
       }
-      await this.reachBodyFor(person.avatar || WorldAgent.DEFAULT_BODY);
+      if (!this.joined) await this.reachBodyFor(person.avatar || WorldAgent.DEFAULT_BODY);
     }
     const entry: { t: any; palm?: false; reached?: true } = { t, ...(opts.palm === false ? { palm: false as const } : {}) };
+    this.reaches.set(limb, entry);
+    if (this.joined) await this.refreshReachReading();
     const res = this.solveReachEntry(limb, entry);
     if (res.state === "ok" && res.reached) entry.reached = true;
-    this.reaches.set(limb, entry);
     const limbW = WorldAgent.LIMB_WORD[limb];
     const what = describeTarget(t, this.name);
     if (res.state !== "ok") {
@@ -2635,7 +2746,7 @@ export class WorldAgent {
       return { ok: true, text: `${limbW} reaching toward ${what} — streamed, but unverified: ${why}` };
     }
     if (res.reached) {
-      return { ok: true, text: `${limbW} rests on ${what} (gap ${Math.round(res.gap * 1000)}mm). It tracks the target until clear_reach — or until you are knocked over.` };
+      return { ok: true, text: `${limbW} reaching ${what} (endpoint gap ${Math.round(res.gap * 1000)}mm). The target stays tracked until clear_reach or knockdown; this is an endpoint measurement, not a stability measurement.` };
     }
     const short = Number.isFinite(res.gap) ? `${res.gap.toFixed(2)}m short` : "not arriving";
     const why = res.bound.length ? ` (limited by: ${res.bound.join(", ")})` : "";
@@ -2665,6 +2776,18 @@ export class WorldAgent {
    *  to "not touching" because a load is slow would fire spurious release/
    *  touch edges at the other end. Loads are kicked here so blindness heals. */
   private reachTick() {
+    if (this.joined) {
+      if (this.reachReadingBusy) return;
+      this.reachReadingBusy = true;
+      void this.refreshReachReading().then(() => {
+        for (const [limb, entry] of this.reaches) {
+          const res = this.solveReachEntry(limb, entry);
+          if (res.state === "ok" && res.reached) entry.reached = true; else delete entry.reached;
+        }
+      }).catch(() => { for (const entry of this.reaches.values()) delete entry.reached; })
+        .finally(() => { this.reachReadingBusy = false; });
+      return;
+    }
     for (const [limb, entry] of this.reaches) {
       const t = entry.t;
       if (t.who !== undefined) {
@@ -2739,6 +2862,8 @@ export class WorldAgent {
    *  pose, and identity all carry over; only the body changes. */
   setAvatar(path: string) {
     this.avatar = path;
+    this.selfBodyGeneration = ++this.bodyGenerationCounter;
+    this.bodyReader?.forget(this.name);
     if (this.joined && this.ws?.readyState === 1) {
       this.ws.send(JSON.stringify({ type: "join", world: this.world, id: this.name, avatar: this.avatar,
         agent: true, token: process.env.WORLD_TOKEN ?? "", agentToken: this.agentToken }));
@@ -2979,15 +3104,38 @@ export class WorldAgent {
       // or contact: separate authored components would provide those, and a
       // resident who reads "warm" acts on it.
       if (c.particles) aff.push(describeParticles(c.particles));
+      // A picture is named by what its author SAID it shows, on the part that
+      // carries it — never by its pixels. Rung 1 of the projector ladder.
+      if (c.picture) aff.push(describePicture(c.picture));
+      // A screen with captions is named by what the captioner wrote down:
+      // what it is showing, where in it, and the last line — never a claim
+      // about pixels or sound. Rung 2 of the projector ladder; the rolling
+      // window is the `captions` detail level, opt-in like `body_state`.
+      if (c.captions) aff.push(describeCaptions(c.captions));
+      // A sound is named by what its author SAID is playing, and whether it
+      // is — never by the audio. The radio's music player; captions (#187)
+      // on the same entity say the words.
+      if (c.sound) aff.push(describeSound(c.sound));
       // locked = nailed down: the server refuses every move/replace/remove on
       // it. Saying so here saves an agent a refused verb round-trip.
       if (c.lock) aff.push(`🔒 locked (immovable until comp {id, type: "lock", data: null})`);
+      // guarded = its placer's to author: the server refuses comps, motion,
+      // behaviors, moves and removal from anyone but them, the world's
+      // owner, or an operator. Using it (use, sitting on it) stays open.
+      if (c.guard) {
+        // the principal stamped at creation (rights.ts placerOf); the legacy
+        // legs cover entities that predate the stamp
+        const actor = String(e.actor ?? "");
+        const placer = (e as any).placer?.id
+          ?? (actor.startsWith("bhv:") ? ((this.st as any).behaviors?.[actor.slice(4)]?.author ?? actor) : actor);
+        aff.push(`🛡 guarded by ${placer || "its placer"} (only they, the world's owner, or an operator may change, move, remove it or load cargo onto it — use and sitting stay open)`);
+      }
       // A griddled building says what it IS — rooms, walls, doors — because
       // unlike a conjured mesh it knows. This is the whole difference the
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
-      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "lock", "structure"].includes(k));
+      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "guard", "structure"].includes(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);
       if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);

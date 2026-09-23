@@ -129,11 +129,12 @@ export function isKtx2Variant(name: string): boolean {
 
 /** Anything the opt tree holds that is not an asset a client addresses by
  *  name: a KTX2 variant, a `.failed` marker (the pump's diagnostic verdict on
- *  a pass), a `.tmp` (a pass mid-write). None is a listing entry — the
+ *  a pass), a `.tmp` (a pass mid-write), a `.deferred` (a pass this host
+ *  could not afford — upload.ts). None is a listing entry — the
  *  prefetcher pushes every listed store path as a fetch, and a marker fetched
  *  as a model is a 404 on a good day. */
 export function isServingArtifact(name: string): boolean {
-  return isKtx2Variant(name) || isLodVariant(name) || /\.(failed|tmp)$/i.test(name);
+  return isKtx2Variant(name) || isLodVariant(name) || /\.(failed|tmp|deferred)$/i.test(name);
 }
 
 /** Is this store/ entry an upload, as opposed to a variant of one? The

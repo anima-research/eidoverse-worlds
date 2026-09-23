@@ -4,3 +4,4 @@ export * from './chat-core-stub.mjs';
 export function report() {}
 export function angleDelta(a, b) { return b - a; }
 export function setName() {}
+export function tee() {}

@@ -97,6 +97,7 @@ export function gateStream(stream, levelFn) {
     _ctx = audioContext();
     if (!_ctx || typeof _ctx.createMediaStreamDestination !== 'function') {
       _gateUnavailable = true;
+      _rawWanted = _ungatedConsent ? 1 : 0;      // a consented raw lane is open until PTT says otherwise
       return _ungatedConsent ? stream : null;   // fail CLOSED, not raw
     }
     _gateUnavailable = false;
@@ -168,6 +169,26 @@ export function driveGate(open) {
   _wanted = target;
 }
 
+// ── THE UNGATED LANE'S ONLY GATE ─────────────────────────────────────────────
+// When the graph could not be built and the person allowed raw transmission
+// (allowUngated), the wire carries the device stream ITSELF: there is no gain
+// for driveGate() to drive, and every decision above lands on nothing. That was
+// acceptable while the only regime was voice activation — "transmit UNGATED"
+// is exactly what the consent row said. Push-to-talk makes a new promise on the
+// same lane ("release V and the room hears nothing") that a nonexistent gain
+// cannot keep (Mica, #148 review: raw audio left while the key was up). So on
+// that lane PTT drives the raw tracks' `enabled` flag instead: binary and
+// abrupt — the very reason the graph exists, see the top of this file — but
+// TRUE, and the same mechanism mute already uses. Intent is recorded so
+// gateOpenness() tells the badge what the wire is doing.
+let _rawWanted = 0;
+export function driveRawTracks(open) {
+  if (!_rawStream) return false;
+  for (const t of _rawStream.getAudioTracks?.() ?? []) t.enabled = !!open;
+  _rawWanted = open ? 1 : 0;
+  return true;
+}
+
 
 // ── MONITOR: hear your own lane, exactly as the room hears it ───────────────
 // R, 2026-08-09: "can you feed my own audio lane back to me for this test so I
@@ -234,7 +255,7 @@ export const monitoring = () => !!_mon;
 // Reports the gate's INTENT, not the instantaneous .value: during a fade the
 // real gain is mid-slope, and an indicator that flickers through every envelope
 // would misreport 'am I being heard' at exactly the moments that matter.
-export const gateOpenness = () => (_gain ? _wanted : 0);
+export const gateOpenness = () => (_gain ? _wanted : (_gateUnavailable && _rawStream ? _rawWanted : 0));
 export const gateGainNow = () => (_gain ? _gain.gain.value : 0);
 export const isGated = () => !!_gain;
 
@@ -304,6 +325,7 @@ export function release() {
   _src = _gain = _dest = null;
   _gatedStream = null;
   _rawStream = null;
+  _rawWanted = 0;
 }
 
 /** The RAW stream, for anything that must measure the true input — the analyser
@@ -380,14 +402,24 @@ export function makeLevelMeter(getMeasured) {
  *  - `speaking` reports threshold PLUS hang-time, or the bar flickers dark
  *    through every pause while the room still hears you;
  *  - 20ms tick: the interval is the worst-case clip on a word's attack. */
-export function makeOnsetGate({ level, threshold, drive, announce }) {
+export function makeOnsetGate({ level, threshold, drive, announce, held = () => null }) {
   let _timer = null, _above = false, _lastOnset = 0, _openUntil = 0;
   let _openedAt = 0, _announced = false;
   let _noise = 0.01, _settle = 0;
   let _blocks = new Array(6).fill(Infinity), _blockIdx = 0, _blocksFilled = 0,
       _blockMin = Infinity, _blockStart = 0;
 
-  const apply = (now) => drive(_above || now <= _openUntil);
+  // PUSH-TO-TALK IS A MODE OF THIS MACHINE, not a bypass around it. `held()`
+  // returns null when the level decides (the default), or the key's boolean
+  // when a held key decides. The level side keeps running either way — it
+  // still feeds the meter and the noise floor, and the envelope + lookahead
+  // downstream still shape the open — but under a held answer the level's
+  // verdict drives nothing and its 🎙 must not fire: a person talking next to
+  // an un-pressed key is exactly the person who chose PTT so the room would
+  // NOT hear that. The press announces instead (press(), below), through
+  // the same rate-limit, so the pill and the audio still agree.
+  const decide = (now) => { const h = held(); return h === null ? (_above || now <= _openUntil) : h; };
+  const apply = (now) => drive(decide(now));
 
   function tick() {
     const lv = level();
@@ -420,7 +452,7 @@ export function makeOnsetGate({ level, threshold, drive, announce }) {
     if (lv >= on) {
       _openUntil = now + 700;                // hang-time
       if (!_above) { _above = true; _openedAt = now; _announced = false; }
-      if (!_announced && now - _openedAt >= 60 && now - _lastOnset > 1500) {
+      if (held() === null && !_announced && now - _openedAt >= 60 && now - _lastOnset > 1500) {
         _announced = true; _lastOnset = now; announce();
       }
     } else if (_above && lv < off && now > _openUntil) _above = false;
@@ -448,7 +480,14 @@ export function makeOnsetGate({ level, threshold, drive, announce }) {
     /** Drop the speaking latch without stopping the watch — unmute hands
      *  control back to the gate rather than reopening mid-latch. */
     dropLatch() { _above = false; _openUntil = 0; },
+    /** A push-to-talk press: announce the 🎙 as a declared gesture, under the
+     *  same once-per-1.5s limit as a level onset. The caller applies the gate. */
+    press(now = Date.now()) {
+      if (now - _lastOnset > 1500) { _lastOnset = now; announce(); }
+    },
+    /** `speaking` is what the room is getting: the held answer when there is
+     *  one, else threshold PLUS hang-time. */
     info: () => ({ level: level(), noise: _noise, on: threshold(),
-      speaking: _above || Date.now() <= _openUntil }),
+      speaking: decide(Date.now()) }),
   };
 }
