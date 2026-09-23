@@ -13,7 +13,7 @@
 //    empty plan rather than a throw (house rule 3, one layer down).
 
 import {
-  planStructure, normalize, wallBoxes, deriveRooms, derivePortals, roomAt,
+  planStructure, normalize, wallBoxes, deriveRooms, derivePortals, roomAt, levelAt, storeyAt,
   edgeCells, edgeBetween, edgeKey, cellKey, APERTURES, GRID_DEFAULTS,
   describeHere, describeStructure, localizePoint, levelParts, TRIM, cornerFills, wallRuns, wallPolylines, sweepProfile, wallProfile, levelSweeps, capProfile, clipProfileV, refineProfile, makeShader, diagOf, halfTriangle, triPrism, halfFloored, segmentEnds, nodeAtPoint, nodeGraph, cellNodes, routeCells, routeLocal, passable, makeShader,
 } from "../shared/structure.js";
@@ -293,6 +293,50 @@ const HOUSE = {
   const unknown = { levels: [{ tiles: [[0, 0]], walls: [[0, 0, 0]], apertures: [[0, 0, 0, "portcullis"]] }] };
   check("unknown aperture kind is ignored, wall stays whole",
     planStructure(unknown).boxes.filter((b) => b.kind === "wall").length === 1);
+}
+
+// 13a. multi-storey perception and routing (ew#140) — the storey a body stands
+// on must be the storey the describer and the router reason about. Both bugs
+// only show with two levels: cell keys are x,z, so a first-match level lookup
+// always answers with the ground floor.
+{
+  // Identical footprints. Ground: kitchen|hall with a door in the divider.
+  // Upstairs: the same divider with NO aperture — two sealed rooms.
+  const TWO = structuredClone(HOUSE) as typeof HOUSE & { levels: any[] };
+  const up = structuredClone(HOUSE.levels[0]) as any;
+  up.y = 3; up.apertures = [];
+  TWO.levels.push(up);
+  const plan = planStructure(TWO);
+  check("two storeys planned", plan.levels.length === 2, String(plan.levels.length));
+  const upY = plan.levels[1].y + 0.1;
+  const ground = describeHere(plan, 0.5, 0.5, 0.1)!;
+  check("ground floor kitchen has its door", /a door on its east to hall/.test(ground), ground);
+  const upstairs = describeHere(plan, 0.5, 0.5, upY)!;
+  check("upstairs kitchen is sealed — it must NOT report the ground floor's door",
+    /No doors — this room is sealed/.test(upstairs) && !/door on its east/.test(upstairs), upstairs);
+
+  // The other direction: open-plan ground, upstairs divided with the door at
+  // the SOUTH end. Upstairs must say it has a door, not that it is sealed …
+  const OPEN = structuredClone(HOUSE) as any;
+  OPEN.levels[0].walls = OPEN.levels[0].walls.filter(([a, x]: number[]) => !(a === 1 && x === 2));
+  OPEN.levels[0].apertures = [[0, 0, 0, "window"]];
+  const upper = structuredClone(HOUSE.levels[0]) as any;
+  upper.y = 3; upper.apertures = [[1, 2, 1, "door"]];
+  OPEN.levels.push(upper);
+  const plan2 = planStructure(OPEN);
+  const upY2 = plan2.levels[1].y + 0.1;
+  const up2 = describeHere(plan2, 0.5, 0.5, upY2)!;
+  check("upstairs room with a south door is not reported sealed", /a door on its east/.test(up2), up2);
+  // … and the router must detour through that door instead of walking the
+  // ground floor's open plan straight through the upstairs wall.
+  const groundRoute = routeLocal(plan2, 0.5, 0.5, 3.5, 0.5, 0.1)!;
+  check("open-plan ground floor routes straight", groundRoute.length === 2, JSON.stringify(groundRoute));
+  const upRoute = routeLocal(plan2, 0.5, 0.5, 3.5, 0.5, upY2)!;
+  check("upstairs route detours through the south door (more than two points)",
+    !!upRoute && upRoute.length > 2, JSON.stringify(upRoute));
+  // routeLocal's y default keeps single-storey callers exactly as they were
+  check("ground route unchanged when y is omitted",
+    JSON.stringify(routeLocal(plan2, 0.5, 0.5, 3.5, 0.5)) === JSON.stringify(groundRoute));
 }
 
 // 13. perception — the whole reason the grid exists
