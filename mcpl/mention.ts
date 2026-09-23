@@ -26,7 +26,40 @@
  *  different door. Returns null so callers can decide; a thrown regex was never
  *  a useful answer to "was I named?". */
 export function mentionRegex(id: unknown): RegExp | null {
-  if (typeof id !== "string" || !id) return null;
-  const safe = id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?<![\\w@])@?${safe}(?![\\w])`, "i");
+  return mentionRegexFor([id]);
+}
+
+/** A trailing ` (qualifier)` on a name, the house label convention
+ *  (`#name (Guild)`, `Artie (kube)`): the part people drop when they address
+ *  the thing. Only a final parenthetical counts; nothing inside the name moves. */
+const TRAILING_QUALIFIER = /\s*\([^()]*\)\s*$/u;
+
+/** The same pattern over every name a body answers to: its id (the mention
+ *  handle) and its token display name (tokens.json `name`, e.g. "Artie (kube)"
+ *  for id `artie-kube`), each also in its qualifier-dropped form, so "@Artie"
+ *  reaches the body whose handle is longer than the name people actually use.
+ *  Uniqueness is deliberately not required here, unlike channel-label
+ *  resolution: two bodies that both answer to "Artie" are both addressed,
+ *  which is what a room full of people does with a shared first name. Each
+ *  alternative still matches only as a whole handle: a hyphen counts as part
+ *  of one (`artie-kube` handles exist), so neither `artie` nor `artie-kube`
+ *  matches inside `artie-kubernetes`. Malformed or empty entries are skipped,
+ *  duplicates collapse case-insensitively, and a list with no usable name
+ *  returns null exactly like `mentionRegex`. */
+export function mentionRegexFor(names: readonly unknown[]): RegExp | null {
+  const seen = new Set<string>();
+  const parts: string[] = [];
+  const add = (form: string) => {
+    const key = form.toLowerCase();
+    if (!form || seen.has(key)) return;
+    seen.add(key);
+    parts.push(form.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  };
+  for (const candidate of names) {
+    if (typeof candidate !== "string" || !candidate) continue;
+    add(candidate);
+    add(candidate.replace(TRAILING_QUALIFIER, ""));
+  }
+  if (parts.length === 0) return null;
+  return new RegExp(`(?<![\\w@-])@?(?:${parts.join("|")})(?![\\w-])`, "i");
 }
