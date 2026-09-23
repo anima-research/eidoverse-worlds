@@ -2474,9 +2474,10 @@ export class WorldAgent {
         const data = (e.comp ?? {}).structure;
         if (!data) continue;
         const plan = planStructure(data);
-        const [ax, , az] = localizePoint(e, this.pos.x, this.pos.y, this.pos.z);
+        const [ax, ay, az] = localizePoint(e, this.pos.x, this.pos.y, this.pos.z);
         const [bx, , bz] = localizePoint(e, x, this.pos.y, z);
-        const pts = routeLocal(plan, ax, az, bx, bz);
+        // route on the storey this body stands on, not the ground floor's plan
+        const pts = routeLocal(plan, ax, az, bx, bz, ay);
         if (!pts || pts.length < 3) continue;    // straight line is already fine
         const yaw = Number.isFinite(e.yaw) ? e.yaw : 0;
         const sc = Number.isFinite(e.scale) && e.scale > 0 ? e.scale : 1;
