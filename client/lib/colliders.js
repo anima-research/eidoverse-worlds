@@ -127,6 +127,16 @@ function bucketAdd(id, entry) {
   entry.cells = [];
   const x0 = Math.floor((obj.position.x - r) / CELL), x1 = Math.floor((obj.position.x + r) / CELL);
   const z0 = Math.floor((obj.position.z - r) / CELL), z1 = Math.floor((obj.position.z + r) / CELL);
+  // pathological-footprint guard (#74 era): a box whose cell span is absurd
+  // (misread scale, corrupt bbox) once OOM-killed the whole daemon — 560
+  // RangeErrors deep in this loop before KeepAlive masked them. The abstain
+  // doctrine from the seam probes applies here too: refuse the box, keep
+  // the process. Same bucketRemove contract as a normal entry (no cells).
+  const spanX = x1 - x0 + 1, spanZ = z1 - z0 + 1;
+  if (spanX * spanZ > 4096) {
+    console.error(`[colliders] bucketAdd ${id} abstained — footprint ${spanX}x${spanZ} cells (r=${r.toFixed(1)}m s=${s})`);
+    return false;
+  }
   for (let cx = x0; cx <= x1; cx++) {
     for (let cz = z0; cz <= z1; cz++) {
       const k = `${cx},${cz}`;
@@ -135,6 +145,7 @@ function bucketAdd(id, entry) {
       entry.cells.push(k);
     }
   }
+  return true;
 }
 function bucketRemove(id, entry) {
   for (const k of entry?.cells ?? []) {
@@ -337,6 +348,9 @@ export function fitSupportBox(id, min, max, { position, yaw = 0, scale = 1 } = {
   // same rule decide() applies to non-exact entries: tall small-footprint
   // things collide as a slim centre pillar, not their canopy extents
   entry.pillar = (box.max.y - box.min.y) * scale > 2.4;
+  // re-fit must release the OLD entry's cells first — a re-fit without
+  // remove leaks every cell the previous position held (found #74 era)
+  bucketRemove(id, colliders.get(id));
   colliders.set(id, entry);
   bucketAdd(id, entry);
 }
@@ -368,6 +382,7 @@ export function fitSupportGrid(id, topGrid, { position, yaw = 0, scale = 1 } = {
   };
   const entry = { obj, box, pref: 'box', exact: null, interior: false, pillar: false, cells: [],
     grid: { n: topGrid.n, minX, minZ, w, d, tops: topGrid.cells } };
+  bucketRemove(id, colliders.get(id));   // re-fit releases the old cells (same rule as fitSupportBox)
   colliders.set(id, entry);
   bucketAdd(id, entry);   // radial footprint: the world bounds follow yaw and scale
   return true;
