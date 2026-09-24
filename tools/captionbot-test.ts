@@ -16,7 +16,10 @@
 //      clock, tells the caller (who rotates the session), and respawns with
 //      a backoff — close() ends it for good;
 //   H. the world client, offline: the queue is BOUNDED and overflow is loud
-//      and spooled; a restart re-queues what the spool never saw confirmed.
+//      and spooled; a restart re-queues what the spool never saw confirmed;
+//   I. the spool fails CLOSED: a line whose `queued` row cannot be written
+//      is refused and intake halts, out loud; what was queued still drains;
+//      `end` still goes through; SPOOL_BEST_EFFORT states the weaker promise.
 //
 //   bun tools/captionbot-test.ts   (run from a tree where tools/captionbot has its deps)
 import type { SttProvider, SttSession, SttTranscript, SttSessionOptions } from '@animalabs/voice-kit';
@@ -199,6 +202,34 @@ console.log('— H. the world client, offline —');
   check('a restart re-queues exactly the unconfirmed lines (4 and 5; 3 was confirmed, 1–2 overflowed)', w2.pendingCount === 2 && (w2 as any).pending.map((p: any) => p.args.n).join() === '4,5', JSON.stringify((w2 as any).pending.map((p: any) => p.key)));
   check('…under a session that follows the old one, so they drain first', w2.session > w.session && (w2 as any).pending[0].args.session === w.session);
   check('rotateSession refuses to go backwards', (() => { try { w2.rotateSession(w.session); return false; } catch { return true; } })());
+}
+
+console.log('— I. the spool fails closed —');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'captionbot-spool-'));
+  const good = join(dir, 'spool.jsonl');
+  const logs: string[] = [];
+  const w = new WorldClient({ url: 'ws://127.0.0.1:1/ws', token: 't', world: 'w', actor: 'cap', screenId: 'cinema', spool: good, log: (m) => logs.push(m), agent: false });
+  w.caption({ t0: 1, t1: 1.5, text: 'before the disk went' });
+  check('a writable spool takes the line', w.pendingCount === 1 && w.spoolRefused === 0 && w.spoolFailed === null);
+  // the disk goes away under a running bot: the spool path is now unwritable
+  (w as any).opts.spool = join(dir, 'no-such-dir', 'spool.jsonl');
+  w.caption({ t0: 2, t1: 2.5, text: 'first line after' });
+  check('the first line whose row cannot be written is refused, not queued', w.pendingCount === 1 && w.spoolRefused === 1 && /ENOENT/.test(w.spoolFailed ?? ''), `pending=${w.pendingCount} refused=${w.spoolRefused} failed=${w.spoolFailed}`);
+  check('…out loud, naming the halt and the way out', logs.some((l) => /⛔ spool write failed .*intake halted.*1 already queued still drain.*SPOOL_BEST_EFFORT=1/.test(l)), JSON.stringify(logs));
+  w.caption({ t0: 3, t1: 3.5, text: 'second line after' });
+  check('intake stays halted: later lines are refused and counted, without per-line noise', w.pendingCount === 1 && w.spoolRefused === 2 && logs.filter((l) => /⛔/.test(l)).length === 1, `pending=${w.pendingCount} refused=${w.spoolRefused} ⛔-lines=${logs.filter((l) => /⛔/.test(l)).length}`);
+  w.end();
+  check('end is not a line: it goes through with the spool down', w.pendingCount === 2 && (w as any).pending[1].args.end === true, `pending=${w.pendingCount}`);
+  const rows = readFileSync(good, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  check('the good spool holds exactly the line it took', rows.length === 1 && rows[0].state === 'queued' && rows[0].args.text === 'before the disk went');
+  // the weaker promise, stated
+  const logs2: string[] = [];
+  const w2 = new WorldClient({ url: 'ws://127.0.0.1:1/ws', token: 't', world: 'w', actor: 'cap', screenId: 'cinema', spool: join(dir, 'no-such-dir', 'spool.jsonl'), spoolBestEffort: true, log: (m) => logs2.push(m), agent: false });
+  w2.caption({ t0: 1, t1: 1.5, text: 'best effort' });
+  w2.caption({ t0: 2, t1: 2.5, text: 'best effort 2' });
+  check('SPOOL_BEST_EFFORT: the line queues anyway and nothing is refused', w2.pendingCount === 2 && w2.spoolRefused === 0, `pending=${w2.pendingCount} refused=${w2.spoolRefused}`);
+  check('…and the failure is still recorded', /ENOENT/.test(w2.spoolFailed ?? ''), String(w2.spoolFailed));
 }
 
 console.log(`\n${pass} ok, ${fail} failed`);

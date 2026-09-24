@@ -25,7 +25,11 @@
 //   SPOOL          JSONL path of every line tried and every receipt (default
 //                  ./captionbot.spool.jsonl; SPOOL= empty for none). A restart
 //                  re-queues whatever the world never confirmed. Append-only:
-//                  rotate it between events.
+//                  rotate it between events. The spool is a promise, so it
+//                  fails closed: if a line's row cannot be written the line is
+//                  refused and intake halts, out loud, until a restart.
+//   SPOOL_BEST_EFFORT=1  the weaker promise: spool failures log and the line
+//                  queues anyway (a restart may then miss it)
 //   MAX_PENDING    queue bound in lines (default 600); past it the oldest
 //                  queued lines are dropped, out loud, into the spool
 //   DRY_RUN=1      no world: print each line as it would be sent
@@ -55,10 +59,11 @@ const spool = env('SPOOL', './captionbot.spool.jsonl');
 const world = DRY_RUN ? null : new WorldClient({
   url: env('WORLD_URL', 'ws://127.0.0.1:8940/ws'), token: env('WORLD_TOKEN'), world: env('WORLD_NAME', 'commons'),
   actor: env('ACTOR', 'captioner'), screenId: SCREEN_ID, title: env('TITLE') || undefined,
-  spool: spool || undefined, maxPending: Number(env('MAX_PENDING', '600')), log,
+  spool: spool || undefined, spoolBestEffort: env('SPOOL_BEST_EFFORT') === '1',
+  maxPending: Number(env('MAX_PENDING', '600')), log,
 });
 world?.connect();
-if (world) log(`session ${world.session}; spool ${spool || '(none)'}`);
+if (world) log(`session ${world.session}; spool ${spool ? `${spool} (${env('SPOOL_BEST_EFFORT') === '1' ? 'best effort' : 'fail-closed'})` : '(none)'}`);
 
 const tap = new AudioTap(RATE);
 const captioner = new Captioner({
@@ -81,7 +86,7 @@ if (file) {
   await new Promise((r) => setTimeout(r, 2000)); // let the last final settle
   world?.end();
   await new Promise((r) => setTimeout(r, 1500)); // and the receipts land
-  log(`done — ${lines} lines, ${captioner.lateRevisions} late revisions dropped${world ? `; ${world.acked} confirmed, ${world.pendingCount} unconfirmed (in the spool)` : ''}`);
+  log(`done — ${lines} lines, ${captioner.lateRevisions} late revisions dropped${world ? `; ${world.acked} confirmed, ${world.pendingCount} unconfirmed (in the spool)${world.spoolRefused ? `, ${world.spoolRefused} REFUSED (spool unwritable: ${world.spoolFailed})` : ''}` : ''}`);
   world?.close();
   process.exit(0);
 } else {
