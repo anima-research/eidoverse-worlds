@@ -224,10 +224,14 @@ function vComp(ctx: VerbCtx, args: Record<string, unknown>) {
     w.debug("rejected", { who: c.id, verb: "comp", why: `type captions is server-written on ${id}` });
     return { error: `"captions" is written by the caption verb, not by comp — grant a captioner the deed (grant {id, caption: "${id}"}) and let it write` };
   }
+  // The cap is 8192 CHARACTERS of the data's JSON (String.length: UTF-16
+  // code units), not bytes — 8192 characters of CJK is ~24 KB on the wire
+  // and still fits. One unit for every size cap in this file, and for the
+  // captions bag's bounds (shared/captions.js), so the numbers compare.
   if (args.data !== undefined && args.data !== null
     && JSON.stringify(args.data).length > 8192) {
-    w.debug("rejected", { who: c.id, verb: "comp", why: `data too large (8KB max) on ${id}.${type}` });
-    return { error: "component data too large (8KB max) — put big things in /upload and reference the path" };
+    w.debug("rejected", { who: c.id, verb: "comp", why: `data too large (8192 chars of JSON max) on ${id}.${type}` });
+    return { error: "component data too large (8192 characters of JSON max) — put big things in /upload and reference the path" };
   }
   return { args: { id, type, data: args.data ?? null } };
 }
@@ -344,7 +348,7 @@ function vBehavior(ctx: VerbCtx, args: Record<string, unknown>) {
     return { error: `nothing here called "${attach}" to attach to` };
   }
   if (args.knobs != null && JSON.stringify(args.knobs).length > 4096) {
-    return { error: "knobs too large (4KB)" };
+    return { error: "knobs too large (4096 characters of JSON max)" };
   }
   const capsIn = (args.caps ?? {}) as Record<string, unknown>;
   const caps = {

@@ -93,7 +93,7 @@ vocabulary:
 ```
 spawn   {id, lib, pos, yaw, scale?}
 place   {id, pos?, yaw?, scale?}          # also re-stamps the rest pose
-comp    {id, type, data|null}             # attach anything; null removes; ≤8KB
+comp    {id, type, data|null}             # attach anything; null removes; ≤8192 chars of JSON
 motion  {id, type, ...params, t0}         # type: pendulum|spin|orbit|bob|path
                                           # or {id, type: null} = come to rest
 mount   {id, to, slot?, offset?, yaw?}    # id rides to; yourself = rank 0
@@ -392,7 +392,7 @@ live sensory event); it appears in the next `look()`.
 
 **Things can EMIT — fire, embers, smoke, motes.** `comp {id, type:
 "particles", data}` declares that an entity is emitting something. It is an
-ordinary component: builder rights, folded blindly, ≤8KB, and it never writes
+ordinary component: builder rights, folded blindly, ≤8192 chars of JSON, and it never writes
 a per-particle or per-frame log entry — the declaration IS the emitter.
 
 ```

@@ -26,6 +26,32 @@ USER_="${PROJECTOR_PUBLISH_USER:-publisher}"
 KEY="${PROJECTOR_PUBLISH_KEY:-}"
 STREAM_PATH="${PROJECTOR_PATH:-screen}"
 case "$STREAM_PATH" in *[!A-Za-z0-9_-]*|"") echo "mkconfig: PROJECTOR_PATH must be [A-Za-z0-9_-]+ (got '$STREAM_PATH')" >&2; exit 2;; esac
+# Every value below is spliced into YAML by sed, unquoted. sed's replacement
+# side reads `&` (the match), `\` (an escape) and the `|` delimiter as
+# syntax, and YAML reads `#`, `:`, quotes and newlines as structure — so a
+# key like `p&ss|word` would render silently wrong (the `&` becomes the
+# literal text `${PUBLISH_KEY}`) or truncate the file. Rather than escape
+# our way through two grammars, each value is checked against the set of
+# characters that is inert in both, and anything else is refused by name
+# (Mica, #187 round-two follow-up). A minted key is hex and always passes.
+#   user:  [A-Za-z0-9_.-]              key:  [A-Za-z0-9_.+/=-]  (hex, base64, urlsafe)
+#   bind:  [A-Za-z0-9.:-]  (IPv4, IPv6, or a hostname)   ports: 1–65535
+inert() { # $1 = name, $2 = value, $3 = allowed class (a case pattern body)
+  case "$2" in "") echo "mkconfig: $1 must not be empty" >&2; exit 2;; esac
+  case "$2" in *[!$3]*) echo "mkconfig: $1 may only use [$3] (got '$(printf %s "$2" | tr -c 'A-Za-z0-9_.+/=:-' '?')')" >&2; exit 2;; esac
+}
+port() { # $1 = name, $2 = value
+  case "$2" in ""|*[!0-9]*) echo "mkconfig: $1 must be a port number (got '$2')" >&2; exit 2;; esac
+  if [ "$2" -lt 1 ] || [ "$2" -gt 65535 ]; then echo "mkconfig: $1 must be 1–65535 (got $2)" >&2; exit 2; fi
+}
+inert PROJECTOR_PUBLISH_USER "$USER_" 'A-Za-z0-9_.-'
+inert PROJECTOR_BIND "$BIND" 'A-Za-z0-9.:-'
+[ -n "$KEY" ] && inert PROJECTOR_PUBLISH_KEY "$KEY" 'A-Za-z0-9_.+/=-'
+port PROJECTOR_RTSP_PORT "${PROJECTOR_RTSP_PORT:-8554}"
+port PROJECTOR_RTMP_PORT "${PROJECTOR_RTMP_PORT:-1935}"
+port PROJECTOR_HLS_PORT "${PROJECTOR_HLS_PORT:-8888}"
+port PROJECTOR_WEBRTC_PORT "${PROJECTOR_WEBRTC_PORT:-8889}"
+port PROJECTOR_WEBRTC_UDP_PORT "${PROJECTOR_WEBRTC_UDP_PORT:-8189}"
 if [ "$KEY" = "projector-dev" ]; then
   echo "mkconfig: refusing the historical dev key 'projector-dev' — it was committed once and is not a secret" >&2; exit 2
 fi
