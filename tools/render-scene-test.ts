@@ -161,3 +161,23 @@ test("water, air and environment components reach native renderers as normalized
   expect(next).toEqual(["ocean"]);
   expect(()=>projectComponentData({vehicle:{blob:"x".repeat(20000)}})).toThrow();
 });
+
+test("moving entities carry closed-form parameters that reproduce the server transform",async()=>{
+  const { evalWholeMotion } = await import("../client/lib/motioneval.js");
+  const f=fixture();
+  f.write("spawn",{id:"ferry",lib:"ferry.glb",pos:[4,0,2],yaw:.3,scale:2});
+  f.write("comp",{id:"ferry",type:"motion",data:{type:"orbit",center:[0,0,0],radius:9,degPerSec:15}});
+  f.write("spawn",{id:"crate",lib:"crate.glb",pos:[0,0,0]});
+  f.write("mount",{id:"crate",to:"ferry",offset:[1,.5,0],yaw:.2});
+  const now=5000, s=f.request(now), byId=Object.fromEntries(s.transforms.map((t:any)=>[t.id,t]));
+  const ferry=byId.ferry, r=evalWholeMotion(ferry.motion.base,ferry.motion.m,now);
+  expect(Number.isFinite(ferry.motion.m.t0)).toBe(true);
+  r.pos.forEach((v:number,i:number)=>expect(v).toBeCloseTo(ferry.p[i],9));
+  r.quat.forEach((v:number,i:number)=>expect(v).toBeCloseTo(ferry.q[i],9));
+  expect(byId.crate.motion).toBeUndefined();
+  expect(byId.crate.mount).toEqual({to:"ferry",offset:[1,.5,0],yaw:.2,scale:1});
+  // parent ∘ (offset × parent scale, then yaw)
+  const {qApply}=await import("../client/lib/motioneval.js");
+  const d=qApply(ferry.q,[2,1,0]);
+  [0,1,2].forEach(i=>expect(byId.crate.p[i]).toBeCloseTo(ferry.p[i]+d[i],9));
+});

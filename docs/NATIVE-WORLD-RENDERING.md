@@ -111,3 +111,18 @@ additive, so version-1 clients that ignore it are unaffected.
 
 A world is aquatic because its entities carry these components, never because of
 its name. The `water` world is an ordinary world imported by `tools/water/import.ts`.
+
+## Client-evaluated motion and mounts
+
+Transforms remain the sampled truth, but may also carry what a renderer needs to
+animate at frame rate without polling:
+
+- `motion: {base:{pos,yaw}, m}` for unmounted, unleased, non-simulated entities
+  with whole-entity motion. Evaluate `client/lib/motioneval.js` `evalWholeMotion`
+  at the server clock (`render-scene.time` + elapsed). `m.t0` is always present:
+  a missing authored t0 is resolved to the server's anchor.
+- `mount: {to, offset, yaw, scale}` for mounted entities: world = parent ∘
+  (offset × parent scale, then yaw about Y); scale = parent scale × own scale.
+
+Ports must reproduce `shared/conformance/motion.json` (regenerate with
+`bun tools/motion-vectors.ts`; `--check` fails when stale).

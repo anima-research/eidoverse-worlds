@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { planStructure } from "../shared/structure.js";
 import { terrainParams, makeHeightField } from "../shared/terrainmath.js";
 import { effectiveWorldTransform } from "../mcpl/effective.ts";
+import { since } from "../client/lib/motioneval.js";
 import { effectiveSky, effectiveClock } from "../shared/forecast.js";
 import { projectFlora } from "./render-flora.ts";
 import { advanceSim, simSnapshot, tickOf } from "../shared/sim.js";
@@ -66,6 +67,24 @@ export function projectEntity(id: string, e: any) {
   return { ...out, revision: hash(out) };
 }
 
+// Parameters for client-side evaluation, so native renderers animate at frame
+// rate from the same closed forms instead of polling sampled transforms.
+// A missing t0 is resolved to this process's anchor: every native client then
+// agrees with the server's own sampled transform.
+export function localMotion(raw: any, nowMs: number, simBody: boolean) {
+  const m = raw?.comp?.motion;
+  if (raw?.parent || simBody || !m || typeof m.type !== "string" || typeof m.part === "string") return null;
+  const t0 = Number.isFinite(m.t0) ? m.t0 : nowMs - since(m, nowMs) * 1000;
+  return { base: { pos: raw.pos, yaw: raw.yaw ?? 0 }, m: { ...m, t0 } };
+}
+export function localMount(raw: any, parent: any) {
+  const m = raw?.parent;
+  if (!m?.to) return null;
+  const sock = m.slot ? parent?.comp?.sockets?.[m.slot] : undefined;
+  if (sock && typeof sock.part === "string") return null;
+  return { to: m.to, offset: m.offset ?? sock?.pos ?? [0, 0, 0], yaw: m.yaw ?? sock?.yaw ?? 0, scale: raw.scale ?? 1 };
+}
+
 export function renderScene(c: Client, msg: any, now = Date.now()): object | null {
   const w = c.world;
   if (!w || c.superseded || !w.clients.has(c) || (c.surface ?? "world") !== "world") return null;
@@ -122,7 +141,13 @@ export function renderScene(c: Client, msg: any, now = Date.now()): object | nul
       const lease=w.leases?.get(e.id);
       if(lease?.lastState){const s=lease.lastState;transforms.push({id:e.id,p:s.p,q:s.q??[0,Math.sin((s.yaw??0)/2),0,Math.cos((s.yaw??0)/2)],scale:w.state.entities[e.id].scale??1,leased:true});moving=true;continue;}
       const t = effectiveWorldTransform(e.id, view, now);
-      if (t.ok) { transforms.push({ id: e.id, p: t.pos, q: t.quat, scale: t.scale }); moving ||= !!t.moving; }
+      if (t.ok) {
+        const raw = w.state.entities[e.id];
+        const motion = localMotion(raw, now, !!sim?.bodies[e.id]);
+        const mount = raw?.parent ? localMount(raw, w.state.entities[raw.parent.to]) : null;
+        transforms.push({ id: e.id, p: t.pos, q: t.quat, scale: t.scale, ...(motion ? { motion } : {}), ...(mount ? { mount } : {}) });
+        moving ||= !!t.moving;
+      }
       else warnings.push(`${e.id}: ${t.why}`);
     }
     const revisions = new Map(cached.entities.map(e => [e.id, e.revision]));
