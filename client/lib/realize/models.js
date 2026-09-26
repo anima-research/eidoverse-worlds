@@ -38,6 +38,18 @@ import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere
 // IMPORT then re-export: a bare `export ... from` creates no local binding, and this
 // module uses PORTED itself further down. Same defect as avatar.js/EMOTES, same branch.
 import { PORTED } from './ported.js';   // the taxonomy is data; causes.js needs it without the engine
+
+// Orientation (PROTOCOL §9 amendment): the fold's q when the thing is more
+// than turned, else its yaw. base carries q too, so motion composes on the
+// real tilt instead of snapping a toppled thing upright.
+function orientObj(obj, ent) {
+  if (Array.isArray(ent?.q) && ent.q.length === 4) obj.quaternion.set(ent.q[0], ent.q[1], ent.q[2], ent.q[3]);
+  else obj.rotation.set(0, ent?.yaw ?? 0, 0);
+}
+const restOf = (obj, ent) => ({
+  pos: obj.position.toArray(), yaw: ent?.yaw ?? obj.rotation.y,
+  ...(Array.isArray(ent?.q) && ent.q.length === 4 ? { q: [...ent.q] } : {}),
+});
 export { PORTED };
 
 /** id → {kind:'model'|'light', lib?, gen} — the realizer's own view of what
@@ -80,9 +92,9 @@ function makePlaceholder(id, ent, g) {
   grp.userData.placeholder = true;
   grp.userData.noCamCollide = true;
   grp.position.set(...(ent.pos ?? [0, 0, 0]));
-  grp.rotation.y = ent.yaw ?? 0;
+  orientObj(grp, ent);
   if (ent.scale) grp.scale.setScalar(ent.scale);
-  grp.userData.base = { pos: grp.position.toArray(), yaw: grp.rotation.y };
+  grp.userData.base = restOf(grp, ent);
   return grp;
 }
 
@@ -325,9 +337,9 @@ function realizeModel(id, cur, obj) {
   obj.userData.entityId = id;
   const sc = cur.scale;
   obj.position.set(...(cur.pos ?? [0, 0, 0]));
-  obj.rotation.y = cur.yaw ?? 0;
+  orientObj(obj, cur);
   if (sc) obj.scale.setScalar(sc);
-  obj.userData.base = { pos: obj.position.toArray(), yaw: obj.rotation.y };
+  obj.userData.base = restOf(obj, cur);
   entities.set(id, obj);
   entityMeta.set(id, { actor: cur.actor, lib: cur.lib, ts: cur.ts, ...(cur.placer ? { placer: cur.placer } : {}) });
   scene.add(obj);
@@ -460,8 +472,8 @@ function refreshModel(id, ent) {
   // bring the fold's word back when the ride ends.
   if (!obj.userData.mountedTo) {
     if (ent.pos) obj.position.set(...ent.pos);
-    if (ent.yaw != null) obj.rotation.y = ent.yaw;
-    obj.userData.base = { pos: obj.position.toArray(), yaw: obj.rotation.y };
+    if (ent.q || ent.yaw != null) orientObj(obj, ent);
+    obj.userData.base = restOf(obj, ent);
   }
   if (ent.scale != null) obj.scale.setScalar(ent.scale);
   if (!isPlaceholder(obj) && obj.userData.tier !== 'lod') refitCollider(id);   // placeholders and lod tiers own no collider
@@ -525,8 +537,8 @@ function retire(id) {
       delete cobj.userData.mountRel;
       const cst = state.st.entities[cid];
       if (cst?.pos) cobj.position.set(...cst.pos);
-      if (cst?.yaw != null) cobj.rotation.set(0, cst.yaw, 0);
-      cobj.userData.base = { pos: cobj.position.toArray(), yaw: cobj.rotation.y };
+      if (cst?.q || cst?.yaw != null) orientObj(cobj, cst);
+      cobj.userData.base = restOf(cobj, cst);
       fitCollider(cid, cobj, { scale: cobj.scale?.x || 1 });
     }
     (obj.parent ?? scene).remove(obj);
@@ -588,7 +600,7 @@ function restAtBase(id) {
   const base = obj?.userData?.base;
   if (!obj || !base) return;
   obj.position.set(...base.pos);
-  obj.rotation.set(0, base.yaw ?? 0, 0);
+  orientObj(obj, base);
   reindexCollider(id);
 }
 
@@ -619,7 +631,8 @@ function execMount(id) {
   const off = rel.offset ?? sock?.pos ?? [0, 0, 0];
   parent.add(child);   // transform becomes parent-relative
   child.position.set(...off);
-  child.rotation.set(0, rel.yaw ?? sock?.yaw ?? 0, 0);
+  if (Array.isArray(rel.q) && rel.q.length === 4) child.quaternion.set(rel.q[0], rel.q[1], rel.q[2], rel.q[3]);
+  else child.rotation.set(0, rel.yaw ?? sock?.yaw ?? 0, 0);
   // a part socket glues the cargo INTO the moving node — attach preserves
   // world transform, baking the part's current phase into the offset
   const partNode = sock?.part ? findPart(parent, String(sock.part)) : null;
@@ -641,8 +654,8 @@ function execDismount(id, ent) {
     indexSceneMount(id, null);
     // plane-transition stamp wins over wherever the ride left it
     if (ent?.pos) obj.position.set(...ent.pos);
-    if (ent?.yaw != null) obj.rotation.set(0, ent.yaw, 0);
-    obj.userData.base = { pos: obj.position.toArray(), yaw: obj.rotation.y };
+    if (ent?.q || ent?.yaw != null) orientObj(obj, ent);
+    obj.userData.base = restOf(obj, ent);
     fitCollider(id, obj, { scale: obj.scale?.x || 1 });
   }
   bus.emit('mount', { id, to: null });

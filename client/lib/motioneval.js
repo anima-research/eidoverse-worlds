@@ -58,6 +58,9 @@ export const yawOfQuat = (q) => {
 };
 
 const yawQuat = (yaw) => qAxisAngle([0, 1, 0], yaw ?? 0);
+// the rest orientation motion composes on: the fold's full q when the thing
+// is tilted (PROTOCOL §9 amendment), else its yaw
+const baseQuat = (base) => (Array.isArray(base?.q) && base.q.length === 4 ? base.q : yawQuat(base?.yaw));
 
 // ---- the generous reader (verbatim from motion.js — see its history) -------
 // Text-tier authors improvise dialect: `amplitude` for amp, `axis: "x"` for
@@ -105,7 +108,7 @@ export function pendulumTheta(m, t) {
  *  `pivot`, composed on the base pose. Returns {pos, quat}. */
 function rotateAtPivot(base, axis, pivot, theta) {
   const q = qAxisAngle(axis ?? [0, 1, 0], theta);
-  const qy = yawQuat(base.yaw);
+  const qy = baseQuat(base);
   const quat = qMul(qy, q);
   const pv = pivot ?? [0, 0, 0];
   const rp = qApply(q, pv);                                  // pivot after rotation
@@ -147,7 +150,7 @@ export function evalPath(m, t, base) {
     const yaw = Math.atan2(bx - ax, bz - az);
     return { ok: true, pos, yaw, quat: yawQuat(yaw), rot: true };
   }
-  return { ok: true, pos, yaw: base.yaw ?? 0, quat: yawQuat(base.yaw), rot: false };
+  return { ok: true, pos, yaw: base.yaw ?? 0, quat: baseQuat(base), rot: false };
 }
 
 /**
@@ -170,7 +173,7 @@ export function evalWholeMotion(base, m, nowMs) {
   if (!m || typeof m.type !== "string") return { ok: false, why: "no motion type" };
   if (typeof m.part === "string") {
     // animates ONE NAMED NODE of the model; the root transform is untouched
-    return { ok: true, pos: [...base.pos], yaw: base.yaw ?? 0, quat: yawQuat(base.yaw), rot: false };
+    return { ok: true, pos: [...base.pos], yaw: base.yaw ?? 0, quat: baseQuat(base), rot: false };
   }
   const t = since(m, nowMs);
   let r;
@@ -193,14 +196,14 @@ export function evalWholeMotion(base, m, nowMs) {
       const pos = [c[0] + rad * Math.sin(a), (c[1] ?? base.pos[1]), c[2] + rad * Math.cos(a)];
       r = m.face !== false
         ? { ok: true, pos, yaw: a + Math.PI / 2, quat: yawQuat(a + Math.PI / 2), rot: true }
-        : { ok: true, pos, yaw: base.yaw ?? 0, quat: yawQuat(base.yaw), rot: false };
+        : { ok: true, pos, yaw: base.yaw ?? 0, quat: baseQuat(base), rot: false };
       break;
     }
     case 'bob': {
       const off = Math.sin((2 * Math.PI / (m.period ?? 4)) * t + (m.phase ?? 0)) * ampOf(m, 0.3);
       const ax = axisOf(m, [0, 1, 0]);
       const n = Math.hypot(...ax) || 1;
-      r = { ok: true, rot: false, yaw: base.yaw ?? 0, quat: yawQuat(base.yaw),
+      r = { ok: true, rot: false, yaw: base.yaw ?? 0, quat: baseQuat(base),
         pos: [base.pos[0] + (ax[0] / n) * off, base.pos[1] + (ax[1] / n) * off, base.pos[2] + (ax[2] / n) * off] };
       break;
     }

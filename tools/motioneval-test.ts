@@ -183,5 +183,15 @@ console.log("\n━━ refusals ━━");
   check("part-carrying motion: root unmoved, rot false", part.ok && near3(part.pos, [5, 0, 5]) && part.rot === false && near(part.yaw, 0.2));
 }
 
+// ---- a tilted rest pose (PROTOCOL §9 amendment): motion composes on the
+// fold's full q, so a toppled wheel spins about ITS axle, not world up
+{
+  const tip = [Math.SQRT1_2, 0, 0, Math.SQRT1_2];               // 90° about +X: local up → world +Z
+  const r = evalWholeMotion({ pos: [0, 0, 0], yaw: 0, q: tip }, { type: "spin", degPerSec: 90, t0: T0 }, T0 + 1000);
+  check("tilted base: a spin keeps its own axis where the tilt put it", r.ok && near3(qApply(r.quat, [0, 1, 0]), [0, 0, 1]), JSON.stringify(r.quat));
+  const b = evalWholeMotion({ pos: [0, 0, 0], yaw: 0, q: tip }, { type: "bob", t0: T0 }, T0 + 500);
+  check("tilted base: a bob carries the tilt through", b.ok && near3(qApply(b.quat, [0, 1, 0]), [0, 0, 1]));
+}
+
 console.log("");
 process.exit(failures ? 1 : 0);
