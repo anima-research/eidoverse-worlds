@@ -61,8 +61,8 @@ measured on the fields above (see `fixtures/README.md`).
 | verb | args | fold effect |
 |---|---|---|
 | `genesis` | `{v, dialect}` | nothing (version marker) |
-| `spawn` | `{id, lib, pos?, yaw?, q?, scale?, collide?}` | create **or replace** entity (see §3.1) |
-| `place` | `{id, pos?, yaw?, q?, scale?}` | update transform; re-stamps rest pose. Orientation per §9.1 |
+| `spawn` | `{id, lib, pos?, yaw?, q?, scale?, collide?}` | create **or replace** entity (see §3.1). `q`: §9.1 *(amendment 2026-09-26)* |
+| `place` | `{id, pos?, yaw?, q?, scale?}` | update transform; re-stamps rest pose. Orientation per §9.1 *(`q`: amendment 2026-09-26)* |
 | `light` | `{id, pos?, color?, intensity?, range?, keep?, day?}` | create light entity; re-issuing on an id that already folds as a light is a **partial update** (absent fields keep their prior value); a non-light holding the id is replaced wholesale (§3.1) |
 | `remove` | `{id}` | delete entity; children mounted on it get their **absolute pose computed and stamped** (parent pos + offset rotated by the parent's orientation, §9.1), then orphaned; body mounts onto it are cleared |
 | `comp` | `{id, type, data\|null}` | `entities[id].comp[type] = data`; null deletes. **Blind**: data is opaque to the fold. Writers SHOULD keep data ≤ 8 KB |
@@ -211,7 +211,7 @@ under `store/` (`<sha256-prefix>.glb`) — a binding pins exact bytes.
 ### 9.1 Orientation: `q`, with `yaw` as its friendly subset
 
 *Amendment (2026-09-26, Hesperus — draft on a workbench branch, not yet
-ratified).* An entity's orientation MAY be a full unit quaternion `q:
+ratified; no dialect bump, see Versioning below).* An entity's orientation MAY be a full unit quaternion `q:
 [x, y, z, w]` (same layout as the pose wire), for things that are more than
 turned: a crate on its edge, a lamp knocked flat, anything a lease let
 tumble. `yaw` stays exactly what it was — and is the whole vocabulary a
@@ -241,9 +241,16 @@ writer needs for anything upright.
   trig (`shared/simmath.js`, PROTOCOL_v2 Covenant I's kernels) — never host
   `sin/cos/atan2` — so every runtime folds the same bits.
 - **Readers that only speak yaw** (older clients, agent tools) keep working
-  and stay honest about facing; they will show a toppled thing upright. That
-  divergence is the reason this is announced as an amendment rather than
-  slipped in. ⚑ open: whether logs that use `q` bump `genesis.v`.
+  and stay honest about facing; they will show a toppled thing upright.
+- **Versioning.** `q` is an optional argument on existing verbs, not a new
+  verb, so under §10 it takes **no `genesis` bump** — the same footing as
+  `collide` on `spawn` and `keep`/`day` on `light` (each also added without
+  one, and `collide` also made pre-amendment readers see an object
+  differently). Rows carrying `q` are tagged in the table instead. ⚑ for
+  review: a yaw-only reader silently shows a toppled thing standing, and
+  `genesis` alone could never announce this to a world that predates it (it
+  is written once, at creation) — if a marker is wanted, the precedent is
+  PROTOCOL_v2's mid-log `epoch` entry, not a number.
 
 ## 10. Extending the protocol
 
