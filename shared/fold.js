@@ -15,6 +15,33 @@
 
 import { foldSkyEntry } from './forecast.js';
 import { normalizeCaptionArgs, captionRefusal, foldCaption } from './captions.js';
+import { qNorm, qFromYaw, qMul, qRotate, qHeading, qWithHeading } from './rot.js';
+
+// Orientation (PROTOCOL §9 amendment): `q` is the whole truth when
+// present and `yaw` is always its heading, so yaw-only readers stay correct
+// about which way a thing faces. A verb carrying only `yaw` is the friendly
+// subset — "turn it about Y". Nothing yaw-only ever grows a q, so every log
+// written before q existed folds byte-identically.
+function setQ(ent, q) {
+  const n = qNorm(q);
+  if (!n) return;
+  ent.q = n;
+  ent.yaw = qHeading(n);
+}
+/** spawn: a fresh orientation from the verb */
+function orient(a) {
+  const q = qNorm(a.q);
+  return q ? { yaw: qHeading(q), q } : { yaw: a.yaw ?? 0 };
+}
+/** place / dismount: q replaces the orientation; a bare yaw turns the thing
+ *  about +Y and keeps any tilt it has (a yaw-only tool spins a toppled chair
+ *  where it lies instead of standing it up) */
+function reorient(ent, a) {
+  if (qNorm(a.q)) return setQ(ent, a.q);
+  if (a.yaw == null) return;
+  if (ent.q && Number.isFinite(a.yaw)) { ent.q = qWithHeading(ent.q, a.yaw) ?? ent.q; }
+  ent.yaw = a.yaw;
+}
 
 /** An entity's CREATION GENERATION: the seq of the entry that made this
  *  object, kept across updates of the same object (a partial re-light, a
@@ -64,11 +91,12 @@ function bornOf(prev, kind, a, e) {
  *   kind?: "light", pos: number[], actor: string, ts: number,
  *   placer?: { id: string, sub?: string },   // the creation's principal (server-stamped; immutable; guard matches on it)
  *   lib?: string, yaw?: number, scale?: number,
+ *   q?: number[],   // full orientation [x,y,z,w] when it is more than a yaw; yaw is then its heading
  *   collide?: string,
  *   color?: number, intensity?: number, range?: number,
  *   keep?: boolean, day?: false,
  *   comp?: Record<string, unknown>,
- *   parent?: { to: string, slot?: string, offset?: number[], yaw?: number },
+ *   parent?: { to: string, slot?: string, offset?: number[], yaw?: number, q?: number[] },
  * }>} entities
  *   Things and lights, one flat id namespace. `keep` (lights) = first claim
  *   on a casting slot, never governor-shed; `day: false` (lights) = burns
@@ -193,7 +221,7 @@ export function foldEntry(st, e) {
       if (!a?.id || !a?.lib) return;
       const prev = st.entities[a.id];
       st.entities[a.id] = {
-        lib: a.lib, pos: a.pos ?? [0, 0, 0], yaw: a.yaw ?? 0,
+        lib: a.lib, pos: a.pos ?? [0, 0, 0], ...orient(a),
         ...(a.scale != null ? { scale: a.scale } : {}),
         // `collide` ("exact" | "box") is the spawner's override of the
         // size-derived collider choice, and the fold used to drop it: the
@@ -219,7 +247,7 @@ export function foldEntry(st, e) {
       // and crash-looped the door): a place with an unusable pos KEEPS the
       // prior position — malformed shapes nothing, per §1's totality rule.
       if (Array.isArray(a.pos) && a.pos.length === 3 && a.pos.every(Number.isFinite)) ent.pos = a.pos;
-      if (a.yaw != null) ent.yaw = a.yaw;
+      reorient(ent, a);
       if (a.scale != null) ent.scale = a.scale;
       return;
     }
@@ -255,6 +283,7 @@ export function foldEntry(st, e) {
         ...(base?.comp ? { comp: base.comp } : {}),
         ...(base?.parent ? { parent: base.parent } : {}),
         ...(base?.yaw != null ? { yaw: base.yaw } : {}),
+        ...(base?.q ? { q: base.q } : {}),
         ...(base?.scale != null ? { scale: base.scale } : {}),
         // a re-light is a partial update, not a re-authoring: the FIRST
         // placer stays (the #190 known edge — an owner brightening someone's
@@ -291,6 +320,16 @@ export function foldEntry(st, e) {
         for (const child of Object.values(st.entities)) {
           if (child.parent?.to !== a.id) continue;
           const off = child.parent.offset ?? [0, 0, 0];
+          if (gone.q || child.parent.q) {
+            // full rotation: the offset turns with the carrier's whole
+            // orientation, and the rider's own relative turn composes on it
+            const qg = gone.q ?? qFromYaw(gone.yaw ?? 0);
+            const r = qRotate(qg, [Number(off[0]) || 0, Number(off[1]) || 0, Number(off[2]) || 0]);
+            child.pos = [gone.pos[0] + r[0], gone.pos[1] + r[1], gone.pos[2] + r[2]];
+            setQ(child, qMul(qg, child.parent.q ?? qFromYaw(child.parent.yaw ?? 0)));
+            delete child.parent;
+            continue;
+          }
           const yaw = gone.yaw ?? 0;
           const [ox, oy, oz] = off;
           child.pos = [
@@ -459,6 +498,7 @@ export function foldEntry(st, e) {
         ...(a.slot ? { slot: String(a.slot) } : {}),
         ...(Array.isArray(a.offset) ? { offset: a.offset } : {}),
         ...(a.yaw != null ? { yaw: a.yaw } : {}),
+        ...(qNorm(a.q) ? { q: qNorm(a.q) } : {}),
       };
       const ent = st.entities[a.id];
       if (ent) ent.parent = rel;
@@ -474,7 +514,7 @@ export function foldEntry(st, e) {
         // must never depend on reconstructing where the parent was. Finite
         // or nothing, same rule as place (§24k).
         if (Array.isArray(a.pos) && a.pos.length === 3 && a.pos.every(Number.isFinite)) ent.pos = a.pos;
-        if (a.yaw != null) ent.yaw = a.yaw;
+        reorient(ent, a);
       }
       if (st.mounts) {
         delete st.mounts[a.id];
@@ -582,15 +622,17 @@ export function stateToEntries(state, {
       // light merge just learned to preserve. pos rides along (idempotent
       // over the light entry) because a pos-less place is legal but at least
       // one consumer (mcpl applyEntry) assigns args.pos unguarded.
-      if (e.yaw != null || e.scale != null) {
+      if (e.yaw != null || e.q || e.scale != null) {
         add('place', { id, pos: e.pos,
           ...(e.yaw != null ? { yaw: e.yaw } : {}),
+          ...(e.q ? { q: e.q } : {}),
           ...(e.scale != null ? { scale: e.scale } : {}) },
           e.actor ?? 'world', e.ts ?? now);
       }
     } else {
       add('spawn', {
         id, lib: e.lib, pos: e.pos, yaw: e.yaw,
+        ...(e.q ? { q: e.q } : {}),
         ...(e.scale != null ? { scale: e.scale } : {}),
         // the spawn verb's collide override decides exact-vs-box; dropping
         // it made the same object walkable or solid depending on when you
