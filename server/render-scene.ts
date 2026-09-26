@@ -8,6 +8,7 @@ import { effectiveWorldTransform } from "../mcpl/effective.ts";
 import { effectiveSky, effectiveClock } from "../shared/forecast.js";
 import { projectFlora } from "./render-flora.ts";
 import { advanceSim, simSnapshot, tickOf } from "../shared/sim.js";
+import { waterParams, vector, MAX_AIR } from "../shared/water.js";
 import type { Client, World } from "./world.ts";
 
 export const RENDER_VERSION = 1;
@@ -30,6 +31,23 @@ export function projectEnvironment(state: any) {
     sky: state.sky ?? null, grass: state.grass ?? null, flora: projectFlora(state.grass,height) };
 }
 
+// Renderer-facing component parameters (tools/water/README.md). Water is
+// normalized by the same law the browser uses; the rest pass through bounded.
+const PASS_THROUGH = ["environment", "vehicle", "traversal", "collision"] as const;
+export function projectComponentData(comp: any) {
+  const data: Record<string, unknown> = {};
+  if (comp?.water) { const { center, size, absorption, scatter, speed, waves } = waterParams(comp.water);
+    data.water = { center, size, absorption, scatter, speed, waves }; }
+  if (Array.isArray(comp?.air?.boxes)) data.air = { boxes: comp.air.boxes.slice(0, MAX_AIR).map((b: any) => {
+    const q = Array.isArray(b?.q) && b.q.length === 4 && b.q.every(Number.isFinite) ? b.q : [0, 0, 0, 1];
+    return { center: vector(b?.center), size: vector(b?.size, [1, 1, 1]).map(Math.abs), q }; }) };
+  for (const k of PASS_THROUGH) if (comp?.[k] && typeof comp[k] === "object") {
+    if (JSON.stringify(comp[k]).length > 16384) throw Error(`component ${k} exceeds native budget`);
+    data[k] = comp[k];
+  }
+  return Object.keys(data).length ? data : null;
+}
+
 export function projectEntity(id: string, e: any) {
   let structure: any = null;
   if (e.comp?.structure) {
@@ -42,7 +60,7 @@ export function projectEntity(id: string, e: any) {
   }
   const out = { id, lib: e.lib ?? "", kind: e.kind ?? "model", structure,
     color: e.color ?? 0xffe0b0, intensity: e.intensity ?? 1, range: e.range ?? 10,
-    collide: e.collide ?? "exact", components: Object.keys(e.comp ?? {}),
+    collide: e.collide ?? "exact", components: Object.keys(e.comp ?? {}), data: projectComponentData(e.comp),
     interact: {actions:Object.keys(e.comp?.reactions??{}).slice(0,32),sockets:e.comp?.sockets??null,
       locked:!!e.comp?.lock, mounted:!!e.parent, moving:!!e.comp?.motion} };
   return { ...out, revision: hash(out) };

@@ -95,3 +95,19 @@ mount/seating, force reactions and full streamed body-pose parity remain future 
 
 Additional scratch checks: `tools/native-environment-control.ts`,
 `tools/native-interactions-fixture.ts`, and `tools/leasetest.ts`.
+
+## Component data (water, air, environment, vehicles)
+
+Each upserted entity may carry `data`, the renderer-relevant component parameters
+documented in `tools/water/README.md`. Absent when an entity has none of them;
+additive, so version-1 clients that ignore it are unaffected.
+
+- `data.water`: normalized by `shared/water.js` `waterParams` — the same law the
+  browser uses — `{center, size, absorption, scatter, speed, waves}`. Entity-local.
+- `data.air`: `{boxes:[{center, size, q}]}`, at most 16, sizes positive, invalid
+  quaternions replaced by identity. Entity-local; boxes follow the live transform.
+- `data.environment`, `data.vehicle`, `data.traversal`, `data.collision`: passed
+  through as authored (16 KiB cap each; exceeding it fails the projection).
+
+A world is aquatic because its entities carry these components, never because of
+its name. The `water` world is an ordinary world imported by `tools/water/import.ts`.

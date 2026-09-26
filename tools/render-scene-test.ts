@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { emptyState, foldEntry } from "../shared/fold.js";
 import { planStructure } from "../shared/structure.js";
 import { makeHeightField, terrainParams } from "../shared/terrainmath.js";
-import { renderScene, projectEntity, projectEnvironment } from "../server/render-scene.ts";
+import { renderScene, projectEntity, projectEnvironment, projectComponentData } from "../server/render-scene.ts";
 import { createNativeLogin } from "../server/native-login.ts";
 import { captureCapability } from "../server/snapshots.ts";
 import { effectiveClock, effectiveSky } from '../shared/forecast.js';
@@ -137,4 +137,27 @@ test("all-world native access requires explicit browser approval; old grants sta
   }
   expect(issued.map(s=>s.nativeWorld)).toEqual(["water","*"]);expect(issued[1].scopes).toEqual(["worlds:join"]);
   expect(captureCapability({version:1,engine:"unreal",scene:"world-projection"})?.scene).toBe("world-projection");
+});
+
+test("water, air and environment components reach native renderers as normalized data",()=>{
+  const f=fixture();
+  f.write("spawn",{id:"ocean",lib:"ocean.glb",pos:[0,0,0]});
+  f.write("comp",{id:"ocean",type:"water",data:{center:[0,-50,0],size:[400,100,-400],absorption:[.2,.06,-1],speed:99,
+    waves:[{amplitude:.4,wavelength:12,direction:[3,4]}],script:"ignored"}});
+  f.write("comp",{id:"ocean",type:"environment",data:{spawn:[0,-5,0],bounds:{min:[-200,-100,-200],max:[200,20,200]}}});
+  f.write("spawn",{id:"habitat",lib:"habitat.glb",pos:[10,-30,5]});
+  f.write("comp",{id:"habitat",type:"air",data:{boxes:[{center:[0,1,0],size:[4,-3,6],q:[0,0,0,"x"]}]}});
+  const up=Object.fromEntries(f.request(1000).upserts.map((e:any)=>[e.id,e]));
+  expect(up.ocean.data.water.size).toEqual([400,100,400]);
+  expect(up.ocean.data.water.absorption).toEqual([.2,.06,0]);
+  expect(up.ocean.data.water.speed).toBe(20);
+  expect(up.ocean.data.water.waves[0].direction[0]).toBeCloseTo(.6);
+  expect(up.ocean.data.water.script).toBeUndefined();
+  expect(up.ocean.data.environment.spawn).toEqual([0,-5,0]);
+  expect(up.habitat.data.air.boxes[0]).toEqual({center:[0,1,0],size:[4,3,6],q:[0,0,0,1]});
+  expect(projectComponentData({reactions:{}})).toBeNull();
+  f.write("comp",{id:"ocean",type:"water",data:{center:[0,-40,0],size:[400,100,400]}});
+  const next=f.request(2000).upserts.map((e:any)=>e.id);
+  expect(next).toEqual(["ocean"]);
+  expect(()=>projectComponentData({vehicle:{blob:"x".repeat(20000)}})).toThrow();
 });
