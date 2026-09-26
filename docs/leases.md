@@ -74,8 +74,11 @@ malformed input dropped.
   states are dropped silently (a lost holder's tail never fights the
   successor).
 
-- **`{op: "release", id, p?, yaw?}`** — done. If a final transform rides
-  along (or the server holds a last state), the server **commits** it:
+- **`{op: "release", id, p?, yaw?, q?}`** — done. If a final transform rides
+  along (or the server holds a last state), the server **commits** it —
+  orientation included: the release's `q`, else the last streamed `q`,
+  except that a release stating a `yaw` without a `q` means *upright at that
+  heading* (PROTOCOL §9.1) and commits no tilt:
   a `place` entry, actor `"world"`, args carrying `{by: holder, via:
   "lease"}` — the same provenance pattern as reaction effects. Then
   `{op: "released", id}` to everyone. The object is at rest in the log;

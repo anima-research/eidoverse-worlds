@@ -61,14 +61,14 @@ measured on the fields above (see `fixtures/README.md`).
 | verb | args | fold effect |
 |---|---|---|
 | `genesis` | `{v, dialect}` | nothing (version marker) |
-| `spawn` | `{id, lib, pos?, yaw?, scale?, collide?}` | create **or replace** entity (see §3.1) |
-| `place` | `{id, pos?, yaw?, scale?}` | update transform; re-stamps rest pose |
+| `spawn` | `{id, lib, pos?, yaw?, q?, scale?, collide?}` | create **or replace** entity (see §3.1) |
+| `place` | `{id, pos?, yaw?, q?, scale?}` | update transform; re-stamps rest pose. Orientation per §9.1 |
 | `light` | `{id, pos?, color?, intensity?, range?, keep?, day?}` | create light entity; re-issuing on an id that already folds as a light is a **partial update** (absent fields keep their prior value); a non-light holding the id is replaced wholesale (§3.1) |
-| `remove` | `{id}` | delete entity; children mounted on it get their **absolute pose computed and stamped** (parent pos + yaw-rotated offset), then orphaned; body mounts onto it are cleared |
+| `remove` | `{id}` | delete entity; children mounted on it get their **absolute pose computed and stamped** (parent pos + offset rotated by the parent's orientation, §9.1), then orphaned; body mounts onto it are cleared |
 | `comp` | `{id, type, data\|null}` | `entities[id].comp[type] = data`; null deletes. **Blind**: data is opaque to the fold. Writers SHOULD keep data ≤ 8 KB |
 | `motion` | `{id, type, …params}` | sugar: `comp[motion] = args-minus-id`; `type: null` deletes. If `t0` absent, fold stamps `t0 = entry.ts` |
-| `mount` | `{id, to, slot?, offset?, yaw?}` | if `id` is an entity: set its `parent`; else record in `mounts` (a body). No-op if `to` missing or `id == to` |
-| `dismount` | `{id, pos?, yaw?}` | clear parent/mount; if entity and pos given, **stamp** it (§9 invariant) |
+| `mount` | `{id, to, slot?, offset?, yaw?, q?}` | if `id` is an entity: set its `parent`; else record in `mounts` (a body). No-op if `to` missing or `id == to` |
+| `dismount` | `{id, pos?, yaw?, q?}` | clear parent/mount; if entity and pos given, **stamp** it (§9 invariant) |
 | `use` | `{id, action}` | **nothing** — a cause, kept as history; effects are separate entries |
 | `force` | `{at:[x,y,z], radius?, power?}` | **nothing** — a physical cause (blast/gust); LIVE clients apply it to bodies they own, under those bodies' consent; replay never re-detonates *(dialect v2)* |
 | `punt` | `{id, power?, dir?}` | **nothing** — a physical cause on an entity; a LIVE client volunteers to simulate the flight via an animation lease (§5), and the landing arrives as an ordinary `place` *(dialect v2)* |
@@ -207,6 +207,43 @@ quaternions where full rotation is needed — never Euler triples. Colors are
 integers (`0xffd9a0`). Times are epoch milliseconds on the sequencer's
 clock. Entity ids are opaque strings; asset paths are content-addressed
 under `store/` (`<sha256-prefix>.glb`) — a binding pins exact bytes.
+
+### 9.1 Orientation: `q`, with `yaw` as its friendly subset
+
+*Amendment (2026-09-26, Hesperus — draft on a workbench branch, not yet
+ratified).* An entity's orientation MAY be a full unit quaternion `q:
+[x, y, z, w]` (same layout as the pose wire), for things that are more than
+turned: a crate on its edge, a lamp knocked flat, anything a lease let
+tumble. `yaw` stays exactly what it was — and is the whole vocabulary a
+writer needs for anything upright.
+
+- **Folded state.** An entity folds `q` only when a verb gave it one. When it
+  has a `q`, that is the whole truth, and its `yaw` is always that `q`'s
+  *heading* (atan2 of the rotated +Z, as above; for a thing facing straight
+  up or down, the heading of its rotated +Y, negated when it faces up — the
+  continuous limit). So a yaw-only reader is always right about which way a
+  thing faces, and a log that never says `q` folds exactly as before.
+- **`spawn`** with a usable `q` folds that orientation (normalized); else
+  `yaw` as always.
+- **`place` / `dismount`**: a usable `q` replaces the orientation (and wins
+  over any `yaw` in the same args). A bare `yaw` means *turn it about +Y to
+  that heading*: an upright thing just turns, and a tilted thing turns where
+  it lies, keeping its tilt (`q' = R_y(yaw − heading(q)) ⊗ q`). Only an
+  explicit `q` stands a thing back up. Neither → orientation unchanged.
+- **`mount`**: `q` is the rider's orientation relative to its carrier, like
+  `yaw`. On `remove`, riders' offsets rotate by the carrier's full
+  orientation and their orientation composes (`q_carrier ⊗ q_rel`); a log
+  with no `q` anywhere takes the original yaw arithmetic unchanged.
+- **Usable** = an array of four finite numbers with a nonzero norm; anything
+  else shapes nothing (the §1 totality rule), and a spawn falls back to its
+  `yaw`.
+- **Numerics.** The fold computes headings and yaw-rotations with owned
+  trig (`shared/simmath.js`, PROTOCOL_v2 Covenant I's kernels) — never host
+  `sin/cos/atan2` — so every runtime folds the same bits.
+- **Readers that only speak yaw** (older clients, agent tools) keep working
+  and stay honest about facing; they will show a toppled thing upright. That
+  divergence is the reason this is announced as an amendment rather than
+  slipped in. ⚑ open: whether logs that use `q` bump `genesis.v`.
 
 ## 10. Extending the protocol
 
