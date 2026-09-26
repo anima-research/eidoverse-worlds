@@ -373,15 +373,20 @@ export class WorldSession {
    *  transform becomes an ordinary `place` entry — server-authored like a
    *  reaction effect, the cause in args — so nothing is ever lost to a
    *  crashed, preempted, or stale simulator. */
-  settleLease(id: string, final?: { p?: number[] | null; yaw?: number | null }) {
+  settleLease(id: string, final?: { p?: number[] | null; yaw?: number | null; q?: number[] | null }) {
     const L = this.leases.get(id);
     if (!L) return;
     const p = final?.p ?? L.lastState?.p ?? null;
     const yaw = final?.yaw ?? L.lastState?.yaw;
+    // the resting orientation: a release that states a yaw without a q means
+    // "upright at this heading" (physobj's self-righting box), so a tilt
+    // streamed earlier must not outvote it; otherwise the last streamed q
+    // is where it came to rest, tumbled or not
+    const q = final?.q ?? (final?.yaw != null ? undefined : L.lastState?.q);
     this.leases.delete(id);
     if (p && this.log.state.entities[id]) {
       this.commit("world", "place", {
-        id, pos: p, ...(yaw != null ? { yaw } : {}), by: L.holder.id, via: "lease",
+        id, pos: p, ...(yaw != null ? { yaw } : {}), ...(q ? { q } : {}), by: L.holder.id, via: "lease",
       });
     }
     this.broadcast({ type: "lease", op: "released", id });

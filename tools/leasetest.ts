@@ -161,6 +161,39 @@ const ball2 = e2.msgs.find((m) => m.type === "snapshot")?.state?.entities?.ball?
 check("punt folds to nothing — late joiner sees only where it rests", ball2?.[0] === 3, JSON.stringify(ball2));
 e2.close();
 
+// 11. full orientation (PROTOCOL §9 amendment): a tumbled thing rests tilted
+const TILT = [0.5, 0.5, 0.5, 0.5];                      // 120° about (1,1,1): on an edge, not a face
+const f = await open("tumbler");
+f.pose([20, 0, 20]);
+f.verb("spawn", { id: "die", lib: "x.glb", pos: [20, 0, 20] });
+await sleep(250);
+f.lease("claim", "die");
+await f.next((m) => m.type === "lease" && m.op === "granted" && m.id === "die");
+f.lease("state", "die", { p: [21, 0.4, 20], q: TILT });
+await sleep(120);
+f.lease("release", "die", { p: [21, 0.4, 20] });
+const pq = await c.next((m) => m.type === "log" && m.entry?.verb === "place" && m.entry?.args?.id === "die");
+check("a release after a tumble commits the streamed q", JSON.stringify(pq.entry.args.q) === JSON.stringify(TILT), JSON.stringify(pq.entry.args));
+f.lease("claim", "die");
+await f.next((m) => m.type === "lease" && m.op === "granted" && m.id === "die");
+f.lease("state", "die", { p: [21, 0.4, 20], q: TILT });
+await sleep(120);
+f.lease("release", "die", { p: [21, 0.5, 20], yaw: 0.7 });
+const pu = await c.next((m) => m.type === "log" && m.entry?.verb === "place" && m.entry?.args?.id === "die" && m.entry.args.pos?.[1] === 0.5);
+check("...a release that states a yaw (no q) rests upright", pu.entry.args.q === undefined && pu.entry.args.yaw === 0.7, JSON.stringify(pu.entry.args));
+f.lease("claim", "die");
+await f.next((m) => m.type === "lease" && m.op === "granted" && m.id === "die");
+f.lease("state", "die", { p: [22, 0.4, 20], q: TILT });
+await sleep(150);
+f.close();
+const pd = await c.next((m) => m.type === "log" && m.entry?.verb === "place" && m.entry?.args?.id === "die" && m.entry.args.pos?.[0] === 22, 5000);
+check("...a holder who vanishes mid-tumble leaves it tilted", JSON.stringify(pd.entry.args.q) === JSON.stringify(TILT), JSON.stringify(pd.entry.args));
+const g2 = await open("latecomer3");
+await sleep(300);
+const dieQ = g2.msgs.find((m) => m.type === "snapshot")?.state?.entities?.die?.q;
+check("...and a late joiner folds the tilt", Array.isArray(dieQ) && Math.abs(dieQ[0] - 0.5) < 1e-12, JSON.stringify(dieQ));
+g2.close();
+
 a.close(); c.close();
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
