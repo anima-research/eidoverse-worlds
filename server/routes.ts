@@ -510,10 +510,12 @@ const ROUTES: Route[] = [
       // a dozen flights ago — the sim's answer outranks it, exactly as the
       // punt verb's own reach math already composes (verbs.ts). Without this
       // an agent measuring a punted crate was told where it USED to be.
-      const simAt = (eid: string, e: { pos: number[]; yaw?: number }) => {
+      // A folded q (PROTOCOL §9.1) is the full orientation — yaw is then its
+      // heading. A sim-owned body speaks yaw only, so its live answer drops q.
+      const simAt = (eid: string, e: { pos: number[]; yaw?: number; q?: number[] }) => {
         const b = (w as any).sim?.bodies?.[eid];
         return b ? { pos: b.p as number[], yaw: (typeof b.yaw === "number" ? b.yaw : e.yaw ?? 0) }
-          : { pos: e.pos, yaw: e.yaw ?? 0 };
+          : { pos: e.pos, yaw: e.yaw ?? 0, ...(e.q ? { q: e.q } : {}) };
       };
       const id = url.searchParams.get("id");
       if (id) {
@@ -522,9 +524,9 @@ const ROUTES: Route[] = [
         const file = e.lib ? resolveLibFile(e.lib) : null;
         const sum = file ? await summarizeGlb(file) : null;
         const at = simAt(id, e);
-        return j({ id, lib: e.lib ?? null, pos: at.pos, yaw: at.yaw, scale: e.scale ?? 1,
+        return j({ id, lib: e.lib ?? null, pos: at.pos, yaw: at.yaw, ...(at.q ? { q: at.q } : {}), scale: e.scale ?? 1,
           parent: e.parent ?? null, comp: e.comp ?? {},
-          geometry: sum,   // local frame — compose with pos/yaw/scale for world space
+          geometry: sum,   // local frame — compose with pos/q-or-yaw/scale for world space
           note: "geometry coords are the MODEL's local frame; sockets use the same frame, so a topSurface center is a socket pos verbatim" });
       }
       const withBoxes = url.searchParams.get("boxes") !== "0";
@@ -534,7 +536,7 @@ const ROUTES: Route[] = [
         const sum = file ? await summarizeGlb(file) : null;
         const at = simAt(eid, e);
         out.push({ id: eid, lib: e.lib ?? null, kind: e.kind ?? "thing",
-          pos: at.pos, yaw: at.yaw, scale: e.scale ?? 1,
+          pos: at.pos, yaw: at.yaw, ...(at.q ? { q: at.q } : {}), scale: e.scale ?? 1,
           parent: e.parent ?? null, comp: e.comp ?? {},
           ...(sum ? { bbox: sum.bbox, tris: sum.tris } : {}) });
       }
