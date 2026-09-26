@@ -11,6 +11,9 @@ import { CONFIG, angleDelta, bus } from './base.js';
 import { heightAt } from './terrain.js';
 import { resolveColliders, lastBlockedTop, findSeat, raySegment } from './colliders.js';
 import { chat } from './chat.js';
+import { waterAt, waterTime, movementBounds } from './water.js';
+import { nearbyTraversal, startTraversal, stepTraversal, traversing, cancelTraversal } from './traversal.js';
+import { swimStep, waveHeight } from '../../shared/water.js';
 import { isOverlayOpen, flashHint } from './ui.js';
 import { selectClip } from './locomotion_clip.js';
 import {
@@ -242,6 +245,8 @@ export const myState = {
   emote: null,       // one-shot, cleared after it's been sent once
   pose: undefined,   // held custom bone override (null clears); presence only
   wingsFolded: false, // semantic body posture; each rig renders its own fold
+  q: undefined,
+  locomotion: undefined,
   seat: null,        // { id, chair } while seated on something
 };
 
@@ -305,6 +310,10 @@ bus.on('key', (e) => {
   // build.js binds R/F and the arrows to nudge/raise/turn, where holding the
   // key to keep moving a thing is the whole interaction.
   if (e.repeat) return;
+  if (e.code === 'KeyE' && !CONFIG.spectate && !photoMode && !myState.seat && myState.locomotion?.mode !== 'pilot') {
+    if (traversing()) { cancelTraversal(); e.worldHandled=true; }
+    else if (startTraversal(myState.pos)) { e.worldHandled=true; flashHint('climbing — E to let go'); }
+  }
   if (e.code === 'KeyX') toggleSit();
   if (e.code === 'KeyF') { const m = toggleFlight(); if (m) flashHint?.(m); }
   if (e.code === 'KeyZ') { posture = posture === 'lie' ? null : 'lie'; myState.seat = null; }
@@ -489,11 +498,13 @@ export function enableTouch() {
   // one key (Enter) away. NOTE: the chat import stays — Enter opens chat and
   // chat.isOpen gates movement.
   const btns = document.getElementById('touchbtns');
-  for (const [label, code] of [['⤒', 'Space']]) {
+  for (const [label, code] of [['⤒', 'Space'], ['⤓', 'KeyC']]) {
     const b = document.createElement('button');
     b.className = 'panel';
     b.textContent = label;
-    b.addEventListener('pointerdown', () => keys.add(code));
+    b.addEventListener('pointerdown', e => { b.setPointerCapture(e.pointerId); keys.add(code); });
+    b.addEventListener('pointercancel', () => keys.delete(code));
+    b.addEventListener('lostpointercapture', () => keys.delete(code));
     b.addEventListener('pointerup', () => keys.delete(code));
     btns.appendChild(b);
   }
@@ -506,6 +517,65 @@ const _dir = new THREE.Vector3();
 const _eye = new THREE.Vector3();
 const _facing = new THREE.Vector3();
 const UP = new THREE.Vector3(0, 1, 0);
+
+let swimVelocity = [0, 0, 0], lastClimbHint = null;
+const _swimProbe = new THREE.Vector3(), _swimOld = new THREE.Vector3();
+const _swimQ = new THREE.Quaternion(), _swimTilt = new THREE.Quaternion();
+export function constrainMovement(pos) {
+  const bounds = movementBounds();
+  if (bounds?.min?.length === 3 && bounds?.max?.length === 3) {
+    for (const [i,axis] of ['x','y','z'].entries())
+      if (Number.isFinite(bounds.min[i]) && Number.isFinite(bounds.max[i])) pos[axis] = THREE.MathUtils.clamp(pos[axis], bounds.min[i], bounds.max[i]);
+  } else if (!bounds && !waterAt(pos)) {
+    // Preserve the legacy stage boundary only for worlds without authored bounds.
+    const r = Math.hypot(pos.x,pos.z); if(r>78){pos.x*=78/r;pos.z*=78/r;}
+  }
+}
+function updateSwimming(dt, me, fwd, strafe) {
+  _swimProbe.copy(myState.pos); _swimProbe.y += .7;
+  const water = waterAt(_swimProbe);
+  if (!water || myState.seat) { swimVelocity=[0,0,0];return false; }
+  _swimProbe.copy(myState.pos);
+  const floor = resolveColliders(_swimProbe,heightAt);
+  const rise=keys.has('Space'), dive=keys.has('KeyC')||keys.has('ControlLeft')||keys.has('ControlRight');
+  // Wading is still walking. At a deep shoreline gravity hands over to swim.
+  if(floor >= waveHeight(water,myState.pos.x,myState.pos.z,waterTime())-1.1 && !rise) return false;
+  if(flight){flight=null;releaseWings();}
+  if(!myState.locomotion)flashHint('swimming — WASD move, Space rise, C / Ctrl dive, Shift faster');
+  mantle=null;posture=null;grounded=false;vy=0;airborneFor=0;
+  _dir.set(strafe,0,-fwd).applyAxisAngle(UP,camYaw);
+  _dir.y = Number(rise)-Number(dive)-fwd*Math.sin(camPitch-.32);
+  const input={direction:_dir.toArray(),rise,dive,fast:keys.has('ShiftLeft')||keys.has('ShiftRight')};
+  let mode='swim';const steps=Math.max(1,Math.ceil(dt/(1/60)));
+  for(let i=0;i<steps;i++){
+    _swimOld.copy(myState.pos);
+    const next=swimStep(myState.pos.toArray(),swimVelocity,input,water,dt/steps,waterTime());
+    myState.pos.fromArray(next.pos);swimVelocity=next.velocity;mode=next.mode;
+    // Sweep torso and head before resolving support; this also stops upward
+    // swimming through a habitat ceiling, which walking's floor probe cannot.
+    _dir.copy(myState.pos).sub(_swimOld);const distance=_dir.length();
+    if(distance>.00001){_dir.divideScalar(distance);
+      for(const h of [.3,1.1]){
+        _swimProbe.copy(_swimOld);_swimProbe.y+=h;
+        const hit=raySegment(_swimProbe,_dir,distance+.3);
+        if(hit!==null){myState.pos.copy(_swimOld).addScaledVector(_dir,Math.max(0,hit-.3));swimVelocity=[0,0,0];break;}
+      }
+    }
+    const bottom=resolveColliders(myState.pos,heightAt);
+    if(myState.pos.y<bottom){myState.pos.y=bottom;swimVelocity[1]=Math.max(0,swimVelocity[1]);}
+    constrainMovement(myState.pos);
+  }
+  const horizontal=Math.hypot(swimVelocity[0],swimVelocity[2]);
+  if(horizontal>.05)myState.yaw+=angleDelta(myState.yaw,Math.atan2(swimVelocity[0],swimVelocity[2]))*Math.min(1,dt*8);
+  myState.speed=Math.hypot(...swimVelocity);myState.clip='idle';
+  myState.locomotion={mode,medium:'water',body:'diver'};me.locomotion=myState.locomotion;
+  _swimQ.setFromAxisAngle(UP,myState.yaw);
+  _swimTilt.setFromAxisAngle(new THREE.Vector3(1,0,0),mode==='surface'?0:Math.min(1.1,horizontal*.4));
+  _swimQ.multiply(_swimTilt);myState.q=_swimQ.toArray();
+  me.root.position.copy(myState.pos);me.root.quaternion.copy(_swimQ);me.setClip('idle',0);
+  myState.pitch=THREE.MathUtils.clamp(camPitch-.32,-.45,.55);me.pitch=firstPerson?0:myState.pitch;
+  updateFollowCamera(dt,me);return true;
+}
 
 export function updateMe(dt, me) {
   if (!me) return;
@@ -525,6 +595,23 @@ export function updateMe(dt, me) {
   if (!Number.isFinite(myState.speed)) myState.speed = 0;
   if (!Number.isFinite(camYaw)) camYaw = 0;
   if (!(Number.isFinite(myState.pos.x) && Number.isFinite(myState.pos.y) && Number.isFinite(myState.pos.z))) myState.pos.copy(_lastFinitePos); else _lastFinitePos.copy(myState.pos);
+  const climb=stepTraversal(dt);
+  if(climb){
+    if(flight){flight=null;releaseWings();}
+    mantle=null;posture=null;myState.seat=null;swimVelocity=[0,0,0];vy=0;grounded=false;airborneFor=0;
+    myState.pos.copy(climb.pos);myState.yaw=climb.yaw;myState.speed=climb.speed;
+    myState.clip='climb';myState.locomotion={mode:'climb',medium:'air',body:'diver'};myState.q=undefined;
+    me.locomotion=null;me.root.position.copy(myState.pos);me.root.rotation.set(0,myState.yaw,0);me.setClip('climb',climb.speed);
+    updateFollowCamera(dt,me);return;
+  }
+  const nearby=nearbyTraversal(myState.pos),hint=nearby?`${nearby.id}/${nearby.index}/${nearby.reverse}`:null;
+  if(hint&&hint!==lastClimbHint)flashHint(`E — ${nearby.reverse?'climb down':'climb up'} ${nearby.name}`);
+  lastClimbHint=hint;
+  if (updateSwimming(dt, me, fwd, strafe)) return;
+  myState.q = undefined;
+  myState.locomotion = undefined;
+  me.locomotion = null;
+  me.root.rotation.set(0, myState.yaw, 0);
   const moving = Math.abs(fwd) > 0.08 || Math.abs(strafe) > 0.08;
   wantMove = moving;   // INTENT, for the clip choice below: the walk→idle blend starts on key release, not 0.34 s later when the coast ends
   const running = keys.has('ShiftLeft') || keys.has('ShiftRight');
@@ -544,9 +631,7 @@ export function updateMe(dt, me) {
     const targetYaw = Math.atan2(_dir.x, _dir.z);
     myState.yaw += angleDelta(myState.yaw, targetYaw) * Math.min(1, 12 * dt); myState.yaw = Math.atan2(Math.sin(myState.yaw), Math.cos(myState.yaw));   // the accumulator wraps too (the owner's recorder: root 7.62 = 1.34 + 2π after setCamYaw already wrapped)
     myState.pos.addScaledVector(_dir, myState.speed * dt);
-    const R = 78; // stay on the island
-    const r = Math.hypot(myState.pos.x, myState.pos.z);
-    if (r > R) { myState.pos.x *= R / r; myState.pos.z *= R / r; }
+    constrainMovement(myState.pos);
   }
 
   // ---- vertical

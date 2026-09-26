@@ -212,11 +212,14 @@ function applyImmediate(r) {
   const s = r.buf[r.buf.length - 1];
   if (!r.avatar || !s) return;
   r.avatar.root.position.set(...s.p);
-  r.avatar.root.rotation.y = s.yaw ?? 0;
+  if (s.q) r.avatar.root.quaternion.fromArray(s.q).normalize();
+  else r.avatar.root.rotation.set(0,s.yaw ?? 0,0);
+  r.avatar.locomotion = s.locomotion ?? null;
 }
 
 // Bone blending scratch. This runs per bone, per remote, per frame — nothing
 // on that path may allocate.
+const _up = new THREE.Vector3(0,1,0);
 const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _qk = new THREE.Quaternion();
 /** Marks "the bones are mid-blend": non-null so a later release still clears,
  *  and never `===` a sample's pose so a held pose always re-applies. */
@@ -375,7 +378,8 @@ export function updateRemotes(dt, now = performance.now()) {
       const sw = mountTransform(r.id, _a, { path: r.avatarPath, av: r.avatar });
       if (sw) {
         r.avatar.root.position.copy(_a);
-        r.avatar.root.rotation.y = sw.yaw;
+        r.avatar.root.rotation.set(0,sw.yaw,0);
+        r.avatar.locomotion = null;
         // Declared seat state (#101): the ≈ marker and one console line per
         // transition — an unprofiled seat renders where it always did, but
         // never silently.
@@ -428,7 +432,12 @@ export function updateRemotes(dt, now = performance.now()) {
 
       _a.set(...a.p); _b.set(...b.p);
       r.avatar.root.position.copy(_a).lerp(_b, k);
-      r.avatar.root.rotation.y = a.yaw + angleDelta(a.yaw, b.yaw ?? a.yaw) * k;
+      if(a.q || b.q){
+        if(a.q)_qa.fromArray(a.q).normalize();else _qa.setFromAxisAngle(_up,a.yaw??0);
+        if(b.q)_qb.fromArray(b.q).normalize();else _qb.setFromAxisAngle(_up,b.yaw??0);
+        r.avatar.root.quaternion.copy(_qa).slerp(_qb,k);
+      } else r.avatar.root.rotation.set(0,(a.yaw??0)+angleDelta(a.yaw??0,b.yaw??a.yaw??0)*k,0);
+      r.avatar.locomotion = b.locomotion ?? null;
       r.avatar.pitch = (a.pitch ?? 0) + ((b.pitch ?? 0) - (a.pitch ?? 0)) * k;
       // drop samples we've moved past, but always keep one behind renderAt
       while (buf.length > 2 && buf[1].t < renderAt - 400) buf.shift();

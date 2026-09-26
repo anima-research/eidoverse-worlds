@@ -172,6 +172,11 @@ changed content shapes; presence-plane, never logged).
 
 ## 7. Quirks recorded, not yet ruled on
 
+Underwater/native-client extension (2026-09-10): optional `pose.q` normalized
+body quaternion and `pose.locomotion` descriptive metadata are validated and
+relayed on the existing presence lane. See `UNDERWATER-PRESENCE.md`. No new
+verb, permission, server physics or log dialect is introduced.
+
 Flagged for the phase-1 protocol review — each is as-built behavior a new
 client must currently reproduce, and a candidate for a deliberate ruling:
 

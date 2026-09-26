@@ -7,6 +7,7 @@ import { THREE, scene, camera, renderer, backendName } from './core.js';
 import { makeCapsuleVrm } from './capsulebody.js';
 import { FADE_PRESS } from './locomotion_clip.js';   // one owner for the jump-press fade (see _setAction)
 import { report, angleDelta, bus, tee } from './base.js';
+import { swimPose } from '../../shared/swimpose.js';
 import { defsRegistry } from './defs.js';
 import { measureChain, solveChain } from './reachbone.js';
 import { REACH_CHAINS } from '../../shared/joints.js';
@@ -1906,6 +1907,21 @@ export class Avatar {
 
     BC('av:mixer');
     this.mixer.update(dt);
+    // Generic humanoid swim overlay; semantic presence, no new clip requirement.
+    // Restore the underlying clip every frame so leaving water releases limbs.
+    for (const node of this._swimNodes ?? []) {
+      const r=this._composed.get(node);
+      if(r?.live && node.quaternion.equals(r.out))node.quaternion.copy(r.base);
+    }
+    this._swimNodes=[];
+    if(this.locomotion?.medium==='water' && this.locomotion?.body!=='submarine' && !this._limp && !this._override && !this.emote){
+      for(const [name,rotation] of Object.entries(swimPose(now/1000,this.locomotion.mode==='surface'))){
+        const node=this.vrm.humanoid?.getNormalizedBoneNode(name);if(!node)continue;
+        const r=this._composeBegin(node);
+        node.quaternion.setFromEuler(new THREE.Euler(...rotation));
+        this._composeEnd(node,r);this._swimNodes.push(node);
+      }
+    }
 
     // While limp the clip keeps running (see setLimp for why stopping it is a
     // trap) — so the bones the sim does not drive have to be re-parked after

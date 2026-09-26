@@ -19,9 +19,16 @@ import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
 import { LOD_RECIPE, lodVariantPath, lodVerdictKind, lodVerdictFinal } from "./store-variants.ts";
 import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
+import { createNativeLogin } from "./native-login.ts";
+const nativeLogin = createNativeLogin({
+  origin: process.env.HN_NATIVE_ORIGIN ?? "https://eidoverse.animalabs.ai",
+  login: HN_LOGIN_URL, enabled: Boolean(HN_ISSUER_KEY), session: sessionFromCookie,
+  issue: session => { const sid = randomBytes(32).toString("hex"); hnSessions.set(sid, session); saveSessions(); return sid; },
+});
 import { resolveLibFile } from "./lint.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { worlds, getWorld, type World } from "./world.ts";
+import { snapshots } from "./snapshots.ts";
 import { handleUpload, optStatus } from "./upload.ts";
 import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
 import { tickStats } from "./tick.ts";
@@ -60,28 +67,9 @@ export type Srv = {
 
 // ---- snapshots: the world serves views of itself ---------------------------
 // GET /snap?world=W&follow=ID → the sequencer asks a renderer client (an
-// invisible hub-spectator on some GPU box, dialed OUT to us like any client)
+// opt-in Unreal player or legacy browser spectator, dialed OUT like any client)
 // to jump its camera to ID's head and return one frame. Clients never know
 // rendering exists as a separate thing — it's just the world's API.
-type PendingSnap = { resolve: (r: { ok: true; png: Uint8Array } | { ok: false; err: string; status: number }) => void };
-export const pendingSnaps = new Map<string, PendingSnap>();
-let nextSnapId = 1;
-
-function requestSnap(world: World, follow: string, view = "first"): Promise<{ ok: true; png: Uint8Array } | { ok: false; err: string; status: number }> {
-  const renderer = [...world.clients].find((c) => c.renderer);
-  if (!renderer) return Promise.resolve({ ok: false, err: `no renderer is currently serving world "${world.name}"`, status: 503 });
-  const target = [...world.clients].find((c) => c.id === follow && !c.spectator);
-  if (!target) return Promise.resolve({ ok: false, err: `"${follow}" is not present in "${world.name}"`, status: 404 });
-  if (!["first", "third", "selfie"].includes(view)) view = "first";
-  const id = `snap-${nextSnapId++}`;
-  return new Promise((resolve) => {
-    pendingSnaps.set(id, { resolve });
-    renderer.ws.send(JSON.stringify({ type: "snap", id, follow, view }));
-    setTimeout(() => {
-      if (pendingSnaps.delete(id)) resolve({ ok: false, err: "renderer timed out", status: 504 });
-    }, 12_000);
-  });
-}
 
 // ---- static serving ---------------------------------------------------------
 
@@ -344,6 +332,7 @@ type Route = {
 };
 
 const ROUTES: Route[] = [
+  { match: u => u.pathname === "/native" || u.pathname.startsWith("/native/"), handler: ({ req }) => nativeLogin(req) },
   {
     match: (u) => u.pathname === "/ws",
     handler: ({ req, srv }) => {
@@ -436,7 +425,11 @@ const ROUTES: Route[] = [
   history.replaceState(null, '', '/auth');
   const r = await fetch('/auth', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token: tok }) });
   const j = await r.json().catch(() => ({}));
-  if (r.ok) { m.textContent = 'welcome, ' + j.name; location.replace('/'); }
+  if (r.ok) {
+    m.textContent = 'welcome, ' + j.name;
+    let code = ''; try { code = sessionStorage.getItem('ew-native-pair-code') || ''; } catch {}
+    location.replace(/^[A-F0-9]{5}-[A-F0-9]{5}$/.test(code) ? '/native#code=' + code : '/');
+  }
   else m.textContent = 'login failed: ' + (j.error ?? r.status) + ' — start again from the login page';
 })();
 </script>`, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } }),
@@ -589,9 +582,10 @@ const ROUTES: Route[] = [
       const w = worlds.get(url.searchParams.get("world") ?? "commons");
       const follow = url.searchParams.get("follow") ?? "";
       if (!w) return new Response("unknown world", { status: 404 });
-      const r = await requestSnap(w, follow, url.searchParams.get("view") ?? "first");
-      if (!r.ok) return new Response(r.err, { status: r.status });
-      return new Response(r.png, { headers: { "content-type": "image/png", "cache-control": "no-store" } });
+      const r = await snapshots.request(w, follow, url.searchParams.get("view") ?? "first", url.searchParams.get("renderer") ?? "auto");
+      if (!r.ok) return new Response(r.err, { status: r.status, headers: { "cache-control": "no-store", ...(r.status === 429 ? { "retry-after": "2" } : {}) } });
+      return new Response(r.png, { headers: { "content-type": "image/png", "cache-control": "no-store",
+        "x-content-type-options": "nosniff", "x-eidoverse-renderer": r.engine, "x-eidoverse-scene": r.scene } });
     },
   },
   {
@@ -879,6 +873,16 @@ const ROUTES: Route[] = [
       const rel = url.pathname.slice("/library/".length);
       // optimized mirror first (draco+webp): same path, ~30x smaller
       const versioned = url.searchParams.has("v") || rel.startsWith("store/"); // content-addressed = immutable
+      // Native importers do not necessarily ship the browser's Draco/WebP
+      // decoders. Explicit negotiation returns provenance bytes, never the
+      // optimized shadow. This changes neither the default browser response
+      // nor asset access rights; serveFrom still enforces path containment.
+      if (url.searchParams.get("native") === "1" && /\.(glb|vrm)$/i.test(rel)) {
+        const patched = normalize(join(PATCH_DIR, rel));
+        if (patched.startsWith(PATCH_DIR + "/") && existsSync(patched)) return serveFrom(PATCH_DIR, rel, true, req, versioned);
+        if (rel.startsWith("store/")) return serveFrom(OPT_DIR, rel, true, req, true);
+        return serveFrom(LIBRARY_DIR, rel, true, req, versioned);
+      }
       // Deliberate upstream forks win over EVERYTHING (upstream-patched/
       // README.md): same URL, versioned in this repo, delete-to-fall-back.
       {

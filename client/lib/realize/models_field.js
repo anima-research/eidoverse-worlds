@@ -105,5 +105,5 @@ export function mountsTouching(stEntities, touchedId, childrenOf = null) {
  *  @param {any} ent   the folded entity record
  *  @param {boolean} mounted  whether the scene object rides a carrier */
 export function collisionOwnedElsewhere(ent, mounted = false) {
-  return !!mounted || !!ent?.comp?.structure;
+  return !!mounted || !!ent?.comp?.structure || ent?.comp?.collision?.enabled === false;
 }

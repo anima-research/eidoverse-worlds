@@ -27,8 +27,9 @@ import { World, type Client, worlds, getWorld, wireSettledPose } from "./world.t
 import { warmBoxes, worldLibs } from "./boxes.ts";
 // The HTTP surface — one route table, /upload behind it in upload.ts (§15,
 // 7c). fetch() below delegates; avatarRoster rides back for the join
-// snapshot, pendingSnaps for the renderer's snap-result replies.
+// snapshot; the separate ephemeral broker owns renderer capture requests.
 import { route, avatarRoster } from "./routes.ts";
+import { snapshots } from "./snapshots.ts";
 import { registerSystem, startTick } from "./tick.ts";
 import { MESSAGES, pendingWhispers, whisperKey } from "./messages.ts";
 import { LIMITS } from "./limits.ts";
@@ -200,6 +201,7 @@ function reapAuxLegs(w: World, primary: Client, closeReason: string) {
   for (const t of [...w.clients]) {
     if (t !== primary && t.id === primary.id && (t.surface ?? "world") !== "world") {
       retireAuxLeg(w, t, primary);
+      snapshots.retire(t);
       w.clients.delete(t); clients.delete(t.ws);
       t.ws.close?.(4007, closeReason);
       console.log(`[world:${w.name}] ${primary.id}/${t.surface} reaped — ${closeReason}`);
@@ -210,6 +212,7 @@ function reapAuxLegs(w: World, primary: Client, closeReason: string) {
 function expel(w: World, target: Client, why: string) {
   try { target.ws.send(JSON.stringify({ type: "error", error: why })); } catch { /* going anyway */ }
   const wasEmbodied = !target.spectator;
+  snapshots.retire(target);
   // an expelled AUX leg announces its own death; an expelled PRIMARY takes
   // its aux legs with it (kick/ban target the identity, not one socket) —
   // review finding 5: expel unmapped + superseded the target, so the close
@@ -376,6 +379,11 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // with an explanation and a close code the client knows not to retry
     // (retrying a name that can never exist is just a polite DoS).
     const wname = String(msg.world ?? "commons");
+    if (auth?.nativeWorld && auth.nativeWorld !== "*" && wname !== auth.nativeWorld) {
+      ws.send(JSON.stringify({ type: "error", error: "this native session is limited to its approved world; sign in again for multi-world access" }));
+      ws.close(4003, "native session world restriction");
+      return null;
+    }
     if (!/^[a-z0-9_-]{1,64}$/i.test(wname)) {
       ws.send(JSON.stringify({ type: "error", error: `"${wname}" is not a world name — check the link that brought you here` }));
       c.ws.close?.(4005, "bad world name");
@@ -428,6 +436,7 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     c.spectator = Boolean(msg.spectate) || c.surface !== "world";
     c.agent = Boolean(msg.agent);
     c.renderer = Boolean(msg.renderer);
+    snapshots.configure(c, msg.capture);
     if (c.renderer) c.spectator = true; // renderers are invisible by definition
     // Same display name, different PERSON (two guild members can share a
     // nick): suffix the newcomer rather than letting takeover fight.
@@ -565,6 +574,7 @@ function installJoin(c: Client, w: World) {
             && (other.surface ?? "world") === c.surface
             && !(other.spectator && (other.surface ?? "world") === "world")) {
           other.superseded = true;
+          snapshots.retire(other);
           retiredGen = other.gen;
           w.clients.delete(other);
           clients.delete(other.ws);
@@ -621,6 +631,7 @@ function buildSnapshot(w: World, c: Client) {
     const jp = w.joinPayload();
     return {
       type: "snapshot",
+      renderSceneVersion: 1,
       world: w.name,
       you: c.id,
       // your durable subject, when the door vouched for one — the principal
@@ -667,7 +678,7 @@ function buildSnapshot(w: World, c: Client) {
 
 const server = Bun.serve({
   port: PORT,
-  hostname: "0.0.0.0",
+  hostname: process.env.HOST ?? "0.0.0.0",
   async fetch(req, srv) {
     // The whole HTTP surface is routes.ts's table (§15, 7c) — one row per
     // endpoint, first match wins, in exactly the order the if-chain had.
@@ -696,6 +707,7 @@ const server = Bun.serve({
       try {
         const c = clients.get(ws);
         if (!c) return;
+        snapshots.retire(c);
         clients.delete(ws);
         // dev crash forensics (?bc=1 clients): the last thing a dying renderer
         // was doing, printed at the only moment we learn it died
@@ -794,6 +806,7 @@ const server = Bun.serve({
           // still rtc- and attest-capable with no living primary, the exact
           // state the 4008 orphan refusal exists to prevent.
           if (c.world) {
+            snapshots.retire(c);
             c.world.clients.delete(c);
             retireAuxLeg(c.world, c);
             if (!c.spectator) {
@@ -1132,7 +1145,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-console.log(`eidoverse-worlds sequencer on http://0.0.0.0:${PORT}`);
+console.log(`eidoverse-worlds sequencer on http://${process.env.HOST ?? "0.0.0.0"}:${PORT}`);
 console.log(`  library: ${LIBRARY_DIR}`);
 console.log(`  worlds:  ${WORLDS_DIR}`);
 if (!JOIN_TOKEN) console.log("  ⚠ NO JOIN_TOKEN — the door is OPEN. Fine on a tailnet, wrong on a public box.");

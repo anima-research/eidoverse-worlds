@@ -103,9 +103,11 @@ export function updateMountedMe(dt) {
   myState.yaw = Math.atan2(Math.sin(sw.yaw), Math.cos(sw.yaw));   // saved yaw may be unwrapped (owner: 7.62 restored on every reload, 09-05)
   myState.speed = 0;
   myState.clip = sw.pose;
+  myState.q = undefined; myState.locomotion = undefined;
   if (me) {
     me.root.position.copy(_seatP);
-    me.root.rotation.y = sw.yaw;
+    me.root.rotation.set(0,sw.yaw,0);
+    me.locomotion = null;
     me.setClip(sw.pose, 0);
   }
   // The camera lives in updateMe, which we skip while seated — so drive it

@@ -247,6 +247,8 @@ export function sendPose(now) {
     pose.clipRate = avatar.current.paused ? 0 : avatar.current.timeScale ?? 1;
   }
   if (ov?.xr) pose.xr = ov.xr;   // C18: tracked head/hands, facing-relative (xrbody.js) — presence, never the log
+  if (s.q) pose.q = s.q;
+  if (s.locomotion) pose.locomotion = s.locomotion;
   if (s.emote) { pose.emote = s.emote; s.emote = null; } // one-shot: send once
   // A held custom pose rides the presence packet (and therefore lastPose, so
   // late joiners see it) — but never the log. `null` explicitly clears it.
