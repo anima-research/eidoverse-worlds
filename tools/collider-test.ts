@@ -236,5 +236,17 @@ console.log('\nfloor-shaped things with lying tops (the blanket rule, issue #11)
   check('collide:"box" still wins over the blanket rule', !C.colliders.get('forced').exact);
 }
 
+{
+  C.clearColliders();
+  prop('target', { h: 2 });
+  const eye = new THREE.Vector3(0, 1, 3), dir = new THREE.Vector3(0, 0, -1);
+  check('camera rays still hit the target collider', C.raySegment(eye, dir, 3) !== null);
+  check('interaction target does not occlude itself', C.raySegment(eye, dir, 3, 'target') === null);
+  prop('wall', { h: 2, at: [0, 0, 1.5] });
+  check('another wall still occludes interaction', C.raySegment(eye, dir, 3, 'target') !== null);
+  C.colliders.get('wall').structOwner = 'target';
+  check('owned structure colliders are excluded with their target', C.raySegment(eye, dir, 3, 'target') === null);
+  C.clearColliders();
+}
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

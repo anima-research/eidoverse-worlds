@@ -1,0 +1,61 @@
+import { strict as assert } from 'node:assert';
+import { mock } from 'bun:test';
+import { GlobalRegistrator } from '@happy-dom/global-registrator';
+GlobalRegistrator.register({ url: 'https://renderer.example/' });
+const listeners = new Map<string, Function[]>(), actions: string[] = [];
+const bus = { on(name: string, fn: Function) { listeners.set(name, [...(listeners.get(name) ?? []), fn]); },
+  emit(name: string, value?: any) { for (const fn of listeners.get(name) ?? []) fn(value); } };
+let overlay = false, focused = true;
+Object.defineProperty(document, 'hasFocus', { value: () => focused });
+mock.module(`${import.meta.dir}/../client/lib/base.js`, () => ({ bus }));
+mock.module(`${import.meta.dir}/../client/lib/ui.js`, () => ({ isOverlayOpen: () => overlay }));
+const input = await import('../client/lib/input.js');
+const pad = { index: 0, id: 'Xbox', connected: true, mapping: 'standard', axes: [0, 0, 0, 0],
+  buttons: Array.from({ length: 17 }, () => ({ pressed: false })) };
+let denied = false;
+Object.defineProperty(navigator, 'getGamepads', { value: () => {
+  if (denied) throw new DOMException('denied', 'SecurityError');
+  return [null, pad];
+} });
+bus.on('input-action', (action: string) => actions.push(action));
+input.pollInput(); pad.buttons[2].pressed = true;
+input.pollInput(); input.pollInput(); assert.deepEqual(actions, ['use']);
+assert.equal(input.usePrompt(), 'X / □');
+input.keys.add('KeyW'); input.touchState.moveX = 1;
+focused = false; window.dispatchEvent(new Event('blur')); input.pollInput();
+assert.equal(input.movementInput().moveX, 0); assert.equal(input.movementInput().moveZ, 0);
+focused = true; input.pollInput(); assert.equal(actions.length, 1);
+pad.buttons[2].pressed = false; input.pollInput();
+overlay = true; pad.buttons[2].pressed = true; input.pollInput();
+overlay = false; input.pollInput(); assert.equal(actions.length, 1);
+pad.buttons[2].pressed = false; input.pollInput();
+const editor = document.createElement('div'); editor.contentEditable = 'true'; editor.tabIndex = 0;
+document.body.append(editor); editor.focus();
+pad.axes[0] = 1; input.pollInput(); assert.equal(input.movementInput().moveX, 0);
+editor.blur(); pad.axes[0] = 0; input.pollInput();
+pad.axes[0] = 1; input.pollInput(); assert.equal(input.movementInput().moveX, 1);
+// A bare `contenteditable` (no value) is editable too. interaction.js used to
+// keep its own copy of this selector and missed exactly this case; there is
+// one definition now, so this is where it is pinned.
+editor.setAttribute('contenteditable', '');
+let clears = 0; bus.on('input-clear', () => { clears++; });
+editor.focus();
+assert.equal(input.typing(), true, 'bare contenteditable is someone typing');
+for (let i = 0; i < 5; i++) input.pollInput();
+assert.equal(input.movementInput().moveX, 0);
+assert.equal(clears, 1, 'a blocked frame clears once, not every frame');
+editor.blur(); editor.remove();
+pad.axes[0] = 0; input.pollInput(); pad.axes[0] = 1; input.pollInput();
+assert.equal(input.movementInput().moveX, 1);
+pad.connected = false; window.dispatchEvent(new Event('gamepaddisconnected'));
+input.pollInput(); assert.equal(input.movementInput().moveX, 0);
+denied = true; input.keys.add('KeyW'); input.pollInput();
+assert.equal(input.movementInput().moveZ, -1, 'denied API retains keyboard');
+bus.emit('net', { joined: false }); assert.equal(input.keys.size, 0);
+input.keys.add('KeyW'); input.touchState.moveX = 1;
+document.dispatchEvent(new Event('visibilitychange'));
+assert.equal(input.keys.size, 0); assert.equal(input.touchState.moveX, 0);
+input.keys.add('Space'); window.dispatchEvent(new Event('pagehide'));
+assert.equal(input.movementInput().jump, false);
+input.setInputAvailable(() => false); input.requestAction('use'); assert.equal(actions.length, 1);
+console.log('Browser input lifetime and fallback checks passed');
