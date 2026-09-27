@@ -371,6 +371,18 @@ export async function loadVRM(libPath, { priority = 1 } = {}) {
       work.phase('parse');
       const gltf = await new Promise((res, rej) => makeLoader(true).parse(buf, '', res, rej));
       const vrm = gltf.userData.vrm;
+      // Every bone's rest, read NOW — before a clip, a spring or a wing has
+      // written any of them. A held pose on a raw bone is measured against it
+      // (avatar.js _rawRest). The skin's bind data cannot stand in: the
+      // skeleton pass below drops every joint that weights no vertex, and
+      // that includes humanoid bones (L_Calf, on mythos-alpha).
+      vrm.userData ??= {};
+      vrm.userData.boneRest = {};
+      vrm.scene.traverse((o) => {
+        if (o.isBone && o.name && !(o.name in vrm.userData.boneRest)) {
+          vrm.userData.boneRest[o.name] = { q: o.quaternion.toArray(), p: o.position.toArray(), s: o.scale.toArray() };
+        }
+      });
       // pool ledger (§19b): path for the release side, source bytes as the
       // VRAM proxy the pool budget counts
       vrmMeta.set(vrm, { libPath, bytes: buf.byteLength });

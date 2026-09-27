@@ -182,7 +182,9 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       ws.send(JSON.stringify({ type: "error", error: "animation too large — keep custom clips small and sparse" }));
       return;
     }
-    c.world.broadcast({ type: "anim", id: c.id, dur: msg.dur, tracks: msg.tracks, loop: !!msg.loop }, c);
+    // Legacy packets omit replace and replace the previous animation.
+    // Modern merge requests must carry an explicit false.
+    c.world.broadcast({ type: "anim", id: c.id, dur: msg.dur, tracks: msg.tracks, loop: !!msg.loop, replace: msg.replace !== false }, c);
   },
   "puppet": ({ c, ws, now, expel }, msg) => {
     // Ask another body to hold a pose or play an animation. Deliberately
@@ -204,7 +206,10 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       const lean = ((msg.ragdoll as { lean: unknown[] }).lean).map(Number);
       if (lean.length === 3 && lean.every(Number.isFinite)) rag = { lean };
     }
-    tc.ws.send(JSON.stringify({ type: "puppet", by: c.id, pose: msg.pose ?? null, anim: msg.anim ?? null, ragdoll: rag }));
+    // merge: pose only the bones sent, over what the target already holds.
+    // Absent means replace — what every sender meant before the flag existed.
+    tc.ws.send(JSON.stringify({ type: "puppet", by: c.id, pose: msg.pose ?? null, merge: msg.merge === true,
+      anim: msg.anim ? { ...msg.anim, replace: msg.anim.replace !== false } : null, ragdoll: rag }));
   },
   "bc": ({ c, ws, now, expel }, msg) => {
     // dev crash forensics: keep the client's last N breadcrumbs in

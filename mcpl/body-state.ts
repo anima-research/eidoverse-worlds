@@ -8,6 +8,7 @@ import { ReachBody } from "./physics.ts";
 import { PoseClips } from "./pose-clips.ts";
 import { CLIP_SLOTS } from "../shared/clipdefs.js";
 import { planReaches, reachKey } from "../shared/reachorder.js";
+import { poseChannels } from "../shared/humanoid.js";
 
 export type PublicPose = {
   p: number[]; yaw: number; speed: number; clip: string;
@@ -254,7 +255,7 @@ export class BodyStateReader {
         if (item.animation) this.clips.apply(item.animation, item.body, hasClipPhase(o.pose!) ? o.pose!.clipTime! : 0, item.rigKey);
         if (Number.isFinite(o.pose!.pitch) && item.body.av.nodes.head) item.body.av.nodes.head.quaternion.premultiply(
           new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.max(-.5, Math.min(.6, o.pose!.pitch!))));
-        for (const [name, q] of Object.entries(mapped)) item.body.av.nodes[name].quaternion.fromArray(q);
+        for (const [name, v] of Object.entries(mapped)) { const q = poseChannels(v)?.q; if (q) item.body.av.nodes[name].quaternion.fromArray(q); }
         item.body.av.root.updateMatrixWorld(true);
       }
       const own = loaded.get(who)!;

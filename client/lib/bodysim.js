@@ -89,6 +89,11 @@ export function setBodyEngine(name) {
  *  with drags" was. A dropped optional argument is invisible in JS; the
  *  parity suites never saw it because they construct the engines directly. */
 export function makeRagdoll(avatar, lean = null, rest = null, seedVel = null) {
+  // A held pose that lowers the hips (kneeling) hands its drop to the root
+  // first (avatar.js bakeHipsIntoRoot). The caller's rest map was read with
+  // the drop still in the skeleton, so it is re-read — the sim measures its
+  // hips offset against it.
+  if (avatar.bakeHipsIntoRoot?.() && rest) rest = avatar.restBonePositions();
   const e = ENGINES.get(engine);
   if (e?.cls && e.cls !== Ragdoll) {
     try { return new e.cls(avatar, lean, rest, seedVel); }

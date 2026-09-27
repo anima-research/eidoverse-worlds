@@ -14,6 +14,7 @@ import { declareSeatState, clearSeatState } from './seats.js';
 import { applyRemoteReach, noteReachEvents } from './reachnet.js';
 import { syncClipPhase } from './poseclips.js';
 import { applyWingFoldPresence } from '../../shared/wingpresence.js';
+import { poseChannels } from '../../shared/humanoid.js';
 import { applyPresenceWire } from '../../shared/presencewire.js';
 import { applyRemoteXR, resetFingers } from './xrbody.js';
 
@@ -242,14 +243,13 @@ function applyPose(r, a, b, k) {
   // and its output arrays outlive every frame of the span.
   if (r.poseA !== pa || r.poseB !== pb) planPoseBlend(r, pa, pb);
   for (const s of r.poseSlots) {
-    _qa.fromArray(s.a); _qb.fromArray(s.b);
-    _qk.slerpQuaternions(_qa, _qb, k).toArray(s.out);
+    if (s.a) { _qa.fromArray(s.a); _qb.fromArray(s.b); _qk.slerpQuaternions(_qa, _qb, k).toArray(s.q); }
+    if (s.ta) for (let i = 0; i < 3; i++) s.t[i] = s.ta[i] + (s.tb[i] - s.ta[i]) * k;
+    if (s.sa) for (let i = 0; i < 3; i++) s.s[i] = s.sa[i] + (s.sb[i] - s.sa[i]) * k;
   }
   r.lastPose = POSE_BLEND;
   r.avatar.setPose(r.poseOut);
 }
-
-const isQuat = (q) => Array.isArray(q) && q.length === 4;
 
 // ---- C18: a tracked (VR) body's head + hands. The sample rides presence as `xr`
 // (see xrbody.js for the frame); here it is blended a→b like the root, handed to
@@ -291,12 +291,17 @@ function applyXRPresence(r, a, b, k) {
 function planPoseBlend(r, pa, pb) {
   r.poseA = pa; r.poseB = pb;
   r.poseSlots = []; r.poseOut = {};
+  // Per channel (shared/humanoid.js poseChannels): rotation slerps, translation
+  // and scale lerp. A channel only one side has is held, not blended from
+  // nothing — the same rule the bare-quaternion form always followed.
   for (const n of new Set([...Object.keys(pa), ...Object.keys(pb)])) {
-    const qa = isQuat(pa[n]) ? pa[n] : pb[n], qb = isQuat(pb[n]) ? pb[n] : pa[n];
-    if (!isQuat(qa) || !isQuat(qb)) continue;
-    const out = [0, 0, 0, 1];
-    r.poseSlots.push({ a: qa, b: qb, out });
-    r.poseOut[n] = out;
+    const ca = poseChannels(pa[n]), cb = poseChannels(pb[n]);
+    if (!ca && !cb) continue;
+    const pick = (ch) => { const x = ca?.[ch] ?? cb?.[ch], y = cb?.[ch] ?? ca?.[ch]; return x ? [x, y] : [null, null]; };
+    const [qa, qb] = pick('q'), [ta, tb] = pick('t'), [sa, sb] = pick('s');
+    const slot = { a: qa, b: qb, q: qa && [0, 0, 0, 1], ta, tb, t: ta && [0, 0, 0], sa, sb, s: sa && [1, 1, 1] };
+    r.poseSlots.push(slot);
+    r.poseOut[n] = !ta && !sa ? slot.q : { ...(qa ? { q: slot.q } : {}), ...(ta ? { t: slot.t } : {}), ...(sa ? { s: slot.s } : {}) };
   }
 }
 

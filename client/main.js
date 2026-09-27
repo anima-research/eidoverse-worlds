@@ -42,8 +42,9 @@ import { snapshot } from './lib/net_snap.js';
 import { myReachBag } from './lib/reachnet.js';
 import {
   net, connect, initIdentity, loginUrl, wireNet, sendVerb, sendPose, sendWhisper, sendTyping,
-  setPoseOverride,
+  setPoseOverride, sendPuppet, sendAnim,
 } from './lib/net.js';
+import { mergePose } from '../shared/humanoid.js';
 import { updateBuild, toggleEditMode, isEditing } from './lib/build.js';
 import { initPalette } from './lib/palette.js';
 import { setRightsSink } from './lib/state.js';
@@ -788,6 +789,27 @@ globalThis.whyIsItSilent = () => {
 const EW = globalThis.EW = {
   me: () => getMe(), remotes, entities, myState, THREE, net, scene, camera, renderer, bus,
   skyArgs, sendVerb, setPosable, get posable() { return posable(); },
+  // POSING from the console — the same verbs an agent's tools have. A value
+  // per bone is [x,y,z,w] or {q, t, s} (shared/humanoid.js poseChannels).
+  //   EW.pose({ leftUpperArm: [...] })          only these bones, over what you hold; null releases one
+  //   EW.pose({ ... }, { replace: true })       the WHOLE pose: every bone not named goes back to normal
+  //   EW.pose({ ... }, { target: 'mythos' })    ask someone else (their client decides)
+  //   EW.clearPose()  /  EW.clearPose('mythos')
+  //   EW.animate(anim, { replace, target })     one-off animation; merge plays over your pose and any
+  //                                             other animation, replace ends them first
+  pose: (bones, { replace = false, target = null } = {}) => {
+    if (target) return sendPuppet(target, { pose: bones, merge: !replace });
+    myState.pose = mergePose(replace ? null : myState.pose, bones);
+    return myState.pose;
+  },
+  clearPose: (target = null) => { if (target) sendPuppet(target, { pose: {} }); else myState.pose = null; },
+  animate: (data, { replace = data?.replace === true, target = null } = {}) => {   // replace may ride in the data too
+    const a = { ...data, replace: !!replace };
+    if (target) return sendPuppet(target, { anim: a });
+    if (replace) myState.pose = null;
+    getMe()?.playAnimation(a);
+    sendAnim(a);
+  },
   setPushable, get pushable() { return pushable(); }, dragState,
   // reach: aim a hand at a world point, or at anything that moves. Pass a
   // function and it re-solves every frame; `EW.reach('leftHand', () =>

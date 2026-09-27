@@ -29,7 +29,7 @@ plugin({
 });
 
 const { THREE } = await import('./core-stub.mjs');
-const { Avatar } = await import('../client/lib/avatar.js');
+const { Avatar, BLINK } = await import('../client/lib/avatar.js');
 const { DRIVEN_BONES } = await import('../client/lib/ragdoll.js');
 
 let pass = 0, fail = 0;
@@ -94,11 +94,12 @@ function stand({ constant = false } = {}) {
   // real methods, or setLimp throws and the whole suite stops at test two.
   for (const m of ['setLimp', '_park', '_resolveBones', '_humanoidBones', 'setPose',
                    'clearPose', '_applyOverride', '_reachOwned', '_composeBegin', '_composeEnd',
+                   '_applyPoseSlot', '_applyAnimSlot', '_handBack', '_rawBegin', '_rawEnd', '_rawRelease', 'playAnimation', '_sampleTrack',
                    'setEyes', '_findLids', '_findWings', '_releaseHair', '_combHair']) {
     self[m] = (Avatar.prototype as any)[m];
   }
   // the slice of update() that matters here, in its real order
-  self.tick = function (dt = 1 / 60) {
+  self.tick = function (dt = 1 / 60, now = 0) {
     this.mixer.update(dt);
     if (this._limp) this._park();
     if (this.head && !this._limp) {
@@ -109,7 +110,7 @@ function stand({ constant = false } = {}) {
       }
       this._composeEnd(this.head, r);
     }
-    if (this._override) this._applyOverride(dt, 0);
+    if (this._override || this._anims?.length) this._applyOverride(dt, now);
   };
   return { self, nodes, action };
 }
@@ -219,6 +220,78 @@ for (const constant of [false, true]) {
   }
 }
 
+// ---- eyelids: where "closed" comes from -------------------------------------
+// THREE sources, in descending authority, and the middle one failed silently.
+//
+// Janus removed the Limit Rotation constraints from the upper lids -- a
+// reasonable edit to a rig -- and the blink driver, which INFERRED the closing
+// angle from those constraints, found nothing and fell through to the generic
+// BLINK.closed of 1.2 rad (69 deg). His rig closes at 38-42. The lids swung
+// nearly 30 degrees too far and drove through the eye, and nothing anywhere
+// said so: a fallback that is reached by absence cannot announce itself.
+//
+// So: an authored POSE wins, a constraint is second, the dial is last. Each is
+// asserted here, including that the dial is still reached when a rig offers
+// neither -- the fallback is correct behaviour, it just must not be silent
+// about a rig that HAS an answer.
+{
+  const lidNode = (name: string, extras: Record<string, unknown>) => {
+    const o = new THREE.Object3D();
+    o.name = name;
+    o.userData = { gltfExtras: extras };
+    return o;
+  };
+  const lidsOf = (extras: Record<string, unknown>) => {
+    const scene = new THREE.Object3D();
+    scene.add(lidNode('L_Eyelid_Upper', extras));
+    const av = Object.create(Avatar.prototype) as any;
+    av.vrm = { scene };
+    av._findLids();
+    return av._lids?.[0] ?? null;
+  };
+
+  // 1. AUTHORED POSE: taken as-is, because it is already the angle from rest.
+  const posed = lidsOf({ blink_closed_src: 'pose', blink_closed_x: 0.6593 });
+  check('an authored closed pose is used verbatim',
+    posed?.exported !== null && Math.abs((posed?.exported ?? 0) - 0.6593) < 1e-4,
+    `exported=${posed?.exported}`);
+  check('...and it is nowhere near the generic 1.2 rad dial',
+    Math.abs((posed?.exported ?? 0) - BLINK.closed) > 0.4,
+    `pose ${posed?.exported} vs dial ${BLINK.closed}`);
+
+  // A pose wins even when constraints are ALSO present: the rig author stating
+  // the pose outranks a range that merely brackets it.
+  const both = lidsOf({
+    blink_closed_src: 'pose', blink_closed_x: 0.6593,
+    limit_min_x: 2.618, limit_max_x: 4.189,
+  });
+  check('an authored pose outranks the constraints beside it',
+    Math.abs((both?.exported ?? 0) - 0.6593) < 1e-4, `exported=${both?.exported}`);
+
+  // 2. CONSTRAINTS: absolute angles, so the delta is closed - centre.
+  //    150/240 deg bracketing a rest of ~195 gives 45 deg of closing.
+  const limited = lidsOf({ limit_min_x: 2.618, limit_max_x: 4.189, blink_closed_x: 4.189 });
+  const wantDelta = 4.189 - (2.618 + 4.189) / 2;
+  check('a Limit Rotation is read as closed MINUS the range centre',
+    Math.abs((limited?.exported ?? 0) - wantDelta) < 1e-3,
+    `exported=${limited?.exported} want ${wantDelta.toFixed(4)}`);
+  check('...which is a plausible lid sweep, not a 240-degree one',
+    Math.abs(limited?.exported ?? 9) < 1.0, `exported=${limited?.exported}`);
+
+  // 3. NEITHER: fall back to the dial. This is the state Janus's rig was in.
+  const bare = lidsOf({});
+  check('a rig with no closed angle falls back to the dial',
+    bare?.exported === null, `exported=${bare?.exported}`);
+
+  // and the guards: nonsense is refused rather than driven through the eye
+  const absurd = lidsOf({ blink_closed_src: 'pose', blink_closed_x: 2.9 });
+  check('an implausible pose angle is refused', absurd?.exported === null,
+    `exported=${absurd?.exported}`);
+  const inverted = lidsOf({ limit_min_x: 4.189, limit_max_x: 2.618, blink_closed_x: 4.189 });
+  check('an inverted constraint range is refused', inverted?.exported === null,
+    `exported=${inverted?.exported}`);
+}
+
 // ---- wings ------------------------------------------------------------------
 // The flap is geometry, and geometry is exactly the kind of thing that "runs
 // without throwing" while pointing the wrong way — the eyelids shipped rotating
@@ -308,6 +381,147 @@ function wingStand() {
     return nodes[n].getWorldPosition(new THREE.Vector3());
   };
   return { self, nodes, tipY, tipPos };
+}
+
+console.log('\nan animation over a held pose (wave while crouching):');
+{
+  // A clip that HOLDS STILL is the case that bit: nothing rewrites a bone
+  // the pose tilted, so whatever is left there stays.
+  const { self, nodes } = stand({ constant: true });
+  self.tick();
+  const clipHips = nodes.hips.quaternion.clone(), clipArm = nodes.leftUpperArm.quaternion.clone();
+  const tilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), 0.54);
+  const wave = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -1.2);
+  const q = (x: any) => [x.x, x.y, x.z, x.w];
+  self.setPose({ hips: q(tilt) });
+  for (let i = 0; i < 60; i++) self.tick();
+  check('the pose holds the hips', nodes.hips.quaternion.angleTo(tilt) < 1e-3);
+
+  self.playAnimation({ dur: 1, tracks: { leftUpperArm: [{ t: 0, q: q(wave) }, { t: 1, q: q(wave) }] } });
+  self._anims[0].start = 0;
+  let now = 0;
+  for (let i = 0; i < 40; i++) self.tick(1 / 60, now += 1000 / 60);   // past the ~120ms ease-in, inside the 1s
+  check('while the wave plays, the crouch keeps its hips', nodes.hips.quaternion.angleTo(tilt) < 1e-3,
+    `${nodes.hips.quaternion.angleTo(tilt).toFixed(3)} rad off`);
+  check('...and the arm is the wave\'s', nodes.leftUpperArm.quaternion.angleTo(wave) < 1e-2,
+    `${nodes.leftUpperArm.quaternion.angleTo(wave).toFixed(3)} rad off`);
+  check('...in its own slot — the pose was not displaced', self._override?.kind === 'pose' && self._anims?.[0]?.kind === 'anim');
+
+  for (let i = 0; i < 120; i++) self.tick(1 / 60, now += 1000 / 60);
+  check('when the wave ends it lets go', self._anims.length === 0);
+  check('...the arm goes back to the clip, not the last frame of the wave', nodes.leftUpperArm.quaternion.angleTo(clipArm) < 1e-3,
+    `${nodes.leftUpperArm.quaternion.angleTo(clipArm).toFixed(3)} rad off`);
+  check('...and the crouch is still held', nodes.hips.quaternion.angleTo(tilt) < 1e-3);
+
+  self.clearPose();
+  for (let i = 0; i < 90; i++) self.tick(1 / 60, now += 1000 / 60);
+  check('releasing the pose leaves NO tilt on a still clip', nodes.hips.quaternion.angleTo(clipHips) < 1e-3,
+    `${nodes.hips.quaternion.angleTo(clipHips).toFixed(3)} rad off`);
+}
+{
+  const { self, nodes } = stand({ constant: true });
+  self.tick();
+  const clipHips = nodes.hips.quaternion.clone();
+  const tilt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), 0.54);
+  self.setPose({ hips: [tilt.x, tilt.y, tilt.z, tilt.w] });
+  for (let i = 0; i < 60; i++) self.tick();
+  self.setPose({ leftUpperArm: [0, 0, 0.38, 0.92] });
+  for (let i = 0; i < 5; i++) self.tick();
+  check('a pose REPLACED by one without hips hands the hips back (the tilt that outlived the crouch)',
+    nodes.hips.quaternion.angleTo(clipHips) < 1e-3, `${nodes.hips.quaternion.angleTo(clipHips).toFixed(3)} rad off`);
+}
+
+console.log('\nanimation layers (merge) and replace:');
+{
+  const { self, nodes } = stand({ constant: true });
+  self.tick();
+  const clipHead = nodes.head.quaternion.clone();
+  const A = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), -1.0);
+  const B = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), 0.8);
+  const q = (x: any) => [x.x, x.y, x.z, x.w];
+  const hold = (x: any, d = 3) => [{ t: 0, q: q(x) }, { t: d, q: q(x) }];
+  let now = 0;
+  const run = (n: number) => { for (let i = 0; i < n; i++) self.tick(1 / 60, now += 1000 / 60); };
+  self.playAnimation({ dur: 3, replace: false, tracks: { leftUpperArm: hold(A), head: hold(B) } });
+  self._anims[0].start = now;
+  run(30);
+  const C = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 1.0);
+  self.playAnimation({ dur: 3, replace: false, tracks: { leftUpperArm: hold(C) } });
+  self._anims.at(-1).start = now;
+  run(30);
+  check('a second animation takes only its bones: the arm is the new one', nodes.leftUpperArm.quaternion.angleTo(C) < 1e-2,
+    `${nodes.leftUpperArm.quaternion.angleTo(C).toFixed(3)} rad off`);
+  check('...and the first keeps playing on the rest (head)', nodes.head.quaternion.angleTo(B) < 1e-2,
+    `${nodes.head.quaternion.angleTo(B).toFixed(3)} rad off`);
+  check('...as two layers', self._anims.length === 2);
+  self.playAnimation({ dur: 3, replace: true, tracks: { leftUpperArm: hold(A) } });
+  self._anims.at(-1).start = now;
+  run(30);
+  check('replace ends every other layer', self._anims.length === 1);
+  check('...and hands the head back to the clip', nodes.head.quaternion.angleTo(clipHead) < 1e-3,
+    `${nodes.head.quaternion.angleTo(clipHead).toFixed(3)} rad off`);
+}
+
+console.log('\npose teardown and legacy animation compatibility:');
+{
+  const { self, nodes } = stand({ constant: true });
+  self.tick();
+  const idle = nodes.leftUpperArm.quaternion.clone();
+  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 1).toArray();
+  self.playAnimation({ dur: 1, loop: true, replace: false, tracks: { leftUpperArm: [{ t: 0, q }] } });
+  self._anims[0].start = 0;
+  for (let i = 0; i < 60; i++) self.tick(1 / 60, i * 1000 / 60);
+  // The mesh survives a same-avatar takeover; only unrelated UI seams are stubbed.
+  for (const name of ['setTyping', 'clearReach', 'setGazeTarget', 'setClip']) self[name] = () => {};
+  Avatar.prototype.resetTransients.call(self);
+  for (let i = 60; i < 300; i++) self.tick(1 / 60, i * 1000 / 60);
+  check('a takeover ends the predecessor’s looping animation', !self._anims?.length);
+  check('...and hands its bones back to the idle clip', nodes.leftUpperArm.quaternion.angleTo(idle) < 1e-3);
+}
+{
+  const { self, nodes } = stand({ constant: true });
+  self.tick();
+  const idle = nodes.leftUpperArm.quaternion.clone();
+  const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), 1).toArray();
+  const tracks = { leftUpperArm: [{ t: 0, q }] };
+  self.playAnimation({ dur: 1, loop: true, tracks }); // legacy wire: no replace flag
+  self._anims[0].start = 0;
+  for (let i = 0; i < 60; i++) self.tick(1 / 60, i * 1000 / 60);
+  self.playAnimation({ dur: 1, tracks: { head: [{ t: 0, q }] } });
+  check('an omitted wire replace flag ends older animation layers', self._anims.length === 1);
+  check('...including bones absent from the new animation', nodes.leftUpperArm.quaternion.angleTo(idle) < 1e-3);
+}
+{
+  // Drive setPose -> raw writes -> REAL dispose -> another wearer on the same
+  // nodes. Pool reset only knows humanoid rotations/positions, not these TRS.
+  const scene = new THREE.Group(), head = new THREE.Bone(), custom = new THREE.Bone();
+  head.name = 'Head'; custom.name = 'Custom'; scene.add(head); head.add(custom);
+  head.scale.set(1.2, 1.2, 1.2); custom.position.set(0, .2, 0);
+  custom.matrixAutoUpdate = false; custom.updateMatrix();
+  const rest = {};
+  scene.traverse((n: any) => { if (n.isBone) rest[n.name] = { p: n.position.toArray(), q: n.quaternion.toArray(), s: n.scale.toArray() }; });
+  const vrm = { scene, userData: { boneRest: rest }, humanoid: {
+    getNormalizedBoneNode: (n: string) => n === 'head' ? head : null,
+    getRawBoneNode: (n: string) => n === 'head' ? head : null,
+  } };
+  const wearer = () => Object.assign(Object.create(Avatar.prototype), {
+    vrm, root: scene, gaze: new THREE.Object3D(), label: new THREE.Sprite(),
+    mixer: new THREE.AnimationMixer(scene), _composed: new Map(),
+  });
+  const first = wearer();
+  first.setPose({ head: { s: 2 }, Custom: { q: [0, 0, Math.sin(.3), Math.cos(.3)], t: [.25, 0, 0] } });
+  first._override.weight = 1; first._applyRawPose();
+  check('fixture really scales and moves the raw bones', head.scale.x > 2 && custom.position.x > .1);
+  first.dispose();
+  check('dispose restores the authored scale before pooling', Math.abs(head.scale.x - 1.2) < 1e-9);
+  check('dispose restores custom translation and rotation', custom.position.distanceTo(new THREE.Vector3(0, .2, 0)) < 1e-9 && custom.quaternion.angleTo(new THREE.Quaternion()) < 1e-6);
+  check('dispose rebuilds manually updated bone matrices', new THREE.Vector3().setFromMatrixPosition(custom.matrix).distanceTo(custom.position) < 1e-9);
+  const second = wearer();
+  second.setPose({ head: { s: 2 } }); second._override.weight = 1; second._applyRawPose();
+  check('the next wearer scales from rest, without compounding the previous pose', Math.abs(head.scale.x - 2.4) < 1e-9);
+  first.dispose();
+  check('repeated disposal cannot clear the next wearer’s pose', Math.abs(head.scale.x - 2.4) < 1e-9);
+  second.dispose();
 }
 
 console.log('\nwings:');

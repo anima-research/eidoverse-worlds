@@ -32,6 +32,7 @@ import { DRIVEN_BONES } from './ragdoll.js';
 import { stroke as strokeIcon } from './icons.js';
 import { SEAT_CLIP_FILE } from './seatcore.js';
 import { planReaches } from '../../shared/reachorder.js';
+import { poseChannels } from '../../shared/humanoid.js';
 
 // The clip library is ~1.9MB PER SLOT. Waiting for all seven before a body
 // could exist put 13MB between a person and their own legs — the single
@@ -428,6 +429,10 @@ const _wr = new THREE.Quaternion();
 const _wax = new THREE.Vector3();
 const _wup = new THREE.Vector3();
 const _wsw = new THREE.Quaternion();
+const _hq = new THREE.Quaternion();        // raw-pose scratch (_applyRawPose) — per bone, per frame
+const _hv = new THREE.Vector3();
+const _hs = new THREE.Vector3();
+const _ONE = new THREE.Vector3(1, 1, 1);
 const DEG = Math.PI / 180;
 
 // THE LAMP'S BREATH, as dials rather than as three numbers buried in a
@@ -961,23 +966,42 @@ export class Avatar {
       const m = /^[LR]_Eyelid_(Upper|Lower)$/.exec(o.name ?? '');
       if (!m) return;
       const ex = o.userData?.gltfExtras ?? o.userData ?? {};
-      // A Limit Rotation's numbers are ABSOLUTE angles in the bone's own frame,
-      // not offsets from rest — mythos's upper lids export min 150 / max 240
-      // degrees, bracketing the ~195 the lid actually rests at. Read as a delta
-      // that is a 240-degree sweep: the lid leaves the head entirely and the eye
-      // is bare, which reads as "you can see through the eyelids" and survives
-      // any amount of making the mesh bigger.
-      //
-      // Rest sits at the middle of a range that brackets it, so the closing
-      // delta is closed - centre = 45 degrees here. Anything that does not come
-      // out plausible is discarded in favour of the dial: a rig may have set
-      // those limits for something other than a blink.
+      // TWO SOURCES, in order of authority: a saved closed POSE (authored),
+      // then a Limit Rotation constraint (inferred), then BLINK.closed (a
+      // generic dial). See each branch.
       let lim = NaN;
-      const mn = Number(ex.limit_min_x), mx = Number(ex.limit_max_x);
       const cl = Number(ex.blink_closed_x);
-      if ([mn, mx, cl].every(Number.isFinite) && mx > mn) {
-        const d = cl - (mn + mx) / 2;
-        if (Math.abs(d) > 1e-3 && Math.abs(d) < 1.6) lim = d;
+      if (ex.blink_closed_src === 'pose') {
+        // AUTHORED, not inferred. eido_export.py read this out of a saved
+        // eyes-closed pose asset, so it is already the lid's rotation FROM
+        // REST -- no centring, because there is no range to centre in.
+        //
+        // This path exists because the inferred one quietly stopped working:
+        // Janus removed the Limit Rotation constraints from the upper lids,
+        // which is a reasonable thing to do to a rig, and the branch below
+        // then found nothing and handed the lids BLINK.closed -- 1.2 rad, 69
+        // degrees, against a rig whose closed pose is 38-42. The lids swung
+        // ~30 degrees too far and drove through the eye. A pose asset is the
+        // author saying what closed looks like; a constraint was only ever
+        // evidence about it.
+        if (Number.isFinite(cl) && Math.abs(cl) > 1e-3 && Math.abs(cl) < 1.6) lim = cl;
+      } else {
+        // A Limit Rotation's numbers are ABSOLUTE angles in the bone's own
+        // frame, not offsets from rest -- mythos's upper lids used to export
+        // min 150 / max 240 degrees, bracketing the ~195 the lid rests at.
+        // Read as a delta that is a 240-degree sweep: the lid leaves the head
+        // entirely and the eye is bare, which reads as "you can see through
+        // the eyelids" and survives any amount of making the mesh bigger.
+        //
+        // Rest sits at the middle of a range that brackets it, so the closing
+        // delta is closed - centre. Anything implausible is discarded in
+        // favour of the dial: a rig may have set those limits for something
+        // other than a blink.
+        const mn = Number(ex.limit_min_x), mx = Number(ex.limit_max_x);
+        if ([mn, mx, cl].every(Number.isFinite) && mx > mn) {
+          const d = cl - (mn + mx) / 2;
+          if (Math.abs(d) > 1e-3 && Math.abs(d) < 1.6) lim = d;
+        }
       }
       found.push({
         node: o,
@@ -1144,16 +1168,90 @@ export class Avatar {
     return out;
   }
 
-  /** Hold a pose. `bones` is a sparse map name -> [x,y,z,w]. */
+  /** Any bone of this rig by its exported name — hair, wings, eyelids, twist
+   *  bones, the raw halves of humanoid bones — or null. Built once: remotes
+   *  call setPose every frame while a pose blends. */
+  _rawBone(name) {
+    if (!this._rawBones) {
+      this._rawBones = new Map();
+      this.vrm.scene.traverse((o) => { if (o.isBone && o.name && !this._rawBones.has(o.name)) this._rawBones.set(o.name, o); });
+    }
+    return this._rawBones.get(name) ?? null;
+  }
+
+  /** A raw bone's rest, from the TRS every bone had at load (assets.js
+   *  boneRest) rather than from the live node, which holds whatever the clip,
+   *  the springs or the wings last wrote. `pq` is the PARENT's rest rotation
+   *  in the model frame, `pinv` its inverse linear part, `rq` this bone's rest
+   *  local rotation: what a model-axes pose value needs to land in a
+   *  parent-local node. The composition three-vrm applies to humanoid bones
+   *  (raw = P⁻¹·q·P·rest), extended to every bone. Null when the body has no
+   *  recorded rest (the capsule stand-in). */
+  _rawRest(node) {
+    this._rawRests ??= new Map();
+    if (this._rawRests.has(node)) return this._rawRests.get(node);
+    const table = this.vrm.userData?.boneRest;
+    const local = (o) => {
+      const r = table[o.name];
+      return new THREE.Matrix4().compose(new THREE.Vector3().fromArray(r.p), new THREE.Quaternion().fromArray(r.q), new THREE.Vector3().fromArray(r.s));
+    };
+    let rest = null;
+    if (table?.[node.name]) {
+      // Walk up through bones at rest; the first non-bone (the armature node)
+      // does not animate, so where it is now IS where it rests.
+      const P = new THREE.Matrix4();
+      let o = node.parent;
+      while (o && o.isBone && table[o.name]) { P.premultiply(local(o)); o = o.parent; }
+      if (o && o !== this.vrm.scene) {
+        this.vrm.scene.updateMatrixWorld(true);
+        P.premultiply(this.vrm.scene.matrixWorld.clone().invert().multiply(o.matrixWorld));
+      }
+      const pq = new THREE.Quaternion();
+      P.decompose(new THREE.Vector3(), pq, new THREE.Vector3());
+      rest = { pq, pqInv: pq.clone().invert(), rq: new THREE.Quaternion().fromArray(table[node.name].q),
+        pinv: new THREE.Matrix3().setFromMatrix4(P).invert() };
+    }
+    this._rawRests.set(node, rest);
+    return rest;
+  }
+
+  /** Hold a pose. `bones` is a sparse map name -> value, where a value is a
+   *  bare [x,y,z,w] or {q?, t?, s?} (shared/humanoid.js poseChannels). A
+   *  VRM humanoid name rotates the normalized bone, composed over the clip as
+   *  it always has; any OTHER name the rig has (Hair_3_2, a wing, an eyelid,
+   *  L_ThighTwist02) is posed on the raw node. Translation and scale ride the
+   *  raw node for every bone, except hips translation, which goes through
+   *  the normalized hips so springs and everything downstream see the body
+   *  where it is. */
   setPose(bones) {
     if (!bones || typeof bones !== 'object') return this.clearPose();
-    const targets = new Map();
-    for (const [n, q] of Object.entries(bones)) {
-      if (Array.isArray(q) && q.length === 4) targets.set(n, new THREE.Quaternion(q[0], q[1], q[2], q[3]).normalize());
+    const targets = new Map(), raw = [];
+    let hipsT = null;
+    const h = this.vrm.humanoid;
+    for (const [n, v] of Object.entries(bones)) {
+      const c = poseChannels(v);
+      if (!c) continue;
+      const norm = h?.getNormalizedBoneNode?.(n);
+      if (norm) {
+        if (c.q) targets.set(n, new THREE.Quaternion(c.q[0], c.q[1], c.q[2], c.q[3]).normalize());
+        if (n === 'hips' && c.t) hipsT = new THREE.Vector3(c.t[0], c.t[1], c.t[2]);
+        const t = n === 'hips' ? null : c.t;
+        if (t || c.s) { const node = h.getRawBoneNode?.(n); if (node) raw.push({ node, q: null, t, s: c.s }); }
+        continue;
+      }
+      const node = this._rawBone(n);
+      if (node) raw.push({ node, q: c.q && new THREE.Quaternion(c.q[0], c.q[1], c.q[2], c.q[3]).normalize(), t: c.t, s: c.s });
     }
-    if (!targets.size) return;
+    if (!targets.size && !raw.length && !hipsT) return;
+    const nodes = this._resolveBones([...targets.keys()]);
+    // A pose REPLACING a pose (remotes do it every frame, a ragdoll on its
+    // first step) must hand back what only the old one covered. Left alone,
+    // a bone whose clip track holds still keeps the old pose forever: a
+    // crouch's 31° hips tilt outlived the crouch and rode every walk after.
+    if (this._override) this._handBack(this._override, nodes, raw, hipsT);
     this._override = {
-      kind: 'pose', nodes: this._resolveBones([...targets.keys()]),
+      kind: 'pose', nodes,
+      raw, hipsT, hipsNode: hipsT ? h.getNormalizedBoneNode('hips') : null,
       // A tumble starts at FULL weight. The ramp is right for a held pose
       // arriving over the wire, but the ragdoll's first frame is by
       // construction the pose the body is already in — easing into it from
@@ -1163,7 +1261,17 @@ export class Avatar {
     };
   }
 
-  /** Play a one-off animation. data = { dur, loop?, tracks: {bone:[{t,q:[x,y,z,w]}]} }. */
+  /** Play a one-off animation. data = { dur, loop?, replace?, tracks: {bone:[{t,q:[x,y,z,w]}]} }.
+   *
+   *  Animations are LAYERS over the held pose rather than a replacement for
+   *  it: a wave while crouching keeps the crouch, and only the bones the wave
+   *  animates are the wave's while it plays. (Sharing the pose's slot, it
+   *  displaced the whole pose — the body stood up to wave, and a crouch's
+   *  hips tilt was left behind on a bone nothing handed back.) A new
+   *  animation takes only ITS bones from the layers already playing; the
+   *  rest of them play on. `replace` ends every other layer instead. Ending
+   *  the held pose is the AUTHOR's half of a replace — it lives in presence
+   *  (myState.pose, an agent's heldPose), which this body only renders. */
   playAnimation(data) {
     if (!data?.tracks) return;
     const tracks = new Map();
@@ -1176,11 +1284,44 @@ export class Avatar {
     }
     if (!tracks.size) return;
     const dur = Math.max(0.1, Math.min(30, Number(data.dur) || 2));
-    this._override = {
-      kind: 'anim', nodes: this._resolveBones([...tracks.keys()]),
+    const nodes = this._resolveBones([...tracks.keys()]);
+    const mine = new Set(nodes.map(([, n]) => n));
+    // Omitted on legacy wire packets: those always replaced the previous clip.
+    // Modern authoring surfaces send false explicitly to request a merge.
+    const replace = data.replace !== false;
+    let from = 0;   // a bone taken over mid-play continues from where it was
+    this._anims ??= [];
+    for (const l of this._anims) {
+      const lose = l.nodes.filter(([, n]) => mine.has(n));
+      if (lose.length) from = Math.max(from, l.weight);
+      if (replace) this._handBack(l, nodes);
+      else l.nodes = l.nodes.filter(([, n]) => !mine.has(n));
+    }
+    this._anims = replace ? [] : this._anims.filter((l) => l.nodes.length);
+    this._anims.push({
+      kind: 'anim', nodes,
       tracks, dur, loop: !!data.loop, start: performance.now(),
-      weight: this._override?.weight ?? 0, wantWeight: 1, _scratch: new THREE.Quaternion(),
-    };
+      weight: from, wantWeight: 1, _scratch: new THREE.Quaternion(),
+    });
+  }
+
+  /** Return an outgoing override's bones to their owners — the clip, or the
+   *  pose underneath — except those the incoming one (`nodes` [name, node]
+   *  pairs, `raw` entries, `hipsT`) goes on writing. Only bones still
+   *  holding exactly what we left are touched; anything rewritten since has
+   *  an owner already. */
+  _handBack(o, nodes = [], raw = [], hipsT = null) {
+    const keep = new Set(nodes.map(([, n]) => n));
+    // an outgoing ANIMATION's bones under the held pose stay the pose's
+    if (o !== this._override) for (const [, n] of this._override?.nodes ?? []) keep.add(n);
+    for (const [, node] of o.nodes ?? []) {
+      if (keep.has(node)) continue;
+      const r = this._composed.get(node);
+      if (r?.live && node.quaternion.equals(r.out)) { node.quaternion.copy(r.base); r.live = false; }
+    }
+    const keepRaw = new Set(raw.map((e) => e.node));
+    for (const e of o.raw ?? []) if (!keepRaw.has(e.node)) this._rawRelease(e.node);
+    if (o.hipsNode && !hipsT) this._rawRelease(o.hipsNode);
   }
 
   // ---- reaching: IK that re-solves every frame ------------------------------
@@ -1326,6 +1467,28 @@ export class Avatar {
 
   clearPose() { if (this._override) this._override.wantWeight = 0; }
 
+  /** Move a held pose's hips translation onto the ROOT, leaving every joint
+   *  where it is in the world. For the moment a sim takes the body: its first
+   *  step replaces this pose with a rotations-only one, so a lowered hips
+   *  (kneeling) snapped back to standing height while the sim — which had
+   *  measured the lowered hips — went on placing the root under them: the body
+   *  rendered a hips-drop above its own physics. A clip-lowered body (sit)
+   *  never showed it because the clip keeps playing under the sim. Baked into
+   *  the root, the skeleton is standard again and the root carries the drop,
+   *  which is also what remotes see. True when something moved. */
+  bakeHipsIntoRoot() {
+    const o = this._override;
+    if (o?.kind !== 'pose' || !o.hipsT || !o.hipsNode) return false;
+    o.hipsNode.parent.updateWorldMatrix(true, false);
+    _hv.copy(o.hipsT).multiplyScalar(o.weight)
+      .applyMatrix3(new THREE.Matrix3().setFromMatrix4(o.hipsNode.parent.matrixWorld));
+    this._rawRelease(o.hipsNode);
+    o.hipsT = null; o.hipsNode = null;
+    this.root.position.add(_hv);
+    this.root.updateMatrixWorld(true);
+    return true;
+  }
+
   /** Go limp, or stand back up.
    *
    *  A ragdoll writes twelve bones. The locomotion mixer writes every bone the
@@ -1406,6 +1569,8 @@ export class Avatar {
       return;
     }
     if (this.emote) this.cancelEmote();
+    for (const l of this._anims ?? []) this._handBack(l);   // a falling body stops waving
+    this._anims = null;
     const driven = new Set(DRIVEN_BONES);
     this._parked = this._resolveBones(
       this._humanoidBones().filter((n) => !driven.has(n)))
@@ -1448,6 +1613,68 @@ export class Avatar {
     return r;
   }
   _composeEnd(node, r) { r.out.copy(node.quaternion); r.live = true; }
+
+  // The same guard over all three channels, for writers that also move and
+  // scale: each channel that still holds exactly what we left was not
+  // rewritten by its owner (clip, springs, wings, vrm.update), so its base is
+  // restored before composing again. Per channel, because owners differ —
+  // vrm.update rewrites a humanoid bone's rotation every frame and never
+  // touches its scale.
+  _rawBegin(node) {
+    this._rawComposed ??= new Map();
+    let r = this._rawComposed.get(node);
+    if (!r) {
+      r = { bq: new THREE.Quaternion(), bp: new THREE.Vector3(), bs: new THREE.Vector3(),
+        oq: new THREE.Quaternion(), op: new THREE.Vector3(), os: new THREE.Vector3(), live: false };
+      this._rawComposed.set(node, r);
+    }
+    if (r.live) {
+      if (node.quaternion.equals(r.oq)) node.quaternion.copy(r.bq);
+      if (node.position.equals(r.op)) node.position.copy(r.bp);
+      if (node.scale.equals(r.os)) node.scale.copy(r.bs);
+    }
+    r.bq.copy(node.quaternion); r.bp.copy(node.position); r.bs.copy(node.scale);
+    return r;
+  }
+  _rawEnd(node, r) { r.oq.copy(node.quaternion); r.op.copy(node.position); r.os.copy(node.scale); r.live = true; }
+  /** Hand a raw-posed bone back: every channel we still own returns to its base. */
+  _rawRelease(node) {
+    const r = this._rawComposed?.get(node);
+    if (!r?.live) return;
+    if (node.quaternion.equals(r.oq)) node.quaternion.copy(r.bq);
+    if (node.position.equals(r.op)) node.position.copy(r.bp);
+    if (node.scale.equals(r.os)) node.scale.copy(r.bs);
+    if (!node.matrixAutoUpdate) node.updateMatrix();
+    r.live = false;
+  }
+
+  /** The raw half of a held pose: rotation of non-humanoid bones, and
+   *  translation/scale of any bone. AFTER vrm.update and after the wings,
+   *  because those are this bone's other authors — springs rewrite the hair
+   *  inside vrm.update, _flap rewrites the wings after it, the blink rewrites
+   *  the lids before it — and a bone the pose names is the pose's. Not while
+   *  limp: then the sim owns the hair and wings. */
+  _applyRawPose() {
+    const o = this._override;
+    if (o?.kind !== 'pose' || !o.raw?.length || this._limp) return;
+    const w = o.weight;
+    for (const e of o.raw) {
+      const rest = this._rawRest(e.node);
+      if (!rest) continue;
+      const r = this._rawBegin(e.node);
+      if (e.q) {   // local = P⁻¹ · q · P · rest
+        _hq.copy(rest.pqInv).multiply(e.q).multiply(rest.pq).multiply(rest.rq);
+        e.node.quaternion.slerp(_hq, w);
+      }
+      if (e.t) e.node.position.addScaledVector(_hv.set(e.t[0], e.t[1], e.t[2]).applyMatrix3(rest.pinv), w);
+      if (e.s) e.node.scale.multiply(_hs.set(e.s[0], e.s[1], e.s[2]).lerp(_ONE, 1 - w));
+      // Spring joints (hair, wings) run with matrixAutoUpdate off — three-vrm
+      // and _flap rebuild their matrices by hand — so a TRS write alone would
+      // never reach the skin.
+      if (!e.node.matrixAutoUpdate) e.node.updateMatrix();
+      this._rawEnd(e.node, r);
+    }
+  }
 
   _humanoidBones() { return Object.keys(this.vrm.humanoid?.humanBones ?? {}); }
 
@@ -1494,13 +1721,22 @@ export class Avatar {
   }
 
   _applyOverride(dt, now) {
-    const o = this._override;
-    if (!o) return;
     // A live reach owns its two bones outright this frame. Letting the held
     // pose write them too would put two authors on one bone, and the compose
     // guard cannot tell them apart: each would read the other's output as the
     // clip's value and both would integrate.
     const taken = this._reachOwned();
+    const posed = this._override ? this._applyPoseSlot(dt, taken) : null;
+    if (this._anims?.length) {
+      for (const l of this._anims) this._applyAnimSlot(l, dt, now, taken, posed);
+      this._anims = this._anims.filter((l) => !l.done);
+    }
+  }
+
+  /** The held pose. Returns the set of bones it wrote this frame. */
+  _applyPoseSlot(dt, taken) {
+    const o = this._override;
+    const posed = new Set();
     // ramp toward the wanted weight (ease ~120ms)
     o.weight += (o.wantWeight - o.weight) * Math.min(1, 12 * dt);
     if (o.wantWeight === 0 && o.weight < 0.02) {
@@ -1511,8 +1747,21 @@ export class Avatar {
         const r = this._composed.get(node);
         if (r?.live && node.quaternion.equals(r.out)) { node.quaternion.copy(r.base); r.live = false; }
       }
+      if (o.hipsNode) this._rawRelease(o.hipsNode);
+      for (const e of o.raw ?? []) this._rawRelease(e.node);
       this._override = null;
-      return;
+      return posed;
+    }
+
+    // Hips translation, on the NORMALIZED hips: three-vrm carries its world
+    // position to the raw hips inside vrm.update, so the springs and the
+    // wings hang off the body where it now is. Same compose rule as rotation
+    // — a clip with no hips track never rewrites the position, and adding to
+    // what we left last frame would sink the body a little more each frame.
+    if (o.kind === 'pose' && o.hipsNode && o.hipsT) {
+      const r = this._rawBegin(o.hipsNode);
+      o.hipsNode.position.addScaledVector(o.hipsT, o.weight);
+      this._rawEnd(o.hipsNode, r);
     }
 
     if (o.kind === 'pose') {
@@ -1526,18 +1775,40 @@ export class Avatar {
         const r = this._composeBegin(node);
         node.quaternion.slerp(target, o.weight);
         this._composeEnd(node, r);
+        posed.add(node);
       }
     }
-    if (o.kind === 'anim') {
-      let tt = (now - o.start) / 1000;
-      if (tt >= o.dur) {
-        if (o.loop) tt %= o.dur; else { o.wantWeight = 0; tt = o.dur; }
+    return posed;
+  }
+
+  /** The one-off animation, over whatever the clip and the pose left. A bone
+   *  the pose wrote THIS frame is composed onto the pose's output rather
+   *  than begun afresh — beginning would read the pose's value as the clip's
+   *  and throw the pose away; ending records the combined value, so next
+   *  frame the pose's begin still restores the clip underneath. Composed at
+   *  all (the old path slerped in place), so a still clip track gets its
+   *  value back when the animation ends instead of keeping the last frame. */
+  _applyAnimSlot(o, dt, now, taken, posed) {
+    o.weight += (o.wantWeight - o.weight) * Math.min(1, 12 * dt);
+    if (o.wantWeight === 0 && o.weight < 0.02) {
+      for (const [, node] of o.nodes) {
+        if (posed?.has(node)) continue;          // the pose goes on owning it
+        const r = this._composed.get(node);
+        if (r?.live && node.quaternion.equals(r.out)) { node.quaternion.copy(r.base); r.live = false; }
       }
-      for (const [name, node] of o.nodes) {
-        if (taken?.has(node)) continue;
-        this._sampleTrack(o.tracks.get(name), tt, o._scratch);
-        node.quaternion.slerp(o._scratch, o.weight);
-      }
+      o.done = true;
+      return;
+    }
+    let tt = (now - o.start) / 1000;
+    if (tt >= o.dur) {
+      if (o.loop) tt %= o.dur; else { o.wantWeight = 0; tt = o.dur; }
+    }
+    for (const [name, node] of o.nodes) {
+      if (taken?.has(node)) continue;
+      const r = posed?.has(node) ? this._composed.get(node) : this._composeBegin(node);
+      this._sampleTrack(o.tracks.get(name), tt, o._scratch);
+      node.quaternion.slerp(o._scratch, o.weight);
+      this._composeEnd(node, r);
     }
   }
 
@@ -1585,6 +1856,8 @@ export class Avatar {
     this.speakUntil = 0;
     this.voiceLevel = null;
     this.clearPose();
+    for (const l of this._anims ?? []) this._handBack(l);
+    this._anims = null;
     this.clearReach();      // a transplanted body must not keep reaching at the predecessor's target
     this.setLimp(false);
     this.setGazeTarget(null);
@@ -1668,7 +1941,7 @@ export class Avatar {
       this._composeEnd(this.head, r);
     }
     BC('av:override');
-    if (this._override) this._applyOverride(dt, now);
+    if (this._override || this._anims?.length) this._applyOverride(dt, now);
 
     // ---- reach: solved fresh every frame, so it TRACKS. After the held pose
     // (which yields any bone a reach owns) and before vrm.update, same as
@@ -1840,6 +2113,8 @@ export class Avatar {
     // is decided by whichever runs second.
     if (this._wings === undefined) this._findWings();
     if (this._wings && !this._limp) this._flap(dt);
+    // the held pose's raw bones — last, so it wins every bone it names
+    if (this._override) this._applyRawPose();
 
     // THE LAMP BREATHES, on the same 3.4s period as the wings and the leaf.
     //
@@ -2001,6 +2276,11 @@ export class Avatar {
     if (this.bubble) disposeSprite(this.bubble);
     if (this.typing) disposeSprite(this.typing);
     disposeSprite(this.label);
+    // The pool resets humanoid rotations/positions, but knows nothing about
+    // custom-bone transforms or scale. Return every raw channel we still own
+    // before dropping the compose records and handing this VRM to a new wearer.
+    for (const node of this._rawComposed?.keys() ?? []) this._rawRelease(node);
+    this._rawComposed?.clear();
     this.mixer.stopAllAction();
     this._composed.clear();
     releaseVRM(this.vrm);

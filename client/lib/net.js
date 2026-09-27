@@ -107,10 +107,12 @@ export function sendAnim(data) {
     net.ws.send(JSON.stringify({ type: 'anim', ...data }));
   }
 }
-/** Ask another body to hold a pose or play an animation. */
-export function sendPuppet(target, { pose = null, anim = null, ragdoll = null } = {}) {
+/** Ask another body to hold a pose or play an animation. `merge`: pose only
+ *  the bones sent, over what they already hold (a null bone releases it);
+ *  without it the pose replaces theirs whole. */
+export function sendPuppet(target, { pose = null, merge = false, anim = null, ragdoll = null } = {}) {
   if (net.joined && net.ws?.readyState === 1) {
-    net.ws.send(JSON.stringify({ type: 'puppet', target, pose, anim, ragdoll }));
+    net.ws.send(JSON.stringify({ type: 'puppet', target, pose, ...(merge ? { merge: true } : {}), anim, ragdoll }));
   }
 }
 
