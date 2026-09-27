@@ -1,0 +1,72 @@
+# The projector appliance — mediamtx as the transport for the eidoverse screen
+# (anima_dev/eidoverse_projector_design.md, layer 2 route A).
+#
+# This is a TEMPLATE. mkconfig.sh renders it into a runtime config in scratch
+# space, filling every ${…} from the environment, and it is the only thing
+# that does: there is no committed credential and no committed public bind.
+# By default everything binds loopback with a key minted for the run; a
+# network-facing appliance needs an explicit PROJECTOR_BIND and an explicit
+# PROJECTOR_PUBLISH_KEY, said out loud (Mica, #187 review B5).
+#
+# One binary, one ingest, three faces:
+#   in   WHIP  http://host:${WEBRTC_PORT}/${STREAM_PATH}/whip   (OBS ≥ 30: Settings → Stream → WHIP)
+#   in   RTMP  rtmp://host:${RTMP_PORT}/${STREAM_PATH}          (OBS "Custom", any older encoder)
+#   out  HLS   http://host:${HLS_PORT}/${STREAM_PATH}/index.m3u8   (movie night: ~3-6 s behind; the client plays a URL)
+#   out  WHEP  http://host:${WEBRTC_PORT}/${STREAM_PATH}/whep      (sub-second; phase 3 with the presentation delay)
+#   out  RTSP  rtsp://127.0.0.1:${RTSP_PORT}/${STREAM_PATH}       (the caption bot's audio tap — loopback ALWAYS)
+#
+# Publishing needs the key; reading needs nothing — what a screen may point
+# at is the WORLD's decision (its comp allow-list), not the appliance's.
+
+logLevel: info
+api: false
+metrics: false
+pprof: false
+playback: false
+
+authMethod: internal
+authInternalUsers:
+  - user: ${PUBLISH_USER}
+    pass: ${PUBLISH_KEY}
+    ips: []
+    permissions:
+      - action: publish
+        path: ${STREAM_PATH}
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: read
+        path: ${STREAM_PATH}
+
+rtsp: true
+rtspTransports: [tcp]
+rtspEncryption: "no"
+rtspAddress: 127.0.0.1:${RTSP_PORT}
+
+rtmp: true
+rtmpEncryption: "no"
+rtmpAddress: ${BIND}:${RTMP_PORT}
+
+hls: true
+hlsAddress: ${BIND}:${HLS_PORT}
+hlsAllowOrigins: ["*"]
+hlsVariant: lowLatency
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+hlsAlwaysRemux: true
+
+webrtc: true
+webrtcAddress: ${BIND}:${WEBRTC_PORT}
+webrtcAllowOrigins: ["*"]
+webrtcLocalUDPAddress: ${BIND}:${WEBRTC_UDP_PORT}
+webrtcIPsFromInterfaces: ${WEBRTC_IPS_FROM_INTERFACES}
+webrtcAdditionalHosts: ${WEBRTC_HOSTS}
+
+srt: false
+
+paths:
+  ${STREAM_PATH}:
+    source: publisher
+  all_others:

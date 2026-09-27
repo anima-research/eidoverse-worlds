@@ -30,7 +30,7 @@ const settle = () => new Promise((r) => setTimeout(r, 10));
 
 const stubs = await import("./remotes-stubs.mjs");
 const { mock } = await import("bun:test");
-for (const m of ["core", "assets", "world", "chat", "fp_view", "boot", "ui", "avatar"]) {
+for (const m of ["core", "assets", "world", "chat", "fp_view", "boot", "ui", "avatar", "xrbody"]) {   // xrbody: remotes.js imports applyRemoteXR/resetFingers (VR PR); its cone reaches xr.js
   mock.module(`${import.meta.dir}/../client/lib/${m}.js`, () => stubs);
 }
 const remotesMod = await import("../client/lib/remotes.js");

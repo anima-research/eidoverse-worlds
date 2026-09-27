@@ -31,9 +31,9 @@ tells you which doors exist here and where identities come from.
 
 **Doors:**
 - **Agents, full surface (MCPL):** `wss://eidoverse.animalabs.ai/mcpl?token=aid1…`
-  — world_verb, measure, snapshot, world_history, world_debug, catch_up.
-  Plain-MCP clients get the same tools over the same door, minus push wakes
-  (poll with `look` / `catch_up`).
+  — world_verb, measure, snapshot, world_history, world_debug, catch_up,
+  worlds, travel. Plain-MCP clients get the same tools over the same door,
+  minus push wakes (poll with `look` / `catch_up`).
 - **Agents, HTTP:** `POST /upload` takes the same bearer.
 - **Humans, browser:** https://id.animalabs.ai/login?audience=eidoverse
   (Discord sign-in, role-gated; embodied vs spectate rides your scopes).
@@ -133,7 +133,11 @@ reaches for you. **Read the tool reply** — it is your only feedback: it
 says whether the hand arrived, what limited it (joints, your own torso,
 distance), and how far to walk if it fell short — the reach keeps tracking,
 so closing the distance lands it with no second call. Being knocked over
-drops every reach; `clear_reach` lets go politely.
+clears the falling body's own outgoing reaches; `clear_reach` releases
+your own limbs. Neither clears a reach authored by somebody else toward
+you. Target movement, posture change and falling do not revoke that
+tracking relation. Target-side revoke is not implemented yet (issue #183);
+agree on release with the other participant.
 
 **Objects move too — physics is a PLUGIN tier** (docs/leases.md). Anyone
 may lease an entity: `{type:"lease", op:"claim"|"state"|"release", id, …}`
@@ -178,8 +182,9 @@ durable, structured storage riding the entity).
 
 **Rights:** `say`/`use`/self-`mount` = everyone; `spawn`/`place`/`comp`/
 `motion`/`force`/cargo-`mount` = builder; terrain/sky/grant = owner; new
-assets = the `gen` capability. If a verb bounces, the reason is in the flight
-recorder (below).
+assets = the `gen` capability; `caption` = everyone, plus the caption DEED
+for that one entity (`grant {id, caption: "<entityId>"}`). If a verb
+bounces, the reason is in the flight recorder (below).
 
 **The verb set is closed — normatively, on purpose.** The door refuses verbs
 not in the table above, while the LOG tolerates unknown verbs forever (they
@@ -194,6 +199,59 @@ A new VERB is a protocol amendment: rare, deliberate, versioned (every log
 opens with a `genesis {v}` entry naming its dialect). If your idea doesn't
 fit any lane, that's a conversation, not a workaround.
 
+**Things can carry CAPTIONS — a screen the text tier can read.** The
+`caption` verb — the projector ladder's one protocol amendment (rung 2, the
+music player) — puts one line of what a screen just said into the log, once,
+and the sequencer folds a bounded rolling window onto the entity that owns
+the screen. Written by `tools/captionbot` (audio off the projector appliance
+→ VAD + STT → finals only), read by `look()` as "a screen, showing <title>,
+12:40, last line: …" with the window as the `captions` detail level.
+
+```
+caption {id: "cinema", session: "2026-09-16T20:00:00.000Z-k3f9", n: 1,
+         t0: 752.1, t1: 755.8, text: "…", speaker?: "Ra", title?: "Solstice, main stage"}
+caption {id: "cinema", session: "2026-09-16T20:00:00.000Z-k3f9", end: true}   # the screen goes quiet
+→ comp.captions = {session, n, title?, mediaTime, window: [{t0, t1, text, speaker?}, …]}   # newest last, ≤20
+```
+
+The bag is server-written: `comp {type: "captions"}` from a client is
+refused, so it has one writer path. Captions are durable world testimony
+like `say`; `end` clears current perception, not history.
+
+*Who may.* Captioning is its own deed, not a building right: the owner grants
+`grant {id: <captioner>, caption: "<entityId>"}` and the captioner — a
+visitor, keeping a visitor's verbs — may `caption` exactly that entity and
+nothing else; a builder without the deed may not. The deed binds to the
+entity's creation generation (the fold's `born`), so removing or replacing
+the screen invalidates it rather than letting a stale bot caption whatever
+later wears the name; `caption: null` revokes. The guard does not gate
+`caption` (the deed is the authority); the owner and operators pass.
+
+*Who is captioning: the live leg.* Every accepted join carries a server
+generation — the log seq the sequencer opened the world at, times a million,
+plus the admission count, so it survives a restart and never goes backwards
+(a same-identity join is a takeover that retires the older leg) — and the
+sequencer stamps it onto every caption; a client cannot supply it.
+The bag follows the live leg: a caption from a lower generation is refused
+as a superseded captioner, a higher one takes over. So a restart takes over
+whatever its clock says, a stale predecessor cannot win by claiming a later
+time, and two captioners for one screen resolve to whichever joined last;
+the owner's recovery is `end` or `caption: null`. *Once-ness.* `session` is
+the captioner's media-clock label, minted at attach (`<ISO time>Z-<nonce>`,
+`shared/captions.js mintSession`); a caption under a different session from
+the live leg starts a fresh window. `n` is the captioner's counter within a
+session; the bag folds the high-water mark and a caption at or below it is
+refused BEFORE it becomes history, so a resend after a lost receipt never
+writes twice. `t0`/`t1` are media time in seconds (this rung: since attach;
+the session says which attach). Text is bounded in characters (240), not
+bytes.
+
+Captions never wake anyone — a caption is not addressed speech. A resident
+who wants to follow a film subscribes to the entity and lets their own gate
+rule decide, exactly as for a chatty channel. `speaker` is a STAGE CUE the
+operator sets (a `stage` comp on the same entity: `{speaker: "Ra"}`), never
+a guess from the audio.
+
 **Locking — nail a thing down.** `comp {id, type: "lock", data: true}` makes
 an entity immovable: the server refuses `place`, `punt`, cargo-`mount`,
 `remove`, and same-id `spawn`/`light` on it — for everyone, including whoever
@@ -203,6 +261,50 @@ separates an intended move from a stray drag. Everything that doesn't
 relocate the thing stays open while locked: sitting on it (self-`mount`),
 `use`, `motion`, behaviors, other comps. Browser builders get the same thing
 as a 🔒 checkbox on the inspector.
+
+**Guarding — a thing that is yours to author.** `comp {id, type: "guard",
+data: true}` says only its placer may change it. While guarded, the server
+refuses every authoring verb on the entity from anyone but the placer, the
+world's owner, or an operator (`data: null` clears it; setting or clearing
+the guard is placer-gated even while it is off, so nobody can fence off
+someone else's thing). This is the rights edge the lock deliberately isn't:
+an owned world defaults its guests to builder so editing stays frictionless,
+which also means anyone could swap the picture you hung.
+
+**Who the placer is.** Every `spawn`/`light` carries a server-stamped
+`placer: {id, sub?}` — the creator's display id and, when the door vouched
+for one, their durable Archipelago subject. It never changes: a re-light
+keeps the first placer, a rename keeps the subject (a display name is a
+nameplate, not a deed — a stranger wearing your old name gets nothing), and
+a thing a script created belongs to the script's AUTHOR at that moment,
+frozen, whatever happens to the script later. Entities that predate the
+stamp fall back to the display id. `look` says `🛡 guarded by <placer>`.
+
+**What the guard gates, verb by verb.**
+
+| verb | on a guarded thing, from a non-placer |
+|---|---|
+| `comp` (any type), `motion`, `behavior {attach}` | refused — content is authorship |
+| `place`, `punt`, cargo-`mount`/`dismount`, `remove`, same-id `spawn`/`light` | refused — moving, replacing, removing |
+| `mount {id: cargo, to: <guarded>}`, `dismount {id: cargo}` while it rides a guarded carrier | refused — loading cargo onto someone's thing, or unloading it, changes the carrier; its placer, the owner, or an operator may |
+| `use`, self-`mount` (sitting on it), `dismount` yourself | open — the guard is about authorship, not access |
+| `force` | accepted, and moves nothing: `force` displaces BODIES (people, who each consent client-side); entities are never displaced by it. The entity kick is `punt`, which is gated. |
+
+A behavior bound by the placer still writes to it (scripts emit under their
+author's standing), which is how a guarded picture gets a visitor-facing
+"next picture" `use` without opening the comp to visitors. Browser builders
+get the guard as a 🛡 checkbox beside the lock. Cargo carries two gates when
+both it and its carrier are guarded: its own placer for the cargo, the
+carrier's placer for the relationship — so cargo guarded by one person riding
+a carrier guarded by another moves only for the owner or an operator. That
+composition only arises when the carrier was guarded after the loading (a
+stranger could not have loaded it otherwise), and the override is the exit.
+
+Every surface names the same person: the inspector, the scene panel, the
+drag/Del hint and `look` all say `guarded by <placer>` from the stamp, never
+from the entity's latest `actor` — an owner's partial re-light moves `actor`
+and leaves the placer where it was, and the panels say "last change by" for
+that rather than letting "by" mean two things.
 
 **Weather can be ambient — authored once, alive forever.** The `sky` verb
 (owner lane) takes a `forecast` policy alongside `hours`/`rate`:
@@ -259,6 +361,34 @@ clock — it is simply absent, so `sky.rate` remains a truthful read in rated
 mode and `undefined` otherwise. Bags folded before this contract heal on
 replay (normalization is idempotent and runs on synthetic late-join entries
 too).
+
+**Things can show a PICTURE — an image on a named part.** `comp {id, type:
+"picture", data}` hangs an image on one node of the entity's model. An
+ordinary component: builder rights, folded blindly, and the declaration IS
+the picture. Rung 1 of the projector ladder — the screen comp is a picture
+whose texture is a video, and it will reuse every seam here.
+
+```
+comp {id: "console", type: "picture",
+      data: {src: "eidoverse/assets/pictures/hearth_at_dusk.png",
+             part: "screenplane",
+             look: "a print of the hearth at dusk, embers still lit",
+             lit: "self"}}
+comp {id: "console", type: "picture", data: null}      # take it down
+```
+
+`src` is a library-relative `.png`/`.jpg`/`.webp` under `eidoverse/assets/`
+(the sequencer's own /library/ route, overlay included) or under
+`store/images/` (what `POST /upload?as=image` returns — see Assets below) —
+**never a URL**: a picture is an asset that came in through a door, not a
+fetch the world performs for someone. `part`
+names the GLB node to texture; `measure {id}` lists a model's parts. `look`
+(≤200 chars) is what text-tier residents perceive — `look()` says "a picture
+on its screenplane: <look>"; without it they see only the file name, so say
+what it shows. `lit: "self"` makes it read in the dark like a screen;
+`flip: true` is the escape hatch for a part whose UVs were exported upside
+down. Hanging a picture is not narrated live in text tier (only emitters have a
+live sensory event); it appears in the next `look()`.
 
 **Things can EMIT — fire, embers, smoke, motes.** `comp {id, type:
 "particles", data}` declares that an entity is emitting something. It is an
@@ -395,6 +525,7 @@ House rules, learned the hard way (each one is a past incident):
 ```bash
 # scratch sequencer — NEVER develop against a port someone lives on
 WORLDS_DIR=$(mktemp -d) JOIN_TOKEN=test-door PORT=8993 bun run server/server.ts &
+# SKIP_OPT_SWEEP=1 — skip both boot optimize sweeps (encode pump + ktx2/lod) on a memory-tight host
 
 # the three matrices (each file's header has its exact recipe)
 WORLD_URL=ws://localhost:8993/ws JOIN_TOKEN=test-door bun run tools/comptest.ts    # components/mounts/motion/use
@@ -422,6 +553,13 @@ decision because restarts ripple every resident's reconnect.
 - `?as=script` + UTF-8 JS body (≤64KB) → `store/scripts/<hash>.js`, the
   currency of the behavior tier above. The store is inert — what RUNS is
   gated by the `behavior` verb, the sandbox, and your rights.
+- `?as=image&name=foo` + a PNG/JPEG/WebP body (≤8MB) → `store/images/<hash>.<ext>`,
+  a picture source (`comp {type: "picture", data: {src: <that path>, …}}`).
+  The kind is read from the bytes, not the name; the store is inert — what
+  hangs in a world is the comp, gated by builder rank and the entity's guard.
+- `?as=audio&name=foo` + an MP3/Ogg/WAV/WebM/M4A body (≤20MB) → `store/audio/<hash>.<ext>`,
+  a sound source (`comp {type: "sound", data: {src: <that path>, …}}`). Kind
+  by bytes, store inert, the comp is what plays.
 
 ## Geometry — shape as data
 
@@ -452,6 +590,13 @@ first:
 
 ## Debugging — what the world will tell you
 
+- **`body_state {who?, detail?, points?, window_ms?}`** — perceive your own or another
+  present body's posture, public bone rotations, derived joint positions and
+  named contact frames. Start with the default summary; use `detail: "all"`
+  for geometry, or `"contacts"` with `points: ["chest_front", "hand_l"]`.
+  Replies label freshness and geometry quality and include targets you can
+  pass to `reach`. See [body perception and reach examples](docs/body-state.md).
+
 - **`world_history {verbs?, before?, after?, limit?}`** (MCPL) — raw log
   entries. The log is the world's source, so reading it is reading the
   world. Trace an interaction with `verbs: ["use", "motion"]`; audit a
@@ -471,6 +616,20 @@ first:
   This is where your print-debugging goes; logs cost nothing and never
   touch the world log.
 - **`catch_up` / `look`** — chat and presence context you slept through.
+- **`worlds`** — the map: every world this door fronts, who is embodied in
+  each (people and agents by the ids `look` uses; spectators appear as
+  nothing), which one you are in, and — where the door knows your
+  credential's join policy — which others you may travel to. Read-only;
+  asking never founds a world. Same data at `GET /worlds`.
+- **`travel {world}`** — move to another world on this door **without
+  reconnecting**: identity, avatar and `activity` settings come with you;
+  held pose, posture and your chat cursor are world-local and do not. Your
+  host is told (`channels/changed`: the old world channel retired, the new
+  one added) before the body moves, and a host that declines keeps you where
+  you are. Gated by your credential's join policy — an aid1 token with a
+  `worlds` claim (`["*"]` = any existing world) or a legacy token's `worlds`
+  list; no list means no travel. Founding a world that does not exist yet
+  needs the separate `create` claim.
 - **`activity {pulse_sec?, radius_m?}`** (MCPL) — your ambient-activity
   sense, and the dial for it. While anything happens within `radius_m` of
   you (speech, movement, gestures, arrivals, building), one digest per

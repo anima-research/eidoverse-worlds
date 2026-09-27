@@ -25,7 +25,7 @@ import { audioContext } from './audioctx.js';
 import { logChat } from './chat.js';
 import { playWhenAllowed } from './audiounlock.js';
 import { why } from './debuglog.js';
-import { rawMicStream } from './micstate.js';
+import { rawMicStream, setMicLive } from './micstate.js';
 
 let pc = null, cred = null, micStream = null, wantMic = false;
 // My own outbound analyser (sfuMyLevel). Declared HERE, with the rest of the
@@ -383,8 +383,16 @@ export async function sfuMic(on = true) {
   //
   // I introduced that an hour ago by making mic-off swap rather than mute.
   // Re-acquire whenever the current stream is not a real device.
+  // 🔴 TELL micstate THE DEVICE IS BACK, in the same synchronous breath as
+  // the re-enable. This path set track.enabled and returned; the only
+  // setMicLive(true) lived in sfuPublish, so after OFF→ON here micstate still
+  // believed the device was off — and since device liveness now gates the
+  // lane's authority (micstate.js drive closure), the gate would have stayed
+  // shut for good. Static import, no await between the enable and the
+  // report: that gap is a window the mode already promised away.
   if (micStream && !micStream.synthetic) {
     micStream.getTracks().forEach((t) => (t.enabled = true));
+    setMicLive(true);
     return;
   }
   if (micStream?.synthetic) {
@@ -392,8 +400,15 @@ export async function sfuMic(on = true) {
     micStream = null;                      // force a real getUserMedia below
   }
   if (micPending && micPendingPc === pc) {
+    // 🔴 NOTHING TO APPLY AFTER THIS AWAIT (round-4 review). This branch used
+    // to re-enable the tracks and report liveness once the shared
+    // acquisition settled — a second, STALER answer: the user could turn the
+    // mic OFF while the permission prompt was up, and this waiter then
+    // re-enabled the device and told micstate it was live. The publish we
+    // are waiting on re-reads wantMic after its own await (sfuPublish) and
+    // acts on the intent current at that moment; the only correct thing for
+    // a waiter to do is wait.
     await micPending;
-    if (micStream && !micStream.synthetic) micStream.getTracks().forEach((t) => (t.enabled = true));
     return;
   }
   // A stale pending is sfuPublish's problem now — its entry loop re-checks
@@ -435,7 +450,26 @@ async function sfuPublish() {
     // is skipped. Everything below — addTrack, the transceiver hunt,
     // replaceTrack — is source-agnostic and unchanged.
     const { voiceSource } = await import('./voicesource.js');
-    const raw = await voiceSource({ micWanted: wantMic });
+    const asked = wantMic;
+    const raw = await voiceSource({ micWanted: asked });
+    // 🔴 RE-READ INTENT AFTER THE AWAIT (round-4 review). getUserMedia can
+    // sit on a permission prompt for seconds; a mic OFF in that window set
+    // wantMic=false and found nothing to disable (no stream yet), so this
+    // path went on to publish a live device the person had just turned off
+    // — and the synth swap the OFF path wanted never happened, because its
+    // own sfuPublish merely joined this pending. The mirror image holds for
+    // a mic ON during a synth acquisition. Whatever arrived is the answer to
+    // a question nobody is asking any more: stop it (a device keeps the
+    // hardware light on; a synth track is a generator someone will start
+    // again) and let the outer function ask the current question.
+    if (wantMic !== asked) {
+      why('publish', `intent changed during acquisition (asked mic=${asked}, now ${wantMic}) — dropping ${raw?.synthetic ? 'synth' : 'device'}`);
+      for (const t of raw?.getTracks?.() ?? []) { try { t.enabled = false; t.stop(); } catch { /* gone */ } }
+      // A device the person turned OFF is not live — say so before anything
+      // reads micOn(); the re-publish below reports its own source's truth.
+      if (!raw?.synthetic) { try { (await import('./micstate.js')).setMicLive(false); } catch { /* probe env */ } }
+      return 'intent-changed';
+    }
     // 🔴 GATE IT BEFORE THE SENDER SEES IT (2026-08-16). This published `raw`
     // directly, so the SFU sent the unprocessed device stream: continuous room
     // tone, with the panel's sensitivity slider driving nothing at all. The
@@ -553,8 +587,9 @@ async function sfuPublish() {
   // the state stays honest — sfuMicOn() is `!!micStream && wantMic`, so leaving
   // wantMic true after a denial would be a claim we did not earn.
   const own = micPending;
+  let outcome;
   try {
-    await own;
+    outcome = await own;
   } catch (e) {
     // Only OUR intent may be cleared: a superseded invocation's rejection was
     // running `wantMic = false` AFTER a fresh sfuMic(true) had set it — the
@@ -566,6 +601,18 @@ async function sfuPublish() {
     // CAS, not blind null: a successor may have registered its own pending
     // while we settled — clobbering it made a THIRD acquisition possible.
     if (micPending === own) micPending = null;
+  }
+  if (outcome === 'intent-changed') {
+    // The same decision sfuMic(false)/sfuMic(true) would have made had the
+    // flip landed on a settled stream: a wanted mic is acquired; an unwanted
+    // one is replaced by the synth only when a provider can speak for you —
+    // with none, there is nothing to publish (re-entering would acquire the
+    // very device we just dropped, forever).
+    if (myPc !== pc) return;
+    const { synthProvider } = await import('./voicesource.js');
+    const prov = synthProvider();
+    if (wantMic || !!prov?.available?.()) return sfuPublish();
+    return;
   }
   // Adding a track makes US want to renegotiate — but the server offers, so we
   // ASK it to, rather than offering ourselves and causing glare.

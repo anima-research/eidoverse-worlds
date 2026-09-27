@@ -136,3 +136,7 @@ export function findPart(root, name) {
   root?.traverse?.((o) => { if (!hit && o.name === name) hit = o; });
   return hit;
 }
+
+// governor.js (VR alpha) imports the shadow switch + resolution from lightrig; inert here
+export const shadowsOn = () => true;
+export const shadowRes = () => 2048;

@@ -45,12 +45,13 @@ export type BehaviorRec = {
   caps?: { verbs?: string[]; selfOnly?: boolean };
   knobs?: Record<string, unknown>;
   author: string;                    // whose rights emits are checked against
+  authorSub?: string;                // the author's durable subject at bind time (fold: bySub) — frozen onto what the script creates
   ts: number;
   state?: Record<string, unknown>;   // persisted kv, folded from bstate entries
 };
 
 // rights gate, injected by server.ts (rightsOf/VERB_NEEDS live there)
-let emitAllowed: (w: WorldLike, author: string, verb: string, args?: Record<string, unknown>) => string | null = () => "behaviors not wired";
+let emitAllowed: (w: WorldLike, author: string, verb: string, args?: Record<string, unknown>, authorSub?: string) => string | null = () => "behaviors not wired";
 export function wireBehaviorGate(fn: typeof emitAllowed) { emitAllowed = fn; }
 
 let OPT_DIR = "";
@@ -230,8 +231,8 @@ class Instance {
     const caps = this.rec.caps?.verbs ?? DEFAULT_CAPS;
     if (!caps.includes(verb)) return `capability mask: this behavior may not "${verb}" (has: ${caps.join(", ")})`;
     const why = emitAllowed(this.w, this.rec.author, verb,
-      args && typeof args === "object" ? args as Record<string, unknown> : undefined);
-    if (why) return why.includes("locked") ? why : `author rights: ${why}`;
+      args && typeof args === "object" ? args as Record<string, unknown> : undefined, this.rec.authorSub);
+    if (why) return /locked|guarded/.test(why) ? why : `author rights: ${why}`;
     if ((this.rec.caps?.selfOnly ?? true) && this.rec.attach
       && args && typeof args === "object" && "id" in args && args.id !== this.rec.attach) {
       return `selfOnly: this behavior only touches its own entity ("${this.rec.attach}")`;
@@ -239,7 +240,12 @@ class Instance {
     try {
       // §24 entry bus: commit publishes (fanout + bhv.onEntry, whose bhv:
       // actor guard is what keeps script-to-script loops out, as before)
-      this.w.commit(`bhv:${this.id}`, verb, { ...args, by: this.rec.author });
+      // A creation carries its placer, frozen NOW from the author's standing
+      // at this moment — not resolved later through whatever this behavior
+      // id is bound to then (rights.ts placerOf, the #190 review).
+      const placer = verb === "spawn" || verb === "light"
+        ? { placer: { id: this.rec.author, ...(this.rec.authorSub ? { sub: this.rec.authorSub } : {}) } } : {};
+      this.w.commit(`bhv:${this.id}`, verb, { ...args, by: this.rec.author, ...placer });
       return "";
     } catch (err) {
       return `append failed: ${String(err).slice(0, 200)}`;

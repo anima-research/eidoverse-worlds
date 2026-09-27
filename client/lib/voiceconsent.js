@@ -27,17 +27,15 @@ const KEY = 'eido.audio.prefs';
 // against right now but at least it will be starting from a default that makes
 // sense").
 //
-// 🔴 volumeFor('world') HAS NO CALLER, AND THAT IS DELIBERATE — not an unwired
-// loose end (R, 2026-08-16: "we shipped some PRs related to this and closed
-// them because it was getting into component-editing territory and we decided
-// to punt on it. That's correct for the time being").
-//
-// So do not "fix" this by hunting for the missing consumer: world/ambient audio
-// volume waits on the component-editing work, and the slider is the surface
-// held ready for it. It is a parked feature with a visible control, which is a
-// different thing from a control that lies — the TTS slider an hour ago was the
-// latter, promising listener-side control that its own architecture had already
-// made impossible.
+// volumeFor('world') now has exactly one caller: the world bus in
+// client/lib/sounds.js (#192, the `sound` component), which is the
+// component-editing work this slider was held ready for. From 2026-08-16 until
+// then it deliberately had NONE (R: "we shipped some PRs related to this and
+// closed them because it was getting into component-editing territory and we
+// decided to punt on it") — a parked feature with a visible control, which is
+// a different thing from a control that lies. Anything else that plays placed
+// or ambient audio should end in that same bus rather than reading the
+// preference on its own, so the slider stays one control over one thing.
 //
 // 1.0 rather than 0.6 for exactly that reason: 0.6 was a guess about the
 // balance of a mix that does not exist yet. When ambient audio does land, the
@@ -54,7 +52,12 @@ const DEFAULTS = { recvVoice: false, volVoices: 1, volWorld: 1, volTts: 1, sttCo
   // a real mic at a real gain. The slider is honest and 1:1 now, so anyone
   // else's number is a drag away; this is a good place to start, not a claim
   // about everyone's room.
-  micFloor: 0.12 };
+  micFloor: 0.12,
+  // Push-to-talk: the gate opens on a HELD KEY instead of on measured level.
+  // Off by default — voice activation is the mode everything above was tuned
+  // for, and PTT is the deliberate opt-in of someone who knows their room
+  // (an open-plan office, a fan, a housemate) will not survive a level gate.
+  pttMode: false };
 
 let prefs = { ...DEFAULTS };
 try {
@@ -105,6 +108,23 @@ export function setVolume(cat, v) {
   save();
   bus.emit('audio:volume', { cat, value: n });
   return n;
+}
+
+// ---- push-to-talk ----------------------------------------------------------
+// A MODE, not a momentary state: which regime decides when the gate opens.
+// The held-key itself lives in micstate.js next to the gate decision it feeds;
+// this file only remembers the choice, like every other preference here.
+export const pttMode = () => !!prefs.pttMode;
+export function setPttMode(on) {
+  const next = !!on;
+  if (next === prefs.pttMode) return prefs.pttMode;
+  prefs.pttMode = next; save();
+  // micstate drops a held key on this event (a mode you leave should not
+  // leave a phantom finger on the gate), and the panel dims the sensitivity
+  // row — under PTT the floor drives nothing, and a control that does
+  // nothing must not look like it does. That rule is this file's history.
+  bus.emit('audio:ptt', next);
+  return next;
 }
 
 // mic sensitivity (R, 17:19: typing sounds pinged the ear) — the floor below

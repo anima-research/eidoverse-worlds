@@ -66,6 +66,7 @@ export type Client = {
   tokenVerified?: boolean; // this leg presented the identity's own bearer at join
   auxBound?: boolean;  // this aux leg is bound to the primary's identity authority (token bearer OR matching login sub) — the B1 admission result, reused by the B3 attest gate
   gen?: number;        // surfaceSession (#57 B2): server-issued transport epoch for THIS leg.
+  legGen?: number;     // this leg's WORLD-scoped generation (World.legGen): survives sequencer restarts, rides caption entries
                        // Monotonic, never reused. Every rtc/attestation message is stamped with
                        // it, and a superseded generation's messages are refused structurally —
                        // takeover retires the GENERATION, not just the socket.
@@ -417,9 +418,28 @@ export class World {
   private log: WorldLog;
   private session: WorldSession;
 
+  /** The log seq this sequencer opened the world at, and the legs admitted
+   *  since. A leg's GENERATION is `openSeq × 1e6 + count`: server-issued,
+   *  strictly increasing within an opening, and never lower than any
+   *  generation a previous opening issued — every caption entry that carried
+   *  one advanced the seq past the opening that issued it, so a later opening
+   *  reads a higher seq (Mica, #187 round 3: a process-local counter reset on
+   *  restart and stranded the first legitimate captioner behind a bag written
+   *  before the restart). Replay-safe by construction: the generation rides
+   *  the entry, and nothing about it is recomputed from a clock or a process.
+   *  A million admissions per opening is the bound; past it the opening
+   *  refuses further legs a generation rather than issuing an ambiguous one. */
+  readonly openSeq: number;
+  private legCount = 0;
+  legGen(): number {
+    if (this.legCount >= 1_000_000) throw new Error(`world "${this.name}": a million legs admitted since opening — restart the sequencer to open a new generation space`);
+    return this.openSeq * 1_000_000 + (++this.legCount);
+  }
+
   constructor(name: string) {
     this.name = name;
     this.log = new WorldLog(name);
+    this.openSeq = this.log.snapSeq + this.log.entries.length + 1;   // = the next seq this opening will write
     this.session = new WorldSession(this.log, (a, v, ar) => this.commit(a, v, ar));
     // Runtime scripts wake with the world — a behavior keeps behaving with
     // nobody connected (timers), which is the point of running server-side.

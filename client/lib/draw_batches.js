@@ -279,7 +279,13 @@ export class DrawBatches {
       before.apply(scene, args);
       // Renderer has updated world matrices and camera projection at this seam.
       // ShadowNode recursively renders this SAME scene through a light camera.
-      if (!prepared && args[1] === scene && !args[2].isArrayCamera) {
+      // Prepare against the MAIN camera only — never a light camera. In WebXR the main pass arrives as
+      // three's ArrayCamera; excluding every ArrayCamera meant the first non-array caller was ShadowNode's
+      // light camera, and the batches were culled to the sun's shadow box around the origin: the eyes saw
+      // the origin grid and nothing else (R's Steam Frame, 2026-09-05 21:45 'I pop to the origin').
+      const cam = args[2];
+      const isMain = cam === camera || (cam.isArrayCamera && renderer.xr?.isPresenting && cam === renderer.xr.getCamera());
+      if (!prepared && args[1] === scene && isMain) {
         prepared = true;
         this.prepare(scene, args[2]);
       }

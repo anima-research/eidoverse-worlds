@@ -257,13 +257,14 @@ function solveWristChain(chain, avatar, targetWorld, poleHint = null, opts = {})
     trace: opts.trace,
     lastPick: opts.lastPick ?? null,
     lastSwivel: opts.lastSwivel ?? null,
+    lastElbow: poleHint, lastGap: opts.lastGap,
     root: shoulder, target, L1: chain.L1, L2: chain.L2,
     rUpper: chain.rUpper, rLower: chain.rLower,
     // The rest direction carried by the parent — a pure function of the
     // current pose. NOT last frame's elbow: threading that back in made the
-    // solve depend on its own output and self-touch oscillated (see
-    // solveTwoBoneClear). poleHint is accepted and ignored for callers that
-    // still pass it.
+    // solve depend on its own output and self-touch oscillated. The previous
+    // elbow is tested separately as an incumbent, never rotated as the sweep
+    // basis (solveTwoBoneClear).
     pole: qRot(qParent, chain.dRestU),
     fwd: qRot(qParent, chain.fwd),
     coneAxis: qRot(qParent, chain.coneAxis),
@@ -281,7 +282,7 @@ function solveWristChain(chain, avatar, targetWorld, poleHint = null, opts = {})
   //
   // Only when the caller says which way; a reach with no surface to meet has
   // no business inventing a wrist angle, and would only fight the clip.
-  let lower = q.lower, hand = null, handFrame = null, palmResidual = null;
+  let lower = q.lower, hand = null, handFrame = null, palmResidual = null, palmTwist = null;
   if (palmWant) {
     const op = orientPalm({
       lowerFrame: q.lowerFrame, dLower: res.lower, palmRest: chain.palmRest,
@@ -295,14 +296,16 @@ function solveWristChain(chain, avatar, targetWorld, poleHint = null, opts = {})
       // as anyone turned around. The position was being converted two lines
       // up; the direction was not.
       want: qRot(qRootInv, palmWant.dir), twistMax: chain.lim.foreTwistMax,
+      lastTwist: opts.lastTwist, lastWrist: opts.lastWrist, dt: opts.dt,
     });
     lower = qMulq(qConj(q.upperFrame), op.lowerFrame);
     hand = op.handLocal;
     handFrame = qMulq(op.lowerFrame, hand);
     palmResidual = op.residualDeg;
+    palmTwist = op.twist;
   }
   return {
-    ok: true, res, upper: q.upper, lower, hand, handFrame, palmResidual, pick: res.pick ?? null,
+    ok: true, res, upper: q.upper, lower, hand, handFrame, palmResidual, palmTwist, pick: res.pick ?? null,
     swivelUsed: res.swivel ?? 0,
     swivel: res.swivel ?? 0, penetration: res.penetration ?? 0,
     elbowOffset: [res.elbow[0] - shoulder[0], res.elbow[1] - shoulder[1], res.elbow[2] - shoulder[2]],

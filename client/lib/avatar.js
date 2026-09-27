@@ -2,11 +2,19 @@
 // the small autonomic behaviours that make a puppet read as present (gaze,
 // blink, head pitch, mouth movement while speaking).
 
-import { THREE, scene, camera, renderer } from './core.js';
-import { report, angleDelta, bus } from './base.js';
+import { renderAside } from './render.js';
+import { THREE, scene, camera, renderer, backendName } from './core.js';
+import { makeCapsuleVrm } from './capsulebody.js';
+import { FADE_PRESS } from './locomotion_clip.js';   // one owner for the jump-press fade (see _setAction)
+import { report, angleDelta, bus, tee } from './base.js';
 import { defsRegistry } from './defs.js';
 import { measureChain, solveChain } from './reachbone.js';
 import { REACH_CHAINS } from '../../shared/joints.js';
+// The light-slot rig: a body that GLOWS should also CAST. Requests, never
+// lights -- lightrig owns the topology because adding a PointLight at runtime
+// recompiles every material in the scene.
+import { attachLamps, releaseOwner, updateRequest, glowScale } from './lightrig.js';
+import { setBodyShadows } from './materials.js';
 // The period, from the one place that defines it. Janus set the idle flap to
 // 1/3.4 Hz -- "Mythos' signature period" -- and that 3.4 is spec T8's BREATH,
 // already a named constant. Importing it beats pasting 0.29411764705: the two
@@ -17,12 +25,13 @@ import {
   CLIP_SLOTS, CLIP_SPEED, releaseVRM, vrmWarmed, markVrmWarmed,
 } from './assets.js';
 import { beginWork, enqueue, idleYield, nextFrame, loadNote } from './loadwork.js';
-import { warm } from './warmqueue.js';
+import { warm, P_GATE } from './warmqueue.js';
 import { heightAt } from './terrain.js';
 import { surfaceUnder } from './colliders.js';
 import { DRIVEN_BONES } from './ragdoll.js';
 import { stroke as strokeIcon } from './icons.js';
 import { SEAT_CLIP_FILE } from './seatcore.js';
+import { planReaches } from '../../shared/reachorder.js';
 
 // The clip library is ~1.9MB PER SLOT. Waiting for all seven before a body
 // could exist put 13MB between a person and their own legs — the single
@@ -239,33 +248,17 @@ const CLIP_FALLBACK = {
 // Emote slots are loaded lazily — a body needs locomotion to exist, but it
 // doesn't need to know how to dance until someone dances.
 //
-// §24l R1: the vocabulary itself is DATA now — defs/animations/_emotes.json,
-// hydrated below (object identity preserved, the FLORA_SPECIES trick) and
-// re-hydrated on the defs-updated push. It used to live in four places
-// (this table, emotebar's ICON map, the /emote help string, the help
-// sheet's prose), each drifted from the others.
-export const EMOTES = {};      // name → clip
-export const EMOTE_ORDER = []; // listed names, def key order = bar/number-key order
-export const EMOTE_ICONS = {}; // name → bar glyph
-export function hydrateEmotes(table) {
-  for (const k of Object.keys(EMOTES)) delete EMOTES[k];
-  for (const k of Object.keys(EMOTE_ICONS)) delete EMOTE_ICONS[k];
-  EMOTE_ORDER.length = 0;
-  for (const [name, e] of Object.entries(table ?? {})) {
-    if (!e?.clip) continue;
-    EMOTES[name] = e.clip;
-    if (e.icon) EMOTE_ICONS[name] = e.icon;
-    if (e.listed !== false) EMOTE_ORDER.push(name);
-  }
-  bus.emit('emotes-updated');
-}
-{
-  const refresh = () => defsRegistry()
-    .then((reg) => hydrateEmotes(reg.emotes))
-    .catch((e) => console.warn('[emotes] def hydration failed — no emotes until it lands:', e));
-  refresh();
-  bus.on('defs-updated', refresh);
-}
+// The emote vocabulary now lives in emotedefs.js (the bar needs it without the
+// engine). Re-exported here because these names were part of avatar.js's surface
+// before the split and several callers still read them from it — same objects, one
+// module instance, so the hydration trick is unaffected.
+// IMPORT then re-export, not `export ... from`. A bare re-export forwards the names to
+// importers without creating local bindings, so avatar.js's own `EMOTES[name]` (playEmote,
+// below) became a ReferenceError the moment the table moved out - and it only fires when
+// someone actually plays an emote, which no boot-level test does. Reported from a phone as
+// a red "EMOTES is not defined" toast.
+import { EMOTES, EMOTE_ORDER, EMOTE_ICONS, hydrateEmotes } from './emotedefs.js';
+export { EMOTES, EMOTE_ORDER, EMOTE_ICONS, hydrateEmotes };
 // Seated postures differ by what you're sitting ON — the ground clip on a
 // chair leaves you cross-legged in mid-air.
 export const SEAT_CLIPS = { ground: 'sitting_on_ground', chair: SEAT_CLIP_FILE };
@@ -285,14 +278,24 @@ function textSprite(draw, w, h, scaleW) {
   return s;
 }
 const disposeSprite = (s) => { s.material.map?.dispose(); s.material.dispose(); };
+// a token read at paint time — canvas sprites cannot use var(); a 'style' event repaints them
+const tokv = (n, fb) => (getComputedStyle(document.documentElement).getPropertyValue(n) || fb).trim();
+// every live Avatar, so a Style change can repaint the sprites it baked from
+// tokens (owner, 09-05 16:41: pink accent, nameplates still teal)
+const liveAvatars = new Set();
+bus.on('style', () => { for (const a of liveAvatars) a.repaintLabel?.(); });
 
 const makeLabel = (name) => textSprite((ctx) => {
-  ctx.font = 'bold 40px ui-monospace, monospace';
+  // humanist, not terminal (R, 08-30: "Matrix vibes, can we do better").
+  // system-ui = Segoe on Windows: warm, rounded, no webfont race on a
+  // canvas that draws the moment someone arrives.
+  ctx.font = '600 40px system-ui, "Segoe UI", sans-serif';
+  try { ctx.letterSpacing = '1.5px'; } catch {}
   ctx.textAlign = 'center';
   const w = Math.min(500, ctx.measureText(name.slice(0, 24)).width + 40);
-  ctx.fillStyle = 'rgba(6,16,22,0.62)';
-  ctx.beginPath(); ctx.roundRect((512 - w) / 2, 6, w, 52, 12); ctx.fill();
-  ctx.fillStyle = '#8fe8c8';
+  ctx.fillStyle = tokv('--pill-bg', 'rgba(6,16,22,0.62)');
+  ctx.beginPath(); ctx.roundRect((512 - w) / 2, 6, w, 52, 26); ctx.fill();   // pill (R, 15:12)
+  ctx.fillStyle = tokv('--pill-name', '#8fe8c8');
   ctx.fillText(name.slice(0, 24), 256, 46);
 }, 512, 64, 0.9);
 
@@ -316,18 +319,18 @@ function makeBubble(text) {
   if (clipped) lines.push('▾ more in chat');
   const h = 30 + lines.length * 34;
   return textSprite((ctx) => {
-    ctx.font = '27px ui-monospace, monospace';
+    ctx.font = '27px system-ui, "Segoe UI", sans-serif';
     // conform to the actual text (R, in-world 13:27): box hugs the widest
     // wrapped line; the old fixed 700 stays as the ceiling
     const wMax = Math.max(...lines.map((l) => ctx.measureText(l).width));
     const w = Math.min(700, Math.ceil(wMax) + 44);
-    ctx.fillStyle = 'rgba(8,20,28,0.86)';
-    ctx.strokeStyle = 'rgba(143,232,200,0.25)';
+    ctx.fillStyle = tokv('--pill-bg', 'rgba(8,20,28,0.86)');
+    ctx.strokeStyle = tokv('--pill-edge', 'rgba(143,232,200,0.25)');
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.roundRect((704 - w) / 2, 2, w, h - 4, 16); ctx.fill(); ctx.stroke();
     ctx.textAlign = 'center';
     lines.forEach((l, i) => {
-      ctx.fillStyle = clipped && i === lines.length - 1 ? '#8ba39c' : '#e8f4ef';
+      ctx.fillStyle = clipped && i === lines.length - 1 ? tokv('--pill-dim', '#8ba39c') : tokv('--pill-fg', '#e8f4ef');
       ctx.fillText(l, 352, 38 + i * 34);
     });
   }, 704, Math.max(64, h), 2.4);
@@ -387,8 +390,8 @@ function drawTypingDots(sprite, t, state) {
   } else {
     for (let i = 0; i < 3; i++) {
       const b = 0.32 + 0.68 * Math.max(0, Math.sin(t * 5 - i * 0.85));
-      ctx.fillStyle = `rgba(180,240,216,${b})`;
-      ctx.beginPath(); ctx.arc(48 + i * 16, 28, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = b; ctx.fillStyle = tokv('--pill-dot', 'rgb(180,240,216)');
+      ctx.beginPath(); ctx.arc(48 + i * 16, 28, 5, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
     }
   }
   sprite.material.map.needsUpdate = true;
@@ -427,13 +430,110 @@ const _wup = new THREE.Vector3();
 const _wsw = new THREE.Quaternion();
 const DEG = Math.PI / 180;
 
+// THE LAMP'S BREATH, as dials rather than as three numbers buried in a
+// trig expression -- this took three passes to feel right and will take more.
+//   FLOOR  an ember, not darkness: the chest keeps burning between breaths
+//   PEAK   below 1 on purpose; a lower ceiling reads as breath, not as a pulse
+//   SHAPE  >1 dwells near the floor and softens the flare (inhale slower than
+//          the rekindling); 1.0 is a plain sine, 2.0 is the sharp version
+// A SMALL FLOOR rather than a hard zero. Janus wanted "almost out, but not
+// quite" and later "fully dark"; both read well, and mica was right that the
+// ember comment and a literal 0 contradicted each other. 0.03 is dark enough
+// to look out and non-zero so the chest never reads as switched off. Janus:
+// "ideally this should eventually be configurable in real time anyway" -- so
+// these four want to be debug-panel dials, like WING_IDLE's, and are named
+// here so that change is a wiring job rather than a hunt.
+const LAMP_FLOOR = 0.03;
+const LAMP_PEAK = 0.62;    // brighter WITH shadows on -- see below
+const LAMP_SHAPE = 1.6;
+// PEAK went 0.45 -> 0.62 when the lamp started casting shadows, and the reason
+// is worth keeping: 0.45 was tuned against a body with NO dark side, where the
+// only thing the glow competed with was the sky. Once the lamp throws its own
+// shadows the lit surfaces have shadowed neighbours to be read against, and the
+// same number looks weaker -- the contrast that makes a shadow legible also
+// makes the light that cast it look dimmer. Janus, seeing it with shadows on:
+// "it looks great with shadows on, but I think now the light should be a bit
+// brighter."
+//
+// Still under 1.0. The ceiling is what keeps this reading as breath rather
+// than as a pulse, and the day curve below still dims it toward noon.
+// ...and the sky's share. The surface dims toward noon on lightrig's own
+// (1-dayness)^2 curve, so the lamp is BRIGHT AT NIGHT and subtle at midday --
+// which is what a lamp does. The floor keeps it visible in full sun rather
+// than switching off, because a lamp that is off at noon looks broken.
+const LAMP_DAY_FLOOR = 0.18;
+
+
+/** A jump clip's take-off: the hips dip (anticipation), then come back up through their rest height — that is the
+ *  frame the feet leave the floor. A clip with no hips track, or one that starts by rising, gives 0. */
+function clipTakeoff(clip) {
+  if (clip.userData.takeoff != null) return clip.userData.takeoff;
+  const tr = clip.tracks.find((t) => /hips\.position$/i.test(t.name) || /Hips\.position$/.test(t.name));
+  let out = 0;
+  if (tr && tr.values.length >= 6) {
+    const n = tr.times.length, half = Math.max(1, Math.floor(n / 2));
+    let minI = 0, minY = Infinity;
+    for (let i = 0; i < half; i++) { const y = tr.values[i * 3 + 1]; if (y < minY) { minY = y; minI = i; } }
+    if (minI > 0 && tr.values[1] - minY > 0.01) {   // a real dip (>1 cm), not noise
+      // the body actually leaves the ground when the hips come back UP through rest height (jump.vrma:
+      // rest .864, bottom .494 @0.33 s, back through rest @0.50 s, apex @0.75 s) — start there, not at the
+      // bottom of the squat, or an airborne body is still pushing off
+      let i = minI; while (i < n - 1 && tr.values[i * 3 + 1] < tr.values[1]) i++;
+      out = tr.times[i];
+    }
+  }
+  clip.userData.takeoff = out;
+  return out;
+}
 export class Avatar {
+  /** Monotonic, so one identity's successive bodies never share a lamp owner. */
+  static _seq = 0;
+
   constructor(id, vrm, clips) {
     this.id = id;
     this.vrm = vrm;
     this.root = new THREE.Group();
     this.root.userData.isBody = true;   // so the sky's scene-diff never claims a person
+    this.root.userData.who = id;        // perf attribution: this subtree is a PERSON (perfscope)
     this.root.add(vrm.scene);
+    // A LAMP IN THE BODY. attachLamps walks for emissive meshes and requests a
+    // real point light at each one's centre. main already does this for spawned
+    // models (realize/models.js, owner `entity:<id>`); avatars are the other
+    // half -- Mythos has a gold emitter in his chest behind a transmissive
+    // pane, and this is what makes it light the room rather than merely look
+    // bright.
+    //
+    // OWNED PER BODY INSTANCE, not per identity. `body:${id}` was wrong and
+    // mica's probe caught it: an entity id is unique per entity, but an
+    // IDENTITY is stable across a body swap, and the swap order is build-new
+    // then dispose-old (mybody.js). So the new body registered `body:mythos`,
+    // the old body's dispose released `body:mythos`, and the live lamp died --
+    // measured as requests 1 -> 0. A monotonic instance id cannot collide.
+    this._lampOwner = `body:${id}:${++Avatar._seq}`;
+    this._lamps = [];
+    // `shadows: true` is the avatar's claim on the one casting slot. The
+    // default is false at the seam, so a placed glowing prop cannot take it
+    // from a body -- see the note in attachLamps.
+    try { this._lamps = attachLamps(vrm.scene, this._lampOwner, { shadows: true }) ?? []; }
+    catch { /* a body with no glow simply has none */ }
+    // A LAMPED BODY CASTS AND RECEIVES; every other body keeps its blob.
+    //
+    // The lamp is the whole reason bodies got real shadows -- "a lamp inside a
+    // ribcage that does not throw the ribcage is a lamp pretending" -- so the
+    // lamp is also the gate. Doing it for every avatar in the world is a global
+    // rendering default on shared client code whose cost nobody has measured:
+    // bodies never reach warmqueue's warmDepth, so their depth pipelines
+    // compile in-frame on the first shadow render, and they bypass the
+    // distance-ranked caster budget that exists to stop exactly that.
+    //
+    // Janus, deciding the scope: "set the change for now to only shadowed body
+    // by default if you have the lamp like mythos... we can test the
+    // performance of having more on the shared server later."
+    if (this._lamps.length) {
+      try { setBodyShadows(vrm.scene, true); }
+      catch { /* shadows are a nicety; a body that cannot take them still works */ }
+    }
+
     this.mixer = new THREE.AnimationMixer(vrm.scene);
     this.actions = {};
     this.extraClips = new Map(); // lazily-loaded emote actions
@@ -458,6 +558,7 @@ export class Avatar {
     this.label = makeLabel(id);
     this.label.position.y = 1.95;
     this.root.add(this.label);
+    liveAvatars.add(this);
 
     // ---- gaze: VRM ships a lookAt rig and nothing was ever pointing it, so
     // every body in the world had dead eyes. A target object per avatar,
@@ -912,25 +1013,49 @@ export class Avatar {
   }
 
   // ---- locomotion / clips
-  setClip(slot, speed = 0) {
+  setClip(slot, speed = 0, { fade, ease = false } = {}) {
     // Moving cancels an emote. Standing frozen mid-cheer while walking away
     // is worse than cutting the cheer short.
     if (this.emote && speed > 0.05) this.cancelEmote();
     if (this.emote) return;        // otherwise it owns the body until it finishes
     let use = slot;
     while (!this.actions[use] && CLIP_FALLBACK[use]) use = CLIP_FALLBACK[use];
-    this._setAction(this.actions[use], use);
+    this._setAction(this.actions[use], use, fade, ease);
     const a = this.actions[use];
     if (!a) return;
     const nat = CLIP_SPEED[slot];
     a.timeScale = nat > 0 && speed > 0 ? THREE.MathUtils.clamp(speed / nat, 0.6, 1.6) : 1;
   }
-  _setAction(a, slot) {
+  _setAction(a, slot, fadeIn, ease = false) {
     if (!a || this.current === a) return;
-    if (this.current) this.current.fadeOut(0.22);
-    a.enabled = true;
-    a.setEffectiveWeight(1);       // base weight — fadeIn ramps a MULTIPLIER on this
-    a.reset().fadeIn(0.22);
+    let linear = false;
+    // into a jump the caller says how fast: a jump press is snappy (feet already off the floor), a walk-off is
+    // 0.5 s EASED (owner, 09-19: 'start immediately… a bezier… almost no transition right away, smoother overall').
+    // The press fade is FADE_PRESS, imported rather than repeated: this fallback and locomotion_clip.js held the
+    // same literal independently, so a change in one would have silently diverged from the other.
+    const fade = fadeIn ?? (slot === 'jump' ? FADE_PRESS : 0.22);
+    // an eased crossfade cut short (a landing inside the 0.5 s walk-off ease): its outgoing action was parked at
+    // weight 1-w with nothing ever fading it — walk stayed half-blended into idle (pre-review B2)
+    // a cut that lands INSIDE an ease (a stair-step landing 0.2 s into the walk-off ease) continues from the current
+    // weights with a linear profile — the plain branch's reset()+fadeIn restarted the incoming clip from 0 and let the
+    // weight sum fall to 0.76 for a frame (round 4 S1b). The finished-ease case takes the plain branch as before.
+    if (this._xfade) { const x = this._xfade; if (x.out && x.out !== a && x.out !== this.current) x.out.fadeOut(fade); this._xfade = null; ease = true; linear = true; }
+    if (ease) {
+      // three's fades are linear; this one is smoothstep on both sides so the weights always sum to 1
+      const prev = this.current; const out0 = prev ? prev.getEffectiveWeight() : 0; if (prev) prev.stopFading();
+      const in0 = a.getEffectiveWeight();   // from wherever the previous linear fade left them, not 0/1 — a land-then-walk-off popped 0.26 (round 3 S1)
+      a.enabled = true; a.reset(); a.stopFading(); a.setEffectiveWeight(in0); a.play();
+      this._xfade = { out: prev, in: a, dur: fade, t: 0, in0, out0, linear };
+    } else {
+      if (this.current) this.current.fadeOut(fade);
+      a.enabled = true;
+      a.setEffectiveWeight(1);       // base weight — fadeIn ramps a MULTIPLIER on this
+      a.reset().fadeIn(fade);
+    }
+    // The jump LEAVES THE GROUND INSTANTLY (gamey, on purpose) but the clip opens with its anticipation crouch,
+    // so the body squatted in mid-air and then rose (owner, 09-19). Start the clip at take-off — the frame the hips
+    // stop dipping — measured from the clip itself, so it holds for any body and any future jump clip.
+    if (slot === 'jump') a.time = clipTakeoff(a.getClip());
     this.current = a;
     this.currentSlot = slot;
   }
@@ -1064,7 +1189,7 @@ export class Avatar {
   // a point that may be moving — someone else's shoulder, a thrown ball, a
   // door handle on a swinging door. So it is stored as a target FUNCTION and
   // re-solved every frame, which is what makes it track. The cost is one
-  // closed-form solve per reaching arm per frame: no iteration, no history.
+  // closed-form solve per reaching arm per frame, with continuity history.
   //
   // It gets its own override slot rather than sharing `_override`, because a
   // held pose and a reach have to coexist — an agent holding a posture and
@@ -1094,6 +1219,14 @@ export class Avatar {
     this._reach.set(key, {
       key, target, weight: prev?.weight ?? 0, wantWeight: opts.weight ?? 1,
       pole: opts.pole ?? null, lastElbow: prev?.lastElbow ?? null, bound: [],
+      lastPick: prev?.lastPick ?? null, lastSwivel: prev?.lastSwivel ?? null, lastTwist: prev?.lastTwist ?? null,
+      lastGap: prev?.gap ?? prev?.lastGap ?? null,
+      lastWrist: prev?.lastWrist ?? null,
+      relation: opts.relation ?? null,
+      palm: opts.palm !== false,
+      // Retargeting still has to restore the previous writes when the new
+      // relation cannot solve (including a cycle over a paused base clip).
+      _nu: prev?._nu, _nl: prev?._nl, _nh: prev?._nh,
     });
     return true;
   }
@@ -1115,16 +1248,27 @@ export class Avatar {
 
   _applyReach(dt, now) {
     if (!this._reach?.size) return;
-    for (const [key, r] of [...this._reach]) {
+    // Establish this frame's clip base before any relation reads a target.
+    for (const r of this._reach.values()) for (const node of [r._nu, r._nl, r._nh]) {
+      const c = node && this._composed.get(node);
+      if (c?.live && node.quaternion.equals(c.out)) { node.quaternion.copy(c.base); c.live = false; }
+    }
+    // Release is a lifecycle operation, including when a cycle prevents a
+    // solve. Retire fading entries BEFORE planning so their dependants can
+    // resume against the released limb's clip pose in this same frame.
+    for (const [key, r] of this._reach) {
+      if (r.wantWeight !== 0) continue;
       r.weight += (r.wantWeight - r.weight) * Math.min(1, 12 * dt);
       if (r.wantWeight === 0 && r.weight < 0.02) {
-        for (const node of [r._nu, r._nl, r._nh]) {
-          const c = node && this._composed.get(node);
-          if (c?.live && node.quaternion.equals(c.out)) { node.quaternion.copy(c.base); c.live = false; }
-        }
         this._reach.delete(key);
-        continue;
       }
+    }
+    const owner = this._reachOwner ?? 'self';
+    const plan = planReaches([...this._reach].map(([limb, r]) => ({ owner, limb, target: r.relation, reach: r })));
+    for (const e of plan.blocked) { e.reach.bound = ['cyclic-reach']; e.reach.gap = null; }
+    for (const { limb: key, reach: r } of plan.order) {
+      // Only solvable reaches fade IN; all releases already faded above.
+      if (r.wantWeight !== 0) r.weight += (r.wantWeight - r.weight) * Math.min(1, 12 * dt);
       const ch = this._measureChain(key);
       if (!ch) { this._reach.delete(key); continue; }
 
@@ -1140,7 +1284,7 @@ export class Avatar {
       // outward normal
       const palm = (r.palm !== false && normal && normal.length === 3 && normal.every(Number.isFinite))
         ? { dir: [-normal[0], -normal[1], -normal[2]] } : null;
-      const out = solveChain(ch, this, tw, r.lastElbow, { palm, lastPick: r.lastPick, lastSwivel: r.lastSwivel });
+      const out = solveChain(ch, this, tw, r.lastElbow, { palm, lastPick: r.lastPick, lastSwivel: r.lastSwivel, lastTwist: r.lastTwist, lastWrist: r.lastWrist, lastGap: r.lastGap, dt });
       if (!out.ok) { r.bound = [out.why]; continue; }
       r.bound = out.res.bound; r.gap = out.res.gap; r.lastPick = out.pick ?? null; r.lastSwivel = out.swivelUsed ?? null; r.penetration = out.penetration ?? 0; r.lastElbow = out.elbowOffset;
       // what the solver BELIEVES it placed, in world space, so a probe can
@@ -1153,6 +1297,9 @@ export class Avatar {
       this._writeBone(ch.nodes.lower, q.lower, r.weight);
       if (out.hand) { r._nh = ch.nodes.end; this._writeBone(ch.nodes.end, out.hand, r.weight); }
       r.palmResidual = out.palmResidual ?? null;
+      r.lastTwist = out.palmTwist ?? null;
+      r.lastGap = out.res.gap;
+      r.lastWrist = out.hand ?? null;
     }
   }
 
@@ -1399,6 +1546,12 @@ export class Avatar {
    *  whole avatar to change a label would drop you through the floor mid-step. */
   setName(name) {
     this.id = name;
+    this._labelName = name;
+    this.repaintLabel();
+  }
+  /** rebuild the nameplate sprite from the current tokens (rename, or a Style change) */
+  repaintLabel() {
+    const name = this._labelName ?? this.id ?? '';
     this.root.remove(this.label);
     disposeSprite(this.label);
     this.label = makeLabel(this._seatApprox ? `${name} ≈` : name);
@@ -1469,6 +1622,11 @@ export class Avatar {
   }
 
   update(dt, now = performance.now()) {
+    if (this._xfade) {   // the eased crossfade (see _setAction): smoothstep in, its complement out
+      const x = this._xfade; x.t += dt; const u = Math.min(1, x.t / x.dur), w = x.linear ? u : u * u * (3 - 2 * u);
+      x.in.setEffectiveWeight(x.in0 + (1 - x.in0) * w); if (x.out && x.out !== x.in) x.out.setEffectiveWeight(x.out0 * (1 - w));
+      if (u >= 1) { if (x.out && x.out !== x.in) x.out.setEffectiveWeight(0); this._xfade = null; }
+    }
     const BC = globalThis.__ewBC ?? (() => {});
     // emote expiry
     if (this.emote && now > this.emote.until) this.cancelEmote();
@@ -1659,6 +1817,11 @@ export class Avatar {
     this._springsLimp(this._limp && !this.__simHair);
     const sbm = this.__simHair ? this.vrm.springBoneManager : null;
     if (sbm) this.vrm.springBoneManager = null;
+    // THE SEAM for tracked-body writes (xrbody: look-at, eye anchor, arm IK): after
+    // the mixer has posed this frame, before vrm.update copies normalized → raw.
+    // A system before update() is overwritten by the mixer; one after never
+    // reaches the skeleton — the same ordering trap the head pitch met (above).
+    this.onBeforeVrmUpdate?.(dt);
     this.vrm.update(dt);
     if (sbm) this.vrm.springBoneManager = sbm;
 
@@ -1677,6 +1840,76 @@ export class Avatar {
     // is decided by whichever runs second.
     if (this._wings === undefined) this._findWings();
     if (this._wings && !this._limp) this._flap(dt);
+
+    // THE LAMP BREATHES, on the same 3.4s period as the wings and the leaf.
+    //
+    // Janus: "it could pulse at 3.4 seconds". BREATH is already the house's
+    // period (spec T8, shared/breath.js) and already drives the wing idle, so
+    // the lamp and the wings rise together rather than beating against each
+    // other -- which is the difference between a body with a rhythm and a body
+    // with two.
+    //
+    // NEARLY OUT, NOT OUT, and dimmer at the top -- Janus, watching the full
+    // swing: "somewhat less bright at the peak, and have it fade to almost
+    // out, but not quite."
+    //
+    // Three passes to get here, and the middle one was worth making: 0.72
+    // floor (too subtle, a dimmer twitching), then a true zero (noticeable,
+    // and reading as a lamp cutting out), and now an EMBER -- 0.08 at the
+    // bottom, so the chest is never actually dark and the eye reads a body
+    // that keeps burning rather than one that switches. The peak drops to 0.70
+    // because a lower ceiling makes the same swing feel like breath instead of
+    // a pulse; brightness and drama are not the same dial.
+    //
+    // The exponent shapes the dwell. sin^1.6 over |sin| holds near the floor a
+    // little longer than a bare sine and softens the peak -- the inhale is
+    // slower than the flare. At half the angular rate, so the period is BREATH
+    // and not half of it.
+    //
+    // Both the emissive SURFACE and the CAST light move together -- the
+    // surface so it is visible up close through the glass, the light so the
+    // pulse reaches whatever he is standing near.
+    if (this._lampMats === undefined) {
+      this._lampMats = [];
+      this.vrm.scene.traverse((o) => {
+        if (!o.isMesh) return;
+        for (const m of (Array.isArray(o.material) ? o.material : [o.material])) {
+          if (m?.emissiveIntensity !== undefined && /lampglass/i.test(m.name || '')) {
+            // ?? not ||: an authored emissiveIntensity of ZERO is a
+            // deliberate value (a lamp that starts dark), and `|| 1` turned it
+            // into full brightness -- then dispose() "restored" it to 1 and
+            // the material came out of the pool brighter than authored.
+            this._lampMats.push({ m, base: m.emissiveIntensity ?? 1 });
+          }
+        }
+      });
+    }
+    if (this._lampMats.length) {
+      const phase = (now / 1000) * (Math.PI / BREATH);   // half-rate: the shaped
+      const breath = Math.abs(Math.sin(phase)) ** LAMP_SHAPE;   // sine has 2x
+      // THE SKY SETS THE CEILING. Janus: "very bright at night, subtle at
+      // noon, and in between in the in between hours." The CAST light was
+      // already day-aware -- lightrig scales every dayAware request by
+      // (1-dayness)^2 -- but the emissive SURFACE has no slot and never went
+      // through that, so the bulb burned identically at midnight and midday.
+      // Read against a bright noon sky it looked washed out; against night it
+      // glared. One curve for both halves fixes the relationship rather than
+      // splitting the difference with a constant.
+      //
+      // A FLOOR under the daylight term, not zero: a lamp that is *off* at
+      // noon is a lamp with a bug, and Mythos's chest is lit because he is
+      // lit, not because it is dark. 0.18 keeps it present in full sun.
+      const day = LAMP_DAY_FLOOR + (1 - LAMP_DAY_FLOOR) * glowScale();
+      const k = (LAMP_FLOOR + (LAMP_PEAK - LAMP_FLOOR) * breath) * day;
+      for (const { m, base } of this._lampMats) m.emissiveIntensity = base * k;
+      // the cast follows the glow, at whatever intensity the inference chose
+      // The rig applies its own dayGlow to a dayAware request, so the cast
+      // gets the BREATH only -- multiplying by `day` here would square it.
+      for (const { key, intensity } of this._lamps) {
+        updateRequest(key, { intensity: intensity * (LAMP_FLOOR
+          + (LAMP_PEAK - LAMP_FLOOR) * breath) });
+      }
+    }
 
     // ---- contact shadow: on the GROUND, not on the body.
     // The blob is a child of root at a fixed local y, so it rode along under a
@@ -1705,7 +1938,7 @@ export class Avatar {
     const d = this.root.position.distanceTo(camera.position);
     const vis = THREE.MathUtils.clamp(1 - (d - 18) / 14, 0, 1);
     this.label.material.opacity = vis;
-    this.label.visible = vis > 0.02;
+    this.label.visible = vis > 0.02 && !this.hideLabel;   // hideLabel: your own name is for OTHER eyes (set while presenting, xr.js selfFirstPerson)
     this.label.scale.setScalar(0); // reset then set (scale carries aspect)
     const lw = 0.9 * (1 + Math.max(0, d - 8) * 0.012); // gentle size hold at range
     this.label.scale.set(lw, lw * 64 / 512, 1);
@@ -1747,11 +1980,22 @@ export class Avatar {
   // deepDispose happens only at pool eviction). Deep-disposing a body that
   // then pools is the recorded black-avatar landmine (§13.3).
   dispose() {
+    liveAvatars.delete(this);
     // Idempotent, and that is load-bearing now: a second dispose() of THIS
     // avatar after its VRM was re-worn by a newer one would release a body
     // someone is wearing back into the pool — two wearers, one instance.
     if (this._disposed) return;
     this._disposed = true;
+    // Hand this instance's light slot back -- keyed to the body, so disposing
+    // an old body cannot delete the lamp of the new one that replaced it.
+    releaseOwner(this._lampOwner);
+    // ...and give the emissive back. The breath WRITES material.emissiveIntensity
+    // every frame, and the vrm pool's resetVrmInstance touches no materials --
+    // so a body pooled mid-breath came back dimmer (mica measured a rewear at
+    // 0.3), and dimmer than the attachLamps threshold means the NEXT wearer
+    // gets no lamp request at all. Restoring the authored value is what makes
+    // pooling safe for an animated material.
+    for (const { m, base } of this._lampMats ?? []) m.emissiveIntensity = base;
     scene.remove(this.root);
     scene.remove(this.gaze);
     if (this.bubble) disposeSprite(this.bubble);
@@ -1791,6 +2035,29 @@ function makeBlobShadow() {
 
 // ---------------------------------------------------------------- factory
 
+/** The body of last resort (capsulebody.js): a real Avatar over a capsule puppet — labels, emotes, the XR arm
+ *  solver and the wire all work on it. Never throws; never touches the network. */
+export function makeCapsuleAvatar(id) {
+  const av = new Avatar(id, makeCapsuleVrm(), {});
+  av.isCapsule = true;
+  // the standard clips, if they can be had (owner, 09-19: 'it has arms and legs'): idle + walk first, then the rest
+  // through the same idle-time hydration a real body uses. Each is best-effort — the capsule exists precisely
+  // because the network may be gone, and a still puppet is the floor, not a failure.
+  (async () => {
+    for (const slot of CORE_CLIPS) {
+      try { const clip = await clipFor(av.vrm, slot); if (av._disposed) return;   // a remote disposed on takeover: stop feeding a dead body (pre-review S8)
+        const a = av.mixer.clipAction(clip); a.enabled = true; a.setEffectiveWeight(0); a.play(); av.actions[slot] = a; }
+      // One unavailable clip is not a verdict on the rest (#196 review B1): this
+      // loop used to `return`, so a single 404 on the first slot cost idle AND
+      // walk and left a still puppet. Each slot is independent — skip the miss.
+      catch (e) { console.warn(`capsule clip ${slot} unavailable`, e); }
+    }
+    if (av._disposed) return;
+    av.setClip(av.currentSlot ?? 'idle');
+    av.hydrateClips().catch(() => {});
+  })();
+  return av;
+}
 export async function makeAvatar(id, libPath, { full = false, urgent = false } = {}) {
   loadTrack(`avatar:${id}`, `${id} materializing`);
   const work = beginWork(`avatar ${id}`);
@@ -1821,6 +2088,11 @@ export async function makeAvatar(id, libPath, { full = false, urgent = false } =
       // compile-stall frames to exactly that. Spread, shared materials
       // cache-hit after their first mesh. frustumCulled defeats the compile
       // walk's culling while the body is still detached (stale matrices).
+      // YOUR body compiles at P_GATE — arrival priority, ahead of every
+      // world model's compile. Measured 09-04 (bodytime probe): at P_MODEL
+      // the body queued behind 19 things' compiles, each 'real frame' 300–
+      // 450 ms under parse jank — 24 s from clips-ready to a visible body,
+      // 33 s from load. R reloaded faster than that and never saw it.
       await warm(`avatar ${id}`, async () => {
         const meshes = [];
         vrm.scene.traverse((o) => { if (o.isMesh) meshes.push(o); });
@@ -1831,7 +2103,7 @@ export async function makeAvatar(id, libPath, { full = false, urgent = false } =
           finally { mesh.frustumCulled = culled; }
           await nextFrame();
         }
-      });
+      }, { p: urgent ? P_GATE : undefined });
       markVrmWarmed(vrm);
     }
     const av = new Avatar(id, vrm, clips);
@@ -1851,20 +2123,44 @@ export async function makeAvatar(id, libPath, { full = false, urgent = false } =
 export async function contributeThumbnail(name, vrm, token = '', { force = false } = {}) {
   try {
     if (!name) return;
-    if (!force && localStorage.getItem(`ew-thumb-${name}`)) return;   // we already tried
+    if (!force && localStorage.getItem(`ew-thumb2-${name}`)) return;   // we already tried
     if (!force) {
       const head = await fetch(`/thumb/${encodeURIComponent(name)}.png`, { method: 'HEAD' });
-      if (head.ok) { localStorage.setItem(`ew-thumb-${name}`, '1'); return; }
+      if (head.ok) { localStorage.setItem(`ew-thumb2-${name}`, '1'); return; }
     }
 
     const size = 256;
     const rt = new THREE.RenderTarget(size, size);
     const cam = new THREE.PerspectiveCamera(28, 1, 0.05, 12);
     const sub = new THREE.Scene();
-    sub.add(new THREE.HemisphereLight(0xffffff, 0x445566, 2.2));
-    const key = new THREE.DirectionalLight(0xffffff, 2.6);
+    // A render target gets no tone mapping — the canvas's ACES curve never
+    // touches these pixels — so lights tuned for the world burned every
+    // portrait to white (owner, 09-05: 'burned'). Linear-safe levels instead.
+    sub.add(new THREE.HemisphereLight(0xffffff, 0x445566, 0.9));
+    const key = new THREE.DirectionalLight(0xffffff, 1.1);
     key.position.set(1.4, 2.2, 2.4);
     sub.add(key);
+
+    // Pose it FIRST — before the precompile below. The compile uploads the skeleton's bone
+    // matrices for the frame; if the pose and the render then land in that same frame, the
+    // skinning node skips its per-frame skeleton update and draws the compile-time pose. That
+    // was a coin flip per body (09-06: claude/tigerbee T-posed, claude-toon/aporia fine, order
+    // and timing dependent). Posing before the compile makes whatever it caches the idle pose.
+    // A VRM at rest is in a T-pose, which reads as a mannequin on a shelf rather than a person
+    // you might be; one frame of the idle clip is a single cached download.
+    let poseMixer = null;
+    try {
+      const clip = await clipFor(vrm, 'idle');
+      poseMixer = new THREE.AnimationMixer(vrm.scene);
+      const act = poseMixer.clipAction(clip);
+      act.play();
+      poseMixer.update(0.6);        // a little way in, past the settling frames
+      vrm.update(0.6);
+      // say what the pose did — 09-06: four portraits came out T-posed while this block 'succeeded'
+      const arm = vrm.humanoid.getRawBoneNode('leftUpperArm');
+      const deg = arm ? Math.round(arm.quaternion.angleTo(new THREE.Quaternion()) * 180 / Math.PI) : -1;
+      tee(`[thumb] ${name}: posed (${clip.tracks.length} tracks, raw arm ${deg}°, autoUpdate ${vrm.humanoid.autoUpdateHumanBones})`);
+    } catch (e) { tee(`[thumb] ${name}: pose failed — ${e?.message ?? e}`); /* T-pose is survivable; a missing portrait is worse */ }
 
     // Precompile the portrait's pipelines BEFORE borrowing the body. This
     // render target + these lights are a brand-new pipeline context (different
@@ -1902,19 +2198,6 @@ export async function contributeThumbnail(name, vrm, token = '', { force = false
     const keptPos = vrm.scene.position.clone();
     const keptRot = vrm.scene.rotation.clone();
 
-    // Pose it first. A VRM at rest is in a T-pose, which reads as a mannequin
-    // on a shelf rather than a person you might be. One frame of the idle clip
-    // costs a single already-cached download and makes the roster look alive.
-    let poseMixer = null;
-    try {
-      const clip = await clipFor(vrm, 'idle');
-      poseMixer = new THREE.AnimationMixer(vrm.scene);
-      const act = poseMixer.clipAction(clip);
-      act.play();
-      poseMixer.update(0.6);        // a little way in, past the settling frames
-      vrm.update(0.6);
-    } catch { /* T-pose is survivable; a missing portrait is worse */ }
-
     // Frame the WHOLE figure, identically for every body. Framing on the head
     // sounds better and isn't: these avatars range from a human silhouette to
     // something that is mostly mane, so a head-relative crop gave each one a
@@ -1933,7 +2216,10 @@ export async function contributeThumbnail(name, vrm, token = '', { force = false
       const rootY = vrm.scene.getWorldPosition(new THREE.Vector3()).y;
       const headY = vrm.humanoid.getNormalizedBoneNode('head').getWorldPosition(new THREE.Vector3()).y;
       const stature = headY - rootY + 0.13; // crown ≈ head joint + a forehead
-      if (stature > 0.2) height = stature;
+      // ...unless the mesh really does go higher: claude's head joint sits at 1.37 m under a
+      // 2.21 m crown of tentacles, and a stature frame cut it off (owner, 09-06 22:37). Let the
+      // bbox raise the top by up to 60 % of stature — enough for any head, not for a particle shell.
+      if (stature > 0.2) height = Math.min(Math.max(stature, dims.y), stature * 1.6);
     } catch { /* bbox fallback */ }
     const fov = 30;
     // fit the taller of (height, width) into a square frame, with headroom
@@ -1951,8 +2237,7 @@ export async function contributeThumbnail(name, vrm, token = '', { force = false
       // Keep the loader's VRM0 normalization (rotateVRM0 sets rotation.y=π on
       // the scene root) — zeroing it photographed every VRM0 body from behind.
       vrm.scene.rotation.set(0, vrm.meta?.metaVersion === '0' ? Math.PI : 0, 0);
-      renderer.setRenderTarget(rt);
-      renderer.render(sub, cam);
+      renderAside(sub, cam, rt);   // never through renderer.render while presenting: a parentless camera rewrites the stereo eyes (render.js)
     } finally {
       renderer.setRenderTarget(prevTarget);
       poseMixer?.stopAllAction();
@@ -1971,13 +2256,34 @@ export async function contributeThumbnail(name, vrm, token = '', { force = false
     // readRenderTargetPixelsAsync RETURNS the pixels; its 6th parameter is a
     // texture index, not an output buffer.
     const buf = await renderer.readRenderTargetPixelsAsync(rt, 0, 0, size, size);
+    // A blank readback must never become a portrait: every WebGPU mint on
+    // 09-05 came back all-zero alpha (claude/aletheia/tigerbee.png 0 % opaque)
+    // and overwrote real art. Count opaque pixels; below 2 % skip the POST and
+    // say so on the tee, so the next wear tells us whether the readback works.
+    { let opaque = 0; for (let i = 3; i < size * size * 4; i += 16) if (buf[i] > 10) opaque++;
+      const frac = opaque / (size * size / 4);
+      if (frac < 0.02) { tee(`[thumb] blank readback (${backendName()}) for ${name} — not posted`); rt.dispose(); return; } }
     const c = document.createElement('canvas');
     c.width = c.height = size;
     const ctx = c.getContext('2d');
     const img = ctx.createImageData(size, size);
-    // WebGPU hands back rows already in top-down order — flipping here (the
-    // WebGL habit) produced upside-down portraits.
-    img.data.set(buf.subarray(0, size * size * 4));
+    // Row order depends on the BACKEND: WebGPU hands rows back top-down; WebGL
+    // bottom-up. Flipping unconditionally made WebGPU portraits upside down
+    // (fixed 09-04); flipping never made WebGL ones upside down (R's shot,
+    // 09-05: claude_suit on its head — minted by a WebGL client). So: flip iff
+    // WebGL.
+    if (backendName() === 'webgl') {
+      const row = size * 4;
+      for (let y = 0; y < size; y++) img.data.set(buf.subarray((size - 1 - y) * row, (size - y) * row), y * row);
+    } else {
+      img.data.set(buf.subarray(0, size * size * 4));
+    }
+    // The target holds LINEAR light and a PNG is shown as sRGB — without this
+    // encode the portraits read dark (claude_suit.png: opaque region averaging
+    // ~49/255 under lights that look right in the world). Alpha untouched.
+    { const d = img.data; const lut = new Uint8Array(256);
+      for (let i = 0; i < 256; i++) { const l = i / 255; lut[i] = Math.round(255 * (l <= 0.0031308 ? 12.92 * l : 1.055 * Math.pow(l, 1 / 2.4) - 0.055)); }
+      for (let i = 0; i < d.length; i += 4) { d[i] = lut[d[i]]; d[i + 1] = lut[d[i + 1]]; d[i + 2] = lut[d[i + 2]]; } }
     ctx.putImageData(img, 0, 0);
     rt.dispose();
 
@@ -1987,7 +2293,7 @@ export async function contributeThumbnail(name, vrm, token = '', { force = false
     if (force) q.set('force', '1'); // a re-mint pass really does replace
     if (token) q.set('token', token);
     await fetch(`/thumb?${q}`, { method: 'POST', body: blob });
-    localStorage.setItem(`ew-thumb-${name}`, '1');
+    localStorage.setItem(`ew-thumb2-${name}`, '1');
   } catch (e) {
     console.warn('thumbnail contribution skipped', e);
   }

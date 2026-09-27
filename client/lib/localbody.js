@@ -12,7 +12,7 @@ import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { radialForce, FORCE_MIN } from '../../shared/force.js';
 import {
-  myState, updateFollowCamera, setPosture, keys, setSeatHook,
+  myState, updateFollowCamera, setPosture, keys, setSeatHook, setMountedHook,
 } from './controller.js';
 import { avatarMounts, mountTransform, comps, socketWorldPos } from './world.js';
 import { sendVerb, sendAnim } from './net.js';
@@ -83,7 +83,7 @@ export function getUp() {
 // dismount with my landing spot stamped (the plane-transition invariant),
 // and control returns to the normal ground controller.
 const _seatP = new THREE.Vector3();
-function dismountMe() {
+export function dismountMe() {
   const sw = mountTransform(CONFIG.name, _seatP);
   const yaw = sw?.yaw ?? myState.yaw;
   const off = sw ? _seatP.clone() : myState.pos.clone();
@@ -99,7 +99,7 @@ export function updateMountedMe(dt) {
   if (!sw) return;                       // parent still downloading
   const me = getMe();
   myState.pos.copy(_seatP);
-  myState.yaw = sw.yaw;
+  myState.yaw = Math.atan2(Math.sin(sw.yaw), Math.cos(sw.yaw));   // saved yaw may be unwrapped (owner: 7.62 restored on every reload, 09-05)
   myState.speed = 0;
   myState.clip = sw.pose;
   if (me) {
@@ -204,7 +204,7 @@ function applyDraggedSample({ pose, p, yaw }) {
     me.root.position.set(p[0], p[1], p[2]);
     myState.pos.set(p[0], p[1], p[2]);
   }
-  if (Number.isFinite(yaw)) { me.root.rotation.y = yaw; myState.yaw = yaw; }
+  if (Number.isFinite(yaw)) { yaw = Math.atan2(Math.sin(yaw), Math.cos(yaw)); me.root.rotation.y = yaw; myState.yaw = yaw; }
   if (pose && typeof pose === 'object') { me.setPose(pose); myState.pose = pose; }
   me.root.updateMatrixWorld(true);
   noteDraggedMotion();
@@ -340,6 +340,7 @@ export function initLocalBody({ logChat: logChatFn }) {
   // X reaches the socket system through the controller's hook: mounted → get
   // up; a declared seat in reach → mount it; anything else falls through to
   // the controller's own layers (geometry seat pans, then the ground sit).
+  setMountedHook(() => avatarMounts.has(CONFIG.name));
   setSeatHook(() => {
     if (avatarMounts.has(CONFIG.name)) { dismountMe(); return true; }
     if (downed) return false;
