@@ -28,7 +28,7 @@ export function projectEnvironment(state: any) {
     heights.push(height((x / n - .5) * p.size, (z / n - .5) * p.size));
   const tint=state.terrain?.color??state.terrain?.layers?.[0]?.color??0x70815a;
   const color=typeof tint==='string'?parseInt(tint.replace('#',''),16):tint;
-  return { terrain: { size: p.size, segments: n, heights, color:Number.isFinite(color)?color:0x70815a },
+  return { terrain: { size: p.size, segments: n, heights, color:Number.isFinite(color)?color:0x70815a, authored: !!state.terrain },
     sky: state.sky ?? null, grass: state.grass ?? null, flora: projectFlora(state.grass,height) };
 }
 

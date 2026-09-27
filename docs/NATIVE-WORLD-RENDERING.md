@@ -106,6 +106,9 @@ additive, so version-1 clients that ignore it are unaffected.
   browser uses — `{center, size, absorption, scatter, speed, waves}`. Entity-local.
 - `data.air`: `{boxes:[{center, size, q}]}`, at most 16, sizes positive, invalid
   quaternions replaced by identity. Entity-local; boxes follow the live transform.
+- `environment.terrain.authored`: false when the world has no `terrain` verb (the
+  flat default). Renderers then follow `data.environment.floor` like the browser:
+  hide the default ground; the floor height is the ground.
 - `data.environment`, `data.vehicle`, `data.traversal`, `data.collision`: passed
   through as authored (16 KiB cap each; exceeding it fails the projection).
 

@@ -181,3 +181,9 @@ test("moving entities carry closed-form parameters that reproduce the server tra
   const d=qApply(ferry.q,[2,1,0]);
   [0,1,2].forEach(i=>expect(byId.crate.p[i]).toBeCloseTo(ferry.p[i]+d[i],9));
 });
+
+test("terrain says whether it was authored, so renderers can honor environment.floor",()=>{
+  expect(projectEnvironment(emptyState()).terrain.authored).toBe(false);
+  const st:any=emptyState();st.terrain={size:300,amplitude:4};
+  expect(projectEnvironment(st).terrain.authored).toBe(true);
+});
