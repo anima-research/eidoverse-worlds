@@ -2,12 +2,15 @@
 import { THREE, TSL, scene, camera, sun, hemi } from './core.js';
 import { report } from './base.js';
 import { state, onWorldChange } from './state.js';
-import { serverNow } from './remotes.js';
 import { MAX_WATER, MAX_AIR, waterParams, mediumAt, vector } from '../../shared/water.js';
 import { setEnvironmentFloor } from './terrain.js';
 const { uniform, uniformArray, wgslFn, positionWorld, cameraPosition, output } = TSL;
 let objects = () => new Map();
 export function setWaterObjects(fn) { objects = fn; }
+// The shared wave clock (server time). Injected by main.js: importing remotes.js
+// here closes an import cycle back to controller.js through the XR modules.
+let serverNow = () => Date.now();
+export function setWaterClock(fn) { serverNow = fn; }
 const waters = [], airs = [], surfaces = [];
 const clock = uniform(0), waterCount = uniform(0,'int'), airCount = uniform(0,'int');
 const mins = uniformArray(Array.from({length:MAX_WATER},()=>new THREE.Vector4()));

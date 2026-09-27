@@ -1,6 +1,6 @@
 import { setTraversalObjects } from './lib/traversal.js';
 import { updateVehicle } from './lib/vehicles.js';
-import { updateWater, setWaterObjects, environmentSettings, waterDebug } from './lib/water.js';
+import { updateWater, setWaterObjects, setWaterClock, environmentSettings, waterDebug } from './lib/water.js';
 // eidoverse-worlds browser client.
 //
 // Two planes: the world log (verbs, ordered, replayed on join) and presence
@@ -36,7 +36,7 @@ import {
   myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
   setRightsHook, setMeHook, setFolded,
 } from './lib/controller.js';
-import { remotes, updateRemotes, updateGaze } from './lib/remotes.js';
+import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js';
 // The whole module as one object: net.js takes the participant registry by injection
 // now (it must carry the protocol for lite.js, which has no bodies to register), and
 // this is the real, body-building implementation of that interface.
@@ -528,6 +528,7 @@ registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather â†
 registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots follow requests
 registerSystem('sounds', () => tickSounds(), { every: 2 });      // panners follow entities, the listener the camera
 setWaterObjects(() => entities);
+setWaterClock(serverNow);
 setTraversalObjects(() => entities);
 registerSystem('water', updateWater);
 registerSystem('me-drive', (dt) => {

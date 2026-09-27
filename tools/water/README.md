@@ -69,7 +69,7 @@ and substitutes transparent glass for Blender's opaque placeholder material:
 
 ```sh
 blender --background --python tools/water/export-submarine-blender.py -- /path/PressureVessels.blend /path/export/submarine-source.glb
-bun tools/water/prepare.ts /path/export /path/bundle
+bun tools/water/prepare.ts /path/export /path/bundle --right-handed
 bun tools/water/preview.ts /path/bundle 19347
 ```
 
@@ -155,3 +155,11 @@ walks along the submarine aisle, verifies all four floor slabs and glass alpha,
 checks a ray through the moonpool, climbs each ladder both ways, moves a carrier
 mid-climb, and samples hand positions over full swim/sculling cycles. It writes
 `/tmp/water-fix-{inside,windshield,swim}.png` for visual review.
+
+## Coordinates
+
+Always prepare with `--right-handed`. Wire space is right-handed (`-UE.Y, UE.Z, UE.X`);
+the earlier legacy mapping (`UE.Y, UE.Z, UE.X`) mirrored the whole scene, visible as
+reversed lettering on the habitat, in every client. `world-data/water/manifest.json` is
+the right-handed export. Renderers must honour mirrored glTF node transforms (the
+wire-coordinate frame is one when composed with the exporter's own basis).

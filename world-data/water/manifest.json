@@ -1,36 +1,36 @@
 {
   "version": 1,
   "source": "/Game/Underwater/SpectralPrototype/L_SpectralOcean_Prototype.L_SpectralOcean_Prototype",
-  "coordinateSystem": "metres / Y-up / legacy presence (UE.Y,UE.Z,UE.X)",
+  "coordinateSystem": "metres / Y-up / right-handed (-UE.Y,UE.Z,UE.X)",
   "files": [
     {
-      "file": "models/2e308fefa5822c3c853f7a6d2a08577cbb0401518e719413ddef8dbf2047f0dc.glb",
-      "path": "store/models/2e308fefa5822c3c853f7a6d2a08577cbb0401518e719413ddef8dbf2047f0dc.glb",
-      "sha256": "2e308fefa5822c3c853f7a6d2a08577cbb0401518e719413ddef8dbf2047f0dc",
+      "file": "models/a1aa362fa7d05c7a62b5beb1a81621e30af85f621d13271d3ece360e13646323.glb",
+      "path": "store/models/a1aa362fa7d05c7a62b5beb1a81621e30af85f621d13271d3ece360e13646323.glb",
+      "sha256": "a1aa362fa7d05c7a62b5beb1a81621e30af85f621d13271d3ece360e13646323",
       "bytes": 6433820
     },
     {
-      "file": "models/aa07dfd62b5d6f1029ef1512871451476a4ae7398cb8a92b04c1f65c1696b43f.glb",
-      "path": "store/models/aa07dfd62b5d6f1029ef1512871451476a4ae7398cb8a92b04c1f65c1696b43f.glb",
-      "sha256": "aa07dfd62b5d6f1029ef1512871451476a4ae7398cb8a92b04c1f65c1696b43f",
+      "file": "models/14807dee529a0dcdc280c12a283380fb03aff223dbd6e5b1a6130be88bd890eb.glb",
+      "path": "store/models/14807dee529a0dcdc280c12a283380fb03aff223dbd6e5b1a6130be88bd890eb.glb",
+      "sha256": "14807dee529a0dcdc280c12a283380fb03aff223dbd6e5b1a6130be88bd890eb",
       "bytes": 5603140
     },
     {
-      "file": "models/f40aca10acf2ec8989a1178f11ded5376a7147ae87925df61e726a7543682d50.glb",
-      "path": "store/models/f40aca10acf2ec8989a1178f11ded5376a7147ae87925df61e726a7543682d50.glb",
-      "sha256": "f40aca10acf2ec8989a1178f11ded5376a7147ae87925df61e726a7543682d50",
+      "file": "models/4da3ea217c657e7f9a90577f35ed1de4d2ee10aef8b81ffde940e547154dd714.glb",
+      "path": "store/models/4da3ea217c657e7f9a90577f35ed1de4d2ee10aef8b81ffde940e547154dd714.glb",
+      "sha256": "4da3ea217c657e7f9a90577f35ed1de4d2ee10aef8b81ffde940e547154dd714",
       "bytes": 3549420
     },
     {
-      "file": "models/0aaab2480730cc32c8a6e0b8d628df91da984ccf41ad2c670c7f1f10782d70e8.glb",
-      "path": "store/models/0aaab2480730cc32c8a6e0b8d628df91da984ccf41ad2c670c7f1f10782d70e8.glb",
-      "sha256": "0aaab2480730cc32c8a6e0b8d628df91da984ccf41ad2c670c7f1f10782d70e8",
+      "file": "models/d45253daedf8c3e9bbd6d1ccb867e101e15afbef707729b9ee8530259da93aa1.glb",
+      "path": "store/models/d45253daedf8c3e9bbd6d1ccb867e101e15afbef707729b9ee8530259da93aa1.glb",
+      "sha256": "d45253daedf8c3e9bbd6d1ccb867e101e15afbef707729b9ee8530259da93aa1",
       "bytes": 591156
     },
     {
-      "file": "models/41bac363b008f9f0d1f820a6b1d2717e740195dc26179eb1efdb50c0dd915076.glb",
-      "path": "store/models/41bac363b008f9f0d1f820a6b1d2717e740195dc26179eb1efdb50c0dd915076.glb",
-      "sha256": "41bac363b008f9f0d1f820a6b1d2717e740195dc26179eb1efdb50c0dd915076",
+      "file": "models/5ed7a52fc6bf458eeb0d14c631366d979752b34d639fe31c40ab5518f7d4b133.glb",
+      "path": "store/models/5ed7a52fc6bf458eeb0d14c631366d979752b34d639fe31c40ab5518f7d4b133.glb",
+      "sha256": "5ed7a52fc6bf458eeb0d14c631366d979752b34d639fe31c40ab5518f7d4b133",
       "bytes": 1170640
     }
   ],
@@ -39,14 +39,14 @@
       "verb": "asset",
       "args": {
         "name": "Unreal terrain",
-        "path": "store/models/2e308fefa5822c3c853f7a6d2a08577cbb0401518e719413ddef8dbf2047f0dc.glb"
+        "path": "store/models/a1aa362fa7d05c7a62b5beb1a81621e30af85f621d13271d3ece360e13646323.glb"
       }
     },
     {
       "verb": "spawn",
       "args": {
         "id": "water-terrain",
-        "lib": "store/models/2e308fefa5822c3c853f7a6d2a08577cbb0401518e719413ddef8dbf2047f0dc.glb",
+        "lib": "store/models/a1aa362fa7d05c7a62b5beb1a81621e30af85f621d13271d3ece360e13646323.glb",
         "pos": [
           0,
           0,
@@ -64,7 +64,7 @@
         "data": {
           "floor": -260,
           "spawn": [
-            29,
+            -29,
             -25,
             89
           ],
@@ -126,7 +126,7 @@
               "amplitude": 0.38,
               "wavelength": 24,
               "direction": [
-                0.3420201,
+                -0.3420201,
                 0.9396926
               ],
               "phase": 0
@@ -135,7 +135,7 @@
               "amplitude": 0.23,
               "wavelength": 13.7,
               "direction": [
-                0.9063078,
+                -0.9063078,
                 0.4226183
               ],
               "phase": 1.7
@@ -144,7 +144,7 @@
               "amplitude": 0.12,
               "wavelength": 7.1,
               "direction": [
-                0.6156615,
+                -0.6156615,
                 -0.7880108
               ],
               "phase": 3.2
@@ -153,7 +153,7 @@
               "amplitude": 0.06,
               "wavelength": 3.3,
               "direction": [
-                -0.9781476,
+                0.9781476,
                 0.2079117
               ],
               "phase": 0.8
@@ -166,16 +166,16 @@
       "verb": "asset",
       "args": {
         "name": "Unreal habitat",
-        "path": "store/models/aa07dfd62b5d6f1029ef1512871451476a4ae7398cb8a92b04c1f65c1696b43f.glb"
+        "path": "store/models/14807dee529a0dcdc280c12a283380fb03aff223dbd6e5b1a6130be88bd890eb.glb"
       }
     },
     {
       "verb": "spawn",
       "args": {
         "id": "water-habitat",
-        "lib": "store/models/aa07dfd62b5d6f1029ef1512871451476a4ae7398cb8a92b04c1f65c1696b43f.glb",
+        "lib": "store/models/14807dee529a0dcdc280c12a283380fb03aff223dbd6e5b1a6130be88bd890eb.glb",
         "pos": [
-          13,
+          -13,
           -30,
           80
         ],
@@ -375,20 +375,20 @@
       "verb": "asset",
       "args": {
         "name": "Unreal submarine",
-        "path": "store/models/f40aca10acf2ec8989a1178f11ded5376a7147ae87925df61e726a7543682d50.glb"
+        "path": "store/models/4da3ea217c657e7f9a90577f35ed1de4d2ee10aef8b81ffde940e547154dd714.glb"
       }
     },
     {
       "verb": "spawn",
       "args": {
         "id": "water-submarine",
-        "lib": "store/models/f40aca10acf2ec8989a1178f11ded5376a7147ae87925df61e726a7543682d50.glb",
+        "lib": "store/models/4da3ea217c657e7f9a90577f35ed1de4d2ee10aef8b81ffde940e547154dd714.glb",
         "pos": [
-          -26,
+          26,
           -18,
           60
         ],
-        "yaw": 1.5707963267948966,
+        "yaw": -1.5707963267948966,
         "collide": "exact"
       }
     },
@@ -625,7 +625,7 @@
         "data": {
           "passenger": {
             "pos": [
-              1,
+              -1,
               -1.8,
               -5
             ],
@@ -638,16 +638,16 @@
       "verb": "asset",
       "args": {
         "name": "Unreal platform",
-        "path": "store/models/0aaab2480730cc32c8a6e0b8d628df91da984ccf41ad2c670c7f1f10782d70e8.glb"
+        "path": "store/models/d45253daedf8c3e9bbd6d1ccb867e101e15afbef707729b9ee8530259da93aa1.glb"
       }
     },
     {
       "verb": "spawn",
       "args": {
         "id": "water-platform",
-        "lib": "store/models/0aaab2480730cc32c8a6e0b8d628df91da984ccf41ad2c670c7f1f10782d70e8.glb",
+        "lib": "store/models/d45253daedf8c3e9bbd6d1ccb867e101e15afbef707729b9ee8530259da93aa1.glb",
         "pos": [
-          60,
+          -60,
           0,
           0
         ],
@@ -666,17 +666,17 @@
               "name": "platform ladder",
               "path": [
                 [
-                  -6.05,
+                  6.05,
                   -1.2,
                   0
                 ],
                 [
-                  -6.05,
+                  6.05,
                   2.6,
                   0
                 ],
                 [
-                  -3.3,
+                  3.3,
                   2.42,
                   0
                 ]
@@ -692,14 +692,14 @@
       "verb": "asset",
       "args": {
         "name": "Unreal scenery",
-        "path": "store/models/41bac363b008f9f0d1f820a6b1d2717e740195dc26179eb1efdb50c0dd915076.glb"
+        "path": "store/models/5ed7a52fc6bf458eeb0d14c631366d979752b34d639fe31c40ab5518f7d4b133.glb"
       }
     },
     {
       "verb": "spawn",
       "args": {
         "id": "water-scenery",
-        "lib": "store/models/41bac363b008f9f0d1f820a6b1d2717e740195dc26179eb1efdb50c0dd915076.glb",
+        "lib": "store/models/5ed7a52fc6bf458eeb0d14c631366d979752b34d639fe31c40ab5518f7d4b133.glb",
         "pos": [
           0,
           0,
