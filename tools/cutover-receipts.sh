@@ -44,6 +44,30 @@ echo "── owned live-door ──"
 run door-cap-gate-live-test.mjs
 echo "── owned real-browser ──"
 run boot-check.mjs
+# THE VIEWPORT MATRIX, actually run (antra-tess #185). The knobs existed and no
+# command exercised them, so the resize phase and the chrome/occlusion check were
+# capabilities rather than receipts — the same gap as a corpus row nothing applies.
+# 390x844 was held out while "stand" was covered by #earbtn — a known-red command
+# in the shared receipts script blocks unrelated cutovers. ENABLED 2026-09-12: the
+# default-size clamp (emotebar.js show()) opens the bar at the width that FITS, so
+# on a phone it comes up 6 wide and two rows at x=110, clear of the mic/ear pair.
+# Measured ok with AND without touch emulation; the occlusion cleared as a side
+# effect of sizing rather than by moving anything.
+BOOT_CHECK_VIEWPORT=390x844 run boot-check.mjs
+BOOT_CHECK_VIEWPORT=390x844 BOOT_CHECK_TOUCH=1 run boot-check.mjs
+BOOT_CHECK_VIEWPORT=800x700 run boot-check.mjs
+BOOT_CHECK_VIEWPORT=1280x720 BOOT_CHECK_RESIZE_TO=390x844 run boot-check.mjs
+BOOT_CHECK_VIEWPORT=844x390 BOOT_CHECK_TOUCH=1 run boot-check.mjs
+# 1024x800 is NOT here for the same reason as 390x844: it fails today, and the
+# defect PREDATES this branch — bef5311 (the head of the 05:32Z review) fails
+# identically with `emotes [336,10,688,56] x world [609,8,1016,381]`. Cause:
+# fitsDefaults sums chat(545)+world(407)=952 for the side-by-side test but
+# EXCLUDES emotes, whose x is 'center' rather than a number — so a 352px centred
+# strip is never counted. Below ~968 the predicate hides the bar and saves us;
+# above ~1192 the geometry separates on its own; 1000-1100 is unprotected and no
+# receipt or corpus row sat between 900 and 1200. ENABLED 2026-09-12 with the
+# fitsDefaults centred-strip term (e6d9252): 1024x800 prints ok.
+BOOT_CHECK_VIEWPORT=1024x800 run boot-check.mjs
 run mic-hud-probe.mjs
 run mic-meter-states.mjs
 run panel-teardown-probe.mjs

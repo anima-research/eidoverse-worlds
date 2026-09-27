@@ -57,7 +57,7 @@ import { warmStats } from './warmqueue.js';
 import { laneBusy } from './loadwork.js';
 import { promoteTailPending, modelQuality } from './realize/models.js';
 import { setSlotCap, getSlotCap, maxSlots, litCount,
-  setCasterBudget, getCasterBudget, casterCount } from './lightrig.js';
+  setCasterBudget, getCasterBudget, casterCount, shadowsOn, shadowRes } from './lightrig.js';
 import { setEmitterQuality, emitterQuality, emitterCount } from './emitters.js';
 import { setGrassDensity, getGrassDensity, hasGrass } from './terrain.js';
 import { setLodBias } from './remotes.js';
@@ -94,6 +94,41 @@ export function setRenderScale(v) {
   return renderScale;
 }
 if (renderScale !== 'auto') setPR(residentBase());
+
+// ---- the resident's particle and avatar-detail dials (§22k siblings) --------
+// Same contract as render scale: 'auto' lets the governor drive; a pinned
+// value is a persisted preference the levers below leave alone — and going
+// back to 'auto' re-anchors outright rather than climbing the restore ladder,
+// as an explicit render-scale move does. Applied at
+// module init so a pin survives a reload — emitters created later inherit the
+// tier (emitters.js:157), remotes read lodBias live.
+const EP_KEY = 'ew-particles';
+export const PARTICLE_TIERS = ['auto', 'med', 'low'];
+let particleTier = PARTICLE_TIERS.includes(localStorage.getItem(EP_KEY)) ? localStorage.getItem(EP_KEY) : 'auto';
+export const getParticleTier = () => particleTier;
+export function setParticleTier(v) {
+  if (!PARTICLE_TIERS.includes(v)) return particleTier;
+  particleTier = v;
+  localStorage.setItem(EP_KEY, v);
+  setEmitterQuality(v);
+  return particleTier;
+}
+if (particleTier !== 'auto') setEmitterQuality(particleTier);
+
+const AD_KEY = 'ew-avatar-detail';
+// how often far bodies update: the lodBias multiplier remotes.js applies to its
+// distance bands (1 = every frame near, 2 = half rate, 4 = quarter)
+export const AVATAR_DETAILS = { auto: null, full: 1, half: 2, low: 4 };
+let avatarDetail = Object.hasOwn(AVATAR_DETAILS, localStorage.getItem(AD_KEY)) ? localStorage.getItem(AD_KEY) : 'auto';
+export const getAvatarDetail = () => avatarDetail;
+export function setAvatarDetail(v) {
+  if (!Object.hasOwn(AVATAR_DETAILS, v)) return avatarDetail;
+  avatarDetail = v;
+  localStorage.setItem(AD_KEY, v);
+  setLodBias(v === 'auto' ? (shedDetail ? 2 : 1) : AVATAR_DETAILS[v]);
+  return avatarDetail;
+}
+if (avatarDetail !== 'auto') setLodBias(AVATAR_DETAILS[avatarDetail]);
 
 const EMITTER_TIERS = ['auto', 'med', 'low'];
 const CASTER_STEPS = [12, 6, 2];
@@ -142,6 +177,7 @@ const LEVERS = [
   {
     name: 'emitters',
     shed() {
+      if (particleTier !== 'auto') return false;   // the resident's word
       if (!emitterCount()) return false;
       const i = EMITTER_TIERS.indexOf(emitterQuality());
       if (i < 0 || i >= EMITTER_TIERS.length - 1) return false;
@@ -150,6 +186,7 @@ const LEVERS = [
       return true;
     },
     restore() {
+      if (particleTier !== 'auto') return false;
       const i = EMITTER_TIERS.indexOf(emitterQuality());
       if (i <= 0) return false;
       return Boolean(setEmitterQuality(EMITTER_TIERS[i - 1]));
@@ -231,8 +268,8 @@ const LEVERS = [
     shed() {
       if (shedDetail) return false;
       shedDetail = true;
-      setLodBias(2);                    // far bodies animate at half rate
-      if (sun.shadow.mapSize.width > 1024) {
+      if (avatarDetail === 'auto') setLodBias(2);   // far bodies animate at half rate
+      if (shadowsOn() && sun.shadow.mapSize.width > 1024) {
         // mapSize is uniform + texture realloc, not pipeline shape (§12.1)
         // — which is exactly what makes this lever two-way at last
         sun.shadow.mapSize.set(1024, 1024);
@@ -244,9 +281,9 @@ const LEVERS = [
     restore() {
       if (!shedDetail) return false;
       shedDetail = false;
-      setLodBias(1);
-      if (sun.shadow.mapSize.width < 2048) {
-        sun.shadow.mapSize.set(2048, 2048);
+      if (avatarDetail === 'auto') setLodBias(1);
+      if (shadowsOn() && sun.shadow.mapSize.width < shadowRes()) {
+        sun.shadow.mapSize.set(shadowRes(), shadowRes());
         sun.shadow.map?.dispose();
         sun.shadow.map = null;
       }

@@ -29,12 +29,23 @@ import { setMyReach, clearMyReach } from '../reachnet.js';
 import { SIM_ID } from '../../../shared/sim.js';
 import { canonicalPoint, CONTACT_POINTS } from '../../../shared/contact.js';
 import { TOUCH_GAP } from '../../../shared/reachwire.js';
+import { panelAlpha, setPanelAlpha } from '../stylepanel.js';
 
 register('help', () => toggleHelp());
 // Flight's own diagnostic, in the chat log where a person can read it and
 // paste it back. See controller.js flightReport() for why this is not just
 // the console probe.
 register('flight', () => { for (const line of flightReport().split('\n')) logChat('*', line); });
+
+// Panel opacity — the glass escape hatch. Adaptive translucency fails over
+// bright scenes (Apple shipped "Tinted" after the Liquid Glass backlash);
+// this is our version of that lesson, one number, user-owned, persisted.
+register('panels', (arg) => {
+  const v = parseFloat(arg);
+  if (!(v >= 0.3 && v <= 1)) return logChat('*', `usage: /panels <0.3–1> — panel opacity (current ${panelAlpha().toFixed(2)})`);
+  setPanelAlpha(v);
+  logChat('*', `panels at ${Math.round(v * 100)}% opacity`);
+});
 
 // Eyelids are BONES on rigs that have them (L_/R_Eyelid_Upper) — most VRMs
 // blink with a blendshape instead and have none, so this says so plainly
@@ -252,12 +263,12 @@ register('touch', (arg) => {
   if (err) return logChat('*', err);
   const whose = who === CONFIG.name ? 'your own' : `${who}'s`;
   logChat('*', `you reach for ${whose} ${point} (${LIMB_WORD[limb]})…`);
-  // the solve runs in the frame loop; read the verdict once the arm settles
+  // The solve runs in the frame loop; read after the initial weight blend.
   setTimeout(() => {
     const s = getMe()?.reachStatus?.()?.[limb];
     if (!s || !Number.isFinite(s.gap)) return;
     if (s.gap <= TOUCH_GAP) {
-      logChat('*', `…your ${LIMB_WORD[limb]} rests on ${whose} ${point} — it follows them until /letgo`);
+      logChat('*', `…your ${LIMB_WORD[limb]} reaches ${whose} ${point} (endpoint gap ${Math.round(s.gap * 1000)}mm) — tracking continues until /letgo`);
     } else {
       logChat('*', `…${s.gap.toFixed(2)}m short${s.bound?.length ? ` (${s.bound.join(', ')})` : ''} — the arm stays reaching; step closer and it will land`);
     }
@@ -420,7 +431,7 @@ export function initCommands() {
       recentReach.set(key, now);
     }
     if (type === 'reach') logChat('*', `${who} reaches toward your ${point ?? 'position'} (${lw})`);
-    else if (type === 'touch') logChat('*', `${who}'s ${lw} rests on your ${point ?? 'position'}`);
+    else if (type === 'touch') logChat('*', `${who}'s ${lw} touches your ${point ?? 'position'}`);
     else logChat('*', `${who} withdraws their ${lw}`);
   };
   bus.on('reach', (e) => narrate('reach', e));

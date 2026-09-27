@@ -22,7 +22,7 @@ let seated = false;
 mock.module(base + 'core.js', () => ({ THREE }));
 mock.module(base + 'base.js', () => ({ CONFIG: { name: 'me' }, bus: { on() {}, emit() {} } }));
 mock.module(base + 'controller.js', () => ({
-  myState, updateFollowCamera() {}, setPosture() {}, setSeatHook() {},
+  myState, updateFollowCamera() {}, setPosture() {}, setSeatHook() {}, setMountedHook() {},
 }));
 mock.module(base + 'input.js', () => ({ movementInput: () => input }));
 mock.module(base + 'world.js', () => ({

@@ -56,7 +56,7 @@ mock.module(base + 'lights.js', () => ({ makeLightGizmo: () => new THREE.Group()
 mock.module(base + 'world.js', () => ({
   entities, entityMeta: new Map(), comps: new Map(), editHolds: new Set(),
 }));
-mock.module(base + 'net.js', () => ({ sendVerb() {}, sendDrag() {} }));
+mock.module(base + 'net.js', () => ({ net: { myId: 'me' }, sendVerb() {}, sendDrag() {} }));
 mock.module(base + 'scenegraph.js', () => ({ sceneSelect() {} }));
 mock.module(base + 'seatedit.js', () => ({
   refreshSeatGizmos() {}, resetSeats() {}, armSeatPlacement() {},

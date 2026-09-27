@@ -5,3 +5,6 @@ export const scene = { add() {}, remove() {} };
 export const ground = { visible: true };
 export const grid = { visible: true };
 export const bus = { on() {}, emit() {} };
+
+// terrain.js (VR alpha) imports the axis lines from core; inert here
+export const axisLines = { visible: true };

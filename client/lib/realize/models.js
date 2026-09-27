@@ -35,7 +35,10 @@ import { schedule, cancelOwner } from '../scheduler.js';
 import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere } from './models_field.js';
 
 /** The verbs this realizer owns — the whole flat entity-id namespace. */
-export const PORTED = new Set(['spawn', 'place', 'remove', 'light', 'comp', 'motion', 'mount', 'dismount']);
+// IMPORT then re-export: a bare `export ... from` creates no local binding, and this
+// module uses PORTED itself further down. Same defect as avatar.js/EMOTES, same branch.
+import { PORTED } from './ported.js';   // the taxonomy is data; causes.js needs it without the engine
+export { PORTED };
 
 /** id → {kind:'model'|'light', lib?, gen} — the realizer's own view of what
  *  it has handled. gen guards a load completion against acting for a
@@ -325,7 +328,7 @@ function realizeModel(id, cur, obj) {
   if (sc) obj.scale.setScalar(sc);
   obj.userData.base = { pos: obj.position.toArray(), yaw: obj.rotation.y };
   entities.set(id, obj);
-  entityMeta.set(id, { actor: cur.actor, lib: cur.lib, ts: cur.ts });
+  entityMeta.set(id, { actor: cur.actor, lib: cur.lib, ts: cur.ts, ...(cur.placer ? { placer: cur.placer } : {}) });
   scene.add(obj);
   bus.emit('entity', { id, kind: 'spawn' });
   // comps that folded while the GLB was in flight (or that rode the
@@ -397,7 +400,12 @@ function runPromoteTail(id, obj) {
     if (colliders.get(id)?.interior) bus.emit('entity', { id, kind: 'collider' });
   }
   // emissive surfaces become lamp REQUESTS — a request costs nothing until
-  // the rig assigns it a slot, and that is uniform writes
+  // the rig assigns it a slot, and that is uniform writes.
+  //
+  // NO SHADOWS, by the seam's default and on purpose: a placed prop glows, it
+  // does not claim the one casting slot. That slot belongs to a body lit from
+  // inside (avatar.js passes shadows:true), and until this default existed a
+  // closer glowing prop could take it off the avatar standing next to it.
   attachLamps(obj, `entity:${id}`);
   // mounts that were waiting on this id — as child or carrier
   for (const mid of mountsTouching(state.st.entities, id, foldChildren)) execMount(mid);
@@ -430,7 +438,7 @@ function createLight(id, ent) {
   // fold refresh, so create and refresh agree on where "at rest" is
   g.userData.base = { pos: g.position.toArray(), yaw: g.rotation.y };
   entities.set(id, g);
-  entityMeta.set(id, { actor: ent.actor, kind: 'light', ts: ent.ts });
+  entityMeta.set(id, { actor: ent.actor, kind: 'light', ts: ent.ts, ...(ent.placer ? { placer: ent.placer } : {}) });
   scene.add(g);
   bus.emit('entity', { id, kind: 'light' });
   emitCompBag(id);
@@ -482,7 +490,7 @@ function refreshLight(id, ent) {
     if (ent.pos) g.position.set(...ent.pos);
     g.userData.base = { pos: g.position.toArray(), yaw: g.rotation.y };
   }
-  entityMeta.set(id, { actor: ent.actor, kind: 'light', ts: ent.ts });
+  entityMeta.set(id, { actor: ent.actor, kind: 'light', ts: ent.ts, ...(ent.placer ? { placer: ent.placer } : {}) });
   bus.emit('entity', { id, kind: 'light' });
   // comps that folded onto the light and its folded parent re-announce and
   // re-execute, exactly as a join create would (createLight + the tail)

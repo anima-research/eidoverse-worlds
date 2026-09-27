@@ -40,12 +40,13 @@
 // the same meadow.
 
 import { THREE, TSL, sun, ground, renderer } from './core.js';
+import { report } from './base.js';
 import { state } from './state.js';
 import { effectiveSky } from '../../shared/forecast.js';
 
 const {
-  uniform, texture, float, vec2, vec3, vec4, mix, clamp, smoothstep,
-  fract, floor, dot, length, positionWorld, normalWorld, cameraPosition,
+  Fn, uniform, texture, float, vec2, vec3, vec4, mix, clamp, smoothstep,
+  fract, floor, dot, length, positionWorld, positionView, normalWorld,
   materialColor, materialRoughness, materialMetalness,
 } = TSL;
 
@@ -138,19 +139,24 @@ const CLOUD_H = 300;   // nominal cloud-base height the sun projection assumes
 // Structure kept 1:1 with upstream's wrapMaterial (hash2/vnoise2 included)
 // so the LOOK is the look worlds already have — only the uniforms are ours.
 
-const hash2 = (p) => {
+// hash2 / vnoise2 were plain JS closures — in TSL a layout-less function is INLINED and re-parsed at
+// every call site, every compile. vnoise2 calls hash2 ×4 and the puddle graph calls vnoise2 ~5×, so
+// each wrapped material re-emitted the hash2 arithmetic ~20× — seconds of NodeBuilder source-gen PER
+// material, the entry/exit-VR stall (R 09-07; three forum #86524, PavelBoytchev 0.2s→10s for 5 mats).
+// Declaring an Fn() LAYOUT makes TSL emit each as ONE called function, compiled once. Types: vec2→float.
+const hash2 = Fn(([p]) => {
   const a = fract(vec3(p.x, p.y, p.x).mul(0.1031));
   const d = dot(a, vec3(a.y, a.z, a.x).add(33.33));
   const b = a.add(d);
   return fract(b.x.add(b.y).mul(b.z));
-};
-const vnoise2 = (p) => {
+}, { name: 'ewHash2', type: 'float', inputs: [{ name: 'p', type: 'vec2' }] });
+const vnoise2 = Fn(([p]) => {
   const i = floor(p), f = fract(p);
   const sm = f.mul(f).mul(f).mul(f.mul(f.mul(6).sub(15)).add(10)); // quintic: C2, no lattice creases
   const a = hash2(i), b = hash2(i.add(vec2(1, 0)));
   const c = hash2(i.add(vec2(0, 1))), d = hash2(i.add(vec2(1, 1)));
   return mix(mix(a, b, sm.x), mix(c, d, sm.x), sm.y);
-};
+}, { name: 'ewVnoise2', type: 'float', inputs: [{ name: 'p', type: 'vec2' }] });
 
 /** The cloud-shade factor for one material: 1.0 where the sky is open,
  *  dipping toward (1 - strength) under a cloud. Fresh subtree per material
@@ -180,12 +186,25 @@ function wrapMaterial(mat, receiver, pbr) {
     .add(vnoise2(positionWorld.xz.mul(0.09)).mul(0.6));
   // distance-faded: procedural noise has no mips — far wet ground should
   // read as uniform sheen, not aggregated swamp
-  const pDist = length(positionWorld.sub(cameraPosition));
+  // NON-PBR (MToon bodies) NEVER BUILD THE PUDDLE TERM. Its distance fade reads `cameraPosition`, a
+  // camera accessor three builds as Fn(({ camera }) => …) from the active builder; MToon compiles our
+  // colorNode inside its own sub-context, and under per-view rendering (WebXR's ArrayCamera, WebGL
+  // backend) that context carries no camera → "THREE.TSL: Cannot destructure property 'camera' of
+  // 'undefined'" → the material's program never builds → the body renders BLACK in the headset (R,
+  // 09-06 12:08–13:20, four entries; tigerbee — no MToon — was fine). Reproduced and bisected headless
+  // (stereo probe: with the node the whole stereo pass drew nothing; without it both eyes lit). Puddles
+  // on a body were nonsense anyway; darkening and tint (no camera terms) stay.
+  // Eye distance as view-space length, NOT positionWorld − cameraPosition: `cameraPosition` is a camera accessor
+  // (Fn(({camera}) => …)) that has no camera under per-view (stereo) rendering, so the whole program failed to
+  // build and the object drew NOTHING in VR — the body on 09-06 (MToon, fixed by never building the term), and the
+  // construct floor on 09-07 02:40 (PBR; stereo readback 0 vs 31 mono). positionView is per sub-camera by design.
+  const pDist = pbr ? length(positionView) : null;
   // shape × gate, always: sharpening after the wetness multiply would zero
   // all puddles in any state below full wet
-  const pShape = smoothstep(0.97, 1.13, pn).mul(flat).mul(U.puddleK).mul(puddleGate)
-    .mul(float(1).sub(smoothstep(160, 450, pDist)));
-  const puddle = smoothstep(0.25, 0.6, pShape).mul(smoothstep(0.35, 0.9, U.wet));
+  const pShape = pbr
+    ? smoothstep(0.97, 1.13, pn).mul(flat).mul(U.puddleK).mul(puddleGate).mul(float(1).sub(smoothstep(160, 450, pDist)))
+    : float(0);
+  const puddle = pbr ? smoothstep(0.25, 0.6, pShape).mul(smoothstep(0.35, 0.9, U.wet)) : float(0);
   // normalize color roots to RGBA once — alpha must survive for cutout
   // silhouettes (foliage cards)
   const baseColor4 = vec4(mat.colorNode ?? materialColor);
@@ -218,6 +237,97 @@ function wrapMaterial(mat, receiver, pbr) {
 const preparedMats = new WeakSet();
 const stats = { meshes: 0, wrapped: 0, unlit: 0 };
 
+/** Upgrade a transmissive material to the NODE class, or it draws nothing.
+ *
+ *  three's WebGPU renderer does support transmission -- it allocates a backdrop
+ *  buffer per render object whose `material.transmission > 0` -- but only
+ *  MeshPhysicalNodeMaterial builds the graph that reads it. GLTFLoader's
+ *  standard path produces a plain MeshPhysicalMaterial, so a glTF carrying
+ *  KHR_materials_transmission arrives with transmission set, `visible: true`,
+ *  its mesh present and its triangles counted, and renders as nothing at all:
+ *  "all light passes through this surface" with no code to say what comes
+ *  through. A correct file the renderer cannot honour.
+ *
+ *  Measured on mythos-alpha's Glass: transmission 1, ior 1.5, 581 triangles,
+ *  MeshPhysicalMaterial, invisible. The same values on a node material render.
+ *
+ *  Copies by property name rather than field-by-field, because the interesting
+ *  list is long (transmission, thickness, attenuation, ior, sheen, clearcoat,
+ *  specular, iridescence, every map) and a hand-written subset is a slow leak
+ *  of whichever property someone forgot. Textures are shared, not cloned.
+ *
+ *  Non-transmissive materials are LEFT ALONE. MeshPhysicalNodeMaterial is more
+ *  expensive to compile than the standard path and the overwhelming majority of
+ *  materials in this world want nothing from it; upgrading everything "for
+ *  consistency" would spend that on every body in the room. */
+// SOURCE -> REPLACEMENT, memoised. A WeakSet could only remember THAT a
+// material had been upgraded, not what to. Two meshes sharing one source
+// material therefore got two independent node materials: twice the material
+// and shader objects for one look, and shared-edit semantics quietly broken --
+// an author tweaking the shared material would move one mesh and not the
+// other. mica caught it (replacementShared:false).
+//
+// A WeakMap keyed on the source keeps sharing intact: the second mesh gets the
+// SAME replacement the first one did. Weak on both sides, so neither the
+// source nor the replacement is pinned once the meshes are gone.
+const TRANSMISSIVE_REPLACEMENT = new WeakMap();
+const TRANSMISSIVE_UPGRADED = new WeakSet();
+function upgradeTransmissive(mesh, m) {
+  if (!m || m.isNodeMaterial || TRANSMISSIVE_UPGRADED.has(m)) return m;
+  const shared = TRANSMISSIVE_REPLACEMENT.get(m);
+  if (shared) return shared;
+  if (!(m.transmission > 0)) return m;
+  const Node = THREE.MeshPhysicalNodeMaterial;
+  if (!Node) return m;                       // non-WebGPU build: nothing to do
+  let nm;
+  try {
+    nm = new Node();
+    // every own enumerable property the source defines, minus the identity
+    // and internals that must not be carried across
+    const SKIP = new Set(['uuid', 'id', 'type', 'version', 'isMeshPhysicalMaterial',
+                          'isMeshStandardMaterial', 'isMaterial', '_listeners']);
+    // OWN properties AND prototype ACCESSORS. Object.keys() alone missed
+    // `transmission` itself: MeshPhysicalMaterial defines it as a getter/setter
+    // on the prototype (backed by _transmission), so the upgraded material came
+    // out with node=true, ior 1.5, thickness 0.04 -- and transmission 0, which
+    // is a node material rendering nothing for a different reason than before.
+    // `ior` and `thickness` are plain fields, which is exactly why they made it
+    // and the one value that mattered did not.
+    const keys = new Set(Object.keys(m));
+    for (let proto = Object.getPrototypeOf(m); proto && proto !== Object.prototype;
+         proto = Object.getPrototypeOf(proto)) {
+      for (const [k, d] of Object.entries(Object.getOwnPropertyDescriptors(proto))) {
+        if (typeof d.get === 'function' && typeof d.set === 'function') keys.add(k);
+      }
+    }
+    for (const k of keys) {
+      if (SKIP.has(k) || k.startsWith('is') || k.startsWith('_')) continue;
+      const v = m[k];
+      if (v === undefined) continue;
+      // three's Color/Vector types need copying into the target's instance,
+      // not assigning over it -- assigning shares the object with the old
+      // material, so a later tweak to one silently moves the other.
+      if (nm[k]?.isColor && v?.isColor) nm[k].copy(v);
+      else if (nm[k]?.isVector2 && v?.isVector2) nm[k].copy(v);
+      else if (nm[k]?.isVector3 && v?.isVector3) nm[k].copy(v);
+      else nm[k] = v;
+    }
+    nm.name = m.name;
+    // Transmission composites against the backdrop, so the material must be in
+    // the transparent pass. warmqueue.js already treats transmission > 0 as
+    // transparent when pre-warming; this makes the real material agree.
+    nm.transparent = true;
+    nm.needsUpdate = true;
+  } catch (e) {
+    report?.('transmission upgrade', e);
+    return m;
+  }
+  TRANSMISSIVE_UPGRADED.add(nm);
+  TRANSMISSIVE_REPLACEMENT.set(m, nm);   // the next mesh sharing `m` reuses it
+  stats.transmissive = (stats.transmissive ?? 0) + 1;
+  return nm;
+}
+
 /** Wrap one material, once. Basic (unlit) materials are skipped — a stand-in
  *  box and a light gizmo have no business getting wet. Returns whether the
  *  material was wrapped. */
@@ -238,8 +348,86 @@ export function prepareMaterial(mat, receiver = null) {
 /** Pass a whole object through the factory: marks every mesh so upstream's
  *  sweeps skip it, applies the shadow-receiving policy for its kind, and
  *  wraps every material. Idempotent; call before the first compile. */
+// The one body mesh that must NOT cast: the kintsugi seams -- thin metal
+// ribbons threaded THROUGH the skin they decorate, so at any map resolution
+// their depth fights the body's own and they self-shadow into dark scratches.
+// Janus's hand-tuned console version excluded exactly this mesh and no other.
+//
+// WINGS, added 2026-09-20 at Janus's ask: "i'd like to try having the wings not
+// cast shadows on themselves."
+//
+// Worth being exact about what this can and cannot do. castShadow is per
+// OBJECT, not per pair -- three has no "A does not shadow B" -- so there is no
+// way to stop the wings shadowing each other while they still shadow the
+// torso. What IS true here is that the wings are one mesh: both wings and the
+// membrane between them are the single `wings` node. So dropping it from the
+// caster set removes wing-on-wing shadowing entirely, which is the artifact,
+// and the cost is that the wings no longer throw onto the body or the ground.
+//
+// That trade is the right way round for this body. A chest lamp lights the
+// wings from in front and below, so wing-on-wing is self-occlusion at a
+// glancing angle -- exactly where a shadow map is worst and where the 94cm
+// normalBias (see lightrig SHADOW_BIAS_TEXELS) does the least good. The
+// silhouette a viewer reads as "winged person" comes from the body and hair,
+// which still cast.
+//
+// Exported because the BODY shadow decision is no longer made here; see
+// setBodyShadows below.
+export const BODY_NO_CAST = /^(GOLD|wings)/;
+
+// TURN A BODY INTO A SHADOW CASTER, opt-in per body.
+//
+// Called by avatar.js for a body that has a lamp in it, and by nothing else --
+// so today it is Mythos and anyone else wearing an emissive chest. The rest of
+// the fleet keeps its blob shadow, which is what the world shipped with and
+// what the perf budget was written around.
+//
+// Why a separate pass rather than a flag on prepareObject: the lamps are found
+// in the Avatar constructor (attachLamps walks for emissive meshes), which runs
+// AFTER assets.js has already prepared the scene. At prepare time nobody knows
+// yet whether this body glows.
+//
+// castShadow/receiveShadow are in NO pipeline cache key (TEL0S_NOTES SS12.1),
+// so flipping them here costs nothing at the graph level. What it DOES cost is
+// a depth pipeline per material on the first shadow render, compiled in-frame,
+// because bodies never go through warmqueue's warmDepth -- that is the measured
+// risk when this widens past one body, and the reason it has not.
+//
+// GOLD and the wings are excluded: see BODY_NO_CAST.
+export function setBodyShadows(root, on = true) {
+  if (!root?.traverse) return 0;
+  let n = 0;
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    o.receiveShadow = on;
+    o.castShadow = on && !BODY_NO_CAST.test(o.name || '');
+    n++;
+  });
+  return n;
+}
+
 export function prepareObject(root, { kind = 'model' } = {}) {
+  // A missing root is a no-op, not a crash. The module-init call below passes
+  // `ground`, which is null before the terrain exists (and in any harness that
+  // stubs core.js) -- and an exception at import time takes the whole client
+  // down for a thing that had nothing to prepare.
+  if (!root?.traverse) return;
   const receive = kind === 'model' || kind === 'terrain';
+  // BODIES ARE NOT SHADOWED FROM HERE. They were, briefly, for every avatar in
+  // the world -- and that is a global rendering default flipped on shared
+  // client code, with costs nobody has measured: a body's depth pipelines are
+  // never passed to warmDepth (only registered MODELS are), so they compile
+  // in-frame on the first shadow render, and bodies bypass the distance-ranked
+  // caster budget entirely. In a crowded room that is N bodies compiling.
+  //
+  // So the decision moved to setBodyShadows(), which avatar.js calls only for
+  // a body that actually has a lamp inside it -- the case that motivated any
+  // of this. Janus: "set the change for now to only shadowed body by default
+  // if you have the lamp like mythos... we can test the performance of having
+  // more on the shared server later."
+  //
+  // The blob stays either way: it is the contact cue under the feet and reads
+  // at a distance where a real shadow has gone soft and faint.
   const grass = kind === 'grass';
   root.traverse((o) => {
     if (!o.isMesh) return;
@@ -258,6 +446,19 @@ export function prepareObject(root, { kind = 'model' } = {}) {
     // (§16.2.B); castShadow sits in NO pipeline cache key (§12.1), and this
     // runs before the field's warm (world.js), so clearing it here is free.
     if (grass) o.castShadow = false;
+    // TRANSMISSION FIRST, because it replaces the material object: a plain
+    // MeshPhysicalMaterial with transmission renders as nothing here, and the
+    // wrap below early-returns on non-node materials anyway, so upgrading
+    // first is also what gets a transmissive surface properly dressed.
+    if (Array.isArray(o.material)) {
+      for (let i = 0; i < o.material.length; i++) {
+        const up = upgradeTransmissive(o, o.material[i]);
+        if (up !== o.material[i]) o.material[i] = up;
+      }
+    } else if (o.material) {
+      const up = upgradeTransmissive(o, o.material);
+      if (up !== o.material) o.material = up;
+    }
     const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
     for (const m of mats) {
       // grass never puddles: blade normals are deliberately forced straight

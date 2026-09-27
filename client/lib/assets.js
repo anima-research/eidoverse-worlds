@@ -10,6 +10,10 @@
 
 import { keyFromVersion, negotiate, lodFromVersion } from '../../shared/ktx2.js';
 import { tierOf, askFor } from './lod_policy.js';
+import { awaitBodyGate, bodyGateArmed, bodyGateOpen } from './bodygate.js';
+// ?bodyfirst=0 — the escape hatch (same convention as ?batching=0): world parses
+// no longer wait for the body; for A/B measurement and for a body-less test
+const BODY_FIRST = new URLSearchParams(globalThis.location?.search ?? '').get('bodyfirst') !== '0';   // globalThis: node-side suites import this without a window
 import { THREE, renderer, camera, scene } from './core.js';
 import { report, bus } from './base.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -18,7 +22,9 @@ import { KTX2Loader } from 'three/addons/loaders/KTX2Loader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { MToonMaterialLoaderPlugin } from '@pixiv/three-vrm-materials-mtoon';
 import { MToonNodeMaterial } from '@pixiv/three-vrm-materials-mtoon/nodes';
-import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from '@pixiv/three-vrm-animation';
+import { parsePoseAnimation, retargetPoseAnimation } from './poseclips.js';
+import { CLIP_SLOTS, CLIP_FILES, CLIP_SPEED } from '../../shared/clipdefs.js';
+export { CLIP_SLOTS, CLIP_FILES, CLIP_SPEED } from '../../shared/clipdefs.js';
 import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
 import { beginWork, enqueue, nextFrame, loadNote } from './loadwork.js';
 import { warm } from './warmqueue.js';
@@ -111,8 +117,17 @@ export async function fetchBytes(path) {
       loadTrack(path, path.split('/').pop().split('?')[0]);
       demandStart();
       try {
-        const r = await fetch(path);
-        if (!r.ok) { byteCache.delete(path); throw new Error(`fetch ${path}: ${r.status}`); }
+        // R 09-07 22:22: 'first load after you change something, no avatar; reload and it's fine'. Her tee: 530s
+        // from the tunnel edge under load. One failed fetch was final here — worse, a REJECTED fetch
+        // stayed in byteCache and poisoned every later ask for the same path until reload. Retry 5xx and
+        // network failures (3 tries, 0.7 s then 1.8 s); evict on final failure so the next ask starts clean.
+        let r;
+        for (let attempt = 0; ; attempt++) {
+          try { r = await fetch(path); } catch (err) { if (attempt >= 2) throw err; r = null; }
+          if (r && (r.ok || r.status < 500 || attempt >= 2)) break;
+          await new Promise((res) => setTimeout(res, attempt === 0 ? 700 : 1800));
+        }
+        if (!r.ok) throw new Error(`fetch ${path}: ${r.status}`);
         const total = Number(r.headers.get('content-length') ?? 0);
         if (r.body && total > 200_000) { // stream big bodies for byte progress
           const reader = r.body.getReader();
@@ -135,7 +150,8 @@ export async function fetchBytes(path) {
         const ab = await r.arrayBuffer();
         noteBytes(path, ab.byteLength);
         return ab;
-      } finally { loadDone(path); demandEnd(); }
+      } catch (err) { byteCache.delete(path); throw err; }
+      finally { loadDone(path); demandEnd(); }
     })());
   }
   return byteCache.get(path);
@@ -546,6 +562,12 @@ export async function loadGLB(libPath, { tier = 'full' } = {}) {
         // (provisional): a lod request is never a worse model. The full URL
         // keys byteCache, so variant and original are distinct entries.
         const buf = await fetchBytes(`/library/${req.url}`);
+        // body first: bytes are in hand, but the PARSE waits for your own
+        // body (bodygate.js) — capped at 12 s so nothing can hold the world
+        if (BODY_FIRST && bodyGateArmed() && !bodyGateOpen()) {
+          work.phase('body-first');
+          await awaitBodyGate(12000);
+        }
         work.phase('queued');
         return await enqueue(async () => {
           work.phase('parse');
@@ -703,15 +725,6 @@ export const protoStats = () => ({
 // a stride is legs doing work against ground that is not there. fallIdle is the
 // library's free-fall pose: limbs trailing, no contact implied, which is what a
 // body hanging under its own wings actually looks like.
-export const CLIP_SLOTS = ['idle', 'walk', 'run', 'sit', 'lie', 'jump', 'climb', 'fly', 'soar'];
-// Slot names are the wire vocabulary (pose.clip); files are whatever the
-// library calls them.
-export const CLIP_FILES = { sit: 'sitting_on_ground', lie: 'sit_laying_on_ground', climb: 'climbLedge',
-  // Both airborne slots share one file today; they are separate SLOTS so a
-  // purpose-made flap and glide can replace either without touching a caller.
-  fly: 'fallIdle', soar: 'fallIdle' };
-// Approximate natural speeds of the library clips (m/s), for timeScale sync.
-export const CLIP_SPEED = { fly: 0, soar: 0, idle: 0, walk: 1.55, run: 4.0, sit: 0, lie: 0, jump: 0, climb: 0 };
 
 const vrmaCache = new Map();
 // Digest of the clip bytes THIS PAGE actually loaded, hashed once at fetch
@@ -777,12 +790,7 @@ function vrmaAnimation(slot, priority = 1) {
         work.phase('queued');
         return await enqueue(async () => {
           work.phase('parse');
-          const l = new GLTFLoader();
-          l.register((pl) => new VRMAnimationLoaderPlugin(pl));
-          const gltf = await new Promise((res, rej) => l.parse(buf.slice(0), '', res, rej));
-          const anim = gltf.userData.vrmAnimations?.[0];
-          if (!anim) throw new Error(`no animation in ${slot}.vrma`);
-          return anim;
+          return parsePoseAnimation(buf);
         }, { lane: 'cpu', priority });
       } finally { work.end(); }
     })();
@@ -793,7 +801,7 @@ function vrmaAnimation(slot, priority = 1) {
 }
 
 export async function clipFor(vrm, slot, { priority = 1 } = {}) {
-  return createVRMAnimationClip(await vrmaAnimation(slot, priority), vrm);
+  return retargetPoseAnimation(await vrmaAnimation(slot, priority), vrm);
 }
 
 // ---- procedural textures ----------------------------------------------------

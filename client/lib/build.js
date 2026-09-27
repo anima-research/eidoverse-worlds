@@ -23,10 +23,12 @@ import { makeLightGizmo } from './lights.js';
 import { entities, entityMeta, comps, editHolds } from './world.js';
 import { reindexCollider } from './colliders.js';
 import { heightAt } from './terrain.js';
-import { sendVerb, sendDrag } from './net.js';
+import { net, sendVerb, sendDrag } from './net.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
 import { flashHint, collapseAll, panelFrame } from './ui.js';
 import { sceneSelect } from './scenegraph.js';
+import { claimEscape } from './frames.js';
+import { mayAuthor, placerOf, placerName } from './placer.js';   // one rule for who may author (and one name for them), shared with the scene panel
 import { refreshSeatGizmos, resetSeats, armSeatPlacement, seatArmed, seatSelected,
   cancelSeatArm, deselectSeat, seatMouseDown, seatKeyDown, updateSeatDrag } from './seatedit.js';
 
@@ -51,8 +53,42 @@ const undoStack = [];     // inverse entries, newest last
 // are doing.
 let editMode = false;
 export const isEditing = () => editMode;
+claimEscape(() => (editMode ? 'edit' : null));   // edit mode owns Esc (its own ladder) — the frames' close-all yields
+
+/** May this client enter edit mode at all?
+ *
+ * PERMISSIVE WHEN UNKNOWN, denying only on a known-insufficient role —
+ * conjure.js:144 (`net.myRights?.gen !== false`) is the house idiom and this
+ * follows it. net.myRights has no declaration in net's object literal; it is
+ * assigned at the snapshot (net.js:697) or a live grant (:468), so it is
+ * `undefined` for the whole pre-snapshot window. Treating that as denial would
+ * make holdGhost() silently do nothing on a slow join — a build click that
+ * vanishes is worse than one that is refused out loud.
+ */
+export const mayEdit = () => {
+  const role = net.myRights?.role;
+  return role === undefined || ['builder', 'owner'].includes(role);
+};
 
 export function setEditMode(on, { quiet = false } = {}) {
+  // The gate the wrench advertises, applied at the one chokepoint every entry
+  // point funnels through: toggleEditMode, the dock action, KeyB, and the two
+  // quiet callers (holdGhost, armSeatPlacement — "I picked a thing to place",
+  // which is exactly the build intent the server refuses). Gating only the
+  // keybind would have been half a fix, which is the shape of mistake this
+  // review round already caught once.
+  //
+  // ONLY the `on` direction. Leaving always works, or a client demoted
+  // mid-session is trapped in edit mode with no way out.
+  //
+  // R, 2026-09-11, on why this is not merely cosmetic: "Builder is true by
+  // default, but if it's a server where builder/not builder is delineated,
+  // Edit is unpinned and gray." The rail says you cannot; the keyboard should
+  // not disagree with the rail.
+  if (on && !mayEdit()) {
+    if (!quiet) flashHint('edit mode needs build rights in this world');
+    return editMode;
+  }
   if (editMode === on) return editMode;
   editMode = on;
   document.body.classList.toggle('edit-mode', on);
@@ -106,21 +142,43 @@ function showInspector(id) {
   ensureInspector();
   const label = libLabels.get(meta.lib) ?? meta.lib?.split('/').pop()?.replace(/\.glb$/, '') ?? id;
   const locked = isLocked(id);
+  const guarded = isGuarded(id);
+  const mine = mayAuthor(id);
+  // a thing guarded by someone else is read-only here: the server would
+  // refuse every edit, so the controls say so before the round-trip
+  const held = guarded && !mine;
+  // attribution names the PLACER (the stamped principal); `actor` is whoever
+  // last wrote the entity, which an owner's re-light moves — say so when
+  // they differ rather than letting "by" mean two things
+  const who = placerOf(id)?.id ?? meta.actor ?? '?';
+  const lastBy = meta.actor && meta.actor !== who ? ` · last change by ${meta.actor}` : '';
   inspector.innerHTML =
     `<span><b>${label.slice(0, 34)}</b></span>` +
-    `<span style="color:var(--dim)">by ${meta.actor ?? '?'}</span>` +
-    (locked
-      ? `<span style="color:var(--dim)">🔒 locked — nothing moves or removes it until unchecked</span>`
-      : `<span style="color:var(--dim)">drag move · <kbd>Shift</kbd>+drag or <kbd>R</kbd><kbd>F</kbd> up/down · ` +
-        `<kbd>Q</kbd><kbd>E</kbd> turn · <kbd>,</kbd><kbd>.</kbd> size · <kbd>Del</kbd> remove · <kbd>Esc</kbd> done</span>`) +
+    `<span style="color:var(--dim)">placed by ${who}${lastBy}</span>` +
+    (held
+      ? `<span style="color:var(--dim)">🛡 guarded by ${placerName(id)} — only they or the world's owner can change, move or remove it</span>`
+      : locked
+        ? `<span style="color:var(--dim)">🔒 locked — nothing moves or removes it until unchecked</span>`
+        : `<span style="color:var(--dim)">drag move · <kbd>Shift</kbd>+drag or <kbd>R</kbd><kbd>F</kbd> up/down · ` +
+          `<kbd>Q</kbd><kbd>E</kbd> turn · <kbd>,</kbd><kbd>.</kbd> size · <kbd>Del</kbd> remove · <kbd>Esc</kbd> done</span>`) +
     `<label title="nail it down: while locked, nobody's drags, verbs or scripts can move, replace or remove it (server-enforced) — sitting on it and content edits stay open" style="display:flex;gap:4px;align-items:center;cursor:pointer">` +
-    `<input type="checkbox" data-bact="lock"${locked ? ' checked' : ''}> 🔒 lock</label>` +
-    `<button data-bact="seat" title="declare a sit anchor: click the spot where a sitter goes">+ seat</button>`;
+    `<input type="checkbox" data-bact="lock"${locked ? ' checked' : ''}${held ? ' disabled' : ''}> 🔒 lock</label>` +
+    `<label title="${mine
+      ? 'make it yours to author: while guarded, only you, the world\'s owner, or an operator can change its components, move it, remove it, or bind scripts to it (server-enforced) — using it and sitting on it stay open for everyone'
+      : `only ${placerName(id)} or the world's owner can set or clear the guard on this`}" style="display:flex;gap:4px;align-items:center;cursor:${mine ? 'pointer' : 'not-allowed'}">` +
+    `<input type="checkbox" data-bact="guard"${guarded ? ' checked' : ''}${mine ? '' : ' disabled'}> 🛡 guard</label>` +
+    `<button data-bact="seat" title="declare a sit anchor: click the spot where a sitter goes"${held ? ' disabled' : ''}>+ seat</button>`;
   inspector.querySelector('[data-bact="lock"]').onchange = (ev) => {
     const on = ev.target.checked;
     sendVerb('comp', { id, type: 'lock', data: on ? true : null });
     flashHint(on ? `🔒 <b>${label.slice(0, 34)}</b> locked — nothing moves it until you uncheck` : `🔓 unlocked`);
     // the echo folds the comp; repaint the hint line once it lands
+    setTimeout(() => { if (selected?.id === id) showInspector(id); }, 400);
+  };
+  inspector.querySelector('[data-bact="guard"]').onchange = (ev) => {
+    const on = ev.target.checked;
+    sendVerb('comp', { id, type: 'guard', data: on ? true : null });
+    flashHint(on ? `🛡 <b>${label.slice(0, 34)}</b> guarded — only you or the world's owner can change it now` : `🛡 guard cleared — any builder can change it again`);
     setTimeout(() => { if (selected?.id === id) showInspector(id); }, 400);
   };
   inspector.querySelector('[data-bact="seat"]').onclick = () => armSeatPlacement(selected?.id ?? id);
@@ -311,7 +369,17 @@ function commitSpawn() {
 // gesture honest — no preview that would have to snap back on refusal, and a
 // hint that teaches the unlock instead of a silent dead hand.
 function isLocked(id) { return !!comps.get(id)?.lock; }
+// ---- guard: `comp {id, type: "guard", data: true}` makes a thing its
+// placer's to author. The SERVER is the enforcement (rights.ts guardRefusal:
+// comps, motion, behaviors, moves, removal and replacement refused for anyone
+// but the placer, the world's owner, or an operator); here the same answer
+// keeps the gesture honest, and the hint names who may instead of a dead hand.
+function isGuarded(id) { return !!comps.get(id)?.guard; }
 function lockedHint(id) {
+  if (isGuarded(id) && !mayAuthor(id)) {
+    flashHint(`🛡 <b>guarded</b> by ${placerName(id)} — only they or the world's owner can move or change it`);
+    return true;
+  }
   if (!isLocked(id)) return false;
   flashHint('🔒 <b>locked</b> — uncheck <b>lock</b> in the inspector to move or remove it');
   return true;
