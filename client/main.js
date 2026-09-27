@@ -10,6 +10,7 @@
 import { THREE, scene, camera, renderer } from './lib/core.js';
 import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
 import { CONFIG, bus, report, tee } from './lib/base.js';
+import { initObjectLabels, tickObjectLabels } from './lib/objectlabels.js';
 import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, EMOTE_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
 import { setSkyArgsSource, entities, buildsPending, avatarMounts, roleOf, worldHasOwner } from './lib/world.js';
@@ -306,6 +307,7 @@ function start() {
     // the join completes.
     .then((vs) => vs.speakOwnSays(bus, () => net.myId || CONFIG.name))
     .catch((e) => console.warn('[voice] own-say hook not installed:', e));
+  initObjectLabels();
   initSceneGraph();   // 🌳 the world as a tree + 📜 the scripts that animate it
   setHint('<kbd>WASD</kbd> move · <kbd>Enter</kbd> chat · <kbd>B</kbd> build · <kbd>?</kbd> help');
 
@@ -553,6 +555,7 @@ registerSystem('send-pose', (dt, t, now) => sendPose(now));
 // XR: read hands → fill intent (updateMe already moved the body) → rig follows
 registerSystem('xr', (dt) => updateXR(dt));
 registerSystem('xrvignette', (dt) => tickXRVignette(dt));   // comfort tunnel, on the XR camera (Settings › VR)
+registerSystem('object-labels', () => tickObjectLabels()); // after motion and camera
 registerSystem('render', renderWorld);
 registerSystem('xrmirror', () => tickXRMirror());           // desktop view while presenting (Settings › VR)
 // radial-menu actions: the ring speaks through the same flows the keyboard does
