@@ -179,7 +179,7 @@ console.log("\nthe store's KTX2 shadow (store-variants.ts, shared/ktx2.js):\n");
   for (const o of ["x.glb", "aletheia.vrm", "moon_color_1k.jpg", "manifest.json", "sky_system.js"])
     check(`${o} is not`, !isKtx2Variant(o) && !isServingArtifact(o));
   // …nor fetches a marker as a model (review of #142, P2)
-  for (const a of ["x.glb.ktx2.glb.failed", "x.glb.failed", "x.glb.tmp", "manifest.json.tmp", "x.glb.ktx2.glb.tmp"])
+  for (const a of ["x.glb.ktx2.glb.failed", "x.glb.failed", "x.glb.tmp", "manifest.json.tmp", "x.glb.ktx2.glb.tmp", "x.glb.ktx2.glb.deferred", "x.glb.lod.lod1-r25e01-texel1024.glb.deferred"])
     check(`${a} is a serving artifact, never a listing entry`, isServingArtifact(a));
   check("the listing the prefetcher sees is originals + the manifest only",
     listing.filter((f) => !isServingArtifact(f)).join(",") === "305ea80018ad4dbf.glb,a1b2c3d4e5f60718.glb,manifest.json,scripts");

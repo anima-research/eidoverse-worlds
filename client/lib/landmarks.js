@@ -25,7 +25,7 @@
 //     free and is never re-derived from a moving skeleton.
 
 import { THREE } from './core.js';
-import { CONTACT_POINTS } from '../../shared/contact.js';
+import { CONTACT_POINTS, contactSeed } from '../../shared/contact.js';
 import { bodyFrame, fromBody } from '../../shared/joints.js';
 
 const _v = new THREE.Vector3();
@@ -40,12 +40,66 @@ function meshesOf(scene) {
   return out;
 }
 
+// Raycast bounds are pose-dependent too. Updating the skeleton alone leaves
+// cached bounds from the last frame, which can reject valid rest-pose hits.
+function refreshBounds(scene, saved) {
+  for (const mesh of meshesOf(scene)) {
+    if (!mesh.isSkinnedMesh) continue;
+    saved.push([mesh, mesh.boundingSphere, mesh.boundingBox]);
+    mesh.skeleton.update();
+    mesh.boundingSphere = null;
+    mesh.boundingBox = null;
+    mesh.computeBoundingSphere();
+  }
+}
+function restoreBounds(saved) {
+  for (const [mesh, sphere, box] of saved) {
+    mesh.boundingSphere = sphere;
+    mesh.boundingBox = box;
+  }
+}
+
+/** A short fan of rays near the intended anatomical site. Never accept the
+ * far side of the body when a ray misses a thin hand or forearm. Prefer the
+ * central ray; nearby rays rescue gaps without averaging points into air. */
+function localSurface(meshes, at, dir, radius) {
+  const tangent = new THREE.Vector3(0, 1, 0);
+  if (Math.abs(tangent.dot(dir)) > 0.9) tangent.set(1, 0, 0);
+  tangent.cross(dir).normalize();
+  const bitangent = dir.clone().cross(tangent);
+  for (const [u, v] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const aim = at.clone().addScaledVector(tangent, u * radius * 0.12)
+      .addScaledVector(bitangent, v * radius * 0.12);
+    _ray.set(aim.addScaledVector(dir, radius), dir.clone().negate());
+    _ray.near = 0;
+    _ray.far = radius * 1.15;
+    _ray.firstHitOnly = false;
+    // meshesOf already flattened the hierarchy: recursion visits children twice.
+    const hit = _ray.intersectObjects(meshes, false).find((h) =>
+      h.distance > 1e-4 && h.point.distanceTo(at) <= radius);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/** The source contact is the palm surface, not the wrist pivot. If a rig
+ * cannot supply a surface, leave the correction unavailable. */
+export function derivePalmAnchor(avatar, side) {
+  const marks = deriveLandmarks(avatar, { palm: {
+    bone: side + 'Hand', toward: side + 'MiddleProximal', along: 0.55,
+    extendFrom: side + 'LowerArm',
+    from: [0, -1, 0], radius: 0.22, tier: 'social',
+  } });
+  const mark = marks.get('palm');
+  return mark?.how === 'surface' ? mark : null;
+}
+
 /**
  * Derive every contact point for one avatar. Call once per body.
  * @returns {Map<string, {bone: string, node: object, offset: THREE.Vector3,
  *          normal: THREE.Vector3, tier: string, how: 'surface'|'fallback'}>}
  */
-export function deriveLandmarks(avatar) {
+export function deriveLandmarks(avatar, specs = CONTACT_POINTS) {
   const h = avatar?.vrm?.humanoid;
   const scene = avatar?.vrm?.scene;
   if (!h || !scene) return new Map();
@@ -67,11 +121,12 @@ export function deriveLandmarks(avatar) {
     const n = h.getNormalizedBoneNode(name);
     if (n) { saved.push([n, n.quaternion.clone()]); n.quaternion.identity(); }
   }
-  h.update();
-  avatar.root.updateMatrixWorld(true);
-
+  const bounds = [];
   const out = new Map();
   try {
+    h.update();
+    avatar.root.updateMatrixWorld(true);
+    refreshBounds(scene, bounds);
     // ⚠ AND the skinning has to be recomputed, or the rays are cast at one
     // pose and hit another.
     //
@@ -105,23 +160,20 @@ export function deriveLandmarks(avatar) {
     const hips = P.hips ? new THREE.Vector3(...P.hips) : null;
     const head = P.head ? new THREE.Vector3(...P.head) : null;
     const scale = (hips && head) ? Math.max(0.2, head.distanceTo(hips)) : 0.6;
-    const standBack = scale * 3;
 
-    for (const [name, spec] of Object.entries(CONTACT_POINTS)) {
+    for (const [name, spec] of Object.entries(specs)) {
       const node = h.getNormalizedBoneNode(spec.bone);
       if (!node) continue;
-      const at = node.getWorldPosition(new THREE.Vector3());
+      const seed = contactSeed(P, spec, F, scale);
+      if (!seed) continue;
+      const at = new THREE.Vector3(...seed.at);
+      const radius = scale * (spec.radius ?? 0.45);
       const dirArr = fromBody(spec.from, F);
       const dir = new THREE.Vector3(dirArr[0], dirArr[1], dirArr[2]);
       if (dir.lengthSq() < 1e-9) continue;
       dir.normalize();
 
-      _ray.set(_v.copy(at).addScaledVector(dir, standBack), dir.clone().negate());
-      _ray.firstHitOnly = true;
-      const hits = _ray.intersectObjects(meshes, true);
-      // The first hit is the OUTERMOST surface along the approach, which is
-      // the one a hand meets. Later hits are the far side of the body.
-      const hit = hits.find((x) => x.point && x.distance > 1e-4) ?? null;
+      const hit = localSurface(meshes, at, dir, radius);
 
       let point, normal, how;
       if (hit) {
@@ -144,12 +196,12 @@ export function deriveLandmarks(avatar) {
         // A normal pointing along -dir means the ray began inside the mesh (an
         // accessory wrapping the cast origin); THOSE are the ones to flip.
         if (normal.dot(dir) < 0) normal.negate();
-        how = 'surface';
+        how = seed.estimated ? 'fallback' : 'surface';
       } else {
         // No surface on that line: a concave region, or a body with nothing
         // there. Sit proportionally off the bone and SAY it was a fallback,
         // so a caller can tell a measured point from a guessed one.
-        point = at.clone().addScaledVector(dir, scale * 0.18);
+        point = at.clone().addScaledVector(dir, Math.min(scale * 0.18, radius * 0.5));
         normal = dir.clone();
         how = 'fallback';
       }
@@ -161,6 +213,7 @@ export function deriveLandmarks(avatar) {
       });
     }
   } finally {
+    restoreBounds(bounds);
     for (const [n, q] of saved) n.quaternion.copy(q);
     h.update();
     avatar.root.updateMatrixWorld(true);
@@ -243,9 +296,11 @@ export function torsoHalfDepth(avatar) {
     const n = h.getNormalizedBoneNode(name);
     if (n) { saved.push([n, n.quaternion.clone()]); n.quaternion.identity(); }
   }
-  h.update();
-  avatar.root.updateMatrixWorld(true);
+  const bounds = [];
   try {
+    h.update();
+    avatar.root.updateMatrixWorld(true);
+    refreshBounds(scene, bounds);
     const meshes = meshesOf(scene);
     if (!meshes.length) return null;
     for (const o of meshes) o.skeleton?.update?.();
@@ -262,6 +317,7 @@ export function torsoHalfDepth(avatar) {
     const reach = 3 * Math.max(0.2, Math.hypot(
       (P.head?.[0] ?? 0) - chest[0], (P.head?.[1] ?? 0) - chest[1], (P.head?.[2] ?? 0) - chest[2]));
     const hitAt = (dir) => {
+      _ray.near = 0; _ray.far = reach * 1.15;
       _ray.set(_v.copy(at).addScaledVector(dir, reach), dir.clone().negate());
       const hits = _ray.intersectObjects(meshes, true);
       const hit = hits.find((x) => x.point && x.distance > 1e-4);
@@ -274,6 +330,7 @@ export function torsoHalfDepth(avatar) {
     const d = (front != null && back != null) ? (front + back) / 2 : (front ?? back);
     return d > 1e-3 ? d : null;
   } finally {
+    restoreBounds(bounds);
     for (const [n, q] of saved) n.quaternion.copy(q);
     h.update();
     avatar.root.updateMatrixWorld(true);

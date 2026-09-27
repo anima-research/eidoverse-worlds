@@ -1134,6 +1134,7 @@ class Session {
       rememberAvatar: (path) => { chosenAvatar[this.auth.id] = path; persistState(); },
       rememberActivity: (cfg) => { activityCfg[this.auth.id] = cfg; persistState(); },
       travel: (world) => this.travelTool(world),
+      worldPolicy: { canJoin: (world) => joinAllowed(this.auth, world), canFound: this.auth.create === true },
     };
   }
 
