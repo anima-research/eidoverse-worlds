@@ -11,7 +11,8 @@
 // it joins as a visitor and keeps a visitor's verbs.
 //
 // Env:
-//   STREAM_URL     rtsp://127.0.0.1:8554/screen   (deploy/projector; or FILE=path.wav to rehearse)
+//   STREAM_URL     rtsp://127.0.0.1:8554/screen   (deploy/projector; or FILE=path.wav to rehearse,
+//                  or FILE=path.jsonl to replay a saved TRANSCRIPT's lines with no audio and no STT)
 //   WORLD_URL      ws(s)://host/ws               (default ws://127.0.0.1:8940/ws)
 //   WORLD_TOKEN    the bot's bearer token          (its actor id is reserved in mcpl/tokens.json)
 //   WORLD_NAME     world                           (default commons)
@@ -38,11 +39,11 @@
 //   TRANSCRIPT     optional local JSONL copy of every final line — a
 //                  convenience for the operator, not the record: the world
 //                  log is the record
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { ScribeSttProvider, AssemblyAiSttProvider } from '@animalabs/voice-kit';
 import { AudioTap } from './tap.ts';
 import { ffmpegSource, fileSource } from './sources.ts';
-import { Captioner } from './captioner.ts';
+import { Captioner, type Caption } from './captioner.ts';
 import { WorldClient } from './world.ts';
 
 const env = (k: string, d = '') => process.env[k] ?? d;
@@ -73,18 +74,35 @@ const captioner = new Captioner({
   thresholdDb: Number(env('VAD_DB', '-45')), speaker: () => world?.speaker(), log,
 });
 let lines = 0;
-captioner.onCaption((c) => {
+// one path for every final line, wherever it came from: the live captioner,
+// a rehearsed audio file, or a replayed transcript
+const onLine = (c: Caption) => {
   lines++;
   log(`📝 [${c.t0.toFixed(1)}–${c.t1.toFixed(1)}] ${c.speaker ? c.speaker + ': ' : ''}${c.text}`);
   if (env('TRANSCRIPT')) appendFileSync(env('TRANSCRIPT'), JSON.stringify({ ...c, session: world?.session, at: Date.now() }) + '\n');
   if (world) world.caption(c); else log(`   would send caption n=${lines}`);
-});
+};
+captioner.onCaption(onLine);
 tap.attach(captioner);
 
 const file = env('FILE');
 if (file) {
-  log(`rehearsing from ${file}`);
-  await fileSource(file, tap);
+  if (file.endsWith('.jsonl')) {
+    // a saved TRANSCRIPT (one {t0, t1, text, speaker?} per line, as this bot
+    // writes it): the lines go through the same door as live ones, with no
+    // audio decoded and no STT session opened. What an operator uses to
+    // re-run an event's captions against a world, and what the CLI process
+    // test drives the real exit owner with.
+    log(`replaying lines from ${file}`);
+    for (const row of readFileSync(file, 'utf8').split('\n')) {
+      if (!row.trim()) continue;
+      const { t0, t1, text, speaker } = JSON.parse(row) as Caption;
+      onLine({ t0, t1, text, ...(speaker ? { speaker } : {}) });
+    }
+  } else {
+    log(`rehearsing from ${file}`);
+    await fileSource(file, tap);
+  }
   await new Promise((r) => setTimeout(r, 2000)); // let the last final settle
   world?.end();
   await new Promise((r) => setTimeout(r, 1500)); // and the receipts land
