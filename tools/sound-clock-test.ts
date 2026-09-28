@@ -80,6 +80,36 @@ check('play committed a sound comp', !!play, JSON.stringify(committed));
 check('its t0 is the server clock, not the machine\'s',
   play && play.args?.data?.t0 === seams.clock.server, play ? `t0=${play.args?.data?.t0} server=${seams.clock.server} machine=${Date.now()}` : '');
 
+console.log('\n— a seek made before the clock is known is made again once it is —\n');
+// The offset is learned from pose frames, and an idle world sends none: a
+// spectator who joins and does not move seeks against their own clock. On the
+// first tick after a frame lands, the seek is made again — once.
+{
+  seams.clock.synced = false;
+  seams.clock.server = Date.now();                   // unsynced: serverNow() IS the machine clock, 5 s ahead
+  stub.bus.emit('comp', { id: 'radio2', type: 'sound', data: { src: 'store/audio/0123456789abcdef.mp3', playing: true, loop: true, t0: T0 } });
+  const h2 = sounds._playing.get('radio2');
+  check('before any frame: the seek lands on the machine clock, 17 s', h2 && Math.abs(h2.el.currentTime - 17) < 1e-9, h2 ? `currentTime=${h2.el.currentTime}` : 'no handle');
+  check('…and the handle remembers the clock was not known', h2?.seekSynced === false, String(h2?.seekSynced));
+  // enough scene for tickSounds to run under the stubs
+  const V3: any = stub.THREE.Vector3;
+  V3.prototype.set ??= function () { return this; };
+  V3.prototype.applyQuaternion ??= function () { return this; };
+  stub.camera.getWorldPosition = (v: any) => v; stub.camera.getWorldDirection = (v: any) => v;
+  stub.entities.get('radio1').getWorldPosition = (v: any) => v;
+  sounds.tickSounds();
+  check('a tick before the first frame changes nothing', Math.abs(h2.el.currentTime - 17) < 1e-9, `currentTime=${h2.el.currentTime}`);
+  // the first frame lands: the server clock is known, 5 s behind the machine
+  seams.clock.synced = true; seams.clock.server = T0 + 12_000;
+  sounds.tickSounds();
+  check('the first tick after the clock is known seeks again: 12 s', Math.abs(h2.el.currentTime - 12) < 1e-9, `currentTime=${h2.el.currentTime}`);
+  check('…and marks the seek as made on the server clock', h2.seekSynced === true, String(h2.seekSynced));
+  seams.clock.server += 1_000;
+  sounds.tickSounds();
+  check('later ticks do not keep re-seeking', Math.abs(h2.el.currentTime - 12) < 1e-9, `currentTime=${h2.el.currentTime}`);
+  check('a sound seeked while the clock was known is never re-seeked', Math.abs(h.el.currentTime - 12) < 1e-9, `radio1 currentTime=${h.el.currentTime}`);
+}
+
 Date.now = realNow;
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

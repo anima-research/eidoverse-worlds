@@ -12,15 +12,18 @@ export const volumeFor = () => 1;
 export const audioContextState = () => 'running';
 
 const node = () => ({ connect() { return this; }, disconnect() {}, gain: { value: 1 } });
+const param = () => ({ value: 0 });
 export const audioContext = () => ({
   createMediaElementSource: () => node(),
   createGain: () => node(),
   createPanner: () => ({ ...node(), positionX: { value: 0 }, positionY: { value: 0 }, positionZ: { value: 0 } }),
   destination: node(),
+  listener: { positionX: param(), positionY: param(), positionZ: param(), forwardX: param(), forwardY: param(), forwardZ: param(), upX: param(), upY: param(), upZ: param() },
 });
 
 /** The dial. The test sets `clock.server` to whatever the smoothed server
  *  clock should read; Date.now() stays the machine's own, deliberately
  *  skewed from it. */
-export const clock = { server: 0 };
+export const clock = { server: 0, synced: true };
 export const serverNow = () => clock.server;
+export const clockSynced = () => clock.synced;   // false = no frame has carried the server's time yet
