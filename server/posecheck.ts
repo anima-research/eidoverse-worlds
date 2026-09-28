@@ -11,6 +11,19 @@ export function sanePose(pose: unknown): Record<string, unknown> | null {
   const p = pose as Record<string, unknown>;
   if (!finArr(p.p, 3)) return null;
   for (const k of ["yaw", "pitch", "speed"]) if (p[k] !== undefined && !fin(p[k])) return null;
+  // Optional full-body orientation and locomotion metadata for 3D clients.
+  // These describe client-owned presence, never grant movement authority.
+  if (p.q !== undefined) {
+    if (!finArr(p.q, 4)) return null;
+    const length2 = (p.q as number[]).reduce((sum, n) => sum + n * n, 0);
+    if (Math.abs(length2 - 1) > 0.02) return null;
+  }
+  if (p.locomotion !== undefined) {
+    const l = p.locomotion as Record<string, unknown> | null;
+    if (!l || typeof l !== 'object' || Array.isArray(l) || !finiteDeep(l, 0)) return null;
+    for (const k of ['mode', 'body', 'medium'])
+      if (l[k] !== undefined && (typeof l[k] !== 'string' || (l[k] as string).length > 32)) return null;
+  }
   if (p.xr !== undefined) {                       // C18: tracked head/hands (client/lib/xrbody.js)
     const x = p.xr as Record<string, unknown> | null;
     if (!x || typeof x !== "object" || !finArr(x.h, 4)) return null;

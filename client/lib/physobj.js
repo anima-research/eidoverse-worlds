@@ -20,7 +20,7 @@ import { bus, CONFIG } from './base.js';
 import { entities, comps } from './world.js';
 import { remotes } from './remotes.js';
 import { heightAt } from './terrain.js';
-import { colliders, nearColliders, entityWorldCenter } from './colliders.js';
+import { colliders, nearColliders, entityWorldCenter, reindexCollider } from './colliders.js';
 import { sendLease, sendVerb } from './net.js';
 import { flashHint } from './ui.js';
 import { logChat } from './chat.js';
@@ -335,7 +335,7 @@ bus.on('lease', (msg) => {
     const pk = pendingKicks.get(id);
     pendingKicks.delete(id);
     if (pk) { startSim(id, pk.launch, msg.from ?? null); if (!pk.silent) flashHint(`you kick ${id}`); }
-    else sendLease('release', id);          // a grant nothing wanted anymore
+    else if (!comps.get(id)?.vehicle) sendLease('release', id);          // a grant nothing wanted anymore
     return;
   }
   if (op === 'denied') {
@@ -360,7 +360,8 @@ bus.on('lease', (msg) => {
     if (!obj || !Array.isArray(msg.p)) return;
     obj.position.set(msg.p[0], msg.p[1], msg.p[2]);
     if (Array.isArray(msg.q) && msg.q.length === 4) obj.quaternion.set(msg.q[0], msg.q[1], msg.q[2], msg.q[3]);
-    else if (msg.yaw != null) obj.rotation.y = msg.yaw;
+    else if (msg.yaw != null) obj.rotation.set(0,msg.yaw,0);
+    reindexCollider(id);
     return;
   }
   // 'claimed' / 'released': nothing to do — states carry the motion, and the

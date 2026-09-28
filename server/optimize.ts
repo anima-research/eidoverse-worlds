@@ -28,7 +28,7 @@ import { ALL_EXTENSIONS, KHRTextureBasisu } from "@gltf-transform/extensions";
 import { dedup, prune, resample, textureCompress, draco, listTextureSlots, weld, simplify } from "@gltf-transform/functions";
 import { MeshoptSimplifier } from "meshoptimizer";
 import draco3d from "draco3dgltf";
-import { capTexels, recipeStamp, LOD_RECIPE, LOD_MIN_VERTS } from "./store-variants.ts";
+import { capTexels, recipeStamp, LOD_RECIPE, LOD_MIN_VERTS, LOD_RATIO, LOD_ERROR } from "./store-variants.ts";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename, dirname } from "node:path";
@@ -432,7 +432,7 @@ export async function optimizeGlbLod(bytes: Uint8Array, encoder: string | null, 
   // what may not change from HERE on is which material each primitive wears
   const preMats = lodMatsSig(doc);
   const [preMin, preMax] = sceneBounds(doc);
-  await doc.transform(weld(), simplify({ simplifier: MeshoptSimplifier, ratio: 0.25, error: 0.01 }));
+  await doc.transform(weld(), simplify({ simplifier: MeshoptSimplifier, ratio: LOD_RATIO, error: LOD_ERROR }));   // the recipe's own numbers — the string derives from them
   mutate?.(doc);   // the mutation-control seam (tests only) — see the param doc
   const after = totalVerts(doc);
   if (lodNodesSig(doc) !== preNodes) return { out: null, verdict: "preservation failed: node hierarchy/transforms changed", before, after, ...none };
@@ -1041,8 +1041,8 @@ if (import.meta.main) {
         console.error("[optimize] lod: textured object and no KTX2 encoder — set KTX2_TOKTX or put toktx/ktx on PATH (docs/ktx2-encoder.md)");
         process.exit(3);
       }
-      if (r.verdict) {   // a typed content refusal — fail closed, marker's business
-        console.error(`[optimize] lod: ${r.verdict} (${Math.round(performance.now() - t0)}ms) — original stays the only representation`);
+      if (r.verdict) {   // a typed content refusal — fail closed, marker's business; stamped with the recipe like the ktx2 size verdict
+        console.error(`[optimize] lod: ${r.verdict} (${Math.round(performance.now() - t0)}ms) ${recipeStamp(LOD_RECIPE)} — original stays the only representation`);
         process.exit(2);
       }
       if (!r.out) {

@@ -35,6 +35,20 @@ const optQueue: OptItem[] = [];
 let optRunning = false;
 let ktx2Skip = false; // set when a --ktx2 run exits 3 (no encoder) — stop queuing variants this boot
 let lodEncoderWarned = false; // the --lod arm's own once-per-boot note; it never sets ktx2Skip
+/** An older recipe generation's files beside a lod outcome — variant, marker,
+ *  deferral — are dead: their URL is never asked for again (the recipe is in
+ *  both the URL and the name). Pruned on a bake AND on a refusal, so a recipe
+ *  bump (a new floor, a new reducer) leaves one generation on disk. */
+function pruneOldLodGenerations(src: string, dest: string) {
+  const base = basename(src), dir = dirname(dest);
+  const keep = new Set([dest, `${dest}.failed`, `${dest}.deferred`]);
+  for (const f of readdirSync(dir)) {
+    const p = join(dir, f);
+    if (f.startsWith(`${base}.lod.`) && /\.glb(\.failed|\.deferred)?$/.test(f) && !keep.has(p))
+      try { rmSync(p); } catch { /* best effort */ }
+  }
+}
+
 // Items this host could not afford (estimate over budget, or the child died
 // under the cap). Informational: the marker never blocks a retry — the next
 // boot re-estimates against whatever budget it has — it exists so /version
@@ -94,9 +108,13 @@ async function pumpOptimize() {
       const { src, dest, mode } = optQueue.shift()!;
       const base = basename(src);                      // <hash>.glb / <model>.glb
       const failed = `${dest}.failed`;
-      // a size verdict from an older recipe does not stand (store-variants.ts)
+      // a size verdict from an older recipe does not stand (store-variants.ts);
+      // nor does ANY verdict older than its source — library files are
+      // mutable, and a re-exported model is a question again (the route
+      // reads the same rule: a stale marker serves provisional, never final)
       const refused = existsSync(failed)
-        && (!mode || verdictStands(readFileSync(failed, "utf8"), mode === "--lod" ? LOD_RECIPE : KTX2_RECIPE));
+        && (!mode || verdictStands(readFileSync(failed, "utf8"), mode === "--lod" ? LOD_RECIPE : KTX2_RECIPE))
+        && (!mode || !existsSync(src) || statSync(failed).mtimeMs > statSync(src).mtimeMs);
       if (!existsSync(src) || refused) continue;
       // Store shadows are content-addressed — existing means done forever.
       // KTX2 variants shadow MUTABLE library files, so a variant older than
@@ -150,22 +168,17 @@ async function pumpOptimize() {
         undefer(dest);
         // a verdict that was re-measured and answered differently is history
         if (existsSync(failed)) try { rmSync(failed); } catch { /* best effort */ }
-        // …and so is an older recipe generation's file: its URL is never
-        // asked for again (the recipe is in both), so the bytes are dead
-        if (mode === "--lod") {
-          const base = basename(src);
-          for (const f of readdirSync(dirname(dest))) {
-            if (f.startsWith(`${base}.lod.`) && f.endsWith(".glb") && join(dirname(dest), f) !== dest)
-              try { rmSync(join(dirname(dest), f)); } catch { /* best effort */ }
-          }
-        }
+        if (mode === "--lod") pruneOldLodGenerations(src, dest);
         const ratio = (Bun.file(src).size / Math.max(1, Bun.file(dest).size)).toFixed(1);
         console.log(mode ? `[ktx2] ${base} → ${basename(dest)} (${ratio}x)` : `[store] optimized ${base} (${ratio}x)`);
       } else if (code === 2) {
         // not suitable — bigger than source, or (--ktx2-img) non-POT dims /
         // conflicted consumers. Mark with the CLI's reason so the boot sweep
-        // stops re-measuring it; the marker's CONTENT is diagnostic only.
+        // stops re-measuring it. For --lod the marker's content is READ at
+        // serve time too (store-variants.ts lodVerdictFinal: a standing
+        // typed verdict makes the original this tier's final answer).
         writeFileSync(failed, err.slice(0, 2000) || "not-smaller"); undefer(dest);
+        if (mode === "--lod") pruneOldLodGenerations(src, dest);
         console.log(mode ? `[ktx2] ${base} — no variant (${err.split("\n").pop()?.replace(/^\[optimize\]\s*/, "") || "not smaller"})`
           : `[store] ${base} already lean — serving original`);
       } else if (code === 4) {
@@ -272,7 +285,11 @@ export function sweepLibrary() {
       // a loose image's variant IS the ktx2 (<rel>.ktx2 — routes.ts serves it
       // as image/ktx2)
       const dest = join(OPT_DIR, mode === "--ktx2-img" ? `${rel}.ktx2` : mode === "--lod" ? lodVariantPath(rel) : `${rel}.ktx2${ext}`);
-      if (existsSync(`${dest}.failed`) && verdictStands(readFileSync(`${dest}.failed`, "utf8"), mode === "--lod" ? LOD_RECIPE : KTX2_RECIPE)) continue;
+      // a standing verdict skips — if it is NEWER than the source it judges
+      // (mutable library files: an updated model is re-measured, exactly as
+      // an updated model's variant is rebuilt below)
+      if (existsSync(`${dest}.failed`) && verdictStands(readFileSync(`${dest}.failed`, "utf8"), mode === "--lod" ? LOD_RECIPE : KTX2_RECIPE)
+        && statSync(`${dest}.failed`).mtimeMs > statSync(p).mtimeMs) continue;
       // mtime, not mere existence: library files are mutable — an updated
       // model/body/texture rebuilds its variant next boot
       if (existsSync(dest) && statSync(dest).mtimeMs > statSync(p).mtimeMs) continue;

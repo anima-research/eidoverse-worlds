@@ -2,11 +2,11 @@
 import { randomUUID } from "node:crypto";
 import type { Client, World } from "./world.ts";
 
-export type CaptureCapability = { version: 1; engine: "unreal"; scene: "underwater-prototype" };
+export type CaptureCapability = { version: 1; engine: "unreal"; scene: "underwater-prototype" | "world-projection" };
 export function captureCapability(value: unknown): CaptureCapability | undefined {
   const v = value as Partial<CaptureCapability> | null;
-  return v?.version === 1 && v.engine === "unreal" && v.scene === "underwater-prototype"
-    ? { version: 1, engine: "unreal", scene: "underwater-prototype" } : undefined;
+  return v?.version === 1 && v.engine === "unreal" && (v.scene === "underwater-prototype" || v.scene === "world-projection")
+    ? { version: 1, engine: "unreal", scene: v.scene } : undefined;
 }
 type Result = { ok: true; png: Uint8Array; engine: string; scene: string }
   | { ok: false; err: string; status: number };

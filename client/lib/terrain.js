@@ -10,8 +10,16 @@ import { retireField } from './flora_field.js';
 import { makeGrassQuality, GRASS_QUALITY } from './grass_quality.js';
 
 let current = null;
+let environmentFloor = null;
+export function setEnvironmentFloor(y) {
+  environmentFloor = Number.isFinite(y) ? y : null;
+  if (!current) {
+    if (ground) ground.visible = environmentFloor === null;
+    if (grid) grid.visible = environmentFloor === null;
+  }
+}
 
-export const heightAt = (x, z) => (current ? current.heightAt(x, z) : 0);
+export const heightAt = (x, z) => (current ? current.heightAt(x, z) : (environmentFloor ?? 0));
 export const hasTerrain = () => current !== null;
 /** §22m diag: the terrain mesh, for cost-attribution phases. */
 export const getTerrainMesh = () => current?.mesh ?? null;
@@ -52,9 +60,9 @@ export function setTerrain(t) {
     if (grid) grid.visible = false;
     if (axisLines) axisLines.visible = false;
   } else {
-    if (ground) ground.visible = true;
-    if (grid) grid.visible = true;
-    if (axisLines) axisLines.visible = true;
+    if (ground) ground.visible = environmentFloor === null;
+    if (grid) grid.visible = environmentFloor === null;
+    if (axisLines) axisLines.visible = environmentFloor === null;
   }
 }
 

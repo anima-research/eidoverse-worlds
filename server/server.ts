@@ -379,8 +379,8 @@ function admitJoin(c: Client, ws: { send(d: string): void; close(code?: number, 
     // with an explanation and a close code the client knows not to retry
     // (retrying a name that can never exist is just a polite DoS).
     const wname = String(msg.world ?? "commons");
-    if (auth?.nativeWorld && wname !== auth.nativeWorld) {
-      ws.send(JSON.stringify({ type: "error", error: "this native session is limited to water" }));
+    if (auth?.nativeWorld && auth.nativeWorld !== "*" && wname !== auth.nativeWorld) {
+      ws.send(JSON.stringify({ type: "error", error: "this native session is limited to its approved world; sign in again for multi-world access" }));
       ws.close(4003, "native session world restriction");
       return null;
     }
@@ -631,6 +631,7 @@ function buildSnapshot(w: World, c: Client) {
     const jp = w.joinPayload();
     return {
       type: "snapshot",
+      renderSceneVersion: 1,
       world: w.name,
       you: c.id,
       // your durable subject, when the door vouched for one — the principal

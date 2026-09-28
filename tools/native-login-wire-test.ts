@@ -56,6 +56,12 @@ try{
  const good=await connect("water",native);const snap=good.messages.find(m=>m.type==="snapshot");assert.ok(snap);
  assert.equal(snap.you,"Native Fixture");
  good.ws.close();
+ const multi=await(await post("/native/start",{})).json();
+ assert.equal((await post("/native/approve",{user_code:multi.user_code,all_worlds:true},{cookie:browser,origin})).status,200);
+ const multiGrant=await post("/native/poll",{device_code:multi.device_code});assert.equal(multiGrant.status,200);
+ const multiCookie=cookie(multiGrant);assert.equal((await multiGrant.json()).world_scope,"*");
+ const second=await connect("native-multi-world",multiCookie);assert.equal(second.messages.find(m=>m.type==="snapshot")?.world,"native-multi-world");second.ws.close();
+ assert.equal((await post("/logout",{},{cookie:multiCookie})).status,200);
  assert.equal((await post("/logout",{},{cookie:native})).status,200);
  assert.equal((await fetch(origin+"/whoami",{headers:{cookie:native}})).status,401);
  assert.equal((await fetch(origin+"/whoami",{headers:{cookie:browser}})).status,200);

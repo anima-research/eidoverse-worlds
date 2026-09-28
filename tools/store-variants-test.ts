@@ -51,7 +51,8 @@ import { join } from "node:path";
 import { Document, NodeIO } from "@gltf-transform/core";
 import { PNG } from "pngjs";
 import { isStoreOriginal, isKtx2Variant, isServingArtifact, ktx2VariantPath, storeShadowsMissing, KTX2_SUFFIX,
-  capTexels, verdictStands, recipeStamp, KTX2_TEXEL_CAP } from "../server/store-variants.ts";
+  capTexels, verdictStands, recipeStamp, KTX2_TEXEL_CAP,
+  LOD_RECIPE, LOD_GEN, LOD_MIN_VERTS, lodRecipeFor, lodVariantPath, isLodVariant, lodVerdictKind, lodVerdictFinal, hasStamp } from "../server/store-variants.ts";
 import { findKtx2Encoder, isKtx2Container } from "../server/optimize.ts";
 import { KTX2_KEY, KTX2_QUERY, wantsKtx2, withKtx2, keyFromVersion, negotiate } from "../shared/ktx2.js";
 
@@ -124,8 +125,50 @@ console.log("\nthe store's KTX2 shadow (store-variants.ts, shared/ktx2.js):\n");
   check("the show box's sixteen refusals carry no stamp → stale, a question again", !verdictStands(prodMarker));
   check("a refusal under the CURRENT recipe stands", verdictStands(`[optimize] not smaller (1 -> 2, 3ms) ${recipeStamp()} — keeping original`));
   check("a refusal under an OLDER recipe does not", !verdictStands(`[optimize] not smaller (1 -> 2, 3ms) ${recipeStamp("texel2048")} — keeping original`));
+  check("…nor one whose stamp merely EXTENDS this recipe's (texel10240 is not texel1024): the match is delimited, never a prefix",
+    !verdictStands(`[optimize] not smaller (1 -> 2, 3ms) ${recipeStamp("texel10240")} — keeping original`)
+    && hasStamp(`x ${recipeStamp("texel1024")} y`, "texel1024") && hasStamp(recipeStamp("texel1024"), "texel1024") && !hasStamp(`${recipeStamp("texel1024")}0`, "texel1024"));
   check("a content verdict stands regardless (nothing to convert)", verdictStands("[optimize] ktx2: no convertible raster images (12ms) — keeping original"));
   check("…and so does a hard failure", verdictStands("exit 1") && verdictStands(""));
+
+  // the LOD recipe DERIVES from its parameters — a floor change is a generation change by construction
+  check("LOD_RECIPE derives from (gen, ratio, error, texel, floor)",
+    LOD_RECIPE === lodRecipeFor() && LOD_RECIPE === `lod${LOD_GEN}-r25e01-texel${KTX2_TEXEL_CAP}-min${LOD_MIN_VERTS}`, LOD_RECIPE);
+  check("a lower floor is a NEW recipe — a new URL and a new filename, nothing pinned under the old",
+    lodRecipeFor({ minVerts: 6000 }) !== LOD_RECIPE && lodVariantPath("store/x.glb", lodRecipeFor({ minVerts: 6000 })) !== lodVariantPath("store/x.glb"));
+  check("…and so is a reducer generation bump, a ratio, an error bound, a texel budget",
+    new Set([LOD_RECIPE, lodRecipeFor({ gen: LOD_GEN + 1 }), lodRecipeFor({ ratio: 0.5 }), lodRecipeFor({ error: 0.02 }), lodRecipeFor({ texel: 2048 })]).size === 5);
+  check("the recipe is URL- and filename-safe, within the client's bound, and isLodVariant recognizes it",
+    /^[a-z0-9.-]+$/.test(LOD_RECIPE) && LOD_RECIPE.length <= 64 && isLodVariant(lodVariantPath("store/x.glb")));
+  check("the encoding is INJECTIVE at the reducer's precision: 0.014 is not 0.01, 0.5 is not 0.05 (a rounded percent read them alike)",
+    lodRecipeFor({ error: 0.014 }) !== LOD_RECIPE && lodRecipeFor({ error: 0.014 }).includes("e014-")
+    && lodRecipeFor({ ratio: 0.5 }) !== lodRecipeFor({ ratio: 0.05 }) && lodRecipeFor({ ratio: 0.5 }).includes("-r5e"), lodRecipeFor({ error: 0.014 }));
+  check("a parameter the string cannot carry faithfully is refused, not mangled",
+    [() => lodRecipeFor({ ratio: 1 }), () => lodRecipeFor({ error: 0 }), () => lodRecipeFor({ error: 1e-7 }), () => lodRecipeFor({ minVerts: 12000.5 })].every((f) => { try { f(); return false; } catch { return true; } }));
+
+  // standing verdicts: which typed refusals make the original the FINAL answer under the running recipe
+  {
+    const stamp = recipeStamp(LOD_RECIPE);
+    const line = (v: string) => `[optimize] lod: ${v} (47ms) ${stamp} — original stays the only representation`;
+    const light = line(`already light (981 verts < ${LOD_MIN_VERTS})`);
+    check("skinned / VRM / joint-weights / morph / animated refusals are STRUCTURAL — properties of the content alone",
+      ["unsupported: skinned/avatar asset (skins)", "unsupported: skinned/avatar asset (VRM metadata)", "unsupported: skinned/avatar asset (joint weights)",
+        "unsupported: morph targets the reducer cannot prove preserved", "unsupported: animated object (v1 reduces static geometry only)"]
+        .every((v) => lodVerdictKind(line(v)) === "structural"));
+    check("'already light' is a FLOOR verdict — and the floor is in the recipe", lodVerdictKind(light) === "light");
+    check("'reduction ineffective' and a preservation failure depend on the REDUCER",
+      lodVerdictKind(line("reduction ineffective (14000 -> 9000 verts)")) === "ineffective" && lodVerdictKind(line("preservation failed: bounds moved on axis 1")) === "preservation");
+    check("anything else is unclassified: a ktx2 size verdict, a deferral note, an exit code, nothing",
+      [`[optimize] not smaller (1 -> 2, 3ms) ${recipeStamp()}`, "estimated 900MB > budget 512MB", "exit 1", ""].every((c) => lodVerdictKind(c) === null));
+    check("FINAL: a structural or floor verdict stamped with the running recipe", lodVerdictFinal(line("unsupported: skinned/avatar asset (skins)")) && lodVerdictFinal(light));
+    check("NOT final: ineffective / preservation — a better reducer may succeed under the same content",
+      !lodVerdictFinal(line("reduction ineffective (14000 -> 9000 verts)")) && !lodVerdictFinal(line("preservation failed: material assignments changed")));
+    check("NOT final: a floor verdict without the stamp (an older CLI), under another floor, or judged against another generation",
+      !lodVerdictFinal(light.replace(stamp, "")) && !lodVerdictFinal(light.replace(stamp, recipeStamp(lodRecipeFor({ minVerts: 6000 })))) && !lodVerdictFinal(light, lodRecipeFor({ gen: 2 })));
+    check("NOT final: unclassified, however stamped", !lodVerdictFinal(`exit 1 ${stamp}`) && !lodVerdictFinal(stamp) && !lodVerdictFinal(""));
+    check("NOT final: a stamp that EXTENDS the running recipe's (min120000 for min12000) — the pull-window case, a newer CLI's verdict in the older server's filename",
+      !lodVerdictFinal(light.replace(stamp, recipeStamp(`${LOD_RECIPE}0`))) && !lodVerdictFinal(light, `${LOD_RECIPE}0`) && !lodVerdictFinal(light, LOD_RECIPE.slice(0, -1)));
+  }
   {
     const minDir2 = join(OPT, "store-min");
     const marker = `${ktx2VariantPath(original)}.failed`;

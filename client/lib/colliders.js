@@ -37,11 +37,20 @@ function buildExact(obj) {
   const geoms = [];
   obj.traverse((o) => {
     if (!o.isMesh || !o.geometry?.attributes?.position) return;
-    const g = (o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone());
-    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
-    const clean = new THREE.BufferGeometry(); // position-only: BVH wants no skinning/uv baggage
-    clean.setAttribute('position', g.getAttribute('position'));
-    geoms.push(clean);
+    // glTF extras preserve non-solid panes, pool surfaces, and decorative parts.
+    for(let parent=o;parent&&parent!==obj.parent;parent=parent.parent)
+      if(parent.userData?.collision===false)return;
+    const relative = new THREE.Matrix4().multiplyMatrices(inv,o.matrixWorld);
+    const instance = new THREE.Matrix4(), transform = new THREE.Matrix4();
+    for(let i=0;i<(o.isInstancedMesh?o.count:1);i++){
+      transform.copy(relative);
+      if(o.isInstancedMesh){o.getMatrixAt(i,instance);transform.multiply(instance);}
+      const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+      g.applyMatrix4(transform);
+      const clean = new THREE.BufferGeometry();
+      clean.setAttribute('position',g.getAttribute('position'));
+      geoms.push(clean);
+    }
   });
   if (!geoms.length) return null;
   return { bvh: new MeshBVH(mergeGeometries(geoms, false)) };
@@ -102,8 +111,13 @@ function localBox(obj) {
     if (!g) return;
     if (g.boundingBox === null) g.computeBoundingBox();
     if (!g.boundingBox || g.boundingBox.isEmpty()) return;
-    _lbBox.copy(g.boundingBox).applyMatrix4(_lbRel.multiplyMatrices(_lbInv, o.matrixWorld));
-    box.union(_lbBox);
+    _lbRel.multiplyMatrices(_lbInv,o.matrixWorld);
+    const instance=new THREE.Matrix4(),transform=new THREE.Matrix4();
+    for(let i=0;i<(o.isInstancedMesh?o.count:1);i++){
+      transform.copy(_lbRel);
+      if(o.isInstancedMesh){o.getMatrixAt(i,instance);transform.multiply(instance);}
+      _lbBox.copy(g.boundingBox).applyMatrix4(transform);box.union(_lbBox);
+    }
   });
   return box;
 }
@@ -588,7 +602,7 @@ function slabT(o, d, box, far) {
 
 /** Nearest blocking distance along origin+dir, within `far`; null = clear.
  *  camGhost entries (gizmos, placeholders) never block. */
-export function raySegment(origin, dir, far) {
+export function raySegment(origin, dir, far, ignoreId = null) {
   let bestT = Infinity;
   const ex = origin.x + dir.x * far, ez = origin.z + dir.z * far;
   const x0 = Math.floor(Math.min(origin.x, ex) / CELL) - 1;
@@ -601,7 +615,7 @@ export function raySegment(origin, dir, far) {
       const set = buckets.get(`${cx},${cz}`);
       if (!set) continue;
       for (const id of set) {
-        if (_rsSeen.has(id)) continue;
+        if (id === ignoreId || _rsSeen.has(id)) continue;
         _rsSeen.add(id);
         const e = colliders.get(id);
         if (!e || e.camGhost || e.mask || !e.box) continue;

@@ -16,7 +16,7 @@ import { randomBytes } from "node:crypto";
 import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, LADDER, JOIN_TOKEN } from "./config.ts";
 import { isStoreOriginal, isServingArtifact } from "./store-variants.ts";
 import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
-import { LOD_RECIPE, lodVariantPath } from "./store-variants.ts";
+import { LOD_RECIPE, lodVariantPath, lodVerdictKind, lodVerdictFinal } from "./store-variants.ts";
 import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
 import { createNativeLogin } from "./native-login.ts";
@@ -67,28 +67,9 @@ export type Srv = {
 
 // ---- snapshots: the world serves views of itself ---------------------------
 // GET /snap?world=W&follow=ID → the sequencer asks a renderer client (an
-// invisible hub-spectator on some GPU box, dialed OUT to us like any client)
+// opt-in Unreal player or legacy browser spectator, dialed OUT like any client)
 // to jump its camera to ID's head and return one frame. Clients never know
 // rendering exists as a separate thing — it's just the world's API.
-type PendingSnap = { resolve: (r: { ok: true; png: Uint8Array } | { ok: false; err: string; status: number }) => void };
-export const pendingSnaps = new Map<string, PendingSnap>();
-let nextSnapId = 1;
-
-function requestSnap(world: World, follow: string, view = "first"): Promise<{ ok: true; png: Uint8Array } | { ok: false; err: string; status: number }> {
-  const renderer = [...world.clients].find((c) => c.renderer);
-  if (!renderer) return Promise.resolve({ ok: false, err: `no renderer is currently serving world "${world.name}"`, status: 503 });
-  const target = [...world.clients].find((c) => c.id === follow && !c.spectator);
-  if (!target) return Promise.resolve({ ok: false, err: `"${follow}" is not present in "${world.name}"`, status: 404 });
-  if (!["first", "third", "selfie"].includes(view)) view = "first";
-  const id = `snap-${nextSnapId++}`;
-  return new Promise((resolve) => {
-    pendingSnaps.set(id, { resolve });
-    renderer.ws.send(JSON.stringify({ type: "snap", id, follow, view }));
-    setTimeout(() => {
-      if (pendingSnaps.delete(id)) resolve({ ok: false, err: "renderer timed out", status: 504 });
-    }, 12_000);
-  });
-}
 
 // ---- static serving ---------------------------------------------------------
 
@@ -282,7 +263,8 @@ const hardCacheable = (path: string) =>
 // fetch whose variant does not exist yet — see the /library route). It wins
 // over `immutable`: no-cache, riding the ETag, so the moment a different file
 // answers the same URL its bytes get through.
-function serveFrom(base: string, rel: string, cache = false, req?: Request, immutable = false, provisional = false): Response {
+function serveFrom(base: string, rel: string, cache = false, req?: Request, immutable = false, provisional = false,
+  extra?: Record<string, string>): Response {
   const path = normalize(join(base, rel));
   if (!path.startsWith(base)) return new Response("forbidden", { status: 403 });
   // A missing file must be a 404, not a Bun.file stream blowing up into a 500 —
@@ -290,7 +272,9 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
   // spawn of it into "Internal Server Error" instead of an honest not-found.
   if (!existsSync(path)) return new Response("not found", { status: 404 });
   const f = Bun.file(path);
-  const headers: Record<string, string> = { "content-type": contentType(path) };
+  // `extra`: headers that NAME the answer (x-eidoverse-lod) — on the 304 too,
+  // so devtools reads the state without a body
+  const headers: Record<string, string> = { "content-type": contentType(path), ...(extra ?? {}) };
   // ETag from size+mtime: makes no-cache revalidation a 304, not a re-download
   // (an 11MB avatar re-pulled per reload is invisible on localhost and rude
   // over tailnet).
@@ -889,6 +873,16 @@ const ROUTES: Route[] = [
       const rel = url.pathname.slice("/library/".length);
       // optimized mirror first (draco+webp): same path, ~30x smaller
       const versioned = url.searchParams.has("v") || rel.startsWith("store/"); // content-addressed = immutable
+      // Native importers do not necessarily ship the browser's Draco/WebP
+      // decoders. Explicit negotiation returns provenance bytes, never the
+      // optimized shadow. This changes neither the default browser response
+      // nor asset access rights; serveFrom still enforces path containment.
+      if (url.searchParams.get("native") === "1" && /\.(glb|vrm)$/i.test(rel)) {
+        const patched = normalize(join(PATCH_DIR, rel));
+        if (patched.startsWith(PATCH_DIR + "/") && existsSync(patched)) return serveFrom(PATCH_DIR, rel, true, req, versioned);
+        if (rel.startsWith("store/")) return serveFrom(OPT_DIR, rel, true, req, true);
+        return serveFrom(LIBRARY_DIR, rel, true, req, versioned);
+      }
       // Deliberate upstream forks win over EVERYTHING (upstream-patched/
       // README.md): same URL, versioned in this repo, delete-to-fall-back.
       {
@@ -925,22 +919,37 @@ const ROUTES: Route[] = [
       // yesterday's reduction can never sit pinned under today's address.
       const lodAsked = url.searchParams.get("lod");
       const wantLod = lodAsked === LOD_RECIPE && wantKtx2 && rel.endsWith(".glb");
+      // The tier's answer is NAMED on the wire (x-eidoverse-lod): `variant`
+      // (the reduced tier), `refused=<kind>` (a STANDING typed verdict — the
+      // original is the final answer for this recipe, store-variants.ts
+      // lodVerdictFinal), or `provisional` (not decided: not yet swept, a
+      // deferred pass, a verdict class that could change with the reducer, a
+      // marker older than a mutated source, an unrecognized generation).
+      let lodFinal = false;
+      let lodState: string | null = null;
       if (wantLod) {
         const lRel = lodVariantPath(rel);
         const l = normalize(join(OPT_DIR, lRel));
-        if (l.startsWith(OPT_DIR) && existsSync(l)) {
-          // library sources are MUTABLE: an updated model with a not-yet-
-          // rebuilt variant must fall through provisional, never serve the
-          // old body under the new ?v= (the §20c vrm freshness discipline)
-          let fresh = true;
-          if (!rel.startsWith("store/")) {
-            const src = [[PATCH_DIR, normalize(join(PATCH_DIR, rel))], [OPT_DIR, normalize(join(OPT_DIR, rel))], [LIBRARY_DIR, normalize(join(LIBRARY_DIR, rel))]]
-              .find(([b, p]) => p.startsWith(b) && existsSync(p))?.[1];
-            fresh = !!src && Bun.file(l).lastModified > Bun.file(src).lastModified;
-          }
-          if (fresh) return serveFrom(OPT_DIR, lRel, true, req, versioned);
-        }
-      }
+        // library sources are MUTABLE: an updated model with a not-yet-
+        // rebuilt variant must fall through provisional, never serve the
+        // old body under the new ?v= (the §20c vrm freshness discipline) —
+        // and a VERDICT older than its source is a question again, exactly
+        // like a variant older than its source
+        const src = rel.startsWith("store/") ? null
+          : [[PATCH_DIR, normalize(join(PATCH_DIR, rel))], [OPT_DIR, normalize(join(OPT_DIR, rel))], [LIBRARY_DIR, normalize(join(LIBRARY_DIR, rel))]]
+            .find(([b, p]) => p.startsWith(b) && existsSync(p))?.[1];
+        const freshOverSource = (p: string) => rel.startsWith("store/") || (!!src && Bun.file(p).lastModified > Bun.file(src).lastModified);
+        if (l.startsWith(OPT_DIR) && existsSync(l) && freshOverSource(l)) return serveFrom(OPT_DIR, lRel, true, req, versioned, false, { "x-eidoverse-lod": "variant" });
+        const marker = `${l}.failed`;
+        if (l.startsWith(OPT_DIR) && existsSync(marker) && freshOverSource(marker)) {
+          let content = "";
+          try { content = readFileSync(marker, "utf8"); } catch { /* unreadable = undecided */ }
+          const kind = lodVerdictKind(content);
+          lodFinal = lodVerdictFinal(content);
+          lodState = lodFinal ? `refused=${kind}` : `provisional; verdict=${kind ?? "unknown"}`;
+        } else lodState = "provisional";
+      } else if (lodAsked != null) lodState = "provisional; generation=unrecognized";
+      const lodHeader = lodState ? { "x-eidoverse-lod": lodState } : undefined;
       if (wantKtx2) {
         const kRel = rel.endsWith(".glb") ? `${rel}.ktx2.glb`
           : rel.endsWith(".vrm") ? `${rel}.ktx2.vrm` : `${rel}.ktx2`;
@@ -953,8 +962,22 @@ const ROUTES: Route[] = [
             fresh = !!orig && Bun.file(k).lastModified > Bun.file(orig).lastModified;
           }
           // a lod-requesting fetch answered by the plain ktx2 variant is
-          // still PROVISIONAL — the lod may land later under this same URL
-          if (fresh) return serveFrom(OPT_DIR, kRel, true, req, versioned, wantLod || (lodAsked != null && !wantLod));
+          // PROVISIONAL — the lod may land later under this same URL —
+          // UNLESS a typed verdict stands: then the plain variant IS this
+          // tier's answer, and it caches exactly as it does unflagged.
+          // For a library GLB the unflagged answer tolerates a variant older
+          // than a re-exported source until the next boot rebuilds it (a
+          // short window, ETag-revalidated); a FINAL answer must not — the
+          // verdict may be fresh while the ktx2 bytes are yesterday's model
+          let ktx2Stale = false;
+          if (lodFinal && !rel.startsWith("store/")) {
+            const src = [[PATCH_DIR, normalize(join(PATCH_DIR, rel))], [OPT_DIR, normalize(join(OPT_DIR, rel))], [LIBRARY_DIR, normalize(join(LIBRARY_DIR, rel))]]
+              .find(([b, p]) => p.startsWith(b) && existsSync(p))?.[1];
+            ktx2Stale = !src || Bun.file(k).lastModified <= Bun.file(src).lastModified;
+          }
+          const finalHere = lodFinal && !ktx2Stale;
+          const header = ktx2Stale ? { "x-eidoverse-lod": `${lodState!.replace(/^refused=/, "provisional; verdict=")}; ktx2=stale` } : lodHeader;
+          if (fresh) return serveFrom(OPT_DIR, kRel, true, req, versioned, lodAsked != null && !finalHere, header);
         }
       }
       // A flagged fetch that falls through is PROVISIONAL for that URL, not
@@ -970,18 +993,22 @@ const ROUTES: Route[] = [
       // an unrecognized lod value is a generation this process does not run
       // (a pull mid-window, a buggy client): whatever answers must not be
       // pinned under that URL — the NEXT process may negotiate it
+      // (a standing lod verdict does not make THIS answer final: the ktx2
+      // arm has not decided yet — no variant, or its own verdict — and the
+      // header says so)
       const provisional = wantKtx2 || (lodAsked != null && !wantLod);
+      const deepHeader = lodFinal ? { "x-eidoverse-lod": `${lodState}; ktx2=undecided` } : lodHeader;
       // store uploads: prefer the store-min shadow — same address, the
       // original stays as provenance and as the fallback while (or if) the
       // optimize pass hasn't landed for this hash
       if (rel.startsWith("store/")) {
         const minRel = `store-min/${rel.slice("store/".length)}`;
         const min = normalize(join(OPT_DIR, minRel));
-        if (min.startsWith(OPT_DIR) && existsSync(min)) return serveFrom(OPT_DIR, minRel, true, req, true, provisional);
+        if (min.startsWith(OPT_DIR) && existsSync(min)) return serveFrom(OPT_DIR, minRel, true, req, true, provisional, deepHeader);
       }
       const opt = normalize(join(OPT_DIR, rel));
-      if (opt.startsWith(OPT_DIR) && existsSync(opt)) return serveFrom(OPT_DIR, rel, true, req, versioned, provisional);
-      return serveFrom(LIBRARY_DIR, rel, true, req, versioned, provisional);
+      if (opt.startsWith(OPT_DIR) && existsSync(opt)) return serveFrom(OPT_DIR, rel, true, req, versioned, provisional, deepHeader);
+      return serveFrom(LIBRARY_DIR, rel, true, req, versioned, provisional, deepHeader);
     },
   },
   {

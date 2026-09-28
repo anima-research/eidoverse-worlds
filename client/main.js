@@ -1,3 +1,6 @@
+import { setTraversalObjects } from './lib/traversal.js';
+import { updateVehicle } from './lib/vehicles.js';
+import { updateWater, setWaterObjects, setWaterClock, environmentSettings, waterDebug } from './lib/water.js';
 // eidoverse-worlds browser client.
 //
 // Two planes: the world log (verbs, ordered, replayed on join) and presence
@@ -33,7 +36,7 @@ import {
   myState, updateMe, updateSpectator, setCamYaw, setPosture, togglePhotoMode,
   setRightsHook, setMeHook, setFolded,
 } from './lib/controller.js';
-import { remotes, updateRemotes, updateGaze } from './lib/remotes.js';
+import { remotes, updateRemotes, updateGaze, serverNow } from './lib/remotes.js';
 // The whole module as one object: net.js takes the participant registry by injection
 // now (it must carry the protocol for lite.js, which has no bodies to register), and
 // this is the real, body-building implementation of that interface.
@@ -352,6 +355,7 @@ setLoadingItems(loadingItems);
 setBootAssets({ items: loadingItems, bytes: bootBytes });
 registerXRPanel(chatXRPanel);
 
+let restoredPosition = false;
 wireNet({
   participants,
   myReachBag,
@@ -366,6 +370,8 @@ wireNet({
     // was stored as [null,0,null] and every rejoin put the owner back on it): only
     // finite numbers are a place; anything else is the origin
     const fin = (v, fb = 0) => (Number.isFinite(v) ? v : fb);
+    restoredPosition = true;
+    myState.q = r.q; myState.locomotion = r.locomotion;
     myState.pos.set(fin(r.p[0]), fin(r.p[1]), fin(r.p[2]));
     myState.yaw = r.yaw ?? 0;
     setCamYaw(myState.yaw + Math.PI); // camera behind you, facing your way
@@ -465,7 +471,13 @@ function people() {
 // instantaneous and looked broken.
 
 let hydrated = false, propsWait = false;
-bus.on('hydrated', () => { hydrated = true; checkReady(); });
+bus.on('hydrated', () => {
+  updateWater();
+  const spawn = environmentSettings()?.spawn;
+  if (!restoredPosition && Array.isArray(spawn) && spawn.length === 3 && spawn.every(Number.isFinite)) myState.pos.fromArray(spawn);
+  hydrated = true; checkReady();
+});
+bus.on('world-reset', () => { restoredPosition=false;myState.q=undefined;myState.locomotion=undefined; });
 
 // An empty world is indistinguishable from a broken one: no ground, no sky,
 // no objects, no explanation. That is what a mistyped world name gets you,
@@ -515,10 +527,15 @@ registerSystem('sky', (dt, t, now) => updateSky(now, t));
 registerSystem('materials', (dt, t, now) => updateMaterials(now)); // weather → uniforms
 registerSystem('rig', (dt, t, now) => updateRig(now));          // light slots follow requests
 registerSystem('sounds', () => tickSounds(), { every: 2 });      // panners follow entities, the listener the camera
+setWaterObjects(() => entities);
+setWaterClock(serverNow);
+setTraversalObjects(() => entities);
+registerSystem('water', updateWater);
 registerSystem('me-drive', (dt) => {
   if (CONFIG.renderer) { /* camera is driven per snap request */ }
   else if (CONFIG.spectate) updateSpectator(dt, CONFIG.follow ? remotes.get(CONFIG.follow) : null);
-  else if (isDowned()) stepRagdoll(dt);     // the controller yields while limp
+  else if (updateVehicle(dt, getMe())) { /* lease holder drives the helm */ }
+  else if (isDowned()) { myState.q=undefined;myState.locomotion=undefined;const me=getMe();if(me)me.locomotion=null;stepRagdoll(dt); }     // the controller yields while limp
   else if (avatarMounts.has(CONFIG.name)) updateMountedMe(dt);  // seated: derived, not driven
   else updateMe(dt, getMe());
   updateSeatHint(dt);            // "X — sit" while a declared seat is in reach
@@ -561,6 +578,7 @@ bus.on('xr:sit', () => { if (!xrTrySitOn(null)) setPosture('sit'); });
 bus.on('xr:stand', () => xrDismountMe());
 bus.on('xr:mic', async () => { const { toggleMic } = await import('./lib/micstate.js'); await toggleMic(CONFIG.name); });
 bus.on('xr:select', (id) => sceneSelect(id));
+globalThis.__waterDebug = waterDebug;
 let _pulseAt = 0;
 registerSystem('pulse', (dt, t, now) => {
   if (now - _pulseAt < 1000) return;
@@ -971,6 +989,7 @@ const EW = globalThis.EW = {
   simFold: simState,           // the deterministic sim's shadow cut (PROTOCOL_v2)
   grassDiag,                   // §22: `await EW.grassDiag()` — the meadow's GPU cost, attributed by difference
   setCloudQuality,             // §22b: the sky pane's tier knob, console-reachable for diagnosis
+  water: waterDebug,
   warm: warmStats,             // the conductor's queue (§16.2.A)
   lanes: () => ({ sched: schedLaneStats(), load: loadLaneStats() }),  // queue depths vs caps
   colliderCache: colliderCacheStats,   // per-lib shared BVH/lie bytes (§16.2.C)

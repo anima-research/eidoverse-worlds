@@ -557,6 +557,11 @@ function emitCompBag(id) {
 function onComp(id, type) {
   syncComps(id);
   const data = comps.get(id)?.[type] ?? null;
+  if (type === 'collision') {
+    const obj=entities.get(id),ent=state.st.entities[id];
+    if (collisionOwnedElsewhere(ent,obj?.userData.mountedTo)) removeCollider(id);
+    else if(obj && !isPlaceholder(obj)) fitCollider(id,obj,{collide:ent?.collide,localFrame:true});
+  }
   if (type === 'motion' && data == null) restAtBase(id);
   // a sockets change re-seats everything riding this carrier — a mount that
   // landed BEFORE its socket was authored glued to the origin, and the

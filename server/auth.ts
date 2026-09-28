@@ -39,7 +39,7 @@ export function aid1JoinIdentity(tok: string): { slug: string; payload: Aid1Payl
   return v.ok ? { slug: aid1Slug(v.payload), payload: v.payload } : null;
 }
 
-export type HnSession = { sub: string; name: string; scopes: string[]; claims?: Record<string, unknown>; exp: number; nativeWorld?: "water" };
+export type HnSession = { sub: string; name: string; scopes: string[]; claims?: Record<string, unknown>; exp: number; nativeWorld?: "water" | "*" };
 export const hnSessions = new Map<string, HnSession>();
 export const hnJti = new JtiCache();
 export function sessionFromCookie(cookie: string | null): HnSession | null {

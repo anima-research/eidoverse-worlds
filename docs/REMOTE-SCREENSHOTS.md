@@ -79,11 +79,19 @@ provides a local-only test pose controller on :18994. Run Unreal's
 and pitched underwater images in a new temporary directory. No production
 identity, inhabited world, or production state is used for these tests.
 
-Production still needs a targeted deployment and operator-approved restart.
-Do not deploy the entire dirty development worktree: it includes separate native
-login, underwater presence, and browser-water work. Preserve the existing
-production native-login commit and cherry-pick/apply only the reviewed screenshot
-changes, then rerun the isolated tests against the deployment worktree.
+Deployed with operator approval on 2026-09-10 (2026-09-11 03:36 UTC): targeted
+commit `2bd5e24b767452224802a735f90ab839b2fa2acc`, based on production native-login
+commit `097ab7192e9042fd2c0899846f9be45fb479e88d`. Unrelated development changes
+were excluded. Both `eidoverse` and `eidoverse-mcpl` restarted and passed health
+checks with zero automatic restarts; public `/version` reports `2bd5e24`, clean.
+Native login landing remains HTTP 200. Production Bun 1.3.14 passed all eight
+broker tests (44 assertions) and both service build checks before restart.
+Rollback branch: `backup/pre-unreal-snapshots-20260910`; source archive:
+`/home/ubuntu/eidoverse-snapshot-deploy.pS9n3I/source-before.tgz`.
+No production test participants or world events were created. A live production
+Unreal screenshot remains to be checked after a player connects and opts in.
+Do not deploy the entire dirty development worktree or reset production to
+upstream main: the targeted production commits are not yet upstream.
 
 Local validation (2026-09-10): 8 broker tests / 44 assertions, the real HTTP/WS
 snapshot test, 63 native-login checks, and the native-login HTTP/WS regression
@@ -97,8 +105,7 @@ real HTTP/WS tests. The 960×540 captures excluded visible Slate chat/UI. A runn
 frame monitor checked the local camera orientation/location and ocean grid
 restoration; all five framings passed. Live opt-out returned 503 immediately.
 Observed HTTP response times were roughly 110–180 ms (including tests during a
-parallel build); this is not a performance benchmark. Production deployment
-still requires operator approval. Final rebuilt binaries were installed and
+parallel build); this is not a performance benchmark. Final rebuilt binaries were installed and
 byte-compared with the build output. The five-view visual pass used identical
 exposure settings applied at runtime before that final rebuild; a fresh-launch
 recheck was interrupted when the editor was closed again externally. It is left

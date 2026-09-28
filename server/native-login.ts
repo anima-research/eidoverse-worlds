@@ -9,7 +9,7 @@ type Options = {
   issue(session: HnSession): string;
   now?: () => number;
 };
-type Pair = { code: string; exp: number; pollAt: number; browserCookie?: string; denied?: boolean };
+type Pair = { code: string; exp: number; pollAt: number; browserCookie?: string; denied?: boolean; allWorlds?: boolean };
 const CODE = /^[A-F0-9]{5}-[A-F0-9]{5}$/;
 export function createNativeLogin(o: Options) {
   const pairs = new Map<string, Pair>();
@@ -68,7 +68,7 @@ export function createNativeLogin(o: Options) {
         ? [...pairs.values()].find(p => p.code === body.user_code) : undefined;
       if (!p || p.browserCookie || p.denied) return json(410, { error: "expired_or_used" });
       if (path === "/native/deny") p.denied = true;
-      else p.browserCookie = cookie!;
+      else { p.browserCookie = cookie!; p.allWorlds = body.all_worlds === true; }
       return json(200, { ok: true }); // Do NOT set a native cookie in the browser.
     }
     if (path === "/native/poll" || path === "/native/cancel") {
@@ -85,9 +85,9 @@ export function createNativeLogin(o: Options) {
       if (!s || s.exp <= t || s.nativeWorld || !s.scopes.includes("worlds:join")) return json(403, { error: "session_expired" });
       const exp = Math.min(s.exp, t + 12 * 3600_000);
       const sid = o.issue({ sub: s.sub, name: s.name, scopes: s.scopes.filter(v => v === "worlds:join" || v === "worlds:spectate"),
-        claims: s.claims, exp, nativeWorld: "water" });
+        claims: s.claims, exp, nativeWorld: p.allWorlds ? "*" : "water" });
       const seconds = Math.max(1, Math.floor((exp - t) / 1000));
-      return json(200, { name: s.name, expires_in: seconds }, {
+      return json(200, { name: s.name, expires_in: seconds, world_scope: p.allWorlds ? "*" : "water" }, {
         "set-cookie": `ew_sess=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${seconds}${o.origin.startsWith("https:") ? "; Secure" : ""}`,
       });
     }
@@ -105,6 +105,8 @@ function nativePage(login: string): Response {
 <p>This grants a separate session for up to 12 hours, limited to water. Joining shares your identity, avatar and movement; public chat is recorded. An existing water connection under your name may be replaced.</p>
 <a id="login" hidden>Sign in with Discord</a>
 <div id="actions" hidden><button id="approve">Authorize Unreal for water</button><button id="deny">Deny</button></div>
+<p>You may instead allow this client to switch between all worlds your account can access. This does not grant additional building, flight or moderation rights.</p>
+<button id="all" hidden>Authorize Unreal for all accessible worlds</button>
 <p id="result" role="status"></p>
 <script nonce="${nonce}">
 // Reopening into an existing tab can be a same-document fragment navigation.
@@ -118,10 +120,12 @@ addEventListener('hashchange', () => location.reload());
   const r = await fetch('/whoami', {cache:'no-store'});
   if (!r.ok) { $('status').textContent = 'Sign in with your usual Eidoverse Discord account, then approve here.';
     $('login').href = ${JSON.stringify(login).replace(/</g, "\\u003c")}; $('login').hidden = false; return; }
-  const s = await r.json(); $('status').textContent = 'Signed in as ' + s.name; $('actions').hidden = false;
+  const s = await r.json(); $('status').textContent = 'Signed in as ' + s.name; $('actions').hidden = false; $('all').hidden = false;
+  let allWorlds = false;
+  $('all').onclick = () => { allWorlds = true; $('approve').click(); };
   for (const action of ['approve','deny']) $(action).onclick = async () => {
-    $('approve').disabled = $('deny').disabled = true;
-    try { const r = await fetch('/native/' + action, {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_code:code})});
+    $('approve').disabled = $('deny').disabled = $('all').disabled = true;
+    try { const r = await fetch('/native/' + action, {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({user_code:code,all_worlds:allWorlds})});
       $('result').textContent = r.ok ? (action === 'approve' ? 'Approved. Return to Unreal and choose Join water.' : 'Denied. You can close this tab.') : 'Could not approve. The code may have expired or your account may lack world access. Start again in Unreal.';
       sessionStorage.removeItem('ew-native-pair-code');
     } catch { $('result').textContent = 'Network error. Start again in Unreal.'; }

@@ -1,6 +1,7 @@
 # Browser-approved Unreal login
 
-Deployment/restart is an operator decision. No home-node
+Deployed to production on 2026-09-10 as targeted commit `097ab71`, based on the
+previous production release `78d79b9`. Deployment/restart is an operator decision. No home-node
 or Discord OAuth configuration changes, world verbs, or fold changes are needed.
 
 1. Unreal posts `{}` to `/native/start`; receives a 256-bit `device_code`, a
@@ -52,5 +53,16 @@ a code received from someone else (standard device-pairing phishing risk).
   native start/poll/cancel/logout requests run; this fixture can never join production.
   `/fixture/report` exposes counters only. Stop the fixture after QA.
 
-After deployment, real Discord OAuth still needs a human sign-in test. The
-automated tests use isolated fixture identities, never production credentials.
+Production HTTPS smoke checks passed for the page/security headers, start,
+pending, authentication/Origin guards, cancellation and replay refusal. Actual
+Discord OAuth and approved native login still need the user's human sign-in test.
+
+The production checkout is on `deploy/native-login-20260910`, with a clean
+worktree. Only the world server was restarted; the MCPL service was not restarted.
+The patch has not been pushed/merged into upstream main: merge it before running
+the generic deploy script, whose reset to origin/main would otherwise remove it.
+Rollback source is retained on the VPS at
+`/home/ubuntu/eidoverse-native-deploy.9EXgyp/source-before.tgz` and Git branch
+`backup/pre-native-login-20260910`. Any rollback after native sessions have been
+issued must revoke those native sessions first; the old server does not enforce
+their water-only restriction. Preserve ordinary browser sessions and world data.
