@@ -1,0 +1,113 @@
+{
+  "source": "https://github.com/SkyeShark/Eanpa-Sky",
+  "commit": "a197d3dc42577e9b870b471a39d6b1710c5b5633",
+  "version": "0.2.1",
+  "packaging": "source-preserving standalone Eanpa subtree consumed directly by eidoverse-worlds",
+  "files": [
+    {
+      "path": "assets/weather/cirrus_ice_trails.png",
+      "bytes": 471139,
+      "sha256": "279afcb119692e3b3c83c9a551a2e8c7b5c2ad46aa80633dcc0ed0229d017e67"
+    },
+    {
+      "path": "engine/asteroid_moon.js",
+      "bytes": 42506,
+      "sha256": "874e28f110013483d3bd603f1ebb36303de93fe3da136a8915aeb658153ee7fa"
+    },
+    {
+      "path": "engine/cached_cloud_display.js",
+      "bytes": 14947,
+      "sha256": "a95538e5a4214c8bf24153cdf9f38f6b4791b846cb55f6c78d9f78d5193c51a7"
+    },
+    {
+      "path": "engine/cloud_motion.js",
+      "bytes": 686,
+      "sha256": "a7d74c445cd5a2cc5b98940efd61620be0ea4d0ba6b2f307e1820e7631ca351c"
+    },
+    {
+      "path": "engine/cloud_shadow_map.js",
+      "bytes": 7474,
+      "sha256": "4f0e6d7a028dcdea5bd532f12cf7b17dc02605297fa8c743d5e39c28120f6586"
+    },
+    {
+      "path": "engine/cloud_uniform_snapshot.js",
+      "bytes": 1566,
+      "sha256": "eaa420dabd55dd1c9fdd0f3bf7251338957a889481fe79f480ab3a1262052fe4"
+    },
+    {
+      "path": "engine/fragment_motion.js",
+      "bytes": 3887,
+      "sha256": "296f27d9e70af30d83e54523b50593ffdcb5f9a3a6cfc001212eff08bcfff97a"
+    },
+    {
+      "path": "engine/impact_smoke.js",
+      "bytes": 2091,
+      "sha256": "ef29a23afc361d013dccebbfd023dbaa588d06be96511e6db28a07f98ba7b5d0"
+    },
+    {
+      "path": "engine/quality_presets.js",
+      "bytes": 2540,
+      "sha256": "4ab527fcefcf3b1610002c90d7aa01c19398514c30235948d7dc22a53875b924"
+    },
+    {
+      "path": "engine/rain_accumulation_field.js",
+      "bytes": 6444,
+      "sha256": "05c4c8b7cd139df5b2d5d51a3eed6f6158ef8f9590f45ff00a897eb2504b5d01"
+    },
+    {
+      "path": "engine/rain_surface_field.js",
+      "bytes": 13575,
+      "sha256": "637fde540e6d3d67b3393a4c76dca41d1380731719e641e09e6755f47c62eec1"
+    },
+    {
+      "path": "engine/redgiant.js",
+      "bytes": 23601,
+      "sha256": "fe86befa7999aeb27e2fe387753bea81dec33cfb42413dd6b782c9043d50e723"
+    },
+    {
+      "path": "engine/ring_cloud_field.js",
+      "bytes": 3376,
+      "sha256": "6a0a085f4fc62fd5c2104a1d3d388817b1f1ea844d631e3c6e1019617e52b58a"
+    },
+    {
+      "path": "engine/ring_eclipse.js",
+      "bytes": 2873,
+      "sha256": "9ba989c828c014be5fcec9b8fdb883b4ed8cf2bf24bf749194af4f891115a097"
+    },
+    {
+      "path": "engine/ring_terrain_geometry.js",
+      "bytes": 6270,
+      "sha256": "c411b499eba0e9232aa0cd701a62ae4d0757e0f91f5d8abf9854c8a44edfd87c"
+    },
+    {
+      "path": "engine/ringworld.js",
+      "bytes": 101248,
+      "sha256": "4c48876fffa7f20ec567cb4db1fbaf7281c74d12b9c44065b2a7a0a5255efb93"
+    },
+    {
+      "path": "engine/sky_noise.js",
+      "bytes": 1691,
+      "sha256": "bcb13101930beff7c125a6e701afe5fc7ef160d228f507f3ca17419be36c8d14"
+    },
+    {
+      "path": "engine/sky_system.js",
+      "bytes": 182902,
+      "sha256": "e3fd3ad66dca4bb15d1476c037c3d9576a5f8db0233968abdde7b36414b5c3d1"
+    },
+    {
+      "path": "engine/weather_listener.js",
+      "bytes": 2518,
+      "sha256": "519892419a4cedeb0863bb438e42c06ca55b3a39caf501a1f763be545e5ec766"
+    },
+    {
+      "path": "engine/weather_system.js",
+      "bytes": 138343,
+      "sha256": "0d41d0792cf3cfd218edf1b457a6e26c4cb53c3de5e8d03084f9d88a72d35d85"
+    },
+    {
+      "path": "src/cloudspatial.js",
+      "bytes": 11547,
+      "sha256": "4c8ed912c4d043c2cbb58a1d5b35a19ba9ba20ea86c4ff5ea8a790864c67e875"
+    }
+  ]
+}
