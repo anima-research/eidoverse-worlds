@@ -70,6 +70,8 @@ for (const port of ['PROJECTOR_RTSP_PORT', 'PROJECTOR_RTMP_PORT', 'PROJECTOR_HLS
   hostile.push([`${port} = 99999`, port, { ...base, [port]: '99999' }]);
   hostile.push([`${port} = 0`, port, { ...base, [port]: '0' }]);
   hostile.push([`${port} = 8554|x`, port, { ...base, [port]: '8554|x' }]);
+  // wider than the shell's integer: `[ -lt ]` errors instead of comparing
+  hostile.push([`${port} = 99999999999999999999`, port, { ...base, [port]: '99999999999999999999' }]);
 }
 let refused = 0;
 for (const [name, variable, env] of hostile) {
@@ -79,12 +81,17 @@ for (const [name, variable, env] of hostile) {
 }
 check(`all ${hostile.length} hostile values refused with exit 2, the variable named, no file written`, refused === hostile.length, `${refused}/${hostile.length}`);
 
-console.log('— D. the refusal is the validator\'s, with the bad characters masked —');
+console.log('— D. the refusal is the validator\'s: bad characters masked, the key never shown —');
 {
   const r = render({ ...base, PROJECTOR_PUBLISH_KEY: 'abcdefgh&ijklmnop' });
-  check('names the allowed set and shows the value with `&` masked', /may only use \[A-Za-z0-9_.+\/=-\] \(got 'abcdefgh\?ijklmnop'\)/.test(r.stderr), r.stderr);
+  check('the key refusal names the allowed set…', /PROJECTOR_PUBLISH_KEY may only use \[A-Za-z0-9_.+\/=-\]/.test(r.stderr), r.stderr);
+  check('…and none of the key reaches stderr (the smoke run prints it on failure)', !/abcdefgh|ijklmnop/.test(r.stderr), r.stderr);
+  const u = render({ ...base, PROJECTOR_PUBLISH_USER: 'pub&lisher' });
+  check('a non-secret value is shown with `&` masked', /PROJECTOR_PUBLISH_USER may only use \[A-Za-z0-9_.-\] \(got 'pub\?lisher'\)/.test(u.stderr), u.stderr);
   const p = render({ ...base, PROJECTOR_HLS_PORT: '70000' });
   check('a port out of range says the range', /must be 1–65535 \(got 70000\)/.test(p.stderr), p.stderr);
+  const w = render({ ...base, PROJECTOR_HLS_PORT: '99999999999999999999' });
+  check('a port wider than the shell\'s integer says the range too, and leaves no file', w.code === 2 && /must be 1–65535 \(got 99999999999999999999\)/.test(w.stderr) && w.yaml === null, `exit=${w.code} ${w.stderr} file=${w.yaml === null ? 'absent' : 'PRESENT'}`);
 }
 
 rmSync(dir, { recursive: true, force: true });

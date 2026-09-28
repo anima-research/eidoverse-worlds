@@ -223,6 +223,7 @@ console.log('— I. the spool fails closed —');
   check('end is not a line: it goes through with the spool down', w.pendingCount === 2 && (w as any).pending[1].args.end === true, `pending=${w.pendingCount}`);
   const rows = readFileSync(good, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
   check('the good spool holds exactly the line it took', rows.length === 1 && rows[0].state === 'queued' && rows[0].args.text === 'before the disk went');
+  check('the unkept promise is countable, for the exit status', w.spoolLost === 2 && w.spoolMissed === 0, `lost=${w.spoolLost}`);
   // the weaker promise, stated
   const logs2: string[] = [];
   const w2 = new WorldClient({ url: 'ws://127.0.0.1:1/ws', token: 't', world: 'w', actor: 'cap', screenId: 'cinema', spool: join(dir, 'no-such-dir', 'spool.jsonl'), spoolBestEffort: true, log: (m) => logs2.push(m), agent: false });
@@ -230,6 +231,8 @@ console.log('— I. the spool fails closed —');
   w2.caption({ t0: 2, t1: 2.5, text: 'best effort 2' });
   check('SPOOL_BEST_EFFORT: the line queues anyway and nothing is refused', w2.pendingCount === 2 && w2.spoolRefused === 0, `pending=${w2.pendingCount} refused=${w2.spoolRefused}`);
   check('…and the failure is still recorded', /ENOENT/.test(w2.spoolFailed ?? ''), String(w2.spoolFailed));
+  check('…and said out loud once, not per line, naming what a restart would lose', logs2.filter((l) => /⚠ spool write failed .*SPOOL_BEST_EFFORT=1.*restart.*loses it/.test(l)).length === 1, JSON.stringify(logs2));
+  check('…and counted: two lines are not in the spool, and that is the exit status', w2.spoolMissed === 2 && w2.spoolLost === 2, `missed=${w2.spoolMissed} lost=${w2.spoolLost}`);
 }
 
 console.log(`\n${pass} ok, ${fail} failed`);

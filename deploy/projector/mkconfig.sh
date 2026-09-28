@@ -36,17 +36,30 @@ case "$STREAM_PATH" in *[!A-Za-z0-9_-]*|"") echo "mkconfig: PROJECTOR_PATH must 
 # (Mica, #187 round-two follow-up). A minted key is hex and always passes.
 #   user:  [A-Za-z0-9_.-]              key:  [A-Za-z0-9_.+/=-]  (hex, base64, urlsafe)
 #   bind:  [A-Za-z0-9.:-]  (IPv4, IPv6, or a hostname)   ports: 1–65535
-inert() { # $1 = name, $2 = value, $3 = allowed class (a case pattern body)
+inert() { # $1 = name, $2 = value, $3 = allowed class (a case pattern body), $4 = "secret" keeps the value out of stderr
   case "$2" in "") echo "mkconfig: $1 must not be empty" >&2; exit 2;; esac
-  case "$2" in *[!$3]*) echo "mkconfig: $1 may only use [$3] (got '$(printf %s "$2" | tr -c 'A-Za-z0-9_.+/=:-' '?')')" >&2; exit 2;; esac
+  case "$2" in *[!$3]*)
+    # the refusal names the variable and the allowed set. A non-secret value
+    # is echoed with the bad characters masked; a secret is never echoed —
+    # the smoke run prints stderr on failure, and a key with one `&` in it
+    # would otherwise land there almost whole
+    if [ "${4:-}" = secret ]; then echo "mkconfig: $1 may only use [$3] (the value is a secret and is not shown)" >&2
+    else echo "mkconfig: $1 may only use [$3] (got '$(printf %s "$2" | tr -c 'A-Za-z0-9_.+/=:-' '?')')" >&2; fi
+    exit 2;;
+  esac
 }
 port() { # $1 = name, $2 = value
   case "$2" in ""|*[!0-9]*) echo "mkconfig: $1 must be a port number (got '$2')" >&2; exit 2;; esac
+  # `[ -lt ]` on a number wider than the shell's integer does not compare,
+  # it errors — and an error inside `if` is not a refusal (set -e does not
+  # reach it), so the value would be written into the config with exit 0.
+  # A port is at most five digits: refuse the width before comparing.
+  case "$2" in ??????*) echo "mkconfig: $1 must be 1–65535 (got $2)" >&2; exit 2;; esac
   if [ "$2" -lt 1 ] || [ "$2" -gt 65535 ]; then echo "mkconfig: $1 must be 1–65535 (got $2)" >&2; exit 2; fi
 }
 inert PROJECTOR_PUBLISH_USER "$USER_" 'A-Za-z0-9_.-'
 inert PROJECTOR_BIND "$BIND" 'A-Za-z0-9.:-'
-[ -n "$KEY" ] && inert PROJECTOR_PUBLISH_KEY "$KEY" 'A-Za-z0-9_.+/=-'
+[ -n "$KEY" ] && inert PROJECTOR_PUBLISH_KEY "$KEY" 'A-Za-z0-9_.+/=-' secret
 port PROJECTOR_RTSP_PORT "${PROJECTOR_RTSP_PORT:-8554}"
 port PROJECTOR_RTMP_PORT "${PROJECTOR_RTMP_PORT:-1935}"
 port PROJECTOR_HLS_PORT "${PROJECTOR_HLS_PORT:-8888}"

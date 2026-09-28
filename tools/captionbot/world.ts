@@ -37,7 +37,9 @@
 // bookkeeping: a failed write there means a restart may resend a line that
 // already landed, which the door's dedupe makes harmless, so those log and
 // continue. `spoolBestEffort` (env SPOOL_BEST_EFFORT=1) states the weaker
-// promise instead: every write failure logs and the line queues anyway.
+// promise instead: a `queued` row that cannot be written is said once (then
+// every 100th, like the refusals) and the line queues anyway — counted in
+// `spoolMissed`, because a restart before it is confirmed loses it.
 //
 // Captions are durable world testimony like `say`; `end` clears current
 // perception, not history. This client keeps nothing the world does not.
@@ -98,6 +100,12 @@ export class WorldClient {
   sent = 0; acked = 0; refused = 0; overflow = 0;
   /** Lines refused because the spool could not take their `queued` row. */
   spoolRefused = 0;
+  /** Lines queued WITHOUT their `queued` row (spoolBestEffort): a restart
+   *  before the world confirms them loses them. */
+  spoolMissed = 0;
+  /** Lines the spool's promise was not kept for, either way. A run that
+   *  ends with this non-zero did not do what the operator was told it does. */
+  get spoolLost(): number { return this.spoolRefused + this.spoolMissed; }
   /** The first spool failure that halted intake, or null while writable. */
   spoolFailed: string | null = null;
   onReceipt: ((args: Args) => void) | null = null;
@@ -184,6 +192,11 @@ export class WorldClient {
       this.spoolRefused++;
       this.log(`⛔ spool write failed (${this.spoolFailed}): intake halted — new captions are refused until the spool is writable and the bot restarts; the ${this.pendingCount} already queued still drain (SPOOL_BEST_EFFORT=1 to log and continue instead)`);
       return;
+    }
+    if (durable && !wrote) {
+      // the weaker promise, kept out loud: once, then every 100th line
+      this.spoolMissed++;
+      if (this.spoolMissed === 1 || this.spoolMissed % 100 === 0) this.log(`⚠ spool write failed (${this.spoolFailed}): SPOOL_BEST_EFFORT=1, so the line queues anyway — a restart before the world confirms it loses it; ${this.spoolMissed} such line${this.spoolMissed === 1 ? '' : 's'} so far`);
     }
     this.pending.push(p);
     const max = this.opts.maxPending ?? 600;

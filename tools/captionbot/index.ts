@@ -28,8 +28,10 @@
 //                  rotate it between events. The spool is a promise, so it
 //                  fails closed: if a line's row cannot be written the line is
 //                  refused and intake halts, out loud, until a restart.
-//   SPOOL_BEST_EFFORT=1  the weaker promise: spool failures log and the line
-//                  queues anyway (a restart may then miss it)
+//   SPOOL_BEST_EFFORT=1  the weaker promise: a spool failure is said once
+//                  (then every 100th line) and the line queues anyway — a
+//                  restart may then miss it. Either way a FILE run whose
+//                  spool promise was not kept for some line exits non-zero.
 //   MAX_PENDING    queue bound in lines (default 600); past it the oldest
 //                  queued lines are dropped, out loud, into the spool
 //   DRY_RUN=1      no world: print each line as it would be sent
@@ -86,9 +88,11 @@ if (file) {
   await new Promise((r) => setTimeout(r, 2000)); // let the last final settle
   world?.end();
   await new Promise((r) => setTimeout(r, 1500)); // and the receipts land
-  log(`done — ${lines} lines, ${captioner.lateRevisions} late revisions dropped${world ? `; ${world.acked} confirmed, ${world.pendingCount} unconfirmed (in the spool)${world.spoolRefused ? `, ${world.spoolRefused} REFUSED (spool unwritable: ${world.spoolFailed})` : ''}` : ''}`);
+  log(`done — ${lines} lines, ${captioner.lateRevisions} late revisions dropped${world ? `; ${world.acked} confirmed, ${world.pendingCount} unconfirmed${world.spoolMissed ? ` (${world.spoolMissed} of this run's lines are NOT in the spool: ${world.spoolFailed})` : ' (in the spool)'}${world.spoolRefused ? `, ${world.spoolRefused} REFUSED (spool unwritable: ${world.spoolFailed})` : ''}` : ''}`);
   world?.close();
-  process.exit(0);
+  // a batch caller reads the exit status: a run that refused lines, or
+  // queued them without their row, did not keep the spool's promise
+  process.exit(world?.spoolLost ? 1 : 0);
 } else {
   const url = env('STREAM_URL', 'rtsp://127.0.0.1:8554/screen');
   log(`listening to ${url}`);
