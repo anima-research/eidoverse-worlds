@@ -51,7 +51,7 @@ import { describeParticles, emitterTransition, transitionLine } from "../shared/
 import { describePicture } from "../shared/picture.js";
 import { describeCaptions } from "../shared/captions.js";
 import { describeSound } from "../shared/sound.js";
-import { cellKey, describeStructure, describeHere, localizePoint, planStructure, routeLocal } from "../shared/structure.js";
+import { cellKey, describeStructure, describeHere, halfFloored, localizePoint, nodeAtPoint, planStructure, routeLocal } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
 
@@ -1525,7 +1525,12 @@ export class WorldAgent {
    *  replaces the object, so identity is the invalidation — and the tick
    *  clamp below asks for plans ten times a second. */
   private static readonly plans = new WeakMap<object, ReturnType<typeof planStructure>>();
-  private planOf(data: object): ReturnType<typeof planStructure> {
+  private planOf(data: unknown): ReturnType<typeof planStructure> {
+    // comp data is opaque to the server (vComp bounds its size, not its
+    // shape), so a builder can post `structure: "junk"`. planStructure reads
+    // that as an empty plan; a WeakMap refuses it as a key. Empty, then, and
+    // uncached — never a throw that costs the caller its loop.
+    if (typeof data !== 'object' || data === null) return planStructure(data);
     let p = WorldAgent.plans.get(data);
     if (!p) { p = planStructure(data); WorldAgent.plans.set(data, p); }
     return p;
@@ -1553,13 +1558,21 @@ export class WorldAgent {
         if (plan.levels.length < 2) continue;                 // one storey: the terrain's job
         const lowest = Math.min(...plan.levels.map((l: any) => l.y));
         const [lx, ly, lz] = localizePoint(e, x, yHint, z);
-        const k = cellKey(Math.floor(lx / plan.grid.tile), Math.floor(lz / plan.grid.tile));
+        const cx = Math.floor(lx / plan.grid.tile), cz = Math.floor(lz / plan.grid.tile);
+        const k = cellKey(cx, cz);
         const s = Number.isFinite(e.scale) && (e.scale as number) > 0 ? (e.scale as number) : 1;
         const py = Array.isArray(e.pos) && Number.isFinite(e.pos[1]) ? e.pos[1] : 0;
         for (const lv of plan.levels as any[]) {
           if (lv.y <= lowest) continue;                       // the ground floor is the terrain
           if (Math.abs(lv.y - ly) > 0.5) continue;            // not within a step of the feet: not stood on
           if (!lv.level.tiles.has(k)) continue;               // no floor here on that storey
+          // a cell cut by a diagonal may be floored on ONE half: the other
+          // half is a hole, not a floor. The router already reads the point
+          // by half (nodeAtPoint); the feet must read it the same way, or a
+          // body over the hole is held in the air and then routed on the
+          // storey below's walls
+          const node = nodeAtPoint(lv.level, plan.grid, lx, lz);
+          if (node.includes(':') && !halfFloored(lv.level, cx, cz, node.split(':')[1])) continue;
           const wy = py + lv.y * s;
           if (wy > best) best = wy;
         }
@@ -2520,10 +2533,10 @@ export class WorldAgent {
     // structure, a sealed room) falls back to the old straight line, which is
     // exactly the behaviour everywhere that has no building.
     this.legs = [];
-    try {
-      for (const e of this.entities.values()) {
-        const data = (e.comp ?? {}).structure;
-        if (!data) continue;
+    for (const e of this.entities.values()) {
+      const data = (e.comp ?? {}).structure;
+      if (!data) continue;
+      try {
         const plan = this.planOf(data);
         const [ax, ay, az] = localizePoint(e, this.pos.x, this.pos.y, this.pos.z);
         const [bx, , bz] = localizePoint(e, x, this.pos.y, z);
@@ -2540,8 +2553,8 @@ export class WorldAgent {
           z: pz + (-lx * n + lz * c) * sc,
         }));
         break;
-      }
-    } catch { this.legs = []; }
+      } catch { /* one malformed house must not cost the route through a sound one — the fold is per building, like groundAt's */ }
+    }
     const first = this.legs.shift();
     this.target = first ? { x: first.x, z: first.z, run, tolerance } : { x, z, run, tolerance };
     return new Promise((resolve) => {

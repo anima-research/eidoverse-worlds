@@ -38,10 +38,12 @@ const HOUSE = {
 const plan = planStructure(HOUSE);
 const upperY = plan.levels[1].y;      // the upstairs walk surface, grid-local == world here (building at origin, scale 1)
 
-function agentIn(y: number, opts: { pos?: number[]; scale?: number } = {}) {
+function agentIn(y: number, opts: { pos?: number[]; scale?: number; before?: Record<string, any>; house?: any } = {}) {
   const ag: any = new WorldAgent({ name: "climber", world: "test" });
+  // entities the agent learned about BEFORE the house: a Map folds in insertion order
+  for (const [id, ent] of Object.entries(opts.before ?? {})) ag.entities.set(id, { id, pos: [50, 0, 50], yaw: 0, actor: "test", ...ent });
   ag.entities.set("house", { id: "house", lib: "house", pos: opts.pos ?? [0, 0, 0], yaw: 0, actor: "test",
-    ...(opts.scale ? { scale: opts.scale } : {}), comp: { structure: HOUSE } });
+    ...(opts.scale ? { scale: opts.scale } : {}), comp: { structure: opts.house ?? HOUSE } });
   const [px, py, pz] = opts.pos ?? [0, 0, 0];
   const s = opts.scale ?? 1;
   ag.pos = { x: px + 0.5 * s, y: py + y * s, z: pz + 0.5 * s };
@@ -105,6 +107,50 @@ console.log("\nstorey-aware walking\n");
   for (let i = 0; i < 5; i++) ag.tick();
   check("tick keeps an upstairs walker on the upper floor", Math.abs(ag.pos.y - upperY) < 1e-9, String(ag.pos.y));
   ag.stop(); ag.joined = false;
+}
+
+
+console.log("\na malformed house elsewhere in the world (Greptile on #200, finding 1)\n");
+{
+  // comp data is opaque to the server: `structure: "junk"` is accepted and
+  // folded. The agent's walk loop used to hold ONE try around every building,
+  // so a primitive that a WeakMap refuses as a key threw out of planOf and
+  // took the route through the sound house with it — straight through walls.
+  for (const junk of ["junk", true, 7]) {
+    const ag = agentIn(upperY, { before: { junk: { lib: "junk", comp: { structure: junk } } } });
+    check(`structure: ${JSON.stringify(junk)} learned first: the upstairs walk still detours through the door`,
+      legsOf(ag, 3.5, 0.5).length >= 2);
+    check(`…and the feet stay on the upper floor`, Math.abs(ag.pos.y - upperY) < 1e-9, String(ag.pos.y));
+  }
+}
+
+console.log("\na corner cut by a diagonal, floored on one half (findings 2 and 3)\n");
+{
+  // Two cells wide. Upstairs, the east cell is cut ↘ and floored on its
+  // north-east half only (the A half; see nodeAtPoint): the south-west half
+  // is a hole over the ground-floor room, not a floor.
+  const shell2 = [[0, 0, 0], [0, 1, 0], [0, 0, 1], [0, 1, 1], [1, 0, 0], [1, 2, 0]];
+  const CORNER = {
+    levels: [
+      { y: 0, tiles: [[0, 0], [1, 0]], walls: shell2, apertures: [] },
+      { y: 3, tiles: [[0, 0], [1, 0, "floor", "A"]], walls: [...shell2, [2, 1, 0]], apertures: [] },
+    ],
+  };
+  const up = planStructure(CORNER).levels[1].y;
+  const onFloor = agentIn(0, { house: CORNER });
+  check("over the floored half at upper height: the feet are on the upper floor",
+    Math.abs(onFloor.groundAt(1.8, 0.2, up) - up) < 1e-9, String(onFloor.groundAt(1.8, 0.2, up)));
+  check("over the hole at upper height: the feet resolve to the terrain — the half is not a floor",
+    onFloor.groundAt(1.2, 0.8, up) === 0, String(onFloor.groundAt(1.2, 0.8, up)));
+  // finding 2, from the product side: the router only ever saw an upstairs
+  // start in an unfloored half because the standing clamp had held the body
+  // there. Once the feet read the half, a body over the hole is on the ground
+  // floor, and the ground plan is the right one to route on.
+  const ag = agentIn(up, { house: CORNER });
+  ag.pos = { x: 1.2, y: up, z: 0.8 };
+  const legs = legsOf(ag, 0.5, 0.5);
+  check("a body over the hole is not held in the air by walkTo", ag.pos.y === 0, String(ag.pos.y));
+  check("…and walks the open ground plan straight, no legs", legs.length === 0, JSON.stringify(legs));
 }
 
 console.log(failures ? `\n${failures} failed` : "\nall passed");
