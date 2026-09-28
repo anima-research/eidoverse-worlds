@@ -129,3 +129,18 @@ animate at frame rate without polling:
 
 Ports must reproduce `shared/conformance/motion.json` (regenerate with
 `bun tools/motion-vectors.ts`; `--check` fails when stale).
+
+## Inspecting an entity's components
+
+`render-scene` carries only what renderers need (`components` lists the type
+names; `data` the renderer-facing ones). An inspector asks for one entity's
+authored bag:
+
+    → {"type":"inspect","id":"crate-1","reqId":7}
+    ← {"type":"inspect","id":"crate-1","reqId":7,"lib":"…","kind":"model","parent":null,"comp":{…}}
+
+Anyone in the world may ask (the log is already public to them, spectators
+included). Unknown ids answer `error: "not_found"`; a bag over 64 KB answers
+`error: "too_large"` with `types` instead of `comp`. Asks closer than 50 ms
+apart on one connection are dropped. Edits go through the ordinary `comp` verb
+(`{id, type, data}`, `data: null` removes), under the ordinary rights gate.

@@ -33,6 +33,11 @@ export const pendingWhispers = new Map<string, unknown[]>();
 export const whisperKey = (world: string, recipient: string) => `${world}\u0000${recipient}`;
 export const WHISPERS_ENABLED = process.env.EIDO_WHISPERS_ENABLED !== "0";
 
+// inspect: per-connection pacing and the reply budget (a bag is authored data;
+// anything bigger than this is a structure plan nobody edits as JSON).
+const inspectAt = new WeakMap<object, number>();
+const INSPECT_MAX = 64 * 1024;
+
 export type MsgCtx = {
   c: Client;
   ws: { send(data: string): void; close?(code?: number, reason?: string): void };
@@ -103,6 +108,26 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
       verbs: Array.isArray(msg.verbs) && msg.verbs.length ? new Set(msg.verbs.map(String)) : null,
     });
     ws.send(JSON.stringify({ type: "history", reqId: msg.reqId ?? null, ...r }));
+  },
+  "inspect": ({ c, ws, now }, msg) => {
+    // One entity's authored component bag, for native inspectors. The browser
+    // folds the whole log and reads the same bag locally; render-scene only
+    // projects what renderers need. Open to spectators for the reason history
+    // is: the log is public to everyone in the world. Read-only; edits are
+    // `comp` verbs through the normal gate.
+    if (!c.world || typeof msg.id !== "string" || msg.id.length > 128) return;
+    const last = inspectAt.get(c) ?? 0;
+    if (now - last < 50) return;
+    inspectAt.set(c, now);
+    const e: any = c.world.state.entities[msg.id];
+    const reply: Record<string, unknown> = { type: "inspect", id: msg.id, reqId: msg.reqId ?? null };
+    if (!e) { ws.send(JSON.stringify({ ...reply, error: "not_found" })); return; }
+    const comp = e.comp ?? {};
+    const size = JSON.stringify(comp).length;
+    Object.assign(reply, { lib: e.lib ?? null, kind: e.kind ?? "model", parent: e.parent ?? null });
+    if (size > INSPECT_MAX) Object.assign(reply, { error: "too_large", types: Object.keys(comp), size });
+    else reply.comp = comp;
+    ws.send(JSON.stringify(reply));
   },
   "debug": ({ c, ws, now, expel }, msg) => {
     // The flight recorder (World.debugLog): why things bounced —
