@@ -273,8 +273,32 @@ in a lost GPU device is **quarantined by hash** for that viewer and reported, so
 others. The last matters beyond the one world: Chromium reportedly counts a GPU-process loss against the whole site
 and, after one, blocks new 3D contexts for that domain for about two minutes (secondhand, from a reading of
 `gpu_data_manager_impl_private.cc`), so a second crash could blank *every* world in that browser. We've already hit
-the stall half of this by accident (a large sky shader compile froze desktop Chrome). The governor is what makes open
-shader worlds safe to offer.
+the stall half of this by accident (a large sky shader compile froze desktop Chrome).
+
+**What the governor can't do alone**, and what goes with it:
+- **It reacts; it doesn't prevent.** It needs a slow frame to act on. A shader that hangs the GPU in a single draw
+  trips the driver's watchdog before a second frame exists; the device is lost, and in a headset the session ends.
+  Quarantine stops the second time, not the first.
+- **A compile deadline is soft.** WebGL can stop *waiting* for a compile but can't cancel one; the GPU process keeps
+  working. The deadline protects the frame loop, not the GPU process.
+- **Attribution is uneven.** Per-canvas GPU time needs timestamp queries, and whether every headset browser exposes
+  them is unverified. Without them the governor sees a slow frame, not which canvas made it, and steps down broadly.
+- **It covers resource harms only.** Comfort, side channels and deceptive UI are the other rows of the table above.
+
+So three things ship with it:
+1. **A preflight with teeth.** Before a record is shown to anyone but its author, it is compiled and run, for a
+   bounded number of frames at a declared size, on a sandboxed client (a preflight worker, or the author's own client
+   under the same budgets), and its compile time and frame cost are stamped into its publication receipt. A shader
+   that hangs a GPU does it there, once, not on a visitor. Avatars go through the same door before public load.
+2. **Shared quarantine.** A lost device implicating a record is reported to the server. After independent reports
+   (or one plus a failed preflight re-run, so a single viewer can't quarantine someone else's work by lying), the
+   record is quarantined for everyone on that server, to fallback, and its author is told. The first crash is paid
+   once, not once per person.
+3. **Honest labels.** When a canvas is stepped down or unloaded, the viewer sees why ("too heavy for this device:
+   showing a still"), and the author can see how their record fares by device class. A weak device getting the
+   fallback is correct; it shouldn't look like censorship.
+
+With those, the governor is what makes open shader worlds safe to offer.
 
 **Each viewer's standing choice**, global and per world: *fallbacks only · engine records · also this world's records ·
 everything I've opted into*. Anything quarantined or stepped down is listed in the world's component panel, so no one
@@ -313,7 +337,7 @@ is asked to debug it.
    sandboxed VM after its first sandbox was escaped). **An honest cost:** sandboxed mods get a narrower, message-based
    UI kit than the built-in panels, which bends docs/MODDING-UI.md's *"There is no second-class citizenship."* The goal
    is to grow the kit until the gap closes.
-7. **The governor, hardened** as above, and the avatar preflight.
+7. **The governor, hardened**, with the preflight, shared quarantine and honest labels, and the avatar preflight.
 8. **Appearance code on receivers**, under the amendment: world-scale canvases for owners and the builders they grant,
    body-and-objects scale for avatars and items.
 9. **Library, discovery, release channels**, after one component has survived authoring, grant, attach, use, travel,
