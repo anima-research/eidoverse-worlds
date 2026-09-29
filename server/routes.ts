@@ -16,7 +16,7 @@ import { randomBytes } from "node:crypto";
 import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, LADDER, JOIN_TOKEN } from "./config.ts";
 import { isStoreOriginal, isServingArtifact } from "./store-variants.ts";
 import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
-import { LOD_RECIPE, lodVariantPath, lodVerdictKind, lodVerdictFinal } from "./store-variants.ts";
+import { LOD_RECIPE, lodVariantPath, lodVerdictKind, lodVerdictFinal, ktx2VariantPath } from "./store-variants.ts";
 import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
 import { verifyToken } from "./aid1.ts";
 import { resolveLibFile } from "./lint.ts";
@@ -780,7 +780,7 @@ const ROUTES: Route[] = [
         for (const e of readdirSync(abs, { withFileTypes: true })) {
           const childRel = sub ? `${sub}/${e.name}` : e.name;
           if (e.isDirectory()) walk(base, childRel, depth + 1);
-          // Serving artifacts are not entries: a KTX2 variant (<rel>.ktx2.glb /
+          // Serving artifacts are not entries: a KTX2 variant (<rel>.ktx2.<recipe>.glb /
           // .ktx2.vrm / <img>.ktx2) is reached only as the path beside it +
           // the negotiation, a .failed marker is the pump's verdict, a .tmp is
           // a pass mid-write. Listed, the prefetcher fetches each one as an
@@ -847,7 +847,7 @@ const ROUTES: Route[] = [
         let man: Record<string, { name?: string; by?: string; ts?: number }> = {};
         try { man = JSON.parse(readFileSync(join(storeDir, "manifest.json"), "utf8")); } catch { /* unnamed */ }
         const store = readdirSync(storeDir)
-          // a KTX2 variant (<hash>.glb.ktx2.glb) is the same model, not a
+          // a KTX2 variant (<hash>.glb.ktx2.<recipe>.glb) is the same model, not a
           // catalog entry — the ghost-listing rule the library list already
           // follows above (store-variants.ts)
           .filter(isStoreOriginal)
@@ -947,7 +947,11 @@ const ROUTES: Route[] = [
       } else if (lodAsked != null) lodState = "provisional; generation=unrecognized";
       const lodHeader = lodState ? { "x-eidoverse-lod": lodState } : undefined;
       if (wantKtx2) {
-        const kRel = rel.endsWith(".glb") ? `${rel}.ktx2.glb`
+        // a MODEL's variant carries the running recipe in its name (store-
+        // variants.ts): a bake from any other generation — every legacy
+        // `<rel>.ktx2.glb` among them — is not looked up, so it can never be
+        // served, or pinned, under this generation's key
+        const kRel = rel.endsWith(".glb") ? ktx2VariantPath(rel)
           : rel.endsWith(".vrm") ? `${rel}.ktx2.vrm` : `${rel}.ktx2`;
         const k = normalize(join(OPT_DIR, kRel));
         if (k.startsWith(OPT_DIR) && existsSync(k)) {

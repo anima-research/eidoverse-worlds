@@ -6,9 +6,9 @@
 //
 //   store-min/<hash>.glb        draco + webp@1024 — the unflagged answer, what
 //                               every client without a KTX2 decoder gets
-//   store/<hash>.glb.ktx2.glb   draco + KTX2 (the §20a diet) — the ?ktx2=<key>
+//   store/<hash>.glb.ktx2.<recipe>.glb   draco + KTX2 (the §20a diet) — the ?ktx2=<key>
 //                               answer, beside the original exactly like every
-//                               library variant (OPT_DIR/<rel>.ktx2.glb), which
+//                               library variant (OPT_DIR/<rel>.ktx2.<recipe>.glb), which
 //                               is the path the /library route already resolves
 //
 // The second shadow is what this module gives a name to. Before it, a KTX2-
@@ -39,9 +39,22 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join, basename } from "node:path";
+import { KTX2_TEXEL_CAP, KTX2_RECIPE } from "../shared/ktx2.js";
 
-/** The variant suffix. `<hash>.glb` + this = the KTX2 shadow's file name. */
-export const KTX2_SUFFIX = ".ktx2.glb";
+// The texel budget and the recipe it names are DEFINED beside the key that
+// derives from them (shared/ktx2.js) and re-exported here, where the rest of
+// the variant contract lives and every server-side reader already looks.
+export { KTX2_TEXEL_CAP, KTX2_RECIPE };
+
+/** A model variant's name carries the RECIPE that baked it — `<rel>.ktx2.
+ *  <recipe>.glb` — exactly as the lod variant's does. The serving route looks
+ *  up the running recipe's name and nothing else, so a bake from another
+ *  generation is invisible by construction: never served under this
+ *  generation's key, never pinned there, pruned when this generation's
+ *  outcome lands. The legacy name (`<rel>.ktx2.glb`, no recipe: everything
+ *  baked before this) is such a generation. */
+export const KTX2_SUFFIX = `.ktx2.${KTX2_RECIPE}.glb`;
+export const KTX2_LEGACY_SUFFIX = ".ktx2.glb";
 
 // ---- the texel budget ------------------------------------------------------
 // The unflagged answer — the webp shadow every client without a KTX2 decoder
@@ -55,8 +68,22 @@ export const KTX2_SUFFIX = ".ktx2.glb";
 // flagged fetch was a silent quality UPGRADE over the unflagged one at ~13×
 // the bytes of the webp shadow. So: same budget as the shadow, GPU-native —
 // downscale (never up) so the longest side is KTX2_TEXEL_CAP, 4-aligned for
-// the block format. toktx does it (--resize) and libvips never touches it.
-export const KTX2_TEXEL_CAP = 1024;
+// the block format. toktx does it (--resize); `ktx create` cannot, so there
+// the source is scaled before the encoder sees it (optimize.ts) — the
+// variant's NAME carries the budget now, and every path that writes under
+// that name has to honor it.
+//
+// What the budget did not reach: the variants ALREADY on disk. "Exists" meant
+// "done" — forever for a store hash, until the source changed for a library
+// file — so everything baked before the budget stayed as it was: the show
+// box, 2026-09-29, 71 of 89 model variants over it (54 of 58 library, 17 of
+// 31 store; 535 MB on the wire; textures to 8192², one model 134 MB of GPU
+// memory for three of them). And the store's were pinned: `immutable` under
+// their URL, in every browser and in nginx, where a re-bake in place reaches
+// no one. Hence the recipe in the variant's name and in the key: the old
+// bakes are another generation's — never looked up, never served, pruned as
+// this generation's outcome lands — and the new ones answer under a URL no
+// cache has seen.
 
 /** The resize a texture of `size` needs to fit the budget, or null when it
  *  already does. Aspect kept; both sides rounded to a multiple of 4. */
@@ -76,7 +103,6 @@ export function capTexels(size: [number, number] | null | undefined, cap = KTX2_
 // re-stamped. The sixteen refusals above get retried the first boot after
 // this lands, with no operator step. Content verdicts ("no convertible raster
 // images", a corrupt container) carry no stamp and stand.
-export const KTX2_RECIPE = "texel1024";
 export const recipeStamp = (recipe = KTX2_RECIPE) => `recipe=${recipe}`;
 /** Does `content` carry the stamp for exactly `recipe`? Delimited, never a
  *  prefix: `recipe=…-min12000` must not answer for `…-min120000` (a marker
@@ -180,12 +206,14 @@ export function verdictStands(content: string, recipe = KTX2_RECIPE): boolean {
   return hasStamp(content, recipe);
 }
 
-/** Any KTX2 serving artifact, of any asset class: `<rel>.ktx2.glb` (models,
- *  library and store), `<rel>.ktx2.vrm` (bodies, §20c), `<img>.ktx2` (loose
+/** Any KTX2 serving artifact, of any asset class and ANY generation:
+ *  `<rel>.ktx2.<recipe>.glb` (models, library and store) and the legacy
+ *  `<rel>.ktx2.glb`, `<rel>.ktx2.vrm` (bodies, §20c), `<img>.ktx2` (loose
  *  toolkit images, §20d). Reached only through the ORIGINAL's path + the
- *  ?ktx2=<key> negotiation; never a listing entry of its own. */
+ *  ?ktx2=<key> negotiation; never a listing entry of its own — an older
+ *  generation's file least of all. */
 export function isKtx2Variant(name: string): boolean {
-  return /\.ktx2(\.glb|\.vrm)?$/i.test(name);
+  return /\.ktx2(\.[a-z0-9.-]+)?\.glb$|\.ktx2\.vrm$|\.ktx2$/i.test(name);
 }
 
 /** Anything the opt tree holds that is not an asset a client addresses by
@@ -206,11 +234,11 @@ export function isStoreOriginal(name: string): boolean {
   return name.endsWith(".glb") && !isKtx2Variant(name) && !isLodVariant(name);
 }
 
-/** Where the KTX2 shadow of a store original lives: beside it, `<path>.ktx2.glb`
- *  — routes.ts's own resolution for a flagged fetch (`${rel}.ktx2.glb` under
- *  OPT_DIR), so serving needs no change to find it. */
-export function ktx2VariantPath(original: string): string {
-  return `${original}${KTX2_SUFFIX}`;
+/** Where the KTX2 shadow of a model lives: beside it, `<path>.ktx2.<recipe>.glb`
+ *  — the one spelling the pump writes, the sweeps look for, and routes.ts
+ *  resolves a flagged fetch to. */
+export function ktx2VariantPath(original: string, recipe = KTX2_RECIPE): string {
+  return `${original}.ktx2.${recipe}.glb`;
 }
 
 /** Which shadows a store original still lacks. A `.failed` marker counts as

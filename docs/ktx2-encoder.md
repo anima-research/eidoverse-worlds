@@ -79,13 +79,25 @@ handed it — never the served file: in the `git pull` → restart window the ol
 process serves the new file, and a client that read the key off disk asked a
 server that did not know it and got pinned (the =2 collision, 2026-08-24).
 No key on `/version` (an older sequencer) means the client does not negotiate
-at all, which is always safe. Bump the key when a flagged answer has been
-served with the wrong caching — the old key's cache entries are simply never
-asked for again (a purge cannot reach browsers). The fall-through answer under
-the current key is served `no-cache` until a variant exists, then the variant
-is served immutable.
+at all, which is always safe.
+
+The key DERIVES from a generation number and the model recipe
+(`KTX2_GEN`, `KTX2_TEXEL_CAP` → `4-texel1024`), and a model variant carries the
+recipe in its name (`<rel>.ktx2.<recipe>.glb`). Change the texel budget and the
+URL and the filename rotate together: the next boot re-bakes every model under
+the new name with no operator step, the older generation's files are never
+served and are pruned as each new outcome lands, and clients refetch once under
+the new key. Bump `KTX2_GEN` alone when a flagged answer has been served with
+the wrong caching, or the encoder changed — the old key's cache entries are
+simply never asked for again (a purge cannot reach browsers). The fall-through
+answer under the current key is served `no-cache` until a variant exists, then
+the variant is served immutable.
 
 `KTX2_TOKTX` may point at either `toktx` or the newer `ktx` binary — the
 probe (`findKtx2Encoder`) detects which by name. Without the env it also
-checks PATH for both. The sweep runs once per boot, serial, ~5-30s per
-model; variants land in `assets/opt/` beside the paths they shadow.
+checks PATH for both. `toktx` scales an over-budget texture itself
+(`--resize`); `ktx create` cannot, so there the source is scaled before the
+encoder sees it (sharp) — without a converter such a model gets no variant
+(exit 5, retried next boot), never one whose name claims a budget its textures
+do not honor. The sweep runs once per boot, serial, ~5-30s per model; variants
+land in `assets/opt/` beside the paths they shadow.

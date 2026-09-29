@@ -50,11 +50,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Document, NodeIO } from "@gltf-transform/core";
 import { PNG } from "pngjs";
-import { isStoreOriginal, isKtx2Variant, isServingArtifact, ktx2VariantPath, storeShadowsMissing, KTX2_SUFFIX,
-  capTexels, verdictStands, recipeStamp, KTX2_TEXEL_CAP,
+import { isStoreOriginal, isKtx2Variant, isServingArtifact, ktx2VariantPath, storeShadowsMissing, KTX2_SUFFIX, KTX2_LEGACY_SUFFIX,
+  capTexels, verdictStands, recipeStamp, KTX2_TEXEL_CAP, KTX2_RECIPE,
   LOD_RECIPE, LOD_GEN, LOD_MIN_VERTS, lodRecipeFor, lodVariantPath, isLodVariant, lodVerdictKind, lodVerdictFinal, hasStamp } from "../server/store-variants.ts";
 import { findKtx2Encoder, isKtx2Container } from "../server/optimize.ts";
-import { KTX2_KEY, KTX2_QUERY, wantsKtx2, withKtx2, keyFromVersion, negotiate } from "../shared/ktx2.js";
+import { KTX2_KEY, KTX2_QUERY, KTX2_GEN, ktx2KeyFor, ktx2RecipeFor, wantsKtx2, withKtx2, keyFromVersion, negotiate } from "../shared/ktx2.js";
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail?: string) => {
@@ -85,15 +85,19 @@ console.log("\nthe store's KTX2 shadow (store-variants.ts, shared/ktx2.js):\n");
   check("a .failed marker is not", !isStoreOriginal(`${hash}.glb${KTX2_SUFFIX}.failed`));
   check("a body is not (store holds models only)", !isStoreOriginal("someone.vrm"));
 
-  check("the variant lives beside the original", ktx2VariantPath(original) === join(OPT, `store/${hash}.glb.ktx2.glb`),
+  check("the variant lives beside the original, and its NAME carries the recipe that baked it",
+    ktx2VariantPath(original) === join(OPT, `store/${hash}.glb.ktx2.${KTX2_RECIPE}.glb`) && ktx2VariantPath(original) === `${original}${KTX2_SUFFIX}`,
     ktx2VariantPath(original));
-  // The serving contract, stated the way routes.ts states it — a flagged
-  // fetch for rel resolves join(OPT_DIR, `${rel}.ktx2.glb`). The two files
-  // must agree on that path WITHOUT importing each other; this is the check
-  // that names the gap on main (routes resolved it, nothing wrote it).
-  const routesResolution = join(OPT, `${rel}.ktx2.glb`);
-  check("…which is exactly the path /library?ktx2=<key> resolves (routes.ts)", ktx2VariantPath(original) === routesResolution,
-    `wrote ${ktx2VariantPath(original)}, routes reads ${routesResolution}`);
+  // The serving contract: routes.ts resolves a flagged fetch through this
+  // same function (one spelling — the door test below proves which file
+  // answers), so a bake from ANOTHER generation has another name and is
+  // never looked up. Everything baked before the recipe joined the name —
+  // the legacy `<rel>.ktx2.glb` — is such a generation.
+  const legacy = `${original}${KTX2_LEGACY_SUFFIX}`;
+  check("the legacy name is NOT this generation's path — what is on disk under it is never resolved",
+    legacy === join(OPT, `${rel}.ktx2.glb`) && legacy !== ktx2VariantPath(original));
+  check("another recipe is another name", ktx2VariantPath(original, ktx2RecipeFor({ texel: 2048 })) !== ktx2VariantPath(original)
+    && ktx2VariantPath(original, ktx2RecipeFor({ texel: 2048 })).endsWith(".ktx2.texel2048.glb"));
 
   const minDir = join(OPT, "store-min");
   const missing = (present: string[]) => storeShadowsMissing(original, minDir, (p) => present.includes(p));
@@ -105,6 +109,8 @@ console.log("\nthe store's KTX2 shadow (store-variants.ts, shared/ktx2.js):\n");
   check("a store-min .failed counts as answered (never re-measured)", !m.min && m.ktx2);
   m = missing([ktx2VariantPath(original)]);
   check("variant present → only store-min is missing", m.min && !m.ktx2);
+  m = missing([legacy, `${legacy}.failed`, ktx2VariantPath(original, "texel2048")]);
+  check("ANOTHER generation's variant or verdict present → this generation's shadow is still MISSING (the sweep re-bakes)", m.ktx2);
   m = missing([`${ktx2VariantPath(original)}.failed`]);
   check("a variant .failed counts as answered too", m.min && !m.ktx2);
   m = missing([join(minDir, `${hash}.glb`), ktx2VariantPath(original)]);
@@ -178,14 +184,31 @@ console.log("\nthe store's KTX2 shadow (store-variants.ts, shared/ktx2.js):\n");
     check("…a current one → not missing (no retry)", !m2.ktx2);
   }
 
-  // the negotiation key is a generation, shared by both sides
-  check("the current key is 3 (1 and rollout-key 2 retired — their flagged answers had been pinned immutable)", KTX2_KEY === "3" && KTX2_QUERY === "ktx2=3");
-  check("the current key negotiates", wantsKtx2(new URLSearchParams("ktx2=3")));
-  check("the just-retired rollout key does NOT — it is an unflagged fetch now", !wantsKtx2(new URLSearchParams("ktx2=2")));
+  // the negotiation key is a generation, shared by both sides — and it
+  // DERIVES from the recipe: a variant's bytes are a function of source and
+  // recipe, the key is the only part of a flagged URL a client can vary, so
+  // a recipe change that did not rotate it would answer a new generation's
+  // bytes under an address caches hold the old generation's for
+  check("the key derives from (generation, recipe)", KTX2_KEY === ktx2KeyFor() && KTX2_KEY === `${KTX2_GEN}-${KTX2_RECIPE}` && KTX2_QUERY === `ktx2=${KTX2_KEY}`, KTX2_KEY);
+  check("the recipe derives from the texel budget", KTX2_RECIPE === ktx2RecipeFor() && KTX2_RECIPE === `texel${KTX2_TEXEL_CAP}`, KTX2_RECIPE);
+  check("a different budget is a different recipe AND a different key — URL and filename rotate together, by construction",
+    ktx2RecipeFor({ texel: 2048 }) !== KTX2_RECIPE && ktx2KeyFor({ recipe: ktx2RecipeFor({ texel: 2048 }) }) !== KTX2_KEY);
+  check("a generation bump alone rotates the key and leaves the recipe (a poisoned cache, a changed encoder)",
+    ktx2KeyFor({ gen: KTX2_GEN + 1 }) !== KTX2_KEY && ktx2KeyFor({ gen: KTX2_GEN + 1 }).endsWith(`-${KTX2_RECIPE}`));
+  check("the key is PUBLISHABLE — the shape a client accepts off /version (a key keyFromVersion refuses is no key)", keyFromVersion({ ktx2Key: KTX2_KEY }) === KTX2_KEY);
+  check("what the key cannot carry faithfully is refused, not mangled",
+    [() => ktx2RecipeFor({ texel: 1023 }), () => ktx2RecipeFor({ texel: 0 }), () => ktx2RecipeFor({ texel: 1024.5 }), () => ktx2KeyFor({ gen: 0 }), () => ktx2KeyFor({ gen: 1.5 }),
+      () => ktx2KeyFor({ recipe: "a b" }), () => ktx2KeyFor({ recipe: "x".repeat(40) })].every((f) => { try { f(); return false; } catch { return true; } }));
+  check("generation 4 (3 retired with the over-budget bakes pinned under it; 1 and 2 before it)", KTX2_GEN === 4);
+  check("the current key negotiates", wantsKtx2(new URLSearchParams(`ktx2=${KTX2_KEY}`)));
+  check("the just-retired key (=3) does NOT — it is an unflagged fetch now", !wantsKtx2(new URLSearchParams("ktx2=3")));
+  check("…nor the bare generation number, nor the recipe alone, nor a key that merely EXTENDS this one",
+    !wantsKtx2(new URLSearchParams(`ktx2=${KTX2_GEN}`)) && !wantsKtx2(new URLSearchParams(`ktx2=${KTX2_RECIPE}`)) && !wantsKtx2(new URLSearchParams(`ktx2=${KTX2_KEY}0`)));
+  check("the retired rollout key (=2) does not negotiate", !wantsKtx2(new URLSearchParams("ktx2=2")));
   check("the original retired key does not negotiate either", !wantsKtx2(new URLSearchParams("ktx2=1")));
   check("no key does not", !wantsKtx2(new URLSearchParams("v=123")));
-  check("withKtx2 appends with ? on a bare path", withKtx2("store/x.glb") === "store/x.glb?ktx2=3");
-  check("…and with & when ?v= is already there (avatar URLs)", withKtx2("eidoverse/assets/vrms/a.vrm?v=9") === "eidoverse/assets/vrms/a.vrm?v=9&ktx2=3");
+  check("withKtx2 appends with ? on a bare path", withKtx2("store/x.glb") === `store/x.glb?ktx2=${KTX2_KEY}`);
+  check("…and with & when ?v= is already there (avatar URLs)", withKtx2("eidoverse/assets/vrms/a.vrm?v=9") === `eidoverse/assets/vrms/a.vrm?v=9&ktx2=${KTX2_KEY}`);
 
   // The browser's half: the key it uses is the one the RUNNING sequencer
   // published on /version — never one read off a served file.
@@ -217,12 +240,13 @@ console.log("\nthe store's KTX2 shadow (store-variants.ts, shared/ktx2.js):\n");
   // The listing rule is one predicate for every asset class the §20 arc
   // shadows — what /library-list must skip so the prefetcher (which pushes
   // every listed store path as a fetch) never pulls a variant twice…
-  for (const v of ["x.glb.ktx2.glb", "aletheia.vrm.ktx2.vrm", "moon_color_1k.jpg.ktx2", "grass_01.png.ktx2", "UPPER.GLB.KTX2.GLB"])
-    check(`${v} is a variant`, isKtx2Variant(v) && isServingArtifact(v));
+  for (const v of [`x.glb${KTX2_SUFFIX}`, "x.glb.ktx2.texel2048.glb", "x.glb.ktx2.glb", "aletheia.vrm.ktx2.vrm", "moon_color_1k.jpg.ktx2", "grass_01.png.ktx2", "UPPER.GLB.KTX2.GLB", "UPPER.GLB.KTX2.TEXEL1024.GLB"])
+    check(`${v} is a variant — of whichever generation`, isKtx2Variant(v) && isServingArtifact(v) && !isStoreOriginal(v));
   for (const o of ["x.glb", "aletheia.vrm", "moon_color_1k.jpg", "manifest.json", "sky_system.js"])
     check(`${o} is not`, !isKtx2Variant(o) && !isServingArtifact(o));
   // …nor fetches a marker as a model (review of #142, P2)
-  for (const a of ["x.glb.ktx2.glb.failed", "x.glb.failed", "x.glb.tmp", "manifest.json.tmp", "x.glb.ktx2.glb.tmp", "x.glb.ktx2.glb.deferred", "x.glb.lod.lod1-r25e01-texel1024.glb.deferred"])
+  for (const a of ["x.glb.ktx2.glb.failed", "x.glb.failed", "x.glb.tmp", "manifest.json.tmp", "x.glb.ktx2.glb.tmp", "x.glb.ktx2.glb.deferred", "x.glb.lod.lod1-r25e01-texel1024.glb.deferred",
+    `x.glb${KTX2_SUFFIX}.failed`, `x.glb${KTX2_SUFFIX}.tmp`, `x.glb${KTX2_SUFFIX}.deferred`])
     check(`${a} is a serving artifact, never a listing entry`, isServingArtifact(a));
   check("the listing the prefetcher sees is originals + the manifest only",
     listing.filter((f) => !isServingArtifact(f)).join(",") === "305ea80018ad4dbf.glb,a1b2c3d4e5f60718.glb,manifest.json,scripts");
@@ -247,8 +271,9 @@ function pngBytes(seed: number, W = 64): Uint8Array {
 }
 /** `textures`: 0 = untextured mesh, 1 = baseColor, 2 = baseColor + normal
  *  (the normal takes the UASTC branch — a different encoder argv). */
-async function fixtureGlb(tag: string, textures: 0 | 1 | 2, extraNode = false, texSize = 64): Promise<Uint8Array> {
+async function fixtureGlb(tag: string, textures: 0 | 1 | 2, extraNode = false, texSize = 64, extras: object | null = null): Promise<Uint8Array> {
   const doc = new Document();
+  if (extras) doc.getRoot().getAsset().extras = extras;
   const buf = doc.createBuffer();
   const mat = doc.createMaterial("probeMat");
   if (textures >= 1) mat.setBaseColorTexture(doc.createTexture("base").setImage(pngBytes(1, texSize)).setMimeType("image/png"));
@@ -305,9 +330,15 @@ check("the canned KTX2 carries the container magic", isKtx2Container(CANNED_KTX2
 const FAKE_DIR = mkdtempSync(join(tmpdir(), "ew-fake-toktx-"));
 const FAKE_SCRIPT = join(FAKE_DIR, "fake-toktx.ts");
 writeFileSync(join(FAKE_DIR, "canned.ktx2"), CANNED_KTX2);
-writeFileSync(FAKE_SCRIPT, `// fake toktx — argv shape is toktx's: [...flags, outPath, inPath]
+writeFileSync(FAKE_SCRIPT, `// fake encoder — toktx's argv shape [...flags, outPath, inPath], or \`ktx create … inPath outPath\`
 const argv = process.argv.slice(2);
-const outPath = argv[argv.length - 2], inPath = argv[argv.length - 1];
+const ktxShape = argv[0] === "create";
+const outPath = ktxShape ? argv[argv.length - 1] : argv[argv.length - 2], inPath = ktxShape ? argv[argv.length - 2] : argv[argv.length - 1];
+if (process.env.FAKE_TOKTX_DIMLOG) {   // what the encoder was HANDED: the PNG's own IHDR
+  const fs = await import("node:fs");
+  const b = fs.readFileSync(inPath);
+  fs.appendFileSync(process.env.FAKE_TOKTX_DIMLOG, (b.readUInt32BE(12) === 0x49484452 ? b.readUInt32BE(16) + "x" + b.readUInt32BE(20) : "not-png") + String.fromCharCode(10));
+}
 const mode = process.env.FAKE_TOKTX_MODE ?? "ok";
 if (process.env.FAKE_TOKTX_ARGLOG) (await import("node:fs")).appendFileSync(process.env.FAKE_TOKTX_ARGLOG, argv.join(" ") + String.fromCharCode(10));
 const counter = process.env.FAKE_TOKTX_COUNTER;
@@ -340,6 +371,21 @@ if (process.platform === "win32") {
   chmodSync(FAKE_TOKTX, 0o755);
 }
 
+// …and the same fake under the OTHER encoder's name: optimize.ts tells toktx
+// from `ktx` by basename, and `ktx create` has no --resize
+const FAKE_KTX_DIR = join(FAKE_DIR, "as-ktx");
+mkdirSync(FAKE_KTX_DIR, { recursive: true });
+let FAKE_KTX: string;
+if (process.platform === "win32") {
+  FAKE_KTX = join(FAKE_KTX_DIR, "ktx.cmd");
+  writeFileSync(FAKE_KTX, `@echo off\r\n"${process.execPath}" run "${FAKE_SCRIPT}" %*\r\nexit /b %ERRORLEVEL%\r\n`);
+} else {
+  FAKE_KTX = join(FAKE_KTX_DIR, "ktx");
+  writeFileSync(FAKE_KTX, `#!/bin/sh\nexec "${process.execPath}" run "${FAKE_SCRIPT}" "$@"\n`);
+  chmodSync(FAKE_KTX, 0o755);
+}
+const sha256 = (b: Uint8Array) => new Bun.CryptoHasher("sha256").update(b).digest("hex");
+
 /** upload.ts's exact spawn for a --ktx2 item, with the encoder chosen. */
 async function runKtx2(src: string, dest: string, env: Record<string, string>) {
   const proc = Bun.spawn([process.execPath, "run", OPTIMIZE, "--ktx2", src, dest],
@@ -367,6 +413,18 @@ console.log("\n  the optimizer, against the fake encoder:");
     check("ok: two textures → exit 0, variant written", r.code === 0 && r.wrote, `exit ${r.code}: ${r.err.split("\n").pop()}`);
     check("…and it is really KTX2 — basisu required, every image image/ktx2", r.wrote && isKtx2Glb(new Uint8Array(readFileSync(ktx2VariantPath(two)))));
     check("…the tally says 2/2", r.out.includes("2/2 texture(s)"), r.out);
+    {   // identity: the variant SAYS what it is a variant of, and how it was made
+      const ex = r.wrote ? glbJson(new Uint8Array(readFileSync(ktx2VariantPath(two)))).asset?.extras : null;
+      check("identity: extras.ktx2.of is the SOURCE's sha256, .recipe the running recipe, .tools names the encoder",
+        ex?.ktx2?.of === sha256(new Uint8Array(readFileSync(two))) && ex?.ktx2?.recipe === KTX2_RECIPE && typeof ex?.ktx2?.tools?.encoder === "string" && ex.ktx2.tools.encoder.length > 0,
+        JSON.stringify(ex));
+      check("…and it does not read as a LOD (no lodOf, no top-level recipe — the client's tierOf binds to those)", ex?.lodOf === undefined && ex?.recipe === undefined);
+      const authored = place(await fixtureGlb("authored", 1, false, 64, { producer: "someone-else", recipe: "chef-special", note: "must survive" }));
+      const ra = await runKtx2(authored, ktx2VariantPath(authored), { KTX2_TOKTX: FAKE_TOKTX, FAKE_TOKTX_MODE: "ok" });
+      const exa = ra.wrote ? glbJson(new Uint8Array(readFileSync(ktx2VariantPath(authored)))).asset?.extras : null;
+      check("the SOURCE's own extras survive beside ours (never clobbered)", ra.code === 0 && exa?.producer === "someone-else" && exa?.recipe === "chef-special" && exa?.note === "must survive" && exa?.ktx2?.recipe === KTX2_RECIPE,
+        JSON.stringify(exa));
+    }
 
     r = await runKtx2(one, ktx2VariantPath(one), { KTX2_TOKTX: FAKE_TOKTX, FAKE_TOKTX_MODE: "fail" });
     check("all-fail: exit 5, NOTHING written (the empty variant main would have shipped)", r.code === 5 && !r.wrote, `exit ${r.code}: ${r.err.split("\n").pop()}`);
@@ -404,6 +462,33 @@ console.log("\n  the optimizer, against the fake encoder:");
     r = await runKtx2(two, ktx2VariantPath(two) + ".small", { KTX2_TOKTX: FAKE_TOKTX, FAKE_TOKTX_MODE: "ok", FAKE_TOKTX_ARGLOG: arglog });
     argv = existsSync(arglog) ? readFileSync(arglog, "utf8") : "";
     check("64² textures: no --resize (never upscaled)", r.code === 0 && !argv.includes("--resize"));
+    // the OTHER encoder: `ktx create` has no --resize. The variant's name
+    // carries the budget, so the source is scaled BEFORE the encoder sees it
+    // (it used to be encoded at source size, with a log line) — and where
+    // that cannot be done, the variant is refused, retryably, never written
+    // under a name its textures do not honor
+    {
+      const dimlog = join(tmp, "dims.log");
+      rmSync(arglog, { force: true });
+      r = await runKtx2(big, ktx2VariantPath(big) + ".ktxcreate", { KTX2_TOKTX: FAKE_KTX, FAKE_TOKTX_MODE: "ok", FAKE_TOKTX_ARGLOG: arglog, FAKE_TOKTX_DIMLOG: dimlog });
+      argv = existsSync(arglog) ? readFileSync(arglog, "utf8") : "";
+      const dims = existsSync(dimlog) ? readFileSync(dimlog, "utf8").trim().split(/\s+/).filter(Boolean) : [];
+      check("(fixture) the fake answered as `ktx create`, which has no --resize", argv.includes("create") && !argv.includes("--resize"), argv.trim().split("\n").map((l) => l.slice(0, 60)).join(" | "));
+      if (r.code === 0) {
+        check("an encoder that cannot resize: 2048² sources reach it already at the budget — 1024², once per texture",
+          r.wrote && dims.length === 2 && dims.every((d) => d === "1024x1024"), `exit ${r.code} handed=${JSON.stringify(dims)}`);
+      } else {
+        // no usable sharp on this box (one-libvips-test.ts owns that story): the honest outcome is a refusal
+        check("an encoder that cannot resize and NO converter: refused retryably (exit 5), nothing written under a name its textures would not honor",
+          r.code === 5 && !r.wrote && dims.every((d) => d === "1024x1024"), `exit ${r.code} handed=${JSON.stringify(dims)}: ${r.err.split("\n").pop()}`);
+        console.log("  - prescale: no usable sharp here — the refusal arm was exercised instead");
+      }
+      check("…and on NO path is a source over the budget handed to an encoder that cannot resize it", !dims.includes("2048x2048"), JSON.stringify(dims));
+      rmSync(dimlog, { force: true }); rmSync(arglog, { force: true });
+      r = await runKtx2(two, ktx2VariantPath(two) + ".ktxsmall", { KTX2_TOKTX: FAKE_KTX, FAKE_TOKTX_MODE: "ok", FAKE_TOKTX_DIMLOG: dimlog });
+      const small = existsSync(dimlog) ? readFileSync(dimlog, "utf8").trim().split(/\s+/).filter(Boolean) : [];
+      check("…a 64² source passes through untouched (never upscaled, no converter in the loop)", r.code === 0 && small.length === 2 && small.every((d) => d === "64x64"), `exit ${r.code} handed=${JSON.stringify(small)}`);
+    }
     // a size refusal names its recipe
     r = await runKtx2(two, ktx2VariantPath(two) + ".bloat", { KTX2_TOKTX: FAKE_TOKTX, FAKE_TOKTX_MODE: "bloat" });
     check("a size refusal (exit 2) carries the recipe stamp — a later recipe can tell it is stale", r.code === 2 && !r.wrote && r.err.includes(recipeStamp()), `exit ${r.code}: ${r.err.split("\n").pop()}`);
@@ -441,8 +526,9 @@ const NO_ENCODER = { KTX2_TOKTX: join(NOWHERE, "no-such-toktx"), PATH: NOWHERE, 
 const DOOR = "test-door";
 const mine = new Set<string>();   // hashes this run put in the store
 const shadowsOf = (hash: string) => [
-  join(STORE, `${hash}.glb`), join(STORE, `${hash}.glb.ktx2.glb`), join(STORE, `${hash}.glb.ktx2.glb.failed`),
-  join(STORE, `${hash}.glb.ktx2.glb.tmp`), join(STORE_MIN, `${hash}.glb`), join(STORE_MIN, `${hash}.glb.failed`), join(STORE_MIN, `${hash}.glb.tmp`)];
+  join(STORE, `${hash}.glb`), join(STORE_MIN, `${hash}.glb`), join(STORE_MIN, `${hash}.glb.failed`), join(STORE_MIN, `${hash}.glb.tmp`),
+  // every generation's variant, marker, deferral and .tmp — ktx2 and lod alike
+  ...(existsSync(STORE) ? readdirSync(STORE).filter((f) => f.startsWith(`${hash}.glb.`)).map((f) => join(STORE, f)) : [])];
 let live: ChildProcess | null = null;
 const cleanup = () => {
   try { live?.kill(); } catch { /* gone */ }
@@ -532,13 +618,15 @@ console.log("\n  the real sequencer — an upload becomes a served variant:");
       const landed = await until(() => existsSync(ktx2VariantPath(join(STORE, `${hash}.glb`))), 30_000);
       check("the queue built the KTX2 shadow beside the original", landed, ktx2VariantPath(join(STORE, `${hash}.glb`)));
       // the parent logs a beat after the child's rename lands the file — poll
-      const logged = await until(() => /\[ktx2\] .*→ .*\.ktx2\.glb/.test(S.log()), 5_000);
+      const logged = await until(() => S.log().includes(`→ ${hash}.glb${KTX2_SUFFIX}`), 5_000);
       check("…and it says so in the sequencer's log", logged, S.log().split("\n").filter((l) => l.includes("ktx2")).join(" | "));
       const flagged = await S.get(negotiate(`store/${hash}.glb`, S.key));
       check("flagged (current key) → the variant, really KTX2, immutable", flagged.status === 200 && isKtx2Glb(flagged.bytes) && flagged.cc.includes("immutable"),
         `cc=${flagged.cc} ktx2=${isKtx2Glb(flagged.bytes)}`);
-      const retired = await S.get(`store/${hash}.glb?ktx2=2`);
-      check("the just-retired key (=2) is an unflagged fetch: not the variant, immutable like the address", retired.status === 200 && !isKtx2Glb(retired.bytes) && retired.cc.includes("immutable"),
+      check("…carrying its identity: this source, this recipe", glbJson(flagged.bytes).asset?.extras?.ktx2?.of === sha256(glb) && glbJson(flagged.bytes).asset?.extras?.ktx2?.recipe === KTX2_RECIPE,
+        JSON.stringify(glbJson(flagged.bytes).asset?.extras));
+      const retired = await S.get(`store/${hash}.glb?ktx2=3`);
+      check("the just-retired key (=3) is an unflagged fetch: not the variant, immutable like the address", retired.status === 200 && !isKtx2Glb(retired.bytes) && retired.cc.includes("immutable"),
         `cc=${retired.cc} ktx2=${isKtx2Glb(retired.bytes)}`);
       const bare = await S.get(`store/${hash}.glb`);
       check("unflagged → not the variant, immutable", bare.status === 200 && !isKtx2Glb(bare.bytes) && bare.cc.includes("immutable"), bare.cc);
@@ -549,24 +637,89 @@ console.log("\n  the real sequencer — an upload becomes a served variant:");
         catalog.filter((h) => h.path === `store/${hash}.glb`).length === 1 && !catalog.some((h) => isKtx2Variant(h.path)),
         catalog.filter((h) => h.path.includes(hash)).map((h) => h.path).join(", "));
       // a marker beside it too, so the listing has every artifact class to skip
-      writeFileSync(join(STORE, `${hash}.glb.ktx2.glb.tmp`), "mid-write");
+      writeFileSync(`${ktx2VariantPath(join(STORE, `${hash}.glb`))}.tmp`, "mid-write");
       const listing: { path: string }[] = await fetch(`${S.base}/library-list?dir=store`).then((r) => r.json());
       const listedMine = listing.map((f) => f.path).filter((p) => p.includes(hash));
       check("/library-list?dir=store lists the upload and NO artifact (variant, .failed, .tmp) — what the prefetcher fetches",
         listedMine.length === 1 && listedMine[0] === `store/${hash}.glb`, listedMine.join(", "));
-      rmSync(join(STORE, `${hash}.glb.ktx2.glb.tmp`), { force: true });
+      rmSync(`${ktx2VariantPath(join(STORE, `${hash}.glb`))}.tmp`, { force: true });
 
       // exit 2's marker, through the pump: an untextured upload
       const none = await fixtureGlb("untextured", 0);
       const h2 = hashOf(none); mine.add(h2);
       await S.upload(none, "untextured");
-      const marked = await until(() => existsSync(join(STORE, `${h2}.glb.ktx2.glb.failed`)), 30_000);
-      check("nothing to convert → the pump writes the .failed marker (exit 2) and no variant", marked && !existsSync(join(STORE, `${h2}.glb.ktx2.glb`)));
+      const marked = await until(() => existsSync(`${ktx2VariantPath(join(STORE, `${h2}.glb`))}.failed`), 30_000);
+      check("nothing to convert → the pump writes the .failed marker (exit 2) and no variant", marked && !existsSync(ktx2VariantPath(join(STORE, `${h2}.glb`))));
       const listing2: { path: string }[] = await fetch(`${S.base}/library-list?dir=store`).then((r) => r.json());
       check("…and the marker is not a listing entry either", !listing2.some((f) => f.path.includes(h2) && f.path !== `store/${h2}.glb`));
     }
   }
   await S.stop();
+}
+
+// ---------------------------------------------- 4b. another generation's bakes are walked away from
+// The show box, 2026-09-29: 71 of 89 model variants baked BEFORE the texel
+// budget, still on disk under the legacy name, the store's pinned immutable
+// under their URL. "Exists" meant "done". Here a store holds exactly that —
+// an original, its legacy-named variant, and a second original whose only
+// answer is a legacy verdict — and a sequencer of THIS generation boots over
+// it. The legacy bytes must never answer under this generation's key (not
+// for the seconds before the re-bake lands, which is when they would be
+// pinned), the sweep must re-bake with no operator step, and the old
+// generation's files must be gone when the new outcome lands.
+console.log("\n  the generation walk-away — legacy bakes are never served, and are replaced:");
+{
+  const glb = await fixtureGlb("legacy-src", 2);
+  const oldBake = await fixtureGlb("legacy-bake", 2, true);              // stands in for the over-budget bake: different bytes, no identity
+  const hash = hashOf(glb); mine.add(hash);
+  const orig = join(STORE, `${hash}.glb`);
+  const legacy = `${orig}${KTX2_LEGACY_SUFFIX}`;
+  writeFileSync(orig, glb);
+  writeFileSync(legacy, oldBake);
+  writeFileSync(`${legacy}.tmp`, "a dead pass");
+  const bare = await fixtureGlb("legacy-untextured", 0);
+  const hb = hashOf(bare); mine.add(hb);
+  writeFileSync(join(STORE, `${hb}.glb`), bare);
+  writeFileSync(`${join(STORE, `${hb}.glb`)}${KTX2_LEGACY_SUFFIX}.failed`, "[optimize] ktx2: no convertible raster images (12ms) — keeping original");
+  const S = await startServer({ KTX2_TOKTX: FAKE_TOKTX, FAKE_TOKTX_MODE: "ok" });
+  check("child server came up over a store holding another generation's bakes", S.up, `:${S.PORT}`);
+  try {
+    if (S.up) {
+      check("it publishes THIS generation's key", S.key === KTX2_KEY, `published ${S.key}`);
+      const url = negotiate(`store/${hash}.glb`, S.key);
+      const early = await S.get(url);
+      const earlyIsNew = isKtx2Glb(early.bytes) && glbJson(early.bytes).asset?.extras?.ktx2?.recipe === KTX2_RECIPE;
+      check("at once, before any re-bake can have been waited for: the flagged answer is NOT the legacy bake", early.status === 200 && !same(early.bytes, oldBake), `file=${whichFile(early.bytes)}`);
+      check("…it is this generation's variant (immutable) or a PROVISIONAL fall-through (no-cache) — never a pinned stand-in",
+        earlyIsNew ? early.cc.includes("immutable") : early.cc === "no-cache", `new=${earlyIsNew} cc=${early.cc}`);
+      const landed = await until(() => existsSync(ktx2VariantPath(orig)), 45_000);
+      check("the boot sweep re-baked it — a legacy variant on disk does not count as done", landed,
+        S.log().split("\n").filter((l) => l.includes(hash.slice(0, 8)) || l.includes("boot sweep")).slice(-3).join(" | "));
+      if (landed) {
+        const now = await S.get(url);
+        check("flagged → this generation's variant: this source, this recipe, immutable",
+          isKtx2Glb(now.bytes) && glbJson(now.bytes).asset?.extras?.ktx2?.of === sha256(glb) && glbJson(now.bytes).asset?.extras?.ktx2?.recipe === KTX2_RECIPE && now.cc.includes("immutable"),
+          `cc=${now.cc} extras=${JSON.stringify(glbJson(now.bytes).asset?.extras)}`);
+        const pruned = await until(() => !existsSync(legacy) && !existsSync(`${legacy}.tmp`), 5_000);
+        check("…and the legacy variant and its dead .tmp are gone — one generation on disk", pruned,
+          readdirSync(STORE).filter((f) => f.startsWith(hash)).join(", "));
+      }
+      const old = await S.get(`store/${hash}.glb?ktx2=3`);
+      check("the retired key (=3) is an unflagged fetch — no variant of ANY generation answers it", old.status === 200 && !isKtx2Glb(old.bytes) && !same(old.bytes, oldBake), `file=${whichFile(old.bytes)} cc=${old.cc}`);
+      // the verdict side: a legacy marker is another generation's answer
+      const remeasured = await until(() => existsSync(`${ktx2VariantPath(join(STORE, `${hb}.glb`))}.failed`), 45_000);
+      check("a legacy VERDICT is a question again: re-measured under this generation's name", remeasured);
+      if (remeasured) {
+        const gone = await until(() => !existsSync(`${join(STORE, `${hb}.glb`)}${KTX2_LEGACY_SUFFIX}.failed`), 5_000);
+        check("…and the legacy marker is pruned on the refusal", gone, readdirSync(STORE).filter((f) => f.startsWith(hb)).join(", "));
+      }
+      const listing: { path: string }[] = await fetch(`${S.base}/library-list?dir=store`).then((r) => r.json());
+      const cat: { path: string }[] = await fetch(`${S.base}/library-models`).then((r) => r.json());
+      check("no generation's artifact is a listing or catalog entry",
+        listing.filter((f) => f.path.includes(hash) || f.path.includes(hb)).every((f) => f.path === `store/${hash}.glb` || f.path === `store/${hb}.glb`)
+        && !cat.some((h) => isKtx2Variant(h.path)), listing.filter((f) => f.path.includes(hash)).map((f) => f.path).join(", "));
+    }
+  } finally { await S.stop(); }
 }
 
 // ---------------------------------------------- 5. boot queuing + exit 5 (fake encoder, fail-second)
@@ -585,8 +738,8 @@ console.log("\n  the boot sweep — a partial conversion is refused, retryably:"
     const refused = await until(() => /REFUSED — partial conversion/.test(S.log()), 30_000);
     check("the --ktx2 pass converted 1 of 2 and was REFUSED (exit 5)", refused && /1\/2/.test(S.log()),
       S.log().split("\n").filter((l) => l.includes("ktx2")).join(" | "));
-    check("…no variant written", !existsSync(join(STORE, `${hash}.glb.ktx2.glb`)));
-    check("…and NO .failed marker — environmental, retried next boot", !existsSync(join(STORE, `${hash}.glb.ktx2.glb.failed`)));
+    check("…no variant written", !existsSync(ktx2VariantPath(join(STORE, `${hash}.glb`))));
+    check("…and NO .failed marker — environmental, retried next boot", !existsSync(`${ktx2VariantPath(join(STORE, `${hash}.glb`))}.failed`));
     check("…and no ktx2Skip: the encoder is there (no 'no encoder' line)", !/no encoder/.test(S.log()));
     const flagged = await S.get(negotiate(`store/${hash}.glb`, S.key));
     check("meanwhile a flagged fetch falls through, provisional (no-cache) — not pinned", flagged.status === 200 && !isKtx2Glb(flagged.bytes) && flagged.cc === "no-cache", flagged.cc);
@@ -635,7 +788,7 @@ console.log("\n  no encoder on the box — exit 3, once, and no marker:");
   if (S.up) {
     const said = await until(() => /no encoder/.test(S.log()), 40_000);
     check("the sweep's --ktx2 item exited 3: 'no encoder … variants skipped this boot'", said);
-    check("…no variant, no marker (environmental)", !existsSync(join(STORE, `${hash}.glb.ktx2.glb`)) && !existsSync(join(STORE, `${hash}.glb.ktx2.glb.failed`)));
+    check("…no variant, no marker (environmental)", !existsSync(ktx2VariantPath(join(STORE, `${hash}.glb`))) && !existsSync(`${ktx2VariantPath(join(STORE, `${hash}.glb`))}.failed`));
     const glb2 = await fixtureGlb("noenc-upload", 1);
     const h2 = hashOf(glb2); mine.add(h2);
     await S.upload(glb2, "noenc-upload");
@@ -643,7 +796,7 @@ console.log("\n  no encoder on the box — exit 3, once, and no marker:");
     await sleep(1500);
     const noEncoderLines = S.log().split("\n").filter((l) => l.includes("no encoder")).length;
     check("a later upload does not re-spawn an exit-3 pass — ktx2Skip held (the line appears exactly once)", noEncoderLines === 1, `${noEncoderLines} line(s)`);
-    check("…and got no marker either", !existsSync(join(STORE, `${h2}.glb.ktx2.glb.failed`)));
+    check("…and got no marker either", !existsSync(`${ktx2VariantPath(join(STORE, `${h2}.glb`))}.failed`));
   }
   await S.stop();
 }
@@ -702,12 +855,18 @@ console.log("\n  the canary — a pull lands under a running sequencer:");
   check("child server came up — with the PRISTINE key in memory", S.up && S.key === KTX2_KEY, `${S.up} key=${S.key}`);
   try {
     if (S.up) {
-      const NEXT = "99";   // the pulled generation, not yet running anywhere
-      const bumped = pristine.toString("utf8").replace(`export const KTX2_KEY = '${KTX2_KEY}';`, `export const KTX2_KEY = '${NEXT}';`);
-      check("(fixture) the pull rewrites the key on disk", bumped !== pristine.toString("utf8"));
+      // the key derives from (generation, recipe): the pull changes a
+      // PARAMETER, as a real one would, and is proven to have landed — a
+      // literal-replace of a derived constant is a mutation that changes nothing
+      const NEXT = ktx2KeyFor({ gen: 99 });   // the pulled generation, not yet running anywhere
+      const bumped = pristine.toString("utf8").replace(`export const KTX2_GEN = ${KTX2_GEN};`, "export const KTX2_GEN = 99;");
+      check("(fixture) the pull rewrites the generation on disk", bumped !== pristine.toString("utf8") && NEXT !== KTX2_KEY, NEXT);
       writeFileSync(SHARED, bumped);
+      const fresh = Bun.spawn([process.execPath, "-e", "import { KTX2_KEY } from './shared/ktx2.js'; console.log(KTX2_KEY)"], { cwd: ROOT, stdout: "pipe", stderr: "pipe" });
+      const freshKey = (await new Response(fresh.stdout).text()).trim(); await fresh.exited;
+      check("a FRESH process reading the pulled file derives the NEXT key — the pull is real", freshKey === NEXT, `fresh=${freshKey}`);
       const served = await fetch(`${S.base}/shared/ktx2.js`, { cache: "no-store" }).then((r) => r.text());
-      check("the running sequencer now SERVES the pulled file — key 99 — to any client that reads it", served.includes(`KTX2_KEY = '${NEXT}'`));
+      check("the running sequencer now SERVES the pulled file — generation 99 — to any client that reads it", served.includes("KTX2_GEN = 99"));
       const version = keyFromVersion(await fetch(`${S.base}/version`).then((r) => r.json()));
       check("…but /version still publishes the key the process RUNS with", version === KTX2_KEY, `published ${version}`);
       // the new client: keyed from /version
@@ -715,7 +874,7 @@ console.log("\n  the canary — a pull lands under a running sequencer:");
       check("a client keyed from /version asks with the running key → the variant, immutable: correct", good.status === 200 && same(good.bytes, variant) && good.cc.includes("immutable"), `file=${whichFile(good.bytes)} cc=${good.cc}`);
       // the old client: keyed off the served file — the incident
       const bad = await S.get(negotiate(`store/${hash}.glb`, NEXT));
-      check("a client keyed off the served file asks ?ktx2=99 → the server does not know it: unflagged, NOT the variant, immutable — this is the poison, and it would have been pinned under the NEXT generation before it ever ran",
+      check("a client keyed off the served file asks with the NEXT key → the server does not know it: unflagged, NOT the variant, immutable — this is the poison, and it would have been pinned under the NEXT generation before it ever ran",
         bad.status === 200 && !same(bad.bytes, variant) && bad.cc.includes("immutable"), `file=${whichFile(bad.bytes)} cc=${bad.cc}`);
       check("the two answers differ — the split brain is real, and only the on-disk path walks into it", good.etag !== bad.etag);
     }

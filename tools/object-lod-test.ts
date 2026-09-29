@@ -369,11 +369,11 @@ let live: ChildProcess | null = null;
 const cleanup = () => {
   try { live?.kill(); } catch { /* gone */ }
   for (const h of mine) {
-    for (const p of [join(STORE, `${h}.glb`), join(STORE, `${h}.glb.ktx2.glb`), join(STORE, `${h}.glb.ktx2.glb.failed`),
+    for (const p of [join(STORE, `${h}.glb`), ktx2VariantPath(join(STORE, `${h}.glb`)), `${ktx2VariantPath(join(STORE, `${h}.glb`))}.failed`,
       join(STORE_MIN, `${h}.glb`), join(STORE_MIN, `${h}.glb.failed`), lodVariantPath(join(STORE, `${h}.glb`)), `${lodVariantPath(join(STORE, `${h}.glb`))}.failed`])
       try { rmSync(p, { force: true }); } catch { /* best effort */ }
   }
-  for (const h of mine) for (const f of (existsSync(STORE) ? readdirSync(STORE) : [])) if (f.startsWith(`${h}.glb.lod.`)) try { rmSync(join(STORE, f), { force: true }); } catch { /* best effort */ }
+  for (const h of mine) for (const f of (existsSync(STORE) ? readdirSync(STORE) : [])) if (f.startsWith(`${h}.glb.lod.`) || f.startsWith(`${h}.glb.ktx2.`)) try { rmSync(join(STORE, f), { force: true }); } catch { /* best effort */ }
   for (const rel of mineOpt) { try { rmSync(join(OPT, rel), { force: true }); } catch { /* best effort */ } }
   for (const rel of mineOpt) { let d = dirname(join(OPT, rel)); while (d !== OPT) { try { rmdirSync(d); } catch { break; } d = dirname(d); } }
   try {
@@ -558,11 +558,11 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
   const libGlb = await gridGlb("library", 160, true);
   const REL = "eidoverse/assets/models/lod_probe_fixture.glb";
   writeFileSync(join(LIB, REL), libGlb);
-  mineOpt.push(`${REL}.ktx2.glb`, `${REL}.ktx2.glb.failed`,
+  mineOpt.push(ktx2VariantPath(REL), `${ktx2VariantPath(REL)}.failed`,
     ...[LOD_RECIPE, "x"].map((r0) => `${REL}.lod.${r0}.glb`), `${REL}.lod.${LOD_RECIPE}.glb.failed`);
   const REL2 = "eidoverse/assets/models/lod_probe_light.glb";   // textured, under the floor: a standing verdict, bound to a MUTABLE source
   writeFileSync(join(LIB, REL2), await gridGlb("library-light", 8, true));
-  mineOpt.push(`${REL2}.ktx2.glb`, `${REL2}.ktx2.glb.failed`, `${REL2}.lod.${LOD_RECIPE}.glb`, `${REL2}.lod.${LOD_RECIPE}.glb.failed`, `${REL2}.lod.${LOD_RECIPE}.glb.deferred`);
+  mineOpt.push(ktx2VariantPath(REL2), `${ktx2VariantPath(REL2)}.failed`, `${REL2}.lod.${LOD_RECIPE}.glb`, `${REL2}.lod.${LOD_RECIPE}.glb.failed`, `${REL2}.lod.${LOD_RECIPE}.glb.deferred`);
   let S = await startServer({ KTX2_TOKTX: FAKE_TOKTX }, LIB);
   try {
   check("child server came up OWNED over the fixture library", S.up, `:${S.PORT}`);
@@ -573,12 +573,12 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
     const landed = await until(() => existsSync(lodPath), 60_000);
     check("the LIBRARY sweep queued and built the LOD (the shared-seen bug is dead)", landed,
       S.log().split("\n").filter((l) => l.includes("lod") || l.includes("ktx2")).slice(-4).join(" | "));
-    check("…and the ktx2 arm still built its own variant beside it", await until(() => existsSync(join(OPT, `${REL}.ktx2.glb`)), 60_000));
+    check("…and the ktx2 arm still built its own variant beside it", await until(() => existsSync(join(OPT, ktx2VariantPath(REL))), 60_000));
     if (landed) {
       const res = await S.get(withLod(negotiate(REL, S.key), S.lod));
       check("the library LOD serves under the recipe URL", isLodGlb(res.bytes) && res.lod === "variant", res.lod);
       const lMarker2 = join(OPT, `${REL2}.lod.${LOD_RECIPE}.glb.failed`);
-      const lightDone = await until(() => existsSync(lMarker2) && existsSync(join(OPT, `${REL2}.ktx2.glb`)), 60_000);
+      const lightDone = await until(() => existsSync(lMarker2) && existsSync(join(OPT, ktx2VariantPath(REL2))), 60_000);
       check("the library sweep wrote the light prop's typed verdict beside its ktx2 variant", lightDone);
       if (lightDone) {
         const f1 = await S.get(withLod(negotiate(REL2, S.key), S.lod));

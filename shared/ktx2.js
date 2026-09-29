@@ -27,8 +27,42 @@
 // Generations: 1 — the §20 launch key (2026-08-10), retired 2026-08-24 because
 // provisional fall-throughs had been served immutable under it. 2 — the PR #142
 // rollout key, retired immediately when an already-poisoned nginx cache entry was
-// observed during rollout. 3 — the clean post-rollout generation.
-export const KTX2_KEY = '3';
+// observed during rollout. 3 — the clean post-rollout generation, retired when
+// the recipe joined the key: model variants baked BEFORE the texel budget
+// (#146) still sat under it — on the show box, 2026-09-29, 71 of 89, textures
+// up to 8192², the store's pinned immutable — and a re-bake under the same URL
+// reaches no cache that already holds the old bytes. 4 — below.
+//
+// THE KEY DERIVES FROM THE RECIPE. A variant's bytes are a function of its
+// source and the recipe that baked it; the key is the only part of a flagged
+// URL a client can vary; so a recipe change that did not rotate the key would
+// serve a new generation's bytes under an address caches hold the old
+// generation's for — or, behind nginx, never serve them at all. KTX2_GEN is
+// the part no parameter names (a poisoned cache to walk away from, a changed
+// encoder); the recipe is the part that is measured. Both are in the key, the
+// recipe is in the model variant's FILENAME too (store-variants.ts
+// ktx2VariantPath), and the running sequencer publishes the key it booted
+// with. Bodies and loose images ride the same key (one key, one negotiation):
+// their bytes do not depend on this recipe, and a rotation refetches them once.
+export const KTX2_GEN = 4;
+/** The house texel budget: the longest side a model texture may have in this
+ *  world, in either shadow (server/store-variants.ts tells the story). */
+export const KTX2_TEXEL_CAP = 1024;
+/** The model recipe, from every parameter a variant's bytes depend on. */
+export function ktx2RecipeFor({ texel = KTX2_TEXEL_CAP } = {}) {
+  if (!Number.isInteger(texel) || texel < 4 || texel % 4) throw new Error(`ktx2 texel cap must be a positive multiple of 4: ${texel}`);
+  return `texel${texel}`;
+}
+export const KTX2_RECIPE = ktx2RecipeFor();
+/** The negotiation key: generation + recipe, publishable as-is (the shape
+ *  keyFromVersion accepts — a key a client would refuse is not a key). */
+export function ktx2KeyFor({ gen = KTX2_GEN, recipe = KTX2_RECIPE } = {}) {
+  if (!Number.isInteger(gen) || gen < 1) throw new Error(`ktx2 generation must be a positive integer: ${gen}`);
+  const key = `${gen}-${recipe}`;
+  if (!/^[A-Za-z0-9._-]{1,32}$/.test(key)) throw new Error(`ktx2 key is not publishable: ${key}`);
+  return key;
+}
+export const KTX2_KEY = ktx2KeyFor();   // "4-texel1024"
 export const KTX2_QUERY = `ktx2=${KTX2_KEY}`;
 
 /** Does this request negotiate KTX2 — the CURRENT key only. A retired key is

@@ -72,7 +72,7 @@ const { emptyState } = await import('../shared/fold.js');
 const { bus } = await import('../client/lib/base.js');
 const { makeModelQuality, askFor, tierOf } = await import('../client/lib/lod_policy.js');
 const { keyFromVersion, lodFromVersion, negotiate, withLod } = await import('../shared/ktx2.js');
-const { LOD_RECIPE } = await import('../server/store-variants.ts');
+const { LOD_RECIPE, KTX2_RECIPE } = await import('../server/store-variants.ts');
 const rig: any = await import('./rig-load.mjs');
 
 let failures = 0;
@@ -295,7 +295,7 @@ const LIB = mkdtempSync(join(tmpdir(), 'ew-lodc-lib-'));
 mkdirSync(join(LIB, 'eidoverse', 'assets', 'models'), { recursive: true });
 const HEAVY = 'eidoverse/assets/models/lod_client_heavy.glb';        // 161² verts → reduced
 const AUTHORED = 'eidoverse/assets/models/lod_client_authored.glb';  // 81 verts, with an AUTHORED `recipe` extra equal to the running one
-const mine = [HEAVY, AUTHORED].flatMap((r) => [`${r}.lod.${LOD_RECIPE}.glb`, `${r}.lod.${LOD_RECIPE}.glb.failed`, `${r}.ktx2.glb`, `${r}.ktx2.glb.failed`]);
+const mine = [HEAVY, AUTHORED].flatMap((r) => [`${r}.lod.${LOD_RECIPE}.glb`, `${r}.lod.${LOD_RECIPE}.glb.failed`, `${r}.ktx2.glb`, `${r}.ktx2.${KTX2_RECIPE}.glb`, `${r}.ktx2.${KTX2_RECIPE}.glb.failed`, `${r}.ktx2.glb.failed`]);
 let child: ChildProcess | null = null;
 const cleanup = () => {
   try { child?.kill(); } catch { /* gone */ }

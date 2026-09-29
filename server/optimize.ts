@@ -28,7 +28,7 @@ import { ALL_EXTENSIONS, KHRTextureBasisu } from "@gltf-transform/extensions";
 import { dedup, prune, resample, textureCompress, draco, listTextureSlots, weld, simplify } from "@gltf-transform/functions";
 import { MeshoptSimplifier } from "meshoptimizer";
 import draco3d from "draco3dgltf";
-import { capTexels, recipeStamp, LOD_RECIPE, LOD_MIN_VERTS, LOD_RATIO, LOD_ERROR } from "./store-variants.ts";
+import { capTexels, recipeStamp, KTX2_RECIPE, LOD_RECIPE, LOD_MIN_VERTS, LOD_RATIO, LOD_ERROR } from "./store-variants.ts";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, basename, dirname } from "node:path";
@@ -226,7 +226,7 @@ function ktx2EncodeArgs(encoder: string, isToktx: boolean, srgb: boolean, uastc:
  *  KTX-Software CLIs — toktx (v4.4.2, the primary target) and the newer
  *  unified `ktx create` — detected by basename. A texture that will not
  *  convert is skipped and NAMED in the tally; the caller decides whether a
- *  partial result is a file at all (the GLB arm refuses one — a .ktx2.glb
+ *  partial result is a file at all (the GLB arm refuses one — a ktx2 variant
  *  with png inside is #122's class of lie, served immutable). Every encoder
  *  output is checked for the KTX2 container magic before it is accepted. */
 export type Ktx2Tally = { eligible: number; converted: number; failed: string[] };
@@ -257,6 +257,12 @@ async function ktx2CompressTextures(doc: Document, encoder: string): Promise<Ktx
       const size = tex.getSize(); // [w, h] | null (png/jpeg/webp all readable)
       const aligned = !!size && size[0] % 4 === 0 && size[1] % 4 === 0;
       const mime = tex.getMimeType();
+      // the house texel budget: the shadow's 1024², never more (store-variants.ts).
+      // toktx resizes on its own (--resize); `ktx create` cannot, so there the
+      // source is scaled BEFORE the encoder sees it — the variant's name
+      // carries the recipe, and a name must not lie on any path that writes it
+      const resize = capTexels(size as [number, number] | null);
+      const prescale = !!resize && !isToktx;
       // Pass the source straight through wherever the encoder reads it
       // natively — PNG always, JPEG for toktx. sharp is only the CONVERTER
       // for the rest (webp, unaligned dims), and it must be treated as
@@ -265,7 +271,7 @@ async function ktx2CompressTextures(doc: Document, encoder: string): Promise<Ktx
       // each other's GLib state (observed on win32: "colourspace: parameter
       // space not set"). A sharp failure skips the TEXTURE, never the file.
       let inPath: string;
-      if (aligned && (mime === "image/png" || (mime === "image/jpeg" && isToktx))) {
+      if (aligned && !prescale && (mime === "image/png" || (mime === "image/jpeg" && isToktx))) {
         inPath = join(tmp, mime === "image/png" ? `${i}.png` : `${i}.jpg`);
         await Bun.write(inPath, image);
       } else if (sharp) {
@@ -273,7 +279,8 @@ async function ktx2CompressTextures(doc: Document, encoder: string): Promise<Ktx
           let s = sharp(Buffer.from(image));
           const meta = await s.metadata();
           const w = meta.width ?? 0, h = meta.height ?? 0;
-          if (w && h && (w % 4 || h % 4))
+          if (prescale) s = s.resize(resize![0], resize![1], { fit: "fill" });   // capTexels 4-aligns
+          else if (w && h && (w % 4 || h % 4))
             s = s.resize(Math.ceil(w / 4) * 4, Math.ceil(h / 4) * 4, { fit: "fill" });
           inPath = join(tmp, `${i}.png`);
           await Bun.write(inPath, await s.png().toBuffer());
@@ -282,13 +289,10 @@ async function ktx2CompressTextures(doc: Document, encoder: string): Promise<Ktx
           failed.push(label); continue;
         }
       } else {
-        console.error(`[optimize] ktx2: skip ${label} (${mime}${aligned ? "" : ", not 4-aligned"}) — sharp unavailable`);
+        console.error(`[optimize] ktx2: skip ${label} (${mime}${aligned ? "" : ", not 4-aligned"}${prescale ? `, ${size![0]}x${size![1]} is over the texel budget and this encoder cannot resize` : ""}) — sharp unavailable`);
         failed.push(label); continue;
       }
       const outPath = join(tmp, `${i}.ktx2`);
-      // the house texel budget: the shadow's 1024², never more (store-variants.ts)
-      const resize = capTexels(size as [number, number] | null);
-      if (resize && !isToktx) console.error(`[optimize] ktx2: ${label} is ${size![0]}x${size![1]} — ktx create has no --resize here, encoding at source size`);
       const args = ktx2EncodeArgs(encoder, isToktx, srgb, uastc, inPath, outPath, isToktx ? resize : null);
       const proc = Bun.spawn(args, { stdout: "ignore", stderr: "pipe" });
       const code = await proc.exited;
@@ -321,7 +325,7 @@ async function ktx2CompressTextures(doc: Document, encoder: string): Promise<Ktx
 /** The --ktx2 diet: dedup + prune + resample (the store recipe minus webp —
  *  KTX2 encodes from the best source) + per-texture KTX2 + draco. ALL or
  *  nothing: `out` is null unless every eligible texture converted. A variant
- *  with some — or no — KTX2 in it is a .ktx2.glb whose name lies about its
+ *  with some — or no — KTX2 in it is a variant whose name lies about its
  *  contents, and it would be served immutable to every capable client (the
  *  #122 class). The tally says which it was: nothing eligible is exit 2's
  *  business, anything unconverted is exit 5's (see the CLI). */
@@ -331,6 +335,12 @@ export async function optimizeGlbKtx2(bytes: Uint8Array, encoder: string): Promi
   await doc.transform(dedup(), prune({ keepAttributes: true }), resample());   // keepAttributes: see optimizeGlb
   const tally = await ktx2CompressTextures(doc, encoder);
   if (tally.eligible === 0 || tally.converted < tally.eligible) return { out: null, ...tally };
+  // identity: the variant SAYS what it is a variant of, and how it was made —
+  // under its own key, the source's extras surviving beside it (the lod
+  // variant's stamp, #156; `ktx2` so neither reads as the other)
+  const asset = doc.getRoot().getAsset();
+  asset.extras = { ...(asset.extras ?? {}), ktx2: { of: new Bun.CryptoHasher("sha256").update(bytes).digest("hex"),
+    recipe: KTX2_RECIPE, tools: { encoder: basename(encoder) } } };
   await doc.transform(draco());
   return { out: await io.writeBinary(doc), ...tally };
 }

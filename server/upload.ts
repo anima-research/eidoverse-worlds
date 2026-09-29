@@ -12,7 +12,7 @@ import { JOIN_TOKEN, UPLOAD_CAP, IMAGE_CAP, ROOT, OPT_DIR, STORE_MIN, LIBRARY_DI
 // merge 2026-09-01 (anima a468cba, geometry LOD): upstream's LOD names ride
 // in; the door stays on R1's aid1JoinIdentity (the HN_*/verifyToken form is
 // what it replaced — the merged body references neither)
-import { isStoreOriginal, ktx2VariantPath, lodVariantPath, storeShadowsMissing, verdictStands, KTX2_RECIPE, LOD_RECIPE } from "./store-variants.ts";
+import { isStoreOriginal, isServingArtifact, ktx2VariantPath, lodVariantPath, storeShadowsMissing, verdictStands, KTX2_RECIPE, LOD_RECIPE } from "./store-variants.ts";
 import { agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { worlds } from "./world.ts";
 import { atomicWrite } from "./fsutil.ts";
@@ -35,16 +35,19 @@ const optQueue: OptItem[] = [];
 let optRunning = false;
 let ktx2Skip = false; // set when a --ktx2 run exits 3 (no encoder) — stop queuing variants this boot
 let lodEncoderWarned = false; // the --lod arm's own once-per-boot note; it never sets ktx2Skip
-/** An older recipe generation's files beside a lod outcome — variant, marker,
- *  deferral — are dead: their URL is never asked for again (the recipe is in
- *  both the URL and the name). Pruned on a bake AND on a refusal, so a recipe
- *  bump (a new floor, a new reducer) leaves one generation on disk. */
-function pruneOldLodGenerations(src: string, dest: string) {
+/** An older recipe generation's files beside a model's outcome — variant,
+ *  marker, deferral, a dead pass's .tmp — are dead: their URL is never asked
+ *  for again (the generation is in both the URL and the name). Pruned on a
+ *  bake AND on a refusal, so a recipe bump (a new floor, a new reducer, a
+ *  new texel budget) leaves one generation on disk. `arm` is the name's own
+ *  infix: `lod`, or `ktx2` — whose legacy `<base>.ktx2.glb` is a generation
+ *  like any other. */
+function pruneOldGenerations(src: string, dest: string, arm: "lod" | "ktx2") {
   const base = basename(src), dir = dirname(dest);
-  const keep = new Set([dest, `${dest}.failed`, `${dest}.deferred`]);
+  const keep = new Set([dest, `${dest}.failed`, `${dest}.deferred`, `${dest}.tmp`]);
   for (const f of readdirSync(dir)) {
     const p = join(dir, f);
-    if (f.startsWith(`${base}.lod.`) && /\.glb(\.failed|\.deferred)?$/.test(f) && !keep.has(p))
+    if (f.startsWith(`${base}.${arm}.`) && /\.glb(\.failed|\.deferred|\.tmp)?$/.test(f) && !keep.has(p))
       try { rmSync(p); } catch { /* best effort */ }
   }
 }
@@ -168,7 +171,8 @@ async function pumpOptimize() {
         undefer(dest);
         // a verdict that was re-measured and answered differently is history
         if (existsSync(failed)) try { rmSync(failed); } catch { /* best effort */ }
-        if (mode === "--lod") pruneOldLodGenerations(src, dest);
+        if (mode === "--lod") pruneOldGenerations(src, dest, "lod");
+        else if (mode === "--ktx2") pruneOldGenerations(src, dest, "ktx2");
         const ratio = (Bun.file(src).size / Math.max(1, Bun.file(dest).size)).toFixed(1);
         console.log(mode ? `[ktx2] ${base} → ${basename(dest)} (${ratio}x)` : `[store] optimized ${base} (${ratio}x)`);
       } else if (code === 2) {
@@ -178,7 +182,8 @@ async function pumpOptimize() {
         // serve time too (store-variants.ts lodVerdictFinal: a standing
         // typed verdict makes the original this tier's final answer).
         writeFileSync(failed, err.slice(0, 2000) || "not-smaller"); undefer(dest);
-        if (mode === "--lod") pruneOldLodGenerations(src, dest);
+        if (mode === "--lod") pruneOldGenerations(src, dest, "lod");
+        else if (mode === "--ktx2") pruneOldGenerations(src, dest, "ktx2");
         console.log(mode ? `[ktx2] ${base} — no variant (${err.split("\n").pop()?.replace(/^\[optimize\]\s*/, "") || "not smaller"})`
           : `[store] ${base} already lean — serving original`);
       } else if (code === 4) {
@@ -245,7 +250,7 @@ export function sweepStore() {
 }
 setTimeout(sweepStore, 5000).unref?.();   // a harness that imports this must not be held open by the timer
 // Library KTX2 sweep (§20a, VRMs §20c, loose images §20d): every library
-// model gets a GPU-native-texture variant at OPT_DIR/<rel>.ktx2.glb, every
+// model gets a GPU-native-texture variant at OPT_DIR/<rel>.ktx2.<recipe>.glb, every
 // avatar a surgical-rewrite variant at OPT_DIR/<rel>.ktx2.vrm, and every
 // curated loose texture a flip-baked variant at OPT_DIR/<rel>.ktx2 — all
 // served only on ?ktx2=<key> (routes.ts, shared/ktx2.js). PATH-PRESERVING, unlike the store arm — basename()
@@ -270,10 +275,9 @@ export function sweepLibrary() {
       const ext = exts.find((x) => e.name.toLowerCase().endsWith(x));
       if (!ext) continue; // non-matching files (.json, _fit.json, audio, …) never queue
       // never re-encode an encode: variants live beside overlay originals
-      // (OPT_DIR/<rel>.ktx2.vrm ends in .vrm too) and must not queue themselves
-      // (image variants end .ktx2 — outside every swept ext — but keep the
-      // guard uniform)
-      if (e.name.endsWith(`.ktx2${ext}`)) continue;
+      // (OPT_DIR/<rel>.ktx2.vrm ends in .vrm too) and must not queue
+      // themselves — one predicate for every artifact class and generation
+      if (isServingArtifact(e.name)) continue;
       const rel = relative(base, p);
       // keyed by (mode, rel): the ktx2 walk and the lod walk cover the SAME
       // rels on purpose — one shared set silently killed the entire library
@@ -284,7 +288,8 @@ export function sweepLibrary() {
       // GLB/VRM variants are themselves GLB/VRM containers (<rel>.ktx2.glb);
       // a loose image's variant IS the ktx2 (<rel>.ktx2 — routes.ts serves it
       // as image/ktx2)
-      const dest = join(OPT_DIR, mode === "--ktx2-img" ? `${rel}.ktx2` : mode === "--lod" ? lodVariantPath(rel) : `${rel}.ktx2${ext}`);
+      const dest = join(OPT_DIR, mode === "--ktx2-img" ? `${rel}.ktx2` : mode === "--lod" ? lodVariantPath(rel)
+        : mode === "--ktx2" ? ktx2VariantPath(rel) : `${rel}.ktx2${ext}`);
       // a standing verdict skips — if it is NEWER than the source it judges
       // (mutable library files: an updated model is re-measured, exactly as
       // an updated model's variant is rebuilt below)
