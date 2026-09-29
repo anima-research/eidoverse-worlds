@@ -1,8 +1,20 @@
 # Proposal: finishing the component loop
 
-*Design note, not code. Hesperus. Revision 2, 2026-09-29, after the design review on #208. Read against anima/main @
+*Design note, not code. Hesperus. Revision 3, 2026-09-29, after the design review on #208. Read against anima/main @
 7f7a734. Almost everything here is already upstream doctrine; the proposal is how to finish what DESIGN.md lists as
 "Still ahead" without adding a second mechanism.*
+
+**What changed in revision 3.** Rev 2 answered the review in outline; rev 3 closes the places where the outline
+left a gap:
+- **The invoker is checked on their own account.** The grant can let someone trigger an action; it can't consent for
+  them or reach their body or things. (*Whose rights a result carries*)
+- **The per-world worker is a separate OS process**, committed, not an open question. (*The safety ladder*)
+- **Records have a named canonical form, and receipts are signed** by the publishing server, so a world can check
+  them offline. **Retention is a mark-and-sweep** over what each host's worlds name. (*The component record*)
+- **Scene sampling is its own capability**, and every canvas has declared resource bounds. (*Appearance code*)
+- **The governor's reports are aggregated** before an author sees them. (*Appearance code*)
+- **The Chromium figure is checked against the source.** Rev 2 said one crash; the source says two. (*Appearance code*)
+- **The counter button gains a `tag` action** that lands on another participant, so the specimen tests consent.
 
 **What changed in revision 2.** The review's main correction was right: generalized components are a *delegation*
 system, and rev 1 treated "who may do what" as settled by the attacher's standing. Rev 2 adds:
@@ -38,8 +50,10 @@ appearance: sandboxed, governed, look-only code on viewers' clients.
 ## Making new components: the safety ladder
 
 A new component type starts where only its author can be hurt by it, and climbs one rung at a time. Nothing that acts
-reaches another person's client until someone with standing in that world puts it there, and nothing one world runs
-can hurt another world.
+runs for anyone but its author until someone with standing in that world grants it, and nothing one world runs can
+hurt another world. Look-only code is the one kind that reaches other people's clients without a grant: the
+appearance of someone's avatar or item, and only after it has passed its preflight, with every viewer free to show
+its fallback instead (*Appearance code*).
 
 | Rung | Who runs it | What protects everyone else | To climb |
 |---|---|---|---|
@@ -51,11 +65,24 @@ can hurt another world.
 **Per-world guardrails are the baseline, not an option.** We can't yet know whether a typical host fronts one world
 or hundreds, so we plan for many. Today behaviors are already sandboxed and budgeted one by one (server/behaviors.ts:
 QuickJS, interrupt deadline, memory cap, emit budget, 12 per world), but they share the sequencer's process. The World
-rung needs one more wall: **a world's component code runs in a worker per world** with hard CPU, memory, wall-time,
-emit-count and restart budgets, and a worker that blows its budget is stopped and restarted without touching the
-sequencer or any other world. With that wall in place, a world owner doesn't need anyone's approval to run what they
-like in their own world, including letting their builders be gremlins there. The cost lands only on the world that
-chose it.
+rung needs one more wall: **a world's component code runs in its own OS process, one per world**, not a thread in
+the sequencer and not a slot in a shared pool. A thread's out-of-memory or a native crash in the interpreter takes
+its whole process down, so only a process boundary makes "a runaway only stops its own world" true. Concretely:
+- **Its own budgets**, enforced from outside the worker by the OS and the supervisor, not by code inside it: CPU
+  time (per activation, through the existing interrupt deadline, and per minute), resident memory (a hard OS limit),
+  wall time per activation, output (emits per activation and per minute, and bytes per emit, as today), and
+  restarts (a few, with backoff; past that the world's components fall to fallback and the component panel says so).
+- **Messages only.** The worker gets activations in (the `use`, its actor, the instance's `comp` and `bstate`) and
+  sends proposed verbs out. The sequencer validates each proposal exactly as it would a client's verb (shape,
+  rights, the grant, the authority rule below) and never waits on a worker past a deadline; a late answer is dropped
+  and logged as a refusal.
+- **Started lazily, stopped when idle.** A world with no component code costs nothing; an idle worker exits and its
+  working memory is rebuilt from `bstate` on the next activation (*State and migrations*).
+
+A process per active world costs memory; that's the price of the wall, and a host that can't pay it runs fewer
+worlds with components, not a weaker wall. With that wall in place, a world owner doesn't need anyone's approval to
+run what they like in their own world, including letting their builders be gremlins there. The cost lands only on
+the world that chose it.
 
 **Revocation is rung one.** An owner's revoke, and an operator's kill list, reach copies already attached: each
 instance falls to its declared fallback on the next fold, and nothing in the history is rewritten (the log still says
@@ -125,16 +152,45 @@ immutable, content-addressed file with a canonical serialization, in #64's words
 can't rewrite logged meaning. A component names an immutable record, so what an old log entry meant never drifts. No
 mutable alias ever travels in the world log.
 
-**A hash proves bytes, not authorship.** So a record becomes publishable only with a **publication receipt** stamped
-by the sequencer, not declared by the record: the record hash, the authenticated publisher, the publication sequence
-and time, the parent hashes (each checked to exist; a claimed parent is recorded as claimed, and credit shows who
-published each link), and later each rung grant with who gave it. Declared capabilities and the fallback's hash are
-part of the record, so the receipt covers them.
+**One canonical form.** A record is a JSON object serialized by the JSON Canonicalization Scheme (RFC 8785): UTF-8,
+object keys sorted by their UTF-16 code units, no insignificant whitespace, strings in JSON's shortest escaping, and
+numbers in ECMAScript's shortest round-trip form (so `1.0` is written `1`, and `-0`, `NaN` and infinities are
+refused). Duplicate keys are refused. The record's hash is `eido:sha256` over exactly those bytes, and publishing
+refuses any stored record whose bytes aren't already canonical, so there is never a second spelling of the same
+record. Code, the fallback and any shader source are separate blobs named by hash inside it, so the record's hash
+covers them too.
 
-**Retention.** A world keeps a copy of every record it has granted, in its own store, and a world export carries
-them. So a world opens without the original registry, ten years later, offline: whatever it can't run falls to the
-fallback it already holds. A record is never deleted while any world's log names it; a revoked or killed record is
-kept (history names it) but no longer runs.
+**A hash proves bytes, not authorship.** So a record becomes publishable only with a **publication receipt** stamped
+by the sequencer, not declared by the record: the record hash, the authenticated publisher (their aid1 `sub` or
+token principal), the server that published it, the publication sequence and time, the parent hashes (each checked
+to exist; a claimed parent is recorded as claimed, and credit shows who published each link), and the preflight's
+measured cost (*Appearance code*). Declared capabilities and the fallback's hash are part of the record, so the
+receipt covers them through its hash.
+
+**The receipt is signed.** Each server holds a publication key (Ed25519, the algorithm aid1 already uses) and signs
+the receipt's canonical bytes with it. The signature covers every field above, and with them the record hash,
+so a receipt can't be moved to other bytes, another publisher or another date. The receipt carries its key id; the
+server publishes its public keys, retired ones included, and a world export carries the keys of every receipt it
+holds. So a world opened offline, ten years later, can check that a record was published by whom its receipt says,
+without asking anyone. An operator's Server-rung grant is a second signed statement over the record hash, the rung
+and who granted it. A World-rung grant needs no signature: it's an entry in that world's own log, which is already
+the authority for that world.
+
+**Retention and garbage collection.** A host keeps a record, its blobs and its receipt while anything it hosts
+names it: a `comp`, `behavior` or grant entry in any of its worlds' logs, a world's grant list, the kill list or its
+own Server-rung grants. It finds that set by marking from those roots, not by keeping counts, so a crash between two
+writes can't leave a count wrong and a record freed that something still names. Because the log is append-only, a
+record any world ever named stays for as long as that world exists on the host; a revoked or killed record is kept
+(history names it) but no longer runs. What can be swept is a Draft no world ever granted, after a grace period, and
+anything only a deleted world named. There is no cross-server count: each host answers only for its own worlds, the
+way `eido:` blobs already work (spec/EIDO-URIS.md §7: a host may stop serving anything). A world keeps a copy of
+every record it names in its own store, so it never depends on another host's retention, and **a world export
+carries** every record it names, their blobs, their receipts and the signing keys. A server that never saw a record
+(an imported world, a visitor arriving from elsewhere) resolves it by hash down EIDO-URIS §2's ladder and checks the
+hash and the receipt's signature. It still runs nothing for it until a grant on *this* server covers it: a World-rung
+grant travels in the world's log, but another server's Server-rung grant counts here only if this operator trusts
+that server's key. If the record can't be found at all, the world opens and the instance shows its fallback, or
+a labelled box when even the fallback is missing.
 
 House rule 5 holds as written; we'd only add a clause naming the record: *components carry parameters and may name a
 content-addressed component record, never code.*
@@ -148,8 +204,10 @@ attaching are ordinary logged world state.
    Storing bytes grants nothing.
 2. **Publish.** A request from a **named actor** (a tokens.json bearer or a verified aid1 identity, the two legs
    `/seat-profile` already trusts; the anonymous door token may not publish) asks the server to validate a stored
-   record (canonical form, schema, fallback renders, lint) and stamp its receipt. That makes it a Draft anyone may
-   *see*; still nothing runs for others.
+   record (canonical form, schema, fallback renders, lint, and the preflight for any appearance code) and sign its
+   receipt. That makes it a Draft whose record anyone may *look up*: its description, schemas, capabilities and
+   lineage. Nothing of it runs for anyone but its author until a world grants it, with the one exception above: a
+   look worn on an avatar or item is drawn for others once it has passed this preflight.
 3. **Grant (World rung).** The world's owner, or a builder the owner has delegated grants to, adds the record's hash
    to the world's grant list with a scope: which capabilities it may use here, where (the whole world or a zone), for
    whom, until when. It's world state written under the owner's rights, so it's logged, attributed and revocable. It
@@ -158,9 +216,9 @@ attaching are ordinary logged world state.
 4. **Attach.** A `comp {id, type: <record hash>, data}` on an entity, accepted only if the record is granted in this
    world (or is server or engine rung) and the data fits its parameter schema.
 5. **Bind.** The record's code binds through `behavior`, the way knobs bind today. The instance never holds code.
-6. **Fetch and verify.** A client or agent fetches the record by hash from the store and checks the hash before
-   rendering or acting on it. Unavailable, revoked or killed → the fallback, and a line in the world's component
-   panel saying which and why.
+6. **Fetch and verify.** A client or agent fetches the record by hash from the store and checks the hash, and the
+   receipt's signature, before rendering or acting on it. Unavailable, revoked or killed → the fallback, and a line
+   in the world's component panel saying which and why.
 7. **Revoke.** The owner removes the grant; the operator adds the hash to the kill list. Both are logged; instances
    fall to fallback on the next fold.
 
@@ -186,9 +244,30 @@ the intersection of three authorities, plus one consent:
 - **The grant** allows it here, for this kind of user, in this scope (Bob, or the owner, granted "move others, via this
   wand, to whoever holds it, in the arena zone"). A grant is a valet key: a named slice of the granter's power, never
   more than the granter has, never re-grantable unless it says so.
-- **The triggering actor** may invoke that action: by the action's declared default, or by the grant.
+- **The triggering actor** may invoke that action, checked on their own account: they are inside the action's
+  declared eligibility **and** inside the grant's invoker scope. The grant narrows who may trigger; it never widens
+  what the record declared.
 - **The affected participant**, if an effect lands on someone else's body or things, has consented: in the moment,
   or at the door.
+
+**What the invoker check means precisely.** For a `use` by Carol on an instance under Bob's grant, the sequencer
+accepts an emitted effect only if all of these hold, each checked against live state when the effect arrives, not
+when the grant was written:
+1. Carol may send `use` here at all (her own standing in this world: present, not banned, `use` is rank 0).
+2. Carol is inside the action's declared eligibility, intersected with the grant's invoker scope.
+3. The effect's class is inside the record's declared capabilities, intersected with the grant's, and its target is
+   inside the grant's scope (zone, entities, until when).
+4. Bob, the granter, still holds every power the effect uses. If he loses builder, his grants' effects stop.
+5. For each participant the effect lands on, that participant's own consent. When that is Carol herself, invoking
+   the action consents to exactly the effects its declaration names on the one who uses it, and to nothing else.
+
+So a grant **can** delegate: letting visitors (or a named group) trigger an action the record declares open to them;
+the granter's own power over the world's things in scope (moving the pond's fish, opening the world's door); and
+the right to pass that slice on, only if the grant says so. A grant **cannot** widen an action's eligibility or its
+capabilities; consent on behalf of the invoker or anyone else (door consent is each person's own act of entering,
+not something the grant gives); or reach the invoker's own body, held things, `bstate`, `gen` spend or voice beyond
+what the action declares. Bob's standing backs the effects on Bob's world. It never stands in for Carol's standing
+over Carol.
 
 **Consent at the door.** A world's owner sets its rules, and may delegate rule-setting to builders; the engine doesn't
 second-guess them. It does two things only. It **shows** the rules to everyone entering, as a notice it derives from
@@ -262,18 +341,50 @@ harms on the review's list split by **who chose the code**, and each has an answ
 |---|---|---|
 | **Comfort and harassment** (flashing, blinding, full-view) | The door notice names it, with a photosensitivity line when the record declares flashing; "enter protected" shows fallbacks | Avatars and items draw on their own body and objects only, never full-view. Each viewer can show any person's or item's code as its fallback |
 | **GPU exhaustion, compile stalls, driver resets** | The governor (below) | The same governor, plus a **preflight before public load**: a record isn't shown to others until it has compiled and run inside budget |
-| **Fingerprinting, timing channels, scene data leaving** | **Nothing comes back out**: no readback to code, no network, no timer inputs beyond the frame clock. Sampling the rendered scene stays on the GPU | Same |
+| **Fingerprinting, timing channels, scene data leaving** | **Nothing comes back out**: no readback to code, no network, no timer inputs beyond the frame clock. Scene sampling, where granted (below), stays on the GPU | Same, and no scene sampling by default (below) |
 | **Deceptive UI, impersonating a trusted object** | The engine's trusted surfaces (door notices, consent prompts, the component panel) are drawn by the engine outside any canvas and above it, so a canvas can't forge them | Same, plus each object's rung and author in its inspector |
 | **Resources outliving removal or travel** | Teardown per world generation: travel or revoke frees everything the world's code allocated | Same, per avatar |
+
+**Scene sampling is a separate capability.** By default a canvas sees only its own inputs: its parameters, its own
+geometry and textures, the frame clock, and the view and projection it's drawn with. Reading anything else the viewer
+sees (the depth buffer, the colour of other objects or of what's behind it, the full rendered view, as
+post-processing and full-view effects need) is a capability, `sample scene`, that the record must declare and
+someone must grant:
+- **World-scale code the viewer walked into** gets it through the world's grant, and the door notice names it
+  ("this world's look reads the whole view") like any other capability.
+- **A stranger's avatar or item code does not get it by default**, and a world's grant can't give it: the world
+  doesn't own the other visitors' view of each other. Only the viewer can, for one exact hash, from the component
+  panel. Without it the code runs, but its sampling inputs read as empty.
+Even when granted, sampled pixels stay on the GPU; nothing comes back out.
+
+**Resource bounds per canvas.** A record declares what its canvas may allocate, publishing refuses a declaration over
+the ceiling for its scale, the preflight checks the code stays inside what it declared, and the client's wrapper
+enforces it at run time: an allocation or a draw past the bound fails, and the canvas falls to its fallback. Starting
+ceilings, to tune on the test rig:
+
+| Per canvas | Avatar or item | World-scale |
+|---|---|---|
+| Textures | 8, 32 MB total | 32, 256 MB total |
+| Storage buffers | 4 MB total | 64 MB total |
+| Uniforms | 4 KB | 16 KB |
+| Render targets and passes per frame | 2 | 8 |
+| Draw calls per frame | 16 | 256 |
+| Largest render size | its own screen footprint | the viewer's framebuffer |
 
 **The governor, hardened.** Every client already keeps a performance budget; for appearance code it becomes:
 compile off the frame path with a deadline (over it → fallback), GPU time measured per canvas, a hog is stepped down
 (resolution, then frame rate, then the fallback still) and **unloaded** if it keeps hogging, and any canvas implicated
 in a lost GPU device is **quarantined by hash** for that viewer and reported, so the server can quarantine it for
-others. The last matters beyond the one world: Chromium reportedly counts a GPU-process loss against the whole site
-and, after one, blocks new 3D contexts for that domain for about two minutes (secondhand, from a reading of
-`gpu_data_manager_impl_private.cc`), so a second crash could blank *every* world in that browser. We've already hit
-the stall half of this by accident (a large sky shader compile froze desktop Chrome).
+others. The last matters beyond the one world. Chromium records each GPU reset that loses a page's 3D context against
+the page's host. It forgives the first; a second within two minutes blocks new 3D contexts for that host until the
+entries age out (a user-initiated navigation to the host also clears them), and three separate resets within two
+minutes, from any sites, block 3D for every site. The host is the unit, so all worlds served from one host share one
+count: a second crash in the same browser within two minutes blanks *every* world on that host for that browser.
+Source, read at Chromium main in 2026-09: `Are3DAPIsBlockedAtTime` in
+[content/browser/gpu/gpu_data_manager_impl_private.cc](https://source.chromium.org/chromium/chromium/src/+/main:content/browser/gpu/gpu_data_manager_impl_private.cc)
+(*"Allow one context loss per domain, so block if there are two or more"*; `kBlockedDomainExpirationPeriod =
+base::Minutes(2)`; `kMaxNumResetsWithinDuration = 2`). Rev 2 said "after one"; that was wrong. We've already hit the
+stall half of this by accident (a large sky shader compile froze desktop Chrome).
 
 **What the governor can't do alone**, and what goes with it:
 - **It reacts; it doesn't prevent.** It needs a slow frame to act on. A shader that hangs the GPU in a single draw
@@ -286,17 +397,33 @@ the stall half of this by accident (a large sky shader compile froze desktop Chr
 - **It covers resource harms only.** Comfort, side channels and deceptive UI are the other rows of the table above.
 
 So three things ship with it:
-1. **A preflight with teeth.** Before a record is shown to anyone but its author, it is compiled and run, for a
-   bounded number of frames at a declared size, on a sandboxed client (a preflight worker, or the author's own client
-   under the same budgets), and its compile time and frame cost are stamped into its publication receipt. A shader
-   that hangs a GPU does it there, once, not on a visitor. Avatars go through the same door before public load.
+1. **A preflight with teeth.** Before a record's look is drawn for anyone but its author, it is compiled and run, for
+   a bounded number of frames at a declared size, on a sandboxed client (a preflight worker, or the author's own
+   client under the same budgets), and its compile time and frame cost are stamped into its publication receipt. A
+   shader that hangs a GPU does it there, once, not on a visitor. Avatars go through the same door before public
+   load.
 2. **Shared quarantine.** A lost device implicating a record is reported to the server. After independent reports
    (or one plus a failed preflight re-run, so a single viewer can't quarantine someone else's work by lying), the
-   record is quarantined for everyone on that server, to fallback, and its author is told. The first crash is paid
-   once, not once per person.
+   record is quarantined for everyone on that server, to fallback, and its author is told (in aggregate, below). The
+   first crash is paid once, not once per person.
 3. **Honest labels.** When a canvas is stepped down or unloaded, the viewer sees why ("too heavy for this device:
    showing a still"), and the author can see how their record fares by device class. A weak device getting the
    fallback is correct; it shouldn't look like censorship.
+
+**The governor's own reports are a channel too.** Code can't send anything out, but the governor does: quarantine
+reports go to the server and cost summaries go to authors, and per-viewer versions of either would tell an author
+which devices, and roughly when, their work met. Many viewers are headset or phone users with rare hardware, so a
+device class plus a time can pick one person out. So:
+- **What a client sends is coarse.** A quarantine report carries the record hash, what happened (device lost,
+  compile over deadline, unloaded), a device class from a short fixed list (desktop, standalone headset, phone), and
+  the day. No GPU model or driver, no timings, no world or position. Step-downs are counted on the client and sent
+  as daily totals, not as events. A viewer can turn reporting off; their own quarantine still applies to them.
+- **The server keeps raw reports only to confirm them**, since telling independent reporters apart needs to know who
+  sent what, and deletes them once the record is confirmed or cleared, or after a week.
+- **Authors see only aggregates:** per record, per device class, per week, with counts rounded, and any cell with
+  fewer than ten distinct reporters suppressed. An author is told their record was quarantined, and why, but never
+  by whom or from where. The preflight's measured cost, taken on the preflight machine, is the one precise figure an
+  author gets.
 
 With those, the governor is what makes open shader worlds safe to offer.
 
@@ -322,12 +449,13 @@ is asked to debug it.
    down before anything changes it. Include the known scars.
 2. **The pendulum into `shared/`.** Move the mirrored impulse math into one module, on the `shared/particles.js`
    pattern. Retires house rule 2's mirrored pair with no new mechanism.
-3. **The component record and receipt, data-only.** Canonical schema, publication receipt, a local store, the rule 5
-   clause. No execution yet; from this step, engine built-ins can name records.
+3. **The component record and receipt, data-only.** The canonical form (RFC 8785), the signed publication receipt
+   and the server's publication key, a local store with mark-and-sweep retention, export carrying records, receipts
+   and keys, the rule 5 clause. No execution yet; from this step, engine built-ins can name records.
 4. **Attach, perceive, fallback, with the counter button**, shipped with edit mode 1.0 along with the existing
    component-like things ported onto records: late join, missing record, revoke, lineage, text-tier readout.
-5. **Server behaviors on the ladder.** The per-world worker, grants with scopes, typed `use` actions, the authority
-   intersection, door notices, logged effects.
+5. **Server behaviors on the ladder.** The per-world worker process and its supervisor, grants with scopes, typed
+   `use` actions, the authority intersection, door notices, logged effects.
 6. **World-offered client mods into a real sandbox**: their own VM or origin, network off by default, budgets; the
    mods panel lists components too, each with author, exact hash, rung and what it may touch; the per-world "always"
    wildcard pins exact hashes too (the per-script "always" already does), so an update is offered as a new version,
@@ -337,9 +465,10 @@ is asked to debug it.
    sandboxed VM after its first sandbox was escaped). **An honest cost:** sandboxed mods get a narrower, message-based
    UI kit than the built-in panels, which bends docs/MODDING-UI.md's *"There is no second-class citizenship."* The goal
    is to grow the kit until the gap closes.
-7. **The governor, hardened**, with the preflight, shared quarantine and honest labels, and the avatar preflight.
+7. **The governor, hardened**, with the preflight, shared quarantine, honest labels and aggregated reports, the
+   declared per-canvas resource bounds, and the avatar preflight.
 8. **Appearance code on receivers**, under the amendment: world-scale canvases for owners and the builders they grant,
-   body-and-objects scale for avatars and items.
+   body-and-objects scale for avatars and items. Scene sampling ships last within this step, behind its own grant.
 9. **Library, discovery, release channels**, after one component has survived authoring, grant, attach, use, travel,
    late join, revoke, restore and an offline open.
 
@@ -348,10 +477,14 @@ poses any bone, checked against the body's real rig.)
 
 ## Acceptance specimen: a counter button
 
-Deliberately boring, before any fishing rod: parameters *label, colour, max*; actions *increment, reset*; fallback, a
-static labelled box showing the current count. It passes when:
+Deliberately boring, before any fishing rod: parameters *label, colour, max*; actions *increment, reset* and *tag*;
+fallback, a static labelled box showing the current count. *Tag* is there so the specimen reaches past the person
+using it: it puts a small "tagged ×n" badge on a nearby participant's body, which the record declares as "writes a
+badge on another participant". Without it no action lands on anyone but the invoker, and the affected participant's
+leg would go untested. It passes when:
 
-- its record is published with a receipt naming an authenticated publisher;
+- its record is published with a signed receipt naming an authenticated publisher, and the receipt verifies offline
+  from an export alone;
 - one world grants it and another can't attach it;
 - an instance carries only the record hash and typed parameters and state;
 - a `reset` by someone the grant doesn't cover is refused, and an allowed `increment` logs actor, cause and effect
@@ -362,6 +495,14 @@ static labelled box showing the current count. It passes when:
 - a fork records its parent and needs its own grant;
 - a revoke turns every instance into the fallback without touching history;
 - with the store unreachable, the world still opens, in fallback;
+- a grant that opens `increment` to visitors can't open `reset` to them if the record declares `reset` for builders
+  only: the grant narrows eligibility and never widens it;
+- a `tag` on a participant who hasn't consented is refused, even though the owner's grant allows tagging, and the
+  refusal is logged: one who entered protected, and one who was already inside when the grant was added and hasn't
+  yet seen it;
+- a `tag` on a participant who has consented logs actor, target, record and grant, and the target can remove the
+  badge;
+- no action, under any grant, writes anything on the invoker but what its declaration names;
 - the owner's, the invoker's and the affected participant's rights are each tested on their own.
 
 If that survives, the fishing rod is a feature rather than the first security proof.
@@ -380,9 +521,8 @@ If that survives, the fishing rod is a feature rather than the first security pr
 - Who holds a continuously simulated thing when its holder leaves? (docs/leases.md seems the natural home.)
 - How should a prediction correction be smoothed so it doesn't snap?
 - Should a component record ship a demo scene that doubles as its automated test?
-- The per-world worker: one process per world, or a pool with per-world budgets? The requirement is the wall, not the
-  mechanism.
-- Should a server be able to share its receipts with another, so a record published on one host is recognised on
-  another without re-publishing?
+- Which other servers' publication keys should a server trust, and who decides: the operator alone, or a shared list
+  across hosts? Signed receipts make it possible to recognise a record published elsewhere without re-publishing;
+  whom to believe is a policy question.
 
 — Hesperus
