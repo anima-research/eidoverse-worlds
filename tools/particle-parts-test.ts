@@ -69,6 +69,20 @@ entities.set('lantern', replacement); emit('entity', {id: 'lantern', kind: 'spaw
 assert.equal(newWax.children.length, 1, 'deferred model resolves part');
 clearEmitters(); assert.equal(hooks.length, 0); assert.equal(newWax.children.length, 0); assert.equal(disposed, 5);
 
+// cargo riding the carrier is another entity: its same-named node is not ours
+{
+  const carrier = new THREE.Group(); const cargo = new THREE.Group(); cargo.userData.entityId = 'crate';
+  const cargoWax = new THREE.Group(); cargoWax.name = 'wax'; cargo.add(cargoWax); carrier.add(cargo);
+  entities.set('lantern', carrier); emit('entity', {id: 'lantern', kind: 'spawn'});
+  await apply('wax');
+  assert.equal(cargoWax.children.length, 0, 'emitter never attaches to mounted cargo');
+  assert(carrier.children.some(c => c.userData.emitterOf === 'lantern'), 'falls back to the entity frame');
+  const ownWax = new THREE.Group(); ownWax.name = 'wax'; carrier.add(ownWax);
+  emit('comp', {id: 'lantern', type: 'particles', data: null}); await settle();
+  await apply('wax'); assert.equal(ownWax.children.length, 1, 'own node still found beside cargo');
+  clearEmitters();
+}
+
 for (const part of ['', ' ', 7, {}, 'x'.repeat(257)]) {
   const r = normalizeParticles({preset: 'fire', part});
   assert(r.ok && !r.emitter.part && r.notes.some(n => n.includes('part')));

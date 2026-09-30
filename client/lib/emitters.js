@@ -30,7 +30,7 @@
 import { THREE, scene } from './core.js';
 import { bus } from './base.js';
 import { loadEidoModule, primeFiles } from './assets.js';
-import { entities, findPart } from './world.js';
+import { entities } from './world.js';
 import { normalizeParticles, resolvedCount, withSeededRandom, QUALITY_TIERS } from '../../shared/particles.js';
 import { makeEmitterRegistry, retireEmitter, adoptSystem } from './emitter_field.js';
 import { autoHooks as autos, ownHook } from './autohooks.js';
@@ -83,6 +83,25 @@ export const emitterCount = () => handles.size;
 
 // ---- build -----------------------------------------------------------------
 
+/** Named node inside THIS entity's own model. Cargo mounted on the carrier is
+ *  a child Object3D carrying its own entityId, and a plain traverse would
+ *  happily anchor the carrier's emitter to cargo's node — so subtrees owned by
+ *  another entity (or another emitter) are not descended into. */
+function ownedPart(root, id, name) {
+  let found = null;
+  const walk = (o) => {
+    for (const c of o.children) {
+      if (found) return;
+      const owner = c.userData?.entityId;
+      if (owner != null && owner !== id) continue;
+      if (c.name === name && !c.userData?.emitterOf) { found = c; return; }
+      walk(c);
+    }
+  };
+  walk(root);
+  return found;
+}
+
 async function build(emitter, { id }) {
   const parent = entities.get(id);
   // `null` is a spawn reservation whose GLB is still downloading, and an
@@ -124,7 +143,7 @@ async function build(emitter, { id }) {
     // composes the entire animated hierarchy, including entity mounts/motion.
     // Missing parts keep the emitter visible in the entity frame; the server
     // records the advisory and this client reports its own realization.
-    const part = emitter.part ? findPart(parent, emitter.part) : null;
+    const part = emitter.part ? ownedPart(parent, id, emitter.part) : null;
     if (emitter.part && !part) console.warn(`[emitters] ${id}: part "${emitter.part}" unavailable — using the entity frame`);
     sys.mesh.position.set(emitter.origin[0], emitter.origin[1], emitter.origin[2]);
     (part ?? parent).add(sys.mesh);

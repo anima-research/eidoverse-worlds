@@ -12,6 +12,7 @@ try {
   const group = doc.createNode('hinge'); scene.addChild(group);
   group.addChild(doc.createNode('wax'));
   doc.createNode('orphan');
+  doc.createScene().addChild(doc.createNode('otherscene'));
   for(let i=0;i<40;i++) group.addChild(doc.createNode(`part-${i}`));
   const file = join(dir,'parts.glb');
   await new NodeIO().write(file,doc);
@@ -19,6 +20,7 @@ try {
   assert(sum.nodeNames.includes('hinge') && sum.nodeNames.includes('wax'));
   assert(sum.nodeNames.includes('part-39'), 'attachment names are not capped with mesh summaries');
   assert(!sum.nodeNames.includes('orphan'), 'unattached export nodes cannot anchor emitters');
+  assert(!sum.nodeNames.includes('otherscene'), 'nodes of unrendered scenes are not parts');
   assert.equal(sum.nodes.length,0, 'transform-only attachment nodes need no mesh');
   console.log('particle attachment geometry names passed');
 } finally { rmSync(dir,{recursive:true,force:true}); }

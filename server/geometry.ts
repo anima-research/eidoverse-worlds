@@ -132,9 +132,11 @@ export async function summarizeGlb(absPath: string): Promise<GeomSummary | null>
   // no renderer would ever draw. Report the world's truth; list orphans
   // separately as the file defect they are.
   const inScene = new Set<any>();
-  for (const scene of doc.getRoot().listScenes()) {
-    scene.traverse((n: any) => inScene.add(n));
-  }
+  // GLTFLoader renders gltf.scene: the default scene, else the first. Other
+  // scenes in the file are never drawn, so their nodes are ghosts too.
+  const gltfRoot = doc.getRoot();
+  const rendered = gltfRoot.getDefaultScene() ?? gltfRoot.listScenes()[0];
+  rendered?.traverse((n: any) => inScene.add(n));
   const orphans: string[] = [];
   for (const node of doc.getRoot().listNodes()) {
     if (!inScene.has(node) && node.getMesh() && node.getName() && orphans.length < 16) {
