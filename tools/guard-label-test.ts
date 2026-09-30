@@ -58,7 +58,7 @@ console.log('\nD. MCPL look() — the fold-side label');
 
 // ---------------------------------------------------------------- the browser
 plugin({ name: 'guard-label-stubs', setup(b) {
-  for (const m of ['core', 'base', 'assets', 'lights', 'world', 'colliders', 'terrain', 'net', 'controller', 'ui', 'frames', 'seatedit', 'inspect', 'chat'])
+  for (const m of ['core', 'base', 'assets', 'lights', 'world', 'colliders', 'terrain', 'net', 'controller', 'ui', 'frames', 'seatedit', 'inspect', 'chat', 'state', 'realize/structure'])
     b.onResolve({ filter: new RegExp(`^\\./${m}\\.js$`) }, () => ({ path: here('./guard-label-stub.mjs') }));
 } });
 
@@ -144,8 +144,8 @@ console.log('\nE. the picture block');
 {
   // the picture editor registers itself at import (registerEditor → stub.editors)
   const pics = await import('../client/lib/pictures.js');
-  const editor = (stub as any).editors[0];
-  check('pictures.js registered exactly one editor', (stub as any).editors.length === 1 && typeof editor === 'function');
+  const editor = (stub as any).editors.at(-1);   // pictures.js registers last; scenegraph's objectlabels.js registered its own first
+  check('pictures.js registered its editor', (stub as any).editors.length >= 1 && typeof editor === 'function');
   // a placed model with one named mesh part: the same fold state as the lamp
   // (bobbie placed and guarded it, the owner re-lit it), but hangable
   const part = { isMesh: true, name: 'screenplane', material: {} };
