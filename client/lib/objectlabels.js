@@ -6,11 +6,12 @@ import { entities } from './world.js';
 import { state, onWorldChange } from './state.js';
 import { objectIdentity, readLabel, visibleLabels } from '../../shared/label.js';
 import { registerEditor } from './inspect.js';
+import { structureGroup } from './realize/structure.js';
 
 let mode = CONFIG.objectLabels ?? 'off', overlay, panel, content, selected = null;
 let records = [], authoredRecords = [], candidates = [], lastCandidates = -Infinity, lastSight = 0, cursor = 0;
 const anchors = new WeakMap(), plaques = [];
-const point = new THREE.Vector3(), projected = new THREE.Vector3(), direction = new THREE.Vector3();
+const camPos = new THREE.Vector3(), point = new THREE.Vector3(), projected = new THREE.Vector3(), direction = new THREE.Vector3();
 // Reused every frame: tickObjectLabels runs at frame rate and is not reentrant.
 const positioned = [], occupied = [], cleared = [], byId = new Map(), assigned = new Set();
 // The keys the overlay itself consumes. Everything else -- movement above all --
@@ -140,6 +141,9 @@ export function initObjectLabels() {
     // NOT consumed -- focus must be able to leave a floating world label.
     element.addEventListener('keydown', event => {
       if (!CONSUMED_KEYS.has(event.key)) return;
+      // Escape belongs to the overlay only while details are actually open;
+      // otherwise it must reach the world (menus, pointer-lock exit, ...).
+      if ((event.key === 'Escape' || event.key === 'Esc') && panel.hidden) return;
       event.stopPropagation();
       if (event.key === 'Escape' || event.key === 'Esc') close.click();
     });
@@ -161,13 +165,16 @@ export function initObjectLabels() {
 function positions(source = authoredRecords) {
   const rect = renderer.domElement.getBoundingClientRect();
   positioned.length = 0;
-  camera.updateMatrixWorld();
+  // World-space camera position read from its matrixWorld without updating it:
+  // under XR the camera hangs off a rig and three owns its tracked pose.
+  camPos.setFromMatrixPosition(camera.matrixWorld);
   for (const record of source) {
-    const object = entities.get(record.id);
+    // A realized structure hides its entity anchor and renders in its own group.
+    const object = structureGroup(record.id) ?? entities.get(record.id);
     if (!object || !object.visible || object.userData.placeholder) continue;
     object.updateWorldMatrix(true, false);
     object.getWorldPosition(point);
-    const distance = point.distanceTo(camera.position);
+    const distance = point.distanceTo(camPos);
     if (distance > 60) continue;
     // An authored offset is complete on its own. It needs no bounds -- labelling
     // a geometry-less marker Group is the case it exists for, and measuring that
@@ -179,7 +186,11 @@ function positions(source = authoredRecords) {
       point.fromArray(record.offset);
       object.localToWorld(point);
     } else {
-      let anchor = anchors.get(object);
+      // Entities with animated parts (`motion:<part>`, or a `motion` naming a
+      // part) change their bounds without any entity event: re-measure those.
+      const bag = record.entity?.comp;
+      const parted = Boolean(bag) && (Object.keys(bag).some(k => k.startsWith('motion:')) || Boolean(bag.motion?.part));
+      let anchor = parted ? undefined : anchors.get(object);
       if (anchor === undefined) {
         const box = new THREE.Box3().setFromObject(object);
         // Cache the MISS as well (null, hence the `=== undefined` test above):
@@ -195,7 +206,7 @@ function positions(source = authoredRecords) {
           anchor.y = box.max.y;
           object.worldToLocal(anchor);
         }
-        anchors.set(object, anchor);
+        if (!parted) anchors.set(object, anchor);
       }
       if (!anchor) continue;   // no meaningful bounds, and never will have
       point.copy(anchor);
@@ -230,9 +241,9 @@ export function tickObjectLabels(now = performance.now()) {
     lastSight = now;
     for (let n = 0; n < Math.min(4, visible.length); n++) {
       const record = visible[cursor++ % visible.length];
-      direction.set(record.wx, record.wy, record.wz).sub(camera.position);
+      direction.set(record.wx, record.wy, record.wz).sub(camPos);
       const distance = direction.length();
-      record.occluded = distance > 0 && raySegment(camera.position, direction.normalize(), distance, record.id) !== null;
+      record.occluded = distance > 0 && raySegment(camPos, direction.normalize(), distance, record.id) !== null;
     }
   }
   occupied.length = 0;
@@ -278,7 +289,16 @@ export function tickObjectLabels(now = performance.now()) {
 
 registerEditor(({ id, bag, commit, esc }) => {
   const label = readLabel(bag.label);
-  return { html: `<fieldset><legend>Object label</legend><label>Name <input data-label-name maxlength="120" value="${esc(label.name)}"></label><label>Description <textarea data-label-description maxlength="2000">${esc(label.description)}</textarea></label><label>Visibility <select data-label-visibility>${[['nearby', 'nearby'], ['always', 'always'], ['inspect', 'inspect (all-nearby mode only)']].map(([value, caption]) => `<option value="${value}" ${value === label.visibility ? 'selected' : ''}>${caption}</option>`).join('')}</select></label><button data-label-save>Save label</button><button data-label-remove>Remove label</button></fieldset>`, wire(root) {
+  return { html: `<fieldset><legend>Object label</legend><label>Name <input data-label-name value="${esc(label.name)}"></label><label>Description <textarea data-label-description>${esc(label.description)}</textarea></label><label>Visibility <select data-label-visibility>${[['nearby', 'nearby'], ['always', 'always'], ['inspect', 'inspect (all-nearby mode only)']].map(([value, caption]) => `<option value="${value}" ${value === label.visibility ? 'selected' : ''}>${caption}</option>`).join('')}</select></label><button data-label-save>Save label</button><button data-label-remove>Remove label</button></fieldset>`, wire(root) {
+    // Limits are Unicode code points (as the reader and docs say), not the
+    // UTF-16 units HTML maxlength counts, so a 120-emoji name stays typeable.
+    for (const [selector, max] of [['[data-label-name]', 120], ['[data-label-description]', 2000]]) {
+      const field = root.querySelector(selector);
+      field.addEventListener('input', () => {
+        const points = [...field.value];
+        if (points.length > max) field.value = points.slice(0, max).join('');
+      });
+    }
     root.querySelector('[data-label-save]').onclick = () => commit('comp', { id, type: 'label', data: {
       name: root.querySelector('[data-label-name]').value,
       description: root.querySelector('[data-label-description]').value,

@@ -31,6 +31,8 @@ mock.module(`${base}colliders.js`, () => ({
     return blocked.has(excludeId!) ? { id: 'wall', t: 1 } : null;
   },
 }));
+const groups = new Map<string, unknown>();
+mock.module(`${base}realize/structure.js`, () => ({ structureGroup: (id: string) => groups.get(id) ?? null }));
 mock.module(`${base}inspect.js`, () => ({ registerEditor: () => {} }));
 const { CONFIG } = await import('../client/lib/base.js');
 const { state, hydrate, foldLive } = await import('../client/lib/state.js');
@@ -119,8 +121,18 @@ const press = (key: string, code: string) => focused.dispatchEvent(
 press('w', 'KeyW'); press('a', 'KeyA'); press('Shift', 'ShiftLeft');
 assert.deepEqual(heard, ['w', 'a', 'Shift'], 'movement keys reach window through a focused plaque');
 heard.length = 0;
-press('Enter', 'Enter'); press(' ', 'Space'); press('Escape', 'Escape');
+press('Enter', 'Enter'); press(' ', 'Space');
 assert.deepEqual(heard, [], 'the keys the overlay consumes stop at the overlay');
+// Escape is the overlay's only while details are open; otherwise the world hears it.
+assert.equal(document.querySelector<HTMLElement>('.ew-object-detail')!.hidden, true);
+press('Escape', 'Escape');
+assert.deepEqual(heard, ['Escape'], 'Escape passes through a focused plaque when no details are open');
+heard.length = 0;
+focused.click();
+assert.equal(document.querySelector<HTMLElement>('.ew-object-detail')!.hidden, false);
+press('Escape', 'Escape');
+assert.deepEqual(heard, [], 'Escape with details open is consumed');
+assert.equal(document.querySelector<HTMLElement>('.ew-object-detail')!.hidden, true, 'and closes them');
 globalThis.removeEventListener('keydown', onKey);
 // ...and the mouse never parks focus on a plaque in the first place.
 focused.blur();
@@ -230,6 +242,54 @@ tickObjectLabels(2900);
 tickObjectLabels(3000);
 assert.equal(measures, measured, 'the empty result is cached: no subtree walk per frame');
 THREE.Box3.prototype.setFromObject = setFromObject;
+
+// ---- structures: hidden anchor, label rides the building's group -------------
+const bld = emptyState();
+foldEntry(bld, entry('spawn', { id: 'bldg', lib: 'fixture.glb', pos: [0, 0, 0] }));
+foldEntry(bld, entry('comp', { id: 'bldg', type: 'label', data: { name: 'Hall' } }));
+hydrate(bld);
+entities.clear(); groups.clear();
+const anchorMesh = mesh(0, 0.5, 0); anchorMesh.visible = false;
+entities.set('bldg', anchorMesh);
+configureObjectLabels({ mode: 'all' });
+tickObjectLabels(3100);
+assert.equal(visible().length, 0, 'a hidden anchor with no structure group stays unlabelled');
+groups.set('bldg', mesh(0, 0.5, 0));
+tickObjectLabels(3200);
+assert.equal(visible().length, 1, 'a structure labels through its own group');
+groups.clear();
+
+// ---- moving parts: bounds are re-measured, not cached -----------------------
+const mp = emptyState();
+foldEntry(mp, entry('spawn', { id: 'mill', lib: 'fixture.glb', pos: [0, 0, 0] }));
+foldEntry(mp, entry('comp', { id: 'mill', type: 'label', data: { name: 'Mill' } }));
+foldEntry(mp, entry('comp', { id: 'mill', type: 'motion:sail', data: { type: 'spin' } }));
+hydrate(mp);
+entities.clear();
+const millRoot = new THREE.Group();
+const sail = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+sail.position.y = 0.5; millRoot.add(sail); millRoot.updateMatrixWorld(true);
+entities.set('mill', millRoot);
+tickObjectLabels(3300);
+const topBefore = parseFloat(visible()[0].style.top);
+sail.position.y = 2.5; millRoot.updateMatrixWorld(true);   // a part moved; the root did not
+tickObjectLabels(3400);
+assert.ok(parseFloat(visible()[0].style.top) < topBefore, 'the plaque follows a part that moved inside a static root');
+
+// ---- inspect-only labels never float in nearby mode, even when selected -----
+const insp = emptyState();
+foldEntry(insp, entry('spawn', { id: 'plaque', lib: 'fixture.glb', pos: [0, 1, 0] }));
+foldEntry(insp, entry('comp', { id: 'plaque', type: 'label', data: { name: 'Quiet', visibility: 'inspect' } }));
+hydrate(insp);
+entities.clear();
+entities.set('plaque', mesh(0, 1, 0));
+configureObjectLabels({ mode: 'all' });
+tickObjectLabels(3500);
+visible()[0].click();
+configureObjectLabels({ mode: 'nearby' });
+tickObjectLabels(3600);
+assert.equal(visible().length, 0, 'a selected inspect-only label has no plaque in nearby mode');
+document.querySelector<HTMLButtonElement>('.ew-object-detail button')!.click();
 
 console.log('label DOM: real fold identity, default off, click details, motion, rename, removal, replay, authored offsets, cached empty bounds, keyboard passthrough, overlap/edge suppression, plaque identity, occlusion and no world writes passed');
 GlobalRegistrator.unregister();

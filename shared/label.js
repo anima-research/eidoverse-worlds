@@ -8,7 +8,9 @@ export function readLabel(value) {
 }
 export function objectIdentity(entity, assets = []) {
   const label = readLabel(entity?.comp?.label);
-  const assetName = text(assets.find(a => a.path === entity?.lib)?.name, 120);
+  // A nameless upload folds to the placeholder 'upload' -- not a name; fall through to the basename.
+  const rawAsset = text(assets.find(a => a.path === entity?.lib)?.name, 120);
+  const assetName = rawAsset.toLowerCase() === 'upload' ? '' : rawAsset;
   const basename = text((entity?.lib ?? '').split('/').pop()?.replace(/\.(glb|vrm)$/i, '').replace(/[_-]+/g, ' '), 120);
   return { ...label, authored: Boolean(label.name), id: String(entity?.id ?? ''), assetName, name: label.name || assetName || basename || String(entity?.id ?? '') };
 }
@@ -16,6 +18,6 @@ export function objectIdentity(entity, assets = []) {
 export function visibleLabels(candidates, preference, selected) {
   if (preference === 'off') return [];
   return candidates.filter(c => c.authored && c.inView && c.distance <= (preference === 'all' || c.visibility === 'always' ? 60 : 12) &&
-    (c.visibility !== 'inspect' || preference === 'all' || c.id === selected))
+    (c.visibility !== 'inspect' || preference === 'all'))
     .sort((a,b) => (b.id === selected) - (a.id === selected) || a.distance-b.distance).slice(0,32);
 }

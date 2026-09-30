@@ -32,7 +32,7 @@ import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
 import { objectIdentity } from '../../shared/label.js';
-import { state } from './state.js';
+import { state, onWorldChange } from './state.js';
 import './objectlabels.js';
 import { editorsFor } from './inspect.js';
 import './lights.js';   // for its registered light editor (world.js pulls it in anyway)
@@ -408,4 +408,6 @@ export function initSceneGraph() {
   bus.on('entity', repaint);
   bus.on('comp', repaint);
   bus.on('mount', repaint);
+  // asset names feed the row's display name; an `asset` entry emits no bus event
+  onWorldChange(ev => { if (ev.type === 'entry' && ev.entry?.verb === 'asset') repaint(); });
 }

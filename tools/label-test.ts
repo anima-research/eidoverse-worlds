@@ -21,4 +21,8 @@ a.equal(visibleLabels(dense,'off',null).length,0);
 a.equal(visibleLabels([{...dense[0],authored:false}],'all',null).length,0);
 a.equal(visibleLabels([{...dense[0],visibility:'inspect'}],'nearby',null).length,0);
 a.equal(visibleLabels(dense,'nearby','9999')[0].id,'9999');
+a.equal(visibleLabels([{...dense[0],visibility:'inspect'}],'nearby',dense[0].id).length,0);
+emit('asset',{path:'models/plain_thing.glb',name:'upload'});
+emit('spawn',{id:'plain',lib:'models/plain_thing.glb',pos:[0,0,0]});
+a.equal(objectIdentity(st.entities.plain,st.assets).name,'plain thing');
 console.log('label semantics, replay/removal and dense-world cap passed');
