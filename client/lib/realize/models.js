@@ -198,6 +198,9 @@ function createModel(id, ent) {
   tracked.set(id, { kind: 'model', lib: ent.lib, gen });
   entities.set(id, null);   // reservation — the contract every consumer knows
   maybePlaceholder(id);     // …upgraded to a sized stand-in when geom is known
+  // a bare reservation has no entity/geom event coming; tell the open scene
+  // panel it exists (status: queued / "Loads when nearby")
+  if (entities.get(id) === null) bus.emit('materialization', { id });
   // STREAMING (§13.3 R1 + §16.2.C): the gate works from POSITION, stand-in
   // or not. At hydration the geom side-channel hasn't landed yet, so the old
   // placeholder-only gate was inert exactly when it mattered (§16.1f) —
@@ -798,6 +801,13 @@ export function residencySweep() {
     const obj = entities.get(id);
     const R = residencyRadius(ent);
     const d = entDist(ent);
+    // proximity decides the displayed status (deferred vs queued/failed and
+    // Retry eligibility): repaint the panel on the transition only
+    const inRange = d <= R;
+    if (t.inRange !== undefined && t.inRange !== inRange && !(obj && !isPlaceholder(obj))) {
+      bus.emit('materialization', { id });
+    }
+    t.inRange = inRange;
     if (obj && !isPlaceholder(obj) && d > R + R_HYST) {
       if (canDemote(id, ent)) demote(id);
     // inside the radius, a realized placement may want the OTHER tier now —

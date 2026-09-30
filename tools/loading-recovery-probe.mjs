@@ -17,7 +17,8 @@ try {
   let attempts = 0;
   await page.route('**/library/recovery.glb*', route => {
     attempts++;
-    return attempts === 1 ? route.fulfill({status: 503, body: 'unavailable'})
+    // fetchBytes retries 5xx (3 tries): fail the whole initial load
+    return attempts <= 3 ? route.fulfill({status: 503, body: 'unavailable'})
       : route.fulfill({status: 200, contentType: 'model/gltf-binary', body: bytes});
   });
   await page.goto(`${world.origin}/?key=${world.key}&name=recovery-probe&world=recovery`);
@@ -39,7 +40,7 @@ try {
   if (await page.evaluate(() => window.loadingModels.retryMaterialization('recovery'))) throw new Error('duplicate retry admitted');
   await page.waitForFunction(() => window.loadingModels.materializationStatus('recovery')?.state === 'ready');
   const status = await page.evaluate(async () => (await import('/lib/realize/models.js')).materializationStatus('recovery'));
-  if (status.error || attempts !== 2) throw new Error(JSON.stringify({status, attempts}));
+  if (status.error || attempts !== 4) throw new Error(JSON.stringify({status, attempts}));
   const held = [];
   await page.route('**/library/collision-*.glb*', route => { held.push(route); });
   await page.evaluate(async () => {
@@ -52,7 +53,15 @@ try {
       assets.libLabels.set(`${id}.glb`, 'identical display name prefix longer than 28');
       window.probeFold('spawn', {id,lib:`${id}.glb`,pos:camera.position.toArray()});
     }
+    // panel repaint hooks: a far reservation announces itself, and crossing
+    // the residency radius announces a status change (transition only)
+    const { bus } = await import('/lib/base.js');
+    window.matEvents = [];
+    bus.on('materialization', (e) => window.matEvents.push(e.id));
     window.probeFold('spawn', {id:'far',lib:'never-fetch.glb',pos:[100000,0,0]});
+  });
+  await page.evaluate(() => {
+    if (!window.matEvents.includes('far')) throw new Error('far reservation did not notify the panel');
   });
   for (let n = 0; held.length < 2 && n < 1500; n++) await new Promise(r => setTimeout(r, 20));
   if (held.length !== 2) throw new Error('held downloads timed out');
@@ -60,6 +69,13 @@ try {
   if (simultaneous !== 2) throw new Error(`progress collision: ${simultaneous}`);
   await page.evaluate(() => {
     if (window.loadingModels.materializationStatus('far').state !== 'deferred' || window.loadingModels.retryMaterialization('far')) throw new Error('residency bypass');
+    // proximity transition repaints once; steady state emits nothing
+    const n0 = window.matEvents.length;
+    window.loadingModels.residencySweep();
+    if (window.matEvents.length !== n0) throw new Error('per-sweep repaint without a transition');
+    window.probeFold('place', {id:'far', pos:[0,0,0]});
+    window.loadingModels.residencySweep();
+    if (window.matEvents.length === n0) throw new Error('range transition did not notify the panel');
     window.probeFold('remove', {id:'collision-a'});
     window.probeFold('spawn', {id:'collision-b',lib:'recovery.glb',pos:[0,0,0]});
   });
