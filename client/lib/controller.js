@@ -303,6 +303,9 @@ addEventListener('keydown', (e) => {
 addEventListener('keyup', (e) => keys.delete(e.code));
 // A held key with the window unfocused stays "down" forever — clear on blur.
 bus.on('input-clear', () => { dragging = false; });
+// clearInput() is a no-op when nothing it tracks is held, and a canvas look-drag
+// is not among those — so a blur must drop the drag itself.
+addEventListener('blur', () => { dragging = false; });
 // The pad legend is a teaching aid, and you only learn it once. `input-device`
 // fires on every SWITCH, so anyone driving the UI with a mouse and the world
 // with a stick re-read the same six-second banner on every swap. Show it the

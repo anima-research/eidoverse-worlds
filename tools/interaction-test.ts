@@ -58,6 +58,10 @@ state.st.entities.lamp = { comp: { reactions: { push: { impulse: 0.3 } } } } as 
 press(); assert.deepEqual(uses[2], ['use', { id: 'lamp', action: 'push' }]);
 state.st.entities.lamp = { comp: { reactions: { push: {}, pull: {} } } } as any;
 tickInteraction(600); assert(button.hidden, 'multiple actions need an authored primary interaction');
+state.st.entities.lamp = { comp: { interaction: { action: 'Pull the big lever!', label: 'Pull' } } } as any;
+press(); assert.deepEqual(uses[3], ['use', { id: 'lamp', action: 'Pull the big lever!' }], 'freeform use actions are usable');
+state.st.entities.lamp = { comp: { reactions: { push: {}, pull: {} } } } as any;
+tickInteraction(700); assert(button.hidden);
 
 // The prompt is a button you can click, and it must still never own the
 // keyboard: a focused one swallowed every keydown before the window listener

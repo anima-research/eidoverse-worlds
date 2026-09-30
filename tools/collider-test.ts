@@ -245,7 +245,7 @@ console.log('\nfloor-shaped things with lying tops (the blanket rule, issue #11)
   prop('wall', { h: 2, at: [0, 0, 1.5] });
   check('another wall still occludes interaction', C.raySegment(eye, dir, 3, 'target') !== null);
   C.colliders.get('wall').structOwner = 'target';
-  check('owned structure colliders are excluded with their target', C.raySegment(eye, dir, 3, 'target') === null);
+  check('owned structure colliders still occlude their target', C.raySegment(eye, dir, 3, 'target') !== null);
   C.clearColliders();
 }
 console.log(`\n${pass} passed, ${fail} failed`);

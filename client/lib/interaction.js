@@ -16,7 +16,7 @@ import { requestAction, usePrompt, setInputAvailable, noteInput, typing } from '
 setInputAvailable(() => net.joined && !CONFIG.renderer);
 
 const point = new THREE.Vector3(), eye = new THREE.Vector3(), direction = new THREE.Vector3();
-const projected = new THREE.Vector3();
+const projected = new THREE.Vector3(), bounds = new THREE.Box3();
 let button = null, current = null, lastScan = -Infinity;
 // "Is the keyboard someone else's right now" has one definition, in input.js —
 // a second copy of the selector here drifted (it missed bare `contenteditable`).
@@ -33,12 +33,17 @@ function choose() {
     const object = structureObject(id) || entities.get(id);
     if (!action || !object?.visible || object.userData.placeholder) continue;
     object.updateWorldMatrix(true, false);
-    object.getWorldPosition(point);
-    point.y += 1;
+    // Range is to the nearest point of the thing's bounds, not its origin: a
+    // 6x4m house is usable from its far wall. Empty bounds fall back to origin.
+    bounds.setFromObject(object);
+    if (bounds.isEmpty()) { object.getWorldPosition(point); point.y += 1; }
+    else bounds.clampPoint(eye, point);
     const distance = point.distanceTo(eye);
     if (distance > nearest) continue;
     direction.copy(point).sub(eye);
-    if (distance > 0.01 && raySegment(eye, direction.normalize(), distance, id) !== null) continue;
+    // Stop just short of the surface we are reaching for; a structure's own
+    // walls between us and it still block (only its own collider is skipped).
+    if (distance > 0.06 && raySegment(eye, direction.normalize(), distance - 0.05, id) !== null) continue;
     // Only something on screen can be used; approaching from behind still
     // works when the camera can see it, including third-person views.
     projected.copy(point).project(camera);

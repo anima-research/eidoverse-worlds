@@ -587,8 +587,8 @@ function slabT(o, d, box, far) {
 }
 
 /** Nearest blocking distance along origin+dir, within `far`; null = clear.
- *  camGhost entries never block. Contextual-use rays can exclude their target,
- *  including its owned structure colliders; camera rays omit that argument. */
+ *  camGhost entries never block. Contextual-use rays can exclude their target's
+ *  own collider (never its structure walls); camera rays omit that argument. */
 export function raySegment(origin, dir, far, excludeId = null) {
   let bestT = Infinity;
   const ex = origin.x + dir.x * far, ez = origin.z + dir.z * far;
@@ -605,7 +605,7 @@ export function raySegment(origin, dir, far, excludeId = null) {
         if (id === excludeId || _rsSeen.has(id)) continue;
         _rsSeen.add(id);
         const e = colliders.get(id);
-        if (!e || (excludeId != null && e.structOwner === excludeId) || e.camGhost || e.mask || !e.box) continue;
+        if (!e || e.camGhost || e.mask || !e.box) continue;
         const o = e.obj;
         const s = o.scale?.x || 1;
         const yaw = o.rotation?.y ?? 0;

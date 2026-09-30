@@ -35,6 +35,7 @@ const keyboard = movement(new Set(['KeyW', 'KeyD', 'Space']), { moveX: 0, moveZ:
 assert(Math.abs(Math.hypot(keyboard.moveX, keyboard.moveZ) - 1) < 1e-9);
 assert(keyboard.jump && keyboard.moveZ < 0);
 assert.equal(movement(new Set(), { moveX: 0.5, moveZ: 0 }, neutral).moveX, 0.5);
+assert.equal(movement(new Set(['KeyW']), { moveX: 0, moveZ: 0 }, { ...neutral, moveX: 0.05, moveZ: 0.05 }).moveZ, -1, 'a resting pad inside noise never overrides a held key');
 
 // The frame loop hands in a scratch instead of allocating a fresh answer it
 // throws away sixty times a second (PR #171 review, item 5). Every OTHER

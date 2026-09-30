@@ -80,7 +80,7 @@ export function movement(keys, touch, pad, out = {}) {
   let moveX = Number(held('KeyD', 'ArrowRight')) - Number(held('KeyA', 'ArrowLeft'));
   let moveZ = Number(held('KeyS', 'ArrowDown')) - Number(held('KeyW', 'ArrowUp'));
   if (touch.moveX || touch.moveZ) { moveX = touch.moveX; moveZ = touch.moveZ; }
-  if (pad.moveX || pad.moveZ) { moveX = pad.moveX; moveZ = pad.moveZ; }
+  if (moving(pad)) { moveX = pad.moveX; moveZ = pad.moveZ; }
   const length = Math.max(1, Math.hypot(moveX, moveZ));
   out.moveX = moveX / length;
   out.moveZ = moveZ / length;

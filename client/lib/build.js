@@ -513,6 +513,8 @@ canvas.addEventListener('click', (e) => {
 
 bus.on('key', (e) => {
   if (e.code === 'Escape') {
+    // A held Escape auto-repeats keydowns: one press dismisses one state.
+    if (e.repeat) return;
     // ONE PRESS, ONE ACTION. This chain runs first — the most transient state
     // wins the press — and the controller's `cancel` (stand up, leave photo
     // mode, drop pointer lock) sits BELOW it as the last resort. Escape used
