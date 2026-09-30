@@ -2,15 +2,16 @@
 import { mock } from 'bun:test';
 import assert from 'node:assert/strict';
 const base = import.meta.dir + '/../client/lib/';
-class Vector3 { x=0; y=0; z=0; set(x:number,y:number,z:number){Object.assign(this,{x,y,z});return this;} }
+class Vector3 { x=0; y=0; z=0; clone(){return new Vector3().set(this.x,this.y,this.z);}set(x:number,y:number,z:number){Object.assign(this,{x,y,z});return this;} }
 const noop = () => {};
 const sent:any[] = [];
 const comps = new Map();
-const myState = { pos:new Vector3(), yaw:0 };
+const myState:any = { pos:new Vector3(), yaw:0, seat:null };
 mock.module(base+'core.js', () => ({ THREE:{Vector3} }));
 mock.module(base+'base.js', () => ({CONFIG:{name:'self'},bus:{on:noop}}));
 mock.module(base+'controller.js', () => ({myState,updateFollowCamera:noop,setPosture:noop,keys:new Set(),setSeatHook:noop}));
-mock.module(base+'world.js', () => ({avatarMounts:new Map(),mountTransform:noop,comps,
+const avatarMounts = new Map();
+mock.module(base+'world.js', () => ({avatarMounts,mountTransform:noop,comps,
   socketWorldPos:(id:string,_slot:string,v:Vector3)=>v.set(comps.get(id).x,0,0)}));
 mock.module(base+'net.js', () => ({sendVerb:(...args:any[])=>sent.push(args),sendAnim:noop}));
 mock.module(base+'bodysim.js', () => ({makeRagdoll:noop}));
@@ -30,6 +31,14 @@ for(const arg of ['ground','here',' GROUND ','Here']) {
   assert.equal(sent.length,0,'explicit ground never emits mount');
   assert.deepEqual([myState.pos.x,myState.pos.y,myState.pos.z],[0,0,0]);
 }
+// Already seated: explicit ground sit must actually leave the seat.
+myState.seat = {id:'stool',chair:true};
+assert.equal(trySitOn('ground'),false); assert.equal(myState.seat,null,'geometry seat cleared');
+avatarMounts.set('self',{to:'ground-bench'});
+assert.equal(trySitOn('here'),false);
+assert.equal(avatarMounts.has('self'),false,'mount dropped locally');
+assert.equal(sent.length,1); assert.equal(sent[0][0],'dismount'); assert.equal(sent[0][1].id,'self');
+assert.equal(sent[0][1].pos.length,3,'dismount stamps absolute pose'); sent.length=0;
 assert.equal(trySitOn(null),true,'ordinary sit keeps existing 3.5m discovery');
 assert.deepEqual(sent.pop(),['mount',{id:'self',to:'ground-bench',slot:'seat'}]);
 assert.equal(trySitOn('here-chair'),true,'full entity IDs remain selectable');

@@ -143,8 +143,14 @@ function nearestSeat(arg, reach) {
  *  anyone standing four meters from a swing they could name but not see. */
 export function trySitOn(arg) {
   // Explicit ground posture must not accidentally match an entity prefix.
-  // Return through the command's existing ground-sit fallback, with no mount.
-  if (typeof arg === 'string' && /^(ground|here)$/i.test(arg.trim())) return false;
+  // Already seated: get off first (a mount dismount stamps its landing pose;
+  // a geometry seat is just cleared) so the ground sit really leaves the seat.
+  // Then return through the command's ground-sit fallback, with no new mount.
+  if (typeof arg === 'string' && /^(ground|here)$/i.test(arg.trim())) {
+    if (avatarMounts.has(CONFIG.name)) dismountMe();
+    myState.seat = null;
+    return false;
+  }
   const best = nearestSeat(arg, arg ? Infinity : 3.5);
   if (!best) {
     const far = arg ? null : nearestSeat(null, 30);
