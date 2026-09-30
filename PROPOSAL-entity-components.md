@@ -15,6 +15,9 @@ left a gap:
 - **The governor's reports are aggregated** before an author sees them. (*Appearance code*)
 - **The Chromium figure is checked against the source.** Rev 2 said one crash; the source says two. (*Appearance code*)
 - **The counter button gains a `tag` action** that lands on another participant, so the specimen tests consent.
+- **Two positions kept, now argued.** Strangers' looks stay on by default after the preflight, with the reasons
+  (*Appearance code*); and entering stays consent, while a rule added mid-visit asks again and a "no" leaves it off
+  for that person (*Consent at the door*). Both are the owner's call.
 
 **What changed in revision 2.** The review's main correction was right: generalized components are a *delegation*
 system, and rev 1 treated "who may do what" as settled by the attacher's standing. Rev 2 adds:
@@ -272,9 +275,12 @@ over Carol.
 **Consent at the door.** A world's owner sets its rules, and may delegate rule-setting to builders; the engine doesn't
 second-guess them. It does two things only. It **shows** the rules to everyone entering, as a notice it derives from
 the live grants, so the notice is always accurate and no one can word it away ("Items here can teleport you: the
-Yeet Hand, granted by Bob"). Entering is consent, as it is at a paintball field; a world may also offer "enter
-protected", which the grants skip. And it never applies a new rule **retroactively**: a grant added while people are
-inside reaches each of them only once they've seen it. Residents who perceive by reading get the same notice as data.
+Yeet Hand, granted by Bob"). The notice covers what the world's own look will do to a visitor too: world-scale shaders,
+full-view effects, and a photosensitivity line when a record declares flashing. Entering is consent, as it is at a
+paintball field; a world may also offer "enter protected", which the grants skip. And it never applies a new rule
+**retroactively**: a grant added while people are inside asks each of them again, as its own approval. Declining
+leaves it off for that person: the effect can't reach them, and a world shader added mid-visit shows them its
+fallback. Residents who perceive by reading get the same notice as data, and answer it the same way.
 
 The log records every hop: *Carol moved Dave, via the Yeet Hand (record …), under Bob's grant*. Revoking the grant
 disarms every copy at once. A world's own author working in their own world is all three parties at once, so none of
@@ -429,7 +435,18 @@ With those, the governor is what makes open shader worlds safe to offer.
 
 **Each viewer's standing choice**, global and per world: *fallbacks only · engine records · also this world's records ·
 everything I've opted into*. Anything quarantined or stepped down is listed in the world's component panel, so no one
-is asked to debug it.
+is asked to debug it. The per-world answers (door approvals, mid-visit approvals, shaders left off) live together in
+one "World permissions" page in the settings, where any of them can be changed later.
+
+**Why strangers' looks are on by default after the preflight, not off until approved.** The review asked for fallback
+until each viewer consents to the exact hash. We'd keep the default on, for three reasons. The governor exists to
+protect the viewer from other people's code, and it does, per viewer, without that viewer's help: compile deadline,
+GPU budget, step-down, unload, quarantine. The preflight means nothing reaches anyone before it has run somewhere
+else first. And a social space where every avatar starts as a grey box until approved one by one is not the norm in
+the spaces people already use: other people's looks show by default there, with a safety setting to narrow them.
+What stays with the viewer: the standing choice above (one click to *engine records* or *fallbacks only*, globally or
+per world), a per-record "show fallback" on anything they see, and a world's own rules, which can narrow looks to its
+builders' records. Exact-hash approval is kept where the code acts, and for a world's own shaders, through the door.
 
 ### Lineage and credit
 
