@@ -227,6 +227,14 @@ where it stands (`"parent.to": "lamp"`; null makes it a root, as does
 `parent.unparent`) — a `mount`/`dismount` carrying its full pose, plus a
 scale `place` when a scaled carrier would resize it; a loop, a lock or a
 guard is refused by name. `inspect` names the parent and the children.
+**The world itself is `@world`** — one entity whose components are its Sky,
+Weather, Ground and Grass (an alias of the world's sky / terrain / grass; nothing new
+on the wire). `inspect {id: "@world"}` shows them; `edit` writes `sky.hours sky.rate
+sky.clouds sky.clock sky.tz sky.exposure …` (→ ONE re-authored `sky` carrying
+everything standing, the weather included) · `weather.state` (→ `weather`; under a
+forecast it holds until the next segment) · `ground.amplitude ground.seed ground.size
+ground.color …` (→ `terrain`) · `grass.density grass.height … grass.mow` (→ `grass`).
+Owner rank, like the verbs. `hierarchy` lists it first.
 A locked thing's pose (or a rider of a moving part's) is read-only and `inspect` says
 why. Refused edits are named and the rest still go; `dry:true` shows the
 verbs without sending. `measure` (below) is geometry; `inspect` is state.

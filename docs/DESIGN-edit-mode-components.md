@@ -98,6 +98,14 @@ One entity per world, id `@world`, whose components are **Sky**, **Ground** (ter
 **Weather**. Today these live outside `entities` (`state.sky`, `state.terrain`, `state.grass`); the alias
 maps them both ways exactly as the entity aliases do. "One sky per world" is not a special rule: Sky is
 one-per-entity and there is one world entity. Picking a sky in the library **replaces** the world's Sky.
+*Built (step 5):* `shared/worldentity.js`. Sky and Weather partition `state.sky` (Weather = `weather`,
+`weatherK`, `weatherSeconds`, `forecast`, `override`; the fold's `ts/seq/by` are stamps); Ground is
+`state.terrain`, Grass `state.grass`. Four engine records (category World, never addable to a thing). Edits go
+out as the existing verbs: every `sky.*` edit is one re-authored `sky` (everything standing rides along,
+the Weather included, and a turning day is re-anchored at now), `weather.state` one `weather`, `ground.*`
+one `terrain`, `grass.*` one `grass` (`grass.mow` = `grass {clear:true}`). A sky pick's args are the
+preset's plus the carried Weather, so the new Sky holds nothing of the old one. The corpus test holds the
+round trip on every local world (392 world states) with a partition oracle of its own.
 
 ### Blueprints
 A blueprint is a canonical-JSON (RFC 8785) record, content-hashed:
@@ -184,7 +192,27 @@ ships, and PROTOCOL.md is updated in the same stack.
 3. Inspector: header + cards + Add Component with needs (auto-add / ask / remove-both); Channel box with
    quaternions; rotate gizmo on `q`.
 4. Hierarchy as a tree with drag-to-parent. *(built)*
-5. Build panel: Blueprints · Tools · World; B opens on Build; the world entity's components.
+5. Build panel: Blueprints · Tools · World; B opens on Build; the world entity's components. *(built)*
+   Blueprints re-hosts the starters and the library (a model is offered as "a blueprint of one Model";
+   placing is build.js's `holdGhost`, unchanged), "add light", and an empty *saved here* line for step 6.
+   Tools re-hosts the transform tools (build.js `setTool`, the call Q/G/E/R make), the six building tools
+   (structure_ui, its own undo stack) and seat placement (seatedit, on the selected thing); one tool reads
+   armed at a time, and a transform tile puts an armed building tool down. World re-hosts the sky presets
+   (`defs/sky/_presets.json`), the ground palette's shapes, tints and plantings (`shared/grounddefs.js`
+   now holds the args recipe the ground panel also writes through) and the weathers; a pick is one verb
+   and one Ctrl+Z step. B opens on Build the first time; the left tab is then remembered per viewer
+   (`client/lib/edittabs.js`, localStorage; a layout saved before Build opens on Build once). `@world` is
+   pinned atop the Hierarchy (and in World); selecting it shows its four cards in the Inspector; agents get
+   it through `inspect`, `edit` and `hierarchy`. The VR quad paints Build (library, World) and the cards.
+   Gaps found: §4's **ground sculpt/paint does not exist** (the ground is a preset terrain; a brush is a new
+   tool and a wire change); **Sky and Weather share the `sky` verb's wholesale fold**, so any Sky edit
+   re-authors a forecast policy and the fold re-epochs it (its segment sequence restarts) — a Sky-only
+   partial verb would be a wire change; the World section is **owner-only** (sky/terrain/grass/weather are
+   owner rank), read-only for a builder; the first-ever terrain has no undo (no verb removes terrain) and
+   the first sky's undo is `sky {}`; Q/G/E/R still leave an armed building tool armed (only the tiles put it
+   down; Esc does too); Esc with `@world` selected leaves edit mode (build.js's Esc ladder doesn't know it);
+   the sky panel's own commit re-sends the stored `hours` anchor, so on a turning day it snaps the clock back
+   (found, not changed here; the World cards re-anchor).
 6. Blueprints: record, store, Save as Blueprint, place copy, overrides, update offer, unlink.
 7. VR parity for every panel; text-tier readout for every new component and for copies.
 
