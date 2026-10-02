@@ -588,6 +588,14 @@ first:
   locally with whatever you have (trimesh, gltf-transform, your own
   parser); the mesh you download is the mesh clients render.
 
+## Walking through buildings
+
+`walk_to {x, z, run?, tolerance?}` routes through doors and arches in griddled structures, including entry, exit, and outdoor walks obstructed by a building. Windows and solid walls block passage. The route covers the horizontal centerline on the selected storey; it does not promise capsule clearance, arbitrary mesh avoidance, or vertical travel. Storey selection and standing height remain a separate concern (#140).
+
+The planner includes outdoor cells inside a padded local region, bounded to 16,384 cells per structure. Distant endpoints connect to that region without expanding it. A sealed destination or an oversized search returns a reason instead of a straight-line fallback. Candidate local paths are checked against other known structures; when none is clear, the tool reports that global multi-building search is unavailable. An unrelated structure does not become the building you route through merely because it appears first.
+
+Routes use the structures known when the walk begins. Intermediate waypoints are reached exactly; `tolerance` (0–0.4 metres) applies only to the requested destination. Replacing a walk with a refused route cancels the old walk too.
+
 ## Debugging — what the world will tell you
 
 - **`body_state {who?, detail?, points?, window_ms?}`** — perceive your own or another

@@ -1,3 +1,4 @@
+import { routeLevel, clearLevelSegment } from './structure-route.js';
 // structure_field — the griddled-building model's pure half (§11.4 discipline,
 // sibling of models_field.js / flora_field.js / emitter_field.js).
 //
@@ -1054,33 +1055,32 @@ export function routeCells(level, fromKey, toKey) {
   return null;
 }
 
-/** A route in grid-local metres: the true start, the centre of each cell the
- *  path turns in, and the true destination.
- *
- *  Only TURNS become waypoints. A straight run down a corridor is one leg, so a
- *  body walks it as a straight line instead of stuttering cell to cell — and
- *  the waypoint count stays proportional to the number of decisions rather than
- *  to the distance. */
+/** Select the same routing storey for planning and segment validation.
+ * Storey/standing-height resolution is the separate #140 contract. */
+function routingLevel(plan, fromX, fromZ, y) {
+  return plan.levels.find((L) => L.rooms.length) ?? plan.levels[0];
+}
+
+/** Rich route result: clear, routed, or blocked with a reason. Outdoor cells
+ * are navigable on this horizontal plane; the room graph stays floor-only. */
+export function planRouteLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
+  if (![fromX, fromZ, toX, toZ].every(Number.isFinite)) return { kind: 'blocked', reason: 'non-finite endpoint', points: [] };
+  const lv = routingLevel(plan, fromX, fromZ, y);
+  if (!lv) return { kind: 'clear', points: [[fromX, fromZ], [toX, toZ]] };
+  return routeLevel(lv.level, plan.grid, [fromX, fromZ], [toX, toZ]);
+}
+
+/** A cheap check of an actual route leg against this structure's walls. */
+export function routeSegmentClear(plan, fromX, fromZ, toX, toZ, y = 0) {
+  const lv = routingLevel(plan, fromX, fromZ, y);
+  return !lv || clearLevelSegment(lv.level, plan.grid, [fromX, fromZ], [toX, toZ]);
+}
+
+/** Compatibility surface for readers that need points rather than refusal
+ * details. A null route is blocked, never a validated straight line. */
 export function routeLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
-  const g = plan.grid;
-  const lv = plan.levels.find((L) => L.rooms.length) ?? plan.levels[0];
-  if (!lv) return null;
-  const level = lv.level;
-  const cells = routeCells(level, nodeAtPoint(level, g, fromX, fromZ), nodeAtPoint(level, g, toX, toZ));
-  if (!cells) return null;
-  const centre = (k) => {
-    const [x, z] = k.split(':')[0].split(',').map(Number);
-    return [(x + 0.5) * g.tile, (z + 0.5) * g.tile];
-  };
-  const pts = [[fromX, fromZ]];
-  for (let i = 1; i < cells.length - 1; i++) {
-    const [ax, az] = cells[i - 1].split(':')[0].split(',').map(Number);
-    const [bx, bz] = cells[i + 1].split(':')[0].split(',').map(Number);
-    if (ax !== bx && az !== bz) pts.push(centre(cells[i]));   // a turn
-  }
-  pts.push([toX, toZ]);
-  void y;
-  return pts;
+  const result = planRouteLocal(plan, fromX, fromZ, toX, toZ, y);
+  return result.kind === 'blocked' ? null : result.points;
 }
 
 // ---- swept wall geometry ----------------------------------------------------

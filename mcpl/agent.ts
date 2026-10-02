@@ -52,7 +52,7 @@ import { describeParticles, emitterTransition, transitionLine } from "../shared/
 import { describePicture } from "../shared/picture.js";
 import { describeCaptions } from "../shared/captions.js";
 import { describeSound } from "../shared/sound.js";
-import { describeStructure, describeHere, localizePoint, planStructure, routeLocal } from "../shared/structure.js";
+import { describeStructure, describeHere, localizePoint, planStructure, planRouteLocal, routeSegmentClear } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
 
@@ -168,9 +168,13 @@ export class WorldAgent {
   pos = { x: 0, y: 0, z: 0 };
   yaw = 0; speed = 0; clip = "idle";
   private target: (Vec2 & { run: boolean; tolerance?: number }) | null = null;
-  /** Remaining waypoints of a routed walk — see walkTo. Empty means the target
-   *  is reachable in a straight line, which is every case outside a building. */
+  /** Remaining validated centerline waypoints. Only the destination uses
+   * the caller's tolerance; intermediate waypoints are reached exactly. */
   private legs: Vec2[] = [];
+  private walkTolerance = ARRIVE;
+  /** Planning is synchronous; a caller can capture this immediately after
+   * walkTo() so a later replacement walk cannot change its refusal receipt. */
+  walkRefusal: string | null = null;
   /** A held custom pose — sparse humanoid-bone quaternions. Presence only:
    *  it rides the pose packet and is never a log verb, because it is a moment,
    *  not a change to the world. `null` clears. */
@@ -1753,7 +1757,8 @@ export class WorldAgent {
         // rounds a doorway instead of driving at the wall behind it.
         const next = this.legs.shift();
         if (next) {
-          this.target = { x: next.x, z: next.z, run: this.target.run, tolerance: this.target.tolerance };
+          this.target = { x: next.x, z: next.z, run: this.target.run,
+            tolerance: this.legs.length ? 0 : this.walkTolerance };
         } else {
           this.target = null; this.speed = 0; this.clip = "idle";
           this.walkDone?.(true); this.walkDone = null;
@@ -1763,8 +1768,14 @@ export class WorldAgent {
         this.speed = sp; this.clip = this.target.run ? "run" : "walk";
         this.yaw = Math.atan2(dx, dz);
         const step = Math.min(dist, sp * dt);
-        this.pos.x += (dx / dist) * step;
-        this.pos.z += (dz / dist) * step;
+        if (step === dist) {
+          // Land on the validated point exactly, rather than allowing a
+          // tolerance or floating residual to cut the next corner.
+          this.pos.x = this.target.x; this.pos.z = this.target.z;
+        } else {
+          this.pos.x += (dx / dist) * step;
+          this.pos.z += (dz / dist) * step;
+        }
       }
     }
     // a tumbling, lying, dragged, nailed or FLYING body owns its own y — the
@@ -2450,6 +2461,8 @@ export class WorldAgent {
   walkTo(x: number, z: number, run = false, timeoutMs = 90_000, tolerance = ARRIVE): Promise<boolean> {
     if (![x, z, tolerance].every(Number.isFinite) || tolerance < 0 || tolerance > 0.4) return Promise.resolve(false);
     this.walkDone?.(false); // cancel a previous walk
+    this.walkDone = null; this.target = null; this.legs = []; this.speed = 0;
+    this.walkRefusal = null; this.walkTolerance = tolerance;
     if (this.draggedBy) {   // deciding to walk IS breaking the dragger's hold
       this.ws?.send(JSON.stringify({ type: "bodydrag", target: this.draggedBy, end: true }));
       this.draggedBy = null;
@@ -2477,36 +2490,63 @@ export class WorldAgent {
     if (this.joined && this.mounts.has(this.name)) this.verb("dismount", { id: this.name });
     // and stand on the ground you got up onto
     this.pos.y = this.heightAt(this.pos.x, this.pos.z);
-    // ROUTE THROUGH WALLS RATHER THAN INTO THEM. Straight-line walking samples
-    // only the height field, so a body crosses walls as if they were not there.
-    // Inside a griddled building the grid IS the navigation graph, so ask it.
-    // Failure is silent and total on purpose: no route (target outdoors, no
-    // structure, a sealed room) falls back to the old straight line, which is
-    // exactly the behaviour everywhere that has no building.
-    this.legs = [];
-    try {
-      for (const e of this.entities.values()) {
-        const data = (e.comp ?? {}).structure;
-        if (!data) continue;
+    // Each local planner may offer a route around/through its building.
+    // Validate the offered polyline against EVERY known structure before
+    // accepting one. This is local planning, not global multi-building search.
+    const constraints: { id: string; plan: ReturnType<typeof planStructure>; e: Entity; y: number }[] = [];
+    const candidates: { points: Vec2[]; length: number; id: string }[] = [];
+    const refusals: string[] = [];
+    for (const e of this.entities.values()) {
+      const data = (e.comp ?? {}).structure;
+      if (!data) continue;
+      try {
         const plan = planStructure(data);
-        const [ax, , az] = localizePoint(e, this.pos.x, this.pos.y, this.pos.z);
+        const [ax, ay, az] = localizePoint(e, this.pos.x, this.pos.y, this.pos.z);
         const [bx, , bz] = localizePoint(e, x, this.pos.y, z);
-        const pts = routeLocal(plan, ax, az, bx, bz);
-        if (!pts || pts.length < 3) continue;    // straight line is already fine
+        constraints.push({ id: e.id, plan, e, y: ay });
+        const result = planRouteLocal(plan, ax, az, bx, bz, ay);
+        if (result.kind === "blocked") {
+          refusals.push("[" + e.id + "]: " + result.reason); continue;
+        }
+        if (result.kind === "clear") continue;
         const yaw = Number.isFinite(e.yaw) ? e.yaw : 0;
         const sc = Number.isFinite(e.scale) && e.scale > 0 ? e.scale : 1;
         const [px, , pz] = Array.isArray(e.pos) ? e.pos : [0, 0, 0];
         const c = Math.cos(yaw), n = Math.sin(yaw);
-        // grid-local back to world: the inverse of localizePoint
-        this.legs = pts.slice(1).map(([lx, lz]) => ({
+        const points = result.points.map(([lx, lz]) => ({
           x: px + (lx * c + lz * n) * sc,
           z: pz + (-lx * n + lz * c) * sc,
         }));
-        break;
+        const length = points.slice(1).reduce((sum, p, i) => sum + Math.hypot(p.x - points[i].x, p.z - points[i].z), 0);
+        candidates.push({ points, length, id: e.id });
+      } catch {
+        // A malformed component has no sound route to offer. Normalize handles
+        // primitive data as empty; keep inspecting other, well-formed houses.
+        refusals.push("[" + e.id + "]: structure could not be planned");
       }
-    } catch { this.legs = []; }
+    }
+    candidates.sort((a, b) => a.length - b.length || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    let selected: Vec2[] | null = null;
+    for (const candidate of candidates) {
+      const valid = constraints.every(({ plan, e, y }) => candidate.points.slice(1).every((p, i) => {
+        const a = candidate.points[i];
+        const [ax, , az] = localizePoint(e, a.x, this.pos.y, a.z);
+        const [bx, , bz] = localizePoint(e, p.x, this.pos.y, p.z);
+        return routeSegmentClear(plan, ax, az, bx, bz, y);
+      }));
+      if (valid) { selected = candidate.points; break; }
+    }
+    if (!selected && (candidates.length || refusals.length)) {
+      this.walkRefusal = candidates.length
+        ? "no local route is clear of all structures (multi-building route search is unavailable)"
+        : "no route: " + refusals.join("; ");
+      this.clip = "idle";
+      return Promise.resolve(false);
+    }
+    this.legs = selected ? selected.slice(1) : [];
     const first = this.legs.shift();
-    this.target = first ? { x: first.x, z: first.z, run, tolerance } : { x, z, run, tolerance };
+    this.target = first ? { x: first.x, z: first.z, run, tolerance: this.legs.length ? 0 : tolerance }
+      : { x, z, run, tolerance };
     return new Promise((resolve) => {
       this.walkDone = resolve;
       setTimeout(() => { if (this.walkDone === resolve) { this.target = null; this.walkDone = null; resolve(false); } }, timeoutMs);
