@@ -23,7 +23,9 @@ let rigRef = null; let builds = 0;
 // where you put each panel (rig-local pos + yaw/pitch), per browser — a grabbed panel (C17) stays put next session
 const PLACE_LS = 'ew-xr-quads';
 const loadPlaces = () => { try { return JSON.parse(localStorage.getItem(PLACE_LS) || '{}'); } catch { return {}; } };
-const savePlace = (id, p) => { try { const all = loadPlaces(); all[id] = p; localStorage.setItem(PLACE_LS, JSON.stringify(all)); } catch {} };
+// MERGED into what is saved: a move (pos/yaw/pitch) must not wipe a VR resize (w, bh, mpp) — it did, and the next grab
+// after a resize put the panel back to its old size and density on the following session (found by the probe, 10-02)
+const savePlace = (id, p) => { try { const all = loadPlaces(); all[id] = { ...(all[id] ?? {}), ...p }; localStorage.setItem(PLACE_LS, JSON.stringify(all)); } catch {} };
 export const resetQuadPlaces = () => { try { localStorage.removeItem(PLACE_LS); } catch {} };
 const _rc = new THREE.Raycaster(); const _m = new THREE.Matrix4();
 
@@ -63,6 +65,10 @@ function stageEl(q) {
   if (el.offsetWidth < 40 || el.offsetHeight < 40) {   // a frame that has never been shown may carry no size yet
     const st = api._state ?? api.state ?? {}; el.style.width = `${st.w ?? 300}px`; el.style.height = `${st.h ?? 220}px`;
   }
+  // VR has ITS OWN layout for a frame (owner, 10-02): a size resized in the headset (saved with the panel's place)
+  // goes on while staged; the desktop's state is never touched
+  const vr = loadPlaces()[q.id];
+  if (Number.isFinite(vr?.w) && Number.isFinite(vr?.bh)) api._setVrSize?.({ w: vr.w, h: vr.bh });
 }
 
 function build(q) {
@@ -144,6 +150,7 @@ function unstageEl(q) {
   if (r.next && r.next.parentNode === parent) parent.insertBefore(q.el, r.next); else parent.appendChild(q.el);
   q.el.style.display = r.display; q.el.style.left = r.left; q.el.style.top = r.top; q.el.style.width = r.width; q.el.style.height = r.height; q.el.style.position = r.position; if (r.collapsed) q.el.classList.add('collapsed');
   q.restore = null;
+  q.api?._setVrSize?.(null);   // the desktop size back (the VR one stays saved with the panel's place)
 }
 
 export const domQuadsEnabled = () => !new URLSearchParams(location.search).has('canvasquads');
@@ -403,11 +410,12 @@ export const domQuadAids = (id) => { const q = all.find((x) => x.id === id);   /
   return [...(q?.handle?.material.opacity === HANDLE_ON ? ['move'] : []), ...(q?.aids?.children ?? []).filter((c) => c.visible).map((c) => c.userData.zone)]; };
 
 // ---- RESIZE in VR: grip on a corner or an edge (owner, 10-02). While held, the gripped corner/edge follows the laser
-// across the panel's plane and an outline shows the new size; the opposite side stays put. On release the size is
-// committed to the frame's layout state the way a desktop resize commits it (frames.js: state, markMoved, save — so it
-// persists, and the desktop frame is that size too), and the quad is rebuilt at the SAME pixel density, so the panel
-// grows rather than its text shrinking. Floors are the frame's own (minW/minH); ceilings keep it on a desktop screen
-// and under RESIZE_MAX_M across.
+// across the panel's plane and an outline shows the new size; the opposite side stays put. On release the size is VR's
+// OWN (owner, 10-02, revising the first pass, which wrote the desktop layout): it goes on the staged frame (frames.js
+// _setVrSize) and is saved with the panel's VR place (ew-xr-quads: w, bh, mpp, pos, yaw, pitch); the desktop frame's
+// size and saved layout are untouched, and come back when the frame leaves the headset. Whether a panel is open and
+// which tab is chosen stay one state for both. The quad is rebuilt at the SAME pixel density, so the panel grows
+// rather than its text shrinking. Floors are the frame's own (minW/minH); the ceiling is RESIZE_MAX_M across.
 export const RESIZE_MAX_M = 1.6;
 const _rp = new THREE.Plane(), _rv = new THREE.Vector3(), _rn = new THREE.Vector3(), _rq = new THREE.Quaternion();
 export function domQuadResizeBegin(at) {
@@ -419,9 +427,9 @@ export function domQuadResizeBegin(at) {
   const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(_rn, q.mesh.getWorldPosition(_rv));
   // the ANCHOR: the corner (or edge midpoint) opposite the one gripped, in quad-local units
   const ax = z.includes('e') ? -W0 / 2 : z.includes('w') ? W0 / 2 : -W0 / 2, ay = z.includes('s') ? H0 / 2 : z.includes('n') ? -H0 / 2 : H0 / 2;
-  const api = getFrame(q.id), chrome = Math.max(0, q.el.offsetHeight - (api?._state?.h ?? q.el.offsetHeight));
+  const api = getFrame(q.id), chrome = Math.max(0, q.el.offsetHeight - (api?._vrSize?.h ?? api?._state?.h ?? q.el.offsetHeight));   // the frame's chrome over its body
   const kScale = q.mesh.scale.x;   // metres per local unit
-  const maxW = Math.min(innerWidth - 16, RESIZE_MAX_M / (kScale * 0.001)), maxH = Math.min(innerHeight - 16, RESIZE_MAX_M / (kScale * 0.001));
+  const maxW = RESIZE_MAX_M / (kScale * 0.001), maxH = RESIZE_MAX_M / (kScale * 0.001);   // VR's own layout: no desktop window to fit
   // a closed Line (five points; the WebGPU renderer draws no LineLoop)
   const outline = new THREE.Line(new THREE.BufferGeometry().setFromPoints([0, 1, 2, 3, 4].map(() => new THREE.Vector3())),
     new THREE.LineBasicNodeMaterial({ color: AID_INK, transparent: true, opacity: 0.95, depthWrite: false }));
@@ -456,14 +464,16 @@ export function domQuadResizeEnd(drag, rig) {
   if (!drag) return null;
   drag.outline.removeFromParent(); drag.outline.geometry.dispose(); drag.outline.material.dispose();
   const { q, z } = drag, api = getFrame(q.id);
-  if (!api?._state || (Math.abs(drag.w - drag.w0) < 1 && Math.abs(drag.h - drag.h0) < 1)) return null;
+  if (!api?._setVrSize || (Math.abs(drag.w - drag.w0) < 1 && Math.abs(drag.h - drag.h0) < 1)) return null;
   const mesh = q.mesh, mpp = mesh.scale.x * 0.001;   // metres per CSS px, kept
   // the anchor corner in world, before the rebuild
   const anchorW = mesh.localToWorld(new THREE.Vector3(drag.ax, drag.ay, 0));
-  if (z.includes('e') || z.includes('w')) api._state.w = Math.round(drag.w);
-  if (z.includes('s') || z.includes('n')) api._state.h = Math.max(drag.info.minH, Math.round(drag.h - drag.chrome));
-  api._paint(); api._markMoved?.((/[ew]/.test(z) ? 'xw' : '') + (/[ns]/.test(z) ? 'yh' : '')); api._save();
-  if (q.restore) { q.restore.width = q.el.style.width; q.restore.height = q.el.style.height; }   // leaving VR must not put the old width back
+  // VR's OWN size (owner, 10-02: separate VR and desktop layouts): on the staged frame and saved with the panel's place
+  // below; the desktop frame's state and its saved layout are not touched
+  const cur = api._vrSize ?? { w: q.el.offsetWidth, h: Math.max(drag.info.minH, Math.round(drag.h0 - drag.chrome)) };
+  const w = z.includes('e') || z.includes('w') ? Math.round(drag.w) : cur.w;
+  const bh = z.includes('s') || z.includes('n') ? Math.max(drag.info.minH, Math.round(drag.h - drag.chrome)) : cur.h;
+  api._setVrSize({ w, h: bh });
   // the new box's centre: from the anchor, half the NEW size toward the gripped side (an edge-only resize keeps the
   // other axis's centre), in the quad's own frame
   const fr = q.el.getBoundingClientRect(), sx = z.includes('w') ? -1 : 1, sy = z.includes('n') ? 1 : -1;
@@ -474,7 +484,7 @@ export function domQuadResizeEnd(drag, rig) {
   const parent = mesh.parent ?? rig; parent.updateMatrixWorld(true);
   const posLocal = parent.worldToLocal(centreW.clone());
   const _e = new THREE.Euler().setFromQuaternion(mesh.quaternion, 'YXZ');
-  const place = { pos: posLocal.toArray().map((v) => +v.toFixed(3)), yaw: +_e.y.toFixed(3), pitch: +_e.x.toFixed(3), mpp: +mpp.toFixed(6) };
+  const place = { pos: posLocal.toArray().map((v) => +v.toFixed(3)), yaw: +_e.y.toFixed(3), pitch: +_e.x.toFixed(3), mpp: +mpp.toFixed(6), w, bh };
   savePlace(q.id, place);
   drop(q); q.aids = null; setVisible(q, true);   // rebuilt at the new size, from the saved place
   return { w: fr.width, h: fr.height, anchorWorld: anchorW.toArray(), centreWorld: centreW.toArray(), W0, H0 };

@@ -466,6 +466,9 @@ export function makeFrame(id, opts = {}) {
     // alone BYPASSES the viewport clamp: the bar reflowed to three rows and
     // painted itself past the bottom edge (#185 review, 800x700).
     _state: state, _paint: () => paint(), _markMoved: markMoved, _project: () => project(),
+    // VR's size for this frame (domquad.js): set while staged, null to give the frame back its desktop size
+    _setVrSize: (s) => { vrSize = s && Number.isFinite(s.w) && Number.isFinite(s.h) ? { w: s.w, h: s.h } : null; root.style.width = `${vrSize?.w ?? state.w}px`; body.style.height = `${vrSize?.h ?? state.h}px`; },
+    get _vrSize() { return vrSize && { ...vrSize }; },
     // a rider writing _state.w/h is setting the frame's size, so that is the rest size
     _fit: () => { rest.w = state.w; rest.h = state.h; fit(); },
       // READER for the same flag (#185 B1): the api carried a SETTER only, so the
@@ -569,11 +572,15 @@ export function makeFrame(id, opts = {}) {
   function save() {
     localStorage.setItem(LS(id), JSON.stringify({ ...state, x: rest.x, y: rest.y, w: rest.w, h: rest.h, vw: rest.vw, vh: rest.vh }));
   }
+  // VR's OWN size for this frame (owner, 10-02: VR and desktop layouts are separate). Set by domquad.js while the frame is
+  // staged for the headset and cleared when it comes back; paint honours it, so nothing that repaints the frame
+  // mid-session puts the desktop size on the VR panel. Never saved here: the desktop layout (state) is untouched.
+  let vrSize = null;   // { w, h } (h: the body's height, as state.h) or null
   function paint() {
     root.style.display = state.hidden ? 'none' : 'flex';
     root.style.left = `${state.x}px`;
     root.style.top = `${state.y}px`;
-    root.style.width = `${state.w}px`;
+    root.style.width = `${vrSize?.w ?? state.w}px`;
     // PUBLISH THE FRAME'S OWN FLOOR. index.html's `.frame { min-width: 170px }`
     // is a CSS floor sitting BENEATH this JS one, and it silently won whenever a
     // frame declared a smaller minW. Measured in Chromium: the emote bar asking
@@ -584,7 +591,7 @@ export function makeFrame(id, opts = {}) {
     // rows of tiles. Three rounds of fixing snapTo changed nothing she could see
     // because the arithmetic was right and the render was floored.
     root.style.minWidth = `${minW}px`;
-    body.style.height = `${state.h}px`;
+    body.style.height = `${vrSize?.h ?? state.h}px`;
     // arrange-mode affordances: which viewport edges hold this frame (glow),
     // and whether the floating label must sit below (frame hugs the top)
     const hgt = root.offsetHeight || state.h;
