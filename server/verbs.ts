@@ -18,6 +18,8 @@ import { isAdminId, rightsOf, worldHasOwner, VERB_NEEDS, lockRefusal, guardRefus
 import { normalizeCaptionArgs, captionRefusal } from "../shared/captions.js";
 import { compRefusal } from "../shared/components.js";
 import { cycleRefusal } from "../shared/hierarchy.js";
+import { blueprintRefusal, hashRefusal } from "../shared/blueprint.js";
+import { canon } from "../shared/components.js";
 import { lintMotion, lintParticles } from "./lint.ts";
 import { reactToUse } from "./reactions.ts";
 import { behaviorLimits } from "./behaviors.ts";
@@ -246,6 +248,43 @@ function vComp(ctx: VerbCtx, args: Record<string, unknown>) {
     return { error: "component data too large (8KB max) — put big things in /upload and reference the path" };
   }
   return { args: { id, type, data: args.data ?? null } };
+}
+
+/** Publish a blueprint record into this world's store (design §3; PROTOCOL
+ *  §4.1): {hash, record}. The shape and size are the shared rule's
+ *  (shared/blueprint.js blueprintRefusal — the editor asks the same), the
+ *  hash is recomputed and must be the one sent, and a version's parent must
+ *  already be in the store, so every lineage this world holds is complete and
+ *  a copy's "update to v3" can always walk back to the v1 it was placed from.
+ *  Publishing what the store already holds, byte for byte, is accepted
+ *  idempotently as a thin {hash} entry: the publisher gets its echo, the log
+ *  does not carry the record twice. A re-publish whose prose (`note`) was
+ *  reworded goes in whole — same hash, and the store takes the new words. */
+function vBlueprint(ctx: VerbCtx, args: Record<string, unknown>) {
+  const { w, c } = ctx;
+  const refuse = (why: string) => {
+    w.debug("rejected", { who: c.id, verb: "blueprint", why });
+    return { error: why };
+  };
+  const store = (w.state as { blueprints?: Record<string, { record: unknown }> }).blueprints ?? {};
+  if (args.record === undefined) {
+    // {hash} alone: an acknowledgement of a record the store already holds
+    const h = typeof args.hash === "string" ? args.hash : "";
+    if (h && store[h]) return { args: { hash: h } };
+    return refuse(h ? `this world's store has no blueprint ${h} — send the record: blueprint {hash, record}` : "blueprint wants {hash, record}: the record and its content hash");
+  }
+  const rec = args.record as Record<string, unknown>;
+  const shape = blueprintRefusal(rec);
+  if (shape) return refuse(shape);
+  const hash = hashRefusal(rec, args.hash);
+  if (hash) return refuse(hash);
+  const h = args.hash as string;
+  const held = store[h];
+  if (held && canon(held.record) === canon(rec)) return { args: { hash: h } };
+  if (rec.parent !== undefined && !store[rec.parent as string]) {
+    return refuse(`this version's parent ${rec.parent} is not in this world's store — publish the version it was edited from first (a world keeps every version its copies follow)`);
+  }
+  return { args: { hash: h, record: rec } };
 }
 
 /** One caption line, or the screen going quiet. Shape by the shared meaning
@@ -539,6 +578,7 @@ const extras: Record<string, Pick<VerbRow, "selfRankZero" | "validate" | "after"
     },
   },
   comp: { validate: vComp, after: afterComp },
+  blueprint: { validate: vBlueprint },
   motion: { after: (ctx, entry) => lintMotion(ctx.w, entry) },
   // ...and a (re)bind reconciles sandboxes before scripts hear anything else.
   behavior: { validate: vBehavior, after: (ctx) => ctx.w.bhv.sync() },

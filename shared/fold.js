@@ -16,6 +16,7 @@
 import { foldSkyEntry } from './forecast.js';
 import { normalizeCaptionArgs, captionRefusal, foldCaption } from './captions.js';
 import { qNorm, qFromYaw, qMul, qRotate, qHeading, qWithHeading } from './rot.js';
+import { blueprintHash } from './blueprint.js';
 
 // Orientation (PROTOCOL §9 amendment): `q` is the whole truth when
 // present and `yaw` is always its heading, so yaw-only readers stay correct
@@ -155,6 +156,15 @@ function bornOf(prev, kind, a, e) {
  *   because snapshots from before this verb lack the map.
  * @property {Record<string, BehaviorBinding>} [behaviors]
  *   Runtime scripts bound into this world by `behavior` entries.
+ * @property {Record<string, { record: object, by: string, ts: number }>} [blueprints]
+ *   The world's blueprint store (design §3; PROTOCOL §4.1): every record a
+ *   `blueprint` entry published, keyed by its content hash — recomputed here,
+ *   so a hand-edited log cannot file a record under a name that is not its
+ *   own. Append-only: nothing unpublishes, so every record a copy names stays
+ *   (RFC: retention) and the world opens offline. `by`/`ts` are the FIRST
+ *   publish (no seq: a snapshot's re-synthesized entries carry their own); a re-publish with reworded prose (`note`, outside the
+ *   hash) takes the new record. Absent until the first publish, so states
+ *   and snapshots from before the verb keep their shape.
  */
 
 /** The rights ladder (PROTOCOL.md §7): visitor < builder < owner.
@@ -387,6 +397,21 @@ export function foldEntry(st, e) {
         st.assets.push({ name: a.name ?? "upload", path: a.path });
       }
       return;
+    case "blueprint": {
+      // {hash, record}: file the record under its hash when the hash is its
+      // own. {hash} alone (the door's idempotent re-publish) folds nothing
+      // new. The door checks shape and lineage; the fold checks only what
+      // keeps the store honest, and never throws (§1 totality).
+      const rec = a?.record;
+      if (!rec || typeof rec !== "object" || Array.isArray(rec) || typeof a.hash !== "string") return;
+      let h;
+      try { h = blueprintHash(rec); } catch { return; }
+      if (h !== a.hash) return;
+      st.blueprints ??= {};
+      const held = st.blueprints[h];
+      st.blueprints[h] = held ? { ...held, record: rec } : { record: rec, by: e.actor, ts: e.ts };
+      return;
+    }
     case "say":
       st.recentChat.push({ actor: e.actor, text: String(a?.text ?? ""), ts: e.ts, seq: e.seq });
       st.chatTotal = (st.chatTotal ?? 0) + 1;
@@ -620,6 +645,10 @@ export function stateToEntries(state, {
   if (state.grass) add('grass', state.grass);
   if (state.sky) add('sky', state.sky, 'world', state.sky.ts ?? now);
   for (const a of state.assets ?? []) add('asset', a);
+  // the blueprint store, oldest publish first, each under its first publisher
+  for (const [hash, b] of Object.entries(state.blueprints ?? {}).sort((x, y) => (x[1].ts ?? 0) - (y[1].ts ?? 0))) {
+    add('blueprint', { hash, record: b.record }, b.by ?? 'world', b.ts ?? now);
+  }
   for (const [id, e] of Object.entries(state.entities ?? {})) {
     if (e.kind === 'light') {
       // folded lights have no lib — synthesizing one crashes every consumer

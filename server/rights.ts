@@ -88,6 +88,10 @@ export const VERB_NEEDS: Record<string, { rank: number; gen?: boolean; caption?:
   // and one log word meaning two acts by referent type is a landmine.)
   punt: { rank: 0 },
   asset: { rank: 1, gen: true },
+  // Publishing a blueprint into this world's store (design §3, §8: builder
+  // rank by default). It adds a design, it changes nothing that stands; the
+  // records are content-addressed parameters, never code.
+  blueprint: { rank: 1 },
   terrain: { rank: 2 }, grass: { rank: 2 }, sky: { rank: 2 }, weather: { rank: 2 },
   // Entering (or upgrading) the deterministic-sim epoch reinterprets every
   // physical intent that follows — owner power, like shaping the ground.

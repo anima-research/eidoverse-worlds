@@ -16,6 +16,7 @@ import { createHash } from 'node:crypto';
 import { emptyState, foldEntry } from '../shared/fold.js';
 import { componentsOf, entityOf, canon, sha256hex, RECORDS, addable, lightOf, colliderOf, isEmpty, recordHash } from '../shared/components.js';
 import { worldComponents, worldOf, worldState } from '../shared/worldentity.js';
+import { blueprintRefusal, blueprintHash, expand, overridesOf } from '../shared/blueprint.js';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
@@ -147,6 +148,12 @@ const WORLD_VERBS = new Set(['sky', 'weather', 'terrain', 'grass']);
 let worldChecked = 0; const worldBad: string[] = []; const worldTypes = new Map<string, number>();
 const types = new Map<string, number>();
 const extras = new Map<string, number>();
+// blueprints (design §3, step 6a): every final entity saved as a one-part
+// blueprint — its components minus placement, parenting, captions and the
+// stamps — must be a record the door accepts (or be refused for size alone),
+// expand back to its exact bytes once the placement is put back, and read
+// as a copy with no overrides
+let bpSaved = 0; const bpRefused = new Map<string, number>(); const bpBad: string[] = [];
 for (const path of unique) {
   const st: any = emptyState();
   const lines = readFileSync(path, 'utf8').split('\n').filter(Boolean);
@@ -179,6 +186,28 @@ for (const path of unique) {
     }
   }
   entitiesSeen += ids.size;
+  for (const [eid, ent] of Object.entries(st.entities ?? {}) as [string, any][]) {
+    const { components, stamps } = componentsOf(ent);
+    const placement: any = {};
+    const design = components.filter((c: any) => c.type !== 'Attachment' && c.type !== 'Captions').map((c: any) => {
+      if (c.type !== 'Transform') return c;
+      const p = { ...c.params };
+      for (const k of ['pos', 'q', 'yaw']) if (p[k] !== undefined) { placement[k] = p[k]; delete p[k]; }
+      return { ...c, params: p };
+    });
+    const rec: any = { kind: 'eido.blueprint', v: 1, name: String(ent.comp?.label ?? eid).slice(0, 64) || 'thing', root: { components: design, children: [] } };
+    const why = blueprintRefusal(rec);
+    if (why) { const k = why.replace(/\d+/g, 'N').slice(0, 60); bpRefused.set(k, (bpRefused.get(k) ?? 0) + 1); continue; }
+    bpSaved++;
+    const x = expand(rec);
+    const back = { ...x.entity, ...placement, ...(ent.parent ? { parent: ent.parent } : {}), ...stamps };
+    if (ent.comp?.captions !== undefined) (back.comp ??= {}).captions = ent.comp.captions;
+    const asCopy = { components, children: [] };
+    const ov = overridesOf(asCopy, rec);
+    if ((canon(back) !== canon(ent) || ov.length || !/^[0-9a-f]{64}$/.test(blueprintHash(rec))) && bpBad.length < 8) {
+      bpBad.push(`${path.replace(/^.*?(worlds|fixtures)\//, '$1/')} ${eid}\n     was ${canon(ent).slice(0, 300)}\n     got ${canon(back).slice(0, 300)}${ov.length ? `\n     overrides ${JSON.stringify(ov).slice(0, 200)}` : ''}`);
+    }
+  }
   for (const ent of Object.values(st.entities ?? {})) for (const c of componentsOf(ent).components) {
     types.set(c.type, (types.get(c.type) ?? 0) + 1);
     for (const k of Object.keys(c.extra?.unknown ?? {})) extras.set(`${c.type}.${k}`, (extras.get(`${c.type}.${k}`) ?? 0) + 1);
@@ -187,6 +216,8 @@ for (const path of unique) {
 check(`round trip exact after every entry (${checked} entity states, ${entries} entries, ${entitiesSeen} entities)`, bad.length === 0 && checked > 0, '\n   ' + bad.join('\n   '));
 check(`@world: the world's sky / terrain / grass as components and back, exact after every world verb (${worldChecked} world states; ${[...worldTypes].map(([t, n]) => `${t} ${n}`).join(' · ')})`,
   worldBad.length === 0 && worldChecked > 0 && (worldTypes.get('Sky') ?? 0) > 0, '\n   ' + worldBad.join('\n   '));
+check(`blueprints: every final entity saved as a one-part blueprint expands back exact, with no overrides (${bpSaved} saved${bpRefused.size ? `; refused: ${[...bpRefused].map(([k, n]) => `${n}× ${k}`).join(' · ')}` : ''})`,
+  bpBad.length === 0 && bpSaved > 0 && [...bpRefused.keys()].every((k) => /bytes|larger than a component/.test(k)), '\n   ' + bpBad.join('\n   '));
 console.log('\ncomponents in the final worlds:', [...types].sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t} ${n}`).join(' · '));
 console.log('keys no record names (kept in extra, not lost):', extras.size ? [...extras].map(([k, n]) => `${k} ×${n}`).join(' · ') : 'none');
 console.log(`\n${pass} passed, ${fail} failed`);
