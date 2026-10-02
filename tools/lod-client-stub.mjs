@@ -82,8 +82,11 @@ export const refitCollider = (id) => { colliderLog.push(['refit', id]); };
 export const reindexCollider = () => {};
 
 // ---- lightrig.js / lights.js ------------------------------------------------
-export const attachLamps = () => {};
-export const releaseOwner = () => {};
+/** inferred lamps (attachLamps) by owner, as the realizer drives them: owner -> times attached; plus the log */
+export const lampOwners = new Map();
+export const lampLog = [];
+export const attachLamps = (_root, owner) => { lampOwners.set(owner, (lampOwners.get(owner) ?? 0) + 1); lampLog.push(['attach', owner]); };
+export const releaseOwner = (owner) => { lampOwners.delete(owner); lampLog.push(['release', owner]); };
 export const registerCaster = () => {};
 export const releaseCaster = () => {};
 export const makeLight = () => new THREE_.Group();

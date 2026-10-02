@@ -215,6 +215,13 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
     stub.entities.get('farlamp') === null && rq('farlamp')?.obj === null && jeq(rq('farlamp')?.pos, [600, 0, 0]) && rq('farlamp').intensity === 5, JSON.stringify(rq('farlamp')));
   check('a legacy light-verb light makes no comp request (it is realized by createLight, as always)', !rq('porch') && stub.entities.get('porch') !== undefined);
 
+  // authored beats inferred (design §3): a Light component suppresses the model's inferred lamps
+  const lamps = (id: string) => stub.lampOwners.get(`entity:${id}`) ?? 0;
+  check('a lamp (Model + comp.light) lands WITHOUT inferred lamps — the authored light alone lights it', !!lamp?.userData?.lib && lamps('lamp') === 0,
+    JSON.stringify(stub.lampLog.filter((e: any) => e[1] === 'entity:lamp')));
+  check('…a model with no Light component still gets its inferred lamps, exactly once', lamps('plain') === 1 && lamps('crate') === 1, JSON.stringify([...stub.lampOwners]));
+  check('…attached once at landing, with no churn (no release, no second attach) before anything changed',
+    ['plain', 'crate'].every((id) => JSON.stringify(stub.lampLog.filter((e: any) => e[1] === `entity:${id}`)) === JSON.stringify([['attach', `entity:${id}`]])), JSON.stringify(stub.lampLog));
   const fit = (id: string) => stub.colliders.get(id)?.opts;
   check('colliders: comp.collider wins over the legacy collide on the same entity', fit('lamp')?.collide === 'box', JSON.stringify(fit('lamp')));
   check('…the legacy collide alone is still honoured', fit('crate')?.collide === 'box', JSON.stringify(fit('crate')));
@@ -234,11 +241,21 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
     stub.colliders.get('lamp')?.pref === 'exact' && stub.colliderLog.slice(marks).some((e: any) => e[0] === 'refit' && e[1] === 'lamp'), JSON.stringify(stub.colliderLog.slice(marks)));
   live('comp', { id: 'lamp', type: 'collider', data: null });
   check('…and removing it falls back to the legacy collide', stub.colliders.get('lamp')?.pref === 'exact');
+  live('comp', { id: 'plain', type: 'light', data: { intensity: 9 } });
+  check('live: a Light component added to a STANDING model releases its inferred lamps (and casts its own)',
+    lamps('plain') === 0 && stub.lampLog.at(-1)?.[0] === 'release' && stub.lampLog.at(-1)?.[1] === 'entity:plain' && rq('plain')?.intensity === 9, JSON.stringify(stub.lampLog.slice(-3)));
+  live('comp', { id: 'plain', type: 'light', data: { intensity: 12 } });
+  check('…changing that light touches no lamps', lamps('plain') === 0 && stub.lampLog.at(-1)?.[1] === 'entity:plain' && stub.lampLog.at(-1)?.[0] === 'release' && rq('plain')?.intensity === 12);
+  live('comp', { id: 'plain', type: 'light', data: null });
+  check('…removing it re-infers the lamps, once', lamps('plain') === 1 && !rq('plain'), JSON.stringify(stub.lampLog.slice(-3)));
+  live('comp', { id: 'plain', type: 'light', data: null });
+  check('…and a second removal does not attach them twice', lamps('plain') === 1);
   live('comp', { id: 'pivot', type: 'light', data: null });
   check('live: removing comp.light releases the request and takes the gizmo off the Empty',
     !rq('pivot') && !piv.children.some((c: any) => c.userData.gizmo));
   live('spawn', { id: 'lamp', lib: LAMP, pos: [2, 0, 0] });
   check('live: re-spawning a lamp with the same model (wholesale replace, refreshed in place) drops its old light', !rq('lamp') && stub.entities.get('lamp') === lamp, `${JSON.stringify(rq('lamp')?.color)}`);
+  check('…and, its authored light gone, its inferred lamps come back', lamps('lamp') === 1, JSON.stringify(stub.lampLog.filter((e: any) => e[1] === 'entity:lamp')));
   live('comp', { id: 'pivot', type: 'light', data: {} });
   live('spawn', { id: 'pivot', pos: [5, 5, 5] });
   check('live: re-spawning the Empty (wholesale replace) drops the light its old bag had', !rq('pivot') && stub.entities.get('pivot') === piv, `${!!rq('pivot')}`);

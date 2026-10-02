@@ -299,6 +299,7 @@ function scheduleLoad(id, ent, gen, tier = null) {
  *  a demote (real → placeholder) release identically. */
 function teardownRealized(id, obj) {
   promoteTail.delete(id);   // a pending heavy tail dies — the replacement earns its own
+  lampsOn.delete(id);
   indexSceneMount(id, null);
   releaseGLB(obj.userData?.glbKey ?? obj.userData?.lib);
   cancelOwner(`entity:${id}`);
@@ -428,7 +429,14 @@ function runPromoteTail(id, obj) {
   // does not claim the one casting slot. That slot belongs to a body lit from
   // inside (avatar.js passes shadows:true), and until this default existed a
   // closer glowing prop could take it off the avatar standing next to it.
-  attachLamps(obj, `entity:${id}`);
+  //
+  // AUTHORED BEATS INFERRED (design §3): an entity with a Light component (a
+  // lamp: Model + comp.light) is lit by that light alone — its emissive
+  // shade must not add inferred lamps on top, or it double-lights.
+  if (lampsOn.get(id)) releaseOwner(`entity:${id}`);   // a re-run tail on the same id: never two sets
+  const infer = !lightOf(cur);
+  if (infer) attachLamps(obj, `entity:${id}`);
+  lampsOn.set(id, infer);
   // mounts that were waiting on this id — as child or carrier
   for (const mid of mountsTouching(state.st.entities, id, foldChildren)) execMount(mid);
 }
@@ -541,10 +549,30 @@ function dropCompLight(id) {
   compLights.delete(id);
 }
 
+// id -> are its inferred lamps (attachLamps, owner `entity:<id>`) standing?
+// Present only once the promote tail has decided (it reads lightOf at
+// landing); a Light component added to or removed from a STANDING model then
+// flips them here — released when an authored light arrives, re-inferred
+// when it goes. Lamp requests are the only requests a model id owns (a
+// light-verb light owns `entity:<its own id>`), so releaseOwner takes
+// nothing else. Cleared with the realized object (teardown, retire).
+const lampsOn = new Map();
+function syncInferredLamps(id) {
+  if (!lampsOn.has(id)) return;   // the tail has not landed: it will decide
+  const obj = entities.get(id);
+  if (!obj) return;
+  const ent = state.st.entities[id];
+  const want = !!ent && !lightOf(ent);
+  if (want && !lampsOn.get(id)) attachLamps(obj, `entity:${id}`);
+  else if (!want && lampsOn.get(id)) releaseOwner(`entity:${id}`);
+  lampsOn.set(id, want);
+}
+
 /** Make the realized light match the fold for this id: create, update, move
  *  to the current realized object, or release. Idempotent; called whenever
  *  the comp changes or the entity's realized object is replaced. */
 function syncCompLight(id) {
+  syncInferredLamps(id);
   const ent = state.st.entities[id];
   const L = ent && kindOf(ent) !== 'light' ? lightOf(ent) : null;
   if (!L) { dropCompLight(id); return; }
@@ -638,6 +666,7 @@ function refreshLight(id, ent) {
 
 function retire(id) {
   dropCompLight(id);
+  lampsOn.delete(id);
   cancelOwner(`entity:${id}`);
   releaseOwner(`entity:${id}`);   // lamp + placed-light requests die with it
   promoteTail.delete(id);         // a pending heavy tail dies with the id
