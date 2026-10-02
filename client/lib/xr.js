@@ -40,7 +40,8 @@ import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, ea
 import { markActive } from './presence.js';
 import { setReveal } from './namereveal.js';
 import { platePick, aimPlate } from './platecard.js';   // VR hover: a laser resting on a nameplate opens its card
-import { makeDwell } from './dwell.js';   // "rested on it for a beat": one mechanism, per hand here
+import { makeDwell } from './dwell.js';
+import { showXRTip, hideXRTip, dropXRTip, tipTextFor } from './xrtip.js';   // a panel control's tooltip, on dwell   // "rested on it for a beat": one mechanism, per hand here
 import { POINTER_VIS_DEFAULT, pointerVisible, looksAtWorld, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy: when it is drawn, how it follows the hand, how it holds a target
 import { dockPins } from './ui.js';
 import { xrScales, toRigLocal } from './bodyscale.js';   // the chosen size composes with the device fit (rig = u, body = u/k)
@@ -891,7 +892,7 @@ async function enterVR({ retryOf = null } = {}) {
       selfFirstPerson(false);
       { const av = getSelf(), v = av?.vrm; if (v) { if (av.setPuppetScale) av.setPuppetScale(1); else v.scene.scale.setScalar(1); v.scene.position.set(0, 0, 0); v.scene.updateMatrixWorld(true); if (v.userData) { v.userData.ankleH = null; v.userData._gait = null; } } }   // the puppet scale AND the eye-anchor offset (xrbody writes vrm.scene.position every presenting frame; left in place it sank the feet on the desktop — owner 09-08 00:38) are presenting things
       releaseGrab();      // a gripped panel goes back to the rig BEFORE the quads are disposed, or a dead mesh stays in the rig
-      sticky.left = sticky.right = null; dwells.left.reset(); dwells.right.reset();
+      sticky.left = sticky.right = null; dwells.left.reset(); dwells.right.reset(); dropXRTip();
       for (const h of [hands.left, hands.right]) if (h) { h.laser.visible = false; h.laser.removeFromParent(); hideSurfaceDot(h.dot); rig.add(h.dot); h.smooth.init = false; }   // the beams live in the scene while presenting; the aim snaps on the next entry
       { const t = performance.now(); xrPanelsExit(rig); tee(`[xr] panels exit ${(performance.now() - t).toFixed(1)} ms`); }
       rig.remove(camera);
@@ -1328,6 +1329,17 @@ export function updateXR(dtSec = 1 / 72) {
       }
       triggerWas[side] = trig; gripWas[side] = grip;
     }
+    // THE TOOLTIP (owner, 10-02): a hand whose laser has DWELLED on a panel control with a desktop tooltip shows that text
+    // in the panel (xrtip.js); the right hand first. It goes when no hand rests on such a control — and never for the
+    // panel a hand is holding (it is moving).
+    let tipShown = false;
+    for (const side of ['right', 'left']) {
+      const st = sticky[side], key = dwells[side].ripeKey();
+      if (tipShown || !key || st?.kind !== 'panel' || st.key !== key || typeof key === 'string' || held?.quad?.mesh === st.obj) continue;
+      const root = st.obj.material?.map?.dom, text = root ? tipTextFor(key, root) : '';
+      if (text) { showXRTip(st.obj, root, key, text); tipShown = true; }
+    }
+    if (!tipShown) hideXRTip();
   }
 
   // eye cameras see the first-person split, never the third-person head.
