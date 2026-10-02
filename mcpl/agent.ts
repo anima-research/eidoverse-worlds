@@ -6,6 +6,7 @@
 
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
 import { mentionRegex } from "./mention.ts";
+import { resolveBriefing } from "../shared/briefing.js";
 import { mergePose } from "../shared/humanoid.js";
 import * as THREE_W from "three/webgpu";
 import * as TSL from "three/tsl";
@@ -407,6 +408,9 @@ export class WorldAgent {
   private lastDayPhase: string | null = null;
   private lastSkyCheck = 0;
   worldInfo: Record<string, unknown> = {};
+  /** Documentation hints from the latest join, separate from folded world facts.
+   *  Exposed on every look: delivery is not evidence the consumer read a guide. */
+  briefing: ReturnType<typeof resolveBriefing> = null;
   private ticker: ReturnType<typeof setInterval> | null = null;
   /** Highest world-log seq this body has seen. This — not a wall-clock time —
    *  is what "where was I up to" means: it survives restarts, it cannot drift,
@@ -655,6 +659,9 @@ export class WorldAgent {
             if (msg.rights) this.acceptEffectiveRights(msg.rights, "world");
             break;
           case "snapshot":
+            // Replace even when absent: reconnecting to an older door must not
+            // keep advertising guidance from a previous snapshot.
+            this.briefing = resolveBriefing(msg.briefing, this.httpBase + "/");
             // Our surface generation, issued by the server on acceptance —
             // every attest must echo it or the receipt is refused (PR #103 B2).
             if (typeof msg.gen === "number") this.surfaceGen = msg.gen;
@@ -3074,6 +3081,7 @@ export class WorldAgent {
         description: describeSky(this.skyState, now),
       };
     }
+    if (this.briefing) L.push(`Briefing (door guidance): ${JSON.stringify(this.briefing)}`);
     if (Object.keys(this.worldInfo).length) L.push(`World: ${JSON.stringify(this.worldInfo)}`);
 
     const others = [...this.people.values()];
