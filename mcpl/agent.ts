@@ -219,7 +219,7 @@ export class WorldAgent {
   /** Every mount's full wire shape — offset/yaw OVERRIDE socket defaults in
    *  the world transform (#82), so dropping them here made the composed
    *  position disagree with every renderer. */
-  mounts = new Map<string, { to: string; slot?: string; offset?: number[]; yaw?: number }>();
+  mounts = new Map<string, { to: string; slot?: string; offset?: number[]; yaw?: number; q?: number[] }>();
   people = new Map<string, Person>();
   inbox: InboxItem[] = [];
   private inboxCursor = 0;
@@ -1168,6 +1168,8 @@ export class WorldAgent {
    *  the perception view above deliberately thins. The inspector tools read
    *  this; `parent` is attached from the mount view so the shape matches
    *  what shared/editschema.js expects. */
+  /** Every placed thing's id in the fold (the hierarchy tools walk them). */
+  foldedIds(): string[] { return Object.keys(this.st.entities); }
   foldRecord(id: string): Record<string, unknown> | null {
     const e = (this.st.entities as Record<string, any>)[id];
     if (!e) return null;
@@ -1197,7 +1199,8 @@ export class WorldAgent {
       const p = (e as any).parent;
       if (p) this.mounts.set(id, { to: p.to, slot: p.slot,
         ...(p.offset != null ? { offset: p.offset } : {}),
-        ...(p.yaw != null ? { yaw: p.yaw } : {}) });
+        ...(p.yaw != null ? { yaw: p.yaw } : {}),
+        ...(p.q != null ? { q: p.q } : {}) });   // the relative orientation (PROTOCOL §9.1): foldRecord's parent must not lose it
     }
     for (const [id, m] of Object.entries(this.st.mounts ?? {})) {
       this.mounts.set(id, { to: (m as any).to, slot: (m as any).slot,
