@@ -2,7 +2,7 @@
 // navigable too; indoor ROOM derivation remains the floor-only graph.
 // This is topology, not capsule clearance or terrain/mesh navigation.
 import { edgeKey, edgeBetween, nodeAtPoint, nodeOnSide, diagOf,
-  halfTriangle, segmentEnds } from './structure.js';
+  halfTriangle, halfFloored, segmentEnds } from './structure.js';
 
 export const ROUTE_MAX_CELLS = 16384;
 const EPS = 1e-9;
@@ -45,12 +45,12 @@ export function clearLevelSegment(level, g, a, b) {
 
 /** The result distinguishes a validated direct leg from a refused route.
  * A refused search is never permission to walk the direct leg. */
-export function routeLevel(level, g, from, to) {
+export function routeLevel(level, g, from, to, outdoors = true) {
   const blocked = reason => ({ kind: 'blocked', reason, points: [] });
   if (![...from, ...to].every(Number.isFinite)) return blocked('non-finite endpoint');
   let walls;
   try { walls = geometry(level, g); } catch (e) { return blocked(String(e.message)); }
-  if (clearOf(walls, from, to)) return { kind: 'clear', points: [from, to] };
+  if (outdoors && clearOf(walls, from, to)) return { kind: 'clear', points: [from, to] };
   if (!clearOf(walls, from, from) || !clearOf(walls, to, to)) return blocked('endpoint lies on a solid wall');
 
   // Bounds belong to authored geometry, never to walk distance. Include walls
@@ -78,6 +78,16 @@ export function routeLevel(level, g, from, to) {
       !clearOf(walls, from, start) || !clearOf(walls, end, to))
     return blocked('exterior connector is obstructed');
   const first = nodeAtPoint(level, g, ...start), last = nodeAtPoint(level, g, ...end);
+  const allowed = key => {
+    if (outdoors) return true;
+    const [cell, half] = key.split(':'), [x, z] = cell.split(',').map(Number);
+    return level.tiles.has(cell) && (!half || halfFloored(level, x, z, half));
+  };
+  // Outdoor travel is ground-level only. An upper floor's empty cells/halves
+  // are holes, not an exterior plane on which the body can walk.
+  if (!outdoors && (!allowed(first) || !allowed(last) || start[0] !== from[0] ||
+      start[1] !== from[1] || end[0] !== to[0] || end[1] !== to[1]))
+    return blocked('upper-storey route requires floored endpoints');
   const center = key => {
     const [cell, half] = key.split(':');
     const [x, z] = cell.split(',').map(Number);
@@ -96,13 +106,15 @@ export function routeLevel(level, g, from, to) {
       const e = edgeBetween(x, z, nx, nz), ek = edgeKey(...e);
       if (level.walls.has(ek) && !OPEN.has(level.apertures.get(ek))) continue;
       const dest = nodeOnSide(level, nx, nz, back);
+      if (!allowed(dest)) continue;
       const crossing = e[0] === 0 ? [(e[1] + .5) * g.tile, e[2] * g.tile]
         : [e[1] * g.tile, (e[2] + .5) * g.tile];
       out.push({ key: dest, crossing });
     }
     const diag = diagOf(level, x, z);
-    if (half && OPEN.has(level.apertures.get(edgeKey(diag, x, z))))
-      out.push({ key: cell + (half === 'A' ? ':B' : ':A'), crossing: [(x + .5) * g.tile, (z + .5) * g.tile] });
+    const other = cell + (half === 'A' ? ':B' : ':A');
+    if (half && allowed(other) && OPEN.has(level.apertures.get(edgeKey(diag, x, z))))
+      out.push({ key: other, crossing: [(x + .5) * g.tile, (z + .5) * g.tile] });
     return out;
   };
   // At most two nodes per cell. BFS chooses deterministically; it makes no
@@ -114,7 +126,7 @@ export function routeLevel(level, g, from, to) {
       prev.set(n.key, { key: q[i], crossing: n.crossing }); q.push(n.key);
     }
   }
-  if (!prev.has(last)) return blocked('no walkable opening connects the endpoints');
+  if (!prev.has(last)) return blocked('no walkable connection between the endpoints');
   const keys = [], crossings = [];
   for (let k = last; k !== null;) {
     keys.push(k);

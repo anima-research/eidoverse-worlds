@@ -85,6 +85,19 @@ const courtyard = { levels: [{ tiles: [[0,0],[1,0],[2,0],[0,1],[2,1],[0,2],[1,2]
 route(courtyard,[1.5,1.5],[3.5,1.5],"unfloored courtyard through its door");
 check(planRouteLocal(p,NaN,0,1,1).kind==="blocked","non-finite endpoints are refused");
 
+// Main still selects its first storey (#140 is separate), so place the upper
+// level first to exercise upper-floor policy independently of that selector.
+const upper = structuredClone(house.levels[0]); upper.y = 3;
+const stacked = { levels: [upper, { ...structuredClone(house.levels[0]), y: 0 }] };
+const upstairs = planRouteLocal(planStructure(stacked), .5,1.5,3.5,1.5,3.1);
+check(upstairs.kind === "routed" && upstairs.points.every(([x,z])=>x>=0&&x<=4&&z>=0&&z<=2),
+  "upper-storey routes stay on the floor instead of using an outdoor shortcut");
+upper.apertures = [[0,0,0,"door"]]; // a ground-level exterior exit is air upstairs
+check(planRouteLocal(planStructure(stacked), .5,1.5,3.5,1.5,3.1).kind === "blocked",
+  "upper-storey sealed partition cannot be bypassed across air");
+check(planRouteLocal(planStructure(stacked), .5,1.5,.5,-2,3.1).kind === "blocked",
+  "upper-storey exterior destination is a refusal, not vertical navigation");
+
 const agents: WorldAgent[] = [];
 function agent() {
   const a = new WorldAgent({ name: "walker", avatar: "", world: "test" });
@@ -143,6 +156,23 @@ try {
   d.pos={x:-2,y:0,z:1.5};
   const outcome=await walk(d,[5,1.5]);
   check(!outcome.arrived && !!d.walkRefusal?.includes("multi-building"),"conflicting second structure gets explicit local-search refusal");
+  if (typeof (d as any).groundAt === "function") {
+    // This branch runs in the isolated combination with PR #200. It cannot
+    // claim upstairs product coverage from main's terrain-only body clamp.
+    const u=agent();
+    const above=structuredClone(house.levels[0]); above.y=3;
+    u.entities.set("stacked",entity({ levels: [structuredClone(house.levels[0]),above] } as any,"stacked"));
+    u.pos={x:.5,y:3.1,z:.5};
+    const out=await walk(u,[.5,-2]);
+    check(!out.arrived && !!u.walkRefusal?.includes("floored endpoints"),"#200 combination refuses an upper destination beyond the floor");
+    check(u.pos.x===.5 && u.pos.z===.5 && u.pos.y===3.1,"#200 combination refusal preserves upstairs standing position");
+    above.tiles=[[0,0],[2,0]]; above.walls=[]; above.apertures=[];
+    u.entities.set("stacked",entity({ levels: [structuredClone(house.levels[0]),above] } as any,"stacked"));
+    const gap=await walk(u,[2.5,.5]);
+    check(!gap.arrived && !(u as any).target,"#200 combination refuses crossing a gap in sparse upper floors");
+  } else {
+    console.log("Main has no #200 standing-height resolver; combined upper-storey product checks are separate.");
+  }
   console.log("PASS " + checks + " threshold routing checks");
 } finally { for (const a of agents) a.close(); }
 process.exit(0);

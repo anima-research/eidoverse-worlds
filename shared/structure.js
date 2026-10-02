@@ -1067,7 +1067,7 @@ export function planRouteLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
   if (![fromX, fromZ, toX, toZ].every(Number.isFinite)) return { kind: 'blocked', reason: 'non-finite endpoint', points: [] };
   const lv = routingLevel(plan, fromX, fromZ, y);
   if (!lv) return { kind: 'clear', points: [[fromX, fromZ], [toX, toZ]] };
-  return routeLevel(lv.level, plan.grid, [fromX, fromZ], [toX, toZ]);
+  return routeLevel(lv.level, plan.grid, [fromX, fromZ], [toX, toZ], lv.y === Math.min(...plan.levels.map(l => l.y)));
 }
 
 /** A cheap check of an actual route leg against this structure's walls. */
