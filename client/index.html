@@ -1720,6 +1720,9 @@ body.edit-workspace #dock button[data-toggles="edit"].on::before { display: none
 .sp-tree-row.dragging { opacity: .4; }
 .sp-tree-row.drop { box-shadow: inset 0 0 0 1px var(--brand); background: color-mix(in srgb, var(--brand) 14%, transparent); }
 .sp-tree { min-height: 48px; }   /* room to drop onto empty space (→ root) */
+.sp-tree-root { display: none; margin-top: 2px; padding: 6px 8px; border: 1px dashed var(--e-line, rgba(255,255,255,.25)); border-radius: 4px; color: var(--dim, #9aa); font-size: 11px; text-align: center; }
+.sp-tree.dragging .sp-tree-root { display: block; }
+.sp-tree-root.drop { border-style: solid; border-color: var(--e-accent, var(--brand)); color: var(--e-accent, var(--brand)); }
 .frame.edit .sp-f-text .sp-label:empty { display: none; }
 .frame.edit .sp-f-text .sp-text { font-size: 12px; }
 /* fixed chrome from before the columns keeps to the VIEWPORT between them */

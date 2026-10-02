@@ -41,7 +41,8 @@
 //                 collapsed groups skip their rows                → edit('fold', k)
 //   { t:'tree',   k, rows:[{ id, label, sub?, depth, active?, multi?, badges?:[], locked?, menu?, kids?, open?, dim? }],
 //                 a Shift/Ctrl-click row dispatches edit(k, id, f, {extend:true}); dragging a row onto
-//                 another dispatches edit('drop', {id, onto}) — onto empty tree space: {onto: null}
+//                 another dispatches edit('drop', {id, onto}) — onto empty tree space: {onto: null};
+//                 rootDrop?: a label for a strip at the tree's foot, shown while a row is dragged, that drops {onto: null}
 //                 menu?:[{k, label, danger?}] }   right-click a row → its menu (row.menu wins)
 //                 rename?: current label — double-click / menu 'rename' edits it inline → edit('rename', id, f, {value})
 //                 kids>0 draws a disclosure → edit('open', id)   → edit(k, id) / edit('lock', id) / edit(item.k, id)
@@ -448,8 +449,8 @@ function fieldDOM(f, edit, ro = {}) {
         const line = el('div', `sp-item sp-tree-row${r.active ? ' active' : ''}${r.multi ? ' multi' : ''}`);
         if (!r.noDrag) {
           line.draggable = true;
-          line.ondragstart = (e) => { treeDrag = r.id; line.classList.add('dragging'); e.dataTransfer?.setData('text/plain', String(r.id)); };
-          line.ondragend = () => { treeDrag = null; line.classList.remove('dragging'); box.querySelectorAll('.drop').forEach((x) => x.classList.remove('drop')); };
+          line.ondragstart = (e) => { treeDrag = r.id; line.classList.add('dragging'); box.classList.add('dragging'); e.dataTransfer?.setData('text/plain', String(r.id)); };
+          line.ondragend = () => { treeDrag = null; line.classList.remove('dragging'); box.classList.remove('dragging'); box.querySelectorAll('.drop').forEach((x) => x.classList.remove('drop')); };
           line.ondragover = (e) => { if (treeDrag && treeDrag !== r.id) { e.preventDefault(); e.stopPropagation(); line.classList.add('drop'); } };
           line.ondragleave = () => line.classList.remove('drop');
           line.ondrop = dropOn(r.id);
@@ -501,6 +502,15 @@ function fieldDOM(f, edit, ro = {}) {
           line.append(lock);
         }
         box.append(line);
+      }
+      // the root zone: a full tree has no empty space to drop on, so while a
+      // row is in flight a strip at its foot says "no parent" and takes the drop
+      if (f.rootDrop && f.rows?.length) {
+        const zone = el('div', 'sp-tree-root', f.rootDrop);
+        zone.ondragover = (e) => { if (treeDrag) { e.preventDefault(); e.stopPropagation(); zone.classList.add('drop'); } };
+        zone.ondragleave = () => zone.classList.remove('drop');
+        zone.ondrop = dropOn(null);
+        box.append(zone);
       }
       row.append(box);
       break;   // rows are shape: a changed tree repaints

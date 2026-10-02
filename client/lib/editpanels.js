@@ -17,13 +17,15 @@
 // the base the motion composes onto, which is the honest thing to edit.
 
 import { THREE, scene } from './core.js';
-import { bus } from './base.js';
+import { bus, CONFIG } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
 import { sendVerb, requestDebug } from './net.js';
 import { flashHint } from './ui.js';
 import { makeSchemaFrame, resolveDelta } from './panels.js';
 import { registerXRPanel } from './xrpanels.js';
-import { treeData, sceneSelected, sceneSelect, sceneAttach, sceneDetach } from './scenegraph.js';
+import { treeData, sceneSelected, sceneSelect } from './scenegraph.js';
+import { state } from './state.js';
+import { treeRows, kindHint, ancestors } from '../../shared/hierarchy.js';
 import { pushUndo, refreshOutline, setRemoveHook, holdGhost } from './build.js';
 import { structureTools, currentTool as structureTool, setTool as setStructureTool, undo as structureUndo, undoDepth, newBuilding } from './structure_ui.js';
 import { starterModels } from './palette.js';
@@ -61,7 +63,19 @@ let armingRef = null;
 // prompt at the top of the cards; answering re-commits the same address.
 let pendingAsk = null;
 let filter = '';     // the hierarchy's filter text: non-matches hide, ancestors of a match stay (dimmed)
-const collapsed = new Set();   // ids whose children are folded (client state, not persisted)
+// ids whose children are folded — this viewer's, per world, never on the wire
+// (design §5: folding is a view, not the world). A selection unfolds its
+// ancestors so the selected row is always on screen.
+const HFOLD_LS = () => `ew-hier-fold:${CONFIG.world ?? ''}`;
+const collapsed = new Set((() => { try { const v = JSON.parse(localStorage.getItem(HFOLD_LS()) || '[]'); return Array.isArray(v) ? v.map(String) : []; } catch { return []; } })());
+function saveFolds() { try { localStorage.setItem(HFOLD_LS(), JSON.stringify([...collapsed])); } catch { /* a private window: folds last the session */ } }
+/** Unfold every ancestor of `id` (a selection reveals itself). */
+function revealPath(id) {
+  let changed = false;
+  for (const a of ancestors(state.st.entities ?? {}, id)) if (collapsed.delete(a)) changed = true;
+  if (changed) saveFolds();
+  return changed;
+}
 let visibleRows = [];          // the rows as last painted, for ↑/↓
 
 // ---------------------------------------------------------------- multi-selection
@@ -148,44 +162,35 @@ function badgesFor(id) {
 
 // ---------------------------------------------------------------- hierarchy
 function hierarchyFields() {
-  const { roots, kids, riders } = treeData();
+  // the tree is the FOLD's (shared/hierarchy.js): a child whose model is still
+  // loading sits under its parent, not at the root; seated people ride as rows
+  const { riders } = treeData();
+  const world = state.st.entities ?? {};
   const sel = sceneSelected();
   const q = filter.trim().toLowerCase();
-  const rows = [];
-  const labelOf = (id) => { const l = comps.get(id)?.label; return typeof l === 'string' && l ? `${l}  (${id})` : id; };
-  const matches = (id) => !q || [id, comps.get(id)?.label ?? '', entityMeta.get(id)?.lib ?? '', ...Object.keys(comps.get(id) ?? {})].join(' ').toLowerCase().includes(q);
-  // a row shows when it matches or any descendant does; ancestors of a match dim
-  const walk = (id, depth) => {
-    const meta = entityMeta.get(id); const bag = comps.get(id) ?? {};
+  const labelOf = (id) => { const l = comps.get(id)?.label ?? world[id]?.comp?.label; return typeof l === 'string' && l ? `${l}  (${id})` : id; };
+  const matches = q ? (id) => [id, world[id]?.comp?.label ?? '', world[id]?.lib ?? '', kindHint(world[id]), ...Object.keys(world[id]?.comp ?? {})].join(' ').toLowerCase().includes(q) : null;
+  const ridersOf = (id) => (riders.get(id) ?? []).map((r) => ({ id: `rider:${r}`, match: !q || r.toLowerCase().includes(q) }));
+  const rows = treeRows(world, { collapsed, matches, extra: ridersOf }).map((t) => {
+    if (t.extra) return { id: t.id, label: `🧍 ${t.id.slice(6)}`, depth: t.depth, noDrag: true };
+    const id = t.id; const bag = comps.get(id) ?? world[id]?.comp ?? {};
     const badges = badgesFor(id);
     if (!entities.get(id)) badges.unshift('loading…');
     if (bag.hidden === true) badges.push('hidden');
-    const ch = kids.get(id) ?? [];
-    const rd = riders.get(id) ?? [];
-    const mine = matches(id);
-    const row = { id, label: labelOf(id), sub: short(meta), depth, active: id === sel, multi: extra.has(id) && id !== sel, badges, locked: !!bag.lock,
-      kids: ch.length + rd.length, open: !collapsed.has(id) || !!q, dim: q && !mine };   // a filter looks inside folded nodes, so the glyph says open
-    const at = rows.length; rows.push(row);
-    let any = mine;
-    if (!collapsed.has(id) || q) {   // a filter looks inside folded nodes too
-      for (const r of rd) if (!q || r.toLowerCase().includes(q)) { rows.push({ id: `rider:${r}`, label: `🧍 ${r}`, depth: depth + 1, noDrag: true }); any = true; }
-      for (const k of ch) if (walk(k, depth + 1)) any = true;
-    }
-    if (!any) rows.splice(at);        // nothing under it matched either: drop it and its subtree
-    return any;
-  };
-  for (const id of roots.sort()) walk(id, 0);
+    return { id, label: labelOf(id), sub: kindHint(world[id]), depth: t.depth, active: id === sel, multi: extra.has(id) && id !== sel, badges, locked: !!bag.lock,
+      kids: t.kids, open: t.open, ...(t.dim ? { dim: true } : {}) };   // a filter looks inside folded nodes, so the glyph says open
+  });
   for (const r of rows) {
     if (String(r.id).startsWith('rider:')) continue;
-    const mounted = !!entities.get(r.id)?.userData?.mountedTo;
+    const mounted = !!world[r.id]?.parent;
     const lab = comps.get(r.id)?.label;
     r.rename = typeof lab === 'string' ? lab : '';   // the label comp; empty = the row shows its id
     r.menu = [
       { k: 'rename', label: 'rename  (F2)' },
       { k: 'find', label: 'find  (F)' },
       { k: 'duplicate', label: 'duplicate  (Alt+D)' },
-      { k: 'attach', label: arming === r.id ? 'cancel attach' : 'attach to…' },
-      ...(mounted ? [{ k: 'detach', label: 'detach' }] : []),
+      { k: 'attach', label: arming === r.id ? 'cancel parent pick' : 'parent to…' },
+      ...(mounted ? [{ k: 'detach', label: 'unparent' }] : []),
       { k: 'lock', label: r.locked ? 'unlock' : 'lock in place' },
       { k: 'hide', label: comps.get(r.id)?.hidden === true ? 'show' : 'hide' },
       { k: 'remove', label: 'remove  (X)', danger: true },
@@ -194,7 +199,7 @@ function hierarchyFields() {
   visibleRows = rows.filter((r) => !String(r.id).startsWith('rider:')).map((r) => r.id);
   return [
     { t: 'text', k: 'filter', label: '', value: filter, placeholder: 'filter — id, label, lib, component ⏎', hint: 'non-matches hide; a match keeps its ancestors' },
-    { t: 'tree', k: 'sel', rows, empty: q ? `nothing matches "${filter}"` : 'nothing placed yet — press B in the world to place things' },
+    { t: 'tree', k: 'sel', rows, rootDrop: 'drop here: no parent', empty: q ? `nothing matches "${filter}"` : 'nothing placed yet — press B in the world to place things' },
   ];
 }
 function hierarchyDispatch(action, payload, _field, opts = {}) {
@@ -203,7 +208,7 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
     case 'sel': {
       if (String(payload).startsWith('rider:')) return;
       if (armingRef && completeRefPick(payload)) break;   // a row click names a ref target
-      if (arming && payload !== arming) { const child = arming; arming = null; reparent(child, payload); break; }
+      if (arming && payload !== arming) { const child = arming; arming = null; reparent(child, payload); sceneSelect(child); break; }
       if (opts.extend) { extendSelection(payload); return; }
       sceneSelect(payload);
       break;
@@ -222,11 +227,11 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
       if (arming) { sceneSelect(arming); flashHint(`now click <b>${arming}</b>'s new parent — a row here, or the thing itself in the world`, 5000); }
       break;
     }
-    case 'detach': sceneDetach(payload ?? sel); break;
+    case 'detach': reparent(payload ?? sel, null); break;
     case 'remove': { const ids = payload && !extra.has(payload) && payload !== sel ? [payload] : selection(); if (ids.length) removeMany(ids); break; }
     case 'drop': reparent(payload?.id, payload?.onto); break;
     case 'filter': filter = String(payload ?? ''); break;
-    case 'open': if (collapsed.has(payload)) collapsed.delete(payload); else collapsed.add(payload); break;
+    case 'open': if (collapsed.has(payload)) collapsed.delete(payload); else collapsed.add(payload); saveFolds(); break;
     case 'hide': { const id = payload ?? sel; if (id) commitEdit(id, 'flags.hidden', comps.get(id)?.hidden !== true); break; }
     case 'duplicate': duplicate(payload ?? sel); break;
     case 'step': {   // ↑/↓ through the rows as painted
@@ -239,34 +244,20 @@ function hierarchyDispatch(action, payload, _field, opts = {}) {
   repaintAll();
 }
 
-/** Drag-reparent: `id` onto `onto` (null = make it a root). Refuses a thing
- *  onto itself or its own cargo BEFORE anything is sent, with the reason;
- *  scenegraph does the mount/dismount math (in place: the thing doesn't move,
- *  its frame does). The undo re-issues whatever held it before — its old
- *  carrier with the old offset, or a dismount stamped at its absolute pose. */
+/** Drag-reparent: `id` onto `onto` (null = make it a root), where it stands.
+ *  The same edit as the inspector's Parent field (`parent.to`, shared/
+ *  hierarchy.js parentVerbs through the shared commit path): the child keeps
+ *  its world pose, a cycle / lock / guard is refused before anything is sent
+ *  and the reason shown the way the inspector shows refusals, and the drag is
+ *  ONE undo step however many verbs it took (a mount, plus a place when a
+ *  scaled parent means the child's own scale must change to keep its size). */
 function reparent(id, onto) {
-  if (!id || !entities.get(id)) return;
-  const rec = foldRecord(id); if (!rec) return;
-  const was = rec.parent ? { to: rec.parent.to, ...(rec.parent.slot ? { slot: rec.parent.slot } : {}), ...(rec.parent.offset ? { offset: [...rec.parent.offset] } : {}), ...(rec.parent.yaw != null ? { yaw: rec.parent.yaw } : {}) } : null;
-  if (onto == null) {
-    if (!was) { flashHint(`${id} is already a root`, 3000); return; }
-    pushUndo({ verb: 'mount', args: { id, ...was } }, `detaching ${id} from ${was.to}`);
-    sceneDetach(id);
-    return;
-  }
+  if (!id || !foldRecord(id)) return;
   if (onto === id) return;
-  if (!entities.get(onto)) { flashHint(`${onto} is still loading`, 3000); return; }
-  for (let p = foldRecord(onto); p; p = p.parent ? foldRecord(p.parent.to) : null) {
-    if (p === rec || (p.parent && p.parent.to === id)) { flashHint(`<b>${onto}</b> rides <b>${id}</b> — a thing can't be mounted on its own cargo`, 4000); return; }
-  }
-  if (was?.to === onto) { flashHint(`${id} already rides ${onto}`, 3000); return; }
-  if (comps.get(id)?.lock) { flashHint(`${id} is locked — unlock it first`, 4000); return; }
-  const obj = entities.get(id); const wp = obj.getWorldPosition(_wp);
-  const q = obj.getWorldQuaternion(new THREE.Quaternion()); const yaw = new THREE.Euler().setFromQuaternion(q, 'YXZ').y;
-  pushUndo(was ? { verb: 'mount', args: { id, ...was } } : { verb: 'dismount', args: { id, pos: [+wp.x.toFixed(3), +wp.y.toFixed(3), +wp.z.toFixed(3)], yaw: +yaw.toFixed(3) } }, `mounting ${id} on ${onto}`);
-  sceneAttach(id, onto);
-  if (!collapsed.has(onto)) return;
-  collapsed.delete(onto);   // show where it went
+  const r = commitEdit(id, 'parent.to', onto ?? null);
+  if (r.errors?.length) { flashHint(r.errors.join(' · '), 5000); return r; }
+  if (onto && collapsed.delete(onto)) saveFolds();   // show where it went
+  return r;
 }
 
 /** A copy of a thing: same lib/pose (nudged so it is not on top of the
@@ -750,6 +741,7 @@ export function initEditPanels() {
     const sf = makeSchemaFrame(p.id, { title: p.title, ...p.frame, hidden: true, className: 'edit' });   // the desktop body
     frames.set(p.id, sf);
   }
+  bus.on('sg:selected', (id) => { if (id) revealPath(id); });   // before the paint: a selected child shows, its ancestors unfold (design §5)
   for (const ev of ['entity', 'comp', 'mount', 'edit-mode', 'sg:selected', 'structure-tool']) bus.on(ev, repaintAll);
   bus.on('sg:selected', () => { gesture = null; pendingAsk = null; endGesture(); if (!extending) clearExtras(); });   // a plain select collapses the set; a drag's `before` never outlives its selection
   bus.on('edit-extend', (id) => extendSelection(id));   // Ctrl-click in the viewport (build.js)
