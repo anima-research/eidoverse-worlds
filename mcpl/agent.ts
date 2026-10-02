@@ -420,7 +420,12 @@ export class WorldAgent {
   private pendingDebug = new Map<string, (m: any) => void>();
   private histId = 0;
 
-  constructor(opts: { url?: string; name?: string; world?: string; avatar?: string; agentToken?: string } = {}) {
+  private briefingBase: string | null | undefined;
+  constructor(opts: { url?: string; name?: string; world?: string; avatar?: string; agentToken?: string; briefingBase?: string | null } = {}) {
+    // undefined: a local/stdio consumer can use the sequencer URL. Network
+    // sessions supply their public door origin (null when unavailable), never
+    // substitute the body's private loopback connection for the reader's origin.
+    this.briefingBase = opts.briefingBase;
     this.url = opts.url ?? process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws";
     this.name = opts.name ?? process.env.AGENT_NAME ?? "claude";
     this.world = opts.world ?? process.env.WORLD_NAME ?? "commons";
@@ -661,7 +666,8 @@ export class WorldAgent {
           case "snapshot":
             // Replace even when absent: reconnecting to an older door must not
             // keep advertising guidance from a previous snapshot.
-            this.briefing = resolveBriefing(msg.briefing, this.httpBase + "/");
+            this.briefing = resolveBriefing(msg.briefing,
+              this.briefingBase === undefined ? this.httpBase + "/" : this.briefingBase ?? undefined);
             // Our surface generation, issued by the server on acceptance —
             // every attest must echo it or the receipt is refused (PR #103 B2).
             if (typeof msg.gen === "number") this.surfaceGen = msg.gen;

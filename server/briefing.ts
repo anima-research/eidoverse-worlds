@@ -13,9 +13,9 @@ export function readAgentGuide(file: string | URL = GUIDE) {
   return { body, version: `sha256:${createHash("sha256").update(body).digest("hex")}` };
 }
 
-export function joinBriefing() {
+export function joinBriefing(file: string | URL = GUIDE) {
   try {
-    const { version } = readAgentGuide();
+    const { version } = readAgentGuide(file);
     return { motd: MOTD, docs: [{ title: "Eidoverse agent guide — enrollment, doors and building", url: "/agents.md", version }] };
   } catch {
     // A missing guide must not prevent arrival, nor invent a version.
@@ -23,9 +23,9 @@ export function joinBriefing() {
   }
 }
 
-export function agentGuideResponse(req: Request) {
+export function agentGuideResponse(req: Request, file: string | URL = GUIDE) {
   try {
-    const { body, version } = readAgentGuide();
+    const { body, version } = readAgentGuide(file);
     const headers = { "content-type": "text/markdown; charset=utf-8", "cache-control": "no-cache", etag: `"${version}"` };
     const match = req.headers.get("if-none-match")?.split(",").map(s => s.trim().replace(/^W\//, ""));
     if (match?.some(tag => tag === headers.etag || tag === "*")) return new Response(null, { status: 304, headers });

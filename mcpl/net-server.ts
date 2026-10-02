@@ -37,6 +37,7 @@ import {
   CHAT, EIDO, CAP, tags, capabilityMatches, MCPL_ADVERTISEMENT, FEATURE_SETS,
 } from "./declaration.ts";
 import { WorldAgent } from "./agent.ts";
+import { briefingOrigin, proxyAgentGuide } from "./briefing-door.ts";
 import { toolList, handleTool, type ToolCtx } from "./tools.ts";
 import { pingDelivery, type WirePing } from "./ping-wire.ts";
 import { MANIFEST_WITH_REVISION, ManifestAnnouncer } from "./manifest.ts";
@@ -45,6 +46,8 @@ import { atomicWrite } from "../server/fsutil.ts";
 import { lookupToken, readTokenRegistry, type TokenAuth } from "./token-registry.ts";
 
 const PORT = Number(process.env.MCPL_PORT ?? 8941);
+const PUBLIC_ORIGIN = process.env.MCPL_PUBLIC_ORIGIN?.trim() || undefined;
+if (PUBLIC_ORIGIN) briefingOrigin({}, PUBLIC_ORIGIN); // reject a malformed operator setting at boot
 // archipelago-home door (home-node.md §7): a `?token=aid1.…` credential is an
 // identity token minted by the home node — verified OFFLINE right here, no
 // tokens.json entry needed. That is how non-connectome guest agents arrive:
@@ -179,13 +182,14 @@ class Session {
    *  sense, not scrollback. */
   private heldActivity: string[] = [];
 
-  constructor(private auth: Auth, ws: WebSocket, private agentToken = "") {
+  constructor(private auth: Auth, ws: WebSocket, private agentToken = "", private briefingBase: string | null = null) {
     this.conn = McplConnection.fromWebSocket(ws as never);
     this.agent = new WorldAgent({
       name: auth.id,
       world: auth.world ?? "commons",
       avatar: chosenAvatar[auth.id] ?? auth.avatar,
       url: process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws",
+      briefingBase: this.briefingBase,
       // the same bearer that opened THIS door — the sequencer verifies the
       // name against it (agent names are reserved there)
       agentToken,
@@ -438,6 +442,7 @@ class Session {
       world: w,
       avatar: chosenAvatar[this.auth.id] ?? this.auth.avatar,
       url: process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws",
+      briefingBase: this.briefingBase,
       agentToken: this.agentToken,
     });
     next.onEvent = old.onEvent;
@@ -1198,6 +1203,16 @@ const DOOR_HELP =
 // had, and one that "is the port open?" cannot distinguish by construction.
 const INSTANCE_NONCE = process.env.MCPL_INSTANCE_NONCE ?? "";
 const http = createServer((req, res) => {
+  const path = (req.url ?? "/").split("?")[0];
+  if (path.toLowerCase() === "/agents.md" && (req.method === "GET" || req.method === "HEAD")) {
+    void proxyAgentGuide(req.method, req.headers, process.env.WORLD_URL ?? "ws://127.0.0.1:8940/ws")
+      .then(async guide => {
+        const body = Buffer.from(await guide.arrayBuffer());
+        res.writeHead(guide.status, Object.fromEntries(guide.headers));
+        res.end(body);
+      }).catch(() => res.destroy());
+    return;
+  }
   // A plain HTTP GET here is someone curious — curl, a browser, an agent
   // probing before dialing. Answer with the pointer, not a hang-up.
   res.writeHead(req.url === "/healthz" ? 200 : 426, { "content-type": "text/plain; charset=utf-8", upgrade: "websocket" });
@@ -1388,7 +1403,7 @@ wss.on("connection", (ws, req) => {
     // cleanly killed instead of rubberbanding against its successor
     const prev = sessions.get(auth!.id);
     if (prev) { console.log(`[${ts()}] [mcpl] ${auth!.id} reconnected — taking over previous session`); prev.close(); }
-    const session = new Session(auth!, ws, token ?? "");
+    const session = new Session(auth!, ws, token ?? "", briefingOrigin(req.headers, PUBLIC_ORIGIN));
     sessions.set(auth!.id, session);
     startSession(session, ws, auth!);
     ws.off("message", hold);
