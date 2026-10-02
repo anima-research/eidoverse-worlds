@@ -91,6 +91,7 @@ function build(q) {
   }
   mesh.userData.noCamCollide = true;
   q.mesh = mesh; q.builtAt = [el.offsetWidth, el.offsetHeight];
+  makeHandle(q);
 }
 
 /** The quad's material: undoes the renderer's ACES output pass and applies the VR panel grade (exported for the probe). */
@@ -122,7 +123,7 @@ bus.on('style', () => {
   }
 });
 
-function drop(q) { if (!q.mesh) return; q.mesh.removeFromParent(); q.mesh.dispose(); q.mesh = null; q.aids = null; }
+function drop(q) { if (!q.mesh) return; q.handle?.geometry.dispose(); q.handle?.material.dispose(); q.mesh.removeFromParent(); q.mesh.dispose(); q.mesh = null; q.aids = null; q.handle = null; }
 
 // visible = true builds (or rebuilds a stale) mesh; false only hides what exists
 function setVisible(q, on) {
@@ -285,10 +286,13 @@ const _wn = new THREE.Vector3();
 export function domQuadsAt(handRay) {
   if (!quads || !shown) return null;
   aim(handRay);
-  const hit = _rc.intersectObjects(quads.filter((q) => q.mesh?.visible).map((q) => q.mesh), false)[0];
+  const vis = quads.filter((q) => q.mesh?.visible);
+  const hit = _rc.intersectObjects([...vis.map((q) => q.mesh), ...vis.map((q) => q.handle).filter(Boolean)], false)[0];
   if (!hit) return null;
   const normal = hit.face ? _wn.copy(hit.face.normal).transformDirection(hit.object.matrixWorld).clone() : new THREE.Vector3(0, 0, 1);
   if (normal.dot(_rc.ray.direction) > 0) normal.negate();
+  const hq = hit.object.userData.handleOf;   // the handle bar under the panel: the move grip, nothing to click
+  if (hq) return { dist: hit.distance, point: hit.point, normal, mesh: hq.mesh, id: hq.id, control: null, zone: 'move', handle: true, scroll: false };
   const map = hit.object.material.map;
   const control = hit.uv ? controlAt(map, hit.uv.x, 1 - hit.uv.y) : null;
   let zone = null;
@@ -297,12 +301,12 @@ export function domQuadsAt(handRay) {
     scroll: !control && hit.uv ? scrollableAt(map, hit.uv.x, 1 - hit.uv.y) : false };
 }
 
-// ---- ZONES: a panel's MOVE handle and its RESIZE corners and edges (owner, 10-02) ---------------------------------
+// ---- ZONES: a panel's RESIZE corners and edges (owner, 10-02) ------------------------------------------------------
 // In frame CSS px: the four corners (ZONE_CORNER_PX squares, within ZONE_EDGE_PX of an edge) and the left, right and
-// bottom edges resize (a frame the desktop can resize; frames.js frameResizeInfo); the title strip — .fr-head, or the
-// top ZONE_TOP_PX when the head is hidden at rest — is the move handle; the rest is 'body' (grip there moves too, as a
-// background grab always has). A control under the laser outranks every zone: grip there does nothing.
-export const ZONE_EDGE_PX = 12, ZONE_CORNER_PX = 24, ZONE_TOP_PX = 26;
+// bottom edges resize (a frame the desktop can resize; frames.js frameResizeInfo); the rest is 'body' (grip there moves
+// the panel, the fallback grab). The MOVE handle is not on the panel any more: it is the bar under it (below). A
+// control under the laser outranks every zone: grip there does nothing.
+export const ZONE_EDGE_PX = 12, ZONE_CORNER_PX = 24;
 export function zoneAt(root, x, y) {
   const fr = root.getBoundingClientRect(), W = fr.width, H = fr.height;
   if (!(x >= 0 && y >= 0 && x <= W && y <= H)) return null;
@@ -317,9 +321,33 @@ export function zoneAt(root, x, y) {
     if (R) return 'resize-e';
     if (B) return 'resize-s';
   }
-  const hr = root.querySelector(':scope > .fr-head')?.getBoundingClientRect();
-  return y < (hr && hr.height > 0 ? hr.bottom - fr.top : ZONE_TOP_PX) ? 'move' : 'body';
+  return 'body';
 }
+
+// THE HANDLE BAR (owner, 10-02, SteamOS-style): a small floating bar just BELOW each panel, centred — the primary way to
+// grab and move it ("the bottom of labels tends to be around waist height", where a hand rests). It is always there,
+// faint, so it can be found; a laser dwelling on it (or a hand holding the panel) brings it up to full. Grip on it
+// grabs; the panel's background stays the fallback. A child of the quad in its CSS-px-by-mm units, so it scales with
+// the panel's density and rides along when the panel is carried.
+export const HANDLE_W_PX = 120, HANDLE_H_PX = 14, HANDLE_GAP_PX = 10;
+export const HANDLE_IDLE = 0.35, HANDLE_ON = 0.95;
+let handleTex = null;
+function handleTexture() {
+  if (handleTex) return handleTex;
+  const cv = document.createElement('canvas'); cv.width = 256; cv.height = 32;
+  const g = cv.getContext('2d'); g.fillStyle = '#f2f7f5'; g.beginPath(); g.roundRect(4, 6, 248, 20, 10); g.fill();
+  handleTex = new THREE.CanvasTexture(cv); handleTex.colorSpace = THREE.SRGBColorSpace;
+  return handleTex;
+}
+function makeHandle(q) {
+  const H = q.mesh.geometry.parameters.height;
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(HANDLE_W_PX * 0.001, HANDLE_H_PX * 0.001),
+    new THREE.MeshBasicNodeMaterial({ map: handleTexture(), transparent: true, opacity: HANDLE_IDLE, depthWrite: false, alphaTest: 0.02 }));
+  m.position.set(0, -H / 2 - (HANDLE_GAP_PX + HANDLE_H_PX / 2) * 0.001, 0);
+  m.name = 'xr-handle'; m.userData.handleOf = q; m.userData.noCamCollide = true; m.renderOrder = 1300;
+  q.mesh.add(m); q.handle = m;
+}
+export const domQuadHandle = (id) => quads?.find((q) => q.id === id)?.handle ?? null;   // probe window
 /** Is the point inside an area that scrolls (a trigger-drag there scrolls it)? */
 export function scrollableAt(map, x, y) {
   for (let n = map?.elementAt?.(x, y); n && n !== map.dom.parentElement; n = n.parentElement) {
@@ -329,9 +357,9 @@ export function scrollableAt(map, x, y) {
   return false;
 }
 
-// THE HANDLES, revealed on dwell: invisible until a laser has rested on a zone for a beat (xr.js asks with the hand's
-// dwell), then that zone's handle shows — a bar over the title strip, an L at a corner, a line along an edge — in the
-// house's brand ink, on the quad (its children, in its CSS-px-by-mm units, a hair in front).
+// THE RESIZE HANDLES, revealed on dwell: invisible until a laser has rested on a zone for a beat (xr.js asks with the
+// hand's dwell), then that zone's handle shows — an L at a corner, a line along an edge — in the house's brand ink, on
+// the quad (its children, in its CSS-px-by-mm units, a hair in front). 'move' brightens the handle bar instead.
 const AID_INK = 0x8fe8c8, AID_Z = 0.002;
 function aidsFor(q) {
   if (q.aids && q.aids.parent === q.mesh) return q.aids;
@@ -346,10 +374,7 @@ function aidMesh(q, zone) {
   const mat = (o) => new THREE.LineBasicNodeMaterial({ color: AID_INK, transparent: true, opacity: o, depthWrite: false });
   const x0 = -W / 2, x1 = W / 2, y0 = -H / 2, y1 = H / 2, c = ZONE_CORNER_PX * 0.001, i = 0.004;   // corner arm; inset 4 px
   let pts;
-  if (zone === 'move') {
-    const hr = q.el.querySelector(':scope > .fr-head')?.getBoundingClientRect(), hb = (hr && hr.height > 0 ? hr.bottom - fr.top : ZONE_TOP_PX) * 0.001;
-    pts = [[x0 + c, y1 - i], [x1 - c, y1 - i], [x1 - c, y1 - i], [x1 - c, y1 - hb + i], [x1 - c, y1 - hb + i], [x0 + c, y1 - hb + i], [x0 + c, y1 - hb + i], [x0 + c, y1 - i]];
-  } else if (zone.startsWith('resize-')) {
+  if (zone.startsWith('resize-')) {
     const z = zone.slice(7), X = z.includes('w') ? x0 + i : x1 - i, Y = z.includes('n') ? y1 - i : y0 + i, sx = z.includes('w') ? 1 : -1, sy = z.includes('n') ? -1 : 1;
     if (z.length === 2) pts = [[X, Y], [X + sx * c, Y], [X, Y], [X, Y + sy * c]];
     else if (z === 's') pts = [[x0 + c, y0 + i], [x1 - c, y0 + i]];
@@ -362,18 +387,20 @@ function aidMesh(q, zone) {
 /** Show quad `mesh`'s handle for `zone` ('move' | 'resize-*'), hiding its others; zone null hides them all. */
 export function domQuadReveal(mesh, zone) {
   const q = all.find((x) => x.mesh === mesh); if (!q) return;
-  const want = zone && zone !== 'body' ? aidMesh(q, zone) : null;
+  const want = zone?.startsWith('resize-') ? aidMesh(q, zone) : null;
   for (const c of q.aids?.children ?? []) c.visible = c === want;
+  if (q.handle) q.handle.material.opacity = zone === 'move' ? HANDLE_ON : HANDLE_IDLE;
 }
 /** every quad's handles hidden but `keep` (a {mesh, zone} list) */
 export function domQuadsRevealOnly(keep) {
   for (const q of all) {
     if (!q.mesh) continue;
     const k = keep.find((x) => x.mesh === q.mesh);
-    if (k || q.aids) domQuadReveal(q.mesh, k?.zone ?? null);   // a quad's handles are built the first time one is revealed
+    domQuadReveal(q.mesh, k?.zone ?? null);   // resize handles are built the first time one is revealed; the bar always exists
   }
 }
-export const domQuadAids = (id) => (all.find((q) => q.id === id)?.aids?.children ?? []).filter((c) => c.visible).map((c) => c.userData.zone);   // probe window
+export const domQuadAids = (id) => { const q = all.find((x) => x.id === id);   // probe window: what is revealed ('move' = the bar at full)
+  return [...(q?.handle?.material.opacity === HANDLE_ON ? ['move'] : []), ...(q?.aids?.children ?? []).filter((c) => c.visible).map((c) => c.userData.zone)]; };
 
 // ---- RESIZE in VR: grip on a corner or an edge (owner, 10-02). While held, the gripped corner/edge follows the laser
 // across the panel's plane and an outline shows the new size; the opposite side stays put. On release the size is

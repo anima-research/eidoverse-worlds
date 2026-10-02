@@ -1363,7 +1363,7 @@ export function updateXR(dtSec = 1 / 72) {
         const panelDist = pr?.dist ?? null;
         if (pr?.press) panelPress[side] = pr.press;
         if (panelDist != null) haptic(side, 0.3, 18);   // a button, felt
-        if (panelDist == null) {
+        if (panelDist == null && !panelAt?.handle) {   // (the handle bar is a panel's, not the world's)
           const hit = rayHitEntity(ray);
           if (hit) { bus.emit('xr:select', hit.id); flashHint(`→ ${hit.id}`); }
         }
@@ -1408,9 +1408,10 @@ export function updateXR(dtSec = 1 / 72) {
     const reveal = [];
     for (const side of ['right', 'left']) {
       const k = dwells[side].ripeKey(), m = typeof k === 'string' && k.match(/^panel:(.+):(move|resize-[a-z]+)$/);
-      if (m && held?.hand !== side) { const mesh = domQuadMesh(m[1]); if (mesh) reveal.push({ mesh, zone: m[2] }); }
+      if (m) { const mesh = domQuadMesh(m[1]); if (mesh) reveal.push({ mesh, zone: m[2] }); }
     }
     if (resizing) reveal.push({ mesh: resizing.drag.q.mesh, zone: `resize-${resizing.drag.z}` });
+    if (held?.quad?.mesh) reveal.push({ mesh: held.quad.mesh, zone: 'move' });   // the bar of a carried panel, at full
     domQuadsRevealOnly(reveal);
   }
 
