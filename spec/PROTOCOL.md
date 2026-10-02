@@ -49,7 +49,8 @@ Folding produces, at minimum:
   "roles":  { "<id>": { "role": "owner|builder|visitor", "gen"?: true,
                          "sub"?: "durable id" } },                    // §7
   "behaviors": { "<id>": { "src", "runtime"?: "client", "attach"?, "caps"?,
-                            "knobs"?, "author", "ts", "state"? } }?   // §8
+                            "knobs"?, "author", "ts", "state"? } }?,  // §8
+  "blueprints": { "<hash>": { "record", "by", "ts" } }?               // §4.1
 }
 ```
 
@@ -78,6 +79,7 @@ measured on the fields above (see `fixtures/README.md`).
 | `bstate` | `{id, data}` | `behaviors[id].state = data` (script kv persistence) |
 | `terrain` / `grass` / `sky` / `weather` | opaque bags | world-scope singletons (grass `{clear: true}` deletes; weather merges into sky). Grass bags speak eidoverse-video's `createFlora` (species/height/density/color/rows); legacy makeGrass bags in old logs are mapped client-side, never rewritten |
 | `asset` | `{name, path}` | append to the world's asset palette (dedup by path) |
+| `blueprint` | `{hash, record}` or `{hash}` | file `record` in `blueprints[hash]` **iff** `hash` is the record's own content hash (recomputed, §4.1); first publisher and time kept, a re-publish replaces only the record (its prose may differ, its meaning cannot). `{hash}` alone folds nothing *(amendment 2026-10-02, §4.1)* |
 | anything else | — | **nothing, and the log keeps it** |
 
 ### 3.1 The id namespace is flat, and the newest word wins
@@ -184,7 +186,78 @@ consumes a type. Known types in v1, with their contracts:
   Transform, carried by `comp` so it folds blind on every client; the
   reference door refuses any other value.
 
+- **`blueprint`** `{hash, name}` *(amendment 2026-10-02)* — this entity is a
+  **copy** of the blueprint record `hash` (§4.1), whose name was `name` when
+  it was placed. A copy carries its **full expanded components** like any
+  entity, so a reader that knows nothing of blueprints renders it exactly;
+  the link is what lets an editor compute the copy's overrides and offer it a
+  newer version. Removing the link (`data: null`) unlinks the copy; it keeps
+  its components.
+
 Everything else in a bag is somebody's annotation. Preserve it.
+
+### 4.1 Blueprints *(amendment 2026-10-02)*
+
+A **blueprint** is the master design of a thing: an entity's components and
+its children, saved as one immutable record, from which copies are placed.
+
+```jsonc
+{ "kind": "eido.blueprint", "v": 1, "name": "Lamp",       // 1–64 chars
+  "parent"?: "<hash>",            // the version this one was edited from
+  "note"?: "prose",               // ≤ 2000 chars; NOT hashed
+  "root": { "components": [ { "type", "key"?, "params", "wire"?, "extra"? } ],
+            "children": [ { "id": "bulb", "components": [...], "children": [...] } ] } }
+```
+
+- **Components** are instances in the reference component vocabulary
+  (`shared/components.js` `componentsOf`/`entityOf`: `type` names a record,
+  `key` the comp-bag key it is written under, `params` its parameters), so a
+  node expands to the same entity bytes on every implementation. The root
+  holds no placement — its Transform may carry `scale`/`rotOrder`, never
+  `pos`/`q`/`yaw` — and a child's Transform is local to its parent node. No
+  node holds an Attachment (nesting is the attachment), Captions (the
+  `caption` verb writes those), a world record (Sky, Weather, Ground, Grass)
+  or a `blueprint` annotation (nested copies are not v1). Each child has an
+  `id`, unique among its siblings: the handle by which a newer version's part
+  is matched to a copy's. A record has exactly these keys; `children` is
+  always present (empty when there are none), so one design has one encoding.
+- **Hash.** `hash` = lowercase hex SHA-256 of the RFC 8785 (JCS) canonical
+  JSON of the record without its `note` — the hash covers meaning, not prose,
+  as for component records. `name` and `parent` are meaning. A record cannot
+  name itself or an ancestor of itself as parent (that would need a hash
+  fixed point), so lineage has no cycles by construction.
+- **Lineage.** Editing a blueprint publishes a **new** record whose `parent`
+  is the old one's hash; nothing is edited in place.
+- **The store** is `blueprints`, folded from `blueprint` entries and never
+  shrunk: no verb unpublishes, so every record a copy names stays in the
+  world's own log and the world opens offline. The fold checks only the hash
+  (a hand-edited log cannot file a record under another's name).
+- **The door** (reference implementation, `server/verbs.ts`) additionally
+  refuses: a record that is not of the shape above, or larger than 64 KB
+  canonical (any one component over 8 KB, more than 256 parts, nesting deeper
+  than 8, more than 48 components on a part, two components with one
+  type+key on a part); a `hash` that is not the record's (the refusal names
+  the right one); and a version whose `parent` the store does not hold, so
+  every lineage a world keeps is complete. Re-publishing a record the store
+  holds byte for byte is accepted idempotently and logged as a thin
+  `{hash}`; one whose `note` alone differs is logged whole and the store
+  takes the new prose. Publishing is builder rank (§7).
+- **Copies** are entities carrying `comp.blueprint` (§4). A copy's
+  **overrides** are its components minus its version's, fact by fact (a
+  field, a component, a part); updating a copy to a newer version applies
+  *new version ⊕ its overrides* and is **offered, never applied**. An
+  override on a field the update also changed — or a part or component one
+  side removed while the other edited or added to it — is a conflict, and
+  that copy asks instead of guessing (`shared/blueprint.js` `rebase`).
+
+*Versioning.* `blueprint` is a new verb. §10 says a new verb is announced by
+a `genesis` dialect bump in logs that use it — but `genesis` is written once,
+at a world's creation, so no existing world could ever announce it. As with
+`q` (§9.1) this amendment takes no bump and flags it ⚑ for review: a reader
+that predates it keeps the entries (§1) and folds them to nothing, and loses
+nothing it could render, because every copy carries its full components; it
+only cannot list the store or follow updates. Pinned by
+`tools/blueprint-test.ts`; no conformance fixture yet.
 
 ## 5. Two planes
 
@@ -218,7 +291,7 @@ Everything else in a bag is somebody's annotation. Preserve it.
 ## 7. Authority
 
 Rights ladder per world: `visitor` (say, use, mount **yourself**) <
-`builder` (+ spawn/place/remove/light/comp/motion/behavior/cargo-mount) <
+`builder` (+ spawn/place/remove/light/comp/motion/behavior/blueprint/cargo-mount) <
 `owner` (+ terrain/grass/sky/weather/grant, and a `behavior` carrying
 `runtime: "client"`, §8). `gen` is an orthogonal spend
 capability (introducing new assets). A world with no owner is open

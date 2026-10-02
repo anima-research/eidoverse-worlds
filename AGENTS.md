@@ -106,6 +106,11 @@ mount   {id, to, slot?, offset?, yaw?, q?}  # id rides to (q = orientation relat
                                           # refused if `to` is inside `id` (a loop)
 dismount{id, pos?, yaw?}                  # STAMP the absolute pose you rest at
 use     {id, action}                      # the universal interact, rank 0
+blueprint {hash, record}                  # publish a blueprint into the world's store (builder);
+                                          # record = {kind:"eido.blueprint", v:1, name, parent?, note?,
+                                          #   root:{components, children:[{id, components, children}]}},
+                                          # hash = sha256 of its RFC 8785 JSON minus note (PROTOCOL §4.1);
+                                          # list the store with the blueprints tool
 force   {at:[x,y,z], radius?, power?}     # instantaneous radial push, rank 1
 ```
 
