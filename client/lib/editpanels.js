@@ -95,10 +95,11 @@ function fieldByKey(fields, action) { return (fields ?? []).find((f) => f.k === 
 function completeRefPick(targetId) {
   if (!armingRef || !targetId || String(targetId).startsWith('rider:')) return false;
   const { id, key } = armingRef; armingRef = null;
-  if (targetId === id) { flashHint('a thing can\'t reference itself', 3000); repaintAll(); return true; }
+  const what = key === 'parent.to' ? 'parent' : key.split('.').pop();
+  if (targetId === id) { flashHint(key === 'parent.to' ? 'a thing can\'t be its own parent' : 'a thing can\'t reference itself', 3000); repaintAll(); return true; }
   const r = commitEdit(id, key, targetId);
   if (r.errors?.length) flashHint(r.errors.join(' · '), 5000);
-  else flashHint(`${key.split('.').pop()} → <b>${targetId}</b>`, 3000);
+  else flashHint(`${what} → <b>${targetId}</b>`, 3000);
   repaintAll();
   return true;
 }
@@ -496,7 +497,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     const f = fieldByKey(painted, action);
     if (f?.t === 'ref') {
       if (armingRef && armingRef.id === id && armingRef.key === key) { armingRef = null; flashHint('pick cancelled', 2500); }
-      else { armingRef = { id, key }; flashHint(`now click <b>${key.split('.').pop()}</b>'s target — a row here, or the thing itself in the world`, 5000); }
+      else { armingRef = { id, key }; flashHint(key === 'parent.to' ? `now click <b>${id}</b>'s new parent — a row here, or the thing itself in the world` : `now click <b>${key.split('.').pop()}</b>'s target — a row here, or the thing itself in the world`, 5000); }
       repaintAll();
       return;
     }
@@ -811,7 +812,7 @@ export function initEditPanels() {
 
 /** harness window */
 export const editPanelsDebug = () => ({
-  hierarchy: hierarchyFields().length, inspector: inspectorFields().length, create: createFields().length, createVR: createVRFields().length, selected: sceneSelected(), arming,
+  hierarchy: hierarchyFields().length, hierFields: () => hierarchyFields(), inspector: inspectorFields().length, create: createFields().length, createVR: createVRFields().length, selected: sceneSelected(), arming,
   groups: sceneSelected() ? schemaFor(sceneSelected()).groups.map((g) => g.group) : [], behaviors: behaviors.length, rows: visibleRows, selection: selection(),
   watching, consoleLines: watchLog?.lines?.length ?? 0,
 });

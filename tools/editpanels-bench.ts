@@ -163,7 +163,7 @@ await evalJson(`dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' })), tru
 check('tool buttons show their letters', await evalJson(`[...document.querySelectorAll('.edit-tool-key')].map((k) => k.textContent).join('') === 'QGER'`));
 check('hierarchy has no button row', await evalJson(`document.querySelector('.edit-left [data-frame="hierarchy"] .sp-btn') === null`));
 await evalJson(`(() => { const row = [...document.querySelectorAll('.edit-left .sp-tree-row')].find((r) => /lamp2/.test(r.textContent)); row.dispatchEvent(new MouseEvent('contextmenu', { clientX: 120, clientY: 130, bubbles: true, cancelable: true })); return true; })()`);
-check('right-click opens the row menu with find / attach / lock / remove', await evalJson(`(() => { const m = document.querySelector('.sp-ctx'); const T = m ? [...m.querySelectorAll('.sp-ctx-item')].map((i) => i.textContent) : []; return T.some((t) => /find/.test(t)) && T.some((t) => /attach/.test(t)) && T.some((t) => /lock/.test(t)) && T.some((t) => /remove/.test(t)); })()`));
+check('right-click opens the row menu with find / parent to / lock / remove', await evalJson(`(() => { const m = document.querySelector('.sp-ctx'); const T = m ? [...m.querySelectorAll('.sp-ctx-item')].map((i) => i.textContent) : []; return T.some((t) => /find/.test(t)) && T.some((t) => /parent to/.test(t)) && T.some((t) => /lock/.test(t)) && T.some((t) => /remove/.test(t)); })()`));
 await evalJson(`[...document.querySelectorAll('.sp-ctx-item')].find((i) => /remove/.test(i.textContent)).click(), true`);
 check('menu → remove takes lamp2 out of the world', await waitFor(`import('/lib/world.js').then((m) => !m.entities.has('lamp2'))`));
 check('…and the menu is gone', await evalJson(`document.querySelector('.sp-ctx') === null`));
@@ -291,7 +291,7 @@ check('drop onto a row → mounted on it (in place)', await waitFor(`import('/li
 await sleep(600);
 const d3 = await dragTo('porch  (benchlamp)', rowOf('lamp3'));
 await sleep(400);
-check('dropping a carrier onto its own cargo is refused with a hint, nothing sent', d3 === 'ok' && await evalJson(`import('/lib/state.js').then((m) => m.state.st.entities.lamp3?.parent?.to === 'benchlamp' && !m.state.st.entities.benchlamp?.parent)`) && await evalJson(`/own cargo/.test(document.querySelector('#hintbar, .hint, #hint')?.textContent ?? document.body.textContent)`));
+check('dropping a carrier onto its own cargo is refused with a hint naming the path, nothing sent', d3 === 'ok' && await evalJson(`import('/lib/state.js').then((m) => m.state.st.entities.lamp3?.parent?.to === 'benchlamp' && !m.state.st.entities.benchlamp?.parent)`) && await evalJson(`/lamp3 is inside benchlamp/.test(document.querySelector('#hintbar, .hint, #hint')?.textContent ?? document.body.textContent)`), await evalJson(`document.querySelector('#hintbar')?.textContent`));
 await evalJson(`import('/lib/build.js').then((m) => m.undo()), true`);
 check('Ctrl+Z undoes the attach → detached again', await waitFor(`import('/lib/state.js').then((m) => !m.state.st.entities.lamp3?.parent)`), JSON.stringify(await evalJson(`import('/lib/state.js').then((m) => m.state.st.entities.lamp3?.parent)`)));
 await sleep(600);
@@ -419,7 +419,7 @@ console.log('\npick: an armed attach completes on a viewport click, not only a r
 await sleep(1500);   // verb window
 check('crate1 is a root to start', await evalJson(`import('/lib/state.js').then((m) => !m.state.st.entities.crate1?.parent)`));
 await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('crate1')), true`);
-await evalJson(`(() => { const row = [...${hier}.querySelectorAll('.sp-tree-row')].find((r) => /crate1/.test(r.textContent)); row.dispatchEvent(new MouseEvent('contextmenu', { clientX: 120, clientY: 130, bubbles: true, cancelable: true })); const it = [...document.querySelectorAll('.sp-ctx .sp-ctx-item')].find((i) => /attach/.test(i.textContent)); it.click(); return true; })()`);
+await evalJson(`(() => { const row = [...${hier}.querySelectorAll('.sp-tree-row')].find((r) => /crate1/.test(r.textContent)); row.dispatchEvent(new MouseEvent('contextmenu', { clientX: 120, clientY: 130, bubbles: true, cancelable: true })); const it = [...document.querySelectorAll('.sp-ctx .sp-ctx-item')].find((i) => /parent to/.test(i.textContent)); it.click(); return true; })()`);
 check('attach armed on crate1: the hint names the world as a target', await waitFor(`globalThis.__editPanels?.().arming === 'crate1' && /in the world/.test(document.querySelector('#hintbar')?.textContent ?? '')`), JSON.stringify(await evalJson(`({ arming: globalThis.__editPanels?.().arming, hint: document.querySelector('#hintbar')?.textContent })`)));
 // a viewport pick = build.js select(id) → sceneSelect(id): the same seam, driven directly
 await evalJson(`import('/lib/build.js').then((m) => m.select('benchlamp')), true`);
@@ -428,6 +428,79 @@ check('…and arming is cleared', await evalJson(`globalThis.__editPanels?.().ar
 await sleep(600);
 await evalJson(`import('/lib/build.js').then((m) => m.undo()), true`);
 check('undo frees it again (the row-click path now shares this undo)', await waitFor(`import('/lib/state.js').then((m) => !m.state.st.entities.crate1?.parent)`), JSON.stringify(await evalJson(`import('/lib/state.js').then((m) => m.state.st.entities.crate1?.parent)`)));
+await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('benchlamp')), true`);
+await waitFor(`${insp}.querySelector('.sp-info')?.textContent.startsWith('benchlamp')`);
+
+console.log('\nthe tree (step 4): kind hints, folds kept, a folded filter hit, reveal on select, the root strip, a scaled carrier kept in place, the Parent field:');
+await sleep(1500);   // verb window
+{
+  const sub = (id: string) => `(${rowOf(id)}?.querySelector('.sp-item-sub')?.textContent ?? '')`;
+  check('rows carry a kind hint: a light says light, a model its file stem', await waitFor(`${sub('lamp3')}.startsWith('light') && ${sub('crate1')}.startsWith('unit quad picture')`), await evalJson(`[${sub('lamp3')}, ${sub('crate1')}]`));
+  const FOLD = `JSON.parse(localStorage.getItem('ew-hier-fold:editbench') || '[]')`;
+  await evalJson(`(${rowOf('porch  (benchlamp)')}.querySelector('.sp-disc').click(), true)`);
+  check('folding benchlamp hides lamp3 and is remembered in this browser', await waitFor(`!${rowOf('lamp3')} && ${FOLD}.includes('benchlamp')`), JSON.stringify(await evalJson(FOLD)));
+  await evalJson(`(() => { const i = ${hier}.querySelector('.sp-f-text .sp-text'); i.value = 'lamp3'; i.dispatchEvent(new Event('change')); return true; })()`);
+  check('a filter hit inside the FOLDED benchlamp shows the path: benchlamp (dimmed) › lamp3', await waitFor(`(() => { const R = [...${hier}.querySelectorAll('.sp-tree-row')]; return R.length === 2 && R[0].classList.contains('dim') && /lamp3/.test(R[1].textContent); })()`),
+    await evalJson(`[...${hier}.querySelectorAll('.sp-tree-row')].map((r) => r.className + ':' + r.querySelector('.sp-item-label').textContent).join('|')`));
+  await evalJson(`(() => { const i = ${hier}.querySelector('.sp-f-text .sp-text'); i.value = ''; i.dispatchEvent(new Event('change')); return true; })()`);
+  check('…clearing the filter leaves the fold as it was', await waitFor(`!${rowOf('lamp3')} && !!${rowOf('crate1')}`));
+  await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('lamp3')), true`);
+  check('selecting lamp3 (inside the fold) reveals it: benchlamp unfolds, the row is active', await waitFor(`!!${rowOf('lamp3')}?.classList.contains('active') && !${FOLD}.includes('benchlamp')`), JSON.stringify(await evalJson(FOLD)));
+  await sleep(600);
+  // the root strip: only while a row is in flight, and a drop on it unparents
+  check('no root strip at rest', await evalJson(`(${hier}.querySelector('.sp-tree-root')?.offsetHeight ?? -1) === 0`));
+  const strip = await evalJson(`(() => { const src = ${rowOf('lamp3')}; const z = ${hier}.querySelector('.sp-tree-root'); src.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() })); const shown = z.offsetHeight > 0 && /no parent/.test(z.textContent); z.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() })); z.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() })); src.dispatchEvent(new DragEvent('dragend', { bubbles: true })); return shown; })()`);
+  check('dragging shows the "no parent" strip; dropping on it unparents lamp3', strip === true && await waitFor(`import('/lib/state.js').then((m) => !m.state.st.entities.lamp3?.parent)`), String(strip));
+  await sleep(600);
+  await evalJson(`import('/lib/build.js').then((m) => m.undo()), true`);
+  check('…one undo puts it back', await waitFor(`import('/lib/state.js').then((m) => m.state.st.entities.lamp3?.parent?.to === 'benchlamp')`));
+  await sleep(1500);
+  // a scaled, turned carrier: the dragged child keeps its world position AND size (mount + a scale place, one undo)
+  await evalJson(`import('/lib/net.js').then((m) => { m.sendVerb('place', { id: 'crate1', pos: [3, 0.5, 3], q: [0.2, 0.3, 0.1, 0.93], scale: 2 }); m.sendVerb('spawn', { id: 'cup1', lib: 'eidoverse/assets/models/unit_quad_picture_plane.glb', pos: [4, 1.2, 3.5], yaw: 0.7, scale: 0.5 }); }), true`);
+  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('cup1') && Math.abs(m.entities.get('crate1').scale.x - 2) < 1e-6)`, 8000);
+  const WP = `import('/lib/world.js').then((m) => { const o = m.entities.get('cup1'); o.updateWorldMatrix(true, false); const p = new o.position.constructor(), s = new o.position.constructor(); o.getWorldPosition(p); o.getWorldScale(s); return [p.x, p.y, p.z, s.x]; })`;
+  const w0 = await evalJson(WP);
+  await sleep(600);
+  const d = await dragTo('cup1', rowOf('crate1'));
+  check('cup1 dropped on the scaled crate1 → under it', d === 'ok' && await waitFor(`import('/lib/state.js').then((m) => m.state.st.entities.cup1?.parent?.to === 'crate1' && Math.abs((m.state.st.entities.cup1.scale ?? 1) - 0.25) < 1e-3)`), d + ' ' + JSON.stringify(await evalJson(`import('/lib/state.js').then((m) => [m.state.st.entities.cup1?.parent, m.state.st.entities.cup1?.scale])`)));
+  const w1 = await evalJson(WP);
+  check('…and did not move or resize in the world (three.js, after the echo)', await waitFor(`${WP}.then((w) => w.every((v, i) => Math.abs(v - ${JSON.stringify(w0)}[i]) < 2e-3))`), JSON.stringify({ w0, w1 }));
+  await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('cup1')), true`);
+  const ref = (label: string) => `[...${insp}.querySelectorAll('.sp-f-ref')].find((x) => x.querySelector('.sp-label')?.textContent === ${JSON.stringify(label)})`;
+  check('the inspector header shows Parent: crate1', await waitFor(`/crate1/.test(${ref('parent')}?.querySelector('.sp-ref-name')?.textContent ?? '')`), await evalJson(`${insp}.textContent.slice(0, 300)`));
+  check('…and its Translate reads LOCAL (the mount offset), said so on the card', await waitFor(`(() => { const f = (l) => [...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label')?.textContent === l); const x = f('translate x'); return !!x && Math.abs(parseFloat(x.querySelector('.sp-num').value) - 4) > 0.05 && /local to its parent, crate1/.test(${insp}.textContent); })()`),
+    await evalJson(`[...${insp}.querySelectorAll('.sp-f-num')].slice(0, 3).map((r) => r.querySelector('.sp-label')?.textContent + '=' + r.querySelector('.sp-num').value).join(' ')`));
+  await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('crate1')), true`);
+  check('crate1\'s inspector lists its children', await waitFor(`[...${insp}.querySelectorAll('.sp-f-info')].some((r) => r.querySelector('.sp-label')?.textContent === 'children' && /cup1/.test(r.textContent))`));
+  await sleep(600);
+  await evalJson(`import('/lib/build.js').then((m) => m.undo()), true`);
+  check('ONE undo for the drag: a root again, its own scale back, same world pose', await waitFor(`import('/lib/state.js').then((m) => !m.state.st.entities.cup1?.parent && m.state.st.entities.cup1?.scale === 0.5)`) && await waitFor(`${WP}.then((w) => w.every((v, i) => Math.abs(v - ${JSON.stringify(w0)}[i]) < 2e-3))`),
+    JSON.stringify(await evalJson(`import('/lib/state.js').then((m) => m.state.st.entities.cup1)`)));
+  await sleep(1200);
+  // the Parent field: pick (the VR / agent path — no drag), then ✕ to unparent
+  // arm only once the inspector SHOWS cup1 (a stale crate1 inspector also has a Parent field), and
+  // click the row only once the pick is armed — the same order a person's eyes enforce
+  await evalJson(`import('/lib/scenegraph.js').then((m) => { m.sceneSelect('cup1'); return true; })`);
+  await waitFor(`${insp}.querySelector('.sp-info')?.textContent.startsWith('cup1') && !!${ref('parent')}`);
+  await evalJson(`(${ref('parent')}.querySelector('.sp-ref-name').click(), true)`);
+  await waitFor(`/click a target/.test(${ref('parent')}?.querySelector('.sp-ref-name')?.textContent ?? '') && /new parent/.test(document.querySelector('#hintbar')?.textContent ?? '')`);
+  await evalJson(`([...${hier}.querySelectorAll('.sp-tree-row')].find((r) => r.dataset.id === 'crate1').querySelector('.sp-item-main').click(), true)`);
+  check('Parent: pick crate1 (a row) → parented in place, the inspector stays on cup1', await waitFor(`import('/lib/state.js').then((m) => m.state.st.entities.cup1?.parent?.to === 'crate1')`) && await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'cup1')`) && await waitFor(`${WP}.then((w) => w.every((v, i) => Math.abs(v - ${JSON.stringify(w0)}[i]) < 2e-3))`),
+    JSON.stringify(await evalJson(`Promise.all([import('/lib/state.js'), import('/lib/scenegraph.js')]).then(([m, g]) => ({ parent: m.state.st.entities.cup1?.parent, sel: g.sceneSelected(), hint: document.querySelector('#hintbar')?.textContent }))`)) + ' w=' + JSON.stringify(await evalJson(WP)));
+  await sleep(600);
+  await waitFor(`!!${ref('parent')}?.querySelector('.sp-ref-clear')`);
+  await evalJson(`(${ref('parent')}?.querySelector('.sp-ref-clear')?.click(), true)`);
+  check('Parent ✕ → a root again, where it stood', await waitFor(`import('/lib/state.js').then((m) => !m.state.st.entities.cup1?.parent)`) && await waitFor(`${WP}.then((w) => w.every((v, i) => Math.abs(v - ${JSON.stringify(w0)}[i]) < 2e-3))`), JSON.stringify(await evalJson(WP)));
+  // the VR quad paints the same tree (one fields declaration)
+  // the VR quad paints the same declaration: render it to a canvas as the quad does and read its hit regions
+  await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('mount', { id: 'cup1', to: 'crate1', offset: [0, 0.5, 0] })), true`);
+  await waitFor(`import('/lib/state.js').then((m) => m.state.st.entities.cup1?.parent?.to === 'crate1')`);
+  const vr = await evalJson(`import('/lib/panels.js').then((m) => { const c = document.createElement('canvas'); const R = m.renderCanvas(c, globalThis.__editPanels().hierFields(), { theme: 'edit' }); return { cup: R.some((r) => r.action === 'sel' && r.payload === 'cup1'), disc: R.some((r) => r.action === 'open' && r.payload === 'crate1') }; })`);
+  check('the VR quad paints the same tree: a cup1 row to pick, a disclosure on crate1', vr?.cup && vr?.disc, JSON.stringify(vr));
+  await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('remove', { id: 'cup1' })), true`);   // leave the world as the later sections expect it
+  await waitFor(`import('/lib/state.js').then((m) => !m.state.st.entities.cup1)`);
+  await sleep(1200);
+}
 await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('benchlamp')), true`);
 await waitFor(`${insp}.querySelector('.sp-info')?.textContent.startsWith('benchlamp')`);
 
