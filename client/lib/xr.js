@@ -35,7 +35,7 @@ import { ringEmoteEntries } from './emotebar.js';
 import { entities } from './world.js';
 import { flashHint, toast } from './ui.js';
 import { vrMicPreflight } from './vrmic.js';
-import { makePointerLine } from './pointer.js';
+import { makePointerLine, makeSurfaceDot, placeSurfaceDot, hideSurfaceDot } from './pointer.js';
 import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, earOn, flipEar } from './mictoggle.js';
 import { markActive } from './presence.js';
 import { setReveal } from './namereveal.js';
@@ -360,8 +360,26 @@ function makeHand(i) {
   // the AIM: the controller's target ray through a short low-pass (xrpointer.js POINTER_TAU), in the rig's space so
   // walking and turning are never lagged — only the hand's own tremor is filtered. Every pick and the beam use it.
   const aim = new THREE.Object3D(); aim.name = 'xr-aim';
-  rig.add(grip); rig.add(ray); rig.add(aim);
-  return { grip, ray, aim, smooth: { init: false }, laser, box };
+  // the surface dot where the laser meets its target (pointer.js). Parked under the rig so the hands' warm compiles it;
+  // it moves to the scene the first time it is placed.
+  const dot = makeSurfaceDot();
+  rig.add(grip); rig.add(ray); rig.add(aim); rig.add(dot);
+  return { grip, ray, aim, smooth: { init: false }, laser, dot, box };
+}
+const _dotP = new THREE.Vector3(), _dotN = new THREE.Vector3(), _dotO = new THREE.Vector3(), _dotD = new THREE.Vector3(), _eyeP = new THREE.Vector3();
+/** The dot on the hand's target (a panel hit {point, normal}, a plate at `plateDist` along the ray, an entity hit), or
+ *  hidden when there is none. Plates are camera-facing sprites: the dot faces the eye there. */
+function placeDot(hand, ray, eye, { panel = null, plateDist = null, hit = null } = {}) {
+  const dot = hand.dot;
+  if (!panel && plateDist == null && !hit) { hideSurfaceDot(dot); return; }
+  if (dot.parent !== scene) scene.add(dot);
+  _eyeP.setFromMatrixPosition(eye.matrixWorld);
+  if (panel) placeSurfaceDot(dot, panel.point, panel.normal, _eyeP);
+  else if (plateDist != null) {
+    _dotO.setFromMatrixPosition(ray.matrixWorld); _dotD.set(0, 0, -1).transformDirection(ray.matrixWorld);
+    _dotP.copy(_dotO).addScaledVector(_dotD, plateDist);
+    placeSurfaceDot(dot, _dotP, _dotN.subVectors(_eyeP, _dotP), _eyeP);
+  } else placeSurfaceDot(dot, hit.point, hit.normal ?? _dotN.set(0, 0, 0), _eyeP);
 }
 const _lp = new THREE.Vector3(), _ls = new THREE.Vector3();
 /** The beam along a pick ray (a world matrix, −Z forward), `len` metres long. */
@@ -404,7 +422,8 @@ function rayHitEntity(handRay, far = 24) {
   const hit = _rc.intersectObjects(roots, true)[0];
   let n = hit?.object;
   while (n && !n.userData.entityId) n = n.parent;
-  return n ? { id: n.userData.entityId, dist: hit.distance, point: hit.point } : null;
+  const normal = hit?.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : null;   // for the surface dot
+  return n ? { id: n.userData.entityId, dist: hit.distance, point: hit.point, normal } : null;
 }
 
 
@@ -868,7 +887,7 @@ async function enterVR({ retryOf = null } = {}) {
       { const av = getSelf(), v = av?.vrm; if (v) { if (av.setPuppetScale) av.setPuppetScale(1); else v.scene.scale.setScalar(1); v.scene.position.set(0, 0, 0); v.scene.updateMatrixWorld(true); if (v.userData) { v.userData.ankleH = null; v.userData._gait = null; } } }   // the puppet scale AND the eye-anchor offset (xrbody writes vrm.scene.position every presenting frame; left in place it sank the feet on the desktop — owner 09-08 00:38) are presenting things
       releaseGrab();      // a gripped panel goes back to the rig BEFORE the quads are disposed, or a dead mesh stays in the rig
       sticky.left = sticky.right = null;
-      for (const h of [hands.left, hands.right]) if (h) { h.laser.visible = false; h.laser.removeFromParent(); h.smooth.init = false; }   // the beams live in the scene while presenting; the aim snaps on the next entry
+      for (const h of [hands.left, hands.right]) if (h) { h.laser.visible = false; h.laser.removeFromParent(); hideSurfaceDot(h.dot); rig.add(h.dot); h.smooth.init = false; }   // the beams live in the scene while presenting; the aim snaps on the next entry
       { const t = performance.now(); xrPanelsExit(rig); tee(`[xr] panels exit ${(performance.now() - t).toFixed(1)} ms`); }
       rig.remove(camera);
       scene.remove(rig);
@@ -1247,7 +1266,7 @@ export function updateXR(dtSec = 1 / 72) {
     const eye = renderer.xr.getCamera();
     for (const side of ['right', 'left']) {
       const G = side === 'right' ? R : L; const hand = hands[side];
-      if (!G || !hand) { panelPress[side] = null; sticky[side] = null; if (hand) hand.laser.visible = false; continue; }   // a controller dropped mid-press: forget it (P3)
+      if (!G || !hand) { panelPress[side] = null; sticky[side] = null; if (hand) { hand.laser.visible = false; hideSurfaceDot(hand.dot); } continue; }   // a controller dropped mid-press: forget it (P3)
       const grip = !!G.buttons[1]?.pressed, trig = !!G.buttons[0]?.pressed;
       // the ray every pick below uses, and the beam is drawn along: the controller's, low-passed (xrpointer.js), then
       // bent onto the target it holds while the hand drifts a little off it (stickTo)
@@ -1264,7 +1283,8 @@ export function updateXR(dtSec = 1 / 72) {
       // hover above, the stick scroll — runs either way: 'never' hides the beam, it does not stop the pointing.
       hand.laser.visible = pointerVisible(xrPrefs.pointerVisibility, { target: panelNow != null || plate != null, grip, trig });
       hand.box.visible = !getSelf()?.vrm;   // a body owns the hands → no test box
-      if (!buttonsTrusted()) { triggerWas[side] = trig; gripWas[side] = grip; if (hand.laser.visible) placeLaser(hand.laser, ray.matrixWorld, panelNow ?? plate?.dist ?? 1.8); continue; }
+      if (!buttonsTrusted()) { triggerWas[side] = trig; gripWas[side] = grip; if (hand.laser.visible) placeLaser(hand.laser, ray.matrixWorld, panelNow ?? plate?.dist ?? 1.8);
+        placeDot(hand, ray, eye, { panel: panelAt, plateDist: panelAt ? null : plate?.dist ?? null }); continue; }
       if (grip && !gripWas[side] && !held && !(side === 'right' && ringOpenAtStart)) tryGrab(side, ray);   // grip alone; panels only
       if (!grip && held?.hand === side) releaseGrab();
       const holding = held?.hand === side;
@@ -1286,7 +1306,7 @@ export function updateXR(dtSec = 1 / 72) {
         else { xrPanelsReleasePress(panelPress[side], holding); panelPress[side] = null; }
       }
       {
-        const panelDist = xrPanelsPick(ray, false);
+        const panelHit = xrPanelsAt(ray), panelDist = panelHit?.dist ?? null;   // again: a click above may have hidden or moved it
         if (side === 'right' && panelDist != null && !radialOpen && Math.abs(ry) > 0.3) domQuadsScroll(ray, ry * 900 * (dtSec ?? 1 / 72));   // owner 09-07 22:57: stick Y scrolls the panel under the laser (with the beam hidden too)
         const plateDist = panelDist == null && plate ? plate.dist : null;
         const hit = panelDist == null && plateDist == null && looksAtWorld(xrPrefs.pointerVisibility, { grip, trig }) ? rayHitEntity(ray, 40) : null;
@@ -1295,6 +1315,9 @@ export function updateXR(dtSec = 1 / 72) {
         const target = panelDist ?? plateDist ?? hit?.dist ?? null;
         if (hand.laser.visible) placeLaser(hand.laser, ray.matrixWorld, target ?? 1.8);
         hand.laser.userData.opacity.value = target != null ? 0.85 : 0.4;
+        // the dot marks the target whatever the pointer visibility (in 'never' it is the only mark) — except on the
+        // panel this hand is holding: that panel is not a target, it is in your hand
+        placeDot(hand, ray, eye, { panel: holding ? null : panelHit, plateDist, hit });
       }
       triggerWas[side] = trig; gripWas[side] = grip;
     }
@@ -1431,8 +1454,12 @@ export async function initXR() {
   warm('xr hands', async () => {
     // the avatar warm's form: object + camera + the lit scene, frustumCulled
     // off so a parked (stale-matrix) mesh isn't culled out of the compile walk
+    // the surface dots too, shown for their compile only (a hidden object is skipped by the compile walk) — the rig is not
+    // in the scene before a session, so nothing draws them
+    const dots = [hands.left?.dot, hands.right?.dot].filter(Boolean); for (const d of dots) d.visible = true;
     const meshes = []; rig.traverse((o) => { if (o.isMesh) meshes.push(o); });
-    for (const m of meshes) { m.frustumCulled = false; try { await renderer.compileAsync(m, camera, scene); } catch { /* fine */ } }
+    try { for (const m of meshes) { m.frustumCulled = false; try { await renderer.compileAsync(m, camera, scene); } catch { /* fine */ } } }
+    finally { for (const d of dots) if (d.parent === rig) d.visible = false; }
   }, { p: P_AMBIENT });
 
   { let tries = 0; const iv = setInterval(() => { warmXRPipelines(); if (xrWarmed || ++tries > 240) clearInterval(iv); }, 500); }   // headset present (we are past the support probe): warm once the body is in; gives up after 2 min (a viewer page has no body)   // body arrives seconds after boot; poll until it does
@@ -1479,6 +1506,8 @@ export const xrPointerDebug = () => Object.fromEntries(['left', 'right'].map((si
   const h = hands[side], st = sticky[side];
   return [side, h && { laser: { visible: h.laser.visible, len: +h.laser.scale.z.toFixed(4), opacity: +h.laser.userData.opacity.value.toFixed(2), inScene: h.laser.parent === scene },
     held: st && { kind: st.kind, key: typeof st.key === 'string' ? st.key : `${st.key?.tagName?.toLowerCase()}${st.key?.id ? '#' + st.key.id : ''}` },
+    dot: { visible: h.dot.visible, inScene: h.dot.parent === scene, pos: h.dot.position.toArray().map((v) => +v.toFixed(4)), diam: +h.dot.scale.x.toFixed(5),
+      normal: [0, 0, 1].map((_, i) => +new THREE.Vector3(0, 0, 1).applyQuaternion(h.dot.quaternion).getComponent(i).toFixed(4)) },
     heldEl: st?.kind === 'panel' && typeof st.key !== 'string' ? st.key : null,
     bent: pickState[side].bent, pointerVisibility: xrPrefs.pointerVisibility }];
 }));
