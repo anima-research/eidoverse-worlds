@@ -137,6 +137,11 @@ await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyG', bubbl
 check('G → move tool', await evalJson(`globalThis.__editLayout?.().tool === 'move'`));
 await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW', bubbles: true })), true`);
 check('W is still walking — no tool change', await evalJson(`globalThis.__editLayout?.().tool === 'move'`));
+// …and LET GO of W. A keydown with no keyup is a key held for the rest of the run: the avatar walked off
+// (W here, D after Alt+D below) at ~1.5 m/s, new ground streamed into view, ~20 shader builds a second were
+// retained, and the renderer hit V8's heap limit near the filter section (traced 10-01: the same OOM on
+// this bench at d7f382c, before components-B — a bench bug, not the editor's)
+await evalJson(`dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' })), true`);
 check('tool buttons show their letters', await evalJson(`[...document.querySelectorAll('.edit-tool-key')].map((k) => k.textContent).join('') === 'QGER'`));
 check('hierarchy has no button row', await evalJson(`document.querySelector('.edit-left [data-frame="hierarchy"] .sp-btn') === null`));
 await evalJson(`(() => { const row = [...document.querySelectorAll('.edit-left .sp-tree-row')].find((r) => /lamp2/.test(r.textContent)); row.dispatchEvent(new MouseEvent('contextmenu', { clientX: 120, clientY: 130, bubbles: true, cancelable: true })); return true; })()`);
@@ -245,6 +250,7 @@ check('…and the keystroke never reached the walking keys (positive control: W 
 await evalJson(`(() => { const s = ${hier}.querySelector('.schema-scroll'); s.focus(); s.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true, cancelable: true })); return true; })()`);
 check('↑ selects the previous', await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'benchlamp')`));
 await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyD', altKey: true, bubbles: true })), true`);
+await evalJson(`dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyD', altKey: true, bubbles: true })), true`);   // let go (see the W note: a held D strafes)
 check('Alt+D duplicates: a new light carrying the SOURCE\'s components (minus lock), nudged', await waitFor(`import('/lib/world.js').then((m) => { const id = [...m.entities.keys()].find((k) => /^benchlamp~[0-9a-f]{4}$/.test(k)); const o = m.entities.get(id); if (!o) return false; const strip = (b) => { const c = { ...(b ?? {}) }; delete c.lock; return JSON.stringify(c); }; return strip(m.comps.get(id)) === strip(m.comps.get('benchlamp')) && Math.abs(o.position.x - 1.5) < 0.01; })`), await evalJson(`import('/lib/world.js').then((m) => { const id = [...m.entities.keys()].find((k) => /^benchlamp~[0-9a-f]{4}$/.test(k)); return JSON.stringify({ id, comps: m.comps.get(id), src: m.comps.get('benchlamp'), pos: m.entities.get(id)?.position.toArray() }); })`));
 check('…and the copy is selected', await waitFor(`import('/lib/scenegraph.js').then((m) => /^benchlamp~[0-9a-f]{4}$/.test(m.sceneSelected() ?? ''))`));
 await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('benchlamp')), true`);
