@@ -39,6 +39,7 @@ import { makePointerLine, makeSurfaceDot, placeSurfaceDot, hideSurfaceDot, setSu
 import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, earOn, flipEar } from './mictoggle.js';
 import { setPttHeld } from './micstate.js';   // the left A/X under push-to-talk: held = speak, as V
 import { pttMode } from './voiceconsent.js';
+import './xrmicicon.js';   // the mic, in view, while presenting (VRChat's lower-left icon)
 import { markActive } from './presence.js';
 import { platePick, aimPlate } from './platecard.js';   // VR hover: a laser resting on a nameplate opens its card
 import { makeDwell } from './dwell.js';
