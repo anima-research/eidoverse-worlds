@@ -68,36 +68,38 @@ function playNotice() {
       return;
     }
     tone(ctx, prefs.sound, prefs.volume);
+    return true;
   } catch {
     showStatus('Attention audio unavailable; mentions and whispers stay highlighted.');
   }
 }
 
+function unlock() {
+  if (!prefs.enabled || !prefs.volume) return;
+  try {
+    const ctx = audioContext();
+    // Unlock future notices only. No sound is scheduled on this promise.
+    if (ctx.state === 'running') return;
+    ctx.resume().then(() => {
+      if (ctx.state === 'running') showStatus('Private live mentions and whispers; chat highlights remain on.');
+    }).catch(() => {});
+  } catch { showStatus('Attention audio unavailable; chat highlights remain on.'); }
+}
+
 let gate;
 export function initAttention({ bus, me, scope, mentions }) {
   if (gate) return;
-  gate = createAttentionGate({ me, scope, mentions });
+  gate = createAttentionGate({ me, scope, mentions, play: playNotice });
   bus.on('participant-session', gate.participant);
   bus.on('participant-sessions', gate.roster);
   bus.on('participant-teardown', gate.forget);
-  bus.on('live-entry', (entry) => { if (gate.say(entry)) playNotice(); });
-  const unlock = () => {
-    if (!prefs.enabled || !prefs.volume) return;
-    try {
-      const ctx = audioContext();
-      // Unlock future notices only. No sound is scheduled on this promise.
-      if (ctx.state === 'running') return;
-      ctx.resume().then(() => {
-        if (ctx.state === 'running') showStatus('Private live mentions and whispers; chat highlights remain on.');
-      }).catch(() => {});
-    } catch { showStatus('Attention audio unavailable; chat highlights remain on.'); }
-  };
+  bus.on('live-entry', gate.say);
   for (const event of ['pointerdown', 'keydown', 'touchend']) addEventListener(event, unlock, { passive: true });
 }
 
 /** Called only by the incoming whisper path, which carries replay on held DMs. */
 export function attentionWhisper(msg) {
-  if (gate?.whisper(msg)) playNotice();
+  gate?.whisper(msg);
 }
 
 async function preview() {
@@ -134,9 +136,13 @@ export function mountAttentionControls(parent) {
     showStatus(prefs.enabled
       ? 'Private live mentions and whispers; click Preview to test sound.'
       : 'Attention sound off; mentions and whispers stay highlighted.');
+    unlock(); // onchange is still inside the enabling gesture, unlike the earlier pointerdown
   };
   sound.onchange = () => setAttentionPrefs({ sound: sound.value });
-  volume.oninput = () => setAttentionPrefs({ volume: Number(volume.value) / 100 });
+  volume.oninput = () => {
+    setAttentionPrefs({ volume: Number(volume.value) / 100 });
+    unlock(); // raising a saved zero volume is also an intentional audio gesture
+  };
   box.querySelector('[data-attention="preview"]').onclick = preview;
   parent.append(box);
 }

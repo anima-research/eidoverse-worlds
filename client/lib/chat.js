@@ -796,7 +796,7 @@ function applyChatPrefs() {
   if (logEl) logEl.style.fontSize = `${chatFs}px`;
   sideEl('cols')?.classList.toggle('side-left', sideSt.pos === 'left');
 }
-let gearToggle = null, gearAnchor = null, gearOpen = () => false;
+let gearToggle = null, gearAnchor = null, gearOpen = () => false, placeGear = () => {};
 let chatFs = 14;
 const CMD_LS = 'ew-chat-md';
 let chatMd = true;   // *italic* **bold** `code` in the log — on by default (live, 09-05)
@@ -805,6 +805,20 @@ export const chatMarkdownOn = () => chatMd;
 try { chatFs = Math.min(20, Math.max(11, parseFloat(localStorage.getItem(CFS_LS)) || 14)) } catch {}
 function initChatGear() {
   const pop = frame.body.querySelector('.chat-gearpop');
+  placeGear = () => {
+    if (pop.hidden || !gearAnchor) return;
+    const a = gearAnchor.getBoundingClientRect(), f = frame.el.getBoundingClientRect();
+    const body = frame.body.getBoundingClientRect();
+    const minTop = Math.max(4, body.top - f.top + 4);
+    const bottom = Math.min(frame.el.clientHeight, body.bottom - f.top) - 4;
+    // Fit above the gear when there is no room below (including a gear in the
+    // composer). Short frames scroll the options instead of clipping controls.
+    pop.style.maxHeight = `${Math.max(1, bottom - minTop)}px`;
+    const top = Math.max(minTop, Math.min(a.bottom - f.top + 6, bottom - pop.offsetHeight));
+    pop.style.top = `${top}px`;
+    pop.style.maxHeight = `${Math.max(1, bottom - top)}px`;
+    pop.style.right = `${Math.max(4, Math.min(f.right - a.right, frame.el.clientWidth - pop.offsetWidth - 4))}px`;
+  };
   const paintPop = () => {
     pop.innerHTML = `
       <div class="gp-row"><span>text size</span>
@@ -816,6 +830,7 @@ function initChatGear() {
         <button data-side="left" class="${sideSt.pos === 'left' ? 'on' : ''}">left</button>
         <button data-side="right" class="${sideSt.pos !== 'left' ? 'on' : ''}">right</button></div>`;
     mountAttentionControls(pop);
+    placeGear();
   };
   pop.onclick = (e) => {
     const fs = e.target?.dataset?.fs, sd = e.target?.dataset?.side, md = e.target?.dataset?.md;
@@ -837,9 +852,6 @@ function initChatGear() {
     gearAnchor = anchor;
     if (!pop.hidden) {
       paintPop();
-      const a = anchor.getBoundingClientRect(), f = frame.el.getBoundingClientRect();
-      pop.style.right = `${Math.max(4, f.right - a.right)}px`;
-      pop.style.top = `${a.bottom - f.top + 6}px`;
     }
   };
   const closePop = () => { if (!pop.hidden && gearAnchor) gearToggle(gearAnchor); };
@@ -869,7 +881,7 @@ export function initChat({ send, whisper, typing, people }) {
       // tab that's off-screen because the panel is too narrow"). frames.js has
       // called onResize(w, h) all along (frames.js:437); chat simply never
       // passed one. Debounced like emotebar's (emotebar.js:53).
-      onResize: () => { clearTimeout(_arrowT); _arrowT = setTimeout(() => paintTabs(), 120); },
+      onResize: () => { placeGear(); clearTimeout(_arrowT); _arrowT = setTimeout(() => paintTabs(), 120); },
   });
 
   frame.body.innerHTML = `

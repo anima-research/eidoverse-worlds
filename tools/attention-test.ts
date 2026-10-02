@@ -56,6 +56,28 @@ check('roster removal releases departed sender cache', gate.say(say('@tester', {
 gate.forget('other');
 check('live teardown releases sender cache', gate.say(say('@tester', { spoken: true, utt: 1 }))); tick();
 
+gate.roster([{ id: 'other' }]);
+check('first legacy sender without session can chime', gate.say(say('@tester', { spoken: true, utt: 2 }))); tick();
+gate.roster([{ id: 'other' }]);
+check('sessionless reconnect snapshot preserves dedup', !gate.say(say('@tester', { spoken: true, utt: 2 })));
+gate.participant({ id: 'other' });
+check('explicit sessionless arrival permits counter reuse', gate.say(say('@tester', { spoken: true, utt: 2 }))); tick();
+
+gate.roster([{ id: 'other', session: 'boot-c:9' }]);
+check('known sender session establishes cache', gate.say(say('@tester', { spoken: true, utt: 3 }))); tick();
+gate.roster([{ id: 'other' }]);
+check('known to sessionless snapshot does not invent a lifetime', !gate.say(say('@tester', { spoken: true, utt: 3 })));
+gate.roster([{ id: 'other', session: 'boot-c:9' }]);
+check('later same known session retains dedup', !gate.say(say('@tester', { spoken: true, utt: 3 })));
+
+let audible = false;
+const silentGate = createAttentionGate({ me: () => 'tester', scope: () => 'silent',
+  mentions: () => true, now: () => now, play: () => audible });
+check('silent spoken notice stays silent', !silentGate.say(say('@tester', { spoken: true, utt: 4 })));
+audible = true;
+check('silent utterance never replays on enable', !silentGate.say(say('@tester', { spoken: true, utt: 4 })));
+check('new utterance immediately eligible after silent notice', silentGate.say(say('@tester', { spoken: true, utt: 5 })));
+
 // Execute the actual chat and audio UI; only the renderer/wire are replaced.
 plugin({ name: 'attention-chat-stubs', setup(b) {
   for (const name of ['core', 'base', 'frames', 'net'])
@@ -73,9 +95,11 @@ class Gain {
   connect(target: any) { this.target = target; }
   disconnect() { this.disconnected = true; }
 }
+let gesture = false, resumeCalls = 0, contexts = 0;
 class Audio {
-  state = 'running'; currentTime = 0; destination = {};
-  resume() { return Promise.resolve(); }
+  constructor() { contexts++; }
+  state = 'suspended'; currentTime = 0; destination = {};
+  resume() { resumeCalls++; if (gesture) this.state = 'running'; return Promise.resolve(); }
   createGain() { const g = new Gain(); gains.push(g); return g; }
   createOscillator() {
     const o: any = { frequency: { value: 0 }, connect() {}, disconnect() {},
@@ -96,8 +120,11 @@ const enabled = document.querySelector<HTMLInputElement>('[data-attention="enabl
 check('chat gear mounts default-off attention with independent 20% volume', !enabled.checked && attentionPrefs().volume === 0.2);
 bus.emit('live-entry', { verb: 'say', actor: 'other', seq: 1, args: { text: '@tester' } });
 check('default-off creates no oscillator', oscillators.length === 0);
+gesture = true;
 enabled.checked = true; enabled.dispatchEvent(new Event('change'));
-time += 3000;
+check('enable change creates and resumes audio during its gesture', contexts === 1 && resumeCalls > 0 && audioContext().state === 'running');
+gesture = false;
+// No cooldown wait: the preceding disabled notice made no sound.
 logChat('other', '@tester replayed', '', { seq: 100 });
 bus.emit('caption', { actor: 'other', text: '@tester live caption' });
 check('history rendering and captions never chime', oscillators.length === 0);
@@ -124,7 +151,7 @@ check('suspended context drops notice before scheduling', oscillators.length ===
 window.dispatchEvent(new Event('pointerdown'));
 await Promise.resolve();
 check('unlock never replays a stale notice', oscillators.length === 2);
-time += 3000;
+// No cooldown wait: the preceding locked notice made no sound.
 bus.emit('live-entry', { verb: 'say', actor: 'other', seq: 5, args: { text: '@tester fresh' } });
 check('fresh notice after unlock chimes', oscillators.length === 3);
 const select = document.querySelector<HTMLSelectElement>('[data-attention="sound"]')!;
@@ -135,6 +162,13 @@ check('selected chime preview has two tones', oscillators.length === 5);
 const slider = document.querySelector<HTMLInputElement>('[data-attention="volume"]')!;
 slider.value = '0'; slider.dispatchEvent(new Event('input'));
 check('volume control persists independently', JSON.parse(localStorage.getItem('ew-attention')!).volume === 0);
+time += 3000;
+bus.emit('live-entry', { verb: 'say', actor: 'other', seq: 6, args: { text: '@tester zero-volume' } });
+check('zero-volume notice schedules no tone', oscillators.length === 5);
+setAttentionPrefs({ volume: 0.2, sound: 'soft' });
+bus.emit('live-entry', { verb: 'say', actor: 'other', seq: 7, args: { text: '@tester after volume restored' } });
+check('fresh mention after restoring volume has no silent cooldown', oscillators.length === 6);
+
 check('controls keep audio prefs unchanged', JSON.stringify(audioPrefs()) === unrelated);
 for (const o of oscillators) o.onended();
 check('completed tones release every gain', gains.every(g => g.disconnected));

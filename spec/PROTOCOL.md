@@ -158,7 +158,7 @@ Everything else in a bag is somebody's annotation. Preserve it.
 
 ### Private attention metadata
 
-An `arrive` packet and each `snapshot.present` record carry an optional opaque `session` string for the participant's current primary connection. The sequencer changes it on every accepted join and qualifies it by server boot, so it remains distinct across restarts. The same connection keeps the same value in later snapshots. Clients can use it to scope sender-local utterance counters. It is observational presence metadata, not an identity credential or an authority grant.
+An `arrive` packet and each `snapshot.present` record carry an optional opaque `session` string for the participant's current primary connection. The sequencer changes it on every accepted join and qualifies it by server boot, so it remains distinct across restarts. The same connection keeps the same value in later snapshots. Clients can use it to scope sender-local utterance counters. It is observational presence metadata, not an identity credential or an authority grant. On older servers without this field, the attention client preserves an existing utterance cache through snapshots and clears it on an observed arrival or departure. A sender rejoin missed while the receiver was disconnected cannot be distinguished without the session field.
 
 A held private `whisper` delivered on rejoin carries `replay: true`. A live whisper omits the field. The sequencer sets it on delivery; client-authored whisper fields cannot override it. Attention sounds stay local to the receiver and suppress replay. Neither these packets nor attention preferences become log entries.
 

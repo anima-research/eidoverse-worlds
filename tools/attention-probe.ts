@@ -61,9 +61,45 @@ try {
     (globalThis as any).__received.some((m: any) => m.type === 'whisper' && m.text === 'held before arrival' && m.replay === true)));
   const beforeControls = packets.filter(m => m.type === 'log').length;
   await page.locator('.chat-gear').click();
+  // Every control must remain hittable within the supported minimum frame.
+  const oldSize = await page.evaluate(async () => {
+    const f = (await import('/lib/chat.js')).chat.frame();
+    const old = { w: f._state.w, h: f._state.h };
+    Object.assign(f._state, { w: 240, h: 100 }); f._paint(); return old;
+  });
+  check('minimum popup is bounded and user-scrollable', await page.locator('.chat-gearpop').evaluate(e => {
+    const r = e.getBoundingClientRect(), f = e.closest('.frame').getBoundingClientRect();
+    return r.top >= f.top && r.bottom <= f.bottom && r.left >= f.left && r.right <= f.right
+      && getComputedStyle(e).overflowY === 'auto' && e.scrollHeight > e.clientHeight;
+  }));
+  const popBox = await page.locator('.chat-gearpop').boundingBox();
+  await page.mouse.move(popBox.x + popBox.width - 10, popBox.y + 10);
+  await page.mouse.wheel(0, 300);
+  await page.waitForFunction(() => document.querySelector('.chat-gearpop').scrollTop > 0);
+  check('user wheel scrolls the popup at minimum height', await page.locator('.chat-gearpop').evaluate(e => e.scrollTop > 0));
+  for (const control of ['enabled', 'preview', 'volume', 'sound']) {
+    const el = page.locator('[data-attention="' + control + '"]');
+    await el.scrollIntoViewIfNeeded();
+    check('minimum chat frame exposes ' + control, await el.evaluate(e => {
+      const r = e.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return hit === e || e.contains(hit);
+    }));
+  }
   await page.locator('[data-attention="enabled"]').check();
+  check('enabling alone unlocks context before any preview or live notice', await page.evaluate(async () =>
+    (await import('/lib/audioctx.js')).audioContextState() === 'running'));
+  await page.locator('[data-attention="volume"]').press('Home');
+  await page.locator('[data-attention="volume"]').press('ArrowRight');
+  check('minimum-frame volume is keyboard operable', await page.locator('[data-attention="volume"]').inputValue() === '1');
+  for (let i = 0; i < 19; i++) await page.locator('[data-attention="volume"]').press('ArrowRight');
   await page.locator('[data-attention="preview"]').click();
   await page.waitForFunction(() => (globalThis as any).__tones === 1);
+  await page.evaluate(async size => {
+    const f = (await import('/lib/chat.js')).chat.frame();
+    Object.assign(f._state, size); f._paint();
+  }, oldSize);
+  await page.locator('[data-attention="enabled"]').check();
   check('preview uses the real AudioContext', await page.evaluate(async () =>
     (await import('/lib/audioctx.js')).audioContext().state === 'running'));
   check('local controls and preview append no world log entries', packets.filter(m => m.type === 'log').length === beforeControls);

@@ -4,7 +4,7 @@
 export const ATTENTION_COOLDOWN_MS = 3000;
 const UTTERANCE_LIMIT = 1024;
 
-export function createAttentionGate({ me, scope, mentions, now = () => performance.now() }) {
+export function createAttentionGate({ me, scope, mentions, now = () => performance.now(), play = () => true }) {
   let context, highSeq = -1, last = -Infinity;
   const utterances = new Map();
   const sessions = new Map();
@@ -12,12 +12,14 @@ export function createAttentionGate({ me, scope, mentions, now = () => performan
     sessions.delete(actor);
     for (const [key, who] of utterances) if (who === actor) utterances.delete(key);
   }
-  function participant({ id, session } = {}) {
+  function participant({ id, session } = {}, arrived = true) {
     sync();
     if (!id) return;
-    // Older servers omit session: every observed arrival is a new boundary.
-    if (typeof session !== 'string' || sessions.get(id) !== session) forget(id);
-    sessions.set(id, session);
+    // A live arrival is a boundary even on older servers. A snapshot without
+    // session cannot establish a changed sender; preserve the existing cache.
+    // A rejoin missed while disconnected needs the new server's session field.
+    if (arrived || (typeof session === 'string' && sessions.get(id) !== session)) forget(id);
+    if (typeof session === 'string' || !sessions.has(id)) sessions.set(id, session);
   }
   function sync() {
     const next = JSON.stringify([scope(), me()]);
@@ -28,6 +30,7 @@ export function createAttentionGate({ me, scope, mentions, now = () => performan
   function admit() {
     const at = now();
     if (at - last < ATTENTION_COOLDOWN_MS) return false;
+    if (play() !== true) return false; // silent/locked notices consume identity, not audio cooldown
     last = at;
     return true; // leading-edge coalescing; never queue a stale bell
   }
@@ -38,7 +41,7 @@ export function createAttentionGate({ me, scope, mentions, now = () => performan
       sync();
       const present = new Set(people.map(p => p.id));
       for (const actor of sessions.keys()) if (!present.has(actor)) forget(actor);
-      for (const person of people) participant(person);
+      for (const person of people) participant(person, false);
     },
     say(entry) {
       sync();
