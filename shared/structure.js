@@ -1074,6 +1074,11 @@ export function planRouteLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
   // Only a start actually on this upper floor imposes confinement; an unrelated
   // upper storey elsewhere in the world does not own the walk.
   const confined = !outdoors && lv.level.tiles.has(cell) && (!half || halfFloored(lv.level, cx, cz, half));
+  // A distant upper floor does not support this origin. Its walls still
+  // constrain the walk, but absent floor under an unrelated point cannot veto
+  // a clear ground leg or a direct leg on another supporting structure.
+  if (!outdoors && !confined && clearLevelSegment(lv.level, plan.grid, [fromX, fromZ], [toX, toZ]))
+    return { kind: 'clear', points: [[fromX, fromZ], [toX, toZ]], confined: false };
   return { ...routeLevel(lv.level, plan.grid, [fromX, fromZ], [toX, toZ], outdoors), confined };
 }
 

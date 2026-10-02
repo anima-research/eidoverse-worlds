@@ -176,6 +176,25 @@ try {
   check(supported.arrived && supported.samples.every(([x,z])=>cells.has(Math.floor(x)+","+Math.floor(z))),
     "longer supported route wins over a shorter foreign unsupported shortcut");
 
+  const nearby=agent(); nearby.pos={x:.2,y:3.1,z:.2};
+  const oneFloor={levels:[{y:3,tiles:[[0,0]],walls:[],apertures:[]},
+    {y:0,tiles:[],walls:[],apertures:[]}]};
+  nearby.entities.set("nearby",entity(oneFloor as any,"nearby"));
+  nearby.entities.set("distant",entity(oneFloor as any,"distant",[100,0,100]));
+  const localMove=await walk(nearby,[.3,.3]);
+  check(localMove.arrived && localMove.samples.every(([x,z])=>x>=.2&&x<=.3&&z>=.2&&z<=.3),
+    "unrelated upper floor cannot veto a direct walk on the supporting floor");
+  const stay=await walk(nearby,[.3,.3]);
+  check(stay.arrived && stay.samples.every(([x,z])=>x===.3&&z===.3),
+    "unrelated upper floor cannot veto a stationary supported walk");
+  const free=agent(); free.pos={x:5,y:0,z:5};
+  free.entities.set("distant",entity(oneFloor as any,"distant",[100,0,100]));
+  check((await walk(free,[5.2,5.2])).arrived,"unrelated upper floor alone cannot veto a clear ground walk");
+  const upperWall=structuredClone(oneFloor);
+  upperWall.levels[0].tiles=[[10,10]]; upperWall.levels[0].walls=[[1,1,0]];
+  check(planRouteLocal(planStructure(upperWall),.5,.5,2.5,.5,3.1).kind==="blocked",
+    "an upper floor not supporting the origin still reports a real wall obstruction");
+
   // Two structures offer individually legal but mutually conflicting routes.
   const base=entity(house,"one"); const two=entity(house,"two",[-1,0,0]);
   const d=agent(); d.entities.set("one",base); d.entities.set("two",two);
