@@ -60,6 +60,10 @@ try {
     ["number", 42, "malformed"],
     ["library", "library.glb", null],
     ["overlay", "upload.VRM", null],
+    ["versioned", "library.glb?v=123", null],
+    ["fragment", "library.glb#mesh", null],
+    ["query-fragment", "library.glb?v=123#mesh", null],
+    ["missing-versioned", "absent.glb?v=123", "not-found"],
   ] as const;
   for (const [id, lib] of cases) {
     author.send({ type: "verb", verb: "spawn", args: { id, lib, pos: [0, 0, 0] } });
@@ -72,6 +76,10 @@ try {
     check(id + " has the expected diagnosis", reason ? event?.reason === reason : !event, JSON.stringify(event));
     if (reason) check(id + " names the actor, entity, library and log sequence",
       event?.by === author.snapshot.you && event?.lib === lib && Number.isInteger(event?.seq));
+  }
+  for (const lib of ["library.glb?v=123", "library.glb#mesh", "library.glb?v=123#mesh"]) {
+    const served = await fetch(run.BASE + "/library/" + lib);
+    check("lint matches the actual asset route for " + lib, served.ok && await served.text() === "fixture");
   }
   const eye = await open("observer");
   check("invalid library spawns still fold and appear on late join",
@@ -90,6 +98,17 @@ try {
   const after = await open("after-remove");
   check("a warned ghost remains removable", !after.snapshot.state.entities["no-extension"]);
   check("unrelated verbs do not lint", (await debug(after)).length === events.length);
+  const inert = [
+    { id: "library" }, { id: "library", lib: "" }, { id: "library", lib: null },
+    { id: "never-created", lib: false }, { id: "never-created", lib: 0 },
+  ];
+  for (const args of inert) author.send({ type: "verb", verb: "spawn", args });
+  await until(() => author.messages.filter(m => m.type === "log" && m.entry.verb === "spawn").length === cases.length + inert.length);
+  const afterInert = await open("after-inert");
+  check("fold-inert spawns leave the existing entity unchanged",
+    JSON.stringify(afterInert.snapshot.state.entities.library) === JSON.stringify(eye.snapshot.state.entities.library));
+  check("fold-inert new ids do not create entities", !afterInert.snapshot.state.entities["never-created"]);
+  check("fold-inert spawns add no misleading lint", (await debug(afterInert)).length === events.length);
   const uploaded = await fetch(run.BASE + "/upload?as=script", {
     method: "POST", body: 'world.emit("spawn", {id: "script-ghost", lib: "script-missing.glb"});',
   });

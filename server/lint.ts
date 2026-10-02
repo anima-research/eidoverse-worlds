@@ -40,9 +40,21 @@ export const MOTION_TYPES: Record<string, Set<string>> = {
 };
 
 function modelPath(lib: unknown): string | null {
-  if (typeof lib !== "string" || lib.includes("\0")) return null;
-  const rel = normalize(lib).replace(/^\/+/, "");
+  if (typeof lib !== "string") return null;
+  // Clients fetch /library/<lib>; query/version and fragment identify the
+  // request, not the filesystem path the route serves.
+  const path = lib.split(/[?#]/, 1)[0];
+  if (path.includes("\0")) return null;
+  const rel = normalize(path).replace(/^\/+/, "");
   return rel.includes("..") || !/\.(glb|vrm)$/i.test(rel) ? null : rel;
+}
+
+// The recorder is a bounded diagnosis, not another copy of arbitrary args.
+// Keep normal values verbatim; the committed seq points to the full input.
+function diagnosticValue(value: unknown): unknown {
+  if (typeof value === "string") return value.length > 512 ? value.slice(0, 512) + "… [truncated]" : value;
+  if (value && typeof value === "object") return Array.isArray(value) ? "[array]" : "[object]";
+  return value;
 }
 
 export function resolveLibFile(lib: string): string | null {
@@ -62,13 +74,14 @@ export function lintSpawn(w: LintHost, entry: LogEntry): void {
   queueMicrotask(() => {
     try {
       const a = entry.args;
-      // A missing id never made an entity; this courtesy is for spawns.
-      if (!a?.id) return;
+      // Match the fold's spawn guard: these entries never create or replace
+      // an entity, so do not diagnose its unchanged model as malformed.
+      if (!a?.id || !a.lib) return;
       const lib = a.lib;
       const malformed = modelPath(lib) === null;
       if (!malformed && resolveLibFile(lib as string)) return;
       w.debug("spawn-lint", {
-        entity: String(a.id), by: entry.actor, seq: entry.seq, lib,
+        entity: String(diagnosticValue(a.id)), by: diagnosticValue(entry.actor), seq: entry.seq, lib: diagnosticValue(lib),
         reason: malformed ? "malformed" : "not-found",
         why: malformed
           ? "spawn lib is malformed: use a library-relative .glb or .vrm path without parent traversal"
