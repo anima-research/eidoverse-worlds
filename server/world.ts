@@ -18,7 +18,7 @@
 // too; the boot sweep that CALLS getWorld stays in server.ts — waking
 // scripted worlds with the server is boot policy, not world mechanics.
 
-import { mkdirSync, existsSync, appendFileSync, readFileSync, writeFileSync, renameSync, copyFileSync } from "node:fs";
+import { mkdirSync, existsSync, appendFileSync, readFileSync, writeFileSync, renameSync, copyFileSync, statSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { logIdentity } from "./log-identity.ts";
 import { prepareRecordingReset } from "./recording.ts";
@@ -136,12 +136,30 @@ export class WorldLog {
     this.posesPath = join(dir, "poses.json");
     this.snapPath = join(dir, "snapshot.json");
 
+    // A partial reset (or an empty/lost log) leaves derived files without an
+    // attributable current epoch. Retire them BEFORE creating a fresh genesis:
+    // ignoring them only in memory lets a second unclean restart restore them.
+    // Preserve bytes without guessing which erased directory they belong to.
+    const hasAuthoredLog = existsSync(this.logPath) && statSync(this.logPath).size > 0;
+    if (!hasAuthoredLog) {
+      const orphaned = ["snapshot.json", "poses.json", "snapshot.json.tmp", "poses.json.tmp"]
+        .filter(file => existsSync(join(dir, file)));
+      if (orphaned.length) {
+        const quarantine = join(dir, "orphaned-derived-" + randomUUID());
+        mkdirSync(quarantine);
+        // A failure propagates before genesis; a crash partway leaves no new
+        // log, so the remaining orphan files are retired on the next startup.
+        for (const file of orphaned) renameSync(join(dir, file), join(quarantine, file));
+        console.warn("[world:" + name + "] preserved orphan derived files in " + quarantine);
+      }
+    }
+
     // Boot = snapshot + the bytes after it. The offset is what keeps startup
     // proportional to the TAIL rather than to the whole history: without it we
     // would still parse every line ever written just to find where to resume.
     // Reset moves the log before the derived files. A crash in between can
     // leave an old snapshot/poses beside no log: they cannot become a new epoch.
-    if (existsSync(this.logPath) && existsSync(this.snapPath)) {
+    if (hasAuthoredLog && existsSync(this.snapPath)) {
       try {
         const snap = JSON.parse(readFileSync(this.snapPath, "utf8"));
         if (snap?.state && typeof snap.seq === "number") {

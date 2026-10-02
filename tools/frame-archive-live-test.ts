@@ -152,13 +152,22 @@ try {
   await stop();
   const partialDir = join(worlds, "partial-reset");
   const priorPart = archiveIndex(partialDir)[0];
+  const orphanBytes = new Map(["snapshot.json", "poses.json"].map(f => [f, readFileSync(join(partialDir, f))]));
   mkdirSync(join(partialDir, "erased-partial"));
   renameSync(join(partialDir, "log.jsonl"), join(partialDir, "erased-partial", "log.jsonl"));
   await boot();
   const fresh = await connect("partial-reset", "fresh-owner");
   check(!JSON.stringify({state:fresh.snapshot.state,entries:fresh.snapshot.entries}).includes("old-epoch-object"),
     "partial-reset restart discards the orphan snapshot from the moved log");
-  await move(fresh, 7); await stop();
+  const quarantine = readdirSync(partialDir).find(n => n.startsWith("orphaned-derived-"))!;
+  check(!!quarantine && [...orphanBytes].every(([f, bytes]) => readFileSync(join(partialDir, quarantine, f)).equals(bytes)),
+    "partial-reset recovery preserves orphan snapshot/poses byte-for-byte without attributing them");
+  await stop("SIGKILL"); // recovery itself dies after fresh genesis, before fold
+  await boot();
+  const recoveredAgain = await connect("partial-reset", "fresh-owner");
+  check(!JSON.stringify({state:recoveredAgain.snapshot.state,entries:recoveredAgain.snapshot.entries}).includes("old-epoch-object"),
+    "second unclean recovery keeps old derived state retired");
+  await move(recoveredAgain, 7); await stop();
   const recovered = archiveIndex(partialDir);
   check(recovered.length === 2 && recovered[0].metadata?.logId !== recovered[1].metadata?.logId,
     "partial-reset restart creates a distinct log identity without a sidecar pairing window");

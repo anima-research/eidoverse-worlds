@@ -101,6 +101,8 @@ A segment’s `logId` is SHA-256 of the first complete line of its authored log,
 
 World reset closes the current segment before moving the authored log and binds the next segment to the new log ID. Quota usage and a stopped latch survive reset. The inventory reports `logState` (`resolved`, `missing`, `ambiguous`, or `unknown`) and matching `logPaths` across `log.jsonl` and `erased-*/log.jsonl`. It never guesses among duplicate or missing matches. Indices created before log IDs were introduced report `unknown`. Keep erased logs when exporting reset-spanning performances.
 
+If reset is interrupted after the log moves but before its derived files move, startup preserves the leftover snapshots/poses and temporaries in `orphaned-derived-<uuid>/` before writing a new genesis. The same rule applies to an empty current log. These copies are explicitly unattributed; startup does not guess which erased epoch owns them. Retiring them on disk prevents a second unclean restart from restoring old derived state into the new epoch.
+
 An index with `state: "open"` is unclosed: the sequencer may still be recording, or it may have crashed. Its final range and byte count are unknown. After stopping the sequencer, recover that segment by reading complete JSONL lines; retain and flag any incomplete final line. `state: "interrupted"` reports a known write or close failure. A failed close leaves the final frame range/count and close time unknown; recover the tail from complete lines. A missing/legacy index has `metadata: null` and no `metadataError`; damaged metadata has a per-file `metadataError`, while intact neighbors remain listed. Existing bytes are never rewritten during restart, and a new boot never appends to an old segment.
 
 Segments stay raw JSONL for renderer compatibility and to keep compression CPU and temporary copy space off the sequencer. Compress exported copies on an archival host if desired. The bounded raw-storage policy is deliberate; compressed bytes are not a prerequisite for safe recording.
@@ -108,7 +110,7 @@ Segments stay raw JSONL for renderer compatibility and to keep compression CPU a
 ## After, or when recording stops
 
 1. Stop the sequencer through the operator's normal shutdown procedure.
-2. Copy the world's `log.jsonl`, its `erased-*` directories, all frame segments and indices, and `assets/opt/store/` off-box. Keep library assets used by the performance available too.
+2. Copy the world's `log.jsonl`, its `erased-*` and `orphaned-derived-*` directories, all frame segments and indices, and `assets/opt/store/` off-box. Keep library assets used by the performance available too.
 3. Verify the exported copies before removing local frame segments and their matching indices. Remove only copies you intentionally exported; the sequencer performs no deletion.
 4. Check the reported stop reason. Free shared filesystem space or adjust the archive limits if needed.
 5. Restart the sequencer. Confirm `GET /recordings` reports `ready` or `recording` for the show world after a client joins.
