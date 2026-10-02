@@ -689,6 +689,7 @@ function retire(id) {
       const cst = state.st.entities[cid];
       if (cst?.pos) cobj.position.set(...cst.pos);
       if (cst?.q || cst?.yaw != null) orientObj(cobj, cst);
+      if (!cobj.userData.isLight) cobj.scale.setScalar(cst?.scale ?? 1);   // the fold's scale, not the one attach() baked in
       cobj.userData.base = restOf(cobj, cst);
       // an Empty owns no collider (its only mesh may be a light gizmo)
       if (!cobj.userData.empty) fitCollider(cid, cobj, { collide: colliderOf(cst), scale: cobj.scale?.x || 1 });
@@ -814,6 +815,10 @@ function execDismount(id, ent) {
     // plane-transition stamp wins over wherever the ride left it
     if (ent?.pos) obj.position.set(...ent.pos);
     if (ent?.q || ent?.yaw != null) orientObj(obj, ent);
+    // …and so does the fold's scale: attach() baked the carrier's scale into
+    // this one (a 0.5 cup off a 2× crate became 1.0), which a joiner — who
+    // builds it from ent.scale — would never see
+    if (!obj.userData.isLight) obj.scale.setScalar(ent?.scale ?? 1);
     obj.userData.base = restOf(obj, ent);
     if (!obj.userData.empty) fitCollider(id, obj, { collide: colliderOf(ent), scale: obj.scale?.x || 1 });
   }

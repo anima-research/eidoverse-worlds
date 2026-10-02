@@ -274,6 +274,20 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
   const cartE = stub.entities.get('cart');
   check('live: cargo on a model re-spawned as an Empty is re-seated on the Empty at once', cartE?.userData?.empty === true && stub.entities.get('box1')?.parent === cartE,
     `${stub.entities.get('box1')?.parent?.type} / ${cartE?.userData?.empty}`);
+  // step 4: a child keeps the FOLD's scale when it steps off a scaled carrier —
+  // scene.attach() bakes the carrier's scale into the child (0.5 on a 2× carrier
+  // came off as 1.0), which a joiner building from ent.scale would never see
+  live('spawn', { id: 'big', lib: 'eidoverse/assets/models/box.glb', pos: [0, 0, 20], scale: 2 });
+  live('spawn', { id: 'mug', lib: 'eidoverse/assets/models/box.glb', pos: [1, 1, 20], scale: 0.5 });
+  await settle();
+  live('mount', { id: 'mug', to: 'big', offset: [0.5, 0.5, 0] });
+  const mug = stub.entities.get('mug');
+  check('live: a 0.5 child on a 2× carrier rides it at its own scale (world 1.0)', mug?.parent === stub.entities.get('big') && Math.abs(mug.scale.x - 0.5) < 1e-9, `${mug?.parent?.type} ${mug?.scale?.x}`);
+  live('dismount', { id: 'mug', pos: [1, 1, 20], yaw: 0 });
+  check('live: dismounting it keeps the fold\'s scale 0.5, not the 1.0 attach() baked in', !mug.userData.mountedTo && Math.abs(mug.scale.x - 0.5) < 1e-9, `${mug.scale.x}`);
+  live('mount', { id: 'mug', to: 'big', offset: [0.5, 0.5, 0] });
+  live('remove', { id: 'big' });
+  check('live: …and so does stepping off a carrier that is removed', !mug.userData.mountedTo && Math.abs(mug.scale.x - 0.5) < 1e-9, `${mug.scale.x}`);
   live('spawn', { id: 'e2', pos: [0, 0, 9] });
   live('comp', { id: 'e2', type: 'light', data: { range: 3 } });
   const e2 = stub.entities.get('e2');
