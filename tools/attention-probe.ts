@@ -187,6 +187,7 @@ try {
     JSON.stringify((await import('/lib/voiceconsent.js')).audioPrefs())));
   check('muted mention remains visibly highlighted', await page.locator('#chatlog .line.ping').filter({ hasText: 'now muted' }).count() === 1);
   check('browser path has no page errors', errors.length === 0, errors.join('; '));
+  await autoplayPolicyProbe(browser, h.BASE, say, check);
   completed = true;
 } finally {
   sender?.close();
@@ -202,5 +203,113 @@ async function until(test: () => boolean, timeout = 8000) {
   while (!test()) {
     if (Date.now() > end) throw new Error('timed out waiting for wire event');
     await sleep(25);
+  }
+}
+
+// Headless Chromium's autoplay setting is not a policy oracle. Use real Web
+// Audio nodes behind a simulated gate, and read with CDP userGesture:false:
+// Playwright evaluate would itself grant the activation this case measures.
+async function autoplayPolicyProbe(browser, origin, say, check) {
+  for (const enabled of [false, true]) {
+    const context = await browser.newContext();
+    const name = enabled ? 'saved-audio' : 'first-audio';
+    const page = await context.newPage();
+    const cdp = await context.newCDPSession(page);
+    try {
+      await page.addInitScript(({ enabled }) => {
+        const g = globalThis as any;
+        localStorage.setItem('ew-attention', JSON.stringify({ enabled, volume: 0.2, sound: 'soft' }));
+        g.__policy = { contexts: 0, tones: 0, attempts: [], errors: [] };
+        const NativeContext = window.AudioContext;
+        class PolicyContext extends NativeContext {
+          unlocked = false;
+          constructor() {
+            super();
+            g.__policy.contexts++;
+            g.__policyContext = this;
+            // Native headless output is often running from construction. Hold
+            // it too, while the state getter enforces the simulated policy.
+            super.suspend();
+          }
+          get state() { return this.unlocked ? super.state : 'suspended'; }
+          resume() {
+            const active = navigator.userActivation.isActive;
+            g.__policy.attempts.push(active);
+            if (!active) return Promise.reject(new DOMException('simulated autoplay block', 'NotAllowedError'));
+            this.unlocked = true;
+            return super.resume();
+          }
+        }
+        window.AudioContext = PolicyContext;
+        const start = OscillatorNode.prototype.start;
+        OscillatorNode.prototype.start = function(...args) {
+          g.__policy.tones++;
+          return start.apply(this, args);
+        };
+        addEventListener('error', e => g.__policy.errors.push(e.message));
+      }, { enabled });
+
+      const read = async () => {
+        const r = await cdp.send('Runtime.evaluate', {
+          expression: `JSON.stringify({
+            ...globalThis.__policy,
+            state: globalThis.__policyContext?.state ?? 'none',
+            active: navigator.userActivation.isActive,
+            ready: document.getElementById('splash')?.classList.contains('gone') === true,
+            text: document.getElementById('chatlog')?.textContent ?? ''
+          })`,
+          userGesture: false, returnByValue: true,
+        });
+        if (r.exceptionDetails) throw new Error(JSON.stringify(r.exceptionDetails));
+        return JSON.parse(r.result.value);
+      };
+      const wait = async (pred, label) => {
+        const end = Date.now() + 15000;
+        let r;
+        do {
+          r = await read();
+          if (pred(r)) return r;
+          await sleep(25);
+        } while (Date.now() < end);
+        throw new Error(label + ': ' + JSON.stringify(r));
+      };
+      await page.goto(origin + '/?world=attention&name=' + name + '&key=test-door&lite=1');
+      const initial = await wait(r => r.ready && !r.active, 'cold policy page');
+      check(name + ': non-gesture observation supplies no activation or context', !initial.active && initial.contexts === 0);
+
+      if (enabled) {
+        say('@' + name + ' locked utterance', { spoken: true, utt: 700 });
+        const locked = await wait(r => r.text.includes('locked utterance'), 'locked live delivery');
+        check('saved setting: live notice actually meets a suspended context', locked.state === 'suspended' && locked.attempts.length > 0 && locked.attempts.every(a => a === false));
+        check('saved setting: blocked notice schedules zero oscillators', locked.tones === 0);
+        // This is the one intended gesture; no programmatic audio resume.
+        await page.locator('.chat-gear').click();
+        const unlocked = await wait(r => r.state === 'running', 'gesture unlock');
+        check('saved setting: gesture unlock never performs the missed notice', unlocked.tones === 0 && unlocked.attempts.includes(true));
+        say('@' + name + ' same utterance after unlock', { spoken: true, utt: 700 });
+        const repeat = await wait(r => r.text.includes('same utterance after unlock'), 'repeat delivery');
+        check('saved setting: locked utterance remains consumed after unlock', repeat.tones === 0);
+        say('@' + name + ' fresh after unlock', { spoken: true, utt: 701 });
+        const fresh = await wait(r => r.text.includes('fresh after unlock'), 'fresh delivery');
+        check('saved setting: fresh notice immediately chimes without silent cooldown', fresh.tones === 1 && fresh.errors.length === 0);
+      } else {
+        await page.locator('.chat-gear').click();
+        await page.locator('[data-attention="enabled"]').check();
+        const afterEnable = await read();
+        check('first use: Enable itself constructs and resumes under activation',
+          afterEnable.contexts === 1 && afterEnable.attempts.includes(true));
+        // Wait out transient activation: a later live event must not gain an
+        // accidental unlock just because it followed the test's click quickly.
+        await wait(r => !r.active, 'enable activation expiry');
+        const idle = await read();
+        check('first use: context remains running without any further gesture', idle.state === 'running' && idle.tones === 0);
+        say('@' + name + ' first notice after enable');
+        const fresh = await wait(r => r.text.includes('first notice after enable'), 'first enabled delivery');
+        check('first use: later live notice chimes after activation has expired', !fresh.active && fresh.tones === 1 && fresh.errors.length === 0);
+      }
+    } finally {
+      await cdp.detach();
+      await context.close();
+    }
   }
 }
