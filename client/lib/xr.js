@@ -42,7 +42,7 @@ import { setReveal } from './namereveal.js';
 import { platePick, aimPlate } from './platecard.js';   // VR hover: a laser resting on a nameplate opens its card
 import { makeDwell } from './dwell.js';
 import { showXRTip, hideXRTip, dropXRTip, tipTextFor } from './xrtip.js';   // a panel control's tooltip, on dwell   // "rested on it for a beat": one mechanism, per hand here
-import { POINTER_VIS_DEFAULT, pointerVisible, looksAtWorld, interactable, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy: when it is drawn, how it follows the hand, how it holds a target
+import { POINTER_VIS_DEFAULT, pointerVisible, dotVisible, looksAtWorld, interactable, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy: when it is drawn, how it follows the hand, how it holds a target
 import { dockPins } from './ui.js';
 import { xrScales, toRigLocal } from './bodyscale.js';   // the chosen size composes with the device fit (rig = u, body = u/k)
 import { perf } from './perf.js';
@@ -301,7 +301,8 @@ export const isPresenting = () => presenting;
 // what the desktop window shows while presenting — 'off' | 'first' | 'third'.
 // pointerVisibility: is the VR laser drawn — 'always' | 'never' | 'contextual' (owner, 10-02; xrpointer.js says what each means).
 const PREF_XR = 'ew-xr-prefs';
-const XR_PREF_DEFAULTS = { turn: 'smooth', vignette: false, mirror: 'first', seated: false, res: 'auto', pointerVisibility: POINTER_VIS_DEFAULT };
+// dotVisibility: is the surface dot drawn — the same three words, its own setting (owner, 10-02).
+const XR_PREF_DEFAULTS = { turn: 'smooth', vignette: false, mirror: 'first', seated: false, res: 'auto', pointerVisibility: POINTER_VIS_DEFAULT, dotVisibility: POINTER_VIS_DEFAULT };
 export const xrPrefs = (() => { try { return { ...XR_PREF_DEFAULTS, ...JSON.parse(localStorage.getItem(PREF_XR) || '{}') }; } catch { return { ...XR_PREF_DEFAULTS }; } })();
 { const m = new URLSearchParams(location.search).get('mirror'); if (m === 'off' || m === 'first' || m === 'third') xrPrefs.mirror = m; }   // URL override for A/B (the 'pop to origin' hunt, 09-05 21:46)
 // Eye resolution, as WebXR's framebufferScaleFactor: a per-axis scale of the size the runtime recommends. 'auto' (1.0)
@@ -1346,7 +1347,8 @@ export function updateXR(dtSec = 1 / 72) {
       hand.laser.visible = pointerVisible(xrPrefs.pointerVisibility, { target: panelNow != null || plate != null || !!ent?.interactable, grip, trig });
       hand.box.visible = !getSelf()?.vrm;   // a body owns the hands → no test box
       if (!buttonsTrusted()) { triggerWas[side] = trig; gripWas[side] = grip; if (hand.laser.visible) placeLaser(hand.laser, ray.matrixWorld, panelNow ?? plate?.dist ?? (ent?.interactable ? ent.dist : 1.8));
-        placeDot(hand, ray, eye, { panel: panelAt, plateDist: panelAt ? null : plate?.dist ?? null, hit: ent?.interactable ? ent : null }); continue; }
+        if (dotVisible(xrPrefs.dotVisibility, { target: panelNow != null || plate != null || !!ent?.interactable, surface: !!ent })) placeDot(hand, ray, eye, { panel: panelAt, plateDist: panelAt ? null : plate?.dist ?? null, hit: ent }); else hideSurfaceDot(hand.dot);
+        continue; }
       if (grip && !gripWas[side] && !held && !resizing && !(side === 'right' && ringOpenAtStart)) tryGrab(side, ray);   // grip alone; panels only
       if (!grip && held?.hand === side) releaseGrab();
       if (resizing?.hand === side) { if (grip) domQuadResizeMove(resizing.drag, aim); else endResize(); }   // the raw aim: a resize must not bend onto a control
@@ -1380,9 +1382,11 @@ export function updateXR(dtSec = 1 / 72) {
         const target = panelDist ?? plateDist ?? hit?.dist ?? null;
         if (hand.laser.visible) placeLaser(hand.laser, ray.matrixWorld, target ?? 1.8);
         hand.laser.userData.opacity.value = target != null ? 0.85 : 0.4;
-        // the dot marks the target whatever the pointer visibility (in 'never' it is the only mark) — except on the
+        // the dot follows ITS OWN setting (Settings › VR › surface dot visibility), not the beam's — and never marks the
         // panel this hand is holding: that panel is not a target, it is in your hand
-        placeDot(hand, ray, eye, { panel: holding ? null : panelHit, plateDist, hit });
+        const dPanel = holding ? null : panelHit;
+        if (dotVisible(xrPrefs.dotVisibility, { target: !!dPanel || plateDist != null || !!seen?.interactable, surface: !!seen })) placeDot(hand, ray, eye, { panel: dPanel, plateDist, hit: dPanel || plateDist != null ? null : seen });
+        else hideSurfaceDot(hand.dot);
       }
       triggerWas[side] = trig; gripWas[side] = grip;
     }
@@ -1596,7 +1600,7 @@ export const xrPointerDebug = () => Object.fromEntries(['left', 'right'].map((si
     ent: entSeen[side], dot: { visible: h.dot.visible, inScene: h.dot.parent === scene, kind: h.dot.userData.kind, pos: h.dot.position.toArray().map((v) => +v.toFixed(4)), diam: +h.dot.scale.x.toFixed(5),
       normal: [0, 0, 1].map((_, i) => +new THREE.Vector3(0, 0, 1).applyQuaternion(h.dot.quaternion).getComponent(i).toFixed(4)) },
     heldEl: st?.kind === 'panel' && typeof st.key !== 'string' ? st.key : null,
-    bent: pickState[side].bent, pointerVisibility: xrPrefs.pointerVisibility,
+    bent: pickState[side].bent, pointerVisibility: xrPrefs.pointerVisibility, dotVisibility: xrPrefs.dotVisibility,
     dwell: { key: typeof dwells[side].key === 'string' || dwells[side].key == null ? dwells[side].key : 'el', since: dwells[side].since, ripe: dwells[side].ripe() } }];
 }));
 

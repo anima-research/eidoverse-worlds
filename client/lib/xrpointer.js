@@ -26,6 +26,15 @@ export function pointerVisible(mode, { target = false, grip = false, trig = fals
   if (m === 'always') return true;
   return !!(target || grip || trig);
 }
+/** SURFACE DOT VISIBILITY (owner, 10-02): its own setting, beside pointer visibility, the same three words. 'never' on
+ *  pointer visibility hides only the beam; the dot follows this. `target`: a panel, a nameplate or an interactable
+ *  entity (what the contextual beam shows for); `surface`: anything at all under the laser (a plain wall too). */
+export function dotVisible(mode, { target = false, surface = false } = {}) {
+  const m = pointerVisibilityMode(mode);
+  if (m === 'never') return false;
+  if (m === 'always') return !!(target || surface);
+  return !!target;
+}
 /** Does a PLAIN world entity (one with nothing to interact with) count for the beam's length this frame? Only while a
  *  button is held, or when the beam is always drawn: an idle hand in contextual or never mode must not reach out to
  *  every wall it hangs toward. An INTERACTABLE entity (below) is a target like a panel, button or not. */
