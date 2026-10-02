@@ -50,7 +50,10 @@ draft, branch `hep/quaternions`). Scale stays uniform in this pass (open questio
 **Rotation order is per entity** (owner, 10-01): `rotOrder` on the Transform, XYZ by default, any of the six
 Euler orders or a quaternion mode (Maya's rotateOrder, Blender's rotation mode). Because `q` is what is
 stored, changing the order only changes how the Rotate channels read — the object never moves. It matters
-most later, when motion or animation is keyed in Euler channels.
+most later, when motion or animation is keyed in Euler channels. *Built (step 3):* stored as `comp.rotOrder`
+(`"XYZ"…"ZYX"` or `"quat"`; absent = XYZ, never written), because a new `place` arg would not fold on clients
+that predate it; the component view reads it as a Transform param. Order names are Maya's: **XYZ applies X
+first** (R = Rz·Ry·Rx), which three.js spells `ZYX` (PROTOCOL §4, `shared/euler.js`).
 
 An entity with nothing but a Transform is an **Empty**: a pivot, a group parent, a spawn point, a target.
 
@@ -64,7 +67,11 @@ The 24 engine records in `shared/components.js`, ordered in the inspector as *wh
 - **Needs.** A record lists what it needs. Adding a component whose need has **one sensible default**
   adds the default too, as real entries, in **one undo step** (a Shape brings a default Material). A need
   that requires a **choice** asks ("pick a model for this picture"). Removing something another component
-  needs names the dependant and offers *remove both*.
+  needs names the dependant and offers *remove both*. *Built (step 3):* no Shape/Material records exist yet, so
+  the live cases are **Reactions needs the whole entity's Pendulum** (auto-added at rest; a spin in the way
+  asks before it is replaced; removing the pendulum offers remove-both) and **Collider/Seats/Picture need a
+  Model**, which can't be added in place (a spawn replaces the entity), so on an Empty that need is a blocked
+  entry that says what to do.
 - **Repeatables.** Motions and annotations may repeat; everything else is one per entity.
 - **Light is a component** (`comp.light`, built 10-01). `kind: "light"` stays the alias for an entity
   whose only component is Light; a Model and a Light may share an entity (a lamp). An authored Light on an
@@ -129,8 +136,12 @@ replacing plan apertures, in a later pass; until then the aperture tool keeps wo
 - **Right: Inspector**, a header (name/label, hidden, id, placed by, blueprint link + *open blueprint* /
   *unlink*) then one card per component, then **Add Component** by category; blocked entries show why.
 - **Right: Channel box** (Maya's), above the cards: Translate X/Y/Z, Rotate X/Y/Z, Scale. Rotate shows
-  **Euler degrees derived from the stored quaternion** (order XYZ, shown); an edit to one axis composes
-  exactly into `q` (no gimbal accumulation, because `q` is what is stored). A **Quaternion** row (x y z w)
+  **Euler degrees derived from the stored quaternion** in the entity's rotation order (§3); an edit to one
+  axis composes exactly into `q` (no gimbal accumulation, because `q` is what is stored). A q has two Euler
+  readings plus 360° wraps; each viewer's last composed triple picks the branch, so channels read back as
+  typed; a fresh viewer gets the canonical reading (middle axis within ±90°), and an upright thing reads
+  (0, yaw, 0). At gimbal lock the inner channel keeps the viewer's value (0 for a fresh viewer) and the outer
+  takes the rest; the card says it is locked. A **Quaternion** row (x y z w)
   can be expanded and edited directly, normalized on commit. Overridden fields on a copy are marked.
 - **Rotate gizmo** turns about any axis (full `q`), not only yaw.
 
@@ -146,9 +157,10 @@ replacing plan apertures, in a later pass; until then the aperture tool keeps wo
 | blueprint copy | — | `comp.blueprint { hash, name }` + expanded components |
 | blueprint store | — | `blueprint` verb: publish a record (owner/builder rank) |
 
-**Record hashes cover meaning, not prose** (decide before step 6): a record's hash is computed over
-`kind, v, name, params` (types, defaults, ranges) and `needs`; `summary`, `note`, `hint` and fallback text
-are documentation and may be reworded without changing the hash.
+**Record hashes cover meaning, not prose** (built in step 3): a record's hash excludes `summary`, `note`,
+every `hint` and `fallback.text`, which are documentation and may be reworded without changing it.
+Everything else is hashed — including `category`, `fallback.visual`, `readOnly` and Seats' `seat` defaults,
+which an include-list of `kind, v, name, params, needs` would have dropped although `seat` is meaning.
 
 The door shape-checks `comp light` and `comp collider` (one shared rule, `compRefusal`), consistent with
 PROTOCOL §4 giving them contracts; every other type stays opaque except for size.
