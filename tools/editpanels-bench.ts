@@ -60,18 +60,27 @@ await cdp.send('Page.navigate', { url: `${BASE}/?name=editbot&world=editbench` }
 }
 
 console.log('\nedit mode shows the two frames:');
-// four edit frames since Create joined (09-30): Hierarchy + Inspector show on entry (Create is the
-// Hierarchy's other tab, so it waits behind it), the Console is opt-in
+// four edit frames: Build and Hierarchy share the left column's top pane as tabs (step 5: Build replaced
+// Create, 10-02), the Inspector is on the right, the Console is opt-in
 check('frames exist before edit mode, hidden', await evalJson(`[...document.querySelectorAll('.frame.edit')].length === 4 && [...document.querySelectorAll('.frame.edit')].every((f) => getComputedStyle(f).display === 'none')`));
+check('a fresh viewer has no remembered tab', await evalJson(`(() => { try { return !(JSON.parse(localStorage.getItem('ew-edit-layout') || 'null')?.tabV); } catch { return true; } })()`));
 await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB' })), true`);
-check('B shows both, and NOT the console', await waitFor(`(() => { const F = [...document.querySelectorAll('.frame.edit')]; const vis = F.filter((f) => getComputedStyle(f).display !== 'none').map((f) => f.dataset.frame).sort().join(); return vis === 'hierarchy,inspector'; })()`), JSON.stringify(await evalJson(`[...document.querySelectorAll('.frame.edit')].map((f) => [f.dataset.frame, getComputedStyle(f).display])`)));
-check('titles are Console / Create / Hierarchy / Inspector', await evalJson(`[...document.querySelectorAll('.frame.edit .fr-title')].map((t) => t.textContent).sort().join('|') === 'Console|Create|Hierarchy|Inspector'`));
-check('empty world: hierarchy says so', await evalJson(`!!document.querySelector('#frame-hierarchy .sp-empty, .frame.edit .sp-empty')`));
+// design §5: B enters edit mode on the Build tab
+check('B opens on the Build tab: Build + Inspector show, the Hierarchy waits behind its tab, NOT the console', await waitFor(`(() => { const F = [...document.querySelectorAll('.frame.edit')]; const vis = F.filter((f) => getComputedStyle(f).display !== 'none').map((f) => f.dataset.frame).sort().join(); return vis === 'build,inspector' && document.querySelector('.edit-tab.on')?.dataset.tab === 'build'; })()`), JSON.stringify(await evalJson(`[...document.querySelectorAll('.frame.edit')].map((f) => [f.dataset.frame, getComputedStyle(f).display])`)));
+check('titles are Build / Console / Hierarchy / Inspector', await evalJson(`[...document.querySelectorAll('.frame.edit .fr-title')].map((t) => t.textContent).sort().join('|') === 'Build|Console|Hierarchy|Inspector'`));
+check('the tabs read Build, Hierarchy', await evalJson(`[...document.querySelectorAll('.edit-tab')].map((b) => b.textContent).join('|') === 'Build|Hierarchy'`));
+check('Build has its three sections: Blueprints · Tools · World', await waitFor(`(() => { const t = [...document.querySelectorAll('[data-frame="build"] .sp-group')].map((g) => g.textContent.slice(2)); return t.join('|') === 'Blueprints|Tools|World'; })()`), JSON.stringify(await evalJson(`[...document.querySelectorAll('[data-frame="build"] .sp-group')].map((g) => g.textContent)`)));
+// the tree checks below point at rows by their on-screen boxes: show the Hierarchy page
+await evalJson(`document.querySelector('.edit-tab[data-tab="hierarchy"]').click(), true`);
+check('the Hierarchy tab swaps the pane', await waitFor(`getComputedStyle(document.querySelector('[data-frame="hierarchy"]')).display !== 'none' && getComputedStyle(document.querySelector('[data-frame="build"]')).display === 'none'`));
+check('…and is remembered (this viewer, this browser)', await evalJson(`(() => { const L = JSON.parse(localStorage.getItem('ew-edit-layout') || '{}'); return L.leftTab === 'hierarchy' && L.tabV === 2; })()`));
+check('empty world: hierarchy says so', await evalJson(`!!document.querySelector('[data-frame="hierarchy"] .sp-empty')`));
+check('…with the World row pinned above the tree', await evalJson(`(() => { const r = document.querySelector('[data-frame="hierarchy"] .sp-item'); return !!r && r.textContent.startsWith('World  (@world)'); })()`), await evalJson(`document.querySelector('[data-frame="hierarchy"] .sp-item')?.textContent ?? null`));
 check('nothing selected: inspector says so', await evalJson(`/nothing selected/.test(document.querySelector('[data-frame="inspector"] .sp-info')?.textContent ?? '')`));
 
 console.log('\nthe workspace: docked columns, strips, a slim rail:');
-// moved 09-30: the column's top pane is Hierarchy | Create under a tab strip (was ['hierarchy', split, 'chat'])
-check('hierarchy is docked in the left column, above chat — tabbed with Create', await evalJson(`(() => { const L = document.querySelector('.edit-left'); const ids = [...L.children].map((c) => c.dataset?.frame ?? c.className); return JSON.stringify(ids) === JSON.stringify(['edit-tabs', 'hierarchy', 'create', 'edit-split edit-split-h', 'chat']); })()`), await evalJson(`JSON.stringify([...document.querySelector('.edit-left').children].map((c) => c.dataset?.frame ?? c.className))`));
+// the column's top pane is Build | Hierarchy under a tab strip (was Hierarchy | Create, 09-30)
+check('hierarchy is docked in the left column, above chat — tabbed with Build', await evalJson(`(() => { const L = document.querySelector('.edit-left'); const ids = [...L.children].map((c) => c.dataset?.frame ?? c.className); return JSON.stringify(ids) === JSON.stringify(['edit-tabs', 'build', 'hierarchy', 'edit-split edit-split-h', 'chat']); })()`), await evalJson(`JSON.stringify([...document.querySelector('.edit-left').children].map((c) => c.dataset?.frame ?? c.className))`));
 check('inspector is docked in the right column', await evalJson(`document.querySelector('.edit-right [data-frame="inspector"]') !== null`));
 check('top strip + tools column are up', await evalJson(`!document.querySelector('.edit-top').hidden && document.querySelectorAll('.edit-tools .edit-tool').length === 5`));
 check('mic / ear / goggles sit IN the top bar (inside its box, hit-testable)', await evalJson(`(() => { const bar = document.querySelector('.edit-top').getBoundingClientRect(); const ok = (sel) => { const e = document.querySelector(sel); if (!e) return sel === '.xr-chip'; const r = e.getBoundingClientRect(); const inside = r.top >= bar.top && r.bottom <= bar.bottom + 1 && r.right <= bar.right; const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return inside && (hit === e || e.contains(hit)); }; return ok('#micbtn') && ok('#earbtn') && ok('.xr-chip'); })()`), await evalJson(`JSON.stringify(['#micbtn','#earbtn','.xr-chip'].map((s) => { const e = document.querySelector(s); const r = e?.getBoundingClientRect(); return r ? [s, r.left|0, r.top|0, r.width|0, r.height|0] : [s, null]; }))`));
@@ -129,6 +138,71 @@ check('…and it stayed (the verb was accepted, not rolled back)', (await evalJs
 console.log('\nundo: Ctrl+Z after a light edit restores the fold value:');
 await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ', ctrlKey: true, bubbles: true })), true`);
 check('brightness back to 16', await waitFor(`import('/lib/world.js').then((m) => m.entities.get('benchlamp')?.userData?.lightParams?.intensity === 16)`));
+
+// early on purpose: headless leaks heap with time (see editworkspace-bench's header), and checks added at the
+// end of this long bench ran it into perf-guard's memory floor (10-02)
+console.log('\nBuild — Blueprints · Tools · World, and the world entity (design §5, step 5):');
+{
+  const bf = `document.querySelector('[data-frame="build"]')`;
+  const shown = (id: string) => `getComputedStyle(document.querySelector('[data-frame="${id}"]')).display !== 'none'`;
+  // the tab memory: the Hierarchy was picked earlier — leaving and pressing B again opens on it
+  await evalJson(`import('/lib/build.js').then((m) => (m.setEditMode(false), true))`);
+  await waitFor(`document.querySelector('.edit-top').hidden`);
+  await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyB' })), true`);
+  check('B again opens on the tab used last (Hierarchy), not Build', await waitFor(`${shown('hierarchy')} && !(${shown('build')}) && document.querySelector('.edit-tab.on')?.dataset.tab === 'hierarchy'`));
+  await evalJson(`document.querySelector('.edit-tab[data-tab="build"]').click(), true`);
+  check('the Build tab shows Build', await waitFor(`${shown('build')} && !(${shown('hierarchy')})`));
+  check('Blueprints: add light, the library search, the starters as picture tiles, and an empty "saved here"', await waitFor(`!!${bf}.querySelector('.sp-text[placeholder^="search the library"]') && ${bf}.querySelectorAll('.sp-tiles-img .sp-tile img').length >= 8 && /none yet/.test(${bf}.textContent) && [...${bf}.querySelectorAll('.sp-btn')].some((b) => /add light/.test(b.textContent))`));
+  const tile = (label: string) => `[...${bf}.querySelectorAll('.sp-tile')].find((t) => t.textContent.trim() === '${label}')`;
+  check('Tools: select / move / rotate / scale, the six building tools and seat, as tiles', await evalJson(`['select', 'move', 'rotate', 'scale', 'room', 'wall', 'door', 'window', 'floor', 'erase', 'seat'].every((l) => !!([...${bf}.querySelectorAll('.sp-tile')].find((t) => t.textContent.trim() === l)))`));
+  check('…the active transform tool reads armed (move)', await waitFor(`${tile('move')}?.classList.contains('on') && !${tile('rotate')}?.classList.contains('on')`));
+  await evalJson(`${tile('rotate')}.click(), true`);
+  check('a tool tile activates its tool: rotate, the same as E', await waitFor(`globalThis.__editLayout?.().tool === 'rotate' && ${tile('rotate')}?.classList.contains('on') && document.querySelector('.edit-tool[data-tool="rotate"]').classList.contains('on')`));
+  await evalJson(`${tile('wall')}.click(), true`);
+  check('a building tile arms its tool, and the transform tile stops reading armed (one tool owns the click)', await waitFor(`import('/lib/structure_ui.js').then((m) => m.currentTool() === 'wall') && ${tile('wall')}?.classList.contains('on') && !${tile('rotate')}?.classList.contains('on')`));
+  await evalJson(`${tile('move')}.click(), true`);
+  check('…and a transform tile puts the building tool down', await waitFor(`import('/lib/structure_ui.js').then((m) => m.currentTool() === null) && globalThis.__editLayout?.().tool === 'move' && ${tile('move')}?.classList.contains('on')`));
+  await evalJson(`import('/lib/build.js').then((m) => (m.deselectAll(), true))`);
+  check('seat waits for a selection (disabled, saying so)', await waitFor(`(() => { const t = ${tile('seat')}; return !!t && t.disabled && /select a thing first/.test(t.title); })()`), await evalJson(`${tile('seat')}?.title ?? null`));
+  await evalJson(`import('/lib/scenegraph.js').then((m) => (m.sceneSelect('benchlamp'), true))`);
+  check('…and with a thing selected, says where the sitter goes', await waitFor(`(() => { const t = ${tile('seat')}; return !!t && !t.disabled && /on benchlamp/.test(t.title); })()`), await evalJson(`${tile('seat')}?.title ?? null`));
+
+  // World: the presets come from the defs; a sky pick REPLACES the sky
+  check('World: sky presets, ground shapes and tints, plantings + mow, weathers', await waitFor(`['golden', 'dusk', 'hills', 'rugged', 'arid', 'meadow', 'tufts', 'mow', 'rain', 'storm'].every((l) => !!([...${bf}.querySelectorAll('.sp-tile')].find((t) => t.textContent.trim() === l)))`), await evalJson(`[...${bf}.querySelectorAll('.sp-tile')].map((t) => t.textContent.trim()).join(',')`));
+  await evalJson(`import('/lib/net.js').then((m) => (m.sendVerb('sky', { hours: 3, rate: 6, exposure: 0.6, fog: 2, clouds: 'stratus' }), true))`);
+  check('(a hand-authored sky with a rate, exposure and fog folds)', await waitFor(`import('/lib/state.js').then((m) => m.state.st.sky?.exposure === 0.6)`));
+  await evalJson(`import('/lib/net.js').then((m) => (m.sendVerb('weather', { weather: 'rain' }), true))`);
+  await waitFor(`import('/lib/state.js').then((m) => m.state.st.sky?.weather === 'rain')`);
+  await evalJson(`${tile('golden')}.click(), true`);
+  const golden = await evalJson(`fetch('/defs/sky/_presets.json').then((r) => r.ok ? r.json() : null).then((p) => p?.golden ?? null).catch(() => null)`);
+  check('a Sky pick REPLACES the sky: the preset\'s hours and clouds, no rate / exposure / fog left over', await waitFor(`import('/lib/state.js').then((m) => { const s = m.state.st.sky; return s?.hours === 17.6 && s.clouds === 'cumulus' && !('rate' in s) && !('exposure' in s) && !('fog' in s); })`),
+    await evalJson(`import('/lib/state.js').then((m) => JSON.stringify(m.state.st.sky))`) + ` (preset ${JSON.stringify(golden)})`);
+  check('…the weather (another component) stays', await evalJson(`import('/lib/state.js').then((m) => m.state.st.sky?.weather === 'rain')`));
+  check('…and the golden tile reads armed', await waitFor(`${tile('golden')}?.classList.contains('on') && ${tile('rain')}?.classList.contains('on')`));
+  // the ground and grass picks are worldentity-test's: a terrain mesh is a cost this headless renderer need not pay
+
+  // the world entity in the Inspector
+  await evalJson(`[...${bf}.querySelectorAll('.sp-item-main')].find((m) => /@world/.test(m.textContent))?.click(), true`);
+  const cards = `[...${insp}.querySelectorAll('.sp-group')].map((g) => g.textContent.slice(2))`;
+  check('the World row selects @world: the Inspector shows its four cards', await waitFor(`(() => { const t = ${cards}; return t[0] === 'Sky' && t[1] === 'Weather' && t[2] === 'Ground · default' && t[3] === 'Grass · default' && t.length === 4; })()`), JSON.stringify(await evalJson(cards)));
+  check('…headed @world, saying what its edits become', await evalJson(`/@world — the world entity/.test(${insp}.textContent) && /sky, weather, terrain or grass verb/.test(${insp}.textContent)`));
+  check('…and the World row reads active (the thing selection cleared)', await evalJson(`!!${bf}.querySelector('.sp-item.active') && globalThis.__editPanels?.().worldSel === true && globalThis.__editPanels?.().selected == null`));
+  const hoursIn = `[...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label')?.textContent === 'time of day')?.querySelector('.sp-num')`;
+  check('the Sky card shows the preset\'s hour', await evalJson(`(() => { const i = ${hoursIn}; return !!i && Math.abs(parseFloat(i.value) - 17.6) < 0.05; })()`), await evalJson(`${hoursIn}?.value ?? null`));
+  await evalJson(`(() => { const i = ${hoursIn}; if (!i) return false; i.value = '6'; i.dispatchEvent(new Event('change')); return true; })()`);
+  check('typing an hour in the Sky card commits it through the sky verb, keeping the rest', await waitFor(`import('/lib/state.js').then((m) => m.state.st.sky?.hours === 6 && m.state.st.sky.clouds === 'cumulus' && m.state.st.sky.weather === 'rain')`), await evalJson(`import('/lib/state.js').then((m) => JSON.stringify(m.state.st.sky))`));
+  await evalJson(`import('/lib/build.js').then((m) => (m.undo(), true))`);
+  check('…one Ctrl+Z puts the hour back', await waitFor(`import('/lib/state.js').then((m) => m.state.st.sky?.hours === 17.6)`), await evalJson(`import('/lib/state.js').then((m) => JSON.stringify(m.state.st.sky))`));
+  // the VR quad paints the same declarations (panels-schema path, edit chrome)
+  const vr = await evalJson(`import('/lib/panels.js').then((m) => { const P = globalThis.__editPanels(); const c = document.createElement('canvas'); const B = m.renderCanvas(c, P.buildVRFields(), { theme: 'edit' }); const I = m.renderCanvas(document.createElement('canvas'), P.inspFields(), { theme: 'edit' }); return { sky: B.some((r) => r.action === 'wsky' && r.payload === 'golden'), place: B.some((r) => r.action === 'place'), world: B.some((r) => r.action === 'wsel'), noTools: !B.some((r) => r.action === 'ttool' || r.action === 'stool'), hours: I.some((r) => r.action === 'ed:sky.hours'), wx: I.some((r) => String(r.action).startsWith('ed:weather.state')) }; })`);
+  check('the VR quad paints Build (a sky tile, the library, the World row; the desktop-only tools named, not drawn) and @world\'s cards', vr && Object.values(vr).every(Boolean), JSON.stringify(vr));
+  // selecting a thing again leaves the world
+  await evalJson(`import('/lib/scenegraph.js').then((m) => (m.sceneSelect('benchlamp'), true))`);
+  check('selecting a thing clears @world from the Inspector', await waitFor(`globalThis.__editPanels?.().worldSel === false && !/@world — the world entity/.test(${insp}.textContent)`));
+  // as the next section expects: the Hierarchy page up, benchlamp in the Inspector
+  await evalJson(`document.querySelector('.edit-tab[data-tab="hierarchy"]').click(), true`);
+  await waitFor(`${shown('hierarchy')} && ${insp}.querySelector('.sp-info')?.textContent === 'benchlamp'`);
+}
 
 console.log('\na no-op scrub on one thing must not leak its pose into the next selection:');
 {
@@ -854,7 +928,7 @@ await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape' })),
 await sleep(200);
 await evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape' })), true`);   // deselect, then leave
 check('leaving undocks: frames are back on the body, workspace chrome hidden', await waitFor(`document.querySelector('[data-frame="hierarchy"]').parentElement === document.body && document.querySelector('[data-frame="inspector"]').parentElement === document.body && document.querySelector('.edit-top').hidden && !document.querySelector('.frame.docked')`));
-check('Esc hides the frames (Create among them)', await waitFor(`(() => { const F = [...document.querySelectorAll('.frame.edit')]; return F.length === 4 && F.every((f) => getComputedStyle(f).display === 'none'); })()`));
+check('Esc hides the frames (Build among them)', await waitFor(`(() => { const F = [...document.querySelectorAll('.frame.edit')]; return F.length === 4 && F.every((f) => getComputedStyle(f).display === 'none'); })()`));
 // `hidden` is an attribute; the strips' own display:flex outranks the UA's [hidden] — so ask what is PAINTED
 check('…and the workspace chrome is not painted any more (bar, rail, columns, tool strip)', await waitFor(`[...document.querySelectorAll('.edit-strip, .edit-col, .edit-split-v, .edit-toolstrip')].every((e) => getComputedStyle(e).display === 'none')`), JSON.stringify(await evalJson(`[...document.querySelectorAll('.edit-strip, .edit-col, .edit-split-v, .edit-toolstrip')].map((e) => e.className + ':' + getComputedStyle(e).display)`)));
 check('…and the ∃ is back on the HUD, its glyphs beside it', await evalJson(`(() => { const h = document.querySelector('#hud').getBoundingClientRect(), m = document.querySelector('#micbtn').getBoundingClientRect(); const hit = document.elementFromPoint(h.left + h.width / 2, h.top + h.height / 2); return (hit === document.querySelector('#hud') || document.querySelector('#hud').contains(hit)) && m.left >= h.right && Math.abs((m.top + m.bottom) / 2 - (h.top + h.bottom) / 2) <= 2; })()`));
