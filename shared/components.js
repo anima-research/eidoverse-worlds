@@ -19,6 +19,8 @@
 //
 // Pure: no DOM, no three, no I/O. Server, browser, mcpl and tests import it.
 
+import { ROT_MODES } from './euler.js';
+
 // ------------------------------------------------------------ canonical bytes
 // RFC 8785 (JCS) for the JSON this module produces: object keys sorted by UTF-16
 // code units, no whitespace, numbers in ECMAScript's shortest round-trip form
@@ -83,7 +85,8 @@ const part = { t: 'text', default: null, hint: 'a named node of the model; empty
 
 const DEFS = [
   { name: 'Transform', category: 'Core', builtin: true, summary: 'where it is: position, heading, size',
-    params: { pos: { t: 'vec3', unit: 'm', default: [0, 0, 0] }, q: { t: 'quat', default: [0, 0, 0, 1], hint: 'full orientation (shared/rot.js); yaw is its friendly subset' }, yaw: { ...deg, default: 0 }, scale: { t: 'num', default: 1, min: 0.01, softMax: 12, step: 0.05 } },
+    params: { pos: { t: 'vec3', unit: 'm', default: [0, 0, 0] }, q: { t: 'quat', default: [0, 0, 0, 1], hint: 'full orientation (shared/rot.js); yaw is its friendly subset' }, yaw: { ...deg, default: 0 }, scale: { t: 'num', default: 1, min: 0.01, softMax: 12, step: 0.05 },
+      rotOrder: { t: 'choice', options: ROT_MODES, default: 'XYZ', wire: 'comp.rotOrder', hint: 'how the Rotate channels read q (Maya\'s rotateOrder: XYZ = X applied first); quat = edit the quaternion. Never moves the thing' } },
     fallback: { text: 'at (x, y, z)' } },
   { name: 'Model', category: 'Rendering', summary: 'a 3D model from the library',
     params: { lib: { t: 'asset', default: null, required: true } },
@@ -227,6 +230,12 @@ export function componentsOf(ent) {
   if (!ent || typeof ent !== 'object') return { components: [], stamps: {} };
   const out = [];
   const tf = pick(ent, ['pos', 'q', 'yaw', 'scale']);
+  // rotOrder rides the comp bag (written by `comp`, so it folds blind on every
+  // client and replays; design §3) but belongs to the Transform: a valid one is
+  // read here, and anything else under that key stays an Annotation below
+  const ro = ent.comp?.rotOrder;
+  const hasOrder = typeof ro === 'string' && ROT_MODES.includes(ro);
+  if (hasOrder) tf.rotOrder = ro;
   out.push({ type: 'Transform', params: tf });
   if (ent.kind === 'light') {
     const p = pick(ent, ['color', 'intensity', 'range']);
@@ -241,6 +250,7 @@ export function componentsOf(ent) {
   const c = ent.comp ?? {};
   for (const key of Object.keys(c)) {
     const data = c[key];
+    if (key === 'rotOrder' && hasOrder) continue;   // the Transform's (above)
     if (key in FLAG) { out.push({ type: FLAG[key], key, params: {}, wire: { value: data } }); continue; }
     if (key === 'hidden') { out.push({ type: 'Hidden', key, params: {}, wire: { value: data } }); continue; }
     if (key === 'label') { out.push({ type: 'Label', key, params: { text: data } }); continue; }
@@ -295,7 +305,12 @@ export function entityOf({ components, stamps = {} }) {
   for (const inst of components) {
     const p = inst.params ?? {};
     switch (inst.type) {
-      case 'Transform': Object.assign(ent, p); break;
+      case 'Transform': {
+        const { rotOrder, ...tf } = p;
+        Object.assign(ent, tf);
+        if (rotOrder !== undefined) comp.rotOrder = rotOrder;
+        break;
+      }
       case 'Light': {
         // keyed = comp.light (step 2); keyless = the legacy kind:"light" entity
         if (inst.key != null) { comp[inst.key] = compBag(inst); break; }
@@ -413,6 +428,10 @@ export function compRefusal(type, data, ent = null) {
     if (data.range !== undefined && !(finite(data.range) && data.range > 0)) return 'light range is a number of metres > 0';
     if (data.keep !== undefined && typeof data.keep !== 'boolean') return 'light keep is true or false';
     if (data.day !== undefined && typeof data.day !== 'boolean') return 'light day is true or false (false = burns at noon)';
+    return null;
+  }
+  if (type === 'rotOrder') {
+    if (!ROT_MODES.includes(data)) return `a rotation order is one of ${ROT_MODES.join(', ')} (Maya's rotateOrder: XYZ applies X first; quat edits the quaternion); remove it (data: null) for XYZ`;
     return null;
   }
   if (type === 'collider') {

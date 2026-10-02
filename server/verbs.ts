@@ -229,8 +229,10 @@ function vComp(ctx: VerbCtx, args: Record<string, unknown>) {
   // amendment 2026-10-01): the shape is checked here, by the same rule the
   // inspector applies (shared/components.js compRefusal), so a malformed one
   // never becomes history — and an entity made by the light verb is not
-  // given a second light (its own fields are its light; `light` edits them)
-  if (type === "light" || type === "collider") {
+  // given a second light (its own fields are its light; `light` edits them).
+  // rotOrder (the Transform's rotation order, PROTOCOL §4) is one of seven
+  // names; anything else would read as XYZ everywhere, silently.
+  if (type === "light" || type === "collider" || type === "rotOrder") {
     const why = compRefusal(type, args.data, w.state.entities[id] ?? null);
     if (why) {
       w.debug("rejected", { who: c.id, verb: "comp", why: `${type} on ${id}: ${why}` });

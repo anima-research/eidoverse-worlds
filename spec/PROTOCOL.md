@@ -173,6 +173,16 @@ consumes a type. Known types in v1, with their contracts:
   the legacy `collide` argument of `spawn` (§3), which stays valid; a shape
   other than `exact`/`box` is ignored (the legacy value, or size, decides).
   Client-side meaning only; the fold is blind to it as to every type.
+- **`rotOrder`** `"XYZ" | "XZY" | "YXZ" | "YZX" | "ZXY" | "ZYX" | "quat"`
+  *(amendment 2026-10-01)* — how an editor reads the entity's orientation as
+  Euler channels (Maya's rotateOrder, Blender's rotation mode). Names list
+  the axes in the order they are APPLIED, about the parent's fixed axes:
+  `XYZ` is R = Rz·Ry·Rx (three.js spells it `ZYX`). `quat` = edit the
+  quaternion directly. Absent means `XYZ`; writers SHOULD remove it
+  (`data: null`) rather than write `XYZ`. It never changes the entity's
+  orientation (`q`/`yaw`, §9.1) — only how it reads. Part of the entity's
+  Transform, carried by `comp` so it folds blind on every client; the
+  reference door refuses any other value.
 
 Everything else in a bag is somebody's annotation. Preserve it.
 

@@ -67,7 +67,15 @@ const cases: [string, any, string[]][] = [
   ['legacy kind:"light" AND comp.light (hand-written log)', { kind: 'light', pos: [0, 1, 0], color: 1, intensity: 2, range: 3, comp: { light: { color: 4 } }, ...st0 }, ['Light:', 'Light:light']],
   ['an Empty: nothing but a Transform', { pos: [1, 2, 3], yaw: 0.5, ...st0 }, []],
   ['an Empty with a scale, a q and a comp.light', { pos: [1, 2, 3], yaw: 0, q: [0, 0, 0, 1], scale: 2, comp: { light: { intensity: 4 } }, placer: { id: 'p' }, ...st0 }, ['Light:light']],
+  // step 3: the Transform's rotation order rides comp.rotOrder (design §3)
+  ['a rotation order is part of the Transform, not a component of its own', { lib: L, pos: [0, 0, 0], yaw: 0, q: [0, 0.38, 0, 0.92], comp: { rotOrder: 'ZXY', lock: true }, ...st0 }, ['Model:', 'Lock:lock']],
+  ['quaternion mode, on an Empty', { pos: [0, 0, 0], yaw: 0, comp: { rotOrder: 'quat' }, ...st0 }, []],
+  ['a rotOrder that is not one of the seven names stays an Annotation (bytes kept)', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { rotOrder: 'zxy' }, ...st0 }, ['Model:', 'Annotation:rotOrder']],
+  ['…as does a non-string one', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { rotOrder: { order: 'XYZ' } }, ...st0 }, ['Model:', 'Annotation:rotOrder']],
 ];
+check('the Transform reads its rotOrder (absent = no key at all, so XYZ is never written back)',
+  componentsOf({ pos: [0, 0, 0], comp: { rotOrder: 'YZX' } }).components[0].params.rotOrder === 'YZX'
+  && !('rotOrder' in componentsOf({ pos: [0, 0, 0] }).components[0].params) && !('comp' in entityOf(componentsOf({ pos: [0, 0, 0], yaw: 0 }))));
 for (const [name, ent, want] of cases) {
   const view = componentsOf(ent);
   const got = view.components.map((c: any) => `${c.type}:${c.key ?? ''}`);
@@ -102,7 +110,8 @@ check('a lamp (Model + comp.light) cannot add a second Light; an Empty can add o
     ['comp', { id: 'lamp', type: 'collider', data: { shape: 'exact' } }], ['comp', { id: 'pivot', type: 'light', data: { keep: true } }],
     ['mount', { id: 'pivot', to: 'lamp', offset: [0, 1.8, 0] }], ['place', { id: 'pivot', q: [0, 0.3826834, 0, 0.9238795] }],
     ['light', { id: 'old', pos: [2, 1, 0], intensity: 40 }], ['comp', { id: 'old', type: 'label', data: 'porch' }],
-    ['comp', { id: 'lamp', type: 'light', data: null }], ['spawn', { id: 'pivot', scale: 3 }],
+    ['comp', { id: 'lamp', type: 'light', data: null }], ['comp', { id: 'lamp', type: 'rotOrder', data: 'YXZ' }],
+    ['place', { id: 'lamp', q: [0.1, 0.2, 0.3, 0.9] }], ['comp', { id: 'lamp', type: 'rotOrder', data: null }], ['spawn', { id: 'pivot', scale: 3 }],
   ] as const;
   for (const [i, [verb, args]] of log.entries()) {
     foldEntry(st, { seq: i, ts: 1000 + i, actor: 'owner', verb, args } as any);

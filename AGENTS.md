@@ -98,6 +98,8 @@ comp    {id, type, data|null}             # attach anything; null removes; ≤8K
 comp    {id, type: "light", data: {color?, intensity?, range?, keep?, day?}}
                                           # a light ON anything: model + light = a lamp
 comp    {id, type: "collider", data: {shape: "exact"|"box"}}
+comp    {id, type: "rotOrder", data: "XYZ"|"XZY"|"YXZ"|"YZX"|"ZXY"|"ZYX"|"quat"}
+                                          # how its Rotate channels read q; never moves it (null = XYZ)
 motion  {id, type, ...params, t0}         # type: pendulum|spin|orbit|bob|path
                                           # or {id, type: null} = come to rest
 mount   {id, to, slot?, offset?, yaw?}    # id rides to; yourself = rank 0

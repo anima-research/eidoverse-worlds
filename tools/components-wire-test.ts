@@ -150,6 +150,20 @@ for (const data of [{ shape: 'mesh' }, {}, 'box']) {
   clearErr(); r = O('comp', { id: 'lamp', type: 'collider', data });
   check(`comp collider ${JSON.stringify(data)} is refused, saying the two shapes`, !r.appended && /exact.*box/.test(r.error ?? ''), JSON.stringify(r));
 }
+// step 3 (design §3): the Transform's rotation order rides comp.rotOrder
+clearErr(); r = O('comp', { id: 'lamp', type: 'rotOrder', data: 'ZXY' });
+check('comp rotOrder "ZXY" is accepted and folds into the bag', !!r.appended && st.entities.lamp.comp?.rotOrder === 'ZXY', JSON.stringify(r));
+for (const bad of ['zxy', 'XYX', 3, { order: 'XYZ' }]) {
+  clearErr(); r = O('comp', { id: 'lamp', type: 'rotOrder', data: bad });
+  check(`comp rotOrder ${JSON.stringify(bad)} is refused, naming the seven orders`, !r.appended && /XYZ, XZY, YXZ, YZX, ZXY, ZYX, quat/.test(r.error ?? ''), JSON.stringify(r));
+}
+{
+  const snap: any = emptyState();
+  for (const e of stateToEntries(st, { now: 1 })) foldEntry(snap, JSON.parse(JSON.stringify(e)));
+  check('…and survives a snapshot replay (a late joiner reads the same order)', snap.entities.lamp?.comp?.rotOrder === 'ZXY', JSON.stringify(snap.entities.lamp?.comp));
+}
+clearErr(); r = O('comp', { id: 'lamp', type: 'rotOrder', data: null });
+check('…removing it (back to XYZ) is always allowed', !!r.appended && st.entities.lamp.comp?.rotOrder === undefined, JSON.stringify(r));
 clearErr(); r = V('comp', { id: 'lamp', type: 'light', data: {} });
 check('a visitor\'s comp light is refused by rank, before any shape talk', !r.appended && /builder/.test(r.error ?? ''), JSON.stringify(r));
 
