@@ -98,6 +98,11 @@ check(planRouteLocal(planStructure(stacked), .5,1.5,3.5,1.5,3.1).kind === "block
 check(planRouteLocal(planStructure(stacked), .5,1.5,.5,-2,3.1).kind === "blocked",
   "upper-storey exterior destination is a refusal, not vertical navigation");
 
+check(planRouteLocal(planStructure(stacked), .2,.2,.2,.2,3.1).kind === "clear",
+  "same upper-floor point does not detour through the cell center");
+check(planRouteLocal(planStructure(stacked), .2,.2,.4,.3,3.1).kind === "clear",
+  "clear same-cell upper-floor positioning keeps its direct segment");
+
 const agents: WorldAgent[] = [];
 function agent() {
   const a = new WorldAgent({ name: "walker", avatar: "", world: "test" });
@@ -162,6 +167,10 @@ try {
     const u=agent();
     const above=structuredClone(house.levels[0]); above.y=3;
     u.entities.set("stacked",entity({ levels: [structuredClone(house.levels[0]),above] } as any,"stacked"));
+    u.pos={x:.2,y:3.1,z:.2};
+    const stationary=await walk(u,[.2,.2]);
+    check(stationary.arrived && stationary.samples.every(([x,z])=>x===.2&&z===.2),
+      "#200 combination stays put for an off-center stationary walk request");
     u.pos={x:.5,y:3.1,z:.5};
     const out=await walk(u,[.5,-2]);
     check(!out.arrived && !!u.walkRefusal?.includes("floored endpoints"),"#200 combination refuses an upper destination beyond the floor");

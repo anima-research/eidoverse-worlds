@@ -88,6 +88,10 @@ export function routeLevel(level, g, from, to, outdoors = true) {
   if (!outdoors && (!allowed(first) || !allowed(last) || start[0] !== from[0] ||
       start[1] !== from[1] || end[0] !== to[0] || end[1] !== to[1]))
     return blocked('upper-storey route requires floored endpoints');
+  // One cell/half is convex. Its admitted endpoints can use a clear direct
+  // segment, especially a stationary request which must not visit the center.
+  if (!outdoors && first === last && clearOf(walls, from, to))
+    return { kind: 'clear', points: [from, to] };
   const center = key => {
     const [cell, half] = key.split(':');
     const [x, z] = cell.split(',').map(Number);
