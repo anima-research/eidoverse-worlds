@@ -175,6 +175,7 @@ export class WorldAgent {
    * the caller's tolerance; intermediate waypoints are reached exactly. */
   private legs: Vec2[] = [];
   private walkTolerance = ARRIVE;
+  private walkHeightAt: ((x: number, z: number) => number) | null = null;
   /** Planning is synchronous; a caller can capture this immediately after
    * walkTo() so a later replacement walk cannot change its refusal receipt. */
   walkRefusal: string | null = null;
@@ -451,6 +452,7 @@ export class WorldAgent {
    *  the body as a zombie that fights its successor over the identity. */
   close() {
     this.closed = true;
+    this.stop();
     this.stopSim();
     if (this.ticker) { clearInterval(this.ticker); this.ticker = null; }
     if (this.activityTimer) { clearInterval(this.activityTimer); this.activityTimer = null; }
@@ -1751,6 +1753,9 @@ export class WorldAgent {
       this.draggedBy = null;                 // a silent dragger loses the body
       void this.settleFromDrag(null);        // — and my own sim settles it
     }
+    // Capture before an arrival clears the target: the completion tick uses
+    // the same support that admitted the route, not a newly selected floor.
+    const admittedHeight = this.target ? this.walkHeightAt : null;
     if (!this.draggedBy && this.target) {
       const dx = this.target.x - this.pos.x, dz = this.target.z - this.pos.z;
       const dist = Math.hypot(dx, dz);
@@ -1763,7 +1768,7 @@ export class WorldAgent {
           this.target = { x: next.x, z: next.z, run: this.target.run,
             tolerance: this.legs.length ? 0 : this.walkTolerance };
         } else {
-          this.target = null; this.speed = 0; this.clip = "idle";
+          this.target = null; this.walkHeightAt = null; this.speed = 0; this.clip = "idle";
           this.walkDone?.(true); this.walkDone = null;
         }
       } else {
@@ -1784,7 +1789,7 @@ export class WorldAgent {
     // a tumbling, lying, dragged, nailed or FLYING body owns its own y — the
     // terrain clamp is for FEET, and none of those states is standing on them
     if (!this.draggedBy && this.pins.size === 0 && this.clip !== "ragdoll" && !this.flight) {
-      this.pos.y = this.heightAt(this.pos.x, this.pos.z);
+      this.pos.y = admittedHeight ? admittedHeight(this.pos.x,this.pos.z) : this.heightAt(this.pos.x, this.pos.z);
     }
     // FLIGHT: one fixed-step integration of shared/flight.js per tick, and the
     // body's position is whatever it says. The integrator is the same function
@@ -1829,7 +1834,7 @@ export class WorldAgent {
    *  is something that happens TO this body, not just to its pixels. */
   knockDown(by: string, lean: number[] | null, notice: string) {
     if (!this.pushable || this.draggedBy) return;
-    if (this.target) { this.walkDone?.(false); this.walkDone = null; this.target = null; this.legs = []; }
+    if (this.target) { this.walkDone?.(false); this.walkDone = null; this.target = null; this.legs = []; this.walkHeightAt = null; }
     this.speed = 0;
     // Down NOW, not when the physics finishes loading. tumble() awaits the
     // skeleton, the height field and the support barrier before it can set
@@ -2471,7 +2476,7 @@ export class WorldAgent {
   walkTo(x: number, z: number, run = false, timeoutMs = 90_000, tolerance = ARRIVE): Promise<boolean> {
     if (![x, z, tolerance].every(Number.isFinite) || tolerance < 0 || tolerance > 0.4) return Promise.resolve(false);
     this.walkDone?.(false); // cancel a previous walk
-    this.walkDone = null; this.target = null; this.legs = []; this.speed = 0;
+    this.walkDone = null; this.target = null; this.legs = []; this.walkHeightAt = null; this.speed = 0;
     this.walkRefusal = null; this.walkTolerance = tolerance;
     if (this.draggedBy) {   // deciding to walk IS breaking the dragger's hold
       this.ws?.send(JSON.stringify({ type: "bodydrag", target: this.draggedBy, end: true }));
@@ -2501,7 +2506,7 @@ export class WorldAgent {
     // and stand on the ground you got up onto
     const support = this.walkSupport();
     const terrainForWalk = this.terrain;
-    const terrainHeight = (x: number, z: number) => terrainForWalk ? terrainForWalk.heightAt(x,z) : 0;
+    const terrainHeight = terrainForWalk ? terrainForWalk.heightAt.bind(terrainForWalk) : () => 0;
     this.pos.y = support.height;
     // Each local planner may offer a route around/through its building.
     // Validate the offered polyline against EVERY known structure before
@@ -2573,17 +2578,18 @@ export class WorldAgent {
       this.clip = "idle";
       return Promise.resolve(false);
     }
+    this.walkHeightAt = support.kind === "terrain" ? terrainHeight : () => support.height;
     this.legs = selected ? selected.slice(1) : [];
     const first = this.legs.shift();
     this.target = first ? { x: first.x, z: first.z, run, tolerance: this.legs.length ? 0 : tolerance }
       : { x, z, run, tolerance };
     return new Promise((resolve) => {
       this.walkDone = resolve;
-      setTimeout(() => { if (this.walkDone === resolve) { this.target = null; this.walkDone = null; resolve(false); } }, timeoutMs);
+      setTimeout(() => { if (this.walkDone === resolve) { this.target = null; this.legs = []; this.walkHeightAt = null; this.walkDone = null; resolve(false); } }, timeoutMs);
     });
   }
 
-  stop() { this.target = null; this.legs = []; this.speed = 0; this.clip = "idle"; this.walkDone?.(false); this.walkDone = null; }
+  stop() { this.target = null; this.legs = []; this.walkHeightAt = null; this.speed = 0; this.clip = "idle"; this.walkDone?.(false); this.walkDone = null; }
 
   face(x: number, z: number) { this.yaw = Math.atan2(x - this.pos.x, z - this.pos.z); }
 

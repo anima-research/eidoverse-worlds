@@ -598,7 +598,7 @@ A per-walk context prepares all levels' wall geometry once and keeps the supplie
 
 The search region is the structure's padded local bounds, capped at 16,384 cells. Distant endpoints connect without inflating it. Sealed, over-budget, or conflicting routes return a reason instead of becoming an unchecked straight line. Candidate paths are checked against every known structure under the same supplied support mode. Global multi-building route search, full-body/capsule clearance, arbitrary mesh avoidance, and vertical navigation are outside this contract.
 
-Routes use the structures and terrain function known when the walk begins. Intermediate waypoints are reached exactly; `tolerance` (0–0.4 metres) applies only to the requested destination. Replacing a walk with a refused route cancels the old walk too.
+Routes use the structures and terrain function known when the walk begins. Active movement, including the completion tick, keeps the admitted terrain function or fixed floor height. Stop, cancellation, refusal, timeout, and arrival release that basis; a subsequent walk resolves standing again. Intermediate waypoints are reached exactly; `tolerance` (0–0.4 metres) applies only to the requested destination. Replacing a walk with a refused route cancels the old walk too.
 
 **PR #200 compatibility boundary:** its current standing resolver treats a floor above a basement as elevated support, so the combined implementation explicitly refuses an exit that would change to terrain. Main's actual terrain-supported case exits correctly. PR #200 also does not hold a sole raised floor up; the combined product follows the terrain mode it actually supplies. These are limitations of that separate standing policy, not evidence of successful elevated exits.
 
