@@ -1,6 +1,7 @@
 // bun test tools/frame-archive.test.ts — small real files, injected clock/disk.
 import { test, expect, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, writeSync, readdirSync, statSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, writeSync, readdirSync, statSync, mkdirSync, closeSync, renameSync, copyFileSync, appendFileSync } from "node:fs";
+import { logIdentity, LOG_OPENING_LIMIT } from "../server/log-identity.ts";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { FrameArchive, archiveInventory, archiveIndex, type ArchivePolicy } from "../server/frame-archive.ts";
@@ -184,4 +185,96 @@ test("rate ages to zero and segment age reports the current file", () => {
   expect(a.status().currentSegmentAgeMs).toBe(1000);
   time(61_000);
   expect(a.status().bytesPerSecond).toBe(0);
+});
+
+test("idle last-segment rotation stops before claiming another ready capture", () => {
+  const { a, time, events } = fixture({ maxSegments: 1 });
+  expect(a.append(frame(0), roster, 0, 0)).toBe(true);
+  time(2000); a.maintain();
+  expect(a.status()).toMatchObject({ state: "stopped", reason: "segment-count-limit", currentSegment: null });
+  expect(events.filter(e => e.event === "stopped")).toHaveLength(1);
+  a.maintain();
+  expect(events.filter(e => e.event === "stopped")).toHaveLength(1);
+});
+
+test("failed close preserves interrupted bytes without certifying a final range", () => {
+  const { a, dir, events } = fixture({}, { close: (fd: number) => {
+    closeSync(fd); throw new Error("late close I/O failure");
+  } });
+  a.append(frame(0), roster, 0, 0);
+  a.close();
+  const entry = archiveIndex(dir)[0];
+  expect(a.status().state).toBe("stopped");
+  expect(entry.metadata).toMatchObject({ state: "interrupted", frames: null, lastFrameSeq: null });
+  expect(entry.metadata?.reason).toContain("close-failed");
+  expect(entry.actualBytes).toBeGreaterThan(0);
+  expect(lines(dir, entry.file).filter(r => r.type === "frame")).toHaveLength(1);
+  expect(events.some(e => e.event === "segment-close" && e.state === "closed")).toBe(false);
+});
+
+test("one torn or oversized index does not hide its bytes or intact neighbors", () => {
+  const { a, dir } = fixture({ segmentBytes: 200 });
+  a.append(frame(0), roster, 0, 0); a.append(frame(1), roster, 1, 0); a.close();
+  const [first] = archiveIndex(dir);
+  const path = join(dir, first.file.replace(/\.jsonl$/, ".index.json"));
+  for (const damage of ['{"version":', 'null', "x".repeat(9000)]) {
+    writeFileSync(path, damage);
+    const index = archiveIndex(dir);
+    expect(index).toHaveLength(2);
+    expect(index[0].metadata).toBeNull();
+    expect(index[0].metadataError).toBeTruthy();
+    expect(index[0].actualBytes).toBe(first.actualBytes);
+    expect(index[1].metadata?.state).toBe("closed");
+  }
+});
+
+test("authored-log identity moves with bytes and resolves duplicate/missing paths honestly", () => {
+  const { a, dir } = fixture();
+  const log = join(dir, "log.jsonl"), opening = '{"verb":"genesis","args":{"epoch":"one"}}\n';
+  writeFileSync(log, opening);
+  const id = logIdentity(log);
+  appendFileSync(log, '{"verb":"say"}\n');
+  expect(logIdentity(log)).toBe(id);
+  a.bindLog(() => logIdentity(log)); a.append(frame(0), roster, 0, 1); a.close();
+  expect(archiveIndex(dir)[0]).toMatchObject({ logState: "resolved", logPaths: ["log.jsonl"] });
+  mkdirSync(join(dir, "erased-one")); renameSync(log, join(dir, "erased-one", "log.jsonl"));
+  writeFileSync(log, '{"verb":"genesis","args":{"epoch":"two"}}\n');
+  expect(archiveIndex(dir)[0]).toMatchObject({ logState: "resolved", logPaths: ["erased-one/log.jsonl"] });
+  mkdirSync(join(dir, "erased-copy")); copyFileSync(join(dir, "erased-one", "log.jsonl"), join(dir, "erased-copy", "log.jsonl"));
+  expect(archiveIndex(dir)[0].logState).toBe("ambiguous");
+  rmSync(join(dir, "erased-one"), { recursive: true }); rmSync(join(dir, "erased-copy"), { recursive: true });
+  expect(archiveIndex(dir)[0].logState).toBe("missing");
+});
+
+test("incomplete, oversized or unreadable log opening fails recording identity closed", () => {
+  for (const content of ["", '{"verb":', "x".repeat(LOG_OPENING_LIMIT) + "\n"]) {
+    const { a, dir } = fixture();
+    const path = join(dir, "log.jsonl"); writeFileSync(path, content);
+    expect(() => logIdentity(path)).toThrow();
+    a.bindLog(() => logIdentity(path));
+    expect(a.status()).toMatchObject({ state: "stopped", logId: null });
+    expect(a.status().reason).toContain("log-identity");
+    expect(a.append(frame(0), roster, 0, 0)).toBe(false);
+  }
+  const { a, dir } = fixture();
+  a.bindLog(() => logIdentity(join(dir, "absent")));
+  expect(a.status().state).toBe("stopped");
+});
+
+test("epoch rotation retains cumulative quota, identity and stopped performance metadata", () => {
+  const { a, dir, events } = fixture({ maxSegments: 2 }, { performance: "the-show" });
+  const path = join(dir, "log.jsonl");
+  writeFileSync(path, "epoch1\n"); const first = logIdentity(path);
+  a.bindLog(() => first); a.append(frame(0), roster, 0, 99); a.endEpoch();
+  const used = a.status().totalBytes;
+  writeFileSync(path, "epoch2\n"); const second = logIdentity(path);
+  a.bindLog(() => second); a.append(frame(1), roster, 1, 0); a.endEpoch();
+  expect(a.status()).toMatchObject({ state: "stopped", reason: "segment-count-limit", segments: 2 });
+  expect(a.status().totalBytes).toBeGreaterThan(used!);
+  expect(archiveIndex(dir).map(r => r.metadata?.logId)).toEqual([first, second]);
+  expect(archiveIndex(dir).every(r => r.metadata?.reason === "world-reset")).toBe(true);
+  const stop = events.find(e => e.event === "stopped");
+  expect(stop.performance).toBe("the-show");
+  a.endEpoch();
+  expect(a.status().state).toBe("stopped");
 });

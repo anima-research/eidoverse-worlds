@@ -5,7 +5,7 @@ import { recordingState, recordingNotice } from "../shared/recording.js";
 process.env.AGENT_BODY_ENGINE = "verlet";
 let checks = 0;
 function check(ok: unknown, name: string) { assert.ok(ok, name); checks++; console.log("✓ " + name); }
-const stop = { type: "recording-status", recording: false, recordingStatus: { state: "stopped", reason: "disk-floor" } };
+const stop = { type: "recording-status", recording: false, recordingStatus: { state: "stopped", reason: "disk-floor", performance: "show" } };
 check(recordingState({ recording: true })?.state === "recording", "legacy active flag remains readable");
 check(recordingState({ recording: false })?.state === "disabled", "legacy disabled flag remains readable");
 check(recordingState({}) === null, "missing metadata means unknown, not active");
@@ -30,6 +30,7 @@ try {
   peer.send(JSON.stringify(stop));
   await until(() => a.recordingStatus?.state === "stopped");
   check(a.look().includes('"reason":"disk-floor"'), "MCPL look changes on live stop");
+  check(a.look().includes('"performance":"show"'), "MCPL stop readback retains the performance ID");
   check(a.inbox.some(e => e.text?.includes("recording stopped")), "MCPL receives a stop notice");
   current = {};
   peer.close();
@@ -52,6 +53,7 @@ await _dispatch({ type: "recording-status", recording: true, recordingStatus: { 
 await _dispatch(stop);
 await _dispatch(stop);
 check(net.recordingStatus?.state === "stopped", "browser/lite state changes to stopped");
+check(net.recordingStatus?.performance === "show", "browser/lite stop readback retains the performance ID");
 check(notices.length === 2 && notices[0].includes("⏺") && notices[1].includes("disk-floor"), "browser/lite prints active then stop, without repeated notice");
 await _dispatch({ type: "snapshot", you: "tester", yourRights: { role: "visitor" }, entries: [], present: [], avatars: [], ...current });
 check(net.recordingStatus === null, "browser snapshot clears state absent on older server");

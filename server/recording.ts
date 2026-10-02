@@ -37,3 +37,27 @@ export function recordingStatus(world: string) {
 }
 export function recordingMaintenance() { for (const a of archives.values()) a.maintain(); }
 export function closeRecordings() { for (const a of archives.values()) a.close(); }
+
+/** World reset must not reset the recorder's budgets or stopped state. */
+export function prepareRecordingReset(world: string) { archives.get(world)?.endEpoch(); }
+
+type RecordingWorld = {
+  name: string; recordingLogId(): string;
+  clients: Iterable<{ ws: { send(data: string): unknown } }>;
+  debug(kind: string, detail: Record<string, unknown>): void;
+};
+export function frameRecorder(w: RecordingWorld) {
+  const archive = recorderFor(w.name, (event, detail) => {
+    console.warn("[world:" + w.name + "] recording " + event, detail);
+    w.debug("recording-" + event, detail);
+    if (event === "stopped") {
+      const notice = JSON.stringify({ type: "recording-status", recording: false,
+        recordingStatus: { state: "stopped", reason: detail.reason, performance: detail.performance } });
+      for (const c of w.clients) {
+        try { c.ws.send(notice); } catch { /* a closed peer cannot hide the stop from others */ }
+      }
+    }
+  });
+  archive?.bindLog(() => w.recordingLogId());
+  return archive;
+}

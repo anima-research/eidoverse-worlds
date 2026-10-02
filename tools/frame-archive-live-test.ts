@@ -1,6 +1,6 @@
 // bun tools/frame-archive-live-test.ts — owned child, tiny archives, no assets.
 // Real WS fanout through recording limits, I/O failure, and crash/restart.
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, readdirSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { strict as assert } from "node:assert";
@@ -23,7 +23,7 @@ async function until(fn: () => unknown | Promise<unknown>, message: string) {
   for (let i = 0; i < 100; i++) { if (await fn()) return; await pause(30); }
   throw new Error("timeout: " + message);
 }
-async function boot(record = "1") {
+async function boot(record = "1", extra: Record<string, string> = {}) {
   const nonce = crypto.randomUUID();
   proc = Bun.spawn([process.execPath, "run", join(root, "server/server.ts")], {
     cwd: root, env: { ...process.env, PORT: String(port), JOIN_TOKEN: "archive-test",
@@ -31,7 +31,7 @@ async function boot(record = "1") {
       SKIP_OPT_SWEEP: "1", RECORD_FRAMES: record, RECORD_SEGMENT_BYTES: "500",
       RECORD_SEGMENT_MS: "60000", RECORD_MAX_BYTES: "30000", RECORD_MAX_SEGMENTS: "3",
       RECORD_MIN_FREE_BYTES: "1", RECORD_PERFORMANCE_ID: "test-performance",
-      HN_REQUIRE_LOGIN: "0", BENCH_NONCE: nonce, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0" },
+      HN_REQUIRE_LOGIN: "0", BENCH_NONCE: nonce, BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", ...extra },
     stdout: Bun.file(join(scratch, "server.log")), stderr: Bun.file(join(scratch, "server.log")),
   });
   await until(async () => {
@@ -80,6 +80,8 @@ try {
   for (let i = 0; i < 30 && (await status("bounded")).state !== "stopped"; i++) await move(performer, i);
   check((await status("bounded")).reason === "segment-count-limit", "small configured segment count stops archive");
   check(viewer.messages.some(m => m.type === "recording-status" && m.recording === false && m.recordingStatus.reason === "segment-count-limit"), "existing clients receive the actual recording stop");
+  check(viewer.messages.find(m => m.type === "recording-status").recordingStatus.performance === "test-performance",
+    "live stop retains the affected performance identity");
   const before = viewer.messages.filter(m => m.type === "frame").length;
   await move(performer, 100); await move(performer, 101);
   check(viewer.messages.filter(m => m.type === "frame").length >= before + 2, "spectator receives continued frames after recording cap");
@@ -104,6 +106,24 @@ try {
   check((await status("iofail")).reason.includes("archive-io"), "real index-write failure stops recording");
   await move(failing, 50); check(true, "live fanout survives archival filesystem failure");
 
+  const resetter = await connect("reset-epochs", "owner");
+  const resetDir = join(worlds, "reset-epochs");
+  for (let epoch = 0; epoch < 3; epoch++) {
+    await move(resetter, epoch);
+    const before = resetter.messages.filter(m => m.type === "world-reset").length;
+    resetter.ws.send(JSON.stringify({ type: "world-reset", name: "reset-epochs" }));
+    await until(() => resetter.messages.filter(m => m.type === "world-reset").length > before, "reset " + epoch);
+  }
+  const epochs = archiveIndex(resetDir);
+  check(epochs.length === 3 && new Set(epochs.map(p => p.metadata?.logId)).size === 3,
+    "repeated live resets close segments and start distinct authored-log identities");
+  check(epochs.every(p => p.metadata?.reason === "world-reset" && p.logState === "resolved" && p.logPaths[0].startsWith("erased-")),
+    "offline index resolves each reset performance to its own archived log");
+  check((await status("reset-epochs")).reason === "segment-count-limit", "reset preserves cumulative segment quota and latches stopped");
+  const afterResetBytes = archiveInventory(resetDir).bytes;
+  await move(resetter, 99);
+  check(archiveInventory(resetDir).bytes === afterResetBytes, "reset cannot buy a new recording allowance");
+
   const crash = await connect("crash", "performer");
   await move(crash, 0);
   const old = archiveIndex(join(worlds, "crash"))[0];
@@ -118,6 +138,44 @@ try {
   check(index[0].metadata?.state === "open" && index[1].metadata?.state === "closed", "crash leaves an explicitly unclosed index; shutdown closes the successor");
   check(index.every(p => p.metadata?.performance === "test-performance"), "operator performance ID groups segments across boots");
   check(readFileSync(join(worlds, "crash", old.file)).equals(oldBytes), "restart leaves interrupted archive bytes unchanged");
+
+  check(index.every(p => p.logState === "resolved" && p.logPaths[0] === "log.jsonl") &&
+    index[0].metadata?.logId === index[1].metadata?.logId, "ordinary restart retains authored-log identity");
+
+  // Crash at reset's first rename: old log has moved, old snapshot/poses have
+  // not. The process restarts from that actual durable intermediate state.
+  await boot();
+  const partial = await connect("partial-reset", "owner");
+  partial.ws.send(JSON.stringify({ type: "verb", verb: "spawn", args: { id: "old-epoch-object", lib: "x.glb", pos: [0,0,0] } }));
+  await until(() => partial.messages.some(m => m.type === "log" && m.entry?.args?.id === "old-epoch-object"), "old epoch object");
+  await move(partial, 6);
+  await stop();
+  const partialDir = join(worlds, "partial-reset");
+  const priorPart = archiveIndex(partialDir)[0];
+  mkdirSync(join(partialDir, "erased-partial"));
+  renameSync(join(partialDir, "log.jsonl"), join(partialDir, "erased-partial", "log.jsonl"));
+  await boot();
+  const fresh = await connect("partial-reset", "fresh-owner");
+  check(!JSON.stringify({state:fresh.snapshot.state,entries:fresh.snapshot.entries}).includes("old-epoch-object"),
+    "partial-reset restart discards the orphan snapshot from the moved log");
+  await move(fresh, 7); await stop();
+  const recovered = archiveIndex(partialDir);
+  check(recovered.length === 2 && recovered[0].metadata?.logId !== recovered[1].metadata?.logId,
+    "partial-reset restart creates a distinct log identity without a sidecar pairing window");
+  check(recovered[0].logPaths[0] === "erased-partial/log.jsonl" && recovered[1].logPaths[0] === "log.jsonl" &&
+    recovered[0].metadata?.logId === priorPart.metadata?.logId,
+    "offline recovery resolves both sides of a log-only reset rename");
+
+  await boot("1", { RECORD_MAX_SEGMENTS: "1", RECORD_SEGMENT_MS: "100" });
+  const idle = await connect("idle-cap", "performer");
+  await move(idle, 0);
+  await until(async () => (await status("idle-cap")).state === "stopped", "idle segment-cap stop");
+  const idleJoin = await connect("idle-cap", "late", true);
+  check(!idleJoin.snapshot.recording && idleJoin.snapshot.recordingStatus.reason === "segment-count-limit",
+    "idle final-segment close reports stopped to a new join before another pose");
+  check(idle.messages.some(m => m.type === "recording-status" && m.recordingStatus.performance === "test-performance"),
+    "idle stop tells current clients the performance identity");
+  await stop();
 
   await boot("0");
   const disabled = await connect("disabled", "performer");

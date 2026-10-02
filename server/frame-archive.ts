@@ -3,6 +3,7 @@
 // compression belongs on exported copies, away from the sequencer's tick.
 import { readdirSync, statSync, statfsSync, openSync, closeSync, writeSync, writeFileSync, renameSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { logIdentity } from "./log-identity.ts";
 import { randomUUID } from "node:crypto";
 
 export type ArchivePolicy = {
@@ -22,12 +23,13 @@ type Segment = {
   version: 1; world: string; performance: string; boot: string; ordinal: number;
   file: string; openedAt: number; closedAt: number | null;
   firstFrameSeq: number; lastFrameSeq: number | null;
-  firstLogSeq: number; frames: number | null; bytes: number | null;
+  firstLogSeq: number; logId: string | null; frames: number | null; bytes: number | null;
   state: "open" | "closed" | "interrupted"; reason?: string;
 };
 type Hooks = {
   now?: () => number; freeBytes?: () => number;
   write?: (fd: number, data: Uint8Array) => number;
+  close?: (fd: number) => void;
   report?: (event: string, detail: Record<string, unknown>) => void;
 };
 
@@ -49,12 +51,36 @@ export function archiveInventory(dir: string) {
  * An open index means unclosed (possibly still recording); its final range and
  * last complete JSONL line must be recovered by the reader, not guessed here. */
 export function archiveIndex(dir: string) {
-  return readdirSync(dir).filter(n => SEGMENT_FILE.test(n)).sort().map(file => {
+  const names = readdirSync(dir, { withFileTypes: true });
+  const logs = new Map<string, string[]>(), logErrors: string[] = [];
+  const candidates = ["log.jsonl", ...names.filter(e => e.isDirectory() && e.name.startsWith("erased-"))
+    .map(e => e.name + "/log.jsonl")];
+  for (const path of candidates) {
+    try {
+      const id = logIdentity(join(dir, path));
+      const paths = logs.get(id) ?? []; paths.push(path); logs.set(id, paths);
+    } catch (e) { logErrors.push(path + ": " + String(e)); }
+  }
+  return names.map(e => e.name).filter(n => SEGMENT_FILE.test(n)).sort().map(file => {
     const indexPath = join(dir, file.replace(/\.jsonl$/, ".index.json"));
-    let metadata: Segment | null = null;
-    try { metadata = JSON.parse(readFileSync(indexPath, "utf8")); }
-    catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
-    return { file, actualBytes: statSync(join(dir, file)).size, metadata };
+    let metadata: Segment | null = null, metadataError: string | null = null;
+    try {
+      if (statSync(indexPath).size > INDEX_RESERVE) throw new Error("index exceeds metadata limit");
+      const parsed = JSON.parse(readFileSync(indexPath, "utf8"));
+      if (!parsed || parsed.version !== 1 || parsed.file !== file ||
+          !["open", "closed", "interrupted"].includes(parsed.state))
+        throw new Error("invalid segment index");
+      metadata = parsed;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") metadataError = String(e);
+    }
+    // One damaged/missing sidecar does not hide intact neighboring segments.
+    let actualBytes: number | null = null, fileError: string | null = null;
+    try { actualBytes = statSync(join(dir, file)).size; } catch (e) { fileError = String(e); }
+    const logPaths = metadata?.logId ? logs.get(metadata.logId) ?? [] : [];
+    const logState = !metadata?.logId ? "unknown" : logPaths.length === 1 ? "resolved" : logPaths.length ? "ambiguous" : "missing";
+    return { file, actualBytes, metadata, metadataError, fileError, logState, logPaths,
+      ...(logState === "missing" ? { logErrors } : {}) };
   });
 }
 
@@ -64,6 +90,7 @@ export class FrameArchive {
   private now: () => number;
   private freeBytes: () => number;
   private write: (fd: number, data: Uint8Array) => number;
+  private closeFile: (fd: number) => void;
   private report: NonNullable<Hooks["report"]>;
   private state: "ready" | "recording" | "stopped" | "closed" = "ready";
   private reason: string | null = null;
@@ -77,6 +104,7 @@ export class FrameArchive {
   private ordinal = 0;
   private lastRoster = "";
   private warned = false;
+  private logId: string | null = null;
 
   constructor(readonly dir: string, readonly world: string, readonly policy: ArchivePolicy = DEFAULT_ARCHIVE_POLICY,
     options: Hooks & { boot?: string; performance?: string } = {}) {
@@ -88,6 +116,7 @@ export class FrameArchive {
       const s = statfsSync(dir); return Number(s.bavail) * Number(s.bsize);
     });
     this.write = options.write ?? ((fd, data) => writeSync(fd, data));
+    this.closeFile = options.close ?? closeSync;
     this.report = options.report ?? ((event, detail) => console.warn("[recording:" + world + "] " + event, detail));
     try {
       if (!Object.values(policy).every(n => Number.isSafeInteger(n) && n > 0))
@@ -126,7 +155,7 @@ export class FrameArchive {
     const file = "frames-" + this.boot + "-" + String(this.ordinal++).padStart(6, "0") + ".jsonl";
     const meta: Segment = { version: 1, world: this.world, performance: this.performance,
       boot: this.boot, ordinal: this.ordinal - 1, file, openedAt: now, closedAt: null,
-      firstFrameSeq: seq, lastFrameSeq: null, firstLogSeq: logSeq,
+      firstFrameSeq: seq, lastFrameSeq: null, firstLogSeq: logSeq, logId: this.logId,
       frames: null, bytes: null, state: "open" };
     // A collision is an error, never permission to append to an earlier boot.
     const fd = openSync(join(this.dir, file), "wx");
@@ -145,19 +174,23 @@ export class FrameArchive {
     const c = this.current;
     if (!c) return;
     this.current = null; // close/update failures must not reuse a suspect fd
-    try {
-      closeSync(c.fd);
-    } finally {
-      c.meta.closedAt = this.now(); c.meta.reason = reason;
-      c.meta.state = interrupted ? "interrupted" : "closed";
-      c.meta.bytes = statSync(join(this.dir, c.meta.file)).size;
-      c.meta.frames = c.frames;
-      const data = JSON.stringify(c.meta) + "\n", path = this.indexPath(c.meta);
-      writeFileSync(path + ".tmp", data);
-      renameSync(path + ".tmp", path);
-      this.totalBytes += c.meta.bytes - c.bytes + Buffer.byteLength(data) - c.indexBytes;
-    }
-    this.announce("segment-close", { file: c.meta.file, reason, bytes: c.meta.bytes });
+    let closeError: unknown, closeFailed = false;
+    try { this.closeFile(c.fd); } catch (e) { closeError = e; closeFailed = true; }
+    c.meta.closedAt = closeFailed ? null : this.now();
+    c.meta.reason = closeFailed ? reason + "; close-failed: " + String(closeError) : reason;
+    c.meta.state = interrupted || closeFailed ? "interrupted" : "closed";
+    c.meta.bytes = statSync(join(this.dir, c.meta.file)).size;
+    // A failed close cannot certify the final range, even when prior writes
+    // returned success. Preserve bytes and ask the reader to recover the tail.
+    c.meta.frames = closeFailed ? null : c.frames;
+    if (closeFailed) c.meta.lastFrameSeq = null;
+    const data = JSON.stringify(c.meta) + "\n", path = this.indexPath(c.meta);
+    writeFileSync(path + ".tmp", data);
+    renameSync(path + ".tmp", path);
+    this.totalBytes += c.meta.bytes - c.bytes + Buffer.byteLength(data) - c.indexBytes;
+    this.announce("segment-close", { file: c.meta.file, reason: c.meta.reason,
+      state: c.meta.state, bytes: c.meta.bytes });
+    if (closeFailed) throw closeError;
   }
 
   private stop(reason: string, interrupted = false) {
@@ -171,7 +204,7 @@ export class FrameArchive {
       const inventory = archiveInventory(this.dir);
       this.totalBytes = inventory.bytes; this.segments = inventory.segments; this.inventoryKnown = true;
     } catch { this.inventoryKnown = false; }
-    this.announce("stopped", { reason: this.reason, totalBytes: this.inventoryKnown ? this.totalBytes : null,
+    this.announce("stopped", { reason: this.reason, performance: this.performance, boot: this.boot, logId: this.logId, totalBytes: this.inventoryKnown ? this.totalBytes : null,
       recovery: "Export closed archives, free space or raise limits, then restart. Existing archives are preserved." });
   }
 
@@ -219,7 +252,7 @@ export class FrameArchive {
 
   status() {
     const now = this.now(); this.pruneRate(now);
-    return { state: this.state, reason: this.reason, performance: this.performance, boot: this.boot,
+    return { state: this.state, reason: this.reason, performance: this.performance, boot: this.boot, logId: this.logId,
       totalBytes: this.inventoryKnown ? this.totalBytes : null, writtenBytes: this.writtenBytes, segments: this.segments,
       bytesPerSecond: this.rate.reduce((sum, r) => sum + r.bytes, 0) / Math.max(1, Math.min(60, (now - this.startedAt) / 1000)),
       currentSegment: this.current?.meta.file ?? null,
@@ -228,13 +261,36 @@ export class FrameArchive {
       policy: this.policy };
   }
 
+  /** Bind once per authored-log epoch. Failure is an archival stop, never
+   * permission to substitute a filename or a restarted sequence number. */
+  bindLog(readId: () => string) {
+    if (this.state === "stopped" || this.state === "closed" || this.logId !== null) return;
+    try {
+      const id = readId();
+      if (!/^sha256:[a-f0-9]{64}$/.test(id)) throw new Error("unresolved authored-log identity");
+      this.logId = id;
+    } catch (e) { this.stop("log-identity: " + String(e)); }
+  }
+
+  /** Close before reset moves the authored log. Keep cumulative quotas and
+   * any stopped latch; a new epoch cannot buy another storage allowance. */
+  endEpoch() {
+    if (this.state === "stopped" || this.state === "closed") return;
+    try {
+      this.finish("world-reset");
+      this.logId = null;
+      if (this.admit(0, true)) this.state = "ready";
+    } catch (e) { this.stop("archive-io: " + String(e), true); }
+  }
+
   /** Close an idle, aged segment too, so it is safe to export on schedule. */
   maintain() {
     if (this.state === "stopped" || this.state === "closed") return;
     try {
       if (!this.admit(0, false)) return;
       if (this.current && this.now() - this.current.meta.openedAt >= this.policy.segmentMs) {
-        this.finish("time-rotation"); this.state = "ready";
+        this.finish("time-rotation");
+        if (this.admit(0, true)) this.state = "ready";
       }
     } catch (e) { this.stop("archive-io: " + String(e), true); }
   }
