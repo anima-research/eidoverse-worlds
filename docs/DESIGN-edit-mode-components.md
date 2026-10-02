@@ -31,8 +31,12 @@ Words we decided against, and why: *prefab* (needs a dev background), *thing* (t
    special case of a bag with one entry. Ownership (placer, lock, guard) lives on the entity, so a lamp
    that is one entity has one owner.
 4. **Old spellings are aliases, forever.** `shared/components.js` reads every existing record as
-   components and writes it back byte-identical; untouched entities keep their bytes. An entity is saved
-   in the new form only when edited in the new inspector (write-new-on-edit).
+   components and writes it back byte-identical; untouched entities keep their bytes. The new form is
+   written wherever that costs nothing: added components are always written new, and components are
+   edited as components. **Exception, decided 10-01:** an old `kind:"light"` entity keeps being edited
+   with the `light` verb (a field-level partial update). Migrating it would need a re-spawn, which hands
+   its guard to the editor (new placer), renews `born` (voiding caption deeds), is refused when locked,
+   isn't atomic, and blanks it for older clients.
 5. **One declaration, every surface.** Desktop panel, VR quad and the agent's `inspect`/`edit` tools read
    the same schema (`shared/editschema.js`).
 
@@ -42,6 +46,11 @@ Words we decided against, and why: *prefab* (needs a dev background), *thing* (t
 `Transform { pos, q, scale }` + `comp` bag + optional `parent`. Orientation is a **quaternion** `q`
 (`shared/rot.js`); `yaw` stays as its friendly subset and the alias for yaw-only history (PROTOCOL §9.1
 draft, branch `hep/quaternions`). Scale stays uniform in this pass (open question 1).
+
+**Rotation order is per entity** (owner, 10-01): `rotOrder` on the Transform, XYZ by default, any of the six
+Euler orders or a quaternion mode (Maya's rotateOrder, Blender's rotation mode). Because `q` is what is
+stored, changing the order only changes how the Rotate channels read — the object never moves. It matters
+most later, when motion or animation is keyed in Euler channels.
 
 An entity with nothing but a Transform is an **Empty**: a pivot, a group parent, a spawn point, a target.
 
@@ -57,9 +66,12 @@ The 24 engine records in `shared/components.js`, ordered in the inspector as *wh
   that requires a **choice** asks ("pick a model for this picture"). Removing something another component
   needs names the dependant and offers *remove both*.
 - **Repeatables.** Motions and annotations may repeat; everything else is one per entity.
-- **Light is a component.** `kind: "light"` becomes the alias for an entity whose only component is
-  Light; a Model and a Light may share an entity (a lamp).
-- **Collider is a component** with a verb that writes it.
+- **Light is a component** (`comp.light`, built 10-01). `kind: "light"` stays the alias for an entity
+  whose only component is Light; a Model and a Light may share an entity (a lamp). An authored Light on an
+  entity **suppresses inferred lamps** on that entity (authored beats inferred; otherwise an emissive lamp
+  model double-lights). A light glows from its entity's origin; a bulb position is a child Empty.
+- **Collider is a component** (`comp.collider {shape: exact|box}`, built 10-01). Removing it falls back to
+  the legacy `collide`, then to size-decided.
 
 ### Children
 `parent { to, slot?, offset?, yaw? }` already exists (written by `mount`). The hierarchy panel shows it as a
@@ -134,6 +146,13 @@ replacing plan apertures, in a later pass; until then the aperture tool keeps wo
 | blueprint copy | — | `comp.blueprint { hash, name }` + expanded components |
 | blueprint store | — | `blueprint` verb: publish a record (owner/builder rank) |
 
+**Record hashes cover meaning, not prose** (decide before step 6): a record's hash is computed over
+`kind, v, name, params` (types, defaults, ranges) and `needs`; `summary`, `note`, `hint` and fallback text
+are documentation and may be reworded without changing the hash.
+
+The door shape-checks `comp light` and `comp collider` (one shared rule, `compRefusal`), consistent with
+PROTOCOL §4 giving them contracts; every other type stays opaque except for size.
+
 Every row is covered by `tools/components-corpus-test.ts` (round trip on every local world log) before it
 ships, and PROTOCOL.md is updated in the same stack.
 
@@ -151,7 +170,11 @@ ships, and PROTOCOL.md is updated in the same stack.
 ## 8. Open questions
 
 1. Non-uniform scale (X/Y/Z) in the channel box: a wire change for every entity; deferred.
-2. Euler order shown in the channel box: XYZ (Maya's default) unless the owner prefers another.
-3. Who may publish a blueprint into a world: builder rank (like `spawn`) or owner rank (like client mods)?
+2. ~~Euler order~~ — decided: XYZ default, changeable per entity (`rotOrder`, §3).
+3. ~~Who may publish a blueprint~~ — decided: builder rank by default. Owner-defined roles and powers (how
+   many roles, what each may do, defaults equal to today's three ranks, and the owner always holding every
+   power so no world can be made uneditable) are on the feature wishlist as their own piece.
+5. The live `tools/comptest.ts` matrix doesn't cover the new spellings yet (AGENTS.md: a verb without a
+   check there "doesn't exist yet") — owed before any of this goes upstream.
 4. Copy expansion costs bytes per copy; a resolver that stores only the link + overrides is a later
    optimization once every client can resolve.
