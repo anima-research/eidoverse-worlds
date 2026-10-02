@@ -12,6 +12,12 @@ mkdirSync(library); mkdirSync(overlay);
 // Lint checks resolvability, not GLB decode; no optimizer or renderer runs.
 writeFileSync(join(library, "library.glb"), "fixture");
 writeFileSync(join(overlay, "upload.VRM"), "fixture");
+// The route keeps URL.pathname encoded: literal disk names alone are not
+// fetchable under these URLs; encoded-name fixtures are a separate case.
+writeFileSync(join(library, "space model.glb"), "literal-only");
+writeFileSync(join(library, "café.glb"), "literal-only");
+writeFileSync(join(library, "encoded%20model.glb"), "fixture");
+writeFileSync(join(library, "caf%C3%A9-served.glb"), "fixture");
 const run = await scratchSequencer("spawn-lint", {
   portFrom: 9180,
   serverEnv: {
@@ -64,6 +70,11 @@ try {
     ["fragment", "library.glb#mesh", null],
     ["query-fragment", "library.glb?v=123#mesh", null],
     ["missing-versioned", "absent.glb?v=123", "not-found"],
+    ["literal-space", "space model.glb", "not-found"],
+    ["literal-unicode", "café.glb", "not-found"],
+    ["encoded-space", "encoded model.glb", null],
+    ["encoded-unicode", "café-served.glb", null],
+    ["already-encoded", "encoded%20model.glb", null],
   ] as const;
   for (const [id, lib] of cases) {
     author.send({ type: "verb", verb: "spawn", args: { id, lib, pos: [0, 0, 0] } });
@@ -80,6 +91,12 @@ try {
   for (const lib of ["library.glb?v=123", "library.glb#mesh", "library.glb?v=123#mesh"]) {
     const served = await fetch(run.BASE + "/library/" + lib);
     check("lint matches the actual asset route for " + lib, served.ok && await served.text() === "fixture");
+  }
+  for (const [lib, available] of [["space model.glb", false], ["café.glb", false],
+      ["encoded model.glb", true], ["café-served.glb", true], ["encoded%20model.glb", true]] as const) {
+    const served = await fetch(run.BASE + "/library/" + lib);
+    check("URL-encoded pathname agrees with the actual route for " + lib,
+      available ? served.ok && await served.text() === "fixture" : served.status === 404);
   }
   const eye = await open("observer");
   check("invalid library spawns still fold and appear on late join",

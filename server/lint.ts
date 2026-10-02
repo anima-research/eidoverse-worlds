@@ -41,11 +41,13 @@ export const MOTION_TYPES: Record<string, Set<string>> = {
 
 function modelPath(lib: unknown): string | null {
   if (typeof lib !== "string") return null;
-  // Clients fetch /library/<lib>; query/version and fragment identify the
-  // request, not the filesystem path the route serves.
-  const path = lib.split(/[?#]/, 1)[0];
-  if (path.includes("\0")) return null;
-  const rel = normalize(path).replace(/^\/+/, "");
+  // Mirror the client's /library/<lib> URL, including percent-encoding of
+  // spaces/Unicode and removal of query/fragment. The asset route uses
+  // URL.pathname verbatim (it does not decode it back to a disk filename).
+  if (lib.split(/[?#]/, 1)[0].includes("\0")) return null;
+  const pathname = new URL("/library/" + lib, "http://library.invalid").pathname;
+  if (!pathname.startsWith("/library/")) return null;
+  const rel = normalize(pathname.slice("/library/".length)).replace(/^\/+/, "");
   return rel.includes("..") || !/\.(glb|vrm)$/i.test(rel) ? null : rel;
 }
 
@@ -60,6 +62,8 @@ function diagnosticValue(value: unknown): unknown {
 export function resolveLibFile(lib: string): string | null {
   const rel = modelPath(lib);
   if (rel === null) return null;
+  // Geometry and route callers deliberately see the same patched/upload/base
+  // bytes as /library, not a different unpatched model behind the same name.
   for (const base of LADDER) {
     const p = normalize(join(base, rel));
     if (p.startsWith(base) && existsSync(p)) return p;
