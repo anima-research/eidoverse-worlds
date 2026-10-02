@@ -87,6 +87,12 @@ export const releaseOwner = () => {};
 export const registerCaster = () => {};
 export const releaseCaster = () => {};
 export const makeLight = () => new THREE_.Group();
+export const makeLightGizmo = (color) => { const m = new THREE_.Mesh(new THREE_.SphereGeometry(0.13), new THREE_.MeshBasicMaterial({ color })); m.userData.gizmo = true; return m; };
+/** the rig's request table as the realizer drives it (comp.light): key -> spec */
+export const lightRequests = new Map();
+export const requestLight = (key, spec) => { lightRequests.set(key, { ...spec }); };
+export const updateRequest = (key, patch) => { const r = lightRequests.get(key); if (r) Object.assign(r, patch); };
+export const releaseLight = (key) => { lightRequests.delete(key); };
 export const updateLight = () => {};
 export const disposeLight = () => {};
 

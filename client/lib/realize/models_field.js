@@ -33,13 +33,18 @@ import { P } from '../scheduler.js';
  *  @param {Record<string, any>} stEntities  state.st.entities
  *  @param {Map<string, RealizedView>} realized
  *  @returns {{ create: {id: string, ent: any}[], retire: string[] }} */
+/** What the realizer builds for a folded entity: a legacy `light`-verb light,
+ *  an Empty (a spawn with no lib — PROTOCOL §3.2: an invisible Object3D), or a
+ *  model. One answer for planReconcile and models.js alike. */
+export const kindOf = (ent) => (ent?.kind === 'light' ? 'light' : ent?.lib == null ? 'empty' : 'model');
+
 export function planReconcile(stEntities, realized) {
   const create = [];
   const retire = [];
   for (const [id, view] of realized) {
     const ent = stEntities[id];
     if (!ent) { retire.push(id); continue; }
-    const foldedKind = ent.kind === 'light' ? 'light' : 'model';
+    const foldedKind = kindOf(ent);
     if (view.kind !== foldedKind || (foldedKind === 'model' && view.lib !== ent.lib)) {
       retire.push(id);
       create.push({ id, ent });

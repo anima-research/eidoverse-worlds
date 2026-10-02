@@ -17,6 +17,21 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+// the realizer's renderer/network cone, stubbed exactly as unknown-comp-test does
+// (tools/lod-client-stub.mjs records light requests and collider fits)
+const STUB = fileURLToPath(new URL('./unknown-comp-stub.mjs', import.meta.url));
+const SPY = fileURLToPath(new URL('./unknown-comp-report-spy.mjs', import.meta.url));
+plugin({
+  name: 'components-wire-stub',
+  setup(b) {
+    for (const f of ['^\\.\\./(core|assets|colliders|lightrig|lights|world)\\.js$', '^\\./(core|world|colliders|remotes)\\.js$']) {
+      b.onResolve({ filter: new RegExp(f) }, () => ({ path: STUB }));
+    }
+    // the realizer's report(), recorded; everyone else gets the real base.js (the real bus)
+    b.onResolve({ filter: /^\.\.\/base\.js$/ }, (args) => (args.importer.endsWith('realize/models.js') ? { path: SPY } : undefined));
+  },
+});
+
 // config.ts makes WORLDS_DIR at import: keep the bench out of the repo's worlds/
 const SCRATCH = mkdtempSync(join(tmpdir(), 'ew-comp-wire-'));
 process.env.WORLDS_DIR = join(SCRATCH, 'worlds');
@@ -137,6 +152,121 @@ for (const data of [{ shape: 'mesh' }, {}, 'box']) {
 }
 clearErr(); r = V('comp', { id: 'lamp', type: 'light', data: {} });
 check('a visitor\'s comp light is refused by rank, before any shape talk', !r.appended && /builder/.test(r.error ?? ''), JSON.stringify(r));
+
+// ---- 3. the browser realizer --------------------------------------------------
+console.log('\n3. the browser (client/lib/realize/models.js, real bus + state, stubbed renderer)');
+const stub: any = await import('./unknown-comp-stub.mjs');
+const M: any = await import('../client/lib/realize/models.js');
+const S: any = await import('../client/lib/state.js');
+const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
+const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.(); M.drainPromoteTail?.(); await sleep(15); } };
+{
+  const w0: any = emptyState(); let q = 0;
+  const F = (verb: string, args: any) => foldEntry(w0, { seq: q, ts: 1786320000000 + q++, actor: 'owner', verb, args });
+  F('spawn', { id: 'pivot', pos: [1, 2, 3], yaw: 0.5 });
+  F('comp', { id: 'pivot', type: 'light', data: { keep: true, intensity: 30 } });
+  F('spawn', { id: 'lamp', lib: LAMP, pos: [2, 0, 0], collide: 'exact' });
+  F('comp', { id: 'lamp', type: 'light', data: { color: 0xff8800, range: 7, day: false } });
+  F('comp', { id: 'lamp', type: 'collider', data: { shape: 'box' } });
+  F('spawn', { id: 'crate', lib: 'eidoverse/assets/models/crate.glb', pos: [4, 0, 0], collide: 'box' });
+  F('spawn', { id: 'plain', lib: 'eidoverse/assets/models/plain.glb', pos: [6, 0, 0] });
+  F('spawn', { id: 'farlamp', lib: LAMP, pos: [600, 0, 0] });
+  F('comp', { id: 'farlamp', type: 'light', data: { intensity: 5 } });
+  F('spawn', { id: 'cup', lib: 'eidoverse/assets/models/cup.glb', pos: [0, 0, 0] });
+  F('mount', { id: 'cup', to: 'pivot', offset: [0, 0.5, 0] });
+  F('light', { id: 'porch', pos: [0, 2, 0] });
+  M.initModelsRealizer();
+  S.hydrate(structuredClone(w0), [], q - 1);
+  await settle();
+
+  const piv = stub.entities.get('pivot');
+  check('an Empty realizes at once as an invisible Group at its folded transform', !!piv && piv.isGroup && piv.userData.empty === true
+    && jeq(piv.position.toArray(), [1, 2, 3]) && Math.abs(piv.rotation.y - 0.5) < 1e-9, `${piv?.type} ${JSON.stringify(piv?.position)}`);
+  check('…loads nothing (no asset request names it) and is listed with kind "empty"',
+    !stub.loads.some((l: any) => l.lib == null || l.lib === 'undefined') && stub.entityMeta.get('pivot')?.kind === 'empty', JSON.stringify(stub.loads.map((l: any) => l.lib)));
+  check('…and owns no collider', !stub.colliderLog.some((e: any) => e[1] === 'pivot'), JSON.stringify(stub.colliderLog));
+  const cup = stub.entities.get('cup');
+  check('a model mounted on an Empty rides it (parented into the Empty\'s Group at its offset)', !!cup && cup.parent === piv && jeq(cup.position.toArray(), [0, 0.5, 0]), `${cup?.parent?.type} ${JSON.stringify(cup?.position)}`);
+
+  const rq = (id: string) => stub.lightRequests.get(`complight:${id}`);
+  check('comp.light on the Empty becomes a rig request that follows the Empty\'s object, with its fields and the fold\'s defaults',
+    rq('pivot')?.obj === piv && rq('pivot').keep === true && rq('pivot').intensity === 30 && rq('pivot').range === 10 && rq('pivot').color === 0xffd9a0 && rq('pivot').dayAware === true && rq('pivot').authored === true, JSON.stringify({ ...rq('pivot'), obj: !!rq('pivot')?.obj }));
+  check('…and its gizmo is a child of the Empty (a bare bulb is seen, and selectable)', piv?.children.some((c: any) => c.userData.gizmo), JSON.stringify(piv?.children.map((c: any) => c.type)));
+  const lamp = stub.entities.get('lamp');
+  check('a lamp (Model + comp.light): the request follows the REALIZED model, day:false → not day-aware',
+    !!lamp && !!lamp.userData.lib && rq('lamp')?.obj === lamp && rq('lamp').color === 0xff8800 && rq('lamp').range === 7 && rq('lamp').dayAware === false, JSON.stringify({ ...rq('lamp'), obj: rq('lamp')?.obj?.userData }));
+  let lampGizmo = false; lamp?.traverse((o: any) => { if (o.userData?.gizmo) lampGizmo = true; });
+  check('…with NO gizmo mesh inside the model (it would join the collider, the lamp scan, the caster scan)', !lampGizmo);
+  check('a far lamp (beyond its residency radius, never loaded) still lights: the request parks at the folded position',
+    stub.entities.get('farlamp') === null && rq('farlamp')?.obj === null && jeq(rq('farlamp')?.pos, [600, 0, 0]) && rq('farlamp').intensity === 5, JSON.stringify(rq('farlamp')));
+  check('a legacy light-verb light makes no comp request (it is realized by createLight, as always)', !rq('porch') && stub.entities.get('porch') !== undefined);
+
+  const fit = (id: string) => stub.colliders.get(id)?.opts;
+  check('colliders: comp.collider wins over the legacy collide on the same entity', fit('lamp')?.collide === 'box', JSON.stringify(fit('lamp')));
+  check('…the legacy collide alone is still honoured', fit('crate')?.collide === 'box', JSON.stringify(fit('crate')));
+  check('…and neither = undefined (decide by size), as before', !!fit('plain') && fit('plain').collide === undefined, JSON.stringify(fit('plain')));
+
+  // live
+  const live = (verb: string, args: any) => { const e = { seq: q, ts: 1786320000000 + q++, actor: 'owner', verb, args }; S.foldLive(e); };
+  live('comp', { id: 'pivot', type: 'light', data: { intensity: 2, color: 0x00ff00 } });
+  check('live: a changed comp.light updates the request in place (keep cleared, colour, intensity)', rq('pivot')?.intensity === 2 && rq('pivot').keep === false && rq('pivot').color === 0x00ff00 && rq('pivot').obj === piv, JSON.stringify({ ...rq('pivot'), obj: !!rq('pivot')?.obj }));
+  live('place', { id: 'pivot', pos: [5, 5, 5] });
+  check('live: placing the Empty moves its Group (and the request rides it)', jeq(piv.position.toArray(), [5, 5, 5]) && rq('pivot')?.obj === piv);
+  live('place', { id: 'farlamp', pos: [700, 0, 0] });
+  check('live: placing a never-loaded lamp moves its parked light', jeq(rq('farlamp')?.pos, [700, 0, 0]), JSON.stringify(rq('farlamp')?.pos));
+  const marks = stub.colliderLog.length;
+  live('comp', { id: 'lamp', type: 'collider', data: { shape: 'exact' } });
+  check('live: a changed comp.collider re-decides the standing collider under the new shape',
+    stub.colliders.get('lamp')?.pref === 'exact' && stub.colliderLog.slice(marks).some((e: any) => e[0] === 'refit' && e[1] === 'lamp'), JSON.stringify(stub.colliderLog.slice(marks)));
+  live('comp', { id: 'lamp', type: 'collider', data: null });
+  check('…and removing it falls back to the legacy collide', stub.colliders.get('lamp')?.pref === 'exact');
+  live('comp', { id: 'pivot', type: 'light', data: null });
+  check('live: removing comp.light releases the request and takes the gizmo off the Empty',
+    !rq('pivot') && !piv.children.some((c: any) => c.userData.gizmo));
+  live('spawn', { id: 'lamp', lib: LAMP, pos: [2, 0, 0] });
+  check('live: re-spawning a lamp with the same model (wholesale replace, refreshed in place) drops its old light', !rq('lamp') && stub.entities.get('lamp') === lamp, `${JSON.stringify(rq('lamp')?.color)}`);
+  live('comp', { id: 'pivot', type: 'light', data: {} });
+  live('spawn', { id: 'pivot', pos: [5, 5, 5] });
+  check('live: re-spawning the Empty (wholesale replace) drops the light its old bag had', !rq('pivot') && stub.entities.get('pivot') === piv, `${!!rq('pivot')}`);
+  live('spawn', { id: 'pivot', lib: 'eidoverse/assets/models/stool.glb', pos: [5, 0, 5] });
+  await settle();
+  check('live: a model spawned over the Empty replaces it (the Group retires, the model realizes)',
+    stub.entities.get('pivot') !== piv && !!stub.entities.get('pivot')?.userData?.lib && !piv.parent, `${stub.entities.get('pivot')?.userData?.lib}`);
+  // cargo on a model whose id is re-spawned as an Empty: the fold keeps the
+  // cargo's parent (it names the id); retiring the model steps the cargo off,
+  // and the Empty — which has no promote tail — must re-seat it itself
+  live('spawn', { id: 'cart', lib: 'eidoverse/assets/models/cart.glb', pos: [0, 0, 12] });
+  live('spawn', { id: 'box1', lib: 'eidoverse/assets/models/box.glb', pos: [0, 0, 12] });
+  await settle();
+  live('mount', { id: 'box1', to: 'cart', offset: [0, 1, 0] });
+  live('spawn', { id: 'cart', pos: [0, 0, 12] });
+  const cartE = stub.entities.get('cart');
+  check('live: cargo on a model re-spawned as an Empty is re-seated on the Empty at once', cartE?.userData?.empty === true && stub.entities.get('box1')?.parent === cartE,
+    `${stub.entities.get('box1')?.parent?.type} / ${cartE?.userData?.empty}`);
+  live('spawn', { id: 'e2', pos: [0, 0, 9] });
+  live('comp', { id: 'e2', type: 'light', data: { range: 3 } });
+  const e2 = stub.entities.get('e2');
+  live('remove', { id: 'e2' });
+  check('live: removing an Empty retires its Group and releases its light', !stub.entities.has('e2') && !e2.parent && !rq('e2'));
+  const spy: any = await import('./unknown-comp-report-spy.mjs');
+  const { planReconcile, kindOf } = await import('../client/lib/realize/models_field.js');
+  const plan = planReconcile({ a: { pos: [0, 0, 0] }, b: { lib: LAMP, pos: [0, 0, 0] }, c: { kind: 'light', pos: [0, 1, 0] } },
+    new Map([['a', { kind: 'empty' }], ['b', { kind: 'model', lib: LAMP }], ['c', { kind: 'light' }]]));
+  check('reconcile (rejoin) leaves a standing Empty alone — no retire-and-rebuild churn', plan.create.length === 0 && plan.retire.length === 0, JSON.stringify(plan));
+  const plan2 = planReconcile({ a: { lib: LAMP, pos: [0, 0, 0] } }, new Map([['a', { kind: 'empty' }]]));
+  check('…but an Empty whose id now folds as a model is rebuilt', plan2.retire[0] === 'a' && plan2.create[0]?.id === 'a', JSON.stringify(plan2));
+  check('kindOf: light / empty / model', kindOf({ kind: 'light' }) === 'light' && kindOf({ pos: [0, 0, 0] }) === 'empty' && kindOf({ lib: LAMP }) === 'model');
+  const { bus } = await import('../client/lib/base.js');
+  const marker = (g: any) => !!g?.children.some((c: any) => c.userData?.emptyMarker);
+  const cartG = stub.entities.get('cart');
+  check('outside edit mode an Empty carries no marker (nothing to hit that nobody can see)', !marker(cartG));
+  bus.emit('edit-mode', true);
+  live('spawn', { id: 'e3', pos: [0, 0, 15] });
+  check('edit mode on: every Empty wears a pickable marker, including one created while editing', marker(cartG) && marker(stub.entities.get('e3')));
+  bus.emit('edit-mode', false);
+  check('edit mode off: the markers come off again', !marker(cartG) && !marker(stub.entities.get('e3')));
+  check('the realizer reported nothing at any point (no error path was taken)', spy.reports.length === 0, JSON.stringify(spy.reports.map((r: any) => `${r.where}: ${r.e}`)));
+}
 
 rmSync(SCRATCH, { recursive: true, force: true });
 console.log(`\n${passed} passed, ${failed} failed`);
