@@ -1,5 +1,5 @@
 // The VR pointer's policy (client/lib/xrpointer.js), run without a headset: the "pointer laser" setting, the ray's
-// low-pass.
+// low-pass, and the stickiness (hold a target through a small drift; easier to stay on than to get on).
 // tools/xr-pointer-probe.mjs is the browser half: the real loop under IWER, the setting's row in the VR settings quad.
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/xrpointer-test.mjs
 import * as P from '../client/lib/xrpointer.js';
@@ -46,6 +46,27 @@ const yawOf = (o) => 2 * Math.atan2(o.quaternion.y, o.quaternion.w);
   check('a one-frame jump past the snap angle snaps (tracking came back, a recentre)', P.smoothPose(out, pose(P.POINTER_SNAP_RAD + 0.05), 1 / 90, st) === 'snap');
   check('…as does a jump past the snap distance', P.smoothPose(out, pose(P.POINTER_SNAP_RAD + 0.05, 0.8), 1 / 90, st) === 'snap');
   check('a zero or negative dt does not move it (a stalled frame)', (() => { const o = pose(0), s2 = { init: true }; P.smoothPose(o, pose(0.1), 0, s2); P.smoothPose(o, pose(0.1), -1, s2); return yawOf(o) === 0; })()); }
+
+console.log('\nSTICKINESS');
+{ const A = { key: 'A' }, B = { key: 'B' }, A2 = { key: 'A', point: 2 };
+  const t = (held, raw, ang) => { const r = P.stickStep(held, raw, ang); return `${r.held?.key ?? '-'}${r.bend ? '~' : ''}`; };
+  check('nothing held, nothing under the ray: nothing', t(null, null, NaN) === '-');
+  check('getting on: the target under the ray is taken, unbent', t(null, A, NaN) === 'A');
+  check('on it: the fresh hit replaces the held one (its point follows the ray)', P.stickStep(A, A2, 0).held === A2 && !P.stickStep(A, A2, 0).bend);
+  check('drift off onto nothing within the stay margin: held, ray bent onto it', t(A, null, P.STICK_STAY_RAD * 0.9) === 'A~');
+  check('…past the stay margin: let go', t(A, null, P.STICK_STAY_RAD * 1.1) === '-');
+  check('another target under the ray within the yield margin: still held (no flicker on a seam)', t(A, B, P.STICK_YIELD_RAD * 0.9) === 'A~');
+  check('…past the yield margin: the new target takes over', t(A, B, P.STICK_YIELD_RAD * 1.1) === 'B');
+  check('the held target gone (angle NaN): let go, or take what is under the ray', t(A, null, NaN) === '-' && t(A, B, NaN) === 'B');
+  check('hysteresis: staying on is easier than getting on (yield < stay; plate get-on slack < stay)',
+    P.STICK_YIELD_RAD < P.STICK_STAY_RAD && P.PLATE_GETON_RAD < P.STICK_STAY_RAD, JSON.stringify([P.PLATE_GETON_RAD, P.STICK_YIELD_RAD, P.STICK_STAY_RAD]));
+  check('the stay margin is small: 1–2° (a hand that moves on is let go)', P.STICK_STAY_RAD > 0.015 && P.STICK_STAY_RAD < 0.035, P.STICK_STAY_RAD);
+  check('plate get-on slack is the old 3 cm at 3 m', Math.abs(P.PLATE_GETON_RAD * 3 - 0.03) < 1e-9);
+}
+{ const o = new THREE.Vector3(0, 1, 0), p = new THREE.Vector3(1, 2, -3), m = P.rayMatrixTo(new THREE.Matrix4(), o, p);
+  const d = new THREE.Vector3(0, 0, -1).transformDirection(m), at = new THREE.Vector3().setFromMatrixPosition(m);
+  check('a bent ray starts at the hand and points at the held point', at.distanceTo(o) < 1e-9 && d.angleTo(p.clone().sub(o)) < 1e-6);
+  check('angleTo measures the drift', Math.abs(P.angleTo(o, new THREE.Vector3(0, 0, -1), new THREE.Vector3(Math.tan(0.02), 1, -1)) - 0.02) < 1e-9); }
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

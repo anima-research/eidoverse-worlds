@@ -29,6 +29,7 @@ import { claimEscape } from './frames.js';
 import { svg, fsvg } from './icons.js';
 import { HTMLMesh } from './vendor/htmlmesh.js';
 import { prepareQuadMaterial } from './domquad.js';
+import { PLATE_GETON_RAD } from './xrpointer.js';   // the laser's get-on slack around a plate (see below)
 
 export const HOVER_MS = 300;       // rest this long on a plate before the card opens
 const LEAVE_MS = 250;              // grace to travel from plate to card
@@ -37,7 +38,10 @@ const HEAD_R = 0.14;               // metres: the head under the plate counts as
 // across 0.58 m at arm's length, 0.85 m: domquad.js); wider panels draw their px up to ~1.6× smaller, and the card's text
 // is 12 px. Rasterised at XR_RASTER device px per CSS px.
 const XR_RAD_PER_PX = 0.002, XR_RASTER = 2.5, XR_GAP_PX = 10;
-const PICK_SLACK_M = 0.03;         // VR: the laser's slack around the pill (the desktop gives the cursor 3–4 px): a hand trembles
+// VR: the laser's slack around the pill for getting ON a plate (the desktop gives the cursor 3–4 px): a hand trembles.
+// An ANGLE about the hand, from the pointer's one table (xrpointer.js): it was a flat 3 cm, generous up close and
+// stingy far away, where tremor is angular — 0.01 rad is that same 3 cm at 3 m. Staying ON a plate once there is the
+// pointer's stickiness, measured from the last point the laser had on it (this slack included), not stacked on top.
 
 let d = null;                      // injected: { camera, canvas, scene, remotes, myPos, presenting, openConvo, colorFor }
 let card = null, cardFor = null, openedBy = null, sig = '';
@@ -172,7 +176,7 @@ function followXR() {
 }
 
 /** VR (xr.js, per hand, once no panel claimed the laser): what the laser rests on — a plate's pill, the head under it,
- *  or the open card — as { id, dist }, or null. `cam` is the XR camera: plates are sprites, and a sprite faces a camera. */
+ *  or the open card — as { id, dist, obj }, or null. `cam` is the XR camera: plates are sprites, and a sprite faces a camera. */
 const _rc = new THREE.Raycaster(), _rm = new THREE.Matrix4(), _hits = [];
 export function platePick(handRay, cam, far = 40) {
   if (!d || !vr) return null;
@@ -180,10 +184,10 @@ export function platePick(handRay, cam, far = 40) {
   _rc.ray.origin.setFromMatrixPosition(handRay.matrixWorld);
   _rc.ray.direction.set(0, 0, -1).applyMatrix4(_rm);
   _rc.near = 0; _rc.far = far; _rc.camera = cam;
-  let best = null, bestD = Infinity;
+  let best = null, bestD = Infinity, bestLab = null;
   if (xrMesh?.visible && cardFor) {
     _hits.length = 0; xrMesh.raycast(_rc, _hits);
-    for (const h of _hits) if (h.distance < bestD) { best = cardFor; bestD = h.distance; }
+    for (const h of _hits) if (h.distance < bestD) { best = cardFor; bestD = h.distance; bestLab = xrMesh; }
   }
   for (const r of d.remotes.values()) {
     const av = r.avatar, lab = av?.label;
@@ -194,17 +198,18 @@ export function platePick(handRay, cam, far = 40) {
     if (h?.uv && h.distance < bestD) {
       // the sprite is the whole canvas; the plate is the pill centred in it
       lab.getWorldScale(_s);
-      const hu = (lab.userData.pill ?? 0.5) / 2 + PICK_SLACK_M / _s.x;
-      const hv = (lab.userData.pillH ?? 52 / 512) / (lab.userData.aspect ?? 64 / 512) / 2 + PICK_SLACK_M / _s.y;
-      if (Math.abs(h.uv.x - 0.5) <= hu && Math.abs(h.uv.y - 0.5) <= hv) { best = r.id; bestD = h.distance; }
+      const slack = PLATE_GETON_RAD * h.distance;
+      const hu = (lab.userData.pill ?? 0.5) / 2 + slack / _s.x;
+      const hv = (lab.userData.pillH ?? 52 / 512) / (lab.userData.aspect ?? 64 / 512) / 2 + slack / _s.y;
+      if (Math.abs(h.uv.x - 0.5) <= hu && Math.abs(h.uv.y - 0.5) <= hv) { best = r.id; bestD = h.distance; bestLab = lab; }
     }
     if (av.head) {   // the head under the plate counts as the plate
       av.head.getWorldPosition(_v);
       const t = _h.subVectors(_v, _rc.ray.origin).dot(_rc.ray.direction);
-      if (t > 0 && t < far && t < bestD && _rc.ray.distanceSqToPoint(_v) <= HEAD_R * HEAD_R) { best = r.id; bestD = t; }
+      if (t > 0 && t < far && t < bestD && _rc.ray.distanceSqToPoint(_v) <= HEAD_R * HEAD_R) { best = r.id; bestD = t; bestLab = lab; }
     }
   }
-  return best ? { id: best, dist: bestD } : null;
+  return best ? { id: best, dist: bestD, obj: bestLab } : null;   // obj: what it was found on (the plate, or the card's quad) — the pointer's stickiness keeps its point there
 }
 /** VR: xr.js reports, per hand per frame, the plate its laser rests on (null: none). */
 export function aimPlate(side, id) { if (side === 'left' || side === 'right') xrAim[side] = id ?? null; }

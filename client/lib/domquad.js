@@ -256,6 +256,36 @@ export function domQuadsRelease(press, cancel = false) {
   fire(press.mesh, press.data);
 }
 
+// WHAT IS A CONTROL on a panel: anything a click there does something to — the house's buttons, inputs, the dropdown
+// skin, tabs, links, a <label> (a checkRow is a label around its box), anything focusable or with an onclick handler,
+// and anything styled with a pointer cursor where its parent is not (how a row wired with addEventListener says it is
+// clickable). The stickiness (xr.js, xrpointer.js) holds the laser on one; a grip over one does not grab the panel.
+export const CONTROL_SEL = 'a[href],button,input,select,textarea,label,summary,.dd,[role=button],[role=checkbox],[role=radio],[role=switch],'
+  + '[role=slider],[role=tab],[role=option],[role=link],[role=menuitem],[contenteditable=""],[contenteditable="true"],[tabindex]:not([tabindex="-1"])';
+/** The interactive element at uv (x, y down) on a quad's texture, or null (background, title, text). */
+export function controlAt(map, x, y) {
+  const root = map?.dom; const el = map?.elementAt?.(x, y);
+  if (!root || !el) return null;
+  for (let n = el; n && n !== root; n = n.parentElement) if (n.matches?.(CONTROL_SEL) || typeof n.onclick === 'function') return n;
+  // a pointer cursor that STARTS at some ancestor (cursor inherits: the topmost element still showing it is the control)
+  let top = null;
+  for (let n = el; n && n !== root; n = n.parentElement) { if (getComputedStyle(n).cursor === 'pointer') top = n; else if (top) break; }
+  return top;
+}
+const _wn = new THREE.Vector3();
+/** What the ray is on, among the shown quads: {dist, point, normal (world, facing the ray's side), mesh, id, control}
+ *  or null. `control` is the element under the hit when it is interactive (controlAt), else null. */
+export function domQuadsAt(handRay) {
+  if (!quads || !shown) return null;
+  aim(handRay);
+  const hit = _rc.intersectObjects(quads.filter((q) => q.mesh?.visible).map((q) => q.mesh), false)[0];
+  if (!hit) return null;
+  const normal = hit.face ? _wn.copy(hit.face.normal).transformDirection(hit.object.matrixWorld).clone() : new THREE.Vector3(0, 0, 1);
+  if (normal.dot(_rc.ray.direction) > 0) normal.negate();
+  const control = hit.uv ? controlAt(hit.object.material.map, hit.uv.x, 1 - hit.uv.y) : null;
+  return { dist: hit.distance, point: hit.point, normal, mesh: hit.object, id: quads.find((q) => q.mesh === hit.object)?.id ?? null, control };
+}
+
 /** Scroll the panel under the ray by dy CSS px (right stick Y while the laser is on a quad). */
 export function domQuadsScroll(handRay, dy) {
   if (!quads || !shown) return false;

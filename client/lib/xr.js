@@ -28,7 +28,7 @@ import { CONFIG, report, bus, tee, wornNameOf } from './base.js';
 import { frameDebug } from './frame.js';
 import { resetFingers, xrBodyDebug } from './xrbody.js';
 import { stroke, fillPath } from './icons.js';
-import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsPress, xrPanelsDrag, xrPanelsReleasePress, showXRPanel, xrPanelHas, xrPanelOpen, xrPanelsGrab, xrPanelRelease, xrPanelsShown } from './xrpanels.js';
+import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsAt, xrPanelsPress, xrPanelsDrag, xrPanelsReleasePress, showXRPanel, xrPanelHas, xrPanelOpen, xrPanelsGrab, xrPanelRelease, xrPanelsShown } from './xrpanels.js';
 import { domQuadsScroll } from './domquad.js';
 import { myState, xrIntent, camYaw, setCamYaw, setXrProbe } from './controller.js';
 import { ringEmoteEntries } from './emotebar.js';
@@ -40,7 +40,7 @@ import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, ea
 import { markActive } from './presence.js';
 import { setReveal } from './namereveal.js';
 import { platePick, aimPlate } from './platecard.js';
-import { LASER_DEFAULT, laserVisible, looksAtWorld, smoothPose } from './xrpointer.js';   // the laser's policy: when it is drawn, how it follows the hand, how it holds a target   // VR hover: a laser resting on a nameplate opens its card
+import { LASER_DEFAULT, laserVisible, looksAtWorld, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy: when it is drawn, how it follows the hand, how it holds a target   // VR hover: a laser resting on a nameplate opens its card
 import { dockPins } from './ui.js';
 import { xrScales, toRigLocal } from './bodyscale.js';   // the chosen size composes with the device fit (rig = u, body = u/k)
 import { perf } from './perf.js';
@@ -407,6 +407,44 @@ function rayHitEntity(handRay, far = 24) {
   return n ? { id: n.userData.entityId, dist: hit.distance, point: hit.point } : null;
 }
 
+
+// ---- stickiness (xrpointer.js §3) ------------------------------------------------------------------------------
+// Per hand, the target the laser HOLDS: a panel control or a nameplate, kept as a point LOCAL to the thing it is on
+// (the quad, the plate's sprite, the card's quad), so a panel that moves or a person who walks carries the point along.
+// Each frame the unbent aim is tested; stickStep decides hold / switch / let go, and while it holds, the ray every pick
+// and the beam use is BENT from the hand to that point. A press in progress or a panel in this hand: no bending —
+// the press clicks what it pressed whatever the ray does (domquad.js), and a held panel rides the hand.
+const sticky = { left: null, right: null };   // {kind: 'panel'|'plate', key, obj, local: Vector3}
+const pickState = { left: { bent: false, kind: null }, right: { bent: false, kind: null } };   // probe window
+const bentRay = { left: { matrixWorld: new THREE.Matrix4() }, right: { matrixWorld: new THREE.Matrix4() } };
+const _sp = new THREE.Vector3(), _so = new THREE.Vector3(), _sd = new THREE.Vector3();
+const stickAlive = (h) => !!h.obj?.parent && h.obj.visible && (h.obj.material?.opacity ?? 1) >= 0.1 && !h.obj.userData?.occluded
+  && (typeof h.key === 'string' || h.key?.isConnected !== false);
+/** What a ray is on: the panel (claims first; {dist, point, normal, mesh, control}) or a plate ({id, dist, obj}) that
+ *  nothing in the world stands in front of — the beam stops at the first thing. */
+function rayTargets(ray, eye) {
+  const panel = xrPanelsAt(ray);
+  const seen = panel == null ? platePick(ray, eye) : null;
+  return { panel, plate: seen && !rayHitEntity(ray, seen.dist) ? seen : null };
+}
+function stickTo(side, aim, eye, hold) {
+  const raw = rayTargets(aim, eye);
+  const o = _so.setFromMatrixPosition(aim.matrixWorld), dir = _sd.set(0, 0, -1).transformDirection(aim.matrixWorld);
+  let now = null;
+  if (raw.panel?.control) now = { kind: 'panel', key: raw.panel.control, obj: raw.panel.mesh, point: raw.panel.point };
+  else if (raw.plate?.obj) now = { kind: 'plate', key: `plate:${raw.plate.id}`, obj: raw.plate.obj, point: o.clone().addScaledVector(dir, raw.plate.dist) };
+  const keep = (t) => t && { kind: t.kind, key: t.key, obj: t.obj, local: t.obj.worldToLocal(t.point.clone()) };
+  const ps = pickState[side];
+  if (!hold) { sticky[side] = keep(now); ps.bent = false; ps.kind = now?.kind ?? null; return { ray: aim, ...raw }; }
+  const held = sticky[side];
+  const angle = held && stickAlive(held) ? angleTo(o, dir, held.obj.localToWorld(_sp.copy(held.local))) : NaN;
+  const step = stickStep(held, now, angle);
+  sticky[side] = step.held === now ? keep(now) : step.held;
+  ps.bent = step.bend; ps.kind = sticky[side]?.kind ?? null;
+  if (!step.bend) return { ray: aim, ...raw };
+  const ray = bentRay[side]; rayMatrixTo(ray.matrixWorld, o, _sp);   // _sp: the held point, world
+  return { ray, ...rayTargets(ray, eye) };
+}
 
 // ---- panel grab: grip+trigger chord takes a QUAD to reposition it -----------
 // World-object grabbing lived here too (near-grab, far-grab, the place verb + undo) and was removed
@@ -822,6 +860,7 @@ async function enterVR({ retryOf = null } = {}) {
       selfFirstPerson(false);
       { const av = getSelf(), v = av?.vrm; if (v) { if (av.setPuppetScale) av.setPuppetScale(1); else v.scene.scale.setScalar(1); v.scene.position.set(0, 0, 0); v.scene.updateMatrixWorld(true); if (v.userData) { v.userData.ankleH = null; v.userData._gait = null; } } }   // the puppet scale AND the eye-anchor offset (xrbody writes vrm.scene.position every presenting frame; left in place it sank the feet on the desktop — owner 09-08 00:38) are presenting things
       releaseGrab();      // a gripped panel goes back to the rig BEFORE the quads are disposed, or a dead mesh stays in the rig
+      sticky.left = sticky.right = null;
       for (const h of [hands.left, hands.right]) if (h) { h.laser.visible = false; h.laser.removeFromParent(); h.smooth.init = false; }   // the beams live in the scene while presenting; the aim snaps on the next entry
       { const t = performance.now(); xrPanelsExit(rig); tee(`[xr] panels exit ${(performance.now() - t).toFixed(1)} ms`); }
       rig.remove(camera);
@@ -1200,18 +1239,18 @@ export function updateXR(dtSec = 1 / 72) {
     const eye = renderer.xr.getCamera();
     for (const side of ['right', 'left']) {
       const G = side === 'right' ? R : L; const hand = hands[side];
-      if (!G || !hand) { panelPress[side] = null; if (hand) hand.laser.visible = false; continue; }   // a controller dropped mid-press: forget it (P3)
+      if (!G || !hand) { panelPress[side] = null; sticky[side] = null; if (hand) hand.laser.visible = false; continue; }   // a controller dropped mid-press: forget it (P3)
       const grip = !!G.buttons[1]?.pressed, trig = !!G.buttons[0]?.pressed;
-      // the ray every pick below uses, and the beam is drawn along: the controller's, low-passed (xrpointer.js)
-      const ray = steerAim(hand, dtSec ?? 1 / 72);
+      // the ray every pick below uses, and the beam is drawn along: the controller's, low-passed (xrpointer.js), then
+      // bent onto the target it holds while the hand drifts a little off it (stickTo)
+      const aim = steerAim(hand, dtSec ?? 1 / 72);
       // the laser also shows, with no button held, while it rests on a panel (Resonite's always-there pointer): that is
       // what makes the panel under it scrollable with the stick, and shows where a trigger will land
       // …or on a nameplate: resting there is VR's hover (platecard.js opens the card). Panels claim the laser first.
-      const panelNow = xrPanelsPick(ray, false);
-      // a plate counts only if nothing in the world is nearer along the same laser (the beam stops at the first thing) —
+      // A plate counts only if nothing in the world is nearer along the same laser (the beam stops at the first thing) —
       // decided HERE, before the trust gate below, so the first 700 ms after a controller wakes obey it too (review 10-02)
-      const seen = panelNow == null ? platePick(ray, eye) : null;
-      const plate = seen && !rayHitEntity(ray, seen.dist) ? seen : null;
+      const { ray, panel: panelAt, plate } = stickTo(side, aim, eye, !panelPress[side] && held?.hand !== side);
+      const panelNow = panelAt?.dist ?? null;
       aimPlate(side, plate?.id);
       // Settings › VR › pointer laser (owner, 10-02): whether the BEAM is drawn. Everything below — the click, the plate
       // hover above, the stick scroll — runs either way: 'never' hides the beam, it does not stop the pointing.
@@ -1425,6 +1464,15 @@ export async function initXR() {
   }
   setXrProbe(() => presenting);
 }
+
+/** harness window: the pointer, per hand — the beam as drawn, what the laser holds, whether the ray is bent onto it */
+export const xrPointerDebug = () => Object.fromEntries(['left', 'right'].map((side) => {
+  const h = hands[side], st = sticky[side];
+  return [side, h && { laser: { visible: h.laser.visible, len: +h.laser.scale.z.toFixed(4), opacity: +h.laser.userData.opacity.value.toFixed(2), inScene: h.laser.parent === scene },
+    held: st && { kind: st.kind, key: typeof st.key === 'string' ? st.key : `${st.key?.tagName?.toLowerCase()}${st.key?.id ? '#' + st.key.id : ''}` },
+    heldEl: st?.kind === 'panel' && typeof st.key !== 'string' ? st.key : null,
+    bent: pickState[side].bent, mode: xrPrefs.laser }];
+}));
 
 /** harness window */
 export const xrDebug = () => {

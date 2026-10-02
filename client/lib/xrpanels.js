@@ -12,7 +12,7 @@ import { THREE, renderer } from './core.js';
 import { quadMaterial } from './quadcolour.js';
 import { bus } from './base.js';
 import { renderCanvas, hitRegion } from './panels.js';
-import { domQuadsEnabled, domQuadsEnter, domQuadsExit, domQuadsPick, domQuadsPress, domQuadsDrag, domQuadsRelease, domQuadsSetShown, domQuadsShown, domQuadShow, domQuadOpen, domQuadsGrab, domQuadRelease } from './domquad.js';   // the REAL frames on quads (default); ?canvasquads=1 keeps these canvases
+import { domQuadsEnabled, domQuadsEnter, domQuadsExit, domQuadsPick, domQuadsPress, domQuadsDrag, domQuadsRelease, domQuadsSetShown, domQuadsShown, domQuadShow, domQuadOpen, domQuadsGrab, domQuadRelease, domQuadsAt } from './domquad.js';   // the REAL frames on quads (default); ?canvasquads=1 keeps these canvases
 
 const PX_PER_M = 900;              // canvas pixels per world metre of quad
 const W = 0.58;                    // quad width, metres — an arm's-length read
@@ -141,6 +141,26 @@ export function xrPanelsPick(handRay, click = false) {
     if (r) { p.def.dispatch(r.action, r.payload); repaintAll(); }
   }
   return hit.distance;
+}
+
+/** What the laser is on: {dist, point, normal, mesh, id, control} or null — `control` is the interactive thing under the
+ *  hit (an element on the DOM quads; a hit region's key on the canvas quads), or null on background. The stickiness
+ *  holds the laser on a control; a grip on one does not grab. */
+export function xrPanelsAt(handRay) {
+  if (domQuadsEnabled()) return domQuadsAt(handRay);
+  if (!panels || !shown) return null;
+  _m.identity().extractRotation(handRay.matrixWorld);
+  _rc.ray.origin.setFromMatrixPosition(handRay.matrixWorld);
+  _rc.ray.direction.set(0, 0, -1).applyMatrix4(_m);
+  _rc.far = 3;
+  const hit = _rc.intersectObjects(panels.filter((p) => p.mesh.visible).map((p) => p.mesh), false)[0];
+  if (!hit) return null;
+  const p = panels.find((q) => q.mesh === hit.object);
+  const r = hit.uv ? hitRegion(p.regions, p.canvas, hit.uv.x, 1 - hit.uv.y) : null;
+  const normal = new THREE.Vector3(0, 0, 1).applyQuaternion(hit.object.getWorldQuaternion(new THREE.Quaternion()));
+  if (normal.dot(_rc.ray.direction) > 0) normal.negate();
+  // a region object is rebuilt on every repaint: its KEY (panel, action, payload) is what stays the same frame to frame
+  return { dist: hit.distance, point: hit.point, normal, mesh: hit.object, id: p.def.id, control: r ? `${p.def.id}:${r.action}:${JSON.stringify(r.payload ?? null)}` : null };
 }
 
 /** Trigger down: {dist, press} or null. On the DOM quads a press on a non-interactive spot becomes drag-to-scroll

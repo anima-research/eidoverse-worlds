@@ -9,6 +9,10 @@
 //      shake the beam's far end (a 0.3° tremor is 1.5 cm at 3 m: a whole row of a panel). Frame-rate independent:
 //      alpha = 1 − exp(−dt/τ), the same smoothing at 72, 90 or 120 Hz. Done in the RIG's space (the tracking space),
 //      so walking and turning never lag the beam; only the hand's own motion is filtered.
+//   3. HOW IT HOLDS A TARGET (stickiness, with hysteresis) — once the ray is ON a clickable panel control or a
+//      nameplate, it stays on it while the hand drifts a small angle off; getting ON still needs the ray (plus the
+//      plate's small get-on slack) to actually hit it. Easier to stay on than to get on. While held, the ray is BENT to
+//      the last point it had on the target, so the beam visibly stays there and a trigger lands there.
 import * as THREE from 'three';
 
 // ---- 1. the setting -------------------------------------------------------------------------------------------
@@ -47,4 +51,35 @@ export function smoothPose(out, to, dt, st, tau = POINTER_TAU) {
   const a = smoothAlpha(dt, tau);
   out.position.lerp(to.position, a); out.quaternion.slerp(to.quaternion, a);
   return a;
+}
+
+// ---- 3. stickiness ----------------------------------------------------------------------------------------------
+// One table, both kinds of target. GET ON: a panel control needs the ray on it; a nameplate gets PLATE_GETON_RAD of
+// slack around its pill (platecard.platePick, which used to carry a flat 3 cm — generous up close and stingy far
+// away, where tremor is angular; 0.01 rad is that same 3 cm at 3 m). STAY ON: while held, the target keeps the ray
+// until it is STICK_STAY_RAD off the last point it had ON the target (the plate's slack included) — so the two do not
+// stack blindly: the slack decides getting on, the stay margin is measured from where you last were on.
+// YIELD: another control or plate under the ray takes over only past STICK_YIELD_RAD, so tremor on the seam between
+// two neighbouring buttons does not flicker between them, but moving on to the next button is never held back by
+// more than a fraction of a degree.
+export const PLATE_GETON_RAD = 0.01;      // ≈0.57°
+export const STICK_STAY_RAD = 0.025;      // ≈1.4° — 2 cm at arm's length (0.8 m), 7.5 cm at 3 m
+export const STICK_YIELD_RAD = 0.008;     // ≈0.46°
+/** The held target for the next frame. `held` / `raw`: {key, …} or null (raw = what the unbent ray is on now);
+ *  `angle`: radians between the unbent ray and the held target's last point (NaN when there is none, or the held
+ *  target has gone). → { held, bend }: bend = draw and pick toward held's point instead of along the ray. */
+export function stickStep(held, raw, angle) {
+  if (raw && held && raw.key === held.key) return { held: raw, bend: false };   // on it: its point follows the ray
+  if (held && Number.isFinite(angle) && angle <= (raw ? STICK_YIELD_RAD : STICK_STAY_RAD)) return { held, bend: true };
+  return { held: raw ?? null, bend: false };
+}
+
+const _d = new THREE.Vector3(), _q = new THREE.Quaternion(), _one = new THREE.Vector3(1, 1, 1), _fwd = new THREE.Vector3(0, 0, -1);
+/** Angle (rad) between the ray (origin, unit dir) and the direction to `point`. */
+export const angleTo = (origin, dir, point) => { _d.subVectors(point, origin); return _d.lengthSq() < 1e-12 ? 0 : dir.angleTo(_d); };
+/** A ray matrix from `origin` looking at `point` (−Z forward, the controllers' convention). Writes `out`. */
+export function rayMatrixTo(out, origin, point) {
+  _d.subVectors(point, origin).normalize();
+  _q.setFromUnitVectors(_fwd, _d);
+  return out.compose(origin, _q, _one);
 }
