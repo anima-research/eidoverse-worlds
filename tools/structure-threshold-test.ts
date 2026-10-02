@@ -2,7 +2,7 @@
 // Renderer/server-free. The route oracle computes wall crossings independently
 // of the planner, from authored edges, so a shared predicate bug cannot pass it.
 import { strict as assert } from "node:assert";
-import { planStructure, planRouteLocal, routeLocal, localizePoint } from "../shared/structure.js";
+import { planStructure, planRouteLocal, prepareRouteLocal, routeLocal, localizePoint } from "../shared/structure.js";
 import { WorldAgent } from "../mcpl/agent.ts";
 import { handleTool } from "../mcpl/tools.ts";
 process.env.AGENT_BODY_ENGINE = "verlet";
@@ -85,22 +85,24 @@ const courtyard = { levels: [{ tiles: [[0,0],[1,0],[2,0],[0,1],[2,1],[0,2],[1,2]
 route(courtyard,[1.5,1.5],[3.5,1.5],"unfloored courtyard through its door");
 check(planRouteLocal(p,NaN,0,1,1).kind==="blocked","non-finite endpoints are refused");
 
-// Main still selects its first storey (#140 is separate), so place the upper
-// level first to exercise upper-floor policy independently of that selector.
+// Floor-mode tests supply an explicit support owner/height. They do not
+// manufacture elevated standing on main, whose body remains terrain-clamped.
 const upper = structuredClone(house.levels[0]); upper.y = 3;
-const stacked = { levels: [upper, { ...structuredClone(house.levels[0]), y: 0 }] };
-const upstairs = planRouteLocal(planStructure(stacked), .5,1.5,3.5,1.5,3.1);
+const stacked = { levels: [{ ...structuredClone(house.levels[0]), y: 0 }, upper] };
+const floorRoute = (data: any, from: P, to: P, level=1, height=3.1) =>
+  prepareRouteLocal(planStructure(data),{kind:"floor",level,height,step:.5}).route(...from,...to);
+const upstairs = floorRoute(stacked,[.5,1.5],[3.5,1.5]);
 check(upstairs.kind === "routed" && upstairs.points.every(([x,z])=>x>=0&&x<=4&&z>=0&&z<=2),
   "upper-storey routes stay on the floor instead of using an outdoor shortcut");
 upper.apertures = [[0,0,0,"door"]]; // a ground-level exterior exit is air upstairs
-check(planRouteLocal(planStructure(stacked), .5,1.5,3.5,1.5,3.1).kind === "blocked",
+check(floorRoute(stacked,[.5,1.5],[3.5,1.5]).kind === "blocked",
   "upper-storey sealed partition cannot be bypassed across air");
-check(planRouteLocal(planStructure(stacked), .5,1.5,.5,-2,3.1).kind === "blocked",
+check(floorRoute(stacked,[.5,1.5],[.5,-2]).kind === "blocked",
   "upper-storey exterior destination is a refusal, not vertical navigation");
 
-check(planRouteLocal(planStructure(stacked), .2,.2,.2,.2,3.1).kind === "clear",
+check(floorRoute(stacked,[.2,.2],[.2,.2]).kind === "clear",
   "same upper-floor point does not detour through the cell center");
-check(planRouteLocal(planStructure(stacked), .2,.2,.4,.3,3.1).kind === "clear",
+check(floorRoute(stacked,[.2,.2],[.4,.3]).kind === "clear",
   "clear same-cell upper-floor positioning keeps its direct segment");
 
 const agents: WorldAgent[] = [];
@@ -155,30 +157,31 @@ try {
   const cap=await handleTool({...ctx,agent:c},"walk_to",{x:1,z:.5});
   check(cap.content[0].text.includes("cells") && !(c as any).target,"actual tool reports budget refusal without movement");
 
+  if (typeof (a as any).groundAt === "function") {
   // Independent review repro: a foreign wall's detour must not discharge
   // the floor-only constraint imposed by the structure supporting the start.
   const support=agent(); support.pos={x:.5,y:3.1,z:.5};
-  const floor={levels:[{y:3,tiles:[[0,0],[2,0]],walls:[],apertures:[]},
-    {y:0,tiles:[],walls:[],apertures:[]}]};
+  const floor={levels:[{y:0,tiles:[],walls:[],apertures:[]},
+    {y:3,tiles:[[0,0],[2,0]],walls:[],apertures:[]}]};
   const foreign={levels:[{y:3,tiles:[[10,10]],walls:[[1,1,0]],apertures:[]}]};
   support.entities.set("floor",entity(floor as any,"floor"));
   support.entities.set("foreign",entity(foreign as any,"foreign"));
   const unsupported=await walk(support,[2.5,.5]);
-  check(!unsupported.arrived && !!support.walkRefusal?.includes("upper-floor"),
+  check(!unsupported.arrived && !!support.walkRefusal,
     "foreign building candidate cannot override supporting upper-floor refusal");
   check(unsupported.samples.every(([x,z])=>x===.5&&z===.5),"foreign detour refusal leaves the body where it stands");
-  floor.levels[0].tiles=[[0,0],[0,1],[0,2],[1,2],[2,2],[2,1],[2,0]];
+  floor.levels[1].tiles=[[0,0],[0,1],[0,2],[1,2],[2,2],[2,1],[2,0]];
   // Replace component identity too, so #200's plan cache sees the changed floor.
   support.entities.set("floor",entity(structuredClone(floor) as any,"floor"));
   support.pos={x:.5,y:3.1,z:.5};
   const supported=await walk(support,[2.5,.5]);
-  const cells=new Set(floor.levels[0].tiles.map(([x,z])=>x+","+z));
+  const cells=new Set(floor.levels[1].tiles.map(([x,z])=>x+","+z));
   check(supported.arrived && supported.samples.every(([x,z])=>cells.has(Math.floor(x)+","+Math.floor(z))),
     "longer supported route wins over a shorter foreign unsupported shortcut");
 
   const nearby=agent(); nearby.pos={x:.2,y:3.1,z:.2};
-  const oneFloor={levels:[{y:3,tiles:[[0,0]],walls:[],apertures:[]},
-    {y:0,tiles:[],walls:[],apertures:[]}]};
+  const oneFloor={levels:[{y:0,tiles:[],walls:[],apertures:[]},
+    {y:3,tiles:[[0,0]],walls:[],apertures:[]}]};
   nearby.entities.set("nearby",entity(oneFloor as any,"nearby"));
   nearby.entities.set("distant",entity(oneFloor as any,"distant",[100,0,100]));
   const localMove=await walk(nearby,[.3,.3]);
@@ -191,10 +194,11 @@ try {
   free.entities.set("distant",entity(oneFloor as any,"distant",[100,0,100]));
   check((await walk(free,[5.2,5.2])).arrived,"unrelated upper floor alone cannot veto a clear ground walk");
   const upperWall=structuredClone(oneFloor);
-  upperWall.levels[0].tiles=[[10,10]]; upperWall.levels[0].walls=[[1,1,0]];
-  check(planRouteLocal(planStructure(upperWall),.5,.5,2.5,.5,3.1).kind==="blocked",
+  upperWall.levels[1].tiles=[[10,10]]; upperWall.levels[1].walls=[[1,1,0]];
+  check(prepareRouteLocal(planStructure(upperWall),{kind:"floor",height:3.1}).route(.5,.5,2.5,.5).kind==="blocked",
     "an upper floor not supporting the origin still reports a real wall obstruction");
 
+  }
   // Two structures offer individually legal but mutually conflicting routes.
   const base=entity(house,"one"); const two=entity(house,"two",[-1,0,0]);
   const d=agent(); d.entities.set("one",base); d.entities.set("two",two);

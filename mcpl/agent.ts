@@ -52,7 +52,7 @@ import { describeParticles, emitterTransition, transitionLine } from "../shared/
 import { describePicture } from "../shared/picture.js";
 import { describeCaptions } from "../shared/captions.js";
 import { describeSound } from "../shared/sound.js";
-import { describeStructure, describeHere, localizePoint, planStructure, planRouteLocal, routeSegmentClear } from "../shared/structure.js";
+import { describeStructure, describeHere, localizePoint, planStructure, prepareRouteLocal, ROUTE_STEP_METRES } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
 
@@ -149,6 +149,9 @@ const fillOf = (t: { area: number; x: number[]; z: number[] }) => {
  *  pre-#17 answer. The alternative is inventing geometry, and a body resting
  *  in a palm canopy is exactly the bug this PR exists to end. */
 const DECK_FILL = 0.45;
+
+type WalkSupport = { kind: "terrain"; height: number } |
+  { kind: "floor"; height: number; entity: string; level: number };
 
 // A canned "knocked over" pose for headless agents, which cannot simulate.
 /** One bone of a held pose: a rotation, or {q, t, s} (shared/humanoid.js poseChannels). */
@@ -2458,6 +2461,13 @@ export class WorldAgent {
     ].join("\n");
   }
 
+  /** Main's standing capability is terrain-only. The separate storey-standing
+   * implementation supplies an identified floor here when it actually holds
+   * the feet on that floor; the router never manufactures that capability. */
+  private walkSupport(x = this.pos.x, z = this.pos.z, yHint = this.pos.y): WalkSupport {
+    return { kind: "terrain", height: this.heightAt(x, z) };
+  }
+
   walkTo(x: number, z: number, run = false, timeoutMs = 90_000, tolerance = ARRIVE): Promise<boolean> {
     if (![x, z, tolerance].every(Number.isFinite) || tolerance < 0 || tolerance > 0.4) return Promise.resolve(false);
     this.walkDone?.(false); // cancel a previous walk
@@ -2489,11 +2499,14 @@ export class WorldAgent {
     // glues this body to its socket on every renderer, wherever the feet go
     if (this.joined && this.mounts.has(this.name)) this.verb("dismount", { id: this.name });
     // and stand on the ground you got up onto
-    this.pos.y = this.heightAt(this.pos.x, this.pos.z);
+    const support = this.walkSupport();
+    const terrainForWalk = this.terrain;
+    const terrainHeight = (x: number, z: number) => terrainForWalk ? terrainForWalk.heightAt(x,z) : 0;
+    this.pos.y = support.height;
     // Each local planner may offer a route around/through its building.
     // Validate the offered polyline against EVERY known structure before
     // accepting one. This is local planning, not global multi-building search.
-    const constraints: { id: string; plan: ReturnType<typeof planStructure>; e: Entity; y: number; confined: boolean }[] = [];
+    const constraints: { id: string; e: Entity; route: ReturnType<typeof prepareRouteLocal> }[] = [];
     const candidates: { points: Vec2[]; length: number; id: string; owner: Entity }[] = [];
     const refusals: string[] = [];
     for (const e of this.entities.values()) {
@@ -2501,18 +2514,30 @@ export class WorldAgent {
       if (!data) continue;
       try {
         const plan = planStructure(data);
-        const [ax, ay, az] = localizePoint(e, this.pos.x, this.pos.y, this.pos.z);
+        const yaw = Number.isFinite(e.yaw) ? e.yaw : 0;
+        const sc = Number.isFinite(e.scale) && e.scale > 0 ? e.scale : 1;
+        const [px, py, pz] = Array.isArray(e.pos) ? e.pos : [0, 0, 0];
+        const c = Math.cos(yaw), n = Math.sin(yaw);
+        const worldXZ = (lx: number, lz: number) => [px + (lx*c+lz*n)*sc, pz + (-lx*n+lz*c)*sc];
+        const basis = support.kind === "terrain" ? {
+          kind: "terrain", step: ROUTE_STEP_METRES/sc,
+          heightAt: (lx: number, lz: number) => {
+            const [wx,wz] = worldXZ(lx,lz);
+            return (terrainHeight(wx,wz)-py)/sc;
+          },
+        } : {
+          kind: "floor", step: ROUTE_STEP_METRES/sc, height: (support.height-py)/sc,
+          ...(support.entity === e.id ? { level: support.level } : {}),
+        };
+        const route = prepareRouteLocal(plan,basis);
+        const [ax, , az] = localizePoint(e, this.pos.x, this.pos.y, this.pos.z);
         const [bx, , bz] = localizePoint(e, x, this.pos.y, z);
-        const result = planRouteLocal(plan, ax, az, bx, bz, ay);
-        constraints.push({ id: e.id, plan, e, y: ay, confined: result.confined === true });
+        constraints.push({ id: e.id, e, route });
+        const result = route.route(ax,az,bx,bz);
         if (result.kind === "blocked") {
           refusals.push("[" + e.id + "]: " + result.reason); continue;
         }
         if (result.kind === "clear") continue;
-        const yaw = Number.isFinite(e.yaw) ? e.yaw : 0;
-        const sc = Number.isFinite(e.scale) && e.scale > 0 ? e.scale : 1;
-        const [px, , pz] = Array.isArray(e.pos) ? e.pos : [0, 0, 0];
-        const c = Math.cos(yaw), n = Math.sin(yaw);
         const points = result.points.map(([lx, lz]) => ({
           x: px + (lx * c + lz * n) * sc,
           z: pz + (-lx * n + lz * c) * sc,
@@ -2531,17 +2556,17 @@ export class WorldAgent {
       // Supporting upper floors constrain the route, not just the walls.
       // Cross-building floor composition is outside this local planner: keep
       // the supporting structure's own validated path or explicitly refuse.
-      const valid = constraints.every(({ plan, e, y, confined }) => (!confined || candidate.owner === e) && candidate.points.slice(1).every((p, i) => {
+      const valid = constraints.every(({ e, route }) => (!route.confined || candidate.owner === e) && candidate.points.slice(1).every((p, i) => {
         const a = candidate.points[i];
         const [ax, , az] = localizePoint(e, a.x, this.pos.y, a.z);
         const [bx, , bz] = localizePoint(e, p.x, this.pos.y, p.z);
-        return routeSegmentClear(plan, ax, az, bx, bz, y);
+        return route.clear(ax, az, bx, bz);
       }));
       if (valid) { selected = candidate.points; break; }
     }
     if (!selected && (candidates.length || refusals.length)) {
       this.walkRefusal = candidates.length
-        ? (constraints.some(c => c.confined)
+        ? (constraints.some(c => c.route.confined)
           ? "no local route preserves the supporting upper-floor path (multi-building floor composition is unavailable)"
           : "no local route is clear of all structures (multi-building route search is unavailable)")
         : "no route: " + refusals.join("; ");

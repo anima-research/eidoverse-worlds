@@ -1,4 +1,5 @@
-import { routeLevel, clearLevelSegment } from './structure-route.js';
+import { routeLevel, prepareWallCheck, ROUTE_STEP_METRES } from './structure-route.js';
+export { ROUTE_STEP_METRES };
 // structure_field — the griddled-building model's pure half (§11.4 discipline,
 // sibling of models_field.js / flora_field.js / emitter_field.js).
 //
@@ -1055,41 +1056,58 @@ export function routeCells(level, fromKey, toKey) {
   return null;
 }
 
-/** Select the same routing storey for planning and segment validation.
- * Storey/standing-height resolution is the separate #140 contract. */
-function routingLevel(plan, fromX, fromZ, y) {
-  return plan.levels.find((L) => L.rooms.length) ?? plan.levels[0];
+/** Prepare one structure against a supplied walking basis. The standing
+ * resolver, not floor ordering or x/z overlap, owns that basis:
+ * terrain {heightAt(localX,localZ), step?}; floor {height, level?, step?}.
+ * A floor's level index identifies THIS structure as the support owner;
+ * omit it on other structures, which can constrain walls but offer no support.
+ * step is the feet-to-step obstruction band in local metres, not a grant of
+ * floor ownership. Callers scale ROUTE_STEP_METRES from world metres. */
+export function prepareRouteLocal(plan, basis) {
+  // Freeze the chosen mode/identity and function reference for this walk.
+  // A caller cannot change a floor into terrain halfway through validation.
+  basis = basis ? { ...basis } : basis;
+  const blocked = reason => ({ kind: 'blocked', reason, points: [], confined: basis?.kind === 'floor' && basis.level != null });
+  if (!basis || !['terrain','floor'].includes(basis.kind))
+    return { route: () => blocked('walking support basis is required'), clear: () => false, confined: false };
+  let clear;
+  try { clear = prepareWallCheck(plan,basis); }
+  catch (e) { return { route: () => blocked(String(e.message)), clear: () => false, confined: false }; }
+  const confined = basis.kind === 'floor' && basis.level != null;
+  // Terrain navigation includes the authored geometry's whole local bounds.
+  // Levels contribute split-cell topology, never a support claim.
+  const union = { tiles: new Map(), walls: new Map(), apertures: new Map(), halves: new Map() };
+  if (basis.kind === 'terrain') for (const lv of plan.levels) {
+    for (const [k,v] of lv.level.tiles) union.tiles.set(k,v);
+    for (const [k,v] of lv.level.walls) union.walls.set(k,v);
+  }
+  return {
+    confined,
+    clear: (ax,az,bx,bz) => clear([ax,az],[bx,bz]),
+    route(fromX,fromZ,toX,toZ) {
+      const from=[fromX,fromZ], to=[toX,toZ];
+      if (![...from,...to].every(Number.isFinite)) return blocked('non-finite endpoint');
+      if (basis.kind === 'terrain') return { ...routeLevel(union,plan.grid,from,to,true,clear), confined: false };
+      if (!Number.isFinite(basis.height)) return blocked('non-finite floor height');
+      if (!confined) return clear(from,to)
+        ? {kind:'clear',points:[from,to],confined:false}
+        : blocked('another structure obstructs the identified-floor route');
+      const lv=Number.isInteger(basis.level) ? plan.levels[basis.level] : null;
+      if (!lv || Math.abs(lv.y-basis.height)>1e-7)
+        return blocked('identified support floor does not match supplied feet height');
+      return { ...routeLevel(lv.level,plan.grid,from,to,false,clear), confined:true };
+    },
+  };
 }
 
-/** Rich route result: clear, routed, or blocked with a reason. Outdoor cells
- * are navigable on this horizontal plane; the room graph stays floor-only. */
+/** Legacy point-list surface. Numeric y is a flat terrain walking plane, not
+ * evidence of floor support; elevated callers use prepareRouteLocal explicitly. */
 export function planRouteLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
-  if (![fromX, fromZ, toX, toZ].every(Number.isFinite)) return { kind: 'blocked', reason: 'non-finite endpoint', points: [] };
-  const lv = routingLevel(plan, fromX, fromZ, y);
-  if (!lv) return { kind: 'clear', points: [[fromX, fromZ], [toX, toZ]] };
-  const outdoors = lv.y === Math.min(...plan.levels.map(l => l.y));
-  const node = nodeAtPoint(lv.level, plan.grid, fromX, fromZ);
-  const [cell, half] = node.split(':'), [cx, cz] = cell.split(',').map(Number);
-  // A foreign building's detour cannot discharge this floor-support contract.
-  // Only a start actually on this upper floor imposes confinement; an unrelated
-  // upper storey elsewhere in the world does not own the walk.
-  const confined = !outdoors && lv.level.tiles.has(cell) && (!half || halfFloored(lv.level, cx, cz, half));
-  // A distant upper floor does not support this origin. Its walls still
-  // constrain the walk, but absent floor under an unrelated point cannot veto
-  // a clear ground leg or a direct leg on another supporting structure.
-  if (!outdoors && !confined && clearLevelSegment(lv.level, plan.grid, [fromX, fromZ], [toX, toZ]))
-    return { kind: 'clear', points: [[fromX, fromZ], [toX, toZ]], confined: false };
-  return { ...routeLevel(lv.level, plan.grid, [fromX, fromZ], [toX, toZ], outdoors), confined };
+  return prepareRouteLocal(plan,{kind:'terrain',heightAt:()=>y,step:ROUTE_STEP_METRES}).route(fromX,fromZ,toX,toZ);
 }
-
-/** A cheap check of an actual route leg against this structure's walls. */
 export function routeSegmentClear(plan, fromX, fromZ, toX, toZ, y = 0) {
-  const lv = routingLevel(plan, fromX, fromZ, y);
-  return !lv || clearLevelSegment(lv.level, plan.grid, [fromX, fromZ], [toX, toZ]);
+  return prepareRouteLocal(plan,{kind:'terrain',heightAt:()=>y,step:ROUTE_STEP_METRES}).clear(fromX,fromZ,toX,toZ);
 }
-
-/** Compatibility surface for readers that need points rather than refusal
- * details. A null route is blocked, never a validated straight line. */
 export function routeLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
   const result = planRouteLocal(plan, fromX, fromZ, toX, toZ, y);
   return result.kind === 'blocked' ? null : result.points;
