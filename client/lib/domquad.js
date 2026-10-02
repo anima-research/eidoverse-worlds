@@ -213,8 +213,10 @@ export function domQuadsPick(handRay, click = false) {
 // dropdowns and links click on release, so a drag that starts on one scrolls instead of toggling it: the debug panel
 // is mostly checkbox rows and section-head buttons, and pressing to scroll it flipped them (owner 09-27, review P2).
 // Only controls that need the press ITSELF click at once: a slider (it drags its own thumb) and text fields (focus).
-const NEEDS_PRESS = 'input[type=range],[role=slider],input:not([type]),input[type=text],input[type=search],'
-  + 'input[type=number],input[type=password],input[type=email],input[type=url],textarea,[contenteditable=""],[contenteditable="true"]';
+// the text fields (a press focuses them for typing) — also the VR pointer's "type" icon (xr.js targetKind)
+export const TEXT_SEL = 'input:not([type]),input[type=text],input[type=search],input[type=number],input[type=password],input[type=email],input[type=url],'
+  + 'textarea,[contenteditable=""],[contenteditable="true"]';
+const NEEDS_PRESS = 'input[type=range],[role=slider],' + TEXT_SEL;
 const DRAG_PX = 20;   // from the press point, not summed per frame: hand tremor wanders a few px each way (review 09-27, P1)
 function aim(handRay) {
   _m.identity().extractRotation(handRay.matrixWorld);

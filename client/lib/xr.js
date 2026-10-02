@@ -29,13 +29,13 @@ import { frameDebug } from './frame.js';
 import { resetFingers, xrBodyDebug } from './xrbody.js';
 import { stroke, fillPath } from './icons.js';
 import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsAt, xrPanelsPress, xrPanelsDrag, xrPanelsReleasePress, showXRPanel, xrPanelHas, xrPanelOpen, xrPanelsGrab, xrPanelRelease, xrPanelsShown } from './xrpanels.js';
-import { domQuadsScroll, domQuadResizeBegin, domQuadResizeMove, domQuadResizeEnd, domQuadsRevealOnly, domQuadMesh } from './domquad.js';
+import { TEXT_SEL, domQuadsScroll, domQuadResizeBegin, domQuadResizeMove, domQuadResizeEnd, domQuadsRevealOnly, domQuadMesh } from './domquad.js';
 import { myState, xrIntent, camYaw, setCamYaw, setXrProbe } from './controller.js';
 import { ringEmoteEntries } from './emotebar.js';
 import { entities } from './world.js';
 import { flashHint, toast } from './ui.js';
 import { vrMicPreflight } from './vrmic.js';
-import { makePointerLine, makeSurfaceDot, placeSurfaceDot, hideSurfaceDot } from './pointer.js';
+import { makePointerLine, makeSurfaceDot, placeSurfaceDot, hideSurfaceDot, setSurfaceDotKind } from './pointer.js';
 import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, earOn, flipEar } from './mictoggle.js';
 import { markActive } from './presence.js';
 import { setReveal } from './namereveal.js';
@@ -371,9 +371,21 @@ function makeHand(i) {
 const _dotP = new THREE.Vector3(), _dotN = new THREE.Vector3(), _dotO = new THREE.Vector3(), _dotD = new THREE.Vector3(), _eyeP = new THREE.Vector3();
 /** The dot on the hand's target (a panel hit {point, normal}, a plate at `plateDist` along the ray, an entity hit), or
  *  hidden when there is none. Plates are camera-facing sprites: the dot faces the eye there. */
+/** What a press would do on this target — the dot's icon (pointer.js DOT_KINDS). */
+const RESIZE_KIND = { 'resize-e': 'resize-ew', 'resize-w': 'resize-ew', 'resize-s': 'resize-ns', 'resize-nw': 'resize-nwse', 'resize-se': 'resize-nwse', 'resize-ne': 'resize-nesw', 'resize-sw': 'resize-nesw' };
+export function targetKind({ panel = null, plateDist = null, hit = null } = {}) {
+  if (panel) {
+    if (panel.control) return typeof panel.control !== 'string' && panel.control.matches?.(TEXT_SEL) ? 'type' : 'click';
+    if (RESIZE_KIND[panel.zone]) return RESIZE_KIND[panel.zone];
+    return panel.zone === 'move' || !panel.scroll ? 'move' : 'scroll';
+  }
+  if (plateDist != null) return 'dot';   // a nameplate: resting there IS the action (the card)
+  return hit ? 'click' : 'dot';          // an entity: the trigger selects it
+}
 function placeDot(hand, ray, eye, { panel = null, plateDist = null, hit = null } = {}) {
   const dot = hand.dot;
   if (!panel && plateDist == null && !hit) { hideSurfaceDot(dot); return; }
+  setSurfaceDotKind(dot, targetKind({ panel, plateDist, hit }));
   if (dot.parent !== scene) scene.add(dot);
   _eyeP.setFromMatrixPosition(eye.matrixWorld);
   if (panel) placeSurfaceDot(dot, panel.point, panel.normal, _eyeP);
@@ -1499,10 +1511,12 @@ export async function initXR() {
     // off so a parked (stale-matrix) mesh isn't culled out of the compile walk
     // the surface dots too, shown for their compile only (a hidden object is skipped by the compile walk) — the rig is not
     // in the scene before a session, so nothing draws them
-    const dots = [hands.left?.dot, hands.right?.dot].filter(Boolean); for (const d of dots) d.visible = true;
+    // …the dot AND an icon with its texture on (a map changes the shader): every part compiles before the first session
+    const dots = [hands.left?.dot, hands.right?.dot].filter(Boolean);
+    for (const d of dots) { d.visible = true; setSurfaceDotKind(d, 'click'); d.userData.parts.rim.visible = d.userData.parts.core.visible = true; }
     const meshes = []; rig.traverse((o) => { if (o.isMesh) meshes.push(o); });
     try { for (const m of meshes) { m.frustumCulled = false; try { await renderer.compileAsync(m, camera, scene); } catch { /* fine */ } } }
-    finally { for (const d of dots) if (d.parent === rig) d.visible = false; }
+    finally { for (const d of dots) { setSurfaceDotKind(d, 'dot'); if (d.parent === rig) d.visible = false; } }
   }, { p: P_AMBIENT });
 
   { let tries = 0; const iv = setInterval(() => { warmXRPipelines(); if (xrWarmed || ++tries > 240) clearInterval(iv); }, 500); }   // headset present (we are past the support probe): warm once the body is in; gives up after 2 min (a viewer page has no body)   // body arrives seconds after boot; poll until it does
@@ -1549,7 +1563,7 @@ export const xrPointerDebug = () => Object.fromEntries(['left', 'right'].map((si
   const h = hands[side], st = sticky[side];
   return [side, h && { laser: { visible: h.laser.visible, len: +h.laser.scale.z.toFixed(4), opacity: +h.laser.userData.opacity.value.toFixed(2), inScene: h.laser.parent === scene },
     held: st && { kind: st.kind, key: typeof st.key === 'string' ? st.key : `${st.key?.tagName?.toLowerCase()}${st.key?.id ? '#' + st.key.id : ''}` },
-    dot: { visible: h.dot.visible, inScene: h.dot.parent === scene, pos: h.dot.position.toArray().map((v) => +v.toFixed(4)), diam: +h.dot.scale.x.toFixed(5),
+    dot: { visible: h.dot.visible, inScene: h.dot.parent === scene, kind: h.dot.userData.kind, pos: h.dot.position.toArray().map((v) => +v.toFixed(4)), diam: +h.dot.scale.x.toFixed(5),
       normal: [0, 0, 1].map((_, i) => +new THREE.Vector3(0, 0, 1).applyQuaternion(h.dot.quaternion).getComponent(i).toFixed(4)) },
     heldEl: st?.kind === 'panel' && typeof st.key !== 'string' ? st.key : null,
     bent: pickState[side].bent, pointerVisibility: xrPrefs.pointerVisibility,
