@@ -39,7 +39,8 @@ import { makePointerLine } from './pointer.js';
 import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, earOn, flipEar } from './mictoggle.js';
 import { markActive } from './presence.js';
 import { setReveal } from './namereveal.js';
-import { platePick, aimPlate } from './platecard.js';   // VR hover: a laser resting on a nameplate opens its card
+import { platePick, aimPlate } from './platecard.js';
+import { LASER_DEFAULT, laserVisible, looksAtWorld } from './xrpointer.js';   // the laser's policy: when it is drawn, how it follows the hand, how it holds a target   // VR hover: a laser resting on a nameplate opens its card
 import { dockPins } from './ui.js';
 import { xrScales, toRigLocal } from './bodyscale.js';   // the chosen size composes with the device fit (rig = u, body = u/k)
 import { perf } from './perf.js';
@@ -296,8 +297,10 @@ export const isPresenting = () => presenting;
 // ---- VR preferences (Settings › VR; owner, 09-05 18:22). Persisted per browser.
 // turn: 'snap' | 'smooth' · vignette: comfort tunnel on move/turn · mirror:
 // what the desktop window shows while presenting — 'off' | 'first' | 'third'.
+// laser: the pointer laser — 'always' | 'never' | 'contextual' (owner, 10-02; xrpointer.js says what each means).
 const PREF_XR = 'ew-xr-prefs';
-export const xrPrefs = (() => { try { return { turn: 'smooth', vignette: false, mirror: 'first', seated: false, res: 'auto', ...JSON.parse(localStorage.getItem(PREF_XR) || '{}') }; } catch { return { turn: 'smooth', vignette: false, mirror: 'first', seated: false, res: 'auto' }; } })();
+const XR_PREF_DEFAULTS = { turn: 'smooth', vignette: false, mirror: 'first', seated: false, res: 'auto', laser: LASER_DEFAULT };
+export const xrPrefs = (() => { try { return { ...XR_PREF_DEFAULTS, ...JSON.parse(localStorage.getItem(PREF_XR) || '{}') }; } catch { return { ...XR_PREF_DEFAULTS }; } })();
 { const m = new URLSearchParams(location.search).get('mirror'); if (m === 'off' || m === 'first' || m === 'third') xrPrefs.mirror = m; }   // URL override for A/B (the 'pop to origin' hunt, 09-05 21:46)
 // Eye resolution, as WebXR's framebufferScaleFactor: a per-axis scale of the size the runtime recommends. 'auto' (1.0)
 // is that size — SteamVR's resolution slider sets it, and it is deliberately LARGER than the panel because the lens
@@ -1189,7 +1192,9 @@ export function updateXR(dtSec = 1 / 72) {
       const seen = panelNow == null ? platePick(hand.ray, renderer.xr.getCamera()) : null;
       const plate = seen && !rayHitEntity(hand.ray, seen.dist) ? seen : null;
       aimPlate(side, plate?.id);
-      hand.laser.visible = grip || trig || panelNow != null || plate != null;
+      // Settings › VR › pointer laser (owner, 10-02): whether the BEAM is drawn. Everything below — the click, the plate
+      // hover above, the stick scroll — runs either way: 'never' hides the beam, it does not stop the pointing.
+      hand.laser.visible = laserVisible(xrPrefs.laser, { target: panelNow != null || plate != null, grip, trig });
       hand.box.visible = !getSelf()?.vrm;   // a body owns the hands → no test box
       if (!buttonsTrusted()) { triggerWas[side] = trig; continue; }
       if (grip && trig && !held) tryGrab(side);   // panels only
@@ -1211,11 +1216,11 @@ export function updateXR(dtSec = 1 / 72) {
         if (trig && !grip) xrPanelsDrag(hand.ray, panelPress[side]);
         else { xrPanelsReleasePress(panelPress[side], grip); panelPress[side] = null; }
       }
-      if (hand.laser.visible) {
+      {
         const panelDist = xrPanelsPick(hand.ray, false);
-        if (side === 'right' && panelDist != null && !radialOpen && Math.abs(ry) > 0.3) domQuadsScroll(hand.ray, ry * 900 * (dtSec ?? 1 / 72));   // owner 09-07 22:57: stick Y scrolls the panel under the laser
-        const hit = panelDist == null ? rayHitEntity(hand.ray, 40) : null;
+        if (side === 'right' && panelDist != null && !radialOpen && Math.abs(ry) > 0.3) domQuadsScroll(hand.ray, ry * 900 * (dtSec ?? 1 / 72));   // owner 09-07 22:57: stick Y scrolls the panel under the laser (with the beam hidden too)
         const plateDist = panelDist == null && plate ? plate.dist : null;
+        const hit = panelDist == null && plateDist == null && looksAtWorld(xrPrefs.laser, { grip, trig }) ? rayHitEntity(hand.ray, 40) : null;
         // owner 09-07 22:10: short and faint unless it points at something you can act on — porch-old's 1.8 m
         // idle beam; a panel, a nameplate or an entity under the ray draws it out to the hit at full strength
         const target = panelDist ?? plateDist ?? hit?.dist ?? null;
