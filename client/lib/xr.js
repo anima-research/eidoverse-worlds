@@ -28,7 +28,7 @@ import { CONFIG, report, bus, tee, wornNameOf } from './base.js';
 import { frameDebug } from './frame.js';
 import { resetFingers, xrBodyDebug } from './xrbody.js';
 import { stroke, fillPath } from './icons.js';
-import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsAt, xrPanelsPress, xrPanelsDrag, xrPanelsReleasePress, showXRPanel, xrPanelHas, xrPanelOpen, xrPanelsGrab, xrPanelRelease, xrPanelsShown } from './xrpanels.js';
+import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsAt, xrPanelsPress, xrPanelsDrag, xrPanelsReleasePress, showXRPanel, xrPanelHas, xrPanelOpen, xrPanelsGrab, xrPanelRelease, xrPanelsShown, xrPanelsHideToggle, xrPanelsHidden } from './xrpanels.js';
 import { TEXT_SEL, domQuadsScroll, domQuadResizeBegin, domQuadResizeMove, domQuadResizeEnd, domQuadsRevealOnly, domQuadMesh } from './domquad.js';
 import { myState, xrIntent, camYaw, setCamYaw, setXrProbe } from './controller.js';
 import { ringEmoteEntries } from './emotebar.js';
@@ -38,7 +38,6 @@ import { vrMicPreflight } from './vrmic.js';
 import { makePointerLine, makeSurfaceDot, placeSurfaceDot, hideSurfaceDot, setSurfaceDotKind } from './pointer.js';
 import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, earOn, flipEar } from './mictoggle.js';
 import { markActive } from './presence.js';
-import { setReveal } from './namereveal.js';
 import { platePick, aimPlate } from './platecard.js';   // VR hover: a laser resting on a nameplate opens its card
 import { makeDwell } from './dwell.js';
 import { showXRTip, hideXRTip, dropXRTip, tipTextFor } from './xrtip.js';   // a panel control's tooltip, on dwell   // "rested on it for a beat": one mechanism, per hand here
@@ -742,7 +741,7 @@ function aimRadial(x, y) {
     if (best >= 0) haptic('right', 0.15, 10);
   }
 }
-let radialOpen = false, stickPressWas = false;
+let radialOpen = false, stickPressWas = false, menuBtnWas = false;
 const triggerWas = { left: false, right: false }, gripWas = { left: false, right: false };
 const panelPress = { left: null, right: null };   // a trigger press on a panel, pending drag-or-click
 // Buttons are NOT trusted for the first 700 ms after an input source appears: the gamepad's first
@@ -1166,7 +1165,7 @@ let consoleTapped = false, shaderTees = 0;
 let turnMag = 0;                    // |stick-X| while smooth-turning — the vignette reads it
 export const turnMagnitude = () => turnMag;
 export function updateXR(dtSec = 1 / 72) {
-  if (!presenting) { turnMag = 0; setReveal('xr', false); return; }
+  if (!presenting) { turnMag = 0; return; }
   renderCensusTick();
   // EYE WATCH (owner, 09-06 12:22: 'spontaneously each eye becomes extremely fish-eyed; right eye visible in the
   // left'): per frame, not per 5 s — the first sample is the baseline; any eye whose vertical fov moves
@@ -1255,10 +1254,17 @@ export function updateXR(dtSec = 1 / 72) {
     xrIntent.jump = !!L.buttons[4]?.pressed || !!R?.buttons[4]?.pressed;
     if (held?.hand === 'left' && L.buttons[0]?.pressed) xrIntent.fwd = 0;   // trigger + stick on the holding hand reels the panel: that push is not a step
   } else { xrIntent.fwd = 0; xrIntent.strafe = 0; xrIntent.jump = !!R?.buttons[4]?.pressed; }
-  // HOLD B or Y = every name in range, through walls (namereveal.js; the desktop's N). xr-standard button 5 is the one
-  // face button nothing here reads: 0 trigger (point/select/ring), 1 grip (grab/cancel), 3 right-stick click (ring),
-  // 4 A/X (jump). Either hand; a hold, so a brush never latches anything.
-  setReveal('xr', buttonsTrusted() && (!!L?.buttons[5]?.pressed || !!R?.buttons[5]?.pressed));
+  // B or Y = THE QUICK HIDE (owner, 10-02: the face buttons follow VRChat's convention). VRChat opens its menu on the
+  // top face button, B or Y, either hand (docs.vrchat.com/docs/touch "B/Y: Quick Menu", /docs/valve-index "B (top
+  // button): Quick Menu"); our panels are our menu, so B/Y puts every open panel away and the next press brings exactly
+  // those back (xrpanels/domquad quick hide). A press, either hand, on the edge. B/Y held used to show every name;
+  // that is a setting now (Settings › style › always show names; namereveal.js) — the desktop's N hold is unchanged.
+  { const by = !!L?.buttons[5]?.pressed || !!R?.buttons[5]?.pressed;
+    if (by && !menuBtnWas && buttonsTrusted()) {
+      if (held) releaseGrab(); if (resizing) endResize();   // a carried or resizing panel is put down first
+      const hid = xrPanelsHideToggle(); haptic('left', 0.3, 20); haptic('right', 0.3, 20); tee(`[xr] panels ${hid ? 'hidden' : 'shown'} (B/Y)`);
+    }
+    menuBtnWas = by; }
   if (R) {
     const rx = dead(pickAxis(R.axes[2], R.axes[0]));
     const ry = dead(pickAxis(R.axes[3], R.axes[1]));
@@ -1613,7 +1619,7 @@ export const xrDebug = () => {
   const gp = new THREE.Vector3();
   hands.right?.grip.getWorldPosition(gp);
   return { ring,
-    presenting, held: held?.quad?.id ?? null, radialOpen, resizing: resizing ? { hand: resizing.hand, id: resizing.drag.q.id, zone: resizing.drag.z, w: Math.round(resizing.drag.w), h: Math.round(resizing.drag.h) } : null,
+    presenting, held: held?.quad?.id ?? null, radialOpen, panelsHidden: xrPanelsHidden(), resizing: resizing ? { hand: resizing.hand, id: resizing.drag.q.id, zone: resizing.drag.z, w: Math.round(resizing.drag.w), h: Math.round(resizing.drag.h) } : null,
     radialSel: radial?.sel ?? null,
     rigYaw: +rig.rotation.y.toFixed(3),
     laserOn: hands.right?.laser.visible ?? false,

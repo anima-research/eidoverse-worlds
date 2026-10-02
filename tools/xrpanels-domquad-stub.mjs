@@ -14,6 +14,8 @@ export const domQuadShow = rec('domQuadShow');
 export const domQuadOpen = () => false;
 export const domQuadsGrab = rec('domQuadsGrab');
 export const domQuadsAt = () => null;
+export const domQuadsHideToggle = () => false;
+export const domQuadsHidden = () => false;
 export const domQuadRelease = rec('domQuadRelease');
 export const domQuadsDrag = rec('domQuadsDrag');
 export const domQuadsRelease = rec('domQuadsRelease');

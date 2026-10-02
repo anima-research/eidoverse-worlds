@@ -183,7 +183,7 @@ export function domQuadsExit(rig) {
   for (const q of quads) {   // one bad restore must not strand the others (or the session teardown)
     try { if (q.mesh) { q.mesh.removeFromParent(); q.mesh.visible = false; const t = q.mesh.material.map; t.pause?.(); t.suspend?.(); } unstageEl(q); } catch (e) { console.warn('[domquad] unmount', q.id, e); }
   }
-  quads = null; shown = false; rigRef = null;
+  quads = null; shown = false; rigRef = null; stash = null;
 }
 
 /** probe window: how many meshes exist, how many were ever built (a re-entry that rebuilds shows here) */
@@ -193,8 +193,29 @@ globalThis.__domQuads = domQuadsDebug;
 
 export const domQuadsShown = () => !!quads && quads.some((q) => q.mesh?.visible);
 export function domQuadsSetShown(v) {
+  stash = null;   // an explicit show/hide of all supersedes a quick hide
   shown = !!v;
   for (const q of quads ?? []) setVisible(q, shown);
+}
+
+// THE QUICK HIDE (owner, 10-02): one button puts every open panel away and the same button brings exactly those back,
+// where they were. It is not closing them: their open state, places and sizes are kept (the meshes are only hidden,
+// and paused); opening a panel from the ring while they are hidden brings the hidden ones back first.
+let stash = null;   // ids of the panels the quick hide put away, or null when nothing is hidden
+export const domQuadsHidden = () => !!stash;
+export function domQuadsHideToggle() {
+  if (!quads) return false;
+  if (stash) {
+    for (const q of quads) if (stash.includes(q.id)) setVisible(q, true);
+    stash = null; shown = quads.some((x) => x.mesh?.visible);
+    return false;
+  }
+  const open = quads.filter((q) => q.mesh?.visible);
+  if (!open.length) return false;   // nothing to put away
+  stash = open.map((q) => q.id);
+  for (const q of open) setVisible(q, false);
+  shown = false;
+  return true;
 }
 
 // mirrors xrPanelsPick: distance to the quad under the ray, or null; on click, the
@@ -505,6 +526,7 @@ export function domQuadsScroll(handRay, dy) {
 // one quad by id — a ring slot opens that frame's quad; `on` null toggles
 export function domQuadShow(id, on = null) {
   const q = quads?.find((x) => x.id === id); if (!q) return false;
+  if (stash) domQuadsHideToggle();   // opening one while they are hidden brings the hidden ones back first
   setVisible(q, on == null ? !q.mesh?.visible : !!on);
   shown = quads.some((x) => x.mesh?.visible);
   return !!q.mesh?.visible;

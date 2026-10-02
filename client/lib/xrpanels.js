@@ -12,7 +12,7 @@ import { THREE, renderer } from './core.js';
 import { quadMaterial } from './quadcolour.js';
 import { bus } from './base.js';
 import { renderCanvas, hitRegion } from './panels.js';
-import { domQuadsEnabled, domQuadsEnter, domQuadsExit, domQuadsPick, domQuadsPress, domQuadsDrag, domQuadsRelease, domQuadsSetShown, domQuadsShown, domQuadShow, domQuadOpen, domQuadsGrab, domQuadRelease, domQuadsAt } from './domquad.js';   // the REAL frames on quads (default); ?canvasquads=1 keeps these canvases
+import { domQuadsEnabled, domQuadsEnter, domQuadsExit, domQuadsPick, domQuadsPress, domQuadsDrag, domQuadsRelease, domQuadsSetShown, domQuadsShown, domQuadShow, domQuadOpen, domQuadsGrab, domQuadRelease, domQuadsAt, domQuadsHideToggle, domQuadsHidden } from './domquad.js';   // the REAL frames on quads (default); ?canvasquads=1 keeps these canvases
 
 const PX_PER_M = 900;              // canvas pixels per world metre of quad
 const W = 0.58;                    // quad width, metres — an arm's-length read
@@ -120,6 +120,15 @@ export function showXRPanel(id, on = null) {
   return p.mesh.visible;
 }
 export const xrPanelHas = (id) => registry.some((d) => d.id === id);
+/** The quick hide: every open panel away, then exactly those back (domquad.js). Canvas quads do the same with their own. */
+let canvasStash = null;
+export function xrPanelsHideToggle() {
+  if (domQuadsEnabled()) return domQuadsHideToggle();
+  if (canvasStash) { for (const p of canvasStash) showPanel(p, true); canvasStash = null; shown = (panels ?? []).some((p) => p.mesh.visible); return false; }
+  const open = (panels ?? []).filter((p) => p.mesh.visible); if (!open.length) return false;
+  canvasStash = open; for (const p of open) showPanel(p, false); shown = false; return true;
+}
+export const xrPanelsHidden = () => (domQuadsEnabled() ? domQuadsHidden() : !!canvasStash);
 export const xrPanelsShown = () => (domQuadsEnabled() ? domQuadsShown() : (panels ?? []).some((p) => p.mesh.visible));
 export const xrPanelOpen = (id) => (domQuadsEnabled() ? domQuadOpen(id) : !!panels?.find((q) => q.def.id === id)?.mesh.visible);   // the ring's lit state; read only the canvas quads before, so on the default path every slot read closed
 
