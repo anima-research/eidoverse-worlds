@@ -149,13 +149,15 @@ const hex = (n) => `#${(n >>> 0 & 0xffffff).toString(16).padStart(6, '0')}`;
 const colorInt = (s) => (typeof s === 'string' && /^#[0-9a-f]{6}$/i.test(s) ? parseInt(s.slice(1), 16) : null);
 
 /** A one-line reading of the world, for the Hierarchy's pinned row and the text tier. */
-export function describeWorld(st, now = 0, { presets = null } = {}) {
+export function describeWorld(st, now = 0, { presets = null, clock = true } = {}) {
   const { sky, terrain, grass } = worldState(st);
   const parts = [];
   if (isBag(sky)) {
     const h = hoursAt(sky, now);
     const name = skyPresetOf(sky, presets);
-    parts.push(`sky ${name ? `${name} · ` : ''}${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}${sky.clouds ? ` ${sky.clouds}` : ''}`);
+    // clock:false leaves the time out — a panel row whose text is its shape would rebuild every minute
+    const hm = clock ? ` ${String(Math.floor(h)).padStart(2, '0')}:${String(Math.floor((h % 1) * 60)).padStart(2, '0')}` : '';
+    parts.push(`sky${name ? ` ${name}` : ''}${hm}${sky.clouds ? ` ${sky.clouds}` : ''}`.replace(/^sky$/, 'sky authored'));
     const e = effectiveSky(sky, now);
     if (e.weather) parts.push(`${e.weather}${e.source !== 'authored' ? ` (${e.source})` : ''}`);
   } else parts.push('default sky');

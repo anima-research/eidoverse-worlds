@@ -101,7 +101,7 @@ let skyPresets = null, groundPal = null;
 function loadWorldDefs() {
   defsRegistry().then((reg) => { skyPresets = reg.skyPresets ?? null; groundPal = reg.groundPalette ?? null; repaintAll(); }).catch(() => { /* the tiles say the palette is missing */ });
 }
-const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, label: 'World  (@world)', sub: describeWorld(state.st, Date.now(), { presets: skyPresets }), active: worldSel }] });
+const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, label: 'World  (@world)', sub: describeWorld(state.st, Date.now(), { presets: skyPresets, clock: false }), active: worldSel }] });
 
 // ---------------------------------------------------------------- multi-selection
 // The PRIMARY selection stays exactly what build.js/scenegraph own (one id,
