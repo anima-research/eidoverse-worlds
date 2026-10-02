@@ -13,11 +13,17 @@
 // policy. Rank, locks and rate stay the server's; this only answers "is
 // that even a place".
 
+import { lightArgsError } from "../server/verb-shapes.ts";
+
 export const isFiniteVec3 = (v: unknown): v is [number, number, number] =>
   Array.isArray(v) && v.length === 3 && v.every((n) => typeof n === "number" && Number.isFinite(n));
 
 /** Why these raw args cannot enter the log as this verb — null when they can. */
 export function rawShapeError(verb: string, args: Record<string, unknown>): string | null {
+  if (verb === "light") {
+    const why = lightArgsError(args);
+    if (why) return why;
+  }
   if (verb === "place") {
     if (typeof args.id !== "string" || !args.id)
       return "raw place wants {id, pos:[x,y,z], yaw?, scale?} — missing id";

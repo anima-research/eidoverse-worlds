@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { scratchSequencer, mkCheck, sleep } from "./harness.ts";
 import { emptyState, foldEntry } from "../shared/fold.js";
 import { lightArgsError } from "../server/verb-shapes.ts";
+import { handleTool } from "../mcpl/tools.ts";
 
 const { check, tally } = mkCheck();
 const assets = mkdtempSync(join(tmpdir(), "light-id-assets-"));
@@ -13,9 +14,9 @@ const run = await scratchSequencer("light-id", { portFrom: 9700, serverEnv: {
   OPT_DIR: join(assets, "opt"), EIDOVERSE_DIR: join(assets, "library"), SKIP_OPT_SWEEP: "1", VERB_RATE: "100",
 } });
 const sockets: WebSocket[] = [];
-async function until(fn: () => boolean) {
+async function until(fn: () => boolean | Promise<boolean>) {
   const end = Date.now() + 5000;
-  while (!fn()) { if (Date.now() > end) throw new Error("light-id condition timed out"); await sleep(10); }
+  while (!await fn()) { if (Date.now() > end) throw new Error("light-id condition timed out"); await sleep(10); }
 }
 async function open(id: string) {
   const ws = new WebSocket(run.BASE.replace("http", "ws") + "/ws"); sockets.push(ws);
@@ -80,11 +81,10 @@ try {
 
   await script(author, "uncaught", `world.emit('light', {intensity: 8});`);
   let errors: any;
-  for (let i = 0; i < 60; i++) {
+  await until(async () => {
     errors = await ask(author, { type: "debug", kinds: ["script-error"], limit: 100 });
-    if (errors.events.some((e: any) => e.behavior === "uncaught")) break;
-    await sleep(20);
-  }
+    return errors.events.some((e: any) => e.behavior === "uncaught");
+  });
   check("uncaught malformed emission appears in world_debug", errors.events.some((e: any) => e.behavior === "uncaught" && e.error.includes("light needs a non-empty string id")));
   const history = await ask(author, { type: "history", verbs: ["light"], limit: 100 });
   check("only the four effective valid light verbs reach history", history.entries.length === 4 && history.entries.every((e: any) => typeof e.args.id === "string" && e.args.id.length));
@@ -95,12 +95,44 @@ try {
     catch (e) { world.log('caught: ' + e.message); }
   `, { attach: "lamp" });
   let scoped: any;
-  for (let i = 0; i < 60; i++) {
+  await until(async () => {
     scoped = await ask(author, { type: "debug", behavior: "self-only" });
-    if (scoped.events.some((e: any) => e.line.includes("selfOnly"))) break;
-    await sleep(20);
-  }
+    return scoped.events.some((e: any) => e.line.includes("selfOnly"));
+  });
   check("valid ids still respect the behavior's selfOnly boundary", scoped.events.some((e: any) => e.line.includes("selfOnly")));
+  // The dispatcher shared by both MCPL doors must refuse before optimistic
+  // placement text. Use the real wire for accepted intents and record each send.
+  const sent: { verb: string; args: any }[] = [];
+  const toolAgent: any = {
+    entities: new Map([["lamp", lamp]]), pos: { x: 0, y: 0, z: 0 }, yaw: 0,
+    heightAt: () => 0,
+    verb(verb: string, args: any) { sent.push({ verb, args }); author.verb(verb, args); },
+  };
+  const ctx = { agent: toolAgent, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } };
+  for (const id of ["", "   ", null, 42, [], {}]) {
+    const reply = await handleTool(ctx, "light", { id, intensity: 9 });
+    check("typed tool refuses invalid supplied id before sending or confirming: " + JSON.stringify(id),
+      reply.isError === true && reply.content[0].text.includes("light needs a non-empty string id") && sent.length === 0);
+  }
+  for (const args of [{}, { id: "  " }, { id: 42 }]) {
+    const reply = await handleTool(ctx, "world_verb", { verb: "light", args });
+    check("raw MCPL light applies the same id rule: " + JSON.stringify(args), reply.isError === true && sent.length === 0);
+  }
+  const update = await handleTool(ctx, "light", { id: "lamp", intensity: 11 });
+  check("typed partial update retains the sparse argument bag",
+    !update.isError && update.content[0].text.includes("updated light") && JSON.stringify(sent[0].args) === JSON.stringify({ id: "lamp", intensity: 11 }));
+  const generated = await handleTool(ctx, "light", { color: 456, intensity: 5 });
+  const generatedId = sent[1].args.id;
+  check("omitting the typed id still generates and reports a usable id",
+    !generated.isError && typeof generatedId === "string" && generatedId.trim().length > 0 && generated.content[0].text.includes(generatedId));
+  const explicit = await handleTool(ctx, "light", { id: "typed-explicit", x: 7, y: 8, z: 9, intensity: 6 });
+  check("typed explicit id still reports the accepted intent", !explicit.isError && explicit.content[0].text.includes("typed-explicit"));
+  await until(() => author.messages.filter(m => m.type === "log" && m.entry.verb === "light").length === 7);
+  const typedView = await open("typed-view");
+  check("typed sparse update reaches the server fold without resetting fields",
+    typedView.snapshot.state.entities.lamp.intensity === 11 && typedView.snapshot.state.entities.lamp.range === 8 && typedView.snapshot.state.entities.lamp.color === 0xabcdef);
+  check("generated and explicit typed lights both reach the real world state",
+    typedView.snapshot.state.entities[generatedId]?.intensity === 5 && typedView.snapshot.state.entities["typed-explicit"]?.intensity === 6);
   completed = true;
 } finally {
   for (const ws of sockets) ws.close();
