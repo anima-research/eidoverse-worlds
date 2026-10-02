@@ -40,7 +40,7 @@ Folding produces, at minimum:
 
 ```jsonc
 {
-  "entities": { "<id>": { "pos": [x,y,z], "yaw": r, "lib": "path",   // things
+  "entities": { "<id>": { "pos": [x,y,z], "yaw": r, "lib": "path"?,  // things; no lib = an Empty (§3.1)
                            "scale": s?, "actor": who, "ts": ms, "collide"?,
                            "kind": "light"?, "color"?, "intensity"?, "range"?, "keep"?, "day"?,
                            "comp": { "<type>": <opaque data> }?,      // §4
@@ -61,7 +61,7 @@ measured on the fields above (see `fixtures/README.md`).
 | verb | args | fold effect |
 |---|---|---|
 | `genesis` | `{v, dialect}` | nothing (version marker) |
-| `spawn` | `{id, lib, pos?, yaw?, q?, scale?, collide?}` | create **or replace** entity (see §3.1). `q`: §9.1 *(amendment 2026-09-26)* |
+| `spawn` | `{id, lib?, pos?, yaw?, q?, scale?, collide?}` | create **or replace** entity (see §3.1). An absent (or null) `lib` creates an **Empty**: an entity with only a transform; a present but empty `lib` (`""`) folds to nothing *(Empty: amendment 2026-10-01, §3.2)*. `q`: §9.1 *(amendment 2026-09-26)* |
 | `place` | `{id, pos?, yaw?, q?, scale?}` | update transform; re-stamps rest pose. Orientation per §9.1 *(`q`: amendment 2026-09-26)* |
 | `light` | `{id, pos?, color?, intensity?, range?, keep?, day?}` | create light entity; re-issuing on an id that already folds as a light is a **partial update** (absent fields keep their prior value); a non-light holding the id is replaced wholesale (§3.1) |
 | `remove` | `{id}` | delete entity; children mounted on it get their **absolute pose computed and stamped** (parent pos + offset rotated by the parent's orientation, §9.1), then orphaned; body mounts onto it are cleared |
@@ -86,7 +86,9 @@ A `spawn` whose id already exists REPLACES the previous holder **wholesale**:
 transform, component bag, and parent attachment are those of the new entry
 alone (nothing is inherited — a bag you want to survive re-authoring is a
 bag you re-author). The same replacement applies across kinds: a `spawn`
-landing on a light id, or a `light` landing on a model id, replaces it. The
+landing on a light id, or a `light` landing on a model id, replaces it, and
+an Empty (§3.2) is a kind like the others — a model spawned over it, or it
+spawned over a model, replaces wholesale. The
 one exception is `light`-on-`light`, which merges as a partial update (the
 table above) — brightening a lamp is not re-authoring it.
 
@@ -106,6 +108,26 @@ intensity at noon (the deliberate porch light). Absent or true, a placed
 light dims toward midday the way lamps do. Both are stored only in their
 non-default state (`keep: true`, `day: false`); partial updates merge them
 like any other light field. Pinned by fixture `05-lightpolicy`.
+
+### 3.2 Empties *(amendment 2026-10-01)*
+
+A `spawn` with no `lib` folds to an **Empty**: `{pos, yaw, q?, scale?,
+collide?, actor, ts, …}` with neither `lib` nor `kind` on the record. It is
+an entity in every other respect — it can be placed, mounted and carried,
+removed, carry any component (§4), and other entities can mount onto it — so
+it serves as a pivot, a group parent, a spawn point or a target. Clients
+draw nothing for it (an editor MAY show a gizmo while editing). Re-spawning
+an Empty as an Empty keeps its identity for deeds (`born`); a model spawned
+on its id is a new thing, as across any kinds.
+
+*Versioning.* Before this amendment the reference fold dropped a lib-less
+spawn, and no persisted log carries one (the reference corpus was checked),
+so every old log folds byte-identically. A reader that predates it folds an
+Empty to nothing: it shows nothing (which is what an Empty looks like), its
+`comp`/`place` entries fold to nothing, and a `mount` *of* the Empty is filed
+under `mounts` as if the id were a body (§5) — inert, since no body by that
+name arrives. Same footing as `q` (§9.1): an optional-argument change, no
+`genesis` bump, flagged here for review. Pinned by fixture `06-components`.
 
 ## 4. Components
 
@@ -131,6 +153,26 @@ consumes a type. Known types in v1, with their contracts:
   with a matching action emits ordinary logged effect entries (e.g. a
   velocity-matched pendulum impulse) with `{cause: seq, by: actor}`
   provenance. Replay folds the effects; it never re-runs the reaction.
+
+- **`light`** `{color?, intensity?, range?, keep?, day?}` *(amendment
+  2026-10-01)* — a point light at the entity's origin, on **any** entity: a
+  model and a light on one entity is a lamp; a light on an Empty is a bare
+  bulb. Fields and defaults are the `light` verb's (§3.1: color `0xffd9a0`,
+  intensity 16, range 10 m, `keep: true` = first claim on a casting slot,
+  `day: false` = burns at noon); a field of the wrong type reads as its
+  default. The light follows the entity's live transform (motion, mounts).
+  A part that needs its own position (a bulb at the top of a lamp) is a child
+  entity, not an offset. The legacy spelling — an entity created by the
+  `light` verb (`kind: "light"` + top-level fields) — stays valid forever and
+  means the same thing; if an entity carries both, `kind: "light"` wins.
+  Writers SHOULD NOT add a `light` component to a `kind: "light"` entity
+  (the reference door refuses it).
+- **`collider`** `{shape: "exact" | "box"}` *(amendment 2026-10-01)* — how
+  bodies collide with the entity: `exact` against its triangles, `box`
+  against its bounding box. Absent, a client decides by size. It overrides
+  the legacy `collide` argument of `spawn` (§3), which stays valid; a shape
+  other than `exact`/`box` is ignored (the legacy value, or size, decides).
+  Client-side meaning only; the fold is blind to it as to every type.
 
 Everything else in a bag is somebody's annotation. Preserve it.
 

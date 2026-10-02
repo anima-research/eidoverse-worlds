@@ -76,6 +76,26 @@ check('a lamp (Model + comp.light) cannot add a second Light; an Empty can add o
   && addable(componentsOf({ pos: [0, 0, 0] }).components).some((a) => a.name === 'Light')
   && !addable(componentsOf({ pos: [0, 0, 0] }).components).some((a) => a.name === 'Collider'));
 
+// the same spellings arriving through the REAL fold, as a world would write
+// them: round trip after every entry, exactly as the corpus is checked below
+{
+  const st: any = emptyState(); let n = 0; const badS: string[] = [];
+  const log = [
+    ['spawn', { id: 'pivot', pos: [0, 1, 0] }], ['spawn', { id: 'lamp', lib: L, collide: 'box' }],
+    ['comp', { id: 'lamp', type: 'light', data: { color: 0xffaa66, intensity: 24, range: 9, day: false } }],
+    ['comp', { id: 'lamp', type: 'collider', data: { shape: 'exact' } }], ['comp', { id: 'pivot', type: 'light', data: { keep: true } }],
+    ['mount', { id: 'pivot', to: 'lamp', offset: [0, 1.8, 0] }], ['place', { id: 'pivot', q: [0, 0.3826834, 0, 0.9238795] }],
+    ['light', { id: 'old', pos: [2, 1, 0], intensity: 40 }], ['comp', { id: 'old', type: 'label', data: 'porch' }],
+    ['comp', { id: 'lamp', type: 'light', data: null }], ['spawn', { id: 'pivot', scale: 3 }],
+  ] as const;
+  for (const [i, [verb, args]] of log.entries()) {
+    foldEntry(st, { seq: i, ts: 1000 + i, actor: 'owner', verb, args } as any);
+    const ent = st.entities[(args as any).id]; if (!ent) { badS.push(`${verb} ${(args as any).id}: folded to nothing`); continue; }
+    n++; if (canon(entityOf(componentsOf(ent))) !== canon(ent)) badS.push(`${verb} ${(args as any).id}: ${canon(ent)}`);
+  }
+  check(`a synthetic world of the new spellings, through the real fold: round trip exact after every entry (${n} entity states)`, badS.length === 0 && n === log.length, badS.join(' | '));
+}
+
 // ------------------------------------------------------------ the corpus
 const logs: string[] = [];
 const walk = (d: string, depth = 0) => {

@@ -53,7 +53,9 @@ function reorient(ent, a) {
 function bornOf(prev, kind, a, e) {
   const seq = e.seq ?? e.ts;
   if (!prev) return seq;
-  const same = kind === "light" ? prev.kind === "light" : (prev.kind !== "light" && prev.lib === a.lib);
+  // an Empty has no lib on either side: (undefined ?? null) === (null ?? null),
+  // so re-spawning an Empty keeps its generation; every model compares as before
+  const same = kind === "light" ? prev.kind === "light" : (prev.kind !== "light" && (prev.lib ?? null) === (a.lib ?? null));
   return same && prev.born != null ? prev.born : seq;
 }
 
@@ -98,7 +100,11 @@ function bornOf(prev, kind, a, e) {
  *   comp?: Record<string, unknown>,
  *   parent?: { to: string, slot?: string, offset?: number[], yaw?: number, q?: number[] },
  * }>} entities
- *   Things and lights, one flat id namespace. `keep` (lights) = first claim
+ *   Things, lights and Empties, one flat id namespace. An Empty is a spawn
+ *   with no `lib`: neither `lib` nor `kind` is on its record. A Light may
+ *   also be a component (`comp.light`) on any entity, and a Collider
+ *   `comp.collider` — both fold blindly like every comp (shared/components.js
+ *   reads them). `keep` (lights) = first claim
  *   on a casting slot, never governor-shed; `day: false` (lights) = burns
  *   at noon, opted out of the time-of-day cycle. `comp` is the generic bag,
  *   written by `comp` verbs and folded BLINDLY — the fold never learns what a
@@ -218,10 +224,16 @@ export function foldEntry(st, e) {
       // some volunteer holds), the landing is the `place` that lease commits
       return;
     case "spawn": {
-      if (!a?.id || !a?.lib) return;
+      // An ABSENT lib (missing or null) is an Empty: an entity with nothing
+      // but a Transform — a pivot, a group parent, a spawn point (design §3,
+      // PROTOCOL §3.1). It used to fold to nothing; no log written before
+      // this rule carries a lib-less spawn (the whole local corpus was
+      // checked), so every old fold is byte-identical. A PRESENT but empty
+      // lib ("", 0, false) still folds to nothing, exactly as before.
+      if (!a?.id || (a.lib != null && !a.lib)) return;
       const prev = st.entities[a.id];
       st.entities[a.id] = {
-        lib: a.lib, pos: a.pos ?? [0, 0, 0], ...orient(a),
+        ...(a.lib != null ? { lib: a.lib } : {}), pos: a.pos ?? [0, 0, 0], ...orient(a),
         ...(a.scale != null ? { scale: a.scale } : {}),
         // `collide` ("exact" | "box") is the spawner's override of the
         // size-derived collider choice, and the fold used to drop it: the
