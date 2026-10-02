@@ -424,7 +424,10 @@ function inspectorFields() {
         const r = row(addr); if (!r || r.alias) continue;
         if (r.row === 'quat') quat.push(r); else f.push(r);
       }
-      if (quat.length) {
+      // groups are FLAT markers (renderDOM, the VR quad): a sub-header reopens
+      // its rows even under a folded card, so a folded Transform omits it. A
+      // filter is the exception: filterFields opens whatever holds a hit.
+      if (quat.length && (isOpen(id, key) || ifilter.trim())) {
         const qk = `${key}:quat`;
         f.push({ t: 'group', k: qk, label: 'Quaternion', hint: 'the stored orientation, x y z w — normalized on commit', open: sec.quatOpen ? isOpen(id, qk) : !isOpen(id, qk) });
         f.push(...quat);
