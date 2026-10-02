@@ -17,6 +17,7 @@ const scratch = mkdtempSync(join(tmpdir(), "briefing-"));
 const agents: WorldAgent[] = [], sockets: WebSocket[] = [];
 let h: Awaited<ReturnType<typeof scratchSequencer>> | undefined;
 let fake: ReturnType<typeof Bun.serve> | undefined;
+let completed = false;
 const hash = (bytes: Uint8Array) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 const look = async (agent: WorldAgent) => {
   const reply = await handleTool({ agent, canPush: () => false, heldActivity: [], cursor: { caughtUpTo: null } }, "look", {});
@@ -104,11 +105,12 @@ try {
   current = undefined; peer.close(); await until(() => joins === 4 && client.joined);
   check("older server clears previous briefing rather than retaining stale guidance", await look(client) === null);
   check("offered guidance leaves reading and wakes to the consumer", guideFetches === 0 && pings === 0 && events === 0 && client.pings.length === 0);
+  completed = true;
 } finally {
   for (const a of agents) a.close();
   for (const ws of sockets) ws.close();
   fake?.stop(true);
-  await h?.cleanup(tally.failed ? 1 : 0);
+  await h?.cleanup(completed && !tally.failed ? 0 : 1);
   rmSync(scratch, { recursive: true, force: true });
 }
 console.log(`${tally.passed} passed; ${tally.failed} failed`);
