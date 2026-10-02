@@ -92,8 +92,12 @@ vocabulary:
 
 ```
 spawn   {id, lib, pos, yaw, scale?}
+spawn   {id, pos, yaw}                    # no lib = an Empty: a pivot / group parent / target
 place   {id, pos?, yaw?, scale?}          # also re-stamps the rest pose
 comp    {id, type, data|null}             # attach anything; null removes; ≤8KB
+comp    {id, type: "light", data: {color?, intensity?, range?, keep?, day?}}
+                                          # a light ON anything: model + light = a lamp
+comp    {id, type: "collider", data: {shape: "exact"|"box"}}
 motion  {id, type, ...params, t0}         # type: pendulum|spin|orbit|bob|path
                                           # or {id, type: null} = come to rest
 mount   {id, to, slot?, offset?, yaw?}    # id rides to; yourself = rank 0
@@ -196,7 +200,9 @@ Addresses are `group.field`: `pos.x pos.y pos.z pos.yaw pos.scale` (→ `place`,
 one verb carrying the full pose however many you set) · `flags.lock
 flags.hidden flags.label` (→ `comp`; a label is a display name, the id never
 changes; hidden = not drawn, still there) · `light.color light.intensity
-light.range light.keep light.noon` (→ one partial `light`) · `motion.type
+light.range light.keep light.noon` (→ one partial `light` for a light made
+with the light verb; → one merged `comp light` for a light component) ·
+`collider.shape` (→ `comp collider`) · `motion.type
 motion.axis motion.amp motion.period motion.phase motion.damp …` and a
 part's as `motion.<part>|amp` (→ `motion` / `comp motion:<part>`, keeping
 `t0` so a tweak never restarts the phase; `motion.rest` stops it) ·
