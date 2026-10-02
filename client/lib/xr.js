@@ -509,13 +509,16 @@ function tryGrab(hand, ray) {
   }
   const q = xrPanelsGrab(ray);   // refuses a control too, for any other caller
   if (!q) return;
-  held = { quad: q, hand }; haptic(hand, 0.4, 30); h.grip.attach(q.mesh); flashHint(`holding the ${q.id} panel — release grip to place it`);
+  held = { quad: q, hand }; haptic(hand, 0.4, 30); h.grip.attach(q.mesh); flashHint(`holding the ${q.id} panel — trigger + stick to push or pull it, release grip to place it`);
 }
-// PUSH / PULL (owner, 10-02, Resonite's reel): on the hand HOLDING a panel, stick forward sends it away along the
-// laser, stick back reels it in. Exponential, so the feel is the same near and far (×e^(rate) per second at full
-// deflection), and clamped to an arm's reach and a room's. That hand's stick does nothing else while it holds — no
-// walking (left), no turning (right): the player stays put. No rotation: a released panel is uprighted and faces you,
-// as before. Panels only (world-object grabbing waits for its component).
+// PUSH / PULL (owner, 10-02, Resonite's reel): on the hand HOLDING a panel, with that hand's TRIGGER also held, stick
+// forward sends it away along the laser, stick back reels it in. Exponential, so the feel is the same near and far
+// (×e^(rate) per second at full deflection), and clamped to an arm's reach and a room's. Carrying a panel must not stop
+// you running or turning (owner, 10-02, revising the first pass, which took the stick over for the whole hold): the
+// stick is the panel's only while that trigger is held (a holding hand's trigger clicks nothing anyway), and then only
+// its forward/back — the left stick's walk-forward is held off for those moments, its strafe and the right stick's turn
+// never are. No rotation: a released panel is uprighted and faces you, as before. Panels only (world-object grabbing
+// waits for its component).
 export const PUSH_RATE = 1.6;              // 1/s at full deflection: ≈5× farther per second
 export const PUSH_MIN_M = 0.25, PUSH_MAX_M = 3.0;
 const _pp = new THREE.Vector3(), _po = new THREE.Vector3(), _pd = new THREE.Vector3();
@@ -1045,7 +1048,7 @@ export function syncRigToBody() {
 let turnEarlyFrame = -1;
 let hadPose = false;   // a viewer pose has arrived this session (the eyes exist) — the headset is on someone's head
 export function applyTurnEarly(dtSec) {
-  if (!presenting || radialOpen || !buttonsTrusted() || held?.hand === 'right') return;   // a right hand holding a panel: its stick reels it
+  if (!presenting || radialOpen || !buttonsTrusted()) return;
   const R = sourceFor('right')?.gamepad; if (!R) return;
   const rx = pickAxis(R.axes[2], R.axes[0]);
   if (xrPrefs.turn === 'smooth') {
@@ -1250,7 +1253,7 @@ export function updateXR(dtSec = 1 / 72) {
     // jump = A or X (porch-old: 'A / X = jump'; VRChat: A). No invented bindings on the sticks (owner, 09-06 12:37:
     // 'we shouldn't mess with the default VR affordances') — panels live on the ring.
     xrIntent.jump = !!L.buttons[4]?.pressed || !!R?.buttons[4]?.pressed;
-    if (held?.hand === 'left') { xrIntent.fwd = 0; xrIntent.strafe = 0; }   // the left stick pushes/pulls the held panel: no walking
+    if (held?.hand === 'left' && L.buttons[0]?.pressed) xrIntent.fwd = 0;   // trigger + stick on the holding hand reels the panel: that push is not a step
   } else { xrIntent.fwd = 0; xrIntent.strafe = 0; xrIntent.jump = !!R?.buttons[4]?.pressed; }
   // HOLD B or Y = every name in range, through walls (namereveal.js; the desktop's N). xr-standard button 5 is the one
   // face button nothing here reads: 0 trigger (point/select/ring), 1 grip (grab/cancel), 3 right-stick click (ring),
@@ -1298,7 +1301,6 @@ export function updateXR(dtSec = 1 / 72) {
     ring.trigWas = trigNow;
     turnMag = 0;
     if (radialOpen) { /* the ring owns the stick */ }
-    else if (held?.hand === 'right') { /* the held panel owns the stick: push/pull, no turning */ }
     else if (xrPrefs.turn === 'smooth') {
       // smooth turn: the rig yaws continuously with the stick (the owner's own mode)
       const d = dead(rx);
@@ -1352,7 +1354,7 @@ export function updateXR(dtSec = 1 / 72) {
       if (grip && !gripWas[side] && !held && !resizing && !(side === 'right' && ringOpenAtStart)) tryGrab(side, ray);   // grip alone; panels only
       if (!grip && held?.hand === side) releaseGrab();
       if (resizing?.hand === side) { if (grip) domQuadResizeMove(resizing.drag, aim); else endResize(); }   // the raw aim: a resize must not bend onto a control
-      if (held?.hand === side) pushPull(side, aim, -pickAxis(G.axes[3], G.axes[1]), dtSec ?? 1 / 72);
+      if (held?.hand === side && trig) pushPull(side, aim, -pickAxis(G.axes[3], G.axes[1]), dtSec ?? 1 / 72);   // trigger + stick: the reel
       const holding = held?.hand === side || resizing?.hand === side;
       if (trig && !triggerWas[side] && !holding && !(radialOpen && side === 'right')) {
         // panels claim the laser before the world does — a click meant for a
