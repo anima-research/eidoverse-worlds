@@ -6,11 +6,15 @@
 // text-tier resident reads. No record carries code; the realizers that give the
 // built-ins behaviour are the engine's own.
 //
-// The wire does not change here. Today's spellings (`lib`, `kind: "light"`,
-// `collide`, `parent`, `comp.motion` with its `type` enum, `comp.sockets`, …)
-// are ALIASES: `componentsOf` reads any folded entity as a component list, and
-// `entityOf` writes a component list back to exactly those bytes. Nothing in an
-// existing world is rewritten (RFC: updates are offered, never applied);
+// Every spelling the wire has ever had is an ALIAS here (design §2.4, §6):
+// the old ones (`lib`, `kind: "light"`, `collide`, `parent`, `comp.motion`
+// with its `type` enum, `comp.sockets`, …) and the step-2 ones (`comp.light`
+// on any entity, `comp.collider`, and the Empty — a spawn with no `lib`).
+// `componentsOf` reads any folded entity as a component list, and `entityOf`
+// writes a component list back to exactly those bytes; an instance's `key`
+// says which spelling it came from (a Light with no key is `kind: "light"`, a
+// Light with key "light" is `comp.light`). Nothing in an existing world is
+// rewritten (RFC: updates are offered, never applied);
 // tools/components-corpus-test.ts proves the round trip on every local world.
 //
 // Pure: no DOM, no three, no I/O. Server, browser, mcpl and tests import it.
@@ -86,11 +90,12 @@ const DEFS = [
     fallback: { visual: 'placeholder box until the model loads', text: 'a <file stem>' } },
   { name: 'Collider', category: 'Physics', needs: ['Model'], summary: 'how bodies bump into it',
     params: { shape: { t: 'choice', options: ['exact', 'box'], default: 'exact' } },
-    fallback: { text: '(none)' }, note: 'browser-only today: the agent never sees it (COMPONENTS-TODAY: Model scars)' },
+    fallback: { text: '(none)' }, note: 'wire: comp.collider {shape} (written by comp), or the spawn verb\'s legacy `collide`; comp.collider wins when both are present. Absent = the browser decides by size' },
   { name: 'Light', category: 'Rendering', summary: 'a point light',
     params: { color: { t: 'color', default: 0xffd9a0 }, intensity: { t: 'num', default: 16, min: 0, softMax: 64, step: 1 }, range: { t: 'num', unit: 'm', default: 10, min: 1, softMax: 40, step: 1 },
       keep: { t: 'bool', default: false, hint: 'first claim on a light slot, never shed by the governor' }, burnsAtNoon: { t: 'bool', default: false, hint: 'opts out of the day cycle (wire: day:false)' } },
-    fallback: { visual: 'a glowing gizmo when the slot pool is spent', text: '(light)' } },
+    fallback: { visual: 'a glowing gizmo when the slot pool is spent', text: '(light)' },
+    note: 'wire: comp.light {color, intensity, range, keep, day} on any entity (a lamp is a Model and a Light), or the light verb\'s legacy kind:"light" entity; the legacy spelling wins when both are present' },
   { name: 'Pendulum', category: 'Motion', summary: 'swings back and forth about an axis',
     params: { part, axis: axis('x'), amp: { ...deg, default: 0, min: 0 }, period: { t: 'num', unit: 's', default: 3.5, min: 0.05, step: 0.1 }, pivot: { t: 'vec3', unit: 'm', default: [0, 2, 0], partDefault: [0, 0, 0], hint: 'the point it swings about, in its own frame' }, phase: { ...deg, default: 0 }, damp: { t: 'num', default: 0, min: 0, softMax: 2, step: 0.01 }, maxAmp: { t: 'num', default: 1.1, hint: 'cap on a push (server reaction only), radians' } },
     fallback: { visual: 'stands still', text: 'in motion (pendulum)' } },
@@ -168,6 +173,30 @@ const FLAG = { lock: 'Lock', guard: 'Guard' };
 const pick = (o, keys) => Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
 const omit = (o, keys) => Object.fromEntries(Object.entries(o).filter(([k]) => !keys.includes(k)));
 
+const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
+// A comp-bag Light/Collider: the bag's keys map to the record's params by their
+// wire names (Light's `day: false` is the record's burnsAtNoon, as on the legacy
+// spelling); a `day` other than false is kept verbatim in `wire`, and keys the
+// record has no param for ride `extra.unknown`, so the bytes always come back.
+const COMP_WIRE = { Light: { color: 'color', intensity: 'intensity', range: 'range', keep: 'keep' }, Collider: { shape: 'shape' } };
+function compInstance(type, key, data) {
+  const params = {}; const extra = {}; let wire;
+  for (const [k, v] of Object.entries(data)) {
+    if (COMP_WIRE[type][k]) params[COMP_WIRE[type][k]] = v;
+    else if (type === 'Light' && k === 'day') { if (v === false) params.burnsAtNoon = true; else wire = { day: v }; }
+    else (extra.unknown ??= {})[k] = v;
+  }
+  return { type, key, params, ...(wire ? { wire } : {}), ...(Object.keys(extra).length ? { extra } : {}) };
+}
+function compBag(inst) {
+  const p = inst.params ?? {}; const bag = {};
+  for (const [k, v] of Object.entries(p)) {
+    if (k === 'burnsAtNoon') { if (v === true) bag.day = false; } else bag[k] = v;
+  }
+  if (inst.wire?.day !== undefined && bag.day === undefined) bag.day = inst.wire.day;
+  return Object.assign(bag, inst.extra?.unknown ?? {});
+}
+
 /** Read a folded entity (shared/fold.js) as { components, stamps }.
  *  Every key of the record lands in exactly one place: a component instance
  *  (`{ type, key?, params, extra? }`, `key` = the comp-bag key it came from),
@@ -212,6 +241,10 @@ export function componentsOf(ent) {
       out.push(inst);
       continue;
     }
+    // step 2 (design §6): a Light or a Collider as a component. Only a plain
+    // object is one; any other data under these keys predates the meaning
+    // (none in the corpus) and stays an Annotation, so its bytes still return.
+    if ((key === 'light' || key === 'collider') && isBag(data)) { out.push(compInstance(key === 'light' ? 'Light' : 'Collider', key, data)); continue; }
     const simple = { sockets: ['Seats', 'slots'], reactions: ['Reactions', 'actions'], structure: ['Structure', 'plan'], captions: ['Captions', 'feed'] };
     if (simple[key]) { out.push({ type: simple[key][0], key, params: { [simple[key][1]]: data } }); continue; }
     if (key === 'look' && data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).every((k) => k === 'target')) { out.push({ type: 'LookAt', key, params: { ...data } }); continue; }
@@ -243,6 +276,8 @@ export function entityOf({ components, stamps = {} }) {
     switch (inst.type) {
       case 'Transform': Object.assign(ent, p); break;
       case 'Light': {
+        // keyed = comp.light (step 2); keyless = the legacy kind:"light" entity
+        if (inst.key != null) { comp[inst.key] = compBag(inst); break; }
         ent.kind = 'light';
         Object.assign(ent, pick(p, ['color', 'intensity', 'range']));
         if (p.keep !== undefined) ent.keep = p.keep;
@@ -251,7 +286,8 @@ export function entityOf({ components, stamps = {} }) {
         break;
       }
       case 'Model': ent.lib = p.lib; break;
-      case 'Collider': ent.collide = p.shape; break;
+      // keyed = comp.collider (step 2); keyless = the spawn verb's legacy `collide`
+      case 'Collider': if (inst.key != null) comp[inst.key] = compBag(inst); else ent.collide = p.shape; break;
       case 'Attachment': ent.parent = { ...p }; break;
       case 'Lock': case 'Guard': case 'Hidden': comp[inst.key] = inst.wire?.value ?? true; break;
       case 'Label': comp[inst.key ?? 'label'] = p.text; break;
@@ -299,3 +335,44 @@ export function addable(components) {
   return DEFS.filter((d) => !d.builtin && !d.readOnly && (REPEATABLE.has(d.name) || !have.has(d.name))
     && (d.needs ?? []).every((n) => have.has(n))).map((d) => ({ name: d.name, category: d.category, summary: d.summary, hash: RECORDS[d.name].hash }));
 }
+
+// ------------------------------------------------------------ one reading, every surface
+// The browser, the text tier and the inspector each need to ask "is this a
+// light, and with what?" of an entity that may use either spelling. They ask
+// HERE, so the answer (and its defaults, which are the fold's) is written once.
+export const LIGHT_DEFAULTS = Object.freeze({ color: 0xffd9a0, intensity: 16, range: 10 });
+const finite = (v) => typeof v === 'number' && Number.isFinite(v);
+
+/** The light an entity casts, normalized, or null. Either spelling:
+ *  kind:"light" (the light verb; the fold already defaulted its fields) or a
+ *  plain-object comp.light on any other entity. When both are present the
+ *  legacy kind:"light" wins (the door refuses `comp light` on such an entity;
+ *  this rule is for hand-written logs). A comp.light field of the wrong type
+ *  reads as its default — never a throw, never NaN reaching the rig. */
+export function lightOf(ent) {
+  if (!ent || typeof ent !== 'object') return null;
+  const legacy = ent.kind === 'light';
+  const src = legacy ? ent : (isBag(ent.comp?.light) ? ent.comp.light : null);
+  if (!src) return null;
+  return {
+    spelling: legacy ? 'kind' : 'comp',
+    color: finite(src.color) && src.color >= 0 && src.color <= 0xffffff ? Math.round(src.color) : LIGHT_DEFAULTS.color,
+    intensity: finite(src.intensity) && src.intensity >= 0 ? src.intensity : LIGHT_DEFAULTS.intensity,
+    range: finite(src.range) && src.range > 0 ? src.range : LIGHT_DEFAULTS.range,
+    keep: src.keep === true,
+    day: src.day !== false,
+  };
+}
+
+/** The collider preference the browser hands fitCollider: comp.collider.shape
+ *  when it is "exact" or "box", else the legacy spawn `collide` verbatim (as
+ *  the browser always passed it), else undefined (= decide by size). */
+export function colliderOf(ent) {
+  const s = isBag(ent?.comp?.collider) ? ent.comp.collider.shape : undefined;
+  if (s === 'exact' || s === 'box') return s;
+  return ent?.collide;
+}
+
+/** An Empty: an entity with nothing but a Transform (and whatever comps it
+ *  carries) — no model, not a legacy light. A pivot, a group parent, a target. */
+export const isEmpty = (ent) => !!ent && typeof ent === 'object' && ent.kind !== 'light' && ent.lib == null;

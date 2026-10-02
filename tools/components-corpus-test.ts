@@ -14,7 +14,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { emptyState, foldEntry } from '../shared/fold.js';
-import { componentsOf, entityOf, canon, sha256hex, RECORDS, addable } from '../shared/components.js';
+import { componentsOf, entityOf, canon, sha256hex, RECORDS, addable, lightOf, colliderOf, isEmpty } from '../shared/components.js';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
@@ -29,6 +29,52 @@ check(`every record has a distinct 64-hex hash (${hashes.length} records)`, hash
 check('Pendulum is not addable twice on a part-less basis but motion types repeat', addable([{ type: 'Transform' }, { type: 'Pendulum' }]).some((a) => a.name === 'Pendulum'));
 check('a tilted entity keeps q through the view', (() => { const e = { lib: 'x.glb', pos: [0, 1, 0], q: [0.2588, 0, 0, 0.9659], yaw: 0, comp: { lock: true } }; return canon(entityOf(componentsOf(e))) === canon(e); })());
 check('Picture needs a Model', !addable([{ type: 'Transform' }, { type: 'Light' }]).some((a) => a.name === 'Picture') && addable([{ type: 'Transform' }, { type: 'Model' }]).some((a) => a.name === 'Picture'));
+
+// ------------------------------------------------------------ the step-2 spellings (design §6)
+// No world in the corpus carries these yet, so the round trip is proven here
+// on synthetic records — and each case also says WHAT it must read as: a round
+// trip alone would pass if every new spelling fell through to an Annotation.
+console.log('\nthe step-2 spellings (synthetic):');
+const L = 'eidoverse/assets/models/lamp.glb';
+const st0 = { actor: 'a', ts: 1, born: 1 };
+const cases: [string, any, string[]][] = [
+  // [name, folded entity, expected "Type:key" list after Transform]
+  ['a lamp: a Model and a comp.light on one entity', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { color: 0xff8800, intensity: 20, range: 8 } }, ...st0 }, ['Model:', 'Light:light']],
+  ['comp.light burning at noon (day:false ⇄ burnsAtNoon)', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { day: false, keep: true } }, ...st0 }, ['Model:', 'Light:light']],
+  ['comp.light with day:true kept verbatim', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { day: true } }, ...st0 }, ['Model:', 'Light:light']],
+  ['comp.light with a key no record names (extra, not lost)', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: { color: 1, flicker: 0.3, burnsAtNoon: 'x' } }, ...st0 }, ['Model:', 'Light:light']],
+  ['an empty comp.light {} (all defaults)', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: {} }, ...st0 }, ['Model:', 'Light:light']],
+  ['a comp.light that is not an object stays an Annotation', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { light: 'on' }, ...st0 }, ['Model:', 'Annotation:light']],
+  ['comp.collider box', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { collider: { shape: 'box' } }, ...st0 }, ['Model:', 'Collider:collider']],
+  ['legacy collide AND comp.collider together', { lib: L, pos: [0, 0, 0], yaw: 0, collide: 'box', comp: { collider: { shape: 'exact' } }, ...st0 }, ['Model:', 'Collider:', 'Collider:collider']],
+  ['a comp.collider array stays an Annotation', { lib: L, pos: [0, 0, 0], yaw: 0, comp: { collider: ['box'] }, ...st0 }, ['Model:', 'Annotation:collider']],
+  ['legacy kind:"light" AND comp.light (hand-written log)', { kind: 'light', pos: [0, 1, 0], color: 1, intensity: 2, range: 3, comp: { light: { color: 4 } }, ...st0 }, ['Light:', 'Light:light']],
+  ['an Empty: nothing but a Transform', { pos: [1, 2, 3], yaw: 0.5, ...st0 }, []],
+  ['an Empty with a scale, a q and a comp.light', { pos: [1, 2, 3], yaw: 0, q: [0, 0, 0, 1], scale: 2, comp: { light: { intensity: 4 } }, placer: { id: 'p' }, ...st0 }, ['Light:light']],
+];
+for (const [name, ent, want] of cases) {
+  const view = componentsOf(ent);
+  const got = view.components.map((c: any) => `${c.type}:${c.key ?? ''}`);
+  const back = entityOf(view);
+  check(`${name}: reads as ${['Transform:', ...want].join(' + ')} and round-trips`,
+    canon(back) === canon(ent) && canon(got) === canon(['Transform:', ...want]), `got ${got.join(' + ')} / ${canon(back)}`);
+}
+check('lightOf reads both spellings with the fold\'s defaults; the legacy one wins when both',
+  canon(lightOf({ lib: L, comp: { light: {} } })) === canon({ spelling: 'comp', color: 0xffd9a0, intensity: 16, range: 10, keep: false, day: true })
+  && lightOf({ kind: 'light', color: 1, intensity: 2, range: 3, day: false, comp: { light: { color: 4 } } })?.color === 1
+  && lightOf({ kind: 'light', color: 1, intensity: 2, range: 3, day: false })?.day === false
+  && lightOf({ lib: L, comp: { light: 'on' } }) === null && lightOf({ lib: L }) === null);
+check('lightOf never lets a bad field reach the rig (NaN, string, negative → default)',
+  canon(lightOf({ comp: { light: { color: 'red', intensity: -1, range: NaN, keep: 'yes' } } })) === canon({ spelling: 'comp', color: 0xffd9a0, intensity: 16, range: 10, keep: false, day: true }));
+check('colliderOf: comp.collider wins, a bad shape falls back to legacy collide, absent = undefined',
+  colliderOf({ collide: 'box', comp: { collider: { shape: 'exact' } } }) === 'exact'
+  && colliderOf({ collide: 'box', comp: { collider: { shape: 'mesh' } } }) === 'box'
+  && colliderOf({ lib: L }) === undefined);
+check('isEmpty: no lib and not a legacy light', isEmpty({ pos: [0, 0, 0] }) && !isEmpty({ lib: L }) && !isEmpty({ kind: 'light' }) && !isEmpty(null));
+check('a lamp (Model + comp.light) cannot add a second Light; an Empty can add one; Collider still needs a Model',
+  !addable(componentsOf({ lib: L, comp: { light: {} } }).components).some((a) => a.name === 'Light')
+  && addable(componentsOf({ pos: [0, 0, 0] }).components).some((a) => a.name === 'Light')
+  && !addable(componentsOf({ pos: [0, 0, 0] }).components).some((a) => a.name === 'Collider'));
 
 // ------------------------------------------------------------ the corpus
 const logs: string[] = [];
