@@ -14,7 +14,7 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { emptyState, foldEntry } from '../shared/fold.js';
-import { componentsOf, entityOf, canon, sha256hex, RECORDS, addable, lightOf, colliderOf, isEmpty } from '../shared/components.js';
+import { componentsOf, entityOf, canon, sha256hex, RECORDS, addable, lightOf, colliderOf, isEmpty, recordHash } from '../shared/components.js';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
@@ -26,6 +26,22 @@ check('canon sorts keys and drops undefined', canon({ b: 1, a: [1, { d: undefine
 check('canon refuses NaN', (() => { try { canon({ a: NaN }); return false; } catch { return true; } })());
 const hashes = Object.values(RECORDS).map((r: any) => r.hash);
 check(`every record has a distinct 64-hex hash (${hashes.length} records)`, hashes.every((h) => /^[0-9a-f]{64}$/.test(h)) && new Set(hashes).size === hashes.length);
+// design §6: a record's hash covers meaning, not prose
+{
+  const P: any = RECORDS.Pendulum; const S: any = RECORDS.Seats;
+  const re = (r: any) => recordHash(JSON.parse(JSON.stringify(r)));
+  const tweak = (r: any, f: (x: any) => void) => { const x = JSON.parse(JSON.stringify(r)); f(x); return recordHash(x); };
+  check('every record\'s hash is recordHash of itself (the stored hash is the rule\'s)', Object.values(RECORDS).every((r: any) => re(r) === r.hash));
+  check('rewording summary / note / a param hint / fallback.text leaves the hash alone',
+    tweak(P, (x) => { x.summary = 'sways'; }) === P.hash && tweak(RECORDS.Collider, (x) => { x.note = 'reworded'; }) === RECORDS.Collider.hash
+    && tweak(P, (x) => { x.params.pivot.hint = 'reworded'; }) === P.hash && tweak(P, (x) => { x.fallback.text = 'swinging'; }) === P.hash
+    && tweak(P, (x) => { x.hint = 'a record-level hint'; }) === P.hash);
+  check('…but a default, a range, a type, a need, a seat default or the fallback visual moves it',
+    [(x: any) => { x.params.period.default = 3.6; }, (x: any) => { x.params.amp.min = 0.1; }, (x: any) => { x.params.damp.t = 'text'; },
+      (x: any) => { x.needs = ['Model']; }, (x: any) => { x.fallback.visual = 'swings'; }, (x: any) => { x.name = 'Swing'; }].every((f) => tweak(P, f) !== P.hash)
+    && tweak(S, (x) => { x.seat.pose = 'lie'; }) !== S.hash);
+  check('a parameter that is NAMED hint or note still counts', tweak(P, (x) => { x.params.note = { t: 'text', default: 'a' }; }) !== tweak(P, (x) => { x.params.note = { t: 'text', default: 'b' }; }));
+}
 check('Pendulum is not addable twice on a part-less basis but motion types repeat', addable([{ type: 'Transform' }, { type: 'Pendulum' }]).some((a) => a.name === 'Pendulum'));
 check('a tilted entity keeps q through the view', (() => { const e = { lib: 'x.glb', pos: [0, 1, 0], q: [0.2588, 0, 0, 0.9659], yaw: 0, comp: { lock: true } }; return canon(entityOf(componentsOf(e))) === canon(e); })());
 check('Picture needs a Model', !addable([{ type: 'Transform' }, { type: 'Light' }]).some((a) => a.name === 'Picture') && addable([{ type: 'Transform' }, { type: 'Model' }]).some((a) => a.name === 'Picture'));

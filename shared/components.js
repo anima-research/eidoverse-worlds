@@ -153,9 +153,30 @@ const DEFS = [
 ];
 
 function freeze(o) { if (o && typeof o === 'object') { Object.values(o).forEach(freeze); Object.freeze(o); } return o; }
+// A record's hash covers its MEANING, not its prose (design §6): `summary`,
+// `note`, every `hint` (on the record or any parameter) and `fallback.text`
+// are documentation, and rewording them must not mint a new version of the
+// component. Everything else — kind, v, name, params with their types,
+// defaults and ranges, needs, category, the fallback's visual — is hashed.
+// Exactly those places, so a parameter that happens to be NAMED note or hint
+// still counts.
+function meaningOf(rec) {
+  const { summary: _s, note: _n, hint: _h, hash: _x, ...out } = rec;
+  if (out.params) out.params = Object.fromEntries(Object.entries(out.params).map(([k, p]) => {
+    if (!p || typeof p !== 'object') return [k, p];
+    const { hint: _ph, ...rest } = p;
+    return [k, rest];
+  }));
+  if (out.fallback && typeof out.fallback === 'object') { const { text: _t, ...rest } = out.fallback; out.fallback = rest; }
+  return out;
+}
+/** The content hash of a component record: SHA-256 of the canonical JSON of
+ *  its meaning (meaningOf). Exported so a test can show what does and does
+ *  not move it. */
+export const recordHash = (rec) => sha256hex(canon(meaningOf(rec)));
 export const RECORDS = freeze(Object.fromEntries(DEFS.map((d) => {
   const rec = { kind: 'eido.component', v: 1, rung: 'engine', ...d };
-  return [d.name, { ...rec, hash: sha256hex(canon(rec)) }];
+  return [d.name, { ...rec, hash: recordHash(rec) }];
 })));
 export const CATEGORIES = [...new Set(DEFS.map((d) => d.category))];
 export const recordFor = (name) => RECORDS[name] ?? null;
