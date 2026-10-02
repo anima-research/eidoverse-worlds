@@ -173,17 +173,13 @@ export function xrPanelsPress(handRay) {
 export const xrPanelsDrag = (handRay, press) => domQuadsDrag(handRay, press);
 export const xrPanelsReleasePress = (press, cancel = false) => domQuadsRelease(press, cancel);
 
-/** C17: the panel under the laser, as a grabbable — {id, mesh} or null. Canvas quads grab too. */
+/** C17: the panel under the laser, as a grabbable — {id, mesh} or null; null over a control (a hit region on the
+ *  canvas quads): only a panel's background or title grabs. Canvas quads grab too. */
 export function xrPanelsGrab(handRay) {
   if (domQuadsEnabled()) return domQuadsGrab(handRay);
-  if (!panels || !shown) return null;
-  _m.identity().extractRotation(handRay.matrixWorld);
-  _rc.ray.origin.setFromMatrixPosition(handRay.matrixWorld);
-  _rc.ray.direction.set(0, 0, -1).applyMatrix4(_m);
-  _rc.far = 3;
-  const hit = _rc.intersectObjects(panels.filter((p) => p.mesh.visible).map((p) => p.mesh), false)[0];
-  if (!hit) return null;
-  const p = panels.find((q) => q.mesh === hit.object);
+  const at = xrPanelsAt(handRay);
+  if (!at || at.control) return null;
+  const p = panels.find((q) => q.mesh === at.mesh);
   return p ? { id: p.def.id, mesh: p.mesh } : null;
 }
 export const xrPanelRelease = (q, rig) => domQuadRelease(q, rig);   // uprighting is the same for either kind

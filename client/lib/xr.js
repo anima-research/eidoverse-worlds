@@ -5,10 +5,10 @@
 // eidoverse controller's own wish/gravity/mantle/seat code does every bit of
 // the moving; a thumbstick is a keyboard that reports fractions), the POINTER
 // (right-hand ray: trigger = select, feeding the same sgSelect the hierarchy
-// and viewport clicks feed), GRAB (the HIGGS chord: grip alone aims, grip+
-// trigger takes — local while held, and release SPEAKS A PLACE VERB, so a VR
-// grab and a typed /place are the same sentence; undo already knows how to
-// unsay it), and the RADIAL MENU (right-stick PRESS opens, stick aims, release
+// and viewport clicks feed), PANEL GRAB (grip alone takes the panel under the
+// laser by its background or title — never by a control, so a habitual grip
+// mid-click can't yank it; owner, 10-02, replacing the grip+trigger chord), and
+// the RADIAL MENU (right-stick PRESS opens, stick aims, release
 // commits; snap turn keeps stick-X when the ring is closed; every slot is a
 // verb-backed action — nothing exists only as a VR gesture. Agent parity).
 //
@@ -39,8 +39,8 @@ import { makePointerLine } from './pointer.js';
 import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, earOn, flipEar } from './mictoggle.js';
 import { markActive } from './presence.js';
 import { setReveal } from './namereveal.js';
-import { platePick, aimPlate } from './platecard.js';
-import { LASER_DEFAULT, laserVisible, looksAtWorld, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy: when it is drawn, how it follows the hand, how it holds a target   // VR hover: a laser resting on a nameplate opens its card
+import { platePick, aimPlate } from './platecard.js';   // VR hover: a laser resting on a nameplate opens its card
+import { LASER_DEFAULT, laserVisible, looksAtWorld, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy: when it is drawn, how it follows the hand, how it holds a target
 import { dockPins } from './ui.js';
 import { xrScales, toRigLocal } from './bodyscale.js';   // the chosen size composes with the device fit (rig = u, body = u/k)
 import { perf } from './perf.js';
@@ -446,7 +446,12 @@ function stickTo(side, aim, eye, hold) {
   return { ray, ...rayTargets(ray, eye) };
 }
 
-// ---- panel grab: grip+trigger chord takes a QUAD to reposition it -----------
+// ---- panel grab: GRIP takes a QUAD to reposition it -----------------------------
+// Grip ALONE, on the press (an edge: a grip held while the laser sweeps onto a panel takes nothing), by the panel's
+// background or title (owner, 10-02, after comparing with Resonite — it was the grip+trigger chord). Over a CONTROL
+// (domquad.js controlAt: a button, an input, a slider, a tab, a link…) grip does nothing: the trigger is the click, and
+// a hand that squeezes out of habit mid-click must not yank the panel away. Release on grip release, as before; the
+// trigger of the hand holding a panel does nothing while it holds.
 // World-object grabbing lived here too (near-grab, far-grab, the place verb + undo) and was removed
 // whole (owner, 09-07 22:26: 'take the code out — it needs to be a proper object component, otherwise it's
 // tech debt'). Panels are UI, not world entities: no verb, no undo, they just ride the hand and land
@@ -454,7 +459,9 @@ function stickTo(side, aim, eye, hold) {
 let held = null;   // {quad, hand}
 function tryGrab(hand, ray) {
   const h = hands[hand];
-  const q = xrPanelsGrab(ray);
+  const at = xrPanelsAt(ray);
+  if (at?.control) { tee(`[xr] grip on a control of the ${at.id} panel: not grabbed (grab it by its background or title)`); return; }
+  const q = xrPanelsGrab(ray);   // refuses a control too, for any other caller
   if (!q) return;
   held = { quad: q, hand }; haptic(hand, 0.4, 30); h.grip.attach(q.mesh); flashHint(`holding the ${q.id} panel — release grip to place it`);
 }
@@ -661,7 +668,7 @@ function aimRadial(x, y) {
   }
 }
 let radialOpen = false, stickPressWas = false;
-const triggerWas = { left: false, right: false };
+const triggerWas = { left: false, right: false }, gripWas = { left: false, right: false };
 const panelPress = { left: null, right: null };   // a trigger press on a panel, pending drag-or-click
 // Buttons are NOT trusted for the first 700 ms after an input source appears: the gamepad's first
 // frames report pressed=true garbage (owner, 09-06 11:35: 'panels toggled' fired by itself, sandwiched
@@ -1189,6 +1196,7 @@ export function updateXR(dtSec = 1 / 72) {
     //   · FLICK: deflect and return to centre within 220 ms activates without the trigger;
     //   · compat: release the CLICK while still deflected within 700 ms of opening → commit + close (the old
     //     hold-aim-release muscle memory keeps working).
+    const ringOpenAtStart = radialOpen;   // a grip that closes the ring this frame is spent: it must not also grab
     const gripNow = !!R.buttons[1]?.pressed;
     const trigNow = !!R.buttons[0]?.pressed;
     const magNow = Math.hypot(rx, ry);
@@ -1256,10 +1264,11 @@ export function updateXR(dtSec = 1 / 72) {
       // hover above, the stick scroll — runs either way: 'never' hides the beam, it does not stop the pointing.
       hand.laser.visible = laserVisible(xrPrefs.laser, { target: panelNow != null || plate != null, grip, trig });
       hand.box.visible = !getSelf()?.vrm;   // a body owns the hands → no test box
-      if (!buttonsTrusted()) { triggerWas[side] = trig; if (hand.laser.visible) placeLaser(hand.laser, ray.matrixWorld, panelNow ?? plate?.dist ?? 1.8); continue; }
-      if (grip && trig && !held) tryGrab(side, ray);   // panels only
+      if (!buttonsTrusted()) { triggerWas[side] = trig; gripWas[side] = grip; if (hand.laser.visible) placeLaser(hand.laser, ray.matrixWorld, panelNow ?? plate?.dist ?? 1.8); continue; }
+      if (grip && !gripWas[side] && !held && !(side === 'right' && ringOpenAtStart)) tryGrab(side, ray);   // grip alone; panels only
       if (!grip && held?.hand === side) releaseGrab();
-      if (trig && !triggerWas[side] && !grip && !(radialOpen && side === 'right')) {
+      const holding = held?.hand === side;
+      if (trig && !triggerWas[side] && !holding && !(radialOpen && side === 'right')) {
         // panels claim the laser before the world does — a click meant for a
         // stepper must never select the mountain behind it
         const pr = xrPanelsPress(ray);
@@ -1273,8 +1282,8 @@ export function updateXR(dtSec = 1 / 72) {
       }
       if (panelPress[side]) {
         // a press on a panel: held, it drags the panel's scroll; released, it clicks unless it dragged; a grab cancels it
-        if (trig && !grip) xrPanelsDrag(ray, panelPress[side]);
-        else { xrPanelsReleasePress(panelPress[side], grip); panelPress[side] = null; }
+        if (trig && !holding) xrPanelsDrag(ray, panelPress[side]);
+        else { xrPanelsReleasePress(panelPress[side], holding); panelPress[side] = null; }
       }
       {
         const panelDist = xrPanelsPick(ray, false);
@@ -1287,7 +1296,7 @@ export function updateXR(dtSec = 1 / 72) {
         if (hand.laser.visible) placeLaser(hand.laser, ray.matrixWorld, target ?? 1.8);
         hand.laser.userData.opacity.value = target != null ? 0.85 : 0.4;
       }
-      triggerWas[side] = trig;
+      triggerWas[side] = trig; gripWas[side] = grip;
     }
   }
 
