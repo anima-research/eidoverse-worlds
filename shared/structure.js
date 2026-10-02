@@ -621,13 +621,7 @@ export function planStructure(data) {
     // mitred diagonal — this approximation is only what the body feels.
     for (const [k, e] of level.walls) {
       if (e.axis < 2) continue;
-      const a = [e.x * g.tile, e.z * g.tile];
-      const b = e.axis === 2
-        ? [(e.x + 1) * g.tile, (e.z + 1) * g.tile]
-        : [(e.x + 1) * g.tile, e.z * g.tile];
-      const a2 = e.axis === 2 ? a : [e.x * g.tile, (e.z + 1) * g.tile];
-      const [sx, sz] = e.axis === 2 ? a : b;
-      const [ex, ez] = e.axis === 2 ? b : a2;
+      const [[sx, sz], [ex, ez]] = segmentEnds(e, g);
       const open = ['door', 'arch'].includes(level.apertures.get(k));
       const N = 8, r = g.wallT * 0.8;
       for (let i = 0; i <= N; i++) {
@@ -1178,11 +1172,8 @@ export function wallPolylines(level, g) {
   const segs = [];
   for (const [k, e] of level.walls) {
     if (level.apertures.has(k)) continue;
-    const a = cellKey(e.x, e.z);
-    const b = e.axis === 0 ? cellKey(e.x + 1, e.z)
-      : e.axis === 1 ? cellKey(e.x, e.z + 1)
-      : e.axis === 2 ? cellKey(e.x + 1, e.z + 1)     // ↘ diagonal
-      : cellKey(e.x - 1, e.z + 1);                   // ↗ diagonal
+    const [start, end] = segmentEnds(e, { tile: 1 }); // vertex keys, before metre scaling
+    const a = cellKey(...start), b = cellKey(...end);
     segs.push({ a, b, mat: e.mat, used: false });
   }
   const inc = new Map();
@@ -1335,11 +1326,13 @@ export function sweepProfile(path, profile, y0, ends = null) {
 
 /** A wall segment's two endpoints in grid-local metres, for any axis. */
 export function segmentEnds(e, g) {
-  const a = [e.x * g.tile, e.z * g.tile];
+  // Both diagonals cut their OWN cell, as nodeAtPoint/halfTriangle define.
+  // Axis 3 starts at NE and ends at SW; its start is not the NW corner.
+  const a = [(e.x + (e.axis === 3 ? 1 : 0)) * g.tile, e.z * g.tile];
   const b = e.axis === 0 ? [(e.x + 1) * g.tile, e.z * g.tile]
     : e.axis === 1 ? [e.x * g.tile, (e.z + 1) * g.tile]
     : e.axis === 2 ? [(e.x + 1) * g.tile, (e.z + 1) * g.tile]
-    : [(e.x - 1) * g.tile, (e.z + 1) * g.tile];
+    : [e.x * g.tile, (e.z + 1) * g.tile];
   return [a, b];
 }
 
@@ -1406,11 +1399,7 @@ export function levelSweeps(level, g, floorY) {
     const ap = level.apertures.get(k);
     if (!ap) continue;
     const prf = APERTURES[ap];
-    const a = [e.x * g.tile, e.z * g.tile];
-    const b = e.axis === 0 ? [(e.x + 1) * g.tile, e.z * g.tile]
-      : e.axis === 1 ? [e.x * g.tile, (e.z + 1) * g.tile]
-      : e.axis === 2 ? [(e.x + 1) * g.tile, (e.z + 1) * g.tile]
-      : [(e.x - 1) * g.tile, (e.z + 1) * g.tile];
+    const [a, b] = segmentEnds(e, g);
     const top = Math.min(prf.top, g.wallH);
     const nd = neighbourDirs(level, g, k, e);
     for (const [lo, hi] of [[0, prf.bottom], [top, g.wallH]]) {
