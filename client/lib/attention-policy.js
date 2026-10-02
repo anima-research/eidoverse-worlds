@@ -6,11 +6,23 @@ const UTTERANCE_LIMIT = 1024;
 
 export function createAttentionGate({ me, scope, mentions, now = () => performance.now() }) {
   let context, highSeq = -1, last = -Infinity;
-  const utterances = new Set();
+  const utterances = new Map();
+  const sessions = new Map();
+  function forget(actor) {
+    sessions.delete(actor);
+    for (const [key, who] of utterances) if (who === actor) utterances.delete(key);
+  }
+  function participant({ id, session } = {}) {
+    sync();
+    if (!id) return;
+    // Older servers omit session: every observed arrival is a new boundary.
+    if (typeof session !== 'string' || sessions.get(id) !== session) forget(id);
+    sessions.set(id, session);
+  }
   function sync() {
     const next = JSON.stringify([scope(), me()]);
     if (next !== context) {
-      context = next; highSeq = -1; last = -Infinity; utterances.clear();
+      context = next; highSeq = -1; last = -Infinity; utterances.clear(); sessions.clear();
     }
   }
   function admit() {
@@ -20,6 +32,14 @@ export function createAttentionGate({ me, scope, mentions, now = () => performan
     return true; // leading-edge coalescing; never queue a stale bell
   }
   return {
+    participant,
+    forget,
+    roster(people) {
+      sync();
+      const present = new Set(people.map(p => p.id));
+      for (const actor of sessions.keys()) if (!present.has(actor)) forget(actor);
+      for (const person of people) participant(person);
+    },
     say(entry) {
       sync();
       if (entry?.verb !== 'say' || entry.replay) return false;
@@ -30,10 +50,10 @@ export function createAttentionGate({ me, scope, mentions, now = () => performan
       if (args.spoken === true && Number.isSafeInteger(args.utt)) {
         const key = JSON.stringify([actor, args.utt]);
         if (utterances.has(key)) return false;
-        utterances.add(key);
+        utterances.set(key, actor);
         // Bounded session memory, not a timer: a long utterance's later flush
         // stays consumed even after the burst cooldown has passed.
-        if (utterances.size > UTTERANCE_LIMIT) utterances.delete(utterances.values().next().value);
+        if (utterances.size > UTTERANCE_LIMIT) utterances.delete(utterances.keys().next().value);
       }
       return admit();
     },

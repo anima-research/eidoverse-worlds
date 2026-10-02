@@ -40,6 +40,22 @@ check('renaming updates mention and self matching', gate.say({ ...say('@renamed'
 tick();
 check('old name no longer addressed', !gate.say(say('@tester')));
 
+// Utterance counters are sender-local: STT starts at 1 after a page reload.
+me = 'tester'; world = 'sessions';
+gate.roster([{ id: 'other', session: 'boot-a:1' }]);
+check('first sender session owns its utterance', gate.say(say('@tester', { spoken: true, utt: 1 }))); tick();
+gate.roster([{ id: 'other', session: 'boot-a:1' }]);
+check('unchanged session snapshot retains dedup across listener reconnect', !gate.say(say('@tester', { spoken: true, utt: 1 })));
+gate.participant({ id: 'other', session: 'boot-a:2' });
+check('sender rejoin can reuse its utterance counter', gate.say(say('@tester', { spoken: true, utt: 1 }))); tick();
+gate.roster([{ id: 'other', session: 'boot-b:2' }]);
+check('server restart cannot collide at the same numeric generation', gate.say(say('@tester', { spoken: true, utt: 1 }))); tick();
+gate.roster([]);
+gate.participant({ id: 'other', session: 'boot-b:3' });
+check('roster removal releases departed sender cache', gate.say(say('@tester', { spoken: true, utt: 1 }))); tick();
+gate.forget('other');
+check('live teardown releases sender cache', gate.say(say('@tester', { spoken: true, utt: 1 }))); tick();
+
 // Execute the actual chat and audio UI; only the renderer/wire are replaced.
 plugin({ name: 'attention-chat-stubs', setup(b) {
   for (const name of ['core', 'base', 'frames', 'net'])

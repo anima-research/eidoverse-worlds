@@ -330,6 +330,10 @@ const clients = new Map<unknown, Client>();
 // #57 B2: transport-epoch source. Global (not per-world) so a generation number
 // never collides across worlds or after a world reload; never persisted — an
 // epoch outliving the process would defeat its purpose.
+// Presence consumers need a sender lifetime that survives counter reuse on restart.
+// Opaque observation only: authority still uses the existing credential/leg checks.
+const PRESENCE_BOOT = crypto.randomUUID();
+const presenceSession = (c: Client) => `${PRESENCE_BOOT}:${c.gen}`;
 let GEN = 0;
 
 /** The placeholder tier's bbox side-channel, sent AFTER the snapshot as its
@@ -655,7 +659,7 @@ function buildSnapshot(w: World, c: Client) {
         // settledPose, not lastPose: a joiner must not inherit someone
         // else's mid-ragdoll frame (#61). Same normalization `restore`
         // above already gets via rememberPose.
-        id: o.id, avatar: o.avatar, pose: settledPose(o.lastPose), agent: o.agent,
+        id: o.id, avatar: o.avatar, pose: settledPose(o.lastPose), agent: o.agent, session: presenceSession(o),
         // #57 matrix 7: which aux legs this identity has live NOW —
         // inspectable surface summary on the one roster, never a second body
         surfaces: [...w.clients]
@@ -807,7 +811,7 @@ const server = Bun.serve({
           installJoin(c, w);
           ws.send(JSON.stringify(buildSnapshot(w, c)));
           sendGeomFollowup(w, c);
-          if (!c.spectator) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent }, c);
+          if (!c.spectator) w.broadcast({ type: "arrive", id: c.id, avatar: c.avatar, agent: c.agent, session: presenceSession(c) }, c);
           if (!c.spectator) w.bhv.onPresence("enter", c.id);
           // Whispers that arrived while this identity was away. Held in memory
           // only — see the `whisper` case for why they must never reach the log.

@@ -77,6 +77,9 @@ let gate;
 export function initAttention({ bus, me, scope, mentions }) {
   if (gate) return;
   gate = createAttentionGate({ me, scope, mentions });
+  bus.on('participant-session', gate.participant);
+  bus.on('participant-sessions', gate.roster);
+  bus.on('participant-teardown', gate.forget);
   bus.on('live-entry', (entry) => { if (gate.say(entry)) playNotice(); });
   const unlock = () => {
     if (!prefs.enabled || !prefs.volume) return;
