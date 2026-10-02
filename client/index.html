@@ -402,6 +402,10 @@ a:hover { color: var(--fg); text-decoration-color: var(--brand); }
   /* popovers float OVER content (the chat log), so glass at --panel-a made
      them a legibility lottery — near-opaque, still following the panel hue */
   background: rgb(var(--panel-rgb) / .94); }
+/* Stay in the frame for both desktop and VR. Small frames keep every control
+   reachable through their own scrollbar rather than scrolling clipped ancestors. */
+.chat-gearpop { box-sizing: border-box; max-width: calc(100% - 8px); overflow: auto; overscroll-behavior: contain; }
+.chat-gearpop > * { flex: none; }
 .chat-gearpop[hidden] { display: none; }
 .chat-gearpop .gp-row { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
 .chat-gearpop .gp-row span { color: var(--dim); margin-right: 6px; }
