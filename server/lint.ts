@@ -1,5 +1,5 @@
 // eidoverse-worlds sequencer — advisory lint (TEL0S_NOTES §15, step 7a).
-// The flight-recorder courtesy for motion and particles components, plus the
+// The flight-recorder courtesy for spawns, motion and particles, plus the
 // ONE resolveLibFile (§15.1 named the /geom duplicate; it imports this now).
 // The linters take a structural {state, debug} — the same two things they
 // ever read off the World — so this module needs geometry and shared code,
@@ -7,7 +7,7 @@
 
 import { existsSync } from "node:fs";
 import { join, normalize } from "node:path";
-import { OPT_DIR, LIBRARY_DIR } from "./config.ts";
+import { LADDER } from "./config.ts";
 import { summarizeGlb } from "./geometry.ts";
 // Likewise for the `particles` component: one validator, so the flight
 // recorder's opinion about an emitter is the renderer's own opinion.
@@ -39,14 +39,43 @@ export const MOTION_TYPES: Record<string, Set<string>> = {
   path: new Set(["type", "points", "speed", "duration", "loop", "face", "t0", "part", "cause", "by"]),
 };
 
-export function resolveLibFile(lib: string): string | null {
+function modelPath(lib: unknown): string | null {
+  if (typeof lib !== "string" || lib.includes("\0")) return null;
   const rel = normalize(lib).replace(/^\/+/, "");
-  if (rel.includes("..") || !/\.(glb|vrm)$/i.test(rel)) return null;
-  for (const base of [OPT_DIR, LIBRARY_DIR]) {
+  return rel.includes("..") || !/\.(glb|vrm)$/i.test(rel) ? null : rel;
+}
+
+export function resolveLibFile(lib: string): string | null {
+  const rel = modelPath(lib);
+  if (rel === null) return null;
+  for (const base of LADDER) {
     const p = normalize(join(base, rel));
     if (p.startsWith(base) && existsSync(p)) return p;
   }
   return null;
+}
+
+/** A spawn still folds when its library cannot resolve. Tell the author why
+ * through world_debug instead of leaving only every joiner's failed fetch.
+ * Run after dispatch, contain every failure, and never edit world history. */
+export function lintSpawn(w: LintHost, entry: LogEntry): void {
+  queueMicrotask(() => {
+    try {
+      const a = entry.args;
+      // A missing id never made an entity; this courtesy is for spawns.
+      if (!a?.id) return;
+      const lib = a.lib;
+      const malformed = modelPath(lib) === null;
+      if (!malformed && resolveLibFile(lib as string)) return;
+      w.debug("spawn-lint", {
+        entity: String(a.id), by: entry.actor, seq: entry.seq, lib,
+        reason: malformed ? "malformed" : "not-found",
+        why: malformed
+          ? "spawn lib is malformed: use a library-relative .glb or .vrm path without parent traversal"
+          : "spawn lib was not found in the patched assets, upload overlay or asset library; check the path or upload the asset",
+      });
+    } catch { /* advisory lint must never escape into the sequencer */ }
+  });
 }
 
 export function lintMotion(w: LintHost, entry: LogEntry): void {

@@ -604,7 +604,7 @@ first:
   `{cause: <seq of the use>, by: <who>}` — follow the chain.
 - **`world_debug {limit?, kinds?}`** (MCPL) / **`/debug [n]`** (client chat)
   — the flight recorder: what BOUNCED and why. Kinds: `denied` (rights),
-  `rejected` (malformed/oversized shapes), `rate-limit`, `reaction`
+  `rejected` (malformed/oversized shapes), `spawn-lint` (accepted spawn with a malformed or missing model path; includes actor, entity, library and log seq), `rate-limit`, `reaction`
   (fired, cause→effect), `reaction-skip` (why not: no reactions component,
   no handler for that action, wrong motion type), `reaction-error`, and
   `script-error` / `script-pause` from the behavior tier.

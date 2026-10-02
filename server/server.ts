@@ -14,10 +14,10 @@ import { PORT, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_R
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan } from "./moderation.ts";
 import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal, guardRefusal } from "./rights.ts";
-import { resolveLibFile } from "./lint.ts";
+import { resolveLibFile, lintSpawn } from "./lint.ts";
 // The authored plane's dispatch — table + shell (§15, 7b). It pulls in lint's
-// linters, reactions, and the behavior cap itself; server.ts keeps only what
-// the presence plane and HTTP surface still touch directly.
+// motion/particle linters, reactions, and the behavior cap itself; spawn lint
+// subscribes to all live commits below, including script-authored spawns.
 import { wireBehaviorGate, wireBehaviorStore } from "./behaviors.ts";
 import { summarizeGlb } from "./geometry.ts";
 // The world itself — WorldLog + WorldSession behind the unsplit facade, with
@@ -161,6 +161,10 @@ wireSettledPose(settledPose);
 // subscribe here instead of teaching another append site to fan out.
 onEntryCommitted("client-fanout", (w, entry) => w.broadcast({ type: "log", entry }));
 onEntryCommitted("behaviors", (w, entry) => w.bhv.onEntry(entry));
+// Live commits only: includes script-authored spawns, never replay or joins.
+onEntryCommitted("spawn-lint", (w, entry) => {
+  if (entry.verb === "spawn") lintSpawn(w as World, entry);
+});
 
 // ------------------------------------------------------------------ presence
 
