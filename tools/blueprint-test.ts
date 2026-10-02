@@ -179,6 +179,11 @@ const copyOf = (rec: any, at: number[]) => {
   check('rebase: a part the copy removed but the update edited is a conflict', c4.ok === false && c4.conflicts.some((c: any) => J(c.path) === J(['bulb'])), J(c4));
   const c5: any = rebase(noBulb, (() => { const v = structuredClone(lampV1); v.parent = H1; v.name = 'Lamp '; return v; })(), lampV1);
   check('…but a removal the update did not touch stays removed', c5.ok === true && c5.tree.children.length === 0, J(c5));
+  // the update ADDS to a part the copy removed: the remover and the adder disagree too
+  const capped = structuredClone(lampV1); capped.parent = H1;
+  capped.root.children[0].components.push({ type: 'Label', key: 'label', params: { text: 'the bulb' } });
+  const c7: any = rebase(noBulb, capped, lampV1);
+  check('rebase: a part the copy removed but the update added to is a conflict (not a silent drop)', c7.ok === false && c7.conflicts.some((c: any) => J(c.path) === J(['bulb']) && c.comp === 'Label|label'), J(c7));
   const unlabel = structuredClone(lampV1); unlabel.parent = H1; unlabel.root.components.find((c: any) => c.type === 'Label').params.text = 'a lamp, v4';
   const c6: any = rebase(red, unlabel, lampV1);
   check('rebase: a component the copy removed but the update edited is a conflict', c6.ok === false && c6.conflicts.some((c: any) => c.comp === 'Label|label'), J(c6));
@@ -211,7 +216,7 @@ const H2 = blueprintHash(lampV2);
   // the snapshot path: a joiner folding stateToEntries gets the same store
   const re: any = emptyState();
   for (const e of stateToEntries(st)) foldEntry(re, e);
-  check('a snapshot (stateToEntries) carries the store: a re-fold holds the same records', canon(re.blueprints) === canon(st.blueprints), J(Object.keys(re.blueprints ?? {})));
+  check('a snapshot (stateToEntries) carries the store: a re-fold holds the same records', canon(re.blueprints ?? null) === canon(st.blueprints), J(Object.keys(re.blueprints ?? {})));
   const fresh: any = emptyState();
   check('a world with no blueprints folds no store key (old states keep their shape)', !('blueprints' in fresh) && !stateToEntries(fresh).some((e: any) => e.verb === 'blueprint'));
 }
