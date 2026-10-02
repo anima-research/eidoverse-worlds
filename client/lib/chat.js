@@ -16,6 +16,7 @@ import { CONFIG, bus, colorFor, assignColors } from './base.js';
 // EXPORTED instead and main.js registers it — the dependency inverted rather than made
 // conditional, so there is no lite-mode flag buried in a chat file.
 import { lastWhy } from './debuglog.js';
+import { initAttention, attentionWhisper, mountAttentionControls } from './attention.js';
 import { makeFrame } from './frames.js';
 import { fsvg } from './icons.js';
 import { requestHistory } from './net.js';
@@ -814,6 +815,7 @@ function initChatGear() {
       <div class="gp-row"><span>People Here</span>
         <button data-side="left" class="${sideSt.pos === 'left' ? 'on' : ''}">left</button>
         <button data-side="right" class="${sideSt.pos !== 'left' ? 'on' : ''}">right</button></div>`;
+    mountAttentionControls(pop);
   };
   pop.onclick = (e) => {
     const fs = e.target?.dataset?.fs, sd = e.target?.dataset?.side, md = e.target?.dataset?.md;
@@ -849,6 +851,7 @@ function initChatGear() {
 }
 
 export function initChat({ send, whisper, typing, people }) {
+  initAttention({ bus, me: () => CONFIG.name, scope: () => CONFIG.world, mentions: mentionsMe });
   onSend = send;
   onWhisper = whisper ?? (() => {});
   onTyping = typing ?? (() => {});
@@ -1006,7 +1009,9 @@ export function initChat({ send, whisper, typing, people }) {
 // you never see because you were on another tab is worse than no tabs at all.
 // The tab is for following a thread, not for hiding it.
 
-export function logWhisper({ from, to, text, echo }) {
+export function logWhisper(msg) {
+  const { from, to, text, echo } = msg;
+  attentionWhisper(msg);
   const other = echo ? to : from;
   if (!echo) lastWhisperFrom = from;
   ensureConvo(other);

@@ -814,7 +814,9 @@ const server = Bun.serve({
           if (!c.spectator) {
             const held = pendingWhispers.get(whisperKey(w.name, c.id));
             if (held?.length) {
-              for (const m of held) ws.send(JSON.stringify(m));
+              // The client must distinguish catch-up from a live addressed event
+              // for private attention UI. This flag is server-authored, never logged.
+              for (const m of held) ws.send(JSON.stringify({ ...m, replay: true }));
               pendingWhispers.delete(whisperKey(w.name, c.id));
               console.log(`[world:${w.name}] delivered ${held.length} held whisper(s) to ${c.id}`);
             }
