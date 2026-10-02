@@ -100,5 +100,30 @@ console.log("\nrefusals, gestures and inverses of the other verbs:");
   check("schemaFor reads the fold record", schemaFor("L").groups.some((g: any) => g.group === "light") && schemaFor("nope").groups.length === 0);
 }
 
+console.log("\nthe channel box (step 3): rotations undo by q, and the editor reads back what it typed:");
+{
+  const { emptyState, foldEntry } = await import("../shared/fold.js");
+  const { qFromEuler, sameRotation } = await import("../shared/euler.js");
+  const echo = (id: string, v: any) => { const st: any = emptyState(); st.entities[id] = fold.st.entities[id]; foldEntry(st, { seq: 9, ts: 9, actor: "o", verb: v.verb, args: v.args }); fold.st.entities[id] = st.entities[id]; };
+  fold.st.entities.t1 = { lib: "crate.glb", pos: [0, 0, 0], yaw: 0.5, actor: "r", ts: 1 };
+  world.entities.set("t1", {});
+  const n0 = undos.length;
+  const r = commitEdit("t1", "rot.x", 30 * Math.PI / 180);   // the panel speaks radians for a deg field
+  const sentPlace = sent[sent.length - 1];
+  check("tilting a yaw-only thing sends ONE place with q", r.ok && sentPlace.verb === "place" && Array.isArray(sentPlace.args.q), JSON.stringify(sentPlace));
+  check("…and its undo carries the q of its old yaw (a bare yaw would keep the tilt)", undos.length === n0 + 1 && Array.isArray(undos[undos.length - 1].inv.args.q) && sameRotation(undos[undos.length - 1].inv.args.q, [0, Math.sin(0.25), 0, Math.cos(0.25)], 1e-12), JSON.stringify(undos[undos.length - 1]));
+  echo("t1", sentPlace);
+  // drive it into gimbal lock through the panel: Y to 90°
+  const r2 = commitEdit("t1", "rot.y", Math.PI / 2);
+  echo("t1", sent[sent.length - 1]);
+  const val = (k: string) => schemaFor("t1").groups.find((g: any) => g.group === "rot").fields.find((f: any) => f.k === k).value;
+  check("at gimbal lock the editor reads back exactly what it typed (30°, 90°, 0) — its hint", Math.abs(val("x") - 30 * Math.PI / 180) < 1e-9 && Math.abs(val("y") - Math.PI / 2) < 1e-9 && Math.abs(val("z")) < 1e-9, `${val("x")} ${val("y")} ${val("z")}`);
+  check("…the hint is the triple that was composed, and its q is what was sent", !!r2.euler && [30 * Math.PI / 180, Math.PI / 2, 0].every((v, i) => Math.abs(r2.euler.e[i] - v) < 1e-12)
+    && sameRotation(r2.euler.q, qFromEuler([30 * Math.PI / 180, Math.PI / 2, 0], "XYZ"), 1e-12) && sameRotation(r2.euler.q, fold.st.entities.t1.q, 1e-12), JSON.stringify(r2.euler));
+  // someone else turns it: the hint is void, the fresh (canonical) reading returns
+  fold.st.entities.t1 = { ...fold.st.entities.t1, q: qFromEuler([0, Math.PI / 2, 0.7], "XYZ") };
+  check("…and is void once someone else's turn lands (inner channel back to 0)", val("x") === 0);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

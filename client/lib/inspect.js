@@ -30,6 +30,8 @@ import { renderDOM } from './panels.js';
 import { inspectSchema, editVerbs, fieldAt } from '../../shared/editschema.js';
 import { mayAuthor } from './placer.js';
 import { namedParts } from './parts.js';
+import { qFromYaw } from '../../shared/rot.js';
+import { sameRotation } from '../../shared/euler.js';
 const R2D = 180 / Math.PI;
 
 const handlers = new Map();      // group → [fn] — consulted in order; the first to return true handled it
@@ -45,11 +47,26 @@ export function setEditHooks(h) { hooks = { ...hooks, ...h }; }
 
 /** The folded record for a placed thing — exactly what the schema reads. */
 export const foldRecord = (id) => state.st.entities?.[id] ?? null;
+// The Rotate channels' hint (shared/euler.js): the Euler triple THIS viewer
+// last composed for a thing, so its channels read back exactly as typed
+// (the branch past 90°, the inner channel at gimbal lock). Only honoured
+// while the folded q is still the one it was composed for — anyone else's
+// turn (a gizmo, a peer, an undo) voids it. Client memory, never stored.
+const eulerHints = new Map();   // id → { order, e, q }
+function eulerHint(id, rec) {
+  const h = eulerHints.get(id);
+  if (!h) return undefined;
+  const order = rec?.comp?.rotOrder ?? 'XYZ';
+  // not deleted on a mismatch: the repaint right after a commit reads the fold
+  // BEFORE the echo lands, and the hint is for the q that is about to arrive
+  return rec?.q && h.order === order && sameRotation(h.q, rec.q, 1e-12) ? h.e : undefined;
+}
 /** What only a live client knows about a thing: the schema AND the commit path read the same. */
 export function liveFor(id) {
   const obj = entities.get(id);
   const light = !!obj?.userData?.isLight;
-  return { casting: light ? hooks.casting?.(obj) : undefined, mayAuthor: mayAuthor(id), parts: obj && !light ? namedParts(obj) : undefined };
+  return { casting: light ? hooks.casting?.(obj) : undefined, mayAuthor: mayAuthor(id), parts: obj && !light ? namedParts(obj) : undefined,
+    euler: eulerHint(id, foldRecord(id)) };
 }
 export function schemaFor(id) {
   const rec = foldRecord(id); if (!rec) return { id, groups: [] };
@@ -62,7 +79,10 @@ export function endGesture() { gesture = null; }
 /** Inverse of a verb about to be sent, against the record it was computed from. */
 export function inverseOf(v, rec, id) {
   switch (v.verb) {
-    case 'place': return { verb: 'place', args: { id, pos: [...(rec.pos ?? [0, 0, 0])], yaw: rec.yaw ?? 0, ...(rec.scale != null ? { scale: rec.scale } : {}) } };
+    // a thing with q comes back by its q; a yaw-only thing the edit TILTED comes
+    // back by the q of its old yaw — a bare yaw would keep the tilt (PROTOCOL §9.1)
+    case 'place': return { verb: 'place', args: { id, pos: [...(rec.pos ?? [0, 0, 0])], yaw: rec.yaw ?? 0,
+      ...(rec.q ? { q: [...rec.q] } : v.args.q ? { q: qFromYaw(rec.yaw ?? 0) } : {}), ...(rec.scale != null ? { scale: rec.scale } : {}) } };
     case 'light': {
       const back = { id };
       for (const k of Object.keys(v.args)) if (k !== 'id') back[k] = k === 'day' ? rec.day !== false : k === 'keep' ? rec.keep === true : rec[k];
@@ -86,9 +106,9 @@ export function planEdit(id, key, value, base = null) {
   const f = fieldAt(inspectSchema(rec, id, live), key);
   if (f?.deg && typeof value === 'number') value = value * R2D;   // panel steppers speak wire (radians); editVerbs takes the face
   if (group === 'comp' && k !== '+' && value === '') return { verbs: [], inverses: [], errors: [`${k}: empty — use "remove ${k}" to remove it`] };
-  const { verbs, errors } = editVerbs(rec, id, { [key]: value }, live);
+  const { verbs, errors, euler } = editVerbs(rec, id, { [key]: value }, live);
   const inverses = verbs.map((v) => inverseOf(v, base ?? rec, id)).filter(Boolean);
-  return { verbs, inverses, errors };
+  return { verbs, inverses, errors, euler };
 }
 /** Send one planned verb through the right door (lights ride the coalescer). */
 export function sendPlanned(v) {
@@ -115,10 +135,14 @@ export function commitEdit(id, key, value, opts = {}) {
   // the FACE, converted once here (review B1: amp/phase/socket yaw landed at
   // 1/57th); and a raw-JSON box cleared and blurred must not delete the
   // component — the 'remove <type>' button (null) is the deliberate act (S2).
-  const { verbs, inverses, errors } = planEdit(id, key, value, base);
-  inverses.forEach((inv) => hooks.undo?.(inv, `${key} of ${id}`));
+  const { verbs, inverses, errors, euler } = planEdit(id, key, value, base);
+  // one edit is one undo step, however many verbs it took (an Add Component
+  // that brings its need, a remove-both): the inverses undo in reverse order
+  if (inverses.length === 1) hooks.undo?.(inverses[0], `${key} of ${id}`);
+  else if (inverses.length > 1) hooks.undo?.({ verbs: [...inverses].reverse() }, `${key} of ${id}`);
   verbs.forEach(sendPlanned);
-  return { ok: !errors.length, errors, verbs };
+  if (euler) eulerHints.set(id, euler); else if (verbs.some((v) => v.verb === 'place')) eulerHints.delete(id);
+  return { ok: !errors.length, errors, verbs, ...(euler ? { euler } : {}) };
 }
 
 /** Every editor as html+wire for the legacy section: the registered html

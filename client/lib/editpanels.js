@@ -401,7 +401,19 @@ function inspectorFields() {
       const key = `c:${sec.key ?? sec.type}`;
       f.push({ t: 'group', k: key, label: `${sec.title}${locked && sec.type === 'Transform' ? ' 🔒' : ''}`, hint: `${sec.summary} — ${sec.category} · engine record ${sec.hash.slice(0, 12)}`, open: isOpen(id, key) });
       for (const [label, value] of sec.info ?? []) f.push({ t: 'info', label, value });
-      for (const addr of sec.fields) { const r = row(addr); if (r) f.push(r); }
+      // the channel box: an alias (pos.yaw, the heading) stays addressable for
+      // agents but is not drawn; the Quaternion row folds under its own header,
+      // closed unless the entity is in quaternion mode (then it IS the rotation)
+      const quat = [];
+      for (const addr of sec.fields) {
+        const r = row(addr); if (!r || r.alias) continue;
+        if (r.row === 'quat') quat.push(r); else f.push(r);
+      }
+      if (quat.length) {
+        const qk = `${key}:quat`;
+        f.push({ t: 'group', k: qk, label: 'Quaternion', hint: 'the stored orientation, x y z w — normalized on commit', open: sec.quatOpen ? isOpen(id, qk) : !isOpen(id, qk) });
+        f.push(...quat);
+      }
       if (sec.removable && sec.key) f.push({ t: 'btn', k: `ed:remove.${sec.key}`, label: `remove ${sec.title}`, danger: true });
     }
     if (schema.sections.add.length) {

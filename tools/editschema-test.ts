@@ -29,7 +29,8 @@ console.log("\nschema is a function of the record:");
 {
   const s = inspectSchema(chair, "c1");
   const G = s.groups.map((g) => g.group);
-  check("a chair: pos · flags · sockets · comp", JSON.stringify(G) === '["pos","flags","sockets","comp"]', JSON.stringify(G));
+  // step 3: the channel box's Rotate channels are their own group, `rot` (tools/channelbox-test.ts)
+  check("a chair: pos · rot · flags · sockets · comp", JSON.stringify(G) === '["pos","rot","flags","sockets","comp"]', JSON.stringify(G));
   check("locked → transform read-only with the reason", fieldAt(s, "pos.x")!.disabled === true && /locked/.test(fieldAt(s, "pos.x")!.hint));
   // 09-23: raw rows are `json` fields (multi-line, validated as you type), no longer single-line text
   check("unknown comp 'recipe' is a raw-JSON field; sockets/lock are NOT duplicated there", fieldAt(s, "comp.recipe")?.t === "json" && !fieldAt(s, "comp.sockets") && !fieldAt(s, "comp.lock"));

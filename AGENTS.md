@@ -199,7 +199,13 @@ edit      {id, set, dry?}    # change fields by address; the fewest verbs go out
 ```
 
 Addresses are `group.field`: `pos.x pos.y pos.z pos.yaw pos.scale` (→ `place`,
-one verb carrying the full pose however many you set) · `flags.lock
+one verb carrying the full pose however many you set) · `rot.x rot.y rot.z`
+(Rotate, in degrees, read from the stored `q` in the thing's rotation order;
+one channel composes exactly into `q` → the same `place`; a pure yaw edit on a
+yaw-only thing stays a `yaw`) · `rot.qx rot.qy rot.qz rot.qw` (the quaternion,
+normalized on commit) · `rot.order` (`XYZ`…`ZYX` or `quat`, Maya's
+rotateOrder: XYZ applies X first; → `comp rotOrder`, never moves it;
+`pos.yaw` is the heading: it turns the thing about up, keeping its tilt) · `flags.lock
 flags.hidden flags.label` (→ `comp`; a label is a display name, the id never
 changes; hidden = not drawn, still there) · `light.color light.intensity
 light.range light.keep light.noon` (→ one partial `light` for a light made

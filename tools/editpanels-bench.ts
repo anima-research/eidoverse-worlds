@@ -95,7 +95,7 @@ await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('benchlam
 await waitFor(`!!document.querySelector('.frame.edit .sp-tree-row.active')`);
 const insp = `[...document.querySelectorAll('.frame.edit')].find((f) => /Inspector/.test(f.querySelector('.fr-title')?.textContent))`;
 check('row is active', await evalJson(`!!document.querySelector('.frame.edit .sp-tree-row.active')`));
-check('channels: pos x/y/z + light brightness + range', await evalJson(`(() => { const L = [...${insp}.querySelectorAll('.sp-f-num .sp-label')].map((l) => l.textContent); return L.includes('pos x') && L.includes('pos z') && L.includes('light · brightness') && L.includes('light · range') && !L.includes('yaw'); })()`), 'a light has no yaw');
+check('channels: pos x/y/z + light brightness + range', await evalJson(`(() => { const L = [...${insp}.querySelectorAll('.sp-f-num .sp-label')].map((l) => l.textContent); return L.includes('translate x') && L.includes('translate z') && L.includes('light · brightness') && L.includes('light · range') && !L.includes('yaw'); })()`), 'a light has no yaw');
 check('the light group renders from the registry', await evalJson(`[...${insp}.querySelectorAll('.sp-group')].some((g) => /light/i.test(g.textContent)) && !!${insp}.querySelector('input[type=color]')`));
 check('lock / keep / noon toggles', await evalJson(`${insp}.querySelectorAll('input[type=checkbox]').length >= 3`));
 check('compact channels have no bumpers', await evalJson(`${insp}.querySelectorAll('.sp-step.compact .sp-bump').length === 0 && ${insp}.querySelectorAll('.sp-step.compact').length >= 5`));
@@ -114,7 +114,7 @@ check('brightness back to 16', await waitFor(`import('/lib/world.js').then((m) =
 
 console.log('\na no-op scrub on one thing must not leak its pose into the next selection:');
 {
-  const inpX = `[...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === 'pos x').querySelector('.sp-num')`;
+  const inpX = `[...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === 'translate x').querySelector('.sp-num')`;
   const pe = (t: string, x: number, extra = '') => `new PointerEvent('${t}', { clientX: ${x}, clientY: 0, button: 0, pointerId: 9, bubbles: true, isPrimary: true${extra} })`;
   // ctrl-scrub a few px and release: rounds back to the start value (a live call AT the start pose)
   await evalJson(`(() => { const i = ${inpX}; i.dispatchEvent(${pe('pointerdown', 100)}); i.dispatchEvent(${pe('pointermove', 108, ', ctrlKey: true')}); i.dispatchEvent(${pe('pointerup', 108, ', ctrlKey: true')}); return true; })()`);
@@ -495,7 +495,7 @@ console.log('\nrevert to default (↺): shown only when a value differs; an ordi
   check('…and hides itself', await waitFor(`${rowOf('brightness')}?.querySelector('.sp-revert')?.hidden === true`));
   await evalJson(`import('/lib/build.js').then((m) => (m.undo(), true))`);
   check('one undo brings 40 back (revert is an ordinary edit)', await waitFor(`import('/lib/state.js').then((m) => m.state.st.entities.benchlamp.intensity === 40)`), JSON.stringify(await I()));
-  check('position has no ↺ (no meaningful default)', await evalJson(`!${rowOf('pos x')}?.querySelector('.sp-revert')`));
+  check('position has no ↺ (no meaningful default)', await evalJson(`!${rowOf('translate x')}?.querySelector('.sp-revert')`));
 }
 
 console.log('\nthe first seat in one step (Components ▸ + seat…):');

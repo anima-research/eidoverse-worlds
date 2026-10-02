@@ -25,6 +25,8 @@
 import { normalizePicture, PICTURE_LIT, PICTURE_LOOK_MAX } from './picture.js';
 import { normalizeSound, SOUND_LOOK_MAX } from './sound.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS } from './components.js';
+import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE } from './euler.js';
+import { qNorm, qHeading, qFromYaw } from './rot.js';
 
 const R2D = 180 / Math.PI;
 export const AXES = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] };
@@ -66,6 +68,11 @@ const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
 // light-verb light. When both spellings are present the legacy one owns the
 // `light` group (it is what renders) and the comp shows as raw JSON.
 const compLight = (ent) => !isLight(ent) && isBag(ent?.comp?.light);
+// The reading a viewer with no hint gets: canonical (middle axis within ±90°,
+// shared/euler.js) — except an UPRIGHT thing with a q (a pure turn about +Y,
+// which every lease release and settle writes), which reads (0, yaw, 0) in
+// every order, exactly as the same thing without a q does.
+const uprightHint = (ent) => (ent?.q && Math.abs(ent.q[0]) < 1e-12 && Math.abs(ent.q[2]) < 1e-12 ? [0, ent.yaw ?? 0, 0] : null);
 const motionKeys = (ent) => Object.keys(ent?.comp ?? {}).filter((k) => (k === 'motion' || k.startsWith('motion:')) && ent.comp[k] && typeof ent.comp[k] === 'object');
 
 // ---------------------------------------------------------------- schema
@@ -97,17 +104,40 @@ export function inspectSchema(ent, id, live = {}) {
   const tf = { disabled: locked || mounted, hint: locked ? 'locked — unlock to move it' : mounted ? `mounted on ${ent.parent.to} — the attach offset owns this pose; detach to move it` : undefined };
   const pos = ent.pos ?? [0, 0, 0];
   const transform = [
-    { t: 'num', k: 'x', label: 'pos x', value: round(pos[0]), step: 0.1, dp: 2, unit: 'm', ...tf },
-    { t: 'num', k: 'y', label: 'pos y', value: round(pos[1]), step: 0.1, dp: 2, unit: 'm', ...tf },
-    { t: 'num', k: 'z', label: 'pos z', value: round(pos[2]), step: 0.1, dp: 2, unit: 'm', ...tf },
+    { t: 'num', k: 'x', label: 'translate x', value: round(pos[0]), step: 0.1, dp: 2, unit: 'm', ...tf },
+    { t: 'num', k: 'y', label: 'translate y', value: round(pos[1]), step: 0.1, dp: 2, unit: 'm', ...tf },
+    { t: 'num', k: 'z', label: 'translate z', value: round(pos[2]), step: 0.1, dp: 2, unit: 'm', ...tf },
   ];
+  const rotation = [];
+  let gimbal = false;
   if (!isLight(ent)) {
-    transform.push({ t: 'num', k: 'yaw', label: 'yaw', value: round(ent.yaw ?? 0, 4), step: 5, deg: true, ...tf });
+    // pos.yaw: the heading — the friendly subset (PROTOCOL §9.1: a bare yaw turns
+    // the thing about world +Y and keeps any tilt). Kept for agents and old
+    // callers; the channel box shows the Rotate channels instead (alias).
+    transform.push({ t: 'num', k: 'yaw', label: 'heading', value: round(ent.yaw ?? 0, 4), step: 5, deg: true, alias: 'rot', ...tf,
+      hint: tf.hint ?? 'turn about world up to this heading, keeping any tilt (the Rotate channels are the full orientation)' });
     transform.push({ t: 'num', k: 'scale', label: 'scale', value: round(ent.scale ?? 1), def: 1, step: 0.05, dp: 2, min: 0.01, softMax: 12, ...tf });
+    // the channel box's Rotate (design §5): Euler degrees READ from q in the
+    // entity's rotation order (shared/euler.js); a yaw-only thing reads exactly
+    // (0, yaw, 0) in every order. live.euler is the triple this viewer last
+    // saw — it picks the Euler branch, so channels don't jump while you work.
+    const order = rotOrderOf(ent);
+    const q = ent.q ?? qFromYaw(ent.yaw ?? 0);
+    rotation.push({ t: 'enum', k: 'order', label: 'rotate order', value: order, def: 'XYZ', options: ROT_MODES.map((v) => ({ v, label: v === QUAT_MODE ? 'quaternion' : v })),
+      hint: 'how the Rotate channels read the orientation (Maya\'s rotateOrder: XYZ applies X first). Changing it never moves the thing, so a lock or a mount does not stop it' });
+    if (order !== QUAT_MODE) {
+      let e;
+      if (!ent.q) e = [0, ent.yaw ?? 0, 0];
+      else { const r = eulerFromQ(ent.q, order, live.euler ?? uprightHint(ent)); e = r.e; gimbal = r.locked; }
+      ['x', 'y', 'z'].forEach((k, i) => rotation.push({ t: 'num', k, label: `rotate ${k}`, value: round(e[i], 12), step: 5, deg: true, ...tf }));
+    }
+    ['x', 'y', 'z', 'w'].forEach((a, i) => rotation.push({ t: 'num', k: `q${a}`, label: `quat ${a}`, value: round(q[i], 6), step: 0.01, dp: 4, min: -1, max: 1, row: 'quat', ...tf,
+      hint: tf.hint ?? 'the stored orientation (unit quaternion x y z w); normalized on commit' }));
   }
   const driven = c.motion?.type && !c.motion.part ? 'motion' : null;   // a whole-entity motion composes onto this REST pose
-  if (driven) for (const f of transform) f.driven = driven;
+  if (driven) for (const f of [...transform, ...rotation]) if (f.t === 'num') f.driven = driven;
   groups.push({ group: 'pos', label: 'Transform', verb: 'place', fields: transform });
+  if (rotation.length) groups.push({ group: 'rot', label: 'Rotate', verb: 'place', fields: rotation, ...(gimbal ? { gimbal: true } : {}) });
 
   const flags = [];
   if (held) flags.push({ t: 'info', label: '', value: `🛡 guarded by ${placer ?? 'its placer'} — only they, the world's owner or an operator may change, move or remove it (using it and sitting on it stay open)` });
@@ -341,7 +371,15 @@ function componentSections(ent, groups, held, live = {}) {
     const rec = RECORDS[inst.type];
     const sec = { type: inst.type, key: inst.key ?? null, title: inst.type, hash: rec.hash, category: rec.category, summary: rec.summary, fields: [], removable: false };
     switch (inst.type) {
-      case 'Transform': sec.fields = refs('pos'); break;
+      case 'Transform': {
+        // the channel box: Translate, Rotate, Scale, the order, and the
+        // Quaternion row (fields marked row:'quat', open in quaternion mode)
+        const rot = g('rot');
+        sec.fields = [...refs('pos', (f) => f.k !== 'scale'), ...refs('rot', (f) => f.row !== 'quat'), ...refs('pos', (f) => f.k === 'scale'), ...refs('rot', (f) => f.row === 'quat')];
+        if (rot) sec.quatOpen = rot.fields.find((f) => f.k === 'order')?.value === QUAT_MODE;
+        if (rot?.gimbal) sec.info = [['gimbal lock', 'the middle axis is at ±90°, so the first and last axes turn about the same line — a turn on either shows on the last; the Quaternion row is exact']];
+        break;
+      }
       case 'Model': sec.info = [['model', String(ent.lib)]]; break;
       // keyed = the component; keyless = the legacy spawn `collide`, which owns
       // the collider group only when no component overrides it
@@ -458,6 +496,14 @@ export function editVerbs(ent, id, edits, live = {}) {
   const verbs = [];
   const c = ent?.comp ?? {};
   let place = null;                 // coalesced full pose
+  // the place every transform edit coalesces into, carrying the full pose: a
+  // thing with q keeps its q (a move is not a turn), a yaw-only thing its yaw
+  const basePlace = () => (place ??= { id, pos: [...(ent.pos ?? [0, 0, 0])],
+    ...(isLight(ent) ? {} : { ...(ent.q ? { q: [...ent.q] } : {}), yaw: ent.yaw ?? 0, scale: ent.scale ?? 1 }) });
+  const rotSet = {};                // axis index → radians (the Rotate channels)
+  const quatSet = {};               // component index → value (the Quaternion row)
+  let headingSet = false;
+  let euler = null;                 // the triple a Rotate edit composed: the viewer's next hint
   let light = null;                 // coalesced partial light
   const comps = new Map();          // type → next data (null = remove)
   const motions = new Map();        // key → next params (null = rest)
@@ -496,11 +542,26 @@ export function editVerbs(ent, id, edits, live = {}) {
     if (f?.client) { errors.push(`${key}: a viewport gesture, not a value — set the fields it would have set`); continue; }
     switch (group) {
       case 'pos': {
-        place ??= { id, pos: [...(ent.pos ?? [0, 0, 0])], ...(isLight(ent) ? {} : { yaw: ent.yaw ?? 0, scale: ent.scale ?? 1 }) };
+        basePlace();
         const n = num(f, raw); if (n == null) break;
-        if (k === 'yaw') place.yaw = round(n, 4);
+        // a bare heading: the fold turns the thing about +Y keeping its tilt
+        // (PROTOCOL §9.1) — so it must travel WITHOUT q, which would win
+        if (k === 'yaw') { place.yaw = round(n, 4); delete place.q; headingSet = true; }
         else if (k === 'scale') place.scale = round(n);
         else place.pos['xyz'.indexOf(k)] = round(n);
+        break;
+      }
+      case 'rot': {
+        if (k === 'order') {
+          if (!ROT_MODES.includes(raw)) { errors.push(`rot.order: one of ${ROT_MODES.join(' ')}`); break; }
+          // only how the channels read: never a place, never q. XYZ is the
+          // absence of the comp (nothing writes XYZ)
+          if (raw !== rotOrderOf(ent)) comps.set('rotOrder', raw === 'XYZ' ? null : raw);
+          break;
+        }
+        const n = num(f, raw); if (n == null) break;
+        if (k.startsWith('q')) quatSet['xyzw'.indexOf(k[1])] = n;
+        else rotSet['xyz'.indexOf(k)] = n;
         break;
       }
       case 'flags': {
@@ -626,6 +687,30 @@ export function editVerbs(ent, id, edits, live = {}) {
       default: errors.push(`${key}: no such group`);
     }
   }
+  // Rotate / Quaternion edits compose into ONE q on the coalesced place
+  // (design §5): read q in the entity's order, set the typed channels, recompose.
+  if (Object.keys(quatSet).length || Object.keys(rotSet).length) {
+    basePlace();
+    const q0 = ent.q ?? qFromYaw(ent.yaw ?? 0);
+    const order = rotOrderOf(ent);
+    if (Object.keys(quatSet).length) {
+      const qn = qNorm(q0.map((v, i) => (quatSet[i] ?? v)));
+      if (!qn) { errors.push('rot: a quaternion of zero length is no orientation'); place = null; }   // the pose is one verb: refused whole
+      else { place.q = qn; place.yaw = qHeading(qn); }
+    } else if (!ent.q && !headingSet) {
+      // a yaw-only thing reads (0, yaw, 0) in every order; while the edit keeps
+      // it that way it stays yaw-only, so untouched history keeps its bytes
+      const e = [0, ent.yaw ?? 0, 0];
+      for (const [i, v] of Object.entries(rotSet)) e[+i] = v;
+      if (e[0] === 0 && e[2] === 0) place.yaw = round(e[1], 4);
+      else { const q = qFromEuler(e, order); place.q = q; place.yaw = qHeading(q); euler = { order, e, q }; }
+    } else {
+      const { e } = eulerFromQ(place.q ?? q0, order, live.euler ?? uprightHint(ent));
+      for (const [i, v] of Object.entries(rotSet)) e[+i] = v;
+      const q = qFromEuler(e, order);
+      place.q = q; place.yaw = qHeading(q); euler = { order, e, q };
+    }
+  }
   for (const [type, b] of bags) {
     if (b === null) { comps.set(type, null); continue; }
     if (type === 'light') { const why = compRefusal('light', b, ent); if (why) errors.push(`light: ${why}`); else comps.set('light', b); continue; }
@@ -640,7 +725,7 @@ export function editVerbs(ent, id, edits, live = {}) {
     else verbs.push({ verb: 'comp', args: { id, type: mkey, data: next } });
   }
   for (const [type, data] of comps) verbs.push({ verb: 'comp', args: { id, type, data } });
-  return { verbs, errors };
+  return { verbs, errors, ...(euler ? { euler } : {}) };
 }
 
 /** A one-screen text rendering of the schema — what a model reads. */
