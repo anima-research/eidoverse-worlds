@@ -25,7 +25,7 @@
 
 import { entities } from './world.js';
 import { state } from './state.js';
-import { sendVerb } from './net.js';
+import { sendVerb, net } from './net.js';
 import { renderDOM } from './panels.js';
 import { inspectSchema, editVerbs, fieldAt } from '../../shared/editschema.js';
 import { mayAuthor } from './placer.js';
@@ -33,6 +33,7 @@ import { namedParts } from './parts.js';
 import { qFromYaw } from '../../shared/rot.js';
 import { sameRotation } from '../../shared/euler.js';
 import { localOf } from '../../shared/hierarchy.js';
+import { WORLD_ID, worldSchema, worldEditVerbs } from '../../shared/worldentity.js';
 const R2D = 180 / Math.PI;
 
 const handlers = new Map();      // group → [fn] — consulted in order; the first to return true handled it
@@ -74,7 +75,14 @@ export function liveFor(id) {
     // socket, the Parent field's children, and the in-place parenting maths
     world: state.st.entities ?? {}, mayAuthorOf: (x) => (state.st.entities?.[x] ? mayAuthor(x) : undefined) };
 }
+// The world entity `@world` (design §3, shared/worldentity.js): an alias of
+// state.sky/terrain/grass, edited through the sky/weather/terrain/grass verbs.
+// Those are owner-rank: false = this viewer is known not to be the owner
+// (WORLD_ADMIN operators fold to owner), undefined = not known yet.
+export const mayShape = () => { const r = net.myRights?.role; return r === undefined ? undefined : r === 'owner'; };
+export const worldLive = () => ({ now: Date.now(), mayShape: mayShape() });
 export function schemaFor(id) {
+  if (id === WORLD_ID) return worldSchema(state.st, worldLive());
   const rec = foldRecord(id); if (!rec) return { id, groups: [] };
   return inspectSchema(rec, id, liveFor(id));
 }
@@ -108,6 +116,7 @@ export function inverseOf(v, rec, id) {
  *  multi-selection batches these across ids into one undo step. `base` is
  *  the record the inverse is computed from (a gesture's start, else now). */
 export function planEdit(id, key, value, base = null) {
+  if (id === WORLD_ID) { const r = worldEditVerbs(state.st, { [key]: value }, worldLive()); return { verbs: r.verbs, inverses: r.inverses, errors: r.errors }; }
   const rec = foldRecord(id);
   if (!rec) return { verbs: [], inverses: [], errors: [`${id} is not in the fold`] };
   const dot = key.indexOf('.');
@@ -128,6 +137,13 @@ export function sendPlanned(v) {
 }
 
 export function commitEdit(id, key, value, opts = {}) {
+  if (id === WORLD_ID) {   // no live preview: a world field commits on release, one verb, one undo step
+    if (opts.live) return { ok: true, live: true };
+    const { verbs, inverses, errors } = planEdit(id, key, value);
+    if (inverses.length) hooks.undo?.(inverses.length === 1 ? inverses[0] : { verbs: [...inverses].reverse() }, `${key} of the world`);
+    verbs.forEach(sendPlanned);
+    return { ok: !errors.length, errors, verbs };
+  }
   const rec = foldRecord(id);
   const obj = entities.get(id);
   if (!rec) return { ok: false, errors: [`${id} is not in the fold`] };
