@@ -5,7 +5,8 @@
 //   the corner   the ∃ in the top-left cell, the mic / ear (/ goggles) folded to its right exactly as
 //                the HUD folds them, the menus after them, the glyphs in the editor's greys;
 //   the wrench   the way out: amber on purpose, titled "leave edit mode (B)", the only amber on the rail;
-//   Create       Hierarchy | Create tabs in the left column; the six building tools as tiles (structure_ui's
+//   Build        Build | Hierarchy tabs in the left column (Build replaced Create in step 5, 10-02; its
+//                World section and @world are editpanels-bench's); the six building tools as tiles (structure_ui's
 //                TOOLS), "new building", an honest "undo building edit"; the armed tool's strip across the
 //                top of the viewport and Esc to drop it; the Library (add light, search, the starters as
 //                picture tiles that put the model in your hand); and a VR body that says what it can't do;
@@ -77,24 +78,28 @@ console.log('\nthe wrench is the way out: amber on purpose, the only amber on th
   check('…and no other control on the rail is (tools, ∃)', a.n >= 6 && a.others.length === 0, JSON.stringify(a));
 }
 
-console.log('\nCreate — the building tools and the library, docked beside the Hierarchy:');
+console.log('\nBuild — the building tools and the library, docked beside the Hierarchy:');
 {
-  const create = `document.querySelector('[data-frame="create"]')`;
+  const create = `document.querySelector('[data-frame="build"]')`;
+  // the building tools' own row of tiles (Build's Tools section also holds the transform tiles and seat)
+  const stiles = `[...([...${create}.querySelectorAll('.sp-tile')].find((t) => t.textContent.trim() === 'wall')?.closest('.sp-tiles')?.querySelectorAll('.sp-tile') ?? [])]`;
   const tab = (id: string) => `document.querySelector('.edit-tab[data-tab="${id}"]')`;
   const shown = (f: string) => `getComputedStyle(document.querySelector('[data-frame="${f}"]')).display !== 'none'`;
   check('the viewport carries no floating building bar', await evalJson(`!document.querySelector('#structbar')`));
-  check('Hierarchy is the open tab; Create waits behind it', await evalJson(`${tab('hierarchy')}.classList.contains('on') && ${shown('hierarchy')} && !(${shown('create')})`));
-  await evalJson(`${tab('create')}?.click(), true`);
-  check('the Create tab swaps the pane (Create shown, Hierarchy hidden)', await waitFor(`${shown('create')} && !(${shown('hierarchy')}) && ${tab('create')}.classList.contains('on')`));
+  check('Build is the open tab on a first B (design §5); the Hierarchy waits behind it', await evalJson(`${tab('build')}.classList.contains('on') && ${shown('build')} && !(${shown('hierarchy')})`));
+  await evalJson(`${tab('hierarchy')}?.click(), true`);
+  check('the Hierarchy tab swaps the pane', await waitFor(`${shown('hierarchy')} && !(${shown('build')}) && ${tab('hierarchy')}.classList.contains('on')`));
+  await evalJson(`${tab('build')}?.click(), true`);
+  check('the Build tab swaps it back (Build shown, Hierarchy hidden)', await waitFor(`${shown('build')} && !(${shown('hierarchy')}) && ${tab('build')}.classList.contains('on')`));
   check('…in the same place the Hierarchy was (left column, under the tabs)', await evalJson(`(() => { const t = document.querySelector('.edit-tabs').getBoundingClientRect(), c = ${create}.getBoundingClientRect(), L = document.querySelector('.edit-left').getBoundingClientRect(); return Math.abs(c.top - t.bottom) <= 1 && c.left >= L.left && c.right <= L.right + 1 && c.height > 120; })()`));
-  check('Structure: the six tools as tiles, in TOOLS order', await waitFor(`[...${create}.querySelectorAll('.sp-tile')].slice(0, 6).map((t) => t.textContent.trim()).join() === 'room,wall,door,window,floor,erase'`), await evalJson(`[...${create}.querySelectorAll('.sp-tile')].map((t) => t.textContent.trim()).join()`));
-  check('…each a glyph, titled with its hint', await evalJson(`[...${create}.querySelectorAll('.sp-tile')].slice(0, 6).every((t) => t.querySelector('svg') && / — /.test(t.title))`));
+  check('Structure: the six tools as tiles, in TOOLS order', await waitFor(`${stiles}.map((t) => t.textContent.trim()).join() === 'room,wall,door,window,floor,erase'`), await evalJson(`[...${create}.querySelectorAll('.sp-tile')].map((t) => t.textContent.trim()).join()`));
+  check('…each a glyph, titled with its hint', await evalJson(`${stiles}.length === 6 && ${stiles}.every((t) => t.querySelector('svg') && / — /.test(t.title))`));
   const btn = (re: string) => `[...${create}.querySelectorAll('.sp-btn')].find((b) => /${re}/.test(b.textContent))`;
   check('"new building" and an honestly-named "undo building edit" (disabled: nothing to undo)', await evalJson(`!!${btn('new building')} && ${btn('^undo building edit$')}?.disabled === true && /separate from Ctrl.Z/.test(${btn('^undo building edit$')}.closest('.sp-row').title)`), await evalJson(`[...${create}.querySelectorAll('.sp-row')].map((r) => r.textContent.trim() + ' :: ' + r.title).join(' | ')`));
   check('the viewport strip is down while no tool is armed', await evalJson(`document.querySelector('.edit-toolstrip')?.hidden === true`));
   await evalJson(`[...${create}.querySelectorAll('.sp-tile')].find((t) => t.textContent.trim() === 'wall')?.click(), true`);
   check('clicking the wall tile arms the wall tool', await waitFor(`import('/lib/structure_ui.js').then((m) => m.currentTool() === 'wall')`));
-  check('…the tile reads armed', await waitFor(`[...${create}.querySelectorAll('.sp-tile.on')].map((t) => t.textContent.trim()).join() === 'wall'`));
+  check('…the tile reads armed (and it alone: the transform tile yields the click)', await waitFor(`[...${create}.querySelectorAll('.sp-tile.on')].map((t) => t.textContent.trim()).join() === 'wall'`));
   check('…and the viewport strip names it, with its hint and the way out', await waitFor(`(() => { const s = document.querySelector('.edit-toolstrip'); return s && !s.hidden && /wall/.test(s.textContent) && /click an edge/.test(s.textContent) && /Esc to drop/.test(s.textContent); })()`), await evalJson(`document.querySelector('.edit-toolstrip')?.textContent`));
   check('…laid across the top of the VIEWPORT (between the columns, under the bar)', await evalJson(`(() => { const s = document.querySelector('.edit-toolstrip').getBoundingClientRect(), L = document.querySelector('.edit-left').getBoundingClientRect(), R = document.querySelector('.edit-right').getBoundingClientRect(); return Math.abs(s.left - L.right) <= 1 && Math.abs(s.right - R.left) <= 1 && s.top === 40 && s.height <= 32; })()`));
   await evalJson(`[...${create}.querySelectorAll('.sp-tile')].find((t) => t.textContent.trim() === 'wall')?.click(), true`);
@@ -111,9 +116,9 @@ console.log('\nCreate — the building tools and the library, docked beside the 
   await evalJson(`[...${create}.querySelectorAll('.sp-tiles-img .sp-tile')].find((t) => t.textContent.trim() === 'crate (red)')?.click(), true`);
   check('a library tile puts the model in your hand (the ghost build.js carries)', await waitFor(`import('/lib/build.js').then((m) => m.hasGhost())`), JSON.stringify(await evalJson(`(window.__errs ?? []).filter((e) => /ghost|glb/i.test(e)).slice(-3)`)));
   await evalJson(`import('/lib/build.js').then((m) => m.cancelGhost()), true`);
-  check('the VR body says the building tools are desktop-only, and offers the library', await evalJson(`import('/lib/xrpanels.js').then((m) => { const f = m.xrPanelsDebug().fields.create ?? []; return f.includes('place') && !f.includes('stool') && f.includes('info'); })`), JSON.stringify(await evalJson(`import('/lib/xrpanels.js').then((m) => m.xrPanelsDebug().fields.create)`)));
+  check('the VR body says the building tools are desktop-only, and offers the library and the World', await evalJson(`import('/lib/xrpanels.js').then((m) => { const f = m.xrPanelsDebug().fields.build ?? []; return f.includes('place') && !f.includes('stool') && !f.includes('ttool') && f.includes('info') && f.includes('wsky'); })`), JSON.stringify(await evalJson(`import('/lib/xrpanels.js').then((m) => m.xrPanelsDebug().fields.build)`)));
   await evalJson(`${tab('hierarchy')}?.click(), true`);
-  check('back to the Hierarchy tab', await waitFor(`${shown('hierarchy')} && !(${shown('create')})`));
+  check('back to the Hierarchy tab', await waitFor(`${shown('hierarchy')} && !(${shown('build')})`));
 }
 
 console.log('\nleaving:');
