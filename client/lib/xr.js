@@ -37,6 +37,8 @@ import { flashHint, toast } from './ui.js';
 import { vrMicPreflight } from './vrmic.js';
 import { makePointerLine, makeSurfaceDot, placeSurfaceDot, hideSurfaceDot, setSurfaceDotKind } from './pointer.js';
 import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, earOn, flipEar } from './mictoggle.js';
+import { setPttHeld } from './micstate.js';   // the left A/X under push-to-talk: held = speak, as V
+import { pttMode } from './voiceconsent.js';
 import { markActive } from './presence.js';
 import { platePick, aimPlate } from './platecard.js';   // VR hover: a laser resting on a nameplate opens its card
 import { makeDwell } from './dwell.js';
@@ -741,7 +743,7 @@ function aimRadial(x, y) {
     if (best >= 0) haptic('right', 0.15, 10);
   }
 }
-let radialOpen = false, stickPressWas = false, menuBtnWas = false;
+let radialOpen = false, stickPressWas = false, menuBtnWas = false, muteBtnWas = false, pttFromX = false;
 const triggerWas = { left: false, right: false }, gripWas = { left: false, right: false };
 const panelPress = { left: null, right: null };   // a trigger press on a panel, pending drag-or-click
 // Buttons are NOT trusted for the first 700 ms after an input source appears: the gamepad's first
@@ -1165,7 +1167,7 @@ let consoleTapped = false, shaderTees = 0;
 let turnMag = 0;                    // |stick-X| while smooth-turning — the vignette reads it
 export const turnMagnitude = () => turnMag;
 export function updateXR(dtSec = 1 / 72) {
-  if (!presenting) { turnMag = 0; return; }
+  if (!presenting) { turnMag = 0; if (pttFromX) { setPttHeld(false); pttFromX = false; } muteBtnWas = false; return; }
   renderCensusTick();
   // EYE WATCH (owner, 09-06 12:22: 'spontaneously each eye becomes extremely fish-eyed; right eye visible in the
   // left'): per frame, not per 5 s — the first sample is the baseline; any eye whose vertical fov moves
@@ -1249,11 +1251,22 @@ export function updateXR(dtSec = 1 / 72) {
   if (L) {
     xrIntent.fwd = dead(-pickAxis(L.axes[3], L.axes[1]));
     xrIntent.strafe = dead(pickAxis(L.axes[2], L.axes[0]));
-    // jump = A or X (porch-old: 'A / X = jump'; VRChat: A). No invented bindings on the sticks (owner, 09-06 12:37:
-    // 'we shouldn't mess with the default VR affordances') — panels live on the ring.
-    xrIntent.jump = !!L.buttons[4]?.pressed || !!R?.buttons[4]?.pressed;
+    // jump = the RIGHT A (VRChat's: docs.vrchat.com Touch "A (right hand, bottom button): Jump", Index "Right A: Jump").
+    // The LEFT A/X was jump too (porch-old); VRChat makes it the mic (below), so it is (owner, 10-02).
+    xrIntent.jump = !!R?.buttons[4]?.pressed;
     if (held?.hand === 'left' && L.buttons[0]?.pressed) xrIntent.fwd = 0;   // trigger + stick on the holding hand reels the panel: that push is not a step
   } else { xrIntent.fwd = 0; xrIntent.strafe = 0; xrIntent.jump = !!R?.buttons[4]?.pressed; }
+  // LEFT A / X = THE MIC (owner, 10-02, VRChat's convention: Touch "X (left hand, bottom button): Mute", Index "Left A:
+  // Toggle Mute"). It does what the desktop's V does, through the same doors: in voice-activation mode a press flips the
+  // mic (the ring's 'xr:mic', vrmic.js's VR-safe toggleMic); in push-to-talk mode it is HOLD to speak while the mic is
+  // armed (setPttHeld, exactly V's rule — an unarmed mic is armed from the ring or the HUD glyph, as on the desktop).
+  // Released on button-up, a dropped controller and the session's end (the stuck-key class, mictoggle.js).
+  { const x = buttonsTrusted() && !!L?.buttons[4]?.pressed;
+    if (x && !muteBtnWas) {
+      if (pttMode()) { if (micLive()) { setPttHeld(true); pttFromX = true; } }
+      else { bus.emit('xr:mic'); haptic('left', 0.3, 20); tee('[xr] mic toggled (left A/X)'); }
+    } else if (!x && muteBtnWas && pttFromX) { setPttHeld(false); pttFromX = false; }
+    muteBtnWas = x; }
   // B or Y = THE QUICK HIDE (owner, 10-02: the face buttons follow VRChat's convention). VRChat opens its menu on the
   // top face button, B or Y, either hand (docs.vrchat.com/docs/touch "B/Y: Quick Menu", /docs/valve-index "B (top
   // button): Quick Menu"); our panels are our menu, so B/Y puts every open panel away and the next press brings exactly
