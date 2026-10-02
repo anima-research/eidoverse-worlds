@@ -26,7 +26,8 @@ import { normalizePicture, PICTURE_LIT, PICTURE_LOOK_MAX } from './picture.js';
 import { normalizeSound, SOUND_LOOK_MAX } from './sound.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS } from './components.js';
 import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE } from './euler.js';
-import { qNorm, qHeading, qFromYaw } from './rot.js';
+import { qNorm, qHeading, qFromYaw, qWithHeading } from './rot.js';
+import { localOf, parentVerbs, childrenOf, worldPose } from './hierarchy.js';
 
 const R2D = 180 / Math.PI;
 export const AXES = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] };
@@ -90,6 +91,11 @@ export function inspectSchema(ent, id, live = {}) {
   const c = ent.comp ?? {};
   const mounted = !!ent.parent;
   const locked = !!c.lock;
+  // the pose the channel box shows and edits: a child's is LOCAL to its parent
+  // (design §3) — the mount's offset and relative q, as the renderer realizes
+  // it — never the fold's pre-mount pos, which nothing draws while it rides
+  const L = localOf(ent, live.world ?? null);
+  const pv = L.mounted ? { ...ent, pos: L.pos, q: L.q ?? undefined, yaw: L.yaw } : ent;
   // guard (AGENTS.md "Guarding"): only its placer, the world's owner or an
   // operator may author it. The name comes from the STAMP, never the latest
   // actor — an owner's re-light moves `actor` and leaves the placer alone.
@@ -98,11 +104,13 @@ export function inspectSchema(ent, id, live = {}) {
   const held = guarded && live.mayAuthor === false;
   const groups = [];
 
-  // transform — the entity's LOCAL frame, exactly what `place` takes. A
-  // mounted thing's pose is its attach offset: place would store a local
-  // pose as the fold's absolute and peers would see nothing. Read-only.
-  const tf = { disabled: locked || mounted, hint: locked ? 'locked — unlock to move it' : mounted ? `mounted on ${ent.parent.to} — the attach offset owns this pose; detach to move it` : undefined };
-  const pos = ent.pos ?? [0, 0, 0];
+  // transform — the entity's LOCAL frame: a root's is the world (`place`), a
+  // child's is its parent's (`mount` with the new offset / relative q; scale
+  // stays the child's own, so it is still a `place`). Only a part socket's
+  // rider is read-only: its pose is baked at the moving part's phase.
+  const partRide = mounted && L.part;
+  const tf = { disabled: locked || !!partRide, hint: locked ? 'locked — unlock to move it' : partRide ? `rides ${ent.parent.to}'s moving part ${L.part} — its pose is set where it mounted; unparent and parent it again to move it` : undefined };
+  const pos = pv.pos ?? [0, 0, 0];
   const transform = [
     { t: 'num', k: 'x', label: 'translate x', value: round(pos[0]), step: 0.1, dp: 2, unit: 'm', ...tf },
     { t: 'num', k: 'y', label: 'translate y', value: round(pos[1]), step: 0.1, dp: 2, unit: 'm', ...tf },
@@ -114,21 +122,21 @@ export function inspectSchema(ent, id, live = {}) {
     // pos.yaw: the heading — the friendly subset (PROTOCOL §9.1: a bare yaw turns
     // the thing about world +Y and keeps any tilt). Kept for agents and old
     // callers; the channel box shows the Rotate channels instead (alias).
-    transform.push({ t: 'num', k: 'yaw', label: 'heading', value: round(ent.yaw ?? 0, 4), step: 5, deg: true, alias: 'rot', ...tf,
-      hint: tf.hint ?? 'turn about world up to this heading, keeping any tilt (the Rotate channels are the full orientation)' });
+    transform.push({ t: 'num', k: 'yaw', label: 'heading', value: round(pv.yaw ?? 0, 4), step: 5, deg: true, alias: 'rot', ...tf,
+      hint: tf.hint ?? `turn about ${L.mounted ? 'its parent\'s' : 'world'} up to this heading, keeping any tilt (the Rotate channels are the full orientation)` });
     transform.push({ t: 'num', k: 'scale', label: 'scale', value: round(ent.scale ?? 1), def: 1, step: 0.05, dp: 2, min: 0.01, softMax: 12, ...tf });
     // the channel box's Rotate (design §5): Euler degrees READ from q in the
     // entity's rotation order (shared/euler.js); a yaw-only thing reads exactly
     // (0, yaw, 0) in every order. live.euler is the triple this viewer last
     // saw — it picks the Euler branch, so channels don't jump while you work.
     const order = rotOrderOf(ent);
-    const q = ent.q ?? qFromYaw(ent.yaw ?? 0);
+    const q = pv.q ?? qFromYaw(pv.yaw ?? 0);
     rotation.push({ t: 'enum', k: 'order', label: 'rotate order', value: order, def: 'XYZ', options: ROT_MODES.map((v) => ({ v, label: v === QUAT_MODE ? 'quaternion' : v })),
       hint: 'how the Rotate channels read the orientation (Maya\'s rotateOrder: XYZ applies X first). Changing it never moves the thing, so a lock or a mount does not stop it' });
     if (order !== QUAT_MODE) {
       let e;
-      if (!ent.q) e = [0, ent.yaw ?? 0, 0];
-      else { const r = eulerFromQ(ent.q, order, live.euler ?? uprightHint(ent)); e = r.e; gimbal = r.locked; }
+      if (!pv.q) e = [0, pv.yaw ?? 0, 0];
+      else { const r = eulerFromQ(pv.q, order, live.euler ?? uprightHint(pv)); e = r.e; gimbal = r.locked; }
       ['x', 'y', 'z'].forEach((k, i) => rotation.push({ t: 'num', k, label: `rotate ${k}`, value: round(e[i], 12), step: 5, deg: true, ...tf }));
     }
     ['x', 'y', 'z', 'w'].forEach((a, i) => rotation.push({ t: 'num', k: `q${a}`, label: `quat ${a}`, value: round(q[i], 6), step: 0.01, dp: 4, min: -1, max: 1, row: 'quat', ...tf,
@@ -136,8 +144,21 @@ export function inspectSchema(ent, id, live = {}) {
   }
   const driven = c.motion?.type && !c.motion.part ? 'motion' : null;   // a whole-entity motion composes onto this REST pose
   if (driven) for (const f of [...transform, ...rotation]) if (f.t === 'num') f.driven = driven;
-  groups.push({ group: 'pos', label: 'Transform', verb: 'place', fields: transform });
-  if (rotation.length) groups.push({ group: 'rot', label: 'Rotate', verb: 'place', fields: rotation, ...(gimbal ? { gimbal: true } : {}) });
+  if (L.mounted) transform.unshift({ t: 'info', label: 'frame', value: `local to its parent, ${ent.parent.to} — translate and rotate write its mount; scale is its own (the parent's multiplies it)` });
+  groups.push({ group: 'pos', label: 'Transform', verb: L.mounted ? 'mount' : 'place', fields: transform, ...(L.mounted ? { local: ent.parent.to } : {}) });
+  if (rotation.length) groups.push({ group: 'rot', label: 'Rotate', verb: L.mounted ? 'mount' : 'place', fields: rotation, ...(gimbal ? { gimbal: true } : {}) });
+
+  // the hierarchy (design §3 "Children"): who this rides, who rides it. The
+  // ref picks a new parent (a tree row, or the thing in the world) and keeps
+  // the child where it stands; clearing it — or `unparent` — makes it a root.
+  // The same edit the Hierarchy's drag commits, so a headset and an agent can.
+  const kids = live.world ? childrenOf(live.world, id) : null;
+  groups.push({ group: 'parent', label: 'Parent', verb: 'mount', fields: [
+    { t: 'ref', k: 'to', label: 'parent', value: mounted ? ent.parent.to : null, ...(locked ? { disabled: true, hint: 'locked — unlock to move it' } : {}),
+      hint: locked ? 'locked — unlock to move it' : 'pick its new parent — a row, or the thing itself in the world; it stays where it stands. Clear it to make it a root' },
+    ...(kids ? [{ t: 'info', k: 'children', label: 'children', value: kids.length ? kids.join(', ') : 'none' }] : []),
+    ...(mounted ? [{ t: 'btn', k: 'unparent', label: 'unparent', ...(locked ? { disabled: true, hint: 'locked — unlock to move it' } : { hint: 'make it a root, where it stands' }) }] : []),
+  ] });
 
   const flags = [];
   if (held) flags.push({ t: 'info', label: '', value: `🛡 guarded by ${placer ?? 'its placer'} — only they, the world's owner or an operator may change, move or remove it (using it and sitting on it stay open)` });
@@ -358,7 +379,7 @@ const WIRE_BLOCKED = {
   // not added, from the Library (spawn on the same id)
   Model: (have, ent) => isLight(ent) ? 'this light was made with the light verb and cannot take a model — place the model, then add a Light to it' : 'swap the model from the Library',
   Structure: () => 'start a building from Create ▸ Structure',
-  Attachment: () => 'attach with the mount gesture',
+  Attachment: () => 'give it a parent: the Parent field above, or drag its row onto another in the Hierarchy',
 };
 const MOTION_GROUP = { Pendulum: 1, Spin: 1, Orbit: 1, Bob: 1, Path: 1 };
 /** A library path as the inspector header shows it: the file stem, first three words. */
@@ -396,7 +417,8 @@ function componentSections(ent, groups, held, live = {}, id = '?') {
         const rot = g('rot');
         sec.fields = [...refs('pos', (f) => f.k !== 'scale'), ...refs('rot', (f) => f.row !== 'quat'), ...refs('pos', (f) => f.k === 'scale'), ...refs('rot', (f) => f.row === 'quat')];
         if (rot) sec.quatOpen = rot.fields.find((f) => f.k === 'order')?.value === QUAT_MODE;
-        if (rot?.gimbal) sec.info = [['gimbal lock', 'the middle axis is at ±90°, so the first and last axes turn about the same line — a turn on either shows on the last; the Quaternion row is exact']];
+        if (g('pos')?.local) sec.info = [['frame', `local to its parent, ${g('pos').local}`]];
+        if (rot?.gimbal) sec.info = [...(sec.info ?? []), ['gimbal lock', 'the middle axis is at ±90°, so the first and last axes turn about the same line — a turn on either shows on the last; the Quaternion row is exact']];
         break;
       }
       case 'Model': sec.info = [['model', String(ent.lib)]]; break;
@@ -407,7 +429,7 @@ function componentSections(ent, groups, held, live = {}, id = '?') {
         else sec.info = [['shape', `${String(ent.collide)} (overridden by the collider component)`]];
         sec.removable = inst.key != null;
         break;
-      case 'Attachment': sec.info = [['on', `${ent.parent?.to}${ent.parent?.slot ? ` · ${ent.parent.slot}` : ''}`]]; break;
+      case 'Attachment': sec.info = [['on', `${ent.parent?.to}${ent.parent?.slot ? ` · ${ent.parent.slot}` : ''}`]]; sec.fields = refs('parent', (f) => f.k === 'unparent'); break;
       case 'Light':
         // keyless = the light-verb light (the light group is its); keyed = the
         // component: the group when it is the entity's light, raw JSON when a
@@ -456,7 +478,7 @@ function componentSections(ent, groups, held, live = {}, id = '?') {
   // never disagree with the Model card; an Empty and a light say what they are
   const model = components.find((c) => c.type === 'Model')?.params.lib;
   const lib = model != null ? String(model) : null;
-  return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden'), list: out, add: held ? [] : add,
+  return { header: [...refs('flags', (f) => f.k === 'label' || f.k === 'hidden'), ...refs('parent', (f) => f.k !== 'unparent')], list: out, add: held ? [] : add,
     lib, libLabel: lib != null ? libLabel(lib) : isLight(ent) ? 'light' : 'empty' };
 }
 
@@ -630,10 +652,16 @@ export function editVerbs(ent, id, edits, live = {}) {
   const verbs = [];
   const c = ent?.comp ?? {};
   let place = null;                 // coalesced full pose
+  // a child's channels are LOCAL to its parent (inspectSchema): the pose they
+  // edit is the mount's, and a translate/rotate on it is written as a mount
+  const L = localOf(ent, live.world ?? null);
+  const pv = L.mounted ? { ...ent, pos: L.pos, q: L.q ?? undefined, yaw: L.yaw } : ent;
+  let moved = false;                // a translate/rotate/heading edit (vs. scale alone)
+  let parented = null;              // a parent edit's { verbs, inverses }
   // the place every transform edit coalesces into, carrying the full pose: a
   // thing with q keeps its q (a move is not a turn), a yaw-only thing its yaw
-  const basePlace = () => (place ??= { id, pos: [...(ent.pos ?? [0, 0, 0])],
-    ...(isLight(ent) ? {} : { ...(ent.q ? { q: [...ent.q] } : {}), yaw: ent.yaw ?? 0, scale: ent.scale ?? 1 }) });
+  const basePlace = () => (place ??= { id, pos: [...(pv.pos ?? [0, 0, 0])],
+    ...(isLight(ent) ? {} : { ...(pv.q ? { q: [...pv.q] } : {}), yaw: pv.yaw ?? 0, scale: ent.scale ?? 1 }) });
   const rotSet = {};                // axis index → radians (the Rotate channels)
   const quatSet = {};               // component index → value (the Quaternion row)
   let headingSet = false;
@@ -672,7 +700,7 @@ export function editVerbs(ent, id, edits, live = {}) {
     }
     // actions and creations that have no field row: comp.<any>, sockets.del,
     // a socket slot that does not exist yet (sockets.<new>|pos|1 declares it)
-    const known = f || (group === 'comp' && k) || (group === 'sockets' && (k === 'del' || k.includes('|')))
+    const known = f || group === 'parent' || (group === 'comp' && k) || (group === 'sockets' && (k === 'del' || k.includes('|')))
       || ((group === 'picture' || group === 'sound') && !['upload'].includes(k));   // creation needs no row
     if (!known) { errors.push(`${key}: no such field on ${id}`); continue; }
     if (f?.disabled) { errors.push(`${key}: ${f.hint ?? 'read-only'}`); continue; }
@@ -683,9 +711,20 @@ export function editVerbs(ent, id, edits, live = {}) {
         const n = num(f, raw); if (n == null) break;
         // a bare heading: the fold turns the thing about +Y keeping its tilt
         // (PROTOCOL §9.1) — so it must travel WITHOUT q, which would win
-        if (k === 'yaw') { place.yaw = round(n, 4); delete place.q; headingSet = true; }
+        if (k === 'yaw') { place.yaw = round(n, 4); delete place.q; headingSet = true; moved = true; }
         else if (k === 'scale') place.scale = round(n);
-        else place.pos['xyz'.indexOf(k)] = round(n);
+        else { place.pos['xyz'.indexOf(k)] = round(n); moved = true; }
+        break;
+      }
+      case 'parent': {
+        // design §3: parent it (or make it a root) where it stands — the same
+        // edit the Hierarchy's drag commits (shared/hierarchy.js parentVerbs)
+        if (k !== 'to' && k !== 'unparent') { errors.push(`${key}: no such field`); break; }
+        if (!live.world) { errors.push(`${key}: parenting needs the world's records (live.world)`); break; }
+        if (parented) { errors.push(`${key}: one parent edit at a time`); break; }
+        const r = parentVerbs(live.world, id, k === 'unparent' ? null : raw, { mayAuthor: live.mayAuthorOf });
+        errors.push(...r.errors);
+        if (!r.errors.length) parented = r;
         break;
       }
       case 'rot': {
@@ -699,6 +738,7 @@ export function editVerbs(ent, id, edits, live = {}) {
         const n = num(f, raw); if (n == null) break;
         if (k.startsWith('q')) quatSet['xyzw'.indexOf(k[1])] = n;
         else rotSet['xyz'.indexOf(k)] = n;
+        moved = true;
         break;
       }
       case 'flags': {
@@ -828,21 +868,21 @@ export function editVerbs(ent, id, edits, live = {}) {
   // (design §5): read q in the entity's order, set the typed channels, recompose.
   if (Object.keys(quatSet).length || Object.keys(rotSet).length) {
     basePlace();
-    const q0 = ent.q ?? qFromYaw(ent.yaw ?? 0);
+    const q0 = pv.q ?? qFromYaw(pv.yaw ?? 0);
     const order = rotOrderOf(ent);
     if (Object.keys(quatSet).length) {
       const qn = qNorm(q0.map((v, i) => (quatSet[i] ?? v)));
       if (!qn) { errors.push('rot: a quaternion of zero length is no orientation'); place = null; }   // the pose is one verb: refused whole
       else { place.q = qn; place.yaw = qHeading(qn); }
-    } else if (!ent.q && !headingSet) {
+    } else if (!pv.q && !headingSet) {
       // a yaw-only thing reads (0, yaw, 0) in every order; while the edit keeps
       // it that way it stays yaw-only, so untouched history keeps its bytes
-      const e = [0, ent.yaw ?? 0, 0];
+      const e = [0, pv.yaw ?? 0, 0];
       for (const [i, v] of Object.entries(rotSet)) e[+i] = v;
       if (e[0] === 0 && e[2] === 0) place.yaw = round(e[1], 4);
       else { const q = qFromEuler(e, order); place.q = q; place.yaw = qHeading(q); euler = { order, e, q }; }
     } else {
-      const { e } = eulerFromQ(place.q ?? q0, order, live.euler ?? uprightHint(ent));
+      const { e } = eulerFromQ(place.q ?? q0, order, live.euler ?? uprightHint(pv));
       for (const [i, v] of Object.entries(rotSet)) e[+i] = v;
       const q = qFromEuler(e, order);
       place.q = q; place.yaw = qHeading(q); euler = { order, e, q };
@@ -855,6 +895,25 @@ export function editVerbs(ent, id, edits, live = {}) {
     if (!n.ok) { errors.push(`${type}: ${n.why}`); continue; }   // the rule, before any round-trip
     comps.set(type, type === 'picture' ? n.picture : n.sound);
   }
+  if (parented && place) { errors.push('parent: a parent edit goes alone — move it before or after, not in the same edit'); place = null; parented = null; }
+  if (parented) verbs.push(...parented.verbs);
+  if (place && L.mounted) {
+    // a child: translate/rotate → ONE mount carrying the new local pose (the
+    // same carrier and slot); scale → a place carrying only scale (the mount
+    // has no scale, and a place's pos would be read as the fold's absolute)
+    if (moved) {
+      // a bare heading on a tilted child turns it about the parent's up keeping
+      // its tilt — exactly place's rule; the mount stores the result as q
+      let q = place.q ? qNorm(place.q) : null;
+      if (headingSet && !q && pv.q) q = qWithHeading(pv.q, place.yaw);
+      const turn = isLight(ent) ? { ...(ent.parent.q ? { q: ent.parent.q } : {}), ...(ent.parent.yaw != null ? { yaw: ent.parent.yaw } : {}) }   // a light has no orientation to edit: keep the mount's
+        : q && !(Math.abs(q[0]) < 1e-12 && Math.abs(q[2]) < 1e-12) ? { q, yaw: qHeading(q) } : { yaw: round(q ? qHeading(q) : place.yaw, 6) };
+      const rel = { id, to: ent.parent.to, ...(ent.parent.slot ? { slot: ent.parent.slot } : {}), offset: place.pos.map((v) => round(v, 4)), ...turn };
+      verbs.push({ verb: 'mount', args: rel });
+    }
+    if (!isLight(ent) && place.scale !== (ent.scale ?? 1)) verbs.push({ verb: 'place', args: { id, scale: place.scale } });
+    place = null;
+  }
   if (place) verbs.push({ verb: 'place', args: place });
   if (light) verbs.push({ verb: 'light', args: light });
   for (const [mkey, next] of motions) {
@@ -862,7 +921,7 @@ export function editVerbs(ent, id, edits, live = {}) {
     else verbs.push({ verb: 'comp', args: { id, type: mkey, data: next } });
   }
   for (const [type, data] of comps) verbs.push({ verb: 'comp', args: { id, type, data } });
-  return { verbs, errors, ...(euler ? { euler } : {}), ...(asks.length ? { asks } : {}) };
+  return { verbs, errors, ...(euler ? { euler } : {}), ...(asks.length ? { asks } : {}), ...(parented ? { inverses: parented.inverses } : {}) };
 }
 
 /** A one-screen text rendering of the schema — what a model reads. */
@@ -873,13 +932,14 @@ export function describeSchema(schema, { verbsHint = true } = {}) {
     L.push(`${g.label ?? g.group} (${g.group}.* → ${g.verb})`);
     for (const f of g.fields) {
       if (f.t === 'btn' || f.t === 'list' || (f.t === 'json' && f.commit)) continue;
-      if (f.t === 'info') { if (f.value) L.push(`  ${f.value}`); continue; }
+      if (f.t === 'info') { if (f.value) L.push(`  ${f.label ? `${f.label}: ` : ''}${f.value}`); continue; }
       const val = f.t === 'num' ? (f.deg ? `${Math.round(f.value * R2D)}°` : `${+(+f.value).toFixed(f.dp ?? 2)}${f.unit ? ' ' + f.unit : ''}`)
         : f.t === 'color' ? '0x' + (f.value ?? 0).toString(16).padStart(6, '0')
         : f.t === 'enum' ? `${f.value}  [${f.options.map((o) => o.v).join('|')}]`
         : f.t === 'check' ? (f.value ? 'yes' : 'no')
         : f.t === 'text' ? (f.value === '' ? '—' : String(f.value).slice(0, 120))
-        : f.t === 'json' ? String(f.value).replace(/\s+/g, ' ').slice(0, 120) : String(f.value);
+        : f.t === 'json' ? String(f.value).replace(/\s+/g, ' ').slice(0, 120)
+        : f.t === 'ref' ? (f.value == null ? '— (none)' : String(f.value)) : String(f.value);
       const lim = f.t === 'num' && (f.min != null || f.max != null || f.softMax != null) ? `  (${f.min ?? ''}…${f.max ?? f.softMax ?? ''}${f.max == null && f.softMax != null ? ' soft' : ''})` : '';
       const ro = f.disabled ? '  [read-only: ' + (f.hint ?? '') + ']' : f.driven ? `  [rest pose — driven by ${f.driven}]` : '';
       L.push(`  ${g.group}.${f.k} = ${val}${lim}${ro}`);

@@ -32,6 +32,7 @@ import { mayAuthor } from './placer.js';
 import { namedParts } from './parts.js';
 import { qFromYaw } from '../../shared/rot.js';
 import { sameRotation } from '../../shared/euler.js';
+import { localOf } from '../../shared/hierarchy.js';
 const R2D = 180 / Math.PI;
 
 const handlers = new Map();      // group → [fn] — consulted in order; the first to return true handled it
@@ -57,16 +58,21 @@ function eulerHint(id, rec) {
   const h = eulerHints.get(id);
   if (!h) return undefined;
   const order = rec?.comp?.rotOrder ?? 'XYZ';
+  // a child's channels read its RELATIVE q (the mount's), so that is the q the hint is for
+  const q = rec ? localOf(rec, state.st.entities).q : null;
   // not deleted on a mismatch: the repaint right after a commit reads the fold
   // BEFORE the echo lands, and the hint is for the q that is about to arrive
-  return rec?.q && h.order === order && sameRotation(h.q, rec.q, 1e-12) ? h.e : undefined;
+  return q && h.order === order && sameRotation(h.q, q, 1e-12) ? h.e : undefined;
 }
 /** What only a live client knows about a thing: the schema AND the commit path read the same. */
 export function liveFor(id) {
   const obj = entities.get(id);
   const light = !!obj?.userData?.isLight;
   return { casting: light ? hooks.casting?.(obj) : undefined, mayAuthor: mayAuthor(id), parts: obj && !light ? namedParts(obj) : undefined,
-    euler: eulerHint(id, foldRecord(id)) };
+    euler: eulerHint(id, foldRecord(id)),
+    // the hierarchy reads the whole fold: a child's local pose, its parent's
+    // socket, the Parent field's children, and the in-place parenting maths
+    world: state.st.entities ?? {}, mayAuthorOf: (x) => (state.st.entities?.[x] ? mayAuthor(x) : undefined) };
 }
 export function schemaFor(id) {
   const rec = foldRecord(id); if (!rec) return { id, groups: [] };
@@ -89,6 +95,10 @@ export function inverseOf(v, rec, id) {
       return { verb: 'light', args: back };
     }
     case 'motion': return { verb: 'motion', args: rec.comp?.motion ? { id, ...rec.comp.motion } : { id, type: null } };
+    // a child's translate/rotate went out as a mount: back to the relation it had
+    case 'mount': return rec.parent ? { verb: 'mount', args: { id, ...JSON.parse(JSON.stringify(rec.parent)) } }
+      : { verb: 'dismount', args: { id, pos: [...(rec.pos ?? [0, 0, 0])], ...(rec.q ? { q: [...rec.q] } : {}), yaw: rec.yaw ?? 0 } };
+    case 'dismount': return rec.parent ? { verb: 'mount', args: { id, ...JSON.parse(JSON.stringify(rec.parent)) } } : null;
     case 'comp': return { verb: 'comp', args: { id, type: v.args.type, data: rec.comp?.[v.args.type] ?? null } };
   }
   return null;
@@ -106,8 +116,9 @@ export function planEdit(id, key, value, base = null) {
   const f = fieldAt(inspectSchema(rec, id, live), key);
   if (f?.deg && typeof value === 'number') value = value * R2D;   // panel steppers speak wire (radians); editVerbs takes the face
   if (group === 'comp' && k !== '+' && value === '') return { verbs: [], inverses: [], errors: [`${k}: empty — use "remove ${k}" to remove it`] };
-  const { verbs, errors, euler, asks } = editVerbs(rec, id, { [key]: value }, live);
-  const inverses = verbs.map((v) => inverseOf(v, base ?? rec, id)).filter(Boolean);
+  const { verbs, errors, euler, asks, inverses: own } = editVerbs(rec, id, { [key]: value }, live);
+  // a parent edit brings its own way back (shared/hierarchy.js parentVerbs), in send order
+  const inverses = own ?? verbs.map((v) => inverseOf(v, base ?? rec, id)).filter(Boolean);
   return { verbs, inverses, errors, euler, asks };
 }
 /** Send one planned verb through the right door (lights ride the coalescer). */

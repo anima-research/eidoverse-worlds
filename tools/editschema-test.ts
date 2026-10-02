@@ -30,7 +30,7 @@ console.log("\nschema is a function of the record:");
   const s = inspectSchema(chair, "c1");
   const G = s.groups.map((g) => g.group);
   // step 3: the channel box's Rotate channels are their own group, `rot` (tools/channelbox-test.ts)
-  check("a chair: pos · rot · flags · sockets · comp", JSON.stringify(G) === '["pos","rot","flags","sockets","comp"]', JSON.stringify(G));
+  check("a chair: pos · rot · parent · flags · sockets · comp", JSON.stringify(G) === '["pos","rot","parent","flags","sockets","comp"]', JSON.stringify(G));
   check("locked → transform read-only with the reason", fieldAt(s, "pos.x")!.disabled === true && /locked/.test(fieldAt(s, "pos.x")!.hint));
   // 09-23: raw rows are `json` fields (multi-line, validated as you type), no longer single-line text
   check("unknown comp 'recipe' is a raw-JSON field; sockets/lock are NOT duplicated there", fieldAt(s, "comp.recipe")?.t === "json" && !fieldAt(s, "comp.sockets") && !fieldAt(s, "comp.lock"));
@@ -42,7 +42,9 @@ console.log("\nschema is a function of the record:");
   check("motion group covers the whole comp AND the part", fieldAt(w, "motion.amp")?.t === "num" && fieldAt(w, "motion.plank|degPerSec")?.value === 60);
   check("axis vector reads back as a name", fieldAt(w, "motion.axis")?.value === "x");
   const m = inspectSchema(cargo, "k");
-  check("mounted → transform read-only, names the carrier", fieldAt(m, "pos.x")!.disabled && /truck/.test(fieldAt(m, "pos.x")!.hint));
+  // step 4 (design §3): a child's transform is LOCAL to its parent and editable — the mount's offset, not the fold's pre-mount pos
+  check("mounted → transform is local (the mount offset), editable, and says which parent", !fieldAt(m, "pos.x")!.disabled && fieldAt(m, "pos.y")!.value === 1 && fieldAt(m, "pos.x")!.value === 0
+    && m.groups.find((g: any) => g.group === "pos")!.local === "truck" && fieldAt(m, "parent.to")!.value === "truck");
   check("null record → empty", inspectSchema(null, "zz").groups.length === 0);
   const ch = channels(w);
   check("channels(): every num, dotted", ch.length >= 8 && ch.every((c) => c.t === "num" && c.key.includes(".")) && ch.some((c) => c.key === "motion.period"));
@@ -127,7 +129,9 @@ console.log("\ndescribeSchema reads like an inspector:");
   check("names dotted addresses with values and units", /light\.intensity = 20/.test(t) && /light\.range = 6 m/.test(t) && /pos\.y = 2 m/.test(t));
   check("says how to edit", /edit \{id, set:/.test(t));
   const t2 = describeSchema(inspectSchema(cargo, "k"));
-  check("read-only fields say why", /read-only: mounted on truck/.test(t2));
+  check("a child says its frame and its parent", /frame: local to its parent, truck/.test(t2) && /parent\.to = truck/.test(t2));
+  const t3 = describeSchema(inspectSchema({ ...cargo, comp: { lock: true } }, "k"));
+  check("read-only fields say why", /read-only: locked/.test(t3));
   check("parseEntry passes numbers and refuses garbage", parseEntry(4, 0) === 4 && parseEntry("x", 0) === null);
 }
 
