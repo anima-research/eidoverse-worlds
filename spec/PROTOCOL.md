@@ -67,7 +67,7 @@ measured on the fields above (see `fixtures/README.md`).
 | `remove` | `{id}` | delete entity; children mounted on it get their **absolute pose computed and stamped** (parent pos + offset rotated by the parent's orientation, §9.1), then orphaned; body mounts onto it are cleared |
 | `comp` | `{id, type, data\|null}` | `entities[id].comp[type] = data`; null deletes. **Blind**: data is opaque to the fold. Writers SHOULD keep data ≤ 8 KB |
 | `motion` | `{id, type, …params}` | sugar: `comp[motion] = args-minus-id`; `type: null` deletes. If `t0` absent, fold stamps `t0 = entry.ts` |
-| `mount` | `{id, to, slot?, offset?, yaw?, q?}` | if `id` is an entity: set its `parent`; else record in `mounts` (a body). No-op if `to` missing or `id == to` |
+| `mount` | `{id, to, slot?, offset?, yaw?, q?}` | if `id` is an entity: set its `parent`; else record in `mounts` (a body). No-op if `to` missing or `id == to`. The door refuses a mount that puts an entity under its own descendant (a loop); a fold meeting one in an old log keeps it, and readers treat both members as unparented |
 | `dismount` | `{id, pos?, yaw?, q?}` | clear parent/mount; if entity and pos given, **stamp** it (§9 invariant) |
 | `use` | `{id, action}` | **nothing** — a cause, kept as history; effects are separate entries |
 | `force` | `{at:[x,y,z], radius?, power?}` | **nothing** — a physical cause (blast/gust); LIVE clients apply it to bodies they own, under those bodies' consent; replay never re-detonates *(dialect v2)* |

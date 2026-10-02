@@ -83,6 +83,15 @@ The 24 engine records in `shared/components.js`, ordered in the inspector as *wh
 ### Children
 `parent { to, slot?, offset?, yaw? }` already exists (written by `mount`). The hierarchy panel shows it as a
 real tree; drag a row onto another to parent, out to unparent. A child's Transform is local to its parent.
+*Built (step 4):* `shared/hierarchy.js` is the tree as a function of the fold, and parenting writes the
+existing verbs: `mount {offset, q, yaw}` at the child's world pose (the mount already took `q`, PROTOCOL
+§9.1) / `dismount {pos, q, yaw}`, plus `place {scale}` when the carrier's world scale isn't 1 — the renderer
+multiplies a child's scale by its carrier's and neither verb carries scale. A child's channel box reads the
+mount (offset, relative q); Translate/Rotate write one `mount`, Scale a scale-only `place`. The door refuses a
+loop. The inspector header carries **Parent: [pick] ✕** (and *unparent*), the same edit as a drag, for VR and
+agents (`parent.to`). Known gaps: the fold's `remove` step-off ignores the carrier's scale and its own
+carrier (a removed carrier that itself rode something), so riders of scaled or nested carriers land off;
+the gizmo still declines children; a lock doesn't stop `dismount` at the door.
 
 ### The world entity
 One entity per world, id `@world`, whose components are **Sky**, **Ground** (terrain), **Grass**,
@@ -174,7 +183,7 @@ ships, and PROTOCOL.md is updated in the same stack.
 2. Wire: light as a component, empty entities, collider; aliases + corpus test.
 3. Inspector: header + cards + Add Component with needs (auto-add / ask / remove-both); Channel box with
    quaternions; rotate gizmo on `q`.
-4. Hierarchy as a tree with drag-to-parent.
+4. Hierarchy as a tree with drag-to-parent. *(built)*
 5. Build panel: Blueprints · Tools · World; B opens on Build; the world entity's components.
 6. Blueprints: record, store, Save as Blueprint, place copy, overrides, update offer, unlink.
 7. VR parity for every panel; text-tier readout for every new component and for copies.

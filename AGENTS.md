@@ -102,7 +102,8 @@ comp    {id, type: "rotOrder", data: "XYZ"|"XZY"|"YXZ"|"YZX"|"ZXY"|"ZYX"|"quat"}
                                           # how its Rotate channels read q; never moves it (null = XYZ)
 motion  {id, type, ...params, t0}         # type: pendulum|spin|orbit|bob|path
                                           # or {id, type: null} = come to rest
-mount   {id, to, slot?, offset?, yaw?}    # id rides to; yourself = rank 0
+mount   {id, to, slot?, offset?, yaw?, q?}  # id rides to (q = orientation relative to it); yourself = rank 0
+                                          # refused if `to` is inside `id` (a loop)
 dismount{id, pos?, yaw?}                  # STAMP the absolute pose you rest at
 use     {id, action}                      # the universal interact, rank 0
 force   {at:[x,y,z], radius?, power?}     # instantaneous radial push, rank 1
@@ -219,7 +220,14 @@ part's as `motion.<part>|amp` (→ `motion` / `comp motion:<part>`, keeping
 `comp.<type>` (raw JSON for any component no group speaks for; `comp.+`
 adds one). Numbers take Maya's relative math — `"+=1"`, `"-=0.5"`,
 `"*=-1"`, `"+=10%"` — against the current value; angles are typed in
-degrees. A locked or mounted thing's pose is read-only and `inspect` says
+degrees. A child's (mounted thing's) Transform is LOCAL to its parent:
+`pos.*`/`rot.*` read and write its mount (offset, relative q → one `mount`),
+`pos.scale` stays its own (→ `place {id, scale}`). `parent.to` parents it
+where it stands (`"parent.to": "lamp"`; null makes it a root, as does
+`parent.unparent`) — a `mount`/`dismount` carrying its full pose, plus a
+scale `place` when a scaled carrier would resize it; a loop, a lock or a
+guard is refused by name. `inspect` names the parent and the children.
+A locked thing's pose (or a rider of a moving part's) is read-only and `inspect` says
 why. Refused edits are named and the rest still go; `dry:true` shows the
 verbs without sending. `measure` (below) is geometry; `inspect` is state.
 
