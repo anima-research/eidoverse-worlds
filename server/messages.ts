@@ -20,6 +20,7 @@ import { sanePose } from "./posecheck.ts";
 import { currentIncarnation } from "./transport.ts";
 import { rightsOf, isAdminId } from "./rights.ts";
 import { ROLE_RANK } from "../shared/fold.js";
+import { qNorm } from "../shared/rot.js";
 import { simSnapshot } from "../shared/sim.js";
 import { worlds, forkWorld, type World, type Client } from "./world.ts";
 import { pendingSnaps } from "./routes.ts";
@@ -451,7 +452,10 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     // the RELEASE is a `place` verb the gate above checks; the live drag
     // must agree with it or visitors can slide props they can't commit
     if (ROLE_RANK[rightsOf(c.world.state, c.id, c.sub).role] < 1) return;
-    c.world.broadcast({ type: "drag", id: msg.id, pos: msg.pos, yaw: msg.yaw, by: c.id }, c);
+    // q: the rotate gizmo turns about any axis (design §5); relayed only when
+    // it is a usable quaternion (normalized), so a malformed one is never seen
+    const q = qNorm(msg.q);
+    c.world.broadcast({ type: "drag", id: msg.id, pos: msg.pos, yaw: msg.yaw, ...(q ? { q } : {}), by: c.id }, c);
   },
   "pose": ({ c, ws, now, expel }, msg) => {
     if (!c.world || c.spectator) return;

@@ -470,6 +470,25 @@ export function removeVerbs(ent, id, key) {
   return { verbs: [], errors: [`${id} has no component at ${key}`] };
 }
 
+/** What a viewport gesture (the gizmo) commits, as edits for editVerbs: the
+ *  realized object's pose → the fields this thing HAS. mode 'move' sends the
+ *  position, 'scale' the scale, 'rotate' the orientation: a full q
+ *  (rot.qx…qw, normalized by editVerbs) — except a pure turn about +Y on a
+ *  yaw-only thing, which stays a heading (pos.yaw, degrees) so its history
+ *  keeps its bytes. */
+export function poseEdits(ent, id, mode, { pos, q, scale } = {}, live = {}) {
+  const sc = inspectSchema(ent, id, live);
+  const out = {};
+  if (mode === 'move' && pos) ['x', 'y', 'z'].forEach((k, i) => { if (fieldAt(sc, `pos.${k}`)) out[`pos.${k}`] = +(+pos[i]).toFixed(3); });
+  if (mode === 'scale' && scale != null && fieldAt(sc, 'pos.scale')) out['pos.scale'] = +(+scale).toFixed(3);
+  if (mode === 'rotate' && q && fieldAt(sc, 'rot.qw')) {
+    const n = qNorm(q);
+    if (n && !ent.q && Math.abs(n[0]) < 1e-9 && Math.abs(n[2]) < 1e-9) out['pos.yaw'] = qHeading(n) * R2D;
+    else if (n) ['x', 'y', 'z', 'w'].forEach((a, i) => { out[`rot.q${a}`] = n[i]; });
+  }
+  return out;
+}
+
 /** The channel box: every num in the schema, flat, with dotted addresses. */
 export function channels(schema) {
   const out = [];

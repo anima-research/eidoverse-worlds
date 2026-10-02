@@ -29,7 +29,8 @@ import { flashHint, collapseAll, panelFrame } from './ui.js';
 import { sceneSelect, sceneSelected, sceneDeselect } from './scenegraph.js';
 import { claimEscape } from './frames.js';
 import { currentTool as structureTool, setTool as setStructureTool } from './structure_ui.js';   // an armed building tool is Esc's first rung
-import { mayAuthor, placerOf, placerName } from './placer.js';   // one rule for who may author (and one name for them), shared with the scene panel
+import { mayAuthor, placerOf, placerName } from './placer.js';
+import { state } from './state.js';   // one rule for who may author (and one name for them), shared with the scene panel
 import { refreshSeatGizmos, resetSeats, armSeatPlacement, seatArmed, seatSelected,
   cancelSeatArm, deselectSeat, seatMouseDown, seatKeyDown, updateSeatDrag } from './seatedit.js';
 
@@ -312,7 +313,10 @@ export function updateBuild() {
   }
   if (dragging?.armed && selected) {
     if (tool === 'rotate') {
-      selected.obj.rotation.y = dragging.startYaw - (dragging.clientX - dragging.startX) * 0.012;   // ~1° per px, drag right = clockwise from above
+      // ~1° per px, drag right = clockwise from above — a turn about world UP,
+      // composed on the full orientation, so a tilted thing turns where it lies
+      _turn.setFromAxisAngle(_up, -(dragging.clientX - dragging.startX) * 0.012);
+      selected.obj.quaternion.copy(_turn).multiply(dragging.startQuat);
       reindexCollider(selected.id); refreshOutline(); relayDrag();
     } else if (tool === 'scale') {
       selected.obj.scale.setScalar(THREE.MathUtils.clamp(dragging.startScale * Math.exp((dragging.clientX - dragging.startX) * 0.006), 0.1, 12));
@@ -352,16 +356,17 @@ function relayDrag() {
   const now = performance.now();
   if (now - (dragging.lastSent ?? 0) < 66) return;
   dragging.lastSent = now;
-  const p = selected.obj.position;
-  sendDrag(selected.id, [p.x, p.y, p.z], selected.obj.rotation.y);
+  const p = selected.obj.position; const q = selected.obj.quaternion;
+  sendDrag(selected.id, [p.x, p.y, p.z], new THREE.Euler().setFromQuaternion(q, 'YXZ').y, [q.x, q.y, q.z, q.w]);
 }
 
 // remote drags: apply transiently, no log involvement
-bus.on('drag', ({ id, pos, yaw }) => {
+bus.on('drag', ({ id, pos, yaw, q }) => {
   const obj = entities.get(id);
   if (!obj) return;
   obj.position.set(...pos);
-  if (yaw != null) obj.rotation.y = yaw;
+  if (Array.isArray(q) && q.length === 4) obj.quaternion.set(q[0], q[1], q[2], q[3]);   // the rotate gizmo's full turn
+  else if (yaw != null) obj.rotation.y = yaw;
   reindexCollider(id);
 });
 
@@ -419,22 +424,29 @@ function commitPlace(before) {
   if (lockedHint(selected.id)) {
     // the world never moved — put the local preview back where the log says
     const o = selected.obj;
-    o.position.set(...before.pos); o.rotation.y = before.yaw; o.scale.setScalar(before.scale);
+    o.position.set(...before.pos); o.quaternion.fromArray(before.q); o.scale.setScalar(before.scale);
     reindexCollider(selected.id); refreshOutline();
     return;
   }
   const o = selected.obj;
+  // a thing the fold knows by q is placed by q (a bare yaw would only turn it
+  // about up, PROTOCOL §9.1); a yaw-only thing stays upright here, so a yaw
+  const rec = state.st.entities?.[selected.id];
+  const tilted = !!rec?.q;
+  const { q: _bq, ...beforeYaw } = before;
   sendVerb('place', {
     id: selected.id,
     pos: [o.position.x, o.position.y, o.position.z],
-    yaw: o.rotation.y,
+    ...(tilted ? { q: o.quaternion.toArray() } : {}),
+    yaw: new THREE.Euler().setFromQuaternion(o.quaternion, 'YXZ').y,
     scale: o.scale.x,
   });
-  pushUndo({ verb: 'place', args: { id: selected.id, ...before } }, 'move');
+  pushUndo({ verb: 'place', args: { id: selected.id, ...(tilted ? before : beforeYaw) } }, 'move');
 }
 
+const _up = new THREE.Vector3(0, 1, 0), _turn = new THREE.Quaternion(), _q = new THREE.Quaternion();
 function snapshotOf(obj) {
-  return { pos: [obj.position.x, obj.position.y, obj.position.z], yaw: obj.rotation.y, scale: obj.scale.x };
+  return { pos: [obj.position.x, obj.position.y, obj.position.z], yaw: new THREE.Euler().setFromQuaternion(obj.quaternion, 'YXZ').y, q: obj.quaternion.toArray(), scale: obj.scale.x };
 }
 
 export function undo() {
@@ -468,7 +480,8 @@ function removeSelected() {
   if (!selected) return;
   if (lockedHint(selected.id)) return;   // an accidental Del is the worst accident
   const meta = entityMeta.get(selected.id) ?? {};
-  const snap = snapshotOf(selected.obj);
+  const { q, ...upright } = snapshotOf(selected.obj);
+  const snap = state.st.entities?.[selected.id]?.q ? { ...upright, q } : upright;   // q only for a thing the fold knew tilted
   sendVerb('remove', { id: selected.id });
   pushUndo({ verb: 'spawn', args: { id: selected.id, lib: meta.lib, ...snap } }, 'removal');
   deselect();
@@ -522,6 +535,7 @@ canvas.addEventListener('mousedown', (e) => {
     vertical: e.shiftKey,
     clientX: e.clientX,
     startYaw: root.rotation.y,
+    startQuat: root.quaternion.clone(),
     startScale: root.scale.x,
     startPos: entities.get(id).position.clone(),
     depth: camera.position.distanceTo(entities.get(id).position),
@@ -554,7 +568,7 @@ addEventListener('mouseup', () => {
     const same = Math.abs(o.position.x - moved.pos[0]) < 0.005
       && Math.abs(o.position.y - moved.pos[1]) < 0.005
       && Math.abs(o.position.z - moved.pos[2]) < 0.005
-      && Math.abs(o.rotation.y - moved.yaw) < 1e-4
+      && o.quaternion.angleTo(_q.fromArray(moved.q)) < 1e-4
       && Math.abs(o.scale.x - moved.scale) < 1e-4;
     if (!same) commitPlace(moved);          // release commits ONE clean entry
   }

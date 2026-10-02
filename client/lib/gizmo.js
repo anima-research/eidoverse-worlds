@@ -6,8 +6,9 @@
 // build.js vetoes its mesh-grab while a handle is hot (setPointerVeto), and
 // both commit the same way: ONE `place` carrying the full pose on release,
 // an inverse from the fold on the undo stack, others watching the drag at
-// pose cadence. Constraints from the fold's shape: rotate is yaw only (the
-// log has no pitch/roll), scale is uniform (the log has one number).
+// pose cadence. Rotate turns about any axis and commits the full orientation
+// q (design §5; a pure turn about up on a yaw-only thing stays a yaw); scale
+// is uniform (the log has one number).
 // Locked or mounted things get no gizmo — the schema says their transform is
 // read-only, and a handle you can't drag is a lie.
 
@@ -21,7 +22,7 @@ import { getTool, isEditing, pushUndo, refreshOutline, setPointerVeto } from './
 import { reindexCollider } from './colliders.js';
 import { foldRecord, inverseOf } from './inspect.js';
 import { mayAuthor } from './placer.js';
-import { editVerbs, inspectSchema, fieldAt } from '../../shared/editschema.js';
+import { editVerbs, inspectSchema, fieldAt, poseEdits } from '../../shared/editschema.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
 const R2D = 180 / Math.PI;
@@ -49,12 +50,12 @@ function ensure() {
 
 const MODE = { move: 'translate', rotate: 'rotate', scale: 'scale' };
 /** Can this thing take THIS gesture? The schema decides: a mounted or locked
- *  thing's transform is read-only; a light has no yaw or scale to drag. */
+ *  thing's transform is read-only; a light has no orientation or scale to drag. */
 function editable(id, mode) {
   const rec = foldRecord(id); const obj = entities.get(id);
   if (!rec || !obj || rec.parent || comps.get(id)?.lock) return false;
   const sc = inspectSchema(rec, id, { mayAuthor: mayAuthor(id) });   // guarded by someone else → no handles
-  const key = mode === 'rotate' ? 'pos.yaw' : mode === 'scale' ? 'pos.scale' : 'pos.x';
+  const key = mode === 'rotate' ? 'rot.qw' : mode === 'scale' ? 'pos.scale' : 'pos.x';
   const f = fieldAt(sc, key);
   return !!f && !f.disabled;
 }
@@ -68,8 +69,8 @@ function sync() {
   if (attachedId !== want) { c.attach(entities.get(want)); attachedId = want; }
   const mode = MODE[getTool()];
   if (c.mode !== mode) c.setMode(mode);
-  // yaw only: the log has no pitch or roll; uniform only: the log has one scale
-  c.showX = mode !== 'rotate'; c.showZ = mode !== 'rotate'; c.showY = true;
+  // every axis: rotate commits q; scale still applies uniformly (onChange)
+  c.showX = true; c.showZ = true; c.showY = true;
 }
 
 function beginDrag() {
@@ -85,21 +86,23 @@ function onChange() {
     const k = ['x', 'y', 'z'].includes(ax) ? obj.scale[ax] / start.scale : obj.scale.x / start.scale;
     obj.scale.setScalar(THREE.MathUtils.clamp(start.scale * k, 0.1, 12));
   }
-  if (controls.mode === 'rotate') { obj.rotation.x = 0; obj.rotation.z = 0; }
   reindexCollider(attachedId); refreshOutline();
   const now = performance.now();
-  if (now - lastSent >= 66) { lastSent = now; const p = obj.position; sendDrag(attachedId, [p.x, p.y, p.z], obj.rotation.y); }
+  if (now - lastSent >= 66) {
+    lastSent = now; const p = obj.position; const q = obj.quaternion;
+    // yaw for older peers (the heading), q for everyone who reads it
+    sendDrag(attachedId, [p.x, p.y, p.z], new THREE.Euler().setFromQuaternion(q, 'YXZ').y, [q.x, q.y, q.z, q.w]);
+  }
 }
 function endDrag() {
   const id = attachedId; const obj = id && entities.get(id);
   if (!obj || !start?.rec) { start = null; return; }
   const rec = foldRecord(id) ?? start.rec;
-  const sc = inspectSchema(rec, id);
-  // only the transform fields this thing HAS (a light has no yaw/scale) —
-  // editVerbs coalesces them into one place carrying the full pose
-  const all = { 'pos.x': +obj.position.x.toFixed(3), 'pos.y': +obj.position.y.toFixed(3), 'pos.z': +obj.position.z.toFixed(3),
-    'pos.yaw': obj.rotation.y * R2D, 'pos.scale': +obj.scale.x.toFixed(3) };
-  const set = Object.fromEntries(Object.entries(all).filter(([k]) => fieldAt(sc, k)));
+  // only the fields this gesture moved and this thing HAS (shared/editschema.js
+  // poseEdits) — editVerbs coalesces them into one place carrying the full pose
+  const mode = { translate: 'move', rotate: 'rotate', scale: 'scale' }[controls.mode];
+  const o = obj.quaternion;
+  const set = poseEdits(rec, id, mode, { pos: obj.position.toArray(), q: [o.x, o.y, o.z, o.w], scale: obj.scale.x });
   const { verbs, errors } = editVerbs(rec, id, set);
   if (errors.length || !verbs.length) { start = null; return; }
   for (const v of verbs) {

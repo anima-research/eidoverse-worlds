@@ -9,7 +9,7 @@
 // other channels read back unchanged after the log folds it.
 import * as THREE from '../client/node_modules/three/build/three.module.js';
 import { emptyState, foldEntry } from '../shared/fold.js';
-import { inspectSchema, editVerbs, fieldAt, describeSchema } from '../shared/editschema.js';
+import { inspectSchema, editVerbs, fieldAt, describeSchema, poseEdits } from '../shared/editschema.js';
 import { qFromEuler, eulerFromQ, ROT_ORDERS, sameRotation } from '../shared/euler.js';
 import { qHeading, qRotate } from '../shared/rot.js';
 
@@ -197,6 +197,30 @@ console.log('the heading alias and moves');
   check('a move carries the thing\'s q unchanged (a move is not a turn)', JSON.stringify(m.verbs[0].args.q) === JSON.stringify(tilt) && m.verbs[0].args.pos[0] === 5 && m.verbs[0].args.scale === 2);
   const both = editVerbs(ent, 'e', { 'pos.x': 5, 'rot.z': 10, 'pos.scale': 3 });
   check('Translate + Rotate + Scale in one edit = ONE place', both.verbs.length === 1 && both.verbs[0].args.pos[0] === 5 && both.verbs[0].args.scale === 3 && !!both.verbs[0].args.q);
+}
+
+console.log('the rotate gizmo: any axis, committed as q (poseEdits → editVerbs → the fold)');
+{
+  const crate = { lib: LIB, pos: [1, 0, 2], yaw: 0.4, scale: 1.5, actor: 'o', ts: 1 };
+  const tq = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.3, 0.4, -0.2, 'ZYX'));   // what TransformControls leaves on the object
+  const set = poseEdits(crate, 'e', 'rotate', { pos: [9, 9, 9], q: [tq.x, tq.y, tq.z, tq.w], scale: 7 });
+  check('rotate sends the orientation only (not the position or scale it did not touch)', Object.keys(set).sort().join() === 'rot.qw,rot.qx,rot.qy,rot.qz', JSON.stringify(set));
+  const r = editVerbs(crate, 'e', set);
+  const after = foldPlace(crate, r.verbs[0].args);
+  check('…and the fold holds exactly the gizmo\'s orientation, pos and scale untouched', Array.isArray(after.q) && sameRotation(after.q, [tq.x, tq.y, tq.z, tq.w], 1e-12) && JSON.stringify(after.pos) === '[1,0,2]' && after.scale === 1.5, JSON.stringify(after));
+  const flip = poseEdits(crate, 'e', 'rotate', { q: [-tq.x, -tq.y, -tq.z, -tq.w] });
+  check('…a negated quaternion (the same rotation) commits the same rotation', sameRotation(foldPlace(crate, editVerbs(crate, 'e', flip).verbs[0].args).q ?? [0, 0, 0, 0], [tq.x, tq.y, tq.z, tq.w], 1e-12));
+  const yq = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 2.0);
+  const ys = poseEdits(crate, 'e', 'rotate', { q: [yq.x, yq.y, yq.z, yq.w] });
+  const yr = editVerbs(crate, 'e', ys);
+  check('a pure turn about up on a yaw-only thing stays a yaw (no q written)', !('q' in yr.verbs[0].args) && Math.abs(yr.verbs[0].args.yaw - 2.0) < 1e-4, JSON.stringify(yr.verbs));
+  const tilted = { ...crate, q: [tq.x, tq.y, tq.z, tq.w], yaw: qHeading([tq.x, tq.y, tq.z, tq.w]) };
+  check('…but the same turn on a thing that already has q writes q', 'rot.qw' in poseEdits(tilted, 'e', 'rotate', { q: [yq.x, yq.y, yq.z, yq.w] }));
+  const mv = editVerbs(tilted, 'e', poseEdits(tilted, 'e', 'move', { pos: [4, 0, 4], q: [0, 0, 0, 1], scale: 3 }));
+  check('move on a tilted thing sends the position and keeps its q (no stray heading from the object\'s Euler y)', JSON.stringify(mv.verbs[0].args.q) === JSON.stringify(tilted.q) && mv.verbs[0].args.pos[0] === 4 && mv.verbs[0].args.scale === 1.5, JSON.stringify(mv.verbs));
+  check('scale sends the scale only', Object.keys(poseEdits(crate, 'e', 'scale', { pos: [9, 9, 9], q: [0, 0, 0, 1], scale: 2 })).join() === 'pos.scale');
+  check('a light-verb light has nothing to rotate', Object.keys(poseEdits({ kind: 'light', pos: [0, 2, 0] }, 'e', 'rotate', { q: [tq.x, tq.y, tq.z, tq.w] })).length === 0);
+  check('a locked thing\'s rotate is refused by editVerbs with the reason', /locked/.test(editVerbs({ ...crate, comp: { lock: true } }, 'e', set).errors[0] ?? ''));
 }
 
 for (const f of fails) console.log('  ✗', f);

@@ -187,9 +187,9 @@ export function sendTyping(to, state) {
 
 /** Transient, never-logged relay — used while a build drag is in flight so
  *  other people see the object moving before the single committed `place`. */
-export function sendDrag(id, pos, yaw) {
+export function sendDrag(id, pos, yaw, q = null) {
   if (net.joined && net.ws?.readyState === 1) {
-    net.ws.send(JSON.stringify({ type: 'drag', id, pos, yaw }));
+    net.ws.send(JSON.stringify({ type: 'drag', id, pos, yaw, ...(q ? { q } : {}) }));
   }
 }
 
