@@ -20,6 +20,7 @@
 // Pure: no DOM, no three, no I/O. Server, browser, mcpl and tests import it.
 
 import { ROT_MODES } from './euler.js';
+import { WEATHERS, CLOUDS } from './forecast.js';
 
 // ------------------------------------------------------------ canonical bytes
 // RFC 8785 (JCS) for the JSON this module produces: object keys sorted by UTF-16
@@ -153,6 +154,29 @@ const DEFS = [
   { name: 'Stage', category: 'Media', summary: 'who is speaking (captionbot)', params: { speaker: { t: 'text', default: null } }, fallback: { text: 'components: stage' } },
   { name: 'Annotation', category: 'Data', summary: 'any other data a world invents (recipe, notice, story…)',
     params: { type: { t: 'text', default: null, required: true }, data: { t: 'json', default: null } }, fallback: { text: 'components: <type>' } },
+  // The world entity's components (design §3, shared/worldentity.js): `@world`
+  // is ONE entity whose bag is these four, aliased both ways onto the fold's
+  // state.sky / state.terrain / state.grass. `world: true` keeps them off every
+  // other entity's Add Component; the world has exactly one of each.
+  { name: 'Sky', category: 'World', world: true, summary: 'the time of day, the clock, clouds and light',
+    params: { hours: { t: 'num', unit: 'h', default: 12, min: 0, max: 24 }, rate: { t: 'num', default: 0, min: 0, softMax: 48, hint: 'world hours per real hour; 0 = the sun stands still' },
+      clock: { t: 'choice', options: ['real'], default: null, hint: 'real = the hour IS a timezone\'s wall hour' }, tz: { t: 'text', default: null },
+      clouds: { t: 'choice', options: [...CLOUDS], default: 'cumulus' },
+      azimuth: { t: 'num', unit: '°', default: 180 }, sun: { t: 'num', default: 1 }, ambient: { t: 'num', default: 1 }, fill: { t: 'num', default: 1 },
+      exposure: { t: 'num', default: 1 }, fog: { t: 'num', default: 1 }, dormantRated: { t: 'json', default: null, hint: 'the rated clock parked under a real clock' } },
+    fallback: { text: 'the sky at <hour>' }, note: 'wire: the sky verb, folded wholesale into state.sky; presets are authoring conveniences (defs/sky/_presets.json), never logged by name' },
+  { name: 'Weather', category: 'World', world: true, summary: 'what the sky is doing: rain, storm, clear — or a forecast policy',
+    params: { weather: { t: 'choice', options: [...WEATHERS], default: null },
+      weatherK: { t: 'num', default: 1 }, weatherSeconds: { t: 'num', unit: 's', default: null }, forecast: { t: 'json', default: null }, override: { t: 'json', default: null, hint: 'a manual weather inside a forecast segment (stamped by the fold)' } },
+    fallback: { text: 'weather <state>' }, note: 'wire: the weather verb (merges onto state.sky), and the sky verb\'s forecast policy' },
+  { name: 'Ground', category: 'World', world: true, summary: 'the terrain: its shape, size and colour',
+    params: { seed: { t: 'num', default: 7 }, size: { t: 'num', unit: 'm', default: 160 }, segments: { t: 'num', default: 200 }, amplitude: { t: 'num', unit: 'm', default: 0 },
+      flatRadius: { t: 'num', unit: 'm', default: 16 }, layers: { t: 'json', default: [] } },
+    fallback: { text: 'the ground' }, note: 'wire: the terrain verb, folded wholesale into state.terrain' },
+  { name: 'Grass', category: 'World', world: true, summary: 'what grows on the ground',
+    params: { species: { t: 'text', default: null }, preset: { t: 'text', default: null }, width: { t: 'num', unit: 'm', default: null }, depth: { t: 'num', unit: 'm', default: null },
+      density: { t: 'num', default: 1 }, height: { t: 'num', unit: 'm', default: null } },
+    fallback: { text: 'grass' }, note: 'wire: the grass verb, folded wholesale into state.grass; grass {clear:true} mows it' },
 ];
 
 function freeze(o) { if (o && typeof o === 'object') { Object.values(o).forEach(freeze); Object.freeze(o); } return o; }
@@ -375,7 +399,7 @@ export function addable(components, { unmet = false, met = null } = {}) {
   const isMet = (n) => (met ? met(n) : have.has(n));
   const out = [];
   for (const d of DEFS) {
-    if (d.builtin || d.readOnly || (!REPEATABLE.has(d.name) && have.has(d.name))) continue;
+    if (d.builtin || d.readOnly || d.world || (!REPEATABLE.has(d.name) && have.has(d.name))) continue;
     const missing = (d.needs ?? []).filter((n) => !isMet(n));
     if (missing.length && !unmet) continue;
     out.push({ name: d.name, category: d.category, summary: d.summary, hash: RECORDS[d.name].hash, ...(missing.length ? { unmet: missing } : {}) });

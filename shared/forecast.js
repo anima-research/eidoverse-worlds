@@ -18,6 +18,9 @@
 // simultaneous clients all land on the same segment of the same forecast.
 
 export const WEATHERS = ['clear', 'fair', 'sunshower', 'overcast', 'rain', 'storm', 'cyclone', 'darkstorm'];
+// The cloud kinds the sky realizes (client/lib/sky.js re-exports this; the
+// world entity's Sky record names the same list).
+export const CLOUDS = ['clear', 'cumulus', 'stratus', 'cirrus'];
 
 // ---------------------------------------------------------------- day clock
 
