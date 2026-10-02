@@ -49,6 +49,7 @@ import { radialForce, FORCE_MIN } from "../shared/force.js";
 // what is burning (#25's shared-facts boundary).
 import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
 import { describePicture } from "../shared/picture.js";
+import { lightOf } from "../shared/components.js";
 import { describeCaptions } from "../shared/captions.js";
 import { describeSound } from "../shared/sound.js";
 import { describeStructure, describeHere, localizePoint, planStructure, routeLocal } from "../shared/structure.js";
@@ -3100,7 +3101,8 @@ export class WorldAgent {
     const ordered = meKnown ? [...ents].sort((a, b) => sortKey(a) - sortKey(b)) : ents;
     for (const e of ordered) {
       const f = fx.get(e.id)!;
-      const short = (e.lib ?? "(light)").split("/").pop()!.replace(".glb", "").split("_").slice(0, 5).join(" ")
+      // an Empty (PROTOCOL §3.2) has no lib and is not a light: say so, not ""
+      const short = (e.lib || "(empty)").split("/").pop()!.replace(".glb", "").split("_").slice(0, 5).join(" ")
         + (typeof e.comp?.label === "string" && e.comp.label ? ` "${e.comp.label}"` : "");   // a display name someone gave it (comp label)
       // Affordances read out loud: a thing that can be sat on, used, or is
       // moving SAYS SO in text-tier perception — this is how the capability
@@ -3108,6 +3110,18 @@ export class WorldAgent {
       // who perceives by reading.
       const c = e.comp ?? {};
       const aff: string[] = [];
+      // A light, by either spelling (the light verb's entity, or a light
+      // component on a lamp model or an Empty), says what it casts — colour,
+      // brightness, reach — read off the FOLDED record (the perception view
+      // above thins a light's fields away) through the one shared reading.
+      const lit = lightOf((this.st.entities as Record<string, any>)[e.id]);
+      if (lit) aff.push(`light: #${lit.color.toString(16).padStart(6, "0")}, brightness ${+lit.intensity.toFixed(2)}, reaches ${+lit.range.toFixed(2)}m${lit.keep ? ", kept lit" : ""}${lit.day ? "" : ", burns at noon"}`);
+      // a declared collider (comp.collider). The spawn verb's legacy `collide`
+      // is deliberately NOT described: this agent's snapshot path drops it
+      // (stateToEntries collide:false), so describing it would make two agents
+      // in one world disagree by when they joined.
+      const col = c.collider && typeof c.collider === "object" && !Array.isArray(c.collider) ? c.collider.shape : undefined;
+      if (col === "exact" || col === "box") aff.push(col === "box" ? "collides as a box" : "collides as its exact shape");
       if (c.sockets) aff.push(`sit/mount: ${Object.keys(c.sockets).join(", ")}`);
       if (c.reactions) aff.push(`reacts to: ${Object.keys(c.reactions).join(", ")}`);
       if (c.motion?.type) aff.push(`in motion (${c.motion.type})`);
@@ -3149,7 +3163,10 @@ export class WorldAgent {
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
-      const extra = Object.keys(c).filter((k) => !["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "guard", "structure", "label", "hidden"].includes(k));
+      const spoken = ["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "guard", "structure", "label", "hidden"];
+      if (lit?.spelling === "comp") spoken.push("light");   // described above; a malformed one stays listed
+      if (col === "exact" || col === "box") spoken.push("collider");
+      const extra = Object.keys(c).filter((k) => !spoken.includes(k));
       if (extra.length) aff.push(`components: ${extra.join(", ")}`);
       const ride = this.mounts.get(e.id);
       if (ride) aff.push(`mounted on ${ride.to}${f.ok && f.moving ? ` (riding its ${f.moving})` : ""}`);

@@ -268,6 +268,42 @@ const settle = async () => { for (let i = 0; i < 6; i++) { M.residencySweep?.();
   check('the realizer reported nothing at any point (no error path was taken)', spy.reports.length === 0, JSON.stringify(spy.reports.map((r: any) => `${r.where}: ${r.e}`)));
 }
 
+// ---- 4. text tier --------------------------------------------------------------
+console.log('\n4. text tier (mcpl/agent.ts look(), mcpl/tools.ts)');
+{
+  const { WorldAgent } = await import('../mcpl/agent.ts');
+  const ag = new WorldAgent({ name: 'eye' });
+  const A = ag as any;
+  let n = 1;
+  const entry = (verb: string, args: Record<string, unknown>) => A.applyEntry({ verb, args, ts: 1786320000000 + n, seq: n++, actor: 'owner' }, false);
+  entry('spawn', { id: 'pivot', pos: [1, 0, 1] });
+  entry('spawn', { id: 'bulb', pos: [2, 0, 2] });
+  entry('comp', { id: 'bulb', type: 'light', data: { color: 0x00ff00, intensity: 9, day: false } });
+  entry('spawn', { id: 'lamp', lib: LAMP, pos: [3, 0, 3] });
+  entry('comp', { id: 'lamp', type: 'light', data: { keep: true } });
+  entry('comp', { id: 'lamp', type: 'collider', data: { shape: 'box' } });
+  entry('light', { id: 'porch', pos: [4, 2, 4], color: 0xffd9a0, intensity: 40, range: 12 });
+  entry('spawn', { id: 'odd', lib: LAMP, pos: [5, 0, 5] });
+  entry('comp', { id: 'odd', type: 'light', data: 'on' });
+  entry('spawn', { id: 'old', lib: LAMP, pos: [6, 0, 6], collide: 'exact' });
+  const out = ag.look();
+  const line = (id: string) => out.split('\n').find((l: string) => l.includes(`[${id}]`)) ?? '';
+  check('an Empty is named "(empty)" in look() — like "(light)", never a blank', /\[pivot\] \(empty\):/.test(line('pivot')), line('pivot'));
+  check('a light component on an Empty says what it casts (colour, brightness, reach, noon)', /\[bulb\] \(empty\): .*light: #00ff00, brightness 9, reaches 10m, burns at noon/.test(line('bulb')), line('bulb'));
+  check('…and is not ALSO listed as a bare component', !/components: .*light/.test(line('bulb')), line('bulb'));
+  check('a lamp (Model + light component) is named by its model and says its light and its collider',
+    /\[lamp\] lamp: .*light: #ffd9a0, brightness 16, reaches 10m, kept lit/.test(line('lamp')) && /collides as a box/.test(line('lamp')) && !/components:/.test(line('lamp')), line('lamp'));
+  check('a light-verb light now says what it casts too (it used to say only "(light)")', /\[porch\] \(light\): .*light: #ffd9a0, brightness 40, reaches 12m/.test(line('porch')), line('porch'));
+  check('a malformed light comp casts nothing and stays listed by name', /components: light/.test(line('odd')) && !/light: #/.test(line('odd')), line('odd'));
+  check('the spawn verb\'s legacy collide is not described (this agent\'s snapshot path drops it by design)', !/collides/.test(line('old')), line('old'));
+  const { HANDLERS } = await import('../mcpl/tools.ts');
+  {
+    const r: any = await HANDLERS.inspect(ag as any, { id: 'pivot' });
+    const txt = JSON.stringify(r);
+    check('the inspect tool heads an Empty "empty"', /\[pivot\] empty/.test(txt), txt.slice(0, 160));
+  }
+}
+
 rmSync(SCRATCH, { recursive: true, force: true });
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

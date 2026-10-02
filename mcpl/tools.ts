@@ -690,7 +690,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       if (!rec) return text(`inspect: no placed thing "${id}" here (ids are in look() and hierarchy)`);
       const schema = inspectSchema(rec, id);
       if (a.json) return text(JSON.stringify(schema));
-      const head = `[${id}] ${rec.kind === "light" ? "light" : String(rec.lib ?? "").split("/").pop()}${rec.comp?.label ? ` "${rec.comp.label}"` : ""}${rec.parent ? ` — mounted on ${rec.parent.to}` : ""}`;
+      const head = `[${id}] ${rec.kind === "light" ? "light" : rec.lib == null ? "empty" : String(rec.lib).split("/").pop()}${rec.comp?.label ? ` "${rec.comp.label}"` : ""}${rec.parent ? ` — mounted on ${rec.parent.to}` : ""}`;
       return text(`${head}\n${describeSchema(schema)}`);
   },
   edit: async (ag, a) => {
@@ -720,7 +720,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const line = (e: any) => {
         const c = e.comp ?? {};
         const comps = Object.keys(c).filter((k) => k !== "lock" && k !== "label").map((k) => (k === "motion" || k.startsWith("motion:")) ? `${k}(${c[k]?.type ?? "…"})` : k === "sockets" ? `sockets(${Object.keys(c.sockets ?? {}).join(",")})` : k);
-        return `[${e.id}]${c.label ? ` "${c.label}"` : ""} ${e.lib === "(light)" ? "light" : String(e.lib ?? "").split("/").pop()}${comps.length ? ` · ${comps.join(" · ")}` : ""}${c.lock ? " · 🔒" : ""}${c.hidden ? " · hidden" : ""}`;
+        return `[${e.id}]${c.label ? ` "${c.label}"` : ""} ${e.lib === "(light)" ? "light" : !e.lib ? "empty" : String(e.lib).split("/").pop()}${comps.length ? ` · ${comps.join(" · ")}` : ""}${c.lock ? " · 🔒" : ""}${c.hidden ? " · hidden" : ""}`;
       };
       const hit = (e: any) => !q || [e.id, e.lib, e.comp?.label ?? "", ...Object.keys(e.comp ?? {})].join(" ").toLowerCase().includes(q);
       const L: string[] = [];
