@@ -46,6 +46,8 @@ interface WorldAPI {
    *  a blast, a gust, a trap springing. Bodies in radius that ALLOW being
    *  pushed (their own setting) tumble away from `at`. It has no targets and
    *  no lasting state: emit it at the moment the thing happens.
+   *  `light` requires a non-empty string `id`. Reuse an existing light id
+   *  to update only the supplied fields (for example, `{id, intensity}`).
    *  A refused emit THROWS with the reason — catch it or let the flight
    *  recorder log it. */
   emit(verb: string, args?: Record<string, unknown>): void;

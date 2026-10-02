@@ -19,6 +19,7 @@ import { normalizeCaptionArgs, captionRefusal } from "../shared/captions.js";
 import { lintMotion, lintParticles } from "./lint.ts";
 import { reactToUse } from "./reactions.ts";
 import { behaviorLimits } from "./behaviors.ts";
+import { lightArgsError } from "./verb-shapes.ts";
 import { ROLE_RANK, type LogEntry, type WorldState } from "../shared/fold.js";
 import { SIM_ID } from "../shared/sim.js";
 import { boxOf, worldLibs } from "./boxes.ts";
@@ -437,10 +438,21 @@ function vSpawn(ctx: VerbCtx, args: Record<string, unknown>) {
   return { args: box ? { ...rest, box } : rest };
 }
 
+function vLight(ctx: VerbCtx, args: Record<string, unknown>) {
+  const error = lightArgsError(args);
+  if (error) {
+    ctx.w.debug("rejected", { who: ctx.c.id, verb: "light", why: error });
+    return { error };
+  }
+  // Keep the sparse bag: the fold merges partial updates with a standing light.
+  return { args };
+}
+
 const extras: Record<string, Pick<VerbRow, "selfRankZero" | "validate" | "after">> = {
   say: { validate: vSay },
   caption: { validate: vCaption },
   spawn: { validate: vSpawn },
+  light: { validate: vLight },
   // A `use` is a cause; reactions turn it into logged effects.
   use: { after: (ctx, entry) => reactToUse(ctx.w, entry) },
   mount: { selfRankZero: true, validate: vMount },
