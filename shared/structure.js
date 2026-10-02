@@ -1067,7 +1067,14 @@ export function planRouteLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
   if (![fromX, fromZ, toX, toZ].every(Number.isFinite)) return { kind: 'blocked', reason: 'non-finite endpoint', points: [] };
   const lv = routingLevel(plan, fromX, fromZ, y);
   if (!lv) return { kind: 'clear', points: [[fromX, fromZ], [toX, toZ]] };
-  return routeLevel(lv.level, plan.grid, [fromX, fromZ], [toX, toZ], lv.y === Math.min(...plan.levels.map(l => l.y)));
+  const outdoors = lv.y === Math.min(...plan.levels.map(l => l.y));
+  const node = nodeAtPoint(lv.level, plan.grid, fromX, fromZ);
+  const [cell, half] = node.split(':'), [cx, cz] = cell.split(',').map(Number);
+  // A foreign building's detour cannot discharge this floor-support contract.
+  // Only a start actually on this upper floor imposes confinement; an unrelated
+  // upper storey elsewhere in the world does not own the walk.
+  const confined = !outdoors && lv.level.tiles.has(cell) && (!half || halfFloored(lv.level, cx, cz, half));
+  return { ...routeLevel(lv.level, plan.grid, [fromX, fromZ], [toX, toZ], outdoors), confined };
 }
 
 /** A cheap check of an actual route leg against this structure's walls. */

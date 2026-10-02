@@ -2493,8 +2493,8 @@ export class WorldAgent {
     // Each local planner may offer a route around/through its building.
     // Validate the offered polyline against EVERY known structure before
     // accepting one. This is local planning, not global multi-building search.
-    const constraints: { id: string; plan: ReturnType<typeof planStructure>; e: Entity; y: number }[] = [];
-    const candidates: { points: Vec2[]; length: number; id: string }[] = [];
+    const constraints: { id: string; plan: ReturnType<typeof planStructure>; e: Entity; y: number; confined: boolean }[] = [];
+    const candidates: { points: Vec2[]; length: number; id: string; owner: Entity }[] = [];
     const refusals: string[] = [];
     for (const e of this.entities.values()) {
       const data = (e.comp ?? {}).structure;
@@ -2503,8 +2503,8 @@ export class WorldAgent {
         const plan = planStructure(data);
         const [ax, ay, az] = localizePoint(e, this.pos.x, this.pos.y, this.pos.z);
         const [bx, , bz] = localizePoint(e, x, this.pos.y, z);
-        constraints.push({ id: e.id, plan, e, y: ay });
         const result = planRouteLocal(plan, ax, az, bx, bz, ay);
+        constraints.push({ id: e.id, plan, e, y: ay, confined: result.confined === true });
         if (result.kind === "blocked") {
           refusals.push("[" + e.id + "]: " + result.reason); continue;
         }
@@ -2518,7 +2518,7 @@ export class WorldAgent {
           z: pz + (-lx * n + lz * c) * sc,
         }));
         const length = points.slice(1).reduce((sum, p, i) => sum + Math.hypot(p.x - points[i].x, p.z - points[i].z), 0);
-        candidates.push({ points, length, id: e.id });
+        candidates.push({ points, length, id: e.id, owner: e });
       } catch {
         // A malformed component has no sound route to offer. Normalize handles
         // primitive data as empty; keep inspecting other, well-formed houses.
@@ -2528,7 +2528,10 @@ export class WorldAgent {
     candidates.sort((a, b) => a.length - b.length || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     let selected: Vec2[] | null = null;
     for (const candidate of candidates) {
-      const valid = constraints.every(({ plan, e, y }) => candidate.points.slice(1).every((p, i) => {
+      // Supporting upper floors constrain the route, not just the walls.
+      // Cross-building floor composition is outside this local planner: keep
+      // the supporting structure's own validated path or explicitly refuse.
+      const valid = constraints.every(({ plan, e, y, confined }) => (!confined || candidate.owner === e) && candidate.points.slice(1).every((p, i) => {
         const a = candidate.points[i];
         const [ax, , az] = localizePoint(e, a.x, this.pos.y, a.z);
         const [bx, , bz] = localizePoint(e, p.x, this.pos.y, p.z);
@@ -2538,7 +2541,9 @@ export class WorldAgent {
     }
     if (!selected && (candidates.length || refusals.length)) {
       this.walkRefusal = candidates.length
-        ? "no local route is clear of all structures (multi-building route search is unavailable)"
+        ? (constraints.some(c => c.confined)
+          ? "no local route preserves the supporting upper-floor path (multi-building floor composition is unavailable)"
+          : "no local route is clear of all structures (multi-building route search is unavailable)")
         : "no route: " + refusals.join("; ");
       this.clip = "idle";
       return Promise.resolve(false);

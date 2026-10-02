@@ -155,6 +155,27 @@ try {
   const cap=await handleTool({...ctx,agent:c},"walk_to",{x:1,z:.5});
   check(cap.content[0].text.includes("cells") && !(c as any).target,"actual tool reports budget refusal without movement");
 
+  // Independent review repro: a foreign wall's detour must not discharge
+  // the floor-only constraint imposed by the structure supporting the start.
+  const support=agent(); support.pos={x:.5,y:3.1,z:.5};
+  const floor={levels:[{y:3,tiles:[[0,0],[2,0]],walls:[],apertures:[]},
+    {y:0,tiles:[],walls:[],apertures:[]}]};
+  const foreign={levels:[{y:3,tiles:[[10,10]],walls:[[1,1,0]],apertures:[]}]};
+  support.entities.set("floor",entity(floor as any,"floor"));
+  support.entities.set("foreign",entity(foreign as any,"foreign"));
+  const unsupported=await walk(support,[2.5,.5]);
+  check(!unsupported.arrived && !!support.walkRefusal?.includes("upper-floor"),
+    "foreign building candidate cannot override supporting upper-floor refusal");
+  check(unsupported.samples.every(([x,z])=>x===.5&&z===.5),"foreign detour refusal leaves the body where it stands");
+  floor.levels[0].tiles=[[0,0],[0,1],[0,2],[1,2],[2,2],[2,1],[2,0]];
+  // Replace component identity too, so #200's plan cache sees the changed floor.
+  support.entities.set("floor",entity(structuredClone(floor) as any,"floor"));
+  support.pos={x:.5,y:3.1,z:.5};
+  const supported=await walk(support,[2.5,.5]);
+  const cells=new Set(floor.levels[0].tiles.map(([x,z])=>x+","+z));
+  check(supported.arrived && supported.samples.every(([x,z])=>cells.has(Math.floor(x)+","+Math.floor(z))),
+    "longer supported route wins over a shorter foreign unsupported shortcut");
+
   // Two structures offer individually legal but mutually conflicting routes.
   const base=entity(house,"one"); const two=entity(house,"two",[-1,0,0]);
   const d=agent(); d.entities.set("one",base); d.entities.set("two",two);
