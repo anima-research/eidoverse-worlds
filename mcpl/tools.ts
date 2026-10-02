@@ -697,9 +697,13 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const id = String(a.id ?? "");
       const rec = ag.foldRecord(id) as any;
       if (!rec) return text(`edit: no placed thing "${id}" here`);
-      const { verbs, errors } = editVerbs(rec, id, (a.set ?? {}) as Record<string, unknown>);
+      const { verbs, errors, asks } = editVerbs(rec, id, (a.set ?? {}) as Record<string, unknown>);
       const L: string[] = [];
       for (const e of errors) L.push(`refused: ${e}`);
+      // needs (design §3): a choice to make or a remove-both to confirm sends nothing and says how to answer
+      for (const q of (asks ?? []) as any[]) if (q.kind === 'confirm' || q.options.length) L.push(q.kind === 'choice'
+        ? `asks: ${q.prompt} — answer with ${q.options.map((o: any) => `"${q.key}": "${o.v}" (${o.label})`).join(' or ')}`
+        : `asks: ${q.prompt} — answer with "${q.key}": "both"`);
       if (!verbs.length) return { content: [{ type: "text", text: L.length ? L.join("\n") : "edit: nothing to change" }], isError: errors.length > 0 };
       for (const v of verbs) {
         const why = rawShapeError(v.verb, v.args as Record<string, unknown>);

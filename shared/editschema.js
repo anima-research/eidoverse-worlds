@@ -343,7 +343,7 @@ export function inspectSchema(ent, id, live = {}) {
     if (f.t === 'info' || f.disabled) continue;
     f.disabled = true; f.hint = `guarded by ${placer ?? 'its placer'}`;
   }
-  return { id, groups, sections: componentSections(ent, groups, held, live), ...(guarded ? { guard: { placer, held } } : {}) };
+  return { id, groups, sections: componentSections(ent, groups, held, live, id), ...(guarded ? { guard: { placer, held } } : {}) };
 }
 
 // ---------------------------------------------------------------- components (B)
@@ -361,7 +361,7 @@ const WIRE_BLOCKED = {
   Attachment: () => 'attach with the mount gesture',
 };
 const MOTION_GROUP = { Pendulum: 1, Spin: 1, Orbit: 1, Bob: 1, Path: 1 };
-function componentSections(ent, groups, held, live = {}) {
+function componentSections(ent, groups, held, live = {}, id = '?') {
   const { components } = componentsOf(ent);
   const have = new Set(components.map((c) => c.type));
   const g = (name) => groups.find((x) => x.group === name);
@@ -421,16 +421,86 @@ function componentSections(ent, groups, held, live = {}) {
     if (held) sec.removable = false;
     out.push(sec);
   }
-  const add = addable(components).filter((a) => a.name !== 'Label' && a.name !== 'Hidden')
-    .map((a) => ({ ...a, blocked: (a.name === 'Guard' && live.mayAuthor === false ? 'only its placer or the world\'s owner can guard it' : null) ?? WIRE_BLOCKED[a.name]?.(have, ent) ?? null }));
+  // needs (design §3): an entry whose need has one sensible default says what
+  // it brings; one that needs a choice says it will ask; one whose need cannot
+  // be met in place (a Model: placed from the Library) is blocked, saying why
+  const add = addable(components, { unmet: true, met: (n) => needMet(n, ent) }).filter((a) => a.name !== 'Label' && a.name !== 'Hidden')
+    .map((a) => {
+      const plan = a.unmet ? planNeeds(ent, id, a.name) : null;
+      const needsWhy = plan?.choice && !plan.choice.options.length ? plan.choice.prompt : null;
+      const blocked = (a.name === 'Guard' && live.mayAuthor === false ? 'only its placer or the world\'s owner can guard it' : null) ?? needsWhy ?? WIRE_BLOCKED[a.name]?.(have, ent) ?? null;
+      return { ...a, blocked, ...(plan?.brings ? { brings: plan.brings } : {}), ...(plan?.choice?.options.length ? { asks: plan.choice.need } : {}) };
+    });
   for (const name of ['Model', 'Structure', 'Attachment']) if (!have.has(name) && !add.some((a) => a.name === name) && WIRE_BLOCKED[name])
     add.push({ name, category: RECORDS[name].category, summary: RECORDS[name].summary, hash: RECORDS[name].hash, blocked: WIRE_BLOCKED[name](have, ent) });
   return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden'), list: out, add: held ? [] : add };
 }
 
-/** What adding a component writes, in today's verbs. `value` is the part name
- *  for a part motion, or the type name for an Annotation. */
+// ---------------------------------------------------------------- needs
+// What each need means on THIS entity, and how it is met when it is not
+// (design §3). A need with one sensible default is added for you, as real
+// verbs, in the same undo step; a need that requires a choice returns a
+// `choice` the panel renders as a prompt (and an agent reads), resolved by
+// adding again with one of its option values. A choice with no options is a
+// need that cannot be met in place — it reads as a refusal that says why.
+const article = (w) => (/^[aeiou]/i.test(w) ? 'an' : 'a');
+const NEEDS = {
+  // a model is placed from the Library (spawn on the id would replace this
+  // entity wholesale: its components, its placer, its born)
+  Model: {
+    met: (ent) => ent?.lib != null && !isLight(ent),
+    plan: (ent, id, name) => ({ choice: { need: 'Model', options: [],
+      prompt: `${article(name)} ${name.toLowerCase()} needs a model to act on (${id} has none) — place a model from the Library and add the ${name} to it, or put ${id} under one` } }),
+  },
+  // reactions push the WHOLE entity's pendulum (server/reactions.ts): a part's
+  // pendulum does not count, and a whole-entity spin is in the way
+  Pendulum: {
+    met: (ent) => ent?.comp?.motion?.type === 'pendulum',
+    plan: (ent, id, name) => {
+      const m = ent?.comp?.motion;
+      const verbs = [{ verb: 'motion', args: { id, type: 'pendulum', amp: 0, period: 3.5 } }];
+      if (!m) return { verbs, brings: 'a Pendulum at rest, for it to push' };
+      return { choice: { need: 'Pendulum', prompt: `${name} pushes a pendulum, and ${id} already moves as a whole (${m.type ?? 'a motion'}) — replace that with a Pendulum?`,
+        options: [{ v: 'replace', label: `replace its ${m.type ?? 'motion'} with a Pendulum`, verbs }] } };
+    },
+  },
+};
+/** Is `need` met on this entity? The NEEDS table's reading, else a component of that type. */
+export function needMet(need, ent) {
+  return NEEDS[need] ? NEEDS[need].met(ent) : componentsOf(ent).components.some((c) => c.type === need);
+}
+/** Plan the needs of adding `name`: { verbs } to prepend, `brings` (what is
+ *  added for you), or a `choice` (unresolved). `value` resolves a choice when
+ *  it names one of its options ("replace", or {choose: "replace"}). */
+export function planNeeds(ent, id, name, value) {
+  const verbs = []; const brings = [];
+  const pick = typeof value === 'string' ? value : value?.choose;
+  for (const need of RECORDS[name]?.needs ?? []) {
+    if (needMet(need, ent)) continue;
+    const p = NEEDS[need]?.plan(ent, id, name) ?? { choice: { need, options: [], prompt: `${article(name)} ${name} needs ${article(need)} ${need} first` } };
+    if (p.choice) {
+      const opt = p.choice.options.find((o) => o.v === pick);
+      if (!opt) return { verbs: [], choice: { component: name, ...p.choice, options: p.choice.options.map(({ v, label }) => ({ v, label })) } };
+      verbs.push(...opt.verbs); brings.push(opt.label);
+      continue;
+    }
+    verbs.push(...p.verbs); brings.push(p.brings);
+  }
+  return { verbs, ...(brings.length ? { brings: brings.join('; ') } : {}) };
+}
+
+/** What adding a component writes, in today's verbs, needs included (one
+ *  call = one undo step on every surface). `value` is the part name for a
+ *  part motion, the type name for an Annotation, or a need's choice. Returns
+ *  { verbs, errors, choice? } — a `choice` sends nothing and asks. */
 export function addVerbs(ent, id, name, value) {
+  const np = planNeeds(ent, id, name, value);
+  if (np.choice) return { verbs: [], errors: np.choice.options.length ? [] : [np.choice.prompt], choice: np.choice };
+  const own = addOwnVerbs(ent, id, name, np.verbs.length ? undefined : value);
+  if (own.errors.length) return own;
+  return { verbs: [...np.verbs, ...own.verbs], errors: [], ...(np.brings ? { brings: np.brings } : {}) };
+}
+function addOwnVerbs(ent, id, name, value) {
   const c = ent?.comp ?? {};
   const motion = { Pendulum: { type: 'pendulum', amp: 0.26, period: 3.5 }, Spin: { type: 'spin', degPerSec: 36 }, Orbit: { type: 'orbit', radius: 1, degPerSec: 12 }, Bob: { type: 'bob', amp: 0.3, period: 4 }, Path: { type: 'path', points: [[0, 0, 0], [0, 0, 2]], speed: 1 } };
   if (motion[name]) {
@@ -440,7 +510,7 @@ export function addVerbs(ent, id, name, value) {
     return { verbs: [{ verb: 'motion', args: { id, ...motion[name] } }], errors: [] };
   }
   const simple = { Lock: ['lock', true], Guard: ['guard', true], Hidden: ['hidden', true], Label: ['label', typeof value === 'string' && value.trim() ? value.trim().slice(0, 80) : 'unnamed'],
-    Particles: ['particles', { preset: typeof value === 'string' && value ? value : 'fire' }], LookAt: ['look', {}], Reactions: ['reactions', {}], Stage: ['stage', {}] };
+    Particles: ['particles', { preset: typeof value === 'string' && value ? value : 'fire' }], LookAt: ['look', {}], Reactions: ['reactions', { push: { impulse: 0.35 } }], Stage: ['stage', {}] };
   if (simple[name]) { const [type, data] = simple[name]; if (c[type] != null) return { verbs: [], errors: [`${id} already has ${name}`] }; return { verbs: [{ verb: 'comp', args: { id, type, data } }], errors: [] }; }
   // write-new-on-edit: a Light added here is a component, never the light verb,
   // and it is written with its fields spelled out — the log records the result,
@@ -461,8 +531,29 @@ export function addVerbs(ent, id, name, value) {
   return { verbs: [], errors: [`${name}: added by a gesture, not a value (${WIRE_BLOCKED[name]?.(new Set()) ?? 'see its card'})`] };
 }
 
-/** What removing one component instance writes. */
-export function removeVerbs(ent, id, key) {
+/** What removing one component instance writes. When another component
+ *  needs it (design §3) nothing is sent: the result names the dependants in a
+ *  `confirm`, and removing again with value "both" removes them too, in the
+ *  same step. */
+export function removeVerbs(ent, id, key, value) {
+  const c = ent?.comp ?? {};
+  if (c[key] != null) {
+    const after = { ...ent, comp: Object.fromEntries(Object.entries(c).filter(([k]) => k !== key)) };
+    const deps = componentsOf(ent).components.filter((inst) => inst.key != null && inst.key !== key
+      && (RECORDS[inst.type]?.needs ?? []).some((n) => needMet(n, ent) && !needMet(n, after)));
+    if (deps.length) {
+      const what = componentsOf(ent).components.find((inst) => inst.key === key)?.type ?? key;
+      if (value !== 'both') return { verbs: [], errors: [], confirm: { key, type: what, dependants: deps.map((d) => ({ type: d.type, key: d.key })),
+        prompt: `${deps.map((d) => d.type).join(' and ')} need${deps.length > 1 ? '' : 's'} this ${what} — remove ${deps.length > 1 ? 'them' : 'both'}?`, both: 'both' } };
+      const verbs = [];
+      for (const d of deps) { const r = removeOwnVerbs(ent, id, d.key); if (r.errors.length) return r; verbs.push(...r.verbs); }
+      const own = removeOwnVerbs(ent, id, key);
+      return own.errors.length ? own : { verbs: [...verbs, ...own.verbs], errors: [] };
+    }
+  }
+  return removeOwnVerbs(ent, id, key);
+}
+function removeOwnVerbs(ent, id, key) {
   const c = ent?.comp ?? {};
   if (key === 'motion' && c.motion) return { verbs: [{ verb: 'motion', args: { id, type: null } }], errors: [] };
   if (key === 'captions') return { verbs: [], errors: ['captions are written by the caption verb only'] };
@@ -523,6 +614,7 @@ export function editVerbs(ent, id, edits, live = {}) {
   const quatSet = {};               // component index → value (the Quaternion row)
   let headingSet = false;
   let euler = null;                 // the triple a Rotate edit composed: the viewer's next hint
+  const asks = [];                  // needs (design §3): a choice to make, or a remove-both to confirm
   let light = null;                 // coalesced partial light
   const comps = new Map();          // type → next data (null = remove)
   const motions = new Map();        // key → next params (null = rest)
@@ -548,8 +640,10 @@ export function editVerbs(ent, id, edits, live = {}) {
     // components (B): add.<Component> = value is a part name / annotation type; remove.<comp key>
     if (group === 'add' || group === 'remove') {
       if (schema.guard?.held) { errors.push(`${key}: guarded by ${schema.guard.placer ?? 'its placer'}`); continue; }
-      const r = group === 'add' ? addVerbs(ent, id, k, raw) : removeVerbs(ent, id, k);
+      const r = group === 'add' ? addVerbs(ent, id, k, raw) : removeVerbs(ent, id, k, raw);
       errors.push(...r.errors); verbs.push(...r.verbs);
+      if (r.choice) asks.push({ kind: 'choice', ...r.choice, key });
+      if (r.confirm) asks.push({ kind: 'confirm', ...r.confirm, comp: r.confirm.key, key });   // key = the address to answer on
       continue;
     }
     // actions and creations that have no field row: comp.<any>, sockets.del,
@@ -744,7 +838,7 @@ export function editVerbs(ent, id, edits, live = {}) {
     else verbs.push({ verb: 'comp', args: { id, type: mkey, data: next } });
   }
   for (const [type, data] of comps) verbs.push({ verb: 'comp', args: { id, type, data } });
-  return { verbs, errors, ...(euler ? { euler } : {}) };
+  return { verbs, errors, ...(euler ? { euler } : {}), ...(asks.length ? { asks } : {}) };
 }
 
 /** A one-screen text rendering of the schema — what a model reads. */

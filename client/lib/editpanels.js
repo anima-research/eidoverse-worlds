@@ -56,6 +56,10 @@ let arming = null;   // the child id waiting for a row click to name its parent
 // the schema key (e.g. 'look.target'). The next thing picked (a tree row or the
 // thing in the world) commits that id into the field. Reuses attach's pick path.
 let armingRef = null;
+// a need waiting on the viewer (design §3, shared/editschema.js): { id, ask } —
+// a choice for an Add Component, or a remove-both for a Remove. Shown as a
+// prompt at the top of the cards; answering re-commits the same address.
+let pendingAsk = null;
 let filter = '';     // the hierarchy's filter text: non-matches hide, ancestors of a match stay (dimmed)
 const collapsed = new Set();   // ids whose children are folded (client state, not persisted)
 let visibleRows = [];          // the rows as last painted, for ↑/↓
@@ -396,6 +400,14 @@ function inspectorFields() {
       return r;
     };
     for (const a of schema.sections.header ?? []) { const r = row(a); if (r) f.push(r); }
+    if (pendingAsk?.id === id) {
+      const q = pendingAsk.ask;
+      f.push({ t: 'group', k: 'c:ask', label: q.kind === 'confirm' ? `Remove ${q.type}?` : `${q.component} needs a choice`, open: true });
+      f.push({ t: 'info', label: '', value: q.prompt });
+      if (q.kind === 'confirm') f.push({ t: 'btn', k: 'ask:both', label: `remove ${[...q.dependants.map((d) => d.type), q.type].join(' and ')}`, danger: true });
+      else for (const o of q.options) f.push({ t: 'btn', k: `ask:${o.v}`, label: o.label });
+      f.push({ t: 'btn', k: 'ask:cancel', label: 'cancel' });
+    }
     f.push({ t: 'text', k: 'ifilter', label: '', value: ifilter, placeholder: 'filter properties ⏎', hint: 'non-matching fields hide; components with a hit open' });
     for (const sec of schema.sections.list) {
       const key = `c:${sec.key ?? sec.type}`;
@@ -422,7 +434,8 @@ function inspectorFields() {
         f.push({ t: 'info', label: '', value: cat });
         for (const a of schema.sections.add.filter((x) => x.category === cat)) {
           const viaGesture = { Picture: 'ed:comp.add:picture', Sound: 'ed:comp.add:sound', Seats: 'ed:sockets.add' }[a.name];
-          f.push({ t: 'btn', k: viaGesture ?? `ed:add.${a.name}`, label: `+ ${a.name}`, disabled: !!a.blocked, hint: a.blocked ?? a.summary });
+          f.push({ t: 'btn', k: viaGesture ?? `ed:add.${a.name}`, label: `+ ${a.name}${a.brings ? ' (+ its need)' : a.asks ? '…' : ''}`, disabled: !!a.blocked,
+            hint: a.blocked ?? (a.brings ? `${a.summary} — also adds ${a.brings}, in the same undo step` : a.asks ? `${a.summary} — needs a ${a.asks}: asks first` : a.summary) });
         }
       }
     }
@@ -471,6 +484,12 @@ function inspectorDispatch(action, payload, field, opts = {}) {
   const id = sceneSelected(); const obj = entities.get(id);
   if (action === 'fold') { toggleFold(id, payload); repaintAll(); return; }
   if (action === 'ifilter') { ifilter = String(payload ?? ''); repaintAll(); return; }
+  if (action.startsWith('ask:')) {
+    const q = pendingAsk?.id === id ? pendingAsk.ask : null; pendingAsk = null;
+    const v = action.slice(4);
+    if (q && v !== 'cancel') { const r = commitEdit(id, q.key, v); if (r.errors?.length) flashHint(r.errors.join(' · '), 5000); }
+    repaintAll(); return;
+  }
   if (!obj) return;
 
   // ref field: a click with NO payload arms the pick (or cancels it); a null
@@ -544,6 +563,9 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     if (isDelta && v == null) return;
     const r = commitEdit(id, key, v, opts);
     if (r.errors?.length) flashHint(r.errors.join(' · '), 5000);
+    // a need that asks (a choice with options, or a remove-both) is a prompt, not an error
+    const ask = r.asks?.find((q) => q.kind === 'confirm' || q.options?.length);
+    if (ask) pendingAsk = { id, ask };
     if (!live) repaintAll();
     return;
   }
@@ -723,7 +745,7 @@ export function initEditPanels() {
     frames.set(p.id, sf);
   }
   for (const ev of ['entity', 'comp', 'mount', 'edit-mode', 'sg:selected', 'structure-tool']) bus.on(ev, repaintAll);
-  bus.on('sg:selected', () => { gesture = null; endGesture(); if (!extending) clearExtras(); });   // a plain select collapses the set; a drag's `before` never outlives its selection
+  bus.on('sg:selected', () => { gesture = null; pendingAsk = null; endGesture(); if (!extending) clearExtras(); });   // a plain select collapses the set; a drag's `before` never outlives its selection
   bus.on('edit-extend', (id) => extendSelection(id));   // Ctrl-click in the viewport (build.js)
   // an armed attach completes on a VIEWPORT pick too: build.js select → sceneSelect
   // → this. The child is re-selected after, so the inspector shows what moved.

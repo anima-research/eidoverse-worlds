@@ -123,6 +123,13 @@ console.log("\nthe channel box (step 3): rotations undo by q, and the editor rea
   // someone else turns it: the hint is void, the fresh (canonical) reading returns
   fold.st.entities.t1 = { ...fold.st.entities.t1, q: qFromEuler([0, Math.PI / 2, 0.7], "XYZ") };
   check("…and is void once someone else's turn lands (inner channel back to 0)", val("x") === 0);
+  check("a held compound edit is ONE undo step (an inverse list, newest first)", (() => {
+    const before = undos.length;
+    fold.st.entities.r1 = { lib: "swing.glb", pos: [0, 0, 0], yaw: 0, actor: "r", ts: 1 };
+    world.entities.set("r1", {});
+    const rr = commitEdit("r1", "add.Reactions", null);
+    return rr.verbs.length === 2 && undos.length === before + 1 && Array.isArray(undos[undos.length - 1].inv.verbs) && undos[undos.length - 1].inv.verbs[0].args.type === "reactions";
+  })(), JSON.stringify(undos[undos.length - 1]));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

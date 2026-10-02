@@ -121,7 +121,7 @@ const DEFS = [
   { name: 'Attachment', category: 'Interaction', summary: 'rides on another entity (wire: parent, written by mount)',
     params: { to: { t: 'ref', default: null, required: true }, slot: { t: 'text', default: null }, offset: { t: 'vec3', default: null }, yaw: { ...deg, default: null } },
     fallback: { text: 'on <to>' } },
-  { name: 'Reactions', category: 'Interaction', summary: 'what a `use` does (today: a pendulum push)',
+  { name: 'Reactions', category: 'Interaction', needs: ['Pendulum'], summary: 'what a `use` does (today: a pendulum push)',
     params: { actions: { t: 'json', default: {} } }, fallback: { text: 'reacts to: <actions>' } },
   { name: 'Particles', category: 'Effects', summary: 'fire, smoke, sparks…',
     params: { preset: { t: 'choice', options: ['fire', 'sparks', 'embers', 'smoke', 'dust', 'snow', 'magic', 'stars', 'muzzle'], default: null, required: true },
@@ -364,12 +364,23 @@ export function entityOf({ components, stamps = {} }) {
 export const sameRecord = (a, b) => canon(a) === canon(b);
 
 /** The library, grouped for an "Add Component" menu: what may be added to
- *  this entity now (needs met, not already present unless repeatable). */
+ *  this entity now (needs met, not already present unless repeatable).
+ *  { unmet: true } also lists the ones whose needs are NOT met, each with
+ *  `unmet: [names]` — the editor decides whether such a need is added for
+ *  you or asked about (shared/editschema.js). `met(need)` may override the
+ *  plain "a component of that type is present" test. */
 const REPEATABLE = new Set(['Pendulum', 'Spin', 'Orbit', 'Bob', 'Path', 'Annotation']);
-export function addable(components) {
+export function addable(components, { unmet = false, met = null } = {}) {
   const have = new Set(components.map((c) => c.type));
-  return DEFS.filter((d) => !d.builtin && !d.readOnly && (REPEATABLE.has(d.name) || !have.has(d.name))
-    && (d.needs ?? []).every((n) => have.has(n))).map((d) => ({ name: d.name, category: d.category, summary: d.summary, hash: RECORDS[d.name].hash }));
+  const isMet = (n) => (met ? met(n) : have.has(n));
+  const out = [];
+  for (const d of DEFS) {
+    if (d.builtin || d.readOnly || (!REPEATABLE.has(d.name) && have.has(d.name))) continue;
+    const missing = (d.needs ?? []).filter((n) => !isMet(n));
+    if (missing.length && !unmet) continue;
+    out.push({ name: d.name, category: d.category, summary: d.summary, hash: RECORDS[d.name].hash, ...(missing.length ? { unmet: missing } : {}) });
+  }
+  return out;
 }
 
 // ------------------------------------------------------------ one reading, every surface

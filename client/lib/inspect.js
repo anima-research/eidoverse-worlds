@@ -106,9 +106,9 @@ export function planEdit(id, key, value, base = null) {
   const f = fieldAt(inspectSchema(rec, id, live), key);
   if (f?.deg && typeof value === 'number') value = value * R2D;   // panel steppers speak wire (radians); editVerbs takes the face
   if (group === 'comp' && k !== '+' && value === '') return { verbs: [], inverses: [], errors: [`${k}: empty — use "remove ${k}" to remove it`] };
-  const { verbs, errors, euler } = editVerbs(rec, id, { [key]: value }, live);
+  const { verbs, errors, euler, asks } = editVerbs(rec, id, { [key]: value }, live);
   const inverses = verbs.map((v) => inverseOf(v, base ?? rec, id)).filter(Boolean);
-  return { verbs, inverses, errors, euler };
+  return { verbs, inverses, errors, euler, asks };
 }
 /** Send one planned verb through the right door (lights ride the coalescer). */
 export function sendPlanned(v) {
@@ -135,14 +135,14 @@ export function commitEdit(id, key, value, opts = {}) {
   // the FACE, converted once here (review B1: amp/phase/socket yaw landed at
   // 1/57th); and a raw-JSON box cleared and blurred must not delete the
   // component — the 'remove <type>' button (null) is the deliberate act (S2).
-  const { verbs, inverses, errors, euler } = planEdit(id, key, value, base);
+  const { verbs, inverses, errors, euler, asks } = planEdit(id, key, value, base);
   // one edit is one undo step, however many verbs it took (an Add Component
   // that brings its need, a remove-both): the inverses undo in reverse order
   if (inverses.length === 1) hooks.undo?.(inverses[0], `${key} of ${id}`);
   else if (inverses.length > 1) hooks.undo?.({ verbs: [...inverses].reverse() }, `${key} of ${id}`);
   verbs.forEach(sendPlanned);
   if (euler) eulerHints.set(id, euler); else if (verbs.some((v) => v.verb === 'place')) eulerHints.delete(id);
-  return { ok: !errors.length, errors, verbs, ...(euler ? { euler } : {}) };
+  return { ok: !errors.length, errors, verbs, ...(euler ? { euler } : {}), ...(asks?.length ? { asks } : {}) };
 }
 
 /** Every editor as html+wire for the legacy section: the registered html
