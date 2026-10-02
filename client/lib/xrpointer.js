@@ -26,11 +26,15 @@ export function pointerVisible(mode, { target = false, grip = false, trig = fals
   if (m === 'always') return true;
   return !!(target || grip || trig);
 }
-/** Does the hand look for WORLD entities this frame (the laser's length)? Panels and nameplates are always looked
- *  for — they are the targets a resting laser serves. The world is looked at only while a button is held, or when the
- *  beam is always drawn: an idle hand in contextual or never mode must not paint a dot on every wall it hangs toward
- *  (and must not pay a scene raycast per hand per frame for it). */
+/** Does a PLAIN world entity (one with nothing to interact with) count for the beam's length this frame? Only while a
+ *  button is held, or when the beam is always drawn: an idle hand in contextual or never mode must not reach out to
+ *  every wall it hangs toward. An INTERACTABLE entity (below) is a target like a panel, button or not. */
 export const looksAtWorld = (mode, { grip = false, trig = false } = {}) => pointerVisibilityMode(mode) === 'always' || !!(grip || trig);
+/** INTERACTABLE: an entity that does something when you use it (owner, 10-02: "it does something when you trigger-click
+ *  it"). The affordances look() reads out to agents (mcpl/agent.ts): sockets (sit / mount) and reactions (use). The
+ *  trigger on any entity also SELECTS it for editing (xr:select → the scene graph); that is an editor's act, not an
+ *  affordance, so a plain wall is not a target. `comp`: the entity's component bag (world.js comps). */
+export const interactable = (comp) => !!comp && ['sockets', 'reactions'].some((k) => comp[k] && typeof comp[k] === 'object' && Object.keys(comp[k]).length > 0);
 
 // ---- 2. smoothing ---------------------------------------------------------------------------------------------
 // τ is the time to close ~63% of a gap. 30 ms: physiological tremor (8–12 Hz) is roughly halved, and a deliberate

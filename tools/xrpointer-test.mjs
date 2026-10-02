@@ -68,5 +68,8 @@ console.log('\nSTICKINESS');
   check('a bent ray starts at the hand and points at the held point', at.distanceTo(o) < 1e-9 && d.angleTo(p.clone().sub(o)) < 1e-6);
   check('angleTo measures the drift', Math.abs(P.angleTo(o, new THREE.Vector3(0, 0, -1), new THREE.Vector3(Math.tan(0.02), 1, -1)) - 0.02) < 1e-9); }
 
+console.log('\nINTERACTABLE ENTITIES');
+check('an entity with sockets or reactions is interactable; a plain one, empty bags, or none is not',
+  P.interactable({ sockets: { seat: {} } }) && P.interactable({ reactions: { push: {} } }) && !P.interactable({}) && !P.interactable({ sockets: {} }) && !P.interactable({ motion: { type: 'spin' } }) && !P.interactable(undefined));
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

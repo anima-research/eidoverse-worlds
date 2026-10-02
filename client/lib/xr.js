@@ -32,7 +32,7 @@ import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsAt, xrPanelsPress, x
 import { TEXT_SEL, domQuadsScroll, domQuadResizeBegin, domQuadResizeMove, domQuadResizeEnd, domQuadsRevealOnly, domQuadMesh } from './domquad.js';
 import { myState, xrIntent, camYaw, setCamYaw, setXrProbe } from './controller.js';
 import { ringEmoteEntries } from './emotebar.js';
-import { entities } from './world.js';
+import { entities, comps } from './world.js';
 import { flashHint, toast } from './ui.js';
 import { vrMicPreflight } from './vrmic.js';
 import { makePointerLine, makeSurfaceDot, placeSurfaceDot, hideSurfaceDot, setSurfaceDotKind } from './pointer.js';
@@ -42,7 +42,7 @@ import { setReveal } from './namereveal.js';
 import { platePick, aimPlate } from './platecard.js';   // VR hover: a laser resting on a nameplate opens its card
 import { makeDwell } from './dwell.js';
 import { showXRTip, hideXRTip, dropXRTip, tipTextFor } from './xrtip.js';   // a panel control's tooltip, on dwell   // "rested on it for a beat": one mechanism, per hand here
-import { POINTER_VIS_DEFAULT, pointerVisible, looksAtWorld, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy: when it is drawn, how it follows the hand, how it holds a target
+import { POINTER_VIS_DEFAULT, pointerVisible, looksAtWorld, interactable, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy: when it is drawn, how it follows the hand, how it holds a target
 import { dockPins } from './ui.js';
 import { xrScales, toRigLocal } from './bodyscale.js';   // the chosen size composes with the device fit (rig = u, body = u/k)
 import { perf } from './perf.js';
@@ -380,7 +380,7 @@ export function targetKind({ panel = null, plateDist = null, hit = null } = {}) 
     return panel.zone === 'move' || !panel.scroll ? 'move' : 'scroll';
   }
   if (plateDist != null) return 'dot';   // a nameplate: resting there IS the action (the card)
-  return hit ? 'click' : 'dot';          // an entity: the trigger selects it
+  return hit?.interactable ? 'click' : 'dot';   // an entity you can use (sit, react); a plain one is only a surface
 }
 function placeDot(hand, ray, eye, { panel = null, plateDist = null, hit = null } = {}) {
   const dot = hand.dot;
@@ -437,7 +437,7 @@ function rayHitEntity(handRay, far = 24) {
   let n = hit?.object;
   while (n && !n.userData.entityId) n = n.parent;
   const normal = hit?.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : null;   // for the surface dot
-  return n ? { id: n.userData.entityId, dist: hit.distance, point: hit.point, normal } : null;
+  return n ? { id: n.userData.entityId, dist: hit.distance, point: hit.point, normal, interactable: interactable(comps.get(n.userData.entityId)) } : null;
 }
 
 
@@ -453,6 +453,7 @@ const pickState = { left: { bent: false, kind: null }, right: { bent: false, kin
 // The nameplate card, the VR tooltips and the panel handles all read it.
 const dwells = { left: makeDwell(), right: makeDwell() };
 export const xrDwell = (side) => dwells[side];
+const entSeen = { left: null, right: null };   // probe window: the entity under each laser, {id, interactable}
 const bentRay = { left: { matrixWorld: new THREE.Matrix4() }, right: { matrixWorld: new THREE.Matrix4() } };
 const _sp = new THREE.Vector3(), _so = new THREE.Vector3(), _sd = new THREE.Vector3();
 const stickAlive = (h) => !!h.obj?.parent && h.obj.visible && (h.obj.material?.opacity ?? 1) >= 0.1 && !h.obj.userData?.occluded
@@ -1332,15 +1333,20 @@ export function updateXR(dtSec = 1 / 72) {
       // decided HERE, before the trust gate below, so the first 700 ms after a controller wakes obey it too (review 10-02)
       const { ray, panel: panelAt, plate } = stickTo(side, aim, eye, !panelPress[side] && held?.hand !== side && resizing?.hand !== side);
       const panelNow = panelAt?.dist ?? null;
+      // the WORLD, every frame now: an interactable entity (sockets, reactions — xrpointer.js) is a target like a panel
+      // (owner, 10-02); a plain one only counts with a button held. The beam stops at the first thing, so the whole
+      // world is cast, not just the interactable part (a wall in front of a chair hides the chair).
+      const ent = panelAt == null && plate == null ? rayHitEntity(ray, 40) : null;
+      entSeen[side] = ent && { id: ent.id, interactable: ent.interactable };
       // the dwell's key: what the laser holds (a panel control, a plate) — else, on a panel, its zone (panel.js zones)
       const dw = dwells[side].step(sticky[side]?.key ?? (panelAt ? `panel:${panelAt.id}:${panelAt.zone ?? 'body'}` : null));
       aimPlate(side, plate?.id, dw.since);
       // Settings › VR › pointer visibility (owner, 10-02): whether the BEAM is drawn. Everything below — the click, the plate
       // hover above, the stick scroll — runs either way: 'never' hides the beam, it does not stop the pointing.
-      hand.laser.visible = pointerVisible(xrPrefs.pointerVisibility, { target: panelNow != null || plate != null, grip, trig });
+      hand.laser.visible = pointerVisible(xrPrefs.pointerVisibility, { target: panelNow != null || plate != null || !!ent?.interactable, grip, trig });
       hand.box.visible = !getSelf()?.vrm;   // a body owns the hands → no test box
-      if (!buttonsTrusted()) { triggerWas[side] = trig; gripWas[side] = grip; if (hand.laser.visible) placeLaser(hand.laser, ray.matrixWorld, panelNow ?? plate?.dist ?? 1.8);
-        placeDot(hand, ray, eye, { panel: panelAt, plateDist: panelAt ? null : plate?.dist ?? null }); continue; }
+      if (!buttonsTrusted()) { triggerWas[side] = trig; gripWas[side] = grip; if (hand.laser.visible) placeLaser(hand.laser, ray.matrixWorld, panelNow ?? plate?.dist ?? (ent?.interactable ? ent.dist : 1.8));
+        placeDot(hand, ray, eye, { panel: panelAt, plateDist: panelAt ? null : plate?.dist ?? null, hit: ent?.interactable ? ent : null }); continue; }
       if (grip && !gripWas[side] && !held && !resizing && !(side === 'right' && ringOpenAtStart)) tryGrab(side, ray);   // grip alone; panels only
       if (!grip && held?.hand === side) releaseGrab();
       if (resizing?.hand === side) { if (grip) domQuadResizeMove(resizing.drag, aim); else endResize(); }   // the raw aim: a resize must not bend onto a control
@@ -1367,7 +1373,8 @@ export function updateXR(dtSec = 1 / 72) {
         const panelHit = xrPanelsAt(ray), panelDist = panelHit?.dist ?? null;   // again: a click above may have hidden or moved it
         if (side === 'right' && panelDist != null && !radialOpen && !holding && Math.abs(ry) > 0.3) domQuadsScroll(ray, ry * 900 * (dtSec ?? 1 / 72));   // owner 09-07 22:57: stick Y scrolls the panel under the laser (with the beam hidden too)
         const plateDist = panelDist == null && plate ? plate.dist : null;
-        const hit = panelDist == null && plateDist == null && looksAtWorld(xrPrefs.pointerVisibility, { grip, trig }) ? rayHitEntity(ray, 40) : null;
+        const seen = panelDist == null && plateDist == null ? ent : null;   // (a click above may have shown a panel in front of it)
+        const hit = seen && (seen.interactable || looksAtWorld(xrPrefs.pointerVisibility, { grip, trig })) ? seen : null;
         // owner 09-07 22:10: short and faint unless it points at something you can act on — porch-old's 1.8 m
         // idle beam; a panel, a nameplate or an entity under the ray draws it out to the hit at full strength
         const target = panelDist ?? plateDist ?? hit?.dist ?? null;
@@ -1586,7 +1593,7 @@ export const xrPointerDebug = () => Object.fromEntries(['left', 'right'].map((si
   const h = hands[side], st = sticky[side];
   return [side, h && { laser: { visible: h.laser.visible, len: +h.laser.scale.z.toFixed(4), opacity: +h.laser.userData.opacity.value.toFixed(2), inScene: h.laser.parent === scene },
     held: st && { kind: st.kind, key: typeof st.key === 'string' ? st.key : `${st.key?.tagName?.toLowerCase()}${st.key?.id ? '#' + st.key.id : ''}` },
-    dot: { visible: h.dot.visible, inScene: h.dot.parent === scene, kind: h.dot.userData.kind, pos: h.dot.position.toArray().map((v) => +v.toFixed(4)), diam: +h.dot.scale.x.toFixed(5),
+    ent: entSeen[side], dot: { visible: h.dot.visible, inScene: h.dot.parent === scene, kind: h.dot.userData.kind, pos: h.dot.position.toArray().map((v) => +v.toFixed(4)), diam: +h.dot.scale.x.toFixed(5),
       normal: [0, 0, 1].map((_, i) => +new THREE.Vector3(0, 0, 1).applyQuaternion(h.dot.quaternion).getComponent(i).toFixed(4)) },
     heldEl: st?.kind === 'panel' && typeof st.key !== 'string' ? st.key : null,
     bent: pickState[side].bent, pointerVisibility: xrPrefs.pointerVisibility,
