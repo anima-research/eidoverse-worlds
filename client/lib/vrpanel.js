@@ -7,7 +7,7 @@ import { makeSection, flashHint } from './ui.js';
 import { checkRow, selectRow, btn, sliderTable } from './rows.js';
 import { currentGrade, setGrade, GRADE_DEFAULT, GRADE_RANGE } from './quadcolour.js';
 import { xrPrefs, setXrPref, recentreXR, isPresenting } from './xr.js';
-import { laserMode } from './xrpointer.js';
+import { pointerVisibilityMode } from './xrpointer.js';
 import { xrGlyphAvailable } from './mictoggle.js';
 
 export function initVRPanel() {
@@ -30,15 +30,16 @@ export function initVRPanel() {
     turn.title = 'smooth: continuous, like a desktop mouse — the default. snap: the world pivots 30° per stick flick, a comfort option.';
     body.appendChild(turn);
 
-    // the pointer laser (owner, 10-02, after comparing with Resonite). A house dropdown like its neighbours: dropdown.js
-    // skins the <select> and opens its list INSIDE the staged frame, so it works on the VR quad (a native popup is never
-    // drawn there). Pointing works in every mode; this only decides whether the beam is drawn (xrpointer.js).
-    const LASER_OPTS = [['always', 'always'], ['never', 'never (still points)'], ['contextual', 'contextual']];
-    const { row: laser, select: laserSel } = selectRow('pointer laser', LASER_OPTS, laserMode(xrPrefs.laser),
-      (v) => { setXrPref('laser', laserMode(v)); flashHint(`VR pointer laser: ${laserMode(v)}`); });
-    laserSel.id = 'vr-laser';
-    laser.title = 'contextual (the default): the beam shows while it rests on a panel or a name, or while you hold grip or trigger. always: always drawn, faint when it points at nothing. never: no beam, but pointing, clicking and name hover still work, and a small dot still marks what you aim at.';
-    body.appendChild(laser);
+    // pointer visibility: is the VR laser drawn (owner, 10-02, after comparing with Resonite; the owner named it). A house
+    // dropdown like its neighbours: dropdown.js skins the <select> and opens its list INSIDE the staged frame, so it works
+    // on the VR quad (a native popup is never drawn there). Pointing works in every mode; this only decides whether the
+    // beam is drawn (xrpointer.js).
+    const POINTER_VIS_OPTS = [['always', 'always'], ['never', 'never (still points)'], ['contextual', 'contextual']];
+    const { row: pointerVis, select: pointerVisSel } = selectRow('pointer visibility', POINTER_VIS_OPTS, pointerVisibilityMode(xrPrefs.pointerVisibility),
+      (v) => { setXrPref('pointerVisibility', pointerVisibilityMode(v)); flashHint(`VR pointer visibility: ${pointerVisibilityMode(v)}`); });
+    pointerVisSel.id = 'vr-pointer-visibility';
+    pointerVis.title = 'contextual (the default): the beam shows while it rests on a panel or a name, or while you hold grip or trigger. always: always drawn, faint when it points at nothing. never: no beam, but pointing, clicking and name hover still work, and a small dot still marks what you aim at.';
+    body.appendChild(pointerVis);
 
     // eye resolution: 'auto' is what the headset's runtime asks for; each step is per axis, so pixels go as its square
     const RES_OPTS = [['auto', 'auto (the headset asks)'], ['85', '85% (≈ ¾ the pixels)'], ['70', '70% (≈ ½ the pixels)'], ['50', '50% (¼ the pixels)']];
