@@ -1176,6 +1176,11 @@ export class WorldAgent {
     const s = this.st as any;
     return { sky: s.sky ?? null, terrain: s.terrain ?? null, grass: s.grass ?? null };
   }
+  /** The world's blueprint store (shared/fold.js state.blueprints): every
+   *  published record by its content hash, with who and when. */
+  blueprintStore(): Record<string, { record: unknown; by: string; ts: number }> {
+    return ((this.st as any).blueprints ?? {}) as Record<string, { record: unknown; by: string; ts: number }>;
+  }
   foldRecord(id: string): Record<string, unknown> | null {
     const e = (this.st.entities as Record<string, any>)[id];
     if (!e) return null;

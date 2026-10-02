@@ -265,6 +265,18 @@ console.log('\n5. the door (server/verbs.ts runVerb)');
   check('a re-publish with reworded prose goes in whole, and the store takes the note', !!r.appended?.args.record && st.blueprints[H1].record.note === 'reworded', J(r));
   r = B({ hash: H2, record: lampV2 });
   check('now the parent is held, the new version is accepted', !!r.appended && !!st.blueprints[H2], J(r));
+  // ---- 6. the agent's readout
+  console.log('\n6. the text tier (mcpl/tools.ts blueprints)');
+  const { HANDLERS, TOOLS } = await import('../mcpl/tools.ts');
+  const ag: any = { blueprintStore: () => st.blueprints ?? {} };
+  const out = (r: any) => r.content.map((c: any) => c.text).join('\n');
+  const list = out(await HANDLERS.blueprints(ag, {}));
+  check('the list names each record by short hash, name, version and parent', list.includes(`[${H1.slice(0, 12)}] "Lamp" v1 · 2 parts`) && list.includes(`[${H2.slice(0, 12)}] "Lamp" v2 ← ${H1.slice(0, 12)}`) && /Model · Light · Label · by bld/.test(list), list);
+  const one = out(await HANDLERS.blueprints(ag, { hash: H2.slice(0, 10) }));
+  check('a prefix opens one record in full, with its lineage newest first', one.startsWith(`[${H2}]`) && one.includes(`${H2.slice(0, 12)} "Lamp" ← ${H1.slice(0, 12)} "Lamp"`) && JSON.parse(one.slice(one.indexOf('{'))).root.children[0].id === 'bulb', one.slice(0, 300));
+  check('an unknown prefix says so', /no record here whose hash starts "zz"/.test(out(await HANDLERS.blueprints(ag, { hash: 'zz' }))));
+  check('an empty store says how to publish', /store is empty.*world_verb blueprint/.test(out(await HANDLERS.blueprints({ blueprintStore: () => ({}) } as any, {}))));
+  check('world_verb\'s closed verb list names blueprint', /behavior, asset, blueprint/.test(TOOLS.find((t: any) => t.name === 'world_verb')!.description));
   check('the door\'s rules are the shared module\'s (one refusal text)', (() => { const v = (VERBS.blueprint as any).validate({ w, c: { id: 'bld' } }, { hash: H1, record: 'x' }); return v.error === blueprintRefusal('x'); })());
 }
 
