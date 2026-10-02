@@ -783,6 +783,10 @@ function execMount(id) {
   // after the mount must re-seat the rider, not be ignored (review S5)
   const relKey = JSON.stringify([rel, sock ?? null]);
   if (child.userData.mountRel === relKey) return;   // already exactly this
+  // a loop (a log written before the door refused them): parenting a thing
+  // under its own descendant would make three.js recurse forever every frame —
+  // leave it where it stands; the Hierarchy shows both as roots (hierarchy.js treeOf)
+  for (let p = parent; p; p = p.parent) if (p === child) return;
   const off = rel.offset ?? sock?.pos ?? [0, 0, 0];
   parent.add(child);   // transform becomes parent-relative
   child.position.set(...off);

@@ -17,6 +17,7 @@ import { VERB_RATE, OPT_DIR } from "./config.ts";
 import { isAdminId, rightsOf, worldHasOwner, VERB_NEEDS, lockRefusal, guardRefusal, captionDeedRefusal } from "./rights.ts";
 import { normalizeCaptionArgs, captionRefusal } from "../shared/captions.js";
 import { compRefusal } from "../shared/components.js";
+import { cycleRefusal } from "../shared/hierarchy.js";
 import { lintMotion, lintParticles } from "./lint.ts";
 import { reactToUse } from "./reactions.ts";
 import { behaviorLimits } from "./behaviors.ts";
@@ -290,7 +291,16 @@ function vMount(ctx: VerbCtx, args: Record<string, unknown>) {
       why: !w.state.entities[to] ? `no entity "${to}" to mount onto` : "malformed mount" });
     return { error: "mount wants {id, to: <existing entity>, slot?, offset?, yaw?}" };
   }
-  return { args };   // shape passed — a mount's slot/offset/yaw ride as sent
+  // an entity under its own descendant is a loop: every renderer's scene
+  // graph would recurse forever (design §3; the Hierarchy refuses it before
+  // sending, and this is the door for everyone else). Bodies have no children.
+  const ents = w.state.entities as Record<string, { parent?: { to?: string } }>;
+  const loop = ents[id] ? cycleRefusal(ents, id, to) : null;
+  if (loop) {
+    w.debug("rejected", { who: c.id, verb: "mount", why: loop });
+    return { error: loop };
+  }
+  return { args };   // shape passed — a mount's slot/offset/yaw/q ride as sent
 }
 
 function vModerate(ctx: VerbCtx, args: Record<string, unknown>, verb: "kick" | "ban" | "unban") {
