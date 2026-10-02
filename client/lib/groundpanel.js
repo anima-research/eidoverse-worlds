@@ -18,6 +18,7 @@ import { defsRegistry } from './defs.js';
 import { sendVerb } from './net.js';
 import { flashHint } from './ui.js';
 import { selectRow, btn, btnRow } from './rows.js';
+import { paletteDefaults, terrainArgs, grassArgs } from '../../shared/grounddefs.js';
 
 // panel state, OUTSIDE the paint: a defs push repaints the rows and must not
 // forget what the author had dialed in
@@ -33,32 +34,24 @@ export function paintGround(body) {
       body.innerHTML = '<div style="color:var(--dim);font-size:11px">this world serves no ground palette (defs/ground/_palette.json)</div>';
       return;
     }
-    const first = (o) => Object.keys(o)[0];
     // carry the author's dials across a defs push; fall back when an edit
     // removed the very option they had selected
-    if (!pal.tints[st.tint]) st.tint = pal.tints.meadow ? 'meadow' : first(pal.tints);
-    if (pal.shapes[st.shape] == null) st.shape = pal.shapes.hills != null ? 'hills' : first(pal.shapes);
-    if (pal.grassHeight[st.height] == null) st.height = pal.grassHeight.meadow != null ? 'meadow' : first(pal.grassHeight);
-    if (pal.grassDensity[st.density] == null) st.density = pal.grassDensity.normal != null ? 'normal' : first(pal.grassDensity);
-    if (!pal.plantings[st.plant]) st.plant = pal.plantings.meadow ? 'meadow' : first(pal.plantings);
+    const def = paletteDefaults(pal);
+    if (!pal.tints[st.tint]) st.tint = def.tint;
+    if (pal.shapes[st.shape] == null) st.shape = def.shape;
+    if (pal.grassHeight[st.height] == null) st.height = def.height;
+    if (pal.grassDensity[st.density] == null) st.density = def.density;
+    if (!pal.plantings[st.plant]) st.plant = def.plant;
 
-    const growTerrain = () => sendVerb('terrain', {
-      seed: st.seed, size: 160, segments: 200, amplitude: pal.shapes[st.shape], flatRadius: 16,
-      layers: [{ color: pal.tints[st.tint].layer, repeat: 16 }],
-    });
+    // the args are shared/grounddefs.js's — the Build tab's World section
+    // writes the same ones for the same pick
+    const growTerrain = () => sendVerb('terrain', terrainArgs(pal, { seed: st.seed, shape: st.shape, tint: st.tint }));
     // what "grow" plants — every option is one bag on the singleton grass
     // verb, straight from the def; blade plantings take the height dial and
     // the tint row's colour column
     const growGrass = () => {
       st.grass = true;
-      const p = pal.plantings[st.plant];
-      const args = structuredClone(p.args);
-      if (p.blade) {
-        args.height = pal.grassHeight[st.height];
-        const color = pal.tints[st.tint][p.tint];
-        if (color) args.color = color;
-      }
-      sendVerb('grass', { ...args, density: pal.grassDensity[st.density] });
+      sendVerb('grass', grassArgs(pal, st));
     };
     const isBlade = () => !!pal.plantings[st.plant]?.blade;
 
