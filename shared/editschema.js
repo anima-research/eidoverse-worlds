@@ -24,6 +24,7 @@
 
 import { normalizePicture, PICTURE_LIT, PICTURE_LOOK_MAX } from './picture.js';
 import { normalizeSound, SOUND_LOOK_MAX } from './sound.js';
+import { componentsOf, addable, RECORDS } from './components.js';
 
 const R2D = 180 / Math.PI;
 export const AXES = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] };
@@ -288,7 +289,94 @@ export function inspectSchema(ent, id, live = {}) {
     if (f.t === 'info' || f.disabled) continue;
     f.disabled = true; f.hint = `guarded by ${placer ?? 'its placer'}`;
   }
-  return { id, groups, ...(guarded ? { guard: { placer, held } } : {}) };
+  return { id, groups, sections: componentSections(ent, groups, held, live), ...(guarded ? { guard: { placer, held } } : {}) };
+}
+
+// ---------------------------------------------------------------- components (B)
+// The same fields, presented the way Unity/Godot/Resonite do: one card per
+// component instance on the entity (shared/components.js), each naming the
+// fields it owns by their unchanged `group.k` address — so editVerbs, the
+// agent's `edit` tool and the gizmo keep working — plus what may be added.
+// A component today's wire cannot express is listed with the reason, not hidden.
+const WIRE_BLOCKED = {
+  Light: (have) => have.has('Model') ? 'a model and a light on one entity needs the new wire (port section E)' : null,
+  Model: (have) => have.has('Light') ? 'a light and a model on one entity needs the new wire (port section E)' : 'swap the model from the Library',
+  Collider: () => 'no verb writes `collide` yet (port section E)',
+  Structure: () => 'start a building from Create ▸ Structure',
+  Attachment: () => 'attach with the mount gesture',
+};
+const MOTION_GROUP = { Pendulum: 1, Spin: 1, Orbit: 1, Bob: 1, Path: 1 };
+function componentSections(ent, groups, held, live = {}) {
+  const { components } = componentsOf(ent);
+  const have = new Set(components.map((c) => c.type));
+  const g = (name) => groups.find((x) => x.group === name);
+  const refs = (group, pred = () => true) => (g(group)?.fields ?? []).filter((f) => f.k != null && pred(f)).map((f) => `${group}.${f.k}`);
+  const out = [];
+  for (const inst of components) {
+    const rec = RECORDS[inst.type];
+    const sec = { type: inst.type, key: inst.key ?? null, title: inst.type, hash: rec.hash, category: rec.category, summary: rec.summary, fields: [], removable: false };
+    switch (inst.type) {
+      case 'Transform': sec.fields = refs('pos'); break;
+      case 'Model': sec.info = [['model', String(ent.lib)]]; break;
+      case 'Collider': sec.info = [['shape', String(ent.collide)]]; break;
+      case 'Attachment': sec.info = [['on', `${ent.parent?.to}${ent.parent?.slot ? ` · ${ent.parent.slot}` : ''}`]]; break;
+      case 'Light': sec.fields = refs('light'); break;
+      case 'Label': case 'Hidden': continue;       // the header's, like Unity's name and active box
+      case 'Lock': case 'Guard': sec.fields = refs('flags', (f) => f.k === inst.key); sec.removable = true; break;
+      case 'Seats': sec.fields = refs('sockets'); sec.removable = true; break;
+      case 'Particles': sec.fields = refs('particles', (f) => f.k !== 'out'); sec.removable = true; break;
+      case 'Picture': sec.fields = refs('picture', (f) => f.k !== 'down'); sec.removable = true; break;
+      case 'Sound': sec.fields = refs('sound', (f) => f.k !== 'silence'); sec.removable = true; break;
+      case 'LookAt': sec.fields = refs('look'); sec.removable = true; break;
+      default:
+        if (MOTION_GROUP[inst.type]) {
+          const part = inst.key === 'motion' ? (inst.params.part ?? null) : inst.key.slice(7);
+          if (part) sec.title = `${inst.type} · ${part}`;
+          // the type is the card, not a field: changing it is remove + add
+          const own = (f) => (inst.key === 'motion' ? !f.k.includes('|') : f.k.startsWith(`${inst.key.slice(7)}|`));
+          sec.fields = refs('motion', (f) => own(f) && !/(^|\|)(type|rest)$/.test(f.k));
+          sec.removable = true;
+        } else {
+          sec.fields = [`comp.${inst.key}`];         // the raw-JSON floor (Annotation, Structure, Reactions, Captions, Stage)
+          sec.removable = inst.type !== 'Captions';
+          if (inst.type === 'Annotation') sec.title = inst.key;
+        }
+    }
+    if (held) sec.removable = false;
+    out.push(sec);
+  }
+  const add = addable(components).filter((a) => a.name !== 'Label' && a.name !== 'Hidden')
+    .map((a) => ({ ...a, blocked: (a.name === 'Guard' && live.mayAuthor === false ? 'only its placer or the world\'s owner can guard it' : null) ?? WIRE_BLOCKED[a.name]?.(have) ?? null }));
+  for (const name of ['Light', 'Model', 'Collider', 'Structure', 'Attachment']) if (!have.has(name) && !add.some((a) => a.name === name) && WIRE_BLOCKED[name])
+    add.push({ name, category: RECORDS[name].category, summary: RECORDS[name].summary, hash: RECORDS[name].hash, blocked: WIRE_BLOCKED[name](have) });
+  return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden'), list: out, add: held ? [] : add };
+}
+
+/** What adding a component writes, in today's verbs. `value` is the part name
+ *  for a part motion, or the type name for an Annotation. */
+export function addVerbs(ent, id, name, value) {
+  const c = ent?.comp ?? {};
+  const motion = { Pendulum: { type: 'pendulum', amp: 0.26, period: 3.5 }, Spin: { type: 'spin', degPerSec: 36 }, Orbit: { type: 'orbit', radius: 1, degPerSec: 12 }, Bob: { type: 'bob', amp: 0.3, period: 4 }, Path: { type: 'path', points: [[0, 0, 0], [0, 0, 2]], speed: 1 } };
+  if (motion[name]) {
+    const part = typeof value === 'string' && value.trim() ? value.trim() : null;
+    if (part) { const key = `motion:${part}`; if (c[key]) return { verbs: [], errors: [`${id} already has a motion on ${part}`] }; return { verbs: [{ verb: 'comp', args: { id, type: key, data: motion[name] } }], errors: [] }; }
+    if (c.motion) return { verbs: [], errors: [`${id} already moves as a whole (${c.motion.type}) — remove it first, or add this one to a part`] };
+    return { verbs: [{ verb: 'motion', args: { id, ...motion[name] } }], errors: [] };
+  }
+  const simple = { Lock: ['lock', true], Guard: ['guard', true], Hidden: ['hidden', true], Label: ['label', typeof value === 'string' && value.trim() ? value.trim().slice(0, 80) : 'unnamed'],
+    Particles: ['particles', { preset: typeof value === 'string' && value ? value : 'fire' }], LookAt: ['look', {}], Reactions: ['reactions', {}], Stage: ['stage', {}] };
+  if (simple[name]) { const [type, data] = simple[name]; if (c[type] != null) return { verbs: [], errors: [`${id} already has ${name}`] }; return { verbs: [{ verb: 'comp', args: { id, type, data } }], errors: [] }; }
+  if (name === 'Annotation') { const type = String(value ?? '').trim(); if (!type) return { verbs: [], errors: ['an annotation needs a type name'] }; if (c[type] != null) return { verbs: [], errors: [`${id} already has ${type}`] }; return { verbs: [{ verb: 'comp', args: { id, type, data: {} } }], errors: [] }; }
+  return { verbs: [], errors: [`${name}: added by a gesture, not a value (${WIRE_BLOCKED[name]?.(new Set()) ?? 'see its card'})`] };
+}
+
+/** What removing one component instance writes. */
+export function removeVerbs(ent, id, key) {
+  const c = ent?.comp ?? {};
+  if (key === 'motion' && c.motion) return { verbs: [{ verb: 'motion', args: { id, type: null } }], errors: [] };
+  if (key === 'captions') return { verbs: [], errors: ['captions are written by the caption verb only'] };
+  if (c[key] != null) return { verbs: [{ verb: 'comp', args: { id, type: key, data: null } }], errors: [] };
+  return { verbs: [], errors: [`${id} has no component at ${key}`] };
 }
 
 /** The channel box: every num in the schema, flat, with dotted addresses. */
@@ -339,6 +427,13 @@ export function editVerbs(ent, id, edits, live = {}) {
   for (const [key, raw] of Object.entries(edits ?? {})) {
     const f = fieldAt(schema, key);
     const dot = key.indexOf('.'); const group = key.slice(0, dot); const k = key.slice(dot + 1);
+    // components (B): add.<Component> = value is a part name / annotation type; remove.<comp key>
+    if (group === 'add' || group === 'remove') {
+      if (schema.guard?.held) { errors.push(`${key}: guarded by ${schema.guard.placer ?? 'its placer'}`); continue; }
+      const r = group === 'add' ? addVerbs(ent, id, k, raw) : removeVerbs(ent, id, k);
+      errors.push(...r.errors); verbs.push(...r.verbs);
+      continue;
+    }
     // actions and creations that have no field row: comp.<any>, sockets.del,
     // a socket slot that does not exist yet (sockets.<new>|pos|1 declares it)
     const known = f || (group === 'comp' && k) || (group === 'sockets' && (k === 'del' || k.includes('|')))

@@ -30,7 +30,7 @@ import { starterModels } from './palette.js';
 import { spawnAhead } from './worldquad.js';
 import { libLabels } from './assets.js';
 import { schemaFor, commitEdit, planEdit, sendPlanned, setEditHooks, endGesture, foldRecord } from './inspect.js';
-import { channels } from '../../shared/editschema.js';
+import { channels, fieldAt } from '../../shared/editschema.js';
 import { commitLight, lightCasting } from './lights.js';
 import { myState } from './controller.js';
 import { placerOf, guardedByOther, placerName } from './placer.js';
@@ -385,6 +385,36 @@ function inspectorFields() {
     { t: 'info', label: 'world', value: `(${wp.x.toFixed(1)}, ${wp.y.toFixed(1)}, ${wp.z.toFixed(1)}) · ${wp.distanceTo(myState.pos).toFixed(0)}m away` },
   ];
 
+  // B: one card per component (shared/components.js via schema.sections), each
+  // owning its fields by their unchanged group.k address, then Add Component.
+  if (schema.sections) {
+    const row = (addr) => {
+      const nf = fieldAt(schema, addr); if (!nf) return null;
+      const r = { ...nf, k: nf.commit ? `ed:${nf.commit}` : `ed:${addr}`, path: nf.commit ?? addr, ...(nf.t === 'num' ? { compact: true } : {}) };
+      if (nf.t === 'ref') r.arming = !!armingRef && armingRef.id === id && armingRef.key === addr;
+      if (nf.t === 'list') r.rows = (nf.rows ?? []).map((x) => ({ ...x, actions: (x.actions ?? []).map((a) => ({ ...a, k: `ed:${addr.slice(0, addr.indexOf('.'))}.${a.k}` })) }));
+      return r;
+    };
+    for (const a of schema.sections.header ?? []) { const r = row(a); if (r) f.push(r); }
+    f.push({ t: 'text', k: 'ifilter', label: '', value: ifilter, placeholder: 'filter properties ⏎', hint: 'non-matching fields hide; components with a hit open' });
+    for (const sec of schema.sections.list) {
+      const key = `c:${sec.key ?? sec.type}`;
+      f.push({ t: 'group', k: key, label: `${sec.title}${locked && sec.type === 'Transform' ? ' 🔒' : ''}`, hint: `${sec.summary} — ${sec.category} · engine record ${sec.hash.slice(0, 12)}`, open: isOpen(id, key) });
+      for (const [label, value] of sec.info ?? []) f.push({ t: 'info', label, value });
+      for (const addr of sec.fields) { const r = row(addr); if (r) f.push(r); }
+      if (sec.removable && sec.key) f.push({ t: 'btn', k: `ed:remove.${sec.key}`, label: `remove ${sec.title}`, danger: true });
+    }
+    if (schema.sections.add.length) {
+      f.push({ t: 'group', k: 'c:+', label: 'Add Component', open: isOpen(id, 'c:+') });
+      for (const cat of [...new Set(schema.sections.add.map((a) => a.category))]) {
+        f.push({ t: 'info', label: '', value: cat });
+        for (const a of schema.sections.add.filter((x) => x.category === cat)) {
+          const viaGesture = { Picture: 'ed:comp.add:picture', Sound: 'ed:comp.add:sound', Seats: 'ed:sockets.add' }[a.name];
+          f.push({ t: 'btn', k: viaGesture ?? `ed:add.${a.name}`, label: `+ ${a.name}`, disabled: !!a.blocked, hint: a.blocked ?? a.summary });
+        }
+      }
+    }
+  } else {
   // CHANNELS — the numeric lane: every num in the schema, transform first
   f.push({ t: 'text', k: 'ifilter', label: '', value: ifilter, placeholder: 'filter properties ⏎', hint: 'non-matching fields hide; groups with a hit open' });
   f.push({ t: 'group', k: 'channels', label: `Channels${locked ? ' 🔒' : ''}${obj.userData.mountedTo ? ' (mounted)' : ''}`, open: isOpen(id, 'channels') });
@@ -412,6 +442,7 @@ function inspectorFields() {
   addGroup(groupOf('flags'), 'flags', 'Flags');
   for (const g of schema.groups) if (!['pos', 'flags', 'comp'].includes(g.group)) addGroup(g, g.group);
   addGroup(groupOf('comp'), 'components');
+  }
 
   const mine = behaviors.filter((b) => b.attach === id);
   if (mine.length) {
