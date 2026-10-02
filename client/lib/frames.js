@@ -64,6 +64,13 @@ const _CORNER = 15;            // the corner is the hardest 2D target on the
                                // frame and USED to be the intersection of two
                                // 2px bands — invisible in practice. It gets
                                // its own square, sized like the old SE grip.
+/** A frame element's resize floors, {minW, minH}, or null when it is not resizable or the layout is locked — VR's
+ *  panel resize (domquad.js) asks here, so a headset resizes exactly the frames the mouse can. */
+export function frameResizeInfo(root) {
+  if (locked) return null;
+  const f = _resizables.find((r) => r.root === root);
+  return f ? { minW: f.minW, minH: f.minH } : null;
+}
 /** Would the edge-resize hit-tester claim this point? (for ui.js's
  *  arrange-exit guard — the grab band extends _REACH px OUTSIDE frames) */
 export function resizeZoneAt(x, y) {

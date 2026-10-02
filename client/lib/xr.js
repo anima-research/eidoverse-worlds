@@ -29,7 +29,7 @@ import { frameDebug } from './frame.js';
 import { resetFingers, xrBodyDebug } from './xrbody.js';
 import { stroke, fillPath } from './icons.js';
 import { xrPanelsEnter, xrPanelsExit, xrPanelsPick, xrPanelsAt, xrPanelsPress, xrPanelsDrag, xrPanelsReleasePress, showXRPanel, xrPanelHas, xrPanelOpen, xrPanelsGrab, xrPanelRelease, xrPanelsShown } from './xrpanels.js';
-import { domQuadsScroll } from './domquad.js';
+import { domQuadsScroll, domQuadResizeBegin, domQuadResizeMove, domQuadResizeEnd, domQuadsRevealOnly, domQuadMesh } from './domquad.js';
 import { myState, xrIntent, camYaw, setCamYaw, setXrProbe } from './controller.js';
 import { ringEmoteEntries } from './emotebar.js';
 import { entities } from './world.js';
@@ -482,13 +482,26 @@ function stickTo(side, aim, eye, hold) {
 // tech debt'). Panels are UI, not world entities: no verb, no undo, they just ride the hand and land
 // uprighted on the rig. See git history (a2e25e2 and before) for the entity path when the component exists.
 let held = null;   // {quad, hand}
+// a RESIZE in progress (grip on a panel's corner or edge; domquad.js does the geometry and the commit): {hand, drag}
+let resizing = null;
 function tryGrab(hand, ray) {
   const h = hands[hand];
   const at = xrPanelsAt(ray);
   if (at?.control) { tee(`[xr] grip on a control of the ${at.id} panel: not grabbed (grab it by its background or title)`); return; }
+  if (at?.zone?.startsWith('resize-')) {   // a corner or an edge: the grip resizes (owner, 10-02)
+    const drag = domQuadResizeBegin(at);
+    if (drag) { resizing = { hand, drag }; haptic(hand, 0.4, 30); }
+    return;
+  }
   const q = xrPanelsGrab(ray);   // refuses a control too, for any other caller
   if (!q) return;
   held = { quad: q, hand }; haptic(hand, 0.4, 30); h.grip.attach(q.mesh); flashHint(`holding the ${q.id} panel — release grip to place it`);
+}
+function endResize() {
+  if (!resizing) return;
+  const r = domQuadResizeEnd(resizing.drag, rig);
+  if (r) tee(`[xr] panel ${resizing.drag.q.id} resized to ${Math.round(r.w)}×${Math.round(r.h)} px`);
+  resizing = null;
 }
 function releaseGrab() {
   if (!held) return;
@@ -892,6 +905,7 @@ async function enterVR({ retryOf = null } = {}) {
       selfFirstPerson(false);
       { const av = getSelf(), v = av?.vrm; if (v) { if (av.setPuppetScale) av.setPuppetScale(1); else v.scene.scale.setScalar(1); v.scene.position.set(0, 0, 0); v.scene.updateMatrixWorld(true); if (v.userData) { v.userData.ankleH = null; v.userData._gait = null; } } }   // the puppet scale AND the eye-anchor offset (xrbody writes vrm.scene.position every presenting frame; left in place it sank the feet on the desktop — owner 09-08 00:38) are presenting things
       releaseGrab();      // a gripped panel goes back to the rig BEFORE the quads are disposed, or a dead mesh stays in the rig
+      endResize();        // a resize in progress commits as it stands (as a released grip would)
       sticky.left = sticky.right = null; dwells.left.reset(); dwells.right.reset(); dropXRTip();
       for (const h of [hands.left, hands.right]) if (h) { h.laser.visible = false; h.laser.removeFromParent(); hideSurfaceDot(h.dot); rig.add(h.dot); h.smooth.init = false; }   // the beams live in the scene while presenting; the aim snaps on the next entry
       { const t = performance.now(); xrPanelsExit(rig); tee(`[xr] panels exit ${(performance.now() - t).toFixed(1)} ms`); }
@@ -1282,7 +1296,7 @@ export function updateXR(dtSec = 1 / 72) {
       // …or on a nameplate: resting there is VR's hover (platecard.js opens the card). Panels claim the laser first.
       // A plate counts only if nothing in the world is nearer along the same laser (the beam stops at the first thing) —
       // decided HERE, before the trust gate below, so the first 700 ms after a controller wakes obey it too (review 10-02)
-      const { ray, panel: panelAt, plate } = stickTo(side, aim, eye, !panelPress[side] && held?.hand !== side);
+      const { ray, panel: panelAt, plate } = stickTo(side, aim, eye, !panelPress[side] && held?.hand !== side && resizing?.hand !== side);
       const panelNow = panelAt?.dist ?? null;
       // the dwell's key: what the laser holds (a panel control, a plate) — else, on a panel, its zone (panel.js zones)
       const dw = dwells[side].step(sticky[side]?.key ?? (panelAt ? `panel:${panelAt.id}:${panelAt.zone ?? 'body'}` : null));
@@ -1293,9 +1307,10 @@ export function updateXR(dtSec = 1 / 72) {
       hand.box.visible = !getSelf()?.vrm;   // a body owns the hands → no test box
       if (!buttonsTrusted()) { triggerWas[side] = trig; gripWas[side] = grip; if (hand.laser.visible) placeLaser(hand.laser, ray.matrixWorld, panelNow ?? plate?.dist ?? 1.8);
         placeDot(hand, ray, eye, { panel: panelAt, plateDist: panelAt ? null : plate?.dist ?? null }); continue; }
-      if (grip && !gripWas[side] && !held && !(side === 'right' && ringOpenAtStart)) tryGrab(side, ray);   // grip alone; panels only
+      if (grip && !gripWas[side] && !held && !resizing && !(side === 'right' && ringOpenAtStart)) tryGrab(side, ray);   // grip alone; panels only
       if (!grip && held?.hand === side) releaseGrab();
-      const holding = held?.hand === side;
+      if (resizing?.hand === side) { if (grip) domQuadResizeMove(resizing.drag, aim); else endResize(); }   // the raw aim: a resize must not bend onto a control
+      const holding = held?.hand === side || resizing?.hand === side;
       if (trig && !triggerWas[side] && !holding && !(radialOpen && side === 'right')) {
         // panels claim the laser before the world does — a click meant for a
         // stepper must never select the mountain behind it
@@ -1340,6 +1355,15 @@ export function updateXR(dtSec = 1 / 72) {
       if (text) { showXRTip(st.obj, root, key, text); tipShown = true; }
     }
     if (!tipShown) hideXRTip();
+    // THE HANDLES (owner, 10-02): a panel's move strip and resize corners/edges are invisible until a laser has dwelled on
+    // one; then that one shows (domquad.js draws it). A resize in progress keeps its own showing.
+    const reveal = [];
+    for (const side of ['right', 'left']) {
+      const k = dwells[side].ripeKey(), m = typeof k === 'string' && k.match(/^panel:(.+):(move|resize-[a-z]+)$/);
+      if (m && held?.hand !== side) { const mesh = domQuadMesh(m[1]); if (mesh) reveal.push({ mesh, zone: m[2] }); }
+    }
+    if (resizing) reveal.push({ mesh: resizing.drag.q.mesh, zone: `resize-${resizing.drag.z}` });
+    domQuadsRevealOnly(reveal);
   }
 
   // eye cameras see the first-person split, never the third-person head.
@@ -1538,7 +1562,7 @@ export const xrDebug = () => {
   const gp = new THREE.Vector3();
   hands.right?.grip.getWorldPosition(gp);
   return { ring,
-    presenting, held: held?.quad?.id ?? null, radialOpen,
+    presenting, held: held?.quad?.id ?? null, radialOpen, resizing: resizing ? { hand: resizing.hand, id: resizing.drag.q.id, zone: resizing.drag.z, w: Math.round(resizing.drag.w), h: Math.round(resizing.drag.h) } : null,
     radialSel: radial?.sel ?? null,
     rigYaw: +rig.rotation.y.toFixed(3),
     laserOn: hands.right?.laser.visible ?? false,

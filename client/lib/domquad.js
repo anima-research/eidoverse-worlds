@@ -8,7 +8,7 @@
 // returned, with its display state, on exit. Fallback for comparison: ?canvasquads=1.
 import { THREE, renderer } from './core.js';
 import { tee, bus } from './base.js';
-import { allFrames, getFrame } from './frames.js';
+import { allFrames, getFrame, frameResizeInfo } from './frames.js';
 import { HTMLMesh } from './vendor/htmlmesh.js';
 import { quadMaterial } from './quadcolour.js';
 
@@ -68,19 +68,24 @@ function stageEl(q) {
 function build(q) {
   const el = q.el;
   const cssW = Math.max(40, el.offsetWidth);
-  const scale = (PX_PER_M * W) / cssW;   // device px per CSS px so the quad reads at 900 px/m
+  const placed = loadPlaces()[q.id];
+  const wM = Number.isFinite(placed?.mpp) && placed.mpp > 0.0003 && placed.mpp < 0.01 ? placed.mpp * cssW : W;   // the quad's width, metres (see below)
+  const scale = (PX_PER_M * wM) / cssW;   // device px per CSS px so the quad reads at 900 px/m
   const mesh = new HTMLMesh(el, { scale, minInterval: LIVE_MIN_MS[q.id] ?? 16 });
   builds++;
   mesh.material.transparent = false;   // stays in the opaque pass (no sorting, no blending)…
   mesh.material.alphaTest = 0.5;       // …while the raster's clear corners (a frame's border-radius) cut out instead of drawing black
   prepareQuadMaterial(mesh);           // the authored colour after the output pass (quadcolour.js says why)
   applyPanelAlpha(mesh);               // Settings › Style › VR panel opacity: below 1 the quad leaves the opaque pass
-  const k = W / (cssW * 0.001);   // HTMLMesh geometry = CSS px × 1 mm; rescale to W metres
+  const saved = loadPlaces()[q.id];
+  // a panel RESIZED in VR keeps the pixel density it had (metres per CSS px, saved with its place): wider is bigger,
+  // not finer. Never resized: every quad is W wide, as always.
+  const mpp = Number.isFinite(saved?.mpp) && saved.mpp > 0.0003 && saved.mpp < 0.01 ? saved.mpp : W / cssW;
+  const k = mpp / 0.001;   // HTMLMesh geometry = CSS px × 1 mm; rescale to mpp metres per px
   mesh.scale.setScalar(k);
   const a = (q.i - (q.n - 1) / 2) * 0.55;
   mesh.position.set(Math.sin(a) * 0.85, 1.15, -Math.cos(a) * 0.85);
   mesh.rotation.y = -a;
-  const saved = loadPlaces()[q.id];
   if (saved && Array.isArray(saved.pos) && saved.pos.length === 3 && saved.pos.every(Number.isFinite) && Number.isFinite(saved.yaw)) {
     mesh.position.fromArray(saved.pos); mesh.rotation.set(Number.isFinite(saved.pitch) ? saved.pitch : 0, saved.yaw, 0, 'YXZ');
   }
@@ -117,7 +122,7 @@ bus.on('style', () => {
   }
 });
 
-function drop(q) { if (!q.mesh) return; q.mesh.removeFromParent(); q.mesh.dispose(); q.mesh = null; }
+function drop(q) { if (!q.mesh) return; q.mesh.removeFromParent(); q.mesh.dispose(); q.mesh = null; q.aids = null; }
 
 // visible = true builds (or rebuilds a stale) mesh; false only hides what exists
 function setVisible(q, on) {
@@ -282,8 +287,168 @@ export function domQuadsAt(handRay) {
   if (!hit) return null;
   const normal = hit.face ? _wn.copy(hit.face.normal).transformDirection(hit.object.matrixWorld).clone() : new THREE.Vector3(0, 0, 1);
   if (normal.dot(_rc.ray.direction) > 0) normal.negate();
-  const control = hit.uv ? controlAt(hit.object.material.map, hit.uv.x, 1 - hit.uv.y) : null;
-  return { dist: hit.distance, point: hit.point, normal, mesh: hit.object, id: quads.find((q) => q.mesh === hit.object)?.id ?? null, control };
+  const map = hit.object.material.map;
+  const control = hit.uv ? controlAt(map, hit.uv.x, 1 - hit.uv.y) : null;
+  let zone = null;
+  if (!control && hit.uv && map?.dom) { const fr = map.dom.getBoundingClientRect(); zone = zoneAt(map.dom, hit.uv.x * fr.width, (1 - hit.uv.y) * fr.height); }
+  return { dist: hit.distance, point: hit.point, normal, mesh: hit.object, id: quads.find((q) => q.mesh === hit.object)?.id ?? null, control, zone,
+    scroll: !control && hit.uv ? scrollableAt(map, hit.uv.x, 1 - hit.uv.y) : false };
+}
+
+// ---- ZONES: a panel's MOVE handle and its RESIZE corners and edges (owner, 10-02) ---------------------------------
+// In frame CSS px: the four corners (ZONE_CORNER_PX squares, within ZONE_EDGE_PX of an edge) and the left, right and
+// bottom edges resize (a frame the desktop can resize; frames.js frameResizeInfo); the title strip — .fr-head, or the
+// top ZONE_TOP_PX when the head is hidden at rest — is the move handle; the rest is 'body' (grip there moves too, as a
+// background grab always has). A control under the laser outranks every zone: grip there does nothing.
+export const ZONE_EDGE_PX = 12, ZONE_CORNER_PX = 24, ZONE_TOP_PX = 26;
+export function zoneAt(root, x, y) {
+  const fr = root.getBoundingClientRect(), W = fr.width, H = fr.height;
+  if (!(x >= 0 && y >= 0 && x <= W && y <= H)) return null;
+  if (frameResizeInfo(root)) {
+    const L = x < ZONE_EDGE_PX, R = x > W - ZONE_EDGE_PX, T = y < ZONE_EDGE_PX, B = y > H - ZONE_EDGE_PX;
+    const cl = x < ZONE_CORNER_PX, cr = x > W - ZONE_CORNER_PX, ct = y < ZONE_CORNER_PX, cb = y > H - ZONE_CORNER_PX;
+    if ((L || B) && cl && cb) return 'resize-sw';
+    if ((R || B) && cr && cb) return 'resize-se';
+    if ((L || T) && cl && ct) return 'resize-nw';
+    if ((R || T) && cr && ct) return 'resize-ne';
+    if (L) return 'resize-w';
+    if (R) return 'resize-e';
+    if (B) return 'resize-s';
+  }
+  const hr = root.querySelector(':scope > .fr-head')?.getBoundingClientRect();
+  return y < (hr && hr.height > 0 ? hr.bottom - fr.top : ZONE_TOP_PX) ? 'move' : 'body';
+}
+/** Is the point inside an area that scrolls (a trigger-drag there scrolls it)? */
+export function scrollableAt(map, x, y) {
+  for (let n = map?.elementAt?.(x, y); n && n !== map.dom.parentElement; n = n.parentElement) {
+    if (n.scrollHeight > n.clientHeight + 1 && /(auto|scroll)/.test(getComputedStyle(n).overflowY)) return true;
+    if (n === map.dom) break;
+  }
+  return false;
+}
+
+// THE HANDLES, revealed on dwell: invisible until a laser has rested on a zone for a beat (xr.js asks with the hand's
+// dwell), then that zone's handle shows — a bar over the title strip, an L at a corner, a line along an edge — in the
+// house's brand ink, on the quad (its children, in its CSS-px-by-mm units, a hair in front).
+const AID_INK = 0x8fe8c8, AID_Z = 0.002;
+function aidsFor(q) {
+  if (q.aids && q.aids.parent === q.mesh) return q.aids;
+  const g = new THREE.Group(); g.name = 'xr-aids'; q.mesh.add(g); q.aids = g; return g;
+}
+function aidMesh(q, zone) {
+  const fr = q.el.getBoundingClientRect(), W = fr.width * 0.001, H = fr.height * 0.001, g = aidsFor(q);
+  const key = `${zone}:${fr.width}x${fr.height}`;
+  let m = g.children.find((c) => c.userData.zone === zone);
+  if (m && m.userData.key === key) return m;
+  if (m) { g.remove(m); m.geometry.dispose(); m.material.dispose(); }
+  const mat = (o) => new THREE.LineBasicNodeMaterial({ color: AID_INK, transparent: true, opacity: o, depthWrite: false });
+  const x0 = -W / 2, x1 = W / 2, y0 = -H / 2, y1 = H / 2, c = ZONE_CORNER_PX * 0.001, i = 0.004;   // corner arm; inset 4 px
+  let pts;
+  if (zone === 'move') {
+    const hr = q.el.querySelector(':scope > .fr-head')?.getBoundingClientRect(), hb = (hr && hr.height > 0 ? hr.bottom - fr.top : ZONE_TOP_PX) * 0.001;
+    pts = [[x0 + c, y1 - i], [x1 - c, y1 - i], [x1 - c, y1 - i], [x1 - c, y1 - hb + i], [x1 - c, y1 - hb + i], [x0 + c, y1 - hb + i], [x0 + c, y1 - hb + i], [x0 + c, y1 - i]];
+  } else if (zone.startsWith('resize-')) {
+    const z = zone.slice(7), X = z.includes('w') ? x0 + i : x1 - i, Y = z.includes('n') ? y1 - i : y0 + i, sx = z.includes('w') ? 1 : -1, sy = z.includes('n') ? -1 : 1;
+    if (z.length === 2) pts = [[X, Y], [X + sx * c, Y], [X, Y], [X, Y + sy * c]];
+    else if (z === 's') pts = [[x0 + c, y0 + i], [x1 - c, y0 + i]];
+    else pts = [[X, y0 + c], [X, y1 - c]];
+  } else return null;
+  const geo = new THREE.BufferGeometry().setFromPoints(pts.map(([x, y]) => new THREE.Vector3(x, y, AID_Z)));
+  m = new THREE.LineSegments(geo, mat(0.95)); m.userData.zone = zone; m.userData.key = key; m.renderOrder = 1400; m.frustumCulled = false;
+  g.add(m); return m;
+}
+/** Show quad `mesh`'s handle for `zone` ('move' | 'resize-*'), hiding its others; zone null hides them all. */
+export function domQuadReveal(mesh, zone) {
+  const q = all.find((x) => x.mesh === mesh); if (!q) return;
+  const want = zone && zone !== 'body' ? aidMesh(q, zone) : null;
+  for (const c of q.aids?.children ?? []) c.visible = c === want;
+}
+/** every quad's handles hidden but `keep` (a {mesh, zone} list) */
+export function domQuadsRevealOnly(keep) {
+  for (const q of all) {
+    if (!q.mesh) continue;
+    const k = keep.find((x) => x.mesh === q.mesh);
+    if (k || q.aids) domQuadReveal(q.mesh, k?.zone ?? null);   // a quad's handles are built the first time one is revealed
+  }
+}
+export const domQuadAids = (id) => (all.find((q) => q.id === id)?.aids?.children ?? []).filter((c) => c.visible).map((c) => c.userData.zone);   // probe window
+
+// ---- RESIZE in VR: grip on a corner or an edge (owner, 10-02). While held, the gripped corner/edge follows the laser
+// across the panel's plane and an outline shows the new size; the opposite side stays put. On release the size is
+// committed to the frame's layout state the way a desktop resize commits it (frames.js: state, markMoved, save — so it
+// persists, and the desktop frame is that size too), and the quad is rebuilt at the SAME pixel density, so the panel
+// grows rather than its text shrinking. Floors are the frame's own (minW/minH); ceilings keep it on a desktop screen
+// and under RESIZE_MAX_M across.
+export const RESIZE_MAX_M = 1.6;
+const _rp = new THREE.Plane(), _rv = new THREE.Vector3(), _rn = new THREE.Vector3(), _rq = new THREE.Quaternion();
+export function domQuadResizeBegin(at) {
+  const q = all.find((x) => x.mesh === at?.mesh); const info = q && frameResizeInfo(q.el);
+  if (!q || !info || !at.zone?.startsWith('resize-')) return null;
+  const z = at.zone.slice(7), fr = q.el.getBoundingClientRect(), { width: W0, height: H0 } = q.mesh.geometry.parameters;
+  q.mesh.updateMatrixWorld(true);
+  _rn.set(0, 0, 1).applyQuaternion(q.mesh.getWorldQuaternion(_rq));
+  const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(_rn, q.mesh.getWorldPosition(_rv));
+  // the ANCHOR: the corner (or edge midpoint) opposite the one gripped, in quad-local units
+  const ax = z.includes('e') ? -W0 / 2 : z.includes('w') ? W0 / 2 : -W0 / 2, ay = z.includes('s') ? H0 / 2 : z.includes('n') ? -H0 / 2 : H0 / 2;
+  const api = getFrame(q.id), chrome = Math.max(0, q.el.offsetHeight - (api?._state?.h ?? q.el.offsetHeight));
+  const kScale = q.mesh.scale.x;   // metres per local unit
+  const maxW = Math.min(innerWidth - 16, RESIZE_MAX_M / (kScale * 0.001)), maxH = Math.min(innerHeight - 16, RESIZE_MAX_M / (kScale * 0.001));
+  // a closed Line (five points; the WebGPU renderer draws no LineLoop)
+  const outline = new THREE.Line(new THREE.BufferGeometry().setFromPoints([0, 1, 2, 3, 4].map(() => new THREE.Vector3())),
+    new THREE.LineBasicNodeMaterial({ color: AID_INK, transparent: true, opacity: 0.95, depthWrite: false }));
+  outline.renderOrder = 1401; outline.frustumCulled = false; outline.name = 'xr-resize-outline'; q.mesh.add(outline);
+  // where the grip took the edge, relative to the edge itself: the edge then moves BY the laser's travel, it does not
+  // jump to the laser (a grip 5 px inside the corner would otherwise shrink the panel 5 px on the first frame)
+  const p0 = q.mesh.worldToLocal(at.point.clone());
+  const offX = fr.width - Math.abs(p0.x - ax) / 0.001, offY = fr.height - Math.abs(p0.y - ay) / 0.001;
+  return { q, z, plane, ax, ay, offX, offY, w0: fr.width, h0: fr.height, w: fr.width, h: fr.height, chrome, info, maxW, maxH, outline };
+}
+/** One frame of a resize: the laser's point on the panel's plane sets the new size (CSS px); the outline shows it. */
+export function domQuadResizeMove(drag, handRay) {
+  aim(handRay);
+  if (!_rc.ray.intersectPlane(drag.plane, _rv)) return drag;
+  const p = drag.q.mesh.worldToLocal(_rv), z = drag.z;
+  const minH = drag.info.minH + drag.chrome;
+  if (z.includes('e') || z.includes('w')) drag.w = THREE.MathUtils.clamp(Math.abs(p.x - drag.ax) / 0.001 + drag.offX, Math.max(drag.info.minW, 40), drag.maxW);
+  if (z.includes('s') || z.includes('n')) drag.h = THREE.MathUtils.clamp(Math.abs(p.y - drag.ay) / 0.001 + drag.offY, minH, drag.maxH);
+  // the outline from the anchor, in the direction the gripped side lies
+  const sx = z.includes('w') ? -1 : 1, sy = z.includes('n') ? 1 : -1, X = drag.ax, Y = drag.ay, w = drag.w * 0.001, h = drag.h * 0.001;
+  const ox = z.includes('e') || z.includes('w') ? X : -drag.q.mesh.geometry.parameters.width / 2;   // an edge-only resize keeps the other axis
+  const oy = z.includes('s') || z.includes('n') ? Y : drag.q.mesh.geometry.parameters.height / 2;
+  const pos = drag.outline.geometry.attributes.position;
+  const xs = [ox, ox + sx * w], ys = [oy, oy + sy * h];
+  [[xs[0], ys[0]], [xs[1], ys[0]], [xs[1], ys[1]], [xs[0], ys[1]], [xs[0], ys[0]]].forEach(([x, y], i) => pos.setXYZ(i, x, y, AID_Z * 1.5));
+  pos.needsUpdate = true; drag.outline.geometry.computeBoundingSphere();
+  return drag;
+}
+/** Release: commit the size to the frame (frames.js, as a desktop resize does) and rebuild the quad at the same density
+ *  with the anchor where it was. Returns { w, h } (CSS px, the frame's whole box) or null. */
+export function domQuadResizeEnd(drag, rig) {
+  if (!drag) return null;
+  drag.outline.removeFromParent(); drag.outline.geometry.dispose(); drag.outline.material.dispose();
+  const { q, z } = drag, api = getFrame(q.id);
+  if (!api?._state || (Math.abs(drag.w - drag.w0) < 1 && Math.abs(drag.h - drag.h0) < 1)) return null;
+  const mesh = q.mesh, mpp = mesh.scale.x * 0.001;   // metres per CSS px, kept
+  // the anchor corner in world, before the rebuild
+  const anchorW = mesh.localToWorld(new THREE.Vector3(drag.ax, drag.ay, 0));
+  if (z.includes('e') || z.includes('w')) api._state.w = Math.round(drag.w);
+  if (z.includes('s') || z.includes('n')) api._state.h = Math.max(drag.info.minH, Math.round(drag.h - drag.chrome));
+  api._paint(); api._markMoved?.((/[ew]/.test(z) ? 'xw' : '') + (/[ns]/.test(z) ? 'yh' : '')); api._save();
+  if (q.restore) { q.restore.width = q.el.style.width; q.restore.height = q.el.style.height; }   // leaving VR must not put the old width back
+  // the new box's centre: from the anchor, half the NEW size toward the gripped side (an edge-only resize keeps the
+  // other axis's centre), in the quad's own frame
+  const fr = q.el.getBoundingClientRect(), sx = z.includes('w') ? -1 : 1, sy = z.includes('n') ? 1 : -1;
+  const { width: W0, height: H0 } = mesh.geometry.parameters;
+  const cx = z.includes('e') || z.includes('w') ? drag.ax + sx * fr.width * 0.0005 : 0;
+  const cy = z.includes('s') || z.includes('n') ? drag.ay + sy * fr.height * 0.0005 : (H0 / 2 - fr.height * 0.0005);   // top edge stays put
+  const centreW = mesh.localToWorld(new THREE.Vector3(cx, cy, 0));
+  const parent = mesh.parent ?? rig; parent.updateMatrixWorld(true);
+  const posLocal = parent.worldToLocal(centreW.clone());
+  const _e = new THREE.Euler().setFromQuaternion(mesh.quaternion, 'YXZ');
+  const place = { pos: posLocal.toArray().map((v) => +v.toFixed(3)), yaw: +_e.y.toFixed(3), pitch: +_e.x.toFixed(3), mpp: +mpp.toFixed(6) };
+  savePlace(q.id, place);
+  drop(q); q.aids = null; setVisible(q, true);   // rebuilt at the new size, from the saved place
+  return { w: fr.width, h: fr.height, anchorWorld: anchorW.toArray(), centreWorld: centreW.toArray(), W0, H0 };
 }
 
 /** Scroll the panel under the ray by dy CSS px (right stick Y while the laser is on a quad). */
@@ -316,7 +481,7 @@ export const domQuadOpen = (id) => !!quads?.find((q) => q.id === id)?.mesh?.visi
 const _e = new THREE.Euler(0, 0, 0, 'YXZ');
 export function domQuadsGrab(handRay) {
   const at = domQuadsAt(handRay);
-  if (!at || at.control) return null;   // a control under the laser: the grip is not a grab
+  if (!at || at.control || at.zone?.startsWith('resize-')) return null;   // a control: the grip is not a grab; a resizer: it is a resize
   return quads.find((q) => q.mesh === at.mesh) ?? null;
 }
 /** Hand the quad back to `rig` where it visually is; upright it. Returns the quad's rig-local pose. */
