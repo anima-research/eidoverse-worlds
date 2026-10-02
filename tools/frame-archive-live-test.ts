@@ -17,6 +17,7 @@ const pause = (ms: number) => new Promise(r => setTimeout(r, ms));
 let proc: Bun.Subprocess | null = null;
 const sockets: WebSocket[] = [];
 let checks = 0;
+let completed = false;
 function check(value: unknown, message: string) { assert.ok(value, message); checks++; console.log("✓ " + message); }
 async function until(fn: () => unknown | Promise<unknown>, message: string) {
   for (let i = 0; i < 100; i++) { if (await fn()) return; await pause(30); }
@@ -124,10 +125,12 @@ try {
   check(!disabled.snapshot.recording && (await status("disabled")).state === "disabled", "disabled recording stays disabled");
   check(archiveInventory(join(worlds, "disabled")).bytes === 0, "disabled recording writes no archive");
   console.log("PASS " + checks + " live archive checks");
+  completed = true;
 } catch (e) {
   console.error(readFileSync(join(scratch, "server.log"), "utf8").slice(-6000));
   throw e;
 } finally {
   await stop();
-  rmSync(scratch, { recursive: true, force: true });
+  if (completed) rmSync(scratch, { recursive: true, force: true });
+  else console.error("Failure artifacts retained at " + scratch);
 }
