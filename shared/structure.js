@@ -1,4 +1,4 @@
-import { routeLevel, prepareWallCheck, ROUTE_STEP_METRES } from './structure-route.js';
+import { routeLevel, prepareWallCheck, routeGeometryFor, ROUTE_STEP_METRES } from './structure-route.js';
 export { ROUTE_STEP_METRES };
 // structure_field — the griddled-building model's pure half (§11.4 discipline,
 // sibling of models_field.js / flora_field.js / emitter_field.js).
@@ -1056,7 +1056,7 @@ export function routeCells(level, fromKey, toKey) {
   return null;
 }
 
-/** Prepare one structure against a supplied walking basis. The standing
+/** Prepare one immutable structure-plan snapshot against a supplied walking basis. The standing
  * resolver, not floor ordering or x/z overlap, owns that basis:
  * terrain {heightAt(localX,localZ), step?}; floor {height, level?, step?}.
  * A floor's level index identifies THIS structure as the support owner;
@@ -1074,13 +1074,9 @@ export function prepareRouteLocal(plan, basis) {
   try { clear = prepareWallCheck(plan,basis); }
   catch (e) { return { route: () => blocked(String(e.message)), clear: () => false, confined: false }; }
   const confined = basis.kind === 'floor' && basis.level != null;
-  // Terrain navigation includes the authored geometry's whole local bounds.
-  // Levels contribute split-cell topology, never a support claim.
-  const union = { tiles: new Map(), walls: new Map(), apertures: new Map(), halves: new Map() };
-  if (basis.kind === 'terrain') for (const lv of plan.levels) {
-    for (const [k,v] of lv.level.tiles) union.tiles.set(k,v);
-    for (const [k,v] of lv.level.walls) union.walls.set(k,v);
-  }
+  // The immutable plan's cached local topology has no support/transform
+  // state. Each new received component revision produces a different plan.
+  const union = routeGeometryFor(plan).terrain;
   return {
     confined,
     clear: (ax,az,bx,bz) => clear([ax,az],[bx,bz]),

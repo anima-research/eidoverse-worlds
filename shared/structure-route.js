@@ -33,13 +33,18 @@ function crossingRange(a, b, c, d) {
   return hi >= lo-EPS ? [lo,Math.max(lo,hi)] : null;
 }
 
-/** Geometry is prepared once per structure/walk, including every level.
- * Support and obstruction are separate: a tall lower wall can meet the
- * walking plane even when that level's floor cannot support the body. */
-export function prepareWallCheck(plan, basis) {
-  const band = basis.step ?? ROUTE_STEP_METRES;
-  if (!Number.isFinite(band) || band < 0) throw new Error('invalid local step band');
+// Plans are immutable derivations of one received component revision.
+// Weak keys retain neither replaced component revisions nor discarded plans.
+const routeGeometry = new WeakMap();
+export function routeGeometryFor(plan) {
+  let prepared = routeGeometry.get(plan);
+  if (prepared) return prepared;
   const spans = [];
+  const terrain = { tiles: new Map(), walls: new Map(), apertures: new Map(), halves: new Map() };
+  for (const lv of plan.levels) {
+    for (const [key,tile] of lv.level.tiles) terrain.tiles.set(key,tile);
+    for (const [key,edge] of lv.level.walls) terrain.walls.set(key,edge);
+  }
   for (const lv of plan.levels) for (const [key, edge] of lv.level.walls) {
     const ends = segmentEnds(edge, plan.grid), ap = lv.level.apertures.get(key);
     // Windows remain topological barriers. Doors/arches remove their opening,
@@ -49,6 +54,17 @@ export function prepareWallCheck(plan, basis) {
     if (!ends.flat().concat([low,high]).every(Number.isFinite)) throw new Error('non-finite wall geometry');
     if (high > low) spans.push({ ends, low, high });
   }
+  prepared = { spans, terrain };
+  routeGeometry.set(plan,prepared);
+  return prepared;
+}
+
+/** Geometry is shared across walks; this checker is fresh for each supplied
+ * support basis. A tall lower wall can obstruct without supplying support. */
+export function prepareWallCheck(plan, basis) {
+  const band = basis.step ?? ROUTE_STEP_METRES;
+  if (!Number.isFinite(band) || band < 0) throw new Error('invalid local step band');
+  const { spans } = routeGeometryFor(plan);
   const heightAt = basis.kind === 'terrain' ? basis.heightAt : () => basis.height;
   if (typeof heightAt !== 'function') throw new Error('terrain walking requires a height function');
   const overlaps = (span, y) => y < span.high - EPS && y + band >= span.low - EPS;

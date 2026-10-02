@@ -1545,6 +1545,18 @@ export class WorldAgent {
     return this.terrain ? this.terrain.heightAt(x, z) : 0;
   }
 
+  /** Received component data is replaced by the comp fold, never edited in
+   * place. Key the pure local plan by that revision's object identity; entity
+   * transforms and each walk's support basis remain outside this cache. */
+  private static readonly plans = new WeakMap<object, ReturnType<typeof planStructure>>();
+  private planOf(data: unknown): ReturnType<typeof planStructure> {
+    // Opaque primitive components normalize as empty but cannot be WeakMap keys.
+    if (typeof data !== "object" || data === null) return planStructure(data);
+    let plan = WorldAgent.plans.get(data);
+    if (!plan) { plan = planStructure(data); WorldAgent.plans.set(data, plan); }
+    return plan;
+  }
+
   // ---- support surfaces (#17) ----------------------------------------------
   // A body settling headless used to see bare terrain: every placed floor —
   // a platform, a deck, the bell pavilion's slab — simply was not there, and
@@ -2518,7 +2530,7 @@ export class WorldAgent {
       const data = (e.comp ?? {}).structure;
       if (!data) continue;
       try {
-        const plan = planStructure(data);
+        const plan = this.planOf(data);
         const yaw = Number.isFinite(e.yaw) ? e.yaw : 0;
         const sc = Number.isFinite(e.scale) && e.scale > 0 ? e.scale : 1;
         const [px, py, pz] = Array.isArray(e.pos) ? e.pos : [0, 0, 0];
@@ -3125,7 +3137,7 @@ export class WorldAgent {
         if (!data) continue;
         try {
           const [lx, ly, lz] = localizePoint(e, me.x, me.y, me.z);
-          const here = describeHere(planStructure(data), lx, lz, ly);
+          const here = describeHere(this.planOf(data), lx, lz, ly);
           if (here) { L.push(`${here} (inside [${e.id}]; sides are the building's own compass.)`); break; }
         } catch { /* one malformed house must not cost the whole percept */ }
       }
