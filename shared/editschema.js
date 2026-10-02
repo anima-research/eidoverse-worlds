@@ -361,12 +361,31 @@ const WIRE_BLOCKED = {
   Attachment: () => 'attach with the mount gesture',
 };
 const MOTION_GROUP = { Pendulum: 1, Spin: 1, Orbit: 1, Bob: 1, Path: 1 };
+/** A library path as the inspector header shows it: the file stem, first three words. */
+export const libLabel = (lib) => String(lib).split('/').pop().replace(/\.glb$/, '').split('_').slice(0, 3).join(' ');
+// A node name a generator made (tripo_part_fused_0, mesh_12, Cube.003, a uuid)
+// says nothing to a person; anything else is the modeller's own word.
+const MACHINE_PART = [/^(tripo_)?(part|mesh|node|object|geometry|group|primitive|submesh)([_.\- ]?(fused|merged))?[_.\- ]?\d+$/i,
+  /^(cube|sphere|cylinder|plane|mesh|object|node|empty)[._]?\d+$/i, /^\d+$/, /^[0-9a-f]{8}-?[0-9a-f]{4}/i];
+/** A part's name for a card title: the modeller's word when it is one
+ *  ("seat plank"), else its place in the model ("part 2": its index in the
+ *  model's named parts when the viewer knows them, else the name's own
+ *  trailing number + 1, else its order among this entity's part motions). */
+export function partLabel(name, parts = null, ordinal = 1) {
+  const n = String(name);
+  if (!MACHINE_PART.some((re) => re.test(n))) return n.replace(/[_]+/g, ' ').trim();
+  const at = parts?.indexOf(n) ?? -1;
+  if (at >= 0) return `part ${at + 1}`;
+  const tail = /(\d+)$/.exec(n);
+  return `part ${tail ? +tail[1] + 1 : ordinal}`;
+}
 function componentSections(ent, groups, held, live = {}, id = '?') {
   const { components } = componentsOf(ent);
   const have = new Set(components.map((c) => c.type));
   const g = (name) => groups.find((x) => x.group === name);
   const refs = (group, pred = () => true) => (g(group)?.fields ?? []).filter((f) => f.k != null && pred(f)).map((f) => `${group}.${f.k}`);
   const out = [];
+  let partOrdinal = 0;
   for (const inst of components) {
     const rec = RECORDS[inst.type];
     const sec = { type: inst.type, key: inst.key ?? null, title: inst.type, hash: rec.hash, category: rec.category, summary: rec.summary, fields: [], removable: false };
@@ -407,7 +426,7 @@ function componentSections(ent, groups, held, live = {}, id = '?') {
       default:
         if (MOTION_GROUP[inst.type]) {
           const part = inst.key === 'motion' ? (inst.params.part ?? null) : inst.key.slice(7);
-          if (part) sec.title = `${inst.type} · ${part}`;
+          if (part) { sec.title = `${inst.type} · ${partLabel(part, live.parts, ++partOrdinal)}`; sec.part = part; }
           // the type is the card, not a field: changing it is remove + add
           const own = (f) => (inst.key === 'motion' ? !f.k.includes('|') : f.k.startsWith(`${inst.key.slice(7)}|`));
           sec.fields = refs('motion', (f) => own(f) && !/(^|\|)(type|rest)$/.test(f.k));
@@ -433,7 +452,12 @@ function componentSections(ent, groups, held, live = {}, id = '?') {
     });
   for (const name of ['Model', 'Structure', 'Attachment']) if (!have.has(name) && !add.some((a) => a.name === name) && WIRE_BLOCKED[name])
     add.push({ name, category: RECORDS[name].category, summary: RECORDS[name].summary, hash: RECORDS[name].hash, blocked: WIRE_BLOCKED[name](have, ent) });
-  return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden'), list: out, add: held ? [] : add };
+  // the header's `lib` line reads the Model component (design §5), so it can
+  // never disagree with the Model card; an Empty and a light say what they are
+  const model = components.find((c) => c.type === 'Model')?.params.lib;
+  const lib = model != null ? String(model) : null;
+  return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden'), list: out, add: held ? [] : add,
+    lib, libLabel: lib != null ? libLabel(lib) : isLight(ent) ? 'light' : 'empty' };
 }
 
 // ---------------------------------------------------------------- needs

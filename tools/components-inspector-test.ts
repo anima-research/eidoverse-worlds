@@ -9,7 +9,7 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { emptyState, foldEntry } from '../shared/fold.js';
-import { inspectSchema, fieldAt, editVerbs } from '../shared/editschema.js';
+import { inspectSchema, fieldAt, editVerbs, partLabel, libLabel } from '../shared/editschema.js';
 import { componentsOf } from '../shared/components.js';
 
 let pass = 0, fail = 0;
@@ -60,6 +60,28 @@ for (const [id, e] of ents) {
       || (a === 'flags.lock' && addable.has('Lock')) || (a === 'flags.guard' && addable.has('Guard'));
     if (!owned.has(a) && !replaced && !(g.group === 'comp' && owned.has(`comp.${f.k}`))) probs.push(`${id}: ${a} is in no card`);
   }
+}
+// the header's lib line reads the Model component, on every corpus entity (it said "lib ?" beside a Model card)
+{
+  const bad: string[] = []; let titled = 0; const rawTitles: string[] = [];
+  for (const [id, e] of ents) {
+    const sec = inspectSchema(e, id).sections;
+    const want = e.lib != null && e.kind !== 'light' ? String(e.lib) : null;
+    if (sec.lib !== want) bad.push(`${id}: lib ${sec.lib} vs ${want}`);
+    if (sec.libLabel !== (want ? libLabel(want) : e.kind === 'light' ? 'light' : 'empty') || /\?/.test(sec.libLabel)) bad.push(`${id}: label ${sec.libLabel}`);
+    for (const c of sec.list) if (c.part) { titled++; if (/tripo_|_fused_|^mesh_\d/.test(c.title.split(' · ')[1] ?? '')) rawTitles.push(`${id}: ${c.title}`); }
+  }
+  check(`the header's lib line is the Model component's, on every entity (an Empty says empty, a light says light)`, bad.length === 0, bad.slice(0, 6).join(' | '));
+  check(`no part-scoped card is titled with a generator's node name (${titled} part cards in the corpus)`, rawTitles.length === 0, rawTitles.slice(0, 6).join(' | '));
+}
+{
+  const sw = { lib: 'store/swing.glb', pos: [0, 0, 0], comp: { 'motion:tripo_part_fused_0': { type: 'pendulum', amp: 0.2 }, 'motion:tripo_part_fused_3': { type: 'spin' }, 'motion:seat_plank': { type: 'bob' }, 'motion:mesh7': { type: 'bob' } } };
+  const titles = (live: any = {}) => inspectSchema(sw, 's', live).sections.list.filter((c: any) => c.part).map((c: any) => c.title);
+  check('part cards: "Pendulum · part 1" for tripo_part_fused_0 (its number + 1), the modeller\'s own word kept ("seat plank"), mesh7 → part 8',
+    JSON.stringify(titles()) === JSON.stringify(['Pendulum · part 1', 'Spin · part 4', 'Bob · seat plank', 'Bob · part 8']), JSON.stringify(titles()));
+  check('…with the model\'s parts known, the number is its place among them', JSON.stringify(titles({ parts: ['frame', 'tripo_part_fused_3', 'tripo_part_fused_0'] }).slice(0, 2)) === JSON.stringify(['Pendulum · part 3', 'Spin · part 2']), JSON.stringify(titles({ parts: ['frame', 'tripo_part_fused_3', 'tripo_part_fused_0'] })));
+  check('…and the raw node name rides the card (the panel puts it in the hint)', inspectSchema(sw, 's').sections.list.find((c: any) => c.part === 'tripo_part_fused_0')?.title === 'Pendulum · part 1');
+  check('partLabel: machine names (Cube.003, node_4, a uuid) become a place; words stay words', partLabel('Cube.003') === 'part 4' && partLabel('node_4') === 'part 5' && partLabel('3f2a9c1e-77aa-4c3b') === 'part 1' && partLabel('Door_Left') === 'Door Left' && partLabel('wheel2') === 'wheel2');
 }
 check(`every entity: a card per component (label and hidden in the header), every card field real, owned once, every field reachable (${cards} cards)`, probs.length === 0, '\n   ' + [...new Set(probs)].slice(0, 15).join('\n   '));
 

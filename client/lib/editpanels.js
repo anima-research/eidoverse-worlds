@@ -374,15 +374,18 @@ function inspectorFields() {
   const obj = entities.get(id); const meta = entityMeta.get(id) ?? {}; const bag = comps.get(id) ?? {};
   // the fold knows the thing before its model arrives: entities holds null
   // while the GLB loads (scenegraph guards the same seam)
-  if (!obj) return [{ t: 'info', label: 'id', value: id }, { t: 'info', label: 'lib', value: short(meta) }, { t: 'info', label: 'state', value: 'loading…' }];
   const schema = schemaFor(id);           // ONE declaration: shared/editschema.js
+  // the lib line follows the Model component (schema.sections), not the realizer's meta,
+  // which can lack it (the header used to say "lib ?" beside a Model card showing the path)
+  const libLine = { t: 'info', label: 'lib', value: schema.sections?.libLabel ?? short(meta), ...(schema.sections?.lib ? { hint: schema.sections.lib } : {}) };
+  if (!obj) return [{ t: 'info', label: 'id', value: id }, libLine, { t: 'info', label: 'state', value: 'loading…' }];
   const locked = !!bag.lock;
   const wp = obj.getWorldPosition(_wp);
   const label = typeof bag.label === 'string' && bag.label ? ` "${bag.label}"` : '';
 
   const f = [
     { t: 'info', label: 'id', value: `${id}${label}` },
-    { t: 'info', label: 'lib', value: short(meta) },
+    libLine,
     // attribution names the PLACER (the server's stamp); `actor` is whoever last wrote it —
     // an owner's re-light moves actor, so say so when they differ (AGENTS.md, build.js)
     { t: 'info', label: 'placed by', value: `${placerOf(id)?.id ?? meta.actor ?? '?'}${meta.actor && meta.actor !== (placerOf(id)?.id ?? meta.actor) ? ` · last change by ${meta.actor}` : ''}${obj?.userData?.mountedTo ? ` · on ${obj.userData.mountedTo}` : ''}` },
@@ -411,7 +414,7 @@ function inspectorFields() {
     f.push({ t: 'text', k: 'ifilter', label: '', value: ifilter, placeholder: 'filter properties ⏎', hint: 'non-matching fields hide; components with a hit open' });
     for (const sec of schema.sections.list) {
       const key = `c:${sec.key ?? sec.type}`;
-      f.push({ t: 'group', k: key, label: `${sec.title}${locked && sec.type === 'Transform' ? ' 🔒' : ''}`, hint: `${sec.summary} — ${sec.category} · engine record ${sec.hash.slice(0, 12)}`, open: isOpen(id, key) });
+      f.push({ t: 'group', k: key, label: `${sec.title}${locked && sec.type === 'Transform' ? ' 🔒' : ''}`, hint: `${sec.summary} — ${sec.category} · engine record ${sec.hash.slice(0, 12)}${sec.part ? ` · part: ${sec.part}` : ''}`, open: isOpen(id, key) });
       for (const [label, value] of sec.info ?? []) f.push({ t: 'info', label, value });
       // the channel box: an alias (pos.yaw, the heading) stays addressable for
       // agents but is not drawn; the Quaternion row folds under its own header,
