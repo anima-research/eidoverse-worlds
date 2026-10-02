@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { emptyState, foldEntry } from '../shared/fold.js';
 import { componentsOf, entityOf, canon, sha256hex, RECORDS, addable, lightOf, colliderOf, isEmpty, recordHash } from '../shared/components.js';
+import { worldComponents, worldOf, worldState } from '../shared/worldentity.js';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
@@ -140,6 +141,10 @@ for (const p of logs) { const h = createHash('md5').update(readFileSync(p)).dige
 console.log(`\nthe corpus: ${unique.length} distinct world logs (${logs.length} found)`);
 let entries = 0, checked = 0, entitiesSeen = 0;
 const bad: string[] = [];
+// the world entity (design §3, shared/worldentity.js): the fold's sky / terrain / grass
+// read as @world's components and written back, after every world verb, exact
+const WORLD_VERBS = new Set(['sky', 'weather', 'terrain', 'grass']);
+let worldChecked = 0; const worldBad: string[] = []; const worldTypes = new Map<string, number>();
 const types = new Map<string, number>();
 const extras = new Map<string, number>();
 for (const path of unique) {
@@ -150,6 +155,17 @@ for (const path of unique) {
     let e; try { e = JSON.parse(line); } catch { continue; }
     try { foldEntry(st, e); } catch { continue; }
     entries++;
+    if (WORLD_VERBS.has(e?.verb)) {
+      const view = worldComponents(st);
+      worldChecked++;
+      for (const c of view.components) worldTypes.set(c.type, (worldTypes.get(c.type) ?? 0) + 1);
+      const sky = view.components.find((c: any) => c.type === 'Sky'), wx = view.components.find((c: any) => c.type === 'Weather');
+      // the partition by meaning, from an oracle of its own (not worldentity's list): the weather
+      // verb's keys, a forecast and its override are the Weather's, never the Sky's
+      const split = !(sky?.params && wx?.params && Object.keys(wx.params).some((k) => k in sky.params))
+        && !Object.keys(sky?.params ?? {}).some((k) => /^weather|^forecast$|^override$/.test(k));
+      if ((canon(worldOf(view)) !== canon(worldState(st)) || !split) && worldBad.length < 8) worldBad.push(`${path.replace(/^.*?(worlds|fixtures)\//, '$1/')} @${e.seq ?? '?'} ${e.verb}\n     was ${canon(worldState(st)).slice(0, 300)}\n     got ${canon(worldOf(view)).slice(0, 300)}`);
+    }
     const id = e?.args?.id ?? e?.id;
     const touched = typeof id === 'string' ? [id] : [];
     for (const tid of touched) {
@@ -169,6 +185,8 @@ for (const path of unique) {
   }
 }
 check(`round trip exact after every entry (${checked} entity states, ${entries} entries, ${entitiesSeen} entities)`, bad.length === 0 && checked > 0, '\n   ' + bad.join('\n   '));
+check(`@world: the world's sky / terrain / grass as components and back, exact after every world verb (${worldChecked} world states; ${[...worldTypes].map(([t, n]) => `${t} ${n}`).join(' · ')})`,
+  worldBad.length === 0 && worldChecked > 0 && (worldTypes.get('Sky') ?? 0) > 0, '\n   ' + worldBad.join('\n   '));
 console.log('\ncomponents in the final worlds:', [...types].sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t} ${n}`).join(' · '));
 console.log('keys no record names (kept in extra, not lost):', extras.size ? [...extras].map(([k, n]) => `${k} ×${n}`).join(' · ') : 'none');
 console.log(`\n${pass} passed, ${fail} failed`);
