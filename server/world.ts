@@ -360,8 +360,6 @@ export class WorldSession {
    *  plane: never persisted; outcomes commit as `place` verbs. */
   leases = new Map<string, { holder: Client; lastState: { p: number[]; yaw?: number; q?: number[] } | null; lastAt: number }>();
   frameSeq = 0;
-  recPath: string | null = null; // frames archive, created lazily on first recorded frame
-  lastRoster = "";               // last written roster line — deltas only
 
   /** `commit` is the facade's append-and-publish (§24 entry bus) — injected
    *  so the session's settlements ride the same spine as every other entry
@@ -466,10 +464,6 @@ export class World {
   get leases() { return this.session.leases; }
   get frameSeq() { return this.session.frameSeq; }
   set frameSeq(v: number) { this.session.frameSeq = v; }
-  get recPath() { return this.session.recPath; }
-  set recPath(v: string | null) { this.session.recPath = v; }
-  get lastRoster() { return this.session.lastRoster; }
-  set lastRoster(v: string) { this.session.lastRoster = v; }
 
   append(actor: string, verb: string, args: Record<string, unknown>): LogEntry {
     return this.log.append(actor, verb, args);

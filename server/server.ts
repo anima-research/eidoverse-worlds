@@ -5,12 +5,13 @@
 //  - serves the browser client and the eidoverse-video asset library
 // No world manifest: everything about a world arrives through its log.
 
-import { existsSync, appendFileSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 // config FIRST — it carries the WORLDS_DIR mkdir, and auth.ts/moderation.ts
 // carry their restore-at-boot blocks, so this import order IS the unsplit
 // file's boot order: mkdir → session restore → ban restore (§15, step 7a).
-import { PORT, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
+import { PORT, JOIN_TOKEN, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
+import { recorderFor, recordingStatus, recordingMaintenance, closeRecordings } from "./recording.ts";
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan } from "./moderation.ts";
 import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal, guardRefusal } from "./rights.ts";
@@ -616,7 +617,23 @@ function installJoin(c: Client, w: World) {
     }
 }
 
+function frameRecorder(w: World) {
+  return recorderFor(w.name, (event, detail) => {
+    console.warn("[world:" + w.name + "] recording " + event, detail);
+    w.debug("recording-" + event, detail);
+    if (event === "stopped") {
+      const notice = JSON.stringify({ type: "recording-status", recording: false,
+        recordingStatus: { state: "stopped", reason: detail.reason } });
+      for (const c of w.clients) {
+        try { c.ws.send(notice); } catch { /* a closed peer cannot hide the stop from others */ }
+      }
+    }
+  });
+}
+
 function buildSnapshot(w: World, c: Client) {
+    const archive = frameRecorder(w);
+    const recording = archive?.status();
     // snapshot = full log replay (folding comes later) + who's present now
     const jp = w.joinPayload();
     return {
@@ -634,7 +651,8 @@ function buildSnapshot(w: World, c: Client) {
       yourSurfaces: [...w.clients]
         .filter(x => x !== c && x.id === c.id && (x.surface ?? "world") !== "world")
         .map(x => ({ surface: x.surface, gen: x.gen })),
-      recording: RECORD,
+      recording: recording?.state === "ready" || recording?.state === "recording",
+      recordingStatus: recording ?? recordingStatus(w.name),
       // The world as it is, then only what has happened since. A joiner's
       // cost is now the size of the WORLD, not the length of its history.
       state: jp.state,
@@ -1070,22 +1088,22 @@ registerSystem({ name: "stage-frames", everyMs: FRAME_MS, fn: () => {
     if (w.dirty.size === 0) continue;
     const data = JSON.stringify({ type: "frame", seq: w.frameSeq++, t: Date.now(), poses: Object.fromEntries(w.dirty) });
     w.dirty.clear();
-    if (RECORD) {
-      if (!w.recPath) {
-        w.recPath = join(WORLDS_DIR, w.name, `frames-${Date.now()}.jsonl`);
-        console.log(`[world:${w.name}] ⏺ recording stage frames → ${w.recPath}`);
-      }
-      const roster = JSON.stringify([...w.clients].filter((c) => !c.spectator).map((c) => ({ id: c.id, avatar: c.avatar })));
-      if (roster !== w.lastRoster) { w.lastRoster = roster; appendFileSync(w.recPath, `{"type":"roster","t":${Date.now()},"roster":${roster}}\n`); }
-      appendFileSync(w.recPath, data + "\n");
-    }
     for (const c of w.clients) {
       if ((c.ws.getBufferedAmount?.() ?? 0) > FRAME_SKIP_BUFFERED) continue; // stale frames die here, not in the kernel
       c.ws.send(data);
     }
+    // Deliver first. Archival admission and I/O failures stop only the archive.
+    const archive = frameRecorder(w);
+    if (archive) {
+      const roster = JSON.stringify([...w.clients].filter((c) => !c.spectator && !c.superseded && (c.surface ?? "world") === "world")
+        .map((c) => ({ id: c.id, avatar: c.avatar })));
+      archive.append(data, roster, w.frameSeq - 1, w.snapSeq + w.entries.length);
+    }
     } catch (err) { console.error(`[world:${w.name}] frame tick`, err); }
   }
 } });
+
+registerSystem({ name: "recording-maintenance", everyMs: 1000, fn: recordingMaintenance });
 
 // Stale-lease sweep: a holder that stops streaming (hung tab, wedged plugin)
 // loses the object — committed at its last known transform, like a
@@ -1115,6 +1133,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
     if (shuttingDown) process.exit(0);
     shuttingDown = true;
+    closeRecordings();
     for (const w of worlds.values()) {
       // ws close handlers never run on exit — everyone connected right now
       // sleeps where they stand, same as a normal leave. Without this, a

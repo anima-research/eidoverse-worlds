@@ -1,3 +1,4 @@
+import { recordingState, recordingNotice } from "../../shared/recording.js";
 // net — the wire. One socket carrying two planes: the world log (ordered,
 // persisted, replayed on join) and presence (batched, lossy, never persisted).
 
@@ -517,9 +518,19 @@ function noteStalePresence(id) {
   console.warn(`[net] presence for unannounced id "${id}" dropped (straggler from a departed generation?)`);
 }
 
+let lastRecordingNotice = null;
+function acceptRecording(msg) {
+  net.recordingStatus = recordingState(msg);
+  const notice = recordingNotice(net.recordingStatus);
+  if (notice && notice !== lastRecordingNotice) logChat('*', notice);
+  lastRecordingNotice = notice;
+  bus.emit('recording-status', net.recordingStatus);
+}
+
 async function handle(msg) {
   switch (msg.type) {
     case 'snapshot': return onSnapshot(msg);
+    case 'recording-status': acceptRecording(msg); break;
 
     case 'your-rights': {
       // Personalized effective rights, folded by the authority after every
@@ -786,10 +797,7 @@ async function onSnapshot(msg) {
   bus.emit('surfaces', [...(msg.present ?? []),
     ...(msg.yourSurfaces?.length ? [{ id: msg.you, surfaces: msg.yourSurfaces }] : [])]);
 
-  if (msg.recording && !onSnapshot._noted) {
-    onSnapshot._noted = true;
-    logChat('*', '⏺ this performance is being recorded (movement + chat, for the archive)');
-  }
+  acceptRecording(msg);
 
   // wake where you fell asleep — but never teleport a body that has already
   // moved this session (mid-session reconnects keep local truth)
