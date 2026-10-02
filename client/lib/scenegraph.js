@@ -16,7 +16,8 @@
 //                 (the comp verb's contract).
 //               · actions: find, attach (pick a new parent by clicking it),
 //                 detach, remove. Attach PRESERVES the current world
-//                 transform — the thing glues where it stands, never jumps.
+//                 transform — the thing glues where it stands, never jumps
+//                 (the shared parenting edit: shared/hierarchy.js).
 //
 //   📜 scripts  the behavior runtime made visible: every bound script with
 //               its status (running / paused-with-reason), what it's attached
@@ -31,7 +32,7 @@
 import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
-import { editorsFor } from './inspect.js';
+import { editorsFor, commitEdit } from './inspect.js';
 import './lights.js';   // for its registered light editor (world.js pulls it in anyway)
 import { sendVerb, requestDebug } from './net.js';
 import { guardedByOther, placerOf, placerName } from './placer.js';   // the server's who-may-author rule, mirrored — and its one name
@@ -44,13 +45,6 @@ const esc = (v) => String(v).replace(/[&<>"]/g, (c) => (
   { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 const _wp = new THREE.Vector3();
-const _wq = new THREE.Quaternion();
-const _fw = new THREE.Vector3();
-const worldYawOf = (obj) => {
-  obj.getWorldQuaternion(_wq);
-  _fw.set(0, 0, 1).applyQuaternion(_wq);
-  return Math.atan2(_fw.x, _fw.z);
-};
 
 // ============================================================ 🌳 scene
 
@@ -314,31 +308,22 @@ export function sceneAttach(childId, parentId, slot) {
   }
   doAttach(childId, parentId);
 }
+// One path for every attach and detach — this section, /mount, /dismount, the
+// edit-mode Hierarchy and the inspector's Parent field: the shared parenting
+// edit (shared/hierarchy.js parentVerbs via inspect.js commitEdit). It keeps
+// the FULL world pose (q and scale, not just a yaw), refuses a loop / lock /
+// guard by name, and lands on the undo stack as one step.
 function doAttach(childId, parentId) {
-  const child = entities.get(childId);
-  const parent = entities.get(parentId);
-  if (!child || !parent) return logChat('*', 'both things must be fully loaded');
   if (childId === parentId) return;
-  // no cycles: walking up from the parent must not meet the child
-  for (let p = parent; p; p = entities.get(p.userData?.mountedTo)) {
-    if (p === child) return logChat('*', 'that would mount a thing onto its own cargo');
-  }
-  const lp = parent.worldToLocal(child.getWorldPosition(_wp.clone()));
-  const relYaw = worldYawOf(child) - worldYawOf(parent);
-  sendVerb('mount', {
-    id: childId, to: parentId,
-    offset: [+lp.x.toFixed(3), +lp.y.toFixed(3), +lp.z.toFixed(3)],
-    yaw: +relYaw.toFixed(3),
-  });
+  const r = commitEdit(childId, 'parent.to', parentId);
+  if (r.errors?.length) return logChat('*', r.errors.join(' · '));
   logChat('*', `${childId} now rides ${parentId} — it moves when ${parentId} moves`);
 }
 
 export function sceneDetach(id) { doDetach(id); }
 function doDetach(id) {
-  const obj = entities.get(id);
-  if (!obj) return;
-  const p = obj.getWorldPosition(_wp);
-  sendVerb('dismount', { id, pos: [+p.x.toFixed(3), +p.y.toFixed(3), +p.z.toFixed(3)], yaw: +worldYawOf(obj).toFixed(3) });
+  const r = commitEdit(id, 'parent.to', null);
+  if (r.errors?.length) logChat('*', r.errors.join(' · '));
 }
 
 // ============================================================ 📜 scripts
