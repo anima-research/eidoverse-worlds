@@ -152,6 +152,18 @@ try {
   check('…it renders in the VR quad: the house dropdown button is what the laser finds there, drawn with ink; the native select is hidden', row.atIsBtn && row.ink > 60 && row.nativeHidden, J(row));
   check('…and a laser + trigger opens its list inside the quad and picks "never": the pref and its storage follow', row.popInQuad && row.chose === 'never' && row.stored === 'never' && /^never/.test(row.after), J(row));
 
+  const drow = await ev(pg, async () => {
+    const sel = document.getElementById('vr-dot-visibility'), btn = sel?.nextElementSibling, pv = document.getElementById('vr-pointer-visibility');
+    if (!sel) return { none: true };
+    const tex = __h.dq.domQuadTexture('settings'), fr = tex.dom.getBoundingClientRect(); btn.scrollIntoView({ block: 'center' }); await new Promise((r) => setTimeout(r, 300));
+    const r = __h.rectIn('settings', btn), at = tex.elementAt(r.cx / fr.width, r.cy / fr.height);
+    return { label: sel.closest('.row')?.querySelector('.nm')?.textContent, opts: [...sel.options].map((o) => o.value), value: sel.value, inQuad: !!at && (at === btn || btn.contains(at)),
+      nextToPointer: pv?.closest('.row')?.nextElementSibling === sel.closest('.row'), pref: __h.xr.xrPrefs.dotVisibility };
+  });
+  console.log('  · dot row', J(drow));
+  check('Settings › VR has a "surface dot visibility" row right after pointer visibility: always / never / contextual, contextual by default, in the VR quad',
+    drow.label === 'surface dot visibility' && J(drow.opts) === J(['always', 'never', 'contextual']) && drow.value === 'contextual' && drow.pref === 'contextual' && drow.inQuad && drow.nextToPointer, J(drow));
+
   // ---- spots on the settings quad: a background point (no control) and a control with room around it ----------------
   const spots = await ev(pg, async () => {
     const H = __h, dom = H.dq.domQuadTexture('settings').dom, fr = dom.getBoundingClientRect();
@@ -255,21 +267,33 @@ try {
     }
     H.xr.setXrPref('pointerVisibility', 'contextual');
     H.up('right'); await H.frames(6); out.none = read().visible;
-    // a world entity, held with the trigger (contextual looks at the world only with a button held): a box registered in
-    // the world's entity table for the check, then removed
+    // world entities: a box registered in the world's entity table for the check (then removed) — PLAIN first (no
+    // components: a wall), then INTERACTABLE (a sockets component, as a chair has)
     const world = await import('./lib/world.js');
     const from = H.handFrom('right'), h = H.head(), at = from.clone().addScaledVector(h.f, 2.2).add(new T.Vector3(0, 0.2, 0));
     const box = new T.Mesh(new T.BoxGeometry(0.6, 0.6, 0.6), new T.MeshBasicNodeMaterial({ color: 0x556677 }));
     box.position.copy(at); box.lookAt(from.x, at.y, from.z); box.userData.entityId = 'probe-box'; EW.scene.add(box); box.updateMatrixWorld(true);
     world.entities.set('probe-box', box);
+    const want = +from.distanceTo(at.clone().addScaledVector(from.clone().sub(at).normalize(), 0.3)).toFixed(2);
+    const beam = () => ({ vis: H.dbg().laser.visible, len: +H.dbg().laser.len.toFixed(2), op: H.dbg().laser.opacity });
     try {
-      H.aim('right', from, at); await H.frames(4); out.entIdle = read().visible;
-      H.btn('right', 'squeeze', 1); await H.frames(6);
+      H.aim('right', from, at); await H.frames(5);
+      out.plainIdle = { dot: read().visible, beam: beam(), ent: H.dbg().ent };
+      H.btn('right', 'squeeze', 1); await H.frames(5);
+      out.plainGrip = { dot: read().visible, beam: beam() };
+      H.btn('right', 'squeeze', 0); await H.frames(3);
+      H.xr.setXrPref('dotVisibility', 'always'); await H.frames(4);
+      out.plainAlways = { dot: read().visible, kind: H.dbg().dot.kind };
+      H.xr.setXrPref('dotVisibility', 'contextual');
+      world.comps.set('probe-box', { sockets: { seat: { pose: 'sitchair' } } }); await H.frames(5);
       const d = read(), fn = from.clone().sub(at).setY(0).normalize();   // the face toward the hand: its plane is 0.3 m out along fn
       const toRay = d.p.clone().sub(from).cross(at.clone().sub(from).normalize()).length();
-      out.ent = { visible: d.visible, lift: +(d.p.clone().sub(at).dot(fn) - 0.3).toFixed(4), onRay: +toRay.toFixed(4), facing: +d.n.dot(fn).toFixed(4), angDiam: +(d.diam / eyeP().distanceTo(d.p)).toFixed(5) };
-      H.btn('right', 'squeeze', 0); await H.frames(4);
-    } finally { world.entities.delete('probe-box'); box.removeFromParent(); }
+      out.ent = { visible: d.visible, kind: H.dbg().dot.kind, beam: beam(), want, ent: H.dbg().ent, lift: +(d.p.clone().sub(at).dot(fn) - 0.3).toFixed(4), onRay: +toRay.toFixed(4), facing: +d.n.dot(fn).toFixed(4), angDiam: +(d.diam / eyeP().distanceTo(d.p)).toFixed(5) };
+      // pointer visibility 'never' hides only the beam: the dot keeps its own setting; dot 'never' hides the dot
+      H.xr.setXrPref('pointerVisibility', 'never'); await H.frames(3); out.entNeverBeam = { dot: read().visible, beam: H.dbg().laser.visible };
+      H.xr.setXrPref('pointerVisibility', 'contextual'); H.xr.setXrPref('dotVisibility', 'never'); await H.frames(3); out.entNeverDot = { dot: read().visible, beam: H.dbg().laser.visible };
+      H.xr.setXrPref('dotVisibility', 'contextual');
+    } finally { world.entities.delete('probe-box'); world.comps.delete('probe-box'); box.removeFromParent(); }
     return out;
   }, { bg: spots.bg }, 60000);
   console.log('  · dot', J(dot));
@@ -279,7 +303,14 @@ try {
   check('…constant in angle (≈0.007 rad across, at any distance)', Math.abs(dot.contextual.angDiam - DOT) < 0.0005 && Math.abs(dot.ent?.angDiam - DOT) < 0.0005, J([dot.contextual.angDiam, dot.ent?.angDiam]));
   check('…shown in never mode too, with no beam: it is the only mark', dot.never.visible && !dot.never.beam && dot.never.across < 0.003, J(dot.never));
   check('…hidden with no target', dot.none === false, J(dot.none));
-  check('…on a world entity (with a button held): on its face, facing out; an idle contextual hand marks no entity', dot.entIdle === false && dot.ent?.visible && dot.ent.lift >= 0 && dot.ent.lift < 0.01 && dot.ent.onRay < 0.01 && dot.ent.facing > 0.99, J(dot));
+  check('a PLAIN entity (a wall), contextual: an idle hand shows no beam and no dot', dot.plainIdle?.ent?.id === 'probe-box' && !dot.plainIdle.ent.interactable && !dot.plainIdle.dot && !dot.plainIdle.beam.vis, J(dot.plainIdle));
+  check('…grip held: the search beam reaches it (full length), but no dot (contextual dot = the beam\'s targets only)', dot.plainGrip?.beam.vis && Math.abs(dot.plainGrip.beam.len - dot.ent?.want) < 0.05 && !dot.plainGrip.dot, J({ g: dot.plainGrip, want: dot.ent?.want }));
+  check('…dot visibility "always": the dot marks it, as a plain dot (nothing to do there)', dot.plainAlways?.dot && dot.plainAlways.kind === 'dot', J(dot.plainAlways));
+  check('an INTERACTABLE entity (sockets), idle hand: the contextual beam reaches it at full strength and the dot sits on its face as a click icon',
+    dot.ent?.ent?.interactable && dot.ent.visible && dot.ent.kind === 'click' && dot.ent.beam.vis && Math.abs(dot.ent.beam.len - dot.ent.want) < 0.05 && dot.ent.beam.op >= 0.85
+    && dot.ent.lift >= 0 && dot.ent.lift < 0.01 && dot.ent.onRay < 0.01 && dot.ent.facing > 0.99, J(dot.ent));
+  check('pointer visibility "never" hides only the beam (the dot keeps its own setting); dot visibility "never" hides only the dot',
+    dot.entNeverBeam?.dot && !dot.entNeverBeam.beam && !dot.entNeverDot?.dot && dot.entNeverDot.beam, J([dot.entNeverBeam, dot.entNeverDot]));
 
   // ---- 3. smoothing, as wired: the aim is the controller's ray low-passed by the frame's own dt ----------------------
   const sm = await ev(pg, async ({ bg }) => {
