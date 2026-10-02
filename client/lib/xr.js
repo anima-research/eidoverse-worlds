@@ -40,6 +40,7 @@ import { markXrAbsent, registerXrGlyph, micGlyph, earGlyph, xrGlyph, micLive, ea
 import { markActive } from './presence.js';
 import { setReveal } from './namereveal.js';
 import { platePick, aimPlate } from './platecard.js';   // VR hover: a laser resting on a nameplate opens its card
+import { makeDwell } from './dwell.js';   // "rested on it for a beat": one mechanism, per hand here
 import { POINTER_VIS_DEFAULT, pointerVisible, looksAtWorld, smoothPose, stickStep, angleTo, rayMatrixTo } from './xrpointer.js';   // the laser's policy: when it is drawn, how it follows the hand, how it holds a target
 import { dockPins } from './ui.js';
 import { xrScales, toRigLocal } from './bodyscale.js';   // the chosen size composes with the device fit (rig = u, body = u/k)
@@ -435,6 +436,10 @@ function rayHitEntity(handRay, far = 24) {
 // the press clicks what it pressed whatever the ray does (domquad.js), and a held panel rides the hand.
 const sticky = { left: null, right: null };   // {kind: 'panel'|'plate', key, obj, local: Vector3}
 const pickState = { left: { bent: false, kind: null }, right: { bent: false, kind: null } };   // probe window
+// THE DWELL, per hand (dwell.js), keyed on what the laser HOLDS — so the stickiness carries it through a small drift.
+// The nameplate card, the VR tooltips and the panel handles all read it.
+const dwells = { left: makeDwell(), right: makeDwell() };
+export const xrDwell = (side) => dwells[side];
 const bentRay = { left: { matrixWorld: new THREE.Matrix4() }, right: { matrixWorld: new THREE.Matrix4() } };
 const _sp = new THREE.Vector3(), _so = new THREE.Vector3(), _sd = new THREE.Vector3();
 const stickAlive = (h) => !!h.obj?.parent && h.obj.visible && (h.obj.material?.opacity ?? 1) >= 0.1 && !h.obj.userData?.occluded
@@ -886,7 +891,7 @@ async function enterVR({ retryOf = null } = {}) {
       selfFirstPerson(false);
       { const av = getSelf(), v = av?.vrm; if (v) { if (av.setPuppetScale) av.setPuppetScale(1); else v.scene.scale.setScalar(1); v.scene.position.set(0, 0, 0); v.scene.updateMatrixWorld(true); if (v.userData) { v.userData.ankleH = null; v.userData._gait = null; } } }   // the puppet scale AND the eye-anchor offset (xrbody writes vrm.scene.position every presenting frame; left in place it sank the feet on the desktop — owner 09-08 00:38) are presenting things
       releaseGrab();      // a gripped panel goes back to the rig BEFORE the quads are disposed, or a dead mesh stays in the rig
-      sticky.left = sticky.right = null;
+      sticky.left = sticky.right = null; dwells.left.reset(); dwells.right.reset();
       for (const h of [hands.left, hands.right]) if (h) { h.laser.visible = false; h.laser.removeFromParent(); hideSurfaceDot(h.dot); rig.add(h.dot); h.smooth.init = false; }   // the beams live in the scene while presenting; the aim snaps on the next entry
       { const t = performance.now(); xrPanelsExit(rig); tee(`[xr] panels exit ${(performance.now() - t).toFixed(1)} ms`); }
       rig.remove(camera);
@@ -1266,7 +1271,7 @@ export function updateXR(dtSec = 1 / 72) {
     const eye = renderer.xr.getCamera();
     for (const side of ['right', 'left']) {
       const G = side === 'right' ? R : L; const hand = hands[side];
-      if (!G || !hand) { panelPress[side] = null; sticky[side] = null; if (hand) { hand.laser.visible = false; hideSurfaceDot(hand.dot); } continue; }   // a controller dropped mid-press: forget it (P3)
+      if (!G || !hand) { panelPress[side] = null; sticky[side] = null; dwells[side].reset(); if (hand) { hand.laser.visible = false; hideSurfaceDot(hand.dot); } continue; }   // a controller dropped mid-press: forget it (P3)
       const grip = !!G.buttons[1]?.pressed, trig = !!G.buttons[0]?.pressed;
       // the ray every pick below uses, and the beam is drawn along: the controller's, low-passed (xrpointer.js), then
       // bent onto the target it holds while the hand drifts a little off it (stickTo)
@@ -1278,7 +1283,9 @@ export function updateXR(dtSec = 1 / 72) {
       // decided HERE, before the trust gate below, so the first 700 ms after a controller wakes obey it too (review 10-02)
       const { ray, panel: panelAt, plate } = stickTo(side, aim, eye, !panelPress[side] && held?.hand !== side);
       const panelNow = panelAt?.dist ?? null;
-      aimPlate(side, plate?.id);
+      // the dwell's key: what the laser holds (a panel control, a plate) — else, on a panel, its zone (panel.js zones)
+      const dw = dwells[side].step(sticky[side]?.key ?? (panelAt ? `panel:${panelAt.id}:${panelAt.zone ?? 'body'}` : null));
+      aimPlate(side, plate?.id, dw.since);
       // Settings › VR › pointer visibility (owner, 10-02): whether the BEAM is drawn. Everything below — the click, the plate
       // hover above, the stick scroll — runs either way: 'never' hides the beam, it does not stop the pointing.
       hand.laser.visible = pointerVisible(xrPrefs.pointerVisibility, { target: panelNow != null || plate != null, grip, trig });
@@ -1509,7 +1516,8 @@ export const xrPointerDebug = () => Object.fromEntries(['left', 'right'].map((si
     dot: { visible: h.dot.visible, inScene: h.dot.parent === scene, pos: h.dot.position.toArray().map((v) => +v.toFixed(4)), diam: +h.dot.scale.x.toFixed(5),
       normal: [0, 0, 1].map((_, i) => +new THREE.Vector3(0, 0, 1).applyQuaternion(h.dot.quaternion).getComponent(i).toFixed(4)) },
     heldEl: st?.kind === 'panel' && typeof st.key !== 'string' ? st.key : null,
-    bent: pickState[side].bent, pointerVisibility: xrPrefs.pointerVisibility }];
+    bent: pickState[side].bent, pointerVisibility: xrPrefs.pointerVisibility,
+    dwell: { key: typeof dwells[side].key === 'string' || dwells[side].key == null ? dwells[side].key : 'el', since: dwells[side].since, ripe: dwells[side].ripe() } }];
 }));
 
 /** harness window */

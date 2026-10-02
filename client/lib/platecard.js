@@ -9,7 +9,8 @@
 // is gone. Mic and hearing live in the card below, in words. A client too old to say leaves them undefined and the
 // card reads "not shared" — unknown is not "headphones off".
 //
-// THE CARD: rest the pointer on a nameplate (or the head under it) for HOVER_MS and a small card opens beside the
+// THE CARD: rest the pointer on a nameplate (or the head under it) for HOVER_MS (dwell.js: one dwell for every
+// "rest on it for a beat" in the client) and a small card opens beside the
 // plate — name, presence, mic and hearing in words, distance / VR / agent, and the one per-person action the people
 // column already offers (message → the DM tab, chat.js openConvo). It is DOM, projected to the plate each frame:
 // crisp text at any distance, the house tokens and buttons for free, focusable, and it follows the plate while open.
@@ -30,8 +31,9 @@ import { svg, fsvg } from './icons.js';
 import { HTMLMesh } from './vendor/htmlmesh.js';
 import { prepareQuadMaterial } from './domquad.js';
 import { PLATE_GETON_RAD } from './xrpointer.js';   // the laser's get-on slack around a plate (see below)
+import { makeDwell, DWELL_MS } from './dwell.js';
 
-export const HOVER_MS = 300;       // rest this long on a plate before the card opens
+export const HOVER_MS = DWELL_MS;  // rest this long on a plate before the card opens: the shared dwell (300 ms)
 const LEAVE_MS = 250;              // grace to travel from plate to card
 const HEAD_R = 0.14;               // metres: the head under the plate counts as the plate
 // VR: a CSS px of the card subtends this many radians, whatever the plate's distance — the narrowest VR panel's (342 px
@@ -51,7 +53,8 @@ let dismissed = null, dismissOff = 0;              // a card closed by hand (Esc
 const _v = new THREE.Vector3(), _h = new THREE.Vector3();
 let vr = false;                                    // presenting: the laser is the pointer, the card is a quad
 let xrMesh = null, xrBuilt = null;                 // the card's quad and the CSS size it was built at (HTMLMesh fixes its geometry)
-const xrAim = { left: null, right: null };         // the plate id under each hand's laser, as xr.js last reported it
+const xrAim = { left: null, right: null };         // per hand, as xr.js last reported it: { id, since } — the plate its laser rests on, and since when (that hand's dwell)
+const mouseDwell = makeDwell(HOVER_MS);            // the desktop pointer's dwell (VR's are xr.js's, one per hand)
 let openedAt = 0;                                  // for probes: when the open card opened
 
 export function initPlates(deps) {
@@ -99,21 +102,24 @@ export function updatePlates(now = performance.now()) {
   if (d.presenting()) { updatePlatesXR(now); return; }
   if (vr) leaveXR();
   const over = ptr ? hitAt(ptr.x, ptr.y) : null;
-  hoverStep(over, onDomCard, now);
+  mouseDwell.step(over, now);
+  hoverStep(over, mouseDwell.since, onDomCard, now);
   if (!card.hidden) follow();
 }
 const onDomCard = () => card.matches(':hover'), onNoCard = () => false;
 
 // hover: the same plate for HOVER_MS opens it; leaving plate AND card closes a hover-opened card. `over` is the plate
-// under the pointer (desktop) or under a laser (VR); onCard() says whether the pointer is on the card itself.
-function hoverStep(over, onCard, now) {
-  if (over !== hoverId) { hoverId = over; hoverSince = now; }
+// under the pointer (desktop) or under a laser (VR), `since` when the pointer came to rest on it (its dwell's clock —
+// the mouse's here, the hand's in VR, where the laser's stickiness keeps it counting through a small drift); onCard()
+// says whether the pointer is on the card itself.
+function hoverStep(over, since, onCard, now) {
+  hoverId = over; hoverSince = over != null ? since : now;
   // a dismissal ends only once the pointer has been OFF that plate for a moment: a plate is a thin target, and a
   // one-frame miss (the camera breathing a few px) must not re-arm the card under a resting pointer
   if (dismissed && over === dismissed) dismissOff = 0;
   else if (dismissed && !dismissOff) dismissOff = now;
   else if (dismissed && now - dismissOff >= LEAVE_MS) { dismissed = null; dismissOff = 0; }
-  if (over && over !== cardFor && over !== dismissed && now - hoverSince >= HOVER_MS && openedBy !== 'tap') open(over, 'hover');
+  if (over && over !== cardFor && over !== dismissed && now - hoverSince >= HOVER_MS && openedBy !== 'tap') open(over, 'hover');   // the dwell is ripe
   if (!card.hidden && openedBy === 'hover') {
     if (over === cardFor || onCard()) leftAt = 0;
     else if (!leftAt) leftAt = now;
@@ -127,8 +133,10 @@ function updatePlatesXR(now) {
   // either hand: one already on the open card's person keeps it; otherwise the right hand leads
   const L = xrAim.left, R = xrAim.right;
   xrAim.left = xrAim.right = null;   // xr.js re-reports every frame its pointer loop runs; a frame it doesn't, nothing is aimed at
-  const over = cardFor && (L === cardFor || R === cardFor) ? cardFor : (R ?? L);
-  hoverStep(over, onNoCard, now);    // the card's own quad is part of platePick's answer (it returns cardFor)
+  const over = cardFor && (L?.id === cardFor || R?.id === cardFor) ? cardFor : (R?.id ?? L?.id ?? null);
+  // the hand(s) on it: the one that has rested there longest owns the clock
+  const since = Math.min(...[L, R].filter((a) => a && a.id === over).map((a) => a.since), now);
+  hoverStep(over, since, onNoCard, now);    // the card's own quad is part of platePick's answer (it returns cardFor)
   if (!card.hidden) followXR();
 }
 function enterXR() {
@@ -211,8 +219,9 @@ export function platePick(handRay, cam, far = 40) {
   }
   return best ? { id: best, dist: bestD, obj: bestLab } : null;   // obj: what it was found on (the plate, or the card's quad) — the pointer's stickiness keeps its point there
 }
-/** VR: xr.js reports, per hand per frame, the plate its laser rests on (null: none). */
-export function aimPlate(side, id) { if (side === 'left' || side === 'right') xrAim[side] = id ?? null; }
+/** VR: xr.js reports, per hand per frame, the plate its laser rests on (null: none) and since when — that hand's dwell
+ *  clock (dwell.js), keyed on what the laser holds, so stickiness carries through. */
+export function aimPlate(side, id, since = performance.now()) { if (side === 'left' || side === 'right') xrAim[side] = id == null ? null : { id, since }; }
 
 // ---- where a plate is on screen ------------------------------------------------------------------------------
 // The plate is a camera-facing sprite: its screen rect is its world anchor projected, sized by pixels-per-metre at
