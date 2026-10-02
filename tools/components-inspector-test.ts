@@ -69,9 +69,10 @@ check('add.Spin on a part → comp motion:<part>', JSON.stringify(v({ 'add.Spin'
 check('add.Spin with a whole motion present → refused, says why', v({ 'add.Spin': '' }).verbs.length === 0 && /already moves as a whole/.test(v({ 'add.Spin': '' }).errors[0] ?? ''));
 check('remove.motion → motion {type:null}', JSON.stringify(v({ 'remove.motion': null }).verbs) === JSON.stringify([{ verb: 'motion', args: { id: 'c1', type: null } }]));
 check('remove.lock → comp lock null', JSON.stringify(v({ 'remove.lock': null }).verbs) === JSON.stringify([{ verb: 'comp', args: { id: 'c1', type: 'lock', data: null } }]));
-check('add.Light on a model → refused (needs the new wire)', v({ 'add.Light': null }).verbs.length === 0 && v({ 'add.Light': null }).errors.length === 1);
+// step 2 (design §6): a lamp is a Model with a Light component — no longer blocked
+check('add.Light on a model → comp light with its fields spelled out (write-new-on-edit)', JSON.stringify(v({ 'add.Light': null }).verbs) === JSON.stringify([{ verb: 'comp', args: { id: 'c1', type: 'light', data: { color: 0xffd9a0, intensity: 16, range: 10 } } }]));
 check('a held guard refuses add and remove', (() => { const g = { ...crate, comp: { ...crate.comp, guard: true }, placer: { id: 'someone' } }; const r = editVerbs(g, 'c1', { 'remove.lock': null }, { mayAuthor: false }); return r.verbs.length === 0 && /guarded/.test(r.errors[0] ?? ''); })());
-check('Add Component lists blocked entries with a reason', (() => { const s = inspectSchema(crate, 'c1'); const L = s.sections.add.find((a: any) => a.name === 'Light'); return !!L?.blocked && s.sections.add.some((a: any) => a.name === 'Particles' && !a.blocked); })());
+check('Add Component lists blocked entries with a reason; Light and Collider are no longer among them', (() => { const s = inspectSchema(crate, 'c1'); const st = s.sections.add.find((a: any) => a.name === 'Structure'); const ok = (n: string) => s.sections.add.some((a: any) => a.name === n && !a.blocked); return !!st?.blocked && ok('Particles') && ok('Light') && ok('Collider'); })());
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

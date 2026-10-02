@@ -24,7 +24,7 @@
 
 import { normalizePicture, PICTURE_LIT, PICTURE_LOOK_MAX } from './picture.js';
 import { normalizeSound, SOUND_LOOK_MAX } from './sound.js';
-import { componentsOf, addable, RECORDS } from './components.js';
+import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS } from './components.js';
 
 const R2D = 180 / Math.PI;
 export const AXES = { x: [1, 0, 0], y: [0, 1, 0], z: [0, 0, 1], '-x': [-1, 0, 0], '-y': [0, -1, 0], '-z': [0, 0, -1] };
@@ -61,6 +61,11 @@ function axisName(m, def) {
   return def;
 }
 const isLight = (ent) => ent?.kind === 'light';
+const isBag = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
+// The light component (PROTOCOL §4, 2026-10-01) — on anything that is not a
+// light-verb light. When both spellings are present the legacy one owns the
+// `light` group (it is what renders) and the comp shows as raw JSON.
+const compLight = (ent) => !isLight(ent) && isBag(ent?.comp?.light);
 const motionKeys = (ent) => Object.keys(ent?.comp ?? {}).filter((k) => (k === 'motion' || k.startsWith('motion:')) && ent.comp[k] && typeof ent.comp[k] === 'object');
 
 // ---------------------------------------------------------------- schema
@@ -127,16 +132,34 @@ export function inspectSchema(ent, id, live = {}) {
     ] });
   }
 
-  if (isLight(ent)) {
+  // one `light` group for either spelling, so `light.intensity` means the same
+  // address to the panel, the VR quad and the agent's edit tool. What it WRITES
+  // follows the spelling the entity already has (editVerbs): the light verb for
+  // a light-verb light, `comp light` for a light component.
+  if (isLight(ent) || compLight(ent)) {
+    const src = isLight(ent) ? ent : c.light;
     const fields = [
-      { t: 'color', k: 'color', label: 'color', value: ent.color ?? 0xffd9a0, def: 0xffd9a0 },
-      { t: 'num', k: 'intensity', label: 'brightness', value: ent.intensity ?? 16, def: 16, step: 1, dp: 0, min: 0, softMax: Math.max(64, ent.intensity ?? 16) },
-      { t: 'num', k: 'range', label: 'range', value: ent.range ?? 10, def: 10, step: 1, dp: 0, min: 1, softMax: Math.max(40, ent.range ?? 10), unit: 'm' },
-      { t: 'check', k: 'keep', label: 'keep lit', value: ent.keep === true, hint: 'first claim on a light slot, never governor-shed' },
-      { t: 'check', k: 'noon', label: 'burns at noon', value: ent.day === false, hint: 'opts out of the day cycle' },
+      { t: 'color', k: 'color', label: 'color', value: src.color ?? 0xffd9a0, def: 0xffd9a0 },
+      { t: 'num', k: 'intensity', label: 'brightness', value: src.intensity ?? 16, def: 16, step: 1, dp: 0, min: 0, softMax: Math.max(64, src.intensity ?? 16) },
+      { t: 'num', k: 'range', label: 'range', value: src.range ?? 10, def: 10, step: 1, dp: 0, min: 1, softMax: Math.max(40, src.range ?? 10), unit: 'm' },
+      { t: 'check', k: 'keep', label: 'keep lit', value: src.keep === true, hint: 'first claim on a light slot, never governor-shed' },
+      { t: 'check', k: 'noon', label: 'burns at noon', value: src.day === false, hint: 'opts out of the day cycle' },
     ];
     if (live.casting === false) fields.push({ t: 'info', label: '', value: 'glow-only right now (slot pool spent) — it may still cast for others' });
-    groups.push({ group: 'light', label: 'light', verb: 'light', fields });
+    groups.push({ group: 'light', label: 'light', ...(isLight(ent) ? { verb: 'light' } : { verb: 'comp', types: ['light'] }), fields });
+  }
+
+  // the collider component (PROTOCOL §4, 2026-10-01), or the spawn verb's
+  // legacy `collide` it overrides. Editing writes the component either way:
+  // `collide` has no verb but spawn, and re-spawning would re-author the thing.
+  if (isBag(c.collider) || ent.collide != null) {
+    const shape = isBag(c.collider) ? c.collider.shape : ent.collide;
+    const opts = ['exact', 'box'];
+    groups.push({ group: 'collider', label: 'collider', verb: 'comp', ...(isBag(c.collider) ? { types: ['collider'] } : {}), fields: [
+      { t: 'enum', k: 'shape', label: 'shape', value: shape, options: (opts.includes(shape) ? opts : [...opts, String(shape)]).map((v) => ({ v, label: v })),
+        hint: isBag(c.collider) ? 'exact = its triangles, box = its bounding box; remove the component to let its size decide'
+          : 'set by its spawn; changing it here writes a collider component, which takes precedence' },
+    ] });
   }
 
   const mk = motionKeys(ent);
@@ -272,7 +295,8 @@ export function inspectSchema(ent, id, live = {}) {
 
   // every type no group speaks for: raw JSON, the blind fold's UI twin —
   // a type invented this morning is editable today
-  const claimed = new Set(['lock', 'guard', 'hidden', 'label', 'sockets', 'particles', 'picture', 'sound', ...mk]);
+  const claimed = new Set(['lock', 'guard', 'hidden', 'label', 'sockets', 'particles', 'picture', 'sound', ...mk,
+    ...(compLight(ent) ? ['light'] : []), ...(isBag(c.collider) ? ['collider'] : [])]);
   const rest = Object.keys(c).filter((t) => !claimed.has(t));
   const fields = rest.map((type) => ({ t: 'json', k: type, label: type, value: JSON.stringify(c[type], null, 2), hint: 'raw JSON — a saved edit replaces this type\'s data wholesale' }));
   // Add Component (Unity's pattern) for the kinds that need a gesture to begin:
@@ -299,9 +323,10 @@ export function inspectSchema(ent, id, live = {}) {
 // agent's `edit` tool and the gizmo keep working — plus what may be added.
 // A component today's wire cannot express is listed with the reason, not hidden.
 const WIRE_BLOCKED = {
-  Light: (have) => have.has('Model') ? 'a model and a light on one entity needs the new wire (port section E)' : null,
-  Model: (have) => have.has('Light') ? 'a light and a model on one entity needs the new wire (port section E)' : 'swap the model from the Library',
-  Collider: () => 'no verb writes `collide` yet (port section E)',
+  // a lamp is a Model with a Light component; a light-verb light cannot grow a
+  // model in place (spawn would replace it wholesale), and a model is swapped,
+  // not added, from the Library (spawn on the same id)
+  Model: (have, ent) => isLight(ent) ? 'this light was made with the light verb and cannot take a model — place the model, then add a Light to it' : 'swap the model from the Library',
   Structure: () => 'start a building from Create ▸ Structure',
   Attachment: () => 'attach with the mount gesture',
 };
@@ -318,9 +343,22 @@ function componentSections(ent, groups, held, live = {}) {
     switch (inst.type) {
       case 'Transform': sec.fields = refs('pos'); break;
       case 'Model': sec.info = [['model', String(ent.lib)]]; break;
-      case 'Collider': sec.info = [['shape', String(ent.collide)]]; break;
+      // keyed = the component; keyless = the legacy spawn `collide`, which owns
+      // the collider group only when no component overrides it
+      case 'Collider':
+        if (inst.key != null || !isBag(ent.comp?.collider)) sec.fields = refs('collider');
+        else sec.info = [['shape', `${String(ent.collide)} (overridden by the collider component)`]];
+        sec.removable = inst.key != null;
+        break;
       case 'Attachment': sec.info = [['on', `${ent.parent?.to}${ent.parent?.slot ? ` · ${ent.parent.slot}` : ''}`]]; break;
-      case 'Light': sec.fields = refs('light'); break;
+      case 'Light':
+        // keyless = the light-verb light (the light group is its); keyed = the
+        // component: the group when it is the entity's light, raw JSON when a
+        // hand-written log put one beside a legacy light
+        if (inst.key == null || compLight(ent)) sec.fields = refs('light');
+        else sec.fields = [`comp.${inst.key}`];
+        sec.removable = inst.key != null;
+        break;
       case 'Label': case 'Hidden': continue;       // the header's, like Unity's name and active box
       case 'Lock': case 'Guard': sec.fields = refs('flags', (f) => f.k === inst.key); sec.removable = true; break;
       case 'Seats': sec.fields = refs('sockets'); sec.removable = true; break;
@@ -346,9 +384,9 @@ function componentSections(ent, groups, held, live = {}) {
     out.push(sec);
   }
   const add = addable(components).filter((a) => a.name !== 'Label' && a.name !== 'Hidden')
-    .map((a) => ({ ...a, blocked: (a.name === 'Guard' && live.mayAuthor === false ? 'only its placer or the world\'s owner can guard it' : null) ?? WIRE_BLOCKED[a.name]?.(have) ?? null }));
-  for (const name of ['Light', 'Model', 'Collider', 'Structure', 'Attachment']) if (!have.has(name) && !add.some((a) => a.name === name) && WIRE_BLOCKED[name])
-    add.push({ name, category: RECORDS[name].category, summary: RECORDS[name].summary, hash: RECORDS[name].hash, blocked: WIRE_BLOCKED[name](have) });
+    .map((a) => ({ ...a, blocked: (a.name === 'Guard' && live.mayAuthor === false ? 'only its placer or the world\'s owner can guard it' : null) ?? WIRE_BLOCKED[a.name]?.(have, ent) ?? null }));
+  for (const name of ['Model', 'Structure', 'Attachment']) if (!have.has(name) && !add.some((a) => a.name === name) && WIRE_BLOCKED[name])
+    add.push({ name, category: RECORDS[name].category, summary: RECORDS[name].summary, hash: RECORDS[name].hash, blocked: WIRE_BLOCKED[name](have, ent) });
   return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden'), list: out, add: held ? [] : add };
 }
 
@@ -366,6 +404,21 @@ export function addVerbs(ent, id, name, value) {
   const simple = { Lock: ['lock', true], Guard: ['guard', true], Hidden: ['hidden', true], Label: ['label', typeof value === 'string' && value.trim() ? value.trim().slice(0, 80) : 'unnamed'],
     Particles: ['particles', { preset: typeof value === 'string' && value ? value : 'fire' }], LookAt: ['look', {}], Reactions: ['reactions', {}], Stage: ['stage', {}] };
   if (simple[name]) { const [type, data] = simple[name]; if (c[type] != null) return { verbs: [], errors: [`${id} already has ${name}`] }; return { verbs: [{ verb: 'comp', args: { id, type, data } }], errors: [] }; }
+  // write-new-on-edit: a Light added here is a component, never the light verb,
+  // and it is written with its fields spelled out — the log records the result,
+  // so a later change of the engine's defaults cannot change this lamp
+  if (name === 'Light') {
+    if (isLight(ent)) return { verbs: [], errors: [`${id} is already a light (made with the light verb)`] };
+    if (c.light != null) return { verbs: [], errors: [`${id} already has a light`] };
+    return { verbs: [{ verb: 'comp', args: { id, type: 'light', data: { ...LIGHT_DEFAULTS } } }], errors: [] };
+  }
+  if (name === 'Collider') {
+    if (ent?.lib == null || isLight(ent)) return { verbs: [], errors: [`a collider needs a model to collide as (${id} has none)`] };
+    if (c.collider != null) return { verbs: [], errors: [`${id} already has a collider`] };
+    const shape = value === 'box' ? 'box' : value == null || value === '' || value === 'exact' ? 'exact' : null;
+    if (!shape) return { verbs: [], errors: ['a collider shape is "exact" or "box"'] };
+    return { verbs: [{ verb: 'comp', args: { id, type: 'collider', data: { shape } } }], errors: [] };
+  }
   if (name === 'Annotation') { const type = String(value ?? '').trim(); if (!type) return { verbs: [], errors: ['an annotation needs a type name'] }; if (c[type] != null) return { verbs: [], errors: [`${id} already has ${type}`] }; return { verbs: [{ verb: 'comp', args: { id, type, data: {} } }], errors: [] }; }
   return { verbs: [], errors: [`${name}: added by a gesture, not a value (${WIRE_BLOCKED[name]?.(new Set()) ?? 'see its card'})`] };
 }
@@ -458,6 +511,17 @@ export function editVerbs(ent, id, edits, live = {}) {
         break;
       }
       case 'light': {
+        if (!isLight(ent)) {
+          // the light component: merge into its bag, keep/day stored only in
+          // their non-default state (as the light verb's fold stores them),
+          // validated once at the end like picture/sound
+          const b = bag('light', () => ({}));
+          if (f.t === 'num') { const n = num(f, raw); if (n == null) break; b[k] = n; }
+          else if (k === 'color') b.color = typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/, ''), 16) : raw;
+          else if (k === 'keep') { if (bool(raw)) b.keep = true; else delete b.keep; }
+          else if (k === 'noon') { if (bool(raw)) b.day = false; else delete b.day; }
+          break;
+        }
         light ??= { id };
         if (f.t === 'num') { const n = num(f, raw); if (n == null) break; light[k] = n; }
         else if (k === 'color') light.color = typeof raw === 'string' ? parseInt(raw.replace(/^#|^0x/, ''), 16) : raw;
@@ -526,6 +590,13 @@ export function editVerbs(ent, id, edits, live = {}) {
         else errors.push(`${key}: no such field`);
         break;
       }
+      case 'collider': {
+        if (k !== 'shape') { errors.push(`${key}: no such field`); break; }
+        const why = compRefusal('collider', { shape: raw });
+        if (why) { errors.push(`collider: ${why}`); break; }
+        comps.set('collider', { ...(isBag(c.collider) ? c.collider : {}), shape: raw });
+        break;
+      }
       case 'look': {
         // the ref field commits the target id, or null to clear it. The whole
         // `look` comp goes away when its only field is cleared.
@@ -542,7 +613,8 @@ export function editVerbs(ent, id, edits, live = {}) {
         if (raw == null || raw === '') { comps.set(k, null); break; }
         let data = raw;
         if (typeof raw === 'string') { try { data = JSON.parse(raw); } catch (e) { errors.push(`comp.${k}: not valid JSON (${e.message})`); break; } }
-        // the JSON door is not a way around the evaluators' rules
+        // the JSON door is not a way around the evaluators' rules — nor the door's
+        if ((k === 'light' || k === 'collider') && compRefusal(k, data, ent)) { errors.push(`comp.${k}: ${compRefusal(k, data, ent)}`); break; }
         if ((k === 'picture' || k === 'sound') && data != null) {
           const n = k === 'picture' ? normalizePicture(data) : normalizeSound(data);
           if (!n.ok) { errors.push(`${k}: ${n.why}`); break; }
@@ -556,6 +628,7 @@ export function editVerbs(ent, id, edits, live = {}) {
   }
   for (const [type, b] of bags) {
     if (b === null) { comps.set(type, null); continue; }
+    if (type === 'light') { const why = compRefusal('light', b, ent); if (why) errors.push(`light: ${why}`); else comps.set('light', b); continue; }
     const n = type === 'picture' ? normalizePicture(b) : normalizeSound(b);
     if (!n.ok) { errors.push(`${type}: ${n.why}`); continue; }   // the rule, before any round-trip
     comps.set(type, type === 'picture' ? n.picture : n.sound);

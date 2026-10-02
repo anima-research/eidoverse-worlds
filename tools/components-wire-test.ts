@@ -304,6 +304,67 @@ console.log('\n4. text tier (mcpl/agent.ts look(), mcpl/tools.ts)');
   }
 }
 
+// ---- 5. the inspector ----------------------------------------------------------
+console.log('\n5. the inspector (shared/editschema.js: reads either spelling, writes new on edit)');
+{
+  const { inspectSchema, editVerbs, fieldAt } = await import('../shared/editschema.js');
+  const ed = (ent: any, set: Record<string, unknown>) => editVerbs(ent, 'x', set);
+  const verbsOf = (r: any) => JSON.stringify(r.verbs);
+  // every card's fields resolve and are owned once (components-inspector-test's rule)
+  const cardsSound = (ent: any) => { const sc = inspectSchema(ent, 'x'); const own = new Map<string, string>(); const bad: string[] = [];
+    for (const a of sc.sections.header) own.set(a, 'header');
+    for (const sec of sc.sections.list) for (const a of sec.fields) { if (!fieldAt(sc, a)) bad.push(`${sec.title}: ${a} is no field`); if (own.has(a)) bad.push(`${a} owned twice`); own.set(a, sec.title); }
+    return bad; };
+  const card = (ent: any, type: string, key: string | null = null) => inspectSchema(ent, 'x').sections.list.find((c: any) => c.type === type && c.key === key);
+
+  const legacy = { kind: 'light', pos: [0, 2, 0], color: 0xffd9a0, intensity: 16, range: 10, actor: 'a', ts: 1 };
+  check('an OLD light-verb light is edited with the light verb, as before — it is not migrated',
+    verbsOf(ed(legacy, { 'light.intensity': 30, 'light.noon': true })) === JSON.stringify([{ verb: 'light', args: { id: 'x', intensity: 30, day: false } }]), verbsOf(ed(legacy, { 'light.intensity': 30, 'light.noon': true })));
+  check('…its Light card owns the light group and is not removable (removing a light-verb light is removing the entity)',
+    card(legacy, 'Light')?.fields.includes('light.intensity') && card(legacy, 'Light').removable === false, JSON.stringify(card(legacy, 'Light')));
+
+  const lamp = { lib: LAMP, pos: [0, 0, 0], yaw: 0, comp: { light: { color: 0xff8800, intensity: 20, keep: true, flicker: 1 } }, actor: 'a', ts: 1 };
+  const lsch = inspectSchema(lamp, 'x');
+  check('a light component shows in the SAME light group (light.* addresses), valued from its bag',
+    fieldAt(lsch, 'light.intensity')?.value === 20 && fieldAt(lsch, 'light.color')?.value === 0xff8800 && fieldAt(lsch, 'light.range')?.value === 10 && fieldAt(lsch, 'light.keep')?.value === true, JSON.stringify(lsch.groups.find((g: any) => g.group === 'light')));
+  check('…editing it writes comp light, merged into the bag (unknown keys kept), keep/day stored only when not default',
+    verbsOf(ed(lamp, { 'light.intensity': 24, 'light.keep': false, 'light.noon': true, 'light.color': '#00ff00' })) === JSON.stringify([{ verb: 'comp', args: { id: 'x', type: 'light', data: { color: 0x00ff00, intensity: 24, flicker: 1, day: false } } }]),
+    verbsOf(ed(lamp, { 'light.intensity': 24, 'light.keep': false, 'light.noon': true, 'light.color': '#00ff00' })));
+  check('…a value the door would refuse is refused here first, with the door\'s words', (() => { const r = ed(lamp, { 'light.color': 'zz' }); return r.verbs.length === 0 && /light: light color/.test(r.errors[0] ?? ''); })(), JSON.stringify(ed(lamp, { 'light.color': 'zz' })));
+  check('…its card is removable and remove.light writes comp light null', card(lamp, 'Light', 'light')?.removable === true
+    && verbsOf(ed(lamp, { 'remove.light': null })) === JSON.stringify([{ verb: 'comp', args: { id: 'x', type: 'light', data: null } }]));
+  check('…and it is not shown a second time as raw JSON in Components', !fieldAt(lsch, 'comp.light'));
+
+  const empty = { pos: [1, 2, 3], yaw: 0, actor: 'a', ts: 1 };
+  const esch = inspectSchema(empty, 'x');
+  check('an Empty: a Transform card with yaw and scale, and no Model card', !!fieldAt(esch, 'pos.yaw') && !!fieldAt(esch, 'pos.scale') && !card(empty, 'Model') && esch.sections.list.length === 1, JSON.stringify(esch.sections.list.map((c: any) => c.type)));
+  check('…Add Component offers Light (unblocked) and not Collider (it needs a model)',
+    esch.sections.add.some((a: any) => a.name === 'Light' && !a.blocked) && !esch.sections.add.some((a: any) => a.name === 'Collider' && !a.blocked), JSON.stringify(esch.sections.add.map((a: any) => `${a.name}${a.blocked ? '(blocked)' : ''}`)));
+  check('…add.Light writes comp light with the fields spelled out (the log records the result, not a default)',
+    verbsOf(ed(empty, { 'add.Light': null })) === JSON.stringify([{ verb: 'comp', args: { id: 'x', type: 'light', data: { color: 0xffd9a0, intensity: 16, range: 10 } } }]));
+  check('…add.Collider is refused with a reason', (() => { const r = ed(empty, { 'add.Collider': null }); return r.verbs.length === 0 && /needs a model/.test(r.errors[0] ?? ''); })());
+  check('add.Light on a light-verb light is refused (it is already one)', (() => { const r = ed(legacy, { 'add.Light': null }); return r.verbs.length === 0 && /already a light/.test(r.errors[0] ?? ''); })());
+
+  const oldCol = { lib: LAMP, pos: [0, 0, 0], yaw: 0, collide: 'exact', actor: 'a', ts: 1 };
+  check('a legacy spawn collide shows as the collider group; editing it writes the collider COMPONENT (write-new-on-edit)',
+    fieldAt(inspectSchema(oldCol, 'x'), 'collider.shape')?.value === 'exact' && verbsOf(ed(oldCol, { 'collider.shape': 'box' })) === JSON.stringify([{ verb: 'comp', args: { id: 'x', type: 'collider', data: { shape: 'box' } } }]));
+  check('…its legacy card is not removable (only a spawn writes collide)', card(oldCol, 'Collider')?.removable === false);
+  const both = { ...oldCol, comp: { collider: { shape: 'box' } } };
+  check('with both spellings the component owns the group, the legacy card says it is overridden, nothing is owned twice',
+    fieldAt(inspectSchema(both, 'x'), 'collider.shape')?.value === 'box' && card(both, 'Collider', 'collider')?.fields.includes('collider.shape')
+    && /overridden/.test(JSON.stringify(card(both, 'Collider')?.info)) && cardsSound(both).length === 0, JSON.stringify(cardsSound(both)));
+  check('collider.shape must be exact or box', (() => { const r = ed(both, { 'collider.shape': 'mesh' }); return r.verbs.length === 0 && /exact.*box/.test(r.errors[0] ?? ''); })());
+  check('add.Collider on a model writes comp collider (default exact; "box" when asked)',
+    verbsOf(ed({ lib: LAMP, pos: [0, 0, 0] }, { 'add.Collider': 'box' })) === JSON.stringify([{ verb: 'comp', args: { id: 'x', type: 'collider', data: { shape: 'box' } } }])
+    && verbsOf(ed({ lib: LAMP, pos: [0, 0, 0] }, { 'add.Collider': null })) === JSON.stringify([{ verb: 'comp', args: { id: 'x', type: 'collider', data: { shape: 'exact' } } }]));
+  check('the raw-JSON door obeys the door\'s rules too (comp.light with a string colour; comp.light on a light-verb light)',
+    ed(lamp, { 'comp.light': '{"color":"red"}' }).verbs.length === 0 && ed(legacy, { 'comp.light': '{"intensity":3}' }).verbs.length === 0);
+  const hand = { ...legacy, comp: { light: { color: 4 } } };
+  check('a hand-written log with both lights: the legacy one owns the group, the component is raw JSON, nothing owned twice',
+    fieldAt(inspectSchema(hand, 'x'), 'light.color')?.value === 0xffd9a0 && !!fieldAt(inspectSchema(hand, 'x'), 'comp.light') && cardsSound(hand).length === 0, JSON.stringify(cardsSound(hand)));
+  check('every card sound on the lamp, the Empty and the legacy-collide model', [lamp, empty, oldCol, legacy].every((e) => cardsSound(e).length === 0), JSON.stringify([lamp, empty, oldCol, legacy].map(cardsSound)));
+}
+
 rmSync(SCRATCH, { recursive: true, force: true });
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
