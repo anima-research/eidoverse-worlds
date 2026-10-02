@@ -1,4 +1,5 @@
-// worldentity-test — the world entity `@world` (design §3, shared/worldentity.js).
+// worldentity-test — the world entity `@world` (design §3, shared/worldentity.js)
+// and the Build tab's memory (design §5, client/lib/edittabs.js).
 //
 //   BUN_RUNTIME_TRANSPILER_CACHE_PATH=0 bun tools/worldentity-test.ts
 //
@@ -10,6 +11,8 @@
 //    the Weather; a ground/grass pick changes only its own dial
 // 3. edits: every card field resolves, commits as the existing verb, folds back
 //    to the value typed; undo's inverse folds the world back; the owner gate
+// 4. the tab memory: Build the first time (and for a pre-Build layout), then
+//    whatever was used last
 // 5. the text tier: inspect / edit / hierarchy speak @world
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -19,6 +22,7 @@ import { fieldAt, describeSchema } from '../shared/editschema.js';
 import { hoursAt } from '../shared/forecast.js';
 import { terrainArgs, grassArgs, paletteDefaults } from '../shared/grounddefs.js';
 import { WORLD_ID, worldComponents, worldOf, worldState, worldSchema, worldEditVerbs, worldPick, worldChoice, skyPresetOf, pickSky, worldInverse } from '../shared/worldentity.js';
+import { TABS, openingTab, useTab, TAB_V } from '../client/lib/edittabs.js';
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
@@ -183,6 +187,18 @@ console.log('\n3. the cards: every field commits through the existing verbs and 
   const empty = worldSchema(emptyState(), {});
   check('an empty world still shows four cards, defaults marked, saying how to grow ground and grass', empty.sections.list.length === 4 && empty.sections.list.every((s: any) => s.present === false)
     && /Build ▸ World/.test(empty.sections.list.find((s: any) => s.type === 'Ground').info[0][1]));
+}
+
+// ------------------------------------------------------------ 4. the tab memory
+console.log('\n4. the left column\'s tab memory (edittabs.js):');
+{
+  check('two tabs, Build first', canon(TABS.map(([id]) => id)) === canon(['build', 'hierarchy']));
+  check('nothing stored: B opens on Build', openingTab(null) === 'build' && openingTab(undefined) === 'build');
+  check('a layout saved before Build existed (leftTab hierarchy or the retired create, no tabV) opens on Build once', openingTab({ leftW: 280, leftTab: 'hierarchy' }) === 'build' && openingTab({ leftTab: 'create' }) === 'build');
+  const used = useTab({ leftW: 280, leftTab: 'build' }, 'hierarchy');
+  check('after the viewer picks Hierarchy, that is what opens next time (the rest of the layout kept)', openingTab(JSON.parse(JSON.stringify(used))) === 'hierarchy' && used.leftW === 280 && used.tabV === TAB_V);
+  check('…and Build again after picking Build', openingTab(useTab(used, 'build')) === 'build');
+  check('an unknown tab changes nothing; a stored unknown tab opens on Build', canon(useTab(used, 'create')) === canon(used) && openingTab({ leftTab: 'create', tabV: TAB_V }) === 'build');
 }
 
 // ------------------------------------------------------------ 5. the text tier

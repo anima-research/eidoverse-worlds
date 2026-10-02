@@ -5,7 +5,7 @@
 //
 //   ∃ mic ear vr │ World Edit View Panels  undo  ▢ ⤢ ─────────── tool name
 //   ───────┬─────────────────────────────────────────────────────────────
-//   🔧     │ Hierarchy|Create │  [armed tool strip]        │ Inspector
+//   🔧     │ Build|Hierarchy  │  [armed tool strip]        │ Inspector
 //   ↖✥↻⤢   │ ───split───      │       viewport             │
 //   tools  │ Chat             │                            │
 //
@@ -24,12 +24,14 @@ import { panelFrame } from './ui.js';
 import { THREE, scene } from './core.js';
 import { svg as iconSvg } from './icons.js';
 import { structureTools, currentTool as structureTool } from './structure_ui.js';
+import { TABS, openingTab, useTab } from './edittabs.js';
 
 const LS = 'ew-edit-layout';
-const DEF = { leftW: 300, rightW: 320, leftSplit: 0.55, leftTab: 'hierarchy' };
-const TABS = [['hierarchy', 'Hierarchy'], ['create', 'Create']];   // the left column's top pane: one frame at a time
+// the left column's top pane is one frame at a time, picked by tab (edittabs.js TABS): B opens
+// on Build the first time, then on whichever tab this viewer used last (design §5)
+const DEF = { leftW: 300, rightW: 320, leftSplit: 0.55, leftTab: 'build' };
 let L = { ...DEF };
-try { L = { ...DEF, ...JSON.parse(localStorage.getItem(LS) || '{}') }; } catch { /* defaults */ }
+try { const stored = JSON.parse(localStorage.getItem(LS) || 'null'); L = { ...DEF, ...(stored ?? {}), leftTab: openingTab(stored) }; } catch { /* defaults */ }
 const save = () => { try { localStorage.setItem(LS, JSON.stringify(L)); } catch { /* fine */ } };
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -58,13 +60,13 @@ function build() {
   const rsplit = el('div', 'edit-split edit-split-v');    // right column's left edge
   const split = el('div', 'edit-split edit-split-h');     // between hierarchy and chat
   left.append(split);
-  // Hierarchy | Create: two docked frames sharing the column's top pane, picked by tab (the
+  // Build | Hierarchy: two docked frames sharing the column's top pane, picked by tab (the
   // tab strip stands in for their title bars, so the pane reads as ONE panel with two pages)
   const tabs = el('div', 'edit-tabs');
   for (const [id, label] of TABS) {
     const b = el('button', 'edit-tab', label);
     b.dataset.tab = id;
-    b.onclick = () => { L.leftTab = id; save(); apply(); };
+    b.onclick = () => { L = useTab(L, id); save(); apply(); };
     tabs.append(b);
   }
   // the armed building tool, named across the top of the viewport (it disappears with the tool)
@@ -244,7 +246,7 @@ function apply() {
   const chat = getFrame('chat');
   const chatOn = !!chat?.visible;
   // the top pane (tabs + the picked frame) takes leftSplit of the column when chat shows, all of it otherwise
-  const tab = TABS.some(([id]) => id === L.leftTab) && getFrame(L.leftTab) ? L.leftTab : 'hierarchy';
+  const tab = TABS.some(([id]) => id === L.leftTab) && getFrame(L.leftTab) ? L.leftTab : 'build';
   left.dataset.tab = tab;
   for (const b of tabs.children) b.classList.toggle('on', b.dataset.tab === tab);
   const hh = (chatOn ? Math.round(left.clientHeight * L.leftSplit) : left.clientHeight) - tabs.offsetHeight;
@@ -262,9 +264,9 @@ function enter() {
   for (const e of [top, tools, left, right, lsplit, rsplit]) e.hidden = false;
   document.body.classList.add('edit-workspace');
   dispatchEvent(new CustomEvent('dockmoved'));   // the ∃ just moved into the corner: re-seat its glyphs now (mictoggle.placeMic listens)
-  const h = getFrame('hierarchy'), cr = getFrame('create'), i = getFrame('inspector'), c = getFrame('chat');
-  h?.dock(left); cr?.dock(left);
-  left.prepend(tabs, ...[h?.el, cr?.el].filter(Boolean));   // tabs, then both pages, above the splitter
+  const bd = getFrame('build'), h = getFrame('hierarchy'), i = getFrame('inspector'), c = getFrame('chat');
+  bd?.dock(left); h?.dock(left);
+  left.prepend(tabs, ...[bd?.el, h?.el].filter(Boolean));   // tabs, then both pages, above the splitter
   i?.dock(right);
   if (c) { prevChat = c.visible; c.dock(left); if (!c.visible) c.show(); }
   // floating frames render UNDER the columns; the World panel build.js opens
@@ -289,7 +291,7 @@ function exit() {
   setWireframe(false);
   if (els.top.querySelector('.edit-vbtn[data-view="wire"]')) els.top.querySelector('.edit-vbtn[data-view="wire"]').classList.remove('on');
   const c = getFrame('chat');
-  for (const f of [getFrame('hierarchy'), getFrame('create'), getFrame('inspector'), c]) { if (f) { f.el.style.flex = ''; f.undock(); } }
+  for (const f of [getFrame('build'), getFrame('hierarchy'), getFrame('inspector'), c]) { if (f) { f.el.style.flex = ''; f.undock(); } }
   if (c && prevChat != null) c[prevChat ? 'show' : 'hide']();   // exactly as it was before the workspace
   if (prevWorld) getFrame('world')?.show();
   prevChat = prevWorld = null;

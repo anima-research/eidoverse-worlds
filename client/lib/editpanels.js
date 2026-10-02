@@ -24,14 +24,18 @@ import { flashHint } from './ui.js';
 import { makeSchemaFrame, resolveDelta } from './panels.js';
 import { registerXRPanel } from './xrpanels.js';
 import { treeData, sceneSelected, sceneSelect } from './scenegraph.js';
-import { state } from './state.js';
+import { state, onWorldChange } from './state.js';
 import { treeRows, kindHint, ancestors } from '../../shared/hierarchy.js';
-import { pushUndo, refreshOutline, setRemoveHook, holdGhost } from './build.js';
+import { pushUndo, refreshOutline, setRemoveHook, holdGhost, getTool as transformTool, setTool as setTransformTool, deselectAll } from './build.js';
+import { armSeatPlacement, seatArmed, cancelSeatArm } from './seatedit.js';
+import { defsRegistry } from './defs.js';
+import { WORLD_ID, describeWorld, worldPick, worldChoice } from '../../shared/worldentity.js';
+import { WEATHERS } from '../../shared/forecast.js';
 import { structureTools, currentTool as structureTool, setTool as setStructureTool, undo as structureUndo, undoDepth, newBuilding } from './structure_ui.js';
 import { starterModels } from './palette.js';
 import { spawnAhead } from './worldquad.js';
 import { libLabels } from './assets.js';
-import { schemaFor, commitEdit, planEdit, sendPlanned, setEditHooks, endGesture, foldRecord } from './inspect.js';
+import { schemaFor, commitEdit, planEdit, sendPlanned, setEditHooks, endGesture, foldRecord, mayShape } from './inspect.js';
 import { channels, fieldAt } from '../../shared/editschema.js';
 import { commitLight, lightCasting } from './lights.js';
 import { myState } from './controller.js';
@@ -47,7 +51,7 @@ const round = (v, dp = 3) => +(+v).toFixed(dp);
 const FOLD_LS = 'ew-insp-fold';
 let folds = {};
 try { folds = JSON.parse(localStorage.getItem(FOLD_LS) || '{}'); } catch { /* fresh */ }
-const foldKey = (id) => `${entityMeta.get(id)?.lib ?? '?'}`;
+const foldKey = (id) => (id === WORLD_ID ? WORLD_ID : `${entityMeta.get(id)?.lib ?? '?'}`);
 const isOpen = (id, g) => !(folds[foldKey(id)]?.[g]);
 function toggleFold(id, g) {
   const k = foldKey(id); folds[k] ??= {}; folds[k][g] = !folds[k][g];
@@ -77,6 +81,27 @@ function revealPath(id) {
   return changed;
 }
 let visibleRows = [];          // the rows as last painted, for ↑/↓
+
+// ---------------------------------------------------------------- the world entity
+// `@world` (design §3, shared/worldentity.js) is not in `entities` — it is the
+// fold's sky / terrain / grass read as one entity — so it has no outline and no
+// scenegraph selection. Selecting it clears the thing selection and shows its
+// components in the Inspector; selecting any thing clears it again.
+let worldSel = false;
+function selectWorld() {
+  arming = null; armingRef = null;
+  if (sceneSelected()) deselectAll();   // sg:selected(null) — which leaves worldSel alone
+  clearExtras();
+  worldSel = true;
+  repaintAll();
+}
+// the palettes the World tiles offer — defs (defs/sky/_presets.json, defs/ground/_palette.json),
+// authoring conveniences only: a pick writes concrete verb args, never a preset's name
+let skyPresets = null, groundPal = null;
+function loadWorldDefs() {
+  defsRegistry().then((reg) => { skyPresets = reg.skyPresets ?? null; groundPal = reg.groundPalette ?? null; repaintAll(); }).catch(() => { /* the tiles say the palette is missing */ });
+}
+const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, label: 'World  (@world)', sub: describeWorld(state.st, Date.now(), { presets: skyPresets }), active: worldSel }] });
 
 // ---------------------------------------------------------------- multi-selection
 // The PRIMARY selection stays exactly what build.js/scenegraph own (one id,
@@ -199,6 +224,7 @@ function hierarchyFields() {
   }
   visibleRows = rows.filter((r) => !String(r.id).startsWith('rider:')).map((r) => r.id);
   return [
+    worldRowFields(),   // pinned: the world entity, always first, never filtered out (design §3)
     { t: 'text', k: 'filter', label: '', value: filter, placeholder: 'filter — id, label, lib, component ⏎', hint: 'non-matches hide; a match keeps its ancestors' },
     { t: 'tree', k: 'sel', rows, rootDrop: 'drop here: no parent', empty: q ? `nothing matches "${filter}"` : 'nothing placed yet — press B in the world to place things' },
   ];
@@ -206,6 +232,11 @@ function hierarchyFields() {
 function hierarchyDispatch(action, payload, _field, opts = {}) {
   let sel = sceneSelected();
   switch (action) {
+    case 'wsel': {   // the pinned World row
+      if (arming || armingRef) { arming = null; armingRef = null; flashHint('the world is not a thing to point at — pick a thing; a drop on the root strip unparents', 4000); break; }
+      selectWorld();
+      return;
+    }
     case 'sel': {
       if (String(payload).startsWith('rider:')) return;
       if (armingRef && completeRefPick(payload)) break;   // a row click names a ref target
@@ -358,9 +389,62 @@ function filterFields(f, q) {
   return out;
 }
 
+/** One card row from the schema, by address (the panels.js spec plus its dispatch key). */
+function cardRow(schema, id, addr) {
+  const nf = fieldAt(schema, addr); if (!nf) return null;
+  const r = { ...nf, k: nf.commit ? `ed:${nf.commit}` : `ed:${addr}`, path: nf.commit ?? addr, ...(nf.t === 'num' ? { compact: true } : {}) };
+  if (nf.t === 'ref') r.arming = !!armingRef && armingRef.id === id && armingRef.key === addr;
+  if (nf.t === 'list') r.rows = (nf.rows ?? []).map((x) => ({ ...x, actions: (x.actions ?? []).map((a) => ({ ...a, k: `ed:${addr.slice(0, addr.indexOf('.'))}.${a.k}` })) }));
+  return r;
+}
+/** The cards (design §5): one per component, each owning its fields by their
+ *  group.k address — a thing's (inspectSchema) and the world's (worldSchema) alike. */
+function pushCards(f, schema, id, { locked = false } = {}) {
+  for (const sec of schema.sections.list) {
+    const key = `c:${sec.key ?? sec.type}`;
+    f.push({ t: 'group', k: key, label: `${sec.title}${locked && sec.type === 'Transform' ? ' 🔒' : ''}${sec.present === false ? ' · default' : ''}`, hint: `${sec.summary} — ${sec.category} · engine record ${sec.hash.slice(0, 12)}${sec.part ? ` · part: ${sec.part}` : ''}`, open: isOpen(id, key) });
+    for (const [label, value] of sec.info ?? []) f.push({ t: 'info', label, value });
+    // the channel box: an alias (pos.yaw, the heading) stays addressable for
+    // agents but is not drawn; the Quaternion row folds under its own header,
+    // closed unless the entity is in quaternion mode (then it IS the rotation)
+    const quat = [];
+    for (const addr of sec.fields) {
+      const r = cardRow(schema, id, addr); if (!r || r.alias) continue;
+      if (r.row === 'quat') quat.push(r); else f.push(r);
+    }
+    // groups are FLAT markers (renderDOM, the VR quad): a sub-header reopens
+    // its rows even under a folded card, so a folded Transform omits it. A
+    // filter is the exception: filterFields opens whatever holds a hit.
+    if (quat.length && (isOpen(id, key) || ifilter.trim())) {
+      const qk = `${key}:quat`;
+      f.push({ t: 'group', k: qk, label: 'Quaternion', hint: 'the stored orientation, x y z w — normalized on commit', open: sec.quatOpen ? isOpen(id, qk) : !isOpen(id, qk) });
+      f.push(...quat);
+    }
+    if (sec.removable && sec.key) f.push({ t: 'btn', k: `ed:remove.${sec.key}`, label: `remove ${sec.title}`, danger: true });
+  }
+}
+
+/** The world entity in the Inspector: a header, then its Sky / Weather /
+ *  Ground / Grass cards from shared/worldentity.js — edited through the sky,
+ *  weather, terrain and grass verbs (inspect.js commitEdit routes @world). */
+function worldFields() {
+  const schema = schemaFor(WORLD_ID);
+  const f = [
+    { t: 'info', label: 'id', value: `${WORLD_ID} — the world entity` },
+    { t: 'info', label: '', value: 'its sky, weather, ground and grass, as components: an edit goes out as the sky, weather, terrain or grass verb' },
+  ];
+  if (mayShape() === false) f.push({ t: 'info', label: '', value: 'shaping the world is the owner\'s — read-only for you' });
+  f.push({ t: 'text', k: 'ifilter', label: '', value: ifilter, placeholder: 'filter properties ⏎', hint: 'non-matching fields hide; components with a hit open' });
+  pushCards(f, schema, WORLD_ID);
+  const shown = filterFields(f, ifilter);
+  painted = shown;
+  return shown;
+}
+
 function inspectorFields() {
+  if (worldSel) return worldFields();
   const id = sceneSelected();
-  if (!id || !entities.has(id)) return [{ t: 'info', label: 'selection', value: 'nothing selected — click a thing, or a row in the hierarchy' }];
+  if (!id || !entities.has(id)) return [{ t: 'info', label: 'selection', value: 'nothing selected — click a thing, a row in the hierarchy, or World for the sky and ground' }];
   const ids = selection();
   if (ids.length > 1) return multiFields(ids);
   const obj = entities.get(id); const meta = entityMeta.get(id) ?? {}; const bag = comps.get(id) ?? {};
@@ -387,14 +471,7 @@ function inspectorFields() {
   // B: one card per component (shared/components.js via schema.sections), each
   // owning its fields by their unchanged group.k address, then Add Component.
   if (schema.sections) {
-    const row = (addr) => {
-      const nf = fieldAt(schema, addr); if (!nf) return null;
-      const r = { ...nf, k: nf.commit ? `ed:${nf.commit}` : `ed:${addr}`, path: nf.commit ?? addr, ...(nf.t === 'num' ? { compact: true } : {}) };
-      if (nf.t === 'ref') r.arming = !!armingRef && armingRef.id === id && armingRef.key === addr;
-      if (nf.t === 'list') r.rows = (nf.rows ?? []).map((x) => ({ ...x, actions: (x.actions ?? []).map((a) => ({ ...a, k: `ed:${addr.slice(0, addr.indexOf('.'))}.${a.k}` })) }));
-      return r;
-    };
-    for (const a of schema.sections.header ?? []) { const r = row(a); if (r) f.push(r); }
+    for (const a of schema.sections.header ?? []) { const r = cardRow(schema, id, a); if (r) f.push(r); }
     if (pendingAsk?.id === id) {
       const q = pendingAsk.ask;
       f.push({ t: 'group', k: 'c:ask', label: q.kind === 'confirm' ? `Remove ${q.type}?` : `${q.component} needs a choice`, open: true });
@@ -404,28 +481,7 @@ function inspectorFields() {
       f.push({ t: 'btn', k: 'ask:cancel', label: 'cancel' });
     }
     f.push({ t: 'text', k: 'ifilter', label: '', value: ifilter, placeholder: 'filter properties ⏎', hint: 'non-matching fields hide; components with a hit open' });
-    for (const sec of schema.sections.list) {
-      const key = `c:${sec.key ?? sec.type}`;
-      f.push({ t: 'group', k: key, label: `${sec.title}${locked && sec.type === 'Transform' ? ' 🔒' : ''}`, hint: `${sec.summary} — ${sec.category} · engine record ${sec.hash.slice(0, 12)}${sec.part ? ` · part: ${sec.part}` : ''}`, open: isOpen(id, key) });
-      for (const [label, value] of sec.info ?? []) f.push({ t: 'info', label, value });
-      // the channel box: an alias (pos.yaw, the heading) stays addressable for
-      // agents but is not drawn; the Quaternion row folds under its own header,
-      // closed unless the entity is in quaternion mode (then it IS the rotation)
-      const quat = [];
-      for (const addr of sec.fields) {
-        const r = row(addr); if (!r || r.alias) continue;
-        if (r.row === 'quat') quat.push(r); else f.push(r);
-      }
-      // groups are FLAT markers (renderDOM, the VR quad): a sub-header reopens
-      // its rows even under a folded card, so a folded Transform omits it. A
-      // filter is the exception: filterFields opens whatever holds a hit.
-      if (quat.length && (isOpen(id, key) || ifilter.trim())) {
-        const qk = `${key}:quat`;
-        f.push({ t: 'group', k: qk, label: 'Quaternion', hint: 'the stored orientation, x y z w — normalized on commit', open: sec.quatOpen ? isOpen(id, qk) : !isOpen(id, qk) });
-        f.push(...quat);
-      }
-      if (sec.removable && sec.key) f.push({ t: 'btn', k: `ed:remove.${sec.key}`, label: `remove ${sec.title}`, danger: true });
-    }
+    pushCards(f, schema, id, { locked });
     if (schema.sections.add.length) {
       f.push({ t: 'group', k: 'c:+', label: 'Add Component', open: isOpen(id, 'c:+') });
       for (const cat of [...new Set(schema.sections.add.map((a) => a.category))]) {
@@ -479,9 +535,19 @@ function inspectorFields() {
 }
 
 function inspectorDispatch(action, payload, field, opts = {}) {
-  const id = sceneSelected(); const obj = entities.get(id);
+  const id = worldSel ? WORLD_ID : sceneSelected(); const obj = entities.get(id);
   if (action === 'fold') { toggleFold(id, payload); repaintAll(); return; }
   if (action === 'ifilter') { ifilter = String(payload ?? ''); repaintAll(); return; }
+  if (id === WORLD_ID) {   // the world's cards: every field commits through inspect.js's @world path
+    if (!action.startsWith('ed:') && !action.startsWith('ch:')) return;
+    const isDelta = typeof payload === 'object' && payload && 'delta' in payload;   // a VR stepper
+    const v = isDelta ? resolveDelta(painted, action, payload) : payload;
+    if (isDelta && v == null) return;
+    const r = commitEdit(WORLD_ID, action.slice(3), v, opts);
+    if (r.errors?.length) flashHint(r.errors.join(' · '), 5000);
+    if (!opts.live) repaintAll();
+    return;
+  }
   if (action.startsWith('ask:')) {
     const q = pendingAsk?.id === id ? pendingAsk.ask : null; pendingAsk = null;
     const v = action.slice(4);
@@ -643,18 +709,27 @@ function removeMany(ids) {
   return true;
 }
 
-// ---------------------------------------------------------------- create
-// Things INTO the world, in the left column beside the Hierarchy (Hierarchy | Create), so the
-// viewport carries nothing but the world. Two sections:
-//   Structure  the griddled-building tools (structure_ui.js — its TOOLS, its setTool, its OWN undo
-//              stack, which is not Ctrl+Z's and is labelled so), plus "new building".
-//   Library    what the World panel's build section offers (palette.js): add a light, search the
-//              library, click a model to carry it as a ghost (build.js holdGhost). The World panel
-//              keeps its copy for the HUD outside edit mode; both send the same verbs.
+// ---------------------------------------------------------------- build
+// Things INTO the world, in the left column beside the Hierarchy (Build | Hierarchy; design §5),
+// so the viewport carries nothing but the world. B opens edit mode on this tab the first time;
+// editlayout.js remembers the last tab after that (edittabs.js). Three sections, every one a
+// RE-HOST of something that already worked — nothing here is a second implementation:
+//   Blueprints  the starters and the library (palette.js, /library-models): a raw model is a
+//               blueprint of one Model, and placing one is exactly what placing from the library
+//               always did (build.js holdGhost → spawn). "add light" is a blueprint of one Light.
+//               Saved blueprints arrive with step 6; the group is there, empty, saying so.
+//   Tools       the transform tools (build.js setTool — the same call as Q/G/E/R), the building
+//               tools (structure_ui.js — its TOOLS, its setTool, its OWN undo stack, labelled so)
+//               and seat placement (seatedit.js armSeatPlacement, on the selected thing).
+//   World       the world entity's presets (shared/worldentity.js worldPick): Sky from
+//               defs/sky/_presets.json, Ground and Grass from defs/ground/_palette.json (the same
+//               args groundpanel writes, shared/grounddefs.js), Weather. A pick replaces the
+//               current choice through the existing sky / terrain / grass / weather verbs, as one
+//               Ctrl+Z step. "World" selects @world: its every field, in the Inspector.
 // The VR body says what it cannot do: the building tools pick cells with a mouse ray on the canvas,
-// which a headset does not have yet — so the quad names that and offers the Library, placing a
-// model 1.5 m ahead (worldquad.js spawnAhead, the world quad's own hand-free place).
-const createFolds = {};
+// and the transform tools drag with one, which a headset does not have yet — so the quad names
+// that, offers the Library (placing a model 1.5 m ahead: worldquad.js spawnAhead) and the World.
+const buildFolds = {};
 let libQ = '';            // the Library search box
 let libHits = null;       // search results; null = the curated starters (an empty box shows those, as palette.js does)
 let libSeq = 0;
@@ -669,24 +744,86 @@ async function searchLibrary(q) {
 const libModels = () => libHits ?? starterModels().map((m) => ({ ...m, preview: m.path.replace(/\.glb$/, '_preview.jpg') }));
 const libTiles = (pics) => ({ t: 'tiles', k: 'place', value: null, empty: libQ ? `nothing matches "${libQ}"` : 'the library is empty',
   options: libModels().map((m) => ({ v: m.path, label: m.name, ...(pics && m.preview ? { img: `/library/${m.preview}` } : {}),
-    hint: pics ? 'click, then click the world to place it' : 'places it 1.5 m ahead of you' })) });
+    hint: pics ? 'a blueprint of one Model — click, then click the world to place it' : 'a blueprint of one Model — places it 1.5 m ahead of you' })) });
 
-function createFields() {
+// the transform tools, as the rail draws them (editlayout.js TOOLS) — the same ids build.js setTool takes
+const TRANSFORM_TILES = [
+  { v: 'select', label: 'select', icon: 'mousePointer2', hint: 'Q — click picks, a drag never moves' },
+  { v: 'move', label: 'move', icon: 'move', hint: 'G — drag moves; Shift+drag raises' },
+  { v: 'rotate', label: 'rotate', icon: 'rotateCw', hint: 'E — drag turns it, any axis on the gizmo' },
+  { v: 'scale', label: 'scale', icon: 'scale3d', hint: 'R — drag sizes, uniform' },
+];
+
+const blueprintFields = (pics) => [
+  { t: 'group', k: 'blueprints', label: 'Blueprints', open: !buildFolds.blueprints },
+  { t: 'info', label: '', value: 'a model from the library is a blueprint of one Model' },
+  ...(pics ? [{ t: 'btn', k: 'light', label: 'add light', icon: 'lightbulb', hint: 'a blueprint of one Light — carry it, then click the world to place it' },
+    { t: 'text', k: 'libq', label: '', value: libQ, placeholder: 'search the library ⏎', hint: 'an empty box shows the starters' }] : []),
+  libTiles(pics),
+  { t: 'info', label: 'saved here', value: 'none yet — Save as Blueprint comes with blueprints (next step)' },
+];
+
+/** The World section: one row of tiles per component, each reading its current choice. */
+function worldBuildFields() {
+  const owner = mayShape() !== false;
+  const ro = owner ? {} : { disabled: true };
+  const now = Date.now();
+  const ch = worldChoice(state.st, { pal: groundPal, presets: skyPresets, now });
+  const names = (o) => Object.keys(o ?? {}).filter((k) => k !== 'doc');
+  const f = [
+    { t: 'group', k: 'world', label: 'World', open: !buildFolds.world },
+    worldRowFields(),
+    ...(owner ? [] : [{ t: 'info', label: '', value: 'shaping the world is the owner\'s — these are read-only for you' }]),
+    { t: 'info', label: 'sky', value: ch.sky ? `${ch.sky} — a pick replaces the sky; the weather stays` : 'custom — a pick replaces the sky; the weather stays' },
+    { t: 'tiles', k: 'wsky', value: ch.sky, empty: 'this world serves no sky presets (defs/sky/_presets.json)', options: names(skyPresets).map((n) => ({ v: n, label: n, hint: `the sky at ${skyPresets[n].hours ?? '?'}h${skyPresets[n].clouds ? `, ${skyPresets[n].clouds}` : ''}` })), ...ro },
+    { t: 'info', label: 'ground', value: 'shape and colour — each pick changes only its own dial' },
+    { t: 'tiles', k: 'wshape', value: ch.shape, empty: 'this world serves no ground palette (defs/ground/_palette.json)', options: names(groundPal?.shapes).map((n) => ({ v: n, label: n, hint: `${groundPal.shapes[n]} m of relief` })), ...ro },
+    { t: 'tiles', k: 'wtint', value: ch.tint, options: names(groundPal?.tints).map((n) => ({ v: n, label: n, hint: `${groundPal.tints[n].layer} ground, grass to match` })), ...ro },
+    { t: 'info', label: 'grass', value: ch.plant ? `${ch.plant} growing` : state.st.grass ? 'something the palette does not name is growing' : 'nothing growing' },
+    { t: 'tiles', k: 'wplant', value: ch.plant, options: [...names(groundPal?.plantings).map((n) => ({ v: n, label: n, hint: 'plant it (replaces what grows now)' })), ...(groundPal ? [{ v: '@mow', label: 'mow', hint: 'clear the field' }] : [])], ...ro },
+    { t: 'info', label: 'weather', value: state.st.sky?.forecast ? 'a forecast governs — a pick holds until its next change' : 'a pick sets it' },
+    { t: 'tiles', k: 'wwx', value: ch.weather, options: WEATHERS.map((w) => ({ v: w, label: w })), ...ro },
+  ];
+  return f;
+}
+const WORLD_PICKS = { wsky: 'sky', wshape: 'shape', wtint: 'tint', wplant: 'plant', wwx: 'weather' };
+/** A World tile: the pick as verbs (shared/worldentity.js worldPick), one undo step. */
+function pickWorld(action, v) {
+  const kind = action === 'wplant' && v === '@mow' ? 'mow' : WORLD_PICKS[action];
+  const r = worldPick(state.st, kind, v, { pal: groundPal, presets: skyPresets, now: Date.now(), mayShape: mayShape() });
+  if (r.errors.length) { flashHint(r.errors.join(' · '), 5000); return r; }
+  if (r.inverses.length) pushUndo(r.inverses.length === 1 ? r.inverses[0] : { verbs: [...r.inverses].reverse() }, kind === 'mow' ? 'mowing' : `the ${kind === 'shape' || kind === 'tint' ? 'ground' : kind === 'plant' ? 'grass' : kind}`);
+  for (const x of r.verbs) sendVerb(x.verb, x.args);
+  flashHint(kind === 'mow' ? 'field cleared' : `${kind === 'plant' ? 'grass' : kind}: <b>${v}</b>`, 2500);
+  return r;
+}
+
+function buildFields() {
+  const st = structureTool(); const sel = sceneSelected();
   return [
-    { t: 'group', k: 'structure', label: 'Structure', open: !createFolds.structure },
-    { t: 'tiles', k: 'stool', value: structureTool(), options: structureTools().map((x) => ({ v: x.k, label: x.label, icon: x.icon, hint: x.hint })) },
+    ...blueprintFields(true),
+    { t: 'group', k: 'tools', label: 'Tools', open: !buildFolds.tools },
+    // one tool is active: an armed building tool or seat placement owns the next click, so the
+    // transform tile reads armed only while neither is
+    { t: 'tiles', k: 'ttool', value: st || seatArmed() ? null : transformTool(), options: TRANSFORM_TILES },
+    { t: 'tiles', k: 'stool', value: st, options: structureTools().map((x) => ({ v: x.k, label: x.label, icon: x.icon, hint: x.hint })) },
+    { t: 'tiles', k: 'xtool', value: seatArmed() ? 'seat' : null, disabled: !sel && !seatArmed(),
+      options: [{ v: 'seat', label: 'seat', icon: 'armchair', hint: sel ? `click where a sitter goes on ${sel}` : 'select a thing first, then click where a sitter goes' }] },
     { t: 'btn', k: 'snew', label: 'new building', icon: 'plus', hint: 'start a new building on the ground in view' },
     { t: 'btn', k: 'sundo', label: 'undo building edit', icon: 'undo2', disabled: !undoDepth(), hint: 'undo the last building edit — its own stack, separate from Ctrl+Z' },
-    { t: 'group', k: 'library', label: 'Library', open: !createFolds.library },
-    { t: 'btn', k: 'light', label: 'add light', icon: 'lightbulb', hint: 'carry a light source; click the world to place it' },
-    { t: 'text', k: 'libq', label: '', value: libQ, placeholder: 'search the library ⏎', hint: 'an empty box shows the starters' },
-    libTiles(true),
+    ...worldBuildFields(),
   ];
 }
-function createDispatch(action, payload) {
+function buildDispatch(action, payload) {
+  if (WORLD_PICKS[action]) { pickWorld(action, payload); repaintAll(); return; }
   switch (action) {
-    case 'fold': createFolds[payload] = !createFolds[payload]; break;
-    case 'stool': setStructureTool(structureTool() === payload ? null : payload); break;   // the armed tile again = drop it
+    case 'fold': buildFolds[payload] = !buildFolds[payload]; break;
+    case 'wsel': selectWorld(); return;
+    // a transform tile is the same call as its key (Q/G/E/R); picking one also puts down an armed
+    // building tool or seat placement, which would otherwise keep the next click
+    case 'ttool': if (structureTool()) setStructureTool(null); cancelSeatArm(); setTransformTool(payload); break;
+    case 'stool': cancelSeatArm(); setStructureTool(structureTool() === payload ? null : payload); break;   // the armed tile again = drop it
+    case 'xtool': if (seatArmed()) cancelSeatArm(); else { if (structureTool()) setStructureTool(null); armSeatPlacement(sceneSelected()); } break;
     case 'snew': newBuilding(null); break;
     case 'sundo': structureUndo(); break;
     case 'light': holdGhost('@light', 'light'); break;
@@ -699,16 +836,18 @@ function createDispatch(action, payload) {
   }
   repaintAll();
 }
-function createVRFields() {
+function buildVRFields() {
   return [
-    { t: 'group', k: 'structure', label: 'Structure', open: !createFolds.structure },
-    { t: 'info', label: '', value: 'building tools: desktop only for now' },
-    { t: 'group', k: 'library', label: 'Library', open: !createFolds.library },
-    libTiles(false),
+    ...blueprintFields(false),
+    { t: 'group', k: 'tools', label: 'Tools', open: !buildFolds.tools },
+    { t: 'info', label: '', value: 'building and transform tools: desktop only for now' },
+    ...worldBuildFields(),
   ];
 }
-function createVRDispatch(action, payload) {
-  if (action === 'fold') createFolds[payload] = !createFolds[payload];
+function buildVRDispatch(action, payload) {
+  if (WORLD_PICKS[action]) pickWorld(action, payload);
+  else if (action === 'fold') buildFolds[payload] = !buildFolds[payload];
+  else if (action === 'wsel') { selectWorld(); return; }
   else if (action === 'place' && payload) spawnAhead(payload);
   repaintAll();
 }
@@ -716,8 +855,8 @@ function createVRDispatch(action, payload) {
 // ---------------------------------------------------------------- mounting
 const PANELS = [
   { id: 'hierarchy', title: 'Hierarchy', theme: 'edit', fields: hierarchyFields, dispatch: hierarchyDispatch, frame: { x: 64, y: 60, w: 300, h: 380, minW: 220, minH: 160 } },   // x clears the dock rail (left:10 + 34px buttons + padding)
-  // docked as a tab beside the Hierarchy by editlayout.js (Hierarchy | Create); its VR body is its own field list
-  { id: 'create', title: 'Create', theme: 'edit', fields: createFields, dispatch: createDispatch, vr: { fields: createVRFields, dispatch: createVRDispatch }, frame: { x: 64, y: 60, w: 300, h: 380, minW: 220, minH: 160 } },
+  // docked as a tab beside the Hierarchy by editlayout.js (Build | Hierarchy); its VR body is its own field list
+  { id: 'build', title: 'Build', theme: 'edit', fields: buildFields, dispatch: buildDispatch, vr: { fields: buildVRFields, dispatch: buildVRDispatch }, frame: { x: 64, y: 60, w: 300, h: 380, minW: 220, minH: 160 } },
   { id: 'inspector', title: 'Inspector', theme: 'edit', fields: inspectorFields, dispatch: inspectorDispatch, frame: { x: -330, y: 60, w: 320, h: 520, minW: 250, minH: 160 } },
   // optional: never auto-shown on entering edit mode (View ▸ console, or a script row in the inspector)
   { id: 'console', title: 'Console', theme: 'edit', fields: consoleFields, dispatch: consoleDispatch, optional: true, frame: { x: 'center', y: -24, w: 560, h: 240, minW: 320, minH: 120 } },
@@ -742,8 +881,12 @@ export function initEditPanels() {
     const sf = makeSchemaFrame(p.id, { title: p.title, ...p.frame, hidden: true, className: 'edit' });   // the desktop body
     frames.set(p.id, sf);
   }
-  bus.on('sg:selected', (id) => { if (id) revealPath(id); });   // before the paint: a selected child shows, its ancestors unfold (design §5)
-  for (const ev of ['entity', 'comp', 'mount', 'edit-mode', 'sg:selected', 'structure-tool']) bus.on(ev, repaintAll);
+  bus.on('sg:selected', (id) => { if (id) { revealPath(id); worldSel = false; } });   // before the paint: a selected child shows, its ancestors unfold (design §5)
+  for (const ev of ['entity', 'comp', 'mount', 'edit-mode', 'sg:selected', 'structure-tool', 'tool', 'your-rights']) bus.on(ev, repaintAll);
+  // the world entity's components are the fold's sky / terrain / grass: repaint when a world verb folds
+  const WORLD_VERBS = new Set(['sky', 'weather', 'terrain', 'grass']);
+  onWorldChange((ev) => { if (ev.type !== 'entry' || WORLD_VERBS.has(ev.entry?.verb)) repaintAll(); });
+  loadWorldDefs(); bus.on('defs-updated', loadWorldDefs);
   bus.on('sg:selected', () => { gesture = null; pendingAsk = null; endGesture(); if (!extending) clearExtras(); });   // a plain select collapses the set; a drag's `before` never outlives its selection
   bus.on('edit-extend', (id) => extendSelection(id));   // Ctrl-click in the viewport (build.js)
   // an armed attach completes on a VIEWPORT pick too: build.js select → sceneSelect
@@ -761,7 +904,7 @@ export function initEditPanels() {
     sceneSelect(child);
   });
   bus.on('entity', () => { if (extra.size) syncOutlines(); });
-  bus.on('edit-mode', (on) => { if (!on) { clearExtras(); armingRef = null; } });
+  bus.on('edit-mode', (on) => { if (!on) { clearExtras(); armingRef = null; worldSel = false; } });
   setEditHooks({ undo: pushUndo, commitLight, casting: lightCasting });
   // Del / Backspace / X act on what the inspector shows — every selected thing, one undo
   setRemoveHook(() => removeMany(selection()));
@@ -812,7 +955,8 @@ export function initEditPanels() {
 
 /** harness window */
 export const editPanelsDebug = () => ({
-  hierarchy: hierarchyFields().length, hierFields: () => hierarchyFields(), inspector: inspectorFields().length, create: createFields().length, createVR: createVRFields().length, selected: sceneSelected(), arming,
+  hierarchy: hierarchyFields().length, hierFields: () => hierarchyFields(), inspector: inspectorFields().length, inspFields: () => inspectorFields(),
+  build: buildFields().length, buildFields: () => buildFields(), buildVR: buildVRFields().length, buildVRFields: () => buildVRFields(), worldSel, selected: sceneSelected(), arming,
   groups: sceneSelected() ? schemaFor(sceneSelected()).groups.map((g) => g.group) : [], behaviors: behaviors.length, rows: visibleRows, selection: selection(),
   watching, consoleLines: watchLog?.lines?.length ?? 0,
 });
