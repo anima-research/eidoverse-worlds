@@ -172,7 +172,7 @@ replacing plan apertures, in a later pass; until then the aperture tool keeps wo
 | collider | `collide` (browser only) | `comp.collider { shape }` |
 | world | `state.sky/terrain/grass` | `@world` entity components (alias only; the verbs stay) |
 | blueprint copy | — | `comp.blueprint { hash, name }` + expanded components |
-| blueprint store | — | `blueprint` verb: publish a record (owner/builder rank) |
+| blueprint store | — | `blueprint {hash, record}` verb: publish a record into `state.blueprints` (builder rank, §8; PROTOCOL §4.1) |
 
 **Record hashes cover meaning, not prose** (built in step 3): a record's hash excludes `summary`, `note`,
 every `hint` and `fallback.text`, which are documentation and may be reworded without changing it.
@@ -214,6 +214,34 @@ ships, and PROTOCOL.md is updated in the same stack.
    the sky panel's own commit re-sends the stored `hours` anchor, so on a turning day it snaps the clock back
    (found, not changed here; the World cards re-anchor).
 6. Blueprints: record, store, Save as Blueprint, place copy, overrides, update offer, unlink.
+   *6a built (record, store, verb; no UI):* `shared/blueprint.js` — the record's shape and size rule
+   (`blueprintRefusal`, which the door and later the editor share), its hash (`canon` + `sha256hex` from
+   `shared/components.js` over the record minus its `note`: `name` and `parent` are meaning), `expand`,
+   `overridesOf` and `rebase` (a three-way merge fact by fact — a field, a component, a part — that returns
+   the merged tree or a conflict list, never a guess). Nodes hold component instances in `componentsOf`'s
+   vocabulary; the root holds no placement (its Transform may say `scale`/`rotOrder`), a child's Transform is
+   local, no node holds an Attachment, and **each child carries an `id`**, unique among its siblings, so an
+   update can find the same part in the next version (the §3 record didn't name one; without it a rebase
+   could only match children by position). **The store is folded state** (`state.blueprints[hash] =
+   {record, by, ts}`), not a side store: the records then live in the world's own log, so a copied, forked or
+   offline world carries every record its copies name with no second file to keep in step; the snapshot holds
+   it and `stateToEntries` replays it; the fold recomputes each hash and files nothing under a name that is
+   not its own; nothing unpublishes. Cost: every join ships the whole store in its state (bounded at 64 KB a
+   record; a lazy fetch is a later optimization). **The `blueprint` verb** (builder rank, §8): the door
+   refuses a malformed or oversized record, a hash that isn't the record's (naming the right one), and a
+   parent the store doesn't hold (so every lineage a world keeps is complete back to the version its copies
+   were placed from); an identical re-publish is accepted as a thin `{hash}` entry, and one whose note alone
+   differs goes in whole. PROTOCOL §4.1, AGENTS.md, and an agent `blueprints` tool listing the store with
+   lineage. Tests: `tools/blueprint-test.ts`; the corpus test saves every final entity of every local world as
+   a one-part blueprint and expands it back exact (518, none refused). Gaps found: a legacy `kind:"light"`
+   entity saves as a keyless Light, which `expand` writes back as `kind:"light"` — 6b must decide whether a
+   placed copy of it goes out as the `light` verb or as `comp.light`; `comp.blueprint` still reads as an
+   Annotation in the inspector (a read-only Blueprint record belongs with 6c's header link); a new verb is,
+   per PROTOCOL §10, a `genesis` bump that no existing world could ever carry — flagged in §4.1 like `q`.
+   *Left:* **6b** placing copies (spawn the expanded tree, children mounted at their local poses, the link
+   on the root, one undo step) and reading a placed copy back as a tree; **6c** Save as Blueprint (a
+   selection with its children → a record → `blueprint`), the update offer ("12 copies of Lamp can update
+   to v3"), conflicts asked per copy, and unlink.
 7. VR parity for every panel; text-tier readout for every new component and for copies.
 
 ## 8. Open questions
