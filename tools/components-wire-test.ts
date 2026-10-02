@@ -80,6 +80,64 @@ console.log('\n1. the fold (shared/fold.js)');
   check('…and without the JSON pass (the agent: lib undefined on the synthetic spawn)', !!st3.entities.pivot && !('lib' in st3.entities.pivot));
 }
 
+// ---- 2. the door -------------------------------------------------------------
+console.log('\n2. the door (server/verbs.ts runVerb)');
+const { runVerb } = await import('../server/verbs.ts');
+const st: any = emptyState();
+st.roles.owner = { role: 'owner' }; st.roles.vis = { role: 'visitor' };
+let seq = -1;
+const log: any[] = [];
+const w: any = {
+  name: 'comp-wire-bench', state: st, clients: new Set(), leases: new Map(),
+  sim: { epoch: null, bodies: {} }, bhv: { sync() {}, onEntry() {} },
+  append(actor: string, verb: string, args: any) { const e = { seq: ++seq, ts: 1786320000000 + seq, actor, verb, args }; foldEntry(st, e); log.push(e); return e; },
+  commit(actor: string, verb: string, args: any) { return this.append(actor, verb, args); },
+  broadcast() {}, debug() {}, fold() {},
+};
+const conn = (id: string) => { const msgs: any[] = []; const c: any = { id, spectator: false, world: w, lastPose: null, ws: { send(x: string) { msgs.push(JSON.parse(x)); } }, verbWin: 0, verbCount: 0, msgs }; w.clients.add(c); return c; };
+const owner = conn('owner'), vis = conn('vis');
+// the rate limiter is not under test here: each call opens a fresh window
+const as = (c: any) => (v: string, args: any) => { c.verbWin = 0; c.verbCount = 0; const n = log.length; runVerb({ w, c, now: Date.now(), expel() {} } as any, v, args); return { appended: log.length > n ? log.at(-1) : null, error: c.msgs.filter((m: any) => m.type === 'error').at(-1)?.error }; };
+const O = as(owner), V = as(vis);
+const clearErr = () => { owner.msgs.length = 0; vis.msgs.length = 0; };
+
+let r = O('spawn', { id: 'empty1', pos: [1, 0, 1] });
+check('a builder\'s spawn {id} with no lib is accepted, appended as sent, and folds to an Empty',
+  !!r.appended && r.appended.args.lib === undefined && !!st.entities.empty1 && !('lib' in st.entities.empty1), JSON.stringify(r));
+check('…with the placer principal stamped by the server like any spawn', st.entities.empty1?.placer?.id === 'owner', JSON.stringify(st.entities.empty1));
+clearErr(); r = V('spawn', { id: 'empty2' });
+check('a visitor\'s lib-less spawn is refused by rank, like any spawn', !r.appended && /builder/.test(r.error ?? ''), JSON.stringify(r));
+O('comp', { id: 'empty1', type: 'lock', data: true });
+clearErr(); r = O('spawn', { id: 'empty1' });
+check('a lib-less spawn onto a locked id is refused (it would replace it)', !r.appended && /lock/i.test(r.error ?? ''), JSON.stringify(r));
+O('comp', { id: 'empty1', type: 'lock', data: null });
+
+O('spawn', { id: 'lamp', lib: LAMP });
+clearErr(); r = O('comp', { id: 'lamp', type: 'light', data: { color: 0xffaa66, intensity: 24, range: 9, day: false, flicker: 0.2 } });
+check('comp light on a model is accepted verbatim (unknown keys ride along)', !!r.appended && jeq(st.entities.lamp.comp?.light, { color: 0xffaa66, intensity: 24, range: 9, day: false, flicker: 0.2 }), JSON.stringify(r));
+for (const [what, data, re] of [
+  ['a string', 'on', /is an object/], ['an array', [1], /is an object/], ['a colour as a string', { color: 'red' }, /color/],
+  ['a negative intensity', { intensity: -1 }, /intensity/], ['a zero range', { range: 0 }, /range/], ['keep as a string', { keep: 'yes' }, /keep/], ['day as 0', { day: 0 }, /day/],
+] as [string, unknown, RegExp][]) {
+  clearErr(); r = O('comp', { id: 'lamp', type: 'light', data });
+  check(`comp light with ${what} is refused with a teaching reason, nothing appended`, !r.appended && re.test(r.error ?? ''), JSON.stringify(r));
+}
+O('light', { id: 'porch', pos: [0, 2, 0] });
+clearErr(); r = O('comp', { id: 'porch', type: 'light', data: { intensity: 4 } });
+check('comp light on a light-verb light is refused (its own fields are its light)', !r.appended && /already a light/.test(r.error ?? '') && !st.entities.porch.comp, JSON.stringify(r));
+clearErr(); r = O('comp', { id: 'porch', type: 'light', data: null });
+check('…but removing one (data: null) is always allowed — a hand-written log may have put one there', !!r.appended, JSON.stringify(r));
+clearErr(); r = O('comp', { id: 'empty1', type: 'light', data: {} });
+check('comp light {} on an Empty is accepted (all defaults)', !!r.appended && jeq(st.entities.empty1.comp?.light, {}), JSON.stringify(r));
+clearErr(); r = O('comp', { id: 'lamp', type: 'collider', data: { shape: 'box' } });
+check('comp collider {shape: "box"} is accepted', !!r.appended && jeq(st.entities.lamp.comp?.collider, { shape: 'box' }), JSON.stringify(r));
+for (const data of [{ shape: 'mesh' }, {}, 'box']) {
+  clearErr(); r = O('comp', { id: 'lamp', type: 'collider', data });
+  check(`comp collider ${JSON.stringify(data)} is refused, saying the two shapes`, !r.appended && /exact.*box/.test(r.error ?? ''), JSON.stringify(r));
+}
+clearErr(); r = V('comp', { id: 'lamp', type: 'light', data: {} });
+check('a visitor\'s comp light is refused by rank, before any shape talk', !r.appended && /builder/.test(r.error ?? ''), JSON.stringify(r));
+
 rmSync(SCRATCH, { recursive: true, force: true });
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

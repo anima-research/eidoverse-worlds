@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { VERB_RATE, OPT_DIR } from "./config.ts";
 import { isAdminId, rightsOf, worldHasOwner, VERB_NEEDS, lockRefusal, guardRefusal, captionDeedRefusal } from "./rights.ts";
 import { normalizeCaptionArgs, captionRefusal } from "../shared/captions.js";
+import { compRefusal } from "../shared/components.js";
 import { lintMotion, lintParticles } from "./lint.ts";
 import { reactToUse } from "./reactions.ts";
 import { behaviorLimits } from "./behaviors.ts";
@@ -223,6 +224,18 @@ function vComp(ctx: VerbCtx, args: Record<string, unknown>) {
   if (type === "captions") {
     w.debug("rejected", { who: c.id, verb: "comp", why: `type captions is server-written on ${id}` });
     return { error: `"captions" is written by the caption verb, not by comp — grant a captioner the deed (grant {id, caption: "${id}"}) and let it write` };
+  }
+  // light and collider are components with a contract (PROTOCOL §4,
+  // amendment 2026-10-01): the shape is checked here, by the same rule the
+  // inspector applies (shared/components.js compRefusal), so a malformed one
+  // never becomes history — and an entity made by the light verb is not
+  // given a second light (its own fields are its light; `light` edits them)
+  if (type === "light" || type === "collider") {
+    const why = compRefusal(type, args.data, w.state.entities[id] ?? null);
+    if (why) {
+      w.debug("rejected", { who: c.id, verb: "comp", why: `${type} on ${id}: ${why}` });
+      return { error: why };
+    }
   }
   if (args.data !== undefined && args.data !== null
     && JSON.stringify(args.data).length > 8192) {

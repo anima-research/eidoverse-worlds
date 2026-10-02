@@ -376,3 +376,27 @@ export function colliderOf(ent) {
 /** An Empty: an entity with nothing but a Transform (and whatever comps it
  *  carries) — no model, not a legacy light. A pivot, a group parent, a target. */
 export const isEmpty = (ent) => !!ent && typeof ent === 'object' && ent.kind !== 'light' && ent.lib == null;
+
+/** Why a `comp` of type light/collider would be refused, or null. The door
+ *  (server/verbs.ts vComp) and the inspector ask the same question, so a
+ *  refusal reads the same from either. `data: null` (removal) is always fine.
+ *  Keys a record does not name are allowed, as in every bag (annotations
+ *  ride along); the ones it names must have their type. */
+export function compRefusal(type, data, ent = null) {
+  if (data == null) return null;
+  if (type === 'light') {
+    if (ent?.kind === 'light') return 'this is already a light (made with the light verb) — change it with light {id, …}; a light component is for things that are not lights yet (a lamp model, an Empty)';
+    if (!isBag(data)) return 'a light component is an object: {color?, intensity?, range?, keep?, day?}';
+    if (data.color !== undefined && !(Number.isInteger(data.color) && data.color >= 0 && data.color <= 0xffffff)) return 'light color is an integer 0…0xffffff (e.g. 16767392 for 0xffd9a0)';
+    if (data.intensity !== undefined && !(finite(data.intensity) && data.intensity >= 0)) return 'light intensity is a number ≥ 0';
+    if (data.range !== undefined && !(finite(data.range) && data.range > 0)) return 'light range is a number of metres > 0';
+    if (data.keep !== undefined && typeof data.keep !== 'boolean') return 'light keep is true or false';
+    if (data.day !== undefined && typeof data.day !== 'boolean') return 'light day is true or false (false = burns at noon)';
+    return null;
+  }
+  if (type === 'collider') {
+    if (!isBag(data) || (data.shape !== 'exact' && data.shape !== 'box')) return 'a collider component is {shape: "exact"} (its triangles) or {shape: "box"} (its bounding box); remove it (data: null) to let the size decide';
+    return null;
+  }
+  return null;
+}
