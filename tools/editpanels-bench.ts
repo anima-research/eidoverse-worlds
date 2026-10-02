@@ -5,10 +5,13 @@
 //
 // panels-test.ts binds the factory headless; this is the seam it cannot see:
 // the frames mount in the real dock, edit mode shows them, a placed light
-// (no asset needed — and the one component with a registered editor) lands
-// in the tree, its channels and its `light` group render from ONE fields
-// declaration, and a typed `+=4` on brightness reaches the light through
-// dispatch → updateLight → the coalesced `light` verb.
+// (no asset needed) lands in the tree, the Inspector draws ONE card per
+// component (design §5: Transform with its channel box, Light, Bob, Seats …,
+// then Add Component) from the one fields declaration, and a typed `+=4` on
+// brightness reaches the light through dispatch → updateLight → the coalesced
+// `light` verb. (Before components-B the inspector was a flat channel strip
+// labelled `light · brightness` plus a group repeating the same fields — two
+// lanes; B has one, so the checks below read card labels.)
 
 import { scratchBench, mkCheck, sleep } from './harness.ts';
 
@@ -29,6 +32,9 @@ const waitFor = async (expr: string, ms = 6000) => {
   while (Date.now() - t0 < ms) { if (await evalJson(expr)) return true; await sleep(100); }
   return false;
 };
+// …and when the next step READS a row (a right-click menu reads the row's live field, a key acts on what the
+// inspector shows), wait for two real frames: the repaint that carries the new value is the next rAF
+const painted = () => evalJson(`new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))`);
 
 await cdp.send('Page.addScriptToEvaluateOnNewDocument', {
   source: `window.__errs = [];
@@ -95,16 +101,28 @@ await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('benchlam
 await waitFor(`!!document.querySelector('.frame.edit .sp-tree-row.active')`);
 const insp = `[...document.querySelectorAll('.frame.edit')].find((f) => /Inspector/.test(f.querySelector('.fr-title')?.textContent))`;
 check('row is active', await evalJson(`!!document.querySelector('.frame.edit .sp-tree-row.active')`));
-check('channels: pos x/y/z + light brightness + range', await evalJson(`(() => { const L = [...${insp}.querySelectorAll('.sp-f-num .sp-label')].map((l) => l.textContent); return L.includes('translate x') && L.includes('translate z') && L.includes('light · brightness') && L.includes('light · range') && !L.includes('yaw'); })()`), 'a light has no yaw');
+// B: the number rows are the cards' own — Transform's translate x/y/z, then Light's brightness/range,
+// each ONCE, with no `light · ` prefix (the card title says whose they are). A light-verb light has no
+// Rotate and no scale (a point light has no facing), as it had no yaw.
+const numLabels = `[...${insp}.querySelectorAll('.sp-f-num .sp-label')].map((l) => l.textContent)`;
+check('number rows are the cards\' own: translate x/y/z, brightness, range — once each, no rotate on a light', await evalJson(`JSON.stringify(${numLabels}) === JSON.stringify(['translate x', 'translate y', 'translate z', 'brightness', 'range'])`), JSON.stringify(await evalJson(numLabels)));
+const cardTitles = `[...${insp}.querySelectorAll('.sp-group')].map((g) => g.textContent.slice(2))`;
+check('one card per component, then Add Component (no Channels strip, no Flags group)', await evalJson(`JSON.stringify(${cardTitles}) === JSON.stringify(['Transform', 'Light', 'Add Component'])`), JSON.stringify(await evalJson(cardTitles)));
+check('the header carries label + hidden above the cards (Unity\'s name and active box)', await evalJson(`(() => { const rows = [...${insp}.querySelector('.sp-group').closest('.sp-row').parentElement.children]; const first = rows.findIndex((r) => r.querySelector('.sp-group')); const head = rows.slice(0, first).map((r) => r.querySelector('.sp-label')?.textContent).filter(Boolean); return head.includes('label') && head.includes('hidden'); })()`));
 check('the light group renders from the registry', await evalJson(`[...${insp}.querySelectorAll('.sp-group')].some((g) => /light/i.test(g.textContent)) && !!${insp}.querySelector('input[type=color]')`));
-check('lock / keep / noon toggles', await evalJson(`${insp}.querySelectorAll('input[type=checkbox]').length >= 3`));
+// was "lock / keep / noon toggles" (Flags held locked): in B a lock is a component — "+ Lock" under Add
+// Component, a Lock card once added (checked further down) — so the toggles here are hidden, keep, noon
+check('hidden / keep lit / noon toggles (locked is not a toggle until a Lock is added)', await evalJson(`(() => { const L = [...${insp}.querySelectorAll('.sp-f-check .sp-label')].map((l) => l.textContent); return L.includes('hidden') && L.includes('keep lit') && L.includes('burns at noon') && !L.includes('locked'); })()`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('.sp-f-check .sp-label')].map((l) => l.textContent)`)));
 check('compact channels have no bumpers', await evalJson(`${insp}.querySelectorAll('.sp-step.compact .sp-bump').length === 0 && ${insp}.querySelectorAll('.sp-step.compact').length >= 5`));
 check('grey scope: the edit frame re-points --brand to the grey', await evalJson(`getComputedStyle(${insp}).getPropertyValue('--brand').trim() === '#d2d2d6'`));
 
 console.log('\nediting through the channel box reaches the light:');
-await evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === 'light · brightness').querySelector('.sp-num'); i.value = '+=4'; i.dispatchEvent(new Event('change')); return true; })()`);
+await evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === 'brightness').querySelector('.sp-num'); i.value = '+=4'; i.dispatchEvent(new Event('change')); return true; })()`);
 check('brightness is 20 on the light', await waitFor(`import('/lib/world.js').then((m) => m.entities.get('benchlamp')?.userData?.lightParams?.intensity === 20)`));
-check('…and the light group agrees (same declaration, two lanes)', await waitFor(`(() => { const R = [...${insp}.querySelectorAll('.sp-f-num')].filter((r) => /brightness/.test(r.querySelector('.sp-label').textContent)); return R.length >= 2 && R.every((r) => r.querySelector('.sp-num').value === '20'); })()`));
+// was "…and the light group agrees (same declaration, two lanes)": the channel strip AND the light
+// group each drew brightness. B retired the second lane (one card owns each field), so the same
+// behaviour now reads: exactly ONE brightness row, and it shows the committed 20.
+check('…and the Light card\'s one brightness row shows 20 (one lane: B drew it twice before)', await waitFor(`(() => { const R = [...${insp}.querySelectorAll('.sp-f-num')].filter((r) => /brightness/.test(r.querySelector('.sp-label').textContent)); return R.length === 1 && R[0].querySelector('.sp-num').value === '20'; })()`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('.sp-f-num')].map((r) => r.querySelector('.sp-label').textContent + '=' + r.querySelector('.sp-num').value)`)));
 await sleep(1500);   // past EDIT_COMMIT_MS and the echo: a refusal would have rolled it back by now
 check('…and it stayed (the verb was accepted, not rolled back)', (await evalJson(`import('/lib/world.js').then((m) => m.entities.get('benchlamp')?.userData?.lightParams?.intensity)`)) === 20);
 
@@ -160,7 +178,7 @@ await waitFor(`${insp}.querySelector('.sp-info')?.textContent === 'benchlamp'`);
 console.log('\nEsc mid-scrub, in a real browser (the key lands on the document, not the blurred input):');
 {
   const pe = (t: string, x: number) => `new PointerEvent('${t}', { clientX: ${x}, clientY: 0, button: 0, pointerId: 7, bubbles: true, isPrimary: true })`;
-  const inp = `[...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === 'light · range').querySelector('.sp-num')`;
+  const inp = `[...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === 'range').querySelector('.sp-num')`;
   await evalJson(`(() => { const i = ${inp}; i.dispatchEvent(${pe('pointerdown', 100)}); i.dispatchEvent(${pe('pointermove', 130)}); i.dispatchEvent(${pe('pointermove', 160)}); return true; })()`);
   check('scrub previews (range 10 → 22 on the face)', await evalJson(`${inp}.value === '22'`), await evalJson(`${inp}.value`));
   check('…and the input is not focused while scrubbing', await evalJson(`document.activeElement !== ${inp}`));
@@ -174,9 +192,11 @@ console.log('\nEsc mid-scrub, in a real browser (the key lands on the document, 
   check('…and the light never left 10 (nothing committed)', (await evalJson(`import('/lib/world.js').then((m) => m.entities.get('benchlamp')?.userData?.lightParams?.range)`)) === 10);
 }
 
-console.log('\nmotion: a bob on the light — group, driven channels, an edit that keeps t0:');
+console.log('\nmotion: a bob on the light — a Bob card, driven channels, an edit that keeps t0:');
 await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('motion', { id: 'benchlamp', type: 'bob', amp: 0.3, period: 2 })), true`);
-check('motion group renders from motion.js', await waitFor(`[...${insp}.querySelectorAll('.sp-group')].some((g) => /motion/i.test(g.textContent)) && [...${insp}.querySelectorAll('select.sp-enum')].some((s) => s.value === 'bob')`));
+// B: the motion's type IS the card ("Bob"), not a type dropdown inside a Motion group — changing it is
+// remove + add — so the check reads the card title and its own fields (axis / amp / period / phase)
+check('a Bob card renders from motion.js (the type is the card, not a dropdown)', await waitFor(`(() => { const T = ${cardTitles}; const L = ${numLabels}; return T.includes('Bob') && !T.some((t) => /^motion/i.test(t)) && L.includes('amp') && L.includes('period') && ![...${insp}.querySelectorAll('select.sp-enum')].some((s) => s.value === 'bob'); })()`), JSON.stringify(await evalJson(cardTitles)));
 check('pos channels are DRIVEN (rest pose, marked)', await evalJson(`${insp}.querySelectorAll('.sp-f-num.driven').length >= 3`));
 {
   // axis AND driven at once (R, 09-30): the label keeps x/y/z; the FIELD wears the amber edge and a ~
@@ -186,27 +206,28 @@ check('pos channels are DRIVEN (rest pose, marked)', await evalJson(`${insp}.que
   check('…the field carries driven: amber edge + a ~ marker', ['x', 'y', 'z'].every((a) => L[a]?.edge === 'rgba(201, 162, 74, 0.45)' && L[a]?.mark === '~'), JSON.stringify(L));
   check('…titled "driven by motion — editing moves its rest pose"', ['x', 'y', 'z'].every((a) => L[a]?.title === 'driven by motion — editing moves its rest pose'), JSON.stringify(L.x?.title));
 }
-check('amp / period reach the channel box', await evalJson(`(() => { const L = [...${insp}.querySelectorAll('.sp-f-num .sp-label')].map((l) => l.textContent); return L.includes('motion · amp') && L.includes('motion · period'); })()`));
+check('amp / period are the Bob card\'s rows, once each (no "motion · " lane)', await evalJson(`(() => { const L = ${numLabels}; return L.filter((l) => l === 'amp').length === 1 && L.filter((l) => l === 'period').length === 1 && !L.some((l) => /^motion · /.test(l)); })()`), JSON.stringify(await evalJson(numLabels)));
 const t0 = await evalJson(`import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.motion?.t0)`);
 check('the fold stamped a t0', typeof t0 === 'number' && t0 > 0, String(t0));
-await evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === 'motion · amp').querySelector('.sp-num'); i.value = '+=0.2'; i.dispatchEvent(new Event('change')); return true; })()`);
+await evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === 'amp').querySelector('.sp-num'); i.value = '+=0.2'; i.dispatchEvent(new Event('change')); return true; })()`);
 check('amp is 0.5 after +=0.2', await waitFor(`import('/lib/world.js').then((m) => Math.abs((m.comps.get('benchlamp')?.motion?.amp ?? 0) - 0.5) < 1e-9)`));
 check('…and t0 was kept (no phase restart)', (await evalJson(`import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.motion?.t0)`)) === t0);
-await evalJson(`(() => { const b = [...${insp}.querySelectorAll('.sp-btn')].find((x) => /come to rest/.test(x.textContent)); b.dispatchEvent(new PointerEvent('pointerdown', { clientX: 1, clientY: 1, bubbles: true })); b.click(); return true; })()`);
-check('come to rest removes the motion', await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('benchlamp')?.motion)`));
+// was the Motion group's "come to rest" button; B's card carries its own remove (the same verb: motion type null)
+await evalJson(`(() => { const b = [...${insp}.querySelectorAll('.sp-btn')].find((x) => x.textContent === 'remove Bob'); b.dispatchEvent(new PointerEvent('pointerdown', { clientX: 1, clientY: 1, bubbles: true })); b.click(); return true; })()`);
+check('the Bob card\'s "remove Bob" removes the motion', await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('benchlamp')?.motion)`));
 
-console.log('\nsockets: a seat on the light — list, per-slot channels, ✕ through the merged write:');
+console.log('\nsockets: a seat on the light — a Seats card, list, per-slot channels, ✕ through the merged write:');
 await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('comp', { id: 'benchlamp', type: 'sockets', data: { seat: { pos: [0, 0.5, 0], yaw: 0 } } })), true`);
-check('sockets group with the seat row', await waitFor(`[...${insp}.querySelectorAll('.sp-group')].some((g) => /sockets/i.test(g.textContent)) && [...${insp}.querySelectorAll('.sp-item-label')].some((l) => l.textContent === 'seat')`));
-check('seat x/y/z/yaw reach the channel box', await evalJson(`(() => { const L = [...${insp}.querySelectorAll('.sp-f-num .sp-label')].map((l) => l.textContent); return L.includes('sockets · seat x') && L.includes('sockets · seat yaw'); })()`));
+check('a Seats card with the seat row', await waitFor(`${cardTitles}.includes('Seats') && [...${insp}.querySelectorAll('.sp-item-label')].some((l) => l.textContent === 'seat')`), JSON.stringify(await evalJson(cardTitles)));
+check('seat x/y/z/yaw are the Seats card\'s rows, once each (no "sockets · " lane)', await evalJson(`(() => { const L = ${numLabels}; return ['seat x', 'seat y', 'seat z', 'seat yaw'].every((n) => L.filter((l) => l === n).length === 1) && !L.some((l) => /^sockets · /.test(l)); })()`), JSON.stringify(await evalJson(numLabels)));
 await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('motion', { id: 'benchlamp', type: 'spin', degPerSec: 30 })), true`);
-await waitFor(`[...${insp}.querySelectorAll('select.sp-enum')].some((s) => s.value === 'spin')`);
+await waitFor(`${cardTitles}.includes('Spin')`);
 if (process.env.EDIT_SHOT) {   // a look, not a trust: the grey scope is a design claim
   const shot = await cdp.send<any>('Page.captureScreenshot', { format: 'png' });
   await Bun.write(process.env.EDIT_SHOT, Buffer.from(shot.data, 'base64'));
   console.log(`  screenshot → ${process.env.EDIT_SHOT}`);
 }
-await evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === 'sockets · seat yaw').querySelector('.sp-num'); i.value = '90'; i.dispatchEvent(new Event('change')); return true; })()`);
+await evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === 'seat yaw').querySelector('.sp-num'); i.value = '90'; i.dispatchEvent(new Event('change')); return true; })()`);
 check('typing 90 into a degree channel lands as π/2 in the fold (not π/2/57)', await waitFor(`import('/lib/world.js').then((m) => Math.abs((m.comps.get('benchlamp')?.sockets?.seat?.yaw ?? 0) - Math.PI / 2) < 1e-3)`), 'yaw=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.sockets?.seat?.yaw)`)));
 check('no raw-JSON row for a type an editor speaks for', await evalJson(`![...${insp}.querySelectorAll('.sp-f-text .sp-label')].some((l) => /^(sockets|motion)$/.test(l.textContent))`));
 // a settle before the ✕: the bench fires verbs faster than a person, and the
@@ -220,7 +241,7 @@ console.log('\nhierarchy: label · hidden · filter · disclosure · duplicate �
 await sleep(1500);   // settle: the verb-rate window (see the ✕ note above)
 const hier = `[...document.querySelectorAll('.frame.edit')].find((f) => /Hierarchy/.test(f.querySelector('.fr-title')?.textContent))`;
 await evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-text')].find((r) => r.querySelector('.sp-label')?.textContent === 'label').querySelector('.sp-text'); i.value = 'porch'; i.dispatchEvent(new Event('change')); return true; })()`);
-check('label typed in Flags → the hierarchy row shows it', await waitFor(`[...${hier}.querySelectorAll('.sp-tree-row .sp-item-label')].some((l) => l.textContent === 'porch  (benchlamp)')`), 'rows=' + await evalJson(`[...${hier}.querySelectorAll('.sp-tree-row .sp-item-label')].map((l) => l.textContent).join('|')`) + ' label-comp=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.label)`)) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
+check('label typed in the header → the hierarchy row shows it', await waitFor(`[...${hier}.querySelectorAll('.sp-tree-row .sp-item-label')].some((l) => l.textContent === 'porch  (benchlamp)')`), 'rows=' + await evalJson(`[...${hier}.querySelectorAll('.sp-tree-row .sp-item-label')].map((l) => l.textContent).join('|')`) + ' label-comp=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.label)`)) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
 await evalJson(`(() => { const c = [...${insp}.querySelectorAll('.sp-f-check')].find((r) => r.querySelector('.sp-label')?.textContent === 'hidden').querySelector('input'); c.checked = true; c.dispatchEvent(new Event('change')); return true; })()`);
 check('hidden checkbox → the mesh is not drawn (obj.visible false, still in the fold)', await waitFor(`import('/lib/world.js').then((m) => m.entities.get('benchlamp')?.visible === false && !!m.comps.get('benchlamp')?.hidden)`));
 await evalJson(`(() => { const c = [...${insp}.querySelectorAll('.sp-f-check')].find((r) => r.querySelector('.sp-label')?.textContent === 'hidden').querySelector('input'); c.checked = false; c.dispatchEvent(new Event('change')); return true; })()`);
@@ -279,17 +300,31 @@ check('…and once more undoes the detach → mounted again with its old offset'
 await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('benchlamp')), true`);
 await waitFor(`${insp}.querySelector('.sp-info')?.textContent.startsWith('benchlamp')`);
 
-console.log('\ngizmo: TransformControls on the selection, yaw-only rotate, one place on release, undo:');
+console.log('\ngizmo: TransformControls on the selection, rotate about any axis committing q, one place on release, undo:');
 await sleep(1200);
 await evalJson(`import('/lib/build.js').then((m) => m.setTool('move')), true`);
 check('move tool + a selection → the gizmo is attached to it in translate mode', await waitFor(`globalThis.__gizmo?.().attached === 'benchlamp' && globalThis.__gizmo().mode === 'translate'`), JSON.stringify(await evalJson(`(() => { const g = globalThis.__gizmo?.(); return g && { attached: g.attached, mode: g.mode }; })()`)));
 check('the helper is in the scene', await evalJson(`import('/lib/core.js').then((m) => !!m.scene.getObjectByName('edit-gizmo'))`));
 await evalJson(`import('/lib/build.js').then((m) => m.setTool('rotate')), true`);
-check('rotate tool on a LIGHT → no gizmo (a light has no yaw)', await waitFor(`globalThis.__gizmo?.().attached === null`), JSON.stringify(await evalJson(`(() => { const g = globalThis.__gizmo?.(); return g && { attached: g.attached, mode: g.mode }; })()`)));
+check('rotate tool on a LIGHT → still no gizmo (a point light has no facing: no rot.qw to drag)', await waitFor(`globalThis.__gizmo?.().attached === null`), JSON.stringify(await evalJson(`(() => { const g = globalThis.__gizmo?.(); return g && { attached: g.attached, mode: g.mode }; })()`)));
 await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('spawn', { id: 'crate1', lib: 'eidoverse/assets/models/unit_quad_picture_plane.glb', pos: [3, 0, 3], yaw: 0 })), true`);
 await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('crate1'))`, 8000);
 await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('crate1')), true`);
-check('rotate tool on a MODEL → rotate mode with only the Y ring (the log has no pitch/roll)', await waitFor(`globalThis.__gizmo?.().attached === 'crate1' && globalThis.__gizmo().mode === 'rotate' && globalThis.__gizmo().showX === false && globalThis.__gizmo().showZ === false`), JSON.stringify(await evalJson(`(() => { const g = globalThis.__gizmo?.(); return g && { attached: g.attached, mode: g.mode, lib: null }; })()`)) + ' lib=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.entityMeta.get('crate1')?.lib)`)));
+// was "only the Y ring (the log has no pitch/roll)": B stores the full q, so all three rings show (design §5)
+check('rotate tool on a MODEL → rotate mode with ALL three rings (q is stored, not only yaw)', await waitFor(`globalThis.__gizmo?.().attached === 'crate1' && globalThis.__gizmo().mode === 'rotate' && globalThis.__gizmo().controls.showX && globalThis.__gizmo().controls.showY && globalThis.__gizmo().controls.showZ`), JSON.stringify(await evalJson(`(() => { const g = globalThis.__gizmo?.(); return g && { attached: g.attached, mode: g.mode, lib: null }; })()`)) + ' lib=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.entityMeta.get('crate1')?.lib)`)));
+{
+  // a tilt on the X ring, driven through the controls' own events (as the translate drag below):
+  // release commits ONE place carrying the full q, pos untouched; undo goes back to the yaw-only record
+  const D = Math.PI / 180;
+  const qWant = [Math.sin(20 * D), 0, 0, Math.cos(20 * D)];   // 40° about +X
+  await evalJson(`(() => { const c = globalThis.__gizmo().controls; c.dispatchEvent({ type: 'dragging-changed', value: true }); return import('/lib/world.js').then((m) => { m.entities.get('crate1').quaternion.set(${qWant.join(',')}); c.dispatchEvent({ type: 'objectChange' }); c.dispatchEvent({ type: 'dragging-changed', value: false }); return true; }); })()`);
+  check('a tilt on the X ring commits ONE place carrying the full q (pitch survives, pos untouched)', await waitFor(`import('/lib/state.js').then((m) => { const e = m.state.st.entities.crate1; return Array.isArray(e.q) && Math.abs(Math.abs(e.q[0] * ${qWant[0]} + e.q[3] * ${qWant[3]}) - 1) < 1e-6 && e.pos[0] === 3 && e.pos[2] === 3; })`), JSON.stringify(await evalJson(`import('/lib/state.js').then((m) => m.state.st.entities.crate1)`)) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
+  check('…and the channel box reads it: rotate x = 40', await waitFor(`(() => { const r = [...${insp}.querySelectorAll('.sp-f-num')].find((x) => x.querySelector('.sp-label').textContent === 'rotate x'); return !!r && Math.abs(+r.querySelector('.sp-num').value - 40) < 0.01; })()`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('.sp-f-num')].map((r) => r.querySelector('.sp-label').textContent + '=' + r.querySelector('.sp-num').value)`)));
+  await sleep(600);
+  await evalJson(`import('/lib/build.js').then((m) => m.undo()), true`);
+  check('undo restores the upright crate (no tilt left in the fold)', await waitFor(`import('/lib/state.js').then((m) => { const e = m.state.st.entities.crate1; return !e.q || (Math.abs(e.q[0]) < 1e-9 && Math.abs(e.q[2]) < 1e-9); })`), JSON.stringify(await evalJson(`import('/lib/state.js').then((m) => m.state.st.entities.crate1)`)));
+  await sleep(600);
+}
 await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('benchlamp')), true`);
 await evalJson(`import('/lib/build.js').then((m) => m.setTool('move')), true`);
 await waitFor(`globalThis.__gizmo?.().mode === 'translate'`);
@@ -312,6 +347,73 @@ await evalJson(`import('/lib/build.js').then((m) => m.setTool('select')), true`)
 check('select tool → no gizmo', await waitFor(`globalThis.__gizmo?.().attached === null`));
 await evalJson(`import('/lib/build.js').then((m) => m.setTool('move')), true`);
 await sleep(600);
+
+console.log('\nthe channel box on a model (design §5): Maya\'s rows, the rotate order, the Quaternion row, gimbal lock:');
+{
+  await sleep(1200);   // verb window
+  await evalJson(`import('/lib/scenegraph.js').then((m) => (m.sceneSelect('crate1'), true))`);
+  await waitFor(`${insp}.querySelector('.sp-info')?.textContent.startsWith('crate1')`);
+  // the rows a card owns: from its header to the next header (renderDOM draws groups as flat markers)
+  const cardRows = (title: string) => `(() => { const R = [...${insp}.querySelectorAll('.sp-row')]; const i = R.findIndex((r) => r.querySelector('.sp-group')?.textContent.slice(2) === ${JSON.stringify(title)}); if (i < 0) return []; const out = []; for (const r of R.slice(i + 1)) { if (r.querySelector('.sp-group')) break; out.push(r); } return out; })()`;
+  const cardLabels = (title: string) => `${cardRows(title)}.map((r) => r.querySelector('.sp-label')?.textContent ?? r.textContent)`;
+  const chan = (label: string) => `[...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === ${JSON.stringify(label)})?.querySelector('.sp-num')`;
+  const type = (label: string, v: string) => evalJson(`(() => { const i = ${chan(label)}; if (!i) return false; i.value = ${JSON.stringify(v)}; i.dispatchEvent(new Event('change')); return true; })()`);
+  const faces = `['rotate x', 'rotate y', 'rotate z'].map((l) => +[...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === l)?.querySelector('.sp-num').value)`;
+  const rec = () => evalJson(`import('/lib/state.js').then((m) => m.state.st.entities.crate1)`);
+  const orderSel = `${cardRows('Transform')}.find((r) => r.querySelector('.sp-label')?.textContent === 'rotate order')?.querySelector('select')`;
+  const setOrder = (v: string) => evalJson(`(() => { const s = ${orderSel}; if (!s) return false; s.value = ${JSON.stringify(v)}; s.dispatchEvent(new Event('change')); return true; })()`);
+  // in-page: does the fold's q equal the channels' faces recomposed in this order? (the shared math, not a copy)
+  const facesCompose = (order: string) => `import('/shared/euler.js').then((E) => import('/lib/state.js').then((S) => { const f = ${faces}.map((d) => d * Math.PI / 180); const q = E.qFromEuler(f, ${JSON.stringify(order)}); const e = S.state.st.entities.crate1; return !!e.q && E.sameRotation(q, e.q, 1e-3); }))`;
+
+  check('the Transform card is Maya\'s channel box: translate x/y/z, rotate order, rotate x/y/z, scale (the heading alias not drawn)', await waitFor(`JSON.stringify(${cardLabels('Transform')}) === JSON.stringify(['translate x', 'translate y', 'translate z', 'rotate order', 'rotate x', 'rotate y', 'rotate z', 'scale'])`), JSON.stringify(await evalJson(cardLabels('Transform'))));
+  check('…the Rotate rows carry their axis (x / y / z label colours)', await evalJson(`['x', 'y', 'z'].every((a) => ${cardRows('Transform')}.find((r) => r.querySelector('.sp-label')?.textContent === 'rotate ' + a)?.dataset.axis === a)`));
+  check('rotate order is a dropdown of Maya\'s six orders + quaternion, reading XYZ', await evalJson(`(() => { const s = ${orderSel}; return !!s && [...s.options].map((o) => o.value).join() === 'XYZ,XZY,YXZ,YZX,ZXY,ZYX,quat' && s.value === 'XYZ'; })()`), JSON.stringify(await evalJson(`(() => { const s = ${orderSel}; return s ? [s.value, [...s.options].map((o) => o.value)] : null; })()`)));
+  check('the Quaternion row follows the Transform card, collapsed (header only, no quat rows painted)', await evalJson(`(() => { const G = ${cardTitles}; return G[G.indexOf('Transform') + 1] === 'Quaternion' && [...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▸ Quaternion') && ${cardRows('Quaternion')}.length === 0; })()`), JSON.stringify(await evalJson(cardTitles)));
+
+  await type('rotate x', '30');
+  check('typing rotate x = 30 writes q (30° about X) into the fold, pos and scale untouched', await waitFor(`import('/lib/state.js').then((m) => { const e = m.state.st.entities.crate1; const h = 15 * Math.PI / 180; return Array.isArray(e.q) && Math.abs(Math.abs(e.q[0] * Math.sin(h) + e.q[3] * Math.cos(h)) - 1) < 1e-6 && e.pos[0] === 3 && e.pos[2] === 3 && (e.scale ?? 1) === 1; })`), JSON.stringify(await rec()));
+  check('…and the channels read back (30, 0, 0)', await waitFor(`(() => { const f = ${faces}; return f[0] === 30 && f[1] === 0 && f[2] === 0; })()`), JSON.stringify(await evalJson(faces)));
+  await sleep(400);
+  await type('rotate y', '45');
+  check('then rotate y = 45: x still reads 30, z still 0 (one axis edit composes into q, no drift)', await waitFor(`(() => { const f = ${faces}; return f[0] === 30 && f[1] === 45 && f[2] === 0; })()`), JSON.stringify(await evalJson(faces)));
+  check('…and those three faces recomposed in XYZ ARE the fold\'s q', await waitFor(facesCompose('XYZ')), JSON.stringify(await rec()));
+  await sleep(400);
+  const qBefore = JSON.stringify(((await rec()) as any).q);
+  await setOrder('ZXY');
+  check('rotate order → ZXY writes comp rotOrder and leaves q bit-identical (changing the order never moves the thing)', await waitFor(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.rotOrder === 'ZXY') && import('/lib/state.js').then((m) => JSON.stringify(m.state.st.entities.crate1.q) === ${JSON.stringify(qBefore)})`), JSON.stringify(await rec()));
+  check('…and the channels now read that same q in ZXY (recomposing them in ZXY gives q)', await waitFor(`(async () => (await import('/lib/world.js')).comps.get('crate1')?.rotOrder === 'ZXY' && ${orderSel}?.value === 'ZXY' && await ${facesCompose('ZXY')})()`), JSON.stringify(await evalJson(faces)));
+  await sleep(400);
+  await setOrder('XYZ');
+  check('back to XYZ removes the comp (absent means XYZ)', await waitFor(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.rotOrder == null)`), JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.comps.get('crate1'))`)));
+  await sleep(400);
+  await type('rotate y', '90');
+  check('rotate y = 90 (XYZ\'s middle axis): the Transform card says it is in gimbal lock', await waitFor(`${cardRows('Transform')}.some((r) => r.classList.contains('sp-f-info') && /gimbal lock/.test(r.textContent))`), JSON.stringify(await evalJson(cardLabels('Transform'))));
+  await sleep(400);
+  await evalJson(`([...${insp}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▸ Quaternion')?.click(), true)`);
+  check('clicking the Quaternion header opens it: quat x / y / z / w', await waitFor(`JSON.stringify(${cardLabels('Quaternion')}) === JSON.stringify(['quat x', 'quat y', 'quat z', 'quat w'])`), JSON.stringify(await evalJson(cardLabels('Quaternion'))));
+  check('…reading the fold\'s q', await waitFor(`import('/lib/state.js').then((m) => { const q = m.state.st.entities.crate1.q; const v = ${cardRows('Quaternion')}.map((r) => +r.querySelector('.sp-num').value); return v.length === 4 && v.every((x, i) => Math.abs(x - q[i]) < 1e-3); })`), JSON.stringify([await evalJson(`${cardRows('Quaternion')}.map((r) => r.querySelector('.sp-num').value)`), ((await rec()) as any).q]));
+  const qLock = ((await rec()) as any).q;
+  await type('quat w', '2');
+  check('typing quat w = 2 commits a NORMALIZED q (clamped to 1, then the whole q scaled to unit length)', await waitFor(`import('/lib/state.js').then((m) => { const q = m.state.st.entities.crate1.q; return Array.isArray(q) && Math.abs(Math.hypot(...q) - 1) < 1e-9 && q[3] > ${qLock[3]} + 1e-3; })`), JSON.stringify(await rec()));
+  await sleep(600);
+  await evalJson(`import('/lib/build.js').then((m) => (m.undo(), true))`);
+  check('one undo puts the gimbal-locked q back', await waitFor(`import('/lib/state.js').then((m) => { const q = m.state.st.entities.crate1.q; return Array.isArray(q) && q.every((x, i) => Math.abs(x - ${JSON.stringify(qLock)}[i]) < 1e-9); })`, 10000), JSON.stringify(await rec()) + ' want=' + JSON.stringify(qLock));
+  // folding the Transform card must fold its Quaternion row too (renderDOM draws groups as FLAT markers, so a
+  // sub-header that is open would otherwise reopen its rows under a closed card)
+  await evalJson(`([...${insp}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▾ Transform')?.click(), true)`);
+  check('folding Transform hides its rows AND the open Quaternion row inside it', await waitFor(`(() => { const L = [...${insp}.querySelectorAll('.sp-label')].map((l) => l.textContent); return [...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▸ Transform') && !L.includes('rotate x') && !L.includes('quat w') && !${cardTitles}.includes('Quaternion'); })()`), JSON.stringify({ groups: await evalJson(cardTitles), labels: await evalJson(`[...${insp}.querySelectorAll('.sp-label')].map((l) => l.textContent)`) }));
+  const filt = (v: string) => evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-text .sp-text')].find((x) => /filter properties/.test(x.placeholder)); i.value = ${JSON.stringify(v)}; i.dispatchEvent(new Event('change')); i.blur(); return true; })()`);
+  await filt('quat');
+  check('…but a filter still finds the quaternion inside the folded card (it opens what holds a hit)', await waitFor(`JSON.stringify(${cardLabels('Quaternion')}) === JSON.stringify(['quat x', 'quat y', 'quat z', 'quat w'])`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('.sp-label, .sp-group')].map((l) => l.textContent)`)));
+  await filt('');
+  // folds persist per lib (localStorage): put both back the way later sections expect them
+  // (wait for the unfiltered paint first: under the filter the card was forced open, so '▸ Transform' is not there yet)
+  await waitFor(`[...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▸ Transform')`);
+  await evalJson(`([...${insp}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▸ Transform')?.click(), true)`);
+  await waitFor(`[...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▾ Quaternion')`);
+  await evalJson(`([...${insp}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▾ Quaternion')?.click(), true)`);
+  check('…and unfolding brings the card back with the Quaternion row as it was left', await waitFor(`${cardLabels('Transform')}.includes('rotate x') && [...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▸ Quaternion')`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('.sp-group')].map((g) => g.textContent)`)));
+}
 
 console.log('\npick: an armed attach completes on a viewport click, not only a row click; both attach paths undo:');
 await sleep(1500);   // verb window
@@ -385,6 +487,8 @@ console.log('\nDel / Backspace act on what the INSPECTOR shows (a tree pick), no
   const key = (code: string) => evalJson(`(document.activeElement?.blur?.(), dispatchEvent(new KeyboardEvent('keydown', { code: '${code}' })), true)`);
   await L('delA', -2); await L('delB', 2);
   await waitFor(`(async () => (await ${alive('delA')}) && (await ${alive('delB')}))()`);
+  // …and for their tree ROWS: the hierarchy repaints on a late headless rAF, and a click before it found no row (seen 10-01)
+  await waitFor(`['delA', 'delB'].every((id) => [...${hier}.querySelectorAll('.sp-tree-row .sp-item-label')].some((l) => l.textContent.trim() === id))`);
   // AWAIT the import: a trailing `, true` returned before it resolved, and the pick landed AFTER the tree click below
   await evalJson(`import('/lib/build.js').then((m) => (m.select('delA'), true))`);          // viewport pick: build.js's own `selected`
   await sleep(150);
@@ -407,11 +511,13 @@ console.log('\nDel / Backspace act on what the INSPECTOR shows (a tree pick), no
   check('…and ONE undo restores both', await waitFor(`(async () => (await ${alive('delA')}) && (await ${alive('delB')}))()`));
   await sleep(300);
   await rowClick('delA'); await sleep(100);
+  await waitFor(`JSON.stringify(globalThis.__editPanels?.().selection) === '["delA"]'`);   // the click collapsed the pair to delA (not a stale two)
   await evalJson(`import('/lib/net.js').then((m) => m.sendVerb('comp', { id: 'delA', type: 'lock', data: true })), true`);
   await waitFor(`import('/lib/world.js').then((m) => !!m.comps.get('delA')?.lock)`);
+  await painted();
   await key('KeyX');
   await sleep(600);
-  check('X on a locked thing removes nothing', await evalJson(alive('delA')));
+  check('X on a locked thing removes nothing', await evalJson(alive('delA')), 'sel=' + JSON.stringify(await evalJson(`globalThis.__editPanels?.().selection`)) + ' hint=' + JSON.stringify(await evalJson(`document.querySelector('#hintbar')?.textContent`)));
 }
 
 console.log('\ndeselect is deliberate (Esc / Edit ▸ deselect); undo keeps what you are working on; badges once:');
@@ -456,27 +562,31 @@ console.log('\npicture + sound in the inspector (schema groups; uploads through 
   const btn = async (label: string) => (await cdp.send<any>('Runtime.evaluate', { userGesture: true, returnByValue: true, expression: `(() => { const b = [...${insp}.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(label)}); if (!b) return false; b.click(); return true; })()` }))?.result?.value;
   const field = (label: string, value: string) => evalJson(`(() => { const r = [...${insp}.querySelectorAll('.sp-row')].find((x) => x.querySelector('.sp-label')?.textContent === ${JSON.stringify(label)}); const i = r?.querySelector('input, select'); if (!i) return false; i.value = ${JSON.stringify(value)}; i.dispatchEvent(new Event('change')); return true; })()`);
   await evalJson(`import('/lib/scenegraph.js').then((m) => (m.sceneSelect('crate1'), true))`);
-  check('a model with named parts: Components offers "+ picture…" and "+ sound…"', await waitFor(`(() => { const t = [...${insp}.querySelectorAll('button')].map((b) => b.textContent.trim()); return t.includes('+ picture…') && t.includes('+ sound…'); })()`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('button')].map((b) => b.textContent.trim())`)));
+  // was the Components group's "+ picture…" / "+ sound…"; B lists them under Add Component as "+ Picture" /
+// "+ Sound" (same gesture keys, comp.add:picture / comp.add:sound, so the same chooser opens)
+check('a model with named parts: Add Component offers "+ Picture" and "+ Sound"', await waitFor(`(() => { const t = [...${insp}.querySelectorAll('button')].map((b) => b.textContent.trim()); return t.includes('+ Picture') && t.includes('+ Sound'); })()`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('button')].map((b) => b.textContent.trim())`)));
   nextFile = png;
-  check('+ picture… opens the chooser', await btn('+ picture…'));
+  check('+ Picture opens the chooser', await btn('+ Picture'));
   check('…the image goes through /upload and hangs on the first named part', await waitFor(`import('/lib/world.js').then((m) => { const p = m.comps.get('crate1')?.picture; return !!p && p.src.startsWith('store/images/') && typeof p.part === 'string' && p.part.length > 0; })`, 10000), JSON.stringify(await comp('picture')) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
-  check('the inspector grows a picture group whose part is a dropdown', await waitFor(`!![...${insp}.querySelectorAll('.sp-f-enum')].find((r) => r.querySelector('.sp-label')?.textContent === 'part')`));
+  check('the inspector grows a Picture card whose part is a dropdown', await waitFor(`!![...${insp}.querySelectorAll('.sp-f-enum')].find((r) => r.querySelector('.sp-label')?.textContent === 'part')`));
   await field('what it shows', 'a red square, hung by the bench');
   check('typing "what it shows" updates look, keeps src', await waitFor(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.picture?.look === 'a red square, hung by the bench' && m.comps.get('crate1').picture.src.startsWith('store/images/'))`), JSON.stringify(await comp('picture')));
   await field('image', 'https://example.com/x.png');
   await sleep(500);
   check('a URL is refused before the wire (src unchanged)', ((await comp('picture')) as any)?.src?.startsWith('store/images/'), JSON.stringify(await comp('picture')));
   check('the legacy Scene section still shows ONE picture editor, its own (no double from the schema)', await evalJson(`document.querySelectorAll('#sec-scene [data-pe-root]').length === 1 && ![...document.querySelectorAll('#sec-scene [data-fe] .sp-label')].some((l) => l.textContent === 'what it shows')`));
-  check('take down removes it', (await btn('take down')) && await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('crate1')?.picture)`));
+  // was the picture group's "take down"; B's Picture card removes itself (the same comp picture null)
+  check('the Picture card\'s "remove Picture" takes it down', (await btn('remove Picture')) && await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('crate1')?.picture)`));
   nextFile = wav;
-  check('+ sound… opens the chooser', await btn('+ sound…'));
+  check('+ Sound opens the chooser', await btn('+ Sound'));
   check('…the audio goes through /upload and lands PAUSED (no t0)', await waitFor(`import('/lib/world.js').then((m) => { const s = m.comps.get('crate1')?.sound; return !!s && s.src.startsWith('store/audio/') && s.playing === false && s.t0 == null; })`, 10000), JSON.stringify(await comp('sound')) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
   check('▶ play starts it with a t0', (await btn('▶ play')) && await waitFor(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.sound?.playing === true && m.comps.get('crate1').sound.t0 > 0)`), JSON.stringify(await comp('sound')));
   const t0 = ((await comp('sound')) as any)?.t0;
   await sleep(300);
   await field('volume', '0.5');
   check('turning the volume of a PLAYING sound keeps its t0', await waitFor(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.sound?.volume === 0.5 && m.comps.get('crate1').sound.t0 === ${t0})`), JSON.stringify(await comp('sound')));
-  check('silence removes it', (await btn('silence')) && await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('crate1')?.sound)`));
+  // was the sound group's "silence"; B's Sound card removes itself
+  check('the Sound card\'s "remove Sound" silences it', (await btn('remove Sound')) && await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('crate1')?.sound)`));
   await cdp.send('Page.setInterceptFileChooserDialog', { enabled: false });
 }
 
@@ -504,19 +614,41 @@ console.log('\nrevert to default (↺): shown only when a value differs; an ordi
   check('position has no ↺ (no meaningful default)', await evalJson(`!${rowOf('translate x')}?.querySelector('.sp-revert')`));
 }
 
-console.log('\nthe first seat in one step (Components ▸ + seat…):');
+console.log('\nAdd Component (design §3/§5): categories, blocked entries say why, + Lock adds a Lock card, its remove takes it off:');
+{
+  await evalJson(`import('/lib/scenegraph.js').then((m) => (m.sceneSelect('benchlamp'), true))`);
+  await waitFor(`${insp}.querySelector('.sp-info')?.textContent.startsWith('benchlamp')`);
+  const addBtn = (name: string) => `[...${insp}.querySelectorAll('.sp-btn')].find((b) => b.textContent.trim() === ${JSON.stringify(name)})`;
+  const isLocked = `import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.lock === true)`;
+  check('Add Component is the last card, and lists entries under category captions', await evalJson(`(() => { const G = ${cardTitles}; const R = [...${insp}.querySelectorAll('.sp-row')]; const i = R.findIndex((r) => r.querySelector('.sp-group')?.textContent === '▾ Add Component'); const caps = R.slice(i + 1).filter((r) => r.classList.contains('sp-f-info')).map((r) => r.textContent.trim()).filter(Boolean); return G[G.length - 1] === 'Add Component' && caps.length >= 3; })()`), JSON.stringify(await evalJson(cardTitles)));
+  check('a light is offered "+ Lock"; "+ Model" is there but disabled, titled with why', await evalJson(`(() => { const l = ${addBtn('+ Lock')}, m = ${addBtn('+ Model')}; return !!l && !l.disabled && !!m && m.disabled && (m.closest('.sp-row')?.title ?? '').length > 10; })()`), JSON.stringify(await evalJson(`(() => { const m = ${addBtn('+ Model')}; return m ? { disabled: m.disabled, why: m.closest('.sp-row')?.title } : null; })()`)));
+  await evalJson(`(${addBtn('+ Lock')}.click(), true)`);
+  check('+ Lock adds the lock component', await waitFor(isLocked), JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.comps.get('benchlamp'))`)) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
+  check('…a Lock card appears with its checked "locked" box, and "+ Lock" leaves Add Component', await waitFor(`(() => { const R = [...${insp}.querySelectorAll('.sp-row')]; const i = R.findIndex((r) => r.querySelector('.sp-group')?.textContent === '▾ Lock'); const box = i >= 0 ? R[i + 1]?.querySelector('input[type=checkbox]') : null; return !!box && box.checked && R[i + 1].querySelector('.sp-label')?.textContent === 'locked' && !${addBtn('+ Lock')}; })()`), JSON.stringify(await evalJson(cardTitles)));
+  await sleep(600);
+  await evalJson(`(${addBtn('remove Lock')}.click(), true)`);
+  check('the Lock card\'s "remove Lock" takes the component off, and "+ Lock" is offered again', await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('benchlamp')?.lock) && !${cardTitles}.includes('Lock') && !!${addBtn('+ Lock')}`), JSON.stringify(await evalJson(cardTitles)));
+  await sleep(600);
+  await evalJson(`import('/lib/build.js').then((m) => (m.undo(), true))`);
+  check('one undo puts the Lock back (remove is an ordinary edit)', await waitFor(isLocked));
+  await sleep(600);
+  await evalJson(`import('/lib/build.js').then((m) => (m.undo(), true))`);
+  check('…and one more takes it off again (the add undoes too)', await waitFor(`import('/lib/world.js').then((m) => !m.comps.get('benchlamp')?.lock)`));
+}
+
+console.log('\nthe first seat in one step (Add Component ▸ + Seats, which was Components ▸ + seat…):');
 {
   await evalJson(`import('/lib/net.js').then((m) => (m.sendVerb('comp', { id: 'crate1', type: 'sockets', data: null }), true))`);
   await evalJson(`import('/lib/scenegraph.js').then((m) => (m.sceneSelect('crate1'), true))`);
-  const btn = `[...${insp}.querySelectorAll('button')].find((b) => b.textContent.trim() === '+ seat…')`;
-  check('a model without sockets is offered "+ seat…"', await waitFor(`!!${btn}`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('button')].map((b) => b.textContent.trim())`)));
+  const btn = `[...${insp}.querySelectorAll('button')].find((b) => b.textContent.trim() === '+ Seats')`;
+  check('a model without sockets is offered "+ Seats"', await waitFor(`!!${btn}`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('button')].map((b) => b.textContent.trim())`)));
   await evalJson(`(${btn}.click(), true)`);
-  check('clicking it arms seat placement directly (no empty sockets comp first)', await waitFor(`import('/lib/seatedit.js').then((m) => m.seatArmed())`));
+  check('clicking it arms seat placement directly (no empty sockets comp first)', await waitFor(`import('/lib/seatedit.js').then((m) => m.seatArmed())`), JSON.stringify(await evalJson(`({ btn: (() => { const b = ${btn}; return b ? { disabled: b.disabled, title: b.closest('.sp-row')?.title } : null; })(), hint: document.querySelector('#hintbar')?.textContent, sel: globalThis.__editPanels?.().selection, errs: (window.__errs ?? []).slice(-3), refused: window.__refused })`)));
   check('…and wrote nothing yet', await evalJson(`import('/lib/world.js').then((m) => !m.comps.get('crate1')?.sockets)`));
   await evalJson(`(document.activeElement?.blur?.(), dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape' })), true)`);
   check('Esc cancels the arming', await waitFor(`import('/lib/seatedit.js').then((m) => !m.seatArmed())`));
   await evalJson(`import('/lib/net.js').then((m) => (m.sendVerb('comp', { id: 'crate1', type: 'sockets', data: { seat: { pos: [0, 0.5, 0], yaw: 0 } } }), true))`);
-  check('once it has a seat, "+ seat…" gives way to the sockets group', await waitFor(`!${btn} && [...${insp}.querySelectorAll('.sp-group')].some((g) => /Sockets/.test(g.textContent))`));
+  check('once it has a seat, "+ Seats" gives way to the Seats card', await waitFor(`!${btn} && ${cardTitles}.includes('Seats')`), JSON.stringify(await evalJson(cardTitles)));
   await evalJson(`import('/lib/net.js').then((m) => (m.sendVerb('comp', { id: 'crate1', type: 'sockets', data: null }), true))`);
 }
 
@@ -525,15 +657,17 @@ console.log('\nright-click a field: copy value, paste value, copy path, reset to
   await evalJson(`import('/lib/scenegraph.js').then((m) => (m.sceneSelect('benchlamp'), true))`);
   await sleep(300);
   const rowOf = (label: string) => `[...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label')?.textContent === ${JSON.stringify(label)})`;
-  const menuOn = (label: string) => evalJson(`(() => { const l = ${rowOf(label)}.querySelector('.sp-label'); l.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 1400, clientY: 300 })); return [...document.querySelectorAll('.sp-ctx-item')].map((i) => i.textContent); })()`);
+  const menuOn = async (label: string) => (await painted(), evalJson(`(() => { const l = ${rowOf(label)}.querySelector('.sp-label'); l.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 1400, clientY: 300 })); return [...document.querySelectorAll('.sp-ctx-item')].map((i) => i.textContent); })()`));
   const pick = (re: string) => evalJson(`(() => { const i = [...document.querySelectorAll('.sp-ctx-item')].find((x) => new RegExp(${JSON.stringify(re)}).test(x.textContent)); i?.click(); return !!i; })()`);
   const E = (k: string) => evalJson(`import('/lib/state.js').then((m) => m.state.st.entities.benchlamp.${k})`);
   await evalJson(`(() => { const i = ${rowOf('brightness')}.querySelector('.sp-num'); i.value = '25'; i.dispatchEvent(new Event('change')); return true; })()`);
-  await waitFor(`import('/lib/state.js').then((m) => m.state.st.entities.benchlamp.intensity === 25)`);
+  // wait for the PAINT as well as the fold: the menu reads the row's live field, which the rAF-coalesced
+  // repaint updates — headless delivers rAF late, and a right-click before it copied the old 40 (seen 10-01)
+  await waitFor(`import('/lib/state.js').then((m) => m.state.st.entities.benchlamp.intensity === 25) && ${rowOf('brightness')}?.querySelector('.sp-num').value === '25'`);
   const items = await menuOn('brightness') as string[];
   check('the menu offers copy value, copy path (light.intensity) and reset to default', items.some((t) => /^copy value/.test(t)) && items.some((t) => /copy path\s+\(light\.intensity\)/.test(t)) && items.some((t) => /reset to default/.test(t)), JSON.stringify(items));
   await pick('^copy value');
-  check('copy value holds the LIVE value (25)', await evalJson(`import('/lib/panels.js').then((m) => m._fieldClip()?.value === 25)`), JSON.stringify(await evalJson(`import('/lib/panels.js').then((m) => m._fieldClip())`)));
+  check('copy value holds the LIVE value (25)', await evalJson(`import('/lib/panels.js').then((m) => m._fieldClip()?.value === 25)`), JSON.stringify(await evalJson(`import('/lib/panels.js').then((m) => m._fieldClip())`)) + ' fold=' + JSON.stringify(await evalJson(`import('/lib/state.js').then((m) => m.state.st.entities.benchlamp)`)) + ' sel=' + JSON.stringify(await evalJson(`globalThis.__editPanels?.().selection`)) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)) + ' hint=' + JSON.stringify(await evalJson(`document.querySelector('#hintbar')?.textContent`)) + ' focus=' + JSON.stringify(await evalJson(`(() => { const a = document.activeElement; return a ? [a.tagName, a.className, a.placeholder ?? null, !!a.closest?.('[data-frame]'), a.closest?.('[data-frame]')?.dataset.frame] : null; })()`)) + ' face=' + JSON.stringify(await evalJson(`${rowOf('brightness')}?.querySelector('.sp-num').value`)));
   const rItems = await menuOn('range') as string[];
   check('another number field offers "paste value (25)"', rItems.some((t) => /paste value\s+\(25\)/.test(t)), JSON.stringify(rItems));
   await pick('^paste value');
@@ -544,12 +678,14 @@ console.log('\nright-click a field: copy value, paste value, copy path, reset to
   check('copy path puts the address a model uses on the clip', await evalJson(`import('/lib/panels.js').then((m) => m._fieldClip()?.value === 'light.intensity')`));
 }
 
-console.log('\ninspector filter: non-matches hide, groups holding a hit open (even folded ones):');
+console.log('\ninspector filter: non-matches hide, cards holding a hit open (even folded ones); the header stays:');
 {
   await evalJson(`import('/lib/scenegraph.js').then((m) => (m.sceneSelect('benchlamp'), true))`);
   await sleep(300);
-  // field labels only — the header's info lines (id, lib, placed by, world) stay by design
-  const labels = `[...${insp}.querySelectorAll('.sp-row:not(.sp-f-info) .sp-label')].map((l) => l.textContent).filter(Boolean)`;
+  // field labels only, BELOW the filter box: the header (id, lib, placed by, world — and in B label +
+  // hidden, Unity's name and active box) stays by design, so it is read separately
+  const labels = `(() => { const R = [...${insp}.querySelectorAll('.sp-row')]; const at = R.findIndex((r) => /filter properties/.test(r.querySelector('.sp-text')?.placeholder ?? '')); return R.slice(at + 1).filter((r) => !r.classList.contains('sp-f-info')).map((r) => r.querySelector('.sp-label')?.textContent).filter(Boolean); })()`;
+  const headLabels = `(() => { const R = [...${insp}.querySelectorAll('.sp-row')]; const at = R.findIndex((r) => /filter properties/.test(r.querySelector('.sp-text')?.placeholder ?? '')); return R.slice(0, at).map((r) => r.querySelector('.sp-label')?.textContent).filter(Boolean); })()`;
   const groups = `[...${insp}.querySelectorAll('.sp-group')].map((g) => g.textContent.slice(2))`;
   const setFilter = (v: string) => evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-text .sp-text')].find((x) => /filter properties/.test(x.placeholder)); i.value = ${JSON.stringify(v)}; i.dispatchEvent(new Event('change')); i.blur(); return true; })()`);
   // (no \s in these page regexes: inside a TS template literal it collapses to a plain 's')
@@ -558,13 +694,17 @@ console.log('\ninspector filter: non-matches hide, groups holding a hit open (ev
   check('Light folded before filtering', await waitFor(`[...${insp}.querySelectorAll('.sp-group')].some((g) => /^▸ Light/.test(g.textContent))`), JSON.stringify(await evalJson(groups)));
   await setFilter('range');
   check('"range": only range rows remain, and the folded Light group OPENS for its hit', await waitFor(`(() => { const L = ${labels}; return L.length > 0 && L.every((l) => /range/.test(l)) && [...${insp}.querySelectorAll('.sp-group')].some((g) => /^▾ Light/.test(g.textContent)); })()`), JSON.stringify({ labels: await evalJson(labels), groups: await evalJson(groups) }));
-  check('…and Flags (no hit) is gone', !(await evalJson(groups) as string[]).some((g) => /Flags/.test(g)));
-  await setFilter('flags');
-  check('a matching GROUP name keeps all its fields', await waitFor(`(() => { const L = ${labels}; return L.includes('locked') && L.includes('hidden') && L.includes('label'); })()`), JSON.stringify(await evalJson(labels)));
+  // was "…and Flags (no hit) is gone": B has no Flags group; the Transform card is the one with no hit
+  check('…and the Transform card (no hit) is gone, Add Component too', !(await evalJson(groups) as string[]).some((g) => /Transform|Add Component/.test(g)), JSON.stringify(await evalJson(groups)));
+  check('…while the header keeps label + hidden (B moved them there, out of the filter\'s reach)', await evalJson(`(() => { const H = ${headLabels}; return H.includes('label') && H.includes('hidden'); })()`), JSON.stringify(await evalJson(headLabels)));
+  // was 'flags' (a matching group name keeps locked/hidden/label); now a CARD name: "transform" is in no
+  // field label or key (translate x … pos.x), so only the card-name rule can keep its rows
+  await setFilter('transform');
+  check('a matching CARD name keeps all its fields', await waitFor(`(() => { const L = ${labels}; return JSON.stringify(L) === JSON.stringify(['translate x', 'translate y', 'translate z']); })()`), JSON.stringify(await evalJson(labels)));
   await setFilter('zzzz');
   check('no match says so', await waitFor(`/no property matches "zzzz"/.test(${insp}.textContent)`));
   await setFilter('');
-  check('clearing brings everything back (Flags and Channels)', await waitFor(`(() => { const G = ${groups}; return G.some((g) => /Flags/.test(g)) && G.some((g) => /Channels/.test(g)); })()`), JSON.stringify(await evalJson(groups)));
+  check('clearing brings everything back (Transform, Light, Add Component)', await waitFor(`(() => { const G = ${groups}; return G.includes('Transform') && G.includes('Light') && G.includes('Add Component'); })()`), JSON.stringify(await evalJson(groups)));
   await evalJson(`([...${insp}.querySelectorAll('.sp-group')].find((g) => /^▸ Light/.test(g.textContent))?.click(), true)`);   // unfold for later checks
 }
 
