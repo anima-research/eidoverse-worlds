@@ -79,7 +79,7 @@ const part = { t: 'text', default: null, hint: 'a named node of the model; empty
 
 const DEFS = [
   { name: 'Transform', category: 'Core', builtin: true, summary: 'where it is: position, heading, size',
-    params: { pos: { t: 'vec3', unit: 'm', default: [0, 0, 0] }, yaw: { ...deg, default: 0 }, scale: { t: 'num', default: 1, min: 0.01, softMax: 12, step: 0.05 } },
+    params: { pos: { t: 'vec3', unit: 'm', default: [0, 0, 0] }, q: { t: 'quat', default: [0, 0, 0, 1], hint: 'full orientation (shared/rot.js); yaw is its friendly subset' }, yaw: { ...deg, default: 0 }, scale: { t: 'num', default: 1, min: 0.01, softMax: 12, step: 0.05 } },
     fallback: { text: 'at (x, y, z)' } },
   { name: 'Model', category: 'Rendering', summary: 'a 3D model from the library',
     params: { lib: { t: 'asset', default: null, required: true } },
@@ -176,7 +176,7 @@ const omit = (o, keys) => Object.fromEntries(Object.entries(o).filter(([k]) => !
 export function componentsOf(ent) {
   if (!ent || typeof ent !== 'object') return { components: [], stamps: {} };
   const out = [];
-  const tf = pick(ent, ['pos', 'yaw', 'scale']);
+  const tf = pick(ent, ['pos', 'q', 'yaw', 'scale']);
   out.push({ type: 'Transform', params: tf });
   if (ent.kind === 'light') {
     const p = pick(ent, ['color', 'intensity', 'range']);
