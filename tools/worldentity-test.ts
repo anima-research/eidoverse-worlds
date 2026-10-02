@@ -10,6 +10,7 @@
 //    the Weather; a ground/grass pick changes only its own dial
 // 3. edits: every card field resolves, commits as the existing verb, folds back
 //    to the value typed; undo's inverse folds the world back; the owner gate
+// 5. the text tier: inspect / edit / hierarchy speak @world
 import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { emptyState, foldEntry } from '../shared/fold.js';
@@ -182,6 +183,30 @@ console.log('\n3. the cards: every field commits through the existing verbs and 
   const empty = worldSchema(emptyState(), {});
   check('an empty world still shows four cards, defaults marked, saying how to grow ground and grass', empty.sections.list.length === 4 && empty.sections.list.every((s: any) => s.present === false)
     && /Build ▸ World/.test(empty.sections.list.find((s: any) => s.type === 'Ground').info[0][1]));
+}
+
+// ------------------------------------------------------------ 5. the text tier
+console.log('\n5. the text tier (mcpl/tools.ts): inspect, edit and hierarchy speak @world:');
+{
+  const { WorldAgent } = await import('../mcpl/agent.ts');
+  const { HANDLERS } = await import('../mcpl/tools.ts');
+  const ag = new WorldAgent({ name: 'eye' });
+  const A = ag as any; let n = 1;
+  const entry = (verb: string, args: Record<string, unknown>) => A.applyEntry({ verb, args, ts: T0 + n * 1000, seq: n++, actor: 'owner' }, false);
+  entry('sky', { hours: 17.6, clouds: 'cumulus' });
+  entry('terrain', terrainArgs(PAL, { seed: 7, shape: 'hills', tint: 'meadow' }));
+  entry('spawn', { id: 'pivot', pos: [1, 0, 1] });
+  const out = (r: any) => (r?.content ?? []).map((c: any) => c.text).join('\n');
+  const insp = out(await HANDLERS.inspect(ag as any, { id: WORLD_ID }));
+  check('inspect @world: its components and every field, by address', /\[@world\] the world entity/.test(insp) && /components: Sky, Weather \(default\), Ground, Grass \(default\)/.test(insp) && /sky\.clouds = cumulus/.test(insp) && /ground\.amplitude = 2\.6/.test(insp), insp.slice(0, 300));
+  const ed = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'sky.hours': 6, 'ground.amplitude': '+=1' }, dry: true }));
+  check('edit @world (dry): one sky and one terrain verb, the sky carrying everything standing', /would send sky \{"hours":6,"clouds":"cumulus"\}/.test(ed) && /would send terrain .*"amplitude":3\.6/.test(ed), ed);
+  const bad = out(await HANDLERS.edit(ag as any, { id: WORLD_ID, set: { 'pos.x': 1 }, dry: true }));
+  check('…an address the world has not is refused by name', /refused: pos\.x: no such field on @world/.test(bad), bad);
+  const hier = out(await HANDLERS.hierarchy(ag as any, {}));
+  check('hierarchy pins the world first, then the things', /^\[@world\] World — sky golden|^\[@world\] World — sky /.test(hier) && /\[pivot\]/.test(hier.split('\n')[1] ?? ''), hier.split('\n').slice(0, 2).join(' / '));
+  const filtered = out(await HANDLERS.hierarchy(ag as any, { filter: 'zzz' }));
+  check('…even under a filter that matches nothing else', /^\[@world\]/.test(filtered) && /no placed thing matches "zzz"/.test(filtered), filtered);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

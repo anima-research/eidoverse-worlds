@@ -1170,6 +1170,12 @@ export class WorldAgent {
    *  what shared/editschema.js expects. */
   /** Every placed thing's id in the fold (the hierarchy tools walk them). */
   foldedIds(): string[] { return Object.keys(this.st.entities); }
+  /** The world's half of the fold — state.sky / terrain / grass — which
+   *  shared/worldentity.js reads as the world entity `@world`. */
+  worldFold(): { sky: unknown; terrain: unknown; grass: unknown } {
+    const s = this.st as any;
+    return { sky: s.sky ?? null, terrain: s.terrain ?? null, grass: s.grass ?? null };
+  }
   foldRecord(id: string): Record<string, unknown> | null {
     const e = (this.st.entities as Record<string, any>)[id];
     if (!e) return null;
