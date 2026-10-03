@@ -1,3 +1,5 @@
+import { routeLevel, prepareWallCheck, routeGeometryFor, ROUTE_STEP_METRES } from './structure-route.js';
+export { ROUTE_STEP_METRES };
 // structure_field — the griddled-building model's pure half (§11.4 discipline,
 // sibling of models_field.js / flora_field.js / emitter_field.js).
 //
@@ -621,13 +623,7 @@ export function planStructure(data) {
     // mitred diagonal — this approximation is only what the body feels.
     for (const [k, e] of level.walls) {
       if (e.axis < 2) continue;
-      const a = [e.x * g.tile, e.z * g.tile];
-      const b = e.axis === 2
-        ? [(e.x + 1) * g.tile, (e.z + 1) * g.tile]
-        : [(e.x + 1) * g.tile, e.z * g.tile];
-      const a2 = e.axis === 2 ? a : [e.x * g.tile, (e.z + 1) * g.tile];
-      const [sx, sz] = e.axis === 2 ? a : b;
-      const [ex, ez] = e.axis === 2 ? b : a2;
+      const [[sx, sz], [ex, ez]] = segmentEnds(e, g);
       const open = ['door', 'arch'].includes(level.apertures.get(k));
       const N = 8, r = g.wallT * 0.8;
       for (let i = 0; i <= N; i++) {
@@ -1060,33 +1056,57 @@ export function routeCells(level, fromKey, toKey) {
   return null;
 }
 
-/** A route in grid-local metres: the true start, the centre of each cell the
- *  path turns in, and the true destination.
- *
- *  Only TURNS become waypoints. A straight run down a corridor is one leg, so a
- *  body walks it as a straight line instead of stuttering cell to cell — and
- *  the waypoint count stays proportional to the number of decisions rather than
- *  to the distance. */
-export function routeLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
-  const g = plan.grid;
-  const lv = plan.levels.find((L) => L.rooms.length) ?? plan.levels[0];
-  if (!lv) return null;
-  const level = lv.level;
-  const cells = routeCells(level, nodeAtPoint(level, g, fromX, fromZ), nodeAtPoint(level, g, toX, toZ));
-  if (!cells) return null;
-  const centre = (k) => {
-    const [x, z] = k.split(':')[0].split(',').map(Number);
-    return [(x + 0.5) * g.tile, (z + 0.5) * g.tile];
+/** Prepare one immutable structure-plan snapshot against a supplied walking basis. The standing
+ * resolver, not floor ordering or x/z overlap, owns that basis:
+ * terrain {heightAt(localX,localZ), step?}; floor {height, level?, step?}.
+ * A floor's level index identifies THIS structure as the support owner;
+ * omit it on other structures, which can constrain walls but offer no support.
+ * step is the feet-to-step obstruction band in local metres, not a grant of
+ * floor ownership. Callers scale ROUTE_STEP_METRES from world metres. */
+export function prepareRouteLocal(plan, basis) {
+  // Freeze the chosen mode/identity and function reference for this walk.
+  // A caller cannot change a floor into terrain halfway through validation.
+  basis = basis ? { ...basis } : basis;
+  const blocked = reason => ({ kind: 'blocked', reason, points: [], confined: basis?.kind === 'floor' && basis.level != null });
+  if (!basis || !['terrain','floor'].includes(basis.kind))
+    return { route: () => blocked('walking support basis is required'), clear: () => false, confined: false };
+  let clear;
+  try { clear = prepareWallCheck(plan,basis); }
+  catch (e) { return { route: () => blocked(String(e.message)), clear: () => false, confined: false }; }
+  const confined = basis.kind === 'floor' && basis.level != null;
+  // The immutable plan's cached local topology has no support/transform
+  // state. Each new received component revision produces a different plan.
+  const union = routeGeometryFor(plan).terrain;
+  return {
+    confined,
+    clear: (ax,az,bx,bz) => clear([ax,az],[bx,bz]),
+    route(fromX,fromZ,toX,toZ) {
+      const from=[fromX,fromZ], to=[toX,toZ];
+      if (![...from,...to].every(Number.isFinite)) return blocked('non-finite endpoint');
+      if (basis.kind === 'terrain') return { ...routeLevel(union,plan.grid,from,to,true,clear), confined: false };
+      if (!Number.isFinite(basis.height)) return blocked('non-finite floor height');
+      if (!confined) return clear(from,to)
+        ? {kind:'clear',points:[from,to],confined:false}
+        : blocked('another structure obstructs the identified-floor route');
+      const lv=Number.isInteger(basis.level) ? plan.levels[basis.level] : null;
+      if (!lv || Math.abs(lv.y-basis.height)>1e-7)
+        return blocked('identified support floor does not match supplied feet height');
+      return { ...routeLevel(lv.level,plan.grid,from,to,false,clear), confined:true };
+    },
   };
-  const pts = [[fromX, fromZ]];
-  for (let i = 1; i < cells.length - 1; i++) {
-    const [ax, az] = cells[i - 1].split(':')[0].split(',').map(Number);
-    const [bx, bz] = cells[i + 1].split(':')[0].split(',').map(Number);
-    if (ax !== bx && az !== bz) pts.push(centre(cells[i]));   // a turn
-  }
-  pts.push([toX, toZ]);
-  void y;
-  return pts;
+}
+
+/** Legacy point-list surface. Numeric y is a flat terrain walking plane, not
+ * evidence of floor support; elevated callers use prepareRouteLocal explicitly. */
+export function planRouteLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
+  return prepareRouteLocal(plan,{kind:'terrain',heightAt:()=>y,step:ROUTE_STEP_METRES}).route(fromX,fromZ,toX,toZ);
+}
+export function routeSegmentClear(plan, fromX, fromZ, toX, toZ, y = 0) {
+  return prepareRouteLocal(plan,{kind:'terrain',heightAt:()=>y,step:ROUTE_STEP_METRES}).clear(fromX,fromZ,toX,toZ);
+}
+export function routeLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
+  const result = planRouteLocal(plan, fromX, fromZ, toX, toZ, y);
+  return result.kind === 'blocked' ? null : result.points;
 }
 
 // ---- swept wall geometry ----------------------------------------------------
@@ -1178,11 +1198,8 @@ export function wallPolylines(level, g) {
   const segs = [];
   for (const [k, e] of level.walls) {
     if (level.apertures.has(k)) continue;
-    const a = cellKey(e.x, e.z);
-    const b = e.axis === 0 ? cellKey(e.x + 1, e.z)
-      : e.axis === 1 ? cellKey(e.x, e.z + 1)
-      : e.axis === 2 ? cellKey(e.x + 1, e.z + 1)     // ↘ diagonal
-      : cellKey(e.x - 1, e.z + 1);                   // ↗ diagonal
+    const [start, end] = segmentEnds(e, { tile: 1 }); // vertex keys, before metre scaling
+    const a = cellKey(...start), b = cellKey(...end);
     segs.push({ a, b, mat: e.mat, used: false });
   }
   const inc = new Map();
@@ -1335,11 +1352,13 @@ export function sweepProfile(path, profile, y0, ends = null) {
 
 /** A wall segment's two endpoints in grid-local metres, for any axis. */
 export function segmentEnds(e, g) {
-  const a = [e.x * g.tile, e.z * g.tile];
+  // Both diagonals cut their OWN cell, as nodeAtPoint/halfTriangle define.
+  // Axis 3 starts at NE and ends at SW; its start is not the NW corner.
+  const a = [(e.x + (e.axis === 3 ? 1 : 0)) * g.tile, e.z * g.tile];
   const b = e.axis === 0 ? [(e.x + 1) * g.tile, e.z * g.tile]
     : e.axis === 1 ? [e.x * g.tile, (e.z + 1) * g.tile]
     : e.axis === 2 ? [(e.x + 1) * g.tile, (e.z + 1) * g.tile]
-    : [(e.x - 1) * g.tile, (e.z + 1) * g.tile];
+    : [e.x * g.tile, (e.z + 1) * g.tile];
   return [a, b];
 }
 
@@ -1406,11 +1425,7 @@ export function levelSweeps(level, g, floorY) {
     const ap = level.apertures.get(k);
     if (!ap) continue;
     const prf = APERTURES[ap];
-    const a = [e.x * g.tile, e.z * g.tile];
-    const b = e.axis === 0 ? [(e.x + 1) * g.tile, e.z * g.tile]
-      : e.axis === 1 ? [e.x * g.tile, (e.z + 1) * g.tile]
-      : e.axis === 2 ? [(e.x + 1) * g.tile, (e.z + 1) * g.tile]
-      : [(e.x - 1) * g.tile, (e.z + 1) * g.tile];
+    const [a, b] = segmentEnds(e, g);
     const top = Math.min(prf.top, g.wallH);
     const nd = neighbourDirs(level, g, k, e);
     for (const [lo, hi] of [[0, prf.bottom], [top, g.wallH]]) {
