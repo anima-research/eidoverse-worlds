@@ -11,7 +11,8 @@
 // it joins as a visitor and keeps a visitor's verbs.
 //
 // Env:
-//   STREAM_URL     rtsp://127.0.0.1:8554/screen   (deploy/projector; or FILE=path.wav to rehearse)
+//   STREAM_URL     rtsp://127.0.0.1:8554/screen   (deploy/projector; or FILE=path.wav to rehearse,
+//                  or FILE=path.jsonl to replay a saved TRANSCRIPT's lines with no audio and no STT)
 //   WORLD_URL      ws(s)://host/ws               (default ws://127.0.0.1:8940/ws)
 //   WORLD_TOKEN    the bot's bearer token          (its actor id is reserved in mcpl/tokens.json)
 //   WORLD_NAME     world                           (default commons)
@@ -25,18 +26,24 @@
 //   SPOOL          JSONL path of every line tried and every receipt (default
 //                  ./captionbot.spool.jsonl; SPOOL= empty for none). A restart
 //                  re-queues whatever the world never confirmed. Append-only:
-//                  rotate it between events.
+//                  rotate it between events. The spool is a promise, so it
+//                  fails closed: if a line's row cannot be written the line is
+//                  refused and intake halts, out loud, until a restart.
+//   SPOOL_BEST_EFFORT=1  the weaker promise: a spool failure is said once
+//                  (then every 100th line) and the line queues anyway — a
+//                  restart may then miss it. Either way a FILE run whose
+//                  spool promise was not kept for some line exits non-zero.
 //   MAX_PENDING    queue bound in lines (default 600); past it the oldest
 //                  queued lines are dropped, out loud, into the spool
 //   DRY_RUN=1      no world: print each line as it would be sent
 //   TRANSCRIPT     optional local JSONL copy of every final line — a
 //                  convenience for the operator, not the record: the world
 //                  log is the record
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { ScribeSttProvider, AssemblyAiSttProvider } from '@animalabs/voice-kit';
 import { AudioTap } from './tap.ts';
 import { ffmpegSource, fileSource } from './sources.ts';
-import { Captioner } from './captioner.ts';
+import { Captioner, type Caption } from './captioner.ts';
 import { WorldClient } from './world.ts';
 
 const env = (k: string, d = '') => process.env[k] ?? d;
@@ -55,10 +62,11 @@ const spool = env('SPOOL', './captionbot.spool.jsonl');
 const world = DRY_RUN ? null : new WorldClient({
   url: env('WORLD_URL', 'ws://127.0.0.1:8940/ws'), token: env('WORLD_TOKEN'), world: env('WORLD_NAME', 'commons'),
   actor: env('ACTOR', 'captioner'), screenId: SCREEN_ID, title: env('TITLE') || undefined,
-  spool: spool || undefined, maxPending: Number(env('MAX_PENDING', '600')), log,
+  spool: spool || undefined, spoolBestEffort: env('SPOOL_BEST_EFFORT') === '1',
+  maxPending: Number(env('MAX_PENDING', '600')), log,
 });
 world?.connect();
-if (world) log(`session ${world.session}; spool ${spool || '(none)'}`);
+if (world) log(`session ${world.session}; spool ${spool ? `${spool} (${env('SPOOL_BEST_EFFORT') === '1' ? 'best effort' : 'fail-closed'})` : '(none)'}`);
 
 const tap = new AudioTap(RATE);
 const captioner = new Captioner({
@@ -66,24 +74,43 @@ const captioner = new Captioner({
   thresholdDb: Number(env('VAD_DB', '-45')), speaker: () => world?.speaker(), log,
 });
 let lines = 0;
-captioner.onCaption((c) => {
+// one path for every final line, wherever it came from: the live captioner,
+// a rehearsed audio file, or a replayed transcript
+const onLine = (c: Caption) => {
   lines++;
   log(`📝 [${c.t0.toFixed(1)}–${c.t1.toFixed(1)}] ${c.speaker ? c.speaker + ': ' : ''}${c.text}`);
   if (env('TRANSCRIPT')) appendFileSync(env('TRANSCRIPT'), JSON.stringify({ ...c, session: world?.session, at: Date.now() }) + '\n');
   if (world) world.caption(c); else log(`   would send caption n=${lines}`);
-});
+};
+captioner.onCaption(onLine);
 tap.attach(captioner);
 
 const file = env('FILE');
 if (file) {
-  log(`rehearsing from ${file}`);
-  await fileSource(file, tap);
+  if (file.endsWith('.jsonl')) {
+    // a saved TRANSCRIPT (one {t0, t1, text, speaker?} per line, as this bot
+    // writes it): the lines go through the same door as live ones, with no
+    // audio decoded and no STT session opened. What an operator uses to
+    // re-run an event's captions against a world, and what the CLI process
+    // test drives the real exit owner with.
+    log(`replaying lines from ${file}`);
+    for (const row of readFileSync(file, 'utf8').split('\n')) {
+      if (!row.trim()) continue;
+      const { t0, t1, text, speaker } = JSON.parse(row) as Caption;
+      onLine({ t0, t1, text, ...(speaker ? { speaker } : {}) });
+    }
+  } else {
+    log(`rehearsing from ${file}`);
+    await fileSource(file, tap);
+  }
   await new Promise((r) => setTimeout(r, 2000)); // let the last final settle
   world?.end();
   await new Promise((r) => setTimeout(r, 1500)); // and the receipts land
-  log(`done — ${lines} lines, ${captioner.lateRevisions} late revisions dropped${world ? `; ${world.acked} confirmed, ${world.pendingCount} unconfirmed (in the spool)` : ''}`);
+  log(`done — ${lines} lines, ${captioner.lateRevisions} late revisions dropped${world ? `; ${world.acked} confirmed, ${world.pendingCount} unconfirmed${world.spoolMissed ? ` (${world.spoolMissed} of this run's lines are NOT in the spool: ${world.spoolFailed})` : ' (in the spool)'}${world.spoolRefused ? `, ${world.spoolRefused} REFUSED (spool unwritable: ${world.spoolFailed})` : ''}` : ''}`);
   world?.close();
-  process.exit(0);
+  // a batch caller reads the exit status: a run that refused lines, or
+  // queued them without their row, did not keep the spool's promise
+  process.exit(world?.spoolLost ? 1 : 0);
 } else {
   const url = env('STREAM_URL', 'rtsp://127.0.0.1:8554/screen');
   log(`listening to ${url}`);

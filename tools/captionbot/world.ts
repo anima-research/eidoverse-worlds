@@ -26,6 +26,21 @@
 // append-only) is the bot's durable record of what it tried and what the
 // world confirmed; a restart re-queues whatever it never saw confirmed.
 //
+// THE SPOOL IS A PROMISE, SO IT FAILS CLOSED (Mica, #187 round-two
+// follow-up). A line is queued only once its `queued` row is on disk; if
+// that write fails, the line is REFUSED and intake halts — new captions are
+// counted and refused, out loud, until the operator fixes the disk and
+// restarts (the replay then picks up exactly what was confirmed). What is
+// already queued still drains: it is in memory and on disk. `end` is not a
+// line — a perception clear, idempotent at the door — so it goes through
+// even with the spool down. The other rows (acked, refused, overflow) are
+// bookkeeping: a failed write there means a restart may resend a line that
+// already landed, which the door's dedupe makes harmless, so those log and
+// continue. `spoolBestEffort` (env SPOOL_BEST_EFFORT=1) states the weaker
+// promise instead: a `queued` row that cannot be written is said once (then
+// every 100th, like the refusals) and the line queues anyway — counted in
+// `spoolMissed`, because a restart before it is confirmed loses it.
+//
 // Captions are durable world testimony like `say`; `end` clears current
 // perception, not history. This client keeps nothing the world does not.
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
@@ -42,6 +57,8 @@ export interface WorldOptions {
   title?: string;
   /** JSONL spool path; omit for none (tests). */
   spool?: string;
+  /** Spool write failures log and continue instead of halting intake. */
+  spoolBestEffort?: boolean;
   /** Queue bound, in lines (default 600). */
   maxPending?: number;
   /** Minimum ms between sends (default 500: 2/s, under the 12-per-4-s door). */
@@ -81,6 +98,16 @@ export class WorldClient {
   session: string;
   n = 0;
   sent = 0; acked = 0; refused = 0; overflow = 0;
+  /** Lines refused because the spool could not take their `queued` row. */
+  spoolRefused = 0;
+  /** Lines queued WITHOUT their `queued` row (spoolBestEffort): a restart
+   *  before the world confirms them loses them. */
+  spoolMissed = 0;
+  /** Lines the spool's promise was not kept for, either way. A run that
+   *  ends with this non-zero did not do what the operator was told it does. */
+  get spoolLost(): number { return this.spoolRefused + this.spoolMissed; }
+  /** The first spool failure that halted intake, or null while writable. */
+  spoolFailed: string | null = null;
   onReceipt: ((args: Args) => void) | null = null;
 
   constructor(private opts: WorldOptions) {
@@ -140,7 +167,7 @@ export class WorldClient {
   /** The screen goes quiet for this session (idempotent at the door). */
   end(): void {
     const args: Args = { id: this.opts.screenId, session: this.session, end: true };
-    this.enqueue({ key: keyOf(args), args, tries: 0 });
+    this.enqueue({ key: keyOf(args), args, tries: 0 }, { durable: false });
   }
 
   /** A new time origin (source reconnect, restart): a later session. The old
@@ -151,9 +178,27 @@ export class WorldClient {
     this.log(`session → ${session}`);
   }
 
-  private enqueue(p: Pending): void {
+  private enqueue(p: Pending, { durable = true } = {}): void {
+    // the `queued` row is the promise a restart keeps: on disk BEFORE the
+    // line is in memory, or the line is not taken
+    if (durable && this.spoolFailed && !this.opts.spoolBestEffort) {
+      this.spoolRefused++;
+      // the halt was said once; from here every 100th refusal, not per line
+      if (this.spoolRefused % 100 === 0) this.log(`⛔ refused ${p.key}: spool unwritable (${this.spoolFailed}); ${this.spoolRefused} refused so far`);
+      return;
+    }
+    const wrote = this.spool({ state: 'queued', key: p.key, args: p.args, at: Date.now() });
+    if (durable && !wrote && !this.opts.spoolBestEffort) {
+      this.spoolRefused++;
+      this.log(`⛔ spool write failed (${this.spoolFailed}): intake halted — new captions are refused until the spool is writable and the bot restarts; the ${this.pendingCount} already queued still drain (SPOOL_BEST_EFFORT=1 to log and continue instead)`);
+      return;
+    }
+    if (durable && !wrote) {
+      // the weaker promise, kept out loud: once, then every 100th line
+      this.spoolMissed++;
+      if (this.spoolMissed === 1 || this.spoolMissed % 100 === 0) this.log(`⚠ spool write failed (${this.spoolFailed}): SPOOL_BEST_EFFORT=1, so the line queues anyway — a restart before the world confirms it loses it; ${this.spoolMissed} such line${this.spoolMissed === 1 ? '' : 's'} so far`);
+    }
     this.pending.push(p);
-    this.spool({ state: 'queued', key: p.key, args: p.args, at: Date.now() });
     const max = this.opts.maxPending ?? 600;
     let dropped = 0;
     while (this.pending.length > max) {
@@ -248,9 +293,16 @@ export class WorldClient {
     this.schedule();
   }
 
-  private spool(row: SpoolRow): void {
-    if (!this.opts.spool) return;
-    try { appendFileSync(this.opts.spool, JSON.stringify(row) + '\n'); } catch (e) { this.log(`spool write failed: ${(e as Error).message}`); }
+  /** Append one row. True when it is on disk (or there is no spool). */
+  private spool(row: SpoolRow): boolean {
+    if (!this.opts.spool) return true;
+    try { appendFileSync(this.opts.spool, JSON.stringify(row) + '\n'); return true; }
+    catch (e) {
+      const why = (e as Error).message;
+      if (row.state === 'queued') this.spoolFailed ??= why;
+      else this.log(`spool write failed on a ${row.state} row for ${row.key}: ${why} — a restart may resend it; the door dedupes`);
+      return false;
+    }
   }
 
   /** Re-queue whatever a previous life never saw confirmed. Their sessions

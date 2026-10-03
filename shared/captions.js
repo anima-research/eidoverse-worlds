@@ -55,9 +55,11 @@
 // does not change when the source improves, only its accuracy — and the
 // session says which attach a `00:30` belongs to.
 //
-// BOUNDS are in CHARACTERS (String.length), not bytes: a 240-character line
-// of CJK is ~720 UTF-8 bytes and that is fine — the bag is folded state, not
-// a verb payload under the 8 KB comp cap.
+// BOUNDS are in CHARACTERS (String.length, UTF-16 code units), not bytes: a
+// 240-character line of CJK is ~720 UTF-8 bytes and that is fine — the bag is
+// folded state, not a verb payload under the comp cap; and that cap is the
+// same unit (8192 characters of JSON, server/verbs.ts vComp), so a bag of 20
+// full lines plus title and speakers stays well inside it in any script.
 
 export const CAPTIONS_MAX_LINES = 20;
 export const CAPTION_TEXT_MAX = 240;
