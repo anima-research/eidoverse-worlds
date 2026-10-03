@@ -16,9 +16,13 @@
 //   2. Autoplay: the browser may refuse play() until a gesture. Every sound
 //      rides the shared unlock queue (client/lib/audiounlock.js), which retries
 //      all held elements on the first gesture and SAYS SO in chat.
-//   3. The clock is the author's: with `t0` every client seeks to the same
-//      playhead ((now - t0) mod duration when looping), so a late joiner hears
+//   3. The clock is the SERVER's: with `t0` every client seeks to the same
+//      playhead ((serverNow - t0) mod duration when looping), so a late joiner hears
 //      the same bar as everyone else. Without it, the top of the track.
+//      The server's clock is learned from pose frames, and an idle world
+//      sends none: a seek made before the first frame lands is made against
+//      the machine's own clock, and is made AGAIN on the first tick after
+//      the clock is known (seekSynced).
 //   4. Replace (same id, new bag): same src → adjust in place (volume, loop,
 //      playing, re-seek on a new t0); new src → tear down and rebuild. A
 //      sound whose entity left the scene keeps its graph but is silenced
@@ -39,6 +43,7 @@ import { volumeFor } from './voiceconsent.js';
 import { registerEditor } from './inspect.js';
 import { toast, flashHint } from './ui.js';
 import { guardedByOther, placerName } from './placer.js';   // the server's who-may-author rule, mirrored — by placer, never latest actor (#190)
+import { serverNow, clockSynced } from './remotes.js';   // the smoothed SERVER clock: the playhead is shared, so it runs on the clock everyone shares (see the clock note below)
 import { normalizeSound, SOUND_LOOK_MAX, SOUND_STORE } from '../../shared/sound.js';
 
 // id → { sound, el, srcNode, gain, panner }
@@ -80,7 +85,7 @@ function buildGraph(id, sound) {
   panner.rolloffFactor = 1.5;
   panner.maxDistance = sound.radius;
   srcNode.connect(gain); gain.connect(panner); panner.connect(worldGain());
-  const h = { id, sound, el, srcNode, gain, panner, seeked: false };
+  const h = { id, sound, el, srcNode, gain, panner, seeked: false, seekSynced: null };
   playing.set(id, h);
   return h;
 }
@@ -100,8 +105,13 @@ function seekTo(h) {
   const apply = () => {
     const dur = el.duration;
     if (!sound.t0 || !Number.isFinite(dur) || dur <= 0) return;
-    const elapsed = (Date.now() - sound.t0) / 1000;
+    // t0 is server time (the editor stamps it from serverNow(); a behavior
+    // script's Date.now() IS the server's). Elapsed against the machine's
+    // own clock made two listeners with skewed clocks hear the same radio
+    // their skew apart — and an author with a skewed clock shifted everyone.
+    const elapsed = (serverNow() - sound.t0) / 1000;
     const at = sound.loop ? ((elapsed % dur) + dur) % dur : Math.min(dur, Math.max(0, elapsed));
+    h.seekSynced = clockSynced();   // false: this seek used the machine clock; the tick redoes it once a frame has landed
     try { el.currentTime = at; } catch { /* not seekable yet — the loadedmetadata retry below covers it */ }
   };
   if (Number.isFinite(el.duration) && el.duration > 0) apply();
@@ -132,6 +142,9 @@ function applyFrom(id, data) {
 /** Per-frame: panners follow their entities, the listener follows the camera. */
 export function tickSounds() {
   if (!playing.size) return;
+  // a seek made before the server clock was known is made again, once, on
+  // the first tick after it is (rule 3)
+  if (clockSynced()) for (const h of playing.values()) if (h.seekSynced === false) seekTo(h);
   const ctx = audioContext();
   const L = ctx.listener;
   camera.getWorldPosition(_pos); camera.getWorldDirection(_fwd); _up.set(0, 1, 0).applyQuaternion(camera.quaternion);
@@ -210,7 +223,7 @@ registerEditor(({ id, obj, meta, bag, commit }) => {
       const bagFrom = (playingNow) => {
         const data = { src: q('src').value.trim(), volume: Number(q('volume').value), radius: Number(q('radius').value), loop: !!q('loop').checked, playing: playingNow };
         const look = q('look').value.trim(); if (look) data.look = look;
-        if (playingNow) data.t0 = Date.now();   // (re)start: everyone seeks to the same place
+        if (playingNow) data.t0 = serverNow();   // (re)start: everyone seeks to the same place — stamped in SERVER time, the clock every listener seeks against
         return data;
       };
       q('pick')?.addEventListener('click', () => q('file')?.click());
