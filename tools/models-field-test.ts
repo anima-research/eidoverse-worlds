@@ -10,7 +10,7 @@
 // every linkage a completed spawn could unblock); distance bands promote
 // what is in front of you.
 
-import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere } from "../client/lib/realize/models_field.js";
+import { planReconcile, bandForDistance, mountsTouching, collisionOwnedElsewhere, loadStatus } from "../client/lib/realize/models_field.js";
 import { P } from "../client/lib/scheduler.js";
 
 let passed = 0, failed = 0;
@@ -101,6 +101,14 @@ const light = () => ({ kind: "light", pos: [0, 1, 0], color: 0xffd9a0, intensity
     !collisionOwnedElsewhere({ ...model("x.glb"), comp: { lock: true } }, false));
   check("missing entity is not a crash", !collisionOwnedElsewhere(undefined, false));
 }
+
+check('ready geometry takes precedence', loadStatus({failedAt: 1}, true, true).state === 'ready');
+check('out of range explains deferred failure', loadStatus({failedAt: 1}, false, false).state === 'deferred');
+check('deferred failures cannot bypass residency', !loadStatus({failedAt: 1}, false, false).retryAvailable);
+check('failed in-range object offers retry', loadStatus({failedAt: 1}, false, true).retryAvailable);
+check('queued retry coalesces clicks', !loadStatus({loading: true, phase: 'queued', failedAt: 1}, false, true).retryAvailable);
+check('running job is loading', loadStatus({loading: true, phase: 'loading'}, false, true).state === 'loading');
+check('failure summary persists while retrying', loadStatus({loading: true, error: 'safe'}, false, true).error === 'safe');
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed) process.exit(1);
