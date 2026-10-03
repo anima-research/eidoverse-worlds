@@ -18,7 +18,10 @@
 // too; the boot sweep that CALLS getWorld stays in server.ts — waking
 // scripted worlds with the server is boot policy, not world mechanics.
 
-import { mkdirSync, existsSync, appendFileSync, readFileSync, writeFileSync, renameSync, copyFileSync } from "node:fs";
+import { mkdirSync, existsSync, appendFileSync, readFileSync, writeFileSync, renameSync, copyFileSync, statSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { logIdentity } from "./log-identity.ts";
+import { prepareRecordingReset } from "./recording.ts";
 import { join } from "node:path";
 import { WORLDS_DIR, FOLD_EVERY } from "./config.ts";
 import { BehaviorHost } from "./behaviors.ts";
@@ -111,6 +114,15 @@ export class WorldLog {
   private logPath: string;
   private posesPath: string;
   private snapPath: string;
+  private archiveLogId: string | null = null;
+
+  recordingLogId(): string {
+    if (!this.archiveLogId) {
+      this.flushLog(); // the identity must describe bytes on disk, including a fresh genesis
+      this.archiveLogId = logIdentity(this.logPath);
+    }
+    return this.archiveLogId;
+  }
   /** Where each identity last stood — the world remembers your resting place
    *  across disconnects, restarts, and hosts. Presence is ephemeral; the
    *  place you fell asleep is yours. */
@@ -124,10 +136,30 @@ export class WorldLog {
     this.posesPath = join(dir, "poses.json");
     this.snapPath = join(dir, "snapshot.json");
 
+    // A partial reset (or an empty/lost log) leaves derived files without an
+    // attributable current epoch. Retire them BEFORE creating a fresh genesis:
+    // ignoring them only in memory lets a second unclean restart restore them.
+    // Preserve bytes without guessing which erased directory they belong to.
+    const hasAuthoredLog = existsSync(this.logPath) && statSync(this.logPath).size > 0;
+    if (!hasAuthoredLog) {
+      const orphaned = ["snapshot.json", "poses.json", "snapshot.json.tmp", "poses.json.tmp"]
+        .filter(file => existsSync(join(dir, file)));
+      if (orphaned.length) {
+        const quarantine = join(dir, "orphaned-derived-" + randomUUID());
+        mkdirSync(quarantine);
+        // A failure propagates before genesis; a crash partway leaves no new
+        // log, so the remaining orphan files are retired on the next startup.
+        for (const file of orphaned) renameSync(join(dir, file), join(quarantine, file));
+        console.warn("[world:" + name + "] preserved orphan derived files in " + quarantine);
+      }
+    }
+
     // Boot = snapshot + the bytes after it. The offset is what keeps startup
     // proportional to the TAIL rather than to the whole history: without it we
     // would still parse every line ever written just to find where to resume.
-    if (existsSync(this.snapPath)) {
+    // Reset moves the log before the derived files. A crash in between can
+    // leave an old snapshot/poses beside no log: they cannot become a new epoch.
+    if (hasAuthoredLog && existsSync(this.snapPath)) {
       try {
         const snap = JSON.parse(readFileSync(this.snapPath, "utf8"));
         if (snap?.state && typeof snap.seq === "number") {
@@ -160,14 +192,14 @@ export class WorldLog {
       }
       this.dirtySinceFold = this.entries.length;
     }
-    if (existsSync(this.posesPath)) {
+    if (this.logBytes > 0 && existsSync(this.posesPath)) {
       try { this.poses = JSON.parse(readFileSync(this.posesPath, "utf8")); } catch { /* corrupt = fresh */ }
     }
     // A brand-new world's first entry names the log dialect — the one fix
     // with a deadline, because it only helps logs written after it exists
     // (Hesperus finding #5). Old readers fold it as an unknown verb: nothing.
     if (this.logBytes === 0 && this.snapSeq < 0) {
-      this.append("world", "genesis", { v: 2, dialect: "eidoverse-log" });
+      this.append("world", "genesis", { v: 2, dialect: "eidoverse-log", epoch: randomUUID() });
     }
   }
 
@@ -204,11 +236,14 @@ export class WorldLog {
    *  never destruction — and zero the in-memory log. The facade owns the
    *  other half (behavior teardown + the fresh genesis). */
   reset(): string {
+    this.archiveLogId = null;
     this.flushLog();   // pending lines belong to the OLD log — they must be
                        // in the file before it is renamed into the archive
     const dir = join(WORLDS_DIR, this.name);
-    const arch = join(dir, `erased-${new Date().toISOString().replace(/[:.]/g, "-")}`);
-    mkdirSync(arch, { recursive: true });
+    // Distinct resets may share a clock millisecond. An exclusive directory
+    // keeps the earlier epoch's log from being overwritten by a later rename.
+    const arch = join(dir, `erased-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID()}`);
+    mkdirSync(arch);
     for (const f of ["log.jsonl", "snapshot.json", "poses.json"]) {
       const p = join(dir, f);
       if (existsSync(p)) renameSync(p, join(arch, f));
@@ -360,8 +395,6 @@ export class WorldSession {
    *  plane: never persisted; outcomes commit as `place` verbs. */
   leases = new Map<string, { holder: Client; lastState: { p: number[]; yaw?: number; q?: number[] } | null; lastAt: number }>();
   frameSeq = 0;
-  recPath: string | null = null; // frames archive, created lazily on first recorded frame
-  lastRoster = "";               // last written roster line — deltas only
 
   /** `commit` is the facade's append-and-publish (§24 entry bus) — injected
    *  so the session's settlements ride the same spine as every other entry
@@ -466,10 +499,6 @@ export class World {
   get leases() { return this.session.leases; }
   get frameSeq() { return this.session.frameSeq; }
   set frameSeq(v: number) { this.session.frameSeq = v; }
-  get recPath() { return this.session.recPath; }
-  set recPath(v: string | null) { this.session.recPath = v; }
-  get lastRoster() { return this.session.lastRoster; }
-  set lastRoster(v: string) { this.session.lastRoster = v; }
 
   append(actor: string, verb: string, args: Record<string, unknown>): LogEntry {
     return this.log.append(actor, verb, args);
@@ -488,6 +517,7 @@ export class World {
   }
   fold(reason = "threshold") { this.log.fold(reason); }
   flushLog() { this.log.flushLog(); }
+  recordingLogId() { return this.log.recordingLogId(); }
   readHistory(opts: { before?: number; after?: number; limit?: number; verbs?: Set<string> | null }) {
     return this.log.readHistory(opts);
   }
@@ -505,10 +535,11 @@ export class World {
    *  Returns the archive directory. The caller decides who owns the fresh
    *  world and how to tell everyone standing in it. */
   reset(): string {
+    prepareRecordingReset(this.name);
     const arch = this.log.reset();
     this.bhv.disposeAll();
     this.bhv.sync();
-    this.log.append("world", "genesis", { v: 2, dialect: "eidoverse-log" });
+    this.log.append("world", "genesis", { v: 2, dialect: "eidoverse-log", epoch: randomUUID() });
     return arch;
   }
 }
