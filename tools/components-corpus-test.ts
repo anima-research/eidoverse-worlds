@@ -16,8 +16,10 @@ import { createHash } from 'node:crypto';
 import { emptyState, foldEntry } from '../shared/fold.js';
 import { componentsOf, entityOf, canon, sha256hex, RECORDS, addable, lightOf, colliderOf, isEmpty, recordHash } from '../shared/components.js';
 import { worldComponents, worldOf, worldState } from '../shared/worldentity.js';
-import { blueprintRefusal, blueprintHash, expand, overridesOf } from '../shared/blueprint.js';
+import { blueprintRefusal, blueprintHash, expand, overridesOf, placeVerbs, placeRefusal, copyTree, modernize, localComponents, LINK_KEY } from '../shared/blueprint.js';
+import { treeOf } from '../shared/hierarchy.js';
 
+const J = JSON.stringify;
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = '') => { if (ok) pass++; else fail++; console.log(`${ok ? '✓' : '✗'} ${name}${!ok && detail ? `  — ${detail}` : ''}`); };
 
@@ -154,6 +156,20 @@ const extras = new Map<string, number>();
 // expand back to its exact bytes once the placement is put back, and read
 // as a copy with no overrides
 let bpSaved = 0; const bpRefused = new Map<string, number>(); const bpBad: string[] = [];
+// …and then PLACED (step 6b): each saved blueprint placed as a copy (placeVerbs → the fold) where
+// the entity stood, read back (copyTree) as exactly the record, with bytes that are the original's —
+// or, for a legacy spelling (kind:"light", spawn's collide), the component spelling of the same
+// light / collider (owner, 10-02: every new write uses the component form). Then every root that
+// carries children saved WHOLE (its subtree, each child's Transform local) and placed the same way.
+let placed = 0, legacyPlaced = 0, treesPlaced = 0, treeParts = 0; const placeBad: string[] = []; const treeBad: string[] = []; const placeRefused = new Map<string, number>();
+const STAMP_KEYS = ['placer', 'born', 'actor', 'ts', 'box'];
+const bytesOf = (e: any) => { const o: any = { ...e }; for (const k of [...STAMP_KEYS, 'pos', 'q', 'yaw', 'parent']) delete o[k]; if (o.comp) { o.comp = { ...o.comp }; delete o.comp[LINK_KEY]; delete o.comp.captions; if (!Object.keys(o.comp).length) delete o.comp; } return o; };
+const placeInto = (pst: any, rec: any, at: any) => {
+  const plan = placeVerbs(rec, at, { taken: (x: string) => !!pst.entities[x] });
+  if (plan.errors.length) return { plan, error: plan.errors[0] };
+  let s = 0; for (const v of plan.verbs) foldEntry(pst, { seq: s++, ts: 1, actor: 'corpus', verb: v.verb, args: v.args });
+  return { plan, error: null };
+};
 for (const path of unique) {
   const st: any = emptyState();
   const lines = readFileSync(path, 'utf8').split('\n').filter(Boolean);
@@ -204,8 +220,60 @@ for (const path of unique) {
     if (ent.comp?.captions !== undefined) (back.comp ??= {}).captions = ent.comp.captions;
     const asCopy = { components, children: [] };
     const ov = overridesOf(asCopy, rec);
+    // placed: in a world of its own, at the entity's own placement
+    {
+      const pst: any = emptyState();
+      const { error } = placeInto(pst, rec, { id: 'copy', pos: placement.pos ?? [0, 0, 0], ...(placement.q ? { q: placement.q } : {}), ...(placement.yaw != null ? { yaw: placement.yaw } : {}) });
+      const tag = `${path.replace(/^.*?(worlds|fixtures)\//, '$1/')} ${eid}`;
+      if (error) { const k = error.replace(/\d+/g, 'N').slice(0, 70); placeRefused.set(k, (placeRefused.get(k) ?? 0) + 1); }
+      else {
+        placed++;
+        const got = pst.entities.copy;
+        const t = copyTree(pst.entities, 'copy', rec);
+        const pov = t ? overridesOf(t.tree, rec) : [{ missing: true }];
+        const legacy = ent.kind === 'light' || ent.collide !== undefined;
+        if (legacy) legacyPlaced++;
+        // the bytes: the original's, or (legacy) the modern spelling's — and then the meaning matches the original's
+        const want = legacy ? bytesOf(expand({ ...rec, root: { ...rec.root, components: modernize(rec.root.components) } }).entity) : bytesOf(ent);
+        const same = canon(bytesOf(got)) === canon(want)
+          && (!legacy || (canon({ ...lightOf(got), spelling: 0 }) === canon({ ...lightOf(ent), spelling: 0 }) && colliderOf(got) === colliderOf(ent) && got.kind == null))
+          && J(got.pos) === J(placement.pos ?? [0, 0, 0]) && got.comp?.[LINK_KEY]?.hash === blueprintHash(rec);
+        if ((!same || pov.length) && placeBad.length < 8) placeBad.push(`${tag}\n     was ${canon(bytesOf(ent)).slice(0, 240)}\n     got ${canon(bytesOf(got)).slice(0, 240)}${pov.length ? `\n     overrides ${JSON.stringify(pov).slice(0, 200)}` : ''}`);
+      }
+    }
     if ((canon(back) !== canon(ent) || ov.length || !/^[0-9a-f]{64}$/.test(blueprintHash(rec))) && bpBad.length < 8) {
       bpBad.push(`${path.replace(/^.*?(worlds|fixtures)\//, '$1/')} ${eid}\n     was ${canon(ent).slice(0, 300)}\n     got ${canon(back).slice(0, 300)}${ov.length ? `\n     overrides ${JSON.stringify(ov).slice(0, 200)}` : ''}`);
+    }
+  }
+  // whole trees: every root that carries children, saved with its subtree and placed
+  {
+    const world = st.entities ?? {};
+    const { roots, kids } = treeOf(world);
+    const strip = (comps: any[]) => comps.filter((c: any) => c.type !== 'Attachment' && c.type !== 'Captions');
+    for (const rid of roots) {
+      if (!kids.get(rid)?.length) continue;
+      const placement: any = {};
+      const node = (id: string, isRoot: boolean): any => {
+        const comps = isRoot ? componentsOf(world[id]).components : localComponents(world, world[id]);
+        const design = strip(comps).map((c: any) => {
+          if (c.type !== 'Transform' || !isRoot) return c;
+          const p = { ...c.params }; for (const k of ['pos', 'q', 'yaw']) if (p[k] !== undefined) { placement[k] = p[k]; delete p[k]; }
+          return { ...c, params: p };
+        });
+        const n: any = { components: design, children: (kids.get(id) ?? []).map((k) => node(k, false)) };
+        if (!isRoot) n.id = id.replace(/\//g, '_');
+        return n;
+      };
+      const rec: any = { kind: 'eido.blueprint', v: 1, name: 'tree', root: node(rid, true) };
+      const why = blueprintRefusal(rec);
+      if (why) { const k = `tree: ${why.replace(/\d+/g, 'N').slice(0, 60)}`; placeRefused.set(k, (placeRefused.get(k) ?? 0) + 1); continue; }
+      const pst: any = emptyState();
+      const { plan, error } = placeInto(pst, rec, { id: 'copy', pos: placement.pos ?? [0, 0, 0], ...(placement.q ? { q: placement.q } : {}), ...(placement.yaw != null ? { yaw: placement.yaw } : {}) });
+      if (error) { const k = `tree: ${error.replace(/\d+/g, 'N').slice(0, 60)}`; placeRefused.set(k, (placeRefused.get(k) ?? 0) + 1); continue; }
+      treesPlaced++; treeParts += Object.keys(plan.parts).length;
+      const t = copyTree(pst.entities, 'copy', rec);
+      const pov = t ? overridesOf(t.tree, rec) : [{ missing: true }];
+      if ((pov.length || Object.keys(t?.parts ?? {}).length !== Object.keys(plan.parts).length) && treeBad.length < 8) treeBad.push(`${path.replace(/^.*?(worlds|fixtures)\//, '$1/')} tree ${rid} (${Object.keys(plan.parts).length} parts)\n     overrides ${JSON.stringify(pov).slice(0, 300)}`);
     }
   }
   for (const ent of Object.values(st.entities ?? {})) for (const c of componentsOf(ent).components) {
@@ -218,6 +286,10 @@ check(`@world: the world's sky / terrain / grass as components and back, exact a
   worldBad.length === 0 && worldChecked > 0 && (worldTypes.get('Sky') ?? 0) > 0, '\n   ' + worldBad.join('\n   '));
 check(`blueprints: every final entity saved as a one-part blueprint expands back exact, with no overrides (${bpSaved} saved${bpRefused.size ? `; refused: ${[...bpRefused].map(([k, n]) => `${n}× ${k}`).join(' · ')}` : ''})`,
   bpBad.length === 0 && bpSaved > 0 && [...bpRefused.keys()].every((k) => /bytes|larger than a component/.test(k)), '\n   ' + bpBad.join('\n   '));
+check(`blueprints placed: every saved blueprint placed as a copy reads back as its record, with the original's bytes (${placed} placed, ${legacyPlaced} of them legacy lights/colliders written as components${placeRefused.size ? `; refused: ${[...placeRefused].map(([k, n]) => `${n}× ${k}`).join(' · ')}` : ''})`,
+  placeBad.length === 0 && placed > 0 && placed === bpSaved - [...placeRefused].filter(([k]) => !k.startsWith('tree:')).reduce((a, [, n]) => a + n, 0) && [...placeRefused.keys()].every((k) => /bytes|larger than a component/.test(k)), '\n   ' + placeBad.join('\n   '));
+check(`blueprints placed whole: every root with children saved with its subtree, placed, read back as its record (${treesPlaced} trees, ${treeParts} parts)`,
+  treeBad.length === 0 && (treesPlaced > 0 || !process.env.COMPONENTS_CORPUS), '\n   ' + treeBad.join('\n   '));
 console.log('\ncomponents in the final worlds:', [...types].sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t} ${n}`).join(' · '));
 console.log('keys no record names (kept in extra, not lost):', extras.size ? [...extras].map(([k, n]) => `${k} ×${n}`).join(' · ') : 'none');
 console.log(`\n${pass} passed, ${fail} failed`);
