@@ -953,11 +953,13 @@ export function openingsOf(level, room) {
  *  has its own north, and saying "north" about it while a person reads a world
  *  compass would be a quiet lie. The phrasing says whose north it is. */
 export function describeHere(plan, lx, lz, ly = 0) {
-  const level = plan.levels.find((lv) => lv.rooms.some((r) => r.cells.includes(
-    cellKey(Math.floor(lx / plan.grid.tile), Math.floor(lz / plan.grid.tile)))));
-  if (!level) return null;
-  const room = roomAt(plan, lx, lz, ly);
-  if (!room) return null;
+  // One resolution for both: the level this room belongs to, never a level
+  // re-derived from the cell key alone (cell keys are x,z, so on a stacked
+  // building a key-only lookup always answers with the ground floor and its
+  // doors — ew#140).
+  const here = levelAt(plan, lx, lz, ly);
+  if (!here) return null;
+  const { level, room } = here;
   const w = (room.max[0] - room.min[0]).toFixed(0), d = (room.max[1] - room.min[1]).toFixed(0);
   const name = room.label ? `the ${room.label}` : `an unnamed room (${room.id})`;
   const ways = openingsOf(level, room);
@@ -994,10 +996,17 @@ export function describeStructure(data) {
  *  point, and the thing that makes "which room am I in" O(1) instead of a
  *  geometric query against triangles. */
 export function roomAt(plan, lx, lz, ly = 0) {
-  const tile = plan.grid.tile;
-  void tile;
-  // Nearest level at or below the point, so a first storey doesn't answer for
-  // someone standing on the second.
+  return levelAt(plan, lx, lz, ly)?.room ?? null;
+}
+
+/** The storey a point stands on AND the room it stands in, resolved once:
+ *  the nearest level at or below the point (so a first storey doesn't answer
+ *  for someone standing on the second) that has a room at that cell. Every
+ *  consumer that needs a level for a point goes through here — the describer
+ *  for its doors, the router for its walls — so single-storey behaviour is
+ *  unchanged by construction and a second storey cannot be answered by the
+ *  first. Null when the point is in no room on any reachable storey. */
+export function levelAt(plan, lx, lz, ly = 0) {
   let best = null;
   for (const lv of plan.levels) {
     if (lv.y > ly + 0.5) continue;
@@ -1006,7 +1015,21 @@ export function roomAt(plan, lx, lz, ly = 0) {
       if (room) best = { y: lv.y, level: lv, room };
     }
   }
-  return best ? best.room : null;
+  return best ? { level: best.level, room: best.room } : null;
+}
+
+/** The storey a height belongs to, room or no room: the highest level at or
+ *  below `ly` that has any rooms, else the lowest such level. What the router
+ *  uses when its start point is not inside a room (a doorway, a diagonal
+ *  half-cell, outdoors beside the building). */
+export function storeyAt(plan, ly = 0) {
+  let best = null;
+  for (const lv of plan.levels) {
+    if (!lv.rooms.length) continue;
+    if (lv.y > ly + 0.5) continue;
+    if (!best || lv.y > best.y) best = lv;
+  }
+  return best ?? plan.levels.find((L) => L.rooms.length) ?? plan.levels[0] ?? null;
 }
 
 // ---- routing ----------------------------------------------------------------
@@ -1069,7 +1092,11 @@ export function routeCells(level, fromKey, toKey) {
  *  to the distance. */
 export function routeLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
   const g = plan.grid;
-  const lv = plan.levels.find((L) => L.rooms.length) ?? plan.levels[0];
+  // The storey the body stands on, by height — the same rule the describer
+  // uses. Before this, the level was the first one with rooms (always the
+  // ground floor) and `y` was discarded, so an agent upstairs was routed
+  // against the downstairs walls and walked through the upstairs ones (ew#140).
+  const lv = levelAt(plan, fromX, fromZ, y)?.level ?? storeyAt(plan, y);
   if (!lv) return null;
   const level = lv.level;
   const cells = routeCells(level, nodeAtPoint(level, g, fromX, fromZ), nodeAtPoint(level, g, toX, toZ));
@@ -1085,7 +1112,6 @@ export function routeLocal(plan, fromX, fromZ, toX, toZ, y = 0) {
     if (ax !== bx && az !== bz) pts.push(centre(cells[i]));   // a turn
   }
   pts.push([toX, toZ]);
-  void y;
   return pts;
 }
 

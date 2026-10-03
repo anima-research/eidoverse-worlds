@@ -53,7 +53,7 @@ import { describeParticles, emitterTransition, transitionLine } from "../shared/
 import { describePicture } from "../shared/picture.js";
 import { describeCaptions } from "../shared/captions.js";
 import { describeSound } from "../shared/sound.js";
-import { describeStructure, describeHere, localizePoint, planStructure, routeLocal } from "../shared/structure.js";
+import { cellKey, describeStructure, describeHere, halfFloored, localizePoint, nodeAtPoint, planStructure, routeLocal } from "../shared/structure.js";
 import { effectiveWorldTransform, type Effective } from "./effective.ts";
 import { makeVerdictCache, seatGateCore, nameFromAvatarPath } from "../client/lib/seatcore.js";
 
@@ -1552,6 +1552,66 @@ export class WorldAgent {
     return this.terrain ? this.terrain.heightAt(x, z) : 0;
   }
 
+  /** Building plans, cached by the structure data object. A `comp` verb
+   *  replaces the object, so identity is the invalidation — and the tick
+   *  clamp below asks for plans ten times a second. */
+  private static readonly plans = new WeakMap<object, ReturnType<typeof planStructure>>();
+  private planOf(data: unknown): ReturnType<typeof planStructure> {
+    // comp data is opaque to the server (vComp bounds its size, not its
+    // shape), so a builder can post `structure: "junk"`. planStructure reads
+    // that as an empty plan; a WeakMap refuses it as a key. Empty, then, and
+    // uncached — never a throw that costs the caller its loop.
+    if (typeof data !== 'object' || data === null) return planStructure(data);
+    let p = WorldAgent.plans.get(data);
+    if (!p) { p = planStructure(data); WorldAgent.plans.set(data, p); }
+    return p;
+  }
+
+  /** The height this body's FEET belong at: the terrain, unless it stands on
+   *  an UPPER storey of a griddled building at that cell, in which case that
+   *  storey's walk surface (ew#140). `yHint` — the body's current height —
+   *  only selects which real surface qualifies and never becomes the height
+   *  itself: a storey counts when its floor is within a step of the feet in
+   *  EITHER direction and has a tile under the cell. A body floating high
+   *  above the house is not "on" its top storey, and a stale y with no floor
+   *  near it resolves to the terrain exactly as the old clamp did. A ground
+   *  floor resolves to the terrain too, so single-storey and outdoor walking
+   *  are unchanged by construction. One rule for walkTo's storey resolution
+   *  and the tick's standing clamp, so an upstairs walk is not dragged to the
+   *  ground floor mid-route. */
+  groundAt(x: number, z: number, yHint = this.pos.y): number {
+    let best = this.heightAt(x, z);
+    for (const e of this.entities.values()) {
+      const data = (e.comp ?? {}).structure;
+      if (!data) continue;
+      try {
+        const plan = this.planOf(data);
+        if (plan.levels.length < 2) continue;                 // one storey: the terrain's job
+        const lowest = Math.min(...plan.levels.map((l: any) => l.y));
+        const [lx, ly, lz] = localizePoint(e, x, yHint, z);
+        const cx = Math.floor(lx / plan.grid.tile), cz = Math.floor(lz / plan.grid.tile);
+        const k = cellKey(cx, cz);
+        const s = Number.isFinite(e.scale) && (e.scale as number) > 0 ? (e.scale as number) : 1;
+        const py = Array.isArray(e.pos) && Number.isFinite(e.pos[1]) ? e.pos[1] : 0;
+        for (const lv of plan.levels as any[]) {
+          if (lv.y <= lowest) continue;                       // the ground floor is the terrain
+          if (Math.abs(lv.y - ly) > 0.5) continue;            // not within a step of the feet: not stood on
+          if (!lv.level.tiles.has(k)) continue;               // no floor here on that storey
+          // a cell cut by a diagonal may be floored on ONE half: the other
+          // half is a hole, not a floor. The router already reads the point
+          // by half (nodeAtPoint); the feet must read it the same way, or a
+          // body over the hole is held in the air and then routed on the
+          // storey below's walls
+          const node = nodeAtPoint(lv.level, plan.grid, lx, lz);
+          if (node.includes(':') && !halfFloored(lv.level, cx, cz, node.split(':')[1])) continue;
+          const wy = py + lv.y * s;
+          if (wy > best) best = wy;
+        }
+      } catch { /* a malformed house must not cost the body its feet */ }
+    }
+    return best;
+  }
+
   // ---- support surfaces (#17) ----------------------------------------------
   // A body settling headless used to see bare terrain: every placed floor —
   // a platform, a deck, the bell pavilion's slab — simply was not there, and
@@ -1786,7 +1846,7 @@ export class WorldAgent {
     // a tumbling, lying, dragged, nailed or FLYING body owns its own y — the
     // terrain clamp is for FEET, and none of those states is standing on them
     if (!this.draggedBy && this.pins.size === 0 && this.clip !== "ragdoll" && !this.flight) {
-      this.pos.y = this.heightAt(this.pos.x, this.pos.z);
+      this.pos.y = this.groundAt(this.pos.x, this.pos.z);
     }
     // FLIGHT: one fixed-step integration of shared/flight.js per tick, and the
     // body's position is whatever it says. The integrator is the same function
@@ -2491,8 +2551,12 @@ export class WorldAgent {
     // and deciding to walk IS getting off the seat — a folded mount otherwise
     // glues this body to its socket on every renderer, wherever the feet go
     if (this.joined && this.mounts.has(this.name)) this.verb("dismount", { id: this.name });
-    // and stand on the ground you got up onto
-    this.pos.y = this.heightAt(this.pos.x, this.pos.z);
+    // and stand on the ground you got up onto — which is the storey under
+    // your feet if you are upstairs in a building, not the terrain beneath
+    // the building (ew#140: a terrain-only clamp here grounded every body
+    // before the storey was resolved, so an upstairs walk routed against
+    // the downstairs walls)
+    this.pos.y = this.groundAt(this.pos.x, this.pos.z);
     // ROUTE THROUGH WALLS RATHER THAN INTO THEM. Straight-line walking samples
     // only the height field, so a body crosses walls as if they were not there.
     // Inside a griddled building the grid IS the navigation graph, so ask it.
@@ -2500,14 +2564,15 @@ export class WorldAgent {
     // structure, a sealed room) falls back to the old straight line, which is
     // exactly the behaviour everywhere that has no building.
     this.legs = [];
-    try {
-      for (const e of this.entities.values()) {
-        const data = (e.comp ?? {}).structure;
-        if (!data) continue;
-        const plan = planStructure(data);
-        const [ax, , az] = localizePoint(e, this.pos.x, this.pos.y, this.pos.z);
+    for (const e of this.entities.values()) {
+      const data = (e.comp ?? {}).structure;
+      if (!data) continue;
+      try {
+        const plan = this.planOf(data);
+        const [ax, ay, az] = localizePoint(e, this.pos.x, this.pos.y, this.pos.z);
         const [bx, , bz] = localizePoint(e, x, this.pos.y, z);
-        const pts = routeLocal(plan, ax, az, bx, bz);
+        // route on the storey this body stands on, not the ground floor's plan
+        const pts = routeLocal(plan, ax, az, bx, bz, ay);
         if (!pts || pts.length < 3) continue;    // straight line is already fine
         const yaw = Number.isFinite(e.yaw) ? e.yaw : 0;
         const sc = Number.isFinite(e.scale) && e.scale > 0 ? e.scale : 1;
@@ -2519,8 +2584,8 @@ export class WorldAgent {
           z: pz + (-lx * n + lz * c) * sc,
         }));
         break;
-      }
-    } catch { this.legs = []; }
+      } catch { /* one malformed house must not cost the route through a sound one — the fold is per building, like groundAt's */ }
+    }
     const first = this.legs.shift();
     this.target = first ? { x: first.x, z: first.z, run, tolerance } : { x, z, run, tolerance };
     return new Promise((resolve) => {
@@ -3069,7 +3134,7 @@ export class WorldAgent {
         if (!data) continue;
         try {
           const [lx, ly, lz] = localizePoint(e, me.x, me.y, me.z);
-          const here = describeHere(planStructure(data), lx, lz, ly);
+          const here = describeHere(this.planOf(data), lx, lz, ly);
           if (here) { L.push(`${here} (inside [${e.id}]; sides are the building's own compass.)`); break; }
         } catch { /* one malformed house must not cost the whole percept */ }
       }
