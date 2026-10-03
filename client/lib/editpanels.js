@@ -26,11 +26,12 @@ import { registerXRPanel } from './xrpanels.js';
 import { treeData, sceneSelected, sceneSelect } from './scenegraph.js';
 import { state, onWorldChange } from './state.js';
 import { treeRows, kindHint, ancestors } from '../../shared/hierarchy.js';
-import { pushUndo, refreshOutline, setRemoveHook, holdGhost, getTool as transformTool, setTool as setTransformTool, deselectAll } from './build.js';
+import { pushUndo, refreshOutline, setRemoveHook, holdGhost, holdBlueprint, placeBlueprint, getTool as transformTool, setTool as setTransformTool, deselectAll } from './build.js';
 import { armSeatPlacement, seatArmed, cancelSeatArm } from './seatedit.js';
 import { defsRegistry } from './defs.js';
 import { WORLD_ID, describeWorld, worldPick, worldChoice } from '../../shared/worldentity.js';
 import { WEATHERS } from '../../shared/forecast.js';
+import { versionOf, copiesOf } from '../../shared/blueprint.js';
 import { structureTools, currentTool as structureTool, setTool as setStructureTool, undo as structureUndo, undoDepth, newBuilding } from './structure_ui.js';
 import { starterModels } from './palette.js';
 import { spawnAhead } from './worldquad.js';
@@ -203,7 +204,9 @@ function hierarchyFields() {
     const badges = badgesFor(id);
     if (!entities.get(id)) badges.unshift('loading…');
     if (bag.hidden === true) badges.push('hidden');
-    return { id, label: labelOf(id), sub: kindHint(world[id]), depth: t.depth, active: id === sel, multi: extra.has(id) && id !== sel, badges, locked: !!bag.lock,
+    const bpLink = world[id]?.comp?.blueprint;
+    const sub = bpLink && typeof bpLink === 'object' ? `${kindHint(world[id])} · ${bpLink.hash ? `${bpLink.name ?? 'blueprint'} copy` : `part ${bpLink.part}`}` : kindHint(world[id]);
+    return { id, label: labelOf(id), sub, depth: t.depth, active: id === sel, multi: extra.has(id) && id !== sel, badges, locked: !!bag.lock,
       kids: t.kids, open: t.open, ...(t.dim ? { dim: true } : {}) };   // a filter looks inside folded nodes, so the glyph says open
   });
   for (const r of rows) {
@@ -760,8 +763,35 @@ const blueprintFields = (pics) => [
   ...(pics ? [{ t: 'btn', k: 'light', label: 'add light', icon: 'lightbulb', hint: 'a blueprint of one Light — carry it, then click the world to place it' },
     { t: 'text', k: 'libq', label: '', value: libQ, placeholder: 'search the library ⏎', hint: 'an empty box shows the starters' }] : []),
   libTiles(pics),
-  { t: 'info', label: 'saved here', value: 'none yet — Save as Blueprint comes with blueprints (next step)' },
+  ...savedFields(pics),
 ];
+/** The blueprints this world's store holds (state.blueprints, folded from `blueprint` entries),
+ *  oldest publish first, each with its version and how many copies stand. A pick carries a copy
+ *  as the ghost (build.js holdBlueprint) on desktop, or places one 1.5 m ahead in VR. Save as
+ *  Blueprint (a selection → a record) is step 6c; until then records arrive through the
+ *  blueprint verb (an agent, or world_verb). */
+function savedFields(pics) {
+  const store = state.st.blueprints ?? {};
+  const hashes = Object.keys(store).sort((a, b) => (store[a].ts ?? 0) - (store[b].ts ?? 0));
+  const copies = copiesOf(state.st.entities ?? {});
+  const parts = (n) => 1 + (n?.children ?? []).reduce((k, c) => k + parts(c), 0);
+  return [
+    { t: 'info', label: 'saved here', value: hashes.length ? `${hashes.length} blueprint${hashes.length === 1 ? '' : 's'} in this world` : 'none yet — Save as Blueprint comes next (6c)' },
+    ...(hashes.length ? [{ t: 'tiles', k: 'bp', value: null, options: hashes.map((h) => {
+      const r = store[h].record; const v = versionOf(store, h); const n = parts(r.root); const c = copies[h]?.length ?? 0;
+      return { v: h, label: `${r.name} v${v}`, icon: 'boxes',
+        hint: `${n} part${n === 1 ? '' : 's'}${c ? ` · ${c} cop${c === 1 ? 'y' : 'ies'} placed` : ''} · ${h.slice(0, 12)} — ${pics ? 'click, then click the world to place a copy' : 'places a copy 1.5 m ahead of you'}` };
+    }) }] : []),
+  ];
+}
+/** A copy 1.5 m ahead, facing the way you face — the hand-free place (worldquad.js spawnAhead's pose). */
+function placeAhead(hash) {
+  const rec = state.st.blueprints?.[hash]?.record;
+  if (!rec) return null;
+  const yaw = myState.yaw ?? 0;
+  const p = [myState.pos.x + Math.sin(yaw) * 1.5, myState.pos.y, myState.pos.z + Math.cos(yaw) * 1.5].map((v) => +v.toFixed(2));
+  return placeBlueprint(hash, rec, { id: crypto.randomUUID().slice(0, 8), pos: p, yaw: +yaw.toFixed(3) });
+}
 
 /** The World section: one row of tiles per component, each reading its current choice. */
 function worldBuildFields() {
@@ -827,6 +857,7 @@ function buildDispatch(action, payload) {
     case 'snew': newBuilding(null); break;
     case 'sundo': structureUndo(); break;
     case 'light': holdGhost('@light', 'light'); break;
+    case 'bp': { const b = state.st.blueprints?.[payload]; holdBlueprint(payload, b?.record); break; }
     case 'libq': searchLibrary(String(payload ?? '').trim()); return;
     case 'place': {
       const m = libModels().find((x) => x.path === payload);
@@ -849,6 +880,7 @@ function buildVRDispatch(action, payload) {
   else if (action === 'fold') buildFolds[payload] = !buildFolds[payload];
   else if (action === 'wsel') { selectWorld(); return; }
   else if (action === 'place' && payload) spawnAhead(payload);
+  else if (action === 'bp' && payload) placeAhead(payload);
   repaintAll();
 }
 
@@ -884,7 +916,8 @@ export function initEditPanels() {
   bus.on('sg:selected', (id) => { if (id) { revealPath(id); worldSel = false; } });   // before the paint: a selected child shows, its ancestors unfold (design §5)
   for (const ev of ['entity', 'comp', 'mount', 'edit-mode', 'sg:selected', 'structure-tool', 'tool', 'your-rights']) bus.on(ev, repaintAll);
   // the world entity's components are the fold's sky / terrain / grass: repaint when a world verb folds
-  const WORLD_VERBS = new Set(['sky', 'weather', 'terrain', 'grass']);
+  // …and the Build panel's saved blueprints when a record is published
+  const WORLD_VERBS = new Set(['sky', 'weather', 'terrain', 'grass', 'blueprint']);
   onWorldChange((ev) => { if (ev.type !== 'entry' || WORLD_VERBS.has(ev.entry?.verb)) repaintAll(); });
   loadWorldDefs(); bus.on('defs-updated', loadWorldDefs);
   bus.on('sg:selected', () => { gesture = null; pendingAsk = null; endGesture(); if (!extending) clearExtras(); });   // a plain select collapses the set; a drag's `before` never outlives its selection
@@ -956,7 +989,7 @@ export function initEditPanels() {
 /** harness window */
 export const editPanelsDebug = () => ({
   hierarchy: hierarchyFields().length, hierFields: () => hierarchyFields(), inspector: inspectorFields().length, inspFields: () => inspectorFields(),
-  build: buildFields().length, buildFields: () => buildFields(), buildVR: buildVRFields().length, buildVRFields: () => buildVRFields(), worldSel, selected: sceneSelected(), arming,
+  build: buildFields().length, buildFields: () => buildFields(), buildVR: buildVRFields().length, buildVRFields: () => buildVRFields(), buildVRDo: (a, v) => buildVRDispatch(a, v), worldSel, selected: sceneSelected(), arming,
   groups: sceneSelected() ? schemaFor(sceneSelected()).groups.map((g) => g.group) : [], behaviors: behaviors.length, rows: visibleRows, selection: selection(),
   watching, consoleLines: watchLog?.lines?.length ?? 0,
 });

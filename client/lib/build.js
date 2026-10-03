@@ -23,7 +23,8 @@ import { makeLightGizmo } from './lights.js';
 import { entities, entityMeta, comps, editHolds } from './world.js';
 import { reindexCollider } from './colliders.js';
 import { heightAt } from './terrain.js';
-import { net, sendVerb, sendDrag } from './net.js';
+import { net, sendVerb, sendVerbs, sendDrag } from './net.js';
+import { placeVerbs, placeRefusal } from '../../shared/blueprint.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
 import { flashHint, collapseAll, panelFrame } from './ui.js';
 import { sceneSelect, sceneSelected, sceneDeselect } from './scenegraph.js';
@@ -40,7 +41,7 @@ const _hit = new THREE.Vector3();
 
 // ============================================================ state
 
-let ghost = null;         // { obj, lib, yaw, scale } — a thing not yet placed
+let ghost = null;         // { obj, lib, yaw, scale, bp? } — a thing not yet placed (bp: a blueprint copy, {hash, record})
 let selected = null;      // { id, obj, box } — a placed thing under edit
 let dragging = null;      // { id, offset, plane } while moving a selection
 const undoStack = [];     // inverse entries, newest last
@@ -271,6 +272,68 @@ export async function holdGhost(lib, label) {
   } catch (e) { report('ghost', e); }
 }
 
+/** Carry a COPY of a blueprint as the ghost (design §3, step 6b): the whole tree,
+ *  each part at its local pose under its parent — the same nesting the renderer
+ *  builds for a mounted child — so what you aim is what lands. Committing places
+ *  it as ordinary verbs (shared/blueprint.js placeVerbs), one Ctrl+Z step. */
+export async function holdBlueprint(hash, record) {
+  const why = record ? placeRefusal(record) : 'that blueprint is not in this world\'s store';
+  if (why) { flashHint(`can't place it: ${why}`, 5000); return false; }
+  setEditMode(true, { quiet: true });
+  cancelGhost();
+  deselect();
+  const token = (holdBlueprint.n = (holdBlueprint.n ?? 0) + 1);
+  try {
+    const node = async (n) => {
+      const g = new THREE.Group();
+      const tf = n.components.find((c) => c.type === 'Transform')?.params ?? {};
+      if (Array.isArray(tf.pos)) g.position.fromArray(tf.pos);
+      if (Array.isArray(tf.q) && tf.q.length === 4) g.quaternion.fromArray(tf.q).normalize();
+      else if (Number.isFinite(tf.yaw)) g.rotation.y = tf.yaw;
+      if (Number.isFinite(tf.scale)) g.scale.setScalar(tf.scale);
+      const model = n.components.find((c) => c.type === 'Model');
+      const light = n.components.find((c) => c.type === 'Light');
+      if (model) {
+        try { const m = await loadGLB(model.params.lib); ghostify(m); g.add(m); }
+        catch (e) { report('ghost', e); }
+      } else if (light) {
+        const m = makeLightGizmo(Number.isInteger(light.params?.color) ? light.params.color : 0xffd9a0);
+        m.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = 0.7; } });
+        g.add(m);
+      } else {
+        g.add(new THREE.AxesHelper(0.3));   // an Empty: a pivot you can see while aiming
+      }
+      for (const k of n.children) g.add(await node(k));
+      return g;
+    };
+    const obj = await node(record.root);
+    if (token !== holdBlueprint.n) return false;   // another pick came first
+    obj.userData.noCamCollide = true;
+    obj.traverse((o) => { o.userData.noCamCollide = true; });
+    // the ghost's own scale is the R-drag; the record's root scale rides inside
+    const holder = new THREE.Group();
+    holder.add(obj);
+    holder.userData.noCamCollide = true;
+    ghost = { obj: holder, lib: null, yaw: 0, scale: 1, bp: { hash, record } };
+    scene.add(holder);
+    collapseAll();
+    const n = (function count(x) { return 1 + x.children.reduce((k, c) => k + count(c), 0); })(record.root);
+    flashHint(`placing a copy of <b>${record.name}</b>${n > 1 ? ` (${n} parts)` : ''} — click to place, then <kbd>E</kbd> rotate / <kbd>R</kbd> scale · <kbd>Esc</kbd> cancel`, 6000);
+    return true;
+  } catch (e) { report('ghost', e); return false; }
+}
+
+/** Place a copy at a pose with no ghost (the VR body has no cursor to carry one;
+ *  an agent says where). One undo step. Returns the plan, or null when refused. */
+export function placeBlueprint(hash, record, at, label = record?.name) {
+  const plan = placeVerbs(record, at, { hash, taken: (x) => entities.has(x) || !!state.st.entities?.[x] });
+  if (plan.errors.length) { flashHint(`can't place it: ${plan.errors.join(' · ')}`, 5000); return null; }
+  sendVerbs(plan.verbs);
+  pushUndo({ verbs: plan.inverses }, `placing ${label}`);
+  bus.emit('blueprint-placed', { hash, root: at.id, parts: plan.parts, verbs: plan.verbs.length });
+  return plan;
+}
+
 export function cancelGhost() {
   if (ghost) { scene.remove(ghost.obj); ghost = null; }
 }
@@ -381,6 +444,13 @@ export function pushUndo(inverse, describe) {
 function commitSpawn() {
   const p = ghost.obj.position;
   const id = crypto.randomUUID().slice(0, 8);
+  if (ghost.bp) {
+    const { hash, record } = ghost.bp;
+    const plan = placeBlueprint(hash, record, { id, pos: [p.x, p.y, p.z], yaw: ghost.yaw, scale: ghost.scale });
+    if (plan && plan.verbs.length > 10) flashHint(`placing <b>${record.name}</b> — ${plan.verbs.length} verbs, paced under the world's rate limit`, 3000);
+    cancelGhost();
+    return;
+  }
   if (ghost.lib === '@light') {
     // lift a placed light off the floor a touch so it reads as a hanging bulb
     sendVerb('light', { id, pos: [p.x, p.y + 0.9, p.z], color: 0xffd9a0, intensity: 16, range: 10 });
@@ -455,7 +525,9 @@ export function undo() {
   // Undo is inverse ENTRIES — history stays append-only, which is what keeps
   // the log replayable and the world forkable.
   // a compound inverse ({verbs: [...]}) undoes a multi-selection edit as ONE step
-  for (const inv of step.inverse.verbs ?? [step.inverse]) sendVerb(inv.verb, inv.args);
+  // paced (net.js sendVerbs): undoing a placed blueprint copy is a remove per part,
+  // more than the door's rate limit lets through at once
+  sendVerbs(step.inverse.verbs ?? [step.inverse]);
   flashHint(`undid ${step.describe}`);
   deselect();
 }

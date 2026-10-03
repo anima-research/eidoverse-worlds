@@ -587,7 +587,15 @@ function fieldDOM(f, edit, ro = {}) {
         box.append(b);
       }
       row.append(box);
-      row.update = (nf) => { for (const b of box.querySelectorAll('.sp-tile')) b.classList.toggle('on', b.dataset.v === String(nf.value)); };
+      // a hint is not shape (a saved blueprint's "2 copies placed" changes under it): kept current in place
+      row.update = (nf) => {
+        const byV = new Map((nf.options ?? []).map((o) => [String(o.v), o]));
+        for (const b of box.querySelectorAll('.sp-tile')) {
+          b.classList.toggle('on', b.dataset.v === String(nf.value));
+          const o = byV.get(b.dataset.v);
+          if (o) b.title = o.hint ? `${o.label} — ${o.hint}` : o.label;
+        }
+      };
       break;
     }
     case 'ref': {

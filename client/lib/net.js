@@ -19,6 +19,7 @@ import { presenceWire, voiceWire, bodyWire } from '../../shared/presencewire.js'
 import { presence } from './presence.js';
 import { logChat, logWhisper, noteTyping, noteHistoryContext } from './chat.js';
 import { markPhase } from './boot.js';
+import { makePacer } from '../../shared/pace.js';
 // ui.js is the desktop shell and reaches the engine through its panels (videopanel,
 // profile). The wire only ever wanted to SAY something to the user, so it takes a
 // notifier instead of importing a whole UI. Default logs: a dropped connection notice
@@ -93,7 +94,7 @@ export function wireNet(h) {
 
 // ---------------------------------------------------------------- sending
 
-export function sendVerb(verb, args) {
+function rawSend(verb, args) {
   if (net.joined && net.ws?.readyState === 1) {
     net.ws.send(JSON.stringify({ type: 'verb', verb, args }));
   } else {
@@ -101,6 +102,18 @@ export function sendVerb(verb, args) {
     logChat('*', `queued ${verb} — reconnecting…`);
   }
 }
+// One gesture that is many verbs (placing a blueprint copy, undoing it) is
+// paced under the door's rate limit (shared/pace.js); a single verb sent while
+// such a run drains waits behind it, so the log keeps the order they were said.
+const pacer = makePacer({ send: rawSend });
+export function sendVerb(verb, args) { pacer.direct(verb, args); }
+/** Send a run of verbs in order, paced so the door's rate limit never drops
+ *  the tail. Returns how many still wait. */
+export function sendVerbs(list) { return pacer.run(list); }
+/** What a paced run still holds, and roughly how long it needs (ms). */
+export const verbPace = () => ({ pending: pacer.pending(), eta: pacer.eta() });
+/** Retune the pacer (a bench with a raised VERB_RATE, a door that says its rate). */
+export const setVerbPace = (o) => pacer.set(o);
 
 /** A one-off animation — sent once, relayed to everyone, never logged. */
 export function sendAnim(data) {
