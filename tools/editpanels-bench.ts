@@ -204,6 +204,61 @@ console.log('\nBuild — Blueprints · Tools · World, and the world entity (des
   await waitFor(`${shown('hierarchy')} && ${insp}.querySelector('.sp-info')?.textContent === 'benchlamp'`);
 }
 
+// step 6b: a blueprint from the store, placed as a copy from Build › Blueprints — the ghost, the click, the tree
+// it spawns, the link, the Hierarchy saying so, one Ctrl+Z; the VR body's place-ahead; a big copy paced
+console.log('\nBlueprints — placing a copy (design §3, step 6b):');
+{
+  const { blueprintHash } = await import('../shared/blueprint.js');
+  const bf = `document.querySelector('[data-frame="build"]')`;
+  const lib = await evalJson(`import('/lib/palette.js').then((m) => m.starterModels()[0]?.path ?? null)`);
+  const rec: any = { kind: 'eido.blueprint', v: 1, name: 'Bench lamp', root: { components: [
+    { type: 'Transform', params: {} }, { type: 'Model', params: { lib } }, { type: 'Label', key: 'label', params: { text: 'bench lamp' } },
+  ], children: [
+    // a keyless Light: a part saved from a legacy kind:"light" entity — placed as comp.light (owner, 10-02)
+    { id: 'bulb', components: [{ type: 'Transform', params: { pos: [0, 1.2, 0], yaw: 0 } }, { type: 'Light', params: { color: 0xffffff, intensity: 4, range: 3 } }], children: [] },
+  ] } };
+  const H = blueprintHash(rec);
+  await evalJson(`import('/lib/net.js').then((m) => (m.sendVerb('blueprint', { hash: '${H}', record: ${JSON.stringify(rec)} }), true))`);
+  const bpTile = `${bf}.querySelector('.sp-tile[data-v="${H}"]')`;
+  check('a published blueprint appears under "saved here" as a tile, with its version', await waitFor(`!!${bpTile} && /Bench lamp v1/.test(${bpTile}.textContent) && /1 blueprint in this world/.test(${bf}.textContent)`), await evalJson(`${bf}.textContent.slice(0, 400)`));
+  await evalJson(`(${bpTile}.click(), true)`);
+  check('picking it carries a copy as the ghost (edit mode, the whole tree)', await waitFor(`import('/lib/build.js').then((m) => m.hasGhost() && m.isEditing())`));
+  const before = await evalJson(`import('/lib/state.js').then((m) => Object.keys(m.state.st.entities).length)`);
+  await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: innerWidth / 2, clientY: innerHeight * 0.7 })), true))`);
+  const rootQ = `Object.entries(m.state.st.entities).find(([, e]) => e.comp?.blueprint?.hash === '${H}')?.[0]`;
+  check('a click places it: the root holds the link {hash, name}', await waitFor(`import('/lib/state.js').then((m) => { const r = ${rootQ}; const e = r && m.state.st.entities[r]; return !!e && e.lib === ${JSON.stringify(lib)} && e.comp.blueprint.name === 'Bench lamp' && e.comp.label === 'bench lamp'; })`, 8000));
+  const root = await evalJson(`import('/lib/state.js').then((m) => ${rootQ} ?? null)`);
+  check('…the bulb rides it at its local pose, an Empty with comp.light (not the light verb), marked as part "bulb"', await waitFor(`import('/lib/state.js').then((m) => { const b = m.state.st.entities['${root}-bulb']; return !!b && b.parent?.to === '${root}' && JSON.stringify(b.parent.offset) === '[0,1.2,0]' && b.kind == null && b.lib == null && b.comp?.light?.intensity === 4 && b.comp?.blueprint?.part === 'bulb'; })`), await evalJson(`import('/lib/state.js').then((m) => JSON.stringify(m.state.st.entities['${root}-bulb'] ?? null))`));
+  check('…the ghost is put down', await evalJson(`import('/lib/build.js').then((m) => !m.hasGhost())`));
+  check('read back in the page: the copy is its record (no overrides)', await evalJson(`Promise.all([import('/lib/state.js'), import('/shared/blueprint.js')]).then(([s, b]) => { const t = b.copyTree(s.state.st.entities, '${root}', s.state.st.blueprints['${H}'].record); return !!t && b.overridesOf(t.tree, s.state.st.blueprints['${H}'].record).length === 0 && t.parts.bulb === '${root}-bulb'; })`));
+  check('the Hierarchy marks the copy and its part', await waitFor(`(() => { const t = document.querySelector('[data-frame="hierarchy"]').textContent; return t.includes('Bench lamp copy') && t.includes('part bulb'); })()`), await evalJson(`document.querySelector('[data-frame="hierarchy"]').textContent.slice(0, 300)`));
+  check('the tile says a copy is placed', await waitFor(`/1 copy placed/.test(${bpTile}?.title ?? '')`), await evalJson(`${bpTile}?.title ?? null`));
+  await evalJson(`import('/lib/build.js').then((m) => (m.undo(), true))`);
+  check('ONE Ctrl+Z takes the whole copy away', await waitFor(`import('/lib/state.js').then((m) => !m.state.st.entities['${root}'] && !m.state.st.entities['${root}-bulb'] && Object.keys(m.state.st.entities).length === ${before})`, 8000));
+  // the VR body: the tile is painted, and a pick places a copy 1.5 m ahead
+  const vrbp = await evalJson(`import('/lib/panels.js').then((m) => m.renderCanvas(document.createElement('canvas'), globalThis.__editPanels().buildVRFields(), { theme: 'edit' }).some((r) => r.action === 'bp' && r.payload === '${H}'))`);
+  check('the VR quad paints the saved blueprint', vrbp === true);
+  await evalJson(`(globalThis.__editPanels().buildVRDo('bp', '${H}'), true)`);
+  check('a VR pick places a copy ahead of you (no ghost to carry)', await waitFor(`import('/lib/state.js').then((m) => { const r = ${rootQ}; return !!r && !!m.state.st.entities[r + '-bulb']?.parent; })`, 8000));
+  await evalJson(`import('/lib/build.js').then((m) => (m.undo(), true))`);
+  check('…and one undo takes it away', await waitFor(`import('/lib/state.js').then((m) => !(${rootQ}))`, 8000));
+  // a copy of 7 parts is ~30 verbs: more than the door lets through at once — the run is paced, and all of it lands
+  const big: any = { kind: 'eido.blueprint', v: 1, name: 'Bench row', root: { components: [{ type: 'Transform', params: {} }, { type: 'Model', params: { lib } }],
+    children: Array.from({ length: 6 }, (_, i) => ({ id: `post${i}`, components: [{ type: 'Transform', params: { pos: [i * 0.6 - 1.5, 0, 0] } }, { type: 'Model', params: { lib } }, { type: 'Label', key: 'label', params: { text: `post ${i}` } }], children: [] })) } };
+  const HB = blueprintHash(big);
+  await evalJson(`import('/lib/net.js').then((m) => (m.sendVerb('blueprint', { hash: '${HB}', record: ${JSON.stringify(big)} }), true))`);
+  await waitFor(`import('/lib/state.js').then((m) => !!m.state.st.blueprints?.['${HB}'])`);
+  const paced = await evalJson(`Promise.all([import('/lib/build.js'), import('/lib/state.js'), import('/lib/net.js')]).then(([b, s, n]) => { const p = b.placeBlueprint('${HB}', s.state.st.blueprints['${HB}'].record, { id: 'row1', pos: [4, 0, -4], yaw: 0 }); return { verbs: p?.verbs.length, pending: n.verbPace().pending }; })`);
+  check(`a big copy is paced: ${paced?.verbs} verbs, ${paced?.pending} waiting at once`, paced?.verbs > 20 && paced?.pending > 0, JSON.stringify(paced));
+  check('…and every part lands, mounted, in order', await waitFor(`import('/lib/state.js').then((m) => [0, 1, 2, 3, 4, 5].every((i) => m.state.st.entities['row1-post' + i]?.parent?.to === 'row1' && m.state.st.entities['row1-post' + i]?.comp?.blueprint?.part === 'post' + i))`, 25000));
+  check('…with nothing refused on the way', await evalJson(`!(window.__refused ?? []).some((e) => /slow down|row1/.test(e))`), JSON.stringify(await evalJson(`window.__refused`)));
+  await evalJson(`import('/lib/build.js').then((m) => (m.undo(), true))`);
+  check('…and its undo (7 removes, paced behind it) takes all of it away', await waitFor(`import('/lib/state.js').then((m) => !Object.keys(m.state.st.entities).some((k) => k.startsWith('row1')))`, 15000));
+  // as the next section expects: the Hierarchy page up, benchlamp in the Inspector
+  await evalJson(`import('/lib/scenegraph.js').then((m) => (m.sceneSelect('benchlamp'), true))`);
+  await waitFor(`${insp}.querySelector('.sp-info')?.textContent === 'benchlamp'`);
+}
+
 console.log('\na no-op scrub on one thing must not leak its pose into the next selection:');
 {
   const inpX = `[...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === 'translate x').querySelector('.sp-num')`;
