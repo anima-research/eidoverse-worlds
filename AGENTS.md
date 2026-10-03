@@ -111,6 +111,10 @@ blueprint {hash, record}                  # publish a blueprint into the world's
                                           #   root:{components, children:[{id, components, children}]}},
                                           # hash = sha256 of its RFC 8785 JSON minus note (PROTOCOL §4.1);
                                           # list the store with the blueprints tool
+# a COPY of a blueprint is ordinary verbs: each part spawned, each child mounted at its local
+# pose, every component a comp, then the link — comp blueprint {hash, name} on the root and
+# comp blueprint {part: "<child id>"} on each part. The blueprint_place tool sends all of it
+# (paced under the rate limit) and says how to undo it; look/inspect say "a copy of "Lamp" (v1, …)"
 force   {at:[x,y,z], radius?, power?}     # instantaneous radial push, rank 1
 ```
 

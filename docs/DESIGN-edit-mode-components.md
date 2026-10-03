@@ -242,10 +242,51 @@ ships, and PROTOCOL.md is updated in the same stack.
    consistency"):** every NEW write uses the component form: a placed copy of a legacy light goes out as
    `comp.light`, never the `light` verb. Legacy `kind:"light"` entries already in a log keep reading through the
    alias table; nothing is migrated, and nothing new is written in the old spelling.
-   *Left:* **6b** placing copies (spawn the expanded tree, children mounted at their local poses, the link
-   on the root, one undo step) and reading a placed copy back as a tree; **6c** Save as Blueprint (a
-   selection with its children → a record → `blueprint`), the update offer ("12 copies of Lamp can update
-   to v3"), conflicts asked per copy, and unlink.
+   *6b built (placing copies, reading them back):* `shared/blueprint.js` `placeVerbs` turns a record into
+   ordinary verbs: each part a `spawn` (an Empty when it has no Model) at its composed world pose, so nothing
+   jumps between its spawn and its mount; each child a `mount` under its parent's entity with the record's
+   local pose as `offset`/`q`/`yaw`; every other component a `comp`; then **the link**: `comp.blueprint {hash,
+   name}` on the root and **`comp.blueprint {part: <child id>}` on each part** (a part marker per part, not a
+   map on the root: a comp is at most 8 KB and a record may hold 256 parts). Locks and guards go out last (a
+   locked part refuses its own mount). The inverses unlock what the copy locked and remove the parts leaves
+   first: **one undo step**. Part entity ids are minted `<root>-<child id>`, never over something standing.
+   Per the owner's decision, **every write is the component spelling**: `modernize` turns a keyless Light
+   into `comp.light` and a keyless `exact|box` Collider into `comp.collider`, and the same function feeds
+   `overridesOf`/`rebase`, so a copy placed from a legacy record reads back as that record. `placeRefusal`
+   names, before anything is sent, what the door would refuse one verb at a time (a light the contract
+   refuses, a comp with no data, a key the door truncates, two spellings of a light on one part).
+   **Read back:** `copyTree` rebuilds a placed copy as a tree in the record's shape (children's Transforms
+   local, from the mount; a child named by its marker; anything parented in since, or a duplicated marker,
+   is an added part named by its entity id), ready for `overridesOf`; `copyOf` finds which copy a part
+   belongs to, `copiesOf` where copies stand, `copyLine` says it once for every surface ("a copy of "Lamp"
+   (v1, 1a2b…)", "part "bulb" of lamp-1, a copy of …"). **Rate:** the door takes 12 verbs per 4 s and drops
+   the rest, and a copy is ~3–4 verbs a part, so `shared/pace.js` drains a run under it (10 per 4.4 s sliding,
+   order kept; a verb sent meanwhile waits behind the run). The browser sends every compound undo through it
+   too. **Surfaces:** Build › Blueprints lists the store under *saved here* (name, version, parts, copies
+   placed); a pick carries the whole tree as the ghost (`build.js holdBlueprint`), a click places it; the VR
+   quad places a copy 1.5 m ahead; the Hierarchy marks a copy ("Lamp copy") and its parts ("part bulb");
+   agents get it in `look`, `inspect`, the `blueprints` tool (where each record's copies stand, with override
+   counts) and a `blueprint_place` tool (the same verbs, paced). PROTOCOL §4 and §4.1 say the part marker and
+   how a copy is placed. Tests: `tools/blueprint-test.ts` places through `server/verbs.ts runVerb` and reads
+   back (150), the pacer against a model of the door; the corpus places every saved one-part blueprint (158,
+   28 of them legacy lights/colliders written as components, read back as their records with the original's
+   bytes or the same light/collider) and every root with children saved whole (2 trees); editpanels-bench
+   places from the tile, the VR pick and a paced 7-part copy, and undoes each in one step (281;
+   editworkspace-bench 36).
+   Gaps found: **a copy is many verbs and not atomic** — a big one takes a while (a 256-part record is
+   ~1000 verbs, ~7 minutes at the door's rate), and a refusal midway (a rights change, a lock someone set)
+   leaves part of it standing, which its undo still removes; a place-a-copy verb (or a batch) would be a wire
+   change. A record has no **slot**: a part mounted into a socket reads back with the slot's pose as its local
+   pose, and placing writes it as an offset (6c's Save should say so; a socket on a moving part cannot be
+   expressed). The fold normalizes a mount's `q`, so a hand-written record with a non-unit `q` reads back as
+   an override. A copy mounted inside another copy reads as an added part of the outer one, not descended
+   (nested copies are not v1). The ghost turns about up only (as a model's does). The inspector still shows
+   `comp.blueprint` as an Annotation card (6c's header link); the "out of date" dot is 6c's. The corpus command
+   above (`COMPONENTS_CORPUS=worlds:scratch-worlds`) now sees 15 logs and 158 final entities, not 6a's 518:
+   the local worlds have changed since, or 6a ran over a wider set — not looked into.
+   *Left:* **6c** Save as Blueprint (a selection with its children → a record → `blueprint`; `localComponents`
+   already reads a child's Transform as local), the update offer ("12 copies of Lamp can update to v3"),
+   conflicts asked per copy, and unlink.
 7. VR parity for every panel; text-tier readout for every new component and for copies.
 
 ## 8. Open questions

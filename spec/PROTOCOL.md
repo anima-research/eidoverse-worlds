@@ -192,7 +192,11 @@ consumes a type. Known types in v1, with their contracts:
   entity, so a reader that knows nothing of blueprints renders it exactly;
   the link is what lets an editor compute the copy's overrides and offer it a
   newer version. Removing the link (`data: null`) unlinks the copy; it keeps
-  its components.
+  its components. Each **part** of a copy (a child entity placed from the
+  record's tree) carries `blueprint {part: "<child id>"}` instead — the record's
+  id for that part, so the copy can be read back as the record's tree whatever
+  ids its entities were given, and a newer version's part found again. A value
+  with a `hash` is a link; one with only `part` is a part marker.
 
 Everything else in a bag is somebody's annotation. Preserve it.
 
@@ -242,6 +246,17 @@ its children, saved as one immutable record, from which copies are placed.
   holds byte for byte is accepted idempotently and logged as a thin
   `{hash}`; one whose `note` alone differs is logged whole and the store
   takes the new prose. Publishing is builder rank (§7).
+- **Placing a copy** writes ordinary entries only (the log records results):
+  each part a `spawn` (no `lib` for a part without a Model: an Empty, §3.2),
+  each child a `mount` under its parent's entity with the record's local pose
+  as `offset`/`q`/`yaw`, each other component a `comp`, the root's link and
+  each part's marker last but for `lock`/`guard` (a locked part refuses its own
+  mount). Every component goes out in its component spelling: a record part
+  holding a legacy light (`kind: "light"`, read as a Light with no key) is
+  placed as `comp light` on an Empty, never with the `light` verb, and a legacy
+  `collide` of `exact`/`box` as `comp collider`; reading the copy back compares
+  the two spellings as one component. The reference implementation is
+  `shared/blueprint.js` `placeVerbs` / `copyTree`.
 - **Copies** are entities carrying `comp.blueprint` (§4). A copy's
   **overrides** are its components minus its version's, fact by fact (a
   field, a component, a part); updating a copy to a newer version applies
