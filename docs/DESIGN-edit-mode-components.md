@@ -238,6 +238,10 @@ ships, and PROTOCOL.md is updated in the same stack.
    placed copy of it goes out as the `light` verb or as `comp.light`; `comp.blueprint` still reads as an
    Annotation in the inspector (a read-only Blueprint record belongs with 6c's header link); a new verb is,
    per PROTOCOL §10, a `genesis` bump that no existing world could ever carry — flagged in §4.1 like `q`.
+   **Decided (owner, 2026-10-02 19:18: "everything should go out under the new comp system… for the sake of future
+   consistency"):** every NEW write uses the component form: a placed copy of a legacy light goes out as
+   `comp.light`, never the `light` verb. Legacy `kind:"light"` entries already in a log keep reading through the
+   alias table; nothing is migrated, and nothing new is written in the old spelling.
    *Left:* **6b** placing copies (spawn the expanded tree, children mounted at their local poses, the link
    on the root, one undo step) and reading a placed copy back as a tree; **6c** Save as Blueprint (a
    selection with its children → a record → `blueprint`), the update offer ("12 copies of Lamp can update
