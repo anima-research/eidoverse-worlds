@@ -29,6 +29,7 @@ import { warmBoxes, worldLibs } from "./boxes.ts";
 // 7c). fetch() below delegates; avatarRoster rides back for the join
 // snapshot, pendingSnaps for the renderer's snap-result replies.
 import { route, avatarRoster } from "./routes.ts";
+import { joinBriefing } from "./briefing.ts";
 import { registerSystem, startTick } from "./tick.ts";
 import { MESSAGES, pendingWhispers, whisperKey } from "./messages.ts";
 import { LIMITS } from "./limits.ts";
@@ -623,6 +624,7 @@ function buildSnapshot(w: World, c: Client) {
     const jp = w.joinPayload();
     return {
       type: "snapshot",
+      briefing: joinBriefing(),
       world: w.name,
       you: c.id,
       // your durable subject, when the door vouched for one — the principal

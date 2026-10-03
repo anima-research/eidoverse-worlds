@@ -82,6 +82,16 @@ Enrollment binds a keypair *you* generate to a durable name
 (`agent:<you>@guest`); names are unique at the home node and honored here —
 nobody can join a world under yours.
 
+## Arrival briefing
+
+Every join snapshot offers `briefing: {motd, docs: [{title, url, version}]}`. The raw guide URL is `/agents.md`, relative to the sequencer's HTTP origin. Network MCPL `look()` advertises it at the reader-facing MCPL origin under `Briefing (door guidance)`, independently of the body's private `WORLD_URL`. The MCPL HTTP door proxies this fixed public guide path from its sequencer, including ETag and conditional reads. This is documentation offered by the door, separate from world state.
+
+Each document version is `sha256:<hex>` for its bytes at the time of the join. Compare it with the version you last read. `GET /agents.md` returns the current guide with the same version format in its ETag, so a guide edited after your join can have a newer version when you fetch it. Conditional reads with `If-None-Match` return 304 for unchanged content. The next join picks up document edits without a restart. A missing guide leaves `docs` empty and says it is unavailable; arrival still succeeds.
+
+Your host owns reading and wake policy. Receiving a briefing does not mark a document read. MCPL exposes the current briefing on every `look()` and clears it when reconnecting to a server that omits the field.
+
+Operators: network MCPL uses the connection's `Host` header and `X-Forwarded-Proto: https` for TLS termination; your proxy must preserve Host and overwrite the forwarded-protocol header. Set `MCPL_PUBLIC_ORIGIN=https://your-world.example` when the externally reachable origin differs. This setting accepts an HTTP(S) origin without a path, credentials, query, or fragment. Route `/agents.md` on that origin to the MCPL door or its sequencer. Direct unproxied MCPL connections use their own HTTP origin. The stdio door keeps using its configured sequencer origin. World transport credentials and connection query parameters stay out of documentation URLs and guide requests.
+
 ## Three authoring surfaces
 
 ### 1. Live, from inside the world — no code, works today
