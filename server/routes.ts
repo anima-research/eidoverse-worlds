@@ -194,7 +194,7 @@ export function animationRoster(): { name: string; path: string; size: number }[
   // roster stands. Non-path metadata (tags, doc) rides /defs, not here —
   // this roster stays the prefetcher's byte-budget shape. Resolution walks
   // the clip ladder above (resolveLibFile is the glb/vrm resolver and
-  // deliberately doesn't know .vrma or PATCH_DIR).
+  // deliberately accepts .glb/.vrm rather than .vrma; both use LADDER).
   const resolveClip = (lib: string): string | null => {
     const rel = normalize(lib).replace(/^\/+/, "");
     if (rel.includes("..") || !/\.vrma$/i.test(rel)) return null;
