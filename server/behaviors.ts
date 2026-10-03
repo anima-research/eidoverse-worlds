@@ -23,6 +23,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { lightArgsError } from "./verb-shapes.ts";
 
 // --- what we need from server.ts (structural, to avoid a circular import) ---
 type LogEntry = { seq: number; ts: number; actor: string; verb: string; args: Record<string, unknown> };
@@ -236,6 +237,10 @@ class Instance {
     if ((this.rec.caps?.selfOnly ?? true) && this.rec.attach
       && args && typeof args === "object" && "id" in args && args.id !== this.rec.attach) {
       return `selfOnly: this behavior only touches its own entity ("${this.rec.attach}")`;
+    }
+    if (verb === "light") {
+      const error = lightArgsError(args);
+      if (error) return error; // __emit turns this into a catchable script error.
     }
     try {
       // §24 entry bus: commit publishes (fanout + bhv.onEntry, whose bhv:
