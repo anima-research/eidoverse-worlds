@@ -52,6 +52,7 @@ import { radialForce, FORCE_MIN } from "../shared/force.js";
 import { describeParticles, emitterTransition, transitionLine } from "../shared/particles.js";
 import { describePicture } from "../shared/picture.js";
 import { lightOf } from "../shared/components.js";
+import { copyLine } from "../shared/blueprint.js";
 import { describeCaptions } from "../shared/captions.js";
 import { describeSound } from "../shared/sound.js";
 import { describeStructure, describeHere, localizePoint, planStructure, routeLocal } from "../shared/structure.js";
@@ -3210,12 +3211,17 @@ export class WorldAgent {
         aff.push(`🛡 guarded by ${placer || "its placer"} (only they, the world's owner, or an operator may change, move, remove it or load cargo onto it — use and sitting stay open)`);
       }
       if (c.hidden === true) aff.push(`hidden (not drawn; comp {id, type: "hidden", data: null} shows it)`);
+      // a placed blueprint copy (or one of its parts) says which blueprint it
+      // follows — the link, read through the one shared reading
+      const copy = c.blueprint ? copyLine(this.st.entities as Record<string, any>, e.id, (this.st as any).blueprints ?? null) : null;
+      if (copy) aff.push(copy);
       // A griddled building says what it IS — rooms, walls, doors — because
       // unlike a conjured mesh it knows. This is the whole difference the
       // structure component buys: `components: structure` would be true and
       // useless, where "a building: 2 rooms, 14 walls, 1 door" is actionable.
       if (c.structure) { try { aff.push(describeStructure(c.structure)); } catch { /* a broken house is not a broken look() */ } }
       const spoken = ["sockets", "reactions", "motion", "particles", "picture", "captions", "sound", "lock", "guard", "structure", "label", "hidden"];
+      if (copy) spoken.push("blueprint");
       if (lit?.spelling === "comp") spoken.push("light");   // described above; a malformed one stays listed
       if (col === "exact" || col === "box") spoken.push("collider");
       const extra = Object.keys(c).filter((k) => !spoken.includes(k));
