@@ -146,6 +146,23 @@ Everything else in a bag is somebody's annotation. Preserve it.
   server relays the bag opaquely. Semantic rig state travels the same way:
   `pose.wingsFolded` is a boolean intent, never implementation-specific wing
   quaternions; each renderer applies it through the worn rig's own fold path.
+  The same packet carries a body's size and a person's voice state, each
+  optional, absence meaning the default (or, for voice, *unknown*):
+  - `pose.scale` — the wearer's chosen size multiplier for the whole body
+    (mesh, eyes, stride, collider); absent = 1. Range 0.5–2.
+  - `pose.plateY` — metres the nameplate hangs above the body's measured
+    crown, at its authored size (it grows with `scale`); absent = 0 (auto).
+    Range −0.3…+0.8.
+  - `pose.mic` — this person's microphone is live; `pose.hear` — they are
+    hearing voices. Booleans; absent = unknown, never "off".
+
+  Receivers MUST clamp `scale`/`plateY` to their ranges and read a
+  non-number as absent; a non-boolean `mic`/`hear` is absent
+  (shared/presencewire.js holds the clamps; the sequencer's pose fence
+  applies the same ones). `scale`/`plateY` are body state and ride the
+  settled pose a sequencer keeps for late joiners, as `wingsFolded` does;
+  `mic`/`hear` are a live reading re-sent with every packet and are never
+  part of it.
 - **The plane-transition invariant**: anything returning from live motion to
   rest MUST stamp its absolute pose into the verb that ends the ride
   (`dismount {pos, yaw}`; `motion {type: null}` + `place`). The log never

@@ -95,7 +95,8 @@ check('browser owner path joins controller state to the semantic wire field',
 check('browser toggle asks the current rig for physical wing evidence',
   /inspectBody\(flightBones \?\? \[\]\)\.canAnimateWings/.test(controllerSrc));
 check('settled pose preserves unknown semantic fields for late join',
-  /const \{ emote: _emote, \.\.\.still \} = pose/.test(serverSrc));
+  // live readings (mic/hear) are dropped by name; everything else rides the rest spread
+  /const \{ emote: _emote(?:, \w+: _\w+)*, \.\.\.still \} = pose/.test(serverSrc));
 check('headless reconnect restores its own fold state',
   /this\.wingsFolded = msg\.restore\.wingsFolded === true/.test(agentSrc));
 check('text-tier perception reports the public silhouette',

@@ -30,7 +30,7 @@ globalThis.fetch = (async () => new Response('[]', { status: 200 })) as any;
 // the elements ui.js binds at import, plus the sheet's own tokens the style panel reads back
 for (const id of ['hud', 'loading', 'toasts', 'hintbar', 'door', 'help', 'dock', 'touch']) { const d = document.createElement('div'); d.id = id; document.body.append(d); }
 const sheet = document.createElement('style');
-sheet.textContent = ':root{--panel-a:.9;--panel-rgb:20 24 28;--brand:#aabbcc;--attn:#ff5533;--fg:#eeeeee}';
+sheet.textContent = ':root{--panel-a:.9;--xr-panel-a:1;--panel-rgb:20 24 28;--brand:#aabbcc;--attn:#ff5533;--fg:#eeeeee}';
 document.head.append(sheet);
 // the dock's profile button: what paintPresence (ui.js) repaints on presence:me
 const dockBtn = document.createElement('button'); dockBtn.dataset.toggles = 'profile'; document.getElementById('dock')!.append(dockBtn);
@@ -38,6 +38,7 @@ const dockBtn = document.createElement('button'); dockBtn.dataset.toggles = 'pro
 const stub = await import('./settings-panels-stub.mjs');
 const { calls, emitted, xrPanels, net, bus } = stub;
 const ui = await import('../client/lib/ui.js');
+const { getFrame } = await import('../client/lib/frames.js');
 const style = await import('../client/lib/stylepanel.js');
 const video = await import('../client/lib/videopanel.js');
 const profile = await import('../client/lib/profile.js');
@@ -56,7 +57,8 @@ const tokens = () => JSON.parse(localStorage.getItem('ew-style-tokens') || '{}')
 const since = (i: number, name: string) => calls.slice(i).filter((c) => c[0] === name);
 const emits = (i: number, t: string) => emitted.slice(i).filter((e) => e[0] === t).length;
 const fire = (el: Element, type: string) => el.dispatchEvent(new Event(type, { bubbles: true }));
-const openSection = async (id: string) => { const sec = document.getElementById(`sec-${id}`)!; (sec.querySelector('.head') as HTMLElement).click(); await tick(); return sec.querySelector('.body')!; };
+// Settings is TABBED (ui.js makeSection): #sec-<id>-tab chooses the pane #sec-<id>
+const openSection = async (id: string) => { (document.getElementById(`sec-${id}-tab`) as HTMLElement).click(); await tick(); return document.getElementById(`sec-${id}`)!.querySelector('.body')!; };
 
 // ============================================================ style: --panel-a
 console.log('STYLE — setPanelAlpha persists and repaints --panel-a');
@@ -84,10 +86,30 @@ console.log('STYLE — setPanelAlpha persists and repaints --panel-a');
   check('a swatch repaints its token', computed('--brand') === '#112233', computed('--brand'));
   check('…persists it', tokens()['--brand'] === '#112233');
   check('…and emits style{--brand}', emitted.slice(e0).some((e) => e[0] === 'style' && e[1]?.key === '--brand'));
+  // the two opacity dials (owner, 09-30): the desktop one says it is the desktop's, and VR has its own
+  const dials = [...body.querySelectorAll('input[type=range]')] as HTMLInputElement[];
+  const label = (el: Element) => el.closest('.row')?.querySelector('.nm')?.textContent ?? '';
+  check('two opacity dials: desktop, then VR', dials.length === 2 && label(dials[0]) === 'desktop panel opacity' && label(dials[1]) === 'VR panel opacity',
+    dials.map(label).join(' | '));
+  const xr = dials[1];
+  check('the VR dial starts opaque (1) and spans 0.6–1', xr?.value === '1' && xr?.min === '0.6' && xr?.max === '1', `${xr?.value} ${xr?.min}–${xr?.max}`);
+  const e1 = emitted.length;
+  xr.value = '0.6'; fire(xr, 'input');
+  check('dragging the VR dial repaints --xr-panel-a (and leaves --panel-a alone)', computed('--xr-panel-a') === '0.6' && computed('--panel-a') === '0.66', `${computed('--xr-panel-a')} ${computed('--panel-a')}`);
+  check('…persists it with the style tokens', tokens()['--xr-panel-a'] === '0.6', JSON.stringify(tokens()));
+  check('…and emits style{--xr-panel-a} (what the VR quads re-raster on)', emitted.slice(e1).some((e) => e[0] === 'style' && e[1]?.key === '--xr-panel-a'));
+  style.setXrPanelAlpha(0.7);
+  const xrReadout = xr.nextElementSibling as HTMLElement;
+  check('setXrPanelAlpha from code moves the VR dial too (value and readout)', xr.value === '0.7' && xrReadout.textContent === '0.70', `${xr.value} ${xrReadout.textContent}`);
+  style.setXrPanelAlpha(0.2);
+  check('setXrPanelAlpha clamps to the dial\'s range', computed('--xr-panel-a') === '0.6', computed('--xr-panel-a'));
+  root().removeProperty('--xr-panel-a'); style.applyStyleTokens();
+  check('the VR value survives a re-apply from storage', computed('--xr-panel-a') === '0.6', computed('--xr-panel-a'));
   (body.querySelector('button') as HTMLElement).click();   // reset to defaults
   check('reset clears the live tokens', computed('--panel-a') === '.9' && computed('--brand') === '#aabbcc', `${computed('--panel-a')} ${computed('--brand')}`);
   check('reset empties the store', Object.keys(tokens()).length === 0, JSON.stringify(tokens()));
   check('reset repaints the slider from the sheet', slider.value === '0.9', slider.value);
+  check('reset returns VR panels to opaque, dial included', computed('--xr-panel-a') === '1' && xr.value === '1', `${computed('--xr-panel-a')} ${xr.value}`);
 }
 
 // ============================================================ video rows
@@ -165,7 +187,7 @@ console.log('PROFILE — presence dispatch reaches setPresence; the dock dot rep
   check('presence() is busy', presence.presence() === 'busy', presence.presence());
   check('presence:me was emitted', emits(e0, 'presence:me') === 1);
   check('the dock dot repaints (data-presence=busy)', dockBtn.dataset.presence === 'busy', String(dockBtn.dataset.presence));
-  check('the dock title names the state', dockBtn.title === 'profile · busy', dockBtn.title);
+  check('the dock title names the state', dockBtn.title === 'Profile · busy', dockBtn.title);
   check('the quad repaints', emits(e0, 'xr:repaint') >= 1);
   check('the quad lists busy as active', quad.fields().find((x: any) => x.label === 'presence').rows.find((r: any) => r.active).id === 'busy');
   // the desk: the portrait IS the presence control
@@ -242,6 +264,74 @@ console.log('BODIES — the list populates on avatar-worn, which setMe emits');
     check('re-wearing an existing body does not duplicate it', stored.filter((n: string) => n === 'fox').length === 1, JSON.stringify(stored));
     check('...and moves it to the front (newest first)', stored[0] === 'fox', JSON.stringify(stored));
     void e2; }
+
+// ============================================================ tabs
+console.log('TABS — every registered section is a tab; choosing one shows its pane alone, and its action opens it');
+{ const actions = await import('../client/lib/actions.js');
+  const frame = ui.settingsFrame() as any;
+  const strip = frame.strip as HTMLElement;
+  const ids = ['style', 'video'];
+  check('the settings frame carries a tab strip with one tab per section, in registration order',
+    [...strip.querySelectorAll('.pf-tab')].map((b) => b.id).join() === ids.map((i) => `sec-${i}-tab`).join(),
+    [...strip.querySelectorAll('.pf-tab')].map((b) => b.id).join());
+  check('no pane lives in the strip, no tab in a pane (a strip, not an accordion)',
+    !strip.querySelector('.sec') && ids.every((i) => !document.getElementById(`sec-${i}`)!.querySelector('.pf-tab')));
+  const state = () => ids.map((i) => `${i}:${document.getElementById(`sec-${i}`)!.classList.contains('open') ? 'open' : '-'}/${document.getElementById(`sec-${i}-tab`)!.classList.contains('on') ? 'on' : '-'}/${document.getElementById(`sec-${i}-tab`)!.getAttribute('aria-selected')}`).join(' ');
+  for (const id of ids) {
+    await openSection(id);
+    check(`clicking the ${id} tab shows its pane ALONE, the tab marked chosen`,
+      state() === ids.map((i) => (i === id ? `${i}:open/on/true` : `${i}:-/-/false`)).join(' '), state());
+  }
+  frame.hide();
+  for (const id of ids) {
+    actions.run(`section:settings:${id}`); await tick(); await tick();
+    check(`the lantern action section:settings:${id} opens the frame on the ${id} tab`,
+      frame.visible && state() === ids.map((i) => (i === id ? `${i}:open/on/true` : `${i}:-/-/false`)).join(' '), `${frame.visible} ${state()}`);
+  }
+  // a frame shown with no tab chosen opens the one last chosen (never an empty pane)
+  ui.collapseAll(); await tick();
+  check('collapseAll folds the pane away (placing a ghost wants the view)', !ids.some((i) => document.getElementById(`sec-${i}`)!.classList.contains('open')), state());
+  frame.hide(); frame.show(); await tick();
+  check('shown again with nothing chosen, the frame opens its last tab (video)', state() === 'style:-/-/false video:open/on/true', state());
+
+  // a mod's section may share a built-in's label (mods.js passes no id): removing the mod's
+  // must not take the built-in's lantern row with it
+  const builtinRun = actions.get('section:settings:video')?.run;
+  const mod = ui.makeSection('video', () => {}, { host: 'settings' });
+  mod.remove(); await tick();
+  check('removing a mod section that shares a label keeps the built-in\'s lantern row',
+    !!actions.get('section:settings:video') && actions.get('section:settings:video')!.run === builtinRun,
+    `row=${!!actions.get('section:settings:video')} sameRun=${actions.get('section:settings:video')?.run === builtinRun}`);
+  const again = ui.makeSection('🎨 extra', () => {}, { host: 'settings' });
+  check('a removed section\'s own row goes with it', (again.remove(), await tick(), actions.get('section:settings:extra') === null));
+
+
+  // toggle() with no argument flips, as the accordion's did (mods call ctx.ui.section(…).toggle())
+  const video = frame.sections.find((x: any) => x.key === 'video');
+  await video.toggle(true);
+  await video.toggle();
+  check('toggle() on the chosen tab folds it', !video.isOpen, state());
+  await video.toggle();
+  check('toggle() on a folded tab chooses it', video.isOpen, state());
+}
+
+console.log('WORLD — a viewport restore opens a tab, like show() does');
+{
+  // Last session the viewport auto-hid World; its sections register while it is hidden, so the queued
+  // ensureTab finds it closed and does nothing. When the window grows back, the viewport rule un-hides it
+  // WITHOUT show() — it must still open a tab, not come back as an empty pane.
+  check('setup: World is not built yet', !getFrame('world'));
+  localStorage.setItem('ew-frame-world', JSON.stringify({ x: 700, y: 52, w: 280, h: 320, hidden: true, autoHidden: true }));
+  const sec = ui.makeSection('🧪 probe', () => {}, { id: 'probe' });
+  await tick();
+  const w: any = getFrame('world');
+  check('setup: World comes up auto-hidden, no tab open', !w.visible && !sec.isOpen, JSON.stringify({ visible: w.visible, open: sec.isOpen }));
+  const vp = (x: number, y: number) => { (window as any).innerWidth = x; (window as any).innerHeight = y; window.dispatchEvent(new Event('resize')); };
+  const w0 = innerWidth, h0 = innerHeight;
+  vp(390, 844); vp(w0, h0); await tick();
+  check('setup: the viewport restores World', w.visible === true);
+  check('…with its remembered (or first) tab open, not an empty pane', sec.isOpen, JSON.stringify(w.sections.map((x: any) => [x.key, x.isOpen])));
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -48,6 +48,10 @@
       "drag the scene · <kbd>wheel</kbd> zooms (through to first person)"
     ],
     [
+      "Names",
+      "hold <kbd>N</kbd> — every name within ~60 m, through walls (VR: hold <kbd>B</kbd> or <kbd>Y</kbd>)"
+    ],
+    [
       "Mouselook",
       "<kbd>M</kbd> toggles · <kbd>Esc</kbd> frees the cursor (browsers only let Esc release it)"
     ],

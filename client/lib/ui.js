@@ -2,8 +2,10 @@
 // Toasts, the loading tray, the HUD, the hint bar, the panel frames, the dock,
 // and the two overlays (help, front door).
 
+import { chooseClient } from './litechoice.js';
+import { confirmCenter } from './confirmcenter.js';
 import { bus, CONFIG, setName, setToken, setErrorSink, report } from './base.js';
-import { resizeZoneAt } from './frames.js';
+import { resizeZoneAt, fitTabStrip } from './frames.js';
 import { flipMic, flipEar, micLive, earOn, glyphPinned, setGlyphPinned, micGlyph, earGlyph, xrGlyph, xrGlyphAvailable, xrLive, flipXr } from './mictoggle.js';
 import { svg, fsvg, hasFill, rsvg, hasLine } from './icons.js';
 
@@ -30,8 +32,10 @@ const EMOJI_ICON = {
 // the real one.
 let loadingItems = () => [];
 export function setLoadingItems(fn) { loadingItems = fn; }
-import { makeFrame, getFrame, isLocked, setLocked, resetLayout } from './frames.js';
+import { makeFrame, getFrame, isLocked, setLocked, resetLayout, escapeHid } from './frames.js';
 import { defsRegistry } from './defs.js';
+import { register as registerAction, get as getAction } from './actions.js';
+import { openLantern, closeLantern, isLanternOpen, CHORD, pillPinned, setPillPinned, setPillQuiet, resetPillPlace } from './lantern.js';
 
 const $ = (id) => document.getElementById(id);
 export const el = {
@@ -107,15 +111,25 @@ export function setAmbientHint(html) {
   if (ambientHint) { el.hint.innerHTML = ambientHint; el.hint.classList.remove('gone'); }
   else el.hint.classList.add('gone');
 }
+// Esc put every panel away (frames.js): say how to get them back, for a few seconds; when they come back, stop saying it
+// …and the lantern's resting line goes away with them and comes back with them (lantern.js setPillQuiet)
+bus.on('esc-quiet', (did) => {
+  setPillQuiet(did === 'closed');
+  if (did === 'closed') flashHint(`<span>${escapeHid() ? 'panels hidden' : 'hidden'} · <kbd>Esc</kbd> to bring back</span>`, 4000);   // one span: the bar is a flex row, which would eat the spaces around the key
+  else if (did === 'restored' && el.hint._t && /hidden · Esc to bring back/.test(el.hint.textContent)) endFlash();
+});
 export function flashHint(html, ms = 2600) {
   el.hint.innerHTML = html;
   el.hint.classList.remove('gone');
   clearTimeout(el.hint._t);
-  el.hint._t = setTimeout(() => {
-    el.hint._t = null;
-    if (ambientHint) el.hint.innerHTML = ambientHint;
-    else el.hint.classList.add('gone');
-  }, ms);
+  el.hint._t = setTimeout(endFlash, ms);
+}
+// a flash is over (its time ran out, or what it said stopped being true): the bar goes back to the ambient offer or away
+function endFlash() {
+  clearTimeout(el.hint._t);
+  el.hint._t = null;
+  if (ambientHint) el.hint.innerHTML = ambientHint;
+  else el.hint.classList.add('gone');
 }
 
 // ============================================================ cursors
@@ -178,10 +192,15 @@ const tip = document.createElement('div');
 tip.id = 'tipchip';
 document.body.appendChild(tip);
 let tipTimer = null, tipHost = null;
+// ancestors with their own title= while a DESCENDANT holds the tip: their titles are borrowed too, or the browser
+// paints the ancestor's NATIVE tooltip beside ours (owner, 09-24: a Build card's name over its ↻ chip's hint)
+let tipAnc = [];
 
 function tipHide() {
   clearTimeout(tipTimer); tipTimer = null;
   if (tipHost) { if (tipHost._tip) tipHost.setAttribute('title', tipHost._tip); tipHost._tip = null; tipHost = null; }
+  for (const [el, t] of tipAnc) el.setAttribute('title', t);
+  tipAnc = [];
   tip.classList.remove('show');
 }
 document.addEventListener('mouseover', (e) => {
@@ -191,6 +210,9 @@ document.addEventListener('mouseover', (e) => {
   const text = host.getAttribute('title');
   if (!text) return;
   tipHost = host; host._tip = text; host.removeAttribute('title');
+  for (let a = host.parentElement?.closest('[title]'); a; a = a.parentElement?.closest('[title]')) {
+    tipAnc.push([a, a.getAttribute('title')]); a.removeAttribute('title');
+  }
   tipTimer = setTimeout(() => {
     if (tipHost !== host || !document.body.contains(host)) return;
     tip.textContent = host._tip;   // reread: paintHud may have refreshed it
@@ -201,6 +223,21 @@ document.addEventListener('mouseover', (e) => {
     let x = Math.round(r.left + r.width / 2 - tw / 2);
     let y = Math.round(r.bottom + 7);
     if (y + th > innerHeight - 4) y = Math.round(r.top - th - 7);   // flip above
+    // a VERTICAL rail's buttons say it beside the rail, out over the world — under the button it covered the next one
+    const edge = host.closest?.('#dock')?.dataset.edge;
+    if (edge === 'left' || edge === 'right') {
+      y = Math.round(r.top + r.height / 2 - th / 2);
+      x = Math.round(edge === 'left' ? r.right + 10 : r.left - tw - 10);
+    }
+    // a WATERFALL row (the ∃ menu and its flyout) says it beside the menus, level with the row — under the row it
+    // covered the very rows you were moving to (owner, 10-01). Past the rightmost open menu, so a flyout stays clear;
+    // the left side if the right has no room.
+    if (host.closest?.('#emenu, #emenu-sub')) {
+      const menus = ['#emenu', '#emenu-sub'].map((q) => document.querySelector(q)).filter((m) => m && !m.hidden && getComputedStyle(m).display !== 'none')   /* not offsetParent: it is null for any fixed element */.map((m) => m.getBoundingClientRect());
+      const right = Math.max(...menus.map((m) => m.right)), left = Math.min(...menus.map((m) => m.left));
+      y = Math.round(Math.max(4, Math.min(r.top + r.height / 2 - th / 2, innerHeight - th - 4)));
+      x = right + 10 + tw <= innerWidth - 4 ? Math.round(right + 10) : Math.round(left - tw - 10);
+    }
     x = Math.max(4, Math.min(x, innerWidth - tw - 4));
     tip.style.left = `${x}px`; tip.style.top = `${y}px`;
   }, 450);
@@ -223,75 +260,140 @@ new MutationObserver(() => {
 
 // ============================================================ panel frames
 
+// World and Settings hold their sections as TABS (owner, 09-29: the A-kit mockup's tabs, not the accordion):
+// a strip on top, one pane below. The strip is the profile's own recipe (.pf-tabs/.pf-tab — one tab
+// mechanism in this client, not three), and it tightens as the frame narrows: full labels → the chosen
+// tab alone keeps its label → icons only → the strip scrolls. Every tab keeps its name as a tooltip.
+function tabbedFrame(id, opts) {
+  const f = makeFrame(id, opts);
+  f.body.classList.add('tabbed');
+  const strip = document.createElement('div');
+  strip.className = 'pf-tabs sec-tabs'; strip.setAttribute('role', 'tablist');
+  const stack = document.createElement('div');
+  stack.className = 'stack';
+  f.body.append(strip, stack);
+  f.stack = stack; f.strip = strip; f.sections = [];
+  // how much label the strip can afford, re-decided whenever it or its tabs change size
+  const fitStrip = () => fitTabStrip(strip);
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(fitStrip).observe(strip);
+  f.fitStrip = fitStrip;
+  // A frame never shows an empty pane: shown with no tab chosen, it opens the one last chosen here, else the first.
+  const LS = `ew-tab-${id}`;
+  f.ensureTab = () => {
+    if (!f.visible || f.sections.some((x) => x.isOpen) || !f.sections.length) return;
+    let want = null; try { want = localStorage.getItem(LS); } catch {}
+    const pick = f.sections.find((x) => x.key === want) ?? f.sections[0];
+    pick.toggle(true).catch((e) => report(pick.key, e));
+  };
+  f.rememberTab = (key) => { try { localStorage.setItem(LS, key); } catch {} };
+  f.onShow(() => { f.ensureTab(); fitStrip(); });   // every way back on screen, the viewport restore included
+  return f;
+}
+
 let worldFrame = null;
 export function panelFrame() {
   if (!worldFrame) {
-    worldFrame = makeFrame('world', {
-      title: 'world', x: -10, y: 52, w: 232, h: 300, minW: 200,   // eight rows, no bleed
+    worldFrame = tabbedFrame('world', {
+      title: 'world', x: -10, y: 52, w: 280, h: 320, minW: 200,   // 280: eight tabs with the chosen one's name (the A-kit mockup's column)
     });
-    const stack = document.createElement('div');
-    stack.className = 'stack';
-    worldFrame.body.appendChild(stack);
-    worldFrame.stack = stack;
   }
   return worldFrame;
 }
 
 // engine settings — machine-noun home (video, sound, controls). First tenant:
-// the audio panel, moved out of the world menu. Same stack shape.
+// the audio panel, moved out of the world menu. Same tabbed shape.
 let settingsFrameApi = null;
 export function settingsFrame() {
   if (!settingsFrameApi) {
-    settingsFrameApi = makeFrame('settings', {
-      title: 'settings', x: -10, y: 364, w: 232, h: 260, minW: 210, hidden: true,   // right column, UNDER world (52+300+12)
+    settingsFrameApi = tabbedFrame('settings', {
+      title: 'settings', x: -10, y: 384, w: 280, h: 280, minW: 210, hidden: true,   // right column, UNDER world (52+320+12)
     });
-    const stack = document.createElement('div');
-    stack.className = 'stack';
-    settingsFrameApi.body.appendChild(stack);
-    settingsFrameApi.stack = stack;
-    // the frame registers its own dock entry (its section heads live INSIDE it, so nothing else can open it);
+    // the frame registers its own dock entry (its tabs live INSIDE it, so nothing else can open it);
     // a caller that already listed 'settings' wins, and a frame born after initDock still gets its button
     if (!dockEntries.some((e) => e.id === 'settings')) { const entry = { id: 'settings', icon: 'gear-six' }; dockEntries.push(entry); if (el?.dock) { addDockButton(entry); paintDock(); } }
   }
   return settingsFrameApi;
 }
 
-/** Collapsible section inside the world frame. onOpen is awaited each time it
- *  opens, so rosters and catalogs re-fetch instead of going stale. */
+/** A section of the world (or settings) frame: a TAB in its strip and a pane under it. onOpen is
+ *  awaited each time the tab is chosen, so rosters and catalogs re-fetch instead of going stale.
+ *  The api is the accordion's: `box` (#sec-<id>, the pane, .open while chosen) holds `body`; `head`
+ *  is the tab button (#sec-<id>-tab); toggle(true) chooses it, toggle(false) folds the pane away,
+ *  toggle() flips. */
 export function makeSection(title, onOpen, { id = '', host: hostName = 'world' } = {}) {
   const hostFrame = hostName === 'settings' ? settingsFrame() : panelFrame();
-  const host = hostFrame.stack;
   const box = document.createElement('div');
   box.className = 'sec';
+  box.setAttribute('role', 'tabpanel');
   if (id) box.id = `sec-${id}`;
   const head = document.createElement('button');
-  head.className = 'head';
+  head.className = 'pf-tab head';
+  head.setAttribute('role', 'tab');
+  if (id) head.id = `sec-${id}-tab`;
   const m = title.match(/^(\S+)\s+(.*)$/);
   const glyph = m && EMOJI_ICON[m[1].replace(/️/g, '')];
   if (glyph && hasFill(glyph)) head.innerHTML = `${fsvg(glyph, 15)}<span>${m[2]}</span>`;
   else head.textContent = title;
-  head.setAttribute('aria-expanded', 'false');
+  const label = /^[\p{L}\p{N}]/u.test(title) ? title : title.replace(/^\S+\s+/, '');   // "☀ sky" → "sky"
+  head.title = label;
+  head.setAttribute('aria-selected', 'false');
+  head.setAttribute('aria-expanded', 'false');   // kept for anything reading the accordion's attribute
   const body = document.createElement('div');
   body.className = 'body';
 
+  const select = (on) => {
+    box.classList.toggle('open', on); head.classList.toggle('on', on);
+    head.setAttribute('aria-selected', String(on)); head.setAttribute('aria-expanded', String(on));
+  };
   const api = {
-    box, head, body,
+    box, head, body, key: id || label,
     get isOpen() { return box.classList.contains('open'); },
     async toggle(force) {
-      const open = force ?? !box.classList.contains('open');
-      box.classList.toggle('open', open);
-      head.setAttribute('aria-expanded', String(open));
-      if (open) { hostFrame.show(); await onOpen?.(body); }
+      const open = force ?? !api.isOpen;   // a tab click passes true: it CHOOSES, never folds
+      if (open) {
+        for (const o of hostFrame.sections) if (o !== api && o.isOpen) o.toggle(false);
+        select(true);
+        hostFrame.rememberTab(api.key);
+        hostFrame.show();   // shows and raises; its ensureTab finds this tab open and leaves it be
+        hostFrame.stack.scrollTop = 0;
+        hostFrame.fitStrip();
+        { const st = hostFrame.strip, l = head.offsetLeft - st.offsetLeft, r = l + head.offsetWidth;   // a scrolled strip brings its chosen tab into view
+          if (l < st.scrollLeft) st.scrollLeft = l; else if (r > st.scrollLeft + st.clientWidth) st.scrollLeft = r - st.clientWidth; }
+        await onOpen?.(body);
+      } else select(false);
+    },
+    /** take the tab and its pane out (a mod switched off) */
+    remove() {
+      const i = hostFrame.sections.indexOf(api); if (i >= 0) hostFrame.sections.splice(i, 1);
+      head.remove(); box.remove(); unregisterSelf();
+      if (api.isOpen) { select(false); hostFrame.ensureTab(); }
+      hostFrame.fitStrip();
     },
   };
-  head.onclick = () => api.toggle().catch((e) => report(title, e));
-  box.append(head, body);
-  host.appendChild(box);
+  head.onclick = () => api.toggle(true).catch((e) => report(title, e));
+  box.append(body);
+  hostFrame.strip.appendChild(head);
+  hostFrame.stack.appendChild(box);
+  hostFrame.sections.push(api);
+  hostFrame.fitStrip();
+  // a frame already on screen (restored open) gets its tab once this tick's registrations are in
+  if (!hostFrame._tabQueued) { hostFrame._tabQueued = true; setTimeout(() => { hostFrame._tabQueued = false; hostFrame.ensureTab(); }, 0); }
+  // the lantern finds a section by its own name ("sky", "audio"): open the panel AND the tab.
+  // A mod's section may share a built-in's label; a second id keeps it from merging into
+  // (and, on remove, deleting) the built-in's row.
+  let actionId = `section:${hostName}:${label}`;
+  for (let n = 2; getAction(actionId); n++) actionId = `section:${hostName}:${label}#${n}`;
+  const unregisterSelf = registerAction({
+    id: actionId, title: label, group: hostName, keywords: [hostName],
+    icon: glyph ?? undefined, detail: `open the ${label} tab`,
+    run: () => api.toggle(true).catch((e) => report(title, e)),
+  });
   return api;
 }
 
+/** Fold every open pane away (placing a ghost wants the view): the strips stay, no tab chosen. */
 export function collapseAll() {
-  for (const s of document.querySelectorAll('.sec.open')) s.classList.remove('open');
+  for (const f of [worldFrame, settingsFrameApi]) for (const x of f?.sections ?? []) if (x.isOpen) x.toggle(false);
 }
 
 // ============================================================ who's here
@@ -314,8 +416,10 @@ const PINS_LS = 'ew-dock-pins';
 const gateWas = new Map();
 let pins = new Set();
 // every panel starts pinned to the dock; unpinning is the personal choice, not pinning (live, 09-06 23:34)
-const DEFAULT_PINS = ['profile', 'world', 'chat', 'emotes', 'debug', 'settings', 'edit'];   // 'edit' too (live 09-07 10:55) — its ownership gate still decides visibility
+const DEFAULT_PINS = ['search', 'profile', 'world', 'chat', 'emotes', 'debug', 'settings', 'edit'];   // 'edit' too (live 09-07 10:55) — its ownership gate still decides visibility
 try { pins = new Set(JSON.parse(localStorage.getItem(PINS_LS) ?? JSON.stringify(DEFAULT_PINS))) } catch { pins = new Set(DEFAULT_PINS); }
+// the search entry arrived after people had saved their pins: pin it ONCE for them, then their unpin is theirs
+try { if (!localStorage.getItem('ew-dock-search-seen')) { localStorage.setItem('ew-dock-search-seen', '1'); pins.add('search'); } } catch {}
 const savePins = () => { try { localStorage.setItem(PINS_LS, JSON.stringify([...pins])) } catch {} };
 let dockEntries = [];
 
@@ -349,25 +453,32 @@ export function paintPresence(state) {
   const b = el.dock.querySelector('button[data-toggles="profile"]');
   if (!b) return;
   b.dataset.presence = state;
-  b.title = `profile · ${state}`;
+  b.title = `Profile · ${state}`;
 }
 
+// one resolver for the rail AND the VR ring: the ring read only entry.icon, so frames whose glyph comes from the
+// id/emoji fallbacks (debug, world, chat) drew blank discs in VR (the owner's headset pass, 09-27)
+const iconOf = (e) => e.icon ?? ID_ICON[e.id] ?? EMOJI_ICON[(e.label ?? '').replace(/\uFE0F/g, '')];
 export function dockPins() {
   return dockEntries
     .filter((e) => !e.action && (pins.has(e.id) || !!getFrame(e.id)?.visible))
-    .map((e) => ({ id: e.id, icon: e.icon, open: !!getFrame(e.id)?.visible }));
+    .map((e) => ({ id: e.id, icon: iconOf(e), open: !!getFrame(e.id)?.visible }));
 }
 
+// how a rail entry reads as a lantern row (the rail itself shows only a glyph)
+const PANEL_TITLE = { emotes: 'emote bar', edit: 'edit mode', debug: 'debug panel' };
+const PANEL_WORDS = { world: ['catalog', 'build'], profile: ['avatar', 'presence', 'friends', 'satchel'],
+  chat: ['messages', 'log', 'people'], edit: ['build', 'place'], settings: ['preferences', 'options'] };
 function addDockButton(entry) {
   const { id, label, action } = entry;
-  const icon = entry.icon ?? ID_ICON[id] ?? EMOJI_ICON[(label ?? '').replace(/\uFE0F/g, '')];   // upstream main.js still labels the rail with emoji; chrome never rides emoji
+  const icon = iconOf(entry);   // upstream main.js still labels the rail with emoji; chrome never rides emoji
   const b = document.createElement('button');
   // both weights ride the button; CSS shows the LINE glyph at rest and the
   // FILL glyph while the window is open (the .on class) — a glyph swap, not
   // a color change, is what makes inactive read as inactive
   if (icon && hasFill(icon)) b.innerHTML = (hasLine(icon) ? rsvg(icon, 21) : '') + fsvg(icon, 21);   // +25% glyph, same 34px button
   else b.textContent = label ?? id;
-  b.title = action ? id : `toggle ${id}`;
+  b.title = dockTitle(entry);
   b.onclick = () => {
     if (action) { action(); paintDock(); return; }
     const f = getFrame(id);
@@ -376,6 +487,14 @@ function addDockButton(entry) {
     paintDock();
   };
   b.dataset.toggles = id;   // NOT data-frame — that belongs to the window itself
+  if (id === SEARCH_ENTRY.id) b.dataset.lanternToggle = '';   // its click closes an open lantern; the line's blur must not (lantern.js)
+  // the same act, findable by name in the lantern; a key table may merge its key in (main.js)
+  if (!entry.noAction) registerAction({
+    id: `panel:${id}`, title: PANEL_TITLE[id] ?? id, group: 'panels', icon, detail: 'open / close the panel',
+    keywords: [id, 'panel', ...(PANEL_WORDS[id] ?? [])],
+    when: action && entry.gate ? entry.gate : undefined,
+    run: () => b.onclick(),
+  });
   if (entry.last) b.dataset.last = '1';
   // before the first `last` button if there is one, else before the grip — so
   // the wrench keeps the end and the grip stays after it
@@ -395,11 +514,30 @@ function initPanels() {
     .catch((e) => report('ui panels', e));
   return [{ id: 'profile', icon: 'user-circle' }];
 }
+// Search & commands: the lantern prompt (Ctrl/Cmd+K). Between emotes and debug (owner, 10-01: "Search almost feels like
+// a less-standard feature") — initDock places it. An action entry (not a frame): it lights while the prompt is open.
+// It registers no lantern row — a row that opens the prompt you are typing in would be noise.
+const SEARCH_ENTRY = { id: 'search', icon: 'magnifying-glass', label: 'Search & commands', noAction: true,
+  action: () => (isLanternOpen() ? closeLantern() : openLantern()), active: () => isLanternOpen() };
+addEventListener('lantern', () => paintDock());
+// every rail button's tooltip: its name, and its key where the action registry knows one ("Chat · Enter",
+// "Debug · F3") — read from actions.js at paint time, so a key table merged in later (main.js) shows up
+const DOCK_NAME = { search: 'Search & commands' };
+function dockTitle(entry, suffix = '') {
+  const name = DOCK_NAME[entry.id] ?? (entry.id.charAt(0).toUpperCase() + entry.id.slice(1));
+  const key = entry.id === 'search' ? CHORD : getAction(`panel:${entry.id}`)?.key;
+  return `${name}${key ? ` · ${key}` : ''}${suffix}`;
+}
 export function initDock(entries) {
   const lead = initPanels();
   // built-ins lead; a mod registered before boot keeps its entry, once
   const seen = new Set();
   dockEntries = [...lead, ...entries, ...dockEntries].filter((e) => !seen.has(e.id) && seen.add(e.id));
+  // search goes in before debug, else after emotes, else ahead of the `last` entries (the sort below keeps those last)
+  if (!seen.has(SEARCH_ENTRY.id)) {
+    const at = dockEntries.findIndex((e) => e.id === 'debug'), after = dockEntries.findIndex((e) => e.id === 'emotes');
+    dockEntries.splice(at >= 0 ? at : after >= 0 ? after + 1 : dockEntries.length, 0, SEARCH_ENTRY);
+  }
   // `last: true` entries (the edit wrench) ALWAYS close the list: edit is a
   // MODE, not a window, and it reads as one only when it sits apart at the end
   // (live, 09-05). Mods registering later insert ahead of them (addDockButton).
@@ -436,15 +574,18 @@ export function initDock(entries) {
   // AUTO-PIN ON THE GRANT, and only on the transition. R asked for the wrench
   // to "activate and pin to the dock automatically when you do get it", with a
   // manual unpin still winning — so this fires on closed->open, never on every
-  // repaint, or the next paint would undo her unpin. `gateWas` starts at the
-  // gate's value so a builder who was ALREADY a builder at boot is not pinned
-  // over their own earlier choice; only an actual grant counts.
-  for (const e of dockEntries) if (e.action && e.gate) gateWas.set(e.id, !!e.gate());
+  // repaint, or the next paint would undo her unpin. A builder who was ALREADY
+  // a builder at boot is not pinned over their own earlier choice; only an
+  // actual grant counts. The gate is closed for everyone at initDock (rights
+  // ride the snapshot, which lands later), so the FIRST report is the level we
+  // start from, not an edge — read at initDock, every reload re-pinned a
+  // builder's unpinned wrench (measured 10-01; tools/dock-boot-test.ts).
   bus.on('your-rights', () => {
     for (const e of dockEntries) {
       if (!e.action || !e.gate) continue;
       const now = !!e.gate(), was = gateWas.get(e.id);
       gateWas.set(e.id, now);
+      if (was === undefined) continue;                 // the arrival: a level
       // BOTH VERBS. R asked to "gray out AND UNPIN ... when you don't have
       // builder status, and it activates and pins to the dock automatically
       // when you do get it" — I quoted that sentence in the comment above and
@@ -547,6 +688,9 @@ function snapDock(ev) {
   try { localStorage.setItem(DOCKPOS_LS, JSON.stringify(pos)) } catch {}
   applyDockEdge(pos);
 }
+// write a title only when it changes: the tooltip chip borrows the attribute while hovered, and a rewrite every 2 s
+// would re-arm the native one (the MutationObserver above routes a real change into the borrow)
+function setTitle(b, t) { if ((b._tip ?? b.getAttribute('title')) !== t) b.setAttribute('title', t); }
 function paintDock() {
   // the rail never hides — it carries the ∃, which is always visible
   for (const b of el.dock.querySelectorAll('button[data-toggles]')) {
@@ -561,7 +705,7 @@ function paintDock() {
       const open = entry.gate ? !!entry.gate() : true;
       b.classList.toggle('dead', !open);
       b.disabled = !open;
-      b.title = open ? id : `${id} — needs build rights in this world`;
+      setTitle(b, dockTitle(entry, open ? '' : ' — needs build rights in this world'));
       b.hidden = !entry.active?.() && !pins.has(id);
       // never `on` AND `dead`: .on's brand ink and edge-bar come later in the
       // sheet at equal specificity, so the pair rendered as "active but
@@ -570,130 +714,316 @@ function paintDock() {
       continue;
     }
     const open = !!getFrame(id)?.visible;
+    if (entry && id !== 'profile') setTitle(b, dockTitle(entry));   // profile's carries its presence (paintPresence)
     b.classList.toggle('on', open);
     b.hidden = !open && !pins.has(id) && !entry?.always;
   }
   paintEMenu();
 }
 
-// ---- the ∃ menu — window list, pins, layout lock; open = arranging --------
+// ---- the ∃ menu: a File-style waterfall (owner, 10-01) -------------------
+// "turning the E-menu into a traditional drop down waterfall menu, kind of like a traditional File menu, pop out to
+// the right of E/dock, over the mic/headphones/vr visor icons." Top level: Save world · Load world · Panels ▸ ·
+// Log in · Help · Keys · About ▸. Settings and Profile stay on the rail ("I don't want to bury it"). Panels ▸ holds
+// what the old menu was: HUD layout mode (the old click-∃ arranging, now a switch of its own), the pins, the lock
+// and reset layout. An item never dismisses the menu unless it takes you to another window (help, a login page);
+// the menu goes on mouse-away (desktop), a press outside it, and Esc — touch and VR have no hover.
 // Alt = the universal window-manager "grab anywhere" chord; show the hand
 // so the convention teaches itself.
 addEventListener('keydown', (e) => { if (e.key === 'Alt') document.body.classList.add('altgrab'); });
 addEventListener('keyup', (e) => { if (e.key === 'Alt') document.body.classList.remove('altgrab'); });
 addEventListener('blur', () => document.body.classList.remove('altgrab'));
 
-const EMENUPOS_LS = 'ew-emenu-pos';
+// What the menu needs to know that ui.js cannot import (net.js is above this rung): INJECTED by main.js, like the
+// load list. Defaults are the truth for a client with no server: no build rights, no sign-in.
+let menuSrc = { buildRights: () => false, loginUrl: () => null };
+export function setMenuSources(src) { menuSrc = { ...menuSrc, ...src }; if (!emenuEl()?.hidden) paintEMenu(); }
+
+// Save and load are honest stubs: the server has no save points to make or restore (grep, 10-01: a world IS its
+// append-only log, so every change is already kept; /fork copies a whole world under a new name, owner-only).
+const NEEDS_RIGHTS = 'needs build rights in this world';
+const SAVE_WHY = 'not yet — this world already keeps every change as it happens (its log); save points need server support. /fork <name> copies the whole world today (owner)';
+const LOAD_WHY = 'not yet — restoring a saved world needs server support; a copy made with /fork is its own world (?world=<name>)';
+const NO_LOGIN = 'this server has no sign-in — it admits by door key';
+const AWAY_MS = 450;   // mouse-away grace: crossing the gap to a flyout, or a wobble off the edge, does not shut the menu
+
+const emenuEl = () => document.getElementById('emenu');
+const subEl = () => document.getElementById('emenu-sub');
+let subFor = null;     // which top-level row the open flyout belongs to ('panels' | 'about'), null = none
+let subCloseT = null;
+let layoutBar = null;
+
+// ---- HUD layout mode: the old click-∃ behaviour, now its own switch. Frames show their title tabs and rims, the rail
+// its grip, the lantern's resting line goes grabbable (index.html body.arranging). It ends on Esc, on a press out in
+// the world, or on its own switch; never because the menu closed.
+export const isLayoutMode = () => document.body.classList.contains('arranging');
+export function setLayoutMode(on) {
+  document.body.classList.toggle('arranging', !!on);
+  paintLayoutBar();
+  paintEMenu();
+}
+function paintLayoutBar() {
+  if (!layoutBar) return;
+  layoutBar.hidden = !isLayoutMode();
+  if (!layoutBar.hidden) anchorBeside(layoutBar);
+}
+
 function initEMenu() {
   el.hud.onclick = () => toggleEMenu();
-  addEventListener('keydown', (e) => { if (e.key === 'Escape' && !emenuEl().hidden) toggleEMenu(false); });
-  // Arranging survives clicks on ANY chrome (panels, headers, rail, menu) —
-  // it ends only out in the world (canvas/body) or back on the ∃.
-  addEventListener('pointerdown', (e) => {
-    const m = emenuEl();
-    if (m.hidden) return;
-    const t = e.target;
-    if (el.hud.contains(t)) return;                       // ∃ itself toggles via click
-    const inChrome = (t instanceof Element &&
-      (m.contains(t) || t.closest('.frame, #dock, .panel, .hud-pop, #micbtn, #earbtn'))) ||
-      resizeZoneAt(e.clientX, e.clientY);   // the grab band hangs 6px outside frames
-    if (!inChrome) toggleEMenu(false);
-  }, true);
-  // the menu is a panel like any other: drag it by its empty parts, kept
   const m = emenuEl();
-  m.addEventListener('pointerdown', (e) => {
-    if (e.target !== m && e.target.className !== 'msep' && !e.target.closest?.('.fr-title')) return;
-    e.preventDefault();
-    const r = m.getBoundingClientRect();
-    const ox = e.clientX - r.left, oy = e.clientY - r.top;
-    let moved = false;
-    const move = (ev) => {
-      moved = true;
-      m.style.left = `${Math.max(4, Math.min(innerWidth - r.width - 4, ev.clientX - ox))}px`;
-      m.style.top = `${Math.max(34, Math.min(innerHeight - r.height - 4, ev.clientY - oy))}px`;
-      m.style.right = m.style.bottom = 'auto';
-    };
-    const up = () => {
-      removeEventListener('pointermove', move); removeEventListener('pointerup', up);
-      if (!moved) return;
-      try { localStorage.setItem(EMENUPOS_LS, JSON.stringify({ x: parseInt(m.style.left), y: parseInt(m.style.top) })) } catch {}
-    };
-    addEventListener('pointermove', move); addEventListener('pointerup', up);
+  let s = subEl();
+  if (!s) { s = document.createElement('div'); s.id = 'emenu-sub'; s.className = 'panel'; s.hidden = true; m.after(s); }
+  s.addEventListener('pointerenter', () => clearTimeout(subCloseT));
+  for (const box of [m, s]) {
+    box.setAttribute('role', 'menu');
+    // a pin is bookkeeping: it never takes focus, so an open lantern keeps its line and stays open
+    box.addEventListener('mousedown', (e) => { if (e.target.closest?.('.mpin')) e.preventDefault(); });
+  }
+  layoutBar = document.createElement('div');
+  layoutBar.id = 'layoutbar'; layoutBar.className = 'panel'; layoutBar.hidden = true;
+  layoutBar.innerHTML = `${fsvg('arrows-out-cardinal', 14)}<span>HUD layout — drag panels, the rail's grip, the resting line</span><kbd>Esc</kbd><button class="lb-done">done</button>`;
+  layoutBar.querySelector('.lb-done').onclick = () => setLayoutMode(false);
+  document.body.appendChild(layoutBar);
+  addEventListener('resize', () => { paintLayoutBar(); if (!m.hidden) { anchorBeside(m); placeSub(); } });
+  addEventListener('dockmoved', () => { paintLayoutBar(); if (!m.hidden) { anchorBeside(m); placeSub(); } });
+
+  // Esc: the deepest level first — the flyout, then the menu, then HUD layout mode (frames.js yields Esc to all
+  // three: escapeIsClaimed sees the open menu and body.arranging)
+  addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (!m.hidden) { if (subFor) closeSub(); else toggleEMenu(false); }
+    else if (isLayoutMode()) setLayoutMode(false);
   });
+  addEventListener('pointerdown', (e) => {
+    const t = e.target instanceof Element ? e.target : null;
+    // a press outside the menu (and outside the ∃, which toggles it by its own click) dismisses it — tap-outside
+    if (!m.hidden && !t?.closest('#emenu, #emenu-sub, #hud')) toggleEMenu(false);
+    // HUD layout mode survives presses on ANY chrome (panels, headers, the rail, the menu, the resting line) — it ends
+    // out in the world (canvas/body)
+    if (isLayoutMode() && !el.hud.contains(t)) {
+      const inChrome = (t && t.closest('#emenu, #emenu-sub, #layoutbar, .frame, #dock, .panel, .hud-pop, #micbtn, #earbtn, #xrbtn, #hudstatus'))
+        || resizeZoneAt(e.clientX, e.clientY);   // the grab band hangs 6px outside frames
+      if (!inChrome) setLayoutMode(false);
+    }
+  }, true);
+  // mouse-away (desktop only: a pen or a finger has no hover to leave with)
+  let away = null;
+  const arm = () => { if (!away) away = setTimeout(() => { away = null; toggleEMenu(false); }, AWAY_MS); };
+  const disarm = () => { clearTimeout(away); away = null; };
+  document.addEventListener('pointermove', (e) => {
+    if (m.hidden || e.pointerType !== 'mouse') return;
+    if (e.target instanceof Element && e.target.closest('#emenu, #emenu-sub, #hud')) disarm(); else arm();
+  }, true);
+  document.addEventListener('pointerout', (e) => { if (!m.hidden && e.pointerType === 'mouse' && !e.relatedTarget) arm(); }, true);   // left the window
+  m.addEventListener('pointerenter', disarm);
+
+  // the same acts, findable by name in the lantern ("save", "layout mode")
+  registerAction({ id: 'menu:save', title: 'save world', group: 'world', icon: 'floppy-disk', keywords: ['save', 'snapshot', 'world', 'file'],
+    detail: 'not yet — it tells you why', run: () => toast(menuSrc.buildRights() ? SAVE_WHY : `save world — ${NEEDS_RIGHTS}`, 'info', 9000) });
+  registerAction({ id: 'menu:load', title: 'load world', group: 'world', icon: 'folder-open', keywords: ['load', 'open', 'restore', 'world', 'file'],
+    detail: 'not yet — it tells you why', run: () => toast(menuSrc.buildRights() ? LOAD_WHY : `load world — ${NEEDS_RIGHTS}`, 'info', 9000) });
+  registerAction({ id: 'menu:layout', title: 'HUD layout mode', group: 'panels', icon: 'arrows-out-cardinal',
+    keywords: ['layout', 'arrange', 'move', 'hud', 'panels', 'drag'], detail: 'move panels, the rail and the resting line',
+    run: () => setLayoutMode(!isLayoutMode()) });
+  registerAction({ id: 'menu:reset-layout', title: 'reset layout', group: 'panels', icon: 'sparkle', keywords: ['layout', 'reset', 'default', 'panels'],
+    detail: 'every window back where it started', run: () => { resetHudLayout(); paintDock(); } });
+  registerAction({ id: 'menu:lock', title: 'lock / unlock the layout', group: 'panels', icon: 'lock', keywords: ['layout', 'lock', 'unlock', 'panels'],
+    run: () => { setLocked(!isLocked()); paintEMenu(); } });
+  registerAction({ id: 'menu:keys', title: 'keys', group: 'view', icon: 'keyboard', keywords: ['keys', 'controls', 'shortcuts', 'bindings'],
+    detail: 'the key table', run: () => openKeys() });
+  registerAction({ id: 'menu:about', title: 'about this build', group: 'view', icon: 'info', keywords: ['about', 'version', 'build', 'sha'],
+    run: () => buildInfo().then((v) => toast(`eidoverse-worlds · ${v.lines.join(' · ')}`, 'info', 9000)) });
+  registerAction({ id: 'menu:login', title: 'log in / log out', group: 'view', keywords: ['login', 'logout', 'sign in', 'sign out', 'account', 'discord'],
+    run: () => { const it = loginItem(); if (it.dead) toast(it.dead, 'info'); else it.run(); } });
 }
-const emenuEl = () => document.getElementById('emenu');
+
 export function toggleEMenu(force) {
   const m = emenuEl();
   const open = force ?? m.hidden;
-  m.hidden = !open;
-  document.body.classList.toggle('arranging', open);
-  if (open) {
-    let placed = false;
-    try {
-      const p = JSON.parse(localStorage.getItem(EMENUPOS_LS) || 'null');
-      if (p) p.y = Math.max(34, p.y);   // tab headroom on restore too
-      if (p && p.x >= 0) { m.style.left = `${p.x}px`; m.style.top = `${p.y}px`; m.style.right = m.style.bottom = 'auto'; placed = true; }
-    } catch {}
-    if (!placed) {
-      // pop out beside the rail, toward the roomier side of the mark
-      const r = el.dock.getBoundingClientRect();
-      const right = r.left > innerWidth / 2;
-      // folded mic/ear ride beside the ∃ — the menu must clear them too
-      let clearRight = r.right;
-      for (const id of ['micbtn', 'earbtn']) {
-        const g = document.getElementById(id)?.getBoundingClientRect();
-        if (g && g.left < r.right + 80 && g.top < r.bottom && g.bottom > r.top) clearRight = Math.max(clearRight, g.right);
-      }
-      // 'auto', never '' — the sheet's top:54px/left:10px resurrect on '' (the dock's lesson)
-      m.style.left = right ? 'auto' : `${Math.round(clearRight + 8)}px`;
-      m.style.right = right ? `${Math.round(innerWidth - r.left + 8)}px` : 'auto';
-      const h = el.hud.getBoundingClientRect();
-      const below = h.top < innerHeight / 2;
-      // ≥34px: the menu carries its tab ABOVE itself now — leave it headroom
-      m.style.top = below ? `${Math.max(34, Math.round(h.top))}px` : 'auto';
-      m.style.bottom = below ? 'auto' : `${Math.round(innerHeight - h.bottom)}px`;
-    }
-    paintEMenu();
-    dodgeEMenu(m);
+  if (!open) { closeSub(); m.hidden = true; return; }
+  m.hidden = false;
+  paintEMenu();
+  anchorBeside(m);
+}
+// Beside the ∃, on the side away from the rail's edge: to the right of a left rail (over the mic/ear/visor glyphs),
+// left of a right one, under a top rail, over a bottom one. Clamped to the viewport. Never remembered: a dropdown
+// hangs from what opened it.
+function anchorBeside(node) {
+  const h = el.hud.getBoundingClientRect();
+  const edge = el.dock.dataset.edge || 'left';
+  node.style.left = node.style.top = '0px'; node.style.right = node.style.bottom = 'auto';
+  const r = node.getBoundingClientRect();
+  let x = h.right + 6, y = h.top;
+  if (edge === 'right') x = h.left - 6 - r.width;
+  else if (edge === 'top') { x = h.left; y = h.bottom + 6; }
+  else if (edge === 'bottom') { x = h.left; y = h.top - 6 - r.height; }
+  node.style.left = `${Math.round(Math.max(4, Math.min(innerWidth - r.width - 4, x)))}px`;
+  node.style.top = `${Math.round(Math.max(4, Math.min(innerHeight - r.height - 4, y)))}px`;
+}
+
+// ---- the flyout: one at a time, beside its row
+function openSub(id) {
+  clearTimeout(subCloseT);
+  const s = subEl();
+  if (subFor !== id) {
+    subFor = id;
+    delete s.dataset.key;
+    s.innerHTML = '';
+    if (id === 'about') buildAbout(s); else buildPanels(s);
   }
+  s.hidden = false;
+  paintEMenu();
+  placeSub();
 }
-// The menu opens onto the nearest EMPTY spot (live 09-07 11:07: it opened over the profile panel). Its remembered
-// or default position is kept when clear; otherwise candidate positions spiral outward from it on a 40 px grid
-// and the closest one that overlaps no visible frame wins. Never persisted — a dodge is not a choice.
-function dodgeEMenu(m) {
-  const r = m.getBoundingClientRect(); if (!r.width) return;
-  const frames = [...document.querySelectorAll('.frame')].filter((f) => f.style.display !== 'none')   // frames are position:fixed — offsetParent is null for them, so don't test it
-    .map((f) => f.getBoundingClientRect()).filter((b) => b.width && b.height);
-  const hits = (x, y) => frames.some((b) => x < b.right + 6 && x + r.width > b.left - 6 && y < b.bottom + 6 && y + r.height > b.top - 6);
-  if (!hits(r.left, r.top)) return;
-  const W = innerWidth, H = innerHeight, step = 40;
-  let best = null;
-  for (let dy = 0; dy <= H; dy += step) for (const sy of dy ? [-1, 1] : [1]) {
-    const y = Math.round(r.top + sy * dy); if (y < 34 || y + r.height > H - 4) continue;
-    for (let dx = 0; dx <= W; dx += step) for (const sx of dx ? [-1, 1] : [1]) {
-      const x = Math.round(r.left + sx * dx); if (x < 4 || x + r.width > W - 4) continue;
-      const d = dx * dx + dy * dy; if (best && d >= best.d) continue;
-      if (!hits(x, y)) best = { x, y, d };
-    }
+function closeSub() {
+  clearTimeout(subCloseT);
+  const s = subEl();
+  if (!s) return;
+  subFor = null; s.hidden = true; s.innerHTML = ''; delete s.dataset.key;
+  for (const r of emenuEl().querySelectorAll('.mrow.subopen')) r.classList.remove('subopen');
+}
+function placeSub() {
+  const s = subEl(), m = emenuEl();
+  if (!s || s.hidden || !subFor) return;
+  const row = m.querySelector(`.mrow[data-item="${subFor}"]`);
+  if (!row) return;
+  const mr = m.getBoundingClientRect(), rr = row.getBoundingClientRect();
+  s.style.left = s.style.top = '0px'; s.style.maxHeight = '';
+  const r = s.getBoundingClientRect();
+  // away from the rail: right of the menu, unless the rail is on the right; the other side when that one has no room
+  const right = mr.right + 2, left = mr.left - 2 - r.width;
+  const fitsR = right + r.width <= innerWidth - 4, fitsL = left >= 4;
+  let x, y;
+  if (fitsR || fitsL) {
+    x = (el.dock.dataset.edge === 'right' ? fitsL || !fitsR : !fitsR) ? left : right;
+    y = Math.max(4, Math.min(innerHeight - r.height - 4, rr.top - 6));   // its first row level with its parent row
+  } else {
+    // a phone: no room on either side — it hangs off its row, indented, so the row that opened it stays in view, on
+    // whichever side has more screen (a rail docked low leaves little below), and scrolls inside exactly what is
+    // left there: never a floor taller than the room, which pushed the last rows off-screen (review of #212)
+    x = Math.max(4, Math.min(innerWidth - r.width - 4, mr.left + 16));
+    const below = innerHeight - rr.bottom - 6, above = rr.top - 6;
+    const h = Math.min(r.height, Math.max(below, above));
+    y = below >= Math.min(r.height, 120) || below >= above ? rr.bottom + 2 : rr.top - 2 - h;
+    s.style.maxHeight = `${Math.max(0, Math.round(h))}px`;
   }
-  if (!best) return;
-  m.style.left = `${best.x}px`; m.style.top = `${best.y}px`; m.style.right = m.style.bottom = 'auto';
+  s.style.left = `${Math.round(x)}px`; s.style.top = `${Math.round(y)}px`;
 }
-function fsvgOrStroke(name, size) {
-  if (hasFill(name)) return fsvg(name, size);
-  try { return svg(name, size); } catch { return ''; }
+
+// ---- rows
+const fsvgOr = (name, size, fallback = 'puzzle-piece') => fsvg(name, size) || fsvg(fallback, size);
+/** a top-level item: { id, icon, label, key?, detail?, sub?, dead?, away?, run? } */
+function topRow(it) {
+  const row = document.createElement('button');
+  row.className = `mrow${it.dead ? ' dead soft' : ''}${it.sub ? ' hassub' : ''}`;
+  row.dataset.item = it.id;
+  row.setAttribute('role', 'menuitem');
+  const tail = it.sub ? `<span class="mcaret">${fsvg('caret-right', 10)}</span>`
+    : it.key ? `<kbd class="mkey">${escapeHtml(it.key)}</kbd>` : it.tag ? `<span class="mtag">${escapeHtml(it.tag)}</span>` : '';
+  row.innerHTML = `${fsvgOr(it.icon, 15)}<span class="mname">${escapeHtml(it.label)}${it.detail ? ` <em class="mdetail">${escapeHtml(it.detail)}</em>` : ''}</span>${tail}`;
+  if (it.dead) {
+    // listed, not offered — and it SAYS why on a press too (a finger or a laser has no hover for the tooltip)
+    row.setAttribute('aria-disabled', 'true');
+    row.title = `${it.label} — ${it.dead}`;
+    row.onclick = () => { closeSub(); toast(`${it.label} — ${it.dead}`, 'info', 9000); };
+  } else if (it.sub) {
+    row.setAttribute('aria-haspopup', 'menu');
+    row.onclick = () => openSub(it.id);   // opens, never toggles shut: a hover may have opened it a moment ago
+    let t = null;
+    row.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') { clearTimeout(t); t = setTimeout(() => openSub(it.id), 110); } });
+    row.addEventListener('pointerleave', () => clearTimeout(t));
+  } else {
+    if (it.title) row.title = it.title;
+    row.onclick = () => { closeSub(); it.run(); if (it.away) toggleEMenu(false); else paintEMenu(); };
+  }
+  // hovering a plain row shuts another row's flyout — after a beat, which the flyout cancels when the pointer reaches it
+  // (the way there can graze the row below)
+  if (!it.sub) row.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse' && subFor) { clearTimeout(subCloseT); subCloseT = setTimeout(closeSub, 250); } });
+  return row;
 }
+function loginItem() {
+  if (CONFIG.authed) return { id: 'login', icon: 'sign-out', label: 'Log out', detail: CONFIG.name, away: true, run: logOut };
+  const url = menuSrc.loginUrl?.();
+  if (url) return { id: 'login', icon: 'sign-in', label: 'Log in', detail: 'with Discord', away: true, run: () => { location.href = url; } };
+  return { id: 'login', icon: 'sign-in', label: 'Log in', dead: NO_LOGIN };
+}
+async function logOut() {
+  if (!confirm(`Log out of ${location.host}? You will leave "${CONFIG.world}".`)) return;
+  try { await fetch('/logout', { credentials: 'same-origin' }); } catch { /* the reload below still drops the session's page */ }
+  // net.js bounces a browser that USED to be signed in straight back through the login (silent while Discord still
+  // authorizes) — forget that, or logging out would log you back in
+  try { localStorage.removeItem('ew-authed'); } catch { /* private mode */ }
+  location.reload();
+}
+function topItems() {
+  const rights = !!menuSrc.buildRights?.();
+  return [
+    { id: 'save', icon: 'floppy-disk', label: 'Save world', dead: rights ? SAVE_WHY : NEEDS_RIGHTS, tag: rights ? 'not yet' : 'builders' },
+    { id: 'load', icon: 'folder-open', label: 'Load world', dead: rights ? LOAD_WHY : NEEDS_RIGHTS, tag: rights ? 'not yet' : 'builders' },
+    'sep',
+    { id: 'panels', icon: 'layout', label: 'Panels', sub: true },
+    // the way down to the light version, asked first (owner, 10-01); back up is the ∃ there
+    { id: 'lite', icon: 'chat-circle', label: 'Lite client', title: "the lite client: chat, emotes and who's here, with no 3D world", run: () => confirmCenter({
+      title: 'Switch to the lite client?',
+      body: "Chat, emotes and who's here, with no 3D world. Useful on a slow or struggling machine. Click the \u2203 logo there to come back.",
+      ok: 'Switch', cancel: 'Stay in 3D',
+    }).then((yes) => { if (yes) chooseClient(true); }) },
+    'sep',
+    loginItem(),
+    { id: 'help', icon: 'question', label: 'Help', key: 'H', away: true, run: () => toggleHelp() },
+    { id: 'keys', icon: 'keyboard', label: 'Keys', away: true, run: () => openKeys() },
+    { id: 'about', icon: 'info', label: 'About', sub: true },
+  ];
+}
+const sep = () => { const s = document.createElement('div'); s.className = 'msep'; s.setAttribute('role', 'separator'); return s; };
+function buildTop(m) {
+  m.innerHTML = '';
+  for (const it of topItems()) m.appendChild(it === 'sep' ? sep() : topRow(it));
+}
+const topKey = () => `${!!menuSrc.buildRights?.()}|${CONFIG.authed ? 'out' : menuSrc.loginUrl?.() ? 'in' : 'none'}`;
+
+// Keys: the help sheet's key table (defs/ui/_help.json), opened at that table
+function openKeys() {
+  openOverlay(el.help);
+  const h = [...el.help.querySelectorAll('h2')].find((x) => /^keys$/i.test(x.textContent.trim()));
+  h?.scrollIntoView({ block: 'start' });
+}
+// About: what /version says this build is
+let versionAsk = null;
+function buildInfo() {
+  versionAsk ??= fetch('/version', { cache: 'no-store' }).then((r) => r.json()).then((v) => {
+    const sha = `${String(v.sha ?? '').slice(0, 7) || 'unknown'}${v.dirty === true ? ' +dirty' : ''}`;
+    const when = (t) => (t && t !== 'unknown' ? new Date(t).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown');
+    return { sha, lines: [`build ${sha}`, `code from ${when(v.commitTime)}`, `server up since ${when(v.startedAt)}`] };
+  }).catch(() => { versionAsk = null; return { sha: 'unknown', lines: ['build unknown — /version did not answer'] }; });
+  return versionAsk;
+}
+function buildAbout(s) {
+  s.innerHTML = `<div class="minfo"><b>eidoverse-worlds</b></div><div class="minfo dim">asking the server…</div>`;
+  buildInfo().then((v) => {
+    if (subFor !== 'about') return;
+    s.innerHTML = `<div class="minfo"><b>eidoverse-worlds</b></div>${v.lines.map((l) => `<div class="minfo">${escapeHtml(l)}</div>`).join('')}`;
+    placeSub();
+  });
+}
+
 const emenuKey = () => dockEntries.filter((e) => !e.action || !e.gate || e.gate()).map((e) => e.id).join('|');
 function paintEMenu() {
   const m = emenuEl();
   if (!m || m.hidden) return;
+  if (m.dataset.key !== topKey()) { const keep = subFor; buildTop(m); m.dataset.key = topKey(); if (keep) m.querySelector(`.mrow[data-item="${keep}"]`)?.classList.add('subopen'); }
+  for (const r of m.querySelectorAll('.mrow[data-item]')) r.classList.toggle('subopen', r.dataset.item === subFor);
+  const s = subEl();
+  if (!s || s.hidden || subFor !== 'panels') return;
   // rows are built once per entry-set; the 2s sweep only moves their state
   const key = emenuKey();
-  if (m.dataset.key !== key) { buildEMenu(m); m.dataset.key = key; }
-  for (const row of m.querySelectorAll('.mrow[data-row]')) {
+  if (s.dataset.key !== key) { buildPanels(s); s.dataset.key = key; placeSub(); }
+  s.querySelector('.mrow[data-layout]')?.classList.toggle('open', isLayoutMode());
+  s.querySelector('.mrow[data-layout]')?.setAttribute('aria-checked', String(isLayoutMode()));
+  for (const row of s.querySelectorAll('.mrow[data-row]')) {
     const id = row.dataset.row;
     const entry = dockEntries.find((x) => x.id === id);
-    const on = id === 'glyph:mic' ? micLive() : id === 'glyph:ear' ? earOn()
+    const on = id === 'glyph:mic' ? micLive() : id === 'glyph:ear' ? earOn() : id === 'lantern' ? isLanternOpen()
       : entry?.action ? !!entry.active?.() : !!getFrame(id)?.visible;
     row.classList.toggle('open', on);
     // the glyph bakes its ink at build; re-stamp it when the state flips
@@ -704,25 +1034,62 @@ function paintEMenu() {
       if (g) g.outerHTML = glyph(16);
     }
   }
-  for (const pin of m.querySelectorAll('.mpin[data-pin]')) {
+  for (const pin of s.querySelectorAll('.mpin[data-pin]')) {
     const id = pin.dataset.pin;
-    const on = id.startsWith('glyph:') ? glyphPinned(id.slice(6)) : pins.has(id);
+    const on = id.startsWith('glyph:') ? glyphPinned(id.slice(6)) : id === 'lantern' ? pillPinned() : pins.has(id);
     pin.classList.toggle('on', on);
-    pin.title = id.startsWith('glyph:')
+    pin.setAttribute('aria-pressed', String(on));
+    if (pin.disabled) continue;
+    pin.title = id === 'lantern'
+      ? (on ? `hide the resting line — ${CHORD} and the rail's search still open the lighthouse` : 'rest the line bottom-centre again')
+      : id.startsWith('glyph:')
       ? (on ? `detach ${pin.dataset.nm} from the rail` : `attach ${pin.dataset.nm} to the rail`)
       : (on ? 'unpin from rail' : 'pin to rail');
   }
-  const lock = m.querySelector('.mrow[data-lock]');
+  const lock = s.querySelector('.mrow[data-lock]');
   const lockHtml = `${fsvg(isLocked() ? 'lock' : 'lock-open', 15)}<span class="mname">${isLocked() ? 'layout locked' : 'layout unlocked'}</span>`;
   if (lock && lock.dataset.lock !== String(isLocked())) { lock.dataset.lock = String(isLocked()); lock.innerHTML = lockHtml; }
   lock?.classList.toggle('open', isLocked());
 }
-function buildEMenu(m) {
-  m.innerHTML = '<div class="fr-head"><span class="fr-title">menu</span><div class="fr-btns"><button class="fr-btn" title="close">\u2715</button></div></div>';
-  m.querySelector('.fr-btn').onclick = () => toggleEMenu(false);
-  // voice first: mic + ears lead the menu in their own section — they matter
-  // more than any window, and they wear the SAME glyphs as the floating pair
-  const voiceRows = [['mic', 'mic', micGlyph, flipMic], ['ears', 'ear', earGlyph, flipEar], ['VR', 'xr', xrGlyph, flipXr]];
+/** Every window back where it started, and the lantern's resting line too (it is not a frame, but it moves in
+ *  HUD layout mode). The rail's own edge is NOT reset — where you put the rail is your decision (loadDockEdge). */
+export function resetHudLayout() { resetLayout(); resetPillPlace(); }
+// THE LANTERN'S RESTING LINE (owner, 10-01: "add it as a pin feature for the reverse-E menu (might need its own logo to
+// differentiate)"). A group of its own between the voice rows and the windows ("It's not *quite* a conventional panel
+// so it can't get docked"): the row opens the lantern, and its pin keeps the pill bottom-centre (lantern.js
+// setPillPinned — its own key, ew-lantern-pinned, like the glyphs'). Unpinned, the lantern is still one chord away.
+const LANTERN_GLYPH = 'lighthouse';   // the owner's pick (10-01); its own glyph, so it reads apart from the search glass
+function pinButton(id, onclick) {
+  const pin = document.createElement('button');
+  pin.className = 'mpin'; pin.dataset.pin = id;
+  pin.innerHTML = fsvg('push-pin', 13);
+  if (onclick) pin.onclick = (e) => { e.stopPropagation(); onclick(); paintDock(); paintEMenu(); };
+  return pin;
+}
+function lanternRow() {
+  const row = document.createElement('button');
+  row.className = 'mrow'; row.dataset.row = 'lantern'; row.dataset.lanternToggle = '';
+  row.innerHTML = `${fsvg(LANTERN_GLYPH, 15)}<span class="mname">lighthouse</span>`;
+  row.title = `the lighthouse — type or say anything (${CHORD}). Its pin keeps the resting line bottom-centre; unpinned, ${CHORD} and the rail's search still open it`;
+  row.onclick = () => { isLanternOpen() ? closeLantern() : openLantern(); paintEMenu(); };
+  row.appendChild(pinButton('lantern', () => setPillPinned(!pillPinned())));
+  return row;
+}
+// Panels ▸ — the old ∃ menu, whole: layout mode, the voice glyphs, the lantern, every window, the lock and the reset.
+// A row toggles its thing (a window opening beside the HUD is not "another window" — the menu stays); its pin is
+// whether that thing rides the rail.
+function buildPanels(s) {
+  s.innerHTML = '';
+  const lay = document.createElement('button');
+  lay.className = 'mrow'; lay.dataset.layout = ''; lay.setAttribute('role', 'menuitemcheckbox');
+  lay.innerHTML = `${fsvg('arrows-out-cardinal', 15)}<span class="mname">HUD layout mode</span>`;
+  lay.title = 'move panels, the rail (its grip) and the lighthouse\'s resting line — Esc or a click out in the world ends it';
+  lay.onclick = () => setLayoutMode(!isLayoutMode());
+  s.appendChild(lay);
+  s.appendChild(sep());
+  // voice first: mic + headphones lead in their own section — they matter more than any window, and they wear the SAME
+  // glyphs as the floating pair
+  const voiceRows = [['mic', 'mic', micGlyph, flipMic], ['headphones', 'ear', earGlyph, flipEar], ['VR', 'xr', xrGlyph, flipXr]];
   for (const [nm, key, glyph, flip] of voiceRows) {
     // VR: the row is always LISTED, but greyed with an explainer when no headset
     // can present — and its pin is dead, so an absent glyph cannot be pinned to
@@ -732,84 +1099,66 @@ function buildEMenu(m) {
     row.className = `mrow${dead ? ' dead' : ''}`; row.dataset.row = `glyph:${key}`;
     row.innerHTML = `${glyph(16)}<span class="mname">${nm}</span>`;
     if (dead) { row.disabled = true; row.title = 'no headset sensed — Chrome finds the OpenXR runtime only at browser start (chrome://restart after SteamVR is up)'; }
-    else row.onclick = async () => { await flip(); paintEMenu(); };
-    const pin = document.createElement('button');
-    pin.className = 'mpin'; pin.dataset.pin = `glyph:${key}`; pin.dataset.nm = nm;
-    pin.innerHTML = fsvg('push-pin', 13);
+    else row.onclick = async () => { if (key === 'xr') toggleEMenu(false); await flip(); paintEMenu(); };   // entering VR is another window
+    const pin = pinButton(`glyph:${key}`, dead ? null : () => setGlyphPinned(key, !glyphPinned(key)));
+    pin.dataset.nm = nm;
     if (dead) { pin.disabled = true; pin.title = 'nothing to pin until a headset is sensed'; }
-    else pin.onclick = (e) => { e.stopPropagation(); setGlyphPinned(key, !glyphPinned(key)); paintEMenu(); };
     row.appendChild(pin);
-    m.appendChild(row);
+    s.appendChild(row);
   }
-  { const s = document.createElement('div'); s.className = 'msep'; m.appendChild(s); }
+  s.appendChild(sep());
+  s.appendChild(lanternRow());
+  s.appendChild(sep());
   // ORDER AT PAINT TIME, not at registration. initDock sorts `last` to the end
-  // once, but registerPanel (ui.js:329) PUSHES later mods onto dockEntries after
-  // that sort has already run — so the rail stayed correct (addDockButton
-  // inserts before the first [data-last] button) while this menu drifted.
-  // Measured: dock [..., modx, mody, edit] vs menu [..., edit, modx, mody].
+  // once, but registerPanel PUSHES later mods onto dockEntries after that sort
+  // has already run — so the rail stayed correct (addDockButton inserts before
+  // the first [data-last] button) while this menu drifted.
   // R, 2026-09-11: "it should always be at the bottom of both until further notice."
   const ordered = [...dockEntries].sort((a, b) => (a.last ? 1 : 0) - (b.last ? 1 : 0));
+  const flipPin = (id) => () => { pins.has(id) ? pins.delete(id) : pins.add(id); savePins(); };
   for (const entry of ordered) {
     const { id, action, gate } = entry;
-    const icon = entry.icon ?? ID_ICON[id] ?? EMOJI_ICON[(entry.label ?? '').replace(/\uFE0F/g, '')];
+    const icon = iconOf(entry);
     if (action) {
       // ALWAYS a row, gated or not. R, 2026-09-11: "It SHOULD be in the
       // reverse-E menu regardless." A dead row is the menu's existing
-      // vocabulary for "listed, not offered" — the same treatment the VR row
-      // gets when no headset is sensed.
+      // vocabulary for "listed, not offered".
       const open = gate ? !!gate() : true;
       const row = document.createElement('button');
       row.className = `mrow${open ? '' : ' dead'}`; row.dataset.row = id;
-      row.innerHTML = `${fsvg(icon, 15) || fsvg('puzzle-piece', 15)}<span class="mname">${id}</span>`;
+      if (id === SEARCH_ENTRY.id) row.dataset.lanternToggle = '';
+      row.innerHTML = `${fsvgOr(icon, 15)}<span class="mname">${escapeHtml(id)}</span>`;
       if (!open) { row.disabled = true; row.title = `${id} — needs build rights in this world`; }
       else row.onclick = () => { action(); paintDock(); paintEMenu(); };
-      // a pin, like any window: pinned = the wrench stays on the rail (live, 09-05)
-      const pin = document.createElement('button');
-      pin.className = 'mpin'; pin.dataset.pin = id;
-      pin.innerHTML = fsvg('push-pin', 13);
-      // Dead row, dead pin — the same two lines the VR row above uses. The
-      // CSS `pointer-events: none` only stops a hover; a programmatic or
-      // assistive activation still fired the handler and pinned a rail icon
-      // that is dead on arrival. (round 5)
-      if (!open) { pin.disabled = true; pin.title = `nothing to pin until you have build rights`; }
-      else pin.onclick = (e) => { e.stopPropagation(); pins.has(id) ? pins.delete(id) : pins.add(id); savePins(); paintDock(); paintEMenu(); };
+      // a pin, like any window: pinned = the wrench stays on the rail (live, 09-05). Dead row, dead pin: the CSS
+      // `pointer-events: none` only stops a hover; a programmatic or assistive activation still fired the handler
+      // and pinned a rail icon that is dead on arrival. (round 5)
+      const pin = pinButton(id, open ? flipPin(id) : null);
+      if (!open) { pin.disabled = true; pin.title = 'nothing to pin until you have build rights'; }
       row.appendChild(pin);
-      m.appendChild(row);
+      s.appendChild(row);
       continue;
     }
     if (!getFrame(id)) continue;   // an entry with no frame behind it (a caller's stale id) gets no row
     const row = document.createElement('button');
     row.className = 'mrow'; row.dataset.row = id;
-    row.innerHTML = `${fsvg(icon, 15) || fsvg('puzzle-piece', 15)}<span class="mname">${id}</span>`;
+    row.innerHTML = `${fsvgOr(icon, 15)}<span class="mname">${escapeHtml(id)}</span>`;
     // click = toggle; the row's brightness IS the open state
-    // (one less glyph to reason about)
-    row.onclick = () => {
-      const f = getFrame(id); if (!f) return;
-      f.toggle();
-      paintDock(); paintEMenu();
-    };
-    const pin = document.createElement('button');
-    pin.className = 'mpin'; pin.dataset.pin = id;
-    pin.innerHTML = fsvg('push-pin', 13);
-    pin.onclick = (e) => {
-      e.stopPropagation();
-      pins.has(id) ? pins.delete(id) : pins.add(id);
-      savePins(); paintDock(); paintEMenu();
-    };
-    row.appendChild(pin);
-    m.appendChild(row);
+    row.onclick = () => { const f = getFrame(id); if (!f) return; f.toggle(); paintDock(); paintEMenu(); };
+    row.appendChild(pinButton(id, flipPin(id)));
+    s.appendChild(row);
   }
-  const sep = document.createElement('div'); sep.className = 'msep'; m.appendChild(sep);
+  s.appendChild(sep());
   const lock = document.createElement('button');
   lock.className = 'mrow'; lock.dataset.lock = '';
   lock.onclick = () => { setLocked(!isLocked()); paintEMenu(); };
-  m.appendChild(lock);
+  s.appendChild(lock);
   const reset = document.createElement('button');
-  reset.className = 'mrow';
-  reset.innerHTML = `${fsvg('sparkle', 15)}<span class="mname">reset layout</span><span class="mdot"></span>`;
-  reset.title = 'put every window back where it started';
-  reset.onclick = () => { resetLayout(); paintDock(); };
-  m.appendChild(reset);
+  reset.className = 'mrow'; reset.dataset.reset = '';
+  reset.innerHTML = `${fsvg('sparkle', 15)}<span class="mname">reset layout</span>`;
+  reset.title = 'put every window back where it started, and the lighthouse\'s resting line';
+  reset.onclick = () => { resetHudLayout(); paintDock(); paintEMenu(); };
+  s.appendChild(reset);
 }
 
 // ============================================================ overlays
@@ -856,7 +1205,7 @@ export function buildHelp() {
         🔓 in the corner locks the layout once you like it.
         <button id="help-reset" style="margin-left:6px">reset layout</button></p>`;
     s.querySelector('.close-x').onclick = () => closeOverlay(el.help);
-    s.querySelector('#help-reset').onclick = () => { resetLayout(); closeOverlay(el.help); };
+    s.querySelector('#help-reset').onclick = () => { resetHudLayout(); closeOverlay(el.help); };
   }).catch((e) => report('help def', e));
   paint();
   bus.on('defs-updated', paint);   // edited prose reaches an open client too

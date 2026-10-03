@@ -46,6 +46,26 @@ export function setPanelAlpha(v) {
   const o = load(); o['--panel-a'] = String(v); save(o);
 }
 
+// --xr-panel-a: the VR quads' panel alpha (domquad.js reads it; 1 = opaque, today's VR). Separate from --panel-a on
+// purpose: the desktop's glass tints a live viewport, a quad has none, so the desktop dial never reached VR (owner, 09-30).
+export const XR_PANEL_A_RANGE = [0.6, 1];
+export const xrPanelAlphaToken = () => {
+  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--xr-panel-a'));
+  return Number.isFinite(v) ? v : 1;
+};
+export function setXrPanelAlpha(v) {
+  const n = Math.min(XR_PANEL_A_RANGE[1], Math.max(XR_PANEL_A_RANGE[0], Number(v)));
+  if (!Number.isFinite(n)) return;
+  rootStyle().setProperty('--xr-panel-a', String(n));
+  const o = load(); o['--xr-panel-a'] = String(n); save(o);
+  bus.emit('style', { key: '--xr-panel-a', value: String(n) });   // the VR quads re-raster and pick their pass on this
+}
+
+// the opacity dials follow the token whoever sets it (a command, a reset, code): a dial that kept showing 1.00 while
+// the VR panels sat at 0.6 is a control that lies (probe shot 148, 09-30). One listener, the newest panel's repaint.
+let repaintDials = null;
+bus.on('style', (e) => { if (e?.key === '--xr-panel-a' || e?.key === '*') repaintDials?.(); });
+
 function currentHex(f) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(f.key).trim();
   return f.kind === 'rgbTriplet' ? tripletToHex(v) : v;
@@ -75,23 +95,29 @@ export function initStylePanel() {
       row.append(sw, name);
       body.appendChild(row);
     }
-    // panel visibility — the --panel-a opacity dial (the visionOS "Tinted"
-    // lesson already lived behind /panels; asked for here, 09-01 23:31)
-    const vrow = document.createElement('label');
-    vrow.className = 'row';
-    const vnm = document.createElement('span');
-    vnm.className = 'nm'; vnm.textContent = 'panel opacity';
-    const vis = document.createElement('input');
-    vis.type = 'range'; vis.min = 0.3; vis.max = 1; vis.step = 0.02;
-    vis.value = panelAlpha();
-    const vval = document.createElement('span');
-    vval.className = 'v'; vval.textContent = Number(vis.value).toFixed(2);
-    vis.oninput = () => {
-      setPanelAlpha(vis.value);
-      vval.textContent = Number(vis.value).toFixed(2);
+    // panel visibility — two dials, because a desktop panel and a VR panel are different glass. The desktop one is
+    // --panel-a (the visionOS "Tinted" lesson already lived behind /panels; asked for here, 09-01 23:31); it tints a
+    // live viewport and never reached the headset, which the label now says (owner, 09-30). The VR one is --xr-panel-a.
+    const dial = (label, title, min, max, get, set) => {
+      const row = document.createElement('label');
+      row.className = 'row'; row.title = title;
+      const nm = document.createElement('span');
+      nm.className = 'nm'; nm.textContent = label;
+      const input = document.createElement('input');
+      input.type = 'range'; input.min = min; input.max = max; input.step = 0.02;
+      input.value = get();
+      const val = document.createElement('span');
+      val.className = 'v'; val.textContent = Number(input.value).toFixed(2);
+      input.oninput = () => { set(input.value); val.textContent = Number(input.value).toFixed(2); };
+      row.append(nm, input, val);
+      body.appendChild(row);
+      return { repaint: () => { input.value = get(); val.textContent = Number(input.value).toFixed(2); } };
     };
-    vrow.append(vnm, vis, vval);
-    body.appendChild(vrow);
+    const vis = dial('desktop panel opacity', 'the desktop panels\' glass: lower lets the world show through. VR panels have their own dial below.',
+      0.3, 1, panelAlpha, setPanelAlpha);
+    const xrVis = dial('VR panel opacity', 'the panels in a headset: 1 is solid (the default); lower lets the world show through behind the text.',
+      ...XR_PANEL_A_RANGE, xrPanelAlphaToken, setXrPanelAlpha);
+    repaintDials = () => { vis.repaint(); xrVis.repaint(); };
 
     const reset = document.createElement('button');
     reset.textContent = 'reset to defaults';
@@ -99,12 +125,13 @@ export function initStylePanel() {
     reset.onclick = () => {
       for (const f of FIELDS) rootStyle().removeProperty(f.key);
       rootStyle().removeProperty('--panel-a');
+      rootStyle().removeProperty('--xr-panel-a');
       save({});
-      // repaint swatches + the visibility slider from the sheet's own values
+      // repaint swatches + both opacity sliders from the sheet's own values
       const inputs = reset.parentElement.querySelectorAll('input[type=color]');
       FIELDS.forEach((f, i) => { inputs[i].value = currentHex(f); });
-      vis.value = panelAlpha();
-      vval.textContent = Number(vis.value).toFixed(2);
+      vis.repaint(); xrVis.repaint();
+      bus.emit('style', { key: '*', value: null });   // the VR quads re-raster at the sheet's values
       // ui.js's 1s sweep repaints the --p fill; dispatching input here would
       // re-save the default into the just-emptied store
     };

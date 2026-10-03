@@ -13,8 +13,10 @@ import { existsSync, readFileSync, writeFileSync, renameSync, readdirSync, mkdir
 import { sfuDiag } from "./sfuadapter.ts";
 import { join, normalize } from "node:path";
 import { randomBytes } from "node:crypto";
-import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, LADDER, JOIN_TOKEN } from "./config.ts";
-import { isStoreOriginal, isServingArtifact } from "./store-variants.ts";
+import { ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, PATCH_DIR, LADDER, JOIN_TOKEN, STORE_MIN } from "./config.ts";
+import { isStoreOriginal, isServingArtifact, variantStatus, variantSource, freshOver } from "./store-variants.ts";
+import { glbPerfOfFile } from "./glbperf.ts";
+import { rankOf, TIER_NAMES } from "../shared/perfrank.js";
 import { wantsKtx2, KTX2_KEY } from "../shared/ktx2.js";
 import { LOD_RECIPE, lodVariantPath, lodVerdictKind, lodVerdictFinal } from "./store-variants.ts";
 import { hnSessions, hnJti, sessionFromCookie, saveSessions, SESSION_TTL_MS, HN_ISSUER_KEY, HN_ISS, HN_AUD, HN_LOGIN_URL, HN_REQUIRE_LOGIN } from "./auth.ts";
@@ -29,7 +31,7 @@ import { resolveLibFile } from "./lint.ts";
 import { summarizeGlb } from "./geometry.ts";
 import { worlds, getWorld, type World } from "./world.ts";
 import { snapshots } from "./snapshots.ts";
-import { handleUpload, optStatus } from "./upload.ts";
+import { handleUpload, optStatus, rebuildAsset } from "./upload.ts";
 import { defsPayload, avatarDefs, animationDefs } from "./defs.ts";
 import { tickStats } from "./tick.ts";
 import { entryBusStats } from "./events.ts";
@@ -39,6 +41,7 @@ import { atomicWrite } from "./fsutil.ts";
 // busy world cannot starve the rest, a made-up label cannot buy quota or a file of its own, and the map is
 // bounded by the worlds that exist (review of #172: 64 invented labels once denied a real new world until restart).
 const clientLogRate = new Map<string, { at: number; n: number }>();
+const rebuildWin = new Map<string, { t: number; n: number }>();   // POST /rebuild per-IP windows (4/min, as /upload)
 const clientLogGlobal = { at: 0, n: 0 };
 const CLIENTLOG_DIR = process.env.CLIENTLOG_DIR ?? join(WORLDS_DIR, ".clientlogs");   // beside the worlds, like .perflogs — never a shared temp dir
 const CLIENTLOG_MAX_BODY = 4096, CLIENTLOG_MAX_FILE = 5_000_000, CLIENTLOG_PER_WORLD_MIN = 600, CLIENTLOG_GLOBAL_MIN = 2000;
@@ -80,8 +83,25 @@ export type Srv = {
  *  the join snapshot, so a joiner needs no separate round-trip before it
  *  can resolve a body name (the /avatars top-level await used to gate the
  *  client's entire module graph). */
-export function avatarRoster(): { name: string; path: string; height: number | null; seat?: unknown }[] {
-  const seen = new Map<string, { url: string; file: string }>();
+export type AvatarPerf = { tris: number; draws: number; mats: number; alpha: number; bones: number; texMB: number;
+  rank: number; rankName: string; worst: string; v: string };
+/** POST /thumb's `perf` (JSON of the loupe's numbers) + `v` → a validated record with the rank recomputed here, or
+ *  null. Every field must be a finite, non-negative, sane number — this is client-written. */
+export function avatarPerfParam(raw: string | null, v: string | null): AvatarPerf | null {
+  if (!raw || !v || !/^\d{1,16}$/.test(v) || raw.length > 400) return null;
+  let o: any; try { o = JSON.parse(raw); } catch { return null; }
+  const LIM = { tris: 5e7, draws: 1e5, mats: 1e4, alpha: 1e4, bones: 1e4, texMB: 1e5 } as const;
+  const n: any = {};
+  for (const [k, max] of Object.entries(LIM)) {
+    const x = o?.[k];   // a number, not something that coerces to one (Number(null), Number([]), Number("") are all 0)
+    if (typeof x !== "number" || !Number.isFinite(x) || x < 0 || x > max) return null;
+    n[k] = k === "texMB" ? Math.round(x * 100) / 100 : Math.round(x);
+  }
+  const r = rankOf(n);
+  return { ...n, rank: r.rank, rankName: TIER_NAMES[r.rank], worst: r.worst, v };
+}
+export function avatarRoster(): { name: string; path: string; height: number | null; perf?: AvatarPerf | null; seat?: unknown }[] {
+  const seen = new Map<string, { url: string; file: string; v: string }>();
   for (const base of [LIBRARY_DIR, OPT_DIR]) {
     const dir = join(base, "eidoverse/assets/vrms");
     if (!existsSync(dir)) continue;
@@ -89,10 +109,8 @@ export function avatarRoster(): { name: string; path: string; height: number | n
       // .ktx2.vrm files are §20c texture variants living beside overlay
       // originals — negotiated serving artifacts, not bodies of their own
       if (f.endsWith(".vrm") && !f.endsWith(".ktx2.vrm")) {
-        seen.set(f.replace(".vrm", ""), {
-          url: `eidoverse/assets/vrms/${f}?v=${Math.round(Bun.file(join(dir, f)).lastModified)}`,
-          file: join(dir, f),
-        });
+        const v = String(Math.round(Bun.file(join(dir, f)).lastModified));
+        seen.set(f.replace(".vrm", ""), { url: `eidoverse/assets/vrms/${f}?v=${v}`, file: join(dir, f), v });
       }
     }
   }
@@ -105,11 +123,12 @@ export function avatarRoster(): { name: string; path: string; height: number | n
     if (!d.vrm) continue;
     const file = resolveLibFile(d.vrm);
     if (!file) { console.error(`[defs] avatar "${name}": vrm not found in library — ${d.vrm}`); continue; }
-    seen.set(name, { url: `${d.vrm}?v=${Math.round(Bun.file(file).lastModified)}`, file });
+    const v = String(Math.round(Bun.file(file).lastModified));
+    seen.set(name, { url: `${d.vrm}?v=${v}`, file, v });
   }
   // stature metadata, contributed alongside portraits (see POST /thumb);
   // a def's declared height wins over the measured sidecar
-  let hmeta: Record<string, { h: number }> = {};
+  let hmeta: Record<string, { h?: number; perf?: AvatarPerf }> = {};
   try {
     const mp = join(OPT_DIR, "thumbs", "meta.json");
     if (existsSync(mp)) hmeta = JSON.parse(readFileSync(mp, "utf8"));
@@ -119,8 +138,10 @@ export function avatarRoster(): { name: string; path: string; height: number | n
   // never rehash a VRM and can never read a stale value as fresh). The sha
   // work behind judge() is mtime-cached, so a roster read costs hashing only
   // when a body's bytes actually changed.
-  return [...seen].map(([name, { url, file }]) => ({ name, path: url,
+  return [...seen].map(([name, { url, file, v }]) => ({ name, path: url,
     height: defs[name]?.height ?? hmeta[name.replace(/[^a-zA-Z0-9_-]/g, "_")]?.h ?? null,
+    // the loupe's rank of THIS version only (the v its URL carries): a stamp from an older export is withheld until a wearer re-measures
+    perf: ((p) => p && p.v === v ? p : null)(hmeta[name.replace(/[^a-zA-Z0-9_-]/g, "_")]?.perf),
     seat: seatStore.judge(name, file) }));
 }
 
@@ -263,8 +284,19 @@ const hardCacheable = (path: string) =>
 // fetch whose variant does not exist yet — see the /library route). It wins
 // over `immutable`: no-cache, riding the ETag, so the moment a different file
 // answers the same URL its bytes get through.
+// A built VARIANT (a KTX2 or LOD shadow) can be rebuilt IN PLACE (↻, the tf/cap purge, a host gaining sharp), so it
+// must never be pinned `immutable` like its content-addressed original: the recipe in its URL names how it SHOULD be
+// built, not the bytes. Short-lived + validator (the "same URL, may change" pattern): browsers reuse it for a minute,
+// then a 304; nginx still caches it for that minute, so proxy_cache_lock keeps collapsing a crowd into one upstream
+// fetch. A rebuild reaches a browser on its next load after the minute — up to ~6 min where stale-while-revalidate
+// hands out the old copy once while it revalidates in the background. The same tier answers a lod ask whose standing
+// verdict makes the plain ktx2 variant FINAL (#205): final for this recipe, but still those rebuildable bytes.
+const VARIANT_CC = "public, max-age=60, stale-while-revalidate=300";
+/** `opts.variant`: the file is a built variant (VARIANT_CC unless provisional). `opts.headers`: headers that NAME the
+ *  answer (x-eidoverse-lod) — on the 304 too, so devtools reads the state without a body. */
 function serveFrom(base: string, rel: string, cache = false, req?: Request, immutable = false, provisional = false,
-  extra?: Record<string, string>): Response {
+  opts: { variant?: boolean; headers?: Record<string, string> } = {}): Response {
+  const variant = !!opts.variant;
   const path = normalize(join(base, rel));
   if (!path.startsWith(base)) return new Response("forbidden", { status: 403 });
   // A missing file must be a 404, not a Bun.file stream blowing up into a 500 —
@@ -272,9 +304,7 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
   // spawn of it into "Internal Server Error" instead of an honest not-found.
   if (!existsSync(path)) return new Response("not found", { status: 404 });
   const f = Bun.file(path);
-  // `extra`: headers that NAME the answer (x-eidoverse-lod) — on the 304 too,
-  // so devtools reads the state without a body
-  const headers: Record<string, string> = { "content-type": contentType(path), ...(extra ?? {}) };
+  const headers: Record<string, string> = { "content-type": contentType(path), ...(opts.headers ?? {}) };
   // ETag from size+mtime: makes no-cache revalidation a 304, not a re-download
   // (an 11MB avatar re-pulled per reload is invisible on localhost and rude
   // over tailnet).
@@ -284,6 +314,7 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
     if (req?.headers.get("if-none-match") === etag) {
       // cache-control must ride along on the 304 (it refreshes the stored response's lifetime)
       headers["cache-control"] = provisional ? "no-cache"
+        : variant ? VARIANT_CC
         : immutable ? "public, max-age=31536000, immutable"
         : cache && hardCacheable(path) ? "public, max-age=86400" : cache ? "no-cache" : "no-store";
       return new Response(null, { status: 304, headers });
@@ -296,6 +327,7 @@ function serveFrom(base: string, rel: string, cache = false, req?: Request, immu
   // different cached rigs). no-cache = revalidate each load, still cheap.
   const hard = cache && hardCacheable(path);
   headers["cache-control"] = provisional ? "no-cache"
+    : variant ? VARIANT_CC
     : immutable ? "public, max-age=31536000, immutable"
     : hard ? "public, max-age=86400" : cache ? "no-cache" : "no-store";
   // gzip the JS modules: three.webgpu.js is 2.1MB raw / ~500KB gzipped, and
@@ -329,6 +361,29 @@ type RouteCtx = { req: Request; url: URL; srv: Srv };
 type Route = {
   match(url: URL, req: Request): boolean;
   handler(ctx: RouteCtx): Response | Promise<Response>;
+};
+
+/** Which file a KTX2-negotiating client (the norm) gets for a library/store model at full detail — the ORDER the
+ *  /library/ handler below serves in: a deliberate upstream patch (PATCH_DIR wins over everything), the KTX2 variant,
+ *  then (store) store-min, then the optimized mirror, then the original. The catalog ranks this file ("perf if you
+ *  load it", owner 09-24); tools/library-status-probe fetches /library/<rel>?ktx2 and checks the bytes are this file's. */
+function servedGlbPath(rel: string): { path: string; as: "patched copy" | "KTX2 variant" | "compressed copy" | "optimized copy" | "original" } {
+  const pt = normalize(join(PATCH_DIR, rel));
+  if (pt.startsWith(PATCH_DIR) && existsSync(pt)) return { path: pt, as: "patched copy" };
+  const k = join(OPT_DIR, `${rel}.ktx2.glb`);
+  if (existsSync(k)) return { path: k, as: "KTX2 variant" };
+  if (rel.startsWith("store/")) {
+    const m = join(OPT_DIR, "store-min", rel.slice("store/".length));
+    if (existsSync(m)) return { path: m, as: "compressed copy" };
+  }
+  const o = join(OPT_DIR, rel);
+  if (existsSync(o)) return { path: o, as: "optimized copy" };
+  return { path: rel.startsWith("store/") ? join(OPT_DIR, rel) : join(LIBRARY_DIR, rel), as: "original" };
+}
+const perfPair = (rel: string, original: string) => {
+  const s = servedGlbPath(rel);
+  const perf = glbPerfOfFile(s.path);
+  return { perf: perf ? { ...perf, servedAs: s.as } : null, perfOriginal: s.path === original ? null : glbPerfOfFile(original) };
 };
 
 const ROUTES: Route[] = [
@@ -724,9 +779,42 @@ const ROUTES: Route[] = [
     },
   },
   {
+    // A Build card's rebuild button: re-run one object's KTX2 + LOD passes (a refusal asked again, a built variant
+    // rebuilt in place). Gated on the /upload sign-ins + a session cookie (below); rate-limited; the queue dedups.
+    match: (u, req) => u.pathname === "/rebuild" && req.method === "POST",
+    handler: ({ req, url, srv }) => {
+      // Who may ask: the sign-ins /upload accepts (the door key, an agent token, an aid1 credential) plus a signed-in
+      // session cookie — a person who came in through the home node carries no door key and got 401 here. The key rides
+      // `Authorization: Bearer`, never the URL (base.js: it would land in access logs). A key in ?token= is refused.
+      if (JOIN_TOKEN) {
+        const auth = req.headers.get("authorization") ?? "";
+        const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+        const ok = (key && (key === JOIN_TOKEN || agentTokens().byToken.has(key) || !!aid1JoinIdentity(key)))
+          // a cookie rides cross-site requests from sibling subdomains (SameSite=Lax is per-SITE): take it only from this page
+          || (!!sessionFromCookie(req.headers.get("cookie")) && req.headers.get("sec-fetch-site") === "same-origin");
+        if (!ok) return new Response("sign in or send the door key as a Bearer header", { status: 401 });
+      }
+      // a forced rebuild skips the freshness check, so a POST loop could keep the one serial pump busy and starve uploads
+      const ip = req.headers.get("x-real-ip") ?? srv?.requestIP?.(req)?.address ?? "?";
+      const w = rebuildWin.get(ip) ?? { t: 0, n: 0 };
+      if (Date.now() - w.t > 60_000) { w.t = Date.now(); w.n = 0; }
+      w.n++; rebuildWin.set(ip, w);
+      if (rebuildWin.size > 1000) for (const [k, v] of rebuildWin) if (Date.now() - v.t > 60_000) rebuildWin.delete(k);   // bounded
+      if (w.n > 4) return new Response("rebuild rate limit (4/min)", { status: 429 });
+      const r = rebuildAsset(url.searchParams.get("path") ?? "");
+      if (!r) return new Response("not a rebuildable object", { status: 400 });
+      console.log(`[rebuild] ${url.searchParams.get("path")}: ${r.queued.join(" + ") || "nothing (no encoder)"}`);
+      return new Response(JSON.stringify({ ok: true, ...r }), { headers: { "content-type": "application/json" } });
+    },
+  },
+  {
     match: (u, req) => u.pathname === "/thumb" && req.method === "POST",
     handler: async ({ req, url }) => {
-      if (JOIN_TOKEN && url.searchParams.get("token") !== JOIN_TOKEN)
+      // The door key rides `Authorization: Bearer`, never the URL (access logs; see /clientlog). The old ?token= shape
+      // is refused outright so a stale client cannot keep leaking it.
+      if (url.searchParams.has("token")) return new Response("key belongs in the Authorization header", { status: 400 });
+      const auth = req.headers.get("authorization") ?? "";
+      if (JOIN_TOKEN && (auth.startsWith("Bearer ") ? auth.slice(7).trim() : "") !== JOIN_TOKEN)
         return new Response("token required", { status: 401 });
       const safe = (url.searchParams.get("name") ?? "").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 48);
       if (!safe) return new Response("name required", { status: 400 });
@@ -737,19 +825,26 @@ const ROUTES: Route[] = [
       // client-side) — kept beside the images so /avatars can hand catalogs a
       // roster drawn to a common scale.
       const height = Number(url.searchParams.get("height"));
-      if (Number.isFinite(height) && height > 0.2 && height < 20) {
+      const hOk = Number.isFinite(height) && height > 0.2 && height < 20;
+      // …and the body's loupe numbers, measured by the wearer's client on the LOADED body (perfscope.statsOf — the
+      // runtime draws a GLB parse can't see: MToon outline groups). Tied to the body version `v` (the roster's ?v=
+      // mtime) so a re-export shows no stale rank. The rank is recomputed HERE from the numbers (shared/perfrank.js);
+      // a client-sent rank would be ignored.
+      const perf = avatarPerfParam(url.searchParams.get("perf"), url.searchParams.get("v"));
+      if (hOk || perf) {
         const metaPath = join(dir, "meta.json");
-        let meta: Record<string, { h: number }> = {};
+        let meta: Record<string, { h?: number; perf?: AvatarPerf }> = {};
         try { if (existsSync(metaPath)) meta = JSON.parse(readFileSync(metaPath, "utf8")); } catch { /* fresh */ }
-        meta[safe] = { h: Math.round(height * 100) / 100 };
+        meta[safe] = { ...meta[safe], ...(hOk ? { h: Math.round(height * 100) / 100 } : {}), ...(perf ? { perf } : {}) };
         atomicWrite(metaPath, JSON.stringify(meta));
       }
       // First contributor wins (re-posting on every join would be pointless
       // write traffic) — unless a re-mint pass explicitly forces the refresh.
       const force = url.searchParams.get("force") === "1";
-      if (existsSync(dest) && !force) return new Response(JSON.stringify({ ok: true, existed: true }),
+      if (existsSync(dest) && !force) return new Response(JSON.stringify({ ok: true, existed: true, perf: !!perf }),
         { headers: { "content-type": "application/json" } });
       const body = new Uint8Array(await req.arrayBuffer());
+      if (body.length === 0 && perf) return new Response(JSON.stringify({ ok: true, meta: true, perf: true }), { headers: { "content-type": "application/json" } });
       if (body.length > 400_000) return new Response("thumb too large", { status: 413 });
       if (body.length < 8 || body[0] !== 0x89 || body[1] !== 0x50) return new Response("not a PNG", { status: 415 });
       writeFileSync(dest, body);
@@ -826,8 +921,23 @@ const ROUTES: Route[] = [
           // with the previews it becomes an actual catalog.
           const prev = f.replace(/\.glb$/i, "_preview.jpg");
           const hasPrev = dirs.some((d) => existsSync(join(d, prev)));
+          // every optimization's state, from the sweep's own markers (store-variants.ts variantStatus): the
+          // library's variants live in the OPT mirror beside where the original's optimized copy would be
+          const libOpt = join(OPT_DIR, "eidoverse/assets/models");
+          const libSrc = variantSource(`eidoverse/assets/models/${f}`, { opt: OPT_DIR, library: LIBRARY_DIR })!;
+          const rebuildable = existsSync(libSrc);
           return {
             path: `eidoverse/assets/models/${f}`,
+            // ↻ rebuilds from the LIBRARY source (upload.ts rebuildAsset); a model present only in the OPT overlay has
+            // none, and the button would answer 400 — say so, and the card leaves it off
+            rebuildable,
+            // no draco "min" pass exists for library models (only store/ has store-min) — omit it rather than
+            // report a pass that will never run as forever "pending". The library file is MUTABLE: a variant or a
+            // verdict about another version of it is stale — freshOver against variantSource, the rule the sweep
+            // rebuilds by and the route serves by (no library file: nothing is fresh, as at the route)
+            opt: (({ min: _none, ...rest }) => rest)(variantStatus(join(libOpt, f), libOpt, { source: libSrc })),
+            // the loupe's rank of the SERVED file, and of the original beside it (glbperf.ts; mtime-cached; null = unreadable)
+            ...perfPair(`eidoverse/assets/models/${f}`, join(LIBRARY_DIR, "eidoverse/assets/models", f)),
             // strip the SEO-soup filenames into something a person can read
             name: f.replace(/\.glb$/i, "").replace(/_/g, " ").slice(0, 48),
             preview: hasPrev ? `eidoverse/assets/models/${prev}` : null,
@@ -848,18 +958,15 @@ const ROUTES: Route[] = [
           .map((f) => {
             const hash = f.replace(/\.glb$/i, "");
             const m = man[hash];
-            return {
-              path: `store/${f}`,
-              name: (m?.name ?? `conjured ${hash.slice(0, 8)}`).slice(0, 48),
-              preview: null as string | null,
-              ts: m?.ts ?? 0,
-              score: q.length ? q.filter((t) => (m?.name ?? "").toLowerCase().includes(t)).length : 1,
-            };
+            return { f, name: (m?.name ?? `conjured ${hash.slice(0, 8)}`).slice(0, 48), ts: m?.ts ?? 0,
+              score: q.length ? q.filter((t) => (m?.name ?? "").toLowerCase().includes(t)).length : 1 };
           })
           .filter((s) => s.score > 0)
           .sort((a, b) => b.ts - a.ts)
           .slice(0, 30)
-          .map(({ path, name, preview }) => ({ path, name, preview }));
+          // the status + perf read (a GLB parse on a cold cache) only for the 30 that are returned, never the whole store
+          .map(({ f, name }) => ({ path: `store/${f}`, name, preview: null as string | null, rebuildable: true,
+            opt: variantStatus(join(storeDir, f), STORE_MIN), ...perfPair(`store/${f}`, join(storeDir, f)) }));
         hits.push(...store);
       }
       return new Response(JSON.stringify(hits), {
@@ -933,13 +1040,14 @@ const ROUTES: Route[] = [
         // library sources are MUTABLE: an updated model with a not-yet-
         // rebuilt variant must fall through provisional, never serve the
         // old body under the new ?v= (the §20c vrm freshness discipline) —
-        // and a VERDICT older than its source is a question again, exactly
-        // like a variant older than its source
-        const src = rel.startsWith("store/") ? null
-          : [[PATCH_DIR, normalize(join(PATCH_DIR, rel))], [OPT_DIR, normalize(join(OPT_DIR, rel))], [LIBRARY_DIR, normalize(join(LIBRARY_DIR, rel))]]
-            .find(([b, p]) => p.startsWith(b) && existsSync(p))?.[1];
-        const freshOverSource = (p: string) => rel.startsWith("store/") || (!!src && Bun.file(p).lastModified > Bun.file(src).lastModified);
-        if (l.startsWith(OPT_DIR) && existsSync(l) && freshOverSource(l)) return serveFrom(OPT_DIR, lRel, true, req, versioned, false, { "x-eidoverse-lod": "variant" });
+        // and a VERDICT about an older version of its source is a question
+        // again, exactly like such a variant. Compared against the file the
+        // sweep BUILT from (variantSource: the library model — never the OPT
+        // mirror this route may serve at full detail) by recorded identity
+        // (store-variants.ts freshOver), the rule the sweep and the card use
+        const src = variantSource(rel, { opt: OPT_DIR, library: LIBRARY_DIR });
+        const freshOverSource = (p: string) => freshOver(p, src);
+        if (l.startsWith(OPT_DIR) && existsSync(l) && freshOverSource(l)) return serveFrom(OPT_DIR, lRel, true, req, versioned, false, { variant: true, headers: { "x-eidoverse-lod": "variant" } });
         const marker = `${l}.failed`;
         if (l.startsWith(OPT_DIR) && existsSync(marker) && freshOverSource(marker)) {
           let content = "";
@@ -956,28 +1064,21 @@ const ROUTES: Route[] = [
         const k = normalize(join(OPT_DIR, kRel));
         if (k.startsWith(OPT_DIR) && existsSync(k)) {
           let fresh = true;
-          if (rel.endsWith(".vrm")) {
-            const orig = [[OPT_DIR, normalize(join(OPT_DIR, rel))], [LIBRARY_DIR, normalize(join(LIBRARY_DIR, rel))]]
-              .find(([base, p]) => p.startsWith(base) && existsSync(p))?.[1];
-            fresh = !!orig && Bun.file(k).lastModified > Bun.file(orig).lastModified;
-          }
+          if (rel.endsWith(".vrm")) fresh = freshOver(k, variantSource(rel, { opt: OPT_DIR, library: LIBRARY_DIR }));
           // a lod-requesting fetch answered by the plain ktx2 variant is
           // PROVISIONAL — the lod may land later under this same URL —
           // UNLESS a typed verdict stands: then the plain variant IS this
-          // tier's answer, and it caches exactly as it does unflagged.
+          // tier's answer, and it caches exactly as it does unflagged: the
+          // variant tier (VARIANT_CC), since these bytes rebuild in place.
           // For a library GLB the unflagged answer tolerates a variant older
           // than a re-exported source until the next boot rebuilds it (a
           // short window, ETag-revalidated); a FINAL answer must not — the
           // verdict may be fresh while the ktx2 bytes are yesterday's model
           let ktx2Stale = false;
-          if (lodFinal && !rel.startsWith("store/")) {
-            const src = [[PATCH_DIR, normalize(join(PATCH_DIR, rel))], [OPT_DIR, normalize(join(OPT_DIR, rel))], [LIBRARY_DIR, normalize(join(LIBRARY_DIR, rel))]]
-              .find(([b, p]) => p.startsWith(b) && existsSync(p))?.[1];
-            ktx2Stale = !src || Bun.file(k).lastModified <= Bun.file(src).lastModified;
-          }
+          if (lodFinal) ktx2Stale = !freshOver(k, variantSource(rel, { opt: OPT_DIR, library: LIBRARY_DIR }));
           const finalHere = lodFinal && !ktx2Stale;
           const header = ktx2Stale ? { "x-eidoverse-lod": `${lodState!.replace(/^refused=/, "provisional; verdict=")}; ktx2=stale` } : lodHeader;
-          if (fresh) return serveFrom(OPT_DIR, kRel, true, req, versioned, lodAsked != null && !finalHere, header);
+          if (fresh) return serveFrom(OPT_DIR, kRel, true, req, versioned, lodAsked != null && !finalHere, { variant: true, headers: header });
         }
       }
       // A flagged fetch that falls through is PROVISIONAL for that URL, not
@@ -1004,11 +1105,11 @@ const ROUTES: Route[] = [
       if (rel.startsWith("store/")) {
         const minRel = `store-min/${rel.slice("store/".length)}`;
         const min = normalize(join(OPT_DIR, minRel));
-        if (min.startsWith(OPT_DIR) && existsSync(min)) return serveFrom(OPT_DIR, minRel, true, req, true, provisional, deepHeader);
+        if (min.startsWith(OPT_DIR) && existsSync(min)) return serveFrom(OPT_DIR, minRel, true, req, true, provisional, { headers: deepHeader });
       }
       const opt = normalize(join(OPT_DIR, rel));
-      if (opt.startsWith(OPT_DIR) && existsSync(opt)) return serveFrom(OPT_DIR, rel, true, req, versioned, provisional, deepHeader);
-      return serveFrom(LIBRARY_DIR, rel, true, req, versioned, provisional, deepHeader);
+      if (opt.startsWith(OPT_DIR) && existsSync(opt)) return serveFrom(OPT_DIR, rel, true, req, versioned, provisional, { headers: deepHeader });
+      return serveFrom(LIBRARY_DIR, rel, true, req, versioned, provisional, { headers: deepHeader });
     },
   },
   {
@@ -1063,10 +1164,13 @@ const ROUTES: Route[] = [
       // answered 500, so every page load logged a server error for a file
       // nobody asked us to have.
       new Response(
+        // the mark's hand-set 32 px master — the same drawing as index.html's <link rel="icon">, for pages
+        // (captions.html, AGENTS.md in a tab) that don't carry one
         `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-           <rect width="32" height="32" rx="7" fill="#0c1720"/>
-           <circle cx="16" cy="16" r="6" fill="#8fe8c8"/>
-           <circle cx="16" cy="16" r="10.5" fill="none" stroke="#8fe8c8" stroke-opacity=".45" stroke-width="1.5"/>
+           <style>path{fill:#8fe8c8}@media (prefers-color-scheme:light){path{fill:#1d7a5f}}</style>
+           <path d="M6.361 4 L25 4 L25 12 L21 12 L21 8 L2.407 8 A14.5 14.5 0 0 1 6.361 4 Z"/>
+           <path d="M2.407 24 L21 24 L21 20 L25 20 L25 28 L6.361 28 A14.5 14.5 0 0 1 2.407 24 Z"/>
+           <path d="M9.335 14 L28.861 14 A14.5 14.5 0 0 1 28.861 18 L9.335 18 A5.539 5.539 0 0 1 9.335 14 Z"/>
          </svg>`,
         { headers: { "content-type": "image/svg+xml", "cache-control": "public, max-age=86400" } },
       ),

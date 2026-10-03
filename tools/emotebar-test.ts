@@ -373,5 +373,23 @@ myState.emote = 'clap'; paint();   // a number key set it elsewhere
 check('a number-key emote (myState.emote) lights its tile', tile('[data-emote=clap]').classList.contains('on') && !tile('[data-emote=wave]').classList.contains('on'));
 myState.emote = null; paint();
 
+console.log('EMOTEBAR — a defs push rebuilds the lantern\'s emote actions, not just the tiles');
+{
+  // register() MERGES and skips undefined fields, so re-registering on top of the old
+  // entries kept a moved emote's old number and a removed emote's row
+  const A = await import('../client/lib/actions.js');
+  const saved = EMOTE_ORDER.splice(0);
+  EMOTE_ORDER.push('clap', 'cheer', 'dance', 'point', 'salute', 'bow', 'shrug', 'nod', 'spin', 'wave');
+  bus.emit('emotes-updated');
+  check('a moved emote takes its new number key (clap → 1)', A.get('emote:clap')?.key === '1', `key=${A.get('emote:clap')?.key}`);
+  check('an emote moved past nine loses its key (wave, 1st → 10th)', !!A.get('emote:wave') && A.get('emote:wave').key === undefined, `key=${A.get('emote:wave')?.key}`);
+  EMOTE_ORDER.splice(0, EMOTE_ORDER.length, 'wave', 'cheer');
+  bus.emit('emotes-updated');
+  check('a removed emote leaves the lantern (clap gone)', A.get('emote:clap') === null);
+  check('the kept ones are still there with their keys', A.get('emote:wave')?.key === '1' && A.get('emote:cheer')?.key === '2');
+  check('posture:stand survives the rebuild', !!A.get('posture:stand'));
+  EMOTE_ORDER.splice(0, EMOTE_ORDER.length, ...saved); bus.emit('emotes-updated');
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

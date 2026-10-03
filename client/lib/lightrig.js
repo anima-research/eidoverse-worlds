@@ -188,7 +188,7 @@ for (let i = 0; i < N_SLOTS; i++) {
   // runs above that declaration, and the const TDZ made it a boot-time
   // ReferenceError that took the whole client down (caught by
   // tools/shadow-follow-test.mjs).
-  pl.castShadow = i === SHADOW_SLOT && _prefShadows;
+  pl.castShadow = i === SHADOW_SLOT;   // pipeline shape: fixed at birth; the preference is uniform-level (applyShadowPref)
   // The shadow CONFIG is written for the shadow slot whether or not it is
   // casting right now, so a later setShadows(true) flips one boolean onto an
   // already-configured light rather than an unconfigured one.
@@ -285,32 +285,48 @@ export const lampShadowState = () => {
   };
 };
 
+// THE SWITCH IS UNIFORM-LEVEL (owner, 09-27: 'HUGE hang on Video > shadows'). shadowMap.enabled and castShadow are
+// in every lit material's pipeline key (§12.1), so flipping them recompiled the whole scene (a wave of 60 k-char relinks,
+// seconds each on the owner's GPU) and raced three's ShadowNode into 'reading depthTexture of null'. They're now fixed on
+// (below, at boot); 'off' is the shadow's own intensity at 0 with its depth pass stopped (autoUpdate off). The cost: a
+// resident with shadows off still carries the shadow lookup in lit shaders, but no depth pass and no toggle recompile.
+/** Does this light actually draw shadows right now? Shape (castShadow + the map) AND the preference's uniform half. */
+const castsNow = (l) => Boolean(l?.castShadow && renderer.shadowMap.enabled && l.shadow && l.shadow.intensity > 0 && l.shadow.autoUpdate !== false);
+function applyShadowPref(on) {
+  for (const l of [sun, slots[SHADOW_SLOT]]) {
+    if (!l?.shadow) continue;
+    l.shadow.intensity = on ? 1 : 0;
+    l.shadow.autoUpdate = on;
+    if (on) l.shadow.needsUpdate = true;   // the held map is stale: redraw it once now
+  }
+}
+/** Put the shadow preference's uniform half back (after a probe held shadow maps across frames: review 7, L5). */
+export const reassertShadowPref = () => applyShadowPref(_prefShadows);
 export function setShadows(on) {
   localStorage.setItem(SH_KEY, on ? 'on' : 'off');
   _prefShadows = on;
-  renderer.shadowMap.enabled = on;
-  sun.castShadow = on;
-  // THE LAMP FOLLOWS THE SWITCH TOO. This wrote only the sun, which read as
-  // "the body casts nothing on load" with the preference off: the resident's
-  // switch turned shadowMap.enabled off globally, so slot 0 -- born casting,
-  // unconditionally, below -- was a shadow-casting light whose shadows the
-  // renderer never drew. Nothing re-established it on the way back on either,
-  // because the slot is created once at boot and never revisited.
-  //
-  // Guarded on existence: setShadows can be called from the video panel before
-  // the slot loop has run in a harness that stubs core.js.
-  if (slots[SHADOW_SLOT]) slots[SHADOW_SLOT].castShadow = on;
+  applyShadowPref(on);
 }
-renderer.shadowMap.enabled = shadowsOn();
+renderer.shadowMap.enabled = true;   // pipeline shape: always (see setShadows)
 renderer.shadowMap.type = ({ basic: THREE.BasicShadowMap, pcf: THREE.PCFShadowMap, soft: THREE.PCFSoftShadowMap })[CONFIG.params.get('shadowtype')] ?? THREE.PCFSoftShadowMap;   // ?shadowtype=basic|pcf|soft (boot-time: pipeline-shape) — owner 09-07 19:22 diagnostic
-sun.castShadow = shadowsOn();
+sun.castShadow = true;
+applyShadowPref(shadowsOn());
 // shadow map resolution (persisted; the video settings row, owner 09-07 21:32). Uniform-level:
 // three's ShadowNode setSize()s the target every update, so a live change is a realloc, no recompile.
 const RES_KEY = 'ew-shadow-res';
 export const SHADOW_RES = [1024, 2048, 4096];
 export const shadowRes = () => { const v = +stored(RES_KEY); return SHADOW_RES.includes(v) ? v : 2048; };
-export function setShadowRes(n) { localStorage.setItem(RES_KEY, String(n)); sun.shadow.mapSize.set(n, n); }
+// ONE dial for EVERY shadow-casting light (owner, 09-24: 'it should apply to all shadows anywhere'): the sun takes n, the
+// lamp slot scales with it from its hand-tuned SHADOW_MAP — at the default 2048 the lamp stays exactly SHADOW_MAP,
+// so the default look is unchanged. setLampShadow re-derives the lamp's bias from its new size (the look holds).
+const lampMapFor = (n) => Math.round(SHADOW_MAP * (n / 2048));
+export function setShadowRes(n) {
+  localStorage.setItem(RES_KEY, String(n));
+  sun.shadow.mapSize.set(n, n);
+  if (slots[SHADOW_SLOT] && slots[SHADOW_SLOT].shadow.mapSize.x !== lampMapFor(n)) setLampShadow({ map: lampMapFor(n) });
+}
 sun.shadow.mapSize.set(shadowRes(), shadowRes());
+if (lampMapFor(shadowRes()) !== SHADOW_MAP) setLampShadow({ map: lampMapFor(shadowRes()) });
 // ?csm=2|3|4 — cascaded shadow maps (bench probe, owner 09-07 21:32: 'better performance in VR'; Basis ships 4
 // cascades over 150 m, first split at 12%). three's CSMShadowNode fits one ortho camera per cascade around the
 // VIEW frustum every frame, with lightMargin m of room behind the light — the follow-box below is replaced by
@@ -584,12 +600,16 @@ const _q = new THREE.Quaternion();
 const _s = new THREE.Vector3();
 const _p = new THREE.Vector3();
 
+// the camera's WORLD position: in XR the camera is a child of the rig and camera.position is only the head's offset in
+// it, so lights near the world origin won the slots and walking never triggered a re-assign (review 10a M4; 41406ed)
+const _eye = new THREE.Vector3();
 function assign(now) {
   lastAssign = now;
-  _lastCam.copy(camera.position);
+  camera.getWorldPosition(_eye);
+  _lastCam.copy(_eye);
   assignDirty = false;
   const ranked = [...requests.values()].map((r) => {
-    const d = worldPosOf(r, _p).distanceTo(camera.position);
+    const d = worldPosOf(r, _p).distanceTo(_eye);
     return {
       r,
       tier: r.keep ? 0 : r.authored ? 1 : 2,
@@ -802,7 +822,7 @@ function trackShadowFar(pl) {
 export function updateRig(now) {
   updateShadow();
   if (now - lastCasterPass > 300) { lastCasterPass = now; casterPass(); }
-  if (assignDirty || now - lastAssign > 600 || _lastCam.distanceToSquared(camera.position) > 2.25) {
+  if (assignDirty || now - lastAssign > 600 || _lastCam.distanceToSquared(camera.getWorldPosition(_eye)) > 2.25) {
     assign(now);
   }
   const lit = new Array(N_SLOTS).fill(null);
@@ -874,18 +894,18 @@ export const rigDebug = () => ({
     const want = [...requests.values()].filter((r) => r.shadows);
     const held = want.filter((r) => r.slot >= 0);
     return {
-      pref: shadowsOn(), map: renderer.shadowMap.enabled, sun: sun.castShadow,
+      pref: shadowsOn(), map: renderer.shadowMap.enabled, sun: sun.castShadow, sunCasting: castsNow(sun),
       castingSlot: SHADOW_SLOT,
-      slotIsCaster: Boolean(slots[SHADOW_SLOT]?.castShadow),
+      slotIsCaster: castsNow(slots[SHADOW_SLOT]),   // effective: shape + intensity + depth pass (the switch is uniform-level)
       // one row per request that WANTS shadows: which slot it got, and whether
       // that slot is the one that casts. `casting` is the honest answer.
       wantsShadows: want.map((r) => ({
         key: r.key, slot: r.slot,
-        casting: r.slot >= 0 && Boolean(slots[r.slot]?.castShadow),
+        casting: r.slot >= 0 && castsNow(slots[r.slot]),
         intensity: r.slot >= 0 ? +(slots[r.slot]?.intensity ?? 0).toFixed(3) : 0,
       })),
       // the headline: is SOMETHING that wants to cast actually casting?
-      anyCasting: held.some((r) => Boolean(slots[r.slot]?.castShadow)),
+      anyCasting: held.some((r) => castsNow(slots[r.slot])),
       // map size, the derived bias, and the texel it came from -- the numbers
       // you need to retune by eye (setLampShadow)
       lamp: lampShadowState(),

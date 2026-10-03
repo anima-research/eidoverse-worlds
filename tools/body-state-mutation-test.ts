@@ -13,7 +13,7 @@ if (baseline.code !== 0) throw new Error("baseline is not green:\n" + baseline.o
 const cases = [
   { name: "drop incoming bone map", file: "agent.ts", from: "p.pose = pose; p.observedAt = now;", to: "p.pose = { ...pose, pose: null }; p.observedAt = now;", witness: "presence condition timed out" },
   { name: "tool discards requested detail", file: "tools.ts", from: 'a.detail ?? "summary", a.points', to: '"summary", a.points', witness: "eight exact quaternions round-trip" },
-  { name: "FK ignores root yaw", file: "body-state.ts", from: "item.body.poseAt(o.pose!.p, o.pose!.yaw, null)", to: "item.body.poseAt(o.pose!.p, 0, null)", witness: "world joints include root translation and yaw" },
+  { name: "FK ignores root yaw", file: "body-state.ts", from: "item.body.poseAt(o.pose!.p, o.pose!.yaw, null, o.pose!.scale)", to: "item.body.poseAt(o.pose!.p, 0, null, o.pose!.scale)", witness: "world joints include root translation and yaw" },
   { name: "self leaks unpublished physics", file: "agent.ts", from: 'const bones = this.heldPose && (this.heldPoseAuthored || this.clip === "ragdoll") ? this.heldPose : null;', to: 'const bones = this.heldPose;', witness: "internal retired physics does not leak into self readback" },
   { name: "missing clip is silently replaced by rest geometry", file: "body-state.ts", from: 'animation = await this.clips.load(o.pose?.clip ?? "idle");', to: 'animation = null;', witness: "a reach toward an unevaluated seated body" },
 ];

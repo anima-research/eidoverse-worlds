@@ -3,6 +3,8 @@
 // it — each receiver's lerp then held NaN until its own guard caught it. The
 // client guards remain (they fix the cause); this is the fence at the source:
 // a non-finite sample is dropped here, never batched into a frame.
+import { clampBodyScale, clampPlateY } from "../shared/presencewire.js";
+
 const fin = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const finArr = (a: unknown, n: number) => Array.isArray(a) && a.length === n && a.every(fin);
 
@@ -34,6 +36,11 @@ export function sanePose(pose: unknown): Record<string, unknown> | null {
   // held pose (bone quats), body pins and reach descriptors ride the same packet and are lerped by
   // every receiver — a NaN anywhere inside them is the same fault. Deep finite-check, bounded depth.
   for (const k of ["pose", "pins", "reach"]) if (p[k] != null && !finiteDeep(p[k], 0)) return null;
+  // voice and body fields are normalised here, not refused: a bad one costs its field, never the whole pose (the
+  // receivers clamp too, but lastPose is remembered for joiners). Absent = unknown / default, so garbage is deleted.
+  for (const k of ["mic", "hear"]) if (k in p && typeof p[k] !== "boolean") delete p[k];
+  if ("scale" in p) { if (fin(p.scale)) p.scale = clampBodyScale(p.scale); else delete p.scale; }
+  if ("plateY" in p) { if (fin(p.plateY)) p.plateY = clampPlateY(p.plateY); else delete p.plateY; }
   return p;
 }
 

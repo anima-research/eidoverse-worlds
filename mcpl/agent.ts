@@ -24,6 +24,7 @@ import {
 import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
 import { inspectBody } from "../shared/flightbody.js";
 import { wingFoldPresence } from "../shared/wingpresence.js";
+import { clampBodyScale } from "../shared/presencewire.js";
 import { DEFAULT_LEAF_FORCE as LEAF_FORCE } from "../shared/leafforce.js";
 
 /** integrator yaw (atan2(dz,dx), forward = (cos,sin)) -> world yaw
@@ -160,6 +161,21 @@ const DOWNED_POSE: Record<string, number[]> = {
   leftUpperLeg: [0.9, 0, 0, 0.44], rightUpperLeg: [0.9, 0, 0, 0.44],
   leftLowerLeg: [-0.7, 0, 0, 0.71], rightLowerLeg: [-0.7, 0, 0, 0.71],
 };
+
+/** What a person's voice state means for YOU, in words (owner, 10-02: "something more understandable — their headphones
+ *  are off, but they can still receive text"). Read from the live pose (shared/presencewire.js voiceWire, shared with
+ *  everyone in the world: docs/pose-wire.md). The headphones gate spoken voice only (people's mics and synthesized
+ *  speech, an agent's included); chat text always arrives. Absent = the client didn't say: no claim is made. */
+export function voiceNote(pose: unknown): string {
+  const v = (pose ?? {}) as { mic?: unknown; hear?: unknown; xr?: unknown };
+  const parts: string[] = [];
+  if (v.hear === false) parts.push("headphones off: they won't hear anything spoken aloud, yours included, but they still see chat text");
+  else if (v.hear === true) parts.push("headphones on: they hear spoken voices");
+  if (v.mic === true) parts.push("mic on: they may be talking aloud");
+  else if (v.mic === false) parts.push("mic off");
+  if (v.xr) parts.push("in VR");
+  return parts.length ? `; ${parts.join("; ")}` : "";
+}
 
 export class WorldAgent {
   url: string; name: string; world: string; avatar: string; agentToken = "";
@@ -2693,7 +2709,8 @@ export class WorldAgent {
       const pose = person!.pose;
       const pp = posePosition(pose);
       if (!pp) return { err: `${t.who} has no known position yet` };
-      body.poseAt(pp, pose?.yaw ?? 0, (pose as { pose?: Record<string, number[]> | null })?.pose ?? null);
+      // their chosen size (absent = 1): contacts scale about their root, as in every browser
+      body.poseAt(pp, pose?.yaw ?? 0, (pose as { pose?: Record<string, number[]> | null })?.pose ?? null, pose?.scale);
     }
     const c = body.contact(t.point!, t.standoff ?? 0.02);
     if (!c) return { err: `${t.who}'s rig has no ${t.point}` };
@@ -2993,6 +3010,9 @@ export class WorldAgent {
       entity: (eid) => this.entities.get(eid),
       mount: (eid) => this.mounts.get(eid),
       seatVerdict: (eid) => this.seatVerdictFor(eid),
+      // a rider's chosen size, from its own presence (absent = 1). An agent's own
+      // body is its authored size: no agent sets `scale`, so its wire carries none.
+      riderScale: (eid) => eid === this.name ? 1 : clampBodyScale(this.people.get(eid)?.pose?.scale),
     }, nowMs);
   }
 
@@ -3089,7 +3109,7 @@ export class WorldAgent {
       const winged = p.pose.wingsFolded === true ? ", wings folded" : "";
       const ride = this.mounts.get(p.id);
       const riding = ride ? ` — on ${ride.to}${ride.slot ? ` (${ride.slot})` : ""}${this.seatSuffix(p.id, ride)}` : "";
-      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${winged}${riding}`);
+      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${winged}${riding}${voiceNote(p.pose)}`);
     }
 
     const ents = [...this.entities.values()];

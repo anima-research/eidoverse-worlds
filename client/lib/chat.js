@@ -22,6 +22,7 @@ import { requestHistory } from './net.js';
 // ONLY the registry — never handlers.js, or the cycle chat→handlers→net→chat
 // closes (§14.2). The registry is a pure table with no imports of its own.
 import { COMMANDS, resolveCommand } from './commands/registry.js';
+import { register as registerAction } from './actions.js';
 
 const MAX_LINES = 400;
 const HISTORY = 'ew-chat-history';
@@ -416,7 +417,7 @@ function paintUnread() {
 
 function insertAtCursor(str) {
   const s = inputEl.selectionStart ?? inputEl.value.length;
-  inputEl.value = inputEl.value.slice(0, s) + str + inputEl.value.slice(inputEl.selectionEnd ?? s);
+  setInput(inputEl.value.slice(0, s) + str + inputEl.value.slice(inputEl.selectionEnd ?? s));
   const p = s + str.length;
   inputEl.setSelectionRange(p, p);
   inputEl.focus();
@@ -492,7 +493,7 @@ function acceptAC() {
   if (!it) return;
   const v = inputEl.value;
   const caret = inputEl.selectionStart ?? v.length;
-  inputEl.value = v.slice(0, acStart) + it.value + ' ' + v.slice(caret);
+  setInput(v.slice(0, acStart) + it.value + ' ' + v.slice(caret));
   const p = acStart + it.value.length + 1;
   inputEl.setSelectionRange(p, p);
   closeAC();
@@ -648,6 +649,22 @@ const CHAT_LOCAL = {
   },
 };
 
+/** One line, as if typed into the compose box and Entered: history, then a
+ *  /command or speech — a whisper while a conversation tab is showing. The
+ *  lantern prompt sends through here, so there is ONE send path. */
+function submitLine(v) {
+  sentHistory.push(v);
+  while (sentHistory.length > 50) sentHistory.shift();
+  try { localStorage.setItem(HISTORY, JSON.stringify(sentHistory.slice(-20))); } catch { /* full */ }
+  if (v.startsWith('/')) { runCommand(v); return; }
+  // In a conversation tab, plain typing is a whisper — you should not have
+  // to prefix every line of a private conversation with a command, and you
+  // REALLY should not be able to say something aloud while looking at a
+  // window that reads like a private one.
+  if (filter.startsWith('w:')) onWhisper(filter.slice(2), v.slice(0, 4000));
+  else onSend(v.slice(0, 4000));
+}
+
 function runCommand(raw) {
   const [cmd, ...rest] = raw.slice(1).split(/\s+/);
   const arg = rest.join(' ');
@@ -673,9 +690,12 @@ export const chat = {
     inputEl.focus();
     scrollToEnd();
   },
-  close() { inputEl.value = ''; closeAC(); inputEl.blur(); },
+  close() { setInput(''); closeAC(); inputEl.blur(); },
   get isOpen() { return document.activeElement === inputEl; },
   toggle() { frame.toggle(); },
+  submit: (text) => { const v = String(text ?? '').trim(); if (v) submitLine(v); },
+  /** who a plain line would reach right now: null = the room, else a whisper target */
+  whisperTarget: () => (filter.startsWith('w:') ? filter.slice(2) : null),
   frame: () => frame,
   // unread accounting is observable so tests can pin it (Sol review, PR#7)
   unreadCounts: () => ({ unread, mentions: unreadMentions }),
@@ -712,7 +732,16 @@ function initSidePane() {
   // chat init mid-boot. Unreachable today; inconsistent with the file's own
   // thesis, which is the point. (agent review round 3)
   const tog = sideEl('tog');
-  if (tog) tog.onclick = () => { sideSt.open = !sideSt.open; applySide(); saveSide(); };
+  if (tog) tog.onclick = toggleSide;
+  // the open column's header closes it (the tab-row chip is hidden while it is open)
+  const head = sideEl('head');
+  if (head) {
+    head.setAttribute('role', 'button'); head.tabIndex = 0;
+    head.addEventListener('click', () => { if (sideSt.open) toggleSide(); });
+    head.addEventListener('keydown', (e) => {
+      if ((e.key === 'Enter' || e.key === ' ') && sideSt.open) { e.preventDefault(); e.stopPropagation(); toggleSide(); }
+    });
+  }
 
     // DOUBLE-CLICK A NAME -> ITS DM TAB. R, 2026-09-11: "can you double-click on
     // a name in the People Here pane and have a DM tab show up correctly".
@@ -739,12 +768,36 @@ function initSidePane() {
     const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); saveSide(); };
     addEventListener('pointermove', move); addEventListener('pointerup', up);
   });
-  bus.on('roster', paintSide);
-  bus.on('presence:me', paintSide);                                   // my own mark flips at once
+  bus.on('roster', () => { paintSide(); paintWho(); });
+  bus.on('presence:me', () => { paintSide(); paintWho(); });                                   // my own mark flips at once
   setInterval(() => { if (frame?.visible && sideSt.open) paintSide(); }, 2000);   // remote presence rides pose packets; a 2 s repaint is plenty. (`side` was out of scope here — the first tick threw and the interval died: marks froze on their first value)
   applySide();
 }
 const saveSide = () => { try { localStorage.setItem(SIDE_LS, JSON.stringify(sideSt)) } catch {} };
+function toggleSide() { sideSt.open = !sideSt.open; applySide(); saveSide(); }
+// THE PRESENCE CHIP in the tab row: who's here at a glance (a dot per person in their name colour, ringed by
+// presence) and the pane's toggle. Collapsed, the pane leaves NO strip in the chat body, so tabs, log and compose sit
+// centred in the panel (R, 09-29: "the Chat and typing surface being off-center in its own panel ... when it's
+// collapsed"). Painted in place on roster/presence; paintTabs rebuilds the row and calls this for its new chip.
+let whoChip = null;   // the chip paintTabs wrote — by handle, never by class (MODDING-UI §3)
+function paintWho() {
+  const chip = whoChip?.isConnected ? whoChip : null;
+  if (!chip) return;
+  const people = getPeople(), others = people.filter((p) => !p.me).length;
+  const dots = [...people.filter((p) => !p.me), ...people.filter((p) => p.me)].slice(0, 3).map((p) =>
+    `<span class="who-dot" data-presence="${esc(p.presence ?? 'present')}" style="background:${colorFor(p.id)}"></span>`).join('');
+  chip.innerHTML = `<span class="who-dots">${dots}</span><span class="who-n">${others === 0 ? 'just you' : `${people.length} here`}</span>`;
+  // on the side the column opens from (Chat ▸ settings): first in the row on the left, last on the right
+  const bar = chip.parentElement, left = sideSt.pos === 'left';
+  if (left && bar.firstElementChild !== chip) bar.prepend(chip);
+  else if (!left && bar.lastElementChild !== chip) bar.appendChild(chip);
+  chip.classList.toggle('at-left', left);
+  // OPEN, the chip steps out: the column's own header says who's here and is the way back (R, 09-29 — "just you"
+  // twice on one line). Closing returns it.
+  chip.hidden = !!sideSt.open;
+  chip.setAttribute('aria-expanded', String(!!sideSt.open));
+  chip.title = 'people here';
+}
 function applySide() {
   const side = sideEl('side');
   if (!side) return;
@@ -752,10 +805,16 @@ function applySide() {
   // the line between log and pane is the pane's grab edge; closed, there is
   // nothing to grab, so the line goes too (live, 09-05: a confusing affordance)
   sideEl('cols')?.classList.toggle('side-closed', !sideSt.open);
+  paintWho();
   side.style.width = sideSt.open ? `${sideSt.w}px` : '';
   // the chevron points the way the pane will move: on the right › closes / ‹ opens; mirrored on the left
   const left = sideSt.pos === 'left';
-  const t = sideEl('tog'); if (t) t.textContent = (sideSt.open !== left) ? '›' : '‹';
+  const chev = (sideSt.open !== left) ? '›' : '‹';
+  const t = sideEl('tog'); if (t) t.textContent = chev;
+  // the open column's header is its close control, its chevron pointing at the edge it collapses to — drawn from
+  // data-chev by CSS, so the header's text stays exactly who's here
+  const head = sideEl('head');
+  if (head) { head.dataset.chev = chev; head.title = 'hide people here'; }
   paintSide();
 }
 function paintSide() {
@@ -795,7 +854,7 @@ function applyChatPrefs() {
   if (logEl) logEl.style.fontSize = `${chatFs}px`;
   sideEl('cols')?.classList.toggle('side-left', sideSt.pos === 'left');
 }
-let gearToggle = null, gearAnchor = null, gearOpen = () => false;
+let gearToggle = null, gearAnchor = null;
 let chatFs = 14;
 const CMD_LS = 'ew-chat-md';
 let chatMd = true;   // *italic* **bold** `code` in the log — on by default (live, 09-05)
@@ -828,18 +887,25 @@ function initChatGear() {
     } else return;
     applyChatPrefs(); applySide(); paintPop();   // applySide repaints the chevron for the new side (live 09-07 23:25: it pointed the old way after a left↔right move)
   };
-  gearOpen = () => !pop.hidden;
   gearToggle = (anchor) => {
     pop.hidden = !pop.hidden;
     anchor.setAttribute('aria-expanded', String(!pop.hidden));
     gearAnchor = anchor;
     if (!pop.hidden) {
       paintPop();
+      // UPWARD from the compose row's gear, its right edge on the gear's: the log is above, the frame's edge below
       const a = anchor.getBoundingClientRect(), f = frame.el.getBoundingClientRect();
       pop.style.right = `${Math.max(4, f.right - a.right)}px`;
-      pop.style.top = `${a.bottom - f.top + 6}px`;
+      pop.style.top = 'auto';
+      pop.style.bottom = `${f.bottom - a.top + 6}px`;
     }
   };
+  // the gear lives at the right end of the compose box, like a settings affordance in a text field
+  const gear = frame.body.querySelector('.chat-compose > .chat-gear');
+  if (gear) {
+    gear.innerHTML = fsvg('gear-six', 14);
+    gear.onclick = (e) => { e.stopPropagation(); gearToggle(gear); };
+  }
   const closePop = () => { if (!pop.hidden && gearAnchor) gearToggle(gearAnchor); };
   document.addEventListener('pointerdown', (e) => {
     if (!pop.hidden && !pop.contains(e.target) && !gearAnchor?.contains(e.target)) closePop();
@@ -847,6 +913,25 @@ function initChatGear() {
   addEventListener('keydown', (e) => { if (e.key === 'Escape') closePop(); });
   applyChatPrefs();
 }
+
+// THE COMPOSE BOX GROWS (owner, 10-01: "it never expands to multiple lines… no matter how much you type"). The
+// convention (Discord, Slack, iMessage): one line at rest, growing with what you type up to a cap, then scrolling.
+// The cap here is six lines or 40% of the chat pane, whichever is less, so the log is never pushed out of sight.
+const INPUT_MAX_LINES = 6, INPUT_MAX_SHARE = 0.4;
+function sizeInput() {
+  if (!inputEl) return;
+  const cs = getComputedStyle(inputEl);
+  const line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.35;
+  const chrome = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0) + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+  const pane = inputEl.closest('.fr-body')?.clientHeight || innerHeight;
+  const max = Math.max(line + chrome, Math.min(line * INPUT_MAX_LINES + chrome, pane * INPUT_MAX_SHARE));
+  inputEl.style.height = 'auto';
+  // empty: exactly one line (a long placeholder must not wrap the box taller)
+  const want = inputEl.value ? inputEl.scrollHeight + (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0) : line + chrome;
+  inputEl.style.height = `${Math.min(want, max)}px`;
+  inputEl.style.overflowY = want > max + 1 ? 'auto' : 'hidden';
+}
+function setInput(v) { if (!inputEl) return; inputEl.value = v; sizeInput(); }
 
 export function initChat({ send, whisper, typing, people }) {
   onSend = send;
@@ -878,7 +963,8 @@ export function initChat({ send, whisper, typing, people }) {
         <div class="chat-typing"></div>
         <div class="chat-compose">
           <div id="chat-ac" class="ac panel"></div>
-          <input id="chatline" placeholder="say something…  @ to mention · / for commands">
+          <textarea id="chatline" rows="1" enterkeyhint="send" placeholder="say something…  @ to mention · / for commands"></textarea>
+          <button type="button" class="chat-gear" title="chat options" aria-expanded="false" aria-haspopup="dialog"></button>
         </div>
       </div>
       <button class="chat-side-tog" title="People Here"></button>
@@ -914,10 +1000,13 @@ export function initChat({ send, whisper, typing, people }) {
   // markup is written at frame.body.innerHTML above, so #chatlog is queryable
   // here. (self-caught, agent review round 3)
   logEl = frame.body.querySelector('#chatlog');
+  tabsEl = frame.body.querySelector(':scope > .chat-cols > .chat-main > .chat-tabs');
   initSidePane();
   initChatGear();
 
   inputEl = frame.body.querySelector('#chatline');
+  inputEl.addEventListener('focus', () => requestAnimationFrame(sizeInput));
+  if (globalThis.ResizeObserver) new ResizeObserver(() => sizeInput()).observe(frame.body);
   acBox = frame.body.querySelector('#chat-ac');
   closeAC();
 
@@ -938,6 +1027,7 @@ export function initChat({ send, whisper, typing, people }) {
   });
 
   inputEl.addEventListener('input', () => {
+    sizeInput();
     updateAC();
     // throttle: presence, not a keystroke log
     const now = performance.now();
@@ -960,40 +1050,46 @@ export function initChat({ send, whisper, typing, people }) {
     if (e.key === 'Escape') { chat.close(); return; }
 
     // shell-style recall of what you last said
-    if (e.key === 'ArrowUp' && !inputEl.value.trim() || (e.key === 'ArrowUp' && historyIdx >= 0)) {
+    if (e.key === 'ArrowUp' && !inputEl.value.trim() || (e.key === 'ArrowUp' && historyIdx >= 0 && !inputEl.value.slice(0, inputEl.selectionStart ?? 0).includes('\n'))) {
       if (sentHistory.length) {
         e.preventDefault();
         historyIdx = Math.min(historyIdx + 1, sentHistory.length - 1);
-        inputEl.value = sentHistory[sentHistory.length - 1 - historyIdx];
+        setInput(sentHistory[sentHistory.length - 1 - historyIdx]);
         inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
       }
       return;
     }
-    if (e.key === 'ArrowDown' && historyIdx >= 0) {
+    if (e.key === 'ArrowDown' && historyIdx >= 0 && !inputEl.value.slice(inputEl.selectionEnd ?? inputEl.value.length).includes('\n')) {
       e.preventDefault();
       historyIdx--;
-      inputEl.value = historyIdx < 0 ? '' : sentHistory[sentHistory.length - 1 - historyIdx];
+      setInput(historyIdx < 0 ? '' : sentHistory[sentHistory.length - 1 - historyIdx]);
       return;
     }
 
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();                      // a textarea now: Enter sends, Shift+Enter is a new line
       const v = inputEl.value.trim();
-      inputEl.value = '';
+      setInput('');
       historyIdx = -1;
       closeAC();
       if (!v) { inputEl.blur(); return; }
-      sentHistory.push(v);
-      while (sentHistory.length > 50) sentHistory.shift();
-      try { localStorage.setItem(HISTORY, JSON.stringify(sentHistory.slice(-20))); } catch { /* full */ }
-      if (v.startsWith('/')) { runCommand(v); return; }
-      // In a conversation tab, plain typing is a whisper — you should not have
-      // to prefix every line of a private conversation with a command, and you
-      // REALLY should not be able to say something aloud while looking at a
-      // window that reads like a private one.
-      if (filter.startsWith('w:')) onWhisper(filter.slice(2), v.slice(0, 4000));
-      else onSend(v.slice(0, 4000));
+      submitLine(v);
     }
   });
+
+  // every listed slash command is an action too; one that needs an argument FILLS the prompt instead of running,
+  // and so does one whose first argument is its target ("/push [name]"): run bare, it would pick whoever is nearest
+  for (const row of COMMANDS) {
+    if (row.listed === false) continue;
+    const needsArg = new RegExp(`^/${row.name} (<|\\[(name|thing|person)\\b)`).test(row.help);
+    registerAction({
+      id: `cmd:${row.name}`, title: `/${row.name}`, group: 'commands', detail: row.help,
+      // the name is already a word of the title ('/sit'), so it is not ALSO an exact keyword: an exact keyword
+      // outranked the thing itself ('sit' led with /sit, not the body's own sit / stand)
+      keywords: [...(row.aliases ?? []), row.help.replace(/^\/\S+\s*/, '').replace(/[<>[\]—|"]/g, ' ')],
+      ...(needsArg ? { fill: `/${row.name} ` } : { run: () => submitLine(`/${row.name}`) }),
+    });
+  }
 
   try { sentHistory.push(...(JSON.parse(localStorage.getItem(HISTORY) ?? '[]'))); } catch { /* none */ }
 
@@ -1067,7 +1163,7 @@ const drafts = new Map();
 function setFilter(f) {
   if (inputEl) {
     if (inputEl.value) drafts.set(filter, inputEl.value); else drafts.delete(filter);
-    inputEl.value = drafts.get(f) ?? '';
+    setInput(drafts.get(f) ?? '');
   }
   filter = f;
   if (f.startsWith('w:')) { const c = convos.get(f.slice(2)); if (c) c.unread = 0; }
@@ -1079,9 +1175,10 @@ function setFilter(f) {
 }
 
 let _arrowT = null;   // debounce for the resize-driven tab repaint
+let tabsEl = null;    // captured in initChat, like sideEls
 
 function paintTabs() {
-  const bar = frame.body.querySelector('.chat-tabs');
+  const bar = tabsEl;
   if (!bar) return;
   bar.innerHTML = '';
   // The strip carries `all · mentions · system` PLUS one tab per open DM, so
@@ -1150,7 +1247,7 @@ function paintTabs() {
         // called B3 verified — the hand-probe closed the tab it was looking at, so it
         // structurally could not reach this branch. (antra-tess #185 B3)
         drafts.delete(key);
-        if (filter === key && inputEl) inputEl.value = '';
+        if (filter === key && inputEl) setInput('');
         convos.delete(key.slice(2));
         if (filter === key) setFilter('all'); else paintTabs();
       };
@@ -1165,7 +1262,7 @@ function paintTabs() {
       // called B3 verified — the hand-probe closed the tab it was looking at, so it
       // structurally could not reach this branch. (antra-tess #185 B3)
       drafts.delete(key);
-      if (filter === key && inputEl) inputEl.value = '';
+      if (filter === key && inputEl) setInput('');
       convos.delete(key.slice(2));
       if (filter === key) setFilter('all'); else { paintTabs(); }
     };
@@ -1177,16 +1274,12 @@ function paintTabs() {
   mk('mentions', 'mentions');
   mk('system', 'system');
   for (const [name, c] of convos) mk(`w:${name}`, `@${name}`, c.unread, true);
-  const gear = document.createElement('button');
-  gear.className = 'chat-gear';
-  gear.title = 'chat options';
-  gear.innerHTML = fsvg('gear-six', 13);
-  // tabs repaint while the popover may be open: the new gear inherits it
-  const open = gearOpen();
-  gear.setAttribute('aria-expanded', String(open));
-  if (open) gearAnchor = gear;
-  gear.onclick = (e) => { e.stopPropagation(); gearToggle?.(gear); };
-  bar.appendChild(gear);                     // the gear stays OUTSIDE the scroller — always reachable
+  const who = document.createElement('button');
+  who.type = 'button'; who.className = 'chat-who';
+  who.onclick = (e) => { e.stopPropagation(); toggleSide(); };
+  bar.appendChild(who);
+  whoChip = who;
+  paintWho();
   paintArrows();
   // KEEP THE ACTIVE TAB IN VIEW. Overflow was sacrificing the tab you are
   // actually reading: R's screenshot shows `system| @H` — the open whisper

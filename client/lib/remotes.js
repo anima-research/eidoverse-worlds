@@ -15,7 +15,7 @@ import { applyRemoteReach, noteReachEvents } from './reachnet.js';
 import { syncClipPhase } from './poseclips.js';
 import { applyWingFoldPresence } from '../../shared/wingpresence.js';
 import { poseChannels } from '../../shared/humanoid.js';
-import { applyPresenceWire } from '../../shared/presencewire.js';
+import { applyPresenceWire, applyVoiceWire, applyBodyWire } from '../../shared/presencewire.js';
 import { applyRemoteXR, resetFingers } from './xrbody.js';
 
 export const remotes = new Map(); // id -> RemoteBody
@@ -308,6 +308,15 @@ function planPoseBlend(r, pa, pb) {
   }
 }
 
+/** A remote's chosen size and plate lift (shared/presencewire.js bodyWire: clamped, absence = default). Written onto
+ *  the record every sample and onto the Avatar — idempotent, and a body swap (a fresh Avatar at 1) picks it up on the
+ *  very next sample. Exported for tools/bodyscale-test.ts (a stand-in avatar) and tools/bodyscale-probe.mjs (the real one). */
+export function applyRemoteBody(r, s) {
+  applyBodyWire(r, s);
+  r.avatar?.setUserScale?.(r.scale);
+  r.avatar?.setPlateY?.(r.plateY);
+}
+
 /** Presence extras that aren't position or bones: emotes and the locomotion
  *  clip. Driven by the NEWER sample of the pair and never blended — these are
  *  discrete events, and half a wave is not a wave. Applied in BOTH the
@@ -315,6 +324,8 @@ function planPoseBlend(r, pa, pb) {
 function applyPresenceExtras(r, s) {
   applyWingFoldPresence(r.avatar, s);
   applyPresenceWire(r, s);            // present / away / busy, for the Who panel
+  applyVoiceWire(r, s);              // mic / hear, for the hover card
+  applyRemoteBody(r, s);             // their chosen size / plate lift (absence = default)
   const clip = s.clip ?? 'idle';
   if (s.emote && s.emote !== r.lastEmote) {
     r.lastEmote = s.emote;
@@ -361,8 +372,12 @@ export function setLodBias(v) { lodBias = v; }
 // owns root and bones; springs/expressions still tick.
 export const draggedLocal = new Set();
 
+const _eye = new THREE.Vector3();
 export function updateRemotes(dt, now = performance.now()) {
   const renderAt = serverNow() - INTERP_MS;
+  // animation LOD by distance from the camera's WORLD position (in XR camera.position is the head's offset inside the
+  // rig: remotes near the world origin animated at full rate, the ones beside you at a quarter; review 10a M4)
+  const eye = camera.getWorldPosition(_eye);
 
   for (const r of remotes.values()) {
     if (!r.avatar) continue;
@@ -397,6 +412,8 @@ export function updateRemotes(dt, now = performance.now()) {
           // still visibly folded through the same rig-local renderer path.
           applyWingFoldPresence(r.avatar, s);
           applyPresenceWire(r, s);
+          applyVoiceWire(r, s);
+          applyRemoteBody(r, s);
           if (s.emote && s.emote !== r.lastEmote) {
             r.lastEmote = s.emote;
             r.avatar.playEmote(s.emote);
@@ -408,7 +425,7 @@ export function updateRemotes(dt, now = performance.now()) {
         if (r.lastClip !== sw.pose) { r.lastClip = sw.pose; }
         r.avatar.setClip(sw.pose, 0);   // emote-aware: no-ops while a gesture owns the body
         if ((s?.clipTimeSlot ?? s?.clip) === sw.pose) syncClipPhase(r.avatar, s, r.clipPhaseStamp ??= {});
-        const d = r.avatar.root.position.distanceTo(camera.position);
+        const d = r.avatar.root.position.distanceTo(eye);
         const every = Math.round((d < LOD_NEAR ? 1 : d < LOD_MID ? 2 : 4) * lodBias);
         r.lodAcc += dt;
         r.lodTick = (r.lodTick + 1) % Math.max(1, every);
@@ -455,7 +472,7 @@ export function updateRemotes(dt, now = performance.now()) {
       applyPresenceExtras(r, buf[0]);
     }
 
-    const d = r.avatar.root.position.distanceTo(camera.position);
+    const d = r.avatar.root.position.distanceTo(eye);
     const every = Math.round((d < LOD_NEAR ? 1 : d < LOD_MID ? 2 : 4) * lodBias);
     r.lodAcc += dt;
     r.lodTick = (r.lodTick + 1) % Math.max(1, every);

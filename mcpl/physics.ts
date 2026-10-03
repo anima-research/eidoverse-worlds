@@ -41,6 +41,7 @@
 import { plugin } from "bun";
 import { fileURLToPath } from "node:url";
 import { poseChannels } from "../shared/humanoid.js";
+import { clampBodyScale } from "../shared/presencewire.js";
 import { isFiniteVec3 } from "./shape.ts";
 // pure shared geometry — no client import cone, safe to load eagerly
 import { CONTACT_POINTS, contactSeed } from "../shared/contact.js";
@@ -561,8 +562,20 @@ export class ReachBody {
   }
 
   /** Put the stand-in where the streamed presence says the body is. `pose` is
-   *  the sparse bone map off the wire (held pose / ragdoll frame), or null. */
-  poseAt(p: number[], yaw: number, pose: Record<string, unknown> | null) {
+   *  the sparse bone map off the wire (held pose / ragdoll frame), or null.
+   *  `scale` is the body's chosen size (wire `pose.scale`, absent = 1), composed
+   *  exactly as the browser does (avatar.js _applyBodyScale): on the pivot that
+   *  stands for vrm.scene, never the root — so the root keeps its position and
+   *  yaw, every joint and contact scales about it, and root-frame points
+   *  (reach `space`) stay in unscaled metres like reachnet.js's localToWorld. */
+  poseAt(p: number[], yaw: number, pose: Record<string, unknown> | null, scale: unknown = 1) {
+    const u = clampBodyScale(scale);
+    if (this.av.pivot.scale.x !== u) {
+      this.av.pivot.scale.setScalar(u);
+      // limb lengths are measured in the root's (unscaled) frame, so a size
+      // change re-measures them — a stale arm length would misjudge reach
+      this.chains.clear();
+    }
     this.av.root.position.set(p[0], p[1] ?? 0, p[2]);
     this.av.root.rotation.y = yaw ?? 0;
     for (const [name, n] of Object.entries(this.av.nodes) as [string, any][]) { n.quaternion.identity(); n.position.copy(this.restPositions.get(name)); }

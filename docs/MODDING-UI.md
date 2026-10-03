@@ -62,6 +62,16 @@ note here:
     chat-side-head           its heading row
     chat-side-list           the list of who is present
 
+Changes to the list above:
+
+- **2026-09-30** — `chat-side-tog` is no longer displayed (`display: none`):
+  the node and its class stay, and clicking it still toggles the pane, but
+  the 14px collapse strip is gone. Collapsed, a presence chip in the tab row
+  (`chat-who`, not part of this contract) opens the pane; open,
+  `chat-side-head` is the close control — it carries `role="button"`,
+  `tabindex="0"` and a `data-chev` chevron drawn by CSS `::after`, and its
+  text is still exactly the who's-here line.
+
 Two consequences, stated so neither surprises you:
 
 - **Restyle freely.** Match these in CSS, read them in JS, mount next to them.

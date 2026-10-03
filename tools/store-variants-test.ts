@@ -51,9 +51,10 @@ import { join } from "node:path";
 import { Document, NodeIO } from "@gltf-transform/core";
 import { PNG } from "pngjs";
 import { isStoreOriginal, isKtx2Variant, isServingArtifact, ktx2VariantPath, storeShadowsMissing, KTX2_SUFFIX,
-  capTexels, verdictStands, recipeStamp, KTX2_TEXEL_CAP,
-  LOD_RECIPE, LOD_GEN, LOD_MIN_VERTS, lodRecipeFor, lodVariantPath, isLodVariant, lodVerdictKind, lodVerdictFinal, hasStamp } from "../server/store-variants.ts";
-import { findKtx2Encoder, isKtx2Container } from "../server/optimize.ts";
+  capTexels, verdictStands, recipeStamp, KTX2_TEXEL_CAP, KTX2_RECIPE,
+  LOD_RECIPE, LOD_GEN, LOD_MIN_VERTS, lodRecipeFor, lodVariantPath, isLodVariant, lodVerdictKind, lodVerdictFinal, hasStamp, readVerdict } from "../server/store-variants.ts";
+import { findKtx2Encoder, isKtx2Container, lodGpuRefusal } from "../server/optimize.ts";
+import { toolsStamp, toolsDigest, toolVersions, currentToolsDigest, hasToolsStamp } from "../server/tools-stamp.ts";
 import { KTX2_KEY, KTX2_QUERY, wantsKtx2, withKtx2, keyFromVersion, negotiate } from "../shared/ktx2.js";
 
 let failures = 0;
@@ -123,7 +124,31 @@ console.log("\nthe store's KTX2 shadow (store-variants.ts, shared/ktx2.js):\n");
   // the verdict: a size refusal is only as durable as its recipe
   const prodMarker = "[optimize] not smaller (17600988 -> 26716692, 91234ms) — keeping original";   // the show box, 2026-08-25, ×16
   check("the show box's sixteen refusals carry no stamp → stale, a question again", !verdictStands(prodMarker));
-  check("a refusal under the CURRENT recipe stands", verdictStands(`[optimize] not smaller (1 -> 2, 3ms) ${recipeStamp()} — keeping original`));
+  check("a refusal under the CURRENT recipe and tools stands", verdictStands(`[optimize] not smaller (1 -> 2, 3ms) ${recipeStamp()} ${toolsStamp()} — keeping original`));
+  // the tools are the third part of the derivation key (tools-stamp.ts): a new encoder / reducer / sharp re-asks the
+  // REFUSALS it could overturn — and only those; no variant URL changes
+  {
+    const other = toolsDigest({ ...toolVersions(), encoder: "toktx:1:2" });
+    check("a size refusal measured with OTHER tools does not stand (re-asked once)", other !== currentToolsDigest()
+      && !verdictStands(`[optimize] not smaller (1 -> 2, 3ms) ${recipeStamp()} ${toolsStamp(other)} — keeping original`));
+    check("…nor one from before the tools stamp (tools unknown: re-asked once, like an unstamped recipe)",
+      !verdictStands(`[optimize] not smaller (1 -> 2, 3ms) ${recipeStamp()} — keeping original`));
+    const lodL = (v: string, t = toolsStamp()) => `[optimize] lod: ${v} (47ms) ${recipeStamp(LOD_RECIPE)} ${t} — original stays the only representation`;
+    check("the reducer's refusals (ineffective / preservation / gpu) stand only under the tools that measured them",
+      ["reduction ineffective (14000 -> 9000 verts, permissive too)", "preservation failed: bounds moved on axis 1", "not lighter on the GPU (textures 1.33 -> 5.33 MB, 912ms)"]
+        .every((v) => verdictStands(lodL(v), LOD_RECIPE) && !verdictStands(lodL(v, toolsStamp(other)), LOD_RECIPE) && !verdictStands(lodL(v, ""), LOD_RECIPE)));
+    check("CONTENT verdicts stand whatever the tools (a body, under the floor, nothing to convert — facts about the file)",
+      [lodL("unsupported: skinned/avatar asset (skins)", toolsStamp(other)), lodL(`already light (981 verts < ${LOD_MIN_VERTS})`, "")].every((c) => verdictStands(c, LOD_RECIPE))
+      && verdictStands("[optimize] ktx2: no convertible raster images (12ms) — keeping original", KTX2_RECIPE, other));
+    const v0 = toolVersions();
+    check("the digest moves with EVERY tool the CLI runs (gltf-transform, meshoptimizer, draco, sharp, the encoder binary)",
+      Object.keys(v0).length >= 7 && Object.keys(v0).every((k) => toolsDigest({ ...v0, [k]: `${v0[k]}+1` }) !== toolsDigest(v0)), v0);
+    check("…is canonical (key order does not matter) and delimited (a digest that extends this one is not it)",
+      toolsDigest(Object.fromEntries(Object.entries(v0).reverse())) === toolsDigest(v0)
+      && hasToolsStamp(`x ${toolsStamp()} y`) && !hasToolsStamp(`${toolsStamp()}0`), toolsDigest(v0));
+    check("the encoder is named by basename + size + mtime of its real file, never by running it; absent → none",
+      toolVersions(null).encoder === "none" && /^bun:\d+:[\d.]+$/.test(toolVersions(process.execPath).encoder), toolVersions(process.execPath).encoder);
+  }
   check("a refusal under an OLDER recipe does not", !verdictStands(`[optimize] not smaller (1 -> 2, 3ms) ${recipeStamp("texel2048")} — keeping original`));
   check("…nor one whose stamp merely EXTENDS this recipe's (texel10240 is not texel1024): the match is delimited, never a prefix",
     !verdictStands(`[optimize] not smaller (1 -> 2, 3ms) ${recipeStamp("texel10240")} — keeping original`)
@@ -131,20 +156,37 @@ console.log("\nthe store's KTX2 shadow (store-variants.ts, shared/ktx2.js):\n");
   check("a content verdict stands regardless (nothing to convert)", verdictStands("[optimize] ktx2: no convertible raster images (12ms) — keeping original"));
   check("…and so does a hard failure", verdictStands("exit 1") && verdictStands(""));
 
+  // every refusal the CLI can exit 2 with names its KIND on a [verdict] line (the record's source of truth) — read from
+  // the emitter itself, not a hand-kept list: a new exit-2 site without one is a record typed only by grammar
+  {
+    const cliSrc = readFileSync(join(import.meta.dir, "..", "server", "optimize.ts"), "utf8");
+    const main = cliSrc.slice(cliSrc.indexOf("if (import.meta.main)"));
+    const exits = [...main.matchAll(/process\.exit\(2\)/g)].map((m) => main.slice(Math.max(0, m.index! - 400), m.index!));
+    const bare = exits.filter((pre) => !/console\.error\(verdictLine\([^\n]*\);\s*$/.test(pre));
+    check(`every exit-2 site in the CLI (${exits.length}) emits a typed [verdict] line just before it`, exits.length >= 6 && bare.length === 0,
+      bare.map((b) => b.split("\n").slice(-2).join(" ").trim().slice(0, 120)));
+  }
   // the LOD recipe DERIVES from its parameters — a floor change is a generation change by construction
-  check("LOD_RECIPE derives from (gen, ratio, error, texel, floor)",
-    LOD_RECIPE === lodRecipeFor() && LOD_RECIPE === `lod${LOD_GEN}-r25e01-texel${KTX2_TEXEL_CAP}-min${LOD_MIN_VERTS}`, LOD_RECIPE);
+  check("LOD_RECIPE derives from (gen, ratio, screen budget px/ppd/tpp, texture-only share, the switch distance, texel, floor)",
+    LOD_RECIPE === lodRecipeFor() && LOD_RECIPE === `lod${LOD_GEN}-r25-px2ppd25-tpp1-tx5-d80k4f45h25-texel${KTX2_TEXEL_CAP}-min${LOD_MIN_VERTS}`, LOD_RECIPE);
   check("a lower floor is a NEW recipe — a new URL and a new filename, nothing pinned under the old",
-    lodRecipeFor({ minVerts: 6000 }) !== LOD_RECIPE && lodVariantPath("store/x.glb", lodRecipeFor({ minVerts: 6000 })) !== lodVariantPath("store/x.glb"));
-  check("…and so is a reducer generation bump, a ratio, an error bound, a texel budget",
-    new Set([LOD_RECIPE, lodRecipeFor({ gen: LOD_GEN + 1 }), lodRecipeFor({ ratio: 0.5 }), lodRecipeFor({ error: 0.02 }), lodRecipeFor({ texel: 2048 })]).size === 5);
+    lodRecipeFor({ minVerts: LOD_MIN_VERTS / 2 }) !== LOD_RECIPE && lodVariantPath("store/x.glb", lodRecipeFor({ minVerts: LOD_MIN_VERTS / 2 })) !== lodVariantPath("store/x.glb"));
+  check("…and so is a reducer generation bump, a ratio, a pixel budget, a pixel density, a texel density, a texel cap",
+    new Set([LOD_RECIPE, lodRecipeFor({ gen: LOD_GEN + 1 }), lodRecipeFor({ ratio: 0.5 }), lodRecipeFor({ px: 3 }), lodRecipeFor({ ppd: 20 }), lodRecipeFor({ tpp: 2 }), lodRecipeFor({ texOnly: 0.25 }), lodRecipeFor({ texel: 2048 }),
+      // the distance the budget is taken at: tuning the client's switch re-budgets every LOD, so it re-names them
+      lodRecipeFor({ rBase: 60 }), lodRecipeFor({ diagK: 3 }), lodRecipeFor({ fraction: 0.5 }), lodRecipeFor({ hyst: 0.2 })]).size === 12);
   check("the recipe is URL- and filename-safe, within the client's bound, and isLodVariant recognizes it",
     /^[a-z0-9.-]+$/.test(LOD_RECIPE) && LOD_RECIPE.length <= 64 && isLodVariant(lodVariantPath("store/x.glb")));
-  check("the encoding is INJECTIVE at the reducer's precision: 0.014 is not 0.01, 0.5 is not 0.05 (a rounded percent read them alike)",
-    lodRecipeFor({ error: 0.014 }) !== LOD_RECIPE && lodRecipeFor({ error: 0.014 }).includes("e014-")
-    && lodRecipeFor({ ratio: 0.5 }) !== lodRecipeFor({ ratio: 0.05 }) && lodRecipeFor({ ratio: 0.5 }).includes("-r5e"), lodRecipeFor({ error: 0.014 }));
+  check("the encoding is INJECTIVE at the reducer's precision: 1.5 px is not 15 px, 0.5 is not 0.05 (a rounded percent read them alike)",
+    lodRecipeFor({ px: 1.5 }).includes("-px1p5ppd") && lodRecipeFor({ px: 15 }).includes("-px15ppd") && lodRecipeFor({ px: 1.5 }) !== lodRecipeFor({ px: 15 })
+    && lodRecipeFor({ tpp: 0.5 }).includes("-tpp0p5-") && lodRecipeFor({ ratio: 0.5 }) !== lodRecipeFor({ ratio: 0.05 }) && lodRecipeFor({ ratio: 0.5 }).includes("-r5-"), lodRecipeFor({ px: 1.5 }));
   check("a parameter the string cannot carry faithfully is refused, not mangled",
-    [() => lodRecipeFor({ ratio: 1 }), () => lodRecipeFor({ error: 0 }), () => lodRecipeFor({ error: 1e-7 }), () => lodRecipeFor({ minVerts: 12000.5 })].every((f) => { try { f(); return false; } catch { return true; } }));
+    [() => lodRecipeFor({ ratio: 1 }), () => lodRecipeFor({ px: 0 }), () => lodRecipeFor({ px: 1e-7 }), () => lodRecipeFor({ tpp: -1 }), () => lodRecipeFor({ ppd: 25.5 }), () => lodRecipeFor({ minVerts: 12000.5 })].every((f) => { try { f(); return false; } catch { return true; } }));
+  check("the legacy text grammar still reads gen 3's wording (a marker with no structured line: stand-in optimizers)",
+    lodVerdictKind("[optimize] lod: already light (500 verts < 1000; textures 80% of the full tier)") === "light"
+    && lodVerdictKind("[optimize] lod: reduction ineffective (9600 -> 6269 verts, permissive too; textures 100% of the full tier)") === "ineffective");
+  check("LOD_GEN 3, floor 12,000: attribute-aware simplification and the screen-space budget changed what a gen-2 name built",
+    LOD_GEN === 3 && LOD_MIN_VERTS === 12_000 && LOD_RECIPE.startsWith("lod3-") && LOD_RECIPE.endsWith("-min12000"), LOD_RECIPE);
 
   // standing verdicts: which typed refusals make the original the FINAL answer under the running recipe
   {
@@ -158,13 +200,23 @@ console.log("\nthe store's KTX2 shadow (store-variants.ts, shared/ktx2.js):\n");
     check("'already light' is a FLOOR verdict — and the floor is in the recipe", lodVerdictKind(light) === "light");
     check("'reduction ineffective' and a preservation failure depend on the REDUCER",
       lodVerdictKind(line("reduction ineffective (14000 -> 9000 verts)")) === "ineffective" && lodVerdictKind(line("preservation failed: bounds moved on axis 1")) === "preservation");
+    check("…and so does the Permissive retry's phrase (', permissive too') — the same kind, never 'unknown'",
+      lodVerdictKind(line("reduction ineffective (20280 -> 13728 verts, permissive too)")) === "ineffective");
+    check("the GPU gate's refusal is its own kind, 'gpu' (optimize.ts: not lighter on the GPU)",
+      lodVerdictKind(`[optimize] lod: not lighter on the GPU (textures 1.33 -> 5.33 MB, 912ms) ${stamp} — original stays the only representation`) === "gpu");
     check("anything else is unclassified: a ktx2 size verdict, a deferral note, an exit code, nothing",
       [`[optimize] not smaller (1 -> 2, 3ms) ${recipeStamp()}`, "estimated 900MB > budget 512MB", "exit 1", ""].every((c) => lodVerdictKind(c) === null));
     check("FINAL: a structural or floor verdict stamped with the running recipe", lodVerdictFinal(line("unsupported: skinned/avatar asset (skins)")) && lodVerdictFinal(light));
     check("NOT final: ineffective / preservation — a better reducer may succeed under the same content",
       !lodVerdictFinal(line("reduction ineffective (14000 -> 9000 verts)")) && !lodVerdictFinal(line("preservation failed: material assignments changed")));
+    const gpuLine = lodGpuRefusal(1.33, 5.33, 912);   // the CLI's own line (optimize.ts --lod GPU gate)
+    check("the CLI's GPU-gate refusal carries the running recipe's stamp and reads as kind 'gpu'",
+      gpuLine.includes(stamp) && lodVerdictKind(gpuLine) === "gpu" && !lodVerdictFinal(gpuLine), gpuLine);
+    check("…and the tools stamp: a new encoder or sharp re-asks it", gpuLine.includes(`${stamp} ${toolsStamp()}`) && verdictStands(gpuLine, LOD_RECIPE), gpuLine);
+    check("NOT final: the GPU gate's refusal, stamped — it depends on the encoder and the host, not on the URL",
+      !lodVerdictFinal(`[optimize] lod: not lighter on the GPU (textures 1.33 -> 5.33 MB, 912ms) ${stamp} — original stays the only representation`));
     check("NOT final: a floor verdict without the stamp (an older CLI), under another floor, or judged against another generation",
-      !lodVerdictFinal(light.replace(stamp, "")) && !lodVerdictFinal(light.replace(stamp, recipeStamp(lodRecipeFor({ minVerts: 6000 })))) && !lodVerdictFinal(light, lodRecipeFor({ gen: 2 })));
+      !lodVerdictFinal(light.replace(stamp, "")) && !lodVerdictFinal(light.replace(stamp, recipeStamp(lodRecipeFor({ minVerts: LOD_MIN_VERTS * 6 })))) && !lodVerdictFinal(light, lodRecipeFor({ gen: LOD_GEN + 1 })));
     check("NOT final: unclassified, however stamped", !lodVerdictFinal(`exit 1 ${stamp}`) && !lodVerdictFinal(stamp) && !lodVerdictFinal(""));
     check("NOT final: a stamp that EXTENDS the running recipe's (min120000 for min12000) — the pull-window case, a newer CLI's verdict in the older server's filename",
       !lodVerdictFinal(light.replace(stamp, recipeStamp(`${LOD_RECIPE}0`))) && !lodVerdictFinal(light, `${LOD_RECIPE}0`) && !lodVerdictFinal(light, LOD_RECIPE.slice(0, -1)));
@@ -174,18 +226,21 @@ console.log("\nthe store's KTX2 shadow (store-variants.ts, shared/ktx2.js):\n");
     const marker = `${ktx2VariantPath(original)}.failed`;
     const m1 = storeShadowsMissing(original, minDir2, (p) => p === marker, () => prodMarker);
     check("storeShadowsMissing: a stale size verdict → the KTX2 shadow is MISSING (retry)", m1.ktx2);
-    const m2 = storeShadowsMissing(original, minDir2, (p) => p === marker, () => `not smaller ${recipeStamp()}`);
+    const m2 = storeShadowsMissing(original, minDir2, (p) => p === marker, () => `not smaller ${recipeStamp()} ${toolsStamp()}`);
     check("…a current one → not missing (no retry)", !m2.ktx2);
+    const m3 = storeShadowsMissing(original, minDir2, (p) => p === marker, () => `not smaller ${recipeStamp()} ${toolsStamp(toolsDigest({ ...toolVersions(), meshoptimizer: "0.0.1" }))}`);
+    check("…one measured with other tools → MISSING (the sweep re-asks it)", m3.ktx2);
   }
 
   // the negotiation key is a generation, shared by both sides
-  check("the current key is 3 (1 and rollout-key 2 retired — their flagged answers had been pinned immutable)", KTX2_KEY === "3" && KTX2_QUERY === "ktx2=3");
-  check("the current key negotiates", wantsKtx2(new URLSearchParams("ktx2=3")));
-  check("the just-retired rollout key does NOT — it is an unflagged fetch now", !wantsKtx2(new URLSearchParams("ktx2=2")));
+  check("the current key is 4 (1 and 2 retired — flagged answers pinned immutable; 3 retired — built variants pinned immutable, now rebuildable in place)", KTX2_KEY === "4" && KTX2_QUERY === "ktx2=4");
+  check("the current key negotiates", wantsKtx2(new URLSearchParams("ktx2=4")));
+  check("the just-retired key (3) does NOT — it is an unflagged fetch now", !wantsKtx2(new URLSearchParams("ktx2=3")));
+  check("…nor the rollout key (2)", !wantsKtx2(new URLSearchParams("ktx2=2")));
   check("the original retired key does not negotiate either", !wantsKtx2(new URLSearchParams("ktx2=1")));
   check("no key does not", !wantsKtx2(new URLSearchParams("v=123")));
-  check("withKtx2 appends with ? on a bare path", withKtx2("store/x.glb") === "store/x.glb?ktx2=3");
-  check("…and with & when ?v= is already there (avatar URLs)", withKtx2("eidoverse/assets/vrms/a.vrm?v=9") === "eidoverse/assets/vrms/a.vrm?v=9&ktx2=3");
+  check("withKtx2 appends with ? on a bare path", withKtx2("store/x.glb") === "store/x.glb?ktx2=4");
+  check("…and with & when ?v= is already there (avatar URLs)", withKtx2("eidoverse/assets/vrms/a.vrm?v=9") === "eidoverse/assets/vrms/a.vrm?v=9&ktx2=4");
 
   // The browser's half: the key it uses is the one the RUNNING sequencer
   // published on /version — never one read off a served file.
@@ -222,7 +277,7 @@ console.log("\nthe store's KTX2 shadow (store-variants.ts, shared/ktx2.js):\n");
   for (const o of ["x.glb", "aletheia.vrm", "moon_color_1k.jpg", "manifest.json", "sky_system.js"])
     check(`${o} is not`, !isKtx2Variant(o) && !isServingArtifact(o));
   // …nor fetches a marker as a model (review of #142, P2)
-  for (const a of ["x.glb.ktx2.glb.failed", "x.glb.failed", "x.glb.tmp", "manifest.json.tmp", "x.glb.ktx2.glb.tmp", "x.glb.ktx2.glb.deferred", "x.glb.lod.lod1-r25e01-texel1024.glb.deferred"])
+  for (const a of ["x.glb.ktx2.glb.failed", "x.glb.failed", "x.glb.tmp", "manifest.json.tmp", "x.glb.ktx2.glb.tmp", "x.glb.ktx2.glb.deferred", "x.glb.lod.lod1-r25e01-texel1024.glb.deferred", "x.glb.ktx2.glb.srcid", "x.glb.lod.lod2-r25e01-texel1024-min1000.glb.srcid"])
     check(`${a} is a serving artifact, never a listing entry`, isServingArtifact(a));
   check("the listing the prefetcher sees is originals + the manifest only",
     listing.filter((f) => !isServingArtifact(f)).join(",") === "305ea80018ad4dbf.glb,a1b2c3d4e5f60718.glb,manifest.json,scripts");
@@ -407,6 +462,10 @@ console.log("\n  the optimizer, against the fake encoder:");
     // a size refusal names its recipe
     r = await runKtx2(two, ktx2VariantPath(two) + ".bloat", { KTX2_TOKTX: FAKE_TOKTX, FAKE_TOKTX_MODE: "bloat" });
     check("a size refusal (exit 2) carries the recipe stamp — a later recipe can tell it is stale", r.code === 2 && !r.wrote && r.err.includes(recipeStamp()), `exit ${r.code}: ${r.err.split("\n").pop()}`);
+    check("…and a typed [verdict] line: kind `size`, measured under this recipe, with these tools (the record the pump writes)",
+      readVerdict(r.err).kind === "size" && readVerdict(r.err).recipe === KTX2_RECIPE && readVerdict(r.err).toolsDigest === toolsDigest(toolVersions(FAKE_TOKTX)), readVerdict(r.err));
+    check("…and the stamp of the tools the CLI ran with (this encoder) — a new encoder can tell it is stale",
+      r.err.includes(`${recipeStamp()} ${toolsStamp(toolsDigest(toolVersions(FAKE_TOKTX)))}`), r.err.split("\n").pop());
 
     const real = findKtx2Encoder();
     if (!real) console.log("  - real encoder: skipped — none on this box (KTX2_TOKTX / toktx / ktx; docs/ktx2-encoder.md)");
@@ -524,21 +583,26 @@ console.log("\n  the real sequencer — an upload becomes a served variant:");
     else {
       // The pump runs store-min then --ktx2, serially, off the request path.
       // Until the variant lands, the flagged answer is whatever the unflagged
-      // one is, marked provisional; once it lands, the variant, immutable.
+      // one is, marked provisional; once it lands, the variant, short-lived + revalidating (rebuildable in place).
       const early = await S.get(negotiate(`store/${hash}.glb`, S.key));
       const earlyIsVariant = isKtx2Glb(early.bytes);
       check("a flagged fetch is answered either way, and its caching says which", early.status === 200
-        && (earlyIsVariant ? early.cc.includes("immutable") : early.cc === "no-cache"), `variant=${earlyIsVariant} cc=${early.cc}`);
+        && (earlyIsVariant ? early.cc.includes("max-age=60") && !early.cc.includes("immutable") : early.cc === "no-cache"), `variant=${earlyIsVariant} cc=${early.cc}`);
       const landed = await until(() => existsSync(ktx2VariantPath(join(STORE, `${hash}.glb`))), 30_000);
       check("the queue built the KTX2 shadow beside the original", landed, ktx2VariantPath(join(STORE, `${hash}.glb`)));
+      if (landed) {   // every image this encoder writes carries the transfer mark — the purge tells fixed from old by it
+        const { parseGlb } = await import("../server/glbparse.ts"); const { KTX2_TF_MARK } = await import("../server/optimize.ts");
+        const ims = (parseGlb(new Uint8Array(readFileSync(ktx2VariantPath(join(STORE, `${hash}.glb`))))).json.images ?? []).filter((i: any) => i.mimeType === "image/ktx2");
+        check(`…and every KTX2 image in it carries the transfer mark (${ims.length} image(s))`, ims.length > 0 && ims.every((i: any) => i.extras?.[KTX2_TF_MARK]), ims.map((i: any) => i.extras));
+      }
       // the parent logs a beat after the child's rename lands the file — poll
       const logged = await until(() => /\[ktx2\] .*→ .*\.ktx2\.glb/.test(S.log()), 5_000);
       check("…and it says so in the sequencer's log", logged, S.log().split("\n").filter((l) => l.includes("ktx2")).join(" | "));
       const flagged = await S.get(negotiate(`store/${hash}.glb`, S.key));
-      check("flagged (current key) → the variant, really KTX2, immutable", flagged.status === 200 && isKtx2Glb(flagged.bytes) && flagged.cc.includes("immutable"),
+      check("flagged (current key) → the variant, really KTX2, short-lived + revalidating", flagged.status === 200 && isKtx2Glb(flagged.bytes) && flagged.cc.includes("max-age=60") && !flagged.cc.includes("immutable"),
         `cc=${flagged.cc} ktx2=${isKtx2Glb(flagged.bytes)}`);
-      const retired = await S.get(`store/${hash}.glb?ktx2=2`);
-      check("the just-retired key (=2) is an unflagged fetch: not the variant, immutable like the address", retired.status === 200 && !isKtx2Glb(retired.bytes) && retired.cc.includes("immutable"),
+      const retired = await S.get(`store/${hash}.glb?ktx2=3`);
+      check("the just-retired key (=3) is an unflagged fetch: not the variant, immutable like the address", retired.status === 200 && !isKtx2Glb(retired.bytes) && retired.cc.includes("immutable"),
         `cc=${retired.cc} ktx2=${isKtx2Glb(retired.bytes)}`);
       const bare = await S.get(`store/${hash}.glb`);
       check("unflagged → not the variant, immutable", bare.status === 200 && !isKtx2Glb(bare.bytes) && bare.cc.includes("immutable"), bare.cc);
@@ -609,7 +673,8 @@ console.log("\n  the boot sweep — a stale size verdict is re-measured, a curre
   // both have a store-min verdict so only the KTX2 arm is in play
   writeFileSync(join(STORE_MIN, `${hs}.glb.failed`), "fixture"); writeFileSync(join(STORE_MIN, `${hc}.glb.failed`), "fixture");
   writeFileSync(`${ktx2VariantPath(join(STORE, `${hs}.glb`))}.failed`, "[optimize] not smaller (17600988 -> 26716692, 91234ms) — keeping original");   // prod's shape
-  writeFileSync(`${ktx2VariantPath(join(STORE, `${hc}.glb`))}.failed`, `[optimize] not smaller (1 -> 2, 3ms) ${recipeStamp()} — keeping original`);
+  // current = this recipe AND the tools the child server's CLI runs with (the fake encoder)
+  writeFileSync(`${ktx2VariantPath(join(STORE, `${hc}.glb`))}.failed`, `[optimize] not smaller (1 -> 2, 3ms) ${recipeStamp()} ${toolsStamp(toolsDigest(toolVersions(FAKE_TOKTX)))} — keeping original`);
   const S = await startServer({ KTX2_TOKTX: FAKE_TOKTX, FAKE_TOKTX_MODE: "ok" });
   check("child server came up", S.up, `:${S.PORT}`);
   if (S.up) {
@@ -668,9 +733,9 @@ console.log("\n  the swap a browser makes when the variant lands:");
     const swapped = await S.get(negotiate(`store/${hash}.glb`, S.key), { "if-none-match": before.etag });
     check("the variant landed: the same If-None-Match now gets a 200 with the VARIANT — the swap", swapped.status === 200 && same(swapped.bytes, variant),
       `${swapped.status} file=${whichFile(swapped.bytes)}`);
-    check("…immutable from here on, under a new ETag", swapped.cc.includes("immutable") && swapped.etag !== before.etag, `cc=${swapped.cc}`);
+    check("…short-lived + revalidating from here on (a rebuild can land under it), under a new ETag", swapped.cc.includes("max-age=60") && !swapped.cc.includes("immutable") && swapped.etag !== before.etag, `cc=${swapped.cc}`);
     const settled = await S.get(negotiate(`store/${hash}.glb`, S.key), { "if-none-match": swapped.etag });
-    check("…and revalidating the variant is a 304 that says immutable", settled.status === 304 && settled.cc.includes("immutable"), `${settled.status} ${settled.cc}`);
+    check("…and revalidating the variant is a 304 carrying the same short-lived policy", settled.status === 304 && settled.cc.includes("max-age=60") && !settled.cc.includes("immutable"), `${settled.status} ${settled.cc}`);
     const bare = await S.get(`store/${hash}.glb`);
     check("the unflagged answer never moved: the original, immutable — the address IS content-addressed", same(bare.bytes, glb) && bare.cc.includes("immutable"), bare.cc);
   }
@@ -712,7 +777,7 @@ console.log("\n  the canary — a pull lands under a running sequencer:");
       check("…but /version still publishes the key the process RUNS with", version === KTX2_KEY, `published ${version}`);
       // the new client: keyed from /version
       const good = await S.get(negotiate(`store/${hash}.glb`, version));
-      check("a client keyed from /version asks with the running key → the variant, immutable: correct", good.status === 200 && same(good.bytes, variant) && good.cc.includes("immutable"), `file=${whichFile(good.bytes)} cc=${good.cc}`);
+      check("a client keyed from /version asks with the running key → the variant, short-lived + revalidating: correct", good.status === 200 && same(good.bytes, variant) && good.cc.includes("max-age=60") && !good.cc.includes("immutable"), `file=${whichFile(good.bytes)} cc=${good.cc}`);
       // the old client: keyed off the served file — the incident
       const bad = await S.get(negotiate(`store/${hash}.glb`, NEXT));
       check("a client keyed off the served file asks ?ktx2=99 → the server does not know it: unflagged, NOT the variant, immutable — this is the poison, and it would have been pinned under the NEXT generation before it ever ran",

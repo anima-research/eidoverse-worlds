@@ -9,11 +9,15 @@ import { PoseClips } from "./pose-clips.ts";
 import { CLIP_SLOTS } from "../shared/clipdefs.js";
 import { planReaches, reachKey } from "../shared/reachorder.js";
 import { poseChannels } from "../shared/humanoid.js";
+import { clampBodyScale } from "../shared/presencewire.js";
 
 export type PublicPose = {
   p: number[]; yaw: number; speed: number; clip: string;
   pose?: Record<string, number[]> | null; wingsFolded?: boolean; reach?: unknown;
   clipTime?: number; clipRate?: number; clipTimeSlot?: string; pitch?: number;
+  /** The wearer's chosen body size (shared/presencewire.js bodyWire): sent only
+   *  when not 1, so absent = 1; untrusted, read through clampBodyScale. */
+  scale?: number;
 };
 export type BodyObservation = {
   who: string; avatar: string; generation: number; self: boolean;
@@ -88,6 +92,13 @@ function missingPosture(out: any, o: BodyObservation) {
       reason: "posture_not_evaluated", currentBodyTargets: false } };
 }
 
+// The ROOT frame is unscaled metres in every tier. A chosen body size lives
+// below the root (browser: vrm.scene; here: the stand-in's pivot, applied by
+// ReachBody.poseAt), so joints and contacts grow about the root position while
+// a root-frame point — reach `space: 'self' | <id>`, a selfPosition — means the
+// same metres at any size, exactly as reachnet.js's root.localToWorld. These
+// two are inverses; neither may apply scale, or a selfPosition handed back as a
+// `space: 'self'` target would miss the joint it came from.
 function rootPoint(p: number[], pose: PublicPose) {
   const c = Math.cos(pose.yaw), s = Math.sin(pose.yaw);
   return [pose.p[0] + p[0] * c + p[2] * s, pose.p[1] + p[1], pose.p[2] - p[0] * s + p[2] * c];
@@ -190,8 +201,9 @@ export class BodyStateReader {
         ok: f.status === "current", who, avatar: o.avatar || null, self: o.self,
         bodyGeneration: { scope: "this observer", value: o.generation }, freshness: f,
         frame: o.frame ?? { source: "presence" },
-        summary: `${who}: ${f.status}; ${valid ? `${p!.clip || "posture unknown"}${wing} at (${p!.p.map(round).join(", ")}), ${count} published bone override(s), ${Object.keys(reaches ?? {}).length} held reach(es)` : "pose unknown"}.`,
+        summary: `${who}: ${f.status}; ${valid ? `${p!.clip || "posture unknown"}${wing}${clampBodyScale(p!.scale) !== 1 ? `, ${clampBodyScale(p!.scale)}× size` : ""} at (${p!.p.map(round).join(", ")}), ${count} published bone override(s), ${Object.keys(reaches ?? {}).length} held reach(es)` : "pose unknown"}.`,
         root: valid ? { position: [...p!.p], yaw: p!.yaw, forward: [Math.sin(p!.yaw), 0, Math.cos(p!.yaw)] } : null,
+        scale: clampBodyScale(p?.scale),
         posture: p?.clip ?? null, wingsFolded: typeof p?.wingsFolded === "boolean" ? p.wingsFolded : null,
         overrides: { state: valid ? count ? "held" : "none" : "unknown", count, source: o.source,
           sourceBasis: o.self ? "owner state" : o.source === "physics" ? "ragdoll clip; original author unknown" : "producer does not publish provenance" },
@@ -251,7 +263,7 @@ export class BodyStateReader {
         }
         item.observation = o;
         const mapped = Object.fromEntries(Object.entries(o.pose!.pose ?? {}).filter(([name]) => Object.hasOwn(item.body.av.nodes, name)));
-        item.body.poseAt(o.pose!.p, o.pose!.yaw, null);
+        item.body.poseAt(o.pose!.p, o.pose!.yaw, null, o.pose!.scale);
         if (item.animation) this.clips.apply(item.animation, item.body, hasClipPhase(o.pose!) ? o.pose!.clipTime! : 0, item.rigKey);
         if (Number.isFinite(o.pose!.pitch) && item.body.av.nodes.head) item.body.av.nodes.head.quaternion.premultiply(
           new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.max(-.5, Math.min(.6, o.pose!.pitch!))));

@@ -53,6 +53,9 @@ let close = async () => {};
 try {
   ({ page, close } = await launchBrowser());
   const pg = await page();
+  // BOOT_CHECK_CLOUDS_OFF=1: the sky guard, before any module reads localStorage (sky.js) — a cloudy sky bakes on
+  // the CPU in headless Chromium and has frozen a small host; the rest of the boot is checked as ever
+  if (process.env.BOOT_CHECK_CLOUDS_OFF === '1') await pg.addInitScript(() => { try { localStorage.setItem('ew-cloud-quality', 'off'); } catch {} });
   const errs = [], logs = [], bodyErrs = [];
   pg.on('pageerror', e => errs.push(e.message));
   pg.on('console', m => { const t = m.text(); if (/^\[boot\]|^\[body\]|^\[render\]/.test(t)) logs.push(t); if (/^avatar\b/.test(t)) bodyErrs.push(t); });
@@ -72,7 +75,7 @@ try {
       phase: sp?.querySelector('.sp-phase')?.textContent ?? null, raysHandle: !!globalThis.__raysWorker, raysStarted: globalThis.__raysStarted === true,
       raysAck: globalThis.__raysAck === true, raysNoGl: globalThis.__raysNoGl === true,
       backend: globalThis._r?.backend ? (globalThis._r.backend.isWebGLBackend ? 'webgl' : 'webgpu') : null, xrEnabled: !!globalThis._r?.xr?.enabled,
-      tolerance: !!globalThis.__renderListTolerance, xrShadow: globalThis.__xrShadowPatched === true, raysCanvas: !!document.querySelector('#splash .sp-rays'),
+      tolerance: !!globalThis.__renderListTolerance, xrShadow: globalThis.__xrShadowPatched === true, xrPixelRatio: globalThis.__xrPixelRatioGuarded === true, xrPass: globalThis.__xrPassSplit === true, raysCanvas: !!document.querySelector('#splash .sp-rays'),
       hasBody: !!globalThis.EW?.me?.(),
       capsule: !!globalThis.EW?.me?.()?.isCapsule,   // the body of last resort (capsulebody.js) — an avatar error BEFORE it is the expected story
       // REACHABILITY, not scrollWidth: html,body use overflow:hidden, so a frame
@@ -107,6 +110,11 @@ try {
             : null;
           return { id: (t.title || t.getAttribute('aria-label') || t.textContent || '?').trim().slice(0, 18), owner }; })
         .filter((c) => c.owner),
+      // the owner's rule for the capability card (09-27): it may cover anything while its dismiss button is visible
+      // and clickable, i.e. the pixel at the button's centre is the button
+      capDismissable: (() => { const bts = [...document.querySelectorAll('.capnotice .cn-ok')]; if (!bts.length) return null;
+        return bts.every((bt) => { const r = bt.getBoundingClientRect(); if (!r.width || !r.height) return false;
+          const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return bt === h || bt.contains(h); }); })(),   // EVERY item's (U4)
       // how many control surfaces were MEASURABLE at all. A check that reports
       // green from an empty collection is worse than no check: at 390x844 the
       // emote bar is hidden by fitsDefaults, so `.frame .tile` yields nine
@@ -143,6 +151,8 @@ try {
   if (s.xrEnabled !== wantXR) { fail(`xr.enabled=${s.xrEnabled} but query "${QUERY}" ${wantXR ? 'is' : 'is not'} an XR boot`); }
   if (s.tolerance !== wantXR) { fail(`tolerant render list ${s.tolerance ? 'installed' : 'not installed'} at boot; it must install only for an XR boot (query "${QUERY}")`); }
   if (!s.xrShadow) { fail('the ShadowNode XR-off patch was not applied at boot (core.js → xrshadow.js)'); }
+  if (!s.xrPass) { fail('stereo renders were not split into their own pass at boot (core.js → xrpass.js): every VR switch rebuilds'); }
+  if (!s.xrPixelRatio) { fail('the XR pixel-ratio guard (#32 split vision) was not applied at boot (core.js → xrpixelratio.js)'); }
   // REACHABILITY (#185 review). Every visible frame must lie inside the viewport.
   // Not scrollWidth: html,body use overflow:hidden, so a frame past the edge is
   // simply unreachable and the document reports no overflow at all. Run this at a
@@ -171,7 +181,10 @@ try {
     // over a z-25 bar, or the rail once it reorients along the top edge.
     // EVERY thief counts, including ones outside my selector list — dropping
     // 'other' is how #earbtn's inner <rect> made a real occluder invisible.
-    const stolen = g.controls ?? [];
+    // …except under the capability card while it can be dismissed (owner, 09-27; intentionally reverses #185 B2's
+    // reachability rule for this one dismissible notice). A card whose dismiss button can't be clicked still fails.
+    if (g.capDismissable === false) fail(`the capability card's dismiss button is not clickable at ${g.vw}x${g.vh} (${where})`);
+    const stolen = (g.controls ?? []).filter((c) => !(c.owner === '.capnotice' && g.capDismissable));
     if (stolen.length) {
       fail(`controls unreachable at ${g.vw}x${g.vh} — the pixel at their centre belongs to other chrome (${where}):\n  `
         + stolen.map((c) => `"${c.id}" covered by ${c.owner}`).join('\n  '));

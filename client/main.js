@@ -10,9 +10,10 @@ import { updateWater, setWaterObjects, setWaterClock, environmentSettings, water
 // handle in mybody.js, my body's physics in localbody.js, consent in
 // consent.js, voice mouths in voicemouths.js, /commands in lib/commands/.
 
-import { THREE, scene, camera, renderer } from './lib/core.js';
+import { chooseClient } from './lib/litechoice.js';
+import { THREE, scene, camera, renderer, canvas } from './lib/core.js';
 import { releaseBodyGate, armBodyGate } from './lib/bodygate.js';
-import { CONFIG, bus, report, tee } from './lib/base.js';
+import { CONFIG, bus, report, tee, colorFor } from './lib/base.js';
 import { contributeThumbnail, makeAvatar, makeCapsuleAvatar, EMOTE_ORDER } from './lib/avatar.js';
 import { updateSky, updateAutoSystems, skyArgs, setCloudQuality } from './lib/sky.js';
 import { setSkyArgsSource, entities, buildsPending, avatarMounts, roleOf, worldHasOwner } from './lib/world.js';
@@ -52,7 +53,7 @@ import { updateBuild, toggleEditMode, isEditing } from './lib/build.js';
 import { initPalette } from './lib/palette.js';
 import { setRightsSink } from './lib/state.js';
 import { initConjure } from './lib/conjure.js';
-import './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
+import { micLive, earOn } from './lib/mictoggle.js'; // mic + headphone toggles beside the HUD, both off by default
 import { initAudioPanel } from './lib/audiopanel.js';
 import { initSceneGraph, sceneSelect } from './lib/scenegraph.js';
 import { initXR, updateXR, bindXRSelf, isPresenting } from './lib/xr.js';
@@ -62,8 +63,8 @@ import { tickXRVignette } from './lib/xrvignette.js';
 import { initVRPanel } from './lib/vrpanel.js';
 import { trySitOn as xrTrySitOn, dismountMe as xrDismountMe } from './lib/localbody.js';
 import {
-  toast, setHint, flashHint, buildHelp, toggleHelp,
-  openDoor, togglePeopleHere, initDock, paintPresence, panelFrame, settingsFrame, setLoadingItems,
+  toast, flashHint, buildHelp, toggleHelp,
+  openDoor, togglePeopleHere, initDock, paintPresence, panelFrame, settingsFrame, setLoadingItems, setMenuSources,
 } from './lib/ui.js';
 import { registerXRPanel } from './lib/xrpanels.js';
 import { initDebug, updateDebug, toggleDebug } from './lib/debug.js';
@@ -76,7 +77,8 @@ fetch('/version').then((r) => r.json())
   .then(({ sha, commitTime, dirty, startedAt }) => console.log(`[eidoverse] server build ${sha}${dirty === true ? ' (DIRTY TREE)' : dirty === false ? '' : ' (dirty: unknown)'} (code from ${commitTime}), up since ${startedAt}`))
   .catch(() => console.log('[eidoverse] server build unknown (/version unavailable)'));
 import { dragSim, updateBodyDrag, dragState } from './lib/bodydrag.js';
-import { initChat, logChat, chatXRPanel } from './lib/chat.js';
+import { initChat, logChat, chatXRPanel, openConvo } from './lib/chat.js';
+import { initPlates, updatePlates } from './lib/platecard.js';
 import { bodyEngine, setBodyEngine, listBodyEngines } from './lib/bodysim.js';
 import { initPhysObj, tickPhysObj, leaseApi } from './lib/physobj.js';
 import { initMods, tickMods, modsApi } from './lib/mods.js';
@@ -85,10 +87,12 @@ import { protoStats, forgetBytes, loadingItems, bootBytes } from './lib/assets.j
 import { grassTiles } from './lib/terrain.js';
 import { grassDiag } from './lib/grassdiag.js';
 import { warmStats } from './lib/warmqueue.js';
+import { budgetStats } from './lib/framebudget.js';
 import { pending, P, onIdle, laneStats as schedLaneStats } from './lib/scheduler.js';
 import { laneStats as loadLaneStats } from './lib/loadwork.js';
 import { colliderCacheStats } from './lib/colliders.js';
-import { governPerformance, governorDebug, whenCalm } from './lib/governor.js';
+import { statusChip } from './lib/statuschips.js';
+import { governPerformance, governorDebug, whenCalm, applyPendingPixelRatio } from './lib/governor.js';
 import { registerSystem, startFrame, frameDebug } from './lib/frame.js';
 import { perf } from './lib/perf.js';
 import { renderWorld, drawStats, setDrawBatching } from './lib/render.js';
@@ -108,6 +112,8 @@ import { updateVoiceMouths } from './lib/voicemouths.js';
 import { initEmoteBar } from './lib/emotebar.js';
 import { initXRKeyboard } from './lib/xrkeyboard.js';
 import { initCommands, saveScreenshot } from './lib/commands/handlers.js';
+import { register as registerAction } from './lib/actions.js';
+import { initLantern } from './lib/lantern.js';
 import { deriveLandmarks, debugMarkers, landmarkWorld } from './lib/landmarks.js';
 import { measureChain, solveChain } from './lib/reachbone.js';
 import { canonicalPoint } from '../shared/contact.js';
@@ -151,12 +157,14 @@ initSimWorld();
 
 initBoot({ world: CONFIG.world, name: CONFIG.name });
 buildHelp();
-initChat({
+const chatApi = initChat({
   send: (text) => sendVerb('say', { text }),
   whisper: sendWhisper,
   typing: (to) => { sendTyping(to); getMe()?.setTyping(); },
   people,
 });
+// the lantern prompt (Ctrl/Cmd+K): actions from lib/actions.js, speech and /commands through chat's own submit
+initLantern({ submit: chatApi.submit, whisperTarget: chatApi.whisperTarget });
 initEmoteBar();
 initXRKeyboard();   // C16: types into the last-focused text input; a quad in VR
 initWorldQuad();
@@ -191,6 +199,8 @@ initDock([
     gate: () => ['builder', 'owner'].includes(net.myRights?.role),
   },
 ]);
+// the ∃ menu's Save/Load are offered to builders (the wrench's own gate), and its Log in follows the deployment's login
+setMenuSources({ buildRights: () => ['builder', 'owner'].includes(net.myRights?.role), loginUrl: () => loginUrl() });
 paintPresence(presence());            // the dot needs the button: after initDock
 bus.on('presence:me', paintPresence);
 initDebug({
@@ -256,6 +266,16 @@ if (CONFIG.params.has('sendlayout')) {
   }, 1500));
 }
 
+// A desktop whose last full boot never came back is NOT demoted to lite (index.html
+// decideLite, 'retry'): it boots full again and says so, as a pill on the status strip
+// with the light version one press away. Never "type ?lite=1" (owner, 10-01).
+if (globalThis.__ewLiteWhy === 'retry') statusChip({
+  id: 'lite-retry', level: 'attn', label: 'last load stalled',
+  title: "This world didn't finish loading last time",
+  body: "We're trying the full 3D world again. If it keeps stalling or crashing here, the lite client has chat, emotes and who's here, with no 3D.",
+  actions: [{ label: 'switch to the lite client', run: () => chooseClient(true) }, { label: 'stay in 3D', clear: true }],
+});
+
 // A rejected door key re-opens the door with a key field instead of retrying
 // into a wall forever.
 bus.on('bad-key', () => {
@@ -311,7 +331,8 @@ function start() {
     .then((vs) => vs.speakOwnSays(bus, () => net.myId || CONFIG.name))
     .catch((e) => console.warn('[voice] own-say hook not installed:', e));
   initSceneGraph();   // 🌳 the world as a tree + 📜 the scripts that animate it
-  setHint('<kbd>WASD</kbd> move · <kbd>Enter</kbd> chat · <kbd>B</kbd> build · <kbd>?</kbd> help');
+  // the boot hint ('WASD move · Enter chat · B build · ? help') merged into the lantern's resting line
+  // (lib/lantern.js), which owns bottom-centre; the hint bar now only borrows that spot for offers and flashes
 
   if (!isViewer) {
     // A body is never optional (owner, in-headset 09-04: no avatar at all, on
@@ -343,7 +364,7 @@ function start() {
         // signal — it costs an offscreen render-target compile burst, and the
         // old t+4s wall clock dropped that into the middle of the boot storm
         // (§16.1g). Calm = 5 smooth seconds with no load work in flight.
-        if (!av.isCapsule) whenCalm().then(() => contributeThumbnail(getMyAvatarName(), av.vrm, CONFIG.token));
+        if (!av.isCapsule) whenCalm().then(() => contributeThumbnail(getMyAvatarName(), av.vrm, CONFIG.token, { path: getMyAvatarPath() }));
       })
       .catch((e) => { bodySettled = true; markPhase('body', 1); report('avatar', e); releaseBodyGate('body failed — the world must not wait'); checkReady(); });
   }
@@ -365,6 +386,7 @@ wireNet({
   myAvatarPath: () => getMyAvatarPath(),   // a bare name: the server resolves
   myState,
   me: () => getMe(),
+  myVoice: () => ({ mic: micLive(), hear: earOn() }),   // rides presence: others' hover card + agents' look
   onRestore: (r) => {
     // a remembered pose can carry null (JSON has no NaN — tonight's NaN body
     // was stored as [null,0,null] and every rejoin put the owner back on it): only
@@ -423,16 +445,33 @@ initCommands();   // the /command surface (lib/commands/) + its bus subscription
 
 // ---------------------------------------------------------------- keys
 
+// The main keys, as data: the handler below dispatches from this table and the
+// lantern prompt lists it (lib/actions.js), so a key and its row cannot drift.
+// `id` names an existing action to merge into (the dock's debug/edit/chat rows
+// gain their key) or a new one; `guard` gates the KEY only (edit mode rebinds H
+// and R) — from the prompt the act is always the act.
+const MAIN_KEYS = [
+  { code: 'KeyH', key: 'H', id: 'key:help', title: 'help — keys and controls', keywords: ['?', 'keys', 'controls', 'how'], group: 'view',
+    guard: () => !isEditing(), run: () => toggleHelp() },
+  { code: 'Tab', key: 'Tab', id: 'key:people', title: 'people here', keywords: ['who', 'present', 'roster'], group: 'panels', icon: 'users',
+    prevent: true, run: () => togglePeopleHere() },
+  { code: 'KeyB', key: 'B', id: 'panel:edit', run: () => toggleEditMode() },
+  { code: 'KeyP', key: 'P', id: 'key:photo', title: 'photo mode (free camera)', keywords: ['camera', 'picture'], group: 'view', run: () => togglePhotoMode() },
+  { code: 'F1', key: 'F1', id: 'key:hidehud', title: 'hide the HUD', keywords: ['interface', 'clean', 'photo'], group: 'view', icon: 'eye-slash',
+    prevent: true, run: () => document.body.classList.toggle('photo') },
+  { code: 'F2', key: 'F2', id: 'key:screenshot', title: 'save a screenshot', keywords: ['picture', 'capture'], group: 'view', prevent: true, run: () => saveScreenshot() },
+  { code: 'F3', key: 'F3', id: 'panel:debug', prevent: true, run: () => toggleDebug() },
+  { code: 'KeyR', key: 'R', id: 'body:limp', title: 'go limp / get up', keywords: ['ragdoll', 'fall', 'flop'], group: 'body',
+    guard: () => !isEditing(), run: () => (isDowned() ? getUp() : goLimp()) },
+];
+// merge-into rows keep the dock's title/run (the same act) and only add the key; new rows register whole
+for (const { code, guard, prevent, ...a } of MAIN_KEYS) registerAction(a.title ? a : { id: a.id, key: a.key });
+registerAction({ id: 'panel:chat', key: 'Enter' });
+
 bus.on('key', (e) => {
   if (e.code === 'Slash' && e.shiftKey) { toggleHelp(); return; }
-  if (e.code === 'KeyH' && !isEditing()) { toggleHelp(); return; }
-  if (e.code === 'Tab') { e.preventDefault(); togglePeopleHere(); return; }
-  if (e.code === 'KeyB') { toggleEditMode(); return; }
-  if (e.code === 'KeyP') { togglePhotoMode(); return; }
-  if (e.code === 'F1') { e.preventDefault(); document.body.classList.toggle('photo'); return; }
-  if (e.code === 'F2') { e.preventDefault(); saveScreenshot(); return; }
-  if (e.code === 'F3') { e.preventDefault(); toggleDebug(); return; }
-  if (e.code === 'KeyR' && !isEditing()) { isDowned() ? getUp() : goLimp(); return; }
+  const k = MAIN_KEYS.find((m) => m.code === e.code && (!m.guard || m.guard()));
+  if (k) { if (k.prevent) e.preventDefault(); k.run(); return; }
   // any movement stands you back up
   if (isDowned() && ['KeyW','KeyA','KeyS','KeyD','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) getUp();
   // emotes on the number row — the world is a performance space and there was
@@ -561,6 +600,10 @@ registerSystem('physobj', (dt, t, now) => tickPhysObj(dt, now)); // entity lease
 registerSystem('mods', (dt, t, now) => tickMods(dt, now));       // 🧩 runtime scripts
 registerSystem('remotes', (dt, t, now) => updateRemotes(dt, now));
 registerSystem('gaze', (dt, t, now) => updateGaze(myState.pos, getMe(), CONFIG.name, now));
+// the hover card beside a nameplate (desktop pointer, touch tap, VR laser) — after gaze, before render
+initPlates({ camera, canvas, scene, remotes, myPos: () => (getMe() ? myState.pos : null), presenting: () => isPresenting(),
+  openConvo, colorFor });
+registerSystem('plates', (dt, t, now) => updatePlates(now));
 registerSystem('build', () => updateBuild());
 registerSystem('promote-tail', () => drainPromoteTail());        // §16.2.C: promote
                                  // boulders (colliders/lamps/casters/mount
@@ -571,12 +614,13 @@ registerSystem('send-pose', (dt, t, now) => sendPose(now));
 // XR: read hands → fill intent (updateMe already moved the body) → rig follows
 registerSystem('xr', (dt) => updateXR(dt));
 registerSystem('xrvignette', (dt) => tickXRVignette(dt));   // comfort tunnel, on the XR camera (Settings › VR)
+registerSystem('pixel-ratio', () => applyPendingPixelRatio());   // a resize clears the canvas: before the draw, never after
 registerSystem('render', renderWorld);
 registerSystem('xrmirror', () => tickXRMirror());           // desktop view while presenting (Settings › VR)
 // radial-menu actions: the ring speaks through the same flows the keyboard does
 bus.on('xr:sit', () => { if (!xrTrySitOn(null)) setPosture('sit'); });
 bus.on('xr:stand', () => xrDismountMe());
-bus.on('xr:mic', async () => { const { toggleMic } = await import('./lib/micstate.js'); await toggleMic(CONFIG.name); });
+bus.on('xr:mic', async () => { const { xrMicPress } = await import('./lib/vrmic.js'); await xrMicPress(); });   // in VR an open mic permission gets one bounded try, never a hang (vrmic.js); otherwise exactly toggleMic
 bus.on('xr:select', (id) => sceneSelect(id));
 globalThis.__waterDebug = waterDebug;
 let _pulseAt = 0;
@@ -983,6 +1027,8 @@ const EW = globalThis.EW = {
   residency: residencyDebug,   // real/stand-in/loading counts + sweep stats (§13.3)
   gpu: () => ({ ...renderer.info.memory, ...protoStats() }),   // bytes + proto/byte tiers
   draws: drawStats,
+  foliage: () => import('./lib/foliage.js').then((m) => m.foliageDebug()),
+  overdraw: (opts) => import('./lib/overdraw.js').then((m) => m.overdrawCapture(opts)),   // fragments shaded per pixel, by category
   setDrawBatching,
   frame: frameDebug,           // per-system rolling ms + strides (§14.2 6b)
   grass: grassTiles,           // tile-level draw truth (§13.2, landed 8e)
@@ -991,6 +1037,7 @@ const EW = globalThis.EW = {
   setCloudQuality,             // §22b: the sky pane's tier knob, console-reachable for diagnosis
   water: waterDebug,
   warm: warmStats,             // the conductor's queue (§16.2.A)
+  budget: budgetStats,         // the shared per-frame background budget: share, debt, per-lane spend/grants/denials
   lanes: () => ({ sched: schedLaneStats(), load: loadLaneStats() }),  // queue depths vs caps
   colliderCache: colliderCacheStats,   // per-lib shared BVH/lie bytes (§16.2.C)
 };

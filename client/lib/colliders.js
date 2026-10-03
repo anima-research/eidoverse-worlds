@@ -673,7 +673,10 @@ const _ray = new THREE.Ray();
 const _hip = new THREE.Vector3();
 const _cp = {};
 
-export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL) {
+// `climbs`: may this body mantle what blocks it (sets lastBlockedTop)? Defaults to "a full-height body", which is what
+// the old `tall >= TALL` test meant; the walking avatar passes true explicitly, so a SMALLER chosen size (bodyscale.js
+// colliderFor: tall = 1.9 × size) keeps its mantle while a ragdoll joint still never climbs.
+export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL, climbs = tall >= TALL) {
   blockedTop = null;
   let ground = terrainAt(pos.x, pos.z);
   // Everything below is written for a body of SOME height standing at `pos`.
@@ -816,7 +819,7 @@ export function resolveColliders(pos, terrainAt, r = 0.32, tall = TALL) {
     // holding whichever wrist last brushed a crate. That is harmless only
     // because updateMe does not run while you are down, which is not a
     // guarantee worth resting on.
-    if (!pillar && tall >= TALL) blockedTop = topY;
+    if (!pillar && climbs) blockedTop = topY;
   }
   return ground;
 }

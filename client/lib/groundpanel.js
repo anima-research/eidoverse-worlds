@@ -18,10 +18,14 @@ import { defsRegistry } from './defs.js';
 import { sendVerb } from './net.js';
 import { flashHint } from './ui.js';
 import { selectRow, btn, btnRow } from './rows.js';
+import { state, onWorldChange } from './state.js';
+import { stateLines } from './statelines.js';
+import { getGrassQuality, getGrassShed, getGrassDensity } from './terrain.js';
 
 // panel state, OUTSIDE the paint: a defs push repaints the rows and must not
 // forget what the author had dialed in
 const st = { tint: null, shape: null, seed: 7, density: null, grass: false, plant: null, height: null };
+let offNow = null, offBudget = null;   // the readout's subscriptions — one per paint
 
 export function paintGround(body) {
   if (body.dataset.init) return;
@@ -66,6 +70,37 @@ export function paintGround(body) {
     body.appendChild(btnRow(...Object.keys(pal.shapes).map((k) =>
       btn(k, () => { st.shape = k; growTerrain(); flashHint(`terrain: ${k}`); }))));
     body.appendChild(btnRow(btn('↻ reshuffle', () => { st.seed = Math.floor(Math.random() * 9999); growTerrain(); })));
+
+    // WHAT THE WORLD HAS NOW, and what you're seeing instead (only while those differ). The dials below are a
+    // COMPOSER (what 🌱 grow will plant) and they default to meadow, so on their own they read like a report of the
+    // field (the owner and I both took galleta_dry for meadow, 09-24).
+    const lines = stateLines();
+    lines.el.classList.add('ground-now');
+    const readNow = () => {
+      const g = state.st?.grass;
+      let world;
+      if (!g || g.clear) world = 'no grass';
+      else {
+        const named = Object.entries(pal.plantings).find(([, v]) => v?.args?.species && v.args.species === g.species)?.[0];
+        world = `${named ?? g.species ?? 'grass'}${named && named !== g.species ? ` (${g.species})` : ''}`
+          + `${g.density != null ? ` · density ${g.density}` : ''}${g.height != null ? ` · height ${g.height}` : ''}`;
+      }
+      let you = null;
+      if (g && !g.clear) {
+        const cap = getGrassQuality(), shed = getGrassShed(), eff = getGrassDensity();
+        if (cap === 'off') you = 'no grass drawn (your grass⚙ is off)';
+        else if (eff < 1) you = `drawing ×${+eff.toFixed(2)} of it (${shed < 1 ? `auto governor ×${+shed.toFixed(2)}` : ''}${shed < 1 && cap !== 'full' ? ', ' : ''}${cap !== 'full' ? `your grass⚙ ${cap}` : ''})`;
+      }
+      lines.set(world, you);
+    };
+    readNow();
+    offNow?.(); offNow = onWorldChange(readNow);
+    offBudget?.(); offBudget = bus.on('grass-budget', readNow) ?? null;
+    body.appendChild(lines.el);
+    const cap = document.createElement('div');
+    cap.style.cssText = 'font-size:10px;color:var(--dim);padding:0 2px 2px';
+    cap.textContent = 'below: what 🌱 grow plants';
+    body.appendChild(cap);
 
     // what to plant
     const plant = selectRow('plant', Object.keys(pal.plantings), st.plant, (v) => {

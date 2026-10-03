@@ -147,7 +147,9 @@ wireBehaviorGate((w, author, verb, args, authorSub) => {
  *  Held bones (pose.pose) survive both: an enacted pose is a place. */
 function settledPose(pose: unknown): Record<string, unknown> | null {
   if (!pose) return null;
-  const { emote: _emote, ...still } = pose as Record<string, unknown>;
+  // mic/hear are a live reading the sender re-sends every packet; remembered, they came back in `restore` and a
+  // client replayed a voice state its new session never had (review 09-30 S2)
+  const { emote: _emote, mic: _mic, hear: _hear, ...still } = pose as Record<string, unknown>;
   if (still.clip === "ragdoll") { still.clip = "idle"; delete still.pose; }
   return still;
 }

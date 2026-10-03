@@ -20,10 +20,10 @@ const { page, close } = await launchBrowser({ mic: true });
 const shut = async () => { await close(); await world.close(); };
 const pg = await page();
 await pg.goto(`${ORIGIN}/?world=staging&name=metercheck`, { waitUntil: 'domcontentloaded' });
-await pg.waitForSelector('#sec-audio .head', { timeout: 20000 }).catch(() => {});
+await pg.waitForSelector('#sec-audio-tab', { timeout: 20000 }).catch(() => {});
 await new Promise((r) => setTimeout(r, 2000));
 await pg.evaluate(() => {
-  [...document.querySelectorAll('.sec .head')].find((h) => /audio/i.test(h.textContent || ''))?.click();
+  [...document.querySelectorAll('.sec-tabs .pf-tab')].find((h) => /audio/i.test(h.textContent || ''))?.click();
 });
 await pg.waitForFunction(() => !!document.querySelector('#sec-audio [data-lvl]'), null, { timeout: 20000 })
   .catch(() => {});

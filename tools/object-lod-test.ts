@@ -41,8 +41,9 @@ import { join, dirname } from "node:path";
 import { Document, NodeIO } from "@gltf-transform/core";
 import { PNG } from "pngjs";
 import { isLodVariant, isServingArtifact, isStoreOriginal, lodVariantPath, ktx2VariantPath, storeShadowsMissing,
-  LOD_RECIPE, LOD_MIN_VERTS, recipeStamp, lodVerdictKind, lodVerdictFinal, lodRecipeFor } from "../server/store-variants.ts";
+  LOD_RECIPE, LOD_MIN_VERTS, recipeStamp, lodVerdictKind, lodVerdictFinal, lodRecipeFor, diskIdentity, freshOver, readVerdict } from "../server/store-variants.ts";
 import { lodExclusion, findKtx2Encoder, optimizeGlbLod, lodNodesSig, lodMatsSig } from "../server/optimize.ts";
+import { toolsStamp, toolsDigest, toolVersions } from "../server/tools-stamp.ts";
 import { lodFromVersion, withLod, keyFromVersion, negotiate } from "../shared/ktx2.js";
 
 let failures = 0;
@@ -135,6 +136,27 @@ async function gridGlb(tag: string, cells: number, textured: boolean, extras: ob
     .setAttribute("POSITION", doc.createAccessor().setType("VEC3").setBuffer(buf).setArray(pos))
     .setAttribute("TEXCOORD_0", doc.createAccessor().setType("VEC2").setBuffer(buf).setArray(uv));
   doc.createScene("s").addChild(doc.createNode(`hero-${tag}-${NONCE}`).setMesh(doc.createMesh("gridMesh").addPrimitive(prim)));
+  return new NodeIO().writeBinary(doc);
+}
+// Every cell its own UV island: shared positions, different UVs, so every interior edge is an attribute seam and the
+// proven simplify pass is locked solid (measured: 6400 -> 6400 verts). Only the Permissive retry can reduce it.
+async function seamedGridGlb(cells: number): Promise<Uint8Array> {
+  const doc = new Document(); const buf = doc.createBuffer();
+  const pos: number[] = [], uv: number[] = [], idx: number[] = [];
+  for (let y = 0; y < cells; y++) for (let x = 0; x < cells; x++) {
+    const base = pos.length / 3;
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+      const X = x + dx, Y = y + dy;
+      pos.push(X / cells, Math.sin(X * 0.37) * Math.cos(Y * 0.29) * 0.02, Y / cells);
+      uv.push((x % 7) / 7 + dx * 0.1, (y % 5) / 5 + dy * 0.1);
+    }
+    idx.push(base, base + 2, base + 1, base + 1, base + 2, base + 3);
+  }
+  const prim = doc.createPrimitive().setMaterial(doc.createMaterial("seamMat"))
+    .setIndices(doc.createAccessor().setType("SCALAR").setBuffer(buf).setArray(new Uint32Array(idx)))
+    .setAttribute("POSITION", doc.createAccessor().setType("VEC3").setBuffer(buf).setArray(new Float32Array(pos)))
+    .setAttribute("TEXCOORD_0", doc.createAccessor().setType("VEC2").setBuffer(buf).setArray(new Float32Array(uv)));
+  doc.createScene("s").addChild(doc.createNode(`seamed-${NONCE}`).setMesh(doc.createMesh("seamMesh").addPrimitive(prim)));
   return new NodeIO().writeBinary(doc);
 }
 async function skinnedGlb(tag: string): Promise<Uint8Array> {
@@ -268,7 +290,7 @@ console.log("\n  the CLI — bodies and animation refused, objects reduced, iden
     check(`an already-light object (< ${LOD_MIN_VERTS} verts) → typed verdict, nothing written`, r.code === 2 && !r.wrote && r.err.includes("already light"),
       `exit ${r.code}: ${r.err.split("\n").pop()}`);
     check("…a FLOOR verdict, stamped, final under this recipe — and NOT under a lower floor's",
-      lodVerdictKind(r.err) === "light" && lodVerdictFinal(r.err) && !lodVerdictFinal(r.err, "lod1-r25e01-texel1024-min6000"), r.err.split("\n").pop());
+      lodVerdictKind(r.err) === "light" && lodVerdictFinal(r.err) && !lodVerdictFinal(r.err, lodRecipeFor({ minVerts: LOD_MIN_VERTS / 2 })), r.err.split("\n").pop());
 
     const heroBytes = await gridGlb("hero", 160, true, { producer: "someone-else", note: "must survive" });
     const hero = place(heroBytes, "hero.glb");
@@ -363,6 +385,10 @@ const STORE = join(OPT, "store"), STORE_MIN = join(OPT, "store-min");
 const madeStore = !existsSync(STORE), madeMin = !existsSync(STORE_MIN);
 mkdirSync(STORE, { recursive: true }); mkdirSync(STORE_MIN, { recursive: true });
 const DOOR = "test-door";
+// routes.ts VARIANT_CC — the tier every BUILT variant answers at, and the tier a standing verdict's final answer shares
+// (it serves the plain ktx2 variant). Not #205's `immutable` / a day: variants rebuild IN PLACE (↻, the tf/cap purge, a
+// host gaining sharp), so the recipe in the URL does not pin the bytes; spelled out here so the wire is checked exactly.
+const VARIANT_CC = "public, max-age=60, stale-while-revalidate=300";
 const mine = new Set<string>();          // store hashes this run created
 const mineOpt: string[] = [];            // OPT_DIR-relative files the library sweep created for us
 let live: ChildProcess | null = null;
@@ -468,7 +494,8 @@ console.log("\n  the store door — the tier URL carries the generation:");
     check("the queue built the recipe-named LOD shadow", landed, lodVariantPath(join(STORE, `${hash}.glb`)));
     if (landed) {
       const res = await S.get(url);
-      check("?ktx2=<key>&lod=<recipe> → the stamped variant, immutable, named `variant`", isLodGlb(res.bytes) && res.cc.includes("immutable") && res.lod === "variant", `cc=${res.cc} lod=${res.lod}`);
+      check("?ktx2=<key>&lod=<recipe> → the stamped variant, named `variant`, short-lived + revalidating (↻ rebuilds it in place; never immutable)",
+        isLodGlb(res.bytes) && res.cc === VARIANT_CC && res.lod === "variant", `cc=${res.cc} lod=${res.lod}`);
       const other = await S.get(withLod(negotiate(`store/${hash}.glb`, S.key), "some-future-recipe"));
       check("an UNRECOGNIZED generation answers provisionally — the next process may negotiate it, nothing gets pinned",
         !isLodGlb(other.bytes) && other.cc === "no-cache" && other.lod === "provisional; generation=unrecognized", `cc=${other.cc} lod=${other.lod}`);
@@ -511,24 +538,37 @@ console.log("\n  the store door — the tier URL carries the generation:");
       const lUrl = withLod(negotiate(`store/${lh}.glb`, S.key), S.lod);
       const fin = await S.get(lUrl);
       const plain = await S.get(negotiate(`store/${lh}.glb`, S.key));
-      check("STANDING VERDICT: the lod URL answers the plain ktx2 variant as FINAL — immutable, like the unflagged tier — and names it",
-        !isLodGlb(fin.bytes) && fin.cc.includes("immutable") && fin.lod === "refused=light", `cc=${fin.cc} lod=${fin.lod}`);
+      check("STANDING VERDICT: the lod URL answers the plain ktx2 variant as FINAL — the variant tier, like the unflagged ktx2 answer — and names it",
+        !isLodGlb(fin.bytes) && fin.cc === VARIANT_CC && plain.cc === VARIANT_CC && fin.lod === "refused=light", `cc=${fin.cc} plain=${plain.cc} lod=${fin.lod}`);
       check("…byte-identical to the unflagged ktx2 answer: the original IS the tier", Buffer.from(fin.bytes).equals(Buffer.from(plain.bytes)) && plain.lod === "");
       check("…and the older generation's variant and marker were pruned on the refusal", !existsSync(oldGen) && !existsSync(`${oldGen}.failed`));
       // the marker's CONTENT is the gate — mutation controls on the real file, each restored
       const saved = readFileSync(lMarker, "utf8");
       const stamp = recipeStamp(LOD_RECIPE);
-      check("the real marker carries the stamp the gate reads", saved.includes(stamp) && lodVerdictKind(saved) === "light", saved.slice(0, 100));
+      // the real marker is a RECORD (store-variants.ts verdictMarker): the CLI named the kind where it minted the phrase
+      let savedRec: any = null; try { savedRec = JSON.parse(saved); } catch { /* not JSON */ }
+      const withRecipe = (r: string | null) => JSON.stringify({ ...savedRec, recipe: r });
+      check("the real marker is a JSON record carrying the kind, the recipe and the tools the gate reads",
+        savedRec?.v === 1 && savedRec.kind === "light" && savedRec.recipe === LOD_RECIPE && savedRec.toolsDigest === toolsDigest(toolVersions(FAKE_TOKTX))
+        && lodVerdictKind(saved) === "light" && lodVerdictFinal(saved), saved.slice(0, 160));
       writeFileSync(lMarker, `[optimize] lod: reduction ineffective (14000 -> 9000 verts) (80ms) ${stamp} — original stays the only representation`);
       const inef = await S.get(lUrl);
       check("a reducer-dependent verdict (ineffective) is NOT final: provisional, and named", inef.cc === "no-cache" && inef.lod === "provisional; verdict=ineffective", `cc=${inef.cc} lod=${inef.lod}`);
-      writeFileSync(lMarker, saved.replace(stamp, ""));
+      // the reducer's OTHER ineffective phrase (it tried the Permissive retry too) and the GPU gate's refusal, verbatim as
+      // optimize.ts writes them: both named, both provisional (the reducer / the encoder may answer differently tomorrow)
+      writeFileSync(lMarker, `[optimize] lod: reduction ineffective (20280 -> 13728 verts, permissive too) (287ms) ${stamp} — original stays the only representation`);
+      const inefP = await S.get(lUrl);
+      check("…and the permissive-too phrase is the same kind, not 'unknown'", inefP.cc === "no-cache" && inefP.lod === "provisional; verdict=ineffective", `cc=${inefP.cc} lod=${inefP.lod}`);
+      writeFileSync(lMarker, `[optimize] lod: not lighter on the GPU (textures 1.33 -> 5.33 MB, 912ms) ${stamp} — original stays the only representation`);
+      const gpu = await S.get(lUrl);
+      check("the GPU gate's refusal is named `gpu` and NOT final (it depends on the encoder and the host)", gpu.cc === "no-cache" && gpu.lod === "provisional; verdict=gpu", `cc=${gpu.cc} lod=${gpu.lod}`);
+      writeFileSync(lMarker, withRecipe(null));
       const unst = await S.get(lUrl);
       check("a floor verdict WITHOUT the running recipe's stamp is not final", unst.cc === "no-cache" && unst.lod === "provisional; verdict=light", `cc=${unst.cc} lod=${unst.lod}`);
-      writeFileSync(lMarker, saved.replace(stamp, recipeStamp("lod9-r25e01-texel1024-min12000")));
+      writeFileSync(lMarker, withRecipe("lod9-r25e01-texel1024-min12000"));
       const older = await S.get(lUrl);
       check("…nor one stamped with another generation", older.cc === "no-cache" && older.lod === "provisional; verdict=light", `cc=${older.cc} lod=${older.lod}`);
-      writeFileSync(lMarker, saved.replace(stamp, recipeStamp(`${LOD_RECIPE}0`)));
+      writeFileSync(lMarker, withRecipe(`${LOD_RECIPE}0`));
       const pref = await S.get(lUrl);
       check("…nor a stamp that merely EXTENDS this recipe's (min120000 is not min12000)", pref.cc === "no-cache" && pref.lod === "provisional; verdict=light", `cc=${pref.cc} lod=${pref.lod}`);
       writeFileSync(lMarker, "exit 1");
@@ -539,10 +579,10 @@ console.log("\n  the store door — the tier URL carries the generation:");
       check("a DEFERRED pass (no verdict yet) is provisional", def.cc === "no-cache" && def.lod === "provisional", `cc=${def.cc} lod=${def.lod}`);
       rmSync(`${lPath}.deferred`); writeFileSync(lMarker, saved);
       const back = await S.get(lUrl);
-      check("the standing verdict restored → final again", back.cc.includes("immutable") && back.lod === "refused=light", `cc=${back.cc} lod=${back.lod}`);
+      check("the standing verdict restored → final again", back.cc === VARIANT_CC && back.lod === "refused=light", `cc=${back.cc} lod=${back.lod}`);
       const c304 = await fetch(`${S.base}/library/${lUrl}`, { headers: { "if-none-match": (await fetch(`${S.base}/library/${lUrl}`)).headers.get("etag") ?? "" } });
       check("…and the 304 carries the same cache tier and the same name (a revalidation refreshes what it stored)",
-        c304.status === 304 && (c304.headers.get("cache-control") ?? "").includes("immutable") && c304.headers.get("x-eidoverse-lod") === "refused=light",
+        c304.status === 304 && c304.headers.get("cache-control") === VARIANT_CC && c304.headers.get("x-eidoverse-lod") === "refused=light",
         `${c304.status} cc=${c304.headers.get("cache-control")} lod=${c304.headers.get("x-eidoverse-lod")}`);
     }
   }
@@ -580,14 +620,31 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
       const lMarker2 = join(OPT, `${REL2}.lod.${LOD_RECIPE}.glb.failed`);
       const lightDone = await until(() => existsSync(lMarker2) && existsSync(join(OPT, `${REL2}.ktx2.glb`)), 60_000);
       check("the library sweep wrote the light prop's typed verdict beside its ktx2 variant", lightDone);
+      check("…stamped with the recipe AND the tools the CLI ran with (this box's encoder — tools-stamp.ts)", lightDone
+        && readFileSync(lMarker2, "utf8").includes(`${recipeStamp(LOD_RECIPE)} ${toolsStamp(toolsDigest(toolVersions(FAKE_TOKTX)))}`)
+        && readVerdict(readFileSync(lMarker2, "utf8")).toolsDigest === toolsDigest(toolVersions(FAKE_TOKTX)), lightDone && readFileSync(lMarker2, "utf8").slice(0, 200));
       if (lightDone) {
         const f1 = await S.get(withLod(negotiate(REL2, S.key), S.lod));
-        check("STANDING VERDICT (library): the lod URL answers the ktx2 variant at the library's own tier (max-age + ETag, never immutable), named",
-          f1.cc === "public, max-age=86400" && f1.lod === "refused=light", `cc=${f1.cc} lod=${f1.lod}`);
+        check("STANDING VERDICT (library): the lod URL answers the ktx2 variant at the variant tier (short max-age + ETag, never immutable), named",
+          f1.cc === VARIANT_CC && f1.lod === "refused=light", `cc=${f1.cc} lod=${f1.lod}`);
+        const cat1: { path: string; opt?: { lod?: { state: string } } }[] = await fetch(`${S.base}/library-models?q=lod_probe_light`).then((r) => r.json());
+        check("…and its catalog card reads the same verdict: LOD not needed (lodVerdictKind light)", cat1.find((h) => h.path === REL2)?.opt?.lod?.state === "not-needed",
+          cat1.find((h) => h.path === REL2)?.opt);
         await sleep(1100);
         const t2 = new Date(); utimesSync(join(LIB, REL2), t2, t2);   // the SOURCE mutates: the verdict is older than it now
         const f2 = await S.get(withLod(negotiate(REL2, S.key), S.lod));
         check("source newer than the verdict → a question again: provisional, unnamed verdict", f2.cc === "no-cache" && f2.lod === "provisional", `cc=${f2.cc} lod=${f2.lod}`);
+        // the CARD says the same as the wire (G1): /library-models reads the verdict through the same kind and the same
+        // freshness rule — before the mutation the fixture read not-needed (checked above via the wire's refused=light)
+        const cat2: { path: string; opt?: { lod?: { state: string; reason: string | null } } }[] = await fetch(`${S.base}/library-models?q=lod_probe_light`).then((r) => r.json());
+        const card = cat2.find((h) => h.path === REL2)?.opt?.lod;
+        check("…and the catalog card says `stale` for it too, never `not needed` over a provisional wire", card?.state === "stale", card);
+        // review 1 M1: a variant OLDER than the mutated source, whose re-measure will be refused (light). Planted with
+        // real LOD bytes (the heavy model's, built above) and an mtime before the mutation — the next boot must
+        // remove it, or it sits beside a fresh standing verdict forever (card `stale`, sweep skipping it for good)
+        const planted = join(OPT, `${REL2}.lod.${LOD_RECIPE}.glb`);
+        writeFileSync(planted, readFileSync(lodPath));
+        const tOld = new Date(t2.getTime() - 5000); utimesSync(planted, tOld, tOld);
       }
       // the catalog humans pick from must not show the variant as a model. The
       // store section asserts this for a store hash — where OPT_DIR is never
@@ -616,7 +673,8 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
       S = await startServer({ KTX2_TOKTX: FAKE_TOKTX }, LIB);
       check("child rebooted", S.up);
       if (S.up) {
-        const rebuilt = await until(() => existsSync(lodPath) && Bun.file(lodPath).lastModified > Bun.file(join(LIB, REL)).lastModified, 60_000);
+        // fresh by THE rule (freshOver: the variant records the new source's identity), not by mtime order
+        const rebuilt = await until(() => existsSync(lodPath) && freshOver(lodPath, join(LIB, REL)), 60_000);
         check("the next boot re-swept the mutated source into a FRESH variant", rebuilt);
         if (rebuilt) {
           const res2 = await S.get(withLod(negotiate(REL, S.key), S.lod));
@@ -627,16 +685,29 @@ console.log("\n  the library arm — the sweep queues LODs, and mutable sources 
           const remeasured = await until(() => existsSync(lMarker2) && Bun.file(lMarker2).lastModified > Bun.file(join(LIB, REL2)).lastModified, 60_000);
           const f3 = await S.get(withLod(negotiate(REL2, S.key), S.lod));
           check("…and the mutated light prop was re-measured: its verdict stands again, newer than the source — final",
-            remeasured && f3.cc === "public, max-age=86400" && f3.lod === "refused=light", `remeasured=${remeasured} cc=${f3.cc} lod=${f3.lod}`);
+            remeasured && f3.cc === VARIANT_CC && f3.lod === "refused=light", `remeasured=${remeasured} cc=${f3.cc} lod=${f3.lod}`);
+          // the refused re-measure removed the variant it outlived — so the card reads the verdict, not `stale`
+          const plantedGone = await until(() => !existsSync(join(OPT, `${REL2}.lod.${LOD_RECIPE}.glb`)), 10_000);
+          const cat3: { path: string; opt?: { lod?: { state: string } } }[] = await fetch(`${S.base}/library-models?q=lod_probe_light`).then((r) => r.json());
+          const card3 = cat3.find((h) => h.path === REL2)?.opt?.lod;
+          check("…and the refused re-measure REMOVED the stale variant it outlived (not left beside a fresh verdict)", plantedGone,
+            S.log().split("\n").filter((l) => l.includes("lod_probe_light")).slice(-3).join(" | "));
+          check("…so its card reads the standing verdict (not needed), never `stale` forever", card3?.state === "not-needed", card3);
           // a FRESH verdict over a STALE ktx2 variant (the source re-exported, the ktx2 rebuild not yet run — or refused):
           // the unflagged answer tolerates that window; a FINAL answer must not serve yesterday's bytes for a day
           if (remeasured) {
             await sleep(1100);
             const t3 = new Date(); utimesSync(join(LIB, REL2), t3, t3);                                   // source newer than the ktx2 variant…
-            const t4 = new Date(t3.getTime() + 2000); utimesSync(lMarker2, t4, t4);                       // …but the verdict newer still
+            // …but the verdict re-measured over THIS source (it records the identity it judged — freshOver; touching the
+            // marker's mtime no longer makes it fresh, only a recorded identity equal to the source's does)
+            writeFileSync(lMarker2, JSON.stringify({ ...JSON.parse(readFileSync(lMarker2, "utf8")), source: diskIdentity(join(LIB, REL2)) }));
             const f4 = await S.get(withLod(negotiate(REL2, S.key), S.lod));
             check("a fresh verdict over a STALE ktx2 variant is NOT final: provisional, and the header names the stale arm",
               f4.cc === "no-cache" && f4.lod === "provisional; verdict=light; ktx2=stale", `cc=${f4.cc} lod=${f4.lod}`);
+            // the card names the same arm the header does: the lod verdict stands (fresh), the ktx2 variant is stale
+            const cat4: { path: string; opt?: { lod?: { state: string }; ktx2?: { state: string } } }[] = await fetch(`${S.base}/library-models?q=lod_probe_light`).then((r) => r.json());
+            const o4 = cat4.find((h) => h.path === REL2)?.opt;
+            check("…and the catalog card agrees arm by arm: LOD not needed, ktx2 stale", o4?.lod?.state === "not-needed" && o4?.ktx2?.state === "stale", o4);
           }
         }
       }
@@ -689,8 +760,8 @@ console.log("\n  the canary — a pulled recipe lands under a running sequencer:
       check("its boot sweep built the current-generation variant", landed);
       // the recipe DERIVES from its parameters now, so a pull that changes one is what a real deploy looks like — and the
       // mutation must be PROVEN to have landed (the old literal-replace went silently inert when the literal left the file)
-      const NEXT = lodRecipeFor({ minVerts: 6000 });
-      const pulled = pristine.toString("utf8").replace(/export const LOD_MIN_VERTS = 12_000;/, "export const LOD_MIN_VERTS = 6_000;");
+      const NEXT = lodRecipeFor({ minVerts: LOD_MIN_VERTS / 2 });
+      const pulled = pristine.toString("utf8").replace(/^export const LOD_MIN_VERTS = [\d_]+;/m, `export const LOD_MIN_VERTS = ${LOD_MIN_VERTS / 2};`);
       check("the canary's pull changes the on-disk source (a no-op mutation proves nothing)", pulled !== pristine.toString("utf8") && NEXT !== LOD_RECIPE, NEXT);
       writeFileSync(SV, pulled);
       const fresh = spawn(process.execPath, ["-e", "import { LOD_RECIPE } from './server/store-variants.ts'; console.log(LOD_RECIPE)"], { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"] });
@@ -700,13 +771,27 @@ console.log("\n  the canary — a pulled recipe lands under a running sequencer:
       const version2 = await fetch(`${S.base}/version`).then((r) => r.json());
       check("the pull landed; /version still publishes the RUNNING recipe", lodFromVersion(version2) === LOD_RECIPE, JSON.stringify(version2.lodRecipe));
       const good = await S.get(withLod(negotiate(`store/${hash}.glb`, S.key), LOD_RECIPE));
-      check("a client keyed from /version gets the variant, immutable — correct", isLodGlb(good.bytes) && good.cc.includes("immutable"), good.cc);
+      check("a client keyed from /version gets the variant, short-lived + revalidating — correct", isLodGlb(good.bytes) && good.cc === VARIANT_CC, good.cc);
       const bad = await S.get(withLod(negotiate(`store/${hash}.glb`, S.key), NEXT));
       check("the NEXT generation's URL answers no-cache and NOT the old variant — nothing for the new recipe to inherit",
         !isLodGlb(bad.bytes) && bad.cc === "no-cache", `cc=${bad.cc} lod=${isLodGlb(bad.bytes)}`);
     }
   } finally { restore(); await S.stop(); }
   check("the on-disk recipe is restored byte-for-byte", readFileSync(SV).equals(pristine));
+}
+
+{ // the Permissive fallback: a UV-seam-locked mesh still gets its LOD, and the result says it was permissive
+  const r = await optimizeGlbLod(await seamedGridGlb(40), null, undefined, { minVerts: 1_000 });   // a 6,400-vertex fixture: the mechanics, at a 1k floor
+  check("a UV-seam-locked mesh reduces only via the Permissive retry (≤0.6×, flagged permissive)",
+    r.out !== null && r.permissive === true && r.after <= r.before * 0.6, JSON.stringify({ before: r.before, after: r.after, permissive: r.permissive, verdict: r.verdict }));
+  // the catalog reads the marker back from the file itself (store-variants.ts lodSimplifyOf: the GLB's JSON chunk only)
+  const { lodSimplifyOf } = await import("../server/store-variants.ts");
+  const dir = mkdtempSync(join(tmpdir(), "ew-lod-perm-")), pf = join(dir, "perm.glb"), plainF = join(dir, "plain.glb");
+  if (r.out) writeFileSync(pf, r.out);
+  writeFileSync(plainF, await gridGlb("plainread", 8, false));
+  check("lodSimplifyOf reads 'permissive' from the written variant, and null from an ordinary GLB",
+    lodSimplifyOf(pf) === "permissive" && lodSimplifyOf(plainF) === null, JSON.stringify([lodSimplifyOf(pf), lodSimplifyOf(plainF)]));
+  rmSync(dir, { recursive: true, force: true });
 }
 
 cleanup();

@@ -15,7 +15,7 @@ import { sfuConnect, sfuOnOffer, sfuOnIce, sfuMic, sfuPeerLevels, sfuMyLevel,
   sfuMicWanted, sfuDropSpeaker } from './voicesfu.js';
 import { remotes } from './remotes.js';
 import { myState } from './controller.js';
-import { isHushed, volumeFor, receivingVoice } from './voiceconsent.js';
+import { isHushed, volumeFor, receivingVoice, VOICE_FULL_M, VOICE_SILENT_M } from './voiceconsent.js';
 import { setGeneratorRebuildHook, synthProvider } from './voicesource.js';
 
 const send = (o) => { if (net.ws?.readyState === 1) net.ws.send(JSON.stringify(o)); };
@@ -180,7 +180,7 @@ export function initVoiceSfu(name) {
   // NOTE: this is the CLIENT half of the same rolloff the server's proximity
   // gate uses (FULL_M=3, SILENT_M=20). The server gate is an efficiency hint
   // that only ever subtracts; this is what actually makes distance audible.
-  const FULL_M = 3, SILENT_M = 20;
+  const FULL_M = VOICE_FULL_M, SILENT_M = VOICE_SILENT_M;   // one number (voiceconsent.js)
   setInterval(() => {
     for (const [id, s] of sfuSpeakers()) {
       const r = remotes.get(id);
