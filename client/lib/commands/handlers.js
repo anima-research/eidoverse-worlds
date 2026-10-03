@@ -42,7 +42,7 @@ register('flight', () => { for (const line of flightReport().split('\n')) logCha
 // this is our version of that lesson, one number, user-owned, persisted.
 register('panels', (arg) => {
   const v = parseFloat(arg);
-  if (!(v >= 0.3 && v <= 1)) return logChat('*', `usage: /panels <0.3–1> — panel opacity (current ${panelAlpha().toFixed(2)})`);
+  if (!(v >= 0.3 && v <= 1)) return logChat('*', `usage: /panels <0.3–1> — desktop panel opacity (current ${panelAlpha().toFixed(2)})`);
   setPanelAlpha(v);
   logChat('*', `panels at ${Math.round(v * 100)}% opacity`);
 });

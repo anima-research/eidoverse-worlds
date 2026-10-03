@@ -44,6 +44,15 @@ observed body's root frame: X lateral, Y up, Z forward. It is suitable for
 reading someone else. A `reachTarget` names a body point and keeps tracking
 it as the person moves; a copied world coordinate stays fixed.
 
+`scale` is the body's chosen size (a browser's Profile › Avatar "this body",
+0.5–2; absent on the wire means 1). It is composed exactly as browsers draw
+it: the root keeps its position and yaw, and every joint and contact sits u×
+as far from the root as at authored size, so a 2× body's shoulder is twice as
+high and its arm twice as long. The root frame itself never scales: a
+`selfPosition` or a `space` point is the same metres at any size, and a
+contact's `standoff` stays in metres. A seated body's profiled seat contact
+scales with it too.
+
 ## A hand on a named point
 
 Read your contact points, then pass a returned target to `reach`:

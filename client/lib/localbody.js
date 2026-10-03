@@ -11,6 +11,7 @@
 import { THREE } from './core.js';
 import { CONFIG, bus } from './base.js';
 import { radialForce, FORCE_MIN } from '../../shared/force.js';
+import { mergePose } from '../../shared/humanoid.js';
 import {
   myState, updateFollowCamera, setPosture, keys, setSeatHook, setMountedHook,
 } from './controller.js';
@@ -359,7 +360,7 @@ export function initLocalBody({ logChat: logChatFn }) {
     removePin,
   });
 
-  bus.on('puppet', ({ by, pose, anim, ragdoll: rag }) => {
+  bus.on('puppet', ({ by, pose, merge, anim, ragdoll: rag }) => {
     // A ragdoll request runs the sim on MY body — I own it, so I simulate and
     // stream. That is the sync guarantee: the requester never simulates me.
     if (rag) {
@@ -377,8 +378,19 @@ export function initLocalBody({ logChat: logChatFn }) {
       toast(`${by} tried to pose you — enable it in settings to allow`, 'warn', 6000);
       return;
     }
-    if (pose) { myState.pose = pose; flashHint(`${by} posed you`); }
-    if (anim) { getMe()?.playAnimation(anim); sendAnim(anim); }
+    // merge: only the bones they sent (null releases one); otherwise their
+    // pose replaces mine whole — and an EMPTY one is a release. It used to
+    // become an empty held pose, which setPose ignores: `clear_pose target`
+    // never let a human go.
+    if (pose) {
+      myState.pose = merge ? mergePose(myState.pose, pose) : (Object.keys(pose).length ? pose : null);
+      flashHint(myState.pose ? `${by} posed you` : `${by} released your pose`);
+    }
+    if (anim) {
+      const data = { ...anim, replace: anim.replace !== false }; // legacy puppets replace
+      if (data.replace) myState.pose = null;          // a replacing animation ends the held pose too
+      getMe()?.playAnimation(data); sendAnim(data);
+    }
   });
 
   // A force verb reaching us live: an instantaneous radial CAUSE (blast, gust).

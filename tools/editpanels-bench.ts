@@ -603,7 +603,8 @@ await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('benchlam
 await waitFor(`${insp}.querySelector('.sp-info')?.textContent.startsWith('benchlamp')`);
 
 console.log('\nthe legacy World›Scene section still gets the light editor (adapter):');
-await evalJson(`document.querySelector('#sec-scene .head')?.click(), true`);
+// main's World panel holds its sections as TABS (ui.js makeSection): the head is #sec-scene-tab, beside the pane, not in it
+await evalJson(`document.querySelector('#sec-scene-tab')?.click(), true`);
 check('scene section renders the light fields through editorsFor', await waitFor(`!!document.querySelector('#sec-scene [data-fe] .sp-num')`));
 
 console.log('\nref field: pick another entity as a value (look.target):');

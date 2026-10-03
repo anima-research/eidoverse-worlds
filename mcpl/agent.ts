@@ -6,6 +6,7 @@
 
 import { BodyStateReader, type BodyObservation, type PublicPose } from "./body-state.ts";
 import { mentionRegex } from "./mention.ts";
+import { mergePose } from "../shared/humanoid.js";
 import * as THREE_W from "three/webgpu";
 import * as TSL from "three/tsl";
 import { NoiseGate, SHORT_STINT_MS, APPROACH_REFRACT_MS, APPROACH_RADIUS, REARM_RADIUS,
@@ -23,6 +24,7 @@ import {
 import { resolveFlight, worldFlightProvider } from "../shared/flightcap.js";
 import { inspectBody } from "../shared/flightbody.js";
 import { wingFoldPresence } from "../shared/wingpresence.js";
+import { clampBodyScale } from "../shared/presencewire.js";
 import { DEFAULT_LEAF_FORCE as LEAF_FORCE } from "../shared/leafforce.js";
 
 /** integrator yaw (atan2(dz,dx), forward = (cos,sin)) -> world yaw
@@ -151,12 +153,30 @@ const fillOf = (t: { area: number; x: number[]; z: number[] }) => {
 const DECK_FILL = 0.45;
 
 // A canned "knocked over" pose for headless agents, which cannot simulate.
+/** One bone of a held pose: a rotation, or {q, t, s} (shared/humanoid.js poseChannels). */
+type PoseValue = number[] | { q?: number[]; t?: number[]; s?: number[] | number };
+
 const DOWNED_POSE: Record<string, number[]> = {
   spine: [0.6, 0, 0, 0.8], chest: [0.5, 0, 0, 0.87], neck: [0.3, 0, 0, 0.95],
   leftUpperArm: [0, 0, -0.9, 0.44], rightUpperArm: [0, 0, 0.9, 0.44],
   leftUpperLeg: [0.9, 0, 0, 0.44], rightUpperLeg: [0.9, 0, 0, 0.44],
   leftLowerLeg: [-0.7, 0, 0, 0.71], rightLowerLeg: [-0.7, 0, 0, 0.71],
 };
+
+/** What a person's voice state means for YOU, in words (owner, 10-02: "something more understandable — their headphones
+ *  are off, but they can still receive text"). Read from the live pose (shared/presencewire.js voiceWire, shared with
+ *  everyone in the world: docs/pose-wire.md). The headphones gate spoken voice only (people's mics and synthesized
+ *  speech, an agent's included); chat text always arrives. Absent = the client didn't say: no claim is made. */
+export function voiceNote(pose: unknown): string {
+  const v = (pose ?? {}) as { mic?: unknown; hear?: unknown; xr?: unknown };
+  const parts: string[] = [];
+  if (v.hear === false) parts.push("headphones off: they won't hear anything spoken aloud, yours included, but they still see chat text");
+  else if (v.hear === true) parts.push("headphones on: they hear spoken voices");
+  if (v.mic === true) parts.push("mic on: they may be talking aloud");
+  else if (v.mic === false) parts.push("mic off");
+  if (v.xr) parts.push("in VR");
+  return parts.length ? `; ${parts.join("; ")}` : "";
+}
 
 export class WorldAgent {
   url: string; name: string; world: string; avatar: string; agentToken = "";
@@ -171,7 +191,7 @@ export class WorldAgent {
   /** A held custom pose — sparse humanoid-bone quaternions. Presence only:
    *  it rides the pose packet and is never a log verb, because it is a moment,
    *  not a change to the world. `null` clears. */
-  heldPose: Record<string, number[]> | null = null;
+  heldPose: Record<string, PoseValue> | null = null;
   /** Where heldPose came from. An AUTHORED pose (set deliberately — the pose
    *  tool, a puppet, the server's settled memory) is a place: it survives
    *  walking, posture changes and sleep. A PHYSICS pose (ragdoll sim frame,
@@ -191,7 +211,7 @@ export class WorldAgent {
    *  sites, and the one that got missed would be a pose that outlived every
    *  walk forever. This cannot be missed: it is the same identity trick the
    *  renderer's `_composeBegin` and the interpolator's `lastPose` both use. */
-  private heldPoseSticky: Record<string, number[]> | null = null;
+  private heldPoseSticky: Record<string, PoseValue> | null = null;
   draggedBy: string | null = null;   // whose takeover sim drives this body (bodydrag)
   dragAt = 0;                        // last drag sample, for the silence timeout
   pins = new Map<string, number[]>(); // persistent bodydrag nails: joint -> [x,y,z]
@@ -722,8 +742,19 @@ export class WorldAgent {
                 (msg.ragdoll as { lean?: number[] })?.lean ?? null,
                 `(${msg.by} knocks you over)`);
             }
-            if (msg.pose) { this.heldPose = msg.pose; this.heldPoseAuthored = true; } // posed BY someone = authored
-            if (msg.anim) this.ws?.send(JSON.stringify({ type: "anim", ...msg.anim }));
+            // posed BY someone = authored. merge: only the bones sent, over an
+            // authored held pose (null releases one); otherwise the pose is
+            // theirs whole, and an empty one releases.
+            if (msg.pose) {
+              const next = msg.merge ? mergePose(this.heldPoseAuthored ? this.heldPose : null, msg.pose)
+                : (Object.keys(msg.pose).length ? msg.pose : null);
+              this.heldPose = next; this.heldPoseAuthored = next != null;
+            }
+            if (msg.anim) {
+              const anim = { ...msg.anim, replace: (msg.anim as { replace?: boolean }).replace !== false };
+              if (anim.replace) { this.heldPose = null; this.heldPoseAuthored = false; }
+              this.ws?.send(JSON.stringify({ type: "anim", ...anim }));
+            }
             this.onEvent?.({ ts: Date.now(), kind: "say", who: msg.by,
               text: `(posed you${msg.anim ? " with an animation" : ""})` } as any);
             break;
@@ -1902,7 +1933,7 @@ export class WorldAgent {
 
   /** Resume MY OWN sim from wherever a drag left this body — the same
    *  settle-under-owner-authority browsers do, pins enforced for real. */
-  private async settleFromDrag(pose: Record<string, number[]> | null, sim?: any) {
+  private async settleFromDrag(pose: Record<string, PoseValue> | null, sim?: any) {
     const epoch = ++this.bodyEpoch;
     const body = await this.ensureBody();
     if (this.bodyEpoch !== epoch) return;
@@ -2636,7 +2667,7 @@ export class WorldAgent {
   }
 
   /** Hold a custom pose (yourself). Sparse bone -> [x,y,z,w] quaternion. */
-  setPose(bones: Record<string, number[]> | null, sticky = false) {
+  setPose(bones: Record<string, PoseValue> | null, sticky = false) {
     this.heldPose = bones;
     this.heldPoseAuthored = bones != null;
     // Only a deliberate self-pose can ask to survive walking, and only THIS
@@ -2705,7 +2736,8 @@ export class WorldAgent {
       const pose = person!.pose;
       const pp = posePosition(pose);
       if (!pp) return { err: `${t.who} has no known position yet` };
-      body.poseAt(pp, pose?.yaw ?? 0, (pose as { pose?: Record<string, number[]> | null })?.pose ?? null);
+      // their chosen size (absent = 1): contacts scale about their root, as in every browser
+      body.poseAt(pp, pose?.yaw ?? 0, (pose as { pose?: Record<string, number[]> | null })?.pose ?? null, pose?.scale);
     }
     const c = body.contact(t.point!, t.standoff ?? 0.02);
     if (!c) return { err: `${t.who}'s rig has no ${t.point}` };
@@ -2897,20 +2929,23 @@ export class WorldAgent {
     }
   }
 
-  /** Play a one-off animation on yourself — relayed once, never logged. */
-  animate(data: { dur: number; loop?: boolean; tracks: Record<string, { t: number; q: number[] }[]> }) {
+  /** Play a one-off animation on yourself — relayed once, never logged.
+   *  Over your held pose and other animations; `replace` ends them first. */
+  animate(data: { dur: number; loop?: boolean; replace?: boolean; tracks: Record<string, { t: number; q: number[] }[]> }) {
+    if (data.replace) this.setPose(null);
     if (this.joined && this.ws?.readyState === 1) {
-      this.ws.send(JSON.stringify({ type: "anim", dur: data.dur, loop: !!data.loop, tracks: data.tracks }));
+      this.ws.send(JSON.stringify({ type: "anim", dur: data.dur, loop: !!data.loop, tracks: data.tracks,
+        replace: data.replace === true }));
     }
   }
 
   /** Ask another body to hold a pose or play an animation. It decides.
    *  `ragdoll: true` asks it to go limp; `{lean:[x,y,z]}` (m/s) says which
    *  way the shove sends it — the receiver simulates and caps for itself. */
-  puppet(target: string, spec: { pose?: Record<string, number[]>; anim?: unknown; ragdoll?: boolean | { lean: number[] } }) {
+  puppet(target: string, spec: { pose?: Record<string, PoseValue | null>; merge?: boolean; anim?: unknown; ragdoll?: boolean | { lean: number[] } }) {
     if (this.joined && this.ws?.readyState === 1) {
       this.ws.send(JSON.stringify({ type: "puppet", target,
-        pose: spec.pose ?? null, anim: spec.anim ?? null, ragdoll: spec.ragdoll ?? null }));
+        pose: spec.pose ?? null, ...(spec.merge ? { merge: true } : {}), anim: spec.anim ?? null, ragdoll: spec.ragdoll ?? null }));
     }
   }
 
@@ -3002,6 +3037,9 @@ export class WorldAgent {
       entity: (eid) => this.entities.get(eid),
       mount: (eid) => this.mounts.get(eid),
       seatVerdict: (eid) => this.seatVerdictFor(eid),
+      // a rider's chosen size, from its own presence (absent = 1). An agent's own
+      // body is its authored size: no agent sets `scale`, so its wire carries none.
+      riderScale: (eid) => eid === this.name ? 1 : clampBodyScale(this.people.get(eid)?.pose?.scale),
     }, nowMs);
   }
 
@@ -3098,7 +3136,7 @@ export class WorldAgent {
       const winged = p.pose.wingsFolded === true ? ", wings folded" : "";
       const ride = this.mounts.get(p.id);
       const riding = ride ? ` — on ${ride.to}${ride.slot ? ` (${ride.slot})` : ""}${this.seatSuffix(p.id, ride)}` : "";
-      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${winged}${riding}`);
+      L.push(`  - ${p.id}: ${meKnown ? `${Math.hypot(dx, dz).toFixed(1)}m ${this.bearing(dx, dz)} ` : ""}at (${x.toFixed(1)}, ${z.toFixed(1)}), ${doing}${posed}${winged}${riding}${voiceNote(p.pose)}`);
     }
 
     const ents = [...this.entities.values()];

@@ -14,7 +14,7 @@ plugin({ name: 'core-stub', setup(build) {
   build.onResolve({ filter: /^\.\/loadwork\.js$/ }, () => ({ path: here('./loadwork-stub.mjs') }));
 } });
 const { THREE, camera, sun } = await import('./core-stub.mjs');
-const { updateRig, registerCaster, setCasterBudget, rigDebug } = await import('../client/lib/lightrig.js');
+const { updateRig, registerCaster, setCasterBudget, rigDebug, requestLight, releaseLight, isCasting, setSlotCap } = await import('../client/lib/lightrig.js');
 
 let pass = 0, fail = 0;
 const check = (name, ok, note = '') => { if (ok) { pass++; console.log(`  ok    ${name}`); } else { fail++; console.log(`  FAIL  ${name}${note ? `  -- ${note}` : ''}`); } };
@@ -67,6 +67,24 @@ console.log('CASTER BUDGET — ranked by WORLD distance');
   updateRig(3400);
   const l2 = Object.fromEntries(rigDebug().casterList.map((c) => [c.id, c]));
   check('a caster under a moved parent ranks by its WORLD position', l2['parented-near-world']?.warm !== 'none' && l2['unparented-far']?.warm === 'none', JSON.stringify(l2)); }
+
+console.log('POINT-LIGHT SLOTS — ranked by WORLD distance (review 10a M4)');
+{ const wp = camera.getWorldPosition(new THREE.Vector3());
+  setSlotCap(1);
+  requestLight('lamp-near-local', { pos: [1, 1.6, 0] });                 // 1 m from camera.position, far from where you stand
+  requestLight('lamp-near-world', { pos: [wp.x + 2, 1, wp.z] });        // 2 m from where you stand
+  updateRig(5000);
+  check('the one free slot goes to the lamp nearest in WORLD space', isCasting('lamp-near-world') && !isCasting('lamp-near-local'),
+    JSON.stringify({ world: isCasting('lamp-near-world'), local: isCasting('lamp-near-local') }));
+  // walking re-ranks at once (the rig moves, camera.position doesn't): the > 1.5 m trigger, well inside the 600 ms cadence
+  requestLight('lamp-ahead', { pos: [wp.x + 40, 1, wp.z] });            // 40 m ahead: loses to near-world for now
+  updateRig(5100);
+  const before = isCasting('lamp-ahead');
+  rig.position.x += 39; rig.updateMatrixWorld(true);
+  updateRig(5200);                                                      // 100 ms later: only the movement trigger can fire
+  check('walking 39 m toward a lamp re-assigns within the 600 ms cadence (the move trigger reads the WORLD position)', !before && isCasting('lamp-ahead'),
+    JSON.stringify({ before, after: isCasting('lamp-ahead') }));
+  for (const k of ['lamp-near-local', 'lamp-near-world', 'lamp-ahead']) releaseLight(k); }
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

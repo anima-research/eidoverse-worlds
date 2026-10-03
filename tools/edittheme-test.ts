@@ -23,6 +23,11 @@ plugin({
     b.onResolve({ filter: /^\.\/core\.js$/ }, () => ({ path: here("./core-stub.mjs") }));
     b.onResolve({ filter: /^\.\/base\.js$/ }, () => ({ path: here("./core-stub.mjs") }));
     b.onResolve({ filter: /^\.\/domquad\.js$/ }, () => ({ path: here("./xrpanels-domquad-stub.mjs") }));
+    // main's makePanel swaps the quad's material through quadcolour.js (a MeshBasicNodeMaterial: three's WebGPU
+    // build only, absent from the headless three.module.js). D asks about the texture, which the swap keeps as
+    // its map — so the swap is an identity here; its own colour is tools/xr-quad-colour-probe.mjs's to measure.
+    b.onResolve({ filter: /^\.\/quadcolour\.js$/ }, () => ({ path: "quadcolour", namespace: "edittheme-stub" }));
+    b.onLoad({ filter: /.*/, namespace: "edittheme-stub" }, () => ({ contents: "export const quadMaterial = () => {};", loader: "js" }));
   },
 });
 GlobalRegistrator.register();
@@ -163,6 +168,9 @@ console.log("\nD. the quad's texture is sRGB (xrpanels.makePanel, the real modul
   const tex = got[0]?.material?.map;
   check("a CanvasTexture exists on the quad", !!tex?.isTexture, String(got.length));
   check("its colorSpace is SRGBColorSpace (unmarked, #1e1e21 rendered rgb(97,97,103))", tex?.colorSpace === THREE.SRGBColorSpace, String(tex?.colorSpace));
+  // main paints a canvas quad when it is first SHOWN (xrpanels.js showPanel; a hidden quad is only marked stale)
+  check("a hidden quad is not painted yet", xr.xrPanelsDebug().regions.find((r: any) => r.id === "insp-t")?.n === 0);
+  xr.showXRPanel("insp-t", true);
   const reg = xr.xrPanelsDebug().regions.find((r: any) => r.id === "insp-t");
   check("an edit-themed registration reaches the edit painter (the quad's canvas is the edit paint's)", reg && reg.h === E.c.height, JSON.stringify(reg) + " vs " + E.c.height);
 }

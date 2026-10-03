@@ -82,7 +82,7 @@ function makeCtx(name) {
     world: CONFIG.world,
     EW: globalThis.EW,
     ui: {
-      /** A collapsible section in the world panel — removed on disable. */
+      /** A tab in the world panel — removed on disable. */
       section: (title, onOpen) => { const s = makeSection(title, onOpen); inst.sections.push(s); return s; },
       /** A free-floating draggable frame — removed on disable. */
       frame: (id, opts) => { const f = makeFrame(`mod-${name}-${id}`, opts); inst.frames.push(f); return f; },
@@ -115,7 +115,7 @@ function stopMod(name) {
   if (!inst) return;
   running.delete(name);
   for (const fn of inst.disposers) { try { fn(); } catch (e) { report(`mod ${name} dispose`, e); } }
-  for (const s of inst.sections) s.box?.remove();
+  for (const s of inst.sections) s.remove?.();   // the tab, its pane and its lantern action
   for (const f of inst.frames) { try { f.hide?.(); f.el?.remove(); } catch { /* gone */ } }
 }
 
@@ -211,46 +211,52 @@ export function initMods() {
     const render = async () => {
       const mine = await listScripts();
       const g = grants();
+      // THE LAYOUT (owner, 09-29: "the mod area was a bit of a hot mess"): every entry is one .mod-row —
+      // its name, a quiet line saying what it is, and its controls on the right (or under it, when a
+      // row carries more than one) — grouped under the pane's captions. No inline button runs in prose,
+      // no rules, no nested scroller.
       const rows = mine.map((s) => {
         const on = running.has(s.name);
-        return `<div class="stack" style="gap:2px">
-          <div><b>${esc(s.name)}</b> ${on ? '· running' : ''}
+        return `<div class="mod-row stacked">
+          <div class="mod-txt"><span class="mod-nm">${esc(s.name)}</span><span class="mod-note">${on ? 'running' : 'stopped'}${s.auto ? ' · runs on arrival' : ''}</span></div>
+          <div class="mod-btns">
             <button data-run="${esc(s.name)}">${on ? 'stop' : 'run'}</button>
-            <button data-auto="${esc(s.name)}">${s.auto ? 'autorun ✓' : 'autorun'}</button>
+            <button data-auto="${esc(s.name)}" title="run it every time you arrive">${s.auto ? 'autorun ✓' : 'autorun'}</button>
             <button data-edit="${esc(s.name)}">edit</button>
             <button data-promote="${esc(s.name)}" title="upload + offer to everyone in this world (owner)">promote</button>
-            <button data-del="${esc(s.name)}">✕</button></div>
+            <button data-del="${esc(s.name)}" title="delete this mod" aria-label="delete">✕</button></div>
         </div>`;
       }).join('');
       const offerRows = offers().map(([id, b]) => {
         const on = running.has(`world:${id}`);
-        const granted = g[scriptKey(id, b.src)] || g[worldKey()];
-        return `<div><b>${esc(id)}</b> <span style="color:var(--dim)">by ${esc(b.author)}</span>
-          ${on ? '· running' : ''}
-          <button data-orun="${esc(id)}">${on ? 'stop' : 'run once'}</button>
-          <button data-oalways="${esc(id)}">${g[scriptKey(id, b.src)] ? 'trusted ✓' : 'always (this script)'}</button>
-          <button data-osrc="${esc(id)}" title="read the code before trusting it">view</button></div>`;
+        return `<div class="mod-row stacked">
+          <div class="mod-txt"><span class="mod-nm">${esc(id)}</span><span class="mod-note">by ${esc(b.author)}${on ? ' · running' : ''}</span></div>
+          <div class="mod-btns">
+            <button data-orun="${esc(id)}">${on ? 'stop' : 'run once'}</button>
+            <button data-oalways="${esc(id)}">${g[scriptKey(id, b.src)] ? 'trusted ✓' : 'always (this script)'}</button>
+            <button data-osrc="${esc(id)}" title="read the code before trusting it">view</button></div>
+        </div>`;
       }).join('');
-      body.innerHTML = `<div class="stack">
-        <div><b>built-in</b> — the house plugins, dogfooding the same tier</div>
-        <div>⚙ object physics <span style="color:var(--dim)">(balls, boxes, punts — the SIM half; you always SEE others' physics)</span>
+      body.innerHTML = `
+        <div class="sec-cap">built in</div>
+        <div class="mod-row">
+          <div class="mod-txt"><span class="mod-nm">object physics</span><span class="mod-note">balls, boxes, punts — the simulating half; you always see others' physics</span></div>
           <button data-corephys="1">${physicsEnabled() ? 'on ✓' : 'off'}</button></div>
-        <div>⚙ body engine <span style="color:var(--dim)">(how YOUR falls simulate — verlet: particles · ammo: Bullet, the janus rig — click to cycle)</span>
+        <div class="mod-row">
+          <div class="mod-txt"><span class="mod-nm">body engine</span><span class="mod-note">how your falls simulate — verlet: particles · ammo: Bullet, the janus rig. Click to cycle.</span></div>
           <button data-bodyeng="1">${bodyEngine()}</button></div>
-        <hr>
-        <div style="color:var(--dim)">local mods run with FULL access, as you — load only code you trust</div>
-        ${rows || '<div style="color:var(--dim)">no local mods yet</div>'}
-        <div><button data-new="1">+ new mod</button></div>
-        <hr>
-        <div><b>world offers</b> — scripts this world's owner promoted</div>
-        ${offerRows || '<div style="color:var(--dim)">none here</div>'}
-        <div><button data-wworld="1">${g[worldKey()] ? `trusting everything in "${esc(CONFIG.world)}" ✓ (click to revoke)` : `trust ALL scripts in "${esc(CONFIG.world)}", now and future`}</button></div>
-        ${editing != null ? `<hr><div class="stack">
+        <div class="sec-cap">your mods</div>
+        <div class="mod-note warn">local mods run with full access, as you — load only code you trust</div>
+        ${rows || '<div class="mod-note">no local mods yet</div>'}
+        <button data-new="1">+ new mod</button>
+        <div class="sec-cap">this world offers</div>
+        <div class="mod-note">scripts this world's owner promoted</div>
+        ${offerRows || '<div class="mod-note">none here</div>'}
+        <button data-wworld="1">${g[worldKey()] ? `trusting everything in "${esc(CONFIG.world)}" ✓ (click to revoke)` : `trust all scripts in "${esc(CONFIG.world)}", now and future`}</button>
+        ${editing != null ? `<div class="sec-cap">${editing ? `editing ${esc(editing)}` : 'new mod'}</div>
           <input id="mod-name" placeholder="mod name" value="${esc(editing)}" ${editing ? 'disabled' : ''}>
-          <textarea id="mod-src" rows="14" spellcheck="false" style="font-family:ui-monospace,monospace;font-size:11px;width:100%"></textarea>
-          <div><button data-save="1">save</button> <button data-cancel="1">cancel</button></div>
-        </div>` : ''}
-      </div>`;
+          <textarea id="mod-src" rows="14" spellcheck="false"></textarea>
+          <div class="btn-row"><button data-save="1">save</button><button data-cancel="1">cancel</button></div>` : ''}`;
       if (editing != null) {
         const rec = editing ? mine.find((s) => s.name === editing) : null;
         body.querySelector('#mod-src').value = rec?.source ?? TEMPLATE;
@@ -341,7 +347,7 @@ export function initMods() {
     };
     paint = render;
     await render();
-  });
+  }, { id: 'mods' });
 
   // autoruns: local mods marked auto, and consented world offers
   bus.on('hydrated', async () => {

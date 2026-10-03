@@ -122,7 +122,10 @@ const _seenParts = new Set();
  *  a motion component — the map is tiny compared to the scene.
  *  Epoch clock, NOT the rAF timestamp: t0s are sequencer Date.now() stamps,
  *  and agreeing with other clients matters more than agreeing with vsync. */
+// the camera's WORLD position: in XR camera.position is rig-local, so motion near you froze 90 m from spawn (11a M1)
+const _eye = new THREE.Vector3();
 export function tickMotion() {
+  camera.getWorldPosition(_eye);   // in XR camera.position is only the head's offset inside the rig
   // The SEQUENCER's clock, not the wall's: t0s are server stamps, and an
   // NTP-skewed client rendering motion at wrong phase disagrees with every
   // other window into the same world (Hesperus finding #4). serverNow() is
@@ -141,7 +144,7 @@ export function tickMotion() {
       // distance gate (§14.2 6a, offender #4): motion is CLOSED-FORM f(t),
       // so a far swing skipped this frame lands at exactly the right phase
       // the frame it re-enters range — nothing drifts, nothing catches up
-      if (obj.position.distanceToSquared(camera.position) > 8100) continue;   // 90m
+      if (obj.position.distanceToSquared(_eye) > 8100) continue;   // 90m, from the camera's WORLD position (review 11a M1)
       const t = since(m, nowMs);
       const partName = isWhole ? (typeof m.part === 'string' ? m.part : null) : key.slice(7);
 

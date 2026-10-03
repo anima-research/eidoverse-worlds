@@ -44,7 +44,7 @@ export function setTerrain(t) {
       // landing while an async sky build is in flight got CLAIMED (tel0s's
       // trace: "sky warm terrain") and the next sky rebuild would have
       // removed it (§17c)
-      if (t.mesh.userData) t.mesh.userData.skyExempt = true;
+      if (t.mesh.userData) { t.mesh.userData.skyExempt = true; t.mesh.userData.odTag = 'terrain'; }
       scene.add(t.mesh);
     }
     // terrain replaces the stage floor

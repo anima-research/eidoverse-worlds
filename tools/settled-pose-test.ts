@@ -23,7 +23,7 @@
 // silently testing a stale copy.
 function settledPose(pose: unknown): Record<string, unknown> | null {
   if (!pose) return null;
-  const { emote: _emote, ...still } = pose as Record<string, unknown>;
+  const { emote: _emote, mic: _mic, hear: _hear, ...still } = pose as Record<string, unknown>;
   if (still.clip === "ragdoll") { still.clip = "idle"; delete still.pose; }
   return still;
 }
@@ -68,6 +68,17 @@ const ck = (n: string, got: unknown, want: unknown) => {
   ck("  ...the underlying clip does", out.clip, "idle");
 }
 
+// ── voice state is a LIVE reading, not a place (review 09-30 S2) ──────────
+// Remembered, it came back in `restore`, a client replayed it, and the world heard a microphone state the new
+// session never had. A live sender re-sends it every packet; size and plate lift are the body, and stay.
+{
+  const talking = { clip: "idle", mic: true, hear: false, scale: 1.5, plateY: 0.3, p: [0, 0, 0] };
+  const out = settledPose(talking)!;
+  ck("mic does not persist", "mic" in out, false);
+  ck("  ...nor hear", "hear" in out, false);
+  ck("  ...the body's size and plate lift do", [out.scale, out.plateY], [1.5, 0.3]);
+}
+
 // ── a ragdoll mid-emote: both rules apply, neither leaks ───────────────────
 {
   const knockedMidWave = { clip: "ragdoll", emote: "wave", pose: { hips: [0, 0, 0, 1] }, p: [5, 1.2, 5] };
@@ -105,6 +116,8 @@ const ck = (n: string, got: unknown, want: unknown) => {
   ck("server still defines settledPose", /function settledPose\(/.test(src), true);
   ck("the ragdoll rule is still in the real function",
      /still\.clip === "ragdoll".*still\.clip = "idle".*delete still\.pose/s.test(src), true);
+  ck("the real function drops mic and hear",
+     /function settledPose\([^]*?const \{[^}]*\bmic: _\w+[^}]*\bhear: _\w+[^}]*\.\.\.still \}/.test(src), true);
   ck("the JOIN SNAPSHOT uses it (this is the fix; reverting it fails here)",
      /pose: settledPose\(o\.lastPose\)/.test(src), true);
   ck("no raw lastPose ships to other clients",

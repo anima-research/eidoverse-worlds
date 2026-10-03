@@ -67,6 +67,11 @@ try {
 
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* private mode */ } };
 
+// How far a voice carries: full within VOICE_FULL_M, silent past VOICE_SILENT_M (voicesfubridge.js's rolloff, the
+// client half of the server's proximity gate). "Near" for anything about being heard is inside
+// VOICE_SILENT_M — past it nobody hears you whatever their settings say.
+export const VOICE_FULL_M = 3, VOICE_SILENT_M = 20;
+
 export const audioPrefs = () => ({ ...prefs });
 export const receivingVoice = () => prefs.recvVoice;
 export const volumeFor = (cat) => (

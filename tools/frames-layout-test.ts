@@ -452,10 +452,15 @@ f.show(); mid.show();
 const esc = (target: EventTarget = document.body) => target.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 const open = () => allFrames().filter((x: any) => x.visible).map((x: any) => x.id);
 check("setup: two frames open", open().join() === "t,mid", open().join());
+const { bus: stubBus } = await import("./chat-core-stub.mjs");
+const quiet: string[] = [];
+stubBus.on("esc-quiet", (d: string) => quiet.push(d));
 esc();
 check("Esc closes every open frame", open().length === 0, open().join());
+check("…and says so on the bus (ui.js flashes 'panels hidden · Esc to bring back')", quiet.join() === "closed", quiet.join());
 esc();
 check("Esc again restores exactly that set", open().sort().join() === "mid,t", open().join());
+check("…and says that too (the hint stops)", quiet.join() === "closed,restored", quiet.join());
 {
   const input = document.createElement("input");
   document.body.appendChild(input);
@@ -463,6 +468,7 @@ check("Esc again restores exactly that set", open().sort().join() === "mid,t", o
   check("escapeIsClaimed() = 'field' while an input is focused", escapeIsClaimed() === "field", String(escapeIsClaimed()));
   esc(input);
   check("Esc with an input focused leaves the frames alone", open().length === 2, open().join());
+  check("…and announces nothing", quiet.join() === "closed,restored", quiet.join());
   input.blur(); input.remove();
   check("...and is unclaimed once it blurs", escapeIsClaimed() === null, String(escapeIsClaimed()));
 }
@@ -475,6 +481,17 @@ check("Esc again restores exactly that set", open().sort().join() === "mid,t", o
   pop.remove();
 }
 {
+  // a status chip's popover (statuschips.js #stpop) claims Esc while shown — its own handler folds it — and not while hidden
+  const sp = document.createElement("div"); sp.id = "stpop"; sp.hidden = true;
+  document.body.appendChild(sp);
+  check("a HIDDEN status-chip popover does not claim Esc", escapeIsClaimed() === null, String(escapeIsClaimed()));
+  sp.hidden = false;
+  check("a shown status-chip popover claims Esc (the panels stay)", escapeIsClaimed() === "pop", String(escapeIsClaimed()));
+  esc();
+  check("…Esc with it open leaves the frames alone", open().length === 2, open().join());
+  sp.remove();
+}
+{
   let claim: string | null = null;
   claimEscape(() => claim);
   claim = "edit";
@@ -485,6 +502,22 @@ check("Esc again restores exactly that set", open().sort().join() === "mid,t", o
   esc();
   check("releasing the claim hands Esc back to the frames", open().length === 0, open().join());
   check("escapeToggle() reports what it did", escapeToggle() === "restored" && escapeToggle() === "closed" && escapeToggle() === "restored");
+}
+{
+  // NO PANELS OPEN (owner, 10-01: "Basically only the dock should be visible"): Esc still goes quiet — the lantern's
+  // resting line goes away (ui.js relays 'closed') — and the next Esc brings it back, with nothing to reopen
+  for (const x of allFrames()) x.hide();
+  quiet.length = 0;
+  esc();
+  check("no panels open: Esc still goes quiet (says 'closed' on the bus, opens nothing)", quiet.join() === "closed" && open().length === 0, `${quiet.join()} | ${open().join()}`);
+  esc();
+  check("…and the next Esc says 'restored' (the pill comes back), still opening nothing", quiet.join() === "closed,restored" && open().length === 0, `${quiet.join()} | ${open().join()}`);
+  // quiet with nothing hidden, then a panel opened by hand: Esc hides it, and the next Esc brings back THAT
+  esc(); f.show(); esc();
+  check("quiet, then a panel opened by hand: Esc hides it (still quiet)", open().length === 0 && quiet.join() === "closed,restored,closed,closed", quiet.join());
+  esc();
+  check("…and the next Esc brings that panel back, and the pill", open().join() === "t" && quiet.at(-1) === "restored", `${open().join()} | ${quiet.join()}`);
+  f.hide();
 }
 
 console.log("CHROME COST — the declared anchor");
@@ -574,6 +607,200 @@ console.log("AUTO-HIDDEN — survives a reload");
   const g: any = makeFrame("autotest2", { title: "autotest2", x: 100, y: 100, w: 200, h: 150, hidden: true });
   check("a saved hide with no autoHidden flag stays user-hidden",
     g._state.autoHidden === false, JSON.stringify(g._state));
+}
+
+console.log("FRAMES — a shrink is not a decision: grow the window back and every panel is where it was");
+{
+  // Reported 2026-09-24: shrink the window until a bottom panel meets the top and
+  // the panels smoosh together, then STAY smooshed when the window grows back, sizes
+  // too. The clamp that keeps a frame inside a small viewport was writing the frame's
+  // own rect, so the small viewport's answer outlived it. Wanted: every panel returns
+  // to its layout position and size on any resize unless the person deliberately
+  // moved or resized it — and one they did move returns to where THEY put it.
+  (window as any).innerWidth = 1000; (window as any).innerHeight = 700;
+  window.dispatchEvent(new Event("resize"));
+  const bl = measurable(makeFrame("rt-bl", { title: "bl", x: 10, y: -10, w: 300, h: 200 })); bl.show();
+  const tr = measurable(makeFrame("rt-tr", { title: "tr", x: -8, y: 8, w: 250, h: 300 })); tr.show();
+  // a returning user's frame: saved by an ordinary show/hide, never dragged
+  localStorage.setItem("ew-frame-rt-saved", JSON.stringify({ x: 400, y: 250, w: 220, h: 180, hidden: false }));
+  const sv = measurable(makeFrame("rt-saved", { title: "saved", x: 40, y: 40, w: 220, h: 180 })); sv.show();
+  // a frame the owner dragged to a spot of their own
+  const pl: any = measurable(makeFrame("rt-placed", { title: "placed", x: 40, y: 40, w: 200, h: 160 })); pl.show();
+  Object.assign(pl._state, { x: 520, y: 330 }); pl._markMoved(); pl._save();
+  const rect = (f: any) => [f.state.x, f.state.y, f.state.w, f.state.h].join(",");
+  const cases: [string, any][] = [["bottom-left default", bl], ["top-right default", tr], ["saved, never placed", sv], ["placed by hand", pl]];
+  const before = cases.map(([, f]) => rect(f));
+
+  (window as any).innerHeight = 260;                      // the bottom panel's top meets the top edge
+  window.dispatchEvent(new Event("resize"));
+  check("the shrink really squeezes (else this binds nothing)",
+    cases.some(([, f], i) => rect(f) !== before[i]), cases.map(([, f]) => rect(f)).join(" | "));
+  sv.hide(); sv.show();                                   // an ordinary toggle while small
+  (window as any).innerHeight = 700;
+  window.dispatchEvent(new Event("resize"));
+  cases.forEach(([name, f], i) =>
+    check(`height shrink → grow: ${name} returns to its rect`, rect(f) === before[i], `${before[i]} -> ${rect(f)}`));
+
+  (window as any).innerWidth = 420;                       // and across: side-by-side panels collide
+  window.dispatchEvent(new Event("resize"));
+  (window as any).innerWidth = 1000;
+  window.dispatchEvent(new Event("resize"));
+  cases.forEach(([name, f], i) =>
+    check(`width shrink → grow: ${name} returns to its rect`, rect(f) === before[i], `${before[i]} -> ${rect(f)}`));
+
+  // The squeeze must not reach storage either: a toggle while small used to persist
+  // the squashed rect, so the NEXT load came up smooshed at full size.
+  (window as any).innerHeight = 260; window.dispatchEvent(new Event("resize"));
+  sv.hide(); sv.show();
+  const stored = JSON.parse(localStorage.getItem("ew-frame-rt-saved") || "{}");
+  check("a toggle while squeezed persists the layout rect, not the squeezed one",
+    [stored.x, stored.y, stored.w, stored.h].join(",") === before[2], JSON.stringify(stored));
+  (window as any).innerHeight = 700; window.dispatchEvent(new Event("resize"));
+
+  // A RIDER owns its frame's size (emotebar.js snapTo writes _state.w/h, then _fit).
+  // What it writes is the frame's size from then on, so a window resize must keep it
+  // rather than re-projecting the size the frame had before the rider spoke.
+  const rider: any = measurable(makeFrame("rt-rider", { title: "rider", x: 40, y: 400, w: 352, h: 32 })); rider.show();
+  rider._state.w = 124; rider._state.h = 108; rider._fit();
+  (window as any).innerWidth = 1001; window.dispatchEvent(new Event("resize"));
+  // Height is the binding axis: an UNPLACED frame's width is re-derived from its
+  // declared w by fit() on purpose (the width-ratchet fix), with or without a rider.
+  check("a rider's height survives the next window resize",
+    rider.state.h === 108, rect(rider));
+  (window as any).innerWidth = 1000; window.dispatchEvent(new Event("resize"));
+
+  // Reset is the deliberate act of un-placing: after it, a resize must not drag the
+  // frame back to where the owner HAD put it.
+  pl.resetLayout();
+  const resetAt = rect(pl);
+  (window as any).innerWidth = 1001; window.dispatchEvent(new Event("resize"));
+  (window as any).innerWidth = 1000; window.dispatchEvent(new Event("resize"));
+  check("after a reset, a window resize keeps the frame at its default, not its old drag spot",
+    rect(pl) === resetAt, `${resetAt} -> ${rect(pl)}`);
+
+  // HIDDEN THROUGH THE RESIZE (review C1): a display:none frame measures 0 tall in a
+  // browser, so edge-docking and fit() both went blind, and show() fitted only once.
+  // Esc (hide all) → resize → Esc is the everyday path. This fixture measures a hidden
+  // frame as 0, which the shared measurable() does not.
+  const hid: any = makeFrame("rt-hidden", { title: "hid", x: 40, y: 40, w: 200, h: 150 });
+  (hid.el as any).getBoundingClientRect = () => ({ left: hid.state.x, top: hid.state.y, width: hid.state.w,
+    height: hid.state.h + 30, right: hid.state.x + hid.state.w, bottom: hid.state.y + hid.state.h + 30 });
+  Object.defineProperty(hid.el, "offsetHeight", { get: () => hid.el.style.display === "none" ? 0 : hid.state.h + 30, configurable: true });
+  hid.show();
+  Object.assign(hid._state, { x: 1000 - 8 - 200, y: 700 - 8 - 180 }); hid._markMoved(); hid._save();   // docked bottom-right
+  hid.hide();
+  (window as any).innerHeight = 900; window.dispatchEvent(new Event("resize"));
+  hid.show();
+  check("a docked frame hidden through a grow rides its edge when shown", hid.state.y + 180 === 900 - 8, rect(hid));
+  hid.hide();
+  (window as any).innerHeight = 500; window.dispatchEvent(new Event("resize"));
+  hid.show();
+  check("...and one hidden through a shrink comes back inside the viewport", hid.state.y + 180 <= 500 - 8, rect(hid));
+  (window as any).innerHeight = 700; window.dispatchEvent(new Event("resize"));
+
+  // LOADED INTO A DIFFERENT WINDOW (review C2): the save now records its viewport, so a
+  // docked frame must come up docked at load — not mid-air, then jump on the first resize.
+  (window as any).innerWidth = 1400; window.dispatchEvent(new Event("resize"));
+  localStorage.setItem("ew-frame-rt-load", JSON.stringify({ x: 792, y: 100, w: 200, h: 150, hidden: false, placed: true, vw: 1000, vh: 700 }));
+  const ld: any = measurable(makeFrame("rt-load", { title: "ld", x: 40, y: 40, w: 200, h: 150 }));
+  check("a right-docked save loaded 400px wider comes up docked", ld.state.x === 1192, rect(ld));
+  window.dispatchEvent(new Event("resize"));
+  check("...and the first resize does not move it", ld.state.x === 1192, rect(ld));
+  (window as any).innerWidth = 1000; window.dispatchEvent(new Event("resize"));
+
+  // A NUDGE WHILE SQUEEZED IS A MOVE, NOT A RESIZE (review C4): the owner's rule exempts
+  // what the person deliberately moved or resized — a drag chose a position, not the
+  // height the small window imposed. Through the real title-bar drag.
+  const ng: any = measurable(makeFrame("rt-nudge", { title: "ng", x: 300, y: 100, w: 220, h: 500 })); ng.show();
+  (window as any).innerHeight = 300; window.dispatchEvent(new Event("resize"));
+  const gx = ng.state.x + 50, gy = ng.state.y + 10;
+  ng.head.dispatchEvent(pe("pointerdown", gx, gy));
+  ng.head.dispatchEvent(pe("pointermove", gx + 20, gy));
+  ng.head.dispatchEvent(pe("pointerup", gx + 20, gy));
+  (window as any).innerHeight = 700; window.dispatchEvent(new Event("resize"));
+  check("a drag while squeezed keeps its new x but not the squeezed height", ng.state.x === 320 && ng.state.h === 500, rect(ng));
+}
+
+console.log("FRAMES — an edge resize while squeezed, then grow");
+{
+  // A resize commits its size axis and stamps the CURRENT viewport into the rest rect, so a position
+  // left over from the old, bigger viewport was paired with the new small one: the frame read as
+  // docked against an edge it never touched, jumped on the next 1px resize and docked on the grow.
+  // Through the real edge hit-tester; every other frame closed so none can win the grab.
+  for (const x of allFrames()) x.hide();
+  const vp = (w: number, h: number) => { (window as any).innerWidth = w; (window as any).innerHeight = h; window.dispatchEvent(new Event("resize")); };
+  const rect = (f: any) => [f.state.x, f.state.y, f.state.w, f.state.h].join(",");
+  const drag = (x0: number, y0: number, x1: number, y1: number) => {
+    document.dispatchEvent(pe("pointerdown", x0, y0));
+    document.dispatchEvent(pe("pointermove", x1, y1));
+    document.dispatchEvent(pe("pointerup", x1, y1));
+  };
+
+  vp(1900, 1000);
+  const e: any = measurable(makeFrame("sq-e", { title: "e", x: 900, y: 100, w: 400, h: 200 })); e.show();
+  vp(600, 1000); e.show();   // shown in the small window (the viewport rule may have auto-hidden it)
+  check("setup: the shrink clamps it to x=192", e.state.x === 192, rect(e));
+  const right = e.state.x + e.state.w - 1, midY = e.state.y + 100;
+  drag(right, midY, right - 100, midY);
+  check("setup: the e-edge drag narrows it to 300 where it stands", rect(e) === "192,100,300,200", rect(e));
+  vp(601, 1000);
+  check("e-edge: a 1px window resize leaves it where the person resized it", rect(e) === "192,100,300,200", rect(e));
+  vp(1900, 1000);
+  check("e-edge: growing back does not dock it right", rect(e) === "192,100,300,200", rect(e));
+  e.hide();
+
+  vp(1900, 1000);
+  const s: any = measurable(makeFrame("sq-s", { title: "s", x: 100, y: 500, w: 300, h: 200 })); s.show();
+  vp(1900, 400); s.show();
+  check("setup: the shrink clamps it to y=162", s.state.y === 162, rect(s));
+  const bottom = s.state.y + outerH(s) - 1, midX = s.state.x + 150;
+  drag(midX, bottom, midX, bottom - 50);
+  check("setup: the s-edge drag shortens it to 150 where it stands", rect(s) === "100,162,300,150", rect(s));
+  vp(1900, 401);
+  check("s-edge: a 1px window resize leaves it where the person resized it", rect(s) === "100,162,300,150", rect(s));
+  vp(1900, 1000);
+  check("s-edge: growing back does not dock it to the bottom", rect(s) === "100,162,300,150", rect(s));
+  s.hide();
+
+  // The OTHER axis squeezed: a resize chooses only its own axis, so the axis it never touched
+  // must come back from the rest rect when the window grows, not from the clamp.
+  vp(1900, 1000);
+  const ey: any = measurable(makeFrame("sq-ey", { title: "ey", x: 100, y: 500, w: 400, h: 200 })); ey.show();
+  vp(1900, 400); ey.show();
+  check("setup: the height squeeze clamps it to y=162", ey.state.y === 162, rect(ey));
+  drag(ey.state.x + ey.state.w - 1, ey.state.y + 50, ey.state.x + ey.state.w - 101, ey.state.y + 50);
+  check("setup: the e-edge drag narrows it to 300", rect(ey) === "100,162,300,200", rect(ey));
+  vp(1900, 1000);
+  check("e-edge under a HEIGHT squeeze: growing back restores its y, not bottom-docked",
+    rect(ey) === "100,500,300,200", rect(ey));
+  ey.hide();
+
+  vp(1900, 1000);
+  const sx: any = measurable(makeFrame("sq-sx", { title: "sx", x: 900, y: 100, w: 400, h: 200 })); sx.show();
+  vp(600, 1000); sx.show();
+  check("setup: the width squeeze clamps it to x=192", sx.state.x === 192, rect(sx));
+  drag(sx.state.x + 200, sx.state.y + outerH(sx) - 1, sx.state.x + 200, sx.state.y + outerH(sx) - 51);
+  check("setup: the s-edge drag shortens it to 150", rect(sx) === "192,100,400,150", rect(sx));
+  vp(1900, 1000);
+  check("s-edge under a WIDTH squeeze: growing back restores its x, not right-docked",
+    rect(sx) === "900,100,400,150", rect(sx));
+  sx.hide();
+  vp(1000, 700);
+}
+
+console.log("FRAMES — a stored value that is not a usable number falls back, field by field");
+{
+  // vw:0 read as a zero-wide authoring viewport: every frame looked docked right and bottom.
+  localStorage.setItem("ew-frame-bad-vw", JSON.stringify({ x: 100, y: 100, w: 300, h: 200, hidden: false, placed: true, vw: 0, vh: 0 }));
+  const z: any = measurable(makeFrame("bad-vw", { title: "z", x: 40, y: 40, w: 220, h: 150 }));
+  check("a save with vw:0 / vh:0 comes up where it was saved", [z.state.x, z.state.y, z.state.w, z.state.h].join(",") === "100,100,300,200",
+    JSON.stringify(z.state));
+  z.hide();
+  localStorage.setItem("ew-frame-bad-xy", JSON.stringify({ x: "abc", y: null, w: -5, h: 120, hidden: false, placed: true, vw: "x", vh: 700 }));
+  const g: any = measurable(makeFrame("bad-xy", { title: "g", x: 40, y: 50, w: 220, h: 150 }));
+  check("garbage x/y/w fall back to the declared layout; a good h is kept",
+    [g.state.x, g.state.y, g.state.w, g.state.h].join(",") === "40,50,220,120", JSON.stringify(g.state));
+  g.hide();
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

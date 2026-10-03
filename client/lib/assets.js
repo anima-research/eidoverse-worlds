@@ -29,6 +29,7 @@ import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
 import { beginWork, enqueue, nextFrame, loadNote } from './loadwork.js';
 import { warm } from './warmqueue.js';
 import { prepareObject } from './materials.js';
+import { registerFoliage } from './foliage.js';
 import { markDrawBatchSource } from './draw_batches.js';
 
 // ---- loading tray -----------------------------------------------------------
@@ -228,7 +229,7 @@ async function negotiated(path, eligible) {
   const key = eligible && ktx2.workerConfig ? await ktx2KeyReady : null;
   return negotiate(path, key);
 }
-function makeLoader(vrm = false) {
+export function makeLoader(vrm = false) {   // exported for tools/glbperf-parity-probe (the client's own loader)
   const l = new GLTFLoader();
   l.setDRACOLoader(draco);
   l.setKTX2Loader(ktx2);
@@ -371,6 +372,18 @@ export async function loadVRM(libPath, { priority = 1 } = {}) {
       work.phase('parse');
       const gltf = await new Promise((res, rej) => makeLoader(true).parse(buf, '', res, rej));
       const vrm = gltf.userData.vrm;
+      // Every bone's rest, read NOW — before a clip, a spring or a wing has
+      // written any of them. A held pose on a raw bone is measured against it
+      // (avatar.js _rawRest). The skin's bind data cannot stand in: the
+      // skeleton pass below drops every joint that weights no vertex, and
+      // that includes humanoid bones (L_Calf, on mythos-alpha).
+      vrm.userData ??= {};
+      vrm.userData.boneRest = {};
+      vrm.scene.traverse((o) => {
+        if (o.isBone && o.name && !(o.name in vrm.userData.boneRest)) {
+          vrm.userData.boneRest[o.name] = { q: o.quaternion.toArray(), p: o.position.toArray(), s: o.scale.toArray() };
+        }
+      });
       // pool ledger (§19b): path for the release side, source bytes as the
       // VRAM proxy the pool budget counts
       vrmMeta.set(vrm, { libPath, bytes: buf.byteLength });
@@ -574,7 +587,7 @@ export async function loadGLB(libPath, { tier = 'full' } = {}) {
           const gltf = await new Promise((res, rej) => makeLoader(false).parse(buf, '', res, rej));
           // the PROTOTYPE goes through the factory once; every skeletonClone
           // shares its wrapped materials and copies its mesh markers
-          prepareObject(gltf.scene, { kind: 'model' });
+          prepareObject(gltf.scene, { kind: 'model', foliage: false });   // foliage cores go on each clone, below
           markDrawBatchSource(gltf.scene);
           // identity the realizer reads: which cache entry this proto is (for
           // retain/release/eviction) and which tier the SERVER actually sent
@@ -596,6 +609,7 @@ export async function loadGLB(libPath, { tier = 'full' } = {}) {
   }
   const proto = await glbCache.get(glbKey);
   const obj = skeletonClone(proto); // safe for rigged + static alike
+  registerFoliage(obj);             // this placement's foliage cores (foliage.js: per instance, state per material)
   // Precompile pipelines OFF the render path — otherwise the first frame that
   // sees a new material stalls the main thread (the ~1.5s spawn freeze).
   // ALL THREE compile paths run through the warm conductor (warmqueue.js,
