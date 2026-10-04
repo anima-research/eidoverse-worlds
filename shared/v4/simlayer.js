@@ -1,21 +1,24 @@
-// shared/v4/simlayer.js — ported from the v4 lab (code/v4-lab/simlayer.js). Pure.
 // The sim layer (design 20, P4–P7): a second fold beside the blind one. It reads the log's state entries (through
 // fold.js, untouched) and its `sim` entries (intents that start motion), and runs the engine @world.sim names.
-// It never writes the log: the door appends what it reports (rest results, P5). Determinism is local: it holds only
-// for a carried engine build, inside one epoch. A world whose engine isn't carried here is still fully knowable from
-// its results; this layer then computes no motion at all (Covenant II: a wrong answer is worse than none).
-import { apply, emptyState } from "./fold.js";
+// It never writes the log. Determinism is local: it holds only for a carried engine build, inside one epoch.
+//
+// PROTOCOL-v4 L3: a state entry whose `cause` is a sim entry IS a rest, and its value must equal the engine's. There
+// is no annotation to trust: carriers compare the value the fold applies with where the engine has the body.
+// Time: the engine's clock is the envelope's `ts` (§2.1: the door's admission time, the one clock readers trust),
+// never running backwards: an entry without one happens at the latest time stated before it.
+// Ported from the v4 lab (code/v4-lab/simlayer.js @ 11db981). Engine changes: no node: imports (the browser imports
+// this file); the engine is ../sim.js (byte-identical to the lab's legacy/shared/sim.js), and its build hash is a
+// pinned constant instead of a read of the files at import time — tools/v4/run.ts recomputes it from the files and
+// fails if they changed without a new engine name (Covenant II).
+import { sha256 } from "./hash.js";
+import { fold, opsOf, applyOps, applyInPlace, emptyState, Malformed } from "./fold.js";
+import { MODELS } from "./catalogue.js";
 import * as eidosim from "../sim.js";
-import { sha256hex } from "../components.js";
 
-// Models with no stamped shape aren't colliders here: in the engine, geometry enters the sim only through the log
-// (Covenant III), as physics.shape. The lab passed a catalogue; the engine passes nothing.
-const MODELS = {};
-
-// Determinism is per binary (18b), so an engine is named AND hashed. This build carries one.
-// sha256 of sim.js + simmath.js + terrainmath.js (joined by NUL), first 16 hex. tools/v4-test.ts pins it to the files:
-// changing any of them without a new engine name is exactly what Covenant II forbids.
+// Determinism is per binary (18b), so an engine is named AND hashed. This build carries one:
+// sha256(sim.js ‖ NUL ‖ simmath.js ‖ NUL ‖ terrainmath.js), first 16 hex.
 export const EIDOSIM_BUILD = "35c61300f4812699";
+export const EIDOSIM_FILES = ["shared/sim.js", "shared/simmath.js", "shared/terrainmath.js"];
 const EIDOSIM = EIDOSIM_BUILD;
 // one build carries all five laws (her CARRIED set), so all five names resolve to it
 export const ENGINES = Object.fromEntries(["0.1.0", "0.2.0", "0.3.0", "0.4.0", "0.5.0"].map((v) => [`eidosim@${v}`,
@@ -26,7 +29,7 @@ export const carried = (spec) => !!spec && ENGINES[spec.engine]?.build === spec.
 const PHYSICAL = new Set(["transform", "parent", "model", "physics"]);
 
 const yawOf = (q) => (Array.isArray(q) ? 2 * Math.atan2(q[1], q[3]) : 0);
-function worldPose(st, id, depth = 0) {
+export function worldPose(st, id, depth = 0) {
   const e = st.entities[id]; if (!e) return null;
   const t = e.c.transform ?? {}; const pos = t.pos ?? [0, 0, 0], q = t.q ?? [0, 0, 0, 1], sc = t.scale ?? [1, 1, 1];
   const p = e.c.parent?.to;
@@ -53,15 +56,19 @@ const catalogueBox = (m) => [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2
 // a collider's shape is the log's word when stamped there (physics.shape, Covenant III); the catalogue's otherwise
 function boxesFor(st) {
   const out = Object.fromEntries(Object.entries(MODELS).map(([k, m]) => [k, catalogueBox(m)]));
-  for (const e of Object.values(st.entities)) if (e.c.physics?.shape && typeof e.c.model === "string") out[e.c.model] = e.c.physics.shape;
+  for (const id of Object.keys(st.entities)) { const e = st.entities[id]; if (e.c.physics?.shape && typeof e.c.model === "string") out[e.c.model] = e.c.physics.shape; }
   return out;
 }
-const touchedOps = (e) => (e.verb === "batch" ? (e.args?.ops ?? []) : [{ verb: e.verb, args: e.args ?? {} }]);
+const opsSafe = (e) => { try { return opsOf(e); } catch (x) { if (x instanceof Malformed) return []; throw x; } };
+const isEntry = (e) => e && !(e instanceof Malformed) && typeof e === "object";
 
 // Fold the whole log: the blind state, plus the sim epoch's live bodies and what came to rest (not yet logged).
-export function simFold(entries, getBlob, now) {
-  const st = emptyState();
-  const out = { st, spec: null, foreign: false, sim: null, launched: {}, rested: [], checks: { agree: 0, disagree: [] } };
+export function simFold(entries, now) {
+  const blind = fold(entries); // the strict fold decides which entries count; this layer replays the same ones
+  const bad = new Set(blind.diagnostics.filter(([, c]) => c.startsWith("malformed")).map(([q]) => q));
+  const valid = new Set(); if (blind.status === "ok") for (let s = 0; s < entries.length; s++) if (isEntry(entries[s]) && !bad.has(s)) valid.add(s);
+  const st = emptyState(); let clock = 0;
+  const out = { st, spec: null, foreign: false, sim: null, launched: {}, rested: [], checks: { agree: 0, disagree: [] }, restTicks: {} };
   const tickOf = (ts) => (out.sim ? eidosim.tickOf(out.sim, ts) : 0);
   const advance = (ts) => {
     if (!out.sim) return;
@@ -74,67 +81,102 @@ export function simFold(entries, getBlob, now) {
       for (const id of flying) if (out.sim.bodies[id]?.resting && out.launched[id]) out.launched[id].restTick ??= out.sim.tick;
     }
   };
-  for (const e of entries) {
-    if (out.sim) advance(e.ts);
-    const said = e.kind === "state" && e.args?.sim?.digest;
-    if (said && out.sim) { const mine = digestOf(out.sim); if (mine === said) out.checks.agree++; else out.checks.disagree.push({ seq: e.seq, logged: said, mine }); }
-    if (e.kind === "state" && e.args?.sim?.rest && out.sim) { // and the resting place itself
-      const r = e.args.sim; const b = out.sim.bodies[r.id];
-      if (!b || !b.resting || JSON.stringify(r.at) !== JSON.stringify(b.p)) out.checks.disagree.push({ seq: e.seq, id: r.id, logged: r.at, mine: b ? (b.resting ? b.p : "still flying") : "not in the sim" }); }
-    const wasSpec = JSON.stringify(st.entities["@world"]?.c.sim ?? null);
-    apply(st, e, getBlob);
+  const disagree = (x) => out.checks.disagree.push(x);
+  for (let seq = 0; seq < entries.length; seq++) {
+    if (!valid.has(seq)) continue;
+    const e = entries[seq];
+    if (typeof e.ts === "number" && e.ts > clock) clock = e.ts;
+    if (out.sim) advance(clock);
+    if (e.kind === "sim" && e.verb === "digest" && out.sim) { const mine = digestOf(out.sim); if (mine !== e.body.digest) disagree({ seq, logged: e.body.digest, mine }); continue; }
     if (e.kind === "state") {
+      const ops = opsSafe(e);
+      const causeE = entries[e.cause];
+      const isRest = isEntry(causeE) && causeE.kind === "sim";
+      const wasSpec = JSON.stringify(st.entities["@world"]?.c.sim ?? null);
+      if (out.sim && isRest) { // L3: a rest. Its cause must be a launch, the body's CURRENT one, and the value must be the engine's
+        const ids = [...new Set(ops.map((o) => o.id))];
+        const after = applyOps(st, ops);
+        if (causeE.verb !== "launch") disagree({ seq, why: `caused by a ${causeE.verb}, which starts no motion` });
+        else for (const id of ids) {
+          const b = out.sim.bodies[id], l = out.launched[id];
+          if (id !== causeE.body.id) disagree({ seq, id, why: "a rest may only move the body its launch threw" });
+          else if (!l || l.seq !== e.cause) disagree({ seq, id, why: "its launch is not this body's current flight (caught, re-thrown or moved since)" });
+          else if (!b || !b.resting) disagree({ seq, id, why: "the engine still has it in flight" });
+          else { const mine = worldPose(after, id)?.pos; if (JSON.stringify(mine) !== JSON.stringify(b.p)) disagree({ seq, id, logged: mine, engine: b.p }); else { out.checks.agree++; out.restTicks[seq] = l.restTick ?? out.sim.tick; } }
+        }
+      } else if (out.sim) { // a launched body is the engine's until its rest is logged (L6)
+        const cut = ops.some((o) => o.id === "@world" && o.comp === "sim"); // an epoch cut may freeze it (P6, force)
+        for (const o of ops) { const l = out.launched[o.id]; if (!l) continue; const b = out.sim.bodies[o.id];
+          if (b && !b.resting && !cut) disagree({ seq, id: o.id, why: `touches a body in flight (launch ${l.seq}); only its rest may (L6, 33 F1)` });
+          else if (PHYSICAL.has(o.comp) && !(e.cause > l.seq)) disagree({ seq, id: o.id, why: `changes a body in flight, but its cause (${e.cause}) is not after the launch (${l.seq})` }); }
+      }
+      applyInPlace(st, ops, seq);
       const spec = st.entities["@world"]?.c.sim ?? null;
       if (JSON.stringify(spec) !== wasSpec) { // an epoch boundary. The door makes it a real cut: nothing in flight (P6).
         out.spec = spec; out.launched = {}; out.foreign = !!spec && !carried(spec); out.sim = null;
         if (spec && !out.foreign) {
           out.sim = eidosim.emptySim();
-          eidosim.simEntry(out.sim, { seq: e.seq, ts: e.ts, actor: "door", verb: "epoch", args: { sim: spec.engine, tickMs: spec.tickMs, boxes: boxesFor(st) } }, v1View(st));
+          eidosim.simEntry(out.sim, { seq, ts: clock, actor: "door", verb: "epoch", args: { sim: spec.engine, tickMs: spec.tickMs, boxes: boxesFor(st) } }, v1View(st));
         }
         continue;
       }
       if (!out.sim) continue;
-      for (const o of touchedOps(e)) { // P7, keyed by component
-        const a = o.args ?? {}; if (typeof a.id !== "string") continue;
-        if (a.id === "@world") { // the ground itself changed: re-ground, release every body, rebuild colliders (her law)
-          if (a.component === "terrain") eidosim.simEntry(out.sim, { seq: e.seq, ts: e.ts, actor: e.actor, verb: "terrain", args: st.entities["@world"].c.terrain ?? {} }, v1View(st));
-          if (a.component === "terrain") out.launched = {};
+      for (const o of ops) { // P7, keyed by component
+        if (o.id === "@world") { // the ground itself changed: re-ground, release every body, rebuild colliders (her law)
+          if (o.comp === "terrain") { eidosim.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "terrain", args: st.entities["@world"].c.terrain ?? {} }, v1View(st)); out.launched = {}; }
           continue; }
-        const shape = st.entities[a.id]?.c.physics?.shape, model = st.entities[a.id]?.c.model;
+        const shape = st.entities[o.id]?.c.physics?.shape, model = st.entities[o.id]?.c.model;
         if (shape && out.sim.boxes && typeof model === "string") out.sim.boxes[model] ??= shape;
-        const whole = o.verb === "create" || (o.verb === "delete" && !a.component);
-        if (!whole && !PHYSICAL.has(a.component)) continue;
-        const ids = [a.id, ...Object.keys(st.entities).filter((k) => isUnder(st, k, a.id))];
+        const whole = o.verb === "create" || (o.verb === "delete" && o.comp === undefined);
+        if (!whole && !PHYSICAL.has(o.comp)) continue;
+        const ids = [o.id, ...Object.keys(st.entities).filter((k) => isUnder(st, k, o.id))];
         for (const id of ids) {
           const view = v1View(st); const gone = !view.entities[id];
-          eidosim.simEntry(out.sim, { seq: e.seq, ts: e.ts, actor: e.actor, verb: gone ? "remove" : "place", args: { id } }, view);
+          eidosim.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: gone ? "remove" : "place", args: { id } }, view);
           if (out.launched[id]) delete out.launched[id];
         }
       }
     } else if (e.kind === "sim" && out.sim) {
-      const a = e.args ?? {};
+      const a = e.body;
       if (e.verb === "launch" && st.entities[a.id] && Array.isArray(a.p) && Array.isArray(a.v)) {
         const view = v1View(st); const base = view.entities[a.id]; if (!base) continue;
         view.entities[a.id] = { ...base, pos: a.p, yaw: typeof a.yaw === "number" ? a.yaw : base.yaw };
         // her punt makes the body (order, statics, box); then the launch's stamped state is set EXACTLY — through
         // dir/power it would be renormalised, which can move it by an ulp, and dialect 3 has no zero-power "let go"
-        eidosim.simEntry(out.sim, { seq: e.seq, ts: e.ts, actor: e.actor, verb: "punt", args: { id: a.id, dir: [0, -1, 0], power: 1 } }, view);
+        eidosim.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "punt", args: { id: a.id, dir: [0, -1, 0], power: 1 } }, view);
         const b = out.sim.bodies[a.id]; if (b) { b.p = a.p.slice(); b.v = a.v.slice(); }
-        out.launched[a.id] = { seq: e.seq, cause: e.cause, by: e.actor, handled: a.handled ?? [e.actor] };
-      } else if (e.verb === "catch" && out.sim.bodies[a.id]) {
-        // caught mid-air: the sim lets go (a static leaves with it); presence owns it until it's put or thrown
-        eidosim.simEntry(out.sim, { seq: e.seq, ts: e.ts, actor: e.actor, verb: "remove", args: { id: a.id } }, { entities: {} });
+        out.launched[a.id] = { seq, cause: e.cause, by: e.actor, handled: a.handled ?? [e.actor] };
+      } else if ((e.verb === "lift" || e.verb === "catch") && st.entities[a.id]) {
+        // picked up (or caught mid-air): it leaves the world's physics — no body, no collider at its old spot — until
+        // it's put down (an authored transform reseats it) or thrown (a launch)
+        eidosim.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "remove", args: { id: a.id } }, { entities: {} });
         delete out.launched[a.id];
       }
     }
   }
-  if (now !== undefined) advance(now);
+  if (now !== undefined) { if (now > clock) clock = now; advance(clock); }
+  out.clock = clock;
   if (out.sim) for (const [id, l] of Object.entries(out.launched)) {
     const b = out.sim.bodies[id]; if (b?.resting) out.rested.push({ id, ...l, p: b.p, yaw: b.yaw, tick: l.restTick ?? out.sim.tick });
   }
+  out.rested.sort((x, y) => x.tick - y.tick);
   return out;
 }
 function isUnder(st, k, id) { let p = st.entities[k]?.c.parent?.to, n = 0; while (p && n++ < 32) { if (p === id) return true; p = st.entities[p]?.c.parent?.to; } return false; }
+
+// A view over the log alone (no engine): every rest, where it put the body, and what the door did after it.
+export function restsOf(entries) {
+  const out = [];
+  entries.forEach((e, seq) => {
+    if (!isEntry(e) || e.kind !== "state") return; const c = entries[e.cause];
+    if (!isEntry(c) || c.kind !== "sim" || c.verb !== "launch") return;
+    const op = opsSafe(e).find((o) => o.comp === "transform" && o.id === c.body.id);
+    const after = entries.slice(seq + 1).find((x) => isEntry(x) && x.kind === "act" && x.actor === "door" && x.body?.rest === seq);
+    out.push({ seq, id: c.body.id, cause: e.cause, at: op?.value?.pos, handled: c.body.handled ?? [c.actor],
+      ...(after?.verb === "return-lost" ? { lost: true } : {}), ...(after?.verb === "settle" ? { onto: after.body.onto } : {}) });
+  });
+  return out;
+}
 
 // Where things are right now, for reads: the blind state's word, except bodies the sim owns.
 export function livePoses(sf) {
@@ -143,7 +185,7 @@ export function livePoses(sf) {
   for (const [id, b] of Object.entries(sf.sim.bodies)) if (!b.resting && sf.launched[id]) out[id] = { pos: b.p.map((n) => Math.round(n * 1000) / 1000), v: b.v.map((n) => Math.round(n * 100) / 100) };
   return out;
 }
-export const digestOf = (sim) => sha256hex(JSON.stringify(eidosim.simSnapshot(sim))).slice(0, 16);
+export const digestOf = (sim) => sha256(JSON.stringify(eidosim.simSnapshot(sim))).slice(0, 16);
 // A cut, in our own format: the engine state as plain JSON, restorable. (For eidosim the format IS its snapshot.)
 export const snapshotOf = (sim) => JSON.parse(JSON.stringify(eidosim.simSnapshot(sim)));
 // Predict when everything now in flight will be at rest (a carrier can look ahead; a barrier waits for it).

@@ -1,56 +1,273 @@
-// shared/v4/fold.js — ported from the v4 lab (code/v4-lab/fold.js), unchanged. Pure; server, browser and tests import it.
-// The v4 fold, fold version 1. It knows nothing about any component type (R1): it creates entities, replaces
-// component values, deletes components and entities. It reads nothing outside the entry except immutable,
-// content-addressed blobs the entry names by hash. It never throws (v1 §1: folding is total).
+// The v4 fold (PROTOCOL-v4 §1 L1, §2.3, §2.4). It knows nothing about any component type: it creates entities,
+// replaces component values, deletes components and entities. It reads only the entry: never a blob, never the door.
+// It is total: a malformed entry shapes nothing and is named in diagnostics, never in the world. A version it
+// doesn't implement gives "unknown version" and no world.
+// Ported from the v4 lab (code/v4-lab/fold.js @ 11db981). Engine changes: sha256 comes from ./hash.js (sync, no
+// node: imports) so the browser imports this file as-is. Nothing else differs; the conformance suite (Python
+// reference reader vs this file) is tools/v4/compare.ts.
+import { sha256 } from "./hash.js";
 
-export const FOLD_VERSION = 1;
+export const VERSION = 4;
+const MAX_LINE = 1 << 20, MAX_DEPTH = 64, BIG = 2 ** 53;
+// §2.1 + §2.4: `ts` is the door's admission time; `head`/`sig` mark chain points (§2.1 still says `prev`; §2.4 and the reference reader say `head`)
+const ENVELOPE = new Set(["world", "kind", "ts", "actor", "for", "grant", "by", "cause", "verb", "body", "head", "sig"]);
+const KINDS = new Set(["genesis", "state", "act", "sim", "say", "purge", "sequencer"]);
+const IDENT = "[a-z0-9-]{1,64}";
+// §2.3: entity ids are minted opaque ids or @world. `body:<identity>` is a reference, never an entity.
+const ENTITY = /^(?:[a-z0-9-]{1,64}|@world)$/;
+const DOMAIN = "[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*/";
+const COMP = new RegExp(`^(?:${DOMAIN})?[a-z][a-z0-9-]*(?:@[1-9][0-9]{0,8})?(?::${IDENT})?$`);
+export const isEntityId = (s) => typeof s === "string" && ENTITY.test(s);
+export const isComponent = (s) => typeof s === "string" && COMP.test(s);
+export const isIdentity = (s) => typeof s === "string" && new RegExp(`^${IDENT}$`).test(s);
 
-export function emptyState() {
-  return { fold: null, seq: -1, entities: {} };
-}
+export class Malformed { constructor(code, detail = "") { this.code = code; this.detail = String(detail).slice(0, 80); } }
+const bad = (code, detail) => { throw new Malformed(code, detail); };
+const PARSED = new WeakSet(); // objects this module built from text: already checked value by value
 
-export function fold(entries, getBlob, state = emptyState()) {
-  for (const e of entries) apply(state, e, getBlob);
-  return state;
-}
-
-export function apply(s, e, getBlob) {
-  s.seq = e.seq;
-  if (e.verb === "genesis") { s.fold = e.args?.fold ?? null; return; }
-  if (e.kind !== "state") return; // timeline entries (say, act, …) never shape the world (R5)
-  op(s, e.verb, e.args ?? {}, e.seq, getBlob);
-}
-
-function op(s, verb, a, seq, getBlob) {
-  switch (verb) {
-    case "create": {
-      if (a.expanded) {
-        const blob = safe(() => getBlob(a.expanded));
-        if (!Array.isArray(blob)) { s.entities[a.id] = { born: seq, c: { missing: { blob: a.expanded } } }; return; }
-        for (const part of blob) s.entities[part.id] = { born: seq, c: clone(part.components ?? {}) };
-        return;
+// ---------- strict I-JSON (RFC 7493) ----------
+export function parseLine(text) {
+  if (text.length && text.charCodeAt(0) === 0xfeff) bad("ijson-bom");
+  let i = 0;
+  const ws = () => { while (i < text.length) { const c = text[i]; if (c === " " || c === "\t" || c === "\n" || c === "\r") i++; else break; } };
+  const value = (depth) => {
+    if (depth > MAX_DEPTH) bad("cap-depth", String(MAX_DEPTH));
+    ws(); const c = text[i];
+    if (c === "{") {
+      i++; const o = Object.create(null); ws();
+      if (text[i] === "}") { i++; return mark(o); }
+      for (;;) {
+        ws(); if (text[i] !== '"') bad("json-syntax", `key at ${i}`);
+        const k = string();
+        if (Object.prototype.hasOwnProperty.call(o, k)) bad("ijson-dupkey", JSON.stringify(k));
+        ws(); if (text[i++] !== ":") bad("json-syntax", `: at ${i - 1}`);
+        o[k] = value(depth + 1); ws();
+        const d = text[i++]; if (d === "}") return mark(o); if (d !== ",") bad("json-syntax", `, or } at ${i - 1}`);
       }
-      if (typeof a.id === "string") s.entities[a.id] = { born: seq, c: clone(a.components ?? {}) };
-      return;
     }
-    case "set": {
-      const ent = s.entities[a.id];
-      if (ent && typeof a.component === "string") ent.c[a.component] = clone(a.value);
-      return;
+    if (c === "[") {
+      i++; const a = []; ws();
+      if (text[i] === "]") { i++; return mark(a); }
+      for (;;) { a.push(value(depth + 1)); ws(); const d = text[i++]; if (d === "]") return mark(a); if (d !== ",") bad("json-syntax", `, or ] at ${i - 1}`); }
     }
-    case "delete": {
-      if (typeof a.id !== "string") return;
-      if (typeof a.component === "string") { const ent = s.entities[a.id]; if (ent) delete ent.c[a.component]; }
-      else delete s.entities[a.id];
-      return;
+    if (c === '"') return string();
+    if (text.startsWith("true", i)) { i += 4; return true; }
+    if (text.startsWith("false", i)) { i += 5; return false; }
+    if (text.startsWith("null", i)) { i += 4; return null; }
+    for (const k of ["NaN", "Infinity", "-Infinity"]) if (text.startsWith(k, i)) bad("ijson-nonfinite", k);
+    NUM.lastIndex = i; const m = NUM.exec(text);
+    if (!m) bad("json-syntax", `value at ${i}`);
+    i += m[0].length; const s = m[0];
+    if (m[1] === undefined && m[2] === undefined) { // an integer lexeme must be exactly a binary64 (§1 L1)
+      const n = BigInt(s); if (n === 0n && s[0] === "-") bad("ijson-negzero", s);
+      const f = Number(s); if (!Number.isFinite(f)) bad("ijson-nonfinite", s.slice(0, 40));
+      if (BigInt(f) !== n) bad("ijson-bigint", s.slice(0, 40));
+      return f;
     }
-    case "batch": {
-      for (const o of Array.isArray(a.ops) ? a.ops : []) op(s, o.verb, o.args ?? {}, seq, getBlob);
-      return;
+    const n = Number(s); if (!Number.isFinite(n)) bad("ijson-nonfinite", s.slice(0, 40));
+    if (Object.is(n, -0)) bad("ijson-negzero", s.slice(0, 40));
+    return n;
+  };
+  const string = () => {
+    i++; let out = "";
+    for (;;) {
+      if (i >= text.length) bad("json-syntax", "unterminated string");
+      const c = text.charCodeAt(i++);
+      if (c === 0x22) break;
+      if (c < 0x20) bad("json-syntax", "control character in string");
+      if (c !== 0x5c) { PLAIN.lastIndex = i; const run = PLAIN.exec(text)[0]; out += String.fromCharCode(c) + run; i += run.length; continue; }
+      const e = text[i++];
+      const simple = { '"': '"', "\\": "\\", "/": "/", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t" }[e];
+      if (simple !== undefined) { out += simple; continue; }
+      if (e !== "u" || !/^[0-9a-fA-F]{4}$/.test(text.slice(i, i + 4))) bad("json-syntax", "bad escape");
+      out += String.fromCharCode(parseInt(text.slice(i, i + 4), 16)); i += 4;
     }
-    default: return; // unknown state verbs shape nothing; the log keeps them
+    checkString(out); return out;
+  };
+  const v = value(0); ws();
+  if (i !== text.length) bad("json-syntax", `trailing data at ${i}`);
+  return v;
+}
+const NUM = /-?(?:0|[1-9][0-9]*)(\.[0-9]+)?([eE][+-]?[0-9]+)?/y, PLAIN = /[^"\\\x00-\x1f]*/y;
+const mark = (o) => (PARSED.add(o), o);
+function checkString(s) {
+  for (let k = 0; k < s.length; k++) {
+    const c = s.charCodeAt(k); let cp = c;
+    if (c >= 0xd800 && c <= 0xdbff) { const d = s.charCodeAt(k + 1); if (!(d >= 0xdc00 && d <= 0xdfff)) bad("ijson-surrogate", c.toString(16)); cp = 0x10000 + ((c - 0xd800) << 10) + (d - 0xdc00); k++; }
+    else if (c >= 0xdc00 && c <= 0xdfff) bad("ijson-surrogate", c.toString(16));
+    if ((cp >= 0xfdd0 && cp <= 0xfdef) || (cp & 0xfffe) === 0xfffe) bad("ijson-noncharacter", cp.toString(16));
   }
 }
+// The same rules for a value that was built in memory rather than parsed (a door's own entry, a test's tamper).
+// A number in [2^53, 1e21) is refused too: every JSON writer (and JCS) spells it as an integer lexeme, which §2.4
+// makes malformed on the next read.
+function checkValue(v, depth = 0) {
+  if (depth > MAX_DEPTH) bad("cap-depth", String(MAX_DEPTH));
+  if (v === null || typeof v === "boolean") return;
+  if (typeof v === "number") {
+    if (!Number.isFinite(v)) bad("ijson-nonfinite", String(v)); if (Object.is(v, -0)) bad("ijson-negzero", "-0");
+    return; }
+  if (typeof v === "string") return checkString(v);
+  if (PARSED.has(v)) return;
+  if (Array.isArray(v)) { for (const x of v) checkValue(x, depth + 1); return; }
+  if (typeof v === "object" && (Object.getPrototypeOf(v) === Object.prototype || Object.getPrototypeOf(v) === null)) {
+    for (const k of Object.keys(v)) { checkString(k); checkValue(v[k], depth + 1); } return; }
+  bad("not-json", typeof v);
+}
 
-const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
-const safe = (f) => { try { return f(); } catch { return undefined; } };
+export const checkIJSON = (v) => checkValue(v, 0);
+
+// A log is UTF-8 JSONL; a line's 0-based position is its seq. Returns one item per line: an object or a Malformed.
+export function readLog(bytes) {
+  if (typeof bytes === "string") bytes = new TextEncoder().encode(bytes);
+  const lines = []; let start = 0;
+  for (let k = 0; k <= bytes.length; k++) if (k === bytes.length || bytes[k] === 0x0a) { lines.push(bytes.subarray(start, k)); start = k + 1; }
+  if (lines.length && lines.at(-1).length === 0) lines.pop();
+  const dec = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+  return lines.map((raw) => {
+    try {
+      if (raw.length > MAX_LINE) bad("cap-size", String(raw.length));
+      let text; try { text = dec.decode(raw); } catch (e) { bad("ijson-utf8", e.message); }
+      return parseLine(text);
+    } catch (e) { if (e instanceof Malformed) return e; if (e instanceof RangeError) return new Malformed("cap-depth", "parser recursion"); throw e; }
+  });
+}
+
+// ---------- JCS (RFC 8785) and the digest (§2.4) ----------
+export function jcs(v) {
+  if (v === null || typeof v === "boolean") return String(v);
+  if (typeof v === "number") return Object.is(v, -0) ? "0" : String(v);
+  if (typeof v === "string") return JSON.stringify(v);
+  if (Array.isArray(v)) return "[" + v.map(jcs).join(",") + "]";
+  return "{" + Object.keys(v).sort().map((k) => JSON.stringify(k) + ":" + jcs(v[k])).join(",") + "}";
+}
+export { sha256 };
+export const worldIdOf = (genesis) => "sha256:" + sha256(jcs(genesis));
+export const PURGED = Object.freeze({ purged: true });
+export function view(st) {
+  const out = Object.create(null);
+  for (const id of Object.keys(st.entities)) { const c = st.entities[id].c, v = Object.create(null);
+    for (const k of Object.keys(c)) v[k] = c[k] === PURGED ? { purged: true } : { v: c[k] }; out[id] = v; }
+  return out;
+}
+export const digest = (st) => sha256(jcs(view(st)));
+
+// ---------- envelope and state bodies ----------
+export function checkEntry(e, seq) {
+  if (e === null || typeof e !== "object" || Array.isArray(e)) bad("not-object");
+  if (Object.prototype.propertyIsEnumerable.call(e, "seq")) bad("seq-field"); // L1: the position is the seq (a reader may attach it, unenumerable, in memory)
+  const extra = Object.keys(e).filter((k) => !ENVELOPE.has(k)); if (extra.length) bad("unknown-field", extra.sort().join(","));
+  if (!KINDS.has(e.kind)) bad("kind", JSON.stringify(e.kind));
+  for (const f of ["kind", "actor", "verb"]) if (typeof e[f] !== "string") bad("envelope", `${f} missing or not a string`);
+  if (e.kind !== "genesis" && typeof e.world !== "string") bad("envelope", "world");
+  if (e.body === null || typeof e.body !== "object" || Array.isArray(e.body)) bad("envelope", "body not an object");
+  if ("for" in e) bad("for-before-keys"); // L4: until identities have keys, `for` is not written at all
+  if (e.kind === "state" || "cause" in e) { const c = e.cause; if (!(Number.isInteger(c) && c >= 0 && c < seq)) bad("cause", JSON.stringify(c)); }
+  if (!PARSED.has(e)) for (const k of Object.keys(e)) checkValue(e[k], 1);
+}
+const OP_FIELDS = { create: ["id"], delete: ["id", "comp"], set: ["id", "comp", "value", "salt", "commit"] }; // `commit` replaces value+salt once purged
+// A state entry as a flat list of ops. Any shape or grammar error anywhere makes the whole entry malformed.
+export function opsOf(e) {
+  const { verb, body } = e;
+  if (verb === "batch") {
+    const extra = Object.keys(body).filter((k) => k !== "ops"); if (extra.length) bad("batch-field", extra.join(","));
+    if (!Array.isArray(body.ops)) bad("batch-ops");
+    return body.ops.map((o, i) => {
+      if (o === null || typeof o !== "object" || Array.isArray(o)) bad("batch-op", String(i));
+      if (o.verb === "batch") bad("nested-batch", `op ${i}`); // L1: a batch never contains a batch
+      return shapeOne(o.verb, o, true, `op ${i}`);
+    });
+  }
+  return [shapeOne(verb, body, false, "")];
+}
+export function shapeOne(verb, b, inner, where) {
+  const allowed = OP_FIELDS[verb]; if (!allowed) bad("verb", `${where} ${JSON.stringify(verb)}`);
+  const extra = Object.keys(b).filter((k) => !(inner && k === "verb") && !allowed.includes(k));
+  if (extra.length) bad("op-field", `${where} ${extra.sort().join(",")}`);
+  if (!isEntityId(b.id)) bad("entity-id", `${where} ${JSON.stringify(b.id)}`);
+  if ((verb === "set" || "comp" in b) && !isComponent(b.comp)) bad("comp-name", `${where} ${JSON.stringify(b.comp)}`);
+  const op = { verb, id: b.id }; if (b.comp !== undefined) op.comp = b.comp;
+  if (verb === "set" && "value" in b) op.value = b.value; // only an ABSENT value is "no value"; null is a value
+  return op;
+}
+
+// ---------- the fold ----------
+export function emptyState() {
+  const entities = Object.create(null); entities["@world"] = { born: 0, c: Object.create(null) }; // live from genesis
+  return { status: "ok", version: VERSION, worldId: null, entities, diagnostics: [] };
+}
+// entries: what readLog returned, or entry objects. `until`: fold only state entries with seq <= until (purges from
+// the whole log still apply: a purged value is absent at every point in time).
+export function fold(entries, { until = Infinity } = {}) {
+  const st = emptyState(); const d = (seq, code, detail = "") => st.diagnostics.push([seq, code, detail]);
+  const ok = entries.map((e, seq) => {
+    if (e instanceof Malformed) { d(seq, "malformed:" + e.code, e.detail); return null; }
+    try { checkEntry(e, seq); return e; } catch (x) { if (x instanceof Malformed) { d(seq, "malformed:" + x.code, x.detail); return null; } throw x; }
+  });
+  const g = ok[0];
+  if (!g || g.kind !== "genesis") { d(0, "no-genesis", g ? `entry 0 kind=${g.kind}` : "entry 0 missing or malformed"); return { ...st, status: "no-world", entities: null }; }
+  if (g.body.version !== VERSION) { d(0, "unknown-version", JSON.stringify(g.body.version)); return { ...st, status: "unknown-version", entities: null, version: g.body.version }; }
+  st.worldId = worldIdOf(g);
+  for (let seq = 1; seq < ok.length; seq++) { const e = ok[seq]; if (!e) continue;
+    if (e.kind === "genesis") { d(seq, "malformed:genesis-not-first"); ok[seq] = null; continue; }
+    if (e.world !== st.worldId) d(seq, "world-mismatch", String(e.world)); }
+  // §2.1: ts is an integer (ms) ≥ 0, required on every entry after genesis, never decreasing. A missing, fractional
+  // or decreasing ts makes that entry malformed (it shapes nothing and does not move the clock on).
+  let lastTs = null;
+  for (let seq = 1; seq < ok.length; seq++) { const e = ok[seq]; if (!e) continue; const t = e.ts;
+    if (!(Number.isInteger(t) && t >= 0)) { d(seq, "malformed:ts", JSON.stringify(t) ?? "missing"); ok[seq] = null; continue; }
+    if (lastTs !== null && t < lastTs) { d(seq, "malformed:ts-decreasing", `${t} < ${lastTs}`); ok[seq] = null; continue; }
+    lastTs = t; }
+  const purged = purgesOf(ok, d);
+  for (let seq = 1; seq < ok.length && seq <= until; seq++) {
+    const e = ok[seq]; if (!e || e.kind !== "state") continue;
+    let ops; try { ops = opsOf(e); } catch (x) { if (x instanceof Malformed) { d(seq, "malformed:" + x.code, x.detail); continue; } throw x; }
+    ops.forEach((op, i) => applyOp(st, seq, op, purged.get(`${seq}:${e.verb === "batch" ? i : "-"}`), d));
+  }
+  return st;
+}
+function purgesOf(ok, d) {
+  const out = new Map();
+  ok.forEach((e, pseq) => {
+    if (!e || e.kind !== "purge") return;
+    const vals = e.body.values; if (!Array.isArray(vals)) { d(pseq, "purge-ignored", "body.values not a list"); return; }
+    for (const t of vals) {
+      const okT = t && typeof t === "object" && !Array.isArray(t) && Object.keys(t).every((k) => k === "seq" || k === "op")
+        && Number.isInteger(t.seq) && (t.op === undefined || (Number.isInteger(t.op) && t.op >= 0));
+      if (!okT) { d(pseq, "purge-target-bad", jcs(t).slice(0, 60)); continue; }
+      if (t.seq >= pseq || t.seq <= 0) { d(pseq, "purge-target-range", String(t.seq)); continue; }
+      if (ok[t.seq]?.kind === "purge") { d(pseq, "purge-of-purge-refused", String(t.seq)); continue; }
+      out.set(`${t.seq}:${t.op ?? "-"}`, pseq); d(pseq, "purge", `seq ${t.seq}${t.op === undefined ? "" : ` op ${t.op}`}`);
+    }
+  });
+  return out;
+}
+const clone = (v) => (v === null || typeof v !== "object" ? v : JSON.parse(JSON.stringify(v)));
+function applyOp(st, seq, op, purgedBy, d) {
+  const w = st.entities, { verb, id, comp } = op;
+  if (purgedBy !== undefined && verb !== "set") d(seq, "purge-target-not-a-value", id);
+  if (verb === "create") { if (w[id]) d(seq, "noop:create-live", id); else w[id] = { born: seq, c: Object.create(null) }; return; }
+  const ent = w[id]; if (!ent) { d(seq, `noop:${verb}-missing-entity`, id); return; }
+  if (verb === "set") {
+    if (purgedBy !== undefined) { ent.c[comp] = PURGED; return; }
+    if (!("value" in op)) { d(seq, "noop:set-no-value", `${id}.${comp}`); return; }
+    ent.c[comp] = clone(op.value); return;
+  }
+  if (comp === undefined) { if (id === "@world") { d(seq, "noop:delete-@world"); return; } delete w[id]; return; }
+  if (comp in ent.c) delete ent.c[comp]; else d(seq, "noop:delete-missing-comp", `${id}.${comp}`);
+}
+
+// A copy of a folded state that keeps null prototypes (so an id like "constructor" stays an ordinary key).
+export function cloneState(st) {
+  const entities = Object.create(null);
+  for (const id of Object.keys(st.entities)) { const c = Object.create(null); const e = st.entities[id];
+    for (const k of Object.keys(e.c)) c[k] = clone(e.c[k]); entities[id] = { born: e.born, c }; }
+  return { ...st, entities, diagnostics: [...st.diagnostics] };
+}
+// Apply ops to a state copy, as a fold of one more state entry would (the door's preview of a write).
+export const applyOps = (st, ops, seq = Infinity) => applyInPlace(cloneState(st), ops, seq);
+export function applyInPlace(s, ops, seq = Infinity) {
+  const d = (q, code, detail = "") => s.diagnostics.push([q, code, detail]);
+  for (const o of ops) applyOp(s, seq, shapeOne(o.verb, o, true, "door"), undefined, d);
+  return s;
+}
