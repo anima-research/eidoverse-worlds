@@ -10,6 +10,7 @@
 import { readLog, fold, opsOf, applyOps, cloneState, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
 import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
 import { validate, toolHelp, TOOLSPEC } from "./toolspec.js";
+import { dec } from "./names.js";
 import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose } from "./simlayer.js";
 
 // ---------- the model catalogue (engine, slice 2) ----------
@@ -249,6 +250,9 @@ const madeBy = (w, id) => creatorOf(w, id)?.by ?? null;
 // ---------- the door ----------
 class Refusal extends Error { constructor(code, reason, teach, extra = {}) { super(reason); Object.assign(this, { code, reason, teach, ...extra }); } }
 const refuse = (code, reason, teach, extra) => { throw new Refusal(code, reason, teach, extra); };
+// A person's name as they spell it, for a refusal's words (an escaped identity, x--5269…, reads back as "Riannon"; a
+// hashed one, h--, can't, and stays). The identity itself rides as a field (`by`) for whoever must match it.
+const said = (id) => dec(String(id)) ?? String(id);
 const RESERVED = new Set(["door", "sim", "world"]); // the door's own identities: a request can never be stamped as one
 
 // A request as sent must itself be I-JSON (it is logged as the act). -0 is normalised; non-finite is refused.
@@ -301,7 +305,7 @@ function expectCheck(w, list) {
     const same = "value" in x ? has && cur !== PURGED && jcs(cur) === jcs(x.value) : !has;
     if (same) continue;
     const lt = lastTouch(w, x.id, x.component);
-    const why = !e ? `${x.id} is gone` : lt ? `${lt.actor} changed it at ${lt.seq}` : "it isn't what you started from";
+    const why = !e ? `${x.id} is gone` : lt ? `${said(lt.actor)} changed it at ${lt.seq}` : "it isn't what you started from";
     refuse("changed", `${x.id}.${x.component} changed since you started: ${why}`, "look again and redo it (nothing was written); or send it without expect to overwrite what's there",
       { id: x.id, component: x.component, expected: "value" in x ? x.value : null, current: cur === undefined ? null : cur, ...(lt ? { by: lt.actor, at: lt.seq } : {}) });
   }
@@ -341,7 +345,7 @@ function rateCheck(w, actor) {
   const now = w.now(); let n = 0; for (let i = w.entries.length - 1; i >= 0 && n <= RATE.n; i--) { const e = w.entries[i];
     if (isE(e) && Number.isInteger(e.ts) && now - e.ts > RATE.ms) break; // ts never decreases: everything earlier is older (engine: the lab scanned the whole log for a quiet actor)
     if (isE(e) && (e.kind === "act" || e.kind === "say") && e.actor === actor) n++; }
-  if (n >= RATE.n) refuse("rate", `${actor} has made ${n} entries in ${RATE.ms / 1000} s`, "slow down; batch {ops} counts as one");
+  if (n >= RATE.n) refuse("rate", `${said(actor)} has made ${n} entries in ${RATE.ms / 1000} s`, "slow down; batch {ops} counts as one");
 }
 function admit(w, st, who, ops) {
   const { actor, cap } = who;
@@ -394,12 +398,12 @@ function admit(w, st, who, ops) {
 function lockCheck(w, st, who, role, k, op, at) {
   const mayUnlock = !who.cap && RANK[role] >= RANK[rankNeeded({ id: k, comp: "lock" })];
   if (THROUGH && mayUnlock) return;
-  const by = lastSetterOf(w, k, "lock"); const whose = by && !by.deleted ? ` (locked by ${by.by} at ${by.seq})` : "";
+  const by = lastSetterOf(w, k, "lock"); const whose = by && !by.deleted ? ` (locked by ${said(by.by)} at ${by.seq})` : "";
   const what = k === op.id ? `${op.id} is locked${whose}, so ${at} can't change` : `${op.id} is attached to ${k}, which is locked${whose}, so ${at} can't change`;
   const teach = THROUGH && who.cap ? "through_lock covers your own edits, not a handler or a held thing; unlock it first"
     : mayUnlock ? `send the same request with through_lock: true, or unlock it first: delete {id: '${k}', component: 'lock'}. A lock stops accidents; any builder may lift it, and history shows who did`
     : `a builder or owner can unlock it (delete {id: '${k}', component: 'lock'}); you are ${role}`;
-  refuse("locked", what, teach, { lock: k });
+  refuse("locked", what, teach, { lock: k, ...(by && !by.deleted ? { by: by.by } : {}) });
 }
 const unNegZero = (v) => (Object.is(v, -0) ? 0 : Array.isArray(v) ? v.map(unNegZero) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unNegZero(x)])) : v);
 function shapeOneOrRefuse(verb, op, i) {
@@ -416,7 +420,7 @@ function rights(w, st, s, who, role, op, at) {
   const { actor, cap } = who; const need = rankNeeded(op);
   if (!cap) { if (RANK[role] < RANK[need]) refuse("rights", `changing ${at} needs ${need}; you are ${role}`, `ask the world's owner for ${need} rights (say {text, to: <owner>}); help shows your role`); return; }
   if (!cap.ids.includes(op.id) || !cap.comps.includes(op.comp)) refuse("rights", `${cap.kind === "reaction" ? `the '${cap.action}' handler` : cap.kind} may change only ${cap.comps.join("/")} of ${cap.ids.join(", ")}, not ${op.verb} ${at}`, "a capability is scoped to what it names");
-  if (cap.kind === "reaction" && RANK[roleOf(st, cap.author)] < RANK[need]) refuse("rights", `'${cap.action}' was set up by ${cap.author}, who can't change ${at} any more`, "ask someone with the rights to set the reactions again");
+  if (cap.kind === "reaction" && RANK[roleOf(st, cap.author)] < RANK[need]) refuse("rights", `'${cap.action}' was set up by ${said(cap.author)}, who can't change ${at} any more`, "ask someone with the rights to set the reactions again");
   if (cap.kind === "handle") { const ph = st.entities[op.id]?.c.physics; const n = ph?.who ?? "builder";
     if (ph?.kind !== "dynamic") refuse("not-dynamic", `${op.id} isn't something you can carry`, "");
     if (RANK[role] < RANK[n]) refuse("rights", `only a ${n} may move ${op.id} by hand; you are ${role}`, "ask the owner to set physics.who"); }
@@ -439,8 +443,8 @@ function keyRights(w, st, s, who, op, at, keysMade) {
   if (RANK[roleOf(st, holder)] >= RANK.owner) return;
   const c = creatorOf(w, op.id, op.comp);
   if (c && c.rights === holder) return;
-  refuse("rights", `${at} is ${c ? c.rights : "nobody's on record"}'s${c ? ` (made at ${c.seq})` : ""}; only its creator or an owner may ${op.verb === "delete" ? "delete" : "change"} it`,
-    op.comp.startsWith("library:") ? "publish your own version: it gets its own key" : `make your own instance (${op.comp.split(":")[0]}:<another key>), or ask ${c?.rights ?? "an owner"}`);
+  refuse("rights", `${at} is ${c ? said(c.rights) : "nobody's on record"}'s${c ? ` (made at ${c.seq})` : ""}; only its creator or an owner may ${op.verb === "delete" ? "delete" : "change"} it`,
+    op.comp.startsWith("library:") ? "publish your own version: it gets its own key" : `make your own instance (${op.comp.split(":")[0]}:<another key>), or ask ${c ? said(c.rights) : "an owner"}`);
 }
 // Sanity and shape of the values the door's own engine reads (what the change IS, not which word carried it).
 function valueCheck(s, { id, comp, value: v }) {
@@ -574,7 +578,7 @@ function buildSet(ctx, a) {
   const e = needThing(ctx, a.id);
   if (!isComponent(a.component)) refuse("shape", `'${a.component}' isn't a component name`, "§2.3: [a-z][a-z0-9-]*, optionally <domain>/, @<n> and :<key> (ASCII only)", { didYouMean: guess(String(a.component), Object.keys(COMPONENTS)) });
   const lt = lastTouch(ctx.w, a.id, a.component);
-  if (a.base !== undefined && lt && lt.seq > a.base) refuse("stale", `${a.id}.${a.component} changed since version ${a.base}: ${lt.actor} set it at ${lt.seq}`, a.merge ? `inspect {id: '${a.id}'} for the current value and its new version, then re-send with that base` : `inspect {id: '${a.id}'} for the current value and version, then decide; or merge: true to change only your fields`, { current: e.c[a.component] ?? null, version: lt.seq });
+  if (a.base !== undefined && lt && lt.seq > a.base) refuse("stale", `${a.id}.${a.component} changed since version ${a.base}: ${said(lt.actor)} set it at ${lt.seq}`, a.merge ? `inspect {id: '${a.id}'} for the current value and its new version, then re-send with that base` : `inspect {id: '${a.id}'} for the current value and version, then decide; or merge: true to change only your fields`, { current: e.c[a.component] ?? null, version: lt.seq, by: lt.actor });
   if (a.base === undefined && !a.merge && lt && lt.actor !== ctx.actor && a.component in e.c) ctx.notes.push({ id: a.id, component: a.component, overwrote: { by: lt.actor, seq: lt.seq }, why: "you replaced someone else's value without a base version; send base (from inspect) to be refused instead if it changed" });
   let v = a.merge ? merge7396(e.c[a.component], a.value) : a.value;
   if (a.component === "parent") {
@@ -880,7 +884,7 @@ function buildUndo(ctx, a, w) {
     : a.label ? pick((q) => bodyOf(q)?.request?.label === a.label && !X.undone.has(q))
     : pick((q) => E[q].verb !== "undo" && E[q].verb !== "new" && !X.undone.has(q) && X.resultOf.has(q));
   if (!target) { const last = X.lastAct === null ? null : E[X.lastAct];
-    refuse("nothing", "nothing of yours to undo" + (last && last.actor !== ctx.actor ? ` (the latest change was ${last.actor}'s; undo only reverts your own)` : ""), "history shows who did what; to change someone else's work, edit it (they'll see it)"); }
+    refuse("nothing", "nothing of yours to undo" + (last && last.actor !== ctx.actor ? ` (the latest change was ${said(last.actor)}'s; undo only reverts your own)` : ""), "history shows who did what; to change someone else's work, edit it (they'll see it)"); }
   if (target.verb === "new") refuse("founding", "founding a world can't be undone", "§2.3: @world can't be deleted or undone as a whole; to hand it over, give the new owner their role first");
   if (X.undone.has(target.seq)) refuse("nothing", `act ${target.seq} was already undone`, "");
   if (["throw", "drop", "leave"].includes(target.verb)) refuse("physical", `that was a ${target.verb}: what it changed is where things came to rest, which physics decided`, "put it back yourself: grab it, then put {id, pos}");
@@ -901,7 +905,7 @@ function buildUndo(ctx, a, w) {
   for (const [, o] of [...keys].reverse()) {
     const { id, comp } = o; const whole = o.verb === "create" || (o.verb === "delete" && comp === undefined);
     const by = touchedBy(id, whole ? undefined : comp);
-    if (by) { skipped.push({ id, component: comp, why: `${by} changed it since` }); continue; }
+    if (by) { skipped.push({ id, component: comp, why: `${said(by)} changed it since`, by }); continue; }
     if (o.verb === "create") { if (now.entities[id]) groups.push([delOp(id)]); }
     else if (whole) { const old = before(id); if (old && !now.entities[id]) groups.push(createOps(id, Object.fromEntries(Object.entries(old.c).filter(([, v]) => v !== PURGED)))); }
     else { const old = before(id)?.c[comp];
@@ -917,7 +921,7 @@ function buildUndo(ctx, a, w) {
     const trial = scratch(now, g); const mine = obbs(trial, o.id);
     const hit = [...othersSince].find((x) => x !== o.id && trial.entities[x] && obbs(trial, x).some((sb) => mine.some((ma) => satDepth(ma, sb) > 0.02)));
     if (hit) { const who = later.find((e) => opsQuiet(e).some((q) => q.id === hit))?.actor;
-      skipped.push({ id: o.id, component: o.comp, why: `putting it back would land it on ${hit}, which ${who} has placed since` }); groups.splice(i, 1); } }
+      skipped.push({ id: o.id, component: o.comp, why: `putting it back would land it on ${hit}, which ${said(who)} has placed since`, by: who }); groups.splice(i, 1); } }
   if (!groups.length) refuse("conflict", "everything that act touched has been changed by someone else since", "their later change stands (undo never writes over it); if you still want yours, make the change again yourself, and history shows who did what", { skipped });
   if (skipped.length) ctx.notes.push({ skipped });
   ctx.actExtra = { undoes: target.seq };
@@ -1121,7 +1125,7 @@ function body(w, actor) {
 }
 function holdOf(w, actor, id) {
   const h = w.presence.holds[id];
-  if (!h || h.by !== actor) refuse("not-holding", `you aren't holding ${id}${h ? ` (${h.by} is)` : ""}`, `grab {id: '${id}'} first`);
+  if (!h || h.by !== actor) refuse("not-holding", `you aren't holding ${id}${h ? ` (${said(h.by)} is)` : ""}`, `grab {id: '${id}'} first`);
   if (!w.state().entities[id]) { delete w.presence.holds[id]; w.savePresence(); refuse("gone", `${id} was deleted while you held it`, "your hand is empty now"); }
   return h;
 }

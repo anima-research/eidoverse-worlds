@@ -777,7 +777,7 @@ export const HANDLERS: Record<string, ToolHandler> = {
         const why = rawShapeError(v.verb, v.args as Record<string, unknown>);
         if (why) { L.push(`refused ${v.verb}: ${why}`); continue; }
         if (!a.dry) { const r = await ag.sendVerb(v.verb, v.args as Record<string, unknown>);
-          if (r && !r.ok) { L.push(`refused ${v.verb} by the door: ${r.refused?.reason ?? "refused"}${r.refused?.teach ? ` (${r.refused.teach})` : ""}`); continue; } }
+          if (r && !r.ok) { L.push(refusalText(v.verb, r)); continue; } }   // the words a person sees (shared/v4/refusal.js)
         L.push(`${a.dry ? "would send" : "sent"} ${v.verb} ${JSON.stringify(v.args)}`);
       }
       L.push(ag.v4 ? "(v4 world: each verb above was answered by the door)" : "(the fold echoes in a beat — inspect again to read the new values; refusals of rank or rate land in world_debug)");

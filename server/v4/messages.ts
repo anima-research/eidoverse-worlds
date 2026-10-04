@@ -17,6 +17,7 @@
 import type { Client, World } from "../world.ts";
 import { enc } from "../../shared/v4/names.js";
 import { toV4 as toV4At } from "../../shared/v4/fromv1.js";
+import { refusalText } from "../../shared/v4/refusal.js";
 
 type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: unknown };
 type Any = any;
@@ -37,7 +38,6 @@ function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>) {
 /** A v1 verb as a door request (shared/v4/fromv1.js), against this world's current fold. */
 export const toV4 = (w: World, verb: string, a: Any) => toV4At(w.v4!.live.state(), verb, a) as { tool: string; args: Any } | { refuse: string } | { noop: true };
 
-const refusalText = (r: Any) => `${r.refused?.reason ?? "refused"}${r.refused?.teach ? ` — ${r.refused.teach}` : ""}`;
 
 export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
   "v4": ({ c, ws }, msg) => {
@@ -71,7 +71,7 @@ export const V4_MESSAGES: Record<string, (ctx: Ctx, msg: Any) => void> = {
       if ("noop" in m) return;
       if ("refuse" in m) { w.debug("v4-verb-refused", { who: c.id, verb, why: m.refuse }); ws.send(JSON.stringify({ type: "error", error: m.refuse })); return; }
       const r = await w.v4!.request(actorOf(c), m.tool, m.args);
-      if (!r.ok) { w.debug("v4-refused", { who: c.id, verb, tool: m.tool, refused: r.refused }); ws.send(JSON.stringify({ type: "error", error: refusalText(r) })); }
+      if (!r.ok) { w.debug("v4-refused", { who: c.id, verb, tool: m.tool, refused: r.refused }); ws.send(JSON.stringify({ type: "error", error: refusalText(verb, r) })); }
     });
   },
   "lease": ({ ws }) => { ws.send(JSON.stringify({ type: "error", error: "leases aren't part of v4 worlds: carrying is grab/put/throw through the door (L6)" })); },

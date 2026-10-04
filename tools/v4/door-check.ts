@@ -19,6 +19,7 @@ import { makeV4Client, stateView, stateFromView } from "../../shared/v4/client.j
 import { simFold, digestOf, restsOf } from "../../shared/v4/simlayer.js";
 import { MODELS } from "../../shared/v4/catalogue.js";
 import { enc, encName, dec } from "../../shared/v4/names.js";
+import { refusalText } from "../../shared/v4/refusal.js";
 import { translate, TRANSLATOR } from "../../shared/v4/translate-v1.js";
 import { legacyState, legacyDelta, foldLegacy, legacyDiff } from "../../shared/v4/legacy.js";
 import { openWorld } from "../../server/v4/disk.ts";
@@ -159,6 +160,37 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     fs.writeFileSync(root + "worlds/tr-locks.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
     const tc = (actor, tool, args) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "tr-locks"), actor, tool, args); };
     ok(code(tc("ann", "set", { id: "sign", component: "transform", value: { pos: [0, 0, 0] } })) === "locked", "P41 in the translated world the old guard binds even its placer (by design, §5)"); }
+}
+
+// ---- NR: people's names in refusals (polish for R's first test, research 44 #3) ----
+// A name outside the identity grammar ("Riannon": capitals) is stored escaped (x--5269…). A refusal is read by a person
+// or an agent, so it says the name as the person spells it, and carries the id as a field for whoever needs to match it.
+{ const name = "names";
+  const R = enc("Riannon");
+  const call = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, name), actor, tool, args); };
+  call(R, "new", { title: "names" });
+  call(R, "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+  call(R, "create", { id: "statue", model: "crate", place: { at: [0, 2] } });
+  call(R, "set", { id: "statue", component: "lock", value: true });
+  const locked = call("bob", "set", { id: "statue", component: "transform", value: { pos: [1, 0, 1] } });
+  ok(code(locked) === "locked" && /locked by Riannon at/.test(locked.refused.reason) && !/x--/.test(locked.refused.reason), "NR1 a lock refusal names who locked it as they spell it (Riannon, not x--5269…)", locked.refused);
+  ok(locked.refused.by === R && locked.refused.lock === "statue", "NR2 …and carries the identity as a field (by), next to the lock", locked.refused);
+  call(R, "create", { id: "pot", model: "crate", place: { at: [3, 2] } });
+  const t0 = openWorld(root, name).state().entities.pot.c.transform;
+  call(R, "set", { id: "pot", component: "transform", value: { ...t0, pos: [3, 0, 3] } });
+  const ch = call("bob", "set", { id: "pot", component: "transform", value: { ...t0, pos: [4, 0, 4] }, expect: [{ id: "pot", component: "transform", value: t0 }] });
+  ok(code(ch) === "changed" && /Riannon changed it at/.test(ch.refused.reason) && ch.refused.by === R, "NR3 an expect refusal names who changed it (and keeps by: the id)", ch.refused);
+  const st = call("bob", "set", { id: "pot", component: "transform", value: { ...t0, pos: [5, 0, 5] }, base: 1 });
+  ok(code(st) === "stale" && /Riannon set it at/.test(st.refused.reason) && st.refused.by === R, "NR4 a stale-base refusal names them too", st.refused);
+  call("bob", "create", { id: "cup", model: "crate", place: { at: [6, 2] } });
+  const cupT = openWorld(root, name).state().entities.cup.c.transform;
+  const mv = call("bob", "set", { id: "cup", component: "transform", value: { ...cupT, pos: [6, 0, 6] } });
+  call(R, "set", { id: "cup", component: "transform", value: { ...cupT, pos: [7, 0, 7] } });
+  const un = call("bob", "undo", { act: mv.act });
+  ok(code(un) === "conflict" && /Riannon changed it since/.test(JSON.stringify(un.refused.skipped)) && un.refused.skipped?.[0]?.by === R, "NR5 an undo conflict names who changed it since (and by: the id)", un.refused);
+  ok(refusalText("move x--4c616d70", { refused: { code: "locked", reason: "x--4c616d70 is locked (locked by x--5269616e6e6f6e at 9)", teach: "" } }) === "move Lamp refused by the door (locked): Lamp is locked (locked by Riannon at 9)",
+    "NR6 the shared refusal text (what a person's toast and an agent's verb tools show) reads any escaped name back", refusalText("move x--4c616d70", { refused: { code: "locked", reason: "x--4c616d70 is locked (locked by x--5269616e6e6f6e at 9)" } }));
+  ok(refusalText("x", { refused: { code: "c", reason: "h--abc and plain-id and x--zz stay" } }) === "x refused by the door (c): h--abc and plain-id and x--zz stay", "NR7 …a hashed name (h--) or a non-hex x-- is left as it is (it can't be read back)");
 }
 
 // ---- M: translated mounts in the door's shape (research 37, slice 3 #3) ----
