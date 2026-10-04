@@ -42,7 +42,9 @@ const myActs = () => entries().map((e, seq) => ({ e, seq })).filter(({ e }) => e
 const disk = () => fold(entries());
 const waitFor = async (expr: string, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (await evalJson(expr)) return true; } catch { /* page busy */ } await sleep(100); } return false; };
 const waitDisk = async (pred: () => boolean, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (pred()) return true; await sleep(100); } return false; };
-const key = (code: string, mods: any = {}) => evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', key: '${code}', bubbles: true, ${Object.entries(mods).map(([k, v]) => `${k}: ${v}`).join(", ")} })), true`);
+// a press is a keydown AND a keyup: a held D (Alt+D) or Delete would otherwise walk the body on, and the view with it
+const key = (code: string, mods: any = {}) => { const m = Object.entries(mods).map(([k, v]) => `${k}: ${v}`).join(", ");
+  return evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', key: '${code}', bubbles: true, ${m} })), dispatchEvent(new KeyboardEvent('keyup', { code: '${code}', key: '${code}', bubbles: true, ${m} })), true`); };
 const page = (js: string) => evalJson(`(async () => { ${js} })()`);
 // the centre dialog and the Hierarchy, as a person sees them
 const dlgTitle = `(document.querySelector('#confirm-center #cc-title')?.textContent ?? null)`;
@@ -132,6 +134,8 @@ try {
     const ok2 = await waitDisk(() => myActs().length === n0 + 2);
     const [rel, und] = myActs().slice(n0);
     check("Q1 release + Ctrl+Z in the same tick: the undo names the release, not the act before it", ok2 && rel.e.verb === "set" && und.e.verb === "undo" && und.e.body.request.act === rel.seq && JSON.stringify(disk().entities[crate].c.transform) === before, myActs().slice(n0).map((a) => [a.seq, a.e.verb, a.e.body.request])); }
+
+  check("N0 by now (a create, a dozen moves, undos and redos) no '[state] seq gap' warning (N1 checks again at the end)", await evalJson(`__gaps.length === 0`), await evalJson(`__gaps.slice(0, 4)`));
 
   // ---- C: undo refused when someone changed it since ----
   const moved = disk().entities[crate].c.transform;
@@ -278,6 +282,10 @@ try {
   // pebble moved by R·0.6·that, the wrong way), and its ray could hit the pebble itself (it is drawn inside the plinth).
   { const roots = Object.keys(disk().entities).filter((k) => k !== "@world" && !disk().entities[k].c.parent);
     check("(setup) bob clears the field (everything placed so far, through its locks), so only the plinth is under the pointer", (await bobReq("batch", { ops: roots.map((id) => ({ tool: "delete", args: { id } })), through_lock: true })).ok, roots);
+    // the view must hold still while the test aims (the body may still be settling, and the camera chases it)
+    const camNow = () => evalJson(`import('/lib/core.js').then((c) => { c.camera.updateMatrixWorld(); return c.camera.matrixWorld.elements.map((v) => +v.toFixed(4)).join(); })`);
+    const settle = async () => { let last = await camNow(), same = 0; for (let i = 0; i < 60 && same < 5; i++) { await sleep(200); const now = await camNow(); same = now === last ? same + 1 : 0; last = now; } return same >= 5; };
+    check("(setup) the view holds still", await settle());
     // the nearest spot ahead where both the plinth's foot and the pebble on it are in view
     const G = await evalJson(`import('/lib/core.js').then((c) => { const T = c.THREE; const cam = c.camera; const f = cam.getWorldDirection(new T.Vector3()); f.y = 0; f.normalize();
       const o = cam.getWorldPosition(new T.Vector3());
@@ -293,22 +301,32 @@ try {
     // the test's own ray, as build.js aims: the first thing under a screen point that isn't the pebble, if it's the
     // plinth's top (a face pointing up). P = the pebble's world position. press: a point ON the pebble whose ray, past
     // the pebble, meets the plinth's top (its middle may look past the plinth's far edge, to the ground)
-    const geo = (x: number, y: number) => evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE;
-      const peb = w.entities.get('pebble'), pl = w.entities.get('plinth'); const P = peb.getWorldPosition(new T.Vector3());
+    await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE;
       const inside = (o, r) => { for (let q = o; q; q = q.parent) if (q === r) return true; return false; };
-      const rc = new T.Raycaster(); rc.setFromCamera(new T.Vector2(${x} / innerWidth * 2 - 1, -(${y} / innerHeight) * 2 + 1), c.camera);
-      const hs = rc.intersectObjects([...w.entities.values()].filter(Boolean), true);
-      const h = hs.find((h) => !inside(h.object, peb)); const top = h && h.face && h.face.normal.clone().transformDirection(h.object.matrixWorld).y > 0.6 && inside(h.object, pl);
-      return { P: P.toArray(), A: top ? h.point.toArray() : null, onPebble: !!hs[0] && inside(hs[0].object, peb) }; })`);
-    const findPress = async () => { const c0 = await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE; const peb = w.entities.get('pebble');
-      const s = new T.Box3().setFromObject(peb).getCenter(new T.Vector3()).project(c.camera); return [(s.x + 1) / 2 * innerWidth, (1 - s.y) / 2 * innerHeight]; })`);
-      // whole pixels (a MouseEvent's clientX is), and the middle of the run that qualifies, not its edge
-      const ok = []; for (let dy = 0; dy <= 40; dy += 2) { const xy = [Math.round(c0[0]), Math.round(c0[1] + dy)]; const g = await geo(xy[0], xy[1]); if (g.onPebble && g.A) ok.push({ xy, g }); }
-      return ok.length ? ok[Math.floor(ok.length / 2)] : null; };
+      globalThis.__geoF = (x, y) => { const peb = w.entities.get('pebble'), pl = w.entities.get('plinth'); const P = peb.getWorldPosition(new T.Vector3());
+        const rc = new T.Raycaster(); rc.setFromCamera(new T.Vector2(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1), c.camera);
+        const hs = rc.intersectObjects([...w.entities.values()].filter(Boolean), true);
+        const h = hs.find((h) => !inside(h.object, peb)); const top = h && h.face && h.face.normal.clone().transformDirection(h.object.matrixWorld).y > 0.6 && inside(h.object, pl);
+        return { P: P.toArray(), A: top ? h.point.toArray() : null, onPebble: !!hs[0] && inside(hs[0].object, peb) }; };
+      // every whole pixel (a MouseEvent's clientX is one) over the pebble's drawn box that qualifies as a press point;
+      // the one nearest their middle, away from the edges where a sub-pixel would flip the hit
+      globalThis.__pressF = () => { const peb = w.entities.get('pebble'); const b = new T.Box3().setFromObject(peb); const xs = [], ys = [];
+        for (const cx of [b.min.x, b.max.x]) for (const cy of [b.min.y, b.max.y]) for (const cz of [b.min.z, b.max.z]) { const s = new T.Vector3(cx, cy, cz).project(c.camera); xs.push((s.x + 1) / 2 * innerWidth); ys.push((1 - s.y) / 2 * innerHeight); }
+        const ok = []; for (let y = Math.ceil(Math.min(...ys)); y <= Math.max(...ys); y += 2) for (let x = Math.ceil(Math.min(...xs)); x <= Math.max(...xs); x += 2) { const g = __geoF(x, y); if (g.onPebble && g.A) ok.push({ xy: [x, y], g }); }
+        if (!ok.length) return null; const mx = ok.reduce((a, o) => a + o.xy[0], 0) / ok.length, my = ok.reduce((a, o) => a + o.xy[1], 0) / ok.length;
+        return ok.reduce((best, o) => (Math.hypot(o.xy[0] - mx, o.xy[1] - my) < Math.hypot(best.xy[0] - mx, best.xy[1] - my) ? o : best)); };
+      return true; })`);
+    const geo = (x: number, y: number) => evalJson(`__geoF(${x}, ${y})`);
+    const findPress = () => evalJson(`__pressF()`);
+    await settle();
     const pr = await findPress(); const at = pr?.xy ?? null; const press = pr?.g;
-    const m0 = at && [at[0], at[1] + 6], m1 = at && [at[0] + 10, at[1] + 4];
-    const A0 = m0 && (await geo(m0[0], m0[1])).A, A1 = m1 && (await geo(m1[0], m1[1])).A;
-    check("(setup) a press point on the pebble, and two pointer points over the plinth's top", !!at && !!A0 && !!A1, { press, at, A0, A1 });
+    // two pointer points over the plinth's top: past the drag's 4 px slop, then a small move on
+    let m0: any = null, m1: any = null, A0: any = null, A1: any = null;
+    for (const [dx, dy] of [[0, 6], [6, 0], [-6, 0], [0, -6], [5, 5], [-5, 5], [5, -5], [-5, -5]]) { if (!at || m0) break; const c = [at[0] + dx, at[1] + dy]; const a = (await geo(c[0], c[1])).A; if (a) { m0 = c; A0 = a; } }
+    for (const [dx, dy] of [[10, 4], [-10, 4], [10, -4], [-10, -4], [4, 10], [-4, 10], [4, -10], [-4, -10]]) { if (!m0 || m1) break; const c = [m0[0] + dx, m0[1] + dy]; const a = (await geo(c[0], c[1])).A; if (a && Math.hypot(a[0] - A0[0], a[2] - A0[2]) > 0.03) { m1 = c; A1 = a; } }
+    const fOk = !!at && !!A0 && !!A1;
+    check("(setup) a press point on the pebble, and two pointer points over the plinth's top", fOk, { press, at, m0, m1, A0, A1 });
+    if (fOk) {
     await page(`(await import('/lib/build.js')).setTool('move'); return true;`);
     await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${at?.[0]}, clientY: ${at?.[1]} })), true))`);
     check("F1 a press on the pebble selects it", await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'pebble')`));
@@ -330,6 +348,7 @@ try {
     // a mesh drag of a thing I locked asks too (the old client stopped it before the door was asked)
     check("(setup) I lock the pebble", (await page(`return (await (await import('/lib/v4edit.js')).lock('pebble', true)).ok;`)) === true);
     n0 = myActs().length;
+    await settle();
     const g2 = (await findPress())?.xy ?? at;
     await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${g2?.[0]}, clientY: ${g2?.[1]} })), true))`);
     await move([g2?.[0] + 10, g2?.[1] + 8]);
@@ -337,7 +356,8 @@ try {
     await evalJson(`(dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${g2?.[0] + 10}, clientY: ${g2?.[1] + 8} })), true)`);
     check("F6 a mesh drag of my locked pebble asks 'Move anyway?'", await waitFor(`${dlgTitle} === 'This is locked. Move anyway?'`), await evalJson(dlgTitle));
     await dlgClick("Cancel");
-    check("F7 ✕ Cancel puts it back, and nothing is written", await waitFor(`import('/lib/world.js').then((m) => { const p = m.entities.get('pebble').getWorldPosition(new (m.entities.get('pebble').position.constructor)()); return Math.hypot(p.x - ${pAfter[0]}, p.y - ${pAfter[1]}, p.z - ${pAfter[2]}) < 0.02; })`) && (await sleep(600), myActs().length === n0), myActs().slice(n0).map((a) => a.e.body.request)); }
+    check("F7 ✕ Cancel puts it back, and nothing is written", await waitFor(`import('/lib/world.js').then((m) => { const p = m.entities.get('pebble').getWorldPosition(new (m.entities.get('pebble').position.constructor)()); return Math.hypot(p.x - ${pAfter[0]}, p.y - ${pAfter[1]}, p.z - ${pAfter[2]}) < 0.02; })`) && (await sleep(600), myActs().length === n0), myActs().slice(n0).map((a) => a.e.body.request)); } }
+  await evalJson(`document.querySelector('#confirm-center .cc-no')?.click(), true`);   // a dialog a failed check left open would hold the keys
 
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);
