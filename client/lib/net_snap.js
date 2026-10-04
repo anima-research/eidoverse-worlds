@@ -7,6 +7,7 @@ import { THREE, camera } from './core.js';
 import { remotes } from './remotes.js';
 import { composeFirstPerson } from './fp_view.js';
 import { captureFrame, captureFrom } from './capture.js';
+import { entities } from './world.js';
 
 const _snapHead = new THREE.Vector3();
 const _snapBox = new THREE.Box3();
@@ -27,7 +28,24 @@ export async function snapshot(msg) {
     const root = r.avatar.root;
     const fwd = new THREE.Vector3(Math.sin(root.rotation.y), 0, Math.cos(root.rotation.y));
     let dataUrl;
-    if (msg.view === 'third') {
+    if (msg.at) {
+      // a placed thing, seen from where the asker stands, fitted to its bounds: an agent checks what it built
+      // without walking over (gap list 2026-10-04: framing used to need the client's internals)
+      const obj = entities.get(msg.at);
+      // a picture of the grey stand-in would be a confident lie about what was built: say it is loading instead
+      if (obj === null || obj?.userData?.placeholder) throw new Error(`"${msg.at}" is still loading — try again in a moment`);
+      if (!obj) throw new Error(`"${msg.at}" is not a placed thing in this scene`);
+      _snapBox.setFromObject(obj);
+      if (_snapBox.isEmpty()) _snapBox.setFromCenterAndSize(obj.getWorldPosition(new THREE.Vector3()), new THREE.Vector3(1, 1, 1));
+      const center = _snapBox.getCenter(new THREE.Vector3());
+      const radius = Math.max(0.3, _snapBox.getSize(new THREE.Vector3()).length() / 2);
+      const from = root.position.clone().sub(center).setY(0);
+      if (from.lengthSq() < 1e-6) from.set(0, 0, 1);
+      from.normalize();
+      const dist = radius / Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * 1.1;
+      const eye = center.clone().addScaledVector(from, dist).add(new THREE.Vector3(0, radius * 0.25, 0));
+      dataUrl = captureFrom(eye, center);
+    } else if (msg.view === 'third') {
       const eye = root.position.clone().add(new THREE.Vector3(0, 2.1, 0)).addScaledVector(fwd, -3.4);
       dataUrl = captureFrom(eye,
         root.position.clone().add(new THREE.Vector3(0, 1.2, 0)).addScaledVector(fwd, 4));

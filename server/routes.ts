@@ -72,7 +72,7 @@ type PendingSnap = { resolve: (r: { ok: true; png: Uint8Array } | { ok: false; e
 export const pendingSnaps = new Map<string, PendingSnap>();
 let nextSnapId = 1;
 
-function requestSnap(world: World, follow: string, view = "first"): Promise<{ ok: true; png: Uint8Array } | { ok: false; err: string; status: number }> {
+function requestSnap(world: World, follow: string, view = "first", at?: string): Promise<{ ok: true; png: Uint8Array } | { ok: false; err: string; status: number }> {
   const renderer = [...world.clients].find((c) => c.renderer);
   if (!renderer) return Promise.resolve({ ok: false, err: `no renderer is currently serving world "${world.name}"`, status: 503 });
   const target = [...world.clients].find((c) => c.id === follow && !c.spectator);
@@ -81,7 +81,7 @@ function requestSnap(world: World, follow: string, view = "first"): Promise<{ ok
   const id = `snap-${nextSnapId++}`;
   return new Promise((resolve) => {
     pendingSnaps.set(id, { resolve });
-    renderer.ws.send(JSON.stringify({ type: "snap", id, follow, view }));
+    renderer.ws.send(JSON.stringify({ type: "snap", id, follow, view, ...(at ? { at } : {}) }));
     setTimeout(() => {
       if (pendingSnaps.delete(id)) resolve({ ok: false, err: "renderer timed out", status: 504 });
     }, 12_000);
@@ -648,7 +648,8 @@ const ROUTES: Route[] = [
       const w = worlds.get(url.searchParams.get("world") ?? "commons");
       const follow = url.searchParams.get("follow") ?? "";
       if (!w) return new Response("unknown world", { status: 404 });
-      const r = await requestSnap(w, follow, url.searchParams.get("view") ?? "first");
+      const at = (url.searchParams.get("at") ?? "").slice(0, 200) || undefined;
+      const r = await requestSnap(w, follow, url.searchParams.get("view") ?? "first", at);
       if (!r.ok) return new Response(r.err, { status: r.status });
       return new Response(r.png, { headers: { "content-type": "image/png", "cache-control": "no-store" } });
     },
