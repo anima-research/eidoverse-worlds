@@ -14,14 +14,14 @@ import { ENGINE } from "./common.ts";
 import { sha256 } from "../../shared/v4/hash.js";
 
 const LAB_DIGEST = "22a27ab081644ca125718b3ad3e376e6b300f8c07930bd9868e01014577f663b";
-const MODS = ["fold", "hash", "catalogue", "toolspec", "simlayer", "door", "translate-v1", "translate-d3"];
+const MODS = ["fold", "hash", "catalogue", "toolspec", "simlayer", "door", "translate-v1", "translate-d3", "names", "legacy"];
 
 // the work, as one function that runs unchanged in bun and in the page (only the import base differs)
 const work = async (base: string, texts: { cottage: string; v1: string; d3: string }) => {
   const imp = (m: string) => import(`${base}/shared/v4/${m}.js`);
   const loaded: Record<string, boolean> = {};
   const M: Record<string, any> = {};
-  for (const m of ["fold", "hash", "catalogue", "toolspec", "simlayer", "door", "translate-v1", "translate-d3"]) {
+  for (const m of ["fold", "hash", "catalogue", "toolspec", "simlayer", "door", "translate-v1", "translate-d3", "names", "legacy"]) {
     try { M[m] = await imp(m); loaded[m] = true; } catch (e) { loaded[m] = false; M[m] = String(e); }
   }
   const { readLog, fold, digest } = M.fold;
