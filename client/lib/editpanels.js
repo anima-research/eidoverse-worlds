@@ -19,7 +19,7 @@
 import { THREE, scene } from './core.js';
 import { bus, CONFIG } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
-import { sendVerb, requestDebug, requestV4 } from './net.js';
+import { sendVerb, requestDebug, requestV4, v4 } from './net.js';
 import { flashHint } from './ui.js';
 import { makeSchemaFrame, resolveDelta } from './panels.js';
 import { registerXRPanel } from './xrpanels.js';
@@ -103,7 +103,9 @@ let skyPresets = null, groundPal = null;
 function loadWorldDefs() {
   defsRegistry().then((reg) => { skyPresets = reg.skyPresets ?? null; groundPal = reg.groundPalette ?? null; repaintAll(); }).catch(() => { /* the tiles say the palette is missing */ });
 }
-const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, label: 'World  (@world)', sub: describeWorld(state.st, Date.now(), { presets: skyPresets, clock: false }), active: worldSel }] });
+// the world's display name: v4 keeps it on @world (about.name); a v1 world has only the name in its address
+const worldName = () => (V4.isV4() ? v4.st?.entities?.['@world']?.c?.about?.name : null) || CONFIG.world || 'World';
+const worldRowFields = () => ({ t: 'list', k: 'wsel', rows: [{ id: WORLD_ID, label: worldName(), sub: describeWorld(state.st, Date.now(), { presets: skyPresets, clock: false }), active: worldSel }] });
 
 // ---------------------------------------------------------------- multi-selection
 // The PRIMARY selection stays exactly what build.js/scenegraph own (one id,
@@ -413,7 +415,7 @@ function cardRow(schema, id, addr) {
 function pushCards(f, schema, id, { locked = false } = {}) {
   for (const sec of schema.sections.list) {
     const key = `c:${sec.key ?? sec.type}`;
-    f.push({ t: 'group', k: key, label: `${sec.title}${locked && sec.type === 'Transform' ? ' 🔒' : ''}${sec.present === false ? ' · default' : ''}`, hint: `${sec.summary} — ${sec.category} · engine record ${sec.hash.slice(0, 12)}${sec.part ? ` · part: ${sec.part}` : ''}`, open: isOpen(id, key) });
+    f.push({ t: 'group', k: key, label: `${sec.title}${locked && sec.type === 'Transform' ? ' 🔒' : ''}${sec.present === false ? (sec.type === 'Parent' ? ' · none' : ' · default') : ''}`, hint: `${sec.summary} — ${sec.category} · engine record ${sec.hash.slice(0, 12)}${sec.part ? ` · part: ${sec.part}` : ''}`, open: isOpen(id, key) });
     for (const [label, value] of sec.info ?? []) f.push({ t: 'info', label, value });
     // the channel box: an alias (pos.yaw, the heading) stays addressable for
     // agents but is not drawn; the Quaternion row folds under its own header,
@@ -441,8 +443,8 @@ function pushCards(f, schema, id, { locked = false } = {}) {
 function worldFields() {
   const schema = schemaFor(WORLD_ID);
   const f = [
-    { t: 'info', label: 'id', value: `${WORLD_ID} — the world entity` },
-    { t: 'info', label: '', value: 'its sky, weather, ground and grass, as components: an edit goes out as the sky, weather, terrain or grass verb' },
+    { t: 'info', label: 'name', value: worldName(), hint: 'the world itself: its sky, weather, ground and grass are its components' },
+    { t: 'info', label: 'id', value: WORLD_ID, dim: true, hint: 'the world entity\'s permanent id: agents and scripts name it @world' },
   ];
   if (mayShape() === false) f.push({ t: 'info', label: '', value: 'shaping the world is the owner\'s — read-only for you' });
   pushCards(f, schema, WORLD_ID);

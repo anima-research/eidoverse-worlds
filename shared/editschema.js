@@ -27,7 +27,7 @@ import { normalizeSound, SOUND_LOOK_MAX } from './sound.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS } from './components.js';
 import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE } from './euler.js';
 import { qNorm, qHeading, qFromYaw, qWithHeading } from './rot.js';
-import { scale3, scaleWire } from './scale3.js';
+import { scale3, scaleWire, entScale } from './scale3.js';
 import { localOf, parentVerbs, childrenOf, worldPose } from './hierarchy.js';
 
 const R2D = 180 / Math.PI;
@@ -130,7 +130,7 @@ export function inspectSchema(ent, id, live = {}) {
       hint: tf.hint ?? `turn about ${L.mounted ? 'its parent\'s' : 'world'} up to this heading, keeping any tilt (the Rotate channels are the full orientation)` });
     // scale: in a v4 world (live.doorLocks) three channels like translate and rotate (R 10-04); `scale` stays as the
     // uniform setter agents already use (all three to one number), drawn only where it is the whole story (v1)
-    const S = scale3(ent.scale);
+    const S = scale3(entScale(ent));
     transform.push({ t: 'num', k: 'scale', label: 'scale', value: round(S[1]), def: 1, step: 0.05, dp: 2, min: 0.01, softMax: 12, ...tf,
       ...(live.doorLocks ? { alias: 'scale', hint: tf.hint ?? 'sets all three axes to one number (the channels are scale x / y / z)' } : {}) });
     if (live.doorLocks) ['x', 'y', 'z'].forEach((a, i) => transform.push({ t: 'num', k: `s${a}`, label: `scale ${a}`, value: round(S[i]), def: 1, step: 0.05, dp: 2, min: 0.01, softMax: 12, ...tf }));
@@ -472,6 +472,12 @@ function componentSections(ent, groups, held, live = {}, id = '?') {
     if (held) sec.removable = false;
     out.push(sec);
   }
+  // a root still shows its Parent card, empty: picking a parent there is the no-drag path (a headset, a trackpad), and
+  // Resonite shows Parent on every slot. present:false paints it quietly (· none), like the world's default cards.
+  if (!have.has('Parent') && g('parent')) {
+    const rec = RECORDS.Parent;
+    out.push({ type: 'Parent', key: null, title: 'Parent', hash: rec.hash, category: rec.category, summary: rec.summary, fields: refs('parent', (f) => f.k === 'to'), removable: false, present: false });
+  }
   // needs (design §3): an entry whose need has one sensible default says what
   // it brings; one that needs a choice says it will ask; one whose need cannot
   // be met in place (a Model: placed from the Library) is blocked, saying why
@@ -673,7 +679,7 @@ export function editVerbs(ent, id, edits, live = {}) {
   // the place every transform edit coalesces into, carrying the full pose: a
   // thing with q keeps its q (a move is not a turn), a yaw-only thing its yaw
   const basePlace = () => (place ??= { id, pos: [...(pv.pos ?? [0, 0, 0])],
-    ...(isLight(ent) ? {} : { ...(pv.q ? { q: [...pv.q] } : {}), yaw: pv.yaw ?? 0, scale: ent.scale ?? 1 }) });
+    ...(isLight(ent) ? {} : { ...(pv.q ? { q: [...pv.q] } : {}), yaw: pv.yaw ?? 0, scale: entScale(ent) ?? 1 }) });
   const rotSet = {};                // axis index → radians (the Rotate channels)
   const quatSet = {};               // component index → value (the Quaternion row)
   let headingSet = false;
@@ -924,7 +930,7 @@ export function editVerbs(ent, id, edits, live = {}) {
       const rel = { id, to: ent.parent.to, ...(ent.parent.slot ? { slot: ent.parent.slot } : {}), offset: place.pos.map((v) => round(v, 4)), ...turn };
       verbs.push({ verb: 'mount', args: rel });
     }
-    if (!isLight(ent) && JSON.stringify(place.scale) !== JSON.stringify(ent.scale ?? 1)) verbs.push({ verb: 'place', args: { id, scale: place.scale } });
+    if (!isLight(ent) && JSON.stringify(place.scale) !== JSON.stringify(entScale(ent) ?? 1)) verbs.push({ verb: 'place', args: { id, scale: place.scale } });
     place = null;
   }
   if (place) verbs.push({ verb: 'place', args: place });

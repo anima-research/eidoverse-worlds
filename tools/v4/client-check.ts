@@ -407,6 +407,10 @@ try {
     const r = { edit: e.visible, plain: p.visible }; e.el.remove(); p.el.remove(); return JSON.stringify(r);`);
   check("R1 an edit frame saved 'shown' starts hidden after a reload (a plain frame keeps its saved state)", reborn === JSON.stringify({ edit: false, plain: true }), reborn);
 
+  // the World row: its name big (v4 keeps it on @world.about), @world small (R 10-04: "World and (@world)?")
+  const wrow = await evalJson(`document.querySelector('[data-frame="hierarchy"] .sp-item')?.textContent ?? null`);
+  check("W1 the Hierarchy's World row reads the world's name, not '(@world)'", wrow?.startsWith("client check") && !wrow.includes("@world"), wrow);
+
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);
   check("B4 what the page drew came from its own fold: v4 entries ingested, v1 verbs derived locally, no resync (that the server sends it no `log` entries is server-check S8)", await evalJson(`import('/lib/net.js').then((m) => m.v4.stats.ingested > 10 && m.v4.stats.projected > 0 && m.v4.stats.resyncs === 0)`), await evalJson(`import('/lib/net.js').then((m) => m.v4.stats)`));

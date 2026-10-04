@@ -439,5 +439,19 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const s8 = step("about", "ann", "set", { id: "@world", component: "sky", value: { hours: 3 } });
   ok(s8.resync, "X9 a change with no v1 verb (the sky) is a resync, never a wrong delta", s8); }
 
+// ---- S3: a stretched v4 thing in the projection (R 10-04 three-axis scale; Wren's agent-lab `look` failure) ----
+{ const { legacyEntity } = await import("../../shared/v4/legacy.js");
+  const { foldEntry, emptyState } = await import("../../shared/fold.js");
+  const { effectiveWorldTransform } = await import("../../mcpl/effective.ts");
+  const rec = legacyEntity("bench", { model: "x.glb", transform: { pos: [1, 0, 2], q: [0, 0, 0, 1], scale: [2, 0.4, 0.4] } });
+  ok(typeof rec.scale === "number" && JSON.stringify(rec.scale3) === "[2,0.4,0.4]", "S3a a stretched thing projects `scale` as ONE number (every v1-era reader) and scale3 beside it", rec);
+  ok(legacyEntity("box", { model: "x.glb", transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [3, 3, 3] } }).scale3 === undefined, "S3b a uniform one carries no scale3 (v1 worlds stay byte-identical)");
+  const eff = effectiveWorldTransform("bench", { entity: (id: string) => (id === "bench" ? rec : undefined), mount: () => undefined } as any, 0);
+  ok(eff.ok === true, "S3c the agent's pose reader (mcpl/effective) resolves it: no 'non-finite folded transform'", eff);
+  const st = emptyState();
+  foldEntry(st, { seq: 1, ts: 0, actor: "a", verb: "spawn", args: { id: "b", lib: "x.glb", pos: [0, 0, 0], scale: 0.4, scale3: [2, 0.4, 0.4] } });
+  foldEntry(st, { seq: 2, ts: 0, actor: "a", verb: "place", args: { id: "b", pos: [0, 0, 0], scale: 1 } });
+  ok(st.entities.b && st.entities.b.scale === 1 && st.entities.b.scale3 === undefined, "S3d the v1 fold carries scale3, and a plain scale makes it uniform again", st.entities.b); }
+
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

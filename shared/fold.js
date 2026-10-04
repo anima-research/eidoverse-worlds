@@ -245,6 +245,8 @@ export function foldEntry(st, e) {
       st.entities[a.id] = {
         ...(a.lib != null ? { lib: a.lib } : {}), pos: a.pos ?? [0, 0, 0], ...orient(a),
         ...(a.scale != null ? { scale: a.scale } : {}),
+        // scale3: a v4 world's per-axis scale, beside the one-number `scale` (shared/v4/legacy.js); v1 never writes it
+        ...(Array.isArray(a.scale3) && a.scale3.length === 3 && a.scale3.every(Number.isFinite) ? { scale3: a.scale3 } : {}),
         // `collide` ("exact" | "box") is the spawner's override of the
         // size-derived collider choice, and the fold used to drop it: the
         // clients present at the spawn honoured it, and everyone who joined
@@ -271,6 +273,7 @@ export function foldEntry(st, e) {
       if (Array.isArray(a.pos) && a.pos.length === 3 && a.pos.every(Number.isFinite)) ent.pos = a.pos;
       reorient(ent, a);
       if (a.scale != null) ent.scale = a.scale;
+      if (Array.isArray(a.scale3) && a.scale3.length === 3 && a.scale3.every(Number.isFinite)) ent.scale3 = a.scale3; else if (a.scale != null) delete ent.scale3;   // a plain scale is uniform again
       return;
     }
     case "light": {
@@ -307,6 +310,7 @@ export function foldEntry(st, e) {
         ...(base?.yaw != null ? { yaw: base.yaw } : {}),
         ...(base?.q ? { q: base.q } : {}),
         ...(base?.scale != null ? { scale: base.scale } : {}),
+        ...(base?.scale3 ? { scale3: base.scale3 } : {}),
         // a re-light is a partial update, not a re-authoring: the FIRST
         // placer stays (the #190 known edge — an owner brightening someone's
         // guarded lamp used to become its placer through `actor`)

@@ -710,6 +710,7 @@ function fieldDOM(f, edit, ro = {}) {
       if (!f.rows?.length) box.append(el('div', 'sp-empty', f.empty ?? 'nothing here'));
       for (const r of f.rows ?? []) {
         const line = el('div', `sp-item${r.active ? ' active' : ''}`);
+        if (r.id != null) line.dataset.id = String(r.id);   // a row is findable by what it IS, not by its label
         const main = el('span', 'sp-item-main');
         main.append(el('span', 'sp-item-label', r.label));
         if (r.sub) main.append(el('span', 'sp-item-sub', r.sub));

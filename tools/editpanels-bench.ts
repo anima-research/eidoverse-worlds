@@ -75,7 +75,7 @@ await evalJson(`document.querySelector('.edit-tab[data-tab="hierarchy"]').click(
 check('the Hierarchy tab swaps the pane', await waitFor(`getComputedStyle(document.querySelector('[data-frame="hierarchy"]')).display !== 'none' && getComputedStyle(document.querySelector('[data-frame="build"]')).display === 'none'`));
 check('…and is remembered (this viewer, this browser)', await evalJson(`(() => { const L = JSON.parse(localStorage.getItem('ew-edit-layout') || '{}'); return L.leftTab === 'hierarchy' && L.tabV === 2; })()`));
 check('empty world: hierarchy says so', await evalJson(`!!document.querySelector('[data-frame="hierarchy"] .sp-empty')`));
-check('…with the World row pinned above the tree', await evalJson(`(() => { const r = document.querySelector('[data-frame="hierarchy"] .sp-item'); return !!r && r.textContent.startsWith('World  (@world)'); })()`), await evalJson(`document.querySelector('[data-frame="hierarchy"] .sp-item')?.textContent ?? null`));
+check('…with the World row pinned above the tree', await evalJson(`(() => { const r = document.querySelector('[data-frame="hierarchy"] .sp-item'); return !!r && !r.textContent.includes('@world') && r.textContent.length > 0; })()`), await evalJson(`document.querySelector('[data-frame="hierarchy"] .sp-item')?.textContent ?? null`));
 check('nothing selected: inspector says so', await evalJson(`/nothing selected/.test(document.querySelector('[data-frame="inspector"] .sp-info')?.textContent ?? '')`));
 
 console.log('\nthe workspace: docked columns, strips, a slim rail:');
@@ -109,6 +109,11 @@ check('tree row appears (after the coalesced repaint)', await waitFor(`[...docum
 await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('benchlamp')), true`);
 await waitFor(`!!document.querySelector('.frame.edit .sp-tree-row.active')`);
 const insp = `[...document.querySelectorAll('.frame.edit')].find((f) => /Inspector/.test(f.querySelector('.fr-title')?.textContent))`;
+// Add Component is ONE button opening a searchable list (R 10-04): '+ X' is the list's item X (opened FRESH each time:
+// the list is a snapshot of the selection it opened on)
+const popItem = (label: string) => `(() => { document.querySelector('.sp-pop-search')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); ${insp}.querySelector('.sp-pop-btn')?.click(); return [...document.querySelectorAll('.sp-pop-item')].find((b) => b.textContent.trim().replace(/…$/, '') === ${JSON.stringify(label.replace(/^\+ /, ''))}); })()`;
+const popItems = `(() => { document.querySelector('.sp-pop-search')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); ${insp}.querySelector('.sp-pop-btn')?.click(); return [...document.querySelectorAll('.sp-pop-item')].map((b) => '+ ' + b.textContent.trim().replace(/…$/, '')); })()`;
+const popClose = `(document.querySelector('.sp-pop-search')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true)`;
 check('row is active', await evalJson(`!!document.querySelector('.frame.edit .sp-tree-row.active')`));
 // B: the number rows are the cards' own — Transform's translate x/y/z, then Light's brightness/range,
 // each ONCE, with no `light · ` prefix (the card title says whose they are). A light-verb light has no
@@ -116,8 +121,8 @@ check('row is active', await evalJson(`!!document.querySelector('.frame.edit .sp
 const numLabels = `[...${insp}.querySelectorAll('.sp-f-num .sp-label')].map((l) => l.textContent)`;
 check('number rows are the cards\' own: translate x/y/z, brightness, range — once each, no rotate on a light', await evalJson(`JSON.stringify(${numLabels}) === JSON.stringify(['translate x', 'translate y', 'translate z', 'brightness', 'range'])`), JSON.stringify(await evalJson(numLabels)));
 const cardTitles = `[...${insp}.querySelectorAll('.sp-group')].map((g) => g.textContent.slice(2))`;
-check('one card per component, then Add Component (no Channels strip, no Flags group)', await evalJson(`JSON.stringify(${cardTitles}) === JSON.stringify(['Transform', 'Light', 'Add Component'])`), JSON.stringify(await evalJson(cardTitles)));
-check('the header carries label + hidden above the cards (Unity\'s name and active box)', await evalJson(`(() => { const rows = [...${insp}.querySelector('.sp-group').closest('.sp-row').parentElement.children]; const first = rows.findIndex((r) => r.querySelector('.sp-group')); const head = rows.slice(0, first).map((r) => r.querySelector('.sp-label')?.textContent).filter(Boolean); return head.includes('label') && head.includes('hidden'); })()`));
+check('one card per component (a root\'s quiet Parent · none last), then ONE Add Component button (no Channels strip, no Flags group; R 10-04)', await evalJson(`JSON.stringify(${cardTitles}) === JSON.stringify(['Transform', 'Light', 'Parent · none']) && ${insp}.querySelectorAll('.sp-pop-btn').length === 1`), JSON.stringify(await evalJson(cardTitles)));
+check('the header carries name + hidden above the cards (Unity\'s name and active box)', await evalJson(`(() => { const rows = [...${insp}.querySelector('.sp-group').closest('.sp-row').parentElement.children]; const first = rows.findIndex((r) => r.querySelector('.sp-group')); const head = rows.slice(0, first).map((r) => r.querySelector('.sp-label')?.textContent).filter(Boolean); return head[0] === 'name' && head.includes('hidden'); })()`));
 check('the light group renders from the registry', await evalJson(`[...${insp}.querySelectorAll('.sp-group')].some((g) => /light/i.test(g.textContent)) && !!${insp}.querySelector('input[type=color]')`));
 // was "lock / keep / noon toggles" (Flags held locked): in B a lock is a component — "+ Lock" under Add
 // Component, a Lock card once added (checked further down) — so the toggles here are hidden, keep, noon
@@ -182,10 +187,10 @@ console.log('\nBuild — Blueprints · Tools · World, and the world entity (des
   // the ground and grass picks are worldentity-test's: a terrain mesh is a cost this headless renderer need not pay
 
   // the world entity in the Inspector
-  await evalJson(`[...${bf}.querySelectorAll('.sp-item-main')].find((m) => /@world/.test(m.textContent))?.click(), true`);
+  await evalJson(`${bf}.querySelector('.sp-item[data-id="@world"] .sp-item-main')?.click(), true`);
   const cards = `[...${insp}.querySelectorAll('.sp-group')].map((g) => g.textContent.slice(2))`;
   check('the World row selects @world: the Inspector shows its four cards', await waitFor(`(() => { const t = ${cards}; return t[0] === 'Sky' && t[1] === 'Weather' && t[2] === 'Ground · default' && t[3] === 'Grass · default' && t.length === 4; })()`), JSON.stringify(await evalJson(cards)));
-  check('…headed @world, saying what its edits become', await evalJson(`/@world — the world entity/.test(${insp}.textContent) && /sky, weather, terrain or grass verb/.test(${insp}.textContent)`));
+  check('…headed by its name, with @world as its id (R 10-04)', await evalJson(`(() => { const rows = [...${insp}.querySelectorAll('.sp-row')].map((r) => [r.querySelector('.sp-label')?.textContent, r.querySelector('.sp-info')?.textContent]); return rows[0]?.[0] === 'name' && rows[1]?.[0] === 'id' && rows[1]?.[1] === '@world'; })()`));
   check('…and the World row reads active (the thing selection cleared)', await evalJson(`!!${bf}.querySelector('.sp-item.active') && globalThis.__editPanels?.().worldSel === true && globalThis.__editPanels?.().selected == null`));
   const hoursIn = `[...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label')?.textContent === 'time of day')?.querySelector('.sp-num')`;
   check('the Sky card shows the preset\'s hour', await evalJson(`(() => { const i = ${hoursIn}; return !!i && Math.abs(parseFloat(i.value) - 17.6) < 0.05; })()`), await evalJson(`${hoursIn}?.value ?? null`));
@@ -369,7 +374,7 @@ check('✕ removes the only seat → sockets comp gone', await waitFor(`import('
 console.log('\nhierarchy: label · hidden · filter · disclosure · duplicate · arrows:');
 await sleep(1500);   // settle: the verb-rate window (see the ✕ note above)
 const hier = `[...document.querySelectorAll('.frame.edit')].find((f) => /Hierarchy/.test(f.querySelector('.fr-title')?.textContent))`;
-await evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-text')].find((r) => r.querySelector('.sp-label')?.textContent === 'label').querySelector('.sp-text'); i.value = 'porch'; i.dispatchEvent(new Event('change')); return true; })()`);
+await evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-text')].find((r) => r.querySelector('.sp-label')?.textContent === 'name').querySelector('.sp-text'); i.value = 'porch'; i.dispatchEvent(new Event('change')); return true; })()`);
 check('label typed in the header → the hierarchy row shows it', await waitFor(`[...${hier}.querySelectorAll('.sp-tree-row .sp-item-label')].some((l) => l.textContent === 'porch  (benchlamp)')`), 'rows=' + await evalJson(`[...${hier}.querySelectorAll('.sp-tree-row .sp-item-label')].map((l) => l.textContent).join('|')`) + ' label-comp=' + JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.label)`)) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
 await evalJson(`(() => { const c = [...${insp}.querySelectorAll('.sp-f-check')].find((r) => r.querySelector('.sp-label')?.textContent === 'hidden').querySelector('input'); c.checked = true; c.dispatchEvent(new Event('change')); return true; })()`);
 check('hidden checkbox → the mesh is not drawn (obj.visible false, still in the fold)', await waitFor(`import('/lib/world.js').then((m) => m.entities.get('benchlamp')?.visible === false && !!m.comps.get('benchlamp')?.hidden)`));
@@ -489,15 +494,17 @@ console.log('\nthe channel box on a model (design §5): Maya\'s rows, the rotate
   const type = (label: string, v: string) => evalJson(`(() => { const i = ${chan(label)}; if (!i) return false; i.value = ${JSON.stringify(v)}; i.dispatchEvent(new Event('change')); return true; })()`);
   const faces = `['rotate x', 'rotate y', 'rotate z'].map((l) => +[...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label').textContent === l)?.querySelector('.sp-num').value)`;
   const rec = () => evalJson(`import('/lib/state.js').then((m) => m.state.st.entities.crate1)`);
-  const orderSel = `${cardRows('Transform')}.find((r) => r.querySelector('.sp-label')?.textContent === 'rotate order')?.querySelector('select')`;
+  const orderSel = `${cardRows('Advanced')}.find((r) => r.querySelector('.sp-label')?.textContent === 'rotate order')?.querySelector('select')`;
   const setOrder = (v: string) => evalJson(`(() => { const s = ${orderSel}; if (!s) return false; s.value = ${JSON.stringify(v)}; s.dispatchEvent(new Event('change')); return true; })()`);
   // in-page: does the fold's q equal the channels' faces recomposed in this order? (the shared math, not a copy)
   const facesCompose = (order: string) => `import('/shared/euler.js').then((E) => import('/lib/state.js').then((S) => { const f = ${faces}.map((d) => d * Math.PI / 180); const q = E.qFromEuler(f, ${JSON.stringify(order)}); const e = S.state.st.entities.crate1; return !!e.q && E.sameRotation(q, e.q, 1e-3); }))`;
 
-  check('the Transform card is Maya\'s channel box: translate x/y/z, rotate order, rotate x/y/z, scale (the heading alias not drawn)', await waitFor(`JSON.stringify(${cardLabels('Transform')}) === JSON.stringify(['translate x', 'translate y', 'translate z', 'rotate order', 'rotate x', 'rotate y', 'rotate z', 'scale'])`), JSON.stringify(await evalJson(cardLabels('Transform'))));
+  check('the Transform card is Maya\'s channel box: translate x/y/z, rotate x/y/z, scale (rotate order lives in Advanced, R 10-04; the heading alias not drawn)', await waitFor(`JSON.stringify(${cardLabels('Transform')}) === JSON.stringify(['translate x', 'translate y', 'translate z', 'rotate x', 'rotate y', 'rotate z', 'scale'])`), JSON.stringify(await evalJson(cardLabels('Transform'))));
   check('…the Rotate rows carry their axis (x / y / z label colours)', await evalJson(`['x', 'y', 'z'].every((a) => ${cardRows('Transform')}.find((r) => r.querySelector('.sp-label')?.textContent === 'rotate ' + a)?.dataset.axis === a)`));
+  check('the Advanced group follows the Transform card, collapsed (header only: rotate order and the quaternion, R 10-04)', await evalJson(`(() => { const G = ${cardTitles}; return G[G.indexOf('Transform') + 1] === 'Advanced' && [...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▸ Advanced') && ${cardRows('Advanced')}.length === 0; })()`), JSON.stringify(await evalJson(cardTitles)));
+  await evalJson(`([...${insp}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▸ Advanced')?.click(), true)`);
+  await waitFor(`!![...${insp}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▾ Advanced')`);
   check('rotate order is a dropdown of Maya\'s six orders + quaternion, reading XYZ', await evalJson(`(() => { const s = ${orderSel}; return !!s && [...s.options].map((o) => o.value).join() === 'XYZ,XZY,YXZ,YZX,ZXY,ZYX,quat' && s.value === 'XYZ'; })()`), JSON.stringify(await evalJson(`(() => { const s = ${orderSel}; return s ? [s.value, [...s.options].map((o) => o.value)] : null; })()`)));
-  check('the Quaternion row follows the Transform card, collapsed (header only, no quat rows painted)', await evalJson(`(() => { const G = ${cardTitles}; return G[G.indexOf('Transform') + 1] === 'Quaternion' && [...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▸ Quaternion') && ${cardRows('Quaternion')}.length === 0; })()`), JSON.stringify(await evalJson(cardTitles)));
 
   await type('rotate x', '30');
   check('typing rotate x = 30 writes q (30° about X) into the fold, pos and scale untouched', await waitFor(`import('/lib/state.js').then((m) => { const e = m.state.st.entities.crate1; const h = 15 * Math.PI / 180; return Array.isArray(e.q) && Math.abs(Math.abs(e.q[0] * Math.sin(h) + e.q[3] * Math.cos(h)) - 1) < 1e-6 && e.pos[0] === 3 && e.pos[2] === 3 && (e.scale ?? 1) === 1; })`), JSON.stringify(await rec()));
@@ -518,9 +525,8 @@ console.log('\nthe channel box on a model (design §5): Maya\'s rows, the rotate
   await type('rotate y', '90');
   check('rotate y = 90 (XYZ\'s middle axis): the Transform card says it is in gimbal lock', await waitFor(`${cardRows('Transform')}.some((r) => r.classList.contains('sp-f-info') && /gimbal lock/.test(r.textContent))`), JSON.stringify(await evalJson(cardLabels('Transform'))));
   await sleep(400);
-  await evalJson(`([...${insp}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▸ Quaternion')?.click(), true)`);
-  check('clicking the Quaternion header opens it: quat x / y / z / w', await waitFor(`JSON.stringify(${cardLabels('Quaternion')}) === JSON.stringify(['quat x', 'quat y', 'quat z', 'quat w'])`), JSON.stringify(await evalJson(cardLabels('Quaternion'))));
-  check('…reading the fold\'s q', await waitFor(`import('/lib/state.js').then((m) => { const q = m.state.st.entities.crate1.q; const v = ${cardRows('Quaternion')}.map((r) => +r.querySelector('.sp-num').value); return v.length === 4 && v.every((x, i) => Math.abs(x - q[i]) < 1e-3); })`), JSON.stringify([await evalJson(`${cardRows('Quaternion')}.map((r) => r.querySelector('.sp-num').value)`), ((await rec()) as any).q]));
+  check('the open Advanced group holds rotate order and quat x / y / z / w', await waitFor(`JSON.stringify(${cardLabels('Advanced')}) === JSON.stringify(['rotate order', 'quat x', 'quat y', 'quat z', 'quat w'])`), JSON.stringify(await evalJson(cardLabels('Advanced'))));
+  check('…reading the fold\'s q', await waitFor(`import('/lib/state.js').then((m) => { const q = m.state.st.entities.crate1.q; const v = ${cardRows('Advanced')}.filter((r) => r.querySelector('.sp-num')).map((r) => +r.querySelector('.sp-num').value); return v.length === 4 && v.every((x, i) => Math.abs(x - q[i]) < 1e-3); })`), JSON.stringify([await evalJson(`${cardRows('Quaternion')}.map((r) => r.querySelector('.sp-num').value)`), ((await rec()) as any).q]));
   const qLock = ((await rec()) as any).q;
   await type('quat w', '2');
   check('typing quat w = 2 commits a NORMALIZED q (clamped to 1, then the whole q scaled to unit length)', await waitFor(`import('/lib/state.js').then((m) => { const q = m.state.st.entities.crate1.q; return Array.isArray(q) && Math.abs(Math.hypot(...q) - 1) < 1e-9 && q[3] > ${qLock[3]} + 1e-3; })`), JSON.stringify(await rec()));
@@ -530,18 +536,13 @@ console.log('\nthe channel box on a model (design §5): Maya\'s rows, the rotate
   // folding the Transform card must fold its Quaternion row too (renderDOM draws groups as FLAT markers, so a
   // sub-header that is open would otherwise reopen its rows under a closed card)
   await evalJson(`([...${insp}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▾ Transform')?.click(), true)`);
-  check('folding Transform hides its rows AND the open Quaternion row inside it', await waitFor(`(() => { const L = [...${insp}.querySelectorAll('.sp-label')].map((l) => l.textContent); return [...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▸ Transform') && !L.includes('rotate x') && !L.includes('quat w') && !${cardTitles}.includes('Quaternion'); })()`), JSON.stringify({ groups: await evalJson(cardTitles), labels: await evalJson(`[...${insp}.querySelectorAll('.sp-label')].map((l) => l.textContent)`) }));
-  const filt = (v: string) => evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-text .sp-text')].find((x) => /filter properties/.test(x.placeholder)); i.value = ${JSON.stringify(v)}; i.dispatchEvent(new Event('change')); i.blur(); return true; })()`);
-  await filt('quat');
-  check('…but a filter still finds the quaternion inside the folded card (it opens what holds a hit)', await waitFor(`JSON.stringify(${cardLabels('Quaternion')}) === JSON.stringify(['quat x', 'quat y', 'quat z', 'quat w'])`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('.sp-label, .sp-group')].map((l) => l.textContent)`)));
-  await filt('');
+  check('folding Transform hides its rows AND the open Advanced group inside it', await waitFor(`(() => { const L = [...${insp}.querySelectorAll('.sp-label')].map((l) => l.textContent); return [...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▸ Transform') && !L.includes('rotate x') && !L.includes('quat w') && !${cardTitles}.includes('Quaternion'); })()`), JSON.stringify({ groups: await evalJson(cardTitles), labels: await evalJson(`[...${insp}.querySelectorAll('.sp-label')].map((l) => l.textContent)`) }));
   // folds persist per lib (localStorage): put both back the way later sections expect them
-  // (wait for the unfiltered paint first: under the filter the card was forced open, so '▸ Transform' is not there yet)
   await waitFor(`[...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▸ Transform')`);
   await evalJson(`([...${insp}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▸ Transform')?.click(), true)`);
-  await waitFor(`[...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▾ Quaternion')`);
-  await evalJson(`([...${insp}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▾ Quaternion')?.click(), true)`);
-  check('…and unfolding brings the card back with the Quaternion row as it was left', await waitFor(`${cardLabels('Transform')}.includes('rotate x') && [...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▸ Quaternion')`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('.sp-group')].map((g) => g.textContent)`)));
+  await waitFor(`[...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▾ Advanced')`);
+  await evalJson(`([...${insp}.querySelectorAll('.sp-group')].find((g) => g.textContent === '▾ Advanced')?.click(), true)`);
+  check('…and unfolding brings the card back with the Advanced group as it was left', await waitFor(`${cardLabels('Transform')}.includes('rotate x') && [...${insp}.querySelectorAll('.sp-group')].some((g) => g.textContent === '▸ Advanced')`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('.sp-group')].map((g) => g.textContent)`)));
 }
 
 console.log('\npick: an armed attach completes on a viewport click, not only a row click; both attach paths undo:');
@@ -600,7 +601,7 @@ await sleep(1500);   // verb window
   check('…and its Translate reads LOCAL (the mount offset), said so on the card', await waitFor(`(() => { const f = (l) => [...${insp}.querySelectorAll('.sp-f-num')].find((r) => r.querySelector('.sp-label')?.textContent === l); const x = f('translate x'); return !!x && Math.abs(parseFloat(x.querySelector('.sp-num').value) - 4) > 0.05 && /local to its parent, crate1/.test(${insp}.textContent); })()`),
     await evalJson(`[...${insp}.querySelectorAll('.sp-f-num')].slice(0, 3).map((r) => r.querySelector('.sp-label')?.textContent + '=' + r.querySelector('.sp-num').value).join(' ')`));
   await evalJson(`import('/lib/scenegraph.js').then((m) => m.sceneSelect('crate1')), true`);
-  check('crate1\'s inspector lists its children', await waitFor(`[...${insp}.querySelectorAll('.sp-f-info')].some((r) => r.querySelector('.sp-label')?.textContent === 'children' && /cup1/.test(r.textContent))`));
+  check('crate1\'s inspector does NOT list its children: that is the Hierarchy\'s job (R 10-04)', await evalJson(`![...${insp}.querySelectorAll('.sp-f-info')].some((r) => r.querySelector('.sp-label')?.textContent === 'children')`));
   await sleep(600);
   await evalJson(`import('/lib/build.js').then((m) => m.undo()), true`);
   check('ONE undo for the drag: a root again, its own scale back, same world pose', await waitFor(`import('/lib/state.js').then((m) => !m.state.st.entities.cup1?.parent && m.state.st.entities.cup1?.scale === 0.5)`) && await waitFor(`${WP}.then((w) => w.every((v, i) => Math.abs(v - ${JSON.stringify(w0)}[i]) < 2e-3))`),
@@ -762,12 +763,12 @@ console.log('\npicture + sound in the inspector (schema groups; uploads through 
   const comp = (t: string) => evalJson(`import('/lib/world.js').then((m) => m.comps.get('crate1')?.${t} ?? null)`);
   // a person's click carries user ACTIVATION, which the file chooser requires (Chrome: "File chooser dialog can only be
   // shown with a user activation"); a plain Runtime.evaluate click does not — say it is a gesture
-  const btn = async (label: string) => (await cdp.send<any>('Runtime.evaluate', { userGesture: true, returnByValue: true, expression: `(() => { const b = [...${insp}.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(label)}); if (!b) return false; b.click(); return true; })()` }))?.result?.value;
+  const btn = async (label: string) => (await cdp.send<any>('Runtime.evaluate', { userGesture: true, returnByValue: true, expression: `(() => { const b = ${label.startsWith('+ ') ? popItem(label) : `[...${insp}.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(label)})`}; if (!b) return false; b.click(); return true; })()` }))?.result?.value;
   const field = (label: string, value: string) => evalJson(`(() => { const r = [...${insp}.querySelectorAll('.sp-row')].find((x) => x.querySelector('.sp-label')?.textContent === ${JSON.stringify(label)}); const i = r?.querySelector('input, select'); if (!i) return false; i.value = ${JSON.stringify(value)}; i.dispatchEvent(new Event('change')); return true; })()`);
   await evalJson(`import('/lib/scenegraph.js').then((m) => (m.sceneSelect('crate1'), true))`);
   // was the Components group's "+ picture…" / "+ sound…"; B lists them under Add Component as "+ Picture" /
 // "+ Sound" (same gesture keys, comp.add:picture / comp.add:sound, so the same chooser opens)
-check('a model with named parts: Add Component offers "+ Picture" and "+ Sound"', await waitFor(`(() => { const t = [...${insp}.querySelectorAll('button')].map((b) => b.textContent.trim()); return t.includes('+ Picture') && t.includes('+ Sound'); })()`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('button')].map((b) => b.textContent.trim())`)));
+check('a model with named parts: Add Component offers "+ Picture" and "+ Sound"', await waitFor(`(() => { const t = ${popItems}; return t.includes('+ Picture') && t.includes('+ Sound'); })()`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('button')].map((b) => b.textContent.trim())`)));
   nextFile = png;
   check('+ Picture opens the chooser', await btn('+ Picture'));
   check('…the image goes through /upload and hangs on the first named part', await waitFor(`import('/lib/world.js').then((m) => { const p = m.comps.get('crate1')?.picture; return !!p && p.src.startsWith('store/images/') && typeof p.part === 'string' && p.part.length > 0; })`, 10000), JSON.stringify(await comp('picture')) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
@@ -821,10 +822,10 @@ console.log('\nAdd Component (design §3/§5): categories, blocked entries say w
 {
   await evalJson(`import('/lib/scenegraph.js').then((m) => (m.sceneSelect('benchlamp'), true))`);
   await waitFor(`${insp}.querySelector('.sp-info')?.textContent.startsWith('benchlamp')`);
-  const addBtn = (name: string) => `[...${insp}.querySelectorAll('.sp-btn')].find((b) => b.textContent.trim() === ${JSON.stringify(name)})`;
+  const addBtn = (name: string) => name.startsWith('+ ') ? popItem(name) : `[...${insp}.querySelectorAll('.sp-btn')].find((b) => b.textContent.trim() === ${JSON.stringify(name)})`;
   const isLocked = `import('/lib/world.js').then((m) => m.comps.get('benchlamp')?.lock === true)`;
-  check('Add Component is the last card, and lists entries under category captions', await evalJson(`(() => { const G = ${cardTitles}; const R = [...${insp}.querySelectorAll('.sp-row')]; const i = R.findIndex((r) => r.querySelector('.sp-group')?.textContent === '▾ Add Component'); const caps = R.slice(i + 1).filter((r) => r.classList.contains('sp-f-info')).map((r) => r.textContent.trim()).filter(Boolean); return G[G.length - 1] === 'Add Component' && caps.length >= 3; })()`), JSON.stringify(await evalJson(cardTitles)));
-  check('a light is offered "+ Lock"; "+ Model" is there but disabled, titled with why', await evalJson(`(() => { const l = ${addBtn('+ Lock')}, m = ${addBtn('+ Model')}; return !!l && !l.disabled && !!m && m.disabled && (m.closest('.sp-row')?.title ?? '').length > 10; })()`), JSON.stringify(await evalJson(`(() => { const m = ${addBtn('+ Model')}; return m ? { disabled: m.disabled, why: m.closest('.sp-row')?.title } : null; })()`)));
+  check('Add Component is ONE button after the cards, and its list groups entries under category captions', await evalJson(`(() => { const G = ${cardTitles}; const b = ${insp}.querySelectorAll('.sp-pop-btn'); if (b.length !== 1 || G.includes('Add Component')) return false; ${insp}.querySelector('.sp-pop-btn').click(); const caps = [...document.querySelectorAll('.sp-pop-cat')].length; document.querySelector('.sp-pop-search')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return caps >= 3; })()`), JSON.stringify(await evalJson(cardTitles)));
+  check('a light is offered "+ Lock"; "+ Model" is there but disabled, titled with why', await evalJson(`(() => { const l = ${addBtn('+ Lock')}, m = ${addBtn('+ Model')}; return !!l && !l.disabled && !!m && m.disabled && (m.title ?? '').length > 10; })()`), JSON.stringify(await evalJson(`(() => { const m = ${addBtn('+ Model')}; return m ? { disabled: m.disabled, why: m.closest('.sp-row')?.title } : null; })()`)));
   await evalJson(`(${addBtn('+ Lock')}.click(), true)`);
   check('+ Lock adds the lock component', await waitFor(isLocked), JSON.stringify(await evalJson(`import('/lib/world.js').then((m) => m.comps.get('benchlamp'))`)) + ' refused=' + JSON.stringify(await evalJson(`window.__refused`)));
   check('…a Lock card appears with its checked "locked" box, and "+ Lock" leaves Add Component', await waitFor(`(() => { const R = [...${insp}.querySelectorAll('.sp-row')]; const i = R.findIndex((r) => r.querySelector('.sp-group')?.textContent === '▾ Lock'); const box = i >= 0 ? R[i + 1]?.querySelector('input[type=checkbox]') : null; return !!box && box.checked && R[i + 1].querySelector('.sp-label')?.textContent === 'locked' && !${addBtn('+ Lock')}; })()`), JSON.stringify(await evalJson(cardTitles)));
@@ -843,8 +844,8 @@ console.log('\nthe first seat in one step (Add Component ▸ + Seats, which was 
 {
   await evalJson(`import('/lib/net.js').then((m) => (m.sendVerb('comp', { id: 'crate1', type: 'sockets', data: null }), true))`);
   await evalJson(`import('/lib/scenegraph.js').then((m) => (m.sceneSelect('crate1'), true))`);
-  const btn = `[...${insp}.querySelectorAll('button')].find((b) => b.textContent.trim() === '+ Seats')`;
-  check('a model without sockets is offered "+ Seats"', await waitFor(`!!${btn}`), JSON.stringify(await evalJson(`[...${insp}.querySelectorAll('button')].map((b) => b.textContent.trim())`)));
+  const btn = popItem('+ Seats');
+  check('a model without sockets is offered "+ Seats"', await waitFor(`!!${btn}`), JSON.stringify(await evalJson(popItems)));
   await evalJson(`(${btn}.click(), true)`);
   check('clicking it arms seat placement directly (no empty sockets comp first)', await waitFor(`import('/lib/seatedit.js').then((m) => m.seatArmed())`), JSON.stringify(await evalJson(`({ btn: (() => { const b = ${btn}; return b ? { disabled: b.disabled, title: b.closest('.sp-row')?.title } : null; })(), hint: document.querySelector('#hintbar')?.textContent, sel: globalThis.__editPanels?.().selection, errs: (window.__errs ?? []).slice(-3), refused: window.__refused })`)));
   check('…and wrote nothing yet', await evalJson(`import('/lib/world.js').then((m) => !m.comps.get('crate1')?.sockets)`));
@@ -881,35 +882,8 @@ console.log('\nright-click a field: copy value, paste value, copy path, reset to
   check('copy path puts the address a model uses on the clip', await evalJson(`import('/lib/panels.js').then((m) => m._fieldClip()?.value === 'light.intensity')`));
 }
 
-console.log('\ninspector filter: non-matches hide, cards holding a hit open (even folded ones); the header stays:');
-{
-  await evalJson(`import('/lib/scenegraph.js').then((m) => (m.sceneSelect('benchlamp'), true))`);
-  await sleep(300);
-  // field labels only, BELOW the filter box: the header (id, lib, placed by, world — and in B label +
-  // hidden, Unity's name and active box) stays by design, so it is read separately
-  const labels = `(() => { const R = [...${insp}.querySelectorAll('.sp-row')]; const at = R.findIndex((r) => /filter properties/.test(r.querySelector('.sp-text')?.placeholder ?? '')); return R.slice(at + 1).filter((r) => !r.classList.contains('sp-f-info')).map((r) => r.querySelector('.sp-label')?.textContent).filter(Boolean); })()`;
-  const headLabels = `(() => { const R = [...${insp}.querySelectorAll('.sp-row')]; const at = R.findIndex((r) => /filter properties/.test(r.querySelector('.sp-text')?.placeholder ?? '')); return R.slice(0, at).map((r) => r.querySelector('.sp-label')?.textContent).filter(Boolean); })()`;
-  const groups = `[...${insp}.querySelectorAll('.sp-group')].map((g) => g.textContent.slice(2))`;
-  const setFilter = (v: string) => evalJson(`(() => { const i = [...${insp}.querySelectorAll('.sp-f-text .sp-text')].find((x) => /filter properties/.test(x.placeholder)); i.value = ${JSON.stringify(v)}; i.dispatchEvent(new Event('change')); i.blur(); return true; })()`);
-  // (no \s in these page regexes: inside a TS template literal it collapses to a plain 's')
-  // fold the Light group first: a hit inside it must still show
-  await evalJson(`([...${insp}.querySelectorAll('.sp-group')].find((g) => /^▾ Light/.test(g.textContent))?.click(), true)`);
-  check('Light folded before filtering', await waitFor(`[...${insp}.querySelectorAll('.sp-group')].some((g) => /^▸ Light/.test(g.textContent))`), JSON.stringify(await evalJson(groups)));
-  await setFilter('range');
-  check('"range": only range rows remain, and the folded Light group OPENS for its hit', await waitFor(`(() => { const L = ${labels}; return L.length > 0 && L.every((l) => /range/.test(l)) && [...${insp}.querySelectorAll('.sp-group')].some((g) => /^▾ Light/.test(g.textContent)); })()`), JSON.stringify({ labels: await evalJson(labels), groups: await evalJson(groups) }));
-  // was "…and Flags (no hit) is gone": B has no Flags group; the Transform card is the one with no hit
-  check('…and the Transform card (no hit) is gone, Add Component too', !(await evalJson(groups) as string[]).some((g) => /Transform|Add Component/.test(g)), JSON.stringify(await evalJson(groups)));
-  check('…while the header keeps label + hidden (B moved them there, out of the filter\'s reach)', await evalJson(`(() => { const H = ${headLabels}; return H.includes('label') && H.includes('hidden'); })()`), JSON.stringify(await evalJson(headLabels)));
-  // was 'flags' (a matching group name keeps locked/hidden/label); now a CARD name: "transform" is in no
-  // field label or key (translate x … pos.x), so only the card-name rule can keep its rows
-  await setFilter('transform');
-  check('a matching CARD name keeps all its fields', await waitFor(`(() => { const L = ${labels}; return JSON.stringify(L) === JSON.stringify(['translate x', 'translate y', 'translate z']); })()`), JSON.stringify(await evalJson(labels)));
-  await setFilter('zzzz');
-  check('no match says so', await waitFor(`/no property matches "zzzz"/.test(${insp}.textContent)`));
-  await setFilter('');
-  check('clearing brings everything back (Transform, Light, Add Component)', await waitFor(`(() => { const G = ${groups}; return G.includes('Transform') && G.includes('Light') && G.includes('Add Component'); })()`), JSON.stringify(await evalJson(groups)));
-  await evalJson(`([...${insp}.querySelectorAll('.sp-group')].find((g) => /^▸ Light/.test(g.textContent))?.click(), true)`);   // unfold for later checks
-}
+console.log('\ninspector filter: retired (R 10-04: it did nothing useful in a panel this small); client-check I2 checks it is gone');
+check('the Inspector has no filter box', await evalJson(`![...${insp}.querySelectorAll('.sp-text')].some((x) => /filter properties/.test(x.placeholder ?? ''))`));
 
 console.log('\nrename in the tree: double-click, F2, or the row menu; commits the label comp:');
 {

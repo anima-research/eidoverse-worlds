@@ -16,7 +16,7 @@
 // and while mounted the fold's `pos`/`q` on the child are its pre-mount pose,
 // unused until a dismount stamps a new one.
 
-import { scale3, scaleWire } from './scale3.js';
+import { scale3, scaleWire, entScale } from './scale3.js';
 import { qNorm, qMul, qRotate, qFromYaw, qHeading } from './rot.js';
 
 const conj = (q) => [-q[0], -q[1], -q[2], q[3]];
@@ -43,7 +43,7 @@ const ridden = (world, ent) => !!ent?.parent?.to && !!world?.[ent.parent.to];
  *  at the part's current phase, not editable as an offset). */
 export function localOf(ent, world = null) {
   if (!ent) return null;
-  const scale = isLight(ent) ? 1 : (ent.scale ?? 1);
+  const scale = isLight(ent) ? 1 : (entScale(ent) ?? 1);
   if (!ent.parent || (world && !ridden(world, ent))) {
     return { mounted: false, pos: [...(ent.pos ?? [0, 0, 0])], q: isLight(ent) ? null : (qNorm(ent.q) ?? null), yaw: isLight(ent) ? 0 : (ent.yaw ?? 0), scale, part: null };
   }
@@ -200,7 +200,7 @@ export function parentVerbs(world, id, to, { mayAuthor, doorLocks = false } = {}
   if (errors.length) return { verbs: [], inverses: [], errors };
 
   const W = worldPose(world, id);
-  const ownScale = isLight(ent) ? 1 : (ent.scale ?? 1);
+  const ownScale = isLight(ent) ? 1 : (entScale(ent) ?? 1);
   const orient = (q) => (upright(q) ? { yaw: r9(qHeading(q)) } : { q: q.map(r9), yaw: r9(qHeading(q)) });
   const verbs = [];
   let scale = W.scale;

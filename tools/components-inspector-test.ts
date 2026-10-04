@@ -41,7 +41,8 @@ for (const [id, e] of ents) {
   const comps = componentsOf(e).components;
   cards += s.sections.list.length;
   const inHeader = comps.filter((c) => c.type === 'Label' || c.type === 'Hidden').length;
-  if (s.sections.list.length !== comps.length - inHeader) probs.push(`${id}: ${comps.length} components (${inHeader} in the header), ${s.sections.list.length} cards`);
+  const emptyParent = s.sections.list.filter((c: any) => c.type === 'Parent' && c.present === false).length;   // a root's quiet Parent card (the no-drag path, R 10-04)
+  if (s.sections.list.length - emptyParent !== comps.length - inHeader) probs.push(`${id}: ${comps.length} components (${inHeader} in the header), ${s.sections.list.length} cards`);
   const owned = new Map<string, string>();
   for (const a of s.sections.header) owned.set(a, 'header');
   const addable = new Set(s.sections.add.filter((a: any) => !a.blocked).map((a: any) => a.name));
@@ -57,8 +58,7 @@ for (const [id, e] of ents) {
     if (f.k == null || f.t === 'info') continue;
     const a = `${g.group}.${f.k}`;
     const replaced = /(^|\|)(type|rest)$/.test(f.k) && g.group === 'motion' || ['particles.out', 'picture.down', 'sound.silence', 'comp.+'].includes(a) || a.startsWith('comp.add:') || /\.json\|/.test(a)
-      || (a === 'flags.lock' && addable.has('Lock')) || (a === 'flags.guard' && addable.has('Guard'))
-      || (g.group === 'parent' && !s.sections.list.some((c: any) => c.type === 'Parent'));   // a root has no Parent card: the Hierarchy drag parents it (R, 10-04); agents edit parent.to
+      || (a === 'flags.lock' && addable.has('Lock')) || (a === 'flags.guard' && addable.has('Guard'));
     if (!owned.has(a) && !replaced && !(g.group === 'comp' && owned.has(`comp.${f.k}`))) probs.push(`${id}: ${a} is in no card`);
   }
 }
