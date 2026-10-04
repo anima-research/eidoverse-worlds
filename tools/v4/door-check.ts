@@ -14,7 +14,7 @@
 import fs from "node:fs";
 import { scratch } from "./common.ts";
 import { request, creatorOf, LAB_CATALOGUE, actIndexOf, actIndexFresh, entityBefore } from "../../shared/v4/door.js";
-import { fold, readLog, digest } from "../../shared/v4/fold.js";
+import { fold, readLog, digest, opsOf } from "../../shared/v4/fold.js";
 import { simFold, digestOf, restsOf } from "../../shared/v4/simlayer.js";
 import { MODELS } from "../../shared/v4/catalogue.js";
 import { enc, encName, dec } from "../../shared/v4/names.js";
@@ -266,6 +266,50 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(!bad, `U7 entityBefore(id, seq) = fold(until: seq - 1) for every thing at all ${L.length} seqs (it reads a thing's own history)`, bad);
   ok(!firstBad, `U8 the incremental index = a fresh build after each of ${steps} steps (writes, undos, refusals, two purges)`, firstBad);
   { const X = actIndexOf(w); ok(X.purged.has(b1.act) && X.purgedOps.size === 2, "U9 the index knows both purges (an act body and a set value)", [[...X.purged], [...X.purgedOps]]); } }
+
+// ---- E: expect (§3a: a gesture settles as one act with expect on its starting values), duplicate, redo ----
+{ const dir = root + "expect/"; let now = T + 6000;
+  const w = openLive(dir, "expect", { now: () => now });
+  const call = (actor, tool, args = {}) => { now += 100; return request(w, actor, tool, args); };
+  const n = () => w.entries.length;
+  call("ann", "new", { title: "expect" }); call("ann", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+  call("ann", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
+  call("ann", "create", { id: "cup", model: "crate", place: { on: "tbl" } });
+  const t0 = w.state().entities.tbl.c.transform;
+  const moved = { ...t0, pos: [1, t0.pos[1], 3] };
+  const e1 = call("ann", "set", { id: "tbl", component: "transform", value: moved, expect: [{ id: "tbl", component: "transform", value: t0 }] });
+  ok(e1.ok && w.entries[e1.act].body.request.expect?.length === 1, "E1 expect equal to what's there: written, and the act records it as sent", e1.refused);
+  call("bob", "set", { id: "tbl", component: "transform", value: { ...moved, pos: [2, t0.pos[1], 3] } });
+  const before = n();
+  const e2 = call("ann", "set", { id: "tbl", component: "transform", value: { ...moved, pos: [5, t0.pos[1], 5] }, expect: [{ id: "tbl", component: "transform", value: moved }] });
+  ok(code(e2) === "changed" && e2.refused.by === "bob" && n() === before && w.state().entities.tbl.c.transform.pos[0] === 2, "E2 someone changed it since: refused `changed`, naming them, and nothing is written", [e2.refused, n() - before]);
+  ok(code(call("ann", "set", { id: "tbl", component: "label", value: "x", expect: [{ id: "tbl", component: "label", value: "y" }] })) === "changed", "E3 expecting a value that isn't there");
+  ok(call("ann", "set", { id: "tbl", component: "label", value: "x", expect: [{ id: "tbl", component: "label" }] }).ok, "E4 value left out = expect it absent");
+  ok(code(call("ann", "set", { id: "tbl", component: "label", value: "z", expect: [{ id: "tbl", component: "label" }] })) === "changed", "E4b …and refused once it's there");
+  ok(code(call("ann", "set", { id: "tbl", component: "label", value: "z", expect: { id: "tbl" } })) === "shape", "E5 a malformed expect is a shape refusal");
+  ok(code(call("ann", "batch", { ops: [{ tool: "delete", args: { id: "tbl" } }], expect: [{ id: "gone", component: "transform", value: {} }] })) === "changed", "E6 expect guards a batch too (a thing that's gone)");
+  // duplicate: create {from: <a thing>}
+  call("ann", "set", { id: "tbl", component: "lock", value: true });
+  const d1 = call("bob", "create", { from: "tbl" });
+  const st = w.state(); const copy = d1.after && Object.keys(d1.after).find((k) => st.entities[k]?.c.model === "table" && k !== "tbl");
+  const kid = copy && Object.keys(st.entities).find((k) => st.entities[k].c.parent?.to === copy);
+  ok(d1.ok && copy && kid && !("lock" in st.entities[copy].c) && st.entities[kid].c.model === "crate", "D1 duplicate copies the thing and what's attached to it, as one act (the lock isn't copied)", [d1.refused, copy, kid]);
+  ok(d1.ok && Math.abs(st.entities[copy].c.transform.pos[0] - (st.entities.tbl.c.transform.pos[0] + 0.5)) < 1e-9 && opsOf(w.entries[d1.seq]).filter((o) => o.verb === "create").length === 2, "D2 …0.5 m along x, in ONE state entry (two creates)", st.entities[copy]?.c.transform);
+  ok(d1.ok && w.entries[d1.seq].actor === "bob" && w.entries[d1.act].body.request.from === "tbl", "D3 the copy is bob's (the act says what it copied)");
+  const d4 = call("bob", "undo", { act: d1.act });
+  ok(d4.ok && !w.state().entities[copy] && !w.state().entities[kid], "D4 undoing the duplicate removes both parts", d4.refused);
+  ok(code(call("bob", "create", { from: "nope" })) === "not-found", "D5 duplicating nothing is not-found");
+  // redo = undo of my undo (Figma's rule: never back over someone's later work)
+  call("ann", "delete", { id: "tbl", component: "lock" });
+  const a1 = call("bob", "set", { id: "cup", component: "label", value: "one" });
+  const u1 = call("bob", "undo", { act: a1.act });
+  const r1 = call("bob", "undo", { act: u1.act });
+  ok(u1.ok && r1.ok && w.state().entities.cup.c.label === "one", "R1 redo (undo {act: <my undo>}) puts my change back", [u1.refused, r1.refused]);
+  const u2 = call("bob", "undo", { act: r1.act });
+  ok(u2.ok && w.state().entities.cup.c.label === undefined, "R2 …and undoing the redo takes it away again", u2.refused);
+  call("ann", "set", { id: "cup", component: "label", value: "ann's" });
+  const r2 = call("bob", "undo", { act: u2.act });
+  ok(code(r2) === "conflict" && w.state().entities.cup.c.label === "ann's", "R3 redo never puts my change back over someone's later work (Figma's rule)", r2.refused); }
 
 // ---- C: an off-centre catalogue box and measured surfaces ----
 { const cat = { get: (n) => ({ "lib/desk.glb": { label: "desk", box: [[-0.5, -0.4, -0.3], [0.7, 0.35, 0.5]], size: [1.2, 0.75, 0.8], surfaces: [{ y: 0.35, x: [-0.4, 0.6], z: [-0.2, 0.4] }] },

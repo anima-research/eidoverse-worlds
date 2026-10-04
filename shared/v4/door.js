@@ -269,10 +269,12 @@ export function request(w, actor, tool, args = {}) {
     if (!h) refuse("unknown-tool", `there is no '${tool}'`, "help lists every tool", { didYouMean: guess(tool, Object.keys(TOOLS)) });
     args = wire(args);
     // through_lock (§5) is a flag on any request, not an argument of one tool: checked here, then admit reads it
-    const { through_lock, ...plain } = args;
+    // expect (§3a) is the same kind of flag: the values a gesture started from. Checked here, before anything is built
+    const { through_lock, expect, ...plain } = args;
     if (through_lock !== undefined && typeof through_lock !== "boolean") refuse("shape", `through_lock is true or false, got ${JSON.stringify(through_lock)}`, "send through_lock: true to act through a lock you may remove");
     THROUGH = through_lock === true;
     const bad = validate(tool, plain); if (bad) { const { code, reason, teach, ...rest } = bad; refuse(code, reason, teach, rest); }
+    if (expect !== undefined) expectCheck(w, expect);
     if (tool === "create" && args.place) { const b2 = validate("place", { ...args.place, id: "x" }); if (b2) { const { code, reason, teach, ...rest } = b2; refuse(code, `place: ${reason}`, teach, rest); } }
     const r = h(w, actor, args);
     if (r && r.refused && !r.refused.teach) r.refused.teach = toolHelp(tool) ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool";
@@ -283,6 +285,25 @@ export function request(w, actor, tool, args = {}) {
   } finally { CAT = prevCat; THROUGH = prevThrough; }
 }
 const pick = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !["message", "stack"].includes(k)));
+// §3a: "Release settles as one act with `expect` on the starting values." expect is a list of {id, component, value?}:
+// the component must hold exactly that value now (JCS-equal), or be absent when value is left out. Anything else is
+// refused as `changed`, naming who changed it, and nothing is written. It is door practice (the act records it, as
+// sent); the fold never reads it. A purged value never equals anything.
+function expectCheck(w, list) {
+  if (!Array.isArray(list) || !list.length || list.length > 256) refuse("shape", "expect is a list of {id, component, value?} (1–256 of them)", "e.g. expect: [{id: 'lamp-1', component: 'transform', value: {pos, q, scale}}]");
+  const st = w.state();
+  for (const x of list) {
+    if (!x || typeof x !== "object" || Array.isArray(x) || typeof x.id !== "string" || typeof x.component !== "string" || Object.keys(x).some((k) => !["id", "component", "value"].includes(k)))
+      refuse("shape", `expect entries are {id, component, value?}, got ${JSON.stringify(x)?.slice(0, 80)}`, "leave value out to expect the component to be absent");
+    const e = st.entities[x.id]; const has = !!e && x.component in e.c; const cur = has ? e.c[x.component] : undefined;
+    const same = "value" in x ? has && cur !== PURGED && jcs(cur) === jcs(x.value) : !has;
+    if (same) continue;
+    const lt = lastTouch(w, x.id, x.component);
+    const why = !e ? `${x.id} is gone` : lt ? `${lt.actor} changed it at ${lt.seq}` : "it isn't what you started from";
+    refuse("changed", `${x.id}.${x.component} changed since you started: ${why}`, "look again and redo it (nothing was written); or send it without expect to overwrite what's there",
+      { id: x.id, component: x.component, expected: "value" in x ? x.value : null, current: cur === undefined ? null : cur, ...(lt ? { by: lt.actor, at: lt.seq } : {}) });
+  }
+}
 function guess(s, opts) {
   const d = (a, b) => { const m = Array.from({ length: a.length + 1 }, (_, i) => [i]); for (let j = 1; j <= b.length; j++) m[0][j] = j;
     for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) m[i][j] = Math.min(m[i-1][j] + 1, m[i][j-1] + 1, m[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1)); return m[a.length][b.length]; };
@@ -987,6 +1008,7 @@ function buildUpdate(ctx, a, w) {
 }
 // L1: a copy is expanded by the door into an explicit batch. The fold never reads the record.
 function buildCreateFrom(ctx, a) {
+  if (typeof a.from === "string" && !a.from.startsWith("sha256:")) return buildDuplicate(ctx, a);
   const w = ctx.w; let rec;
   try { rec = w.getBlob(a.from); } catch { refuse("not-found", `no blueprint ${a.from}`, "find {kind: 'blueprint'} lists this world's library"); }
   if (!inLibrary(ctx.st, a.from)) refuse("not-in-library", `${a.from} isn't in this world's library`, "publish it here first");
@@ -1000,6 +1022,32 @@ function buildCreateFrom(ctx, a) {
     if (c.parent) c.parent = { ...c.parent, to: ids.get(c.parent.to) };
     c.blueprint = { from: a.from, key: p.key };
     ops.push(...createOps(ids.get(p.key), c)); ctx.refs.add(ids.get(p.key)); }
+  return ops;
+}
+
+// Duplicate (slice 3b; PARITY (b)3): create {from: <a live thing's id>} copies it and everything attached to it, as one
+// explicit batch (L1: the fold sees plain creates). The copy keeps the source's parent (a sibling of it), so its
+// transform stays local to that parent; `at` replaces fields of the root's transform (local to that parent too), and
+// without it the copy sits 0.5 m along x from the source, as v1's duplicate did. `lock` isn't copied (v1 didn't
+// either: a copy is something you're about to move). Who made the copy is the create entry's actor (a view, L2).
+function buildDuplicate(ctx, a) {
+  const st = ctx.st, src = a.from;
+  if (src === "@world" || !st.entities[src]) refuse("not-found", `no thing called '${src}' to copy`, "from takes a blueprint hash (sha256:…) or the id of a thing here", { didYouMean: guess(String(src), Object.keys(st.entities)) });
+  const all = [src, ...descendants(st, src)];
+  const sc = st.entities[src].c;
+  const id = a.id ?? mint(st, typeof sc.label === "string" ? sc.label : typeof sc.model === "string" ? sc.model.split("/").pop().replace(/\.[a-z0-9]+$/i, "") : src);
+  if (!isEntityId(id) || id === "@world") refuse("shape", `'${id}' isn't an id you can make`, "§2.3: a–z, 0–9 and '-', up to 64; or leave id out");
+  if (st.entities[id]) refuse("exists", `'${id}' already exists`, "choose another id for the copy");
+  const ids = partIds(st, id, src, all);
+  const ops = []; let locks = 0;
+  for (const sid of all) { const orig = st.entities[sid].c; const c = clone(orig);
+    if ("lock" in c) { delete c.lock; locks++; }
+    for (const k of Object.keys(orig)) if (orig[k] === PURGED) delete c[k]; // a purged value can't be copied
+    if (c.parent && typeof c.parent.to === "string") c.parent = { ...c.parent, to: ids.get(c.parent.to) ?? c.parent.to };
+    if (sid === src) { const t = { ...COMPONENTS.transform.defaults, ...(c.transform ?? {}) };
+      c.transform = resolve(ctx, id, "transform", a.at ?? { pos: [t.pos[0] + 0.5, t.pos[1], t.pos[2]] }, t); }
+    ops.push(...createOps(ids.get(sid), c)); ctx.refs.add(ids.get(sid)); }
+  ctx.notes.push({ copied: src, as: id, parts: all.length, ...(locks ? { why: "a lock isn't copied: the copy is free to move" } : {}) });
   return ops;
 }
 
@@ -1270,11 +1318,11 @@ const TOOLS = {
     return { ok: true, world: st?.entities?.["@world"]?.c.about, you: { id: actor, role },
       tools: { read: ["look", "inspect {id}", "measure {id}", "find {kind: 'model'|'blueprint', query?}", "check {id?}", "history {limit?}", "schema {component?}"],
         world: ["new {title, text?} — found this world if it doesn't exist (you become its owner)"],
-        write: ["create {id?, model?, components?} | {from: <blueprint>, id?, at?}", "set {id, component, value, merge?}", "delete {id} | {id, component}",
+        write: ["create {id?, model?, components?} | {from: <blueprint hash | a thing to duplicate>, id?, at?}", "set {id, component, value, merge?}", "delete {id} | {id, component}",
           "place {id, on|beside|hang|against|near|at, facing?, height?, along?, level?, offset?, side?, gap?, attach?}", "batch {ops: [{tool, args}…], label?}", "use {id, action?, args?}", "say {text, to?}",
           "undo {label?|act?}", "publish {from, name}", "update {copy, to, resolve?}"],
         body: ["move {to: [x, y, z]}", "grab {id}", "put {id, pos?}", "throw {id, v: [x, y, z]}", "drop {id}", "leave", "wait"],
-        physics: "the world runs physics when @world has a sim component: set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has physics {kind: 'dynamic', who?: 'visitor'|'builder'}", every_write: "may add dry: true to preview, and through_lock: true to act through a lock you may remove (§5: a lock stops accidents and binds everyone, its locker included)", details: "help {tool: 'place'} (or create, set, delete, use, grab, put, throw) shows every argument with its type and an example" },
+        physics: "the world runs physics when @world has a sim component: set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has physics {kind: 'dynamic', who?: 'visitor'|'builder'}", every_write: "may add dry: true to preview, expect: [{id, component, value?}] to be refused (code changed) if any of those isn't what you started from, and through_lock: true to act through a lock you may remove (§5: a lock stops accidents and binds everyone, its locker included)", details: "help {tool: 'place'} (or create, set, delete, use, grab, put, throw) shows every argument with its type and an example" },
       world: st?.entities?.["@world"]?.c.about ?? { name: w.name } };
   },
   look(w, actor, a) {
