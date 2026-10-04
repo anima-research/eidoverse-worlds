@@ -1,0 +1,42 @@
+// The JS fold (shared/v4/fold.js) against the Python reference reader (spec/v4/conformance/v4read.py, written from
+// PROTOCOL-v4 alone) on every conformance log: status, digest, and diagnostic codes. Ported from
+// code/v4-lab/conformance/compare.js @ 11db981. Also runs the reference reader's own tests (test_v4read.py,
+// test_chain.py; the latter needs python3 `cryptography`). usage: bun tools/v4/compare.ts  (exit 1 on any difference)
+import fs from "node:fs";
+import { readLog, fold, digest } from "../../shared/v4/fold.js";
+import { ENGINE } from "./common.ts";
+
+const here = ENGINE + "spec/v4/conformance/";
+const py = (args: string[]) => Bun.spawnSync(["python3", "-B", ...args], { cwd: here, env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" } });
+const files = ["EXAMPLE-01.jsonl", ...fs.readdirSync(here + "logs").sort().map((f) => "logs/" + f)];
+// Where §2.3/§2.4 (normative) and the reference reader disagree, the JS fold follows the spec; list each here.
+const KNOWN: Record<string, string> = {};
+
+let diffs = 0;
+for (const f of files) {
+  const raw = fs.readFileSync(here + f);
+  const js = fold(readLog(raw)); const jsOut: any = { status: js.status, digest: js.status === "ok" ? digest(js) : null, codes: js.diagnostics.map(([s, c]: any) => `${s}:${c}`) };
+  const p = JSON.parse(py([here + "v4read.py", here + f, "--json"]).stdout.toString());
+  const pyOut: any = { status: p.status, digest: p.digest, codes: p.diagnostics.map(([s, c]: any) => `${s}:${c}`) };
+  const same = (k: string) => JSON.stringify(jsOut[k]) === JSON.stringify(pyOut[k]);
+  const okAll = same("status") && same("digest") && same("codes");
+  if (!okAll && !KNOWN[f]) diffs++;
+  console.log(`${okAll ? "same " : KNOWN[f] ? "known" : "DIFF "} ${f.padEnd(30)} ${jsOut.status} ${jsOut.digest?.slice(0, 16) ?? "-"}${okAll ? "" : `  | py ${pyOut.status} ${pyOut.digest?.slice(0, 16) ?? "-"}`}`);
+  if (!okAll) { for (const k of ["status", "digest"]) if (!same(k)) console.log(`      ${k}: js ${jsOut[k]}  py ${pyOut[k]}`);
+    if (!same("codes")) { const a = new Set(jsOut.codes), b = new Set(pyOut.codes);
+      console.log(`      only js: ${[...a].filter((x) => !b.has(x)).join(" ")}\n      only py: ${[...b].filter((x) => !a.has(x)).join(" ")}`); }
+    if (KNOWN[f]) console.log(`      why: ${KNOWN[f]}`); }
+}
+console.log(`${files.length} logs, ${diffs} unexplained differences`);
+
+// the reference reader's own suites. test_v4read.py regenerates logs/ from its builders: they must come out byte-identical
+const before = new Map(files.map((f) => [f, fs.readFileSync(here + f, "utf8")]));
+let suiteFails = 0;
+for (const t of ["test_v4read.py", "test_chain.py"]) {
+  const r = py([t]); const out = (r.stdout.toString() + r.stderr.toString()).trim().split("\n");
+  console.log(`${r.exitCode === 0 ? "ok  " : "FAIL"} python ${t}: ${out.find((l) => /^\d+\/\d+ passed/.test(l)) ?? out.at(-1)}`);
+  if (r.exitCode !== 0) { suiteFails++; console.log(out.slice(-8).join("\n")); }
+}
+const drift = files.filter((f) => fs.readFileSync(here + f, "utf8") !== before.get(f));
+if (drift.length) { suiteFails++; console.log(`FAIL test_v4read.py rewrote ${drift.join(", ")} differently (fixtures no longer what the reader's builders make)`); }
+process.exit(diffs || suiteFails ? 1 : 0);
