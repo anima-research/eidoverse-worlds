@@ -1689,6 +1689,10 @@ body.edit-workspace, .frame.edit {
   --e-x: #e06a62; --e-y: #82c45e; --e-z: #5f95e8; --e-danger: #e07a72; --e-driven: #c9a24a;
   --e-driven-edge: rgba(201,162,74,.45);
 }
+/* Flat gray in edit mode, every panel (R, 10-04: "flat gray is better for an editor — colors can't clash"). --panel
+   must be RE-DECLARED here: a custom property resolves its var()s where it is declared, so :root's --panel stays
+   baked teal however --panel-rgb is overridden below it — which is why docked chat/Inspector frames kept the tint. */
+body.edit-workspace { --panel-rgb: 30 30 33; --panel: rgb(var(--panel-rgb) / var(--panel-a)); }
 /* the house tokens, re-pointed INSIDE edit frames, so the shared renderers (panels.js) and the
    frame chrome are reused untouched */
 .frame.edit, body.edit-workspace .frame.docked {
