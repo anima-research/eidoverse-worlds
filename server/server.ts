@@ -1161,7 +1161,7 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-console.log(`eidoverse-worlds sequencer on http://0.0.0.0:${PORT}`);
+console.log(`eidoverse-worlds sequencer on http://${HOST}:${PORT}`);
 console.log(`  library: ${LIBRARY_DIR}`);
 console.log(`  worlds:  ${WORLDS_DIR}`);
 if (!JOIN_TOKEN) console.log("  ⚠ NO JOIN_TOKEN — the door is OPEN. Fine on a tailnet, wrong on a public box.");
