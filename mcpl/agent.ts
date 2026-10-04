@@ -431,6 +431,10 @@ export class WorldAgent {
    *  and it is directly comparable with what the world hands out. */
   lastSeq = -1;
   private pendingHistory = new Map<string, (m: any) => void>();
+  /** This world's protocol, from the snapshot: set only in a v4 world (protocol/v4 slice 2). Building tools route
+   *  through door()/verbV4() there and WAIT for the door's reply, so a refusal reaches the agent (PARITY (d)1). */
+  v4: { version: number; head: number; worldId: string } | null = null;
+  private pendingV4 = new Map<string, (m: any) => void>();
   private pendingDebug = new Map<string, (m: any) => void>();
   private histId = 0;
 
@@ -673,6 +677,7 @@ export class WorldAgent {
             if (msg.rights) this.acceptEffectiveRights(msg.rights, "world");
             break;
           case "snapshot":
+            this.v4 = msg.v4 ?? null;
             // Our surface generation, issued by the server on acceptance —
             // every attest must echo it or the receipt is refused (PR #103 B2).
             if (typeof msg.gen === "number") this.surfaceGen = msg.gen;
@@ -839,6 +844,11 @@ export class WorldAgent {
             }
             await this.applyEntry(msg.entry, true);
             break;
+          case "v4-result": {
+            const p = this.pendingV4.get(String(msg.id));
+            if (p) { this.pendingV4.delete(String(msg.id)); p(msg); }
+            break;
+          }
           case "history": {
             const p = this.pendingHistory.get(msg.reqId);
             if (p) { this.pendingHistory.delete(msg.reqId); p(msg); }
@@ -2564,6 +2574,25 @@ export class WorldAgent {
   verb(verb: string, args: Record<string, unknown>) {
     if (!this.joined) throw new Error("not joined");
     this.ws!.send(JSON.stringify({ type: "verb", verb, args }));
+  }
+
+  /** One v4 request (v4 worlds only), answered by the door: {ok: true, …} or {ok: false, refused: {code, reason,
+   *  teach}}. `via` sends a v1 verb instead, which the server maps onto the door's request (server/v4/messages.ts). */
+  door(tool: string, args: Record<string, unknown> = {}, via?: { verb: string; args: Record<string, unknown> }): Promise<any> {
+    if (!this.joined || this.ws?.readyState !== 1) return Promise.resolve({ ok: false, refused: { code: "not-joined", reason: "not in a world" } });
+    if (!this.v4) return Promise.resolve({ ok: false, refused: { code: "not-v4", reason: `${this.world} is not a v4 world`, teach: "the door tool works in worlds founded or translated as v4" } });
+    const id = `v${++this.histId}`;
+    return new Promise((resolve) => {
+      const t = setTimeout(() => { this.pendingV4.delete(id); resolve({ ok: false, refused: { code: "timeout", reason: "the door did not answer within 8 s" } }); }, 8000);
+      this.pendingV4.set(id, (m) => { clearTimeout(t); resolve(m.reply ?? { ok: false, refused: { code: "no-reply", reason: "the door's answer had no reply" } }); });
+      this.ws!.send(JSON.stringify(via ? { type: "v4", id, verb: via.verb, args: via.args } : { type: "v4", id, tool, args }));
+    });
+  }
+  /** A building verb, waited for in a v4 world (the door's reply) and fire-and-forget elsewhere (null). */
+  async sendVerb(verb: string, args: Record<string, unknown>): Promise<any | null> {
+    if (this.v4) return this.door("", {}, { verb, args });
+    this.verb(verb, args);
+    return null;
   }
 
   // ---- moderation ----

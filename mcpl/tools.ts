@@ -121,6 +121,7 @@ export const TOOLS = [
   { name: "place", description: "Move an entity (id from look) to x,z (y defaults to terrain; pass y to seat on furniture).", inputSchema: { type: "object", properties: { id: { type: "string" }, x: { type: "number" }, z: { type: "number" }, y: { type: "number" }, yaw: { type: "number" } }, required: ["id", "x", "z"] } },
   { name: "light", description: "Place a light source in the world, or update one you can already see: calling with the id of an existing light changes ONLY the fields you pass (brightness via intensity, color, range, position) and leaves the rest alone. Persists like any placed thing. color is a hex integer (e.g. 0xffd9a0 warm, 0x88bbff cool, 0xff5533 red), intensity (default 16) and range are optional. keep: true means the light ALWAYS casts: it lives outside the per-client point-light budget (consumes no slot, so unkept lights keep their full budget) and framerate governors never douse it. Every casting light has real GPU cost — keep it for lights that matter. Position defaults to just in front of you. A small glowing sphere marks it; move or remove it by id like any entity.", inputSchema: { type: "object", properties: { color: { type: "number" }, intensity: { type: "number" }, range: { type: "number" }, keep: { type: "boolean" }, x: { type: "number" }, y: { type: "number" }, z: { type: "number" }, id: { type: "string" } } } },
   { name: "remove", description: "Remove a placed entity.", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] } },
+  { name: "door", description: "v4 worlds only: one request to the world's door, answered by the door itself — {ok: true, …what changed, notes, warnings} or {ok: false, refused: {code, reason, teach}}. tool is one of: create {id?, model?, components?, place?} | set {id, component, value, merge?, base?} | delete {id, component?} | place {id, on|beside|hang|against|near|at, facing?, …} (the door solves where it goes) | batch {ops: [{tool, args}…]} | use {id, action?} | say {text} | undo {act?|label?} (your own acts; refuses what others changed since) | publish {from, name} | update {copy, to} | move/grab/put/throw/drop/wait (your door-tracked body) | look | inspect {id} (who made it, versions) | measure {id} | find {kind: 'model'|'blueprint', query?} | check | history {limit?} | schema {component?} | help {tool?}. Every write may add dry: true. In a v4 world spawn/place/light/remove/world_verb/edit also wait for the door and report refusals.", inputSchema: { type: "object", properties: { tool: { type: "string" }, args: { type: "object" } }, required: ["tool"] } },
   // Description narrowed to what the implementation actually does (antra
   // review, #3). It previously promised "held pose and posture survive", which
   // joinWorld does NOT transfer — and which contradicts the existing pose
@@ -238,6 +239,8 @@ export async function snapshotTool(ag: ToolAgent, view = "first") {
 // "Unknown tool" a caller meets at runtime.
 
 const text = (t: string) => ({ content: [{ type: "text", text: t }] });
+/** A v4 door's refusal as a tool error: the code, why, and what to do instead. */
+const refusedBy = (r: any, what: string) => ({ content: [{ type: "text", text: `${what} refused by the door (${r.refused?.code ?? "refused"}): ${r.refused?.reason ?? ""}${r.refused?.teach ? ` — ${r.refused.teach}` : ""}` }], isError: true });
 // Refused at dispatch too, not merely hidden: a pilot who learned the name
 // off a bench must not be able to fire the trusted seam here.
 const rehearse = (ag: ToolAgent, a: Record<string, any>, name: string) => {
@@ -600,13 +603,15 @@ export const HANDLERS: Record<string, ToolHandler> = {
       const x = a.x ?? ag.pos.x + Math.sin(ag.yaw) * 2;
       const z = a.z ?? ag.pos.z + Math.cos(ag.yaw) * 2;
       const id = a.id ?? crypto.randomUUID().slice(0, 8);
-      ag.verb("spawn", { id, lib, pos: [x, a.y ?? ag.heightAt(x, z), z], yaw: a.yaw ?? 0 });
-      return text(`spawned [${id}] ${String(lib).split("/").pop()} at (${x.toFixed(1)}, ${z.toFixed(1)})`);
+      const r = await ag.sendVerb("spawn", { id, lib, pos: [x, a.y ?? ag.heightAt(x, z), z], yaw: a.yaw ?? 0 });
+      if (r && !r.ok) return refusedBy(r, "spawn");
+      return text(`spawned [${id}] ${String(lib).split("/").pop()} at (${x.toFixed(1)}, ${z.toFixed(1)})${r ? " (the door accepted it)" : ""}`);
 
   },
   place: async (ag, a, ctx, name) => {
       if (!ag.entities.has(a.id)) return text(`no entity ${a.id}`);
-      ag.verb("place", { id: a.id, pos: [a.x, a.y ?? ag.heightAt(a.x, a.z), a.z], ...(a.yaw != null ? { yaw: a.yaw } : {}) });
+      const r = await ag.sendVerb("place", { id: a.id, pos: [a.x, a.y ?? ag.heightAt(a.x, a.z), a.z], ...(a.yaw != null ? { yaw: a.yaw } : {}) });
+      if (r && !r.ok) return refusedBy(r, "place");
       return text(`placed ${a.id}`);
 
   },
@@ -621,18 +626,25 @@ export const HANDLERS: Record<string, ToolHandler> = {
           const prev = ag.entities.get(a.id)!.pos ?? [0, 1, 0];
           patch.pos = [a.x ?? prev[0], a.y ?? prev[1], a.z ?? prev[2]];
         }
-        ag.verb("light", patch);
+        const r = await ag.sendVerb("light", patch);
+        if (r && !r.ok) return refusedBy(r, "light");
         return text(`updated light [${a.id}]`);
       }
       const x = a.x ?? ag.pos.x + Math.sin(ag.yaw) * 2;
       const z = a.z ?? ag.pos.z + Math.cos(ag.yaw) * 2;
       const y = a.y ?? ag.heightAt(x, z) + 1.6;
       const id = a.id ?? crypto.randomUUID().slice(0, 8);
-      ag.verb("light", { id, pos: [x, y, z], color: a.color ?? 0xffd9a0, intensity: a.intensity ?? 16, range: a.range ?? 10, ...(a.keep ? { keep: true } : {}) });
+      const r = await ag.sendVerb("light", { id, pos: [x, y, z], color: a.color ?? 0xffd9a0, intensity: a.intensity ?? 16, range: a.range ?? 10, ...(a.keep ? { keep: true } : {}) });
+      if (r && !r.ok) return refusedBy(r, "light");
       return text(`placed light [${id}] at (${x.toFixed(1)}, ${y.toFixed(1)}, ${z.toFixed(1)})`);
 
   },
-  remove: async (ag, a, ctx, name) => { ag.verb("remove", { id: a.id }); return text(`removed ${a.id}`); },
+  remove: async (ag, a, ctx, name) => { const r = await ag.sendVerb("remove", { id: a.id }); if (r && !r.ok) return refusedBy(r, "remove"); return text(`removed ${a.id}`); },
+  door: async (ag, a) => {
+      const r = await ag.door(String(a.tool ?? ""), (a.args && typeof a.args === "object" ? a.args : {}) as Record<string, unknown>);
+      const reply = r ?? { ok: false };
+      return { content: [{ type: "text", text: JSON.stringify(reply, null, 1) }], ...(reply.ok ? {} : { isError: true }) };
+  },
   travel: async (ag, a, ctx, name) => {
       // Travel is SESSION machinery — channel epochs, join gates, the
       // fatal-join teardown — so the shared table hands it to the host
@@ -674,8 +686,9 @@ export const HANDLERS: Record<string, ToolHandler> = {
       // must survive (#88)
       const why = rawShapeError(String(a.verb), (a.args ?? {}) as Record<string, unknown>);
       if (why) return { content: [{ type: "text", text: `refused ${a.verb}: ${why}` }], isError: true };
-      ag.verb(String(a.verb), a.args ?? {});
-      return text(`sent ${a.verb}`);
+      const r = await ag.sendVerb(String(a.verb), a.args ?? {});
+      if (r && !r.ok) return refusedBy(r, String(a.verb));
+      return text(r ? `${a.verb}: the door accepted it` : `sent ${a.verb}`);
 
   },
   measure: async (ag, a, ctx, name) => {
@@ -761,10 +774,11 @@ export const HANDLERS: Record<string, ToolHandler> = {
       for (const v of verbs) {
         const why = rawShapeError(v.verb, v.args as Record<string, unknown>);
         if (why) { L.push(`refused ${v.verb}: ${why}`); continue; }
-        if (!a.dry) ag.verb(v.verb, v.args as Record<string, unknown>);
+        if (!a.dry) { const r = await ag.sendVerb(v.verb, v.args as Record<string, unknown>);
+          if (r && !r.ok) { L.push(`refused ${v.verb} by the door: ${r.refused?.reason ?? "refused"}${r.refused?.teach ? ` (${r.refused.teach})` : ""}`); continue; } }
         L.push(`${a.dry ? "would send" : "sent"} ${v.verb} ${JSON.stringify(v.args)}`);
       }
-      L.push("(the fold echoes in a beat — inspect again to read the new values; refusals of rank or rate land in world_debug)");
+      L.push(ag.v4 ? "(v4 world: each verb above was answered by the door)" : "(the fold echoes in a beat — inspect again to read the new values; refusals of rank or rate land in world_debug)");
       return text(L.join("\n"));
   },
   hierarchy: async (ag, a) => {
