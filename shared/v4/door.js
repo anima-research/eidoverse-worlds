@@ -10,7 +10,7 @@
 import { readLog, fold, opsOf, applyOps, cloneState, checkEntry, checkIJSON, isEntityId, isComponent, isIdentity, jcs, sha256, worldIdOf, Malformed, PURGED, VERSION } from "./fold.js";
 import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
 import { validate, toolHelp, TOOLSPEC } from "./toolspec.js";
-import { simFold, livePoses, digestOf, restEta, ENGINES, carried, restsOf, worldPose } from "./simlayer.js";
+import { simFold, livePoses, digestOf, restEta, ENGINES, carried, worldPose } from "./simlayer.js";
 
 // ---------- the model catalogue (engine, slice 2) ----------
 // The lab's door read its own table (./catalogue.js). The engine's models are library paths measured from their GLBs
@@ -775,26 +775,97 @@ function offersFor(st, id, actor) {
   return { canDo: can, ...(notForYou.length ? { notForYou } : {}) };
 }
 
+// ---------- the act index (slice 3a): undo and wait without scanning the log ----------
+// A view over the log (L2), built once per world object and advanced per appended entry, so a live world (server/v4,
+// where `w` lives as long as the world is open) pays for each entry once. A purge is retroactive (L1), so a purge entry
+// throws the index away and rebuilds it, as live.ts refolds the state. What it holds:
+//   actsOf    actor → their act seqs, in order          resultOf  act seq → the first state entry it caused
+//   undone    act seqs some `undo` act names (body.undoes)
+//   purged    seqs whose act/say/sim BODY is purged; purgedOps `${seq}:${op|-}` → a purged set value (as the fold keys it)
+//   states    every state seq, in order                 touch     id → the state seqs that touch it, in order
+//   rests     state seqs that are rests (caused by a sim launch); restAfter: rest seq → the door's follow-up act
+//   lastAct   the latest act that isn't an undo or the door's (for "the latest change was X's")
+// A world object over a log that is re-read per request (the suites' disk worlds) rebuilds it per request, as before.
+function freshIndex() {
+  return { n: 0, actsOf: new Map(), resultOf: new Map(), undone: new Set(), purged: new Set(), purgedOps: new Map(), states: [], touch: new Map(),
+    rests: [], restAfter: new Map(), lastAct: null };
+}
+function purgeTargets(E, x) { // the fold's own reading of purge entries (fold.js purgesOf), kept for views
+  x.pt = E.length; // purges below this seq are already in purged/purgedOps
+  E.forEach((e, pseq) => { if (!isE(e) || x.bad.has(pseq) || e.kind !== "purge" || !Array.isArray(e.body?.values)) return;
+    for (const t of e.body.values) { if (!t || typeof t !== "object" || Array.isArray(t) || !Object.keys(t).every((k) => k === "seq" || k === "op")) continue;
+      if (!Number.isInteger(t.seq) || t.seq <= 0 || t.seq >= pseq || (t.op !== undefined && !(Number.isInteger(t.op) && t.op >= 0))) continue;
+      const tgt = E[t.seq]; if (!isE(tgt) || x.bad.has(t.seq) || tgt.kind === "purge") continue;
+      if (t.op === undefined && ["act", "say", "sim"].includes(tgt.kind)) x.purged.add(t.seq);
+      x.purgedOps.set(`${t.seq}:${t.op ?? "-"}`, pseq); } });
+}
+function indexEntry(x, E, i) {
+  const e = E[i]; if (!isE(e) || x.bad.has(i)) return; // what the fold refuses (malformed) shapes no view either
+  if (e.kind === "act") { let a = x.actsOf.get(e.actor); if (!a) x.actsOf.set(e.actor, (a = [])); a.push(i);
+    const b = x.purged.has(i) ? null : e.body;
+    if (e.verb === "undo" && b && b.undoes !== undefined) x.undone.add(b.undoes);
+    if (e.verb !== "undo" && e.actor !== "door") x.lastAct = i;
+    if (e.actor === "door" && b && Number.isInteger(b.rest) && !x.restAfter.has(b.rest)) x.restAfter.set(b.rest, i); }
+  if (e.kind === "state") { x.states.push(i);
+    if (Number.isInteger(e.cause) && !x.resultOf.has(e.cause)) x.resultOf.set(e.cause, i);
+    for (const id of new Set(opsQuiet(e).map((o) => o.id))) { let a = x.touch.get(id); if (!a) x.touch.set(id, (a = [])); a.push(i); }
+    const c = E[e.cause]; if (isE(c) && c.kind === "sim" && c.verb === "launch") x.rests.push(i); }
+}
+// The entries the fold calls malformed (it shapes nothing with them). The door never writes one; an old or hand-made
+// log may hold some, and they're known when the index is built (the door re-reads every line it appends).
+const malformedSeqs = (st) => new Set((st?.diagnostics ?? []).filter(([, c]) => String(c).startsWith("malformed")).map(([q]) => q));
+/** The act index for a world, advanced to the log's end (rebuilt from scratch when a purge arrives). */
+export function actIndexOf(w) {
+  const E = w.entries; let x = w.__actIndex;
+  const fresh = () => { const y = freshIndex(); y.entries = E; y.bad = malformedSeqs(w.state ? w.state() : fold(E)); purgeTargets(E, y); return (w.__actIndex = y); };
+  if (!x || x.entries !== E || x.n > E.length) x = fresh();
+  for (; x.n < E.length; x.n++) {
+    if (x.n >= x.pt && isE(E[x.n]) && E[x.n].kind === "purge") { const n = x.n; x = fresh(); for (; x.n < n; x.n++) indexEntry(x, E, x.n); } // retroactive (L1): start over
+    indexEntry(x, E, x.n); }
+  return x;
+}
+/** The same index built from nothing over `entries` (the reference the incremental one must equal). */
+export function actIndexFresh(entries) { return actIndexOf({ entries }); }
+const firstAfter = (a, seq) => { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m] <= seq) lo = m + 1; else hi = m; } return lo; };
+/** A thing as it was just before entry `seq` (= fold(entries, {until: seq - 1}).entities[id]), from its own history
+ *  through the index, never the whole log. Purged values are PURGED at every point in time, as the fold has them. */
+export function entityBefore(w, id, seq, x = actIndexOf(w)) {
+  let ent = id === "@world" ? { born: 0, c: Object.create(null) } : undefined; // @world is live from genesis (§2.3)
+  const E = w.entries; const hist = x.touch.get(id) ?? [];
+  for (let k = 0; k < hist.length && hist[k] < seq; k++) { const i = hist[k]; const e = E[i]; const ops = opsQuiet(e); const batch = e.verb === "batch";
+    ops.forEach((o, j) => { if (o.id !== id) return;
+      if (o.verb === "create") { if (!ent) ent = { born: i, c: Object.create(null) }; return; }
+      if (!ent) return;
+      if (o.verb === "set") { if (x.purgedOps.has(`${i}:${batch ? j : "-"}`)) ent.c[o.comp] = PURGED; else if ("value" in o) ent.c[o.comp] = clone(o.value); return; }
+      if (o.comp === undefined) { if (id !== "@world") ent = undefined; return; }
+      delete ent.c[o.comp]; }); }
+  return ent;
+}
+
 // ---------- undo (by act; the inverse goes through admit like any write: rank and locks NOW) ----------
 function buildUndo(ctx, a, w) {
-  const isAct = (e) => isE(e) && e.kind === "act";
-  const acts = w.entries.filter((e) => isAct(e) && e.actor === ctx.actor);
-  const undone = new Set(w.entries.filter((e) => isAct(e) && e.verb === "undo").map((e) => e.body.undoes).filter((x) => x !== undefined));
-  const result = (e) => w.entries.find((s) => isE(s) && s.kind === "state" && s.cause === e.seq);
-  const target = a.act !== undefined ? acts.find((e) => e.seq === a.act)
-    : a.label ? [...acts].reverse().find((e) => e.body.request?.label === a.label && !undone.has(e.seq))
-    : [...acts].reverse().find((e) => e.verb !== "undo" && e.verb !== "new" && !undone.has(e.seq) && result(e));
-  if (!target) { const last = [...w.entries].reverse().find((e) => isAct(e) && e.verb !== "undo" && e.actor !== "door");
+  const X = actIndexOf(w); const E = w.entries;
+  const mine = X.actsOf.get(ctx.actor) ?? [];
+  const bodyOf = (seq) => (X.purged.has(seq) ? null : E[seq].body); // a purged act's request can't be read, or matched by label
+  const result = (seq) => { const r = X.resultOf.get(seq); return r === undefined ? undefined : E[r]; };
+  const pick = (pred) => { for (let k = mine.length - 1; k >= 0; k--) if (pred(mine[k])) return E[mine[k]]; return undefined; };
+  const target = a.act !== undefined ? (mine.includes(a.act) ? E[a.act] : undefined)
+    : a.label ? pick((q) => bodyOf(q)?.request?.label === a.label && !X.undone.has(q))
+    : pick((q) => E[q].verb !== "undo" && E[q].verb !== "new" && !X.undone.has(q) && X.resultOf.has(q));
+  if (!target) { const last = X.lastAct === null ? null : E[X.lastAct];
     refuse("nothing", "nothing of yours to undo" + (last && last.actor !== ctx.actor ? ` (the latest change was ${last.actor}'s; undo only reverts your own)` : ""), "history shows who did what; to change someone else's work, edit it (they'll see it)"); }
   if (target.verb === "new") refuse("founding", "founding a world can't be undone", "§2.3: @world can't be deleted or undone as a whole; to hand it over, give the new owner their role first");
-  if (undone.has(target.seq)) refuse("nothing", `act ${target.seq} was already undone`, "");
+  if (X.undone.has(target.seq)) refuse("nothing", `act ${target.seq} was already undone`, "");
   if (["throw", "drop", "leave"].includes(target.verb)) refuse("physical", `that was a ${target.verb}: what it changed is where things came to rest, which physics decided`, "put it back yourself: grab it, then put {id, pos}");
-  const res = result(target); if (!res) refuse("nothing", "that act changed nothing", "");
-  const before = w.stateAt(target.seq - 1), now = ctx.st;
+  const res = result(target.seq); if (!res) refuse("nothing", "that act changed nothing", "");
+  const now = ctx.st; const beforeOf = new Map(); const before = (id) => { if (!beforeOf.has(id)) beforeOf.set(id, entityBefore(w, id, target.seq, X)); return beforeOf.get(id); };
   const flat = opsOf(res);
-  const later = w.entries.filter((e) => isE(e) && e.seq > res.seq && e.kind === "state" && e.actor !== ctx.actor);
-  const touchedBy = (id, comp) => { for (const e of later) for (const o of opsQuiet(e)) {
-    if (o.id === id && (comp === undefined || o.comp === comp || o.comp === undefined || o.verb === "create")) return e.actor; } return null; };
+  // what others wrote since: a thing's own later history (touch), and, for the spatial check, every state entry since
+  // the result (bounded by what happened after the act, never the log before it)
+  const others = (i) => E[i].actor !== ctx.actor;
+  const touchedBy = (id, comp) => { const h = X.touch.get(id) ?? []; for (let k = firstAfter(h, res.seq); k < h.length; k++) { const e = E[h[k]]; if (!others(h[k])) continue;
+    for (const o of opsQuiet(e)) if (o.id === id && (comp === undefined || o.comp === comp || o.comp === undefined || o.verb === "create")) return e.actor; } return null; };
+  const later = X.states.slice(firstAfter(X.states, res.seq)).filter(others).map((i) => E[i]);
   const groups = [], skipped = [];
   const keys = new Map();
   const madeHere = new Set(flat.filter((o) => o.verb === "create").map((o) => o.id)); // undone as one unit: the whole thing goes
@@ -805,8 +876,8 @@ function buildUndo(ctx, a, w) {
     const by = touchedBy(id, whole ? undefined : comp);
     if (by) { skipped.push({ id, component: comp, why: `${by} changed it since` }); continue; }
     if (o.verb === "create") { if (now.entities[id]) groups.push([delOp(id)]); }
-    else if (whole) { const old = before.entities[id]; if (old && !now.entities[id]) groups.push(createOps(id, Object.fromEntries(Object.entries(old.c).filter(([, v]) => v !== PURGED)))); }
-    else { const old = before.entities[id]?.c[comp];
+    else if (whole) { const old = before(id); if (old && !now.entities[id]) groups.push(createOps(id, Object.fromEntries(Object.entries(old.c).filter(([, v]) => v !== PURGED)))); }
+    else { const old = before(id)?.c[comp];
       if (old === PURGED) { skipped.push({ id, component: comp, why: "its old value was purged" }); continue; }
       if (old === undefined) { if (now.entities[id] && comp in now.entities[id].c) groups.push([delOp(id, comp)]); }
       else if (now.entities[id]) groups.push([setOp(id, comp, old)]); }
@@ -1140,13 +1211,25 @@ const PHYSICS_TOOLS = {
   },
   wait(w) {
     const sf = w.sim(); const now = w.now();
-    const rests = restsOf(w.entries).map((r) => ({ ...r, when: w.entries[r.seq].ts ?? 0 })).filter((r) => now - r.when < 60000).slice(-8).map((r) => {
+    const rests = recentRests(w, now).map((r) => {
       const par = sf.st.entities[r.id]?.c.parent?.to;
       return { id: r.id, at: r.at.map(r3), ...(r.lost ? { lost: "landed outside the world; it's back where it was picked up" } : { on: par ?? "ground" }), secondsAgo: Math.round((now - r.when) / 1000) }; });
     const stuck = sf.rested.map((r) => ({ id: r.id, launch: r.seq, at: r.p.map(r3), why: (w.unsettled ?? []).find((u) => u.id === r.id)?.reason ?? "not yet logged" }));
     return { ok: true, inFlight: livePoses(sf), ...(rests.length ? { cameToRest: rests } : {}), ...(stuck.length ? { unsettled: stuck } : {}) };
   },
 };
+// The rests of the last minute, at most 8, oldest first: what restsOf(w.entries) gives filtered to that window, read
+// from the act index's rest list backwards (ts never decreases along the log, so the window is a suffix).
+function recentRests(w, now) {
+  const X = actIndexOf(w); const E = w.entries; const out = [];
+  for (let k = X.rests.length - 1; k >= 0 && out.length < 8; k--) { const seq = X.rests[k]; const e = E[seq]; const when = e.ts ?? 0;
+    if (!(now - when < 60000)) break;
+    const c = E[e.cause]; const op = opsQuiet(e).find((o) => o.comp === "transform" && o.id === c.body.id);
+    const ai = X.restAfter.get(seq); const after = ai === undefined ? null : E[ai];
+    out.push({ seq, id: c.body.id, cause: e.cause, at: op?.value?.pos, handled: c.body.handled ?? [c.actor], when,
+      ...(after?.verb === "return-lost" ? { lost: true } : {}), ...(after?.verb === "settle" ? { onto: after.body.onto } : {}) }); }
+  return out.reverse();
+}
 function launch(w, actor, a, tool) {
   const me = body(w, actor); const h = holdOf(w, actor, a.id);
   const spec = w.state().entities["@world"]?.c.sim;

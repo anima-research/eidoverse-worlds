@@ -4,6 +4,8 @@
 //   T   the engine translator's own name, and the v1 fold build it stamps
 //   P   locks (PROTOCOL-v4 §5): v1's matrix (tools/locktest.ts), ancestors, through_lock, the gameplay lock inside
 //       its own component, and v1 lock/guard through the translator
+//   U   the act index (undo, wait): equals a fresh build after every request; entityBefore equals the fold at every
+//       seq; a later write, a purge and a new act each change undo's answer the way a full scan would
 //   M   translated mounts in the door's shape: where the door sees a riding thing, place-on and overlap warnings
 //   L   the live world (server/v4/live.ts) equals a whole-log re-read after every request: state, sim, the id index
 //   C   the engine catalogue's shape (an off-centre GLB box, measured surfaces) places things where they rest
@@ -11,9 +13,9 @@
 // @ts-nocheck
 import fs from "node:fs";
 import { scratch } from "./common.ts";
-import { request, creatorOf, LAB_CATALOGUE } from "../../shared/v4/door.js";
+import { request, creatorOf, LAB_CATALOGUE, actIndexOf, actIndexFresh, entityBefore } from "../../shared/v4/door.js";
 import { fold, readLog, digest } from "../../shared/v4/fold.js";
-import { simFold, digestOf } from "../../shared/v4/simlayer.js";
+import { simFold, digestOf, restsOf } from "../../shared/v4/simlayer.js";
 import { MODELS } from "../../shared/v4/catalogue.js";
 import { enc, encName, dec } from "../../shared/v4/names.js";
 import { translate, TRANSLATOR } from "../../shared/v4/translate-v1.js";
@@ -198,10 +200,59 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("rowan", "move", { to: [0, 0, -0.5] }); call("rowan", "grab", { id: "ball" });
   ok(call("rowan", "throw", { id: "ball", v: [0, 2, 3] }).ok, "L throw accepted");
   call("rowan", "look", {}, 300); same("mid-flight (a read advanced the sim first)");
-  call("rowan", "wait", {}, 6000); same("after the rest");
+  { const r = call("rowan", "wait", {}, 6000); same("after the rest");
+    const want = restsOf(w.entries).map((x) => ({ ...x, when: w.entries[x.seq].ts })).filter((x) => now - x.when < 60000).slice(-8).map((x) => [x.id, x.at.map((n) => Math.round(n * 1000) / 1000)]);
+    ok(r.cameToRest?.length && JSON.stringify(r.cameToRest.map((x) => [x.id, x.at])) === JSON.stringify(want), "L wait's rests (from the act index) = restsOf over the whole log", [r.cameToRest, want]); }
   call("rowan", "set", { id: "table-1", component: "label", value: "first" }); call("rowan", "undo", {}); same("after an undo");
   const st = w.state(); const held = st.entities["table-1"]; call("rowan", "set", { id: "table-1", component: "label", value: "t" });
   ok(held === st.entities["table-1"] && !("label" in held.c), "L a state a caller holds never changes under it (copy on write)"); same("after a label"); }
+
+// ---- U: the act index (research 37, slice 3 #5): undo and wait without scanning the log ----
+{ const dir = root + "undo/"; let now = T + 3000;
+  const w = openLive(dir, "undo", { now: () => now });
+  const call = (actor, tool, args = {}) => { now += 100; return request(w, actor, tool, args); };
+  const flat = (x) => JSON.stringify(Object.fromEntries(Object.entries(x).filter(([k]) => !["entries", "bad", "pt"].includes(k)).map(([k, v]) => [k, v instanceof Map ? [...v].sort((a, b) => String(a[0]).localeCompare(String(b[0]))) : v instanceof Set ? [...v].sort() : v])));
+  let steps = 0, firstBad = null;
+  const same = (what) => { steps++; const inc = flat(actIndexOf(w)), fresh = flat(actIndexFresh(readLog(fs.readFileSync(dir + "v4.jsonl"))));
+    if (inc !== fresh && !firstBad) firstBad = [what, inc.slice(0, 300), fresh.slice(0, 300)]; };
+  const step = (actor, tool, args = {}) => { const r = call(actor, tool, args); same(`${actor} ${tool}`); return r; };
+  const purge = (values) => { now += 100; w.append({ kind: "purge", actor: "door", verb: "purge", body: { values } }); same("purge"); };
+  const label = () => w.state().entities.crate?.c.label;
+  step("rowan", "new", { title: "undo" }); step("rowan", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } });
+  step("bob", "create", { id: "crate", model: "crate", place: { at: [0, 0] } });
+  // a later act of my own: the index must have advanced, or the second undo finds the first again
+  const a1 = step("bob", "set", { id: "crate", component: "label", value: "one" });
+  const u1 = step("bob", "undo", {}); ok(u1.ok && label() === undefined, "U1 bob's undo reverts his label", u1.refused);
+  const a2 = step("bob", "set", { id: "crate", component: "label", value: "two" });
+  const u2 = step("bob", "undo", {});
+  ok(u2.ok && label() === undefined && w.entries[u2.act].body.undoes === a2.act, "U2 a NEW act of mine is the next undo (not 'already undone', not the old one)", [u2.refused, w.entries[u2?.act]?.body]);
+  ok(code(step("bob", "undo", { act: a1.act })) === "nothing", "U3 an act already undone stays undone");
+  // someone else's later write: the per-thing history must include it
+  const m = step("bob", "set", { id: "crate", component: "transform", value: { pos: [2, 0, 2] } });
+  step("rowan", "set", { id: "crate", component: "transform", value: { pos: [3, 0, 3] } });
+  const u3 = step("bob", "undo", {});
+  ok(code(u3) === "conflict" && u3.refused.skipped?.[0]?.why === "rowan changed it since", "U4 a later write by someone else: undo refuses what they changed since", u3.refused);
+  ok(code(step("bob", "undo", { act: m.act })) === "conflict", "U4 …by act too");
+  // purge: a purged OLD value must never come back through undo (the index has to learn the purge)
+  const s1 = step("bob", "set", { id: "crate", component: "label", value: "my phone number" });
+  step("bob", "set", { id: "crate", component: "label", value: "public" });
+  purge([{ seq: w.entries.findIndex((e, i) => i > s1.act && e.kind === "state" && e.cause === s1.act) }]);
+  ok(w.state().entities.crate.c.label === "public", "U5 (the purge leaves the current value alone)");
+  const u5 = step("bob", "undo", {});
+  ok(code(u5) === "conflict" && /purged/.test(u5.refused.skipped?.[0]?.why) && w.state().entities.crate.c.label === "public", "U5 undoing the later label won't restore the purged one", [u5.refused, w.state().entities.crate.c.label]);
+  // purge an act's whole body: its label can't be read, so undo {label} can't find it
+  const b1 = step("bob", "batch", { label: "tidy", ops: [{ tool: "set", args: { id: "crate", component: "light", value: { range: 3 } } }] });
+  purge([{ seq: b1.act }]);
+  ok(code(step("bob", "undo", { label: "tidy" })) === "nothing", "U6 a purged act's label can't be matched any more", b1.refused);
+  // entityBefore = the fold at every seq, for every thing (purged values included)
+  const L = readLog(fs.readFileSync(dir + "v4.jsonl")); let bad = null;
+  for (let q = 1; q <= L.length && !bad; q++) { const st = fold(L, { until: q - 1 });
+    for (const id of new Set([...Object.keys(st.entities), "crate"])) { const a = entityBefore(w, id, q), b = st.entities[id];
+      const j = (e) => (e ? JSON.stringify({ born: e.born, c: Object.fromEntries(Object.keys(e.c).sort().map((k) => [k, e.c[k]])) }) : null);
+      if (j(a) !== j(b)) { bad = [q, id, j(a), j(b)]; break; } } }
+  ok(!bad, `U7 entityBefore(id, seq) = fold(until: seq - 1) for every thing at all ${L.length} seqs (it reads a thing's own history)`, bad);
+  ok(!firstBad, `U8 the incremental index = a fresh build after each of ${steps} steps (writes, undos, refusals, two purges)`, firstBad);
+  { const X = actIndexOf(w); ok(X.purged.has(b1.act) && X.purgedOps.size === 2, "U9 the index knows both purges (an act body and a set value)", [[...X.purged], [...X.purgedOps]]); } }
 
 // ---- C: an off-centre catalogue box and measured surfaces ----
 { const cat = { get: (n) => ({ "lib/desk.glb": { label: "desk", box: [[-0.5, -0.4, -0.3], [0.7, 0.35, 0.5]], size: [1.2, 0.75, 0.8], surfaces: [{ y: 0.35, x: [-0.4, 0.6], z: [-0.2, 0.4] }] },
