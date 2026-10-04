@@ -26,6 +26,7 @@ import { foldEntry, emptyState, type LogEntry, type WorldState } from "../shared
 import { emptySim, simEntry, simSnapshot } from "../shared/sim.js";
 import { publishEntry } from "./events.ts";
 import { atomicWrite } from "./fsutil.ts";
+import { V4Log, isV4World } from "./v4/world.ts";
 
 /** The sim fold's state (shared/sim.js — JSDoc-typed JS; mirrored here
  *  structurally for the TS side of the house). */
@@ -46,6 +47,12 @@ let settle: (pose: unknown) => Record<string, unknown> | null = () => {
   throw new Error("settledPose not wired — server.ts wires it at boot");
 };
 export function wireSettledPose(fn: typeof settle) { settle = fn; }
+
+// A v4 world's resync (a fresh snapshot to everyone in it) and rights refresh need server.ts's buildSnapshot and
+// rightsOf; they arrive by injection like settle (this module never imports server.ts).
+let v4Resync: (w: World) => void = () => { throw new Error("v4 resync not wired — server.ts wires it at boot"); };
+let v4Rights: (w: World) => void = () => {};
+export function wireV4(resync: typeof v4Resync, rights: typeof v4Rights) { v4Resync = resync; v4Rights = rights; }
 
 // ------------------------------------------------------------------- clients
 
@@ -422,6 +429,9 @@ export class World {
   bhv!: BehaviorHost;
   private log: WorldLog;
   private session: WorldSession;
+  /** A v4 world (protocol/v4, slice 2): its log is a V4Log, every write a v4 request (server/v4/). null for every
+   *  v1 world, which is built and served exactly as before. */
+  readonly v4: V4Log | null = null;
 
   /** The log seq this sequencer opened the world at, and the legs admitted
    *  since. A leg's GENERATION is `openSeq × 1e6 + count`: server-issued,
@@ -443,7 +453,18 @@ export class World {
 
   constructor(name: string) {
     this.name = name;
-    this.log = new WorldLog(name);
+    if (isV4World(name)) { // decided by the world's own genesis (server/v4/live.ts isV4Dir); v1 worlds never enter
+      const v4 = new V4Log(name);
+      this.v4 = v4;
+      this.log = v4 as unknown as WorldLog; // the WorldLog surface it serves: the compatibility projection
+      v4.attach({
+        publish: (entry) => publishEntry(this, entry),
+        broadcast: (msg) => this.session.broadcast(msg),
+        resync: () => v4Resync(this),
+        rightsChanged: () => v4Rights(this),
+        debug: (kind, detail) => this.debug(kind, detail),
+      });
+    } else this.log = new WorldLog(name);
     this.openSeq = this.log.snapSeq + this.log.entries.length + 1;   // = the next seq this opening will write
     this.session = new WorldSession(this.log, (a, v, ar) => this.commit(a, v, ar));
     // Runtime scripts wake with the world — a behavior keeps behaving with
@@ -483,7 +504,7 @@ export class World {
    *  that an audience should hear goes through here; bare append() remains
    *  for the deliberate silences (genesis — see events.ts's rulings). */
   commit(actor: string, verb: string, args: Record<string, unknown>): LogEntry {
-    const entry = this.log.append(actor, verb, args);
+    const entry = this.log.append(actor, verb, args); // a V4Log throws here: v1 writes have no path into a v4 world
     publishEntry(this, entry);
     return entry;
   }
@@ -497,7 +518,10 @@ export class World {
     return this.log.readHistory(opts);
   }
   joinPayload() { return this.log.joinPayload(); }
-  rememberPose(id: string, pose: unknown) { this.log.rememberPose(id, pose); }
+  rememberPose(id: string, pose: unknown) {
+    if (this.v4) this.v4.rememberPose(id, pose, settle);
+    else this.log.rememberPose(id, pose);
+  }
 
   /** Erase the world back to zero.
    *

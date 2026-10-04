@@ -23,7 +23,8 @@ import { summarizeGlb } from "./geometry.ts";
 // The world itself — WorldLog + WorldSession behind the unsplit facade, with
 // the registry (§15, 7c). The boot sweep below stays HERE: waking scripted
 // worlds with the server is boot policy, not world mechanics.
-import { World, type Client, worlds, getWorld, wireSettledPose } from "./world.ts";
+import { World, type Client, worlds, getWorld, wireSettledPose, wireV4 } from "./world.ts";
+import { v4Handler } from "./v4/messages.ts";
 import { warmBoxes, worldLibs } from "./boxes.ts";
 // The HTTP surface — one route table, /upload behind it in upload.ts (§15,
 // 7c). fetch() below delegates; avatarRoster rides back for the join
@@ -156,6 +157,12 @@ function settledPose(pose: unknown): Record<string, unknown> | null {
 // both planes. world.ts takes it by injection because the source-text gates
 // (§15.1: settled-pose-test regexes this file) pin the definition here.
 wireSettledPose(settledPose);
+// v4 worlds (protocol/v4 slice 2, server/v4/): a change the projection can't spell as v1 verbs re-sends the
+// snapshot itself (the reconnect path), and a role change re-sends everyone's rights, as afterGrant does for v1.
+wireV4(
+  (w) => { for (const c of w.clients) { try { c.ws.send(JSON.stringify(buildSnapshot(w, c))); } catch (err) { w.debug("v4-resync-error", { who: c.id, error: String(err) }); } } },
+  (w) => { for (const c of w.clients) { try { c.ws.send(JSON.stringify({ type: "your-rights", rights: { ...rightsOf(w.state, c.id, c.sub), open: !worldHasOwner(w.state) } })); } catch { /* gone */ } } },
+);
 
 // The entry bus's boot-time subscribers (§24, events.ts): every committed
 // entry reaches these, uniformly, in this order — the wire's seq stream
@@ -637,6 +644,8 @@ function buildSnapshot(w: World, c: Client) {
         .filter(x => x !== c && x.id === c.id && (x.surface ?? "world") !== "world")
         .map(x => ({ surface: x.surface, gen: x.gen })),
       recording: RECORD,
+      // a v4 world says so (agents route their tools through {type: "v4"} requests; slice 2)
+      ...(w.v4 ? { v4: w.v4.info() } : {}),
       // The world as it is, then only what has happened since. A joiner's
       // cost is now the size of the WORLD, not the length of its history.
       state: jp.state,
@@ -1044,7 +1053,9 @@ const server = Bun.serve({
           // OWN keys only: a type such as "__proto__" or "constructor" must
           // fall through to silence like any unknown type, never reach
           // Object.prototype and fail server-side (PR #160 review, B5).
-          const h = typeof msg.type === "string" && Object.hasOwn(MESSAGES, msg.type) ? MESSAGES[msg.type] : undefined;
+          // a v4 world answers some types itself (server/v4/messages.ts); v1 worlds never consult that table
+          const h = (c.world?.v4 ? v4Handler(msg.type) : undefined)
+            ?? (typeof msg.type === "string" && Object.hasOwn(MESSAGES, msg.type) ? MESSAGES[msg.type] : undefined);
           if (h) h({ c, ws, now, expel }, msg);
         }
       }
