@@ -14,7 +14,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["phys", "phys-check.ts", 1],         // design 20: launches, rests by cause, carriers
   ["replay", "replay-check.ts", 1],     // L1: the fold alone, self-agreement, the lab's digest
   ["conformance", "compare.ts", 3],     // the JS fold vs the Python reference reader (+ its own tests)
-  ["sweep", "sweep.ts", 3],             // translators on every local world log + her dialect-3 goldens + pins
+  ["sweep", "sweep.ts", 4],             // translators on every local world log + her dialect-3 goldens + pins
   ["browser", "browser-check.ts", 1],   // the shared core imported by headless Chromium, byte-for-byte with bun
   ["door", "door-check.ts", 1],
   ["server", "server-check.ts", 1],     // slice 2 at the server: real processes, real WebSockets, scratch ports; v1 byte-compared         // slice 2 in process: names, translator stamp, ancestor pins, live = whole-log, catalogue, projection
