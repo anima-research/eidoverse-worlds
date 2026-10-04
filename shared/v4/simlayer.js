@@ -41,21 +41,21 @@ export function worldPose(st, id, depth = 0) {
   return { pos: pt.pos.map((n, i) => n + r[i]), q: [d*e2+a*h+b*g-c*f, d*f-a*g+b*h+c*e2, d*g+a*f-b*e2+c*h, d*h-a*e2-b*f-c*g], scale: sc.map((n, i) => n * pt.scale[i]) };
 }
 // The engine sees the world through a v1-shaped view: one entry per modelled thing (its "lib" is its model).
-function v1Entity(st, id) {
-  const e = st.entities[id]; if (!e || !(MODELS[e.c.model] || e.c.physics?.shape) || e.c.physics?.kind === "none") return null;
+function v1Entity(st, id, models = MODELS) {
+  const e = st.entities[id]; if (!e || !(models[e.c.model] || e.c.physics?.shape) || e.c.physics?.kind === "none") return null;
   const t = worldPose(st, id);
   return { pos: t.pos, yaw: yawOf(t.q), lib: e.c.model, scale: t.scale[1] };
 }
-function v1View(st) {
+function v1ViewM(st, models = MODELS) {
   const entities = {};
-  for (const id of Object.keys(st.entities)) { const v = v1Entity(st, id); if (v) entities[id] = v; }
+  for (const id of Object.keys(st.entities)) { const v = v1Entity(st, id, models); if (v) entities[id] = v; }
   const terr = st.entities["@world"]?.c.terrain;
   return { entities, terrain: terr ?? { amplitude: 0 } }; // v4 worlds stand on y = 0 unless they declare terrain
 }
 const catalogueBox = (m) => [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2, m.size[1], m.size[2] / 2]];
 // a collider's shape is the log's word when stamped there (physics.shape, Covenant III); the catalogue's otherwise
-function boxesFor(st) {
-  const out = Object.fromEntries(Object.entries(MODELS).map(([k, m]) => [k, catalogueBox(m)]));
+function boxesForM(st, models = MODELS) {
+  const out = Object.fromEntries(Object.entries(models).map(([k, m]) => [k, catalogueBox(m)]));
   for (const id of Object.keys(st.entities)) { const e = st.entities[id]; if (e.c.physics?.shape && typeof e.c.model === "string") out[e.c.model] = e.c.physics.shape; }
   return out;
 }
@@ -63,10 +63,23 @@ const opsSafe = (e) => { try { return opsOf(e); } catch (x) { if (x instanceof M
 const isEntry = (e) => e && !(e instanceof Malformed) && typeof e === "object";
 
 // Fold the whole log: the blind state, plus the sim epoch's live bodies and what came to rest (not yet logged).
-export function simFold(entries, now) {
+// (Engine, slice 2: this is now simFolder fed every valid entry, then viewed at `now` — the same code the server runs
+// incrementally, so every suite that calls simFold exercises the incremental path.)
+export function simFold(entries, now, opts = {}) {
   const blind = fold(entries); // the strict fold decides which entries count; this layer replays the same ones
   const bad = new Set(blind.diagnostics.filter(([, c]) => c.startsWith("malformed")).map(([q]) => q));
-  const valid = new Set(); if (blind.status === "ok") for (let s = 0; s < entries.length; s++) if (isEntry(entries[s]) && !bad.has(s)) valid.add(s);
+  const f = simFolder(entries, opts);
+  if (blind.status === "ok") for (let s = 0; s < entries.length; s++) if (isEntry(entries[s]) && !bad.has(s)) f.feed(s);
+  return f.view(now);
+}
+// The sim layer as a running fold (engine, slice 2; the lab re-folded the whole log on every call, O(n) per request).
+// feed(seq) takes the next VALID entry (the caller decides validity: the strict fold on load, the door's own re-read
+// on append), in log order; view(now) advances the engine to `now` and returns what simFold returned. `now` must not
+// run backwards relative to later entries' ts (the server's clock is monotonic and every ts it writes is ≥ it), so
+// advancing early for a read and then folding a later entry is the same as folding it first: advancement is
+// schedule-independent. opts.models: the catalogue whose models count as colliders (default the lab's; the server
+// passes {} so geometry enters the sim only through the log's physics.shape, Covenant III).
+export function simFolder(entries, { models = MODELS } = {}) {
   const st = emptyState(); let clock = 0;
   const out = { st, spec: null, foreign: false, sim: null, launched: {}, rested: [], checks: { agree: 0, disagree: [] }, restTicks: {} };
   const tickOf = (ts) => (out.sim ? eidosim.tickOf(out.sim, ts) : 0);
@@ -82,12 +95,12 @@ export function simFold(entries, now) {
     }
   };
   const disagree = (x) => out.checks.disagree.push(x);
-  for (let seq = 0; seq < entries.length; seq++) {
-    if (!valid.has(seq)) continue;
+  const v1View = (s) => v1ViewM(s, models), boxesFor = (s) => boxesForM(s, models);
+  const feed = (seq) => {
     const e = entries[seq];
     if (typeof e.ts === "number" && e.ts > clock) clock = e.ts;
     if (out.sim) advance(clock);
-    if (e.kind === "sim" && e.verb === "digest" && out.sim) { const mine = digestOf(out.sim); if (mine !== e.body.digest) disagree({ seq, logged: e.body.digest, mine }); continue; }
+    if (e.kind === "sim" && e.verb === "digest" && out.sim) { const mine = digestOf(out.sim); if (mine !== e.body.digest) disagree({ seq, logged: e.body.digest, mine }); return; }
     if (e.kind === "state") {
       const ops = opsSafe(e);
       const causeE = entries[e.cause];
@@ -118,9 +131,9 @@ export function simFold(entries, now) {
           out.sim = eidosim.emptySim();
           eidosim.simEntry(out.sim, { seq, ts: clock, actor: "door", verb: "epoch", args: { sim: spec.engine, tickMs: spec.tickMs, boxes: boxesFor(st) } }, v1View(st));
         }
-        continue;
+        return;
       }
-      if (!out.sim) continue;
+      if (!out.sim) return;
       for (const o of ops) { // P7, keyed by component
         if (o.id === "@world") { // the ground itself changed: re-ground, release every body, rebuild colliders (her law)
           if (o.comp === "terrain") { eidosim.simEntry(out.sim, { seq, ts: clock, actor: e.actor, verb: "terrain", args: st.entities["@world"].c.terrain ?? {} }, v1View(st)); out.launched = {}; }
@@ -139,7 +152,7 @@ export function simFold(entries, now) {
     } else if (e.kind === "sim" && out.sim) {
       const a = e.body;
       if (e.verb === "launch" && st.entities[a.id] && Array.isArray(a.p) && Array.isArray(a.v)) {
-        const view = v1View(st); const base = view.entities[a.id]; if (!base) continue;
+        const view = v1View(st); const base = view.entities[a.id]; if (!base) return;
         view.entities[a.id] = { ...base, pos: a.p, yaw: typeof a.yaw === "number" ? a.yaw : base.yaw };
         // her punt makes the body (order, statics, box); then the launch's stamped state is set EXACTLY — through
         // dir/power it would be renormalised, which can move it by an ulp, and dialect 3 has no zero-power "let go"
@@ -153,14 +166,18 @@ export function simFold(entries, now) {
         delete out.launched[a.id];
       }
     }
-  }
-  if (now !== undefined) { if (now > clock) clock = now; advance(clock); }
-  out.clock = clock;
-  if (out.sim) for (const [id, l] of Object.entries(out.launched)) {
-    const b = out.sim.bodies[id]; if (b?.resting) out.rested.push({ id, ...l, p: b.p, yaw: b.yaw, tick: l.restTick ?? out.sim.tick });
-  }
-  out.rested.sort((x, y) => x.tick - y.tick);
-  return out;
+  };
+  const view = (now) => {
+    if (now !== undefined) { if (now > clock) clock = now; advance(clock); }
+    out.clock = clock;
+    out.rested = [];
+    if (out.sim) for (const [id, l] of Object.entries(out.launched)) {
+      const b = out.sim.bodies[id]; if (b?.resting) out.rested.push({ id, ...l, p: b.p, yaw: b.yaw, tick: l.restTick ?? out.sim.tick });
+    }
+    out.rested.sort((x, y) => x.tick - y.tick);
+    return out;
+  };
+  return { feed, view };
 }
 function isUnder(st, k, id) { let p = st.entities[k]?.c.parent?.to, n = 0; while (p && n++ < 32) { if (p === id) return true; p = st.entities[p]?.c.parent?.to; } return false; }
 
