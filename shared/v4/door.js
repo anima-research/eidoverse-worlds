@@ -12,6 +12,24 @@ import { MODELS, COMPONENTS, PENDULUM } from "./catalogue.js";
 import { validate, toolHelp, TOOLSPEC } from "./toolspec.js";
 import { simFold, livePoses, digestOf, restEta, ENGINES, carried, restsOf, worldPose } from "./simlayer.js";
 
+// ---------- the model catalogue (engine, slice 2) ----------
+// The lab's door read its own table (./catalogue.js). The engine's models are library paths measured from their GLBs
+// (server/v4/catalogue.ts), so the catalogue is injected: io.catalogue = { get(name) → entry | undefined,
+// list(query) → [name, entry][] }. An entry is { label, size?, box?, surfaces, solids?, sockets? }:
+//   box      [[x,y,z], [x,y,z]] in the model's frame (a GLB's origin is wherever its author put it); absent → the lab's
+//            convention, a size-box with the origin at the base centre;
+//   surfaces [{y, x?: [min,max], z?: [min,max], inset?}] in the model's frame (measured flat zones carry x/z);
+//   size     absent → a model this door can name but not measure (no placement help, no collisions, said so).
+// request() sets CAT for the duration of one synchronous call; nothing in the door awaits, so calls can't interleave.
+// own keys only: MODELS["constructor"] is Object (the lab door accepted model "constructor"; L1's no-prototype rule)
+export const LAB_CATALOGUE = Object.freeze({ get: (n) => (Object.hasOwn(MODELS, n) ? MODELS[n] : undefined), list: (q) => Object.entries(MODELS).filter(([k, m]) => k.includes(q) || m.label.includes(q)) });
+let CAT = LAB_CATALOGUE;
+const modelOf = (name) => (typeof name === "string" ? CAT.get(name) : undefined);
+const geomOf = (name) => { const m = modelOf(name); return m && m.size ? m : undefined; };
+const boxOfM = (m) => m.box ?? [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2, m.size[1], m.size[2] / 2]];
+/** Run fn with world w's catalogue in force (also for callers outside request(), e.g. a server's settle tick). */
+export function withCatalogue(w, fn) { const prev = CAT; CAT = w.catalogue ?? LAB_CATALOGUE; try { return fn(); } finally { CAT = prev; } }
+
 // ---------- storage ----------
 const STATE = Symbol("admitted state write");
 export const posAt = (e, i) => { if (e && typeof e === "object") Object.defineProperty(e, "seq", { value: i, enumerable: false, configurable: true }); return e; };
@@ -27,7 +45,7 @@ export const posAt = (e, i) => { if (e && typeof e === "object") Object.definePr
  */
 export function worldOf(io) {
   const { name, entries, getBlob, putBlob } = io;
-  const w = { name, entries, getBlob, putBlob, exists: entries.length > 0 };
+  const w = { name, entries, getBlob, putBlob, exists: entries.length > 0, catalogue: io.catalogue ?? null };
   w.worldId = entries[0] && !(entries[0] instanceof Malformed) ? worldIdOf(entries[0]) : null;
   w.now = io.now;
   // the presence plane: bodies and holds. Transient, never logged (P1, P2)
@@ -100,10 +118,10 @@ function localFrom(st, parentId, wt) {
   return { pos: d.map((v, i) => r3(v / pt.scale[i])), q: qmul(qinv(pt.q), wt.q).map(r3), scale: wt.scale.map((v, i) => r3(v / pt.scale[i])) };
 }
 function aabb(st, id) {
-  const e = st.entities[id]; const m = MODELS[e?.c.model]; if (!m) return null;
-  const t = worldT(st, id); const [sx, sy, sz] = m.size;
+  const e = st.entities[id]; const m = geomOf(e?.c.model); if (!m) return null;
+  const t = worldT(st, id); const [lo0, hi0] = boxOfM(m);
   const corners = [];
-  for (const x of [-sx/2, sx/2]) for (const y of [0, sy]) for (const z of [-sz/2, sz/2]) {
+  for (const x of [lo0[0], hi0[0]]) for (const y of [lo0[1], hi0[1]]) for (const z of [lo0[2], hi0[2]]) {
     const p = qrot(t.q, [x * t.scale[0], y * t.scale[1], z * t.scale[2]]);
     corners.push(p.map((v, i) => v + t.pos[i]));
   }
@@ -112,7 +130,7 @@ function aabb(st, id) {
   return { min, max };
 }
 function solids(st, id) {
-  const e = st.entities[id]; const m = MODELS[e?.c.model]; if (!m) return [];
+  const e = st.entities[id]; const m = geomOf(e?.c.model); if (!m) return [];
   if (!m.solids) { const b = aabb(st, id); return b ? [b] : []; }
   const t = worldT(st, id);
   return m.solids.map(([lo, hi]) => { const cs = [];
@@ -121,8 +139,8 @@ function solids(st, id) {
 }
 // Oriented boxes + the separating-axis test (F21): world-AABBs of rotated solids fatten into false overlaps.
 function obbs(st, id) {
-  const e = st.entities[id]; const m = MODELS[e?.c.model]; if (!m) return [];
-  const t = worldT(st, id); const boxes = m.solids ?? [[[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2, m.size[1], m.size[2] / 2]]];
+  const e = st.entities[id]; const m = geomOf(e?.c.model); if (!m) return [];
+  const t = worldT(st, id); const boxes = m.solids ?? [boxOfM(m)];
   const ax = [qrot(t.q, [1, 0, 0]), qrot(t.q, [0, 1, 0]), qrot(t.q, [0, 0, 1])];
   return boxes.map(([lo, hi]) => { const lc = [0, 1, 2].map((i) => (lo[i] + hi[i]) / 2 * t.scale[i]);
     const off = qrot(t.q, lc); return { c: t.pos.map((v, i) => v + off[i]), ax, h: [0, 1, 2].map((i) => Math.abs(hi[i] - lo[i]) / 2 * Math.abs(t.scale[i])) }; });
@@ -145,10 +163,13 @@ const descendants = (st, id) => Object.keys(st.entities).filter((k) => {
 const ancestors = (st, id) => { const out = []; let p = st.entities[id]?.c.parent?.to, n = 0; while (p && n++ < 32) { out.push(p); p = st.entities[p]?.c.parent?.to; } return out; };
 
 function surfacesOf(st, id) {
-  const e = st.entities[id]; const m = MODELS[e?.c.model]; const b = aabb(st, id); if (!m || !b) return [];
+  const e = st.entities[id]; const m = geomOf(e?.c.model); const b = aabb(st, id); if (!m || !b) return [];
   const t = worldT(st, id);
-  return m.surfaces.map((s, i) => ({ id, level: i, y: t.pos[1] + s.y * t.scale[1],
-    min: [b.min[0] + (s.inset ?? 0), b.min[2] + (s.inset ?? 0)], max: [b.max[0] - (s.inset ?? 0), b.max[2] - (s.inset ?? 0)] }));
+  return (m.surfaces ?? []).map((s, i) => { const k = s.inset ?? 0;
+    if (s.x && s.z) { // a measured zone: its own rectangle, carried into the world (the axis-aligned box of its corners)
+      const cs = [[s.x[0], s.z[0]], [s.x[0], s.z[1]], [s.x[1], s.z[0]], [s.x[1], s.z[1]]].map(([x, z]) => { const p = qrot(t.q, [x * t.scale[0], s.y * t.scale[1], z * t.scale[2]]); return [p[0] + t.pos[0], p[2] + t.pos[2]]; });
+      return { id, level: i, y: t.pos[1] + s.y * t.scale[1], min: [Math.min(...cs.map((c) => c[0])) + k, Math.min(...cs.map((c) => c[1])) + k], max: [Math.max(...cs.map((c) => c[0])) - k, Math.max(...cs.map((c) => c[1])) - k] }; }
+    return { id, level: i, y: t.pos[1] + s.y * t.scale[1], min: [b.min[0] + k, b.min[2] + k], max: [b.max[0] - k, b.max[2] - k] }; });
 }
 function supportBelow(st, x, z, y, ignore = new Set()) {
   let best = { y: 0, id: "ground" };
@@ -192,9 +213,15 @@ function entryBy(w, e) {
 }
 // The creator of a thing (comp undefined), or of component `comp` on it, in its CURRENT life: the entry that made it
 // present after it was last absent. null if it isn't present now. { seq, by, rights }.
+// The state entries that may touch `id`, newest first. A live world (server/v4) keeps an index id → seqs so these
+// views cost the thing's own history, not the whole log's; without one (the suites) every entry is a candidate.
+function* backward(w, id) {
+  if (w.touching) { const a = w.touching(id); for (let k = a.length - 1; k >= 0; k--) yield a[k]; return; }
+  for (let i = w.entries.length - 1; i >= 0; i--) yield i;
+}
 export function creatorOf(w, id, comp) {
   let found = null;
-  for (let i = w.entries.length - 1; i >= 0; i--) { const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
+  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
     const ops = opsQuiet(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id) continue;
       if (comp === undefined) { if (o.verb === "create") return entryBy(w, e); if (o.verb === "delete" && o.comp === undefined) return null; continue; }
@@ -204,7 +231,7 @@ export function creatorOf(w, id, comp) {
 }
 // Who last set (or deleted) component `comp` on a thing: { seq, by, rights, deleted } or null if nobody ever has.
 export function lastSetterOf(w, id, comp) {
-  for (let i = w.entries.length - 1; i >= 0; i--) { const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
+  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
     const ops = opsQuiet(e);
     for (let k = ops.length - 1; k >= 0; k--) { const o = ops[k]; if (o.id !== id || o.comp !== comp || o.verb === "create") continue;
       return { ...entryBy(w, e), deleted: o.verb === "delete" }; } }
@@ -228,6 +255,7 @@ function wire(args) {
 }
 
 export function request(w, actor, tool, args = {}) {
+  const prevCat = CAT; CAT = w.catalogue ?? LAB_CATALOGUE;
   try {
     if (!isIdentity(actor) || RESERVED.has(actor)) refuse("identity", `'${actor}' isn't an identity the door can stamp`, "identities are a–z, 0–9 and '-', up to 64 (§2.3); door, sim and world are the door's own");
     const h = TOOLS[tool];
@@ -244,7 +272,7 @@ export function request(w, actor, tool, args = {}) {
   } catch (e) {
     if (e instanceof Refusal) { const { code, reason, teach, ...rest } = e; return { ok: false, refused: { code, reason, teach: teach || (TOOLSPEC[tool] ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool"), ...pick(rest) } }; }
     throw e;
-  }
+  } finally { CAT = prevCat; }
 }
 const pick = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !["message", "stack"].includes(k)));
 function guess(s, opts) {
@@ -273,7 +301,8 @@ class Admitted { constructor(who, ops, after) { this.who = who; this.ops = ops; 
 function rateCheck(w, actor) {
   if (w.leaving === actor) return; // a disconnect's settlement is the door's duty, not the leaver's request: never rate-refused
   const now = w.now(); let n = 0; for (let i = w.entries.length - 1; i >= 0 && n <= RATE.n; i--) { const e = w.entries[i];
-    if (isE(e) && (e.kind === "act" || e.kind === "say") && e.actor === actor) { if (now - (e.ts ?? 0) > RATE.ms) break; n++; } }
+    if (isE(e) && Number.isInteger(e.ts) && now - e.ts > RATE.ms) break; // ts never decreases: everything earlier is older (engine: the lab scanned the whole log for a quiet actor)
+    if (isE(e) && (e.kind === "act" || e.kind === "say") && e.actor === actor) n++; }
   if (n >= RATE.n) refuse("rate", `${actor} has made ${n} entries in ${RATE.ms / 1000} s`, "slow down; batch {ops} counts as one");
 }
 function admit(w, st, who, ops) {
@@ -365,7 +394,7 @@ function valueCheck(s, { id, comp, value: v }) {
   if (comp === "parent") { if (!obj || typeof v.to !== "string") refuse("shape", `${at} must be {to: <id>}`, "");
     if (!s.entities[v.to]) refuse("not-found", `no thing called '${v.to}'`, "", { didYouMean: guess(v.to, Object.keys(s.entities)) });
     if (v.to === id || ancestors(s, v.to).includes(id) || ancestors(s, id).length >= 32) refuse("loop", `${id} can't be inside ${v.to}: that makes a loop`, ""); }
-  if (comp === "model" && !MODELS[v]) refuse("shape", `no model called '${v}'`, "find {kind: 'model', query} lists models", { didYouMean: guess(String(v), Object.keys(MODELS)) });
+  if (comp === "model" && !modelOf(v)) refuse("shape", `no model called '${v}'`, "find {kind: 'model', query} lists models", { didYouMean: guess(String(v), CAT.list(String(v).split("/").pop().replace(/\.[a-z0-9]+$/i, "").slice(0, 12)).map(([k]) => k).slice(0, 200)) });
   if (comp === "motion" && obj && "pivot" in v) refuse("derived", `${at}.pivot is derived from what it hangs from; it isn't stored`, "L2: no stored derived values; inspect shows the pivot as a view");
   if (comp === "reactions") { if (!obj) refuse("shape", `${at} must be {<action>: handler}`, "");
     const kinds = Object.keys(COMPONENTS.reactions.handlers);
@@ -419,7 +448,7 @@ const stripDry = ({ dry, ...rest }) => rest;
 const warnOrNot = (ws) => (ws.length ? { warnings: ws } : {});
 
 function lastTouch(w, id, comp) {
-  for (let i = w.entries.length - 1; i >= 0; i--) { const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
+  for (const i of backward(w, id)) { const e = w.entries[i]; if (!isE(e) || e.kind !== "state") continue;
     for (const o of opsQuiet(e)) { if (o.id !== id) continue;
       if (o.verb === "create" || o.comp === comp || (o.verb === "delete" && o.comp === undefined)) return { seq: i, actor: e.actor }; } }
   return null;
@@ -531,7 +560,7 @@ function buildDelete(ctx, a) {
 // Relational placement (A1): the door solves; the log gets a plain transform.
 function buildPlace(ctx, a) {
   const e = needThing(ctx, a.id);
-  const m = MODELS[e.c.model]; if (!m) refuse("shape", `${a.id} has no model, so it has no size to place`, "set its transform directly");
+  const m = geomOf(e.c.model); if (!m) refuse("shape", modelOf(e.c.model) ? `${a.id}'s model hasn't been measured here, so it has no size to place` : `${a.id} has no model, so it has no size to place`, "set its transform directly");
   const st = ctx.st, cur = worldT(st, a.id), scale = cur.scale;
   const fam = new Set([a.id, ...descendants(st, a.id)]);
   let yaw = a.yaw ?? qYaw(cur.q);
@@ -539,7 +568,7 @@ function buildPlace(ctx, a) {
   let tilt = [0, 0, 0, 1];
   if (a.lying) { const d = m.size.map((v, i) => v * scale[i]); const k = d.indexOf(Math.min(...d)); const r = Math.SQRT1_2;
     tilt = k === 2 ? [r, 0, 0, r] : k === 0 ? [0, 0, r, r] : tilt; }
-  const lc = []; for (const x of [-m.size[0] / 2, m.size[0] / 2]) for (const y of [0, m.size[1]]) for (const z of [-m.size[2] / 2, m.size[2] / 2]) lc.push(qrot(tilt, [x * scale[0], y * scale[1], z * scale[2]]));
+  const [mlo, mhi] = boxOfM(m); const lc = []; for (const x of [mlo[0], mhi[0]]) for (const y of [mlo[1], mhi[1]]) for (const z of [mlo[2], mhi[2]]) lc.push(qrot(tilt, [x * scale[0], y * scale[1], z * scale[2]]));
   const lo = [0, 1, 2].map((i) => Math.min(...lc.map((c) => c[i]))), hi = [0, 1, 2].map((i) => Math.max(...lc.map((c) => c[i])));
   const S = [hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]], C = [(hi[0] + lo[0]) / 2, 0, (hi[2] + lo[2]) / 2];
   const half = (y) => { const c = Math.abs(Math.cos(y)), s = Math.abs(Math.sin(y)); const hx = S[0] / 2, hz = S[2] / 2; return [c * hx + s * hz, s * hx + c * hz]; };
@@ -575,7 +604,7 @@ function buildPlace(ctx, a) {
   } else if (a.beside) {
     const nb = aabb(st, a.beside); const nt = worldT(st, a.beside); if (!nb) refuse("not-found", `no solid '${a.beside}'`, "", { didYouMean: guess(a.beside, Object.keys(st.entities)) });
     yaw = qYaw(nt.q); const right = qrot(nt.q, [1, 0, 0]), fwd = qrot(nt.q, [0, 0, 1]); const dir = a.side === "left" ? -1 : 1;
-    const nm = MODELS[st.entities[a.beside].c.model];
+    const nm = geomOf(st.entities[a.beside].c.model);
     const nh = nm.size[0] * nt.scale[0] / 2, mh = m.size[0] * scale[0] / 2, gap = a.gap ?? 0.005;
     const flush = ((m.size[2] * scale[2]) - (nm.size[2] * nt.scale[2])) / 2; // backs line up, as furniture does against a wall
     let k = nh + mh + gap, p, blocker = null;
@@ -693,7 +722,7 @@ function buildUse(ctx, a) {
   refuse("no-handler", `${a.id} declares '${action}' but its handler kind isn't one this engine runs`, `handler kinds: ${Object.keys(COMPONENTS.reactions.handlers).join(", ")} (schema {component: 'reactions'})`);
 }
 function actionsOf(st, id) {
-  const e = st.entities[id]; const m = MODELS[e?.c.model];
+  const e = st.entities[id]; const m = modelOf(e?.c.model);
   return [...Object.keys(e?.c.reactions ?? {}), ...((e?.c.sockets || m?.sockets) ? ["sit"] : [])];
 }
 function offersFor(st, id, actor) {
@@ -861,7 +890,7 @@ function buildCreateFrom(ctx, a) {
 // ---------- reads ----------
 function describe(st, id, live = {}, holds = {}) {
   const e = st.entities[id]; const t = worldT(st, id);
-  return { id, name: e.c.label ?? MODELS[e.c.model]?.label ?? e.c.model ?? id, at: t.pos.map((n) => Math.round(n * 100) / 100),
+  return { id, name: e.c.label ?? modelOf(e.c.model)?.label ?? e.c.model ?? id, at: t.pos.map((n) => Math.round(n * 100) / 100),
     ...(live[id] ? { moving: live[id] } : {}), ...(holds[id] ? { heldBy: holds[id].by, heldAt: holds[id].pose.pos.map((n) => Math.round(n * 100) / 100) } : {}),
     ...(actionsOf(st, id).length ? { actions: actionsOf(st, id) } : {}), ...(e.c.parent ? { in: e.c.parent.to } : {}), ...(pinnedC(e.c) ? { pinned: true } : {}), ...(e.c.locked === true ? { locked: true } : {}) };
 }
@@ -940,12 +969,12 @@ const TRACK = { speed: 6, cap: 4, step: 0.8, radius: 0.2, height: 1.7, spawnR: 2
 function bodyBox(p) { return { min: [p[0] - TRACK.radius, p[1] + TRACK.step, p[2] - TRACK.radius], max: [p[0] + TRACK.radius, p[1] + TRACK.height, p[2] + TRACK.radius] }; }
 function solidAt(w, st, p, except = new Set()) {
   const box = bodyBox(p); const held = new Set(Object.keys(w.presence.holds));
-  for (const id of Object.keys(st.entities)) { if (id === "@world" || held.has(id) || except.has(id) || !MODELS[st.entities[id].c.model]) continue; if (hits(box, st, id, 0.01)) return id; }
+  for (const id of Object.keys(st.entities)) { if (id === "@world" || held.has(id) || except.has(id) || !geomOf(st.entities[id].c.model)) continue; if (hits(box, st, id, 0.01)) return id; }
   return null;
 }
 function pathBlocked(w, st, from, to) {
   const already = new Set(); const b0 = bodyBox(from); // a body already inside something may walk out of it
-  for (const id of Object.keys(st.entities)) if (MODELS[st.entities[id].c.model] && hits(b0, st, id, 0.01)) already.add(id);
+  for (const id of Object.keys(st.entities)) if (geomOf(st.entities[id].c.model) && hits(b0, st, id, 0.01)) already.add(id);
   const n = Math.max(1, Math.ceil(dist(from, to) / 0.05));
   for (let k = 1; k <= n; k++) { const p = from.map((v, i) => v + (to[i] - v) * k / n); const hit = solidAt(w, st, p, already); if (hit) return hit; }
   return null;
@@ -1146,10 +1175,10 @@ const TOOLS = {
     const q = (a.query ?? "").toLowerCase();
     if (a.kind === "blueprint") { const lib = w.state().entities["@world"]?.c ?? {};
       return { ok: true, blueprints: Object.entries(lib).filter(([k]) => k.startsWith("library:")).map(([k, v]) => ({ hash: `sha256:${k.slice(8)}`, ...v, by: creatorOf(w, "@world", k)?.rights ?? null })).filter((b) => String(b.name ?? "").toLowerCase().includes(q)) }; }
-    return { ok: true, models: Object.entries(MODELS).filter(([k, m]) => k.includes(q) || m.label.includes(q)).map(([k, m]) => ({ model: k, size: m.size, about: m.label, surfaces: m.surfaces.map((s) => s.y), ...(m.sockets ? { seats: Object.keys(m.sockets) } : {}) })) };
+    return { ok: true, models: CAT.list(q).slice(0, 50).map(([k, m]) => ({ model: k, ...(m.size ? { size: m.size } : { size: null, note: "not measured here" }), about: m.label, surfaces: (m.surfaces ?? []).map((s) => s.y), ...(m.sockets ? { seats: Object.keys(m.sockets) } : {}) })) };
   },
   check(w, actor, a) { const st = w.state(); return { ok: true, warnings: warnings(st, a.id ? [a.id] : Object.keys(st.entities)) }; },
-  history(w, actor, a) { return { ok: true, entries: w.entries.map((e, seq) => [e, seq]).slice(-(a.limit ?? 12)).map(([e, seq]) => isE(e) ? { seq, actor: e.actor, kind: e.kind, verb: e.verb, ...(e.cause !== undefined ? { cause: e.cause } : {}), body: e.kind === "act" ? e.body : JSON.stringify(e.body).slice(0, 160) } : { seq, malformed: e.code }) }; },
+  history(w, actor, a) { const from = Math.max(0, w.entries.length - (a.limit ?? 12)); return { ok: true, entries: w.entries.slice(from).map((e, k) => [e, from + k]).map(([e, seq]) => isE(e) ? { seq, actor: e.actor, kind: e.kind, verb: e.verb, ...(e.cause !== undefined ? { cause: e.cause } : {}), body: e.kind === "act" ? e.body : JSON.stringify(e.body).slice(0, 160) } : { seq, malformed: e.code }) }; },
   schema(w, actor, a) { return { ok: true, components: a.component ? { [a.component]: COMPONENTS[a.component] } : COMPONENTS }; },
   create: (w, actor, a) => commit(w, actor, "create", a, (ctx) => buildCreate(ctx, a)),
   set: (w, actor, a) => commit(w, actor, "set", a, (ctx) => buildSet(ctx, a)),
