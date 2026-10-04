@@ -34,6 +34,7 @@ import { qFromYaw } from '../../shared/rot.js';
 import { sameRotation } from '../../shared/euler.js';
 import { localOf } from '../../shared/hierarchy.js';
 import { WORLD_ID, worldSchema, worldEditVerbs } from '../../shared/worldentity.js';
+import * as V4 from './v4edit.js';   // protocol/v4 slice 3b: a v4 world's component edits are door requests
 const R2D = 180 / Math.PI;
 
 const handlers = new Map();      // group → [fn] — consulted in order; the first to return true handled it
@@ -150,12 +151,13 @@ export function commitEdit(id, key, value, opts = {}) {
   const dot = key.indexOf('.');
   const group = key.slice(0, dot), k = key.slice(dot + 1);
   const live = !!opts.live;
-  if (live && (!gesture || gesture.id !== id)) gesture = { id, rec: JSON.parse(JSON.stringify(rec)) };
+  if (live && (!gesture || gesture.id !== id)) gesture = { id, rec: JSON.parse(JSON.stringify(rec)), ...(V4.isV4() ? { v4: V4.compsOf(id) } : {}) };
   for (const h of handlers.get(group) ?? []) {
     try { if (h(id, obj, k, value, opts)) { if (!live) gesture = null; return { ok: true, handled: true }; } } catch (e) { console.warn(`[inspect] ${group} handler`, e); }
   }
   if (live) return { ok: true, live: true };
   const base = gesture?.id === id ? gesture.rec : rec;   // the pose/values before the drag began
+  const baseV4 = gesture?.id === id ? gesture.v4 : null;
   gesture = null;
   // planEdit holds the two seam rules: the panel's steppers speak WIRE units
   // (a deg field commits radians) while editVerbs' contract — a model's — is
@@ -163,6 +165,13 @@ export function commitEdit(id, key, value, opts = {}) {
   // 1/57th); and a raw-JSON box cleared and blurred must not delete the
   // component — the 'remove <type>' button (null) is the deliberate act (S2).
   const { verbs, inverses, errors, euler, asks } = planEdit(id, key, value, base);
+  if (V4.isV4()) {
+    // one edit is ONE door request (a batch when it took several verbs): one act, one Ctrl+Z (the door's undo), and it
+    // waits for the door; expect names what it changes as this viewer saw it (a scrubbed field: as the scrub began)
+    if (verbs.length) V4.sendVerbsV4(verbs, { what: `${key} of ${id}`, base: baseV4 ? { [id]: baseV4 } : null, revert: () => V4.revertPose(id) });
+    if (euler) eulerHints.set(id, euler); else if (verbs.some((v) => v.verb === 'place')) eulerHints.delete(id);
+    return { ok: !errors.length, errors, verbs, ...(euler ? { euler } : {}), ...(asks?.length ? { asks } : {}) };
+  }
   // one edit is one undo step, however many verbs it took (an Add Component
   // that brings its need, a remove-both): the inverses undo in reverse order
   if (inverses.length === 1) hooks.undo?.(inverses[0], `${key} of ${id}`);

@@ -32,6 +32,7 @@ import { claimEscape } from './frames.js';
 import { currentTool as structureTool, setTool as setStructureTool } from './structure_ui.js';   // an armed building tool is Esc's first rung
 import { mayAuthor, placerOf, placerName } from './placer.js';
 import { state } from './state.js';   // one rule for who may author (and one name for them), shared with the scene panel
+import * as V4 from './v4edit.js';   // protocol/v4 slice 3b: in a v4 world every write here is a door request
 import { refreshSeatGizmos, resetSeats, armSeatPlacement, seatArmed, seatSelected,
   cancelSeatArm, deselectSeat, seatMouseDown, seatKeyDown, updateSeatDrag } from './seatedit.js';
 
@@ -187,14 +188,18 @@ function showInspector(id) {
       : `only ${placerName(id)} or the world's owner can set or clear the guard on this`}" style="display:flex;gap:4px;align-items:center;cursor:${mine ? 'pointer' : 'not-allowed'}">` +
     `<input type="checkbox" data-bact="guard"${guarded ? ' checked' : ''}${mine ? '' : ' disabled'}> 🛡 guard</label>` +
     `<button data-bact="seat" title="declare a sit anchor: click the spot where a sitter goes"${held ? ' disabled' : ''}>+ seat</button>`;
+  // a v4 world has no guard (PROTOCOL-v4 §5 merged it into lock; the door refuses it by name): don't offer it
+  if (V4.isV4()) inspector.querySelector('[data-bact="guard"]')?.closest('label')?.remove();
   inspector.querySelector('[data-bact="lock"]').onchange = (ev) => {
     const on = ev.target.checked;
+    if (V4.isV4()) { V4.lock(id, on).then(() => { if (selected?.id === id) showInspector(id); }); return; }
     sendVerb('comp', { id, type: 'lock', data: on ? true : null });
     flashHint(on ? `🔒 <b>${label.slice(0, 34)}</b> locked — nothing moves it until you uncheck` : `🔓 unlocked`);
     // the echo folds the comp; repaint the hint line once it lands
     setTimeout(() => { if (selected?.id === id) showInspector(id); }, 400);
   };
-  inspector.querySelector('[data-bact="guard"]').onchange = (ev) => {
+  const guardBox = inspector.querySelector('[data-bact="guard"]');
+  if (guardBox) guardBox.onchange = (ev) => {
     const on = ev.target.checked;
     sendVerb('comp', { id, type: 'guard', data: on ? true : null });
     flashHint(on ? `🛡 <b>${label.slice(0, 34)}</b> guarded — only you or the world's owner can change it now` : `🛡 guard cleared — any builder can change it again`);
@@ -444,6 +449,15 @@ export function pushUndo(inverse, describe) {
 function commitSpawn() {
   const p = ghost.obj.position;
   const id = crypto.randomUUID().slice(0, 8);
+  if (V4.isV4()) {   // one door request: create (a model or a light), or create {from} for a blueprint copy
+    const verbs = ghost.bp ? null : ghost.lib === '@light'
+      ? [{ verb: 'light', args: { id, pos: [p.x, p.y + 0.9, p.z], color: 0xffd9a0, intensity: 16, range: 10 } }]
+      : [{ verb: 'spawn', args: { id, lib: ghost.lib, pos: [p.x, p.y, p.z], yaw: ghost.yaw, ...(ghost.scale !== 1 ? { scale: ghost.scale } : {}) } }];
+    if (ghost.bp) V4.copyBlueprint(ghost.bp.hash, { pos: [p.x, p.y, p.z], q: [0, Math.sin(ghost.yaw / 2), 0, Math.cos(ghost.yaw / 2)] });
+    else V4.sendVerbsV4(verbs, { what: ghost.lib === '@light' ? 'place a light' : `place ${libLabels.get(ghost.lib) ?? ghost.lib}`, expect: false });
+    cancelGhost();
+    return;
+  }
   if (ghost.bp) {
     const { hash, record } = ghost.bp;
     const plan = placeBlueprint(hash, record, { id, pos: [p.x, p.y, p.z], yaw: ghost.yaw, scale: ghost.scale });
@@ -499,11 +513,17 @@ function commitPlace(before) {
     return;
   }
   const o = selected.obj;
+  if (V4.isV4()) {   // the drag was presence; the release is ONE request, with expect on where it started (§3a)
+    const id = selected.id;
+    V4.sendVerbsV4([{ verb: 'place', args: { id, pos: [o.position.x, o.position.y, o.position.z], q: o.quaternion.toArray(), scale: o.scale.x } }],
+      { what: `move ${id}`, base: before.v4 ? { [id]: before.v4 } : null, revert: () => V4.revertPose(id) });
+    return;
+  }
   // a thing the fold knows by q is placed by q (a bare yaw would only turn it
   // about up, PROTOCOL §9.1); a yaw-only thing stays upright here, so a yaw
   const rec = state.st.entities?.[selected.id];
   const tilted = !!rec?.q;
-  const { q: _bq, ...beforeYaw } = before;
+  const { q: _bq, v4: _v4, ...beforeYaw } = before;
   sendVerb('place', {
     id: selected.id,
     pos: [o.position.x, o.position.y, o.position.z],
@@ -520,6 +540,8 @@ function snapshotOf(obj) {
 }
 
 export function undo() {
+  // a v4 world: the door's undo {act} of MY last act (it refuses what others changed since)
+  if (V4.isV4()) { deselect(); return V4.undo(); }
   const step = undoStack.pop();
   if (!step) { flashHint('nothing to undo'); return; }
   // Undo is inverse ENTRIES — history stays append-only, which is what keeps
@@ -551,6 +573,7 @@ function removeTargets() {
 function removeSelected() {
   if (!selected) return;
   if (lockedHint(selected.id)) return;   // an accidental Del is the worst accident
+  if (V4.isV4()) { V4.del([selected.id]); deselect(); return; }
   const meta = entityMeta.get(selected.id) ?? {};
   const { q, ...upright } = snapshotOf(selected.obj);
   const snap = state.st.entities?.[selected.id]?.q ? { ...upright, q } : upright;   // q only for a thing the fold knew tilted
@@ -595,7 +618,8 @@ canvas.addEventListener('mousedown', (e) => {
   const aim = aimPoint(id);
   dragging = {
     id,
-    before: snapshotOf(root),
+    // v4: the components this gesture starts from: the release's `expect`
+    before: V4.isV4() ? { ...snapshotOf(root), v4: V4.compsOf(id) } : snapshotOf(root),
     lastSent: 0,
     armed: false,
     startX: e.clientX,
@@ -655,8 +679,14 @@ canvas.addEventListener('click', (e) => {
 
 // ============================================================ keys
 
+/** Something mid-gesture that Esc should cancel before anything else (gizmo.js, in a v4 world). */
+let escapeHook = () => false;
+export function setEscapeHook(fn) { escapeHook = fn; }
 bus.on('key', (e) => {
   if (e.code === 'Escape') {
+    // v4 (§3a): Esc during a drag cancels it and writes nothing; the thing goes back to where the log has it
+    if (V4.isV4() && dragging?.armed) { const id = dragging.id; dragging = null; V4.revertPose(id); flashHint('move cancelled — nothing written'); return; }
+    if (escapeHook()) return;
     if (structureTool()) setStructureTool(null);   // an armed building tool drops first (the viewport strip says "Esc to drop")
     else if (cancelSeatArm()) { /* an armed placement is the most transient state */ }
     else if (ghost) cancelGhost();
@@ -667,6 +697,8 @@ bus.on('key', (e) => {
   }
   // Undo stays available outside edit mode — you may only notice the mistake
   // after you have gone back to looking.
+  // v4: redo is Ctrl+Shift+Z or Ctrl+Y (the door's undo of my undo); a v1 world keeps today's keys exactly
+  if (V4.isV4() && (e.ctrlKey || e.metaKey) && ((e.code === 'KeyZ' && e.shiftKey) || e.code === 'KeyY')) { e.preventDefault?.(); V4.redo(); return; }
   if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undo(); return; }
   if (!editMode) return;
 

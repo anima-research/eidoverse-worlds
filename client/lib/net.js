@@ -6,7 +6,7 @@ import { CONFIG, report, bus } from './base.js';
 // folds here — synchronously, through the same shared/fold.js the
 // sequencer runs — and the realizers project it into the scene.
 // EW.foldParity() measures fold-vs-scene drift on demand.
-import { hydrate as shadowHydrate, foldLive as shadowFold, reset as shadowReset } from './state.js';
+import { hydrate as shadowHydrate, foldLive as shadowFold, reset as shadowReset, state as shadowState } from './state.js';
 import { pending, P } from './scheduler.js';
 // The realizers (TEL0S_NOTES §11.4) own the scene: state verbs realize
 // FROM the fold, and fold-inert causes (use/punt/force, moderation
@@ -20,6 +20,12 @@ import { presence } from './presence.js';
 import { logChat, logWhisper, noteTyping, noteHistoryContext } from './chat.js';
 import { markPhase } from './boot.js';
 import { makePacer } from '../../shared/pace.js';
+// protocol/v4 slice 3b: in a v4 world this client folds the door's own stream (shared/v4/client.js) and derives the
+// v1 state the realizers draw from it, locally; edit mode sends v4 requests (v4edit.js) and waits for the door.
+import { makeV4Client } from '../../shared/v4/client.js';
+export const v4 = makeV4Client();
+/** Is this client standing in a v4 world (one whose snapshot carried the v4 cut)? */
+export const isV4 = () => v4.active;
 // ui.js is the desktop shell and reaches the engine through its panels (videopanel,
 // profile). The wire only ever wanted to SAY something to the user, so it takes a
 // notifier instead of importing a whole UI. Default logs: a dropped connection notice
@@ -218,7 +224,42 @@ export function sendJoin() {
     spectate: CONFIG.spectate || CONFIG.renderer,
     renderer: CONFIG.renderer,
     token: CONFIG.token,
+    // a v4 world sends this client its own v4 stream and no compatibility projection (v1 worlds ignore it)
+    v4fold: true,
   }));
+}
+
+// ---- v4 requests: {type: 'v4', id, tool, args} → {type: 'v4-result', id, ok, reply} (server/v4/messages.ts) ----
+let v4Seq = 0;
+const v4Pending = new Map();   // id → {resolve, timer}
+/** One door request; resolves with the door's own reply ({ok, …} or {ok: false, refused: {code, reason, teach}}).
+ *  Never rejects: a lost socket or a timeout is a refusal the caller shows like any other. */
+export function requestV4(tool, args = {}, { timeoutMs = 15000 } = {}) {
+  if (!(net.joined && net.ws?.readyState === 1)) return Promise.resolve({ ok: false, refused: { code: 'offline', reason: 'not connected to the world', teach: 'wait for the connection to come back, then try again' } });
+  const id = ++v4Seq;
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { v4Pending.delete(id); resolve({ ok: false, refused: { code: 'timeout', reason: `the door didn't answer '${tool}' in ${timeoutMs / 1000} s`, teach: 'it may still land: look before trying again' } }); }, timeoutMs);
+    v4Pending.set(id, { resolve, timer });
+    net.ws.send(JSON.stringify({ type: 'v4', id, tool, args }));
+  });
+}
+function onV4Result(msg) {
+  const p = v4Pending.get(msg.id); if (!p) return;
+  v4Pending.delete(msg.id); clearTimeout(p.timer);
+  p.resolve(msg.reply ?? { ok: false, refused: { code: 'no-reply', reason: 'the door sent no reply body' } });
+}
+/** The door's fresh entries: fold them (v4.ingest), then deliver what the realizers draw. */
+function onV4Log(msg) {
+  if (!v4.active) return;
+  const r = v4.ingest(msg.entries ?? [], msg.from ?? -1, shadowState.st);
+  if (r.resync) { console.warn(`[v4] can't continue this client's cut (${r.why}): asking for a fresh snapshot`); rejoin(); return; }
+  for (const e of r.v1) onLogEntry(e);
+  if (r.rehydrate) {
+    // no v1 verbs can say this change: re-draw from this client's own fold (the server's old resync, done locally)
+    shadowHydrate(v4.legacy(shadowState.st), [], r.throughSeq);
+    if (r.throughSeq > lastSeq) lastSeq = r.throughSeq;
+  }
+  bus.emit('v4-applied', { from: msg.from, n: msg.entries?.length ?? 0, entries: msg.entries ?? [] });
 }
 
 let lastPoseSent = 0;
@@ -533,6 +574,19 @@ function noteStalePresence(id) {
   console.warn(`[net] presence for unannounced id "${id}" dropped (straggler from a departed generation?)`);
 }
 
+// shadow fold first, synchronously — seq-guarded, so the backlog flush after hydration can never double-fold what
+// landed here. When the realizers are active this IS the delivery: the fold event drives state realization, and
+// 'live-entry' carries the causes. (A v4 world's entries arrive here from this client's own fold, onV4Log.)
+function onLogEntry(entry) {
+  shadowFold(entry);
+  if (hydrating) pendingLive.push(entry);
+  else if ((entry.seq ?? -1) > lastSeq) {
+    lastSeq = entry.seq;
+    bus.emit('live-entry', entry);
+    if (entry.verb === 'say') noteSpeaking(entry.actor);
+  }
+}
+
 async function handle(msg) {
   switch (msg.type) {
     case 'snapshot': return onSnapshot(msg);
@@ -685,18 +739,11 @@ async function handle(msg) {
       break;
 
     case 'log':
-      // shadow fold first, synchronously — seq-guarded, so the backlog
-      // flush after hydration can never double-fold what landed here. When
-      // the realizers are active this IS the delivery: the fold event
-      // drives state realization, and 'live-entry' carries the causes.
-      shadowFold(msg.entry);
-      if (hydrating) pendingLive.push(msg.entry);
-      else if ((msg.entry.seq ?? -1) > lastSeq) {
-        lastSeq = msg.entry.seq;
-        bus.emit('live-entry', msg.entry);
-        if (msg.entry.verb === 'say') noteSpeaking(msg.entry.actor);
-      }
+      onLogEntry(msg.entry);
       break;
+
+    case 'v4-log': onV4Log(msg); break;
+    case 'v4-result': onV4Result(msg); break;
 
     case 'snap':
       // The reply is the snapshot's to produce and the wire's to send, so a client
@@ -848,7 +895,10 @@ async function onSnapshot(msg) {
   // server sends live-folded state (it already contains the tail's effects;
   // the tail rides along for the chat overlap), so the shadow folds nothing
   // twice: it marks the highest covered seq and lets foldLive take over.
-  shadowHydrate(msg.state, [], Math.max(
+  // a v4 world: adopt the door's own cut, and draw the v1 state THIS client derives from it (the snapshot's `state`
+  // is the server's projection, which a v4-folding client no longer needs; its chat window is kept)
+  if (msg.v4?.state) { v4.adopt(msg.v4); bus.emit('v4-mine', msg.v4.mine ?? []); } else v4.reset();
+  shadowHydrate(msg.v4?.state ? v4.legacy(msg.state) : msg.state, [], Math.max(
     typeof msg.throughSeq === 'number' ? msg.throughSeq : -1,
     ...(msg.entries?.length ? msg.entries.map((e) => e.seq ?? -1) : [-1]),
   ), msg.sim ?? null);

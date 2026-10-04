@@ -18,7 +18,8 @@ import { entities, comps } from './world.js';
 import { sendDrag } from './net.js';
 import { registerSystem } from './frame.js';
 import { sceneSelected } from './scenegraph.js';
-import { getTool, isEditing, pushUndo, refreshOutline, setPointerVeto } from './build.js';
+import { getTool, isEditing, pushUndo, refreshOutline, setPointerVeto, setEscapeHook } from './build.js';
+import * as V4 from './v4edit.js';   // protocol/v4 slice 3b: a v4 world's release is one door request with expect
 import { reindexCollider } from './colliders.js';
 import { foldRecord, inverseOf } from './inspect.js';
 import { mayAuthor } from './placer.js';
@@ -29,7 +30,8 @@ const R2D = 180 / Math.PI;
 let controls = null;
 let helper = null;
 let attachedId = null;
-let start = null;        // { rec, scale } at drag start
+let start = null;        // { rec, scale, v4? } at drag start (v4: the components the release's expect names)
+let cancelled = false;   // v4: Esc during the drag — the thing goes back, and the release writes nothing (§3a)
 let lastSent = 0;
 
 function ensure() {
@@ -61,6 +63,9 @@ function editable(id, mode) {
 }
 
 function sync() {
+  // v4: a drag in flight keeps its handles even if a lock lands meanwhile — the release asks the door, which says so
+  // (and offers to move it anyway); detaching mid-drag left the preview stranded with nothing sent
+  if (V4.isV4() && start) return;
   const id = sceneSelected();
   // scenegraph's selection is THE selection (a tree click never sets build.js's viewport `selected`)
   const want = isEditing() && id && MODE[getTool()] && editable(id, MODE[getTool()]) ? id : null;
@@ -76,10 +81,12 @@ function sync() {
 function beginDrag() {
   if (!attachedId) return;
   const rec = foldRecord(attachedId);
-  start = rec ? { rec: JSON.parse(JSON.stringify(rec)), scale: entities.get(attachedId).scale.x } : null;
+  start = rec ? { rec: JSON.parse(JSON.stringify(rec)), scale: entities.get(attachedId).scale.x, ...(V4.isV4() ? { v4: V4.compsOf(attachedId) } : {}) } : null;
+  cancelled = false;
 }
 function onChange() {
   const obj = attachedId && entities.get(attachedId); if (!obj) return;
+  if (cancelled) { bus.emit('pose-revert', { id: attachedId }); return; }   // Esc held it where the log has it
   if (controls.mode === 'scale' && start) {
     // whichever handle moved, the thing scales uniformly by that ratio
     const ax = (controls.axis ?? 'X')[0].toLowerCase();
@@ -95,6 +102,7 @@ function onChange() {
   }
 }
 function endDrag() {
+  if (cancelled) { cancelled = false; start = null; return; }
   const id = attachedId; const obj = id && entities.get(id);
   if (!obj || !start?.rec) { start = null; return; }
   const rec = foldRecord(id) ?? start.rec;
@@ -105,6 +113,13 @@ function endDrag() {
   const set = poseEdits(rec, id, mode, { pos: obj.position.toArray(), q: [o.x, o.y, o.z, o.w], scale: obj.scale.x });
   const { verbs, errors } = editVerbs(rec, id, set);
   if (errors.length || !verbs.length) { start = null; return; }
+  if (V4.isV4()) {   // presence until now; the release is ONE request, expecting where the drag started
+    const what = `${controls.mode === 'translate' ? 'move' : controls.mode === 'rotate' ? 'turn' : 'size'} ${id}`;
+    const base = start.v4 ? { [id]: start.v4 } : null; start = null;
+    bus.emit('gizmo-v4', { id, verbs });
+    V4.sendVerbsV4(verbs, { what, base, revert: () => V4.revertPose(id) });
+    return;
+  }
   for (const v of verbs) {
     const inv = inverseOf(v, start.rec, id);
     if (inv) pushUndo(inv, `${controls.mode === 'translate' ? 'moving' : controls.mode === 'rotate' ? 'turning' : 'sizing'} ${id}`);
@@ -115,7 +130,16 @@ function endDrag() {
 /** The commit itself rides one seam so the bench can watch it; net.js speaks the wire. */
 bus.on('gizmo-commit', (v) => import('./net.js').then((m) => m.sendVerb(v.verb, v.args)));
 
+/** Esc mid-drag (v4 only; a v1 world's Esc is unchanged): cancel the gesture. */
+function cancelDrag() {
+  if (!V4.isV4() || !start || !attachedId) return false;
+  cancelled = true; V4.revertPose(attachedId); refreshOutline();
+  import('./ui.js').then((m) => m.flashHint('cancelled — nothing written'));
+  return true;
+}
+
 export function initGizmo() {
+  setEscapeHook(cancelDrag);
   registerSystem('gizmo', sync, { every: 4 });   // selection/tool/lock changes are rare; a few frames' lag is invisible
   bus.on('tool', sync); bus.on('sg:selected', sync); bus.on('edit-mode', sync); bus.on('comp', sync);
   globalThis.__gizmo = () => ({ attached: attachedId, mode: controls?.mode ?? null, showX: controls?.showX, showZ: controls?.showZ, controls });   // harness window

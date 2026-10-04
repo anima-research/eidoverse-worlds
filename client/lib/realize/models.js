@@ -1134,6 +1134,22 @@ export function initModelsRealizer() {
     editing = !!on;
     for (const [id, t] of tracked) if (t.kind === 'empty' && entities.get(id)) setEmptyMarker(entities.get(id), editing);
   });
+  // a gesture the door refused, or one cancelled with Esc (v4 worlds, v4edit.js): the preview snaps back to the fold.
+  // A mounted child's pose is its mount's (parent-relative), which execMount skips when the linkage is unchanged.
+  bus.on('pose-revert', ({ id }) => {
+    const ent = state.st.entities[id]; const obj = entities.get(id);
+    if (!ent || !obj) return;
+    if (tracked.get(id)?.kind === 'light') { refreshLight(id, ent); return; }
+    if (obj.userData.mountedTo && ent.parent) {
+      const sock = ent.parent.slot ? state.st.entities[ent.parent.to]?.comp?.sockets?.[ent.parent.slot] : null;
+      obj.position.set(...(ent.parent.offset ?? sock?.pos ?? [0, 0, 0]));
+      if (Array.isArray(ent.parent.q) && ent.parent.q.length === 4) obj.quaternion.set(...ent.parent.q);
+      if (ent.scale != null) obj.scale.setScalar(ent.scale);
+      bus.emit('entity', { id, kind: 'place' });
+      return;
+    }
+    refreshModel(id, ent);
+  });
   bus.on('light-refused', ({ id }) => {
     const ent = state.st.entities[id];
     if (ent?.kind === 'light' && tracked.get(id)?.kind === 'light') refreshLight(id, ent);

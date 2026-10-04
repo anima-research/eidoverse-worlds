@@ -14,7 +14,8 @@
 import fs from "node:fs";
 import { scratch } from "./common.ts";
 import { request, creatorOf, LAB_CATALOGUE, actIndexOf, actIndexFresh, entityBefore } from "../../shared/v4/door.js";
-import { fold, readLog, digest, opsOf } from "../../shared/v4/fold.js";
+import { fold, readLog, digest, opsOf, PURGED } from "../../shared/v4/fold.js";
+import { makeV4Client, stateView, stateFromView } from "../../shared/v4/client.js";
 import { simFold, digestOf, restsOf } from "../../shared/v4/simlayer.js";
 import { MODELS } from "../../shared/v4/catalogue.js";
 import { enc, encName, dec } from "../../shared/v4/names.js";
@@ -310,6 +311,43 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   call("ann", "set", { id: "cup", component: "label", value: "ann's" });
   const r2 = call("bob", "undo", { act: u2.act });
   ok(code(r2) === "conflict" && w.state().entities.cup.c.label === "ann's", "R3 redo never puts my change back over someone's later work (Figma's rule)", r2.refused); }
+
+// ---- K: the client's own fold (shared/v4/client.js): adopt a cut, ingest the door's entries; the v4 state equals the
+// server's after every request, and the v1 state the renderer draws equals the projection (verbs or a local re-draw) ----
+{ let now = T + 12000; const w = openLive(root + "client/", "client", { now: () => now });
+  const call = (actor, tool, args = {}) => { now += 100; return request(w, actor, tool, args); };
+  call("ann", "new", { title: "client" }); call("ann", "create", { id: "tbl", model: "table", place: { at: [0, 3] } });
+  const c = makeV4Client();
+  c.adopt(JSON.parse(JSON.stringify({ state: stateView(w.state()), head: w.entries.length - 1, worldId: w.worldId })));
+  let held = c.legacy({ recentChat: [], chatTotal: 0 }); let steps = 0, bad = null, rehydrated = 0, verbs = 0;
+  const step = (what, actor, tool, args) => { const from = w.entries.length; const r = call(actor, tool, args);
+    const fresh = JSON.parse(JSON.stringify(w.entries.slice(from))); // over the wire: plain JSON
+    const k = c.ingest(fresh, from, held); steps++;
+    if (k.resync) return { r, k };
+    held = foldLegacy(held, k.v1); verbs += k.v1.length;
+    if (k.rehydrate) { held = c.legacy(held); rehydrated++; }
+    if (!bad && digest(c.st) !== digest(w.state())) bad = [what, "v4 state differs"];
+    if (!bad && legacyDiff(held, legacyState(w.state()))) bad = [what, legacyDiff(held, legacyState(w.state()))];
+    return { r, k }; };
+  step("on", "ann", "create", { id: "cup", model: "crate", place: { on: "tbl" } });
+  step("lock", "ann", "set", { id: "tbl", component: "lock", value: true });
+  step("say", "ann", "say", { text: "hi" });
+  step("move", "ann", "set", { id: "tbl", component: "transform", value: { pos: [1, 0, 3] }, through_lock: true });
+  step("dup", "ann", "create", { from: "tbl" });
+  const sky = step("sky", "ann", "set", { id: "@world", component: "sky", value: { hours: 3 } });
+  step("del", "ann", "delete", { id: "tbl", through_lock: true });
+  step("undo", "ann", "undo", {});
+  step("publish", "ann", "publish", { from: "tbl", name: "table set" });
+  ok(!bad, `K1 after each of ${steps} requests the client's v4 fold = the server's (digest), and what it draws = the projection`, bad);
+  ok(verbs > 0 && sky.k.rehydrate && rehydrated === 1, "K2 a change with no v1 verb (the sky) is re-drawn locally, never a wrong delta; the rest went as verbs", { verbs, rehydrated });
+  ok(c.ingest(JSON.parse(JSON.stringify(w.entries.slice(-1))), w.entries.length - 1, held).v1.length === 0, "K3 a re-delivered entry is ignored");
+  call("ann", "set", { id: "cup", component: "label", value: "x" }); const from = w.entries.length; call("ann", "set", { id: "cup", component: "label", value: "y" });
+  ok(c.ingest(JSON.parse(JSON.stringify(w.entries.slice(from))), from, held).resync, "K4 a gap (a missed entry) asks for a fresh snapshot, never folds past it");
+  const c2 = makeV4Client(); c2.adopt(JSON.parse(JSON.stringify({ state: stateView(w.state()), head: w.entries.length - 1 })));
+  now += 100; w.append({ kind: "purge", actor: "door", verb: "purge", body: { values: [{ seq: from + 1 }] } });
+  ok(c2.ingest(JSON.parse(JSON.stringify(w.entries.slice(-1))), w.entries.length - 1, held).resync, "K5 a purge (retroactive, L1) asks for a fresh snapshot");
+  const sv = stateFromView(JSON.parse(JSON.stringify(stateView(w.state()))));
+  ok(digest(sv) === digest(w.state()) && sv.entities.cup.c.label === PURGED, "K6 stateView survives the wire both ways, a purged value still purged (not a value)", sv.entities.cup?.c); }
 
 // ---- C: an off-centre catalogue box and measured surfaces ----
 { const cat = { get: (n) => ({ "lib/desk.glb": { label: "desk", box: [[-0.5, -0.4, -0.3], [0.7, 0.35, 0.5]], size: [1.2, 0.75, 0.8], surfaces: [{ y: 0.35, x: [-0.4, 0.6], z: [-0.2, 0.4] }] },

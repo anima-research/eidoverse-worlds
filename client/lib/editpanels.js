@@ -42,6 +42,7 @@ import { commitLight, lightCasting } from './lights.js';
 import { myState } from './controller.js';
 import { placerOf, guardedByOther, placerName } from './placer.js';
 import { reindexCollider } from './colliders.js';
+import * as V4 from './v4edit.js';   // protocol/v4 slice 3b: in a v4 world these panels' writes are door requests
 
 const _wp = new THREE.Vector3();
 const short = (meta) => (meta?.lib ?? meta?.kind ?? '?').split('/').pop().replace('.glb', '').split('_').slice(0, 3).join(' ');
@@ -302,6 +303,11 @@ function reparent(id, onto) {
 function duplicate(id) {
   const rec = foldRecord(id); const obj = entities.get(id);
   if (!rec || !obj) return;
+  if (V4.isV4()) {   // the door copies it, and what's attached to it: create {from: id}, one act
+    V4.duplicate(id).then((r) => { const nid = r.ok && r.refs?.[0]?.id; if (!nid) return;
+      const out = V4.idOut(nid); flashHint(`<b>${out}</b> — a copy of ${id}`, 4000); setTimeout(() => { if (entities.has(out)) sceneSelect(out); }, 400); });
+    return;
+  }
   const nid = `${id}~${Math.random().toString(16).slice(2, 6)}`;   // never strip anything from the id: 'lamp-2024' is a name, not a suffix
   const pos = [...(rec.pos ?? [0, 0, 0])]; pos[0] = round(pos[0] + 0.5); pos[2] = round(pos[2] + 0.5);
   if (rec.kind === 'light') sendVerb('light', { id: nid, pos, color: rec.color, intensity: rec.intensity, range: rec.range, ...(rec.keep ? { keep: true } : {}), ...(rec.day === false ? { day: false } : {}) });
@@ -315,6 +321,7 @@ function duplicate(id) {
 
 function toggleLock(id) {
   const locked = !!comps.get(id)?.lock;
+  if (V4.isV4()) { V4.lock(id, !locked); return; }
   sendVerb('comp', { id, type: 'lock', data: locked ? null : true });
   pushUndo({ verb: 'comp', args: { id, type: 'lock', data: locked ? true : null } }, locked ? `unlocking ${id}` : `locking ${id}`);
 }
@@ -582,6 +589,14 @@ function inspectorDispatch(action, payload, field, opts = {}) {
       const v = isDelta ? resolveDelta(painted, action, payload) : payload;
       if (isDelta && v == null) return;
       const inverses = [], errors = [];
+      if (V4.isV4()) {   // every selected thing's change in ONE request (a batch): one act, one Ctrl+Z
+        const verbs = [];
+        for (const each of ids) { const plan = planEdit(each, key, v); errors.push(...plan.errors); verbs.push(...plan.verbs); }
+        if (verbs.length) V4.sendVerbsV4(verbs, { what: `${key} on ${ids.length} things`, revert: () => ids.forEach((x) => V4.revertPose(x)) });
+        if (errors.length) flashHint(errors.join(' · '), 5000);
+        repaintAll();
+        return;
+      }
       for (const each of ids) {
         const plan = planEdit(each, key, v);
         errors.push(...plan.errors); inverses.push(...plan.inverses);
@@ -617,6 +632,7 @@ function inspectorDispatch(action, payload, field, opts = {}) {
     }
     gesture = null;
     if (JSON.stringify(next) === JSON.stringify(before)) return;
+    if (V4.isV4()) { V4.sendVerbsV4([{ verb: 'place', args: { id, ...next } }], { what: `move ${id}`, revert: () => V4.revertPose(id) }); repaintAll(); return; }
     pushUndo({ verb: 'place', args: { id, ...before } }, `moving ${id}`);
     sendVerb('place', { id, ...next });
     repaintAll();
@@ -705,6 +721,7 @@ function removeMany(ids) {
   if (why.length) flashHint(why.join(' · '), 4000);
   const go = ids.filter((id) => entities.get(id) && !locked.includes(id) && !held.includes(id));
   if (!go.length) return false;
+  if (V4.isV4()) { V4.del(go); clearExtras(); return true; }   // one request: delete, or a batch of them (one act)
   const inverses = go.map(removeInverse).filter(Boolean);
   pushUndo(inverses.length === 1 ? inverses[0] : { verbs: inverses }, go.length === 1 ? `removing ${go[0]}` : `removing ${go.length} things`);
   for (const id of go) sendVerb('remove', { id });
@@ -771,6 +788,7 @@ const blueprintFields = (pics) => [
  *  Blueprint (a selection → a record) is step 6c; until then records arrive through the
  *  blueprint verb (an agent, or world_verb). */
 function savedFields(pics) {
+  if (V4.isV4()) return savedFieldsV4();
   const store = state.st.blueprints ?? {};
   const hashes = Object.keys(store).sort((a, b) => (store[a].ts ?? 0) - (store[b].ts ?? 0));
   const copies = copiesOf(state.st.entities ?? {});
@@ -784,8 +802,23 @@ function savedFields(pics) {
     }) }] : []),
   ];
 }
+/** v4: this world's library is @world library:<hash> (the door's publish writes it); a copy is the door's
+ *  create {from: hash, at} 1.5 m ahead, and Save as blueprint is the door's publish {from, name} on the selection. */
+function savedFieldsV4() {
+  const lib = V4.library(); const sel = selection();
+  return [
+    { t: 'info', label: 'saved here', value: lib.length ? `${lib.length} blueprint${lib.length === 1 ? '' : 's'} in this world` : 'none yet — select something and save it' },
+    { t: 'btn', k: 'bpsave', label: 'save as blueprint', icon: 'boxes', disabled: !sel.length,
+      hint: sel.length ? `save ${sel.length === 1 ? sel[0] : `these ${sel.length} things`} (and what's attached) to this world's library — the door's publish, the same request an agent sends` : 'select something first' },
+    ...(lib.length ? [{ t: 'tiles', k: 'bp', value: null, options: lib.map((b) => ({ v: b.hash, label: String(b.name ?? b.hash.slice(7, 15)), icon: 'boxes',
+      hint: `${b.parts ?? '?'} part${b.parts === 1 ? '' : 's'} · ${b.hash.slice(0, 15)} — places a copy 1.5 m ahead of you` })) }] : []),
+  ];
+}
+const aheadPose = () => { const yaw = myState.yaw ?? 0;
+  return { pos: [myState.pos.x + Math.sin(yaw) * 1.5, myState.pos.y, myState.pos.z + Math.cos(yaw) * 1.5].map((v) => +v.toFixed(2)), q: [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)].map((v) => +v.toFixed(4)) }; };
 /** A copy 1.5 m ahead, facing the way you face — the hand-free place (worldquad.js spawnAhead's pose). */
 function placeAhead(hash) {
+  if (V4.isV4()) return V4.copyBlueprint(hash, aheadPose());
   const rec = state.st.blueprints?.[hash]?.record;
   if (!rec) return null;
   const yaw = myState.yaw ?? 0;
@@ -857,7 +890,10 @@ function buildDispatch(action, payload) {
     case 'snew': newBuilding(null); break;
     case 'sundo': structureUndo(); break;
     case 'light': holdGhost('@light', 'light'); break;
-    case 'bp': { const b = state.st.blueprints?.[payload]; holdBlueprint(payload, b?.record); break; }
+    case 'bp': { if (V4.isV4()) { placeAhead(payload); break; } const b = state.st.blueprints?.[payload]; holdBlueprint(payload, b?.record); break; }
+    case 'bpsave': { const ids = selection(); if (!ids.length) break;
+      const name = ids.length === 1 ? String(foldRecord(ids[0])?.comp?.label ?? ids[0]) : `${ids.length} things`;
+      V4.publish(ids, name).then((r) => { if (r.ok) flashHint(`saved <b>${name}</b> as a blueprint — it's in Blueprints › saved here`, 4000); repaintAll(); }); break; }
     case 'libq': searchLibrary(String(payload ?? '').trim()); return;
     case 'place': {
       const m = libModels().find((x) => x.path === payload);
@@ -914,7 +950,7 @@ export function initEditPanels() {
     frames.set(p.id, sf);
   }
   bus.on('sg:selected', (id) => { if (id) { revealPath(id); worldSel = false; } });   // before the paint: a selected child shows, its ancestors unfold (design §5)
-  for (const ev of ['entity', 'comp', 'mount', 'edit-mode', 'sg:selected', 'structure-tool', 'tool', 'your-rights']) bus.on(ev, repaintAll);
+  for (const ev of ['entity', 'comp', 'mount', 'edit-mode', 'sg:selected', 'structure-tool', 'tool', 'your-rights', 'v4-applied']) bus.on(ev, repaintAll);   // v4-applied: a v4 world's library lives on @world, which the realizers never touch
   // the world entity's components are the fold's sky / terrain / grass: repaint when a world verb folds
   // …and the Build panel's saved blueprints when a record is published
   const WORLD_VERBS = new Set(['sky', 'weather', 'terrain', 'grass', 'blueprint']);

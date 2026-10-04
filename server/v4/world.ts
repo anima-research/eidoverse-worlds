@@ -53,8 +53,12 @@ export class V4Log {
   name: string;
   readonly v4 = true;
   live: Any;
-  /** The projection every client holds (it is what they fold). Checked against the v4 fold after every request. */
-  state: WorldState;
+  /** The projection every client holds (it is what they fold). Checked against the v4 fold after every request.
+   *  Slice 3b: when no client in the world reads it, it is brought up to date lazily, by whoever reads it next (rights,
+   *  the drag relay's rank check, a joiner that still folds v1), never left stale for them. */
+  private _state!: WorldState;
+  get state(): WorldState { if (this.stale) this.freshen(); return this._state; }
+  set state(v: WorldState) { this._state = v; }
   /** v1 entries never live here: a v4 world has no v1 tail (joinPayload sends none). */
   entries: LogEntry[] = [];
   sim = emptySim() as Any;           // the v1 sim: none (v4 physics isn't projected to old clients)
@@ -85,7 +89,7 @@ export class V4Log {
   attach(host: V4Host) { this.host = host; }
 
   private project(): WorldState {
-    return legacyState(this.live.state(), { recentChat: this.state?.recentChat ?? [], chatTotal: this.state?.chatTotal ?? 0 }) as WorldState;
+    return legacyState(this.live.state(), { recentChat: this._state?.recentChat ?? [], chatTotal: this._state?.chatTotal ?? 0 }) as WorldState;
   }
   /** The last v4 seq. */
   get head(): number { return this.live.entries.length - 1; }
@@ -106,8 +110,8 @@ export class V4Log {
   }
 
   /** Publish what the door just wrote: the raw v4 entries, then the projection's v1 verbs (checked), or a resync.
-   *  Slice 3b: when every client in the world folds v4 itself, no projection is computed at all; the next client
-   *  that needs one gets a fresh one at join (joinPayload). */
+   *  Slice 3b: when every client in the world folds v4 itself, no projection delta is computed; the projection is
+   *  marked stale and rebuilt by its next reader (the `state` getter). */
   private stale = false;
   private afterWrite(from: number) {
     this.stats.writes++;
@@ -116,13 +120,18 @@ export class V4Log {
     if (this.host?.projectionWanted && !this.host.projectionWanted()) {
       // the chat window stays current (a later joiner that reads the projection gets it); entities wait for freshen()
       const says = fresh.filter((e: Any) => e?.kind === "say").map((e: Any) => ({ seq: e.seq * 1000, ts: e.ts, actor: idOut(e.actor), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: idOut(String(e.body.to)) } : {}) } } as LogEntry));
-      if (says.length) { this.state = foldLegacy(this.state, says); for (const e of says) this.record(e); }
+      if (says.length) { this._state = foldLegacy(this._state, says); for (const e of says) this.record(e); }
       this.stale = true; this.stats.skipped++;
       const roles = (e: Any) => { try { return e?.kind === "state" && opsOf(e).some((o: Any) => o.id === "@world" && String(o.comp ?? "").startsWith("roles:")); } catch { return false; } };
       if (fresh.some(roles)) this.host?.rightsChanged();
       return;
     }
-    if (this.stale) this.freshen();
+    // a projection that went stale while nobody read it can't be stepped from: its readers get a fresh one (chat kept)
+    if (this.stale) {
+      const says = fresh.filter((e: Any) => e?.kind === "say").map((e: Any) => ({ seq: e.seq * 1000, ts: e.ts, actor: idOut(e.actor), verb: "say", args: { text: String(e.body?.text ?? "") } } as LogEntry));
+      if (says.length) { this._state = foldLegacy(this._state, says); for (const e of says) this.record(e); }
+      this.freshen(); this.stats.resyncs++; this.host?.resync(); this.host?.rightsChanged(); return;
+    }
     const last = fresh[fresh.length - 1];
     const ts = Number.isInteger(last?.ts) ? last.ts : Date.now();
     const actorOf = idOut(String(fresh.find((e: Any) => e?.kind === "act" || e?.kind === "say")?.actor ?? last?.actor ?? "world"));
@@ -171,8 +180,8 @@ export class V4Log {
   }
   /** Bring a skipped projection up to date (chat from the recorded says), before anyone reads it again. */
   private freshen() {
-    this.state = { ...this.project(), recentChat: this.state.recentChat, chatTotal: this.state.chatTotal } as WorldState;
     this.stale = false;
+    this._state = { ...this.project(), recentChat: this._state.recentChat, chatTotal: this._state.chatTotal } as WorldState;
   }
   joinPayload() { if (this.stale) this.freshen(); return { state: this.state, tail: [] as LogEntry[], throughSeq: this.snapSeq }; }
   /** Slice 3b: what a client that folds v4 adopts at join: the fold itself (shared/v4/client.js stateView), its head,
