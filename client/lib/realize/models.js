@@ -22,6 +22,7 @@
 // erratum, pinned by fixture 04-overwrite.
 
 import { THREE, scene, camera } from '../core.js';
+import { applyScale } from '../../../shared/scale3.js';
 import { report, bus } from '../base.js';
 import { loadGLB, retainGLB, releaseGLB, evictIdleProtos, lodRecipeReady, gpuPressure,
   lodNegotiable, negotiationReady } from '../assets.js';
@@ -97,7 +98,7 @@ function makePlaceholder(id, ent, g) {
   grp.userData.noCamCollide = true;
   grp.position.set(...(ent.pos ?? [0, 0, 0]));
   orientObj(grp, ent);
-  if (ent.scale) grp.scale.setScalar(ent.scale);
+  if (ent.scale) applyScale(grp, ent.scale);
   grp.userData.base = restOf(grp, ent);
   return grp;
 }
@@ -346,7 +347,7 @@ function realizeModel(id, cur, obj) {
   const sc = cur.scale;
   obj.position.set(...(cur.pos ?? [0, 0, 0]));
   orientObj(obj, cur);
-  if (sc) obj.scale.setScalar(sc);
+  if (sc) applyScale(obj, sc);
   obj.userData.base = restOf(obj, cur);
   entities.set(id, obj);
   entityMeta.set(id, { actor: cur.actor, lib: cur.lib, ts: cur.ts, ...(cur.placer ? { placer: cur.placer } : {}) });
@@ -491,7 +492,7 @@ function createEmpty(id, ent) {
   g.userData.noCamCollide = true;
   g.position.set(...(ent.pos ?? [0, 0, 0]));
   orientObj(g, ent);
-  if (ent.scale) g.scale.setScalar(ent.scale);
+  if (ent.scale) applyScale(g, ent.scale);
   g.userData.base = restOf(g, ent);
   setEmptyMarker(g, editing);
   entities.set(id, g);
@@ -625,7 +626,7 @@ function refreshModel(id, ent) {
     if (ent.q || ent.yaw != null) orientObj(obj, ent);
     obj.userData.base = restOf(obj, ent);
   }
-  if (ent.scale != null) obj.scale.setScalar(ent.scale);
+  if (ent.scale != null) applyScale(obj, ent.scale);
   if (!isPlaceholder(obj) && obj.userData.tier !== 'lod') refitCollider(id);   // placeholders and lod tiers own no collider
   bus.emit('entity', { id, kind: 'place' });
 }
@@ -690,7 +691,7 @@ function retire(id) {
       const cst = state.st.entities[cid];
       if (cst?.pos) cobj.position.set(...cst.pos);
       if (cst?.q || cst?.yaw != null) orientObj(cobj, cst);
-      if (!cobj.userData.isLight) cobj.scale.setScalar(cst?.scale ?? 1);   // the fold's scale, not the one attach() baked in
+      if (!cobj.userData.isLight) applyScale(cobj, cst?.scale ?? 1);   // the fold's scale, not the one attach() baked in
       cobj.userData.base = restOf(cobj, cst);
       // an Empty owns no collider (its only mesh may be a light gizmo)
       if (!cobj.userData.empty) fitCollider(cid, cobj, { collide: colliderOf(cst), scale: cobj.scale?.x || 1 });
@@ -819,7 +820,7 @@ function execDismount(id, ent) {
     // …and so does the fold's scale: attach() baked the carrier's scale into
     // this one (a 0.5 cup off a 2× crate became 1.0), which a joiner — who
     // builds it from ent.scale — would never see
-    if (!obj.userData.isLight) obj.scale.setScalar(ent?.scale ?? 1);
+    if (!obj.userData.isLight) applyScale(obj, ent?.scale ?? 1);
     obj.userData.base = restOf(obj, ent);
     if (!obj.userData.empty) fitCollider(id, obj, { collide: colliderOf(ent), scale: obj.scale?.x || 1 });
   }
@@ -1144,7 +1145,7 @@ export function initModelsRealizer() {
       const sock = ent.parent.slot ? state.st.entities[ent.parent.to]?.comp?.sockets?.[ent.parent.slot] : null;
       obj.position.set(...(ent.parent.offset ?? sock?.pos ?? [0, 0, 0]));
       if (Array.isArray(ent.parent.q) && ent.parent.q.length === 4) obj.quaternion.set(...ent.parent.q);
-      if (ent.scale != null) obj.scale.setScalar(ent.scale);
+      if (ent.scale != null) applyScale(obj, ent.scale);
       bus.emit('entity', { id, kind: 'place' });
       return;
     }

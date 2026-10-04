@@ -79,7 +79,7 @@ function sync() {
   if (attachedId !== want) { c.attach(entities.get(want)); attachedId = want; }
   const mode = MODE[getTool()];
   if (c.mode !== mode) c.setMode(mode);
-  // every axis: rotate commits q; scale still applies uniformly (onChange)
+  // every axis: rotate commits q; scale is per axis in a v4 world, uniform in v1 (onChange)
   c.showX = true; c.showZ = true; c.showY = true;
 }
 
@@ -92,7 +92,7 @@ function beginDrag() {
 function onChange() {
   const obj = attachedId && entities.get(attachedId); if (!obj) return;
   if (cancelled) { bus.emit('pose-revert', { id: attachedId }); return; }   // Esc held it where the log has it
-  if (controls.mode === 'scale' && start) {
+  if (controls.mode === 'scale' && start && !V4.isV4()) {   // v1: one number; a v4 transform scales per axis (R 10-04)
     // whichever handle moved, the thing scales uniformly by that ratio
     const ax = (controls.axis ?? 'X')[0].toLowerCase();
     const k = ['x', 'y', 'z'].includes(ax) ? obj.scale[ax] / start.scale : obj.scale.x / start.scale;
@@ -115,7 +115,7 @@ function endDrag() {
   // poseEdits) — editVerbs coalesces them into one place carrying the full pose
   const mode = { translate: 'move', rotate: 'rotate', scale: 'scale' }[controls.mode];
   const o = obj.quaternion;
-  const set = poseEdits(rec, id, mode, { pos: obj.position.toArray(), q: [o.x, o.y, o.z, o.w], scale: obj.scale.x });
+  const set = poseEdits(rec, id, mode, { pos: obj.position.toArray(), q: [o.x, o.y, o.z, o.w], scale: V4.isV4() ? obj.scale.toArray() : obj.scale.x });
   const { verbs, errors } = editVerbs(rec, id, set, V4.isV4() ? { doorLocks: true } : undefined);   // v4: the door asks about locks
   if (errors.length || !verbs.length) { start = null; return; }
   if (V4.isV4()) {   // presence until now; the release is ONE request, expecting where the drag started

@@ -395,7 +395,9 @@ export function makeFrame(id, opts = {}) {
     // user made. Only a FIRST load on a viewport that cannot hold the default
     // opens less: chat alone, because it is the one pane useful by itself and it
     // carries the composer. Everything else stays one dock tap away.
-    hidden: saved?.hidden ?? (hidden || (id !== 'chat' && !fitsDefaults())),
+    // an edit-mode frame (className 'edit') opens only with edit mode: a reload comes back OUT of edit mode, and its
+    // saved 'shown' (taken while docked in the workspace's columns) would float it at its docked size (R 10-04)
+    hidden: /\bedit\b/.test(className) ? true : saved?.hidden ?? (hidden || (id !== 'chat' && !fitsDefaults())),
     // MUST be read back, not just written. save() serialises the whole state object,
     // so `autoHidden` reached storage — but this initialiser never restored it, making
     // it write-only across a reload. Consequence, measured: auto-hide at 900 persists

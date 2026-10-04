@@ -20,6 +20,10 @@ export function toV4(st, verb, a) {
       return { tool: "create", args: { id: id(a.id), ...(typeof a.lib === "string" && a.lib ? { model: a.lib } : {}), components: { transform: tf(a) } } };
     case "place": {
       const e = st.entities[id(a.id)];
+      // a child's transform is LOCAL to its parent, so a place (world pos) can't move it; its scale is its own, though,
+      // and a scale-only place (the Inspector's scale channels, the gizmo's scale) sets just that
+      const onlyScale = a.scale != null && a.pos == null && a.q == null && a.yaw == null;
+      if (e?.c.parent && onlyScale) return { tool: "set", args: { id: id(a.id), component: "transform", value: { ...e.c.transform, scale: s3(a.scale) } } };
       if (e?.c.parent) return { refuse: `${a.id} rides ${e.c.parent.to}: move it relative to it (mount with an offset), or detach it first` };
       return { tool: "set", args: { id: id(a.id), component: "transform", value: tf(a, e?.c.transform) } };
     }

@@ -391,6 +391,22 @@ try {
   await page(`await (await import('/lib/v4edit.js')).lock('pebble', false); return true;`);
   check("I12 …and unlocking takes it away", await waitFor(`!(${tfLock})`), await evalJson(`[...${insp}.querySelectorAll('.sp-group')].map((g) => g.innerHTML.slice(0, 80))`));
 
+  // three-axis scale (R 10-04): the v4 wire always had [x,y,z]; the page now edits, draws and keeps it
+  const sLabels = await evalJson(`[...${insp}.querySelectorAll('.sp-row .sp-label')].map((l) => l.textContent).filter((t) => /scale/.test(t))`);
+  check("I13 the Transform shows scale x / y / z", JSON.stringify(sLabels) === JSON.stringify(["scale x", "scale y", "scale z"]), sLabels);
+  await page(`(await import('/lib/inspect.js')).commitEdit('pebble', 'pos.sx', 2); return true;`);
+  check("I14 …editing scale x writes [2, y, z] to the log (one act)", await waitDisk(() => { const sc = disk().entities.pebble?.c.transform.scale; return sc && sc[0] === 2 && sc[1] !== 2; }), disk().entities.pebble?.c.transform);
+  check("I15 …and the page draws it stretched, not uniform", await waitFor(`import('/lib/world.js').then((m) => { const s = m.entities.get('pebble').scale; return Math.abs(s.x - 2) < 1e-6 && Math.abs(s.y - 0.4) < 1e-6 && s.y === s.z; })`), await evalJson(`import('/lib/world.js').then((m) => m.entities.get('pebble').scale.toArray())`));
+
+  // R 10-04: a reload made in edit mode came back with the edit frames floating, squashed, outside edit mode. An edit
+  // frame whose saved state says "shown" (saved while docked) must still start hidden; edit mode alone opens it.
+  const reborn = await page(`localStorage.setItem('ew-frame-zz-edit', JSON.stringify({ x: 60, y: 60, w: 300, h: 12, hidden: false }));
+    localStorage.setItem('ew-frame-zz-plain', JSON.stringify({ x: 60, y: 60, w: 300, h: 200, hidden: false }));
+    const F = await import('/lib/frames.js');
+    const e = F.makeFrame('zz-edit', { title: 'zz', className: 'edit' }), p = F.makeFrame('zz-plain', { title: 'zz' });
+    const r = { edit: e.visible, plain: p.visible }; e.el.remove(); p.el.remove(); return JSON.stringify(r);`);
+  check("R1 an edit frame saved 'shown' starts hidden after a reload (a plain frame keeps its saved state)", reborn === JSON.stringify({ edit: false, plain: true }), reborn);
+
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);
   check("B4 what the page drew came from its own fold: v4 entries ingested, v1 verbs derived locally, no resync (that the server sends it no `log` entries is server-check S8)", await evalJson(`import('/lib/net.js').then((m) => m.v4.stats.ingested > 10 && m.v4.stats.projected > 0 && m.v4.stats.resyncs === 0)`), await evalJson(`import('/lib/net.js').then((m) => m.v4.stats)`));

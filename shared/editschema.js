@@ -27,6 +27,7 @@ import { normalizeSound, SOUND_LOOK_MAX } from './sound.js';
 import { componentsOf, addable, RECORDS, compRefusal, LIGHT_DEFAULTS } from './components.js';
 import { eulerFromQ, qFromEuler, rotOrderOf, ROT_MODES, QUAT_MODE } from './euler.js';
 import { qNorm, qHeading, qFromYaw, qWithHeading } from './rot.js';
+import { scale3, scaleWire } from './scale3.js';
 import { localOf, parentVerbs, childrenOf, worldPose } from './hierarchy.js';
 
 const R2D = 180 / Math.PI;
@@ -127,7 +128,12 @@ export function inspectSchema(ent, id, live = {}) {
     // callers; the channel box shows the Rotate channels instead (alias).
     transform.push({ t: 'num', k: 'yaw', label: 'heading', value: round(pv.yaw ?? 0, 4), step: 5, deg: true, alias: 'rot', ...tf,
       hint: tf.hint ?? `turn about ${L.mounted ? 'its parent\'s' : 'world'} up to this heading, keeping any tilt (the Rotate channels are the full orientation)` });
-    transform.push({ t: 'num', k: 'scale', label: 'scale', value: round(ent.scale ?? 1), def: 1, step: 0.05, dp: 2, min: 0.01, softMax: 12, ...tf });
+    // scale: in a v4 world (live.doorLocks) three channels like translate and rotate (R 10-04); `scale` stays as the
+    // uniform setter agents already use (all three to one number), drawn only where it is the whole story (v1)
+    const S = scale3(ent.scale);
+    transform.push({ t: 'num', k: 'scale', label: 'scale', value: round(S[1]), def: 1, step: 0.05, dp: 2, min: 0.01, softMax: 12, ...tf,
+      ...(live.doorLocks ? { alias: 'scale', hint: tf.hint ?? 'sets all three axes to one number (the channels are scale x / y / z)' } : {}) });
+    if (live.doorLocks) ['x', 'y', 'z'].forEach((a, i) => transform.push({ t: 'num', k: `s${a}`, label: `scale ${a}`, value: round(S[i]), def: 1, step: 0.05, dp: 2, min: 0.01, softMax: 12, ...tf }));
     // the channel box's Rotate (design §5): Euler degrees READ from q in the
     // entity's rotation order (shared/euler.js); a yaw-only thing reads exactly
     // (0, yaw, 0) in every order. live.euler is the triple this viewer last
@@ -418,7 +424,8 @@ function componentSections(ent, groups, held, live = {}, id = '?') {
         // the channel box: Translate, Rotate, Scale, the order, and the
         // Quaternion row (fields marked row:'quat', open in quaternion mode)
         const rot = g('rot');
-        sec.fields = [...refs('pos', (f) => f.k !== 'scale'), ...refs('rot', (f) => f.row !== 'quat'), ...refs('pos', (f) => f.k === 'scale'), ...refs('rot', (f) => f.row === 'quat')];
+        const isS = (f) => f.k === 'scale' || /^s[xyz]$/.test(f.k);
+        sec.fields = [...refs('pos', (f) => !isS(f)), ...refs('rot', (f) => f.row !== 'quat'), ...refs('pos', isS), ...refs('rot', (f) => f.row === 'quat')];
         if (rot) sec.quatOpen = rot.fields.find((f) => f.k === 'order')?.value === QUAT_MODE;
         if (g('pos')?.local) sec.info = [['frame', `local to its parent, ${g('pos').local}`]];
         if (rot?.gimbal) sec.info = [...(sec.info ?? []), ['gimbal lock', 'the middle axis is at ±90°, so the first and last axes turn about the same line — a turn on either shows on the last; the Quaternion row is exact']];
@@ -481,7 +488,8 @@ function componentSections(ent, groups, held, live = {}, id = '?') {
   // never disagree with the Model card; an Empty and a light say what they are
   const model = components.find((c) => c.type === 'Model')?.params.lib;
   const lib = model != null ? String(model) : null;
-  return { header: [...refs('flags', (f) => f.k === 'label' || f.k === 'hidden'), ...refs('parent', (f) => f.k !== 'unparent')], list: out, add: held ? [] : add,
+  // parenting lives on the Parent card (R, 10-04), not the header
+  return { header: refs('flags', (f) => f.k === 'label' || f.k === 'hidden'), list: out, add: held ? [] : add,
     lib, libLabel: lib != null ? libLabel(lib) : isLight(ent) ? 'light' : 'empty' };
 }
 
@@ -620,7 +628,8 @@ export function poseEdits(ent, id, mode, { pos, q, scale } = {}, live = {}) {
   const sc = inspectSchema(ent, id, live);
   const out = {};
   if (mode === 'move' && pos) ['x', 'y', 'z'].forEach((k, i) => { if (fieldAt(sc, `pos.${k}`)) out[`pos.${k}`] = +(+pos[i]).toFixed(3); });
-  if (mode === 'scale' && scale != null && fieldAt(sc, 'pos.scale')) out['pos.scale'] = +(+scale).toFixed(3);
+  if (mode === 'scale' && scale != null && fieldAt(sc, 'pos.sx')) scale3(scale).forEach((v, i) => { out[`pos.s${'xyz'[i]}`] = +(+v).toFixed(3); });
+  else if (mode === 'scale' && scale != null && fieldAt(sc, 'pos.scale')) out['pos.scale'] = +(+scale3(scale)[1]).toFixed(3);
   if (mode === 'rotate' && q && fieldAt(sc, 'rot.qw')) {
     const n = qNorm(q);
     if (n && !ent.q && Math.abs(n[0]) < 1e-9 && Math.abs(n[2]) < 1e-9) out['pos.yaw'] = qHeading(n) * R2D;
@@ -716,6 +725,7 @@ export function editVerbs(ent, id, edits, live = {}) {
         // (PROTOCOL §9.1) — so it must travel WITHOUT q, which would win
         if (k === 'yaw') { place.yaw = round(n, 4); delete place.q; headingSet = true; moved = true; }
         else if (k === 'scale') place.scale = round(n);
+        else if (k === 'sx' || k === 'sy' || k === 'sz') { const v = [...scale3(place.scale)]; v['xyz'.indexOf(k[1])] = round(n); place.scale = scaleWire(v); }
         else { place.pos['xyz'.indexOf(k)] = round(n); moved = true; }
         break;
       }
@@ -914,7 +924,7 @@ export function editVerbs(ent, id, edits, live = {}) {
       const rel = { id, to: ent.parent.to, ...(ent.parent.slot ? { slot: ent.parent.slot } : {}), offset: place.pos.map((v) => round(v, 4)), ...turn };
       verbs.push({ verb: 'mount', args: rel });
     }
-    if (!isLight(ent) && place.scale !== (ent.scale ?? 1)) verbs.push({ verb: 'place', args: { id, scale: place.scale } });
+    if (!isLight(ent) && JSON.stringify(place.scale) !== JSON.stringify(ent.scale ?? 1)) verbs.push({ verb: 'place', args: { id, scale: place.scale } });
     place = null;
   }
   if (place) verbs.push({ verb: 'place', args: place });

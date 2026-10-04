@@ -16,6 +16,7 @@
 // and while mounted the fold's `pos`/`q` on the child are its pre-mount pose,
 // unused until a dismount stamps a new one.
 
+import { scale3, scaleWire } from './scale3.js';
 import { qNorm, qMul, qRotate, qFromYaw, qHeading } from './rot.js';
 
 const conj = (q) => [-q[0], -q[1], -q[2], q[3]];
@@ -81,8 +82,10 @@ export function worldPose(world, id) {
     const L = localOf(e, i === chain.length - 1 ? {} : world);   // {} = "treat as root": no carrier lookups
     const lq = L.q ?? qFromYaw(L.yaw);
     if (!acc) { acc = { pos: L.pos, q: lq, scale: L.scale }; continue; }
-    const p = qRotate(acc.q, L.pos);
-    acc = { pos: [acc.pos[0] + acc.scale * p[0], acc.pos[1] + acc.scale * p[1], acc.pos[2] + acc.scale * p[2]], q: qNorm(qMul(acc.q, lq)), scale: acc.scale * L.scale };
+    // a scale is one number or [x,y,z] (shared/scale3.js): the parent's scale applies in its own axes, before its turn
+    const s = scale3(acc.scale), ls = scale3(L.scale);
+    const p = qRotate(acc.q, [s[0] * L.pos[0], s[1] * L.pos[1], s[2] * L.pos[2]]);
+    acc = { pos: [acc.pos[0] + p[0], acc.pos[1] + p[1], acc.pos[2] + p[2]], q: qNorm(qMul(acc.q, lq)), scale: scaleWire([s[0] * ls[0], s[1] * ls[1], s[2] * ls[2]]) };
   }
   return acc;
 }
@@ -92,8 +95,8 @@ export function worldPose(world, id) {
 export function localUnder(parent, child) {
   const inv = conj(parent.q);
   const d = qRotate(inv, [child.pos[0] - parent.pos[0], child.pos[1] - parent.pos[1], child.pos[2] - parent.pos[2]]);
-  const s = parent.scale || 1;
-  return { offset: d.map((v) => v / s), q: qNorm(qMul(inv, child.q)), scale: child.scale / s };
+  const s = scale3(parent.scale || 1), cs = scale3(child.scale);
+  return { offset: d.map((v, i) => v / (s[i] || 1)), q: qNorm(qMul(inv, child.q)), scale: scaleWire(cs.map((v, i) => v / (s[i] || 1))) };
 }
 
 /** Why `id` may not go under `to`, or null. A thing cannot be its own parent,
@@ -209,7 +212,8 @@ export function parentVerbs(world, id, to, { mayAuthor, doorLocks = false } = {}
   } else {
     verbs.push({ verb: 'dismount', args: { id, pos: W.pos.map(r3), ...orient(W.q) } });
   }
-  if (!isLight(ent) && Math.abs(scale - ownScale) > 1e-6) verbs.push({ verb: 'place', args: { id, scale: r3(scale) } });
+  const sameScale = scale3(scale).every((v, i) => Math.abs(v - scale3(ownScale)[i]) <= 1e-6);
+  if (!isLight(ent) && !sameScale) verbs.push({ verb: 'place', args: { id, scale: scaleWire(scale3(scale).map(r3)) } });
 
   // the way back: the old carrier with its old relation, or the stamp of the
   // root pose it had (the fold keeps a root's pos/q current)

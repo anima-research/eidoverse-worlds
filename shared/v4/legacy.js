@@ -10,8 +10,8 @@
 // What the projection says, and what it can't (research 37 has the table):
 //   - ids, roles and parent targets come back through names.dec (the translator's x-- escapes undone), so a person
 //     sees the names they typed; an h-- (hashed) name stays hashed;
-//   - transform → pos / q (+ yaw = q's heading) / scale. v1 scale is one number: a non-uniform v4 scale shows its
-//     y factor (lossy, named); a uniform one is exact;
+//   - transform → pos / q (+ yaw = q's heading) / scale: one number while the three agree (exact, as v1 always was),
+//     else [x, y, z] (R 10-04: a 3D world scales per axis; this branch's client and fold read both);
 //   - a parent ({to, order, slot?}: transform LOCAL to it, whether the door or translate-v1@2 wrote it) → v1
 //     `parent {to, slot?, offset, q}` (slice 3a retired the `order` stopgap that told translate-v1@1's carried v1
 //     records apart; a world translated by @1 should be translated again);
@@ -40,7 +40,7 @@ export function legacyEntity(id, c) {
   const qn = qNorm(t.q) ?? [0, 0, 0, 1];
   rec.yaw = qHeading(qn); rec.q = qn;
   const s = Array.isArray(t.scale) && t.scale.length === 3 ? t.scale : [1, 1, 1];
-  rec.scale = s[0] === s[1] && s[1] === s[2] ? s[0] : s[1];
+  rec.scale = s[0] === s[1] && s[1] === s[2] ? s[0] : s.slice();
   const p = c.parent;
   // every parent is the door's shape now (translate-v1@2 writes it too): the transform is LOCAL to the parent, which is
   // exactly v1's offset + q. A socket name rides along for the UI; with an explicit offset v1 draws it at the offset.

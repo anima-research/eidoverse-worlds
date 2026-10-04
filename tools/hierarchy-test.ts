@@ -197,7 +197,7 @@ console.log("a child's channel box: local, and an edit writes one mount");
   check('the channels are editable, and the frame is said', !fieldAt(sc, 'pos.x')!.disabled && /local to its parent, lamp/.test(describeSchema(sc)));
   const card = sc.sections.list.find((c: any) => c.type === 'Transform');
   check('the Transform card says it is local to lamp', card.info?.some(([k, v]: string[]) => k === 'frame' && /lamp/.test(v)));
-  check('the header carries the Parent field; children are listed', sc.sections.header.includes('parent.to') && fieldAt(inspectSchema(W.lamp, 'lamp', { world: W }), 'parent.children')!.value === 'bulb');
+  check('the Parent card carries the parent field (not the header); children are still listed for agents', !sc.sections.header.includes('parent.to') && sc.sections.list.find((c: any) => c.type === 'Parent')?.fields.includes('parent.to') && fieldAt(inspectSchema(W.lamp, 'lamp', { world: W }), 'parent.children')!.value === 'bulb');
   const e1 = editVerbs(W.bulb, 'bulb', { 'pos.y': '+=0.5' }, { world: W });
   check('Translate Y += 0.5 → ONE mount, same carrier, offset moved, turn kept', e1.verbs.length === 1 && e1.verbs[0].verb === 'mount' && e1.verbs[0].args.to === 'lamp' && near(e1.verbs[0].args.offset, [0, 2, 0.2], 1e-9) && e1.verbs[0].args.yaw === 0.25, JSON.stringify(e1));
   for (const v of e1.verbs) fold(st, v.verb, v.args);

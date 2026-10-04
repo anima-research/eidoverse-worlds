@@ -60,6 +60,7 @@ export function spell(verbs) {
       const pos = v.verb === 'mount' ? a.offset : a.pos; if (Array.isArray(pos)) t.pos = pos;
       const q = qArg(a); if (q) t.q = q;
       if (Number.isFinite(a.scale)) t.scale = [a.scale, a.scale, a.scale];
+      else if (Array.isArray(a.scale) && a.scale.length === 3 && a.scale.every(Number.isFinite)) t.scale = [...a.scale];   // per axis (R 10-04)
       ops.push({ tool: 'set', args: { id: idIn(a.id), component: 'transform', value: t } });
       continue;
     }

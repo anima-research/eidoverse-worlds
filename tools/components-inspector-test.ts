@@ -57,7 +57,8 @@ for (const [id, e] of ents) {
     if (f.k == null || f.t === 'info') continue;
     const a = `${g.group}.${f.k}`;
     const replaced = /(^|\|)(type|rest)$/.test(f.k) && g.group === 'motion' || ['particles.out', 'picture.down', 'sound.silence', 'comp.+'].includes(a) || a.startsWith('comp.add:') || /\.json\|/.test(a)
-      || (a === 'flags.lock' && addable.has('Lock')) || (a === 'flags.guard' && addable.has('Guard'));
+      || (a === 'flags.lock' && addable.has('Lock')) || (a === 'flags.guard' && addable.has('Guard'))
+      || (g.group === 'parent' && !s.sections.list.some((c: any) => c.type === 'Parent'));   // a root has no Parent card: the Hierarchy drag parents it (R, 10-04); agents edit parent.to
     if (!owned.has(a) && !replaced && !(g.group === 'comp' && owned.has(`comp.${f.k}`))) probs.push(`${id}: ${a} is in no card`);
   }
 }

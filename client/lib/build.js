@@ -24,6 +24,7 @@ import { entities, entityMeta, comps, editHolds } from './world.js';
 import { reindexCollider } from './colliders.js';
 import { heightAt } from './terrain.js';
 import { net, sendVerb, sendVerbs, sendDrag } from './net.js';
+import { scaleOf } from '../../shared/scale3.js';
 import { placeVerbs, placeRefusal } from '../../shared/blueprint.js';
 import { myState, mouse, setPointerClaim, setEditingProbe } from './controller.js';
 import { flashHint, collapseAll, panelFrame } from './ui.js';
@@ -391,7 +392,7 @@ export function updateBuild() {
       selected.obj.quaternion.copy(_turn).multiply(dragging.startQuat);
       reindexCollider(selected.id); refreshOutline(); relayDrag();
     } else if (tool === 'scale') {
-      selected.obj.scale.setScalar(THREE.MathUtils.clamp(dragging.startScale * Math.exp((dragging.clientX - dragging.startX) * 0.006), 0.1, 12));
+      { const k = Math.exp((dragging.clientX - dragging.startX) * 0.006); const sc = selected.obj.scale.copy(dragging.startScale).multiplyScalar(k); sc.set(...sc.toArray().map((v) => THREE.MathUtils.clamp(v, 0.1, 12))); }   // keeps a stretched thing's proportions
       reindexCollider(selected.id); refreshOutline();
     } else if (dragging.vertical) {
       // map screen-vertical pixels to world metres at the object's depth, so a
@@ -539,7 +540,7 @@ function commitPlace(before) {
   const o = selected.obj;
   if (V4.isV4()) {   // the drag was presence; the release is ONE request, with expect on where it started (§3a)
     const id = selected.id;
-    V4.sendVerbsV4([{ verb: 'place', args: { id, pos: [o.position.x, o.position.y, o.position.z], q: o.quaternion.toArray(), scale: o.scale.x } }],
+    V4.sendVerbsV4([{ verb: 'place', args: { id, pos: [o.position.x, o.position.y, o.position.z], q: o.quaternion.toArray(), scale: scaleOf(o) } }],
       { what: `move ${id}`, base: before.v4 ? { [id]: before.v4 } : null, revert: () => V4.revertPose(id) });
     return;
   }
@@ -553,14 +554,14 @@ function commitPlace(before) {
     pos: [o.position.x, o.position.y, o.position.z],
     ...(tilted ? { q: o.quaternion.toArray() } : {}),
     yaw: new THREE.Euler().setFromQuaternion(o.quaternion, 'YXZ').y,
-    scale: o.scale.x,
+    scale: scaleOf(o),
   });
   pushUndo({ verb: 'place', args: { id: selected.id, ...(tilted ? before : beforeYaw) } }, 'move');
 }
 
 const _up = new THREE.Vector3(0, 1, 0), _turn = new THREE.Quaternion(), _q = new THREE.Quaternion();
 function snapshotOf(obj) {
-  return { pos: [obj.position.x, obj.position.y, obj.position.z], yaw: new THREE.Euler().setFromQuaternion(obj.quaternion, 'YXZ').y, q: obj.quaternion.toArray(), scale: obj.scale.x };
+  return { pos: [obj.position.x, obj.position.y, obj.position.z], yaw: new THREE.Euler().setFromQuaternion(obj.quaternion, 'YXZ').y, q: obj.quaternion.toArray(), scale: scaleOf(obj) };
 }
 
 export function undo() {
@@ -661,7 +662,7 @@ canvas.addEventListener('mousedown', (e) => {
     clientX: e.clientX,
     startYaw: root.rotation.y,
     startQuat: root.quaternion.clone(),
-    startScale: root.scale.x,
+    startScale: root.scale.clone(),
     startPos: at,
     depth: camera.position.distanceTo(at),
     grab: aim ? at.clone().sub(aim.point) : new THREE.Vector3(),
@@ -694,7 +695,7 @@ addEventListener('mouseup', () => {
       && Math.abs(o.position.y - moved.pos[1]) < 0.005
       && Math.abs(o.position.z - moved.pos[2]) < 0.005
       && o.quaternion.angleTo(_q.fromArray(moved.q)) < 1e-4
-      && Math.abs(o.scale.x - moved.scale) < 1e-4;
+      && JSON.stringify(scaleOf(o)) === JSON.stringify(moved.scale);
     if (!same) commitPlace(moved);          // release commits ONE clean entry
   }
   dragging = null;
