@@ -19,6 +19,7 @@ export function scratch(tag: string) {
   fs.mkdirSync(base, { recursive: true });
   const d = fs.mkdtempSync(path.join(base, `v4-${tag}-`)) + "/";
   fs.mkdirSync(d + "worlds", { recursive: true }); fs.mkdirSync(d + "store", { recursive: true });
+  process.on("exit", () => fs.rmSync(d, { recursive: true, force: true })); // also when a suite throws part-way
   return d;
 }
 
