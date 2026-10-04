@@ -350,7 +350,11 @@ function aimPoint(skipId = null) {
   raycaster.setFromCamera(mouse, camera);
   const targets = [];
   for (const [id, o] of entities) if (o && id !== skipId) targets.push(o);
-  const hits = raycaster.intersectObjects(targets, true);
+  let hits = raycaster.intersectObjects(targets, true);
+  // v4: a mounted child is drawn INSIDE its parent's object, so the parent's recursive hit test would find the very
+  // thing being dragged under the pointer (and it would climb toward the camera). Skip its whole subtree.
+  const skipObj = V4.isV4() && skipId != null ? entities.get(skipId) : null;
+  if (skipObj) hits = hits.filter((h) => { for (let o = h.object; o; o = o.parent) if (o === skipObj) return false; return true; });
   if (hits.length) {
     const h = hits[0];
     // only treat near-horizontal faces as placement surfaces — a wall should
@@ -397,7 +401,8 @@ export function updateBuild() {
       const dy = (dragging.startY - dragging.clientY) * pxToWorld;   // up = raise
       const floor = heightAt(dragging.startPos.x, dragging.startPos.z);
       const y = Math.max(floor, dragging.startPos.y + dy);
-      selected.obj.position.set(dragging.startPos.x, y, dragging.startPos.z);
+      if (dragging.world) setWorldPosition(selected.obj, _w.set(dragging.startPos.x, y, dragging.startPos.z));
+      else selected.obj.position.set(dragging.startPos.x, y, dragging.startPos.z);
       reindexCollider(selected.id);
       refreshOutline();
       relayDrag();
@@ -407,16 +412,34 @@ export function updateBuild() {
         // Keep the grab offset. Without it the object teleports so that its
         // ORIGIN sits under the cursor, which is both a jump and usually wrong —
         // you grabbed a crate by its corner, not by its pivot.
-        selected.obj.position.copy(aim.point).add(dragging.grab);
-        // dropping onto a surface should still rest ON it, not float by the
-        // offset you happened to grab at
-        if (aim.onto) selected.obj.position.y = aim.point.y;
+        if (dragging.world) {
+          // v4: the grab offset, the aim and the result are WORLD points; a mounted child's object position is local
+          // to its parent (turned, scaled), so the world target is brought into that frame last (research 44 #5)
+          _w.copy(aim.point).add(dragging.grab);
+          if (aim.onto) _w.y = aim.point.y;
+          setWorldPosition(selected.obj, _w);
+        } else {
+          selected.obj.position.copy(aim.point).add(dragging.grab);
+          // dropping onto a surface should still rest ON it, not float by the
+          // offset you happened to grab at
+          if (aim.onto) selected.obj.position.y = aim.point.y;
+        }
         reindexCollider(selected.id);
         refreshOutline();
         relayDrag();
       }
     }
   }
+}
+
+const _w = new THREE.Vector3();
+globalThis.__buildDrag = () => (dragging ? { id: dragging.id, armed: dragging.armed, world: !!dragging.world, tool } : null);   // harness window (tools/v4/client-check.ts F)
+/** Put an object at a WORLD position, whatever frame it is drawn in (a mounted child sits in its parent's). */
+function setWorldPosition(obj, w) {
+  const p = obj.parent;
+  if (!p) { obj.position.copy(w); return; }
+  p.updateWorldMatrix(true, false);
+  obj.position.copy(p.worldToLocal(w.clone()));
 }
 
 // relay at pose cadence so others see it move, not teleport
@@ -498,7 +521,8 @@ function lockedHint(id) {
     flashHint(`🛡 <b>guarded</b> by ${placerName(id)} — only they or the world's owner can move or change it`);
     return true;
   }
-  if (!isLocked(id)) return false;
+  // v4: the door is asked, and a person who may lift the lock gets "This is locked. Move anyway?" (v4edit.send)
+  if (!isLocked(id) || V4.isV4()) return false;
   flashHint('🔒 <b>locked</b> — uncheck <b>lock</b> in the inspector to move or remove it');
   return true;
 }
@@ -616,8 +640,13 @@ canvas.addEventListener('mousedown', (e) => {
   // A press is a SELECT. It only becomes a drag once the pointer actually
   // travels — otherwise clicking a thing to look at its label moved it.
   const aim = aimPoint(id);
+  // v4: the drag reckons in WORLD space (a mounted child's object position is in its parent's frame); v1 keeps the
+  // object-position maths it always had (and its known child-drag bug: research 43 "Left")
+  const world = V4.isV4();
+  const at = world ? root.getWorldPosition(new THREE.Vector3()) : entities.get(id).position.clone();
   dragging = {
     id,
+    world,
     // v4: the components this gesture starts from: the release's `expect`
     before: V4.isV4() ? { ...snapshotOf(root), v4: V4.compsOf(id) } : snapshotOf(root),
     lastSent: 0,
@@ -633,9 +662,9 @@ canvas.addEventListener('mousedown', (e) => {
     startYaw: root.rotation.y,
     startQuat: root.quaternion.clone(),
     startScale: root.scale.x,
-    startPos: entities.get(id).position.clone(),
-    depth: camera.position.distanceTo(entities.get(id).position),
-    grab: aim ? entities.get(id).position.clone().sub(aim.point) : new THREE.Vector3(),
+    startPos: at,
+    depth: camera.position.distanceTo(at),
+    grab: aim ? at.clone().sub(aim.point) : new THREE.Vector3(),
   };
   e.preventDefault();
 });
