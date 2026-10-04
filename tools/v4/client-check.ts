@@ -101,9 +101,29 @@ try {
   check("U1 Ctrl+Z = undo {act} of my act", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "undo" && myActs().at(-1).e.body.request.act === g.seq), myActs().slice(n0).map((a) => a.e.body));
   check("U2 …it's back where it was", await waitDisk(() => JSON.stringify(disk().entities[crate].c.transform) === JSON.stringify(start)));
   const undoAct = myActs().at(-1).seq;
+  // the door writes before it replies: wait until the page has its reply (the act on its redo stack) before the key
+  await waitFor(`globalThis.__v4edit().redo.at(-1) === ${undoAct}`);
   await key("KeyZ", { ctrlKey: true, shiftKey: true });
   check("U3 Ctrl+Shift+Z redoes: undo {act: <my undo>}", await waitDisk(() => myActs().at(-1).e.verb === "undo" && myActs().at(-1).e.body.request.act === undoAct && Math.abs(disk().entities[crate].c.transform.pos[0] - (start.pos[0] + 1)) < 1e-3), myActs().at(-1)?.e.body);
   check("U4 the page's drawing follows (its fold)", await waitFor(`import('/lib/world.js').then((m) => Math.abs(m.entities.get('${crate}').position.x - ${start.pos[0] + 1}) < 1e-3)`));
+  const redoAct = myActs().at(-1).seq;
+  await waitFor(`globalThis.__v4edit().undo.at(-1) === ${redoAct}`);
+  await key("KeyZ", { ctrlKey: true });
+  check("U5 Ctrl+Z after a redo undoes the redo (it went back on my undo stack)", await waitDisk(() => myActs().at(-1).e.verb === "undo" && myActs().at(-1).e.body.request.act === redoAct && JSON.stringify(disk().entities[crate].c.transform) === JSON.stringify(start)), myActs().at(-1)?.e.body);
+  const undo2 = myActs().at(-1).seq;
+  await waitFor(`globalThis.__v4edit().redo.at(-1) === ${undo2}`);
+  await key("KeyZ", { ctrlKey: true, shiftKey: true });
+  check("U6 …and redo again", await waitDisk(() => myActs().at(-1).e.body.request.act === undo2 && Math.abs(disk().entities[crate].c.transform.pos[0] - (start.pos[0] + 1)) < 1e-3), myActs().at(-1)?.e.body);
+  await waitFor(`import('/lib/net.js').then((m) => Math.abs(m.v4.st.entities['${crate}'].c.transform.pos[0] - ${start.pos[0] + 1}) < 1e-3)`);
+
+  // ---- Q: a Ctrl+Z pressed in the same tick as the release undoes THAT release (it waits for the door's reply) ----
+  { n0 = myActs().length; const before = JSON.stringify(disk().entities[crate].c.transform);
+    await evalJson(`(() => { const c = globalThis.__gizmo().controls; c.dispatchEvent({ type: 'dragging-changed', value: true });
+      return import('/lib/world.js').then((m) => { m.entities.get('${crate}').position.z += 1; c.dispatchEvent({ type: 'objectChange' }); c.dispatchEvent({ type: 'dragging-changed', value: false });
+        dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyZ', key: 'KeyZ', ctrlKey: true, bubbles: true })); return true; }); })()`);
+    const ok2 = await waitDisk(() => myActs().length === n0 + 2);
+    const [rel, und] = myActs().slice(n0);
+    check("Q1 release + Ctrl+Z in the same tick: the undo names the release, not the act before it", ok2 && rel.e.verb === "set" && und.e.verb === "undo" && und.e.body.request.act === rel.seq && JSON.stringify(disk().entities[crate].c.transform) === before, myActs().slice(n0).map((a) => [a.seq, a.e.verb, a.e.body.request])); }
 
   // ---- C: undo refused when someone changed it since ----
   const moved = disk().entities[crate].c.transform;

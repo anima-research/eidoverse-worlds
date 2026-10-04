@@ -97,8 +97,16 @@ export function showRefusal(what, r) {
   return text;
 }
 
+// writes still waiting for the door: Ctrl+Z waits for them, or a quick Ctrl+Z after a release would undo the act BEFORE
+// it (the release's act isn't on the stack until its reply arrives)
+const inflight = new Set();
+const settled = () => Promise.allSettled([...inflight]);
 /** One request, waiting for the door. opts: {what, revert(), record = true}. Returns the final reply. */
-export async function send(req, { what = req.tool, revert = null, record = true } = {}) {
+export function send(req, opts = {}) {
+  const p = sendNow(req, opts); inflight.add(p); p.finally(() => inflight.delete(p));
+  return p;
+}
+async function sendNow(req, { what = req.tool, revert = null, record = true } = {}) {
   bus.emit('v4-sending', { req, what });
   let r = await requestV4(req.tool, req.args);
   if (!r.ok && r.refused?.code === 'locked' && req.args?.through_lock !== true && mayLift()) {
@@ -131,6 +139,7 @@ export async function sendVerbsV4(verbs, { what, base = null, expect = true, rev
 
 // ---- undo / redo: the door's undo-by-act, of my own acts only ----
 export async function undo() {
+  await settled();
   const act = undoStack.at(-1);
   if (act === undefined) { flashHint('nothing of yours to undo here'); return { ok: false, refused: { code: 'nothing' } }; }
   const r = await send({ tool: 'undo', args: { act } }, { what: 'undo', record: false });
@@ -141,6 +150,7 @@ export async function undo() {
   return r;
 }
 export async function redo() {
+  await settled();
   const act = redoStack.at(-1);
   if (act === undefined) { flashHint('nothing to redo'); return { ok: false, refused: { code: 'nothing' } }; }
   const r = await send({ tool: 'undo', args: { act } }, { what: 'redo', record: false });
