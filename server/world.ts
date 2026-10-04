@@ -27,6 +27,7 @@ import { emptySim, simEntry, simSnapshot } from "../shared/sim.js";
 import { publishEntry } from "./events.ts";
 import { atomicWrite } from "./fsutil.ts";
 import { V4Log, isV4World } from "./v4/world.ts";
+import { leaseRefusal } from "./rights.ts";
 
 /** The sim fold's state (shared/sim.js — JSDoc-typed JS; mirrored here
  *  structurally for the TS side of the house). */
@@ -392,7 +393,14 @@ export class WorldSession {
     // is where it came to rest, tumbled or not
     const q = final?.q ?? (final?.yaw != null ? undefined : L.lastState?.q);
     this.leases.delete(id);
-    if (p && this.log.state.entities[id]) {
+    const ent = this.log.state.entities[id];
+    // Re-ask at commit: a lock or guard may have landed mid-lease, and the
+    // server must never author a place its holder could not have made. The
+    // refused stream was presence only — snap every view (the holder's too)
+    // back to where the log says the thing stands, then end the lease.
+    if (p && ent && leaseRefusal(this.log.state, { id: L.holder.id, sub: L.holder.sub }, id)) {
+      this.broadcast({ type: "lease", op: "state", id, by: "world", p: ent.pos, ...(ent.yaw != null ? { yaw: ent.yaw } : {}) });
+    } else if (p && ent) {
       this.commit("world", "place", {
         id, pos: p, ...(yaw != null ? { yaw } : {}), ...(q ? { q } : {}), by: L.holder.id, via: "lease",
       });

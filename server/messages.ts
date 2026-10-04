@@ -19,7 +19,7 @@ import { coldLibs, warmBoxes, worldLibs } from "./boxes.ts";
 import { LIMITS } from "./limits.ts";
 import { sanePose } from "./posecheck.ts";
 import { currentIncarnation } from "./transport.ts";
-import { rightsOf, isAdminId } from "./rights.ts";
+import { rightsOf, isAdminId, leaseRefusal } from "./rights.ts";
 import { ROLE_RANK } from "../shared/fold.js";
 import { qNorm } from "../shared/rot.js";
 import { simSnapshot } from "../shared/sim.js";
@@ -244,7 +244,16 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
         return;
       }
       // physical play is USING the world (rank 0), like `use` — a
-      // per-world knob can gate this later without protocol changes
+      // per-world knob can gate this later without protocol changes.
+      // But the lease's outcome is a committed `place`, so the claim clears
+      // the edges a move does: guard, then lock (rights.ts leaseRefusal —
+      // the same answer settleLease re-asks at commit time).
+      const refused = leaseRefusal(w.state, { id: c.id, sub: c.sub }, id);
+      if (refused) {
+        w.debug("denied", { who: c.id, verb: "lease", why: refused });
+        ws.send(JSON.stringify({ type: "lease", op: "denied", id, why: refused }));
+        return;
+      }
       const cur = w.leases.get(id);
       if (cur && cur.holder !== c) {
         const stale = Date.now() - cur.lastAt > LIMITS.LEASE_STALE_MS;

@@ -273,3 +273,19 @@ export function guardRefusal(
         : "change";
   return `"${id}" is guarded — ${may} ${act} it`;
 }
+
+/** May this participant lease-animate entity `id` (docs/leases.md)?
+ *
+ *  A lease's outcome is a `place` the server commits on the holder's behalf,
+ *  so the claim must clear the same edges a hand-authored move would. The
+ *  rank gate stays where leases.md put it (rank 0 — physical play is USING
+ *  the world, like `punt`), so the gates are punt's: the guard (only the
+ *  placer, the owner, or an operator may move a guarded thing) and then the
+ *  lock (a nailed-down thing refuses everyone). Asked at claim AND again at
+ *  settle — a lock or guard can land mid-lease, and the commit must never be
+ *  a place its holder could not have made. Null = may. */
+export function leaseRefusal(state: WorldState, who: { id: string; sub?: string }, id: string): string | null {
+  const role = rightsOf(state, who.id, who.sub).role;
+  return guardRefusal(state, { id: who.id, sub: who.sub, role }, "punt", { id })
+    ?? lockRefusal(state, "punt", { id });
+}

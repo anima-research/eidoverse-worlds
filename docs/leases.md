@@ -59,8 +59,10 @@ malformed input dropped.
 
 - **`{op: "claim", id, take?}`** — ask to animate an entity.
   Granted if: the entity exists, the claimant's rank clears the world's lease
-  gate (default rank 0 — physical play is *using* the world, like `use`), and
-  the entity is unleased — OR `take: true` and the claimant's body is within
+  gate (default rank 0 — physical play is *using* the world, like `use`), the
+  claimant could move it by hand-authored `punt` — it is not guarded by someone
+  else (`comp guard`: placer, owner and operators only) and not locked
+  (`comp lock` refuses everyone) — and the entity is unleased — OR `take: true` and the claimant's body is within
   TAKE_RANGE of the object's live position (kick the ball away from the
   dribbler), OR the current lease is stale (no state for STALE_MS).
   Server replies `{op: "granted", id}` or `{op: "denied", id, why}`.
@@ -81,7 +83,10 @@ malformed input dropped.
   heading* (PROTOCOL §9.1) and commits no tilt:
   a `place` entry, actor `"world"`, args carrying `{by: holder, via:
   "lease"}` — the same provenance pattern as reaction effects. Then
-  `{op: "released", id}` to everyone. The object is at rest in the log;
+  `{op: "released", id}` to everyone. The guard/lock check is asked again
+  here: if a lock or guard landed mid-lease, nothing is committed and the
+  server broadcasts one `{op: "state", id, by: "world", p, yaw}` carrying the
+  logged position, so every view (the holder's too) snaps back. The object is at rest in the log;
   late joiners fold it; the lease table forgets it.
 
 - **Holder disconnects** → identical to release-with-last-state. A crashed

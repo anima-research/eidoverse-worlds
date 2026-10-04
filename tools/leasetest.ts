@@ -194,6 +194,61 @@ const dieQ = g2.msgs.find((m) => m.type === "snapshot")?.state?.entities?.die?.q
 check("...and a late joiner folds the tilt", Array.isArray(dieQ) && Math.abs(dieQ[0] - 0.5) < 1e-12, JSON.stringify(dieQ));
 g2.close();
 
+// 12. a lease commits a `place` on the holder's behalf, so the claim must
+// clear the edges a move does. "kicker" joined first and owns this world;
+// "watcher" is a drop-in builder. A lock refuses everyone (owner included);
+// a guard refuses all but its placer, the owner, and operators.
+await sleep(4200);                       // let the verb-rate window turn over
+a.verb("spawn", { id: "house", lib: "x.glb", pos: [20, 0, 20] });
+a.verb("spawn", { id: "statue", lib: "x.glb", pos: [25, 0, 20] });
+a.verb("spawn", { id: "barrel", lib: "x.glb", pos: [30, 0, 20] });
+await sleep(300);
+a.verb("comp", { id: "house", type: "lock", data: true });
+a.verb("comp", { id: "statue", type: "guard", data: true });
+await sleep(300);
+const placesOf = (id: string) => c.msgs.filter((m) => m.type === "log" && m.entry?.verb === "place" && m.entry?.args?.id === id).length;
+
+c.lease("claim", "house");
+const lk = await c.next((m) => m.type === "lease" && m.op === "denied" && m.id === "house").catch(() => null);
+check("claiming a LOCKED thing is refused", /locked/.test(String(lk?.why)), String(lk?.why));
+a.lease("claim", "house");
+const lk2 = await a.next((m) => m.type === "lease" && m.op === "denied" && m.id === "house").catch(() => null);
+check("...for everyone, the world's owner included", /locked/.test(String(lk2?.why)), String(lk2?.why));
+c.lease("state", "house", { p: [999, 50, 999] });
+c.lease("release", "house", { p: [999, 50, 999] });
+await sleep(300);
+check("...and a refused claimant's state + release commit nothing", placesOf("house") === 0);
+
+c.lease("claim", "statue");
+const gd = await c.next((m) => m.type === "lease" && m.op === "denied" && m.id === "statue").catch(() => null);
+check("claiming someone else's GUARDED thing is refused, naming who may",
+  /guarded/.test(String(gd?.why)) && /kicker/.test(String(gd?.why)), String(gd?.why));
+a.lease("claim", "statue");
+const gp = await a.next((m) => m.type === "lease" && m.op === "granted" && m.id === "statue").catch(() => null);
+check("...its placer may still lease it", !!gp);
+a.lease("release", "statue");
+await a.next((m) => m.type === "lease" && m.op === "released" && m.id === "statue").catch(() => null);
+
+// a lock that lands MID-lease: the settle re-asks, commits nothing, and
+// snaps every view back to where the log says the barrel stands
+c.lease("claim", "barrel");
+await c.next((m) => m.type === "lease" && m.op === "granted" && m.id === "barrel");
+c.lease("state", "barrel", { p: [80, 3, 80], yaw: 1 });
+await sleep(150);
+a.verb("comp", { id: "barrel", type: "lock", data: true });
+await sleep(300);
+c.lease("release", "barrel", { p: [80, 3, 80], yaw: 1 });
+const snapBack = await a.next((m) => m.type === "lease" && m.op === "state" && m.id === "barrel" && m.by === "world").catch(() => null);
+check("a lock landing mid-lease: release commits nothing", placesOf("barrel") === 0);
+check("...and views snap back to the logged position", snapBack?.p?.[0] === 30, JSON.stringify(snapBack?.p));
+await c.next((m) => m.type === "lease" && m.op === "released" && m.id === "barrel").catch(() => null);
+const e3 = await open("latecomer3");
+const ents3 = e3.msgs.find((m) => m.type === "snapshot")?.state?.entities ?? {};
+check("late joiner: house, statue and barrel all stand where they were placed",
+  ents3.house?.pos?.[0] === 20 && ents3.statue?.pos?.[0] === 25 && ents3.barrel?.pos?.[0] === 30,
+  JSON.stringify([ents3.house?.pos, ents3.statue?.pos, ents3.barrel?.pos]));
+e3.close();
+
 a.close(); c.close();
 console.log(`\n${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);
