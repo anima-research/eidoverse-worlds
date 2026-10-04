@@ -6,7 +6,7 @@ import { CONFIG, report, bus } from './base.js';
 // folds here — synchronously, through the same shared/fold.js the
 // sequencer runs — and the realizers project it into the scene.
 // EW.foldParity() measures fold-vs-scene drift on demand.
-import { hydrate as shadowHydrate, foldLive as shadowFold, reset as shadowReset, state as shadowState } from './state.js';
+import { hydrate as shadowHydrate, foldLive as shadowFold, reset as shadowReset, state as shadowState, setSparseSeq } from './state.js';
 import { pending, P } from './scheduler.js';
 // The realizers (TEL0S_NOTES §11.4) own the scene: state verbs realize
 // FROM the fold, and fold-inert causes (use/punt/force, moderation
@@ -898,6 +898,7 @@ async function onSnapshot(msg) {
   // a v4 world: adopt the door's own cut, and draw the v1 state THIS client derives from it (the snapshot's `state`
   // is the server's projection, which a v4-folding client no longer needs; its chat window is kept)
   if (msg.v4?.state) { v4.adopt(msg.v4); bus.emit('v4-mine', msg.v4.mine ?? []); } else v4.reset();
+  setSparseSeq(!!msg.v4?.state);   // the v1 numbering derived from a v4 stream jumps by design (state.js sparseSeq)
   shadowHydrate(msg.v4?.state ? v4.legacy(msg.state) : msg.state, [], Math.max(
     typeof msg.throughSeq === 'number' ? msg.throughSeq : -1,
     ...(msg.entries?.length ? msg.entries.map((e) => e.seq ?? -1) : [-1]),
