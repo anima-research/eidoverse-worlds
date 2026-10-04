@@ -24,7 +24,7 @@ import { WORLDS_DIR } from "../config.ts";
 import { atomicWrite } from "../fsutil.ts";
 import { emptySim } from "../../shared/sim.js";
 import type { LogEntry, WorldState } from "../../shared/fold.js";
-import { request as doorRequest, actIndexOf } from "../../shared/v4/door.js";
+import { request as doorRequest, actIndexOf, roleIn } from "../../shared/v4/door.js";
 import { stateView } from "../../shared/v4/client.js";
 import { legacyState, legacyDelta, foldLegacy, legacyDiff } from "../../shared/v4/legacy.js";
 import { dec } from "../../shared/v4/names.js";
@@ -184,6 +184,9 @@ export class V4Log {
     this._state = { ...this.project(), recentChat: this._state.recentChat, chatTotal: this._state.chatTotal } as WorldState;
   }
   joinPayload() { if (this.stale) this.freshen(); return { state: this.state, tail: [] as LogEntry[], throughSeq: this.snapSeq }; }
+  /** The role the DOOR gives this identity (the door is what admits writes; v1's own default for strangers is builder,
+   *  the door's is visitor, so a client must be told the door's). */
+  roleOf(actor: string): string { return roleIn(this.live.state(), actor); }
   /** Slice 3b: what a client that folds v4 adopts at join: the fold itself (shared/v4/client.js stateView), its head,
    *  and the asker's own acts that undo could still take back (newest last), so Ctrl+Z survives a reload. */
   clientCut(actor: string) {

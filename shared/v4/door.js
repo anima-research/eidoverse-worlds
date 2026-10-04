@@ -205,6 +205,8 @@ function roleOf(st, actor) {
   if (RANK[r] === undefined) r = "visitor";
   return !ownersOf(st).length && RANK[r] > RANK.visitor ? "visitor" : r;
 }
+/** The role the door gives `actor` in a folded state (a view: what a client should be told it may do here). */
+export const roleIn = (st, actor) => roleOf(st, actor);
 const opsQuiet = (e) => { try { return opsOf(e); } catch { return []; } };
 // ---------- views over the log: who did what (L2: derived, never stored) ----------
 // Who a state entry is "by": its cause's actor (the person whose request it was), and whose RIGHTS admitted it. Those

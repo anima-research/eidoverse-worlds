@@ -214,9 +214,15 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
 { ok(tool(["found", "meadow", "--owner", "Ann"]).code === 0, "S8 found a second v4 world");
   const a = await client(srv.port, "meadow", "Ann", { v4fold: true });
   ok(a.snapshot?.v4?.state?.["@world"] && Number.isInteger(a.snapshot.v4.head) && Array.isArray(a.snapshot.v4.mine), "S8 a v4-folding client's snapshot carries the fold, its head and my undoable acts", Object.keys(a.snapshot?.v4 ?? {}));
+  const bv = await client(srv.port, "meadow", "Bob", { v4fold: true }); // Bob folds v4 too: nobody reads the projection
+  ok(bv.snapshot?.yourRights?.role === "visitor", "S8 Bob arrives a visitor", bv.snapshot?.yourRights);
   const r1 = await a.req("create", { id: "box", model: "test/table.glb", place: { at: [1, 1] } });
   ok((await a.req("set", { id: "@world", component: `roles:${enc("Bob")}`, value: { role: "builder" } })).ok, "S8 Ann makes Bob a builder (nobody in the world reads the projection)");
   await sleep(200);
+  ok(bv.of("your-rights").at(-1)?.rights?.role === "builder", "S8 …and Bob is told at once (the door's role, not v1's stranger default)", bv.of("your-rights").map((m) => m.rights?.role));
+  { const g = await fetch(`http://127.0.0.1:${srv.port}/geom?world=meadow&id=box`, { signal: AbortSignal.timeout(3000) });
+    ok(g.status === 200, "S8 an HTTP reader of the projection (/geom) sees a thing made while nobody stepped it (it's rebuilt for its reader, never stale)", g.status); }
+  bv.close();
   ok(r1.ok && a.of("log").length === 0 && a.of("v4-log").length >= 2, "S8 it gets v4-log and no projected `log` entries", [a.of("log").length, a.of("v4-log").length]);
   const c = makeV4Client(); c.adopt(a.snapshot.v4);
   for (const m of a.of("v4-log")) c.ingest(m.entries, m.from, legacyState(c.st));

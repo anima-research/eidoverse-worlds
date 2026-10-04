@@ -162,7 +162,7 @@ wireSettledPose(settledPose);
 wireV4(
   // a client that folds v4 itself (slice 3b) never needs the projection's resync: it re-hydrates from its own fold
   (w) => { for (const c of w.clients) { if (c.v4fold) continue; try { c.ws.send(JSON.stringify(buildSnapshot(w, c))); } catch (err) { w.debug("v4-resync-error", { who: c.id, error: String(err) }); } } },
-  (w) => { for (const c of w.clients) { try { c.ws.send(JSON.stringify({ type: "your-rights", rights: { ...rightsOf(w.state, c.id, c.sub), open: !worldHasOwner(w.state) } })); } catch { /* gone */ } } },
+  (w) => { for (const c of w.clients) { try { c.ws.send(JSON.stringify({ type: "your-rights", rights: { ...rightsFor(w, c), open: !worldHasOwner(w.state) } })); } catch { /* gone */ } } },
 );
 
 // The entry bus's boot-time subscribers (§24, events.ts): every committed
@@ -632,6 +632,13 @@ function installJoin(c: Client, w: World) {
     }
 }
 
+/** What a client is told it may do. A v4 world's role is the door's (slice 3b: v1's default for a stranger in an owned
+ *  world is builder, the door's is visitor; telling a v4 visitor "builder" opened edit mode for writes the door refuses). */
+function rightsFor(w: World, c: Client) {
+  const r = rightsOf(w.state, c.id, c.sub);
+  return w.v4 ? { ...r, role: w.v4.roleOf(v4ActorOf(c)) } : r;
+}
+
 function buildSnapshot(w: World, c: Client) {
     // snapshot = full log replay (folding comes later) + who's present now
     const jp = w.joinPayload();
@@ -666,7 +673,7 @@ function buildSnapshot(w: World, c: Client) {
       avatars: avatarRoster(),
       // what YOU may do here, as of now (live grants update it client-side).
       // `open` = no owner exists, so rights are the everyone-builds default.
-      yourRights: { ...rightsOf(w.state, c.id, c.sub), open: !worldHasOwner(w.state) },
+      yourRights: { ...rightsFor(w, c), open: !worldHasOwner(w.state) },
       // wake where you fell asleep — the world's memory of your body
       restore: c.spectator ? null : (w.poses[c.id] ?? null),
       present: [...w.clients].filter(o => o !== c && !o.spectator).map(o => ({

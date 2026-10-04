@@ -13,6 +13,7 @@
 // tools/whisper-disable-test.ts and tools/voice-wiring-test.ts — moving a
 // body again means moving their patterns with it.
 
+import { enc as encV4 } from "../shared/v4/names.js";
 import { runVerb } from "./verbs.ts";
 import { coldLibs, warmBoxes, worldLibs } from "./boxes.ts";
 import { LIMITS } from "./limits.ts";
@@ -456,7 +457,8 @@ export const MESSAGES: Record<string, (ctx: MsgCtx, msg: any) => void> = {
     if (!c.world || c.spectator) return;
     // the RELEASE is a `place` verb the gate above checks; the live drag
     // must agree with it or visitors can slide props they can't commit
-    if (ROLE_RANK[rightsOf(c.world.state, c.id, c.sub).role] < 1) return;
+    // (a v4 world: the door's role, protocol/v4 slice 3b — v1's stranger default is builder, the door's is visitor)
+    if (ROLE_RANK[c.world.v4 ? c.world.v4.roleOf(encV4(c.id)) : rightsOf(c.world.state, c.id, c.sub).role] < 1) return;
     // q: the rotate gizmo turns about any axis (design §5); relayed only when
     // it is a usable quaternion (normalized), so a malformed one is never seen
     const q = qNorm(msg.q);

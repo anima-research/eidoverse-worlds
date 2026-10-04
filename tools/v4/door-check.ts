@@ -346,6 +346,14 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const c2 = makeV4Client(); c2.adopt(JSON.parse(JSON.stringify({ state: stateView(w.state()), head: w.entries.length - 1 })));
   now += 100; w.append({ kind: "purge", actor: "door", verb: "purge", body: { values: [{ seq: from + 1 }] } });
   ok(c2.ingest(JSON.parse(JSON.stringify(w.entries.slice(-1))), w.entries.length - 1, held).resync, "K5 a purge (retroactive, L1) asks for a fresh snapshot");
+  // a drawing that drifted from the fold (here: the client drew the cup elsewhere) heals at the next write: the verbs are a
+  // diff from what the client HOLDS to its fold, checked by folding them, and a re-draw when they can't say it
+  { const c3 = makeV4Client(); c3.adopt(JSON.parse(JSON.stringify({ state: stateView(w.state()), head: w.entries.length - 1 })));
+    const drifted = c3.legacy({ recentChat: [], chatTotal: 0 }); drifted.entities.cup.pos = [9, 9, 9]; if (drifted.entities.cup.parent) drifted.entities.cup.parent.offset = [9, 9, 9];
+    const f3 = w.entries.length; call("ann", "set", { id: "cup", component: "light", value: { range: 2 } });
+    const k3 = c3.ingest(JSON.parse(JSON.stringify(w.entries.slice(f3))), f3, drifted);
+    const healed = k3.rehydrate ? c3.legacy(drifted) : foldLegacy(drifted, k3.v1);
+    ok(!legacyDiff(healed, legacyState(w.state())), "K7 a drawing that drifted from the fold is healed at the next write (a diff from what it holds, checked)", legacyDiff(healed, legacyState(w.state()))); }
   const sv = stateFromView(JSON.parse(JSON.stringify(stateView(w.state()))));
   ok(digest(sv) === digest(w.state()) && sv.entities.cup.c.label === PURGED, "K6 stateView survives the wire both ways, a purged value still purged (not a value)", sv.entities.cup?.c); }
 
