@@ -350,7 +350,11 @@ function admit(w, st, who, ops) {
     // locks: the thing's own lock as of this op; its ancestors' locks as of before this write (what was attached then)
     if (op.verb === "create") made.add(op.id);
     else if (!made.has(op.id) && cap?.kind !== "rest" && (op.comp === undefined || LOCK_GUARDED.has(op.comp))) { // a rest is the engine's word on a released thing: locks guard authored writes
-      const own = lockedC(s.entities[op.id]?.c) ? op.id : null; const anc = ancestors(st, op.id).find((k) => lockedC(st.entities[k]?.c));
+      // §5: "a held thing keeps its logged parent, but holding suspends parent constraints until it settles" (answering
+      // research 34 #11): a lock set on the table while the cup is in a hand doesn't bind the cup in the hand, so its
+      // put or throw settles it. Its OWN lock still binds, and picking it up off a locked thing is refused at grab.
+      const held = cap?.kind === "handle" && cap.ids.includes(op.id);
+      const own = lockedC(s.entities[op.id]?.c) ? op.id : null; const anc = held ? null : ancestors(st, op.id).find((k) => lockedC(st.entities[k]?.c));
       const k = own ?? anc;
       if (k) lockCheck(w, st, who, role, k, op, at); }
     s = applyOps(s, [op]); norm.push(op);
