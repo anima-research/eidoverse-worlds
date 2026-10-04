@@ -359,6 +359,38 @@ try {
     check("F7 ✕ Cancel puts it back, and nothing is written", await waitFor(`import('/lib/world.js').then((m) => { const p = m.entities.get('pebble').getWorldPosition(new (m.entities.get('pebble').position.constructor)()); return Math.hypot(p.x - ${pAfter[0]}, p.y - ${pAfter[1]}, p.z - ${pAfter[2]}) < 0.02; })`) && (await sleep(600), myActs().length === n0), myActs().slice(n0).map((a) => a.e.body.request)); } }
   await evalJson(`document.querySelector('#confirm-center .cc-no')?.click(), true`);   // a dialog a failed check left open would hold the keys
 
+  // ---- I: the Inspector, as R asked on 10-04 (name first, id dim, no lib/filter/parent rows, one Add Component pop-out) ----
+  const insp = `document.querySelector('[data-frame="inspector"]')`;
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('pebble'); return true;`);
+  await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'pebble')`);
+  await sleep(600);
+  const labels = await evalJson(`[...${insp}.querySelectorAll('.sp-row .sp-label')].map((l) => l.textContent)`);
+  check("I1 the Inspector leads with the name, then the id", labels?.[0] === "name" && labels?.[1] === "id", labels);
+  check("I2 …no lib line (the Model card has it), no filter box; the Parent card shows its parent, not its children", !labels?.includes("lib") && !(await evalJson(`!!${insp}.querySelector('input[placeholder^="filter"]')`)) && labels?.includes("parent") && !labels?.includes("children") && !labels?.includes("on"), labels);
+  check("I3 …placed by names who made it (the door's inspect, as an agent asks it)", await waitFor(`[...${insp}.querySelectorAll('.sp-row')].some((r) => r.querySelector('.sp-label')?.textContent === 'placed by' && r.textContent.includes('bob'))`), await evalJson(`[...${insp}.querySelectorAll('.sp-row')].map((r) => r.textContent).slice(0, 5)`));
+  check("I4 …rotation order sits inside the folded Advanced group, not in the main Transform", await evalJson(`![...${insp}.querySelectorAll('.sp-row .sp-label')].some((l) => /order/i.test(l.textContent))`), labels);
+  check("I5 Add Component is ONE button", await evalJson(`[...${insp}.querySelectorAll('.sp-pop-btn')].length === 1 && ![...${insp}.querySelectorAll('.sp-btn')].some((b) => /^\\+ (Light|Pendulum|Spin)/.test(b.textContent))`), await evalJson(`[...${insp}.querySelectorAll('.sp-btn')].map((b) => b.textContent)`));
+  await evalJson(`${insp}.querySelector('.sp-pop-btn').click(), true`);
+  check("I6 …it opens a searchable list, focused", await waitFor(`document.activeElement?.classList.contains('sp-pop-search')`));
+  await evalJson(`(() => { const i = document.querySelector('.sp-pop-search'); i.value = 'swi'; i.dispatchEvent(new Event('input')); return true; })()`);
+  const swi = await evalJson(`[...document.querySelectorAll('.sp-pop-item')].map((b) => b.textContent)`);
+  check("I7 …'swi' finds the swinging one (by its description)", swi?.length > 0 && swi.some((t) => /pendulum/i.test(t)), swi);
+  await evalJson(`document.querySelector('.sp-pop-search').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
+  check("I8 …Esc closes it", await waitFor(`!document.querySelector('.sp-pop')`));
+  // G on a thing that rides another: the handles come up (R: "g/e/r doesn't always bring up the controls")
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('pebble'); (await import('/lib/build.js')).setTool('select'); return true;`);
+  await key("KeyG"); await sleep(400);
+  check("I9 G on the pebble (it rides another thing) brings up the move handles", await evalJson(`__gizmo().attached === 'pebble' && __gizmo().mode === 'translate'`), await evalJson(`({ a: __gizmo().attached, m: __gizmo().mode })`));
+  await key("KeyE"); await sleep(400);
+  check("I10 …and E the rotate handles", await evalJson(`__gizmo().attached === 'pebble' && __gizmo().mode === 'rotate'`), await evalJson(`({ a: __gizmo().attached, m: __gizmo().mode })`));
+  await page(`(await import('/lib/build.js')).setTool('select'); return true;`);
+  // the Transform card's padlock follows the lock (R: "a padlock next to Transform regardless of its lock status")
+  const tfLock = `[...${insp}.querySelectorAll('.sp-group')].find((g) => /Transform/.test(g.textContent))?.querySelector('.sp-ico') != null`;
+  await page(`await (await import('/lib/v4edit.js')).lock('pebble', true); return true;`);
+  check("I11 a locked thing's Transform card shows the padlock", await waitFor(tfLock), await evalJson(`[...${insp}.querySelectorAll('.sp-group')].map((g) => g.innerHTML.slice(0, 80))`));
+  await page(`await (await import('/lib/v4edit.js')).lock('pebble', false); return true;`);
+  check("I12 …and unlocking takes it away", await waitFor(`!(${tfLock})`), await evalJson(`[...${insp}.querySelectorAll('.sp-group')].map((g) => g.innerHTML.slice(0, 80))`));
+
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);
   check("B4 what the page drew came from its own fold: v4 entries ingested, v1 verbs derived locally, no resync (that the server sends it no `log` entries is server-check S8)", await evalJson(`import('/lib/net.js').then((m) => m.v4.stats.ingested > 10 && m.v4.stats.projected > 0 && m.v4.stats.resyncs === 0)`), await evalJson(`import('/lib/net.js').then((m) => m.v4.stats)`));

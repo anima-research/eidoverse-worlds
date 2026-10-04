@@ -19,7 +19,7 @@
 import { THREE, scene } from './core.js';
 import { bus, CONFIG } from './base.js';
 import { entities, entityMeta, comps, avatarMounts } from './world.js';
-import { sendVerb, requestDebug } from './net.js';
+import { sendVerb, requestDebug, requestV4 } from './net.js';
 import { flashHint } from './ui.js';
 import { makeSchemaFrame, resolveDelta } from './panels.js';
 import { registerXRPanel } from './xrpanels.js';
@@ -421,14 +421,14 @@ function pushCards(f, schema, id, { locked = false } = {}) {
     const quat = [];
     for (const addr of sec.fields) {
       const r = cardRow(schema, id, addr); if (!r || r.alias) continue;
-      if (r.row === 'quat') quat.push(r); else f.push(r);
+      if (r.row === 'quat' || addr === 'rot.order') quat.push(r); else f.push(r);   // R, 10-04: rarely needed until rigs
     }
     // groups are FLAT markers (renderDOM, the VR quad): a sub-header reopens
     // its rows even under a folded card, so a folded Transform omits it. A
     // filter is the exception: filterFields opens whatever holds a hit.
     if (quat.length && (isOpen(id, key) || ifilter.trim())) {
       const qk = `${key}:quat`;
-      f.push({ t: 'group', k: qk, label: 'Quaternion', hint: 'the stored orientation, x y z w — normalized on commit', open: sec.quatOpen ? isOpen(id, qk) : !isOpen(id, qk) });
+      f.push({ t: 'group', k: qk, label: 'Advanced', hint: 'rotation order and the quaternion (the rotation as it is stored: four numbers that never gimbal-lock) — rarely needed until rigs', open: sec.quatOpen ? isOpen(id, qk) : !isOpen(id, qk) });
       f.push(...quat);
     }
     if (sec.removable && sec.key) f.push({ t: 'btn', k: `ed:remove.${sec.key}`, label: `remove ${sec.title}`, danger: true });
@@ -445,11 +445,21 @@ function worldFields() {
     { t: 'info', label: '', value: 'its sky, weather, ground and grass, as components: an edit goes out as the sky, weather, terrain or grass verb' },
   ];
   if (mayShape() === false) f.push({ t: 'info', label: '', value: 'shaping the world is the owner\'s — read-only for you' });
-  f.push({ t: 'text', k: 'ifilter', label: '', value: ifilter, placeholder: 'filter properties ⏎', hint: 'non-matching fields hide; components with a hit open' });
   pushCards(f, schema, WORLD_ID);
   const shown = filterFields(f, ifilter);
   painted = shown;
   return shown;
+}
+
+// who made it. A v1 world stamps the placer; a v4 world keeps no such field (L2: a view, never stored), so ask the
+// door once per thing, the same `inspect` an agent uses (derived.madeBy), and repaint when it answers
+const madeByCache = new Map();
+function placedBy(id, meta) {
+  if (!V4.isV4()) return placerOf(id)?.id ?? meta.actor ?? '?';
+  if (madeByCache.has(id)) return madeByCache.get(id) ?? '…';
+  madeByCache.set(id, null);
+  requestV4('inspect', { id }).then((r) => { madeByCache.set(id, r?.ok && r.derived?.madeBy ? V4.idOut(r.derived.madeBy) : 'unknown'); repaintAll(); }).catch(() => madeByCache.delete(id));
+  return '…';
 }
 
 function inspectorFields() {
@@ -462,27 +472,22 @@ function inspectorFields() {
   // the fold knows the thing before its model arrives: entities holds null
   // while the GLB loads (scenegraph guards the same seam)
   const schema = schemaFor(id);           // ONE declaration: shared/editschema.js
-  // the lib line follows the Model component (schema.sections), not the realizer's meta,
-  // which can lack it (the header used to say "lib ?" beside a Model card showing the path)
-  const libLine = { t: 'info', label: 'lib', value: schema.sections?.libLabel ?? short(meta), ...(schema.sections?.lib ? { hint: schema.sections.lib } : {}) };
-  if (!obj) return [{ t: 'info', label: 'id', value: id }, libLine, { t: 'info', label: 'state', value: 'loading…' }];
+  const idRow = { t: 'info', label: 'id', value: id, dim: true, hint: 'its permanent id: the log, scripts and agents point at this, so it never changes, even when you rename it (like a Maya node\'s UUID)' };
+  if (!obj) return [idRow, { t: 'info', label: 'state', value: 'loading…', hint: 'its model is still downloading' }];
   const locked = !!bag.lock;
   const wp = obj.getWorldPosition(_wp);
-  const label = typeof bag.label === 'string' && bag.label ? ` "${bag.label}"` : '';
 
   const f = [
-    { t: 'info', label: 'id', value: `${id}${label}` },
-    libLine,
-    // attribution names the PLACER (the server's stamp); `actor` is whoever last wrote it —
-    // an owner's re-light moves actor, so say so when they differ (AGENTS.md, build.js)
-    { t: 'info', label: 'placed by', value: `${placerOf(id)?.id ?? meta.actor ?? '?'}${meta.actor && meta.actor !== (placerOf(id)?.id ?? meta.actor) ? ` · last change by ${meta.actor}` : ''}${obj?.userData?.mountedTo ? ` · on ${obj.userData.mountedTo}` : ''}` },
-    { t: 'info', label: 'world', value: `(${wp.x.toFixed(1)}, ${wp.y.toFixed(1)}, ${wp.z.toFixed(1)}) · ${wp.distanceTo(myState.pos).toFixed(0)}m away` },
+    idRow,
+    { t: 'info', label: 'placed by', value: placedBy(id, meta), hint: 'who first made it' },
+    { t: 'info', label: 'world', value: `(${wp.x.toFixed(1)}, ${wp.y.toFixed(1)}, ${wp.z.toFixed(1)}) · ${wp.distanceTo(myState.pos).toFixed(0)}m away`, hint: 'where it is in the world, and how far from you' },
   ];
 
   // B: one card per component (shared/components.js via schema.sections), each
   // owning its fields by their unchanged group.k address, then Add Component.
   if (schema.sections) {
-    for (const a of schema.sections.header ?? []) { const r = cardRow(schema, id, a); if (r) f.push(r); }
+    // the name leads (Unity's name box), the id under it; the rest of the header after the facts
+    for (const a of schema.sections.header ?? []) { const r = cardRow(schema, id, a); if (r && !a.startsWith('parent.')) { if (a === 'flags.label') f.unshift(r); else f.push(r); } }   // parenting is the Hierarchy's job (R, 10-04); agents keep parent.* in edit
     if (pendingAsk?.id === id) {
       const q = pendingAsk.ask;
       f.push({ t: 'group', k: 'c:ask', label: q.kind === 'confirm' ? `Remove ${q.type}?` : `${q.component} needs a choice`, open: true });
@@ -491,10 +496,14 @@ function inspectorFields() {
       else for (const o of q.options) f.push({ t: 'btn', k: `ask:${o.v}`, label: o.label });
       f.push({ t: 'btn', k: 'ask:cancel', label: 'cancel' });
     }
-    f.push({ t: 'text', k: 'ifilter', label: '', value: ifilter, placeholder: 'filter properties ⏎', hint: 'non-matching fields hide; components with a hit open' });
     pushCards(f, schema, id, { locked });
     if (schema.sections.add.length) {
-      f.push({ t: 'group', k: 'c:+', label: 'Add Component', open: isOpen(id, 'c:+') });
+      // desktop: ONE button that opens a searchable list (R, 10-04); the VR quad keeps the flat rows below
+      const keyOf = (a) => ({ Picture: 'ed:comp.add:picture', Sound: 'ed:comp.add:sound', Seats: 'ed:sockets.add' }[a.name] ?? `ed:add.${a.name}`);
+      f.push({ t: 'pop', k: 'c:+pop', label: '+ Add Component', deskOnly: true, recentKey: 'components', hint: 'add a light, motion, sound, collider…',
+        items: schema.sections.add.map((a) => ({ k: keyOf(a), label: `${a.name}${a.asks ? '…' : ''}`, category: a.category, disabled: !!a.blocked,
+          hint: a.blocked ?? (a.brings ? `${a.summary} — also adds ${a.brings}, in the same undo step` : a.asks ? `${a.summary} — needs a ${a.asks}: asks first` : a.summary) })) });
+      f.push({ t: 'group', k: 'c:+', label: 'Add Component', open: isOpen(id, 'c:+'), vrOnly: true });
       for (const cat of [...new Set(schema.sections.add.map((a) => a.category))]) {
         f.push({ t: 'info', label: '', value: cat });
         for (const a of schema.sections.add.filter((x) => x.category === cat)) {
@@ -506,7 +515,6 @@ function inspectorFields() {
     }
   } else {
   // CHANNELS — the numeric lane: every num in the schema, transform first
-  f.push({ t: 'text', k: 'ifilter', label: '', value: ifilter, placeholder: 'filter properties ⏎', hint: 'non-matching fields hide; groups with a hit open' });
   f.push({ t: 'group', k: 'channels', label: `Channels${locked ? ' 🔒' : ''}${obj.userData.mountedTo ? ' (mounted)' : ''}`, open: isOpen(id, 'channels') });
   for (const c of channels(schema)) {
     f.push({ ...c, k: `ch:${c.key}`, path: c.key, label: c.group === 'pos' ? c.label : `${c.group} · ${c.label ?? c.k}`, compact: true });

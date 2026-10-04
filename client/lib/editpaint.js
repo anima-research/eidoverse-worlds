@@ -36,7 +36,7 @@ export function paintEdit(canvas, fields, { width = 522, title = '' } = {}) {
   let folded = false;
   for (const f of fields) {
     if (f.t === 'group') { folded = f.open === false; items.push({ f, h: rowH }); continue; }
-    if (folded) continue;
+    if (folded || f.deskOnly) continue;   // deskOnly: a desktop pop-out the quad has its own rows for
     if (f.t === 'vec3') { items.push({ f, h: rowH * 3 }); continue; }                     // one line per axis, labelled x/y/z
     if (f.t === 'enum') { font(); items.push({ f, h: rowH * enumLines(g, f, vw).length }); continue; }
     if (f.t === 'tiles') { items.push({ f, h: rowH * Math.max(1, Math.ceil((f.options ?? []).length / TILE_COLS)) }); continue; }

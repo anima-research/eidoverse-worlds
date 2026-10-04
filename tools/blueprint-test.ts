@@ -86,7 +86,7 @@ console.log('\n2. the shape (blueprintRefusal)');
     ['two children with one id', { ...lampV1, root: { components: [], children: [{ id: 'a', components: [], children: [] }, { id: 'a', components: [], children: [] }] } }, /two children with id "a"/],
     ['an unknown component type', { ...lampV1, root: { components: [{ type: 'Gizmo', params: {} }], children: [] } }, /not a component a thing can carry/],
     ['a world component', { ...lampV1, root: { components: [{ type: 'Sky', params: {} }], children: [] } }, /not a component a thing can carry/],
-    ['an Attachment', { ...lampV1, root: { components: [{ type: 'Attachment', params: { to: 'x' } }], children: [] } }, /attached by nesting/],
+    ['a Parent', { ...lampV1, root: { components: [{ type: 'Parent', params: { to: 'x' } }], children: [] } }, /attached by nesting/],
     ['Captions', { ...lampV1, root: { components: [{ type: 'Captions', key: 'captions', params: { feed: {} } }], children: [] } }, /caption verb/],
     ['a nested copy', { ...lampV1, root: { components: [{ type: 'Annotation', key: 'blueprint', params: { type: 'blueprint', data: { hash: H1 } } }], children: [] } }, /blueprint inside a blueprint/],
     ['placement on the root', { ...lampV1, root: { components: [{ type: 'Transform', params: { pos: [1, 0, 0] } }], children: [] } }, /holds no pos, q or yaw/],
@@ -112,7 +112,7 @@ console.log('\n2. the shape (blueprintRefusal)');
 // ---- 3. the link -------------------------------------------------------------------
 console.log('\n3. the copy link (expand, overridesOf, rebase)');
 // a copy as the world holds it: the root entity's components (placement + link
-// included) and the bulb as a child entity (an Attachment the world added)
+// included) and the bulb as a child entity (a Parent the world added)
 const copyOf = (rec: any, at: number[]) => {
   const x = expand(rec);
   const root = componentsOf({ ...x.entity, pos: at, yaw: 0.5, comp: { ...(x.entity.comp ?? {}), blueprint: linkOf(rec) } }).components;

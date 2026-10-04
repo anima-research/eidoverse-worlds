@@ -171,7 +171,7 @@ export function inspectSchema(ent, id, live = {}) {
       hint: live.mayAuthor === false ? `only ${placer ?? 'its placer'} or the world's owner can set or clear the guard on this`
         : 'make it yours to author: while guarded, only you, the world\'s owner or an operator can change its components, move it, remove it or bind scripts to it (server-enforced) — using it and sitting on it stay open' },
     { t: 'check', k: 'hidden', label: 'hidden', value: c.hidden === true, hint: 'not drawn, still there — a comp every client honours' },
-    { t: 'text', k: 'label', label: 'label', value: typeof c.label === 'string' ? c.label : '', placeholder: 'a name people see', hint: 'a display name (comp label) — the id never changes' },
+    { t: 'text', k: 'label', label: 'name', value: typeof c.label === 'string' ? c.label : '', placeholder: 'give it a name', hint: 'what people see; rename it freely — its id never changes' },
   ] });
 
   // look — the first user of the `ref` field: name ANOTHER entity for this one
@@ -382,7 +382,7 @@ const WIRE_BLOCKED = {
   // not added, from the Library (spawn on the same id)
   Model: (have, ent) => isLight(ent) ? 'this light was made with the light verb and cannot take a model — place the model, then add a Light to it' : 'swap the model from the Library',
   Structure: () => 'start a building from Create ▸ Structure',
-  Attachment: () => 'give it a parent: the Parent field above, or drag its row onto another in the Hierarchy',
+  Parent: () => 'give it a parent: drag its row onto another in the Hierarchy, or pick one in this card',
 };
 const MOTION_GROUP = { Pendulum: 1, Spin: 1, Orbit: 1, Bob: 1, Path: 1 };
 /** A library path as the inspector header shows it: the file stem, first three words. */
@@ -432,7 +432,7 @@ function componentSections(ent, groups, held, live = {}, id = '?') {
         else sec.info = [['shape', `${String(ent.collide)} (overridden by the collider component)`]];
         sec.removable = inst.key != null;
         break;
-      case 'Attachment': sec.info = [['on', `${ent.parent?.to}${ent.parent?.slot ? ` · ${ent.parent.slot}` : ''}`]]; sec.fields = refs('parent', (f) => f.k === 'unparent'); break;
+      case 'Parent': sec.info = ent.parent?.slot ? [['socket', String(ent.parent.slot)]] : []; sec.fields = refs('parent', (f) => f.k !== 'children'); break;   // children are the Hierarchy's (R, 10-04)   // the Parent card (R, 10-04: a component, named as engines name it)
       case 'Light':
         // keyless = the light-verb light (the light group is its); keyed = the
         // component: the group when it is the entity's light, raw JSON when a
@@ -475,7 +475,7 @@ function componentSections(ent, groups, held, live = {}, id = '?') {
       const blocked = (a.name === 'Guard' && live.mayAuthor === false ? 'only its placer or the world\'s owner can guard it' : null) ?? needsWhy ?? WIRE_BLOCKED[a.name]?.(have, ent) ?? null;
       return { ...a, blocked, ...(plan?.brings ? { brings: plan.brings } : {}), ...(plan?.choice?.options.length ? { asks: plan.choice.need } : {}) };
     });
-  for (const name of ['Model', 'Structure', 'Attachment']) if (!have.has(name) && !add.some((a) => a.name === name) && WIRE_BLOCKED[name])
+  for (const name of ['Model', 'Structure', 'Parent']) if (!have.has(name) && !add.some((a) => a.name === name) && WIRE_BLOCKED[name])
     add.push({ name, category: RECORDS[name].category, summary: RECORDS[name].summary, hash: RECORDS[name].hash, blocked: WIRE_BLOCKED[name](have, ent) });
   // the header's `lib` line reads the Model component (design §5), so it can
   // never disagree with the Model card; an Empty and a light say what they are

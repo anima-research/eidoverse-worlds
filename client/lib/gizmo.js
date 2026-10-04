@@ -57,7 +57,10 @@ function editable(id, mode) {
   const rec = foldRecord(id); const obj = entities.get(id);
   // v4: a lock doesn't stop the drag; the release asks the door, and a person who may lift it is asked (§5, R's dialog)
   const doorLocks = V4.isV4();
-  if (!rec || !obj || rec.parent || (!doorLocks && comps.get(id)?.lock)) return false;
+  // a thing riding another: three parents it (realize/models.js), so its position IS the local pose the schema's pos.*
+  // edit (→ one mount), the frame the mesh drag already uses. v1 keeps its rule; a part socket (a moving node) stays out.
+  const rides = !!rec?.parent;
+  if (!rec || !obj || (rides && (!doorLocks || obj.parent !== entities.get(rec.parent.to ?? rec.parent))) || (!doorLocks && comps.get(id)?.lock)) return false;
   const sc = inspectSchema(rec, id, { mayAuthor: mayAuthor(id), doorLocks });   // guarded by someone else → no handles
   const key = mode === 'rotate' ? 'rot.qw' : mode === 'scale' ? 'pos.scale' : 'pos.x';
   const f = fieldAt(sc, key);

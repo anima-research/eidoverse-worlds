@@ -205,7 +205,7 @@ for (const path of unique) {
   for (const [eid, ent] of Object.entries(st.entities ?? {}) as [string, any][]) {
     const { components, stamps } = componentsOf(ent);
     const placement: any = {};
-    const design = components.filter((c: any) => c.type !== 'Attachment' && c.type !== 'Captions').map((c: any) => {
+    const design = components.filter((c: any) => c.type !== 'Parent' && c.type !== 'Captions').map((c: any) => {
       if (c.type !== 'Transform') return c;
       const p = { ...c.params };
       for (const k of ['pos', 'q', 'yaw']) if (p[k] !== undefined) { placement[k] = p[k]; delete p[k]; }
@@ -249,7 +249,7 @@ for (const path of unique) {
   {
     const world = st.entities ?? {};
     const { roots, kids } = treeOf(world);
-    const strip = (comps: any[]) => comps.filter((c: any) => c.type !== 'Attachment' && c.type !== 'Captions');
+    const strip = (comps: any[]) => comps.filter((c: any) => c.type !== 'Parent' && c.type !== 'Captions');
     for (const rid of roots) {
       if (!kids.get(rid)?.length) continue;
       const placement: any = {};

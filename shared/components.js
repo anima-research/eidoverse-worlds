@@ -119,7 +119,7 @@ const DEFS = [
   { name: 'Seats', category: 'Interaction', needs: ['Model'], summary: 'places to sit or mount things',
     params: { slots: { t: 'list', of: 'seat', default: {}, hint: 'slot → {pos, yaw?, pose?, part?}' } },
     seat: { bodyDefault: [0, 0.5, 0], cargoDefault: [0, 0, 0], pose: 'sitchair' }, fallback: { text: 'sit/mount: <slots>' } },
-  { name: 'Attachment', category: 'Interaction', summary: 'rides on another entity (wire: parent, written by mount)',
+  { name: 'Parent', category: 'Interaction', summary: 'what it rides: its parent (wire: parent, written by mount)',
     params: { to: { t: 'ref', default: null, required: true }, slot: { t: 'text', default: null }, offset: { t: 'vec3', default: null }, yaw: { ...deg, default: null } },
     fallback: { text: 'on <to>' } },
   { name: 'Reactions', category: 'Interaction', needs: ['Pendulum'], summary: 'what a `use` does (today: a pendulum push)',
@@ -270,7 +270,7 @@ export function componentsOf(ent) {
   }
   if (ent.lib !== undefined) out.push({ type: 'Model', params: { lib: ent.lib } });
   if (ent.collide !== undefined) out.push({ type: 'Collider', params: { shape: ent.collide } });
-  if (ent.parent !== undefined) out.push({ type: 'Attachment', params: { ...ent.parent } });
+  if (ent.parent !== undefined) out.push({ type: 'Parent', params: { ...ent.parent } });
   const c = ent.comp ?? {};
   for (const key of Object.keys(c)) {
     const data = c[key];
@@ -348,7 +348,7 @@ export function entityOf({ components, stamps = {} }) {
       case 'Model': ent.lib = p.lib; break;
       // keyed = comp.collider (step 2); keyless = the spawn verb's legacy `collide`
       case 'Collider': if (inst.key != null) comp[inst.key] = compBag(inst); else ent.collide = p.shape; break;
-      case 'Attachment': ent.parent = { ...p }; break;
+      case 'Parent': ent.parent = { ...p }; break;
       case 'Lock': case 'Guard': case 'Hidden': comp[inst.key] = inst.wire?.value ?? true; break;
       case 'Label': comp[inst.key ?? 'label'] = p.text; break;
       case 'Pendulum': case 'Spin': case 'Orbit': case 'Bob': case 'Path': {

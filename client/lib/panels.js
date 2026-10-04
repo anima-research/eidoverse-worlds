@@ -173,7 +173,7 @@ export function renderDOM(body, fields, edit, ro = {}) {
   let folded = false;
   for (const f of fields) {
     let row = null;
-    if (f.t === 'group') { folded = f.open === false; row = fieldDOM(f, via, ro); }
+    if (f.t === 'group') { folded = f.open === false || !!f.vrOnly; row = f.vrOnly ? null : fieldDOM(f, via, ro); }   // a vrOnly group hides its rows too
     else if (!folded && !f.vrOnly) row = fieldDOM(f, via, ro);   // vrOnly: the quad's stand-in for a key the desktop has
     rows.push(row);
     if (row) body.append(row);
@@ -334,11 +334,70 @@ function stepper(value, f, commit) {
   return wrap;
 }
 
+let popOpen = null;
+function openPop(anchor, f, pick) {
+  popOpen?.close();
+  const LS = `ew-recent-${f.recentKey ?? 'pop'}`;
+  let recent = []; try { recent = JSON.parse(localStorage.getItem(LS) ?? '[]'); } catch { /* none */ }
+  const box = el('div', 'sp-pop');
+  Object.assign(box.style, { position: 'fixed', zIndex: 10000, width: '260px', maxHeight: '360px', display: 'flex', flexDirection: 'column',
+    background: 'var(--panel, #2a2a2a)', border: '1px solid var(--line, #555)', borderRadius: '6px', boxShadow: '0 6px 24px rgba(0,0,0,.45)', padding: '6px' });
+  const r = anchor.getBoundingClientRect();
+  box.style.left = `${Math.max(8, Math.min(r.left, innerWidth - 268))}px`;
+  box.style.top = `${Math.max(8, Math.min(r.bottom + 4, innerHeight - 368))}px`;
+  const inp = el('input', 'sp-pop-search'); inp.type = 'search'; inp.placeholder = 'search components…';
+  Object.assign(inp.style, { width: '100%', boxSizing: 'border-box', marginBottom: '6px' });
+  const list = el('div', 'sp-pop-list'); Object.assign(list.style, { overflowY: 'auto', flex: '1' });
+  box.append(inp, list);
+  const items = f.items ?? [];
+  const take = (it) => {
+    if (it.disabled) return;
+    try { localStorage.setItem(LS, JSON.stringify([it.k, ...recent.filter((k) => k !== it.k)].slice(0, 5))); } catch { /* fine */ }
+    close(); pick(it.k);
+  };
+  let shown = [];
+  const paint = () => {
+    const q = inp.value.trim().toLowerCase();
+    list.textContent = '';
+    const hit = (it) => !q || it.label.toLowerCase().includes(q) || String(it.hint ?? '').toLowerCase().includes(q);
+    // a name hit ranks above a description hit ("swi" finds Pendulum by its "swings")
+    const ranked = items.filter(hit).sort((a, b) => (q ? (b.label.toLowerCase().includes(q) - a.label.toLowerCase().includes(q)) : 0));
+    const groups = [];
+    if (!q) { const rec = recent.map((k) => items.find((it) => it.k === k)).filter(Boolean); if (rec.length) groups.push(['recent', rec]); }
+    for (const cat of [...new Set(ranked.map((it) => it.category ?? ''))]) groups.push([cat, ranked.filter((it) => (it.category ?? '') === cat)]);
+    shown = q ? ranked : groups.flatMap(([, xs]) => xs);
+    for (const [cat, xs] of groups) {
+      if (cat && !q) { const h = el('div', 'sp-pop-cat', cat); Object.assign(h.style, { opacity: '.6', fontSize: '.8em', margin: '6px 4px 2px', textTransform: 'uppercase' }); list.append(h); }
+      for (const it of xs) {
+        const row = el('button', 'sp-btn sp-pop-item', it.label);
+        Object.assign(row.style, { display: 'block', width: '100%', textAlign: 'left', margin: '1px 0' });
+        row.title = it.hint ?? ''; row.disabled = !!it.disabled;
+        row.onclick = () => take(it);
+        list.append(row);
+      }
+    }
+    if (!shown.length) list.append(el('div', 'sp-empty', `nothing matches "${inp.value}"`));
+  };
+  const onDoc = (e) => { if (!box.contains(e.target)) close(); };
+  const close = () => { box.remove(); document.removeEventListener('pointerdown', onDoc, true); if (popOpen?.box === box) popOpen = null; };
+  inp.oninput = paint;
+  inp.onkeydown = (e) => {
+    e.stopPropagation();   // typing here is not a shortcut (G/E/R, Delete…)
+    if (e.key === 'Escape') close();
+    if (e.key === 'Enter') { const it = shown.find((x) => !x.disabled); if (it) take(it); }
+  };
+  document.addEventListener('pointerdown', onDoc, true);
+  document.body.append(box);
+  popOpen = { box, close };
+  paint(); inp.focus();
+}
+
 function fieldDOM(f, edit, ro = {}) {
   const row = el('div', `sp-row sp-f-${f.t}`);   // sp-f- prefix: never collide with element classes
   const ax = /(?:^|:)(?:pos|rot|scale)\.([xyz])$/.exec(f.k ?? '');
   if (ax) row.dataset.axis = ax[1];   // the channel's axis: edit chrome colours its label x/y/z
   if (f.disabled) row.classList.add('disabled');
+  if (f.dim) { row.style.opacity = '0.55'; row.style.fontSize = '0.9em'; }   // secondary: an id beside its name
   if (f.driven) { row.classList.add('driven'); row.title = `driven by ${f.driven} — editing moves its rest pose`; }
   else if (f.hint) row.title = f.hint;
   let label = null;
@@ -559,6 +618,16 @@ function fieldDOM(f, edit, ro = {}) {
       row.update = (nf) => { setLabel(nf); base = nf.value ?? ''; if (document.activeElement !== inp) inp.value = base; };
       break;
     }
+    case 'pop': {
+      // one button that opens a searchable list (Add Component, R 10-04): {label, items:[{k, label, category, hint,
+      // disabled}], recentKey}. Typing filters on name and hint, Enter takes the first, Esc or a click outside closes.
+      const b = el('button', 'sp-btn sp-pop-btn', f.label);
+      b.title = f.hint ?? '';
+      b.onclick = (e) => { e.stopPropagation(); openPop(b, f, (k) => edit(k)); };
+      row.append(b);
+      row.update = (nf) => { b.textContent = nf.label; f = nf; };
+      break;
+    }
     case 'btn': {
       const b = el('button', `sp-btn${f.danger ? ' danger' : ''}${f.icon ? ' sp-btn-ico' : ''}`);
       const txt = el('span', '', f.label);
@@ -727,7 +796,7 @@ export function renderCanvas(canvas, fields, { width = 512, rowH = 44, pad = 12,
   let folded = false;
   for (const f of fields) {
     if (f.t === 'group') { folded = f.open === false; rows.push(f); continue; }
-    if (folded) continue;
+    if (folded || f.deskOnly) continue;
     rows.push(f, ...(f.t === 'list' || f.t === 'tree' ? (f.rows ?? []).map((r) => ({ _row: r, parent: f })) : []));
   }
   C = tokens();

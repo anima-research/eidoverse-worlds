@@ -56,7 +56,7 @@ const INST_KEYS = new Set(['type', 'key', 'params', 'wire', 'extra']);
 // Types a blueprint node may not hold: the nesting IS the attachment, captions
 // are server-written (the caption verb), and the world's records are the world's.
 const NOT_IN_A_BLUEPRINT = {
-  Attachment: 'a node is attached by nesting it under its parent, not by an Attachment',
+  Parent: 'a node is attached by nesting it under its parent, not by a Parent component',
   Captions: 'captions are written by the caption verb, never authored',
 };
 const PLACEMENT = ['pos', 'q', 'yaw'];
@@ -176,7 +176,7 @@ function designOf(components, isRoot) {
   let placement = null;
   const comps = [];
   for (const c of components ?? []) {
-    if (c.type === 'Attachment') continue;
+    if (c.type === 'Parent') continue;
     if (c.type === 'Annotation' && (c.key ?? c.params?.type) === 'blueprint') continue;
     if (c.type === 'Transform' && isRoot) {
       const p = { ...(c.params ?? {}) };
