@@ -115,7 +115,7 @@ ok(vic.of("log").some((m) => m.entry.verb === "spawn" && m.entry.args.id === "cu
   "S2 another client is sent v1 spawn + mount (it folds v1)", vic.of("log").map((m) => m.entry.verb));
 ok(vic.of("v4-log").length >= 2, "S2 …and the raw v4 entries (v4-log) for clients that read v4");
 { const m = vic.of("log").find((x) => x.entry.verb === "mount" && x.entry.args.id === "cup")?.entry.args; const loc = fold(readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl")))).entities.cup.c.transform.pos;
-  ok(m && Math.abs(m.offset[0] - loc[0]) < 1e-9 && Math.abs(m.offset[2] - loc[2]) < 1e-9 && Math.abs(m.offset[2]) < 0.5, "S2 the mount's offset is the door's LOCAL transform (the table stands at z = 3; the cup's offset is near 0)", [m?.offset, loc]); }
+  ok(Array.isArray(m?.offset) && Math.abs(m.offset[0] - loc[0]) < 1e-9 && Math.abs(m.offset[2] - loc[2]) < 1e-9 && Math.abs(m.offset[2]) < 0.5, "S2 the mount's offset is the door's LOCAL transform (the table stands at z = 3; the cup's offset is near 0)", [m?.offset, loc]); }
 
 ok((await ann.req("set", { id: "tbl", component: "pinned", value: true })).ok, "S3 Ann pins the table");
 const mv = await bob.req("set", { id: "cup", component: "transform", value: { pos: [0.2, 0.75, 0] } });
