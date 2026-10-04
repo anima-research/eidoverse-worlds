@@ -24,7 +24,7 @@ import { summarizeGlb } from "./geometry.ts";
 // the registry (§15, 7c). The boot sweep below stays HERE: waking scripted
 // worlds with the server is boot policy, not world mechanics.
 import { World, type Client, worlds, getWorld, wireSettledPose, wireV4 } from "./world.ts";
-import { v4Handler } from "./v4/messages.ts";
+import { v4Handler, actorOf as v4ActorOf } from "./v4/messages.ts";
 import { warmBoxes, worldLibs } from "./boxes.ts";
 // The HTTP surface — one route table, /upload behind it in upload.ts (§15,
 // 7c). fetch() below delegates; avatarRoster rides back for the join
@@ -160,7 +160,8 @@ wireSettledPose(settledPose);
 // v4 worlds (protocol/v4 slice 2, server/v4/): a change the projection can't spell as v1 verbs re-sends the
 // snapshot itself (the reconnect path), and a role change re-sends everyone's rights, as afterGrant does for v1.
 wireV4(
-  (w) => { for (const c of w.clients) { try { c.ws.send(JSON.stringify(buildSnapshot(w, c))); } catch (err) { w.debug("v4-resync-error", { who: c.id, error: String(err) }); } } },
+  // a client that folds v4 itself (slice 3b) never needs the projection's resync: it re-hydrates from its own fold
+  (w) => { for (const c of w.clients) { if (c.v4fold) continue; try { c.ws.send(JSON.stringify(buildSnapshot(w, c))); } catch (err) { w.debug("v4-resync-error", { who: c.id, error: String(err) }); } } },
   (w) => { for (const c of w.clients) { try { c.ws.send(JSON.stringify({ type: "your-rights", rights: { ...rightsOf(w.state, c.id, c.sub), open: !worldHasOwner(w.state) } })); } catch { /* gone */ } } },
 );
 
@@ -168,7 +169,13 @@ wireV4(
 // entry reaches these, uniformly, in this order — the wire's seq stream
 // first, then the scripts. Future systems (seats, recorders, the sim core)
 // subscribe here instead of teaching another append site to fan out.
-onEntryCommitted("client-fanout", (w, entry) => w.broadcast({ type: "log", entry }));
+onEntryCommitted("client-fanout", (w, entry) => {
+  // in a v4 world the `log` entries are the compatibility projection: a client that folds v4 (slice 3b) derives its
+  // own from the `v4-log` stream, so it never gets them. v1 worlds broadcast exactly as before.
+  if (!w.v4) { w.broadcast({ type: "log", entry }); return; }
+  const data = JSON.stringify({ type: "log", entry });
+  for (const c of w.clients) if (!c.v4fold) c.ws.send(data);
+});
 onEntryCommitted("behaviors", (w, entry) => w.bhv.onEntry(entry));
 
 // ------------------------------------------------------------------ presence
@@ -645,7 +652,7 @@ function buildSnapshot(w: World, c: Client) {
         .map(x => ({ surface: x.surface, gen: x.gen })),
       recording: RECORD,
       // a v4 world says so (agents route their tools through {type: "v4"} requests; slice 2)
-      ...(w.v4 ? { v4: w.v4.info() } : {}),
+      ...(w.v4 ? { v4: { ...w.v4.info(), ...(c.v4fold ? w.v4.clientCut(v4ActorOf(c)) : {}) } } : {}),
       // The world as it is, then only what has happened since. A joiner's
       // cost is now the size of the WORLD, not the length of its history.
       state: jp.state,
@@ -815,6 +822,8 @@ const server = Bun.serve({
           }
           const w = admitJoin(c, ws, msg, auth);
           if (!w) return;
+          // protocol/v4 slice 3b: a client that says it folds v4 gets the v4 cut and the v4-log stream, and no projection
+          c.v4fold = msg.v4fold === true;
           installJoin(c, w);
           ws.send(JSON.stringify(buildSnapshot(w, c)));
           sendGeomFollowup(w, c);

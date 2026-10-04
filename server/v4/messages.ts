@@ -15,16 +15,12 @@
 // Requests from one client run in order: an async warm-up (measuring a model) never lets a later request overtake an
 // earlier one (the same per-client queue the v1 verb path uses).
 import type { Client, World } from "../world.ts";
-import { enc, encName } from "../../shared/v4/names.js";
-import { qNorm } from "../../shared/rot.js";
+import { enc } from "../../shared/v4/names.js";
+import { toV4 as toV4At } from "../../shared/v4/fromv1.js";
 
 type Ctx = { c: Client; ws: { send(d: string): void }; now: number; expel: unknown };
 type Any = any;
 const READS = new Set(["look", "inspect", "measure", "find", "check", "history", "schema", "help", "wait"]);
-const yawQ = (y: number) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
-const s3 = (s: unknown) => (typeof s === "number" && Number.isFinite(s) ? [s, s, s] : Array.isArray(s) && s.length === 3 ? s : undefined);
-const qOf = (a: Any) => qNorm(a?.q) ?? (Number.isFinite(a?.yaw) ? yawQ(a.yaw) : undefined);
-
 /** The identity the door stamps for this connection (names.js: the same encoding the translator gives old logs). */
 export const actorOf = (c: Client) => enc(c.id);
 
@@ -38,68 +34,8 @@ function inOrder(c: Client, ws: Ctx["ws"], fn: () => Promise<void>) {
   void tail.then(() => { if (c.verbQueue === tail) c.verbQueue = undefined; });
 }
 
-/** A v1 verb as a door request, or a refusal reason. Ids and component names go through names.js. */
-export function toV4(w: World, verb: string, a: Any): { tool: string; args: Any } | { refuse: string } | { noop: true } {
-  const st = w.v4!.live.state();
-  const id = (s: unknown) => enc(String(s ?? ""));
-  const has = (x: string) => !!st.entities[x];
-  const tf = (x: Any, cur?: Any) => ({ ...(cur ?? {}), ...(Array.isArray(x.pos) ? { pos: x.pos } : {}), ...(qOf(x) ? { q: qOf(x) } : {}), ...(s3(x.scale) ? { scale: s3(x.scale) } : {}) });
-  switch (verb) {
-    case "spawn":
-      return { tool: "create", args: { id: id(a.id), ...(typeof a.lib === "string" && a.lib ? { model: a.lib } : {}), components: { transform: tf(a) } } };
-    case "place": {
-      const e = st.entities[id(a.id)];
-      if (e?.c.parent) return { refuse: `${a.id} rides ${e.c.parent.to}: move it relative to it (mount with an offset), or detach it first` };
-      return { tool: "set", args: { id: id(a.id), component: "transform", value: tf(a, e?.c.transform) } };
-    }
-    case "remove": return { tool: "delete", args: { id: id(a.id) } };
-    case "comp": {
-      if (typeof a.type !== "string") return { refuse: "comp needs a type" };
-      // §5: `lock` is v1's lock, the same component with the same meaning (the identity). `guard` merged into it; an
-      // old UI's guard toggle is refused with that reason rather than silently becoming a lock someone didn't ask for.
-      if (a.type === "guard") return { refuse: "in a v4 world `guard` is merged into `lock` (PROTOCOL-v4 §5): lock it instead (any builder may unlock it)" };
-      const comp = encName(a.type);
-      if (a.data == null) return has(id(a.id)) && comp in (st.entities[id(a.id)].c) ? { tool: "delete", args: { id: id(a.id), component: comp } } : { noop: true };
-      return { tool: "set", args: { id: id(a.id), component: comp, value: a.type === "lock" ? true : a.data } };
-    }
-    case "motion": {
-      const { id: _i, ...m } = a ?? {};
-      if (m.type == null) return has(id(a.id)) && "motion" in st.entities[id(a.id)].c ? { tool: "delete", args: { id: id(a.id), component: "motion" } } : { noop: true };
-      return { tool: "set", args: { id: id(a.id), component: "motion", value: m } };
-    }
-    case "mount": {
-      if (!a?.to) return { refuse: "mount needs to" };
-      const cur = st.entities[id(a.id)]?.c.transform;
-      // v1 reads a mount as the renderer does: at the offset, else the named socket's pos (and its yaw), else the
-      // carrier's origin (shared/hierarchy.js localOf; translate-v1@2 writes old mounts the same way)
-      const socks = st.entities[id(a.to)]?.c.sockets; const sock = typeof a.slot === "string" && socks && typeof socks === "object" && Object.hasOwn(socks, a.slot) ? socks[a.slot] : null;
-      const slot = typeof a.slot === "string" && a.slot ? { slot: a.slot } : {};
-      return { tool: "batch", args: { ops: [
-        { tool: "set", args: { id: id(a.id), component: "parent", value: { to: id(a.to), ...slot } } },
-        { tool: "set", args: { id: id(a.id), component: "transform", value: { ...(cur ?? {}), pos: Array.isArray(a.offset) ? a.offset : Array.isArray(sock?.pos) ? sock.pos : [0, 0, 0],
-          q: qOf(a) ?? (Number.isFinite(sock?.yaw) ? yawQ(sock.yaw) : [0, 0, 0, 1]) } } }] } };
-    }
-    case "dismount": {
-      const ops: Any[] = [{ tool: "delete", args: { id: id(a.id), component: "parent" } }];
-      if (Array.isArray(a.pos)) ops.push({ tool: "set", args: { id: id(a.id), component: "transform", value: tf(a, st.entities[id(a.id)]?.c.transform) } });
-      return { tool: "batch", args: { ops } };
-    }
-    case "light": {
-      const L = Object.fromEntries(["color", "intensity", "range", "keep", "day"].filter((k) => a[k] !== undefined).map((k) => [k, a[k]]));
-      if (has(id(a.id))) return { tool: "batch", args: { ops: [
-        { tool: "set", args: { id: id(a.id), component: "light", value: L, merge: true } },
-        ...(Array.isArray(a.pos) ? [{ tool: "set", args: { id: id(a.id), component: "transform", value: { pos: a.pos } } }] : [])] } };
-      return { tool: "create", args: { id: id(a.id), components: { transform: { pos: Array.isArray(a.pos) ? a.pos : [0, 1, 0] }, light: L } } };
-    }
-    case "say": return { tool: "say", args: { text: String(a?.text ?? ""), ...(a?.to ? { to: id(a.to) } : {}) } };
-    case "use": return { tool: "use", args: { id: id(a.id), ...(a.action ? { action: String(a.action) } : {}), ...(a.args ? { args: a.args } : {}) } };
-    case "grant":
-      if (!a?.role) return { refuse: "in a v4 world a grant sets a role (gen, fly and caption deeds aren't v4 components yet)" };
-      return { tool: "set", args: { id: "@world", component: `roles:${id(a.id)}`, value: { role: String(a.role) } } };
-    default:
-      return { refuse: `'${verb}' has no v4 request yet in this world (slice 2 maps spawn, place, remove, comp, motion, mount, dismount, light, say, use, grant)` };
-  }
-}
+/** A v1 verb as a door request (shared/v4/fromv1.js), against this world's current fold. */
+export const toV4 = (w: World, verb: string, a: Any) => toV4At(w.v4!.live.state(), verb, a) as { tool: string; args: Any } | { refuse: string } | { noop: true };
 
 const refusalText = (r: Any) => `${r.refused?.reason ?? "refused"}${r.refused?.teach ? ` — ${r.refused.teach}` : ""}`;
 

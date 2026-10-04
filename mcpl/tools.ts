@@ -21,6 +21,7 @@
 // Everything else in here talks only to the WorldAgent and the sequencer's
 // HTTP surface, which is exactly what makes it transport-agnostic.
 
+import { refusalText } from "../shared/v4/refusal.js";
 import { readdirSync } from "node:fs";
 import sharp from "sharp";
 import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, mergePose } from "../shared/humanoid.js";
@@ -240,7 +241,8 @@ export async function snapshotTool(ag: ToolAgent, view = "first") {
 
 const text = (t: string) => ({ content: [{ type: "text", text: t }] });
 /** A v4 door's refusal as a tool error: the code, why, and what to do instead. */
-const refusedBy = (r: any, what: string) => ({ content: [{ type: "text", text: `${what} refused by the door (${r.refused?.code ?? "refused"}): ${r.refused?.reason ?? ""}${r.refused?.teach ? ` — ${r.refused.teach}` : ""}` }], isError: true });
+// the same words a person in edit mode sees for the same refusal (shared/v4/refusal.js)
+const refusedBy = (r: any, what: string) => ({ content: [{ type: "text", text: refusalText(what, r) }], isError: true });
 // Refused at dispatch too, not merely hidden: a pilot who learned the name
 // off a bench must not be able to fire the trusted seam here.
 const rehearse = (ag: ToolAgent, a: Record<string, any>, name: string) => {

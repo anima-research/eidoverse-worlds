@@ -24,7 +24,8 @@ import { WORLDS_DIR } from "../config.ts";
 import { atomicWrite } from "../fsutil.ts";
 import { emptySim } from "../../shared/sim.js";
 import type { LogEntry, WorldState } from "../../shared/fold.js";
-import { request as doorRequest } from "../../shared/v4/door.js";
+import { request as doorRequest, actIndexOf } from "../../shared/v4/door.js";
+import { stateView } from "../../shared/v4/client.js";
 import { legacyState, legacyDelta, foldLegacy, legacyDiff } from "../../shared/v4/legacy.js";
 import { dec } from "../../shared/v4/names.js";
 import { openLive, isV4Dir } from "./live.ts";
@@ -43,6 +44,9 @@ export type V4Host = {
   resync(): void;                          // a fresh snapshot to every client (server.ts's buildSnapshot)
   rightsChanged(): void;                   // tell every client its rights again
   debug(kind: string, detail: Record<string, unknown>): void;
+  /** Does any client in the world still read the compatibility projection? (A client that folds v4 itself, slice 3b,
+   *  doesn't: it derives its own from the v4-log stream.) Absent = yes. */
+  projectionWanted?(): boolean;
 };
 
 export class V4Log {
@@ -62,7 +66,7 @@ export class V4Log {
   private posesPath: string;
   private host: V4Host | null = null;
   /** counters, for /tick-style inspection and the tests */
-  stats = { requests: 0, writes: 0, projected: 0, resyncs: 0 };
+  stats = { requests: 0, writes: 0, projected: 0, resyncs: 0, skipped: 0 };
 
   constructor(name: string) {
     this.name = name;
@@ -101,11 +105,24 @@ export class V4Log {
     return r;
   }
 
-  /** Publish what the door just wrote: the raw v4 entries, then the projection's v1 verbs (checked), or a resync. */
+  /** Publish what the door just wrote: the raw v4 entries, then the projection's v1 verbs (checked), or a resync.
+   *  Slice 3b: when every client in the world folds v4 itself, no projection is computed at all; the next client
+   *  that needs one gets a fresh one at join (joinPayload). */
+  private stale = false;
   private afterWrite(from: number) {
     this.stats.writes++;
     const fresh = this.live.entries.slice(from);
     this.host?.broadcast({ type: "v4-log", world: this.name, from, entries: fresh });
+    if (this.host?.projectionWanted && !this.host.projectionWanted()) {
+      // the chat window stays current (a later joiner that reads the projection gets it); entities wait for freshen()
+      const says = fresh.filter((e: Any) => e?.kind === "say").map((e: Any) => ({ seq: e.seq * 1000, ts: e.ts, actor: idOut(e.actor), verb: "say", args: { text: String(e.body?.text ?? ""), ...(e.body?.to ? { to: idOut(String(e.body.to)) } : {}) } } as LogEntry));
+      if (says.length) { this.state = foldLegacy(this.state, says); for (const e of says) this.record(e); }
+      this.stale = true; this.stats.skipped++;
+      const roles = (e: Any) => { try { return e?.kind === "state" && opsOf(e).some((o: Any) => o.id === "@world" && String(o.comp ?? "").startsWith("roles:")); } catch { return false; } };
+      if (fresh.some(roles)) this.host?.rightsChanged();
+      return;
+    }
+    if (this.stale) this.freshen();
     const last = fresh[fresh.length - 1];
     const ts = Number.isInteger(last?.ts) ? last.ts : Date.now();
     const actorOf = idOut(String(fresh.find((e: Any) => e?.kind === "act" || e?.kind === "say")?.actor ?? last?.actor ?? "world"));
@@ -152,7 +169,19 @@ export class V4Log {
     const oldest = out.length ? out[0].seq : null;
     return { entries: out, oldestSeq: oldest, hasMore: false };
   }
-  joinPayload() { return { state: this.state, tail: [] as LogEntry[], throughSeq: this.snapSeq }; }
+  /** Bring a skipped projection up to date (chat from the recorded says), before anyone reads it again. */
+  private freshen() {
+    this.state = { ...this.project(), recentChat: this.state.recentChat, chatTotal: this.state.chatTotal } as WorldState;
+    this.stale = false;
+  }
+  joinPayload() { if (this.stale) this.freshen(); return { state: this.state, tail: [] as LogEntry[], throughSeq: this.snapSeq }; }
+  /** Slice 3b: what a client that folds v4 adopts at join: the fold itself (shared/v4/client.js stateView), its head,
+   *  and the asker's own acts that undo could still take back (newest last), so Ctrl+Z survives a reload. */
+  clientCut(actor: string) {
+    const X = actIndexOf(this.live); const E = this.live.entries;
+    const mine = (X.actsOf.get(actor) ?? []).filter((q: number) => !["undo", "new", "throw", "drop", "leave", "move", "grab"].includes(E[q].verb) && !X.undone.has(q) && X.resultOf.has(q)).slice(-40);
+    return { state: stateView(this.live.state()), head: this.head, mine };
+  }
   rememberPose(id: string, pose: unknown, settle: (p: unknown) => unknown) {
     if (!pose) return;
     this.poses[id] = settle(pose);
@@ -166,7 +195,7 @@ export class V4Log {
 import { translate } from "../../shared/v4/translate-v1.js";
 import { v1FoldBuild } from "./build.ts";
 import { enc } from "../../shared/v4/names.js";
-import { readLog, fold, digest } from "../../shared/v4/fold.js";
+import { readLog, fold, digest, opsOf } from "../../shared/v4/fold.js";
 
 /** Found a new v4 world in `dir` (which must not hold a world): genesis + the founding act, through the door. */
 export function foundV4(dir: string, name: string, owner: string, title?: string, now?: () => number) {
