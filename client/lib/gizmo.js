@@ -55,8 +55,10 @@ const MODE = { move: 'translate', rotate: 'rotate', scale: 'scale' };
  *  thing's transform is read-only; a light has no orientation or scale to drag. */
 function editable(id, mode) {
   const rec = foldRecord(id); const obj = entities.get(id);
-  if (!rec || !obj || rec.parent || comps.get(id)?.lock) return false;
-  const sc = inspectSchema(rec, id, { mayAuthor: mayAuthor(id) });   // guarded by someone else → no handles
+  // v4: a lock doesn't stop the drag; the release asks the door, and a person who may lift it is asked (§5, R's dialog)
+  const doorLocks = V4.isV4();
+  if (!rec || !obj || rec.parent || (!doorLocks && comps.get(id)?.lock)) return false;
+  const sc = inspectSchema(rec, id, { mayAuthor: mayAuthor(id), doorLocks });   // guarded by someone else → no handles
   const key = mode === 'rotate' ? 'rot.qw' : mode === 'scale' ? 'pos.scale' : 'pos.x';
   const f = fieldAt(sc, key);
   return !!f && !f.disabled;
@@ -111,7 +113,7 @@ function endDrag() {
   const mode = { translate: 'move', rotate: 'rotate', scale: 'scale' }[controls.mode];
   const o = obj.quaternion;
   const set = poseEdits(rec, id, mode, { pos: obj.position.toArray(), q: [o.x, o.y, o.z, o.w], scale: obj.scale.x });
-  const { verbs, errors } = editVerbs(rec, id, set);
+  const { verbs, errors } = editVerbs(rec, id, set, V4.isV4() ? { doorLocks: true } : undefined);   // v4: the door asks about locks
   if (errors.length || !verbs.length) { start = null; return; }
   if (V4.isV4()) {   // presence until now; the release is ONE request, expecting where the drag started
     const what = `${controls.mode === 'translate' ? 'move' : controls.mode === 'rotate' ? 'turn' : 'size'} ${id}`;

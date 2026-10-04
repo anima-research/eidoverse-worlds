@@ -74,7 +74,9 @@ export function liveFor(id) {
     euler: eulerHint(id, foldRecord(id)),
     // the hierarchy reads the whole fold: a child's local pose, its parent's
     // socket, the Parent field's children, and the in-place parenting maths
-    world: state.st.entities ?? {}, mayAuthorOf: (x) => (state.st.entities?.[x] ? mayAuthor(x) : undefined) };
+    world: state.st.entities ?? {}, mayAuthorOf: (x) => (state.st.entities?.[x] ? mayAuthor(x) : undefined),
+    // a v4 world: locks are the door's to refuse and the person's to answer (This is locked. Move anyway?)
+    ...(V4.isV4() ? { doorLocks: true } : {}) };
 }
 // The world entity `@world` (design §3, shared/worldentity.js): an alias of
 // state.sky/terrain/grass, edited through the sky/weather/terrain/grass verbs.

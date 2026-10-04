@@ -1800,6 +1800,7 @@ body.edit-workspace .frame.docked input[type=text], body.edit-workspace .frame.d
 .frame.edit .sp-tree .sp-mini:not(.on) { visibility: hidden; }
 .frame.edit .sp-tree-row:hover .sp-mini, .frame.edit .sp-tree .sp-mini:focus-visible { visibility: visible; }
 .frame.edit .sp-tree .sp-mini.on { color: var(--e-accent); background: none; }
+.frame.edit .sp-tree .sp-lock:disabled { cursor: default; opacity: .55; background: none; }
 .frame.edit .sp-tree .sp-mini:hover { background: var(--e-hover); }
 .frame.edit .sp-empty { color: var(--e-dim); font-style: normal; }
 body.edit-workspace [data-frame="emotes"] { display: none !important; }
@@ -2256,6 +2257,8 @@ try { const o = JSON.parse(localStorage.getItem('ew-style-tokens') || '{}');
 #confirm-center .cc-btns button { min-height: 34px; padding: 0 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
 #confirm-center .cc-no { background: var(--chip); color: var(--fg); border: 1px solid var(--edge); }
 #confirm-center .cc-ok { background: var(--brand-deep); color: var(--ink-on-brand, var(--bg)); border: 1px solid var(--brand); font-weight: 600; }
+#confirm-center .cc-alt { background: var(--chip); color: var(--fg); border: 1px solid var(--edge); }
+#confirm-center .cc-btns.cc-many { flex-wrap: wrap; }
 
 /* ---------------------------------------------------------------- lite client
    The renderer-free surface (client/lite.js). It shares the token sheet above and

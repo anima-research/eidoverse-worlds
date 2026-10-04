@@ -91,6 +91,9 @@ export function inspectSchema(ent, id, live = {}) {
   const c = ent.comp ?? {};
   const mounted = !!ent.parent;
   const locked = !!c.lock;
+  // live.doorLocks (a v4 world): a lock doesn't make the pose read-only here; the door refuses the move and a person who
+  // may lift the lock is asked "This is locked. Move anyway?" (PROTOCOL-v4 §5). v1 and agents' schemas are unchanged.
+  const binds = locked && !live.doorLocks;
   // the pose the channel box shows and edits: a child's is LOCAL to its parent
   // (design §3) — the mount's offset and relative q, as the renderer realizes
   // it — never the fold's pre-mount pos, which nothing draws while it rides
@@ -109,7 +112,7 @@ export function inspectSchema(ent, id, live = {}) {
   // stays the child's own, so it is still a `place`). Only a part socket's
   // rider is read-only: its pose is baked at the moving part's phase.
   const partRide = mounted && L.part;
-  const tf = { disabled: locked || !!partRide, hint: locked ? 'locked — unlock to move it' : partRide ? `rides ${ent.parent.to}'s moving part ${L.part} — its pose is set where it mounted; unparent and parent it again to move it` : undefined };
+  const tf = { disabled: binds || !!partRide, hint: binds ? 'locked — unlock to move it' : locked ? 'locked — moving it asks first' : partRide ? `rides ${ent.parent.to}'s moving part ${L.part} — its pose is set where it mounted; unparent and parent it again to move it` : undefined };
   const pos = pv.pos ?? [0, 0, 0];
   const transform = [
     { t: 'num', k: 'x', label: 'translate x', value: round(pos[0]), step: 0.1, dp: 2, unit: 'm', ...tf },
@@ -154,10 +157,10 @@ export function inspectSchema(ent, id, live = {}) {
   // The same edit the Hierarchy's drag commits, so a headset and an agent can.
   const kids = live.world ? childrenOf(live.world, id) : null;
   groups.push({ group: 'parent', label: 'Parent', verb: 'mount', fields: [
-    { t: 'ref', k: 'to', label: 'parent', value: mounted ? ent.parent.to : null, ...(locked ? { disabled: true, hint: 'locked — unlock to move it' } : {}),
-      hint: locked ? 'locked — unlock to move it' : 'pick its new parent — a row, or the thing itself in the world; it stays where it stands. Clear it to make it a root' },
+    { t: 'ref', k: 'to', label: 'parent', value: mounted ? ent.parent.to : null, ...(binds ? { disabled: true, hint: 'locked — unlock to move it' } : {}),
+      hint: binds ? 'locked — unlock to move it' : 'pick its new parent — a row, or the thing itself in the world; it stays where it stands. Clear it to make it a root' },
     ...(kids ? [{ t: 'info', k: 'children', label: 'children', value: kids.length ? kids.join(', ') : 'none' }] : []),
-    ...(mounted ? [{ t: 'btn', k: 'unparent', label: 'unparent', ...(locked ? { disabled: true, hint: 'locked — unlock to move it' } : { hint: 'make it a root, where it stands' }) }] : []),
+    ...(mounted ? [{ t: 'btn', k: 'unparent', label: 'unparent', ...(binds ? { disabled: true, hint: 'locked — unlock to move it' } : { hint: 'make it a root, where it stands' }) }] : []),
   ] });
 
   const flags = [];
@@ -722,7 +725,7 @@ export function editVerbs(ent, id, edits, live = {}) {
         if (k !== 'to' && k !== 'unparent') { errors.push(`${key}: no such field`); break; }
         if (!live.world) { errors.push(`${key}: parenting needs the world's records (live.world)`); break; }
         if (parented) { errors.push(`${key}: one parent edit at a time`); break; }
-        const r = parentVerbs(live.world, id, k === 'unparent' ? null : raw, { mayAuthor: live.mayAuthorOf });
+        const r = parentVerbs(live.world, id, k === 'unparent' ? null : raw, { mayAuthor: live.mayAuthorOf, doorLocks: live.doorLocks });
         errors.push(...r.errors);
         if (!r.errors.length) parented = r;
         break;

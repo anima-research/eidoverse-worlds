@@ -13,7 +13,7 @@ let open = null;   // { root, settle }
 
 export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' } = {}) {
   if (typeof document === 'undefined') return Promise.resolve(false);
-  open?.settle(false);
+  open?.settle(open.cancel ?? false);
   return new Promise((resolve) => {
     const root = document.createElement('div');
     root.id = 'confirm-center';
@@ -53,3 +53,49 @@ export function confirmCenter({ title, body = '', ok = 'OK', cancel = 'Cancel' }
 }
 
 export const confirmOpen = () => !!open;
+
+/** The same centre card with more than two answers (the v4 lock question: ✓ Move anyway / ✕ Cancel / 🔓 Unlock).
+ *  choices: [{v, label}], in the order shown; `cancel` is the v that Esc and the backdrop answer (and Enter on it).
+ *  The first choice has focus (the house yes); Tab walks the buttons. Resolves with the chosen v. Same one-at-a-time
+ *  rule: asking again answers the open one with its cancel. */
+export function chooseCenter({ title, body = '', choices = [], cancel = null } = {}) {
+  if (typeof document === 'undefined' || !choices.length) return Promise.resolve(cancel);
+  open?.settle(open.cancel ?? false);
+  return new Promise((resolve) => {
+    const root = document.createElement('div');
+    root.id = 'confirm-center';
+    root.innerHTML = '<div class="cc-card panel" role="alertdialog" aria-modal="true" aria-labelledby="cc-title" aria-describedby="cc-body">'
+      + '<b id="cc-title"></b><p id="cc-body"></p><div class="cc-btns cc-many"></div></div>';
+    root.querySelector('#cc-title').textContent = title;
+    root.querySelector('#cc-body').textContent = body;
+    if (!body) root.querySelector('#cc-body').remove();
+    const box = root.querySelector('.cc-btns');
+    const btns = choices.map((c, i) => {
+      const b = document.createElement('button'); b.type = 'button';
+      b.className = i === 0 ? 'cc-ok' : c.v === cancel ? 'cc-no' : 'cc-alt';
+      b.textContent = c.label; b.dataset.v = String(c.v);
+      b.addEventListener('click', () => settle(c.v));
+      box.append(b); return b;
+    });
+    const before = document.activeElement;
+    const onKey = (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); settle(cancel); }
+      else if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); e.stopPropagation(); const i = btns.indexOf(e.target); settle(i >= 0 ? choices[i].v : cancel); }
+      else if (e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); const i = btns.indexOf(e.target); btns[(i + (e.shiftKey ? btns.length - 1 : 1)) % btns.length].focus(); }
+      else e.stopPropagation();   // typing here is never walking or a hotkey
+    };
+    function settle(v) {
+      if (open?.root !== root) return;
+      open = null;
+      removeEventListener('keydown', onKey, true);
+      root.remove();
+      try { before?.focus?.(); } catch { /* gone */ }
+      resolve(v);
+    }
+    root.addEventListener('pointerdown', (e) => { if (e.target === root) settle(cancel); });
+    addEventListener('keydown', onKey, true);
+    document.body.appendChild(root);
+    open = { root, settle, cancel };
+    btns[0].focus();
+  });
+}

@@ -498,7 +498,9 @@ function fieldDOM(f, edit, ro = {}) {
           const lock = el('button', `sp-mini sp-lock${r.locked ? ' on' : ''}`);
           lock.innerHTML = iconSvg(r.locked ? 'lock' : 'lockOpen', 14);   // a glyph, not an emoji (the canvas trap; one icon set)
           lock.title = r.locked ? 'locked — click to unlock' : 'click to lock in place';
-          lock.onclick = (e) => { e.stopPropagation(); edit('lock', r.id); };
+          // lockable: false = this viewer may not lift locks (a v4 visitor, §5): the icon still says, the click doesn't
+          if (r.lockable === false) { lock.disabled = true; lock.title = r.locked ? 'locked (builders and owners can unlock it)' : 'not locked (builders and owners can lock it)'; }
+          lock.onclick = (e) => { e.stopPropagation(); if (!lock.disabled) edit('lock', r.id); };
           line.append(lock);
         }
         box.append(line);
@@ -769,7 +771,7 @@ export function renderCanvas(canvas, fields, { width = 512, rowH = 44, pad = 12,
         g.fillRect(bx, y + 7, bw, rowH - 14);
         font(13, 600); g.fillStyle = r.locked ? '#14100c' : C.text;
         g.fillText(r.locked ? 'L' : 'l', bx + 12, y + rowH * 0.62);
-        regions.push({ x: bx, y: y + 7, w: bw, h: rowH - 14, action: 'lock', payload: r.id });
+        if (r.lockable !== false) regions.push({ x: bx, y: y + 7, w: bw, h: rowH - 14, action: 'lock', payload: r.id });
         y += rowH; continue;
       }
       let bx = width - pad;

@@ -19,7 +19,7 @@ import { makeV4Client, stateView, stateFromView } from "../../shared/v4/client.j
 import { simFold, digestOf, restsOf } from "../../shared/v4/simlayer.js";
 import { MODELS } from "../../shared/v4/catalogue.js";
 import { enc, encName, dec } from "../../shared/v4/names.js";
-import { refusalText } from "../../shared/v4/refusal.js";
+import { refusalText, lockVerb, lockQuestion, lockChoices } from "../../shared/v4/refusal.js";
 import { translate, TRANSLATOR } from "../../shared/v4/translate-v1.js";
 import { legacyState, legacyDelta, foldLegacy, legacyDiff } from "../../shared/v4/legacy.js";
 import { openWorld } from "../../server/v4/disk.ts";
@@ -191,6 +191,11 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(refusalText("move x--4c616d70", { refused: { code: "locked", reason: "x--4c616d70 is locked (locked by x--5269616e6e6f6e at 9)", teach: "" } }) === "move Lamp refused by the door (locked): Lamp is locked (locked by Riannon at 9)",
     "NR6 the shared refusal text (what a person's toast and an agent's verb tools show) reads any escaped name back", refusalText("move x--4c616d70", { refused: { code: "locked", reason: "x--4c616d70 is locked (locked by x--5269616e6e6f6e at 9)" } }));
   ok(refusalText("x", { refused: { code: "c", reason: "h--abc and plain-id and x--zz stay" } }) === "x refused by the door (c): h--abc and plain-id and x--zz stay", "NR7 …a hashed name (h--) or a non-hex x-- is left as it is (it can't be read back)");
+  { const V = (req) => lockVerb(req); const set = (component) => ({ tool: "set", args: { id: "a", component, value: 1 } });
+    const got = [V(set("transform")), V(set("parent")), V({ tool: "place", args: { id: "a", at: [0, 0] } }), V({ tool: "delete", args: { id: "a" } }), V(set("model")),
+      V({ tool: "batch", args: { ops: [set("transform"), { tool: "delete", args: { id: "b" } }] } }), V({ tool: "undo", args: { act: 3 } }), V(set("label")), V({ tool: "delete", args: { id: "a", component: "parent" } })];
+    ok(JSON.stringify(got) === JSON.stringify(["Move", "Move", "Move", "Delete", "Replace", "Delete", "Undo", "Change", "Move"]) && lockQuestion("Delete") === "This is locked. Delete anyway?"
+      && lockChoices("Move").map((c) => c.v).join() === "through,cancel,unlock", "NR8 the lock question names what the request would do: Move / Delete / Replace anyway? (R's three answers)", got); }
 }
 
 // ---- M: translated mounts in the door's shape (research 37, slice 3 #3) ----

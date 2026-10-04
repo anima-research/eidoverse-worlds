@@ -20,8 +20,8 @@ import { net, requestV4, v4, isV4, sendDrag } from './net.js';
 import { entities } from './world.js';
 import { toV4 } from '../../shared/v4/fromv1.js';
 import { enc, dec } from '../../shared/v4/names.js';
-import { refusalText } from '../../shared/v4/refusal.js';
-import { confirmCenter } from './confirmcenter.js';
+import { refusalText, lockVerb, lockQuestion, lockChoices } from '../../shared/v4/refusal.js';
+import { chooseCenter } from './confirmcenter.js';
 import { flashHint, toast } from './ui.js';
 
 export { isV4 };
@@ -77,9 +77,8 @@ export function writesOf(req) {
   return ops.filter((o) => o.tool === 'set').map((o) => [idOut(o.args.id), o.args.component]);
 }
 
-const MOVES = new Set(['transform', 'parent']);
-const isMove = (req) => (req.tool === 'batch' ? req.args.ops : [req]).some((o) => o.tool === 'place' || (o.tool === 'set' && MOVES.has(o.args.component)));
-const mayLift = () => ['builder', 'owner'].includes(net.myRights?.role);
+/** May this viewer lift a lock (§5: builders and owners)? The lock question and the Hierarchy's lock icons ask this. */
+export const mayLift = () => ['builder', 'owner'].includes(net.myRights?.role);
 
 /** Put a thing back where the log has it (a refused or cancelled gesture), and tell everyone who watched the drag. */
 export function revertPose(id) {
@@ -106,21 +105,38 @@ export function send(req, opts = {}) {
   const p = sendNow(req, opts); inflight.add(p); p.finally(() => inflight.delete(p));
   return p;
 }
+const remember = (act) => { undoStack.push(act); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; };
 async function sendNow(req, { what = req.tool, revert = null, record = true } = {}) {
   bus.emit('v4-sending', { req, what });
   let r = await requestV4(req.tool, req.args);
-  if (!r.ok && r.refused?.code === 'locked' && req.args?.through_lock !== true && mayLift()) {
-    const yes = await confirmCenter({ title: '🔒 locked', body: refusalText(what, r),
-      ok: isMove(req) ? 'Move anyway' : 'Do it anyway', cancel: 'Leave it' });
-    bus.emit('v4-lock-asked', { what, yes });
-    if (yes) r = await requestV4(req.tool, { ...req.args, through_lock: true });
+  // A lock (§5, R's dialog): someone who may lift it is asked "This is locked. Move anyway?" —
+  //   ✓ through: the SAME request with through_lock: one act, the lock stays on;
+  //   ✕ cancel:  nothing is written, and the thing goes back (revert);
+  //   🔓 unlock: delete the lock, then the request as it was: two acts on my stack, so Ctrl+Z undoes the edit first.
+  //     Undo and redo aren't offered it: their act isn't mine to stack under an unlock (Ctrl+Z would then undo the unlock).
+  // A visitor (who may not lift locks) gets the refusal as a toast, no buttons. Another lock further up asks again.
+  let cancelled = false;
+  for (let round = 0; round < 8 && !r.ok && r.refused?.code === 'locked' && req.args?.through_lock !== true && mayLift(); round++) {
+    const verb = lockVerb(req);
+    const choices = lockChoices(verb).filter((c) => record || c.v !== 'unlock');
+    const choice = await chooseCenter({ title: lockQuestion(verb), body: refusalText(what, r), choices, cancel: 'cancel' });
+    bus.emit('v4-lock-asked', { what, yes: choice === 'through', choice });
+    if (choice === 'through') { r = await requestV4(req.tool, { ...req.args, through_lock: true }); break; }
+    if (choice !== 'unlock') { cancelled = true; break; }
+    const k = r.refused.lock;
+    const u = await requestV4('delete', { id: k, component: 'lock' });
+    if (!u.ok) { r = u; what = `unlock ${idOut(k)}`; break; }
+    if (Number.isInteger(u.act)) remember(u.act);
+    bus.emit('v4-done', { what: `unlock ${idOut(k)}`, req: { tool: 'delete', args: { id: k, component: 'lock' } }, reply: u });
+    r = await requestV4(req.tool, req.args);
   }
   if (r.ok) {
-    if (record && Number.isInteger(r.act)) { undoStack.push(r.act); if (undoStack.length > 200) undoStack.shift(); redoStack.length = 0; }
+    if (record && Number.isInteger(r.act)) remember(r.act);
     bus.emit('v4-done', { what, req, reply: r });
   } else {
     try { revert?.(); } catch (e) { console.warn('[v4edit] revert', e); }
-    showRefusal(what, r);
+    if (cancelled) { flashHint('cancelled — nothing written'); bus.emit('v4-cancelled', { what, refused: r.refused }); }
+    else showRefusal(what, r);
   }
   return r;
 }

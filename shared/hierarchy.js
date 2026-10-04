@@ -179,7 +179,7 @@ export function treeRows(world, { collapsed = new Set(), matches = null, extra =
  *  carrier's, so when the carrier's world scale is not 1 a `place {id, scale}`
  *  rides along to keep the size. An upright orientation travels as a bare yaw
  *  (old readers stay exact); anything tilted as q + its heading. */
-export function parentVerbs(world, id, to, { mayAuthor } = {}) {
+export function parentVerbs(world, id, to, { mayAuthor, doorLocks = false } = {}) {
   const errors = [];
   const ent = world?.[id];
   if (!ent) return { verbs: [], inverses: [], errors: [`${id} is not in the world`] };
@@ -189,7 +189,7 @@ export function parentVerbs(world, id, to, { mayAuthor } = {}) {
   if (to && !world[to]) return { verbs: [], inverses: [], errors: [`no ${to} here to parent under`] };
   const cyc = cycleRefusal(world, id, to);
   if (cyc) errors.push(cyc);
-  if (ent.comp?.lock) errors.push(`${id} is locked — unlock it first to move it`);
+  if (ent.comp?.lock && !doorLocks) errors.push(`${id} is locked — unlock it first to move it`);   // doorLocks (v4): the door asks
   const guardedBy = (x) => world[x]?.comp?.guard && mayAuthor?.(x) === false ? (world[x].placer?.id ?? world[x].actor ?? 'its placer') : null;
   if (guardedBy(id)) errors.push(`${id} is guarded by ${guardedBy(id)} — only they or the world's owner can move it`);
   if (to && guardedBy(to)) errors.push(`${to} is guarded by ${guardedBy(to)} — only they or the world's owner can put things under it`);

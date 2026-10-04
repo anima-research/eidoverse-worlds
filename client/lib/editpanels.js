@@ -208,6 +208,7 @@ function hierarchyFields() {
     const bpLink = world[id]?.comp?.blueprint;
     const sub = bpLink && typeof bpLink === 'object' ? `${kindHint(world[id])} · ${bpLink.hash ? `${bpLink.name ?? 'blueprint'} copy` : `part ${bpLink.part}`}` : kindHint(world[id]);
     return { id, label: labelOf(id), sub, depth: t.depth, active: id === sel, multi: extra.has(id) && id !== sel, badges, locked: !!bag.lock,
+      ...(V4.isV4() ? { lockable: V4.mayLift() } : {}),   // v4 (§5): only builders and owners lock and unlock
       kids: t.kids, open: t.open, ...(t.dim ? { dim: true } : {}) };   // a filter looks inside folded nodes, so the glyph says open
   });
   for (const r of rows) {
@@ -221,7 +222,7 @@ function hierarchyFields() {
       { k: 'duplicate', label: 'duplicate  (Alt+D)' },
       { k: 'attach', label: arming === r.id ? 'cancel parent pick' : 'parent to…' },
       ...(mounted ? [{ k: 'detach', label: 'unparent' }] : []),
-      { k: 'lock', label: r.locked ? 'unlock' : 'lock in place' },
+      ...(r.lockable === false ? [] : [{ k: 'lock', label: r.locked ? 'unlock' : 'lock in place' }]),
       { k: 'hide', label: comps.get(r.id)?.hidden === true ? 'show' : 'hide' },
       { k: 'remove', label: 'remove  (X)', danger: true },
     ];
@@ -321,7 +322,7 @@ function duplicate(id) {
 
 function toggleLock(id) {
   const locked = !!comps.get(id)?.lock;
-  if (V4.isV4()) { V4.lock(id, !locked); return; }
+  if (V4.isV4()) { if (V4.mayLift()) V4.lock(id, !locked); else flashHint('only builders and owners can lock or unlock things here'); return; }
   sendVerb('comp', { id, type: 'lock', data: locked ? null : true });
   pushUndo({ verb: 'comp', args: { id, type: 'lock', data: locked ? true : null } }, locked ? `unlocking ${id}` : `locking ${id}`);
 }
@@ -712,7 +713,8 @@ function removeInverse(id) {
     : { verb: 'spawn', args: { id, lib: rec.lib, pos, yaw: rec.yaw ?? 0, ...(rec.scale != null ? { scale: rec.scale } : {}) } };
 }
 function removeMany(ids) {
-  const locked = ids.filter((id) => comps.get(id)?.lock);
+  // v4: a locked thing is asked about by the door's refusal ("This is locked. Delete anyway?"), not filtered out here
+  const locked = V4.isV4() ? [] : ids.filter((id) => comps.get(id)?.lock);
   const held = ids.filter((id) => !comps.get(id)?.lock && guardedByOther(id));
   const why = [];
   if (locked.length) why.push(`${locked.join(', ')} ${locked.length > 1 ? 'are' : 'is'} locked — unlock first`);
