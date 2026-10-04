@@ -76,7 +76,10 @@ function diff(prev, now) {
 }
 
 export class Translator {
-  constructor() {
+  /** opts.check: false skips the per-entry self-check (each check re-projects the whole world). Use it only for a
+   *  catch-up over a log tools/v4-test.ts already proves; check every live entry. */
+  constructor(opts = {}) {
+    this.checking = opts.check !== false;
     this.st = v1Empty(); this.sim = eidosim.emptySim(); this.v4 = v4Empty(); this.out = [];
     this.recorded = new Map(); this.restLogged = new Set(); this.launchSeq = {}; this.restTicks = {};
     this.stats = { in: 0, out: 0, state: 0, launches: 0, rests: 0, worldDivergences: 0, flightDivergences: 0, first: null, verbs: {} };
@@ -137,7 +140,7 @@ export class Translator {
     const now = this.composed(); const ops = diff(this.prev, now);
     if (ops.length) { this.push_({ kind: 'state', actor: e.actor, ts: e.ts, cause: tl, from: e.seq, verb: ops.length === 1 ? ops[0].verb : 'batch', args: ops.length === 1 ? ops[0].args : { ops } }); this.stats.state++; }
     this.prev = now;
-    const ok = this.check(e);
+    const ok = this.checking ? this.check(e) : true;
     this.stats.out = this.out.length;
     return { entries: this.out.slice(from), ok };
   }
