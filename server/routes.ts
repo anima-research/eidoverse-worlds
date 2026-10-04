@@ -47,8 +47,10 @@ const knownWorld = (name: string) => {
   const relist = () => { try { worldDirs = new Set(readdirSync(WORLDS_DIR)); } catch { worldDirs = new Set(); } worldDirsAt = now; };
   if (now - worldDirsAt > 5000) relist();
   if (!worldDirs.has(name) && now - worldDirsAt > 1000) relist();   // a miss re-lists (at most once a second): a new world is known at once
-  return worldDirs.has(name) && existsSync(join(WORLDS_DIR, name, "log.jsonl"));
+  return worldDirs.has(name) && hasWorldLog(name);
 };
+/** A world's directory holds its log: log.jsonl (v1) or v4.jsonl (a v4 world, protocol/v4 slice 2). */
+const hasWorldLog = (name: string) => existsSync(join(WORLDS_DIR, name, "log.jsonl")) || existsSync(join(WORLDS_DIR, name, "v4.jsonl"));
 const CLIENTLOG_UNKNOWN = "~unknown";   // '~' is outside the world-name alphabet, so no real world can share this file
 try { mkdirSync(CLIENTLOG_DIR, { recursive: true }); } catch (e) { console.warn(`[clientlog] cannot create ${CLIENTLOG_DIR}: ${(e as Error)?.message ?? e}`); }
 import { seatStore, announceProfileUpdate, MAX_PROPOSAL_BYTES } from "./seats.ts";
@@ -559,7 +561,7 @@ const ROUTES: Route[] = [
       }
       // read-only: answer for LOADED or on-disk worlds, never create one
       if (!/^[a-z0-9_-]{1,64}$/i.test(wname)
-        || (!worlds.has(wname) && !existsSync(join(WORLDS_DIR, wname, "log.jsonl")))) {
+        || (!worlds.has(wname) && !hasWorldLog(wname))) {
         return j({ error: "no such world" }, 404);
       }
       const w = getWorld(wname);
@@ -663,7 +665,7 @@ const ROUTES: Route[] = [
       const names = new Set<string>(worlds.keys());
       try {
         for (const n of readdirSync(WORLDS_DIR)) {
-          if (/^[a-z0-9_-]{1,64}$/i.test(n) && existsSync(join(WORLDS_DIR, n, "log.jsonl"))) names.add(n);
+          if (/^[a-z0-9_-]{1,64}$/i.test(n) && hasWorldLog(n)) names.add(n);
         }
       } catch { /* no worlds dir yet: only loaded worlds */ }
       const out = [...names].sort().map((name) => {

@@ -49,7 +49,7 @@ async function startServer(tree: string, worlds: string, opt: string, tag: strin
   const p = Bun.spawn(["bun", "server/server.ts"], { cwd: tree, env: { ...process.env, PORT: String(port), WORLDS_DIR: worlds, OPT_DIR: opt, SKIP_OPT_SWEEP: "1",
     BUN_RUNTIME_TRANSPILER_CACHE_PATH: "0", JOIN_TOKEN: "", WORLD_ADMIN: "", EIDO_FLIGHT_REHEARSAL: "" }, stdout: Bun.file(logf), stderr: Bun.file(logf + ".err") });
   procs.push(p);
-  for (let i = 0; i < 100; i++) { await sleep(150); try { const r = await fetch(`http://127.0.0.1:${port}/worlds`); if (r.ok) return { port, proc: p, log: logf }; } catch {} }
+  for (let i = 0; i < 100; i++) { await sleep(150); try { const r = await fetch(`http://127.0.0.1:${port}/worlds`, { signal: AbortSignal.timeout(1000) }); if (r.ok) return { port, proc: p, log: logf }; } catch {} } // bounded: on this host a closed local port can drop the SYN instead of refusing it
   throw new Error(`${tag} server didn't come up: ${fs.existsSync(logf + ".err") ? fs.readFileSync(logf + ".err", "utf8").slice(-800) : ""}`);
 }
 
@@ -94,6 +94,8 @@ const f = tool(["found", "garden", "--owner", "Ann", "--title", "a v4 garden"]);
 ok(f.code === 0 && /founded v4 world "garden"/.test(f.out), "S1 tools/v4/world.ts found makes a v4 world", f.out);
 ok(tool(["found", "garden", "--owner", "Ann"]).code !== 0, "S1 founding over an existing world is refused");
 const srv = await startServer(ENGINE, W4, OPT, "v4");
+{ const ws0 = await (await fetch(`http://127.0.0.1:${srv.port}/worlds`)).json();
+  ok(ws0.worlds?.some((w) => w.name === "garden" && w.loaded === false), "S1 /worlds lists the v4 world on disk before anyone loads it (travel discovery)", ws0); }
 const ann = await client(srv.port, "garden", "Ann");
 ok(ann.snapshot?.v4?.version === 4, "S1 the snapshot says v4", ann.snapshot?.v4);
 ok(ann.snapshot?.yourRights?.role === "owner", "S1 the founder is the owner (the door stamps the same name the tool did)", ann.snapshot?.yourRights);
@@ -112,6 +114,8 @@ await sleep(150);
 ok(vic.of("log").some((m) => m.entry.verb === "spawn" && m.entry.args.id === "cup") && vic.of("log").some((m) => m.entry.verb === "mount" && m.entry.args.id === "cup" && m.entry.args.to === "tbl"),
   "S2 another client is sent v1 spawn + mount (it folds v1)", vic.of("log").map((m) => m.entry.verb));
 ok(vic.of("v4-log").length >= 2, "S2 …and the raw v4 entries (v4-log) for clients that read v4");
+{ const m = vic.of("log").find((x) => x.entry.verb === "mount" && x.entry.args.id === "cup")?.entry.args; const loc = fold(readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl")))).entities.cup.c.transform.pos;
+  ok(m && Math.abs(m.offset[0] - loc[0]) < 1e-9 && Math.abs(m.offset[2] - loc[2]) < 1e-9 && Math.abs(m.offset[2]) < 0.5, "S2 the mount's offset is the door's LOCAL transform (the table stands at z = 3; the cup's offset is near 0)", [m?.offset, loc]); }
 
 ok((await ann.req("set", { id: "tbl", component: "pinned", value: true })).ok, "S3 Ann pins the table");
 const mv = await bob.req("set", { id: "cup", component: "transform", value: { pos: [0.2, 0.75, 0] } });
@@ -138,6 +142,11 @@ ok(L.filter((e) => e.kind === "act").every((e) => [enc("Ann"), enc("Bob")].inclu
 const truth = legacyState(st);
 for (const c of [ann, bob, vic, spec]) { const d = legacyDiff(heldBy(c), truth); ok(!d, `S4 what ${c.id} holds (its own v1 fold of what it was sent) = the projection of the v4 log`, d); }
 ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync was needed (one snapshot each)", [ann, bob, vic].map((c) => c.of("snapshot").length));
+{ // a change with no v1 verb (the sky): every client is re-sent the state (a resync), and then holds the projection
+  ok((await ann.req("set", { id: "@world", component: "sky", value: { hours: 18 } })).ok, "S4b Ann sets the sky (owner)"); await sleep(250);
+  const t2 = legacyState(fold(readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl")))));
+  ok([ann, bob, vic].every((c) => c.of("snapshot").length === 2), "S4b a change v1 can't spell is a resync: a second snapshot to each client", [ann, bob, vic].map((c) => c.of("snapshot").length));
+  for (const c of [ann, bob, vic]) { const d = legacyDiff(heldBy(c), t2); ok(!d && heldBy(c).sky?.hours === 18, `S4b …and ${c.id} then holds the projection (sky included)`, d); } }
 
 // ---- S5: an agent's tools (mcpl/tools.ts) over this connection ----
 { const { HANDLERS } = await import("../../mcpl/tools.ts");
