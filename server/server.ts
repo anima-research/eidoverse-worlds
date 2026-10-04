@@ -10,7 +10,7 @@ import { join } from "node:path";
 // config FIRST — it carries the WORLDS_DIR mkdir, and auth.ts/moderation.ts
 // carry their restore-at-boot blocks, so this import order IS the unsplit
 // file's boot order: mkdir → session restore → ban restore (§15, step 7a).
-import { PORT, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
+import { PORT, HOST, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan } from "./moderation.ts";
 import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal, guardRefusal } from "./rights.ts";
@@ -692,7 +692,7 @@ function buildSnapshot(w: World, c: Client) {
 
 const server = Bun.serve({
   port: PORT,
-  hostname: "0.0.0.0",
+  hostname: HOST,
   async fetch(req, srv) {
     // The whole HTTP surface is routes.ts's table (§15, 7c) — one row per
     // endpoint, first match wins, in exactly the order the if-chain had.
