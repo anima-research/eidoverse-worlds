@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { PORT, HOST, JOIN_TOKEN, RECORD, ROOT, WORLDS_DIR, LIBRARY_DIR, OPT_DIR, MSG_RATE, FRAME_MS, FRAME_SKIP_BUFFERED } from "./config.ts";
 import { type HnSession, agentTokens, aid1JoinIdentity } from "./auth.ts";
 import { globalBans, findBan } from "./moderation.ts";
-import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal, guardRefusal } from "./rights.ts";
+import { isAdminId, worldHasOwner, rightsOf, VERB_NEEDS, lockRefusal, guardRefusal, bodyRefusal } from "./rights.ts";
 import { resolveLibFile } from "./lint.ts";
 // The authored plane's dispatch — table + shell (§15, 7b). It pulls in lint's
 // linters, reactions, and the behavior cap itself; server.ts keeps only what
@@ -119,6 +119,9 @@ wireBehaviorStore(OPT_DIR);
 wireBehaviorGate((w, author, verb, args, authorSub) => {
   const needs = VERB_NEEDS[verb];
   if (!needs) return `verb not allowed: ${verb}`;
+  // a script seats or unseats only its author's own body, like a hand
+  const bodyWhy = bodyRefusal((w as unknown as World).state, { id: author }, verb, args);
+  if (bodyWhy) return bodyWhy;
   const rights = rightsOf((w as unknown as World).state, author, authorSub);
   if (ROLE_RANK[rights.role] < needs.rank || (needs.gen && !rights.gen)) {
     return `"${verb}" needs more than ${author}'s "${rights.role}" role here`;

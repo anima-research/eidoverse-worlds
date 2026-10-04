@@ -249,8 +249,10 @@ why. Refused edits are named and the rest still go; `dry:true` shows the
 verbs without sending. `measure` (below) is geometry; `inspect` is state.
 
 **Rights:** `say`/`use`/self-`mount` = everyone; `spawn`/`place`/`comp`/
-`motion`/`force`/cargo-`mount`/`behavior` = builder; terrain/sky/grant and a
-`behavior` with `runtime: "client"` (a client mod offer, surface 2) = owner; new
+`motion`/`force`/cargo-`mount`/`behavior` = builder; someone ELSE's body in
+`mount`/`dismount` = nobody (a body rides only by its own request — owner and
+scripts included); terrain/sky/grant and a `behavior` with `runtime: "client"`
+(a client mod offer, surface 2) = owner; new
 assets = the `gen` capability; `caption` = everyone, plus the caption DEED
 for that one entity (`grant {id, caption: "<entityId>"}`). If a verb
 bounces, the reason is in the flight recorder (below).

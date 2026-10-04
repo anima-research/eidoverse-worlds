@@ -14,7 +14,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { VERB_RATE, OPT_DIR } from "./config.ts";
-import { isAdminId, rightsOf, worldHasOwner, VERB_NEEDS, lockRefusal, guardRefusal, captionDeedRefusal } from "./rights.ts";
+import { isAdminId, rightsOf, worldHasOwner, VERB_NEEDS, lockRefusal, guardRefusal, captionDeedRefusal, bodyRefusal } from "./rights.ts";
 import { normalizeCaptionArgs, captionRefusal } from "../shared/captions.js";
 import { compRefusal } from "../shared/components.js";
 import { cycleRefusal } from "../shared/hierarchy.js";
@@ -636,6 +636,13 @@ export function runVerb(ctx: VerbCtx, verb: string, rawArgs: unknown): void {
   const selfMount = isVerbStr && Boolean(row.selfRankZero)
     && String((rawArgs as Record<string, unknown> | undefined)?.id ?? "") === c.id;
   const needRank = selfMount ? 0 : row.rank;
+  // someone else's body: no rank, guard or lock opens it, so say so first
+  const bodyWhy = isVerbStr ? bodyRefusal(w.state, c, verb, rawArgs as Record<string, unknown> | undefined) : null;
+  if (bodyWhy) {
+    w.debug("denied", { who: c.id, verb: String(verb), why: "someone else's body" });
+    c.ws.send(JSON.stringify({ type: "error", error: bodyWhy }));
+    return;
+  }
   const rights = rightsOf(w.state, c.id, c.sub);
   // The caption deed sits with the rank gate: same teaching order (who may),
   // before locks and shapes. A visitor holding the deed passes here for

@@ -129,10 +129,14 @@ try {
   await carol.settle();
   check("3. a stranger may not load cargo onto a guarded carrier", carol.errors.length === before + 1 && /guarded/.test(last(carol)) && /cargo/.test(last(carol)), last(carol));
   before = carol.errors.length;
-  carol.verb("mount", { id: "carol", to: "truck1", slot: "seat" });
+  // her BODY's id is the display name the door gave her ("Carol"), not the
+  // id she asked to join as — a mount naming "carol" would be someone else's
+  // body (refused since the body-mount fix), not sitting down
+  const carolBody = carol.snap.you;
+  carol.verb("mount", { id: carolBody, to: "truck1", slot: "seat" });
   await carol.settle();
   check("3. …but may sit on it (self-mount is use, not authorship)", carol.errors.length === before, carol.errors.slice(before).join("; "));
-  carol.verb("dismount", { id: "carol" }); await carol.settle();
+  carol.verb("dismount", { id: carolBody }); await carol.settle();
   check("3. …and steps off again (self-dismount is use too)", carol.errors.length === before, carol.errors.slice(before).join("; "));
   before = bob.errors.length;
   bob.verb("spawn", { id: "crate2", lib: "deco/crate.glb", pos: [6, 0, 7], yaw: 0 });

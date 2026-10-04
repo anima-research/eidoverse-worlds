@@ -126,8 +126,9 @@ Rank: 0 visitor (using the world), 1 builder (shaping it), 2 owner.
 - rank 0: `say`, `use`, `punt`
 - rank 1: `spawn`, `place`, `remove`, `light`, `comp`, `motion`,
   `behavior`, `force`, `mount`*, `dismount`* (*rank 0 when mounting
-  YOURSELF — sitting is using, not building), `asset` (also needs the
-  `gen` capability)
+  YOURSELF — sitting is using, not building; another person's body is
+  refused for every rank: only that body may seat or unseat itself),
+  `asset` (also needs the `gen` capability)
 - rank 2: `terrain`, `grass`, `sky`, `weather`, `grant`, `kick`, `ban`,
   `unban`
 - server-only actors: `genesis`, `bstate` (scripts' persisted kv),

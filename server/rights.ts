@@ -138,6 +138,23 @@ export function captionDeedRefusal(state: WorldState, rights: { role: string; ca
   return null;
 }
 
+/** Is this verb seating or unseating SOMEONE ELSE's body?
+ *
+ *  `mount`/`dismount` name either a thing (cargo, an entity) or a body (a
+ *  participant id, folded into `state.mounts` and restored on every rejoin).
+ *  A body is its owner's alone (DESIGN.md: each client owns its own avatar;
+ *  a puppet is a REQUEST its target applies to itself). So a body rides or
+ *  steps off only by its own request: `id` must be the caller. Rank, guard
+ *  and lock govern things; none of them can grant this, so the refusal comes
+ *  first and names the only door there is. A behavior asks with its
+ *  AUTHOR's id, exactly like its other rights. */
+export function bodyRefusal(state: WorldState, who: { id: string }, verb: string, args: Record<string, unknown> | undefined): string | null {
+  if (verb !== "mount" && verb !== "dismount") return null;
+  const id = String(args?.id ?? "");
+  if (!id || state.entities[id] || id === who.id) return null;   // a thing (cargo rules apply), or yourself
+  return `"${id}" is someone's body, not a thing — only ${id} can ${verb === "mount" ? "seat" : "unseat"} it (${verb} {id: "${who.id}", …} is yours)`;
+}
+
 export function lockRefusal(state: WorldState, verb: string, args: Record<string, unknown> | undefined): string | null {
   if (!LOCK_GUARDED.has(verb)) return null;
   const id = String(args?.id ?? "");
