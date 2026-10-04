@@ -916,7 +916,7 @@ function buildUndo(ctx, a, w) {
     const hit = [...othersSince].find((x) => x !== o.id && trial.entities[x] && obbs(trial, x).some((sb) => mine.some((ma) => satDepth(ma, sb) > 0.02)));
     if (hit) { const who = later.find((e) => opsQuiet(e).some((q) => q.id === hit))?.actor;
       skipped.push({ id: o.id, component: o.comp, why: `putting it back would land it on ${hit}, which ${who} has placed since` }); groups.splice(i, 1); } }
-  if (!groups.length) refuse("conflict", "everything that act touched has been changed by someone else since", "", { skipped });
+  if (!groups.length) refuse("conflict", "everything that act touched has been changed by someone else since", "their later change stands (undo never writes over it); if you still want yours, make the change again yourself, and history shows who did what", { skipped });
   if (skipped.length) ctx.notes.push({ skipped });
   ctx.actExtra = { undoes: target.seq };
   return groups.flat();

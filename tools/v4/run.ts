@@ -5,6 +5,7 @@
 //   bun tools/v4/run.ts hostile phys    run only the named suites
 // Each suite runs in its own process (they pin the door's clock through V4_NOW). Prints each suite's tail; exits 1
 // if any suite fails.
+import { existsSync } from "node:fs";
 import { ENGINE, controlNote } from "./common.ts";
 
 const SUITES: [string, string, number][] = [ // name, file, tail lines to show
@@ -17,6 +18,7 @@ const SUITES: [string, string, number][] = [ // name, file, tail lines to show
   ["sweep", "sweep.ts", 4],             // translators on every local world log + her dialect-3 goldens + pins
   ["browser", "browser-check.ts", 1],   // the shared core imported by headless Chromium, byte-for-byte with bun
   ["door", "door-check.ts", 1],
+  ["client", "client-check.ts", 1],     // slice 3b: edit mode in headless Chromium against a scratch server (one browser, guarded)
   ["server", "server-check.ts", 1],     // slice 2 at the server: real processes, real WebSockets, scratch ports; v1 byte-compared         // slice 2 in process: names, translator stamp, ancestor pins, live = whole-log, catalogue, projection
 ];
 const only = process.argv.slice(2);
@@ -26,7 +28,18 @@ const t0 = performance.now();
 for (const [name, file, tail] of SUITES) {
   if (only.length && !only.includes(name)) continue;
   const t = performance.now();
-  const r = Bun.spawnSync(["bun", ENGINE + "tools/v4/" + file], { cwd: ENGINE, env });
+  // the browser suite runs under the house guards when this host has them (one headless Chrome at a time, perf-guard,
+  // no boot re-encoder: memory reference_browser_probe_hygiene); a host with no Chrome skips it, and says so
+  let cmd = ["bun", ENGINE + "tools/v4/" + file]; let senv: Record<string, string | undefined> = env;
+  if (name === "client") {
+    const home = process.env.HOME ?? "";
+    const chrome = process.env.CHROME ?? [`${home}/.local/chrome153/chrome-linux64/chrome`, "/usr/bin/google-chrome", "/usr/bin/chromium"].find((p) => existsSync(p));
+    if (!chrome) { console.log(`\n== client (client-check.ts) SKIPPED: no Chrome on this host (set CHROME)`); continue; }
+    senv = { ...env, CHROME: chrome, SKIP_OPT_SWEEP: "1" };
+    const lock = `${home}/eido/.headless.lock`, guard = "/mnt/c/Users/Claude/code/scripts/perf-guard.sh";
+    if (existsSync(guard) && existsSync(lock)) cmd = ["flock", lock, "bash", guard, "-t", "400", "--", ...cmd];
+  }
+  const r = Bun.spawnSync(cmd, { cwd: ENGINE, env: senv });
   const out = (r.stdout.toString() + r.stderr.toString()).trimEnd().split("\n");
   const fails = out.filter((l) => /^\s*FAIL\b/.test(l));
   const ok = r.exitCode === 0;
