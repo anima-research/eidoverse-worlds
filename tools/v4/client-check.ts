@@ -44,6 +44,13 @@ const waitFor = async (expr: string, ms = 8000) => { const t0 = Date.now(); whil
 const waitDisk = async (pred: () => boolean, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (pred()) return true; await sleep(100); } return false; };
 const key = (code: string, mods: any = {}) => evalJson(`dispatchEvent(new KeyboardEvent('keydown', { code: '${code}', key: '${code}', bubbles: true, ${Object.entries(mods).map(([k, v]) => `${k}: ${v}`).join(", ")} })), true`);
 const page = (js: string) => evalJson(`(async () => { ${js} })()`);
+// the centre dialog and the Hierarchy, as a person sees them
+const dlgTitle = `(document.querySelector('#confirm-center #cc-title')?.textContent ?? null)`;
+const dlgBtns = `[...document.querySelectorAll('#confirm-center .cc-btns button')].map((b) => b.textContent)`;
+const dlgClick = (re: string) => evalJson(`[...document.querySelectorAll('#confirm-center .cc-btns button')].find((b) => /${re}/.test(b.textContent))?.click(), true`);
+const hier = `document.querySelector('[data-frame="hierarchy"]')`;
+const lockBtn = (id: string) => `[...${hier}.querySelectorAll('.sp-tree-row')].find((r) => r.dataset.id === ${JSON.stringify(id)})?.querySelector('.sp-lock')`;
+const posX = (id: string) => `import('/lib/world.js').then((m) => m.entities.get('${id}')?.position.x)`;
 
 try {
   // ---- a second builder over a plain socket (an agent's view: it still reads the projection) ----
@@ -53,6 +60,7 @@ try {
   const bobReq = (tool: string, args: any) => new Promise<any>((res) => { const id = `b${++rn}`; replies.set(id, res); bob.send(JSON.stringify({ type: "v4", id, tool, args })); setTimeout(() => res({ ok: false, refused: { code: "timeout" } }), 6000); });
 
   await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: `window.__errs = []; addEventListener('error', (e) => __errs.push('error: ' + e.message));
+    window.__gaps = []; { const w = console.warn.bind(console); console.warn = (...a) => { if (/\\[state\\] seq gap/.test(String(a[0]))) __gaps.push(String(a[0])); return w(...a); }; }
     window.__refused = []; window.__asked = [];
     import('/lib/base.js').then((m) => { m.bus.on('v4-refused', (e) => __refused.push(e)); m.bus.on('v4-lock-asked', (e) => __asked.push(e)); });` });
   await cdp.send("Page.navigate", { url: `${BASE}/?name=${ME}&world=${WORLD}` });
@@ -153,11 +161,11 @@ try {
   check("L0 the page has the cup on the table", await waitFor(`import('/lib/world.js').then((m) => m.entities.get('cup')?.userData?.mountedTo === 'tbl')`, 12000));
   n0 = myActs().length; const a0 = await evalJson(`__asked.length`);
   await page(`(await import('/lib/inspect.js')).commitEdit('cup', 'pos.x', 0.4); return true;`);
-  check("L1 moving the cup on bob's locked table asks first (centre dialog: Move anyway)", await waitFor(`!!document.querySelector('#confirm-center .cc-ok') && document.querySelector('#confirm-center .cc-ok').textContent === 'Move anyway'`));
+  check("L1 moving the cup on bob's locked table asks first: 'This is locked. Move anyway?'", await waitFor(`${dlgTitle} === 'This is locked. Move anyway?'`), await evalJson(dlgTitle));
   const body = await evalJson(`document.querySelector('#confirm-center #cc-body')?.textContent ?? ''`);
   check("L2 …saying why, in the door's words (attached to tbl, which is locked by bob)", /cup is attached to tbl, which is locked \(locked by bob/.test(body) && /through_lock/.test(body), body);
   check("L3 …and the refused try wrote nothing", myActs().length === n0);
-  await evalJson(`document.querySelector('#confirm-center .cc-ok').click(), true`);
+  await dlgClick("Move anyway");
   check("L4 Move anyway: ONE act, the same request with through_lock: true", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.body.request.through_lock === true && myActs().at(-1).e.body.request.id === "cup"), myActs().slice(n0).map((a) => a.e.body.request));
   check("L5 …the cup moved, and the table is still locked", Math.abs(disk().entities.cup.c.transform.pos[0] - 0.4) < 1e-9 && disk().entities.tbl.c.lock === true, [disk().entities.cup.c.transform, disk().entities.tbl.c.lock]);
   check("L6 the dialog's answer was recorded as yes", await evalJson(`__asked.length === ${a0 + 1} && __asked.at(-1).yes === true`));
@@ -197,10 +205,145 @@ try {
   await evalJson(`[...${bf}.querySelectorAll('.sp-tile')].find((t) => t.textContent.trim() === 'tbl').click(), true`);
   check("S4 the tile places a copy: create {from: <hash>}, ONE act", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "create" && /^sha256:/.test(myActs().at(-1).e.body.request.from)), myActs().slice(n0).map((a) => a.e.body.request));
 
+  // ==== research 44: polish for R's first test ====
+
+  // ---- H: the lock icon on each Hierarchy row (builders and owners toggle it; it shows others' locks live) ----
+  await evalJson(`document.querySelector('.edit-tab[data-tab="hierarchy"]')?.click(), true`);
+  check("H0 the crate's Hierarchy row has a lock icon, open", await waitFor(`!!${lockBtn(crate)} && !${lockBtn(crate)}.classList.contains('on') && !${lockBtn(crate)}.disabled`),
+    await evalJson(`[...${hier}?.querySelectorAll('.sp-tree-row') ?? []].map((r) => r.dataset.id + ':' + (r.querySelector('.sp-lock')?.className ?? '-'))`));
+  n0 = myActs().length;
+  await evalJson(`${lockBtn(crate)}.click(), true`);
+  check("H1 a click on it is ONE act: set lock true", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.body.request.component === "lock" && myActs().at(-1).e.body.request.id === crate && disk().entities[crate].c.lock === true), myActs().slice(n0).map((a) => a.e.body.request));
+  check("H2 …and the icon reads locked", await waitFor(`${lockBtn(crate)}?.classList.contains('on')`));
+  check("H3 a lock someone else set shows on its row (bob's table)", await waitFor(`${lockBtn("tbl")}?.classList.contains('on')`));
+  check("(setup) bob unlocks his table", (await bobReq("delete", { id: "tbl", component: "lock" })).ok);
+  check("H4 …and his unlock shows live", await waitFor(`${lockBtn("tbl")} && !${lockBtn("tbl")}.classList.contains('on')`));
+
+  // ---- K: my own lock asks too: "This is locked. Move anyway?" with ✓ / ✕ / 🔓 ----
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('${crate}'); (await import('/lib/build.js')).setTool('move'); return true;`);
+  check("K0 the gizmo attaches to a thing I locked myself (the door asks; the client no longer blocks the drag)", await waitFor(`globalThis.__gizmo?.().attached === '${crate}'`), await evalJson(`globalThis.__gizmo?.().attached ?? null`));
+  const kStart = disk().entities[crate].c.transform;
+  n0 = myActs().length;
+  await drag(1);
+  check("K1 the release asks: 'This is locked. Move anyway?'", await waitFor(`${dlgTitle} === 'This is locked. Move anyway?'`), await evalJson(dlgTitle));
+  check("K2 …with three choices, in R's order", JSON.stringify(await evalJson(dlgBtns)) === JSON.stringify(["✓ Move anyway", "✕ Cancel", "🔓 Unlock"]), await evalJson(dlgBtns));
+  await dlgClick("Cancel");
+  check("K3 ✕ Cancel: it snaps back to where the log has it", await waitFor(`${posX(crate)}.then((x) => Math.abs(x - ${kStart.pos[0]}) < 1e-3)`), await evalJson(posX(crate)));
+  await sleep(800);
+  check("K4 …and nothing was written (0 acts), the lock still on", myActs().length === n0 && disk().entities[crate].c.lock === true, myActs().slice(n0).map((a) => a.e.body.request));
+  await drag(1);
+  await waitFor(`${dlgTitle} === 'This is locked. Move anyway?'`);
+  await dlgClick("Unlock");
+  check("K5 🔓 Unlock: TWO acts, the unlock and then the move (no through_lock)", await waitDisk(() => myActs().length === n0 + 2), myActs().slice(n0).map((a) => a.e.body.request));
+  const [ul, mv] = myActs().slice(n0);
+  check("K6 …the first deletes the lock, the second moves it; it's unlocked and 1 m along", ul?.e.verb === "delete" && ul?.e.body.request.component === "lock" && mv?.e.verb === "set" && mv?.e.body.request.through_lock === undefined
+    && !("lock" in disk().entities[crate].c) && Math.abs(disk().entities[crate].c.transform.pos[0] - (kStart.pos[0] + 1)) < 1e-3, [ul?.e.body.request, mv?.e.body.request]);
+  await waitFor(`globalThis.__v4edit().undo.at(-1) === ${mv?.seq}`);
+  await key("KeyZ", { ctrlKey: true });
+  check("K7 Ctrl+Z undoes the move first (the lock stays off)", await waitDisk(() => myActs().at(-1).e.verb === "undo" && myActs().at(-1).e.body.request.act === mv?.seq && Math.abs(disk().entities[crate].c.transform.pos[0] - kStart.pos[0]) < 1e-3 && !("lock" in disk().entities[crate].c)), myActs().at(-1)?.e.body);
+  await waitFor(`globalThis.__v4edit().undo.at(-1) === ${ul?.seq}`);
+  await key("KeyZ", { ctrlKey: true });
+  check("K8 …and the next Ctrl+Z puts the lock back", await waitDisk(() => myActs().at(-1).e.body.request.act === ul?.seq && disk().entities[crate].c.lock === true), myActs().at(-1)?.e.body);
+  n0 = myActs().length;
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('${crate}'); return true;`);
+  await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === '${crate}')`);
+  await key("Delete");
+  check("K9 Delete on a locked thing asks 'This is locked. Delete anyway?'", await waitFor(`${dlgTitle} === 'This is locked. Delete anyway?'`), await evalJson(dlgTitle));
+  check("K10 …its first choice says so", (await evalJson(dlgBtns))?.[0] === "✓ Delete anyway", await evalJson(dlgBtns));
+  await dlgClick("Delete anyway");
+  check("K11 ✓ Delete anyway: ONE act, the delete with through_lock", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "delete" && myActs().at(-1).e.body.request.through_lock === true && !disk().entities[crate]), myActs().slice(n0).map((a) => a.e.body.request));
+  await waitFor(`globalThis.__v4edit().undo.at(-1) === ${myActs().at(-1).seq}`);
+  await key("KeyZ", { ctrlKey: true });
+  check("K12 Ctrl+Z brings it back, still locked", await waitDisk(() => !!disk().entities[crate] && disk().entities[crate].c.lock === true) && await waitFor(`import('/lib/world.js').then((m) => m.entities.has('${crate}'))`, 12000));
+
+  // ---- V: a visitor (who can't lift locks) gets the refusal, no buttons ----
+  { const r0 = await evalJson(`__refused.length`);
+    await evalJson(`(async () => { const n = await import('/lib/net.js'); globalThis.__wasRights = n.net.myRights; n.net.myRights = { ...n.net.myRights, role: 'visitor' };
+      const t = (await import('/lib/v4edit.js')).compsOf('${crate}').transform;
+      globalThis.__vis = (await import('/lib/v4edit.js')).send({ tool: 'set', args: { id: '${crate}', component: 'transform', value: { ...t, pos: [t.pos[0] + 2, t.pos[1], t.pos[2]] } } }, { what: 'move ${crate}' });
+      return true; })()`);
+    const refusedV = await waitFor(`__refused.length > ${r0} && __refused.at(-1).refused.code === 'locked'`);
+    const dialogV = await evalJson(`!!document.querySelector('#confirm-center')`);
+    check("V1 a visitor's move of a locked thing: the refusal, in the agents' words, and no dialog", refusedV && !dialogV && (await evalJson(`__refused.at(-1).text`))?.startsWith(`move ${crate} refused by the door (locked)`), { dialogV, last: await evalJson(`__refused.at(-1)`) });
+    if (dialogV) await dlgClick("Cancel");
+    await page(`const n = await import('/lib/net.js'); n.net.myRights = { ...globalThis.__wasRights, role: 'visitor' }; (await import('/lib/base.js')).bus.emit('your-rights', n.net.myRights); return true;`);
+    check("V2 …and its Hierarchy lock icons can't be clicked", await waitFor(`${lockBtn(crate)}?.disabled === true`), await evalJson(`${lockBtn(crate)}?.outerHTML ?? null`));
+    await page(`const n = await import('/lib/net.js'); n.net.myRights = globalThis.__wasRights; (await import('/lib/base.js')).bus.emit('your-rights', n.net.myRights); return true;`);
+    check("V3 an owner's are clickable again", await waitFor(`${lockBtn(crate)}?.disabled === false`)); }
+
+  // ---- F: the mesh drag of a mounted child moves it in the world's frame (the old frame bug) ----
+  // A low plinth (below eye level, so its top is what the pointer meets), turned 90° and scaled 0.6×, with a pebble
+  // riding it. The drag keeps its grab offset in WORLD space, so the pebble's world displacement equals the pointer's
+  // on the plinth's top. The old code added a world point to a local offset and set it as the local position (so the
+  // pebble moved by R·0.6·that, the wrong way), and its ray could hit the pebble itself (it is drawn inside the plinth).
+  { const roots = Object.keys(disk().entities).filter((k) => k !== "@world" && !disk().entities[k].c.parent);
+    check("(setup) bob clears the field (everything placed so far, through its locks), so only the plinth is under the pointer", (await bobReq("batch", { ops: roots.map((id) => ({ tool: "delete", args: { id } })), through_lock: true })).ok, roots);
+    // the nearest spot ahead where both the plinth's foot and the pebble on it are in view
+    const G = await evalJson(`import('/lib/core.js').then((c) => { const T = c.THREE; const cam = c.camera; const f = cam.getWorldDirection(new T.Vector3()); f.y = 0; f.normalize();
+      const o = cam.getWorldPosition(new T.Vector3());
+      for (let d = 3; d <= 24; d += 0.5) { const g = o.clone().addScaledVector(f, d); g.y = 0;
+        if ([g.clone().project(cam), g.clone().setY(1.6).project(cam)].every((s) => Math.abs(s.x) < 0.8 && Math.abs(s.y) < 0.8 && s.z < 1)) return [g.x, g.z]; }
+      return { cam: o.toArray(), dir: cam.getWorldDirection(new T.Vector3()).toArray() }; })`);
+    check("(setup) a spot in view for the plinth", Array.isArray(G), G);
+    const [px, pz] = Array.isArray(G) ? G : [start.pos[0] - 3, start.pos[2]];
+    check("(setup) bob builds a low plinth (turned 90°, scaled 0.6×) with a pebble on it", (await bobReq("create", { id: "plinth", model: CRATE, components: { transform: { pos: [px, 0, pz], q: [0, Math.SQRT1_2, 0, Math.SQRT1_2], scale: [0.6, 0.6, 0.6] } } })).ok
+      && (await bobReq("create", { id: "pebble", model: CRATE, components: { transform: { pos: [0.25, 1.9, 0.25], scale: [0.4, 0.4, 0.4] }, parent: { to: "plinth", order: "a0" } } })).ok);
+    check("F0 the page has the pebble on the plinth", await waitFor(`import('/lib/world.js').then((m) => m.entities.get('pebble')?.userData?.mountedTo === 'plinth')`, 12000));
+    await sleep(600);
+    // the test's own ray, as build.js aims: the first thing under a screen point that isn't the pebble, if it's the
+    // plinth's top (a face pointing up). P = the pebble's world position. press: a point ON the pebble whose ray, past
+    // the pebble, meets the plinth's top (its middle may look past the plinth's far edge, to the ground)
+    const geo = (x: number, y: number) => evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE;
+      const peb = w.entities.get('pebble'), pl = w.entities.get('plinth'); const P = peb.getWorldPosition(new T.Vector3());
+      const inside = (o, r) => { for (let q = o; q; q = q.parent) if (q === r) return true; return false; };
+      const rc = new T.Raycaster(); rc.setFromCamera(new T.Vector2(${x} / innerWidth * 2 - 1, -(${y} / innerHeight) * 2 + 1), c.camera);
+      const hs = rc.intersectObjects([...w.entities.values()].filter(Boolean), true);
+      const h = hs.find((h) => !inside(h.object, peb)); const top = h && h.face && h.face.normal.clone().transformDirection(h.object.matrixWorld).y > 0.6 && inside(h.object, pl);
+      return { P: P.toArray(), A: top ? h.point.toArray() : null, onPebble: !!hs[0] && inside(hs[0].object, peb) }; })`);
+    const findPress = async () => { const c0 = await evalJson(`Promise.all([import('/lib/core.js'), import('/lib/world.js')]).then(([c, w]) => { const T = c.THREE; const peb = w.entities.get('pebble');
+      const s = new T.Box3().setFromObject(peb).getCenter(new T.Vector3()).project(c.camera); return [(s.x + 1) / 2 * innerWidth, (1 - s.y) / 2 * innerHeight]; })`);
+      // whole pixels (a MouseEvent's clientX is), and the middle of the run that qualifies, not its edge
+      const ok = []; for (let dy = 0; dy <= 40; dy += 2) { const xy = [Math.round(c0[0]), Math.round(c0[1] + dy)]; const g = await geo(xy[0], xy[1]); if (g.onPebble && g.A) ok.push({ xy, g }); }
+      return ok.length ? ok[Math.floor(ok.length / 2)] : null; };
+    const pr = await findPress(); const at = pr?.xy ?? null; const press = pr?.g;
+    const m0 = at && [at[0], at[1] + 6], m1 = at && [at[0] + 10, at[1] + 4];
+    const A0 = m0 && (await geo(m0[0], m0[1])).A, A1 = m1 && (await geo(m1[0], m1[1])).A;
+    check("(setup) a press point on the pebble, and two pointer points over the plinth's top", !!at && !!A0 && !!A1, { press, at, A0, A1 });
+    await page(`(await import('/lib/build.js')).setTool('move'); return true;`);
+    await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${at?.[0]}, clientY: ${at?.[1]} })), true))`);
+    check("F1 a press on the pebble selects it", await waitFor(`import('/lib/scenegraph.js').then((m) => m.sceneSelected() === 'pebble')`));
+    const move = (m: number[]) => evalJson(`(dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: ${m?.[0]}, clientY: ${m?.[1]} })), true)`);
+    await move(m0); await sleep(400);
+    const p0 = (await geo(0, 0)).P;
+    await move(m1); await sleep(400);
+    const p1 = (await geo(0, 0)).P;
+    const d = (u: number[], v: number[]) => [u[0] - v[0], u[1] - v[1], u[2] - v[2]];
+    const dp = d(p1, p0), da = A0 && A1 ? d(A1, A0) : null;
+    check("F2 the pebble follows the pointer in the world's frame: its move = the pointer's on the plinth's top", !!da && Math.hypot(...d(dp, da)) < 0.02 && Math.hypot(...da) > 0.03, { dp, da, A0, A1, drag: await evalJson(`globalThis.__buildDrag?.()`) });
+    check("F3 …and the drag doesn't jump when it starts: the pebble keeps its offset from the point under the pointer (the old ray found the pebble itself)", !!A0 && !!press && Math.hypot(...d(d(p0, A0), d(press.P, press.A))) < 0.02, { p0, A0, press });
+    n0 = myActs().length;
+    await evalJson(`(dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${m1?.[0]}, clientY: ${m1?.[1]} })), true)`);
+    check("F4 release = ONE act: set the pebble's transform (local to the plinth), expecting where it was", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.verb === "set" && myActs().at(-1).e.body.request.id === "pebble" && !!myActs().at(-1).e.body.request.expect), myActs().slice(n0).map((a) => a.e.body.request));
+    await sleep(800);
+    const pAfter = (await geo(0, 0)).P;
+    check("F5 …and once the door's echo is drawn, the pebble is where the drag left it", Math.hypot(...d(pAfter, p1)) < 0.02, { pAfter, p1 });
+    // a mesh drag of a thing I locked asks too (the old client stopped it before the door was asked)
+    check("(setup) I lock the pebble", (await page(`return (await (await import('/lib/v4edit.js')).lock('pebble', true)).ok;`)) === true);
+    n0 = myActs().length;
+    const g2 = (await findPress())?.xy ?? at;
+    await evalJson(`import('/lib/core.js').then((m) => (m.canvas.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0, clientX: ${g2?.[0]}, clientY: ${g2?.[1]} })), true))`);
+    await move([g2?.[0] + 10, g2?.[1] + 8]);
+    await sleep(400);
+    await evalJson(`(dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: ${g2?.[0] + 10}, clientY: ${g2?.[1] + 8} })), true)`);
+    check("F6 a mesh drag of my locked pebble asks 'Move anyway?'", await waitFor(`${dlgTitle} === 'This is locked. Move anyway?'`), await evalJson(dlgTitle));
+    await dlgClick("Cancel");
+    check("F7 ✕ Cancel puts it back, and nothing is written", await waitFor(`import('/lib/world.js').then((m) => { const p = m.entities.get('pebble').getWorldPosition(new (m.entities.get('pebble').position.constructor)()); return Math.hypot(p.x - ${pAfter[0]}, p.y - ${pAfter[1]}, p.z - ${pAfter[2]}) < 0.02; })`) && (await sleep(600), myActs().length === n0), myActs().slice(n0).map((a) => a.e.body.request)); }
+
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);
   check("B4 what the page drew came from its own fold: v4 entries ingested, v1 verbs derived locally, no resync (that the server sends it no `log` entries is server-check S8)", await evalJson(`import('/lib/net.js').then((m) => m.v4.stats.ingested > 10 && m.v4.stats.projected > 0 && m.v4.stats.resyncs === 0)`), await evalJson(`import('/lib/net.js').then((m) => m.v4.stats)`));
   console.log("  (toasts on screen at the end: " + JSON.stringify(await evalJson(`[...document.querySelectorAll('.toast')].map((t) => t.textContent.slice(0, 120))`)) + ")");
+  check("N1 no '[state] seq gap' noise: the v1 numbering a v4 client derives is sparse by design (v4seq×1000+k), and the v4 stream checks its own gaps (K4)", await evalJson(`__gaps.length === 0`), await evalJson(`__gaps.slice(0, 4)`));
   check("errors: no page error", await evalJson(`__errs.length === 0`), await evalJson(`__errs`));
   bob.close();
 } catch (e) { check("the run threw", false, String(e?.stack ?? e)); }
