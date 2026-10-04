@@ -12,8 +12,9 @@
 //     sees the names they typed; an h-- (hashed) name stays hashed;
 //   - transform → pos / q (+ yaw = q's heading) / scale. v1 scale is one number: a non-uniform v4 scale shows its
 //     y factor (lossy, named); a uniform one is exact;
-//   - a door-written parent ({to, order}: transform LOCAL to it) → v1 `parent {to, offset, q}`; a translated one
-//     (no `order`: the v1 record the translator carried) passes back unchanged;
+//   - a parent ({to, order, slot?}: transform LOCAL to it, whether the door or translate-v1@2 wrote it) → v1
+//     `parent {to, slot?, offset, q}` (slice 3a retired the `order` stopgap that told translate-v1@1's carried v1
+//     records apart; a world translated by @1 should be translated again);
 //   - model → lib; every other component → comp.<name> (so `lock` is comp.lock: the same lock, PROTOCOL-v4 §5);
 //     legacy:<field> (a v1 field the translator carried) → that field;
 //   - @world: roles:<id> → roles, default-role → roles['*'], bans:<id> → bans, palette:<k> → assets,
@@ -41,10 +42,9 @@ export function legacyEntity(id, c) {
   const s = Array.isArray(t.scale) && t.scale.length === 3 ? t.scale : [1, 1, 1];
   rec.scale = s[0] === s[1] && s[1] === s[2] ? s[0] : s[1];
   const p = c.parent;
-  if (p && typeof p.to === "string") {
-    if ("order" in p) rec.parent = { to: idOut(p.to), offset: rec.pos.slice(), q: qn.slice() }; // door-written: transform is local to it
-    else rec.parent = { ...clone(p), to: idOut(p.to) };                                         // translated: the v1 record as carried
-  }
+  // every parent is the door's shape now (translate-v1@2 writes it too): the transform is LOCAL to the parent, which is
+  // exactly v1's offset + q. A socket name rides along for the UI; with an explicit offset v1 draws it at the offset.
+  if (p && typeof p.to === "string") rec.parent = { to: idOut(p.to), ...(typeof p.slot === "string" ? { slot: p.slot } : {}), offset: rec.pos.slice(), q: qn.slice() };
   for (const [k, v] of Object.entries(c)) {
     if (k === "model" || k === "transform" || k === "parent") continue;
     if (k.startsWith("legacy:")) { rec[idOut(k.slice(7))] = clone(v); continue; }

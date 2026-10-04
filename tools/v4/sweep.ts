@@ -24,6 +24,7 @@ import { translate as translateD3 } from "../../shared/v4/translate-d3.js";
 import { simFold, EIDOSIM_BUILD, EIDOSIM_FILES } from "../../shared/v4/simlayer.js";
 import { emptyState as v1Empty, foldEntry } from "../../shared/fold.js";
 import * as eidosim from "../../shared/sim.js";
+import { localOf } from "../../shared/hierarchy.js";
 
 let pass = 0, fail = 0;
 const check = (name: string, ok: boolean, detail = "") => { if (ok) pass++; else { fail++; console.log(`  FAIL ${name}${detail ? ` — ${detail}` : ""}`); } };
@@ -75,11 +76,20 @@ const LIGHT_KEYS = ["color", "intensity", "range", "keep", "day"];
 const dec = (s: string) => (s.startsWith("x--") ? Buffer.from(s.slice(3), "hex").toString("utf8") : s); // h--: a hash, not invertible; a mismatch shows
 const DROP_ENTITY = ["actor", "ts", "born", "placer"]; // DROPPED: entity.actor / entity.ts, entity.born, placer
 const DROP_WORLD = ["entities", "mounts", "recentChat", "chatTotal"]; // DROPPED: mounts, recentChat / chatTotal
+// translate-v1@2 (slice 3a): a riding thing's pose is where the RENDERER puts it, read here through shared/hierarchy.js
+// localOf (the client's own reading, not the translator's rideOf): offset, else its socket's pos; parent.q, else yaw,
+// else the socket's yaw. Its own v1 pos/yaw/q while it rides are DROPPED ("a mounted thing's own pos/yaw/q"), and the
+// parent keeps {to, slot?} plus anything that isn't pose. A v1 guard is a lock (DROPPED "comp.guard").
+const POSE = new Set(["offset", "yaw", "q"]);
 function oldNorm(st: any) {
   const ents: any = {};
   for (const [id, e0] of Object.entries<any>(st.entities ?? {})) {
     const e: any = {};
     for (const [k, v] of Object.entries<any>(e0)) if (!DROP_ENTITY.includes(k)) e[k] = v;
+    const L = e0.parent ? localOf(e0, st.entities) : null;
+    if (L?.mounted) { e.pos = L.pos; e.q = L.q ?? yq(L.yaw); delete e.yaw; }
+    if (e.parent && typeof e.parent.to === "string") e.parent = Object.fromEntries(Object.entries<any>(e.parent).filter(([k]) => !POSE.has(k)));
+    if (e.comp && "guard" in e.comp) { const { guard, ...cc } = e.comp; e.comp = cc; if (guard && !cc.lock) e.comp.lock = true; }
     const { yaw, q, scale, pos, ...rest } = e;
     const n: any = { ...rest, pos: pos ?? [0, 0, 0], q: Array.isArray(q) ? q : yq(yaw ?? 0), scale: typeof scale === "number" ? [scale, scale, scale] : (scale ?? [1, 1, 1]) };
     if (rest.kind === "light") { const L: any = {}; for (const f of LIGHT_KEYS) if (rest[f] !== undefined) { L[f] = rest[f]; delete n[f]; } delete n.kind; n.comp = { ...(n.comp ?? {}), light: L }; }
@@ -111,7 +121,7 @@ function unproject(v4: any) {
     for (const [k, v] of Object.entries<any>(comps)) {
       if (k === "transform") { e.pos = v.pos; e.q = v.q; e.scale = v.scale; }
       else if (k === "model") e.lib = v;
-      else if (k === "parent") e.parent = typeof v?.to === "string" ? { ...v, to: dec(v.to) } : v;
+      else if (k === "parent") e.parent = typeof v?.to === "string" ? (({ order, ...p }) => ({ ...p, to: dec(v.to) }))(v) : v; // order: v4's sibling order, no v1 field
       else if (k.startsWith("legacy:")) e[dec(k.slice(7))] = v;
       else (e.comp ??= {})[dec(k)] = v;
     }
@@ -133,12 +143,13 @@ const walk = (d: string, depth = 0) => { if (depth > 5) return; let ents: string
   for (const n of ents) { if (n === "node_modules" || n === ".git") continue; const p = path.join(d, n);
     if (n === "log.jsonl") logs.push(p); else { try { if (fs.statSync(p).isDirectory()) walk(p, depth + 1); } catch {} } } };
 for (const r of roots) walk(r);
-const seen = new Set<string>(); let total = 0, entries = 0, divergences = 0, malformed = 0, lossy = 0, renamed = 0, clamped = 0; const t0 = performance.now();
+const seen = new Set<string>(); let total = 0, entries = 0, divergences = 0, malformed = 0, lossy = 0, renamed = 0, clamped = 0, guards = 0, guardWorlds = 0, mounted = 0, mountVerbs = 0; const t0 = performance.now();
 for (const p of logs.sort()) {
   const raw = fs.readFileSync(p, "utf8"); const h = sha256(raw); if (seen.has(h) || !raw.trim()) continue; seen.add(h);
   const L = parse(raw); const name = p.replace(path.resolve(ENGINE, "..") + "/", "");
   let r: any; try { r = translateV1(L); } catch (e: any) { check(`${name}: translates without throwing`, false, e.message); continue; }
   total++; entries += L.length; divergences += r.stats.divergences; renamed += r.stats.renamed ?? 0; clamped += r.stats.tsClamped ?? 0;
+  guards += r.stats.guards; if (r.stats.guards) guardWorlds++; mounted += Object.values<any>(r.final.v4).filter((c) => c.parent).length; mountVerbs += r.stats.verbs.mount ?? 0;
   check(`${name} (${L.length}): 0 divergences`, !r.stats.divergences, JSON.stringify(r.stats.firstDivergence));
   const back = v4fold(readLog(text(r.out)));
   const m = back.diagnostics.filter(([, k]: any) => k.startsWith("malformed")); malformed += m.length;
@@ -155,6 +166,7 @@ for (const p of logs.sort()) {
   check(`${name}: the projection loses nothing (independent inverse vs the engine fold${every > 1 ? `, every ${every}` : ", every entry"})`, !loss, JSON.stringify(loss).slice(0, 400));
 }
 console.log(`[sweep] ${total} distinct world logs, ${entries} entries, divergences ${divergences}, malformed-on-read-back ${malformed}, lossy ${lossy}, renamed actors ${renamed}, ts clamped ${clamped}, ${Math.round(performance.now() - t0)} ms`);
+console.log(`[sweep] translate-v1@2: ${mountVerbs} v1 mounts translated; ${mounted} things ride a parent at the end (door-shaped: transform local, parent {to, order, slot?}); ${guards} guards became locks in ${guardWorlds} world(s)`);
 console.log(`[sweep] DROPPED (by design): ${Object.keys(DROPPED).join("; ")}`);
 console.log(`[sweep] ${pass} passed, ${fail} failed`);
 process.exit(fail || !total ? 1 : 0);

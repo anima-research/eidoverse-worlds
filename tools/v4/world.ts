@@ -39,6 +39,10 @@ if (cmd === "found") {
   console.log(`translated "${src}" (${r.stats.in} v1 entries) → v4 world "${dest}" (${r.entries} entries, ${r.stats.state} state, `
     + `0 divergences, ${r.stats.renamed} actor names escaped, ${r.stats.tsClamped ?? 0} ts clamped); digest ${r.digest}`);
   console.log(`the v1 log was read, not written: ${before.size} bytes, mtime unchanged: ${before.mtimeMs === after.mtimeMs}`);
+  // PROTOCOL-v4 §5: v1 `guard` merges into `lock`, which drops its authorship protection by design. Say so, so the
+  // world's owners can be told what changed (and which things to look at).
+  if (r.stats.guards) console.log(`NOTE for the owners: ${r.stats.guards} guarded thing(s) in the v1 world became locked (${r.stats.guardsLive} still guarded at the end). `
+    + `In v4 a lock binds everyone, the placer too, and any builder may lift it; the guard's "only the placer or an owner may change it" is gone (§5).`);
 } else if (cmd === "info") {
   const name = rest[0]; if (!name || !NAME.test(name)) die("usage: info <name>");
   if (!isV4World(name)) die(`${name} is not a v4 world (no v4.jsonl with a v4 genesis)`);

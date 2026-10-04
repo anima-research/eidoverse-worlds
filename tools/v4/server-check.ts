@@ -16,6 +16,7 @@ import { readLog, fold } from "../../shared/v4/fold.js";
 import { legacyState, legacyDiff } from "../../shared/v4/legacy.js";
 import { emptyState as v1Empty, foldEntry } from "../../shared/fold.js";
 import { enc } from "../../shared/v4/names.js";
+import { worldPose } from "../../shared/hierarchy.js";
 
 const BASE = process.env.V4_BASE ?? "097eedcc"; // slice 1's head: the v1 server before this slice
 const root = scratch("server");
@@ -178,6 +179,9 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   a.verb("comp", { id: "lamp_1", type: "label", data: "the old table" });
   a.verb("spawn", { id: "cup_1", lib: "test/cup.glb", pos: [1, 0.75, 1] });
   a.verb("mount", { id: "cup_1", to: "lamp_1", offset: [0, 0.75, 0] });
+  a.verb("comp", { id: "lamp_1", type: "sockets", data: { seat: { pos: [0.3, 0.75, 0.1], yaw: 1 } } });
+  a.verb("spawn", { id: "mug_1", lib: "test/cup.glb", pos: [7, 0, 7] });
+  a.verb("mount", { id: "mug_1", to: "lamp_1", slot: "seat" });
   a.verb("say", { text: "hello from v1" });
   await sleep(500); a.close(); await sleep(300);
   const v1log = path.join(W4, "oldtown", "log.jsonl"); const before = fs.readFileSync(v1log);
@@ -188,8 +192,15 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   ok(/^eidoverse\/translate-v1@/.test(g.body.translatedFrom?.translator) && /^[0-9a-f]{16}$/.test(g.body.translatedFrom?.fold), "S6 genesis names the engine translator and the v1 fold build", g.body.translatedFrom);
   ok(tool(["translate", "oldtown", "oldtown-v4"]).code !== 0, "S6 translating onto an existing world is refused");
   const old = await client(srv.port, "oldtown", "Ann"), neu = await client(srv.port, "oldtown-v4", "Ann");
-  const E = (s) => Object.fromEntries(Object.entries(s.entities).map(([id, e]) => [id, { lib: e.lib, pos: e.pos, label: e.comp?.label, parent: e.parent?.to }]));
-  ok(JSON.stringify(E(old.snapshot.state)) === JSON.stringify(E(neu.snapshot.state)), "S6 the v4 copy shows the same things to today's client", [E(old.snapshot.state), E(neu.snapshot.state)]);
+  // what a person SEES: each thing's world pose as the renderer composes it (shared/hierarchy.js). A riding thing's own
+  // v1 pos is its unused pre-mount pose, so comparing raw `pos` would compare a hidden field (translate-v1@2 DROPPED)
+  const r6 = (v) => v.map((n) => Math.round(n * 1e6) / 1e6);
+  const E = (s) => Object.fromEntries(Object.entries(s.entities).map(([id, e]) => { const p = worldPose(s.entities, id);
+    return [id, { lib: e.lib, at: r6(p.pos), q: r6(p.q), label: e.comp?.label, parent: e.parent?.to, slot: e.parent?.slot }]; }));
+  ok(JSON.stringify(E(old.snapshot.state)) === JSON.stringify(E(neu.snapshot.state)), "S6 the v4 copy shows the same things to today's client, where they are (mounted at an offset and at a socket)", [E(old.snapshot.state), E(neu.snapshot.state)]);
+  const v4c = fold(readLog(fs.readFileSync(path.join(W4, "oldtown-v4", "v4.jsonl")))).entities;
+  ok(JSON.stringify(v4c[enc("mug_1")].c.parent) === JSON.stringify({ to: enc("lamp_1"), order: "a0", slot: "seat" }) && JSON.stringify(v4c[enc("mug_1")].c.transform.pos) === "[0.3,0.75,0.1]",
+    "S6 a translated mount is in the door's shape: transform local to the parent (here the socket's pos), parent {to, order, slot}", [v4c[enc("mug_1")].c.parent, v4c[enc("mug_1")].c.transform]);
   ok(neu.snapshot.v4?.version === 4 && neu.snapshot.yourRights?.role === "owner" && !old.snapshot.v4, "S6 v4 copy: v4 + Ann still owns it; the original: still v1", [neu.snapshot.yourRights, old.snapshot.v4]);
   ok(neu.snapshot.state.recentChat?.some((m) => m.text === "hello from v1"), "S6 the chat window comes across");
   const ed = await neu.req("set", { id: enc("lamp_1"), component: "label", value: "the new table" });

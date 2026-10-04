@@ -3,7 +3,8 @@
 //   N   names.js: one encoding for actors, ids and components; the lab's `0abc` / `n0abc` collision is gone
 //   T   the engine translator's own name, and the v1 fold build it stamps
 //   P   locks (PROTOCOL-v4 §5): v1's matrix (tools/locktest.ts), ancestors, through_lock, the gameplay lock inside
-//       its own component
+//       its own component, and v1 lock/guard through the translator
+//   M   translated mounts in the door's shape: where the door sees a riding thing, place-on and overlap warnings
 //   L   the live world (server/v4/live.ts) equals a whole-log re-read after every request: state, sim, the id index
 //   C   the engine catalogue's shape (an off-centre GLB box, measured surfaces) places things where they rest
 //   X   the compatibility projection: the v1 verbs it sends, folded by the client's own fold, reproduce it
@@ -20,6 +21,8 @@ import { legacyState, legacyDelta, foldLegacy, legacyDiff } from "../../shared/v
 import { openWorld } from "../../server/v4/disk.ts";
 import { openLive } from "../../server/v4/live.ts";
 import { v1FoldBuild, v1FoldFiles } from "../../server/v4/build.ts";
+import { emptyState as v1Empty, foldEntry as v1fold } from "../../shared/fold.js";
+import { worldPose } from "../../shared/hierarchy.js";
 
 const root = scratch("door");
 let pass = 0, fail = 0;
@@ -123,7 +126,55 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
     const i = call("vic", "inspect", { id: "gate" }); ok(i.notForYou?.some((x) => x.action === "open") && i.door?.locked === true, "P36 inspect shows why, and the door's state", i.notForYou);
     call("olive", "set", { id: "gate", component: "lock", value: true });
     ok(code(call("bob", "use", { id: "gate", action: "bolt" })) === undefined, "P37 an edit lock doesn't stop using the door (v1: use stays open)"); }
+  { // translation: v1 lock is the identity; v1 guard becomes a lock, and is counted
+    const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log", roles: { ann: { role: "owner" } } } },
+      { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
+      { seq: 1, ts: 2, actor: "ann", verb: "spawn", args: { id: "statue", lib: "crate", pos: [1, 0, 1] } },
+      { seq: 2, ts: 3, actor: "ann", verb: "comp", args: { id: "statue", type: "lock", data: true } },
+      { seq: 3, ts: 4, actor: "ann", verb: "spawn", args: { id: "sign", lib: "crate", pos: [3, 0, 1] } },
+      { seq: 4, ts: 5, actor: "ann", verb: "comp", args: { id: "sign", type: "guard", data: true } },
+      { seq: 5, ts: 6, actor: "ann", verb: "spawn", args: { id: "both", lib: "crate", pos: [5, 0, 1] } },
+      { seq: 6, ts: 7, actor: "ann", verb: "comp", args: { id: "both", type: "guard", data: true } },
+      { seq: 7, ts: 8, actor: "ann", verb: "comp", args: { id: "both", type: "guard", data: null } }];
+    const r = translate(old); const f = r.final.v4;
+    ok(f.statue.lock === true && !r.stats.divergences, "P38 a v1 lock translates to `lock` unchanged (the identity)", f.statue);
+    ok(f.sign.lock === true && !("guard" in f.sign) && !("lock" in f.both), "P39 a v1 guard becomes a lock (and an unguarded thing has none)", [f.sign, f.both]);
+    ok(r.stats.guards === 2 && r.stats.guardsLive === 1, "P40 the translator counts guards that became locks (2 ever, 1 still on), so the owners can be told", r.stats);
+    fs.writeFileSync(root + "worlds/tr-locks.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
+    const tc = (actor, tool, args) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "tr-locks"), actor, tool, args); };
+    ok(code(tc("ann", "set", { id: "sign", component: "transform", value: { pos: [0, 0, 0] } })) === "locked", "P41 in the translated world the old guard binds even its placer (by design, §5)"); }
 }
+
+// ---- M: translated mounts in the door's shape (research 37, slice 3 #3) ----
+// translate-v1@1 carried v1's parent record and v1's own pos; the door reads transform as LOCAL to parent, so it saw a
+// riding crate wherever its unused pre-mount pos pointed. Now the door must see it where v1 draws it.
+{ const old = [{ seq: 0, ts: 1, actor: "world", verb: "genesis", args: { v: 2, dialect: "eidoverse-log" } },
+    { seq: 1, ts: 2, actor: "ann", verb: "grant", args: { id: "ann", role: "owner" } },
+    { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "tbl", lib: "table", pos: [2, 0, 3] } },
+    { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "rack", lib: "table", pos: [-3, 0, 2], yaw: 0.5 } },
+    { seq: 2, ts: 3, actor: "ann", verb: "spawn", args: { id: "jar", lib: "bell", pos: [0, 0, 0] } },
+    { seq: 2, ts: 3, actor: "ann", verb: "mount", args: { id: "jar", to: "rack", offset: [0.3, 0.75, -0.1], q: [0, 0.3826834, 0, 0.9238795] } }, // a turned carrier, a turned rider
+    { seq: 3, ts: 4, actor: "ann", verb: "spawn", args: { id: "box", lib: "crate", pos: [9, 4, -6] } },           // its pre-mount pose: far away
+    { seq: 4, ts: 5, actor: "ann", verb: "mount", args: { id: "box", to: "tbl", offset: [0, 0.75, 0] } },          // rides at the table's centre
+    { seq: 5, ts: 6, actor: "ann", verb: "comp", args: { id: "tbl", type: "sockets", data: { perch: { pos: [0.45, 0.75, 0.25], yaw: 1.2 } } } },
+    { seq: 6, ts: 7, actor: "ann", verb: "spawn", args: { id: "bell", lib: "bell", pos: [-5, 0, -5] } },
+    { seq: 7, ts: 8, actor: "ann", verb: "mount", args: { id: "bell", to: "tbl", slot: "perch" } },                // at a socket, no offset
+    { seq: 8, ts: 9, actor: "ann", verb: "spawn", args: { id: "stray", lib: "ball", pos: [6, 0, 6] } },
+    { seq: 9, ts: 10, actor: "ann", verb: "mount", args: { id: "stray", to: "nowhere", offset: [0, 5, 0] } }];      // its carrier doesn't exist
+  const r = translate(old); fs.writeFileSync(root + "worlds/tr-mounts.jsonl", r.out.map((e) => JSON.stringify(e)).join("\n") + "\n");
+  const v1 = v1Empty(); for (const e of old) v1fold(v1, e);
+  const tc = (tool, args) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "tr-mounts"), "ann", tool, args); };
+  ok(!r.stats.divergences && r.final.v4.box.parent?.order === "a0" && !("offset" in r.final.v4.box.parent), "M1 a translated mount is door-shaped: parent {to, order}, no offset copy (L2)", r.final.v4.box.parent);
+  ok(JSON.stringify(r.final.v4.box.transform.pos) === "[0,0.75,0]" && JSON.stringify(r.final.v4.bell.transform.pos) === "[0.45,0.75,0.25]" && r.final.v4.bell.parent.slot === "perch",
+    "M2 its transform is local: the offset, or (no offset) its socket's pos, and the slot is kept", [r.final.v4.box.transform, r.final.v4.bell.transform, r.final.v4.bell.parent]);
+  const near = (a, b) => a && b && a.every((x, i) => Math.abs(x - b[i]) < 1e-6);
+  for (const id of ["box", "bell", "stray", "jar"]) { const i = tc("inspect", { id }); const want = worldPose(v1.entities, id);
+    ok(near(i.world?.pos, want.pos) && near(i.world?.q, want.q), `M3 the door sees ${id} where v1 draws it (world pose)`, [i.world, want]); }
+  const p = tc("create", { id: "ball2", model: "ball", place: { on: "tbl" } }); const at = p.notes?.find((n) => n.placed)?.placed;
+  const loc = openWorld(root, "tr-mounts").state().entities.ball2?.c.transform.pos; // local to tbl (it rides the table)
+  ok(p.ok && loc && Math.max(Math.abs(loc[0]), Math.abs(loc[2])) > 0.4, "M4 place on the table avoids the riding crate at its centre (with @1's shape the door saw the crate 9 m away and the centre free)", [at, loc]);
+  const chk = tc("check", {}).warnings ?? []; ok(!chk.some((x) => x.kind === "overlap" && [x.id, x.with].includes("box") && [x.id, x.with].includes("ball2")), "M5 …and check sees no overlap between them", chk);
+  ok(chk.filter((x) => x.kind === "floating" && ["box", "bell", "jar"].includes(x.id)).length === 0, "M6 …nor calls a riding thing floating", chk); }
 
 // ---- L: live world vs whole-log re-read ----
 { const dir = root + "live/"; T += 1000; let now = T;

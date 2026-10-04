@@ -70,9 +70,14 @@ export function toV4(w: World, verb: string, a: Any): { tool: string; args: Any 
     case "mount": {
       if (!a?.to) return { refuse: "mount needs to" };
       const cur = st.entities[id(a.id)]?.c.transform;
+      // v1 reads a mount as the renderer does: at the offset, else the named socket's pos (and its yaw), else the
+      // carrier's origin (shared/hierarchy.js localOf; translate-v1@2 writes old mounts the same way)
+      const socks = st.entities[id(a.to)]?.c.sockets; const sock = typeof a.slot === "string" && socks && typeof socks === "object" && Object.hasOwn(socks, a.slot) ? socks[a.slot] : null;
+      const slot = typeof a.slot === "string" && a.slot ? { slot: a.slot } : {};
       return { tool: "batch", args: { ops: [
-        { tool: "set", args: { id: id(a.id), component: "parent", value: { to: id(a.to) } } },
-        { tool: "set", args: { id: id(a.id), component: "transform", value: { ...(cur ?? {}), pos: Array.isArray(a.offset) ? a.offset : [0, 0, 0], q: qOf(a) ?? [0, 0, 0, 1] } } }] } };
+        { tool: "set", args: { id: id(a.id), component: "parent", value: { to: id(a.to), ...slot } } },
+        { tool: "set", args: { id: id(a.id), component: "transform", value: { ...(cur ?? {}), pos: Array.isArray(a.offset) ? a.offset : Array.isArray(sock?.pos) ? sock.pos : [0, 0, 0],
+          q: qOf(a) ?? (Number.isFinite(sock?.yaw) ? yawQ(sock.yaw) : [0, 0, 0, 1]) } } }] } };
     }
     case "dismount": {
       const ops: Any[] = [{ tool: "delete", args: { id: id(a.id), component: "parent" } }];
