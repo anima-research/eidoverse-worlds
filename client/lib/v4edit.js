@@ -20,7 +20,7 @@ import { net, requestV4, v4, isV4, sendDrag } from './net.js';
 import { entities } from './world.js';
 import { toV4 } from '../../shared/v4/fromv1.js';
 import { enc, dec } from '../../shared/v4/names.js';
-import { refusalText, lockVerb, lockQuestion, lockChoices } from '../../shared/v4/refusal.js';
+import { refusalText, lockVerb, lockQuestion, lockChoices, lockBody } from '../../shared/v4/refusal.js';
 import { chooseCenter } from './confirmcenter.js';
 import { flashHint, toast } from './ui.js';
 
@@ -119,7 +119,8 @@ async function sendNow(req, { what = req.tool, revert = null, record = true } = 
   for (let round = 0; round < 8 && !r.ok && r.refused?.code === 'locked' && req.args?.through_lock !== true && mayLift(); round++) {
     const verb = lockVerb(req);
     const choices = lockChoices(verb).filter((c) => record || c.v !== 'unlock');
-    const choice = await chooseCenter({ title: lockQuestion(verb), body: refusalText(what, r), choices, cancel: 'cancel' });
+    console.info('[v4edit] lock:', refusalText(what, r));
+    const choice = await chooseCenter({ title: lockQuestion(verb), body: lockBody(r, req.args?.id), choices, cancel: 'cancel' });
     bus.emit('v4-lock-asked', { what, yes: choice === 'through', choice });
     if (choice === 'through') { r = await requestV4(req.tool, { ...req.args, through_lock: true }); break; }
     if (choice !== 'unlock') { cancelled = true; break; }

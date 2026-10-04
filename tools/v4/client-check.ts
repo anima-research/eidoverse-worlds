@@ -167,7 +167,7 @@ try {
   await page(`(await import('/lib/inspect.js')).commitEdit('cup', 'pos.x', 0.4); return true;`);
   check("L1 moving the cup on bob's locked table asks first: 'This is locked. Move anyway?'", await waitFor(`${dlgTitle} === 'This is locked. Move anyway?'`), await evalJson(dlgTitle));
   const body = await evalJson(`document.querySelector('#confirm-center #cc-body')?.textContent ?? ''`);
-  check("L2 …saying why, in the door's words (attached to tbl, which is locked by bob)", /cup is attached to tbl, which is locked \(locked by bob/.test(body) && /through_lock/.test(body), body);
+  check("L2 …saying in one line which thing is locked and by whom, no agent teaching (R, 10-04)", body === "It rides tbl, which is locked by bob.", body);
   check("L3 …and the refused try wrote nothing", myActs().length === n0);
   await dlgClick("Move anyway");
   check("L4 Move anyway: ONE act, the same request with through_lock: true", await waitDisk(() => myActs().length === n0 + 1 && myActs().at(-1).e.body.request.through_lock === true && myActs().at(-1).e.body.request.id === "cup"), myActs().slice(n0).map((a) => a.e.body.request));

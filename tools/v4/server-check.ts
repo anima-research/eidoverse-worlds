@@ -257,7 +257,7 @@ srv.proc.kill();
       [a, "grant", { id: "Bob", role: "builder" }], [b, "spawn", { id: "c1", lib: "test/cup.glb", pos: [0, 0.75, 3] }], [b, "mount", { id: "c1", to: "t1", offset: [0, 0.75, 0] }],
       [a, "comp", { id: "t1", type: "lock", data: true }], [b, "place", { id: "t1", pos: [1, 0, 3] }], [b, "say", { text: "is it locked?" }], [a, "light", { id: "l1", pos: [0, 2, 0], intensity: 9 }],
       [a, "motion", { id: "l1", type: "bob", amp: 0.1, period: 2 }], [b, "remove", { id: "c1" }], [a, "comp", { id: "t1", type: "lock", data: null }], [b, "place", { id: "t1", pos: [1, 0, 3], yaw: 1 }],
-      [b, "frobnicate", { id: "t1" }], [a, "dismount", { id: "nothing" }]];
+      [b, "frobnicate", { id: "t1" }], [a, "dismount", { id: "Ann" }]];   // own body: fix/body-mount (57e0b81f) refuses a foreign one, deliberately
     for (const [c, v, args] of script) { c.verb(v, args); await sleep(60); }
     a.send({ type: "history", reqId: "h1", limit: 50 }); await sleep(400);
     const out = { log: fs.readFileSync(path.join(worlds, "plain", "log.jsonl"), "utf8"), a: a.msgs, b: b.msgs };

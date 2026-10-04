@@ -31,6 +31,13 @@ export function lockVerb(req) {
 }
 /** "This is locked. Move anyway?" */
 export const lockQuestion = (verb) => `This is locked. ${verb} anyway?`;
+/** The lock question's one line for a person: who locked it, and which thing when the lock is on a parent.
+ *  The door's full refusal (with its teaching for agents) stays in the log and the console. */
+export function lockBody(r, id) {
+  const k = r?.refused?.lock; const by = r?.refused?.by;
+  const who = by ? ` by ${readable(by)}` : "";
+  return k && id && k !== id ? `It rides ${readable(k)}, which is locked${who}.` : `Locked${who}.`;
+}
 /** The three answers, in R's order. `through` re-sends with through_lock (one act, the lock stays on); `cancel` writes
  *  nothing and puts the thing back; `unlock` removes the lock and then does it (two acts; Ctrl+Z undoes the edit first). */
 export const lockChoices = (verb) => [
