@@ -6,6 +6,14 @@
 // control: it shows the probe really is an attack. Those commits live in the lab's repository, not this one, so
 // here the control arm runs only when V4_LAB points at a lab checkout; without it the suites check today's code
 // alone and say the control was skipped. Today's side is the gate either way.
+//
+// Locks (slice 3a, PROTOCOL-v4 §5): the engine's door calls the edit lock `lock` and refuses with code `locked`; the
+// lab's doors called it `pinned` and refused with `pinned`. The control arm stays meaningful WITHOUT a name map,
+// because both lab doors the control extracts (4f62913 and c9b4a67) already read `lock` as their legacy alias of
+// `pinned` (`pinnedC = c?.pinned === true || c?.lock === true`). So every suite sends the same `lock` request to both
+// arms and it locks the thing in both. Only the refusal CODE differs, and no baseline predicate reads a code: they
+// ask whether the attack was accepted (`ok`) or refused at all; the `now` predicates ask for `locked`. One case
+// changed meaning on purpose: attack H1c (motion on a lock) is a guard now, since v1's matrix keeps motion open.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";

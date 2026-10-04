@@ -39,7 +39,7 @@ const work = async (base: string, texts: { cottage: string; v1: string; d3: stri
   const w = M.door.worldOf(io);
   const reqs: [string, string, any][] = [["olive", "new", { title: "mem" }], ["olive", "set", { id: "@world", component: "roles:bob", value: { role: "builder" } }],
     ["bob", "create", { id: "table-1", model: "table", place: { at: [0, 0] } }], ["bob", "create", { id: "crate-1", model: "crate", place: { on: "table-1" } }],
-    ["olive", "set", { id: "table-1", component: "pinned", value: true }], ["bob", "delete", { id: "table-1" }], ["bob", "undo", {}]];
+    ["olive", "set", { id: "table-1", component: "lock", value: true }], ["bob", "delete", { id: "table-1" }], ["bob", "undo", {}]];
   const results = reqs.map(([a, t, x]) => { T += 100; const r = M.door.request(w, a, t, x); return r.ok ? "ok" : `refused ${r.refused?.code}`; });
   return { loaded, portable: H === M.hash.sha256Portable, abc: H("abc"), cottage: st.status === "ok" ? digest(st) : st.status,
     v1: H(v1), d3: H(d3), door: { results, log: H(lines.join("\n")), n: lines.length } };

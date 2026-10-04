@@ -147,7 +147,7 @@ const cases = [
       const L = s.world().entries; return { thrown, stopped: stopped ? show(stopped) : null, code: code(stopped), vicActs: L.filter((e) => e.kind === "act" && e.actor === "vic").length }; },
     baseBad: (o) => o.thrown === 40, nowGood: (o) => o.thrown < 40 && o.code === "rate" && o.vicActs <= 60 },
   { id: "G3d", guard: true, what: "a visitor's `use` counts against the visitor, not the handler's author", run(s) { cast(s);
-      s.call("bob", "create", { id: "door", model: "door", place: { at: [0, 0] } }); s.call("bob", "set", { id: "door", component: "reactions", value: { open: { kind: "toggle", component: "open" } } });
+      s.call("bob", "create", { id: "door", model: "door", place: { at: [0, 0] } }); s.call("bob", "set", { id: "door", component: "reactions", value: { open: { kind: "toggle", component: "door", field: "open" } } });
       const uses = Array.from({ length: 61 }, () => s.call("vic", "use", { id: "door", action: "open" }, 50));
       return { accepted: uses.filter(ok).length, last: uses.at(-1), bob: s.call("bob", "set", { id: "door", component: "label", value: "front" }, 50) }; },
     nowGood: (o) => o.accepted === 60 && code(o.last) === "rate" && ok(o.bob) },
@@ -199,27 +199,27 @@ const cases = [
       s.call("ann", "wait", {}, 6000);
       return { tr, mo, rests: restIds(s) }; },
     baseBad: (o) => ok(o.tr) && ok(o.mo) && !o.rests.includes("ball-2"), nowGood: (o) => code(o.tr) === "in-flight" && code(o.mo) === "in-flight" && o.rests.includes("ball-2") },
-  { id: "R2a", what: "33 F2: a pin set mid-flight; then a visitor's unrelated throw never rests, and an epoch cut is 'free'", run(s) { phys(s);
+  { id: "R2a", what: "33 F2: a lock set mid-flight; then a visitor's unrelated throw never rests, and an epoch cut is 'free'", run(s) { phys(s);
       s.call("bob", "move", { to: [-2, 0, 0.3] }); s.call("bob", "grab", { id: "ball-1" }); s.call("bob", "throw", { id: "ball-1", v: [0, 6, 0] });
-      const pin = s.call("ann", "set", { id: "ball-1", component: "pinned", value: true }, 100);
+      const pin = s.call("ann", "set", { id: "ball-1", component: "lock", value: true }, 100);
       s.call("vic", "move", { to: [2, 0, 0.3] }, 10000); s.call("vic", "grab", { id: "ball-3" }); s.call("vic", "throw", { id: "ball-3", v: [0, 4, 0] });
       const w = s.call("vic", "wait", {}, 20000); const cut = s.call("olive", "set", { id: "@world", component: "sim", value: { engine: "eidosim@0.4.0" } });
       return { pin, cut, rests: restIds(s), waitSaw: (w.cameToRest ?? []).map((r) => r.id) }; },
     baseBad: (o) => ok(o.pin) && ok(o.cut) && !o.rests.includes("ball-3"), nowGood: (o) => code(o.pin) === "in-flight" && ok(o.cut) && o.rests.includes("ball-1") && o.rests.includes("ball-3") },
-  { id: "R2b", what: "…the same stall by another road: the table under a held ball is pinned while it's held, then the ball is thrown", run(s) { phys(s);
+  { id: "R2b", what: "…the same stall by another road: the table under a held ball is locked while it's held, then the ball is thrown", run(s) { phys(s);
       s.call("olive", "create", { id: "tbl", model: "table", place: { at: [0, 3] } }); s.call("bob", "move", { to: [0, 0, 2.6] }, 1000);
       s.call("olive", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { on: "tbl" } });
-      const g = s.call("bob", "grab", { id: "cup" }); const pin = s.call("olive", "set", { id: "tbl", component: "pinned", value: true });
+      const g = s.call("bob", "grab", { id: "cup" }); const pin = s.call("olive", "set", { id: "tbl", component: "lock", value: true });
       const t = s.call("bob", "throw", { id: "cup", v: [0, 2, -1] });
       s.call("vic", "move", { to: [2, 0, 0.3] }, 1000); s.call("vic", "grab", { id: "ball-3" }); s.call("vic", "throw", { id: "ball-3", v: [0, 3, 0] });
       s.call("vic", "wait", {}, 8000); s.call("vic", "wait", {}, 100);
       return { g, pin, t, rests: restIds(s) }; },
-    baseBad: (o) => ok(o.g) && ok(o.pin) && ok(o.t) && !o.rests.includes("cup") && !o.rests.includes("ball-3"), nowGood: (o) => code(o.t) === "pinned" && o.rests.includes("ball-3") }, // the launch is admitted like a put: its parent's pin (set while held) binds it in hand (note 34)
-  { id: "R2c", what: "…and by a third: the cup is thrown off the table, then the TABLE is pinned while the cup flies (a flying thing keeps its logged parent)", run(s) { phys(s);
+    baseBad: (o) => ok(o.g) && ok(o.pin) && ok(o.t) && !o.rests.includes("cup") && !o.rests.includes("ball-3"), nowGood: (o) => code(o.t) === "locked" && o.rests.includes("ball-3") }, // the launch is admitted like a put: its parent's lock (set while held) binds it in hand (note 34)
+  { id: "R2c", what: "…and by a third: the cup is thrown off the table, then the TABLE is locked while the cup flies (a flying thing keeps its logged parent)", run(s) { phys(s);
       s.call("olive", "create", { id: "tbl", model: "table", place: { at: [0, 3] } }); s.call("bob", "move", { to: [0, 0, 2.6] }, 1000);
       s.call("olive", "create", { id: "cup", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { on: "tbl" } });
       const g = s.call("bob", "grab", { id: "cup" }); const t = s.call("bob", "throw", { id: "cup", v: [0, 3, -1] });
-      const pin = s.call("olive", "set", { id: "tbl", component: "pinned", value: true }, 50);
+      const pin = s.call("olive", "set", { id: "tbl", component: "lock", value: true }, 50);
       s.call("vic", "move", { to: [2, 0, 0.3] }, 50); s.call("vic", "grab", { id: "ball-3" }); s.call("vic", "throw", { id: "ball-3", v: [0, 3, 0] });
       s.call("vic", "wait", {}, 8000); const w = s.call("vic", "wait", {}, 100);
       return { g, t, pin, rests: restIds(s), unsettled: (w.unsettled ?? []).map((u) => u.id) }; },

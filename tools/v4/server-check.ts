@@ -2,7 +2,7 @@
 // scratch WORLDS_DIR (never the repo's worlds, never ports 8968/8970). usage: bun tools/v4/server-check.ts
 //   S1  found a v4 world (tools/v4/world.ts), join it: the snapshot says v4, the founder is its owner
 //   S2  writes are door requests: create (a measured GLB), place ON it (the engine catalogue), every client sees it
-//   S3  refusals reach the asker: a pinned edit (v4 message and old-UI verb), a visitor's create, a spectator's write
+//   S3  refusals reach the asker: a locked edit (v4 message and old-UI verb; the old guard refused by name), a visitor's create, a spectator's write
 //   S4  undo through the door; the log on disk is v4, strictly readable, and every client's v1 fold = the projection
 //   S5  an agent's building tools (mcpl/tools.ts HANDLERS) wait for the door: accepted, and refused with the reason
 //   S6  translate a v1 world once into a new v4 world: the v1 log's bytes are untouched, the v4 copy is visitable
@@ -117,15 +117,17 @@ ok(vic.of("v4-log").length >= 2, "S2 …and the raw v4 entries (v4-log) for clie
 { const m = vic.of("log").find((x) => x.entry.verb === "mount" && x.entry.args.id === "cup")?.entry.args; const loc = fold(readLog(fs.readFileSync(path.join(W4, "garden", "v4.jsonl")))).entities.cup.c.transform.pos;
   ok(Array.isArray(m?.offset) && Math.abs(m.offset[0] - loc[0]) < 1e-9 && Math.abs(m.offset[2] - loc[2]) < 1e-9 && Math.abs(m.offset[2]) < 0.5, "S2 the mount's offset is the door's LOCAL transform (the table stands at z = 3; the cup's offset is near 0)", [m?.offset, loc]); }
 
-ok((await ann.req("set", { id: "tbl", component: "pinned", value: true })).ok, "S3 Ann pins the table");
+ok((await ann.req("set", { id: "tbl", component: "lock", value: true })).ok, "S3 Ann locks the table");
 const mv = await bob.req("set", { id: "cup", component: "transform", value: { pos: [0.2, 0.75, 0] } });
-ok(mv.ok === false && mv.refused?.code === "pinned", "S3 Bob's move of the cup ON the pinned table is refused, to Bob, with the reason", mv);
+ok(mv.ok === false && mv.refused?.code === "locked" && /through_lock/.test(mv.refused.teach), "S3 Bob's move of the cup ON the locked table is refused, to Bob, with the reason and the way through", mv);
 const errsBefore = bob.of("error").length;
 bob.verb("remove", { id: "cup" }); await sleep(300);
-ok(bob.of("error").length === errsBefore + 1 && /pinned/.test(bob.of("error").at(-1)?.error), "S3 the old UI's remove is refused the same way (an error the client shows)", bob.of("error").at(-1));
+ok(bob.of("error").length === errsBefore + 1 && /locked/.test(bob.of("error").at(-1)?.error), "S3 the old UI's remove is refused the same way (an error the client shows)", bob.of("error").at(-1));
+bob.verb("comp", { id: "cup", type: "guard", data: true }); await sleep(300);
+ok(bob.of("error").length === errsBefore + 2 && /merged into `lock`/.test(bob.of("error").at(-1)?.error), "S3 the old UI's guard is refused by name: guard merged into lock (§5)", bob.of("error").at(-1));
 ok((await vic.req("create", { id: "vics", model: "test/cup.glb" })).refused?.code === "rights", "S3 a visitor's create is refused (rights)");
 ok((await spec.req("create", { id: "x" })).refused?.code === "spectator" && (await spec.req("look")).ok, "S3 a spectator may read, not write");
-ok((await bob.req("set", { id: "cup", component: "label", value: "Bob's cup" })).ok, "S3 a label isn't pin-guarded");
+ok((await bob.req("set", { id: "cup", component: "label", value: "Bob's cup" })).ok, "S3 a label isn't lock-guarded");
 
 const u = await bob.req("undo", {});
 ok(u.ok && u.after?.cup && u.after.cup.label === null, "S4 Bob undoes his own last act (the label goes)", u);
@@ -159,11 +161,11 @@ ok([ann, bob, vic].every((c) => c.of("snapshot").length === 1), "S4 no resync wa
   const sp = await HANDLERS.spawn(ag, { lib: "test/cup.glb", x: 2, z: 2, id: "agentcup" }, {} as any, "spawn");
   ok(!sp.isError && /accepted/.test(sp.content[0].text), "S5 the agent's spawn waits for the door and says it was accepted", sp.content[0].text);
   const rm = await HANDLERS.remove(ag, { id: "cup" }, {} as any, "remove");
-  ok(rm.isError && /pinned/.test(rm.content[0].text), "S5 the agent's remove of a pinned thing comes back as an error naming the pin (PARITY (d)1)", rm.content[0].text);
+  ok(rm.isError && /locked/.test(rm.content[0].text), "S5 the agent's remove of a locked thing comes back as an error naming the lock (PARITY (d)1)", rm.content[0].text);
   const dr = await HANDLERS.door(ag, { tool: "place", args: { id: "agentcup", on: "tbl" } }, {} as any, "door");
   ok(!dr.isError && /"ok": true/.test(dr.content[0].text), "S5 the door tool exposes the v4 vocabulary (relational place)", dr.content[0].text.slice(0, 200));
   const un0 = await HANDLERS.door(ag, { tool: "undo", args: {} }, {} as any, "door");
-  ok(un0.isError && /pinned/.test(un0.content[0].text), "S5 undoing that place is refused now (the inverse goes through admit: the table is pinned)", un0.content[0].text.slice(0, 200));
+  ok(un0.isError && /locked/.test(un0.content[0].text), "S5 undoing that place is refused now (the inverse goes through admit: the table is locked)", un0.content[0].text.slice(0, 200));
   await HANDLERS.door(ag, { tool: "set", args: { id: "agentcup", component: "label", value: "mine" } }, {} as any, "door");
   const un = await HANDLERS.door(ag, { tool: "undo", args: {} }, {} as any, "door");
   ok(!un.isError && /"label": null/.test(un.content[0].text), "S5 …and an undo the agent may make goes through (agents had none: PARITY (b)1)", un.content[0].text.slice(0, 200));

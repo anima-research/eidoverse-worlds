@@ -55,7 +55,10 @@ export function toV4(w: World, verb: string, a: Any): { tool: string; args: Any 
     case "remove": return { tool: "delete", args: { id: id(a.id) } };
     case "comp": {
       if (typeof a.type !== "string") return { refuse: "comp needs a type" };
-      const comp = a.type === "lock" ? "pinned" : encName(a.type);
+      // §5: `lock` is v1's lock, the same component with the same meaning (the identity). `guard` merged into it; an
+      // old UI's guard toggle is refused with that reason rather than silently becoming a lock someone didn't ask for.
+      if (a.type === "guard") return { refuse: "in a v4 world `guard` is merged into `lock` (PROTOCOL-v4 §5): lock it instead (any builder may unlock it)" };
+      const comp = encName(a.type);
       if (a.data == null) return has(id(a.id)) && comp in (st.entities[id(a.id)].c) ? { tool: "delete", args: { id: id(a.id), component: comp } } : { noop: true };
       return { tool: "set", args: { id: id(a.id), component: comp, value: a.type === "lock" ? true : a.data } };
     }

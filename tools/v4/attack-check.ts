@@ -31,19 +31,22 @@ function cast(s) {
 const look = (s, id) => s.call("olive", "inspect", { id });
 
 const attacks = [
-  { id: "H1a", what: "pin bypass: delete a pinned thing's transform", run(s) { cast(s);
-      s.call("bob", "create", { id: "statue", model: "crate", place: { at: [2, 2] } }); s.call("olive", "set", { id: "statue", component: "pinned", value: true });
+  { id: "H1a", what: "lock bypass: delete a locked thing's transform", run(s) { cast(s);
+      s.call("bob", "create", { id: "statue", model: "crate", place: { at: [2, 2] } }); s.call("olive", "set", { id: "statue", component: "lock", value: true });
       const set = s.call("bob", "set", { id: "statue", component: "transform", value: { pos: [0, 0, 0] } });
       return { set, attack: s.call("bob", "delete", { id: "statue", component: "transform" }) }; },
-    baseBad: (o) => refused(o.set) && ok(o.attack), nowGood: (o) => refused(o.set) && o.attack.refused?.code === "pinned" },
-  { id: "H1b", what: "pin bypass: delete a pinned thing's model", run(s) { cast(s);
-      s.call("bob", "create", { id: "statue", model: "crate", place: { at: [2, 2] } }); s.call("olive", "set", { id: "statue", component: "pinned", value: true });
+    baseBad: (o) => refused(o.set) && ok(o.attack), nowGood: (o) => refused(o.set) && o.attack.refused?.code === "locked" },
+  { id: "H1b", what: "lock bypass: delete a locked thing's model", run(s) { cast(s);
+      s.call("bob", "create", { id: "statue", model: "crate", place: { at: [2, 2] } }); s.call("olive", "set", { id: "statue", component: "lock", value: true });
       return { attack: s.call("bob", "delete", { id: "statue", component: "model" }) }; },
-    baseBad: (o) => ok(o.attack), nowGood: (o) => o.attack.refused?.code === "pinned" },
-  { id: "H1c", what: "pin bypass: set motion {type:'spin'} on a pinned thing", run(s) { cast(s);
-      s.call("bob", "create", { id: "statue", model: "crate", place: { at: [2, 2] } }); s.call("olive", "set", { id: "statue", component: "pinned", value: true });
-      return { attack: s.call("bob", "set", { id: "statue", component: "motion", value: { type: "spin" } }) }; },
-    baseBad: (o) => ok(o.attack), nowGood: (o) => o.attack.refused?.code === "pinned" },
+    baseBad: (o) => ok(o.attack), nowGood: (o) => o.attack.refused?.code === "locked" },
+  // H1c was "pin bypass: set motion {type:'spin'} on a pinned thing", refused by the lab's pin. PROTOCOL-v4 §5 gave
+  // `lock` v1's exact meaning, and v1's matrix (tools/locktest.ts) keeps motion open on a locked thing: a motion
+  // animates it in place (v4's are pendulum/spin/bob), it doesn't relocate it. So this is a guard now: it must work.
+  { id: "H1c", guard: true, what: "motion {type:'spin'} on a locked thing stays open, as in v1's lock matrix (§5; the lab's pin refused it)", run(s) { cast(s);
+      s.call("bob", "create", { id: "statue", model: "crate", place: { at: [2, 2] } }); s.call("olive", "set", { id: "statue", component: "lock", value: true });
+      return { open: s.call("bob", "set", { id: "statue", component: "motion", value: { type: "spin" } }), move: s.call("bob", "set", { id: "statue", component: "transform", value: { pos: [0, 0, 0] } }) }; },
+    baseBad: () => true, nowGood: (o) => ok(o.open) && o.move.refused?.code === "locked" },
   { id: "H1d", what: "one change, two answers: `placer` refused by set, written by a visitor's use", run(s) { cast(s);
       s.call("bob", "create", { id: "bell", model: "bell", place: { at: [1, 1] } });
       const direct = s.call("bob", "set", { id: "bell", component: "placer", value: { who: "olive" } });
@@ -65,16 +68,16 @@ const attacks = [
       s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "visitor" } });
       return { bobSet: s.call("bob", "set", { id: "lever", component: "label", value: "mine" }), attack: s.call("vic", "use", { id: "lever", action: "yank" }) }; },
     baseBad: (o) => refused(o.bobSet) && ok(o.attack), nowGood: (o) => refused(o.bobSet) && o.attack.refused?.code === "rights" },
-  { id: "H1g", what: "undo ignores rank and pins: demoted bob undoes his move of a crate olive has since pinned", run(s) { cast(s);
+  { id: "H1g", what: "undo ignores rank and locks: demoted bob undoes his move of a crate olive has since locked", run(s) { cast(s);
       s.call("bob", "create", { id: "crate-1", model: "crate", place: { at: [0, 0] } }); s.call("bob", "set", { id: "crate-1", component: "transform", value: { pos: [3, 0, 3] } });
-      s.call("olive", "set", { id: "crate-1", component: "pinned", value: true }); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "visitor" } });
+      s.call("olive", "set", { id: "crate-1", component: "lock", value: true }); s.call("olive", "set", { id: "@world", component: "roles:bob", value: { role: "visitor" } });
       const set = s.call("bob", "set", { id: "crate-1", component: "transform", value: { pos: [0, 0, 0] } });
       return { set, attack: s.call("bob", "undo", {}), pos: look(s, "crate-1").components?.transform?.pos }; },
     baseBad: (o) => refused(o.set) && ok(o.attack), nowGood: (o) => refused(o.set) && refused(o.attack) && JSON.stringify(o.pos) === "[3,0,3]" },
-  { id: "H1h", what: "put checks rank and pins only at grab (time-of-check/time-of-use)", run(s) { cast(s);
+  { id: "H1h", what: "put checks rank and locks only at grab (time-of-check/time-of-use)", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
       s.call("vic", "move", { to: [0, 0, 0.5] }); const grab = s.call("vic", "grab", { id: "ball" });
-      s.call("olive", "set", { id: "ball", component: "pinned", value: true }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "none" } });
+      s.call("olive", "set", { id: "ball", component: "lock", value: true }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "none" } });
       return { grab, attack: s.call("vic", "put", { id: "ball" }), pos: look(s, "ball").components?.transform?.pos }; },
     baseBad: (o) => ok(o.grab) && ok(o.attack), nowGood: (o) => ok(o.grab) && refused(o.attack) && JSON.stringify(o.pos) === "[0,0,0]" },
   { id: "H1h2", what: "…the same, split: only the role changes between grab and put", run(s) { cast(s);
@@ -82,11 +85,11 @@ const attacks = [
       s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("olive", "set", { id: "@world", component: "roles:vic", value: { role: "none" } });
       return { attack: s.call("vic", "put", { id: "ball" }) }; },
     baseBad: (o) => ok(o.attack), nowGood: (o) => o.attack.refused?.code === "rights" },
-  { id: "H1h3", what: "…and only the pin changes between grab and put", run(s) { cast(s);
+  { id: "H1h3", what: "…and only the lock changes between grab and put", run(s) { cast(s);
       s.call("olive", "create", { id: "ball", model: "ball", components: { physics: { kind: "dynamic", who: "visitor" } }, place: { at: [0, 0] } });
-      s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("olive", "set", { id: "ball", component: "pinned", value: true });
+      s.call("vic", "move", { to: [0, 0, 0.5] }); s.call("vic", "grab", { id: "ball" }); s.call("olive", "set", { id: "ball", component: "lock", value: true });
       return { attack: s.call("vic", "put", { id: "ball" }) }; },
-    baseBad: (o) => ok(o.attack), nowGood: (o) => o.attack.refused?.code === "pinned" },
+    baseBad: (o) => ok(o.attack), nowGood: (o) => o.attack.refused?.code === "locked" },
   { id: "H1i", what: "reserved ids through create-from: id '@x/../y'; and a dry run writes a blob", run(s) { cast(s);
       s.call("bob", "create", { id: "seed", model: "crate", place: { at: [6, 6] } }); const p = s.call("bob", "publish", { from: "seed", name: "seed" });
       const hash = p.notes?.find((n) => n.record)?.record; const store = () => fs.readdirSync(s.root + "store").length;
@@ -188,5 +191,6 @@ for (const a of attacks) {
        now:      ${k === "P4" ? (on[k] ? "view and world disagree" : "one value: view and world agree") : on[k] ? "caught" : "NOT caught"}`); } }
 fs.rmSync(root, { recursive: true, force: true }); if (B) fs.rmSync(B, { recursive: true, force: true });
 console.log(controlNote());
-console.log(`${attacks.length + 5} attacks: ${bad ? `${bad} FAILED` : (B ? "every one worked on the baseline (P1a: already caught there) and is refused or caught now" : "every one is refused or caught now (baseline not run)")}`);
+const G = attacks.filter((a) => a.guard).length;
+console.log(`${attacks.length + 5} attacks (${G} of them guards that must still work): ${bad ? `${bad} FAILED` : (B ? "every attack worked on the baseline (P1a: already caught there) and is refused or caught now; every guard works" : "every attack is refused or caught now (baseline not run); every guard works")}`);
 process.exit(bad ? 1 : 0);

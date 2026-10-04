@@ -2,7 +2,7 @@
 // the plain results it produced (one `state` entry, `cause` = the act's seq). Replay never runs this file.
 // PROTOCOL-v4 L7: every state write, from every path (tools, use handlers, undo, put, create-from, rests, the door's
 // own follow-ups), is admitted by ONE function, `admit`, keyed on who asks, which components change (old and new),
-// pins, where it lands, sanity and rate. Tool checks may only add to it. The only code that appends a state entry is
+// locks, where it lands, sanity and rate. Tool checks may only add to it. The only code that appends a state entry is
 // `stateEntry`, and it takes only what `admit` returned.
 // Ported from the v4 lab (code/v4-lab/door.js @ 11db981). Engine change: storage is injected. The lab's openWorld
 // read and wrote files here; that part is server/v4/disk.js now, so this module has no node: imports and no
@@ -24,6 +24,7 @@ import { simFold, livePoses, digestOf, restEta, ENGINES, carried, restsOf, world
 // own keys only: MODELS["constructor"] is Object (the lab door accepted model "constructor"; L1's no-prototype rule)
 export const LAB_CATALOGUE = Object.freeze({ get: (n) => (Object.hasOwn(MODELS, n) ? MODELS[n] : undefined), list: (q) => Object.entries(MODELS).filter(([k, m]) => k.includes(q) || m.label.includes(q)) });
 let CAT = LAB_CATALOGUE;
+let THROUGH = false; // the request's through_lock flag, set by request() for one synchronous call (like CAT)
 const modelOf = (name) => (typeof name === "string" ? CAT.get(name) : undefined);
 const geomOf = (name) => { const m = modelOf(name); return m && m.size ? m : undefined; };
 const boxOfM = (m) => m.box ?? [[-m.size[0] / 2, 0, -m.size[2] / 2], [m.size[0] / 2, m.size[1], m.size[2] / 2]];
@@ -81,7 +82,10 @@ export function worldOf(io) {
 }
 const isE = (e) => e && !(e instanceof Malformed) && typeof e === "object";
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
-const pinnedC = (c) => c?.pinned === true || c?.lock === true; // `lock` = legacy spelling of `pinned`: door practice, never the fold's
+// PROTOCOL-v4 §5 (locks: decided): `lock` is v1's lock with v1's meaning, so an old log's locks carry over untranslated.
+// A lock is on when its value is truthy, exactly as v1 read it (`comp.lock`); the door itself only ever writes `true`.
+// A purged value is absent(purged), not a lock. The lab's `pinned` and top-level `locked` are retired.
+const lockedC = (c) => { const v = c?.lock; return v !== undefined && v !== PURGED && !!v; };
 const r3 = (n) => Math.round(n * 1000) / 1000;
 const setOp = (id, comp, value) => ({ verb: "set", id, comp, value });
 const delOp = (id, comp) => (comp === undefined ? { verb: "delete", id } : { verb: "delete", id, comp });
@@ -255,7 +259,7 @@ function wire(args) {
 }
 
 export function request(w, actor, tool, args = {}) {
-  const prevCat = CAT; CAT = w.catalogue ?? LAB_CATALOGUE;
+  const prevCat = CAT, prevThrough = THROUGH; CAT = w.catalogue ?? LAB_CATALOGUE; THROUGH = false;
   try {
     if (!isIdentity(actor) || RESERVED.has(actor)) refuse("identity", `'${actor}' isn't an identity the door can stamp`, "identities are a–z, 0–9 and '-', up to 64 (§2.3); door, sim and world are the door's own");
     const h = TOOLS[tool];
@@ -264,7 +268,11 @@ export function request(w, actor, tool, args = {}) {
     if (h && w.exists) settleSim(w);
     if (!h) refuse("unknown-tool", `there is no '${tool}'`, "help lists every tool", { didYouMean: guess(tool, Object.keys(TOOLS)) });
     args = wire(args);
-    const bad = validate(tool, args); if (bad) { const { code, reason, teach, ...rest } = bad; refuse(code, reason, teach, rest); }
+    // through_lock (§5) is a flag on any request, not an argument of one tool: checked here, then admit reads it
+    const { through_lock, ...plain } = args;
+    if (through_lock !== undefined && typeof through_lock !== "boolean") refuse("shape", `through_lock is true or false, got ${JSON.stringify(through_lock)}`, "send through_lock: true to act through a lock you may remove");
+    THROUGH = through_lock === true;
+    const bad = validate(tool, plain); if (bad) { const { code, reason, teach, ...rest } = bad; refuse(code, reason, teach, rest); }
     if (tool === "create" && args.place) { const b2 = validate("place", { ...args.place, id: "x" }); if (b2) { const { code, reason, teach, ...rest } = b2; refuse(code, `place: ${reason}`, teach, rest); } }
     const r = h(w, actor, args);
     if (r && r.refused && !r.refused.teach) r.refused.teach = toolHelp(tool) ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool";
@@ -272,7 +280,7 @@ export function request(w, actor, tool, args = {}) {
   } catch (e) {
     if (e instanceof Refusal) { const { code, reason, teach, ...rest } = e; return { ok: false, refused: { code, reason, teach: teach || (TOOLSPEC[tool] ? `help {tool: '${tool}'} shows its arguments with examples` : "help lists every tool"), ...pick(rest) } }; }
     throw e;
-  } finally { CAT = prevCat; }
+  } finally { CAT = prevCat; THROUGH = prevThrough; }
 }
 const pick = (o) => Object.fromEntries(Object.entries(o).filter(([k]) => !["message", "stack"].includes(k)));
 function guess(s, opts) {
@@ -291,7 +299,14 @@ function guess(s, opts) {
 //   rest     — the engine's word on a launched body: transform/parent of that body, and it must equal the engine's;
 //   door     — the door's own follow-up to physics (set down what lost its support, attach a rest, return a lost thing);
 //   founding — the `new` act's first write to @world, by an owner named in genesis, once.
-const PIN_GUARDED = new Set(["transform", "parent", "model", "motion", "physics"]);
+// What a lock guards (§5, mirroring v1's matrix, tools/locktest.ts): nothing may MOVE, REPLACE or REMOVE a locked thing
+// or anything attached to it. Move = transform or parent (v1 place, mount, punt); replace = model (v1 spawn/light onto
+// its id); remove = deleting the thing. Everything that doesn't relocate it stays open, as in v1: labels, lights,
+// reactions, sockets, `use`, sitting on it, and motion (v1's matrix keeps motion open: "sit / use / motion / other comps
+// all stay open while locked"; v4's motions, pendulum/spin/bob, animate a thing in place and never carry it away) and
+// physics (setting it moves nothing; picking a locked thing up is refused at grab). The lab's pin also guarded motion
+// and physics (research 25d H1 called motion on a pin "a pinned thing now visibly moves"); §5 chose v1's meaning.
+const LOCK_GUARDED = new Set(["transform", "parent", "model"]);
 const RATE = { n: 60, ms: 10000 };
 class Admitted { constructor(who, ops, after) { this.who = who; this.ops = ops; this.after = after; Object.freeze(this); } }
 // L7 rate, per actor, over EVERYTHING the actor makes the log hold (acts and says), by the door's clock. One function:
@@ -315,7 +330,7 @@ function admit(w, st, who, ops) {
   // (cap rest) or the door's own follow-ups; an epoch cut (a write to @world.sim) may freeze it (P6, force).
   const sf = st.entities["@world"]?.c.sim && !(cap && ["rest", "door"].includes(cap.kind)) && !ops.some((o) => o.id === "@world" && o.comp === "sim") ? w.sim() : null;
   const inFlight = (id) => !!(sf?.launched[id] && sf.sim?.bodies[id] && !sf.sim.bodies[id].resting);
-  let s = st; const norm = []; const made = new Set(); // a pin guards what happens after it, not the write that creates the thing
+  let s = st; const norm = []; const made = new Set(); // a lock guards what happens after it, not the write that creates the thing
   ops.forEach((raw, i) => {
     const { verb, ...rest } = raw; const op = { verb, ...shapeOneOrRefuse(verb, rest, i) };
     if ("value" in op) op.value = unNegZero(op.value); // I-JSON has no -0 (an engine can make one); the same number, written as 0
@@ -331,18 +346,33 @@ function admit(w, st, who, ops) {
     rights(w, st, s, who, role, op, at);
     keyRights(w, st, s, who, op, at, keysMade);
     if (inFlight(op.id)) refuse("in-flight", `${op.id} is in flight: the engine has it until it comes to rest`, "wait (or catch it: grab {id}); L6: no write may touch a launched thing before its rest");
-    // pins: the thing's own pin as of this op; its ancestors' pins as of before this write (what was attached then)
+    if (op.id === "@world" && op.comp === "lock" && op.verb === "set") refuse("world", "@world can't be locked", "§5: lock the things in it instead");
+    // locks: the thing's own lock as of this op; its ancestors' locks as of before this write (what was attached then)
     if (op.verb === "create") made.add(op.id);
-    else if (!made.has(op.id) && cap?.kind !== "rest" && (op.comp === undefined || PIN_GUARDED.has(op.comp))) { // a rest is the engine's word on a released thing: pins guard authored writes
-      const own = pinnedC(s.entities[op.id]?.c) ? op.id : null; const anc = ancestors(st, op.id).find((k) => pinnedC(st.entities[k]?.c));
-      const k = own ?? anc; const name = s.entities[k]?.c.pinned === true || st.entities[k]?.c.pinned === true ? "pinned" : "lock";
-      if (k) refuse("pinned", `${k === op.id ? op.id : `${op.id}'s parent ${k}`} is pinned, so ${at} can't change`, `delete {id: '${k}', component: '${name}'} first (anyone with build rights may)`); }
+    else if (!made.has(op.id) && cap?.kind !== "rest" && (op.comp === undefined || LOCK_GUARDED.has(op.comp))) { // a rest is the engine's word on a released thing: locks guard authored writes
+      const own = lockedC(s.entities[op.id]?.c) ? op.id : null; const anc = ancestors(st, op.id).find((k) => lockedC(st.entities[k]?.c));
+      const k = own ?? anc;
+      if (k) lockCheck(w, st, who, role, k, op, at); }
     s = applyOps(s, [op]); norm.push(op);
   });
   for (const op of norm) if (op.verb === "set") valueCheck(s, op); // against the state the whole write leaves (parents may come later in a batch)
   if (ownersOf(st).length && !ownersOf(s).length) refuse("last-owner", "that would leave this world with no owner", "§2.3: add the new owner's role first (set {id: '@world', component: 'roles:<them>', value: {role: 'owner'}}), then change yours");
   if (cap?.kind === "rest") restCheck(w, cap, s);
   return new Admitted(who, norm, s);
+}
+// A lock binds everyone, the locker and owners included (§5). `through_lock: true` on the request lets anyone who may
+// remove that lock act through it, and the log records only the edit (the act carries the request as sent, flag and
+// all). It covers the asker's OWN writes: a capability (a handler's author, a hand, the door's own follow-ups) never
+// acts through a lock. Who may remove a lock is whoever may delete the component: builders and owners (L7 rights).
+function lockCheck(w, st, who, role, k, op, at) {
+  const mayUnlock = !who.cap && RANK[role] >= RANK[rankNeeded({ id: k, comp: "lock" })];
+  if (THROUGH && mayUnlock) return;
+  const by = lastSetterOf(w, k, "lock"); const whose = by && !by.deleted ? ` (locked by ${by.by} at ${by.seq})` : "";
+  const what = k === op.id ? `${op.id} is locked${whose}, so ${at} can't change` : `${op.id} is attached to ${k}, which is locked${whose}, so ${at} can't change`;
+  const teach = THROUGH && who.cap ? "through_lock covers your own edits, not a handler or a held thing; unlock it first"
+    : mayUnlock ? `send the same request with through_lock: true, or unlock it first: delete {id: '${k}', component: 'lock'}. A lock stops accidents; any builder may lift it, and history shows who did`
+    : `a builder or owner can unlock it (delete {id: '${k}', component: 'lock'}); you are ${role}`;
+  refuse("locked", what, teach, { lock: k });
 }
 const unNegZero = (v) => (Object.is(v, -0) ? 0 : Array.isArray(v) ? v.map(unNegZero) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unNegZero(x)])) : v);
 function shapeOneOrRefuse(verb, op, i) {
@@ -395,11 +425,14 @@ function valueCheck(s, { id, comp, value: v }) {
     if (!s.entities[v.to]) refuse("not-found", `no thing called '${v.to}'`, "", { didYouMean: guess(v.to, Object.keys(s.entities)) });
     if (v.to === id || ancestors(s, v.to).includes(id) || ancestors(s, id).length >= 32) refuse("loop", `${id} can't be inside ${v.to}: that makes a loop`, ""); }
   if (comp === "model" && !modelOf(v)) refuse("shape", `no model called '${v}'`, "find {kind: 'model', query} lists models", { didYouMean: guess(String(v), CAT.list(String(v).split("/").pop().replace(/\.[a-z0-9]+$/i, "").slice(0, 12)).map(([k]) => k).slice(0, 200)) });
+  if (comp === "lock" && v !== true) refuse("shape", `${at} is true while locked; to unlock, delete it`, `delete {id: '${id}', component: 'lock'}`);
   if (comp === "motion" && obj && "pivot" in v) refuse("derived", `${at}.pivot is derived from what it hangs from; it isn't stored`, "L2: no stored derived values; inspect shows the pivot as a view");
   if (comp === "reactions") { if (!obj) refuse("shape", `${at} must be {<action>: handler}`, "");
     const kinds = Object.keys(COMPONENTS.reactions.handlers);
     for (const [act, h] of Object.entries(v)) { if (!kinds.includes(h?.kind)) refuse("shape", `reactions.${act}: no handler kind '${h?.kind}'`, `handler kinds: ${kinds.join(", ")}`, { didYouMean: guess(String(h?.kind), kinds) });
-      if (h.component !== undefined && !isComponent(h.component)) refuse("shape", `reactions.${act}.component '${h.component}' isn't a component name`, "§2.3"); } }
+      if (h.component !== undefined && !isComponent(h.component)) refuse("shape", `reactions.${act}.component '${h.component}' isn't a component name`, "§2.3");
+      if (h.kind === "set" && !isComponent(h.component)) refuse("shape", `reactions.${act} (set) needs a component`, "e.g. {kind: 'set', component: 'door', field: 'locked', value: true}");
+      for (const f of ["field", "unless"]) if (h[f] !== undefined && typeof h[f] !== "string") refuse("shape", `reactions.${act}.${f} is a field name (a string)`, ""); } }
   if (comp.startsWith("roles:") && (!obj || RANK[v.role] === undefined)) refuse("shape", `${at} must be {role: owner|builder|visitor|none}`, "");
   for (const [f, allowed] of Object.entries(COMPONENTS[comp]?.enums ?? {})) if (obj && v[f] !== undefined && !allowed.includes(v[f])) refuse("shape", `${comp}.${f} must be one of ${allowed.join(" | ")}, got ${JSON.stringify(v[f])}`, `schema {component: '${comp}'}`);
 }
@@ -712,15 +745,23 @@ function buildUse(ctx, a) {
     reactionCap(ctx, a.id, "motion", action);
     ctx.refs.add(a.id); return [setOp(a.id, "motion", { ...mo, amp: r3(amp), t0: ctx.w.now() })];
   }
-  if (h?.kind === "set") { reactionCap(ctx, a.id, h.component, action); ctx.refs.add(a.id); return [setOp(a.id, h.component, h.value)]; }
+  // §5: a thing's gameplay state lives inside its own component (a door is `door: {open, locked}`), never as a top-level
+  // name beside the edit `lock`. A handler names its component and, for an object component, the field it changes.
+  if (h?.kind === "set") { const comp = h.component; reactionCap(ctx, a.id, comp, action); ctx.refs.add(a.id);
+    return [setOp(a.id, comp, h.field === undefined ? h.value : { ...objOf(e.c[comp]), [h.field]: h.value })]; }
   if (h?.kind === "toggle") {
-    const comp = h.component ?? "open"; ctx.refs.add(a.id);
-    if (h.unless && e.c[h.unless] === true) refuse("barred", `${a.id} is ${h.unless}`, h.teach ?? `someone allowed to may 'use' it with another action first`);
+    const { comp, field } = toggleOf(h); ctx.refs.add(a.id);
+    if (barredBy(e, h)) refuse("barred", `${a.id} is ${h.unless}`, h.teach ?? `someone allowed to may 'use' it with another action first`);
     reactionCap(ctx, a.id, comp, action);
-    return [setOp(a.id, comp, !e.c[comp])];
+    return [setOp(a.id, comp, field === undefined ? !e.c[comp] : { ...objOf(e.c[comp]), [field]: !objOf(e.c[comp])[field] })];
   }
   refuse("no-handler", `${a.id} declares '${action}' but its handler kind isn't one this engine runs`, `handler kinds: ${Object.keys(COMPONENTS.reactions.handlers).join(", ")} (schema {component: 'reactions'})`);
 }
+const objOf = (v) => (v && typeof v === "object" && !Array.isArray(v) && v !== PURGED ? v : {});
+// toggle's defaults: the door's own `open` (component `door`, field `open`); a named component with no field toggles
+// the whole value (a plain boolean component). `unless` names a field of the same component that, when true, bars it.
+const toggleOf = (h) => { const comp = h.component ?? "door"; return { comp, field: h.field ?? (h.component === undefined ? "open" : undefined) }; };
+const barredBy = (e, h) => !!h?.unless && objOf(e.c[toggleOf(h).comp])[h.unless] === true;
 function actionsOf(st, id) {
   const e = st.entities[id]; const m = modelOf(e?.c.model);
   return [...Object.keys(e?.c.reactions ?? {}), ...((e?.c.sockets || m?.sockets) ? ["sit"] : [])];
@@ -729,12 +770,12 @@ function offersFor(st, id, actor) {
   const e = st.entities[id]; const can = [], notForYou = [];
   for (const act of actionsOf(st, id)) { const h = e.c.reactions?.[act];
     if (h?.who && RANK[roleOf(st, actor)] < RANK[h.who]) notForYou.push({ action: act, why: `needs ${h.who}` });
-    else if (h?.unless && e.c[h.unless] === true) notForYou.push({ action: act, why: `it is ${h.unless}` });
+    else if (h?.kind === "toggle" && barredBy(e, h)) notForYou.push({ action: act, why: `it is ${h.unless}` });
     else can.push(act); }
   return { canDo: can, ...(notForYou.length ? { notForYou } : {}) };
 }
 
-// ---------- undo (by act; the inverse goes through admit like any write: rank and pins NOW) ----------
+// ---------- undo (by act; the inverse goes through admit like any write: rank and locks NOW) ----------
 function buildUndo(ctx, a, w) {
   const isAct = (e) => isE(e) && e.kind === "act";
   const acts = w.entries.filter((e) => isAct(e) && e.actor === ctx.actor);
@@ -892,7 +933,7 @@ function describe(st, id, live = {}, holds = {}) {
   const e = st.entities[id]; const t = worldT(st, id);
   return { id, name: e.c.label ?? modelOf(e.c.model)?.label ?? e.c.model ?? id, at: t.pos.map((n) => Math.round(n * 100) / 100),
     ...(live[id] ? { moving: live[id] } : {}), ...(holds[id] ? { heldBy: holds[id].by, heldAt: holds[id].pose.pos.map((n) => Math.round(n * 100) / 100) } : {}),
-    ...(actionsOf(st, id).length ? { actions: actionsOf(st, id) } : {}), ...(e.c.parent ? { in: e.c.parent.to } : {}), ...(pinnedC(e.c) ? { pinned: true } : {}), ...(e.c.locked === true ? { locked: true } : {}) };
+    ...(actionsOf(st, id).length ? { actions: actionsOf(st, id) } : {}), ...(e.c.parent ? { in: e.c.parent.to } : {}), ...(lockedC(e.c) ? { lock: true } : {}), ...(e.c.door && typeof e.c.door === "object" ? { door: e.c.door } : {}) };
 }
 
 // ---------- physics (design 20) ----------
@@ -1016,7 +1057,7 @@ const PHYSICS_TOOLS = {
     const ph = e.c.physics;
     if (ph?.kind !== "dynamic") refuse("not-dynamic", `${a.id} isn't something you can pick up`, `a builder can make it so: set {id: '${a.id}', component: 'physics', value: {kind: 'dynamic'}}`);
     const need = ph.who ?? "builder"; if (RANK[roleOf(st, actor)] < RANK[need]) refuse("rights", `only a ${need} may pick up ${a.id}`, "ask someone who can, or ask the owner to set physics.who: 'visitor'");
-    for (const k of [a.id, ...ancestors(st, a.id)]) if (pinnedC(st.entities[k]?.c)) refuse("pinned", `${k === a.id ? a.id : `${a.id}'s parent ${k}`} is pinned`, "");
+    for (const k of [a.id, ...ancestors(st, a.id)]) if (lockedC(st.entities[k]?.c)) refuse("locked", `${k === a.id ? `${a.id} is locked` : `${a.id} is attached to ${k}, which is locked`}, so it can't be picked up`, `a builder or owner can unlock it first: delete {id: '${k}', component: 'lock'}`, { lock: k });
     const live = livePoses(sf)[a.id]; const t = worldT(st, a.id); const here = held ? held.pose.pos : live ? live.pos : t.pos; // where it IS: someone's hand, the air, or the log
     const d = dist(handOf(me), here); if (d > REACH) refuse("out-of-reach", `${a.id} is ${r3(d)} m from you; you can reach ${REACH} m`, `move {to: [${r3(here[0])}, ${me.at[1]}, ${r3(here[2])}]} (your feet stay on the floor; your hand reaches ${HAND_Y} m up) first`);
     const prev = w.presence.holds[a.id]; const notes = [];
@@ -1026,7 +1067,7 @@ const PHYSICS_TOOLS = {
     const dependents = live ? [] : Object.keys(st.entities).filter((k) => { if (fam.has(k)) return false; const b = aabb(st, k);
       return b && !st.entities[k].c.parent && supportUnder(st, b, new Set([k, ...descendants(st, k)])).id === a.id; });
     for (const k of dependents) { const pk = st.entities[k].c.physics; const role = roleOf(st, actor);
-      const pinK = [k, ...ancestors(st, k)].find((x) => pinnedC(st.entities[x]?.c)); if (pinK) refuse("pinned", `${k} rests on ${a.id} and is pinned`, "take it off first, or ask whoever pinned it");
+      const lockK = [k, ...ancestors(st, k)].find((x) => lockedC(st.entities[x]?.c)); if (lockK) refuse("locked", `${k} rests on ${a.id}, and ${lockK === k ? "it" : lockK} is locked, so picking ${a.id} up would move it`, `take ${k} off first, or unlock ${lockK} (delete {id: '${lockK}', component: 'lock'})`, { lock: lockK });
       if (RANK[role] < RANK.builder && !(pk?.kind === "dynamic" && RANK[role] >= RANK[pk.who ?? "builder"])) refuse("rights", `${k} rests on ${a.id}, and you can't move ${k}`, "picking it up would move what's on it; ask someone who can to take it off first"); }
     const spec = st.entities["@world"]?.c.sim;
     // without physics, dependents are set straight down: a write, so it is admitted first (all or nothing)
@@ -1070,7 +1111,7 @@ const PHYSICS_TOOLS = {
     const d = dist(handOf(me), pos); if (d > REACH) refuse("out-of-reach", `that's ${r3(d)} m from you; you can reach ${REACH} m`, "move closer first");
     const q = a.q ?? h.pose.q; const value = { pos, q, scale: t.scale };
     const ops = [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", value)];
-    // the one gate first (your role and its pins NOW, not when you picked it up), then the physical claim on top
+    // the one gate first (your role and its locks NOW, not when you picked it up), then the physical claim on top
     const plan = admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, ops);
     const bad = warnings(plan.after, [a.id]);
     if (bad.length) refuse("implausible", `physics wouldn't leave ${a.id} there: ${bad.map((b) => b.kind + (b.with ? ` ${b.with}` : b.above ? ` above ${b.above}` : b.into ? ` into ${b.into}` : "")).join("; ")}`, "a settlement is a claim the door checks; put it where it would really rest, or leave pos out to set it straight down", { problems: bad });
@@ -1088,7 +1129,7 @@ const PHYSICS_TOOLS = {
   leave(w, actor) {
     const mine = Object.entries(w.presence.holds).filter(([, h]) => h.by === actor).map(([id]) => id);
     w.leaving = actor; let out; try { out = mine.map((id) => ({ id, r: request(w, actor, "drop", { id }) })); } finally { w.leaving = null; }
-    // L6: a disconnect settles at the last ACCEPTED state. A drop the gate refused (demoted, pinned) leaves the thing
+    // L6: a disconnect settles at the last ACCEPTED state. A drop the gate refused (demoted, locked) leaves the thing
     // where the log last had it; if picking it up took it out of the engine, the door puts it back there, as its own act.
     for (const { id, r } of out) if (!r.ok && w.presence.holds[id]?.by === actor) { delete w.presence.holds[id];
       const st = w.state(); if (st.entities[id] && st.entities["@world"]?.c.sim) { const t = st.entities[id].c.transform;
@@ -1113,7 +1154,7 @@ function launch(w, actor, a, tool) {
   if (!carried(spec)) refuse("foreign-engine", `this world runs ${spec.engine} (build ${spec.build}), which this server doesn't carry`, "put it down instead");
   if (!Array.isArray(a.v) || a.v.length !== 3 || a.v.some((n) => !Number.isFinite(n))) refuse("shape", "throw needs v: [x, y, z] in m/s", "e.g. v: [0, 3, 4] tosses it up and forward (+z)");
   // L7 (33 F3): a launch writes no state now, but it decides a write (its rest). Admit the write it releases, as put
-  // does: your role and its pins NOW, rate. The plan is a check only; the rest will be the engine's value.
+  // does: your role and its locks NOW, rate. The plan is a check only; the rest will be the engine's value.
   { const st = w.state(); const t = worldT(st, a.id);
     admit(w, st, { actor, cap: { kind: "handle", ids: [a.id], comps: ["transform", "parent"] } }, [...(st.entities[a.id].c.parent ? [delOp(a.id, "parent")] : []), setOp(a.id, "transform", { pos: h.pose.pos.map(r3), q: t.q, scale: t.scale })]); }
   const notes = []; let v = a.v; const sp = Math.hypot(...v), max = ENGINES[spec.engine].maxSpeed;
@@ -1146,7 +1187,7 @@ const TOOLS = {
           "place {id, on|beside|hang|against|near|at, facing?, height?, along?, level?, offset?, side?, gap?, attach?}", "batch {ops: [{tool, args}…], label?}", "use {id, action?, args?}", "say {text, to?}",
           "undo {label?|act?}", "publish {from, name}", "update {copy, to, resolve?}"],
         body: ["move {to: [x, y, z]}", "grab {id}", "put {id, pos?}", "throw {id, v: [x, y, z]}", "drop {id}", "leave", "wait"],
-        physics: "the world runs physics when @world has a sim component: set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has physics {kind: 'dynamic', who?: 'visitor'|'builder'}", every_write: "may add dry: true to preview", details: "help {tool: 'place'} (or create, set, delete, use, grab, put, throw) shows every argument with its type and an example" },
+        physics: "the world runs physics when @world has a sim component: set {id: '@world', component: 'sim', value: {engine: 'eidosim@0.5.0'}} (owner). A thing can be picked up when it has physics {kind: 'dynamic', who?: 'visitor'|'builder'}", every_write: "may add dry: true to preview, and through_lock: true to act through a lock you may remove (§5: a lock stops accidents and binds everyone, its locker included)", details: "help {tool: 'place'} (or create, set, delete, use, grab, put, throw) shows every argument with its type and an example" },
       world: st?.entities?.["@world"]?.c.about ?? { name: w.name } };
   },
   look(w, actor, a) {

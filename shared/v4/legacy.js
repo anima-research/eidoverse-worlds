@@ -14,7 +14,7 @@
 //     y factor (lossy, named); a uniform one is exact;
 //   - a door-written parent ({to, order}: transform LOCAL to it) → v1 `parent {to, offset, q}`; a translated one
 //     (no `order`: the v1 record the translator carried) passes back unchanged;
-//   - model → lib; `pinned: true` → comp.lock (the edit-mode lock); every other component → comp.<name>;
+//   - model → lib; every other component → comp.<name> (so `lock` is comp.lock: the same lock, PROTOCOL-v4 §5);
 //     legacy:<field> (a v1 field the translator carried) → that field;
 //   - @world: roles:<id> → roles, default-role → roles['*'], bans:<id> → bans, palette:<k> → assets,
 //     sky/terrain/grass → themselves, legacy:<k> → st[k].
@@ -48,7 +48,6 @@ export function legacyEntity(id, c) {
   for (const [k, v] of Object.entries(c)) {
     if (k === "model" || k === "transform" || k === "parent") continue;
     if (k.startsWith("legacy:")) { rec[idOut(k.slice(7))] = clone(v); continue; }
-    if (k === "pinned") { if (v === true) (rec.comp ??= {}).lock = true; continue; }
     (rec.comp ??= {})[idOut(k)] = clone(v);
   }
   return rec;
