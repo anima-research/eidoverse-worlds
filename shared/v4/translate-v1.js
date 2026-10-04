@@ -9,23 +9,19 @@
 // ../fold.js (the lab carried an older anima/main copy in legacy/), hashing and hex come from ./hash.js (no node:
 // imports; the browser may import this file), and the lab's CLI is tools/v4/sweep.ts.
 import { emptyState as v1Empty, foldEntry } from "../fold.js";
-import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, VERSION, isComponent } from "./fold.js";
-import { sha256, utf8Hex } from "./hash.js";
+import { emptyState as v4Empty, applyInPlace, opsOf, worldIdOf, VERSION } from "./fold.js";
+import { enc, encName, dec } from "./names.js";
 
-export const TRANSLATOR = "translate-v1@0.3";
+// The engine's translator has its own name (research 35, slice-2 #1): it projects the ENGINE's v1 fold, which differs
+// from the lab's older copy on two of 35 logs (tilt-demo's q, 06-components' newer verbs), so the lab's name
+// "translate-v1@0.3" would claim output this code didn't make. @1 also differs from the lab in names.js's escape
+// (a component name the grammar refuses is always x--, never n-prefixed). The exact v1 fold build is stamped beside
+// it when the caller knows it (translate(…, {foldBuild}); server/v4/build.ts computes it from the files).
+export const TRANSLATOR = "eidoverse/translate-v1@1";
+export { enc, encName, dec };
 const yawQ = (y) => [0, Math.sin(y / 2), 0, Math.cos(y / 2)];
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
-const sha = sha256;
-
-// §2.3 grammar for old names. A name the grammar accepts (and that doesn't start with the escape) is kept; anything
-// else becomes "x--" + hex(utf8) — or, past 64 characters, "h--" + 61 hex of its sha256. Injective by construction.
-export function enc(s) {
-  s = String(s);
-  if (/^[a-z0-9-]{1,64}$/.test(s) && !/^[xh]--/.test(s)) return s;
-  const hex = utf8Hex(s);
-  return hex.length + 3 <= 64 ? `x--${hex}` : `h--${sha(s).slice(0, 61)}`;
-}
-const encName = (k) => (isComponent(k) && !/^[xh]--/.test(k) ? k : enc(k).replace(/^([0-9])/, "n$1")); // a component name starts with a letter
+// §2.3 grammar for old names: names.js (one encoding, shared with the live door).
 const keyed = (prefix, k) => `${prefix}:${enc(k)}`;
 
 // The projection: what the old fold's state MEANS, in v4 terms. Every deliberate difference is named in DROPPED.
@@ -84,7 +80,7 @@ export const stateBody = (ops) => (ops.length === 1 ? (({ verb, ...body }) => ({
 // I-JSON has no -0; an old log may hold one (the same number, written as 0)
 export const unNegZero = (v) => (Object.is(v, -0) ? 0 : Array.isArray(v) ? v.map(unNegZero) : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unNegZero(x)])) : v);
 
-export function translate(oldEntries, { onDivergence } = {}) {
+export function translate(oldEntries, { onDivergence, foldBuild } = {}) {
   const v1 = v1Empty(); const v4 = v4Empty(); const out = [];
   const stats = { in: oldEntries.length, out: 0, state: 0, verbs: {}, ops: 0, divergences: 0, firstDivergence: null, renamed: 0 };
   let world = null;
@@ -96,7 +92,7 @@ export function translate(oldEntries, { onDivergence } = {}) {
     if (e.kind === "genesis") world = worldIdOf(e); if (e.kind === "state") applyInPlace(v4, opsOf(e), seq); return seq; };
   const genesis = oldEntries[0]?.verb === "genesis" ? oldEntries[0].args : { v: 1, dialect: "eidoverse-log", implicit: true };
   const owners = Object.entries(genesis.roles ?? {}).filter(([, r]) => r?.role === "owner").map(([k]) => enc(k));
-  push({ kind: "genesis", actor: "door", verb: "genesis", ...(Number.isInteger(oldEntries[0]?.ts) ? { ts: oldEntries[0].ts } : {}), body: { version: VERSION, owners, translatedFrom: unNegZero({ ...genesis, translator: TRANSLATOR }) } });
+  push({ kind: "genesis", actor: "door", verb: "genesis", ...(Number.isInteger(oldEntries[0]?.ts) ? { ts: oldEntries[0].ts } : {}), body: { version: VERSION, owners, translatedFrom: unNegZero({ ...genesis, translator: TRANSLATOR, ...(foldBuild ? { fold: foldBuild } : {}) }) } });
   let prev = project(v1);
   for (const e of oldEntries) {
     if (e.verb === "genesis") continue;
