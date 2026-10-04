@@ -18,6 +18,7 @@ import { openLive } from '../../server/v4/live.ts';
 import { request } from '../../shared/v4/door.js';
 import { readLog } from '../../shared/v4/fold.js';
 import { enc } from '../../shared/v4/names.js';
+import { ENGINE_CATALOGUE, warm } from '../../server/v4/catalogue.ts';
 
 const MODEL = 'eidoverse/assets/models/crate_large_red.glb';
 const KEY = 'v4probe';
@@ -28,7 +29,8 @@ let world = null, b = null;
 try {
   // the world: founded by Ann, a crate already standing in it, Bob a builder
   foundV4(join(worlds, 'garden'), 'garden', 'Ann', 'a v4 garden');
-  { const w = openLive(join(worlds, 'garden'), 'garden');
+  await warm([MODEL]);
+  { const w = openLive(join(worlds, 'garden'), 'garden', { catalogue: ENGINE_CATALOGUE });
     const r1 = request(w, enc('Ann'), 'create', { id: 'crate-before', model: MODEL, components: { transform: { pos: [0, 0, 3] } } });
     const r2 = request(w, enc('Ann'), 'set', { id: '@world', component: `roles:${enc('Bob')}`, value: { role: 'builder' } });
     if (!r1.ok || !r2.ok) throw new Error(`setup: ${JSON.stringify([r1, r2])}`); }
@@ -38,6 +40,7 @@ try {
   const errors = [], logs = [];
   pg.on('pageerror', (e) => errors.push(String(e)));
   pg.on('console', (m) => { const t = m.text(); logs.push(t); if (m.type() === 'error') errors.push(t); });
+  const http4xx = []; pg.on('response', (r) => { if (r.status() >= 400) http4xx.push(`${r.status()} ${new URL(r.url()).pathname}`); });
   await pg.goto(`${world.origin}/?world=garden&name=Ann&key=${KEY}`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   const race = (p, ms = 8000) => Promise.race([p, new Promise((_, j) => setTimeout(() => j(new Error(`evaluate stalled ${ms} ms`)), ms))]);
   const ents = () => race(pg.evaluate(() => [...(globalThis.EW?.entities?.keys?.() ?? [])]));
@@ -76,6 +79,7 @@ try {
   check('refuse: …and the crate is still there', (await ents()).includes('crate-live'));
   ws.close();
   const v4Errors = errors.filter((e) => /v4|legacy|projection|fold/i.test(e));
+  stage('http: responses ≥ 400 the page saw (reported, not asserted)', true, http4xx);
   check('errors: no page error, and no console.error mentioning the v4 path', !errors.some((e) => /pageerror|TypeError|ReferenceError/.test(e)) && !v4Errors.length, errors.slice(0, 6));
 } catch (e) {
   failed++; stage('probe', false, String(e?.stack ?? e).slice(0, 600));
