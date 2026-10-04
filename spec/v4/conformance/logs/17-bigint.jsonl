@@ -1,0 +1,9 @@
+{"kind": "genesis", "actor": "door", "verb": "genesis", "body": {"version": 4, "owners": ["k-owner"]}}
+{"world":"sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4","kind":"state","ts":1,"actor":"door","cause":0,"verb":"create","body":{"id":"n0000"}}
+{"world":"sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4","kind":"state","ts":1,"actor":"door","cause":0,"verb":"set","body":{"id":"n0000","comp":"v","value":100000000000000000000}}
+{"world":"sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4","kind":"state","ts":1,"actor":"door","cause":0,"verb":"create","body":{"id":"n0993"}}
+{"world":"sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4","kind":"state","ts":1,"actor":"door","cause":0,"verb":"set","body":{"id":"n0993","comp":"v","value":9007199254740993}}
+{"world":"sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4","kind":"state","ts":1,"actor":"door","cause":0,"verb":"create","body":{"id":"n0992"}}
+{"world":"sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4","kind":"state","ts":1,"actor":"door","cause":0,"verb":"set","body":{"id":"n0992","comp":"v","value":9007199254740992}}
+{"world":"sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4","kind":"state","ts":1,"actor":"door","cause":0,"verb":"create","body":{"id":"n120"}}
+{"world":"sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4","kind":"state","ts":1,"actor":"door","cause":0,"verb":"set","body":{"id":"n120","comp":"v","value":1e20}}

@@ -1,0 +1,5 @@
+{"kind": "genesis", "actor": "door", "verb": "genesis", "body": {"version": 4, "owners": ["k-owner"]}}
+{"world": "sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4", "kind": "act", "ts": 1, "actor": "alice", "verb": "spawn", "body": {}}
+{"world": "sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4", "kind": "state", "ts": 1, "actor": "door", "cause": 1, "verb": "create", "body": {"id": "lamp-1"}}
+{"body":{"value":{"c":"#fff","i":25e-1},"comp":"light","id":"lamp-1"},"verb":"set","cause":1.0,"ts":1e0,"actor":"door","kind":"state","world":"sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4"}
+{"world": "sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4", "kind": "state", "ts": 1, "actor": "door", "cause": 1, "verb": "batch", "body": {"ops": [{"verb": "create", "id": "chair"}, {"verb": "set", "id": "chair", "comp": "example.com/seat@2", "value": [1.0, 2.0]}, {"verb": "set", "id": "@world", "comp": "roles:alice", "value": "owner"}]}}

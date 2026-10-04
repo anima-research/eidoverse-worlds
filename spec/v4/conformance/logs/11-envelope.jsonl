@@ -1,0 +1,10 @@
+{"kind": "genesis", "actor": "door", "verb": "genesis", "body": {"version": 4, "owners": ["k-owner"]}}
+{"world": "sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4", "kind": "act", "ts": 1, "actor": "alice", "verb": "spawn", "body": {}}
+{"world": "sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4", "kind": "state", "ts": 1, "actor": "door", "cause": 1, "verb": "create", "body": {"id": "a"}, "seq": 2}
+{"world": "sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4", "kind": "state", "ts": 1, "actor": "door", "cause": 1, "verb": "create", "body": {"id": "b"}, "extra": 1}
+{"ts": 1, "world": "sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4", "kind": "state", "actor": "door", "verb": "create", "body": {"id": "c"}}
+{"world": "sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4", "kind": "state", "ts": 1, "actor": "door", "cause": 99, "verb": "create", "body": {"id": "d"}}
+{"ts": 1, "world": "sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4", "kind": "teleport", "actor": "door", "verb": "x", "body": {}}
+{"world": "sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4", "kind": "state", "ts": 1, "actor": "door", "cause": 1, "verb": "create", "body": {"id": "e"}, "for": "bob"}
+{"world": "sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4", "kind": "state", "ts": 1, "actor": "door", "cause": 1.5, "verb": "create", "body": {"id": "f"}}
+{"world": "sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4", "kind": "state", "ts": 1, "actor": "door", "cause": 0, "verb": "create", "body": {"id": "g"}}

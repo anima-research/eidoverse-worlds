@@ -1,0 +1,4 @@
+{"kind": "genesis", "actor": "door", "verb": "genesis", "body": {"version": 4, "owners": ["k-owner"]}}
+{"world": "sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4", "kind": "act", "ts": 1, "actor": "alice", "verb": "spawn", "body": {}}
+
+{"world": "sha256:2b77045214421e000ef6120c290ab4c28a5ac9f8081a089a54c60a8602b06fe4", "kind": "state", "ts": 1, "actor": "door", "cause": 1, "verb": "create", "body": {"id": "a"}}
