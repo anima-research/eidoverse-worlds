@@ -164,7 +164,9 @@ export function tickMotion() {
         // The shared evaluator (motioneval.js) is the single source of the
         // closed forms — the agent's look() runs the SAME call, which is the
         // whole point (#82). This side just applies the result to the object.
-        const r = evalWholeMotion(base, m, nowMs);
+        // the entity's pivot component is the default hinge (research 52), in its parent's units: scaled by its own scale
+        const pv = comps.get(id)?.pivot?.pos;
+        const r = evalWholeMotion(Array.isArray(pv) && pv.length === 3 ? { ...base, pivot: [pv[0] * obj.scale.x, pv[1] * obj.scale.y, pv[2] * obj.scale.z] } : base, m, nowMs);
         if (!r.ok) {
           // A motion this evaluator won't vouch for (unknown type, malformed
           // path): the thing stands still here and moves for newer clients.

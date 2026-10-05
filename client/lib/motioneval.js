@@ -180,12 +180,12 @@ export function evalWholeMotion(base, m, nowMs) {
   switch (m.type) {
     case 'pendulum':
       r = { ok: true, rot: true, yaw: null,
-        ...rotateAtPivot(base, axisOf(m, [1, 0, 0]), m.pivot ?? [0, 2, 0], pendulumTheta(m, t)) };
+        ...rotateAtPivot(base, axisOf(m, [1, 0, 0]), m.pivot ?? base.pivot ?? [0, 2, 0], pendulumTheta(m, t)) };   // base.pivot: the entity's pivot component (research 52)
       break;
     case 'spin': {
       const rate = m.degPerSec != null ? m.degPerSec : (m.rpm ?? 6) * 6;   // rpm → deg/s
       r = { ok: true, rot: true, yaw: null,
-        ...rotateAtPivot(base, axisOf(m, [0, 1, 0]), m.pivot ?? [0, 0, 0],
+        ...rotateAtPivot(base, axisOf(m, [0, 1, 0]), m.pivot ?? base.pivot ?? [0, 0, 0],
           (m.phase ?? 0) + (rate * Math.PI / 180) * t) };
       break;
     }

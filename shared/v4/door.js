@@ -750,6 +750,19 @@ function buildPlace(ctx, a) {
     if (e.c.parent) ops.push(delOp(a.id, "parent"));
     ops.push(setOp(a.id, "transform", wt));
   }
+  // a hung thing swings from where its ropes would tie: the UNDERSIDE of the member right above it (agent lab round 2,
+  // Rowan: the swing's pivot was the frame's top), stored as its pivot component, which the door's pivot, inspect, the
+  // renderer and the agent's look all read (research 52). A pivot someone already set is left alone.
+  if (a.hang && !e.c.pivot) {
+    const tie = obbs(st, a.hang).map((o) => { const ext = [0, 1, 2].map((i) => o.ax.reduce((acc, axv, j) => acc + Math.abs(axv[i]) * o.h[j], 0)); return { min: o.c.map((v, i) => v - ext[i]), max: o.c.map((v, i) => v + ext[i]) }; })
+      .filter((b) => pos[0] >= b.min[0] - 1e-6 && pos[0] <= b.max[0] + 1e-6 && pos[2] >= b.min[2] - 1e-6 && pos[2] <= b.max[2] + 1e-6 && b.min[1] >= pos[1] + S[1] - 1e-6)
+      .reduce((best, b) => (best === null || b.min[1] < best ? b.min[1] : best), null);
+    if (tie !== null) {
+      const d = qrot(qinv(wt.q), [pos[0] - wt.pos[0], tie - wt.pos[1], pos[2] - wt.pos[2]]);
+      ops.push(setOp(a.id, "pivot", { pos: d.map((v, i) => r3(v / (scale[i] || 1))) }));
+      ctx.notes.push({ id: a.id, hinge: { y: r3(tie), why: `it swings from the underside of ${a.hang} right above it (its pivot)` } });
+    }
+  }
   ctx.notes.push({ id: a.id, placed: { pos: wt.pos, restsAt: r3(restsAt), ...(a.lying ? { lying: true } : {}), yawDeg: r3(yaw * 180 / Math.PI), on: support, ridesWith: a.attach && support !== "ground" ? support : null }, ...(relaxed.length ? { relaxed } : {}) });
   ctx.refs.add(a.id);
   return ops;
@@ -781,6 +794,7 @@ function warnings(st, ids) {
 // ---------- use (interaction) ----------
 // A pendulum's pivot is a view: derived from what it hangs from, every time it's read (L2: never stored).
 function pivotOf(st, id) {
+  const pv = st.entities[id]?.c.pivot?.pos; if (Array.isArray(pv) && pv.length === 3) return pv.slice();   // the stored hinge (research 52)
   const t = worldT(st, id); const p = st.entities[id]?.c.parent?.to; const pb = p && aabb(st, p);
   return pb && pb.max[1] > t.pos[1] ? [0, r3((pb.max[1] - t.pos[1]) / t.scale[1]), 0] : null;
 }

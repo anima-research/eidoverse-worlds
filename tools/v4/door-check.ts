@@ -561,5 +561,27 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   const again = uw("ann", "undo", { act: mv.act });
   ok(again.refused?.code === "nothing" && /already undone \(by undo \d+, then redo \d+, then undo \d+\)/.test(again.refused.reason), "UR5 undo {act} of something already undone names the chain", again.refused); }
 
+// ---- HG: a hung thing swings from the underside of what's above it, and everyone reads the same hinge (Rowan) ----
+{ const hw = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "hinge"), actor, tool, args); };
+  const { evalWholeMotion, qApply } = await import("../../client/lib/motioneval.js");
+  hw("ann", "new", { title: "hinge" });
+  hw("ann", "create", { id: "frame", model: "swing-frame", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+  const r = hw("ann", "create", { id: "seat", model: "swing-seat", place: { hang: "frame", height: 0.45 } });
+  const W = () => openWorld(root, "hinge").state();
+  const piv = W().entities.seat?.c.pivot?.pos;
+  const st = W(); const sp = st.entities.seat.c.transform; const fp = st.entities.frame.c.transform;
+  const pivWorldY = piv ? fp.pos[1] + sp.pos[1] + piv[1] * sp.scale[1] : null;
+  ok(r.ok && piv && Math.abs(pivWorldY - 2.1) < 1e-3, "HG1 hanging writes the seat's pivot at the beam's UNDERSIDE (y 2.1), not the frame's top (2.2)", { piv, pivWorldY, notes: r.notes });
+  hw("ann", "set", { id: "seat", component: "motion", value: { type: "pendulum", axis: [1, 0, 0], amp: 0.3, period: 3, t0: 0 } });
+  const ins = hw("ann", "inspect", { id: "seat" });
+  ok(JSON.stringify(ins.derived?.pivot) === JSON.stringify(piv), "HG2 inspect reports that same hinge as the pendulum's pivot", ins.derived);
+  const base = { pos: [0, 0.45, 0], yaw: 0, pivot: piv };
+  const mid = evalWholeMotion(base, { type: "pendulum", axis: [1, 0, 0], amp: 0.3, period: 3, t0: 0 }, 1000);
+  const fixed = mid.ok && mid.pos.map((v, i) => v + qApply(mid.quat, piv)[i]);
+  ok(fixed && fixed.every((v, i) => Math.abs(v - (base.pos[i] + piv[i])) < 1e-6) && Math.abs(mid.quat[3]) < 0.9999, "HG3 the renderer's (and look's) evaluator swings ABOUT it: mid-swing, the hinge point hasn't moved", { mid, fixed });
+  hw("ann", "create", { id: "seat2", model: "swing-seat", components: { transform: { pos: [5, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, pivot: { pos: [0, 9, 0] } } });
+  hw("ann", "place", { id: "seat2", hang: "frame", height: 0.45, along: 0.5 });
+  ok(JSON.stringify(W().entities.seat2?.c.pivot?.pos) === "[0,9,0]", "HG4 a pivot someone already set is left alone by a hang"); }
+
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

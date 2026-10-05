@@ -138,7 +138,8 @@ function resolve(id: string, view: EffectiveView, nowMs: number, depth: number, 
 
   const motion = e.comp?.motion;
   if (motion && motion.type != null) {
-    const r = evalWholeMotion({ pos: e.pos, yaw: yaw0 }, motion, nowMs);
+    const pv = (e.comp as any)?.pivot?.pos; const s3 = Array.isArray((e as any).scale3) ? (e as any).scale3 : [scale, scale, scale];
+    const r = evalWholeMotion({ pos: e.pos, yaw: yaw0, ...(Array.isArray(pv) && pv.length === 3 ? { pivot: pv.map((v: number, i: number) => v * s3[i]) } : {}) }, motion, nowMs);   // the same hinge the renderer swings about
     if (!r.ok) return { ok: false, why: r.why, link: id };
     // part-carrying motion returns the base unmoved (parts swing, roots
     // stand still) — report the chain as still in that case
