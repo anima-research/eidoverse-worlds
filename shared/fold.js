@@ -671,7 +671,8 @@ export function stateToEntries(state, {
         add('place', { id, pos: e.pos,
           ...(e.yaw != null ? { yaw: e.yaw } : {}),
           ...(e.q ? { q: e.q } : {}),
-          ...(e.scale != null ? { scale: e.scale } : {}) },
+          ...(e.scale != null ? { scale: e.scale } : {}),
+          ...(Array.isArray(e.scale3) ? { scale3: e.scale3 } : {}) },
           e.actor ?? 'world', e.ts ?? now);
       }
     } else {
@@ -679,6 +680,9 @@ export function stateToEntries(state, {
         id, lib: e.lib, pos: e.pos, yaw: e.yaw,
         ...(e.q ? { q: e.q } : {}),
         ...(e.scale != null ? { scale: e.scale } : {}),
+        // a v4 world's per-axis scale rides beside it (shared/v4/legacy.js); dropping it here flattened every stretched
+        // thing an agent then edited (agent lab, 10-04: the agent's edit of a stretched bench wrote [0.2, 0.2, 0.2])
+        ...(Array.isArray(e.scale3) ? { scale3: e.scale3 } : {}),
         // the spawn verb's collide override decides exact-vs-box; dropping
         // it made the same object walkable or solid depending on when you
         // arrived (the drift house rule 1 forbids)

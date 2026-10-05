@@ -476,6 +476,9 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   foldEntry(st, { seq: 2, ts: 0, actor: "a", verb: "place", args: { id: "b", pos: [0, 0, 0], scale: 1 } });
   ok(st.entities.b && st.entities.b.scale === 1 && st.entities.b.scale3 === undefined, "S3d the v1 fold carries scale3, and a plain scale makes it uniform again", st.entities.b);
   const { rawShapeError } = await import("../../mcpl/shape.ts");
+  const { stateToEntries } = await import("../../shared/fold.js");
+  const rt = emptyState(); for (const e of stateToEntries({ entities: { b: { lib: "x.glb", pos: [0, 0, 0], yaw: 0, scale: 0.4, scale3: [2, 0.4, 0.4] } } }, { now: 0 })) foldEntry(rt, e);
+  ok(JSON.stringify(rt.entities.b?.scale3) === "[2,0.4,0.4]", "S3g a snapshot replayed as entries (how an agent joins) keeps scale3: an agent's edit of a stretched thing must not flatten it", rt.entities.b);
   ok(rawShapeError("place", { id: "b", pos: [0, 0, 0], scale: [2, 0.4, 0.4] }) === null, "S3e the agent's raw place check takes a per-axis scale (Juniper: every rotate on a stretched thing was refused)");
   ok(rawShapeError("place", { id: "b", scale: [2, NaN, 1] }) !== null && rawShapeError("place", { id: "b", scale: "big" }) !== null, "S3f …and still refuses a broken one"); }
 
@@ -582,6 +585,21 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   hw("ann", "create", { id: "seat2", model: "swing-seat", components: { transform: { pos: [5, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, pivot: { pos: [0, 9, 0] } } });
   hw("ann", "place", { id: "seat2", hang: "frame", height: 0.45, along: 0.5 });
   ok(JSON.stringify(W().entities.seat2?.c.pivot?.pos) === "[0,9,0]", "HG4 a pivot someone already set is left alone by a hang"); }
+
+// ---- WT: a warning as a sentence (agent lab: out-of-bounds "doesn't say out of what") ----
+{ const { warningText } = await import("../../shared/v4/refusal.js");
+  ok(warningText({ id: "box", kind: "out-of-bounds", bounds: { min: [-20, 0, -20], max: [20, 12, 20] } }) === "box is outside the world's bounds (x -20…20, y 0…12, z -20…20 m)", "WT1 out-of-bounds says which bounds");
+  ok(warningText({ id: "cup", kind: "overlap", with: "x--5269616e6e6f6e", by: 0.1 }) === "cup overlaps Riannon by 0.1 m", "WT2 an overlap reads as a sentence, names decoded");
+  const ww = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "warnwords"), actor, tool, args); };
+  ww("ann", "new", { title: "warnwords" });
+  const far = ww("ann", "create", { id: "far", model: "crate", components: { transform: { pos: [500, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+  ok((far.warnings ?? []).some((w) => w.kind === "out-of-bounds" && w.bounds?.max), "WT3 the door's out-of-bounds warning carries the bounds", far.warnings);
+  const { enc } = await import("../../shared/v4/names.js");
+  ww("ann", "set", { id: "@world", component: "roles:" + enc("Hazel"), value: { role: "builder" } });
+  ww(enc("Hazel"), "create", { id: "hz", model: "crate", components: { transform: { pos: [1, 0, 1], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+  const other = ww("ann", "set", { id: "hz", component: "label", value: "hazel's crate" });
+  const nt = (other.notes ?? []).find((x) => x.madeBy);
+  ok(nt && /this is Hazel's/.test(nt.why), "WT4 the 'this is X's' note names a person, not an encoded id (x--48617a656c)", nt); }
 
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

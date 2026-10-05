@@ -522,7 +522,7 @@ function needThing(ctx, id) {
   const e = ctx.st.entities[id];
   if (!e) refuse("not-found", `no thing called '${id}'`, "look lists what's here", { didYouMean: guess(String(id), Object.keys(ctx.st.entities)) });
   const by = id === "@world" ? null : madeBy(ctx.w, id);
-  if (by && by !== ctx.actor && !ctx.__owned?.has(id)) { (ctx.__owned ??= new Set()).add(id); ctx.notes.push({ id, madeBy: by, why: `this is ${by}'s; your change is attributed to you and shows in their "changes to my things"` }); }
+  if (by && by !== ctx.actor && !ctx.__owned?.has(id)) { (ctx.__owned ??= new Set()).add(id); ctx.notes.push({ id, madeBy: by, why: `this is ${said(by)}'s; your change is attributed to you and shows in their "changes to my things"` }); }
   return e;
 }
 
@@ -786,7 +786,7 @@ function warnings(st, ids) {
     const mounted = ancestors(st, id).some((p) => { const pb = aabb(st, p); return pb && pb.min[1] <= b.min[1] && pb.max[1] >= b.max[1]; });
     const under = supportUnder(st, b, new Set([id, ...descendants(st, id)]));
     if (b.min[1] - under.y > 0.03 && !hungFrom && !mounted) out.push({ id, kind: "floating", gap: r3(b.min[1] - under.y), above: under.id });
-    if (B && (b.min[0] < B.min[0] || b.max[0] > B.max[0] || b.min[2] < B.min[2] || b.max[2] > B.max[2])) out.push({ id, kind: "out-of-bounds" });
+    if (B && (b.min[0] < B.min[0] || b.max[0] > B.max[0] || b.min[2] < B.min[2] || b.max[2] > B.max[2])) out.push({ id, kind: "out-of-bounds", bounds: B });
   }
   return out;
 }

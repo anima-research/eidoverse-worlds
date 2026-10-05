@@ -45,3 +45,17 @@ export const lockChoices = (verb) => [
   { v: "cancel", label: "✕ Cancel" },
   { v: "unlock", label: "🔓 Unlock" },
 ];
+
+/** A door warning ({id, kind, …}) as one sentence for a person or an agent (agent lab: "the out-of-bounds warning doesn't
+ *  say out of what"; "edit replies… warnings get lost"). */
+export function warningText(w) {
+  if (!w || typeof w !== "object") return String(w);
+  const id = readable(w.id ?? "?");
+  switch (w.kind) {
+    case "overlap": return `${id} overlaps ${readable(w.with)} by ${w.by} m`;
+    case "sunk": return `${id} sinks ${w.depth} m into ${readable(w.into)}`;
+    case "floating": return `${id} floats ${w.gap} m above ${readable(w.above)}`;
+    case "out-of-bounds": return w.bounds ? `${id} is outside the world's bounds (x ${w.bounds.min[0]}…${w.bounds.max[0]}, y ${w.bounds.min[1]}…${w.bounds.max[1]}, z ${w.bounds.min[2]}…${w.bounds.max[2]} m)` : `${id} is outside the world's bounds`;
+    default: return `${id}: ${w.kind ?? JSON.stringify(w)}`;
+  }
+}

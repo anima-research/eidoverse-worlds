@@ -21,7 +21,7 @@
 // Everything else in here talks only to the WorldAgent and the sequencer's
 // HTTP surface, which is exactly what makes it transport-agnostic.
 
-import { refusalText } from "../shared/v4/refusal.js";
+import { refusalText, warningText } from "../shared/v4/refusal.js";
 import { readdirSync } from "node:fs";
 import sharp from "sharp";
 import { validatePose, validateTracks, tracksSpan, poseReport, HUMANOID_BONES, mergePose } from "../shared/humanoid.js";
@@ -776,9 +776,16 @@ export const HANDLERS: Record<string, ToolHandler> = {
       for (const v of verbs) {
         const why = rawShapeError(v.verb, v.args as Record<string, unknown>);
         if (why) { L.push(`refused ${v.verb}: ${why}`); continue; }
-        if (!a.dry) { const r = await ag.sendVerb(v.verb, v.args as Record<string, unknown>);
+        let r: any = null;
+        if (!a.dry) { r = await ag.sendVerb(v.verb, v.args as Record<string, unknown>);
           if (r && !r.ok) { L.push(refusalText(v.verb, r)); continue; } }   // the words a person sees (shared/v4/refusal.js)
         L.push(`${a.dry ? "would send" : "sent"} ${v.verb} ${JSON.stringify(v.args)}`);
+        // the door's own words on what it did (agent lab round 2, Hazel: "edit replies don't show the door's answer, so
+        // warnings get lost"): its notes, warnings, and an undo's account of itself
+        if (!a.dry && r && r.ok) {
+          for (const w of (r.warnings ?? []) as any[]) L.push(`  warning: ${warningText(w)}`);
+          for (const nt of (r.notes ?? []) as any[]) if (!nt.placed) L.push(`  note: ${nt.why ?? JSON.stringify(nt)}`);
+        }
       }
       L.push(ag.v4 ? "(v4 world: each verb above was answered by the door)" : "(the fold echoes in a beat — inspect again to read the new values; refusals of rank or rate land in world_debug)");
       return text(L.join("\n"));
