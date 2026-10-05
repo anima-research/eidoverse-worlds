@@ -427,6 +427,21 @@ try {
   check("T4 …picking 'object axes' arms move in the thing's own axes", await waitFor(`import('/lib/build.js').then((B) => B.getTool() === 'move' && B.getSpace('move') === 'object' && __gizmo().controls?.space === 'local')`), await evalJson(`import('/lib/build.js').then((B) => ({ t: B.getTool(), s: B.getSpace('move'), g: __gizmo().controls?.space }))`));
   await page(`const B = await import('/lib/build.js'); B.setSpace('move', 'world'); B.setSpace('rotate', 'world'); B.setTool('select'); return true;`);
 
+  // the pivot (research 52): handles sit at the pivot, and a turn goes ABOUT it (the thing swings round, not in place)
+  check("(setup) a crate 'pv' with its pivot 1 m along its own x", (await bobReq("create", { id: "pv", model: CRATE, components: { transform: { pos: [10, 0, 10], q: [0, 0, 0, 1], scale: [1, 1, 1] }, pivot: { pos: [1, 0, 0] } } })).ok);
+  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('pv') && !!m.comps.get('pv')?.pivot)`, 12000);
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('pv'); (await import('/lib/build.js')).setTool('rotate'); return true;`);
+  check("PV1 the rotate handles sit at the pivot (11, 0, 10), not the origin", await waitFor(`(() => { const g = __gizmo(); return g.attached === 'pv' && g.viaProxy && Math.abs(g.proxyPos[0] - 11) < 1e-6 && Math.abs(g.proxyPos[2] - 10) < 1e-6; })()`), await evalJson(`__gizmo().proxyPos`));
+  const nPv = myActs().length;
+  await evalJson(`(() => { const c = __gizmo().controls; c.dispatchEvent({ type: 'dragging-changed', value: true });
+    c.object.quaternion.setFromAxisAngle({ x: 0, y: 1, z: 0, isVector3: true, clone() { return this; } }, Math.PI / 2); c.object.updateMatrixWorld(true);
+    c.dispatchEvent({ type: 'objectChange' }); c.dispatchEvent({ type: 'dragging-changed', value: false }); return true; })()`);
+  check("PV2 a quarter turn about the pivot is ONE act", await waitDisk(() => myActs().length === nPv + 1), myActs().slice(nPv).map((a) => a.e.verb));
+  const pvT = disk().entities.pv?.c.transform;
+  check("PV3 …the crate swung round the pivot: its origin went from (10, 0, 10) to (11, 0, 11)", pvT && Math.abs(pvT.pos[0] - 11) < 1e-3 && Math.abs(pvT.pos[2] - 11) < 1e-3, pvT);
+  check("PV4 …and the pivot itself stayed where it was (11, 0, 10)", await waitFor(`(() => { const g = __gizmo(); return Math.abs(g.proxyPos[0] - 11) < 1e-3 && Math.abs(g.proxyPos[2] - 10) < 1e-3; })()`), await evalJson(`__gizmo().proxyPos`));
+  await page(`(await import('/lib/build.js')).setTool('select'); return true;`);
+
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);
   check("B4 what the page drew came from its own fold: v4 entries ingested, v1 verbs derived locally, no resync (that the server sends it no `log` entries is server-check S8)", await evalJson(`import('/lib/net.js').then((m) => m.v4.stats.ingested > 10 && m.v4.stats.projected > 0 && m.v4.stats.resyncs === 0)`), await evalJson(`import('/lib/net.js').then((m) => m.v4.stats)`));

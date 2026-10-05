@@ -24,6 +24,7 @@
 // factory, through the same commit path.
 
 import { entities } from './world.js';
+import { libBox } from './realize/models.js';
 import { state } from './state.js';
 import { sendVerb, net } from './net.js';
 import { renderDOM } from './panels.js';
@@ -75,6 +76,8 @@ export function liveFor(id) {
     // the hierarchy reads the whole fold: a child's local pose, its parent's
     // socket, the Parent field's children, and the in-place parenting maths
     world: state.st.entities ?? {}, mayAuthorOf: (x) => (state.st.entities?.[x] ? mayAuthor(x) : undefined),
+    // the model's own box (the pivot's centre / base snaps)
+    box: foldRecord(id)?.lib ? libBox(foldRecord(id).lib) : null,
     // a v4 world: locks are the door's to refuse and the person's to answer (This is locked. Move anyway?)
     ...(V4.isV4() ? { doorLocks: true } : {}) };
 }

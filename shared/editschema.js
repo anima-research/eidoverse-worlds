@@ -180,6 +180,19 @@ export function inspectSchema(ent, id, live = {}) {
     { t: 'text', k: 'label', label: 'name', value: typeof c.label === 'string' ? c.label : '', placeholder: 'give it a name', hint: 'what people see; rename it freely — its id never changes' },
   ] });
 
+  // pivot (research 52): where it turns and scales from, in its own frame (before scale). The buttons snap it to the
+  // model's own box (live.box, the client's measure of the model in its frame); reset = back to the origin.
+  if (isBag(c.pivot) && Array.isArray(c.pivot.pos)) {
+    const pp = c.pivot.pos; const box = live.box;
+    groups.push({ group: 'pivot', label: 'pivot', verb: 'comp', types: ['pivot'], fields: [
+      ...['x', 'y', 'z'].map((a, i) => ({ t: 'num', k: a, label: `pivot ${a}`, value: round(+pp[i] || 0), step: 0.05, dp: 2, unit: 'm', ...tf,
+        hint: tf.hint ?? 'in its own frame, before scale: 0 is its origin. Moving the pivot never moves the thing' })),
+      { t: 'btn', k: 'centre', label: 'centre', disabled: !box || !!tf.disabled, hint: box ? 'the middle of its model' : 'its model is still loading' },
+      { t: 'btn', k: 'base', label: 'base', disabled: !box || !!tf.disabled, hint: box ? 'the middle of its bottom face (where it stands)' : 'its model is still loading' },
+      { t: 'btn', k: 'reset', label: 'origin', disabled: !!tf.disabled, hint: 'back to the origin its author left (removes the pivot)' },
+    ] });
+  }
+
   // look — the first user of the `ref` field: name ANOTHER entity for this one
   // to face. The value is a target id (or null). The picker reuses attach's
   // arming: arm, then click a row or the thing in the world. Only shown once a
@@ -455,6 +468,7 @@ function componentSections(ent, groups, held, live = {}, id = '?') {
       case 'Picture': sec.fields = refs('picture', (f) => f.k !== 'down'); sec.removable = true; break;
       case 'Sound': sec.fields = refs('sound', (f) => f.k !== 'silence'); sec.removable = true; break;
       case 'LookAt': sec.fields = refs('look'); sec.removable = true; break;
+      case 'Pivot': sec.fields = refs('pivot'); sec.removable = true; break;
       default:
         if (MOTION_GROUP[inst.type]) {
           const part = inst.key === 'motion' ? (inst.params.part ?? null) : inst.key.slice(7);
@@ -572,7 +586,7 @@ function addOwnVerbs(ent, id, name, value) {
     if (c.motion) return { verbs: [], errors: [`${id} already moves as a whole (${c.motion.type}) — remove it first, or add this one to a part`] };
     return { verbs: [{ verb: 'motion', args: { id, ...motion[name] } }], errors: [] };
   }
-  const simple = { Lock: ['lock', true], Guard: ['guard', true], Hidden: ['hidden', true], Label: ['label', typeof value === 'string' && value.trim() ? value.trim().slice(0, 80) : 'unnamed'],
+  const simple = { Pivot: ['pivot', { pos: Array.isArray(value) && value.length === 3 && value.every(Number.isFinite) ? value : [0, 0, 0] }], Lock: ['lock', true], Guard: ['guard', true], Hidden: ['hidden', true], Label: ['label', typeof value === 'string' && value.trim() ? value.trim().slice(0, 80) : 'unnamed'],
     Particles: ['particles', { preset: typeof value === 'string' && value ? value : 'fire' }], LookAt: ['look', {}], Reactions: ['reactions', { push: { impulse: 0.35 } }], Stage: ['stage', {}] };
   if (simple[name]) { const [type, data] = simple[name]; if (c[type] != null) return { verbs: [], errors: [`${id} already has ${name}`] }; return { verbs: [{ verb: 'comp', args: { id, type, data } }], errors: [] }; }
   // write-new-on-edit: a Light added here is a component, never the light verb,
@@ -853,6 +867,18 @@ export function editVerbs(ent, id, edits, live = {}) {
         if (why) { errors.push(`collider: ${why}`); break; }
         comps.set('collider', { ...(isBag(c.collider) ? c.collider : {}), shape: raw });
         break;
+      }
+      case 'pivot': {
+        const cur = [...((comps.get('pivot') ?? c.pivot)?.pos ?? [0, 0, 0])];
+        const box = live.box;
+        if (k === 'reset') { comps.set('pivot', null); break; }
+        if (k === 'centre' || k === 'base') {
+          if (!box) { errors.push(`${key}: its model hasn't been measured yet`); break; }
+          const mid = [0, 1, 2].map((i) => round((box[0][i] + box[1][i]) / 2, 4));
+          comps.set('pivot', { pos: k === 'base' ? [mid[0], round(box[0][1], 4), mid[2]] : mid }); break;
+        }
+        const n = num(f, raw); if (n == null) break;
+        cur['xyz'.indexOf(k)] = round(n, 4); comps.set('pivot', { pos: cur }); break;
       }
       case 'look': {
         // the ref field commits the target id, or null to clear it. The whole

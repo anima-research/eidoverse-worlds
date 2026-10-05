@@ -33,6 +33,21 @@ let attachedId = null;
 let start = null;        // { rec, scale, v4? } at drag start (v4: the components the release's expect names)
 let cancelled = false;   // v4: Esc during the drag — the thing goes back, and the release writes nothing (§3a)
 let lastSent = 0;
+// the pivot (research 52, Roblox's PivotOffset): with a `pivot` comp the handles ride a PROXY at the pivot, oriented as
+// the thing, and the thing follows the proxy: objWorld = proxy × offset (offset fixed at drag start). A turn or a size
+// then goes about the pivot; nothing about the thing's own record changes but its pose.
+const proxy = new THREE.Object3D(); proxy.name = 'edit-gizmo-pivot';
+let viaProxy = false, offset = null;
+const _m = new THREE.Matrix4(), _pq = new THREE.Quaternion(), _pp = new THREE.Vector3(), _ps = new THREE.Vector3();
+const pivotOf = (id) => { const p = comps.get(id)?.pivot?.pos; return Array.isArray(p) && p.length === 3 && p.every(Number.isFinite) ? p : null; };
+/** Put the proxy at obj's pivot in the world, turned as obj is, unscaled. */
+function seatProxy(obj, piv) {
+  obj.updateWorldMatrix(true, false);
+  obj.matrixWorld.decompose(_pp, _pq, _ps);
+  proxy.position.copy(new THREE.Vector3(...piv).applyMatrix4(obj.matrixWorld));
+  proxy.quaternion.copy(_pq); proxy.scale.set(1, 1, 1);
+  proxy.updateMatrixWorld(true);
+}
 
 function ensure() {
   if (controls) return controls;
@@ -74,9 +89,11 @@ function sync() {
   const id = sceneSelected();
   // scenegraph's selection is THE selection (a tree click never sets build.js's viewport `selected`)
   const want = isEditing() && id && MODE[getTool()] && editable(id, MODE[getTool()]) ? id : null;
-  if (!want) { if (attachedId) { controls?.detach(); attachedId = null; } return; }
+  if (!want) { if (attachedId) { controls?.detach(); attachedId = null; viaProxy = false; } return; }
   const c = ensure();
-  if (attachedId !== want) { c.attach(entities.get(want)); attachedId = want; }
+  const obj = entities.get(want); const piv = pivotOf(want);
+  if (piv && !controls?.dragging) { if (!proxy.parent) scene.add(proxy); seatProxy(obj, piv); }   // between drags it follows the thing (others move it too)
+  if (attachedId !== want || viaProxy !== !!piv) { c.attach(piv ? proxy : obj); attachedId = want; viaProxy = !!piv; }
   const mode = MODE[getTool()];
   if (c.mode !== mode) c.setMode(mode);
   const sp = getSpace(getTool()) === 'object' ? 'local' : 'world';
@@ -87,6 +104,7 @@ function sync() {
 
 function beginDrag() {
   if (!attachedId) return;
+  if (viaProxy) { const obj = entities.get(attachedId); obj.updateWorldMatrix(true, false); proxy.updateMatrixWorld(true); offset = proxy.matrixWorld.clone().invert().multiply(obj.matrixWorld); }
   const rec = foldRecord(attachedId);
   start = rec ? { rec: JSON.parse(JSON.stringify(rec)), scale: entities.get(attachedId).scale.x, ...(V4.isV4() ? { v4: V4.compsOf(attachedId) } : {}) } : null;
   cancelled = false;
@@ -94,6 +112,12 @@ function beginDrag() {
 function onChange() {
   const obj = attachedId && entities.get(attachedId); if (!obj) return;
   if (cancelled) { bus.emit('pose-revert', { id: attachedId }); return; }   // Esc held it where the log has it
+  if (viaProxy && offset) {   // the thing follows the proxy: world = proxy × offset, then into its parent's frame
+    proxy.updateMatrixWorld(true);
+    _m.multiplyMatrices(proxy.matrixWorld, offset);
+    if (obj.parent) { obj.parent.updateWorldMatrix(true, false); _m.premultiply(obj.parent.matrixWorld.clone().invert()); }
+    _m.decompose(obj.position, obj.quaternion, obj.scale);
+  }
   if (controls.mode === 'scale' && start && !V4.isV4()) {   // v1: one number; a v4 transform scales per axis (R 10-04)
     // whichever handle moved, the thing scales uniformly by that ratio
     const ax = (controls.axis ?? 'X')[0].toLowerCase();
@@ -117,7 +141,9 @@ function endDrag() {
   // poseEdits) — editVerbs coalesces them into one place carrying the full pose
   const mode = { translate: 'move', rotate: 'rotate', scale: 'scale' }[controls.mode];
   const o = obj.quaternion;
-  const set = poseEdits(rec, id, mode, { pos: obj.position.toArray(), q: [o.x, o.y, o.z, o.w], scale: V4.isV4() ? obj.scale.toArray() : obj.scale.x });
+  const pose = { pos: obj.position.toArray(), q: [o.x, o.y, o.z, o.w], scale: V4.isV4() ? obj.scale.toArray() : obj.scale.x };
+  // about a pivot, a turn or a size ALSO moves the origin (it swings round the pivot): send the position with it
+  const set = viaProxy && mode !== 'move' ? { ...poseEdits(rec, id, 'move', pose), ...poseEdits(rec, id, mode, pose) } : poseEdits(rec, id, mode, pose);
   const { verbs, errors } = editVerbs(rec, id, set, V4.isV4() ? { doorLocks: true } : undefined);   // v4: the door asks about locks
   if (errors.length || !verbs.length) { start = null; return; }
   if (V4.isV4()) {   // presence until now; the release is ONE request, expecting where the drag started
@@ -149,5 +175,5 @@ export function initGizmo() {
   setEscapeHook(cancelDrag);
   registerSystem('gizmo', sync, { every: 4 });   // selection/tool/lock changes are rare; a few frames' lag is invisible
   bus.on('tool', sync); bus.on('tool-space', sync); bus.on('sg:selected', sync); bus.on('edit-mode', sync); bus.on('comp', sync);
-  globalThis.__gizmo = () => ({ attached: attachedId, mode: controls?.mode ?? null, showX: controls?.showX, showZ: controls?.showZ, controls });   // harness window
+  globalThis.__gizmo = () => ({ attached: attachedId, viaProxy, proxyPos: proxy.position.toArray(), mode: controls?.mode ?? null, showX: controls?.showX, showZ: controls?.showZ, controls });   // harness window
 }

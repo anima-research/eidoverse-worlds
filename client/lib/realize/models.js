@@ -77,6 +77,8 @@ const _v = new THREE.Vector3();
 // check honestly silent about them.
 
 const libGeom = new Map();   // lib -> {bbox} — fed by the 'geom' message
+/** A model's box in its own frame (before scale), as the server measured it: [[min], [max]], or null until known. */
+export function libBox(lib) { const b = libGeom.get(lib)?.bbox; if (!b?.size) return null; const c = b.center ?? [0, b.size[1] / 2, 0]; return [[0, 1, 2].map((i) => c[i] - b.size[i] / 2), [0, 1, 2].map((i) => c[i] + b.size[i] / 2)]; }
 let _phGeo = null;
 let _phMat = null;
 

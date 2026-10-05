@@ -24,6 +24,7 @@ export const COMPONENTS = {
   transform: { defaults: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] }, help: "where it is: pos (m), q (unit quaternion), scale" },
   model:     { help: "which model it shows: a name from find {kind: 'model'}" },
   label:     { help: "its display name, a short string" },
+  pivot:     { help: "{pos: [x,y,z]}: where it turns and scales from, in its own frame before scale ([0,0,0] = its origin). Never moves it or changes how it draws" },
   parent:    { defaults: { order: "a0" }, help: "{to: id}; its transform becomes local to the parent" },
   light:     { defaults: { kind: "point", color: 0xffd9a0, intensity: 1, range: 6, shadows: false }, enums: { kind: ["point", "spot"] }, help: "a light on this thing: {kind: point|spot, color (0xRRGGBB), intensity, range (m), shadows}" },
   motion:    { enums: { type: ["pendulum", "spin", "bob"] }, help: "{type: pendulum|spin|bob, axis [x,y,z] (local), amp (rad or m), period (s), damp, maxAmp, phase}; a pendulum swings about the point it hangs from; the door stamps t0" },

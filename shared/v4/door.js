@@ -456,6 +456,7 @@ function valueCheck(s, { id, comp, value: v }) {
     if (!s.entities[v.to]) refuse("not-found", `no thing called '${v.to}'`, "", { didYouMean: guess(v.to, Object.keys(s.entities)) });
     if (v.to === id || ancestors(s, v.to).includes(id) || ancestors(s, id).length >= 32) refuse("loop", `${id} can't be inside ${v.to}: that makes a loop`, ""); }
   if (comp === "model" && !modelOf(v)) refuse("shape", `no model called '${v}'`, "find {kind: 'model', query} lists models", { didYouMean: guess(String(v), CAT.list(String(v).split("/").pop().replace(/\.[a-z0-9]+$/i, "").slice(0, 12)).map(([k]) => k).slice(0, 200)) });
+  if (comp === "pivot" && (!obj || !nums(v.pos, 3, 1e4) || Object.keys(v).some((k) => k !== "pos"))) refuse("shape", `${at} must be {pos: [x,y,z]} in its own frame (metres, before scale)`, "e.g. {pos: [0, 0.5, 0]}; delete it to turn about the origin again");
   if (comp === "lock" && v !== true) refuse("shape", `${at} is true while locked; to unlock, delete it`, `delete {id: '${id}', component: 'lock'}`);
   if (comp === "motion" && obj && "pivot" in v) refuse("derived", `${at}.pivot is derived from what it hangs from; it isn't stored`, "L2: no stored derived values; inspect shows the pivot as a view");
   if (comp === "reactions") { if (!obj) refuse("shape", `${at} must be {<action>: handler}`, "");

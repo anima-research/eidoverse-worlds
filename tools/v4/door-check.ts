@@ -479,5 +479,30 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(rawShapeError("place", { id: "b", pos: [0, 0, 0], scale: [2, 0.4, 0.4] }) === null, "S3e the agent's raw place check takes a per-axis scale (Juniper: every rotate on a stretched thing was refused)");
   ok(rawShapeError("place", { id: "b", scale: [2, NaN, 1] }) !== null && rawShapeError("place", { id: "b", scale: "big" }) !== null, "S3f …and still refuses a broken one"); }
 
+// ---- P: the pivot component (research 52: Roblox's PivotOffset; where it turns and scales from, never moves it) ----
+{ const { editVerbs, inspectSchema, addVerbs } = await import("../../shared/editschema.js");
+  const { componentsOf, entityOf } = await import("../../shared/components.js");
+  const pw = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "pivots"), actor, tool, args); };
+  pw("ann", "new", { title: "pivots" });
+  pw("ann", "create", { id: "gate", model: "crate", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+  ok(pw("ann", "set", { id: "gate", component: "pivot", value: { pos: [0.3, 0, 0] } }).ok, "P1 the door takes a pivot {pos: [x,y,z]}");
+  ok(code(pw("ann", "set", { id: "gate", component: "pivot", value: { pos: [1, 2] } })) === "shape" && code(pw("ann", "set", { id: "gate", component: "pivot", value: { pos: [0, 0, 0], q: [0, 0, 0, 1] } })) === "shape", "P2 …and refuses a bad one (two numbers; an extra field), saying the shape");
+  const tr = openWorld(root, "pivots").state().entities.gate.c.transform;
+  ok(JSON.stringify(tr.pos) === "[0,0,0]", "P3 setting a pivot never moved the thing", tr);
+  const ent = { lib: "x.glb", pos: [0, 0, 0], comp: { pivot: { pos: [0.3, 0, 0] } } };
+  const sortK = (v) => (Array.isArray(v) ? v.map(sortK) : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortK(v[k])])) : v);
+  ok(JSON.stringify(sortK(entityOf(componentsOf(ent)))) === JSON.stringify(sortK(ent)), "P4 pivot round-trips through the component view (componentsOf ∘ entityOf)", entityOf(componentsOf(ent)));
+  const live = { box: [[2, 0, -0.4], [3.2, 0.75, 0.4]], doorLocks: true };
+  const c1 = editVerbs(ent, "g", { "pivot.centre": true }, live).verbs[0]?.args?.data;
+  ok(JSON.stringify(c1) === JSON.stringify({ pos: [2.6, 0.375, 0] }), "P5 'centre' snaps the pivot to the middle of the model's own box (an off-origin model)", c1);
+  const c2 = editVerbs(ent, "g", { "pivot.base": true }, live).verbs[0]?.args?.data;
+  ok(JSON.stringify(c2) === JSON.stringify({ pos: [2.6, 0, 0] }), "P6 'base' snaps it to the middle of the bottom face", c2);
+  const c3 = editVerbs(ent, "g", { "pivot.reset": true }, live).verbs[0]?.args;
+  ok(c3?.type === "pivot" && c3.data === null, "P7 'origin' removes it (turn about the origin again)", c3);
+  const sc = inspectSchema(ent, "g", live);
+  ok(sc.sections.list.some((c) => c.type === "Pivot" && c.fields.includes("pivot.x")), "P8 the Inspector draws a Pivot card with its channels");
+  const a = addVerbs({ lib: "x.glb", pos: [0, 0, 0] }, "g", "Pivot");
+  ok(a.verbs[0]?.args?.type === "pivot" && JSON.stringify(a.verbs[0].args.data) === '{"pos":[0,0,0]}', "P9 Add Component ▸ Pivot starts at the origin (then centre/base)", a); }
+
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

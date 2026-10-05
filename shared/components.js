@@ -89,6 +89,11 @@ const DEFS = [
     params: { pos: { t: 'vec3', unit: 'm', default: [0, 0, 0] }, q: { t: 'quat', default: [0, 0, 0, 1], hint: 'full orientation (shared/rot.js); yaw is its friendly subset' }, yaw: { ...deg, default: 0 }, scale: { t: 'num', default: 1, min: 0.01, softMax: 12, step: 0.05 },
       rotOrder: { t: 'choice', options: ROT_MODES, default: 'XYZ', wire: 'comp.rotOrder', hint: 'how the Rotate channels read q (Maya\'s rotateOrder: XYZ = X applied first); quat = edit the quaternion. Never moves the thing' } },
     fallback: { text: 'at (x, y, z)' } },
+  // Pivot (research 52, Roblox's PivotOffset): where it turns and scales from, in its own frame before scale. It never
+  // moves the thing or changes how it draws: only the handles, the turn and the size go about it.
+  { name: 'Pivot', category: 'Core', summary: 'where it turns and scales from (its own frame); never moves it',
+    params: { pos: { t: 'vec3', unit: 'm', default: [0, 0, 0], hint: 'in its own frame, before scale: [0, 0, 0] is its origin' } },
+    fallback: { text: 'turns about <pos>' } },
   { name: 'Model', category: 'Rendering', summary: 'a 3D model from the library',
     params: { lib: { t: 'asset', default: null, required: true } },
     fallback: { visual: 'placeholder box until the model loads', text: 'a <file stem>' } },
@@ -300,6 +305,7 @@ export function componentsOf(ent) {
     // object is one; any other data under these keys predates the meaning
     // (none in the corpus) and stays an Annotation, so its bytes still return.
     if ((key === 'light' || key === 'collider') && isBag(data)) { out.push(compInstance(key === 'light' ? 'Light' : 'Collider', key, data)); continue; }
+    if (key === 'pivot' && isBag(data) && Array.isArray(data.pos) && data.pos.length === 3 && Object.keys(data).every((k) => k === 'pos')) { out.push({ type: 'Pivot', key, params: { pos: data.pos } }); continue; }
     const simple = { sockets: ['Seats', 'slots'], reactions: ['Reactions', 'actions'], structure: ['Structure', 'plan'], captions: ['Captions', 'feed'] };
     if (simple[key]) { out.push({ type: simple[key][0], key, params: { [simple[key][1]]: data } }); continue; }
     if (key === 'look' && data && typeof data === 'object' && !Array.isArray(data) && Object.keys(data).every((k) => k === 'target')) { out.push({ type: 'LookAt', key, params: { ...data } }); continue; }
@@ -349,6 +355,7 @@ export function entityOf({ components, stamps = {} }) {
       // keyed = comp.collider (step 2); keyless = the spawn verb's legacy `collide`
       case 'Collider': if (inst.key != null) comp[inst.key] = compBag(inst); else ent.collide = p.shape; break;
       case 'Parent': ent.parent = { ...p }; break;
+      case 'Pivot': comp[inst.key ?? 'pivot'] = { pos: p.pos }; break;
       case 'Lock': case 'Guard': case 'Hidden': comp[inst.key] = inst.wire?.value ?? true; break;
       case 'Label': comp[inst.key ?? 'label'] = p.text; break;
       case 'Pendulum': case 'Spin': case 'Orbit': case 'Bob': case 'Path': {
