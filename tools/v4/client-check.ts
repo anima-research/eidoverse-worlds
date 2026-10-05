@@ -442,6 +442,23 @@ try {
   check("PV4 …and the pivot itself stayed where it was (11, 0, 10)", await waitFor(`(() => { const g = __gizmo(); return Math.abs(g.proxyPos[0] - 11) < 1e-3 && Math.abs(g.proxyPos[2] - 10) < 1e-3; })()`), await evalJson(`__gizmo().proxyPos`));
   await page(`(await import('/lib/build.js')).setTool('select'); return true;`);
 
+  // the pivot tool (P): drag the pivot itself; it snaps to the model's centre; the thing never moves
+  check("(setup) a crate 'pt' with no pivot", (await bobReq("create", { id: "pt", model: CRATE, components: { transform: { pos: [14, 0, 10], q: [0, 0, 0, 1], scale: [1, 1, 1] } } })).ok);
+  await waitFor(`import('/lib/world.js').then((m) => !!m.entities.get('pt'))`, 12000);
+  await page(`(await import('/lib/scenegraph.js')).sceneSelect('pt'); (await import('/lib/build.js')).setTool('select'); return true;`);
+  await key("KeyP"); await sleep(400);
+  check("PT1 P arms the pivot tool: the handles sit at its origin (no pivot yet)", await waitFor(`import('/lib/build.js').then((B) => { const g = __gizmo(); return B.getTool() === 'pivot' && g.attached === 'pt' && g.viaProxy && Math.abs(g.proxyPos[0] - 14) < 1e-6 && Math.abs(g.proxyPos[2] - 10) < 1e-6; })`), await evalJson(`({ g: __gizmo().proxyPos, a: __gizmo().attached })`));
+  const ptBefore = JSON.stringify(disk().entities.pt.c.transform);
+  const nPt = myActs().length;
+  const centre = await page(`const W = await import('/lib/world.js'); const M = await import('/lib/realize/models.js'); const S = await import('/lib/state.js');
+    const box = M.boxOf('pt'); const mid = [0, 1, 2].map((i) => (box[0][i] + box[1][i]) / 2);
+    const o = W.entities.get('pt'); o.updateWorldMatrix(true, false); const c = __gizmo().controls; c.dispatchEvent({ type: 'dragging-changed', value: true });
+    c.object.position.set(mid[0] + 0.05, mid[1] + 0.03, mid[2]).applyMatrix4(o.matrixWorld); c.object.updateMatrixWorld(true);
+    c.dispatchEvent({ type: 'objectChange' }); c.dispatchEvent({ type: 'dragging-changed', value: false }); return JSON.stringify(mid.map((v) => Math.round(v * 1e4) / 1e4));`);
+  check("PT2 releasing near the middle snaps the pivot to the model's centre: ONE pivot write", await waitDisk(() => myActs().length === nPt + 1 && JSON.stringify(disk().entities.pt?.c.pivot?.pos) === centre), { centre, pivot: disk().entities.pt?.c.pivot, acts: myActs().slice(nPt).map((a) => a.e.body?.request) });
+  check("PT3 …and the crate itself did not move", JSON.stringify(disk().entities.pt.c.transform) === ptBefore, [ptBefore, disk().entities.pt.c.transform]);
+  await page(`(await import('/lib/build.js')).setTool('select'); return true;`);
+
   // ---- the page's own fold, at the end ----
   check("B3 the page's v4 fold = the log on disk (digest), after everything above", await waitFor(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st) === '${digest(disk())}')`), [await evalJson(`Promise.all([import('/lib/net.js'), import('/shared/v4/fold.js')]).then(([n, f]) => f.digest(n.v4.st))`), digest(disk())]);
   check("B4 what the page drew came from its own fold: v4 entries ingested, v1 verbs derived locally, no resync (that the server sends it no `log` entries is server-check S8)", await evalJson(`import('/lib/net.js').then((m) => m.v4.stats.ingested > 10 && m.v4.stats.projected > 0 && m.v4.stats.resyncs === 0)`), await evalJson(`import('/lib/net.js').then((m) => m.v4.stats)`));

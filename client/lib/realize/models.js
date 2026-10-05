@@ -78,6 +78,22 @@ const _v = new THREE.Vector3();
 
 const libGeom = new Map();   // lib -> {bbox} — fed by the 'geom' message
 /** A model's box in its own frame (before scale), as the server measured it: [[min], [max]], or null until known. */
+/** A placed thing's model box in its own frame: the server's measure, or (a model added after you joined, which the
+ *  join-time geom never covered) measured here from the loaded meshes. null while nothing has loaded. */
+const _ib = new THREE.Matrix4(), _bx = new THREE.Box3(), _mb = new THREE.Box3();
+export function boxOf(id) {
+  const ent = state.st.entities?.[id]; const known = ent?.lib ? libBox(ent.lib) : null; if (known) return known;
+  const obj = entities.get(id); if (!obj) return null;
+  obj.updateWorldMatrix(true, true); _ib.copy(obj.matrixWorld).invert(); _bx.makeEmpty();
+  const walk = (m) => {   // its own meshes only: a rider (another entity mounted here) is a child in three, not part of it
+    if (m !== obj && m.userData?.entityId != null && m.userData.entityId !== id) return;
+    if (m.isMesh && m.geometry && !m.userData?.isGizmo) { if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+      _mb.copy(m.geometry.boundingBox).applyMatrix4(new THREE.Matrix4().multiplyMatrices(_ib, m.matrixWorld)); _bx.union(_mb); }
+    for (const k of m.children) walk(k);
+  };
+  walk(obj);
+  return _bx.isEmpty() ? null : [_bx.min.toArray(), _bx.max.toArray()];
+}
 export function libBox(lib) { const b = libGeom.get(lib)?.bbox; if (!b?.size) return null; const c = b.center ?? [0, b.size[1] / 2, 0]; return [[0, 1, 2].map((i) => c[i] - b.size[i] / 2), [0, 1, 2].map((i) => c[i] + b.size[i] / 2)]; }
 let _phGeo = null;
 let _phMat = null;

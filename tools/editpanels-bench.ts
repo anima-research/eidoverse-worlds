@@ -294,7 +294,7 @@ check('W is still walking — no tool change', await evalJson(`globalThis.__edit
 // retained, and the renderer hit V8's heap limit near the filter section (traced 10-01: the same OOM on
 // this bench at d7f382c, before components-B — a bench bug, not the editor's)
 await evalJson(`dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' })), true`);
-check('tool buttons show their letters', await evalJson(`[...document.querySelectorAll('.edit-tool-key')].map((k) => k.textContent).join('') === 'QGER'`));
+check('tool buttons show their letters', await evalJson(`[...document.querySelectorAll('.edit-tool-key')].map((k) => k.textContent).join('') === 'QGERP'`));   // P: the pivot tool (R 10-04)
 check('hierarchy has no button row', await evalJson(`document.querySelector('.edit-left [data-frame="hierarchy"] .sp-btn') === null`));
 await evalJson(`(() => { const row = [...document.querySelectorAll('.edit-left .sp-tree-row')].find((r) => /lamp2/.test(r.textContent)); row.dispatchEvent(new MouseEvent('contextmenu', { clientX: 120, clientY: 130, bubbles: true, cancelable: true })); return true; })()`);
 check('right-click opens the row menu with find / parent to / lock / remove', await evalJson(`(() => { const m = document.querySelector('.sp-ctx'); const T = m ? [...m.querySelectorAll('.sp-ctx-item')].map((i) => i.textContent) : []; return T.some((t) => /find/.test(t)) && T.some((t) => /parent to/.test(t)) && T.some((t) => /lock/.test(t)) && T.some((t) => /remove/.test(t)); })()`));

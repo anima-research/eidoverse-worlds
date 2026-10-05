@@ -21,6 +21,7 @@ import { sceneSelected } from './scenegraph.js';
 import { getTool, getSpace, isEditing, pushUndo, refreshOutline, setPointerVeto, setEscapeHook } from './build.js';
 import * as V4 from './v4edit.js';   // protocol/v4 slice 3b: a v4 world's release is one door request with expect
 import { reindexCollider } from './colliders.js';
+import { boxOf } from './realize/models.js';
 import { foldRecord, inverseOf } from './inspect.js';
 import { mayAuthor } from './placer.js';
 import { editVerbs, inspectSchema, fieldAt, poseEdits } from '../../shared/editschema.js';
@@ -65,7 +66,7 @@ function ensure() {
   return controls;
 }
 
-const MODE = { move: 'translate', rotate: 'rotate', scale: 'scale' };
+const MODE = { move: 'translate', rotate: 'rotate', scale: 'scale', pivot: 'translate' };
 /** Can this thing take THIS gesture? The schema decides: a mounted or locked
  *  thing's transform is read-only; a light has no orientation or scale to drag. */
 function editable(id, mode) {
@@ -91,7 +92,7 @@ function sync() {
   const want = isEditing() && id && MODE[getTool()] && editable(id, MODE[getTool()]) ? id : null;
   if (!want) { if (attachedId) { controls?.detach(); attachedId = null; viaProxy = false; } return; }
   const c = ensure();
-  const obj = entities.get(want); const piv = pivotOf(want);
+  const obj = entities.get(want); const piv = pivotOf(want) ?? (getTool() === 'pivot' ? [0, 0, 0] : null);   // the pivot tool starts at the origin when there is none
   if (piv && !controls?.dragging) { if (!proxy.parent) scene.add(proxy); seatProxy(obj, piv); }   // between drags it follows the thing (others move it too)
   if (attachedId !== want || viaProxy !== !!piv) { c.attach(piv ? proxy : obj); attachedId = want; viaProxy = !!piv; }
   const mode = MODE[getTool()];
@@ -112,6 +113,7 @@ function beginDrag() {
 function onChange() {
   const obj = attachedId && entities.get(attachedId); if (!obj) return;
   if (cancelled) { bus.emit('pose-revert', { id: attachedId }); return; }   // Esc held it where the log has it
+  if (getTool() === 'pivot') { refreshOutline(); return; }   // the pivot tool moves the pivot only: the thing stays
   if (viaProxy && offset) {   // the thing follows the proxy: world = proxy × offset, then into its parent's frame
     proxy.updateMatrixWorld(true);
     _m.multiplyMatrices(proxy.matrixWorld, offset);
@@ -132,7 +134,33 @@ function onChange() {
     sendDrag(attachedId, [p.x, p.y, p.z], new THREE.Euler().setFromQuaternion(q, 'YXZ').y, [q.x, q.y, q.z, q.w]);
   }
 }
+// the pivot tool's release: where the proxy ended, in the thing's own frame (before scale), snapped to the nearest
+// hotspot of the model's box within 15 cm (centre, base, top, the 6 face centres, the 8 corners); one pivot write
+function hotspots(box) {
+  const [lo, hi] = box; const mid = [0, 1, 2].map((i) => (lo[i] + hi[i]) / 2); const out = [['centre', mid]];
+  for (let i = 0; i < 3; i++) for (const [w, v] of [['min', lo[i]], ['max', hi[i]]]) { const p = [...mid]; p[i] = v; out.push([i === 1 ? (w === 'min' ? 'base' : 'top') : `${'xyz'[i]} ${w === 'min' ? '−' : '+'} face`, p]); }
+  for (const x of [lo[0], hi[0]]) for (const y of [lo[1], hi[1]]) for (const z of [lo[2], hi[2]]) out.push(['corner', [x, y, z]]);
+  return out;
+}
+function endPivotDrag() {
+  const id = attachedId; const obj = id && entities.get(id); start = null;
+  if (cancelled) { cancelled = false; return; }
+  if (!obj) return;
+  obj.updateWorldMatrix(true, false);
+  let p = proxy.position.clone().applyMatrix4(obj.matrixWorld.clone().invert()).toArray().map((v) => Math.round(v * 1e4) / 1e4);
+  const box = boxOf(id); let snapped = null;
+  if (box) { const s = obj.getWorldScale(new THREE.Vector3()); let best = null;
+    for (const [name, h] of hotspots(box)) { const d = Math.hypot(...h.map((v, i) => (v - p[i]) * [s.x, s.y, s.z][i])); if (d < 0.15 && (!best || d < best.d)) best = { name, h, d }; }
+    if (best) { p = best.h.map((v) => Math.round(v * 1e4) / 1e4); snapped = best.name; } }
+  const data = p.every((v) => v === 0) ? null : { pos: p };   // back at the origin = no pivot
+  const verbs = [{ verb: 'comp', args: { id, type: 'pivot', data } }];
+  if (V4.isV4()) V4.sendVerbsV4(verbs, { what: `pivot of ${id}`, expect: false });
+  else { pushUndo({ verb: 'comp', args: { id, type: 'pivot', data: comps.get(id)?.pivot ?? null } }, `pivot of ${id}`); import('./net.js').then((m) => m.sendVerb('comp', verbs[0].args)); }
+  import('./ui.js').then((m) => m.flashHint(snapped ? `pivot → <b>${snapped}</b>` : data ? 'pivot moved — the thing stays where it is' : 'pivot back at the origin', 2200));
+  bus.emit('pivot-set', { id, pos: p, snapped });
+}
 function endDrag() {
+  if (getTool() === 'pivot') { endPivotDrag(); return; }
   if (cancelled) { cancelled = false; start = null; return; }
   const id = attachedId; const obj = id && entities.get(id);
   if (!obj || !start?.rec) { start = null; return; }

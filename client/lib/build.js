@@ -137,7 +137,7 @@ export function cycleSpace(t = tool) {
   return setSpace(t, list[(list.indexOf(getSpace(t)) + 1) % list.length]);
 }
 export function setTool(t) {
-  if (!['select', 'move', 'rotate', 'scale'].includes(t) || t === tool) return tool;
+  if (!['select', 'move', 'rotate', 'scale', 'pivot'].includes(t) || t === tool) return tool;
   tool = t;
   bus.emit('tool', tool);
   return tool;
@@ -757,7 +757,7 @@ bus.on('key', (e) => {
   // removes, Esc steps out, B toggles the mode. The old per-key nudges (Q/E
   // turn, ,/. size, R/F raise) are retired; the tools do those with a drag.
   if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-    const t = { KeyQ: 'select', KeyG: 'move', KeyE: 'rotate', KeyR: 'scale' }[e.code];
+    const t = { KeyQ: 'select', KeyG: 'move', KeyE: 'rotate', KeyR: 'scale', KeyP: 'pivot' }[e.code];   // P: the pivot (Maya's D; D walks here)
     if (t) {   // the active tool's key again steps its space (G G: move in the thing's own axes), saying so
       if (t === getTool() && SPACES[t]?.length > 1) { const s = cycleSpace(t); flashHint(`${t} in <b>${s}</b> axes · ${{ move: 'G', rotate: 'E' }[t]} again to switch`, 2200); return; }
       setTool(t); return;
