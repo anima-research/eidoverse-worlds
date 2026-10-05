@@ -544,5 +544,22 @@ ok(TRANSLATOR !== "translate-v1@0.3" && /^eidoverse\//.test(TRANSLATOR), "T1 the
   ok(tw("ann", "turn", { id: "gate", axis: "y", deg: 0, about: "origin" }).ok, "TN5 about: 'origin' is there when you want the old behaviour");
   ok(code(tw("ann", "turn", { id: "plank", axis: "sideways", deg: 10 })) === "shape" && code(tw("ann", "turn", { id: "plank", axis: "x", deg: 10, space: "screen" })) === "shape" && code(tw("ann", "turn", { id: "plank", axis: "x", deg: 10, about: "pivot" })) === "shape", "TN6 a bad axis, space, or about-pivot without one is refused, naming the fix"); }
 
+// ---- UR: undo after a redo, and an undo that says what it undid (agent lab round 2, Hazel #1) ----
+{ const uw = (actor, tool, args = {}) => { T += 100; process.env.V4_NOW = String(T); return request(openWorld(root, "undoredo"), actor, tool, args); };
+  const px = () => openWorld(root, "undoredo").state().entities.box?.c.transform.pos[0];
+  uw("ann", "new", { title: "undoredo" });
+  uw("ann", "create", { id: "box", model: "crate", components: { transform: { pos: [0, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } } });
+  const mv = uw("ann", "set", { id: "box", component: "transform", value: { pos: [5, 0, 0], q: [0, 0, 0, 1], scale: [1, 1, 1] } });
+  const u1 = uw("ann", "undo", {});
+  ok(u1.ok && px() === 0 && u1.undid?.act === mv.act && u1.undid.kind === "undo" && /set box transform/.test(u1.undid.what), "UR1 a bare undo says what it undid: {act, kind: 'undo', what: 'set box transform'}", u1.undid);
+  const r1 = uw("ann", "undo", { act: u1.act });
+  ok(r1.ok && px() === 5 && r1.undid?.kind === "redo" && r1.undid.of === mv.act, "UR2 undoing that undo is a redo, and says so (kind 'redo', of the move)", r1.undid);
+  const u2 = uw("ann", "undo", {});
+  ok(u2.ok && px() === 0 && u2.undid?.act === r1.act, "UR3 a bare undo after a redo takes back the REDO (not older work: the box goes back, and still exists)", { undid: u2.undid, x: px() });
+  const u3 = uw("ann", "undo", {});
+  ok(u3.ok && openWorld(root, "undoredo").state().entities.box === undefined, "UR4 …and the next bare undo walks on back past it (the create), not round the undo/redo loop", u3.undid);
+  const again = uw("ann", "undo", { act: mv.act });
+  ok(again.refused?.code === "nothing" && /already undone \(by undo \d+, then redo \d+, then undo \d+\)/.test(again.refused.reason), "UR5 undo {act} of something already undone names the chain", again.refused); }
+
 console.log(`[door-check] ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
