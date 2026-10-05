@@ -2,11 +2,12 @@
 // must draw from its own v4 fold (state.st = viewState(fold)), with every thing in the scene. Screenshot to SHOT.
 import { launchBrowser, checker } from './probe-harness.mjs';
 const ORIGIN = process.env.GARDEN_ORIGIN ?? 'http://127.0.0.1:8985';
+const WORLD = process.env.WORLD ?? 'garden';
 const { browser, page } = await launchBrowser();
 const { check, done } = checker();
 try {
   const pg = await page();
-  await pg.goto(`${ORIGIN}/?world=garden&name=lookprobe`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await pg.goto(`${ORIGIN}/?world=${WORLD}&name=lookprobe`, { waitUntil: 'domcontentloaded', timeout: 60000 });
   await pg.waitForFunction(() => import('/lib/net.js').then((m) => m.v4?.active && m.net?.joined), null, { timeout: 60000 });
   // the splash leaves when the world is drawn (or after its own patience); then give the scene a moment to settle
   await pg.waitForFunction(() => { const sp = document.getElementById('splash'); return !sp || sp.hidden || getComputedStyle(sp).display === 'none' || getComputedStyle(sp).opacity === '0'; }, null, { timeout: 150000 }).catch(() => console.log('   (splash still up after 150 s)'));
